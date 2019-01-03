@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/giantswarm/devctl/cmd"
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
+
+	"github.com/giantswarm/devctl/cmd"
 )
 
 var (
@@ -27,7 +28,6 @@ func main() {
 		if err != nil {
 			panic(fmt.Sprintf("failed to create logger: %#v", err))
 		}
-
 	}
 
 	var rootCommand *cobra.Command
