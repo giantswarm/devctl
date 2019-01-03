@@ -8,7 +8,7 @@ import (
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
 
-	"github.com/giantswarm/devctl/cmd/repo/dependent"
+	"github.com/giantswarm/devctl/cmd/repo/list"
 )
 
 const (
@@ -35,15 +35,15 @@ func New(config Config) (*cobra.Command, error) {
 
 	var err error
 
-	var dependentCmd *cobra.Command
+	var listCmd *cobra.Command
 	{
-		c := dependent.Config{
+		c := list.Config{
 			Logger: config.Logger,
 			Stderr: config.Stderr,
 			Stdout: config.Stdout,
 		}
 
-		dependentCmd, err = dependent.New(c)
+		listCmd, err = list.New(c)
 		if err != nil {
 			return nil, microerror.Mask(err)
 		}
@@ -67,7 +67,7 @@ func New(config Config) (*cobra.Command, error) {
 
 	f.Init(c)
 
-	c.AddCommand(dependentCmd)
+	c.AddCommand(listCmd)
 
 	return c, nil
 }

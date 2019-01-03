@@ -1,4 +1,4 @@
-package dependent
+package list
 
 import "github.com/giantswarm/microerror"
 

@@ -1,4 +1,4 @@
-package dependent
+package list
 
 import (
 	"io"
@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	name        = "dependent"
-	description = "Lists Go repositories dependent from given repository."
+	name        = "list"
+	description = "Lists Github repositories with given filters applied."
 )
 
 type Config struct {
