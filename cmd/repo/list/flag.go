@@ -11,23 +11,23 @@ import (
 )
 
 const (
-	flagDependentFrom     = "dependent-from"
+	flagDependOn          = "depend-on"
 	flagGithubAccessToken = "github.access.token"
 )
 
 type flag struct {
-	DependentFrom     string
+	DependOn          string
 	GithubAccessToken string
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
-	cmd.Flags().StringVar(&f.DependentFrom, flagDependentFrom, "", `Fully qualifed name of github repository, e.g. "github.com/giantswarm/helmclient". With this flag set only repositories having dependency to the flag value will be listed.`)
+	cmd.Flags().StringVar(&f.DependOn, flagDependOn, "", `Name of Go package, e.g. "github.com/giantswarm/helmclient". Filters listed repositories by those having dependency to the package.`)
 	cmd.Flags().StringVar(&f.GithubAccessToken, flagGithubAccessToken, os.Getenv(env.DevctlGithubAccessToken), fmt.Sprintf(`Github access token. Defaults to %s environment variable.`, env.DevctlGithubAccessToken))
 }
 
 func (f *flag) Validate() error {
-	if f.DependentFrom == "" {
-		return microerror.Maskf(invalidFlagError, "--%s must not be empty", flagDependentFrom)
+	if f.DependOn == "" {
+		return microerror.Maskf(invalidFlagError, "--%s must not be empty", flagDependOn)
 	}
 	if f.GithubAccessToken == "" {
 		return microerror.Maskf(invalidFlagError, "--%s or %s environment variable must not be empty", flagGithubAccessToken, env.DevctlGithubAccessToken)
