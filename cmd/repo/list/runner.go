@@ -136,7 +136,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		}
 	}
 
-	fmt.Fprintf(r.stdout, "----> Go repos dependend on %q edited in last %d days (%d):\n", r.flag.DependOn, freshDays, len(results))
+	fmt.Fprintf(r.stdout, "----> Go repos depending on %q edited in last %d days (%d):\n", r.flag.DependsOn, freshDays, len(results))
 	for _, res := range results {
 		fmt.Fprintf(r.stdout, "%s\n", res.Repo)
 		for _, d := range res.Deps {
