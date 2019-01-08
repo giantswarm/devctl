@@ -118,7 +118,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 			dependencies := append(depMf.Constraints, depMf.Overrides...)
 			for _, d := range dependencies {
-				if d.Name != r.flag.DependOn {
+				if d.Name != r.flag.DependsOn {
 					continue
 				}
 
