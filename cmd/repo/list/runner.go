@@ -118,7 +118,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 			dependencies := append(depMf.Constraints, depMf.Overrides...)
 			for _, d := range dependencies {
-				if d.Name != r.flag.DependentFrom {
+				if d.Name != r.flag.DependsOn {
 					continue
 				}
 
@@ -136,7 +136,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		}
 	}
 
-	fmt.Fprintf(r.stdout, "----> Go repos dependend on %q edited in last %d days (%d):\n", r.flag.DependentFrom, freshDays, len(results))
+	fmt.Fprintf(r.stdout, "----> Go repos depending on %q edited in last %d days (%d):\n", r.flag.DependsOn, freshDays, len(results))
 	for _, res := range results {
 		fmt.Fprintf(r.stdout, "%s\n", res.Repo)
 		for _, d := range res.Deps {
