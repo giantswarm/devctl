@@ -11,12 +11,12 @@ import (
 )
 
 const (
-	flagDependsOn          = "depend-on"
+	flagDependsOn         = "depends-on"
 	flagGithubAccessToken = "github.access.token"
 )
 
 type flag struct {
-	DependsOn          string
+	DependsOn         string
 	GithubAccessToken string
 }
 
