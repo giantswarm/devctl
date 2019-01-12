@@ -6,10 +6,13 @@ jobs:
     working_directory: /workdir
     steps:
       - checkout
+      - attach_workspace:
+          at: .
       - restore_cache:
           keys:
             - go-mod-v1-{{ checksum "go.sum" }}
-      - run: go test ./...
+      - run: |
+          go test ./... && go build . -o devctl
       - save_cache:
           key: go-mod-v1-{{ checksum "go.sum" }}
           paths:
