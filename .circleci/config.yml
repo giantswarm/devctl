@@ -2,7 +2,7 @@ version: 2
 jobs:
   build:
     docker:
-      - image: circleci/golang:1.11
+      - image: quay.io/giantswarm/golang:1.11.3
     working_directory: /workdir
     steps:
       - checkout
