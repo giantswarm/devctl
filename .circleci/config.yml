@@ -12,7 +12,9 @@ jobs:
           keys:
             - go-mod-v1-{{ checksum "go.sum" }}
       - run: |
-          go test ./... && go build -o devctl .
+          go test ./...
+      - run: |
+          go build -o devctl .
       - save_cache:
           key: go-mod-v1-{{ checksum "go.sum" }}
           paths:
