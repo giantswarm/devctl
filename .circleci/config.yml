@@ -24,7 +24,7 @@ jobs:
           ./devctl version
   deploy-image:
     docker:
-      - image: docker:18.09.1 # TODO: should be moved to rettager?
+      - image: kopiczko/golang:1.11.3 # TODO create our image with image with git, docker & go
     working_directory: /workdir
     steps:
       - checkout
