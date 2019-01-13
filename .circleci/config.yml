@@ -28,10 +28,9 @@ jobs:
           - ./devctl
   deploy-image:
     docker:
-      - image: kopiczko/golang:1.11.3 # TODO create our image with image with git, docker & go
+      - image: docker:18.09.1 # TODO add to retagger
     working_directory: /workdir
     steps:
-      - checkout
       - attach_workspace:
           at: .
       - setup_remote_docker:
