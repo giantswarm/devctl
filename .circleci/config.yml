@@ -21,3 +21,14 @@ jobs:
             - "/go/pkg/mod"
       - run: |
           ./devctl version
+  deploy:
+    docker:
+      - image: docker:18.09.1 # TODO: should be moved to rettager?
+    working_directory: /workdir
+    steps:
+      - checkout
+      - setup_remote_docker:
+        docker_layer_caching: true
+        version: 18.09.1
+      - run: |
+        docker build --tag quay.io/giantswarm/devctl .
