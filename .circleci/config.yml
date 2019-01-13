@@ -32,7 +32,7 @@ jobs:
           at: .
       - setup_remote_docker:
           docker_layer_caching: true
-          version: 18.09.1
+          version: 17.05.0-ce
       - run: |
           docker build --tag quay.io/giantswarm/devctl .
 
