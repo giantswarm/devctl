@@ -12,9 +12,9 @@ jobs:
           keys:
             - go-mod-v1-{{ checksum "go.sum" }}
       - run: |
-          go test -race ./...
+          CGO_ENABLED=0 go test -ldflags "-w -X main.gitCommit=${CIRCLE_SHA1} -linkmode 'auto' -extldflags '-static'" -race ./...
       - run: |
-          go build -ldflags "-X main.gitCommit=${CIRCLE_SHA1}" -o devctl .
+          CGO_ENABLED=0 go build -ldflags "-w -X main.gitCommit=${CIRCLE_SHA1} -linkmode 'auto' -extldflags '-static'" -o devctl .
       - save_cache:
           key: go-mod-v1-{{ checksum "go.sum" }}
           paths:
