@@ -33,6 +33,10 @@ jobs:
       - setup_remote_docker:
           docker_layer_caching: true
       - run: |
+          docker version
+      - run: |
+          git --version
+      - run: |
           docker build --tag quay.io/giantswarm/devctl .
 
 workflows:
