@@ -41,7 +41,7 @@ jobs:
       - run: |
           docker build --tag quay.io/giantswarm/devctl .
       - run: |
-          docker run --it --rm --name devctl --log-driver none quay.io/giantswarm/devctl version
+          docker run -i --rm --name devctl --log-driver none quay.io/giantswarm/devctl version
 
 workflows:
   version: 2
