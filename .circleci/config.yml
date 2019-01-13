@@ -22,6 +22,10 @@ jobs:
             - "/go/pkg/mod"
       - run: |
           ./devctl version
+      - persist_to_workspace:
+          root: .
+          paths:
+          - ./devctl
   deploy-image:
     docker:
       - image: kopiczko/golang:1.11.3 # TODO create our image with image with git, docker & go
