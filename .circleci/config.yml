@@ -25,7 +25,8 @@ jobs:
       - persist_to_workspace:
           root: .
           paths:
-          - ./devctl
+            - ./devctl
+            - ./Dockerfile
   deploy-image:
     docker:
       - image: docker:18.09.1 # TODO add to retagger
