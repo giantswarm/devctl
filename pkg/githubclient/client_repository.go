@@ -44,7 +44,7 @@ func (c *Client) ListRepositories(ctx context.Context, owner string) ([]Reposito
 				repos = append(repos, r)
 			}
 
-			c.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("listing page %d of %d repositories for owner %#q", pageCnt, len(pageRepos), owner))
+			c.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("listed page %d of %d repositories for owner %#q", pageCnt, len(pageRepos), owner))
 		}
 	}
 
