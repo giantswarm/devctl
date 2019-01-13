@@ -39,9 +39,19 @@ jobs:
       - run: |
           docker version
       - run: |
-          docker build --tag quay.io/giantswarm/devctl .
+          docker build --tag quay.io/giantswarm/devctl:${CIRCLE_SHA1} .
       - run: |
-          docker run -i --rm --name devctl --log-driver none quay.io/giantswarm/devctl version
+          docker tag quay.io/giantswarm/devctl:${CIRCLE_SHA1} quay.io/giantswarm/devctl:latest
+      - run: |
+          docker run -i --rm --name devctl --log-driver none quay.io/giantswarm/devctl:${CIRCLE_SHA1} version
+      - run: |
+          docker run -i --rm --name devctl --log-driver none quay.io/giantswarm/devctl:latest version
+      - run: |
+          docker login -u ${QUAY_USERNAME} -p ${QUAY_PASSWORD} quay.io
+      - run: |
+          docker push quay.io/giantswarm/devctl:${CIRCLE_SHA1}
+      - run: |
+          docker push quay.io/giantswarm/devctl:latest
 
 workflows:
   version: 2
