@@ -6,9 +6,9 @@ Command line tool for the development daily business.
 
 ## Installation
 
-This project uses Go modules so be sure to have it outside your `$GOPATH` or or
+This project uses Go modules. Be sure to have it outside your `$GOPATH` or
 set `GO111MODULE=on` environment variable. Then regular `go install` should do
-the trick. Below handy oneliner:
+the trick. Alternatively the following one-liner may help. 
 
 ```sh
 GO111MODULE=on go install -ldflags "-X main.gitCommit=$(git rev-parse HEAD)" .
