@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
 
@@ -17,6 +18,13 @@ var (
 )
 
 func main() {
+	err := mainWithError()
+	if err != nil {
+		panic(fmt.Sprintf("%#v\n", err))
+	}
+}
+
+func mainWithError() error {
 	var err error
 	ctx := context.Background()
 
@@ -26,7 +34,7 @@ func main() {
 
 		logger, err = micrologger.New(c)
 		if err != nil {
-			panic(fmt.Sprintf("failed to create logger: %#v", err))
+			return microerror.Mask(err)
 		}
 	}
 
@@ -44,7 +52,9 @@ func main() {
 
 	err = rootCommand.Execute()
 	if err != nil {
-		logger.LogCtx(ctx, "level", "error", "message", "failed to execute root command", "stack", fmt.Sprintf("%#v", err))
+		logger.LogCtx(ctx, "level", "error", "message", "failed to execute command", "stack", fmt.Sprintf("%#v", err))
 		os.Exit(1)
 	}
+
+	return nil
 }
