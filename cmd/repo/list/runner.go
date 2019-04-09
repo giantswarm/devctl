@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 	"time"
 
@@ -26,20 +25,20 @@ type runner struct {
 	stderr io.Writer
 }
 
-func (r *runner) Run(cmd *cobra.Command, args []string) {
+func (r *runner) RunWithError(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 
 	err := r.flag.Validate()
 	if err != nil {
-		fmt.Fprintf(r.stderr, "%s\n", err.Error())
-		os.Exit(2)
+		return microerror.Mask(err)
 	}
 
 	err = r.run(ctx, cmd, args)
 	if err != nil {
-		fmt.Fprintf(r.stderr, "%#v\n", err)
-		os.Exit(1)
+		return microerror.Mask(err)
 	}
+
+	return nil
 }
 
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {

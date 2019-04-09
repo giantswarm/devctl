@@ -44,7 +44,7 @@ func New(config Config) (*cobra.Command, error) {
 		Use:   name,
 		Short: description,
 		Long:  description,
-		Run:   r.Run,
+		RunE:  r.RunWithError,
 	}
 
 	f.Init(c)
