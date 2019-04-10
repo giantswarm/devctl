@@ -21,7 +21,7 @@ type runner struct {
 	source    string
 }
 
-func (r *runner) RunWithError(cmd *cobra.Command, args []string) error {
+func (r *runner) Run(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 
 	err := r.flag.Validate()
