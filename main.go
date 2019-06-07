@@ -10,23 +10,18 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/cmd"
-)
-
-var (
-	gitCommit = "n/a"
-	source    = "https://github.com/giantswarm/devctl"
+	"github.com/giantswarm/devctl/pkg/project"
 )
 
 func main() {
-	err := mainWithError()
+	err := mainE(context.Background())
 	if err != nil {
 		panic(fmt.Sprintf("%#v\n", err))
 	}
 }
 
-func mainWithError() error {
+func mainE(ctx context.Context) error {
 	var err error
-	ctx := context.Background()
 
 	var logger micrologger.Logger
 	{
@@ -43,8 +38,8 @@ func mainWithError() error {
 		c := cmd.Config{
 			Logger: logger,
 
-			GitCommit: gitCommit,
-			Source:    source,
+			GitCommit: project.GitSHA(),
+			Source:    project.Source(),
 		}
 
 		rootCommand, err = cmd.New(c)
@@ -52,7 +47,7 @@ func mainWithError() error {
 
 	err = rootCommand.Execute()
 	if err != nil {
-		logger.LogCtx(ctx, "level", "error", "message", "failed to execute command", "stack", fmt.Sprintf("%#v", err))
+		logger.LogCtx(ctx, "level", "error", "message", "failed to execute command", "stack", microerror.Stack(err))
 		os.Exit(1)
 	}
 

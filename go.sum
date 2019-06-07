@@ -2,8 +2,8 @@ github.com/BurntSushi/toml v0.3.1 h1:WXkYYl6Yr3qBf1K79EBnL4mak0OimBfB0XUf9Vl28OQ
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
-github.com/giantswarm/microerror v0.0.0-20181001144842-3bc3cb1a3670 h1:r4rDd+ihHOy0nqfc+wfsKIfddOE/AUq5mkxRGwF+ziA=
-github.com/giantswarm/microerror v0.0.0-20181001144842-3bc3cb1a3670/go.mod h1://Lo9dKJ8P2TBciuky5fDHEItccyvZOWE+B/0JiJT8A=
+github.com/giantswarm/microerror v0.0.0-20190605150300-f446cc816a48 h1:Mn7QWbBrHDfr+7D3Q51dKeJdXTKQCGl2zDEyHJi27W0=
+github.com/giantswarm/microerror v0.0.0-20190605150300-f446cc816a48/go.mod h1://Lo9dKJ8P2TBciuky5fDHEItccyvZOWE+B/0JiJT8A=
 github.com/giantswarm/micrologger v0.0.0-20181128163930-39ed6a99d31b h1:7zq3+zLj7Vsef9AZywA1Bn5EF2mpTStye174RAwdrSg=
 github.com/giantswarm/micrologger v0.0.0-20181128163930-39ed6a99d31b/go.mod h1:2O9GG1AfKI8px8oseWx+TTD6A6aEdUo16ZjAKv2wOVk=
 github.com/go-kit/kit v0.8.0 h1:Wz+5lgoB0kkuqLEc6NVmwRknTKP6dTGbSqvhZtBI/j0=

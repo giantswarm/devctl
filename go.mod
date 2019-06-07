@@ -3,7 +3,7 @@ module github.com/giantswarm/devctl
 require (
 	github.com/BurntSushi/toml v0.3.1 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/giantswarm/microerror v0.0.0-20181001144842-3bc3cb1a3670
+	github.com/giantswarm/microerror v0.0.0-20190605150300-f446cc816a48
 	github.com/giantswarm/micrologger v0.0.0-20181128163930-39ed6a99d31b
 	github.com/go-kit/kit v0.8.0 // indirect
 	github.com/go-logfmt/logfmt v0.4.0 // indirect
