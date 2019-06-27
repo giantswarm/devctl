@@ -6,8 +6,9 @@ import (
 	"html/template"
 	"os"
 
-	"github.com/giantswarm/devctl/pkg/gen/input"
 	"github.com/giantswarm/microerror"
+
+	"github.com/giantswarm/devctl/pkg/gen/input"
 )
 
 func Execute(ctx context.Context, files ...input.File) error {
