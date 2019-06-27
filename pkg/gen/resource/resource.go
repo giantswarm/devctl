@@ -67,7 +67,7 @@ import (
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
 	{{ .ObjectGroup }}{{ .ObjectVersion }} "k8s.io/api/{{ .ObjectGroup }}/{{ .ObjectVersion }}"
-	{{ .ClientImport }}
+	"{{ .ClientImport }}"
 )
 
 type Config struct {
