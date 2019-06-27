@@ -8,6 +8,7 @@ import (
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
 
+	"github.com/giantswarm/devctl/cmd/gen"
 	"github.com/giantswarm/devctl/cmd/repo"
 	"github.com/giantswarm/devctl/cmd/version"
 )
@@ -46,6 +47,20 @@ func New(config Config) (*cobra.Command, error) {
 	}
 
 	var err error
+
+	var genCmd *cobra.Command
+	{
+		c := gen.Config{
+			Logger: config.Logger,
+			Stderr: config.Stderr,
+			Stdout: config.Stdout,
+		}
+
+		genCmd, err = gen.New(c)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+	}
 
 	var repoCmd *cobra.Command
 	{
@@ -97,6 +112,7 @@ func New(config Config) (*cobra.Command, error) {
 
 	f.Init(c)
 
+	c.AddCommand(genCmd)
 	c.AddCommand(versionCmd)
 	c.AddCommand(repoCmd)
 
