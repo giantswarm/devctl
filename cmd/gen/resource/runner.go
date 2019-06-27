@@ -7,6 +7,9 @@ import (
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
+
+	"github.com/giantswarm/devctl/pkg/gen"
+	"github.com/giantswarm/devctl/pkg/gen/resource"
 )
 
 type runner struct {
@@ -33,5 +36,25 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 }
 
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
+	c := resource.Config{
+		Dir:           r.flag.Dir,
+		ObjectGroup:   r.flag.ObjectGroup,
+		ObjectKind:    r.flag.ObjectKind,
+		ObjectVersion: r.flag.ObjectVersion,
+	}
+
+	resourceFile, err := resource.NewResource(c)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	err = gen.Execute(
+		ctx,
+		resourceFile,
+	)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
 	return nil
 }
