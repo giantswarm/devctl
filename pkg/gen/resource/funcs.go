@@ -1,8 +1,8 @@
 package resource
 
 import (
-	"bytes"
 	"strings"
+	"unicode"
 )
 
 func firstLetterToLower(s string) string {
@@ -10,10 +10,8 @@ func firstLetterToLower(s string) string {
 		return strings.ToLower(s)
 	}
 
-	bs := []byte(s)
+	rs := []rune(s)
+	rs[0] = unicode.ToLower(rs[0])
 
-	lc := bytes.ToLower([]byte{bs[0]})
-	rest := bs[1:]
-
-	return string(bytes.Join([][]byte{lc, rest}, nil))
+	return string(rs)
 }
