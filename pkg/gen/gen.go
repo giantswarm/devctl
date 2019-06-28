@@ -24,7 +24,7 @@ func Execute(ctx context.Context, files ...input.File) error {
 		}
 
 		// TODO override, ignore
-		w, err := os.OpenFile(in.Path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0666)
+		w, err := os.OpenFile(in.Path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 		if err != nil {
 			return microerror.Mask(err)
 		}
