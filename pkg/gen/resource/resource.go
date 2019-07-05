@@ -71,7 +71,7 @@ import (
 )
 
 type Config struct {
-	Client   {{ .ClientPackage }}.Interface
+	Client      {{ .ClientPackage }}.Interface
 	Logger      micrologger.Logger
 	StateGetter StateGetter
 
@@ -79,7 +79,7 @@ type Config struct {
 }
 
 type Resource struct {
-	client   {{ .ClientPackage }}.Interface
+	client      {{ .ClientPackage }}.Interface
 	logger      micrologger.Logger
 	stateGetter StateGetter
 
