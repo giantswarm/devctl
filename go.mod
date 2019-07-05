@@ -15,6 +15,8 @@ require (
 	github.com/kr/pretty v0.1.0 // indirect
 	github.com/pelletier/go-toml v1.2.0
 	github.com/spf13/cobra v0.0.3
+	github.com/spf13/pflag v1.0.3 // indirect
+	golang.org/x/net v0.0.0-20190328230028-74de082e2cca // indirect
 	golang.org/x/oauth2 v0.0.0-20180821212333-d2e6202438be
 	golang.org/x/time v0.0.0-20190308202827-9d24e82272b4 // indirect
 	google.golang.org/appengine v1.1.0 // indirect
