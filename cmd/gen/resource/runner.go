@@ -2,7 +2,9 @@ package resource
 
 import (
 	"context"
+	"fmt"
 	"io"
+	"os"
 
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
@@ -52,7 +54,10 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		ctx,
 		resourceFile,
 	)
-	if err != nil {
+	if gen.IsFilePath(err) {
+		fmt.Fprintf(r.stderr, "%s\n", err)
+		os.Exit(1)
+	} else if err != nil {
 		return microerror.Mask(err)
 	}
 
