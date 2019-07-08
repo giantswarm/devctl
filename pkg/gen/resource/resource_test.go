@@ -30,7 +30,7 @@ func Test_Resource(t *testing.T) {
 		errorMatcher func(err error) bool
 	}{
 		{
-			name:         "case 0: resources.go",
+			name:         "case 0: resource.go",
 			errorMatcher: nil,
 		},
 	}
