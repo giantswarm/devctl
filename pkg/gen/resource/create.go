@@ -3,6 +3,7 @@ package resource
 import (
 	"context"
 	"path/filepath"
+	"strings"
 
 	"github.com/giantswarm/devctl/pkg/gen/input"
 	"github.com/giantswarm/microerror"
@@ -36,11 +37,12 @@ func (f *Create) GetInput(ctx context.Context) (input.Input, error) {
 		Path:         filepath.Join(f.dir, "create.go"),
 		TemplateBody: createTemplate,
 		TemplateData: map[string]interface{}{
-			"ObjectGroup":   f.objectGroup,
-			"ObjectKind":    f.objectKind,
-			"ObjectVersion": f.objectVersion,
-			"Package":       f.dir,
-			"Var":           firstLetterToLower(f.objectKind),
+			"ObjectGroup":        f.objectGroup,
+			"ObjectKind":         f.objectKind,
+			"ObjectVersion":      f.objectVersion,
+			"Package":            f.dir,
+			"ObjectGroupTitle":   strings.Title(f.objectGroup),
+			"ObjectVersionTitle": strings.Title(f.objectVersion),
 		},
 	}
 
@@ -58,23 +60,23 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
-// ApplyCreateChange ensures {{ .ObjectKind }} is created in the k8s api.
+// ApplyCreateChange ensures the {{ .ObjectKind }} is created in the k8s api.
 func (r *Resource) ApplyCreateChange(ctx context.Context, obj, createChange interface{}) error {
-	objects, err := to{{ .ObjectKind }}s(createChange)
+	configMaps, err := to{{ .ObjectKind }}s(createChange)
 	if err != nil {
 		return microerror.Mask(err)
 	}
 
-	for _, o := range objects {
-		r.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("creating {{ .ObjectKind }} %#q in namespace %#q", o.Name, o.Namespace))
+	for _, configMap := range configMaps {
+		r.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("creating {{ .ObjectKind }} %#q in namespace %#q", configMap.Name, configMap.Namespace))
 
-		_, err = r.k8sClient.{{ .ObjectGroup }}{{ .ObjectVersion }}().{{ .ObjectKind }}(o.Namespace).Create(o)
+		_, err = r.k8sClient.{{ .ObjectGroupTitle }}{{ .ObjectVersionTitle }}().{{ .ObjectKind }}s(configMap.Namespace).Create(configMap)
 		if apierrors.IsAlreadyExists(err) {
-			r.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("already created {{ .ObjectKind }} %#q in namespace %#q", o.Name, o.Namespace))
+			r.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("already created {{ .ObjectKind }} %#q in namespace %#q", configMap.Name, configMap.Namespace))
 		} else if err != nil {
 			return microerror.Mask(err)
 		} else {
-			r.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("created {{ .ObjectKind }} %#q in namespace %#q", o.Name, o.Namespace))
+			r.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("created {{ .ObjectKind }} %#q in namespace %#q", configMap.Name, configMap.Namespace))
 		}
 	}
 
@@ -82,29 +84,29 @@ func (r *Resource) ApplyCreateChange(ctx context.Context, obj, createChange inte
 }
 
 func (r *Resource) newCreateChange(ctx context.Context, obj, currentState, desiredState interface{}) (interface{}, error) {
-	current, err := to{{ .ObjectKind }}s(currentState)
+	currentConfigMaps, err := to{{ .ObjectKind }}s(currentState)
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}
 
-	desired, err := to{{ .ObjectKind }}s(desiredState)
+	desiredConfigMaps, err := to{{ .ObjectKind }}s(desiredState)
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}
 
-	var toCreate []*{{ .ObjectGroup }}{{ .ObjectVersion }}.{{ .ObjectKind }}
+	var configMapsToCreate []*{{ .ObjectGroup }}{{ .ObjectVersion }}.{{ .ObjectKind }}
 	{
-		r.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("computing {{ .ObjectKind }} to create "))
+		r.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("computing {{ .ObjectKind }}s to create "))
 
-		for _, d := range desired {
-			if !contains{{ .ObjectKind }}(current, d) {
-				toCreate = append(toCreate, d)
+		for _, d := range desiredConfigMaps {
+			if !contains{{ .ObjectKind }}(currentConfigMaps, d) {
+				configMapsToCreate = append(configMapsToCreate, d)
 			}
 		}
 
-		r.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("computed %d {{ .ObjectKind }} to create", len(toCreate)))
+		r.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("computed %d {{ .ObjectKind }}s to create", len(configMapsToCreate)))
 	}
 
-	return toCreate, nil
+	return configMapsToCreate, nil
 }
 `
