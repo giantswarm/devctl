@@ -45,6 +45,11 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		ObjectVersion: r.flag.ObjectVersion,
 	}
 
+	currentFile, err := resource.NewCurrent(c)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
 	resourceFile, err := resource.NewResource(c)
 	if err != nil {
 		return microerror.Mask(err)
@@ -52,6 +57,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 	err = gen.Execute(
 		ctx,
+		currentFile,
 		resourceFile,
 	)
 	if gen.IsFilePath(err) {
