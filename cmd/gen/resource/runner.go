@@ -50,9 +50,15 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 
+	createFile, err := resource.NewCreate(c)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
 	err = gen.Execute(
 		ctx,
 		resourceFile,
+		createFile,
 	)
 	if gen.IsFilePath(err) {
 		fmt.Fprintf(r.stderr, "%s\n", err)
