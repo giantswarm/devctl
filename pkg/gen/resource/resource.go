@@ -53,7 +53,7 @@ func (f *Resource) GetInput(ctx context.Context) (input.Input, error) {
 			"ObjectGroup":   f.objectGroup,
 			"ObjectKind":    f.objectKind,
 			"ObjectVersion": f.objectVersion,
-			"Package":       f.dir,
+			"Package":       path.Base(f.dir),
 			"Var":           firstLetterToLower(f.objectKind),
 		},
 	}
