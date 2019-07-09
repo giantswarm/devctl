@@ -43,6 +43,7 @@ func (f *Create) GetInput(ctx context.Context) (input.Input, error) {
 			"Package":            f.dir,
 			"ObjectGroupTitle":   strings.Title(f.objectGroup),
 			"ObjectVersionTitle": strings.Title(f.objectVersion),
+			"ObjectKindLower":    firstLetterToLower(f.objectKind),
 		},
 	}
 
@@ -62,21 +63,21 @@ import (
 
 // ApplyCreateChange ensures the {{ .ObjectKind }} is created in the k8s api.
 func (r *Resource) ApplyCreateChange(ctx context.Context, obj, createChange interface{}) error {
-	configMaps, err := to{{ .ObjectKind }}s(createChange)
+	{{ .ObjectKindLower }}s, err := to{{ .ObjectKind }}s(createChange)
 	if err != nil {
 		return microerror.Mask(err)
 	}
 
-	for _, configMap := range configMaps {
-		r.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("creating {{ .ObjectKind }} %#q in namespace %#q", configMap.Name, configMap.Namespace))
+	for _, {{ .ObjectKindLower }} := range {{ .ObjectKindLower }}s {
+		r.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("creating {{ .ObjectKind }} %#q in namespace %#q", {{ .ObjectKindLower }}.Name, {{ .ObjectKindLower }}.Namespace))
 
-		_, err = r.k8sClient.{{ .ObjectGroupTitle }}{{ .ObjectVersionTitle }}().{{ .ObjectKind }}s(configMap.Namespace).Create(configMap)
+		_, err = r.k8sClient.{{ .ObjectGroupTitle }}{{ .ObjectVersionTitle }}().{{ .ObjectKind }}s({{ .ObjectKindLower }}.Namespace).Create({{ .ObjectKindLower }})
 		if apierrors.IsAlreadyExists(err) {
-			r.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("already created {{ .ObjectKind }} %#q in namespace %#q", configMap.Name, configMap.Namespace))
+			r.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("already created {{ .ObjectKind }} %#q in namespace %#q", {{ .ObjectKindLower }}.Name, {{ .ObjectKindLower }}.Namespace))
 		} else if err != nil {
 			return microerror.Mask(err)
 		} else {
-			r.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("created {{ .ObjectKind }} %#q in namespace %#q", configMap.Name, configMap.Namespace))
+			r.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("created {{ .ObjectKind }} %#q in namespace %#q", {{ .ObjectKindLower }}.Name, {{ .ObjectKindLower }}.Namespace))
 		}
 	}
 
@@ -84,29 +85,29 @@ func (r *Resource) ApplyCreateChange(ctx context.Context, obj, createChange inte
 }
 
 func (r *Resource) newCreateChange(ctx context.Context, obj, currentState, desiredState interface{}) (interface{}, error) {
-	currentConfigMaps, err := to{{ .ObjectKind }}s(currentState)
+	current{{ .ObjectKind }}s, err := to{{ .ObjectKind }}s(currentState)
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}
 
-	desiredConfigMaps, err := to{{ .ObjectKind }}s(desiredState)
+	desired{{ .ObjectKind }}s, err := to{{ .ObjectKind }}s(desiredState)
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}
 
-	var configMapsToCreate []*{{ .ObjectGroup }}{{ .ObjectVersion }}.{{ .ObjectKind }}
+	var {{ .ObjectKindLower }}sToCreate []*{{ .ObjectGroup }}{{ .ObjectVersion }}.{{ .ObjectKind }}
 	{
 		r.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("computing {{ .ObjectKind }}s to create "))
 
-		for _, d := range desiredConfigMaps {
-			if !contains{{ .ObjectKind }}(currentConfigMaps, d) {
-				configMapsToCreate = append(configMapsToCreate, d)
+		for _, d := range desired{{ .ObjectKind }}s {
+			if !contains{{ .ObjectKind }}(current{{ .ObjectKind }}s, d) {
+				{{ .ObjectKindLower }}sToCreate = append({{ .ObjectKindLower }}sToCreate, d)
 			}
 		}
 
-		r.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("computed %d {{ .ObjectKind }}s to create", len(configMapsToCreate)))
+		r.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("computed %d {{ .ObjectKind }}s to create", len({{ .ObjectKindLower }}sToCreate)))
 	}
 
-	return configMapsToCreate, nil
+	return {{ .ObjectKindLower }}sToCreate, nil
 }
 `
