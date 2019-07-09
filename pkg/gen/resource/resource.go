@@ -52,9 +52,9 @@ func (f *Resource) GetInput(ctx context.Context) (input.Input, error) {
 			"ClientPackage":   path.Base(clientImport),
 			"ObjectGroup":     f.objectGroup,
 			"ObjectKind":      f.objectKind,
+			"ObjectKindLower": firstLetterToLower(f.objectKind),
 			"ObjectVersion":   f.objectVersion,
 			"Package":         f.dir,
-			"ObjectKindLower": firstLetterToLower(f.objectKind),
 		},
 	}
 

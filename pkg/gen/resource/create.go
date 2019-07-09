@@ -38,12 +38,12 @@ func (f *Create) GetInput(ctx context.Context) (input.Input, error) {
 		TemplateBody: createTemplate,
 		TemplateData: map[string]interface{}{
 			"ObjectGroup":        f.objectGroup,
-			"ObjectKind":         f.objectKind,
-			"ObjectVersion":      f.objectVersion,
-			"Package":            f.dir,
 			"ObjectGroupTitle":   strings.Title(f.objectGroup),
-			"ObjectVersionTitle": strings.Title(f.objectVersion),
+			"ObjectKind":         f.objectKind,
 			"ObjectKindLower":    firstLetterToLower(f.objectKind),
+			"ObjectVersion":      f.objectVersion,
+			"ObjectVersionTitle": strings.Title(f.objectVersion),
+			"Package":            f.dir,
 		},
 	}
 
