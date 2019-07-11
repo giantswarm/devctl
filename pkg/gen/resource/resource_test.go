@@ -27,10 +27,26 @@ var update = flag.Bool("update", false, "update resource.golden file")
 func Test_Resource(t *testing.T) {
 	testCases := []struct {
 		name         string
+		dir          string
+		group        string
+		kind         string
+		version      string
 		errorMatcher func(err error) bool
 	}{
 		{
-			name:         "case 0: resources.go",
+			name:         "case 0: core v1 ConfigMap resources.go",
+			dir:          "/go/src/some.domain/project/subpath/configmapresource",
+			group:        "core",
+			kind:         "ConfigMap",
+			version:      "v1",
+			errorMatcher: nil,
+		},
+		{
+			name:         "case 1: core v1 Secret resources.go",
+			dir:          "/go/src/some.domain/project/subpath/secretresource",
+			group:        "core",
+			kind:         "Secret",
+			version:      "v1",
 			errorMatcher: nil,
 		},
 	}
@@ -40,10 +56,10 @@ func Test_Resource(t *testing.T) {
 			ctx := context.Background()
 
 			c := Config{
-				Dir:           "/go/src/some.domain/project/subpath/configmapresource",
-				ObjectGroup:   "core",
-				ObjectKind:    "ConfigMap",
-				ObjectVersion: "v1",
+				Dir:           tc.dir,
+				ObjectGroup:   tc.group,
+				ObjectKind:    tc.kind,
+				ObjectVersion: tc.version,
 			}
 
 			f, err := NewResource(c)
