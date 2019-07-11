@@ -48,13 +48,13 @@ func (f *Resource) GetInput(ctx context.Context) (input.Input, error) {
 		Path:         filepath.Join(f.dir, "resource.go"),
 		TemplateBody: resourceTemplate,
 		TemplateData: map[string]interface{}{
-			"ClientImport":  clientImport,
-			"ClientPackage": path.Base(clientImport),
-			"ObjectGroup":   f.objectGroup,
-			"ObjectKind":    f.objectKind,
-			"ObjectVersion": f.objectVersion,
-			"Package":       path.Base(f.dir),
-			"Var":           firstLetterToLower(f.objectKind),
+			"ClientImport":    clientImport,
+			"ClientPackage":   path.Base(clientImport),
+			"ObjectGroup":     f.objectGroup,
+			"ObjectKind":      f.objectKind,
+			"ObjectKindLower": firstLetterToLower(f.objectKind),
+			"ObjectVersion":   f.objectVersion,
+			"Package":         f.dir,
 		},
 	}
 
@@ -116,9 +116,9 @@ func (r *Resource) Name() string {
 	return r.name
 }
 
-func contains{{ .ObjectKind }}({{ .Var }}s []*{{ .ObjectGroup }}{{ .ObjectVersion }}.{{ .ObjectKind }}, {{ .Var }} *{{ .ObjectGroup }}{{ .ObjectVersion }}.{{ .ObjectKind }}) bool {
-	for _, a := range {{ .Var }}s {
-		if {{ .Var }}.Name == a.Name && {{ .Var }}.Namespace == a.Namespace {
+func contains{{ .ObjectKind }}({{ .ObjectKindLower }}s []*{{ .ObjectGroup }}{{ .ObjectVersion }}.{{ .ObjectKind }}, {{ .ObjectKindLower }} *{{ .ObjectGroup }}{{ .ObjectVersion }}.{{ .ObjectKind }}) bool {
+	for _, a := range {{ .ObjectKindLower }}s {
+		if {{ .ObjectKindLower }}.Name == a.Name && {{ .ObjectKindLower }}.Namespace == a.Namespace {
 			return true
 		}
 	}
