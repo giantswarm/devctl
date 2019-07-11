@@ -34,7 +34,7 @@ func Test_Resource(t *testing.T) {
 		errorMatcher func(err error) bool
 	}{
 		{
-			name:         "case 0: core v1 ConfigMap resources.go",
+			name:         "case 0: core v1 ConfigMap resource.go",
 			dir:          "/go/src/some.domain/project/subpath/configmapresource",
 			group:        "core",
 			kind:         "ConfigMap",
@@ -42,7 +42,7 @@ func Test_Resource(t *testing.T) {
 			errorMatcher: nil,
 		},
 		{
-			name:         "case 1: core v1 Secret resources.go",
+			name:         "case 1: core v1 Secret resource.go",
 			dir:          "/go/src/some.domain/project/subpath/secretresource",
 			group:        "core",
 			kind:         "Secret",
