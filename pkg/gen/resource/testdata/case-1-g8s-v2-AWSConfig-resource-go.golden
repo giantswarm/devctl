@@ -3,12 +3,12 @@ package secretresource
 import (
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/client-go/kubernetes"
+	g8sv2 "k8s.io/api/g8s/v2"
+	"github.com/giantswarm/apiextensions/pkg/clientset/versioned"
 )
 
 type Config struct {
-	Client      kubernetes.Interface
+	Client      versioned.Interface
 	Logger      micrologger.Logger
 	StateGetter StateGetter
 
@@ -16,7 +16,7 @@ type Config struct {
 }
 
 type Resource struct {
-	client      kubernetes.Interface
+	client      versioned.Interface
 	logger      micrologger.Logger
 	stateGetter StateGetter
 
@@ -53,9 +53,9 @@ func (r *Resource) Name() string {
 	return r.name
 }
 
-func containsSecret(secrets []*corev1.Secret, secret *corev1.Secret) bool {
-	for _, a := range secrets {
-		if secret.Name == a.Name && secret.Namespace == a.Namespace {
+func containsAWSConfig(aWSConfigs []*g8sv2.AWSConfig, aWSConfig *g8sv2.AWSConfig) bool {
+	for _, a := range aWSConfigs {
+		if aWSConfig.Name == a.Name && aWSConfig.Namespace == a.Namespace {
 			return true
 		}
 	}
@@ -63,8 +63,8 @@ func containsSecret(secrets []*corev1.Secret, secret *corev1.Secret) bool {
 	return false
 }
 
-func toSecrets(v interface{}) ([]*corev1.Secret, error) {
-	x, ok := v.([]*corev1.Secret)
+func toAWSConfigs(v interface{}) ([]*g8sv2.AWSConfig, error) {
+	x, ok := v.([]*g8sv2.AWSConfig)
 	if !ok {
 		return nil, microerror.Maskf(wrongTypeError, "expected '%T', got '%T'", x, v)
 	}

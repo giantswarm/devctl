@@ -42,11 +42,11 @@ func Test_Resource(t *testing.T) {
 			errorMatcher: nil,
 		},
 		{
-			name:         "case 1: core v1 Secret resource.go",
+			name:         "case 1: g8s v2 AWSConfig resource.go",
 			dir:          "/go/src/some.domain/project/subpath/secretresource",
-			group:        "core",
-			kind:         "Secret",
-			version:      "v1",
+			group:        "g8s",
+			kind:         "AWSConfig",
+			version:      "v2",
 			errorMatcher: nil,
 		},
 	}
