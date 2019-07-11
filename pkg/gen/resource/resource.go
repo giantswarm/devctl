@@ -54,7 +54,7 @@ func (f *Resource) GetInput(ctx context.Context) (input.Input, error) {
 			"ObjectKind":      f.objectKind,
 			"ObjectKindLower": firstLetterToLower(f.objectKind),
 			"ObjectVersion":   f.objectVersion,
-			"Package":         f.dir,
+			"Package":         path.Base(f.dir),
 		},
 	}
 
