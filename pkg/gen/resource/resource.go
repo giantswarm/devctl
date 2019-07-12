@@ -37,6 +37,8 @@ func (f *Resource) GetInput(ctx context.Context) (input.Input, error) {
 	var clientImport string
 	{
 		switch f.objectGroup {
+		case "g8s":
+			clientImport = "github.com/giantswarm/apiextensions/pkg/clientset/versioned"
 		case "core":
 			clientImport = "k8s.io/client-go/kubernetes"
 		default:
@@ -54,7 +56,7 @@ func (f *Resource) GetInput(ctx context.Context) (input.Input, error) {
 			"ObjectKind":      f.objectKind,
 			"ObjectKindLower": firstLetterToLower(f.objectKind),
 			"ObjectVersion":   f.objectVersion,
-			"Package":         f.dir,
+			"Package":         path.Base(f.dir),
 		},
 	}
 

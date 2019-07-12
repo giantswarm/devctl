@@ -2,14 +2,13 @@ package gen
 
 import (
 	"context"
-	"fmt"
-	"html/template"
 	"os"
 	"path"
 
 	"github.com/giantswarm/microerror"
 
 	"github.com/giantswarm/devctl/pkg/gen/input"
+	"github.com/giantswarm/devctl/pkg/gen/internal"
 )
 
 func Execute(ctx context.Context, files ...input.File) error {
@@ -34,18 +33,13 @@ func Execute(ctx context.Context, files ...input.File) error {
 			}
 		}
 
-		tmpl, err := template.New(fmt.Sprintf("%T", f)).Parse(in.TemplateBody)
-		if err != nil {
-			return microerror.Mask(err)
-		}
-
 		w, err := os.OpenFile(in.Path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 		if err != nil {
 			return microerror.Mask(err)
 		}
 		defer w.Close()
 
-		err = tmpl.Execute(w, in.TemplateData)
+		err = internal.Execute(ctx, w, f)
 		if err != nil {
 			return microerror.Mask(err)
 		}
