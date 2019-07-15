@@ -3,7 +3,7 @@ package secretresource
 import (
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
-	g8sv2 "k8s.io/api/g8s/v2"
+	g8sv2 "github.com/giantswarm/apiextensions/pkg/apis/g8s/v2"
 	"github.com/giantswarm/apiextensions/pkg/clientset/versioned"
 )
 

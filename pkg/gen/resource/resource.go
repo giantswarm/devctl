@@ -34,15 +34,20 @@ func NewResource(config Config) (*Resource, error) {
 }
 
 func (f *Resource) GetInput(ctx context.Context) (input.Input, error) {
-	var clientImport string
+	var (
+		clientImport string
+		objectImport string
+	)
 	{
 		switch f.objectGroup {
 		case "g8s":
 			clientImport = "github.com/giantswarm/apiextensions/pkg/clientset/versioned"
+			objectImport = "github.com/giantswarm/apiextensions/pkg/apis/" + f.objectGroup + "/" + f.objectVersion
 		case "core":
 			clientImport = "k8s.io/client-go/kubernetes"
+			objectImport = "k8s.io/api/" + f.objectGroup + "/" + f.objectVersion
 		default:
-			return input.Input{}, microerror.Maskf(executionFailedError, "determine client import for group %#q", f.objectGroup)
+			return input.Input{}, microerror.Maskf(executionFailedError, "determine client and object import for group %#q", f.objectGroup)
 		}
 	}
 
@@ -53,6 +58,7 @@ func (f *Resource) GetInput(ctx context.Context) (input.Input, error) {
 			"ClientImport":    clientImport,
 			"ClientPackage":   path.Base(clientImport),
 			"ObjectGroup":     f.objectGroup,
+			"ObjectImport":    objectImport,
 			"ObjectKind":      f.objectKind,
 			"ObjectKindLower": firstLetterToLower(f.objectKind),
 			"ObjectVersion":   f.objectVersion,
@@ -68,7 +74,7 @@ var resourceTemplate = `package {{ .Package }}
 import (
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
-	{{ .ObjectGroup }}{{ .ObjectVersion }} "k8s.io/api/{{ .ObjectGroup }}/{{ .ObjectVersion }}"
+	{{ .ObjectGroup }}{{ .ObjectVersion }} "{{ .ObjectImport }}"
 	"{{ .ClientImport }}"
 )
 

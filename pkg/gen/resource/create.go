@@ -2,6 +2,7 @@ package resource
 
 import (
 	"context"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -33,6 +34,20 @@ func NewCreate(config Config) (*Create, error) {
 }
 
 func (f *Create) GetInput(ctx context.Context) (input.Input, error) {
+	var (
+		objectImport string
+	)
+	{
+		switch f.objectGroup {
+		case "g8s":
+			objectImport = "github.com/giantswarm/apiextensions/pkg/apis/" + f.objectGroup + "/" + f.objectVersion
+		case "core":
+			objectImport = "k8s.io/api/" + f.objectGroup + "/" + f.objectVersion
+		default:
+			return input.Input{}, microerror.Maskf(executionFailedError, "determine object import for group %#q", f.objectGroup)
+		}
+	}
+
 	i := input.Input{
 		Path:         filepath.Join(f.dir, "create.go"),
 		TemplateBody: createTemplate,
@@ -41,9 +56,10 @@ func (f *Create) GetInput(ctx context.Context) (input.Input, error) {
 			"ObjectGroupTitle":   strings.Title(f.objectGroup),
 			"ObjectKind":         f.objectKind,
 			"ObjectKindLower":    firstLetterToLower(f.objectKind),
+			"ObjectImport":       objectImport,
 			"ObjectVersion":      f.objectVersion,
 			"ObjectVersionTitle": strings.Title(f.objectVersion),
-			"Package":            f.dir,
+			"Package":            path.Base(f.dir),
 		},
 	}
 
@@ -57,7 +73,7 @@ import (
 	"fmt"
 
 	"github.com/giantswarm/microerror"
-	{{ .ObjectGroup }}{{ .ObjectVersion }} "k8s.io/api/{{ .ObjectGroup }}/{{ .ObjectVersion }}"
+	{{ .ObjectGroup }}{{ .ObjectVersion }} "{{ .ObjectImport }}"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
