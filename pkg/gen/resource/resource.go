@@ -2,7 +2,6 @@ package resource
 
 import (
 	"context"
-	"path"
 	"path/filepath"
 
 	"github.com/giantswarm/microerror"
@@ -34,35 +33,18 @@ func NewResource(config Config) (*Resource, error) {
 }
 
 func (f *Resource) GetInput(ctx context.Context) (input.Input, error) {
-	var (
-		clientImport string
-		objectImport string
-	)
-	{
-		switch f.objectGroup {
-		case "g8s":
-			clientImport = "github.com/giantswarm/apiextensions/pkg/clientset/versioned"
-			objectImport = "github.com/giantswarm/apiextensions/pkg/apis/" + f.objectGroup + "/" + f.objectVersion
-		case "core":
-			clientImport = "k8s.io/client-go/kubernetes"
-			objectImport = "k8s.io/api/" + f.objectGroup + "/" + f.objectVersion
-		default:
-			return input.Input{}, microerror.Maskf(executionFailedError, "determine client and object import for group %#q", f.objectGroup)
-		}
-	}
-
 	i := input.Input{
 		Path:         filepath.Join(f.dir, "resource.go"),
 		TemplateBody: resourceTemplate,
 		TemplateData: map[string]interface{}{
-			"ClientImport":    clientImport,
-			"ClientPackage":   path.Base(clientImport),
+			"ClientImport":    clientImport(f.objectGroup),
+			"ClientPackage":   clientPackage(f.objectGroup),
 			"ObjectGroup":     f.objectGroup,
-			"ObjectImport":    objectImport,
+			"ObjectImport":    objectImport(f.objectGroup, f.objectVersion),
 			"ObjectKind":      f.objectKind,
 			"ObjectKindLower": firstLetterToLower(f.objectKind),
 			"ObjectVersion":   f.objectVersion,
-			"Package":         path.Base(f.dir),
+			"Package":         packageName(f.dir),
 		},
 	}
 
