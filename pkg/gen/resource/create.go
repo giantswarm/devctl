@@ -2,7 +2,6 @@ package resource
 
 import (
 	"context"
-	"path"
 	"path/filepath"
 	"strings"
 
@@ -34,20 +33,6 @@ func NewCreate(config Config) (*Create, error) {
 }
 
 func (f *Create) GetInput(ctx context.Context) (input.Input, error) {
-	var (
-		objectImport string
-	)
-	{
-		switch f.objectGroup {
-		case "g8s":
-			objectImport = "github.com/giantswarm/apiextensions/pkg/apis/" + f.objectGroup + "/" + f.objectVersion
-		case "core":
-			objectImport = "k8s.io/api/" + f.objectGroup + "/" + f.objectVersion
-		default:
-			return input.Input{}, microerror.Maskf(executionFailedError, "determine object import for group %#q", f.objectGroup)
-		}
-	}
-
 	i := input.Input{
 		Path:         filepath.Join(f.dir, "create.go"),
 		TemplateBody: createTemplate,
@@ -56,10 +41,10 @@ func (f *Create) GetInput(ctx context.Context) (input.Input, error) {
 			"ObjectGroupTitle":   strings.Title(f.objectGroup),
 			"ObjectKind":         f.objectKind,
 			"ObjectKindLower":    firstLetterToLower(f.objectKind),
-			"ObjectImport":       objectImport,
+			"ObjectImport":       objectImport(f.objectGroup, f.objectVersion),
 			"ObjectVersion":      f.objectVersion,
 			"ObjectVersionTitle": strings.Title(f.objectVersion),
-			"Package":            path.Base(f.dir),
+			"Package":            packageName(f.dir),
 		},
 	}
 

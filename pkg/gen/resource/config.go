@@ -17,11 +17,19 @@ type Config struct {
 }
 
 func (c *Config) Validate() error {
+	validObjectGroups := []string{
+		"core",
+		"g8s",
+	}
+
 	if c.Dir == "" {
 		return microerror.Maskf(invalidConfigError, "%T.Dir must not be empty", c)
 	}
 	if c.ObjectGroup == "" {
 		c.ObjectGroup = "core"
+	}
+	if !containsString(validObjectGroups, c.ObjectGroup) {
+		return microerror.Maskf(invalidConfigError, "%T.ObjectGroup must one of %v but got %#q", c, validObjectGroups, c.ObjectGroup)
 	}
 	if c.ObjectKind == "" {
 		return microerror.Maskf(invalidConfigError, "%T.ObjectKind must not be empty", c)

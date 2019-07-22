@@ -2,7 +2,6 @@ package resource
 
 import (
 	"context"
-	"path"
 	"path/filepath"
 
 	"github.com/giantswarm/microerror"
@@ -32,7 +31,7 @@ func (f *Current) GetInput(ctx context.Context) (input.Input, error) {
 		Path:         filepath.Join(f.dir, "current.go"),
 		TemplateBody: currentTemplate,
 		TemplateData: map[string]interface{}{
-			"Package": path.Base(f.dir),
+			"Package": packageName(f.dir),
 		},
 	}
 
