@@ -7,10 +7,10 @@ import (
 
 func clientImport(objectGroup string) string {
 	switch objectGroup {
-	case "g8s":
-		return "github.com/giantswarm/apiextensions/pkg/clientset/versioned"
 	case "core":
 		return "k8s.io/client-go/kubernetes"
+	case "g8s":
+		return "github.com/giantswarm/apiextensions/pkg/clientset/versioned"
 	default:
 		// This is validated in Config.Validate. If this happens then
 		// this is a bug in the code.
@@ -24,10 +24,10 @@ func clientPackage(objectGroup string) string {
 
 func objectImport(objectGroup, objectVersion string) string {
 	switch objectGroup {
-	case "g8s":
-		return "github.com/giantswarm/apiextensions/pkg/apis/" + objectGroup + "/" + objectVersion
 	case "core":
 		return "k8s.io/api/" + objectGroup + "/" + objectVersion
+	case "g8s":
+		return "github.com/giantswarm/apiextensions/pkg/apis/" + objectGroup + "/" + objectVersion
 	default:
 		// This is validated in Config.Validate. If this happens then
 		// this is a bug in the code.
