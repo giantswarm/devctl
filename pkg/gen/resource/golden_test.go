@@ -64,7 +64,7 @@ func Test_Resource(t *testing.T) {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			ctx := context.Background()
 
-			f, err := NewResource(tc.inputConfig)
+			f, err := tc.newFileFunc(tc.inputConfig)
 			if err != nil {
 				t.Fatal(microerror.Mask(err))
 			}
