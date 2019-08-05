@@ -1,0 +1,60 @@
+package secretresource
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/giantswarm/microerror"
+	g8sv2 "github.com/giantswarm/apiextensions/pkg/apis/g8s/v2"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+)
+
+// ApplyCreateChange ensures the AWSConfig is created in the k8s api.
+func (r *Resource) ApplyCreateChange(ctx context.Context, obj, createChange interface{}) error {
+	aWSConfigs, err := toAWSConfigs(createChange)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	for _, aWSConfig := range aWSConfigs {
+		r.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("creating AWSConfig %#q in namespace %#q", aWSConfig.Name, aWSConfig.Namespace))
+
+		_, err = r.k8sClient.G8sV2().AWSConfigs(aWSConfig.Namespace).Create(aWSConfig)
+		if apierrors.IsAlreadyExists(err) {
+			r.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("already created AWSConfig %#q in namespace %#q", aWSConfig.Name, aWSConfig.Namespace))
+		} else if err != nil {
+			return microerror.Mask(err)
+		} else {
+			r.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("created AWSConfig %#q in namespace %#q", aWSConfig.Name, aWSConfig.Namespace))
+		}
+	}
+
+	return nil
+}
+
+func (r *Resource) newCreateChange(ctx context.Context, obj, currentState, desiredState interface{}) (interface{}, error) {
+	currentAWSConfigs, err := toAWSConfigs(currentState)
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
+
+	desiredAWSConfigs, err := toAWSConfigs(desiredState)
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
+
+	var aWSConfigsToCreate []*g8sv2.AWSConfig
+	{
+		r.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("computing AWSConfigs to create "))
+
+		for _, d := range desiredAWSConfigs {
+			if !containsAWSConfig(currentAWSConfigs, d) {
+				aWSConfigsToCreate = append(aWSConfigsToCreate, d)
+			}
+		}
+
+		r.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("computed %d AWSConfigs to create", len(aWSConfigsToCreate)))
+	}
+
+	return aWSConfigsToCreate, nil
+}

@@ -53,9 +53,21 @@ func Test_Resource(t *testing.T) {
 			errorMatcher: nil,
 		},
 		{
-			name:         "case 1: g8s v2 AWSConfig resource.go",
+			name:         "case 1: core v1 ConfigMap create.go",
+			inputConfig:  configCoreV1ConfigMap,
+			newFileFunc:  func(c Config) (input.File, error) { return NewCreate(c) },
+			errorMatcher: nil,
+		},
+		{
+			name:         "case 2: g8s v2 AWSConfig resource.go",
 			inputConfig:  configG8sV2AWSConfig,
 			newFileFunc:  func(c Config) (input.File, error) { return NewResource(c) },
+			errorMatcher: nil,
+		},
+		{
+			name:         "case 3: g8s v2 AWSConfig create.go",
+			inputConfig:  configG8sV2AWSConfig,
+			newFileFunc:  func(c Config) (input.File, error) { return NewCreate(c) },
 			errorMatcher: nil,
 		},
 	}
