@@ -10,6 +10,7 @@ import (
 	"testing"
 	"unicode"
 
+	"github.com/giantswarm/devctl/pkg/gen/input"
 	"github.com/giantswarm/devctl/pkg/gen/internal"
 	"github.com/giantswarm/microerror"
 	"github.com/google/go-cmp/cmp"
@@ -25,28 +26,36 @@ var update = flag.Bool("update", false, "update resource.golden file")
 //	go test ./pkg/gen/resource -run Test_Resource -update
 //
 func Test_Resource(t *testing.T) {
+	configCoreV1ConfigMap := Config{
+		Dir:           "/go/src/some.domain/project/subpath/configmapresource",
+		ObjectGroup:   "core",
+		ObjectKind:    "ConfigMap",
+		ObjectVersion: "v1",
+	}
+
+	configG8sV2AWSConfig := Config{
+		Dir:           "/go/src/some.domain/project/subpath/secretresource",
+		ObjectGroup:   "g8s",
+		ObjectKind:    "AWSConfig",
+		ObjectVersion: "v2",
+	}
+
 	testCases := []struct {
 		name         string
-		dir          string
-		group        string
-		kind         string
-		version      string
+		inputConfig  Config
+		newFileFunc  func(Config) (input.File, error)
 		errorMatcher func(err error) bool
 	}{
 		{
 			name:         "case 0: core v1 ConfigMap resource.go",
-			dir:          "/go/src/some.domain/project/subpath/configmapresource",
-			group:        "core",
-			kind:         "ConfigMap",
-			version:      "v1",
+			inputConfig:  configCoreV1ConfigMap,
+			newFileFunc:  func(c Config) (input.File, error) { return NewResource(c) },
 			errorMatcher: nil,
 		},
 		{
 			name:         "case 1: g8s v2 AWSConfig resource.go",
-			dir:          "/go/src/some.domain/project/subpath/secretresource",
-			group:        "g8s",
-			kind:         "AWSConfig",
-			version:      "v2",
+			inputConfig:  configG8sV2AWSConfig,
+			newFileFunc:  func(c Config) (input.File, error) { return NewResource(c) },
 			errorMatcher: nil,
 		},
 	}
@@ -55,14 +64,7 @@ func Test_Resource(t *testing.T) {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			ctx := context.Background()
 
-			c := Config{
-				Dir:           tc.dir,
-				ObjectGroup:   tc.group,
-				ObjectKind:    tc.kind,
-				ObjectVersion: tc.version,
-			}
-
-			f, err := NewResource(c)
+			f, err := tc.newFileFunc(tc.inputConfig)
 			if err != nil {
 				t.Fatal(microerror.Mask(err))
 			}
