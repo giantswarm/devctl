@@ -5,4 +5,10 @@ orbs:
 workflows:
   go-build:
     jobs:
-      - architect/go-build
+      - architect/go-build:
+          name: go-build-devctl
+          binary: devctl
+          # Needed to trigger job also on git tag.
+          filters:
+            tags:
+              only: /^v.*/
