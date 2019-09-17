@@ -1,28 +1,14 @@
-version: 2
+version: 2.1
+orbs:
+  architect: giantswarm/architect@0.4.0
 
-jobs:
-  build:
-    docker:
-      - image: quay.io/giantswarm/golang:1.11.3
-    working_directory: /workdir
-    steps:
-      - checkout
-      - attach_workspace:
-          at: .
-      - restore_cache:
-          keys:
-            - go-mod-v1-{{ checksum "go.sum" }}
-      - run: |
-          CGO_ENABLED=0 go test -ldflags "-w -X main.gitCommit=${CIRCLE_SHA1} -linkmode 'auto' -extldflags '-static'" ./...
-      - run: |
-          CGO_ENABLED=0 go build -ldflags "-w -X main.gitCommit=${CIRCLE_SHA1} -linkmode 'auto' -extldflags '-static'" -o devctl .
-      - save_cache:
-          key: go-mod-v1-{{ checksum "go.sum" }}
-          paths:
-            - "/go/pkg/mod"
-      - run: |
-          ./devctl version
-      - persist_to_workspace:
-          root: .
-          paths:
-            - ./devctl
+workflows:
+  go-build:
+    jobs:
+      - architect/go-build:
+          name: go-build-devctl
+          binary: devctl
+          # Needed to trigger job also on git tag.
+          filters:
+            tags:
+              only: /^v.*/
