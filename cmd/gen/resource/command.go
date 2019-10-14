@@ -31,8 +31,10 @@ func New(config Config) (*cobra.Command, error) {
 		config.Stdout = os.Stdout
 	}
 
+	f := flag{}
+
 	r := &runner{
-		flag:   flag{},
+		flag:   f,
 		logger: config.Logger,
 		stderr: config.Stderr,
 		stdout: config.Stdout,
