@@ -2,7 +2,10 @@ package replace
 
 import (
 	"context"
+	"fmt"
 	"io"
+	"io/ioutil"
+	"regexp"
 
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
@@ -33,5 +36,17 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 }
 
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
+	regex, err := regexp.Compile(args[0])
+	if err != nil {
+		microerror.Mask(err)
+	}
+
+	content, err := ioutil.ReadFile(args[2])
+	if err != nil {
+		microerror.Mask(err)
+	}
+
+	replaced := regex.ReplaceAll(content, []byte(args[1]))
+	fmt.Fprintf(r.stdout, "%s", replaced)
 	return nil
 }
