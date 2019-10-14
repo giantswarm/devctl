@@ -19,7 +19,7 @@ const (
 )
 
 type runner struct {
-	flag   *flag
+	flag   flag
 	logger micrologger.Logger
 	stdout io.Writer
 	stderr io.Writer
@@ -28,7 +28,7 @@ type runner struct {
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 
-	err := r.flag.Validate()
+	err := r.flag.Init(cmd, args)
 	if err != nil {
 		return microerror.Mask(err)
 	}

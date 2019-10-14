@@ -93,7 +93,7 @@ func New(config Config) (*cobra.Command, error) {
 		}
 	}
 
-	f := &flag{}
+	f := flag{}
 
 	r := &runner{
 		flag:   f,
@@ -109,8 +109,6 @@ func New(config Config) (*cobra.Command, error) {
 		RunE:         r.Run,
 		SilenceUsage: true,
 	}
-
-	f.Init(c)
 
 	c.AddCommand(genCmd)
 	c.AddCommand(versionCmd)
