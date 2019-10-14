@@ -41,11 +41,12 @@ func New(config Config) (*cobra.Command, error) {
 	}
 
 	c := &cobra.Command{
-		Use:   name,
-		Short: description,
-		Long:  description,
-		Args:  validatePositionalArgs,
-		RunE:  r.Run,
+		Use:     name,
+		Short:   description,
+		Long:    description,
+		Example: "replace foo bar /path/to/file",
+		Args:    validatePositionalArgs,
+		RunE:    r.Run,
 	}
 
 	f.Init(c)
