@@ -41,12 +41,21 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		microerror.Mask(err)
 	}
 
-	content, err := ioutil.ReadFile(args[2])
-	if err != nil {
-		microerror.Mask(err)
+	for _, file := range args[2:] {
+		content, err := ioutil.ReadFile(file)
+		if err != nil {
+			microerror.Mask(err)
+		}
+		fmt.Fprintf(r.stderr, "> file %s\n", file)
+		replaced := regex.ReplaceAll(content, []byte(args[1]))
+		if r.flag.inPlace {
+			err := ioutil.WriteFile(file, replaced, 0644)
+			if err != nil {
+				microerror.Mask(err)
+			}
+		} else {
+			fmt.Fprintf(r.stdout, "%s", replaced)
+		}
 	}
-
-	replaced := regex.ReplaceAll(content, []byte(args[1]))
-	fmt.Fprintf(r.stdout, "%s", replaced)
 	return nil
 }

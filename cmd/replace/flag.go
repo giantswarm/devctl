@@ -9,9 +9,11 @@ import (
 )
 
 type flag struct {
+	inPlace bool
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
+	cmd.PersistentFlags().BoolVarP(&f.inPlace, "inplace", "i", false, "write changes to files.")
 }
 
 func (f *flag) Validate() error {
@@ -27,8 +29,10 @@ func validatePositionalArgs(cmd *cobra.Command, args []string) error {
 		return microerror.Maskf(invalidFlagsError, "first argument is not a valid regex: %v", err)
 	}
 
-	if _, err := os.Stat(args[2]); err != nil {
-		return microerror.Maskf(invalidFlagsError, "cannot access file %#q: %v", args[2], err)
+	for _, file := range args[2:] {
+		if _, err := os.Stat(file); err != nil {
+			return microerror.Maskf(invalidFlagsError, "cannot access file %#q: %v", file, err)
+		}
 	}
 
 	return nil
