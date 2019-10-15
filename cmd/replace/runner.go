@@ -63,8 +63,12 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 }
 
 func (r *runner) processFile(fileName string, replacer func(src []byte) []byte) error {
+	flag := os.O_RDONLY
+	if r.flag.inPlace {
+		flag = os.O_RDWR
+	}
 	// Open file, do not attempt to create it (last argument is ignored in this case).
-	f, err := os.OpenFile(fileName, os.O_RDWR, 0)
+	f, err := os.OpenFile(fileName, flag, 0)
 	if err != nil {
 		return microerror.Mask(err)
 	}
