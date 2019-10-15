@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	name        = "replace"
-	description = "Replace text in files"
+	usage       = "replace [pattern] [replacement] [file ...]"
+	description = "replace text in files."
 )
 
 type Config struct {
@@ -41,12 +41,11 @@ func New(config Config) (*cobra.Command, error) {
 	}
 
 	c := &cobra.Command{
-		Use:     name,
-		Short:   description,
-		Long:    description,
-		Example: "replace foo bar /path/to/file",
-		Args:    validatePositionalArgs,
-		RunE:    r.Run,
+		Use:   usage,
+		Short: description,
+		Long:  description,
+		Args:  validatePositionalArgs,
+		RunE:  r.Run,
 	}
 
 	f.Init(c)
