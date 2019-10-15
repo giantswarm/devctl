@@ -12,6 +12,8 @@ import (
 const (
 	usage       = "replace [pattern] [replacement] [file ...]"
 	description = "replace text in files."
+	example     = `  devctl replace foo bar /path/to/file
+  devctl replace -i '^(\\w+).+' '$1 foobar' /file/a /file/b`
 )
 
 type Config struct {
@@ -41,11 +43,12 @@ func New(config Config) (*cobra.Command, error) {
 	}
 
 	c := &cobra.Command{
-		Use:   usage,
-		Short: description,
-		Long:  description,
-		Args:  validatePositionalArgs,
-		RunE:  r.Run,
+		Use:     usage,
+		Example: example,
+		Short:   description,
+		Long:    description,
+		Args:    validatePositionalArgs,
+		RunE:    r.Run,
 	}
 
 	f.Init(c)
