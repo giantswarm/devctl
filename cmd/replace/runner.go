@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"os"
 	"regexp"
 
 	"github.com/giantswarm/microerror"
@@ -36,26 +37,60 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 }
 
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
-	regex, err := regexp.Compile(args[0])
+	var (
+		pattern     = args[0]
+		replacement = args[1]
+		files       = args[2:]
+	)
+
+	regex, err := regexp.Compile(pattern)
 	if err != nil {
 		microerror.Mask(err)
 	}
 
-	for _, file := range args[2:] {
-		content, err := ioutil.ReadFile(file)
-		if err != nil {
-			microerror.Mask(err)
-		}
+	replacer := func(src []byte) []byte {
+		return regex.ReplaceAll(src, []byte(replacement))
+	}
+
+	for _, file := range files {
 		fmt.Fprintf(r.stderr, "> file %s\n", file)
-		replaced := regex.ReplaceAll(content, []byte(args[1]))
-		if r.flag.inPlace {
-			err := ioutil.WriteFile(file, replaced, 0644)
-			if err != nil {
-				microerror.Mask(err)
-			}
-		} else {
-			fmt.Fprintf(r.stdout, "%s", replaced)
+		err := r.processFile(file, replacer)
+		if err != nil {
+			return microerror.Mask(err)
 		}
 	}
+	return nil
+}
+
+func (r *runner) processFile(fileName string, replacer func(src []byte) []byte) error {
+	// Open file, do not attempt to create it (last argument is ignored in this case).
+	f, err := os.OpenFile(fileName, os.O_RDWR, 0)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+	defer f.Close()
+
+	content, err := ioutil.ReadAll(f)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	replaced := replacer(content)
+
+	if r.flag.inPlace {
+		// Replace entire file content.
+		err := f.Truncate(0)
+		if err != nil {
+			return microerror.Mask(err)
+		}
+		_, err = f.Write(replaced)
+		if err != nil {
+			return microerror.Mask(err)
+		}
+	} else {
+		// Print result to stdout.
+		fmt.Fprintf(r.stdout, "%s", replaced)
+	}
+
 	return nil
 }
