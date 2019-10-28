@@ -48,13 +48,9 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		microerror.Mask(err)
 	}
 
-	replacer := func(src []byte) []byte {
-		return regex.ReplaceAll(src, []byte(replacement))
-	}
-
 	for _, file := range files {
 		fmt.Fprintf(r.stderr, "> file %s\n", file)
-		err := r.processFile(file, replacer)
+		err := r.processFile(file, regex, replacement)
 		if err != nil {
 			return microerror.Mask(err)
 		}
@@ -62,7 +58,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	return nil
 }
 
-func (r *runner) processFile(fileName string, replacer func(src []byte) []byte) error {
+func (r *runner) processFile(fileName string, regex *regexp.Regexp, replacement string) error {
 	// Write permission is only needed in case the file needs to be changed.
 	flag := os.O_RDONLY
 	if r.flag.InPlace {
@@ -81,7 +77,7 @@ func (r *runner) processFile(fileName string, replacer func(src []byte) []byte) 
 		return microerror.Mask(err)
 	}
 
-	replaced := replacer(content)
+	replaced := regex.ReplaceAll(content, []byte(replacement))
 
 	if r.flag.InPlace {
 		// Replace entire file content.
