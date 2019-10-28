@@ -64,7 +64,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 func (r *runner) processFile(fileName string, replacer func(src []byte) []byte) error {
 	flag := os.O_RDONLY
-	if r.flag.inPlace {
+	if r.flag.InPlace {
 		flag = os.O_RDWR
 	}
 	// Open file, do not attempt to create it (last argument is ignored in this case).
@@ -81,7 +81,7 @@ func (r *runner) processFile(fileName string, replacer func(src []byte) []byte) 
 
 	replaced := replacer(content)
 
-	if r.flag.inPlace {
+	if r.flag.InPlace {
 		// Replace entire file content.
 		err := f.Truncate(0)
 		if err != nil {

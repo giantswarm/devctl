@@ -9,11 +9,11 @@ import (
 )
 
 type flag struct {
-	inPlace bool
+	InPlace bool
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
-	cmd.PersistentFlags().BoolVarP(&f.inPlace, "inplace", "i", false, "write changes to files.")
+	cmd.PersistentFlags().BoolVarP(&f.InPlace, "inplace", "i", false, "write changes to files.")
 }
 
 func (f *flag) Validate() error {
