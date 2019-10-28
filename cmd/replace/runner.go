@@ -63,11 +63,13 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 }
 
 func (r *runner) processFile(fileName string, replacer func(src []byte) []byte) error {
+	// Write permission is only needed in case the file needs to be changed.
 	flag := os.O_RDONLY
 	if r.flag.InPlace {
 		flag = os.O_RDWR
 	}
-	// Open file, do not attempt to create it (last argument is ignored in this case).
+
+	// Open file, do not attempt to create it (last argument for file permission is ignored in this case).
 	f, err := os.OpenFile(fileName, flag, 0)
 	if err != nil {
 		return microerror.Mask(err)
