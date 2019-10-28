@@ -14,6 +14,7 @@ type flag struct {
 
 func (f *flag) Init(cmd *cobra.Command) {
 	cmd.PersistentFlags().BoolVarP(&f.InPlace, "inplace", "i", false, "write changes to files.")
+	cmd.Args = validatePositionalArgs
 }
 
 func (f *flag) Validate() error {

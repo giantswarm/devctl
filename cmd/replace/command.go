@@ -47,7 +47,6 @@ func New(config Config) (*cobra.Command, error) {
 		Example: example,
 		Short:   description,
 		Long:    description,
-		Args:    validatePositionalArgs,
 		RunE:    r.Run,
 	}
 
