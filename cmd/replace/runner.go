@@ -1,6 +1,7 @@
 package replace
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -79,14 +80,14 @@ func (r *runner) processFile(fileName string, regex *regexp.Regexp, replacement 
 
 	replaced := regex.ReplaceAll(content, []byte(replacement))
 
-	if r.flag.InPlace && content != replaced {
+	if r.flag.InPlace && bytes.Equal(content, replaced) {
 		// Replace entire file content.
 		err := f.Truncate(0)
 		if err != nil {
 			return microerror.Mask(err)
 		}
 
-		n, err = f.WriteAt(replaced, 0)
+		n, err := f.WriteAt(replaced, 0)
 		if err != nil {
 			return microerror.Mask(err)
 		}
