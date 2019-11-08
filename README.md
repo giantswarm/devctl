@@ -24,3 +24,11 @@ To be able to fully use `devctl` you need to set following environment variables
 ## Usage
 
 Please check `devctl -h` for for details on all functions.
+
+### Find repositories depending on a Go package/module
+
+For example, to find all our repositories using `github.com/giantswarm/microerror`:
+
+```
+devctl repo list --depends-on github.com/giantswarm/microerror
+```
