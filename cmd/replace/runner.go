@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"regexp"
 
 	"github.com/giantswarm/microerror"
@@ -50,8 +51,23 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	}
 
 	for _, file := range files {
-		fmt.Fprintf(r.stderr, "> file %s\n", file)
-		err := r.processFile(file, regex, replacement)
+		err := filepath.Walk(file, func(file string, info os.FileInfo, err error) error {
+			if err != nil {
+				return microerror.Mask(err)
+			}
+
+			if info.IsDir() {
+				return nil
+			}
+
+			fmt.Fprintf(r.stderr, "Processing file %q.\n", file)
+			err = r.processFile(file, regex, replacement)
+			if err != nil {
+				return microerror.Mask(err)
+			}
+
+			return nil
+		})
 		if err != nil {
 			return microerror.Mask(err)
 		}
