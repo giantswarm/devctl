@@ -9,11 +9,15 @@ import (
 )
 
 type flag struct {
+	Ignore  []string
+	Include []string
 	InPlace bool
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
-	cmd.PersistentFlags().BoolVarP(&f.InPlace, "inplace", "i", false, "write changes to files.")
+	cmd.PersistentFlags().StringSliceVar(&f.Ignore, "ignore", []string{}, `Ignore files matching comma separated list of patterns. The pattern recognizes "*", "**" and "?" globing.`)
+	cmd.PersistentFlags().StringSliceVar(&f.Include, "include", []string{}, `Include only matching comma separated list of patterns. The pattern recognizes "*", "**" and "?" globing.`)
+	cmd.PersistentFlags().BoolVarP(&f.InPlace, "inplace", "i", false, "Write changes to files in-place.")
 	cmd.Args = validatePositionalArgs
 }
 
