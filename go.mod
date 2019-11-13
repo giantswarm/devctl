@@ -18,6 +18,7 @@ require (
 	github.com/pelletier/go-toml v1.2.0
 	github.com/spf13/cobra v0.0.3
 	github.com/spf13/pflag v1.0.3 // indirect
+	golang.org/x/mod v0.1.1-0.20191107180719-034126e5016b
 	golang.org/x/net v0.0.0-20190812203447-cdfb69ac37fc // indirect
 	golang.org/x/oauth2 v0.0.0-20180821212333-d2e6202438be
 	google.golang.org/appengine v1.1.0 // indirect
