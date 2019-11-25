@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 
+	"github.com/bmatcuk/doublestar"
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
@@ -50,8 +51,38 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		microerror.Mask(err)
 	}
 
+	var ignoredFiles []string
+	{
+		for _, ignorePattern := range r.flag.Ignore {
+			ignored, err := doublestar.Glob(ignorePattern)
+			if err != nil {
+				return microerror.Mask(err)
+			}
+			ignoredFiles = append(ignoredFiles, ignored...)
+		}
+	}
+
+	var includedFiles []string
+	{
+		for _, includePattern := range r.flag.Include {
+			included, err := doublestar.Glob(includePattern)
+			if err != nil {
+				return microerror.Mask(err)
+			}
+			includedFiles = append(includedFiles, included...)
+		}
+	}
+
 	for _, file := range files {
 		err := filepath.Walk(file, func(file string, info os.FileInfo, err error) error {
+			// Ignore file if present in ignored files list.
+			if contains(file, ignoredFiles) {
+				return nil
+			}
+			// Ignore files which are not in include files list, when the list is not empty.
+			if len(includedFiles) > 0 && !contains(file, includedFiles) {
+				return nil
+			}
 			if err != nil {
 				return microerror.Mask(err)
 			}
@@ -116,4 +147,13 @@ func (r *runner) processFile(fileName string, regex *regexp.Regexp, replacement 
 	}
 
 	return nil
+}
+
+func contains(file string, files []string) bool {
+	for _, f := range files {
+		if file == f {
+			return true
+		}
+	}
+	return false
 }
