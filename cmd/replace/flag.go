@@ -16,7 +16,7 @@ type flag struct {
 
 func (f *flag) Init(cmd *cobra.Command) {
 	cmd.PersistentFlags().StringSliceVar(&f.Ignore, "ignore", []string{}, `Ignore files matching comma separated list of patterns. The pattern recognizes "*", "**" and "?" globing.`)
-	cmd.PersistentFlags().StringSliceVar(&f.Include, "include", []string{}, `Include only matching comma separated list of patterns. The pattern recognizes "*", "**" and "?" globing.`)
+	cmd.PersistentFlags().StringSliceVar(&f.Include, "include", []string{}, `Include only matching comma separated list of patterns. The pattern recognizes "*", "**" and "?" globing. Default to include everything.`)
 	cmd.PersistentFlags().BoolVarP(&f.InPlace, "inplace", "i", false, "Write changes to files in-place.")
 	cmd.Args = validatePositionalArgs
 }
