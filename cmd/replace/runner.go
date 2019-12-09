@@ -51,28 +51,6 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		microerror.Mask(err)
 	}
 
-	var ignoredFiles []string
-	{
-		for _, ignorePattern := range r.flag.Ignore {
-			ignored, err := doublestar.Glob(ignorePattern)
-			if err != nil {
-				return microerror.Mask(err)
-			}
-			ignoredFiles = append(ignoredFiles, ignored...)
-		}
-	}
-
-	var includedFiles []string
-	{
-		for _, includePattern := range r.flag.Include {
-			included, err := doublestar.Glob(includePattern)
-			if err != nil {
-				return microerror.Mask(err)
-			}
-			includedFiles = append(includedFiles, included...)
-		}
-	}
-
 	for _, file := range files {
 		err := filepath.Walk(file, func(file string, info os.FileInfo, err error) error {
 			// Skip files matching any ignore pattern.
