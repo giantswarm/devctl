@@ -61,6 +61,10 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 					return microerror.Mask(err)
 				}
 				if ignored {
+					if info.IsDir() {
+						return filepath.SkipDir
+					}
+
 					return nil
 				}
 			}
