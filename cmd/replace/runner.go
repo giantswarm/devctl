@@ -75,16 +75,29 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 	for _, file := range files {
 		err := filepath.Walk(file, func(file string, info os.FileInfo, err error) error {
-			// Ignore file if present in ignored files list.
-			if contains(file, ignoredFiles) {
-				return nil
+			// Skip files matching any ignore pattern.
+			// e.g. ignore=vendor_dir/ ignore=*.sqldump
+			{
+				ignored, err := r.isIgnored(file)
+				if err != nil {
+					return microerror.Mask(err)
+				}
+				if ignored {
+					return nil
+				}
 			}
-			// Ignore files which are not in include files list, when the list is not empty.
-			if len(includedFiles) > 0 && !contains(file, includedFiles) {
-				return nil
-			}
-			if err != nil {
-				return microerror.Mask(err)
+
+			// Only include files matching include patterns.
+			// In case there are no include patterns, all files are included.
+			// e.g. include=*.go include=src_dir/
+			{
+				included, err := r.isIncluded(file)
+				if err != nil {
+					return microerror.Mask(err)
+				}
+				if !included {
+					return nil
+				}
 			}
 
 			if info.IsDir() {
@@ -156,4 +169,38 @@ func contains(file string, files []string) bool {
 		}
 	}
 	return false
+}
+
+// isIgnored returns true when a file should be skipped.
+func (r *runner) isIgnored(file string) (bool, error) {
+	for _, pattern := range r.flag.Ignore {
+		ok, err := doublestar.PathMatch(pattern, file)
+		if err != nil {
+			return false, microerror.Mask(err)
+		}
+		if ok {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
+// isIncluded returns true when a file should be processed.
+func (r *runner) isIncluded(file string) (bool, error) {
+	if len(r.flag.Include) > 0 {
+		for _, pattern := range r.flag.Include {
+			ok, err := doublestar.PathMatch(pattern, file)
+			if err != nil {
+				return false, microerror.Mask(err)
+			}
+			if ok {
+				return true, nil
+			}
+		}
+
+		return false, nil
+	}
+
+	return true, nil
 }
