@@ -144,15 +144,6 @@ func (r *runner) processFile(fileName string, regex *regexp.Regexp, replacement 
 	return nil
 }
 
-func contains(file string, files []string) bool {
-	for _, f := range files {
-		if file == f {
-			return true
-		}
-	}
-	return false
-}
-
 // isIgnored returns true when a file should be skipped.
 func (r *runner) isIgnored(file string) (bool, error) {
 	for _, pattern := range r.flag.Ignore {
