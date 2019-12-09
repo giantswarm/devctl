@@ -54,7 +54,6 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	for _, file := range files {
 		err := filepath.Walk(file, func(file string, info os.FileInfo, err error) error {
 			// Skip files matching any ignore pattern.
-			// e.g. ignore=vendor_dir/ ignore=*.sqldump
 			{
 				ignored, err := r.isIgnored(file)
 				if err != nil {
@@ -71,7 +70,6 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 			// Only include files matching include patterns.
 			// In case there are no include patterns, all files are included.
-			// e.g. include=*.go include=src_dir/
 			{
 				included, err := r.isIncluded(file)
 				if err != nil {
