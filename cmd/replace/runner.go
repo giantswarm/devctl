@@ -43,7 +43,8 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	var (
 		pattern     = args[0]
 		replacement = args[1]
-		files       = args[2:]
+		// TODO Consider taking only one last arg which would be a glob.
+		globs = args[2:]
 	)
 
 	regex, err := regexp.Compile(pattern)
@@ -51,11 +52,12 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		microerror.Mask(err)
 	}
 
+	// TODO Files got renamed to globs. This won't compile. We need to take the files using doublestar.Glob.
 	for _, file := range files {
 		err := filepath.Walk(file, func(file string, info os.FileInfo, err error) error {
 			// Skip files matching any ignore pattern.
 			{
-				ignored, err := r.isIgnored(file)
+				ignored, err := globMatchAny(file, r.flag.Ignore)
 				if err != nil {
 					return microerror.Mask(err)
 				}
@@ -71,7 +73,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 			// Only include files matching include patterns.
 			// In case there are no include patterns, all files are included.
 			{
-				included, err := r.isIncluded(file)
+				included, err := globMatchAny(file, r.flag.Include)
 				if err != nil {
 					return microerror.Mask(err)
 				}
@@ -142,9 +144,8 @@ func (r *runner) processFile(fileName string, regex *regexp.Regexp, replacement 
 	return nil
 }
 
-// isIgnored returns true when a file should be skipped.
-func (r *runner) isIgnored(file string) (bool, error) {
-	for _, pattern := range r.flag.Ignore {
+func globMatchAny(file string, patterns []string) (bool, error) {
+	for _, pattern := range patterns {
 		ok, err := doublestar.PathMatch(pattern, file)
 		if err != nil {
 			return false, microerror.Mask(err)
@@ -155,23 +156,4 @@ func (r *runner) isIgnored(file string) (bool, error) {
 	}
 
 	return false, nil
-}
-
-// isIncluded returns true when a file should be processed.
-func (r *runner) isIncluded(file string) (bool, error) {
-	if len(r.flag.Include) > 0 {
-		for _, pattern := range r.flag.Include {
-			ok, err := doublestar.PathMatch(pattern, file)
-			if err != nil {
-				return false, microerror.Mask(err)
-			}
-			if ok {
-				return true, nil
-			}
-		}
-
-		return false, nil
-	}
-
-	return true, nil
 }
