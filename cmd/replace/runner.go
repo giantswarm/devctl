@@ -96,8 +96,9 @@ func (r *runner) processFile(fileName string, regex *regexp.Regexp, replacement 
 
 	replaced := regex.ReplaceAll(content, []byte(replacement))
 
+	// When --inplace flag isn't specified print replacement to stdout and
+	// return.
 	if !r.flag.InPlace {
-		// Print result to stdout.
 		fmt.Fprintf(r.stdout, "%s", replaced)
 
 		return nil
