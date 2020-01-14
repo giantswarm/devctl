@@ -110,17 +110,19 @@ func (r *runner) processFile(fileName string, regex *regexp.Regexp, replacement 
 	}
 
 	// Replace entire file content.
-	err := f.Truncate(0)
-	if err != nil {
-		return microerror.Mask(err)
-	}
+	{
+		err := f.Truncate(0)
+		if err != nil {
+			return microerror.Mask(err)
+		}
 
-	n, err := f.WriteAt(replaced, 0)
-	if err != nil {
-		return microerror.Mask(err)
-	}
-	if n < len(replaced) {
-		return microerror.Maskf(executionFailedError, "short write to %#q only %d of %d bytes written", f.Name(), n, len(replaced))
+		n, err := f.WriteAt(replaced, 0)
+		if err != nil {
+			return microerror.Mask(err)
+		}
+		if n < len(replaced) {
+			return microerror.Maskf(executionFailedError, "short write to %#q only %d of %d bytes written", f.Name(), n, len(replaced))
+		}
 	}
 
 	return nil
