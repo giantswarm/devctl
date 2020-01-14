@@ -96,8 +96,22 @@ func (r *runner) processFile(fileName string, regex *regexp.Regexp, replacement 
 
 	replaced := regex.ReplaceAll(content, []byte(replacement))
 
-	if r.flag.InPlace && bytes.Equal(content, replaced) {
-		// Replace entire file content.
+	// When --inplace flag isn't specified print replacement to stdout and
+	// return.
+	if !r.flag.InPlace {
+		fmt.Fprintf(r.stdout, "%s", replaced)
+
+		return nil
+	}
+
+	// If replaced content is the same there is no reason to override the
+	// file so return early.
+	if bytes.Equal(content, replaced) {
+		return nil
+	}
+
+	// Replace entire file content.
+	{
 		err := f.Truncate(0)
 		if err != nil {
 			return microerror.Mask(err)
@@ -110,9 +124,6 @@ func (r *runner) processFile(fileName string, regex *regexp.Regexp, replacement 
 		if n < len(replaced) {
 			return microerror.Maskf(executionFailedError, "short write to %#q only %d of %d bytes written", f.Name(), n, len(replaced))
 		}
-	} else {
-		// Print result to stdout.
-		fmt.Fprintf(r.stdout, "%s", replaced)
 	}
 
 	return nil
