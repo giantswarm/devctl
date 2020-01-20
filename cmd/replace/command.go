@@ -14,7 +14,7 @@ const (
 	description = `Replaces text in files. PATTERN is Go regular expressions and REPLACEMENT is Go regular expressions replacement string. GLOB is a file path pattern recognizing "*", "**" and "?" globing.`
 	example     = `  devctl replace foo bar /path/to/file
   devctl replace -i '^(\\w+).+' '$1 foobar' '/file/a' '/file/b'
-  devctl replace -i --ignore='**/*.yaml' 'a' 'b' '/dir/*'
+  devctl replace -i 'a' 'b' '/dir/*' --ignore='**/*.yaml'
   devctl replace -i 'a' 'b' './dir/**/*.go' 'main.go'
   devctl replace -i 'a' 'b' '**/*.go' --ignore './vendor'
   devctl replace -i 'a' 'b' './dir/**/*.json' --ignore '**/fixture*,**/test*'`
