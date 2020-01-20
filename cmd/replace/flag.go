@@ -1,7 +1,6 @@
 package replace
 
 import (
-	"os"
 	"regexp"
 
 	"github.com/giantswarm/microerror"
@@ -9,11 +8,13 @@ import (
 )
 
 type flag struct {
+	Ignore  []string
 	InPlace bool
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
-	cmd.PersistentFlags().BoolVarP(&f.InPlace, "inplace", "i", false, "write changes to files.")
+	cmd.PersistentFlags().StringSliceVar(&f.Ignore, "ignore", []string{}, `Ignore files matching comma separated list of patterns. The pattern recognizes "*", "**" and "?" globing.`)
+	cmd.PersistentFlags().BoolVarP(&f.InPlace, "inplace", "i", false, "Write changes to files in-place.")
 	cmd.Args = validatePositionalArgs
 }
 
@@ -23,17 +24,11 @@ func (f *flag) Validate() error {
 
 func validatePositionalArgs(cmd *cobra.Command, args []string) error {
 	if len(args) < 3 {
-		return microerror.Maskf(invalidFlagsError, "expected 3 arguments, got %d", len(args))
+		return microerror.Maskf(invalidFlagsError, "expected 3 or more arguments, got %d", len(args))
 	}
 
 	if _, err := regexp.Compile(args[0]); err != nil {
 		return microerror.Maskf(invalidFlagsError, "first argument is not a valid regex: %v", err)
-	}
-
-	for _, file := range args[2:] {
-		if _, err := os.Stat(file); err != nil {
-			return microerror.Maskf(invalidFlagsError, "cannot access file %#q: %v", file, err)
-		}
 	}
 
 	return nil
