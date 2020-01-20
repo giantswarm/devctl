@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 
+	"github.com/bmatcuk/doublestar"
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
@@ -42,7 +43,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	var (
 		pattern     = args[0]
 		replacement = args[1]
-		files       = args[2:]
+		globs       = args[2:]
 	)
 
 	regex, err := regexp.Compile(pattern)
@@ -50,10 +51,35 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		microerror.Mask(err)
 	}
 
-	for _, file := range files {
-		err := filepath.Walk(file, func(file string, info os.FileInfo, err error) error {
+	matches := make(map[string]struct{})
+	{
+		for _, g := range globs {
+			ms, err := doublestar.Glob(g)
 			if err != nil {
 				return microerror.Mask(err)
+			}
+
+			for _, m := range ms {
+				matches[m] = struct{}{}
+			}
+		}
+	}
+
+	for file := range matches {
+		err := filepath.Walk(file, func(file string, info os.FileInfo, err error) error {
+			// Skip files matching any ignore pattern.
+			{
+				ignored, err := globMatchAny(file, r.flag.Ignore)
+				if err != nil {
+					return microerror.Mask(err)
+				}
+				if ignored {
+					if info.IsDir() {
+						return filepath.SkipDir
+					}
+
+					return nil
+				}
 			}
 
 			if info.IsDir() {
@@ -127,4 +153,18 @@ func (r *runner) processFile(fileName string, regex *regexp.Regexp, replacement 
 	}
 
 	return nil
+}
+
+func globMatchAny(file string, patterns []string) (bool, error) {
+	for _, pattern := range patterns {
+		ok, err := doublestar.PathMatch(pattern, file)
+		if err != nil {
+			return false, microerror.Mask(err)
+		}
+		if ok {
+			return true, nil
+		}
+	}
+
+	return false, nil
 }
