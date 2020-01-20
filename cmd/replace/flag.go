@@ -9,7 +9,6 @@ import (
 
 type flag struct {
 	Ignore  []string
-	Include []string
 	InPlace bool
 }
 
