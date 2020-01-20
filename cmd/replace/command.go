@@ -13,7 +13,11 @@ const (
 	usage       = "replace [pattern] [replacement] [file ...]"
 	description = "replace text in files."
 	example     = `  devctl replace foo bar /path/to/file
-  devctl replace -i '^(\\w+).+' '$1 foobar' /file/a /file/b`
+  devctl replace -i '^(\\w+).+' '$1 foobar' '/file/a' '/file/b'
+  devctl replace -i --ignore='**/*.yaml' 'a' 'b' '/dir/*'
+  devctl replace -i 'a' 'b' './dir/**/*.go' 'main.go'
+  devctl replace -i 'a' 'b' '**/*.go' --ignore './vendor'
+  devctl replace -i 'a' 'b' './dir/**/*.json' --ignore '**/fixture*,**/test*'`
 )
 
 type Config struct {
