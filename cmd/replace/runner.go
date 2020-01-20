@@ -43,8 +43,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	var (
 		pattern     = args[0]
 		replacement = args[1]
-		// TODO Consider taking only one last arg which would be a glob.
-		globs = args[2:]
+		globs       = args[2:]
 	)
 
 	regex, err := regexp.Compile(pattern)
@@ -52,8 +51,21 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		microerror.Mask(err)
 	}
 
-	// TODO Files got renamed to globs. This won't compile. We need to take the files using doublestar.Glob.
-	for _, file := range files {
+	matches := make(map[string]struct{})
+	{
+		for _, g := range globs {
+			ms, err := doublestar.Glob(g)
+			if err != nil {
+				return microerror.Mask(err)
+			}
+
+			for _, m := range ms {
+				matches[m] = struct{}{}
+			}
+		}
+	}
+
+	for file := range matches {
 		err := filepath.Walk(file, func(file string, info os.FileInfo, err error) error {
 			// Skip files matching any ignore pattern.
 			{
@@ -66,18 +78,6 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 						return filepath.SkipDir
 					}
 
-					return nil
-				}
-			}
-
-			// Only include files matching include patterns.
-			// In case there are no include patterns, all files are included.
-			{
-				included, err := globMatchAny(file, r.flag.Include)
-				if err != nil {
-					return microerror.Mask(err)
-				}
-				if !included {
 					return nil
 				}
 			}
