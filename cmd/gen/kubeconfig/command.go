@@ -1,4 +1,4 @@
-package gen
+package kubeconfig
 
 import (
 	"io"
@@ -7,14 +7,11 @@ import (
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
-
-	"github.com/giantswarm/devctl/cmd/gen/kubeconfig"
-	"github.com/giantswarm/devctl/cmd/gen/resource"
 )
 
 const (
-	name        = "gen"
-	description = "Generate files."
+	name        = "kubeconfig"
+	description = "Generates kubeconfig file for tenant cluster."
 )
 
 type Config struct {
@@ -34,37 +31,6 @@ func New(config Config) (*cobra.Command, error) {
 		config.Stdout = os.Stdout
 	}
 
-	var err error
-
-	var kubeconfigCmd *cobra.Command
-	{
-		c := kubeconfig.Config{
-			Logger: config.Logger,
-			Stderr: config.Stderr,
-			Stdout: config.Stdout,
-		}
-
-		kubeconfigCmd, err = kubeconfig.New(c)
-		if err != nil {
-			return nil, microerror.Mask(err)
-		}
-	}
-
-	var resourceCmd *cobra.Command
-	{
-		c := resource.Config{
-			Logger: config.Logger,
-			Stderr: config.Stderr,
-			Stdout: config.Stdout,
-		}
-
-		resourceCmd, err = resource.New(c)
-		if err != nil {
-			return nil, microerror.Mask(err)
-		}
-	}
-
-
 	f := &flag{}
 
 	r := &runner{
@@ -82,9 +48,6 @@ func New(config Config) (*cobra.Command, error) {
 	}
 
 	f.Init(c)
-
-	c.AddCommand(kubeconfigCmd)
-	c.AddCommand(resourceCmd)
 
 	return c, nil
 }
