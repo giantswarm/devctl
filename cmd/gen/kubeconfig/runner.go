@@ -2,17 +2,17 @@ package kubeconfig
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
 	"io"
-	"os"
-	"text/template"
+	"io/ioutil"
+	"strings"
 
 	"github.com/giantswarm/k8sclient"
+	gskubeconfig "github.com/giantswarm/kubeconfig"
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 type runner struct {
@@ -21,27 +21,6 @@ type runner struct {
 	stdout io.Writer
 	stderr io.Writer
 }
-
-const kubeconfigTemplate = `apiVersion: v1
-clusters:
-- cluster:
-    certificate-authority-data: {{.CA}}
-    server: https://{{.APIUrl}}
-  name: tenant-cluster
-contexts:
-- context:
-    cluster: tenant-cluster
-    user: ci-user
-  name: tenant-cluster-context
-current-context: tenant-cluster-context
-kind: Config
-preferences: {}
-users:
-- name: ci-user
-  user:
-    client-certificate-data: {{.Certificate}}
-    client-key-data: {{.Key}}
-`
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
@@ -71,55 +50,29 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 
-	var apiUrl string
-	if r.flag.Provider == "azure" {
-		cluster, err := clients.G8sClient().ProviderV1alpha1().AzureConfigs("default").Get(r.flag.ClusterID, v1.GetOptions{})
-		if err != nil {
-			return microerror.Mask(err)
-		}
-		apiUrl = cluster.Spec.Cluster.Kubernetes.API.Domain
-	} else if r.flag.Provider == "aws" {
-		cluster, err := clients.G8sClient().ProviderV1alpha1().AWSConfigs("default").Get(r.flag.ClusterID, v1.GetOptions{})
-		if err != nil {
-			return microerror.Mask(err)
-		}
-		apiUrl = cluster.Spec.Cluster.Kubernetes.API.Domain
-	} else if r.flag.Provider == "kvm" {
-		cluster, err := clients.G8sClient().ProviderV1alpha1().KVMConfigs("default").Get(r.flag.ClusterID, v1.GetOptions{})
-		if err != nil {
-			return microerror.Mask(err)
-		}
-		apiUrl = cluster.Spec.Cluster.Kubernetes.API.Domain
-	} else {
-		return microerror.Mask(fmt.Errorf("invalid provider specified"))
-	}
-
-	secret, err := clients.K8sClient().CoreV1().Secrets("default").Get(getSecretName(r.flag.ClusterID), v1.GetOptions{})
+	secret, err := clients.K8sClient().CoreV1().Secrets("default").Get(getSecretName(r.flag.ClusterID), metav1.GetOptions{})
 	if err != nil {
 		return microerror.Mask(err)
 	}
 
-	var kubeconfigFile *os.File
+	restConfig := clients.RESTConfig()
+	restConfig.CertData = secret.Data["crt"]
+	restConfig.CAData = secret.Data["ca"]
+	restConfig.KeyData = secret.Data["key"]
+	restConfig.Host = strings.Replace(restConfig.Host, "g8s", fmt.Sprintf("api.%s.k8s", r.flag.ClusterID), 1)
+
+	kubeconfigContents, err := gskubeconfig.NewKubeConfigForRESTConfig(ctx, restConfig, r.flag.ClusterID, "default")
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
 	if r.flag.Output == "" {
-		kubeconfigFile = os.Stdout
+		fmt.Printf("%s", kubeconfigContents)
 	} else {
-		kubeconfigFile, err = os.Create(r.flag.Output)
+		err = ioutil.WriteFile(r.flag.Output, kubeconfigContents, 0644)
 		if err != nil {
 			return microerror.Mask(err)
 		}
-		defer kubeconfigFile.Close()
-	}
-
-	t := template.Must(template.New("kubeconfig").Parse(kubeconfigTemplate))
-	err = t.Execute(kubeconfigFile, map[string]interface{}{
-		"APIUrl":      apiUrl,
-		"CA":          base64.StdEncoding.EncodeToString(secret.Data["ca"]),
-		"Certificate": base64.StdEncoding.EncodeToString(secret.Data["crt"]),
-		"ClusterID":   r.flag.ClusterID,
-		"Key":         base64.StdEncoding.EncodeToString(secret.Data["key"]),
-	})
-	if err != nil {
-		return microerror.Mask(err)
 	}
 
 	return nil

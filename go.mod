@@ -5,6 +5,7 @@ require (
 	github.com/giantswarm/apiextensions v0.0.0-20200220082851-d6884ee11480 // indirect
 	github.com/giantswarm/backoff v0.0.0-20200209120535-b7cb1852522d // indirect
 	github.com/giantswarm/k8sclient v0.0.0-20200120104955-1542917096d6
+	github.com/giantswarm/kubeconfig v0.0.0-20191209121754-c5784ae65a49
 	github.com/giantswarm/microerror v0.0.0-20190605150300-f446cc816a48
 	github.com/giantswarm/micrologger v0.0.0-20181128163930-39ed6a99d31b
 	github.com/go-kit/kit v0.10.0 // indirect

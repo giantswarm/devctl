@@ -109,6 +109,8 @@ github.com/giantswarm/backoff v0.0.0-20200209120535-b7cb1852522d h1:Mf9H/jKXrs3H
 github.com/giantswarm/backoff v0.0.0-20200209120535-b7cb1852522d/go.mod h1:kjItv/iHgl/xsprYgbnCOme1pVTiiiaZeR2ybsN4ab0=
 github.com/giantswarm/k8sclient v0.0.0-20200120104955-1542917096d6 h1:EsjtptM208YbyHkkn6WuFFOQuTFkymkrqAC5qajwTVA=
 github.com/giantswarm/k8sclient v0.0.0-20200120104955-1542917096d6/go.mod h1:XH0Ea+GvJOStcuamQyFSJXIQasGcPpHnWnHQVyG7AJc=
+github.com/giantswarm/kubeconfig v0.0.0-20191209121754-c5784ae65a49 h1:7A4URevsdTMdWlAnbYdryrfLdqBuHvyU2ans0oDEqck=
+github.com/giantswarm/kubeconfig v0.0.0-20191209121754-c5784ae65a49/go.mod h1:XJHVL/1hBzfAPkCtwTNg/1NTS6AFbj5h2HzUCi01Ox4=
 github.com/giantswarm/microerror v0.0.0-20190605150300-f446cc816a48 h1:Mn7QWbBrHDfr+7D3Q51dKeJdXTKQCGl2zDEyHJi27W0=
 github.com/giantswarm/microerror v0.0.0-20190605150300-f446cc816a48/go.mod h1://Lo9dKJ8P2TBciuky5fDHEItccyvZOWE+B/0JiJT8A=
 github.com/giantswarm/micrologger v0.0.0-20181128163930-39ed6a99d31b h1:7zq3+zLj7Vsef9AZywA1Bn5EF2mpTStye174RAwdrSg=
@@ -652,6 +654,7 @@ k8s.io/klog v0.0.0-20181102134211-b9b56d5dfc92/go.mod h1:Gq+BEi5rUBO/HRz0bTSXDUc
 k8s.io/klog v0.3.0/go.mod h1:Gq+BEi5rUBO/HRz0bTSXDUcqjScdoY3a9IHpCEIOOfk=
 k8s.io/klog v1.0.0 h1:Pt+yjF5aB1xDSVbau4VsWe+dQNzA0qv1LlXdC2dF6Q8=
 k8s.io/klog v1.0.0/go.mod h1:4Bi6QPql/J/LkTDqv7R/cd3hPo4k2DG6Ptcz060Ez5I=
+k8s.io/kube-openapi v0.0.0-20191107075043-30be4d16710a h1:UcxjrRMyNx/i/y8G7kPvLyy7rfbeuf1PYyBf973pgyU=
 k8s.io/kube-openapi v0.0.0-20191107075043-30be4d16710a/go.mod h1:1TqjTSzOxsLGIKfj0lK8EeCP7K1iUG65v09OM0/WG5E=
 k8s.io/utils v0.0.0-20191114184206-e782cd3c129f h1:GiPwtSzdP43eI1hpPCbROQCCIgCuiMMNF8YUVLF3vJo=
 k8s.io/utils v0.0.0-20191114184206-e782cd3c129f/go.mod h1:sZAwmy6armz5eXlNoLmJcl4F1QuKu7sr+mFQ0byX7Ew=
