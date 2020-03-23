@@ -9,7 +9,7 @@ require (
 	github.com/giantswarm/microerror v0.0.0-20190605150300-f446cc816a48
 	github.com/giantswarm/micrologger v0.0.0-20181128163930-39ed6a99d31b
 	github.com/go-kit/kit v0.10.0 // indirect
-	github.com/google/go-cmp v0.3.1
+	github.com/google/go-cmp v0.4.0
 	github.com/google/go-github v17.0.0+incompatible
 	github.com/google/go-querystring v1.0.0 // indirect
 	github.com/juju/errgo v0.0.0-20140925100237-08cceb5d0b53 // indirect
