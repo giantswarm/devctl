@@ -1,4 +1,4 @@
-package resource
+package xstrings
 
 import (
 	"strconv"
@@ -7,7 +7,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-func Test_firstLetterToLower(t *testing.T) {
+func Test_FirstLetterToLower(t *testing.T) {
 	testCases := []struct {
 		name           string
 		inputString    string
@@ -32,7 +32,7 @@ func Test_firstLetterToLower(t *testing.T) {
 
 	for i, tc := range testCases {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			s := firstLetterToLower(tc.inputString)
+			s := FirstLetterToLower(tc.inputString)
 			if !cmp.Equal(s, tc.expectedString) {
 				t.Fatalf("\n\n%s\n", cmp.Diff(s, tc.expectedString))
 			}

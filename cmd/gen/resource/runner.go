@@ -11,7 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/pkg/gen"
-	"github.com/giantswarm/devctl/pkg/gen/resource"
+	"github.com/giantswarm/devctl/pkg/gen/input/resource"
 )
 
 type runner struct {
@@ -45,26 +45,16 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		ObjectVersion: r.flag.ObjectVersion,
 	}
 
-	currentFile, err := resource.NewCurrent(c)
-	if err != nil {
-		return microerror.Mask(err)
-	}
-
-	resourceFile, err := resource.NewResource(c)
-	if err != nil {
-		return microerror.Mask(err)
-	}
-
-	createFile, err := resource.NewCreate(c)
+	resourceInput, err := resource.New(c)
 	if err != nil {
 		return microerror.Mask(err)
 	}
 
 	err = gen.Execute(
 		ctx,
-		currentFile,
-		resourceFile,
-		createFile,
+		resourceInput.CreateFile(),
+		resourceInput.CurrentFile(),
+		resourceInput.ResourceFile(),
 	)
 	if gen.IsFilePath(err) {
 		fmt.Fprintf(r.stderr, "%s\n", err)

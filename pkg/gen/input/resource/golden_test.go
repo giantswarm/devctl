@@ -23,7 +23,7 @@ var update = flag.Bool("update", false, "update resource.golden file")
 // It uses golden file as reference and when changes to template are
 // intentional, they can be updated by providing -update flag for go test.
 //
-//	go test ./pkg/gen/resource -run Test_Resource -update
+//	go test ./pkg/gen/input/resource -run Test_Resource -update
 //
 func Test_Resource(t *testing.T) {
 	configCoreV1ConfigMap := Config{
@@ -34,7 +34,7 @@ func Test_Resource(t *testing.T) {
 	}
 
 	configG8sV2AWSConfig := Config{
-		Dir:           "/go/src/some.domain/project/subpath/secretresource",
+		Dir:           "/go/src/some.domain/project/subpath/awsconfigresource",
 		ObjectGroup:   "g8s",
 		ObjectKind:    "AWSConfig",
 		ObjectVersion: "v2",
@@ -42,20 +42,17 @@ func Test_Resource(t *testing.T) {
 
 	testCases := []struct {
 		name         string
-		inputConfig  Config
-		newFileFunc  func(Config) (input.File, error)
+		inputFile    input.File
 		errorMatcher func(err error) bool
 	}{
 		{
-			name:         "case 0: core v1 ConfigMap resource.go",
-			inputConfig:  configCoreV1ConfigMap,
-			newFileFunc:  func(c Config) (input.File, error) { return NewResource(c) },
+			name:         "case 0: core v1 ConfigMap zz_generated.resource.go",
+			inputFile:    mustResource(configCoreV1ConfigMap).ResourceFile(),
 			errorMatcher: nil,
 		},
 		{
-			name:         "case 1: g8s v2 AWSConfig resource.go",
-			inputConfig:  configG8sV2AWSConfig,
-			newFileFunc:  func(c Config) (input.File, error) { return NewResource(c) },
+			name:         "case 1: g8s v2 AWSConfig zz_generated.resource.go",
+			inputFile:    mustResource(configG8sV2AWSConfig).ResourceFile(),
 			errorMatcher: nil,
 		},
 	}
@@ -64,13 +61,8 @@ func Test_Resource(t *testing.T) {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			ctx := context.Background()
 
-			f, err := tc.newFileFunc(tc.inputConfig)
-			if err != nil {
-				t.Fatal(microerror.Mask(err))
-			}
-
 			w := &bytes.Buffer{}
-			err = internal.Execute(ctx, w, f)
+			err := internal.Execute(ctx, w, tc.inputFile)
 
 			switch {
 			case err == nil && tc.errorMatcher == nil:
@@ -117,4 +109,13 @@ func normalizeToFileName(s string) string {
 		}
 	}
 	return string(result)
+}
+
+func mustResource(config Config) *Resource {
+	r, err := New(config)
+	if err != nil {
+		panic(microerror.Stack(err))
+	}
+
+	return r
 }

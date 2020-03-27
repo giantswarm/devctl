@@ -1,4 +1,4 @@
-package secretresource
+package awsconfigresource
 
 import (
 	"github.com/giantswarm/microerror"

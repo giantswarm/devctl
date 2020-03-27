@@ -1,12 +1,12 @@
-package resource
+package file
 
 import (
 	"context"
 	"path/filepath"
 
-	"github.com/giantswarm/microerror"
-
 	"github.com/giantswarm/devctl/pkg/gen/input"
+	"github.com/giantswarm/devctl/pkg/gen/input/resource/internal/params"
+	"github.com/giantswarm/devctl/pkg/xstrings"
 )
 
 type Resource struct {
@@ -16,35 +16,31 @@ type Resource struct {
 	objectVersion string
 }
 
-func NewResource(config Config) (*Resource, error) {
-	err := config.Validate()
-	if err != nil {
-		return nil, microerror.Mask(err)
-	}
-
+func NewResource(p params.Params) *Resource {
 	f := &Resource{
-		dir:           config.Dir,
-		objectGroup:   config.ObjectGroup,
-		objectKind:    config.ObjectKind,
-		objectVersion: config.ObjectVersion,
+		dir:           p.Dir,
+		objectGroup:   p.ObjectGroup,
+		objectKind:    p.ObjectKind,
+		objectVersion: p.ObjectVersion,
 	}
 
-	return f, nil
+	return f
 }
 
 func (f *Resource) GetInput(ctx context.Context) (input.Input, error) {
 	i := input.Input{
-		Path:         filepath.Join(f.dir, "resource.go"),
+		Path:         filepath.Join(f.dir, params.RegenerableFileName("resource.go")),
+		Scaffolding:  false,
 		TemplateBody: resourceTemplate,
 		TemplateData: map[string]interface{}{
-			"ClientImport":    clientImport(f.objectGroup),
-			"ClientPackage":   clientPackage(f.objectGroup),
+			"ClientImport":    params.ClientImport(f.objectGroup),
+			"ClientPackage":   params.ClientPackage(f.objectGroup),
 			"ObjectGroup":     f.objectGroup,
-			"ObjectImport":    objectImport(f.objectGroup, f.objectVersion),
+			"ObjectImport":    params.ObjectImport(f.objectGroup, f.objectVersion),
 			"ObjectKind":      f.objectKind,
-			"ObjectKindLower": firstLetterToLower(f.objectKind),
+			"ObjectKindLower": xstrings.FirstLetterToLower(f.objectKind),
 			"ObjectVersion":   f.objectVersion,
-			"Package":         packageName(f.dir),
+			"Package":         params.Package(f.dir),
 		},
 	}
 
@@ -56,6 +52,7 @@ var resourceTemplate = `package {{ .Package }}
 import (
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
+
 	{{ .ObjectGroup }}{{ .ObjectVersion }} "{{ .ObjectImport }}"
 	"{{ .ClientImport }}"
 )
@@ -106,22 +103,13 @@ func (r *Resource) Name() string {
 	return r.name
 }
 
-func contains{{ .ObjectKind }}({{ .ObjectKindLower }}s []*{{ .ObjectGroup }}{{ .ObjectVersion }}.{{ .ObjectKind }}, {{ .ObjectKindLower }} *{{ .ObjectGroup }}{{ .ObjectVersion }}.{{ .ObjectKind }}) bool {
-	for _, a := range {{ .ObjectKindLower }}s {
-		if {{ .ObjectKindLower }}.Name == a.Name && {{ .ObjectKindLower }}.Namespace == a.Namespace {
-			return true
+func find(resources []*{{ .ObjectGroup }}{{ .ObjectVersion }}.{{ .ObjectKind }}, r *{{ .ObjectGroup }}{{ .ObjectVersion }}.{{ .ObjectKind }}) (int, bool) {
+	for i, resource := range resources {
+		if resource.GetName() == r.GetName() && resource.GetNamespace() == r.GetNamespace() {
+			return i, true
 		}
 	}
 
-	return false
-}
-
-func to{{ .ObjectKind }}s(v interface{}) ([]*{{ .ObjectGroup }}{{ .ObjectVersion }}.{{ .ObjectKind }}, error) {
-	x, ok := v.([]*{{ .ObjectGroup }}{{ .ObjectVersion }}.{{ .ObjectKind }})
-	if !ok {
-		return nil, microerror.Maskf(wrongTypeError, "expected '%T', got '%T'", x, v)
-	}
-
-	return x, nil
+	return -1, false
 }
 `

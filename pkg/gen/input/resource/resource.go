@@ -2,6 +2,11 @@ package resource
 
 import (
 	"github.com/giantswarm/microerror"
+
+	"github.com/giantswarm/devctl/pkg/gen/input"
+	"github.com/giantswarm/devctl/pkg/gen/input/resource/internal/file"
+	"github.com/giantswarm/devctl/pkg/gen/input/resource/internal/params"
+	"github.com/giantswarm/devctl/pkg/xstrings"
 )
 
 type Config struct {
@@ -28,7 +33,7 @@ func (c *Config) Validate() error {
 	if c.ObjectGroup == "" {
 		c.ObjectGroup = "core"
 	}
-	if !containsString(validObjectGroups, c.ObjectGroup) {
+	if !xstrings.Contains(validObjectGroups, c.ObjectGroup) {
 		return microerror.Maskf(invalidConfigError, "%T.ObjectGroup must one of %v but got %#q", c, validObjectGroups, c.ObjectGroup)
 	}
 	if c.ObjectKind == "" {
@@ -40,3 +45,24 @@ func (c *Config) Validate() error {
 
 	return nil
 }
+
+type Resource struct {
+	params params.Params
+}
+
+func New(config Config) (*Resource, error) {
+	err := config.Validate()
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
+
+	r := &Resource{
+		params: params.Params(config),
+	}
+
+	return r, nil
+}
+
+func (r *Resource) CreateFile() input.File   { return file.NewCreate(r.params) }
+func (r *Resource) CurrentFile() input.File  { return file.NewCurrent(r.params) }
+func (r *Resource) ResourceFile() input.File { return file.NewResource(r.params) }

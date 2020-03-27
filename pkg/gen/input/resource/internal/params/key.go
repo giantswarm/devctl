@@ -1,11 +1,13 @@
-package resource
+package params
 
 import (
 	"fmt"
 	"path"
+
+	"github.com/giantswarm/devctl/pkg/gen/internal"
 )
 
-func clientImport(objectGroup string) string {
+func ClientImport(objectGroup string) string {
 	switch objectGroup {
 	case "core":
 		return "k8s.io/client-go/kubernetes"
@@ -18,11 +20,11 @@ func clientImport(objectGroup string) string {
 	}
 }
 
-func clientPackage(objectGroup string) string {
-	return path.Base(clientImport(objectGroup))
+func ClientPackage(objectGroup string) string {
+	return path.Base(ClientImport(objectGroup))
 }
 
-func objectImport(objectGroup, objectVersion string) string {
+func ObjectImport(objectGroup, objectVersion string) string {
 	switch objectGroup {
 	case "core":
 		return "k8s.io/api/" + objectGroup + "/" + objectVersion
@@ -35,7 +37,10 @@ func objectImport(objectGroup, objectVersion string) string {
 	}
 }
 
-/* `package` would be a better name but it's a keyword. */
-func packageName(dir string) string {
+func Package(dir string) string {
 	return path.Base(dir)
+}
+
+func RegenerableFileName(suffix string) string {
+	return internal.RegenerableFilePrefix + suffix
 }
