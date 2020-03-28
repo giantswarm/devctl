@@ -64,7 +64,6 @@ func New(config Config) (*cobra.Command, error) {
 		}
 	}
 
-
 	f := &flag{}
 
 	r := &runner{

@@ -48,7 +48,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 	regex, err := regexp.Compile(pattern)
 	if err != nil {
-		microerror.Mask(err)
+		return microerror.Mask(err)
 	}
 
 	matches := make(map[string]struct{})
@@ -67,6 +67,10 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 	for file := range matches {
 		err := filepath.Walk(file, func(file string, info os.FileInfo, err error) error {
+			if err != nil {
+				return microerror.Mask(err)
+			}
+
 			// Skip files matching any ignore pattern.
 			{
 				ignored, err := globMatchAny(file, r.flag.Ignore)
@@ -98,6 +102,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 			return microerror.Mask(err)
 		}
 	}
+
 	return nil
 }
 

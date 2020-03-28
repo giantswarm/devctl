@@ -1,5 +1,5 @@
 package env
 
 const (
-	DevctlGithubAccessToken = "DEVCTL_GITHUB_ACCESS_TOKEN"
+	DevctlGithubAccessToken = "DEVCTL_GITHUB_ACCESS_TOKEN" // nolint:gosec
 )

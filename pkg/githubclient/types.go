@@ -1,7 +1,6 @@
 package githubclient
 
 import (
-	"strings"
 	"time"
 
 	"github.com/giantswarm/microerror"
@@ -51,17 +50,6 @@ type RepositoryFile struct {
 func newRepositoryFile(ghContent *github.RepositoryContent) (RepositoryFile, error) {
 	if ghContent == nil {
 		return RepositoryFile{}, microerror.Maskf(executionError, "expected non nil argument but got %#v", ghContent)
-	}
-
-	// Validate type.
-	{
-		typ, err := toString(ghContent.Type)
-		if err != nil {
-			return RepositoryFile{}, microerror.Mask(err)
-		}
-
-		if strings.ToLower(typ) != "file" {
-		}
 	}
 
 	path, err := toString(ghContent.Path)
