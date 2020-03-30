@@ -1,5 +1,7 @@
 package resource
 
+/*
+
 import (
 	"bytes"
 	"context"
@@ -119,3 +121,4 @@ func mustResource(config Config) *Resource {
 
 	return r
 }
+*/

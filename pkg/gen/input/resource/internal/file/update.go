@@ -5,10 +5,10 @@ import (
 	"github.com/giantswarm/devctl/pkg/gen/input/resource/internal/params"
 )
 
-func NewCreateInput(p params.Params) input.Input {
+func NewUpdateInput(p params.Params) input.Input {
 	i := input.Input{
-		Path:         params.RegenerableFileName(p, "create.go"),
-		TemplateBody: createTemplate,
+		Path:         params.RegenerableFileName(p, "update.go"),
+		TemplateBody: updateTemplate,
 		TemplateData: map[string]interface{}{
 			"Package": params.Package(p),
 		},
@@ -17,8 +17,7 @@ func NewCreateInput(p params.Params) input.Input {
 	return i
 }
 
-var createTemplate = `
-package {{ .Package }}
+var updateTemplate = `package {{ .Package }}
 
 import (
 	"context"
@@ -26,17 +25,17 @@ import (
 	"github.com/giantswarm/microerror"
 )
 
-func (r *Resource) ApplyCreateChange(ctx context.Context, obj, createChange interface{}) error {
+func (r *Resource) ApplyUpdateChange(ctx context.Context, obj, updateChange interface{}) error {
 	typedObj, err := toTypedObject(obj)
 	if err != nil {
 		return microerror.Mask(err)
 	}
-	toCreate, err := toTypedState(createChange)
+	toUpdate, err := toTypedState(updateChange)
 	if err != nil {
 		return microerror.Mask(err)
 	}
 
-	err = r.applyCreateChange(ctx, typedObj, toCreate)
+	err = r.applyUpdateChange(ctx, typedObj, toUpdate)
 	if err != nil {
 		return microerror.Mask(err)
 	}

@@ -6,41 +6,35 @@ import (
 	"github.com/giantswarm/devctl/pkg/gen/input"
 	"github.com/giantswarm/devctl/pkg/gen/input/resource/internal/file"
 	"github.com/giantswarm/devctl/pkg/gen/input/resource/internal/params"
-	"github.com/giantswarm/devctl/pkg/xstrings"
 )
 
 type Config struct {
 	// Dir is the name of the directory where the files of the resource
 	// should be generated.
 	Dir string
-	// ObjectGroup of the object reconciled by the generated resource.
-	ObjectGroup string
-	// ObjectKind of the object reconciled by the generated resource.
-	ObjectKind string
-	// ObjectVersion of the object reconciled by the generated resource.
-	ObjectVersion string
+	// ObjectFullType is a fully qualified type of the object watched by
+	// the controller. It must be a pointer. E.g.
+	// "*github.com/user/repo/pkg.MyType".
+	ObjectFullType string
+	// ObjectImportAlias of the object watched by the controller.
+	ObjectImportAlias string
+	// StateFullType is a fully qualified type of the object holding
+	// a state of the generated CRUD resource. It can be a pointer. E.g.
+	// "github.com/user/repo/pkg.MyType".
+	StateFullType string
+	// StateImportAlias of the object reconciled by the generated resource.
+	StateImportAlias string
 }
 
 func (c *Config) Validate() error {
-	validObjectGroups := []string{
-		"core",
-		"g8s",
-	}
-
 	if c.Dir == "" {
 		return microerror.Maskf(invalidConfigError, "%T.Dir must not be empty", c)
 	}
-	if c.ObjectGroup == "" {
-		c.ObjectGroup = "core"
+	if c.ObjectFullType == "" {
+		return microerror.Maskf(invalidConfigError, "%T.ObjectFullType must not be empty", c)
 	}
-	if !xstrings.Contains(validObjectGroups, c.ObjectGroup) {
-		return microerror.Maskf(invalidConfigError, "%T.ObjectGroup must one of %v but got %#q", c, validObjectGroups, c.ObjectGroup)
-	}
-	if c.ObjectKind == "" {
-		return microerror.Maskf(invalidConfigError, "%T.ObjectKind must not be empty", c)
-	}
-	if c.ObjectVersion == "" {
-		return microerror.Maskf(invalidConfigError, "%T.ObjectVersion must not be empty", c)
+	if c.StateFullType == "" {
+		return microerror.Maskf(invalidConfigError, "%T.StateFullType must not be empty", c)
 	}
 
 	return nil
@@ -63,6 +57,11 @@ func New(config Config) (*Resource, error) {
 	return r, nil
 }
 
-func (r *Resource) CreateFile() input.File   { return file.NewCreate(r.params) }
-func (r *Resource) CurrentFile() input.File  { return file.NewCurrent(r.params) }
-func (r *Resource) ResourceFile() input.File { return file.NewResource(r.params) }
+func (r *Resource) CreateFile() input.Input  { return file.NewCreateInput(r.params) }
+func (r *Resource) CurrentFile() input.Input { return file.NewCurrentInput(r.params) }
+func (r *Resource) DeleteFile() input.Input  { return file.NewDeleteInput(r.params) }
+func (r *Resource) DesiredFile() input.Input { return file.NewDesiredInput(r.params) }
+func (r *Resource) ErrorFile() input.Input   { return file.NewErrorInput(r.params) }
+func (r *Resource) KeyFile() input.Input     { return file.NewKeyInput(r.params) }
+func (r *Resource) PatchFile() input.Input   { return file.NewPatchInput(r.params) }
+func (r *Resource) UpdateFile() input.Input  { return file.NewUpdateInput(r.params) }

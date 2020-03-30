@@ -7,38 +7,39 @@ import (
 )
 
 const (
-	flagDir           = "dir"
-	flagObjectGroup   = "object.group"
-	flagObjectKind    = "object.kind"
-	flagObjectVersion = "object.version"
+	flagDir               = "dir"
+	flagObjectFullType    = "object-full-type"
+	flagObjectImportAlias = "object-import-alias"
+	flagStateFullType     = "state-full-type"
+	flagStateImportAlias  = "state-import-alias"
 )
 
 type flag struct {
-	Dir           string
-	ObjectGroup   string
-	ObjectKind    string
-	ObjectVersion string
+	Dir               string
+	ObjectFullType    string
+	ObjectImportAlias string
+	StateFullType     string
+	StateImportAlias  string
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
+	// TODO update descs
 	cmd.Flags().StringVar(&f.Dir, flagDir, "", `Directory/package where the generated code should be located.`)
-	cmd.Flags().StringVar(&f.ObjectGroup, flagObjectGroup, "", `Group of the object reconciled by the resource, e.g. "apps".`)
-	cmd.Flags().StringVar(&f.ObjectKind, flagObjectKind, "", `Kind of the object reconciled by the resource, e.g. "Deployment".`)
-	cmd.Flags().StringVar(&f.ObjectVersion, flagObjectVersion, "", `Kind of the object reconciled by the resource, e.g. "v1".`)
+	cmd.Flags().StringVar(&f.ObjectFullType, flagObjectFullType, "", ``)
+	cmd.Flags().StringVar(&f.ObjectImportAlias, flagObjectImportAlias, "", ``)
+	cmd.Flags().StringVar(&f.StateFullType, flagStateFullType, "", ``)
+	cmd.Flags().StringVar(&f.StateImportAlias, flagStateImportAlias, "", ``)
 }
 
 func (f *flag) Validate() error {
 	if f.Dir == "" {
 		return microerror.Maskf(invalidFlagError, "--%s must not be empty", flagDir)
 	}
-	if f.ObjectGroup == "" {
-		return microerror.Maskf(invalidFlagError, "--%s must not be empty", flagObjectGroup)
+	if f.ObjectFullType == "" {
+		return microerror.Maskf(invalidFlagError, "--%s must not be empty", flagObjectFullType)
 	}
-	if f.ObjectKind == "" {
-		return microerror.Maskf(invalidFlagError, "--%s must not be empty", flagObjectKind)
-	}
-	if f.ObjectVersion == "" {
-		return microerror.Maskf(invalidFlagError, "--%s must not be empty", flagObjectVersion)
+	if f.StateFullType == "" {
+		return microerror.Maskf(invalidFlagError, "--%s must not be empty", flagStateFullType)
 	}
 
 	return nil

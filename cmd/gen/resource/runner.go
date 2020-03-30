@@ -39,10 +39,11 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
 	c := resource.Config{
-		Dir:           r.flag.Dir,
-		ObjectGroup:   r.flag.ObjectGroup,
-		ObjectKind:    r.flag.ObjectKind,
-		ObjectVersion: r.flag.ObjectVersion,
+		Dir:               r.flag.Dir,
+		ObjectFullType:    r.flag.ObjectFullType,
+		ObjectImportAlias: r.flag.ObjectImportAlias,
+		StateFullType:     r.flag.StateFullType,
+		StateImportAlias:  r.flag.StateImportAlias,
 	}
 
 	resourceInput, err := resource.New(c)
@@ -54,7 +55,12 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		ctx,
 		resourceInput.CreateFile(),
 		resourceInput.CurrentFile(),
-		resourceInput.ResourceFile(),
+		resourceInput.DeleteFile(),
+		resourceInput.DesiredFile(),
+		resourceInput.ErrorFile(),
+		resourceInput.KeyFile(),
+		resourceInput.PatchFile(),
+		resourceInput.UpdateFile(),
 	)
 	if gen.IsFilePath(err) {
 		fmt.Fprintf(r.stderr, "%s\n", err)

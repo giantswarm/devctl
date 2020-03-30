@@ -1,48 +1,33 @@
 package file
 
 import (
-	"context"
-	"path/filepath"
-
 	"github.com/giantswarm/devctl/pkg/gen/input"
 	"github.com/giantswarm/devctl/pkg/gen/input/resource/internal/params"
 )
 
-type Error struct {
-	dir string
-}
-
-func NewError(p params.Params) *Error {
-	f := &Error{
-		dir: p.Dir,
-	}
-
-	return f
-}
-
-func (f *Error) GetInput(ctx context.Context) (input.Input, error) {
+func NewErrorInput(p params.Params) input.Input {
 	i := input.Input{
-		Path:         filepath.Join(f.dir, params.RegenerableFileName("error.go")),
-		Scaffolding:  false,
+		Path:         params.RegenerableFileName(p, "error.go"),
 		TemplateBody: errorTemplate,
 		TemplateData: map[string]interface{}{
-			"Package": params.Package(f.dir),
+			"Package": params.Package(p),
 		},
 	}
 
-	return i, nil
+	return i
 }
 
 var errorTemplate = `package {{ .Package }}
 
-import "github.com/giantswarm/microerror"
+import (
+	"github.com/giantswarm/microerror"
+)
 
-var invalidConfigError = &microerror.Error{
-	Kind: "invalidConfigError",
+var wrongTypeError = &microerror.Error{
+	Kind: "wrongTypeError",
 }
 
-// IsInvalidConfig asserts invalidConfigError.
-func IsInvalidConfig(err error) bool {
-	return microerror.Cause(err) == invalidConfigError
+func IsWrongTypeError(err error) bool {
+	return microerror.Cause(err) == wrongTypeError
 }
 `

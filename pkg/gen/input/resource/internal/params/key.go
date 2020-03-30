@@ -1,46 +1,86 @@
 package params
 
 import (
-	"fmt"
-	"path"
+	"path/filepath"
+	"strings"
 
 	"github.com/giantswarm/devctl/pkg/gen/internal"
+	"github.com/giantswarm/microerror"
 )
 
-func ClientImport(objectGroup string) string {
-	switch objectGroup {
-	case "core":
-		return "k8s.io/client-go/kubernetes"
-	case "g8s":
-		return "github.com/giantswarm/apiextensions/pkg/clientset/versioned"
-	default:
-		// This is validated in Config.Validate. If this happens then
-		// this is a bug in the code.
-		panic(fmt.Sprintf("determine client import for group %#q", objectGroup))
+func Dir(params Params) string {
+	return params.Dir
+}
+
+func ObjectImport(params Params) string {
+	return extractImport(params.ObjectFullType)
+}
+
+func ObjectImportAlias(params Params) string {
+	return params.ObjectImportAlias
+}
+
+func ObjectType(params Params) string {
+	t := extractType(params.ObjectFullType)
+	if !strings.HasPrefix(t, "*") {
+		err := microerror.Maskf(invalidConfigError, "expected the watched object type = %q to be a pointer", params.ObjectFullType)
+		panic(microerror.Stack(err))
 	}
+
+	return strings.TrimLeft(t, "*")
 }
 
-func ClientPackage(objectGroup string) string {
-	return path.Base(ClientImport(objectGroup))
+func RegenerableFileName(params Params, suffix string) string {
+	return filepath.Join(params.Dir, internal.RegenerableFilePrefix+suffix)
 }
 
-func ObjectImport(objectGroup, objectVersion string) string {
-	switch objectGroup {
-	case "core":
-		return "k8s.io/api/" + objectGroup + "/" + objectVersion
-	case "g8s":
-		return "github.com/giantswarm/apiextensions/pkg/apis/" + objectGroup + "/" + objectVersion
-	default:
-		// This is validated in Config.Validate. If this happens then
-		// this is a bug in the code.
-		panic(fmt.Sprintf("determine object import for group %#q", objectGroup))
+func ScaffoldingFileName(params Params, suffix string) string {
+	return filepath.Join(params.Dir, suffix)
+}
+
+func StateImport(params Params) string {
+	return extractImport(params.StateFullType)
+}
+
+func StateImportAlias(params Params) string {
+	return params.StateImportAlias
+}
+
+func StateType(params Params) string {
+	return extractType(params.StateFullType)
+}
+
+func Package(params Params) string {
+	return filepath.Base(params.Dir)
+}
+
+// TODO test
+func extractImport(fullType string) string {
+	i := strings.LastIndex(fullType, ".")
+	if i <= 0 {
+		err := microerror.Maskf(invalidConfigError, "expected at least one \".\" character in full type = %q", fullType)
+		panic(microerror.Stack(err))
 	}
+	if len(fullType) < i+1 {
+		err := microerror.Maskf(invalidConfigError, "expected at least one character after last \".\" character in full type = %q", fullType)
+		panic(microerror.Stack(err))
+	}
+
+	return strings.TrimLeft(fullType[:i+1], "*")
 }
 
-func Package(dir string) string {
-	return path.Base(dir)
-}
+// TODO test
+func extractType(fullType string) string {
+	split := strings.Split(fullType, "/")
+	if len(split) == 0 {
+		err := microerror.Maskf(invalidConfigError, "expected at least one character after last \"/\" character in the fullType = %q", fullType)
+		panic(microerror.Stack(err))
+	}
 
-func RegenerableFileName(suffix string) string {
-	return internal.RegenerableFilePrefix + suffix
+	t := split[len(split)-1]
+	if strings.HasPrefix(fullType, "*") {
+		t = "*" + t
+	}
+
+	return t
 }

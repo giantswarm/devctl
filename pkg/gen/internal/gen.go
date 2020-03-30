@@ -10,17 +10,12 @@ import (
 	"github.com/giantswarm/microerror"
 )
 
-func Execute(ctx context.Context, w io.Writer, f input.File) error {
-	in, err := f.GetInput(ctx)
+func Execute(ctx context.Context, w io.Writer, f input.Input) error {
+	tmpl, err := template.New(fmt.Sprintf("%T", f)).Parse(f.TemplateBody)
 	if err != nil {
 		return microerror.Mask(err)
 	}
-
-	tmpl, err := template.New(fmt.Sprintf("%T", f)).Parse(in.TemplateBody)
-	if err != nil {
-		return microerror.Mask(err)
-	}
-	err = tmpl.Execute(w, in.TemplateData)
+	err = tmpl.Execute(w, f.TemplateData)
 	if err != nil {
 		return microerror.Mask(err)
 	}

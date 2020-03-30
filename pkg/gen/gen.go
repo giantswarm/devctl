@@ -13,7 +13,7 @@ import (
 	"github.com/giantswarm/devctl/pkg/gen/internal"
 )
 
-func Execute(ctx context.Context, files ...input.File) error {
+func Execute(ctx context.Context, files ...input.Input) error {
 	for _, f := range files {
 		err := execute(ctx, f)
 		if err != nil {
@@ -24,19 +24,14 @@ func Execute(ctx context.Context, files ...input.File) error {
 	return nil
 }
 
-func execute(ctx context.Context, file input.File) error {
-	in, err := file.GetInput(ctx)
-	if err != nil {
-		return microerror.Mask(err)
-	}
-
+func execute(ctx context.Context, file input.Input) error {
 	// Check if the file's directory exists. Error if it doesn't. If it does check if the
 	// file itself is a directory. Error if it is.
 	{
-		dir := path.Dir(in.Path)
+		dir := path.Dir(file.Path)
 		f, err := os.Stat(dir)
 		if os.IsNotExist(err) {
-			return microerror.Maskf(filePathError, "directory %#q for file %#q does not exist", dir, path.Base(in.Path))
+			return microerror.Maskf(filePathError, "directory %#q for file %#q does not exist", dir, path.Base(file.Path))
 		} else if err != nil {
 			return microerror.Mask(err)
 		}
@@ -49,14 +44,14 @@ func execute(ctx context.Context, file input.File) error {
 	// Check if file exist. If it does and it is not prefixed with
 	// "zz_generated." return.
 	{
-		base := filepath.Base(in.Path)
+		base := filepath.Base(file.Path)
 		if !strings.HasPrefix(base, internal.RegenerableFilePrefix) {
 			// Skip.
 			return nil
 		}
 	}
 
-	w, err := os.OpenFile(in.Path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	w, err := os.OpenFile(file.Path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	if err != nil {
 		return microerror.Mask(err)
 	}

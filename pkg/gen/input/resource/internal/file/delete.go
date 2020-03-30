@@ -1,36 +1,20 @@
 package file
 
 import (
-	"context"
-	"path/filepath"
-
 	"github.com/giantswarm/devctl/pkg/gen/input"
 	"github.com/giantswarm/devctl/pkg/gen/input/resource/internal/params"
 )
 
-type Delete struct {
-	dir string
-}
-
-func NewDelete(p params.Params) *Delete {
-	f := &Delete{
-		dir: p.Dir,
-	}
-
-	return f
-}
-
-func (f *Delete) GetInput(ctx context.Context) (input.Input, error) {
+func NewDeleteInput(p params.Params) input.Input {
 	i := input.Input{
-		Path:         filepath.Join(f.dir, params.RegenerableFileName("delete.go")),
-		Scaffolding:  false,
+		Path:         params.RegenerableFileName(p, "delete.go"),
 		TemplateBody: deleteTemplate,
 		TemplateData: map[string]interface{}{
-			"Package": params.Package(f.dir),
+			"Package": params.Package(p),
 		},
 	}
 
-	return i, nil
+	return i
 }
 
 var deleteTemplate = `package {{ .Package }}
@@ -41,17 +25,17 @@ import (
 	"github.com/giantswarm/microerror"
 )
 
-func (r *Resource) EnsureDeleted(ctx context.Context, obj interface{}) error {
-	current, err := r.stateGetter.GetDeleteCurrentState(ctx, obj)
+func (r *Resource) ApplyDeleteChange(ctx context.Context, obj, deleteChange interface{}) error {
+	typedObj, err := toTypedObject(obj)
 	if err != nil {
 		return microerror.Mask(err)
 	}
-	desired, err := r.stateGetter.GetDeleteDesiredState(ctx, obj)
+	toDelete, err := toTypedState(deleteChange)
 	if err != nil {
 		return microerror.Mask(err)
 	}
 
-	err = r.ensure(ctx, current, desired)
+	err = r.applyDeleteChange(ctx, typedObj, toDelete)
 	if err != nil {
 		return microerror.Mask(err)
 	}
