@@ -31,6 +31,9 @@ func (c *Client) GetFile(ctx context.Context, owner, repo, path, ref string) (Re
 		}
 
 		file, err = newRepositoryFile(fileContent)
+		if err != nil {
+			return RepositoryFile{}, microerror.Mask(err)
+		}
 	}
 
 	c.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("got %#q file content for owner %#q and repository %#q", path, owner, repo))

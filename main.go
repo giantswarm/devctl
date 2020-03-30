@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"os"
 
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
@@ -43,12 +42,14 @@ func mainE(ctx context.Context) error {
 		}
 
 		rootCommand, err = cmd.New(c)
+		if err != nil {
+			return microerror.Mask(err)
+		}
 	}
 
 	err = rootCommand.Execute()
 	if err != nil {
-		logger.LogCtx(ctx, "level", "error", "message", "failed to execute command", "stack", microerror.Stack(err))
-		os.Exit(1)
+		return microerror.Mask(err)
 	}
 
 	return nil

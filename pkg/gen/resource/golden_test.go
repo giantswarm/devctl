@@ -10,10 +10,11 @@ import (
 	"testing"
 	"unicode"
 
-	"github.com/giantswarm/devctl/pkg/gen/input"
-	"github.com/giantswarm/devctl/pkg/gen/internal"
 	"github.com/giantswarm/microerror"
 	"github.com/google/go-cmp/cmp"
+
+	"github.com/giantswarm/devctl/pkg/gen/input"
+	"github.com/giantswarm/devctl/pkg/gen/internal"
 )
 
 var update = flag.Bool("update", false, "update resource.golden file")
@@ -87,7 +88,10 @@ func Test_Resource(t *testing.T) {
 
 			golden := filepath.Join("testdata", normalizeToFileName(tc.name)+".golden")
 			if *update {
-				ioutil.WriteFile(golden, actual, 0644)
+				err := ioutil.WriteFile(golden, actual, 0644)
+				if err != nil {
+					t.Fatal(err)
+				}
 			}
 
 			expected, err := ioutil.ReadFile(golden)
@@ -106,7 +110,7 @@ func Test_Resource(t *testing.T) {
 // to dash ('-'). Coalesces multiple dashes into one.
 func normalizeToFileName(s string) string {
 	var result []rune
-	for _, r := range []rune(s) {
+	for _, r := range []rune(s) { // nolint:gosimple,staticcheck
 		if unicode.IsDigit(r) || unicode.IsLetter(r) {
 			result = append(result, r)
 		} else {

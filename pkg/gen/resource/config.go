@@ -18,15 +18,15 @@ type Config struct {
 
 func (c *Config) Validate() error {
 	validObjectGroups := []string{
-		"core",
-		"g8s",
+		core,
+		g8s,
 	}
 
 	if c.Dir == "" {
 		return microerror.Maskf(invalidConfigError, "%T.Dir must not be empty", c)
 	}
 	if c.ObjectGroup == "" {
-		c.ObjectGroup = "core"
+		c.ObjectGroup = core
 	}
 	if !containsString(validObjectGroups, c.ObjectGroup) {
 		return microerror.Maskf(invalidConfigError, "%T.ObjectGroup must one of %v but got %#q", c, validObjectGroups, c.ObjectGroup)

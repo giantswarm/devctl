@@ -5,8 +5,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/giantswarm/devctl/pkg/gen/input"
 	"github.com/giantswarm/microerror"
+
+	"github.com/giantswarm/devctl/pkg/gen/input"
 )
 
 type Create struct {

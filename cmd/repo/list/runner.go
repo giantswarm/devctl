@@ -7,11 +7,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/giantswarm/devctl/pkg/depclient"
-	"github.com/giantswarm/devctl/pkg/githubclient"
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
+
+	"github.com/giantswarm/devctl/pkg/depclient"
+	"github.com/giantswarm/devctl/pkg/githubclient"
 )
 
 const (

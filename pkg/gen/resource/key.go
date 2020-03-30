@@ -5,9 +5,14 @@ import (
 	"path"
 )
 
+const (
+	core = "core"
+	g8s  = "g8s"
+)
+
 func clientImport(objectGroup string) string {
 	switch objectGroup {
-	case "core":
+	case core:
 		return "k8s.io/client-go/kubernetes"
 	case "g8s":
 		return "github.com/giantswarm/apiextensions/pkg/clientset/versioned"
@@ -24,7 +29,7 @@ func clientPackage(objectGroup string) string {
 
 func objectImport(objectGroup, objectVersion string) string {
 	switch objectGroup {
-	case "core":
+	case core:
 		return "k8s.io/api/" + objectGroup + "/" + objectVersion
 	case "g8s":
 		return "github.com/giantswarm/apiextensions/pkg/apis/" + objectGroup + "/" + objectVersion

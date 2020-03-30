@@ -1,18 +1,16 @@
 module github.com/giantswarm/devctl
 
+go 1.13
+
 require (
 	github.com/bmatcuk/doublestar v1.1.5
-	github.com/giantswarm/apiextensions v0.0.0-20200220082851-d6884ee11480 // indirect
-	github.com/giantswarm/backoff v0.0.0-20200209120535-b7cb1852522d // indirect
-	github.com/giantswarm/k8sclient v0.0.0-20200120104955-1542917096d6
-	github.com/giantswarm/kubeconfig v0.0.0-20191209121754-c5784ae65a49
-	github.com/giantswarm/microerror v0.0.0-20190605150300-f446cc816a48
-	github.com/giantswarm/micrologger v0.0.0-20181128163930-39ed6a99d31b
-	github.com/go-kit/kit v0.10.0 // indirect
-	github.com/google/go-cmp v0.3.1
+	github.com/giantswarm/k8sclient v0.2.0
+	github.com/giantswarm/kubeconfig v0.2.0
+	github.com/giantswarm/microerror v0.2.0
+	github.com/giantswarm/micrologger v0.3.1
+	github.com/google/go-cmp v0.4.0
 	github.com/google/go-github v17.0.0+incompatible
 	github.com/google/go-querystring v1.0.0 // indirect
-	github.com/juju/errgo v0.0.0-20140925100237-08cceb5d0b53 // indirect
 	github.com/pelletier/go-toml v1.2.0
 	github.com/spf13/cobra v0.0.5
 	golang.org/x/oauth2 v0.0.0-20190604053449-0f29369cfe45
@@ -42,7 +40,4 @@ replace (
 	k8s.io/legacy-cloud-providers v0.0.0 => k8s.io/legacy-cloud-providers v0.16.6
 	k8s.io/metrics v0.0.0 => k8s.io/metrics v0.16.6
 	k8s.io/sample-apiserver v0.0.0 => k8s.io/sample-apiserver v0.16.6
-
 )
-
-go 1.13
