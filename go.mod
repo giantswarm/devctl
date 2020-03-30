@@ -14,7 +14,7 @@ require (
 	github.com/pelletier/go-toml v1.2.0
 	github.com/spf13/cobra v0.0.5
 	golang.org/x/oauth2 v0.0.0-20190604053449-0f29369cfe45
-	k8s.io/apimachinery v0.17.2
+	k8s.io/apimachinery v0.18.0
 	sigs.k8s.io/controller-runtime v0.5.0 // indirect
 )
 
