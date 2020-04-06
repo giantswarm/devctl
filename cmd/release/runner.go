@@ -64,6 +64,9 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		Tagger:  r.flag.Author,
 		Message: r.flag.TagName,
 	})
+	if err != nil {
+		return microerror.Mask(err)
+	}
 
 	_, err = r.replaceReleaseVersionWithNextWorkInProgress(worktree)
 	if err != nil {
