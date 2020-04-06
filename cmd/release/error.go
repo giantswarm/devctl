@@ -15,6 +15,18 @@ var invalidFlagError = &microerror.Error{
 	Kind: "invalidFlagError",
 }
 
+var wrongNumberOfVersionsFoundError = &microerror.Error{
+	Kind: "wrongNumberOfVersionsFoundError",
+}
+
+var tokenNotFoundError = &microerror.Error{
+	Kind: "tokenNotFoundError",
+}
+
+var unreachableRepositoryError = &microerror.Error{
+	Kind: "unreachableRepositoryError",
+}
+
 // IsInvalidFlag asserts invalidFlagError.
 func IsInvalidFlag(err error) bool {
 	return microerror.Cause(err) == invalidFlagError

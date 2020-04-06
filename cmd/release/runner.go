@@ -6,7 +6,6 @@ import (
 	"io"
 	"os/exec"
 
-	"github.com/coreos/go-semver/semver"
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
 	"github.com/google/go-github/github"
@@ -44,6 +43,16 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
 	var err error
+
+	fmt.Printf("Creating a new release for %s/%s", r.flag.Organization, r.flag.RepositoryName)
+	fmt.Println()
+	fmt.Printf("Current version: %s", r.flag.WorkInProgressVersion)
+	fmt.Println()
+	fmt.Printf("Releasing tag: %s", r.flag.CurrentVersion)
+	fmt.Println()
+	fmt.Printf("Next work in progress version: %s", r.flag.NextPatchWorkInProgressVersion)
+	fmt.Println()
+	fmt.Println()
 
 	repo, err := git.PlainOpen(r.flag.RepositoryPath)
 	if err != nil {
@@ -96,17 +105,19 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 
-	fmt.Printf("Github release '%s' created successfuly", r.flag.TagName)
+	fmt.Printf("Github release '%s' created successfuly!", r.flag.TagName)
 	fmt.Println()
-	fmt.Printf("Check that the workflow containing this job ends up successfully %s", *statuses[0].TargetURL)
-	fmt.Println()
+	if len(statuses) > 0 {
+		fmt.Printf("Check that the workflow containing this job ends up successfully %s", *statuses[0].TargetURL)
+		fmt.Println()
+	}
 
 	return nil
 }
 
 // replaceWorkInProgressVersionWithRelease replaces work in progress version with the release that we want to publish in the source code.
 func (r *runner) replaceWorkInProgressVersionWithRelease(worktree *git.Worktree) (plumbing.Hash, error) {
-	err := replaceVersionInFile(r.flag.WorkInProgressVersion, r.flag.Release)
+	err := replaceVersionInFile(r.flag.WorkInProgressVersion, r.flag.CurrentVersion)
 	if err != nil {
 		return plumbing.Hash{}, microerror.Mask(err)
 	}
@@ -121,15 +132,12 @@ func (r *runner) replaceWorkInProgressVersionWithRelease(worktree *git.Worktree)
 
 // replaceWorkInProgressVersionWithRelease replaces work in progress version with the release that we want to publish in the source code.
 func (r *runner) replaceReleaseVersionWithNextWorkInProgress(worktree *git.Worktree) (plumbing.Hash, error) {
-	nextPatchVersion := semver.New(r.flag.Release)
-	nextPatchVersion.BumpPatch()
-	nextPatchVersionWorkInProgress := fmt.Sprintf("%s-dev", nextPatchVersion.String())
-	err := replaceVersionInFile(r.flag.Release, nextPatchVersionWorkInProgress)
+	err := replaceVersionInFile(r.flag.CurrentVersion, r.flag.NextPatchWorkInProgressVersion)
 	if err != nil {
 		return plumbing.Hash{}, microerror.Mask(err)
 	}
 
-	commit, err := addAndCommitChanges(worktree, r.flag.Author, fmt.Sprintf("bump new work in progress version to %s", nextPatchVersionWorkInProgress))
+	commit, err := addAndCommitChanges(worktree, r.flag.Author, fmt.Sprintf("bump new work in progress version to %s", r.flag.NextPatchWorkInProgressVersion))
 	if err != nil {
 		return plumbing.Hash{}, microerror.Mask(err)
 	}
