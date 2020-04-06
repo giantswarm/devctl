@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strings"
+	"path/filepath"
 	"time"
 
 	"github.com/giantswarm/microerror"
@@ -21,7 +21,6 @@ type flag struct {
 	Organization          string
 	RepositoryName        string
 	Release               string
-	Repository            string
 	RepositoryPath        string
 	TagName               string
 	Token                 string
@@ -30,7 +29,8 @@ type flag struct {
 
 func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.Release, "release", "", `Release number that you want to publish.`)
-	cmd.Flags().StringVar(&f.Repository, "repository", "", `Repository of the code that you want to release.`)
+	cmd.Flags().StringVar(&f.Organization, "organization", "giantswarm", `Github organization owning the repository.`)
+	cmd.Flags().StringVar(&f.RepositoryName, "repositoryName", "", `Repository name on Github. Defaults to current directory.`)
 	cmd.Flags().StringVar(&f.RepositoryPath, "repositoryPath", "", `Path where the git repository lives in your file system.`)
 }
 
@@ -42,16 +42,13 @@ func (f *flag) Validate() error {
 	f.TagName = fmt.Sprintf("v%s", f.Release)
 	f.WorkInProgressVersion = fmt.Sprintf("%s-dev", f.Release)
 
-	if f.Repository == "" {
-		return microerror.Maskf(invalidFlagError, "--%s must not be empty. Format is owner/repo, like giantswarm/azure-operator.", "repository")
+	if f.RepositoryName == "" {
+		path, err := os.Getwd()
+		if err != nil {
+			return microerror.Mask(err)
+		}
+		f.RepositoryName = filepath.Base(path)
 	}
-
-	repoParts := strings.Split(f.Repository, "/")
-	if len(repoParts) != 2 {
-		return microerror.Maskf(invalidRepoError, "repository format is owner/repo, like giantswarm/azure-operator")
-	}
-	f.Organization = repoParts[0]
-	f.RepositoryName = repoParts[1]
 
 	f.Author, err = getAuthorFromGitConfigFile()
 	if err != nil {
