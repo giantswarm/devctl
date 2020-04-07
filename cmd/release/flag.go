@@ -20,8 +20,8 @@ import (
 )
 
 const (
-	WorkInProgressVersionRegex = `([0-9]+\.)([0-9]+\.)([0-9]+)-dev`
 	WorkInProgressSuffix       = "-dev"
+	WorkInProgressVersionRegex = `([0-9]+\.)([0-9]+\.)([0-9]+)` + WorkInProgressSuffix
 )
 
 type flag struct {
