@@ -147,7 +147,7 @@ func (r *runner) replaceReleaseVersionWithNextWorkInProgress(file string, worktr
 }
 
 func (r *runner) addAndCommitChanges(file string, worktree *git.Worktree, author *object.Signature, commitMessage string) (plumbing.Hash, error) {
-	_, err := worktree.Add(strings.TrimPrefix(file, r.flag.RepositoryPath + "/"))
+	_, err := worktree.Add(strings.TrimPrefix(file, r.flag.RepositoryPath+"/"))
 	if err != nil {
 		return plumbing.Hash{}, microerror.Mask(err)
 	}
