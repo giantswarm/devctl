@@ -165,7 +165,6 @@ func (r *runner) replaceVersionInFile(file, search, replaceWith string) error {
 		return microerror.Mask(err)
 	}
 	filecontents := string(f)
-	fmt.Println(filecontents)
 
 	if !strings.Contains(filecontents, search) {
 		return microerror.Maskf(NoVersionFoundInFileError, "No version was found in %s", file)
@@ -176,7 +175,6 @@ func (r *runner) replaceVersionInFile(file, search, replaceWith string) error {
 	if err != nil {
 		return microerror.Mask(err)
 	}
-	fmt.Println(string(updatedFileContents))
 
 	return nil
 }
