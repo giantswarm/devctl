@@ -10,8 +10,11 @@ import (
 )
 
 const (
-	name        = "release"
-	description = "Makes new operator release."
+	name             = "release"
+	shortDescription = "Creates new operator release."
+	description      = `Replaces version in operator code, normally in pkg/project/project.go.
+It will remove the work in progress suffix (-dev) from the version, commit the change and tag that commit to create a Github release from that tag.
+Finally, it will increase the patch version and add back the work in progress suffix.`
 )
 
 type Config struct {
@@ -42,7 +45,7 @@ func New(config Config) (*cobra.Command, error) {
 
 	c := &cobra.Command{
 		Use:   name,
-		Short: description,
+		Short: shortDescription,
 		Long:  description,
 		RunE:  r.Run,
 	}
