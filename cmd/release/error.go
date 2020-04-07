@@ -19,6 +19,10 @@ var wrongNumberOfVersionsFoundError = &microerror.Error{
 	Kind: "wrongNumberOfVersionsFoundError",
 }
 
+var NoVersionFoundInFileError = &microerror.Error{
+	Kind: "NoVersionFoundInFileError",
+}
+
 var tokenNotFoundError = &microerror.Error{
 	Kind: "tokenNotFoundError",
 }

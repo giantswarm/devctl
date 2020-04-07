@@ -4,7 +4,8 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os/exec"
+	"io/ioutil"
+	"strings"
 
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
@@ -15,8 +16,6 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/object"
 )
-
-const VersionFile = "pkg/project/project.go"
 
 type runner struct {
 	flag   *flag
@@ -65,7 +64,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 
-	commit, err := r.replaceWorkInProgressVersionWithRelease(worktree)
+	commit, err := r.replaceWorkInProgressVersionWithRelease(fmt.Sprintf("%s/%s", r.flag.RepositoryPath, VersionFile), worktree)
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -78,7 +77,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 
-	_, err = r.replaceReleaseVersionWithNextWorkInProgress(worktree)
+	_, err = r.replaceReleaseVersionWithNextWorkInProgress(fmt.Sprintf("%s/%s", r.flag.RepositoryPath, VersionFile), worktree)
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -118,13 +117,13 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 }
 
 // replaceWorkInProgressVersionWithRelease replaces work in progress version with the release that we want to publish in the source code.
-func (r *runner) replaceWorkInProgressVersionWithRelease(worktree *git.Worktree) (plumbing.Hash, error) {
-	err := replaceVersionInFile(r.flag.WorkInProgressVersion, r.flag.CurrentVersion)
+func (r *runner) replaceWorkInProgressVersionWithRelease(file string, worktree *git.Worktree) (plumbing.Hash, error) {
+	err := r.replaceVersionInFile(file, r.flag.WorkInProgressVersion, r.flag.CurrentVersion)
 	if err != nil {
 		return plumbing.Hash{}, microerror.Mask(err)
 	}
 
-	commit, err := addAndCommitChanges(worktree, r.flag.Author, fmt.Sprintf("release %s", r.flag.TagName))
+	commit, err := r.addAndCommitChanges(file, worktree, r.flag.Author, fmt.Sprintf("release %s", r.flag.TagName))
 	if err != nil {
 		return plumbing.Hash{}, microerror.Mask(err)
 	}
@@ -133,13 +132,13 @@ func (r *runner) replaceWorkInProgressVersionWithRelease(worktree *git.Worktree)
 }
 
 // replaceWorkInProgressVersionWithRelease replaces work in progress version with the release that we want to publish in the source code.
-func (r *runner) replaceReleaseVersionWithNextWorkInProgress(worktree *git.Worktree) (plumbing.Hash, error) {
-	err := replaceVersionInFile(r.flag.CurrentVersion, r.flag.NextPatchWorkInProgressVersion)
+func (r *runner) replaceReleaseVersionWithNextWorkInProgress(file string, worktree *git.Worktree) (plumbing.Hash, error) {
+	err := r.replaceVersionInFile(file, r.flag.CurrentVersion, r.flag.NextPatchWorkInProgressVersion)
 	if err != nil {
 		return plumbing.Hash{}, microerror.Mask(err)
 	}
 
-	commit, err := addAndCommitChanges(worktree, r.flag.Author, fmt.Sprintf("bump new work in progress version to %s", r.flag.NextPatchWorkInProgressVersion))
+	commit, err := r.addAndCommitChanges(file, worktree, r.flag.Author, fmt.Sprintf("bump new work in progress version to %s", r.flag.NextPatchWorkInProgressVersion))
 	if err != nil {
 		return plumbing.Hash{}, microerror.Mask(err)
 	}
@@ -147,8 +146,8 @@ func (r *runner) replaceReleaseVersionWithNextWorkInProgress(worktree *git.Workt
 	return commit, err
 }
 
-func addAndCommitChanges(worktree *git.Worktree, author *object.Signature, commitMessage string) (plumbing.Hash, error) {
-	_, err := worktree.Add(VersionFile)
+func (r *runner) addAndCommitChanges(file string, worktree *git.Worktree, author *object.Signature, commitMessage string) (plumbing.Hash, error) {
+	_, err := worktree.Add(strings.TrimPrefix(file, r.flag.RepositoryPath + "/"))
 	if err != nil {
 		return plumbing.Hash{}, microerror.Mask(err)
 	}
@@ -160,9 +159,24 @@ func addAndCommitChanges(worktree *git.Worktree, author *object.Signature, commi
 	return commit, microerror.Mask(err)
 }
 
-func replaceVersionInFile(search, replaceWith string) error {
-	sedCommand := fmt.Sprintf("s/%s/%s/", search, replaceWith)
-	command := exec.Command("sed", "-i", "-E", sedCommand, VersionFile)
+func (r *runner) replaceVersionInFile(file, search, replaceWith string) error {
+	f, err := ioutil.ReadFile(file)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+	filecontents := string(f)
+	fmt.Println(filecontents)
 
-	return microerror.Mask(command.Run())
+	if !strings.Contains(filecontents, search) {
+		return microerror.Maskf(NoVersionFoundInFileError, "No version was found in %s", file)
+	}
+
+	updatedFileContents := []byte(strings.Replace(filecontents, search, replaceWith, 1))
+	err = ioutil.WriteFile(file, updatedFileContents, 0)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+	fmt.Println(string(updatedFileContents))
+
+	return nil
 }

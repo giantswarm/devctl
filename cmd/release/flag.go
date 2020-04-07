@@ -20,6 +20,7 @@ import (
 )
 
 const (
+	VersionFile                = "pkg/project/project.go"
 	WorkInProgressSuffix       = "-dev"
 	WorkInProgressVersionRegex = `([0-9]+\.)([0-9]+\.)([0-9]+)` + WorkInProgressSuffix
 )
@@ -41,14 +42,15 @@ type flag struct {
 func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.GitConfigFile, "gitconfigfile", os.Getenv("HOME")+"/.gitconfig", `Path to the Git config file used to read user configuration.`)
 	cmd.Flags().StringVar(&f.Organization, "organization", "giantswarm", `Github organization owning the repository, used to publish the Github release.`)
-	cmd.Flags().StringVar(&f.RepositoryName, "repositoryName", "", `Repository name on Github. Defaults to current directory.`)
-	cmd.Flags().StringVar(&f.RepositoryPath, "repositoryPath", "", `Path where the git repository lives in your file system. Defaults to current directory.`)
+	cmd.Flags().StringVar(&f.RepositoryName, "repositoryname", "", `Repository name on Github. Defaults to current directory.`)
+	cmd.Flags().StringVar(&f.RepositoryPath, "repositorypath", "", `Path where the git repository lives in your file system. Defaults to current directory.`)
 }
 
 func (f *flag) Validate() error {
 	var err error
 
-	f.WorkInProgressVersion, f.CurrentVersion, f.NextPatchWorkInProgressVersion, err = getVersions()
+	f.RepositoryPath = strings.TrimSuffix(f.RepositoryPath, "/")
+	f.WorkInProgressVersion, f.CurrentVersion, f.NextPatchWorkInProgressVersion, err = getVersions(fmt.Sprintf("%s/%s", f.RepositoryPath, VersionFile))
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -100,8 +102,8 @@ func getAuthorFromGitConfigFile(gitconfigfile string) (*object.Signature, error)
 	return &object.Signature{Name: userConfig.Option("name"), Email: userConfig.Option("email"), When: time.Now()}, nil
 }
 
-func getVersions() (string, string, string, error) {
-	b, err := ioutil.ReadFile(VersionFile)
+func getVersions(file string) (string, string, string, error) {
+	b, err := ioutil.ReadFile(file)
 	if err != nil {
 		return "", "", "", microerror.Mask(err)
 	}
