@@ -46,11 +46,12 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 	fmt.Printf("Creating a new release for %s/%s", r.flag.Organization, r.flag.RepositoryName)
 	fmt.Println()
+	fmt.Println()
 	fmt.Printf("Current version: %s", r.flag.WorkInProgressVersion)
 	fmt.Println()
-	fmt.Printf("Releasing tag: %s", r.flag.CurrentVersion)
+	fmt.Printf("Releasing tag: %s", r.flag.TagName)
 	fmt.Println()
-	fmt.Printf("Next work in progress version: %s", r.flag.NextPatchWorkInProgressVersion)
+	fmt.Printf("Next Work In Progress version: %s", r.flag.NextPatchWorkInProgressVersion)
 	fmt.Println()
 	fmt.Println()
 
@@ -95,7 +96,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	ghrelease := &github.RepositoryRelease{
 		TagName: github.String(r.flag.TagName),
 	}
-	_, _, err = r.flag.Client.Repositories.CreateRelease(ctx, r.flag.Organization, r.flag.RepositoryName, ghrelease)
+	ghrepositoryRelease, _, err := r.flag.Client.Repositories.CreateRelease(ctx, r.flag.Organization, r.flag.RepositoryName, ghrelease)
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -105,10 +106,11 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 
-	fmt.Printf("Github release '%s' created successfuly!", r.flag.TagName)
+	fmt.Printf("Github release '%s' created successfully! %s", r.flag.TagName, *ghrepositoryRelease.HTMLURL)
 	fmt.Println()
 	if len(statuses) > 0 {
 		fmt.Printf("Check that the workflow containing this job ends up successfully %s", *statuses[0].TargetURL)
+		fmt.Println()
 		fmt.Println()
 	}
 

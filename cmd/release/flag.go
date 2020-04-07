@@ -28,6 +28,7 @@ type flag struct {
 	Author                         *object.Signature
 	Client                         *github.Client
 	CurrentVersion                 string
+	GitConfigFile                  string
 	NextPatchWorkInProgressVersion string
 	Organization                   string
 	RepositoryName                 string
@@ -38,9 +39,10 @@ type flag struct {
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
-	cmd.Flags().StringVar(&f.Organization, "organization", "giantswarm", `Github organization owning the repository.`)
+	cmd.Flags().StringVar(&f.GitConfigFile, "gitconfigfile", os.Getenv("HOME")+"/.gitconfig", `Path to the Git config file used to read user configuration.`)
+	cmd.Flags().StringVar(&f.Organization, "organization", "giantswarm", `Github organization owning the repository, used to publish the Github release.`)
 	cmd.Flags().StringVar(&f.RepositoryName, "repositoryName", "", `Repository name on Github. Defaults to current directory.`)
-	cmd.Flags().StringVar(&f.RepositoryPath, "repositoryPath", "", `Path where the git repository lives in your file system.`)
+	cmd.Flags().StringVar(&f.RepositoryPath, "repositoryPath", "", `Path where the git repository lives in your file system. Defaults to current directory.`)
 }
 
 func (f *flag) Validate() error {
@@ -61,7 +63,7 @@ func (f *flag) Validate() error {
 		f.RepositoryName = filepath.Base(path)
 	}
 
-	f.Author, err = getAuthorFromGitConfigFile()
+	f.Author, err = getAuthorFromGitConfigFile(f.GitConfigFile)
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -81,13 +83,13 @@ func (f *flag) Validate() error {
 	return nil
 }
 
-func getAuthorFromGitConfigFile() (*object.Signature, error) {
-	gitconfigfile, err := os.Open(os.Getenv("HOME") + "/.gitconfig")
+func getAuthorFromGitConfigFile(gitconfigfile string) (*object.Signature, error) {
+	configfile, err := os.Open(gitconfigfile)
 	if err != nil {
 		return &object.Signature{}, microerror.Mask(err)
 	}
 
-	d := formatConfig.NewDecoder(gitconfigfile)
+	d := formatConfig.NewDecoder(configfile)
 	gitconfig := formatConfig.New()
 	err = d.Decode(gitconfig)
 	if err != nil {
