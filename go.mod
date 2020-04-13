@@ -3,7 +3,7 @@ module github.com/giantswarm/devctl
 go 1.13
 
 require (
-	github.com/bmatcuk/doublestar v1.1.5
+	github.com/bmatcuk/doublestar v1.2.3
 	github.com/giantswarm/k8sclient v0.2.0
 	github.com/giantswarm/kubeconfig v0.2.0
 	github.com/giantswarm/microerror v0.2.0
