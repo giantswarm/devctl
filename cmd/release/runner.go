@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"regexp"
 	"strings"
+	"time"
 
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
@@ -64,7 +66,12 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 
-	commit, err := r.replaceWorkInProgressVersionWithRelease(fmt.Sprintf("%s/%s", r.flag.RepositoryPath, VersionFile), worktree)
+	_, err = r.replaceWorkInProgressVersionWithRelease(fmt.Sprintf("%s/%s", r.flag.RepositoryPath, VersionFile), worktree)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	commit, err := r.addReleaseToChangelog(fmt.Sprintf("%s/%s", r.flag.RepositoryPath, ChangelogFile), worktree)
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -177,4 +184,48 @@ func (r *runner) replaceVersionInFile(file, search, replaceWith string) error {
 	}
 
 	return nil
+}
+
+func (r *runner) addReleaseToChangelog(file string, worktree *git.Worktree) (plumbing.Hash, error) {
+	search := "## [Unreleased]"
+	replaceWith := fmt.Sprintf("## [Unreleased]\n\n## [%s] %s", r.flag.CurrentVersion, time.Now().Format("2006-01-02"))
+	f, err := ioutil.ReadFile(file)
+	if err != nil {
+		return plumbing.Hash{}, microerror.Mask(err)
+	}
+	filecontents := string(f)
+
+	if !strings.Contains(filecontents, search) {
+		return plumbing.Hash{}, microerror.Maskf(NoUnreleasedWorkFoundInChangelogError, "No unreleased work was found in %s", file)
+	}
+
+	updatedFileContents := []byte(strings.Replace(filecontents, search, replaceWith, 1))
+	err = ioutil.WriteFile(file, updatedFileContents, 0)
+	if err != nil {
+		return plumbing.Hash{}, microerror.Mask(err)
+	}
+
+	// Change [Unreleased] link
+	m1 := regexp.MustCompile(`(\[Unreleased]:)(.*)(v[0-9]+\.[0-9]+\.[0-9]+)`)
+	updatedFileContents = []byte(m1.ReplaceAllString(string(updatedFileContents), fmt.Sprintf("$1${2}%s$5", r.flag.TagName)))
+	err = ioutil.WriteFile(file, updatedFileContents, 0)
+	if err != nil {
+		return plumbing.Hash{}, microerror.Mask(err)
+	}
+
+	// Change new tag's link
+	taglink := fmt.Sprintf("https://github.com/%s/%s/releases/tag/%s", r.flag.Organization, r.flag.RepositoryName, r.flag.TagName)
+	m2 := regexp.MustCompile(`(\[Unreleased]:.*)`)
+	updatedFileContents = []byte(m2.ReplaceAllString(string(updatedFileContents), fmt.Sprintf("${1}\n[%s]: %s", r.flag.CurrentVersion, taglink)))
+	err = ioutil.WriteFile(file, updatedFileContents, 0)
+	if err != nil {
+		return plumbing.Hash{}, microerror.Mask(err)
+	}
+
+	commit, err := r.addAndCommitChanges("CHANGELOG.md", worktree, r.flag.Author, fmt.Sprintf("add release %s to changelog", r.flag.CurrentVersion))
+	if err != nil {
+		return plumbing.Hash{}, microerror.Mask(err)
+	}
+
+	return commit, nil
 }

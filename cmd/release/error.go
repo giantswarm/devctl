@@ -23,6 +23,10 @@ var NoVersionFoundInFileError = &microerror.Error{
 	Kind: "NoVersionFoundInFileError",
 }
 
+var NoUnreleasedWorkFoundInChangelogError = &microerror.Error{
+	Kind: "NoUnreleasedWorkFoundInChangelogError",
+}
+
 var tokenNotFoundError = &microerror.Error{
 	Kind: "tokenNotFoundError",
 }

@@ -20,6 +20,7 @@ import (
 )
 
 const (
+	ChangelogFile              = "CHANGELOG.md"
 	VersionFile                = "pkg/project/project.go"
 	WorkInProgressSuffix       = "-dev"
 	WorkInProgressVersionRegex = `([0-9]+\.)([0-9]+\.)([0-9]+)` + WorkInProgressSuffix
