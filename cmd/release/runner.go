@@ -96,7 +96,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 
-	if ! r.flag.ReviewReleaseBeforeMerging {
+	if !r.flag.ReviewReleaseBeforeMerging {
 		_, err = repo.CreateTag(r.flag.TagName, commit, &git.CreateTagOptions{
 			Tagger:  r.flag.Author,
 			Message: r.flag.TagName,
