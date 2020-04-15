@@ -2,6 +2,10 @@ package release
 
 import "github.com/giantswarm/microerror"
 
+var executionFailedError = &microerror.Error{
+	Kind: "executionFailedError",
+}
+
 var invalidConfigError = &microerror.Error{
 	Kind: "invalidConfigError",
 }
@@ -17,14 +21,6 @@ var invalidFlagError = &microerror.Error{
 
 var wrongNumberOfVersionsFoundError = &microerror.Error{
 	Kind: "wrongNumberOfVersionsFoundError",
-}
-
-var NoVersionFoundInFileError = &microerror.Error{
-	Kind: "NoVersionFoundInFileError",
-}
-
-var NoUnreleasedWorkFoundInChangelogError = &microerror.Error{
-	Kind: "NoUnreleasedWorkFoundInChangelogError",
 }
 
 var tokenNotFoundError = &microerror.Error{

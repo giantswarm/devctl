@@ -66,25 +66,22 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 
-	_, err = r.replaceWorkInProgressVersionWithRelease(fmt.Sprintf("%s/%s", r.flag.RepositoryPath, VersionFile), worktree)
+	if r.flag.ReviewReleaseBeforeMerging {
+		err := worktree.Checkout(&git.CheckoutOptions{
+			Branch: plumbing.ReferenceName(r.flag.BranchName),
+			Create: true,
+		})
+		if err != nil {
+			return microerror.Mask(err)
+		}
+	}
+
+	_, err = r.replaceWorkInProgressVersionWithRelease(r.flag.VersionFile, worktree)
 	if err != nil {
 		return microerror.Mask(err)
 	}
 
-	commit, err := r.addReleaseToChangelog(fmt.Sprintf("%s/%s", r.flag.RepositoryPath, ChangelogFile), worktree)
-	if err != nil {
-		return microerror.Mask(err)
-	}
-
-	_, err = repo.CreateTag(r.flag.TagName, commit, &git.CreateTagOptions{
-		Tagger:  r.flag.Author,
-		Message: r.flag.TagName,
-	})
-	if err != nil {
-		return microerror.Mask(err)
-	}
-
-	_, err = r.replaceReleaseVersionWithNextWorkInProgress(fmt.Sprintf("%s/%s", r.flag.RepositoryPath, VersionFile), worktree)
+	commit, err := r.addReleaseToChangelog(r.flag.ChangelogFile, worktree)
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -99,23 +96,52 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 
-	ghrelease := &github.RepositoryRelease{
-		TagName: github.String(r.flag.TagName),
-	}
-	ghrepositoryRelease, _, err := r.flag.Client.Repositories.CreateRelease(ctx, r.flag.Organization, r.flag.RepositoryName, ghrelease)
-	if err != nil {
-		return microerror.Mask(err)
-	}
+	if ! r.flag.ReviewReleaseBeforeMerging {
+		_, err = repo.CreateTag(r.flag.TagName, commit, &git.CreateTagOptions{
+			Tagger:  r.flag.Author,
+			Message: r.flag.TagName,
+		})
+		if err != nil {
+			return microerror.Mask(err)
+		}
 
-	statuses, _, err := r.flag.Client.Repositories.ListStatuses(ctx, r.flag.Organization, r.flag.RepositoryName, commit.String(), &github.ListOptions{})
-	if err != nil {
-		return microerror.Mask(err)
-	}
+		commit, err := r.replaceReleaseVersionWithNextWorkInProgress(r.flag.VersionFile, worktree)
+		if err != nil {
+			return microerror.Mask(err)
+		}
 
-	fmt.Printf("Github release '%s' created successfully! %s", r.flag.TagName, *ghrepositoryRelease.HTMLURL)
-	fmt.Println()
-	if len(statuses) > 0 {
-		fmt.Printf("Check that the workflow containing this job ends up successfully %s", *statuses[0].TargetURL)
+		err = repo.PushContext(ctx, &git.PushOptions{
+			RefSpecs: []config.RefSpec{
+				"refs/heads/*:refs/heads/*",
+				"refs/tags/*:refs/tags/*",
+			},
+		})
+		if err != nil {
+			return microerror.Mask(err)
+		}
+
+		ghrelease := &github.RepositoryRelease{
+			TagName: github.String(r.flag.TagName),
+		}
+		ghrepositoryRelease, _, err := r.flag.Client.Repositories.CreateRelease(ctx, r.flag.Organization, r.flag.RepositoryName, ghrelease)
+		if err != nil {
+			return microerror.Mask(err)
+		}
+
+		statuses, _, err := r.flag.Client.Repositories.ListStatuses(ctx, r.flag.Organization, r.flag.RepositoryName, commit.String(), &github.ListOptions{})
+		if err != nil {
+			return microerror.Mask(err)
+		}
+
+		fmt.Printf("Github release '%s' created successfully! %s", r.flag.TagName, *ghrepositoryRelease.HTMLURL)
+		fmt.Println()
+		if len(statuses) > 0 {
+			fmt.Printf("Check that the workflow containing this job ends up successfully %s", *statuses[0].TargetURL)
+			fmt.Println()
+			fmt.Println()
+		}
+	} else {
+		fmt.Printf("Create a pull request by visiting: http://github.com/%s/%s/pull/new/%s", r.flag.Organization, r.flag.RepositoryName, r.flag.BranchName)
 		fmt.Println()
 		fmt.Println()
 	}
@@ -174,7 +200,7 @@ func (r *runner) replaceVersionInFile(file, search, replaceWith string) error {
 	filecontents := string(f)
 
 	if !strings.Contains(filecontents, search) {
-		return microerror.Maskf(NoVersionFoundInFileError, "No version was found in %s", file)
+		return microerror.Maskf(executionFailedError, "No version was found in %s", file)
 	}
 
 	updatedFileContents := []byte(strings.Replace(filecontents, search, replaceWith, 1))
@@ -187,6 +213,7 @@ func (r *runner) replaceVersionInFile(file, search, replaceWith string) error {
 }
 
 func (r *runner) addReleaseToChangelog(file string, worktree *git.Worktree) (plumbing.Hash, error) {
+	// Add new entry to changelog
 	search := "## [Unreleased]"
 	replaceWith := fmt.Sprintf("## [Unreleased]\n\n## [%s] %s", r.flag.CurrentVersion, time.Now().Format("2006-01-02"))
 	f, err := ioutil.ReadFile(file)
@@ -196,7 +223,7 @@ func (r *runner) addReleaseToChangelog(file string, worktree *git.Worktree) (plu
 	filecontents := string(f)
 
 	if !strings.Contains(filecontents, search) {
-		return plumbing.Hash{}, microerror.Maskf(NoUnreleasedWorkFoundInChangelogError, "No unreleased work was found in %s", file)
+		return plumbing.Hash{}, microerror.Maskf(executionFailedError, "No unreleased work was found in %s", file)
 	}
 
 	updatedFileContents := []byte(strings.Replace(filecontents, search, replaceWith, 1))
@@ -205,18 +232,9 @@ func (r *runner) addReleaseToChangelog(file string, worktree *git.Worktree) (plu
 		return plumbing.Hash{}, microerror.Mask(err)
 	}
 
-	// Change [Unreleased] link
-	m1 := regexp.MustCompile(`(\[Unreleased]:)(.*)(v[0-9]+\.[0-9]+\.[0-9]+)`)
-	updatedFileContents = []byte(m1.ReplaceAllString(string(updatedFileContents), fmt.Sprintf("$1${2}%s$5", r.flag.TagName)))
-	err = ioutil.WriteFile(file, updatedFileContents, 0)
-	if err != nil {
-		return plumbing.Hash{}, microerror.Mask(err)
-	}
-
-	// Change new tag's link
-	taglink := fmt.Sprintf("https://github.com/%s/%s/releases/tag/%s", r.flag.Organization, r.flag.RepositoryName, r.flag.TagName)
-	m2 := regexp.MustCompile(`(\[Unreleased]:.*)`)
-	updatedFileContents = []byte(m2.ReplaceAllString(string(updatedFileContents), fmt.Sprintf("${1}\n[%s]: %s", r.flag.CurrentVersion, taglink)))
+	// Update links at the bottom
+	m1 := regexp.MustCompile(`^(\[Unreleased]:)(.*)(v[0-9]+\.[0-9]+\.[0-9]+)(...HEAD)\n`)
+	updatedFileContents = []byte(m1.ReplaceAllString(string(updatedFileContents), fmt.Sprintf("$1${2}%s...HEAD\n\n[${3}]: https://github.com/%s/%s/compare/${3}...%s", r.flag.TagName, r.flag.Organization, r.flag.RepositoryName, r.flag.TagName)))
 	err = ioutil.WriteFile(file, updatedFileContents, 0)
 	if err != nil {
 		return plumbing.Hash{}, microerror.Mask(err)

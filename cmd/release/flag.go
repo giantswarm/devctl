@@ -28,6 +28,8 @@ const (
 
 type flag struct {
 	Author                         *object.Signature
+	BranchName                     string
+	ChangelogFile                  string
 	Client                         *github.Client
 	CurrentVersion                 string
 	GitConfigFile                  string
@@ -35,8 +37,10 @@ type flag struct {
 	Organization                   string
 	RepositoryName                 string
 	RepositoryPath                 string
+	ReviewReleaseBeforeMerging     bool
 	TagName                        string
 	Token                          string
+	VersionFile                    string
 	WorkInProgressVersion          string
 }
 
@@ -45,18 +49,27 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.Organization, "organization", "giantswarm", `Github organization owning the repository, used to publish the Github release.`)
 	cmd.Flags().StringVar(&f.RepositoryName, "repositoryname", "", `Repository name on Github. Defaults to current directory.`)
 	cmd.Flags().StringVar(&f.RepositoryPath, "repositorypath", "", `Path where the git repository lives in your file system. Defaults to current directory.`)
+	cmd.Flags().BoolVar(&f.ReviewReleaseBeforeMerging, "reviewreleasebeforemerging", true, `Whether or not to create a pull request to review the release. When false it will commit to master.`)
 }
 
 func (f *flag) Validate() error {
 	var err error
 
 	f.RepositoryPath = strings.TrimSuffix(f.RepositoryPath, "/")
-	f.WorkInProgressVersion, f.CurrentVersion, f.NextPatchWorkInProgressVersion, err = getVersions(fmt.Sprintf("%s/%s", f.RepositoryPath, VersionFile))
+	f.ChangelogFile = fmt.Sprintf("%s/%s", f.RepositoryPath, ChangelogFile)
+	f.VersionFile = fmt.Sprintf("%s/%s", f.RepositoryPath, VersionFile)
+	if f.RepositoryPath == "" {
+		f.ChangelogFile = ChangelogFile
+		f.VersionFile = VersionFile
+	}
+
+	f.WorkInProgressVersion, f.CurrentVersion, f.NextPatchWorkInProgressVersion, err = getVersions(f.VersionFile)
 	if err != nil {
 		return microerror.Mask(err)
 	}
 
 	f.TagName = fmt.Sprintf("v%s", f.CurrentVersion)
+	f.BranchName = fmt.Sprintf("release-%s", f.TagName)
 
 	if f.RepositoryName == "" {
 		path, err := os.Getwd()
