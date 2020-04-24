@@ -88,7 +88,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 
-	commit, err := r.addReleaseToChangelog(r.flag.ChangelogFile, worktree)
+	commit, err := r.commitChangesToChangelog(r.flag.ChangelogFile, worktree)
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -221,30 +221,18 @@ func (r *runner) replaceVersionInFile(file, search, replaceWith string) error {
 	return nil
 }
 
-func (r *runner) addReleaseToChangelog(file string, worktree *git.Worktree) (plumbing.Hash, error) {
-	// Add new entry to changelog
-	search := "## [Unreleased]"
-	replaceWith := fmt.Sprintf("## [Unreleased]\n\n## [%s] %s", r.flag.CurrentVersion, time.Now().Format("2006-01-02"))
+func (r *runner) commitChangesToChangelog(file string, worktree *git.Worktree) (plumbing.Hash, error) {
 	f, err := ioutil.ReadFile(file)
 	if err != nil {
 		return plumbing.Hash{}, microerror.Mask(err)
 	}
-	filecontents := string(f)
 
-	if !strings.Contains(filecontents, search) {
-		return plumbing.Hash{}, microerror.Maskf(executionFailedError, "No unreleased work was found in %s", file)
-	}
-
-	updatedFileContents := []byte(strings.Replace(filecontents, search, replaceWith, 1))
-	err = ioutil.WriteFile(file, updatedFileContents, 0)
+	updatedFileContents, err := addReleaseToChangelog(string(f), time.Now().Format("2006-01-02"), r.flag.CurrentVersion, fmt.Sprintf("%s/%s", r.flag.Organization, r.flag.RepositoryName))
 	if err != nil {
 		return plumbing.Hash{}, microerror.Mask(err)
 	}
 
-	// Update links at the bottom
-	m1 := regexp.MustCompile(`^(\[Unreleased]:)(.*)(v[0-9]+\.[0-9]+\.[0-9]+)(...HEAD)\n`)
-	updatedFileContents = []byte(m1.ReplaceAllString(string(updatedFileContents), fmt.Sprintf("$1${2}%s...HEAD\n\n[${3}]: https://github.com/%s/%s/compare/${3}...%s", r.flag.TagName, r.flag.Organization, r.flag.RepositoryName, r.flag.TagName)))
-	err = ioutil.WriteFile(file, updatedFileContents, 0)
+	err = ioutil.WriteFile(file, []byte(updatedFileContents), 0)
 	if err != nil {
 		return plumbing.Hash{}, microerror.Mask(err)
 	}
@@ -255,4 +243,22 @@ func (r *runner) addReleaseToChangelog(file string, worktree *git.Worktree) (plu
 	}
 
 	return commit, nil
+}
+
+func addReleaseToChangelog(filecontent, date, currentVersion, repository string) (string, error) {
+	tagname := fmt.Sprintf("v%s", currentVersion)
+	search := "## [Unreleased]"
+	if !strings.Contains(filecontent, search) {
+		return "", microerror.Maskf(executionFailedError, "No '[Unreleased]' work was found")
+	}
+
+	// Add new entry to changelog
+	replaceWith := fmt.Sprintf("## [Unreleased]\n\n## [%s] %s", currentVersion, date)
+	updatedFileContents := strings.Replace(filecontent, search, replaceWith, 1)
+
+	// Update links at the bottom
+	bottomLinks := regexp.MustCompile(`(\[Unreleased]:)(.*)(v[0-9]+\.[0-9]+\.[0-9]+)(...HEAD)\n`)
+	updatedFileContents = bottomLinks.ReplaceAllString(updatedFileContents, fmt.Sprintf("$1${2}%s...HEAD\n\n[%s]: https://github.com/%s/compare/${3}...%s", tagname, currentVersion, repository, tagname))
+
+	return updatedFileContents, nil
 }
