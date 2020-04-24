@@ -61,14 +61,21 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 
+	headRef, err := repo.Head()
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	branchName := plumbing.NewBranchReferenceName(r.flag.BranchName)
 	worktree, err := repo.Worktree()
 	if err != nil {
 		return microerror.Mask(err)
 	}
 
 	if r.flag.ReviewReleaseBeforeMerging {
-		err := worktree.Checkout(&git.CheckoutOptions{
-			Branch: plumbing.ReferenceName(r.flag.BranchName),
+		err = worktree.Checkout(&git.CheckoutOptions{
+			Hash:   headRef.Hash(),
+			Branch: branchName,
 			Create: true,
 		})
 		if err != nil {
@@ -91,6 +98,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 			"refs/heads/*:refs/heads/*",
 			"refs/tags/*:refs/tags/*",
 		},
+		RemoteName: "origin",
 	})
 	if err != nil {
 		return microerror.Mask(err)
@@ -115,6 +123,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 				"refs/heads/*:refs/heads/*",
 				"refs/tags/*:refs/tags/*",
 			},
+			RemoteName: "origin",
 		})
 		if err != nil {
 			return microerror.Mask(err)
