@@ -11,9 +11,10 @@ import (
 	"strings"
 
 	"github.com/Masterminds/semver"
-	"github.com/giantswarm/devctl/pkg/gen/input"
 	"github.com/giantswarm/microerror"
 	"golang.org/x/net/html"
+
+	"github.com/giantswarm/devctl/pkg/gen/input"
 )
 
 var amiTemplate = `// NOTE: This file is generated. Do not edit.
