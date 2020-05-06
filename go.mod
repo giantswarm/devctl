@@ -3,6 +3,7 @@ module github.com/giantswarm/devctl
 go 1.13
 
 require (
+	github.com/Masterminds/semver/v3 v3.1.0
 	github.com/bmatcuk/doublestar v1.1.5
 	github.com/giantswarm/k8sclient v0.2.0
 	github.com/giantswarm/kubeconfig v0.2.0
@@ -13,6 +14,7 @@ require (
 	github.com/google/go-querystring v1.0.0 // indirect
 	github.com/pelletier/go-toml v1.2.0
 	github.com/spf13/cobra v0.0.5
+	golang.org/x/net v0.0.0-20191004110552-13f9640d40b9
 	golang.org/x/oauth2 v0.0.0-20190604053449-0f29369cfe45
 	k8s.io/apimachinery v0.17.2
 	sigs.k8s.io/controller-runtime v0.5.0 // indirect
