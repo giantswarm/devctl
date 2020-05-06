@@ -8,6 +8,7 @@ import (
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
 
+	"github.com/giantswarm/devctl/cmd/gen/ami"
 	"github.com/giantswarm/devctl/cmd/gen/kubeconfig"
 	"github.com/giantswarm/devctl/cmd/gen/resource"
 )
@@ -35,6 +36,20 @@ func New(config Config) (*cobra.Command, error) {
 	}
 
 	var err error
+
+	var amiCmd *cobra.Command
+	{
+		c := ami.Config{
+			Logger: config.Logger,
+			Stderr: config.Stderr,
+			Stdout: config.Stdout,
+		}
+
+		amiCmd, err = ami.New(c)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+	}
 
 	var kubeconfigCmd *cobra.Command
 	{
@@ -82,6 +97,7 @@ func New(config Config) (*cobra.Command, error) {
 
 	f.Init(c)
 
+	c.AddCommand(amiCmd)
 	c.AddCommand(kubeconfigCmd)
 	c.AddCommand(resourceCmd)
 
