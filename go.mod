@@ -3,7 +3,7 @@ module github.com/giantswarm/devctl
 go 1.13
 
 require (
-	github.com/Masterminds/semver v1.5.0
+	github.com/Masterminds/semver/v3 v3.1.0
 	github.com/bmatcuk/doublestar v1.1.5
 	github.com/giantswarm/k8sclient v0.2.0
 	github.com/giantswarm/kubeconfig v0.2.0
