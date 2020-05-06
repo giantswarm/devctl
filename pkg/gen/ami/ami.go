@@ -60,11 +60,6 @@ func NewAMI(config Config) (*AMI, error) {
 	return f, nil
 }
 
-type sourceFileTemplateData struct {
-	AMIInfoString string
-	Package       string
-}
-
 type amiInfo struct {
 	Name string `json:"name"`
 	PV   string `json:"pv"`
