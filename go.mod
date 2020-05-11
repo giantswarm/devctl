@@ -5,12 +5,14 @@ go 1.13
 require (
 	github.com/Masterminds/semver/v3 v3.1.0
 	github.com/bmatcuk/doublestar v1.1.5
+	github.com/docker/docker v0.7.3-0.20190327010347-be7ac8be2ae0
 	github.com/giantswarm/k8sclient v0.2.0
 	github.com/giantswarm/kubeconfig v0.2.0
 	github.com/giantswarm/microerror v0.2.0
 	github.com/giantswarm/micrologger v0.3.1
 	github.com/google/go-github v17.0.0+incompatible
 	github.com/google/go-querystring v1.0.0 // indirect
+	github.com/opencontainers/runc v0.1.1 // indirect
 	github.com/pelletier/go-toml v1.2.0
 	github.com/spf13/cobra v0.0.5
 	golang.org/x/net v0.0.0-20191004110552-13f9640d40b9
