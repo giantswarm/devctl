@@ -10,7 +10,6 @@ import (
 
 	"github.com/giantswarm/devctl/cmd/gen/ami"
 	"github.com/giantswarm/devctl/cmd/gen/kubeconfig"
-	"github.com/giantswarm/devctl/cmd/gen/resource"
 )
 
 const (
@@ -65,20 +64,6 @@ func New(config Config) (*cobra.Command, error) {
 		}
 	}
 
-	var resourceCmd *cobra.Command
-	{
-		c := resource.Config{
-			Logger: config.Logger,
-			Stderr: config.Stderr,
-			Stdout: config.Stdout,
-		}
-
-		resourceCmd, err = resource.New(c)
-		if err != nil {
-			return nil, microerror.Mask(err)
-		}
-	}
-
 	f := &flag{}
 
 	r := &runner{
@@ -99,7 +84,6 @@ func New(config Config) (*cobra.Command, error) {
 
 	c.AddCommand(amiCmd)
 	c.AddCommand(kubeconfigCmd)
-	c.AddCommand(resourceCmd)
 
 	return c, nil
 }
