@@ -5,9 +5,11 @@ import (
 )
 
 type Config struct {
-	Arch           string
-	Channel        string
-	ChinaDomain    string
+	Arch        string
+	Channel     string
+	ChinaDomain string
+	// Dir is the name of the directory where the files of the resource
+	// should be generated.
 	Dir            string
 	MinimumVersion string
 	PrimaryDomain  string

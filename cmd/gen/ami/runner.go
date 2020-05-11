@@ -9,7 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/pkg/gen"
-	"github.com/giantswarm/devctl/pkg/gen/ami"
+	"github.com/giantswarm/devctl/pkg/gen/input/ami"
 )
 
 type runner struct {
@@ -36,23 +36,21 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 }
 
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
-	c := ami.Config{
-		Arch:           r.flag.Arch,
-		Channel:        r.flag.Channel,
-		ChinaDomain:    r.flag.ChinaDomain,
-		Dir:            r.flag.Dir,
-		MinimumVersion: r.flag.MinimumVersion,
-		PrimaryDomain:  r.flag.PrimaryDomain,
+	c := ami.Config(*r.flag)
+
+	amiInput, err := ami.New(c)
+	if err != nil {
+		return microerror.Mask(err)
 	}
 
-	amiFile, err := ami.NewAMI(c)
+	err = amiInput.Boot(ctx)
 	if err != nil {
 		return microerror.Mask(err)
 	}
 
 	err = gen.Execute(
 		ctx,
-		amiFile,
+		amiInput.AMIFile(),
 	)
 	if err != nil {
 		return microerror.Mask(err)
