@@ -60,7 +60,7 @@ func (f *AMI) GetInput(ctx context.Context) (input.Input, error) {
 		return input.Input{}, microerror.Mask(err)
 	}
 	i := input.Input{
-		Path:         filepath.Join(f.dir, "ami.go"),
+		Path:         filepath.Join(f.dir, "zz_generated.ami.go"),
 		TemplateBody: amiTemplate,
 		TemplateData: templateData,
 	}
