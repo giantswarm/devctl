@@ -23,8 +23,9 @@ package {{ .Package }}
 
 import "encoding/json"
 
-var amiJSON = []byte({{ .AMIInfoString }})
 var amiInfo = map[string]map[string]string{}
+
+var amiJSON = []byte({{ .AMIInfoString }})
 
 func init() {
 	err := json.Unmarshal(amiJSON, &amiInfo)
