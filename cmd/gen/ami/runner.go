@@ -54,10 +54,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		ctx,
 		amiInput.AMIFile(),
 	)
-	if gen.IsFilePath(err) {
-		fmt.Fprintf(r.stderr, "%s\n", err)
-		os.Exit(1)
-	} else if err != nil {
+	if err != nil {
 		return microerror.Mask(err)
 	}
 
