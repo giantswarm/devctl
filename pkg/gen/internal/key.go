@@ -19,7 +19,7 @@ const (
 
 // Package returns Go package name for the give directory.
 func Package(dir string) string {
-	abs, err := filepath.Abs(p.Dir)
+	abs, err := filepath.Abs(dir)
 	if err != nil {
 		panic(fmt.Sprintf("filepath.Abs: %s", err))
 	}
@@ -36,5 +36,5 @@ func Package(dir string) string {
 // compatible with regenerated files as they are not updated in subsequent
 // generator executions.
 func RegenerableFileName(dir, suffix string) string {
-	return filepath.Join(params.Dir, internal.RegenerableFilePrefix+suffix)
+	return filepath.Join(dir, RegenerableFilePrefix+suffix)
 }
