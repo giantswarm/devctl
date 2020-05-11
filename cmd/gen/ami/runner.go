@@ -2,9 +2,7 @@ package ami
 
 import (
 	"context"
-	"fmt"
 	"io"
-	"os"
 
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
