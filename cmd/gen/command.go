@@ -10,6 +10,7 @@ import (
 
 	"github.com/giantswarm/devctl/cmd/gen/ami"
 	"github.com/giantswarm/devctl/cmd/gen/kubeconfig"
+	"github.com/giantswarm/devctl/cmd/gen/makefile"
 )
 
 const (
@@ -64,6 +65,20 @@ func New(config Config) (*cobra.Command, error) {
 		}
 	}
 
+	var makefileCmd *cobra.Command
+	{
+		c := makefile.Config{
+			Logger: config.Logger,
+			Stderr: config.Stderr,
+			Stdout: config.Stdout,
+		}
+
+		makefileCmd, err = makefile.New(c)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+	}
+
 	f := &flag{}
 
 	r := &runner{
@@ -84,6 +99,7 @@ func New(config Config) (*cobra.Command, error) {
 
 	c.AddCommand(amiCmd)
 	c.AddCommand(kubeconfigCmd)
+	c.AddCommand(makefileCmd)
 
 	return c, nil
 }
