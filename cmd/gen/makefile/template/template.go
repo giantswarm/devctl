@@ -5,7 +5,12 @@ type TemplateConfig struct {
 	Application string
 }
 
-var Makefile = `APPLICATION   ?= {{.Application}}
+var Makefile = `# DO NOT EDIT. Generated with:
+#
+#    devctl gen makefile
+#
+
+APPLICATION   ?= {{.Application}}
 VERSION       ?= $(shell git describe --tags --always --dirty)
 SOURCES       = $(shell find . -name '*.go')
 GOPKGS        = $(shell go list ./...)
