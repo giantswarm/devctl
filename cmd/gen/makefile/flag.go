@@ -11,17 +11,16 @@ const (
 )
 
 type flag struct {
-	App    string
-	Output string
+	Dir         string
+	Application string
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
-	cmd.Flags().StringVar(&f.App, app, "", `Name of the application, this will be the name of the go binary.`)
-	cmd.Flags().StringVar(&f.Output, "output", "", `Where you want the generated Makefile to be saved`)
+	cmd.Flags().StringVar(&f.Application, app, "", `Name of the application, this will be the name of the go binary.`)
 }
 
 func (f *flag) Validate() error {
-	if f.App == "" {
+	if f.Application == "" {
 		return microerror.Maskf(invalidFlagError, "--%s must not be empty", app)
 	}
 

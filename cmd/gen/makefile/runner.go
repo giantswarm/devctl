@@ -4,9 +4,9 @@ import (
 	"context"
 	"io"
 	"os"
-	"text/template"
 
-	mtemplate "github.com/giantswarm/devctl/cmd/gen/makefile/template"
+	"github.com/giantswarm/devctl/pkg/gen"
+	"github.com/giantswarm/devctl/pkg/gen/input/makefile"
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
@@ -36,27 +36,28 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 }
 
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
-	var err error
-	var temp = template.New("Makefile")
-	t := template.Must(temp.Parse(mtemplate.Makefile))
-	data := mtemplate.TemplateConfig{
-		Application: r.flag.App,
+	c := makefile.Config(*r.flag)
+
+	makefileInput, err := makefile.New(c)
+	if err != nil {
+		return microerror.Mask(err)
 	}
 
-	if r.flag.Output == "" {
-		err = t.Execute(os.Stdout, data)
-		if err != nil {
-			return microerror.Mask(err)
-		}
-	} else {
-		file, err := os.Create(r.flag.Output)
-		if err != nil {
-			return microerror.Mask(err)
-		}
-		err = t.Execute(file, data)
-		if err != nil {
-			return microerror.Mask(err)
-		}
+	err = makefileInput.Params(ctx)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+	_, err = os.Create("Makefile")
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	err = gen.Execute(
+		ctx,
+		makefileInput.Makefile(),
+	)
+	if err != nil {
+		return microerror.Mask(err)
 	}
 
 	return nil
