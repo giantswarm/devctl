@@ -3,7 +3,6 @@ package makefile
 import (
 	"context"
 	"io"
-	"os"
 
 	"github.com/giantswarm/devctl/pkg/gen"
 	"github.com/giantswarm/devctl/pkg/gen/input/makefile"
@@ -44,10 +43,6 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	}
 
 	err = makefileInput.Params(ctx)
-	if err != nil {
-		return microerror.Mask(err)
-	}
-	_, err = os.Create("Makefile")
 	if err != nil {
 		return microerror.Mask(err)
 	}
