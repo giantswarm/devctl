@@ -22,7 +22,7 @@ var makefileTemplate = `# DO NOT EDIT. Generated with:
 #    devctl gen makefile
 #
 
-APPLICATION    ?= {{.Application}}
+APPLICATION    ?= $(shell basename $(go list .))
 VERSION        ?= $(shell architect project version)
 GITSHA1        = $(shell git rev-parse --verify HEAD)
 BUILDTIMESTAMP = $(shell date -u '+%FT%TZ')
