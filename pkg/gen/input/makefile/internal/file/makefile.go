@@ -2,16 +2,13 @@ package file
 
 import (
 	"github.com/giantswarm/devctl/pkg/gen/input"
-	"github.com/giantswarm/devctl/pkg/gen/input/makefile/internal/params"
 )
 
-func NewMakefileInput(p params.Params) input.Input {
+func NewMakefileInput() input.Input {
 	i := input.Input{
-		Path:         params.RegenerableFileName(p, "Makefile"),
+		Path:         "Makefile",
 		TemplateBody: makefileTemplate,
-		TemplateData: map[string]interface{}{
-			"Application": params.Application(p),
-		},
+		TemplateData: map[string]interface{}{},
 	}
 
 	return i
@@ -22,7 +19,7 @@ var makefileTemplate = `# DO NOT EDIT. Generated with:
 #    devctl gen makefile
 #
 
-APPLICATION    ?= $(shell basename $(go list .))
+APPLICATION    ?= $(shell basename $(shell go list .))
 VERSION        ?= $(shell architect project version)
 GITSHA1        = $(shell git rev-parse --verify HEAD)
 BUILDTIMESTAMP = $(shell date -u '+%FT%TZ')

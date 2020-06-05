@@ -13,7 +13,6 @@ import (
 )
 
 type runner struct {
-	flag   *flag
 	logger micrologger.Logger
 	stdout io.Writer
 	stderr io.Writer
@@ -22,12 +21,7 @@ type runner struct {
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 
-	err := r.flag.Validate()
-	if err != nil {
-		return microerror.Mask(err)
-	}
-
-	err = r.run(ctx, cmd, args)
+	err := r.run(ctx, cmd, args)
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -36,14 +30,7 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 }
 
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
-	c := makefile.Config(*r.flag)
-
-	makefileInput, err := makefile.New(c)
-	if err != nil {
-		return microerror.Mask(err)
-	}
-
-	err = makefileInput.Params(ctx)
+	makefileInput, err := makefile.New()
 	if err != nil {
 		return microerror.Mask(err)
 	}
