@@ -28,7 +28,8 @@ GITSHA1        = $(shell git rev-parse --verify HEAD)
 BUILDTIMESTAMP = $(shell date -u '+%FT%TZ')
 LDFLAGS        ?= -w -linkmode 'auto' -extldflags '-static' \
   -X '$(go list .)/pkg/project.buildTimestamp=${BUILDTIMESTAMP}' \
-  -X '$(go list .)/pkg/project.gitSHA=${GITSHA1}'
+  -X '$(go list .)/pkg/project.gitSHA=${GITSHA1}' \
+  -X '$(go list .)/pkg/project.version=${VERSION}'
 default: build
 
 .PHONY: build
