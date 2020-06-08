@@ -58,6 +58,7 @@ run:
 .PHONY: clean
 ## clean: cleans the binary
 clean:
+	rm -f $(APPLICATION)*
 	go clean
 
 .PHONY: lint
