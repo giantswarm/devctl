@@ -49,7 +49,7 @@ build-darwin: clean
 .PHONY: install
 ## install: install the application
 install:
-	go install .
+	go install -ldflags "$(LDFLAGS)" .
 
 .PHONY: run
 ## run: runs go run main.go
