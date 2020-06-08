@@ -29,22 +29,21 @@ LDFLAGS        ?= -w -linkmode 'auto' -extldflags '-static' \
   -X '$(shell go list .)/pkg/project.buildTimestamp=${BUILDTIMESTAMP}' \
   -X '$(shell go list .)/pkg/project.gitSHA=${GITSHA1}' \
   -X '$(shell go list .)/pkg/project.version=${VERSION}'
-default: build
+.DEFAULT_GOAL := build
 
-.PHONY: build
+.PHONY: build build-darwin build-linux
 ## build: builds a local binary
-build: clean
-	CGO_ENABLED=0 go build -o ${APPLICATION} .
+build: $(APPLICATION)
+## build-darwin: builds a local binary for darwin/amd64
+build-darwin: $(APPLICATION)-darwin
+## build-linux: builds a local binary for linux/amd64
+build-linux: $(APPLICATION)-linux
 
-.PHONY: build-linux
-## build-linux: builds binary for linux/amd64
-build-linux: clean
-	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build .
+$(APPLICATION): $(APPLICATION)-$(OS)
+	cp -a $< $@
 
-.PHONY: build-darwin
-## build-darwin: builds binary for darwin/amd64
-build-darwin: clean
-	GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build .
+$(APPLICATION)-%: $(SOURCES)
+	GOOS=$* GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o $@ .
 
 .PHONY: install
 ## install: install the application
