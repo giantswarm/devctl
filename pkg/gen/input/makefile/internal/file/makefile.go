@@ -19,10 +19,12 @@ var makefileTemplate = `# DO NOT EDIT. Generated with:
 #    devctl gen makefile
 #
 
-APPLICATION    ?= $(shell basename $(shell go list .))
-VERSION        ?= $(shell architect project version)
-GITSHA1        = $(shell git rev-parse --verify HEAD)
-BUILDTIMESTAMP = $(shell date -u '+%FT%TZ')
+APPLICATION    := $(shell basename $(shell go list .))
+BUILDTIMESTAMP := $(shell date -u '+%FT%TZ')
+GITSHA1        := $(shell git rev-parse --verify HEAD)
+OS             := $(shell go env GOOS)
+SOURCES        := $(shell find . -name '*.go')
+VERSION        := $(shell architect project version)
 LDFLAGS        ?= -w -linkmode 'auto' -extldflags '-static' \
   -X '$(go list .)/pkg/project.buildTimestamp=${BUILDTIMESTAMP}' \
   -X '$(go list .)/pkg/project.gitSHA=${GITSHA1}' \
