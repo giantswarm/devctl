@@ -54,7 +54,7 @@ install:
 .PHONY: run
 ## run: runs go run main.go
 run:
-	go run -race .
+	go run -ldflags "$(LDFLAGS)" -race .
 
 .PHONY: clean
 ## clean: cleans the binary
