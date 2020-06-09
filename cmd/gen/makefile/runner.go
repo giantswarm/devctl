@@ -1,0 +1,47 @@
+package makefile
+
+import (
+	"context"
+	"io"
+
+	"github.com/giantswarm/microerror"
+	"github.com/giantswarm/micrologger"
+	"github.com/spf13/cobra"
+
+	"github.com/giantswarm/devctl/pkg/gen"
+	"github.com/giantswarm/devctl/pkg/gen/input/makefile"
+)
+
+type runner struct {
+	logger micrologger.Logger
+	stdout io.Writer
+	stderr io.Writer
+}
+
+func (r *runner) Run(cmd *cobra.Command, args []string) error {
+	ctx := context.Background()
+
+	err := r.run(ctx, cmd, args)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	return nil
+}
+
+func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
+	makefileInput, err := makefile.New()
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	err = gen.Execute(
+		ctx,
+		makefileInput.Makefile(),
+	)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	return nil
+}

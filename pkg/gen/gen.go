@@ -41,14 +41,8 @@ func execute(ctx context.Context, file input.Input) error {
 		}
 	}
 
-	// Check if file exist. If it does and it is not prefixed with
-	// "zz_generated." return.
-	{
-		base := filepath.Base(file.Path)
-		if !strings.HasPrefix(base, internal.RegenerableFilePrefix) {
-			// Skip.
-			return nil
-		}
+	if !isRegenerable(file.Path) {
+		return nil
 	}
 
 	w, err := os.OpenFile(file.Path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
@@ -63,4 +57,21 @@ func execute(ctx context.Context, file input.Input) error {
 	}
 
 	return nil
+}
+
+// isRegenerable returns true if the file should be overridden with the
+// regenerated content. All files with "zz_generated." prefix qualify for that
+// but there are also some exceptions usually when the name is conventional.
+func isRegenerable(path string) bool {
+	base := filepath.Base(path)
+
+	if base == "Makefile" {
+		return true
+	}
+
+	if strings.HasPrefix(base, internal.RegenerableFilePrefix) {
+		return true
+	}
+
+	return false
 }
