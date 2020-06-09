@@ -69,7 +69,7 @@ lint:
 .PHONY: test
 ## test: runs go test with default values
 test:
-	go test -ldflags "$(LDFLAGS)" -race -cover ./...
+	go test -ldflags "$(LDFLAGS)" -race ./...
 
 .PHONY: build-docker
 ## build-docker: builds docker image to registry
