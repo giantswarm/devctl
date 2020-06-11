@@ -15,3 +15,7 @@ func NewCRUD() (*CRUD, error) {
 func (m *CRUD) CRUD() input.Input {
 	return file.NewCRUDInput()
 }
+
+func (m *CRUD) Patch() input.Input {
+	return file.NewPatchInput()
+}
