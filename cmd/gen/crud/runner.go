@@ -30,34 +30,18 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 }
 
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
-	{
-		crudInput, err := crud.NewCRUD()
-		if err != nil {
-			return microerror.Mask(err)
-		}
-
-		err = gen.Execute(
-			ctx,
-			crudInput.CRUD(),
-		)
-		if err != nil {
-			return microerror.Mask(err)
-		}
+	crudInput, err := crud.NewCRUD()
+	if err != nil {
+		return microerror.Mask(err)
 	}
 
-	{
-		patchInput, err := crud.NewPatch()
-		if err != nil {
-			return microerror.Mask(err)
-		}
-
-		err = gen.Execute(
-			ctx,
-			patchInput.Patch(),
-		)
-		if err != nil {
-			return microerror.Mask(err)
-		}
+	err = gen.Execute(
+		ctx,
+		crudInput.CRUD(),
+		crudInput.Patch(),
+	)
+	if err != nil {
+		return microerror.Mask(err)
 	}
 
 	return nil
