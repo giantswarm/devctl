@@ -14,8 +14,9 @@ const (
 	description = "Generates legacy CRUD interface files for operator projects."
 	example     = `
     Migrating a handler using the legacy CRUD interface can be done using the following
-    script. Note that this does not fix the handler wiring in the controller file, which
-    still needs to be done manually.
+    script. Note that the script must be executed within the handler package you want to
+    refactor. Note that the script does not fix the handler wiring in the controller file,
+    which still needs to be done manually.
 
     $ cat crud.sh
     #!/bin/bash

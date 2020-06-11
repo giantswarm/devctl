@@ -1,15 +1,29 @@
 package file
 
 import (
+	"os"
+	"path/filepath"
+
 	"github.com/giantswarm/devctl/pkg/gen/input"
 	"github.com/giantswarm/devctl/pkg/gen/internal"
 )
 
 func NewCRUDInput() input.Input {
+	var dir string
+	{
+		wd, err := os.Getwd()
+		if err != nil {
+			panic(err)
+		}
+		dir = filepath.Base(wd)
+	}
+
 	i := input.Input{
 		Path:         internal.RegenerableFilePrefix + "crud.go",
 		TemplateBody: crudTemplate,
-		TemplateData: map[string]interface{}{},
+		TemplateData: map[string]interface{}{
+			"pkg": dir,
+		},
 	}
 
 	return i
@@ -18,7 +32,7 @@ func NewCRUDInput() input.Input {
 var crudTemplate = `// NOTE this file is copied from operatorkit for migration purposes. The goal
 // here is to get rid of the crud primitive and move to the implementation of
 // the new handler interface eventually.
-package certconfig
+package {{ .pkg }}
 
 import (
 	"context"
