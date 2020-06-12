@@ -61,6 +61,11 @@ clean:
 	rm -f $(APPLICATION)*
 	go clean
 
+.PHONY: imports
+## imports: runs goimports
+imports:
+	goimports -local $(shell go list .) -w .
+
 .PHONY: lint
 ## lint: runs golangci-lint
 lint:
