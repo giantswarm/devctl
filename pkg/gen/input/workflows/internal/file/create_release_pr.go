@@ -18,7 +18,11 @@ func NewCreateReleasePRInput(p params.Params) input.Input {
 	return i
 }
 
-var createReleasePRTemplate = `name: Create Release PR
+var createReleasePRTemplate = `# DO NOT EDIT. Generated with:
+#
+#    devctl gen workflows
+#
+name: Create Release PR
 on:
   create:
     branches:

@@ -18,7 +18,11 @@ func NewCreateReleaseInput(p params.Params) input.Input {
 	return i
 }
 
-var createReleaseTemplate = `name: Create Release
+var createReleaseTemplate = `# DO NOT EDIT. Generated with:
+#
+#    devctl gen workflows
+#
+name: Create Release
 on:
   push:
     branches:
