@@ -12,7 +12,16 @@ import (
 )
 
 func Execute(ctx context.Context, w io.Writer, f input.Input) error {
-	tmpl, err := template.New(fmt.Sprintf("%T", f)).Parse(f.TemplateBody)
+	var err error
+
+	tmpl := template.New(fmt.Sprintf("%T", f))
+
+	emptyDelims := input.InputTemplateDelims{}
+	if f.TemplateDelims != emptyDelims {
+		tmpl = tmpl.Delims(f.TemplateDelims.Left, f.TemplateDelims.Right)
+	}
+
+	tmpl, err = tmpl.Parse(f.TemplateBody)
 	if err != nil {
 		return microerror.Mask(err)
 	}

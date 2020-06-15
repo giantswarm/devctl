@@ -25,19 +25,22 @@ func Execute(ctx context.Context, files ...input.Input) error {
 }
 
 func execute(ctx context.Context, file input.Input) error {
-	// Check if the file's directory exists. Error if it doesn't. If it does check if the
-	// file itself is a directory. Error if it is.
+	// Create the file's directory if it doesn't exist. Check if the file
+	// itself is a directory. Error if it is.
 	{
 		dir := path.Dir(file.Path)
-		f, err := os.Stat(dir)
-		if os.IsNotExist(err) {
-			return microerror.Maskf(filePathError, "directory %#q for file %#q does not exist", dir, path.Base(file.Path))
-		} else if err != nil {
+		err := os.MkdirAll(dir, 0755)
+		if err != nil {
 			return microerror.Mask(err)
 		}
 
-		if !f.IsDir() {
-			return microerror.Maskf(filePathError, "file %#q is not a directory", dir)
+		f, err := os.Stat(file.Path)
+		if os.IsNotExist(err) {
+			// Fall trough.
+		} else if err != nil {
+			return microerror.Mask(err)
+		} else if f.IsDir() {
+			return microerror.Maskf(filePathError, "file %#q is a directory", file.Path)
 		}
 	}
 

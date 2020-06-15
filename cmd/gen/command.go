@@ -12,6 +12,7 @@ import (
 	"github.com/giantswarm/devctl/cmd/gen/crud"
 	"github.com/giantswarm/devctl/cmd/gen/kubeconfig"
 	"github.com/giantswarm/devctl/cmd/gen/makefile"
+	"github.com/giantswarm/devctl/cmd/gen/workflows"
 )
 
 const (
@@ -94,6 +95,20 @@ func New(config Config) (*cobra.Command, error) {
 		}
 	}
 
+	var workflowsCmd *cobra.Command
+	{
+		c := workflows.Config{
+			Logger: config.Logger,
+			Stderr: config.Stderr,
+			Stdout: config.Stdout,
+		}
+
+		workflowsCmd, err = workflows.New(c)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+	}
+
 	f := &flag{}
 
 	r := &runner{
@@ -116,6 +131,7 @@ func New(config Config) (*cobra.Command, error) {
 	c.AddCommand(crudCmd)
 	c.AddCommand(kubeconfigCmd)
 	c.AddCommand(makefileCmd)
+	c.AddCommand(workflowsCmd)
 
 	return c, nil
 }
