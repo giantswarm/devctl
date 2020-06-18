@@ -9,4 +9,12 @@ type Input struct {
 	TemplateBody string
 	// TemplateData defines data for the template defined in TemplateBody.
 	TemplateData interface{}
+	// TemplateDelims are used to call
+	// https://golang.org/pkg/text/template/#Template.Delims if set.
+	TemplateDelims InputTemplateDelims
+}
+
+type InputTemplateDelims struct {
+	Left  string
+	Right string
 }
