@@ -4,10 +4,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const (
-	flagDir = "dir"
-)
-
 type flag struct {
 }
 
