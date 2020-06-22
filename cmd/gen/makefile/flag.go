@@ -1,6 +1,7 @@
 package makefile
 
 import (
+	"github.com/giantswarm/microerror"
 	"github.com/spf13/cobra"
 )
 
@@ -21,5 +22,9 @@ func (f *flag) Init(cmd *cobra.Command) {
 }
 
 func (f *flag) Validate() error {
+	if f.Flavour != flavourApp && f.Flavour != flavourCLI && f.Flavour != flavourOperator {
+		return microerror.Maskf(invalidFlagError, "--%s must be one of <app|cli|operator>", flavour)
+	}
+
 	return nil
 }
