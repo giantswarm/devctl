@@ -29,6 +29,8 @@ on:
       - 'master#release#v*.*.*'
       - 'legacy#release#v*.*.*'
       - 'release-v*.*.x#release#v*.*.*'
+      # "!" negates previous positive patterns so it has to be at the end.
+      - '!release-v*.x.x#release#v*.*.*'
 jobs:
   debug_info:
     name: Debug info
