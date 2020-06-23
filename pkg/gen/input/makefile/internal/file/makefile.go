@@ -35,7 +35,6 @@ var makefileTemplate = `# DO NOT EDIT. Generated with:
 
 {{- if eq .CurrentFlavour .FlavourCLI}}
 
-GOVERSION      := 1.14.2
 PACKAGE_DIR    := ./bin-dist
 
 {{- end}}
