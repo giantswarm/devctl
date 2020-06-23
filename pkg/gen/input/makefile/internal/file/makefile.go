@@ -69,14 +69,12 @@ package-darwin: $(APPLICATION)-package-darwin
 package-linux: $(APPLICATION)-package-linux
 
 $(APPLICATION)-package-%: $(SOURCES)
-	docker run --rm \
-    		-v $(shell pwd):/$(APPLICATION) \
-    		-w /$(APPLICATION) \
-    		-e GOOS=$* -e GOARCH=amd64 \
-    		golang:$(GOVERSION)-alpine go build \
-    		-ldflags "$(LDFLAGS)" \
-    		-o $(APPLICATION)-$(VERSION)-$*-amd64
+	@$(MAKE) $(APPLICATION)-$*
+	@$(MAKE) $(APPLICATION)-rename-binary-$*
 	@$(MAKE) $(APPLICATION)-archive-$*
+
+$(APPLICATION)-rename-binary-%:
+	cp $(APPLICATION)-$* $(APPLICATION)-$(VERSION)-$*-amd64
 
 $(APPLICATION)-archive-%:
 	mkdir -p $(PACKAGE_DIR)
