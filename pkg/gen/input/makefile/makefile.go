@@ -8,6 +8,7 @@ import (
 const (
 	FlavourApp = iota
 	FlavourCLI
+	FlavourLibrary
 	FlavourOperator
 )
 
@@ -28,6 +29,7 @@ func (m *Makefile) Makefile() input.Input {
 		CurrentFlavour:  m.flavour,
 		FlavourApp:      FlavourApp,
 		FlavourCLI:      FlavourCLI,
+		FlavourLibrary:  FlavourLibrary,
 		FlavourOperator: FlavourOperator,
 	}
 

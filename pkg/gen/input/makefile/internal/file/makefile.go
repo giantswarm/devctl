@@ -8,6 +8,7 @@ type Config struct {
 	CurrentFlavour  int
 	FlavourApp      int
 	FlavourCLI      int
+	FlavourLibrary  int
 	FlavourOperator int
 }
 
@@ -19,6 +20,7 @@ func NewMakefileInput(c Config) input.Input {
 			"CurrentFlavour":  c.CurrentFlavour,
 			"FlavourApp":      c.FlavourApp,
 			"FlavourCLI":      c.FlavourCLI,
+			"FlavourLibrary":  c.FlavourLibrary,
 			"FlavourOperator": c.FlavourOperator,
 		},
 	}

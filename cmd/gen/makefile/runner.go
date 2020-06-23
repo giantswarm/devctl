@@ -64,6 +64,9 @@ func mapFlavourTypeToMakeFileFlavour(f string) int {
 	case flavourOperator:
 		return makefile.FlavourOperator
 
+	case flavourLibrary:
+		return makefile.FlavourLibrary
+
 	default:
 		return makefile.FlavourOperator
 	}
