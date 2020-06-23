@@ -37,6 +37,10 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
 	flavour, err := mapFlavourTypeToMakeFileFlavour(r.flag.Flavour)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
 	makefileInput, err := makefile.New(flavour)
 	if err != nil {
 		return microerror.Mask(err)
@@ -68,6 +72,6 @@ func mapFlavourTypeToMakeFileFlavour(f string) (int, error) {
 		return makefile.FlavourLibrary, nil
 
 	default:
-		return 0, microerror.Maskf(invalidFlagError, "the picked flavour is invalid", flavour)
+		return 0, microerror.Maskf(invalidFlagError, "the picked flavour is invalid")
 	}
 }
