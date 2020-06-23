@@ -67,7 +67,7 @@ package-darwin: $(APPLICATION)-package-darwin
 package-linux: $(APPLICATION)-package-linux
 
 $(APPLICATION)-package-%: $(SOURCES)
-	docker run --rm -it \
+	docker run --rm \
     		-v $(shell pwd):/$(APPLICATION) \
     		-w /$(APPLICATION) \
     		-e GOOS=$* -e GOARCH=amd64 \
