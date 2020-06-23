@@ -28,7 +28,7 @@ on:
     branches:
       - 'master#release#v*.*.*'
       - 'legacy#release#v*.*.*'
-      - 'release-v*.x.x#release#v*.*.*'
+      - 'release-v*.*.x#release#v*.*.*'
 jobs:
   debug_info:
     name: Debug info
