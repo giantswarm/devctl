@@ -69,13 +69,13 @@ $(APPLICATION)-rename-binary-%:
 	cp $(APPLICATION)-$* $(APPLICATION)-$(VERSION)-$*-amd64
 
 $(APPLICATION)-archive-%:
-	mkdir -p $(PACKAGE_DIR)
+	mkdir -p $(PACKAGE_DIR)/$(APPLICATION)-$(VERSION)-$*-amd64
+	mv $(APPLICATION)-$(VERSION)-$*-amd64 $(PACKAGE_DIR)/$(APPLICATION)-$(VERSION)-$*-amd64
+	cp ./{README.md,LICENSE} $(PACKAGE_DIR)/$(APPLICATION)-$(VERSION)-$*-amd64
+	cd $(PACKAGE_DIR)/ && \
 	tar -cvzf $(APPLICATION)-$(VERSION)-$*-amd64.tar.gz \
-		$(APPLICATION)-$(VERSION)-$*-amd64 \
-		README.md \
-		LICENSE
-	mv $(APPLICATION)-$(VERSION)-$*-amd64.tar.gz $(PACKAGE_DIR)/$(APPLICATION)-$(VERSION)-$*-amd64.tar.gz
-	rm -rf $(APPLICATION)-$(VERSION)-$*-amd64
+		$(APPLICATION)-$(VERSION)-$*-amd64
+	rm -rf $(PACKAGE_DIR)/$(APPLICATION)-$(VERSION)-$*-amd64
 
 {{- end}}
 
