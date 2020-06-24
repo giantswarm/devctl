@@ -40,7 +40,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 	var c workflows.Config
 	{
-		c.Flavour, err = mapFlavourTypeToMakeFileFlavour(r.flag.Flavour)
+		c.Flavour, err = mapFlavourTypeToWorkflowFlavour(r.flag.Flavour)
 		if err != nil {
 			return microerror.Mask(err)
 		}
@@ -63,7 +63,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	return nil
 }
 
-func mapFlavourTypeToMakeFileFlavour(f string) (int, error) {
+func mapFlavourTypeToWorkflowFlavour(f string) (int, error) {
 	switch f {
 	case flavourApp:
 		return workflows.FlavourApp, nil
