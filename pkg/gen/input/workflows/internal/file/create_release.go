@@ -174,6 +174,8 @@ jobs:
     needs:
       - gather_facts
     if: ${{ needs.gather_facts.outputs.version }}
+    outputs:
+      upload_url: ${{ steps.create_gh_release.outputs.upload_url }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
@@ -196,6 +198,7 @@ jobs:
         run: |
           git push "${REMOTE_REPO}" --tags
       - name: Create release
+        id: create_gh_release
         uses: actions/create-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -205,7 +208,101 @@ jobs:
 
 {{- if eq .CurrentFlavour .FlavourCLI}}
 
-
+  install_architect:
+    name: Install architect
+    runs-on: ubuntu-18.04
+    env:
+      BINARY: "architect"
+      DIR: "/opt/cache"
+      IMAGE: "quay.io/giantswarm/architect"
+      IMAGE_PATH: "/usr/bin/architect"
+      VERSION: "1.2.0"
+    outputs:
+      cache_key: "${{ steps.get_cache_key.outputs.cache_key }}"
+    steps:
+      - name: Get cache key
+        id: get_cache_key
+        run: |
+          cache_key="install-${{ env.BINARY }}-${{ env.VERSION }}"
+          echo "::set-output name=cache_key::${cache_key}"
+      - name: Cache
+        id: cache
+        uses: actions/cache@v1
+        with:
+          key: "${{ steps.get_cache_key.outputs.cache_key }}"
+          path: "${{ env.DIR }}"
+      - name: Download
+        if: ${{ steps.cache.outputs.cache-hit != 'true' }}
+        run: |
+          mkdir -p ${{ env.DIR }}
+          docker container create --name tmp ${{ env.IMAGE }}:${{ env.VERSION }}
+          docker cp tmp:${{ env.IMAGE_PATH }} ${{ env.DIR }}/${{ env.BINARY }}
+          docker container rm tmp
+      - name: Smoke test
+        run: |
+          ${{ env.DIR }}/${{ env.BINARY }} version
+      - name: Upload artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: "${{ env.BINARY }}"
+          path: "${{ env.DIR }}/${{ env.BINARY }}"
+  create_and_upload_build_artifacts:
+    name: Create and upload build artifacts
+    runs-on: ubuntu-18.04
+    strategy:
+      matrix:
+        platform:
+          - darwin
+          - linux
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GO_VERSION: 1.14.2
+      ARTIFACT_DIR: bin-dist
+      PKG_VERSION: ${{ needs.gather_facts.outputs.version }}
+    needs:
+      - create_release
+      - gather_facts
+      - install_architect
+    steps:
+      - name: Cache
+        id: cache
+        uses: actions/cache@v1
+        with:
+          key: "${{ needs.install_architect.outputs.cache_key }}"
+          path: /opt/bin
+      - name: Download architect artifact to /opt/bin
+        if: ${{ steps.cache.outputs.cache-hit != 'true' }}
+        uses: actions/download-artifact@v2
+        with:
+          name: architect
+          path: /opt/bin
+      - name: Prepare /opt/bin
+        run: |
+          chmod +x /opt/bin/*
+          echo "::add-path::/opt/bin"
+      - name: Print architect version
+        run: |
+          architect version
+      - name: Set up Go ${{ env.GO_VERSION }}
+        uses: actions/setup-go@v1
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Checkout code
+        uses: actions/checkout@v2
+        with:
+          ref: v${{ needs.gather_facts.outputs.version }}
+      - name: Create ${{ matrix.platform }} package
+        run: make package-${{ matrix.platform }}
+      - name: Add ${{ matrix.platform }} package to release
+        uses: actions/upload-release-asset@v1
+        env:
+          FILE_NAME: ${{ github.event.repository.name }}-${{ env.PKG_VERSION }}-${{ matrix.platform }}-amd64.tar.gz
+        with:
+          path: ${{ env.ARTIFACT_DIR }}
+          upload_url: ${{ needs.create_release.outputs.upload_url }}
+          asset_path: ${{ env.ARTIFACT_DIR }}/${{ env.FILE_NAME }}
+          asset_name: ${{ env.FILE_NAME }}
+          asset_content_type: application/octet-stream
 
 {{- end}}
 `
