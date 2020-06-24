@@ -13,6 +13,13 @@ func NewCreateReleaseInput(p params.Params) input.Input {
 			Left:  "##-ignore-left-##",
 			Right: "##-ignore-right-##",
 		},
+		TemplateData: map[string]interface{}{
+			"CurrentFlavour":  p.CurrentFlavour,
+			"FlavourApp":      p.FlavourApp,
+			"FlavourCLI":      p.FlavourCLI,
+			"FlavourLibrary":  p.FlavourLibrary,
+			"FlavourOperator": p.FlavourOperator,
+		},
 	}
 
 	return i
@@ -195,4 +202,10 @@ jobs:
         with:
           tag_name: "v${{ needs.gather_facts.outputs.version }}"
           release_name: "v${{ needs.gather_facts.outputs.version }}"
+
+{{- if eq .CurrentFlavour .FlavourCLI}}
+
+
+
+{{- end}}
 `
