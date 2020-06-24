@@ -3,6 +3,7 @@ package makefile
 import (
 	"github.com/giantswarm/devctl/pkg/gen/input"
 	"github.com/giantswarm/devctl/pkg/gen/input/makefile/internal/file"
+	"github.com/giantswarm/devctl/pkg/gen/input/makefile/internal/params"
 )
 
 const (
@@ -12,26 +13,28 @@ const (
 	FlavourOperator
 )
 
-type Makefile struct {
-	flavour int
+type Config struct {
+	Flavour int
 }
 
-func New(flavour int) (*Makefile, error) {
+type Makefile struct {
+	params params.Params
+}
+
+func New(config Config) (*Makefile, error) {
 	m := &Makefile{
-		flavour: flavour,
+		params: params.Params{
+			CurrentFlavour:  config.Flavour,
+			FlavourApp:      FlavourApp,
+			FlavourCLI:      FlavourCLI,
+			FlavourLibrary:  FlavourLibrary,
+			FlavourOperator: FlavourOperator,
+		},
 	}
 
 	return m, nil
 }
 
 func (m *Makefile) Makefile() input.Input {
-	c := file.Config{
-		CurrentFlavour:  m.flavour,
-		FlavourApp:      FlavourApp,
-		FlavourCLI:      FlavourCLI,
-		FlavourLibrary:  FlavourLibrary,
-		FlavourOperator: FlavourOperator,
-	}
-
-	return file.NewMakefileInput(c)
+	return file.NewMakefileInput(m.params)
 }

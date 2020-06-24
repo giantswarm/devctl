@@ -36,12 +36,17 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 }
 
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
-	flavour, err := mapFlavourTypeToMakeFileFlavour(r.flag.Flavour)
-	if err != nil {
-		return microerror.Mask(err)
+	var err error
+
+	var c makefile.Config
+	{
+		c.Flavour, err = mapFlavourTypeToMakeFileFlavour(r.flag.Flavour)
+		if err != nil {
+			return microerror.Mask(err)
+		}
 	}
 
-	makefileInput, err := makefile.New(flavour)
+	makefileInput, err := makefile.New(c)
 	if err != nil {
 		return microerror.Mask(err)
 	}

@@ -2,26 +2,19 @@ package file
 
 import (
 	"github.com/giantswarm/devctl/pkg/gen/input"
+	"github.com/giantswarm/devctl/pkg/gen/input/makefile/internal/params"
 )
 
-type Config struct {
-	CurrentFlavour  int
-	FlavourApp      int
-	FlavourCLI      int
-	FlavourLibrary  int
-	FlavourOperator int
-}
-
-func NewMakefileInput(c Config) input.Input {
+func NewMakefileInput(p params.Params) input.Input {
 	i := input.Input{
 		Path:         "Makefile",
 		TemplateBody: makefileTemplate,
 		TemplateData: map[string]interface{}{
-			"CurrentFlavour":  c.CurrentFlavour,
-			"FlavourApp":      c.FlavourApp,
-			"FlavourCLI":      c.FlavourCLI,
-			"FlavourLibrary":  c.FlavourLibrary,
-			"FlavourOperator": c.FlavourOperator,
+			"CurrentFlavour":  p.CurrentFlavour,
+			"FlavourApp":      p.FlavourApp,
+			"FlavourCLI":      p.FlavourCLI,
+			"FlavourLibrary":  p.FlavourLibrary,
+			"FlavourOperator": p.FlavourOperator,
 		},
 	}
 
