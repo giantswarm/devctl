@@ -206,7 +206,7 @@ jobs:
           tag_name: "v${{ needs.gather_facts.outputs.version }}"
           release_name: "v${{ needs.gather_facts.outputs.version }}"
 
-{{{{- if eq .CurrentFlavour .FlavourCLI}}}}
+{{{{- if eq .CurrentFlavour .FlavourCLI }}}}
 
   install_architect:
     name: Install architect
