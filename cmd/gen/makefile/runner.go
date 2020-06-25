@@ -13,6 +13,7 @@ import (
 )
 
 type runner struct {
+	flag   *flag
 	logger micrologger.Logger
 	stdout io.Writer
 	stderr io.Writer
@@ -21,7 +22,12 @@ type runner struct {
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 
-	err := r.run(ctx, cmd, args)
+	err := r.flag.Validate()
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	err = r.run(ctx, cmd, args)
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -30,7 +36,17 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 }
 
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
-	makefileInput, err := makefile.New()
+	var err error
+
+	var c makefile.Config
+	{
+		c.Flavour, err = mapFlavourTypeToMakeFileFlavour(r.flag.Flavour)
+		if err != nil {
+			return microerror.Mask(err)
+		}
+	}
+
+	makefileInput, err := makefile.New(c)
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -44,4 +60,23 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	}
 
 	return nil
+}
+
+func mapFlavourTypeToMakeFileFlavour(f string) (int, error) {
+	switch f {
+	case flavourApp:
+		return makefile.FlavourApp, nil
+
+	case flavourCLI:
+		return makefile.FlavourCLI, nil
+
+	case flavourOperator:
+		return makefile.FlavourOperator, nil
+
+	case flavourLibrary:
+		return makefile.FlavourLibrary, nil
+
+	default:
+		return 0, microerror.Maskf(invalidFlagError, "the picked flavour is invalid")
+	}
 }

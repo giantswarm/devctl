@@ -2,13 +2,20 @@ package file
 
 import (
 	"github.com/giantswarm/devctl/pkg/gen/input"
+	"github.com/giantswarm/devctl/pkg/gen/input/makefile/internal/params"
 )
 
-func NewMakefileInput() input.Input {
+func NewMakefileInput(p params.Params) input.Input {
 	i := input.Input{
 		Path:         "Makefile",
 		TemplateBody: makefileTemplate,
-		TemplateData: map[string]interface{}{},
+		TemplateData: map[string]interface{}{
+			"CurrentFlavour":  p.CurrentFlavour,
+			"FlavourApp":      p.FlavourApp,
+			"FlavourCLI":      p.FlavourCLI,
+			"FlavourLibrary":  p.FlavourLibrary,
+			"FlavourOperator": p.FlavourOperator,
+		},
 	}
 
 	return i
@@ -18,6 +25,12 @@ var makefileTemplate = `# DO NOT EDIT. Generated with:
 #
 #    devctl gen makefile
 #
+
+{{- if eq .CurrentFlavour .FlavourCLI}}
+
+PACKAGE_DIR    := ./bin-dist
+
+{{- end}}
 
 APPLICATION    := $(shell basename $(shell go list .))
 BUILDTIMESTAMP := $(shell date -u '+%FT%TZ')
@@ -38,6 +51,33 @@ build: $(APPLICATION)
 build-darwin: $(APPLICATION)-darwin
 ## build-linux: builds a local binary for linux/amd64
 build-linux: $(APPLICATION)-linux
+
+{{- if eq .CurrentFlavour .FlavourCLI}}
+
+.PHONY: package-darwin package-linux
+## package-darwin: prepares a packaged darwin/amd64 version
+package-darwin: $(APPLICATION)-package-darwin
+## package-linux: prepares a packaged linux/amd64 version
+package-linux: $(APPLICATION)-package-linux
+
+$(APPLICATION)-package-%: $(SOURCES)
+	@$(MAKE) $(APPLICATION)-$*
+	@$(MAKE) $(APPLICATION)-rename-binary-$*
+	@$(MAKE) $(APPLICATION)-archive-$*
+
+$(APPLICATION)-rename-binary-%:
+	cp $(APPLICATION)-$* $(APPLICATION)-$(VERSION)-$*-amd64
+
+$(APPLICATION)-archive-%:
+	mkdir -p $(PACKAGE_DIR)/$(APPLICATION)-$(VERSION)-$*-amd64
+	mv $(APPLICATION)-$(VERSION)-$*-amd64 $(PACKAGE_DIR)/$(APPLICATION)-$(VERSION)-$*-amd64
+	cp ./{README.md,LICENSE} $(PACKAGE_DIR)/$(APPLICATION)-$(VERSION)-$*-amd64
+	cd $(PACKAGE_DIR)/ && \
+	tar -cvzf $(APPLICATION)-$(VERSION)-$*-amd64.tar.gz \
+		$(APPLICATION)-$(VERSION)-$*-amd64
+	rm -rf $(PACKAGE_DIR)/$(APPLICATION)-$(VERSION)-$*-amd64
+
+{{- end}}
 
 $(APPLICATION): $(APPLICATION)-$(OS)
 	cp -a $< $@
