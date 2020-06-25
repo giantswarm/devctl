@@ -304,5 +304,5 @@ jobs:
           asset_name: ${{ env.FILE_NAME }}
           asset_content_type: application/octet-stream
 
-{{{{- end}}}}
+{{{{- end }}}}
 `
