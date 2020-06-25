@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/cmd/gen/ami"
+	"github.com/giantswarm/devctl/cmd/gen/command"
 	"github.com/giantswarm/devctl/cmd/gen/crud"
 	"github.com/giantswarm/devctl/cmd/gen/kubeconfig"
 	"github.com/giantswarm/devctl/cmd/gen/makefile"
@@ -48,6 +49,20 @@ func New(config Config) (*cobra.Command, error) {
 		}
 
 		amiCmd, err = ami.New(c)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+	}
+
+	var commandCmd *cobra.Command
+	{
+		c := command.Config{
+			Logger: config.Logger,
+			Stderr: config.Stderr,
+			Stdout: config.Stdout,
+		}
+
+		commandCmd, err = command.New(c)
 		if err != nil {
 			return nil, microerror.Mask(err)
 		}
@@ -128,6 +143,7 @@ func New(config Config) (*cobra.Command, error) {
 	f.Init(c)
 
 	c.AddCommand(amiCmd)
+	c.AddCommand(commandCmd)
 	c.AddCommand(crudCmd)
 	c.AddCommand(kubeconfigCmd)
 	c.AddCommand(makefileCmd)
