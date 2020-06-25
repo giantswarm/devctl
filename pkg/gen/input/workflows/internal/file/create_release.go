@@ -10,8 +10,8 @@ func NewCreateReleaseInput(p params.Params) input.Input {
 		Path:         params.RegenerableFileName(p, "create_release.yaml"),
 		TemplateBody: createReleaseTemplate,
 		TemplateDelims: input.InputTemplateDelims{
-			Left:  "##-ignore-left-##",
-			Right: "##-ignore-right-##",
+			Left:  "{{{{",
+			Right: "}}}}",
 		},
 		TemplateData: map[string]interface{}{
 			"CurrentFlavour":  p.CurrentFlavour,
@@ -206,7 +206,7 @@ jobs:
           tag_name: "v${{ needs.gather_facts.outputs.version }}"
           release_name: "v${{ needs.gather_facts.outputs.version }}"
 
-##-ignore-left-##- if eq .CurrentFlavour .FlavourCLI##-ignore-right-##
+{{{{- if eq .CurrentFlavour .FlavourCLI}}}}
 
   install_architect:
     name: Install architect
@@ -304,5 +304,5 @@ jobs:
           asset_name: ${{ env.FILE_NAME }}
           asset_content_type: application/octet-stream
 
-##-ignore-left-##- end##-ignore-right-##
+{{{{- end}}}}
 `
