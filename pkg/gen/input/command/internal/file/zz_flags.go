@@ -5,10 +5,10 @@ import (
 	"github.com/giantswarm/devctl/pkg/gen/input/command/internal/params"
 )
 
-func NewFlagsInput(p params.Params) input.Input {
+func NewZZFlagsInput(p params.Params) input.Input {
 	i := input.Input{
 		Path:         params.RegenerableFileName(p, "flags.go"),
-		TemplateBody: flagsTemplate,
+		TemplateBody: zzFlagsTemplate,
 		TemplateData: map[string]interface{}{
 			"IsRoot":  params.IsRoot(p),
 			"Name":    params.Name(p),
@@ -20,7 +20,7 @@ func NewFlagsInput(p params.Params) input.Input {
 	return i
 }
 
-var flagsTemplate = `// DO NOT EDIT. Generated with:
+var zzFlagsTemplate = `// DO NOT EDIT. Generated with:
 //
 //	devctl gen command
 //

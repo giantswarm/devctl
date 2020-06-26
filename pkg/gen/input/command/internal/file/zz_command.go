@@ -5,10 +5,10 @@ import (
 	"github.com/giantswarm/devctl/pkg/gen/input/command/internal/params"
 )
 
-func NewCommandInput(p params.Params) input.Input {
+func NewZZCommandInput(p params.Params) input.Input {
 	i := input.Input{
 		Path:         params.RegenerableFileName(p, "command.go"),
-		TemplateBody: commandTemplate,
+		TemplateBody: zzCommandTemplate,
 		TemplateData: map[string]interface{}{
 			"Package": params.Package(p),
 			"Name":    params.Name(p),
@@ -18,7 +18,7 @@ func NewCommandInput(p params.Params) input.Input {
 	return i
 }
 
-var commandTemplate = `// DO NOT EDIT. Generated with:
+var zzCommandTemplate = `// DO NOT EDIT. Generated with:
 //
 //	devctl gen command
 //

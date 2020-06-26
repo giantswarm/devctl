@@ -34,18 +34,18 @@ func New(config Config) (*Command, error) {
 	return c, nil
 }
 
-func (c *Command) Command() input.Input {
-	return file.NewCommandInput(c.params)
+func (c *Command) ZZCommand() input.Input {
+	return file.NewZZCommandInput(c.params)
 }
 
-func (c *Command) Error() input.Input {
-	return file.NewErrorInput(c.params)
+func (c *Command) ZZError() input.Input {
+	return file.NewZZErrorInput(c.params)
 }
 
-func (c *Command) Flags() input.Input {
-	return file.NewFlagsInput(c.params)
+func (c *Command) ZZFlags() input.Input {
+	return file.NewZZFlagsInput(c.params)
 }
 
-func (c *Command) Runner() input.Input {
-	return file.NewRunnerInput(c.params)
+func (c *Command) ZZRunner() input.Input {
+	return file.NewZZRunnerInput(c.params)
 }

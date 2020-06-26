@@ -5,10 +5,10 @@ import (
 	"github.com/giantswarm/devctl/pkg/gen/input/command/internal/params"
 )
 
-func NewErrorInput(p params.Params) input.Input {
+func NewZZErrorInput(p params.Params) input.Input {
 	i := input.Input{
 		Path:         params.RegenerableFileName(p, "error.go"),
-		TemplateBody: errorTemplate,
+		TemplateBody: zzErrorTemplate,
 		TemplateData: map[string]interface{}{
 			"Package": params.Package(p),
 		},
@@ -17,7 +17,7 @@ func NewErrorInput(p params.Params) input.Input {
 	return i
 }
 
-var errorTemplate = `// DO NOT EDIT. Generated with:
+var zzErrorTemplate = `// DO NOT EDIT. Generated with:
 //
 //	devctl gen command
 //

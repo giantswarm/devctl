@@ -44,9 +44,10 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 	err = gen.Execute(
 		ctx,
-		commandInput.Command(),
-		commandInput.Error(),
-		commandInput.Flags(),
+		commandInput.ZZCommand(),
+		commandInput.ZZError(),
+		commandInput.ZZFlags(),
+		commandInput.ZZRunner(),
 	)
 	if err != nil {
 		return microerror.Mask(err)

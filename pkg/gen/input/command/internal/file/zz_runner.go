@@ -5,10 +5,10 @@ import (
 	"github.com/giantswarm/devctl/pkg/gen/input/command/internal/params"
 )
 
-func NewRunnerInput(p params.Params) input.Input {
+func NewZZRunnerInput(p params.Params) input.Input {
 	i := input.Input{
 		Path:         params.RegenerableFileName(p, "runner.go"),
-		TemplateBody: runnerTemplate,
+		TemplateBody: zzRunnerTemplate,
 		TemplateData: map[string]interface{}{
 			"Package": params.Package(p),
 		},
@@ -17,7 +17,7 @@ func NewRunnerInput(p params.Params) input.Input {
 	return i
 }
 
-var runnerTemplate = `// DO NOT EDIT. Generated with:
+var zzRunnerTemplate = `// DO NOT EDIT. Generated with:
 //
 //	devctl gen command
 //
@@ -26,12 +26,10 @@ package {{ .Package }}
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
-	flag "github.com/spf13/pflag"
 )
 
 type runner struct {
@@ -56,14 +54,6 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
-}
-
-func (r *runner) FlagString() string {
-	var lines []string
-	r.cmd.Flags().Visit(func(flag *flag.Flag) {
-		lines = append(lines, flag.Name+":"+flag.Value.String())
-	})
-	return strings.Join(lines, " ")
 }
 
 func (r *runner) Print(i ...interface{}) {
