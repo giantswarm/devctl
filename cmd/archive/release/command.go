@@ -11,7 +11,7 @@ import (
 
 const (
 	name        = "release"
-	description = "Creates and registers a new Giant Swarm platform release including Release CR and release notes."
+	description = "Archives and de-registers an existing Giant Swarm platform release."
 )
 
 type Config struct {

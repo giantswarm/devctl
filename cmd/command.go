@@ -10,7 +10,6 @@ import (
 
 	"github.com/giantswarm/devctl/cmd/archive"
 	"github.com/giantswarm/devctl/cmd/create"
-	"github.com/giantswarm/devctl/cmd/edit"
 	"github.com/giantswarm/devctl/cmd/gen"
 	"github.com/giantswarm/devctl/cmd/replace"
 	"github.com/giantswarm/devctl/cmd/repo"
@@ -75,20 +74,6 @@ func New(config Config) (*cobra.Command, error) {
 		}
 
 		createCmd, err = create.New(c)
-		if err != nil {
-			return nil, microerror.Mask(err)
-		}
-	}
-
-	var editCmd *cobra.Command
-	{
-		c := edit.Config{
-			Logger: config.Logger,
-			Stderr: config.Stderr,
-			Stdout: config.Stdout,
-		}
-
-		editCmd, err = edit.New(c)
 		if err != nil {
 			return nil, microerror.Mask(err)
 		}
@@ -174,7 +159,6 @@ func New(config Config) (*cobra.Command, error) {
 
 	c.AddCommand(archiveCmd)
 	c.AddCommand(createCmd)
-	c.AddCommand(editCmd)
 	c.AddCommand(genCmd)
 	c.AddCommand(versionCmd)
 	c.AddCommand(repoCmd)

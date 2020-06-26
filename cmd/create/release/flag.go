@@ -11,6 +11,7 @@ const (
 	baseFlag      = "base"
 	componentFlag = "component"
 	nameFlag      = "name"
+	overwriteFlag = "overwrite"
 	providerFlag  = "provider"
 	releasesFlag  = "releases"
 )
@@ -19,14 +20,16 @@ type flag struct {
 	Base       string
 	Components []string
 	Name       string
+	Overwrite  bool
 	Provider   string
 	Releases   string
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
-	cmd.Flags().StringVar(&f.Base, baseFlag, "", `Existing release upon which to base the new release.`)
+	cmd.Flags().StringVar(&f.Base, baseFlag, "", `Existing release upon which to base the new release. Must follow semver format.`)
 	cmd.Flags().StringArrayVar(&f.Components, componentFlag, nil, `Updated component version to apply to created release. Can be specified multiple times.`)
-	cmd.Flags().StringVar(&f.Name, nameFlag, "", `Path to releases repository. Defaults to current working directory.`)
+	cmd.Flags().StringVar(&f.Name, nameFlag, "", `Name of the new release. Must follow semver format.`)
+	cmd.Flags().BoolVar(&f.Overwrite, overwriteFlag, false, `If true, allow overwriting existing release with the same name.`)
 	cmd.Flags().StringVar(&f.Provider, providerFlag, "", `Target provider for the new release.`)
 	cmd.Flags().StringVar(&f.Releases, releasesFlag, ".", `Path to releases repository. Defaults to current working directory.`)
 }
