@@ -11,6 +11,7 @@ import (
 	"github.com/giantswarm/devctl/pkg/gen"
 	"github.com/giantswarm/devctl/pkg/gen/input/command"
 	"github.com/giantswarm/devctl/pkg/gen/input/mainpkg"
+	"github.com/giantswarm/devctl/pkg/gen/input/project"
 )
 
 type runner struct {
@@ -61,6 +62,18 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		}
 	}
 
+	var projectInput *project.Project
+	{
+		c := project.Config{
+			Name: r.flag.Name,
+		}
+
+		projectInput, err = project.New(c)
+		if err != nil {
+			return microerror.Mask(err)
+		}
+	}
+
 	err = gen.Execute(
 		ctx,
 		commandInput.Flags(),
@@ -71,6 +84,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		commandInput.ZZFlags(),
 		commandInput.ZZRunner(),
 		mainInput.ZZMain(),
+		projectInput.ZZProject(),
 	)
 	if err != nil {
 		return microerror.Mask(err)

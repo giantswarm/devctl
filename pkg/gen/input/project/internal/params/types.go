@@ -4,7 +4,12 @@ type Params struct {
 	// Name is the name of CLI binary name.
 	Name string
 
-	Subcommands []Subcommand
+	RootCommand ParamsCommandTree
+}
+
+type ParamsCommandTree struct {
+	Name        string
+	Subcommands []ParamsCommandTree
 }
 
 type Subcommand struct {

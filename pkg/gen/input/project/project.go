@@ -1,9 +1,9 @@
-package mainpkg
+package project
 
 import (
 	"github.com/giantswarm/devctl/pkg/gen/input"
-	"github.com/giantswarm/devctl/pkg/gen/input/mainpkg/internal/file"
-	"github.com/giantswarm/devctl/pkg/gen/input/mainpkg/internal/params"
+	"github.com/giantswarm/devctl/pkg/gen/input/project/internal/file"
+	"github.com/giantswarm/devctl/pkg/gen/input/project/internal/params"
 	"github.com/giantswarm/microerror"
 )
 
@@ -11,16 +11,16 @@ type Config struct {
 	Name string
 }
 
-type Main struct {
+type Project struct {
 	params params.Params
 }
 
-func New(config Config) (*Main, error) {
+func New(config Config) (*Project, error) {
 	if config.Name == "" {
 		return nil, microerror.Maskf(invalidConfigError, "%T.Name must not be empty", config)
 	}
 
-	c := &Main{
+	c := &Project{
 		params: params.Params{
 			Name: config.Name,
 
@@ -48,6 +48,6 @@ func New(config Config) (*Main, error) {
 	return c, nil
 }
 
-func (m *Main) ZZMain() input.Input {
-	return file.NewZZMainInput(m.params)
+func (m *Project) ZZProject() input.Input {
+	return file.NewZZProjectInput(m.params)
 }
