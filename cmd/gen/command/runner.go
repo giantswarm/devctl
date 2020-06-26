@@ -44,6 +44,9 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 	err = gen.Execute(
 		ctx,
+		commandInput.Flags(),
+		commandInput.Meta(),
+		commandInput.Run(),
 		commandInput.ZZCommand(),
 		commandInput.ZZError(),
 		commandInput.ZZFlags(),

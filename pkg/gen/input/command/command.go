@@ -34,6 +34,18 @@ func New(config Config) (*Command, error) {
 	return c, nil
 }
 
+func (c *Command) Flags() input.Input {
+	return file.NewFlagsInput(c.params)
+}
+
+func (c *Command) Meta() input.Input {
+	return file.NewMetaInput(c.params)
+}
+
+func (c *Command) Run() input.Input {
+	return file.NewRunInput(c.params)
+}
+
 func (c *Command) ZZCommand() input.Input {
 	return file.NewZZCommandInput(c.params)
 }

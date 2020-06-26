@@ -25,6 +25,8 @@ func Execute(ctx context.Context, files ...input.Input) error {
 }
 
 func execute(ctx context.Context, file input.Input) error {
+	var exists bool
+
 	// Create the file's directory if it doesn't exist. Check if the file
 	// itself is a directory. Error if it is.
 	{
@@ -41,10 +43,12 @@ func execute(ctx context.Context, file input.Input) error {
 			return microerror.Mask(err)
 		} else if f.IsDir() {
 			return microerror.Maskf(filePathError, "file %#q is a directory", file.Path)
+		} else {
+			exists = true
 		}
 	}
 
-	if !isRegenerable(file.Path) {
+	if exists && !isRegenerable(file.Path) {
 		return nil
 	}
 

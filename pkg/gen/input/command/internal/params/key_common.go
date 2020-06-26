@@ -2,10 +2,15 @@ package params
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/giantswarm/devctl/pkg/gen/internal"
 )
+
+func FileName(p Params, name string) string {
+	return internal.FileName(p.Dir, name)
+}
 
 func IsRoot(p Params) bool {
 	return Package(p) == "cmd"
@@ -30,6 +35,15 @@ func Parent(p Params) string {
 	}
 
 	return split[len(split)-2]
+}
+
+func ParentPackage(p Params) string {
+	if IsRoot(p) {
+		return "PARENT_PACKAGE_SHOULD_NOT_BE_USED_FOR_ROOT"
+	}
+
+	// TODO(PK): I need to think about something smarter here. It would be good to be able to generate that outside giantswarm.
+	return filepath.Join("github.com", "giantswarm", Name(p), filepath.Dir(p.Dir))
 }
 
 func RegenerableFileName(p Params, suffix string) string {

@@ -10,10 +10,11 @@ func NewZZFlagsInput(p params.Params) input.Input {
 		Path:         params.RegenerableFileName(p, "flags.go"),
 		TemplateBody: zzFlagsTemplate,
 		TemplateData: map[string]interface{}{
-			"IsRoot":  params.IsRoot(p),
-			"Name":    params.Name(p),
-			"Package": params.Package(p),
-			"Parent":  params.Parent(p),
+			"IsRoot":        params.IsRoot(p),
+			"Name":          params.Name(p),
+			"Package":       params.Package(p),
+			"Parent":        params.Parent(p),
+			"ParentPackage": params.ParentPackage(p),
 		},
 	}
 
@@ -38,7 +39,7 @@ import (
 
 	{{- if not .IsRoot }}
 
-	"github.com/giantswarm/{{ .Name }}/{{ .Parent }}"
+	"{{ .ParentPackage }}"
 
 	{{- end }}
 )

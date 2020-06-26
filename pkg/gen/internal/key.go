@@ -17,6 +17,10 @@ const (
 	RegenerableFilePrefix = "zz_generated."
 )
 
+func FileName(dir, name string) string {
+	return filepath.Join(dir, name)
+}
+
 // Package returns Go package name for the give directory.
 func Package(dir string) string {
 	abs, err := filepath.Abs(dir)
