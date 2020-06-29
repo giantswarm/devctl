@@ -258,7 +258,7 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GO_VERSION: 1.14.2
       ARTIFACT_DIR: bin-dist
-      PKG_VERSION: ${{ needs.gather_facts.outputs.version }}
+      TAG: v${{ needs.gather_facts.outputs.version }}
     needs:
       - create_release
       - gather_facts
@@ -290,13 +290,13 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
         with:
-          ref: v${{ needs.gather_facts.outputs.version }}
+          ref: ${{ env.TAG }}
       - name: Create ${{ matrix.platform }} package
         run: make package-${{ matrix.platform }}
       - name: Add ${{ matrix.platform }} package to release
         uses: actions/upload-release-asset@v1
         env:
-          FILE_NAME: ${{ github.event.repository.name }}-${{ env.PKG_VERSION }}-${{ matrix.platform }}-amd64.tar.gz
+          FILE_NAME: ${{ github.event.repository.name }}-${{ env.TAG }}-${{ matrix.platform }}-amd64.tar.gz
         with:
           path: ${{ env.ARTIFACT_DIR }}
           upload_url: ${{ needs.create_release.outputs.upload_url }}
