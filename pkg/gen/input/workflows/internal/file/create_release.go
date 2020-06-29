@@ -258,7 +258,7 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GO_VERSION: 1.14.2
       ARTIFACT_DIR: bin-dist
-      PKG_VERSION: ${{ needs.gather_facts.outputs.version }}
+      PKG_VERSION: v${{ needs.gather_facts.outputs.version }}
     needs:
       - create_release
       - gather_facts
@@ -290,7 +290,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
         with:
-          ref: v${{ needs.gather_facts.outputs.version }}
+          ref: ${{ env.PKG_VERSION }}
       - name: Create ${{ matrix.platform }} package
         run: make package-${{ matrix.platform }}
       - name: Add ${{ matrix.platform }} package to release
