@@ -296,7 +296,7 @@ jobs:
       - name: Add ${{ matrix.platform }} package to release
         uses: actions/upload-release-asset@v1
         env:
-          FILE_NAME: ${{ github.event.repository.name }}-${{ env.PKG_VERSION }}-${{ matrix.platform }}-amd64.tar.gz
+          FILE_NAME: ${{ github.event.repository.name }}-${{ env.TAG }}-${{ matrix.platform }}-amd64.tar.gz
         with:
           path: ${{ env.ARTIFACT_DIR }}
           upload_url: ${{ needs.create_release.outputs.upload_url }}
