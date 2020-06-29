@@ -290,7 +290,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
         with:
-          ref: ${{ env.PKG_VERSION }}
+          ref: ${{ env.TAG }}
       - name: Create ${{ matrix.platform }} package
         run: make package-${{ matrix.platform }}
       - name: Add ${{ matrix.platform }} package to release
