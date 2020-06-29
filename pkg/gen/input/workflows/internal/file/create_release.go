@@ -35,7 +35,9 @@ on:
     branches:
       - 'legacy'
       - 'master'
-      - 'release-v*.x.x'
+      - 'release-v*.*.x'
+      # "!" negates previous positive patterns so it has to be at the end.
+      - '!release-v*.x.x'
 jobs:
   debug_info:
     name: Debug info
