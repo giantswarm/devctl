@@ -48,70 +48,84 @@ jobs:
         cat > ./create-branch.py <<-EOF
         # This script creates a branch for the previous minor version based on the current commit's parent
         # if the current tag introduces a new minor version and the release branch doesn't already exist.
+
         import os
         import semver
         from git import Repo
+
         p = "refs/tags/"  # GitHub tags start with this prefix
-        #
+
         # Takes a string and returns the string without the given prefix, if it is present
         def removeprefix(string: str, prefix: str) -> str:
             if string.startswith(prefix):
                 return string[len(prefix):]
             return string
-        #
+
         # Takes a string and returns the semver VersionInfo for that string, even if it includes a leading 'v'
         def version(string: str) -> semver.VersionInfo:
             string = removeprefix(string, 'v')
             return semver.VersionInfo.parse(string)
+
         repo = Repo(os.getcwd())
-        #
+
         # Get the current tag from env and strip quotation marks
         current_tag = os.environ.get("GITHUB_REF").strip('"')
-        #
+
         # Remove GitHub ref path
         current_tag = removeprefix(current_tag, p)
         print("Current tag is " + current_tag)
-        #
+
         # Get the tag of the "first" parent of the current commit including suffix, just for human reference
         parent_tag = repo.git.describe('--tags', "{}".format(repo.commit().parents[0]))
         print("Parent commit tag was {}".format(parent_tag))
-        #
+
         # Get the closest tag to the parent commit (the tag version without the suffix)
         parent_tag = repo.git.describe('--tags', '--abbrev=0', "{}".format(repo.commit().parents[0]))
-        #
+
         # Get the semver for the parent tag
         parent_version = version(parent_tag)
         print("Parent base version was {}".format(parent_tag))
-        #
+
         # Get the semver for the current tag
         current_version = version(current_tag)
-        #
+
         # Format the expected name of the release branch for the previous minor version
-        previous_branch_name = "release-v{}.{}.x".format(current_version.major, current_version.minor)
-        #
-        # Check if the current tag version introduces a new minor version
-        if not current_version.minor > parent_version.minor:
-          print("Current tag is not a new minor version")
+        previous_branch_name = "release-v{}.{}.x".format(parent_version.major, parent_version.minor)
+
+        # Check if the current tag version introduces a new major or minor version
+        new_version = False
+        if current_version.major > parent_version.major:
+          print("Current tag is a new major version")
+          new_version = True
+        elif current_version.major == parent_version.major and current_version.minor > parent_version.minor:
+          print("Current tag is a new minor version")
+          new_version = True
+
+        # Abort if not a new major or minor
+        if not new_version:
+          print("Current tag is not a new major or minor version.")
           print("Nothing to do here.")
           exit(0)
+
         print("Release branch for previous minor would be {}".format(previous_branch_name))
-        #
+
         # Check if the release branch already exists
         for b in repo.branches:
           if b.name == previous_branch_name:
             print("Release branch {} already exists. Nothing to do here.".format(previous_branch_name))
             exit(0)
+
         print("Release branch does not exist")
-        #
+
         # Create the branch
         print("Creating release branch {}".format(previous_branch_name))
         origin = repo.remote()
-        #
+
         # Create a local branch
         release_branch = repo.create_head(previous_branch_name)
         # Check it out
         release_branch.checkout()
-        #
+
         # Push the local branch to remote
         # Unfortunately no API way to do this - use the git client
         repo.git.push('--set-upstream', origin, previous_branch_name)
