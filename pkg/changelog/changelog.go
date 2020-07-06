@@ -1,6 +1,7 @@
 package changelog
 
 import (
+	"encoding/json"
 	"errors"
 	"io/ioutil"
 	"net/http"
@@ -29,6 +30,18 @@ var knownComponentParseParams = map[string]parseParams{
 	"aws-operator": {
 		tag:       "https://github.com/giantswarm/aws-operator/releases/tag/v{{.Version}}",
 		changelog: "https://raw.githubusercontent.com/giantswarm/aws-operator/master/CHANGELOG.md",
+		start:     commonStartPattern,
+		end:       commonEndPattern,
+	},
+	"kvm-operator": {
+		tag:       "https://github.com/giantswarm/kvm-operator/releases/tag/v{{.Version}}",
+		changelog: "https://raw.githubusercontent.com/giantswarm/kvm-operator/master/CHANGELOG.md",
+		start:     commonStartPattern,
+		end:       commonEndPattern,
+	},
+	"azure-operator": {
+		tag:       "https://github.com/giantswarm/aws-operator/releases/tag/v{{.Version}}",
+		changelog: "https://raw.githubusercontent.com/giantswarm/azure-operator/master/CHANGELOG.md",
 		start:     commonStartPattern,
 		end:       commonEndPattern,
 	},
@@ -63,6 +76,19 @@ var knownComponentParseParams = map[string]parseParams{
 		start:     "(?m)^## v?(?P<Version>\\d+\\.\\d+\\.\\d+)$",
 		end:       "(?m)^##? .*$",
 	},
+	"calico": {
+		tag:       "https://github.com/projectcalico/calico/releases/tag/v{{.Version}}",
+		changelog: "https://raw.githubusercontent.com/projectcalico/calico/v{{.Version}}/_includes/release-notes/v{{.Version}}-release-notes.md",
+		start:     "(?m)^(?P<Date>\\d{1,2} [a-zA-Z]{3,9} \\d{4})$",
+	},
+	"containerlinux": {
+		tag:       "https://www.flatcar-linux.org/releases/#release-{{.Version}}",
+		changelog: "https://www.flatcar-linux.org/releases-json/releases-stable.json",
+	},
+}
+
+type containerlinuxRelease struct {
+	ReleaseNotes string `json:"release_notes"`
 }
 
 type parseParams struct {
@@ -102,6 +128,22 @@ func ParseChangelog(componentName, componentVersion string) (*Version, error) {
 		templateData.Minor = parsedVersion.Minor()
 	}
 
+	// Build release link using the template from the params
+	releaseLinkTemplate, err := template.New("link").Parse(params.tag)
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
+	var releaseLinkBuffer strings.Builder
+	err = releaseLinkTemplate.Execute(&releaseLinkBuffer, templateData)
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
+
+	currentVersion := Version{
+		Name: componentVersion,
+		Link: releaseLinkBuffer.String(),
+	}
+
 	// Read full changelog and split into lines
 	changelogURLTemplate, err := template.New("url").Parse(params.changelog)
 	if err != nil {
@@ -120,7 +162,21 @@ func ParseChangelog(componentName, componentVersion string) (*Version, error) {
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}
-	lines := strings.Split(string(body), "\n")
+
+	if componentName == "containerlinux" {
+		var releases map[string]json.RawMessage
+		err := json.Unmarshal(body, &releases)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+		var release containerlinuxRelease
+		err = json.Unmarshal(releases[componentVersion], &release)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+		currentVersion.Content = release.ReleaseNotes
+		return &currentVersion, nil
+	}
 
 	// Regexes used for parsing lines below
 	startPattern, err := regexp.Compile(params.start)
@@ -136,17 +192,18 @@ func ParseChangelog(componentName, componentVersion string) (*Version, error) {
 		return nil, microerror.Mask(err)
 	}
 
-	var currentVersion Version
+	versionFound := false
 	reachedVersionContent := false
 	reachedIntermediateMarker := params.intermediate == ""
+	lines := strings.Split(string(body), "\n")
 	for _, line := range lines {
 		// Skip blank lines
 		if line == "" {
 			continue
 		}
 
-		isStartLine := startPattern.MatchString(line)
-		isEndLine := endPattern.MatchString(line)
+		isStartLine := params.start != "" && startPattern.MatchString(line)
+		isEndLine := params.end != "" && endPattern.MatchString(line)
 
 		if (isStartLine || isEndLine) && reachedVersionContent {
 			// The version has been fully extracted, stop parsing lines and return.
@@ -157,35 +214,21 @@ func ParseChangelog(componentName, componentVersion string) (*Version, error) {
 			// Get "Version" part from regex
 			subMatches := startPattern.FindStringSubmatch(line)
 			var version string
+			versionInStartPattern := false
 			for i, subName := range startPattern.SubexpNames() {
 				if subName == "Version" {
+					versionInStartPattern = true
 					version = subMatches[i]
 				}
 			}
 
 			// Skip if this isn't the desired version
-			if version != componentVersion {
+			if versionInStartPattern && version != componentVersion {
 				continue
-			} else {
-				reachedVersionContent = true
 			}
 
-			// Build release link using the template from the params
-			releaseLinkTemplate, err := template.New("link").Parse(params.tag)
-			if err != nil {
-				return nil, microerror.Mask(err)
-			}
-			var releaseLinkBuffer strings.Builder
-			err = releaseLinkTemplate.Execute(&releaseLinkBuffer, templateData)
-			if err != nil {
-				return nil, microerror.Mask(err)
-			}
-
-			// Actually initialize the version
-			currentVersion = Version{
-				Name: version,
-				Link: releaseLinkBuffer.String(),
-			}
+			reachedVersionContent = true
+			versionFound = true
 		} else if reachedVersionContent {
 			// An intermediate marker indicates that the non-useful info at the start
 			// of the changelog has been passed.
@@ -201,6 +244,10 @@ func ParseChangelog(componentName, componentVersion string) (*Version, error) {
 
 			currentVersion.Content += line + "\n"
 		}
+	}
+
+	if !versionFound {
+		currentVersion.Content = "Not found"
 	}
 
 	return &currentVersion, nil
