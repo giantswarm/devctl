@@ -52,38 +52,36 @@ build-darwin: $(APPLICATION)-darwin
 ## build-linux: builds a local binary for linux/amd64
 build-linux: $(APPLICATION)-linux
 
+$(APPLICATION): $(APPLICATION)-v$(VERSION)-$(OS)-amd64
+	cp -a $< $@
+
+$(APPLICATION)-darwin: $(APPLICATION)-v$(VERSION)-darwin-amd64
+	cp -a $< $@
+
+$(APPLICATION)-linux: $(APPLICATION)-v$(VERSION)-linux-amd64
+	cp -a $< $@
+
+$(APPLICATION)-v$(VERSION)-%-amd64: $(SOURCES)
+	GOOS=$* GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o $@ .
+
 {{- if eq .CurrentFlavour .FlavourCLI}}
 
 .PHONY: package-darwin package-linux
 ## package-darwin: prepares a packaged darwin/amd64 version
-package-darwin: $(APPLICATION)-package-darwin
+package-darwin: $(PACKAGE_DIR)/$(APPLICATION)-v$(VERSION)-darwin-amd64.tar.gz
 ## package-linux: prepares a packaged linux/amd64 version
-package-linux: $(APPLICATION)-package-linux
+package-linux: $(PACKAGE_DIR)/$(APPLICATION)-v$(VERSION)-linux-amd64.tar.gz
 
-$(APPLICATION)-package-%: $(SOURCES)
-	@$(MAKE) $(APPLICATION)-$*
-	@$(MAKE) $(APPLICATION)-rename-binary-$*
-	@$(MAKE) $(APPLICATION)-archive-$*
-
-$(APPLICATION)-rename-binary-%:
-	cp $(APPLICATION)-$* $(APPLICATION)-$(VERSION)-$*-amd64
-
-$(APPLICATION)-archive-%:
-	mkdir -p $(PACKAGE_DIR)/$(APPLICATION)-$(VERSION)-$*-amd64
-	mv $(APPLICATION)-$(VERSION)-$*-amd64 $(PACKAGE_DIR)/$(APPLICATION)-$(VERSION)-$*-amd64
-	cp ./{README.md,LICENSE} $(PACKAGE_DIR)/$(APPLICATION)-$(VERSION)-$*-amd64
-	cd $(PACKAGE_DIR)/ && \
-	tar -cvzf $(APPLICATION)-$(VERSION)-$*-amd64.tar.gz \
-		$(APPLICATION)-$(VERSION)-$*-amd64
-	rm -rf $(PACKAGE_DIR)/$(APPLICATION)-$(VERSION)-$*-amd64
+$(PACKAGE_DIR)/$(APPLICATION)-v$(VERSION)-%-amd64.tar.gz: DIR=$(PACKAGE_DIR)/$<
+$(PACKAGE_DIR)/$(APPLICATION)-v$(VERSION)-%-amd64.tar.gz: $(APPLICATION)-v$(VERSION)-%-amd64
+	mkdir -p $(DIR)
+	cp $< $(DIR)/$(APPLICATION)
+	cp README.md LICENSE $(DIR)
+	tar -C $(PACKAGE_DIR) -cvzf $(PACKAGE_DIR)/$<.tar.gz $<
+	rm -rf $(DIR)
+	rm -rf $<
 
 {{- end}}
-
-$(APPLICATION): $(APPLICATION)-$(OS)
-	cp -a $< $@
-
-$(APPLICATION)-%: $(SOURCES)
-	GOOS=$* GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o $@ .
 
 .PHONY: install
 ## install: install the application
