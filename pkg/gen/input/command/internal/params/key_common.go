@@ -17,7 +17,7 @@ func IsRoot(p Params) bool {
 }
 
 func Name(p Params) string {
-	return internal.Package(p.Name)
+	return filepath.Base(p.GoModule)
 }
 
 func Package(p Params) string {
@@ -42,8 +42,7 @@ func ParentPackage(p Params) string {
 		return "PARENT_PACKAGE_SHOULD_NOT_BE_USED_FOR_ROOT"
 	}
 
-	// TODO(PK): I need to think about something smarter here. It would be good to be able to generate that outside giantswarm.
-	return filepath.Join("github.com", "giantswarm", Name(p), filepath.Dir(p.Dir))
+	return filepath.Join(p.GoModule, filepath.Dir(p.Dir))
 }
 
 func RegenerableFileName(p Params, suffix string) string {

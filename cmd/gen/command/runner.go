@@ -53,7 +53,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	var mainInput *mainpkg.Main
 	{
 		c := mainpkg.Config{
-			Name: r.flag.Name,
+			GoModule: r.flag.GoModule,
 		}
 
 		mainInput, err = mainpkg.New(c)
@@ -65,7 +65,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	var projectInput *project.Project
 	{
 		c := project.Config{
-			Name: r.flag.Name,
+			GoModule: r.flag.GoModule,
 		}
 
 		projectInput, err = project.New(c)

@@ -8,23 +8,25 @@ import (
 func NewZZProjectInput(p params.Params) input.Input {
 	i := input.Input{
 		Path:         params.RegenerableFileName(p, "project.go"),
-		TemplateBody: projectTemplate,
+		TemplateBody: projectZZTemplate,
 		TemplateData: map[string]interface{}{
-			"Name": params.Name(p),
+			"Name":   params.Name(p),
+			"Module": params.Module(p),
 		},
 	}
 
 	return i
 }
 
-// TODO description should be provided by the user. Or maybe taken from REAMDE.md?
-var projectTemplate = `package project
+var projectZZTemplate = `package project
+
+const (
+	name        = "{{ .Name }}"
+	source      = "https://{{ .Module }}"
+)
 
 var (
-	description = "Command line tool."
 	gitSHA      = "n/a"
-	name        = "{{ .Name }}"
-	source      = "https://github.com/giantswarm/{{ .Name }}"
 	version     = "n/a"
 )
 

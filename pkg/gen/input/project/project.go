@@ -1,14 +1,15 @@
 package project
 
 import (
+	"github.com/giantswarm/microerror"
+
 	"github.com/giantswarm/devctl/pkg/gen/input"
 	"github.com/giantswarm/devctl/pkg/gen/input/project/internal/file"
 	"github.com/giantswarm/devctl/pkg/gen/input/project/internal/params"
-	"github.com/giantswarm/microerror"
 )
 
 type Config struct {
-	Name string
+	GoModule string
 }
 
 type Project struct {
@@ -16,36 +17,21 @@ type Project struct {
 }
 
 func New(config Config) (*Project, error) {
-	if config.Name == "" {
-		return nil, microerror.Maskf(invalidConfigError, "%T.Name must not be empty", config)
+	if config.GoModule == "" {
+		return nil, microerror.Maskf(invalidConfigError, "%T.GoModule must not be empty", config)
 	}
 
 	c := &Project{
 		params: params.Params{
-			Name: config.Name,
-
-			RootCommand: params.ParamsCommandTree{
-				Name: "cmd",
-				Subcommands: []params.ParamsCommandTree{
-					{
-						Name:        "example",
-						Subcommands: []params.ParamsCommandTree{},
-					},
-					{
-						Name: "test",
-						Subcommands: []params.ParamsCommandTree{
-							{
-								Name:        "nested",
-								Subcommands: []params.ParamsCommandTree{},
-							},
-						},
-					},
-				},
-			},
+			GoModule: config.GoModule,
 		},
 	}
 
 	return c, nil
+}
+
+func (m *Project) Project() input.Input {
+	return file.NewProjectInput(m.params)
 }
 
 func (m *Project) ZZProject() input.Input {

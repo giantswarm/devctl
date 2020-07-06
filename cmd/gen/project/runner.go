@@ -1,4 +1,4 @@
-package makefile
+package project
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/pkg/gen"
-	"github.com/giantswarm/devctl/pkg/gen/input/makefile"
+	"github.com/giantswarm/devctl/pkg/gen/input/project"
 )
 
 type runner struct {
@@ -38,21 +38,13 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
 	var err error
 
-	var flavour gen.Flavour
+	var projectInput *project.Project
 	{
-		flavour, err = gen.NewFlavour(r.flag.Flavour)
-		if err != nil {
-			return microerror.Mask(err)
-		}
-	}
-
-	var makefileInput *makefile.Makefile
-	{
-		c := makefile.Config{
-			Flavour: flavour,
+		c := project.Config{
+			GoModule: r.flag.GoModule,
 		}
 
-		makefileInput, err = makefile.New(c)
+		projectInput, err = project.New(c)
 		if err != nil {
 			return microerror.Mask(err)
 		}
@@ -60,7 +52,8 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 	err = gen.Execute(
 		ctx,
-		makefileInput.Makefile(),
+		projectInput.Project(),
+		projectInput.ZZProject(),
 	)
 	if err != nil {
 		return microerror.Mask(err)

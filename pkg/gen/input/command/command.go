@@ -1,15 +1,16 @@
 package command
 
 import (
+	"github.com/giantswarm/microerror"
+
 	"github.com/giantswarm/devctl/pkg/gen/input"
 	"github.com/giantswarm/devctl/pkg/gen/input/command/internal/file"
 	"github.com/giantswarm/devctl/pkg/gen/input/command/internal/params"
-	"github.com/giantswarm/microerror"
 )
 
 type Config struct {
-	Dir  string
-	Name string
+	Dir      string
+	GoModule string
 }
 
 type Command struct {
@@ -20,14 +21,14 @@ func New(config Config) (*Command, error) {
 	if config.Dir == "" {
 		return nil, microerror.Maskf(invalidConfigError, "%T.Dir must not be empty", config)
 	}
-	if config.Name == "" {
-		return nil, microerror.Maskf(invalidConfigError, "%T.Name must not be empty", config)
+	if config.GoModule == "" {
+		return nil, microerror.Maskf(invalidConfigError, "%T.GoModule must not be empty", config)
 	}
 
 	c := &Command{
 		params: params.Params{
-			Dir:  config.Dir,
-			Name: config.Name,
+			Dir:      config.Dir,
+			GoModule: config.GoModule,
 		},
 	}
 

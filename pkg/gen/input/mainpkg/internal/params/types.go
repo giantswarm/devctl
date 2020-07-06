@@ -1,9 +1,7 @@
 package params
 
 type Params struct {
-	// Name is the name of CLI binary name.
-	Name string
-
+	GoModule    string
 	Subcommands []Subcommand
 }
 

@@ -10,11 +10,7 @@ func NewMakefileInput(p params.Params) input.Input {
 		Path:         "Makefile",
 		TemplateBody: makefileTemplate,
 		TemplateData: map[string]interface{}{
-			"CurrentFlavour":  p.CurrentFlavour,
-			"FlavourApp":      p.FlavourApp,
-			"FlavourCLI":      p.FlavourCLI,
-			"FlavourLibrary":  p.FlavourLibrary,
-			"FlavourOperator": p.FlavourOperator,
+			"IsFlavourCLI": params.IsFlavourCLI(p),
 		},
 	}
 
@@ -26,11 +22,11 @@ var makefileTemplate = `# DO NOT EDIT. Generated with:
 #    devctl gen makefile
 #
 
-{{- if eq .CurrentFlavour .FlavourCLI}}
+{{- if eq .IsFlavourCLI }}
 
 PACKAGE_DIR    := ./bin-dist
 
-{{- end}}
+{{- end }}
 
 APPLICATION    := $(shell basename $(shell go list .))
 BUILDTIMESTAMP := $(shell date -u '+%FT%TZ')
@@ -52,7 +48,7 @@ build-darwin: $(APPLICATION)-darwin
 ## build-linux: builds a local binary for linux/amd64
 build-linux: $(APPLICATION)-linux
 
-{{- if eq .CurrentFlavour .FlavourCLI}}
+{{- if eq .IsFlavourCLI }}
 
 .PHONY: package-darwin package-linux
 ## package-darwin: prepares a packaged darwin/amd64 version
@@ -77,7 +73,7 @@ $(APPLICATION)-archive-%:
 		$(APPLICATION)-$(VERSION)-$*-amd64
 	rm -rf $(PACKAGE_DIR)/$(APPLICATION)-$(VERSION)-$*-amd64
 
-{{- end}}
+{{- end }}
 
 $(APPLICATION): $(APPLICATION)-$(OS)
 	cp -a $< $@

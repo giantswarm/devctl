@@ -5,14 +5,15 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/giantswarm/microerror"
+
 	"github.com/giantswarm/devctl/pkg/gen/input"
 	"github.com/giantswarm/devctl/pkg/gen/input/mainpkg/internal/file"
 	"github.com/giantswarm/devctl/pkg/gen/input/mainpkg/internal/params"
-	"github.com/giantswarm/microerror"
 )
 
 type Config struct {
-	Name string
+	GoModule string
 }
 
 type Main struct {
@@ -20,31 +21,27 @@ type Main struct {
 }
 
 func New(config Config) (*Main, error) {
-	if config.Name == "" {
-		return nil, microerror.Maskf(invalidConfigError, "%T.Name must not be empty", config)
+	if config.GoModule == "" {
+		return nil, microerror.Maskf(invalidConfigError, "%T.GoModule must not be empty", config)
 	}
 
 	var subcommands []params.Subcommand
 
-	err := os.MkdirAll("cmd", 0755)
+	err := os.MkdirAll(params.RootCmdDir, 0755)
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}
 
-	// TODO unhappy with "cmd" not being const.
-	err = filepath.Walk("cmd", func(path string, info os.FileInfo, err error) error {
+	err = filepath.Walk(params.RootCmdDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return microerror.Mask(err)
 		}
-		if path == "cmd" {
+		if path == params.RootCmdDir {
 			return nil
 		}
 		if !info.IsDir() {
 			return nil
 		}
-
-		// TODO(PK): I need to think about something smarter here. It would be good to be able to generate that outside giantswarm.
-		module := filepath.Join("github.com", "giantswarm", config.Name)
 
 		segs := strings.Split(path, "/")[1:]
 
@@ -55,7 +52,7 @@ func New(config Config) (*Main, error) {
 
 		s := params.Subcommand{
 			Alias:       strings.Join(segs, ""),
-			Import:      filepath.Join(module, path),
+			Import:      filepath.Join(config.GoModule, path),
 			ParentAlias: parentAlias,
 		}
 
@@ -69,7 +66,7 @@ func New(config Config) (*Main, error) {
 
 	c := &Main{
 		params: params.Params{
-			Name: config.Name,
+			GoModule: config.GoModule,
 
 			Subcommands: subcommands,
 		},
