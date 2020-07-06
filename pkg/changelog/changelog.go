@@ -73,22 +73,6 @@ type parseParams struct {
 	end          string
 }
 
-type containerLinuxSoftware struct {
-	Docker   []string `json:"docker"`
-	Ignition []string `json:"ignition"`
-	Kernel   []string `json:"kernel"`
-	Rkt      []string `json:"rkt"`
-	Systemd  []string `json:"systemd"`
-}
-
-type containerLinuxRelease struct {
-	Channel       string                 `json:"channel"`
-	Architectures []string               `json:"architectures"`
-	ReleaseDate   string                 `json:"release_date"`
-	MajorSoftware containerLinuxSoftware `json:"major_software"`
-	ReleaseNotes  string                 `json:"release_notes"`
-}
-
 // Data about a component passed into templates that depend on versions
 type versionTemplateData struct {
 	Major   uint64
@@ -125,6 +109,9 @@ func ParseChangelog(componentName, componentVersion string) (*Version, error) {
 	}
 	var changelogURLBuilder strings.Builder
 	err = changelogURLTemplate.Execute(&changelogURLBuilder, templateData)
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
 	response, err := http.Get(changelogURLBuilder.String())
 	if err != nil {
 		return nil, microerror.Mask(err)

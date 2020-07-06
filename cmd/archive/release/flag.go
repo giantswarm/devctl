@@ -8,10 +8,7 @@ import (
 )
 
 const (
-	baseFlag      = "base"
-	componentFlag = "component"
 	nameFlag      = "name"
-	overwriteFlag = "overwrite"
 	providerFlag  = "provider"
 	releasesFlag  = "releases"
 )
