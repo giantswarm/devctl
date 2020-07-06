@@ -14,11 +14,7 @@ func NewCreateReleaseInput(p params.Params) input.Input {
 			Right: "}}}}",
 		},
 		TemplateData: map[string]interface{}{
-			"CurrentFlavour":  p.CurrentFlavour,
-			"FlavourApp":      p.FlavourApp,
-			"FlavourCLI":      p.FlavourCLI,
-			"FlavourLibrary":  p.FlavourLibrary,
-			"FlavourOperator": p.FlavourOperator,
+			"IsFlavourCLI": params.IsFlavourCLI(p),
 		},
 	}
 
@@ -208,7 +204,7 @@ jobs:
           tag_name: "v${{ needs.gather_facts.outputs.version }}"
           release_name: "v${{ needs.gather_facts.outputs.version }}"
 
-{{{{- if eq .CurrentFlavour .FlavourCLI }}}}
+{{{{- if .IsFlavourCLI }}}}
 
   install_architect:
     name: Install architect

@@ -10,11 +10,7 @@ func NewMakefileInput(p params.Params) input.Input {
 		Path:         "Makefile",
 		TemplateBody: makefileTemplate,
 		TemplateData: map[string]interface{}{
-			"CurrentFlavour":  p.CurrentFlavour,
-			"FlavourApp":      p.FlavourApp,
-			"FlavourCLI":      p.FlavourCLI,
-			"FlavourLibrary":  p.FlavourLibrary,
-			"FlavourOperator": p.FlavourOperator,
+			"IsFlavourCLI": params.IsFlavourCLI(p),
 		},
 	}
 
@@ -26,11 +22,11 @@ var makefileTemplate = `# DO NOT EDIT. Generated with:
 #    devctl gen makefile
 #
 
-{{- if eq .CurrentFlavour .FlavourCLI}}
+{{- if .IsFlavourCLI }}
 
 PACKAGE_DIR    := ./bin-dist
 
-{{- end}}
+{{- end }}
 
 APPLICATION    := $(shell basename $(shell go list .))
 BUILDTIMESTAMP := $(shell date -u '+%FT%TZ')
@@ -71,7 +67,7 @@ $(APPLICATION)-v$(VERSION)-%-amd64: $(SOURCES)
 	@echo "====> $@"
 	GOOS=$* GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o $@ .
 
-{{- if eq .CurrentFlavour .FlavourCLI}}
+{{- if .IsFlavourCLI }}
 
 .PHONY: package-darwin package-linux
 ## package-darwin: prepares a packaged darwin/amd64 version
@@ -91,7 +87,7 @@ $(PACKAGE_DIR)/$(APPLICATION)-v$(VERSION)-%-amd64.tar.gz: $(APPLICATION)-v$(VERS
 	rm -rf $(DIR)
 	rm -rf $<
 
-{{- end}}
+{{- end }}
 
 .PHONY: install
 ## install: install the application

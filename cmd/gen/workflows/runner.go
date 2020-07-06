@@ -38,17 +38,24 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
 	var err error
 
-	var c workflows.Config
+	var flavour gen.Flavour
 	{
-		c.Flavour, err = mapFlavourTypeToWorkflowFlavour(r.flag.Flavour)
+		flavour, err = gen.NewFlavour(r.flag.Flavour)
 		if err != nil {
 			return microerror.Mask(err)
 		}
 	}
 
-	workflowsInput, err := workflows.New(c)
-	if err != nil {
-		return microerror.Mask(err)
+	var workflowsInput *workflows.Workflows
+	{
+		c := workflows.Config{
+			Flavour: flavour,
+		}
+
+		workflowsInput, err = workflows.New(c)
+		if err != nil {
+			return microerror.Mask(err)
+		}
 	}
 
 	err = gen.Execute(
@@ -61,23 +68,4 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	}
 
 	return nil
-}
-
-func mapFlavourTypeToWorkflowFlavour(f string) (int, error) {
-	switch f {
-	case flavourApp:
-		return workflows.FlavourApp, nil
-
-	case flavourCLI:
-		return workflows.FlavourCLI, nil
-
-	case flavourOperator:
-		return workflows.FlavourOperator, nil
-
-	case flavourLibrary:
-		return workflows.FlavourLibrary, nil
-
-	default:
-		return 0, microerror.Maskf(invalidFlagError, "the picked flavour is invalid")
-	}
 }
