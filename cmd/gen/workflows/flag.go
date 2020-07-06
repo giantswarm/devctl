@@ -19,7 +19,7 @@ type flag struct {
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
-	cmd.Flags().StringVarP(&f.Flavour, flagFlavour, "f", "", fmt.Sprintf(`The type of project that you want to generate the Makefile for. Possible values: <%s>`, strings.Join(gen.AllFlavours(), "|")))
+	cmd.Flags().StringVarP(&f.Flavour, flagFlavour, "f", "", fmt.Sprintf(`The type of project that you want to generate the workflows for. Possible values: <%s>`, strings.Join(gen.AllFlavours(), "|")))
 }
 
 func (f *flag) Validate() error {
