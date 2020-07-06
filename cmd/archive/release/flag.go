@@ -8,9 +8,9 @@ import (
 )
 
 const (
-	nameFlag      = "name"
-	providerFlag  = "provider"
-	releasesFlag  = "releases"
+	nameFlag     = "name"
+	providerFlag = "provider"
+	releasesFlag = "releases"
 )
 
 type flag struct {
