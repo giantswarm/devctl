@@ -24,16 +24,15 @@ func New(config Config) (*Main, error) {
 		return nil, microerror.Maskf(invalidConfigError, "%T.Name must not be empty", config)
 	}
 
-	//type Subcommand struct {
-	//	Alias       string
-	//	Import      string
-	//	ParentAlias string
-	//}
-
 	var subcommands []params.Subcommand
 
+	err := os.MkdirAll("cmd", 0755)
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
+
 	// TODO unhappy with "cmd" not being const.
-	err := filepath.Walk("cmd", func(path string, info os.FileInfo, err error) error {
+	err = filepath.Walk("cmd", func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return microerror.Mask(err)
 		}

@@ -13,6 +13,7 @@ require (
 	github.com/google/go-querystring v1.0.0 // indirect
 	github.com/pelletier/go-toml v1.2.0
 	github.com/spf13/cobra v0.0.5
+	github.com/spf13/pflag v1.0.5
 	golang.org/x/net v0.0.0-20191004110552-13f9640d40b9
 	golang.org/x/oauth2 v0.0.0-20190604053449-0f29369cfe45
 	k8s.io/apimachinery v0.17.2

@@ -27,8 +27,8 @@ import (
 func (r *runner) run(ctx context.Context, args []string) error {
 	r.Printf("\t%-25s=  %s\n", "command", r.cmd.Use)
 	r.Printf("\t%-25s=  %v\n", "args", args)
-	r.Printf("\t--%-23s=  %s\n", flagExample, r.flags.Example)
-	r.Printf("\t--%-23s=  %s\n", flagExamplePersistent, r.flags.ExamplePersistent)
+	//r.Printf("\t--%-23s=  %s\n", flagExample, r.flags.Example)
+	//r.Printf("\t--%-23s=  %s\n", flagExamplePersistent, r.flags.ExamplePersistent)
 	r.Printf("\t%-25s=  %+v\n", "flags", r.flags)
 
 	//err := r.cmd.Usage()
