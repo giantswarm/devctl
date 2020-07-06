@@ -10,8 +10,8 @@ func NewCreateReleasePRInput(p params.Params) input.Input {
 		Path:         params.RegenerableFileName(p, "create_release_pr.yaml"),
 		TemplateBody: createReleasePRTemplate,
 		TemplateDelims: input.InputTemplateDelims{
-			Left:  "##-ignore-left-##",
-			Right: "##-ignore-right-##",
+			Left:  "{{{{",
+			Right: "}}}}",
 		},
 	}
 
@@ -28,9 +28,7 @@ on:
     branches:
       - 'master#release#v*.*.*'
       - 'legacy#release#v*.*.*'
-      - 'release-v*.*.x#release#v*.*.*'
-      # "!" negates previous positive patterns so it has to be at the end.
-      - '!release-v*.x.x#release#v*.*.*'
+      - 'release-v*.x.x#release#v*.*.*'
 jobs:
   debug_info:
     name: Debug info

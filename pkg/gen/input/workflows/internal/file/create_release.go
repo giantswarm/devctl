@@ -14,11 +14,7 @@ func NewCreateReleaseInput(p params.Params) input.Input {
 			Right: "}}}}",
 		},
 		TemplateData: map[string]interface{}{
-			"CurrentFlavour":  p.CurrentFlavour,
-			"FlavourApp":      p.FlavourApp,
-			"FlavourCLI":      p.FlavourCLI,
-			"FlavourLibrary":  p.FlavourLibrary,
-			"FlavourOperator": p.FlavourOperator,
+			"IsFlavourCLI": params.IsFlavourCLI(p),
 		},
 	}
 
@@ -35,9 +31,7 @@ on:
     branches:
       - 'legacy'
       - 'master'
-      - 'release-v*.*.x'
-      # "!" negates previous positive patterns so it has to be at the end.
-      - '!release-v*.x.x'
+      - 'release-v*.x.x'
 jobs:
   debug_info:
     name: Debug info
@@ -208,7 +202,7 @@ jobs:
           tag_name: "v${{ needs.gather_facts.outputs.version }}"
           release_name: "v${{ needs.gather_facts.outputs.version }}"
 
-{{{{- if eq .CurrentFlavour .FlavourCLI }}}}
+{{{{- if eq .IsFlavourCLI }}}}
 
   install_architect:
     name: Install architect
@@ -260,7 +254,7 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GO_VERSION: 1.14.2
       ARTIFACT_DIR: bin-dist
-      TAG: v${{ needs.gather_facts.outputs.version }}
+      PKG_VERSION: ${{ needs.gather_facts.outputs.version }}
     needs:
       - create_release
       - gather_facts
@@ -292,13 +286,13 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
         with:
-          ref: ${{ env.TAG }}
+          ref: v${{ needs.gather_facts.outputs.version }}
       - name: Create ${{ matrix.platform }} package
         run: make package-${{ matrix.platform }}
       - name: Add ${{ matrix.platform }} package to release
         uses: actions/upload-release-asset@v1
         env:
-          FILE_NAME: ${{ github.event.repository.name }}-${{ env.TAG }}-${{ matrix.platform }}-amd64.tar.gz
+          FILE_NAME: ${{ github.event.repository.name }}-${{ env.PKG_VERSION }}-${{ matrix.platform }}-amd64.tar.gz
         with:
           path: ${{ env.ARTIFACT_DIR }}
           upload_url: ${{ needs.create_release.outputs.upload_url }}
