@@ -34,9 +34,16 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 	}
 	for _, appVersion := range apps {
 		split := strings.Split(appVersion, "@")
+		name := split[0]
+		version := split[1]
+		var componentVersion string
+		if len(split) > 2 {
+			componentVersion = split[2]
+		}
 		updatesRelease.Spec.Apps = append(updatesRelease.Spec.Apps, v1alpha1.ReleaseSpecApp{
-			Name:    split[0],
-			Version: split[1],
+			Name:    name,
+			Version: version,
+			ComponentVersion: componentVersion,
 		})
 	}
 	newRelease := mergeReleases(baseRelease, updatesRelease)
