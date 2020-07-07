@@ -9,7 +9,7 @@ import (
 )
 
 func createDiff(leftPath string, rightPath string) (string, error) {
-	cmd := exec.Command("diff", leftPath, rightPath)
+	cmd := exec.Command("diff", leftPath, rightPath, "-y", "-t")
 	var writer strings.Builder
 	cmd.Stdout = &writer
 	cmd.Stderr = os.Stdout
