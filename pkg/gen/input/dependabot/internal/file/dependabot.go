@@ -39,7 +39,7 @@ updates:
   reviewers:
   {{- range $reviewer:= .Reviewers }} 
   - {{ $reviewer }} 
-   {{- end}}
+  {{- end}}
 {{- end }}
   ignore:
   - dependency-name: k8s.io/*
