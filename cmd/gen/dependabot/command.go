@@ -19,8 +19,7 @@ dependencies secure and up-to-date.
 E.g. run 'devctl gen dependabot --reviewers team/my-team' to automatically request
 a review from my-team.
 
-Omit reviewers flag and Dependabot will create a new PR without requesting
-a review.
+Omit reviewers flag and Dependabot will create a new PR without requesting a review.
 `
 )
 
