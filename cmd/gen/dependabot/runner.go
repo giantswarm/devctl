@@ -3,7 +3,6 @@ package dependabot
 import (
 	"context"
 	"io"
-	"strings"
 
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
@@ -37,6 +36,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	var dependabotInput *dependabot.Dependabot
 	{
 		c := dependabot.Config{
+			Daily:     r.flag.Daily,
 			Reviewers: r.flag.Reviewers,
 		}
 
@@ -55,8 +55,4 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	}
 
 	return nil
-}
-
-func reviewerList(f string) []string {
-	return strings.Split(f, ",")
 }

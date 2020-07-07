@@ -7,6 +7,7 @@ import (
 )
 
 type Config struct {
+	Daily     bool
 	Reviewers []string
 }
 
@@ -19,6 +20,7 @@ func New(config Config) (*Dependabot, error) {
 		params: params.Params{
 			Dir: ".github/",
 
+			Daily:     config.Daily,
 			Reviewers: config.Reviewers,
 		},
 	}
