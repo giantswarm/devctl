@@ -16,7 +16,7 @@ const (
 This config is used by Dependabot to automatically creating pull requests to keep
 dependencies secure and up-to-date.
 
-Run 'devctl gen dependabot --reviewers team/my-team' to automatically request
+E.g. run 'devctl gen dependabot --reviewers team/my-team' to automatically request
 a review from my-team.
 
 Omit reviewers flag and Dependabot will create a new PR without requesting
