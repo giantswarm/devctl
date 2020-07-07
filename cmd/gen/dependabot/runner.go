@@ -34,18 +34,16 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
 	var err error
 
-	var c dependabot.Config
+	var dependabotInput *dependabot.Dependabot
 	{
-		if len(r.flag.Reviewers) > 0 {
-			c.Reviewers = reviewerList(r.flag.Reviewers)
-		} else {
-			c.Reviewers = nil
+		c := dependabot.Config{
+			Reviewers: r.flag.Reviewers,
 		}
-	}
 
-	dependabotInput, err := dependabot.New(c)
-	if err != nil {
-		return microerror.Mask(err)
+		dependabotInput, err = dependabot.New(c)
+		if err != nil {
+			return microerror.Mask(err)
+		}
 	}
 
 	err = gen.Execute(
