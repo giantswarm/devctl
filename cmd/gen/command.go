@@ -10,6 +10,7 @@ import (
 
 	"github.com/giantswarm/devctl/cmd/gen/ami"
 	"github.com/giantswarm/devctl/cmd/gen/crud"
+	"github.com/giantswarm/devctl/cmd/gen/dependabot"
 	"github.com/giantswarm/devctl/cmd/gen/kubeconfig"
 	"github.com/giantswarm/devctl/cmd/gen/makefile"
 	"github.com/giantswarm/devctl/cmd/gen/workflows"
@@ -62,6 +63,20 @@ func New(config Config) (*cobra.Command, error) {
 		}
 
 		crudCmd, err = crud.New(c)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+	}
+
+	var dependabotCmd *cobra.Command
+	{
+		c := dependabot.Config{
+			Logger: config.Logger,
+			Stderr: config.Stderr,
+			Stdout: config.Stdout,
+		}
+
+		dependabotCmd, err = dependabot.New(c)
 		if err != nil {
 			return nil, microerror.Mask(err)
 		}
@@ -129,6 +144,7 @@ func New(config Config) (*cobra.Command, error) {
 
 	c.AddCommand(amiCmd)
 	c.AddCommand(crudCmd)
+	c.AddCommand(dependabotCmd)
 	c.AddCommand(kubeconfigCmd)
 	c.AddCommand(makefileCmd)
 	c.AddCommand(workflowsCmd)
