@@ -11,6 +11,7 @@ import (
 
 type kustomizationFile struct {
 	CommonAnnotations map[string]string `json:"commonAnnotations"`
+	Transformers      []string          `json:"transformers"`
 	Resources         []string          `json:"resources"`
 }
 
