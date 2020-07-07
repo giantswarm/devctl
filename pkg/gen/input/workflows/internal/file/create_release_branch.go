@@ -9,6 +9,10 @@ func NewCreateReleaseBranchInput(p params.Params) input.Input {
 	i := input.Input{
 		Path:         params.RegenerableFileName(p, "create_release_branch.yaml"),
 		TemplateBody: createReleaseBranchTemplate,
+		TemplateDelims: input.InputTemplateDelims{
+			Left:  "{{{{",
+			Right: "}}}}",
+		},
 	}
 
 	return i
@@ -28,8 +32,18 @@ on:
     tags: ['v*.*.*']
 
 jobs:
+  debug_info:
+    name: Debug info
+    runs-on: ubuntu-18.04
+    steps:
+    - name: Print github context JSON
+	    run: |
+		    cat <<EOF
+		    ${{ toJson(github) }}
+		    EOF
+
   create-release-branch:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-18.04
 
     steps:
     - uses: actions/checkout@v2
@@ -66,7 +80,7 @@ jobs:
             string = removeprefix(string, 'v')
             return semver.VersionInfo.parse(string)
 
-        repo = Repo(os.getcwd())
+        repo = Repo(os.getcwd())  # Reference the repo from our current directory
 
         # Get the current tag from env and strip quotation marks
         current_tag = os.environ.get("GITHUB_REF").strip('"')
@@ -76,11 +90,12 @@ jobs:
         print("Current tag is " + current_tag)
 
         # Get the tag of the "first" parent of the current commit including suffix, just for human reference
-        parent_tag = repo.git.describe('--tags', "{}".format(repo.commit().parents[0]))
+        parent_commit = repo.commit().parents[0]
+        parent_tag = repo.git.describe('--tags', "{}".format(parent_commit))
         print("Parent commit tag was {}".format(parent_tag))
 
         # Get the closest tag to the parent commit (the tag version without the suffix)
-        parent_tag = repo.git.describe('--tags', '--abbrev=0', "{}".format(repo.commit().parents[0]))
+        parent_tag = repo.git.describe('--tags', '--abbrev=0', "{}".format(parent_commit))
 
         # Get the semver for the parent tag
         parent_version = version(parent_tag)
@@ -88,9 +103,6 @@ jobs:
 
         # Get the semver for the current tag
         current_version = version(current_tag)
-
-        # Format the expected name of the release branch for the previous minor version
-        previous_branch_name = "release-v{}.{}.x".format(parent_version.major, parent_version.minor)
 
         # Check if the current tag version introduces a new major or minor version
         new_version = False
@@ -107,6 +119,8 @@ jobs:
           print("Nothing to do here.")
           exit(0)
 
+        # Format the expected name of the release branch for the previous minor version
+        previous_branch_name = "release-v{}.{}.x".format(parent_version.major, parent_version.minor)
         print("Release branch for previous minor would be {}".format(previous_branch_name))
 
         # Check if the release branch already exists
@@ -119,15 +133,16 @@ jobs:
 
         # Create the branch
         print("Creating release branch {}".format(previous_branch_name))
-        origin = repo.remote()
 
-        # Create a local branch
+        # Check out the parent commit to branch from
+        origin = repo.remote()
+        repo.git.checkout(parent_commit, force=True)  # Force parent checkout
+
+        # Create a local branch from the parent commit
         release_branch = repo.create_head(previous_branch_name)
-        # Check it out
-        release_branch.checkout()
 
         # Push the local branch to remote
-        # Unfortunately no API way to do this - use the git client
+        # Unfortunately, no API way to do this - use the git client
         repo.git.push('--set-upstream', origin, previous_branch_name)
         EOF
 
