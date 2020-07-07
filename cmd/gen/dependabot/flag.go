@@ -5,7 +5,7 @@ import (
 )
 
 type flag struct {
-	Reviewers string
+	Reviewers []string
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
