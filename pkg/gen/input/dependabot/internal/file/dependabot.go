@@ -11,10 +11,6 @@ func NewCreateDependabotInput(p params.Params) input.Input {
 	i := input.Input{
 		Path:         filepath.Join(p.Dir, "dependabot.yml"),
 		TemplateBody: createDependabotTemplate,
-		TemplateDelims: input.InputTemplateDelims{
-			Left:  "{{",
-			Right: "}}",
-		},
 		TemplateData: map[string]interface{}{
 			"Reviewers": p.Reviewers,
 		},
