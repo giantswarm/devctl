@@ -12,7 +12,7 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-func CreateRelease(name, base, releases, provider string, components []string, overwrite bool) error {
+func CreateRelease(name, base, releases, provider string, components, apps []string, overwrite bool) error {
 	// Paths
 	baseVersion := *semver.MustParse(base) // already validated to be a valid semver string
 	providerDirectory := filepath.Join(releases, provider)
@@ -28,6 +28,13 @@ func CreateRelease(name, base, releases, provider string, components []string, o
 	for _, componentVersion := range components {
 		split := strings.Split(componentVersion, "@")
 		updatesRelease.Spec.Components = append(updatesRelease.Spec.Components, v1alpha1.ReleaseSpecComponent{
+			Name:    split[0],
+			Version: split[1],
+		})
+	}
+	for _, appVersion := range apps {
+		split := strings.Split(appVersion, "@")
+		updatesRelease.Spec.Apps = append(updatesRelease.Spec.Apps, v1alpha1.ReleaseSpecApp{
 			Name:    split[0],
 			Version: split[1],
 		})

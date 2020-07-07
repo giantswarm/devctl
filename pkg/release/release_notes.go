@@ -64,6 +64,19 @@ func createReleaseNotes(release v1alpha1.Release, provider string) (string, erro
 		})
 	}
 
+	for _, app := range release.Spec.Apps {
+		componentChangelog, err := changelog.ParseChangelog(app.Name, app.Version)
+		if err != nil {
+			return "", microerror.Mask(err)
+		}
+		components = append(components, releaseNotesComponent{
+			Name:      app.Name,
+			Version:   app.Version,
+			Link:      componentChangelog.Link,
+			Changelog: componentChangelog.Content,
+		})
+	}
+
 	var writer strings.Builder
 	data := releaseNotesTemplateData{
 		Name:        release.Name,

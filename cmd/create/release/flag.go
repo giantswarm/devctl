@@ -8,6 +8,7 @@ import (
 )
 
 const (
+	appFlag       = "app"
 	baseFlag      = "base"
 	componentFlag = "component"
 	nameFlag      = "name"
@@ -18,6 +19,7 @@ const (
 
 type flag struct {
 	Base       string
+	Apps       []string
 	Components []string
 	Name       string
 	Overwrite  bool
@@ -26,6 +28,7 @@ type flag struct {
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
+	cmd.Flags().StringArrayVar(&f.Apps, appFlag, nil, `Updated app version to apply to created release. Can be specified multiple times.`)
 	cmd.Flags().StringVar(&f.Base, baseFlag, "", `Existing release upon which to base the new release. Must follow semver format.`)
 	cmd.Flags().StringArrayVar(&f.Components, componentFlag, nil, `Updated component version to apply to created release. Can be specified multiple times.`)
 	cmd.Flags().StringVar(&f.Name, nameFlag, "", `Name of the new release. Must follow semver format.`)

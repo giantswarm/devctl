@@ -15,7 +15,7 @@ import (
 
 // Regex patterns used by all Giant Swarm components
 const (
-	commonStartPattern = "(?m)^## \\[v?(?P<Version>\\d+\\.\\d+\\.\\d+)\\].*(?P<Date>\\d{4}-\\d{2}\\-\\d{2})$"
+	commonStartPattern = "(?m)^## \\[v?(?P<Version>\\d+\\.\\d+\\.\\d+)\\].*(?P<Date>\\d{4}-\\d{2}\\-\\d{2})?$"
 	commonEndPattern   = "(?m)^\\[.*\\]:.*$"
 )
 
@@ -84,6 +84,72 @@ var knownComponentParseParams = map[string]parseParams{
 	"containerlinux": {
 		tag:       "https://www.flatcar-linux.org/releases/#release-{{.Version}}",
 		changelog: "https://www.flatcar-linux.org/releases-json/releases-stable.json",
+	},
+	"cert-exporter": {
+		tag:       "https://github.com/giantswarm/cert-exporter/releases/tag/v{{.Version}}",
+		changelog: "https://raw.githubusercontent.com/giantswarm/cert-exporter/master/CHANGELOG.md",
+		start:     commonStartPattern,
+		end:       commonEndPattern,
+	},
+	"cert-manager": {
+		tag:       "https://github.com/giantswarm/cert-manager-app/releases/tag/v{{.Version}}",
+		changelog: "https://raw.githubusercontent.com/giantswarm/cert-manager-app/master/CHANGELOG.md",
+		start:     commonStartPattern,
+		end:       commonEndPattern,
+	},
+	"chart-operator": {
+		tag:       "https://github.com/giantswarm/chart-operator/releases/tag/v{{.Version}}",
+		changelog: "https://raw.githubusercontent.com/giantswarm/chart-operator/master/CHANGELOG.md",
+		start:     commonStartPattern,
+		end:       commonEndPattern,
+	},
+	"cluster-autoscaler": {
+		tag:       "https://github.com/giantswarm/cluster-autoscaler-app/releases/tag/v{{.Version}}",
+		changelog: "https://raw.githubusercontent.com/giantswarm/cluster-autoscaler-app/master/CHANGELOG.md",
+		start:     commonStartPattern,
+		end:       commonEndPattern,
+	},
+	"coredns": {
+		tag:       "https://github.com/giantswarm/coredns-app/releases/tag/v{{.Version}}",
+		changelog: "https://raw.githubusercontent.com/giantswarm/coredns-app/master/CHANGELOG.md",
+		start:     commonStartPattern,
+		end:       commonEndPattern,
+	},
+	"external-dns": {
+		tag:       "https://github.com/giantswarm/external-dns-app/releases/tag/v{{.Version}}",
+		changelog: "https://raw.githubusercontent.com/giantswarm/external-dns-app/master/CHANGELOG.md",
+		start:     commonStartPattern,
+		end:       commonEndPattern,
+	},
+	"kiam": {
+		tag:       "https://github.com/giantswarm/kiam-app/releases/tag/v{{.Version}}",
+		changelog: "https://raw.githubusercontent.com/giantswarm/kiam-app/master/CHANGELOG.md",
+		start:     commonStartPattern,
+		end:       commonEndPattern,
+	},
+	"kube-state-metrics": {
+		tag:       "https://github.com/giantswarm/kube-state-metrics-app/releases/tag/v{{.Version}}",
+		changelog: "https://raw.githubusercontent.com/giantswarm/kube-state-metrics-app/master/CHANGELOG.md",
+		start:     commonStartPattern,
+		end:       commonEndPattern,
+	},
+	"metrics-server": {
+		tag:       "https://github.com/giantswarm/metrics-server-app/releases/tag/v{{.Version}}",
+		changelog: "https://raw.githubusercontent.com/giantswarm/metrics-server-app/master/CHANGELOG.md",
+		start:     commonStartPattern,
+		end:       commonEndPattern,
+	},
+	"net-exporter": {
+		tag:       "https://github.com/giantswarm/net-exporter/releases/tag/v{{.Version}}",
+		changelog: "https://raw.githubusercontent.com/giantswarm/net-exporter/master/CHANGELOG.md",
+		start:     commonStartPattern,
+		end:       commonEndPattern,
+	},
+	"node-exporter": {
+		tag:       "https://github.com/giantswarm/node-exporter-app/releases/tag/v{{.Version}}",
+		changelog: "https://raw.githubusercontent.com/giantswarm/node-exporter-app/master/CHANGELOG.md",
+		start:     commonStartPattern,
+		end:       commonEndPattern,
 	},
 }
 

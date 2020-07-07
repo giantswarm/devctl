@@ -52,6 +52,15 @@ func mergeReleases(base v1alpha1.Release, override v1alpha1.Release) v1alpha1.Re
 		}
 	}
 
+	for i, app := range merged.Spec.Apps {
+		for _, overrideApp := range override.Spec.Apps {
+			if app.Name == overrideApp.Name {
+				merged.Spec.Apps[i].Version = overrideApp.Version
+				break
+			}
+		}
+	}
+
 	for _, overrideComponent := range override.Spec.Components {
 		found := false
 		for _, component := range merged.Spec.Components {
@@ -64,6 +73,20 @@ func mergeReleases(base v1alpha1.Release, override v1alpha1.Release) v1alpha1.Re
 			merged.Spec.Components = append(merged.Spec.Components, overrideComponent)
 		}
 	}
+
+	for _, overrideApp := range override.Spec.Apps {
+		found := false
+		for _, app := range merged.Spec.Apps {
+			if app.Name == overrideApp.Name {
+				found = true
+				break
+			}
+		}
+		if !found {
+			merged.Spec.Apps = append(merged.Spec.Apps, overrideApp)
+		}
+	}
+
 	return merged
 }
 
