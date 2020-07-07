@@ -41,8 +41,8 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 			componentVersion = split[2]
 		}
 		updatesRelease.Spec.Apps = append(updatesRelease.Spec.Apps, v1alpha1.ReleaseSpecApp{
-			Name:    name,
-			Version: version,
+			Name:             name,
+			Version:          version,
 			ComponentVersion: componentVersion,
 		})
 	}
