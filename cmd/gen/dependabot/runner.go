@@ -49,6 +49,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	err = gen.Execute(
 		ctx,
 		dependabotInput.CreateDependabot(),
+		dependabotInput.CreateWorkflow(),
 	)
 	if err != nil {
 		return microerror.Mask(err)

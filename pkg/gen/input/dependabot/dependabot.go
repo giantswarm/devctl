@@ -31,3 +31,7 @@ func New(config Config) (*Dependabot, error) {
 func (d *Dependabot) CreateDependabot() input.Input {
 	return file.NewCreateDependabotInput(d.params)
 }
+
+func (d *Dependabot) CreateWorkflow() input.Input {
+	return file.NewCreateWorkflowInput(d.params)
+}
