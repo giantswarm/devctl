@@ -46,4 +46,20 @@ updates:
   - dependency-name: k8s.io/*
     versions:
     - ">=0.17.0"
+- package-ecosystem: docker
+  directory: "/"
+  schedule:
+{{- if .Daily }}
+    interval: daily
+{{- else }}
+    interval: weekly
+{{- end }}
+    time: "04:00"
+  target-branch: master
+{{- if .Reviewers }}
+  reviewers:
+  {{- range $reviewer:= .Reviewers }}
+  - {{ $reviewer }}
+  {{- end}}
+{{- end }}
 `
