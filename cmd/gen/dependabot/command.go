@@ -13,11 +13,9 @@ const (
 	name        = "dependabot"
 	description = `Generates GitHub Dependabot config (.github/dependabot.yml).
 
-This config is used by Dependabot to automatically creating pull requests to keep
-dependencies secure and up-to-date.
+This config is used by Dependabot to automatically creating pull requests to keep dependencies secure and up-to-date.
 
-E.g. run 'devctl gen dependabot --reviewers team/my-team' to automatically request
-a review from my-team.
+E.g. run 'devctl gen dependabot --reviewers team/my-team' to automatically request a review from my-team.
 
 Omit reviewers flag and Dependabot will create a new PR without requesting a review.
 `
