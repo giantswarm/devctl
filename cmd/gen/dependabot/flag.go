@@ -9,5 +9,5 @@ type flag struct {
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
-	cmd.Flags().StringVar(&f.Reviewers, "reviewers", "", "Reviewers you want to assign automatically when Dependabot creates a PR, comma separated.")
+	cmd.Flags().StringSliceVar(&f.Reviewers, "reviewers", "", "Reviewers you want to assign automatically when Dependabot creates a PR, comma separated, e.g. giantswarm/team-firecracker.")
 }
