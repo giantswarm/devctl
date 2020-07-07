@@ -38,8 +38,8 @@ updates:
   open-pull-requests-limit: 10
 {{- if .Reviewers }}
   reviewers:
-  {{- range $reviewer:= .Reviewers }} 
-  - {{ $reviewer }} 
+  {{- range $reviewer:= .Reviewers }}
+  - {{ $reviewer }}
   {{- end}}
 {{- end }}
   ignore:
