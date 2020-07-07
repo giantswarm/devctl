@@ -10,7 +10,7 @@ import (
 
 func NewCreateWorkflowInput(p params.Params) input.Input {
 	i := input.Input{
-		Path:         filepath.Join(p.Dir, "worflows", internal.RegenerableFilePrefix+"gomodtidy.yaml"),
+		Path:         filepath.Join(p.Dir, "workflows", internal.RegenerableFilePrefix+"gomodtidy.yaml"),
 		TemplateBody: createDependabotWorkflowTemplate,
 		TemplateDelims: input.InputTemplateDelims{
 			Left:  "{{{{",
