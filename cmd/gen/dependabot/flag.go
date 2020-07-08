@@ -3,9 +3,10 @@ package dependabot
 import (
 	"strings"
 
-	"github.com/giantswarm/devctl/pkg/gen"
 	"github.com/giantswarm/microerror"
 	"github.com/spf13/cobra"
+
+	"github.com/giantswarm/devctl/pkg/gen"
 )
 
 const (
