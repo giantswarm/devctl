@@ -127,6 +127,7 @@ func New(config Config) (*cobra.Command, error) {
 
 	f.Init(c)
 
+	c.AddCommand(completionCmd)
 	c.AddCommand(genCmd)
 	c.AddCommand(versionCmd)
 	c.AddCommand(repoCmd)
