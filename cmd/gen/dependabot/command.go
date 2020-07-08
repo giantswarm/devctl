@@ -11,14 +11,10 @@ import (
 
 const (
 	name        = "dependabot"
-	description = `Generates GitHub Dependabot config (.github/dependabot.yml).
-
-This config is used by Dependabot to automatically creating pull requests to keep dependencies secure and up-to-date.
-
-E.g. run 'devctl gen dependabot --reviewers team/my-team' to automatically request a review from my-team.
-
-Omit reviewers flag and Dependabot will create a new PR without requesting a review.
-`
+	description = "Generates GitHub Dependabot config for go and docker dependencies (.github/dependabot.yml)."
+	example     = `  devctl gen dependabot 
+  devctl gen dependabot --interval daily --reviewers giantswarm/team-firecracker
+  devctl gen dependabot --interval weekly --reviewers giantswarm/team-firecracker,njuettner`
 )
 
 type Config struct {
@@ -48,10 +44,11 @@ func New(config Config) (*cobra.Command, error) {
 	}
 
 	c := &cobra.Command{
-		Use:   name,
-		Short: description,
-		Long:  description,
-		RunE:  r.Run,
+		Use:     name,
+		Short:   description,
+		Long:    description,
+		Example: example,
+		RunE:    r.Run,
 	}
 
 	f.Init(c)
