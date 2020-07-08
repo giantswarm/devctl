@@ -12,6 +12,9 @@ import (
 const (
 	name        = "dependabot"
 	description = "Generates GitHub Dependabot config for go and docker dependencies (.github/dependabot.yml)."
+	example     = `  devctl gen dependabot 
+  devctl gen dependabot --interval daily --reviewers giantswarm/team-firecracker
+  devctl gen dependabot --interval weekly --reviewers giantswarm/team-firecracker,njuettner`
 )
 
 type Config struct {
@@ -41,10 +44,11 @@ func New(config Config) (*cobra.Command, error) {
 	}
 
 	c := &cobra.Command{
-		Use:   name,
-		Short: description,
-		Long:  description,
-		RunE:  r.Run,
+		Use:     name,
+		Short:   description,
+		Long:    description,
+		Example: example,
+		RunE:    r.Run,
 	}
 
 	f.Init(c)

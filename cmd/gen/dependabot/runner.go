@@ -22,7 +22,12 @@ type runner struct {
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 
-	err := r.run(ctx, cmd, args)
+	err := r.flag.Validate()
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	err = r.run(ctx, cmd, args)
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -36,7 +41,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	var dependabotInput *dependabot.Dependabot
 	{
 		c := dependabot.Config{
-			Daily:     r.flag.Daily,
+			Interval:  r.flag.Interval,
 			Reviewers: r.flag.Reviewers,
 		}
 

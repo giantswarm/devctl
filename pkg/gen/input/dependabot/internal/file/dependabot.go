@@ -12,7 +12,7 @@ func NewCreateDependabotInput(p params.Params) input.Input {
 		Path:         filepath.Join(p.Dir, "dependabot.yml"),
 		TemplateBody: createDependabotTemplate,
 		TemplateData: map[string]interface{}{
-			"Daily":     p.Daily,
+			"Interval":  p.Interval,
 			"Reviewers": p.Reviewers,
 		},
 	}
@@ -29,11 +29,7 @@ updates:
 - package-ecosystem: gomod
   directory: "/"
   schedule:
-{{- if .Daily }}
-    interval: daily
-{{- else }}
-    interval: weekly
-{{- end }}
+    interval: {{ .Interval }}
     time: "04:00"
   open-pull-requests-limit: 10
 {{- if .Reviewers }}
@@ -49,11 +45,7 @@ updates:
 - package-ecosystem: docker
   directory: "/"
   schedule:
-{{- if .Daily }}
-    interval: daily
-{{- else }}
-    interval: weekly
-{{- end }}
+    interval: {{ .Interval }}
     time: "04:00"
   target-branch: master
 {{- if .Reviewers }}
