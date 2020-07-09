@@ -37,10 +37,10 @@ jobs:
     runs-on: ubuntu-18.04
     steps:
     - name: Print github context JSON
-	    run: |
-		    cat <<EOF
-		    ${{ toJson(github) }}
-		    EOF
+      run: |
+        cat <<EOF
+        ${{ toJson(github) }}
+        EOF
 
   create-release-branch:
     runs-on: ubuntu-18.04
