@@ -41,10 +41,6 @@ func (w *Workflows) CreateRelease() input.Input {
 	return file.NewCreateReleaseInput(w.params)
 }
 
-func (w *Workflows) CreateReleaseBranch() input.Input {
-	return file.NewCreateReleaseBranchInput(w.params)
-}
-
 func (w *Workflows) CreateReleasePR() input.Input {
 	return file.NewCreateReleasePRInput(w.params)
 }

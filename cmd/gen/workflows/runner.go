@@ -54,7 +54,6 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	err = gen.Execute(
 		ctx,
 		workflowsInput.CreateRelease(),
-		workflowsInput.CreateReleaseBranch(),
 		workflowsInput.CreateReleasePR(),
 	)
 	if err != nil {
