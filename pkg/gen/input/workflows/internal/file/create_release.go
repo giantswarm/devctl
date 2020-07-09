@@ -14,11 +14,7 @@ func NewCreateReleaseInput(p params.Params) input.Input {
 			Right: "}}}}",
 		},
 		TemplateData: map[string]interface{}{
-			"CurrentFlavour":  p.CurrentFlavour,
-			"FlavourApp":      p.FlavourApp,
-			"FlavourCLI":      p.FlavourCLI,
-			"FlavourLibrary":  p.FlavourLibrary,
-			"FlavourOperator": p.FlavourOperator,
+			"IsFlavourCLI": params.IsFlavourCLI(p),
 		},
 	}
 
@@ -322,7 +318,7 @@ jobs:
       - name: Check and create release branch
         run: "python3 ./create-branch.py"
 
-{{{{- if eq .CurrentFlavour .FlavourCLI }}}}
+{{{{- if .IsFlavourCLI }}}}
 
   install_architect:
     name: Install architect

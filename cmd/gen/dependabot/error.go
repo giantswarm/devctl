@@ -1,4 +1,4 @@
-package gen
+package dependabot
 
 import "github.com/giantswarm/microerror"
 
@@ -11,11 +11,11 @@ func IsInvalidConfig(err error) bool {
 	return microerror.Cause(err) == invalidConfigError
 }
 
-var filePathError = &microerror.Error{
-	Kind: "filePathError",
+var invalidFlagError = &microerror.Error{
+	Kind: "invalidFlagError",
 }
 
-// IsFilePath asserts filePathError.
-func IsFilePath(err error) bool {
-	return microerror.Cause(err) == filePathError
+// IsInvalidFlag asserts invalidFlagError.
+func IsInvalidFlag(err error) bool {
+	return microerror.Cause(err) == invalidFlagError
 }
