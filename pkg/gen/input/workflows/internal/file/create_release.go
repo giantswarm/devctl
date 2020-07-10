@@ -252,7 +252,7 @@ jobs:
           release_branch="release-v${parent_major}.${parent_minor}.x"
           echo "release_branch=$release_branch"
 
-          if git rev-parse --verify master $release_branch ; then
+          if git rev-parse --verify $release_branch ; then
             echo "Release branch $release_branch already exists. Nothing to do here."
             exit 0
           fi
