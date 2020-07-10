@@ -205,118 +205,60 @@ jobs:
           release_name: "v${{ needs.gather_facts.outputs.version }}"
 
   create-release-branch:
+    name: Create release branch
     runs-on: ubuntu-18.04
     needs:
       - gather_facts
+      - install_semver
     if: ${{ needs.gather_facts.outputs.version }}
     steps:
+      - name: Download semver artifact to /opt/bin
+        uses: actions/download-artifact@v2
+        with:
+          name: semver
+          path: /opt/bin
+      - name: Prepare /opt/bin
+        run: |
+          chmod +x /opt/bin/*
+          echo "::add-path::/opt/bin"
       - uses: actions/checkout@v2
         name: Check out the repository
         with:
           fetch-depth: 0  # Clone the whole history, not just the most recent commit.
-
       - name: Fetch all tags and branches
         run: "git fetch --all"
-
-      - name: Set up python dependencies
-        run: "pip3 install gitpython==3.1.3 semver==2.10.2"
-
-      - name: Set release version
+      - name: Create long-lived release branch
         run: |
-          export GITHUB_TAG_NAME=${{ needs.gather_facts.outputs.version }}
-          echo "::set-env name=GITHUB_TAG_NAME::$GITHUB_TAG_NAME"
+          current_version="${{ needs.gather_facts.outputs.version }}"
+          parent_version="$(git describe --tags --abbrev=0 HEAD^)"
+          parent_version="${parent_version#v}" # Strip "v" prefix.
+          echo "current_version=$current_version parent_version=$parent_version"
 
-      - name: Create the script containing the branch logic
-        run: |
-          cat > ./create-branch.py <<-EOF
-          # This script creates a branch for the previous minor version based on the current commit's parent
-          # if the current tag introduces a new minor version and the release branch doesn't already exist.
+          current_major=$(semver get major $current_version)
+          current_minor=$(semver get minor $current_version)
+          parent_major=$(semver get major $parent_version)
+          parent_minor=$(semver get minor $parent_version)
+          echo "current_major=$current_major current_minor=$current_minor parent_major=$parent_major parent_minor=$parent_minor"
 
-          import os
-          import semver
-          from git import Repo
+          if [[ $current_major -gt $parent_major ]] ; then
+            echo "Current tag is a new major version"
+          elif [[ $current_major -eq $parent_major ]] && [[ $current_minor -gt $parent_minor ]] ; then
+            echo "Current tag is a new minor version"
+          else
+            echo "Current tag is not a new major or minor version. Nothing to do here."
+            exit 0
+          fi
 
-          p = "refs/tags/"  # GitHub tags start with this prefix
+          release_branch="release-v${parent_major}.${parent_minor}.x"
+          echo "release_branch=$release_branch"
 
-          # Takes a string and returns the string without the given prefix, if it is present
-          def removeprefix(string: str, prefix: str) -> str:
-              if string.startswith(prefix):
-                  return string[len(prefix):]
-              return string
+          if git rev-parse --verify master $release_branch ; then
+            echo "Release branch $release_branch already exists. Nothing to do here."
+            exit 0
+          fi
 
-          # Takes a string and returns the semver VersionInfo for that string, even if it includes a leading 'v'
-          def version(string: str) -> semver.VersionInfo:
-              string = removeprefix(string, 'v')
-              return semver.VersionInfo.parse(string)
-
-          repo = Repo(os.getcwd())  # Reference the repo from our current directory
-
-          # Get the current tag from env and strip quotation marks
-          current_tag = os.environ.get("GITHUB_TAG_NAME").strip('"')
-
-          # Remove GitHub ref path
-          current_tag = removeprefix(current_tag, p)
-          print("Current tag is " + current_tag)
-
-          # Get the tag of the "first" parent of the current commit including suffix, just for human reference
-          parent_commit = repo.commit().parents[0]
-          parent_tag = repo.git.describe('--tags', "{}".format(parent_commit))
-          print("Parent commit tag was {}".format(parent_tag))
-
-          # Get the closest tag to the parent commit (the tag version without the suffix)
-          parent_tag = repo.git.describe('--tags', '--abbrev=0', "{}".format(parent_commit))
-
-          # Get the semver for the parent tag
-          parent_version = version(parent_tag)
-          print("Parent base version was {}".format(parent_tag))
-
-          # Get the semver for the current tag
-          current_version = version(current_tag)
-
-          # Check if the current tag version introduces a new major or minor version
-          new_version = False
-          if current_version.major > parent_version.major:
-            print("Current tag is a new major version")
-            new_version = True
-          elif current_version.major == parent_version.major and current_version.minor > parent_version.minor:
-            print("Current tag is a new minor version")
-            new_version = True
-
-          # Abort if not a new major or minor
-          if not new_version:
-            print("Current tag is not a new major or minor version.")
-            print("Nothing to do here.")
-            exit(0)
-
-          # Format the expected name of the release branch for the previous minor version
-          previous_branch_name = "release-v{}.{}.x".format(parent_version.major, parent_version.minor)
-          print("Release branch for previous minor would be {}".format(previous_branch_name))
-
-          # Check if the release branch already exists
-          for b in repo.branches:
-            if b.name == previous_branch_name:
-              print("Release branch {} already exists. Nothing to do here.".format(previous_branch_name))
-              exit(0)
-
-          print("Release branch does not exist")
-
-          # Create the branch
-          print("Creating release branch {}".format(previous_branch_name))
-
-          # Check out the parent commit to branch from
-          origin = repo.remote()
-          repo.git.checkout(parent_commit, force=True)  # Force parent checkout
-
-          # Create a local branch from the parent commit
-          release_branch = repo.create_head(previous_branch_name)
-
-          # Push the local branch to remote
-          # Unfortunately, no API way to do this - use the git client
-          repo.git.push('--set-upstream', origin, previous_branch_name)
-          EOF
-
-      - name: Check and create release branch
-        run: "python3 ./create-branch.py"
+          git branch $release_branch HEAD^
+          git push origin $release_branch
 
 {{{{- if .IsFlavourCLI }}}}
 
