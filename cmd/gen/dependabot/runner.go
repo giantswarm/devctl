@@ -41,8 +41,9 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	var dependabotInput *dependabot.Dependabot
 	{
 		c := dependabot.Config{
-			Interval:  r.flag.Interval,
-			Reviewers: r.flag.Reviewers,
+			Interval:   r.flag.Interval,
+			Reviewers:  r.flag.Reviewers,
+			Ecosystems: r.flag.Ecosystems,
 		}
 
 		dependabotInput, err = dependabot.New(c)

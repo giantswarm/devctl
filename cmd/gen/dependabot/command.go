@@ -12,9 +12,9 @@ import (
 const (
 	name        = "dependabot"
 	description = "Generates GitHub Dependabot config for go and docker dependencies (.github/dependabot.yml)."
-	example     = `  devctl gen dependabot 
-  devctl gen dependabot --interval daily --reviewers giantswarm/team-firecracker
-  devctl gen dependabot --interval weekly --reviewers giantswarm/team-firecracker,njuettner`
+	example     = `  devctl gen dependabot --ecosystems go
+  devctl gen dependabot --ecosystems docker,go --interval daily --reviewers giantswarm/team-firecracker
+  devctl gen dependabot --ecosystems docker --interval weekly --reviewers giantswarm/team-firecracker,njuettner`
 )
 
 type Config struct {

@@ -12,8 +12,9 @@ func NewCreateDependabotInput(p params.Params) input.Input {
 		Path:         filepath.Join(p.Dir, "dependabot.yml"),
 		TemplateBody: createDependabotTemplate,
 		TemplateData: map[string]interface{}{
-			"Interval":  p.Interval,
-			"Reviewers": p.Reviewers,
+			"Ecosystems": p.Ecosystems,
+			"Interval":   p.Interval,
+			"Reviewers":  p.Reviewers,
 		},
 	}
 
@@ -24,17 +25,21 @@ var createDependabotTemplate = `# DO NOT EDIT. Generated with:
 #
 #    devctl gen dependabot
 #
+{{- $interval := .Interval }}
+{{- $reviewers := .Reviewers }}
+{{- range $ecosystem := .Ecosystems }}
+{{- if eq $ecosystem "go" }}
 version: 2
 updates:
 - package-ecosystem: gomod
   directory: "/"
   schedule:
-    interval: {{ .Interval }}
+    interval: {{ $interval }}
     time: "04:00"
   open-pull-requests-limit: 10
-{{- if .Reviewers }}
+{{- if $reviewers }}
   reviewers:
-  {{- range $reviewer:= .Reviewers }}
+  {{- range $reviewer := $reviewers }}
   - {{ $reviewer }}
   {{- end}}
 {{- end }}
@@ -42,16 +47,20 @@ updates:
   - dependency-name: k8s.io/*
     versions:
     - ">=0.17.0"
+{{- end }}
+{{- if eq $ecosystem "docker" }}
 - package-ecosystem: docker
   directory: "/"
   schedule:
-    interval: {{ .Interval }}
+    interval: {{ $interval }}
     time: "04:00"
   target-branch: master
-{{- if .Reviewers }}
+{{- if $reviewers }}
   reviewers:
-  {{- range $reviewer:= .Reviewers }}
+  {{- range $reviewer := $reviewers }}
   - {{ $reviewer }}
   {{- end}}
+{{- end }}
+{{- end }}
 {{- end }}
 `
