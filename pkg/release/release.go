@@ -11,10 +11,12 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
+// Calculate the directory name of the given release
 func releaseToDirectory(release v1alpha1.Release) string {
 	return release.Name
 }
 
+// Given a slice of versions as strings, return them in ascending semver order with v prefix.
 func deduplicateAndSortVersions(originalVersions []string) ([]string, error) {
 	versions := map[string]*semver.Version{}
 	for _, v := range originalVersions {
@@ -39,10 +41,14 @@ func deduplicateAndSortVersions(originalVersions []string) ([]string, error) {
 	return result, nil
 }
 
+// Return base release with all components and apps from override merged into it.
 func mergeReleases(base v1alpha1.Release, override v1alpha1.Release) v1alpha1.Release {
 	merged := base
 	merged.Name = override.Name
+	merged.Spec.State = override.Spec.State
+	merged.Spec.Date = override.Spec.Date
 
+	// Where the component exists in both, set version to that of override component.
 	for i, component := range merged.Spec.Components {
 		for _, overrideComponent := range override.Spec.Components {
 			if component.Name == overrideComponent.Name {
@@ -52,15 +58,18 @@ func mergeReleases(base v1alpha1.Release, override v1alpha1.Release) v1alpha1.Re
 		}
 	}
 
+	// Where the app exists in both, set version to that of override app.
 	for i, app := range merged.Spec.Apps {
 		for _, overrideApp := range override.Spec.Apps {
 			if app.Name == overrideApp.Name {
 				merged.Spec.Apps[i].Version = overrideApp.Version
+				merged.Spec.Apps[i].ComponentVersion = overrideApp.ComponentVersion
 				break
 			}
 		}
 	}
 
+	// Where the component doesn't exist in the base, add it directly from override.
 	for _, overrideComponent := range override.Spec.Components {
 		found := false
 		for _, component := range merged.Spec.Components {
@@ -74,6 +83,7 @@ func mergeReleases(base v1alpha1.Release, override v1alpha1.Release) v1alpha1.Re
 		}
 	}
 
+	// Where the app doesn't exist in the base, add it directly from override.
 	for _, overrideApp := range override.Spec.Apps {
 		found := false
 		for _, app := range merged.Spec.Apps {
@@ -90,6 +100,7 @@ func mergeReleases(base v1alpha1.Release, override v1alpha1.Release) v1alpha1.Re
 	return merged
 }
 
+// Parse release.yaml for given version from the given provider path in the releases repository.
 func findRelease(providerDirectory string, targetVersion semver.Version) (v1alpha1.Release, string, error) {
 	fileInfos, err := ioutil.ReadDir(providerDirectory)
 	if err != nil {

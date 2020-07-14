@@ -7,7 +7,7 @@ import (
 	"github.com/giantswarm/apiextensions/pkg/apis/release/v1alpha1"
 	"github.com/giantswarm/microerror"
 
-	"github.com/giantswarm/devctl/pkg/changelog"
+	"github.com/giantswarm/devctl/pkg/release/changelog"
 )
 
 const releaseNotesTemplate = `# :zap: Giant Swarm Release {{ .Name }} for {{ .Provider }} :zap:

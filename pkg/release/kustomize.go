@@ -15,6 +15,7 @@ type kustomizationFile struct {
 	Resources         []string          `json:"resources"`
 }
 
+// Create a release kustomization.yaml which simply defines the release.yaml as a resource.
 func createKustomization(releaseDirectory string) error {
 	content := `resources:
 - release.yaml
@@ -26,6 +27,7 @@ func createKustomization(releaseDirectory string) error {
 	return nil
 }
 
+// Add the given release to the provider kustomization.yaml, sorting and de-duplicating resources as needed.
 func addToKustomization(providerDirectory string, release v1alpha1.Release) error {
 	path := filepath.Join(providerDirectory, "kustomization.yaml")
 	var providerKustomization kustomizationFile
@@ -58,6 +60,7 @@ func addToKustomization(providerDirectory string, release v1alpha1.Release) erro
 	return nil
 }
 
+// Remove the given release from the provider kustomization.yaml.
 func removeFromKustomization(providerDirectory string, release v1alpha1.Release) error {
 	path := filepath.Join(providerDirectory, "kustomization.yaml")
 	var providerKustomization kustomizationFile

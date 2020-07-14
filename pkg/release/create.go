@@ -1,6 +1,7 @@
 package release
 
 import (
+	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -12,6 +13,8 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
+// Creates a release on the filesystem from the given parameters. This is the entry point
+// for the `devctl create release` command logic.
 func CreateRelease(name, base, releases, provider string, components, apps []string, overwrite bool) error {
 	// Paths
 	baseVersion := *semver.MustParse(base) // already validated to be a valid semver string
@@ -27,6 +30,10 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 	updatesRelease.Name = "v" + newVersion.String()
 	for _, componentVersion := range components {
 		split := strings.Split(componentVersion, "@")
+		if len(split) != 2 {
+			fmt.Println("Component must be specified as <name>@<version>, got", componentVersion)
+			return microerror.Mask(badFormatError)
+		}
 		updatesRelease.Spec.Components = append(updatesRelease.Spec.Components, v1alpha1.ReleaseSpecComponent{
 			Name:    split[0],
 			Version: split[1],
@@ -34,6 +41,10 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 	}
 	for _, appVersion := range apps {
 		split := strings.Split(appVersion, "@")
+		if len(split) != 2 && len(split) != 3 {
+			fmt.Println("App must be specified as <name>@<version>, got", appVersion)
+			return microerror.Mask(badFormatError)
+		}
 		name := split[0]
 		version := split[1]
 		var componentVersion string

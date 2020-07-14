@@ -11,7 +11,18 @@ import (
 
 const (
 	name        = "release"
-	description = "Creates and registers a new Giant Swarm platform release including Release CR and release notes."
+	description = `Creates and registers a new Giant Swarm platform release including Release CR and release notes.
+
+Example: devctl create release \
+	--name 12.0.1 \
+	--provider kvm \
+	--base 11.3.2 \
+	--app cert-exporter@1.2.3 \
+	--app cluster-autoscaler@1.16.0@1.16.5 \
+	--component cluster-operator@0.23.9 \
+	--component containerlinux@2512.2.1 \
+	--overwrite
+`
 )
 
 type Config struct {

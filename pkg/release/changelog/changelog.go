@@ -1,7 +1,6 @@
 package changelog
 
 import (
-	"encoding/json"
 	"errors"
 	"io/ioutil"
 	"net/http"
@@ -15,9 +14,21 @@ import (
 
 // Regex patterns used by all Giant Swarm components
 const (
+	// Indicates that the target version has started.
+	// Expects a line like "## [1.0.0] 2020-07-14" with optional v prefix on the version and optional date.
 	commonStartPattern = "(?m)^## \\[v?(?P<Version>\\d+\\.\\d+\\.\\d+)\\].*(?P<Date>\\d{4}-\\d{2}\\-\\d{2})?$"
-	commonEndPattern   = "(?m)^\\[.*\\]:.*$"
+	// Indicates that the links following the final release in a CHANGELOG have been encountered.
+	// Expects a line lke "[Unreleased]: https://github.com/giantswarm/kvm-operator/compare/v3.12.0...HEAD".
+	commonEndPattern = "(?m)^\\[.*\\]:.*$"
 )
+
+type parseParams struct {
+	tag          string
+	changelog    string
+	start        string
+	intermediate string
+	end          string
+}
 
 // Parameters defining how to parse and extract release info about all known components
 var knownComponentParseParams = map[string]parseParams{
@@ -159,18 +170,6 @@ var knownComponentParseParams = map[string]parseParams{
 	},
 }
 
-type containerlinuxRelease struct {
-	ReleaseNotes string `json:"release_notes"`
-}
-
-type parseParams struct {
-	tag          string
-	changelog    string
-	start        string
-	intermediate string
-	end          string
-}
-
 // Data about a component passed into templates that depend on versions
 type versionTemplateData struct {
 	Major   uint64
@@ -236,17 +235,10 @@ func ParseChangelog(componentName, componentVersion string) (*Version, error) {
 	}
 
 	if componentName == "containerlinux" {
-		var releases map[string]json.RawMessage
-		err := json.Unmarshal(body, &releases)
+		currentVersion.Content, err = parseContainerLinuxChangelog(body, componentVersion)
 		if err != nil {
 			return nil, microerror.Mask(err)
 		}
-		var release containerlinuxRelease
-		err = json.Unmarshal(releases[componentVersion], &release)
-		if err != nil {
-			return nil, microerror.Mask(err)
-		}
-		currentVersion.Content = release.ReleaseNotes
 		return &currentVersion, nil
 	}
 

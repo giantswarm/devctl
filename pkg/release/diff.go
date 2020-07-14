@@ -8,6 +8,7 @@ import (
 	"github.com/giantswarm/microerror"
 )
 
+// Call "diff" on the current machine to compare the file at leftPath against rightPath.
 func createDiff(leftPath string, rightPath string) (string, error) {
 	cmd := exec.Command("diff", leftPath, rightPath, "-y", "-t")
 	var writer strings.Builder
