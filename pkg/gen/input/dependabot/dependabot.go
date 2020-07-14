@@ -7,8 +7,9 @@ import (
 )
 
 type Config struct {
-	Interval  string
-	Reviewers []string
+	Interval   string
+	Reviewers  []string
+	Ecosystems []string
 }
 
 type Dependabot struct {
@@ -20,8 +21,9 @@ func New(config Config) (*Dependabot, error) {
 		params: params.Params{
 			Dir: ".github/",
 
-			Interval:  config.Interval,
-			Reviewers: config.Reviewers,
+			Ecosystems: config.Ecosystems,
+			Interval:   config.Interval,
+			Reviewers:  config.Reviewers,
 		},
 	}
 
