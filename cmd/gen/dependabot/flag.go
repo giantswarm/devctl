@@ -13,6 +13,7 @@ import (
 const (
 	flagEcosystems = "ecosystems"
 	flagInterval   = "interval"
+	flagReviewers  = "reviewers"
 )
 
 type flag struct {
@@ -23,8 +24,8 @@ type flag struct {
 
 func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&f.Interval, flagInterval, "i", "weekly", "Check for daily, weekly or monthly updates (default: weekly).")
-	cmd.Flags().StringSliceVarP(&f.Reviewers, "reviewers", "r", []string{}, "Reviewers you want to assign automatically when Dependabot creates a PR, e.g. giantswarm/team-firecracker.")
-	cmd.Flags().StringSliceVarP(&f.Ecosystems, "ecosystems", "e", []string{}, "Ecosystem for each one package manager that you want GitHub Dependabot to monitor for new versions , e.g. go, docker")
+	cmd.Flags().StringSliceVarP(&f.Reviewers, flagReviewers, "r", []string{}, "Reviewers you want to assign automatically when Dependabot creates a PR, e.g. giantswarm/team-firecracker.")
+	cmd.Flags().StringSliceVarP(&f.Ecosystems, flagEcosystems, "e", []string{}, "Ecosystem for each one package manager that you want GitHub Dependabot to monitor for new versions , e.g. go, docker. Setting this flag disables autodetection of files.")
 }
 
 func (f *flag) Validate() error {
