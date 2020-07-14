@@ -1,6 +1,7 @@
 package dependabot
 
 import (
+	"os"
 	"strings"
 
 	"github.com/giantswarm/microerror"
@@ -30,8 +31,22 @@ func (f *flag) Validate() error {
 	if !gen.IsValidSchedule(f.Interval) {
 		return microerror.Maskf(invalidFlagError, "--%s must be one of <%s>", flagInterval, strings.Join(gen.AllowedSchedule(), "|"))
 	}
+
+	// in case ecosystem was not set specifically, we autodetect files
 	if len(f.Ecosystems) == 0 {
-		return microerror.Maskf(invalidFlagError, "--%s is not set, please provide at least one ecosystem, allowed <%s>", flagEcosystems, strings.Join(gen.AllowedEcosystems(), "|"))
+		for _, e := range gen.AllowedEcosystems() {
+			switch e {
+			case "docker":
+				if exists("Dockerfile") {
+					f.Ecosystems = append(f.Ecosystems, "docker")
+				}
+			case "go":
+				if exists("go.mod") && exists("go.sum") {
+					f.Ecosystems = append(f.Ecosystems, "go")
+				}
+			}
+		}
+
 	}
 
 	if !gen.IsValidEcoSystem(f.Ecosystems) {
@@ -39,4 +54,13 @@ func (f *flag) Validate() error {
 	}
 
 	return nil
+}
+
+func exists(file string) bool {
+	if _, err := os.Stat(file); err != nil {
+		if os.IsNotExist(err) {
+			return false
+		}
+	}
+	return true
 }
