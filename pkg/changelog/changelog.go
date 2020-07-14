@@ -145,6 +145,12 @@ var knownComponentParseParams = map[string]parseParams{
 		start:     commonStartPattern,
 		end:       commonEndPattern,
 	},
+	"nginx-ingress-controller": {
+		tag:       "https://github.com/giantswarm/nginx-ingress-controller-app/releases/tag/v{{.Version}}",
+		changelog: "https://raw.githubusercontent.com/giantswarm/nginx-ingress-controller-app/master/CHANGELOG.md",
+		start:     commonStartPattern,
+		end:       commonEndPattern,
+	},
 	"node-exporter": {
 		tag:       "https://github.com/giantswarm/node-exporter-app/releases/tag/v{{.Version}}",
 		changelog: "https://raw.githubusercontent.com/giantswarm/node-exporter-app/master/CHANGELOG.md",
