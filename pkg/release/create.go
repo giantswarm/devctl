@@ -10,6 +10,7 @@ import (
 	"github.com/Masterminds/semver/v3"
 	"github.com/giantswarm/apiextensions/pkg/apis/release/v1alpha1"
 	"github.com/giantswarm/microerror"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/yaml"
 )
 
@@ -28,6 +29,9 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 	var updatesRelease v1alpha1.Release
 	newVersion := *semver.MustParse(name) // already validated to be a valid semver string
 	updatesRelease.Name = "v" + newVersion.String()
+	now := metav1.Now()
+	updatesRelease.Spec.Date = &now
+	updatesRelease.Spec.State = "active"
 	for _, componentVersion := range components {
 		split := strings.Split(componentVersion, "@")
 		if len(split) != 2 {
