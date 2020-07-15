@@ -21,7 +21,7 @@ type flag struct {
 
 func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.Name, nameFlag, "", `Name of the new release. Must follow semver format.`)
-	cmd.Flags().StringVar(&f.Provider, providerFlag, "", `Target provider for the new release.`)
+	cmd.Flags().StringVar(&f.Provider, providerFlag, "", `Target provider for the to be archived release.`)
 	cmd.Flags().StringVar(&f.Releases, releasesFlag, ".", `Path to releases repository. Defaults to current working directory.`)
 }
 
