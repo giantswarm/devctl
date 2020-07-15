@@ -1,11 +1,7 @@
 package params
 
-type Params struct {
-	// CurrentFlavour is the desired type of Makefile that should be generated.
-	CurrentFlavour int
+import "github.com/giantswarm/devctl/pkg/gen"
 
-	FlavourApp      int
-	FlavourCLI      int
-	FlavourLibrary  int
-	FlavourOperator int
+type Params struct {
+	Flavour gen.Flavour
 }

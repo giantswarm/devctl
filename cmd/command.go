@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/cmd/archive"
+	"github.com/giantswarm/devctl/cmd/completion"
 	"github.com/giantswarm/devctl/cmd/create"
 	"github.com/giantswarm/devctl/cmd/gen"
 	"github.com/giantswarm/devctl/cmd/replace"
@@ -60,6 +61,20 @@ func New(config Config) (*cobra.Command, error) {
 		}
 
 		archiveCmd, err = archive.New(c)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+	}
+
+	var completionCmd *cobra.Command
+	{
+		c := completion.Config{
+			Logger: config.Logger,
+			Stderr: config.Stderr,
+			Stdout: config.Stdout,
+		}
+
+		completionCmd, err = completion.New(c)
 		if err != nil {
 			return nil, microerror.Mask(err)
 		}
@@ -158,6 +173,7 @@ func New(config Config) (*cobra.Command, error) {
 	f.Init(c)
 
 	c.AddCommand(archiveCmd)
+	c.AddCommand(completionCmd)
 	c.AddCommand(createCmd)
 	c.AddCommand(genCmd)
 	c.AddCommand(versionCmd)

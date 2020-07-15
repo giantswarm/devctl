@@ -10,8 +10,8 @@ func NewCreateReleasePRInput(p params.Params) input.Input {
 		Path:         params.RegenerableFileName(p, "create_release_pr.yaml"),
 		TemplateBody: createReleasePRTemplate,
 		TemplateDelims: input.InputTemplateDelims{
-			Left:  "##-ignore-left-##",
-			Right: "##-ignore-right-##",
+			Left:  "{{{{",
+			Right: "}}}}",
 		},
 	}
 

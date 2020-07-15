@@ -9,10 +9,10 @@ func IsFlavourCLI(p Params) bool {
 	return p.Flavour == gen.FlavourCLI
 }
 
-func Package(p Params) string {
-	return internal.Package(p.Dir)
+func FileName(p Params, suffix string) string {
+	return internal.FileName("pkg/project", suffix)
 }
 
 func RegenerableFileName(p Params, suffix string) string {
-	return internal.RegenerableFileName(p.Dir, suffix)
+	return internal.RegenerableFileName("pkg/project", suffix)
 }

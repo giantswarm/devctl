@@ -1,4 +1,4 @@
-package makefile
+package dependabot
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/pkg/gen"
-	"github.com/giantswarm/devctl/pkg/gen/input/makefile"
+	"github.com/giantswarm/devctl/pkg/gen/input/dependabot"
 )
 
 type runner struct {
@@ -38,21 +38,15 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
 	var err error
 
-	var flavour gen.Flavour
+	var dependabotInput *dependabot.Dependabot
 	{
-		flavour, err = gen.NewFlavour(r.flag.Flavour)
-		if err != nil {
-			return microerror.Mask(err)
-		}
-	}
-
-	var makefileInput *makefile.Makefile
-	{
-		c := makefile.Config{
-			Flavour: flavour,
+		c := dependabot.Config{
+			Interval:   r.flag.Interval,
+			Reviewers:  r.flag.Reviewers,
+			Ecosystems: r.flag.Ecosystems,
 		}
 
-		makefileInput, err = makefile.New(c)
+		dependabotInput, err = dependabot.New(c)
 		if err != nil {
 			return microerror.Mask(err)
 		}
@@ -60,7 +54,8 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 	err = gen.Execute(
 		ctx,
-		makefileInput.Makefile(),
+		dependabotInput.CreateDependabot(),
+		dependabotInput.CreateWorkflow(),
 	)
 	if err != nil {
 		return microerror.Mask(err)
