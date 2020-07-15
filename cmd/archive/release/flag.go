@@ -20,20 +20,20 @@ type flag struct {
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
-	cmd.Flags().StringVar(&f.Name, nameFlag, "", `Name of the new release. Must follow semver format.`)
-	cmd.Flags().StringVar(&f.Provider, providerFlag, "", `Target provider for the to be archived release.`)
-	cmd.Flags().StringVar(&f.Releases, releasesFlag, ".", `Path to releases repository. Defaults to current working directory.`)
+	cmd.Flags().StringVar(&f.Name, flagName, "", `Name of the new release. Must follow semver format.`)
+	cmd.Flags().StringVar(&f.Provider, flagProvider, "", `Target provider for the to be archived release.`)
+	cmd.Flags().StringVar(&f.Releases, flagReleases, ".", `Path to releases repository. Defaults to current working directory.`)
 }
 
 func (f *flag) Validate() error {
 	if f.Name == "" {
-		return microerror.Maskf(invalidFlagError, "--%s must not be empty", nameFlag)
+		return microerror.Maskf(invalidFlagError, "--%s must not be empty", flagName)
 	}
 	if _, err := semver.NewVersion(f.Name); err != nil {
-		return microerror.Maskf(invalidFlagError, "--%s must be a valid semver", nameFlag)
+		return microerror.Maskf(invalidFlagError, "--%s must be a valid semver", flagName)
 	}
 	if f.Provider == "" {
-		return microerror.Maskf(invalidFlagError, "--%s must not be empty", providerFlag)
+		return microerror.Maskf(invalidFlagError, "--%s must not be empty", flagProvider)
 	}
 
 	return nil
