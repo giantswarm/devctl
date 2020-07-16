@@ -5,6 +5,7 @@ go 1.13
 require (
 	github.com/Masterminds/semver/v3 v3.1.0
 	github.com/bmatcuk/doublestar v1.1.5
+	github.com/giantswarm/apiextensions v0.4.8
 	github.com/giantswarm/k8sclient v0.2.0
 	github.com/giantswarm/kubeconfig v0.2.0
 	github.com/giantswarm/microerror v0.2.0
@@ -17,6 +18,7 @@ require (
 	golang.org/x/oauth2 v0.0.0-20190604053449-0f29369cfe45
 	k8s.io/apimachinery v0.17.2
 	sigs.k8s.io/controller-runtime v0.5.0 // indirect
+	sigs.k8s.io/yaml v1.2.0
 )
 
 replace (
