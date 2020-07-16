@@ -1,4 +1,4 @@
-package archive
+package create
 
 import (
 	"io"
@@ -7,13 +7,22 @@ import (
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
-
-	"github.com/giantswarm/devctl/cmd/archive/release"
 )
 
 const (
-	name        = "archive"
-	description = "Archive resources in the current working directory."
+	name        = "create"
+	description = `Creates and registers a new Giant Swarm platform release including Release CR and release notes.
+
+Example: devctl release create \
+	--name 12.0.1 \
+	--provider kvm \
+	--base 11.3.2 \
+	--app cert-exporter@1.2.3 \
+	--app cluster-autoscaler@1.16.0@1.16.5 \
+	--component cluster-operator@0.23.9 \
+	--component containerlinux@2512.2.1 \
+	--overwrite
+`
 )
 
 type Config struct {
@@ -33,22 +42,6 @@ func New(config Config) (*cobra.Command, error) {
 		config.Stdout = os.Stdout
 	}
 
-	var err error
-
-	var releaseCmd *cobra.Command
-	{
-		c := release.Config{
-			Logger: config.Logger,
-			Stderr: config.Stderr,
-			Stdout: config.Stdout,
-		}
-
-		releaseCmd, err = release.New(c)
-		if err != nil {
-			return nil, microerror.Mask(err)
-		}
-	}
-
 	f := &flag{}
 
 	r := &runner{
@@ -66,8 +59,6 @@ func New(config Config) (*cobra.Command, error) {
 	}
 
 	f.Init(c)
-
-	c.AddCommand(releaseCmd)
 
 	return c, nil
 }

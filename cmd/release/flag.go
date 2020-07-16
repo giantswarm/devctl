@@ -1,4 +1,4 @@
-package archive
+package release
 
 import "github.com/spf13/cobra"
 

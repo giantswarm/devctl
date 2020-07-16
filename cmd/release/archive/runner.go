@@ -1,4 +1,4 @@
-package create
+package archive
 
 import (
 	"context"
@@ -7,6 +7,8 @@ import (
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
+
+	"github.com/giantswarm/devctl/pkg/release"
 )
 
 type runner struct {
@@ -33,10 +35,9 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 }
 
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
-	err := cmd.Help()
+	err := release.ArchiveRelease(r.flag.Name, r.flag.Releases, r.flag.Provider)
 	if err != nil {
 		return microerror.Mask(err)
 	}
-
 	return nil
 }

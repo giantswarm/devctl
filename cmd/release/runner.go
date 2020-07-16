@@ -7,8 +7,6 @@ import (
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
-
-	"github.com/giantswarm/devctl/pkg/release"
 )
 
 type runner struct {
@@ -34,10 +32,11 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func (r *runner) run(_ context.Context, _ *cobra.Command, _ []string) error {
-	err := release.CreateRelease(r.flag.Name, r.flag.Base, r.flag.Releases, r.flag.Provider, r.flag.Components, r.flag.Apps, r.flag.Overwrite)
+func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
+	err := cmd.Help()
 	if err != nil {
 		return microerror.Mask(err)
 	}
+
 	return nil
 }

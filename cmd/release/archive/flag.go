@@ -1,4 +1,4 @@
-package release
+package archive
 
 import (
 	"github.com/Masterminds/semver/v3"
