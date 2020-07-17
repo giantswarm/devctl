@@ -134,7 +134,7 @@ build-docker: build-linux
 
 .PHONY: lint-chart
 ## lint-chart: runs ct against the default chart
-lint-chart: IMAGE := quay.io/giantswarm/helm-chart-testing:v3.0.0-rc.1
+lint-chart: IMAGE := giantswarm/helm-chart-testing:v3.0.0-rc.1
 lint-chart:
 	@echo "====> $@"
 	rm -rf /tmp/$(APPLICATION)-test
