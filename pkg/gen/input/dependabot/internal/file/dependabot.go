@@ -27,10 +27,10 @@ var createDependabotTemplate = `# DO NOT EDIT. Generated with:
 #
 {{- $interval := .Interval }}
 {{- $reviewers := .Reviewers }}
-{{- range $ecosystem := .Ecosystems }}
-{{- if eq $ecosystem "go" }}
 version: 2
 updates:
+{{- range $ecosystem := .Ecosystems }}
+{{- if eq $ecosystem "go" }}
 - package-ecosystem: gomod
   directory: "/"
   schedule:
