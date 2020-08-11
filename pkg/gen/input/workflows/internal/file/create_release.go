@@ -91,10 +91,12 @@ jobs:
           fi
           version=$(echo $title | cut -d ' ' -f 2)
           version="${version#v}" # Strip "v" prefix.
+          refversion=false
           if [[ "${version}" =~ ^[0-9]+.[0-9]+.[0-9]+-[0-9]+$ ]]; then
-            echo "refversion=true"
-            echo ::set-output name=refversion::true
+            refversion=true
           fi
+          echo "refversion =\"$refversion\""
+          echo "::set-output name=refversion::$refversion"
   install_semver:
     name: Install semver
     runs-on: ubuntu-18.04
