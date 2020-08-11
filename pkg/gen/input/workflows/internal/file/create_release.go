@@ -82,6 +82,13 @@ jobs:
           fi
           echo "path=\"$path\""
           echo "::set-output name=path::${path}"
+      - name: Check if reference version
+        id: ref_version
+        run: |
+          version=$(echo $title | cut -d ' ' -f 2)
+          if [[ "${version}" =~ ^[0-9]+.[0-9]+.[0-9]+-[0-9]+$ ]]; then
+            echo ::set-output name=refversion::true
+          fi
   install_semver:
     name: Install semver
     runs-on: ubuntu-18.04
@@ -125,7 +132,7 @@ jobs:
   update_project_go:
     name: Update project.go
     runs-on: ubuntu-18.04
-    if: ${{ needs.gather_facts.outputs.version != '' && needs.gather_facts.outputs.project_go_path != ''}}
+    if: ${{ needs.gather_facts.outputs.version != '' && needs.gather_facts.outputs.project_go_path != '' && need.gather_facts.ref_version.outputs.refversion != 'true' }}
     needs:
       - gather_facts
       - install_semver
@@ -193,7 +200,7 @@ jobs:
         with:
           ref: ${{ github.sha }}
       - name: Ensure correct version in project.go
-        if: ${{ needs.gather_facts.outputs.project_go_path != ''}}
+        if: ${{ needs.gather_facts.outputs.project_go_path != '' && needs.gather_facts.ref_version.outputs.refversion != 'true' }}
         run: |
           file="${{ needs.gather_facts.outputs.project_go_path }}"
           version="${{ needs.gather_facts.outputs.version }}"
