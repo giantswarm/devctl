@@ -28,7 +28,7 @@ PACKAGE_DIR    := ./bin-dist
 
 {{- end }}
 
-APPLICATION    := $(shell basename $(shell go list .))
+APPLICATION    := $(shell go list . | cut -d '/' -f 3)
 BUILDTIMESTAMP := $(shell date -u '+%FT%TZ')
 GITSHA1        := $(shell git rev-parse --verify HEAD)
 OS             := $(shell go env GOOS)
