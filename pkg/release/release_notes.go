@@ -4,7 +4,7 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/giantswarm/apiextensions/pkg/apis/release/v1alpha1"
+	"github.com/giantswarm/apiextensions/v2/pkg/apis/release/v1alpha1"
 	"github.com/giantswarm/microerror"
 
 	"github.com/giantswarm/devctl/pkg/release/changelog"

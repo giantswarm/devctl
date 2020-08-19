@@ -7,8 +7,8 @@ import (
 	"io/ioutil"
 	"strings"
 
-	"github.com/giantswarm/k8sclient/v3/pkg/k8sclient"
-	gskubeconfig "github.com/giantswarm/kubeconfig"
+	"github.com/giantswarm/k8sclient/v4/pkg/k8sclient"
+	gskubeconfig "github.com/giantswarm/kubeconfig/v2"
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
@@ -50,7 +50,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 
-	secret, err := clients.K8sClient().CoreV1().Secrets("default").Get(getSecretName(r.flag.ClusterID), metav1.GetOptions{})
+	secret, err := clients.K8sClient().CoreV1().Secrets("default").Get(ctx, getSecretName(r.flag.ClusterID), metav1.GetOptions{})
 	if err != nil {
 		return microerror.Mask(err)
 	}
