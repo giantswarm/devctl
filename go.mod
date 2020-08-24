@@ -10,6 +10,7 @@ require (
 	github.com/giantswarm/kubeconfig/v2 v2.0.0
 	github.com/giantswarm/microerror v0.2.1
 	github.com/giantswarm/micrologger v0.3.1
+	github.com/giantswarm/releases v0.0.0-20200824174323-45cde6973ea9
 	github.com/google/go-github v17.0.0+incompatible
 	github.com/pelletier/go-toml v1.6.0
 	github.com/prometheus/client_golang v1.7.1 // indirect

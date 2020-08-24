@@ -4,8 +4,8 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/giantswarm/apiextensions/v2/pkg/apis/release/v1alpha1"
 	"github.com/giantswarm/microerror"
+	"github.com/giantswarm/releases/pkg/patch"
 
 	"github.com/giantswarm/devctl/pkg/release/changelog"
 )
@@ -44,34 +44,40 @@ var providerTitleMap = map[string]string{
 	"kvm":   "KVM",
 }
 
-func createReleaseNotes(release v1alpha1.Release, provider string) (string, error) {
+func createReleaseNotes(releaseName string, releasePatch patch.ReleasePatch, provider string) (string, error) {
 	templ, err := template.New("release-notes").Parse(releaseNotesTemplate)
 	if err != nil {
 		return "", microerror.Mask(err)
 	}
 
 	var components []releaseNotesComponent
-	for _, component := range release.Spec.Components {
-		componentChangelog, err := changelog.ParseChangelog(component.Name, component.Version)
+	for _, component := range releasePatch.Components {
+		if component.Version == nil || component.Change != "M" {
+			continue
+		}
+		componentChangelog, err := changelog.ParseChangelog(component.Name, *component.Version)
 		if err != nil {
 			return "", microerror.Mask(err)
 		}
 		components = append(components, releaseNotesComponent{
 			Name:      component.Name,
-			Version:   component.Version,
+			Version:   *component.Version,
 			Link:      componentChangelog.Link,
 			Changelog: componentChangelog.Content,
 		})
 	}
 
-	for _, app := range release.Spec.Apps {
-		componentChangelog, err := changelog.ParseChangelog(app.Name, app.Version)
+	for _, app := range releasePatch.Apps {
+		if app.Version == nil || app.Change != "M" {
+			continue
+		}
+		componentChangelog, err := changelog.ParseChangelog(app.Name, *app.Version)
 		if err != nil {
 			return "", microerror.Mask(err)
 		}
 		components = append(components, releaseNotesComponent{
 			Name:      app.Name,
-			Version:   app.Version,
+			Version:   *app.Version,
 			Link:      componentChangelog.Link,
 			Changelog: componentChangelog.Content,
 		})
@@ -79,7 +85,7 @@ func createReleaseNotes(release v1alpha1.Release, provider string) (string, erro
 
 	var writer strings.Builder
 	data := releaseNotesTemplateData{
-		Name:        release.Name,
+		Name:        releaseName,
 		Provider:    providerTitleMap[provider],
 		Description: "<< Add description here >>",
 		Components:  components,
