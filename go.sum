@@ -159,8 +159,8 @@ github.com/giantswarm/microerror v0.2.1 h1:4y88WstqZ4OSSq6T/TvTJaefRe/JbrbuwoWQN
 github.com/giantswarm/microerror v0.2.1/go.mod h1:1YtJq/m7Vlq1Y6NP7B+SODOKCGlG7e5wctV2OoE9n34=
 github.com/giantswarm/micrologger v0.3.1 h1:HbYbQLobvfsLYzRiGTncaO61CCPd4BlT18xaaday+4o=
 github.com/giantswarm/micrologger v0.3.1/go.mod h1:PjAgtcJ922ZMX/Aa05IPi0bdYvOj2P7pZ7+6dBShMQs=
-github.com/giantswarm/releases v0.0.0-20200824174323-45cde6973ea9 h1:uYo5msSOA/U4ok8c0F7rjResNr56tZCD5WD38Va/jOM=
-github.com/giantswarm/releases v0.0.0-20200824174323-45cde6973ea9/go.mod h1:AE7zR+MdiPymnSceXCaAoR3upnGb4rimaGVJvMIWs4I=
+github.com/giantswarm/releases v0.0.0-20200825173758-104f77bf387b h1:koOt9rQ6YAhc5lm6pIBiKdriWksppr7i+o/2q9Dm/xc=
+github.com/giantswarm/releases v0.0.0-20200825173758-104f77bf387b/go.mod h1:AE7zR+MdiPymnSceXCaAoR3upnGb4rimaGVJvMIWs4I=
 github.com/giantswarm/versionbundle v0.2.0/go.mod h1:n7GOlSXpX9TpP3EsYhErCjskN++c7uYHEEfV81NCH7s=
 github.com/globalsign/mgo v0.0.0-20180905125535-1ca0a4f7cbcb/go.mod h1:xkRDCp4j0OGD1HRkm4kmhM+pmpv3AKq5SU7GMg4oO/Q=
 github.com/globalsign/mgo v0.0.0-20181015135952-eeefdecb41b8/go.mod h1:xkRDCp4j0OGD1HRkm4kmhM+pmpv3AKq5SU7GMg4oO/Q=
