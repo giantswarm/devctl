@@ -41,6 +41,10 @@ func (f *flag) Validate() error {
 				if exists("Dockerfile") {
 					f.Ecosystems = append(f.Ecosystems, "docker")
 				}
+			case "github-actions":
+				if exists(".github/workflows/") {
+					f.Ecosystems = append(f.Ecosystems, "github-actions")
+				}
 			case "go":
 				if exists("go.mod") && exists("go.sum") {
 					f.Ecosystems = append(f.Ecosystems, "go")

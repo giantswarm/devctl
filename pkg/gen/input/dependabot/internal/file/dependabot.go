@@ -62,5 +62,19 @@ updates:
   {{- end}}
 {{- end }}
 {{- end }}
+{{- if eq $ecosystem "github-actions" }}
+- package-ecosystem: github-actions
+  directory: "/"
+  schedule:
+    interval: {{ $interval }}
+    time: "04:00"
+  target-branch: master
+{{- if $reviewers }}
+  reviewers:
+  {{- range $reviewer := $reviewers }}
+  - {{ $reviewer }}
+  {{- end}}
+{{- end }}
+{{- end }}
 {{- end }}
 `
