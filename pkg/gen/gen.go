@@ -36,7 +36,7 @@ func execute(ctx context.Context, file input.Input) error {
 
 		f, err := os.Stat(file.Path)
 		if os.IsNotExist(err) {
-			// Fall trough.
+			// Fall through.
 		} else if err != nil {
 			return microerror.Mask(err)
 		} else if f.IsDir() {
