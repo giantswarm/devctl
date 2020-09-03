@@ -10,7 +10,9 @@ func NewMakefileInput(p params.Params) input.Input {
 		Path:         "Makefile",
 		TemplateBody: makefileTemplate,
 		TemplateData: map[string]interface{}{
-			"IsFlavourCLI": params.IsFlavourCLI(p),
+			"IsFlavourApp":      params.IsFlavourApp(p),
+			"IsFlavourCLI":      params.IsFlavourCLI(p),
+			"IsFlavourOperator": params.IsFlavourOperator(p),
 		},
 	}
 
@@ -131,6 +133,8 @@ build-docker: build-linux
 	@echo "====> $@"
 	docker build -t ${APPLICATION}:${VERSION} .
 
+{{- if or .IsFlavourApp .IsFlavourOperator }}
+
 .PHONY: lint-chart
 ## lint-chart: runs ct against the default chart
 lint-chart: IMAGE := giantswarm/helm-chart-testing:v3.0.0-rc.1
@@ -142,6 +146,8 @@ lint-chart:
 	architect helm template --dir /tmp/$(APPLICATION)-test/helm/$(APPLICATION)
 	docker run -it --rm -v /tmp/$(APPLICATION)-test:/wd --workdir=/wd --name ct $(IMAGE) ct lint --validate-maintainers=false --charts="helm/$(APPLICATION)"
 	rm -rf /tmp/$(APPLICATION)-test
+
+{{- end }}
 
 .PHONY: help
 ## help: prints this help message
