@@ -62,6 +62,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		ctx,
 		workflowsInput.CreateRelease(),
 		workflowsInput.CreateReleasePR(),
+		workflowsInput.Gitleaks(),
 	)
 	if err != nil {
 		return microerror.Mask(err)
