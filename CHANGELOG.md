@@ -7,15 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+ - First release.
+
 ## Security
 
 - Update actions/cache actions/upload-artifact to v2.1.1 in generated
   workflows.
-
-## [v1.0.0]
-
-### Added
-
- - First release.
 
 [Unreleased]: https://github.com/giantswarm/devctl/tree/master
