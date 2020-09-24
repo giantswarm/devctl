@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2020-09-24
+
 ### Changed
 
 - Include k8s dependency for 1.18 in dependabot
@@ -18,5 +20,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/giantswarm/devctl/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/giantswarm/devctl/releases/tag/v1.0.0
