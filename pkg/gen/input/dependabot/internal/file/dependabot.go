@@ -46,7 +46,7 @@ updates:
   ignore:
   - dependency-name: k8s.io/*
     versions:
-    - ">=0.17.0"
+    - ">=0.19.0"
 {{- end }}
 {{- if eq $ecosystem "docker" }}
 - package-ecosystem: docker
