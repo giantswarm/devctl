@@ -116,7 +116,7 @@ jobs:
           echo "::set-output name=url::${URL}"
       - name: Cache
         id: cache
-        uses: actions/cache@v1
+        uses: actions/cache@v2.1.1
         with:
           key: "${{ steps.key.outputs.cache_key }}"
           path: "${{ steps.key.outputs.cache_dir }}"
@@ -134,7 +134,7 @@ jobs:
         run: |
           ${{ steps.key.outputs.cache_dir }}/${{ steps.key.outputs.binary }} --version
       - name: Upload artifact
-        uses: actions/upload-artifact@v1
+        uses: actions/upload-artifact@v2.1.4
         with:
           name: "${{ steps.key.outputs.binary }}"
           path: "${{ steps.key.outputs.cache_dir }}/${{ steps.key.outputs.binary }}"
@@ -309,7 +309,7 @@ jobs:
           echo "::set-output name=cache_key::${cache_key}"
       - name: Cache
         id: cache
-        uses: actions/cache@v1
+        uses: actions/cache@v2.1.1
         with:
           key: "${{ steps.get_cache_key.outputs.cache_key }}"
           path: "${{ env.DIR }}"
@@ -324,7 +324,7 @@ jobs:
         run: |
           ${{ env.DIR }}/${{ env.BINARY }} version
       - name: Upload artifact
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v2.1.4
         with:
           name: "${{ env.BINARY }}"
           path: "${{ env.DIR }}/${{ env.BINARY }}"
@@ -348,7 +348,7 @@ jobs:
     steps:
       - name: Cache
         id: cache
-        uses: actions/cache@v1
+        uses: actions/cache@v2.1.1
         with:
           key: "${{ needs.install_architect.outputs.cache_key }}"
           path: /opt/bin
