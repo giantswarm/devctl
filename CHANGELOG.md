@@ -9,7 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Include k8s dependency for 1.18 in dependabot
+- Include k8s dependency for 1.18 in dependabot.
+
+### Fixed
+
+- Update architect to v3.0.0 to fix the issue with updating Go module version.
+  E.g.:
+  https://github.com/giantswarm/operatorkit/commit/db6fafc711528b5d7474d2717cf7f4bb850f8812#diff-37aff102a57d3d7b797f152915a6dc16R1
 
 ## Security
 
