@@ -2,7 +2,7 @@
 #
 #    devctl gen makefile
 #
-
+#test
 PACKAGE_DIR    := ./bin-dist
 
 APPLICATION    := $(shell go list . | cut -d '/' -f 3)
