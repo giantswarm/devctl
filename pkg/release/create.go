@@ -16,7 +16,7 @@ import (
 
 // Creates a release on the filesystem from the given parameters. This is the entry point
 // for the `devctl create release` command logic.
-func CreateRelease(name, base, releases, provider string, components, apps []string, overwrite bool) error {
+func CreateRelease(name, base, releases, provider string, components, apps []string, overwrite bool, creationCommand string) error {
 	// Paths
 	baseVersion := *semver.MustParse(base) // already validated to be a valid semver string
 	providerDirectory := filepath.Join(releases, provider)
@@ -84,6 +84,11 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 	releaseYAML, err := yaml.Marshal(newRelease)
 	if err != nil {
 		return microerror.Mask(err)
+	}
+	// Prepend command used for creation
+	{
+		yamlComment := []byte(fmt.Sprintf("# Generated with:\n# %s\n", creationCommand))
+		releaseYAML = append(yamlComment, releaseYAML...)
 	}
 	err = ioutil.WriteFile(releaseYAMLPath, releaseYAML, 0644)
 	if err != nil {
