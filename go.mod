@@ -5,7 +5,7 @@ go 1.14
 require (
 	github.com/Masterminds/semver/v3 v3.1.0
 	github.com/bmatcuk/doublestar v1.1.5
-	github.com/giantswarm/apiextensions/v2 v2.1.0
+	github.com/giantswarm/apiextensions/v2 v2.6.2
 	github.com/giantswarm/k8sclient/v4 v4.0.0
 	github.com/giantswarm/kubeconfig/v2 v2.0.0
 	github.com/giantswarm/microerror v0.2.1
