@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Include k8s dependency for 1.18 in dependabot.
+- Include k8s dependency for 1.18 in generated dependabot configuration.
 
 ### Security
 
