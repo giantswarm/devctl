@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Include k8s dependency for 1.18 in dependabot.
+
+### Security
+
 - Update upload-artifact action to v2.2.0.
 - Update cache action to v2.1.1.
 
