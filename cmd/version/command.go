@@ -18,9 +18,6 @@ type Config struct {
 	Logger micrologger.Logger
 	Stderr io.Writer
 	Stdout io.Writer
-
-	GitCommit string
-	Source    string
 }
 
 func New(config Config) (*cobra.Command, error) {
@@ -41,9 +38,6 @@ func New(config Config) (*cobra.Command, error) {
 		logger: config.Logger,
 		stderr: config.Stderr,
 		stdout: config.Stdout,
-
-		gitCommit: config.GitCommit,
-		source:    config.Source,
 	}
 
 	c := &cobra.Command{
