@@ -234,44 +234,6 @@ jobs:
 
 {{{{- if .IsFlavourCLI }}}}
 
-  install_architect:
-    name: Install architect
-    runs-on: ubuntu-18.04
-    env:
-      BINARY: "architect"
-      DIR: "/opt/cache"
-      IMAGE: "quay.io/giantswarm/architect"
-      IMAGE_PATH: "/usr/bin/architect"
-      VERSION: "3.0.2"
-    outputs:
-      cache_key: "${{ steps.get_cache_key.outputs.cache_key }}"
-    steps:
-      - name: Get cache key
-        id: get_cache_key
-        run: |
-          cache_key="install-${{ env.BINARY }}-${{ env.VERSION }}"
-          echo "::set-output name=cache_key::${cache_key}"
-      - name: Cache
-        id: cache
-        uses: actions/cache@v2.1.1
-        with:
-          key: "${{ steps.get_cache_key.outputs.cache_key }}"
-          path: "${{ env.DIR }}"
-      - name: Download
-        if: ${{ steps.cache.outputs.cache-hit != 'true' }}
-        run: |
-          mkdir -p ${{ env.DIR }}
-          docker container create --name tmp ${{ env.IMAGE }}:${{ env.VERSION }}
-          docker cp tmp:${{ env.IMAGE_PATH }} ${{ env.DIR }}/${{ env.BINARY }}
-          docker container rm tmp
-      - name: Smoke test
-        run: |
-          ${{ env.DIR }}/${{ env.BINARY }} version
-      - name: Upload artifact
-        uses: actions/upload-artifact@v2.2.0
-        with:
-          name: "${{ env.BINARY }}"
-          path: "${{ env.DIR }}/${{ env.BINARY }}"
   create_and_upload_build_artifacts:
     name: Create and upload build artifacts
     runs-on: ubuntu-18.04
@@ -288,27 +250,9 @@ jobs:
     needs:
       - create_release
       - gather_facts
-      - install_architect
     steps:
-      - name: Cache
-        id: cache
-        uses: actions/cache@v2.1.1
-        with:
-          key: "${{ needs.install_architect.outputs.cache_key }}"
-          path: /opt/bin
-      - name: Download architect artifact to /opt/bin
-        if: ${{ steps.cache.outputs.cache-hit != 'true' }}
-        uses: actions/download-artifact@v2
-        with:
-          name: architect
-          path: /opt/bin
-      - name: Prepare /opt/bin
-        run: |
-          chmod +x /opt/bin/*
-          echo "::add-path::/opt/bin"
-      - name: Print architect version
-        run: |
-          architect version
+      - name: Install tools
+        uses: giantswarm/install-tools-action@v0.1.0
       - name: Set up Go ${{ env.GO_VERSION }}
         uses: actions/setup-go@v1
         with:
