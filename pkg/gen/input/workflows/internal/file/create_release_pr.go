@@ -34,7 +34,7 @@ on:
 jobs:
   debug_info:
     name: Debug info
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-20.04
     steps:
       - name: Print github context JSON
         run: |
@@ -43,7 +43,7 @@ jobs:
           EOF
   gather_facts:
     name: Gather facts
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-20.04
     outputs:
       base: ${{ steps.gather_facts.outputs.base }}
       version: ${{ steps.gather_facts.outputs.version }}
@@ -51,7 +51,6 @@ jobs:
       - name: Gather facts
         id: gather_facts
         run: |
-          echo "::group::Get facts"
           head="${{ github.event.ref }}"
           head="${head#refs/heads/}" # Strip "refs/heads/" prefix.
           base="$(echo $head | cut -d '#' -f 1)"
@@ -62,26 +61,23 @@ jobs:
           echo "::set-output name=base::${base}"
           echo "::set-output name=head::${head}"
           echo "::set-output name=version::${version}"
-          echo "::endgroup::"
-          echo "::group::Validate"
-          git init -q
-          git remote add origin ${{ github.event.repository.clone_url }}
-          git fetch -q --depth=1 origin $base
-          git fetch -q --depth=1 origin $head
-          out=$(git rev-list --left-right --count origin/$base...origin/$head)
-          ahead=$(echo $out | awk '{print $2}')
-          behind=$(echo $out | awk '{print $1}')
-          echo "ahead=\"$ahead\" behind=\"$behind\""
-          if [[ $ahead -ne 0 ]] || [[ $behind -ne 0 ]] ; then
-            echo "::error:: Branch $head is $ahead commits ahead and $behind commits behind $base branch. Please recreate the $head branch."
-            exit 1
+      - name: Check if PR exists
+        env:
+          GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+        id: pr_exists
+        run: |
+          if gh pr view --repo ${{ github.repository }} ${{ github.event.ref }} ; then
+            echo "::warning::Release PR already exists"
+            echo "::set-output name=skip::true"
+          else
+            echo "::set-output name=skip::false"
           fi
-          echo "::endgroup::"
   create_release_pr:
     name: Create release PR
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-20.04
     needs:
       - gather_facts
+    if: ${{ needs.gather_facts.outputs.skip != 'true' }}
     env:
       architect_flags: "--organisation ${{ github.repository_owner }} --project ${{ github.event.repository.name }}"
     steps:
@@ -99,7 +95,7 @@ jobs:
           git config --local user.email "action@github.com"
           git config --local user.name "github-actions"
           git add -A
-          git commit -m "release v${{ env.version }}"
+          git commit -m "Release v${{ env.version }}"
       - name: Push changes
         env:
           remote_repo: "https://${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
@@ -111,5 +107,5 @@ jobs:
           base: "${{ needs.gather_facts.outputs.base }}"
           version: "${{ needs.gather_facts.outputs.version }}"
         run: |
-          hub pull-request -f  -m "release v${{ env.version }}" -a ${{ github.actor }} -b ${{ env.base }} -h ${{ github.event.ref }}
+          hub pull-request -f  -m "Release v${{ env.version }}" -a ${{ github.actor }} -b ${{ env.base }} -h ${{ github.event.ref }}
 `

@@ -37,7 +37,7 @@ on:
 jobs:
   debug_info:
     name: Debug info
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-20.04
     steps:
       - name: Print github context JSON
         run: |
@@ -46,7 +46,7 @@ jobs:
           EOF
   gather_facts:
     name: Gather facts
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-20.04
     outputs:
       project_go_path: ${{ steps.get_project_go_path.outputs.path }}
       ref_version: ${{ steps.ref_version.outputs.refversion }}
@@ -58,13 +58,13 @@ jobs:
           title="$(echo "${{ github.event.head_commit.message }}" | head -n 1 -)"
           # Matches strings like:
           #
-          #   - "release v1.2.3"
-          #   - "release v1.2.3-r4"
-          #   - "release v1.2.3 (#56)"
-          #   - "release v1.2.3-r4 (#56)"
+          #   - "Release v1.2.3"
+          #   - "Release v1.2.3-r4"
+          #   - "Release v1.2.3 (#56)"
+          #   - "Release v1.2.3-r4 (#56)"
           #
           # And outputs version part (1.2.3).
-          if echo $title | grep -qE '^release v[0-9]+\.[0-9]+\.[0-9]+([.-][^ .-][^ ]*)?( \(#[0-9]+\))?$' ; then
+          if echo $title | grep -iqE '^Release v[0-9]+\.[0-9]+\.[0-9]+([.-][^ .-][^ ]*)?( \(#[0-9]+\))?$' ; then
             version=$(echo $title | cut -d ' ' -f 2)
           fi
           version="${version#v}" # Strip "v" prefix.
@@ -100,7 +100,7 @@ jobs:
           echo "::set-output name=refversion::$refversion"
   update_project_go:
     name: Update project.go
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-20.04
     if: ${{ needs.gather_facts.outputs.version != '' && needs.gather_facts.outputs.project_go_path != '' && needs.gather_facts.outputs.ref_version != 'true' }}
     needs:
       - gather_facts
@@ -149,7 +149,7 @@ jobs:
           hub pull-request -f  -m "${{ env.title }}" -b ${{ env.base }} -h ${{ env.branch }} -r ${{ github.actor }}
   create_release:
     name: Create release
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-20.04
     needs:
       - gather_facts
     if: ${{ needs.gather_facts.outputs.version }}
@@ -186,7 +186,7 @@ jobs:
           release_name: "v${{ needs.gather_facts.outputs.version }}"
   create-release-branch:
     name: Create release branch
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-20.04
     needs:
       - gather_facts
     if: ${{ needs.gather_facts.outputs.version }}
@@ -236,7 +236,7 @@ jobs:
 
   create_and_upload_build_artifacts:
     name: Create and upload build artifacts
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-20.04
     strategy:
       matrix:
         platform:
