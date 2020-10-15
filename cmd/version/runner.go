@@ -6,10 +6,11 @@ import (
 	"io"
 	"runtime"
 
-	"github.com/giantswarm/devctl/pkg/project"
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
+
+	"github.com/giantswarm/devctl/pkg/project"
 )
 
 type runner struct {
