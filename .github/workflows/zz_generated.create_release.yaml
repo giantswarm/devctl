@@ -93,7 +93,7 @@ jobs:
           echo "::set-output name=url::${URL}"
       - name: Cache
         id: cache
-        uses: actions/cache@v2.1.2
+        uses: actions/cache@v1
         with:
           key: "${{ steps.key.outputs.cache_key }}"
           path: "${{ steps.key.outputs.cache_dir }}"
@@ -273,7 +273,7 @@ jobs:
       DIR: "/opt/cache"
       IMAGE: "quay.io/giantswarm/architect"
       IMAGE_PATH: "/usr/bin/architect"
-      VERSION: "3.0.2"
+      VERSION: "1.2.0"
     outputs:
       cache_key: "${{ steps.get_cache_key.outputs.cache_key }}"
     steps:
@@ -284,7 +284,7 @@ jobs:
           echo "::set-output name=cache_key::${cache_key}"
       - name: Cache
         id: cache
-        uses: actions/cache@v2.1.2
+        uses: actions/cache@v1
         with:
           key: "${{ steps.get_cache_key.outputs.cache_key }}"
           path: "${{ env.DIR }}"
@@ -323,7 +323,7 @@ jobs:
     steps:
       - name: Cache
         id: cache
-        uses: actions/cache@v2.1.2
+        uses: actions/cache@v1
         with:
           key: "${{ needs.install_architect.outputs.cache_key }}"
           path: /opt/bin
