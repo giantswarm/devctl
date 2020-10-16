@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Skip generated "Create Release PR" workflow execution when release PR already
+  exists.
+
 ## [2.0.0] - 2020-10-14
 
 ### Changed
