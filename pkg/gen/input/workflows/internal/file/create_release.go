@@ -271,7 +271,7 @@ jobs:
           binary: "architect"
           version: "3.0.5"
       - name: Set up Go ${{ env.GO_VERSION }}
-        uses: actions/setup-go@v1
+        uses: actions/setup-go@v2.1.3
         with:
           go-version: ${{ env.GO_VERSION }}
       - name: Checkout code
