@@ -207,8 +207,6 @@ jobs:
         with:
           binary: "architect"
           version: "3.0.5"
-      - name: Install tools
-        uses: giantswarm/install-tools-action@v0.1.0
       - name: Check out the repository
         uses: actions/checkout@v2
         with:
@@ -267,8 +265,11 @@ jobs:
       - create_release
       - gather_facts
     steps:
-      - name: Install tools
-        uses: giantswarm/install-tools-action@v0.1.0
+      - name: Install architect
+        uses: giantswarm/install-binary-action@v1.0.0
+        with:
+          binary: "architect"
+          version: "3.0.5"
       - name: Set up Go ${{ env.GO_VERSION }}
         uses: actions/setup-go@v2.1.3
         with:
