@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Update actions/setup-go from v1 to v2.1.3 in generated workflows.
+
 ## [2.0.2] - 2020-10-20
 
 ### Fixed
