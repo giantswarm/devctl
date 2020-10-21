@@ -179,13 +179,14 @@ jobs:
       - gather_facts
     if: ${{ needs.gather_facts.outputs.version }}
     steps:
-      - name: Install architect
+      - name: Install semver
         uses: giantswarm/install-binary-action@v1.0.0
         with:
-          binary: "architect"
-          version: "3.0.5"
-      - name: Install tools
-        uses: giantswarm/install-tools-action@v0.1.0
+          binary: "semver"
+          version: "3.0.0"
+          download_url: "https://github.com/fsaintjacques/${binary}-tool/archive/${version}.tar.gz"
+          tarball_binary_path: "*/src/${binary}"
+          smoke_test: "${binary} --version"
       - name: Check out the repository
         uses: actions/checkout@v2
         with:
@@ -242,10 +243,13 @@ jobs:
       - create_release
       - gather_facts
     steps:
-      - name: Install tools
-        uses: giantswarm/install-tools-action@v0.1.0
+      - name: Install architect
+        uses: giantswarm/install-binary-action@v1.0.0
+        with:
+          binary: "architect"
+          version: "3.0.5"
       - name: Set up Go ${{ env.GO_VERSION }}
-        uses: actions/setup-go@v1
+        uses: actions/setup-go@v2.1.3
         with:
           go-version: ${{ env.GO_VERSION }}
       - name: Checkout code
@@ -259,7 +263,6 @@ jobs:
         env:
           FILE_NAME: ${{ github.event.repository.name }}-${{ env.TAG }}-${{ matrix.platform }}-amd64.tar.gz
         with:
-          path: ${{ env.ARTIFACT_DIR }}
           upload_url: ${{ needs.create_release.outputs.upload_url }}
           asset_path: ${{ env.ARTIFACT_DIR }}/${{ env.FILE_NAME }}
           asset_name: ${{ env.FILE_NAME }}
