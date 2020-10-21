@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Fix regression in "Create release branch" job in generated "Create Release"
+  workflow.
+
 ## [2.0.3] - 2020-10-20
 
 ### Fixed
