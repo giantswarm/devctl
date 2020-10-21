@@ -285,7 +285,6 @@ jobs:
         env:
           FILE_NAME: ${{ github.event.repository.name }}-${{ env.TAG }}-${{ matrix.platform }}-amd64.tar.gz
         with:
-          path: ${{ env.ARTIFACT_DIR }}
           upload_url: ${{ needs.create_release.outputs.upload_url }}
           asset_path: ${{ env.ARTIFACT_DIR }}/${{ env.FILE_NAME }}
           asset_name: ${{ env.FILE_NAME }}
