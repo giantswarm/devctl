@@ -202,11 +202,14 @@ jobs:
       - gather_facts
     if: ${{ needs.gather_facts.outputs.version }}
     steps:
-      - name: Install architect
+      - name: Install semver
         uses: giantswarm/install-binary-action@v1.0.0
         with:
-          binary: "architect"
-          version: "3.0.5"
+          binary: "semver"
+          version: "3.0.0"
+          download_url: "https://github.com/fsaintjacques/${binary}-tool/archive/${version}.tar.gz"
+          tarball_binary_path: "*/src/${binary}"
+          smoke_test: "${binary} --version"
       - name: Check out the repository
         uses: actions/checkout@v2
         with:
