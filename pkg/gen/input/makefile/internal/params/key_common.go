@@ -13,10 +13,6 @@ func IsFlavourCLI(p Params) bool {
 	return p.Flavour == gen.FlavourCLI
 }
 
-func IsFlavourOperator(p Params) bool {
-	return p.Flavour == gen.FlavourOperator
-}
-
 func FileName(p Params, suffix string) string {
 	return internal.FileName("pkg/project", suffix)
 }
