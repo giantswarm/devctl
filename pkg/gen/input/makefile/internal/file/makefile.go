@@ -10,9 +10,8 @@ func NewMakefileInput(p params.Params) input.Input {
 		Path:         "Makefile",
 		TemplateBody: makefileTemplate,
 		TemplateData: map[string]interface{}{
-			"IsFlavourApp":      params.IsFlavourApp(p),
-			"IsFlavourCLI":      params.IsFlavourCLI(p),
-			"IsFlavourOperator": params.IsFlavourOperator(p),
+			"IsFlavourApp": params.IsFlavourApp(p),
+			"IsFlavourCLI": params.IsFlavourCLI(p),
 		},
 	}
 
@@ -133,7 +132,7 @@ build-docker: build-linux
 	@echo "====> $@"
 	docker build -t ${APPLICATION}:${VERSION} .
 
-{{- if or .IsFlavourApp .IsFlavourOperator }}
+{{- if or .IsFlavourApp }}
 
 .PHONY: lint-chart
 ## lint-chart: runs ct against the default chart

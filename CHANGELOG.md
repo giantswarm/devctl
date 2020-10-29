@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add `generic` flavour to `gen` commands.
+
+### Removed
+
+- Remove `operator` flavour from `gen` commands. `app` flavour should be used
+  instead.
+- Remove `library` flavour from `gen` commands. `generic` flavour should be used
+  instead.
+
 ## [2.0.4] - 2020-10-21
 
 ### Fixed

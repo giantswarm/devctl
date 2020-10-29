@@ -11,7 +11,13 @@ import (
 
 const (
 	name        = "workflows"
-	description = "Generates GitHub workflows."
+	description = `Generates GitHub workflows.
+
+There are different generation flavours:
+
+  - app - project containing a helm chart
+  - cli - project released with a downloadable binary
+  - generic - everything else, i.e a project which simply needs to be released`
 )
 
 type Config struct {
