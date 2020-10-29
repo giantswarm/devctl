@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0] - 2020-10-29
+
 ### Added
 
 - Add `generic` flavour to `gen` commands.
@@ -76,7 +78,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v2.0.4...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v3.0.0...HEAD
+[3.0.0]: https://github.com/giantswarm/devctl/compare/v2.0.4...v3.0.0
 [2.0.4]: https://github.com/giantswarm/devctl/compare/v2.0.3...v2.0.4
 [2.0.3]: https://github.com/giantswarm/devctl/compare/v2.0.2...v2.0.3
 [2.0.2]: https://github.com/giantswarm/devctl/compare/v2.0.1...v2.0.2
