@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/pkg/gen"
+	"github.com/giantswarm/devctl/pkg/gen/input"
 	"github.com/giantswarm/devctl/pkg/gen/input/workflows"
 )
 
@@ -58,11 +59,18 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		}
 	}
 
-	err = gen.Execute(
-		ctx,
+	inputs := []input.Input{
 		workflowsInput.CreateRelease(),
 		workflowsInput.CreateReleasePR(),
-		workflowsInput.Gitleaks(),
+	}
+
+	if r.flag.CheckSecrets {
+		inputs = append(inputs, workflowsInput.Gitleaks())
+	}
+
+	err = gen.Execute(
+		ctx,
+		inputs...,
 	)
 	if err != nil {
 		return microerror.Mask(err)
