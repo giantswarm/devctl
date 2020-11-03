@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Fix changelog collection for non-master branches in `release create` command.
+
 ## [3.0.0] - 2020-10-29
 
 ### Added
