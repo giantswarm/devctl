@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.1.0] - 2020-11-05
+
 ### Added
 
 - Add `gitleaks` workflow to `gen workflows`.
@@ -86,7 +88,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v3.0.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v3.1.0...HEAD
+[3.1.0]: https://github.com/giantswarm/devctl/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/giantswarm/devctl/compare/v2.0.4...v3.0.0
 [2.0.4]: https://github.com/giantswarm/devctl/compare/v2.0.3...v2.0.4
 [2.0.3]: https://github.com/giantswarm/devctl/compare/v2.0.2...v2.0.3
