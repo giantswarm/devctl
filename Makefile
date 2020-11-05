@@ -1,33 +1,9 @@
-package file
-
-import (
-	"github.com/giantswarm/devctl/pkg/gen/input"
-	"github.com/giantswarm/devctl/pkg/gen/input/makefile/internal/params"
-)
-
-func NewMakefileInput(p params.Params) input.Input {
-	i := input.Input{
-		Path:         "Makefile",
-		TemplateBody: makefileTemplate,
-		TemplateData: map[string]interface{}{
-			"IsFlavourApp": params.IsFlavourApp(p),
-			"IsFlavourCLI": params.IsFlavourCLI(p),
-		},
-	}
-
-	return i
-}
-
-var makefileTemplate = `# DO NOT EDIT. Generated with:
+# DO NOT EDIT. Generated with:
 #
 #    devctl gen makefile
 #
 
-{{- if .IsFlavourCLI }}
-
 PACKAGE_DIR    := ./bin-dist
-
-{{- end }}
 
 APPLICATION    := $(shell go list . | cut -d '/' -f 3)
 BUILDTIMESTAMP := $(shell date -u '+%FT%TZ')
@@ -67,8 +43,6 @@ $(APPLICATION)-v$(VERSION)-%-amd64: $(SOURCES)
 	@echo "====> $@"
 	CGO_ENABLED=0 GOOS=$* GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o $@ .
 
-{{- if .IsFlavourCLI }}
-
 .PHONY: package-darwin package-linux
 ## package-darwin: prepares a packaged darwin/amd64 version
 package-darwin: $(PACKAGE_DIR)/$(APPLICATION)-v$(VERSION)-darwin-amd64.tar.gz
@@ -86,8 +60,6 @@ $(PACKAGE_DIR)/$(APPLICATION)-v$(VERSION)-%-amd64.tar.gz: $(APPLICATION)-v$(VERS
 	tar -C $(PACKAGE_DIR) -cvzf $(PACKAGE_DIR)/$<.tar.gz $<
 	rm -rf $(DIR)
 	rm -rf $<
-
-{{- end }}
 
 .PHONY: install
 ## install: install the application
@@ -132,25 +104,8 @@ build-docker: build-linux
 	@echo "====> $@"
 	docker build -t ${APPLICATION}:${VERSION} .
 
-{{- if or .IsFlavourApp }}
-
-.PHONY: lint-chart
-## lint-chart: runs ct against the default chart
-lint-chart: IMAGE := giantswarm/helm-chart-testing:v3.0.0-rc.1
-lint-chart:
-	@echo "====> $@"
-	rm -rf /tmp/$(APPLICATION)-test
-	mkdir -p /tmp/$(APPLICATION)-test/helm
-	cp -a ./helm/$(APPLICATION) /tmp/$(APPLICATION)-test/helm/
-	architect helm template --dir /tmp/$(APPLICATION)-test/helm/$(APPLICATION)
-	docker run -it --rm -v /tmp/$(APPLICATION)-test:/wd --workdir=/wd --name ct $(IMAGE) ct lint --validate-maintainers=false --charts="helm/$(APPLICATION)"
-	rm -rf /tmp/$(APPLICATION)-test
-
-{{- end }}
-
 .PHONY: help
 ## help: prints this help message
 help:
 	@echo "Usage: \n"
 	@sed -n 's/^##//p' ${MAKEFILE_LIST} | column -t -s ':' |  sed -e 's/^/ /'
-`

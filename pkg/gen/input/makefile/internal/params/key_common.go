@@ -5,6 +5,10 @@ import (
 	"github.com/giantswarm/devctl/pkg/gen/internal"
 )
 
+func IsFlavourApp(p Params) bool {
+	return p.Flavour == gen.FlavourApp
+}
+
 func IsFlavourCLI(p Params) bool {
 	return p.Flavour == gen.FlavourCLI
 }

@@ -7,13 +7,15 @@ import (
 )
 
 const (
-	EcosystemDocker Ecosystem = "docker"
-	EcosystemGo     Ecosystem = "go"
+	EcosystemDocker        Ecosystem = "docker"
+	EcosystemGithubActions Ecosystem = "github-actions"
+	EcosystemGo            Ecosystem = "go"
 )
 
 func AllowedEcosystems() []string {
 	return []string{
 		EcosystemDocker.String(),
+		EcosystemGithubActions.String(),
 		EcosystemGo.String(),
 	}
 }
@@ -24,6 +26,8 @@ func NewEcosystem(s string) (Ecosystem, error) {
 	switch s {
 	case EcosystemDocker.String():
 		return EcosystemDocker, nil
+	case EcosystemGithubActions.String():
+		return EcosystemGithubActions, nil
 	case EcosystemGo.String():
 		return EcosystemGo, nil
 	}

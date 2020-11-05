@@ -1,24 +1,4 @@
-package file
-
-import (
-	"github.com/giantswarm/devctl/pkg/gen/input"
-	"github.com/giantswarm/devctl/pkg/gen/input/workflows/internal/params"
-)
-
-func NewCreateReleasePRInput(p params.Params) input.Input {
-	i := input.Input{
-		Path:         params.RegenerableFileName(p, "create_release_pr.yaml"),
-		TemplateBody: createReleasePRTemplate,
-		TemplateDelims: input.InputTemplateDelims{
-			Left:  "{{{{",
-			Right: "}}}}",
-		},
-	}
-
-	return i
-}
-
-var createReleasePRTemplate = `# DO NOT EDIT. Generated with:
+# DO NOT EDIT. Generated with:
 #
 #    devctl gen workflows
 #
@@ -112,4 +92,3 @@ jobs:
           version: "${{ needs.gather_facts.outputs.version }}"
         run: |
           hub pull-request -f  -m "Release v${{ env.version }}" -a ${{ github.actor }} -b ${{ env.base }} -h ${{ github.event.ref }}
-`

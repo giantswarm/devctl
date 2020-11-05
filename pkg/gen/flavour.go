@@ -7,18 +7,16 @@ import (
 )
 
 const (
-	FlavourApp      Flavour = "app"
-	FlavourCLI      Flavour = "cli"
-	FlavourLibrary  Flavour = "library"
-	FlavourOperator Flavour = "operator"
+	FlavourApp     Flavour = "app"
+	FlavourCLI     Flavour = "cli"
+	FlavourGeneric Flavour = "generic"
 )
 
 func AllFlavours() []string {
 	return []string{
 		FlavourApp.String(),
 		FlavourCLI.String(),
-		FlavourLibrary.String(),
-		FlavourOperator.String(),
+		FlavourGeneric.String(),
 	}
 }
 
@@ -30,10 +28,8 @@ func NewFlavour(s string) (Flavour, error) {
 		return FlavourApp, nil
 	case FlavourCLI.String():
 		return FlavourCLI, nil
-	case FlavourLibrary.String():
-		return FlavourLibrary, nil
-	case FlavourOperator.String():
-		return FlavourOperator, nil
+	case FlavourGeneric.String():
+		return FlavourGeneric, nil
 	}
 
 	return Flavour("unknown"), microerror.Maskf(invalidConfigError, "flavour must be one of %s", strings.Join(AllFlavours(), "|"))

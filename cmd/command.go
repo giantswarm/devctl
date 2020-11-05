@@ -14,11 +14,7 @@ import (
 	"github.com/giantswarm/devctl/cmd/replace"
 	"github.com/giantswarm/devctl/cmd/repo"
 	"github.com/giantswarm/devctl/cmd/version"
-)
-
-const (
-	name        = "devctl"
-	description = "Command line development utility."
+	"github.com/giantswarm/devctl/pkg/project"
 )
 
 type Config struct {
@@ -27,8 +23,6 @@ type Config struct {
 	Stdout io.Writer
 
 	BinaryName string
-	GitCommit  string
-	Source     string
 }
 
 func New(config Config) (*cobra.Command, error) {
@@ -40,13 +34,6 @@ func New(config Config) (*cobra.Command, error) {
 	}
 	if config.Stdout == nil {
 		config.Stdout = os.Stdout
-	}
-
-	if config.GitCommit == "" {
-		return nil, microerror.Maskf(invalidConfigError, "%T.GitCommit must not be empty", config)
-	}
-	if config.Source == "" {
-		return nil, microerror.Maskf(invalidConfigError, "%T.Source must not be empty", config)
 	}
 
 	var err error
@@ -127,9 +114,6 @@ func New(config Config) (*cobra.Command, error) {
 			Logger: config.Logger,
 			Stderr: config.Stderr,
 			Stdout: config.Stdout,
-
-			GitCommit: config.GitCommit,
-			Source:    config.Source,
 		}
 
 		versionCmd, err = version.New(c)
@@ -148,9 +132,9 @@ func New(config Config) (*cobra.Command, error) {
 	}
 
 	c := &cobra.Command{
-		Use:          name,
-		Short:        description,
-		Long:         description,
+		Use:          project.Name(),
+		Short:        project.Description(),
+		Long:         project.Description(),
 		RunE:         r.Run,
 		SilenceUsage: true,
 	}
