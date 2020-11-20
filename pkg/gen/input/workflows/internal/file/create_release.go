@@ -202,14 +202,6 @@ jobs:
       - gather_facts
     if: ${{ needs.gather_facts.outputs.version }}
     steps:
-      - name: Install semver
-        uses: giantswarm/install-binary-action@v1.0.0
-        with:
-          binary: "semver"
-          version: "3.0.0"
-          download_url: "https://github.com/fsaintjacques/${binary}-tool/archive/${version}.tar.gz"
-          tarball_binary_path: "*/src/${binary}"
-          smoke_test: "${binary} --version"
       - name: Check out the repository
         uses: actions/checkout@v2
         with:
@@ -218,36 +210,38 @@ jobs:
         run: "git fetch --all"
       - name: Create long-lived release branch
         run: |
-          current_version="${{ needs.gather_facts.outputs.version }}"
           parent_version="$(git describe --tags --abbrev=0 HEAD^)"
           parent_version="${parent_version#v}" # Strip "v" prefix.
-          echo "current_version=$current_version parent_version=$parent_version"
+          echo "parent_version=$parent_version"
 
-          current_major=$(semver get major $current_version)
-          current_minor=$(semver get minor $current_version)
-          parent_major=$(semver get major $parent_version)
-          parent_minor=$(semver get minor $parent_version)
-          echo "current_major=$current_major current_minor=$current_minor parent_major=$parent_major parent_minor=$parent_minor"
+          release_branch="release-v$(echo ${parent_version} | cut -d '.' -f 1,2).x"
+          echo "release_branch=${release_branch}"
 
-          if [[ $current_major -gt $parent_major ]] ; then
-            echo "Current tag is a new major version"
-          elif [[ $current_major -eq $parent_major ]] && [[ $current_minor -gt $parent_minor ]] ; then
-            echo "Current tag is a new minor version"
-          else
-            echo "Current tag is not a new major or minor version. Nothing to do here."
+          if git rev-parse --verify ${release_branch} 2>&1 >/dev/null ; then
+            echo "Release branch ${release_branch} already exists. Nothing to do here."
             exit 0
           fi
 
-          release_branch="release-v${parent_major}.${parent_minor}.x"
-          echo "release_branch=$release_branch"
+          current_rev=$(git rev-parse HEAD)
+          has_makefile=$([ -f Makefile ] && echo "yes" || echo "no")
 
-          if git rev-parse --verify $release_branch ; then
-            echo "Release branch $release_branch already exists. Nothing to do here."
-            exit 0
+          git branch ${release_branch} v${parent_version}
+          git checkout ${release_branch}
+
+          git checkout $current_rev -- .github/workflows
+          if [[ $has_makefile == "yes" ]] ; then
+            git checkout $current_rev -- Makefile
           fi
 
-          git branch $release_branch HEAD^
-          git push origin $release_branch
+          git add -A
+
+          if ! git diff --cached --exit-code > /dev/null ; then
+            git config --local user.email "action@github.com"
+            git config --local user.name "GitHub Action"
+            git commit -m "Update workflows"
+          fi
+
+          git push origin ${release_branch}
 
 {{{{- if .IsFlavourCLI }}}}
 

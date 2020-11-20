@@ -12,7 +12,6 @@ import (
 	"github.com/giantswarm/devctl/cmd/gen"
 	"github.com/giantswarm/devctl/cmd/release"
 	"github.com/giantswarm/devctl/cmd/replace"
-	"github.com/giantswarm/devctl/cmd/repo"
 	"github.com/giantswarm/devctl/cmd/version"
 	"github.com/giantswarm/devctl/pkg/project"
 )
@@ -94,20 +93,6 @@ func New(config Config) (*cobra.Command, error) {
 		}
 	}
 
-	var repoCmd *cobra.Command
-	{
-		c := repo.Config{
-			Logger: config.Logger,
-			Stderr: config.Stderr,
-			Stdout: config.Stdout,
-		}
-
-		repoCmd, err = repo.New(c)
-		if err != nil {
-			return nil, microerror.Mask(err)
-		}
-	}
-
 	var versionCmd *cobra.Command
 	{
 		c := version.Config{
@@ -144,7 +129,6 @@ func New(config Config) (*cobra.Command, error) {
 	c.AddCommand(completionCmd)
 	c.AddCommand(genCmd)
 	c.AddCommand(releaseCmd)
-	c.AddCommand(repoCmd)
 	c.AddCommand(replaceCmd)
 	c.AddCommand(versionCmd)
 
