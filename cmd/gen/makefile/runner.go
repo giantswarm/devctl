@@ -81,11 +81,11 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		inputs = append(inputs, in.Makefile())
 
 		if flavour == gen.FlavourApp {
-			inputs = append(inputs, in.MakefileApp())
+			inputs = append(inputs, in.MakefileGenApp())
 		}
 
 		if language == gen.LanguageGo {
-			inputs = append(inputs, in.MakefileGo())
+			inputs = append(inputs, in.MakefileGenGo())
 		}
 	}
 

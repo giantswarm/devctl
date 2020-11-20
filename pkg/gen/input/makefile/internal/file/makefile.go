@@ -20,11 +20,11 @@ var makefileTemplate = `# DO NOT EDIT. Generated with:
 #    devctl gen makefile
 #
 
-include *.mk
+include Makefile.*.mk
 
 .PHONY: help
 ## help: prints this help message
 help:
 	@echo "Usage: \n"
-	@sed -n 's/^##//p' ${MAKEFILE_LIST} | column -t -s ':' |  sed -e 's/^/ /'
+	@sed -n 's/^##//p' ${MAKEFILE_LIST} | column -t -s ':' |  sed -e 's/^/ /' | sort
 `

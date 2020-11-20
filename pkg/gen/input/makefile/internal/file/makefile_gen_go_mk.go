@@ -5,10 +5,10 @@ import (
 	"github.com/giantswarm/devctl/pkg/gen/input/makefile/internal/params"
 )
 
-func NewMakefileGoMkInput(p params.Params) input.Input {
+func NewMakefileGenGoMkInput(p params.Params) input.Input {
 	i := input.Input{
-		Path:         "Makefile.go.mk",
-		TemplateBody: makefileGoMkTemplate,
+		Path:         "Makefile.gen.go.mk",
+		TemplateBody: makefileGenGoMkTemplate,
 		TemplateData: map[string]interface{}{
 			"IsFlavourApp": params.IsFlavourApp(p),
 			"IsFlavourCLI": params.IsFlavourCLI(p),
@@ -18,7 +18,7 @@ func NewMakefileGoMkInput(p params.Params) input.Input {
 	return i
 }
 
-var makefileGoMkTemplate = `# DO NOT EDIT. Generated with:
+var makefileGenGoMkTemplate = `# DO NOT EDIT. Generated with:
 #
 #    devctl gen makefile
 #

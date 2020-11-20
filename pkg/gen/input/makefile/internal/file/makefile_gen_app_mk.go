@@ -5,17 +5,17 @@ import (
 	"github.com/giantswarm/devctl/pkg/gen/input/makefile/internal/params"
 )
 
-func NewMakefileAppMkInput(p params.Params) input.Input {
+func NewMakefileGenAppMkInput(p params.Params) input.Input {
 	i := input.Input{
-		Path:         "Makefile.app.mk",
-		TemplateBody: makefileAppMkTemplate,
+		Path:         "Makefile.gen.app.mk",
+		TemplateBody: makefileGenAppMkTemplate,
 		TemplateData: map[string]interface{}{},
 	}
 
 	return i
 }
 
-var makefileAppMkTemplate = `# DO NOT EDIT. Generated with:
+var makefileGenAppMkTemplate = `# DO NOT EDIT. Generated with:
 #
 #    devctl gen makefile
 #
