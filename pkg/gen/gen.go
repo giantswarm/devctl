@@ -69,7 +69,7 @@ func isRegenerable(path string) bool {
 	base := filepath.Base(path)
 
 	switch {
-	case base == "Makefile" || base == "Makefile.devctl.mk":
+	case strings.HasPrefix(base, "Makefile"):
 		return true
 	case base == "dependabot.yml":
 		return true

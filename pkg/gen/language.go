@@ -14,6 +14,7 @@ const (
 func AllLanguages() []string {
 	return []string{
 		LanguageGo.String(),
+		LanguageGeneric.String(),
 	}
 }
 
@@ -23,6 +24,8 @@ func NewLanguage(s string) (Language, error) {
 	switch s {
 	case LanguageGo.String():
 		return LanguageGo, nil
+	case LanguageGeneric.String():
+		return LanguageGeneric, nil
 	}
 
 	return Language("unknown"), microerror.Maskf(invalidConfigError, "flavour must be one of %s", strings.Join(AllLanguages(), "|"))
