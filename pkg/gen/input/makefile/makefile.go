@@ -28,3 +28,7 @@ func New(config Config) (*Makefile, error) {
 func (m *Makefile) Makefile() input.Input {
 	return file.NewMakefileInput(m.params)
 }
+
+func (m *Makefile) MakefileGo() input.Input {
+	return file.NewMakefileGoMkInput(m.params)
+}

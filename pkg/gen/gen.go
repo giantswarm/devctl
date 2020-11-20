@@ -68,11 +68,12 @@ func execute(ctx context.Context, file input.Input) error {
 func isRegenerable(path string) bool {
 	base := filepath.Base(path)
 
-	if base == "Makefile" || base == "dependabot.yml" {
+	switch {
+	case base == "Makefile" || base == "Makefile.devctl.mk":
 		return true
-	}
-
-	if strings.HasPrefix(base, internal.RegenerableFilePrefix) {
+	case base == "dependabot.yml":
+		return true
+	case strings.HasPrefix(base, internal.RegenerableFilePrefix):
 		return true
 	}
 
