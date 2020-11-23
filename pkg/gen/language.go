@@ -28,7 +28,7 @@ func NewLanguage(s string) (Language, error) {
 		return LanguageGeneric, nil
 	}
 
-	return Language("unknown"), microerror.Maskf(invalidConfigError, "flavour must be one of %s", strings.Join(AllLanguages(), "|"))
+	return Language("unknown"), microerror.Maskf(invalidConfigError, "language must be one of %s", strings.Join(AllLanguages(), "|"))
 }
 
 func (f Language) String() string {
