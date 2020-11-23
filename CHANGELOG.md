@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Generate language specific Makefiles in `gen makefile`.
 
+## Removed
+
+- Remove `repo list` command replaced with Go modules + dependabot.
+
 ## [3.1.0] - 2020-11-05
 
 ### Added
