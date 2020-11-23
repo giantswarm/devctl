@@ -16,7 +16,7 @@ func main() {
 	err := mainE(context.Background())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", microerror.Pretty(err, true))
-		os.Exit(1)
+		os.Exit(2)
 	}
 }
 
