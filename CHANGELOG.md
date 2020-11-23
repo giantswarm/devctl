@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## Added
+
+- Add `--language` flag to `gen makefile`.
+- Generate main Makefile including `*.mk` files to allow custom Makefiles.
+
+## Changed
+
+- Generate language specific Makefiles in `gen makefile`.
+
 ## Removed
 
 - Remove `repo list` command replaced with Go modules + dependabot.

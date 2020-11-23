@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/pkg/gen"
+	"github.com/giantswarm/devctl/pkg/gen/input"
 	"github.com/giantswarm/devctl/pkg/gen/input/makefile"
 )
 
@@ -46,22 +47,49 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		}
 	}
 
-	var makefileInput *makefile.Makefile
+	var language gen.Language
 	{
-		c := makefile.Config{
-			Flavour: flavour,
-		}
-
-		makefileInput, err = makefile.New(c)
+		language, err = gen.NewLanguage(r.flag.Language)
 		if err != nil {
 			return microerror.Mask(err)
 		}
 	}
 
-	err = gen.Execute(
-		ctx,
-		makefileInput.Makefile(),
-	)
+	if flavour == gen.FlavourCLI && language != gen.LanguageGo {
+		return microerror.Maskf(
+			executionFailedError,
+			"flavour %q is supported only for language %q",
+			gen.FlavourCLI, gen.LanguageGo,
+		)
+	}
+
+	var inputs []input.Input
+
+	// Makefile
+	// Makefile.app.mk
+	// Makefile.go.mk
+	{
+		c := makefile.Config{
+			Flavour: flavour,
+		}
+
+		in, err := makefile.New(c)
+		if err != nil {
+			return microerror.Mask(err)
+		}
+
+		inputs = append(inputs, in.Makefile())
+
+		if flavour == gen.FlavourApp {
+			inputs = append(inputs, in.MakefileGenApp())
+		}
+
+		if language == gen.LanguageGo {
+			inputs = append(inputs, in.MakefileGenGo())
+		}
+	}
+
+	err = gen.Execute(ctx, inputs...)
 	if err != nil {
 		return microerror.Mask(err)
 	}
