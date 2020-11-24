@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Add `--language` flag to `gen makefile`.
 - Generate main Makefile including `*.mk` files to allow custom Makefiles.
+- Pretty print errors.
 
 ## Changed
 
