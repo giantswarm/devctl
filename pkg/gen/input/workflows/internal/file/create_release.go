@@ -14,6 +14,7 @@ func NewCreateReleaseInput(p params.Params) input.Input {
 			Right: "}}}}",
 		},
 		TemplateData: map[string]interface{}{
+			"Header":       params.Header("#"),
 			"IsFlavourCLI": params.IsFlavourCLI(p),
 		},
 	}
@@ -21,10 +22,7 @@ func NewCreateReleaseInput(p params.Params) input.Input {
 	return i
 }
 
-var createReleaseTemplate = `# DO NOT EDIT. Generated with:
-#
-#    devctl gen workflows
-#
+var createReleaseTemplate = `{{{{ .Header }}}}
 name: Create Release
 on:
   push:

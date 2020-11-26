@@ -5,6 +5,10 @@ import (
 	"github.com/giantswarm/devctl/pkg/gen/internal"
 )
 
+func Header(comment string) string {
+	return internal.Header(comment)
+}
+
 func IsFlavourCLI(p Params) bool {
 	return p.Flavour == gen.FlavourCLI
 }

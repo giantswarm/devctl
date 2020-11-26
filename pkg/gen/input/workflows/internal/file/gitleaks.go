@@ -13,15 +13,15 @@ func NewGitleaksInput(p params.Params) input.Input {
 			Left:  "{{{{",
 			Right: "}}}}",
 		},
+		TemplateData: map[string]interface{}{
+			"Header": params.Header("#"),
+		},
 	}
 
 	return i
 }
 
-var gitleaksTemplate = `# DO NOT EDIT. Generated with:
-#
-#    devctl gen workflows
-#
+var gitleaksTemplate = `{{{{ .Header }}}}
 name: gitleaks
 
 on: [push,pull_request]

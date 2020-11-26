@@ -13,15 +13,15 @@ func NewCreateReleasePRInput(p params.Params) input.Input {
 			Left:  "{{{{",
 			Right: "}}}}",
 		},
+		TemplateData: map[string]interface{}{
+			"Header": params.Header("#"),
+		},
 	}
 
 	return i
 }
 
-var createReleasePRTemplate = `# DO NOT EDIT. Generated with:
-#
-#    devctl gen workflows
-#
+var createReleasePRTemplate = `{{{{ .Header }}}}
 name: Create Release PR
 on:
   push:
