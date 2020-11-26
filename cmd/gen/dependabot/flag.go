@@ -35,23 +35,15 @@ func (f *flag) Validate() error {
 
 	// in case ecosystem was not set specifically, we autodetect files
 	if len(f.Ecosystems) == 0 {
-		for _, e := range gen.AllowedEcosystems() {
-			switch e {
-			case "docker":
-				if exists("Dockerfile") {
-					f.Ecosystems = append(f.Ecosystems, "docker")
-				}
-			case "github-actions":
-				if exists(".github/workflows/") {
-					f.Ecosystems = append(f.Ecosystems, "github-actions")
-				}
-			case "go":
-				if exists("go.mod") && exists("go.sum") {
-					f.Ecosystems = append(f.Ecosystems, "go")
-				}
-			}
+		if exists("Dockerfile") {
+			f.Ecosystems = append(f.Ecosystems, gen.EcosystemDocker.String())
 		}
-
+		if exists(".github/workflows/") {
+			f.Ecosystems = append(f.Ecosystems, gen.EcosystemGithubActions.String())
+		}
+		if exists("go.mod") && exists("go.sum") {
+			f.Ecosystems = append(f.Ecosystems, gen.EcosystemGomod.String())
+		}
 	}
 
 	if !gen.IsValidEcoSystem(f.Ecosystems) {

@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Changed
 
+- Rename ecosystem "go" to "gomod" in `gen dependabot`.
 - Generate language specific Makefiles in `gen makefile`.
 - Add required `--language` flag to `gen makefile`.
 

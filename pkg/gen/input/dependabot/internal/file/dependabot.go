@@ -12,10 +12,11 @@ func NewCreateDependabotInput(p params.Params) input.Input {
 		Path:         filepath.Join(p.Dir, "dependabot.yml"),
 		TemplateBody: createDependabotTemplate,
 		TemplateData: map[string]interface{}{
-			"Ecosystems": p.Ecosystems,
-			"Header":     params.Header("#"),
-			"Interval":   p.Interval,
-			"Reviewers":  p.Reviewers,
+			"EcosystemGomod": params.EcosystemGomod(p),
+			"Ecosystems":     params.Ecosystems(p),
+			"Header":         params.Header("#"),
+			"Interval":       params.Interval(p),
+			"Reviewers":      params.Reviewers(p),
 		},
 	}
 
@@ -24,12 +25,12 @@ func NewCreateDependabotInput(p params.Params) input.Input {
 
 var createDependabotTemplate = `{{ .Header }}
 {{- $interval := .Interval }}
+{{- $ecosystemGomod := .EcosystemGomod }}
 {{- $reviewers := .Reviewers }}
 version: 2
 updates:
 {{- range $ecosystem := .Ecosystems }}
-{{- if eq $ecosystem "go" }}
-- package-ecosystem: gomod
+- package-ecosystem: {{ $ecosystem }}
   directory: "/"
   schedule:
     interval: {{ $interval }}
@@ -41,38 +42,11 @@ updates:
   - {{ $reviewer }}
   {{- end}}
 {{- end }}
+{{- if eq $ecosystem $ecosystemGomod }}
   ignore:
   - dependency-name: k8s.io/*
     versions:
     - ">=0.19.0"
-{{- end }}
-{{- if eq $ecosystem "docker" }}
-- package-ecosystem: docker
-  directory: "/"
-  schedule:
-    interval: {{ $interval }}
-    time: "04:00"
-  target-branch: master
-{{- if $reviewers }}
-  reviewers:
-  {{- range $reviewer := $reviewers }}
-  - {{ $reviewer }}
-  {{- end}}
-{{- end }}
-{{- end }}
-{{- if eq $ecosystem "github-actions" }}
-- package-ecosystem: github-actions
-  directory: "/"
-  schedule:
-    interval: {{ $interval }}
-    time: "04:00"
-  target-branch: master
-{{- if $reviewers }}
-  reviewers:
-  {{- range $reviewer := $reviewers }}
-  - {{ $reviewer }}
-  {{- end}}
-{{- end }}
 {{- end }}
 {{- end }}
 `
