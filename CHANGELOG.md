@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Generate language specific Makefiles in `gen makefile`.
 
+## Fixed
+
+- Fix Azure tag URL in release changelog generation.
+
 ## Removed
 
 - Remove `repo list` command replaced with Go modules + dependabot.
