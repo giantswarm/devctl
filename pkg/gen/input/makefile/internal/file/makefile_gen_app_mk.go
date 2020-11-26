@@ -9,16 +9,15 @@ func NewMakefileGenAppMkInput(p params.Params) input.Input {
 	i := input.Input{
 		Path:         "Makefile.gen.app.mk",
 		TemplateBody: makefileGenAppMkTemplate,
-		TemplateData: map[string]interface{}{},
+		TemplateData: map[string]interface{}{
+			"Header": params.Header("#"),
+		},
 	}
 
 	return i
 }
 
-var makefileGenAppMkTemplate = `# DO NOT EDIT. Generated with:
-#
-#    devctl gen makefile
-#
+var makefileGenAppMkTemplate = `{{ .Header }}
 
 .PHONY: lint-chart
 ## lint-chart: runs ct against the default chart

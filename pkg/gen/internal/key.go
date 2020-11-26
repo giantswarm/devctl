@@ -3,6 +3,9 @@ package internal
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
+
+	"github.com/giantswarm/devctl/pkg/project"
 )
 
 const (
@@ -19,6 +22,15 @@ const (
 
 func FileName(dir, name string) string {
 	return filepath.Join(dir, name)
+}
+
+func Header(comment string) string {
+	return strings.Join([]string{
+		comment + " DO NOT EDIT. Generated with:",
+		comment,
+		comment + "    devctl@" + project.Version(),
+		comment,
+	}, "\n")
 }
 
 // Package returns Go package name for the give directory.

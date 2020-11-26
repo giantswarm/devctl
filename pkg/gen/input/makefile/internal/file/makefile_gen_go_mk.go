@@ -12,16 +12,14 @@ func NewMakefileGenGoMkInput(p params.Params) input.Input {
 		TemplateData: map[string]interface{}{
 			"IsFlavourApp": params.IsFlavourApp(p),
 			"IsFlavourCLI": params.IsFlavourCLI(p),
+			"Header":       params.Header("#"),
 		},
 	}
 
 	return i
 }
 
-var makefileGenGoMkTemplate = `# DO NOT EDIT. Generated with:
-#
-#    devctl gen makefile
-#
+var makefileGenGoMkTemplate = `{{ .Header }}
 
 {{- if .IsFlavourCLI }}
 

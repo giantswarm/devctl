@@ -13,6 +13,7 @@ func NewCreateDependabotInput(p params.Params) input.Input {
 		TemplateBody: createDependabotTemplate,
 		TemplateData: map[string]interface{}{
 			"Ecosystems": p.Ecosystems,
+			"Header":     params.Header("#"),
 			"Interval":   p.Interval,
 			"Reviewers":  p.Reviewers,
 		},
@@ -21,10 +22,7 @@ func NewCreateDependabotInput(p params.Params) input.Input {
 	return i
 }
 
-var createDependabotTemplate = `# DO NOT EDIT. Generated with:
-#
-#    devctl gen dependabot
-#
+var createDependabotTemplate = `{{ .Header }}
 {{- $interval := .Interval }}
 {{- $reviewers := .Reviewers }}
 version: 2

@@ -12,6 +12,9 @@ func NewCreateWorkflowInput(p params.Params) input.Input {
 	i := input.Input{
 		Path:         filepath.Join(p.Dir, "workflows", internal.RegenerableFilePrefix+"gomodtidy.yaml"),
 		TemplateBody: createDependabotWorkflowTemplate,
+		TemplateData: map[string]interface{}{
+			"Header": params.Header("#"),
+		},
 		TemplateDelims: input.InputTemplateDelims{
 			Left:  "{{{{",
 			Right: "}}}}",
@@ -21,7 +24,7 @@ func NewCreateWorkflowInput(p params.Params) input.Input {
 	return i
 }
 
-var createDependabotWorkflowTemplate = `# DO NOT EDIT. Generated with:
+var createDependabotWorkflowTemplate = `{{{{ .Header }}}}# DO NOT EDIT. Generated with:
 #
 #    devctl gen dependabot
 #

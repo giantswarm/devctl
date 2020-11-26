@@ -9,16 +9,15 @@ func NewMakefileInput(p params.Params) input.Input {
 	i := input.Input{
 		Path:         "Makefile",
 		TemplateBody: makefileTemplate,
-		TemplateData: map[string]interface{}{},
+		TemplateData: map[string]interface{}{
+			"Header": params.Header("#"),
+		},
 	}
 
 	return i
 }
 
-var makefileTemplate = `# DO NOT EDIT. Generated with:
-#
-#    devctl gen makefile
-#
+var makefileTemplate = `{{ .Header }}
 
 include Makefile.*.mk
 
