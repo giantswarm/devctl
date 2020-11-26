@@ -12,22 +12,19 @@ func NewCreateWorkflowInput(p params.Params) input.Input {
 	i := input.Input{
 		Path:         filepath.Join(p.Dir, "workflows", internal.RegenerableFilePrefix+"gomodtidy.yaml"),
 		TemplateBody: createDependabotWorkflowTemplate,
-		TemplateData: map[string]interface{}{
-			"Header": params.Header("#"),
-		},
 		TemplateDelims: input.InputTemplateDelims{
 			Left:  "{{{{",
 			Right: "}}}}",
+		},
+		TemplateData: map[string]interface{}{
+			"Header": params.Header("#"),
 		},
 	}
 
 	return i
 }
 
-var createDependabotWorkflowTemplate = `{{{{ .Header }}}}# DO NOT EDIT. Generated with:
-#
-#    devctl gen dependabot
-#
+var createDependabotWorkflowTemplate = `{{{{ .Header }}}}
 # Credit: https://github.com/crazy-max/diun
 name: auto-go-mod-tidy
 
