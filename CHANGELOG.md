@@ -9,14 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Added
 
-- Add `--language` flag to `gen makefile`.
+- Add Dockerfile.
 - Generate main Makefile including `*.mk` files to allow custom Makefiles.
 - Pretty print errors.
-- Add Dockerfile.
+- Print devctl version in generated files headers.
 
 ## Changed
 
 - Generate language specific Makefiles in `gen makefile`.
+- Add required `--language` flag to `gen makefile`.
 
 ## Removed
 
