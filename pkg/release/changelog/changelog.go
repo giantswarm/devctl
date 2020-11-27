@@ -193,7 +193,7 @@ func ParseChangelog(componentName, componentVersion string) (*Version, error) {
 	}
 
 	templateData := versionTemplateData{
-		Branch: "master",
+		Branch:  "master",
 		Version: componentVersion,
 	}
 	parsedVersion, err := semver.NewVersion(componentVersion)
