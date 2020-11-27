@@ -16,6 +16,7 @@ workflows:
 
       - architect/push-to-docker:
           name: push-devctl-to-quay
+          context: architect
           image: "quay.io/giantswarm/devctl"
           username_envar: "QUAY_USERNAME"
           password_envar: "QUAY_PASSWORD"
