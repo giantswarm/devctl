@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 
 	"github.com/giantswarm/microerror"
-	"github.com/giantswarm/releases/pkg/filesystem"
-	"github.com/giantswarm/releases/pkg/patch"
+	"github.com/giantswarm/releaseclient/pkg/filesystem"
+	"github.com/giantswarm/releaseclient/pkg/patch"
 	"sigs.k8s.io/yaml"
 )
 

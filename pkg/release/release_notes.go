@@ -5,7 +5,7 @@ import (
 	"text/template"
 
 	"github.com/giantswarm/microerror"
-	"github.com/giantswarm/releases/pkg/patch"
+	"github.com/giantswarm/releaseclient/pkg/patch"
 
 	"github.com/giantswarm/devctl/pkg/release/changelog"
 )

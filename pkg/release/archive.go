@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 
 	"github.com/giantswarm/microerror"
-	"github.com/giantswarm/releases/pkg/filesystem"
+	"github.com/giantswarm/releaseclient/pkg/filesystem"
 )
 
 // Archives a release on the filesystem from the given parameters. This is the entry point
