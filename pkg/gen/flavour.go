@@ -12,14 +12,6 @@ const (
 	FlavourGeneric Flavour = "generic"
 )
 
-func AllFlavours() []string {
-	return []string{
-		FlavourApp.String(),
-		FlavourCLI.String(),
-		FlavourGeneric.String(),
-	}
-}
-
 type Flavour string
 
 func NewFlavour(s string) (Flavour, error) {
@@ -37,6 +29,24 @@ func NewFlavour(s string) (Flavour, error) {
 
 func (f Flavour) String() string {
 	return string(f)
+}
+
+type Flavours []Flavour
+
+func AllFlavours() Flavours {
+	return Flavours{
+		FlavourApp,
+		FlavourCLI,
+		FlavourGeneric,
+	}
+}
+
+func (fs Flavours) ToStringSlice() []string {
+	var ss []string
+	for _, f := range fs {
+		ss = append(ss, f.String())
+	}
+	return ss
 }
 
 func IsValidFlavour(s string) bool {

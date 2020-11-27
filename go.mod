@@ -11,6 +11,7 @@ require (
 	github.com/giantswarm/microerror v0.2.1
 	github.com/giantswarm/micrologger v0.3.4
 	github.com/google/go-github v17.0.0+incompatible
+	github.com/huandu/xstrings v1.3.2 // indirect
 	github.com/pelletier/go-toml v1.8.1
 	github.com/prometheus/client_golang v1.7.1 // indirect
 	github.com/spf13/cobra v1.1.1
