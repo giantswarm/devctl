@@ -36,7 +36,7 @@ func execute(ctx context.Context, file input.Input) error {
 
 		f, err := os.Stat(file.Path)
 		if os.IsNotExist(err) {
-			// Fall trough.
+			// Fall through.
 		} else if err != nil {
 			return microerror.Mask(err)
 		} else if f.IsDir() {
@@ -68,11 +68,12 @@ func execute(ctx context.Context, file input.Input) error {
 func isRegenerable(path string) bool {
 	base := filepath.Base(path)
 
-	if base == "Makefile" || base == "dependabot.yml" {
+	switch {
+	case base == "Makefile" || strings.HasPrefix(base, "Makefile.gen."):
 		return true
-	}
-
-	if strings.HasPrefix(base, internal.RegenerableFilePrefix) {
+	case base == "dependabot.yml":
+		return true
+	case strings.HasPrefix(base, internal.RegenerableFilePrefix):
 		return true
 	}
 

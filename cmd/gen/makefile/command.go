@@ -11,7 +11,13 @@ import (
 
 const (
 	name        = "makefile"
-	description = "Generates a Makefile for Golang projects."
+	description = `Generates a Makefile for Golang projects.
+
+There are different generation flavours:
+
+  - app - project containing a helm chart
+  - cli - project released with a downloadable binary
+  - generic - everything else, i.e a project which simply needs to be released`
 )
 
 type Config struct {

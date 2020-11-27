@@ -34,3 +34,7 @@ func (w *Workflows) CreateRelease() input.Input {
 func (w *Workflows) CreateReleasePR() input.Input {
 	return file.NewCreateReleasePRInput(w.params)
 }
+
+func (w *Workflows) Gitleaks() input.Input {
+	return file.NewGitleaksInput(w.params)
+}

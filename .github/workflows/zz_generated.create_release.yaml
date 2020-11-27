@@ -1,28 +1,7 @@
-package file
-
-import (
-	"github.com/giantswarm/devctl/pkg/gen/input"
-	"github.com/giantswarm/devctl/pkg/gen/input/workflows/internal/params"
-)
-
-func NewCreateReleaseInput(p params.Params) input.Input {
-	i := input.Input{
-		Path:         params.RegenerableFileName(p, "create_release.yaml"),
-		TemplateBody: createReleaseTemplate,
-		TemplateDelims: input.InputTemplateDelims{
-			Left:  "{{{{",
-			Right: "}}}}",
-		},
-		TemplateData: map[string]interface{}{
-			"Header":       params.Header("#"),
-			"IsFlavourCLI": params.IsFlavourCLI(p),
-		},
-	}
-
-	return i
-}
-
-var createReleaseTemplate = `{{{{ .Header }}}}
+# DO NOT EDIT. Generated with:
+#
+#    devctl gen workflows
+#
 name: Create Release
 on:
   push:
@@ -247,8 +226,6 @@ jobs:
           git branch $release_branch HEAD^
           git push origin $release_branch
 
-{{{{- if .IsFlavourCLI }}}}
-
   create_and_upload_build_artifacts:
     name: Create and upload build artifacts
     runs-on: ubuntu-20.04
@@ -290,6 +267,3 @@ jobs:
           asset_path: ${{ env.ARTIFACT_DIR }}/${{ env.FILE_NAME }}
           asset_name: ${{ env.FILE_NAME }}
           asset_content_type: application/octet-stream
-
-{{{{- end }}}}
-`

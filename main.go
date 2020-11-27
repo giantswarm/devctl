@@ -3,19 +3,20 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/cmd"
-	"github.com/giantswarm/devctl/pkg/project"
 )
 
 func main() {
 	err := mainE(context.Background())
 	if err != nil {
-		panic(fmt.Sprintf("%#v\n", err))
+		fmt.Fprintf(os.Stderr, "Error: %s\n", microerror.Pretty(err, true))
+		os.Exit(2)
 	}
 }
 
@@ -36,9 +37,6 @@ func mainE(ctx context.Context) error {
 	{
 		c := cmd.Config{
 			Logger: logger,
-
-			GitCommit: project.GitSHA(),
-			Source:    project.Source(),
 		}
 
 		rootCommand, err = cmd.New(c)

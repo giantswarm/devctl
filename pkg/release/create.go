@@ -57,6 +57,7 @@ func CreateRelease(patchFile, base, releases, provider string, overwrite bool) e
 	if err != nil {
 		return microerror.Mask(err)
 	}
+
 	err = ioutil.WriteFile(releaseYAMLPath, releaseYAML, 0644)
 	if err != nil {
 		return microerror.Mask(err)
