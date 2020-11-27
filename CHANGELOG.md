@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Removed
 
 - Remove `repo list` command replaced with Go modules + dependabot.
+- Remove `gen crud` command as CRUD handler is obsolete.
 
 ## [3.1.0] - 2020-11-05
 
