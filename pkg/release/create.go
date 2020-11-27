@@ -86,15 +86,13 @@ func CreateRelease(patchFile, base, releases, provider string, overwrite bool) e
 		return microerror.Mask(err)
 	}
 
-	// Release diff
-	diffPath := filepath.Join(releasePath, "release.diff")
-	diff, err := createDiff(baseYAMLPath, releaseYAMLPath)
-	if err != nil {
-		return microerror.Mask(err)
-	}
-	err = ioutil.WriteFile(diffPath, []byte(diff), 0644)
-	if err != nil {
-		return microerror.Mask(err)
+	// Write the patch to the release directory
+	diffPath := filepath.Join(releasePath, "patch.yaml")
+	if overwrite || diffPath != patchFile {
+		err = ioutil.WriteFile(diffPath, releasePatchContent, 0644)
+		if err != nil {
+			return microerror.Mask(err)
+		}
 	}
 
 	// Release kustomization.yaml

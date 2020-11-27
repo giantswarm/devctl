@@ -2,6 +2,7 @@ package changelog
 
 import (
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"regexp"
@@ -40,7 +41,7 @@ var knownComponentParseParams = map[string]parseParams{
 	},
 	"aws-operator": {
 		tag:       "https://github.com/giantswarm/aws-operator/releases/tag/v{{.Version}}",
-		changelog: "https://raw.githubusercontent.com/giantswarm/aws-operator/master/CHANGELOG.md",
+		changelog: "https://raw.githubusercontent.com/giantswarm/aws-operator/{{.Branch}}/CHANGELOG.md",
 		start:     commonStartPattern,
 		end:       commonEndPattern,
 	},
@@ -78,7 +79,7 @@ var knownComponentParseParams = map[string]parseParams{
 	"etcd": {
 		tag:       "https://github.com/etcd-io/etcd/releases/tag/v{{.Version}}",
 		changelog: "https://raw.githubusercontent.com/etcd-io/etcd/master/CHANGELOG-{{.Major}}.{{.Minor}}.md",
-		start:     "(?m)^## \\[v?(?P<Version>\\d+\\.\\d+\\.\\d+)\\].*$",
+		start:     "(?m)^## (\\[v?(?P<Version>\\d+\\.\\d+\\.\\d+)\\].*|v?(?P<Version>\\d+\\.\\d+\\.\\d+) \\(.*\\))$",
 		end:       "(?m)^## .*$",
 	},
 	"aws-cni": {
@@ -175,6 +176,7 @@ type versionTemplateData struct {
 	Major   uint64
 	Minor   uint64
 	Version string
+	Branch  string
 }
 
 // Data about a particular component version returned from parsing a changelog
@@ -191,6 +193,7 @@ func ParseChangelog(componentName, componentVersion string) (*Version, error) {
 	}
 
 	templateData := versionTemplateData{
+		Branch: "master",
 		Version: componentVersion,
 	}
 	parsedVersion, err := semver.NewVersion(componentVersion)
@@ -215,6 +218,14 @@ func ParseChangelog(componentName, componentVersion string) (*Version, error) {
 		Link: releaseLinkBuffer.String(),
 	}
 
+	// Hack for aws-operator@legacy
+	if componentName == "aws-operator" && parsedVersion.Major() == 5 && parsedVersion.Minor() == 7 {
+		templateData.Branch = "legacy"
+	}
+	if componentName == "calico" && parsedVersion.LessThan(semver.MustParse("3.12")) {
+		params.changelog = strings.Replace(params.changelog, "/_includes/release-notes/", "/_includes/v{{.Major}}.{{.Minor}}/release-notes/", 1)
+	}
+
 	// Read full changelog and split into lines
 	changelogURLTemplate, err := template.New("url").Parse(params.changelog)
 	if err != nil {
@@ -233,6 +244,8 @@ func ParseChangelog(componentName, componentVersion string) (*Version, error) {
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}
+
+	fmt.Println(changelogURLBuilder.String(), params.changelog, templateData)
 
 	if componentName == "containerlinux" {
 		currentVersion.Content, err = parseContainerLinuxChangelog(body, componentVersion)

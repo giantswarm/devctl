@@ -52,7 +52,7 @@ func createReleaseNotes(releaseName string, releasePatch patch.ReleasePatch, pro
 
 	var components []releaseNotesComponent
 	for _, component := range releasePatch.Components {
-		if component.Version == nil || component.Change != "M" {
+		if component.Version == nil || !component.Change.IsAddOrModify() {
 			continue
 		}
 		componentChangelog, err := changelog.ParseChangelog(component.Name, *component.Version)
@@ -68,7 +68,7 @@ func createReleaseNotes(releaseName string, releasePatch patch.ReleasePatch, pro
 	}
 
 	for _, app := range releasePatch.Apps {
-		if app.Version == nil || app.Change != "M" {
+		if app.Version == nil || !app.Change.IsAddOrModify() {
 			continue
 		}
 		componentChangelog, err := changelog.ParseChangelog(app.Name, *app.Version)
