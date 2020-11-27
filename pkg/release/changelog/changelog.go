@@ -51,7 +51,7 @@ var knownComponentParseParams = map[string]parseParams{
 		end:       commonEndPattern,
 	},
 	"azure-operator": {
-		tag:       "https://github.com/giantswarm/aws-operator/releases/tag/v{{.Version}}",
+		tag:       "https://github.com/giantswarm/azure-operator/releases/tag/v{{.Version}}",
 		changelog: "https://raw.githubusercontent.com/giantswarm/azure-operator/v{{.Version}}/CHANGELOG.md",
 		start:     commonStartPattern,
 		end:       commonEndPattern,
