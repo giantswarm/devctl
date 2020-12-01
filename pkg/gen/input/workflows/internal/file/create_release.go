@@ -221,8 +221,8 @@ jobs:
           parent_version="${parent_version#v}" # Strip "v" prefix.
 
           if [[ "$parent_version" = "" ]] ; then
-          echo "Unable to find a parent tag version. No branch to create."
-          exit 0
+            echo "Unable to find a parent tag version. No branch to create."
+            exit 0
           fi
 
           echo "current_version=$current_version parent_version=$parent_version"
@@ -234,20 +234,20 @@ jobs:
           echo "current_major=$current_major current_minor=$current_minor parent_major=$parent_major parent_minor=$parent_minor"
 
           if [[ $current_major -gt $parent_major ]] ; then
-          echo "Current tag is a new major version"
+            echo "Current tag is a new major version"
           elif [[ $current_major -eq $parent_major ]] && [[ $current_minor -gt $parent_minor ]] ; then
-          echo "Current tag is a new minor version"
+            echo "Current tag is a new minor version"
           else
-          echo "Current tag is not a new major or minor version. Nothing to do here."
-          exit 0
+            echo "Current tag is not a new major or minor version. Nothing to do here."
+            exit 0
           fi
 
           release_branch="release-v${parent_major}.${parent_minor}.x"
           echo "release_branch=$release_branch"
 
           if git rev-parse --verify $release_branch ; then
-          echo "Release branch $release_branch already exists. Nothing to do here."
-          exit 0
+            echo "Release branch $release_branch already exists. Nothing to do here."
+            exit 0
           fi
 
           git branch $release_branch HEAD^
