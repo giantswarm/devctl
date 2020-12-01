@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Generate language specific Makefiles in `gen makefile`.
 - Add required `--language` flag to `gen makefile`.
+- Do not try to create a previous release branch when tagging the first release.
 
 ## Fixed
 

@@ -220,7 +220,7 @@ jobs:
           parent_version="$(git describe --tags --abbrev=0 HEAD^ || true)"
           parent_version="${parent_version#v}" # Strip "v" prefix.
 
-          if [[ "$parent_version" = "" ]] ; then
+          if [[ -z "$parent_version" ]] ; then
             echo "Unable to find a parent tag version. No branch to create."
             exit 0
           fi
