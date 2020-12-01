@@ -217,8 +217,14 @@ jobs:
       - name: Create long-lived release branch
         run: |
           current_version="${{ needs.gather_facts.outputs.version }}"
-          parent_version="$(git describe --tags --abbrev=0 HEAD^)"
+          parent_version="$(git describe --tags --abbrev=0 HEAD^ || true)"
           parent_version="${parent_version#v}" # Strip "v" prefix.
+
+          if [[ -z "$parent_version" ]] ; then
+            echo "Unable to find a parent tag version. No branch to create."
+            exit 0
+          fi
+
           echo "current_version=$current_version parent_version=$parent_version"
 
           current_major=$(semver get major $current_version)

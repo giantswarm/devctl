@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Fixed
 
 - Fix Azure tag URL in release changelog generation.
+- Do not try to create a previous release branch when tagging the first release.
 
 ## Removed
 
