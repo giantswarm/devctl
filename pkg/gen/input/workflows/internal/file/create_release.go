@@ -219,20 +219,20 @@ jobs:
           current_version="${{ needs.gather_facts.outputs.version }}"
           parent_version="$(git describe --tags --abbrev=0 HEAD^ || true)"
           parent_version="${parent_version#v}" # Strip "v" prefix.
-          
+
           if [[ "$parent_version" = "" ]] ; then
           echo "Unable to find a parent tag version. No branch to create."
           exit 0
           fi
-          
+
           echo "current_version=$current_version parent_version=$parent_version"
-          
+
           current_major=$(semver get major $current_version)
           current_minor=$(semver get minor $current_version)
           parent_major=$(semver get major $parent_version)
           parent_minor=$(semver get minor $parent_version)
           echo "current_major=$current_major current_minor=$current_minor parent_major=$parent_major parent_minor=$parent_minor"
-          
+
           if [[ $current_major -gt $parent_major ]] ; then
           echo "Current tag is a new major version"
           elif [[ $current_major -eq $parent_major ]] && [[ $current_minor -gt $parent_minor ]] ; then
@@ -241,10 +241,10 @@ jobs:
           echo "Current tag is not a new major or minor version. Nothing to do here."
           exit 0
           fi
-          
+
           release_branch="release-v${parent_major}.${parent_minor}.x"
           echo "release_branch=$release_branch"
-          
+
           if git rev-parse --verify $release_branch ; then
           echo "Release branch $release_branch already exists. Nothing to do here."
           exit 0
