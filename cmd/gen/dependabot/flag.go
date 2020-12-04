@@ -44,6 +44,12 @@ func (f *flag) Validate() error {
 		if exists("go.mod") && exists("go.sum") {
 			f.Ecosystems = append(f.Ecosystems, gen.EcosystemGomod.String())
 		}
+		if exists("package.json") {
+			f.Ecosystems = append(f.Ecosystems, gen.EcosystemNPM.String())
+		}
+		if exists("setup.py") {
+			f.Ecosystems = append(f.Ecosystems, gen.EcosystemPIP.String())
+		}
 	}
 
 	if !gen.IsValidEcoSystem(f.Ecosystems) {
