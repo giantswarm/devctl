@@ -10,6 +10,8 @@ const (
 	EcosystemDocker        Ecosystem = "docker"
 	EcosystemGithubActions Ecosystem = "github-actions"
 	EcosystemGomod         Ecosystem = "gomod"
+	EcosystemNPM           Ecosystem = "npm"
+	EcosystemPIP           Ecosystem = "pip"
 )
 
 func AllowedEcosystems() []string {
@@ -17,6 +19,8 @@ func AllowedEcosystems() []string {
 		EcosystemDocker.String(),
 		EcosystemGithubActions.String(),
 		EcosystemGomod.String(),
+		EcosystemNPM.String(),
+		EcosystemPIP.String(),
 	}
 }
 
@@ -30,6 +34,10 @@ func NewEcosystem(s string) (Ecosystem, error) {
 		return EcosystemGithubActions, nil
 	case EcosystemGomod.String():
 		return EcosystemGomod, nil
+	case EcosystemNPM.String():
+		return EcosystemNPM, nil
+	case EcosystemPIP.String():
+		return EcosystemPIP, nil
 	}
 
 	return Ecosystem("unknown"), microerror.Maskf(invalidConfigError, "ecosystem must be one of %s", strings.Join(AllowedEcosystems(), "|"))
