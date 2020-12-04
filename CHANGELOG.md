@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Generate main Makefile including `*.mk` files to allow custom Makefiles.
 - Pretty print errors.
 - Print devctl version in generated files headers.
+- Set version flag in generated Go Makefiles.
 
 ## Changed
 
