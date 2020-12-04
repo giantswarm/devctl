@@ -9,14 +9,14 @@ import (
 const (
 	EcosystemDocker        Ecosystem = "docker"
 	EcosystemGithubActions Ecosystem = "github-actions"
-	EcosystemGo            Ecosystem = "go"
+	EcosystemGomod         Ecosystem = "gomod"
 )
 
 func AllowedEcosystems() []string {
 	return []string{
 		EcosystemDocker.String(),
 		EcosystemGithubActions.String(),
-		EcosystemGo.String(),
+		EcosystemGomod.String(),
 	}
 }
 
@@ -28,8 +28,8 @@ func NewEcosystem(s string) (Ecosystem, error) {
 		return EcosystemDocker, nil
 	case EcosystemGithubActions.String():
 		return EcosystemGithubActions, nil
-	case EcosystemGo.String():
-		return EcosystemGo, nil
+	case EcosystemGomod.String():
+		return EcosystemGomod, nil
 	}
 
 	return Ecosystem("unknown"), microerror.Maskf(invalidConfigError, "ecosystem must be one of %s", strings.Join(AllowedEcosystems(), "|"))
