@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Added
 
+- Add "npm" and "pip" ecosystems to `gen dependabot`.
 - Add Dockerfile.
 - Generate main Makefile including `*.mk` files to allow custom Makefiles.
 - Pretty print errors.
