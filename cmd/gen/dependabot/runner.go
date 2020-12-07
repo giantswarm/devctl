@@ -53,21 +53,9 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		}
 	}
 
-	var hasGomodEcosystem bool
-	for _, e := range r.flag.Ecosystems {
-		if e == gen.EcosystemGomod.String() {
-			hasGomodEcosystem = true
-			break
-		}
-	}
-
 	var inputs []input.Input
 	{
 		inputs = append(inputs, dependabotInput.CreateDependabot())
-
-		if hasGomodEcosystem {
-			inputs = append(inputs, dependabotInput.CreateWorkflow())
-		}
 	}
 
 	err = gen.Execute(ctx, inputs...)
