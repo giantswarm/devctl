@@ -30,23 +30,23 @@ var createDependabotTemplate = `{{ .Header }}
 version: 2
 updates:
 {{- range $ecosystem := .Ecosystems }}
-- package-ecosystem: {{ $ecosystem }}
-  directory: "/"
-  schedule:
-    interval: {{ $interval }}
-    time: "04:00"
-  open-pull-requests-limit: 10
-{{- if $reviewers }}
-  reviewers:
-  {{- range $reviewer := $reviewers }}
-  - {{ $reviewer }}
-  {{- end}}
-{{- end }}
-{{- if eq $ecosystem $ecosystemGomod }}
-  ignore:
-  - dependency-name: k8s.io/*
-    versions:
-    - ">=0.19.0"
+  - package-ecosystem: {{ $ecosystem }}
+    directory: "/"
+    schedule:
+      interval: {{ $interval }}
+      time: "04:00"
+    open-pull-requests-limit: 10
+  {{- if $reviewers }}
+    reviewers:
+    {{- range $reviewer := $reviewers }}
+      - {{ $reviewer }}
+    {{- end}}
+  {{- end }}
+  {{- if eq $ecosystem $ecosystemGomod }}
+    ignore:
+      - dependency-name: k8s.io/*
+        versions:
+          - ">=0.19.0"
 {{- end }}
 {{- end }}
 `
