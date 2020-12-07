@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/pkg/gen"
+	"github.com/giantswarm/devctl/pkg/gen/input"
 	"github.com/giantswarm/devctl/pkg/gen/input/dependabot"
 )
 
@@ -52,11 +53,24 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		}
 	}
 
-	err = gen.Execute(
-		ctx,
-		dependabotInput.CreateDependabot(),
-		dependabotInput.CreateWorkflow(),
-	)
+	var hasGomodEcosystem bool
+	for _, e := range r.flag.Ecosystems {
+		if e == gen.EcosystemGomod.String() {
+			hasGomodEcosystem = true
+			break
+		}
+	}
+
+	var inputs []input.Input
+	{
+		inputs = append(inputs, dependabotInput.CreateDependabot())
+
+		if hasGomodEcosystem {
+			inputs = append(inputs, dependabotInput.CreateWorkflow())
+		}
+	}
+
+	err = gen.Execute(ctx, inputs...)
 	if err != nil {
 		return microerror.Mask(err)
 	}
