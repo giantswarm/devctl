@@ -11,6 +11,10 @@ func Ecosystems(p Params) []string {
 	return p.Ecosystems
 }
 
+func EcosystemGithubActions(p Params) string {
+	return gen.EcosystemGithubActions.String()
+}
+
 func EcosystemGomod(p Params) string {
 	return gen.EcosystemGomod.String()
 }

@@ -12,11 +12,12 @@ func NewCreateDependabotInput(p params.Params) input.Input {
 		Path:         filepath.Join(p.Dir, "dependabot.yml"),
 		TemplateBody: createDependabotTemplate,
 		TemplateData: map[string]interface{}{
-			"EcosystemGomod": params.EcosystemGomod(p),
-			"Ecosystems":     params.Ecosystems(p),
-			"Header":         params.Header("#"),
-			"Interval":       params.Interval(p),
-			"Reviewers":      params.Reviewers(p),
+			"EcosystemGithubActions": params.EcosystemGithubActions(p),
+			"EcosystemGomod":         params.EcosystemGomod(p),
+			"Ecosystems":             params.Ecosystems(p),
+			"Header":                 params.Header("#"),
+			"Interval":               params.Interval(p),
+			"Reviewers":              params.Reviewers(p),
 		},
 	}
 
@@ -26,6 +27,7 @@ func NewCreateDependabotInput(p params.Params) input.Input {
 var createDependabotTemplate = `{{ .Header }}
 {{- $interval := .Interval }}
 {{- $ecosystemGomod := .EcosystemGomod }}
+{{- $ecosystemGithubActions := .EcosystemGithubActions }}
 {{- $reviewers := .Reviewers }}
 version: 2
 updates:
@@ -47,6 +49,10 @@ updates:
       - dependency-name: k8s.io/*
         versions:
           - ">=0.19.0"
-{{- end }}
+  {{- end }}
+  {{- if eq $ecosystem $ecosystemGithubActions }}
+    ignore:
+      - dependency-name: zricethezav/gitleaks-action
+  {{- end }}
 {{- end }}
 `
