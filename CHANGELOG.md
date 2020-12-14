@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.0.1] - 2020-12-14
+
 ## Changed
 
 - Update `gitleaks action` to version `1.2.0` using `gitleaks` version `7.2.0`.
@@ -122,7 +124,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v4.0.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v4.0.1...HEAD
+[4.0.1]: https://github.com/giantswarm/devctl/compare/v4.0.0...v4.0.1
 [4.0.0]: https://github.com/giantswarm/devctl/compare/v3.1.0...v4.0.0
 [3.1.0]: https://github.com/giantswarm/devctl/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/giantswarm/devctl/compare/v2.0.4...v3.0.0
