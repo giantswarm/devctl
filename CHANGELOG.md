@@ -7,11 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## Changed
+
+- Update `gitleaks action` to version `1.2.0` using `gitleaks` version `7.2.0`.
+
 ## [4.0.0] - 2020-12-08
 
 ## Removed
 
-- Remove `go mod tidy` workflow. 
+- Remove `go mod tidy` workflow.
 
 ## Added
 
