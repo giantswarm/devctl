@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [4.0.1] - 2020-12-14
 
+### Fixed
+
+- Compile binaries statically only on Linux to avoid linking issues on other
+  platforms in generated Makefiles for Go.
+
 ## Changed
 
 - Update `gitleaks action` to version `1.2.0` using `gitleaks` version `7.2.0`.
