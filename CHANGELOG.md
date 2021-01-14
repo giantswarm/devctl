@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Fix generated Makefile for Go language for cases where there are no Go source
+  files in the root module directory. In particular `make imports` is fixed.
+
 ## [4.0.1] - 2020-12-14
 
 ## Changed
