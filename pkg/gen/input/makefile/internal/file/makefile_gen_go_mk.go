@@ -34,9 +34,13 @@ MODULE         := $(shell go list -m)
 OS             := $(shell go env GOOS)
 SOURCES        := $(shell find . -name '*.go')
 VERSION        := $(shell architect project version)
-LDFLAGS        ?= -w -linkmode 'auto' -extldflags '-static' \
+ifeq ($(OS), linux)
+EXTLDFLAGS := -static
+endif
+LDFLAGS        ?= -w -linkmode 'auto' -extldflags '$(EXTLDFLAGS)' \
   -X '$(shell go list -m)/pkg/project.buildTimestamp=${BUILDTIMESTAMP}' \
   -X '$(shell go list -m)/pkg/project.gitSHA=${GITSHA1}'
+
 .DEFAULT_GOAL := build
 
 .PHONY: build build-darwin build-linux
