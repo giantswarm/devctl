@@ -30,7 +30,7 @@ PACKAGE_DIR    := ./bin-dist
 APPLICATION    := $(shell go list -m | cut -d '/' -f 3)
 BUILDTIMESTAMP := $(shell date -u '+%FT%TZ')
 GITSHA1        := $(shell git rev-parse --verify HEAD)
-LOCAL_IMPORT   := $(shell go list -m | cut -d '/' -f 1-3)
+MODULE         := $(shell go list -m)
 OS             := $(shell go env GOOS)
 SOURCES        := $(shell find . -name '*.go')
 VERSION        := $(shell architect project version)
@@ -111,7 +111,7 @@ clean:
 ## imports: runs goimports
 imports:
 	@echo "====> $@"
-	goimports -local $(LOCAL_IMPORT) -w .
+	goimports -local $(MODULE) -w .
 
 .PHONY: lint
 ## lint: runs golangci-lint
