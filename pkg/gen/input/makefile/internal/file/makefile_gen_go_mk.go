@@ -27,9 +27,10 @@ PACKAGE_DIR    := ./bin-dist
 
 {{- end }}
 
-APPLICATION    := $(shell go list . | cut -d '/' -f 3)
+APPLICATION    := $(shell go list -m | cut -d '/' -f 3)
 BUILDTIMESTAMP := $(shell date -u '+%FT%TZ')
 GITSHA1        := $(shell git rev-parse --verify HEAD)
+MODULE         := $(shell go list -m)
 OS             := $(shell go env GOOS)
 SOURCES        := $(shell find . -name '*.go')
 VERSION        := $(shell architect project version)
@@ -37,8 +38,9 @@ ifeq ($(OS), linux)
 EXTLDFLAGS := -static
 endif
 LDFLAGS        ?= -w -linkmode 'auto' -extldflags '$(EXTLDFLAGS)' \
-  -X '$(shell go list .)/pkg/project.buildTimestamp=${BUILDTIMESTAMP}' \
-  -X '$(shell go list .)/pkg/project.gitSHA=${GITSHA1}'
+  -X '$(shell go list -m)/pkg/project.buildTimestamp=${BUILDTIMESTAMP}' \
+  -X '$(shell go list -m)/pkg/project.gitSHA=${GITSHA1}'
+
 .DEFAULT_GOAL := build
 
 .PHONY: build build-darwin build-linux
@@ -113,7 +115,7 @@ clean:
 ## imports: runs goimports
 imports:
 	@echo "====> $@"
-	goimports -local $(shell go list .) -w .
+	goimports -local $(MODULE) -w .
 
 .PHONY: lint
 ## lint: runs golangci-lint
