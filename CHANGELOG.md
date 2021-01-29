@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.1.0] - 2021-01-29
+
 ### Fixed
 - Add `main` branch as release target for Create Release PR workflow.
 
@@ -137,7 +139,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v4.0.2...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v4.1.0...HEAD
+[4.1.0]: https://github.com/giantswarm/devctl/compare/v4.0.2...v4.1.0
 [4.0.2]: https://github.com/giantswarm/devctl/compare/v4.0.1...v4.0.2
 [4.0.1]: https://github.com/giantswarm/devctl/compare/v4.0.0...v4.0.1
 [4.0.0]: https://github.com/giantswarm/devctl/compare/v3.1.0...v4.0.0
