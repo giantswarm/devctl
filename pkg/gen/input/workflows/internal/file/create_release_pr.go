@@ -26,8 +26,9 @@ name: Create Release PR
 on:
   push:
     branches:
-      - 'master#release#v*.*.*'
       - 'legacy#release#v*.*.*'
+      - 'main#release#v*.*.*'
+      - 'master#release#v*.*.*'
       - 'release-v*.*.x#release#v*.*.*'
       # "!" negates previous positive patterns so it has to be at the end.
       - '!release-v*.x.x#release#v*.*.*'
