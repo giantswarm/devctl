@@ -9,13 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [4.3.0] - 2021-02-01
 
+### Fixed
+
+- Fix broken formatting (tab->spaces).
+
 ## [4.2.0] - 2021-02-01
+
+### Fixed
 
 - Add `main` branch as release target for Create Release workflow.
 
 ## [4.1.0] - 2021-01-29
 
 ### Fixed
+
 - Add `main` branch as release target for Create Release PR workflow.
 
 ## [4.0.2] - 2021-01-14
