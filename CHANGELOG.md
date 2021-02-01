@@ -7,7 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Fix broken formatting in Create Release workflow.
+
 ## [4.2.0] - 2021-02-01
+
+### Fixed
 
 - Add `main` branch as release target for Create Release workflow.
 
