@@ -28,7 +28,7 @@ on:
   push:
     branches:
       - 'legacy'
-	  - 'main'
+      - 'main'
       - 'master'
       - 'release-v*.*.x'
       # "!" negates previous positive patterns so it has to be at the end.
