@@ -7,7 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.2.1] - 2021-02-01
+
+### Fixed
+
+- Fix broken formatting in Create Release workflow.
+
 ## [4.2.0] - 2021-02-01
+
+### Fixed
 
 - Add `main` branch as release target for Create Release workflow.
 
@@ -143,7 +151,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v4.2.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v4.2.1...HEAD
+[4.2.1]: https://github.com/giantswarm/devctl/compare/v4.2.0...v4.2.1
 [4.2.0]: https://github.com/giantswarm/devctl/compare/v4.1.0...v4.2.0
 [4.1.0]: https://github.com/giantswarm/devctl/compare/v4.0.2...v4.1.0
 [4.0.2]: https://github.com/giantswarm/devctl/compare/v4.0.1...v4.0.2
