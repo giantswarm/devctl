@@ -14,6 +14,7 @@ require (
 	github.com/pelletier/go-toml v1.8.1
 	github.com/prometheus/client_golang v1.7.1 // indirect
 	github.com/spf13/cobra v1.1.1
+	github.com/spf13/pflag v1.0.5
 	golang.org/x/net v0.0.0-20200520004742-59133d7f0dd7
 	golang.org/x/oauth2 v0.0.0-20200107190931-bf48bf16ab8d
 	k8s.io/apimachinery v0.18.5

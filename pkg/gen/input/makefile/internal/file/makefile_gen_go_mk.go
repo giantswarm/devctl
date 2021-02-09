@@ -10,7 +10,6 @@ func NewMakefileGenGoMkInput(p params.Params) input.Input {
 		Path:         "Makefile.gen.go.mk",
 		TemplateBody: makefileGenGoMkTemplate,
 		TemplateData: map[string]interface{}{
-			"IsFlavourApp": params.IsFlavourApp(p),
 			"IsFlavourCLI": params.IsFlavourCLI(p),
 			"Header":       params.Header("#"),
 		},

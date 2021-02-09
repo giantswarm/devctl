@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Allow specifying multiple flavours for `gen makefile` and `gen workflows`.
+
 ## [4.2.1] - 2021-02-01
 
 ### Fixed

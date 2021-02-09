@@ -10,7 +10,7 @@ func Header(comment string) string {
 }
 
 func IsFlavourCLI(p Params) bool {
-	return p.Flavour == gen.FlavourCLI
+	return p.Flavours.Contains(gen.FlavourCLI)
 }
 
 func Package(p Params) string {

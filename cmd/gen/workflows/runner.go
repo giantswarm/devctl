@@ -39,18 +39,10 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
 	var err error
 
-	var flavour gen.Flavour
-	{
-		flavour, err = gen.NewFlavour(r.flag.Flavour)
-		if err != nil {
-			return microerror.Mask(err)
-		}
-	}
-
 	var workflowsInput *workflows.Workflows
 	{
 		c := workflows.Config{
-			Flavour: flavour,
+			Flavours: r.flag.Flavours,
 		}
 
 		workflowsInput, err = workflows.New(c)

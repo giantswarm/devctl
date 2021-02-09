@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/giantswarm/microerror"
+	"github.com/spf13/pflag"
 )
 
 const (
@@ -38,4 +39,31 @@ func (f Language) String() string {
 func IsValidLanguage(s string) bool {
 	_, err := NewLanguage(s)
 	return err == nil
+}
+
+type LanguageFlagValue Language
+
+var _ pflag.Value = new(LanguageFlagValue)
+
+func NewLanguageFlagValue(p *Language, value Language) *LanguageFlagValue {
+	*p = value
+	return (*LanguageFlagValue)(p)
+}
+
+func (v *LanguageFlagValue) Set(s string) error {
+	x, err := NewLanguage(s)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	*v = LanguageFlagValue(x)
+	return nil
+}
+
+func (v *LanguageFlagValue) Type() string {
+	return "language"
+}
+
+func (v *LanguageFlagValue) String() string {
+	return string(*v)
 }
