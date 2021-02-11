@@ -27,10 +27,10 @@ func (f *flag) Init(cmd *cobra.Command) {
 
 func (f *flag) Validate() error {
 	if len(f.Flavours) == 0 {
-		return microerror.Maskf(invalidFlagError, "--%s must not be empty", flagFlavour)
+		return microerror.Maskf(invalidFlagError, "--%s must be one or more of: %s", flagFlavour, strings.Join(gen.AllFlavours(), ", ")
 	}
 	if len(f.Language) == 0 {
-		return microerror.Maskf(invalidFlagError, "--%s must not be empty", flagLanguage)
+		return microerror.Maskf(invalidFlagError, "--%s must be one of: %s", flagLanguage, strings.Join(gen.AllLanguages(), ", "))
 	}
 
 	if f.Flavours.Contains(gen.FlavourCLI) && f.Language != gen.LanguageGo {
