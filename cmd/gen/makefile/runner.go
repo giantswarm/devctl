@@ -39,30 +39,6 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
 	var err error
 
-	var flavour gen.Flavour
-	{
-		flavour, err = gen.NewFlavour(r.flag.Flavour)
-		if err != nil {
-			return microerror.Mask(err)
-		}
-	}
-
-	var language gen.Language
-	{
-		language, err = gen.NewLanguage(r.flag.Language)
-		if err != nil {
-			return microerror.Mask(err)
-		}
-	}
-
-	if flavour == gen.FlavourCLI && language != gen.LanguageGo {
-		return microerror.Maskf(
-			executionFailedError,
-			"flavour %q is supported only for language %q",
-			gen.FlavourCLI, gen.LanguageGo,
-		)
-	}
-
 	var inputs []input.Input
 
 	// Makefile
@@ -70,7 +46,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	// Makefile.go.mk
 	{
 		c := makefile.Config{
-			Flavour: flavour,
+			Flavours: r.flag.Flavours,
 		}
 
 		in, err := makefile.New(c)
@@ -80,11 +56,11 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 		inputs = append(inputs, in.Makefile())
 
-		if flavour == gen.FlavourApp {
+		if r.flag.Flavours.Contains(gen.FlavourApp) {
 			inputs = append(inputs, in.MakefileGenApp())
 		}
 
-		if language == gen.LanguageGo {
+		if r.flag.Language == gen.LanguageGo {
 			inputs = append(inputs, in.MakefileGenGo())
 		}
 	}

@@ -8,7 +8,7 @@ import (
 )
 
 type Config struct {
-	Flavour gen.Flavour
+	Flavours gen.FlavourSlice
 }
 
 type Makefile struct {
@@ -18,7 +18,7 @@ type Makefile struct {
 func New(config Config) (*Makefile, error) {
 	m := &Makefile{
 		params: params.Params{
-			Flavour: config.Flavour,
+			Flavours: config.Flavours,
 		},
 	}
 
