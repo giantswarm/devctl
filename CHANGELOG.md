@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Allow specifying multiple flavours for `gen makefile` and `gen workflows`.
 
+### Fixed
+
+- Fix the binary name in docker-build target in makefile generated for Go.
+
 ## [4.2.1] - 2021-02-01
 
 ### Fixed
