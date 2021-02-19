@@ -9,7 +9,7 @@ workflows:
       - architect/go-build:
           name: go-build-devctl
           binary: devctl
-          # Needed to trigger job also on git tag
+          # Needed to trigger job also on git tag.
           filters:
             tags:
               only: /^v.*/
