@@ -1,7 +1,7 @@
 version: 2.1
 
 orbs:
-  architect: giantswarm/architect@dev:bump-go-to-1.16
+  architect: giantswarm/architect@2.0.0
 
 workflows:
   go-build:
