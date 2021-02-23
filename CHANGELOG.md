@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add azure-scheduled-events to known apps for `gen release`.
+
 ## [4.3.0] - 2021-02-15
 
 ### Added

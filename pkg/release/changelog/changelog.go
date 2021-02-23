@@ -168,6 +168,12 @@ var knownComponentParseParams = map[string]parseParams{
 		start:     commonStartPattern,
 		end:       commonEndPattern,
 	},
+	"azure-scheduled-events": {
+		tag:       "https://github.com/giantswarm/azure-scheduled-events/releases/tag/v{{.Version}}",
+		changelog: "https://raw.githubusercontent.com/giantswarm/azure-scheduled-events/v{{.Version}}/CHANGELOG.md",
+		start:     commonStartPattern,
+		end:       commonEndPattern,
+	},
 }
 
 // Data about a component passed into templates that depend on versions
