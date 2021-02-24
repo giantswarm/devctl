@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add darwin-arm64 and linux-arm64 build targets to generated Makefile and GitHub workflows.
+
 ## [4.3.0] - 2021-02-15
 
 ### Added
