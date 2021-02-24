@@ -108,7 +108,7 @@ jobs:
         uses: giantswarm/install-binary-action@v1.0.0
         with:
           binary: "architect"
-          version: "3.0.5"
+          version: "3.3.0"
       - name: Install semver
         uses: giantswarm/install-binary-action@v1.0.0
         with:
@@ -263,10 +263,12 @@ jobs:
       matrix:
         platform:
           - darwin
+          - darwin-arm64
           - linux
+          - linux-arm64
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      GO_VERSION: 1.14.2
+      GO_VERSION: 1.16.0
       ARTIFACT_DIR: bin-dist
       TAG: v${{ needs.gather_facts.outputs.version }}
     needs:
@@ -277,7 +279,7 @@ jobs:
         uses: giantswarm/install-binary-action@v1.0.0
         with:
           binary: "architect"
-          version: "3.0.5"
+          version: "3.3.0"
       - name: Set up Go ${{ env.GO_VERSION }}
         uses: actions/setup-go@v2.1.3
         with:
