@@ -17,7 +17,10 @@ There are different generation flavours:
 
   - app - project containing a helm chart
   - cli - project released with a downloadable binary
-  - generic - everything else, i.e a project which simply needs to be released`
+  - generic - everything else, i.e a project which simply needs to be released
+
+For flavour "cli", it is possible to choose the architectures to build release binaries for. darwin,linux,darwin-arm64,linux-arm64.
+Default: darwin,linux`
 )
 
 type Config struct {

@@ -14,8 +14,9 @@ func NewCreateReleaseInput(p params.Params) input.Input {
 			Right: "}}}}",
 		},
 		TemplateData: map[string]interface{}{
-			"Header":       params.Header("#"),
-			"IsFlavourCLI": params.IsFlavourCLI(p),
+			"Header":        params.Header("#"),
+			"IsFlavourCLI":  params.IsFlavourCLI(p),
+			"Architectures": params.Architectures(p),
 		},
 	}
 
@@ -262,10 +263,9 @@ jobs:
     strategy:
       matrix:
         platform:
-          - darwin
-          - darwin-arm64
-          - linux
-          - linux-arm64
+        {{{{- range .Architectures }}}}
+          - {{{{ . }}}}
+        {{{{- end }}}}
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GO_VERSION: 1.16.2
