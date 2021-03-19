@@ -42,8 +42,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	var workflowsInput *workflows.Workflows
 	{
 		c := workflows.Config{
-			Flavours:      r.flag.Flavours,
-			Architectures: r.flag.Architectures,
+			Flavours: r.flag.Flavours,
 		}
 
 		workflowsInput, err = workflows.New(c)
