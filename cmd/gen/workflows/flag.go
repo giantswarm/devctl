@@ -25,7 +25,7 @@ type flag struct {
 func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().VarP(gen.NewFlavourSliceFlagValue(&f.Flavours, gen.FlavourSlice{}), flagFlavour, "f", fmt.Sprintf(`The type of project that you want to generate the workflows for. Possible values: <%s>`, strings.Join(gen.AllFlavours(), "|")))
 	cmd.Flags().BoolVar(&f.CheckSecrets, flagCheckSecrets, true, "If true, also generate a secret-scanning workflow. Possible values: true (default), false.")
-	cmd.Flags().VarP(gen.NewArchitectureSliceFlagValue(&f.Architectures, gen.ArchitectureSlice{gen.ArchitectureDarwin, gen.ArchitectureLinux}), flagArchitecture, "a", fmt.Sprintf(`The architectures to build release artifacts for through workflows. Possible values: <%s>`, strings.Join(gen.AllArchitectures(), "|")))
+	cmd.Flags().VarP(gen.NewArchitectureSliceFlagValue(&f.Architectures, gen.ArchitectureSlice{gen.ArchitectureDarwin, gen.ArchitectureLinux, gen.ArchitectureDarwinARM64, gen.ArchitectureLinuxARM64}), flagArchitecture, "a", fmt.Sprintf(`The architectures to build release artifacts for through workflows. Possible values: <%s>`, strings.Join(gen.AllArchitectures(), "|")))
 }
 
 func (f *flag) Validate() error {
