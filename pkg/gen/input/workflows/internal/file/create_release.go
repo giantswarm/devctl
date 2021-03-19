@@ -14,8 +14,9 @@ func NewCreateReleaseInput(p params.Params) input.Input {
 			Right: "}}}}",
 		},
 		TemplateData: map[string]interface{}{
-			"Header":       params.Header("#"),
-			"IsFlavourCLI": params.IsFlavourCLI(p),
+			"Header":        params.Header("#"),
+			"IsFlavourCLI":  params.IsFlavourCLI(p),
+			"Architectures": params.Architectures(p),
 		},
 	}
 
@@ -108,7 +109,7 @@ jobs:
         uses: giantswarm/install-binary-action@v1.0.0
         with:
           binary: "architect"
-          version: "3.0.5"
+          version: "3.4.0"
       - name: Install semver
         uses: giantswarm/install-binary-action@v1.0.0
         with:
@@ -262,11 +263,12 @@ jobs:
     strategy:
       matrix:
         platform:
-          - darwin
-          - linux
+        {{{{- range .Architectures }}}}
+          - {{{{ . }}}}
+        {{{{- end }}}}
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      GO_VERSION: 1.14.2
+      GO_VERSION: 1.16.2
       ARTIFACT_DIR: bin-dist
       TAG: v${{ needs.gather_facts.outputs.version }}
     needs:
@@ -277,7 +279,7 @@ jobs:
         uses: giantswarm/install-binary-action@v1.0.0
         with:
           binary: "architect"
-          version: "3.0.5"
+          version: "3.4.0"
       - name: Set up Go ${{ env.GO_VERSION }}
         uses: actions/setup-go@v2.1.3
         with:
@@ -291,7 +293,7 @@ jobs:
       - name: Add ${{ matrix.platform }} package to release
         uses: actions/upload-release-asset@v1
         env:
-          FILE_NAME: ${{ github.event.repository.name }}-${{ env.TAG }}-${{ matrix.platform }}-amd64.tar.gz
+          FILE_NAME: ${{ github.event.repository.name }}-${{ env.TAG }}-${{ matrix.platform }}.tar.gz
         with:
           upload_url: ${{ needs.create_release.outputs.upload_url }}
           asset_path: ${{ env.ARTIFACT_DIR }}/${{ env.FILE_NAME }}

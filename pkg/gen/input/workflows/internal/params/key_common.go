@@ -20,3 +20,11 @@ func Package(p Params) string {
 func RegenerableFileName(p Params, suffix string) string {
 	return internal.RegenerableFileName(p.Dir, suffix)
 }
+
+func Architectures(p Params) []string {
+	out := make([]string, len(p.Architectures))
+	for i, x := range p.Architectures {
+		out[i] = x.String()
+	}
+	return out
+}
