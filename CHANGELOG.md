@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Add azure-scheduled-events to known apps for `gen release`.
 - Add darwin-arm64 and linux-arm64 build targets to generated Makefile and GitHub workflows.
+- Add `--architecture` flag to `gen workflows` which allows to enable arm64 builds in release workflows.
 
 ## [4.3.0] - 2021-02-15
 
