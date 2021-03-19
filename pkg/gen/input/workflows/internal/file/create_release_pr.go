@@ -87,7 +87,7 @@ jobs:
         uses: giantswarm/install-binary-action@v1.0.0
         with:
           binary: "architect"
-          version: "3.3.0"
+          version: "3.4.0"
       - name: Checkout code
         uses: actions/checkout@v2
       - name: Prepare release changes
