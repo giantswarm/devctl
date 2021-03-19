@@ -7,6 +7,5 @@ type Params struct {
 	// should be generated.
 	Dir string
 
-	Flavours      gen.FlavourSlice
-	Architectures gen.ArchitectureSlice
+	Flavours gen.FlavourSlice
 }

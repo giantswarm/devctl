@@ -8,8 +8,7 @@ import (
 )
 
 type Config struct {
-	Flavours      gen.FlavourSlice
-	Architectures gen.ArchitectureSlice
+	Flavours gen.FlavourSlice
 }
 
 type Workflows struct {
@@ -21,8 +20,7 @@ func New(config Config) (*Workflows, error) {
 		params: params.Params{
 			Dir: ".github/workflows",
 
-			Flavours:      config.Flavours,
-			Architectures: config.Architectures,
+			Flavours: config.Flavours,
 		},
 	}
 
