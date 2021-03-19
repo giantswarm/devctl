@@ -8,8 +8,8 @@ import (
 )
 
 const (
-	ArchitectureDarwin      Architecture = "darwin"
-	ArchitectureLinux       Architecture = "linux"
+	ArchitectureDarwin      Architecture = "darwin-amd64"
+	ArchitectureLinux       Architecture = "linux-amd64"
 	ArchitectureDarwinARM64 Architecture = "darwin-arm64"
 	ArchitectureLinuxARM64  Architecture = "linux-arm64"
 )

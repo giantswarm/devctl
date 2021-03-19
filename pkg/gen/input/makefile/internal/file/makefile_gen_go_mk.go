@@ -89,15 +89,15 @@ $(APPLICATION)-v$(VERSION)-%-arm64: $(SOURCES)
 
 {{- if .IsFlavourCLI }}
 
-.PHONY: package-darwin package-darwin-arm64 package-linux package-linux-arm64
-## package-darwin: prepares a packaged darwin/amd64 version
-package-darwin: $(PACKAGE_DIR)/$(APPLICATION)-v$(VERSION)-darwin-amd64.tar.gz
+.PHONY: package-darwin-amd64 package-darwin-arm64 package-linux-amd64 package-linux-arm64
+## package-darwin-amd64: prepares a packaged darwin/amd64 version
+package-darwin-amd64: $(PACKAGE_DIR)/$(APPLICATION)-v$(VERSION)-darwin-amd64.tar.gz
 	@echo "====> $@"
 ## package-darwin-arm64: prepares a packaged darwin/arm64 version
 package-darwin-arm64: $(PACKAGE_DIR)/$(APPLICATION)-v$(VERSION)-darwin-arm64.tar.gz
 	@echo "====> $@"
-## package-linux: prepares a packaged linux/amd64 version
-package-linux: $(PACKAGE_DIR)/$(APPLICATION)-v$(VERSION)-linux-amd64.tar.gz
+## package-linux-amd64: prepares a packaged linux/amd64 version
+package-linux-amd64: $(PACKAGE_DIR)/$(APPLICATION)-v$(VERSION)-linux-amd64.tar.gz
 	@echo "====> $@"
 ## package-linux-arm64: prepares a packaged linux/arm64 version
 package-linux-arm64: $(PACKAGE_DIR)/$(APPLICATION)-v$(VERSION)-linux-arm64.tar.gz

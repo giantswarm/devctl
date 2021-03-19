@@ -19,8 +19,8 @@ There are different generation flavours:
   - cli - project released with a downloadable binary
   - generic - everything else, i.e a project which simply needs to be released
 
-For flavour "cli", it is possible to choose the architectures to build release binaries for. darwin,linux,darwin-arm64,linux-arm64.
-Default: darwin,linux`
+For flavour "cli", it is possible to choose the architectures to build release binaries for. darwin-amd64,linux-amd6,darwin-arm64,linux-arm64.
+Default: darwin-amd64,linux-amd64`
 )
 
 type Config struct {
