@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.4.0] - 2021-03-19
+
 ### Added
 
 - Add azure-scheduled-events to known apps for `gen release`.
@@ -168,7 +170,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v4.3.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v4.4.0...HEAD
+[4.4.0]: https://github.com/giantswarm/devctl/compare/v4.3.0...v4.4.0
 [4.3.0]: https://github.com/giantswarm/devctl/compare/v4.2.1...v4.3.0
 [4.2.1]: https://github.com/giantswarm/devctl/compare/v4.2.0...v4.2.1
 [4.2.0]: https://github.com/giantswarm/devctl/compare/v4.1.0...v4.2.0
