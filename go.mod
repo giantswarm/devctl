@@ -4,7 +4,9 @@ go 1.16
 
 require (
 	github.com/Masterminds/semver/v3 v3.1.1
+	github.com/blang/semver v3.5.1+incompatible
 	github.com/bmatcuk/doublestar v1.3.4
+	github.com/fatih/color v1.10.0
 	github.com/giantswarm/apiextensions/v2 v2.6.2
 	github.com/giantswarm/k8sclient/v4 v4.1.0
 	github.com/giantswarm/kubeconfig/v2 v2.0.0
@@ -13,6 +15,7 @@ require (
 	github.com/google/go-github v17.0.0+incompatible
 	github.com/pelletier/go-toml v1.8.1
 	github.com/prometheus/client_golang v1.7.1 // indirect
+	github.com/rhysd/go-github-selfupdate v1.2.3
 	github.com/spf13/cobra v1.1.3
 	github.com/spf13/pflag v1.0.5
 	golang.org/x/net v0.0.0-20200520004742-59133d7f0dd7

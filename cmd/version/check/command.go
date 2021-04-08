@@ -1,19 +1,19 @@
-package version
+package check
 
 import (
 	"io"
 	"os"
 
-	"github.com/giantswarm/devctl/cmd/version/check"
-	"github.com/giantswarm/devctl/cmd/version/update"
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
 )
 
 const (
-	name        = "version"
-	description = "Prints version information."
+	name        = "check"
+	description = `Verify if there is a newer version available.
+
+Check if there's a release in the GitHub repo with a newer tag version than the one installed.`
 )
 
 type Config struct {
@@ -33,28 +33,6 @@ func New(config Config) (*cobra.Command, error) {
 		config.Stdout = os.Stdout
 	}
 
-	var err error
-
-	var checkCmd *cobra.Command
-	{
-		c := check.Config(config)
-
-		checkCmd, err = check.New(c)
-		if err != nil {
-			return nil, microerror.Mask(err)
-		}
-	}
-
-	var updateCmd *cobra.Command
-	{
-		c := update.Config(config)
-
-		updateCmd, err = update.New(c)
-		if err != nil {
-			return nil, microerror.Mask(err)
-		}
-	}
-
 	f := &flag{}
 
 	r := &runner{
@@ -72,9 +50,6 @@ func New(config Config) (*cobra.Command, error) {
 	}
 
 	f.Init(c)
-
-	c.AddCommand(checkCmd)
-	c.AddCommand(updateCmd)
 
 	return c, nil
 }

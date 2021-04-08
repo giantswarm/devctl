@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add `devctl version check`.
+- Add `devctl version update`.
+- Check for latest version before running commands.
+
 ## [4.4.0] - 2021-03-19
 
 ### Added
