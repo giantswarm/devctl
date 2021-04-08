@@ -4,11 +4,12 @@ import (
 	"io"
 	"os"
 
-	"github.com/giantswarm/devctl/cmd/version/check"
-	"github.com/giantswarm/devctl/cmd/version/update"
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
+
+	"github.com/giantswarm/devctl/cmd/version/check"
+	"github.com/giantswarm/devctl/cmd/version/update"
 )
 
 const (
