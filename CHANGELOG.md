@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add `devctl version check`.
 - Add `devctl version update`.
 - Check for latest version before running commands.
+- Make generated Makefile help target on par with kubebuilder.
 
 ## [4.4.0] - 2021-03-19
 
