@@ -21,6 +21,8 @@ var makefileTemplate = `{{ .Header }}
 
 include Makefile.*.mk
 
+##@ General
+
 # The help target prints out all targets with their descriptions organized
 # beneath their categories. The categories are represented by '##@' and the
 # target descriptions by '##'. The awk commands is responsible for reading the
