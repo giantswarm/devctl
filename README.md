@@ -43,7 +43,7 @@ Error: GET https://api.github.com/repos/giantswarm/devctl/releases: 401 Bad cred
 
 This means if you have probably either:
 
-- `GITHUB_TOKEN` variable set to a token with not enought permissions.
+- `GITHUB_TOKEN` variable set to a token with not enough permissions.
 - `github.token` configuration set to a token with not enough permissions. You can verify that with `git config --get --null github.token`.
 
 Workarounds:
