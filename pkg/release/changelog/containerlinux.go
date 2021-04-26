@@ -2,6 +2,7 @@ package changelog
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/giantswarm/microerror"
 )
@@ -16,8 +17,14 @@ func parseContainerLinuxChangelog(body []byte, componentVersion string) (string,
 	if err != nil {
 		return "", microerror.Mask(err)
 	}
+
+	b, ok := releases[componentVersion]
+	if !ok {
+		return fmt.Sprintf("Containerlinux release %q was not found in the changelog", componentVersion), nil
+	}
+
 	var release containerlinuxRelease
-	err = json.Unmarshal(releases[componentVersion], &release)
+	err = json.Unmarshal(b, &release)
 	if err != nil {
 		return "", microerror.Mask(err)
 	}

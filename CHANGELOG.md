@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Check for latest version before running commands.
 - Make generated Makefile help target on par with kubebuilder.
 
+### Fixed
+
+- Don't crash if the container linux version is not present in the upstream changelog.
+
 ## [4.4.0] - 2021-03-19
 
 ### Added
