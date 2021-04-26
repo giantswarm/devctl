@@ -32,3 +32,22 @@ For example, to find all our repositories using `github.com/giantswarm/microerro
 ```
 devctl repo list --depends-on github.com/giantswarm/microerror
 ```
+
+## Troubleshooting
+
+`devctl` tries to check if there is a newer version available before every command execution. If you happen to see this error:
+
+```
+Error: GET https://api.github.com/repos/giantswarm/devctl/releases: 401 Bad credentials []
+```
+
+This means if you have probably either:
+
+- `GITHUB_TOKEN` variable set to a token with not enough permissions.
+- `github.token` configuration set to a token with not enough permissions. You can verify that with `git config --get --null github.token`.
+
+Workarounds:
+
+- Run `unset GITHUB_TOKEN`.
+- Run `git config --unset github.token`.
+- Set `GITHUB_TOKEN` to a token with enough permissions.
