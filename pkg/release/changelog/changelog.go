@@ -94,7 +94,7 @@ var knownComponentParseParams = map[string]parseParams{
 	},
 	"containerlinux": {
 		tag:       "https://www.flatcar-linux.org/releases/#release-{{.Version}}",
-		changelog: "https://www.flatcar-linux.org/releases-json/releases-stable.json",
+		changelog: "https://kinvolk.io/flatcar-container-linux/releases-json/releases-stable.json",
 	},
 	"cert-exporter": {
 		tag:       "https://github.com/giantswarm/cert-exporter/releases/tag/v{{.Version}}",
