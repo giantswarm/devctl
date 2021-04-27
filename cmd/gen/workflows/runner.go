@@ -60,6 +60,10 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		inputs = append(inputs, workflowsInput.Gitleaks())
 	}
 
+	if r.flag.EnableFloatingMajorVersionTags {
+		inputs = append(inputs, workflowsInput.EnsureMajorVersionTags())
+	}
+
 	err = gen.Execute(
 		ctx,
 		inputs...,

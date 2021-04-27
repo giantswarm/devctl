@@ -7,5 +7,7 @@ type Params struct {
 	// should be generated.
 	Dir string
 
+	EnableFloatingMajorVersionTags bool
+
 	Flavours gen.FlavourSlice
 }
