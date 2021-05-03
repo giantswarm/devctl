@@ -27,6 +27,15 @@ on:
   workflow_dispatch: {}
 
 jobs:
+  debug_info:
+    name: Debug info
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Print github context JSON
+        run: |
+          cat <<EOF
+          ${{ toJson(github) }}
+          EOF
   ensure_major_version_tags:
     name: Ensure major version tags
     runs-on: ubuntu-20.04
