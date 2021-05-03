@@ -206,7 +206,7 @@ jobs:
       - create_release
     steps:
       - uses: actions/checkout@v2
-      - uses: giantswarm/floating-tag-action@v1
+      - uses: giantswarm/floating-tags-action@v1
 
 {{{{- end }}}}
 
