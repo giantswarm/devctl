@@ -14,9 +14,9 @@ func NewCreateReleaseInput(p params.Params) input.Input {
 			Right: "}}}}",
 		},
 		TemplateData: map[string]interface{}{
-			"Header":                  params.Header("#"),
-			"EnableFloatingMajorVersionTags": params.EnableFloatingMajorVersionTags(),
-			"IsFlavourCLI":            params.IsFlavourCLI(p),
+			"Header":                         params.Header("#"),
+			"EnableFloatingMajorVersionTags": params.EnableFloatingMajorVersionTags(p),
+			"IsFlavourCLI":                   params.IsFlavourCLI(p),
 		},
 	}
 
