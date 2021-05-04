@@ -22,9 +22,10 @@ func (configDir) Val() string {
 		if err != nil {
 			panic(err)
 		}
+		s = filepath.Join(s, ".config")
 	}
 
-	return filepath.Join(s, ".config", project.Name())
+	return filepath.Join(s, project.Name())
 }
 
 type devctlUnsafeForceVersion struct{}

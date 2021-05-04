@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Fix caching for self-update mechanism.
+
 ## [4.5.0] - 2021-05-04
 
 ### Added
@@ -51,6 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [4.1.0] - 2021-01-29
 
 ### Fixed
+
 - Add `main` branch as release target for Create Release PR workflow.
 
 ## [4.0.2] - 2021-01-14

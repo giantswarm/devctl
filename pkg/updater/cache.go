@@ -27,7 +27,7 @@ func (c *cache) IsExpired() bool {
 	return expectedExpiration.Before(time.Now().UTC())
 }
 
-func (c *cache) Persist(toPath string) error {
+func (c *cache) Persist(cacheDir string) error {
 	c.LastUpdate = time.Now().UTC()
 
 	serialized, err := yaml.Marshal(c)
@@ -35,7 +35,12 @@ func (c *cache) Persist(toPath string) error {
 		return microerror.Mask(err)
 	}
 
-	out := filepath.Join(toPath, cacheFileName)
+	err = os.MkdirAll(cacheDir, 0700)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	out := filepath.Join(cacheDir, cacheFileName)
 
 	err = ioutil.WriteFile(out, serialized, os.FileMode(cacheFileMode))
 	if err != nil {
