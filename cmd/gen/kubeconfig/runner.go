@@ -69,7 +69,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	if r.flag.Output == "" {
 		fmt.Printf("%s", kubeconfigContents)
 	} else {
-		err = ioutil.WriteFile(r.flag.Output, kubeconfigContents, 0644)
+		err = ioutil.WriteFile(r.flag.Output, kubeconfigContents, 0644) //nolint:gosec
 		if err != nil {
 			return microerror.Mask(err)
 		}

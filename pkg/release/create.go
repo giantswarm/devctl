@@ -90,7 +90,7 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 		yamlComment := []byte(fmt.Sprintf("# Generated with:\n# %s\n", creationCommand))
 		releaseYAML = append(yamlComment, releaseYAML...)
 	}
-	err = ioutil.WriteFile(releaseYAMLPath, releaseYAML, 0644)
+	err = ioutil.WriteFile(releaseYAMLPath, releaseYAML, 0644) //nolint:gosec
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -101,7 +101,7 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 	if err != nil {
 		return microerror.Mask(err)
 	}
-	err = ioutil.WriteFile(releaseNotesPath, []byte(releaseNotes), 0644)
+	err = ioutil.WriteFile(releaseNotesPath, []byte(releaseNotes), 0644) //nolint:gosec
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -112,7 +112,7 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 	if err != nil {
 		return microerror.Mask(err)
 	}
-	err = ioutil.WriteFile(diffPath, []byte(diff), 0644)
+	err = ioutil.WriteFile(diffPath, []byte(diff), 0644) //nolint:gosec
 	if err != nil {
 		return microerror.Mask(err)
 	}

@@ -20,7 +20,7 @@ func createKustomization(releaseDirectory string) error {
 	content := `resources:
 - release.yaml
 `
-	err := ioutil.WriteFile(filepath.Join(releaseDirectory, "kustomization.yaml"), []byte(content), 0644)
+	err := ioutil.WriteFile(filepath.Join(releaseDirectory, "kustomization.yaml"), []byte(content), 0644) //nolint:gosec
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -52,7 +52,7 @@ func addToKustomization(providerDirectory string, release v1alpha1.Release) erro
 		return microerror.Mask(err)
 	}
 
-	err = ioutil.WriteFile(path, data, 0644)
+	err = ioutil.WriteFile(path, data, 0644) //nolint:gosec
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -90,7 +90,7 @@ func removeFromKustomization(providerDirectory string, release v1alpha1.Release)
 		return microerror.Mask(err)
 	}
 
-	err = ioutil.WriteFile(path, data, 0644)
+	err = ioutil.WriteFile(path, data, 0644) //nolint:gosec
 	if err != nil {
 		return microerror.Mask(err)
 	}
