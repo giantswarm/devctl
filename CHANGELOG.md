@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add `--enable-floating-major-tags` to `devctl gen workflows`.
 - Add `devctl version check`.
 - Add `devctl version update`.
 - Check for latest version before running commands.

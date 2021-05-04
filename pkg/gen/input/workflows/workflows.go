@@ -8,7 +8,8 @@ import (
 )
 
 type Config struct {
-	Flavours gen.FlavourSlice
+	EnableFloatingMajorVersionTags bool
+	Flavours                       gen.FlavourSlice
 }
 
 type Workflows struct {
@@ -20,7 +21,8 @@ func New(config Config) (*Workflows, error) {
 		params: params.Params{
 			Dir: ".github/workflows",
 
-			Flavours: config.Flavours,
+			EnableFloatingMajorVersionTags: config.EnableFloatingMajorVersionTags,
+			Flavours:                       config.Flavours,
 		},
 	}
 
@@ -33,6 +35,10 @@ func (w *Workflows) CreateRelease() input.Input {
 
 func (w *Workflows) CreateReleasePR() input.Input {
 	return file.NewCreateReleasePRInput(w.params)
+}
+
+func (w *Workflows) EnsureMajorVersionTags() input.Input {
+	return file.NewEnsureMajorVersionTagsInput(w.params)
 }
 
 func (w *Workflows) Gitleaks() input.Input {

@@ -14,8 +14,9 @@ func NewCreateReleaseInput(p params.Params) input.Input {
 			Right: "}}}}",
 		},
 		TemplateData: map[string]interface{}{
-			"Header":       params.Header("#"),
-			"IsFlavourCLI": params.IsFlavourCLI(p),
+			"Header":                         params.Header("#"),
+			"EnableFloatingMajorVersionTags": params.EnableFloatingMajorVersionTags(p),
+			"IsFlavourCLI":                   params.IsFlavourCLI(p),
 		},
 	}
 
@@ -194,6 +195,21 @@ jobs:
         with:
           tag_name: "v${{ needs.gather_facts.outputs.version }}"
           release_name: "v${{ needs.gather_facts.outputs.version }}"
+
+{{{{- if .EnableFloatingMajorVersionTags }}}}
+
+  ensure_floating_major_version_tags:
+    name: Ensure floating major version tags
+    runs-on: ubuntu-20.04
+    needs:
+      - gather_facts
+      - create_release
+    steps:
+      - uses: actions/checkout@v2
+      - uses: giantswarm/floating-tags-action@v1
+
+{{{{- end }}}}
+
   create-release-branch:
     name: Create release branch
     runs-on: ubuntu-20.04
