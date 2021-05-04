@@ -63,12 +63,12 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 	_, err = updaterService.GetLatest()
 	if updater.IsHasNewVersion(err) {
-		color.New(color.Bold, color.FgYellow).Fprintf(r.stderr, "There's a new version available!\n")
+		color.New(color.Bold, color.FgYellow).Fprintf(r.stderr, "There's a new version available!\n") //nolint:errcheck
 		fmt.Fprintf(r.stderr, "Run \"%s version update\" to update to the latest version.\n", project.Name())
 
 		os.Exit(125)
 	} else if updater.IsVersionNotFound(err) {
-		color.New(color.Bold, color.FgRed).Fprintf(r.stderr, "Checking for the latest version failed or your platform is unsupported.\n")
+		color.New(color.Bold, color.FgRed).Fprintf(r.stderr, "Checking for the latest version failed or your platform is unsupported.\n") //nolint:errcheck
 		fmt.Fprintf(r.stderr, "Make sure your GitHub token has access to the %s repository.\n", project.Name())
 
 		return microerror.Mask(err)
@@ -76,7 +76,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 
-	color.New(color.Bold, color.FgGreen).Fprintf(r.stdout, "You are already using the latest version.\n")
+	color.New(color.Bold, color.FgGreen).Fprintf(r.stdout, "You are already using the latest version.\n") //nolint:errcheck
 	fmt.Fprintf(r.stdout, "There are no newer versions available.\n")
 
 	return nil
