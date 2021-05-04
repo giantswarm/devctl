@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.5.1] - 2021-05-04
+
 ### Fixed
 
 - Fix caching for self-update mechanism.
@@ -185,7 +187,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v4.5.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v4.5.1...HEAD
+[4.5.1]: https://github.com/giantswarm/devctl/compare/v4.5.0...v4.5.1
 [4.5.0]: https://github.com/giantswarm/devctl/compare/v4.4.0...v4.5.0
 [4.4.0]: https://github.com/giantswarm/devctl/compare/v4.3.0...v4.4.0
 [4.3.0]: https://github.com/giantswarm/devctl/compare/v4.2.1...v4.3.0
