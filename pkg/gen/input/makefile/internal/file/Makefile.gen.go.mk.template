@@ -89,17 +89,15 @@ package-linux-arm64: $(PACKAGE_DIR)/$(APPLICATION)-v$(VERSION)-linux-arm64.tar.g
 package-windows-amd64: $(PACKAGE_DIR)/$(APPLICATION)-v$(VERSION)-windows-amd64.tar.gz ## Prepares a packaged windows/amd64 version.
 	@echo "====> $@"
 
-$(PACKAGE_DIR)/$(APPLICATION)-v$(VERSION)-windows-amd64.tar.gz: DIR=$(PACKAGE_DIR)/$<
-$(PACKAGE_DIR)/$(APPLICATION)-v$(VERSION)-windows-amd64.tar.gz: $(APPLICATION)-v$(VERSION)-windows-amd64.exe
+$(PACKAGE_DIR)/$(APPLICATION)-v$(VERSION)-windows-amd64.zip: DIR=$(PACKAGE_DIR)/$(APPLICATION)-v$(VERSION)-windows-amd64
+$(PACKAGE_DIR)/$(APPLICATION)-v$(VERSION)-windows-amd64.zip: $(APPLICATION)-v$(VERSION)-windows-amd64.exe
 	@echo "====> $@"
 	mkdir -p $(DIR)
 	cp $< $(DIR)/$(APPLICATION).exe
 	cp README.md LICENSE $(DIR)
-	# TODO: use ZIP instead
-	tar -C $(PACKAGE_DIR) -cvzf $(PACKAGE_DIR)/$<.tar.gz $<
+	cd ./bin-dist && zip $(APPLICATION)-v$(VERSION)-windows-amd64.zip $(APPLICATION)-v$(VERSION)-windows-amd64/*
 	rm -rf $(DIR)
 	rm -rf $<
-
 
 $(PACKAGE_DIR)/$(APPLICATION)-v$(VERSION)-%-amd64.tar.gz: DIR=$(PACKAGE_DIR)/$<
 $(PACKAGE_DIR)/$(APPLICATION)-v$(VERSION)-%-amd64.tar.gz: $(APPLICATION)-v$(VERSION)-%-amd64
