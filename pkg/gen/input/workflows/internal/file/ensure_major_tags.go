@@ -1,9 +1,14 @@
 package file
 
 import (
+	_ "embed"
+
 	"github.com/giantswarm/devctl/pkg/gen/input"
 	"github.com/giantswarm/devctl/pkg/gen/input/workflows/internal/params"
 )
+
+//go:embed ensure_major_version_tags.yaml.template
+var ensureMajorVersionTagsTemplate string
 
 func NewEnsureMajorVersionTagsInput(p params.Params) input.Input {
 	i := input.Input{
@@ -20,26 +25,3 @@ func NewEnsureMajorVersionTagsInput(p params.Params) input.Input {
 
 	return i
 }
-
-var ensureMajorVersionTagsTemplate = `{{{{ .Header }}}}
-name: Ensure major version tags
-on:
-  workflow_dispatch: {}
-
-jobs:
-  debug_info:
-    name: Debug info
-    runs-on: ubuntu-20.04
-    steps:
-      - name: Print github context JSON
-        run: |
-          cat <<EOF
-          ${{ toJson(github) }}
-          EOF
-  ensure_major_version_tags:
-    name: Ensure major version tags
-    runs-on: ubuntu-20.04
-    steps:
-      - uses: actions/checkout@v2
-      - uses: giantswarm/floating-tags-action@v1
-`

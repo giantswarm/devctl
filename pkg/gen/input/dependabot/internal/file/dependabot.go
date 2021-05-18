@@ -1,11 +1,15 @@
 package file
 
 import (
+	_ "embed"
 	"path/filepath"
 
 	"github.com/giantswarm/devctl/pkg/gen/input"
 	"github.com/giantswarm/devctl/pkg/gen/input/dependabot/internal/params"
 )
+
+//go:embed dependabot.yml.template
+var createDependabotTemplate string
 
 func NewCreateDependabotInput(p params.Params) input.Input {
 	i := input.Input{
@@ -23,36 +27,3 @@ func NewCreateDependabotInput(p params.Params) input.Input {
 
 	return i
 }
-
-var createDependabotTemplate = `{{ .Header }}
-{{- $interval := .Interval }}
-{{- $ecosystemGomod := .EcosystemGomod }}
-{{- $ecosystemGithubActions := .EcosystemGithubActions }}
-{{- $reviewers := .Reviewers }}
-version: 2
-updates:
-{{- range $ecosystem := .Ecosystems }}
-  - package-ecosystem: {{ $ecosystem }}
-    directory: "/"
-    schedule:
-      interval: {{ $interval }}
-      time: "04:00"
-    open-pull-requests-limit: 10
-  {{- if $reviewers }}
-    reviewers:
-    {{- range $reviewer := $reviewers }}
-      - {{ $reviewer }}
-    {{- end}}
-  {{- end }}
-  {{- if eq $ecosystem $ecosystemGomod }}
-    ignore:
-      - dependency-name: k8s.io/*
-        versions:
-          - ">=0.19.0"
-  {{- end }}
-  {{- if eq $ecosystem $ecosystemGithubActions }}
-    ignore:
-      - dependency-name: zricethezav/gitleaks-action
-  {{- end }}
-{{- end }}
-`
