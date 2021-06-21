@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.6.0] - 2021-06-21
+
 ## Changed
 
 - Fix release templating.
@@ -197,7 +199,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v4.5.2...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v4.6.0...HEAD
+[4.6.0]: https://github.com/giantswarm/devctl/compare/v4.5.2...v4.6.0
 [4.5.2]: https://github.com/giantswarm/devctl/compare/v4.5.1...v4.5.2
 [4.5.1]: https://github.com/giantswarm/devctl/compare/v4.5.0...v4.5.1
 [4.5.0]: https://github.com/giantswarm/devctl/compare/v4.4.0...v4.5.0
