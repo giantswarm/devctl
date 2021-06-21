@@ -1,6 +1,8 @@
 package file
 
 import (
+	_ "embed"
+
 	"github.com/giantswarm/devctl/pkg/gen/input"
 	"github.com/giantswarm/devctl/pkg/gen/input/workflows/internal/params"
 )
