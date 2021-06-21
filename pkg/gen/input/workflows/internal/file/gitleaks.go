@@ -24,7 +24,7 @@ func NewGitleaksInput(p params.Params) input.Input {
 var gitleaksTemplate = `{{{{ .Header }}}}
 name: gitleaks
 
-on: [push,pull_request]
+on: [pull_request]
 
 jobs:
   gitleaks:
