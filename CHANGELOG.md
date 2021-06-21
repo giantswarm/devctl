@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [4.5.2] - 2021-06-21
 
+## Changed
+
+- Update `gitleaks action` to version `1.6.0`.
+
 ## [4.5.1] - 2021-05-04
 
 ### Fixed
