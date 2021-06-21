@@ -34,5 +34,5 @@ jobs:
       with:
         fetch-depth: '0'
     - name: gitleaks-action
-      uses: zricethezav/gitleaks-action@v1.2.0
+      uses: zricethezav/gitleaks-action@v1.6.0
 `
