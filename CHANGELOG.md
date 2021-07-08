@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.7.0] - 2021-07-08
+
 ## Added
 
 - Add additional file detection for `pip` dependabot generation.
@@ -209,7 +211,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v4.6.1...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v4.7.0...HEAD
+[4.7.0]: https://github.com/giantswarm/devctl/compare/v4.6.1...v4.7.0
 [4.6.1]: https://github.com/giantswarm/devctl/compare/v4.6.0...v4.6.1
 [4.6.0]: https://github.com/giantswarm/devctl/compare/v4.5.2...v4.6.0
 [4.5.2]: https://github.com/giantswarm/devctl/compare/v4.5.1...v4.5.2
