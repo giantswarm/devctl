@@ -86,7 +86,7 @@ package-linux-amd64: $(PACKAGE_DIR)/$(APPLICATION)-v$(VERSION)-linux-amd64.tar.g
 	@echo "====> $@"
 package-linux-arm64: $(PACKAGE_DIR)/$(APPLICATION)-v$(VERSION)-linux-arm64.tar.gz ## Prepares a packaged linux/arm64 version.
 	@echo "====> $@"
-package-windows-amd64: $(PACKAGE_DIR)/$(APPLICATION)-v$(VERSION)-windows-amd64.tar.gz ## Prepares a packaged windows/amd64 version.
+package-windows-amd64: $(PACKAGE_DIR)/$(APPLICATION)-v$(VERSION)-windows-amd64.zip ## Prepares a packaged windows/amd64 version.
 	@echo "====> $@"
 
 $(PACKAGE_DIR)/$(APPLICATION)-v$(VERSION)-windows-amd64.zip: DIR=$(PACKAGE_DIR)/$(APPLICATION)-v$(VERSION)-windows-amd64
