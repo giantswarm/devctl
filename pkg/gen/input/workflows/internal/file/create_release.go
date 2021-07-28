@@ -1,11 +1,13 @@
 package file
 
 import (
+	_ "embed"
+
 	"github.com/giantswarm/devctl/pkg/gen/input"
 	"github.com/giantswarm/devctl/pkg/gen/input/workflows/internal/params"
 )
 
-// go:embed create_release.yaml.template
+//go:embed create_release.yaml.template
 var createReleaseTemplate string
 
 func NewCreateReleaseInput(p params.Params) input.Input {

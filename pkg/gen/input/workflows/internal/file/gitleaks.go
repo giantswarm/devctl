@@ -24,7 +24,7 @@ func NewGitleaksInput(p params.Params) input.Input {
 var gitleaksTemplate = `{{{{ .Header }}}}
 name: gitleaks
 
-on: [push,pull_request]
+on: [pull_request]
 
 jobs:
   gitleaks:
@@ -34,5 +34,5 @@ jobs:
       with:
         fetch-depth: '0'
     - name: gitleaks-action
-      uses: zricethezav/gitleaks-action@v1.2.0
+      uses: zricethezav/gitleaks-action@v1.6.0
 `
