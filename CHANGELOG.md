@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Dependencies: use github.com/gorilla/websocket version v1.4.2
+
 ## [4.7.0] - 2021-07-08
 
 ## Added
