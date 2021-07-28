@@ -13,7 +13,7 @@ require (
 	github.com/giantswarm/microerror v0.3.0
 	github.com/giantswarm/micrologger v0.5.0
 	github.com/google/go-github v17.0.0+incompatible
-	github.com/pelletier/go-toml v1.9.0
+	github.com/pelletier/go-toml v1.9.3
 	github.com/prometheus/client_golang v1.7.1 // indirect
 	github.com/rhysd/go-github-selfupdate v1.2.3
 	github.com/spf13/cobra v1.1.3
