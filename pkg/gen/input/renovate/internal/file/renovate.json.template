@@ -1,0 +1,36 @@
+{{- $interval := .Interval -}}
+{{- $language := .Language -}}
+{{- $reviewer := .Reviewer -}}
+{
+  "extends": [
+    "config:base"
+  ],
+  {{- if eq $language "go" }}
+  "packageRules": [
+    {
+      "matchPackagePatterns": [".*giantswarm.*"],
+      "groupName": "giantswarm modules"
+    },
+    {
+      "matchPackagePatterns": ["^k8s.io", "^sigs.k8s.io"],
+      "groupName": "k8s modules"
+    },
+    {
+      "excludePackagePatterns": [".*giantswarm.*" ,"^k8s.io", "^sigs.k8s.io"],
+      "groupName": "etc modules"
+    },
+    {
+      "matchPackagePatterns": ["^k8s.io"],
+      "allowedVersions": "< 1.21.0"
+    },
+    {
+      "matchPackageNames": ["sigs.k8s.io/controller-runtime"],
+      "allowedVersions": "< 0.7.0"
+    }
+  ],
+  "postUpdateOptions": ["gomodTidy", "gomodUpdateImportPaths"],
+  {{- end }}
+  "reviewers": [ {{ $reviewer | printf "team:%s" | printf "%q" }} ],
+  "ignoreDeps": ["zricethezav/gitleaks-action"],
+  "schedule": [ {{ $interval | printf "%q" }} ]
+}
