@@ -4,13 +4,13 @@ import (
 	"context"
 	"io"
 
-	"github.com/giantswarm/devctl/pkg/gen/input/renovate"
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/pkg/gen"
 	"github.com/giantswarm/devctl/pkg/gen/input"
+	"github.com/giantswarm/devctl/pkg/gen/input/renovate"
 )
 
 type runner struct {

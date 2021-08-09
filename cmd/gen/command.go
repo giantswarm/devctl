@@ -4,7 +4,6 @@ import (
 	"io"
 	"os"
 
-	"github.com/giantswarm/devctl/cmd/gen/renovate"
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
@@ -13,6 +12,7 @@ import (
 	"github.com/giantswarm/devctl/cmd/gen/dependabot"
 	"github.com/giantswarm/devctl/cmd/gen/kubeconfig"
 	"github.com/giantswarm/devctl/cmd/gen/makefile"
+	"github.com/giantswarm/devctl/cmd/gen/renovate"
 	"github.com/giantswarm/devctl/cmd/gen/workflows"
 )
 
