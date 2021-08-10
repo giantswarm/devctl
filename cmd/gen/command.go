@@ -12,6 +12,7 @@ import (
 	"github.com/giantswarm/devctl/cmd/gen/dependabot"
 	"github.com/giantswarm/devctl/cmd/gen/kubeconfig"
 	"github.com/giantswarm/devctl/cmd/gen/makefile"
+	"github.com/giantswarm/devctl/cmd/gen/renovate"
 	"github.com/giantswarm/devctl/cmd/gen/workflows"
 )
 
@@ -94,6 +95,19 @@ func New(config Config) (*cobra.Command, error) {
 			return nil, microerror.Mask(err)
 		}
 	}
+	var renovateCmd *cobra.Command
+	{
+		c := renovate.Config{
+			Logger: config.Logger,
+			Stderr: config.Stderr,
+			Stdout: config.Stdout,
+		}
+
+		renovateCmd, err = renovate.New(c)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+	}
 
 	var workflowsCmd *cobra.Command
 	{
@@ -131,6 +145,7 @@ func New(config Config) (*cobra.Command, error) {
 	c.AddCommand(dependabotCmd)
 	c.AddCommand(kubeconfigCmd)
 	c.AddCommand(makefileCmd)
+	c.AddCommand(renovateCmd)
 	c.AddCommand(workflowsCmd)
 
 	return c, nil
