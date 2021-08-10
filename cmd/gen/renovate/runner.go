@@ -3,6 +3,8 @@ package renovate
 import (
 	"context"
 	"io"
+	"os"
+	"path/filepath"
 
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
@@ -60,6 +62,18 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 	err = gen.Execute(ctx, inputs...)
 	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	f, err := filepath.Abs("./.github/dependabot.yml")
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	err = os.Remove(f)
+	if os.IsNotExist(err) {
+		// no-op
+	} else if err != nil {
 		return microerror.Mask(err)
 	}
 
