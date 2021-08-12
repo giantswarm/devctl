@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## Changed
+
+- Update k8s version limit in renovate.
+- `--reviewer` option from `devctl gen renovate` is not required anymore.
+
 ## [4.8.0] - 2021-08-11
 
 ## Added

@@ -30,8 +30,5 @@ func (f *flag) Validate() error {
 	if f.Language == "" {
 		return microerror.Maskf(invalidFlagError, "--%s cannot be empty", flagLanguage)
 	}
-	if f.Reviewer == "" {
-		return microerror.Maskf(invalidFlagError, "--%s cannot be empty", flagReviewer)
-	}
 	return nil
 }
