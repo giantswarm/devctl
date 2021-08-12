@@ -4,6 +4,9 @@
 {
   "extends": [
     "config:base"
+    {{- if $reviewer }},
+    ":reviewer({{ $reviewer | printf "team:%s" }})"
+    {{- end }}
   ],
   {{- if eq $language "go" }}
   "packageRules": [
@@ -21,7 +24,7 @@
     },
     {
       "matchPackagePatterns": ["^k8s.io"],
-      "allowedVersions": "< 1.21.0"
+      "allowedVersions": "< 0.21.0"
     },
     {
       "matchPackageNames": ["sigs.k8s.io/controller-runtime"],
@@ -30,7 +33,6 @@
   ],
   "postUpdateOptions": ["gomodTidy", "gomodUpdateImportPaths"],
   {{- end }}
-  "reviewers": [ {{ $reviewer | printf "team:%s" | printf "%q" }} ],
   "ignoreDeps": ["zricethezav/gitleaks-action"],
   "schedule": [ {{ $interval | printf "%q" }} ]
 }
