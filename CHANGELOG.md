@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.9.1] - 2021-08-17
+
 ## Changed
 
 Renovate config
@@ -233,7 +235,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v4.9.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v4.9.1...HEAD
+[4.9.1]: https://github.com/giantswarm/devctl/compare/v4.9.0...v4.9.1
 [4.9.0]: https://github.com/giantswarm/devctl/compare/v4.8.0...v4.9.0
 [4.8.0]: https://github.com/giantswarm/devctl/compare/v4.7.0...v4.8.0
 [4.7.0]: https://github.com/giantswarm/devctl/compare/v4.6.1...v4.7.0
