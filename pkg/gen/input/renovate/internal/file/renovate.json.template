@@ -33,6 +33,23 @@
   ],
   "postUpdateOptions": ["gomodTidy", "gomodUpdateImportPaths"],
   {{- end }}
-  "ignoreDeps": ["zricethezav/gitleaks-action"],
+  {{- if eq $language "python" }}
+  "assigneesFromCodeOwners": true,
+  "packageRules": [
+    {
+      "matchUpdateTypes": ["patch", "pin", "digest"],
+      "automerge": true
+    }
+  ],
+  {{- end }}
+  "dependencyDashboard": true,
+  "ignorePaths": [
+    ".github/workflows/zz_generated.*",
+    ".github/workflows/codeql-analysis.yml"
+  ],
+  "ignoreDeps": [
+    "architect",
+    "zricethezav/gitleaks-action"
+  ]
   "schedule": [ {{ $interval | printf "%q" }} ]
 }
