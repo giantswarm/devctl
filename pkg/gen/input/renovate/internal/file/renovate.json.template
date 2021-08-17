@@ -50,6 +50,6 @@
   "ignoreDeps": [
     "architect",
     "zricethezav/gitleaks-action"
-  ]
+  ],
   "schedule": [ {{ $interval | printf "%q" }} ]
 }
