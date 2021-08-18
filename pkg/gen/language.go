@@ -9,12 +9,14 @@ import (
 
 const (
 	LanguageGo      Language = "go"
+	LanguagePython  Language = "python"
 	LanguageGeneric Language = "generic"
 )
 
 func AllLanguages() []string {
 	return []string{
 		LanguageGo.String(),
+		LanguagePython.String(),
 		LanguageGeneric.String(),
 	}
 }
@@ -25,6 +27,8 @@ func NewLanguage(s string) (Language, error) {
 	switch s {
 	case LanguageGo.String():
 		return LanguageGo, nil
+	case LanguagePython.String():
+		return LanguagePython, nil
 	case LanguageGeneric.String():
 		return LanguageGeneric, nil
 	}
