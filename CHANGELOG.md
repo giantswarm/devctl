@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - fix description for name flag at archive release command
+- Upgrade used `architect` version in generated `create_release` and `create_release_pr` workflows to `5.2.0`.
+- Upgrade used go version in generated `create_release` and `create_release_pr` workflows to `1.17.1`.
 
 ## [4.9.2] - 2021-08-18
 
