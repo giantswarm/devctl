@@ -13,7 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Upgrade `fsaintjacques/semver-tool` to `3.2.0`.
+- Upgrade `fsaintjacques/semver-tool` to `3.2.0` to fix problem with releases
+with high minor version.
 
 ## [4.10.0] - 2021-09-10
 
