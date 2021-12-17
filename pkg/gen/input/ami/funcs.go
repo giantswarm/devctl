@@ -96,10 +96,7 @@ func scrapeVersions(source io.Reader) ([]string, error) {
 				// Versions to extract look like href="./123.4.5/" or href="123.4.5"
 				// so we trim off suffix and prefix if they exist and then ensure this
 				// is a valid semver version.
-				href := strings.TrimSuffix(attr.Val, "/")
-				if strings.HasPrefix(href, "./") {
-					href = strings.TrimPrefix(href, "./")
-				}
+				href := strings.TrimPrefix(strings.TrimSuffix(attr.Val, "/"), "./")
 				if _, err := semver.NewVersion(href); err != nil {
 					break // href is invalid, no need to look at other attrs
 				}
