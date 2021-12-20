@@ -64,18 +64,21 @@ jobs:
       - name: Check if reference version
         id: ref_version
         run: |
-          title="$(echo "${{ github.event.head_commit.message }}" | head -n 1 -)"
-          if echo $title | grep -qE '^release v[0-9]+\.[0-9]+\.[0-9]+([.-][^ .-][^ ]*)?( \(#[0-9]+\))?$' ; then
-            version=$(echo $title | cut -d ' ' -f 2)
+          title="$(cat <<- 'COMMIT_MESSAGE_END' | head -n 1 -
+          ${{ github.event.head_commit.message }}
+          COMMIT_MESSAGE_END
+          )"
+          if echo "${title}" | grep -qE '^release v[0-9]+\.[0-9]+\.[0-9]+([.-][^ .-][^ ]*)?( \(#[0-9]+\))?$' ; then
+            version=$(echo "${title}" | cut -d ' ' -f 2)
           fi
-          version=$(echo $title | cut -d ' ' -f 2)
+          version=$(echo "${title}" | cut -d ' ' -f 2)
           version="${version#v}" # Strip "v" prefix.
           refversion=false
           if [[ "${version}" =~ ^[0-9]+.[0-9]+.[0-9]+-[0-9]+$ ]]; then
             refversion=true
           fi
-          echo "refversion =\"$refversion\""
-          echo "::set-output name=refversion::$refversion"
+          echo "refversion =\"${refversion}\""
+          echo "::set-output name=refversion::${refversion}"
   update_project_go:
     name: Update project.go
     runs-on: ubuntu-20.04
