@@ -152,6 +152,12 @@ jobs:
           file="${{ needs.gather_facts.outputs.project_go_path }}"
           version="${{ needs.gather_facts.outputs.version }}"
           grep -qE "version[[:space:]]*=[[:space:]]*\"$version\"" $file
+      - name: Get Changelog Entry
+        id: changelog_reader
+        uses: mindsers/changelog-reader-action@v2
+        with:
+          version: ${{ needs.gather_facts.outputs.version }}
+          path: ./CHANGELOG.md
       - name: Create tag
         run: |
           version="${{ needs.gather_facts.outputs.version }}"
@@ -168,6 +174,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
+          body: ${{ steps.changelog_reader.outputs.changes }}
           tag_name: "v${{ needs.gather_facts.outputs.version }}"
           release_name: "v${{ needs.gather_facts.outputs.version }}"
 
