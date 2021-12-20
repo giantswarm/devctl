@@ -42,11 +42,11 @@ jobs:
           #   - "Release v1.2.3-r4 (#56)"
           #
           # And outputs version part (1.2.3).
-          if echo $title | grep -iqE '^Release v[0-9]+\.[0-9]+\.[0-9]+([.-][^ .-][^ ]*)?( \(#[0-9]+\))?$' ; then
-            version=$(echo $title | cut -d ' ' -f 2)
+          if echo "${title}" | grep -iqE '^Release v[0-9]+\.[0-9]+\.[0-9]+([.-][^ .-][^ ]*)?( \(#[0-9]+\))?$' ; then
+          version=$(echo "${title}" | cut -d ' ' -f 2)
           fi
           version="${version#v}" # Strip "v" prefix.
-          echo "version=\"$version\""
+          echo "version=\"${version}\""
           echo "::set-output name=version::${version}"
       - name: Checkout code
         if: ${{ steps.get_version.outputs.version != '' }}
