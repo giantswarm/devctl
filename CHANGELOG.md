@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.12.0] - 2021-12-21
+
 ### Added
 
 - Add changelog entries to release body.
@@ -266,7 +268,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v4.11.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v4.12.0...HEAD
+[4.12.0]: https://github.com/giantswarm/devctl/compare/v4.11.0...v4.12.0
 [4.11.0]: https://github.com/giantswarm/devctl/compare/v4.10.0...v4.11.0
 [4.10.0]: https://github.com/giantswarm/devctl/compare/v4.9.2...v4.10.0
 [4.9.2]: https://github.com/giantswarm/devctl/compare/v4.9.1...v4.9.2
