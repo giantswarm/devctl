@@ -9,6 +9,11 @@ on:
       - 'release-v*.*.x#release#v*.*.*'
       # "!" negates previous positive patterns so it has to be at the end.
       - '!release-v*.x.x#release#v*.*.*'
+  workflow_call:
+    inputs:
+      branch:
+        required: true
+        type: string
 jobs:
   debug_info:
     name: Debug info
@@ -23,6 +28,7 @@ jobs:
     name: Gather facts
     runs-on: ubuntu-20.04
     outputs:
+      branch: ${{ steps.gather_facts.outputs.branch }}
       base: ${{ steps.gather_facts.outputs.base }}
       skip: ${{ steps.pr_exists.outputs.skip }}
       version: ${{ steps.gather_facts.outputs.version }}
@@ -30,7 +36,8 @@ jobs:
       - name: Gather facts
         id: gather_facts
         run: |
-          head="${{ github.event.ref }}"
+          head="${{inputs.branch || github.event.ref }}"
+          echo "::set-output name=branch::${head}"
           head="${head#refs/heads/}" # Strip "refs/heads/" prefix.
           base="$(echo $head | cut -d '#' -f 1)"
           base="${base#refs/heads/}" # Strip "refs/heads/" prefix.
@@ -45,8 +52,8 @@ jobs:
         env:
           GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
         run: |
-          if gh pr view --repo ${{ github.repository }} ${{ github.event.ref }} | grep -i 'state:[[:space:]]*open' >/dev/null; then
-            gh pr view --repo ${{ github.repository }} ${{ github.event.ref }}
+          if gh pr view --repo ${{ github.repository }} ${{ steps.gather_facts.outputs.branch }} | grep -i 'state:[[:space:]]*open' >/dev/null; then
+            gh pr view --repo ${{ github.repository }} ${{ steps.gather_facts.outputs.branch }}
             echo "::set-output name=skip::true"
           else
             echo "::set-output name=skip::false"
@@ -67,6 +74,8 @@ jobs:
           version: "3.4.0"
       - name: Checkout code
         uses: actions/checkout@v2
+        with:
+          ref: ${{ needs.gather_facts.outputs.branch }}
       - name: Prepare release changes
         run: |
           architect prepare-release ${{ env.architect_flags }} --version "${{ needs.gather_facts.outputs.version }}"
@@ -82,11 +91,11 @@ jobs:
         env:
           remote_repo: "https://${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
         run: |
-          git push "${remote_repo}" HEAD:${{ github.ref }}
+          git push "${remote_repo}" HEAD:${{ needs.gather_facts.outputs.branch }}
       - name: Create PR
         env:
           GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
           base: "${{ needs.gather_facts.outputs.base }}"
           version: "${{ needs.gather_facts.outputs.version }}"
         run: |
-          hub pull-request -f  -m "Release v${{ env.version }}" -a ${{ github.actor }} -b ${{ env.base }} -h ${{ github.event.ref }}
+          hub pull-request -f  -m "Release v${{ env.version }}" -a ${{ github.actor }} -b ${{ env.base }} -h ${{ needs.gather_facts.outputs.branch }}

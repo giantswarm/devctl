@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added support for calling `create_release_pr` from another workflow.
+
 ## [4.12.0] - 2021-12-21
 
 ### Added
