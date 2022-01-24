@@ -28,6 +28,7 @@ jobs:
     name: Gather facts
     runs-on: ubuntu-20.04
     outputs:
+      repo_name: ${{ steps.gather_facts.outputs.repo_name }}
       branch: ${{ steps.gather_facts.outputs.branch }}
       base: ${{ steps.gather_facts.outputs.base }}
       skip: ${{ steps.pr_exists.outputs.skip }}
@@ -43,7 +44,9 @@ jobs:
           base="${base#refs/heads/}" # Strip "refs/heads/" prefix.
           version="$(echo $head | cut -d '#' -f 3)"
           version="${version#v}" # Strip "v" prefix.
-          echo "base=\"$base\" head=\"$head\" version=\"$version\""
+          repo_name="$(echo '${{ github.repository }}' | awk -F '/' '{print $1}')"
+          echo "repo_name=\"$repo_name\" base=\"$base\" head=\"$head\" version=\"$version\""
+          echo "::set-output name=repo_name::${repo_name}"
           echo "::set-output name=base::${base}"
           echo "::set-output name=head::${head}"
           echo "::set-output name=version::${version}"
@@ -65,7 +68,7 @@ jobs:
       - gather_facts
     if: ${{ needs.gather_facts.outputs.skip != 'true' }}
     env:
-      architect_flags: "--organisation ${{ github.repository_owner }} --project ${{ github.event.repository.name }}"
+      architect_flags: "--organisation ${{ github.repository_owner }} --project ${{ needs.gather_facts.outputs.repo_name }}"
     steps:
       - name: Install architect
         uses: giantswarm/install-binary-action@v1.0.0
