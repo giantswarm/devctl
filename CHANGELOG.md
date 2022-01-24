@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.13.1] - 2022-01-24
+
 ### Fixed
 
 - Set repo name correctly when calling from other workflow
@@ -278,7 +280,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v4.13.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v4.13.1...HEAD
+[4.13.1]: https://github.com/giantswarm/devctl/compare/v4.13.0...v4.13.1
 [4.13.0]: https://github.com/giantswarm/devctl/compare/v4.12.0...v4.13.0
 [4.12.0]: https://github.com/giantswarm/devctl/compare/v4.11.0...v4.12.0
 [4.11.0]: https://github.com/giantswarm/devctl/compare/v4.10.0...v4.11.0
