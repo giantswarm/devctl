@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Upgrade used `architect` version in generated `create_release` and `create_release_pr` workflows to `5.3.0`.
 - Upgrade used go version in generated `create_release` workflow to `1.17.6`.
+- Add handling of Semver verbs to generated `create_release_pr` workflow.
 
 ## [4.13.1] - 2022-01-24
 

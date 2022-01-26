@@ -5,7 +5,13 @@ on:
     branches:
       - 'legacy#release#v*.*.*'
       - 'main#release#v*.*.*'
+      - 'main#release#major'
+      - 'main#release#minor'
+      - 'main#release#patch'
       - 'master#release#v*.*.*'
+      - 'master#release#major'
+      - 'master#release#minor'
+      - 'master#release#patch'
       - 'release-v*.*.x#release#v*.*.*'
       # "!" negates previous positive patterns so it has to be at the end.
       - '!release-v*.x.x#release#v*.*.*'
@@ -37,13 +43,40 @@ jobs:
       - name: Gather facts
         id: gather_facts
         run: |
-          head="${{inputs.branch || github.event.ref }}"
+          head="${{ inputs.branch || github.event.ref }}"
           echo "::set-output name=branch::${head}"
           head="${head#refs/heads/}" # Strip "refs/heads/" prefix.
           base="$(echo $head | cut -d '#' -f 1)"
           base="${base#refs/heads/}" # Strip "refs/heads/" prefix.
           version="$(echo $head | cut -d '#' -f 3)"
-          version="${version#v}" # Strip "v" prefix.
+          if [[ $version =~ ^major|minor|patch$ ]]; then
+            gh auth login --with-token <<<$(echo -n ${{ secrets.GITHUB_TOKEN }})
+            version_parts=($(gh api "repos/${{ github.repository }}/releases/latest" --jq '.tag_name[1:] | split(".") | .[0], .[1], .[2]'))
+            version_major=${version_parts[0]}
+            version_minor=${version_parts[1]}
+            version_patch=${version_parts[2]}
+            case ${version} in
+              patch)
+                version_patch=$((version_patch+1))
+                ;;
+              minor)
+                version_minor=$((version_minor+1))
+                version_patch=0
+                ;;
+              major)
+                version_major=$((version_major+1))
+                version_minor=0
+                version_patch=0
+                ;;
+              *)
+                echo "Unknown Semver level provided"
+                exit 1
+                ;;
+            esac
+            version="${version_major}.${version_minor}.${version_patch}"
+          else
+            version="${version#v}" # Strip "v" prefix.
+          fi
           repo_name="$(echo '${{ github.repository }}' | awk -F '/' '{print $1}')"
           echo "repo_name=\"$repo_name\" base=\"$base\" head=\"$head\" version=\"$version\""
           echo "::set-output name=repo_name::${repo_name}"
