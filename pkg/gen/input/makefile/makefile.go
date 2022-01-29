@@ -36,3 +36,43 @@ func (m *Makefile) MakefileGenApp() input.Input {
 func (m *Makefile) MakefileGenGo() input.Input {
 	return file.NewMakefileGenGoMkInput(m.params)
 }
+
+func (m *Makefile) MakefileGenKubernetesAPI() []input.Input {
+	return []input.Input{
+		file.NewMakefileGenKubernetesAPIMkInput(m.params),
+		file.NewHackGitignore(m.params),
+		file.NewHackBoilerplate(m.params),
+		{
+			Delete: true,
+			Path:   "Makefile.custom.mk",
+		},
+		{
+			Delete: true,
+			Path:   "hack/tools/bin/controller-gen",
+		},
+		{
+			Delete: true,
+			Path:   "hack/tools/bin",
+		},
+		{
+			Delete: true,
+			Path:   "hack/tools/controller-gen/go.mod",
+		},
+		{
+			Delete: true,
+			Path:   "hack/tools/controller-gen/go.sum",
+		},
+		{
+			Delete: true,
+			Path:   "hack/tools/controller-gen/tools.go",
+		},
+		{
+			Delete: true,
+			Path:   "hack/tools/controller-gen",
+		},
+		{
+			Delete: true,
+			Path:   "hack/tools",
+		},
+	}
+}
