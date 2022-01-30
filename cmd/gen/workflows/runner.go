@@ -42,6 +42,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	var workflowsInput *workflows.Workflows
 	{
 		c := workflows.Config{
+			EnableChangelog:                r.flag.EnableChangelog,
 			EnableFloatingMajorVersionTags: r.flag.EnableFloatingMajorVersionTags,
 			Flavours:                       r.flag.Flavours,
 		}
@@ -59,6 +60,10 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 	if r.flag.CheckSecrets {
 		inputs = append(inputs, workflowsInput.Gitleaks())
+	}
+
+	if r.flag.EnableChangelog {
+		inputs = append(inputs, workflowsInput.UpdateChangelog()...)
 	}
 
 	if r.flag.EnableFloatingMajorVersionTags {

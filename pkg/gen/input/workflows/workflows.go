@@ -8,6 +8,7 @@ import (
 )
 
 type Config struct {
+	EnableChangelog                bool
 	EnableFloatingMajorVersionTags bool
 	Flavours                       gen.FlavourSlice
 }
@@ -21,6 +22,7 @@ func New(config Config) (*Workflows, error) {
 		params: params.Params{
 			Dir: ".github/workflows",
 
+			EnableChangelog:                config.EnableChangelog,
 			EnableFloatingMajorVersionTags: config.EnableFloatingMajorVersionTags,
 			Flavours:                       config.Flavours,
 		},
@@ -43,4 +45,14 @@ func (w *Workflows) EnsureMajorVersionTags() input.Input {
 
 func (w *Workflows) Gitleaks() input.Input {
 	return file.NewGitleaksInput(w.params)
+}
+
+func (w *Workflows) UpdateChangelog() []input.Input {
+	return []input.Input{
+		file.NewUpdateChangelogInput(w.params),
+		{
+			Delete: true,
+			Path:   "CHANGELOG.md",
+		},
+	}
 }

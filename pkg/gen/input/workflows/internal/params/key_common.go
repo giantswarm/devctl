@@ -9,6 +9,10 @@ func Header(comment string) string {
 	return internal.Header(comment)
 }
 
+func EnableChangelog(p Params) bool {
+	return p.EnableChangelog
+}
+
 func EnableFloatingMajorVersionTags(p Params) bool {
 	return p.EnableFloatingMajorVersionTags
 }

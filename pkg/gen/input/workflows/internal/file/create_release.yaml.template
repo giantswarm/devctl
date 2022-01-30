@@ -158,12 +158,27 @@ jobs:
           file="${{ needs.gather_facts.outputs.project_go_path }}"
           version="${{ needs.gather_facts.outputs.version }}"
           grep -qE "version[[:space:]]*=[[:space:]]*\"$version\"" $file
+
+{{{{- if .EnableChangelog }}}}
+
       - name: Get Changelog Entry
         id: changelog_reader
         uses: mindsers/changelog-reader-action@v2
         with:
           version: ${{ needs.gather_facts.outputs.version }}
           path: ./CHANGELOG.md
+
+{{{{- else }}}}
+
+      - name: Get Changelog Entry
+        id: changelog_reader
+        uses: mindsers/changelog-reader-action@v2
+        with:
+          version: ${{ needs.gather_facts.outputs.version }}
+          path: ./CHANGELOG.md
+
+{{{{- end }}}}
+
       - name: Create tag
         run: |
           version="${{ needs.gather_facts.outputs.version }}"

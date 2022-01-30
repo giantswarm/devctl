@@ -94,14 +94,41 @@ jobs:
           else
             echo "::set-output name=skip::false"
           fi
+
+  build_changelog:
+	runs-on: ubuntu-latest
+	needs:
+	  - gather_facts
+    container:
+      image: docker://giantswarm/go-changelog
+      volumes:
+        - ${{ github.workspace }}:/github/workspace
+    outputs:
+      changelog: ${{ steps.gather_facts.outputs.changelog }}
+    steps:
+	  - uses: actions/checkout@v2
+
+	  - name: Build changelog
+		run: |
+		  changelog=$(/go-changelog/changelog-build \
+		    -changelog-template changelog.tmpl \
+		    -entries-dir .changelog \
+		    -last-release ${{ needs.gather_facts.outputs.base }} \
+		    -note-template release-note.tmpl \
+		    -this-release HEAD \
+		    -git-dir /github/workspace)
+		  echo "::set-output name=changelog::${changelog}"
+		env:
+		  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   create_release_pr:
     name: Create release PR
     runs-on: ubuntu-20.04
     needs:
-      - gather_facts
+      - build_changelog
     if: ${{ needs.gather_facts.outputs.skip != 'true' }}
     env:
-      architect_flags: "--organisation ${{ github.repository_owner }} --project ${{ needs.gather_facts.outputs.repo_name }}"
+      architect_flags: "--organisation ${{ github.repository_owner }} --project ${{ needs.gather_facts.outputs.repo_name }} --update-changelog={{{{ .EnableChangelog }}}}"
     steps:
       - name: Install architect
         uses: giantswarm/install-binary-action@v1.0.0
@@ -132,6 +159,13 @@ jobs:
         env:
           GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
           base: "${{ needs.gather_facts.outputs.base }}"
+          branch: "${{ needs.gather_facts.outputs.base }}"
+          changelog: "${{ needs.build_changelog.outputs.changelog }}"
           version: "${{ needs.gather_facts.outputs.version }}"
         run: |
-          hub pull-request -f  -m "Release v${{ env.version }}" -a ${{ github.actor }} -b ${{ env.base }} -h ${{ needs.gather_facts.outputs.branch }}
+          hub pull-request -f \
+            -m "Release v${{ env.version }}" \
+            -m "${{ env.changelog }}" \
+            -a "${{ github.actor }}" \
+            -b "${{ env.base }}" \
+            -h "${{ env.branch }}"

@@ -7,6 +7,7 @@ type Params struct {
 	// should be generated.
 	Dir string
 
+	EnableChangelog                bool
 	EnableFloatingMajorVersionTags bool
 
 	Flavours gen.FlavourSlice

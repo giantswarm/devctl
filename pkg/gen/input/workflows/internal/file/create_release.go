@@ -20,6 +20,7 @@ func NewCreateReleaseInput(p params.Params) input.Input {
 		},
 		TemplateData: map[string]interface{}{
 			"Header":                         params.Header("#"),
+			"EnableChangelog":                params.EnableChangelog(p),
 			"EnableFloatingMajorVersionTags": params.EnableFloatingMajorVersionTags(p),
 			"IsFlavourCLI":                   params.IsFlavourCLI(p),
 		},

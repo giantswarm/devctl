@@ -1,6 +1,7 @@
 package input
 
 type Input struct {
+	Delete bool
 	// Path is the absolute path of the file to be generated from this
 	// Input.
 	Path string
