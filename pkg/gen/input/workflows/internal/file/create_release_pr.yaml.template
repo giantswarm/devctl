@@ -137,17 +137,19 @@ jobs:
     name: Create release PR
     runs-on: ubuntu-20.04
     needs:
-      - build_changelog
       - gather_facts
+{{{{- if .EnableChangelog }}}}
+      - build_changelog
     if: ${{ needs.gather_facts.outputs.skip != 'true' }}
+{{{{- end }}}}
     env:
-      architect_flags: "--organisation ${{ github.repository_owner }} --project ${{ needs.gather_facts.outputs.repo_name }}"
+      architect_flags: "--organisation ${{ github.repository_owner }} --project ${{ needs.gather_facts.outputs.repo_name }} {{{{ if .EnableChangelog }}}}--update-changelog=true{{{{ else }}}}--update-changelog=false{{{{ end }}}}"
     steps:
       - name: Install architect
         uses: giantswarm/install-binary-action@v1.0.0
         with:
           binary: "architect"
-          version: "5.3.0"
+          version: "5.4.0"
       - name: Checkout code
         uses: actions/checkout@v2
         with:
@@ -179,13 +181,17 @@ jobs:
           GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
           base: "${{ needs.gather_facts.outputs.base }}"
           branch: "${{ needs.gather_facts.outputs.branch }}"
+{{{{- if .EnableChangelog }}}}
           changelog: "${{ needs.build_changelog.outputs.changelog }}"
+{{{{- end }}}}
           version: "${{ needs.gather_facts.outputs.version }}"
         run: |
           gh pr create \
             --draft \
             -t "Release v${{ env.version }}" \
+{{{{- if .EnableChangelog }}}}
             -F .changelog/v${{ needs.gather_facts.outputs.version }}.md \
+{{{{- end }}}}
             -a "${{ github.actor }}" \
             -B "${{ env.base }}" \
             -H "${{ env.branch }}"
