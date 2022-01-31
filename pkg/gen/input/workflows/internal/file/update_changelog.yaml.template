@@ -7,16 +7,30 @@ on:
 
 jobs:
   go-changelog:
+    name: Check PR body
     runs-on: ubuntu-latest
     container:
-      image: docker://giantswarm/go-changelog:0.0.0-1cc37556d1acbd1e079a146338b84c2ab9b7d9a4
+      image: docker://giantswarm/go-changelog:0.0.0-9ca8baa4140a49f0fd2c7faeb66d1c85b220ca78
       volumes:
         - ${{ github.workspace }}:/github/workspace
+    outputs:
+      skip: ${{ steps.check.outputs.skip }}
     steps:
       - uses: actions/checkout@v2
 
       - name: Check PR body
-        run: /go-changelog/changelog-pr-body-check -pull-request ${{ github.event.number }} -output-path /github/workspace/.changelog
+        id: check
+        run: |
+          head="${{ github.event.pull_request.head.ref }}"
+          if [[ "$head" =~ "^.+#release#.+" ]]; then
+            echo "::set-output name=skip::true"
+            exit 0
+          else
+            echo "::set-output name=skip::false"
+          fi
+          /go-changelog/changelog-pr-body-check \
+            -pull-request ${{ github.event.number }} \
+            -output-path /github/workspace/.changelog
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -27,8 +41,10 @@ jobs:
           path: .changelog
 
   commit-changes:
+    name: Commit changes
     runs-on: ubuntu-latest
     needs: [go-changelog]
+    if: ${{ needs.go-changelog.outputs.skip != 'true' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v2
