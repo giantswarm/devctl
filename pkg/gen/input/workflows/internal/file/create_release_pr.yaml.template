@@ -12,13 +12,13 @@ on:
       - 'master#release#major'
       - 'master#release#minor'
       - 'master#release#patch'
-      - 'release-v*.*.x#release#v*.*.*'
-      # "!" negates previous positive patterns so it has to be at the end.
-      - '!release-v*.x.x#release#v*.*.*'
       - 'release#v*.*.*'
       - 'release#major'
       - 'release#minor'
       - 'release#patch'
+      - 'release-v*.*.x#release#v*.*.*'
+      # "!" negates previous positive patterns so it has to be at the end.
+      - '!release-v*.x.x#release#v*.*.*'
   workflow_call:
     inputs:
       branch:
