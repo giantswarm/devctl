@@ -25,6 +25,11 @@ func Execute(ctx context.Context, files ...input.Input) error {
 }
 
 func execute(ctx context.Context, file input.Input) error {
+	if file.Delete {
+		_ = os.Remove(file.Path) // Ignore error, file may already be deleted
+		return nil
+	}
+
 	// Create the file's directory if it doesn't exist. Check if the file
 	// itself is a directory. Error if it is.
 	{
@@ -70,6 +75,8 @@ func isRegenerable(path string) bool {
 
 	switch {
 	case base == "Makefile" || strings.HasPrefix(base, "Makefile.gen."):
+		return true
+	case base == ".gitignore":
 		return true
 	case base == "renovate.json":
 		return true

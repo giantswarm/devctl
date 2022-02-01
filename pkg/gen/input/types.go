@@ -1,6 +1,9 @@
 package input
 
 type Input struct {
+	// If delete is true, the file will be deleted if it exists. Allows
+	// for files to be moved/renamed.
+	Delete bool
 	// Path is the absolute path of the file to be generated from this
 	// Input.
 	Path string

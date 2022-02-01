@@ -17,7 +17,9 @@ There are different generation flavours:
 
   - app - project containing a helm chart
   - cli - project released with a downloadable binary
-  - generic - everything else, i.e a project which simply needs to be released`
+  - generic - everything else, i.e a project which simply needs to be released
+  - k8sapi - project containing a Kubernetes API
+`
 )
 
 type Config struct {
