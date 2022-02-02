@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Add `k8sapi` flavour to `gen` commands.
+- Add restriction to renovate config for Go repos to only use `github.com/giantswarm/apiextensions`
+ v4.0.0 or higher.
 
 ## [4.14.0] - 2022-01-26
 
