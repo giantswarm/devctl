@@ -59,7 +59,7 @@ jobs:
 
           base="${base#refs/heads/}" # Strip "refs/heads/" prefix.
 
-          version="$(echo $head | rev | cut -d '#' -f 1 | rev)"
+          version="$(echo $head | awk -F# '{print $NF}')"
           if [[ $version =~ ^major|minor|patch$ ]]; then
             gh auth login --with-token <<<$(echo -n ${{ secrets.GITHUB_TOKEN }})
             version_parts=($(gh api "repos/${{ github.repository }}/releases/latest" --jq '.tag_name[1:] | split(".") | .[0], .[1], .[2]'))
