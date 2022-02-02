@@ -7,11 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-
-- Renovate exclude cluster-api dependencies.
-- Renovate only suggest giantswarm/apiextensions >= 4.0.0.
-
 ### Added
 
 - Add `k8sapi` flavour to `gen` commands.
@@ -19,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Upgrade `create_release_pr` to accept branches without base ref.
+- Renovate exclude cluster-api dependencies.
+- Renovate only suggest giantswarm/apiextensions >= 4.0.0.
 
 ## [4.14.0] - 2022-01-26
 
