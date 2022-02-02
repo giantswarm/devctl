@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Renovate excludes cluster-api dependencies.
+- Renovate exclude cluster-api dependencies.
 - Renovate only suggest giantswarm/apiextensions >= 4.0.0.
 
 ### Added
