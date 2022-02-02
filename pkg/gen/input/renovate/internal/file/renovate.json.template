@@ -29,6 +29,10 @@
     {
       "matchPackageNames": ["sigs.k8s.io/controller-runtime"],
       "allowedVersions": "< 0.7.0"
+    },
+    {
+      "matchPackageNames": ["github.com/giantswarm/apiextensions/v3"],
+      "allowedVersions": ">= 4.0.0"
     }
   ],
   "postUpdateOptions": ["gomodTidy", "gomodUpdateImportPaths"],
