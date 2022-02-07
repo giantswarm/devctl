@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Update `setup-go` action to v2.1.5.
+
 ## [4.15.0] - 2022-02-02
 
 ### Added
