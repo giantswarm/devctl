@@ -60,6 +60,10 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 			inputs = append(inputs, in.MakefileGenApp())
 		}
 
+		if r.flag.Flavours.Contains(gen.FlavourKubernetesAPI) {
+			inputs = append(inputs, in.MakefileGenKubernetesAPI()...)
+		}
+
 		if r.flag.Language == gen.LanguageGo {
 			inputs = append(inputs, in.MakefileGenGo())
 		}

@@ -8,9 +8,10 @@ import (
 )
 
 const (
-	FlavourApp     Flavour = "app"
-	FlavourCLI     Flavour = "cli"
-	FlavourGeneric Flavour = "generic"
+	FlavourApp           Flavour = "app"
+	FlavourCLI           Flavour = "cli"
+	FlavourGeneric       Flavour = "generic"
+	FlavourKubernetesAPI Flavour = "k8sapi"
 )
 
 func AllFlavours() []string {
@@ -18,6 +19,7 @@ func AllFlavours() []string {
 		FlavourApp.String(),
 		FlavourCLI.String(),
 		FlavourGeneric.String(),
+		FlavourKubernetesAPI.String(),
 	}
 }
 
@@ -31,6 +33,8 @@ func NewFlavour(s string) (Flavour, error) {
 		return FlavourCLI, nil
 	case FlavourGeneric.String():
 		return FlavourGeneric, nil
+	case FlavourKubernetesAPI.String():
+		return FlavourKubernetesAPI, nil
 	}
 
 	return Flavour("unknown"), microerror.Maskf(invalidConfigError, "flavour must be one of %s", strings.Join(AllFlavours(), "|"))

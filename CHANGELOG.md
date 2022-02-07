@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Update `setup-go` action to v2.1.5.
+
+## [4.15.0] - 2022-02-02
+
+### Added
+
+- Add `k8sapi` flavour to `gen` commands.
+
+### Changed
+
+- Upgrade `create_release_pr` to accept branches without base ref.
+- Renovate exclude cluster-api dependencies.
+- Renovate only suggest giantswarm/apiextensions >= 4.0.0.
+
 ## [4.14.0] - 2022-01-26
 
 ### Changed
@@ -288,7 +304,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v4.14.0...HEAD
+[Unreleased]: https://github.com/giantswarm/giantswarm/compare/v4.15.0...HEAD
+[4.15.0]: https://github.com/giantswarm/giantswarm/compare/v4.14.0...v4.15.0
 [4.14.0]: https://github.com/giantswarm/devctl/compare/v4.13.1...v4.14.0
 [4.13.1]: https://github.com/giantswarm/devctl/compare/v4.13.0...v4.13.1
 [4.13.0]: https://github.com/giantswarm/devctl/compare/v4.12.0...v4.13.0
