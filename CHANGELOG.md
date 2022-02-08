@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Fixed exclusion of CAPI dependencies.
 
+## [4.16.0] - 2022-02-07
+
+### Changed
+
+- Update `setup-go` action to v2.1.5.
+- Update `architect` to v6.1.0.
+
 ## [4.15.0] - 2022-02-02
 
 ### Added
@@ -304,7 +311,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/giantswarm/compare/v4.15.0...HEAD
+[Unreleased]: https://github.com/giantswarm/giantswarm/compare/v4.16.0...HEAD
+[4.16.0]: https://github.com/giantswarm/giantswarm/compare/v4.15.0...v4.16.0
 [4.15.0]: https://github.com/giantswarm/giantswarm/compare/v4.14.0...v4.15.0
 [4.14.0]: https://github.com/giantswarm/devctl/compare/v4.13.1...v4.14.0
 [4.13.1]: https://github.com/giantswarm/devctl/compare/v4.13.0...v4.13.1
