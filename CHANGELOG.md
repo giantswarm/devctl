@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.16.1] - 2022-02-09
+
 ### Fixed
 
 - Fixed exclusion of CAPI dependencies.
@@ -311,7 +313,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/giantswarm/compare/v4.16.0...HEAD
+[Unreleased]: https://github.com/giantswarm/giantswarm/compare/v4.16.1...HEAD
+[4.16.1]: https://github.com/giantswarm/giantswarm/compare/v4.16.0...v4.16.1
 [4.16.0]: https://github.com/giantswarm/giantswarm/compare/v4.15.0...v4.16.0
 [4.15.0]: https://github.com/giantswarm/giantswarm/compare/v4.14.0...v4.15.0
 [4.14.0]: https://github.com/giantswarm/devctl/compare/v4.13.1...v4.14.0
