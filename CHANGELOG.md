@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.17.0] - 2022-02-11
+
 ### Changed
 
 - Update `setup-go` action to v2.2.0 in generated workflows.
@@ -319,7 +321,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/giantswarm/compare/v4.16.1...HEAD
+[Unreleased]: https://github.com/giantswarm/giantswarm/compare/v4.17.0...HEAD
+[4.17.0]: https://github.com/giantswarm/giantswarm/compare/v4.16.1...v4.17.0
 [4.16.1]: https://github.com/giantswarm/giantswarm/compare/v4.16.0...v4.16.1
 [4.16.0]: https://github.com/giantswarm/giantswarm/compare/v4.15.0...v4.16.0
 [4.15.0]: https://github.com/giantswarm/giantswarm/compare/v4.14.0...v4.15.0
