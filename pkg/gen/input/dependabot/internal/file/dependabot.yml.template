@@ -27,5 +27,6 @@ updates:
   {{- if eq $ecosystem $ecosystemGithubActions }}
     ignore:
       - dependency-name: zricethezav/gitleaks-action
+      - dependency-name: actions/setup-go
   {{- end }}
 {{- end }}
