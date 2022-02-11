@@ -59,7 +59,8 @@
   ],
   "ignoreDeps": [
     "architect",
-    "zricethezav/gitleaks-action"
+    "zricethezav/gitleaks-action",
+    "actions/setup-go"
   ],
   "schedule": [ {{ $interval | printf "%q" }} ]
 }
