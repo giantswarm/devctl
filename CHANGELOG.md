@@ -333,13 +333,13 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/giantswarm/compare/v4.19.0...HEAD
-[4.19.0]: https://github.com/giantswarm/giantswarm/compare/v4.18.0...v4.19.0
-[4.18.0]: https://github.com/giantswarm/giantswarm/compare/v4.17.0...v4.18.0
-[4.17.0]: https://github.com/giantswarm/giantswarm/compare/v4.16.1...v4.17.0
-[4.16.1]: https://github.com/giantswarm/giantswarm/compare/v4.16.0...v4.16.1
-[4.16.0]: https://github.com/giantswarm/giantswarm/compare/v4.15.0...v4.16.0
-[4.15.0]: https://github.com/giantswarm/giantswarm/compare/v4.14.0...v4.15.0
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v4.19.0...HEAD
+[4.19.0]: https://github.com/giantswarm/devctl/compare/v4.18.0...v4.19.0
+[4.18.0]: https://github.com/giantswarm/devctl/compare/v4.17.0...v4.18.0
+[4.17.0]: https://github.com/giantswarm/devctl/compare/v4.16.1...v4.17.0
+[4.16.1]: https://github.com/giantswarm/devctl/compare/v4.16.0...v4.16.1
+[4.16.0]: https://github.com/giantswarm/devctl/compare/v4.15.0...v4.16.0
+[4.15.0]: https://github.com/giantswarm/devctl/compare/v4.14.0...v4.15.0
 [4.14.0]: https://github.com/giantswarm/devctl/compare/v4.13.1...v4.14.0
 [4.13.1]: https://github.com/giantswarm/devctl/compare/v4.13.0...v4.13.1
 [4.13.0]: https://github.com/giantswarm/devctl/compare/v4.12.0...v4.13.0
