@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Forgot to update one `actions/checkout` in create_release_pr workflow template.
+
 ## [4.20.0] - 2022-03-02
 
 ### Changed
