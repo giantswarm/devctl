@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.20.1] - 2022-03-02
+
 ### Fixed
 
 - Forgot to update one `actions/checkout` in create_release_pr workflow template.
@@ -343,7 +345,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v4.20.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v4.20.1...HEAD
+[4.20.1]: https://github.com/giantswarm/devctl/compare/v4.20.0...v4.20.1
 [4.20.0]: https://github.com/giantswarm/devctl/compare/v4.19.0...v4.20.0
 [4.19.0]: https://github.com/giantswarm/devctl/compare/v4.18.0...v4.19.0
 [4.18.0]: https://github.com/giantswarm/devctl/compare/v4.17.0...v4.18.0
