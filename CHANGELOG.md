@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.20.0] - 2022-03-02
+
 ### Changed
 
 - Update `actions/checkout` action to v3 in generated workflows.
@@ -337,7 +339,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v4.19.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v4.20.0...HEAD
+[4.20.0]: https://github.com/giantswarm/devctl/compare/v4.19.0...v4.20.0
 [4.19.0]: https://github.com/giantswarm/devctl/compare/v4.18.0...v4.19.0
 [4.18.0]: https://github.com/giantswarm/devctl/compare/v4.17.0...v4.18.0
 [4.17.0]: https://github.com/giantswarm/devctl/compare/v4.16.1...v4.17.0
