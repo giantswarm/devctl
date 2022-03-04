@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Update used go version in generated workflows to 1.17.8.
+- Update `architect` to v6.3.0 (with go version 1.17.8).
+
 ## [4.20.1] - 2022-03-02
 
 ### Fixed
