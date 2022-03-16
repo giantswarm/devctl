@@ -2,7 +2,7 @@
 
 ##@ App
 
-.PHONY: lint-chart
+.PHONY: lint-chart update-chart
 lint-chart: IMAGE := giantswarm/helm-chart-testing:v3.0.0-rc.1
 lint-chart: ## Runs ct against the default chart.
 	@echo "====> $@"
@@ -12,3 +12,46 @@ lint-chart: ## Runs ct against the default chart.
 	architect helm template --dir /tmp/$(APPLICATION)-test/helm/$(APPLICATION)
 	docker run -it --rm -v /tmp/$(APPLICATION)-test:/wd --workdir=/wd --name ct $(IMAGE) ct lint --validate-maintainers=false --charts="helm/$(APPLICATION)"
 	rm -rf /tmp/$(APPLICATION)-test
+
+update-chart: local_path := "helm/$(shell ls -1 helm|head -n1)"
+update-chart: tmp_branch := "upgrade-tmp"
+update-chart: upgrade_branch := "upgrade-upstream"
+update-chart: repository := $(shell cat $(local_path)/Chart.yaml | yq -r '.annotations.repository')
+update-chart: upstream_path := $(shell cat $(local_path)/Chart.yaml | yq -r '.annotations.path')
+update-chart: remote := $(shell git remote show -n | head -n1)
+update-chart: default_branch := $(shell git rev-parse --abbrev-ref $(remote)/HEAD | cut -d/ -f2)
+update-chart:
+	@echo "repository: $(repository)"
+	@echo "path:       $(upstream_path)"
+	@echo "version:    $(version)"
+	@echo "local_path: $(local_path)"
+	@test -n "$(version)" || (echo "version=<something>, must be set"; exit 1)
+	@echo
+	@echo "=> clean local tags"
+	@# This is necessary otherwise upstream tags will collide with local tags.
+	git tag -d $(git tag -l) 1>/dev/null
+	@echo
+	@echo "=> get upstream references"
+	git remote get-url upstream 1>/dev/null || git remote add --fetch --tags upstream "$(repository)"
+	git fetch upstream &>/dev/null
+	@echo
+	@echo "=> extract upstream content"
+	@# checkout the upstream version we want to extract code from.
+	git -c advice.detachedHead=false checkout $(version) --
+	@#restore local tags
+	git tag -d $(git tag -l) 1>/dev/null
+	git fetch $(remote) &>/dev/null
+	@# split out specific dir from upstream into tmp branch.
+	git subtree split --prefix $(upstream_path) --branch $(tmp_branch)
+	@# create a new branch in our repository to hold the updated upstream code.
+	git checkout -b $(upgrade_branch) $(remote)/$(default_branch)
+	@# merge the upstream extracted and up to date code into ours.
+	git subtree merge --message "Upgrade $(repository) to $(version)" --squash --prefix $(local_path) $(tmp_branch)
+	git branch -D $(tmp_branch)
+	@echo
+	@echo "=> update version in Chart.yaml"
+	yq -i -Y '.annotations.version="$(version)"' $(local_path)/Chart.yaml
+	git commit -m'update version in Chart.yaml' -- $(local_path)/Chart.yaml
+	@echo
+	@echo "=> done"
+	@echo "=> branch $(upgrade_branch) is ready and contains new upstream $(version) version from $(repository)/$(upstream_path)"

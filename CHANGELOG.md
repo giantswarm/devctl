@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add update-chart target in app Makefile.
+
 ## [4.21.0] - 2022-03-04
 
 ### Changed
