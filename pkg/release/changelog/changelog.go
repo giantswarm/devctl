@@ -94,7 +94,7 @@ var knownComponentParseParams = map[string]parseParams{
 	},
 	"containerlinux": {
 		tag:       "https://www.flatcar-linux.org/releases/#release-{{.Version}}",
-		changelog: "https://kinvolk.io/flatcar-container-linux/releases-json/releases-stable.json",
+		changelog: "https://www.flatcar.org/releases-json/releases-stable.json",
 	},
 	"cert-exporter": {
 		tag:       "https://github.com/giantswarm/cert-exporter/releases/tag/v{{.Version}}",
@@ -138,6 +138,12 @@ var knownComponentParseParams = map[string]parseParams{
 		start:     commonStartPattern,
 		end:       commonEndPattern,
 	},
+	"kiam-watchdog": {
+		tag:       "https://github.com/giantswarm/kiam-watchdog/releases/tag/v{{.Version}}",
+		changelog: "https://raw.githubusercontent.com/giantswarm/kiam-watchdog/v{{.Version}}/CHANGELOG.md",
+		start:     commonStartPattern,
+		end:       commonEndPattern,
+	},
 	"kube-state-metrics": {
 		tag:       "https://github.com/giantswarm/kube-state-metrics-app/releases/tag/v{{.Version}}",
 		changelog: "https://raw.githubusercontent.com/giantswarm/kube-state-metrics-app/v{{.Version}}/CHANGELOG.md",
@@ -177,6 +183,18 @@ var knownComponentParseParams = map[string]parseParams{
 	"aws-ebs-csi-driver": {
 		tag:       "https://github.com/giantswarm/aws-ebs-csi-driver-app/releases/tag/v{{.Version}}",
 		changelog: "https://raw.githubusercontent.com/giantswarm/aws-ebs-csi-driver-app/v{{.Version}}/CHANGELOG.md",
+		start:     commonStartPattern,
+		end:       commonEndPattern,
+	},
+	"vertical-pod-autoscaler": {
+		tag:       "https://github.com/giantswarm/vertical-pod-autoscaler-app/releases/tag/v{{.Version}}",
+		changelog: "https://raw.githubusercontent.com/giantswarm/vertical-pod-autoscaler-app/v{{.Version}}/CHANGELOG.md",
+		start:     commonStartPattern,
+		end:       commonEndPattern,
+	},
+	"vertical-pod-autoscaler-crd": {
+		tag:       "https://github.com/giantswarm/vertical-pod-autoscaler-crd/releases/tag/v{{.Version}}",
+		changelog: "https://raw.githubusercontent.com/giantswarm/vertical-pod-autoscaler-crd/v{{.Version}}/CHANGELOG.md",
 		start:     commonStartPattern,
 		end:       commonEndPattern,
 	},

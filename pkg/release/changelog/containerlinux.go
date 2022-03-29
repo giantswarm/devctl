@@ -11,15 +11,11 @@ type containerlinuxRelease struct {
 }
 
 func parseContainerLinuxChangelog(body []byte, componentVersion string) (string, error) {
-	var releases map[string]json.RawMessage
+	var releases map[string]containerlinuxRelease
 	err := json.Unmarshal(body, &releases)
 	if err != nil {
 		return "", microerror.Mask(err)
 	}
-	var release containerlinuxRelease
-	err = json.Unmarshal(releases[componentVersion], &release)
-	if err != nil {
-		return "", microerror.Mask(err)
-	}
-	return release.ReleaseNotes, nil
+
+	return releases[componentVersion].ReleaseNotes, nil
 }
