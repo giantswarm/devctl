@@ -44,3 +44,7 @@ func (w *Workflows) EnsureMajorVersionTags() input.Input {
 func (w *Workflows) Gitleaks() input.Input {
 	return file.NewGitleaksInput(w.params)
 }
+
+func (w *Workflows) CheckValuesSchema() input.Input {
+	return file.NewCheckValuesSchemaInput(w.params)
+}
