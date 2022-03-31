@@ -65,6 +65,10 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		inputs = append(inputs, workflowsInput.EnsureMajorVersionTags())
 	}
 
+	if r.flag.Flavours.Contains(gen.FlavourApp) {
+		inputs = append(inputs, workflowsInput.CheckValuesSchema())
+	}
+
 	err = gen.Execute(
 		ctx,
 		inputs...,
