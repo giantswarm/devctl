@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add steps to build signed windows binary in `gen makefile --flavour cli --language go`
+- 
 ## [4.23.0] - 2022-03-31
 
 ### Added
