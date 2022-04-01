@@ -130,9 +130,6 @@ jobs:
         with:
           binary: "architect"
           version: "6.1.0"
-      - name: Install github.com/marwan-at-work/mod
-        run: |
-          go install github.com/marwan-at-work/mod/cmd/mod@v0.4.1
       - name: Checkout code
         uses: actions/checkout@v3
         with:
@@ -140,7 +137,10 @@ jobs:
       - name: Prepare release changes
         run: |
           architect prepare-release ${{ env.architect_flags }} --version "${{ needs.gather_facts.outputs.version }}"
+      - name: Bump go module defined in go.mod if needed
+        run: |
           if [ "${{ needs.gather_facts.outputs.is_major }}" = true ] && test -f "go.mod"; then
+            go install github.com/marwan-at-work/mod/cmd/mod@v0.4.1
             mod upgrade
           fi
       - name: Create release commit
