@@ -11,6 +11,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Change release automation so that it automatically bumps `go.mod` module version when releasing a new major release.
 
+## [4.24.1] - 2022-04-01
+
+### Fixed
+
+- Make codesign parameters in `gen makefile --flavour cli --language go` for windows generic
+
+## [4.24.0] - 2022-04-01
+
+### Added
+
+- Add steps to build signed windows binary in `gen makefile --flavour cli --language go`
+
 ## [4.23.0] - 2022-03-31
 
 ### Added
@@ -372,7 +384,9 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v4.23.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v4.24.1...HEAD
+[4.24.1]: https://github.com/giantswarm/devctl/compare/v4.24.0...v4.24.1
+[4.24.0]: https://github.com/giantswarm/devctl/compare/v4.23.0...v4.24.0
 [4.23.0]: https://github.com/giantswarm/devctl/compare/v4.22.0...v4.23.0
 [4.22.0]: https://github.com/giantswarm/devctl/compare/v4.21.0...v4.22.0
 [4.21.0]: https://github.com/giantswarm/devctl/compare/v4.20.1...v4.21.0
