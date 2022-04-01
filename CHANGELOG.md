@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Change release automation so that it automatically bumps `go.mod` module version when releasing a new major release.
+
 ## [4.23.0] - 2022-03-31
 
 ### Added
