@@ -41,6 +41,7 @@ jobs:
       repo_name: ${{ steps.gather_facts.outputs.repo_name }}
       branch: ${{ steps.gather_facts.outputs.branch }}
       base: ${{ steps.gather_facts.outputs.base }}
+      is_major: ${{ steps.gather_facts.outputs.is_major }}
       skip: ${{ steps.pr_exists.outputs.skip }}
       version: ${{ steps.gather_facts.outputs.version }}
     steps:
@@ -78,6 +79,7 @@ jobs:
                 version_major=$((version_major+1))
                 version_minor=0
                 version_patch=0
+                echo "::set-output name=is_major::true"
                 ;;
               *)
                 echo "Unknown Semver level provided"
@@ -114,11 +116,17 @@ jobs:
     env:
       architect_flags: "--organisation ${{ github.repository_owner }} --project ${{ needs.gather_facts.outputs.repo_name }}"
     steps:
+      - uses: actions/setup-go@v3
+        with:
+          go-version: '=1.17.0'
       - name: Install architect
         uses: giantswarm/install-binary-action@v1.0.0
         with:
           binary: "architect"
           version: "6.1.0"
+      - name: Install github.com/marwan-at-work/mod
+        run: |
+          go install github.com/marwan-at-work/mod/cmd/mod@v0.4.1
       - name: Checkout code
         uses: actions/checkout@v3
         with:
@@ -126,6 +134,9 @@ jobs:
       - name: Prepare release changes
         run: |
           architect prepare-release ${{ env.architect_flags }} --version "${{ needs.gather_facts.outputs.version }}"
+          if [ "${{ needs.gather_facts.outputs.is_major }}" = true ] && test -f "go.mod"; then
+            mod upgrade
+          fi
       - name: Create release commit
         env:
           version: "${{ needs.gather_facts.outputs.version }}"
