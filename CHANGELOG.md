@@ -11,6 +11,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Change release automation so that it automatically bumps `go.mod` module version when releasing a new major release.
 
+## [5.0.0] - 2022-04-04
+
+### Changed
+
+- Remove `apiextensions` dependency.
+- Upgrade `github.com/giantswarm/k8sclient` to `v7.0.1`.
+- Upgrade `github.com/giantswarm/kubeconfig` to `v4.1.0`.
+- Upgrade `k8s.io/apimachinery` to `v0.20.12`.
+
 ## [4.24.1] - 2022-04-01
 
 ### Fixed
@@ -384,7 +393,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v4.24.1...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v5.0.0...HEAD
+[5.0.0]: https://github.com/giantswarm/devctl/compare/v4.24.1...v5.0.0
 [4.24.1]: https://github.com/giantswarm/devctl/compare/v4.24.0...v4.24.1
 [4.24.0]: https://github.com/giantswarm/devctl/compare/v4.23.0...v4.24.0
 [4.23.0]: https://github.com/giantswarm/devctl/compare/v4.22.0...v4.23.0
