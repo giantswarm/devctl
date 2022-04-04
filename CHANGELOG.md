@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Remove `apiextensions` dependency.
+- Upgrade `github.com/giantswarm/k8sclient` to `v7.0.1`.
+- Upgrade `github.com/giantswarm/kubeconfig` to `v4.1.0`.
+- Upgrade `k8s.io/apimachinery` to `v0.20.12`.
 
 ## [4.24.1] - 2022-04-01
 
