@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.0.0] - 2022-04-04
+
 ### Changed
 
 - Remove `apiextensions` dependency.
@@ -387,7 +389,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v4.24.1...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v5.0.0...HEAD
+[5.0.0]: https://github.com/giantswarm/devctl/compare/v4.24.1...v5.0.0
 [4.24.1]: https://github.com/giantswarm/devctl/compare/v4.24.0...v4.24.1
 [4.24.0]: https://github.com/giantswarm/devctl/compare/v4.23.0...v4.24.0
 [4.23.0]: https://github.com/giantswarm/devctl/compare/v4.22.0...v4.23.0
