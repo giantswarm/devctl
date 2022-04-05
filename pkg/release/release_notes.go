@@ -4,8 +4,8 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/giantswarm/apiextensions/v2/pkg/apis/release/v1alpha1"
 	"github.com/giantswarm/microerror"
+	"github.com/giantswarm/release-operator/v3/api/v1alpha1"
 
 	"github.com/giantswarm/devctl/pkg/release/changelog"
 )
