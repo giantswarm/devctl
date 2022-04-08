@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.1.0] - 2022-04-08
+
 ### Changed
 
 - Change release automation so that it automatically bumps `go.mod` module version when releasing a new major release.
@@ -393,7 +395,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v5.0.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v5.1.0...HEAD
+[5.1.0]: https://github.com/giantswarm/devctl/compare/v5.0.0...v5.1.0
 [5.0.0]: https://github.com/giantswarm/devctl/compare/v4.24.1...v5.0.0
 [4.24.1]: https://github.com/giantswarm/devctl/compare/v4.24.0...v4.24.1
 [4.24.0]: https://github.com/giantswarm/devctl/compare/v4.23.0...v4.24.0
