@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Invalid quoting caused schema checking to not use branch names from environment.
+
 ## [5.1.1] - 2022-04-12
 
 ### Fixed
