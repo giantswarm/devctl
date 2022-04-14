@@ -18,7 +18,7 @@ jobs:
 
           echo "Comparing ${GITHUB_BASE_REF}...${GITHUB_HEAD_REF}"
 
-          changed_files=$(gh api 'repos/{owner}/{repo}/compare/${GITHUB_BASE_REF}...${GITHUB_HEAD_REF}' --jq ".files[] | .filename")
+          changed_files=$(gh api "repos/{owner}/{repo}/compare/${GITHUB_BASE_REF}...${GITHUB_HEAD_REF}" --jq ".files[] | .filename")
 
           if grep -q "values.schema.json" <<< $(git ls-tree -r --name-only ${GITHUB_SHA}); then
 
