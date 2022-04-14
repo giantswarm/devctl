@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.1.2] - 2022-04-14
+
+### Fixed
+
+- Invalid quoting caused schema checking to not use branch names from environment.
+
+## [5.1.1] - 2022-04-12
+
+### Fixed
+
+- Make values schema checking resilient against slashes in branch names.
+
 ## [5.1.0] - 2022-04-08
 
 ### Changed
@@ -395,7 +407,9 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v5.1.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v5.1.2...HEAD
+[5.1.2]: https://github.com/giantswarm/devctl/compare/v5.1.1...v5.1.2
+[5.1.1]: https://github.com/giantswarm/devctl/compare/v5.1.0...v5.1.1
 [5.1.0]: https://github.com/giantswarm/devctl/compare/v5.0.0...v5.1.0
 [5.0.0]: https://github.com/giantswarm/devctl/compare/v4.24.1...v5.0.0
 [4.24.1]: https://github.com/giantswarm/devctl/compare/v4.24.0...v4.24.1
