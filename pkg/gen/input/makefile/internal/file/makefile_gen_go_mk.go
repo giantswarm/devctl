@@ -10,15 +10,30 @@ import (
 //go:embed Makefile.gen.go.mk.template
 var makefileGenGoMkTemplate string
 
-func NewMakefileGenGoMkInput(p params.Params) input.Input {
-	i := input.Input{
-		Path:         "Makefile.gen.go.mk",
-		TemplateBody: makefileGenGoMkTemplate,
-		TemplateData: map[string]interface{}{
-			"IsFlavourCLI": params.IsFlavourCLI(p),
-			"Header":       params.Header("#"),
+//go:embed windows-code-signing.sh.template
+var windowsCodeSigningShellScriptTemplate string
+
+func NewMakefileGenGoMkInput(p params.Params) []input.Input {
+	inputs := []input.Input{
+		{
+			Path:         "Makefile.gen.go.mk",
+			TemplateBody: makefileGenGoMkTemplate,
+			TemplateData: map[string]interface{}{
+				"IsFlavourCLI": params.IsFlavourCLI(p),
+				"Header":       params.Header("#"),
+			},
 		},
 	}
 
-	return i
+	if params.IsFlavourCLI(p) {
+		inputs = append(inputs, input.Input{
+			Path:         ".github/zz_generated.windows-code-signing.sh",
+			TemplateBody: windowsCodeSigningShellScriptTemplate,
+			TemplateData: map[string]interface{}{
+				"Header": params.Header("#"),
+			},
+		})
+	}
+
+	return inputs
 }
