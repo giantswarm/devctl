@@ -27,7 +27,7 @@ func NewMakefileGenGoMkInput(p params.Params) []input.Input {
 
 	if params.IsFlavourCLI(p) {
 		inputs = append(inputs, input.Input{
-			Path:         ".github/windows-code-signing.sh",
+			Path:         ".github/zz_generated.windows-code-signing.sh",
 			TemplateBody: windowsCodeSigningShellScriptTemplate,
 			TemplateData: map[string]interface{}{
 				"Header": params.Header("#"),
