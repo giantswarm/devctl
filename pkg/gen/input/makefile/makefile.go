@@ -33,7 +33,7 @@ func (m *Makefile) MakefileGenApp() input.Input {
 	return file.NewMakefileGenAppMkInput(m.params)
 }
 
-func (m *Makefile) MakefileGenGo() input.Input {
+func (m *Makefile) MakefileGenGo() []input.Input {
 	return file.NewMakefileGenGoMkInput(m.params)
 }
 
