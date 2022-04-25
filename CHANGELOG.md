@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed windows-code-signing.sh template for shell-lint pre-commit hook and make it executable
+
 ## [5.2.0] - 2022-04-20
 
 ### Added
