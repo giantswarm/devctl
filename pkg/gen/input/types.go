@@ -11,7 +11,7 @@ type Input struct {
 	// Path is the absolute path of the file to be generated from this
 	// Input.
 	Path string
-	// Permissions to generate the file with
+	// Permissions to generate the file with.
 	Permissions fs.FileMode
 	// TemplateBody is the Go text template from which the file is
 	// generated.
