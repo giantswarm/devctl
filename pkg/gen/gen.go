@@ -2,6 +2,7 @@ package gen
 
 import (
 	"context"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -53,7 +54,12 @@ func execute(ctx context.Context, file input.Input) error {
 		return nil
 	}
 
-	w, err := os.OpenFile(file.Path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	var permissions fs.FileMode = 0644
+	if file.Permissions != 0 {
+		permissions = file.Permissions
+	}
+
+	w, err := os.OpenFile(file.Path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, permissions)
 	if err != nil {
 		return microerror.Mask(err)
 	}
