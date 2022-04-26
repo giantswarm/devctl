@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Added file system permissions field to file generation `Input` struct. If not set, the default value remains: `0644`.
+- Added executable flags for generated `windows-code-signing.sh` script.
+
+### Fixed
+
+- Fixed quotation in generated `windows-code-signing.sh` to prevent globbing and word splitting issues.
+
 ## [5.2.0] - 2022-04-20
 
 ### Added

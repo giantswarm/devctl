@@ -1,5 +1,9 @@
 package input
 
+import (
+	"io/fs"
+)
+
 type Input struct {
 	// If delete is true, the file will be deleted if it exists. Allows
 	// for files to be moved/renamed.
@@ -7,6 +11,8 @@ type Input struct {
 	// Path is the absolute path of the file to be generated from this
 	// Input.
 	Path string
+	// Permissions to generate the file with.
+	Permissions fs.FileMode
 	// TemplateBody is the Go text template from which the file is
 	// generated.
 	TemplateBody string
