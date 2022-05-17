@@ -45,6 +45,7 @@ func New(config Config) (*cobra.Command, error) {
 		Short: description,
 		Long:  description,
 		RunE:  r.Run,
+		Args:  cobra.ExactArgs(1),
 	}
 
 	f.Init(c)

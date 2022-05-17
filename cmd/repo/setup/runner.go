@@ -4,7 +4,10 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
+	"strings"
 
+	"github.com/giantswarm/devctl/pkg/githubclient"
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
@@ -35,6 +38,33 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
 	fmt.Println("setup")
+
+	s := strings.Split(args[0], "/")
+	if len(s) < 2 {
+		return microerror.Maskf(invalidFlagError, "owner/repo expected")
+	}
+
+	owner := s[0]
+	repo := s[1]
+
+	token := os.Getenv("GITHUB_TOKEN")
+
+	c := githubclient.Config{
+		Logger:      r.logger,
+		AccessToken: token,
+	}
+
+	client, err := githubclient.New(c)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	repository, err := client.GetRepository(ctx, owner, repo)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	fmt.Printf("%v\n", repository)
 
 	return nil
 }

@@ -3,6 +3,7 @@ package githubclient
 import (
 	"context"
 	"fmt"
+	"net/http"
 
 	"github.com/giantswarm/microerror"
 	"github.com/google/go-github/github"
@@ -51,4 +52,25 @@ func (c *Client) ListRepositories(ctx context.Context, owner string) ([]Reposito
 	c.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("listed %d repositories for owner %#q", len(repos), owner))
 
 	return repos, nil
+}
+
+func (c *Client) GetRepository(ctx context.Context, owner, repo string) (*github.Repository, error) {
+	c.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("get repository %s/%s", owner, repo))
+
+	underlyingClient := c.getUnderlyingClient(ctx)
+
+	repository, response, err := underlyingClient.Repositories.Get(ctx, owner, repo)
+	if err != nil {
+		if response != nil && response.Response != nil && response.Response.StatusCode == http.StatusNotFound {
+			return nil, microerror.Mask(notFoundError)
+		}
+		return nil, microerror.Mask(err)
+	}
+
+	c.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("got repository %s", *repository.FullName))
+
+	return repository, nil
+}
+
+func (c *Client) ConfigureRepository(ctx context.Context, owner, repo string) (*github.Repository, error) {
 }
