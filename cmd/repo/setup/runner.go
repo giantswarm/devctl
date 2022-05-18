@@ -83,5 +83,10 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 
+	err = client.SetRepositoryPermissions(ctx, repository, r.flag.Permissions)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
 	return nil
 }
