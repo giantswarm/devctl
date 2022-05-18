@@ -7,11 +7,12 @@ import (
 	"os"
 	"strings"
 
-	"github.com/giantswarm/devctl/pkg/githubclient"
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
 	"github.com/google/go-github/v44/github"
 	"github.com/spf13/cobra"
+
+	"github.com/giantswarm/devctl/pkg/githubclient"
 )
 
 type runner struct {
