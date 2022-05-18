@@ -2,7 +2,6 @@ package setup
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"os"
 	"strings"
