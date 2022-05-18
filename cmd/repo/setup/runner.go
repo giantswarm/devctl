@@ -37,11 +37,9 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 }
 
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
-	fmt.Println("setup")
-
 	s := strings.Split(args[0], "/")
-	if len(s) < 2 {
-		return microerror.Maskf(invalidFlagError, "owner/repo expected")
+	if len(s) != 2 {
+		return microerror.Maskf(invalidArgError, "expected owner/repo, got %s", args[0])
 	}
 
 	owner := s[0]

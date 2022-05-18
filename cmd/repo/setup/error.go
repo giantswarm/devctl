@@ -11,11 +11,11 @@ func IsInvalidConfig(err error) bool {
 	return microerror.Cause(err) == invalidConfigError
 }
 
-var invalidFlagError = &microerror.Error{
-	Kind: "invalidFlagError",
+var invalidArgError = &microerror.Error{
+	Kind: "invalidArgError",
 }
 
-// IsInvalidFlag asserts invalidFlagError.
-func IsInvalidFlag(err error) bool {
-	return microerror.Cause(err) == invalidFlagError
+// IsInvalidArg asserts invalidArgError.
+func IsInvalidArg(err error) bool {
+	return microerror.Cause(err) == invalidArgError
 }
