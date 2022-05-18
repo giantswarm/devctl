@@ -116,8 +116,6 @@ func (c *Client) SetRepositoryPermissions(ctx context.Context, repository *githu
 	owner := *repository.Owner.Login
 	repo := *repository.Name
 
-	c.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("setting repository %s/%s permissions", owner, repo))
-
 	//data, err := json.MarshalIndent(permissions, "", "  ")
 	//if err != nil {
 	//	return microerror.Mask(err)
@@ -127,6 +125,8 @@ func (c *Client) SetRepositoryPermissions(ctx context.Context, repository *githu
 	underlyingClient := c.getUnderlyingClient(ctx)
 
 	for teamSlug, permission := range permissions {
+		c.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("grant %s permission to %s on %s/%s repository", permission, teamSlug, owner, repo))
+
 		opt := &github.TeamAddTeamRepoOptions{Permission: permission}
 
 		_, err := underlyingClient.Teams.AddTeamRepoBySlug(ctx, org, teamSlug, owner, repo, opt)
@@ -134,7 +134,7 @@ func (c *Client) SetRepositoryPermissions(ctx context.Context, repository *githu
 			return microerror.Mask(err)
 		}
 
-		c.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("set repository %s/%s permissions", owner, repo))
+		c.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("granted %s permission to %s on %s/%s repository", permission, teamSlug, owner, repo))
 	}
 
 	return nil
