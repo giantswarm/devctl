@@ -95,7 +95,7 @@ func (c *Client) SetRepositorySettings(ctx context.Context, repository, reposito
 	repository.DeleteBranchOnMerge = repositorySettings.DeleteBranchOnMerge
 
 	underlyingClient := c.getUnderlyingClient(ctx)
-	repository, _, err = underlyingClient.Repositories.Edit(ctx, *repository.Owner.Login, *repository.Name, repository)
+	repository, _, err := underlyingClient.Repositories.Edit(ctx, *repository.Owner.Login, *repository.Name, repository)
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}
