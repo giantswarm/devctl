@@ -10,6 +10,7 @@ import (
 	"github.com/giantswarm/devctl/pkg/githubclient"
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
+	"github.com/google/go-github/v44/github"
 	"github.com/spf13/cobra"
 )
 
@@ -62,7 +63,25 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 
-	fmt.Printf("%v\n", repository)
+	repositorySettings := &github.Repository{
+		HasWiki:     &r.flag.HasWiki,
+		HasIssues:   &r.flag.HasIssues,
+		HasProjects: &r.flag.HasProjects,
+		Archived:    &r.flag.Archived,
+
+		AllowMergeCommit: &r.flag.AllowMergeCommit,
+		AllowSquashMerge: &r.flag.AllowSquashMerge,
+		AllowRebaseMerge: &r.flag.AllowRebaseMerge,
+
+		AllowUpdateBranch:   &r.flag.AllowUpdateBranch,
+		AllowAutoMerge:      &r.flag.AllowAutoMerge,
+		DeleteBranchOnMerge: &r.flag.DeleteBranchOnMerge,
+	}
+
+	repository, err = client.SetRepositorySettings(ctx, repository, repositorySettings)
+	if err != nil {
+		return microerror.Mask(err)
+	}
 
 	return nil
 }
