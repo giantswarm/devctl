@@ -72,5 +72,35 @@ func (c *Client) GetRepository(ctx context.Context, owner, repo string) (*github
 	return repository, nil
 }
 
-func (c *Client) ConfigureRepository(ctx context.Context, owner, repo string) (*github.Repository, error) {
+func (c *Client) SetRepositorySettings(ctx context.Context, repository, repositorySettings *github.Repository) (*github.Repository, error) {
+	owner := *repository.Owner.Login
+	repo := *repository.Name
+
+	c.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("setting repository %s/%s settings", owner, repo))
+
+	// Features
+	repository.HasWiki = repositorySettings.HasWiki
+	repository.HasIssues = repositorySettings.HasIssues
+	repository.HasProjects = repositorySettings.HasProjects
+	repository.Archived = repositorySettings.Archived
+
+	// Merge settings
+	repository.AllowMergeCommit = repositorySettings.AllowMergeCommit
+	repository.AllowSquashMerge = repositorySettings.AllowSquashMerge
+	repository.AllowRebaseMerge = repositorySettings.AllowRebaseMerge
+
+	// Pull Requests
+	repository.AllowUpdateBranch = repositorySettings.AllowUpdateBranch
+	repository.AllowAutoMerge = repositorySettings.AllowAutoMerge
+	repository.DeleteBranchOnMerge = repositorySettings.DeleteBranchOnMerge
+
+	underlyingClient := c.getUnderlyingClient(ctx)
+	repository, _, err = underlyingClient.Repositories.Edit(ctx, *repository.Owner.Login, *repository.Name, repository)
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
+
+	c.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("set repository %s/%s settings", owner, repo))
+
+	return repository, nil
 }
