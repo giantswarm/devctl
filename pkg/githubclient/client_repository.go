@@ -94,6 +94,12 @@ func (c *Client) SetRepositorySettings(ctx context.Context, repository, reposito
 	repository.AllowAutoMerge = repositorySettings.AllowAutoMerge
 	repository.DeleteBranchOnMerge = repositorySettings.DeleteBranchOnMerge
 
+	// This is required since Github does not allow overrides for flags specified
+	// at organization level.
+	// Otherwise you will run into the following error:
+	// HTTP 422 This organization does not allow private repository forking
+	repository.AllowForking = nil
+
 	underlyingClient := c.getUnderlyingClient(ctx)
 	repository, _, err := underlyingClient.Repositories.Edit(ctx, *repository.Owner.Login, *repository.Name, repository)
 	if err != nil {
