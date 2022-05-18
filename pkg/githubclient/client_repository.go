@@ -133,9 +133,47 @@ func (c *Client) SetRepositoryPermissions(ctx context.Context, repository *githu
 		if err != nil {
 			return microerror.Mask(err)
 		}
+
+		c.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("set repository %s/%s permissions", owner, repo))
 	}
 
-	c.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("set repository %s/%s permissions", owner, repo))
+	return nil
+}
+
+func (c *Client) SetRepositoryBranchProtection(ctx context.Context, repository *github.Repository) error {
+	owner := *repository.Owner.Login
+	repo := *repository.Name
+	default_branch := *repository.DefaultBranch
+
+	c.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("configure protection for %s branch on %s/%s repository", default_branch, owner, repo))
+
+	False := false
+
+	opts := &github.ProtectionRequest{
+		//RequiredStatusChecks: &github.RequiredStatusChecks{
+		//	Strict: true,
+		//	Checks: []*github.RequiredStatusCheck{
+		//		&github.RequiredStatusCheck{
+		//			Context: "circleci",
+		//			AppID:   &Minus1,
+		//		},
+		//	},
+		//},
+		RequiredPullRequestReviews: &github.PullRequestReviewsEnforcementRequest{
+			RequiredApprovingReviewCount: 1,
+		},
+		AllowForcePushes: &False,
+		AllowDeletions:   &False,
+		EnforceAdmins:    true,
+	}
+
+	underlyingClient := c.getUnderlyingClient(ctx)
+	_, _, err := underlyingClient.Repositories.UpdateBranchProtection(ctx, owner, repo, default_branch, opts)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	c.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("configured protection for %s branch on %s/%s repository", default_branch, owner, repo))
 
 	return nil
 }
