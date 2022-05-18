@@ -104,3 +104,32 @@ func (c *Client) SetRepositorySettings(ctx context.Context, repository, reposito
 
 	return repository, nil
 }
+
+func (c *Client) SetRepositoryPermissions(ctx context.Context, repository *github.Repository, permissions map[string]string) error {
+	org := *repository.Organization.Login
+	owner := *repository.Owner.Login
+	repo := *repository.Name
+
+	c.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("setting repository %s/%s permissions", owner, repo))
+
+	//data, err := json.MarshalIndent(permissions, "", "  ")
+	//if err != nil {
+	//	return microerror.Mask(err)
+	//}
+	//fmt.Printf("permissions\n%s\n", data)
+
+	underlyingClient := c.getUnderlyingClient(ctx)
+
+	for teamSlug, permission := range permissions {
+		opt := &github.TeamAddTeamRepoOptions{Permission: permission}
+
+		_, err := underlyingClient.Teams.AddTeamRepoBySlug(ctx, org, teamSlug, owner, repo, opt)
+		if err != nil {
+			return microerror.Mask(err)
+		}
+	}
+
+	c.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("set repository %s/%s permissions", owner, repo))
+
+	return nil
+}
