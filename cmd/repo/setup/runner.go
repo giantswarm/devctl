@@ -2,6 +2,7 @@ package setup
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -92,6 +93,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	if err != nil {
 		return microerror.Mask(err)
 	}
+	fmt.Printf("%v\n", *repository.Name)
 
 	return nil
 }
