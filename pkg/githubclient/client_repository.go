@@ -177,3 +177,46 @@ func (c *Client) SetRepositoryBranchProtection(ctx context.Context, repository *
 
 	return nil
 }
+
+func (c *Client) getGithubChecks(ctx context.Context, repository *github.Repository, branch string) ([]*github.RequiredStatusCheck, error) {
+	owner := *repository.Owner.Login
+	repo := *repository.Name
+
+	c.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("get repository commit statuses for %s branch on %s/%s repository", branch, owner, repo))
+
+	var allCombinedStatus []*github.CombinedStatus
+	{
+		opt := &github.ListOptions{
+			PerPage: 10,
+		}
+
+		underlyingClient := c.getUnderlyingClient(ctx)
+
+		for {
+			combinedStatus, resp, err := underlyingClient.Repositories.GetCombinedStatus(ctx, owner, repo, branch, opt)
+			if err != nil {
+				return nil, microerror.Mask(err)
+			}
+			allCombinedStatus = append(allCombinedStatus, combinedStatus)
+			if resp.NextPage == 0 {
+				break
+			}
+			opt.Page = resp.NextPage
+
+		}
+	}
+
+	var checks []*github.RequiredStatusCheck
+	for _, combinedStatus := range allCombinedStatus {
+		for _, status := range combinedStatus.Statuses {
+			c := &github.RequiredStatusCheck{
+				Context: *status.Context,
+			}
+			checks = append(checks, c)
+		}
+	}
+
+	c.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("got %d repository commit statuses for %s branch on %s/%s repository", len(checks), branch, owner, repo))
+
+	return checks, nil
+}
