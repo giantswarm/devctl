@@ -145,20 +145,20 @@ func (c *Client) SetRepositoryBranchProtection(ctx context.Context, repository *
 	repo := *repository.Name
 	default_branch := *repository.DefaultBranch
 
+	checks, err := c.getGithubChecks(ctx, repository, default_branch)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
 	c.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("configure protection for %s branch on %s/%s repository", default_branch, owner, repo))
 
 	False := false
 
 	opts := &github.ProtectionRequest{
-		//RequiredStatusChecks: &github.RequiredStatusChecks{
-		//	Strict: true,
-		//	Checks: []*github.RequiredStatusCheck{
-		//		&github.RequiredStatusCheck{
-		//			Context: "circleci",
-		//			AppID:   &Minus1,
-		//		},
-		//	},
-		//},
+		RequiredStatusChecks: &github.RequiredStatusChecks{
+			Strict: true,
+			Checks: checks,
+		},
 		RequiredPullRequestReviews: &github.PullRequestReviewsEnforcementRequest{
 			RequiredApprovingReviewCount: 1,
 		},
@@ -168,7 +168,7 @@ func (c *Client) SetRepositoryBranchProtection(ctx context.Context, repository *
 	}
 
 	underlyingClient := c.getUnderlyingClient(ctx)
-	_, _, err := underlyingClient.Repositories.UpdateBranchProtection(ctx, owner, repo, default_branch, opts)
+	_, _, err = underlyingClient.Repositories.UpdateBranchProtection(ctx, owner, repo, default_branch, opts)
 	if err != nil {
 		return microerror.Mask(err)
 	}
