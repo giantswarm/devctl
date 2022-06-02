@@ -145,20 +145,9 @@ func (c *Client) SetRepositoryBranchProtection(ctx context.Context, repository *
 	repo := *repository.Name
 	default_branch := *repository.DefaultBranch
 
-	checks, err := c.getGithubChecks(ctx, repository, default_branch)
-	if err != nil {
-		return microerror.Mask(err)
-	}
-
-	c.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("configure protection for %s branch on %s/%s repository", default_branch, owner, repo))
-
 	False := false
 
 	opts := &github.ProtectionRequest{
-		RequiredStatusChecks: &github.RequiredStatusChecks{
-			Strict: true,
-			Checks: checks,
-		},
 		RequiredPullRequestReviews: &github.PullRequestReviewsEnforcementRequest{
 			RequiredApprovingReviewCount: 1,
 		},
@@ -166,6 +155,22 @@ func (c *Client) SetRepositoryBranchProtection(ctx context.Context, repository *
 		AllowDeletions:   &False,
 		EnforceAdmins:    true,
 	}
+
+	checks, err := c.getGithubChecks(ctx, repository, default_branch)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	// We can only set RequiredStatusChecks when there is at least 1 check available.
+	// Otherwise we hit a HTTP 422 Invalid request.
+	if len(checks) > 0 {
+		opts.RequiredStatusChecks = &github.RequiredStatusChecks{
+			Strict: true,
+			Checks: checks,
+		}
+	}
+
+	c.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("configure protection for %s branch on %s/%s repository", default_branch, owner, repo))
 
 	underlyingClient := c.getUnderlyingClient(ctx)
 	_, _, err = underlyingClient.Repositories.UpdateBranchProtection(ctx, owner, repo, default_branch, opts)
