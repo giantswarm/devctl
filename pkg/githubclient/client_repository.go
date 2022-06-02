@@ -69,12 +69,6 @@ func (c *Client) GetRepository(ctx context.Context, owner, repo string) (*github
 
 	c.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("got repository %s", *repository.FullName))
 
-	//data, err := json.MarshalIndent(repository, "", "  ")
-	//if err != nil {
-	//	return nil, microerror.Mask(err)
-	//}
-	//fmt.Printf("repository\n%s\n", data)
-
 	return repository, nil
 }
 
@@ -83,12 +77,6 @@ func (c *Client) SetRepositorySettings(ctx context.Context, repository, reposito
 	repo := *repository.Name
 
 	c.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("setting repository %s/%s settings", owner, repo))
-
-	//data, err := json.MarshalIndent(repositorySettings, "", "  ")
-	//if err != nil {
-	//	return nil, microerror.Mask(err)
-	//}
-	//fmt.Printf("settings\n%s\n", data)
 
 	// Features
 	repository.HasWiki = repositorySettings.HasWiki
