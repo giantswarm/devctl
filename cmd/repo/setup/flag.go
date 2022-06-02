@@ -28,7 +28,7 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.PersistentFlags().BoolVar(&f.AllowRebaseMerge, "allow-rebasemerge", false, "Either true to allow rebase-merging pull requests, or false to prevent rebase-merging.")
 	cmd.PersistentFlags().BoolVar(&f.AllowUpdateBranch, "allow-updatebranch", true, "Whenever there are new changes available in the base branch, present an “update branch” option in the pull request.")
 	cmd.PersistentFlags().BoolVar(&f.AllowAutoMerge, "allow-automerge", true, "Either true to allow auto-merge on pull requests, or false to disallow auto-merge.")
-	cmd.PersistentFlags().BoolVar(&f.DeleteBranchOnMerge, "delete-branch-on-merge", true, "Either true to allow automatically deleting head branches when pull requests are merged, or false to prevent automatic deletion..")
+	cmd.PersistentFlags().BoolVar(&f.DeleteBranchOnMerge, "delete-branch-on-merge", true, "Either true to allow automatically deleting head branches when pull requests are merged, or false to prevent automatic deletion.")
 	cmd.PersistentFlags().StringToStringVar(&f.Permissions, "permission", map[string]string{"Employees": "admin", "bots": "push"}, "map of Github Team slug and permissions. Permission can be one of: pull, push, admin, maintain, triage")
 }
 
