@@ -183,7 +183,7 @@ func (c *Client) SetRepositoryBranchProtection(ctx context.Context, repository *
 	return nil
 }
 
-func (c *Client) getGithubChecks(ctx context.Context, repository *github.Repository, branch string) ([]*github.RequiredStatusCheck, error) {
+func (c *Client) getGithubChecks(ctx context.Context, repository *github.Repository, branch string) ([]string, error) {
 	owner := *repository.Owner.Login
 	repo := *repository.Name
 
@@ -211,13 +211,10 @@ func (c *Client) getGithubChecks(ctx context.Context, repository *github.Reposit
 		}
 	}
 
-	var checks []*github.RequiredStatusCheck
+	var checks []string
 	for _, combinedStatus := range allCombinedStatus {
 		for _, status := range combinedStatus.Statuses {
-			c := &github.RequiredStatusCheck{
-				Context: *status.Context,
-			}
-			checks = append(checks, c)
+			checks = append(checks, *status.Context)
 		}
 	}
 
