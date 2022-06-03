@@ -5,6 +5,7 @@ import (
 )
 
 type flag struct {
+	GithubTokenEnvVar   string
 	HasWiki             bool
 	HasIssues           bool
 	HasProjects         bool
@@ -19,6 +20,7 @@ type flag struct {
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
+	cmd.PersistentFlags().StringVar(&f.GithubTokenEnvVar, "github-token-envvar", "GITHUB_TOKEN", "Environement variable name for Github token.")
 	cmd.PersistentFlags().BoolVar(&f.HasWiki, "has-wiki", false, "Either true to enable the wiki for this repository or false to disable it.")
 	cmd.PersistentFlags().BoolVar(&f.HasIssues, "has-issues", true, "Either true to enable issues for this repository or false to disable them.")
 	cmd.PersistentFlags().BoolVar(&f.HasProjects, "has-projects", false, "Either true to enable projects for this repository or false to disable them.")

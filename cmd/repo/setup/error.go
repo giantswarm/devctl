@@ -19,3 +19,12 @@ var invalidArgError = &microerror.Error{
 func IsInvalidArg(err error) bool {
 	return microerror.Cause(err) == invalidArgError
 }
+
+var envVarNotFoundError = &microerror.Error{
+	Kind: "envVarNotFoundError",
+}
+
+// IsEnvVarNotFound asserts envVarNotFoundError.
+func IsEnvVarNotFound(err error) bool {
+	return microerror.Cause(err) == envVarNotFoundError
+}

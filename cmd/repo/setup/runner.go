@@ -47,7 +47,10 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	owner := s[0]
 	repo := s[1]
 
-	token := os.Getenv("GITHUB_TOKEN")
+	token, found := os.LookupEnv(r.flag.GithubTokenEnvVar)
+	if !found {
+		return microerror.Maskf(envVarNotFoundError, "environement variable %#q was not found", r.flag.GithubTokenEnvVar)
+	}
 
 	c := githubclient.Config{
 		Logger:      r.logger,
