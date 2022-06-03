@@ -68,9 +68,9 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	}
 
 	repositorySettings := &github.Repository{
-		HasWiki:     &r.flag.HasWiki,
-		HasIssues:   &r.flag.HasIssues,
-		HasProjects: &r.flag.HasProjects,
+		HasWiki:     &r.flag.EnableWiki,
+		HasIssues:   &r.flag.EnableIssues,
+		HasProjects: &r.flag.EnableProjects,
 		Archived:    &r.flag.Archived,
 
 		AllowMergeCommit: &r.flag.AllowMergeCommit,
