@@ -140,7 +140,7 @@ func (c *Client) SetRepositoryPermissions(ctx context.Context, repository *githu
 	return nil
 }
 
-func (c *Client) SetRepositoryBranchProtection(ctx context.Context, repository *github.Repository) error {
+func (c *Client) SetRepositoryBranchProtection(ctx context.Context, repository *github.Repository, checkNames []string) (err error) {
 	owner := *repository.Owner.Login
 	repo := *repository.Name
 	default_branch := *repository.DefaultBranch
@@ -156,14 +156,24 @@ func (c *Client) SetRepositoryBranchProtection(ctx context.Context, repository *
 		EnforceAdmins:    true,
 	}
 
-	checks, err := c.getGithubChecks(ctx, repository, default_branch)
-	if err != nil {
-		return microerror.Mask(err)
+	if checkNames == nil {
+		checkNames, err = c.getGithubChecks(ctx, repository, default_branch)
+		if err != nil {
+			return microerror.Mask(err)
+		}
 	}
 
 	// We can only set RequiredStatusChecks when there is at least 1 check available.
 	// Otherwise we hit a HTTP 422 Invalid request.
-	if len(checks) > 0 {
+	if len(checkNames) > 0 {
+		var checks []*github.RequiredStatusCheck
+		for _, checkName := range checkNames {
+			c := &github.RequiredStatusCheck{
+				Context: checkName,
+			}
+			checks = append(checks, c)
+		}
+
 		opts.RequiredStatusChecks = &github.RequiredStatusChecks{
 			Strict: true,
 			Checks: checks,

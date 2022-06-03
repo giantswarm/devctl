@@ -25,6 +25,9 @@ type flag struct {
 
 	// Permissions
 	Permissions map[string]string
+
+	// Branch protection
+	Checks []string
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
@@ -48,6 +51,9 @@ func (f *flag) Init(cmd *cobra.Command) {
 
 	// Permissions
 	cmd.PersistentFlags().StringToStringVar(&f.Permissions, "permissions", map[string]string{"Employees": "admin", "bots": "push"}, "Grant access to this repository using github_team_name=permission format. Multiple values can be provided as a comma separated list or using this flag multiple times. Permission can be one of: pull, push, admin, maintain, triage.")
+
+	// Branch protection
+	cmd.PersistentFlags().StringSliceVar(&f.Checks, "checks", nil, "Check context names for branch protection. Default will add all auto-detected checks, this can be disabled by passing an empty string.")
 }
 
 func (f *flag) Validate() error {

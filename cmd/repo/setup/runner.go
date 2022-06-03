@@ -92,7 +92,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 
-	err = client.SetRepositoryBranchProtection(ctx, repository)
+	err = client.SetRepositoryBranchProtection(ctx, repository, r.flag.Checks)
 	if err != nil {
 		return microerror.Mask(err)
 	}
