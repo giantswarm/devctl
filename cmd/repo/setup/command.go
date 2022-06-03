@@ -11,7 +11,11 @@ import (
 
 const (
 	name        = "setup"
-	description = "Configure github repository settings and permissions."
+	description = `Configure github repository following elements :
+
+- settings
+- permissions
+- branch protection`
 )
 
 type Config struct {
