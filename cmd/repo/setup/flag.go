@@ -21,9 +21,9 @@ type flag struct {
 
 func (f *flag) Init(cmd *cobra.Command) {
 	cmd.PersistentFlags().StringVar(&f.GithubTokenEnvVar, "github-token-envvar", "GITHUB_TOKEN", "Environement variable name for Github token.")
-	cmd.PersistentFlags().BoolVar(&f.HasWiki, "has-wiki", false, "Either true to enable the wiki for this repository or false to disable it.")
-	cmd.PersistentFlags().BoolVar(&f.HasIssues, "has-issues", true, "Either true to enable issues for this repository or false to disable them.")
-	cmd.PersistentFlags().BoolVar(&f.HasProjects, "has-projects", false, "Either true to enable projects for this repository or false to disable them.")
+	cmd.PersistentFlags().BoolVar(&f.HasWiki, "enable-wiki", false, "Either true to enable the wiki for this repository or false to disable it.")
+	cmd.PersistentFlags().BoolVar(&f.HasIssues, "enable-issues", true, "Either true to enable issues for this repository or false to disable them.")
+	cmd.PersistentFlags().BoolVar(&f.HasProjects, "enable-projects", false, "Either true to enable projects for this repository or false to disable them.")
 	cmd.PersistentFlags().BoolVar(&f.Archived, "archived", false, "true to archive this repository.")
 	cmd.PersistentFlags().BoolVar(&f.AllowMergeCommit, "allow-mergecommit", false, "Either true to allow merging pull requests with a merge commit, or false to prevent merging pull requests with merge commits.")
 	cmd.PersistentFlags().BoolVar(&f.AllowSquashMerge, "allow-squashmerge", true, "Either true to allow squash-merging pull requests, or false to prevent squash-merging.")
