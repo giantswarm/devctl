@@ -36,13 +36,13 @@ replace (
 
 	// Mitigate a security issue in github.com/gorilla/websocket v1.4.0 and earlier
 	github.com/gorilla/websocket => github.com/gorilla/websocket v1.4.2
+
+	// Mitigate security issues
 	github.com/hashicorp/consul/api => github.com/hashicorp/consul/api v1.13.0
 	github.com/hashicorp/consul/sdk => github.com/hashicorp/consul/sdk v0.9.0
 	github.com/hashicorp/vault/api => github.com/hashicorp/vault/api v1.6.0
 	github.com/pkg/sftp => github.com/pkg/sftp v1.13.4
 	github.com/prometheus/client_golang => github.com/prometheus/client_golang v1.12.2
-
-	// Mitigate security issues
 	github.com/valyala/fasthttp => github.com/valyala/fasthttp v1.37.0
 
 )
