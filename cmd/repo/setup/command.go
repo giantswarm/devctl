@@ -10,12 +10,12 @@ import (
 )
 
 const (
-	name        = "setup"
-	description = `Configure github repository following elements :
-
-- settings
-- permissions
-- branch protection`
+	name            = "setup"
+	description     = `Configure github repository`
+	longDescription = `Configure github repository with :
+  * settings
+  * permissions
+  * branch protection`
 )
 
 type Config struct {
@@ -47,7 +47,7 @@ func New(config Config) (*cobra.Command, error) {
 	c := &cobra.Command{
 		Use:   name,
 		Short: description,
-		Long:  description,
+		Long:  longDescription,
 		RunE:  r.Run,
 		Args:  cobra.ExactArgs(1),
 	}
