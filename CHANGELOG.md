@@ -7,7 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
 - Add `devctl repo setup` command. Setup github repository settings and permissions.
+
+## [5.3.1] - 2022-06-08
+
+### Changed
+
+- Update github.com/marwan-at-work/mod/cmd/mod to v0.4.2 to include fix: https://github.com/marwan-at-work/mod/pull/14
 
 ## [5.3.0] - 2022-05-10
 
@@ -432,7 +440,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v5.3.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v5.3.1...HEAD
+[5.3.1]: https://github.com/giantswarm/devctl/compare/v5.3.0...v5.3.1
 [5.3.0]: https://github.com/giantswarm/devctl/compare/v5.2.1...v5.3.0
 [5.2.1]: https://github.com/giantswarm/devctl/compare/v5.2.0...v5.2.1
 [5.2.0]: https://github.com/giantswarm/devctl/compare/v5.1.2...v5.2.0
