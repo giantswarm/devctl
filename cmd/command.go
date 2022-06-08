@@ -6,6 +6,7 @@ import (
 
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/cmd/completion"
@@ -35,6 +36,8 @@ func New(config Config) (*cobra.Command, error) {
 	if config.Stdout == nil {
 		config.Stdout = os.Stdout
 	}
+
+	logrus.SetOutput(os.Stdout)
 
 	var err error
 
@@ -97,7 +100,7 @@ func New(config Config) (*cobra.Command, error) {
 	var repoCmd *cobra.Command
 	{
 		c := repo.Config{
-			Logger: config.Logger,
+			Logger: logrus.StandardLogger(),
 			Stderr: config.Stderr,
 			Stdout: config.Stdout,
 		}

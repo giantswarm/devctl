@@ -5,13 +5,13 @@ import (
 	"io"
 
 	"github.com/giantswarm/microerror"
-	"github.com/giantswarm/micrologger"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
 type runner struct {
 	flag   *flag
-	logger micrologger.Logger
+	logger *logrus.Logger
 	stdout io.Writer
 	stderr io.Writer
 }

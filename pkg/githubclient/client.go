@@ -4,19 +4,19 @@ import (
 	"context"
 
 	"github.com/giantswarm/microerror"
-	"github.com/giantswarm/micrologger"
 	"github.com/google/go-github/v44/github"
+	"github.com/sirupsen/logrus"
 	"golang.org/x/oauth2"
 )
 
 type Config struct {
-	Logger micrologger.Logger
+	Logger *logrus.Logger
 
 	AccessToken string
 }
 
 type Client struct {
-	logger micrologger.Logger
+	logger *logrus.Logger
 
 	accessToken string
 }

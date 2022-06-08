@@ -5,7 +5,7 @@ import (
 	"os"
 
 	"github.com/giantswarm/microerror"
-	"github.com/giantswarm/micrologger"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
@@ -19,7 +19,7 @@ const (
 )
 
 type Config struct {
-	Logger micrologger.Logger
+	Logger *logrus.Logger
 	Stderr io.Writer
 	Stdout io.Writer
 }

@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	"github.com/giantswarm/microerror"
-	"github.com/giantswarm/micrologger"
 	"github.com/google/go-github/v44/github"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/pkg/githubclient"
@@ -17,7 +17,7 @@ import (
 
 type runner struct {
 	flag   *flag
-	logger micrologger.Logger
+	logger *logrus.Logger
 	stdout io.Writer
 	stderr io.Writer
 }
