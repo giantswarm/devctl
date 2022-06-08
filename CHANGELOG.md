@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Update github.com/marwan-at-work/mod/cmd/mod to v0.4.2 to include fix: https://github.com/marwan-at-work/mod/pull/14
+
 ## [5.3.0] - 2022-05-10
 
 ### Changed
