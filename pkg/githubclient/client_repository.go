@@ -3,8 +3,11 @@ package githubclient
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"time"
 
+	"github.com/giantswarm/backoff"
 	"github.com/giantswarm/microerror"
 	"github.com/google/go-github/v44/github"
 )
@@ -52,6 +55,51 @@ func (c *Client) ListRepositories(ctx context.Context, owner string) ([]Reposito
 	c.logger.Infof("listed %d repositories for owner %#q", len(repos), owner)
 
 	return repos, nil
+}
+
+func (c *Client) CreateRepository(ctx context.Context, owner, repo string) (*github.Repository, error) {
+	c.logger.Infof("create repository \"%s/%s\"", owner, repo)
+
+	r := &github.Repository{
+		Name: &repo,
+	}
+
+	underlyingClient := c.getUnderlyingClient(ctx)
+
+	repository, _, err := underlyingClient.Repositories.Create(ctx, owner, r)
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
+
+	// TODO:
+	// print message about description and homepage.
+
+	//b, _ := json.MarshalIndent(repository, "", "  ")
+	//c.logger.Debugf("repository details\n%s", b)
+
+	b := backoff.NewExponential(30*time.Second, 5*time.Second)
+	n := func(err error, d time.Duration) {
+		c.logger.Print(".")
+		fmt.Println("test")
+	}
+
+	o := func() error {
+		repository, _, err = underlyingClient.Repositories.Get(ctx, *repository.Owner.Login, *repository.Name)
+		if err != nil {
+			return microerror.Mask(err)
+
+		}
+		return nil
+	}
+	err = backoff.RetryNotify(o, b, n)
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
+
+	details, _ := json.MarshalIndent(repository, "", "  ")
+	c.logger.Debugf("repository details\n%s", details)
+
+	return repository, nil
 }
 
 func (c *Client) GetRepository(ctx context.Context, owner, repo string) (*github.Repository, error) {

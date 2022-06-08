@@ -62,6 +62,10 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	}
 
 	repository, err := client.GetRepository(ctx, owner, repo)
+	if githubclient.IsNotFound(err) {
+		repository, err = client.CreateRepository(ctx, owner, repo)
+	}
+
 	if err != nil {
 		return microerror.Mask(err)
 	}
