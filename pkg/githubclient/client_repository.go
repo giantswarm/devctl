@@ -2,7 +2,7 @@ package githubclient
 
 import (
 	"context"
-	"fmt"
+	"encoding/json"
 	"net/http"
 
 	"github.com/giantswarm/microerror"
@@ -10,7 +10,7 @@ import (
 )
 
 func (c *Client) ListRepositories(ctx context.Context, owner string) ([]Repository, error) {
-	c.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("listing repositories for owner %#q", owner))
+	c.logger.Infof("listing repositories for owner %#q", owner)
 
 	underlyingClient := c.getUnderlyingClient(ctx)
 
@@ -24,7 +24,7 @@ func (c *Client) ListRepositories(ctx context.Context, owner string) ([]Reposito
 			Type: "all",
 		}
 		for pageCnt := 0; ; pageCnt++ {
-			c.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("listing page %d of repositories for owner %#q", pageCnt, owner))
+			c.logger.Infof("listing page %d of repositories for owner %#q", pageCnt, owner)
 
 			pageRepos, resp, err := underlyingClient.Repositories.ListByOrg(ctx, owner, opt)
 			if err != nil {
@@ -45,17 +45,17 @@ func (c *Client) ListRepositories(ctx context.Context, owner string) ([]Reposito
 				repos = append(repos, r)
 			}
 
-			c.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("listed page %d of %d repositories for owner %#q", pageCnt, len(pageRepos), owner))
+			c.logger.Infof("listed page %d of %d repositories for owner %#q", pageCnt, len(pageRepos), owner)
 		}
 	}
 
-	c.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("listed %d repositories for owner %#q", len(repos), owner))
+	c.logger.Infof("listed %d repositories for owner %#q", len(repos), owner)
 
 	return repos, nil
 }
 
 func (c *Client) GetRepository(ctx context.Context, owner, repo string) (*github.Repository, error) {
-	c.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("get repository %s/%s", owner, repo))
+	c.logger.Infof("get repository details for \"%s/%s\"", owner, repo)
 
 	underlyingClient := c.getUnderlyingClient(ctx)
 
@@ -67,16 +67,16 @@ func (c *Client) GetRepository(ctx context.Context, owner, repo string) (*github
 		return nil, microerror.Mask(err)
 	}
 
-	c.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("got repository %s", *repository.FullName))
+	b, _ := json.MarshalIndent(repository, "", "  ")
+	c.logger.Debugf("repository details\n%s", b)
 
 	return repository, nil
 }
 
 func (c *Client) SetRepositorySettings(ctx context.Context, repository, repositorySettings *github.Repository) (*github.Repository, error) {
-	owner := *repository.Owner.Login
-	repo := *repository.Name
-
-	c.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("setting repository %s/%s settings", owner, repo))
+	c.logger.Info("configure repository settings")
+	b, _ := json.MarshalIndent(repositorySettings, "", "  ")
+	c.logger.Debugf("repository settings\n%s", b)
 
 	// Features
 	repository.HasWiki = repositorySettings.HasWiki
@@ -106,7 +106,7 @@ func (c *Client) SetRepositorySettings(ctx context.Context, repository, reposito
 		return nil, microerror.Mask(err)
 	}
 
-	c.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("set repository %s/%s settings", owner, repo))
+	c.logger.Debug("configured repository settings")
 
 	return repository, nil
 }
@@ -116,26 +116,26 @@ func (c *Client) SetRepositoryPermissions(ctx context.Context, repository *githu
 	owner := *repository.Owner.Login
 	repo := *repository.Name
 
-	//data, err := json.MarshalIndent(permissions, "", "  ")
-	//if err != nil {
-	//	return microerror.Mask(err)
-	//}
-	//fmt.Printf("permissions\n%s\n", data)
+	c.logger.Info("grant permission on repository")
+	c.logger.Debugf("permissions\n%v", permissions)
 
 	underlyingClient := c.getUnderlyingClient(ctx)
 
 	for teamSlug, permission := range permissions {
-		c.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("grant %s permission to %s on %s/%s repository", permission, teamSlug, owner, repo))
 
 		opt := &github.TeamAddTeamRepoOptions{Permission: permission}
+
+		c.logger.Debugf("grant %q permission to %q", permission, teamSlug)
 
 		_, err := underlyingClient.Teams.AddTeamRepoBySlug(ctx, org, teamSlug, owner, repo, opt)
 		if err != nil {
 			return microerror.Mask(err)
 		}
 
-		c.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("granted %s permission to %s on %s/%s repository", permission, teamSlug, owner, repo))
+		c.logger.Debugf("granted %q permission to %q", permission, teamSlug)
 	}
+
+	c.logger.Debug("granted permission on repository")
 
 	return nil
 }
@@ -146,6 +146,8 @@ func (c *Client) SetRepositoryBranchProtection(ctx context.Context, repository *
 	default_branch := *repository.DefaultBranch
 
 	False := false
+
+	c.logger.Infof("configure protection for %q branch", default_branch)
 
 	opts := &github.ProtectionRequest{
 		RequiredPullRequestReviews: &github.PullRequestReviewsEnforcementRequest{
@@ -180,7 +182,8 @@ func (c *Client) SetRepositoryBranchProtection(ctx context.Context, repository *
 		}
 	}
 
-	c.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("configure protection for %s branch on %s/%s repository", default_branch, owner, repo))
+	b, _ := json.MarshalIndent(opts, "", "  ")
+	c.logger.Debugf("branch protection settings\n%s", b)
 
 	underlyingClient := c.getUnderlyingClient(ctx)
 	_, _, err = underlyingClient.Repositories.UpdateBranchProtection(ctx, owner, repo, default_branch, opts)
@@ -188,7 +191,7 @@ func (c *Client) SetRepositoryBranchProtection(ctx context.Context, repository *
 		return microerror.Mask(err)
 	}
 
-	c.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("configured protection for %s branch on %s/%s repository", default_branch, owner, repo))
+	c.logger.Debugf("configured protection for %q branch", default_branch)
 
 	return nil
 }
@@ -197,7 +200,7 @@ func (c *Client) getGithubChecks(ctx context.Context, repository *github.Reposit
 	owner := *repository.Owner.Login
 	repo := *repository.Name
 
-	c.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("get repository commit statuses for %s branch on %s/%s repository", branch, owner, repo))
+	c.logger.Debugf("get commit statuses for %q branch", branch)
 
 	var allCombinedStatus []*github.CombinedStatus
 	{
@@ -228,7 +231,7 @@ func (c *Client) getGithubChecks(ctx context.Context, repository *github.Reposit
 		}
 	}
 
-	c.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("got %d repository commit statuses for %s branch on %s/%s repository", len(checks), branch, owner, repo))
+	c.logger.Debugf("found %d commit statuses for %q branch:\n%v", len(checks), branch, checks)
 
 	return checks, nil
 }

@@ -2,7 +2,6 @@ package setup
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -97,7 +96,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 
-	fmt.Printf("completed repository setup for %v\n", *repository.Name)
+	r.logger.Info("completed repository setup")
 
 	return nil
 }
