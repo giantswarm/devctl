@@ -37,8 +37,6 @@ func New(config Config) (*cobra.Command, error) {
 		config.Stdout = os.Stdout
 	}
 
-	logrus.SetOutput(os.Stdout)
-
 	var err error
 
 	var completionCmd *cobra.Command
