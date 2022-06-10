@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/internal/env"
@@ -30,6 +32,11 @@ func (r *runner) PersistentPreRun(cmd *cobra.Command, args []string) error {
 	}
 
 	err = r.persistentPreRun(ctx, cmd, args)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	err = r.configureLogger(ctx, cmd, args)
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -97,6 +104,18 @@ func (r *runner) persistentPreRun(ctx context.Context, cmd *cobra.Command, args 
 	} else if err != nil {
 		return microerror.Mask(err)
 	}
+
+	return nil
+}
+
+func (r *runner) configureLogger(ctx context.Context, cmd *cobra.Command, args []string) error {
+	level, err := logrus.ParseLevel(r.flag.LogLevel)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	logrus.SetLevel(level)
+	logrus.SetOutput(os.Stdout)
 
 	return nil
 }

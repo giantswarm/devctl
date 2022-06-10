@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add `devctl repo setup` command. Setup github repository settings and permissions.
+
 ## [5.3.1] - 2022-06-08
 
 ### Changed

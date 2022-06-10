@@ -2,14 +2,13 @@ package githubclient
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/giantswarm/microerror"
-	"github.com/google/go-github/github"
+	"github.com/google/go-github/v44/github"
 )
 
 func (c *Client) GetFile(ctx context.Context, owner, repo, path, ref string) (RepositoryFile, error) {
-	c.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("getting %#q file content for owner %#q and repository %#q", path, owner, repo))
+	c.logger.Infof("getting %#q file content for owner %#q and repository %#q", path, owner, repo)
 
 	underlyingClient := c.getUnderlyingClient(ctx)
 
@@ -36,7 +35,7 @@ func (c *Client) GetFile(ctx context.Context, owner, repo, path, ref string) (Re
 		}
 	}
 
-	c.logger.LogCtx(ctx, "level", "debug", "message", fmt.Sprintf("got %#q file content for owner %#q and repository %#q", path, owner, repo))
+	c.logger.Infof("got %#q file content for owner %#q and repository %#q", path, owner, repo)
 
 	return file, nil
 }
