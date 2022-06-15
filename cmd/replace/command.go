@@ -10,9 +10,10 @@ import (
 )
 
 const (
-	usage       = "replace [flags] [PATTERN] [REPLACEMENT] [GLOB ...]"
-	description = `Replaces text in files. PATTERN is Go regular expressions and REPLACEMENT is Go regular expressions replacement string. GLOB is a file path pattern recognizing "*", "**" and "?" globing.`
-	example     = `  devctl replace foo bar /path/to/file
+	usage            = "replace [flags] [PATTERN] [REPLACEMENT] [GLOB ...]"
+	shortDescription = `Replaces text in files.`
+	longDescription  = `Replaces text in files. PATTERN is Go regular expressions and REPLACEMENT is Go regular expressions replacement string. GLOB is a file path pattern recognizing "*", "**" and "?" globing.`
+	example          = `  devctl replace foo bar /path/to/file
   devctl replace -i '^(\\w+).+' '$1 foobar' '/file/a' '/file/b'
   devctl replace -i 'a' 'b' '/dir/*' --ignore='**/*.yaml'
   devctl replace -i 'a' 'b' './dir/**/*.go' 'main.go'
@@ -49,8 +50,8 @@ func New(config Config) (*cobra.Command, error) {
 	c := &cobra.Command{
 		Use:     usage,
 		Example: example,
-		Short:   description,
-		Long:    description,
+		Short:   shortDescription,
+		Long:    longDescription,
 		RunE:    r.Run,
 	}
 

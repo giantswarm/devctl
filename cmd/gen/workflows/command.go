@@ -10,8 +10,9 @@ import (
 )
 
 const (
-	name        = "workflows"
-	description = `Generates GitHub workflows.
+	name             = "workflows"
+	shortDescription = `Generates GitHub workflows.`
+	longDescription  = `Generates GitHub workflows.
 
 There are different generation flavours:
 
@@ -50,8 +51,8 @@ func New(config Config) (*cobra.Command, error) {
 
 	c := &cobra.Command{
 		Use:   name,
-		Short: description,
-		Long:  description,
+		Short: shortDescription,
+		Long:  longDescription,
 		RunE:  r.Run,
 	}
 

@@ -10,10 +10,10 @@ import (
 )
 
 const (
-	name        = "create"
-	description = `Creates and registers a new Giant Swarm platform release including Release CR and release notes.
-
-Example: devctl release create \
+	name             = "create"
+	shortDescription = `Creates and registers a new Giant Swarm platform release.`
+	longDescription  = `Creates and registers a new Giant Swarm platform release including Release CR and release notes.`
+	example          = `  devctl release create \
 	--name 12.0.1 \
 	--provider kvm \
 	--base 11.3.2 \
@@ -21,8 +21,7 @@ Example: devctl release create \
 	--app cluster-autoscaler@1.16.0@1.16.5 \
 	--component cluster-operator@0.23.9 \
 	--component containerlinux@2512.2.1 \
-	--overwrite
-`
+	--overwrite`
 )
 
 type Config struct {
@@ -52,10 +51,11 @@ func New(config Config) (*cobra.Command, error) {
 	}
 
 	c := &cobra.Command{
-		Use:   name,
-		Short: description,
-		Long:  description,
-		RunE:  r.Run,
+		Use:     name,
+		Short:   shortDescription,
+		Long:    longDescription,
+		Example: example,
+		RunE:    r.Run,
 	}
 
 	f.Init(c)
