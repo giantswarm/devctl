@@ -16,7 +16,7 @@ type flag struct {
 
 func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&f.NoCache, flagNoCache, false, "Disable version cache.")
-	cmd.PersistentFlags().StringVarP(&f.LogLevel, "log-level", "l", logrus.InfoLevel.String(), "logging level")
+	cmd.PersistentFlags().StringVar(&f.LogLevel, "log-level", logrus.InfoLevel.String(), "logging level")
 }
 
 func (f *flag) Validate() error {
