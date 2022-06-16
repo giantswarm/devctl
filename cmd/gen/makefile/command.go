@@ -10,8 +10,9 @@ import (
 )
 
 const (
-	name        = "makefile"
-	description = `Generates a Makefile for Golang projects.
+	name             = "makefile"
+	shortDescription = `Generates a Makefile for Golang projects.`
+	longDescription  = `Generates a Makefile for Golang projects.
 
 There are different generation flavours:
 
@@ -50,8 +51,8 @@ func New(config Config) (*cobra.Command, error) {
 
 	c := &cobra.Command{
 		Use:   name,
-		Short: description,
-		Long:  description,
+		Short: shortDescription,
+		Long:  longDescription,
 		RunE:  r.Run,
 	}
 

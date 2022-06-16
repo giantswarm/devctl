@@ -10,8 +10,9 @@ import (
 )
 
 const (
-	name        = "update"
-	description = `Update the application to the newest version available.
+	name             = "update"
+	shortDescription = `Update the application to the newest version available.`
+	longDescription  = `Update the application to the newest version available.
 
 The auto-updater will automatically fetch the newest version archive from the GitHub release. It will then unarchive it, and replace the binary that is currently installed with the one from the archive.`
 )
@@ -44,8 +45,8 @@ func New(config Config) (*cobra.Command, error) {
 
 	c := &cobra.Command{
 		Use:   name,
-		Short: description,
-		Long:  description,
+		Short: shortDescription,
+		Long:  longDescription,
 		RunE:  r.Run,
 	}
 

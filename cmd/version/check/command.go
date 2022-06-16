@@ -10,8 +10,9 @@ import (
 )
 
 const (
-	name        = "check"
-	description = `Verify if there is a newer version available.
+	name             = "check"
+	shortDescription = `Verify if there is a newer version available.`
+	longDescription  = `Verify if there is a newer version available.
 
 Check if there's a release in the GitHub repo with a newer tag version than the one installed.`
 )
@@ -44,8 +45,8 @@ func New(config Config) (*cobra.Command, error) {
 
 	c := &cobra.Command{
 		Use:   name,
-		Short: description,
-		Long:  description,
+		Short: shortDescription,
+		Long:  longDescription,
 		RunE:  r.Run,
 	}
 
