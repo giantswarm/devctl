@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Switch go.mod to go 1.17
+
 ## [5.6.0] - 2022-06-20
 
 ### Changed
