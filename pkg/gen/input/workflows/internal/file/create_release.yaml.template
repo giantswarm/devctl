@@ -264,6 +264,7 @@ jobs:
     name: Create and upload build artifacts
     runs-on: ubuntu-20.04
     strategy:
+      fail-fast: false
       matrix:
         platform:
           - darwin-amd64
