@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Update GitHub workflow to not fail all matrix build on one failure
+- Modify windows build script to make code signing optional and skip if it's not configured
 
 ## [5.5.0] - 2022-06-16
 
