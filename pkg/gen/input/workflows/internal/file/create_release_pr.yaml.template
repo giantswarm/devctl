@@ -173,7 +173,10 @@ jobs:
           # Check chart YAML.
           if [ -f "${chart_yaml}" ]
           then
-            yq -i '.version = "${{ needs.gather_facts.outputs.version }}"' "${chart_yaml}"
+            # check if version in Chart.yaml is templated using architect
+            if [ $(grep -c "^version:.*\.Version.*$" "${chart_yaml}") = "0" ]; then
+              yq -i '.version = "${{ needs.gather_facts.outputs.version }}"' "${chart_yaml}"
+            fi
           fi
 
       - name: Bump go module defined in go.mod if needed
