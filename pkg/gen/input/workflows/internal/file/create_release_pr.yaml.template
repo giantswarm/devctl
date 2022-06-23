@@ -143,7 +143,7 @@ jobs:
           chart_name="${{ needs.gather_facts.outputs.repo_name }}"
           chart_name="${chart_name%-app}"
 
-          chart_dir="$(find helm -type d -name '${{ needs.gather_facts.outputs.repo_name }}*')"
+          chart_dir=$(find helm -type d -name "${chart_name}*")
           chart_yaml="${chart_dir}/Chart.yaml"
 
           # replace version field if Chart.yaml exists
