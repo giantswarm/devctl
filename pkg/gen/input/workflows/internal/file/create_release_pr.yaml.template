@@ -137,6 +137,19 @@ jobs:
       - name: Prepare release changes
         run: |
           architect prepare-release ${{ env.architect_flags }} --version "${{ needs.gather_facts.outputs.version }}"
+      - name: Update version field in Chart.yaml
+        run: |
+          # find the Chart.yaml file
+          chart_name="${{ needs.gather_facts.outputs.repo_name }}"
+          chart_name="${chart_name%-app}"
+
+          chart_dir="$(find helm -type d -name '${{ needs.gather_facts.outputs.repo_name }}*')"
+          chart_yaml="${chart_dir}/Chart.yaml"
+
+          # replace version field if Chart.yaml exists
+          if [[ -f "${chart_yaml}" ]]; then
+            yq -i '.version = "${{ needs.gather_facts.outputs.version }}"' "${chart_yaml}"
+          fi
       - name: Bump go module defined in go.mod if needed
         run: |
           if [ "${{ needs.gather_facts.outputs.is_major }}" = true ] && test -f "go.mod"; then
@@ -162,4 +175,4 @@ jobs:
           base: "${{ needs.gather_facts.outputs.base }}"
           version: "${{ needs.gather_facts.outputs.version }}"
         run: |
-          hub pull-request -f  -m "Release v${{ env.version }}" -a ${{ github.actor }} -b ${{ env.base }} -h ${{ needs.gather_facts.outputs.branch }}
+          hub pull-request -f -m "Release v${{ env.version }}" -a ${{ github.actor }} -b ${{ env.base }} -h ${{ needs.gather_facts.outputs.branch }}
