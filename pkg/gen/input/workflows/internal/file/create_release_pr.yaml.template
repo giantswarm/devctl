@@ -139,17 +139,43 @@ jobs:
           architect prepare-release ${{ env.architect_flags }} --version "${{ needs.gather_facts.outputs.version }}"
       - name: Update version field in Chart.yaml
         run: |
-          # find the Chart.yaml file
-          chart_name="${{ needs.gather_facts.outputs.repo_name }}"
-          chart_name="${chart_name%-app}"
+          # Define chart_dir
+          repository="${{ needs.gather_facts.outputs.repo_name }}"
+          chart="helm/${repository}"
 
-          chart_dir=$(find helm -type d -name "${chart_name}*")
-          chart_yaml="${chart_dir}/Chart.yaml"
+          # Check chart directory.
+          if [ ! -d "${chart}" ]
+          then
+            echo "Could not find chart directory '${chart}', adding app suffix."
 
-          # replace version field if Chart.yaml exists
-          if [[ -f "${chart_yaml}" ]]; then
+            # Add app suffix.
+            chart="helm/${repository}-app"
+
+            # Check chart directory with app suffix.
+            if [ ! -d "${chart}" ]
+            then
+              echo "Could not find chart directory '${chart}', removing app suffix."
+
+              # Remove app suffix.
+              chart="helm/${repository%-app}"
+
+              if [ ! -d "${chart}" ]
+              then
+                # Print error.
+                echo "Could not find chart directory '${chart}', doing nothing."
+              fi
+            fi
+          fi
+
+          # Define chart YAML.
+          chart_yaml="${chart}/Chart.yaml"
+
+          # Check chart YAML.
+          if [ -f "${chart_yaml}" ]
+          then
             yq -i '.version = "${{ needs.gather_facts.outputs.version }}"' "${chart_yaml}"
           fi
+
       - name: Bump go module defined in go.mod if needed
         run: |
           if [ "${{ needs.gather_facts.outputs.is_major }}" = true ] && test -f "go.mod"; then
