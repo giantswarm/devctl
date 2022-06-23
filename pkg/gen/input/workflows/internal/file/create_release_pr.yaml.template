@@ -185,12 +185,11 @@ jobs:
             go install github.com/marwan-at-work/mod/cmd/mod@v0.4.2
             mod upgrade
           fi
+{{{{ .StepSetUpGitIdentity }}}}
       - name: Create release commit
         env:
           version: "${{ needs.gather_facts.outputs.version }}"
         run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "github-actions"
           git add -A
           git commit -m "Release v${{ env.version }}"
       - name: Push changes

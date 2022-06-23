@@ -22,6 +22,7 @@ func NewCreateReleaseInput(p params.Params) input.Input {
 			"Header":                         params.Header("#"),
 			"EnableFloatingMajorVersionTags": params.EnableFloatingMajorVersionTags(p),
 			"IsFlavourCLI":                   params.IsFlavourCLI(p),
+			"StepSetUpGitIdentity":           params.StepSetUpGitIdentity(),
 		},
 	}
 
