@@ -9,6 +9,10 @@ func Header(comment string) string {
 	return internal.Header(comment)
 }
 
+func StepSetUpGitIdentity() string {
+	return internal.StepSetUpGitIdentity()
+}
+
 func EnableFloatingMajorVersionTags(p Params) bool {
 	return p.EnableFloatingMajorVersionTags
 }

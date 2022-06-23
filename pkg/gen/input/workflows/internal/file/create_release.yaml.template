@@ -117,11 +117,10 @@ jobs:
             echo "error: no changes in \"$file\"" >&2
             exit 1
           fi
+{{{{ .StepSetUpGitIdentity }}}}
       - name: Commit changes
         run: |
           file="${{ needs.gather_facts.outputs.project_go_path }}"
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
           git add $file
           git commit -m "Bump version to ${{ steps.update_project_go.outputs.new_version }}"
       - name: Push changes
@@ -164,10 +163,10 @@ jobs:
         with:
           version: ${{ needs.gather_facts.outputs.version }}
           path: ./CHANGELOG.md
+{{{{ .StepSetUpGitIdentity }}}}
       - name: Create tag
         run: |
           version="${{ needs.gather_facts.outputs.version }}"
-          git config --local user.name "github-actions"
           git tag "v$version" ${{ github.sha }}
       - name: Push tag
         env:
