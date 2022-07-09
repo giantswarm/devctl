@@ -33,12 +33,14 @@ jobs:
               git fetch &> /dev/null
 
               # calculate hash of the keys from values.yaml from the default branch
-              DEFAULT_BRANCH_SHA=$(git show origin/${GITHUB_BASE_REF}:${VALUES_FILE} | yq -o=json \
-                | jq -r '[paths | join(".")]' | sha1sum | awk '{print $1}')
+              DEFAULT_BRANCH_SHA=$(git show origin/${GITHUB_BASE_REF}:${VALUES_FILE} \
+                | yq -P 'sort_keys(..)' -o=json | jq -r '[paths | join(".")]' \
+                | sha1sum | awk '{print $1}')
 
               # calculate hash of the keys from values.yaml from this branch
-              THIS_BRANCH_SHA=$(git show origin/${GITHUB_HEAD_REF}:${VALUES_FILE} | yq -o=json \
-                | jq -r '[paths | join(".")]' | sha1sum | awk '{print $1}')
+              THIS_BRANCH_SHA=$(git show origin/${GITHUB_HEAD_REF}:${VALUES_FILE} \
+                | yq -P 'sort_keys(..)' -o=json | jq -r '[paths | join(".")]' \
+                | sha1sum | awk '{print $1}')
 
               # compare hashes of the values files
               if [[ "${DEFAULT_BRANCH_SHA}" != "${THIS_BRANCH_SHA}" ]]; then
