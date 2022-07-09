@@ -22,12 +22,13 @@ jobs:
             CHANGED_FILES=$(gh api repos/{owner}/{repo}/compare/${GITHUB_BASE_REF}...${GITHUB_HEAD_REF} \
               --jq ".files[].filename")
 
-            # check if values.yaml was modified by this PR
-            if grep -q "values.yaml" <<< "${CHANGED_FILES}" ; then
+            # check if values.yaml in main chart was modified by this PR
+            # (this won't check values files in subcharts)
+            if grep -q 'helm\/[-a-z].*\/values.yaml' <<< "${CHANGED_FILES}" ; then
 
               # get the path to values.yaml
               VALUES_FILE=$(gh api repos/{owner}/{repo}/compare/${GITHUB_BASE_REF}...${GITHUB_HEAD_REF} \
-                --jq ".files[].filename" | grep "values.yaml")
+                --jq ".files[].filename" | grep 'helm\/[-a-z].*\/values.yaml')
 
               # fetch branches so we can use them to compare
               git fetch &> /dev/null
