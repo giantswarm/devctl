@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.8.0] - 2022-07-12
+
 ### Added
 
 - Add `nancy` command to Go makefile for a convenient method to run the Nancy checks the same way as they are done on the CI
@@ -478,7 +480,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v5.7.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v5.8.0...HEAD
+[5.8.0]: https://github.com/giantswarm/devctl/compare/v5.7.0...v5.8.0
 [5.7.0]: https://github.com/giantswarm/devctl/compare/v5.6.1...v5.7.0
 [5.6.1]: https://github.com/giantswarm/devctl/compare/v5.6.0...v5.6.1
 [5.6.0]: https://github.com/giantswarm/devctl/compare/v5.5.0...v5.6.0
