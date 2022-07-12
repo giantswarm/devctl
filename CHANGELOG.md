@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add `nancy` command to Go makefile for a convenient method to run the Nancy checks the same way as they are done on the CI
+
 ### Changed
 
 - Align git author identities throughout PR automation workflows
