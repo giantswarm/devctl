@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Align git author identities throughout PR automation workflows
+- Completely rework check_values_schema action to cut down on noise
 
 ## [5.7.0] - 2022-06-23
 
