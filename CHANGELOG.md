@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.9.0] - 2022-07-14
+
 ### Changed
 
 - Completely rework check_values_schema action to cut down on noise
@@ -484,7 +486,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v5.8.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v5.9.0...HEAD
+[5.9.0]: https://github.com/giantswarm/devctl/compare/v5.8.0...v5.9.0
 [5.8.0]: https://github.com/giantswarm/devctl/compare/v5.7.0...v5.8.0
 [5.7.0]: https://github.com/giantswarm/devctl/compare/v5.6.1...v5.7.0
 [5.6.1]: https://github.com/giantswarm/devctl/compare/v5.6.0...v5.6.1
