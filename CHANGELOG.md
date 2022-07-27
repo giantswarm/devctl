@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Bump go module also when releasing a version with a suffix like `-alpha1`.
+
 ## [5.9.0] - 2022-07-14
 
 ### Changed

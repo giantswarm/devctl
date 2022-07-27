@@ -92,7 +92,7 @@ jobs:
             version_major=$(echo "${version}" | cut -d "." -f 1)
             version_minor=$(echo "${version}" | cut -d "." -f 2)
             version_patch=$(echo "${version}" | cut -d "." -f 3)
-            if [[ $version_minor = 0 && $version_patch = 0 ]]; then
+            if [[ $version_minor = 0 && $version_patch =~ ^0.* ]]; then
               echo "::set-output name=is_major::true"
             fi
           fi
