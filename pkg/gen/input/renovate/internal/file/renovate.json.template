@@ -10,6 +10,9 @@
   ],
   "labels": ["dependencies"],
   {{- if eq $language "go" }}
+  "constraints": {
+    "go": "1.18"
+  },
   "packageRules": [
     {
       "matchPackagePatterns": [".*giantswarm.*"],
