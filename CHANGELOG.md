@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Constraint go version, so it's not automatically upgraded by renovate.
+- Constrain go version to 1.18, so it's not automatically upgraded by renovate.
 
 ### Fixed
 
