@@ -8,7 +8,7 @@
     ":reviewer({{ $reviewer | printf "team:%s" }})"
     {{- end }}
   ],
-  "labels": ["dependencies"],
+  "labels": ["dependencies", "renovate"],
   {{- if eq $language "go" }}
   "packageRules": [
     {
