@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Bump go module also when releasing a version with a suffix like `-alpha1`.
+- Add `renovate` label to RenovateBot PRs.
 
 ## [5.9.0] - 2022-07-14
 
