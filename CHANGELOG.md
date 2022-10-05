@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.11.0] - 2022-10-05
+
 ### Changed
 
 - Update used go version in generated workflows to v1.19.1.
@@ -499,7 +501,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v5.10.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v5.11.0...HEAD
+[5.11.0]: https://github.com/giantswarm/devctl/compare/v5.10.0...v5.11.0
 [5.10.0]: https://github.com/giantswarm/devctl/compare/v5.9.0...v5.10.0
 [5.9.0]: https://github.com/giantswarm/devctl/compare/v5.8.0...v5.9.0
 [5.8.0]: https://github.com/giantswarm/devctl/compare/v5.7.0...v5.8.0
