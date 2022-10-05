@@ -12,7 +12,9 @@ CVE-2020-26521 until=2022-12-31
 CVE-2020-28466 until=2022-12-31
 CVE-2021-3127  until=2022-12-31
 
-sonatype-2020-1258 until=2022-07-30
+# pkg:golang/github.com/hashicorp/consul/api@v1.13.0
+# pkg:golang/github.com/hashicorp/consul/sdk@v0.9.0
+CVE-2021-41803  until=2022-12-31
 
 sonatype-2021-1485 until=2022-12-31
 
@@ -22,8 +24,10 @@ CVE-2022-29153 until=2022-12-31
 CVE-2022-24687 until=2022-12-31
 
 # pkg:golang/github.com/kataras/iris/v12@v12.1.8
-CVE-2021-23772 until=2022-10-03
-CVE-2021-42576 until=2022-10-03
+CVE-2021-23772 until=2022-12-31
+
+# pkg:golang/github.com/microcosm-cc/bluemonday@v1.0.2
+CVE-2021-42576 until=2022-12-31
 
 # pkg:golang/github.com/labstack/echo/v4@v4.1.11
 # We need to upgrade our operators to a version of operatorkit with up-to-date dependencies.
