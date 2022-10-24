@@ -2,6 +2,9 @@ module github.com/giantswarm/devctl
 
 go 1.18
 
+// Fix for CWE-400: Uncontrolled Resource Consumption ('Resource Exhaustion')
+replace golang.org/x/text => golang.org/x/text v0.3.8
+
 require (
 	github.com/Masterminds/semver/v3 v3.1.1
 	github.com/blang/semver v3.5.1+incompatible
@@ -18,7 +21,7 @@ require (
 	github.com/sirupsen/logrus v1.9.0
 	github.com/spf13/cobra v1.5.0
 	github.com/spf13/pflag v1.0.5
-	golang.org/x/net v0.0.0-20220607020251-c690dde0001d
+	golang.org/x/net v0.0.0-20220722155237-a158d28d115b
 	golang.org/x/oauth2 v0.0.0-20211104180415-d3ed0bb246c8
 	k8s.io/apimachinery v0.20.12
 	sigs.k8s.io/yaml v1.3.0
@@ -53,7 +56,7 @@ require (
 	github.com/tcnksm/go-gitconfig v0.1.2 // indirect
 	github.com/ulikunitz/xz v0.5.9 // indirect
 	golang.org/x/crypto v0.0.0-20220525230936-793ad666bf5e // indirect
-	golang.org/x/sys v0.0.0-20220715151400-c0bba94af5f8 // indirect
+	golang.org/x/sys v0.0.0-20220722155257-8c9f86f7a55f // indirect
 	golang.org/x/term v0.0.0-20210927222741-03fcf44c2211 // indirect
 	golang.org/x/text v0.3.7 // indirect
 	golang.org/x/time v0.0.0-20220411224347-583f2d630306 // indirect
