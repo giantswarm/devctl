@@ -2,8 +2,12 @@ module github.com/giantswarm/devctl
 
 go 1.18
 
-// Fix for CWE-400: Uncontrolled Resource Consumption ('Resource Exhaustion')
-replace golang.org/x/text => golang.org/x/text v0.3.8
+replace (
+	// Fix for CWE-121: Stack-based Buffer Overflow
+	github.com/nats-io/nats-server/v2 => github.com/nats-io/nats-server/v2 v2.9.3
+	// Fix for CWE-400: Uncontrolled Resource Consumption ('Resource Exhaustion')
+	golang.org/x/text => golang.org/x/text v0.3.8
+)
 
 require (
 	github.com/Masterminds/semver/v3 v3.1.1
@@ -55,11 +59,11 @@ require (
 	github.com/stretchr/testify v1.7.2 // indirect
 	github.com/tcnksm/go-gitconfig v0.1.2 // indirect
 	github.com/ulikunitz/xz v0.5.9 // indirect
-	golang.org/x/crypto v0.0.0-20220525230936-793ad666bf5e // indirect
-	golang.org/x/sys v0.0.0-20220722155257-8c9f86f7a55f // indirect
+	golang.org/x/crypto v0.0.0-20220926161630-eccd6366d1be // indirect
+	golang.org/x/sys v0.0.0-20220928140112-f11e5e49a4ec // indirect
 	golang.org/x/term v0.0.0-20210927222741-03fcf44c2211 // indirect
 	golang.org/x/text v0.3.7 // indirect
-	golang.org/x/time v0.0.0-20220411224347-583f2d630306 // indirect
+	golang.org/x/time v0.0.0-20220922220347-f3bd1da661af // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/protobuf v1.27.1 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
