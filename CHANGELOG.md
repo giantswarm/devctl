@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.11.1] - 2022-10-24
+
 ### Changed
 
 - Replaced deprecated set-output with env var alternative
@@ -505,7 +507,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v5.11.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v5.11.1...HEAD
+[5.11.1]: https://github.com/giantswarm/devctl/compare/v5.11.0...v5.11.1
 [5.11.0]: https://github.com/giantswarm/devctl/compare/v5.10.0...v5.11.0
 [5.10.0]: https://github.com/giantswarm/devctl/compare/v5.9.0...v5.10.0
 [5.9.0]: https://github.com/giantswarm/devctl/compare/v5.8.0...v5.9.0
