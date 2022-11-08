@@ -1,10 +1,15 @@
 {{{{ .Header }}}}
-name: Create Update PR
+
+#
+# This workflow creates a PR with changes pulled from upstream repo using the `make update-chart` command.
+# It also updates the Chart.yaml dependencies on local subcharts update.
+
+name: Create Update Chart PR
 on:
   push:
     branches:
-      - 'main#update'
-      - 'master#update'
+      - 'main#update-chart'
+      - 'master#update-chart'
   workflow_call:
     inputs:
       branch:
@@ -27,7 +32,6 @@ jobs:
       repo_name: ${{ steps.gather_facts.outputs.repo_name }}
       branch: ${{ steps.gather_facts.outputs.branch }}
       base: ${{ steps.gather_facts.outputs.base }}
-      is_major: ${{ steps.gather_facts.outputs.is_major }}
       skip: ${{ steps.pr_exists.outputs.skip }}
     steps:
       - name: Gather facts
@@ -76,11 +80,30 @@ jobs:
         run: |
           wget https://github.com/vmware-tanzu/carvel-vendir/releases/download/{{{{ .VendirVersion }}}}/vendir-linux-amd64 -O /tmp/vendir
           SHA_VENDIR=`shasum -a 256 /tmp/vendir | cut -d ' ' -f1`
-          [ "$SHA_VENDIR" != "{{{{ .VendirSha }}}}" ] && echo "invalid vendir binary" && exit -1
+          [ "$SHA_VENDIR" != "{{{{ .VendirSha }}}}" ] && echo "invalid vendir binary" && exit 1
           sudo mv /tmp/vendir /usr/local/bin/vendir && chmod a+x /usr/local/bin/vendir
       - name: Run update
         run: |
-          make update-chart
+          # Define chart_dir
+          repository="${{ needs.gather_facts.outputs.repo_name }}"
+          chart="helm/${repository}"
+
+          # Check chart directory.
+          if [ ! -d "${chart}" ]
+          then
+            echo "Could not find chart directory '${chart}', removing app suffix."
+
+            # Remove app suffix.
+            chart="helm/${repository%-app}"
+
+            if [ ! -d "${chart}" ]
+            then
+              # Print error.
+              echo "Could not find chart directory '${chart}', doing nothing."
+            fi
+          fi
+
+          make update-chart APPLICATION="${chart}"
 {{{{ .StepSetUpGitIdentity }}}}
       - name: Create update commit
         run: |
