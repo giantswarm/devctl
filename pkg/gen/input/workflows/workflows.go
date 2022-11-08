@@ -48,3 +48,7 @@ func (w *Workflows) Gitleaks() input.Input {
 func (w *Workflows) CheckValuesSchema() input.Input {
 	return file.NewCheckValuesSchemaInput(w.params)
 }
+
+func (w *Workflows) UpdateChart() input.Input {
+	return file.NewUpdateChartInput(w.params)
+}

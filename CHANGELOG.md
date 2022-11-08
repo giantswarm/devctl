@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Add
+
+- Add update-chart target in Apps makefile.
+- Add helm-docs target in Apps makefile.
+- Add update_chart workflow for app flavored repos.
+
 ## [5.11.1] - 2022-10-24
 
 ### Changed
