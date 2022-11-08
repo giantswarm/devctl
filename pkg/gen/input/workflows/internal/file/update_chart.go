@@ -21,6 +21,8 @@ func NewUpdateChartInput(p params.Params) input.Input {
 		TemplateData: map[string]interface{}{
 			"Header":               params.Header("#"),
 			"StepSetUpGitIdentity": params.StepSetUpGitIdentity(),
+			"VendirVersion":        "v0.32.0",
+			"VendirSha":            "0b52c170f4a30c2b6213ff0048ecc89c9c25c3e4da56eb1e095fcdb335bd82ed",
 		},
 	}
 
