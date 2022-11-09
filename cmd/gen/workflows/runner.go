@@ -67,6 +67,9 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 	if r.flag.Flavours.Contains(gen.FlavourApp) {
 		inputs = append(inputs, workflowsInput.CheckValuesSchema())
+		if r.flag.InstallUpdateChart {
+			inputs = append(inputs, workflowsInput.UpdateChart())
+		}
 	}
 
 	err = gen.Execute(
