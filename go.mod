@@ -17,7 +17,7 @@ require (
 	github.com/giantswarm/k8sclient/v7 v7.0.1
 	github.com/giantswarm/kubeconfig/v4 v4.1.0
 	github.com/giantswarm/microerror v0.4.0
-	github.com/giantswarm/micrologger v0.6.0
+	github.com/giantswarm/micrologger v1.0.0
 	github.com/giantswarm/release-operator/v3 v3.2.0
 	github.com/google/go-github/v44 v44.1.0
 	github.com/pelletier/go-toml v1.9.5
@@ -39,7 +39,7 @@ require (
 	github.com/giantswarm/k8smetadata v0.6.0 // indirect
 	github.com/go-kit/log v0.2.0 // indirect
 	github.com/go-logfmt/logfmt v0.5.1 // indirect
-	github.com/go-logr/logr v0.4.0 // indirect
+	github.com/go-logr/logr v1.2.2 // indirect
 	github.com/go-stack/stack v1.8.1 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
