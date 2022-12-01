@@ -1,13 +1,6 @@
 module github.com/giantswarm/devctl
 
-go 1.18
-
-replace (
-	// Fix for CWE-121: Stack-based Buffer Overflow
-	github.com/nats-io/nats-server/v2 => github.com/nats-io/nats-server/v2 v2.9.3
-	// Fix for CWE-400: Uncontrolled Resource Consumption ('Resource Exhaustion')
-	golang.org/x/text => golang.org/x/text v0.3.8
-)
+go 1.19
 
 require (
 	github.com/Masterminds/semver/v3 v3.1.1
@@ -93,8 +86,15 @@ replace (
 	github.com/hashicorp/consul/api => github.com/hashicorp/consul/api v1.15.2
 	github.com/hashicorp/consul/sdk => github.com/hashicorp/consul/sdk v0.11.0
 	github.com/hashicorp/vault/api => github.com/hashicorp/vault/api v1.6.0
+
+	// Fix for CWE-121: Stack-based Buffer Overflow
+	github.com/nats-io/nats-server/v2 => github.com/nats-io/nats-server/v2 v2.9.3
+
 	github.com/pkg/sftp => github.com/pkg/sftp v1.13.4
 	github.com/prometheus/client_golang => github.com/prometheus/client_golang v1.12.2
 	github.com/valyala/fasthttp => github.com/valyala/fasthttp v1.37.0
+
+	// Fix for CWE-400: Uncontrolled Resource Consumption ('Resource Exhaustion')
+	golang.org/x/text => golang.org/x/text v0.3.8
 
 )
