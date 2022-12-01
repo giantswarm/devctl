@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [5.13.0] - 2022-12-01
 
+### Changed
+
+- Simplify the schema check action for helm + do the actual schema validation (#464)
+
 ## [5.12.0] - 2022-11-09
 
 ### Added
