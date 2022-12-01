@@ -18,7 +18,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: 'Check if values.json is a valid instance of values.schema.json'
+      - name: 'Check if values.yaml is a valid instance of values.schema.json'
         run: |
           HELM_DIR=$(dirname $(git diff --name-only origin/${GITHUB_BASE_REF} origin/${GITHUB_HEAD_REF} \
            | grep 'helm/[-a-z].*\/values\.' | head -1))
