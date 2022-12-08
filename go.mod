@@ -3,7 +3,7 @@ module github.com/giantswarm/devctl
 go 1.18
 
 require (
-	github.com/Masterminds/semver/v3 v3.1.1
+	github.com/Masterminds/semver/v3 v3.2.0
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/bmatcuk/doublestar v1.3.4
 	github.com/fatih/color v1.13.0
@@ -16,7 +16,7 @@ require (
 	github.com/pelletier/go-toml v1.9.5
 	github.com/rhysd/go-github-selfupdate v1.2.3
 	github.com/sirupsen/logrus v1.9.0
-	github.com/spf13/cobra v1.5.0
+	github.com/spf13/cobra v1.6.1
 	github.com/spf13/pflag v1.0.5
 	golang.org/x/net v0.3.0
 	golang.org/x/oauth2 v0.0.0-20211104180415-d3ed0bb246c8
@@ -42,7 +42,7 @@ require (
 	github.com/googleapis/gnostic v0.5.5 // indirect
 	github.com/imdario/mergo v0.3.12 // indirect
 	github.com/inconshreveable/go-update v0.0.0-20160112193335-8152e7eb6ccf // indirect
-	github.com/inconshreveable/mousetrap v1.0.0 // indirect
+	github.com/inconshreveable/mousetrap v1.0.1 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/mattn/go-colorable v0.1.12 // indirect
 	github.com/mattn/go-isatty v0.0.14 // indirect
@@ -58,7 +58,7 @@ require (
 	golang.org/x/text v0.5.0 // indirect
 	golang.org/x/time v0.3.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
-	google.golang.org/protobuf v1.27.1 // indirect
+	google.golang.org/protobuf v1.28.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
@@ -86,8 +86,15 @@ replace (
 	github.com/hashicorp/consul/api => github.com/hashicorp/consul/api v1.15.2
 	github.com/hashicorp/consul/sdk => github.com/hashicorp/consul/sdk v0.11.0
 	github.com/hashicorp/vault/api => github.com/hashicorp/vault/api v1.6.0
+
+	// Fix for CWE-121: Stack-based Buffer Overflow
+	github.com/nats-io/nats-server/v2 => github.com/nats-io/nats-server/v2 v2.9.3
+
 	github.com/pkg/sftp => github.com/pkg/sftp v1.13.4
 	github.com/prometheus/client_golang => github.com/prometheus/client_golang v1.12.2
 	github.com/valyala/fasthttp => github.com/valyala/fasthttp v1.37.0
+
+	// Fix for CWE-400: Uncontrolled Resource Consumption ('Resource Exhaustion')
+	golang.org/x/text => golang.org/x/text v0.3.8
 
 )

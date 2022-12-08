@@ -11,6 +11,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Catch release/latest "Not Found" in workflow `create_release_pr` 
 
+## [5.14.0] - 2022-12-02
+
+### Changed
+
+- Switched values schema validator to [yajsv](https://github.com/neilpa/yajsv) v1.4.1.
+
+## [5.13.1] - 2022-12-01
+
+### Fixed
+
+- Fix syntax in `check_values_schema.yaml.template`
+
+## [5.13.0] - 2022-12-01
+
+### Changed
+
+- Simplify the schema check action for helm + do the actual schema validation (#464)
+
+## [5.12.0] - 2022-11-09
+
+### Added
+
+- Add update-chart target in Apps makefile.
+- Add helm-docs target in Apps makefile.
+- Add update_chart workflow for app flavored repos.
+
+## [5.11.1] - 2022-10-24
+
+### Changed
+
+- Replaced deprecated set-output with env var alternative
+
 ## [5.11.0] - 2022-10-05
 
 ### Changed
@@ -505,7 +537,12 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v5.11.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v5.14.0...HEAD
+[5.14.0]: https://github.com/giantswarm/devctl/compare/v5.13.1...v5.14.0
+[5.13.1]: https://github.com/giantswarm/devctl/compare/v5.13.0...v5.13.1
+[5.13.0]: https://github.com/giantswarm/devctl/compare/v5.12.0...v5.13.0
+[5.12.0]: https://github.com/giantswarm/devctl/compare/v5.11.1...v5.12.0
+[5.11.1]: https://github.com/giantswarm/devctl/compare/v5.11.0...v5.11.1
 [5.11.0]: https://github.com/giantswarm/devctl/compare/v5.10.0...v5.11.0
 [5.10.0]: https://github.com/giantswarm/devctl/compare/v5.9.0...v5.10.0
 [5.9.0]: https://github.com/giantswarm/devctl/compare/v5.8.0...v5.9.0
