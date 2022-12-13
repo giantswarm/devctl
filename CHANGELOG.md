@@ -9,7 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Catch release/latest "Not Found" in workflow `create_release_pr` 
+- Catch release/latest "Not Found" in workflow `create_release_pr`
+- Update vendir to [v0.32.2](https://github.com/vmware-tanzu/carvel-vendir/releases/tag/v0.32.2) in update_chart workflow
 
 ## [5.14.0] - 2022-12-02
 
