@@ -2,7 +2,7 @@ package changelog
 
 import (
 	"errors"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"regexp"
 	"strings"
@@ -259,7 +259,7 @@ func ParseChangelog(componentName, componentVersion string) (*Version, error) {
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}
-	body, err := ioutil.ReadAll(response.Body)
+	body, err := io.ReadAll(response.Body)
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}

@@ -1,7 +1,7 @@
 package release
 
 import (
-	"io/ioutil"
+	"os"
 	"path/filepath"
 
 	"github.com/giantswarm/microerror"
@@ -20,7 +20,7 @@ func createKustomization(releaseDirectory string) error {
 	content := `resources:
 - release.yaml
 `
-	err := ioutil.WriteFile(filepath.Join(releaseDirectory, "kustomization.yaml"), []byte(content), 0644) //nolint:gosec
+	err := os.WriteFile(filepath.Join(releaseDirectory, "kustomization.yaml"), []byte(content), 0644) //nolint:gosec
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -31,7 +31,7 @@ func createKustomization(releaseDirectory string) error {
 func addToKustomization(providerDirectory string, release v1alpha1.Release) error {
 	path := filepath.Join(providerDirectory, "kustomization.yaml")
 	var providerKustomization kustomizationFile
-	providerKustomizationData, err := ioutil.ReadFile(path)
+	providerKustomizationData, err := os.ReadFile(path)
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -52,7 +52,7 @@ func addToKustomization(providerDirectory string, release v1alpha1.Release) erro
 		return microerror.Mask(err)
 	}
 
-	err = ioutil.WriteFile(path, data, 0644) //nolint:gosec
+	err = os.WriteFile(path, data, 0644) //nolint:gosec
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -64,7 +64,7 @@ func addToKustomization(providerDirectory string, release v1alpha1.Release) erro
 func removeFromKustomization(providerDirectory string, release v1alpha1.Release) error {
 	path := filepath.Join(providerDirectory, "kustomization.yaml")
 	var providerKustomization kustomizationFile
-	providerKustomizationData, err := ioutil.ReadFile(path)
+	providerKustomizationData, err := os.ReadFile(path)
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -90,7 +90,7 @@ func removeFromKustomization(providerDirectory string, release v1alpha1.Release)
 		return microerror.Mask(err)
 	}
 
-	err = ioutil.WriteFile(path, data, 0644) //nolint:gosec
+	err = os.WriteFile(path, data, 0644) //nolint:gosec
 	if err != nil {
 		return microerror.Mask(err)
 	}

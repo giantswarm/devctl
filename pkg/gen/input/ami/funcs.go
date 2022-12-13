@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"strings"
 
@@ -107,7 +106,7 @@ func scrapeVersions(source io.Reader) ([]string, error) {
 }
 
 func scrapeVersionAMI(source io.Reader) (map[string]string, error) {
-	body, err := ioutil.ReadAll(source)
+	body, err := io.ReadAll(source)
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}
