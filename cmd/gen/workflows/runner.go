@@ -72,6 +72,10 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		}
 	}
 
+	if r.flag.Flavours.Contains(gen.FlavourCustomer) {
+		inputs = append(inputs, workflowsInput.AddCustomerBoardAutomation())
+	}
+
 	err = gen.Execute(
 		ctx,
 		inputs...,

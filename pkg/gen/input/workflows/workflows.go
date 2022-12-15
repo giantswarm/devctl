@@ -29,6 +29,10 @@ func New(config Config) (*Workflows, error) {
 	return w, nil
 }
 
+func (w *Workflows) AddCustomerBoardAutomation() input.Input {
+	return file.NewCustomerBoardAutomationInput(w.params)
+}
+
 func (w *Workflows) CreateRelease() input.Input {
 	return file.NewCreateReleaseInput(w.params)
 }
