@@ -10,6 +10,7 @@ import (
 const (
 	FlavourApp           Flavour = "app"
 	FlavourCLI           Flavour = "cli"
+	FlavourCustomer      Flavour = "customer"
 	FlavourGeneric       Flavour = "generic"
 	FlavourKubernetesAPI Flavour = "k8sapi"
 )
@@ -18,6 +19,7 @@ func AllFlavours() []string {
 	return []string{
 		FlavourApp.String(),
 		FlavourCLI.String(),
+		FlavourCustomer.String(),
 		FlavourGeneric.String(),
 		FlavourKubernetesAPI.String(),
 	}
@@ -31,6 +33,8 @@ func NewFlavour(s string) (Flavour, error) {
 		return FlavourApp, nil
 	case FlavourCLI.String():
 		return FlavourCLI, nil
+	case FlavourCustomer.String():
+		return FlavourCustomer, nil
 	case FlavourGeneric.String():
 		return FlavourGeneric, nil
 	case FlavourKubernetesAPI.String():

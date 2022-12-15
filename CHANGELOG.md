@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add new flavour to generate a customer workflow
+
 ### Changed
 
 - Catch release/latest "Not Found" in workflow `create_release_pr`
