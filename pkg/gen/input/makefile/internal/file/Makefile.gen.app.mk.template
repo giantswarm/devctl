@@ -21,7 +21,7 @@ lint-chart: check-env ## Runs ct against the default chart.
 	docker run -it --rm -v /tmp/$(APPLICATION)-test:/wd --workdir=/wd --name ct $(IMAGE) ct lint --validate-maintainers=false --charts="helm/$(APPLICATION)"
 	rm -rf /tmp/$(APPLICATION)-test
 
-update-chart: check-env ## Sync chat with upstream repo.
+update-chart: check-env ## Sync chart with upstream repo.
 	@echo "====> $@"
 	vendir sync
 	$(MAKE) update-deps
