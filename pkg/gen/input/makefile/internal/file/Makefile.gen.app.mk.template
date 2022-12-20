@@ -30,7 +30,7 @@ update-deps: check-env $(DEPS) ## Update Helm dependencies.
 	cd $(APPLICATION) && helm dependency update
 
 $(DEPS): check-env ## Update main Chart.yaml with new local dep versions.
-	dep_name=`basename $@` && \
+	dep_name=$(shell basename $@) && \
 	new_version=`$(YQ) .version $(APPLICATION)/charts/$$dep_name/Chart.yaml` && \
 	$(YQ) -i e "with(.dependencies[]; select(.name == \"$$dep_name\") | .version = \"$$new_version\")" $(APPLICATION)/Chart.yaml
 
