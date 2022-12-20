@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Change Makefile target `update-deps` to only check chart dependencies with a local `Chart.yaml` in generated app Makefile template
+
 ## [5.15.0] - 2022-12-15
 
 ### Added
