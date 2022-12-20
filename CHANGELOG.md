@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.16.0] - 2022-12-20
+
 ### Changed
 
 - Change Makefile target `update-deps` to only check chart dependencies with a local `Chart.yaml` in generated app Makefile template
@@ -548,7 +550,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v5.15.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v5.16.0...HEAD
+[5.16.0]: https://github.com/giantswarm/devctl/compare/v5.15.0...v5.16.0
 [5.15.0]: https://github.com/giantswarm/devctl/compare/v5.14.0...v5.15.0
 [5.14.0]: https://github.com/giantswarm/devctl/compare/v5.13.1...v5.14.0
 [5.13.1]: https://github.com/giantswarm/devctl/compare/v5.13.0...v5.13.1
