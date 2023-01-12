@@ -1,36 +1,37 @@
-CVE-2022-36129 until=2022-12-31
-CVE-2022-36129 until=2022-12-31
+CVE-2022-36129 until=2023-06-30
+CVE-2022-36129 until=2023-06-30
 
-CVE-2022-29946 until=2022-12-31
-CVE-2021-32026 until=2022-12-31
+CVE-2022-29946 until=2023-06-30
+CVE-2021-32026 until=2023-06-30
 
 # pkg:golang/github.com/nats-io/nats-server/v2@v2.1.2
 # it's required by go-kit which is pulled by mane GS libraries
-CVE-2020-26892 until=2022-12-31
-CVE-2022-24450 until=2022-12-31
-CVE-2020-26521 until=2022-12-31
-CVE-2020-28466 until=2022-12-31
-CVE-2021-3127  until=2022-12-31
+CVE-2020-26892 until=2023-06-30
+CVE-2022-24450 until=2023-06-30
+CVE-2020-26521 until=2023-06-30
+CVE-2020-28466 until=2023-06-30
+CVE-2021-3127  until=2023-06-30
 
 # pkg:golang/github.com/hashicorp/consul/api@v1.13.0
 # pkg:golang/github.com/hashicorp/consul/sdk@v0.9.0
-CVE-2021-41803  until=2022-12-31
+CVE-2021-41803  until=2023-06-30
 
-sonatype-2021-1485 until=2022-12-31
+sonatype-2021-1485 until=2023-06-30
+
+# pkg:golang/k8s.io/apiserver@v0.20.12
+sonatype-2022-6522 until=2023-06-30
 
 # Hashicorp consul /api and /sdk are no longer intended for public use and don't have newer tags.
 # Waiting for direct dependencies to move away from them.
-CVE-2022-29153 until=2022-12-31
-CVE-2022-24687 until=2022-12-31
+CVE-2022-29153 until=2023-06-30
+CVE-2022-24687 until=2023-06-30
 
 # pkg:golang/github.com/kataras/iris/v12@v12.1.8
-CVE-2021-23772 until=2022-12-31
+CVE-2021-23772 until=2023-06-30
 
-# pkg:golang/k8s.io/apiserver@v0.20.12
-sonatype-2022-6522 until=2023-02-01
 
 # pkg:golang/github.com/microcosm-cc/bluemonday@v1.0.2
-CVE-2021-42576 until=2022-12-31
+CVE-2021-42576 until=2023-06-30
 
 # pkg:golang/github.com/labstack/echo/v4@v4.1.11
 # We need to upgrade our operators to a version of operatorkit with up-to-date dependencies.

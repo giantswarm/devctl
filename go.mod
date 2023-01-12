@@ -52,7 +52,7 @@ require (
 	github.com/stretchr/testify v1.7.2 // indirect
 	github.com/tcnksm/go-gitconfig v0.1.2 // indirect
 	github.com/ulikunitz/xz v0.5.9 // indirect
-	golang.org/x/crypto v0.4.0 // indirect
+	golang.org/x/crypto v0.5.0 // indirect
 	golang.org/x/sys v0.4.0 // indirect
 	golang.org/x/term v0.4.0 // indirect
 	golang.org/x/text v0.6.0 // indirect
@@ -88,7 +88,7 @@ replace (
 	github.com/hashicorp/vault/api => github.com/hashicorp/vault/api v1.6.0
 
 	// Fix for CWE-121: Stack-based Buffer Overflow
-	github.com/nats-io/nats-server/v2 => github.com/nats-io/nats-server/v2 v2.9.3
+	github.com/nats-io/nats-server/v2 => github.com/nats-io/nats-server/v2 v2.9.11
 
 	github.com/pkg/sftp => github.com/pkg/sftp v1.13.4
 	github.com/prometheus/client_golang => github.com/prometheus/client_golang v1.12.2
