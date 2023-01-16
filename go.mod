@@ -6,7 +6,6 @@ require (
 	github.com/Masterminds/semver/v3 v3.2.0
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/bmatcuk/doublestar v1.3.4
-	github.com/coreos/go-semver v0.3.0
 	github.com/fatih/color v1.13.0
 	github.com/giantswarm/k8sclient/v7 v7.0.1
 	github.com/giantswarm/kubeconfig/v4 v4.1.0
