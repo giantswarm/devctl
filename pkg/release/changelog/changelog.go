@@ -16,7 +16,7 @@ import (
 const (
 	// Indicates that the target version has started.
 	// Expects a line like "## [1.0.0] 2020-07-14" with optional v prefix on the version and optional date.
-	commonStartPattern = "(?m)^## \\[v?(?P<Version>\\d+\\.\\d+\\.\\d+)\\].*(?P<Date>\\d{4}-\\d{2}\\-\\d{2})?$"
+	commonStartPattern = "(?m)^## \\[v?(?P<Version>\\d+\\.\\d+\\.\\d+-?.*)\\].*(?P<Date>\\d{4}-\\d{2}\\-\\d{2})?$"
 	// Indicates that the links following the final release in a CHANGELOG have been encountered.
 	// Expects a line lke "[Unreleased]: https://github.com/giantswarm/kvm-operator/compare/v3.12.0...HEAD".
 	commonEndPattern = "(?m)^\\[.*\\]:.*$"
@@ -77,9 +77,9 @@ var knownComponentParseParams = map[string]parseParams{
 	},
 	"etcd": {
 		tag:       "https://github.com/etcd-io/etcd/releases/tag/v{{.Version}}",
-		changelog: "https://raw.githubusercontent.com/etcd-io/etcd/master/CHANGELOG-{{.Major}}.{{.Minor}}.md",
-		start:     "(?m)^## \\[v?(?P<Version>\\d+\\.\\d+\\.\\d+)\\].*$",
-		end:       "(?m)^## .*$",
+		changelog: "https://raw.githubusercontent.com/etcd-io/etcd/main/CHANGELOG/CHANGELOG-{{.Major}}.{{.Minor}}.md",
+		start:     "(?m)^## v?(?P<Version>\\d+\\.\\d+\\.\\d+)",
+		end:       "(?m)^<hr>.*$",
 	},
 	"aws-cni": {
 		tag:       "https://github.com/aws/amazon-vpc-cni-k8s/releases/tag/v{{.Version}}",
@@ -195,6 +195,48 @@ var knownComponentParseParams = map[string]parseParams{
 	"vertical-pod-autoscaler-crd": {
 		tag:       "https://github.com/giantswarm/vertical-pod-autoscaler-crd/releases/tag/v{{.Version}}",
 		changelog: "https://raw.githubusercontent.com/giantswarm/vertical-pod-autoscaler-crd/v{{.Version}}/CHANGELOG.md",
+		start:     commonStartPattern,
+		end:       commonEndPattern,
+	},
+	"etcd-kubernetes-resources-count-exporter": {
+		tag:       "https://github.com/giantswarm/etcd-kubernetes-resources-count-exporter/releases/tag/v{{.Version}}",
+		changelog: "https://raw.githubusercontent.com/giantswarm/etcd-kubernetes-resources-count-exporter/v{{.Version}}/CHANGELOG.md",
+		start:     commonStartPattern,
+		end:       commonEndPattern,
+	},
+	"aws-cloud-controller-manager": {
+		tag:       "https://github.com/giantswarm/aws-cloud-controller-manager-app/releases/tag/v{{.Version}}",
+		changelog: "https://raw.githubusercontent.com/giantswarm/aws-cloud-controller-manager-app/v{{.Version}}/CHANGELOG.md",
+		start:     commonStartPattern,
+		end:       commonEndPattern,
+	},
+	"cilium": {
+		tag:       "https://github.com/giantswarm/cilium-app/releases/tag/v{{.Version}}",
+		changelog: "https://raw.githubusercontent.com/giantswarm/cilium-app/v{{.Version}}/CHANGELOG.md",
+		start:     commonStartPattern,
+		end:       commonEndPattern,
+	},
+	"azure-cloud-controller-manager": {
+		tag:       "https://github.com/giantswarm/azure-cloud-controller-manager-app/releases/tag/v{{.Version}}",
+		changelog: "https://raw.githubusercontent.com/giantswarm/azure-cloud-controller-manager-app/v{{.Version}}/CHANGELOG.md",
+		start:     commonStartPattern,
+		end:       commonEndPattern,
+	},
+	"azure-cloud-node-manager": {
+		tag:       "https://github.com/giantswarm/azure-cloud-node-manager-app/releases/tag/v{{.Version}}",
+		changelog: "https://raw.githubusercontent.com/giantswarm/azure-cloud-node-manager-app/v{{.Version}}/CHANGELOG.md",
+		start:     commonStartPattern,
+		end:       commonEndPattern,
+	},
+	"azuredisk-csi-driver": {
+		tag:       "https://github.com/giantswarm/azuredisk-csi-driver-app/releases/tag/v{{.Version}}",
+		changelog: "https://raw.githubusercontent.com/giantswarm/azuredisk-csi-driver-app/v{{.Version}}/CHANGELOG.md",
+		start:     commonStartPattern,
+		end:       commonEndPattern,
+	},
+	"observability-bundle": {
+		tag:       "https://github.com/giantswarm/observability-bundle/releases/tag/v{{.Version}}",
+		changelog: "https://raw.githubusercontent.com/giantswarm/observability-bundle/v{{.Version}}/CHANGELOG.md",
 		start:     commonStartPattern,
 		end:       commonEndPattern,
 	},
