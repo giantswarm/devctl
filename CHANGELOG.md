@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.17.0] - 2023-01-16
+
 ### Fixed
 
 - Fix etcd changelog parsing settings.
@@ -559,7 +561,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v5.16.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v5.17.0...HEAD
+[5.17.0]: https://github.com/giantswarm/devctl/compare/v5.16.0...v5.17.0
 [5.16.0]: https://github.com/giantswarm/devctl/compare/v5.15.0...v5.16.0
 [5.15.0]: https://github.com/giantswarm/devctl/compare/v5.14.0...v5.15.0
 [5.14.0]: https://github.com/giantswarm/devctl/compare/v5.13.1...v5.14.0
