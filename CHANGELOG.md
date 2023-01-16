@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Fix etcd changelog parsing settings.
+- Fix regexp to allow matching releases having suffixes.
+
 ## [5.16.0] - 2022-12-20
 
 ### Changed
