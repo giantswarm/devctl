@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Added more information to the `update-chart` PullRequest template.
+
 ## [5.18.0] - 2023-01-23
 
 ### Changed
