@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Remove recursion from `Validate values.yaml schema` workflow.
+
 ## [5.18.1] - 2023-01-26
 
 ### Changed
