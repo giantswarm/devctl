@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.18.2] - 2023-01-31
+
 ### Changed
 
 - Remove recursion from `Validate values.yaml schema` workflow.
@@ -577,7 +579,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v5.18.1...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v5.18.2...HEAD
+[5.18.2]: https://github.com/giantswarm/devctl/compare/v5.18.1...v5.18.2
 [5.18.1]: https://github.com/giantswarm/devctl/compare/v5.18.0...v5.18.1
 [5.18.0]: https://github.com/giantswarm/devctl/compare/v5.17.0...v5.18.0
 [5.17.0]: https://github.com/giantswarm/devctl/compare/v5.16.0...v5.17.0
