@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Improve `create_release_pr.yaml.template` by supporting more cases regarding `-app` suffix in repositories and chart names. 
+
 ## [5.18.2] - 2023-01-31
 
 ### Changed

@@ -160,25 +160,24 @@ jobs:
           # Check chart directory.
           if [ ! -d "${chart}" ]
           then
-            echo "Could not find chart directory '${chart}', adding app suffix."
-
-            # Add app suffix.
-            chart="helm/${repository}-app"
-
-            # Check chart directory with app suffix.
-            if [ ! -d "${chart}" ]
-            then
+            if [[ ${chart} == *-app ]]; then
               echo "Could not find chart directory '${chart}', removing app suffix."
-
+            
               # Remove app suffix.
               chart="helm/${repository%-app}"
+            else
+              echo "Could not find chart directory '${chart}', adding app suffix."
 
-              if [ ! -d "${chart}" ]
-              then
-                # Print error.
-                echo "Could not find chart directory '${chart}', doing nothing."
-              fi
+              # Add app suffix.
+              chart="helm/${repository}-app"
             fi
+            
+            if [ ! -d "${chart}" ]
+            then
+              # Print error.
+              echo "Could not find chart directory '${chart}', doing nothing."
+            fi
+
           fi
 
           # Define chart YAML.
