@@ -32,7 +32,9 @@ jobs:
           VALUES=${HELM_DIR}/values.yaml
           if [ -f ${HELM_DIR}/ci/ci-values.yaml ]; then
             # merge ci-values.yaml into values.yaml (providing required values)
+            echo -e "\nMerged values:\n=============="
             yq '. *= load("'${HELM_DIR}'/ci/ci-values.yaml")' ${HELM_DIR}/values.yaml | tee ${HELM_DIR}/combined-values.yaml
+            echo -e "\n==============\n"
             VALUES=${HELM_DIR}/combined-values.yaml
           fi
 
