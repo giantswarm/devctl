@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Merge `ci/ci-values.yaml` with `values.yaml` before doing the schema validation.
+
 ## [5.18.2] - 2023-01-31
 
 ### Changed
