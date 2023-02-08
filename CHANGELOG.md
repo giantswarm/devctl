@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Merge `ci/ci-values.yaml` with `values.yaml` before doing the schema validation.
+- Update `Makefile` to prevent recursion when looking for deps.
 
 ## [5.18.2] - 2023-01-31
 
