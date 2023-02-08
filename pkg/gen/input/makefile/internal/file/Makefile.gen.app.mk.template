@@ -6,7 +6,7 @@ YQ=docker run --rm -u $$(id -u) -v $${PWD}:/workdir mikefarah/yq:4.29.2
 HELM_DOCS=docker run --rm -u $$(id -u) -v $${PWD}:/helm-docs jnorwood/helm-docs:v1.11.0
 
 ifdef APPLICATION
-DEPS := $(shell find $(APPLICATION)/charts -regex "$(APPLICATION)/charts/[-A-Za-z]*/Chart.yaml" -printf "%h\n")
+DEPS := $(shell find $(APPLICATION)/charts -name "Chart.yaml" -maxdepth 2 -printf "%h\n")
 endif
 
 .PHONY: lint-chart check-env update-chart helm-docs update-deps $(DEPS)
