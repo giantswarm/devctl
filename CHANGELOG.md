@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Merge `ci/ci-values.yaml` with `values.yaml` before doing the schema validation.
 - Update `Makefile` to prevent recursion when looking for deps.
+- Use `GITHUB_SHA` in values validation workflow in git diff. This makes the action work with contributions from external repositories.
 
 ## [5.18.2] - 2023-01-31
 
