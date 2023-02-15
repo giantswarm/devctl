@@ -27,7 +27,7 @@ jobs:
 
       - name: 'Check if values.yaml is a valid instance of values.schema.json'
         run: |
-          HELM_DIR=$(git diff --name-only origin/${GITHUB_BASE_REF} origin/${GITHUB_HEAD_REF} \
+          HELM_DIR=$(git diff --name-only origin/${GITHUB_BASE_REF} ${GITHUB_SHA} \
            | grep 'helm/[-a-z].*\/' | head -1 | awk -F '/' '{print $1"/"$2}')
           VALUES=${HELM_DIR}/values.yaml
           if [ -f ${HELM_DIR}/ci/ci-values.yaml ]; then
