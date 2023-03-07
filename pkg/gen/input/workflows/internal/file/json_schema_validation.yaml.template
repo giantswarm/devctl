@@ -1,0 +1,61 @@
+{{{{ .Header }}}}
+
+name: JSON schema validation
+on:
+  pull_request: 
+    branches:
+      - master
+      - main
+    paths:
+      - 'helm/**/values.yaml'
+      - 'helm/**/values.schema.json'
+
+jobs:
+  validate:
+    name: Validate values.schema.json with schemalint
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v3
+        with:
+          go-version: "^1.19"
+
+      - name: Install schemalint
+        run: |
+          go install github.com/giantswarm/schemalint@latest
+
+      - name: Run schemalint
+        run: |
+          HELM_DIR=$(git diff --name-only origin/${GITHUB_BASE_REF} ${GITHUB_SHA} \
+           | grep 'helm/[-a-z].*\/' | head -1 | awk -F '/' '{print $1"/"$2}')
+          VALUES_SCHEMA=${HELM_DIR}/values.schema.json
+          schemalint verify ${VALUES_SCHEMA} --rule-set cluster-app
+  generate:
+    name: Check that values.yaml is generated from values.schema.json with helm-values-gen
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v3
+        with:
+          go-version: "^1.19"
+
+      - name: Install helm-values-gen
+        run: |
+          go install github.com/giantswarm/helm-values-gen@latest
+
+      - name: Run helm-values-gen
+        run: |
+          HELM_DIR=$(git diff --name-only origin/${GITHUB_BASE_REF} ${GITHUB_SHA} \
+           | grep 'helm/[-a-z].*\/' | head -1 | awk -F '/' '{print $1"/"$2}')
+          VALUES_SCHEMA=${HELM_DIR}/values.schema.json
+          VALUES=${HELM_DIR}/values.yaml
+          diff --unified ${VALUES} <(helm-values-gen ${VALUES_SCHEMA}) 
+          || (echo "values.yaml is out of sync with values.schema.json. Run \`helm-values-gen ${VALUES_SCHEMA} -o ${VALUES} --force\` to fix this." && exit 1)
