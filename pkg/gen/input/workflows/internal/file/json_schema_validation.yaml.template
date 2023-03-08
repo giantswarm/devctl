@@ -12,28 +12,16 @@ on:
 
 jobs:
   validate:
-    name: Validate values.schema.json with schemalint
-    runs-on: ubuntu-22.04
+    name: Verify values.schema.json with schemalint
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
-
-      - uses: actions/setup-go@v3
-        with:
-          go-version: "^1.19"
-
-      - name: Install schemalint
-        run: |
-          go install github.com/giantswarm/schemalint@latest
-
       - name: Run schemalint
-        run: |
-          HELM_DIR=$(git diff --name-only origin/${GITHUB_BASE_REF} ${GITHUB_SHA} \
-           | grep 'helm/[-a-z].*\/' | head -1 | awk -F '/' '{print $1"/"$2}')
-          VALUES_SCHEMA=${HELM_DIR}/values.schema.json
-          schemalint verify ${VALUES_SCHEMA} --rule-set cluster-app
+        id: run-schemalint
+        uses: giantswarm/schemalint/actions/verify-helm-schema@composite-action
+        with:
+          rule-set: 'cluster-app'
   generate:
     name: Check that values.yaml is generated from values.schema.json with helm-values-gen
     runs-on: ubuntu-latest
