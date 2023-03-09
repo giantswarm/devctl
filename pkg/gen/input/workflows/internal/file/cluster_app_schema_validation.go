@@ -7,13 +7,13 @@ import (
 	"github.com/giantswarm/devctl/pkg/gen/input/workflows/internal/params"
 )
 
-//go:embed json_schema_validation.yaml.template
-var jsonSchemaValidationTemplate string
+//go:embed cluster_app_schema_validation.yaml.template
+var clusterAppSchemaValidationTemplate string
 
-func NewJSONSchemaValidation(p params.Params) input.Input {
+func NewClusterAppSchemaValidation(p params.Params) input.Input {
 	i := input.Input{
 		Path:         params.RegenerableFileName(p, "json_schema_validation.yaml"),
-		TemplateBody: jsonSchemaValidationTemplate,
+		TemplateBody: clusterAppSchemaValidationTemplate,
 		TemplateDelims: input.InputTemplateDelims{
 			Left:  "{{{{",
 			Right: "}}}}",

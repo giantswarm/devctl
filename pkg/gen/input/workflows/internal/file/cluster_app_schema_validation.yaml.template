@@ -1,5 +1,8 @@
 {{{{ .Header }}}}
 
+# This workflow che
+# It also updates the Chart.yaml dependencies on local subcharts update.
+
 name: JSON schema validation
 on:
   pull_request: 
@@ -28,22 +31,7 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
-
-      - uses: actions/setup-go@v3
-        with:
-          go-version: "^1.19"
-
-      - name: Install helm-values-gen
-        run: |
-          go install github.com/giantswarm/helm-values-gen@latest
 
       - name: Run helm-values-gen
-        run: |
-          HELM_DIR=$(git diff --name-only origin/${GITHUB_BASE_REF} ${GITHUB_SHA} \
-           | grep 'helm/[-a-z].*\/' | head -1 | awk -F '/' '{print $1"/"$2}')
-          VALUES_SCHEMA=${HELM_DIR}/values.schema.json
-          VALUES=${HELM_DIR}/values.yaml
-          diff --unified ${VALUES} <(helm-values-gen ${VALUES_SCHEMA}) 
-          || (echo "values.yaml is out of sync with values.schema.json. Run \`helm-values-gen ${VALUES_SCHEMA} -o ${VALUES} --force\` to fix this." && exit 1)
+        id: run-helm-values-gen
+        uses: giantswarm/helm-values-gen/actions/ensure-generated@add-github-action

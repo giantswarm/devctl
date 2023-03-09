@@ -57,6 +57,6 @@ func (w *Workflows) UpdateChart() input.Input {
 	return file.NewUpdateChartInput(w.params)
 }
 
-func (w *Workflows) JSONSchemaValidation() input.Input {
-	return file.NewJSONSchemaValidation(w.params)
+func (w *Workflows) ClusterAppSchemaValidation() input.Input {
+	return file.NewClusterAppSchemaValidation(w.params)
 }
