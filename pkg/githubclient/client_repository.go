@@ -235,3 +235,20 @@ func (c *Client) getGithubChecks(ctx context.Context, repository *github.Reposit
 
 	return checks, nil
 }
+
+func (c *Client) SetRepositoryDefaultBranch(ctx context.Context, repository *github.Repository, newDefaultBranch string) (err error) {
+	currentDefaultBranch := *repository.DefaultBranch
+	if currentDefaultBranch != newDefaultBranch {
+		owner := *repository.Owner.Login
+		repo := *repository.Name
+
+		c.logger.Debugf("renaming default branch from %q to %q", currentDefaultBranch, newDefaultBranch)
+		underlyingClient := c.getUnderlyingClient(ctx)
+		_, _, err := underlyingClient.Repositories.RenameBranch(ctx, owner, repo, currentDefaultBranch, newDefaultBranch)
+		if err != nil {
+			return microerror.Mask(err)
+		}
+	}
+
+	return nil
+}

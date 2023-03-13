@@ -96,6 +96,11 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 
+	err = client.SetRepositoryDefaultBranch(ctx, repository, r.flag.DefaultBranch)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
 	r.logger.Info("completed repository setup")
 
 	return nil
