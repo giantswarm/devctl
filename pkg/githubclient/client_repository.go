@@ -199,8 +199,23 @@ func (c *Client) SetRepositoryBranchProtection(ctx context.Context, repository *
 func (c *Client) getGithubChecks(ctx context.Context, repository *github.Repository, branch string) ([]string, error) {
 	owner := *repository.Owner.Login
 	repo := *repository.Name
+	var err error
 
-	c.logger.Debugf("get commit statuses for %q branch", branch)
+	underlyingClient := c.getUnderlyingClient(ctx)
+
+	// Tags have specific workflows, that are not run in PRs.
+	// So, we need to find checks for a commit that is not tagged.
+	// Otherwise PRs would be blocked by not-run checks.
+	allTags, err := c.getTags(ctx, repository)
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
+
+	ref, err := c.getLatestNonTagCommit(ctx, repository, branch, allTags)
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
+	c.logger.Debugf("get commit statuses for ref: %q", ref)
 
 	var allCombinedStatus []*github.CombinedStatus
 	{
@@ -208,10 +223,8 @@ func (c *Client) getGithubChecks(ctx context.Context, repository *github.Reposit
 			PerPage: 10,
 		}
 
-		underlyingClient := c.getUnderlyingClient(ctx)
-
 		for {
-			combinedStatus, resp, err := underlyingClient.Repositories.GetCombinedStatus(ctx, owner, repo, branch, opt)
+			combinedStatus, resp, err := underlyingClient.Repositories.GetCombinedStatus(ctx, owner, repo, ref, opt)
 			if err != nil {
 				return nil, microerror.Mask(err)
 			}
@@ -231,7 +244,81 @@ func (c *Client) getGithubChecks(ctx context.Context, repository *github.Reposit
 		}
 	}
 
-	c.logger.Debugf("found %d commit statuses for %q branch:\n%v", len(checks), branch, checks)
+	c.logger.Debugf("found %d commit statuses for ref %q:\n%v", len(checks), ref, checks)
 
 	return checks, nil
+}
+
+// Retrieve list of tags
+func (c *Client) getTags(ctx context.Context, repository *github.Repository) ([]*github.RepositoryTag, error) {
+	owner := *repository.Owner.Login
+	repo := *repository.Name
+
+	underlyingClient := c.getUnderlyingClient(ctx)
+
+	var allTags []*github.RepositoryTag
+	opt := &github.ListOptions{
+		PerPage: 10,
+	}
+	for {
+		tags, resp, err := underlyingClient.Repositories.ListTags(ctx, owner, repo, opt)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+		allTags = append(allTags, tags...)
+		if resp.NextPage == 0 {
+			break
+		}
+		opt.Page = resp.NextPage
+	}
+	for _, tag := range allTags {
+		c.logger.Debugf("Found tag: %s / commit: %s\n", tag.GetName(), tag.GetCommit().GetSHA())
+	}
+	return allTags, nil
+}
+
+// Gets latest commit that is not tagged
+// because we want one that is not a release
+func (c *Client) getLatestNonTagCommit(ctx context.Context, repository *github.Repository, branch string, tags []*github.RepositoryTag) (string, error) {
+	owner := *repository.Owner.Login
+	repo := *repository.Name
+
+	underlyingClient := c.getUnderlyingClient(ctx)
+
+	opt := &github.CommitsListOptions{
+		SHA: branch,
+		ListOptions: github.ListOptions{
+			PerPage: 10,
+		},
+	}
+
+	// Loop through commits
+	for {
+		commits, resp, err := underlyingClient.Repositories.ListCommits(ctx, owner, repo, opt)
+		if err != nil {
+			return "", microerror.Mask(err)
+		}
+		for _, commit := range commits {
+			c.logger.Debugf("Checking commit: %s\n", commit.GetSHA())
+			// Is this commit tagged?
+			if !isCommitTagged(commit, tags) {
+				return commit.GetSHA(), nil
+			}
+		}
+		if resp.NextPage == 0 {
+			break
+		}
+		opt.Page = resp.NextPage
+	}
+	return "", microerror.Mask(notFoundError)
+}
+
+// Returns true if the commit has an associated tag
+func isCommitTagged(commit *github.RepositoryCommit, tags []*github.RepositoryTag) bool {
+	for _, tag := range tags {
+		if commit.GetSHA() == tag.GetCommit().GetSHA() {
+			return true
+		}
+	}
+	return false
 }
