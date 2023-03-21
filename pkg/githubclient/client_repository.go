@@ -199,9 +199,6 @@ func (c *Client) SetRepositoryBranchProtection(ctx context.Context, repository *
 func (c *Client) getGithubChecks(ctx context.Context, repository *github.Repository, branch string) ([]string, error) {
 	owner := *repository.Owner.Login
 	repo := *repository.Name
-	var err error
-
-	underlyingClient := c.getUnderlyingClient(ctx)
 
 	// Tags have specific workflows, that are not run in PRs.
 	// So, we need to find checks for a commit that is not tagged.
@@ -222,6 +219,8 @@ func (c *Client) getGithubChecks(ctx context.Context, repository *github.Reposit
 		opt := &github.ListOptions{
 			PerPage: 10,
 		}
+
+		underlyingClient := c.getUnderlyingClient(ctx)
 
 		for {
 			combinedStatus, resp, err := underlyingClient.Repositories.GetCombinedStatus(ctx, owner, repo, ref, opt)
