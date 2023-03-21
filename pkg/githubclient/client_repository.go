@@ -112,7 +112,7 @@ func (c *Client) SetRepositorySettings(ctx context.Context, repository, reposito
 }
 
 func (c *Client) SetRepositoryPermissions(ctx context.Context, repository *github.Repository, permissions map[string]string) error {
-	org := *repository.Organization.Login
+	org := repository.GetOrganization().GetLogin()
 	owner := repository.GetOwner().GetLogin()
 	repo := repository.GetName()
 
