@@ -101,7 +101,7 @@ func (c *Client) SetRepositorySettings(ctx context.Context, repository, reposito
 	repository.AllowForking = nil
 
 	underlyingClient := c.getUnderlyingClient(ctx)
-	repository, _, err := underlyingClient.Repositories.Edit(ctx, *repository.Owner.Login, *repository.Name, repository)
+	repository, _, err := underlyingClient.Repositories.Edit(ctx, *repository.Owner.Login, repository.GetName(), repository)
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}
@@ -114,7 +114,7 @@ func (c *Client) SetRepositorySettings(ctx context.Context, repository, reposito
 func (c *Client) SetRepositoryPermissions(ctx context.Context, repository *github.Repository, permissions map[string]string) error {
 	org := *repository.Organization.Login
 	owner := *repository.Owner.Login
-	repo := *repository.Name
+	repo := repository.GetName()
 
 	c.logger.Info("grant permission on repository")
 	c.logger.Debugf("permissions\n%v", permissions)
@@ -142,7 +142,7 @@ func (c *Client) SetRepositoryPermissions(ctx context.Context, repository *githu
 
 func (c *Client) SetRepositoryBranchProtection(ctx context.Context, repository *github.Repository, checkNames []string) (err error) {
 	owner := *repository.Owner.Login
-	repo := *repository.Name
+	repo := repository.GetName()
 	default_branch := *repository.DefaultBranch
 
 	False := false
@@ -198,7 +198,7 @@ func (c *Client) SetRepositoryBranchProtection(ctx context.Context, repository *
 
 func (c *Client) getGithubChecks(ctx context.Context, repository *github.Repository, branch string) ([]string, error) {
 	owner := *repository.Owner.Login
-	repo := *repository.Name
+	repo := repository.GetName()
 
 	// Tags have specific workflows, that are not run in PRs.
 	// So, we need to find checks for a commit that is not tagged.
