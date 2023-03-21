@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add `--dry-run` flag to `devctl repo setup` command.
+
 ### Fixed
 
 - repo setup: better select checks required for PR merge
