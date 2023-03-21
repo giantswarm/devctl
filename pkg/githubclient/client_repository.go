@@ -143,7 +143,7 @@ func (c *Client) SetRepositoryPermissions(ctx context.Context, repository *githu
 func (c *Client) SetRepositoryBranchProtection(ctx context.Context, repository *github.Repository, checkNames []string) (err error) {
 	owner := repository.GetOwner().GetLogin()
 	repo := repository.GetName()
-	default_branch := *repository.DefaultBranch
+	default_branch := repository.GetDefaultBranch()
 
 	False := false
 
