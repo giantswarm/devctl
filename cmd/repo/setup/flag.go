@@ -5,6 +5,7 @@ import (
 )
 
 type flag struct {
+	DryRun            bool
 	GithubTokenEnvVar string
 
 	// Features
@@ -31,6 +32,7 @@ type flag struct {
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
+	cmd.PersistentFlags().BoolVar(&f.DryRun, "dry-run", false, "Dry-run or ready-only mode. Show what is being made but do not apply any change.")
 	cmd.PersistentFlags().StringVar(&f.GithubTokenEnvVar, "github-token-envvar", "GITHUB_TOKEN", "Environement variable name for Github token.")
 
 	// Features
