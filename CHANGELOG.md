@@ -7,7 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
+### Added
+
+- Add new flavour with workflows and makefile for cluster apps.
+
+### Changed
 
 - repo setup: better select checks required for PR merge
 

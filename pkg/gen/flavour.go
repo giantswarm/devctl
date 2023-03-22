@@ -13,6 +13,7 @@ const (
 	FlavourCustomer      Flavour = "customer"
 	FlavourGeneric       Flavour = "generic"
 	FlavourKubernetesAPI Flavour = "k8sapi"
+	FlavourClusterApp    Flavour = "cluster-app"
 )
 
 func AllFlavours() []string {
@@ -22,6 +23,7 @@ func AllFlavours() []string {
 		FlavourCustomer.String(),
 		FlavourGeneric.String(),
 		FlavourKubernetesAPI.String(),
+		FlavourClusterApp.String(),
 	}
 }
 
@@ -39,6 +41,8 @@ func NewFlavour(s string) (Flavour, error) {
 		return FlavourGeneric, nil
 	case FlavourKubernetesAPI.String():
 		return FlavourKubernetesAPI, nil
+	case FlavourClusterApp.String():
+		return FlavourClusterApp, nil
 	}
 
 	return Flavour("unknown"), microerror.Maskf(invalidConfigError, "flavour must be one of %s", strings.Join(AllFlavours(), "|"))
@@ -59,22 +63,22 @@ func (s FlavourSlice) Contains(f Flavour) bool {
 	return false
 }
 
-type FlavourSliceFalgValue struct {
+type FlavourSliceFlagValue struct {
 	value   *FlavourSlice
 	changed bool
 }
 
-var _ pflag.Value = new(FlavourSliceFalgValue)
-var _ pflag.SliceValue = new(FlavourSliceFalgValue)
+var _ pflag.Value = new(FlavourSliceFlagValue)
+var _ pflag.SliceValue = new(FlavourSliceFlagValue)
 
-func NewFlavourSliceFlagValue(p *FlavourSlice, value FlavourSlice) *FlavourSliceFalgValue {
+func NewFlavourSliceFlagValue(p *FlavourSlice, value FlavourSlice) *FlavourSliceFlagValue {
 	*p = value
-	return &FlavourSliceFalgValue{
+	return &FlavourSliceFlagValue{
 		value: p,
 	}
 }
 
-func (s *FlavourSliceFalgValue) Set(val string) error {
+func (s *FlavourSliceFlagValue) Set(val string) error {
 	ss := strings.Split(val, ",")
 	out := make([]Flavour, len(ss))
 	for i, v := range ss {
@@ -95,11 +99,11 @@ func (s *FlavourSliceFalgValue) Set(val string) error {
 	return nil
 }
 
-func (s *FlavourSliceFalgValue) Type() string {
+func (s *FlavourSliceFlagValue) Type() string {
 	return "flavourSlice"
 }
 
-func (s *FlavourSliceFalgValue) String() string {
+func (s *FlavourSliceFlagValue) String() string {
 	out := make([]string, len(*s.value))
 	for i, x := range *s.value {
 		out[i] = x.String()
@@ -107,7 +111,7 @@ func (s *FlavourSliceFalgValue) String() string {
 	return "[" + strings.Join(out, ",") + "]"
 }
 
-func (s *FlavourSliceFalgValue) Append(val string) error {
+func (s *FlavourSliceFlagValue) Append(val string) error {
 	x, err := NewFlavour(val)
 	if err != nil {
 		return microerror.Mask(err)
@@ -117,7 +121,7 @@ func (s *FlavourSliceFalgValue) Append(val string) error {
 	return nil
 }
 
-func (s *FlavourSliceFalgValue) Replace(val []string) error {
+func (s *FlavourSliceFlagValue) Replace(val []string) error {
 	out := make([]Flavour, len(val))
 	for i, x := range val {
 		var err error
@@ -130,7 +134,7 @@ func (s *FlavourSliceFalgValue) Replace(val []string) error {
 	return nil
 }
 
-func (s *FlavourSliceFalgValue) GetSlice() []string {
+func (s *FlavourSliceFlagValue) GetSlice() []string {
 	out := make([]string, len(*s.value))
 	for i, x := range *s.value {
 		out[i] = x.String()
