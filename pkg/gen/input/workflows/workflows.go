@@ -56,3 +56,7 @@ func (w *Workflows) CheckValuesSchema() input.Input {
 func (w *Workflows) UpdateChart() input.Input {
 	return file.NewUpdateChartInput(w.params)
 }
+
+func (w *Workflows) ClusterAppSchemaValidation() input.Input {
+	return file.NewClusterAppSchemaValidation(w.params)
+}
