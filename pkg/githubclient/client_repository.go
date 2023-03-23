@@ -100,10 +100,14 @@ func (c *Client) SetRepositorySettings(ctx context.Context, repository, reposito
 	// HTTP 422 This organization does not allow private repository forking
 	repository.AllowForking = nil
 
-	underlyingClient := c.getUnderlyingClient(ctx)
-	repository, _, err := underlyingClient.Repositories.Edit(ctx, repository.GetOwner().GetLogin(), repository.GetName(), repository)
-	if err != nil {
-		return nil, microerror.Mask(err)
+	if !c.dryRun {
+		var err error
+
+		underlyingClient := c.getUnderlyingClient(ctx)
+		repository, _, err = underlyingClient.Repositories.Edit(ctx, repository.GetOwner().GetLogin(), repository.GetName(), repository)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
 	}
 
 	c.logger.Debug("configured repository settings")
@@ -127,9 +131,11 @@ func (c *Client) SetRepositoryPermissions(ctx context.Context, repository *githu
 
 		c.logger.Debugf("grant %q permission to %q", permission, teamSlug)
 
-		_, err := underlyingClient.Teams.AddTeamRepoBySlug(ctx, org, teamSlug, owner, repo, opt)
-		if err != nil {
-			return microerror.Mask(err)
+		if !c.dryRun {
+			_, err := underlyingClient.Teams.AddTeamRepoBySlug(ctx, org, teamSlug, owner, repo, opt)
+			if err != nil {
+				return microerror.Mask(err)
+			}
 		}
 
 		c.logger.Debugf("granted %q permission to %q", permission, teamSlug)
@@ -185,10 +191,12 @@ func (c *Client) SetRepositoryBranchProtection(ctx context.Context, repository *
 	b, _ := json.MarshalIndent(opts, "", "  ")
 	c.logger.Debugf("branch protection settings\n%s", b)
 
-	underlyingClient := c.getUnderlyingClient(ctx)
-	_, _, err = underlyingClient.Repositories.UpdateBranchProtection(ctx, owner, repo, default_branch, opts)
-	if err != nil {
-		return microerror.Mask(err)
+	if !c.dryRun {
+		underlyingClient := c.getUnderlyingClient(ctx)
+		_, _, err = underlyingClient.Repositories.UpdateBranchProtection(ctx, owner, repo, default_branch, opts)
+		if err != nil {
+			return microerror.Mask(err)
+		}
 	}
 
 	c.logger.Debugf("configured protection for %q branch", default_branch)

@@ -7,7 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.20.0] - 2023-03-22
+
+## [5.20.0] - 2023-03-22
+
 ### Added
+
+- Add `--dry-run` flag to `devctl repo setup` command.
+
+### Fixed
 
 - Add new flavour with workflows and makefile for cluster apps.
 
@@ -603,7 +611,9 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v5.19.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v5.20.0...HEAD
+[5.20.0]: https://github.com/giantswarm/devctl/compare/v5.20.0...v5.20.0
+[5.20.0]: https://github.com/giantswarm/devctl/compare/v5.19.0...v5.20.0
 [5.19.0]: https://github.com/giantswarm/devctl/compare/v5.18.3...v5.19.0
 [5.18.3]: https://github.com/giantswarm/devctl/compare/v5.18.2...v5.18.3
 [5.18.2]: https://github.com/giantswarm/devctl/compare/v5.18.1...v5.18.2
