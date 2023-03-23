@@ -147,7 +147,7 @@ func (c *Client) SetRepositoryPermissions(ctx context.Context, repository *githu
 	return nil
 }
 
-func (c *Client) SetRepositoryBranchProtection(ctx context.Context, repository *github.Repository, checkNames []string) (err error) {
+func (c *Client) SetRepositoryBranchProtection(ctx context.Context, repository *github.Repository, checkNames []string, checksFilter *regexp.Regexp) (err error) {
 	owner := *repository.Owner.Login
 	repo := *repository.Name
 	default_branch := *repository.DefaultBranch
@@ -166,7 +166,7 @@ func (c *Client) SetRepositoryBranchProtection(ctx context.Context, repository *
 	}
 
 	if checkNames == nil {
-		checkNames, err = c.getGithubChecks(ctx, repository, default_branch)
+		checkNames, err = c.getGithubChecks(ctx, repository, default_branch, checksFilter)
 		if err != nil {
 			return microerror.Mask(err)
 		}
@@ -205,7 +205,7 @@ func (c *Client) SetRepositoryBranchProtection(ctx context.Context, repository *
 	return nil
 }
 
-func (c *Client) getGithubChecks(ctx context.Context, repository *github.Repository, branch string) ([]string, error) {
+func (c *Client) getGithubChecks(ctx context.Context, repository *github.Repository, branch string, checksFilter *regexp.Regexp) ([]string, error) {
 	owner := *repository.Owner.Login
 	repo := *repository.Name
 
@@ -248,13 +248,13 @@ func (c *Client) getGithubChecks(ctx context.Context, repository *github.Reposit
 	var checks []string
 	for _, combinedStatus := range allCombinedStatus {
 		for _, status := range combinedStatus.Statuses {
-			if filterCheck(status.GetContext()) {
+			if !checksFilter.MatchString(status.GetContext()) {
 				checks = append(checks, status.GetContext())
 			}
 		}
 	}
 
-	c.logger.Debugf("found %d commit statuses for ref %q:\n%v", len(checks), ref, checks)
+	c.logger.Debugf("found %d commit statuses for ref %q:", len(checks), ref)
 	for id, check := range checks {
 		c.logger.Debugf(" - checks[%d] = %q", id, check)
 	}
@@ -262,21 +262,7 @@ func (c *Client) getGithubChecks(ctx context.Context, repository *github.Reposit
 	return checks, nil
 }
 
-// Returns false if check should be ignored
-func filterCheck(checkName string) bool {
-	// List keywords for checks that should be ignored
-	var ignoredCheckKeywords = []string{"aliyun"}
-
-	for _, ignoredCheckKeyword := range ignoredCheckKeywords {
-		matched, _ := regexp.MatchString(ignoredCheckKeyword, checkName)
-		if matched {
-			return false
-		}
-	}
-	return true
-}
-
-// Retrieve list of tags
+// getTags retrieves list of tags
 func (c *Client) getTags(ctx context.Context, repository *github.Repository) ([]*github.RepositoryTag, error) {
 	owner := *repository.Owner.Login
 	repo := *repository.Name
@@ -304,7 +290,7 @@ func (c *Client) getTags(ctx context.Context, repository *github.Repository) ([]
 	return allTags, nil
 }
 
-// Gets latest commit that is not tagged
+// getLatestNonTagCommit gets latest commit that is not tagged
 // because we want one that is not a release
 func (c *Client) getLatestNonTagCommit(ctx context.Context, repository *github.Repository, branch string, tags []*github.RepositoryTag) (string, error) {
 	owner := *repository.Owner.Login

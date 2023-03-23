@@ -28,7 +28,8 @@ type flag struct {
 	Permissions map[string]string
 
 	// Branch protection
-	Checks []string
+	Checks       []string
+	ChecksFilter string
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
@@ -56,6 +57,7 @@ func (f *flag) Init(cmd *cobra.Command) {
 
 	// Branch protection
 	cmd.PersistentFlags().StringSliceVar(&f.Checks, "checks", nil, "Check context names for branch protection. Default will add all auto-detected checks, this can be disabled by passing an empty string.")
+	cmd.PersistentFlags().StringVar(&f.ChecksFilter, "checks-filter", "aliyun", "Provide a regex to filter checks. Checks matching the regex will be ignored.")
 }
 
 func (f *flag) Validate() error {
