@@ -68,14 +68,13 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 
-	ChecksFilterRegexp, err := regexp.Compile(r.flag.ChecksFilter)
-	if err != nil {
-		return microerror.Mask(err)
+	var ChecksFilterRegexp *regexp.Regexp
+	if r.flag.ChecksFilter != "" {
+		ChecksFilterRegexp, err := regexp.Compile(r.flag.ChecksFilter)
+		if err != nil {
+			return microerror.Mask(err)
+		}
 	}
-	if r.flag.ChecksFilter == "" {
-		ChecksFilterRegexp = nil
-	}
-
 	repositorySettings := &github.Repository{
 		HasWiki:     &r.flag.EnableWiki,
 		HasIssues:   &r.flag.EnableIssues,
