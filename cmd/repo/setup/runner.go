@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/giantswarm/microerror"
@@ -67,6 +68,13 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 
+	var ChecksFilterRegexp *regexp.Regexp
+	if r.flag.ChecksFilter != "" {
+		ChecksFilterRegexp, err = regexp.Compile(r.flag.ChecksFilter)
+		if err != nil {
+			return microerror.Mask(err)
+		}
+	}
 	repositorySettings := &github.Repository{
 		HasWiki:     &r.flag.EnableWiki,
 		HasIssues:   &r.flag.EnableIssues,
@@ -92,7 +100,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 
-	err = client.SetRepositoryBranchProtection(ctx, repository, r.flag.Checks)
+	err = client.SetRepositoryBranchProtection(ctx, repository, r.flag.Checks, ChecksFilterRegexp)
 	if err != nil {
 		return microerror.Mask(err)
 	}
