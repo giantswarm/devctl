@@ -56,7 +56,7 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.PersistentFlags().StringToStringVar(&f.Permissions, "permissions", map[string]string{"Employees": "admin", "bots": "push"}, "Grant access to this repository using github_team_name=permission format. Multiple values can be provided as a comma separated list or using this flag multiple times. Permission can be one of: pull, push, admin, maintain, triage.")
 
 	// Branch protection
-	cmd.PersistentFlags().StringSliceVar(&f.Checks, "checks", nil, "Check context names for branch protection. Default will add all auto-detected checks, this can be disabled by passing an empty string.")
+	cmd.PersistentFlags().StringSliceVar(&f.Checks, "checks", nil, "Check context names for branch protection. Default will add all auto-detected checks, this can be disabled by passing an empty string. Overrides \"--checks-filter\"")
 	cmd.PersistentFlags().StringVar(&f.ChecksFilter, "checks-filter", "aliyun", "Provide a regex to filter checks. Checks matching the regex will be ignored. Empty string disables filter (all checks are accepted).")
 }
 
