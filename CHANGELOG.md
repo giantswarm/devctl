@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- repo setup: filter aliyun checks out of required checks for PR merge
+
 ## [5.20.0] - 2023-03-22
 
 ## [5.20.0] - 2023-03-22
