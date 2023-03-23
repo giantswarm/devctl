@@ -248,7 +248,7 @@ func (c *Client) getGithubChecks(ctx context.Context, repository *github.Reposit
 	var checks []string
 	for _, combinedStatus := range allCombinedStatus {
 		for _, status := range combinedStatus.Statuses {
-			if !checksFilter.MatchString(status.GetContext()) {
+			if checksFilter == nil || !checksFilter.MatchString(status.GetContext()) {
 				checks = append(checks, status.GetContext())
 			}
 		}

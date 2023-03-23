@@ -72,6 +72,9 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	if err != nil {
 		return microerror.Mask(err)
 	}
+	if r.flag.ChecksFilter == "" {
+		ChecksFilterRegexp = nil
+	}
 
 	repositorySettings := &github.Repository{
 		HasWiki:     &r.flag.EnableWiki,

@@ -57,7 +57,7 @@ func (f *flag) Init(cmd *cobra.Command) {
 
 	// Branch protection
 	cmd.PersistentFlags().StringSliceVar(&f.Checks, "checks", nil, "Check context names for branch protection. Default will add all auto-detected checks, this can be disabled by passing an empty string.")
-	cmd.PersistentFlags().StringVar(&f.ChecksFilter, "checks-filter", "aliyun", "Provide a regex to filter checks. Checks matching the regex will be ignored.")
+	cmd.PersistentFlags().StringVar(&f.ChecksFilter, "checks-filter", "aliyun", "Provide a regex to filter checks. Checks matching the regex will be ignored. Empty string disables filter (all checks are accepted).")
 }
 
 func (f *flag) Validate() error {
