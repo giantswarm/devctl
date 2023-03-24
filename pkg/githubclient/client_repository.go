@@ -117,9 +117,9 @@ func (c *Client) SetRepositorySettings(ctx context.Context, repository, reposito
 }
 
 func (c *Client) SetRepositoryPermissions(ctx context.Context, repository *github.Repository, permissions map[string]string) error {
-	org := *repository.Organization.Login
-	owner := *repository.Owner.Login
-	repo := *repository.Name
+	org := repository.GetOrganization().GetLogin()
+	owner := repository.GetOwner().GetLogin()
+	repo := repository.GetName()
 
 	c.logger.Info("grant permission on repository")
 	c.logger.Debugf("permissions\n%v", permissions)
@@ -148,9 +148,9 @@ func (c *Client) SetRepositoryPermissions(ctx context.Context, repository *githu
 }
 
 func (c *Client) SetRepositoryBranchProtection(ctx context.Context, repository *github.Repository, checkNames []string, checksFilter *regexp.Regexp) (err error) {
-	owner := *repository.Owner.Login
-	repo := *repository.Name
-	default_branch := *repository.DefaultBranch
+	owner := repository.GetOwner().GetLogin()
+	repo := repository.GetName()
+	default_branch := repository.GetDefaultBranch()
 
 	False := false
 
@@ -206,8 +206,8 @@ func (c *Client) SetRepositoryBranchProtection(ctx context.Context, repository *
 }
 
 func (c *Client) getGithubChecks(ctx context.Context, repository *github.Repository, branch string, checksFilter *regexp.Regexp) ([]string, error) {
-	owner := *repository.Owner.Login
-	repo := *repository.Name
+	owner := repository.GetOwner().GetLogin()
+	repo := repository.GetName()
 
 	// Tags have specific workflows, that are not run in PRs.
 	// So, we need to find checks for a commit that is not tagged.
@@ -264,8 +264,8 @@ func (c *Client) getGithubChecks(ctx context.Context, repository *github.Reposit
 
 // getTags retrieves list of tags
 func (c *Client) getTags(ctx context.Context, repository *github.Repository) ([]*github.RepositoryTag, error) {
-	owner := *repository.Owner.Login
-	repo := *repository.Name
+	owner := repository.GetOwner().GetLogin()
+	repo := repository.GetName()
 
 	underlyingClient := c.getUnderlyingClient(ctx)
 
@@ -293,8 +293,8 @@ func (c *Client) getTags(ctx context.Context, repository *github.Repository) ([]
 // getLatestNonTagCommit gets latest commit that is not tagged
 // because we want one that is not a release
 func (c *Client) getLatestNonTagCommit(ctx context.Context, repository *github.Repository, branch string, tags []*github.RepositoryTag) (string, error) {
-	owner := *repository.Owner.Login
-	repo := *repository.Name
+	owner := repository.GetOwner().GetLogin()
+	repo := repository.GetName()
 
 	underlyingClient := c.getUnderlyingClient(ctx)
 
