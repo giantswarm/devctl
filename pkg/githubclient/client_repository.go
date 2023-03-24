@@ -268,7 +268,7 @@ func (c *Client) SetRepositoryDefaultBranch(ctx context.Context, repository *git
 		owner := repository.GetOwner().GetLogin()
 		repo := repository.GetName()
 
-		c.logger.Debugf("renaming default branch from %q to %q", currentDefaultBranch, newDefaultBranch)
+		c.logger.Infof("renaming default branch from %q to %q", currentDefaultBranch, newDefaultBranch)
 
 		if !c.dryRun {
 			underlyingClient := c.getUnderlyingClient(ctx)
@@ -280,7 +280,7 @@ func (c *Client) SetRepositoryDefaultBranch(ctx context.Context, repository *git
 			*repository.DefaultBranch = newDefaultBranch
 		}
 
-		c.logger.Debugf("renamed default branch from %q to %q", currentDefaultBranch, newDefaultBranch)
+		c.logger.Infof("renamed default branch from %q to %q", currentDefaultBranch, newDefaultBranch)
 	}
 
 	return nil
