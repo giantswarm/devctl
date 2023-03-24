@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.20.1] - 2023-03-24
+
 ### Fixed
 
 - repo setup: filter aliyun checks out of required checks for PR merge
@@ -614,7 +616,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v5.20.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v5.20.1...HEAD
+[5.20.1]: https://github.com/giantswarm/devctl/compare/v5.20.0...v5.20.1
 [5.20.0]: https://github.com/giantswarm/devctl/compare/v5.20.0...v5.20.0
 [5.20.0]: https://github.com/giantswarm/devctl/compare/v5.19.0...v5.20.0
 [5.19.0]: https://github.com/giantswarm/devctl/compare/v5.18.3...v5.19.0
