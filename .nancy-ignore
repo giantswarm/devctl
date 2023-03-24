@@ -35,4 +35,7 @@ CVE-2021-42576 until=2023-06-30
 
 # pkg:golang/github.com/labstack/echo/v4@v4.1.11
 # We need to upgrade our operators to a version of operatorkit with up-to-date dependencies.
-sonatype-2020-1258
+sonatype-2020-1258 until=2023-06-30
+
+# pkg:golang/k8s.io/apiserver@v0.20.12
+CVE-2020-8561 until=2023-06-30
