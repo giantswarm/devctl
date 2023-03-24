@@ -277,6 +277,8 @@ func (c *Client) SetRepositoryDefaultBranch(ctx context.Context, repository *git
 				return microerror.Mask(err)
 			}
 		}
+
+		c.logger.Debugf("renamed default branch from %q to %q", currentDefaultBranch, newDefaultBranch)
 	}
 
 	return nil
