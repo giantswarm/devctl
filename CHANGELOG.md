@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - repo setup: better select checks required for PR merge
+- Fix unsafe pointer access in pkg/githubclient/client_repository.go
 
 ## [5.19.0] - 2023-02-21
 
