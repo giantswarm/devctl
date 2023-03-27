@@ -121,8 +121,10 @@ jobs:
         env:
           GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
         run: |
-          if gh pr view --repo ${{ github.repository }} ${{ steps.gather_facts.outputs.branch }} | grep -i 'state:[[:space:]]*open' >/dev/null; then
-            gh pr view --repo ${{ github.repository }} ${{ steps.gather_facts.outputs.branch }}
+          head="${{ steps.gather_facts.outputs.branch }}"
+          branch="${head#refs/heads/}" # Strip "refs/heads/" prefix.
+          if gh pr view --repo "${{ github.repository }}" "${branch}" --json state --jq .state | grep -i 'open' > /dev/null; then
+            gh pr view --repo "${{ github.repository }}" "${{ steps.gather_facts.outputs.branch }}"
             echo "skip=true" >> $GITHUB_OUTPUT
           else
             echo "skip=false" >> $GITHUB_OUTPUT
