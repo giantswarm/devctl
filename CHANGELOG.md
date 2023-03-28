@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- repo setup: rename default branch to main
+
 ### Fixed
 
 - Fix a bug where open pull-request are not correctly detected
