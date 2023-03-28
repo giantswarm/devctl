@@ -5,6 +5,7 @@ import (
 )
 
 type flag struct {
+	DryRun            bool
 	GithubTokenEnvVar string
 
 	// Features
@@ -26,11 +27,14 @@ type flag struct {
 	// Permissions
 	Permissions map[string]string
 
-	// Branch protection
-	Checks []string
+	// Branch
+	DefaultBranch string
+	Checks        []string
+	ChecksFilter  string
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
+	cmd.PersistentFlags().BoolVar(&f.DryRun, "dry-run", false, "Dry-run or ready-only mode. Show what is being made but do not apply any change.")
 	cmd.PersistentFlags().StringVar(&f.GithubTokenEnvVar, "github-token-envvar", "GITHUB_TOKEN", "Environement variable name for Github token.")
 
 	// Features
@@ -52,8 +56,10 @@ func (f *flag) Init(cmd *cobra.Command) {
 	// Permissions
 	cmd.PersistentFlags().StringToStringVar(&f.Permissions, "permissions", map[string]string{"Employees": "admin", "bots": "push"}, "Grant access to this repository using github_team_name=permission format. Multiple values can be provided as a comma separated list or using this flag multiple times. Permission can be one of: pull, push, admin, maintain, triage.")
 
-	// Branch protection
-	cmd.PersistentFlags().StringSliceVar(&f.Checks, "checks", nil, "Check context names for branch protection. Default will add all auto-detected checks, this can be disabled by passing an empty string.")
+	// Branch
+	cmd.PersistentFlags().StringVar(&f.DefaultBranch, "default-branch", "main", "Default branch name")
+	cmd.PersistentFlags().StringSliceVar(&f.Checks, "checks", nil, "Check context names for branch protection. Default will add all auto-detected checks, this can be disabled by passing an empty string. Overrides \"--checks-filter\"")
+	cmd.PersistentFlags().StringVar(&f.ChecksFilter, "checks-filter", "aliyun", "Provide a regex to filter checks. Checks matching the regex will be ignored. Empty string disables filter (all checks are accepted).")
 }
 
 func (f *flag) Validate() error {

@@ -125,13 +125,13 @@ jobs:
           git commit -m "Bump version to ${{ steps.update_project_go.outputs.new_version }}"
       - name: Push changes
         env:
-          REMOTE_REPO: "https://${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          REMOTE_REPO: "https://${{ github.actor }}:${{ secrets.TAYLORBOT_GITHUB_ACTION }}@github.com/${{ github.repository }}.git"
           branch: "${{ github.ref }}-version-bump"
         run: |
           git push "${REMOTE_REPO}" HEAD:${{ env.branch }}
       - name: Create PR
         env:
-          GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+          GITHUB_TOKEN: "${{ secrets.TAYLORBOT_GITHUB_ACTION }}"
           base: "${{ github.ref }}"
           branch: "${{ github.ref }}-version-bump"
           version: "${{ needs.gather_facts.outputs.version }}"
@@ -170,14 +170,14 @@ jobs:
           git tag "v$version" ${{ github.sha }}
       - name: Push tag
         env:
-          REMOTE_REPO: "https://${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          REMOTE_REPO: "https://${{ github.actor }}:${{ secrets.TAYLORBOT_GITHUB_ACTION }}@github.com/${{ github.repository }}.git"
         run: |
           git push "${REMOTE_REPO}" --tags
       - name: Create release
         id: create_gh_release
         uses: actions/create-release@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: "${{ secrets.TAYLORBOT_GITHUB_ACTION }}"
         with:
           body: ${{ steps.changelog_reader.outputs.changes }}
           tag_name: "v${{ needs.gather_facts.outputs.version }}"
@@ -272,7 +272,7 @@ jobs:
           - linux-arm64
           - windows-amd64
     env:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GITHUB_TOKEN: "${{ secrets.TAYLORBOT_GITHUB_ACTION }}"
       GO_VERSION: 1.19.6
       ARTIFACT_DIR: bin-dist
       TAG: v${{ needs.gather_facts.outputs.version }}
