@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Change github identity to taylorbot in generated workflows
 - repo setup: rename default branch to main
 
 ### Fixed
