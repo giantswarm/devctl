@@ -76,3 +76,7 @@ func (m *Makefile) MakefileGenKubernetesAPI() []input.Input {
 		},
 	}
 }
+
+func (m *Makefile) MakefileGenClusterApp() input.Input {
+	return file.NewMakefileGenClusterAppMkInput(m.params)
+}

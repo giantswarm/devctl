@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"regexp"
 
 	"github.com/giantswarm/microerror"
 	"github.com/google/go-github/v44/github"
@@ -100,10 +101,14 @@ func (c *Client) SetRepositorySettings(ctx context.Context, repository, reposito
 	// HTTP 422 This organization does not allow private repository forking
 	repository.AllowForking = nil
 
-	underlyingClient := c.getUnderlyingClient(ctx)
-	repository, _, err := underlyingClient.Repositories.Edit(ctx, *repository.Owner.Login, *repository.Name, repository)
-	if err != nil {
-		return nil, microerror.Mask(err)
+	if !c.dryRun {
+		var err error
+
+		underlyingClient := c.getUnderlyingClient(ctx)
+		repository, _, err = underlyingClient.Repositories.Edit(ctx, repository.GetOwner().GetLogin(), repository.GetName(), repository)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
 	}
 
 	c.logger.Debug("configured repository settings")
@@ -112,9 +117,9 @@ func (c *Client) SetRepositorySettings(ctx context.Context, repository, reposito
 }
 
 func (c *Client) SetRepositoryPermissions(ctx context.Context, repository *github.Repository, permissions map[string]string) error {
-	org := *repository.Organization.Login
-	owner := *repository.Owner.Login
-	repo := *repository.Name
+	org := repository.GetOrganization().GetLogin()
+	owner := repository.GetOwner().GetLogin()
+	repo := repository.GetName()
 
 	c.logger.Info("grant permission on repository")
 	c.logger.Debugf("permissions\n%v", permissions)
@@ -127,9 +132,11 @@ func (c *Client) SetRepositoryPermissions(ctx context.Context, repository *githu
 
 		c.logger.Debugf("grant %q permission to %q", permission, teamSlug)
 
-		_, err := underlyingClient.Teams.AddTeamRepoBySlug(ctx, org, teamSlug, owner, repo, opt)
-		if err != nil {
-			return microerror.Mask(err)
+		if !c.dryRun {
+			_, err := underlyingClient.Teams.AddTeamRepoBySlug(ctx, org, teamSlug, owner, repo, opt)
+			if err != nil {
+				return microerror.Mask(err)
+			}
 		}
 
 		c.logger.Debugf("granted %q permission to %q", permission, teamSlug)
@@ -140,10 +147,10 @@ func (c *Client) SetRepositoryPermissions(ctx context.Context, repository *githu
 	return nil
 }
 
-func (c *Client) SetRepositoryBranchProtection(ctx context.Context, repository *github.Repository, checkNames []string) (err error) {
-	owner := *repository.Owner.Login
-	repo := *repository.Name
-	default_branch := *repository.DefaultBranch
+func (c *Client) SetRepositoryBranchProtection(ctx context.Context, repository *github.Repository, checkNames []string, checksFilter *regexp.Regexp) (err error) {
+	owner := repository.GetOwner().GetLogin()
+	repo := repository.GetName()
+	default_branch := repository.GetDefaultBranch()
 
 	False := false
 
@@ -159,7 +166,7 @@ func (c *Client) SetRepositoryBranchProtection(ctx context.Context, repository *
 	}
 
 	if checkNames == nil {
-		checkNames, err = c.getGithubChecks(ctx, repository, default_branch)
+		checkNames, err = c.getGithubChecks(ctx, repository, default_branch, checksFilter)
 		if err != nil {
 			return microerror.Mask(err)
 		}
@@ -185,10 +192,12 @@ func (c *Client) SetRepositoryBranchProtection(ctx context.Context, repository *
 	b, _ := json.MarshalIndent(opts, "", "  ")
 	c.logger.Debugf("branch protection settings\n%s", b)
 
-	underlyingClient := c.getUnderlyingClient(ctx)
-	_, _, err = underlyingClient.Repositories.UpdateBranchProtection(ctx, owner, repo, default_branch, opts)
-	if err != nil {
-		return microerror.Mask(err)
+	if !c.dryRun {
+		underlyingClient := c.getUnderlyingClient(ctx)
+		_, _, err = underlyingClient.Repositories.UpdateBranchProtection(ctx, owner, repo, default_branch, opts)
+		if err != nil {
+			return microerror.Mask(err)
+		}
 	}
 
 	c.logger.Debugf("configured protection for %q branch", default_branch)
@@ -196,11 +205,23 @@ func (c *Client) SetRepositoryBranchProtection(ctx context.Context, repository *
 	return nil
 }
 
-func (c *Client) getGithubChecks(ctx context.Context, repository *github.Repository, branch string) ([]string, error) {
-	owner := *repository.Owner.Login
-	repo := *repository.Name
+func (c *Client) getGithubChecks(ctx context.Context, repository *github.Repository, branch string, checksFilter *regexp.Regexp) ([]string, error) {
+	owner := repository.GetOwner().GetLogin()
+	repo := repository.GetName()
 
-	c.logger.Debugf("get commit statuses for %q branch", branch)
+	// Tags have specific workflows, that are not run in PRs.
+	// So, we need to find checks for a commit that is not tagged.
+	// Otherwise PRs would be blocked by not-run checks.
+	allTags, err := c.getTags(ctx, repository)
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
+
+	ref, err := c.getLatestNonTagCommit(ctx, repository, branch, allTags)
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
+	c.logger.Debugf("get commit statuses for ref: %q", ref)
 
 	var allCombinedStatus []*github.CombinedStatus
 	{
@@ -211,7 +232,7 @@ func (c *Client) getGithubChecks(ctx context.Context, repository *github.Reposit
 		underlyingClient := c.getUnderlyingClient(ctx)
 
 		for {
-			combinedStatus, resp, err := underlyingClient.Repositories.GetCombinedStatus(ctx, owner, repo, branch, opt)
+			combinedStatus, resp, err := underlyingClient.Repositories.GetCombinedStatus(ctx, owner, repo, ref, opt)
 			if err != nil {
 				return nil, microerror.Mask(err)
 			}
@@ -227,11 +248,114 @@ func (c *Client) getGithubChecks(ctx context.Context, repository *github.Reposit
 	var checks []string
 	for _, combinedStatus := range allCombinedStatus {
 		for _, status := range combinedStatus.Statuses {
-			checks = append(checks, *status.Context)
+			if checksFilter == nil || !checksFilter.MatchString(status.GetContext()) {
+				checks = append(checks, status.GetContext())
+			}
 		}
 	}
 
-	c.logger.Debugf("found %d commit statuses for %q branch:\n%v", len(checks), branch, checks)
+	c.logger.Debugf("found %d commit statuses for ref %q:", len(checks), ref)
+	for id, check := range checks {
+		c.logger.Debugf(" - checks[%d] = %q", id, check)
+	}
 
 	return checks, nil
+}
+
+func (c *Client) SetRepositoryDefaultBranch(ctx context.Context, repository *github.Repository, newDefaultBranch string) (err error) {
+	currentDefaultBranch := repository.GetDefaultBranch()
+	if currentDefaultBranch != newDefaultBranch {
+		owner := repository.GetOwner().GetLogin()
+		repo := repository.GetName()
+
+		c.logger.Infof("renaming default branch from %q to %q", currentDefaultBranch, newDefaultBranch)
+
+		if !c.dryRun {
+			underlyingClient := c.getUnderlyingClient(ctx)
+			_, _, err := underlyingClient.Repositories.RenameBranch(ctx, owner, repo, currentDefaultBranch, newDefaultBranch)
+			if err != nil {
+				return microerror.Mask(err)
+			}
+
+			*repository.DefaultBranch = newDefaultBranch
+		}
+
+		c.logger.Infof("renamed default branch from %q to %q", currentDefaultBranch, newDefaultBranch)
+	}
+
+	return nil
+}
+
+// getTags retrieves list of tags
+func (c *Client) getTags(ctx context.Context, repository *github.Repository) ([]*github.RepositoryTag, error) {
+	owner := repository.GetOwner().GetLogin()
+	repo := repository.GetName()
+
+	underlyingClient := c.getUnderlyingClient(ctx)
+
+	var allTags []*github.RepositoryTag
+	opt := &github.ListOptions{
+		PerPage: 10,
+	}
+	for {
+		tags, resp, err := underlyingClient.Repositories.ListTags(ctx, owner, repo, opt)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+		allTags = append(allTags, tags...)
+		if resp.NextPage == 0 {
+			break
+		}
+		opt.Page = resp.NextPage
+	}
+	for _, tag := range allTags {
+		c.logger.Debugf("Found tag: %s / commit: %s\n", tag.GetName(), tag.GetCommit().GetSHA())
+	}
+	return allTags, nil
+}
+
+// getLatestNonTagCommit gets latest commit that is not tagged
+// because we want one that is not a release
+func (c *Client) getLatestNonTagCommit(ctx context.Context, repository *github.Repository, branch string, tags []*github.RepositoryTag) (string, error) {
+	owner := repository.GetOwner().GetLogin()
+	repo := repository.GetName()
+
+	underlyingClient := c.getUnderlyingClient(ctx)
+
+	opt := &github.CommitsListOptions{
+		SHA: branch,
+		ListOptions: github.ListOptions{
+			PerPage: 10,
+		},
+	}
+
+	// Loop through commits
+	for {
+		commits, resp, err := underlyingClient.Repositories.ListCommits(ctx, owner, repo, opt)
+		if err != nil {
+			return "", microerror.Mask(err)
+		}
+		for _, commit := range commits {
+			c.logger.Debugf("Checking commit: %s\n", commit.GetSHA())
+			// Is this commit tagged?
+			if !isCommitTagged(commit, tags) {
+				return commit.GetSHA(), nil
+			}
+		}
+		if resp.NextPage == 0 {
+			break
+		}
+		opt.Page = resp.NextPage
+	}
+	return "", microerror.Mask(notFoundError)
+}
+
+// Returns true if the commit has an associated tag
+func isCommitTagged(commit *github.RepositoryCommit, tags []*github.RepositoryTag) bool {
+	for _, tag := range tags {
+		if commit.GetSHA() == tag.GetCommit().GetSHA() {
+			return true
+		}
+	}
+	return false
 }
