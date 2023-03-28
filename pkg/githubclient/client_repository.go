@@ -262,6 +262,30 @@ func (c *Client) getGithubChecks(ctx context.Context, repository *github.Reposit
 	return checks, nil
 }
 
+func (c *Client) SetRepositoryDefaultBranch(ctx context.Context, repository *github.Repository, newDefaultBranch string) (err error) {
+	currentDefaultBranch := repository.GetDefaultBranch()
+	if currentDefaultBranch != newDefaultBranch {
+		owner := repository.GetOwner().GetLogin()
+		repo := repository.GetName()
+
+		c.logger.Infof("renaming default branch from %q to %q", currentDefaultBranch, newDefaultBranch)
+
+		if !c.dryRun {
+			underlyingClient := c.getUnderlyingClient(ctx)
+			_, _, err := underlyingClient.Repositories.RenameBranch(ctx, owner, repo, currentDefaultBranch, newDefaultBranch)
+			if err != nil {
+				return microerror.Mask(err)
+			}
+
+			*repository.DefaultBranch = newDefaultBranch
+		}
+
+		c.logger.Infof("renamed default branch from %q to %q", currentDefaultBranch, newDefaultBranch)
+	}
+
+	return nil
+}
+
 // getTags retrieves list of tags
 func (c *Client) getTags(ctx context.Context, repository *github.Repository) ([]*github.RepositoryTag, error) {
 	owner := repository.GetOwner().GetLogin()
