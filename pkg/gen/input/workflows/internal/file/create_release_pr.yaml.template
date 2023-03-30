@@ -41,7 +41,7 @@ jobs:
       repo_name: ${{ steps.gather_facts.outputs.repo_name }}
       branch: ${{ steps.gather_facts.outputs.branch }}
       base: ${{ steps.gather_facts.outputs.base }}
-      is_major: ${{ steps.gather_facts.outputs.is_major }}
+      needs_major_bump: ${{ steps.gather_facts.outputs.needs_major_bump }}
       skip: ${{ steps.pr_exists.outputs.skip }}
       version: ${{ steps.gather_facts.outputs.version }}
     steps:
@@ -91,7 +91,9 @@ jobs:
                 version_major=$((version_major+1))
                 version_minor=0
                 version_patch=0
-                echo "is_major=true" >> $GITHUB_OUTPUT
+                if [[ "${version_major}" != "1" ]]; then
+                  echo "needs_major_bump=true" >> $GITHUB_OUTPUT
+                fi
                 ;;
               *)
                 echo "Unknown Semver level provided"
@@ -106,8 +108,8 @@ jobs:
             version_patch=$(echo "${version}" | cut -d "." -f 3)
             # This will help us detect versions with suffixes as majors, i.e 3.0.0-alpha1.
             # Even though it's a pre-release, it's still a major.
-            if [[ $version_minor = 0 && $version_patch =~ ^0.* ]]; then
-              echo "is_major=true" >> $GITHUB_OUTPUT
+            if [[ $version_minor = 0 && $version_patch =~ ^0.* && $version_major != 1 ]]; then
+              echo "needs_major_bump=true" >> $GITHUB_OUTPUT
             fi
           fi
           repo_name="$(echo '${{ github.repository }}' | awk -F '/' '{print $2}')"
@@ -197,7 +199,7 @@ jobs:
 
       - name: Bump go module defined in go.mod if needed
         run: |
-          if [ "${{ needs.gather_facts.outputs.is_major }}" = true ] && test -f "go.mod"; then
+          if [ "${{ needs.gather_facts.outputs.needs_major_bump }}" = true ] && test -f "go.mod"; then
             go install github.com/marwan-at-work/mod/cmd/mod@v0.4.2
             mod upgrade
           fi

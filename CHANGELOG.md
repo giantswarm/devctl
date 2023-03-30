@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Fix a bug where open pull-request are not correctly detected
+- Incorrectly attempting to bump to `/v2` when releasing `v1.0.0`
 
 ## [5.20.1] - 2023-03-24
 
