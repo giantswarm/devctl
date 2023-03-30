@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.21.0] - 2023-03-30
+
 ### Changed
 
 - Change github identity to taylorbot in generated workflows
@@ -627,7 +629,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v5.20.1...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v5.21.0...HEAD
+[5.21.0]: https://github.com/giantswarm/devctl/compare/v5.20.1...v5.21.0
 [5.20.1]: https://github.com/giantswarm/devctl/compare/v5.20.0...v5.20.1
 [5.20.0]: https://github.com/giantswarm/devctl/compare/v5.20.0...v5.20.0
 [5.20.0]: https://github.com/giantswarm/devctl/compare/v5.19.0...v5.20.0
