@@ -1,7 +1,9 @@
 {{{{ .Header }}}}
 
-# This workflow che
-# It also updates the Chart.yaml dependencies on local subcharts update.
+# This workflows workflows valides the JSON schema of the cluster-app located
+# in `helm/*/values.schema.json` with schemalint.
+# It also ensures that the `values.yaml` file located in `helm/*/values.yaml`
+# is generated with helm-values-gen from the defaults in the JSON schema.
 
 name: JSON schema validation
 on:
