@@ -1,9 +1,9 @@
 {{{{ .Header }}}}
 
-# This workflows workflows valides the JSON schema of the cluster-app located
-# in `helm/*/values.schema.json` with schemalint.
-# It also ensures that the `values.yaml` file located in `helm/*/values.yaml`
-# is generated with helm-values-gen from the defaults in the JSON schema.
+# This workflow validates the JSON schema of the cluster-app, which is located in
+# `helm/*/values.schema.json`, using schemalint. It also ensures that the `values.yaml`
+# file located in `helm/*/values.yaml` is generated with helm-values-gen, using the
+# defaults defined in the JSON schema.
 
 name: JSON schema validation
 on:
