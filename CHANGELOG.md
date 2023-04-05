@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - Update comment in the cluster-app schema validation workflow file.
+- Add help text to cluster-app schema make file
 
 ## [5.21.0] - 2023-03-30
 
