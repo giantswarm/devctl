@@ -7,7 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
 - Update comment in the cluster-app schema validation workflow file.
+- Replaced `upload-release-assets` action-based step with CLI-based step.
+
+### Added
+
 - Add help text to cluster-app schema make file
 
 ## [5.21.0] - 2023-03-30
