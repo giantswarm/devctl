@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.21.1] - 2023-04-06
+
 ### Changed
 
 - Update comment in the cluster-app schema validation workflow file.
@@ -638,7 +640,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v5.21.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v5.21.1...HEAD
+[5.21.1]: https://github.com/giantswarm/devctl/compare/v5.21.0...v5.21.1
 [5.21.0]: https://github.com/giantswarm/devctl/compare/v5.20.1...v5.21.0
 [5.20.1]: https://github.com/giantswarm/devctl/compare/v5.20.0...v5.20.1
 [5.20.0]: https://github.com/giantswarm/devctl/compare/v5.20.0...v5.20.0
