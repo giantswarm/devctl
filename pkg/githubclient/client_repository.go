@@ -3,6 +3,7 @@ package githubclient
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"regexp"
 
@@ -201,6 +202,36 @@ func (c *Client) SetRepositoryBranchProtection(ctx context.Context, repository *
 	}
 
 	c.logger.Debugf("configured protection for %q branch", default_branch)
+
+	return nil
+}
+
+func (c *Client) RemoveRepositoryBranchProtection(ctx context.Context, repository *github.Repository) (err error) {
+	owner := repository.GetOwner().GetLogin()
+	repo := repository.GetName()
+	default_branch := repository.GetDefaultBranch()
+
+	c.logger.Info("disable branch protection")
+
+	underlyingClient := c.getUnderlyingClient(ctx)
+	_, _, err = underlyingClient.Repositories.GetBranchProtection(ctx, owner, repo, default_branch)
+	if err != nil {
+		if errors.Is(err, github.ErrBranchNotProtected) {
+			// Branch has no protection set, no need to remove it.
+			c.logger.Debugf("leaving branch %q without protection", default_branch)
+			return nil
+		}
+		return microerror.Mask(err)
+	}
+
+	if !c.dryRun {
+		_, err = underlyingClient.Repositories.RemoveBranchProtection(ctx, owner, repo, default_branch)
+		if err != nil {
+			return microerror.Mask(err)
+		}
+	}
+
+	c.logger.Debugf("disabled protection for %q branch", default_branch)
 
 	return nil
 }

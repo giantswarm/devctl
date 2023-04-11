@@ -105,9 +105,16 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 
-	err = client.SetRepositoryBranchProtection(ctx, repository, r.flag.Checks, ChecksFilterRegexp)
-	if err != nil {
-		return microerror.Mask(err)
+	if r.flag.DisableBranchProtection {
+		err = client.RemoveRepositoryBranchProtection(ctx, repository)
+		if err != nil {
+			return microerror.Mask(err)
+		}
+	} else {
+		err = client.SetRepositoryBranchProtection(ctx, repository, r.flag.Checks, ChecksFilterRegexp)
+		if err != nil {
+			return microerror.Mask(err)
+		}
 	}
 
 	r.logger.Info("completed repository setup")

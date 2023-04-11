@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add `--disable-branch-protetion` flag to `devctl repo setup`, to allow disabling github branch protection.
+
 ## [5.21.1] - 2023-04-06
 
 ### Changed
