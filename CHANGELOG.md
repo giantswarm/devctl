@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Update `update-chart` workflow to accept a TaylorBot Token secret when calling it from another workflow.
+
 ## [5.21.1] - 2023-04-06
 
 ### Changed
