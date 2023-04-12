@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Add `--disable-branch-protetion` flag to `devctl repo setup`, to allow disabling github branch protection.
 
+### Changed
+
+- Check values schema on push, not only for PRs
+
 ## [5.22.0] - 2023-04-13
 
 ### Changed

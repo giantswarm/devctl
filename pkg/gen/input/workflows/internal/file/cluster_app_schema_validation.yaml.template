@@ -7,13 +7,15 @@
 
 name: JSON schema validation
 on:
-  pull_request: 
+  pull_request:
     branches:
       - master
       - main
     paths:
       - 'helm/**/values.yaml'
       - 'helm/**/values.schema.json'
+
+  push: {}
 
 jobs:
   validate:
