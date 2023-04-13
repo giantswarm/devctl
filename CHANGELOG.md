@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Bump `github.com/marwan-at-work/mod/cmd/mod` to `v0.5.0` in create release pr template
+- Update `architect` to v6.11.0
 
 ## [5.21.1] - 2023-04-06
 
