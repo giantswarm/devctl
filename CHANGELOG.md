@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Add `--disable-branch-protetion` flag to `devctl repo setup`, to allow disabling github branch protection.
 
+## [5.22.0] - 2023-04-13
+
+### Changed
+
+- Bump `github.com/marwan-at-work/mod/cmd/mod` to `v0.5.0` in create release pr template
+- Update `architect` to v6.11.0
+
 ## [5.21.1] - 2023-04-06
 
 ### Changed
@@ -644,7 +651,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v5.21.1...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v5.22.0...HEAD
+[5.22.0]: https://github.com/giantswarm/devctl/compare/v5.21.1...v5.22.0
 [5.21.1]: https://github.com/giantswarm/devctl/compare/v5.21.0...v5.21.1
 [5.21.0]: https://github.com/giantswarm/devctl/compare/v5.20.1...v5.21.0
 [5.20.1]: https://github.com/giantswarm/devctl/compare/v5.20.0...v5.20.1
