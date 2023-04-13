@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Bump `github.com/marwan-at-work/mod/cmd/mod` to `v0.5.0` in create release pr template
+
 ## [5.21.1] - 2023-04-06
 
 ### Changed
