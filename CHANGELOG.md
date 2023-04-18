@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add `cilium-prerequisites` component.
+
 ### Changed
 
 - Completely rework check_values_schema action to cut down on noise
