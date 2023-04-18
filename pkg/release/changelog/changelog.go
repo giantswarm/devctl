@@ -114,6 +114,12 @@ var knownComponentParseParams = map[string]parseParams{
 		start:     commonStartPattern,
 		end:       commonEndPattern,
 	},
+	"cilium-prerequisites": {
+		tag:       "https://github.com/giantswarm/cilium-prerequisites/releases/tag/v{{.Version}}",
+		changelog: "https://raw.githubusercontent.com/giantswarm/cilium-prerequisites/v{{.Version}}/CHANGELOG.md",
+		start:     commonStartPattern,
+		end:       commonEndPattern,
+	},
 	"cluster-autoscaler": {
 		tag:       "https://github.com/giantswarm/cluster-autoscaler-app/releases/tag/v{{.Version}}",
 		changelog: "https://raw.githubusercontent.com/giantswarm/cluster-autoscaler-app/v{{.Version}}/CHANGELOG.md",
