@@ -1,7 +1,7 @@
 package release
 
 import (
-	"io/ioutil"
+	"os"
 	"path/filepath"
 	"sort"
 
@@ -102,7 +102,7 @@ func mergeReleases(base v1alpha1.Release, override v1alpha1.Release) v1alpha1.Re
 
 // Parse release.yaml for given version from the given provider path in the releases repository.
 func findRelease(providerDirectory string, targetVersion semver.Version) (v1alpha1.Release, string, error) {
-	fileInfos, err := ioutil.ReadDir(providerDirectory)
+	fileInfos, err := os.ReadDir(providerDirectory)
 	if err != nil {
 		return v1alpha1.Release{}, "", microerror.Mask(err)
 	}
@@ -125,7 +125,7 @@ func findRelease(providerDirectory string, targetVersion semver.Version) (v1alph
 		return v1alpha1.Release{}, "", releaseNotFoundError
 	}
 
-	releaseYAML, err := ioutil.ReadFile(releaseYAMLPath)
+	releaseYAML, err := os.ReadFile(releaseYAMLPath)
 	if err != nil {
 		return v1alpha1.Release{}, "", microerror.Mask(err)
 	}

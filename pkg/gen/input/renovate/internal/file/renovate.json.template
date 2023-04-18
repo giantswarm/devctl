@@ -8,7 +8,7 @@
     ":reviewer({{ $reviewer | printf "team:%s" }})"
     {{- end }}
   ],
-  "labels": ["dependencies"],
+  "labels": ["dependencies", "renovate"],
   {{- if eq $language "go" }}
   "packageRules": [
     {
@@ -26,7 +26,7 @@
     },
     {
       "excludePackagePatterns": [".*giantswarm.*" ,"^k8s.io", "^sigs.k8s.io"],
-      "groupName": "etc modules"
+      "groupName": "misc modules"
     },
     {
       "matchPackagePatterns": ["^sigs.k8s.io/cluster*"],
@@ -62,6 +62,14 @@
     "architect",
     "zricethezav/gitleaks-action",
     "actions/setup-go"
+  ],
+  "regexManagers": [
+    {
+      "fileMatch": ["^helm\\/.+\\/values\\.yaml$"],
+      "matchStrings": ["repo: (?<depName>.*)\n(\\s)*version: (?<currentValue>.*?)\n"],
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v(?<version>.*)$"
+    }
   ],
   "schedule": [ {{ $interval | printf "%q" }} ]
 }

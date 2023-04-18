@@ -67,6 +67,17 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 	if r.flag.Flavours.Contains(gen.FlavourApp) {
 		inputs = append(inputs, workflowsInput.CheckValuesSchema())
+		if r.flag.InstallUpdateChart {
+			inputs = append(inputs, workflowsInput.UpdateChart())
+		}
+	}
+
+	if r.flag.Flavours.Contains(gen.FlavourCustomer) {
+		inputs = append(inputs, workflowsInput.AddCustomerBoardAutomation())
+	}
+
+	if r.flag.Flavours.Contains(gen.FlavourClusterApp) {
+		inputs = append(inputs, workflowsInput.ClusterAppSchemaValidation())
 	}
 
 	err = gen.Execute(

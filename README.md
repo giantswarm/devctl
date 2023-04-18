@@ -18,19 +18,39 @@ GO111MODULE=on go install -ldflags "-X 'github.com/giantswarm/devctl/pkg/project
 
 To be able to fully use `devctl` you need to set following environment variables.
 
-- `DEVCTL_GITHUB_ACCESS_TOKEN`: Github access token generated with your
+- `DEVCTL_GITHUB_ACCESS_TOKEN`: GitHub access token generated with your
   personal account.
 
 ## Usage
 
-Please check `devctl -h` for for details on all functions.
+For full capabilities, please check `devctl -h` for details on all functions.
 
-### Find repositories depending on a Go package/module
+### Generating files
 
-For example, to find all our repositories using `github.com/giantswarm/microerror`:
+This command is mostly used to distribute common files across multiple repositories, for example:
 
+- GitHub workflow via: `devctl gen workflows --flavour ...`
+- Makefiles: `devctl gen makefile --flavour ...`
+- Makefiles: `devctl gen renovate --language ...`
+- Makefiles: `devctl gen dependabot --ecosystems ...`
+
+These are distributed via https://github.com/giantswarm/github and configuration passed to the commands are kept
+within https://github.com/giantswarm/github/tree/master/repositories.
+
+### Generating releases
+
+The tool can be used to create legacy cluster releases, for example the ones stored in https://github.com/giantswarm/releases.
+
+```shell
+devctl release create --provider aws --base 18.0.1 --name 18.0.2 --component aws-operator@13.2.1-dev --overwrite
 ```
-devctl repo list --depends-on github.com/giantswarm/microerror
+
+### Updating the tool
+
+There is a command that can be used to self-upgrade the tool.
+
+```shell
+devctl version update
 ```
 
 ## Troubleshooting

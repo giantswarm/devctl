@@ -10,12 +10,14 @@ import (
 )
 
 type Config struct {
+	DryRun bool
 	Logger *logrus.Logger
 
 	AccessToken string
 }
 
 type Client struct {
+	dryRun bool
 	logger *logrus.Logger
 
 	accessToken string
@@ -31,6 +33,7 @@ func New(config Config) (*Client, error) {
 	}
 
 	c := &Client{
+		dryRun: config.DryRun,
 		logger: config.Logger,
 
 		accessToken: config.AccessToken,

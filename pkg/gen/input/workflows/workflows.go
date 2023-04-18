@@ -29,6 +29,10 @@ func New(config Config) (*Workflows, error) {
 	return w, nil
 }
 
+func (w *Workflows) AddCustomerBoardAutomation() input.Input {
+	return file.NewCustomerBoardAutomationInput(w.params)
+}
+
 func (w *Workflows) CreateRelease() input.Input {
 	return file.NewCreateReleaseInput(w.params)
 }
@@ -47,4 +51,12 @@ func (w *Workflows) Gitleaks() input.Input {
 
 func (w *Workflows) CheckValuesSchema() input.Input {
 	return file.NewCheckValuesSchemaInput(w.params)
+}
+
+func (w *Workflows) UpdateChart() input.Input {
+	return file.NewUpdateChartInput(w.params)
+}
+
+func (w *Workflows) ClusterAppSchemaValidation() input.Input {
+	return file.NewClusterAppSchemaValidation(w.params)
 }

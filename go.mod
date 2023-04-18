@@ -1,31 +1,75 @@
 module github.com/giantswarm/devctl
 
-go 1.16
+go 1.18
 
 require (
-	github.com/Masterminds/semver/v3 v3.1.1
+	github.com/Masterminds/semver/v3 v3.2.0
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/bmatcuk/doublestar v1.3.4
-	github.com/fatih/color v1.13.0
+	github.com/fatih/color v1.15.0
 	github.com/giantswarm/k8sclient/v7 v7.0.1
 	github.com/giantswarm/kubeconfig/v4 v4.1.0
 	github.com/giantswarm/microerror v0.4.0
 	github.com/giantswarm/micrologger v0.6.0
 	github.com/giantswarm/release-operator/v3 v3.2.0
 	github.com/google/go-github/v44 v44.1.0
-	github.com/mattn/go-colorable v0.1.12 // indirect
 	github.com/pelletier/go-toml v1.9.5
 	github.com/rhysd/go-github-selfupdate v1.2.3
-	github.com/sirupsen/logrus v1.8.1
-	github.com/spf13/cobra v1.4.0
+	github.com/sirupsen/logrus v1.9.0
+	github.com/spf13/cobra v1.6.1
 	github.com/spf13/pflag v1.0.5
-	github.com/stretchr/testify v1.7.2 // indirect
-	golang.org/x/crypto v0.0.0-20220525230936-793ad666bf5e // indirect
-	golang.org/x/net v0.0.0-20220607020251-c690dde0001d
-	golang.org/x/oauth2 v0.0.0-20211104180415-d3ed0bb246c8
-	golang.org/x/time v0.0.0-20220411224347-583f2d630306 // indirect
+	golang.org/x/net v0.8.0
+	golang.org/x/oauth2 v0.5.0
 	k8s.io/apimachinery v0.20.12
 	sigs.k8s.io/yaml v1.3.0
+)
+
+require (
+	github.com/cenkalti/backoff/v4 v4.1.2 // indirect
+	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/evanphx/json-patch v4.11.0+incompatible // indirect
+	github.com/giantswarm/backoff v1.0.0 // indirect
+	github.com/giantswarm/k8smetadata v0.6.0 // indirect
+	github.com/go-kit/log v0.2.0 // indirect
+	github.com/go-logfmt/logfmt v0.5.1 // indirect
+	github.com/go-logr/logr v0.4.0 // indirect
+	github.com/go-stack/stack v1.8.1 // indirect
+	github.com/gogo/protobuf v1.3.2 // indirect
+	github.com/golang/protobuf v1.5.2 // indirect
+	github.com/google/go-github/v30 v30.1.0 // indirect
+	github.com/google/go-querystring v1.1.0 // indirect
+	github.com/google/gofuzz v1.1.0 // indirect
+	github.com/googleapis/gnostic v0.5.5 // indirect
+	github.com/imdario/mergo v0.3.12 // indirect
+	github.com/inconshreveable/go-update v0.0.0-20160112193335-8152e7eb6ccf // indirect
+	github.com/inconshreveable/mousetrap v1.0.1 // indirect
+	github.com/json-iterator/go v1.1.12 // indirect
+	github.com/mattn/go-colorable v0.1.13 // indirect
+	github.com/mattn/go-isatty v0.0.17 // indirect
+	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
+	github.com/modern-go/reflect2 v1.0.2 // indirect
+	github.com/pkg/errors v0.9.1 // indirect
+	github.com/stretchr/testify v1.7.2 // indirect
+	github.com/tcnksm/go-gitconfig v0.1.2 // indirect
+	github.com/ulikunitz/xz v0.5.9 // indirect
+	golang.org/x/crypto v0.5.0 // indirect
+	golang.org/x/sys v0.6.0 // indirect
+	golang.org/x/term v0.6.0 // indirect
+	golang.org/x/text v0.8.0 // indirect
+	golang.org/x/time v0.3.0 // indirect
+	google.golang.org/appengine v1.6.7 // indirect
+	google.golang.org/protobuf v1.28.0 // indirect
+	gopkg.in/inf.v0 v0.9.1 // indirect
+	gopkg.in/yaml.v2 v2.4.0 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
+	k8s.io/api v0.20.12 // indirect
+	k8s.io/apiextensions-apiserver v0.20.12 // indirect
+	k8s.io/client-go v0.20.12 // indirect
+	k8s.io/klog/v2 v2.9.0 // indirect
+	k8s.io/kube-openapi v0.0.0-20210421082810-95288971da7e // indirect
+	k8s.io/utils v0.0.0-20210819203725-bdf08cb9a70a // indirect
+	sigs.k8s.io/controller-runtime v0.8.3 // indirect
+	sigs.k8s.io/structured-merge-diff/v4 v4.1.2 // indirect
 )
 
 replace (
@@ -39,11 +83,18 @@ replace (
 	github.com/gorilla/websocket => github.com/gorilla/websocket v1.4.2
 
 	// Mitigate security issues
-	github.com/hashicorp/consul/api => github.com/hashicorp/consul/api v1.13.0
-	github.com/hashicorp/consul/sdk => github.com/hashicorp/consul/sdk v0.9.0
+	github.com/hashicorp/consul/api => github.com/hashicorp/consul/api v1.15.2
+	github.com/hashicorp/consul/sdk => github.com/hashicorp/consul/sdk v0.11.0
 	github.com/hashicorp/vault/api => github.com/hashicorp/vault/api v1.6.0
+
+	// Fix for CWE-121: Stack-based Buffer Overflow
+	github.com/nats-io/nats-server/v2 => github.com/nats-io/nats-server/v2 v2.9.11
+
 	github.com/pkg/sftp => github.com/pkg/sftp v1.13.4
 	github.com/prometheus/client_golang => github.com/prometheus/client_golang v1.12.2
 	github.com/valyala/fasthttp => github.com/valyala/fasthttp v1.37.0
+
+	// Fix for CWE-400: Uncontrolled Resource Consumption ('Resource Exhaustion')
+	golang.org/x/text => golang.org/x/text v0.3.8
 
 )
