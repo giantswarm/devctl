@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add `cilium-prerequisites` component.
 - Add `--disable-branch-protetion` flag to `devctl repo setup`, to allow disabling github branch protection.
 
 ### Changed
