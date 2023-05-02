@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [5.24.0] - 2023-05-02
 
+### Changed
+
+- Update schemalint to v2
+
 ## [5.23.0] - 2023-04-18
 
 ### Added
@@ -19,7 +23,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Check values schema on push, not only for PRs
-- Update schemalint to v2
 
 ## [5.22.0] - 2023-04-13
 
