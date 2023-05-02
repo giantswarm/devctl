@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.24.0] - 2023-05-02
+
 ## [5.23.0] - 2023-04-18
 
 ### Added
@@ -659,7 +661,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v5.23.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v5.24.0...HEAD
+[5.24.0]: https://github.com/giantswarm/devctl/compare/v5.23.0...v5.24.0
 [5.23.0]: https://github.com/giantswarm/devctl/compare/v5.22.0...v5.23.0
 [5.22.0]: https://github.com/giantswarm/devctl/compare/v5.21.1...v5.22.0
 [5.21.1]: https://github.com/giantswarm/devctl/compare/v5.21.0...v5.21.1
