@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- CircleCI badge in devctl's own README
+
 ## [5.24.0] - 2023-05-02
 
 ### Changed
