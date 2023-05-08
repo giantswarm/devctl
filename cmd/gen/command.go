@@ -10,7 +10,6 @@ import (
 
 	"github.com/giantswarm/devctl/cmd/gen/ami"
 	"github.com/giantswarm/devctl/cmd/gen/dependabot"
-	"github.com/giantswarm/devctl/cmd/gen/kubeconfig"
 	"github.com/giantswarm/devctl/cmd/gen/makefile"
 	"github.com/giantswarm/devctl/cmd/gen/renovate"
 	"github.com/giantswarm/devctl/cmd/gen/workflows"
@@ -63,20 +62,6 @@ func New(config Config) (*cobra.Command, error) {
 		}
 
 		dependabotCmd, err = dependabot.New(c)
-		if err != nil {
-			return nil, microerror.Mask(err)
-		}
-	}
-
-	var kubeconfigCmd *cobra.Command
-	{
-		c := kubeconfig.Config{
-			Logger: config.Logger,
-			Stderr: config.Stderr,
-			Stdout: config.Stdout,
-		}
-
-		kubeconfigCmd, err = kubeconfig.New(c)
 		if err != nil {
 			return nil, microerror.Mask(err)
 		}
@@ -143,7 +128,6 @@ func New(config Config) (*cobra.Command, error) {
 
 	c.AddCommand(amiCmd)
 	c.AddCommand(dependabotCmd)
-	c.AddCommand(kubeconfigCmd)
 	c.AddCommand(makefileCmd)
 	c.AddCommand(renovateCmd)
 	c.AddCommand(workflowsCmd)
