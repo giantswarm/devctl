@@ -8,11 +8,11 @@ import (
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
 
-	"github.com/giantswarm/devctl/v2/cmd/gen/ami"
-	"github.com/giantswarm/devctl/v2/cmd/gen/dependabot"
-	"github.com/giantswarm/devctl/v2/cmd/gen/makefile"
-	"github.com/giantswarm/devctl/v2/cmd/gen/renovate"
-	"github.com/giantswarm/devctl/v2/cmd/gen/workflows"
+	"github.com/giantswarm/devctl/cmd/gen/ami"
+	"github.com/giantswarm/devctl/cmd/gen/dependabot"
+	"github.com/giantswarm/devctl/cmd/gen/makefile"
+	"github.com/giantswarm/devctl/cmd/gen/renovate"
+	"github.com/giantswarm/devctl/cmd/gen/workflows"
 )
 
 const (

@@ -1,4 +1,4 @@
-module github.com/giantswarm/devctl/v2
+module github.com/giantswarm/devctl
 
 go 1.18
 

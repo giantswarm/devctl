@@ -3,7 +3,7 @@ package params
 import (
 	"sort"
 
-	"github.com/giantswarm/devctl/v2/pkg/gen"
+	"github.com/giantswarm/devctl/pkg/gen"
 )
 
 func Ecosystems(p Params) []string {

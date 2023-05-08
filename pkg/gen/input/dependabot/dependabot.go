@@ -1,9 +1,9 @@
 package dependabot
 
 import (
-	"github.com/giantswarm/devctl/v2/pkg/gen/input"
-	"github.com/giantswarm/devctl/v2/pkg/gen/input/dependabot/internal/file"
-	"github.com/giantswarm/devctl/v2/pkg/gen/input/dependabot/internal/params"
+	"github.com/giantswarm/devctl/pkg/gen/input"
+	"github.com/giantswarm/devctl/pkg/gen/input/dependabot/internal/file"
+	"github.com/giantswarm/devctl/pkg/gen/input/dependabot/internal/params"
 )
 
 type Config struct {

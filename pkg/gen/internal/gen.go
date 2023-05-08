@@ -8,7 +8,7 @@ import (
 
 	"github.com/giantswarm/microerror"
 
-	"github.com/giantswarm/devctl/v2/pkg/gen/input"
+	"github.com/giantswarm/devctl/pkg/gen/input"
 )
 
 func Execute(ctx context.Context, w io.Writer, f input.Input) error {

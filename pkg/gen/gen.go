@@ -10,8 +10,8 @@ import (
 
 	"github.com/giantswarm/microerror"
 
-	"github.com/giantswarm/devctl/v2/pkg/gen/input"
-	"github.com/giantswarm/devctl/v2/pkg/gen/internal"
+	"github.com/giantswarm/devctl/pkg/gen/input"
+	"github.com/giantswarm/devctl/pkg/gen/internal"
 )
 
 func Execute(ctx context.Context, files ...input.Input) error {

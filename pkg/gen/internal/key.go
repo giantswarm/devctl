@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/giantswarm/devctl/v2/pkg/project"
+	"github.com/giantswarm/devctl/pkg/project"
 )
 
 const (

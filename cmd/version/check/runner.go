@@ -11,9 +11,9 @@ import (
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
 
-	"github.com/giantswarm/devctl/v2/internal/env"
-	"github.com/giantswarm/devctl/v2/pkg/project"
-	"github.com/giantswarm/devctl/v2/pkg/updater"
+	"github.com/giantswarm/devctl/internal/env"
+	"github.com/giantswarm/devctl/pkg/project"
+	"github.com/giantswarm/devctl/pkg/updater"
 )
 
 type runner struct {

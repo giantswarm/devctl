@@ -4,8 +4,8 @@ import (
 	_ "embed"
 	"path/filepath"
 
-	"github.com/giantswarm/devctl/v2/pkg/gen/input"
-	"github.com/giantswarm/devctl/v2/pkg/gen/input/renovate/internal/params"
+	"github.com/giantswarm/devctl/pkg/gen/input"
+	"github.com/giantswarm/devctl/pkg/gen/input/renovate/internal/params"
 )
 
 //go:embed renovate.json.template
