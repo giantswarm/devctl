@@ -3,8 +3,8 @@ package file
 import (
 	_ "embed"
 
-	"github.com/giantswarm/devctl/pkg/gen/input"
-	"github.com/giantswarm/devctl/pkg/gen/input/workflows/internal/params"
+	"github.com/giantswarm/devctl/v2/pkg/gen/input"
+	"github.com/giantswarm/devctl/v2/pkg/gen/input/workflows/internal/params"
 )
 
 //go:embed ensure_major_version_tags.yaml.template

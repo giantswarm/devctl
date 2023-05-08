@@ -3,8 +3,8 @@ package file
 import (
 	_ "embed"
 
-	"github.com/giantswarm/devctl/pkg/gen/input"
-	"github.com/giantswarm/devctl/pkg/gen/input/makefile/internal/params"
+	"github.com/giantswarm/devctl/v2/pkg/gen/input"
+	"github.com/giantswarm/devctl/v2/pkg/gen/input/makefile/internal/params"
 )
 
 //go:embed Makefile.template

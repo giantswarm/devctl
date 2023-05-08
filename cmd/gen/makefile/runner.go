@@ -8,9 +8,9 @@ import (
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
 
-	"github.com/giantswarm/devctl/pkg/gen"
-	"github.com/giantswarm/devctl/pkg/gen/input"
-	"github.com/giantswarm/devctl/pkg/gen/input/makefile"
+	"github.com/giantswarm/devctl/v2/pkg/gen"
+	"github.com/giantswarm/devctl/v2/pkg/gen/input"
+	"github.com/giantswarm/devctl/v2/pkg/gen/input/makefile"
 )
 
 type runner struct {

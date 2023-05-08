@@ -1,9 +1,9 @@
 package renovate
 
 import (
-	"github.com/giantswarm/devctl/pkg/gen/input"
-	"github.com/giantswarm/devctl/pkg/gen/input/renovate/internal/file"
-	"github.com/giantswarm/devctl/pkg/gen/input/renovate/internal/params"
+	"github.com/giantswarm/devctl/v2/pkg/gen/input"
+	"github.com/giantswarm/devctl/v2/pkg/gen/input/renovate/internal/file"
+	"github.com/giantswarm/devctl/v2/pkg/gen/input/renovate/internal/params"
 )
 
 type Config struct {
