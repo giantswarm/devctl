@@ -60,3 +60,7 @@ func (w *Workflows) UpdateChart() input.Input {
 func (w *Workflows) ClusterAppSchemaValidation() input.Input {
 	return file.NewClusterAppSchemaValidation(w.params)
 }
+
+func (w *Workflows) HelmRenderDiff() input.Input {
+	return file.NewHelmRenderDiff(w.params)
+}
