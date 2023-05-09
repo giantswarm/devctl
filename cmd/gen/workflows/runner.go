@@ -78,6 +78,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 	if r.flag.Flavours.Contains(gen.FlavourClusterApp) {
 		inputs = append(inputs, workflowsInput.ClusterAppSchemaValidation())
+		inputs = append(inputs, workflowsInput.HelmRenderDiff())
 	}
 
 	err = gen.Execute(

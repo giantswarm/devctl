@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Github action to render Helm templates on "cluster-app" flavour repositories.
+
 ### Changed
 
 - Makefile help target: accept `/` and `%` (automatic target) in target name
