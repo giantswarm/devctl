@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.1.0] - 2023-05-09
+
 ### Added
 
 - Github action to render Helm templates on "cluster-app" flavour repositories.
@@ -682,7 +684,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v6.0.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v6.1.0...HEAD
+[6.1.0]: https://github.com/giantswarm/devctl/compare/v6.0.0...v6.1.0
 [6.0.0]: https://github.com/giantswarm/devctl/compare/v5.24.0...v6.0.0
 [5.24.0]: https://github.com/giantswarm/devctl/compare/v5.23.0...v5.24.0
 [5.23.0]: https://github.com/giantswarm/devctl/compare/v5.22.0...v5.23.0
