@@ -36,9 +36,9 @@ jobs:
       - name: list rendering values
         id: get-rendering-values
         run: |
-          echo "values=[\"$(ls -m helm/cluster-azure/ci/test-*-values.yaml | tr -d ' \n' | sed 's/,/\", \"/g')\"]"
+          echo "values=[\"$(ls -m helm/${{ github.event.repository.name }}/ci/test-*-values.yaml | tr -d ' \n' | sed 's/,/\", \"/g')\"]"
           echo
-          echo "values=[\"$(ls -m helm/cluster-azure/ci/test-*-values.yaml | tr -d ' \n' | sed 's/,/\", \"/g')\"]" >> $GITHUB_OUTPUT
+          echo "values=[\"$(ls -m helm/${{ github.event.repository.name }}/ci/test-*-values.yaml | tr -d ' \n' | sed 's/,/\", \"/g')\"]" >> $GITHUB_OUTPUT
     outputs:
       values: ${{ steps.get-rendering-values.outputs.values }}
   cmp-helm-rendering:
@@ -79,17 +79,17 @@ jobs:
           mkdir -p /tmp/${{ matrix.values }}
           # TODO split files by "API"_"KIND"_"NAMESPACE|clusterwide"_"NAME"
           helm repo add cluster-catalog https://giantswarm.github.io/cluster-catalog/
-          helm dependency build helm/cluster-azure
-          helm template -n org-multi-project -f helm/cluster-azure/ci/ci-values.yaml -f ${{ matrix.values }} helm/cluster-azure > /tmp/${{ matrix.values }}/render-new.yaml
+          helm dependency build helm/${{ github.event.repository.name }}
+          helm template -n org-giantswarm -f "helm/${{ github.event.repository.name }}/ci/ci-values.yaml" -f "${{ matrix.values }}" "helm/${{ github.event.repository.name }}" > /tmp/${{ matrix.values }}/render-new.yaml
       - uses: actions/checkout@v3
         with:
-          ref: 'main'
+          ref: "${{ github.event.repository.default_branch }}"
           path: 'old'
       - name: render helm with main branch code
         run: |
           # TODO split files by "API"_"KIND"_"NAMESPACE|clusterwide"_"NAME"
-          helm dependency build old/helm/cluster-azure
-          helm template -n org-multi-project -f helm/cluster-azure/ci/ci-values.yaml -f ${{ matrix.values }} old/helm/cluster-azure > /tmp/${{ matrix.values }}/render-old.yaml
+          helm dependency build old/helm/${{ github.event.repository.name }}
+          helm template -n org-giantswarm -f "helm/${{ github.event.repository.name }}/ci/ci-values.yaml" -f "${{ matrix.values }}" "old/helm/${{ github.event.repository.name }}" > /tmp/${{ matrix.values }}/render-old.yaml
       - name: get the diffs
         uses: mathiasvr/command-output@v1
         id: diff
