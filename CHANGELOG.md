@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Fix Github action that renders Helm templates on "cluster-app" repositories, by using variables instead of hardcoding repositories names and branches.
+
 ## [6.1.0] - 2023-05-09
 
 ### Added
