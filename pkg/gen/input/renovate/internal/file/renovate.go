@@ -18,7 +18,6 @@ func NewCreateRenovateInput(p params.Params) input.Input {
 		TemplateData: map[string]interface{}{
 			"Interval": params.Interval(p),
 			"Language": params.Language(p),
-			"Reviewer": params.Reviewer(p),
 		},
 	}
 

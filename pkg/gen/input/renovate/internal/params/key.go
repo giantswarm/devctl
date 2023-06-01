@@ -7,7 +7,3 @@ func Interval(p Params) string {
 func Language(p Params) string {
 	return p.Language
 }
-
-func Reviewer(p Params) string {
-	return p.Reviewer
-}

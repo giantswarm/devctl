@@ -9,7 +9,6 @@ import (
 type Config struct {
 	Interval string
 	Language string
-	Reviewer string
 }
 
 type Renovate struct {
@@ -23,7 +22,6 @@ func New(config Config) (*Renovate, error) {
 
 			Interval: config.Interval,
 			Language: config.Language,
-			Reviewer: config.Reviewer,
 		},
 	}
 

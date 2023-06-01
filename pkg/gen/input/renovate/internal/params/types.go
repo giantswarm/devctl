@@ -7,6 +7,4 @@ type Params struct {
 	// Interval to check for daily, weekly, or monthly updates (default: weekly).
 	Interval string
 	Language string
-	// Reviewer is a set of people or teams who are assigned as reviewers.
-	Reviewer string
 }
