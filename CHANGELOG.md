@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- Remove reviewer from renovate file as we rely on Github `CODEOWNERS` file instead.
+
 ## [6.1.1] - 2023-05-11
 
 ### Fixed
