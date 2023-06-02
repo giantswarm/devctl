@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.3.1] - 2023-06-02
+
 ### Fixed
 
 - Fix "Compare Helm Rendering" workflow to use correct CI values path when rendering the default branch version.
@@ -706,7 +708,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v6.3.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v6.3.1...HEAD
+[6.3.1]: https://github.com/giantswarm/devctl/compare/v6.3.0...v6.3.1
 [6.3.0]: https://github.com/giantswarm/devctl/compare/v6.2.0...v6.3.0
 [6.2.0]: https://github.com/giantswarm/devctl/compare/v6.1.1...v6.2.0
 [6.1.1]: https://github.com/giantswarm/devctl/compare/v6.1.0...v6.1.1
