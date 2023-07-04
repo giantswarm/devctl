@@ -85,6 +85,7 @@ func (c *Client) SetRepositorySettings(ctx context.Context, repository, reposito
 	repository.HasIssues = repositorySettings.HasIssues
 	repository.HasProjects = repositorySettings.HasProjects
 	repository.Archived = repositorySettings.Archived
+	repository.Visibility = repositorySettings.Visibility
 
 	// Merge settings
 	repository.AllowMergeCommit = repositorySettings.AllowMergeCommit

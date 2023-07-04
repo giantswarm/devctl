@@ -13,6 +13,7 @@ type flag struct {
 	EnableIssues   bool
 	EnableProjects bool
 	Archived       bool
+	Visibility     string
 
 	// Merge settings
 	AllowMergeCommit bool
@@ -43,6 +44,7 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.PersistentFlags().BoolVar(&f.EnableIssues, "enable-issues", true, "Either true to enable issues for this repository or false to disable them.")
 	cmd.PersistentFlags().BoolVar(&f.EnableProjects, "enable-projects", false, "Either true to enable projects for this repository or false to disable them.")
 	cmd.PersistentFlags().BoolVar(&f.Archived, "archived", false, "true to archive this repository.")
+	cmd.PersistentFlags().StringVar(&f.Visibility, "visibility", "", "Set repository visibility to either public or private.")
 
 	// Merge settings
 	cmd.PersistentFlags().BoolVar(&f.AllowMergeCommit, "allow-mergecommit", false, "Either true to allow merging pull requests with a merge commit, or false to prevent merging pull requests with merge commits.")

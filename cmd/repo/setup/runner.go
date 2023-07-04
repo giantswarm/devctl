@@ -80,6 +80,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		HasIssues:   &r.flag.EnableIssues,
 		HasProjects: &r.flag.EnableProjects,
 		Archived:    &r.flag.Archived,
+		Visibility:  &r.flag.Visibility,
 
 		AllowMergeCommit: &r.flag.AllowMergeCommit,
 		AllowSquashMerge: &r.flag.AllowSquashMerge,
