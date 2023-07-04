@@ -103,6 +103,42 @@ func (c *Client) GetRepository(ctx context.Context, owner, repo string) (*github
 	return repository, nil
 }
 
+func (c *Client) CreateRepository(ctx context.Context, owner, repo, templateRepo string, private bool) (*github.Repository, error) {
+	c.logger.Infof("create repository \"%s/%s\"", owner, repo)
+	os.Exit(0)
+
+	underlyingClient := c.getUnderlyingClient(ctx)
+
+	var repository *github.Repository
+	var err error
+
+	if templateRepo != "" {
+		templateRepoRequest := &github.TemplateRepoRequest{
+			Name:    github.String(repo),
+			Owner:   github.String(owner),
+			Private: github.Bool(private),
+		}
+		repository, _, err = underlyingClient.Repositories.CreateFromTemplate(ctx, owner, templateRepo, templateRepoRequest)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+	} else {
+		repoRequest := &github.Repository{
+			Name:    github.String(repo),
+			Private: github.Bool(private),
+		}
+		repository, _, err = underlyingClient.Repositories.Create(ctx, owner, repoRequest)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+	}
+
+	b, _ := json.MarshalIndent(repository, "", "  ")
+	c.logger.Debugf("repository details\n%s", b)
+
+	return repository, nil
+}
+
 func (c *Client) SetRepositorySettings(ctx context.Context, repository, repositorySettings *github.Repository) (*github.Repository, error) {
 	c.logger.Info("configure repository settings")
 	b, _ := json.MarshalIndent(repositorySettings, "", "  ")
