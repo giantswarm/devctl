@@ -57,7 +57,6 @@ func (c *Client) ListTemplateRepositories(ctx context.Context, owner string) ([]
 
 	var templateRepositories []*github.Repository
 	query := fmt.Sprintf("org:%s template:true", owner)
-	//query := fmt.Sprintf("org:%s", owner)
 	options := &github.SearchOptions{
 		ListOptions: github.ListOptions{
 			PerPage: 500,
