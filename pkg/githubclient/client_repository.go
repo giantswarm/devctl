@@ -4,19 +4,21 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"os"
 	"regexp"
 
 	"github.com/giantswarm/microerror"
 	"github.com/google/go-github/v44/github"
 )
 
-func (c *Client) ListRepositories(ctx context.Context, owner string) ([]Repository, error) {
+func (c *Client) ListRepositories(ctx context.Context, owner string) ([]*github.Repository, error) {
 	c.logger.Infof("listing repositories for owner %#q", owner)
 
 	underlyingClient := c.getUnderlyingClient(ctx)
 
-	var repos []Repository
+	var repos []*github.Repository
 	{
 		opt := &github.RepositoryListByOrgOptions{
 			ListOptions: github.ListOptions{
@@ -33,27 +35,53 @@ func (c *Client) ListRepositories(ctx context.Context, owner string) ([]Reposito
 				return nil, microerror.Mask(err)
 			}
 
+			repos = append(repos, pageRepos...)
+
+			c.logger.Infof("listed page %d of %d repositories for owner %#q", pageCnt, len(pageRepos), owner)
+
 			if resp.NextPage == 0 {
 				break
 			}
 			opt.Page = resp.NextPage
-
-			for _, pageRepo := range pageRepos {
-				r, err := newRepository(pageRepo, owner)
-				if err != nil {
-					return nil, microerror.Mask(err)
-				}
-
-				repos = append(repos, r)
-			}
-
-			c.logger.Infof("listed page %d of %d repositories for owner %#q", pageCnt, len(pageRepos), owner)
 		}
 	}
 
 	c.logger.Infof("listed %d repositories for owner %#q", len(repos), owner)
 
 	return repos, nil
+}
+
+func (c *Client) ListTemplateRepositories(ctx context.Context, owner string) ([]*github.Repository, error) {
+	c.logger.Infof("listing template repositories for owner %#q", owner)
+	underlyingClient := c.getUnderlyingClient(ctx)
+
+	var templateRepositories []*github.Repository
+	query := fmt.Sprintf("org:%s template:true", owner)
+	//query := fmt.Sprintf("org:%s", owner)
+	options := &github.SearchOptions{
+		ListOptions: github.ListOptions{
+			PerPage: 500,
+		},
+	}
+	for pageCnt := 0; ; pageCnt++ {
+		results, response, err := underlyingClient.Search.Repositories(ctx, query, options)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+
+		for _, repo := range results.Repositories {
+			if repo.GetIsTemplate() {
+				templateRepositories = append(templateRepositories, repo)
+			}
+		}
+
+		if response.NextPage == 0 {
+			break
+		}
+		options.Page = response.NextPage
+	}
+
+	return templateRepositories, nil
 }
 
 func (c *Client) GetRepository(ctx context.Context, owner, repo string) (*github.Repository, error) {
