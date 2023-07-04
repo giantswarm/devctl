@@ -11,6 +11,7 @@ require (
 	github.com/giantswarm/micrologger v0.6.0
 	github.com/giantswarm/release-operator/v3 v3.2.0
 	github.com/google/go-github/v44 v44.1.0
+	github.com/manifoldco/promptui v0.9.0
 	github.com/pelletier/go-toml v1.9.5
 	github.com/rhysd/go-github-selfupdate v1.2.3
 	github.com/sirupsen/logrus v1.9.0
@@ -23,6 +24,7 @@ require (
 )
 
 require (
+	github.com/chzyer/readline v0.0.0-20180603132655-2972be24d48e // indirect
 	github.com/giantswarm/k8smetadata v0.6.0 // indirect
 	github.com/go-kit/log v0.2.0 // indirect
 	github.com/go-logfmt/logfmt v0.5.1 // indirect

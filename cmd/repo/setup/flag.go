@@ -28,6 +28,10 @@ type flag struct {
 	// Permissions
 	Permissions map[string]string
 
+	// Template
+	Template   string
+	NoTemplate bool
+
 	// Branch
 	DefaultBranch           string
 	DisableBranchProtection bool
@@ -58,6 +62,10 @@ func (f *flag) Init(cmd *cobra.Command) {
 
 	// Permissions
 	cmd.PersistentFlags().StringToStringVar(&f.Permissions, "permissions", map[string]string{"Employees": "admin", "bots": "push"}, "Grant access to this repository using github_team_name=permission format. Multiple values can be provided as a comma separated list or using this flag multiple times. Permission can be one of: pull, push, admin, maintain, triage.")
+
+	// Template
+	cmd.PersistentFlags().StringVar(&f.Template, "template", "", "Template repository name for repository creation")
+	cmd.PersistentFlags().BoolVar(&f.NoTemplate, "no-template", false, "Use no template for repository creation")
 
 	// Branch
 	cmd.PersistentFlags().StringVar(&f.DefaultBranch, "default-branch", "main", "Default branch name")

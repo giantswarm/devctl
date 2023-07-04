@@ -5,10 +5,12 @@ import (
 	"io"
 	"os"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/giantswarm/microerror"
 	"github.com/google/go-github/v44/github"
+	"github.com/manifoldco/promptui"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
@@ -64,7 +66,50 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	}
 
 	repository, err := client.GetRepository(ctx, owner, repo)
-	if err != nil {
+	if githubclient.IsNotFound(err) {
+		r.logger.Info("repository not found")
+
+		var templateRepo = r.flag.Template
+		if templateRepo == "" && !r.flag.NoTemplate {
+			repositories, err := client.ListTemplateRepositories(ctx, owner)
+			if err != nil {
+				return microerror.Mask(err)
+			}
+
+			templateRepo, err = chooseTemplate(repositories)
+			if err != nil {
+				return microerror.Mask(err)
+			}
+			r.logger.Infof("using template=%s", templateRepo)
+		}
+
+		var visibility = r.flag.Visibility
+		if visibility == "" {
+			visibility, err = chooseVisibility()
+			if err != nil {
+				return microerror.Mask(err)
+			}
+			r.logger.Infof("using visibility=%s", visibility)
+		}
+
+		var private bool
+		switch visibility {
+		case "public":
+			private = false
+		case "private":
+			private = true
+		default:
+			r.logger.Errorf("invalid visibility: %q", visibility)
+			os.Exit(1)
+		}
+
+		repository, err = client.CreateRepository(ctx, owner, repo, templateRepo, private)
+		if err != nil {
+			return microerror.Mask(err)
+		}
+
+		os.Exit(0)
+	} else if err != nil {
 		return microerror.Mask(err)
 	}
 
@@ -121,4 +166,47 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	r.logger.Info("completed repository setup")
 
 	return nil
+}
+func chooseTemplate(repositories []*github.Repository) (string, error) {
+	var templateRepo string
+
+	var choices = []string{"(none)"}
+	for _, repo := range repositories {
+		choices = append(choices, repo.GetName())
+	}
+	sort.Strings(choices)
+
+	prompt := promptui.Select{
+		Label:        "Select template",
+		Items:        choices,
+		HideSelected: true,
+		Size:         10,
+	}
+
+	index, result, err := prompt.Run()
+	if err != nil {
+		return "", microerror.Mask(err)
+	}
+
+	if index != 0 {
+		templateRepo = result
+	}
+
+	return templateRepo, nil
+}
+
+func chooseVisibility() (string, error) {
+	prompt := promptui.Select{
+		Label:        "Select visibility",
+		Items:        []string{"public", "private"},
+		HideSelected: true,
+	}
+
+	_, result, err := prompt.Run()
+
+	if err != nil {
+		return "", microerror.Mask(err)
+	}
+
+	return result, nil
 }
