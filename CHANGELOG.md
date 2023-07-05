@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Helm schema validation GitHub Action now skips when the `values.schema.json` file is not present for the Helm chart
   - Repositories can contain multiple Helm chart, only folders that does not have the file will be skipped and the check will be considered successful for those folders
 
+### Removed
+
+- Changelog: Remove `nginx-ingress-controller`. ([#595](https://github.com/giantswarm/devctl/pull/595))
+
 ## [6.3.1] - 2023-06-02
 
 ### Fixed
