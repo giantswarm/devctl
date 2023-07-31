@@ -54,3 +54,7 @@ func (c *Client) getUnderlyingClient(ctx context.Context) *github.Client {
 
 	return client
 }
+
+func (c *Client) GetUnderlyingClient(ctx context.Context) *github.Client {
+	return c.getUnderlyingClient(ctx)
+}

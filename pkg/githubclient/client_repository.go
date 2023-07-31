@@ -12,22 +12,18 @@ import (
 )
 
 func (c *Client) ListRepositories(ctx context.Context, owner string) ([]Repository, error) {
-	c.logger.Infof("listing repositories for owner %#q", owner)
-
 	underlyingClient := c.getUnderlyingClient(ctx)
 
 	var repos []Repository
 	{
 		opt := &github.RepositoryListByOrgOptions{
 			ListOptions: github.ListOptions{
-				PerPage: 500,
+				PerPage: 100,
 			},
 
 			Type: "all",
 		}
 		for pageCnt := 0; ; pageCnt++ {
-			c.logger.Infof("listing page %d of repositories for owner %#q", pageCnt, owner)
-
 			pageRepos, resp, err := underlyingClient.Repositories.ListByOrg(ctx, owner, opt)
 			if err != nil {
 				return nil, microerror.Mask(err)
@@ -46,19 +42,13 @@ func (c *Client) ListRepositories(ctx context.Context, owner string) ([]Reposito
 
 				repos = append(repos, r)
 			}
-
-			c.logger.Infof("listed page %d of %d repositories for owner %#q", pageCnt, len(pageRepos), owner)
 		}
 	}
-
-	c.logger.Infof("listed %d repositories for owner %#q", len(repos), owner)
 
 	return repos, nil
 }
 
 func (c *Client) GetRepository(ctx context.Context, owner, repo string) (*github.Repository, error) {
-	c.logger.Infof("get repository details for \"%s/%s\"", owner, repo)
-
 	underlyingClient := c.getUnderlyingClient(ctx)
 
 	repository, response, err := underlyingClient.Repositories.Get(ctx, owner, repo)

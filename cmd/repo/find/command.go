@@ -1,4 +1,4 @@
-package repo
+package find
 
 import (
 	"io"
@@ -7,14 +7,23 @@ import (
 	"github.com/giantswarm/microerror"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-
-	"github.com/giantswarm/devctl/cmd/repo/find"
-	"github.com/giantswarm/devctl/cmd/repo/setup"
 )
 
 const (
-	name        = "repo"
-	description = "Work with Github repositories."
+	name        = "find"
+	description = `Find repositories based on very specific criteria
+
+The --what flag allows to specify what search criteria should be used. When combining several critaria,
+a repository will be returned when it's macthing at least one criteria (boolean OR).
+
+Note: archived repositories are always excluded.
+
+Criteria:
+
+- README_OLD_CIRCLECI_BAGDE - A /README.md file is present, containing an outdated CircleCI badge.
+- NO_CODEOWNERS - No /README-md file is present.
+- DEFAULT_BRANCH_MASTER - The default branch is named 'master'.
+`
 )
 
 type Config struct {
@@ -34,36 +43,6 @@ func New(config Config) (*cobra.Command, error) {
 		config.Stdout = os.Stdout
 	}
 
-	var err error
-
-	var findCmd *cobra.Command
-	{
-		c := find.Config{
-			Logger: config.Logger,
-			Stderr: config.Stderr,
-			Stdout: config.Stdout,
-		}
-
-		findCmd, err = find.New(c)
-		if err != nil {
-			return nil, microerror.Mask(err)
-		}
-	}
-
-	var setupCmd *cobra.Command
-	{
-		c := setup.Config{
-			Logger: config.Logger,
-			Stderr: config.Stderr,
-			Stdout: config.Stdout,
-		}
-
-		setupCmd, err = setup.New(c)
-		if err != nil {
-			return nil, microerror.Mask(err)
-		}
-	}
-
 	f := &flag{}
 
 	r := &runner{
@@ -81,9 +60,6 @@ func New(config Config) (*cobra.Command, error) {
 	}
 
 	f.Init(c)
-
-	c.AddCommand(findCmd)
-	c.AddCommand(setupCmd)
 
 	return c, nil
 }
