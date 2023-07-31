@@ -1,6 +1,6 @@
 module github.com/giantswarm/devctl
 
-go 1.18
+go 1.19
 
 require (
 	github.com/Masterminds/semver/v3 v3.2.1
@@ -10,7 +10,7 @@ require (
 	github.com/giantswarm/microerror v0.4.0
 	github.com/giantswarm/micrologger v0.6.0
 	github.com/giantswarm/release-operator/v3 v3.2.0
-	github.com/google/go-github/v44 v44.1.0
+	github.com/google/go-github/v53 v53.2.0
 	github.com/pelletier/go-toml v1.9.5
 	github.com/rhysd/go-github-selfupdate v1.2.3
 	github.com/sirupsen/logrus v1.9.0
@@ -24,6 +24,8 @@ require (
 )
 
 require (
+	github.com/ProtonMail/go-crypto v0.0.0-20230217124315-7d5c6f04bbb8 // indirect
+	github.com/cloudflare/circl v1.3.3 // indirect
 	github.com/giantswarm/k8smetadata v0.6.0 // indirect
 	github.com/go-kit/log v0.2.0 // indirect
 	github.com/go-logfmt/logfmt v0.5.1 // indirect
@@ -46,7 +48,7 @@ require (
 	github.com/stretchr/testify v1.7.2 // indirect
 	github.com/tcnksm/go-gitconfig v0.1.2 // indirect
 	github.com/ulikunitz/xz v0.5.9 // indirect
-	golang.org/x/crypto v0.5.0 // indirect
+	golang.org/x/crypto v0.7.0 // indirect
 	golang.org/x/sys v0.8.0 // indirect
 	golang.org/x/text v0.9.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
