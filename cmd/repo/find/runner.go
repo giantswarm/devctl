@@ -52,6 +52,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	if len(r.flag.What) < 1 {
 		return microerror.Maskf(invalidConfigError, "no search criteria specified via --what flag")
 	}
+	// TODO: validate --what strings
 
 	c := githubclient.Config{
 		Logger:      r.logger,
@@ -92,8 +93,29 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 		// Check for matching criteria
 
+		if slices.Contains(r.flag.What, "HAS_DOCS_DIR") {
+			_, items, _, err := realClient.Repositories.GetContents(ctx, githubOrg, repo.Name, "docs", nil)
+			if err == nil {
+				output := "    /docs directory exists (HAS_DOCS_DIR)\n"
+				for _, item := range items {
+					path := item.GetPath()
+					ftype := item.GetType()
+					output += fmt.Sprintf("        %s %s\n", path, ftype)
+				}
+				matched = append(matched, output)
+			}
+		}
+
+		if slices.Contains(r.flag.What, "HAS_PR_TEMPLATE_IN_DOCS") {
+			_, _, _, err := realClient.Repositories.GetContents(ctx, githubOrg, repo.Name, "docs/pull_request_template.md", nil)
+			if err == nil {
+				output := "    /docs/pull_request_template.md file exists (HAS_PR_TEMPLATE_IN_DOCS)\n"
+				matched = append(matched, output)
+			}
+		}
+
 		if slices.Contains(r.flag.What, "README_OLD_CIRCLECI_BAGDE") {
-			fileContent, _, _, err := realClient.Repositories.GetContents(ctx, githubOrg, repo.Name, "/README.md", nil)
+			fileContent, _, _, err := realClient.Repositories.GetContents(ctx, githubOrg, repo.Name, "README.md", nil)
 			if err == nil {
 				decodedContent, _ := b64.StdEncoding.DecodeString(*fileContent.Content)
 				if strings.Contains(string(decodedContent), fmt.Sprintf("https://circleci.com/gh/%s", githubOrg)) {
@@ -109,12 +131,19 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		}
 
 		if slices.Contains(r.flag.What, "NO_CODEOWNERS") {
-			_, _, _, err := realClient.Repositories.GetContents(ctx, githubOrg, repo.Name, "/CODEOWNERS", nil)
+			_, _, _, err := realClient.Repositories.GetContents(ctx, githubOrg, repo.Name, "CODEOWNERS", nil)
 			if err != nil {
 				output := "    /CODEOWNERS file not present (NO_CODEOWNERS)\n"
 				if repoMetadata.Fork != nil && *repoMetadata.Fork {
 					output += fmt.Sprintf("        Note: this repo is a fork of %s\n", repoMetadata.GetForksURL())
 				}
+				matched = append(matched, output)
+			}
+		}
+
+		if slices.Contains(r.flag.What, "NO_DESCRIPTION") {
+			if repoMetadata.GetDescription() == "" {
+				output := "    Repository has no description (NO_DESCRIPTION)\n"
 				matched = append(matched, output)
 			}
 		}
