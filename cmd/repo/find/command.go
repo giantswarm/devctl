@@ -1,3 +1,5 @@
+// Package find provides the 'repo find' command, which helps to discover
+// GitHub repositories with certain features, or certain features missing.
 package find
 
 import (
@@ -20,9 +22,12 @@ Note: archived repositories are always excluded.
 
 Criteria:
 
-- README_OLD_CIRCLECI_BAGDE - A /README.md file is present, containing an outdated CircleCI badge.
-- NO_CODEOWNERS - No /README-md file is present.
-- DEFAULT_BRANCH_MASTER - The default branch is named 'master'.
+- DEFAULT_BRANCH_MASTER     - The default branch is named 'master'.
+- HAS_DOCS_DIR              - Has a directory named 'docs' on the root level.
+- HAS_PR_TEMPLATE_IN_DOCS   - Has the file docs/pull_request_template.md (which is not the desired location).
+- NO_CODEOWNERS             - The /CODEOWNERS file is not present.
+- NO_DESCRIPTION            - Repository description is missing.
+- README_OLD_CIRCLECI_BAGDE - An outdated CircleCI badge is present in the README.
 `
 )
 

@@ -18,6 +18,14 @@ import (
 const (
 	githubTokenEnvVar = "GITHUB_TOKEN"
 	githubOrg         = "giantswarm"
+
+	// Criteria names
+	critHasDocsDirectory          = "HAS_DOCS_DIR"
+	critHasPrTemplateInDocs       = "HAS_PR_TEMPLATE_IN_DOCS"
+	critReadmeHasOldCircleCiBadge = "README_OLD_CIRCLECI_BAGDE"
+	critNoCodeownersFile          = "NO_CODEOWNERS"
+	critNoDescription             = "NO_DESCRIPTION"
+	critDefaultBranchMaster       = "DEFAULT_BRANCH_MASTER"
 )
 
 type runner struct {
@@ -92,12 +100,33 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 		// Check for matching criteria
 
-		if slices.Contains(r.flag.What, "README_OLD_CIRCLECI_BAGDE") {
-			fileContent, _, _, err := realClient.Repositories.GetContents(ctx, githubOrg, repo.Name, "/README.md", nil)
+		if slices.Contains(r.flag.What, critHasDocsDirectory) {
+			_, items, _, err := realClient.Repositories.GetContents(ctx, githubOrg, repo.Name, "docs", nil)
+			if err == nil {
+				output := fmt.Sprintf("    /docs directory exists (%s)\n", critHasDocsDirectory)
+				for _, item := range items {
+					path := item.GetPath()
+					ftype := item.GetType()
+					output += fmt.Sprintf("        %s %s\n", path, ftype)
+				}
+				matched = append(matched, output)
+			}
+		}
+
+		if slices.Contains(r.flag.What, critHasPrTemplateInDocs) {
+			_, _, _, err := realClient.Repositories.GetContents(ctx, githubOrg, repo.Name, "docs/pull_request_template.md", nil)
+			if err == nil {
+				output := fmt.Sprintf("    /docs/pull_request_template.md file exists (%s)\n", critHasPrTemplateInDocs)
+				matched = append(matched, output)
+			}
+		}
+
+		if slices.Contains(r.flag.What, critReadmeHasOldCircleCiBadge) {
+			fileContent, _, _, err := realClient.Repositories.GetContents(ctx, githubOrg, repo.Name, "README.md", nil)
 			if err == nil {
 				decodedContent, _ := b64.StdEncoding.DecodeString(*fileContent.Content)
 				if strings.Contains(string(decodedContent), fmt.Sprintf("https://circleci.com/gh/%s", githubOrg)) {
-					output := "    /README.md has old CircleCI badge (README_OLD_CIRCLECI_BAGDE)\n"
+					output := fmt.Sprintf("    /README.md has old CircleCI badge (%s)\n", critReadmeHasOldCircleCiBadge)
 					if repoMetadata.Fork != nil && *repoMetadata.Fork {
 						output += fmt.Sprintf("        Note: this repo is a fork of %s\n", repoMetadata.GetForksURL())
 					}
@@ -108,10 +137,10 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 			}
 		}
 
-		if slices.Contains(r.flag.What, "NO_CODEOWNERS") {
-			_, _, _, err := realClient.Repositories.GetContents(ctx, githubOrg, repo.Name, "/CODEOWNERS", nil)
+		if slices.Contains(r.flag.What, critNoCodeownersFile) {
+			_, _, _, err := realClient.Repositories.GetContents(ctx, githubOrg, repo.Name, "CODEOWNERS", nil)
 			if err != nil {
-				output := "    /CODEOWNERS file not present (NO_CODEOWNERS)\n"
+				output := fmt.Sprintf("    /CODEOWNERS file not present (%s)\n", critNoCodeownersFile)
 				if repoMetadata.Fork != nil && *repoMetadata.Fork {
 					output += fmt.Sprintf("        Note: this repo is a fork of %s\n", repoMetadata.GetForksURL())
 				}
@@ -119,9 +148,16 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 			}
 		}
 
-		if slices.Contains(r.flag.What, "DEFAULT_BRANCH_MASTER") {
+		if slices.Contains(r.flag.What, critNoDescription) {
+			if repoMetadata.GetDescription() == "" {
+				output := fmt.Sprintf("    Repository has no description (%s)\n", critNoDescription)
+				matched = append(matched, output)
+			}
+		}
+
+		if slices.Contains(r.flag.What, critDefaultBranchMaster) {
 			if repoMetadata.GetDefaultBranch() == "master" {
-				output := "    Default branch is 'master'\n"
+				output := fmt.Sprintf("    Default branch is 'master' (%s)\n", critDefaultBranchMaster)
 				if repoMetadata.Fork != nil && *repoMetadata.Fork {
 					output += fmt.Sprintf("        Note: this repo is a fork of %s\n", repoMetadata.GetForksURL())
 				}
@@ -129,6 +165,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 			}
 		}
 
+		// Print output per repo
 		if len(matched) > 0 {
 			matchingReposCount++
 			fmt.Printf("\n(%d of %d) https://github.com/%s/%s\n", i, len(repos), githubOrg, repo.Name)
@@ -139,7 +176,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 	}
 
-	fmt.Printf("Found %d matching non-archived repositoiries\n", matchingReposCount)
+	fmt.Printf("\nFound %d matching non-archived repositoiries\n", matchingReposCount)
 
 	return nil
 }
