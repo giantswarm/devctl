@@ -23,8 +23,10 @@ const (
 	critHasDocsDirectory          = "HAS_DOCS_DIR"
 	critHasPrTemplateInDocs       = "HAS_PR_TEMPLATE_IN_DOCS"
 	critReadmeHasOldCircleCiBadge = "README_OLD_CIRCLECI_BAGDE"
+	critReadmeHasOldGodocLink     = "README_OLD_GODOC_LINK"
 	critNoCodeownersFile          = "NO_CODEOWNERS"
 	critNoDescription             = "NO_DESCRIPTION"
+	critNoReadme                  = "NO_README"
 	critDefaultBranchMaster       = "DEFAULT_BRANCH_MASTER"
 )
 
@@ -98,6 +100,8 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 			continue
 		}
 
+		//fmt.Printf("Permissions: %#v\n", repoMetadata.Permissions)
+
 		// Check for matching criteria
 
 		if slices.Contains(r.flag.What, critHasDocsDirectory) {
@@ -121,19 +125,37 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 			}
 		}
 
-		if slices.Contains(r.flag.What, critReadmeHasOldCircleCiBadge) {
-			fileContent, _, _, err := realClient.Repositories.GetContents(ctx, githubOrg, repo.Name, "README.md", nil)
-			if err == nil {
+		if slices.Contains(r.flag.What, critReadmeHasOldCircleCiBadge) || slices.Contains(r.flag.What, critNoReadme) || slices.Contains(r.flag.What, critReadmeHasOldGodocLink) {
+			fileContent, _, resp, err := realClient.Repositories.GetContents(ctx, githubOrg, repo.Name, "README.md", nil)
+
+			if (slices.Contains(r.flag.What, critReadmeHasOldCircleCiBadge) || slices.Contains(r.flag.What, critReadmeHasOldGodocLink)) && err == nil {
 				decodedContent, _ := b64.StdEncoding.DecodeString(*fileContent.Content)
-				if strings.Contains(string(decodedContent), fmt.Sprintf("https://circleci.com/gh/%s", githubOrg)) {
-					output := fmt.Sprintf("    /README.md has old CircleCI badge (%s)\n", critReadmeHasOldCircleCiBadge)
-					if repoMetadata.Fork != nil && *repoMetadata.Fork {
-						output += fmt.Sprintf("        Note: this repo is a fork of %s\n", repoMetadata.GetForksURL())
+
+				if slices.Contains(r.flag.What, critReadmeHasOldCircleCiBadge) {
+					if strings.Contains(string(decodedContent), fmt.Sprintf("https://circleci.com/gh/%s", githubOrg)) {
+						output := fmt.Sprintf("    /README.md has old CircleCI badge (%s)\n", critReadmeHasOldCircleCiBadge)
+						if repoMetadata.Fork != nil && *repoMetadata.Fork {
+							output += fmt.Sprintf("        Note: this repo is a fork of %s\n", repoMetadata.GetForksURL())
+						}
+						output += fmt.Sprintf("        Edit via https://github.com/%s/%s/edit/%s/README.md\n", githubOrg, repo.Name, repoMetadata.GetDefaultBranch())
+						output += fmt.Sprintf("        Badge code via https://app.circleci.com/settings/project/github/%s/%s/status-badges)\n", githubOrg, repo.Name)
+						matched = append(matched, output)
 					}
-					output += fmt.Sprintf("        Edit via https://github.com/%s/%s/edit/%s/README.md\n", githubOrg, repo.Name, repoMetadata.GetDefaultBranch())
-					output += fmt.Sprintf("        Badge code via https://app.circleci.com/settings/project/github/%s/%s/status-badges)\n", githubOrg, repo.Name)
-					matched = append(matched, output)
 				}
+
+				if slices.Contains(r.flag.What, critReadmeHasOldGodocLink) {
+					if strings.Contains(string(decodedContent), "godoc.org") {
+						output := fmt.Sprintf("    /README.md has link to godoc.org (%s)\n", critReadmeHasOldGodocLink)
+						output += fmt.Sprintf("        Should be https://pkg.go.dev/github.com/%s/%s\n", githubOrg, repo.Name)
+						output += fmt.Sprintf("        Edit via https://github.com/%s/%s/edit/%s/README.md\n", githubOrg, repo.Name, repoMetadata.GetDefaultBranch())
+						matched = append(matched, output)
+					}
+				}
+			}
+
+			if slices.Contains(r.flag.What, critNoReadme) && err != nil && resp.StatusCode == 404 {
+				output := fmt.Sprintf("    /README.md not present (%s)\n", critNoReadme)
+				matched = append(matched, output)
 			}
 		}
 
