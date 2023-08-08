@@ -18,16 +18,48 @@ const (
 The --what flag allows to specify what search criteria should be used. When combining several critaria,
 a repository will be returned when it's macthing at least one criteria (boolean OR).
 
+Example:
+
+    devctl repo find --what NO_DESCRIPTION
+
 Note: archived repositories are always excluded.
 
 Criteria:
 
-- DEFAULT_BRANCH_MASTER     - The default branch is named 'master'.
-- HAS_DOCS_DIR              - Has a directory named 'docs' on the root level.
-- HAS_PR_TEMPLATE_IN_DOCS   - Has the file docs/pull_request_template.md (which is not the desired location).
-- NO_CODEOWNERS             - The /CODEOWNERS file is not present.
-- NO_DESCRIPTION            - Repository description is missing.
-- README_OLD_CIRCLECI_BAGDE - An outdated CircleCI badge is present in the README.
+    DEFAULT_BRANCH_MASTER
+	
+	    The default branch is named 'master'. We want to rename these to 'main'.
+	
+	HAS_DOCS_DIR
+	
+	    The repo has a directory named 'docs' on the root level. This is the place
+		where we want to store technical documentation for the repo.
+
+	HAS_PR_TEMPLATE_IN_DOCS
+	
+		Has the file docs/pull_request_template.md, which is not the desired location.
+		We want this to be in .github/pull_request_template.md.
+
+	NO_CODEOWNERS
+	
+		There is no CODEOWNERS file in the root folder, which means that the repository
+		has no owner. We want repos to have owners, ideally.
+
+	NO_DESCRIPTION
+	
+		Repository description is missing. We want a meaningful description to be present,
+		to understand easily what the repository is about, even from lists.
+	
+	NO_README
+
+		Repository has no README.md file in the root folder. We want thjis to be present,
+		to have some basic info and documentation available.
+
+	README_OLD_CIRCLECI_BAGDE
+	
+		There is an outdated (broken) CircleCI badge is present in the README. This should
+		better get replaced by an up-to-date one, as it can otherwise not fulfil its purpose,
+		and broken images never make a good impression.
 `
 )
 
