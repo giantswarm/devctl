@@ -1,4 +1,4 @@
-[![CircleCI](https://circleci.com/gh/giantswarm/devctl.svg?style=svg&circle-token=6e0974e63eac2ab4c788865e49c201b9d60a781a)](https://circleci.com/gh/giantswarm/devctl)
+[![CircleCI](https://dl.circleci.com/status-badge/img/gh/giantswarm/devctl/tree/main.svg?style=svg)](https://dl.circleci.com/status-badge/redirect/gh/giantswarm/devctl/tree/main)
 
 # devctl
 
