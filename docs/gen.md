@@ -1,6 +1,6 @@
 # Using the `gen` commands to generate files
 
-The `gen` command family is designed to create common files in repositories, adapted specifically for the repository [flavour](flavour.md) and/or programming language used.
+The `gen` command family is designed to create common files in repositories, adapted specifically for the repository [flavour](flavours.md) and/or programming language used.
 
 Files are written to the current directory. The assumption is that the current working directory is the root directory of a cloned repository.
 
