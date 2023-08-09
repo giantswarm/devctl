@@ -100,9 +100,23 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 			continue
 		}
 
-		//fmt.Printf("Permissions: %#v\n", repoMetadata.Permissions)
-
 		// Check for matching criteria
+
+		if slices.Contains(r.flag.What, critNoCodeownersFile) || r.flag.MustHaveCodeowners {
+			_, _, _, err := realClient.Repositories.GetContents(ctx, githubOrg, repo.Name, "CODEOWNERS", nil)
+			if err != nil {
+				if r.flag.MustHaveCodeowners {
+					// Skip repo without it
+					continue
+				}
+
+				output := fmt.Sprintf("    /CODEOWNERS file not present (%s)\n", critNoCodeownersFile)
+				if repoMetadata.Fork != nil && *repoMetadata.Fork {
+					output += fmt.Sprintf("        Note: this repo is a fork of %s\n", repoMetadata.GetForksURL())
+				}
+				matched = append(matched, output)
+			}
+		}
 
 		if slices.Contains(r.flag.What, critHasDocsDirectory) {
 			_, items, _, err := realClient.Repositories.GetContents(ctx, githubOrg, repo.Name, "docs", nil)
@@ -155,17 +169,6 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 			if slices.Contains(r.flag.What, critNoReadme) && err != nil && resp.StatusCode == 404 {
 				output := fmt.Sprintf("    /README.md not present (%s)\n", critNoReadme)
-				matched = append(matched, output)
-			}
-		}
-
-		if slices.Contains(r.flag.What, critNoCodeownersFile) {
-			_, _, _, err := realClient.Repositories.GetContents(ctx, githubOrg, repo.Name, "CODEOWNERS", nil)
-			if err != nil {
-				output := fmt.Sprintf("    /CODEOWNERS file not present (%s)\n", critNoCodeownersFile)
-				if repoMetadata.Fork != nil && *repoMetadata.Fork {
-					output += fmt.Sprintf("        Note: this repo is a fork of %s\n", repoMetadata.GetForksURL())
-				}
 				matched = append(matched, output)
 			}
 		}

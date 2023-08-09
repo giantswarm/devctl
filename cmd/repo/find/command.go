@@ -20,7 +20,7 @@ a repository will be returned when it's macthing at least one criteria (boolean 
 
 Example:
 
-    devctl repo find --what NO_DESCRIPTION
+    devctl repo find --what NO_DESCRIPTION --must-have-codeowners
 
 Note: archived repositories are always excluded.
 
