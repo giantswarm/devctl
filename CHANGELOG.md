@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Exclude `.github/workflows/pre_commit_*.yaml` from renovate dependency updates, as this file is managed centrally.
+
 ## [6.5.0] - 2023-07-27
 
 ### Changed
