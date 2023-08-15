@@ -25,6 +25,7 @@ const (
 	critReadmeHasOldCircleCiBadge = "README_OLD_CIRCLECI_BAGDE"
 	critReadmeHasOldGodocLink     = "README_OLD_GODOC_LINK"
 	critNoCodeownersFile          = "NO_CODEOWNERS"
+	critCodeownersErrors          = "BAD_CODOWNERS"
 	critNoDescription             = "NO_DESCRIPTION"
 	critNoReadme                  = "NO_README"
 	critDefaultBranchMaster       = "DEFAULT_BRANCH_MASTER"
@@ -82,13 +83,14 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 	matchingReposCount := 0
 
-	for i, repo := range repos {
+	for _, repo := range repos {
 		matched := []string{}
 
 		repoMetadata, err := client.GetRepository(ctx, githubOrg, repo.Name)
 		if err != nil {
 			return microerror.Mask(err)
 		}
+		defaultBranch := repoMetadata.GetDefaultBranch()
 
 		if !r.flag.IncludeArchived && repoMetadata.GetArchived() {
 			// Skip archived repos
@@ -106,13 +108,33 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 			_, _, _, err := realClient.Repositories.GetContents(ctx, githubOrg, repo.Name, "CODEOWNERS", nil)
 			if err != nil {
 				if r.flag.MustHaveCodeowners {
-					// Skip repo without it
+					// Skip repo without CODEOWNERS file
 					continue
 				}
 
 				output := fmt.Sprintf("    /CODEOWNERS file not present (%s)\n", critNoCodeownersFile)
 				if repoMetadata.Fork != nil && *repoMetadata.Fork {
 					output += fmt.Sprintf("        Note: this repo is a fork of %s\n", repoMetadata.GetForksURL())
+				}
+				matched = append(matched, output)
+			}
+		}
+
+		if slices.Contains(r.flag.What, critCodeownersErrors) {
+			errs, resp, err := realClient.Repositories.GetCodeownersErrors(ctx, githubOrg, repo.Name)
+			if err != nil {
+				if resp != nil && resp.StatusCode == 404 {
+					// CODEOWNERS not found in this repo. Do nothing.
+				} else {
+					return microerror.Mask(err)
+				}
+			}
+
+			if errs != nil && len(errs.Errors) > 0 {
+				output := fmt.Sprintf("    Errors found in CODEOWNERS files (%s)\n", critCodeownersErrors)
+				for _, item := range errs.Errors {
+					messageFirstLine := strings.Split(item.Message, "\n")[0]
+					output += fmt.Sprintf("        https://github.com/%s/%s/blob/%s/%s#L%d - %q\n", githubOrg, repo.Name, defaultBranch, item.Path, item.Line, messageFirstLine)
 				}
 				matched = append(matched, output)
 			}
@@ -151,7 +173,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 						if repoMetadata.Fork != nil && *repoMetadata.Fork {
 							output += fmt.Sprintf("        Note: this repo is a fork of %s\n", repoMetadata.GetForksURL())
 						}
-						output += fmt.Sprintf("        Edit via https://github.com/%s/%s/edit/%s/README.md\n", githubOrg, repo.Name, repoMetadata.GetDefaultBranch())
+						output += fmt.Sprintf("        Edit via https://github.com/%s/%s/edit/%s/README.md\n", githubOrg, repo.Name, defaultBranch)
 						output += fmt.Sprintf("        Badge code via https://app.circleci.com/settings/project/github/%s/%s/status-badges)\n", githubOrg, repo.Name)
 						matched = append(matched, output)
 					}
@@ -193,7 +215,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		// Print output per repo
 		if len(matched) > 0 {
 			matchingReposCount++
-			fmt.Printf("\n(%d of %d) https://github.com/%s/%s\n", i, len(repos), githubOrg, repo.Name)
+			fmt.Printf("\n- [ ] https://github.com/%s/%s\n", githubOrg, repo.Name)
 			for _, item := range matched {
 				fmt.Print(item)
 			}

@@ -40,6 +40,10 @@ Criteria:
 		Has the file docs/pull_request_template.md, which is not the desired location.
 		We want this to be in .github/pull_request_template.md.
 
+	BAD_CODEOWNERS
+
+		Finds repositories with errors in CODEOWNERS files.
+	
 	NO_CODEOWNERS
 	
 		There is no CODEOWNERS file in the root folder, which means that the repository
