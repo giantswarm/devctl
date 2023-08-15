@@ -17,6 +17,7 @@ import (
 )
 
 const (
+	//nolint:gosec
 	githubTokenEnvVar = "GITHUB_TOKEN"
 	githubOrg         = "giantswarm"
 
