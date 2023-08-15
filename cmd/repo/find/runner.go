@@ -8,11 +8,12 @@ import (
 	"os"
 	"strings"
 
-	"github.com/giantswarm/devctl/pkg/githubclient"
 	"github.com/giantswarm/microerror"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"k8s.io/utils/strings/slices"
+
+	"github.com/giantswarm/devctl/pkg/githubclient"
 )
 
 const (
@@ -112,9 +113,9 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 					continue
 				}
 
-				output := fmt.Sprintf("    /CODEOWNERS file not present (%s)\n", critNoCodeownersFile)
+				output := fmt.Sprintf("  - /CODEOWNERS file not present (%s)\n", critNoCodeownersFile)
 				if repoMetadata.Fork != nil && *repoMetadata.Fork {
-					output += fmt.Sprintf("        Note: this repo is a fork of %s\n", repoMetadata.GetForksURL())
+					output += fmt.Sprintf("    - Note: this repo is a fork of %s\n", repoMetadata.GetForksURL())
 				}
 				matched = append(matched, output)
 			}
@@ -131,10 +132,10 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 			}
 
 			if errs != nil && len(errs.Errors) > 0 {
-				output := fmt.Sprintf("    Errors found in CODEOWNERS files (%s)\n", critCodeownersErrors)
+				output := fmt.Sprintf("  - Errors found in CODEOWNERS files (%s)\n", critCodeownersErrors)
 				for _, item := range errs.Errors {
 					messageFirstLine := strings.Split(item.Message, "\n")[0]
-					output += fmt.Sprintf("        https://github.com/%s/%s/blob/%s/%s#L%d - %q\n", githubOrg, repo.Name, defaultBranch, item.Path, item.Line, messageFirstLine)
+					output += fmt.Sprintf("    - https://github.com/%s/%s/blob/%s/%s#L%d - %q\n", githubOrg, repo.Name, defaultBranch, item.Path, item.Line, messageFirstLine)
 				}
 				matched = append(matched, output)
 			}
@@ -143,11 +144,11 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		if slices.Contains(r.flag.What, critHasDocsDirectory) {
 			_, items, _, err := realClient.Repositories.GetContents(ctx, githubOrg, repo.Name, "docs", nil)
 			if err == nil {
-				output := fmt.Sprintf("    /docs directory exists (%s)\n", critHasDocsDirectory)
+				output := fmt.Sprintf("  - /docs directory exists (%s)\n", critHasDocsDirectory)
 				for _, item := range items {
 					path := item.GetPath()
 					ftype := item.GetType()
-					output += fmt.Sprintf("        %s %s\n", path, ftype)
+					output += fmt.Sprintf("    - %s %s\n", path, ftype)
 				}
 				matched = append(matched, output)
 			}
@@ -156,7 +157,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		if slices.Contains(r.flag.What, critHasPrTemplateInDocs) {
 			_, _, _, err := realClient.Repositories.GetContents(ctx, githubOrg, repo.Name, "docs/pull_request_template.md", nil)
 			if err == nil {
-				output := fmt.Sprintf("    /docs/pull_request_template.md file exists (%s)\n", critHasPrTemplateInDocs)
+				output := fmt.Sprintf("  - /docs/pull_request_template.md file exists (%s)\n", critHasPrTemplateInDocs)
 				matched = append(matched, output)
 			}
 		}
@@ -169,44 +170,44 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 				if slices.Contains(r.flag.What, critReadmeHasOldCircleCiBadge) {
 					if strings.Contains(string(decodedContent), fmt.Sprintf("https://circleci.com/gh/%s", githubOrg)) {
-						output := fmt.Sprintf("    /README.md has old CircleCI badge (%s)\n", critReadmeHasOldCircleCiBadge)
+						output := fmt.Sprintf("  - /README.md has old CircleCI badge (%s)\n", critReadmeHasOldCircleCiBadge)
 						if repoMetadata.Fork != nil && *repoMetadata.Fork {
 							output += fmt.Sprintf("        Note: this repo is a fork of %s\n", repoMetadata.GetForksURL())
 						}
-						output += fmt.Sprintf("        Edit via https://github.com/%s/%s/edit/%s/README.md\n", githubOrg, repo.Name, defaultBranch)
-						output += fmt.Sprintf("        Badge code via https://app.circleci.com/settings/project/github/%s/%s/status-badges)\n", githubOrg, repo.Name)
+						output += fmt.Sprintf("    - Edit via https://github.com/%s/%s/edit/%s/README.md\n", githubOrg, repo.Name, defaultBranch)
+						output += fmt.Sprintf("    - Badge code via https://app.circleci.com/settings/project/github/%s/%s/status-badges)\n", githubOrg, repo.Name)
 						matched = append(matched, output)
 					}
 				}
 
 				if slices.Contains(r.flag.What, critReadmeHasOldGodocLink) {
 					if strings.Contains(string(decodedContent), "godoc.org") {
-						output := fmt.Sprintf("    /README.md has link to godoc.org (%s)\n", critReadmeHasOldGodocLink)
-						output += fmt.Sprintf("        Should be https://pkg.go.dev/github.com/%s/%s\n", githubOrg, repo.Name)
-						output += fmt.Sprintf("        Edit via https://github.com/%s/%s/edit/%s/README.md\n", githubOrg, repo.Name, repoMetadata.GetDefaultBranch())
+						output := fmt.Sprintf("  - /README.md has link to godoc.org (%s)\n", critReadmeHasOldGodocLink)
+						output += fmt.Sprintf("    - Should be https://pkg.go.dev/github.com/%s/%s\n", githubOrg, repo.Name)
+						output += fmt.Sprintf("    - Edit via https://github.com/%s/%s/edit/%s/README.md\n", githubOrg, repo.Name, repoMetadata.GetDefaultBranch())
 						matched = append(matched, output)
 					}
 				}
 			}
 
 			if slices.Contains(r.flag.What, critNoReadme) && err != nil && resp.StatusCode == 404 {
-				output := fmt.Sprintf("    /README.md not present (%s)\n", critNoReadme)
+				output := fmt.Sprintf("  - /README.md not present (%s)\n", critNoReadme)
 				matched = append(matched, output)
 			}
 		}
 
 		if slices.Contains(r.flag.What, critNoDescription) {
 			if repoMetadata.GetDescription() == "" {
-				output := fmt.Sprintf("    Repository has no description (%s)\n", critNoDescription)
+				output := fmt.Sprintf("  - Repository has no description (%s)\n", critNoDescription)
 				matched = append(matched, output)
 			}
 		}
 
 		if slices.Contains(r.flag.What, critDefaultBranchMaster) {
 			if repoMetadata.GetDefaultBranch() == "master" {
-				output := fmt.Sprintf("    Default branch is 'master' (%s)\n", critDefaultBranchMaster)
+				output := fmt.Sprintf("  - Default branch is 'master' (%s)\n", critDefaultBranchMaster)
 				if repoMetadata.Fork != nil && *repoMetadata.Fork {
-					output += fmt.Sprintf("        Note: this repo is a fork of %s\n", repoMetadata.GetForksURL())
+					output += fmt.Sprintf("    - Note: this repo is a fork of %s\n", repoMetadata.GetForksURL())
 				}
 				matched = append(matched, output)
 			}
