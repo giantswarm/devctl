@@ -185,7 +185,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 					if strings.Contains(string(decodedContent), "godoc.org") {
 						output := fmt.Sprintf("  - /README.md has link to godoc.org (%s)\n", critReadmeHasOldGodocLink)
 						output += fmt.Sprintf("    - Should be https://pkg.go.dev/github.com/%s/%s\n", githubOrg, repo.Name)
-						output += fmt.Sprintf("    - Edit via https://github.com/%s/%s/edit/%s/README.md\n", githubOrg, repo.Name, repoMetadata.GetDefaultBranch())
+						output += fmt.Sprintf("    - Edit via https://github.com/%s/%s/edit/%s/README.md\n", githubOrg, repo.Name, defaultBranch)
 						matched = append(matched, output)
 					}
 				}
@@ -205,7 +205,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		}
 
 		if slices.Contains(r.flag.What, critDefaultBranchMaster) {
-			if repoMetadata.GetDefaultBranch() == "master" {
+			if defaultBranch == "master" {
 				output := fmt.Sprintf("  - Default branch is 'master' (%s)\n", critDefaultBranchMaster)
 				if repoMetadata.Fork != nil && *repoMetadata.Fork {
 					output += fmt.Sprintf("    - Note: this repo is a fork of %s\n", repoMetadata.GetForksURL())
