@@ -64,6 +64,10 @@ Criteria:
 		There is an outdated (broken) CircleCI badge is present in the README. This should
 		better get replaced by an up-to-date one, as it can otherwise not fulfil its purpose,
 		and broken images never make a good impression.
+	
+	README_OLD_GODOC_LINK
+
+		The README contains an outdated godoc.org link. Should be pkg.go.dev nowadays.
 `
 )
 
