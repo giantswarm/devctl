@@ -49,6 +49,11 @@ Criteria:
 		There is no CODEOWNERS file in the root folder, which means that the repository
 		has no owner. We want repos to have owners, ideally.
 
+	NO_DEPENDENCY_GRAPH
+
+		Returns repos where the dependency graph feature is inactive. We want it to be
+		active.
+	
 	NO_DESCRIPTION
 	
 		Repository description is missing. We want a meaningful description to be present,

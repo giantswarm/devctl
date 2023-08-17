@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/giantswarm/microerror"
+	"github.com/google/go-github/v53/github"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"k8s.io/utils/strings/slices"
@@ -31,6 +32,7 @@ const (
 	critNoDescription             = "NO_DESCRIPTION"
 	critNoReadme                  = "NO_README"
 	critDefaultBranchMaster       = "DEFAULT_BRANCH_MASTER"
+	critNoDependencyGraph         = "NO_DEPENDENCY_GRAPH"
 )
 
 type runner struct {
@@ -211,6 +213,25 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 					output += fmt.Sprintf("    - Note: this repo is a fork of %s\n", repoMetadata.GetForksURL())
 				}
 				matched = append(matched, output)
+			}
+		}
+
+		if slices.Contains(r.flag.What, critNoDependencyGraph) {
+			path := fmt.Sprintf("/repos/%s/%s/dependency-graph/sbom", githubOrg, repo.Name)
+			req, err := realClient.NewRequest("GET", path, nil, github.WithVersion("2022-11-28"))
+			if err != nil {
+				return microerror.Mask(err)
+			}
+
+			resp, err := realClient.Do(context.Background(), req, nil)
+			if err != nil {
+				if resp != nil && resp.StatusCode == 404 {
+					output := fmt.Sprintf("  - Dependency graph not active (%s)\n", critNoDependencyGraph)
+					output += fmt.Sprintf("    - Enable it here: https://github.com/%s/%s/network/dependencies\n", githubOrg, repo.Name)
+					matched = append(matched, output)
+				} else {
+					return microerror.Mask(err)
+				}
 			}
 		}
 
