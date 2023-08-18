@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.7.0] - 2023-08-18
+
 ### Changed
 
 - Bumped Ubuntu in Github workflow runners to v22.04
@@ -735,7 +737,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v6.6.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v6.7.0...HEAD
+[6.7.0]: https://github.com/giantswarm/devctl/compare/v6.6.0...v6.7.0
 [6.6.0]: https://github.com/giantswarm/devctl/compare/v6.5.0...v6.6.0
 [6.5.0]: https://github.com/giantswarm/devctl/compare/v6.4.0...v6.5.0
 [6.4.0]: https://github.com/giantswarm/devctl/compare/v6.3.1...v6.4.0
