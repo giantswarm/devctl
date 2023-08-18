@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Bumped Ubuntu in Github workflow runners to v22.04
+
 ## [6.6.0] - 2023-08-14
 
 ### Changed
