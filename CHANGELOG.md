@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Bump release operator dependency to v4 to add support for dependencies on release apps.
+
 ## [6.7.0] - 2023-08-18
 
 ### Changed
