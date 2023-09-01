@@ -15,6 +15,15 @@ require (
 	github.com/giantswarm/release-operator/v4 v4.2.0
 	github.com/google/go-github/v61 v61.0.0
 	github.com/pelletier/go-toml/v2 v2.2.1
+	github.com/bmatcuk/doublestar v1.3.4
+	github.com/buger/goterm v1.0.4
+	github.com/fatih/color v1.15.0
+	github.com/giantswarm/microerror v0.4.0
+	github.com/giantswarm/micrologger v1.0.0
+	github.com/giantswarm/release-operator/v4 v4.1.0
+	github.com/google/go-github/v44 v44.1.0
+	github.com/jedib0t/go-pretty/v6 v6.4.7
+	github.com/pelletier/go-toml v1.9.5
 	github.com/rhysd/go-github-selfupdate v1.2.3
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.8.0
@@ -41,9 +50,12 @@ require (
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
+	github.com/mattn/go-isatty v0.0.17 // indirect
+	github.com/mattn/go-runewidth v0.0.13 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/onsi/gomega v1.10.2 // indirect
+	github.com/rivo/uniseg v0.2.0 // indirect
 	github.com/tcnksm/go-gitconfig v0.1.2 // indirect
 	github.com/ulikunitz/xz v0.5.9 // indirect
 	golang.org/x/crypto v0.22.0 // indirect
