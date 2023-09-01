@@ -24,6 +24,11 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 		return microerror.Mask(err)
 	}
 
+	components, apps, err = BumpAll(baseRelease, components, apps)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
 	// Define release CR
 	var updatesRelease v1alpha1.Release
 	newVersion := *semver.MustParse(name) // already validated to be a valid semver string

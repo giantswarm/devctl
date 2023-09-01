@@ -39,6 +39,7 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 
 func (r *runner) run(_ context.Context, cmd *cobra.Command, _ []string) error {
 	creationCommand := fmt.Sprintf("%v", strings.Join(os.Args, " "))
+
 	err := release.CreateRelease(r.flag.Name, r.flag.Base, r.flag.Releases, r.flag.Provider, r.flag.Components, r.flag.Apps, r.flag.Overwrite, creationCommand)
 	if err != nil {
 		return microerror.Mask(err)
