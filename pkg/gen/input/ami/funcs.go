@@ -88,7 +88,7 @@ func getAMIInfoString(config Config) (string, error) {
 		return "", microerror.Mask(err)
 	}
 
-	return fmt.Sprintf("%s", result), nil
+	return string(result), nil
 }
 
 func scrapeVersions(source io.Reader) ([]string, error) {
