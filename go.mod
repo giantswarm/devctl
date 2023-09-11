@@ -4,6 +4,7 @@ go 1.18
 
 require (
 	github.com/Masterminds/semver/v3 v3.2.1
+	github.com/aws/aws-sdk-go v1.45.6
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/bmatcuk/doublestar v1.3.4
 	github.com/fatih/color v1.15.0
@@ -35,6 +36,7 @@ require (
 	github.com/google/gofuzz v1.2.0 // indirect
 	github.com/inconshreveable/go-update v0.0.0-20160112193335-8152e7eb6ccf // indirect
 	github.com/inconshreveable/mousetrap v1.0.1 // indirect
+	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.17 // indirect

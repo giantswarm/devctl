@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/Masterminds/semver/v3"
@@ -13,10 +14,23 @@ import (
 )
 
 func getAMIInfoString(config Config) (string, error) {
+	existing := map[string]map[string]string{}
+	if config.KeepExisting != "" {
+		// Read versions already defined in file.
+		data, err := os.ReadFile(config.KeepExisting)
+		if err != nil {
+			return "", microerror.Mask(err)
+		}
+		err = json.Unmarshal(data, &existing)
+		if err != nil {
+			return "", microerror.Mask(err)
+		}
+	}
+
 	var versions []string
 	{
 		url := fmt.Sprintf("https://%s.release.%s/%s/", config.Channel, config.PrimaryDomain, config.Arch)
-		fmt.Println("scraping", url)
+		fmt.Println("getting list of releases from", url)
 		response, err := http.Get(url) //nolint:gosec
 		if err != nil {
 			return "", microerror.Mask(err)
@@ -33,8 +47,15 @@ func getAMIInfoString(config Config) (string, error) {
 		if semver.MustParse(version).LessThan(semver.MustParse(config.MinimumVersion)) {
 			continue
 		}
+		if val, found := existing[version]; found {
+			fmt.Printf("Release %s already present in %s, not scraping it\n", version, config.KeepExisting)
+			mergedAMI[version] = val
+			delete(existing, version)
+			continue
+		}
+
 		url := fmt.Sprintf("https://%s.release.%s/%s/%s/flatcar_production_ami_all.json", config.Channel, config.PrimaryDomain, config.Arch, version)
-		fmt.Println("scraping", url)
+		fmt.Println("scraping release", version)
 		response, err := http.Get(url) //nolint:gosec
 		if err != nil {
 			return "", microerror.Mask(err)
@@ -46,25 +67,20 @@ func getAMIInfoString(config Config) (string, error) {
 		if err != nil {
 			return "", microerror.Mask(err)
 		}
-	}
 
-	for version := range mergedAMI {
-		url := fmt.Sprintf("https://%s/%s/%s/%s.json", config.ChinaDomain, config.Channel, config.Arch, version)
-		fmt.Println("scraping", url)
-		response, err := http.Get(url) //nolint:gosec
+		chinaVersionAMI, err := getChinaFlatcarRelease(config, version)
 		if err != nil {
 			return "", microerror.Mask(err)
 		}
-		if response.StatusCode == 403 {
-			continue
-		}
-		chinaVersionAMI, err := scrapeVersionAMI(response.Body)
-		if err != nil {
-			return "", microerror.Mask(err)
-		}
+
 		for region, image := range chinaVersionAMI {
 			mergedAMI[version][region] = image
 		}
+	}
+
+	// Releases defined in the existing file but not scraped successfully for some reason.
+	for version, val := range existing {
+		mergedAMI[version] = val
 	}
 
 	result, err := json.MarshalIndent(mergedAMI, "", "  ")
@@ -72,7 +88,7 @@ func getAMIInfoString(config Config) (string, error) {
 		return "", microerror.Mask(err)
 	}
 
-	return fmt.Sprintf("`%s`", result), nil
+	return fmt.Sprintf("%s", result), nil
 }
 
 func scrapeVersions(source io.Reader) ([]string, error) {
