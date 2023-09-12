@@ -1,7 +1,6 @@
 package file
 
 import (
-	"fmt"
 	"path"
 
 	"github.com/giantswarm/devctl/pkg/gen/input"
