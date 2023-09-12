@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Bump release operator dependency to v4 to add support for dependencies on release apps.
 - Add some apps to the changelog apps list.
+- Change `gen ami` command in order to work with aws-operator >= 14.22.0 where AMI Ids have been moved to the config repo.
+
+### Fixed
+
+- Fix AMI ID detection for china in `gen ami` command.
 
 ## [6.7.0] - 2023-08-18
 
