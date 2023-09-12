@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.8.0] - 2023-09-12
+
 ### Changed
 
 - Bump release operator dependency to v4 to add support for dependencies on release apps.
@@ -747,7 +749,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v6.7.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v6.8.0...HEAD
+[6.8.0]: https://github.com/giantswarm/devctl/compare/v6.7.0...v6.8.0
 [6.7.0]: https://github.com/giantswarm/devctl/compare/v6.6.0...v6.7.0
 [6.6.0]: https://github.com/giantswarm/devctl/compare/v6.5.0...v6.6.0
 [6.5.0]: https://github.com/giantswarm/devctl/compare/v6.4.0...v6.5.0
