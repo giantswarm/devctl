@@ -17,8 +17,6 @@ func NewAMIInput(p params.Params) input.Input {
 		},
 	}
 
-	fmt.Println(i.Path)
-
 	return i
 }
 
