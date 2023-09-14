@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Let renovate ignore dependency `github.com/imdario/mergo`
+- Let renovate ignore dependency `github.com/imdario/mergo`.
 
 ## [6.8.0] - 2023-09-12
 
