@@ -49,6 +49,11 @@ Criteria:
 		There is no CODEOWNERS file in the root folder, which means that the repository
 		has no owner. We want repos to have owners, ideally.
 
+	NO_DEPENDABOT_ALERTS
+
+		Dependabot security alerts are disabled. Note: this is independent from
+		version updates via Dependabot.
+
 	NO_DEPENDENCY_GRAPH
 
 		Returns repos where the dependency graph feature is inactive. We want it to be

@@ -5,6 +5,7 @@ import (
 	b64 "encoding/base64"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"strings"
 
@@ -33,6 +34,7 @@ const (
 	critNoReadme                  = "NO_README"
 	critDefaultBranchMaster       = "DEFAULT_BRANCH_MASTER"
 	critNoDependencyGraph         = "NO_DEPENDENCY_GRAPH"
+	critDependabotAlertsDisabled  = "NO_DEPENDABOT_ALERTS"
 )
 
 type runner struct {
@@ -124,10 +126,26 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 			}
 		}
 
+		if slices.Contains(r.flag.What, critDependabotAlertsDisabled) {
+			enabled, _, err := realClient.Repositories.GetVulnerabilityAlerts(ctx, githubOrg, repo.Name)
+			if err != nil {
+				return microerror.Mask(err)
+			}
+
+			if !enabled {
+				output := fmt.Sprintf("  - Dependabot security alerts disabled (%s)\n", critDependabotAlertsDisabled)
+				output += fmt.Sprintf("    - Go to https://github.com/%s/%s/security to enable", githubOrg, repo.Name)
+				if repoMetadata.Fork != nil && *repoMetadata.Fork {
+					output += fmt.Sprintf("    - Note: this repo is a fork of %s\n", repoMetadata.GetForksURL())
+				}
+				matched = append(matched, output)
+			}
+		}
+
 		if slices.Contains(r.flag.What, critCodeownersErrors) {
 			errs, resp, err := realClient.Repositories.GetCodeownersErrors(ctx, githubOrg, repo.Name)
 			if err != nil {
-				if resp != nil && resp.StatusCode == 404 {
+				if resp != nil && resp.StatusCode == http.StatusNotFound {
 					// CODEOWNERS not found in this repo. Do nothing.
 				} else {
 					return microerror.Mask(err)
