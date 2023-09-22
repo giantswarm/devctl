@@ -20,7 +20,7 @@ func (c *Client) ListRepositories(ctx context.Context, owner string) ([]Reposito
 			ListOptions: github.ListOptions{
 				PerPage: 100,
 			},
-
+			Sort: "full_name",
 			Type: "all",
 		}
 		for pageCnt := 0; ; pageCnt++ {
