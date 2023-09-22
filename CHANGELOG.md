@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `devctl gen renovate`: make `--interval` optional, remove default value
+
 ## [6.10.0] - 2023-09-15
 
 ### Changed

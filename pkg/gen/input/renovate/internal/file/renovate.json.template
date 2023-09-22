@@ -1,4 +1,3 @@
-{{- $interval := .Interval -}}
 {{- $language := .Language -}}
 {{- $reviewer := .Reviewer -}}
 {
@@ -69,6 +68,8 @@
       "datasourceTemplate": "github-releases",
       "extractVersionTemplate": "^v(?<version>.*)$"
     }
-  ],
-  "schedule": [ {{ $interval | printf "%q" }} ]
+  ]
+{{- if ne .Interval "" }},
+  "schedule": [ {{ .Interval | printf "%q" }} ]
+{{- end }}
 }
