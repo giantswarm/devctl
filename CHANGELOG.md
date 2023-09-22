@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.11.0] - 2023-09-22
+
 ### Changed
 
 - `devctl gen renovate`: make `--interval` optional, remove default value
@@ -765,7 +767,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v6.10.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v6.11.0...HEAD
+[6.11.0]: https://github.com/giantswarm/devctl/compare/v6.10.0...v6.11.0
 [6.10.0]: https://github.com/giantswarm/devctl/compare/v6.9.0...v6.10.0
 [6.9.0]: https://github.com/giantswarm/devctl/compare/v6.8.0...v6.9.0
 [6.8.0]: https://github.com/giantswarm/devctl/compare/v6.7.0...v6.8.0
