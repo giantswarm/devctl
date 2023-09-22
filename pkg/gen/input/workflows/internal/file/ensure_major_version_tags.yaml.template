@@ -6,7 +6,7 @@ on:
 jobs:
   debug_info:
     name: Debug info
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     steps:
       - name: Print github context JSON
         run: |
@@ -15,7 +15,7 @@ jobs:
           EOF
   ensure_major_version_tags:
     name: Ensure major version tags
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: giantswarm/floating-tags-action@v1

@@ -88,6 +88,8 @@ func isRegenerable(path string) bool {
 		return true
 	case base == "dependabot.yml":
 		return true
+	case base == "aws-ami.yaml.template":
+		return true
 	case strings.HasPrefix(base, internal.RegenerableFilePrefix):
 		return true
 	}

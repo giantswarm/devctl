@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.10.0] - 2023-09-15
+
+### Changed
+
+- Update `action/checkout` to `v4` in Github Action template files.
+
+## [6.9.0] - 2023-09-14
+
+### Changed
+
+- Let renovate ignore dependency `github.com/imdario/mergo`.
+
+## [6.8.0] - 2023-09-12
+
+### Changed
+
+- Bump release operator dependency to v4 to add support for dependencies on release apps.
+- Add some apps to the changelog apps list.
+- Change `gen ami` command in order to work with aws-operator >= 14.22.0 where AMI Ids have been moved to the config repo.
+
+### Fixed
+
+- Fix AMI ID detection for china in `gen ami` command.
+
+## [6.7.0] - 2023-08-18
+
+### Changed
+
+- Bumped Ubuntu in Github workflow runners to v22.04
+
 ## [6.6.0] - 2023-08-14
 
 ### Changed
@@ -731,7 +761,11 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v6.6.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v6.10.0...HEAD
+[6.10.0]: https://github.com/giantswarm/devctl/compare/v6.9.0...v6.10.0
+[6.9.0]: https://github.com/giantswarm/devctl/compare/v6.8.0...v6.9.0
+[6.8.0]: https://github.com/giantswarm/devctl/compare/v6.7.0...v6.8.0
+[6.7.0]: https://github.com/giantswarm/devctl/compare/v6.6.0...v6.7.0
 [6.6.0]: https://github.com/giantswarm/devctl/compare/v6.5.0...v6.6.0
 [6.5.0]: https://github.com/giantswarm/devctl/compare/v6.4.0...v6.5.0
 [6.4.0]: https://github.com/giantswarm/devctl/compare/v6.3.1...v6.4.0
