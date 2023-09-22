@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/giantswarm/microerror"
-	"github.com/google/go-github/v44/github"
+	"github.com/google/go-github/v53/github"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/oauth2"
 )
@@ -53,4 +53,8 @@ func (c *Client) getUnderlyingClient(ctx context.Context) *github.Client {
 	client := github.NewClient(tc)
 
 	return client
+}
+
+func (c *Client) GetUnderlyingClient(ctx context.Context) *github.Client {
+	return c.getUnderlyingClient(ctx)
 }

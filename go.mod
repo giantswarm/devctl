@@ -1,6 +1,6 @@
 module github.com/giantswarm/devctl
 
-go 1.18
+go 1.19
 
 require (
 	github.com/Masterminds/semver/v3 v3.2.1
@@ -11,7 +11,7 @@ require (
 	github.com/giantswarm/microerror v0.4.0
 	github.com/giantswarm/micrologger v1.0.0
 	github.com/giantswarm/release-operator/v4 v4.1.0
-	github.com/google/go-github/v44 v44.1.0
+	github.com/google/go-github/v53 v53.2.0
 	github.com/pelletier/go-toml v1.9.5
 	github.com/rhysd/go-github-selfupdate v1.2.3
 	github.com/sirupsen/logrus v1.9.0
@@ -20,10 +20,13 @@ require (
 	golang.org/x/net v0.13.0
 	golang.org/x/oauth2 v0.8.0
 	k8s.io/apimachinery v0.24.3
+	k8s.io/utils v0.0.0-20220713171938-56c0de1e6f5e
 	sigs.k8s.io/yaml v1.3.0
 )
 
 require (
+	github.com/ProtonMail/go-crypto v0.0.0-20230217124315-7d5c6f04bbb8 // indirect
+	github.com/cloudflare/circl v1.3.3 // indirect
 	github.com/giantswarm/k8smetadata v0.19.0 // indirect
 	github.com/go-kit/log v0.2.1 // indirect
 	github.com/go-logfmt/logfmt v0.5.1 // indirect
@@ -54,7 +57,6 @@ require (
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	k8s.io/klog/v2 v2.70.1 // indirect
-	k8s.io/utils v0.0.0-20220713171938-56c0de1e6f5e // indirect
 	sigs.k8s.io/json v0.0.0-20220713155537-f223a00ba0e2 // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.2.1 // indirect
 )

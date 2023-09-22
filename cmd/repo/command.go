@@ -8,6 +8,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
+	"github.com/giantswarm/devctl/cmd/repo/find"
 	"github.com/giantswarm/devctl/cmd/repo/setup"
 )
 
@@ -34,6 +35,20 @@ func New(config Config) (*cobra.Command, error) {
 	}
 
 	var err error
+
+	var findCmd *cobra.Command
+	{
+		c := find.Config{
+			Logger: config.Logger,
+			Stderr: config.Stderr,
+			Stdout: config.Stdout,
+		}
+
+		findCmd, err = find.New(c)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+	}
 
 	var setupCmd *cobra.Command
 	{
@@ -67,6 +82,7 @@ func New(config Config) (*cobra.Command, error) {
 
 	f.Init(c)
 
+	c.AddCommand(findCmd)
 	c.AddCommand(setupCmd)
 
 	return c, nil
