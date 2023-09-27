@@ -35,6 +35,8 @@ const (
 	critDefaultBranchMaster       = "DEFAULT_BRANCH_MASTER"
 	critNoDependencyGraph         = "NO_DEPENDENCY_GRAPH"
 	critDependabotAlertsDisabled  = "NO_DEPENDABOT_ALERTS"
+
+	renovateAppID = 2740
 )
 
 type runner struct {
@@ -79,13 +81,27 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	if err != nil {
 		return microerror.Mask(err)
 	}
+	realClient := client.GetUnderlyingClient(ctx)
+
+	// Renovate App
+	installations, _, err := realClient.Organizations.ListInstallations(ctx, githubOrg, &github.ListOptions{PerPage: 100})
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	fmt.Printf("Found %d installations\n", *installations.TotalCount)
+
+	for _, inst := range installations.Installations {
+		if *inst.AppID == renovateAppID {
+			repoSelection := inst.GetRepositorySelection()
+			fmt.Printf("Renovate installation: repository selection %s", repoSelection)
+		}
+	}
 
 	repos, err := client.ListRepositories(ctx, githubOrg)
 	if err != nil {
 		return microerror.Mask(err)
 	}
-
-	realClient := client.GetUnderlyingClient(ctx)
 
 	matchingReposCount := 0
 
