@@ -6,7 +6,7 @@ require (
 	github.com/Masterminds/semver/v3 v3.2.1
 	github.com/aws/aws-sdk-go v1.45.17
 	github.com/blang/semver v3.5.1+incompatible
-	github.com/bmatcuk/doublestar v1.3.4
+	github.com/bmatcuk/doublestar/v2 v2.0.4
 	github.com/fatih/color v1.15.0
 	github.com/giantswarm/microerror v0.4.0
 	github.com/giantswarm/micrologger v1.0.0
