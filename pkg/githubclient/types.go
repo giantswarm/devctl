@@ -4,7 +4,7 @@ import (
 	"time"
 
 	"github.com/giantswarm/microerror"
-	"github.com/google/go-github/v44/github"
+	"github.com/google/go-github/v55/github"
 )
 
 type Repository struct {
