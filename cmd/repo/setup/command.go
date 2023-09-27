@@ -1,6 +1,7 @@
 package setup
 
 import (
+	"fmt"
 	"io"
 	"os"
 
@@ -11,11 +12,12 @@ import (
 
 const (
 	name            = "setup"
-	description     = `Configure github repository`
-	longDescription = `Configure github repository with :
-  * settings
-  * permissions
-  * branch protection`
+	description     = `Configure GitHub repository`
+	longDescription = `Configure GitHub repository with:
+
+ - Settings
+ - Permissions
+ - Default branch protection rules`
 )
 
 type Config struct {
@@ -45,7 +47,7 @@ func New(config Config) (*cobra.Command, error) {
 	}
 
 	c := &cobra.Command{
-		Use:   name,
+		Use:   fmt.Sprintf("%s [flags] REPOSITORY", name),
 		Short: description,
 		Long:  longDescription,
 		RunE:  r.Run,
