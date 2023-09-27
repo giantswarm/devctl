@@ -16,7 +16,7 @@ const (
 	longDescription = `Configure GitHub repository with:
 
  - Settings
- - permissions
+ - Permissions
  - Default branch protection rules`
 )
 
