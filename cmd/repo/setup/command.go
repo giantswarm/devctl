@@ -45,7 +45,7 @@ func New(config Config) (*cobra.Command, error) {
 	}
 
 	c := &cobra.Command{
-		Use:   name,
+		Use:   fmt.Sprintf("%s [flags] REPOSITORY", name),
 		Short: description,
 		Long:  longDescription,
 		RunE:  r.Run,
