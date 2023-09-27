@@ -36,7 +36,7 @@ type flag struct {
 
 func (f *flag) Init(cmd *cobra.Command) {
 	cmd.PersistentFlags().BoolVar(&f.DryRun, "dry-run", false, "Dry-run or ready-only mode. Show what is being made but do not apply any change.")
-	cmd.PersistentFlags().StringVar(&f.GithubTokenEnvVar, "github-token-envvar", "GITHUB_TOKEN", "Environement variable name for Github token.")
+	cmd.PersistentFlags().StringVar(&f.GithubTokenEnvVar, "github-token-envvar", "GITHUB_TOKEN", "Environment variable name for Github token.")
 
 	// Features
 	cmd.PersistentFlags().BoolVar(&f.EnableWiki, "enable-wiki", false, "Either true to enable the wiki for this repository or false to disable it.")
