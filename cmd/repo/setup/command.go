@@ -1,6 +1,7 @@
 package setup
 
 import (
+	"fmt"
 	"io"
 	"os"
 
@@ -11,11 +12,12 @@ import (
 
 const (
 	name            = "setup"
-	description     = `Configure github repository`
-	longDescription = `Configure github repository with :
-  * settings
-  * permissions
-  * branch protection`
+	description     = `Configure GitHub repository`
+	longDescription = `Configure GitHub repository with:
+
+ - Settings
+ - permissions
+ - Default branch protection rules`
 )
 
 type Config struct {
