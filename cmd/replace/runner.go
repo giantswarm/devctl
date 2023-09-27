@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 
-	doublestar "github.com/bmatcuk/doublestar/v3"
+	doublestar "github.com/bmatcuk/doublestar/v4"
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
@@ -50,10 +50,12 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 
+	fileSystem := os.DirFS(".")
+
 	matches := make(map[string]struct{})
 	{
 		for _, g := range globs {
-			ms, err := doublestar.Glob(g)
+			ms, err := doublestar.Glob(fileSystem, g)
 			if err != nil {
 				return microerror.Mask(err)
 			}
