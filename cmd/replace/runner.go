@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 
-	doublestar "github.com/bmatcuk/doublestar/v2"
+	doublestar "github.com/bmatcuk/doublestar/v3"
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
