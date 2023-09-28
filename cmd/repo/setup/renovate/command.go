@@ -13,7 +13,14 @@ import (
 const (
 	name            = "renovate"
 	description     = "Enable (or disable) Renovate for the repository"
-	longDescription = ""
+	longDescription = `This command adds the given repository to the list of repos that Renovate will have access to,
+in order to allow for automatic dependency updates.
+
+NOTE: This does not add or remove any renovate configuration to the repository.
+For that, please check out:
+
+  devctl gen renovate --help
+`
 )
 
 type Config struct {

@@ -54,7 +54,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	var token string
 	var found bool
 	if token, found = os.LookupEnv(tokenEnv); !found {
-		return microerror.Maskf(envVarNotFoundError, "environment variable %#q was not found", r.flag.GithubTokenEnvVar)
+		return microerror.Maskf(envVarNotFoundError, "environment variable %#q was not found", tokenEnv)
 	}
 
 	c := githubclient.Config{
