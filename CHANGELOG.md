@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.12.0] - 2023-09-28
+
 ### Added
 
 - Add `devctl repo setup renovate` to enable/disable Renovate for a repository.
@@ -771,7 +773,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v6.11.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v6.12.0...HEAD
+[6.12.0]: https://github.com/giantswarm/devctl/compare/v6.11.0...v6.12.0
 [6.11.0]: https://github.com/giantswarm/devctl/compare/v6.10.0...v6.11.0
 [6.10.0]: https://github.com/giantswarm/devctl/compare/v6.9.0...v6.10.0
 [6.9.0]: https://github.com/giantswarm/devctl/compare/v6.8.0...v6.9.0
