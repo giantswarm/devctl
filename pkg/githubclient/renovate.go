@@ -17,6 +17,8 @@ const (
 	githubApiVersion = "2022-11-28"
 )
 
+// Add repository to the Renovate installation. Corresponds to
+// https://docs.github.com/en/rest/apps/installations?apiVersion=2022-11-28#add-a-repository-to-an-app-installation
 func (c *Client) AddRepoToRenovatePermissions(ctx context.Context, org string, repo *github.Repository) error {
 	path := fmt.Sprintf("/user/installations/%d/repositories/%d", renovateInstallationID, repo.GetID())
 	realClient := c.getUnderlyingClient(ctx)
@@ -37,6 +39,8 @@ func (c *Client) AddRepoToRenovatePermissions(ctx context.Context, org string, r
 	return nil
 }
 
+// Remove repository from the Renovate installation. Corresponds to
+// https://docs.github.com/en/rest/apps/installations?apiVersion=2022-11-28#remove-a-repository-from-an-app-installation
 func (c *Client) RemoveRepoFromRenovatePermissions(ctx context.Context, org string, repo *github.Repository) error {
 	path := fmt.Sprintf("/user/installations/%d/repositories/%d", renovateInstallationID, repo.GetID())
 	realClient := c.getUnderlyingClient(ctx)
