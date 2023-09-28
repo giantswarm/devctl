@@ -28,3 +28,12 @@ var invalidConfigError = &microerror.Error{
 func IsInvalidConfig(err error) bool {
 	return microerror.Cause(err) == invalidConfigError
 }
+
+var installationNotFoundError = &microerror.Error{
+	Kind: "installationNotFoundError",
+}
+
+// IsInstallationNotFound asserts installationNotFoundError.
+func IsInstallationNotFound(err error) bool {
+	return microerror.Cause(err) == installationNotFoundError
+}

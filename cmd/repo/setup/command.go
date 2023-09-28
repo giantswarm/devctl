@@ -8,6 +8,8 @@ import (
 	"github.com/giantswarm/microerror"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+
+	"github.com/giantswarm/devctl/cmd/repo/setup/renovate"
 )
 
 const (
@@ -37,6 +39,22 @@ func New(config Config) (*cobra.Command, error) {
 		config.Stdout = os.Stdout
 	}
 
+	var err error
+
+	var renovateCmd *cobra.Command
+	{
+		c := renovate.Config{
+			Logger: config.Logger,
+			Stderr: config.Stderr,
+			Stdout: config.Stdout,
+		}
+
+		renovateCmd, err = renovate.New(c)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+	}
+
 	f := &flag{}
 
 	r := &runner{
@@ -55,6 +73,8 @@ func New(config Config) (*cobra.Command, error) {
 	}
 
 	f.Init(c)
+
+	c.AddCommand(renovateCmd)
 
 	return c, nil
 }

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add `devctl repo setup renovate` to enable/disable Renovate for a repository.
+
 ## [6.11.0] - 2023-09-22
 
 ### Changed
