@@ -3,7 +3,6 @@ package githubclient
 import (
 	"context"
 	"fmt"
-	"log"
 	"net/http"
 
 	"github.com/google/go-github/v55/github"
@@ -34,7 +33,7 @@ func (c *Client) AddRepoToRenovatePermissions(ctx context.Context, org string, r
 		return err
 	}
 
-	log.Printf("response status: %q", resp.Status)
+	c.logger.Printf("response status: %q", resp.Status)
 
 	return nil
 }
