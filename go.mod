@@ -85,4 +85,6 @@ replace (
 	// Fix for CWE-400: Uncontrolled Resource Consumption ('Resource Exhaustion')
 	golang.org/x/text => golang.org/x/text v0.13.0
 
+	// Fix for CVE-2023-32731
+	google.golang.org/grpc => google.golang.org/grpc v1.58.2
 )
