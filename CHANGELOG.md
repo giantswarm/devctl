@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Replaced `hub` with `gh` in CI templates.
+- Override GH Action workflows replacing `hub` with `gh`.
 
 ### Fixed
 
