@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Replaced `hub` with `gh` in CI templates.
+
 ### Fixed
 
 - Fixed inconsistent logging in `devctl repo setup renovate`.
