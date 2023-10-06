@@ -4,7 +4,7 @@ go 1.18
 
 require (
 	github.com/Masterminds/semver/v3 v3.2.1
-	github.com/aws/aws-sdk-go v1.45.23
+	github.com/aws/aws-sdk-go v1.45.24
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/bmatcuk/doublestar/v4 v4.6.0
 	github.com/fatih/color v1.15.0
@@ -17,8 +17,8 @@ require (
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.7.0
 	github.com/spf13/pflag v1.0.5
-	golang.org/x/net v0.15.0
-	golang.org/x/oauth2 v0.12.0
+	golang.org/x/net v0.16.0
+	golang.org/x/oauth2 v0.13.0
 	k8s.io/apimachinery v0.24.3
 	sigs.k8s.io/yaml v1.3.0
 )
@@ -47,8 +47,8 @@ require (
 	github.com/onsi/gomega v1.10.2 // indirect
 	github.com/tcnksm/go-gitconfig v0.1.2 // indirect
 	github.com/ulikunitz/xz v0.5.9 // indirect
-	golang.org/x/crypto v0.13.0 // indirect
-	golang.org/x/sys v0.12.0 // indirect
+	golang.org/x/crypto v0.14.0 // indirect
+	golang.org/x/sys v0.13.0 // indirect
 	golang.org/x/text v0.13.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/protobuf v1.31.0 // indirect
@@ -61,7 +61,7 @@ require (
 )
 
 replace (
-	github.com/aws/aws-sdk-go => github.com/aws/aws-sdk-go v1.45.23
+	github.com/aws/aws-sdk-go => github.com/aws/aws-sdk-go v1.45.24
 	github.com/coreos/etcd v3.3.13+incompatible => github.com/coreos/etcd v3.3.25+incompatible
 	github.com/dgrijalva/jwt-go => github.com/dgrijalva/jwt-go/v4 v4.0.0-preview1
 	github.com/gin-gonic/gin => github.com/gin-gonic/gin v1.9.1
@@ -76,7 +76,7 @@ replace (
 	github.com/hashicorp/vault/api => github.com/hashicorp/vault/api v1.10.0
 
 	// Fix for CWE-121: Stack-based Buffer Overflow
-	github.com/nats-io/nats-server/v2 => github.com/nats-io/nats-server/v2 v2.10.1
+	github.com/nats-io/nats-server/v2 => github.com/nats-io/nats-server/v2 v2.10.2
 
 	github.com/pkg/sftp => github.com/pkg/sftp v1.13.6
 	github.com/prometheus/client_golang => github.com/prometheus/client_golang v1.17.0
