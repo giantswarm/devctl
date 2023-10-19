@@ -32,6 +32,9 @@ type flag struct {
 	DisableBranchProtection bool
 	Checks                  []string
 	ChecksFilter            string
+
+	// Renovate
+	SetupRenovate bool
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
@@ -65,6 +68,9 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&f.DisableBranchProtection, "disable-branch-protection", false, "Disable default branch protection")
 	cmd.Flags().StringSliceVar(&f.Checks, "checks", nil, "Check context names for branch protection. Default will add all auto-detected checks, this can be disabled by passing an empty string. Overrides \"--checks-filter\"")
 	cmd.Flags().StringVar(&f.ChecksFilter, "checks-filter", "aliyun", "Provide a regex to filter checks. Checks matching the regex will be ignored. Empty string disables filter (all checks are accepted).")
+
+	// Renovate
+	cmd.Flags().BoolVar(&f.SetupRenovate, "renovate", true, "Sets up renovate for the repo")
 }
 
 func (f *flag) Validate() error {

@@ -117,6 +117,14 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		}
 	}
 
+	if r.flag.SetupRenovate {
+		r.logger.Printf("Adding %s/%s to repositories accessible by Renovate...", owner, *repository.Name)
+		err = client.AddRepoToRenovatePermissions(ctx, owner, repository)
+		if err != nil {
+			return microerror.Mask(err)
+		}
+	}
+
 	r.logger.Info("completed repository setup")
 
 	return nil
