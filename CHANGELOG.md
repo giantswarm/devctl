@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.14.0] - 2023-10-20
+
 ### Changed
 
 - Edited Gitleaks to use our own repo, which removed the deprecated `set-output` command.
@@ -790,7 +792,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v6.13.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v6.14.0...HEAD
+[6.14.0]: https://github.com/giantswarm/devctl/compare/v6.13.0...v6.14.0
 [6.13.0]: https://github.com/giantswarm/devctl/compare/v6.12.0...v6.13.0
 [6.12.0]: https://github.com/giantswarm/devctl/compare/v6.11.0...v6.12.0
 [6.11.0]: https://github.com/giantswarm/devctl/compare/v6.10.0...v6.11.0
