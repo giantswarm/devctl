@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Edited Gitleaks to use our own repo, which removed the deprecated `set-output` command.
 - Enable Renovate to access the repo by default as part of `devctl repo setup`
+- Switch renovate to using a JSON5 config file
 
 ## [6.13.0] - 2023-10-05
 

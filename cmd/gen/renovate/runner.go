@@ -76,5 +76,18 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 
+	// Clean up old `renovate.json` in favour of new `renovate.json5`
+	f, err = filepath.Abs("./renovate.json")
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	err = os.Remove(f)
+	if os.IsNotExist(err) {
+		// no-op
+	} else if err != nil {
+		return microerror.Mask(err)
+	}
+
 	return nil
 }
