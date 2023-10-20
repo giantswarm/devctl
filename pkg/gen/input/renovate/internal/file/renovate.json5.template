@@ -1,0 +1,17 @@
+{
+  "extends": [
+    // Base config - https://github.com/giantswarm/renovate-presets/blob/main/default.json5
+    "github>giantswarm/renovate-presets:default.json5",
+    {{- if eq .Language "go" }}
+    // Go specific config - https://github.com/giantswarm/renovate-presets/blob/main/lang-go.json5
+    "github>giantswarm/renovate-presets:lang-go.json5",
+    {{- end }}
+    {{- if eq .Language "python" }}
+    // Python specific config - https://github.com/giantswarm/renovate-presets/blob/main/lang-python.json5
+    "github>giantswarm/renovate-presets:lang-python.json5",
+    {{- end }}
+  ],
+  {{- if ne .Interval "" }},
+  "schedule": [ {{ .Interval | printf "%q" }} ]
+  {{- end }}
+}

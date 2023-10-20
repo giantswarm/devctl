@@ -30,7 +30,7 @@ devctl gen workflows --flavour cli --language go
 
 ## Generating renovate configuration
 
-Generates a `renovate.json` file in the repo root to configure [renovate](https://docs.renovatebot.com/), which automatically updates dependencies in the configured repository.
+Generates a `renovate.json5` file in the repo root to configure [renovate](https://docs.renovatebot.com/), which automatically updates dependencies in the configured repository.
 
 ```nohighlight
 devctl gen renovate --language LANGUAGE
