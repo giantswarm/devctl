@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.15.0] - 2023-10-24
+
 ### Changed
 
 - Changed the Go module name to `github.com/giantswarm/devctl/v6`
@@ -796,7 +798,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v6.14.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v6.15.0...HEAD
+[6.15.0]: https://github.com/giantswarm/devctl/compare/v6.14.0...v6.15.0
 [6.14.0]: https://github.com/giantswarm/devctl/compare/v6.13.0...v6.14.0
 [6.13.0]: https://github.com/giantswarm/devctl/compare/v6.12.0...v6.13.0
 [6.12.0]: https://github.com/giantswarm/devctl/compare/v6.11.0...v6.12.0
