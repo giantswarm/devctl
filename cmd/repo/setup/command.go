@@ -9,7 +9,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
-	"github.com/giantswarm/devctl/cmd/repo/setup/renovate"
+	"github.com/giantswarm/devctl/v6/cmd/repo/setup/renovate"
 )
 
 const (

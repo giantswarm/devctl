@@ -12,7 +12,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
-	"github.com/giantswarm/devctl/pkg/githubclient"
+	"github.com/giantswarm/devctl/v6/pkg/githubclient"
 )
 
 type runner struct {

@@ -9,7 +9,7 @@ import (
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
 
-	"github.com/giantswarm/devctl/cmd"
+	"github.com/giantswarm/devctl/v6/cmd"
 )
 
 func main() {
