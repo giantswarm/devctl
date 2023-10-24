@@ -6,9 +6,9 @@ import (
 
 	"github.com/giantswarm/microerror"
 
-	"github.com/giantswarm/devctl/pkg/gen/input"
-	"github.com/giantswarm/devctl/pkg/gen/input/ami/internal/file"
-	"github.com/giantswarm/devctl/pkg/gen/input/ami/internal/params"
+	"github.com/giantswarm/devctl/v6/pkg/gen/input"
+	"github.com/giantswarm/devctl/v6/pkg/gen/input/ami/internal/file"
+	"github.com/giantswarm/devctl/v6/pkg/gen/input/ami/internal/params"
 )
 
 type AMI struct {

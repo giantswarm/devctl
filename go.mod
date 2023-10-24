@@ -1,6 +1,6 @@
-module github.com/giantswarm/devctl
+module github.com/giantswarm/devctl/v6
 
-go 1.18
+go 1.19
 
 require (
 	github.com/Masterminds/semver/v3 v3.2.1

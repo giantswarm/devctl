@@ -8,7 +8,7 @@ import (
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
 
-	"github.com/giantswarm/devctl/pkg/release"
+	"github.com/giantswarm/devctl/v6/pkg/release"
 )
 
 type runner struct {

@@ -11,9 +11,9 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
-	"github.com/giantswarm/devctl/internal/env"
-	"github.com/giantswarm/devctl/pkg/project"
-	"github.com/giantswarm/devctl/pkg/updater"
+	"github.com/giantswarm/devctl/v6/internal/env"
+	"github.com/giantswarm/devctl/v6/pkg/project"
+	"github.com/giantswarm/devctl/v6/pkg/updater"
 )
 
 type runner struct {

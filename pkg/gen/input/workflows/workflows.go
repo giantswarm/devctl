@@ -1,10 +1,10 @@
 package workflows
 
 import (
-	"github.com/giantswarm/devctl/pkg/gen"
-	"github.com/giantswarm/devctl/pkg/gen/input"
-	"github.com/giantswarm/devctl/pkg/gen/input/workflows/internal/file"
-	"github.com/giantswarm/devctl/pkg/gen/input/workflows/internal/params"
+	"github.com/giantswarm/devctl/v6/pkg/gen"
+	"github.com/giantswarm/devctl/v6/pkg/gen/input"
+	"github.com/giantswarm/devctl/v6/pkg/gen/input/workflows/internal/file"
+	"github.com/giantswarm/devctl/v6/pkg/gen/input/workflows/internal/params"
 )
 
 type Config struct {

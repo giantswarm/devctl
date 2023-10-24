@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Changed the Go module name to `github.com/giantswarm/devctl/v6`
+
 ## [6.14.0] - 2023-10-20
 
 ### Changed

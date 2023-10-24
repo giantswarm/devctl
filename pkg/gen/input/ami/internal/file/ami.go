@@ -3,8 +3,8 @@ package file
 import (
 	"path"
 
-	"github.com/giantswarm/devctl/pkg/gen/input"
-	"github.com/giantswarm/devctl/pkg/gen/input/ami/internal/params"
+	"github.com/giantswarm/devctl/v6/pkg/gen/input"
+	"github.com/giantswarm/devctl/v6/pkg/gen/input/ami/internal/params"
 )
 
 func NewAMIInput(p params.Params) input.Input {
