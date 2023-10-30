@@ -74,7 +74,7 @@ replace (
 	github.com/hashicorp/vault/api => github.com/hashicorp/vault/api v1.10.0
 
 	// Fix for CWE-121: Stack-based Buffer Overflow
-	github.com/nats-io/nats-server/v2 => github.com/nats-io/nats-server/v2 v2.10.3
+	github.com/nats-io/nats-server/v2 => github.com/nats-io/nats-server/v2 v2.10.4
 
 	github.com/pkg/sftp => github.com/pkg/sftp v1.13.6
 	github.com/prometheus/client_golang => github.com/prometheus/client_golang v1.17.0
