@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Prevent false positives in nancy's vulnerability reports by using `go list` with `-deps ./...`
+
 ## [6.15.0] - 2023-10-24
 
 ### Changed
