@@ -49,6 +49,10 @@ Criteria:
 		There is no CODEOWNERS file in the root folder, which means that the repository
 		has no owner. We want repos to have owners, ideally.
 
+	BAD_DEFAULT_BRANCH_PROTECTION_GO
+
+		The Go repo has no effective protection rules for the default branch.
+
 	NO_DEPENDABOT_ALERTS
 
 		Dependabot security alerts are disabled. Note: this is independent from

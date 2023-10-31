@@ -24,17 +24,18 @@ const (
 	githubOrg         = "giantswarm"
 
 	// Criteria names
-	critHasDocsDirectory          = "HAS_DOCS_DIR"
-	critHasPrTemplateInDocs       = "HAS_PR_TEMPLATE_IN_DOCS"
-	critReadmeHasOldCircleCiBadge = "README_OLD_CIRCLECI_BAGDE"
-	critReadmeHasOldGodocLink     = "README_OLD_GODOC_LINK"
-	critNoCodeownersFile          = "NO_CODEOWNERS"
-	critCodeownersErrors          = "BAD_CODOWNERS"
-	critNoDescription             = "NO_DESCRIPTION"
-	critNoReadme                  = "NO_README"
-	critDefaultBranchMaster       = "DEFAULT_BRANCH_MASTER"
-	critNoDependencyGraph         = "NO_DEPENDENCY_GRAPH"
-	critDependabotAlertsDisabled  = "NO_DEPENDABOT_ALERTS"
+	critHasDocsDirectory             = "HAS_DOCS_DIR"
+	critHasPrTemplateInDocs          = "HAS_PR_TEMPLATE_IN_DOCS"
+	critReadmeHasOldCircleCiBadge    = "README_OLD_CIRCLECI_BAGDE"
+	critReadmeHasOldGodocLink        = "README_OLD_GODOC_LINK"
+	critNoCodeownersFile             = "NO_CODEOWNERS"
+	critCodeownersErrors             = "BAD_CODOWNERS"
+	critNoDescription                = "NO_DESCRIPTION"
+	critNoReadme                     = "NO_README"
+	critDefaultBranchMaster          = "DEFAULT_BRANCH_MASTER"
+	critNoDependencyGraph            = "NO_DEPENDENCY_GRAPH"
+	critDependabotAlertsDisabled     = "NO_DEPENDABOT_ALERTS"
+	critBadDefaultBranchProtectionGo = "BAD_DEFAULT_BRANCH_PROTECTION_GO"
 )
 
 type runner struct {
@@ -63,7 +64,7 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
 	token, found := os.LookupEnv(githubTokenEnvVar)
 	if !found {
-		return microerror.Maskf(envVarNotFoundError, "environement variable %#q was not found", githubTokenEnvVar)
+		return microerror.Maskf(envVarNotFoundError, "environment variable %#q was not found", githubTokenEnvVar)
 	}
 
 	if len(r.flag.What) < 1 {
@@ -248,6 +249,45 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 					matched = append(matched, output)
 				} else {
 					return microerror.Mask(err)
+				}
+			}
+		}
+
+		if slices.Contains(r.flag.What, critBadDefaultBranchProtectionGo) && repoMetadata.GetLanguage() == "Go" {
+			protection, resp, err := realClient.Repositories.GetBranchProtection(ctx, githubOrg, repo.Name, defaultBranch)
+			output := ""
+
+			if err != nil {
+				// Branch protection not in place
+				if resp != nil && resp.StatusCode == http.StatusNotFound {
+					output += fmt.Sprintf("  - Default branch has no protection rules (%s)\n", critBadDefaultBranchProtectionGo)
+					output += fmt.Sprintf("    - Default branch name is %q\n", defaultBranch)
+					output += fmt.Sprintf("    - Configure protection here: https://github.com/%s/%s/settings/branches\n", githubOrg, repo.Name)
+				} else {
+					return microerror.Mask(err)
+				}
+				matched = append(matched, output)
+			} else {
+				// Branch protection details
+				if protection.RequiredStatusChecks == nil || protection.RequiredPullRequestReviews == nil {
+					output += fmt.Sprintf("  - Default branch protection not sufficient (%s)\n", critBadDefaultBranchProtectionGo)
+					if protection.RequiredStatusChecks == nil {
+						output += "    - Status checks are not required to pass before merging\n"
+					}
+					if protection.RequiredPullRequestReviews == nil {
+						output += "    - PR reviews are not required\n"
+					}
+
+					output += fmt.Sprintf("    - Configure protection here: https://github.com/%s/%s/settings/branches\n", githubOrg, repo.Name)
+
+					matched = append(matched, output)
+				}
+
+				if protection.RequiredStatusChecks != nil && len(protection.RequiredStatusChecks.Checks) == 0 {
+					output += fmt.Sprintf("  - Default branch protection not sufficient (%s)\n", critBadDefaultBranchProtectionGo)
+					output += "    - None of the checks is required\n"
+					output += fmt.Sprintf("      - Fix this here: https://github.com/%s/%s/settings/branches\n", githubOrg, repo.Name)
+					matched = append(matched, output)
 				}
 			}
 		}
