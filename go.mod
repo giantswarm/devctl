@@ -69,7 +69,7 @@ replace (
 	github.com/gorilla/websocket => github.com/gorilla/websocket v1.5.0
 
 	// Mitigate security issues
-	github.com/hashicorp/consul/api => github.com/hashicorp/consul/api v1.25.1
+	github.com/hashicorp/consul/api => github.com/hashicorp/consul/api v1.26.1
 	github.com/hashicorp/consul/sdk => github.com/hashicorp/consul/sdk v0.14.1
 	github.com/hashicorp/vault/api => github.com/hashicorp/vault/api v1.10.0
 
