@@ -81,7 +81,7 @@ replace (
 	github.com/valyala/fasthttp => github.com/valyala/fasthttp v1.50.0
 
 	// Fix for CWE-400: Uncontrolled Resource Consumption ('Resource Exhaustion')
-	golang.org/x/text => golang.org/x/text v0.13.0
+	golang.org/x/text => golang.org/x/text v0.14.0
 
 	// Fix for CVE-2023-32731
 	google.golang.org/grpc => google.golang.org/grpc v1.59.0
