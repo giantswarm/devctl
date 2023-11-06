@@ -66,7 +66,7 @@ replace (
 	github.com/go-ldap/ldap/v3 => github.com/go-ldap/ldap/v3 v3.4.6
 
 	// Mitigate a security issue in github.com/gorilla/websocket v1.4.0 and earlier
-	github.com/gorilla/websocket => github.com/gorilla/websocket v1.5.0
+	github.com/gorilla/websocket => github.com/gorilla/websocket v1.5.1
 
 	// Mitigate security issues
 	github.com/hashicorp/consul/api => github.com/hashicorp/consul/api v1.26.1
