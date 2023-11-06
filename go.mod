@@ -15,7 +15,7 @@ require (
 	github.com/pelletier/go-toml/v2 v2.1.0
 	github.com/rhysd/go-github-selfupdate v1.2.3
 	github.com/sirupsen/logrus v1.9.3
-	github.com/spf13/cobra v1.7.0
+	github.com/spf13/cobra v1.8.0
 	github.com/spf13/pflag v1.0.5
 	golang.org/x/net v0.17.0
 	golang.org/x/oauth2 v0.13.0
