@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.16.0] - 2023-11-08
+
 ### Changed
 
 - Update `architect` to v6.13.0 (with go version v1.21.3)
@@ -808,7 +810,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v6.15.1...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v6.16.0...HEAD
+[6.16.0]: https://github.com/giantswarm/devctl/compare/v6.15.1...v6.16.0
 [6.15.1]: https://github.com/giantswarm/devctl/compare/v6.15.0...v6.15.1
 [6.15.0]: https://github.com/giantswarm/devctl/compare/v6.14.0...v6.15.0
 [6.14.0]: https://github.com/giantswarm/devctl/compare/v6.13.0...v6.14.0
