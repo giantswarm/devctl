@@ -60,29 +60,9 @@ require (
 
 replace (
 	github.com/aws/aws-sdk-go => github.com/aws/aws-sdk-go v1.47.7
-	github.com/coreos/etcd v3.3.13+incompatible => github.com/coreos/etcd v3.3.25+incompatible
-	github.com/dgrijalva/jwt-go => github.com/dgrijalva/jwt-go/v4 v4.0.0-preview1
-	github.com/gin-gonic/gin => github.com/gin-gonic/gin v1.9.1
-	github.com/go-ldap/ldap/v3 => github.com/go-ldap/ldap/v3 v3.4.6
-
-	// Mitigate a security issue in github.com/gorilla/websocket v1.4.0 and earlier
 	github.com/gorilla/websocket => github.com/gorilla/websocket v1.5.1
-
-	// Mitigate security issues
-	github.com/hashicorp/consul/api => github.com/hashicorp/consul/api v1.26.1
-	github.com/hashicorp/consul/sdk => github.com/hashicorp/consul/sdk v0.15.0
-	github.com/hashicorp/vault/api => github.com/hashicorp/vault/api v1.10.0
-
-	// Fix for CWE-121: Stack-based Buffer Overflow
-	github.com/nats-io/nats-server/v2 => github.com/nats-io/nats-server/v2 v2.10.4
-
 	github.com/pkg/sftp => github.com/pkg/sftp v1.13.6
-	github.com/prometheus/client_golang => github.com/prometheus/client_golang v1.17.0
 	github.com/valyala/fasthttp => github.com/valyala/fasthttp v1.50.0
-
-	// Fix for CWE-400: Uncontrolled Resource Consumption ('Resource Exhaustion')
 	golang.org/x/text => golang.org/x/text v0.14.0
-
-	// Fix for CVE-2023-32731
 	google.golang.org/grpc => google.golang.org/grpc v1.59.0
 )
