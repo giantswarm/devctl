@@ -57,6 +57,10 @@ func (w *Workflows) UpdateChart() input.Input {
 	return file.NewUpdateChartInput(w.params)
 }
 
+func (w *Workflows) ClusterAppDocumentationValidation() input.Input {
+	return file.NewClusterAppDocumentationValidation(w.params)
+}
+
 func (w *Workflows) ClusterAppSchemaValidation() input.Input {
 	return file.NewClusterAppSchemaValidation(w.params)
 }

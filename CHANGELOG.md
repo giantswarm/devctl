@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Validate documentation generated from JSON schema (for cluster apps)
+
 ## [6.16.0] - 2023-11-08
 
 ### Changed
