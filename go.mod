@@ -4,7 +4,7 @@ go 1.19
 
 require (
 	github.com/Masterminds/semver/v3 v3.2.1
-	github.com/aws/aws-sdk-go v1.47.10
+	github.com/aws/aws-sdk-go v1.47.11
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/bmatcuk/doublestar/v4 v4.6.1
 	github.com/fatih/color v1.16.0
@@ -59,10 +59,9 @@ require (
 )
 
 replace (
-	github.com/aws/aws-sdk-go => github.com/aws/aws-sdk-go v1.47.10
+	github.com/aws/aws-sdk-go => github.com/aws/aws-sdk-go v1.47.11
 	github.com/gorilla/websocket => github.com/gorilla/websocket v1.5.1
 	github.com/pkg/sftp => github.com/pkg/sftp v1.13.6
-	github.com/valyala/fasthttp => github.com/valyala/fasthttp v1.50.0
 	golang.org/x/text => golang.org/x/text v0.14.0
 	google.golang.org/grpc => google.golang.org/grpc v1.59.0
 )
