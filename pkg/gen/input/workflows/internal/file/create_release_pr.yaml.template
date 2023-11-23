@@ -45,6 +45,18 @@ jobs:
       skip: ${{ steps.pr_exists.outputs.skip }}
       version: ${{ steps.gather_facts.outputs.version }}
     steps:
+      - name: Generate a token
+        id: generate_token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.HERALD_APP_ID }}
+          private-key: ${{ secrets.HERALD_APP_KEY }}
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ steps.generate_token.outputs.token }}
+          persist-credentials: false
+          ref: ${{ needs.gather_facts.outputs.branch }}
       - name: Gather facts
         id: gather_facts
         run: |
@@ -62,7 +74,7 @@ jobs:
 
           version="$(echo $head | awk -F# '{print $NF}')"
           if [[ $version =~ ^major|minor|patch$ ]]; then
-            gh auth login --with-token <<<$(echo -n ${{ secrets.TAYLORBOT_GITHUB_ACTION }})
+            gh auth login --with-token <<<$(echo -n ${{ steps.generate_token.outputs.token }})
             gh_api_get_latest_release_version()
             {
               if ! version="$(gh api "repos/$1/releases/latest" --jq '.tag_name[1:] | split(".") | .[0], .[1], .[2]')"
@@ -121,12 +133,13 @@ jobs:
       - name: Check if PR exists
         id: pr_exists
         env:
-          GITHUB_TOKEN: "${{ secrets.TAYLORBOT_GITHUB_ACTION }}"
+          GITHUB_TOKEN: ${{ steps.generate_token.outputs.token }}
         run: |
           head="${{ steps.gather_facts.outputs.branch }}"
           branch="${head#refs/heads/}" # Strip "refs/heads/" prefix.
-          if gh pr view --repo "${{ github.repository }}" "${branch}" --json state --jq .state | grep -i 'open' > /dev/null; then
-            gh pr view --repo "${{ github.repository }}" "${branch}"
+
+          if gh pr list --head "${branch}" --json state --jq '.[].state' | grep -i 'open' > /dev/null; then
+            gh pr list --head "${branch}"
             echo "skip=true" >> $GITHUB_OUTPUT
           else
             echo "skip=false" >> $GITHUB_OUTPUT
@@ -148,9 +161,17 @@ jobs:
         with:
           binary: "architect"
           version: "6.11.0"
+      - name: Generate a token
+        id: generate_token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.HERALD_APP_ID }}
+          private-key: ${{ secrets.HERALD_APP_KEY }}
       - name: Checkout code
         uses: actions/checkout@v4
         with:
+          token: ${{ steps.generate_token.outputs.token }}
+          persist-credentials: false
           ref: ${{ needs.gather_facts.outputs.branch }}
       - name: Prepare release changes
         run: |
@@ -212,12 +233,12 @@ jobs:
           git commit -m "Release v${{ env.version }}"
       - name: Push changes
         env:
-          remote_repo: "https://${{ github.actor }}:${{ secrets.TAYLORBOT_GITHUB_ACTION }}@github.com/${{ github.repository }}.git"
+          remote_repo: "https://${{ github.actor }}:${{ steps.generate_token.outputs.token }}@github.com/${{ github.repository }}.git"
         run: |
           git push "${remote_repo}" HEAD:${{ needs.gather_facts.outputs.branch }}
       - name: Create PR
         env:
-          GITHUB_TOKEN: "${{ secrets.TAYLORBOT_GITHUB_ACTION }}"
+          GITHUB_TOKEN: "${{ steps.generate_token.outputs.token }}"
           base: "${{ needs.gather_facts.outputs.base }}"
           version: "${{ needs.gather_facts.outputs.version }}"
         run: |

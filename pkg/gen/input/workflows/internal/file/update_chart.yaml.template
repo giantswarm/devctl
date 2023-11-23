@@ -54,10 +54,16 @@ jobs:
           echo "repo_name=${repo_name}" >> $GITHUB_OUTPUT
           echo "base=${base}" >> $GITHUB_OUTPUT
           echo "head=${head}" >> $GITHUB_OUTPUT
+      - name: Generate a token
+        id: generate_token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.HERALD_APP_ID }}
+          private-key: ${{ secrets.HERALD_APP_KEY }}
       - name: Check if PR exists
         id: pr_exists
         env:
-          GITHUB_TOKEN: "${{ secrets.TAYLORBOT_GITHUB_ACTION }}"
+          GITHUB_TOKEN: "${{ steps.generate_token.outputs.token }}"
         run: |
           head="${{ steps.gather_facts.outputs.branch }}"
           branch="${head#refs/heads/}" # Strip "refs/heads/" prefix.
@@ -74,9 +80,17 @@ jobs:
       - gather_facts
     if: ${{ needs.gather_facts.outputs.skip != 'true' }}
     steps:
+      - name: Generate a token
+        id: generate_token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.HERALD_APP_ID }}
+          private-key: ${{ secrets.HERALD_APP_KEY }}
       - name: Checkout code
         uses: actions/checkout@v4
         with:
+          token: ${{ steps.generate_token.outputs.token }}
+          persist-credentials: false
           ref: ${{ needs.gather_facts.outputs.branch }}
       - name: Install vendir
         run: |
@@ -114,12 +128,12 @@ jobs:
           git commit -m "Automated update from upstream"
       - name: Push changes
         env:
-          remote_repo: "https://${{ github.actor }}:${{ secrets.TAYLORBOT_GITHUB_ACTION }}@github.com/${{ github.repository }}.git"
+          remote_repo: "https://${{ github.actor }}:${{ steps.generate_token.outputs.token }}@github.com/${{ github.repository }}.git"
         run: |
           git push "${remote_repo}" HEAD:${{ needs.gather_facts.outputs.branch }}
       - name: Update PR
         env:
-          GITHUB_TOKEN: "${{ secrets.TAYLORBOT_GITHUB_ACTION }}"
+          GITHUB_TOKEN: "${{ steps.generate_token.outputs.token }}"
           base: "${{ needs.gather_facts.outputs.base }}"
         run: |
           gh pr create --title "Automated update from upstream"  --label "automated-update" --assignee ${{ github.actor }} --base ${{ env.base }} --head ${{ needs.gather_facts.outputs.branch }} --body-file - << EOF

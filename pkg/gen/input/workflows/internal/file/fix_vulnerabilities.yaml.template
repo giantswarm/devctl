@@ -1,0 +1,71 @@
+{{{{ .Header }}}}
+name: Fix Vulnerabilities
+on:
+  push:
+    branches:
+      - 'renovate/*'
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch where to fix vulnerabilities"
+        required: true
+        type: string
+  workflow_call:
+    inputs:
+      branch:
+        required: true
+        type: string
+jobs:
+  gather_facts:
+    name: Gather facts
+    runs-on: ubuntu-22.04
+    outputs:
+      repo_name: ${{ steps.gather_facts.outputs.repo_name }}
+      branch: ${{ steps.gather_facts.outputs.branch }}
+    steps:
+      - name: Gather facts
+        id: gather_facts
+        run: |
+          head="${{ inputs.branch || github.event.ref }}"
+          echo "branch=${head}" >> $GITHUB_OUTPUT
+
+          head="${head#refs/heads/}" # Strip "refs/heads/" prefix.
+          repo_name="$(echo '${{ github.repository }}' | awk -F '/' '{print $2}')"
+          echo "repo_name=\"$repo_name\" base=\"$base\" head=\"$head\" version=\"$version\""
+          echo "repo_name=${repo_name}" >> $GITHUB_OUTPUT
+          echo "head=${head}" >> $GITHUB_OUTPUT
+  run_nancy_fixer:
+    name: Fix vulnerabilities with nancy-fixer
+    runs-on: ubuntu-22.04
+    needs:
+      - gather_facts
+    steps:
+      - name: Generate a token
+        id: generate_token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.HERALD_APP_ID }}
+          private-key: ${{ secrets.HERALD_APP_KEY }}
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ steps.generate_token.outputs.token }}
+          persist-credentials: false
+          ref: ${{ needs.gather_facts.outputs.branch }}
+      - name: Install nancy-fixer
+        run: |
+            go install github.com/giantswarm/nancy-fixer@v0.2.0
+            mod upgrade
+      - name: Run nancy-fixer fix
+        run: |
+            nancy-fixer fix
+{{{{ .StepSetUpGitIdentity }}}}
+      - name: Commit new files
+        run: |
+          git add -A
+          git commit -m "Apply fixes for vulnerabilities"
+      - name: Push changes
+        env:
+          remote_repo: "https://${{ github.actor }}:${{ steps.generate_token.outputs.token }}@github.com/${{ github.repository }}.git"
+        run: |
+          git push "${remote_repo}" HEAD:${{ needs.gather_facts.outputs.branch }}
