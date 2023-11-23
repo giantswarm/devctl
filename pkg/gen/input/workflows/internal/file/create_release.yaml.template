@@ -99,6 +99,12 @@ jobs:
           download_url: "https://github.com/fsaintjacques/${binary}-tool/archive/${version}.tar.gz"
           tarball_binary_path: "*/src/${binary}"
           smoke_test: "${binary} --version"
+      - name: Generate a token
+        id: generate_token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.HERALD_APP_ID }}
+          private-key: ${{ secrets.HERALD_APP_KEY }}
       - name: Checkout code
         uses: actions/checkout@v4
       - name: Update project.go
@@ -125,13 +131,13 @@ jobs:
           git commit -m "Bump version to ${{ steps.update_project_go.outputs.new_version }}"
       - name: Push changes
         env:
-          REMOTE_REPO: "https://${{ github.actor }}:${{ secrets.TAYLORBOT_GITHUB_ACTION }}@github.com/${{ github.repository }}.git"
+          REMOTE_REPO: "https://${{ github.actor }}:${{ steps.generate_token.outputs.token }}@github.com/${{ github.repository }}.git"
           branch: "${{ github.ref }}-version-bump"
         run: |
           git push "${REMOTE_REPO}" HEAD:${{ env.branch }}
       - name: Create PR
         env:
-          GITHUB_TOKEN: "${{ secrets.TAYLORBOT_GITHUB_ACTION }}"
+          GITHUB_TOKEN: "${{ steps.generate_token.outputs.token }}"
           base: "${{ github.ref }}"
           branch: "${{ github.ref }}-version-bump"
           version: "${{ needs.gather_facts.outputs.version }}"
@@ -147,9 +153,17 @@ jobs:
     outputs:
       upload_url: ${{ steps.create_gh_release.outputs.upload_url }}
     steps:
+      - name: Generate a token
+        id: generate_token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.HERALD_APP_ID }}
+          private-key: ${{ secrets.HERALD_APP_KEY }}
       - name: Checkout code
         uses: actions/checkout@v4
         with:
+          token: ${{ steps.generate_token.outputs.token }}
+          persist-credentials: false
           ref: ${{ github.sha }}
       - name: Ensure correct version in project.go
         if: ${{ needs.gather_facts.outputs.project_go_path != '' && needs.gather_facts.outputs.ref_version != 'true' }}
@@ -170,14 +184,14 @@ jobs:
           git tag "v$version" ${{ github.sha }}
       - name: Push tag
         env:
-          REMOTE_REPO: "https://${{ github.actor }}:${{ secrets.TAYLORBOT_GITHUB_ACTION }}@github.com/${{ github.repository }}.git"
+          REMOTE_REPO: "https://${{ github.actor }}:${{ steps.generate_token.outputs.token }}@github.com/${{ github.repository }}.git"
         run: |
           git push "${REMOTE_REPO}" --tags
       - name: Create release
         id: create_gh_release
         uses: ncipollo/release-action@v1
         env:
-          GITHUB_TOKEN: "${{ secrets.TAYLORBOT_GITHUB_ACTION }}"
+          GITHUB_TOKEN: "${{ steps.generate_token.outputs.token }}"
         with:
           body: ${{ steps.changelog_reader.outputs.changes }}
           tag: "v${{ needs.gather_facts.outputs.version }}"
@@ -271,7 +285,6 @@ jobs:
           - linux-arm64
           - windows-amd64
     env:
-      GITHUB_TOKEN: "${{ secrets.TAYLORBOT_GITHUB_ACTION }}"
       GO_VERSION: 1.21.3
       ARTIFACT_DIR: bin-dist
       TAG: v${{ needs.gather_facts.outputs.version }}
@@ -290,9 +303,17 @@ jobs:
         uses: actions/setup-go@v3.3.0
         with:
           go-version: ${{ env.GO_VERSION }}
+      - name: Generate a token
+        id: generate_token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.HERALD_APP_ID }}
+          private-key: ${{ secrets.HERALD_APP_KEY }}
       - name: Checkout code
         uses: actions/checkout@v4
         with:
+          token: ${{ steps.generate_token.outputs.token }}
+          persist-credentials: false
           ref: ${{ env.TAG }}
       - name: Create ${{ matrix.platform }} package
         run: make package-${{ matrix.platform }}
@@ -305,7 +326,7 @@ jobs:
           fi
       - name: Add ${{ matrix.platform }} package to release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.generate_token.outputs.token }}
         run: |
           gh release upload ${{ env.TAG }} \
           ${{ env.ARTIFACT_DIR }}/${{ env.FILE_NAME }}#${{ env.FILE_NAME }}

@@ -45,6 +45,10 @@ func (w *Workflows) EnsureMajorVersionTags() input.Input {
 	return file.NewEnsureMajorVersionTagsInput(w.params)
 }
 
+func (w *Workflows) FixVulnerabilities() input.Input {
+	return file.NewFixVulnerabilitiesInput(w.params)
+}
+
 func (w *Workflows) Gitleaks() input.Input {
 	return file.NewGitleaksInput(w.params)
 }
