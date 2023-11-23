@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Replace unmaintained GitHub action for release creation in "Create Release" workflow with `ncipollo/release-action`.
+
 ## [6.17.0] - 2023-11-14
 
 - Validate documentation generated from JSON schema (for cluster apps)
