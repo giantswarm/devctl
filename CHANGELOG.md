@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Fix Compare Helm Rendering action, so that, when it renders Helm with main branch code, it takes the CI test values from the main branch and not from the current branch.
+
 ## [6.17.1] - 2023-11-23
 
 - Replace unmaintained GitHub action for release creation in "Create Release" workflow with `ncipollo/release-action`.
