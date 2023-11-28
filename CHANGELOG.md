@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.17.2] - 2023-11-28
+
 ### Fixed
 
 - Fix Compare Helm Rendering action, so that, when it renders Helm with main branch code, it takes the CI test values from the main branch and not from the current branch.
@@ -822,7 +824,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v6.17.1...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v6.17.2...HEAD
+[6.17.2]: https://github.com/giantswarm/devctl/compare/v6.17.1...v6.17.2
 [6.17.1]: https://github.com/giantswarm/devctl/compare/v6.17.0...v6.17.1
 [6.17.0]: https://github.com/giantswarm/devctl/compare/v6.16.0...v6.17.0
 [6.16.0]: https://github.com/giantswarm/devctl/compare/v6.15.1...v6.16.0
