@@ -41,12 +41,32 @@ jobs:
           echo "values=[\"$(ls -m helm/${{ github.event.repository.name }}/ci/test-*-values.yaml | tr -d ' \n' | sed 's/,/\", \"/g')\"]" >> $GITHUB_OUTPUT
     outputs:
       values: ${{ steps.get-rendering-values.outputs.values }}
+  get-old-rendering-values:
+    needs: check-cmp-state
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' && needs.check-cmp-state.outputs.suspendcmp == 0
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: "${{ github.event.repository.default_branch }}"
+        path: 'old'
+    - name: list old rendering values
+      id: get-old-rendering-values
+      run: |
+        echo "values=[\"$(ls -m old/helm/${{ github.event.repository.name }}/ci/test-*-values.yaml | tr -d ' \n' | sed 's/,/\", \"/g')\"]"
+        echo
+        echo "values=[\"$(ls -m old/helm/${{ github.event.repository.name }}/ci/test-*-values.yaml | tr -d ' \n' | sed 's/,/\", \"/g')\"]" >> $GITHUB_OUTPUT
+    outputs:
+      values: ${{ steps.get-old-rendering-values.outputs.values }}
   cmp-helm-rendering:
-    needs: get-rendering-values
+    needs:
+    - get-rendering-values
+    - get-old-rendering-values
     runs-on: ubuntu-latest
     strategy:
       matrix:
         values: ${{ fromJson(needs.get-rendering-values.outputs.values) }}
+        oldValues: ${{ fromJson(needs.get-old-rendering-values.outputs.values) }}
     if: github.event_name == 'pull_request'
     steps:
       - name: install helm
@@ -87,15 +107,16 @@ jobs:
           path: 'old'
       - name: render helm with main branch code
         run: |
+          mkdir -p /tmp/${{ matrix.oldValues }}
           # TODO split files by "API"_"KIND"_"NAMESPACE|clusterwide"_"NAME"
           helm dependency build old/helm/${{ github.event.repository.name }}
-          helm template -n org-giantswarm -f "old/helm/${{ github.event.repository.name }}/ci/ci-values.yaml" -f "${{ matrix.values }}" "old/helm/${{ github.event.repository.name }}" > /tmp/${{ matrix.values }}/render-old.yaml
+          helm template -n org-giantswarm -f "old/helm/${{ github.event.repository.name }}/ci/ci-values.yaml" -f "${{ matrix.oldValues }}" "old/helm/${{ github.event.repository.name }}" > /tmp/${{ matrix.oldValues }}/render-old.yaml
       - name: get the diffs
         uses: mathiasvr/command-output@v1
         id: diff
         with:
           run: |
-            dyff between -s -i -b -g /tmp/${{ matrix.values }}/render-old.yaml /tmp/${{ matrix.values }}/render-new.yaml && echo "No diff detected" || if [[ $? -eq 255 ]]; then echo "Diff error"; fi;
+            dyff between -s -i -b -g /tmp/${{ matrix.oldValues }}/render-old.yaml /tmp/${{ matrix.values }}/render-new.yaml && echo "No diff detected" || if [[ $? -eq 255 ]]; then echo "Diff error"; fi;
       - name: Find diff comment
         uses: peter-evans/find-comment@v2
         continue-on-error: true
