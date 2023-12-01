@@ -14,12 +14,9 @@ workflows:
             tags:
               only: /^v.*/
 
-      - architect/push-to-docker:
-          name: push-devctl-to-quay
+      - architect/push-to-registries:
           context: architect
-          image: "quay.io/giantswarm/devctl"
-          username_envar: "QUAY_USERNAME"
-          password_envar: "QUAY_PASSWORD"
+          name: push-to-registries
           requires:
             - go-build-devctl
           filters:
