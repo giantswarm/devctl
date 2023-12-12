@@ -48,7 +48,7 @@ require (
 	golang.org/x/crypto v0.16.0 // indirect
 	golang.org/x/sys v0.15.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
-	google.golang.org/appengine v1.6.7 // indirect
+	google.golang.org/appengine v1.6.8 // indirect
 	google.golang.org/protobuf v1.31.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
@@ -63,5 +63,5 @@ replace (
 	github.com/gorilla/websocket => github.com/gorilla/websocket v1.5.1
 	github.com/pkg/sftp => github.com/pkg/sftp v1.13.6
 	golang.org/x/text => golang.org/x/text v0.14.0
-	google.golang.org/grpc => google.golang.org/grpc v1.59.0
+	google.golang.org/grpc => google.golang.org/grpc v1.60.0
 )
