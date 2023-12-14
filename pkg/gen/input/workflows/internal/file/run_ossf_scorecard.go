@@ -19,10 +19,7 @@ func NewRunOSSFScorecardInput(p params.Params) input.Input {
 			Right: "}}}}",
 		},
 		TemplateData: map[string]interface{}{
-			"Header":                         params.Header("#"),
-			"EnableFloatingMajorVersionTags": params.EnableFloatingMajorVersionTags(p),
-			"IsFlavourCLI":                   params.IsFlavourCLI(p),
-			"StepSetUpGitIdentity":           params.StepSetUpGitIdentity(),
+			"Header": params.Header("#"),
 		},
 	}
 
