@@ -33,6 +33,18 @@ func (w *Workflows) AddCustomerBoardAutomation() input.Input {
 	return file.NewCustomerBoardAutomationInput(w.params)
 }
 
+func (w *Workflows) CheckValuesSchema() input.Input {
+	return file.NewCheckValuesSchemaInput(w.params)
+}
+
+func (w *Workflows) ClusterAppDocumentationValidation() input.Input {
+	return file.NewClusterAppDocumentationValidation(w.params)
+}
+
+func (w *Workflows) ClusterAppSchemaValidation() input.Input {
+	return file.NewClusterAppSchemaValidation(w.params)
+}
+
 func (w *Workflows) CreateRelease() input.Input {
 	return file.NewCreateReleaseInput(w.params)
 }
@@ -49,22 +61,14 @@ func (w *Workflows) Gitleaks() input.Input {
 	return file.NewGitleaksInput(w.params)
 }
 
-func (w *Workflows) CheckValuesSchema() input.Input {
-	return file.NewCheckValuesSchemaInput(w.params)
+func (w *Workflows) HelmRenderDiff() input.Input {
+	return file.NewHelmRenderDiff(w.params)
+}
+
+func (w *Workflows) RunOSSFScorecard() input.Input {
+	return file.NewRunOSSFScorecardInput(w.params)
 }
 
 func (w *Workflows) UpdateChart() input.Input {
 	return file.NewUpdateChartInput(w.params)
-}
-
-func (w *Workflows) ClusterAppDocumentationValidation() input.Input {
-	return file.NewClusterAppDocumentationValidation(w.params)
-}
-
-func (w *Workflows) ClusterAppSchemaValidation() input.Input {
-	return file.NewClusterAppSchemaValidation(w.params)
-}
-
-func (w *Workflows) HelmRenderDiff() input.Input {
-	return file.NewHelmRenderDiff(w.params)
 }

@@ -82,6 +82,10 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		inputs = append(inputs, workflowsInput.HelmRenderDiff())
 	}
 
+	if r.flag.RunSecurityScorecard {
+		inputs = append(inputs, workflowsInput.RunOSSFScorecard())
+	}
+
 	err = gen.Execute(
 		ctx,
 		inputs...,
