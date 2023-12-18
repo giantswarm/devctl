@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.18.0] - 2023-12-18
+
 ### Added
 
 - Add support for generating OpenSSF Scorecard workflows.
@@ -828,7 +830,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v6.17.2...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v6.18.0...HEAD
+[6.18.0]: https://github.com/giantswarm/devctl/compare/v6.17.2...v6.18.0
 [6.17.2]: https://github.com/giantswarm/devctl/compare/v6.17.1...v6.17.2
 [6.17.1]: https://github.com/giantswarm/devctl/compare/v6.17.0...v6.17.1
 [6.17.0]: https://github.com/giantswarm/devctl/compare/v6.16.0...v6.17.0
