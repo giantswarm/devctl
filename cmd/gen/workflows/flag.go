@@ -15,6 +15,7 @@ const (
 	flagEnableFloatingMajorVersionTags = "enable-floating-major-tags"
 	flagFlavour                        = "flavour"
 	flagInstallUpdateChart             = "install-update-chart"
+	flagRunSecurityScorecard           = "run-security-scorecard"
 )
 
 type flag struct {
@@ -22,6 +23,7 @@ type flag struct {
 	EnableFloatingMajorVersionTags bool
 	Flavours                       gen.FlavourSlice
 	InstallUpdateChart             bool
+	RunSecurityScorecard           bool
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
@@ -29,6 +31,7 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&f.EnableFloatingMajorVersionTags, flagEnableFloatingMajorVersionTags, false, "If true, also generate steps and workflows to ensure floating major version tags like \"v1\" after the release creation.")
 	cmd.Flags().VarP(gen.NewFlavourSliceFlagValue(&f.Flavours, gen.FlavourSlice{}), flagFlavour, "f", fmt.Sprintf(`The type of project that you want to generate the workflows for. Possible values: <%s>`, strings.Join(gen.AllFlavours(), "|")))
 	cmd.Flags().BoolVar(&f.InstallUpdateChart, flagInstallUpdateChart, false, "If true, also generate update_chart workflow. Only valid for app flavor.")
+	cmd.Flags().BoolVar(&f.RunSecurityScorecard, flagRunSecurityScorecard, true, "If true, also generate a security scorecard workflow. Possible values: true (default), false.")
 }
 
 func (f *flag) Validate() error {
