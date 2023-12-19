@@ -1,6 +1,8 @@
 module github.com/giantswarm/devctl/v6
 
-go 1.19
+go 1.21
+
+toolchain go1.21.5
 
 require (
 	github.com/Masterminds/semver/v3 v3.2.1
@@ -10,7 +12,7 @@ require (
 	github.com/fatih/color v1.16.0
 	github.com/giantswarm/microerror v0.4.1
 	github.com/giantswarm/micrologger v1.1.1
-	github.com/giantswarm/release-operator/v4 v4.1.0
+	github.com/giantswarm/release-operator/v4 v4.1.1
 	github.com/google/go-github/v57 v57.0.0
 	github.com/pelletier/go-toml/v2 v2.1.1
 	github.com/rhysd/go-github-selfupdate v1.2.3
@@ -19,12 +21,12 @@ require (
 	github.com/spf13/pflag v1.0.5
 	golang.org/x/net v0.19.0
 	golang.org/x/oauth2 v0.15.0
-	k8s.io/apimachinery v0.24.3
+	k8s.io/apimachinery v0.28.4
 	sigs.k8s.io/yaml v1.4.0
 )
 
 require (
-	github.com/giantswarm/k8smetadata v0.19.0 // indirect
+	github.com/giantswarm/k8smetadata v0.23.0 // indirect
 	github.com/go-kit/log v0.2.1 // indirect
 	github.com/go-logfmt/logfmt v0.6.0 // indirect
 	github.com/go-logr/logr v1.3.0 // indirect
@@ -52,10 +54,10 @@ require (
 	google.golang.org/protobuf v1.31.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
-	k8s.io/klog/v2 v2.70.1 // indirect
-	k8s.io/utils v0.0.0-20220713171938-56c0de1e6f5e // indirect
-	sigs.k8s.io/json v0.0.0-20220713155537-f223a00ba0e2 // indirect
-	sigs.k8s.io/structured-merge-diff/v4 v4.2.1 // indirect
+	k8s.io/klog/v2 v2.110.1 // indirect
+	k8s.io/utils v0.0.0-20231127182322-b307cd553661 // indirect
+	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
+	sigs.k8s.io/structured-merge-diff/v4 v4.4.1 // indirect
 )
 
 replace (
