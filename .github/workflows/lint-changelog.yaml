@@ -14,6 +14,8 @@ jobs:
       with:
         fetch-depth: '0'
     - name: Install dependencies
-      run: pip install parse-changelog
+      run: |
+        pip install parse-changelog
+        sudo apt-get install --yes jq
     - name: Parse changelog
       run: parse-changelog --changelog ./CHANGELOG.md
