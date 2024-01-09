@@ -6,7 +6,7 @@ toolchain go1.21.5
 
 require (
 	github.com/Masterminds/semver/v3 v3.2.1
-	github.com/aws/aws-sdk-go v1.49.16
+	github.com/aws/aws-sdk-go v1.49.17
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/bmatcuk/doublestar/v4 v4.6.1
 	github.com/fatih/color v1.16.0
@@ -19,8 +19,8 @@ require (
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.8.0
 	github.com/spf13/pflag v1.0.5
-	golang.org/x/net v0.19.0
-	golang.org/x/oauth2 v0.15.0
+	golang.org/x/net v0.20.0
+	golang.org/x/oauth2 v0.16.0
 	k8s.io/apimachinery v0.28.4
 	sigs.k8s.io/yaml v1.4.0
 )
@@ -47,8 +47,8 @@ require (
 	github.com/onsi/gomega v1.10.2 // indirect
 	github.com/tcnksm/go-gitconfig v0.1.2 // indirect
 	github.com/ulikunitz/xz v0.5.9 // indirect
-	golang.org/x/crypto v0.17.0 // indirect
-	golang.org/x/sys v0.15.0 // indirect
+	golang.org/x/crypto v0.18.0 // indirect
+	golang.org/x/sys v0.16.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
 	google.golang.org/appengine v1.6.8 // indirect
 	google.golang.org/protobuf v1.31.0 // indirect
@@ -61,7 +61,7 @@ require (
 )
 
 replace (
-	github.com/aws/aws-sdk-go => github.com/aws/aws-sdk-go v1.49.16
+	github.com/aws/aws-sdk-go => github.com/aws/aws-sdk-go v1.49.17
 	github.com/gorilla/websocket => github.com/gorilla/websocket v1.5.1
 	github.com/pkg/sftp => github.com/pkg/sftp v1.13.6
 	golang.org/x/text => golang.org/x/text v0.14.0
