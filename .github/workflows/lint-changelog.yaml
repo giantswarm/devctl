@@ -52,3 +52,10 @@ jobs:
         else
           echo "::notice file=CHANGELOG.md::Found $LENGTH top-level items"
         fi
+    - name: Check for unreleased changes
+      run: |
+        CHANGES=$(parse-changelog --changelog ./CHANGELOG.md --show-unreleased | tr -d '[:space:]')
+        if [ -z "$CHANGES" ]
+        then
+          echo "::warning file=CHANGELOG.md,line=1,col=1,endColumn=1::Please don't forget to add info about your changes to CHANGELOG.md"
+        fi
