@@ -9,10 +9,11 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - name: Check out code
+      uses: actions/checkout@v4
       with:
         fetch-depth: '0'
-    - run: pip install parse-changelog
-    - run: pwd
-    - run: ls -la
-    - run: echo $GITHUB_WORKSPACE
+    - name: Install dependencies
+      run: pip install parse-changelog
+    - name: Parse changelog
+      run: parse-changelog --changelog ./CHANGELOG.md
