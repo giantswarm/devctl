@@ -24,14 +24,11 @@ jobs:
         jq . _changelog.json
     - name: Check if introduction is present
       run: |
-        INTRO=$(jq 'has("introduction")' _changelog.json)
-        if [ -z "$INTRO" ]
-        then
-          echo "::error file=CHANGELOG.md,line=1,col=1,endColumn=1::Missing introduction"
-        fi
+        jq -e 'has("introduction")' _changelog.json || (echo "::error file=CHANGELOG.md,line=1,col=1,endColumn=1::Missing introduction" && exit 1)
     - name: Check if introduction title is valid
       run: |
         jq -e '.introduction | has("title")' _changelog.json || (echo "::error file=CHANGELOG.md,line=1,col=1,endColumn=1::Missing introduction title" && exit 1)
+        
         TITLE=$(jq -r '.introduction.title' _changelog.json)
         if [ -z "$TITLE" ]
         then
@@ -40,8 +37,16 @@ jobs:
     - name: Check if introduction content is valid
       run: |
         jq -e '.introduction | has("content")' _changelog.json || (echo "::error file=CHANGELOG.md,line=1,col=1::Missing introduction content" && exit 1)
+        
         CONTENT=$(jq -r '.introduction.content' _changelog.json)
         if [ -z "$CONTENT" ]
         then
           echo "::error file=CHANGELOG.md,line=1,col=1::Empty introduction content"
         fi
+    - name: Check length
+      run: |
+        LENGTH=$(jq -r length _changelog.json)
+        if [[ $LENGTH < 2 ]]
+        then
+          echo "::error file=CHANGELOG.md,line=1,col=1::Changelog has not enough releases ($LENGTH), or the Markdown structure is incorrect."
+        error
