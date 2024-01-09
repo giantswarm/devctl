@@ -28,8 +28,8 @@ jobs:
     - name: Check if introduction title is valid
       run: |
         jq -e '.introduction | has("title")' _changelog.json || (echo "::error file=CHANGELOG.md,line=1,col=1::Missing introduction title" && exit 1)
-        [ -z "$(jq -r '.introduction.title' _changelog.json)" && (echo "::error file=CHANGELOG.md,line=1,col=1::Empty introduction title" && exit 1)
+        [ -z "$(jq -r '.introduction.title' _changelog.json)" ] && echo "::error file=CHANGELOG.md,line=1,col=1::Empty introduction title" && exit 1
     - name: Check if introduction content is valid
       run: |
         jq -e '.introduction | has("content")' _changelog.json || (echo "::error file=CHANGELOG.md,line=1,col=1::Missing introduction content" && exit 1)
-        [ -z "$(jq -r '.introduction.content' _changelog.json)" && (echo "::error file=CHANGELOG.md,line=1,col=1::Empty introduction content" && exit 1)
+        [ -z "$(jq -r '.introduction.content' _changelog.json)" ] && echo "::error file=CHANGELOG.md,line=1,col=1::Empty introduction content" && exit 1
