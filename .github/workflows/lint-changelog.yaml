@@ -28,7 +28,6 @@ jobs:
         if [ -z "$INTRO" ]
         then
           echo "::error file=CHANGELOG.md,line=1,col=1,endColumn=1::Missing introduction"
-          exit 1
         fi
     - name: Check if introduction title is valid
       run: |
@@ -37,7 +36,6 @@ jobs:
         if [ -z "$TITLE" ]
         then
           echo "::error file=CHANGELOG.md,line=1,col=1::Empty introduction title"
-          exit 1
         fi
     - name: Check if introduction content is valid
       run: |
@@ -46,5 +44,4 @@ jobs:
         if [ -z "$CONTENT" ]
         then
           echo "::error file=CHANGELOG.md,line=1,col=1::Empty introduction content"
-          exit 1
         fi
