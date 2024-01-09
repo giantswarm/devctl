@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Add workflow to lint CHANGELOG.md
+
 ## [6.18.0] - 2023-12-18
 
 ### Added
