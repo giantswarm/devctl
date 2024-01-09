@@ -46,7 +46,7 @@ jobs:
     - name: Check length
       run: |
         LENGTH=$(jq -r length _changelog.json)
-        if [[ $LENGTH < 2 ]]
+        if [[ "$LENGTH" < 2 ]]
         then
           echo "::error file=CHANGELOG.md,line=1,col=1::Changelog has not enough releases ($LENGTH), or the Markdown structure is incorrect."
         error
