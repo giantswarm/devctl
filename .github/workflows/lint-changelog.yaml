@@ -50,7 +50,7 @@ jobs:
         then
           echo "::error file=CHANGELOG.md,line=1,col=1::Changelog has not enough releases ($LENGTH), or the Markdown structure is incorrect."
         else
-          echo "::notice file=CHANGELOG.md::Found $LENGTH top-level items"
+          echo "Found $LENGTH top-level items"
         fi
     - name: Check for unreleased changes
       run: |
