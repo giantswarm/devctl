@@ -24,10 +24,10 @@ jobs:
         jq . _changelog.json
     - name: Check if introduction is present
       run: |
-        jq -e 'has("introduction")' || (echo "::error file=CHANGELOG.md,line=1,col=1::Missing introduction" && exit 1)
+        jq -e 'has("introduction")' _changelog.json || (echo "::error file=CHANGELOG.md,line=1,col=1::Missing introduction" && exit 1)
     - name: Check if introduction title is present
       run: |
-        jq -e '.introduction | has("title")' || (echo "::error file=CHANGELOG.md,line=1,col=1::Missing introduction title" && exit 1)
+        jq -e '.introduction | has("title")' _changelog.json || (echo "::error file=CHANGELOG.md,line=1,col=1::Missing introduction title" && exit 1)
     - name: Check if introduction content is present
       run: |
-        jq -e '.introduction | has("content")' || (echo "::error file=CHANGELOG.md,line=1,col=1::Missing introduction content" && exit 1)
+        jq -e '.introduction | has("content")' _changelog.json || (echo "::error file=CHANGELOG.md,line=1,col=1::Missing introduction content" && exit 1)
