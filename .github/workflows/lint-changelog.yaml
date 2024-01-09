@@ -3,7 +3,7 @@ name: lint-changelog
 on:
   pull_request:
     paths:
-      - /CHANGELOG.md
+      - CHANGELOG.md
 
 jobs:
   lint:
