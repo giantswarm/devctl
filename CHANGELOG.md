@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.18.1] - 2024-01-10
+
 ### Fixed
 
 - Fix script injection vulnerability in "Create Release" GitHub action template.
@@ -834,7 +836,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v6.18.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v6.18.1...HEAD
+[6.18.1]: https://github.com/giantswarm/devctl/compare/v6.18.0...v6.18.1
 [6.18.0]: https://github.com/giantswarm/devctl/compare/v6.17.2...v6.18.0
 [6.17.2]: https://github.com/giantswarm/devctl/compare/v6.17.1...v6.17.2
 [6.17.1]: https://github.com/giantswarm/devctl/compare/v6.17.0...v6.17.1
