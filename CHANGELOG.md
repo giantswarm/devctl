@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Fix script injection vulnerability in "Create Release" GitHub action template.
+
 ## [6.18.0] - 2023-12-18
 
 ### Added
