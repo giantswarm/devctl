@@ -8,7 +8,7 @@ import (
 	"regexp"
 
 	"github.com/giantswarm/microerror"
-	"github.com/google/go-github/v57/github"
+	"github.com/google/go-github/v58/github"
 )
 
 func (c *Client) ListRepositories(ctx context.Context, owner string) ([]Repository, error) {
