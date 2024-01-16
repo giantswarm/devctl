@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Use alpine and signcode images from gsoci.azurecr.io
+
 ## [6.18.1] - 2024-01-10
 
 ### Fixed
