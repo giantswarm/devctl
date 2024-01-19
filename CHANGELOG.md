@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Update `architect` to v6.14.1 (with go version v1.21.6)
 - Use alpine and signcode images from gsoci.azurecr.io
 
 ## [6.18.1] - 2024-01-10
