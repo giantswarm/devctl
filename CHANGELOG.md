@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Include cluster-test-catalog in "Compare Helm Rendering" action, so we can more easily test dev builds of subcharts.
+
 ## [6.18.3] - 2024-01-31
 
 ### Changed
