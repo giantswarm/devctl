@@ -11,6 +11,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Add a `Fix Vulnerabilities` workflow to remediate Nancy findings.
 
+## [6.19.0] - 2024-01-31
+
+### Added
+
+- Include cluster-test-catalog in "Compare Helm Rendering" action, so we can more easily test dev builds of subcharts.
+
+## [6.18.3] - 2024-01-31
+
+### Changed
+
+- Enable automatic merging of the "Bump version in project.go" PR.
+
 ## [6.18.2] - 2024-01-19
 
 ### Changed
@@ -847,7 +859,9 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v6.18.2...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v6.19.0...HEAD
+[6.19.0]: https://github.com/giantswarm/devctl/compare/v6.18.3...v6.19.0
+[6.18.3]: https://github.com/giantswarm/devctl/compare/v6.18.2...v6.18.3
 [6.18.2]: https://github.com/giantswarm/devctl/compare/v6.18.1...v6.18.2
 [6.18.1]: https://github.com/giantswarm/devctl/compare/v6.18.0...v6.18.1
 [6.18.0]: https://github.com/giantswarm/devctl/compare/v6.17.2...v6.18.0
