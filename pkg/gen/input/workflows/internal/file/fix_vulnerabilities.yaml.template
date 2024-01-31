@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       branch:
-        description: "Branch where to fix vulnerabilities"
+        description: "Branch on which to fix vulnerabilities"
         required: true
         type: string
   workflow_call:
