@@ -144,7 +144,7 @@ jobs:
           version: "${{ needs.gather_facts.outputs.version }}"
           title: "Bump version to ${{ steps.update_project_go.outputs.new_version }}"
         run: |
-          gh pr merge --auto --squash "${{ env.branch }}"
+          gh pr merge --auto --squash "${{ env.branch }}" || echo "::warning::Auto-merge not allowed. Please adjust the repository settings."
   create_release:
     name: Create release
     runs-on: ubuntu-22.04
