@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.19.0] - 2024-01-31
+
 ### Added
 
 - Include cluster-test-catalog in "Compare Helm Rendering" action, so we can more easily test dev builds of subcharts.
@@ -853,7 +855,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v6.18.3...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v6.19.0...HEAD
+[6.19.0]: https://github.com/giantswarm/devctl/compare/v6.18.3...v6.19.0
 [6.18.3]: https://github.com/giantswarm/devctl/compare/v6.18.2...v6.18.3
 [6.18.2]: https://github.com/giantswarm/devctl/compare/v6.18.1...v6.18.2
 [6.18.1]: https://github.com/giantswarm/devctl/compare/v6.18.0...v6.18.1
