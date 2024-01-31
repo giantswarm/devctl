@@ -57,6 +57,10 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		workflowsInput.CreateReleasePR(),
 	}
 
+	if r.flag.Language == "go" {
+		inputs = append(inputs, workflowsInput.FixVulnerabilities())
+	}
+
 	if r.flag.CheckSecrets {
 		inputs = append(inputs, workflowsInput.Gitleaks())
 	}
