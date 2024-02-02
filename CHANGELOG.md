@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Update giantswarm/install-binary-action to v2.0.0 in generated workflows
+
 ## [6.20.0] - 2024-01-31
 
 ### Added
