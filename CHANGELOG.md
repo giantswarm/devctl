@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.20.2] - 2024-02-06
+
 - Fix `giantswarm/install-binary-action` version.
 - Update `nancy-fixer` to v0.4.3 in generated workflow.
 
@@ -871,7 +873,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v6.20.1...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v6.20.2...HEAD
+[6.20.2]: https://github.com/giantswarm/devctl/compare/v6.20.1...v6.20.2
 [6.20.1]: https://github.com/giantswarm/devctl/compare/v6.20.0...v6.20.1
 [6.20.0]: https://github.com/giantswarm/devctl/compare/v6.19.0...v6.20.0
 [6.19.0]: https://github.com/giantswarm/devctl/compare/v6.18.3...v6.19.0
