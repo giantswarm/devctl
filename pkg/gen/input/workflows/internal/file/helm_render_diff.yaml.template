@@ -75,7 +75,7 @@ jobs:
            version: ${{ env.helm_ver }}
       - run: which helm
       - name: install yq
-        uses: giantswarm/install-binary-action@v1
+        uses: giantswarm/install-binary-action@v2.0.0
         with:
           binary: yq
           download_url: "https://github.com/mikefarah/yq/releases/download/v${version}/yq_linux_amd64.tar.gz"
@@ -84,7 +84,7 @@ jobs:
           version: ${{ env.yq_ver }}
       - run: which yq
       - name: install dyff
-        uses: giantswarm/install-binary-action@v1
+        uses: giantswarm/install-binary-action@v2.0.0
         with:
           binary: dyff
           download_url: "https://github.com/homeport/dyff/releases/download/v${version}/dyff_${version}_linux_amd64.tar.gz"
