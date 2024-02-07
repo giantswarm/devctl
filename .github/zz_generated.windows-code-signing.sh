@@ -2,7 +2,7 @@
 
 # DO NOT EDIT. Generated with:
 #
-#    devctl@6.18.2
+#    devctl@6.19.0
 #
 
 APPLICATION=$1
