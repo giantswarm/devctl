@@ -65,5 +65,4 @@ replace (
 	github.com/gorilla/websocket => github.com/gorilla/websocket v1.5.1
 	github.com/pkg/sftp => github.com/pkg/sftp v1.13.6
 	golang.org/x/text => golang.org/x/text v0.14.0
-	google.golang.org/grpc => google.golang.org/grpc v1.61.0
 )
