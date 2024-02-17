@@ -58,7 +58,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	}
 
 	if r.flag.Language == "go" {
-		inputs = append(inputs, workflowsInput.FixVulnerabilities())
+		inputs = append(inputs, workflowsInput.RemediateVulnerabilities())
 	}
 
 	if r.flag.CheckSecrets {
