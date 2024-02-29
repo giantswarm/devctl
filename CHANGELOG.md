@@ -7,7 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Compare Helm Rendering (only used for cluster charts): put matrix of diff rendering comments into single comment and upgrade dependencies
+
 ## [6.20.2] - 2024-02-06
+
+### Changed
 
 - Fix `giantswarm/install-binary-action` version.
 - Update `nancy-fixer` to v0.4.3 in generated workflow.
