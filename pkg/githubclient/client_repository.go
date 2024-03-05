@@ -186,7 +186,7 @@ func (c *Client) SetRepositoryBranchProtection(ctx context.Context, repository *
 
 		opts.RequiredStatusChecks = &github.RequiredStatusChecks{
 			Strict: true,
-			Checks: checks,
+			Checks: &checks,
 		}
 	}
 
