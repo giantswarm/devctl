@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.21.0] - 2024-03-07
+
 ### Changed
 
 - Compare Helm Rendering (only used for cluster charts): put matrix of diff rendering comments into single comment and upgrade dependencies
@@ -879,7 +881,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v6.20.2...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v6.21.0...HEAD
+[6.21.0]: https://github.com/giantswarm/devctl/compare/v6.20.2...v6.21.0
 [6.20.2]: https://github.com/giantswarm/devctl/compare/v6.20.1...v6.20.2
 [6.20.1]: https://github.com/giantswarm/devctl/compare/v6.20.0...v6.20.1
 [6.20.0]: https://github.com/giantswarm/devctl/compare/v6.19.0...v6.20.0
