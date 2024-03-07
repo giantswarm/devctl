@@ -8,7 +8,7 @@ import (
 	"regexp"
 
 	"github.com/giantswarm/microerror"
-	"github.com/google/go-github/v59/github"
+	"github.com/google/go-github/v60/github"
 )
 
 func (c *Client) ListRepositories(ctx context.Context, owner string) ([]Repository, error) {
@@ -186,7 +186,7 @@ func (c *Client) SetRepositoryBranchProtection(ctx context.Context, repository *
 
 		opts.RequiredStatusChecks = &github.RequiredStatusChecks{
 			Strict: true,
-			Checks: checks,
+			Checks: &checks,
 		}
 	}
 
