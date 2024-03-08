@@ -1,0 +1,3 @@
+appName: {{ .appName | printf "%q" }}
+repoName: {{ .repoName | printf "%q" }}
+appCatalog: {{ .catalog | printf "%q" }}

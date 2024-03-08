@@ -50,7 +50,7 @@ func execute(ctx context.Context, file input.Input) error {
 		}
 	}
 
-	if !isRegenerable(file.Path) {
+	if !file.SkipRegenCheck && !isRegenerable(file.Path) {
 		return nil
 	}
 
