@@ -9,6 +9,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
+	"github.com/giantswarm/devctl/v6/cmd/ci"
 	"github.com/giantswarm/devctl/v6/cmd/completion"
 	"github.com/giantswarm/devctl/v6/cmd/gen"
 	"github.com/giantswarm/devctl/v6/cmd/release"
@@ -123,6 +124,20 @@ func New(config Config) (*cobra.Command, error) {
 		}
 	}
 
+	var ciCmd *cobra.Command
+	{
+		c := ci.Config{
+			Logger: logrus.StandardLogger(),
+			Stderr: config.Stderr,
+			Stdout: config.Stdout,
+		}
+
+		ciCmd, err = ci.New(c)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+	}
+
 	f := &flag{}
 
 	r := &runner{
@@ -150,6 +165,7 @@ func New(config Config) (*cobra.Command, error) {
 	c.AddCommand(replaceCmd)
 	c.AddCommand(repoCmd)
 	c.AddCommand(versionCmd)
+	c.AddCommand(ciCmd)
 
 	return c, nil
 }

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added a new `ci` command with a `setup` subcommand that configures webhooks to our Tekton installation
+
 ## [6.21.0] - 2024-03-07
 
 ### Changed
