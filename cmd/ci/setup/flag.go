@@ -22,7 +22,7 @@ func (f *flag) Init(cmd *cobra.Command) {
 	// Webhook
 	cmd.Flags().StringVar(&f.WebhookURL, "webhook-url", "https://github-pr-webhook.ci.giantswarm.io", "The URL to send the webhook to")
 	cmd.Flags().StringVar(&f.WebhookSharedSecret, "webhook-secret", "", "The shared secret for the webhook configuration (required)")
-	cmd.MarkFlagRequired("webhook-secret")
+	_ = cmd.MarkFlagRequired("webhook-secret")
 }
 
 func (f *flag) Validate() error {
