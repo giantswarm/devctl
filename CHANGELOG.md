@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added a new `ci-webhooks` command under the `repo setup` command that configures webhooks to our Tekton installation
+- Added a new `gen apptest` command that creates the files needed by apptest-framework
+
 ## [6.21.0] - 2024-03-07
 
 ### Changed

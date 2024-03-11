@@ -390,3 +390,46 @@ func isCommitTagged(commit *github.RepositoryCommit, tags []*github.RepositoryTa
 	}
 	return false
 }
+
+func (c *Client) SetRepositoryWebhooks(ctx context.Context, repository *github.Repository, hook *github.Hook) error {
+	owner := repository.GetOwner().GetLogin()
+	repo := repository.GetName()
+
+	underlyingClient := c.getUnderlyingClient(ctx)
+
+	hooks, _, err := underlyingClient.Repositories.ListHooks(ctx, owner, repo, &github.ListOptions{PerPage: 50})
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	c.logger.Debugf("Checking for existing webhook\n")
+	for _, existingHook := range hooks {
+
+		if *existingHook.Config.URL == *hook.Config.URL {
+			c.logger.Debugf("found existing webhook. ID=%d\n", *existingHook.ID)
+
+			if !c.dryRun {
+				hook.ID = existingHook.ID
+
+				hook, _, err = underlyingClient.Repositories.EditHook(ctx, owner, repo, *hook.ID, hook)
+				if err != nil {
+					return microerror.Mask(err)
+				}
+
+				c.logger.Infof("updated existing webhook. ID=%d\n", *hook.ID)
+			}
+			return nil
+		}
+	}
+
+	c.logger.Debugf("Creating new webhook\n")
+	if !c.dryRun {
+		hook, _, err = underlyingClient.Repositories.CreateHook(ctx, owner, repo, hook)
+		if err != nil {
+			return microerror.Mask(err)
+		}
+
+		c.logger.Infof("new webhook added. ID=%d\n", *hook.ID)
+	}
+	return nil
+}

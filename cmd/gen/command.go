@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/v6/cmd/gen/ami"
+	"github.com/giantswarm/devctl/v6/cmd/gen/apptest"
 	"github.com/giantswarm/devctl/v6/cmd/gen/dependabot"
 	"github.com/giantswarm/devctl/v6/cmd/gen/makefile"
 	"github.com/giantswarm/devctl/v6/cmd/gen/renovate"
@@ -108,6 +109,20 @@ func New(config Config) (*cobra.Command, error) {
 		}
 	}
 
+	var apptestCmd *cobra.Command
+	{
+		c := apptest.Config{
+			Logger: config.Logger,
+			Stderr: config.Stderr,
+			Stdout: config.Stdout,
+		}
+
+		apptestCmd, err = apptest.New(c)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+	}
+
 	f := &flag{}
 
 	r := &runner{
@@ -131,6 +146,7 @@ func New(config Config) (*cobra.Command, error) {
 	c.AddCommand(makefileCmd)
 	c.AddCommand(renovateCmd)
 	c.AddCommand(workflowsCmd)
+	c.AddCommand(apptestCmd)
 
 	return c, nil
 }

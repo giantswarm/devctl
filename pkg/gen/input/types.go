@@ -21,6 +21,8 @@ type Input struct {
 	// TemplateDelims are used to call
 	// https://golang.org/pkg/text/template/#Template.Delims if set.
 	TemplateDelims InputTemplateDelims
+	// SkipRegenCheck if set skips over the `isRegenerable` check when creating files
+	SkipRegenCheck bool
 }
 
 type InputTemplateDelims struct {

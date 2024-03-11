@@ -1,26 +1,28 @@
-package setup
+package ciwebhooks
 
 import (
-	"fmt"
 	"io"
 	"os"
 
 	"github.com/giantswarm/microerror"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-
-	"github.com/giantswarm/devctl/v6/cmd/repo/setup/ciwebhooks"
-	"github.com/giantswarm/devctl/v6/cmd/repo/setup/renovate"
 )
 
 const (
-	name            = "setup"
+	name            = "ci-webhooks"
 	description     = `Configure GitHub repository`
 	longDescription = `Configure GitHub repository with:
 
- - Settings
- - Permissions
- - Default branch protection rules`
+ - Webhooks to Tekton
+
+To be able to setup the webhooks, a shared secret must be provided using --webhook-secret
+You can get the value of this secret from the github-webhook-secret Secret in the tekton-pipelines namespace of the gazelle/cicdprod cluster.
+e.g.
+
+  SHARED_SECRET="$(kubectl get secret -n tekton-pipelines github-webhook-secret -o jsonpath='{.data.token}' | base64 -d)"
+`
+	use = `ci-webhooks --webhook-secret ${SHARED_SECRET} [flags] ORG/REPOSITORY`
 )
 
 type Config struct {
@@ -40,36 +42,6 @@ func New(config Config) (*cobra.Command, error) {
 		config.Stdout = os.Stdout
 	}
 
-	var err error
-
-	var renovateCmd *cobra.Command
-	{
-		c := renovate.Config{
-			Logger: config.Logger,
-			Stderr: config.Stderr,
-			Stdout: config.Stdout,
-		}
-
-		renovateCmd, err = renovate.New(c)
-		if err != nil {
-			return nil, microerror.Mask(err)
-		}
-	}
-
-	var ciWebhooksCmd *cobra.Command
-	{
-		c := ciwebhooks.Config{
-			Logger: config.Logger,
-			Stderr: config.Stderr,
-			Stdout: config.Stdout,
-		}
-
-		ciWebhooksCmd, err = ciwebhooks.New(c)
-		if err != nil {
-			return nil, microerror.Mask(err)
-		}
-	}
-
 	f := &flag{}
 
 	r := &runner{
@@ -80,7 +52,7 @@ func New(config Config) (*cobra.Command, error) {
 	}
 
 	c := &cobra.Command{
-		Use:   fmt.Sprintf("%s [flags] REPOSITORY", name),
+		Use:   use,
 		Short: description,
 		Long:  longDescription,
 		RunE:  r.Run,
@@ -88,9 +60,6 @@ func New(config Config) (*cobra.Command, error) {
 	}
 
 	f.Init(c)
-
-	c.AddCommand(renovateCmd)
-	c.AddCommand(ciWebhooksCmd)
 
 	return c, nil
 }
