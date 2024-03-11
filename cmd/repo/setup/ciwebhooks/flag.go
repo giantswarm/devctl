@@ -1,4 +1,4 @@
-package setup
+package ciwebhooks
 
 import (
 	"github.com/spf13/cobra"

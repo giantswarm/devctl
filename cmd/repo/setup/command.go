@@ -9,6 +9,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
+	"github.com/giantswarm/devctl/v6/cmd/repo/setup/ciwebhooks"
 	"github.com/giantswarm/devctl/v6/cmd/repo/setup/renovate"
 )
 
@@ -55,6 +56,20 @@ func New(config Config) (*cobra.Command, error) {
 		}
 	}
 
+	var ciWebhooksCmd *cobra.Command
+	{
+		c := ciwebhooks.Config{
+			Logger: config.Logger,
+			Stderr: config.Stderr,
+			Stdout: config.Stdout,
+		}
+
+		ciWebhooksCmd, err = ciwebhooks.New(c)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+	}
+
 	f := &flag{}
 
 	r := &runner{
@@ -75,6 +90,7 @@ func New(config Config) (*cobra.Command, error) {
 	f.Init(c)
 
 	c.AddCommand(renovateCmd)
+	c.AddCommand(ciWebhooksCmd)
 
 	return c, nil
 }

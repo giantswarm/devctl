@@ -1,4 +1,4 @@
-package setup
+package ciwebhooks
 
 import (
 	"io"
@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	name            = "setup"
+	name            = "ci-webhooks"
 	description     = `Configure GitHub repository`
 	longDescription = `Configure GitHub repository with:
 
@@ -22,7 +22,7 @@ e.g.
 
   SHARED_SECRET="$(kubectl get secret -n tekton-pipelines github-webhook-secret -o jsonpath='{.data.token}' | base64 -d)"
 `
-	use = `setup --webhook-secret ${SHARED_SECRET} [flags] ORG/REPOSITORY`
+	use = `ci-webhooks --webhook-secret ${SHARED_SECRET} [flags] ORG/REPOSITORY`
 )
 
 type Config struct {
