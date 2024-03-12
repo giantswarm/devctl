@@ -146,7 +146,10 @@ func (c *Client) SetRepositoryPermissions(ctx context.Context, repository *githu
 	input := &github.DefaultWorkflowPermissionRepository{
 		DefaultWorkflowPermissions: github.String("write"),
 	}
-	underlyingClient.Repositories.EditDefaultWorkflowPermissions(ctx, owner, repo, *input)
+	_, _, err := underlyingClient.Repositories.EditDefaultWorkflowPermissions(ctx, owner, repo, *input)
+	if err != nil {
+		return microerror.Mask(err)
+	}
 
 	c.logger.Debug("granted permission on repository")
 
