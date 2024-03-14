@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Add a new permission for workflows to be able to write in the repo
+- Update actions/setup-go to v5 in generated workflows
 
 ## [6.22.0] - 2024-03-11
 
