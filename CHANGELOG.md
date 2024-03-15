@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.23.1] - 2024-03-15
+
 ### Added
 
 - Added a default providers array to E2E apptest config
@@ -899,7 +901,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v6.23.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v6.23.1...HEAD
+[6.23.1]: https://github.com/giantswarm/devctl/compare/v6.23.0...v6.23.1
 [6.23.0]: https://github.com/giantswarm/devctl/compare/v6.22.0...v6.23.0
 [6.22.0]: https://github.com/giantswarm/devctl/compare/v6.21.0...v6.22.0
 [6.21.0]: https://github.com/giantswarm/devctl/compare/v6.20.2...v6.21.0
