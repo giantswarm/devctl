@@ -1,3 +1,7 @@
 appName: {{ .appName | printf "%q" }}
 repoName: {{ .repoName | printf "%q" }}
 appCatalog: {{ .catalog | printf "%q" }}
+
+# CAPI providers to test against when triggering `/run app-test-suites` from a PR
+providers:
+- capa
