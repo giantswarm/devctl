@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added a default providers array to E2E apptest config
+
 ## [6.23.0] - 2024-03-15
 
 ### Changed
