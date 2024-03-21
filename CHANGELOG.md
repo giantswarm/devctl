@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.23.2] - 2024-03-21
+
 ### Changed
 
 - Update OSSF Scorecard GitHub Action to v2.3.1.
@@ -905,7 +907,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v6.23.1...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v6.23.2...HEAD
+[6.23.2]: https://github.com/giantswarm/devctl/compare/v6.23.1...v6.23.2
 [6.23.1]: https://github.com/giantswarm/devctl/compare/v6.23.0...v6.23.1
 [6.23.0]: https://github.com/giantswarm/devctl/compare/v6.22.0...v6.23.0
 [6.22.0]: https://github.com/giantswarm/devctl/compare/v6.21.0...v6.22.0
