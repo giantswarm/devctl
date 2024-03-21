@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Update OSSF Scorecard GitHub Action to v2.3.1.
+
 ## [6.23.1] - 2024-03-15
 
 ### Added
