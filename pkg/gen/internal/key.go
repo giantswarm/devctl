@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
-
-	"github.com/giantswarm/devctl/v6/pkg/project"
 )
 
 const (
@@ -26,9 +24,7 @@ func FileName(dir, name string) string {
 
 func Header(comment string) string {
 	return strings.Join([]string{
-		comment + " DO NOT EDIT. Generated with:",
-		comment,
-		comment + "    devctl@" + project.Version(),
+		comment + " DO NOT EDIT. Generated with devctl.",
 		comment,
 	}, "\n")
 }
