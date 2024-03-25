@@ -4,5 +4,21 @@
     "github>giantswarm/renovate-presets:default.json5",
     // Go specific config - https://github.com/giantswarm/renovate-presets/blob/main/lang-go.json5
     "github>giantswarm/renovate-presets:lang-go.json5",
+    // Pin to the SHA of a GitHub action.
+    "helpers:pinGitHubActionDigests"
   ],
 }
+
+"customManagers": [
+  {
+    "customType": "regex",
+    "fileMatch": [
+      ".*.yaml.template$",
+    ],
+    "matchStrings": [
+      "uses: (?<depName>.*)\/v?(?<currentValue>\\S+)\n",
+    ],
+    "datasourceTemplate": "github-actions",
+    "extractVersionTemplate": "^\"?v?(?<version>.*)\"?$"
+  }
+],
