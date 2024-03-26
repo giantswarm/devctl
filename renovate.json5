@@ -8,8 +8,8 @@
     "helpers:pinGitHubActionDigests"
   ],
   "github-actions": {
-   "fileMatch": [
-     ".*.yaml.template$",
-   ],
+    "fileMatch": [
+      ".*.yaml.template$",
+    ],
   },
 }
