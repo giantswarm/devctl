@@ -7,18 +7,9 @@
     // Pin to the SHA of a GitHub action.
     "helpers:pinGitHubActionDigests"
   ],
-
-  "customManagers": [
-  {
-    "customType": "regex",
-    "fileMatch": [
-      ".*.yaml.template$",
-    ],
-    "matchStrings": [
-      "uses: (?<depName>.*)\/v?(?<currentValue>\\S+)\n",
-    ],
-    "datasourceTemplate": "github-actions",
-    "extractVersionTemplate": "^\"?v?(?<version>.*)\"?$"
-  }
-],
+  "github-actions": {
+   "fileMatch": [
+     ".*.yaml.template$",
+   ],
+  },
 }
