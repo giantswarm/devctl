@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.23.3] - 2024-03-26
+
 ### Changed
 
 - Pin generated GitHub Action workflows to SHAs.
@@ -913,7 +915,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v6.23.2...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v6.23.3...HEAD
+[6.23.3]: https://github.com/giantswarm/devctl/compare/v6.23.2...v6.23.3
 [6.23.2]: https://github.com/giantswarm/devctl/compare/v6.23.1...v6.23.2
 [6.23.1]: https://github.com/giantswarm/devctl/compare/v6.23.0...v6.23.1
 [6.23.0]: https://github.com/giantswarm/devctl/compare/v6.22.0...v6.23.0
