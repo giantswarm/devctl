@@ -12,7 +12,7 @@ require (
 	github.com/fatih/color v1.16.0
 	github.com/giantswarm/microerror v0.4.1
 	github.com/giantswarm/micrologger v1.1.1
-	github.com/giantswarm/release-operator/v4 v4.1.1
+	github.com/giantswarm/release-operator/v4 v4.2.0
 	github.com/google/go-github/v60 v60.0.0
 	github.com/pelletier/go-toml/v2 v2.2.0
 	github.com/rhysd/go-github-selfupdate v1.2.3
@@ -26,7 +26,7 @@ require (
 )
 
 require (
-	github.com/giantswarm/k8smetadata v0.23.0 // indirect
+	github.com/giantswarm/k8smetadata v0.24.0 // indirect
 	github.com/go-kit/log v0.2.1 // indirect
 	github.com/go-logfmt/logfmt v0.6.0 // indirect
 	github.com/go-logr/logr v1.3.0 // indirect
@@ -51,7 +51,7 @@ require (
 	golang.org/x/sys v0.18.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
 	google.golang.org/appengine v1.6.8 // indirect
-	google.golang.org/protobuf v1.31.0 // indirect
+	google.golang.org/protobuf v1.33.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	k8s.io/klog/v2 v2.110.1 // indirect
