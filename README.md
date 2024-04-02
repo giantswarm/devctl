@@ -8,9 +8,7 @@ Command line tool for the daily development business at Giant Swarm.
 
 ### Installation
 
-```nohighlight
-go install github.com/giantswarm/devctl
-```
+Install the [latest release](https://github.com/giantswarm/devctl/releases/latest). Please do not use `go install`.
 
 ### Configuration
 
