@@ -10,6 +10,10 @@ import (
 //go:embed add_customer_board_automation.yaml.template
 var customerBoardAutomationTemplate string
 
+//go:generate go run ../../../update-template-sha.go add_customer_board_automation.yaml.template
+//go:embed add_customer_board_automation.yaml.template.sha
+var customerBoardAutomationTemplateSha string
+
 func NewCustomerBoardAutomationInput(p params.Params) input.Input {
 	i := input.Input{
 		Path:         params.RegenerableFileName(p, "add_customer_board_automation.yaml"),
@@ -19,7 +23,7 @@ func NewCustomerBoardAutomationInput(p params.Params) input.Input {
 			Right: "}}}}",
 		},
 		TemplateData: map[string]interface{}{
-			"Header": params.Header("#"),
+			"Header": params.Header("#", customerBoardAutomationTemplateSha),
 		},
 	}
 

@@ -10,6 +10,10 @@ import (
 //go:embed fix_vulnerabilities.yaml.template
 var fixVulnerabilitiesTemplate string
 
+//go:generate go run ../../../update-template-sha.go fix_vulnerabilities.yaml.template
+//go:embed fix_vulnerabilities.yaml.template.sha
+var fixVulnerabilitiesTemplateSha string
+
 func NewFixVulnerabilitiesInput(p params.Params) input.Input {
 	i := input.Input{
 		Path:         params.RegenerableFileName(p, "fix_vulnerabilities.yaml"),
@@ -19,7 +23,7 @@ func NewFixVulnerabilitiesInput(p params.Params) input.Input {
 			Right: "}}}}",
 		},
 		TemplateData: map[string]interface{}{
-			"Header":               params.Header("#"),
+			"Header":               params.Header("#", fixVulnerabilitiesTemplateSha),
 			"StepSetUpGitIdentity": params.StepSetUpGitIdentity(),
 		},
 	}

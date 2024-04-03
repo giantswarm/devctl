@@ -5,7 +5,7 @@ import (
 )
 
 func Header(comment string) string {
-	return internal.Header(comment)
+	return internal.Header(comment, "")
 }
 
 func Package(p Params) string {

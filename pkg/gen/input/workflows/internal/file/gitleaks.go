@@ -5,6 +5,13 @@ import (
 	"github.com/giantswarm/devctl/v6/pkg/gen/input/workflows/internal/params"
 )
 
+//go:embed gitleaks.yaml.template
+var gitleaksTemplate string
+
+//go:generate go run ../../../update-template-sha.go gitleaks.yaml.template
+//go:embed gitleaks.yaml.template.sha
+var gitleaksTemplateSha string
+
 func NewGitleaksInput(p params.Params) input.Input {
 	i := input.Input{
 		Path:         params.RegenerableFileName(p, "gitleaks.yaml"),
@@ -14,25 +21,9 @@ func NewGitleaksInput(p params.Params) input.Input {
 			Right: "}}}}",
 		},
 		TemplateData: map[string]interface{}{
-			"Header": params.Header("#"),
+			"Header": params.Header("#", gitleaksTemplateSha),
 		},
 	}
 
 	return i
 }
-
-var gitleaksTemplate = `{{{{ .Header }}}}
-name: gitleaks
-
-on: [pull_request]
-
-jobs:
-  gitleaks:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
-      with:
-        fetch-depth: '0'
-    - name: gitleaks-action
-      uses: giantswarm/gitleaks-action@main
-`

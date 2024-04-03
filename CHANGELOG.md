@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- Header of generated files do not contain the devctl version any more
+
+### Changed
+
+- Generated file headers now include a GitHub link
+
 ## [6.23.3] - 2024-03-26
 
 ### Changed

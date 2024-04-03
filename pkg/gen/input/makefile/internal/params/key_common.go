@@ -9,8 +9,8 @@ func IsFlavourCLI(p Params) bool {
 	return p.Flavours.Contains(gen.FlavourCLI)
 }
 
-func Header(comment string) string {
-	return internal.Header(comment)
+func Header(comment, githubUrl string) string {
+	return internal.Header(comment, githubUrl)
 }
 
 func FileName(p Params, suffix string) string {
