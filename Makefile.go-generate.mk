@@ -1,3 +1,0 @@
-
-update-template-shas:
-	go generate ./...
