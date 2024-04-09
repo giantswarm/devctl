@@ -10,6 +10,10 @@ import (
 //go:embed run_ossf_scorecard.yaml.template
 var runOSSFScorecardTemplate string
 
+//go:generate go run ../../../update-template-sha.go run_ossf_scorecard.yaml.template
+//go:embed run_ossf_scorecard.yaml.template.sha
+var runOSSFScorecardTemplateSha string
+
 func NewRunOSSFScorecardInput(p params.Params) input.Input {
 	i := input.Input{
 		Path:         params.RegenerableFileName(p, "run_ossf_scorecard.yaml"),
@@ -19,7 +23,7 @@ func NewRunOSSFScorecardInput(p params.Params) input.Input {
 			Right: "}}}}",
 		},
 		TemplateData: map[string]interface{}{
-			"Header": params.Header("#"),
+			"Header": params.Header("#", runOSSFScorecardTemplateSha),
 		},
 	}
 

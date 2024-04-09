@@ -10,6 +10,10 @@ import (
 //go:embed helm_render_diff.yaml.template
 var helmRenderDiffTemplate string
 
+//go:generate go run ../../../update-template-sha.go helm_render_diff.yaml.template
+//go:embed helm_render_diff.yaml.template.sha
+var helmRenderDiffTemplateSha string
+
 func NewHelmRenderDiff(p params.Params) input.Input {
 	i := input.Input{
 		Path:         params.RegenerableFileName(p, "diff_helm_render_templates.yaml"),
@@ -19,7 +23,7 @@ func NewHelmRenderDiff(p params.Params) input.Input {
 			Right: "}}}}",
 		},
 		TemplateData: map[string]interface{}{
-			"Header": params.Header("#"),
+			"Header": params.Header("#", helmRenderDiffTemplateSha),
 		},
 	}
 

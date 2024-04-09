@@ -10,6 +10,10 @@ import (
 //go:embed create_release.yaml.template
 var createReleaseTemplate string
 
+//go:generate go run ../../../update-template-sha.go create_release.yaml.template
+//go:embed create_release.yaml.template.sha
+var createReleaseTemplateSha string
+
 func NewCreateReleaseInput(p params.Params) input.Input {
 	i := input.Input{
 		Path:         params.RegenerableFileName(p, "create_release.yaml"),
@@ -19,7 +23,7 @@ func NewCreateReleaseInput(p params.Params) input.Input {
 			Right: "}}}}",
 		},
 		TemplateData: map[string]interface{}{
-			"Header":                         params.Header("#"),
+			"Header":                         params.Header("#", createReleaseTemplateSha),
 			"EnableFloatingMajorVersionTags": params.EnableFloatingMajorVersionTags(p),
 			"IsFlavourCLI":                   params.IsFlavourCLI(p),
 			"StepSetUpGitIdentity":           params.StepSetUpGitIdentity(),

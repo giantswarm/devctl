@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
-
-	"github.com/giantswarm/devctl/v6/pkg/project"
 )
 
 const (
@@ -24,13 +22,21 @@ func FileName(dir, name string) string {
 	return filepath.Join(dir, name)
 }
 
-func Header(comment string) string {
-	return strings.Join([]string{
+func Header(comment, githubUrl string) string {
+	parts := []string{
 		comment + " DO NOT EDIT. Generated with:",
 		comment,
-		comment + "    devctl@" + project.Version(),
-		comment,
-	}, "\n")
+		comment + "    devctl",
+	}
+	if githubUrl != "" {
+		parts = append(parts,
+			comment,
+			comment+"    "+githubUrl,
+		)
+	}
+	parts = append(parts, comment)
+
+	return strings.Join(parts, "\n")
 }
 
 func StepSetUpGitIdentity() string {

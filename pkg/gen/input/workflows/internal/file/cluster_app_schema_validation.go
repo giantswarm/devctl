@@ -10,6 +10,10 @@ import (
 //go:embed cluster_app_schema_validation.yaml.template
 var clusterAppSchemaValidationTemplate string
 
+//go:generate go run ../../../update-template-sha.go cluster_app_schema_validation.yaml.template
+//go:embed cluster_app_schema_validation.yaml.template.sha
+var clusterAppSchemaValidationTemplateSha string
+
 func NewClusterAppSchemaValidation(p params.Params) input.Input {
 	i := input.Input{
 		Path:         params.RegenerableFileName(p, "json_schema_validation.yaml"),
@@ -19,7 +23,7 @@ func NewClusterAppSchemaValidation(p params.Params) input.Input {
 			Right: "}}}}",
 		},
 		TemplateData: map[string]interface{}{
-			"Header": params.Header("#"),
+			"Header": params.Header("#", clusterAppSchemaValidationTemplateSha),
 		},
 	}
 

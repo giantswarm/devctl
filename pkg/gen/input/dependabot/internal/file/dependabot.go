@@ -11,6 +11,10 @@ import (
 //go:embed dependabot.yml.template
 var createDependabotTemplate string
 
+//go:generate go run ../../../update-template-sha.go dependabot.yml.template
+//go:embed dependabot.yml.template.sha
+var createDependabotTemplateSha string
+
 func NewCreateDependabotInput(p params.Params) input.Input {
 	i := input.Input{
 		Path:         filepath.Join(p.Dir, "dependabot.yml"),
@@ -19,7 +23,7 @@ func NewCreateDependabotInput(p params.Params) input.Input {
 			"EcosystemGithubActions": params.EcosystemGithubActions(p),
 			"EcosystemGomod":         params.EcosystemGomod(p),
 			"Ecosystems":             params.Ecosystems(p),
-			"Header":                 params.Header("#"),
+			"Header":                 params.Header("#", createDependabotTemplateSha),
 			"Interval":               params.Interval(p),
 			"Reviewers":              params.Reviewers(p),
 		},

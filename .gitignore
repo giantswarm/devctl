@@ -7,3 +7,5 @@ TODO
 .DS_Store
 .idea/
 .vscode/
+
+*.template.sha

@@ -10,6 +10,10 @@ import (
 //go:embed check_values_schema.yaml.template
 var checkValuesSchemaTemplate string
 
+//go:generate go run ../../../update-template-sha.go check_values_schema.yaml.template
+//go:embed check_values_schema.yaml.template.sha
+var checkValuesSchemaTemplateSha string
+
 func NewCheckValuesSchemaInput(p params.Params) input.Input {
 	i := input.Input{
 		Path:         params.RegenerableFileName(p, "check_values_schema.yaml"),
@@ -19,7 +23,7 @@ func NewCheckValuesSchemaInput(p params.Params) input.Input {
 			Right: "}}}}",
 		},
 		TemplateData: map[string]interface{}{
-			"Header":        params.Header("#"),
+			"Header":        params.Header("#", checkValuesSchemaTemplateSha),
 			"SchemaDocsURL": "https://intranet.giantswarm.io/docs/organizational-structure/teams/cabbage/app-updates/helm-values-schema/",
 		},
 	}
