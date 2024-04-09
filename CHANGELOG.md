@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
-- Header of generated files do not contain the devctl version any more
+- devctl version is no longer added to generated file header
 
 ### Changed
 
