@@ -35,6 +35,8 @@ type appVersion struct {
 	UserRequested   bool
 }
 
+// BumpAll takes all apps and components in the `input` release and looks up on github for the latest version of each.
+// If the version is not specified in the `manuallyRequestedComponents` or `manuallyRequestedApps` it will be bumped to the latest version.
 func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manuallyRequestedApps []string) ([]string, []string, error) {
 	requestedComponents := map[string]componentVersion{}
 	requestedApps := map[string]appVersion{}
@@ -44,6 +46,7 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 
 	// components
 	{
+		// Prepare the list of components that the user requested to bump in a more useful way.
 		for _, comp := range manuallyRequestedComponents {
 			splitted := strings.Split(comp, "@")
 			if len(splitted) != 2 {
@@ -55,9 +58,11 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 			}
 		}
 
+		// Iterate over all components in the input release and bump them if a version was not manually requested by user.
 		for _, comp := range input.Spec.Components {
 			v := componentVersion{}
 			if req, found := requestedComponents[comp.Name]; found {
+				// User requested specific version.
 				v.Version = req.Version
 				v.UserRequested = true
 			} else {
@@ -77,6 +82,7 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 
 	// apps
 	{
+		// Prepare the list of apps that the user requested to bump in a more useful way.
 		for _, app := range manuallyRequestedApps {
 			splitted := strings.Split(app, "@")
 			if len(splitted) != 2 && len(splitted) != 3 {
@@ -94,9 +100,11 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 			requestedApps[splitted[0]] = req
 		}
 
+		// Iterate over all apps in the input release and bump them if a version was not manually requested by user.
 		for _, app := range input.Spec.Apps {
 			v := appVersion{}
 			if req, found := requestedApps[app.Name]; found {
+				// User requested specific version.
 				v.Version = req.Version
 				v.UpstreamVersion = req.UpstreamVersion
 				v.UserRequested = true
@@ -116,6 +124,7 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 		}
 	}
 
+	// Show a recap table with all the updates being applied.
 	err := printTable(input, components, apps)
 	if err != nil {
 		return nil, nil, microerror.Mask(err)
@@ -137,6 +146,7 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 
 	fmt.Println("Generating release")
 
+	// Prepare list of components and apps to bump.
 	componentsRet := make([]string, 0)
 	appsRet := make([]string, 0)
 
@@ -154,6 +164,7 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 	return componentsRet, appsRet, nil
 }
 
+// Just print a table with a list of apps and components with old and new version for easy checking by user.
 func printTable(input v1alpha1.Release, components map[string]componentVersion, apps map[string]appVersion) error {
 	tm.Clear()
 
