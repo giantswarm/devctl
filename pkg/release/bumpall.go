@@ -266,9 +266,7 @@ func findNewestComponent(name string) (componentVersion, error) {
 		}
 	}
 
-	if strings.HasPrefix(version, "v") {
-		version = strings.TrimPrefix(version, "v")
-	}
+	version = strings.TrimPrefix(version, "v")
 
 	return componentVersion{
 		Version: version,
@@ -315,9 +313,7 @@ func getLatestGithubRelease(owner string, name string) (string, error) {
 		return "", microerror.Mask(latestErr)
 	}
 
-	if strings.HasPrefix(version, "v") {
-		version = strings.TrimPrefix(version, "v")
-	}
+	version = strings.TrimPrefix(version, "v")
 
 	return version, nil
 }
@@ -442,9 +438,7 @@ func getAppVersionFromHelmChart(name string, ref string) (string, error) {
 	}
 
 	ret := crt.AppVersion
-	if strings.HasPrefix(ret, "v") {
-		ret = strings.TrimPrefix(ret, "v")
-	}
+	ret = strings.TrimPrefix(ret, "v")
 
 	return ret, nil
 }
