@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.25.0] - 2024-04-18
+
 ### Added
 
 - Add `--bumpall` flag to `release create` command to automatically bump all apps and components to the latest version.
@@ -929,7 +931,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v6.24.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v6.25.0...HEAD
+[6.25.0]: https://github.com/giantswarm/devctl/compare/v6.24.0...v6.25.0
 [6.24.0]: https://github.com/giantswarm/devctl/compare/v6.23.3...v6.24.0
 [6.23.3]: https://github.com/giantswarm/devctl/compare/v6.23.2...v6.23.3
 [6.23.2]: https://github.com/giantswarm/devctl/compare/v6.23.1...v6.23.2
