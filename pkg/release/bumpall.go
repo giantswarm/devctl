@@ -21,7 +21,7 @@ import (
 	"golang.org/x/oauth2"
 	"sigs.k8s.io/yaml"
 
-	"github.com/giantswarm/devctl/pkg/githubclient"
+	"github.com/giantswarm/devctl/v6/pkg/githubclient"
 )
 
 type componentVersion struct {
