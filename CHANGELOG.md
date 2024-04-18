@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add `--bumpall` flag to `release create` command to automatically bump all apps and components to the latest version.
+
 ## [6.24.0] - 2024-04-10
 
 ### Removed

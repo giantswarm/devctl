@@ -15,13 +15,21 @@ import (
 
 // CreateRelease creates a release on the filesystem from the given parameters. This is the entry point
 // for the `devctl create release` command logic.
-func CreateRelease(name, base, releases, provider string, components, apps []string, overwrite bool, creationCommand string) error {
+func CreateRelease(name, base, releases, provider string, components, apps []string, overwrite bool, creationCommand string, bumpall bool) error {
 	// Paths
 	baseVersion := *semver.MustParse(base) // already validated to be a valid semver string
 	providerDirectory := filepath.Join(releases, provider)
 	baseRelease, baseReleasePath, err := findRelease(providerDirectory, baseVersion)
 	if err != nil {
 		return microerror.Mask(err)
+	}
+
+	if bumpall {
+		fmt.Println("Requested automated bumping of all components and apps.")
+		components, apps, err = BumpAll(baseRelease, components, apps)
+		if err != nil {
+			return microerror.Mask(err)
+		}
 	}
 
 	// Define release CR
