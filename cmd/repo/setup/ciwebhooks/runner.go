@@ -75,7 +75,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 			URL:         &r.flag.WebhookURL,
 			ContentType: github.String("json"),
 			InsecureSSL: github.String("0"),
-			Secret:      github.String(""),
+			Secret:      github.String(r.flag.WebhookSharedSecret),
 		},
 	}
 
