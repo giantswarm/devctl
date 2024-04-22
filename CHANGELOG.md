@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Set the CI webhook secret
+- Made `generate-go` Make task show up in `make help` and added a note to the readme about the template generation.
 
 ## [6.25.0] - 2024-04-18
 
