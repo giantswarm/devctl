@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Compare Helm Rendering (only used for cluster charts): create diff comment from file to avoid size limit
+
 ## [6.25.1] - 2024-04-22
 
 ### Fixed

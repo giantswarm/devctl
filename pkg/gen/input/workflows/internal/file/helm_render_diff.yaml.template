@@ -97,9 +97,10 @@ jobs:
           done
       - name: get the diffs
         uses: mathiasvr/command-output@34408ea3d0528273faff3d9e201761ae96106cd0  # v2.0.0
-        id: diff
         with:
           run: |
+            marker="=== No differences at all ==="
+            (
             found_differences=
             first=1
             for test_file_path in helm/${{ github.event.repository.name }}/ci/test-*-values.yaml; do
@@ -110,13 +111,34 @@ jobs:
                 echo
               fi
               echo "=== Differences when rendered with values file ${test_file_path} ==="
-              dyff between -s -i -b -g "/tmp/${test_file_path}/render-old.yaml" "/tmp/${test_file_path}/render-new.yaml" && echo "No difference" || { res=$?; found_differences=1; if [[ $res -eq 255 ]]; then echo "Diff error"; fi; }
+                dyff between --set-exit-code --ignore-order-changes --omit-header --use-go-patch-style "/tmp/${test_file_path}/render-old.yaml" "/tmp/${test_file_path}/render-new.yaml" && echo "No difference" || { res=$?; found_differences=1; if [[ $res -eq 255 ]]; then echo "Diff error"; fi; }
             done
 
             if [ -z "${found_differences}" ]; then
               echo
-              echo "=== No differences at all ==="
+                echo
+                echo "${marker}"
             fi
+            ) > /tmp/diffs
+
+            (
+              if ! grep -qF "${marker}" /tmp/diffs ; then
+                echo "**There were differences in the rendered Helm template, please check! ⚠️**"
+              else
+                echo "There were no differences in the rendered Helm template."
+              fi
+
+              echo
+              echo "<details>"
+              echo "<summary>Output</summary>"
+              echo "<!-- mandatory empty line -->"
+              echo ""
+              echo '```'
+              cat /tmp/diffs
+              echo '```'
+              echo "</details>"
+              echo "<!-- mandatory empty line -->"
+            ) > /tmp/comment-body
       - name: Find diff comment
         uses: peter-evans/find-comment@3eae4d37986fb5a8592848f6a574fdf654e61f9e # v3.1.0
         continue-on-error: true
@@ -133,37 +155,8 @@ jobs:
           type: delete
           comment_id: ${{ steps.fc.outputs.comment-id }}
           token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Create comment in case of differences
+      - name: Create comment
         uses: peter-evans/create-or-update-comment@71345be0265236311c031f5c7866368bd1eff043  # v4.0.0
-        if: "!contains(steps.diff.outputs.stdout, '=== No differences at all ===')"
         with:
           issue-number: ${{ github.event.pull_request.number }}
-          body: |
-            **There were differences in the rendered Helm template, please check! ⚠️**
-
-            <details>
-            <summary>Output</summary>
-            <!-- mandatory empty line -->
-
-            ```
-            ${{ steps.diff.outputs.stdout }}
-            ```
-            </details>
-            <!-- mandatory empty line -->
-      - name: Create comment in case of no differences
-        uses: peter-evans/create-or-update-comment@71345be0265236311c031f5c7866368bd1eff043  # v4.0.0
-        if: "contains(steps.diff.outputs.stdout, '=== No differences at all ===')"
-        with:
-          issue-number: ${{ github.event.pull_request.number }}
-          body: |
-            There were no differences in the rendered Helm template.
-
-            <details>
-            <summary>Output</summary>
-            <!-- mandatory empty line -->
-
-            ```
-            ${{ steps.diff.outputs.stdout }}
-            ```
-            </details>
-            <!-- mandatory empty line -->
+          body-path: /tmp/comment-body
