@@ -302,7 +302,9 @@ jobs:
         with:
           ref: ${{ env.TAG }}
 {{{{- if .IsDevctl }}}}
-          fetch-depth: 0 # devctl specific, we need the whole git history for generating the correct urls in header templates
+      # devctl specific, we need the whole git history of branch `main` for generating the correct urls in header templates
+      - name: Fetch main branch
+        run: "git fetch origin main --unshallow"
 {{{{- end }}}}
       - name: Create ${{ matrix.platform }} package
         run: make package-${{ matrix.platform }}

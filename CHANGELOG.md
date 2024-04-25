@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Only fetch `main` branch in GitHub actions workflow for devctl releases
+
 ## [6.26.1] - 2024-04-25
 
 ### Fixed
