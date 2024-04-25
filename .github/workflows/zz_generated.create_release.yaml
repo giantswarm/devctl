@@ -296,6 +296,7 @@ jobs:
         uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
         with:
           ref: ${{ env.TAG }}
+          fetch-depth: 0 # devctl specific, we need the whole git history for generating the correct urls in header templates
       - name: Create ${{ matrix.platform }} package
         run: make package-${{ matrix.platform }}
       - name: Specify package file name based on platform

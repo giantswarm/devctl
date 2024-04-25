@@ -2,6 +2,7 @@ package file
 
 import (
 	_ "embed"
+	"strings"
 
 	"github.com/giantswarm/devctl/v6/pkg/gen/input"
 	"github.com/giantswarm/devctl/v6/pkg/gen/input/workflows/internal/params"
@@ -27,6 +28,7 @@ func NewCreateReleaseInput(p params.Params) input.Input {
 			"EnableFloatingMajorVersionTags": params.EnableFloatingMajorVersionTags(p),
 			"IsFlavourCLI":                   params.IsFlavourCLI(p),
 			"StepSetUpGitIdentity":           params.StepSetUpGitIdentity(),
+			"IsDevctl":                       strings.HasPrefix(createReleaseTemplateSha, "https://github.com/giantswarm/devctl"),
 		},
 	}
 
