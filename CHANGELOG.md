@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Add logic to fetch the whole git history when generating the "Create Release" GitHub actions workflow file for devctl.
+- Fetch whole git history for releases to fix GitHub Urls in templated file headers.
+
 ## [6.26.0] - 2024-04-24
 
 ### Fixed
