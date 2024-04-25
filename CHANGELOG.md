@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.26.2] - 2024-04-25
+
 ### Fixed
 
 - Only fetch `main` branch in GitHub actions workflow for devctl releases
@@ -955,7 +957,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v6.26.1...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v6.26.2...HEAD
+[6.26.2]: https://github.com/giantswarm/devctl/compare/v6.26.1...v6.26.2
 [6.26.1]: https://github.com/giantswarm/devctl/compare/v6.26.0...v6.26.1
 [6.26.0]: https://github.com/giantswarm/devctl/compare/v6.25.1...v6.26.0
 [6.25.1]: https://github.com/giantswarm/devctl/compare/v6.25.0...v6.25.1
