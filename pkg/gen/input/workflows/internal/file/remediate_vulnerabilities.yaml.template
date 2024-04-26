@@ -1,12 +1,12 @@
 {{{{ .Header }}}}
-name: Remediate Vulnerabilities
+name: Remediate Nancy findings
 on:
   schedule:
     - cron: '0 9 * * 3'
   workflow_dispatch:
     inputs:
       branch:
-        description: "Branch on which to remediate vulnerabilities"
+        description: "Branch on which to remediate Nancy findings"
         required: true
         type: string
   workflow_call:
@@ -66,17 +66,27 @@ jobs:
           token: ${{ steps.generate_token.outputs.token }}
           persist-credentials: false
           ref: ${{ needs.gather_facts.outputs.branch }}
+          fetch-depth: 0
       - name: Create new branch
         id: create_branch
         run: |
           branch="remediate-vulnerabilities-${{ needs.gather_facts.outputs.branch }}"
           echo "branch=${branch}" >> $GITHUB_OUTPUT
-          git checkout -b "${branch}"
-          git config pull.rebase true
-          git pull origin "${branch}" || true
+
+          git fetch origin ${branch} || true
+
+          # Check if branch exists
+          if [ -z $(git rev-parse --verify origin/$branch 2>/dev/null) ]
+          then
+            # Branch doesn't exist, create it
+            git checkout -b $branch
+          else
+            # Branch exists, use existing
+            git checkout $branch
+          fi
       - name: Run nancy-fixer fix
-        uses: docker://gsoci.azurecr.io/giantswarm/nancy-fixer:0.4.4
-        timeout-minutes: 20
+        uses: docker://gsoci.azurecr.io/giantswarm/nancy-fixer@sha256:76fb4807fc4f94b3bb6c4cd4794302a2c6f2047b0b95bd8179253debc8774db5 # v0.4.4
+        timeout-minutes: 15
       - name: Set up git identity
         run: |
           git config --local user.email "149080493+heraldbot[bot]@users.noreply.github.com"
@@ -89,7 +99,7 @@ jobs:
             echo "No changes found"
             skip=true
           else
-            git commit -m "Remediate Nancy findings"
+            git commit -m "Remediate Nancy findings on branch ${{ needs.gather_facts.outputs.branch }}"
             skip=false
           fi
           echo "skip=${skip}" >> $GITHUB_OUTPUT
@@ -98,11 +108,19 @@ jobs:
         env:
           remote_repo: "https://${{ github.actor }}:${{ steps.generate_token.outputs.token }}@github.com/${{ github.repository }}.git"
         run: |
-          git push "${remote_repo}" HEAD:"${{ steps.create_branch.outputs.branch }}" --force
+          git push "${remote_repo}" HEAD:"${{ steps.create_branch.outputs.branch }}"
       - name: Create PR
         env:
           GITHUB_TOKEN: "${{ steps.generate_token.outputs.token }}"
         if: "${{ steps.commit_changes.outputs.skip != 'true' }}"
         run: |
-          gh pr create --title "Remediate Nancy findings on ${{ needs.gather_facts.outputs.branch }}" --body "Remediate Nancy findings on branch ${{ needs.gather_facts.outputs.branch }}" --head ${{ steps.create_branch.outputs.branch }} --base "${{ needs.gather_facts.outputs.branch }}"
+          body="## Description
+
+          * Remediate Nancy findings on branch ${{ needs.gather_facts.outputs.branch }}
+
+          ---
+          > [!NOTE]  
+          > This PR was created by the **Remediate Vulnerabilities** workflow. Make sure all tests pass before approving.
+          "
+          gh pr create --title "Remediate Nancy findings on ${{ needs.gather_facts.outputs.branch }}" --body "${body}" --head "${{ steps.create_branch.outputs.branch }}" --base "${{ needs.gather_facts.outputs.branch }}"
           gh pr merge --auto --squash
