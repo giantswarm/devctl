@@ -16,7 +16,7 @@ require (
 	github.com/giantswarm/release-operator/v4 v4.2.0
 	github.com/google/go-github/v61 v61.0.0
 	github.com/jedib0t/go-pretty/v6 v6.5.8
-	github.com/pelletier/go-toml/v2 v2.2.1
+	github.com/pelletier/go-toml/v2 v2.2.2
 	github.com/rhysd/go-github-selfupdate v1.2.3
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.8.0
