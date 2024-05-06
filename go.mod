@@ -66,5 +66,5 @@ replace (
 	github.com/aws/aws-sdk-go => github.com/aws/aws-sdk-go v1.52.2
 	github.com/gorilla/websocket => github.com/gorilla/websocket v1.5.1
 	github.com/pkg/sftp => github.com/pkg/sftp v1.13.6
-	golang.org/x/text => golang.org/x/text v0.14.0
+	golang.org/x/text => golang.org/x/text v0.15.0
 )
