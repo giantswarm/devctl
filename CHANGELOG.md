@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.26.3] - 2024-05-21
+
 ### Fixed
 
 - Handle renamed function in Apptest template
@@ -961,7 +963,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v6.26.2...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v6.26.3...HEAD
+[6.26.3]: https://github.com/giantswarm/devctl/compare/v6.26.2...v6.26.3
 [6.26.2]: https://github.com/giantswarm/devctl/compare/v6.26.1...v6.26.2
 [6.26.1]: https://github.com/giantswarm/devctl/compare/v6.26.0...v6.26.1
 [6.26.0]: https://github.com/giantswarm/devctl/compare/v6.25.1...v6.26.0
