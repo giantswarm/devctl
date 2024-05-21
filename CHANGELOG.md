@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Handle renamed function in Apptest template
+
 ## [6.26.2] - 2024-04-25
 
 ### Fixed
