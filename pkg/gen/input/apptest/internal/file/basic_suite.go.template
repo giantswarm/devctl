@@ -22,7 +22,7 @@ func TestBasic(t *testing.T) {
 		// If true, the suite will first install the latest released version of the app before upgrading to the test version
 		WithIsUpgrade(isUpgrade).
 		WithValuesFile("./values.yaml").
-		BeforeInstall(func() {
+		AfterClusterReady(func() {
 			// Do any pre-install checks here (ensure the cluster has needed pre-reqs)
 		}).
 		BeforeUpgrade(func() {
