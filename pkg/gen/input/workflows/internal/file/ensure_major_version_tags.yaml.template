@@ -18,4 +18,4 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
-      - uses: giantswarm/floating-tags-action@80ab97ac423893e85897266c75290b93b7946617  # v1.0.1
+      - uses: giantswarm/floating-tags-action@0f61d4cfbe37dbb2399c0d9119c224030445bba5 # v1.0.2
