@@ -26,7 +26,7 @@ jobs:
         uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
       - name: Run schemalint
         id: run-schemalint
-        uses: giantswarm/schemalint/actions/verify-helm-schema@79be66ce4ed5c6154615f68e9b97ab3110b62968  # v2.5.1
+        uses: giantswarm/schemalint/actions/verify-helm-schema@7d9e7128aaf064cef2e6c6d6acd99f2c858861a6 # v2.6.0
         with:
           rule-set: 'cluster-app'
   generate:
