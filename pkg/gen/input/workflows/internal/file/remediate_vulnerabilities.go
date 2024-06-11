@@ -7,23 +7,23 @@ import (
 	"github.com/giantswarm/devctl/v6/pkg/gen/input/workflows/internal/params"
 )
 
-//go:embed fix_vulnerabilities.yaml.template
-var fixVulnerabilitiesTemplate string
+//go:embed remediate_vulnerabilities.yaml.template
+var remediateVulnerabilitiesTemplate string
 
 //go:generate go run ../../../update-template-sha.go fix_vulnerabilities.yaml.template
 //go:embed fix_vulnerabilities.yaml.template.sha
-var fixVulnerabilitiesTemplateSha string
+var remediateVulnerabilitiesTemplateSha string
 
-func NewFixVulnerabilitiesInput(p params.Params) input.Input {
+func NewRemediateVulnerabilitiesInput(p params.Params) input.Input {
 	i := input.Input{
-		Path:         params.RegenerableFileName(p, "fix_vulnerabilities.yaml"),
-		TemplateBody: fixVulnerabilitiesTemplate,
+		Path:         params.RegenerableFileName(p, "remediate_vulnerabilities.yaml"),
+		TemplateBody: remediateVulnerabilitiesTemplate,
 		TemplateDelims: input.InputTemplateDelims{
 			Left:  "{{{{",
 			Right: "}}}}",
 		},
 		TemplateData: map[string]interface{}{
-			"Header":               params.Header("#", fixVulnerabilitiesTemplateSha),
+			"Header":               params.Header("#", remediateVulnerabilitiesTemplateSha),
 			"StepSetUpGitIdentity": params.StepSetUpGitIdentity(),
 		},
 	}
