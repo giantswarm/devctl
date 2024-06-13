@@ -23,7 +23,7 @@ jobs:
       skip : ${{ steps.gather_facts.outputs.skip }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
         with:
           ref: ${{ inputs.branch || github.ref }}
       - name: Gather facts
@@ -61,7 +61,7 @@ jobs:
           app-id: ${{ secrets.HERALD_APP_ID }}
           private-key: ${{ secrets.HERALD_APP_KEY }}
       - name: Checkout code
-        uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
         with:
           token: ${{ steps.generate_token.outputs.token }}
           persist-credentials: false
