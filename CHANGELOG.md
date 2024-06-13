@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.26.4] - 2024-06-13
+
+- Updates in referenced actions and dependencies
+
 ## [6.26.3] - 2024-05-21
 
 ### Fixed
@@ -963,7 +967,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v6.26.3...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v6.26.4...HEAD
+[6.26.4]: https://github.com/giantswarm/devctl/compare/v6.26.3...v6.26.4
 [6.26.3]: https://github.com/giantswarm/devctl/compare/v6.26.2...v6.26.3
 [6.26.2]: https://github.com/giantswarm/devctl/compare/v6.26.1...v6.26.2
 [6.26.1]: https://github.com/giantswarm/devctl/compare/v6.26.0...v6.26.1
