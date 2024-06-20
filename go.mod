@@ -6,7 +6,7 @@ toolchain go1.22.4
 
 require (
 	github.com/Masterminds/semver/v3 v3.2.1
-	github.com/aws/aws-sdk-go v1.54.4
+	github.com/aws/aws-sdk-go v1.54.5
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/bmatcuk/doublestar/v4 v4.6.1
 	github.com/buger/goterm v1.0.4
@@ -63,7 +63,7 @@ require (
 )
 
 replace (
-	github.com/aws/aws-sdk-go => github.com/aws/aws-sdk-go v1.54.4
+	github.com/aws/aws-sdk-go => github.com/aws/aws-sdk-go v1.54.5
 	github.com/gorilla/websocket => github.com/gorilla/websocket v1.5.3
 	github.com/pkg/sftp => github.com/pkg/sftp v1.13.6
 	golang.org/x/text => golang.org/x/text v0.16.0
