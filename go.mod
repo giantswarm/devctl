@@ -1,6 +1,6 @@
 module github.com/giantswarm/devctl/v6
 
-go 1.21
+go 1.22.0
 
 toolchain go1.22.5
 
@@ -23,7 +23,7 @@ require (
 	github.com/spf13/pflag v1.0.5
 	golang.org/x/net v0.26.0
 	golang.org/x/oauth2 v0.21.0
-	k8s.io/apimachinery v0.28.4
+	k8s.io/apimachinery v0.30.2
 	sigs.k8s.io/yaml v1.4.0
 )
 
@@ -31,7 +31,7 @@ require (
 	github.com/giantswarm/k8smetadata v0.24.0 // indirect
 	github.com/go-kit/log v0.2.1 // indirect
 	github.com/go-logfmt/logfmt v0.6.0 // indirect
-	github.com/go-logr/logr v1.3.0 // indirect
+	github.com/go-logr/logr v1.4.1 // indirect
 	github.com/go-stack/stack v1.8.1 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/google/go-github/v30 v30.1.0 // indirect
@@ -46,7 +46,6 @@ require (
 	github.com/mattn/go-runewidth v0.0.15 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
-	github.com/onsi/gomega v1.10.2 // indirect
 	github.com/rivo/uniseg v0.2.0 // indirect
 	github.com/tcnksm/go-gitconfig v0.1.2 // indirect
 	github.com/ulikunitz/xz v0.5.9 // indirect
@@ -56,7 +55,7 @@ require (
 	gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
-	k8s.io/klog/v2 v2.110.1 // indirect
+	k8s.io/klog/v2 v2.120.1 // indirect
 	k8s.io/utils v0.0.0-20231127182322-b307cd553661 // indirect
 	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.4.1 // indirect
