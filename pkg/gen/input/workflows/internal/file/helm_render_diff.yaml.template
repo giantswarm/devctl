@@ -49,7 +49,7 @@ jobs:
            version: ${{ env.helm_ver }}
       - run: which helm
       - name: install dyff
-        uses: giantswarm/install-binary-action@033b1a657eea23d9c42e77312b370e6125e4e38f  # v2.0.0
+        uses: giantswarm/install-binary-action@c37eb401e5092993fc76d545030b1d1769e61237 # v3.0.0
         with:
           binary: dyff
           download_url: "https://github.com/homeport/dyff/releases/download/v${version}/dyff_${version}_linux_amd64.tar.gz"
