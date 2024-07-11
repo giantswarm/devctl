@@ -15,7 +15,7 @@ import (
 	tm "github.com/buger/goterm"
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/release-operator/v4/api/v1alpha1"
-	"github.com/google/go-github/v62/github"
+	"github.com/google/go-github/v63/github"
 	"github.com/jedib0t/go-pretty/v6/table"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/oauth2"
