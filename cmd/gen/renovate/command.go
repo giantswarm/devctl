@@ -13,7 +13,7 @@ const (
 	name        = "renovate"
 	description = "Generates Renovate config for go and docker dependencies (renovate.json5)."
 	example     = `  devctl gen renovate
-  devctl gen renovate --interval "after 9am on thursday" --reviewers giantswarm/team-firecracker`
+  devctl gen renovate --interval "after 9am on thursday"`
 )
 
 type Config struct {
