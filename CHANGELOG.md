@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Include replace directives in apptest generated go.mo
 
+### Changed
+
+- Add `-trimpath` flag to `go build` in generated Makefile for Go.
+
 ## [6.26.4] - 2024-06-13
 
 - Updates in referenced actions and dependencies
