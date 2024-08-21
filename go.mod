@@ -14,7 +14,7 @@ require (
 	github.com/giantswarm/microerror v0.4.1
 	github.com/giantswarm/micrologger v1.1.1
 	github.com/giantswarm/release-operator/v4 v4.2.0
-	github.com/google/go-github/v63 v63.0.0
+	github.com/google/go-github/v64 v64.0.0
 	github.com/jedib0t/go-pretty/v6 v6.5.9
 	github.com/pelletier/go-toml/v2 v2.2.2
 	github.com/rhysd/go-github-selfupdate v1.2.3
