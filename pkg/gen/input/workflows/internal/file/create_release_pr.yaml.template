@@ -200,7 +200,7 @@ jobs:
       - name: Bump go module defined in go.mod if needed
         run: |
           if [ "${{ needs.gather_facts.outputs.needs_major_bump }}" = true ] && test -f "go.mod"; then
-            go install github.com/marwan-at-work/mod/cmd/mod@v0.5.0
+            go install github.com/marwan-at-work/mod/cmd/mod@v0.7.1
             mod upgrade
           fi
 {{{{ .StepSetUpGitIdentity }}}}
