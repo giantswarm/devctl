@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Include replace directives in apptest generated go.mo
+- Bump `github.com/marwan-at-work/mod/cmd/mod` to `v0.7.1` in create release pr template, to fix compatibility with Go 1.23
 
 ### Changed
 
