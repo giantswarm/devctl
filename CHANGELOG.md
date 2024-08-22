@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.27.2] - 2024-08-22
+
 ### Changed
 
 - Update Go and architect in "Create release PR" workflow template
@@ -987,7 +989,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v6.27.1...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v6.27.2...HEAD
+[6.27.2]: https://github.com/giantswarm/devctl/compare/v6.27.1...v6.27.2
 [6.27.1]: https://github.com/giantswarm/devctl/compare/v6.27.0...v6.27.1
 [6.27.0]: https://github.com/giantswarm/devctl/compare/v6.26.4...v6.27.0
 [6.26.4]: https://github.com/giantswarm/devctl/compare/v6.26.3...v6.26.4
