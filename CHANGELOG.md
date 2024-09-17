@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add `cluster-*` charts as choosable values for `devctl release create --component`
+
 ## [6.27.2] - 2024-08-22
 
 ### Changed
