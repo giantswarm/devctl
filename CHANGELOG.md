@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.28.0] - 2024-09-20
+
 ### Added
 
 - Add `cluster-*` charts as choosable values for `devctl release create --component`
@@ -993,7 +995,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v6.27.2...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v6.28.0...HEAD
+[6.28.0]: https://github.com/giantswarm/devctl/compare/v6.27.2...v6.28.0
 [6.27.2]: https://github.com/giantswarm/devctl/compare/v6.27.1...v6.27.2
 [6.27.1]: https://github.com/giantswarm/devctl/compare/v6.27.0...v6.27.1
 [6.27.0]: https://github.com/giantswarm/devctl/compare/v6.26.4...v6.27.0
