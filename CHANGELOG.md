@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.30.0] - 2024-10-14
+
+- Dependency updates in templates
+
 ## [6.29.0] - 2024-10-08
 
 ### Added
@@ -1001,7 +1005,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v6.29.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v6.30.0...HEAD
+[6.30.0]: https://github.com/giantswarm/devctl/compare/v6.29.0...v6.30.0
 [6.29.0]: https://github.com/giantswarm/devctl/compare/v6.28.0...v6.29.0
 [6.28.0]: https://github.com/giantswarm/devctl/compare/v6.27.2...v6.28.0
 [6.27.2]: https://github.com/giantswarm/devctl/compare/v6.27.1...v6.27.2
