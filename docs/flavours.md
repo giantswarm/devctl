@@ -29,3 +29,7 @@ A repository that provides a Kubernetes API (usually one or several custom resou
 ## `generic`
 
 A repository that does not fit any of the more specific flavours above.
+
+## `fleet`
+
+A repository to be used with GitOps containing kubernetes clusters.
