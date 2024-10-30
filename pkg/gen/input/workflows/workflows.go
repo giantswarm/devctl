@@ -40,6 +40,9 @@ func (w *Workflows) CheckValuesSchema() input.Input {
 func (w *Workflows) ClusterAppDocumentationValidation() input.Input {
 	return file.NewClusterAppDocumentationValidation(w.params)
 }
+func (w *Workflows) ClusterAppValuesValidationUsingSchema() input.Input {
+	return file.NewClusterAppValuesValidationUsingSchemaTemplate(w.params)
+}
 
 func (w *Workflows) ClusterAppSchemaValidation() input.Input {
 	return file.NewClusterAppSchemaValidation(w.params)
