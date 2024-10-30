@@ -6,21 +6,25 @@ orbs:
 workflows:
   go-build:
     jobs:
-      - architect/go-build:
-          name: go-build-devctl
-          binary: devctl
-          pre_test_target: generate-go
+    - architect/go-build:
+        name: go-build-devctl
+        binary: devctl
+        pre_test_target: generate-go
           # Needed to trigger job also on git tag.
-          filters:
-            tags:
-              only: /^v.*/
+        filters:
+          tags:
+            only: /^v.*/
 
-      - architect/push-to-registries:
-          context: architect
-          name: push-to-registries
-          requires:
-            - go-build-devctl
-          filters:
+    - architect/push-to-registries:
+        context: architect
+        name: push-to-registries
+        requires:
+        - go-build-devctl
+        filters:
             # Needed to trigger job also on git tag.
-            tags:
-              only: /^v.*/
+          tags:
+            only: /^v.*/
+          branches:
+            ignore:
+            - main
+            - master
