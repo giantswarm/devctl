@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add new `fleet` flavour.
+- Add workflow to validate cluster-app values against the schema to the `fleet` projects.
+
 ## [6.30.0] - 2024-10-14
 
 - Dependency updates in templates
