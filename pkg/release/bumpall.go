@@ -197,7 +197,7 @@ func printTable(input v1alpha1.Release, components map[string]componentVersion, 
 	t.AppendHeader(table.Row{"Component Name", "Current Version", "Desired Version"})
 	t.AppendSeparator()
 	for _, component := range input.Spec.Components {
-		desiredVersion := ""
+		desiredVersion := "Unchanged"
 		if req, found := components[component.Name]; found {
 			desiredVersion = req.Version
 			if req.UserRequested {
@@ -214,9 +214,26 @@ func printTable(input v1alpha1.Release, components map[string]componentVersion, 
 }
 
 func findNewestApp(name string, getUpstreamVersion bool) (appVersion, error) {
-	version, err := getLatestGithubRelease("giantswarm", name)
-	if err != nil {
-		return appVersion{}, microerror.Mask(err)
+	var err error
+	version := ""
+
+	switch name {
+	case "cloud-provider-aws":
+		version, err = getLatestGithubRelease("giantswarm", "aws-cloud-controller-manager")
+		if err != nil {
+			return appVersion{}, microerror.Mask(err)
+		}
+	case "etcd-k8s-res-count-exporter":
+		version, err = getLatestGithubRelease("giantswarm", "etcd-kubernetes-resources-count-exporter")
+		if err != nil {
+			return appVersion{}, microerror.Mask(err)
+		}
+
+	default:
+		version, err = getLatestGithubRelease("giantswarm", name)
+		if err != nil {
+			return appVersion{}, microerror.Mask(err)
+		}
 	}
 
 	ret := appVersion{
@@ -239,23 +256,20 @@ func findNewestComponent(name string) (componentVersion, error) {
 	version := ""
 
 	switch name {
-	case "containerlinux":
+	case "flatcar":
 		version, err = getLatestFlatcarRelease()
 		if err != nil {
 			return componentVersion{}, microerror.Mask(err)
 		}
 	case "kubernetes":
 		version, err = getLatestGithubRelease("kubernetes", "kubernetes")
+		// strip the "Kubernetes " prefix from the version
+		version, _ = strings.CutPrefix(version, "Kubernetes ")
 		if err != nil {
 			return componentVersion{}, microerror.Mask(err)
 		}
-	case "calico":
-		version, err = getLatestGithubRelease("projectcalico", "calico")
-		if err != nil {
-			return componentVersion{}, microerror.Mask(err)
-		}
-	case "etcd":
-		version, err = getLatestGithubRelease("etcd-io", "etcd")
+	case "os-tooling":
+		version, err = getLatestGithubRelease("giantswarm", "capi-image-builder")
 		if err != nil {
 			return componentVersion{}, microerror.Mask(err)
 		}
@@ -283,7 +297,6 @@ func getLatestGithubRelease(owner string, name string) (string, error) {
 	tc := oauth2.NewClient(ctx, ts)
 
 	client := github.NewClient(tc)
-	//client := github.NewClient(nil)
 
 	candidateNames := []string{name}
 	if strings.HasSuffix(name, "-app") {

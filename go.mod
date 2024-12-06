@@ -47,6 +47,7 @@ require (
 	github.com/mattn/go-runewidth v0.0.15 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
+	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826 // indirect
 	github.com/rivo/uniseg v0.2.0 // indirect
 	github.com/tcnksm/go-gitconfig v0.1.2 // indirect
 	github.com/ulikunitz/xz v0.5.9 // indirect

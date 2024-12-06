@@ -9,6 +9,7 @@ import (
 	"github.com/Masterminds/semver/v3"
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/release-operator/v4/api/v1alpha1"
+	"github.com/mohae/deepcopy"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/yaml"
 )
@@ -18,11 +19,22 @@ import (
 func CreateRelease(name, base, releases, provider string, components, apps []string, overwrite bool, creationCommand string, bumpall bool) error {
 	// Paths
 	baseVersion := *semver.MustParse(base) // already validated to be a valid semver string
-	providerDirectory := filepath.Join(releases, provider)
+	providerDirectory := ""
+	if provider == "aws" {
+		// TODO: Directory for AWS provider is currently 'capa' because of old vintage releases located in aws directory
+		// This will change in the future
+		providerDirectory = filepath.Join(releases, "capa")
+	} else {
+		providerDirectory = filepath.Join(releases, provider)
+	}
+
 	baseRelease, baseReleasePath, err := findRelease(providerDirectory, baseVersion)
 	if err != nil {
 		return microerror.Mask(err)
 	}
+
+	// Store the base release for later use because it gets modified
+	previousRelease := deepcopy.Copy(baseRelease).(v1alpha1.Release)
 
 	if bumpall {
 		fmt.Println("Requested automated bumping of all components and apps.")
@@ -35,7 +47,7 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 	// Define release CR
 	var updatesRelease v1alpha1.Release
 	newVersion := *semver.MustParse(name) // already validated to be a valid semver string
-	updatesRelease.Name = "v" + newVersion.String()
+	updatesRelease.Name = fmt.Sprintf("%s-%s", provider, newVersion.String())
 	now := metav1.Now()
 	updatesRelease.Spec.Date = &now
 	updatesRelease.Spec.State = "active"
@@ -104,7 +116,7 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 
 	// Release notes
 	releaseNotesPath := filepath.Join(releasePath, "README.md")
-	releaseNotes, err := createReleaseNotes(updatesRelease, provider)
+	releaseNotes, err := createReleaseNotes(updatesRelease, previousRelease, provider)
 	if err != nil {
 		return microerror.Mask(err)
 	}

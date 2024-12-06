@@ -296,12 +296,6 @@ var knownComponentParseParams = map[string]parseParams{
 		intermediate: "(?m)^## Changes by Kind$",
 		end:          "(?m)^# .*$",
 	},
-	"os-tooling": {
-		tag:       "https://github.com/giantswarm/os-tooling/releases/tag/v{{.Version}}",
-		changelog: "https://raw.githubusercontent.com/giantswarm/os-tooling/v{{.Version}}/CHANGELOG.md",
-		start:     commonStartPattern,
-		end:       commonEndPattern,
-	},
 }
 
 // Data about a component passed into templates that depend on versions

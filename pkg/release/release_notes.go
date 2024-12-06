@@ -14,9 +14,29 @@ const releaseNotesTemplate = `# :zap: Giant Swarm Release {{ .Name }} for {{ .Pr
 
 {{ .Description }}
 
-## Change details
+## Changes compared to {{ .PreviousName }}
+
+### Components
 
 {{ range .Components }}
+ * {{ .Name }} from {{ .PreviousVersion }} to [{{ .Version }}]({{ .Link }})
+{{ end }}
+
+{{ range .Components }}
+
+### {{ .Name }} [{{ .Version }}]({{ .Link }})
+
+{{ .Changelog }}
+
+{{ end }}
+
+### Apps
+
+{{ range .Apps }}
+ * {{ .Name }} from {{ .PreviousVersion }} to [{{ .Version }}]({{ .Link }})
+{{ end }}
+
+{{ range .Apps }}
 ### {{ .Name }} [{{ .Version }}]({{ .Link }})
 
 {{ .Changelog }}
@@ -24,45 +44,63 @@ const releaseNotesTemplate = `# :zap: Giant Swarm Release {{ .Name }} for {{ .Pr
 {{ end }}
 `
 
-type releaseNotesComponent struct {
-	Name      string
-	Version   string
-	Link      string
-	Changelog string
+type releaseNotes struct {
+	Name            string
+	PreviousVersion string
+	Version         string
+	Link            string
+	Changelog       string
 }
 
 type releaseNotesTemplateData struct {
-	Name        string
-	Provider    string
-	Description string
-	Components  []releaseNotesComponent
+	Name         string
+	PreviousName string
+	Provider     string
+	Description  string
+	Components   []releaseNotes
+	Apps         []releaseNotes
 }
 
 var providerTitleMap = map[string]string{
-	"aws":             "AWS",
+	"aws":             "CAPA",
 	"azure":           "Azure",
 	"kvm":             "KVM",
 	"vsphere":         "vSphere",
 	"cloud-directory": "VMWare Cloud Directory",
 }
 
-func createReleaseNotes(release v1alpha1.Release, provider string) (string, error) {
+func createReleaseNotes(release v1alpha1.Release, baseRelease v1alpha1.Release, provider string) (string, error) {
 	templ, err := template.New("release-notes").Parse(releaseNotesTemplate)
 	if err != nil {
 		return "", microerror.Mask(err)
 	}
 
-	var components []releaseNotesComponent
+	var components []releaseNotes
+	var apps []releaseNotes
 	for _, component := range release.Spec.Components {
+		if component.Name == "os-tooling" {
+			// Skip os-tooling for now
+			continue
+		}
+
+		previousComponentVersion := ""
+		for _, baseComponent := range baseRelease.Spec.Components {
+			if component.Name == baseComponent.Name {
+				previousComponentVersion = baseComponent.Version
+				break
+			}
+		}
+
 		componentChangelog, err := changelog.ParseChangelog(component.Name, component.Version)
 		if err != nil {
 			return "", microerror.Mask(err)
 		}
-		components = append(components, releaseNotesComponent{
-			Name:      component.Name,
-			Version:   component.Version,
-			Link:      componentChangelog.Link,
-			Changelog: componentChangelog.Content,
+		components = append(components, releaseNotes{
+			Name:            component.Name,
+			Version:         component.Version,
+			PreviousVersion: previousComponentVersion,
+			Link:            componentChangelog.Link,
+			Changelog:       componentChangelog.Content,
 		})
 	}
 
@@ -71,20 +109,32 @@ func createReleaseNotes(release v1alpha1.Release, provider string) (string, erro
 		if err != nil {
 			return "", microerror.Mask(err)
 		}
-		components = append(components, releaseNotesComponent{
-			Name:      app.Name,
-			Version:   app.Version,
-			Link:      componentChangelog.Link,
-			Changelog: componentChangelog.Content,
+
+		previousAppVersion := ""
+		for _, baseApp := range baseRelease.Spec.Apps {
+			if app.Name == baseApp.Name {
+				previousAppVersion = baseApp.Version
+				break
+			}
+		}
+
+		apps = append(apps, releaseNotes{
+			Name:            app.Name,
+			Version:         app.Version,
+			PreviousVersion: previousAppVersion,
+			Link:            componentChangelog.Link,
+			Changelog:       componentChangelog.Content,
 		})
 	}
 
 	var writer strings.Builder
 	data := releaseNotesTemplateData{
-		Name:        release.Name,
-		Provider:    providerTitleMap[provider],
-		Description: "<< Add description here >>",
-		Components:  components,
+		Name:         releaseToDirectory(release),
+		PreviousName: releaseToDirectory(baseRelease),
+		Provider:     providerTitleMap[provider],
+		Description:  "<< Add description here >>",
+		Components:   components,
+		Apps:         apps,
 	}
 	err = templ.Execute(&writer, data)
 	if err != nil {
