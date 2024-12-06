@@ -136,7 +136,7 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 		return microerror.Mask(err)
 	}
 
-	// Release announcement.yaml
+	// Release announcement.md
 	announcementPath := filepath.Join(releasePath, "announcement.md")
 	announcement, err := createAnnouncement(updatesRelease, provider)
 	if err != nil {
