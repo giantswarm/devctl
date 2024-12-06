@@ -39,9 +39,11 @@ type releaseNotesTemplateData struct {
 }
 
 var providerTitleMap = map[string]string{
-	"aws":   "AWS",
-	"azure": "Azure",
-	"kvm":   "KVM",
+	"aws":             "AWS",
+	"azure":           "Azure",
+	"kvm":             "KVM",
+	"vsphere":         "vSphere",
+	"cloud-directory": "VMWare Cloud Directory",
 }
 
 func createReleaseNotes(release v1alpha1.Release, provider string) (string, error) {

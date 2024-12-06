@@ -6,12 +6,12 @@ import (
 	"github.com/giantswarm/microerror"
 )
 
-type containerlinuxRelease struct {
+type flatcarRelease struct {
 	ReleaseNotes string `json:"release_notes"`
 }
 
-func parseContainerLinuxChangelog(body []byte, componentVersion string) (string, error) {
-	var releases map[string]containerlinuxRelease
+func parseFlatcarChangelog(body []byte, componentVersion string) (string, error) {
+	var releases map[string]flatcarRelease
 	err := json.Unmarshal(body, &releases)
 	if err != nil {
 		return "", microerror.Mask(err)
