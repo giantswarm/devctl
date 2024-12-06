@@ -136,6 +136,17 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 		return microerror.Mask(err)
 	}
 
+	// Release announcement.yaml
+	announcementPath := filepath.Join(releasePath, "announcement.md")
+	announcement, err := createAnnouncement(updatesRelease, provider)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+	err = os.WriteFile(announcementPath, []byte(announcement), 0644) //nolint:gosec
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
 	// Release kustomization.yaml
 	err = createKustomization(releasePath)
 	if err != nil {
