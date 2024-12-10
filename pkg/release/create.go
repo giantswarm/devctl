@@ -197,7 +197,7 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 		return microerror.Mask(err)
 	}
 
-	err = os.WriteFile(releasesJSONPath, updatedReleasesData, 0644)
+	err = os.WriteFile(releasesJSONPath, updatedReleasesData, 0644) //nolint:gosec
 	if err != nil {
 		return microerror.Mask(err)
 	}
