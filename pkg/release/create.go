@@ -1,10 +1,13 @@
 package release
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/Masterminds/semver/v3"
 	"github.com/giantswarm/microerror"
@@ -155,6 +158,46 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 
 	// Provider kustomization.yaml
 	err = addToKustomization(providerDirectory, newRelease)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	// Update releases.json
+	releasesJSONPath := filepath.Join(providerDirectory, "releases.json")
+	releasesData, err := os.ReadFile(releasesJSONPath)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	var releasesJson ReleasesJsonData
+	err = json.Unmarshal(releasesData, &releasesJson)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	newReleaseInfo := ReleaseJsonInfo{
+		Version:          newVersion.String(),
+		IsDeprecated:     false,
+		ReleaseTimestamp: now.Time.Format(time.RFC3339),
+		ChangelogUrl:     fmt.Sprintf("https://github.com/giantswarm/releases/blob/master/%s/%s/README.md", provider, releaseDirectory),
+		IsStable:         true,
+	}
+
+	releasesJson.Releases = append(releasesJson.Releases, newReleaseInfo)
+
+	// sort releases in json by version
+	sort.SliceStable(releasesJson.Releases, func(i, j int) bool {
+		vi := semver.MustParse(releasesJson.Releases[i].Version)
+		vj := semver.MustParse(releasesJson.Releases[j].Version)
+		return vi.LessThan(vj)
+	})
+
+	updatedReleasesData, err := json.MarshalIndent(releasesJson, "", "  ")
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	err = os.WriteFile(releasesJSONPath, updatedReleasesData, 0644)
 	if err != nil {
 		return microerror.Mask(err)
 	}
