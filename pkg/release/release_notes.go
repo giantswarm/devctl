@@ -79,7 +79,7 @@ func createReleaseNotes(release v1alpha1.Release, baseRelease v1alpha1.Release, 
 	var apps []releaseNotes
 	for _, component := range release.Spec.Components {
 		if component.Name == "os-tooling" {
-			// Skip os-tooling for now
+			// Skip os-tooling for now because it's an internal implementation detail for image naming
 			continue
 		}
 
