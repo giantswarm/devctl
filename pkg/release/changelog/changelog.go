@@ -291,7 +291,7 @@ var knownComponentParseParams = map[string]parseParams{
 	},
 	"kubernetes": {
 		tag:          "https://github.com/kubernetes/kubernetes/releases/tag/v{{.Version}}",
-		changelog:    "https://raw.githubusercontent.com/kubernetes/kubernetes/master/CHANGELOG/CHANGELOG-{{.Major}}.{{.Minor}}.md",
+		changelog:    "https://github.com/kubernetes/kubernetes/blob/master/CHANGELOG/CHANGELOG-{{.Major}}.{{.Minor}}.md#v{{.Version}}",
 		start:        "(?m)^# v?(?P<Version>\\d+\\.\\d+\\.\\d+)$",
 		intermediate: "(?m)^## Changes by Kind$",
 		end:          "(?m)^# .*$",
@@ -318,9 +318,13 @@ func ParseChangelog(componentName, componentVersion string) (*Version, error) {
 		return nil, microerror.Mask(errors.New("unknown component: " + componentName))
 	}
 
-	templateData := versionTemplateData{
-		Version: componentVersion,
+	templateData := &versionTemplateData{}
+	if componentName == "kubernetes" {
+		templateData.Version = strings.Replace(componentVersion, ".", "", -1)
+	} else {
+		templateData.Version = componentVersion
 	}
+
 	parsedVersion, err := semver.NewVersion(componentVersion)
 	if err == nil {
 		templateData.Major = parsedVersion.Major()
@@ -328,9 +332,17 @@ func ParseChangelog(componentName, componentVersion string) (*Version, error) {
 	}
 
 	// Build release link using the template from the params
-	releaseLinkTemplate, err := template.New("link").Parse(params.tag)
-	if err != nil {
-		return nil, microerror.Mask(err)
+	var releaseLinkTemplate *template.Template
+	if componentName == "kubernetes" {
+		releaseLinkTemplate, err = template.New("link").Parse(params.changelog)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+	} else {
+		releaseLinkTemplate, err = template.New("link").Parse(params.tag)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
 	}
 	var releaseLinkBuffer strings.Builder
 	err = releaseLinkTemplate.Execute(&releaseLinkBuffer, templateData)
@@ -362,11 +374,7 @@ func ParseChangelog(componentName, componentVersion string) (*Version, error) {
 		return nil, microerror.Mask(err)
 	}
 
-	if componentName == "flatcar" {
-		currentVersion.Content, err = parseFlatcarChangelog(body, componentVersion)
-		if err != nil {
-			return nil, microerror.Mask(err)
-		}
+	if componentName == "flatcar" || componentName == "kubernetes" {
 		return &currentVersion, nil
 	}
 

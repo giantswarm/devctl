@@ -19,10 +19,17 @@ const releaseNotesTemplate = `# :zap: Giant Swarm Release {{ .Name }} for {{ .Pr
 ### Components
 
 {{ range .Components }}
- * {{ .Name }} from {{ .PreviousVersion }} to [{{ .Version }}]({{ .Link }})
+{{ if eq .Name "kubernetes" }}
+* {{ .Name }} from v{{ .PreviousVersion }} to [v{{ .Version }}]({{ .Link }})
+{{ else }}
+* {{ .Name }} from {{ .PreviousVersion }} to [{{ .Version }}]({{ .Link }})
+{{ end }}
 {{ end }}
 
 {{ range .Components }}
+{{ if or (eq .Name "kubernetes") (eq .Name "flatcar") }}
+{{continue}}
+{{ end }}
 
 ### {{ .Name }} [{{ .Version }}]({{ .Link }})
 
@@ -33,7 +40,7 @@ const releaseNotesTemplate = `# :zap: Giant Swarm Release {{ .Name }} for {{ .Pr
 ### Apps
 
 {{ range .Apps }}
- * {{ .Name }} from {{ .PreviousVersion }} to [{{ .Version }}]({{ .Link }})
+* {{ .Name }} from {{ .PreviousVersion }} to [{{ .Version }}]({{ .Link }})
 {{ end }}
 
 {{ range .Apps }}
@@ -105,17 +112,17 @@ func createReleaseNotes(release v1alpha1.Release, baseRelease v1alpha1.Release, 
 	}
 
 	for _, app := range release.Spec.Apps {
-		componentChangelog, err := changelog.ParseChangelog(app.Name, app.Version)
-		if err != nil {
-			return "", microerror.Mask(err)
-		}
-
 		previousAppVersion := ""
 		for _, baseApp := range baseRelease.Spec.Apps {
 			if app.Name == baseApp.Name {
 				previousAppVersion = baseApp.Version
 				break
 			}
+		}
+
+		componentChangelog, err := changelog.ParseChangelog(app.Name, app.Version)
+		if err != nil {
+			return "", microerror.Mask(err)
 		}
 
 		apps = append(apps, releaseNotes{
