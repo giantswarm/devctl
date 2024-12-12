@@ -19,7 +19,9 @@ const releaseNotesTemplate = `# :zap: Giant Swarm Release {{ .Name }} for {{ .Pr
 ### Components
 
 {{ range .Components }}
-{{ if eq .Name "kubernetes" }}
+{{ if eq .PreviousVersion "" }}
+* Added {{ .Name }} [{{ .Version }}]({{ .Link }})
+{{ else if eq .Name "kubernetes" }}
 * {{ .Name }} from v{{ .PreviousVersion }} to [v{{ .Version }}]({{ .Link }})
 {{ else }}
 * {{ .Name }} from {{ .PreviousVersion }} to [{{ .Version }}]({{ .Link }})
@@ -40,7 +42,11 @@ const releaseNotesTemplate = `# :zap: Giant Swarm Release {{ .Name }} for {{ .Pr
 ### Apps
 
 {{ range .Apps }}
+{{ if eq .PreviousVersion "" }}
+* Added {{ .Name }} [{{ .Version }}]({{ .Link }})
+{{ else }}
 * {{ .Name }} from {{ .PreviousVersion }} to [{{ .Version }}]({{ .Link }})
+{{ end }}
 {{ end }}
 
 {{ range .Apps }}

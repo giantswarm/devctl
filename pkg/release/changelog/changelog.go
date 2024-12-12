@@ -318,6 +318,8 @@ type Version struct {
 	Content string
 }
 
+const kubernetes = "kubernetes"
+
 func ParseChangelog(componentName, componentVersion string) (*Version, error) {
 	params, ok := knownComponentParseParams[componentName]
 	if !ok {
@@ -325,7 +327,7 @@ func ParseChangelog(componentName, componentVersion string) (*Version, error) {
 	}
 
 	templateData := &versionTemplateData{}
-	if componentName == "kubernetes" {
+	if componentName == kubernetes {
 		templateData.Version = strings.Replace(componentVersion, ".", "", -1)
 	} else {
 		templateData.Version = componentVersion
@@ -339,7 +341,8 @@ func ParseChangelog(componentName, componentVersion string) (*Version, error) {
 
 	// Build release link using the template from the params
 	var releaseLinkTemplate *template.Template
-	if componentName == "kubernetes" {
+	if componentName == kubernetes {
+		// Release link for Kubernetes is different use the changelog instead
 		releaseLinkTemplate, err = template.New("link").Parse(params.changelog)
 		if err != nil {
 			return nil, microerror.Mask(err)
@@ -380,7 +383,8 @@ func ParseChangelog(componentName, componentVersion string) (*Version, error) {
 		return nil, microerror.Mask(err)
 	}
 
-	if componentName == "flatcar" || componentName == "kubernetes" {
+	if componentName == "flatcar" || componentName == kubernetes {
+		// Skip parsing and return the entire changelog for Flatcar and Kubernetes
 		return &currentVersion, nil
 	}
 
