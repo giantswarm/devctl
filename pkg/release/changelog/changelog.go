@@ -45,6 +45,12 @@ var knownComponentParseParams = map[string]parseParams{
 		start:     commonStartPattern,
 		end:       commonEndPattern,
 	},
+	"aws-nth-bundle": {
+		tag:       "https://github.com/giantswarm/aws-nth-bundle/releases/tag/v{{.Version}}",
+		changelog: "https://raw.githubusercontent.com/giantswarm/aws-nth-bundle/v{{.Version}}/CHANGELOG.md",
+		start:     commonStartPattern,
+		end:       commonEndPattern,
+	},
 	"cluster-aws": {
 		tag:       "https://github.com/giantswarm/cluster-aws/releases/tag/v{{.Version}}",
 		changelog: "https://raw.githubusercontent.com/giantswarm/cluster-aws/v{{.Version}}/CHANGELOG.md",
