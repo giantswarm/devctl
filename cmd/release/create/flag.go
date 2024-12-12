@@ -56,6 +56,9 @@ func (f *flag) Validate() error {
 	if f.Provider == "" {
 		return microerror.Maskf(invalidFlagError, "--%s must not be empty", flagProvider)
 	}
+	if f.Provider != "aws" && f.Provider != "azure" && f.Provider != "vsphere" && f.Provider != "cloud-director" {
+		return microerror.Maskf(invalidFlagError, "--%s must be one of 'aws', 'azure', 'vsphere', 'cloud-director'", flagProvider)
+	}
 
 	return nil
 }

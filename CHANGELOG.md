@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+**Note** Creating vintage releases is not supported anymore, please use an older release of `devctl`.
+
+### Added
+
+- Create releases for CAPI providers.
+
 ## [6.32.0] - 2024-12-12
 
 - Dependency updates

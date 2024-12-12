@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/Masterminds/semver/v3"
 	"github.com/giantswarm/microerror"
@@ -13,7 +14,8 @@ import (
 
 // Calculate the directory name of the given release
 func releaseToDirectory(release v1alpha1.Release) string {
-	return release.Name
+	releaseName := strings.Split(release.Name, "-")
+	return "v" + releaseName[1]
 }
 
 // Given a slice of versions as strings, return them in ascending semver order with v prefix.
