@@ -1,14 +1,18 @@
 package release
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/Masterminds/semver/v3"
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/release-operator/v4/api/v1alpha1"
+	"github.com/mohae/deepcopy"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/yaml"
 )
@@ -18,11 +22,22 @@ import (
 func CreateRelease(name, base, releases, provider string, components, apps []string, overwrite bool, creationCommand string, bumpall bool) error {
 	// Paths
 	baseVersion := *semver.MustParse(base) // already validated to be a valid semver string
-	providerDirectory := filepath.Join(releases, provider)
+	providerDirectory := ""
+	if provider == "aws" {
+		// TODO: Directory for AWS provider is currently 'capa' because of old vintage releases located in aws directory
+		// This will change in the future
+		providerDirectory = filepath.Join(releases, "capa")
+	} else {
+		providerDirectory = filepath.Join(releases, provider)
+	}
+
 	baseRelease, baseReleasePath, err := findRelease(providerDirectory, baseVersion)
 	if err != nil {
 		return microerror.Mask(err)
 	}
+
+	// Store the base release for later use because it gets modified
+	previousRelease := deepcopy.Copy(baseRelease).(v1alpha1.Release)
 
 	if bumpall {
 		fmt.Println("Requested automated bumping of all components and apps.")
@@ -35,7 +50,7 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 	// Define release CR
 	var updatesRelease v1alpha1.Release
 	newVersion := *semver.MustParse(name) // already validated to be a valid semver string
-	updatesRelease.Name = "v" + newVersion.String()
+	updatesRelease.Name = fmt.Sprintf("%s-%s", provider, newVersion.String())
 	now := metav1.Now()
 	updatesRelease.Spec.Date = &now
 	updatesRelease.Spec.State = "active"
@@ -104,7 +119,7 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 
 	// Release notes
 	releaseNotesPath := filepath.Join(releasePath, "README.md")
-	releaseNotes, err := createReleaseNotes(updatesRelease, provider)
+	releaseNotes, err := createReleaseNotes(updatesRelease, previousRelease, provider)
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -124,14 +139,65 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 		return microerror.Mask(err)
 	}
 
+	// Release announcement.md
+	announcementPath := filepath.Join(releasePath, "announcement.md")
+	announcement, err := createAnnouncement(updatesRelease, provider)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+	err = os.WriteFile(announcementPath, []byte(announcement), 0644) //nolint:gosec
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
 	// Release kustomization.yaml
-	err = createKustomization(releasePath)
+	err = createKustomization(releasePath, provider)
 	if err != nil {
 		return microerror.Mask(err)
 	}
 
 	// Provider kustomization.yaml
 	err = addToKustomization(providerDirectory, newRelease)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	// Update releases.json
+	releasesJSONPath := filepath.Join(providerDirectory, "releases.json")
+	releasesData, err := os.ReadFile(releasesJSONPath)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	var releasesJson ReleasesJsonData
+	err = json.Unmarshal(releasesData, &releasesJson)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	newReleaseInfo := ReleaseJsonInfo{
+		Version:          newVersion.String(),
+		IsDeprecated:     false,
+		ReleaseTimestamp: now.Time.Format(time.RFC3339),
+		ChangelogUrl:     fmt.Sprintf("https://github.com/giantswarm/releases/blob/master/%s/%s/README.md", provider, releaseDirectory),
+		IsStable:         true,
+	}
+
+	releasesJson.Releases = append(releasesJson.Releases, newReleaseInfo)
+
+	// sort releases in json by version
+	sort.SliceStable(releasesJson.Releases, func(i, j int) bool {
+		vi := semver.MustParse(releasesJson.Releases[i].Version)
+		vj := semver.MustParse(releasesJson.Releases[j].Version)
+		return vi.LessThan(vj)
+	})
+
+	updatedReleasesData, err := json.MarshalIndent(releasesJson, "", "  ")
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	err = os.WriteFile(releasesJSONPath, updatedReleasesData, 0644) //nolint:gosec
 	if err != nil {
 		return microerror.Mask(err)
 	}
