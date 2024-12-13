@@ -1,8 +1,8 @@
 package params
 
 import (
-	"github.com/giantswarm/devctl/v6/pkg/gen"
-	"github.com/giantswarm/devctl/v6/pkg/gen/internal"
+	"github.com/giantswarm/devctl/v7/pkg/gen"
+	"github.com/giantswarm/devctl/v7/pkg/gen/internal"
 )
 
 func Header(comment, githubUrl string) string {

@@ -3,8 +3,8 @@ package file
 import (
 	_ "embed"
 
-	"github.com/giantswarm/devctl/v6/pkg/gen/input"
-	"github.com/giantswarm/devctl/v6/pkg/gen/input/workflows/internal/params"
+	"github.com/giantswarm/devctl/v7/pkg/gen/input"
+	"github.com/giantswarm/devctl/v7/pkg/gen/input/workflows/internal/params"
 )
 
 //go:embed cluster_app_values_validation_using_schema.yaml.template
