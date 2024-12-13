@@ -82,7 +82,7 @@ var providerTitleMap = map[string]string{
 	"cloud-director": "VMWare Cloud Director",
 }
 
-func createReleaseNotes(release v1alpha1.Release, baseRelease v1alpha1.Release, provider string) (string, error) {
+func createReleaseNotes(release, baseRelease v1alpha1.Release, provider string) (string, error) {
 	templ, err := template.New("release-notes").Parse(releaseNotesTemplate)
 	if err != nil {
 		return "", microerror.Mask(err)
