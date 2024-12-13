@@ -4,7 +4,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/giantswarm/devctl/v6/pkg/project"
+	"github.com/giantswarm/devctl/v7/pkg/project"
 )
 
 var (

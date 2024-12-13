@@ -1,10 +1,10 @@
 package makefile
 
 import (
-	"github.com/giantswarm/devctl/v6/pkg/gen"
-	"github.com/giantswarm/devctl/v6/pkg/gen/input"
-	"github.com/giantswarm/devctl/v6/pkg/gen/input/makefile/internal/file"
-	"github.com/giantswarm/devctl/v6/pkg/gen/input/makefile/internal/params"
+	"github.com/giantswarm/devctl/v7/pkg/gen"
+	"github.com/giantswarm/devctl/v7/pkg/gen/input"
+	"github.com/giantswarm/devctl/v7/pkg/gen/input/makefile/internal/file"
+	"github.com/giantswarm/devctl/v7/pkg/gen/input/makefile/internal/params"
 )
 
 type Config struct {

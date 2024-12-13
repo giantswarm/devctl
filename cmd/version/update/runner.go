@@ -10,9 +10,9 @@ import (
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
 
-	"github.com/giantswarm/devctl/v6/internal/env"
-	"github.com/giantswarm/devctl/v6/pkg/project"
-	"github.com/giantswarm/devctl/v6/pkg/updater"
+	"github.com/giantswarm/devctl/v7/internal/env"
+	"github.com/giantswarm/devctl/v7/pkg/project"
+	"github.com/giantswarm/devctl/v7/pkg/updater"
 )
 
 type runner struct {

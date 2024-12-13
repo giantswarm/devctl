@@ -8,8 +8,8 @@ import (
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
 
-	"github.com/giantswarm/devctl/v6/cmd/release/archive"
-	"github.com/giantswarm/devctl/v6/cmd/release/create"
+	"github.com/giantswarm/devctl/v7/cmd/release/archive"
+	"github.com/giantswarm/devctl/v7/cmd/release/create"
 )
 
 const (
