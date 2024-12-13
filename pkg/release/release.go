@@ -15,6 +15,9 @@ import (
 // Calculate the directory name of the given release
 func releaseToDirectory(release v1alpha1.Release) string {
 	releaseName := strings.Split(release.Name, "-")
+	if strings.Contains(release.Name, "cloud-director") {
+		return "v" + releaseName[2]
+	}
 	return "v" + releaseName[1]
 }
 
