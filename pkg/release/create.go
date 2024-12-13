@@ -151,7 +151,7 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 	}
 
 	// Release kustomization.yaml
-	err = createKustomization(releasePath)
+	err = createKustomization(releasePath, provider)
 	if err != nil {
 		return microerror.Mask(err)
 	}

@@ -1,6 +1,7 @@
 package release
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -16,11 +17,35 @@ type kustomizationFile struct {
 }
 
 // Create a release kustomization.yaml which simply defines the release.yaml as a resource.
-func createKustomization(releaseDirectory string) error {
+func createKustomization(releaseDirectory, provider string) error {
+	var index int
+	if provider == "cloud-director" {
+		index = 2
+	} else {
+		index = 1
+	}
+
 	content := `resources:
 - release.yaml
+
+replacements:
+- source:
+    group: release.giantswarm.io
+    kind: Release
+    fieldPath: metadata.name
+    options:
+      delimiter: "-"
+      index: %d
+  targets:
+  - select:
+      group: release.giantswarm.io
+      kind: Release
+    fieldPaths:
+    - metadata.annotations.[giantswarm.io/release-notes]
+    options:
+      create: true
 `
-	err := os.WriteFile(filepath.Join(releaseDirectory, "kustomization.yaml"), []byte(content), 0644) //nolint:gosec
+	err := os.WriteFile(filepath.Join(releaseDirectory, "kustomization.yaml"), []byte(fmt.Sprintf(content, index)), 0644) //nolint:gosec
 	if err != nil {
 		return microerror.Mask(err)
 	}
