@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add all app and component version changes since last release to the release notes.
+
 ## [7.0.0] - 2024-12-13
 
 **Note** Creating vintage releases is not supported anymore, please use an older release of `devctl`.

@@ -2,6 +2,7 @@ package changelog
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"regexp"
@@ -320,7 +321,7 @@ type Version struct {
 
 const kubernetes = "kubernetes"
 
-func ParseChangelog(componentName, componentVersion string) (*Version, error) {
+func ParseChangelog(componentName, componentVersion, previousVersion string) (*Version, error) {
 	params, ok := knownComponentParseParams[componentName]
 	if !ok {
 		return nil, microerror.Mask(errors.New("unknown component: " + componentName))
@@ -387,77 +388,50 @@ func ParseChangelog(componentName, componentVersion string) (*Version, error) {
 		// Skip parsing and return the entire changelog for Flatcar and Kubernetes
 		return &currentVersion, nil
 	}
-
-	// Regexes used for parsing lines below
-	startPattern, err := regexp.Compile(params.start)
-	if err != nil {
-		return nil, microerror.Mask(err)
-	}
-	intermediatePattern, err := regexp.Compile(params.intermediate)
-	if err != nil {
-		return nil, microerror.Mask(err)
-	}
-	endPattern, err := regexp.Compile(params.end)
-	if err != nil {
-		return nil, microerror.Mask(err)
-	}
-
-	versionFound := false
-	reachedVersionContent := false
-	reachedIntermediateMarker := params.intermediate == ""
+	// Lines of the downloaded changelog
 	lines := strings.Split(string(body), "\n")
+
+	inSection := false
+	var preRoute string
+
 	for _, line := range lines {
-		// Skip blank lines
-		if line == "" {
-			continue
-		}
-
-		isStartLine := params.start != "" && startPattern.MatchString(line)
-		isEndLine := params.end != "" && endPattern.MatchString(line)
-
-		if (isStartLine || isEndLine) && reachedVersionContent {
-			// The version has been fully extracted, stop parsing lines and return.
+		// When we see the previousVersion line, we stop collecting
+		if strings.Contains(line, "## ["+previousVersion+"]") && inSection {
 			break
 		}
 
-		if isStartLine {
-			// Get "Version" part from regex
-			subMatches := startPattern.FindStringSubmatch(line)
-			var version string
-			versionInStartPattern := false
-			for i, subName := range startPattern.SubexpNames() {
-				if subName == "Version" {
-					versionInStartPattern = true
-					version = subMatches[i]
+		// When we see the start line for currentVersion, begin collecting
+		if strings.Contains(line, "## ["+componentVersion+"]") {
+			inSection = true
+			continue
+		}
+
+		var startRegex = regexp.MustCompile(commonStartPattern)
+		if inSection {
+			// Replace "## [" at the start with "### Previous Version ["
+			if strings.HasPrefix(line, "## [") {
+				matches := startRegex.FindStringSubmatch(line)
+				if len(matches) > 1 {
+					oldVersion := matches[1]
+					line = fmt.Sprintf(
+						"#### Previous Version %s [%s](%s)",
+						componentName, oldVersion, strings.Replace(params.tag, "{{.Version}}", oldVersion, -1))
+					// when adding former versions we need to inherit the preRoute
+					preRoute = "#"
 				}
-			}
 
-			// Skip if this isn't the desired version
-			if versionInStartPattern && version != componentVersion {
-				continue
+			} else if strings.HasPrefix(line, "### ") && !strings.Contains(line, "[") {
+				// Increase heading level for lines like “### Added” → “##### Added”
+				line = preRoute + "#" + line
 			}
-
-			reachedVersionContent = true
-			versionFound = true
-		} else if reachedVersionContent {
-			// An intermediate marker indicates that the non-useful info at the start
-			// of the changelog has been passed.
-			if !reachedIntermediateMarker {
-				reachedIntermediateMarker = intermediatePattern.MatchString(line)
-				continue
-			}
-
-			// Transform level 1-3 headers like "#"-"###" into at least level 4 headers like "####"
-			for strings.HasPrefix(line, "#") && !strings.HasPrefix(line, "#### ") {
-				line = "#" + line
-			}
-
+			// Accumulate the changelog lines for the currentVersion
 			currentVersion.Content += line + "\n"
 		}
 	}
 
-	if !versionFound {
-		currentVersion.Content = "Not found"
+	// If we never entered the section, we didn’t find the version
+	if !inSection || currentVersion.Content == "" {
+		return nil, microerror.Mask(fmt.Errorf("version [%s] not found in changelog", currentVersion))
 	}
 
 	return &currentVersion, nil
