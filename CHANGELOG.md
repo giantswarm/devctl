@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [7.0.1] - 2025-01-10
 
+- Updating some GitHub action versions
+
 ## [7.0.0] - 2024-12-13
 
 **Note** Creating vintage releases is not supported anymore, please use an older release of `devctl`.
