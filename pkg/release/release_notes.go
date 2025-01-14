@@ -33,8 +33,6 @@ const releaseNotesTemplate = `# :zap: Giant Swarm Release {{ .Name }} for {{ .Pr
 {{continue}}
 {{ end }}
 
-### {{ .Name }} [{{ .Version }}]({{ .Link }})
-
 {{ .Changelog }}
 
 {{ end }}
@@ -50,7 +48,6 @@ const releaseNotesTemplate = `# :zap: Giant Swarm Release {{ .Name }} for {{ .Pr
 {{ end }}
 
 {{ range .Apps }}
-### {{ .Name }} [{{ .Version }}]({{ .Link }})
 
 {{ .Changelog }}
 

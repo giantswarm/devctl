@@ -1,7 +1,6 @@
 package changelog
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -9,7 +8,6 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/Masterminds/semver/v3"
 	"github.com/giantswarm/microerror"
 )
 
@@ -307,9 +305,9 @@ var knownComponentParseParams = map[string]parseParams{
 
 // Data about a component passed into templates that depend on versions
 type versionTemplateData struct {
-	Major   uint64
-	Minor   uint64
 	Version string
+	Major   int
+	Minor   int
 }
 
 // Data about a particular component version returned from parsing a changelog
@@ -321,51 +319,25 @@ type Version struct {
 
 const kubernetes = "kubernetes"
 
-func ParseChangelog(componentName, componentVersion, previousVersion string) (*Version, error) {
+type CategorizedChanges struct {
+	Added   []string
+	Changed []string
+	Fixed   []string
+	// Add more categories if needed
+}
+
+var categoryRegex = regexp.MustCompile(`^### (\w+)`)
+
+func ParseChangelog(componentName, currentVersion, endVersion string) (*Version, error) {
 	params, ok := knownComponentParseParams[componentName]
 	if !ok {
-		return nil, microerror.Mask(errors.New("unknown component: " + componentName))
+		return nil, microerror.Mask(fmt.Errorf("unknown component: %s", componentName))
 	}
 
 	templateData := &versionTemplateData{}
-	if componentName == kubernetes {
-		templateData.Version = strings.Replace(componentVersion, ".", "", -1)
-	} else {
-		templateData.Version = componentVersion
-	}
-
-	parsedVersion, err := semver.NewVersion(componentVersion)
-	if err == nil {
-		templateData.Major = parsedVersion.Major()
-		templateData.Minor = parsedVersion.Minor()
-	}
+	templateData.Version = currentVersion
 
 	// Build release link using the template from the params
-	var releaseLinkTemplate *template.Template
-	if componentName == kubernetes {
-		// Release link for Kubernetes is different use the changelog instead
-		releaseLinkTemplate, err = template.New("link").Parse(params.changelog)
-		if err != nil {
-			return nil, microerror.Mask(err)
-		}
-	} else {
-		releaseLinkTemplate, err = template.New("link").Parse(params.tag)
-		if err != nil {
-			return nil, microerror.Mask(err)
-		}
-	}
-	var releaseLinkBuffer strings.Builder
-	err = releaseLinkTemplate.Execute(&releaseLinkBuffer, templateData)
-	if err != nil {
-		return nil, microerror.Mask(err)
-	}
-
-	currentVersion := Version{
-		Name: componentVersion,
-		Link: releaseLinkBuffer.String(),
-	}
-
-	// Read full changelog and split into lines
 	changelogURLTemplate, err := template.New("url").Parse(params.changelog)
 	if err != nil {
 		return nil, microerror.Mask(err)
@@ -379,6 +351,8 @@ func ParseChangelog(componentName, componentVersion, previousVersion string) (*V
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}
+	defer response.Body.Close()
+
 	body, err := io.ReadAll(response.Body)
 	if err != nil {
 		return nil, microerror.Mask(err)
@@ -386,53 +360,107 @@ func ParseChangelog(componentName, componentVersion, previousVersion string) (*V
 
 	if componentName == "flatcar" || componentName == kubernetes {
 		// Skip parsing and return the entire changelog for Flatcar and Kubernetes
-		return &currentVersion, nil
+		return &Version{
+			Name:    currentVersion,
+			Link:    changelogURLBuilder.String(),
+			Content: string(body),
+		}, nil
 	}
-	// Lines of the downloaded changelog
+
+	// Split changelog into lines
 	lines := strings.Split(string(body), "\n")
 
 	inSection := false
-	var preRoute string
+	compareRange := fmt.Sprintf("v%s...v%s", endVersion, currentVersion)
+	compareLink := fmt.Sprintf("https://github.com/giantswarm/%s/compare/%s", componentName, compareRange)
+
+	categorizedChanges := CategorizedChanges{}
+
+	var currentCategory string
+
+	startHeading := fmt.Sprintf("## [%s]", currentVersion)
+	stopHeading := fmt.Sprintf("## [%s]", endVersion)
+
+	inSection = false
 
 	for _, line := range lines {
-		// When we see the previousVersion line, we stop collecting
-		if strings.Contains(line, "## ["+previousVersion+"]") && inSection {
-			break
-		}
+		line = strings.TrimSpace(line)
 
-		// When we see the start line for currentVersion, begin collecting
-		if strings.Contains(line, "## ["+componentVersion+"]") {
+		if strings.Contains(line, startHeading) {
 			inSection = true
 			continue
 		}
 
-		var startRegex = regexp.MustCompile(commonStartPattern)
-		if inSection {
-			// Replace "## [" at the start with "### Previous Version ["
-			if strings.HasPrefix(line, "## [") {
-				matches := startRegex.FindStringSubmatch(line)
-				if len(matches) > 1 {
-					oldVersion := matches[1]
-					line = fmt.Sprintf(
-						"#### Previous Version %s [%s](%s)",
-						componentName, oldVersion, strings.Replace(params.tag, "{{.Version}}", oldVersion, -1))
-					// when adding former versions we need to inherit the preRoute
-					preRoute = "#"
-				}
+		// If we’re in the section and see the stop heading, break.
+		if inSection && strings.Contains(line, stopHeading) {
+			break
+		}
 
-			} else if strings.HasPrefix(line, "### ") && !strings.Contains(line, "[") {
-				// Increase heading level for lines like “### Added” → “##### Added”
-				line = preRoute + "#" + line
+		if inSection {
+			if matches := categoryRegex.FindStringSubmatch(line); len(matches) > 1 {
+				currentCategory = matches[1]
+				continue
 			}
-			// Accumulate the changelog lines for the currentVersion
-			currentVersion.Content += line + "\n"
+			if strings.HasPrefix(line, "- ") || strings.HasPrefix(line, "* ") {
+				item := strings.TrimPrefix(strings.TrimPrefix(line, "- "), "* ")
+				item = strings.TrimSpace(item)
+				switch currentCategory {
+				case "Added":
+					categorizedChanges.Added = append(categorizedChanges.Added, item)
+				case "Changed":
+					categorizedChanges.Changed = append(categorizedChanges.Changed, item)
+				case "Fixed":
+					categorizedChanges.Fixed = append(categorizedChanges.Fixed, item)
+				}
+			}
 		}
 	}
 
-	// If we never entered the section, we didn’t find the version
-	if !inSection || currentVersion.Content == "" {
-		return nil, microerror.Mask(fmt.Errorf("version [%s] not found in changelog", currentVersion))
+	// If we never actually parsed anything, raise the error
+	if !inSection {
+		return nil, microerror.Mask(fmt.Errorf("version range [%s] not found in changelog", compareRange))
 	}
 
-	return &currentVersion, nil
+	// Build the consolidated changelog
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("### %s [%s](%s)\n\n", componentName, currentVersion, compareLink))
+
+	if len(categorizedChanges.Added) > 0 {
+		sb.WriteString("#### Added\n\n")
+		for _, item := range categorizedChanges.Added {
+			sb.WriteString(fmt.Sprintf("- %s\n", item))
+		}
+		sb.WriteString("\n")
+	}
+
+	if len(categorizedChanges.Changed) > 0 {
+		sb.WriteString("#### Changed\n\n")
+		for _, item := range categorizedChanges.Changed {
+			sb.WriteString(fmt.Sprintf("- %s\n", item))
+		}
+		sb.WriteString("\n")
+	}
+
+	if len(categorizedChanges.Fixed) > 0 {
+		sb.WriteString("#### Fixed\n\n")
+		for _, item := range categorizedChanges.Fixed {
+			sb.WriteString(fmt.Sprintf("- %s\n", item))
+		}
+		sb.WriteString("\n")
+	}
+
+	consolidatedContent := sb.String()
+
+	currentVersionStruct := Version{
+		Name:    fmt.Sprintf("v%s...v%s", endVersion, currentVersion),
+		Link:    compareLink,
+		Content: consolidatedContent,
+	}
+
+	// If no changes were collected, return an error
+	if !inSection || consolidatedContent == "" {
+		return nil, microerror.Mask(fmt.Errorf("version range [%s] not found in changelog", compareRange))
+	}
+
+	return &currentVersionStruct, nil
 }
