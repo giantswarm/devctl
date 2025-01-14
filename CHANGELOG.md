@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Add all app and component version changes since last release to the release notes.
--
+
 ## [7.0.1] - 2025-01-10
 
 - Updating some GitHub action versions
