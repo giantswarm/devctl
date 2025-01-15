@@ -33,8 +33,6 @@ const releaseNotesTemplate = `# :zap: Giant Swarm Release {{ .Name }} for {{ .Pr
 {{continue}}
 {{ end }}
 
-### {{ .Name }} [{{ .Version }}]({{ .Link }})
-
 {{ .Changelog }}
 
 {{ end }}
@@ -50,7 +48,6 @@ const releaseNotesTemplate = `# :zap: Giant Swarm Release {{ .Name }} for {{ .Pr
 {{ end }}
 
 {{ range .Apps }}
-### {{ .Name }} [{{ .Version }}]({{ .Link }})
 
 {{ .Changelog }}
 
@@ -104,7 +101,7 @@ func createReleaseNotes(release, baseRelease v1alpha1.Release, provider string) 
 			}
 		}
 
-		componentChangelog, err := changelog.ParseChangelog(component.Name, component.Version)
+		componentChangelog, err := changelog.ParseChangelog(component.Name, component.Version, previousComponentVersion)
 		if err != nil {
 			return "", microerror.Mask(err)
 		}
@@ -126,7 +123,7 @@ func createReleaseNotes(release, baseRelease v1alpha1.Release, provider string) 
 			}
 		}
 
-		componentChangelog, err := changelog.ParseChangelog(app.Name, app.Version)
+		componentChangelog, err := changelog.ParseChangelog(app.Name, app.Version, previousAppVersion)
 		if err != nil {
 			return "", microerror.Mask(err)
 		}
