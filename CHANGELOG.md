@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.1.0] - 2025-01-15
+
 ### Added
 
 - Add all app and component version changes since last release to the release notes.
@@ -1032,7 +1034,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.0.1...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.1.0...HEAD
+[7.1.0]: https://github.com/giantswarm/devctl/compare/v7.0.1...v7.1.0
 [7.0.1]: https://github.com/giantswarm/devctl/compare/v7.0.0...v7.0.1
 [7.0.0]: https://github.com/giantswarm/devctl/compare/v6.32.0...v7.0.0
 [6.32.0]: https://github.com/giantswarm/devctl/compare/v6.31.0...v6.32.0
