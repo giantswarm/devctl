@@ -38,4 +38,4 @@ jobs:
 
       - name: Run helm-values-gen
         id: run-helm-values-gen
-        uses: giantswarm/helm-values-gen/actions/ensure-generated@bb33e5f342b2026c9ba36073a4f2fdc74495f8c4  # v1.0.3
+        uses: giantswarm/helm-values-gen/actions/ensure-generated@6b3fba3fca3e197dd57767eb7245d4f7b3fec21f  # v1.0.4
