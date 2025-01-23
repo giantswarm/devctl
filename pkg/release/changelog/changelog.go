@@ -8,6 +8,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/Masterminds/semver/v3"
 	"github.com/giantswarm/microerror"
 )
 
@@ -306,8 +307,8 @@ var knownComponentParseParams = map[string]parseParams{
 // Data about a component passed into templates that depend on versions
 type versionTemplateData struct {
 	Version string
-	Major   int
-	Minor   int
+	Major   uint64
+	Minor   uint64
 }
 
 // Data about a particular component version returned from parsing a changelog
@@ -316,8 +317,6 @@ type Version struct {
 	Name    string
 	Content string
 }
-
-const kubernetes = "kubernetes"
 
 type CategorizedChanges struct {
 	Added   []string
@@ -336,6 +335,15 @@ func ParseChangelog(componentName, currentVersion, endVersion string) (*Version,
 
 	templateData := &versionTemplateData{}
 	templateData.Version = currentVersion
+
+	if componentName == "kubernetes" {
+		semVer, err := semver.NewVersion(currentVersion)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+		templateData.Major = semVer.Major()
+		templateData.Minor = semVer.Minor()
+	}
 
 	// Build release link using the template from the params
 	changelogURLTemplate, err := template.New("url").Parse(params.changelog)
@@ -358,12 +366,21 @@ func ParseChangelog(componentName, currentVersion, endVersion string) (*Version,
 		return nil, microerror.Mask(err)
 	}
 
-	if componentName == "flatcar" || componentName == kubernetes {
-		// Skip parsing and return the entire changelog for Flatcar and Kubernetes
+	if componentName == "flatcar" {
+		// Skip parsing Flatcar
+		return &Version{
+			Name:    currentVersion,
+			Link:    strings.Replace(params.tag, "{{.Version}}", currentVersion, 1),
+			Content: "",
+		}, nil
+	}
+
+	if componentName == "kubernetes" {
+		// Skip parsing Kubernetes
 		return &Version{
 			Name:    currentVersion,
 			Link:    changelogURLBuilder.String(),
-			Content: string(body),
+			Content: "",
 		}, nil
 	}
 
@@ -372,7 +389,7 @@ func ParseChangelog(componentName, currentVersion, endVersion string) (*Version,
 
 	inSection := false
 	compareRange := fmt.Sprintf("v%s...v%s", endVersion, currentVersion)
-	compareLink := fmt.Sprintf("https://github.com/giantswarm/%s/compare/%s", componentName, compareRange)
+	compareLink := fmt.Sprintf("%s/compare/%s", splitBaseURL(params.tag), compareRange)
 
 	categorizedChanges := CategorizedChanges{}
 
@@ -381,17 +398,14 @@ func ParseChangelog(componentName, currentVersion, endVersion string) (*Version,
 	startHeading := fmt.Sprintf("## [%s]", currentVersion)
 	stopHeading := fmt.Sprintf("## [%s]", endVersion)
 
-	inSection = false
-
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 
+		// Parse between start and stop headings
 		if strings.Contains(line, startHeading) {
 			inSection = true
 			continue
 		}
-
-		// If we’re in the section and see the stop heading, break.
 		if inSection && strings.Contains(line, stopHeading) {
 			break
 		}
@@ -452,15 +466,21 @@ func ParseChangelog(componentName, currentVersion, endVersion string) (*Version,
 	consolidatedContent := sb.String()
 
 	currentVersionStruct := Version{
-		Name:    fmt.Sprintf("v%s...v%s", endVersion, currentVersion),
+		Name:    compareRange,
 		Link:    compareLink,
 		Content: consolidatedContent,
 	}
 
-	// If no changes were collected, return an error
-	if !inSection || consolidatedContent == "" {
-		return nil, microerror.Mask(fmt.Errorf("version range [%s] not found in changelog", compareRange))
+	return &currentVersionStruct, nil
+}
+
+func splitBaseURL(fullURL string) string {
+	suffix := "/releases/tag/v{{.Version}}"
+
+	if strings.HasSuffix(fullURL, suffix) {
+		return strings.TrimSuffix(fullURL, suffix)
 	}
 
-	return &currentVersionStruct, nil
+	// If the suffix is not found, return the original URL
+	return fullURL
 }

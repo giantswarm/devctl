@@ -101,6 +101,11 @@ func createReleaseNotes(release, baseRelease v1alpha1.Release, provider string) 
 			}
 		}
 
+		if previousComponentVersion == component.Version {
+			// Skip components that haven't changed
+			continue
+		}
+
 		componentChangelog, err := changelog.ParseChangelog(component.Name, component.Version, previousComponentVersion)
 		if err != nil {
 			return "", microerror.Mask(err)
@@ -121,6 +126,11 @@ func createReleaseNotes(release, baseRelease v1alpha1.Release, provider string) 
 				previousAppVersion = baseApp.Version
 				break
 			}
+		}
+
+		if previousAppVersion == app.Version {
+			// Skip apps that haven't changed
+			continue
 		}
 
 		componentChangelog, err := changelog.ParseChangelog(app.Name, app.Version, previousAppVersion)
