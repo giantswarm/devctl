@@ -307,8 +307,8 @@ var knownComponentParseParams = map[string]parseParams{
 // Data about a component passed into templates that depend on versions
 type versionTemplateData struct {
 	Version string
-	Major   int
-	Minor   int
+	Major   uint64
+	Minor   uint64
 }
 
 // Data about a particular component version returned from parsing a changelog
@@ -335,13 +335,14 @@ func ParseChangelog(componentName, currentVersion, endVersion string) (*Version,
 
 	templateData := &versionTemplateData{}
 	templateData.Version = currentVersion
+
 	if componentName == "kubernetes" {
 		semVer, err := semver.NewVersion(currentVersion)
 		if err != nil {
 			return nil, microerror.Mask(err)
 		}
-		templateData.Major = int(semVer.Major())
-		templateData.Minor = int(semVer.Minor())
+		templateData.Major = semVer.Major()
+		templateData.Minor = semVer.Minor()
 	}
 
 	// Build release link using the template from the params
