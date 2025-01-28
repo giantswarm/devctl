@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Do not duplicate release info in `releases.json` when re-creating a release
+
 ## [7.1.1] - 2025-01-23
 
 ### Fixed

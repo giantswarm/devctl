@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -182,6 +183,11 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 		ChangelogUrl:     fmt.Sprintf("https://github.com/giantswarm/releases/blob/master/%s/%s/README.md", provider, releaseDirectory),
 		IsStable:         true,
 	}
+
+	// Replace if it's already there
+	releasesJson.Releases = slices.DeleteFunc(releasesJson.Releases, func(releaseJson ReleaseJsonInfo) bool {
+		return releaseJson.Version == newReleaseInfo.Version
+	})
 
 	releasesJson.Releases = append(releasesJson.Releases, newReleaseInfo)
 
