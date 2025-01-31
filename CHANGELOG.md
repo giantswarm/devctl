@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.1.2] - 2025-01-31
+
 ### Fixed
 
 - Do not duplicate release info in `releases.json` when re-creating a release
@@ -1044,7 +1046,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.1.1...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.1.2...HEAD
+[7.1.2]: https://github.com/giantswarm/devctl/compare/v7.1.1...v7.1.2
 [7.1.1]: https://github.com/giantswarm/devctl/compare/v7.1.0...v7.1.1
 [7.1.0]: https://github.com/giantswarm/devctl/compare/v7.0.1...v7.1.0
 [7.0.1]: https://github.com/giantswarm/devctl/compare/v7.0.0...v7.0.1
