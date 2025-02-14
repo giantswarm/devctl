@@ -8,7 +8,7 @@ import (
 	"github.com/giantswarm/release-operator/v4/api/v1alpha1"
 )
 
-const announcementNotesTemplate = `**Workload cluster release {{ .Release }} for {{ .Provider }} is available**. {{ .Description }} 
+const announcementNotesTemplate = `**Workload cluster release {{ .Release }} for {{ .Provider }} is available**. {{ .Description }}
 
 Further details can be found in the [release notes](https://docs.giantswarm.io/changes/workload-cluster-releases-{{ .DocProvider }}/releases/{{ .ReleaseDirectory }}).
 `
