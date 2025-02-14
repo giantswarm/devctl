@@ -1,5 +1,5 @@
 {{{{ .Header }}}}
-name: Add Customer Ticket to general Customer Board 
+name: Add Customer Ticket to general Customer Board
 on:
   issues:
     types: [opened]
