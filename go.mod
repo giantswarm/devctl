@@ -20,7 +20,7 @@ require (
 	github.com/pelletier/go-toml/v2 v2.2.3
 	github.com/rhysd/go-github-selfupdate v1.2.3
 	github.com/sirupsen/logrus v1.9.3
-	github.com/spf13/cobra v1.8.1
+	github.com/spf13/cobra v1.9.1
 	github.com/spf13/pflag v1.0.6
 	golang.org/x/net v0.35.0
 	golang.org/x/oauth2 v0.26.0
