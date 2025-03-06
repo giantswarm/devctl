@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.1.4] - 2025-03-06
+
+- Updates in various actions used in generated workflows
+
 ## [7.1.3] - 2025-02-07
 
 - Dependency updates
@@ -1054,7 +1058,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.1.3...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.1.4...HEAD
+[7.1.4]: https://github.com/giantswarm/devctl/compare/v7.1.3...v7.1.4
 [7.1.3]: https://github.com/giantswarm/devctl/compare/v7.1.2...v7.1.3
 [7.1.2]: https://github.com/giantswarm/devctl/compare/v7.1.1...v7.1.2
 [7.1.1]: https://github.com/giantswarm/devctl/compare/v7.1.0...v7.1.1
