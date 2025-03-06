@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [7.1.4] - 2025-03-06
 
+- Updates in various actions used in generated workflows
+
 ## [7.1.3] - 2025-02-07
 
 - Dependency updates
