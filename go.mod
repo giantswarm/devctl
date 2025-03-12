@@ -24,7 +24,7 @@ require (
 	github.com/spf13/pflag v1.0.6
 	golang.org/x/net v0.37.0
 	golang.org/x/oauth2 v0.28.0
-	k8s.io/apimachinery v0.32.2
+	k8s.io/apimachinery v0.32.3
 	sigs.k8s.io/yaml v1.4.0
 )
 
