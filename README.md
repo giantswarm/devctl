@@ -2,36 +2,152 @@
 
 # devctl
 
-Command line tool for the daily development business at Giant Swarm.
+`devctl` is a command-line tool designed to streamline development workflows at Giant Swarm. It provides various commands to help manage repositories, generate files, and bootstrap applications.
 
-## Quick start
+## Installation
 
-### Installation
-
-Install the [latest release](https://github.com/giantswarm/devctl/releases/latest). Please do not use `go install`.
-
-### Configuration
-
-Most commands require credentials for GitHub write access to be available. Make sure you have the environment variable
-
-```nohighlight
-GITHUB_TOKEN
+```bash
+go install github.com/giantswarm/devctl/v7@latest
 ```
 
-set with a valid [personal access token](https://github.com/settings/tokens) as the value.
+## Features
 
-### Usage
+### App Management (`devctl app`)
 
-Please check `devctl --help` for available commands and options.
+The `app` command provides tools for working with Giant Swarm app repositories.
 
-Also see the [docs](docs/) folder for more details on some commands.
+#### Bootstrap Command (`devctl app bootstrap`)
 
-### Updating
+Creates a new app repository from a template with the following features:
 
-```nohighlight
-devctl version update
+- Creates a new repository from the `template-app` template
+- Configures sync methods (vendir or kustomize)
+- Sets up patch methods (script or kustomize)
+- Configures CI/CD automatically
+- Creates a pull request with the initial setup
+
+```bash
+devctl app bootstrap \
+  --name my-app \
+  --patch-method script \
+  --sync-method vendir \
+  --team myteam \
+  --upstream-chart helm/upstream \
+  --upstream-repo https://github.com/org/repo \
+  --github-token-envvar GITHUB_TOKEN
 ```
 
-### Development
+Options:
+- `--name`: Name of the app (required)
+- `--patch-method`: Method to patch upstream changes (script or kustomize)
+- `--sync-method`: Method to sync upstream changes (vendir or kustomize)
+- `--team`: Team responsible for the app
+- `--upstream-chart`: Path to the upstream chart
+- `--upstream-repo`: URL of the upstream repository
+- `--github-token-envvar`: Name of environment variable containing GitHub token
+- `--dry-run`: Only print what would be done
 
-While running locally during development you may get some errors relating to `no matching files found` for some of the templates. If you do run `make generate-go` to generate these template files before running.
+### Repository Management (`devctl repo`)
+
+The `repo` command helps manage GitHub repositories.
+
+#### Setup Command (`devctl repo setup`)
+
+Configures repository settings according to Giant Swarm standards:
+
+- Sets up branch protection rules
+- Configures repository settings
+- Sets up team permissions
+- Configures CI/CD workflows
+
+```bash
+devctl repo setup org/repo-name
+```
+
+### Code Generation (`devctl gen`)
+
+The `gen` command provides tools for generating various files:
+
+- Workflows
+- Makefile
+- License
+- And more
+
+```bash
+devctl gen workflow
+devctl gen makefile
+devctl gen license
+```
+
+### Release Management (`devctl release`)
+
+Helps manage releases in Giant Swarm repositories:
+
+- Creates release branches
+- Updates changelog
+- Creates GitHub releases
+
+```bash
+devctl release create
+```
+
+### Replace Command (`devctl replace`)
+
+Helps replace content across multiple files:
+
+```bash
+devctl replace old-text new-text
+```
+
+### Shell Completion
+
+Provides shell completion for various shells:
+
+```bash
+# Bash
+devctl completion bash > ~/.bash_completion.d/devctl
+
+# Zsh
+devctl completion zsh > "${fpath[1]}/_devctl"
+
+# Fish
+devctl completion fish > ~/.config/fish/completions/devctl.fish
+```
+
+## Development
+
+### Requirements
+
+- Go 1.21 or later
+- Git
+- GitHub account with appropriate permissions
+
+### Building from Source
+
+```bash
+git clone https://github.com/giantswarm/devctl.git
+cd devctl
+go build
+```
+
+### Running Tests
+
+```bash
+go test ./...
+```
+
+### Debug Mode
+
+Set `LOG_LEVEL=debug` to see detailed output:
+
+```bash
+LOG_LEVEL=debug devctl app bootstrap ...
+```
+
+## Contributing
+
+Please check our [contributing guidelines](CONTRIBUTING.md) for details on how to contribute to this project.
+
+## License
+
+devctl is licensed under the [Apache 2.0 License](LICENSE).
