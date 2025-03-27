@@ -20,6 +20,7 @@ There are different generation flavours:
   - cli - project released with a downloadable binary
   - generic - everything else, i.e a project which simply needs to be released
   - k8sapi - project containing a Kubernetes API
+  - fleet - project containing clusters using GitOps
   - cluster-app - project containing helm chart, that is a cluster app (e.g. cluster-aws, cluster-azure, ...)
 `
 )

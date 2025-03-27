@@ -8,9 +8,7 @@ Command line tool for the daily development business at Giant Swarm.
 
 ### Installation
 
-```nohighlight
-go install github.com/giantswarm/devctl
-```
+Install the [latest release](https://github.com/giantswarm/devctl/releases/latest). Please do not use `go install`.
 
 ### Configuration
 
@@ -33,3 +31,7 @@ Also see the [docs](docs/) folder for more details on some commands.
 ```nohighlight
 devctl version update
 ```
+
+### Development
+
+While running locally during development you may get some errors relating to `no matching files found` for some of the templates. If you do run `make generate-go` to generate these template files before running.

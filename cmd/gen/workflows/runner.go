@@ -8,9 +8,9 @@ import (
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
 
-	"github.com/giantswarm/devctl/v6/pkg/gen"
-	"github.com/giantswarm/devctl/v6/pkg/gen/input"
-	"github.com/giantswarm/devctl/v6/pkg/gen/input/workflows"
+	"github.com/giantswarm/devctl/v7/pkg/gen"
+	"github.com/giantswarm/devctl/v7/pkg/gen/input"
+	"github.com/giantswarm/devctl/v7/pkg/gen/input/workflows"
 )
 
 type runner struct {
@@ -88,6 +88,10 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 	if r.flag.RunSecurityScorecard {
 		inputs = append(inputs, workflowsInput.RunOSSFScorecard())
+	}
+
+	if r.flag.Flavours.Contains(gen.FlavourManagementClustersFleet) {
+		inputs = append(inputs, workflowsInput.ClusterAppValuesValidationUsingSchema())
 	}
 
 	err = gen.Execute(

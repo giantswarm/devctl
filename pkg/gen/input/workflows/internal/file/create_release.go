@@ -2,13 +2,18 @@ package file
 
 import (
 	_ "embed"
+	"strings"
 
-	"github.com/giantswarm/devctl/v6/pkg/gen/input"
-	"github.com/giantswarm/devctl/v6/pkg/gen/input/workflows/internal/params"
+	"github.com/giantswarm/devctl/v7/pkg/gen/input"
+	"github.com/giantswarm/devctl/v7/pkg/gen/input/workflows/internal/params"
 )
 
 //go:embed create_release.yaml.template
 var createReleaseTemplate string
+
+//go:generate go run ../../../update-template-sha.go create_release.yaml.template
+//go:embed create_release.yaml.template.sha
+var createReleaseTemplateSha string
 
 func NewCreateReleaseInput(p params.Params) input.Input {
 	i := input.Input{
@@ -19,10 +24,11 @@ func NewCreateReleaseInput(p params.Params) input.Input {
 			Right: "}}}}",
 		},
 		TemplateData: map[string]interface{}{
-			"Header":                         params.Header("#"),
+			"Header":                         params.Header("#", createReleaseTemplateSha),
 			"EnableFloatingMajorVersionTags": params.EnableFloatingMajorVersionTags(p),
 			"IsFlavourCLI":                   params.IsFlavourCLI(p),
 			"StepSetUpGitIdentity":           params.StepSetUpGitIdentity(),
+			"IsDevctl":                       strings.HasPrefix(createReleaseTemplateSha, "https://github.com/giantswarm/devctl"),
 		},
 	}
 

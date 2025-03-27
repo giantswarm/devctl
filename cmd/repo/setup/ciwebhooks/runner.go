@@ -7,11 +7,11 @@ import (
 	"strings"
 
 	"github.com/giantswarm/microerror"
-	"github.com/google/go-github/v60/github"
+	"github.com/google/go-github/v70/github"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
-	"github.com/giantswarm/devctl/v6/pkg/githubclient"
+	"github.com/giantswarm/devctl/v7/pkg/githubclient"
 )
 
 type runner struct {
@@ -68,14 +68,14 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	}
 
 	hook := &github.Hook{
-		Name:   github.String("web"),
-		Active: github.Bool(true),
+		Name:   github.Ptr("web"),
+		Active: github.Ptr(true),
 		Events: []string{"issue_comment", "pull_request", "check_run"},
 		Config: &github.HookConfig{
 			URL:         &r.flag.WebhookURL,
-			ContentType: github.String("json"),
-			InsecureSSL: github.String("0"),
-			Secret:      github.String(""),
+			ContentType: github.Ptr("json"),
+			InsecureSSL: github.Ptr("0"),
+			Secret:      github.Ptr(r.flag.WebhookSharedSecret),
 		},
 	}
 

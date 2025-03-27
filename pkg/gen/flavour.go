@@ -8,12 +8,13 @@ import (
 )
 
 const (
-	FlavourApp           Flavour = "app"
-	FlavourCLI           Flavour = "cli"
-	FlavourCustomer      Flavour = "customer"
-	FlavourGeneric       Flavour = "generic"
-	FlavourKubernetesAPI Flavour = "k8sapi"
-	FlavourClusterApp    Flavour = "cluster-app"
+	FlavourApp                     Flavour = "app"
+	FlavourCLI                     Flavour = "cli"
+	FlavourCustomer                Flavour = "customer"
+	FlavourGeneric                 Flavour = "generic"
+	FlavourKubernetesAPI           Flavour = "k8sapi"
+	FlavourClusterApp              Flavour = "cluster-app"
+	FlavourManagementClustersFleet Flavour = "fleet"
 )
 
 func AllFlavours() []string {
@@ -24,6 +25,7 @@ func AllFlavours() []string {
 		FlavourGeneric.String(),
 		FlavourKubernetesAPI.String(),
 		FlavourClusterApp.String(),
+		FlavourManagementClustersFleet.String(),
 	}
 }
 
@@ -43,6 +45,8 @@ func NewFlavour(s string) (Flavour, error) {
 		return FlavourKubernetesAPI, nil
 	case FlavourClusterApp.String():
 		return FlavourClusterApp, nil
+	case FlavourManagementClustersFleet.String():
+		return FlavourManagementClustersFleet, nil
 	}
 
 	return Flavour("unknown"), microerror.Maskf(invalidConfigError, "flavour must be one of %s", strings.Join(AllFlavours(), "|"))

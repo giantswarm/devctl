@@ -1,10 +1,10 @@
 package workflows
 
 import (
-	"github.com/giantswarm/devctl/v6/pkg/gen"
-	"github.com/giantswarm/devctl/v6/pkg/gen/input"
-	"github.com/giantswarm/devctl/v6/pkg/gen/input/workflows/internal/file"
-	"github.com/giantswarm/devctl/v6/pkg/gen/input/workflows/internal/params"
+	"github.com/giantswarm/devctl/v7/pkg/gen"
+	"github.com/giantswarm/devctl/v7/pkg/gen/input"
+	"github.com/giantswarm/devctl/v7/pkg/gen/input/workflows/internal/file"
+	"github.com/giantswarm/devctl/v7/pkg/gen/input/workflows/internal/params"
 )
 
 type Config struct {
@@ -39,6 +39,9 @@ func (w *Workflows) CheckValuesSchema() input.Input {
 
 func (w *Workflows) ClusterAppDocumentationValidation() input.Input {
 	return file.NewClusterAppDocumentationValidation(w.params)
+}
+func (w *Workflows) ClusterAppValuesValidationUsingSchema() input.Input {
+	return file.NewClusterAppValuesValidationUsingSchemaTemplate(w.params)
 }
 
 func (w *Workflows) ClusterAppSchemaValidation() input.Input {

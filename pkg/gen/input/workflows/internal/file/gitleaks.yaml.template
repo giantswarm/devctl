@@ -1,9 +1,4 @@
-# DO NOT EDIT. Generated with:
-#
-#    devctl
-#
-#    https://github.com/giantswarm/devctl/blob/8960b8810d2fdb97543d84baa8b50ffa40da26a9/pkg/gen/input/workflows/internal/file/gitleaks.yaml.template
-#
+{{{{ .Header }}}}
 name: gitleaks
 
 on: [pull_request]

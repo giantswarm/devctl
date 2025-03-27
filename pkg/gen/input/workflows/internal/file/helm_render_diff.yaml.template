@@ -18,7 +18,7 @@ jobs:
     if: github.event_name == 'pull_request'
     steps:
       - name: Find suspend comment
-        uses: peter-evans/find-comment@v3
+        uses: peter-evans/find-comment@3eae4d37986fb5a8592848f6a574fdf654e61f9e # v3.1.0
         continue-on-error: true
         id: fc
         with:
@@ -42,14 +42,14 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request' && needs.check-cmp-state.outputs.suspend_comment_id == 0 && needs.check-cmp-state.outputs.suspend_diffs_printing_from_pr_body == 'false'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: install helm
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@b9e51907a09c216f16ebe8536097933489208112 # v4.3.0
         with:
            version: ${{ env.helm_ver }}
       - run: which helm
       - name: install dyff
-        uses: giantswarm/install-binary-action@v1
+        uses: giantswarm/install-binary-action@c37eb401e5092993fc76d545030b1d1769e61237 # v3.0.0
         with:
           binary: dyff
           download_url: "https://github.com/homeport/dyff/releases/download/v${version}/dyff_${version}_linux_amd64.tar.gz"
@@ -76,7 +76,7 @@ jobs:
 
             helm template -n org-giantswarm -f "helm/${{ github.event.repository.name }}/ci/ci-values.yaml" -f "${test_file_path}" "helm/${{ github.event.repository.name }}" > "/tmp/${test_file_path}/render-new.yaml"
           done
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: "${{ github.event.repository.default_branch }}"
           path: 'old'
@@ -96,10 +96,11 @@ jobs:
             helm template -n org-giantswarm -f "old/helm/${{ github.event.repository.name }}/ci/ci-values.yaml" -f "${test_file_path}" "old/helm/${{ github.event.repository.name }}" > "/tmp/${test_file_path}/render-old.yaml"
           done
       - name: get the diffs
-        uses: mathiasvr/command-output@v2.0.0
-        id: diff
+        uses: mathiasvr/command-output@34408ea3d0528273faff3d9e201761ae96106cd0  # v2.0.0
         with:
           run: |
+            marker="=== No differences at all ==="
+            (
             found_differences=
             first=1
             for test_file_path in helm/${{ github.event.repository.name }}/ci/test-*-values.yaml; do
@@ -110,15 +111,36 @@ jobs:
                 echo
               fi
               echo "=== Differences when rendered with values file ${test_file_path} ==="
-              dyff between -s -i -b -g "/tmp/${test_file_path}/render-old.yaml" "/tmp/${test_file_path}/render-new.yaml" && echo "No difference" || { res=$?; found_differences=1; if [[ $res -eq 255 ]]; then echo "Diff error"; fi; }
+                dyff between --set-exit-code --ignore-order-changes --omit-header --use-go-patch-style "/tmp/${test_file_path}/render-old.yaml" "/tmp/${test_file_path}/render-new.yaml" && echo "No difference" || { res=$?; found_differences=1; if [[ $res -eq 255 ]]; then echo "Diff error"; fi; }
             done
 
             if [ -z "${found_differences}" ]; then
               echo
-              echo "=== No differences at all ==="
+                echo
+                echo "${marker}"
             fi
+            ) > /tmp/diffs
+
+            (
+              if ! grep -qF "${marker}" /tmp/diffs ; then
+                echo "**There were differences in the rendered Helm template, please check! ⚠️**"
+              else
+                echo "There were no differences in the rendered Helm template."
+              fi
+
+              echo
+              echo "<details>"
+              echo "<summary>Output</summary>"
+              echo "<!-- mandatory empty line -->"
+              echo ""
+              echo '```'
+              cat /tmp/diffs
+              echo '```'
+              echo "</details>"
+              echo "<!-- mandatory empty line -->"
+            ) > /tmp/comment-body
       - name: Find diff comment
-        uses: peter-evans/find-comment@v3
+        uses: peter-evans/find-comment@3eae4d37986fb5a8592848f6a574fdf654e61f9e # v3.1.0
         continue-on-error: true
         id: fc
         with:
@@ -126,44 +148,15 @@ jobs:
           comment-author: 'github-actions[bot]'
           body-includes: 'differences in the rendered Helm template'
       - name: Delete old comment
-        uses: jungwinter/comment@v1
+        uses: winterjung/comment@fda92dbcb5e7e79cccd55ecb107a8a3d7802a469  # v1.1.0
         continue-on-error: true
         if: steps.fc.outputs.comment-id != 0
         with:
           type: delete
           comment_id: ${{ steps.fc.outputs.comment-id }}
           token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Create comment in case of differences
-        uses: peter-evans/create-or-update-comment@v4
-        if: "!contains(steps.diff.outputs.stdout, '=== No differences at all ===')"
+      - name: Create comment
+        uses: peter-evans/create-or-update-comment@71345be0265236311c031f5c7866368bd1eff043  # v4.0.0
         with:
           issue-number: ${{ github.event.pull_request.number }}
-          body: |
-            **There were differences in the rendered Helm template, please check! ⚠️**
-
-            <details>
-            <summary>Output</summary>
-            <!-- mandatory empty line -->
-
-            ```
-            ${{ steps.diff.outputs.stdout }}
-            ```
-            </details>
-            <!-- mandatory empty line -->
-      - name: Create comment in case of no differences
-        uses: peter-evans/create-or-update-comment@v4
-        if: "contains(steps.diff.outputs.stdout, '=== No differences at all ===')"
-        with:
-          issue-number: ${{ github.event.pull_request.number }}
-          body: |
-            There were no differences in the rendered Helm template.
-
-            <details>
-            <summary>Output</summary>
-            <!-- mandatory empty line -->
-
-            ```
-            ${{ steps.diff.outputs.stdout }}
-            ```
-            </details>
-            <!-- mandatory empty line -->
+          body-path: /tmp/comment-body

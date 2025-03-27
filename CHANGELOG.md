@@ -7,6 +7,176 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.1.4] - 2025-03-06
+
+- Updates in various actions used in generated workflows
+
+## [7.1.3] - 2025-02-07
+
+- Dependency updates
+
+## [7.1.2] - 2025-01-31
+
+### Fixed
+
+- Do not duplicate release info in `releases.json` when re-creating a release
+
+### Changed
+
+- Dependency updates
+
+## [7.1.1] - 2025-01-23
+
+### Fixed
+
+- Skip changelog if apps or components haven't changed.
+
+## [7.1.0] - 2025-01-15
+
+### Added
+
+- Add all app and component version changes since last release to the release notes.
+
+## [7.0.1] - 2025-01-10
+
+- Updating some GitHub action versions
+
+## [7.0.0] - 2024-12-13
+
+**Note** Creating vintage releases is not supported anymore, please use an older release of `devctl`.
+
+### Added
+
+- Create releases for CAPI providers.
+
+## [6.32.0] - 2024-12-12
+
+- Dependency updates
+
+## [6.31.0] - 2024-10-30
+
+### Added
+
+- Add new `fleet` flavour.
+- Add workflow to validate cluster-app values against the schema to the `fleet` projects.
+
+## [6.30.0] - 2024-10-14
+
+- Dependency updates in templates
+
+## [6.29.0] - 2024-10-08
+
+### Added
+
+- Add Backstage specific job to "Create release PR" workflow template.
+
+## [6.28.0] - 2024-09-20
+
+### Added
+
+- Add `cluster-*` charts as choosable values for `devctl release create --component`
+
+## [6.27.2] - 2024-08-22
+
+### Changed
+
+- Update Go and architect in "Create release PR" workflow template
+
+## [6.27.1] - 2024-08-22
+
+### Fixed
+
+- Bump `github.com/marwan-at-work/mod/cmd/mod` to `v0.7.1` in the "Create release PR" workflow template, to fix compatibility with Go 1.23 an re-enable majore version relases.
+
+## [6.27.0] - 2024-08-20
+
+### Fixed
+
+- Include replace directives in apptest generated go.mo
+
+### Changed
+
+- Add `-trimpath` flag to `go build` in generated Makefile for Go.
+
+## [6.26.4] - 2024-06-13
+
+- Updates in referenced actions and dependencies
+
+## [6.26.3] - 2024-05-21
+
+### Fixed
+
+- Handle renamed function in Apptest template
+
+## [6.26.2] - 2024-04-25
+
+### Fixed
+
+- Only fetch `main` branch in GitHub actions workflow for devctl releases
+
+## [6.26.1] - 2024-04-25
+
+### Fixed
+
+- Add logic to fetch the whole git history when generating the "Create Release" GitHub actions workflow file for devctl.
+- Fetch whole git history for releases to fix GitHub Urls in templated file headers.
+
+## [6.26.0] - 2024-04-24
+
+### Fixed
+
+- Compare Helm Rendering (only used for cluster charts): create diff comment from file to avoid size limit
+
+## [6.25.1] - 2024-04-22
+
+### Fixed
+
+- Set the CI webhook secret
+- Made `generate-go` Make task show up in `make help` and added a note to the readme about the template generation.
+
+## [6.25.0] - 2024-04-18
+
+### Added
+
+- Add `--bumpall` flag to `release create` command to automatically bump all apps and components to the latest version.
+
+## [6.24.0] - 2024-04-10
+
+### Removed
+
+- devctl version is no longer added to generated file header
+
+### Changed
+
+- Generated file headers now include a GitHub link
+
+## [6.23.3] - 2024-03-26
+
+### Changed
+
+- Pin generated GitHub Action workflows to SHAs.
+- Rename GitHub Action `jungwinter` to `winterjung`.
+- (Renovate) automatically bump GitHub action versions in generated workflows.
+
+## [6.23.2] - 2024-03-21
+
+### Changed
+
+- Update OSSF Scorecard GitHub Action to v2.3.1.
+
+## [6.23.1] - 2024-03-15
+
+### Added
+
+- Added a default providers array to E2E apptest config
+
+## [6.23.0] - 2024-03-15
+
+### Changed
+
+- Add a new permission for workflows to be able to write in the repo
+- Update actions/setup-go to v5 in generated workflows
+
 ## [6.22.0] - 2024-03-11
 
 ### Added
@@ -888,7 +1058,34 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v6.22.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.1.4...HEAD
+[7.1.4]: https://github.com/giantswarm/devctl/compare/v7.1.3...v7.1.4
+[7.1.3]: https://github.com/giantswarm/devctl/compare/v7.1.2...v7.1.3
+[7.1.2]: https://github.com/giantswarm/devctl/compare/v7.1.1...v7.1.2
+[7.1.1]: https://github.com/giantswarm/devctl/compare/v7.1.0...v7.1.1
+[7.1.0]: https://github.com/giantswarm/devctl/compare/v7.0.1...v7.1.0
+[7.0.1]: https://github.com/giantswarm/devctl/compare/v7.0.0...v7.0.1
+[7.0.0]: https://github.com/giantswarm/devctl/compare/v6.32.0...v7.0.0
+[6.32.0]: https://github.com/giantswarm/devctl/compare/v6.31.0...v6.32.0
+[6.31.0]: https://github.com/giantswarm/devctl/compare/v6.30.0...v6.31.0
+[6.30.0]: https://github.com/giantswarm/devctl/compare/v6.29.0...v6.30.0
+[6.29.0]: https://github.com/giantswarm/devctl/compare/v6.28.0...v6.29.0
+[6.28.0]: https://github.com/giantswarm/devctl/compare/v6.27.2...v6.28.0
+[6.27.2]: https://github.com/giantswarm/devctl/compare/v6.27.1...v6.27.2
+[6.27.1]: https://github.com/giantswarm/devctl/compare/v6.27.0...v6.27.1
+[6.27.0]: https://github.com/giantswarm/devctl/compare/v6.26.4...v6.27.0
+[6.26.4]: https://github.com/giantswarm/devctl/compare/v6.26.3...v6.26.4
+[6.26.3]: https://github.com/giantswarm/devctl/compare/v6.26.2...v6.26.3
+[6.26.2]: https://github.com/giantswarm/devctl/compare/v6.26.1...v6.26.2
+[6.26.1]: https://github.com/giantswarm/devctl/compare/v6.26.0...v6.26.1
+[6.26.0]: https://github.com/giantswarm/devctl/compare/v6.25.1...v6.26.0
+[6.25.1]: https://github.com/giantswarm/devctl/compare/v6.25.0...v6.25.1
+[6.25.0]: https://github.com/giantswarm/devctl/compare/v6.24.0...v6.25.0
+[6.24.0]: https://github.com/giantswarm/devctl/compare/v6.23.3...v6.24.0
+[6.23.3]: https://github.com/giantswarm/devctl/compare/v6.23.2...v6.23.3
+[6.23.2]: https://github.com/giantswarm/devctl/compare/v6.23.1...v6.23.2
+[6.23.1]: https://github.com/giantswarm/devctl/compare/v6.23.0...v6.23.1
+[6.23.0]: https://github.com/giantswarm/devctl/compare/v6.22.0...v6.23.0
 [6.22.0]: https://github.com/giantswarm/devctl/compare/v6.21.0...v6.22.0
 [6.21.0]: https://github.com/giantswarm/devctl/compare/v6.20.2...v6.21.0
 [6.20.2]: https://github.com/giantswarm/devctl/compare/v6.20.1...v6.20.2

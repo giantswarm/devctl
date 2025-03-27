@@ -8,8 +8,8 @@ import (
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
 
-	"github.com/giantswarm/devctl/v6/pkg/gen"
-	"github.com/giantswarm/devctl/v6/pkg/gen/input/ami"
+	"github.com/giantswarm/devctl/v7/pkg/gen"
+	"github.com/giantswarm/devctl/v7/pkg/gen/input/ami"
 )
 
 type runner struct {
