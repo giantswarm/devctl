@@ -46,7 +46,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	s := spinner.New(spinner.CharSets[14], 100*time.Millisecond)
 	s.Writer = r.stdout
 
-	// 1. Create repository from app-template
+	// Create repository from app-template
 	s.Suffix = " Creating repository from template..."
 	s.Start()
 	err := r.createRepository(ctx, r.flag.Name, "giantswarm", "template-app")
@@ -63,7 +63,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	time.Sleep(10 * time.Second)
 	s.Stop()
 
-	// 2. Clone repository locally
+	// Clone repository locally
 	s.Suffix = " Cloning repository..."
 	s.Start()
 	repoPath, err := r.cloneRepository(ctx)
@@ -74,29 +74,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	s.Stop()
 	fmt.Fprintln(r.stdout, "✓ Repository cloned locally")
 
-	// 3. Configure sync method (vendir/kustomize)
-	s.Suffix = fmt.Sprintf(" Configuring sync method (%s)...", r.flag.SyncMethod)
-	s.Start()
-	err = r.configureSyncMethod(ctx, repoPath)
-	if err != nil {
-		s.Stop()
-		return microerror.Mask(err)
-	}
-	s.Stop()
-	fmt.Fprintln(r.stdout, "✓ Sync method configured")
-
-	// 4. Configure patch method (script/kustomize)
-	s.Suffix = fmt.Sprintf(" Configuring patch method (%s)...", r.flag.PatchMethod)
-	s.Start()
-	err = r.configurePatchMethod(ctx, repoPath)
-	if err != nil {
-		s.Stop()
-		return microerror.Mask(err)
-	}
-	s.Stop()
-	fmt.Fprintln(r.stdout, "✓ Patch method configured")
-
-	// 5. Replace placeholders
+	// Replace placeholders
 	s.Suffix = " Replacing placeholders..."
 	s.Start()
 	err = r.replacePlaceholders(ctx, repoPath)
@@ -107,7 +85,29 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	s.Stop()
 	fmt.Fprintln(r.stdout, "✓ Placeholders replaced")
 
-	// 6. Setup CI/CD
+	// Configure sync method (vendir/kustomize)
+	s.Suffix = fmt.Sprintf(" Configuring sync method (%s)...", r.flag.SyncMethod)
+	s.Start()
+	err = r.configureSyncMethod(ctx, repoPath)
+	if err != nil {
+		s.Stop()
+		return microerror.Mask(err)
+	}
+	s.Stop()
+	fmt.Fprintln(r.stdout, "✓ Sync method configured")
+
+	// Configure patch method (script/kustomize)
+	s.Suffix = fmt.Sprintf(" Configuring patch method (%s)...", r.flag.PatchMethod)
+	s.Start()
+	err = r.configurePatchMethod(ctx, repoPath)
+	if err != nil {
+		s.Stop()
+		return microerror.Mask(err)
+	}
+	s.Stop()
+	fmt.Fprintln(r.stdout, "✓ Patch method configured")
+
+	// Setup CI/CD without branch protection
 	s.Suffix = " Setting up CI/CD..."
 	s.Start()
 	err = r.setupCICD(ctx, repoPath)
@@ -118,8 +118,8 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	s.Stop()
 	fmt.Fprintln(r.stdout, "✓ CI/CD setup complete")
 
-	// 7. Initial commit and push
-	s.Suffix = " Creating pull request..."
+	// Initial commit and push
+	s.Suffix = " Pushing changes to main branch..."
 	s.Start()
 	err = r.commitAndPush(ctx, repoPath)
 	if err != nil {
@@ -127,7 +127,18 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 	s.Stop()
-	fmt.Fprintln(r.stdout, "✓ Pull request created")
+	fmt.Fprintln(r.stdout, "✓ Changes pushed to main branch")
+
+	// Enable branch protection
+	s.Suffix = " Enabling branch protection..."
+	s.Start()
+	err = r.enableBranchProtection(ctx, repoPath)
+	if err != nil {
+		s.Stop()
+		return microerror.Mask(err)
+	}
+	s.Stop()
+	fmt.Fprintln(r.stdout, "✓ Branch protection enabled")
 
 	fmt.Fprintf(r.stdout, "\n✨ Successfully bootstrapped app repository %s\n", r.flag.Name)
 
@@ -232,20 +243,37 @@ func (r *runner) configureSyncMethod(ctx context.Context, repoPath string) error
 }
 
 func (r *runner) configureVendir(ctx context.Context, repoPath string) error {
+	// Create vendir.yml - main needs to be replaced with the latest upstream release (eg &version "v1.17.2")
 	vendirConfig := fmt.Sprintf(`apiVersion: vendir.k14s.io/v1alpha1
 kind: Config
 minimumRequiredVersion: 0.12.0
 directories:
 - path: vendor
   contents:
-  - path: %s
+  - path: .
     git:
       url: %s
-      ref: origin/main
+      ref: main
     includePaths:
-    - %s/**/*`, r.flag.Name, r.flag.UpstreamRepo, r.flag.UpstreamChart)
+    - %s/**/*
+- path: helm/%s/templates
+  contents:
+  - path: .
+    directory:
+      path: vendor/%s/templates
+`,
+		r.flag.UpstreamRepo,
+		r.flag.UpstreamChart,
+		r.flag.Name,
+		r.flag.UpstreamChart)
 
 	err := os.WriteFile(filepath.Join(repoPath, "vendir.yml"), []byte(vendirConfig), 0644)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	// Run initial sync
+	err = r.execCommand(ctx, repoPath, "vendir", "sync")
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -361,6 +389,15 @@ func (r *runner) replacePlaceholders(ctx context.Context, repoPath string) error
 		return microerror.Mask(err)
 	}
 
+	// Replace team in CODEOWNERS
+	err = r.execCommand(ctx, repoPath,
+		"sed", "-i",
+		fmt.Sprintf("s/@giantswarm\\/team-honeybadger/@giantswarm\\/team-%s/g", r.flag.Team),
+		"CODEOWNERS")
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
 	// Add team label
 	err = r.execCommand(ctx, repoPath,
 		"sed", "-i",
@@ -383,7 +420,7 @@ func (r *runner) setupCICD(ctx context.Context, repoPath string) error {
 
 	// Run devctl repo setup with GITHUB_TOKEN set
 	repoFullName := fmt.Sprintf("giantswarm/%s-app", r.flag.Name)
-	cmd := exec.CommandContext(ctx, "devctl", "repo", "setup", repoFullName)
+	cmd := exec.CommandContext(ctx, "devctl", "repo", "setup", repoFullName, "--disable-branch-protection")
 	cmd.Dir = repoPath
 
 	// Only show output in debug mode
@@ -403,14 +440,7 @@ func (r *runner) setupCICD(ctx context.Context, repoPath string) error {
 }
 
 func (r *runner) commitAndPush(ctx context.Context, repoPath string) error {
-	// Create and checkout feature branch
-	branchName := "bootstrap-app"
-	err := r.execCommand(ctx, repoPath, "git", "checkout", "-b", branchName)
-	if err != nil {
-		return microerror.Mask(err)
-	}
-
-	err = r.execCommand(ctx, repoPath, "git", "add", "-A")
+	err := r.execCommand(ctx, repoPath, "git", "add", "-A")
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -420,43 +450,35 @@ func (r *runner) commitAndPush(ctx context.Context, repoPath string) error {
 		return microerror.Mask(err)
 	}
 
-	err = r.execCommand(ctx, repoPath, "git", "push", "origin", branchName)
+	err = r.execCommand(ctx, repoPath, "git", "push", "origin", "main")
 	if err != nil {
 		return microerror.Mask(err)
 	}
 
-	// Create pull request
+	return nil
+}
+
+func (r *runner) enableBranchProtection(ctx context.Context, repoPath string) error {
+	// Get token from custom environment variable
 	token := os.Getenv(r.flag.GithubToken)
 	if token == "" {
 		return microerror.Maskf(envVarNotFoundError, "environment variable %#q not found", r.flag.GithubToken)
 	}
 
-	logger := logrus.New()
-	logger.SetOutput(r.stdout)
+	// Run devctl repo setup with GITHUB_TOKEN set (without --disable-branch-protection)
+	repoFullName := fmt.Sprintf("giantswarm/%s-app", r.flag.Name)
+	cmd := exec.CommandContext(ctx, "devctl", "repo", "setup", repoFullName)
+	cmd.Dir = repoPath
 
-	config := githubclient.Config{
-		Logger:      logger,
-		AccessToken: token,
-		DryRun:      r.flag.DryRun,
+	// Only show output in debug mode
+	if os.Getenv("LOG_LEVEL") == "debug" {
+		cmd.Stdout = r.stdout
+		cmd.Stderr = r.stderr
 	}
 
-	client, err := githubclient.New(config)
-	if err != nil {
-		return microerror.Mask(err)
-	}
+	cmd.Env = append(os.Environ(), fmt.Sprintf("GITHUB_TOKEN=%s", token))
 
-	repoName := fmt.Sprintf("%s-app", r.flag.Name)
-	title := "Bootstrap app repository"
-	body := "Initial bootstrap of the app repository"
-	pr := &github.NewPullRequest{
-		Title:               github.String(title),
-		Head:                github.String(branchName),
-		Base:                github.String("main"),
-		Body:                github.String(body),
-		MaintainerCanModify: github.Bool(true),
-	}
-
-	_, err = client.CreatePullRequest(ctx, "giantswarm", repoName, pr)
+	err := cmd.Run()
 	if err != nil {
 		return microerror.Mask(err)
 	}
