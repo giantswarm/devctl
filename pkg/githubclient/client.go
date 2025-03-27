@@ -17,6 +17,7 @@ import (
 type Config struct {
 	Logger      *logrus.Logger
 	AccessToken string
+	WorkDir     string
 }
 
 type Client struct {
@@ -32,49 +33,39 @@ func New(config Config) (*Client, error) {
 	if config.AccessToken == "" {
 		return nil, microerror.Maskf(invalidConfigError, "%T.AccessToken must not be empty", config)
 	}
+	if config.WorkDir == "" {
+		return nil, microerror.Maskf(invalidConfigError, "%T.WorkDir must not be empty", config)
+	}
 
 	c := &Client{
 		logger:      config.Logger,
 		accessToken: config.AccessToken,
+		workDir:     config.WorkDir,
 	}
 
 	return c, nil
 }
 
-func (c *Client) CloneRepository(ctx context.Context, owner, repo, tempDir string) error {
-	c.workDir = tempDir
+func (c *Client) CloneRepository(ctx context.Context, owner, repo string) error {
 	url := fmt.Sprintf("git@github.com:%s/%s.git", owner, repo)
 	cmd := exec.Command("git", "clone", "-b", "main", url, c.workDir)
+	cmd.Dir = c.workDir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
 	return cmd.Run()
 }
 
-func (c *Client) CreateBranch(ctx context.Context, owner, repo, newBranch string) error {
-	client := c.getUnderlyingClient(ctx)
-	ref, _, err := client.Git.GetRef(ctx, owner, repo, "refs/heads/main")
-	if err != nil {
-		return microerror.Mask(err)
-	}
+func (c *Client) CreateBranch(ctx context.Context, newBranch string) error {
+	cmd := exec.Command("git", "checkout", "-b", newBranch)
+	cmd.Dir = c.workDir
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
 
-	newRef := &github.Reference{
-		Ref: github.Ptr("refs/heads/" + newBranch),
-		Object: &github.GitObject{
-			SHA: ref.Object.SHA,
-		},
-	}
-
-	_, _, err = client.Git.CreateRef(ctx, owner, repo, newRef)
-	if err != nil {
-		return microerror.Mask(err)
-	}
-	c.logger.Infof("created branch %s", newBranch)
-
-	return nil
+	return cmd.Run()
 }
 
-func (c *Client) CommitAndPush(ctx context.Context, owner, repo, branch, message string) error {
+func (c *Client) CommitAndPush(ctx context.Context, branch, message string) error {
 	// Stage all changes
 	cmd := exec.Command("git", "add", ".", "-A")
 	cmd.Dir = c.workDir

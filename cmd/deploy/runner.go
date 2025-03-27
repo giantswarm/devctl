@@ -38,10 +38,19 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 		return microerror.Maskf(envVarNotFoundError, "GitHub token not found in environment variables. Please set GITHUB_TOKEN or OPSCTL_GITHUB_TOKEN")
 	}
 
+	// Create temporary directory for GitOps files
+	tempDir, err := os.MkdirTemp("", "gitops-*")
+	if err != nil {
+		return microerror.Mask(err)
+	}
+	r.Logger.LogCtx(ctx, "level", "info", "message", fmt.Sprintf("Created temporary directory: %s", tempDir))
+	//defer os.RemoveAll(tempDir)
+
 	// Create GitHub client
 	githubClient, err := githubclient.New(githubclient.Config{
 		Logger:      logrus.StandardLogger(),
 		AccessToken: token,
+		WorkDir:     tempDir,
 	})
 	if err != nil {
 		return microerror.Mask(err)
@@ -53,22 +62,15 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 		return microerror.Mask(err)
 	}
 
-	// Create temporary directory for GitOps files
-	tempDir, err := os.MkdirTemp("", "gitops-*")
-	if err != nil {
-		return microerror.Mask(err)
-	}
-	//defer os.RemoveAll(tempDir)
-
 	// Clone repository
-	err = githubClient.CloneRepository(ctx, owner, repo, tempDir)
+	err = githubClient.CloneRepository(ctx, owner, repo)
 	if err != nil {
 		return microerror.Mask(err)
 	}
 
 	// Create new branch
 	newBranch := fmt.Sprintf("deploy-%s-%s-%s", r.Flag.WorkloadCluster, r.Flag.AppName, r.Flag.AppVersion)
-	err = githubClient.CreateBranch(ctx, owner, repo, newBranch)
+	err = githubClient.CreateBranch(ctx, newBranch)
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -94,7 +96,7 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 
 	// Commit and push changes
 	commitMsg := fmt.Sprintf("Add the app %s version %s on %s cluster GitOps repository", r.Flag.AppName, r.Flag.AppVersion, r.Flag.WorkloadCluster)
-	err = githubClient.CommitAndPush(ctx, owner, repo, newBranch, commitMsg)
+	err = githubClient.CommitAndPush(ctx, newBranch, commitMsg)
 	if err != nil {
 		return microerror.Mask(err)
 	}
