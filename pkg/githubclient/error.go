@@ -37,3 +37,12 @@ var installationNotFoundError = &microerror.Error{
 func IsInstallationNotFound(err error) bool {
 	return microerror.Cause(err) == installationNotFoundError
 }
+
+var prMergeTimeoutError = &microerror.Error{
+	Kind: "prMergeTimeoutError",
+}
+
+// IsPRMergeTimeout asserts prMergeTimeoutError.
+func IsPRMergeTimeout(err error) bool {
+	return microerror.Cause(err) == prMergeTimeoutError
+}
