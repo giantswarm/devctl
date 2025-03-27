@@ -52,7 +52,6 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	}
 
 	c := githubclient.Config{
-		DryRun:      r.flag.DryRun,
 		Logger:      r.logger,
 		AccessToken: token,
 	}

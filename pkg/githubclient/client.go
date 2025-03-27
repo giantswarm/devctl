@@ -3,9 +3,9 @@ package githubclient
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"time"
 
 	"github.com/giantswarm/microerror"
@@ -17,13 +17,12 @@ import (
 type Config struct {
 	Logger      *logrus.Logger
 	AccessToken string
-	DryRun      bool
 }
 
 type Client struct {
 	logger      *logrus.Logger
 	accessToken string
-	dryRun      bool
+	workDir     string
 }
 
 func New(config Config) (*Client, error) {
@@ -37,24 +36,24 @@ func New(config Config) (*Client, error) {
 	c := &Client{
 		logger:      config.Logger,
 		accessToken: config.AccessToken,
-		dryRun:      config.DryRun,
 	}
 
 	return c, nil
 }
 
-func (c *Client) CloneRepository(ctx context.Context, owner, repo, branch, path string) error {
-	url := fmt.Sprintf("https://github.com/%s/%s.git", owner, repo)
-	cmd := exec.Command("git", "clone", "-b", branch, url, path)
+func (c *Client) CloneRepository(ctx context.Context, owner, repo, tempDir string) error {
+	c.workDir = tempDir
+	url := fmt.Sprintf("git@github.com:%s/%s.git", owner, repo)
+	cmd := exec.Command("git", "clone", "-b", "main", url, c.workDir)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
 	return cmd.Run()
 }
 
-func (c *Client) CreateBranch(ctx context.Context, owner, repo, baseBranch, newBranch string) error {
+func (c *Client) CreateBranch(ctx context.Context, owner, repo, newBranch string) error {
 	client := c.getUnderlyingClient(ctx)
-	ref, _, err := client.Git.GetRef(ctx, owner, repo, "refs/heads/"+baseBranch)
+	ref, _, err := client.Git.GetRef(ctx, owner, repo, "refs/heads/main")
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -70,47 +69,46 @@ func (c *Client) CreateBranch(ctx context.Context, owner, repo, baseBranch, newB
 	if err != nil {
 		return microerror.Mask(err)
 	}
+	c.logger.Infof("created branch %s", newBranch)
 
 	return nil
 }
 
 func (c *Client) CommitAndPush(ctx context.Context, owner, repo, branch, message string) error {
-	cmd := exec.Command("git", "add", ".")
-	cmd.Dir = filepath.Join(os.TempDir(), "gitops-*")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	err := cmd.Run()
+	// Stage all changes
+	cmd := exec.Command("git", "add", ".", "-A")
+	cmd.Dir = c.workDir
+	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return microerror.Mask(err)
+		log.Fatalf("Failed to add stage content %v\n%s", err, output)
+	}
+	c.logger.Infof("work directory: %s", c.workDir)
+
+	// Commit changes
+	c.logger.Infof("committing changes with message: %s", message)
+	cmd = exec.Command("git", "commit", "-am", message)
+	output, err = cmd.CombinedOutput()
+	if err != nil {
+		log.Fatalf("Failed to commit changes: %v\n%s", err, output)
 	}
 
-	cmd = exec.Command("git", "commit", "-m", message)
-	cmd.Dir = filepath.Join(os.TempDir(), "gitops-*")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	err = cmd.Run()
-	if err != nil {
-		return microerror.Mask(err)
-	}
-
+	// Push changes
 	cmd = exec.Command("git", "push", "origin", branch)
-	cmd.Dir = filepath.Join(os.TempDir(), "gitops-*")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	err = cmd.Run()
+	output, err = cmd.CombinedOutput()
 	if err != nil {
-		return microerror.Mask(err)
+		log.Fatalf("Failed to push changes: %v\n%s", err, output)
 	}
 
+	c.logger.Infof("pushed changes to branch %s", branch)
 	return nil
 }
 
-func (c *Client) CreatePullRequest(ctx context.Context, owner, repo, head, base, title string) (*github.PullRequest, error) {
+func (c *Client) CreatePullRequest(ctx context.Context, owner, repo, head, title string) (*github.PullRequest, error) {
 	client := c.getUnderlyingClient(ctx)
 	newPR := &github.NewPullRequest{
 		Title: github.Ptr(title),
 		Head:  github.Ptr(head),
-		Base:  github.Ptr(base),
+		Base:  github.Ptr("main"),
 		Body:  github.Ptr(title),
 	}
 

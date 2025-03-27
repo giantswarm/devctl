@@ -9,12 +9,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/giantswarm/devctl/v7/pkg/appstatus"
+	"github.com/giantswarm/devctl/v7/pkg/githubclient"
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-
-	"github.com/giantswarm/devctl/v7/pkg/githubclient"
 )
 
 type runner struct {
@@ -32,141 +32,98 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 		return microerror.Mask(err)
 	}
 
+	// Get GitHub token from environment variables
+	token := getGitHubToken()
+	if token == "" {
+		return microerror.Maskf(envVarNotFoundError, "GitHub token not found in environment variables. Please set GITHUB_TOKEN or OPSCTL_GITHUB_TOKEN")
+	}
+
+	// Create GitHub client
+	githubClient, err := githubclient.New(githubclient.Config{
+		Logger:      logrus.StandardLogger(),
+		AccessToken: token,
+	})
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
 	// Clone GitOps repository
-	repoDir, err := r.cloneGitOpsRepo(ctx)
+	owner, repo, err := parseGitOpsRepo(r.Flag.GitOpsRepo)
 	if err != nil {
 		return microerror.Mask(err)
-	}
-	defer os.RemoveAll(repoDir)
-
-	// Execute kubectl gs gitops add app
-	err = r.executeGitOpsAddApp(ctx, repoDir)
-	if err != nil {
-		return microerror.Mask(err)
-	}
-
-	// Create branch and commit changes
-	err = r.createBranchAndCommit(ctx, repoDir)
-	if err != nil {
-		return microerror.Mask(err)
-	}
-
-	// Create pull request
-	err = r.createPullRequest(ctx, repoDir)
-	if err != nil {
-		return microerror.Mask(err)
-	}
-
-	return nil
-}
-
-func (r *runner) cloneGitOpsRepo(ctx context.Context) (string, error) {
-	// Split GitOps repo into owner and name
-	s := strings.Split(r.Flag.GitOpsRepo, "/")
-	if len(s) != 2 {
-		return "", microerror.Maskf(invalidArgError, "expected owner/repo, got %s", r.Flag.GitOpsRepo)
-	}
-	owner := s[0]
-	repo := s[1]
-
-	// Get GitHub token
-	var token string
-	var found bool
-	if token, found = os.LookupEnv(r.Flag.GithubTokenEnv); !found {
-		return "", microerror.Maskf(envVarNotFoundError, "environment variable %#q was not found", r.Flag.GithubTokenEnv)
 	}
 
 	// Create temporary directory for GitOps files
-	tmpDir, err := os.MkdirTemp("", "gitops-*")
-	if err != nil {
-		return "", microerror.Mask(err)
-	}
-
-	// Initialize GitHub client
-	githubConfig := githubclient.Config{
-		Logger:      logrus.StandardLogger(),
-		AccessToken: token,
-	}
-
-	githubClient, err := githubclient.New(githubConfig)
-	if err != nil {
-		return "", microerror.Mask(err)
-	}
-
-	// Clone GitOps repository
-	r.Logger.LogCtx(ctx, "level", "info", "message", fmt.Sprintf("Cloning %s/%s to %s", owner, repo, tmpDir))
-	err = githubClient.CloneRepository(ctx, owner, repo, r.Flag.GitOpsBranch, tmpDir)
-	if err != nil {
-		return "", microerror.Mask(err)
-	}
-
-	return tmpDir, nil
-}
-
-func (r *runner) executeGitOpsAddApp(ctx context.Context, repoDir string) error {
-	// Run kubectl gs gitops add app command
-	kubectlCmd := exec.Command("kubectl", "gs", "gitops", "add", "app",
-		"--local-path", repoDir,
-		"--management-cluster", r.Flag.ManagementCluster,
-		"--organization", r.Flag.Organization,
-		"--workload-cluster", r.Flag.WorkloadCluster,
-		"--app", r.Flag.AppName,
-		"--catalog", r.Flag.AppCatalog,
-		"--version", r.Flag.AppVersion,
-		"--target-namespace", r.Flag.AppNamespace,
-		"--name", r.Flag.AppName,
-	)
-
-	kubectlCmd.Stdout = r.Stdout
-	kubectlCmd.Stderr = r.Stderr
-
-	r.Logger.LogCtx(ctx, "level", "info", "message", "Running kubectl gs gitops add app command")
-	err := kubectlCmd.Run()
+	tempDir, err := os.MkdirTemp("", "gitops-*")
 	if err != nil {
 		return microerror.Mask(err)
 	}
+	//defer os.RemoveAll(tempDir)
 
-	return nil
-}
-
-func (r *runner) createBranchAndCommit(ctx context.Context, repoDir string) error {
-	// Split GitOps repo into owner and name
-	s := strings.Split(r.Flag.GitOpsRepo, "/")
-	if len(s) != 2 {
-		return microerror.Maskf(invalidArgError, "expected owner/repo, got %s", r.Flag.GitOpsRepo)
+	// Clone repository
+	err = githubClient.CloneRepository(ctx, owner, repo, tempDir)
+	if err != nil {
+		return microerror.Mask(err)
 	}
-	owner := s[0]
-	repo := s[1]
 
 	// Create new branch
-	newBranch := fmt.Sprintf("deploy/%s/%s", r.Flag.AppName, r.Flag.AppVersion)
-
-	// Get GitHub token
-	var token string
-	var found bool
-	if token, found = os.LookupEnv(r.Flag.GithubTokenEnv); !found {
-		return microerror.Maskf(envVarNotFoundError, "environment variable %#q was not found", r.Flag.GithubTokenEnv)
-	}
-
-	// Initialize GitHub client
-	githubConfig := githubclient.Config{
-		Logger:      logrus.StandardLogger(),
-		AccessToken: token,
-	}
-
-	githubClient, err := githubclient.New(githubConfig)
+	newBranch := fmt.Sprintf("deploy-%s-%s-%s", r.Flag.WorkloadCluster, r.Flag.AppName, r.Flag.AppVersion)
+	err = githubClient.CreateBranch(ctx, owner, repo, newBranch)
 	if err != nil {
 		return microerror.Mask(err)
 	}
 
-	err = githubClient.CreateBranch(ctx, owner, repo, r.Flag.GitOpsBranch, newBranch)
+	// Execute kubectl gs gitops add app
+	kubectlCmd := exec.Command("kubectl", "gs", "gitops", "add", "app",
+		"--app", r.Flag.WorkloadCluster+"-"+r.Flag.AppName,
+		"--name", r.Flag.AppName,
+		"--version", r.Flag.AppVersion,
+		"--catalog", r.Flag.AppCatalog,
+		"--target-namespace", r.Flag.AppNamespace,
+		"--management-cluster", r.Flag.ManagementCluster,
+		"--workload-cluster", r.Flag.WorkloadCluster,
+		"--organization", r.Flag.Organization,
+	)
+	kubectlCmd.Dir = tempDir
+	kubectlCmd.Stdout = r.Stdout
+	kubectlCmd.Stderr = r.Stderr
+	err = kubectlCmd.Run()
 	if err != nil {
 		return microerror.Mask(err)
 	}
 
 	// Commit and push changes
-	commitMsg := fmt.Sprintf("Deploy %s version %s", r.Flag.AppName, r.Flag.AppVersion)
+	commitMsg := fmt.Sprintf("Add the app %s version %s on %s cluster GitOps repository", r.Flag.AppName, r.Flag.AppVersion, r.Flag.WorkloadCluster)
 	err = githubClient.CommitAndPush(ctx, owner, repo, newBranch, commitMsg)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	// Create pull request
+	pr, err := githubClient.CreatePullRequest(ctx, owner, repo, newBranch, commitMsg)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	r.Logger.LogCtx(ctx, "level", "info", "message", fmt.Sprintf("PR created: %s. Please approve to continue.", pr.GetHTMLURL()))
+	// Wait for PR merge
+	err = githubClient.WaitForPRMerge(ctx, owner, repo, pr.GetNumber(), time.Duration(r.Flag.Timeout)*time.Second)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	// Check app status
+	appStatusClient, err := appstatus.New(appstatus.Config{
+		Logger: r.Logger,
+		Stderr: r.Stderr,
+	})
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	orgNamespace := "org-" + r.Flag.Organization
+	appName := r.Flag.WorkloadCluster + "-" + r.Flag.AppName
+	err = appStatusClient.WaitForAppDeployment(ctx, appName, orgNamespace, time.Duration(r.Flag.Timeout)*time.Second)
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -174,55 +131,24 @@ func (r *runner) createBranchAndCommit(ctx context.Context, repoDir string) erro
 	return nil
 }
 
-func (r *runner) createPullRequest(ctx context.Context, repoDir string) error {
-	// Split GitOps repo into owner and name
-	s := strings.Split(r.Flag.GitOpsRepo, "/")
+func parseGitOpsRepo(repo string) (string, string, error) {
+	s := strings.Split(repo, "/")
 	if len(s) != 2 {
-		return microerror.Maskf(invalidArgError, "expected owner/repo, got %s", r.Flag.GitOpsRepo)
+		return "", "", microerror.Maskf(invalidArgError, "invalid GitOps repository format: %q", repo)
 	}
-	owner := s[0]
-	repo := s[1]
+	return s[0], s[1], nil
+}
 
-	newBranch := fmt.Sprintf("deploy/%s/%s", r.Flag.AppName, r.Flag.AppVersion)
-	commitMsg := fmt.Sprintf("Deploy %s version %s", r.Flag.AppName, r.Flag.AppVersion)
-
-	// Get GitHub token
-	var token string
-	var found bool
-	if token, found = os.LookupEnv(r.Flag.GithubTokenEnv); !found {
-		return microerror.Maskf(envVarNotFoundError, "environment variable %#q was not found", r.Flag.GithubTokenEnv)
+func getGitHubToken() string {
+	// Try GITHUB_TOKEN first
+	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
+		return token
 	}
 
-	// Initialize GitHub client
-	githubConfig := githubclient.Config{
-		Logger:      logrus.StandardLogger(),
-		AccessToken: token,
+	// Try OPSCTL_GITHUB_TOKEN as fallback
+	if token := os.Getenv("OPSCTL_GITHUB_TOKEN"); token != "" {
+		return token
 	}
 
-	githubClient, err := githubclient.New(githubConfig)
-	if err != nil {
-		return microerror.Mask(err)
-	}
-
-	// Create pull request
-	r.Logger.LogCtx(ctx, "level", "info", "message", fmt.Sprintf("Creating pull request for %s version %s", r.Flag.AppName, r.Flag.AppVersion))
-	pr, err := githubClient.CreatePullRequest(ctx, owner, repo, newBranch, r.Flag.GitOpsBranch, commitMsg)
-	if err != nil {
-		return microerror.Mask(err)
-	}
-
-	if r.Flag.DryRun {
-		r.Logger.LogCtx(ctx, "level", "info", "message", fmt.Sprintf("Dry run: Would create PR #%d", pr.GetNumber()))
-		return nil
-	}
-
-	// Wait for PR to be merged
-	r.Logger.LogCtx(ctx, "level", "info", "message", fmt.Sprintf("Waiting for PR #%d to be merged...", pr.GetNumber()))
-	err = githubClient.WaitForPRMerge(ctx, owner, repo, pr.GetNumber(), time.Duration(r.Flag.Timeout)*time.Second)
-	if err != nil {
-		return microerror.Mask(err)
-	}
-
-	r.Logger.LogCtx(ctx, "level", "info", "message", fmt.Sprintf("Successfully deployed %s version %s", r.Flag.AppName, r.Flag.AppVersion))
-	return nil
+	return ""
 }
