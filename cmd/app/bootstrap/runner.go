@@ -1,6 +1,7 @@
 package bootstrap
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -133,7 +134,8 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	// Create PR for giantswarm/github repository
 	s.Suffix = " Creating PR for giantswarm/github..."
 	s.Start()
-	err = r.createGithubRepoPR(ctx)
+	var prURL string
+	err, prURL = r.createGithubRepoPR(ctx)
 	if err != nil {
 		s.Stop()
 		return microerror.Mask(err)
@@ -163,7 +165,18 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	s.Stop()
 	fmt.Fprintln(r.stdout, "✓ Branch protection enabled")
 
-	fmt.Fprintf(r.stdout, "\n✨ Successfully bootstrapped app repository %s\n", r.flag.Name)
+	fmt.Fprintf(r.stdout, "\n✨ Successfully bootstrapped app repository %s\n\n", r.flag.Name)
+	fmt.Fprintf(r.stdout, "Next steps:\n")
+	fmt.Fprintf(r.stdout, "1. Visit your new repository: https://github.com/giantswarm/%s-app\n", r.flag.Name)
+	if prURL != "" {
+		fmt.Fprintf(r.stdout, "2. Review and merge the PR: %s\n", prURL)
+	} else {
+		fmt.Fprintf(r.stdout, "2. Review and merge the PR: https://github.com/giantswarm/github/pulls\n")
+	}
+	fmt.Fprintf(r.stdout, "3. Update the Chart.yaml with appropriate metadata and version\n")
+	fmt.Fprintf(r.stdout, "4. Configure your image registry in values.yaml\n")
+	fmt.Fprintf(r.stdout, "5. Create a release by pushing a tag (e.g., v0.1.0)\n")
+	fmt.Fprintf(r.stdout, "\nFor more information, visit: https://intranet.giantswarm.io/docs/dev-and-releng/app-developer-guide/\n")
 
 	return nil
 }
@@ -534,7 +547,7 @@ func (r *runner) generateWorkflowsAndMakefile(ctx context.Context, repoPath stri
 	}
 
 	// Generate Makefile
-	err = r.execCommand(ctx, repoPath, "devctl", "gen", "Makefile",
+	err = r.execCommand(ctx, repoPath, "devctl", "gen", "makefile",
 		"--flavour", "app",
 		"--language", "generic")
 	if err != nil {
@@ -544,10 +557,10 @@ func (r *runner) generateWorkflowsAndMakefile(ctx context.Context, repoPath stri
 	return nil
 }
 
-func (r *runner) createGithubRepoPR(ctx context.Context) error {
+func (r *runner) createGithubRepoPR(ctx context.Context) (error, string) {
 	token := os.Getenv(r.flag.GithubToken)
 	if token == "" {
-		return microerror.Maskf(envVarNotFoundError, "environment variable %#q not found", r.flag.GithubToken)
+		return microerror.Maskf(envVarNotFoundError, "environment variable %#q not found", r.flag.GithubToken), ""
 	}
 
 	// Create a logger that only outputs in debug mode
@@ -567,7 +580,7 @@ func (r *runner) createGithubRepoPR(ctx context.Context) error {
 
 	client, err := githubclient.New(config)
 	if err != nil {
-		return microerror.Mask(err)
+		return microerror.Mask(err), ""
 	}
 
 	// Clone giantswarm/github repository
@@ -576,19 +589,19 @@ func (r *runner) createGithubRepoPR(ctx context.Context) error {
 
 	err = r.execCommand(ctx, "", "git", "clone", "git@github.com:giantswarm/github.git", repoPath)
 	if err != nil {
-		return microerror.Mask(err)
+		return microerror.Mask(err), ""
 	}
 
 	// Create new branch
 	branchName := fmt.Sprintf("add-%s-app", r.flag.Name)
 	err = r.execCommand(ctx, repoPath, "git", "checkout", "-b", branchName)
 	if err != nil {
-		return microerror.Mask(err)
+		return microerror.Mask(err), ""
 	}
 
 	// Update team YAML file
 	teamFile := filepath.Join(repoPath, "repositories", fmt.Sprintf("team-%s.yaml", r.flag.Team))
-	entry := fmt.Sprintf(`- name: %s-app
+	newEntry := fmt.Sprintf(`- name: %s-app
   componentType: service
   gen:
     flavours:
@@ -600,65 +613,70 @@ func (r *runner) createGithubRepoPR(ctx context.Context) error {
 	// Read existing file
 	content, err := os.ReadFile(teamFile)
 	if err != nil {
-		return microerror.Mask(err)
+		return microerror.Mask(err), ""
 	}
 
-	// Parse YAML
-	var data map[string]interface{}
-	err = yaml.Unmarshal(content, &data)
+	// Parse YAML as a list, preserving comments
+	decoder := yaml.NewDecoder(bytes.NewReader(content))
+	decoder.KnownFields(true)
+
+	var repositories []map[string]interface{}
+	err = decoder.Decode(&repositories)
 	if err != nil {
-		return microerror.Mask(err)
+		return microerror.Mask(err), ""
 	}
 
-	// Add new entry in alphabetical order
-	repositories := data["repositories"].([]interface{})
-	var newEntry map[string]interface{}
-	err = yaml.Unmarshal([]byte(entry), &newEntry)
+	// Parse new entry
+	var newEntries []map[string]interface{}
+	err = yaml.Unmarshal([]byte(newEntry), &newEntries)
 	if err != nil {
-		return microerror.Mask(err)
+		return microerror.Mask(err), ""
 	}
+	newRepo := newEntries[0]
 
 	// Insert entry in alphabetical order
 	inserted := false
 	for i, repo := range repositories {
-		repoMap := repo.(map[string]interface{})
-		if repoMap["name"].(string) > fmt.Sprintf("%s-app", r.flag.Name) {
-			repositories = append(repositories[:i], append([]interface{}{newEntry}, repositories[i:]...)...)
+		if repo["name"].(string) > fmt.Sprintf("%s-app", r.flag.Name) {
+			repositories = append(repositories[:i], append([]map[string]interface{}{newRepo}, repositories[i:]...)...)
 			inserted = true
 			break
 		}
 	}
 	if !inserted {
-		repositories = append(repositories, newEntry)
-	}
-	data["repositories"] = repositories
-
-	// Write updated YAML
-	updatedContent, err := yaml.Marshal(data)
-	if err != nil {
-		return microerror.Mask(err)
+		repositories = append(repositories, newRepo)
 	}
 
-	err = os.WriteFile(teamFile, updatedContent, 0644)
+	// Add YAML header comment and marshal with proper indentation
+	var buf bytes.Buffer
+	buf.WriteString("# yaml-language-server: $schema=../.github/repositories.schema.json\n")
+	encoder := yaml.NewEncoder(&buf)
+	encoder.SetIndent(2)
+	err = encoder.Encode(repositories)
 	if err != nil {
-		return microerror.Mask(err)
+		return microerror.Mask(err), ""
+	}
+
+	err = os.WriteFile(teamFile, buf.Bytes(), 0644)
+	if err != nil {
+		return microerror.Mask(err), ""
 	}
 
 	// Commit changes
 	err = r.execCommand(ctx, repoPath, "git", "add", teamFile)
 	if err != nil {
-		return microerror.Mask(err)
+		return microerror.Mask(err), ""
 	}
 
 	err = r.execCommand(ctx, repoPath, "git", "commit", "-m", fmt.Sprintf("Add %s-app to team-%s repositories", r.flag.Name, r.flag.Team))
 	if err != nil {
-		return microerror.Mask(err)
+		return microerror.Mask(err), ""
 	}
 
 	// Push changes using token
 	err = r.execCommand(ctx, repoPath, "git", "push", "origin", branchName)
 	if err != nil {
-		return microerror.Mask(err)
+		return microerror.Mask(err), ""
 	}
 
 	// Create pull request using githubclient
@@ -673,10 +691,14 @@ func (r *runner) createGithubRepoPR(ctx context.Context) error {
 		MaintainerCanModify: github.Bool(true),
 	}
 
-	_, err = client.CreatePullRequest(ctx, "giantswarm", "github", pr)
+	createdPR, err := client.CreatePullRequest(ctx, "giantswarm", "github", pr)
 	if err != nil {
-		return microerror.Mask(err)
+		return microerror.Mask(err), ""
 	}
 
-	return nil
+	// Store PR URL for final message
+	if createdPR.HTMLURL != nil {
+		return nil, *createdPR.HTMLURL
+	}
+	return nil, ""
 }

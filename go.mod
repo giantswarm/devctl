@@ -9,6 +9,7 @@ require (
 	github.com/aws/aws-sdk-go v1.55.6
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/bmatcuk/doublestar/v4 v4.8.1
+	github.com/briandowns/spinner v1.23.2
 	github.com/buger/goterm v1.0.4
 	github.com/fatih/color v1.18.0
 	github.com/giantswarm/microerror v0.4.1
@@ -24,12 +25,12 @@ require (
 	github.com/spf13/pflag v1.0.6
 	golang.org/x/net v0.37.0
 	golang.org/x/oauth2 v0.28.0
+	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/apimachinery v0.32.3
 	sigs.k8s.io/yaml v1.4.0
 )
 
 require (
-	github.com/briandowns/spinner v1.23.2 // indirect
 	github.com/fxamacker/cbor/v2 v2.7.0 // indirect
 	github.com/giantswarm/k8smetadata v0.24.0 // indirect
 	github.com/go-kit/log v0.2.1 // indirect
