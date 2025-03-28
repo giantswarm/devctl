@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/v7/cmd/completion"
+	"github.com/giantswarm/devctl/v7/cmd/deploy"
 	"github.com/giantswarm/devctl/v7/cmd/gen"
 	"github.com/giantswarm/devctl/v7/cmd/release"
 	"github.com/giantswarm/devctl/v7/cmd/replace"
@@ -123,6 +124,20 @@ func New(config Config) (*cobra.Command, error) {
 		}
 	}
 
+	var deployCmd *cobra.Command
+	{
+		c := deploy.Config{
+			Logger: config.Logger,
+			Stderr: config.Stderr,
+			Stdout: config.Stdout,
+		}
+
+		deployCmd, err = deploy.New(c)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+	}
+
 	f := &flag{}
 
 	r := &runner{
@@ -145,6 +160,7 @@ func New(config Config) (*cobra.Command, error) {
 	f.Init(c)
 
 	c.AddCommand(completionCmd)
+	c.AddCommand(deployCmd)
 	c.AddCommand(genCmd)
 	c.AddCommand(releaseCmd)
 	c.AddCommand(replaceCmd)

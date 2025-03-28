@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added `deploy` command to deploy applications to GitOps repositories
+
 ## [7.1.4] - 2025-03-06
 
 - Updates in various actions used in generated workflows
