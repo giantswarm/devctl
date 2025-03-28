@@ -16,9 +16,9 @@ import (
 	"github.com/google/go-github/v70/github"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 
 	"github.com/giantswarm/devctl/v7/pkg/githubclient"
-	"gopkg.in/yaml.v3"
 )
 
 type runner struct {
@@ -416,7 +416,29 @@ func (r *runner) replacePlaceholders(ctx context.Context, repoPath string) error
 		return microerror.Mask(err)
 	}
 
-	// Replace {APP-NAME} with actual app name in all files, excluding .git directory
+	// First replace GitHub URLs that need the -app suffix
+	err = r.execCommand(ctx, repoPath,
+		"find", ".", "-type", "f",
+		"-not", "-path", "./.git/*",
+		"-exec", "sed", "-i",
+		fmt.Sprintf("s|github.com/giantswarm/{APP-NAME}|github.com/giantswarm/%s-app|g", r.flag.Name),
+		"{}", "+")
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	// Then replace CircleCI URLs that need the -app suffix
+	err = r.execCommand(ctx, repoPath,
+		"find", ".", "-type", "f",
+		"-not", "-path", "./.git/*",
+		"-exec", "sed", "-i",
+		fmt.Sprintf("s|gh/giantswarm/{APP-NAME}/|gh/giantswarm/%s-app/|g", r.flag.Name),
+		"{}", "+")
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	// Then do the general replacement for all other cases
 	err = r.execCommand(ctx, repoPath,
 		"find", ".", "-type", "f",
 		"-not", "-path", "./.git/*",

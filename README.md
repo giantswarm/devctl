@@ -6,9 +6,23 @@
 
 ## Installation
 
+> **Important**: We recommend downloading the latest release from our [releases page](https://github.com/giantswarm/devctl/releases) rather than using `go install`. This ensures you get a properly built binary with:
+> - Correct version information
+> - Git commit information for traceability
+> - Build timestamps
+> - All necessary build flags
+> - Generated code and mocks for testing
+>
+> While `go install` will work, it won't include this important metadata and may miss generated code that helps with debugging and version tracking.
+
 ```bash
+# Not recommended
 go install github.com/giantswarm/devctl/v7@latest
 ```
+
+**Recommended**: Download the latest release from
+
+https://github.com/giantswarm/devctl/releases
 
 ## Features
 
@@ -124,10 +138,12 @@ devctl completion fish > ~/.config/fish/completions/devctl.fish
 
 ### Building from Source
 
+If you want to build from source, use the Makefile which ensures all necessary steps are executed:
+
 ```bash
 git clone https://github.com/giantswarm/devctl.git
 cd devctl
-go build
+make build     # Build with proper flags and metadata
 ```
 
 ### Running Tests
