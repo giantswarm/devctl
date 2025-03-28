@@ -21,6 +21,12 @@ import (
 	"github.com/giantswarm/devctl/v7/pkg/githubclient"
 )
 
+const (
+	logLevelDebug = "debug"
+	fileMode0600  = 0600
+	fileMode0755  = 0755
+)
+
 type runner struct {
 	flag   *flag
 	logger micrologger.Logger
@@ -189,7 +195,7 @@ func (r *runner) createRepository(ctx context.Context, name string, owner string
 
 	// Create a logger that only outputs in debug mode
 	logger := logrus.New()
-	if os.Getenv("LOG_LEVEL") == "debug" {
+	if os.Getenv("LOG_LEVEL") == logLevelDebug {
 		logger.SetOutput(r.stdout)
 	} else {
 		logger.SetOutput(io.Discard)
@@ -208,9 +214,9 @@ func (r *runner) createRepository(ctx context.Context, name string, owner string
 
 	repoName := fmt.Sprintf("%s-app", name)
 	repo := &github.Repository{
-		Name:        github.String(repoName),
-		Private:     github.Bool(false),
-		Description: github.String(fmt.Sprintf("Helm chart for %s", name)),
+		Name:        github.Ptr(repoName),
+		Private:     github.Ptr(false),
+		Description: github.Ptr(fmt.Sprintf("Helm chart for %s", name)),
 	}
 
 	_, err = client.CreateFromTemplate(ctx, owner, templateRepo, owner, repo)
@@ -303,7 +309,7 @@ directories:
 		r.flag.Name,
 		r.flag.UpstreamChart)
 
-	err := os.WriteFile(filepath.Join(repoPath, "vendir.yml"), []byte(vendirConfig), 0644)
+	err := os.WriteFile(filepath.Join(repoPath, "vendir.yml"), []byte(vendirConfig), fileMode0600)
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -337,7 +343,7 @@ func (r *runner) configurePatchScript(ctx context.Context, repoPath string) erro
 	// Create sync directory and patches subdirectory
 	syncDir := filepath.Join(repoPath, "sync")
 	patchesDir := filepath.Join(syncDir, "patches")
-	err := os.MkdirAll(patchesDir, 0755)
+	err := os.MkdirAll(patchesDir, fileMode0755)
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -394,7 +400,7 @@ done`
 		r.flag.Name, r.flag.Name, r.flag.Name, r.flag.Name,
 		r.flag.Name, r.flag.Name, r.flag.Name, r.flag.Name, r.flag.Name)
 
-	err = os.WriteFile(filepath.Join(syncDir, "sync.sh"), []byte(syncScript), 0755)
+	err = os.WriteFile(filepath.Join(syncDir, "sync.sh"), []byte(syncScript), fileMode0755)
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -679,7 +685,7 @@ func (r *runner) createGithubRepoPR(ctx context.Context) (error, string) {
 		return microerror.Mask(err), ""
 	}
 
-	err = os.WriteFile(teamFile, buf.Bytes(), 0644)
+	err = os.WriteFile(teamFile, buf.Bytes(), fileMode0600)
 	if err != nil {
 		return microerror.Mask(err), ""
 	}
@@ -706,11 +712,11 @@ func (r *runner) createGithubRepoPR(ctx context.Context) (error, string) {
 	prBody := fmt.Sprintf("This PR adds the %s-app to the team-%s repositories configuration.", r.flag.Name, r.flag.Team)
 
 	pr := &github.NewPullRequest{
-		Title:               github.String(prTitle),
-		Head:                github.String(branchName),
-		Base:                github.String("main"),
-		Body:                github.String(prBody),
-		MaintainerCanModify: github.Bool(true),
+		Title:               github.Ptr(prTitle),
+		Head:                github.Ptr(branchName),
+		Base:                github.Ptr("main"),
+		Body:                github.Ptr(prBody),
+		MaintainerCanModify: github.Ptr(true),
 	}
 
 	createdPR, err := client.CreatePullRequest(ctx, "giantswarm", "github", pr)
