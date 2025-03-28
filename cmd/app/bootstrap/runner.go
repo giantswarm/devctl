@@ -488,7 +488,7 @@ func (r *runner) setupCICD(ctx context.Context, repoPath string) error {
 	cmd.Dir = repoPath
 
 	// Only show output in debug mode
-	if os.Getenv("LOG_LEVEL") == "debug" {
+	if os.Getenv("LOG_LEVEL") == logLevelDebug {
 		cmd.Stdout = r.stdout
 		cmd.Stderr = r.stderr
 	}
@@ -535,7 +535,7 @@ func (r *runner) enableBranchProtection(ctx context.Context, repoPath string) er
 	cmd.Dir = repoPath
 
 	// Only show output in debug mode
-	if os.Getenv("LOG_LEVEL") == "debug" {
+	if os.Getenv("LOG_LEVEL") == logLevelDebug {
 		cmd.Stdout = r.stdout
 		cmd.Stderr = r.stderr
 	}
@@ -557,7 +557,7 @@ func (r *runner) execCommand(ctx context.Context, dir string, command string, ar
 	}
 
 	// Only show command output in debug mode
-	if os.Getenv("LOG_LEVEL") == "debug" {
+	if os.Getenv("LOG_LEVEL") == logLevelDebug {
 		cmd.Stdout = r.stdout
 		cmd.Stderr = r.stderr
 	}
@@ -593,7 +593,7 @@ func (r *runner) createGithubRepoPR(ctx context.Context) (error, string) {
 
 	// Create a logger that only outputs in debug mode
 	logger := logrus.New()
-	if os.Getenv("LOG_LEVEL") == "debug" {
+	if os.Getenv("LOG_LEVEL") == logLevelDebug {
 		logger.SetOutput(r.stdout)
 	} else {
 		logger.SetOutput(io.Discard)

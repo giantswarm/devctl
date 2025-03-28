@@ -449,7 +449,7 @@ func (c *Client) CreateFromTemplate(ctx context.Context, templateOwner, template
 
 	req := &github.TemplateRepoRequest{
 		Name:        repository.Name,
-		Owner:       github.String(newOwner),
+		Owner:       github.Ptr(newOwner),
 		Description: repository.Description,
 		Private:     repository.Private,
 	}
