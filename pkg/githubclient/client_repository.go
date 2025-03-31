@@ -63,7 +63,7 @@ func (c *Client) GetRepository(ctx context.Context, owner, repo string) (*github
 
 	repository, response, err := underlyingClient.Repositories.Get(ctx, owner, repo)
 	if err != nil {
-		if response != nil && response.Response != nil && response.Response.StatusCode == http.StatusNotFound {
+		if response != nil && response.Response != nil && response.StatusCode == http.StatusNotFound {
 			return nil, microerror.Mask(notFoundError)
 		}
 		return nil, microerror.Mask(err)

@@ -35,7 +35,7 @@ func execute(ctx context.Context, file input.Input) error {
 	// itself is a directory. Error if it is.
 	{
 		dir := path.Dir(file.Path)
-		err := os.MkdirAll(dir, 0755)
+		err := os.MkdirAll(dir, 0750)
 		if err != nil {
 			return microerror.Mask(err)
 		}
@@ -63,7 +63,7 @@ func execute(ctx context.Context, file input.Input) error {
 	if err != nil {
 		return microerror.Mask(err)
 	}
-	defer w.Close()
+	defer func() { _ = w.Close() }()
 
 	err = internal.Execute(ctx, w, file)
 	if err != nil {
