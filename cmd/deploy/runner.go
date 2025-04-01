@@ -26,6 +26,7 @@ type runner struct {
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
+	var addAppCmd *exec.Cmd
 
 	err := r.Flag.Validate()
 	if err != nil {
@@ -76,7 +77,8 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 	}
 
 	// Execute kubectl gs gitops add app
-	kubectlCmd := exec.Command("kubectl", "gs", "gitops", "add", "app",
+	addAppArgs := []string{
+		"gs", "gitops", "add", "app",
 		"--app", r.Flag.AppName,
 		"--version", r.Flag.AppVersion,
 		"--catalog", r.Flag.AppCatalog,
@@ -84,11 +86,12 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 		"--management-cluster", r.Flag.ManagementCluster,
 		"--workload-cluster", r.Flag.WorkloadCluster,
 		"--organization", r.Flag.Organization,
-	)
-	kubectlCmd.Dir = tempDir
-	kubectlCmd.Stdout = r.Stdout
-	kubectlCmd.Stderr = r.Stderr
-	err = kubectlCmd.Run()
+	}
+	addAppCmd = exec.Command("kubectl", addAppArgs...)
+	addAppCmd.Dir = tempDir
+	addAppCmd.Stdout = r.Stdout
+	addAppCmd.Stderr = r.Stderr
+	err = addAppCmd.Run()
 	if err != nil {
 		return microerror.Mask(err)
 	}

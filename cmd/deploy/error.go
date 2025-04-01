@@ -13,19 +13,3 @@ var invalidArgError = &microerror.Error{
 var envVarNotFoundError = &microerror.Error{
 	Kind: "envVarNotFoundError",
 }
-
-var deploymentTimeoutError = &microerror.Error{
-	Kind: "deploymentTimeoutError",
-}
-
-var prMergeTimeoutError = &microerror.Error{
-	Kind: "prMergeTimeoutError",
-}
-
-var kubectlError = &microerror.Error{
-	Kind: "kubectlError",
-}
-
-var gitError = &microerror.Error{
-	Kind: "gitError",
-}

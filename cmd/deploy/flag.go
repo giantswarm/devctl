@@ -42,10 +42,6 @@ func (f *flag) Init(cmd *cobra.Command) {
 
 	// Deployment flags
 	cmd.Flags().IntVar(&f.Timeout, "timeout", 300, "Timeout in seconds to wait for deployment")
-
-	// Required flags
-	cmd.MarkFlagRequired("app-name")
-	cmd.MarkFlagRequired("app-version")
 }
 
 func (f *flag) Validate() error {
