@@ -9,11 +9,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/giantswarm/devctl/v7/pkg/appstatus"
-	"github.com/giantswarm/devctl/v7/pkg/githubclient"
 	"github.com/giantswarm/microerror"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+
+	"github.com/giantswarm/devctl/v7/pkg/appstatus"
+	"github.com/giantswarm/devctl/v7/pkg/githubclient"
 )
 
 type runner struct {
