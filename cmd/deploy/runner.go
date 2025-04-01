@@ -67,8 +67,9 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create new branch
-	newBranch := fmt.Sprintf("deploy-%s-%s-%s", r.Flag.WorkloadCluster, r.Flag.AppName, r.Flag.AppVersion)
-	err = githubClient.CreateBranch(ctx, owner, repo, newBranch)
+	newBranch := fmt.Sprintf("deploy-%s-%s-%s-%s", r.Flag.WorkloadCluster, r.Flag.AppName, r.Flag.AppVersion, time.Now().Format("15:04"))
+	newBranch = strings.ReplaceAll(newBranch, ":", "-")
+	err = githubClient.CreateBranch(ctx, newBranch)
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -123,7 +124,7 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 
 	orgNamespace := "org-" + r.Flag.Organization
 	appName := r.Flag.WorkloadCluster + "-" + r.Flag.AppName
-	err = appStatusClient.WaitForAppDeployment(ctx, appName, orgNamespace, time.Duration(r.Flag.Timeout)*time.Second)
+	err = appStatusClient.WaitForAppDeployment(ctx, appName, orgNamespace, r.Flag.ManagementCluster, time.Duration(r.Flag.Timeout)*time.Second)
 	if err != nil {
 		return microerror.Mask(err)
 	}

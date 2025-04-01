@@ -3,12 +3,13 @@ package githubclient
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
-	"os/exec"
 	"time"
 
 	"github.com/giantswarm/microerror"
+	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/config"
+	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/google/go-github/v70/github"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/oauth2"
@@ -41,62 +42,78 @@ func New(config Config) (*Client, error) {
 	return c, nil
 }
 
-func (c *Client) CloneRepository(ctx context.Context, owner, repo, tempDir string) error {
-	c.workDir = tempDir
-	url := fmt.Sprintf("git@github.com:%s/%s.git", owner, repo)
-	cmd := exec.Command("git", "clone", "-b", "main", url, c.workDir)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+func (c *Client) CloneRepository(ctx context.Context, owner, repo string) error {
+	_, err := git.PlainClone(c.workDir, false, &git.CloneOptions{
+		URL:      fmt.Sprintf("https://%s@github.com/%s/%s", c.accessToken, owner, repo),
+		Progress: os.Stdout,
+	})
 
-	return cmd.Run()
+	return microerror.Mask(err)
 }
 
-func (c *Client) CreateBranch(ctx context.Context, owner, repo, newBranch string) error {
-	client := c.getUnderlyingClient(ctx)
-	ref, _, err := client.Git.GetRef(ctx, owner, repo, "refs/heads/main")
+func (c *Client) CreateBranch(ctx context.Context, newBranch string) error {
+	repo, err := git.PlainOpen(c.workDir)
 	if err != nil {
 		return microerror.Mask(err)
 	}
 
-	newRef := &github.Reference{
-		Ref: github.Ptr("refs/heads/" + newBranch),
-		Object: &github.GitObject{
-			SHA: ref.Object.SHA,
-		},
-	}
-
-	_, _, err = client.Git.CreateRef(ctx, owner, repo, newRef)
+	// Get the current HEAD
+	head, err := repo.Head()
 	if err != nil {
 		return microerror.Mask(err)
 	}
+
+	// Create and checkout new branch
+	worktree, err := repo.Worktree()
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	c.logger.Infof("creating new branch %s", newBranch)
+	err = worktree.Checkout(&git.CheckoutOptions{
+		Branch: plumbing.NewBranchReferenceName(newBranch),
+		Create: true,
+		Hash:   head.Hash(),
+	})
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
 	c.logger.Infof("created branch %s", newBranch)
-
 	return nil
 }
 
-func (c *Client) CommitAndPush(ctx context.Context, owner, repo, branch, message string) error {
-	// Stage all changes
-	cmd := exec.Command("git", "add", ".", "-A")
-	cmd.Dir = c.workDir
-	output, err := cmd.CombinedOutput()
+func (c *Client) CommitAndPush(ctx context.Context, branch, message string) error {
+	repo, err := git.PlainOpen(c.workDir)
 	if err != nil {
-		log.Fatalf("Failed to add stage content %v\n%s", err, output)
+		return microerror.Mask(err)
 	}
-	c.logger.Infof("work directory: %s", c.workDir)
+
+	// Get the worktree
+	worktree, err := repo.Worktree()
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	// Stage all changes
+	_, err = worktree.Add(".")
+	if err != nil {
+		return microerror.Mask(err)
+	}
 
 	// Commit changes
-	c.logger.Infof("committing changes with message: %s", message)
-	cmd = exec.Command("git", "commit", "-am", message)
-	output, err = cmd.CombinedOutput()
+	_, err = worktree.Commit(message, &git.CommitOptions{})
 	if err != nil {
-		log.Fatalf("Failed to commit changes: %v\n%s", err, output)
+		return microerror.Mask(err)
 	}
 
 	// Push changes
-	cmd = exec.Command("git", "push", "origin", branch)
-	output, err = cmd.CombinedOutput()
+	err = repo.Push(&git.PushOptions{
+		RemoteName: "origin",
+		RefSpecs:   []config.RefSpec{config.RefSpec(fmt.Sprintf("refs/heads/%s:refs/heads/%s", branch, branch))},
+	})
 	if err != nil {
-		log.Fatalf("Failed to push changes: %v\n%s", err, output)
+		return microerror.Mask(err)
 	}
 
 	c.logger.Infof("pushed changes to branch %s", branch)
