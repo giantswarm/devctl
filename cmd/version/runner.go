@@ -37,11 +37,11 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 }
 
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
-	fmt.Fprintf(r.stdout, "Version:        %s\n", project.Version())
-	fmt.Fprintf(r.stdout, "Git Commit:     %s\n", project.GitSHA())
-	fmt.Fprintf(r.stdout, "Go Version:     %s\n", runtime.Version())
-	fmt.Fprintf(r.stdout, "OS / Arch:      %s / %s\n", runtime.GOOS, runtime.GOARCH)
-	fmt.Fprintf(r.stdout, "Source:         %s\n", project.Source())
+	_, _ = fmt.Fprintf(r.stdout, "Version:        %s\n", project.Version())
+	_, _ = fmt.Fprintf(r.stdout, "Git Commit:     %s\n", project.GitSHA())
+	_, _ = fmt.Fprintf(r.stdout, "Go Version:     %s\n", runtime.Version())
+	_, _ = fmt.Fprintf(r.stdout, "OS / Arch:      %s / %s\n", runtime.GOOS, runtime.GOARCH)
+	_, _ = fmt.Fprintf(r.stdout, "Source:         %s\n", project.Source())
 
 	return nil
 }
