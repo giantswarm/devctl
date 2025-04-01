@@ -97,7 +97,7 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 	}
 
 	// Release directory
-	err = os.Mkdir(releasePath, 0755)
+	err = os.Mkdir(releasePath, 0750)
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -165,6 +165,7 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 
 	// Update releases.json
 	releasesJSONPath := filepath.Join(providerDirectory, "releases.json")
+	releasesJSONPath = filepath.Clean(releasesJSONPath)
 	releasesData, err := os.ReadFile(releasesJSONPath)
 	if err != nil {
 		return microerror.Mask(err)
@@ -179,7 +180,7 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 	newReleaseInfo := ReleaseJsonInfo{
 		Version:          newVersion.String(),
 		IsDeprecated:     false,
-		ReleaseTimestamp: now.Time.Format(time.RFC3339),
+		ReleaseTimestamp: now.Format(time.RFC3339),
 		ChangelogUrl:     fmt.Sprintf("https://github.com/giantswarm/releases/blob/master/%s/%s/README.md", provider, releaseDirectory),
 		IsStable:         true,
 	}

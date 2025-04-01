@@ -340,7 +340,7 @@ func getLatestFlatcarRelease() (string, error) {
 	if err != nil {
 		return "", microerror.Mask(err)
 	}
-	defer r.Body.Close()
+	defer func() { _ = r.Body.Close() }()
 
 	type release struct {
 		Channel string

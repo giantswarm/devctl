@@ -96,10 +96,10 @@ func scrapeVersions(source io.Reader) ([]string, error) {
 	var versions []string
 	for {
 		tt := z.Next()
-		switch {
-		case tt == html.ErrorToken:
+		switch tt {
+		case html.ErrorToken:
 			return versions, nil
-		case tt == html.StartTagToken:
+		case html.StartTagToken:
 			t := z.Token()
 			if t.Data != "a" {
 				continue
