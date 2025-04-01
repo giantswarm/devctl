@@ -127,7 +127,7 @@ func New(config Config) (*cobra.Command, error) {
 	var deployCmd *cobra.Command
 	{
 		c := deploy.Config{
-			Logger: config.Logger,
+			Logger: logrus.StandardLogger(),
 			Stderr: config.Stderr,
 			Stdout: config.Stdout,
 		}

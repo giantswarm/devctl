@@ -76,7 +76,7 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 
 	// Execute kubectl gs gitops add app
 	kubectlCmd := exec.Command("kubectl", "gs", "gitops", "add", "app",
-		"--app", r.Flag.AppName,2.8.1
+		"--app", r.Flag.AppName,
 		"--version", r.Flag.AppVersion,
 		"--catalog", r.Flag.AppCatalog,
 		"--target-namespace", r.Flag.AppNamespace,
