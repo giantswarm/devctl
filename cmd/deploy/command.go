@@ -42,6 +42,7 @@ func New(config Config) (*cobra.Command, error) {
 		2. Adding the application using 'kubectl gs gitops add app'
 		3. Creating a branch and committing the changes
 		4. Creating a pull request
+		5. Check the app is finally deployed
 
 Example:
     devctl deploy \
