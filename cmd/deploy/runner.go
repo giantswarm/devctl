@@ -12,14 +12,13 @@ import (
 	"github.com/giantswarm/devctl/v7/pkg/appstatus"
 	"github.com/giantswarm/devctl/v7/pkg/githubclient"
 	"github.com/giantswarm/microerror"
-	"github.com/giantswarm/micrologger"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
 type runner struct {
 	Flag   *flag
-	Logger micrologger.Logger
+	Logger *logrus.Logger
 	Stderr io.Writer
 	Stdout io.Writer
 }
@@ -58,7 +57,8 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return microerror.Mask(err)
 	}
-	//defer os.RemoveAll(tempDir)
+	r.Logger.Infof("Created temporary directory: %s", tempDir)
+	defer os.RemoveAll(tempDir)
 
 	// Clone repository
 	err = githubClient.CloneRepository(ctx, owner, repo, tempDir)
@@ -76,8 +76,7 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 
 	// Execute kubectl gs gitops add app
 	kubectlCmd := exec.Command("kubectl", "gs", "gitops", "add", "app",
-		"--app", r.Flag.WorkloadCluster+"-"+r.Flag.AppName,
-		"--name", r.Flag.AppName,
+		"--app", r.Flag.AppName,2.8.1
 		"--version", r.Flag.AppVersion,
 		"--catalog", r.Flag.AppCatalog,
 		"--target-namespace", r.Flag.AppNamespace,
@@ -106,7 +105,7 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 		return microerror.Mask(err)
 	}
 
-	r.Logger.LogCtx(ctx, "level", "info", "message", fmt.Sprintf("PR created: %s. Please approve to continue.", pr.GetHTMLURL()))
+	r.Logger.Infof("PR created: %s. Please approve to continue.", pr.GetHTMLURL())
 	// Wait for PR merge
 	err = githubClient.WaitForPRMerge(ctx, owner, repo, pr.GetNumber(), time.Duration(r.Flag.Timeout)*time.Second)
 	if err != nil {

@@ -42,8 +42,9 @@ func New(config Config) (*Client, error) {
 	return c, nil
 }
 
-func (c *Client) CloneRepository(ctx context.Context, owner, repo string) error {
-	_, err := git.PlainClone(c.workDir, false, &git.CloneOptions{
+func (c *Client) CloneRepository(ctx context.Context, owner, repo, workDir string) error {
+	c.workDir = workDir
+	_, err := git.PlainClone(workDir, false, &git.CloneOptions{
 		URL:      fmt.Sprintf("https://%s@github.com/%s/%s", c.accessToken, owner, repo),
 		Progress: os.Stdout,
 	})
@@ -83,14 +84,14 @@ func (c *Client) CreateBranch(ctx context.Context, newBranch string) error {
 	return nil
 }
 
-func (c *Client) CommitAndPush(ctx context.Context, branch, message string) error {
-	repo, err := git.PlainOpen(c.workDir)
+func (c *Client) CommitAndPush(ctx context.Context, owner, repo, branch, message string) error {
+	gitRepo, err := git.PlainOpen(c.workDir)
 	if err != nil {
 		return microerror.Mask(err)
 	}
 
 	// Get the worktree
-	worktree, err := repo.Worktree()
+	worktree, err := gitRepo.Worktree()
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -108,7 +109,7 @@ func (c *Client) CommitAndPush(ctx context.Context, branch, message string) erro
 	}
 
 	// Push changes
-	err = repo.Push(&git.PushOptions{
+	err = gitRepo.Push(&git.PushOptions{
 		RemoteName: "origin",
 		RefSpecs:   []config.RefSpec{config.RefSpec(fmt.Sprintf("refs/heads/%s:refs/heads/%s", branch, branch))},
 	})
