@@ -56,6 +56,7 @@ replacements:
 func addToKustomization(providerDirectory string, release v1alpha1.Release) error {
 	path := filepath.Join(providerDirectory, "kustomization.yaml")
 	var providerKustomization kustomizationFile
+	path = filepath.Clean(path)
 	providerKustomizationData, err := os.ReadFile(path)
 	if err != nil {
 		return microerror.Mask(err)
@@ -89,6 +90,7 @@ func addToKustomization(providerDirectory string, release v1alpha1.Release) erro
 func removeFromKustomization(providerDirectory string, release v1alpha1.Release) error {
 	path := filepath.Join(providerDirectory, "kustomization.yaml")
 	var providerKustomization kustomizationFile
+	path = filepath.Clean(path)
 	providerKustomizationData, err := os.ReadFile(path)
 	if err != nil {
 		return microerror.Mask(err)

@@ -91,7 +91,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 				return nil
 			}
 
-			fmt.Fprintf(r.stderr, "Processing file %q.\n", file)
+			_, _ = fmt.Fprintf(r.stderr, "Processing file %q.\n", file)
 			err = r.processFile(file, regex, replacement)
 			if err != nil {
 				return microerror.Mask(err)
@@ -119,7 +119,7 @@ func (r *runner) processFile(fileName string, regex *regexp.Regexp, replacement 
 	if err != nil {
 		return microerror.Mask(err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	content, err := io.ReadAll(f)
 	if err != nil {
@@ -131,7 +131,7 @@ func (r *runner) processFile(fileName string, regex *regexp.Regexp, replacement 
 	// When --inplace flag isn't specified print replacement to stdout and
 	// return.
 	if !r.flag.InPlace {
-		fmt.Fprintf(r.stdout, "%s", replaced)
+		_, _ = fmt.Fprintf(r.stdout, "%s", replaced)
 
 		return nil
 	}

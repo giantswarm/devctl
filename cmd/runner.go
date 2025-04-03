@@ -95,10 +95,10 @@ func (r *runner) persistentPreRun(ctx context.Context, cmd *cobra.Command, args 
 
 	latestVersion, err := updaterService.GetLatest()
 	if updater.IsHasNewVersion(err) {
-		fmt.Fprintf(r.stderr, "If you know what you are doing you can disable this check by exporting %s=%s\n", env.DevctlUnsafeForceVersion.Key(), project.Version())
-		fmt.Fprintf(r.stderr, "Current version:  %s\n", project.Version())
-		fmt.Fprintf(r.stderr, "Latest version:   %s\n", latestVersion)
-		fmt.Fprintf(r.stderr, "Please update your %s with \"%s version update\"\n", project.Name(), project.Name())
+		_, _ = fmt.Fprintf(r.stderr, "If you know what you are doing you can disable this check by exporting %s=%s\n", env.DevctlUnsafeForceVersion.Key(), project.Version())
+		_, _ = fmt.Fprintf(r.stderr, "Current version:  %s\n", project.Version())
+		_, _ = fmt.Fprintf(r.stderr, "Latest version:   %s\n", latestVersion)
+		_, _ = fmt.Fprintf(r.stderr, "Please update your %s with \"%s version update\"\n", project.Name(), project.Name())
 
 		return microerror.Mask(err)
 	} else if err != nil {
