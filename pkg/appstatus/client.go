@@ -41,18 +41,16 @@ func (c *Client) WaitForAppDeployment(ctx context.Context, appName, orgNamespace
 
 	// Login to management cluster
 	loginCmd := exec.Command("tsh", "kube", "login", managementCluster)
-	loginCmd.Stderr = c.stderr
-	output, err := loginCmd.Output()
+	err := loginCmd.Run()
 	if err != nil {
 		return microerror.Mask(err)
 	}
-	c.logger.Infof("Login output: %s", output)
 
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 
 	ctx, cancel := context.WithTimeout(ctx, timeout)
-	
+
 	go func(appName, orgNamespace string) {
 		// Get app status using kubectl
 		kubectlCmd := exec.Command("kubectl", "get", "app", appName,
@@ -69,12 +67,11 @@ func (c *Client) WaitForAppDeployment(ctx context.Context, appName, orgNamespace
 				return
 			}
 			c.logger.Infof("App %s is not deployed yet, current status: %s", appName, status)
-		 }
+		}
 
-		 <-ticker.C
+		<-ticker.C
 	}(appName, orgNamespace)
 
-	
 	<-ctx.Done()
 	return ctx.Err()
 }

@@ -143,28 +143,29 @@ func (c *Client) WaitForPRMerge(ctx context.Context, owner, repo string, prNumbe
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 
-	deadline := time.Now().Add(timeout)
-	for {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+
+	go func(owner, repo string, prNumber int) {
 		if time.Now().After(deadline) {
-			return microerror.Maskf(prMergeTimeoutError, "PR #%d was not merged within %v", prNumber, timeout)
+			c.logger.Errorf("PR #%d was not merged within %v", prNumber, timeout)
+			return
 		}
 
 		pr, _, err := client.PullRequests.Get(ctx, owner, repo, prNumber)
 		if err != nil {
-			return microerror.Mask(err)
+			cancel()
+			return
 		}
 
 		if pr.Merged != nil && *pr.Merged {
-			return nil
+			return
 		}
 
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-ticker.C:
-			continue
-		}
-	}
+		<-ticker.C
+	}(owner, repo, prNumber)
+
+	<-ctx.Done()
+	return ctx.Err()
 }
 
 func (c *Client) getUnderlyingClient(ctx context.Context) *github.Client {
