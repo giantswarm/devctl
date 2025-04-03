@@ -314,6 +314,8 @@ directories:
 		return microerror.Mask(err)
 	}
 
+	fmt.Printf("Repo path %s \n vendir.yml file created \n", repoPath)
+
 	// Run initial sync
 	err = r.execCommand(ctx, repoPath, "vendir", "sync")
 	if err != nil {
@@ -422,22 +424,24 @@ func (r *runner) replacePlaceholders(ctx context.Context, repoPath string) error
 		return microerror.Mask(err)
 	}
 
+	replaceString := fmt.Sprintf("s|github.com/giantswarm/{APP-NAME}|github.com/giantswarm/%s-app|g", r.flag.Name)
 	// First replace GitHub URLs that need the -app suffix
 	err = r.execCommand(ctx, repoPath,
-		"find", ".", "-type", "f",
-		"-not", "-path", "./.git/*",
-		"-exec", "sed", "-i",
-		fmt.Sprintf("s|github.com/giantswarm/{APP-NAME}|github.com/giantswarm/%s-app|g", r.flag.Name),
+		"find", ".", "-type", "d", "-name", ".git",
+		"-prune", "-o", "-type", "f",
+		"-exec", "sed", "-i ''",
+		replaceString,
 		"{}", "+")
 	if err != nil {
+		fmt.Printf("Error replacing GitHub URLs: repo path %s \n command: find . -type d -name -path .git -prune -o -type f -exec sed -i %s {} +\n", repoPath, replaceString)
 		return microerror.Mask(err)
 	}
 
 	// Then replace CircleCI URLs that need the -app suffix
 	err = r.execCommand(ctx, repoPath,
-		"find", ".", "-type", "f",
-		"-not", "-path", "./.git/*",
-		"-exec", "sed", "-i",
+		"find", ".", "-type", "d", "-name", ".git",
+		"-prune", "-o", "-type", "f",
+		"-exec", "sed", "-i ''",
 		fmt.Sprintf("s|gh/giantswarm/{APP-NAME}/|gh/giantswarm/%s-app/|g", r.flag.Name),
 		"{}", "+")
 	if err != nil {
@@ -446,16 +450,16 @@ func (r *runner) replacePlaceholders(ctx context.Context, repoPath string) error
 
 	// Then do the general replacement for all other cases
 	err = r.execCommand(ctx, repoPath,
-		"find", ".", "-type", "f",
-		"-not", "-path", "./.git/*",
-		"-exec", "sed", "-i", fmt.Sprintf("s/{APP-NAME}/%s/g", r.flag.Name), "{}", "+")
+		"find", ".", "-type", "d", "-name", ".git",
+		"-prune", "-o", "-type", "f",
+		"-exec", "sed", "-i ''", fmt.Sprintf("s/{APP-NAME}/%s/g", r.flag.Name), "{}", "+")
 	if err != nil {
 		return microerror.Mask(err)
 	}
 
 	// Replace team in CODEOWNERS
 	err = r.execCommand(ctx, repoPath,
-		"sed", "-i",
+		"sed", "-i ''",
 		fmt.Sprintf("s/@giantswarm\\/team-honeybadger/@giantswarm\\/team-%s/g", r.flag.Team),
 		"CODEOWNERS")
 	if err != nil {
@@ -464,7 +468,7 @@ func (r *runner) replacePlaceholders(ctx context.Context, repoPath string) error
 
 	// Add team label
 	err = r.execCommand(ctx, repoPath,
-		"sed", "-i",
+		"sed", "-i ''",
 		fmt.Sprintf(`s/app.kubernetes.io\/name: %s/app.kubernetes.io\/name: %s\n    application.giantswarm.io\/team: %s/`,
 			r.flag.Name, r.flag.Name, r.flag.Team),
 		fmt.Sprintf("helm/%s/templates/_helpers.tpl", r.flag.Name))
