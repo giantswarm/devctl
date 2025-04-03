@@ -51,12 +51,9 @@ func (c *Client) WaitForAppDeployment(ctx context.Context, appName, orgNamespace
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 
-	deadline := time.Now().Add(timeout)
-	for {
-		if time.Now().After(deadline) {
-			return microerror.Maskf(executionFailedError, "timeout waiting for app %q to be deployed", appName)
-		}
-
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	
+	go func(appName, orgNamespace string) {
 		// Get app status using kubectl
 		kubectlCmd := exec.Command("kubectl", "get", "app", appName,
 			"-n", orgNamespace,
@@ -64,28 +61,20 @@ func (c *Client) WaitForAppDeployment(ctx context.Context, appName, orgNamespace
 		kubectlCmd.Stderr = c.stderr
 
 		output, err := kubectlCmd.Output()
-		if err != nil {
-			// App might not exist yet, continue waiting
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-ticker.C:
-				continue
+		if err == nil {
+			status := string(output)
+			if status == "deployed" {
+				c.logger.Infof("App %s successfully deployed", appName)
+				cancel()
+				return
 			}
-		}
+			c.logger.Infof("App %s is not deployed yet, current status: %s", appName, status)
+		 }
 
-		status := string(output)
-		if status == "deployed" {
-			c.logger.Infof("App %s successfully deployed", appName)
-			return nil
-		}
-		c.logger.Infof("App %s is not deployed yet, current status: %s", appName, status)
+		 <-ticker.C
+	}(appName, orgNamespace)
 
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-ticker.C:
-			continue
-		}
-	}
+	
+	<-ctx.Done()
+	return ctx.Err()
 }
