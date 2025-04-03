@@ -48,7 +48,7 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 		return microerror.Mask(err)
 	}
 
-	// Clone GitOps repository
+	// Parse repository name
 	owner, repo, err := parseGitOpsRepo(r.Flag.GitOpsRepo)
 	if err != nil {
 		return microerror.Mask(err)
