@@ -69,7 +69,7 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create new branch
-	newBranch := fmt.Sprintf("deploy-%s-%s-%s-%s", r.Flag.WorkloadCluster, r.Flag.AppName, r.Flag.AppVersion, time.Now().Format("15:04"))
+	newBranch := fmt.Sprintf("%s-%s-%s", r.Flag.WorkloadCluster, r.Flag.AppName, r.Flag.AppVersion)
 	newBranch = strings.ReplaceAll(newBranch, ":", "-")
 	err = githubClient.CreateBranch(ctx, newBranch)
 	if err != nil {
