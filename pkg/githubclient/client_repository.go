@@ -102,12 +102,14 @@ func (c *Client) SetRepositorySettings(ctx context.Context, repository, reposito
 	// HTTP 422 This organization does not allow private repository forking
 	repository.AllowForking = nil
 
-	var err error
+	if !c.dryRun {
+		var err error
 
-	underlyingClient := c.getUnderlyingClient(ctx)
-	repository, _, err = underlyingClient.Repositories.Edit(ctx, repository.GetOwner().GetLogin(), repository.GetName(), repository)
-	if err != nil {
-		return nil, microerror.Mask(err)
+		underlyingClient := c.getUnderlyingClient(ctx)
+		repository, _, err = underlyingClient.Repositories.Edit(ctx, repository.GetOwner().GetLogin(), repository.GetName(), repository)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
 	}
 
 	c.logger.Debug("configured repository settings")
@@ -131,9 +133,11 @@ func (c *Client) SetRepositoryPermissions(ctx context.Context, repository *githu
 
 		c.logger.Debugf("grant %q permission to %q", permission, teamSlug)
 
-		_, err := underlyingClient.Teams.AddTeamRepoBySlug(ctx, org, teamSlug, owner, repo, opt)
-		if err != nil {
-			return microerror.Mask(err)
+		if !c.dryRun {
+			_, err := underlyingClient.Teams.AddTeamRepoBySlug(ctx, org, teamSlug, owner, repo, opt)
+			if err != nil {
+				return microerror.Mask(err)
+			}
 		}
 
 		c.logger.Debugf("granted %q permission to %q", permission, teamSlug)
@@ -197,10 +201,12 @@ func (c *Client) SetRepositoryBranchProtection(ctx context.Context, repository *
 	b, _ := json.MarshalIndent(opts, "", "  ")
 	c.logger.Debugf("branch protection settings\n%s", b)
 
-	underlyingClient := c.getUnderlyingClient(ctx)
-	_, _, err = underlyingClient.Repositories.UpdateBranchProtection(ctx, owner, repo, default_branch, opts)
-	if err != nil {
-		return microerror.Mask(err)
+	if !c.dryRun {
+		underlyingClient := c.getUnderlyingClient(ctx)
+		_, _, err = underlyingClient.Repositories.UpdateBranchProtection(ctx, owner, repo, default_branch, opts)
+		if err != nil {
+			return microerror.Mask(err)
+		}
 	}
 
 	c.logger.Debugf("configured protection for %q branch", default_branch)
@@ -226,9 +232,11 @@ func (c *Client) RemoveRepositoryBranchProtection(ctx context.Context, repositor
 		return microerror.Mask(err)
 	}
 
-	_, err = underlyingClient.Repositories.RemoveBranchProtection(ctx, owner, repo, default_branch)
-	if err != nil {
-		return microerror.Mask(err)
+	if !c.dryRun {
+		_, err = underlyingClient.Repositories.RemoveBranchProtection(ctx, owner, repo, default_branch)
+		if err != nil {
+			return microerror.Mask(err)
+		}
 	}
 
 	c.logger.Debugf("disabled protection for %q branch", default_branch)
@@ -301,10 +309,12 @@ func (c *Client) SetRepositoryDefaultBranch(ctx context.Context, repository *git
 
 		c.logger.Infof("renaming default branch from %q to %q", currentDefaultBranch, newDefaultBranch)
 
-		underlyingClient := c.getUnderlyingClient(ctx)
-		_, _, err := underlyingClient.Repositories.RenameBranch(ctx, owner, repo, currentDefaultBranch, newDefaultBranch)
-		if err != nil {
-			return microerror.Mask(err)
+		if !c.dryRun {
+			underlyingClient := c.getUnderlyingClient(ctx)
+			_, _, err := underlyingClient.Repositories.RenameBranch(ctx, owner, repo, currentDefaultBranch, newDefaultBranch)
+			if err != nil {
+				return microerror.Mask(err)
+			}
 		}
 
 		*repository.DefaultBranch = newDefaultBranch
@@ -406,13 +416,14 @@ func (c *Client) SetRepositoryWebhooks(ctx context.Context, repository *github.R
 		if *existingHook.Config.URL == *hook.Config.URL {
 			c.logger.Debugf("found existing webhook. ID=%d\n", *existingHook.ID)
 
-			hook.ID = existingHook.ID
+			if !c.dryRun {
+				hook.ID = existingHook.ID
 
-			hook, _, err = underlyingClient.Repositories.EditHook(ctx, owner, repo, *hook.ID, hook)
-			if err != nil {
-				return microerror.Mask(err)
+				hook, _, err = underlyingClient.Repositories.EditHook(ctx, owner, repo, *hook.ID, hook)
+				if err != nil {
+					return microerror.Mask(err)
+				}
 			}
-
 			c.logger.Infof("updated existing webhook. ID=%d\n", *hook.ID)
 
 			return nil
@@ -420,9 +431,11 @@ func (c *Client) SetRepositoryWebhooks(ctx context.Context, repository *github.R
 	}
 
 	c.logger.Debugf("Creating new webhook\n")
-	hook, _, err = underlyingClient.Repositories.CreateHook(ctx, owner, repo, hook)
-	if err != nil {
-		return microerror.Mask(err)
+	if !c.dryRun {
+		hook, _, err = underlyingClient.Repositories.CreateHook(ctx, owner, repo, hook)
+		if err != nil {
+			return microerror.Mask(err)
+		}
 	}
 
 	c.logger.Infof("new webhook added. ID=%d\n", *hook.ID)

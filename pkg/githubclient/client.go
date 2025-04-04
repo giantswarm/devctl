@@ -18,12 +18,14 @@ import (
 type Config struct {
 	Logger      *logrus.Logger
 	AccessToken string
+	DryRun      bool
 }
 
 type Client struct {
 	logger      *logrus.Logger
 	accessToken string
 	workDir     string
+	dryRun      bool
 }
 
 func New(config Config) (*Client, error) {
@@ -35,6 +37,7 @@ func New(config Config) (*Client, error) {
 	}
 
 	c := &Client{
+		dryRun:      config.DryRun,
 		logger:      config.Logger,
 		accessToken: config.AccessToken,
 	}
@@ -144,27 +147,38 @@ func (c *Client) WaitForPRMerge(ctx context.Context, owner, repo string, prNumbe
 	defer ticker.Stop()
 
 	ctx, cancel := context.WithTimeout(ctx, timeout)
+	deadline := time.Now().Add(timeout)
 
 	go func(owner, repo string, prNumber int) {
-		if time.Now().After(deadline) {
-			c.logger.Errorf("PR #%d was not merged within %v", prNumber, timeout)
-			return
-		}
+		for {
+			if time.Now().After(deadline) {
+				c.logger.Errorf("PR #%d was not merged within %v", prNumber, timeout)
+				cancel()
+				return
+			}
 
-		pr, _, err := client.PullRequests.Get(ctx, owner, repo, prNumber)
-		if err != nil {
-			cancel()
-			return
-		}
+			pr, _, err := client.PullRequests.Get(ctx, owner, repo, prNumber)
+			if err != nil {
+				cancel()
+				return
+			}
 
-		if pr.Merged != nil && *pr.Merged {
-			return
-		}
+			if pr.Merged != nil && *pr.Merged {
+				c.logger.Infof("PR #%d was merged", prNumber)
+				cancel()
+				return
+			}
 
-		<-ticker.C
+			c.logger.Infof("Waiting for PR #%d to be merged", prNumber)
+			<-ticker.C
+		}
 	}(owner, repo, prNumber)
 
 	<-ctx.Done()
+	err := ctx.Err()
+	if err == context.Canceled {
+		return nil
+	}
 	return ctx.Err()
 }
 

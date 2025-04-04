@@ -8,6 +8,9 @@ import (
 )
 
 type flag struct {
+	// GitOps repository flags
+	GitOpsRepo string
+
 	// Cluster configuration
 	ManagementCluster string
 	Organization      string
@@ -39,7 +42,7 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.AppNamespace, "target-namespace", "default", "Kubernetes namespace to deploy the application to")
 
 	// Deployment flags
-	cmd.Flags().DurationVar(&f.Timeout, "timeout", 300, "Timeout in seconds to wait for deployment")
+	cmd.Flags().DurationVar(&f.Timeout, "timeout", 300*time.Second, "Timeout in seconds to wait for deployment")
 }
 
 func (f *flag) Validate() error {
