@@ -17,7 +17,9 @@ const (
 		2. Adding the application using 'kubectl gs gitops add app'
 		3. Creating a branch and committing the changes
 		4. Creating a pull request
-		5. Check the app is finally deployed`
+		5. Check the app is finally deployed
+
+		You must have 'kubectl-gs' and 'tsh' installed in your machine to use this command.`
 	example = `  devctl deploy --gitops-repo giantswarm/workload-clusters-fleet \
 		--app-name hello-world \
 		--app-version 2.8.1 \

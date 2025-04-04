@@ -33,24 +33,6 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 		return microerror.Mask(err)
 	}
 
-	// Check if 'kubectl' is installed
-	if _, err := exec.LookPath("kubectl"); err != nil {
-		fmt.Fprintln(os.Stderr, "Error: 'kubectl' is not installed or not found in PATH")
-		os.Exit(1) // Exit the program with a non-zero status
-	}
-
-	// Check if 'kubectl gs' plugin is installed
-	if _, err := exec.LookPath("kubectl-gs"); err != nil {
-		fmt.Fprintln(os.Stderr, "Error: 'kubectl gs' plugin is not installed or not found in PATH")
-		os.Exit(1) // Exit the program with a non-zero status
-	}
-
-	// Check if 'tsh' is installed
-	if _, err := exec.LookPath("tsh"); err != nil {
-		fmt.Fprintln(os.Stderr, "Error: 'tsh' is not installed or not found in PATH")
-		os.Exit(1) // Exit the program with a non-zero status
-	}
-
 	// Get GitHub token from environment variables
 	token := getGitHubToken()
 	if token == "" {
