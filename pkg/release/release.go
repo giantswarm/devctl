@@ -130,6 +130,7 @@ func findRelease(providerDirectory string, targetVersion semver.Version) (v1alph
 		return v1alpha1.Release{}, "", releaseNotFoundError
 	}
 
+	releaseYAMLPath = filepath.Clean(releaseYAMLPath)
 	releaseYAML, err := os.ReadFile(releaseYAMLPath)
 	if err != nil {
 		return v1alpha1.Release{}, "", microerror.Mask(err)
