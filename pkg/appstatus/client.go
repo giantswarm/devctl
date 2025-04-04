@@ -82,9 +82,10 @@ func (c *Client) WaitForAppDeployment(ctx context.Context, appName, orgNamespace
 	}(appName, orgNamespace)
 
 	<-ctx.Done()
+
 	err = ctx.Err()
-	if err == context.Canceled {
+	if errors.Is(err, context.Canceled) {
 		return nil
 	}
-	return ctx.Err()
+	return err
 }
