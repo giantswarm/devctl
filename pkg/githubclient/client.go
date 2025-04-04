@@ -147,39 +147,26 @@ func (c *Client) WaitForPRMerge(ctx context.Context, owner, repo string, prNumbe
 	defer ticker.Stop()
 
 	ctx, cancel := context.WithTimeout(ctx, timeout)
-	deadline := time.Now().Add(timeout)
+	defer cancel()
 
-	go func(owner, repo string, prNumber int) {
-		for {
-			if time.Now().After(deadline) {
-				c.logger.Errorf("PR #%d was not merged within %v", prNumber, timeout)
-				cancel()
-				return
-			}
-
-			pr, _, err := client.PullRequests.Get(ctx, owner, repo, prNumber)
-			if err != nil {
-				cancel()
-				return
-			}
-
-			if pr.Merged != nil && *pr.Merged {
-				c.logger.Infof("PR #%d was merged", prNumber)
-				cancel()
-				return
-			}
-
-			c.logger.Infof("Waiting for PR #%d to be merged", prNumber)
-			<-ticker.C
+	for {
+		pr, _, err := client.PullRequests.Get(ctx, owner, repo, prNumber)
+		if err != nil {
+			return microerror.Mask(err)
 		}
-	}(owner, repo, prNumber)
 
-	<-ctx.Done()
-	err := ctx.Err()
-	if err == context.Canceled {
-		return nil
+		if pr.Merged != nil && *pr.Merged {
+			c.logger.Infof("PR #%d was merged", prNumber)
+			return nil
+		}
+
+		select {
+		case <-ticker.C:
+			c.logger.Infof("Waiting for PR #%d to be merged", prNumber)
+		case <-ctx.Done():
+			return microerror.Maskf(invalidConfigError, "PR #%d was not merged within %v", prNumber, timeout)
+		}
 	}
-	return ctx.Err()
 }
 
 func (c *Client) getUnderlyingClient(ctx context.Context) *github.Client {
