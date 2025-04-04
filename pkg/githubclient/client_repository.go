@@ -315,9 +315,9 @@ func (c *Client) SetRepositoryDefaultBranch(ctx context.Context, repository *git
 			if err != nil {
 				return microerror.Mask(err)
 			}
-
-			*repository.DefaultBranch = newDefaultBranch
 		}
+
+		*repository.DefaultBranch = newDefaultBranch
 
 		c.logger.Infof("renamed default branch from %q to %q", currentDefaultBranch, newDefaultBranch)
 	}
@@ -423,9 +423,9 @@ func (c *Client) SetRepositoryWebhooks(ctx context.Context, repository *github.R
 				if err != nil {
 					return microerror.Mask(err)
 				}
-
-				c.logger.Infof("updated existing webhook. ID=%d\n", *hook.ID)
 			}
+			c.logger.Infof("updated existing webhook. ID=%d\n", *hook.ID)
+
 			return nil
 		}
 	}
@@ -436,8 +436,9 @@ func (c *Client) SetRepositoryWebhooks(ctx context.Context, repository *github.R
 		if err != nil {
 			return microerror.Mask(err)
 		}
-
-		c.logger.Infof("new webhook added. ID=%d\n", *hook.ID)
 	}
+
+	c.logger.Infof("new webhook added. ID=%d\n", *hook.ID)
+
 	return nil
 }

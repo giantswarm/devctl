@@ -377,7 +377,6 @@ func getLatestFlatcarRelease() (string, error) {
 
 func getAppVersionFromHelmChart(name string, ref string) (string, error) {
 	c := githubclient.Config{
-		DryRun:      false,
 		Logger:      logrus.StandardLogger(),
 		AccessToken: os.Getenv("OPSCTL_GITHUB_TOKEN"),
 	}
