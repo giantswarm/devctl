@@ -315,9 +315,9 @@ func (c *Client) SetRepositoryDefaultBranch(ctx context.Context, repository *git
 			if err != nil {
 				return microerror.Mask(err)
 			}
-
-			*repository.DefaultBranch = newDefaultBranch
 		}
+
+		*repository.DefaultBranch = newDefaultBranch
 
 		c.logger.Infof("renamed default branch from %q to %q", currentDefaultBranch, newDefaultBranch)
 	}
@@ -423,9 +423,9 @@ func (c *Client) SetRepositoryWebhooks(ctx context.Context, repository *github.R
 				if err != nil {
 					return microerror.Mask(err)
 				}
-
-				c.logger.Infof("updated existing webhook. ID=%d\n", *hook.ID)
 			}
+			c.logger.Infof("updated existing webhook. ID=%d\n", *hook.ID)
+
 			return nil
 		}
 	}
@@ -436,9 +436,10 @@ func (c *Client) SetRepositoryWebhooks(ctx context.Context, repository *github.R
 		if err != nil {
 			return microerror.Mask(err)
 		}
-
-		c.logger.Infof("new webhook added. ID=%d\n", *hook.ID)
 	}
+
+	c.logger.Infof("new webhook added. ID=%d\n", *hook.ID)
+
 	return nil
 }
 
@@ -466,22 +467,4 @@ func (c *Client) CreateFromTemplate(ctx context.Context, templateOwner, template
 	c.logger.Infof("created repository %s/%s from template %s/%s", newOwner, repository.GetName(), templateOwner, templateRepo)
 
 	return repo, nil
-}
-
-func (c *Client) CreatePullRequest(ctx context.Context, owner string, repo string, pr *github.NewPullRequest) (*github.PullRequest, error) {
-	c.logger.Infof("creating pull request in repository %s/%s", owner, repo)
-
-	if c.dryRun {
-		c.logger.Infof("would create pull request: %s from %s to %s", *pr.Title, *pr.Head, *pr.Base)
-		return nil, nil
-	}
-
-	underlyingClient := c.getUnderlyingClient(ctx)
-	pullRequest, _, err := underlyingClient.PullRequests.Create(ctx, owner, repo, pr)
-	if err != nil {
-		return nil, microerror.Mask(err)
-	}
-
-	c.logger.Infof("created pull request #%d: %s", pullRequest.GetNumber(), pullRequest.GetHTMLURL())
-	return pullRequest, nil
 }

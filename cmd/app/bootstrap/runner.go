@@ -709,17 +709,8 @@ func (r *runner) createGithubRepoPR(ctx context.Context) (error, string) {
 
 	// Create pull request using githubclient
 	prTitle := fmt.Sprintf("Add %s-app to team-%s repositories", r.flag.Name, r.flag.Team)
-	prBody := fmt.Sprintf("This PR adds the %s-app to the team-%s repositories configuration.", r.flag.Name, r.flag.Team)
 
-	pr := &github.NewPullRequest{
-		Title:               github.Ptr(prTitle),
-		Head:                github.Ptr(branchName),
-		Base:                github.Ptr("main"),
-		Body:                github.Ptr(prBody),
-		MaintainerCanModify: github.Ptr(true),
-	}
-
-	createdPR, err := client.CreatePullRequest(ctx, "giantswarm", "github", pr)
+	createdPR, err := client.CreatePullRequest(ctx, "giantswarm", "github", branchName, prTitle)
 	if err != nil {
 		return microerror.Mask(err), ""
 	}
