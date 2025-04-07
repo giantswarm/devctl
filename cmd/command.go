@@ -9,6 +9,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
+	"github.com/giantswarm/devctl/v7/cmd/app"
 	"github.com/giantswarm/devctl/v7/cmd/completion"
 	"github.com/giantswarm/devctl/v7/cmd/deploy"
 	"github.com/giantswarm/devctl/v7/cmd/gen"
@@ -39,6 +40,20 @@ func New(config Config) (*cobra.Command, error) {
 	}
 
 	var err error
+
+	var appCmd *cobra.Command
+	{
+		c := app.Config{
+			Logger: config.Logger,
+			Stderr: config.Stderr,
+			Stdout: config.Stdout,
+		}
+
+		appCmd, err = app.New(c)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+	}
 
 	var completionCmd *cobra.Command
 	{
@@ -159,6 +174,7 @@ func New(config Config) (*cobra.Command, error) {
 
 	f.Init(c)
 
+	c.AddCommand(appCmd)
 	c.AddCommand(completionCmd)
 	c.AddCommand(deployCmd)
 	c.AddCommand(genCmd)

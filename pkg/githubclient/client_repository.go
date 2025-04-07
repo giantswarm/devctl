@@ -8,7 +8,7 @@ import (
 	"regexp"
 
 	"github.com/giantswarm/microerror"
-	"github.com/google/go-github/v70/github"
+	"github.com/google/go-github/v71/github"
 )
 
 func (c *Client) ListRepositories(ctx context.Context, owner string) ([]Repository, error) {
@@ -441,4 +441,48 @@ func (c *Client) SetRepositoryWebhooks(ctx context.Context, repository *github.R
 	c.logger.Infof("new webhook added. ID=%d\n", *hook.ID)
 
 	return nil
+}
+
+func (c *Client) CreateFromTemplate(ctx context.Context, templateOwner, templateRepo, newOwner string, repository *github.Repository) (*github.Repository, error) {
+	c.logger.Infof("creating repository %s/%s from template %s/%s", newOwner, repository.GetName(), templateOwner, templateRepo)
+
+	underlyingClient := c.getUnderlyingClient(ctx)
+
+	req := &github.TemplateRepoRequest{
+		Name:        repository.Name,
+		Owner:       github.Ptr(newOwner),
+		Description: repository.Description,
+		Private:     repository.Private,
+	}
+
+	repo, _, err := underlyingClient.Repositories.CreateFromTemplate(ctx, templateOwner, templateRepo, req)
+	if err != nil {
+		if c.dryRun {
+			c.logger.Infof("[dry-run] would have created repository %s/%s from template %s/%s", newOwner, repository.GetName(), templateOwner, templateRepo)
+			return repository, nil
+		}
+		return nil, microerror.Mask(err)
+	}
+
+	c.logger.Infof("created repository %s/%s from template %s/%s", newOwner, repository.GetName(), templateOwner, templateRepo)
+
+	return repo, nil
+}
+
+func (c *Client) CreatePullRequest(ctx context.Context, owner string, repo string, pr *github.NewPullRequest) (*github.PullRequest, error) {
+	c.logger.Infof("creating pull request in repository %s/%s", owner, repo)
+
+	if c.dryRun {
+		c.logger.Infof("would create pull request: %s from %s to %s", *pr.Title, *pr.Head, *pr.Base)
+		return nil, nil
+	}
+
+	underlyingClient := c.getUnderlyingClient(ctx)
+	pullRequest, _, err := underlyingClient.PullRequests.Create(ctx, owner, repo, pr)
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
+
+	c.logger.Infof("created pull request #%d: %s", pullRequest.GetNumber(), pullRequest.GetHTMLURL())
+	return pullRequest, nil
 }
