@@ -468,21 +468,3 @@ func (c *Client) CreateFromTemplate(ctx context.Context, templateOwner, template
 
 	return repo, nil
 }
-
-func (c *Client) CreatePullRequest(ctx context.Context, owner string, repo string, pr *github.NewPullRequest) (*github.PullRequest, error) {
-	c.logger.Infof("creating pull request in repository %s/%s", owner, repo)
-
-	if c.dryRun {
-		c.logger.Infof("would create pull request: %s from %s to %s", *pr.Title, *pr.Head, *pr.Base)
-		return nil, nil
-	}
-
-	underlyingClient := c.getUnderlyingClient(ctx)
-	pullRequest, _, err := underlyingClient.PullRequests.Create(ctx, owner, repo, pr)
-	if err != nil {
-		return nil, microerror.Mask(err)
-	}
-
-	c.logger.Infof("created pull request #%d: %s", pullRequest.GetNumber(), pullRequest.GetHTMLURL())
-	return pullRequest, nil
-}
