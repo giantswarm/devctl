@@ -24,7 +24,7 @@ require (
 	github.com/spf13/cobra v1.9.1
 	github.com/spf13/pflag v1.0.6
 	golang.org/x/net v0.38.0
-	golang.org/x/oauth2 v0.28.0
+	golang.org/x/oauth2 v0.29.0
 	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/apimachinery v0.32.3
 	sigs.k8s.io/yaml v1.4.0
@@ -69,5 +69,5 @@ require (
 replace (
 	github.com/aws/aws-sdk-go => github.com/aws/aws-sdk-go v1.55.6
 	github.com/gorilla/websocket => github.com/gorilla/websocket v1.5.3
-	golang.org/x/text => golang.org/x/text v0.23.0
+	golang.org/x/text => golang.org/x/text v0.24.0
 )
