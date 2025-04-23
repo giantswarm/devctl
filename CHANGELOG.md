@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Added `deploy` command to deploy applications to GitOps repositories
+- Added experimental `bootstrap` command
 
 ### Changed
 
