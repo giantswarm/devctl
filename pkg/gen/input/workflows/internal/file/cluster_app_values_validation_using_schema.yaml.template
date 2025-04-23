@@ -8,6 +8,9 @@ on:
   push:
     paths:
       - 'management-clusters/**/cluster-app-manifests.yaml'
+  branches-ignore:
+    - main
+    - master
 
 jobs:
   validate:
