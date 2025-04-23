@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Pin ubuntu version in CI to use 24.04.
+- Validate cluster values workflow: ignore default branch
 
 ## [7.1.4] - 2025-03-06
 

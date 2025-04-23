@@ -6,7 +6,7 @@ toolchain go1.24.2
 
 require (
 	github.com/Masterminds/semver/v3 v3.3.1
-	github.com/aws/aws-sdk-go v1.55.6
+	github.com/aws/aws-sdk-go v1.55.7
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/bmatcuk/doublestar/v4 v4.8.1
 	github.com/briandowns/spinner v1.23.2
@@ -27,7 +27,7 @@ require (
 	golang.org/x/net v0.39.0
 	golang.org/x/oauth2 v0.29.0
 	gopkg.in/yaml.v3 v3.0.1
-	k8s.io/apimachinery v0.32.3
+	k8s.io/apimachinery v0.32.4
 	sigs.k8s.io/yaml v1.4.0
 )
 
@@ -83,7 +83,7 @@ require (
 )
 
 replace (
-	github.com/aws/aws-sdk-go => github.com/aws/aws-sdk-go v1.55.6
+	github.com/aws/aws-sdk-go => github.com/aws/aws-sdk-go v1.55.7
 	github.com/gorilla/websocket => github.com/gorilla/websocket v1.5.3
 	golang.org/x/text => golang.org/x/text v0.24.0
 )
