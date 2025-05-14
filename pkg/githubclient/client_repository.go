@@ -14,7 +14,7 @@ import (
 func (c *Client) ListRepositories(ctx context.Context, owner string) ([]Repository, error) {
 	c.logger.Infof("listing repositories for owner %#q", owner)
 
-	underlyingClient := c.getUnderlyingClient(ctx)
+	underlyingClient := c.GetUnderlyingClient(ctx)
 
 	var repos []Repository
 	{
@@ -59,7 +59,7 @@ func (c *Client) ListRepositories(ctx context.Context, owner string) ([]Reposito
 func (c *Client) GetRepository(ctx context.Context, owner, repo string) (*github.Repository, error) {
 	c.logger.Infof("get repository details for \"%s/%s\"", owner, repo)
 
-	underlyingClient := c.getUnderlyingClient(ctx)
+	underlyingClient := c.GetUnderlyingClient(ctx)
 
 	repository, response, err := underlyingClient.Repositories.Get(ctx, owner, repo)
 	if err != nil {
@@ -105,7 +105,7 @@ func (c *Client) SetRepositorySettings(ctx context.Context, repository, reposito
 	if !c.dryRun {
 		var err error
 
-		underlyingClient := c.getUnderlyingClient(ctx)
+		underlyingClient := c.GetUnderlyingClient(ctx)
 		repository, _, err = underlyingClient.Repositories.Edit(ctx, repository.GetOwner().GetLogin(), repository.GetName(), repository)
 		if err != nil {
 			return nil, microerror.Mask(err)
@@ -125,7 +125,7 @@ func (c *Client) SetRepositoryPermissions(ctx context.Context, repository *githu
 	c.logger.Info("grant permission on repository")
 	c.logger.Debugf("permissions\n%v", permissions)
 
-	underlyingClient := c.getUnderlyingClient(ctx)
+	underlyingClient := c.GetUnderlyingClient(ctx)
 
 	for teamSlug, permission := range permissions {
 
@@ -202,7 +202,7 @@ func (c *Client) SetRepositoryBranchProtection(ctx context.Context, repository *
 	c.logger.Debugf("branch protection settings\n%s", b)
 
 	if !c.dryRun {
-		underlyingClient := c.getUnderlyingClient(ctx)
+		underlyingClient := c.GetUnderlyingClient(ctx)
 		_, _, err = underlyingClient.Repositories.UpdateBranchProtection(ctx, owner, repo, default_branch, opts)
 		if err != nil {
 			return microerror.Mask(err)
@@ -221,7 +221,7 @@ func (c *Client) RemoveRepositoryBranchProtection(ctx context.Context, repositor
 
 	c.logger.Info("disable branch protection")
 
-	underlyingClient := c.getUnderlyingClient(ctx)
+	underlyingClient := c.GetUnderlyingClient(ctx)
 	_, _, err = underlyingClient.Repositories.GetBranchProtection(ctx, owner, repo, default_branch)
 	if err != nil {
 		if errors.Is(err, github.ErrBranchNotProtected) {
@@ -268,7 +268,7 @@ func (c *Client) getGithubChecks(ctx context.Context, repository *github.Reposit
 			PerPage: 10,
 		}
 
-		underlyingClient := c.getUnderlyingClient(ctx)
+		underlyingClient := c.GetUnderlyingClient(ctx)
 
 		for {
 			combinedStatus, resp, err := underlyingClient.Repositories.GetCombinedStatus(ctx, owner, repo, ref, opt)
@@ -310,7 +310,7 @@ func (c *Client) SetRepositoryDefaultBranch(ctx context.Context, repository *git
 		c.logger.Infof("renaming default branch from %q to %q", currentDefaultBranch, newDefaultBranch)
 
 		if !c.dryRun {
-			underlyingClient := c.getUnderlyingClient(ctx)
+			underlyingClient := c.GetUnderlyingClient(ctx)
 			_, _, err := underlyingClient.Repositories.RenameBranch(ctx, owner, repo, currentDefaultBranch, newDefaultBranch)
 			if err != nil {
 				return microerror.Mask(err)
@@ -330,7 +330,7 @@ func (c *Client) getTags(ctx context.Context, repository *github.Repository) ([]
 	owner := repository.GetOwner().GetLogin()
 	repo := repository.GetName()
 
-	underlyingClient := c.getUnderlyingClient(ctx)
+	underlyingClient := c.GetUnderlyingClient(ctx)
 
 	var allTags []*github.RepositoryTag
 	opt := &github.ListOptions{
@@ -359,7 +359,7 @@ func (c *Client) getLatestNonTagCommit(ctx context.Context, repository *github.R
 	owner := repository.GetOwner().GetLogin()
 	repo := repository.GetName()
 
-	underlyingClient := c.getUnderlyingClient(ctx)
+	underlyingClient := c.GetUnderlyingClient(ctx)
 
 	opt := &github.CommitsListOptions{
 		SHA: branch,
@@ -403,7 +403,7 @@ func (c *Client) SetRepositoryWebhooks(ctx context.Context, repository *github.R
 	owner := repository.GetOwner().GetLogin()
 	repo := repository.GetName()
 
-	underlyingClient := c.getUnderlyingClient(ctx)
+	underlyingClient := c.GetUnderlyingClient(ctx)
 
 	hooks, _, err := underlyingClient.Repositories.ListHooks(ctx, owner, repo, &github.ListOptions{PerPage: 50})
 	if err != nil {
@@ -446,7 +446,7 @@ func (c *Client) SetRepositoryWebhooks(ctx context.Context, repository *github.R
 func (c *Client) CreateFromTemplate(ctx context.Context, templateOwner, templateRepo, newOwner string, repository *github.Repository) (*github.Repository, error) {
 	c.logger.Infof("creating repository %s/%s from template %s/%s", newOwner, repository.GetName(), templateOwner, templateRepo)
 
-	underlyingClient := c.getUnderlyingClient(ctx)
+	underlyingClient := c.GetUnderlyingClient(ctx)
 
 	req := &github.TemplateRepoRequest{
 		Name:        repository.Name,
