@@ -8,11 +8,12 @@ import (
 	"os"
 	"strings"
 
-	"github.com/giantswarm/devctl/v7/pkg/githubclient"
 	"github.com/giantswarm/microerror"
 	"github.com/google/go-github/v72/github"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+
+	"github.com/giantswarm/devctl/v7/pkg/githubclient"
 	// "golang.org/x/oauth2" // No longer needed if using ghClient.GetUnderlyingClient
 )
 
@@ -118,5 +119,3 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 // Helper to parse owner/repo from various GitHub URL formats if needed,
 // but issue.GetRepositoryURL() gives API URL, which is easy to parse.
-
-

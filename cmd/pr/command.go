@@ -70,4 +70,4 @@ func New(config Config) (*cobra.Command, error) {
 	c.AddCommand(approveAlignCmd) // Add the approvealign subcommand
 
 	return c, nil
-} 
+}

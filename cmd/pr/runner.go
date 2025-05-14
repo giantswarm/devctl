@@ -25,4 +25,4 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	// Parent command, prints help by default if no subcommand is given.
 	cmd.Help()
 	return nil
-} 
+}

@@ -19,4 +19,4 @@ var executionFailedError = &microerror.Error{
 // IsExecutionFailed asserts executionFailedError.
 func IsExecutionFailed(err error) bool {
 	return microerror.Cause(err) == executionFailedError
-} 
+}

@@ -10,7 +10,7 @@ import (
 
 const (
 	name        = "approvealign"
-	shortCmd    = "approvealignfiles" // Alias or a more descriptive name if needed
+	shortCmd    = "approvealignfiles"   // Alias or a more descriptive name if needed
 	longCmd     = "approve-align-files" // Used for cobra command registration
 	description = "Approves 'Align files' PRs with passing status checks."
 )
@@ -54,4 +54,4 @@ func New(config Config) (*cobra.Command, error) {
 	f.Init(c)
 
 	return c, nil
-} 
+}

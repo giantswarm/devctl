@@ -15,4 +15,4 @@ func (f *flag) Init(cmd *cobra.Command) {
 func (f *flag) Validate() error {
 	// No flags to validate
 	return nil
-} 
+}
