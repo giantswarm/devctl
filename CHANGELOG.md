@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Update `nancy-fixer` in `fix_vulnerabilities` workflow
+
 ## [7.2.1] - 2025-05-14
 
 ### Changed
