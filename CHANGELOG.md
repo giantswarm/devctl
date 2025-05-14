@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Pin dependency `giantswarm/gitleaks-action` version in gitleaks workflow
 
+### Fixed
+
+- Fix workflow syntax of "Validate Cluster Values using JSON Schema" workflow
+
 ## [7.2.0] - 2025-04-23
 
 ### Added
