@@ -54,7 +54,6 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 
-	// This method ghClientService.GetUnderlyingClient(ctx) will be made public in pkg/githubclient/client.go
 	trueUnderlyingClient := ghClientService.GetUnderlyingClient(ctx)
 
 	searchQuery := `is:pr is:open status:success org:giantswarm review-requested:@me "Align files"`
@@ -101,10 +100,11 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		if err != nil {
 			r.logger.Errorf("Failed to approve PR #%d in %s/%s: %v", prNumber, owner, repoName, err)
 			fmt.Fprintf(r.stderr, "Failed to approve PR #%d in %s/%s: %v\n", prNumber, owner, repoName, err)
-		} else {
-			fmt.Fprintf(r.stdout, "Successfully approved PR #%d in %s/%s\n", prNumber, owner, repoName)
-			approvedCount++
+			continue
 		}
+			
+	    fmt.Fprintf(r.stdout, "Successfully approved PR #%d in %s/%s\n", prNumber, owner, repoName)
+		approvedCount++
 	}
 
 	if approvedCount > 0 {

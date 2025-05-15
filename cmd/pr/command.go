@@ -8,7 +8,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
-	"github.com/giantswarm/devctl/v7/cmd/pr/approvealign" // Import approvealign subcommand
+	"github.com/giantswarm/devctl/v7/cmd/pr/approvealign"
 )
 
 const (
@@ -33,7 +33,7 @@ func New(config Config) (*cobra.Command, error) {
 		config.Stdout = os.Stdout
 	}
 
-	var err error // Declare err
+	var err error
 
 	var approveAlignCmd *cobra.Command
 	{
@@ -67,7 +67,7 @@ func New(config Config) (*cobra.Command, error) {
 
 	f.Init(c)
 
-	c.AddCommand(approveAlignCmd) // Add the approvealign subcommand
+	c.AddCommand(approveAlignCmd)
 
 	return c, nil
 }
