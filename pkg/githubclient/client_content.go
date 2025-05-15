@@ -10,7 +10,7 @@ import (
 func (c *Client) GetFile(ctx context.Context, owner, repo, path, ref string) (RepositoryFile, error) {
 	c.logger.Infof("getting %#q file content for owner %#q and repository %#q", path, owner, repo)
 
-	underlyingClient := c.getUnderlyingClient(ctx)
+	underlyingClient := c.GetUnderlyingClient(ctx)
 
 	var file RepositoryFile
 	{

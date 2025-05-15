@@ -13,6 +13,7 @@ import (
 	"github.com/giantswarm/devctl/v7/cmd/completion"
 	"github.com/giantswarm/devctl/v7/cmd/deploy"
 	"github.com/giantswarm/devctl/v7/cmd/gen"
+	"github.com/giantswarm/devctl/v7/cmd/pr"
 	"github.com/giantswarm/devctl/v7/cmd/release"
 	"github.com/giantswarm/devctl/v7/cmd/replace"
 	"github.com/giantswarm/devctl/v7/cmd/repo"
@@ -78,6 +79,20 @@ func New(config Config) (*cobra.Command, error) {
 		}
 
 		genCmd, err = gen.New(c)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+	}
+
+	var prCmd *cobra.Command
+	{
+		c := pr.Config{
+			Logger: logrus.StandardLogger(),
+			Stderr: config.Stderr,
+			Stdout: config.Stdout,
+		}
+
+		prCmd, err = pr.New(c)
 		if err != nil {
 			return nil, microerror.Mask(err)
 		}
@@ -178,6 +193,7 @@ func New(config Config) (*cobra.Command, error) {
 	c.AddCommand(completionCmd)
 	c.AddCommand(deployCmd)
 	c.AddCommand(genCmd)
+	c.AddCommand(prCmd)
 	c.AddCommand(releaseCmd)
 	c.AddCommand(replaceCmd)
 	c.AddCommand(repoCmd)

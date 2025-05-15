@@ -125,7 +125,7 @@ func (c *Client) CommitAndPush(ctx context.Context, owner, repo, branch, message
 }
 
 func (c *Client) CreatePullRequest(ctx context.Context, owner, repo, head, title string) (*github.PullRequest, error) {
-	client := c.getUnderlyingClient(ctx)
+	client := c.GetUnderlyingClient(ctx)
 	newPR := &github.NewPullRequest{
 		Title: github.Ptr(title),
 		Head:  github.Ptr(head),
@@ -142,7 +142,7 @@ func (c *Client) CreatePullRequest(ctx context.Context, owner, repo, head, title
 }
 
 func (c *Client) WaitForPRMerge(ctx context.Context, owner, repo string, prNumber int, timeout time.Duration) error {
-	client := c.getUnderlyingClient(ctx)
+	client := c.GetUnderlyingClient(ctx)
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 
@@ -169,7 +169,9 @@ func (c *Client) WaitForPRMerge(ctx context.Context, owner, repo string, prNumbe
 	}
 }
 
-func (c *Client) getUnderlyingClient(ctx context.Context) *github.Client {
+// GetUnderlyingClient returns the underlying go-github client.
+// This allows access to the full GitHub API if needed.
+func (c *Client) GetUnderlyingClient(ctx context.Context) *github.Client {
 	ts := oauth2.StaticTokenSource(
 		&oauth2.Token{
 			AccessToken: c.accessToken,
