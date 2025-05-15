@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [7.2.3] - 2025-05-15
 
+### Added
+
+- Add `devctl pr approve-align-files` - help engineers to approve "Align files" PRs
+
 ## [7.2.2] - 2025-05-14
 
 ### Changed
