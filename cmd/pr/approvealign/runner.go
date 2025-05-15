@@ -112,7 +112,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	}
 
 	fmt.Fprintln(r.stdout, "\nAll remaining PRs (including any that failed approval or are pending) can be seen with this search query:")
-	fmt.Fprintln(r.stdout, "https://github.com/pulls?q=sort%3Aupdated-desc+is%3Apr+is%3Aopen+archived%3Afalse+review-requested%3A@me+status%3Apending+org%3Agiantswarm+\"Align+files\"")
+	fmt.Fprintln(r.stdout, "https://github.com/pulls?q=sort%3Aupdated-desc+is%3Apr+is%3Aopen+archived%3Afalse+review-requested%3A%40me+status%3Apending+org%3Agiantswarm+%22Align+files%22")
 
 	return nil
 }
