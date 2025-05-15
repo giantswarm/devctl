@@ -88,8 +88,8 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 			fmt.Fprintf(r.stderr, "Failed to approve PR #%d in %s/%s: %v\n", prNumber, owner, repoName, err)
 			continue
 		}
-			
-	    fmt.Fprintf(r.stdout, "Successfully approved PR #%d in %s/%s\n", prNumber, owner, repoName)
+
+		fmt.Fprintf(r.stdout, "Successfully approved PR #%d in %s/%s\n", prNumber, owner, repoName)
 		approvedCount++
 	}
 
