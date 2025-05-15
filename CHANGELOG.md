@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.2.3] - 2025-05-15
+
+### Added
+
+- Add `devctl pr approve-align-files` - help engineers to approve "Align files" PRs
+
 ## [7.2.2] - 2025-05-14
 
 ### Changed
@@ -1086,7 +1092,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.2.2...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.2.3...HEAD
+[7.2.3]: https://github.com/giantswarm/devctl/compare/v7.2.2...v7.2.3
 [7.2.2]: https://github.com/giantswarm/devctl/compare/v7.2.1...v7.2.2
 [7.2.1]: https://github.com/giantswarm/devctl/compare/v7.2.0...v7.2.1
 [7.2.0]: https://github.com/giantswarm/devctl/compare/v7.1.4...v7.2.0
