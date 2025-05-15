@@ -4,9 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net/url"
 	"os"
-	"strings"
 
 	"github.com/giantswarm/microerror"
 	"github.com/google/go-github/v72/github"
@@ -14,7 +12,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/v7/pkg/githubclient"
-	// "golang.org/x/oauth2" // No longer needed if using ghClient.GetUnderlyingClient
 )
 
 const (
@@ -54,7 +51,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 
-	trueUnderlyingClient := ghClientService.GetUnderlyingClient(ctx)
+	githubClient := ghClientService.GetUnderlyingClient(ctx)
 
 	searchQuery := `is:pr is:open status:success org:giantswarm review-requested:@me "Align files"`
 	r.logger.Infof("Searching for PRs with query: %s", searchQuery)
@@ -62,7 +59,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	searchOpts := &github.SearchOptions{
 		ListOptions: github.ListOptions{PerPage: 100},
 	}
-	searchResults, _, err := trueUnderlyingClient.Search.Issues(ctx, searchQuery, searchOpts)
+	searchResults, _, err := githubClient.Search.Issues(ctx, searchQuery, searchOpts)
 	if err != nil {
 		return microerror.Maskf(executionFailedError, "failed to search for PRs: %v", err)
 	}
@@ -76,27 +73,16 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	approvedCount := 0
 	for _, issue := range searchResults.Issues {
 		prNumber := issue.GetNumber()
-		repoURL := issue.GetRepositoryURL()
 
-		parsedURL, err := url.Parse(repoURL)
-		if err != nil {
-			r.logger.Errorf("Failed to parse repository URL %s: %v", repoURL, err)
-			continue
-		}
-		pathParts := strings.Split(strings.Trim(parsedURL.Path, "/"), "/")
-		if len(pathParts) < 3 || pathParts[0] != "repos" {
-			r.logger.Errorf("Unexpected repository URL format: %s", repoURL)
-			continue
-		}
-		owner := pathParts[1]
-		repoName := pathParts[2]
+		owner := issue.GetRepository().GetOrganization().GetLogin()
+		repoName := issue.GetRepository().GetName()
 
 		r.logger.Infof("Attempting to approve PR #%d in %s/%s", prNumber, owner, repoName)
 
 		reviewRequest := &github.PullRequestReviewRequest{
 			Event: github.String("APPROVE"),
 		}
-		_, _, err = trueUnderlyingClient.PullRequests.CreateReview(ctx, owner, repoName, prNumber, reviewRequest)
+		_, _, err = githubClient.PullRequests.CreateReview(ctx, owner, repoName, prNumber, reviewRequest)
 		if err != nil {
 			r.logger.Errorf("Failed to approve PR #%d in %s/%s: %v", prNumber, owner, repoName, err)
 			fmt.Fprintf(r.stderr, "Failed to approve PR #%d in %s/%s: %v\n", prNumber, owner, repoName, err)
@@ -116,6 +102,3 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 	return nil
 }
-
-// Helper to parse owner/repo from various GitHub URL formats if needed,
-// but issue.GetRepositoryURL() gives API URL, which is easy to parse.

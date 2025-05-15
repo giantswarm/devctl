@@ -2,6 +2,7 @@ package approvealign
 
 import (
 	"io"
+	"os"
 
 	"github.com/giantswarm/microerror"
 	"github.com/sirupsen/logrus"
@@ -27,11 +28,11 @@ func New(config Config) (*cobra.Command, error) {
 	}
 	if config.Stderr == nil {
 		// Default to os.Stderr if not provided, though it should be by the parent command
-		config.Stderr = io.Discard // Or os.Stderr, depends on desired behavior
+		config.Stderr = os.Stderr // Or os.Stderr, depends on desired behavior
 	}
 	if config.Stdout == nil {
 		// Default to os.Stdout if not provided
-		config.Stdout = io.Discard // Or os.Stdout
+		config.Stdout = os.Stdout // Or os.Stdout
 	}
 
 	f := &flag{}
