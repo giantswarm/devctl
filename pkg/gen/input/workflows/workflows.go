@@ -72,6 +72,10 @@ func (w *Workflows) HelmRenderDiff() input.Input {
 	return file.NewHelmRenderDiff(w.params)
 }
 
+func (w *Workflows) PublishTechdocsInput() input.Input {
+	return file.NewPublishTechdocs(w.params)
+}
+
 func (w *Workflows) RunOSSFScorecard() input.Input {
 	return file.NewRunOSSFScorecardInput(w.params)
 }

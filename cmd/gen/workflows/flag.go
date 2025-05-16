@@ -17,6 +17,7 @@ const (
 	flagLanguage                       = "language"
 	flagInstallUpdateChart             = "install-update-chart"
 	flagRunSecurityScorecard           = "run-security-scorecard"
+	flagPublishTechdocs                = "publish-techdocs"
 )
 
 type flag struct {
@@ -26,6 +27,7 @@ type flag struct {
 	Language                       string
 	InstallUpdateChart             bool
 	RunSecurityScorecard           bool
+	PublishTechdocs                bool
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
@@ -35,6 +37,7 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&f.Language, flagLanguage, "l", "", "Language of the repo, for generating additional language-specific workflows, like vulnerability remediation.")
 	cmd.Flags().BoolVar(&f.InstallUpdateChart, flagInstallUpdateChart, false, "If true, also generate update_chart workflow. Only valid for app flavor.")
 	cmd.Flags().BoolVar(&f.RunSecurityScorecard, flagRunSecurityScorecard, true, "If true, also generate a security scorecard workflow. Possible values: true (default), false.")
+	cmd.Flags().BoolVar(&f.PublishTechdocs, flagPublishTechdocs, false, "If true, also generate the Publish Techdocs workflow. Possible values: false (default), true.")
 }
 
 func (f *flag) Validate() error {
