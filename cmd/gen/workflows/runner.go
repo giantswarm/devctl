@@ -94,6 +94,9 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		inputs = append(inputs, workflowsInput.ClusterAppValuesValidationUsingSchema())
 	}
 
+	// Techdocs can occur in all types of repositories.
+	inputs = append(inputs, workflowsInput.PublishTechdocs())
+
 	err = gen.Execute(
 		ctx,
 		inputs...,
