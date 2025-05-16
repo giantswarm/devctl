@@ -72,7 +72,7 @@ func (w *Workflows) HelmRenderDiff() input.Input {
 	return file.NewHelmRenderDiff(w.params)
 }
 
-func (w *Workflows) PublishTechdocs() input.Input {
+func (w *Workflows) PublishTechdocsInput() input.Input {
 	return file.NewPublishTechdocs(w.params)
 }
 
