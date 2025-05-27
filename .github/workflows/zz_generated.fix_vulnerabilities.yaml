@@ -79,10 +79,10 @@ jobs:
           git checkout -b "${branch}"
           git pull origin "${branch}" || true
       - name: Run nancy-fixer fix
-        uses: docker://gsoci.azurecr.io/giantswarm/nancy-fixer:0.5.0-57236b5ddb6ba4f96509b5d2c0bb5cc5ad0e5a4b
+        uses: docker://gsoci.azurecr.io/giantswarm/nancy-fixer:0.5.0-a0255ed98b502ae1db02430ade12b642e19db5f1
         timeout-minutes: 20
-        with:
-          args: fix --log-level=debug
+        env:
+          LOG_LEVEL: debug
       - name: Set up git identity
         run: |
           git config --local user.email "149080493+heraldbot[bot]@users.noreply.github.com"
