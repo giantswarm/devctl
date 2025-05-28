@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- Remove `gitleaks` workflow generation and the `--check-secrets` flag from the `gen workflows` command.
+
 ## [7.2.4] - 2025-05-16
 
 ### Added

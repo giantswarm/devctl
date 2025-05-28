@@ -61,10 +61,6 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		inputs = append(inputs, workflowsInput.FixVulnerabilities())
 	}
 
-	if r.flag.CheckSecrets {
-		inputs = append(inputs, workflowsInput.Gitleaks())
-	}
-
 	if r.flag.EnableFloatingMajorVersionTags {
 		inputs = append(inputs, workflowsInput.EnsureMajorVersionTags())
 	}

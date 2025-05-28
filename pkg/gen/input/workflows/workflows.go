@@ -64,10 +64,6 @@ func (w *Workflows) FixVulnerabilities() input.Input {
 	return file.NewFixVulnerabilitiesInput(w.params)
 }
 
-func (w *Workflows) Gitleaks() input.Input {
-	return file.NewGitleaksInput(w.params)
-}
-
 func (w *Workflows) HelmRenderDiff() input.Input {
 	return file.NewHelmRenderDiff(w.params)
 }
