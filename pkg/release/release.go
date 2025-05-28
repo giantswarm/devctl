@@ -144,3 +144,66 @@ func findRelease(providerDirectory string, targetVersion semver.Version) (v1alph
 
 	return release, releaseYAMLPath, nil
 }
+
+// marshalReleaseYAML creates a custom YAML representation of the release
+// with proper field ordering and without unwanted fields like status and creationTimestamp
+func marshalReleaseYAML(release v1alpha1.Release) ([]byte, error) {
+	var sb strings.Builder
+
+	// API version and kind
+	sb.WriteString("apiVersion: release.giantswarm.io/v1alpha1\n")
+	sb.WriteString("kind: Release\n")
+
+	// Metadata (without creationTimestamp)
+	sb.WriteString("metadata:\n")
+	sb.WriteString("  name: " + release.Name + "\n")
+
+	// Spec
+	sb.WriteString("spec:\n")
+
+	// Apps section
+	if len(release.Spec.Apps) > 0 {
+		sb.WriteString("  apps:\n")
+		for _, app := range release.Spec.Apps {
+			sb.WriteString("  - name: " + app.Name + "\n")
+
+			// Add catalog if present
+			if app.Catalog != "" {
+				sb.WriteString("    catalog: " + app.Catalog + "\n")
+			}
+
+			sb.WriteString("    version: " + app.Version + "\n")
+
+			// Add dependsOn if present
+			if len(app.DependsOn) > 0 {
+				sb.WriteString("    dependsOn:\n")
+				for _, dep := range app.DependsOn {
+					sb.WriteString("    - " + dep + "\n")
+				}
+			}
+		}
+	}
+
+	// Components section
+	if len(release.Spec.Components) > 0 {
+		sb.WriteString("  components:\n")
+		for _, component := range release.Spec.Components {
+			sb.WriteString("  - name: " + component.Name + "\n")
+
+			// Add catalog if present
+			if component.Catalog != "" {
+				sb.WriteString("    catalog: " + component.Catalog + "\n")
+			}
+
+			sb.WriteString("    version: " + component.Version + "\n")
+		}
+	}
+
+	// Date and state
+	if release.Spec.Date != nil {
+		sb.WriteString("  date: \"" + release.Spec.Date.Format("2006-01-02T15:04:05Z") + "\"\n")
+	}
+	sb.WriteString("  state: " + string(release.Spec.State) + "\n")
+
+	return []byte(sb.String()), nil
+}

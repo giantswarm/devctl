@@ -1,6 +1,7 @@
 package release
 
 import (
+	"regexp"
 	"strings"
 	"text/template"
 
@@ -18,40 +19,17 @@ const releaseNotesTemplate = `# :zap: Giant Swarm Release {{ .Name }} for {{ .Pr
 
 ### Components
 
-{{ range .Components }}
-{{ if eq .PreviousVersion "" }}
-* Added {{ .Name }} [{{ .Version }}]({{ .Link }})
-{{ else if eq .Name "kubernetes" }}
-* {{ .Name }} from v{{ .PreviousVersion }} to [v{{ .Version }}]({{ .Link }})
-{{ else }}
-* {{ .Name }} from {{ .PreviousVersion }} to [{{ .Version }}]({{ .Link }})
-{{ end }}
+{{ range .Components }}- {{ if eq .PreviousVersion "" }}Added {{ .Name }} {{ .Version }}{{ else if eq .Name "kubernetes" }}Kubernetes from v{{ .PreviousVersion }} to [v{{ .Version }}]({{ .Link }}){{ else if eq .Name "flatcar" }}Flatcar from {{ .PreviousVersion }} to [{{ .Version }}]({{ .Link }}){{ else }}{{ .Name }} from v{{ .PreviousVersion }} to v{{ .Version }}{{ end }}
 {{ end }}
 
-{{ range .Components }}
-{{ if or (eq .Name "kubernetes") (eq .Name "flatcar") }}
-{{continue}}
-{{ end }}
-
-{{ .Changelog }}
-
-{{ end }}
+{{ range .Components }}{{ if or (eq .Name "kubernetes") (eq .Name "flatcar") }}{{ continue }}{{ end }}{{ .Changelog }}{{ end }}
 
 ### Apps
 
-{{ range .Apps }}
-{{ if eq .PreviousVersion "" }}
-* Added {{ .Name }} [{{ .Version }}]({{ .Link }})
-{{ else }}
-* {{ .Name }} from {{ .PreviousVersion }} to [{{ .Version }}]({{ .Link }})
-{{ end }}
+{{ range .Apps }}- {{ if eq .PreviousVersion "" }}Added {{ .Name }} {{ .Version }}{{ else }}{{ .Name }} from {{ .PreviousVersion }} to {{ .Version }}{{ end }}
 {{ end }}
 
-{{ range .Apps }}
-
-{{ .Changelog }}
-
-{{ end }}
+{{ range .Apps }}{{ .Changelog }}{{ end }}
 `
 
 type releaseNotes struct {
@@ -110,6 +88,7 @@ func createReleaseNotes(release, baseRelease v1alpha1.Release, provider string) 
 		if err != nil {
 			return "", microerror.Mask(err)
 		}
+
 		components = append(components, releaseNotes{
 			Name:            component.Name,
 			Version:         component.Version,
@@ -161,5 +140,32 @@ func createReleaseNotes(release, baseRelease v1alpha1.Release, provider string) 
 		return "", microerror.Mask(err)
 	}
 
-	return writer.String(), nil
+	result := writer.String()
+
+	// Clean up the output to remove excess blank lines
+	result = cleanReleaseNotes(result)
+	return result, nil
+}
+
+// cleanReleaseNotes removes excess blank lines from the generated release notes
+func cleanReleaseNotes(notes string) string {
+	multipleNewlines := regexp.MustCompile(`\n{3,}`)
+	notes = multipleNewlines.ReplaceAllString(notes, "\n\n")
+
+	compList := regexp.MustCompile(`(- [^\n]+\n)(\n*)(### [^\n]+)`)
+	notes = compList.ReplaceAllString(notes, "$1\n\n$3")
+
+	betweenChangelogs := regexp.MustCompile(`(### [^\n]+[\s\S]+?)(\n{2,})(### [^\n]+)`)
+	notes = betweenChangelogs.ReplaceAllString(notes, "$1\n\n$3")
+
+	endNewlines := regexp.MustCompile(`\n{2,}$`)
+	notes = endNewlines.ReplaceAllString(notes, "\n")
+
+	notes = regexp.MustCompile(`### Components\n{2,}`).ReplaceAllString(notes, "### Components\n\n")
+	notes = regexp.MustCompile(`### Apps\n{2,}`).ReplaceAllString(notes, "### Apps\n\n")
+
+	bulletPoints := regexp.MustCompile(`(- [^\n]+)\n{2,}(- [^\n]+)`)
+	notes = bulletPoints.ReplaceAllString(notes, "$1\n$2")
+
+	return notes
 }
