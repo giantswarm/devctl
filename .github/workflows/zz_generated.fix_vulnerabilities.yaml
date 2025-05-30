@@ -2,7 +2,7 @@
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/c1b16989bf49dfec3938304f370ac314ebe17c65/pkg/gen/input/workflows/internal/file/fix_vulnerabilities.yaml.template
+#    https://github.com/giantswarm/devctl/blob/8b210b8821f90f70a98d396d357855c0e389795d/pkg/gen/input/workflows/internal/file/fix_vulnerabilities.yaml.template
 #
 name: Fix Vulnerabilities
 on:
@@ -79,7 +79,7 @@ jobs:
           git checkout -b "${branch}"
           git pull origin "${branch}" || true
       - name: Run nancy-fixer fix
-        uses: docker://gsoci.azurecr.io/giantswarm/nancy-fixer:0.5.0
+        uses: docker://gsoci.azurecr.io/giantswarm/nancy-fixer:0.5.1
         timeout-minutes: 20
       - name: Set up git identity
         run: |
