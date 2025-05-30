@@ -9,8 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [7.2.6] - 2025-05-30
 
-## [7.2.5] - 2025-05-30
-
 ### Changed
 
 - The following GitHub workflows are now calling external, reusable workflows in `giantswarm/github-workflows`:
