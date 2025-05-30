@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The following GitHub workflows are now calling external, reusable workflows in `giantswarm/github-workflows`:
+  - "Create Release"
+  - "Create Release PR"
+  - "gitleaks"
+
 ## [7.2.4] - 2025-05-16
 
 ### Added
