@@ -102,6 +102,14 @@ func mergeReleases(base, override v1alpha1.Release) v1alpha1.Release {
 		}
 	}
 
+	// Sort apps and components alphabetically by name to maintain consistent ordering
+	sort.Slice(merged.Spec.Apps, func(i, j int) bool {
+		return merged.Spec.Apps[i].Name < merged.Spec.Apps[j].Name
+	})
+	sort.Slice(merged.Spec.Components, func(i, j int) bool {
+		return merged.Spec.Components[i].Name < merged.Spec.Components[j].Name
+	})
+
 	return merged
 }
 

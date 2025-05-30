@@ -2,6 +2,7 @@ package release
 
 import (
 	"regexp"
+	"sort"
 	"strings"
 	"text/template"
 
@@ -22,14 +23,25 @@ const releaseNotesTemplate = `# :zap: Giant Swarm Release {{ .Name }} for {{ .Pr
 {{ range .Components }}- {{ if eq .PreviousVersion "" }}Added {{ .Name }} {{ .Version }}{{ else if eq .Name "kubernetes" }}Kubernetes from v{{ .PreviousVersion }} to [v{{ .Version }}]({{ .Link }}){{ else if eq .Name "flatcar" }}Flatcar from {{ .PreviousVersion }} to [{{ .Version }}]({{ .Link }}){{ else }}{{ .Name }} from v{{ .PreviousVersion }} to v{{ .Version }}{{ end }}
 {{ end }}
 
-{{ range .Components }}{{ if or (eq .Name "kubernetes") (eq .Name "flatcar") }}{{ continue }}{{ end }}{{ .Changelog }}{{ end }}
+{{ range .Components }}{{ if or (eq .Name "kubernetes") (eq .Name "flatcar") }}{{ continue }}{{ end }}
+### {{ .Name }} {{ if ne .PreviousVersion "" }}[v{{ .PreviousVersion }}...v{{ .Version }}]({{ .Link }}){{ else }}{{ .Version }}{{ end }}
+
+{{ .Changelog }}
+{{ end }}
 
 ### Apps
 
-{{ range .Apps }}- {{ if eq .PreviousVersion "" }}Added {{ .Name }} {{ .Version }}{{ else }}{{ .Name }} from {{ .PreviousVersion }} to {{ .Version }}{{ end }}
-{{ end }}
+{{ range .Apps }}{{ if eq .PreviousVersion "" }}- Added {{ .Name }} {{ .Version }}
+{{ end }}{{ end }}
 
-{{ range .Apps }}{{ .Changelog }}{{ end }}
+{{ range .Apps }}{{ if ne .PreviousVersion "" }}- {{ .Name }} from {{ .PreviousVersion }} to {{ .Version }}
+{{ end }}{{ end }}
+
+{{ range .Apps }}
+### {{ .Name }} {{ if ne .PreviousVersion "" }}[v{{ .PreviousVersion }}...v{{ .Version }}]({{ .Link }}){{ else }}{{ .Version }}{{ end }}
+
+{{ .Changelog }}
+{{ end }}
 `
 
 type releaseNotes struct {
@@ -125,6 +137,14 @@ func createReleaseNotes(release, baseRelease v1alpha1.Release, provider string) 
 			Changelog:       componentChangelog.Content,
 		})
 	}
+
+	// Sort components and apps alphabetically by name
+	sort.Slice(components, func(i, j int) bool {
+		return components[i].Name < components[j].Name
+	})
+	sort.Slice(apps, func(i, j int) bool {
+		return apps[i].Name < apps[j].Name
+	})
 
 	var writer strings.Builder
 	data := releaseNotesTemplateData{

@@ -78,6 +78,25 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 				components[comp.Name] = v
 			}
 		}
+
+		// Add any manually requested components that don't exist in the base release
+		for name, req := range requestedComponents {
+			// Check if this component already exists in the base release
+			found := false
+			for _, comp := range input.Spec.Components {
+				if comp.Name == name {
+					found = true
+					break
+				}
+			}
+			if !found {
+				// This is a new component not in the base release
+				components[name] = componentVersion{
+					Version:       req.Version,
+					UserRequested: true,
+				}
+			}
+		}
 	}
 
 	// apps
@@ -120,6 +139,26 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 			}
 			if v.Version != app.Version {
 				apps[app.Name] = v
+			}
+		}
+
+		// Add any manually requested apps that don't exist in the base release
+		for name, req := range requestedApps {
+			// Check if this app already exists in the base release
+			found := false
+			for _, app := range input.Spec.Apps {
+				if app.Name == name {
+					found = true
+					break
+				}
+			}
+			if !found {
+				// This is a new app not in the base release
+				apps[name] = appVersion{
+					Version:         req.Version,
+					UpstreamVersion: req.UpstreamVersion,
+					UserRequested:   true,
+				}
 			}
 		}
 	}
@@ -189,6 +228,27 @@ func printTable(input v1alpha1.Release, components map[string]componentVersion, 
 		}
 		t.AppendRow(table.Row{app.Name, version, desiredVersion})
 	}
+
+	// Add new apps that don't exist in the base release
+	for name, req := range apps {
+		found := false
+		for _, app := range input.Spec.Apps {
+			if app.Name == name {
+				found = true
+				break
+			}
+		}
+		if !found {
+			desiredVersion := req.Version
+			if req.UpstreamVersion != "" {
+				desiredVersion = fmt.Sprintf("%s (upstream version %s)", req.Version, req.UpstreamVersion)
+			}
+			if req.UserRequested {
+				desiredVersion = fmt.Sprintf("%s - requested by user", desiredVersion)
+			}
+			t.AppendRow(table.Row{name, "New app", desiredVersion})
+		}
+	}
 	t.AppendSeparator()
 	t.Render()
 
@@ -205,6 +265,24 @@ func printTable(input v1alpha1.Release, components map[string]componentVersion, 
 			}
 		}
 		t.AppendRow(table.Row{component.Name, component.Version, desiredVersion})
+	}
+
+	// Add new components that don't exist in the base release
+	for name, req := range components {
+		found := false
+		for _, component := range input.Spec.Components {
+			if component.Name == name {
+				found = true
+				break
+			}
+		}
+		if !found {
+			desiredVersion := req.Version
+			if req.UserRequested {
+				desiredVersion = fmt.Sprintf("%s - requested by user", desiredVersion)
+			}
+			t.AppendRow(table.Row{name, "New component", desiredVersion})
+		}
 	}
 	t.AppendSeparator()
 	t.Render()

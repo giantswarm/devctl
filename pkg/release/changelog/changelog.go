@@ -163,6 +163,12 @@ var knownComponentParseParams = map[string]parseParams{
 		start:     commonStartPattern,
 		end:       commonEndPattern,
 	},
+	"cert-manager-crossplane-resources": {
+		tag:       "https://github.com/giantswarm/cert-manager-crossplane-resources/releases/tag/v{{.Version}}",
+		changelog: "https://raw.githubusercontent.com/giantswarm/cert-manager-crossplane-resources/v{{.Version}}/CHANGELOG.md",
+		start:     commonStartPattern,
+		end:       commonEndPattern,
+	},
 	"chart-operator-extensions": {
 		tag:       "https://github.com/giantswarm/chart-operator-extensions/releases/tag/v{{.Version}}",
 		changelog: "https://raw.githubusercontent.com/giantswarm/chart-operator-extensions/v{{.Version}}/CHANGELOG.md",
@@ -427,6 +433,10 @@ func ParseChangelog(componentName, currentVersion, endVersion string) (*Version,
 		if inSection && strings.Contains(line, stopHeading) {
 			break
 		}
+		// Stop parsing if we hit any other version section after starting
+		if inSection && strings.HasPrefix(line, "## [") && !strings.Contains(line, stopHeading) {
+			break
+		}
 
 		if inSection {
 			if matches := categoryRegex.FindStringSubmatch(line); len(matches) > 1 {
@@ -455,7 +465,6 @@ func ParseChangelog(componentName, currentVersion, endVersion string) (*Version,
 
 	// Build the consolidated changelog
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("### %s [%s](%s)\n\n", componentName, currentVersion, compareLink))
 
 	if len(categorizedChanges.Added) > 0 {
 		sb.WriteString("#### Added\n\n")
