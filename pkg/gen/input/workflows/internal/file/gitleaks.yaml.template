@@ -6,4 +6,4 @@ on:
 
 jobs:
   publish:
-    uses: giantswarm/github-workflows/.github/workflows/gitleaks.yaml@40b94d81af802accd14fcd65d4ff7a8347275e1c
+    uses: giantswarm/github-workflows/.github/workflows/gitleaks.yaml@b58c650fb0f34858ba9f2c1e45eee3392ce0cf26
