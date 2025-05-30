@@ -11,6 +11,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Align release creation with our current approach.
 
+## [7.2.6] - 2025-05-30
+
+### Changed
+
+- The following GitHub workflows are now calling external, reusable workflows in `giantswarm/github-workflows`:
+  - "Create Release"
+  - "Create Release PR"
+  - "gitleaks"
+
 ## [7.2.4] - 2025-05-16
 
 ### Added
@@ -1102,7 +1111,9 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.2.4...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.2.6...HEAD
+[7.2.6]: https://github.com/giantswarm/devctl/compare/v7.2.5...v7.2.6
+[7.2.5]: https://github.com/giantswarm/devctl/compare/v7.2.4...v7.2.5
 [7.2.4]: https://github.com/giantswarm/devctl/compare/v7.2.3...v7.2.4
 [7.2.3]: https://github.com/giantswarm/devctl/compare/v7.2.2...v7.2.3
 [7.2.2]: https://github.com/giantswarm/devctl/compare/v7.2.1...v7.2.2
