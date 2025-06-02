@@ -1,11 +1,5 @@
 {{{{ .Header }}}}
 
-# This file is originally maintained in
-# https://github.com/giantswarm/github/blob/main/languages/generic/workflows/publish-techdocs.yaml
-# and rolled out via the Synchronize (a.k.a "Align files") workflow.
-#
-# Any changes applied to copies will be overwritten eventually.
-
 name: Publish TechDocs
 on:
   push:
@@ -20,7 +14,7 @@ on:
 
 jobs:
   publish:
-    uses: giantswarm/workflows-public/.github/workflows/publish-techdocs.yaml@86c33c5a289ff06f7d916b95bc5544dbb3e542d4
+    uses: giantswarm/github-workflows/.github/workflows/publish-techdocs.yaml@c10b4b84f1e9e8f9c99e1558b8ff56a04281b583
     secrets:
       aws_access_key_id: ${{ secrets.TECHDOCS_S3_ACCESS_KEY_ID }}
       aws_secret_access_key: ${{ secrets.TECHDOCS_S3_SECRET_ACCESS_KEY }}
