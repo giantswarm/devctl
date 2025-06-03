@@ -17,4 +17,7 @@ jobs:
     uses: giantswarm/github-workflows/.github/workflows/fix-vulnerabilities.yaml@70d7ae63de12e093aea62012fd952051cc3b2460
     with:
       branch: ${{ inputs.branch || github.ref }}
+    secrets:
+      HERALD_APP_ID: ${{ secrets.HERALD_APP_ID }}
+      HERALD_APP_KEY: ${{ secrets.HERALD_APP_KEY }}
 
