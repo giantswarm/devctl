@@ -14,7 +14,7 @@ on:
 
 jobs:
   publish:
-    uses: giantswarm/github-workflows/.github/workflows/publish-techdocs.yaml@6bacf73d582b8088d41b8eaec469c40c14398081
+    uses: giantswarm/github-workflows/.github/workflows/publish-techdocs.yaml@70d7ae63de12e093aea62012fd952051cc3b2460
     secrets:
       aws_access_key_id: ${{ secrets.TECHDOCS_S3_ACCESS_KEY_ID }}
       aws_secret_access_key: ${{ secrets.TECHDOCS_S3_SECRET_ACCESS_KEY }}
