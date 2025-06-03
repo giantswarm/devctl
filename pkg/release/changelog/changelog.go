@@ -433,9 +433,15 @@ func ParseChangelog(componentName, currentVersion, endVersion string) (*Version,
 		if inSection && strings.Contains(line, stopHeading) {
 			break
 		}
-		// Stop parsing if we hit any other version section after starting
+		// // Continue parsing intermediate versions - don't stop until we hit the actual endVersion.
+		// This allows collecting changes from all versions between currentVersion and endVersion.
+		// For example, when parsing from v1.2.0 to v1.0.0, this will include changes from
+		// v1.1.1, v1.1.0, etc., providing customers with a complete view of all changes.
 		if inSection && strings.HasPrefix(line, "## [") && !strings.Contains(line, stopHeading) {
-			break
+			// Reset category when encountering intermediate version headers to ensure
+			// proper categorization of changes from each version section.
+			currentCategory = ""
+			continue
 		}
 
 		if inSection {
