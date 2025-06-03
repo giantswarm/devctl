@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Update "Publish TechDocs" workflow reference
+- The following GitHub workflows are now calling external, reusable workflows in `giantswarm/github-workflows`:
+  - "Fix vulnerabilities"
 
 ## [7.2.5] - 2025-05-30
 
