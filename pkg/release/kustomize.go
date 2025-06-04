@@ -24,8 +24,31 @@ func createKustomization(releaseDirectory, provider string) error {
 	} else {
 		index = 1
 	}
+	var content string
+	if provider == "cloud-director" {
+		content = `resources:
+- release.yaml
 
-	content := `resources:
+replacements:
+- source:
+    group: release.giantswarm.io
+    kind: Release
+    fieldPath: metadata.name
+    options:
+      # Need to target index 2 here as ` + "`cloud-director`" + ` itself already contains a hyphen.
+      delimiter: "-"
+      index: %d
+  targets:
+  - select:
+      group: release.giantswarm.io
+      kind: Release
+    fieldPaths:
+    - metadata.annotations.[giantswarm.io/release-notes]
+    options:
+      create: true
+`
+	} else {
+		content = `resources:
 - release.yaml
 
 replacements:
@@ -45,6 +68,8 @@ replacements:
     options:
       create: true
 `
+	}
+
 	err := os.WriteFile(filepath.Join(releaseDirectory, "kustomization.yaml"), []byte(fmt.Sprintf(content, index)), 0644) //nolint:gosec
 	if err != nil {
 		return microerror.Mask(err)

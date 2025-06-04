@@ -146,8 +146,8 @@ var knownComponentParseParams = map[string]parseParams{
 
 	// Common Apps
 	"capi-node-labeler": {
-		tag:       "https://github.com/giantswarm/capi-node-labeler/releases/tag/v{{.Version}}",
-		changelog: "https://raw.githubusercontent.com/giantswarm/capi-node-labeler/v{{.Version}}/CHANGELOG.md",
+		tag:       "https://github.com/giantswarm/capi-node-labeler-app/releases/tag/v{{.Version}}",
+		changelog: "https://raw.githubusercontent.com/giantswarm/capi-node-labeler-app/v{{.Version}}/CHANGELOG.md",
 		start:     commonStartPattern,
 		end:       commonEndPattern,
 	},
@@ -326,6 +326,12 @@ var knownComponentParseParams = map[string]parseParams{
 		intermediate: "(?m)^## Changes by Kind$",
 		end:          "(?m)^# .*$",
 	},
+	"os-tooling": {
+		tag:       "https://github.com/giantswarm/capi-image-builder/releases/tag/v{{.Version}}",
+		changelog: "https://raw.githubusercontent.com/giantswarm/capi-image-builder/v{{.Version}}/CHANGELOG.md",
+		start:     commonStartPattern,
+		end:       commonEndPattern,
+	},
 }
 
 // Data about a component passed into templates that depend on versions
@@ -346,6 +352,7 @@ type CategorizedChanges struct {
 	Added   []string
 	Changed []string
 	Fixed   []string
+	Removed []string
 	// Add more categories if needed
 }
 
@@ -408,6 +415,16 @@ func ParseChangelog(componentName, currentVersion, endVersion string) (*Version,
 		}, nil
 	}
 
+	if componentName == "os-tooling" {
+		// Skip parsing os-tooling
+		// protected repo
+		return &Version{
+			Name:    currentVersion,
+			Link:    changelogURLBuilder.String(),
+			Content: "",
+		}, nil
+	}
+
 	// Split changelog into lines
 	lines := strings.Split(string(body), "\n")
 
@@ -459,6 +476,8 @@ func ParseChangelog(componentName, currentVersion, endVersion string) (*Version,
 					categorizedChanges.Changed = append(categorizedChanges.Changed, item)
 				case "Fixed":
 					categorizedChanges.Fixed = append(categorizedChanges.Fixed, item)
+				case "Removed":
+					categorizedChanges.Removed = append(categorizedChanges.Removed, item)
 				}
 			}
 		}
@@ -491,6 +510,14 @@ func ParseChangelog(componentName, currentVersion, endVersion string) (*Version,
 	if len(categorizedChanges.Fixed) > 0 {
 		sb.WriteString("#### Fixed\n\n")
 		for _, item := range categorizedChanges.Fixed {
+			sb.WriteString(fmt.Sprintf("- %s\n", item))
+		}
+		sb.WriteString("\n")
+	}
+
+	if len(categorizedChanges.Removed) > 0 {
+		sb.WriteString("#### Removed\n\n")
+		for _, item := range categorizedChanges.Removed {
 			sb.WriteString(fmt.Sprintf("- %s\n", item))
 		}
 		sb.WriteString("\n")

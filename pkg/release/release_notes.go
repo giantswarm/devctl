@@ -20,10 +20,10 @@ const releaseNotesTemplate = `# :zap: Giant Swarm Release {{ .Name }} for {{ .Pr
 
 ### Components
 
-{{ range .Components }}- {{ if eq .PreviousVersion "" }}Added {{ .Name }} {{ .Version }}{{ else if eq .Name "kubernetes" }}Kubernetes from v{{ .PreviousVersion }} to [v{{ .Version }}]({{ .Link }}){{ else if eq .Name "flatcar" }}Flatcar from {{ .PreviousVersion }} to [{{ .Version }}]({{ .Link }}){{ else }}{{ .Name }} from v{{ .PreviousVersion }} to v{{ .Version }}{{ end }}
+{{ range .Components }}- {{ if eq .PreviousVersion "" }}Added {{ .Name }} v{{ .Version }}{{ else if eq .Name "kubernetes" }}Kubernetes from v{{ .PreviousVersion }} to [v{{ .Version }}]({{ .Link }}){{ else if eq .Name "flatcar" }}Flatcar from v{{ .PreviousVersion }} to [v{{ .Version }}]({{ .Link }}){{ else if eq .Name "os-tooling" }}os-tooling from v{{ .PreviousVersion }} to v{{ .Version }}{{ else }}{{ .Name }} from v{{ .PreviousVersion }} to v{{ .Version }}{{ end }}
 {{ end }}
 
-{{ range .Components }}{{ if or (eq .Name "kubernetes") (eq .Name "flatcar") }}{{ continue }}{{ end }}
+{{ range .Components }}{{ if or (eq .Name "kubernetes") (eq .Name "flatcar") (eq .Name "os-tooling") }}{{ continue }}{{ end }}
 ### {{ .Name }} {{ if ne .PreviousVersion "" }}[v{{ .PreviousVersion }}...v{{ .Version }}]({{ .Link }}){{ else }}{{ .Version }}{{ end }}
 
 {{ .Changelog }}
@@ -31,10 +31,10 @@ const releaseNotesTemplate = `# :zap: Giant Swarm Release {{ .Name }} for {{ .Pr
 
 ### Apps
 
-{{ range .Apps }}{{ if eq .PreviousVersion "" }}- Added {{ .Name }} {{ .Version }}
+{{ range .Apps }}{{ if eq .PreviousVersion "" }}- Added {{ .Name }} v{{ .Version }}
 {{ end }}{{ end }}
 
-{{ range .Apps }}{{ if ne .PreviousVersion "" }}- {{ .Name }} from {{ .PreviousVersion }} to {{ .Version }}
+{{ range .Apps }}{{ if ne .PreviousVersion "" }}- {{ .Name }} from v{{ .PreviousVersion }} to v{{ .Version }}
 {{ end }}{{ end }}
 
 {{ range .Apps }}
@@ -66,7 +66,7 @@ var providerTitleMap = map[string]string{
 	"azure":          "Azure",
 	"kvm":            "KVM",
 	"vsphere":        "vSphere",
-	"cloud-director": "VMWare Cloud Director",
+	"cloud-director": "VMware Cloud Director",
 }
 
 func createReleaseNotes(release, baseRelease v1alpha1.Release, provider string) (string, error) {
@@ -78,11 +78,6 @@ func createReleaseNotes(release, baseRelease v1alpha1.Release, provider string) 
 	var components []releaseNotes
 	var apps []releaseNotes
 	for _, component := range release.Spec.Components {
-		if component.Name == "os-tooling" {
-			// Skip os-tooling for now because it's an internal implementation detail for image naming
-			continue
-		}
-
 		previousComponentVersion := ""
 		for _, baseComponent := range baseRelease.Spec.Components {
 			if component.Name == baseComponent.Name {

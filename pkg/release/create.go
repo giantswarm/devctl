@@ -82,6 +82,7 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 			Version:          version,
 			ComponentVersion: componentVersion,
 		})
+
 	}
 	newRelease := mergeReleases(baseRelease, updatesRelease)
 	releaseDirectory := releaseToDirectory(newRelease)
@@ -170,6 +171,10 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 	err = json.Unmarshal(releasesData, &releasesJson)
 	if err != nil {
 		return microerror.Mask(err)
+	}
+
+	if provider == "aws" {
+		provider = "capa"
 	}
 
 	newReleaseInfo := ReleaseJsonInfo{
