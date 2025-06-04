@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/giantswarm/microerror"
 	"github.com/google/go-github/v72/github"
@@ -34,8 +35,6 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 }
 
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
-	r.logger.Debug("running approvealign command")
-
 	fmt.Fprintln(r.stdout, "Auto-approving all 'Align files' PRs that have passing status checks...")
 
 	githubToken, found := os.LookupEnv(githubTokenEnvVar)
@@ -54,12 +53,9 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	githubClient := ghClientService.GetUnderlyingClient(ctx)
 
 	searchQuery := `is:pr is:open status:success org:giantswarm review-requested:@me "Align files"`
-	r.logger.Infof("Searching for PRs with query: %s", searchQuery)
-
-	searchOpts := &github.SearchOptions{
+	searchResults, _, err := githubClient.Search.Issues(ctx, searchQuery, &github.SearchOptions{
 		ListOptions: github.ListOptions{PerPage: 100},
-	}
-	searchResults, _, err := githubClient.Search.Issues(ctx, searchQuery, searchOpts)
+	})
 	if err != nil {
 		return microerror.Maskf(executionFailedError, "failed to search for PRs: %v", err)
 	}
@@ -69,32 +65,29 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	} else {
 		fmt.Fprintf(r.stdout, "Found %d PRs to review.\n", searchResults.GetTotal())
 	}
-
-	approvedCount := 0
+	approved := 0
 	for _, issue := range searchResults.Issues {
-		prNumber := issue.GetNumber()
-
-		owner := issue.GetRepository().GetOrganization().GetLogin()
-		repoName := issue.GetRepository().GetName()
-
-		r.logger.Infof("Attempting to approve PR #%d in %s/%s", prNumber, owner, repoName)
-
-		reviewRequest := &github.PullRequestReviewRequest{
-			Event: github.String("APPROVE"),
+		// Extract owner/repo from RepositoryURL: https://api.github.com/repos/{owner}/{repo}
+		parts := strings.Split(issue.GetRepositoryURL(), "/")
+		if len(parts) < 6 {
+			continue
 		}
-		_, _, err = githubClient.PullRequests.CreateReview(ctx, owner, repoName, prNumber, reviewRequest)
+		owner, repo := parts[4], parts[5]
+
+		_, _, err = githubClient.PullRequests.CreateReview(ctx, owner, repo, issue.GetNumber(), &github.PullRequestReviewRequest{
+			Event: github.String("APPROVE"),
+		})
 		if err != nil {
-			r.logger.Errorf("Failed to approve PR #%d in %s/%s: %v", prNumber, owner, repoName, err)
-			fmt.Fprintf(r.stderr, "Failed to approve PR #%d in %s/%s: %v\n", prNumber, owner, repoName, err)
+			fmt.Fprintf(r.stderr, "Failed to approve PR #%d: %v\n", issue.GetNumber(), err)
 			continue
 		}
 
-		fmt.Fprintf(r.stdout, "Successfully approved PR #%d in %s/%s\n", prNumber, owner, repoName)
-		approvedCount++
+		fmt.Fprintf(r.stdout, "Approved PR #%d in %s/%s\n", issue.GetNumber(), owner, repo)
+		approved++
 	}
 
-	if approvedCount > 0 {
-		fmt.Fprintf(r.stdout, "Successfully approved %d PR(s).\n", approvedCount)
+	if approved > 0 {
+		fmt.Fprintf(r.stdout, "\nApproved %d out of %d PRs.\n", approved, len(searchResults.Issues))
 	}
 
 	fmt.Fprintln(r.stdout, "\nAll remaining PRs (including any that failed approval or are pending) can be seen with this search query:")
