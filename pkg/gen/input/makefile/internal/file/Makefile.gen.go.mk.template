@@ -148,6 +148,14 @@ lint: ## Runs golangci-lint.
 	@echo "====> $@"
 	golangci-lint run -E gosec -E goconst --timeout=15m ./...
 
+.PHONY: fmt
+fmt: ## Run go fmt against code.
+	go fmt ./...
+
+.PHONY: vet
+vet: ## Run go vet against code.
+	go vet ./...
+
 .PHONY: nancy
 nancy: ## Runs nancy (requires v1.0.37 or newer).
 	@echo "====> $@"
