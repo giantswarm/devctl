@@ -440,6 +440,8 @@ func ParseChangelog(componentName, currentVersion, endVersion string) (*Version,
 	stopHeading := fmt.Sprintf("## [%s]", endVersion)
 
 	for _, line := range lines {
+		// Don't trim spaces yet - we need them to detect indentation
+		originalLine := line
 		line = strings.TrimSpace(line)
 
 		// Parse between start and stop headings
@@ -466,7 +468,33 @@ func ParseChangelog(componentName, currentVersion, endVersion string) (*Version,
 				currentCategory = matches[1]
 				continue
 			}
-			if strings.HasPrefix(line, "- ") || strings.HasPrefix(line, "* ") {
+
+			// Use originalLine to preserve indentation for bullet point detection
+			if strings.HasPrefix(originalLine, "  - ") || strings.HasPrefix(originalLine, "  * ") {
+				// Sub bullet point (indented)
+				item := strings.TrimPrefix(strings.TrimPrefix(originalLine, "  - "), "  * ")
+				item = strings.TrimSpace(item)
+				// Append to the last item in the current category with proper indentation
+				switch currentCategory {
+				case "Added":
+					if len(categorizedChanges.Added) > 0 {
+						categorizedChanges.Added[len(categorizedChanges.Added)-1] += "\n  - " + item
+					}
+				case "Changed":
+					if len(categorizedChanges.Changed) > 0 {
+						categorizedChanges.Changed[len(categorizedChanges.Changed)-1] += "\n  - " + item
+					}
+				case "Fixed":
+					if len(categorizedChanges.Fixed) > 0 {
+						categorizedChanges.Fixed[len(categorizedChanges.Fixed)-1] += "\n  - " + item
+					}
+				case "Removed":
+					if len(categorizedChanges.Removed) > 0 {
+						categorizedChanges.Removed[len(categorizedChanges.Removed)-1] += "\n  - " + item
+					}
+				}
+			} else if strings.HasPrefix(line, "- ") || strings.HasPrefix(line, "* ") {
+				// Main bullet point
 				item := strings.TrimPrefix(strings.TrimPrefix(line, "- "), "* ")
 				item = strings.TrimSpace(item)
 				switch currentCategory {
