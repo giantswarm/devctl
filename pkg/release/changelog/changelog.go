@@ -429,8 +429,18 @@ func ParseChangelog(componentName, currentVersion, endVersion string) (*Version,
 	lines := strings.Split(string(body), "\n")
 
 	inSection := false
-	compareRange := fmt.Sprintf("v%s...v%s", endVersion, currentVersion)
-	compareLink := fmt.Sprintf("%s/compare/%s", splitBaseURL(params.tag), compareRange)
+	compareRange := ""
+	compareLink := ""
+
+	if endVersion == "" || currentVersion == endVersion {
+		// When there's no previous version or they're the same, link to single release
+		compareRange = fmt.Sprintf("v%s", currentVersion)
+		compareLink = fmt.Sprintf("https://github.com/giantswarm/%s/releases/tag/v%s", componentName, currentVersion)
+	} else {
+		// When there's a version range, use comparison link
+		compareRange = fmt.Sprintf("v%s...v%s", endVersion, currentVersion)
+		compareLink = fmt.Sprintf("%s/compare/%s", splitBaseURL(params.tag), compareRange)
+	}
 
 	categorizedChanges := CategorizedChanges{}
 

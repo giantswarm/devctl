@@ -24,7 +24,7 @@ const releaseNotesTemplate = `# :zap: Giant Swarm Release {{ .Name }} for {{ .Pr
 {{ end }}
 
 {{ range .Components }}{{ if or (eq .Name "kubernetes") (eq .Name "flatcar") (eq .Name "os-tooling") }}{{ continue }}{{ end }}
-### {{ .Name }} {{ if ne .PreviousVersion "" }}[v{{ .PreviousVersion }}...v{{ .Version }}]({{ .Link }}){{ else }}{{ .Version }}{{ end }}
+### {{ .Name }} {{ if ne .PreviousVersion "" }}[v{{ .PreviousVersion }}...v{{ .Version }}]({{ .Link }}){{ else }}[v{{ .Version }}]({{ .Link }}){{ end }}
 
 {{ .Changelog }}
 {{ end }}
@@ -38,7 +38,7 @@ const releaseNotesTemplate = `# :zap: Giant Swarm Release {{ .Name }} for {{ .Pr
 {{ end }}{{ end }}
 
 {{ range .Apps }}
-### {{ .Name }} {{ if ne .PreviousVersion "" }}[v{{ .PreviousVersion }}...v{{ .Version }}]({{ .Link }}){{ else }}{{ .Version }}{{ end }}
+### {{ .Name }} {{ if ne .PreviousVersion "" }}[v{{ .PreviousVersion }}...v{{ .Version }}]({{ .Link }}){{ else }}[v{{ .Version }}]({{ .Link }}){{ end }}
 
 {{ .Changelog }}
 {{ end }}
