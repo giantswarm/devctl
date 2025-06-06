@@ -1,0 +1,43 @@
+apiVersion: release.giantswarm.io/v1alpha1
+kind: Release
+metadata:
+  name: aws-31.0.0-test
+spec:
+  apps:
+  - name: aws-ebs-csi-driver
+    version: 3.0.5
+    dependsOn:
+    - cloud-provider-aws
+  - name: aws-nth-bundle
+    version: 1.2.1
+  - name: cert-manager
+    version: 3.9.1
+    dependsOn:
+    - prometheus-operator-crd
+  - name: cilium-crossplane-resources
+    catalog: cluster
+    version: 0.2.1
+  - name: network-policies
+    catalog: cluster
+    version: 0.1.1
+    dependsOn:
+    - cilium
+  - name: security-bundle
+    catalog: giantswarm
+    version: 1.10.1
+    dependsOn:
+    - prometheus-operator-crd
+  - name: teleport-kube-agent
+    version: 0.10.5
+  components:
+  - name: cluster-aws
+    catalog: cluster
+    version: 3.2.2
+  - name: flatcar
+    version: 4152.2.3
+  - name: kubernetes
+    version: 1.33.1
+  - name: os-tooling
+    version: 1.26.1
+  date: "2025-05-28T15:52:08Z"
+  state: active

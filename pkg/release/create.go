@@ -15,7 +15,6 @@ import (
 	"github.com/giantswarm/release-operator/v4/api/v1alpha1"
 	"github.com/mohae/deepcopy"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"sigs.k8s.io/yaml"
 )
 
 // CreateRelease creates a release on the filesystem from the given parameters. This is the entry point
@@ -83,6 +82,7 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 			Version:          version,
 			ComponentVersion: componentVersion,
 		})
+
 	}
 	newRelease := mergeReleases(baseRelease, updatesRelease)
 	releaseDirectory := releaseToDirectory(newRelease)
@@ -104,15 +104,11 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 
 	// Release CR
 	releaseYAMLPath := filepath.Join(releasePath, "release.yaml")
-	releaseYAML, err := yaml.Marshal(newRelease)
+	releaseYAML, err := marshalReleaseYAML(newRelease)
 	if err != nil {
 		return microerror.Mask(err)
 	}
-	// Prepend command used for creation
-	{
-		yamlComment := []byte(fmt.Sprintf("# Generated with:\n# %s\n", creationCommand))
-		releaseYAML = append(yamlComment, releaseYAML...)
-	}
+
 	err = os.WriteFile(releaseYAMLPath, releaseYAML, 0644) //nolint:gosec
 	if err != nil {
 		return microerror.Mask(err)
@@ -175,6 +171,10 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 	err = json.Unmarshal(releasesData, &releasesJson)
 	if err != nil {
 		return microerror.Mask(err)
+	}
+
+	if provider == "aws" {
+		provider = "capa"
 	}
 
 	newReleaseInfo := ReleaseJsonInfo{
