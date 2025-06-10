@@ -1,6 +1,8 @@
 package release
 
 import (
+	"regexp"
+	"sort"
 	"strings"
 	"text/template"
 
@@ -18,39 +20,27 @@ const releaseNotesTemplate = `# :zap: Giant Swarm Release {{ .Name }} for {{ .Pr
 
 ### Components
 
-{{ range .Components }}
-{{ if eq .PreviousVersion "" }}
-* Added {{ .Name }} [{{ .Version }}]({{ .Link }})
-{{ else if eq .Name "kubernetes" }}
-* {{ .Name }} from v{{ .PreviousVersion }} to [v{{ .Version }}]({{ .Link }})
-{{ else }}
-* {{ .Name }} from {{ .PreviousVersion }} to [{{ .Version }}]({{ .Link }})
-{{ end }}
+{{ range .Components }}- {{ if eq .PreviousVersion "" }}Added {{ .Name }} v{{ .Version }}{{ else if eq .Name "kubernetes" }}Kubernetes from v{{ .PreviousVersion }} to [v{{ .Version }}]({{ .Link }}){{ else if eq .Name "flatcar" }}Flatcar from v{{ .PreviousVersion }} to [v{{ .Version }}]({{ .Link }}){{ else if eq .Name "os-tooling" }}os-tooling from v{{ .PreviousVersion }} to v{{ .Version }}{{ else }}{{ .Name }} from v{{ .PreviousVersion }} to v{{ .Version }}{{ end }}
 {{ end }}
 
-{{ range .Components }}
-{{ if or (eq .Name "kubernetes") (eq .Name "flatcar") }}
-{{continue}}
-{{ end }}
+{{ range .Components }}{{ if or (eq .Name "kubernetes") (eq .Name "flatcar") (eq .Name "os-tooling") }}{{ continue }}{{ end }}
+### {{ .Name }} {{ if ne .PreviousVersion "" }}[v{{ .PreviousVersion }}...v{{ .Version }}]({{ .Link }}){{ else }}[v{{ .Version }}]({{ .Link }}){{ end }}
 
 {{ .Changelog }}
-
 {{ end }}
 
 ### Apps
 
-{{ range .Apps }}
-{{ if eq .PreviousVersion "" }}
-* Added {{ .Name }} [{{ .Version }}]({{ .Link }})
-{{ else }}
-* {{ .Name }} from {{ .PreviousVersion }} to [{{ .Version }}]({{ .Link }})
-{{ end }}
-{{ end }}
+{{ range .Apps }}{{ if eq .PreviousVersion "" }}- Added {{ .Name }} v{{ .Version }}
+{{ end }}{{ end }}
+
+{{ range .Apps }}{{ if ne .PreviousVersion "" }}- {{ .Name }} from v{{ .PreviousVersion }} to v{{ .Version }}
+{{ end }}{{ end }}
 
 {{ range .Apps }}
+### {{ .Name }} {{ if ne .PreviousVersion "" }}[v{{ .PreviousVersion }}...v{{ .Version }}]({{ .Link }}){{ else }}[v{{ .Version }}]({{ .Link }}){{ end }}
 
 {{ .Changelog }}
-
 {{ end }}
 `
 
@@ -76,7 +66,7 @@ var providerTitleMap = map[string]string{
 	"azure":          "Azure",
 	"kvm":            "KVM",
 	"vsphere":        "vSphere",
-	"cloud-director": "VMWare Cloud Director",
+	"cloud-director": "VMware Cloud Director",
 }
 
 func createReleaseNotes(release, baseRelease v1alpha1.Release, provider string) (string, error) {
@@ -88,11 +78,6 @@ func createReleaseNotes(release, baseRelease v1alpha1.Release, provider string) 
 	var components []releaseNotes
 	var apps []releaseNotes
 	for _, component := range release.Spec.Components {
-		if component.Name == "os-tooling" {
-			// Skip os-tooling for now because it's an internal implementation detail for image naming
-			continue
-		}
-
 		previousComponentVersion := ""
 		for _, baseComponent := range baseRelease.Spec.Components {
 			if component.Name == baseComponent.Name {
@@ -110,6 +95,7 @@ func createReleaseNotes(release, baseRelease v1alpha1.Release, provider string) 
 		if err != nil {
 			return "", microerror.Mask(err)
 		}
+
 		components = append(components, releaseNotes{
 			Name:            component.Name,
 			Version:         component.Version,
@@ -147,6 +133,14 @@ func createReleaseNotes(release, baseRelease v1alpha1.Release, provider string) 
 		})
 	}
 
+	// Sort components and apps alphabetically by name
+	sort.Slice(components, func(i, j int) bool {
+		return components[i].Name < components[j].Name
+	})
+	sort.Slice(apps, func(i, j int) bool {
+		return apps[i].Name < apps[j].Name
+	})
+
 	var writer strings.Builder
 	data := releaseNotesTemplateData{
 		Name:         releaseToDirectory(release),
@@ -161,5 +155,32 @@ func createReleaseNotes(release, baseRelease v1alpha1.Release, provider string) 
 		return "", microerror.Mask(err)
 	}
 
-	return writer.String(), nil
+	result := writer.String()
+
+	// Clean up the output to remove excess blank lines
+	result = cleanReleaseNotes(result)
+	return result, nil
+}
+
+// cleanReleaseNotes removes excess blank lines from the generated release notes
+func cleanReleaseNotes(notes string) string {
+	multipleNewlines := regexp.MustCompile(`\n{3,}`)
+	notes = multipleNewlines.ReplaceAllString(notes, "\n\n")
+
+	compList := regexp.MustCompile(`(- [^\n]+\n)(\n*)(### [^\n]+)`)
+	notes = compList.ReplaceAllString(notes, "$1\n\n$3")
+
+	betweenChangelogs := regexp.MustCompile(`(### [^\n]+[\s\S]+?)(\n{2,})(### [^\n]+)`)
+	notes = betweenChangelogs.ReplaceAllString(notes, "$1\n\n$3")
+
+	endNewlines := regexp.MustCompile(`\n{2,}$`)
+	notes = endNewlines.ReplaceAllString(notes, "\n")
+
+	notes = regexp.MustCompile(`### Components\n{2,}`).ReplaceAllString(notes, "### Components\n\n")
+	notes = regexp.MustCompile(`### Apps\n{2,}`).ReplaceAllString(notes, "### Apps\n\n")
+
+	bulletPoints := regexp.MustCompile(`(- [^\n]+)\n{2,}(- [^\n]+)`)
+	notes = bulletPoints.ReplaceAllString(notes, "$1\n$2")
+
+	return notes
 }
