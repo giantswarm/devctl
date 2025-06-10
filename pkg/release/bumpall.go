@@ -409,6 +409,117 @@ func getLatestGithubRelease(owner string, name string) (string, error) {
 	return version, nil
 }
 
+// getKubernetesVersionForMinor fetches the latest patch version for a given Kubernetes minor version
+// e.g., for minorVersion "1.31", it might return "1.31.9"
+func getKubernetesVersionForMinor(minorVersion string) (string, error) {
+	token := os.Getenv("OPSCTL_GITHUB_TOKEN")
+
+	ctx := context.Background()
+	ts := oauth2.StaticTokenSource(
+		&oauth2.Token{AccessToken: token},
+	)
+	tc := oauth2.NewClient(ctx, ts)
+
+	client := github.NewClient(tc)
+
+	// Get all releases from kubernetes repository
+	opt := &github.ListOptions{
+		PerPage: 100, // Get more releases to ensure we find the latest patch
+	}
+
+	var latestVersion string
+	var latestSemver semver.Version
+
+	for {
+		releases, resp, err := client.Repositories.ListReleases(ctx, "kubernetes", "kubernetes", opt)
+		if err != nil {
+			return "", microerror.Mask(err)
+		}
+
+		for _, release := range releases {
+			if release.Name == nil {
+				continue
+			}
+
+			// Handle the "Kubernetes v1.x.y" format from kubernetes/kubernetes releases
+			versionStr := *release.Name
+			// Strip "Kubernetes " prefix if present
+			versionStr = strings.TrimPrefix(versionStr, "Kubernetes ")
+			// Strip "v" prefix if present
+			versionStr = strings.TrimPrefix(versionStr, "v")
+
+			// Skip pre-releases and versions that don't start with the desired minor version
+			if strings.Contains(versionStr, "-") || !strings.HasPrefix(versionStr, minorVersion+".") {
+				continue
+			}
+
+			version, err := semver.ParseTolerant(versionStr)
+			if err != nil {
+				continue
+			}
+
+			// Check if this version matches our target minor version and is newer than what we found
+			if fmt.Sprintf("%d.%d", version.Major, version.Minor) == minorVersion {
+				if latestVersion == "" || version.GT(latestSemver) {
+					latestSemver = version
+					latestVersion = versionStr
+				}
+			}
+		}
+
+		if resp.NextPage == 0 {
+			break
+		}
+		opt.Page = resp.NextPage
+	}
+
+	if latestVersion == "" {
+		return "", microerror.Mask(fmt.Errorf("no stable release found for Kubernetes minor version %s", minorVersion))
+	}
+
+	return latestVersion, nil
+}
+
+// extractKubernetesMinorFromReleaseName attempts to extract a Kubernetes minor version
+// from a release name pattern. For example:
+// - "v31.0.0" -> "1.31" (mapping v31 to k8s 1.31)
+// - "v30.0.0" -> "1.30" (mapping v30 to k8s 1.30)
+// Returns the minor version string (like "1.31") or empty string if pattern doesn't match
+func extractKubernetesMinorFromReleaseName(releaseName string) string {
+	releaseName = strings.TrimPrefix(releaseName, "v")
+
+	// Parse the release version using semver
+	releaseVersion, err := semver.ParseTolerant(releaseName)
+	if err != nil {
+		return ""
+	}
+
+	// The pattern maps the major version of the release to a Kubernetes minor version
+	// For example: release v31 → k8s 1.31, release v30 → k8s 1.30
+	releaseMajor := releaseVersion.Major
+
+	// Convert to kubernetes version pattern: release major = k8s minor
+	kubernetesMinor := fmt.Sprintf("1.%d", releaseMajor)
+
+	return kubernetesMinor
+}
+
+// autoDetectKubernetesVersion attempts to automatically detect and fetch the appropriate
+// Kubernetes version based on the release name pattern
+func autoDetectKubernetesVersion(releaseName string) (string, error) {
+	kubernetesMinor := extractKubernetesMinorFromReleaseName(releaseName)
+	if kubernetesMinor == "" {
+		return "", microerror.Mask(fmt.Errorf("could not extract Kubernetes minor version from release name: %s", releaseName))
+	}
+
+	latestKubernetesVersion, err := getKubernetesVersionForMinor(kubernetesMinor)
+	if err != nil {
+		return "", microerror.Mask(err)
+	}
+
+	return latestKubernetesVersion, nil
+}
+
 func getLatestFlatcarRelease() (string, error) {
 	url := "https://www.flatcar.org/releases-json/releases-stable.json"
 

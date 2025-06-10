@@ -39,6 +39,31 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 	// Store the base release for later use because it gets modified
 	previousRelease := deepcopy.Copy(baseRelease).(v1alpha1.Release)
 
+	// Auto-detect Kubernetes version if not explicitly provided by user
+	hasUserKubernetesComponent := false
+	for _, componentVersion := range components {
+		split := strings.Split(componentVersion, "@")
+		if len(split) >= 1 && split[0] == "kubernetes" {
+			fmt.Println("Explicit Kubernetes component specified by user:", componentVersion)
+			hasUserKubernetesComponent = true
+			break
+		}
+	}
+
+	// Only attempt auto-detection if user didn't explicitly specify Kubernetes
+	if !hasUserKubernetesComponent {
+		fmt.Printf("No explicit Kubernetes component specified by user. Attempting auto-detection based on release name pattern...\n")
+		kubernetesVersion, err := autoDetectKubernetesVersion(name)
+		if err != nil {
+			fmt.Printf("Warning: Could not auto-detect Kubernetes version: %v\n", err)
+			fmt.Printf("You can manually specify the Kubernetes version using --component kubernetes@<version>\n")
+		} else {
+			kubernetesComponent := fmt.Sprintf("kubernetes@%s", kubernetesVersion)
+			components = append(components, kubernetesComponent)
+			fmt.Printf("Auto-detected and added Kubernetes component: %s\n", kubernetesComponent)
+		}
+	}
+
 	if bumpall {
 		fmt.Println("Requested automated bumping of all components and apps.")
 		components, apps, err = BumpAll(baseRelease, components, apps)
