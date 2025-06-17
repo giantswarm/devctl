@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Use `main` when referencing reusable GitHub workflows.
+
 ## [7.2.7] - 2025-06-11
 
 ### Changed
