@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Align release creation with our current approach.
 - The following GitHub workflows are now calling external, reusable workflows in `giantswarm/github-workflows`:
   - "Scorecard supply-chain security"
   - "Validate chart values and schema"
