@@ -51,6 +51,12 @@ var knownComponentParseParams = map[string]parseParams{
 		start:     commonStartPattern,
 		end:       commonEndPattern,
 	},
+	"aws-pod-identity-webhook": {
+		tag:       "https://github.com/giantswarm/aws-pod-identity-webhook/releases/tag/v{{.Version}}",
+		changelog: "https://raw.githubusercontent.com/giantswarm/aws-pod-identity-webhook/v{{.Version}}/CHANGELOG.md",
+		start:     commonStartPattern,
+		end:       commonEndPattern,
+	},
 	"cluster-aws": {
 		tag:       "https://github.com/giantswarm/cluster-aws/releases/tag/v{{.Version}}",
 		changelog: "https://raw.githubusercontent.com/giantswarm/cluster-aws/v{{.Version}}/CHANGELOG.md",
@@ -74,6 +80,18 @@ var knownComponentParseParams = map[string]parseParams{
 	"cluster-eks": {
 		tag:       "https://github.com/giantswarm/cluster-eks/releases/tag/v{{.Version}}",
 		changelog: "https://raw.githubusercontent.com/giantswarm/cluster-eks/v{{.Version}}/CHANGELOG.md",
+		start:     commonStartPattern,
+		end:       commonEndPattern,
+	},
+	"karpenter-bundle": {
+		tag:       "https://github.com/giantswarm/karpenter-bundle/releases/tag/v{{.Version}}",
+		changelog: "https://raw.githubusercontent.com/giantswarm/karpenter-bundle/v{{.Version}}/CHANGELOG.md",
+		start:     commonStartPattern,
+		end:       commonEndPattern,
+	},
+	"karpenter-nodepools": {
+		tag:       "https://github.com/giantswarm/karpenter-nodepools/releases/tag/v{{.Version}}",
+		changelog: "https://raw.githubusercontent.com/giantswarm/karpenter-nodepools/v{{.Version}}/CHANGELOG.md",
 		start:     commonStartPattern,
 		end:       commonEndPattern,
 	},
@@ -140,8 +158,8 @@ var knownComponentParseParams = map[string]parseParams{
 
 	// Common Apps
 	"capi-node-labeler": {
-		tag:       "https://github.com/giantswarm/capi-node-labeler/releases/tag/v{{.Version}}",
-		changelog: "https://raw.githubusercontent.com/giantswarm/capi-node-labeler/v{{.Version}}/CHANGELOG.md",
+		tag:       "https://github.com/giantswarm/capi-node-labeler-app/releases/tag/v{{.Version}}",
+		changelog: "https://raw.githubusercontent.com/giantswarm/capi-node-labeler-app/v{{.Version}}/CHANGELOG.md",
 		start:     commonStartPattern,
 		end:       commonEndPattern,
 	},
@@ -154,6 +172,12 @@ var knownComponentParseParams = map[string]parseParams{
 	"cert-manager": {
 		tag:       "https://github.com/giantswarm/cert-manager-app/releases/tag/v{{.Version}}",
 		changelog: "https://raw.githubusercontent.com/giantswarm/cert-manager-app/v{{.Version}}/CHANGELOG.md",
+		start:     commonStartPattern,
+		end:       commonEndPattern,
+	},
+	"cert-manager-crossplane-resources": {
+		tag:       "https://github.com/giantswarm/cert-manager-crossplane-resources/releases/tag/v{{.Version}}",
+		changelog: "https://raw.githubusercontent.com/giantswarm/cert-manager-crossplane-resources/v{{.Version}}/CHANGELOG.md",
 		start:     commonStartPattern,
 		end:       commonEndPattern,
 	},
@@ -196,6 +220,18 @@ var knownComponentParseParams = map[string]parseParams{
 	"coredns": {
 		tag:       "https://github.com/giantswarm/coredns-app/releases/tag/v{{.Version}}",
 		changelog: "https://raw.githubusercontent.com/giantswarm/coredns-app/v{{.Version}}/CHANGELOG.md",
+		start:     commonStartPattern,
+		end:       commonEndPattern,
+	},
+	"coredns-extensions": {
+		tag:       "https://github.com/giantswarm/coredns-extensions-app/releases/tag/v{{.Version}}",
+		changelog: "https://raw.githubusercontent.com/giantswarm/coredns-extensions-app/v{{.Version}}/CHANGELOG.md",
+		start:     commonStartPattern,
+		end:       commonEndPattern,
+	},
+	"etcd-defrag": {
+		tag:       "https://github.com/giantswarm/etcd-defrag-app/releases/tag/v{{.Version}}",
+		changelog: "https://raw.githubusercontent.com/giantswarm/etcd-defrag-app/v{{.Version}}/CHANGELOG.md",
 		start:     commonStartPattern,
 		end:       commonEndPattern,
 	},
@@ -302,6 +338,12 @@ var knownComponentParseParams = map[string]parseParams{
 		intermediate: "(?m)^## Changes by Kind$",
 		end:          "(?m)^# .*$",
 	},
+	"os-tooling": {
+		tag:       "https://github.com/giantswarm/capi-image-builder/releases/tag/v{{.Version}}",
+		changelog: "https://raw.githubusercontent.com/giantswarm/capi-image-builder/v{{.Version}}/CHANGELOG.md",
+		start:     commonStartPattern,
+		end:       commonEndPattern,
+	},
 }
 
 // Data about a component passed into templates that depend on versions
@@ -322,6 +364,7 @@ type CategorizedChanges struct {
 	Added   []string
 	Changed []string
 	Fixed   []string
+	Removed []string
 	// Add more categories if needed
 }
 
@@ -384,12 +427,32 @@ func ParseChangelog(componentName, currentVersion, endVersion string) (*Version,
 		}, nil
 	}
 
+	if componentName == "os-tooling" {
+		// Skip parsing os-tooling
+		// protected repo
+		return &Version{
+			Name:    currentVersion,
+			Link:    changelogURLBuilder.String(),
+			Content: "",
+		}, nil
+	}
+
 	// Split changelog into lines
 	lines := strings.Split(string(body), "\n")
 
 	inSection := false
-	compareRange := fmt.Sprintf("v%s...v%s", endVersion, currentVersion)
-	compareLink := fmt.Sprintf("%s/compare/%s", splitBaseURL(params.tag), compareRange)
+	compareRange := ""
+	compareLink := ""
+
+	if endVersion == "" || currentVersion == endVersion {
+		// When there's no previous version or they're the same, link to single release
+		compareRange = fmt.Sprintf("v%s", currentVersion)
+		compareLink = fmt.Sprintf("https://github.com/giantswarm/%s/releases/tag/v%s", componentName, currentVersion)
+	} else {
+		// When there's a version range, use comparison link
+		compareRange = fmt.Sprintf("v%s...v%s", endVersion, currentVersion)
+		compareLink = fmt.Sprintf("%s/compare/%s", splitBaseURL(params.tag), compareRange)
+	}
 
 	categorizedChanges := CategorizedChanges{}
 
@@ -399,6 +462,8 @@ func ParseChangelog(componentName, currentVersion, endVersion string) (*Version,
 	stopHeading := fmt.Sprintf("## [%s]", endVersion)
 
 	for _, line := range lines {
+		// Don't trim spaces yet - we need them to detect indentation
+		originalLine := line
 		line = strings.TrimSpace(line)
 
 		// Parse between start and stop headings
@@ -409,13 +474,49 @@ func ParseChangelog(componentName, currentVersion, endVersion string) (*Version,
 		if inSection && strings.Contains(line, stopHeading) {
 			break
 		}
+		// // Continue parsing intermediate versions - don't stop until we hit the actual endVersion.
+		// This allows collecting changes from all versions between currentVersion and endVersion.
+		// For example, when parsing from v1.2.0 to v1.0.0, this will include changes from
+		// v1.1.1, v1.1.0, etc., providing customers with a complete view of all changes.
+		if inSection && strings.HasPrefix(line, "## [") && !strings.Contains(line, stopHeading) {
+			// Reset category when encountering intermediate version headers to ensure
+			// proper categorization of changes from each version section.
+			currentCategory = ""
+			continue
+		}
 
 		if inSection {
 			if matches := categoryRegex.FindStringSubmatch(line); len(matches) > 1 {
 				currentCategory = matches[1]
 				continue
 			}
-			if strings.HasPrefix(line, "- ") || strings.HasPrefix(line, "* ") {
+
+			// Use originalLine to preserve indentation for bullet point detection
+			if strings.HasPrefix(originalLine, "  - ") || strings.HasPrefix(originalLine, "  * ") {
+				// Sub bullet point (indented)
+				item := strings.TrimPrefix(strings.TrimPrefix(originalLine, "  - "), "  * ")
+				item = strings.TrimSpace(item)
+				// Append to the last item in the current category with proper indentation
+				switch currentCategory {
+				case "Added":
+					if len(categorizedChanges.Added) > 0 {
+						categorizedChanges.Added[len(categorizedChanges.Added)-1] += "\n  - " + item
+					}
+				case "Changed":
+					if len(categorizedChanges.Changed) > 0 {
+						categorizedChanges.Changed[len(categorizedChanges.Changed)-1] += "\n  - " + item
+					}
+				case "Fixed":
+					if len(categorizedChanges.Fixed) > 0 {
+						categorizedChanges.Fixed[len(categorizedChanges.Fixed)-1] += "\n  - " + item
+					}
+				case "Removed":
+					if len(categorizedChanges.Removed) > 0 {
+						categorizedChanges.Removed[len(categorizedChanges.Removed)-1] += "\n  - " + item
+					}
+				}
+			} else if strings.HasPrefix(line, "- ") || strings.HasPrefix(line, "* ") {
+				// Main bullet point
 				item := strings.TrimPrefix(strings.TrimPrefix(line, "- "), "* ")
 				item = strings.TrimSpace(item)
 				switch currentCategory {
@@ -425,6 +526,8 @@ func ParseChangelog(componentName, currentVersion, endVersion string) (*Version,
 					categorizedChanges.Changed = append(categorizedChanges.Changed, item)
 				case "Fixed":
 					categorizedChanges.Fixed = append(categorizedChanges.Fixed, item)
+				case "Removed":
+					categorizedChanges.Removed = append(categorizedChanges.Removed, item)
 				}
 			}
 		}
@@ -437,7 +540,6 @@ func ParseChangelog(componentName, currentVersion, endVersion string) (*Version,
 
 	// Build the consolidated changelog
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("### %s [%s](%s)\n\n", componentName, currentVersion, compareLink))
 
 	if len(categorizedChanges.Added) > 0 {
 		sb.WriteString("#### Added\n\n")
@@ -458,6 +560,14 @@ func ParseChangelog(componentName, currentVersion, endVersion string) (*Version,
 	if len(categorizedChanges.Fixed) > 0 {
 		sb.WriteString("#### Fixed\n\n")
 		for _, item := range categorizedChanges.Fixed {
+			sb.WriteString(fmt.Sprintf("- %s\n", item))
+		}
+		sb.WriteString("\n")
+	}
+
+	if len(categorizedChanges.Removed) > 0 {
+		sb.WriteString("#### Removed\n\n")
+		for _, item := range categorizedChanges.Removed {
 			sb.WriteString(fmt.Sprintf("- %s\n", item))
 		}
 		sb.WriteString("\n")
