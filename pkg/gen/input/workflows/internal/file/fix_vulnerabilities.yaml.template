@@ -14,7 +14,7 @@ on:
 
 jobs:
   fix:
-    uses: giantswarm/github-workflows/.github/workflows/fix-vulnerabilities.yaml@897ce7c11f81fcd01f7cf38e839a42848a63c7e7
+    uses: giantswarm/github-workflows/.github/workflows/fix-vulnerabilities.yaml@main
     with:
       branch: ${{ inputs.branch || github.ref }}
     secrets:
