@@ -83,6 +83,18 @@ var knownComponentParseParams = map[string]parseParams{
 		start:     commonStartPattern,
 		end:       commonEndPattern,
 	},
+	"karpenter-bundle": {
+		tag:       "https://github.com/giantswarm/karpenter-bundle/releases/tag/v{{.Version}}",
+		changelog: "https://raw.githubusercontent.com/giantswarm/karpenter-bundle/v{{.Version}}/CHANGELOG.md",
+		start:     commonStartPattern,
+		end:       commonEndPattern,
+	},
+	"karpenter-nodepools": {
+		tag:       "https://github.com/giantswarm/karpenter-nodepools/releases/tag/v{{.Version}}",
+		changelog: "https://raw.githubusercontent.com/giantswarm/karpenter-nodepools/v{{.Version}}/CHANGELOG.md",
+		start:     commonStartPattern,
+		end:       commonEndPattern,
+	},
 
 	// CAPZ Provider Specific
 	"cluster-azure": {
