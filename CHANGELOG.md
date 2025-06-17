@@ -7,11 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.2.7] - 2025-06-11
+
 ### Changed
 
+- Align release creation with our current approach.
 - The following GitHub workflows are now calling external, reusable workflows in `giantswarm/github-workflows`:
   - "Scorecard supply-chain security"
   - "Validate chart values and schema"
+- Fix line ending in workflow template "Fix Go vulnerabilities"
 
 ## [7.2.6] - 2025-06-03
 
@@ -1121,7 +1125,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.2.6...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.2.7...HEAD
+[7.2.7]: https://github.com/giantswarm/devctl/compare/v7.2.6...v7.2.7
 [7.2.6]: https://github.com/giantswarm/devctl/compare/v7.2.5...v7.2.6
 [7.2.5]: https://github.com/giantswarm/devctl/compare/v7.2.6...v7.2.5
 [7.2.6]: https://github.com/giantswarm/devctl/compare/v7.2.5...v7.2.6

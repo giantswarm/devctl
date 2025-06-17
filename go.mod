@@ -2,7 +2,7 @@ module github.com/giantswarm/devctl/v7
 
 go 1.24.0
 
-toolchain go1.24.3
+toolchain go1.24.4
 
 require (
 	github.com/Masterminds/semver/v3 v3.3.1
@@ -15,7 +15,7 @@ require (
 	github.com/giantswarm/microerror v0.4.1
 	github.com/giantswarm/micrologger v1.1.2
 	github.com/giantswarm/release-operator/v4 v4.2.0
-	github.com/go-git/go-git/v5 v5.16.0
+	github.com/go-git/go-git/v5 v5.16.2
 	github.com/google/go-github/v72 v72.0.0
 	github.com/jedib0t/go-pretty/v6 v6.6.7
 	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826
@@ -24,7 +24,7 @@ require (
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.9.1
 	github.com/spf13/pflag v1.0.6
-	golang.org/x/net v0.40.0
+	golang.org/x/net v0.41.0
 	golang.org/x/oauth2 v0.30.0
 	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/apimachinery v0.33.1
@@ -69,10 +69,10 @@ require (
 	github.com/ulikunitz/xz v0.5.12 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
-	golang.org/x/crypto v0.38.0 // indirect
+	golang.org/x/crypto v0.39.0 // indirect
 	golang.org/x/sys v0.33.0 // indirect
 	golang.org/x/term v0.32.0 // indirect
-	golang.org/x/text v0.25.0 // indirect
+	golang.org/x/text v0.26.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	k8s.io/klog/v2 v2.130.1 // indirect
@@ -85,5 +85,5 @@ require (
 replace (
 	github.com/aws/aws-sdk-go => github.com/aws/aws-sdk-go v1.55.7
 	github.com/gorilla/websocket => github.com/gorilla/websocket v1.5.3
-	golang.org/x/text => golang.org/x/text v0.25.0
+	golang.org/x/text => golang.org/x/text v0.26.0
 )
