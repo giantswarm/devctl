@@ -1,5 +1,5 @@
 {{{{ .Header }}}}
-name: Validate Release Changelog
+name: Validate changelog
 
 on:
   workflow_call:
@@ -31,4 +31,4 @@ permissions:
 
 jobs:
   validate-changelog:
-    uses: giantswarm/github-workflows/.github/workflows/validate-changelog.yaml@validate-changelog
+    uses: giantswarm/github-workflows/.github/workflows/validate-changelog.yaml@3681e34c08ca044821ef7c1c037cf8b859194777
