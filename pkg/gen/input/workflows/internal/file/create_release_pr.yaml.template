@@ -27,7 +27,7 @@ on:
 
 jobs:
   publish:
-    uses: giantswarm/github-workflows/.github/workflows/create-release-pr.yaml@897ce7c11f81fcd01f7cf38e839a42848a63c7e7
+    uses: giantswarm/github-workflows/.github/workflows/create-release-pr.yaml@f521ed67a6d5dc7ef628138d4bac919f1d3d4079
     with:
       branch: ${{ inputs.branch }}
     secrets:
