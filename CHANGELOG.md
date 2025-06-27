@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.4.2] - 2025-06-27
+
 ### Fixed
 
 - Enabled installing via the `go install github.com/giantswarm/devctl/v7@latest` command by removing replace directives in `go.mod`.
@@ -1147,7 +1149,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.4.1...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.4.2...HEAD
+[7.4.2]: https://github.com/giantswarm/devctl/compare/v7.4.1...v7.4.2
 [7.4.1]: https://github.com/giantswarm/devctl/compare/v7.4.0...v7.4.1
 [7.4.0]: https://github.com/giantswarm/devctl/compare/v7.3.0...v7.4.0
 [7.3.0]: https://github.com/giantswarm/devctl/compare/v7.2.7...v7.3.0
