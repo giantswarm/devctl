@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Enabled installing via the `go install github.com/giantswarm/devctl/v7@latest` command by removing replace directives in `go.mod`.
 
+### Changed
+
+- Use `main` when referencing reusable GitHub workflows.
+
 ## [7.4.1] - 2025-06-26
 
 ### Fixed
