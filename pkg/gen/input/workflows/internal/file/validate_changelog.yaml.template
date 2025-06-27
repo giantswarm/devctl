@@ -1,0 +1,16 @@
+{{{{ .Header }}}}
+name: Validate changelog
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'CHANGELOG.md'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  validate-changelog:
+    uses: giantswarm/github-workflows/.github/workflows/validate-changelog.yaml@f521ed67a6d5dc7ef628138d4bac919f1d3d4079

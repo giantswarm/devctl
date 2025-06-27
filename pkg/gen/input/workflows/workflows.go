@@ -83,3 +83,7 @@ func (w *Workflows) RunOSSFScorecard() input.Input {
 func (w *Workflows) UpdateChart() input.Input {
 	return file.NewUpdateChartInput(w.params)
 }
+
+func (w *Workflows) ValidateChangelog() input.Input {
+	return file.NewValidateChangelogInput(w.params)
+}
