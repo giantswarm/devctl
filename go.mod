@@ -82,9 +82,3 @@ require (
 	sigs.k8s.io/randfill v1.0.0 // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.7.0 // indirect
 )
-
-replace (
-	github.com/aws/aws-sdk-go => github.com/aws/aws-sdk-go v1.55.7
-	github.com/gorilla/websocket => github.com/gorilla/websocket v1.5.3
-	golang.org/x/text => golang.org/x/text v0.26.0
-)
