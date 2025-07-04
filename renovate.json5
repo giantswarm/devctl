@@ -1,15 +1,12 @@
 {
-  "extends": [
-    // Base config - https://github.com/giantswarm/renovate-presets/blob/main/default.json5
-    "github>giantswarm/renovate-presets:default.json5",
-    // Go specific config - https://github.com/giantswarm/renovate-presets/blob/main/lang-go.json5
-    "github>giantswarm/renovate-presets:lang-go.json5",
-    // Pin to the SHA of a GitHub action.
-    "helpers:pinGitHubActionDigests"
+  extends: [
+    'github>giantswarm/renovate-presets:default.json5',
+    'github>giantswarm/renovate-presets:lang-go.json5',
+    'helpers:pinGitHubActionDigests',
   ],
-  "github-actions": {
-    "fileMatch": [
-      ".*.yaml.template$",
+  'github-actions': {
+    managerFilePatterns: [
+      '/.*.yaml.template$/',
     ],
   },
 }
