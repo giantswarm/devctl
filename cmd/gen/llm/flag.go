@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/giantswarm/microerror"
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/v7/pkg/gen"
@@ -26,9 +25,7 @@ func (f *flag) Init(cmd *cobra.Command) {
 }
 
 func (f *flag) Validate() error {
-	if len(f.Flavours) == 0 {
-		return microerror.Maskf(invalidFlagError, "--%s must be one of: %s", flagFlavour, strings.Join(gen.AllFlavours(), ", "))
-	}
+	// Always generate a base rule set.
 
 	return nil
 }
