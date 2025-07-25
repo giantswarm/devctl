@@ -14,7 +14,7 @@ var goRulesTemplate string
 //go:embed go_rules.mdc.template.sha
 var goRulesTemplateSha string
 
-func NewGoSpecificRulesInput(p params.Params) input.Input {
+func NewGoLLMRulesInput(p params.Params) input.Input {
 	i := input.Input{
 		Path:         params.RegenerableFileName(p, "go-llm-rules.mdc"),
 		TemplateBody: goRulesTemplate,

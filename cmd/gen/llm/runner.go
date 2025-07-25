@@ -58,7 +58,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 	// Add additional rules files for different flavours and languages
 	if r.flag.Language == "go" {
-		inputs = append(inputs, llmInput.GoSpecificRules())
+		inputs = append(inputs, llmInput.GoLLMRules())
 	}
 
 	err = gen.Execute(
