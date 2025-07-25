@@ -27,7 +27,7 @@ require (
 	golang.org/x/net v0.42.0
 	golang.org/x/oauth2 v0.30.0
 	gopkg.in/yaml.v3 v3.0.1
-	k8s.io/apimachinery v0.33.2
+	k8s.io/apimachinery v0.33.3
 	sigs.k8s.io/yaml v1.5.0
 )
 
