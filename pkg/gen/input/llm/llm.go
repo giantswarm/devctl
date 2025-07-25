@@ -33,6 +33,6 @@ func (l *LLM) BaseLLMRules() input.Input {
 	return file.NewBaseLLMRulesInput(l.params)
 }
 
-func (l *LLM) GoSpecificRules() input.Input {
-	return file.NewGoSpecificRulesInput(l.params)
+func (l *LLM) GoLLMRules() input.Input {
+	return file.NewGoLLMRulesInput(l.params)
 }
