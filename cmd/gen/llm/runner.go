@@ -61,18 +61,6 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		inputs = append(inputs, llmInput.GoSpecificRules())
 	}
 
-	// if r.flag.Language == "typescript" || r.flag.Language == "javascript" {
-	// 	inputs = append(inputs, llmInput.TypeScriptRules())
-	// }
-
-	// if r.flag.Flavours.Contains(gen.FlavourApp) {
-	// 	inputs = append(inputs, llmInput.AppRules())
-	// }
-
-	// if r.flag.Flavours.Contains(gen.FlavourClusterApp) {
-	// 	inputs = append(inputs, llmInput.ClusterAppRules())
-	// }
-
 	err = gen.Execute(
 		ctx,
 		inputs...,
