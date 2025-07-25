@@ -11,6 +11,7 @@ import (
 	"github.com/giantswarm/devctl/v7/cmd/gen/ami"
 	"github.com/giantswarm/devctl/v7/cmd/gen/apptest"
 	"github.com/giantswarm/devctl/v7/cmd/gen/dependabot"
+	"github.com/giantswarm/devctl/v7/cmd/gen/llm"
 	"github.com/giantswarm/devctl/v7/cmd/gen/makefile"
 	"github.com/giantswarm/devctl/v7/cmd/gen/renovate"
 	"github.com/giantswarm/devctl/v7/cmd/gen/workflows"
@@ -54,6 +55,20 @@ func New(config Config) (*cobra.Command, error) {
 		}
 	}
 
+	var apptestCmd *cobra.Command
+	{
+		c := apptest.Config{
+			Logger: config.Logger,
+			Stderr: config.Stderr,
+			Stdout: config.Stdout,
+		}
+
+		apptestCmd, err = apptest.New(c)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+	}
+
 	var dependabotCmd *cobra.Command
 	{
 		c := dependabot.Config{
@@ -63,6 +78,20 @@ func New(config Config) (*cobra.Command, error) {
 		}
 
 		dependabotCmd, err = dependabot.New(c)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+	}
+
+	var llmCmd *cobra.Command
+	{
+		c := llm.Config{
+			Logger: config.Logger,
+			Stderr: config.Stderr,
+			Stdout: config.Stdout,
+		}
+
+		llmCmd, err = llm.New(c)
 		if err != nil {
 			return nil, microerror.Mask(err)
 		}
@@ -109,20 +138,6 @@ func New(config Config) (*cobra.Command, error) {
 		}
 	}
 
-	var apptestCmd *cobra.Command
-	{
-		c := apptest.Config{
-			Logger: config.Logger,
-			Stderr: config.Stderr,
-			Stdout: config.Stdout,
-		}
-
-		apptestCmd, err = apptest.New(c)
-		if err != nil {
-			return nil, microerror.Mask(err)
-		}
-	}
-
 	f := &flag{}
 
 	r := &runner{
@@ -143,6 +158,7 @@ func New(config Config) (*cobra.Command, error) {
 
 	c.AddCommand(amiCmd)
 	c.AddCommand(dependabotCmd)
+	c.AddCommand(llmCmd)
 	c.AddCommand(makefileCmd)
 	c.AddCommand(renovateCmd)
 	c.AddCommand(workflowsCmd)

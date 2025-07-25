@@ -1,0 +1,14 @@
+{{.Header}}
+---
+description: Go language-specific development guidelines and patterns
+globs: ["**/*.go"]
+---
+
+These guidelines apply to Go code and supplement any other general development instructions or workflows.
+
+# Go Code Guidelines
+
+- All Go code is expected to adhere to the rules outlined in the Giant Swarm style guide located at @https://github.com/giantswarm/fmt/tree/main/go.
+- Always fetch and fully understand the style guide before reviewing any code.
+- The Giant Swarm style guide linked above must always be considered definitive. ALL rules and provisions contained in the style guide MUST be met.
+- When applying the style guide, always list all instances of a particular issue, grouped by the finding type.
