@@ -18,7 +18,6 @@ func NewBaseLLMRulesInput(p params.Params) input.Input {
 	i := input.Input{
 		Path:         params.RegenerableFileName(p, "base-llm-rules.mdc"),
 		TemplateBody: baseLLMRulesTemplate,
-		// SkipRegenCheck: true,
 		TemplateData: map[string]interface{}{
 			"Header":       params.Header(baseLLMRulesTemplateSha),
 			"IsLanguageGo": params.IsLanguageGo(p),
