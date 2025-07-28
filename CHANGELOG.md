@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.5.0] - 2025-07-28
+
 ### Added
 
 - Add `devctl gen llm` to generate standard Giant Swarm LLM rules in a repository.
@@ -1153,7 +1155,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.4.2...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.5.0...HEAD
+[7.5.0]: https://github.com/giantswarm/devctl/compare/v7.4.2...v7.5.0
 [7.4.2]: https://github.com/giantswarm/devctl/compare/v7.4.1...v7.4.2
 [7.4.1]: https://github.com/giantswarm/devctl/compare/v7.4.0...v7.4.1
 [7.4.0]: https://github.com/giantswarm/devctl/compare/v7.3.0...v7.4.0
