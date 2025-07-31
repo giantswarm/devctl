@@ -376,11 +376,12 @@ func getLatestGithubRelease(owner string, name string) (string, error) {
 
 	client := github.NewClient(tc)
 
-	candidateNames := []string{name}
+	// Makes sure both `my-fancy-controller` and `my-fancy-controller-app` are getting looked up as `my-fancy-controller-app` and `my-fancy-controller`.
+	var candidateNames []string
 	if strings.HasSuffix(name, "-app") {
-		candidateNames = append(candidateNames, strings.TrimSuffix(name, "-app"))
+		candidateNames = []string{name, strings.TrimSuffix(name, "-app")}
 	} else {
-		candidateNames = append(candidateNames, fmt.Sprintf("%s-app", name))
+		candidateNames = []string{fmt.Sprintf("%s-app", name), name}
 	}
 
 	version := ""
