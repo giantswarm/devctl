@@ -188,6 +188,7 @@ jobs:
         with:
           body: ${{ steps.changelog_reader.outputs.changes }}
           tag: "v${{ needs.gather_facts.outputs.version }}"
+          skipIfReleaseExists: true
 
 {{{{- if .EnableFloatingMajorVersionTags }}}}
 
