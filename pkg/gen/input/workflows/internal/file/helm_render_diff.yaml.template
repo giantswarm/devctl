@@ -89,7 +89,7 @@ jobs:
             echo "Rendering Helm template for ${test_file_path} on old code"
 
             if [ ! -f "old/${test_file_path}" ]; then
-              echo "File old/${test_file_path} does not yet exist in old code, skipping"
+              echo "File ${test_file_path} does not yet exist in old code, skipping"
               continue
             fi
 
