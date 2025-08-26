@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Workflows: Skip release creation if already exists.
+
 ## [7.5.1] - 2025-07-31
 
 ### Changed
