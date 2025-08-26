@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.5.3] - 2025-08-26
+
 ### Fixed
 
 - Ignore values check with new values file against older helm releases.
@@ -1171,7 +1173,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.5.2...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.5.3...HEAD
+[7.5.3]: https://github.com/giantswarm/devctl/compare/v7.5.2...v7.5.3
 [7.5.2]: https://github.com/giantswarm/devctl/compare/v7.5.1...v7.5.2
 [7.5.1]: https://github.com/giantswarm/devctl/compare/v7.5.0...v7.5.1
 [7.5.0]: https://github.com/giantswarm/devctl/compare/v7.4.2...v7.5.0
