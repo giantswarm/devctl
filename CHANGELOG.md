@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Ignore values check with new values file against older helm releases.
+
 ## [7.5.2] - 2025-08-26
 
 ### Changed
