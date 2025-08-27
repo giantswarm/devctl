@@ -95,6 +95,9 @@ func createReleaseNotes(release, baseRelease v1alpha1.Release, provider string) 
 		if err != nil {
 			return "", microerror.Mask(err)
 		}
+		if componentChangelog == nil {
+			continue
+		}
 
 		components = append(components, releaseNotes{
 			Name:            component.Name,
@@ -122,6 +125,9 @@ func createReleaseNotes(release, baseRelease v1alpha1.Release, provider string) 
 		componentChangelog, err := changelog.ParseChangelog(app.Name, app.Version, previousAppVersion)
 		if err != nil {
 			return "", microerror.Mask(err)
+		}
+		if componentChangelog == nil {
+			continue
 		}
 
 		apps = append(apps, releaseNotes{

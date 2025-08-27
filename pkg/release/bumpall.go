@@ -17,6 +17,7 @@ import (
 	"github.com/giantswarm/release-operator/v4/api/v1alpha1"
 	"github.com/google/go-github/v74/github"
 	"github.com/jedib0t/go-pretty/v6/table"
+	"github.com/jedib0t/go-pretty/v6/text"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/oauth2"
 	"sigs.k8s.io/yaml"
@@ -37,7 +38,7 @@ type appVersion struct {
 
 // BumpAll takes all apps and components in the `input` release and looks up on github for the latest version of each.
 // If the version is not specified in the `manuallyRequestedComponents` or `manuallyRequestedApps` it will be bumped to the latest version.
-func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manuallyRequestedApps []string) ([]string, []string, error) {
+func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manuallyRequestedApps []string, appsToDrop map[string]bool) ([]string, []string, error) {
 	requestedComponents := map[string]componentVersion{}
 	requestedApps := map[string]appVersion{}
 
@@ -164,7 +165,7 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 	}
 
 	// Show a recap table with all the updates being applied.
-	err := printTable(input, components, apps)
+	err := printTable(input, components, apps, appsToDrop)
 	if err != nil {
 		return nil, nil, microerror.Mask(err)
 	}
@@ -204,27 +205,41 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 }
 
 // Just print a table with a list of apps and components with old and new version for easy checking by user.
-func printTable(input v1alpha1.Release, components map[string]componentVersion, apps map[string]appVersion) error {
+func printTable(input v1alpha1.Release, components map[string]componentVersion, apps map[string]appVersion, appsToDrop map[string]bool) error {
 	tm.Clear()
 
 	t := table.NewWriter()
 	t.SetOutputMirror(tm.Output)
-	t.AppendHeader(table.Row{"App Name", "Current App Version", "Desired App Version"})
+	t.AppendHeader(table.Row{"APP NAME", "CURRENT APP VERSION", "DESIRED APP VERSION"})
 	t.AppendSeparator()
 	for _, app := range input.Spec.Apps {
 		version := app.Version
 		if app.ComponentVersion != "" {
 			version = fmt.Sprintf("%s (upstream version %s)", app.Version, app.ComponentVersion)
 		}
-		desiredVersion := "Unchanged"
+
+		var desiredVersion interface{} = "Unchanged"
+
+		if _, dropped := appsToDrop[app.Name]; dropped {
+			desiredVersion = "Removed"
+			// Color row red
+			t.AppendRow(table.Row{
+				text.FgRed.Sprint(app.Name),
+				text.FgRed.Sprint(version),
+				text.FgRed.Sprint(desiredVersion),
+			})
+			continue
+		}
+
 		if req, found := apps[app.Name]; found {
-			desiredVersion = req.Version
+			desiredVersionStr := req.Version
 			if req.UpstreamVersion != "" {
-				desiredVersion = fmt.Sprintf("%s (upstream version %s)", req.Version, req.UpstreamVersion)
+				desiredVersionStr = fmt.Sprintf("%s (upstream version %s)", req.Version, req.UpstreamVersion)
 			}
 			if req.UserRequested {
-				desiredVersion = fmt.Sprintf("%s - requested by user", desiredVersion)
+				desiredVersionStr = fmt.Sprintf("%s - requested by user", desiredVersionStr)
 			}
+			desiredVersion = text.FgGreen.Sprint(desiredVersionStr)
 		}
 		t.AppendRow(table.Row{app.Name, version, desiredVersion})
 	}
@@ -239,13 +254,14 @@ func printTable(input v1alpha1.Release, components map[string]componentVersion, 
 			}
 		}
 		if !found {
-			desiredVersion := req.Version
+			desiredVersionStr := req.Version
 			if req.UpstreamVersion != "" {
-				desiredVersion = fmt.Sprintf("%s (upstream version %s)", req.Version, req.UpstreamVersion)
+				desiredVersionStr = fmt.Sprintf("%s (upstream version %s)", req.Version, req.UpstreamVersion)
 			}
 			if req.UserRequested {
-				desiredVersion = fmt.Sprintf("%s - requested by user", desiredVersion)
+				desiredVersionStr = fmt.Sprintf("%s - requested by user", desiredVersionStr)
 			}
+			desiredVersion := text.FgGreen.Sprint(desiredVersionStr)
 			t.AppendRow(table.Row{name, "New app", desiredVersion})
 		}
 	}
@@ -254,15 +270,16 @@ func printTable(input v1alpha1.Release, components map[string]componentVersion, 
 
 	t = table.NewWriter()
 	t.SetOutputMirror(tm.Output)
-	t.AppendHeader(table.Row{"Component Name", "Current Version", "Desired Version"})
+	t.AppendHeader(table.Row{"COMPONENT NAME", "CURRENT VERSION", "DESIRED VERSION"})
 	t.AppendSeparator()
 	for _, component := range input.Spec.Components {
-		desiredVersion := "Unchanged"
+		var desiredVersion interface{} = "Unchanged"
 		if req, found := components[component.Name]; found {
-			desiredVersion = req.Version
+			desiredVersionStr := req.Version
 			if req.UserRequested {
-				desiredVersion = fmt.Sprintf("%s - requested by user", desiredVersion)
+				desiredVersionStr = fmt.Sprintf("%s - requested by user", desiredVersionStr)
 			}
+			desiredVersion = text.FgGreen.Sprint(desiredVersionStr)
 		}
 		t.AppendRow(table.Row{component.Name, component.Version, desiredVersion})
 	}
@@ -277,10 +294,11 @@ func printTable(input v1alpha1.Release, components map[string]componentVersion, 
 			}
 		}
 		if !found {
-			desiredVersion := req.Version
+			desiredVersionStr := req.Version
 			if req.UserRequested {
-				desiredVersion = fmt.Sprintf("%s - requested by user", desiredVersion)
+				desiredVersionStr = fmt.Sprintf("%s - requested by user", desiredVersionStr)
 			}
+			desiredVersion := text.FgGreen.Sprint(desiredVersionStr)
 			t.AppendRow(table.Row{name, "New component", desiredVersion})
 		}
 	}
