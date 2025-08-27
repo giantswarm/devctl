@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -259,8 +260,51 @@ func printTable(input v1alpha1.Release, components map[string]componentVersion, 
 			if req.UserRequested {
 				desiredVersionStr = fmt.Sprintf("%s - requested by user", desiredVersionStr)
 			}
-			desiredVersion = text.FgGreen.Sprint(desiredVersionStr)
-			dependencies = text.FgGreen.Sprint(strings.Join(req.DependsOn, ", "))
+
+			if req.Version != app.Version {
+				desiredVersion = text.FgGreen.Sprint(desiredVersionStr)
+			} else {
+				desiredVersion = desiredVersionStr
+			}
+
+			if !slices.Equal(req.DependsOn, app.DependsOn) {
+				oldDeps := make(map[string]struct{})
+				for _, d := range app.DependsOn {
+					oldDeps[d] = struct{}{}
+				}
+				newDeps := make(map[string]struct{})
+				for _, d := range req.DependsOn {
+					newDeps[d] = struct{}{}
+				}
+
+				var unchanged, added, removed []string
+
+				// Find unchanged and removed
+				for _, dep := range app.DependsOn {
+					if _, ok := newDeps[dep]; ok {
+						unchanged = append(unchanged, dep)
+					} else {
+						removed = append(removed, text.FgRed.Sprintf("%s", dep))
+					}
+				}
+
+				// Find added
+				for _, dep := range req.DependsOn {
+					if _, ok := oldDeps[dep]; !ok {
+						added = append(added, text.FgGreen.Sprintf("%s", dep))
+					}
+				}
+
+				sort.Strings(unchanged)
+				sort.Strings(added)
+				sort.Strings(removed)
+
+				allDeps := append(unchanged, added...)
+				allDeps = append(allDeps, removed...)
+				dependencies = strings.Join(allDeps, ", ")
+			} else {
+				dependencies = strings.Join(req.DependsOn, ", ")
+			}
 		}
 		t.AppendRow(table.Row{app.Name, version, desiredVersion, dependencies})
 	}
