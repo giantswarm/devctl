@@ -17,6 +17,18 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+type droppedAppConfig struct {
+	Name         string
+	MajorVersion uint64
+}
+
+var appsToBeDropped = []droppedAppConfig{
+	{
+		Name:         "karpenter-nodepools",
+		MajorVersion: 32,
+	},
+}
+
 // CreateRelease creates a release on the filesystem from the given parameters. This is the entry point
 // for the `devctl create release` command logic.
 func CreateRelease(name, base, releases, provider string, components, apps []string, overwrite bool, creationCommand string, bumpall bool) error {
@@ -50,6 +62,17 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 		}
 	}
 
+	// Determine which apps to drop based on the new release version.
+	appsToDropForThisRelease := make(map[string]bool)
+	releaseVersion, err := semver.NewVersion(strings.TrimPrefix(name, "v"))
+	if err == nil {
+		for _, appToDrop := range appsToBeDropped {
+			if releaseVersion.Major() >= appToDrop.MajorVersion {
+				appsToDropForThisRelease[appToDrop.Name] = true
+			}
+		}
+	}
+
 	// Only attempt auto-detection if user didn't explicitly specify Kubernetes
 	if !hasUserKubernetesComponent {
 		fmt.Printf("No explicit Kubernetes component specified by user. Attempting auto-detection based on release name pattern...\n")
@@ -66,7 +89,7 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 
 	if bumpall {
 		fmt.Println("Requested automated bumping of all components and apps.")
-		components, apps, err = BumpAll(baseRelease, components, apps)
+		components, apps, err = BumpAll(baseRelease, components, apps, appsToDropForThisRelease)
 		if err != nil {
 			return microerror.Mask(err)
 		}
@@ -92,24 +115,46 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 	}
 	for _, appVersion := range apps {
 		split := strings.Split(appVersion, "@")
-		if len(split) != 2 && len(split) != 3 {
-			fmt.Println("App must be specified as <name>@<version>, got", appVersion)
+		if len(split) < 2 || len(split) > 4 {
+			fmt.Println("App must be specified as <name>@<version>[@<component_version>][@<dependencies>], got", appVersion)
 			return microerror.Mask(badFormatError)
 		}
 		name := split[0]
 		version := split[1]
+
 		var componentVersion string
 		if len(split) > 2 {
 			componentVersion = split[2]
 		}
+
+		var dependencies []string
+		if len(split) > 3 && split[3] != "" {
+			dependencies = strings.Split(split[3], ",")
+		}
+
 		updatesRelease.Spec.Apps = append(updatesRelease.Spec.Apps, v1alpha1.ReleaseSpecApp{
 			Name:             name,
 			Version:          version,
 			ComponentVersion: componentVersion,
+			DependsOn:        dependencies,
 		})
 
 	}
 	newRelease := mergeReleases(baseRelease, updatesRelease)
+
+	// Drop apps that are no longer supported in this release.
+	if len(appsToDropForThisRelease) > 0 {
+		var filteredMergedApps []v1alpha1.ReleaseSpecApp
+		for _, app := range newRelease.Spec.Apps {
+			if _, shouldDrop := appsToDropForThisRelease[app.Name]; shouldDrop {
+				fmt.Printf("Dropping %s from release %s as it is no longer supported.\n", app.Name, name)
+				continue
+			}
+			filteredMergedApps = append(filteredMergedApps, app)
+		}
+		newRelease.Spec.Apps = filteredMergedApps
+	}
+
 	releaseDirectory := releaseToDirectory(newRelease)
 	releasePath := filepath.Join(providerDirectory, releaseDirectory)
 

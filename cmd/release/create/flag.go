@@ -30,7 +30,7 @@ type flag struct {
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
-	cmd.Flags().StringArrayVar(&f.Apps, flagApp, nil, `Updated app version to apply to created release. Can be specified multiple times. Must follow a format of <name>@<version>[@<component version>].`)
+	cmd.Flags().StringArrayVar(&f.Apps, flagApp, nil, `Updated app version to apply to created release. Can be specified multiple times. Must follow a format of <name>@<version>[@<component version>][@<dependencies>].`)
 	cmd.Flags().StringVar(&f.Base, flagBase, "", `Existing release upon which to base the new release. Must follow semver format.`)
 	cmd.Flags().StringArrayVar(&f.Components, flagComponent, nil, `Updated component version to apply to created release. Can be specified multiple times. Must follow a format of <name>@<version>.`)
 	cmd.Flags().StringVar(&f.Name, flagName, "", `Name of the new release. Must follow semver format.`)
