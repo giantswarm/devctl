@@ -45,7 +45,15 @@ const (
         --provider capa \
         --base v30.0.0 \
         --bumpall \
-        --app coredns@1.2.3@@`
+        --app cilium@1.2.3@@
+
+  # Bump all components and override an app's component version and dependencies
+  devctl release create \
+        --name v30.1.0 \
+        --provider capa \
+        --base v30.0.0 \
+        --bumpall \
+        --app cluster-autoscaler@1.30.0-gs1@1.30.2@kyverno-crds`
 )
 
 type Config struct {
