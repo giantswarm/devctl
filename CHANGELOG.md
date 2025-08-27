@@ -9,9 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- `devctl release create`: Drop `karpenter-nodepools` from AWS releases v32.0.0 and higher.
-- `devctl release create --bumpall`: Improve UX by coloring bumped versions green and removed apps red in the summary table.
-- Add support for dropped apps easily.
+- `devctl release create`:
+  - Drop `karpenter-nodepools` from AWS releases v32.0.0 and higher.
+  - Add generic support for dropping apps from releases based on release version.
+  - Add support for defining app dependencies via the `--app` flag.
+  - Improve help text with more detailed and accurate examples.
+- `devctl release create --bumpall`:
+  - Improve UX by coloring bumped versions green and removed apps red in the summary table.
+  - Display app dependencies in the summary table.
 
 ## [7.5.3] - 2025-08-26
 

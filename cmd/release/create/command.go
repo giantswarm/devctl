@@ -13,15 +13,39 @@ const (
 	name             = "create"
 	shortDescription = `Creates and registers a new Giant Swarm platform release.`
 	longDescription  = `Creates and registers a new Giant Swarm platform release including Release CR and release notes.`
-	example          = `  devctl release create \
-	--name 12.0.1 \
-	--provider kvm \
-	--base 11.3.2 \
-	--app cert-exporter@1.2.3 \
-	--app cluster-autoscaler@1.16.0@1.16.5 \
-	--component cluster-operator@0.23.9 \
-	--component containerlinux@2512.2.1 \
-	--overwrite`
+	example          = `  # Create a new release by manually specifying new app and component versions
+  devctl release create \
+        --name v30.1.0 \
+        --provider capa \
+        --base v30.0.0 \
+        --app cert-manager@3.9.2 \
+        --component cluster-aws@4.0.1 \
+        --overwrite
+
+  # Create a release by bumping all apps and components to their latest versions
+  devctl release create \
+        --name v30.1.0 \
+        --provider capa \
+        --base v30.0.0 \
+        --bumpall
+
+  # Bump all components, but override a specific app's version and add a dependency
+  # This will overwrite any existing dependencies on 'coredns'.
+  devctl release create \
+        --name v30.1.0 \
+        --provider capa \
+        --base v30.0.0 \
+        --bumpall \
+        --app coredns@1.2.3@@cilium
+
+  # Bump all components and remove all dependencies from a specific app
+  # This will drop any existing dependencies on 'coredns'.
+  devctl release create \
+        --name v30.1.0 \
+        --provider capa \
+        --base v30.0.0 \
+        --bumpall \
+        --app coredns@1.2.3@@`
 )
 
 type Config struct {

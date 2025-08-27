@@ -115,20 +115,28 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 	}
 	for _, appVersion := range apps {
 		split := strings.Split(appVersion, "@")
-		if len(split) != 2 && len(split) != 3 {
-			fmt.Println("App must be specified as <name>@<version>, got", appVersion)
+		if len(split) < 2 || len(split) > 4 {
+			fmt.Println("App must be specified as <name>@<version>[@<component_version>][@<dependencies>], got", appVersion)
 			return microerror.Mask(badFormatError)
 		}
 		name := split[0]
 		version := split[1]
+
 		var componentVersion string
 		if len(split) > 2 {
 			componentVersion = split[2]
 		}
+
+		var dependencies []string
+		if len(split) > 3 && split[3] != "" {
+			dependencies = strings.Split(split[3], ",")
+		}
+
 		updatesRelease.Spec.Apps = append(updatesRelease.Spec.Apps, v1alpha1.ReleaseSpecApp{
 			Name:             name,
 			Version:          version,
 			ComponentVersion: componentVersion,
+			DependsOn:        dependencies,
 		})
 
 	}

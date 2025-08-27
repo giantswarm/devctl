@@ -23,6 +23,7 @@ import (
 	"sigs.k8s.io/yaml"
 
 	"github.com/giantswarm/devctl/v7/pkg/githubclient"
+	"golang.org/x/exp/slices"
 )
 
 type componentVersion struct {
@@ -34,6 +35,7 @@ type appVersion struct {
 	Version         string
 	UpstreamVersion string
 	UserRequested   bool
+	DependsOn       []string
 }
 
 // BumpAll takes all apps and components in the `input` release and looks up on github for the latest version of each.
@@ -105,8 +107,8 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 		// Prepare the list of apps that the user requested to bump in a more useful way.
 		for _, app := range manuallyRequestedApps {
 			splitted := strings.Split(app, "@")
-			if len(splitted) != 2 && len(splitted) != 3 {
-				return nil, nil, microerror.Maskf(badFormatError, "Error parsing app %q", app)
+			if len(splitted) < 2 || len(splitted) > 4 {
+				return nil, nil, microerror.Maskf(badFormatError, "Error parsing app %q. Expected format: <name>@<version>[@<component_version>][@<dependencies>]", app)
 			}
 
 			req := appVersion{
@@ -115,6 +117,10 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 
 			if len(splitted) > 2 {
 				req.UpstreamVersion = splitted[2]
+			}
+
+			if len(splitted) > 3 && splitted[3] != "" {
+				req.DependsOn = strings.Split(splitted[3], ",")
 			}
 
 			requestedApps[splitted[0]] = req
@@ -128,6 +134,7 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 				v.Version = req.Version
 				v.UpstreamVersion = req.UpstreamVersion
 				v.UserRequested = true
+				v.DependsOn = req.DependsOn
 			} else {
 				version, err := findNewestApp(app.Name, app.ComponentVersion != "")
 				if err != nil {
@@ -137,8 +144,9 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 				v.Version = version.Version
 				v.UpstreamVersion = version.UpstreamVersion
 				v.UserRequested = false
+				v.DependsOn = app.DependsOn
 			}
-			if v.Version != app.Version {
+			if v.Version != app.Version || !slices.Equal(v.DependsOn, app.DependsOn) {
 				apps[app.Name] = v
 			}
 		}
@@ -159,6 +167,7 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 					Version:         req.Version,
 					UpstreamVersion: req.UpstreamVersion,
 					UserRequested:   true,
+					DependsOn:       req.DependsOn,
 				}
 			}
 		}
@@ -194,11 +203,19 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 		componentsRet = append(componentsRet, fmt.Sprintf("%s@%s", name, comp.Version))
 	}
 	for name, app := range apps {
-		r := fmt.Sprintf("%s@%s", name, app.Version)
-		if app.UpstreamVersion != "" {
-			r = fmt.Sprintf("%s@%s", r, app.UpstreamVersion)
+		upstreamVersion := app.UpstreamVersion
+		dependencies := ""
+		if len(app.DependsOn) > 0 {
+			dependencies = strings.Join(app.DependsOn, ",")
 		}
-		appsRet = append(appsRet, r)
+
+		if dependencies != "" {
+			appsRet = append(appsRet, fmt.Sprintf("%s@%s@%s@%s", name, app.Version, upstreamVersion, dependencies))
+		} else if upstreamVersion != "" {
+			appsRet = append(appsRet, fmt.Sprintf("%s@%s@%s", name, app.Version, upstreamVersion))
+		} else {
+			appsRet = append(appsRet, fmt.Sprintf("%s@%s", name, app.Version))
+		}
 	}
 
 	return componentsRet, appsRet, nil
@@ -210,7 +227,7 @@ func printTable(input v1alpha1.Release, components map[string]componentVersion, 
 
 	t := table.NewWriter()
 	t.SetOutputMirror(tm.Output)
-	t.AppendHeader(table.Row{"APP NAME", "CURRENT APP VERSION", "DESIRED APP VERSION"})
+	t.AppendHeader(table.Row{"APP NAME", "CURRENT APP VERSION", "DESIRED APP VERSION", "DEPENDENCIES"})
 	t.AppendSeparator()
 	for _, app := range input.Spec.Apps {
 		version := app.Version
@@ -219,6 +236,7 @@ func printTable(input v1alpha1.Release, components map[string]componentVersion, 
 		}
 
 		var desiredVersion interface{} = "Unchanged"
+		var dependencies interface{} = strings.Join(app.DependsOn, ", ")
 
 		if _, dropped := appsToDrop[app.Name]; dropped {
 			desiredVersion = "Removed"
@@ -227,6 +245,7 @@ func printTable(input v1alpha1.Release, components map[string]componentVersion, 
 				text.FgRed.Sprint(app.Name),
 				text.FgRed.Sprint(version),
 				text.FgRed.Sprint(desiredVersion),
+				text.FgRed.Sprint(dependencies),
 			})
 			continue
 		}
@@ -240,8 +259,9 @@ func printTable(input v1alpha1.Release, components map[string]componentVersion, 
 				desiredVersionStr = fmt.Sprintf("%s - requested by user", desiredVersionStr)
 			}
 			desiredVersion = text.FgGreen.Sprint(desiredVersionStr)
+			dependencies = text.FgGreen.Sprint(strings.Join(req.DependsOn, ", "))
 		}
-		t.AppendRow(table.Row{app.Name, version, desiredVersion})
+		t.AppendRow(table.Row{app.Name, version, desiredVersion, dependencies})
 	}
 
 	// Add new apps that don't exist in the base release
@@ -262,7 +282,8 @@ func printTable(input v1alpha1.Release, components map[string]componentVersion, 
 				desiredVersionStr = fmt.Sprintf("%s - requested by user", desiredVersionStr)
 			}
 			desiredVersion := text.FgGreen.Sprint(desiredVersionStr)
-			t.AppendRow(table.Row{name, "New app", desiredVersion})
+			dependencies := text.FgGreen.Sprint(strings.Join(req.DependsOn, ", "))
+			t.AppendRow(table.Row{name, "New app", desiredVersion, dependencies})
 		}
 	}
 	t.AppendSeparator()
