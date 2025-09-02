@@ -471,24 +471,7 @@ func getLatestGithubRelease(owner string, name string) (string, error) {
 
 	client := github.NewClient(tc)
 
-	var candidateNames []string
-	{
-		var repo string
-		var newOwner string
-		newOwner, repo = changelog.GetRepoName(name)
-		if repo != "" {
-			owner = newOwner
-			candidateNames = []string{repo}
-		} else {
-			owner = "giantswarm"
-			// Fallback to old logic if not in map.
-			if strings.HasSuffix(name, "-app") {
-				candidateNames = []string{name, strings.TrimSuffix(name, "-app")}
-			} else {
-				candidateNames = []string{fmt.Sprintf("%s-app", name), name}
-			}
-		}
-	}
+	owner, candidateNames := getRepoCandidates(owner, name)
 
 	version := ""
 	var latestErr error
@@ -529,23 +512,7 @@ func getLatestReleaseForMinor(owner, repo, minorVersion string) (string, error) 
 
 	client := github.NewClient(tc)
 
-	var candidateNames []string
-	{
-		var repoName string
-		var newOwner string
-		newOwner, repoName = changelog.GetRepoName(repo)
-		if repoName != "" {
-			owner = newOwner
-			candidateNames = []string{repoName}
-		} else {
-			// Fallback to old logic if not in map.
-			if strings.HasSuffix(repo, "-app") {
-				candidateNames = []string{repo, strings.TrimSuffix(repo, "-app")}
-			} else {
-				candidateNames = []string{fmt.Sprintf("%s-app", repo), repo}
-			}
-		}
-	}
+	owner, candidateNames := getRepoCandidates(owner, repo)
 
 	var latestVersion string
 	var latestSemver semver.Version
@@ -625,6 +592,26 @@ func getLatestReleaseForMinor(owner, repo, minorVersion string) (string, error) 
 	}
 
 	return latestVersion, nil
+}
+
+func getRepoCandidates(owner, name string) (string, []string) {
+	var repoName string
+	var newOwner string
+	newOwner, repoName = changelog.GetRepoName(name)
+	if repoName != "" {
+		owner = newOwner
+		return owner, []string{repoName}
+	}
+
+	// Fallback to old logic if not in map.
+	var candidateNames []string
+	if strings.HasSuffix(name, "-app") {
+		candidateNames = []string{name, strings.TrimSuffix(name, "-app")}
+	} else {
+		candidateNames = []string{fmt.Sprintf("%s-app", name), name}
+	}
+
+	return owner, candidateNames
 }
 
 // extractKubernetesMinorFromReleaseName attempts to extract a Kubernetes minor version
