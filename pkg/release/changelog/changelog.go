@@ -22,328 +22,351 @@ const (
 	commonEndPattern = "(?m)^\\[.*\\]:.*$"
 )
 
-type parseParams struct {
-	tag          string
-	changelog    string
-	start        string
-	intermediate string
-	end          string
+type ParseParams struct {
+	Tag          string
+	Changelog    string
+	Start        string
+	Intermediate string
+	End          string
+	AutoDetect   bool
 }
 
 // Parameters defining how to parse and extract release info about all known components
-var knownComponentParseParams = map[string]parseParams{
+var KnownComponents = map[string]ParseParams{
 	// CAPA Provider Specific
 	"aws-ebs-csi-driver": {
-		tag:       "https://github.com/giantswarm/aws-ebs-csi-driver-app/releases/tag/v{{.Version}}",
-		changelog: "https://raw.githubusercontent.com/giantswarm/aws-ebs-csi-driver-app/v{{.Version}}/CHANGELOG.md",
-		start:     commonStartPattern,
-		end:       commonEndPattern,
+		Tag:       "https://github.com/giantswarm/aws-ebs-csi-driver-app/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/aws-ebs-csi-driver-app/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
 	},
 	"aws-ebs-csi-driver-servicemonitors": {
-		tag:       "https://github.com/giantswarm/aws-ebs-csi-driver-servicemonitors-app/releases/tag/v{{.Version}}",
-		changelog: "https://raw.githubusercontent.com/giantswarm/aws-ebs-csi-driver-servicemonitors-app/v{{.Version}}/CHANGELOG.md",
-		start:     commonStartPattern,
-		end:       commonEndPattern,
+		Tag:       "https://github.com/giantswarm/aws-ebs-csi-driver-servicemonitors-app/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/aws-ebs-csi-driver-servicemonitors-app/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
 	},
 	"aws-nth-bundle": {
-		tag:       "https://github.com/giantswarm/aws-nth-bundle/releases/tag/v{{.Version}}",
-		changelog: "https://raw.githubusercontent.com/giantswarm/aws-nth-bundle/v{{.Version}}/CHANGELOG.md",
-		start:     commonStartPattern,
-		end:       commonEndPattern,
+		Tag:       "https://github.com/giantswarm/aws-nth-bundle/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/aws-nth-bundle/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
 	},
 	"aws-pod-identity-webhook": {
-		tag:       "https://github.com/giantswarm/aws-pod-identity-webhook/releases/tag/v{{.Version}}",
-		changelog: "https://raw.githubusercontent.com/giantswarm/aws-pod-identity-webhook/v{{.Version}}/CHANGELOG.md",
-		start:     commonStartPattern,
-		end:       commonEndPattern,
+		Tag:       "https://github.com/giantswarm/aws-pod-identity-webhook/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/aws-pod-identity-webhook/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
 	},
 	"cluster-aws": {
-		tag:       "https://github.com/giantswarm/cluster-aws/releases/tag/v{{.Version}}",
-		changelog: "https://raw.githubusercontent.com/giantswarm/cluster-aws/v{{.Version}}/CHANGELOG.md",
-		start:     commonStartPattern,
-		end:       commonEndPattern,
+		Tag:       "https://github.com/giantswarm/cluster-aws/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/cluster-aws/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
 	},
 	"cloud-provider-aws": {
-		tag:       "https://github.com/giantswarm/aws-cloud-controller-manager-app/releases/tag/v{{.Version}}",
-		changelog: "https://raw.githubusercontent.com/giantswarm/aws-cloud-controller-manager-app/v{{.Version}}/CHANGELOG.md",
-		start:     commonStartPattern,
-		end:       commonEndPattern,
+		Tag:        "https://github.com/giantswarm/aws-cloud-controller-manager-app/releases/tag/v{{.Version}}",
+		Changelog:  "https://raw.githubusercontent.com/giantswarm/aws-cloud-controller-manager-app/v{{.Version}}/CHANGELOG.md",
+		Start:      commonStartPattern,
+		End:        commonEndPattern,
+		AutoDetect: true,
 	},
 	"irsa-servicemonitors": {
-		tag:       "https://github.com/giantswarm/irsa-servicemonitors-app/releases/tag/v{{.Version}}",
-		changelog: "https://raw.githubusercontent.com/giantswarm/irsa-servicemonitors-app/v{{.Version}}/CHANGELOG.md",
-		start:     commonStartPattern,
-		end:       commonEndPattern,
+		Tag:       "https://github.com/giantswarm/irsa-servicemonitors-app/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/irsa-servicemonitors-app/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
 	},
 
 	// EKS Provider Specific
 	"cluster-eks": {
-		tag:       "https://github.com/giantswarm/cluster-eks/releases/tag/v{{.Version}}",
-		changelog: "https://raw.githubusercontent.com/giantswarm/cluster-eks/v{{.Version}}/CHANGELOG.md",
-		start:     commonStartPattern,
-		end:       commonEndPattern,
+		Tag:       "https://github.com/giantswarm/cluster-eks/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/cluster-eks/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
 	},
 	"karpenter-bundle": {
-		tag:       "https://github.com/giantswarm/karpenter-bundle/releases/tag/v{{.Version}}",
-		changelog: "https://raw.githubusercontent.com/giantswarm/karpenter-bundle/v{{.Version}}/CHANGELOG.md",
-		start:     commonStartPattern,
-		end:       commonEndPattern,
+		Tag:       "https://github.com/giantswarm/karpenter-bundle/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/karpenter-bundle/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
 	},
 	"karpenter-nodepools": {
-		tag:       "https://github.com/giantswarm/karpenter-nodepools/releases/tag/v{{.Version}}",
-		changelog: "https://raw.githubusercontent.com/giantswarm/karpenter-nodepools/v{{.Version}}/CHANGELOG.md",
-		start:     commonStartPattern,
-		end:       commonEndPattern,
+		Tag:       "https://github.com/giantswarm/karpenter-nodepools/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/karpenter-nodepools/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
 	},
 
 	// CAPZ Provider Specific
 	"cluster-azure": {
-		tag:       "https://github.com/giantswarm/cluster-azure/releases/tag/v{{.Version}}",
-		changelog: "https://raw.githubusercontent.com/giantswarm/cluster-azure/v{{.Version}}/CHANGELOG.md",
-		start:     commonStartPattern,
-		end:       commonEndPattern,
+		Tag:       "https://github.com/giantswarm/cluster-azure/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/cluster-azure/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
 	},
 	"azure-cloud-controller-manager": {
-		tag:       "https://github.com/giantswarm/azure-cloud-controller-manager-app/releases/tag/v{{.Version}}",
-		changelog: "https://raw.githubusercontent.com/giantswarm/azure-cloud-controller-manager-app/v{{.Version}}/CHANGELOG.md",
-		start:     commonStartPattern,
-		end:       commonEndPattern,
+		Tag:        "https://github.com/giantswarm/azure-cloud-controller-manager-app/releases/tag/v{{.Version}}",
+		Changelog:  "https://raw.githubusercontent.com/giantswarm/azure-cloud-controller-manager-app/v{{.Version}}/CHANGELOG.md",
+		Start:      commonStartPattern,
+		End:        commonEndPattern,
+		AutoDetect: true,
 	},
 	"azure-cloud-node-manager": {
-		tag:       "https://github.com/giantswarm/azure-cloud-node-manager-app/releases/tag/v{{.Version}}",
-		changelog: "https://raw.githubusercontent.com/giantswarm/azure-cloud-node-manager-app/v{{.Version}}/CHANGELOG.md",
-		start:     commonStartPattern,
-		end:       commonEndPattern,
+		Tag:        "https://github.com/giantswarm/azure-cloud-node-manager-app/releases/tag/v{{.Version}}",
+		Changelog:  "https://raw.githubusercontent.com/giantswarm/azure-cloud-node-manager-app/v{{.Version}}/CHANGELOG.md",
+		Start:      commonStartPattern,
+		End:        commonEndPattern,
+		AutoDetect: true,
 	},
 	"azuredisk-csi-driver": {
-		tag:       "https://github.com/giantswarm/azuredisk-csi-driver-app/releases/tag/v{{.Version}}",
-		changelog: "https://raw.githubusercontent.com/giantswarm/azuredisk-csi-driver-app/v{{.Version}}/CHANGELOG.md",
-		start:     commonStartPattern,
-		end:       commonEndPattern,
+		Tag:        "https://github.com/giantswarm/azuredisk-csi-driver-app/releases/tag/v{{.Version}}",
+		Changelog:  "https://raw.githubusercontent.com/giantswarm/azuredisk-csi-driver-app/v{{.Version}}/CHANGELOG.md",
+		Start:      commonStartPattern,
+		End:        commonEndPattern,
+		AutoDetect: true,
 	},
 	"azurefile-csi-driver": {
-		tag:       "https://github.com/giantswarm/azurefile-csi-driver-app/releases/tag/v{{.Version}}",
-		changelog: "https://raw.githubusercontent.com/giantswarm/azurefile-csi-driver-app/v{{.Version}}/CHANGELOG.md",
-		start:     commonStartPattern,
-		end:       commonEndPattern,
+		Tag:        "https://github.com/giantswarm/azurefile-csi-driver-app/releases/tag/v{{.Version}}",
+		Changelog:  "https://raw.githubusercontent.com/giantswarm/azurefile-csi-driver-app/v{{.Version}}/CHANGELOG.md",
+		Start:      commonStartPattern,
+		End:        commonEndPattern,
+		AutoDetect: true,
 	},
 
 	// CAPV Provider Specific
 	"cluster-vsphere": {
-		tag:       "https://github.com/giantswarm/cluster-vsphere/releases/tag/v{{.Version}}",
-		changelog: "https://raw.githubusercontent.com/giantswarm/cluster-vsphere/v{{.Version}}/CHANGELOG.md",
-		start:     commonStartPattern,
-		end:       commonEndPattern,
+		Tag:       "https://github.com/giantswarm/cluster-vsphere/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/cluster-vsphere/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
 	},
 	"cloud-provider-vsphere": {
-		tag:       "https://github.com/giantswarm/cloud-provider-vsphere-app/releases/tag/v{{.Version}}",
-		changelog: "https://raw.githubusercontent.com/giantswarm/cloud-provider-vsphere-app/v{{.Version}}/CHANGELOG.md",
-		start:     commonStartPattern,
-		end:       commonEndPattern,
+		Tag:        "https://github.com/giantswarm/cloud-provider-vsphere-app/releases/tag/v{{.Version}}",
+		Changelog:  "https://raw.githubusercontent.com/giantswarm/cloud-provider-vsphere-app/v{{.Version}}/CHANGELOG.md",
+		Start:      commonStartPattern,
+		End:        commonEndPattern,
+		AutoDetect: true,
 	},
 
 	// CAPVCD Provider Specific
 	"cluster-cloud-director": {
-		tag:       "https://github.com/giantswarm/cluster-cloud-director/releases/tag/v{{.Version}}",
-		changelog: "https://raw.githubusercontent.com/giantswarm/cluster-cloud-director/v{{.Version}}/CHANGELOG.md",
-		start:     commonStartPattern,
-		end:       commonEndPattern,
+		Tag:       "https://github.com/giantswarm/cluster-cloud-director/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/cluster-cloud-director/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
 	},
 	"cloud-provider-cloud-director": {
-		tag:       "https://github.com/giantswarm/cloud-provider-cloud-director-app/releases/tag/v{{.Version}}",
-		changelog: "https://raw.githubusercontent.com/giantswarm/cloud-provider-cloud-director-app/v{{.Version}}/CHANGELOG.md",
-		start:     commonStartPattern,
-		end:       commonEndPattern,
+		Tag:        "https://github.com/giantswarm/cloud-provider-cloud-director-app/releases/tag/v{{.Version}}",
+		Changelog:  "https://raw.githubusercontent.com/giantswarm/cloud-provider-cloud-director-app/v{{.Version}}/CHANGELOG.md",
+		Start:      commonStartPattern,
+		End:        commonEndPattern,
+		AutoDetect: true,
 	},
 
 	// Common Apps
 	"capi-node-labeler": {
-		tag:       "https://github.com/giantswarm/capi-node-labeler-app/releases/tag/v{{.Version}}",
-		changelog: "https://raw.githubusercontent.com/giantswarm/capi-node-labeler-app/v{{.Version}}/CHANGELOG.md",
-		start:     commonStartPattern,
-		end:       commonEndPattern,
+		Tag:       "https://github.com/giantswarm/capi-node-labeler-app/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/capi-node-labeler-app/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
 	},
 	"cert-exporter": {
-		tag:       "https://github.com/giantswarm/cert-exporter/releases/tag/v{{.Version}}",
-		changelog: "https://raw.githubusercontent.com/giantswarm/cert-exporter/v{{.Version}}/CHANGELOG.md",
-		start:     commonStartPattern,
-		end:       commonEndPattern,
+		Tag:       "https://github.com/giantswarm/cert-exporter/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/cert-exporter/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
 	},
 	"cert-manager": {
-		tag:       "https://github.com/giantswarm/cert-manager-app/releases/tag/v{{.Version}}",
-		changelog: "https://raw.githubusercontent.com/giantswarm/cert-manager-app/v{{.Version}}/CHANGELOG.md",
-		start:     commonStartPattern,
-		end:       commonEndPattern,
+		Tag:       "https://github.com/giantswarm/cert-manager-app/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/cert-manager-app/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
 	},
 	"cert-manager-crossplane-resources": {
-		tag:       "https://github.com/giantswarm/cert-manager-crossplane-resources/releases/tag/v{{.Version}}",
-		changelog: "https://raw.githubusercontent.com/giantswarm/cert-manager-crossplane-resources/v{{.Version}}/CHANGELOG.md",
-		start:     commonStartPattern,
-		end:       commonEndPattern,
+		Tag:       "https://github.com/giantswarm/cert-manager-crossplane-resources/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/cert-manager-crossplane-resources/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
 	},
 	"chart-operator-extensions": {
-		tag:       "https://github.com/giantswarm/chart-operator-extensions/releases/tag/v{{.Version}}",
-		changelog: "https://raw.githubusercontent.com/giantswarm/chart-operator-extensions/v{{.Version}}/CHANGELOG.md",
-		start:     commonStartPattern,
-		end:       commonEndPattern,
+		Tag:       "https://github.com/giantswarm/chart-operator-extensions/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/chart-operator-extensions/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
 	},
 	"cilium": {
-		tag:       "https://github.com/giantswarm/cilium-app/releases/tag/v{{.Version}}",
-		changelog: "https://raw.githubusercontent.com/giantswarm/cilium-app/v{{.Version}}/CHANGELOG.md",
-		start:     commonStartPattern,
-		end:       commonEndPattern,
+		Tag:       "https://github.com/giantswarm/cilium-app/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/cilium-app/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
 	},
 	"cilium-crossplane-resources": {
-		tag:       "https://github.com/giantswarm/cilium-crossplane-resources/releases/tag/v{{.Version}}",
-		changelog: "https://raw.githubusercontent.com/giantswarm/cilium-crossplane-resources/v{{.Version}}/CHANGELOG.md",
-		start:     commonStartPattern,
-		end:       commonEndPattern,
+		Tag:       "https://github.com/giantswarm/cilium-crossplane-resources/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/cilium-crossplane-resources/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
 	},
 	"cilium-servicemonitors": {
-		tag:       "https://github.com/giantswarm/cilium-servicemonitors-app/releases/tag/v{{.Version}}",
-		changelog: "https://raw.githubusercontent.com/giantswarm/cilium-servicemonitors-app/v{{.Version}}/CHANGELOG.md",
-		start:     commonStartPattern,
-		end:       commonEndPattern,
+		Tag:       "https://github.com/giantswarm/cilium-servicemonitors-app/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/cilium-servicemonitors-app/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
 	},
 	"cilium-prerequisites": {
-		tag:       "https://github.com/giantswarm/cilium-prerequisites/releases/tag/v{{.Version}}",
-		changelog: "https://raw.githubusercontent.com/giantswarm/cilium-prerequisites/v{{.Version}}/CHANGELOG.md",
-		start:     commonStartPattern,
-		end:       commonEndPattern,
+		Tag:       "https://github.com/giantswarm/cilium-prerequisites/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/cilium-prerequisites/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
 	},
 	"cluster-autoscaler": {
-		tag:       "https://github.com/giantswarm/cluster-autoscaler-app/releases/tag/v{{.Version}}",
-		changelog: "https://raw.githubusercontent.com/giantswarm/cluster-autoscaler-app/v{{.Version}}/CHANGELOG.md",
-		start:     commonStartPattern,
-		end:       commonEndPattern,
+		Tag:        "https://github.com/giantswarm/cluster-autoscaler-app/releases/tag/v{{.Version}}",
+		Changelog:  "https://raw.githubusercontent.com/giantswarm/cluster-autoscaler-app/v{{.Version}}/CHANGELOG.md",
+		Start:      commonStartPattern,
+		End:        commonEndPattern,
+		AutoDetect: true,
 	},
 	"coredns": {
-		tag:       "https://github.com/giantswarm/coredns-app/releases/tag/v{{.Version}}",
-		changelog: "https://raw.githubusercontent.com/giantswarm/coredns-app/v{{.Version}}/CHANGELOG.md",
-		start:     commonStartPattern,
-		end:       commonEndPattern,
+		Tag:       "https://github.com/giantswarm/coredns-app/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/coredns-app/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
 	},
 	"coredns-extensions": {
-		tag:       "https://github.com/giantswarm/coredns-extensions-app/releases/tag/v{{.Version}}",
-		changelog: "https://raw.githubusercontent.com/giantswarm/coredns-extensions-app/v{{.Version}}/CHANGELOG.md",
-		start:     commonStartPattern,
-		end:       commonEndPattern,
+		Tag:       "https://github.com/giantswarm/coredns-extensions-app/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/coredns-extensions-app/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
 	},
 	"etcd-defrag": {
-		tag:       "https://github.com/giantswarm/etcd-defrag-app/releases/tag/v{{.Version}}",
-		changelog: "https://raw.githubusercontent.com/giantswarm/etcd-defrag-app/v{{.Version}}/CHANGELOG.md",
-		start:     commonStartPattern,
-		end:       commonEndPattern,
+		Tag:       "https://github.com/giantswarm/etcd-defrag-app/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/etcd-defrag-app/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
 	},
 	"etcd-k8s-res-count-exporter": {
-		tag:       "https://github.com/giantswarm/etcd-kubernetes-resources-count-exporter/releases/tag/v{{.Version}}",
-		changelog: "https://raw.githubusercontent.com/giantswarm/etcd-kubernetes-resources-count-exporter/v{{.Version}}/CHANGELOG.md",
-		start:     commonStartPattern,
-		end:       commonEndPattern,
+		Tag:       "https://github.com/giantswarm/etcd-kubernetes-resources-count-exporter/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/etcd-kubernetes-resources-count-exporter/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
 	},
 	"external-dns": {
-		tag:       "https://github.com/giantswarm/external-dns-app/releases/tag/v{{.Version}}",
-		changelog: "https://raw.githubusercontent.com/giantswarm/external-dns-app/v{{.Version}}/CHANGELOG.md",
-		start:     commonStartPattern,
-		end:       commonEndPattern,
+		Tag:       "https://github.com/giantswarm/external-dns-app/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/external-dns-app/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
 	},
 	"k8s-audit-metrics": {
-		tag:       "https://github.com/giantswarm/k8s-audit-metrics/releases/tag/v{{.Version}}",
-		changelog: "https://raw.githubusercontent.com/giantswarm/k8s-audit-metrics/v{{.Version}}/CHANGELOG.md",
-		start:     commonStartPattern,
-		end:       commonEndPattern,
+		Tag:       "https://github.com/giantswarm/k8s-audit-metrics/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/k8s-audit-metrics/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
 	},
 	"k8s-dns-node-cache": {
-		tag:       "https://github.com/giantswarm/k8s-dns-node-cache-app/releases/tag/v{{.Version}}",
-		changelog: "https://raw.githubusercontent.com/giantswarm/k8s-dns-node-cache-app/v{{.Version}}/CHANGELOG.md",
-		start:     commonStartPattern,
-		end:       commonEndPattern,
+		Tag:       "https://github.com/giantswarm/k8s-dns-node-cache-app/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/k8s-dns-node-cache-app/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
 	},
 	"metrics-server": {
-		tag:       "https://github.com/giantswarm/metrics-server-app/releases/tag/v{{.Version}}",
-		changelog: "https://raw.githubusercontent.com/giantswarm/metrics-server-app/v{{.Version}}/CHANGELOG.md",
-		start:     commonStartPattern,
-		end:       commonEndPattern,
+		Tag:       "https://github.com/giantswarm/metrics-server-app/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/metrics-server-app/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
 	},
 	"net-exporter": {
-		tag:       "https://github.com/giantswarm/net-exporter/releases/tag/v{{.Version}}",
-		changelog: "https://raw.githubusercontent.com/giantswarm/net-exporter/v{{.Version}}/CHANGELOG.md",
-		start:     commonStartPattern,
-		end:       commonEndPattern,
+		Tag:       "https://github.com/giantswarm/net-exporter/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/net-exporter/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
 	},
 	"network-policies": {
-		tag:       "https://github.com/giantswarm/network-policies-app/releases/tag/v{{.Version}}",
-		changelog: "https://raw.githubusercontent.com/giantswarm/network-policies-app/v{{.Version}}/CHANGELOG.md",
-		start:     commonStartPattern,
-		end:       commonEndPattern,
+		Tag:       "https://github.com/giantswarm/network-policies-app/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/network-policies-app/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
 	},
 	"node-exporter": {
-		tag:       "https://github.com/giantswarm/node-exporter-app/releases/tag/v{{.Version}}",
-		changelog: "https://raw.githubusercontent.com/giantswarm/node-exporter-app/v{{.Version}}/CHANGELOG.md",
-		start:     commonStartPattern,
-		end:       commonEndPattern,
+		Tag:       "https://github.com/giantswarm/node-exporter-app/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/node-exporter-app/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
 	},
 	"observability-bundle": {
-		tag:       "https://github.com/giantswarm/observability-bundle/releases/tag/v{{.Version}}",
-		changelog: "https://raw.githubusercontent.com/giantswarm/observability-bundle/v{{.Version}}/CHANGELOG.md",
-		start:     commonStartPattern,
-		end:       commonEndPattern,
+		Tag:       "https://github.com/giantswarm/observability-bundle/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/observability-bundle/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
 	},
 	"observability-policies": {
-		tag:       "https://github.com/giantswarm/observability-policies-app/releases/tag/v{{.Version}}",
-		changelog: "https://raw.githubusercontent.com/giantswarm/observability-policies-app/v{{.Version}}/CHANGELOG.md",
-		start:     commonStartPattern,
-		end:       commonEndPattern,
+		Tag:       "https://github.com/giantswarm/observability-policies-app/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/observability-policies-app/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
 	},
 	"prometheus-blackbox-exporter": {
-		tag:       "https://github.com/giantswarm/prometheus-blackbox-exporter-app/releases/tag/v{{.Version}}",
-		changelog: "https://raw.githubusercontent.com/giantswarm/prometheus-blackbox-exporter-app/v{{.Version}}/CHANGELOG.md",
-		start:     commonStartPattern,
-		end:       commonEndPattern,
+		Tag:       "https://github.com/giantswarm/prometheus-blackbox-exporter-app/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/prometheus-blackbox-exporter-app/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
 	},
 	"security-bundle": {
-		tag:       "https://github.com/giantswarm/security-bundle/releases/tag/v{{.Version}}",
-		changelog: "https://raw.githubusercontent.com/giantswarm/security-bundle/v{{.Version}}/CHANGELOG.md",
-		start:     commonStartPattern,
-		end:       commonEndPattern,
+		Tag:       "https://github.com/giantswarm/security-bundle/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/security-bundle/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
 	},
 	"teleport-kube-agent": {
-		tag:       "https://github.com/giantswarm/teleport-kube-agent-app/releases/tag/v{{.Version}}",
-		changelog: "https://raw.githubusercontent.com/giantswarm/teleport-kube-agent-app/v{{.Version}}/CHANGELOG.md",
-		start:     commonStartPattern,
-		end:       commonEndPattern,
+		Tag:       "https://github.com/giantswarm/teleport-kube-agent-app/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/teleport-kube-agent-app/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
 	},
 	"vertical-pod-autoscaler": {
-		tag:       "https://github.com/giantswarm/vertical-pod-autoscaler-app/releases/tag/v{{.Version}}",
-		changelog: "https://raw.githubusercontent.com/giantswarm/vertical-pod-autoscaler-app/v{{.Version}}/CHANGELOG.md",
-		start:     commonStartPattern,
-		end:       commonEndPattern,
+		Tag:       "https://github.com/giantswarm/vertical-pod-autoscaler-app/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/vertical-pod-autoscaler-app/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
 	},
 	"vertical-pod-autoscaler-crd": {
-		tag:       "https://github.com/giantswarm/vertical-pod-autoscaler-crd/releases/tag/v{{.Version}}",
-		changelog: "https://raw.githubusercontent.com/giantswarm/vertical-pod-autoscaler-crd/v{{.Version}}/CHANGELOG.md",
-		start:     commonStartPattern,
-		end:       commonEndPattern,
+		Tag:       "https://github.com/giantswarm/vertical-pod-autoscaler-crd/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/vertical-pod-autoscaler-crd/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
 	},
 
 	// Core Components
 	"flatcar": {
-		tag:       "https://www.flatcar-linux.org/releases/#release-{{.Version}}",
-		changelog: "https://www.flatcar.org/releases-json/releases-stable.json",
+		Tag:       "https://www.flatcar-linux.org/releases/#release-{{.Version}}",
+		Changelog: "https://www.flatcar.org/releases-json/releases-stable.json",
 	},
 	"kubernetes": {
-		tag:          "https://github.com/kubernetes/kubernetes/releases/tag/v{{.Version}}",
-		changelog:    "https://github.com/kubernetes/kubernetes/blob/master/CHANGELOG/CHANGELOG-{{.Major}}.{{.Minor}}.md#v{{.Version}}",
-		start:        "(?m)^# v?(?P<Version>\\d+\\.\\d+\\.\\d+)$",
-		intermediate: "(?m)^## Changes by Kind$",
-		end:          "(?m)^# .*$",
+		Tag:          "https://github.com/kubernetes/kubernetes/releases/tag/v{{.Version}}",
+		Changelog:    "https://github.com/kubernetes/kubernetes/blob/master/CHANGELOG/CHANGELOG-{{.Major}}.{{.Minor}}.md#v{{.Version}}",
+		Start:        "(?m)^# v?(?P<Version>\\d+\\.\\d+\\.\\d+)$",
+		Intermediate: "(?m)^## Changes by Kind$",
+		End:          "(?m)^# .*$",
+		AutoDetect:   true,
 	},
 	"os-tooling": {
-		tag:       "https://github.com/giantswarm/capi-image-builder/releases/tag/v{{.Version}}",
-		changelog: "https://raw.githubusercontent.com/giantswarm/capi-image-builder/v{{.Version}}/CHANGELOG.md",
-		start:     commonStartPattern,
-		end:       commonEndPattern,
+		Tag:       "https://github.com/giantswarm/capi-image-builder/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/capi-image-builder/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
 	},
+}
+
+// GetRepoName extracts the repository name for a given component from its tag URL.
+func GetRepoName(componentName string) (string, string) {
+	if params, ok := KnownComponents[componentName]; ok {
+		// e.g. "https://github.com/giantswarm/cluster-autoscaler-app/releases/tag/v{{.Version}}"
+		re := regexp.MustCompile(`github\.com/([^/]+)/([^/]+)`)
+		matches := re.FindStringSubmatch(params.Tag)
+		if len(matches) > 2 {
+			return matches[1], matches[2]
+		}
+	}
+	return "", ""
 }
 
 // Data about a component passed into templates that depend on versions
@@ -371,7 +394,7 @@ type CategorizedChanges struct {
 var categoryRegex = regexp.MustCompile(`^### (\w+)`)
 
 func ParseChangelog(componentName, currentVersion, endVersion string) (*Version, error) {
-	params, ok := knownComponentParseParams[componentName]
+	params, ok := KnownComponents[componentName]
 	if !ok {
 		return nil, microerror.Mask(fmt.Errorf("unknown component: %s", componentName))
 	}
@@ -389,7 +412,7 @@ func ParseChangelog(componentName, currentVersion, endVersion string) (*Version,
 	}
 
 	// Build release link using the template from the params
-	changelogURLTemplate, err := template.New("url").Parse(params.changelog)
+	changelogURLTemplate, err := template.New("url").Parse(params.Changelog)
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}
@@ -413,7 +436,7 @@ func ParseChangelog(componentName, currentVersion, endVersion string) (*Version,
 		// Skip parsing Flatcar
 		return &Version{
 			Name:    currentVersion,
-			Link:    strings.Replace(params.tag, "{{.Version}}", currentVersion, 1),
+			Link:    strings.Replace(params.Tag, "{{.Version}}", currentVersion, 1),
 			Content: "",
 		}, nil
 	}
@@ -447,11 +470,11 @@ func ParseChangelog(componentName, currentVersion, endVersion string) (*Version,
 	if endVersion == "" || currentVersion == endVersion {
 		// When there's no previous version or they're the same, link to single release
 		compareRange = fmt.Sprintf("v%s", currentVersion)
-		compareLink = fmt.Sprintf("https://github.com/giantswarm/%s/releases/tag/v%s", componentName, currentVersion)
+		compareLink = strings.Replace(params.Tag, "{{.Version}}", currentVersion, 1)
 	} else {
 		// When there's a version range, use comparison link
 		compareRange = fmt.Sprintf("v%s...v%s", endVersion, currentVersion)
-		compareLink = fmt.Sprintf("%s/compare/%s", splitBaseURL(params.tag), compareRange)
+		compareLink = fmt.Sprintf("%s/compare/%s", splitBaseURL(params.Tag), compareRange)
 	}
 
 	categorizedChanges := CategorizedChanges{}
@@ -460,6 +483,11 @@ func ParseChangelog(componentName, currentVersion, endVersion string) (*Version,
 
 	startHeading := fmt.Sprintf("## [%s]", currentVersion)
 	stopHeading := fmt.Sprintf("## [%s]", endVersion)
+
+	endSemVer, err := semver.NewVersion(endVersion)
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
 
 	for _, line := range lines {
 		// Don't trim spaces yet - we need them to detect indentation
@@ -474,6 +502,21 @@ func ParseChangelog(componentName, currentVersion, endVersion string) (*Version,
 		if inSection && strings.Contains(line, stopHeading) {
 			break
 		}
+
+		if inSection && strings.HasPrefix(line, "## [") {
+			// Extract version from heading, e.g., "## [1.2.3]"
+			versionStr := strings.TrimPrefix(line, "## [")
+			versionStr = strings.Split(versionStr, "]")[0]
+
+			ver, err := semver.NewVersion(versionStr)
+			if err == nil {
+				// Stop if we've reached a version older than or equal to the end version
+				if !ver.GreaterThan(endSemVer) {
+					break
+				}
+			}
+		}
+
 		// // Continue parsing intermediate versions - don't stop until we hit the actual endVersion.
 		// This allows collecting changes from all versions between currentVersion and endVersion.
 		// For example, when parsing from v1.2.0 to v1.0.0, this will include changes from

@@ -7,18 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `devctl release create`: Improve auto-detection of component versions to be more generic and maintainable.
+
+### Fixed
+
+- `devctl release create`: Fix auto-detection for Azure provider components.
+- `devctl release create --bumpall`: Fix an issue where dependencies were dropped for automatically bumped apps.
+- `devctl release create`: Stop parsing component changelogs when the specified `endVersion` is not found, preventing huge outputs.
+
 ## [7.6.0] - 2025-08-27
+
+### Added
+
+- `devctl release create`: Add `--yes`/`-y` flag to skip confirmation prompt for `--bumpall`.
 
 ### Changed
 
-- `devctl release create`:
-  - Drop `karpenter-nodepools` from AWS releases v32.0.0 and higher.
-  - Add generic support for dropping apps from releases based on release version.
-  - Add support for defining app dependencies via the `--app` flag.
-  - Improve help text with more detailed and accurate examples.
-- `devctl release create --bumpall`:
-  - Improve UX by coloring bumped versions green and removed apps red in the summary table.
-  - Display app dependencies in the summary table.
+- `devctl release create --bumpall`: Automatically bump `cloud-provider-*` and `cluster-autoscaler` to match the release minor version.
+
+### Fixed
+
+- `devctl release create --bumpall`: Fix an issue where dependencies were dropped for automatically bumped apps.
+- `devctl release create`: Stop parsing component changelogs when the specified `endVersion` is not found, preventing huge outputs.
 
 ## [7.5.3] - 2025-08-26
 
