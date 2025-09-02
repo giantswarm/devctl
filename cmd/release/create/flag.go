@@ -16,6 +16,7 @@ const (
 	flagProvider  = "provider"
 	flagReleases  = "releases"
 	flagBumpAll   = "bumpall"
+	flagYes       = "yes"
 )
 
 type flag struct {
@@ -27,6 +28,7 @@ type flag struct {
 	Overwrite  bool
 	Provider   string
 	Releases   string
+	Yes        bool
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
@@ -38,6 +40,7 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&f.BumpAll, flagBumpAll, false, `If true, automatically get a list of updated components and apps.`)
 	cmd.Flags().StringVar(&f.Provider, flagProvider, "", `Target provider for the new release.`)
 	cmd.Flags().StringVar(&f.Releases, flagReleases, ".", `Path to releases repository. Defaults to current working directory.`)
+	cmd.Flags().BoolVarP(&f.Yes, flagYes, "y", false, `If true, skip confirmation prompt.`)
 }
 
 func (f *flag) Validate() error {

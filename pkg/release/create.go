@@ -15,6 +15,8 @@ import (
 	"github.com/giantswarm/release-operator/v4/api/v1alpha1"
 	"github.com/mohae/deepcopy"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/giantswarm/devctl/v7/pkg/release/changelog"
 )
 
 type droppedAppConfig struct {
@@ -31,7 +33,7 @@ var appsToBeDropped = []droppedAppConfig{
 
 // CreateRelease creates a release on the filesystem from the given parameters. This is the entry point
 // for the `devctl create release` command logic.
-func CreateRelease(name, base, releases, provider string, components, apps []string, overwrite bool, creationCommand string, bumpall bool) error {
+func CreateRelease(name, base, releases, provider string, components, apps []string, overwrite bool, creationCommand string, bumpall, yes bool) error {
 	// Paths
 	baseVersion := *semver.MustParse(base) // already validated to be a valid semver string
 	providerDirectory := ""
@@ -51,17 +53,6 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 	// Store the base release for later use because it gets modified
 	previousRelease := deepcopy.Copy(baseRelease).(v1alpha1.Release)
 
-	// Auto-detect Kubernetes version if not explicitly provided by user
-	hasUserKubernetesComponent := false
-	for _, componentVersion := range components {
-		split := strings.Split(componentVersion, "@")
-		if len(split) >= 1 && split[0] == "kubernetes" {
-			fmt.Println("Explicit Kubernetes component specified by user:", componentVersion)
-			hasUserKubernetesComponent = true
-			break
-		}
-	}
-
 	// Determine which apps to drop based on the new release version.
 	appsToDropForThisRelease := make(map[string]bool)
 	releaseVersion, err := semver.NewVersion(strings.TrimPrefix(name, "v"))
@@ -73,23 +64,83 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 		}
 	}
 
-	// Only attempt auto-detection if user didn't explicitly specify Kubernetes
-	if !hasUserKubernetesComponent {
-		fmt.Printf("No explicit Kubernetes component specified by user. Attempting auto-detection based on release name pattern...\n")
-		kubernetesVersion, err := autoDetectKubernetesVersion(name)
+	// Auto-detect components that are not explicitly provided by the user.
+	// The auto-detection logic is driven by the `AutoDetect` flag in the `KnownComponents` map.
+	// For each component with this flag, we check if it was present in the base release
+	// and if the user has not already provided a version for it.
+	for componentName, params := range changelog.KnownComponents {
+		if !params.AutoDetect {
+			continue
+		}
+
+		// Check if the component is in the base release.
+		inBaseRelease := false
+		for _, component := range baseRelease.Spec.Components {
+			if component.Name == componentName {
+				inBaseRelease = true
+				break
+			}
+		}
+		for _, app := range baseRelease.Spec.Apps {
+			if app.Name == componentName {
+				inBaseRelease = true
+				break
+			}
+		}
+		if !inBaseRelease {
+			continue
+		}
+
+		// Check if the user has already provided the component.
+		isProvidedByUser := false
+		for _, componentVersion := range components {
+			split := strings.Split(componentVersion, "@")
+			if len(split) >= 1 && split[0] == componentName {
+				fmt.Printf("Explicit component specified by user: %s\n", componentVersion)
+				isProvidedByUser = true
+				break
+			}
+		}
+		if isProvidedByUser {
+			continue
+		}
+		for _, appVersion := range apps {
+			split := strings.Split(appVersion, "@")
+			if len(split) >= 1 && split[0] == componentName {
+				fmt.Printf("Explicit app specified by user: %s\n", appVersion)
+				isProvidedByUser = true
+				break
+			}
+		}
+		if isProvidedByUser {
+			continue
+		}
+
+		// Attempt to auto-detect the component version.
+		fmt.Printf("No explicit %s component specified by user. Attempting auto-detection based on release name pattern...\n", componentName)
+		var detectedVersion string
+		var err error
+		detectedVersion, err = autoDetectVersion(name, componentName)
+
 		if err != nil {
-			fmt.Printf("Warning: Could not auto-detect Kubernetes version: %v\n", err)
-			fmt.Printf("You can manually specify the Kubernetes version using --component kubernetes@<version>\n")
+			fmt.Printf("Warning: Could not auto-detect %s version: %v\n", componentName, err)
+			fmt.Printf("You can manually specify the version using --component %s@<version> or --app %s@<version>\n", componentName, componentName)
 		} else {
-			kubernetesComponent := fmt.Sprintf("kubernetes@%s", kubernetesVersion)
-			components = append(components, kubernetesComponent)
-			fmt.Printf("Auto-detected and added Kubernetes component: %s\n", kubernetesComponent)
+			if componentName == "kubernetes" {
+				component := fmt.Sprintf("%s@%s", componentName, detectedVersion)
+				components = append(components, component)
+				fmt.Printf("Auto-detected and added component: %s\n", component)
+			} else {
+				app := fmt.Sprintf("%s@%s", componentName, detectedVersion)
+				apps = append(apps, app)
+				fmt.Printf("Auto-detected and added app: %s\n", app)
+			}
 		}
 	}
 
 	if bumpall {
 		fmt.Println("Requested automated bumping of all components and apps.")
-		components, apps, err = BumpAll(baseRelease, components, apps, appsToDropForThisRelease)
+		components, apps, err = BumpAll(baseRelease, components, apps, appsToDropForThisRelease, yes)
 		if err != nil {
 			return microerror.Mask(err)
 		}

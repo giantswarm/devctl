@@ -26,6 +26,7 @@ import (
 	"golang.org/x/exp/slices"
 
 	"github.com/giantswarm/devctl/v7/pkg/githubclient"
+	"github.com/giantswarm/devctl/v7/pkg/release/changelog"
 )
 
 type componentVersion struct {
@@ -42,7 +43,7 @@ type appVersion struct {
 
 // BumpAll takes all apps and components in the `input` release and looks up on github for the latest version of each.
 // If the version is not specified in the `manuallyRequestedComponents` or `manuallyRequestedApps` it will be bumped to the latest version.
-func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manuallyRequestedApps []string, appsToDrop map[string]bool) ([]string, []string, error) {
+func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manuallyRequestedApps []string, appsToDrop map[string]bool, yes bool) ([]string, []string, error) {
 	requestedComponents := map[string]componentVersion{}
 	requestedApps := map[string]appVersion{}
 
@@ -121,8 +122,12 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 				req.UpstreamVersion = splitted[2]
 			}
 
-			if len(splitted) > 3 && splitted[3] != "" {
-				req.DependsOn = strings.Split(splitted[3], ",")
+			if len(splitted) > 3 {
+				if splitted[3] != "" {
+					req.DependsOn = strings.Split(splitted[3], ",")
+				} else {
+					req.DependsOn = []string{}
+				}
 			}
 
 			requestedApps[splitted[0]] = req
@@ -136,7 +141,11 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 				v.Version = req.Version
 				v.UpstreamVersion = req.UpstreamVersion
 				v.UserRequested = true
-				v.DependsOn = req.DependsOn
+				if req.DependsOn != nil {
+					v.DependsOn = req.DependsOn
+				} else {
+					v.DependsOn = app.DependsOn
+				}
 			} else {
 				version, err := findNewestApp(app.Name, app.ComponentVersion != "")
 				if err != nil {
@@ -181,18 +190,20 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 		return nil, nil, microerror.Mask(err)
 	}
 
-	var char rune
-	for string(char) != "y" && string(char) != "Y" && string(char) != "n" && string(char) != "N" {
-		fmt.Print("Do you want to continue? (y/n)")
-		reader := bufio.NewReader(os.Stdin)
-		char, _, err = reader.ReadRune()
-		if err != nil {
-			return nil, nil, microerror.Mask(err)
+	if !yes {
+		var char rune
+		for string(char) != "y" && string(char) != "Y" && string(char) != "n" && string(char) != "N" {
+			fmt.Print("Do you want to continue? (y/n)")
+			reader := bufio.NewReader(os.Stdin)
+			char, _, err = reader.ReadRune()
+			if err != nil {
+				return nil, nil, microerror.Mask(err)
+			}
 		}
-	}
 
-	if string(char) == "n" || string(char) == "N" {
-		return nil, nil, nil
+		if string(char) == "n" || string(char) == "N" {
+			return nil, nil, nil
+		}
 	}
 
 	fmt.Println("Generating release")
@@ -460,13 +471,7 @@ func getLatestGithubRelease(owner string, name string) (string, error) {
 
 	client := github.NewClient(tc)
 
-	// Makes sure both `my-fancy-controller` and `my-fancy-controller-app` are getting looked up as `my-fancy-controller-app` and `my-fancy-controller`.
-	var candidateNames []string
-	if strings.HasSuffix(name, "-app") {
-		candidateNames = []string{name, strings.TrimSuffix(name, "-app")}
-	} else {
-		candidateNames = []string{fmt.Sprintf("%s-app", name), name}
-	}
+	owner, candidateNames := getRepoCandidates(owner, name)
 
 	version := ""
 	var latestErr error
@@ -494,9 +499,9 @@ func getLatestGithubRelease(owner string, name string) (string, error) {
 	return version, nil
 }
 
-// getKubernetesVersionForMinor fetches the latest patch version for a given Kubernetes minor version
+// getLatestReleaseForMinor fetches the latest patch version for a given minor version of a component.
 // e.g., for minorVersion "1.31", it might return "1.31.9"
-func getKubernetesVersionForMinor(minorVersion string) (string, error) {
+func getLatestReleaseForMinor(owner, repo, minorVersion string) (string, error) {
 	token := os.Getenv("OPSCTL_GITHUB_TOKEN")
 
 	ctx := context.Background()
@@ -507,34 +512,52 @@ func getKubernetesVersionForMinor(minorVersion string) (string, error) {
 
 	client := github.NewClient(tc)
 
-	// Get all releases from kubernetes repository
-	opt := &github.ListOptions{
-		PerPage: 100, // Get more releases to ensure we find the latest patch
-	}
+	owner, candidateNames := getRepoCandidates(owner, repo)
 
 	var latestVersion string
 	var latestSemver semver.Version
+	var lastErr error
 
-	for {
-		releases, resp, err := client.Repositories.ListReleases(ctx, "kubernetes", "kubernetes", opt)
-		if err != nil {
-			return "", microerror.Mask(err)
+	for _, repoCandidate := range candidateNames {
+		// Get all releases from the repository
+		opt := &github.ListOptions{
+			PerPage: 100, // Get more releases to ensure we find the latest patch
 		}
 
-		for _, release := range releases {
+		var releasesForCandidate []*github.RepositoryRelease
+		for {
+			releases, resp, err := client.Repositories.ListReleases(ctx, owner, repoCandidate, opt)
+			if err != nil {
+				// Check for 404 Not Found, and try the next candidate repo.
+				if ghErr, ok := err.(*github.ErrorResponse); ok && ghErr.Response.StatusCode == http.StatusNotFound {
+					lastErr = err
+					goto nextCandidate
+				}
+				// For other errors, we fail.
+				return "", microerror.Mask(err)
+			}
+
+			releasesForCandidate = append(releasesForCandidate, releases...)
+
+			if resp.NextPage == 0 {
+				break
+			}
+			opt.Page = resp.NextPage
+		}
+
+		for _, release := range releasesForCandidate {
 			if release.Name == nil {
 				continue
 			}
 
-			// Handle the "Kubernetes v1.x.y" format from kubernetes/kubernetes releases
 			versionStr := *release.Name
-			// Strip "Kubernetes " prefix if present
+			// Strip "Kubernetes " prefix if present (for kubernetes/kubernetes)
 			versionStr = strings.TrimPrefix(versionStr, "Kubernetes ")
 			// Strip "v" prefix if present
 			versionStr = strings.TrimPrefix(versionStr, "v")
 
-			// Skip pre-releases and versions that don't start with the desired minor version
-			if strings.Contains(versionStr, "-") || !strings.HasPrefix(versionStr, minorVersion+".") {
+			// Allow our -gs extensions.
+			if (strings.Contains(versionStr, "-") && !strings.Contains(versionStr, "-gs")) || !strings.HasPrefix(versionStr, minorVersion+".") {
 				continue
 			}
 
@@ -544,7 +567,8 @@ func getKubernetesVersionForMinor(minorVersion string) (string, error) {
 			}
 
 			// Check if this version matches our target minor version and is newer than what we found
-			if fmt.Sprintf("%d.%d", version.Major, version.Minor) == minorVersion {
+			currentMinor := fmt.Sprintf("%d.%d", version.Major, version.Minor)
+			if currentMinor == minorVersion {
 				if latestVersion == "" || version.GT(latestSemver) {
 					latestSemver = version
 					latestVersion = versionStr
@@ -552,17 +576,42 @@ func getKubernetesVersionForMinor(minorVersion string) (string, error) {
 			}
 		}
 
-		if resp.NextPage == 0 {
+		// If we found a version, we can break from the candidate loop.
+		if latestVersion != "" {
 			break
 		}
-		opt.Page = resp.NextPage
+
+	nextCandidate:
 	}
 
 	if latestVersion == "" {
-		return "", microerror.Mask(fmt.Errorf("no stable release found for Kubernetes minor version %s", minorVersion))
+		if lastErr != nil {
+			return "", microerror.Mask(lastErr)
+		}
+		return "", microerror.Mask(fmt.Errorf("no stable release found for %s/%s minor version %s", owner, repo, minorVersion))
 	}
 
 	return latestVersion, nil
+}
+
+func getRepoCandidates(owner, name string) (string, []string) {
+	var repoName string
+	var newOwner string
+	newOwner, repoName = changelog.GetRepoName(name)
+	if repoName != "" {
+		owner = newOwner
+		return owner, []string{repoName}
+	}
+
+	// Fallback to old logic if not in map.
+	var candidateNames []string
+	if strings.HasSuffix(name, "-app") {
+		candidateNames = []string{name, strings.TrimSuffix(name, "-app")}
+	} else {
+		candidateNames = []string{fmt.Sprintf("%s-app", name), name}
+	}
+
+	return owner, candidateNames
 }
 
 // extractKubernetesMinorFromReleaseName attempts to extract a Kubernetes minor version
@@ -589,20 +638,25 @@ func extractKubernetesMinorFromReleaseName(releaseName string) string {
 	return kubernetesMinor
 }
 
-// autoDetectKubernetesVersion attempts to automatically detect and fetch the appropriate
-// Kubernetes version based on the release name pattern
-func autoDetectKubernetesVersion(releaseName string) (string, error) {
+// autoDetectVersion attempts to automatically detect and fetch the appropriate
+// version based on the release name pattern
+func autoDetectVersion(releaseName, componentName string) (string, error) {
 	kubernetesMinor := extractKubernetesMinorFromReleaseName(releaseName)
 	if kubernetesMinor == "" {
 		return "", microerror.Mask(fmt.Errorf("could not extract Kubernetes minor version from release name: %s", releaseName))
 	}
 
-	latestKubernetesVersion, err := getKubernetesVersionForMinor(kubernetesMinor)
+	owner, repoName := changelog.GetRepoName(componentName)
+	if repoName == "" {
+		return "", microerror.Mask(fmt.Errorf("could not get repository for app %s", componentName))
+	}
+
+	latestVersion, err := getLatestReleaseForMinor(owner, repoName, kubernetesMinor)
 	if err != nil {
 		return "", microerror.Mask(err)
 	}
 
-	return latestKubernetesVersion, nil
+	return latestVersion, nil
 }
 
 func getLatestFlatcarRelease() (string, error) {
