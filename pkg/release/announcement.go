@@ -15,7 +15,7 @@ Further details can be found in the [release notes](https://docs.giantswarm.io/c
 
 var providerDocMap = map[string]string{
 	"aws":            "capa",
-	"azure":          "capz",
+	"azure":          "azure",
 	"vsphere":        "vsphere",
 	"cloud-director": "cloud-director",
 }
