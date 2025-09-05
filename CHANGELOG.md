@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.7.2] - 2025-09-05
+
 ### Changed
 
 - Remove trailing whitespace from LLM rules, which caused some linter complaints in CI.
@@ -1208,7 +1210,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.7.1...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.7.2...HEAD
+[7.7.2]: https://github.com/giantswarm/devctl/compare/v7.7.1...v7.7.2
 [7.7.1]: https://github.com/giantswarm/devctl/compare/v7.7.0...v7.7.1
 [7.7.0]: https://github.com/giantswarm/devctl/compare/v7.6.0...v7.7.0
 [7.6.0]: https://github.com/giantswarm/devctl/compare/v7.5.3...v7.6.0
