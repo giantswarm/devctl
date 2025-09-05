@@ -25,7 +25,8 @@ You are an AI assistant acting as an expert software developer and platform engi
 - Prioritize readability, maintainability, and security.
 - Write comprehensive tests and documentation.
 
-### Release Management  
+### Release Management
+
 - Follow the changelog and release guidelines from @https://github.com/giantswarm/fmt/tree/main/releases
 - Use semantic versioning and conventional commits
 
@@ -35,11 +36,13 @@ Additional language-specific rules can be found in the general style guide and i
 
 {{if .IsLanguageGo}}
 ### Go Development
+
 - Go code must always adhere to the Go language-specific development guidelines and patterns rules in this repository.
 
 ### Go Application Security
+
 - Ensure all Go dependencies are up to date.
 - Follow best security practices for Go applications.
 {{ end }}
 ---
-For detailed guidelines and examples, always refer to: **https://github.com/giantswarm/fmt/** 
+For detailed guidelines and examples, always refer to: **https://github.com/giantswarm/fmt/**
