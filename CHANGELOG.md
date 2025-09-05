@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Remove trailing whitespace from LLM rules, which caused some linter complaints in CI.
+
 ## [7.7.1] - 2025-09-03
 
 ### Changed
