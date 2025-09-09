@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add `--output markdown` flag to `devctl release create` command to print the output in Markdown format.
+
 ## [7.7.2] - 2025-09-05
 
 ### Changed

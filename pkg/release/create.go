@@ -33,7 +33,7 @@ var appsToBeDropped = []droppedAppConfig{
 
 // CreateRelease creates a release on the filesystem from the given parameters. This is the entry point
 // for the `devctl create release` command logic.
-func CreateRelease(name, base, releases, provider string, components, apps []string, overwrite bool, creationCommand string, bumpall, yes bool) error {
+func CreateRelease(name, base, releases, provider string, components, apps []string, overwrite bool, creationCommand string, bumpall bool, appsToDrop []string, yes bool, output string, verbose bool) error {
 	// Paths
 	baseVersion := *semver.MustParse(base) // already validated to be a valid semver string
 	providerDirectory := ""
@@ -96,7 +96,9 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 		for _, componentVersion := range components {
 			split := strings.Split(componentVersion, "@")
 			if len(split) >= 1 && split[0] == componentName {
-				fmt.Printf("Explicit component specified by user: %s\n", componentVersion)
+				if verbose {
+					fmt.Printf("Explicit component specified by user: %s\n", componentVersion)
+				}
 				isProvidedByUser = true
 				break
 			}
@@ -107,7 +109,9 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 		for _, appVersion := range apps {
 			split := strings.Split(appVersion, "@")
 			if len(split) >= 1 && split[0] == componentName {
-				fmt.Printf("Explicit app specified by user: %s\n", appVersion)
+				if verbose {
+					fmt.Printf("Explicit app specified by user: %s\n", appVersion)
+				}
 				isProvidedByUser = true
 				break
 			}
@@ -117,7 +121,9 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 		}
 
 		// Attempt to auto-detect the component version.
-		fmt.Printf("No explicit %s component specified by user. Attempting auto-detection based on release name pattern...\n", componentName)
+		if verbose {
+			fmt.Printf("No explicit %s component specified by user. Attempting auto-detection based on release name pattern...\n", componentName)
+		}
 		var detectedVersion string
 		var err error
 		detectedVersion, err = autoDetectVersion(name, componentName)
@@ -129,18 +135,24 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 			if componentName == "kubernetes" {
 				component := fmt.Sprintf("%s@%s", componentName, detectedVersion)
 				components = append(components, component)
-				fmt.Printf("Auto-detected and added component: %s\n", component)
+				if verbose {
+					fmt.Printf("Auto-detected and added component: %s\n", component)
+				}
 			} else {
 				app := fmt.Sprintf("%s@%s", componentName, detectedVersion)
 				apps = append(apps, app)
-				fmt.Printf("Auto-detected and added app: %s\n", app)
+				if verbose {
+					fmt.Printf("Auto-detected and added app: %s\n", app)
+				}
 			}
 		}
 	}
 
 	if bumpall {
-		fmt.Println("Requested automated bumping of all components and apps.")
-		components, apps, err = BumpAll(baseRelease, components, apps, appsToDropForThisRelease, yes)
+		if verbose {
+			fmt.Println("Requested automated bumping of all components and apps.")
+		}
+		components, apps, err = BumpAll(baseRelease, components, apps, appsToDropForThisRelease, yes, output)
 		if err != nil {
 			return microerror.Mask(err)
 		}
@@ -198,7 +210,9 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 		var filteredMergedApps []v1alpha1.ReleaseSpecApp
 		for _, app := range newRelease.Spec.Apps {
 			if _, shouldDrop := appsToDropForThisRelease[app.Name]; shouldDrop {
-				fmt.Printf("Dropping %s from release %s as it is no longer supported.\n", app.Name, name)
+				if verbose {
+					fmt.Printf("Dropping %s from release %s as it is no longer supported.\n", app.Name, name)
+				}
 				continue
 			}
 			filteredMergedApps = append(filteredMergedApps, app)

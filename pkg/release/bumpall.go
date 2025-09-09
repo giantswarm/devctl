@@ -43,7 +43,7 @@ type appVersion struct {
 
 // BumpAll takes all apps and components in the `input` release and looks up on github for the latest version of each.
 // If the version is not specified in the `manuallyRequestedComponents` or `manuallyRequestedApps` it will be bumped to the latest version.
-func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manuallyRequestedApps []string, appsToDrop map[string]bool, yes bool) ([]string, []string, error) {
+func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manuallyRequestedApps []string, appsToDrop map[string]bool, yes bool, output string) ([]string, []string, error) {
 	requestedComponents := map[string]componentVersion{}
 	requestedApps := map[string]appVersion{}
 
@@ -185,7 +185,7 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 	}
 
 	// Show a recap table with all the updates being applied.
-	err := printTable(input, components, apps, appsToDrop)
+	err := printTable(input, components, apps, appsToDrop, output)
 	if err != nil {
 		return nil, nil, microerror.Mask(err)
 	}
@@ -235,11 +235,13 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 }
 
 // Just print a table with a list of apps and components with old and new version for easy checking by user.
-func printTable(input v1alpha1.Release, components map[string]componentVersion, apps map[string]appVersion, appsToDrop map[string]bool) error {
+func printTable(input v1alpha1.Release, components map[string]componentVersion, apps map[string]appVersion, appsToDrop map[string]bool, output string) error {
 	tm.Clear()
 
 	t := table.NewWriter()
-	t.SetOutputMirror(tm.Output)
+	if output == "text" {
+		t.SetOutputMirror(tm.Output)
+	}
 	t.AppendHeader(table.Row{"APP NAME", "CURRENT APP VERSION", "DESIRED APP VERSION", "DEPENDENCIES"})
 	t.AppendSeparator()
 	for _, app := range input.Spec.Apps {
@@ -253,13 +255,17 @@ func printTable(input v1alpha1.Release, components map[string]componentVersion, 
 
 		if _, dropped := appsToDrop[app.Name]; dropped {
 			desiredVersion = "Removed"
-			// Color row red
-			t.AppendRow(table.Row{
-				text.FgRed.Sprint(app.Name),
-				text.FgRed.Sprint(version),
-				text.FgRed.Sprint(desiredVersion),
-				text.FgRed.Sprint(dependencies),
-			})
+			if output == "text" {
+				// Color row red
+				t.AppendRow(table.Row{
+					text.FgRed.Sprint(app.Name),
+					text.FgRed.Sprint(version),
+					text.FgRed.Sprint(desiredVersion),
+					text.FgRed.Sprint(dependencies),
+				})
+			} else {
+				t.AppendRow(table.Row{app.Name, version, desiredVersion, dependencies})
+			}
 			continue
 		}
 
@@ -273,7 +279,11 @@ func printTable(input v1alpha1.Release, components map[string]componentVersion, 
 			}
 
 			if req.Version != app.Version {
-				desiredVersion = text.FgGreen.Sprint(desiredVersionStr)
+				if output == "text" {
+					desiredVersion = text.FgGreen.Sprint(desiredVersionStr)
+				} else {
+					desiredVersion = fmt.Sprintf("**%s**", desiredVersionStr)
+				}
 			} else {
 				desiredVersion = desiredVersionStr
 			}
@@ -295,14 +305,22 @@ func printTable(input v1alpha1.Release, components map[string]componentVersion, 
 					if _, ok := newDeps[dep]; ok {
 						unchanged = append(unchanged, dep)
 					} else {
-						removed = append(removed, text.FgRed.Sprintf("%s", dep))
+						if output == "text" {
+							removed = append(removed, text.FgRed.Sprintf("~~%s~~", dep))
+						} else {
+							removed = append(removed, fmt.Sprintf("~~%s~~", dep))
+						}
 					}
 				}
 
 				// Find added
 				for _, dep := range req.DependsOn {
 					if _, ok := oldDeps[dep]; !ok {
-						added = append(added, text.FgGreen.Sprintf("%s", dep))
+						if output == "text" {
+							added = append(added, text.FgGreen.Sprintf("**%s**", dep))
+						} else {
+							added = append(added, fmt.Sprintf("**%s**", dep))
+						}
 					}
 				}
 
@@ -337,16 +355,29 @@ func printTable(input v1alpha1.Release, components map[string]componentVersion, 
 			if req.UserRequested {
 				desiredVersionStr = fmt.Sprintf("%s - requested by user", desiredVersionStr)
 			}
-			desiredVersion := text.FgGreen.Sprint(desiredVersionStr)
-			dependencies := text.FgGreen.Sprint(strings.Join(req.DependsOn, ", "))
+			var desiredVersion, dependencies string
+			if output == "text" {
+				desiredVersion = text.FgGreen.Sprint(desiredVersionStr)
+				dependencies = text.FgGreen.Sprint(strings.Join(req.DependsOn, ", "))
+			} else {
+				desiredVersion = fmt.Sprintf("**%s**", desiredVersionStr)
+				dependencies = fmt.Sprintf("**%s**", strings.Join(req.DependsOn, ", "))
+			}
 			t.AppendRow(table.Row{name, "New app", desiredVersion, dependencies})
 		}
 	}
 	t.AppendSeparator()
-	t.Render()
+	switch output {
+	case "markdown":
+		fmt.Println(t.RenderMarkdown())
+	default:
+		t.Render()
+	}
 
 	t = table.NewWriter()
-	t.SetOutputMirror(tm.Output)
+	if output == "text" {
+		t.SetOutputMirror(tm.Output)
+	}
 	t.AppendHeader(table.Row{"COMPONENT NAME", "CURRENT VERSION", "DESIRED VERSION"})
 	t.AppendSeparator()
 	for _, component := range input.Spec.Components {
@@ -356,7 +387,11 @@ func printTable(input v1alpha1.Release, components map[string]componentVersion, 
 			if req.UserRequested {
 				desiredVersionStr = fmt.Sprintf("%s - requested by user", desiredVersionStr)
 			}
-			desiredVersion = text.FgGreen.Sprint(desiredVersionStr)
+			if output == "text" {
+				desiredVersion = text.FgGreen.Sprint(desiredVersionStr)
+			} else {
+				desiredVersion = fmt.Sprintf("**%s**", desiredVersionStr)
+			}
 		}
 		t.AppendRow(table.Row{component.Name, component.Version, desiredVersion})
 	}
@@ -375,12 +410,22 @@ func printTable(input v1alpha1.Release, components map[string]componentVersion, 
 			if req.UserRequested {
 				desiredVersionStr = fmt.Sprintf("%s - requested by user", desiredVersionStr)
 			}
-			desiredVersion := text.FgGreen.Sprint(desiredVersionStr)
+			var desiredVersion string
+			if output == "text" {
+				desiredVersion = text.FgGreen.Sprint(desiredVersionStr)
+			} else {
+				desiredVersion = fmt.Sprintf("**%s**", desiredVersionStr)
+			}
 			t.AppendRow(table.Row{name, "New component", desiredVersion})
 		}
 	}
 	t.AppendSeparator()
-	t.Render()
+	switch output {
+	case "markdown":
+		fmt.Println(t.RenderMarkdown())
+	default:
+		t.Render()
+	}
 
 	tm.Flush()
 	return nil
