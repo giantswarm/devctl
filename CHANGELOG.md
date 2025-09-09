@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.10.2] - 2025-09-09
+
 ### Fixed
 
 - Correctly pin Kubernetes version to the release's major version during `devctl release create --bumpall` to prevent accidentally upgrading to a new minor version.
@@ -1239,7 +1241,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.10.1...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.10.2...HEAD
+[7.10.2]: https://github.com/giantswarm/devctl/compare/v7.10.1...v7.10.2
 [7.10.1]: https://github.com/giantswarm/devctl/compare/v7.10.0...v7.10.1
 [7.10.0]: https://github.com/giantswarm/devctl/compare/v7.9.0...v7.10.0
 [7.9.0]: https://github.com/giantswarm/devctl/compare/v7.8.0...v7.9.0
