@@ -43,7 +43,7 @@ type appVersion struct {
 
 // BumpAll takes all apps and components in the `input` release and looks up on github for the latest version of each.
 // If the version is not specified in the `manuallyRequestedComponents` or `manuallyRequestedApps` it will be bumped to the latest version.
-func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manuallyRequestedApps []string, appsToDrop map[string]bool, yes bool, output string, changesOnly bool) ([]string, []string, error) {
+func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manuallyRequestedApps []string, appsToDrop map[string]bool, yes bool, output string, changesOnly bool, requestedOnly bool) ([]string, []string, error) {
 	requestedComponents := map[string]componentVersion{}
 	requestedApps := map[string]appVersion{}
 
@@ -185,7 +185,7 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 	}
 
 	// Show a recap table with all the updates being applied.
-	err := printTable(input, components, apps, appsToDrop, output, changesOnly)
+	err := printTable(input, components, apps, appsToDrop, output, changesOnly, requestedOnly)
 	if err != nil {
 		return nil, nil, microerror.Mask(err)
 	}
@@ -206,7 +206,9 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 		}
 	}
 
-	fmt.Println("Generating release")
+	if verbose {
+		fmt.Println("Generating release")
+	}
 
 	// Prepare list of components and apps to bump.
 	componentsRet := make([]string, 0)
@@ -235,7 +237,7 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 }
 
 // Just print a table with a list of apps and components with old and new version for easy checking by user.
-func printTable(input v1alpha1.Release, components map[string]componentVersion, apps map[string]appVersion, appsToDrop map[string]bool, output string, changesOnly bool) error {
+func printTable(input v1alpha1.Release, components map[string]componentVersion, apps map[string]appVersion, appsToDrop map[string]bool, output string, changesOnly bool, requestedOnly bool) error {
 	tm.Clear()
 
 	t := table.NewWriter()
@@ -245,16 +247,18 @@ func printTable(input v1alpha1.Release, components map[string]componentVersion, 
 	t.AppendHeader(table.Row{"APP NAME", "CURRENT APP VERSION", "DESIRED APP VERSION", "DEPENDENCIES"})
 	t.AppendSeparator()
 	for _, app := range input.Spec.Apps {
-		changed := false
-		if _, dropped := appsToDrop[app.Name]; dropped {
-			changed = true
-		}
-		if _, found := apps[app.Name]; found {
-			changed = true
-		}
+		req, isUpdated := apps[app.Name]
+		_, isDropped := appsToDrop[app.Name]
+		isChanged := isUpdated || isDropped
 
-		if changesOnly && !changed {
-			continue
+		if requestedOnly {
+			if !isUpdated || !req.UserRequested {
+				continue
+			}
+		} else if changesOnly {
+			if !isChanged {
+				continue
+			}
 		}
 
 		version := app.Version
@@ -386,6 +390,8 @@ func printTable(input v1alpha1.Release, components map[string]componentVersion, 
 		t.Render()
 	}
 
+	fmt.Println() // Add a blank line between tables
+
 	t = table.NewWriter()
 	if output == "text" {
 		t.SetOutputMirror(tm.Output)
@@ -393,12 +399,16 @@ func printTable(input v1alpha1.Release, components map[string]componentVersion, 
 	t.AppendHeader(table.Row{"COMPONENT NAME", "CURRENT VERSION", "DESIRED VERSION"})
 	t.AppendSeparator()
 	for _, component := range input.Spec.Components {
-		changed := false
-		if _, found := components[component.Name]; found {
-			changed = true
-		}
-		if changesOnly && !changed {
-			continue
+		req, isUpdated := components[component.Name]
+
+		if requestedOnly {
+			if !isUpdated || !req.UserRequested {
+				continue
+			}
+		} else if changesOnly {
+			if !isUpdated {
+				continue
+			}
 		}
 
 		var desiredVersion interface{} = "Unchanged"

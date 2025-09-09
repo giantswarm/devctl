@@ -33,7 +33,7 @@ var appsToBeDropped = []droppedAppConfig{
 
 // CreateRelease creates a release on the filesystem from the given parameters. This is the entry point
 // for the `devctl create release` command logic.
-func CreateRelease(name, base, releases, provider string, components, apps []string, overwrite bool, creationCommand string, bumpall bool, appsToDrop []string, yes bool, output string, verbose bool, changesOnly bool) error {
+func CreateRelease(name, base, releases, provider string, components, apps []string, overwrite bool, creationCommand string, bumpall bool, appsToDrop []string, yes bool, output string, verbose bool, changesOnly bool, requestedOnly bool) error {
 	// Paths
 	baseVersion := *semver.MustParse(base) // already validated to be a valid semver string
 	providerDirectory := ""
@@ -152,7 +152,7 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 		if verbose {
 			fmt.Println("Requested automated bumping of all components and apps.")
 		}
-		components, apps, err = BumpAll(baseRelease, components, apps, appsToDropForThisRelease, yes, output, changesOnly)
+		components, apps, err = BumpAll(baseRelease, components, apps, appsToDropForThisRelease, yes, output, changesOnly, requestedOnly)
 		if err != nil {
 			return microerror.Mask(err)
 		}

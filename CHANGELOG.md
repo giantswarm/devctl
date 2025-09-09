@@ -7,11 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add `--requested-only` flag to `devctl release create` command to only show components and apps requested by the user.
+
 ## [7.9.0] - 2025-09-09
 
 ### Added
 
-- Add `--changes-only` flag to `devctl release create` command to only show components/apps that were changed.
+- Add `--changes-only` flag to `devctl release create` command to only show components and apps that were changed.
 
 ## [7.8.0] - 2025-09-09
 
