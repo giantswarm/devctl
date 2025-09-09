@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add `--changes-only` flag to `devctl release create` command to only show components/apps that were changed.
+
 ## [7.8.0] - 2025-09-09
 
 ### Added

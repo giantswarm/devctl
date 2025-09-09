@@ -8,33 +8,35 @@ import (
 )
 
 const (
-	flagName       = "name"
-	flagBase       = "base"
-	flagProvider   = "provider"
-	flagComponents = "component"
-	flagApps       = "app"
-	flagOverwrite  = "overwrite"
-	flagReleases   = "releases"
-	flagBumpAll    = "bumpall"
-	flagYes        = "yes"
-	flagDrop       = "drop"
-	flagOutput     = "output"
-	flagVerbose    = "verbose"
+	flagName        = "name"
+	flagBase        = "base"
+	flagProvider    = "provider"
+	flagComponents  = "component"
+	flagApps        = "app"
+	flagOverwrite   = "overwrite"
+	flagReleases    = "releases"
+	flagBumpAll     = "bumpall"
+	flagYes         = "yes"
+	flagDrop        = "drop"
+	flagOutput      = "output"
+	flagVerbose     = "verbose"
+	flagChangesOnly = "changes-only"
 )
 
 type flag struct {
-	Base       string
-	Apps       []string
-	BumpAll    bool
-	Components []string
-	Name       string
-	Overwrite  bool
-	Provider   string
-	Releases   string
-	Yes        bool
-	Drop       []string
-	Output     string
-	Verbose    bool
+	Base        string
+	Apps        []string
+	BumpAll     bool
+	Components  []string
+	Name        string
+	Overwrite   bool
+	Provider    string
+	Releases    string
+	Yes         bool
+	Drop        []string
+	Output      string
+	Verbose     bool
+	ChangesOnly bool
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
@@ -49,6 +51,7 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().BoolVarP(&f.Yes, flagYes, "y", false, `If true, skip confirmation prompt.`)
 	cmd.Flags().StringVar(&f.Output, flagOutput, "text", "Output format (text|markdown).")
 	cmd.Flags().BoolVarP(&f.Verbose, flagVerbose, "v", false, "Print verbose output.")
+	cmd.Flags().BoolVar(&f.ChangesOnly, flagChangesOnly, false, "Only print changed components.")
 	cmd.Flags().StringArrayVar(&f.Drop, flagDrop, nil, "App to drop from the release.")
 }
 
