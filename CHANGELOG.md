@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Create branch from parent version tag create-release workflow
+
 ## [7.7.2] - 2025-09-05
 
 ### Changed
