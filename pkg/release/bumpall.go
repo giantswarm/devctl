@@ -206,10 +206,6 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 		}
 	}
 
-	if verbose {
-		fmt.Println("Generating release")
-	}
-
 	// Prepare list of components and apps to bump.
 	componentsRet := make([]string, 0)
 	appsRet := make([]string, 0)
