@@ -68,81 +68,83 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 	// The auto-detection logic is driven by the `AutoDetect` flag in the `KnownComponents` map.
 	// For each component with this flag, we check if it was present in the base release
 	// and if the user has not already provided a version for it.
-	for componentName, params := range changelog.KnownComponents {
-		if !params.AutoDetect {
-			continue
-		}
-
-		// Check if the component is in the base release.
-		inBaseRelease := false
-		for _, component := range baseRelease.Spec.Components {
-			if component.Name == componentName {
-				inBaseRelease = true
-				break
+	if !requestedOnly {
+		for componentName, params := range changelog.KnownComponents {
+			if !params.AutoDetect {
+				continue
 			}
-		}
-		for _, app := range baseRelease.Spec.Apps {
-			if app.Name == componentName {
-				inBaseRelease = true
-				break
-			}
-		}
-		if !inBaseRelease {
-			continue
-		}
 
-		// Check if the user has already provided the component.
-		isProvidedByUser := false
-		for _, componentVersion := range components {
-			split := strings.Split(componentVersion, "@")
-			if len(split) >= 1 && split[0] == componentName {
-				if verbose {
-					fmt.Printf("Explicit component specified by user: %s\n", componentVersion)
+			// Check if the component is in the base release.
+			inBaseRelease := false
+			for _, component := range baseRelease.Spec.Components {
+				if component.Name == componentName {
+					inBaseRelease = true
+					break
 				}
-				isProvidedByUser = true
-				break
 			}
-		}
-		if isProvidedByUser {
-			continue
-		}
-		for _, appVersion := range apps {
-			split := strings.Split(appVersion, "@")
-			if len(split) >= 1 && split[0] == componentName {
-				if verbose {
-					fmt.Printf("Explicit app specified by user: %s\n", appVersion)
+			for _, app := range baseRelease.Spec.Apps {
+				if app.Name == componentName {
+					inBaseRelease = true
+					break
 				}
-				isProvidedByUser = true
-				break
 			}
-		}
-		if isProvidedByUser {
-			continue
-		}
+			if !inBaseRelease {
+				continue
+			}
 
-		// Attempt to auto-detect the component version.
-		if verbose {
-			fmt.Printf("No explicit %s component specified by user. Attempting auto-detection based on release name pattern...\n", componentName)
-		}
-		var detectedVersion string
-		var err error
-		detectedVersion, err = autoDetectVersion(name, componentName)
-
-		if err != nil {
-			fmt.Printf("Warning: Could not auto-detect %s version: %v\n", componentName, err)
-			fmt.Printf("You can manually specify the version using --component %s@<version> or --app %s@<version>\n", componentName, componentName)
-		} else {
-			if componentName == "kubernetes" {
-				component := fmt.Sprintf("%s@%s", componentName, detectedVersion)
-				components = append(components, component)
-				if verbose {
-					fmt.Printf("Auto-detected and added component: %s\n", component)
+			// Check if the user has already provided the component.
+			isProvidedByUser := false
+			for _, componentVersion := range components {
+				split := strings.Split(componentVersion, "@")
+				if len(split) >= 1 && split[0] == componentName {
+					if verbose {
+						fmt.Printf("Explicit component specified by user: %s\n", componentVersion)
+					}
+					isProvidedByUser = true
+					break
 				}
+			}
+			if isProvidedByUser {
+				continue
+			}
+			for _, appVersion := range apps {
+				split := strings.Split(appVersion, "@")
+				if len(split) >= 1 && split[0] == componentName {
+					if verbose {
+						fmt.Printf("Explicit app specified by user: %s\n", appVersion)
+					}
+					isProvidedByUser = true
+					break
+				}
+			}
+			if isProvidedByUser {
+				continue
+			}
+
+			// Attempt to auto-detect the component version.
+			if verbose {
+				fmt.Printf("No explicit %s component specified by user. Attempting auto-detection based on release name pattern...\n", componentName)
+			}
+			var detectedVersion string
+			var err error
+			detectedVersion, err = autoDetectVersion(name, componentName)
+
+			if err != nil {
+				fmt.Printf("Warning: Could not auto-detect %s version: %v\n", componentName, err)
+				fmt.Printf("You can manually specify the version using --component %s@<version> or --app %s@<version>\n", componentName, componentName)
 			} else {
-				app := fmt.Sprintf("%s@%s", componentName, detectedVersion)
-				apps = append(apps, app)
-				if verbose {
-					fmt.Printf("Auto-detected and added app: %s\n", app)
+				if componentName == "kubernetes" {
+					component := fmt.Sprintf("%s@%s", componentName, detectedVersion)
+					components = append(components, component)
+					if verbose {
+						fmt.Printf("Auto-detected and added component: %s\n", component)
+					}
+				} else {
+					app := fmt.Sprintf("%s@%s", componentName, detectedVersion)
+					apps = append(apps, app)
+					if verbose {
+						fmt.Printf("Auto-detected and added app: %s\n", app)
+					}
 				}
 			}
 		}

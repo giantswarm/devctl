@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Add `--requested-only` flag to `devctl release create` command to only show components and apps requested by the user.
 
+### Fixed
+
+- Prevent auto-detected components from being shown when using `--requested-only`.
+- Prevent empty tables from being printed when using filtering flags like `--changes-only` or `--requested-only`.
+
 ## [7.9.0] - 2025-09-09
 
 ### Added
