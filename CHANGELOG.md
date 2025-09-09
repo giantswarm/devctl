@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.10.1] - 2025-09-09
+
 ### Fixed
 
 - Prevent auto-detected components from being shown when using `--requested-only`.
@@ -1233,7 +1235,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.10.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.10.1...HEAD
+[7.10.1]: https://github.com/giantswarm/devctl/compare/v7.10.0...v7.10.1
 [7.10.0]: https://github.com/giantswarm/devctl/compare/v7.9.0...v7.10.0
 [7.9.0]: https://github.com/giantswarm/devctl/compare/v7.8.0...v7.9.0
 [7.8.0]: https://github.com/giantswarm/devctl/compare/v7.7.2...v7.8.0
