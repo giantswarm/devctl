@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Masterminds/semver/v3"
+	"github.com/blang/semver"
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/release-operator/v4/api/v1alpha1"
 	"sigs.k8s.io/yaml"
@@ -23,21 +23,23 @@ func releaseToDirectory(release v1alpha1.Release) string {
 
 // Given a slice of versions as strings, return them in ascending semver order with v prefix.
 func deduplicateAndSortVersions(originalVersions []string) ([]string, error) {
-	versions := map[string]*semver.Version{}
+	versions := map[string]semver.Version{}
 	for _, v := range originalVersions {
-		parsed, err := semver.NewVersion(v)
+		parsed, err := semver.Parse(strings.TrimPrefix(v, "v"))
 		if err != nil {
 			return nil, microerror.Mask(err)
 		}
 		versions[parsed.String()] = parsed
 	}
 
-	var vs []*semver.Version
+	var vs []semver.Version
 	for _, v := range versions {
 		vs = append(vs, v)
 	}
 
-	sort.Sort(semver.Collection(vs))
+	sort.SliceStable(vs, func(i, j int) bool {
+		return vs[i].LT(vs[j])
+	})
 
 	var result []string
 	for _, i := range vs {
@@ -69,6 +71,7 @@ func mergeReleases(base, override v1alpha1.Release) v1alpha1.Release {
 			if app.Name == overrideApp.Name {
 				merged.Spec.Apps[i].Version = overrideApp.Version
 				merged.Spec.Apps[i].ComponentVersion = overrideApp.ComponentVersion
+				merged.Spec.Apps[i].DependsOn = overrideApp.DependsOn
 				break
 			}
 		}
@@ -125,11 +128,11 @@ func findRelease(providerDirectory string, targetVersion semver.Version) (v1alph
 		if !fileInfo.IsDir() || fileInfo.Name() == "archived" {
 			continue
 		}
-		releaseVersion, err := semver.NewVersion(fileInfo.Name())
+		releaseVersion, err := semver.Parse(strings.TrimPrefix(fileInfo.Name(), "v"))
 		if err != nil {
 			continue
 		}
-		if releaseVersion.String() == targetVersion.String() {
+		if releaseVersion.Equals(targetVersion) {
 			releaseYAMLPath = filepath.Join(providerDirectory, fileInfo.Name(), "release.yaml")
 		}
 	}
@@ -181,6 +184,10 @@ func marshalReleaseYAML(release v1alpha1.Release) ([]byte, error) {
 			}
 
 			sb.WriteString("    version: " + app.Version + "\n")
+
+			if app.ComponentVersion != "" {
+				sb.WriteString("    componentVersion: " + app.ComponentVersion + "\n")
+			}
 
 			// Add dependsOn if present
 			if len(app.DependsOn) > 0 {

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Correctly pin Kubernetes version to the release's major version during `devctl release create --bumpall` to prevent accidentally upgrading to a new minor version.
+
 ## [7.10.1] - 2025-09-09
 
 ### Fixed

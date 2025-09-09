@@ -4,7 +4,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/Masterminds/semver/v3"
+	"github.com/blang/semver"
 	"github.com/giantswarm/microerror"
 )
 
@@ -12,7 +12,7 @@ import (
 // for the `devctl archive release` command logic.
 func ArchiveRelease(name, releases, provider string) error {
 	// Paths
-	version := *semver.MustParse(name) // already validated to be a valid semver string
+	version := semver.MustParse(name) // already validated to be a valid semver string
 	providerDirectory := filepath.Join(releases, provider)
 	release, _, err := findRelease(providerDirectory, version)
 	if err != nil {

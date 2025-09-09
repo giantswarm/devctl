@@ -43,7 +43,7 @@ type appVersion struct {
 
 // BumpAll takes all apps and components in the `input` release and looks up on github for the latest version of each.
 // If the version is not specified in the `manuallyRequestedComponents` or `manuallyRequestedApps` it will be bumped to the latest version.
-func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manuallyRequestedApps []string, appsToDrop map[string]bool, yes bool, output string, changesOnly bool, requestedOnly bool) ([]string, []string, error) {
+func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manuallyRequestedApps []string, appsToDrop map[string]bool, yes bool, output string, changesOnly bool, requestedOnly bool, k8sMajorVersion uint64) ([]string, []string, error) {
 	requestedComponents := map[string]componentVersion{}
 	requestedApps := map[string]appVersion{}
 
@@ -72,7 +72,15 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 				v.Version = req.Version
 				v.UserRequested = true
 			} else {
-				version, err := findNewestComponent(comp.Name)
+				var err error
+				version := componentVersion{}
+
+				if comp.Name == "kubernetes" {
+					version.Version, err = getLatestK8sVersion(k8sMajorVersion)
+				} else {
+					version, err = findNewestComponent(comp.Name)
+				}
+
 				if err != nil {
 					return nil, nil, microerror.Mask(err)
 				}
@@ -568,6 +576,58 @@ func getLatestGithubRelease(owner string, name string) (string, error) {
 	version = strings.TrimPrefix(version, "v")
 
 	return version, nil
+}
+
+// getLatestK8sVersion returns the latest patch version for a given k8s major.minor version.
+func getLatestK8sVersion(major uint64) (string, error) {
+	token := os.Getenv("OPSCTL_GITHUB_TOKEN")
+	ctx := context.Background()
+	ts := oauth2.StaticTokenSource(
+		&oauth2.Token{AccessToken: token},
+	)
+	tc := oauth2.NewClient(ctx, ts)
+	client := github.NewClient(tc)
+
+	opt := &github.ListOptions{PerPage: 100}
+	var allReleases []*github.RepositoryRelease
+	for {
+		releases, resp, err := client.Repositories.ListReleases(context.Background(), "kubernetes", "kubernetes", opt)
+		if err != nil {
+			return "", microerror.Mask(err)
+		}
+		allReleases = append(allReleases, releases...)
+		if resp.NextPage == 0 {
+			break
+		}
+		opt.Page = resp.NextPage
+	}
+
+	var latest semver.Version
+	for _, rel := range allReleases {
+		if rel.GetPrerelease() {
+			continue
+		}
+
+		versionName := rel.GetName()
+		// Some release names have a "Kubernetes " prefix
+		versionName = strings.TrimPrefix(versionName, "Kubernetes ")
+		v, err := semver.ParseTolerant(versionName)
+		if err != nil {
+			continue
+		}
+
+		if v.Major == 1 && v.Minor == major {
+			if v.GT(latest) {
+				latest = v
+			}
+		}
+	}
+
+	if latest.Equals(semver.Version{}) {
+		return "", microerror.Maskf(releaseNotFoundError, "no kubernetes release found for major version v1.%d", major)
+	}
+
+	return latest.String(), nil
 }
 
 // getLatestReleaseForMinor fetches the latest patch version for a given minor version of a component.
