@@ -225,7 +225,7 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 		upstreamVersion := app.UpstreamVersion
 		dependencies := ""
 		if len(app.DependsOn) > 0 {
-			dependencies = strings.Join(app.DependsOn, ",")
+			dependencies = strings.Join(app.DependsOn, "#")
 		}
 
 		if dependencies != "" {

@@ -142,11 +142,10 @@ var KnownComponents = map[string]ParseParams{
 		End:       commonEndPattern,
 	},
 	"cloud-provider-vsphere": {
-		Tag:        "https://github.com/giantswarm/cloud-provider-vsphere-app/releases/tag/v{{.Version}}",
-		Changelog:  "https://raw.githubusercontent.com/giantswarm/cloud-provider-vsphere-app/v{{.Version}}/CHANGELOG.md",
-		Start:      commonStartPattern,
-		End:        commonEndPattern,
-		AutoDetect: true,
+		Tag:       "https://github.com/giantswarm/cloud-provider-vsphere-app/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/cloud-provider-vsphere-app/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
 	},
 
 	// CAPVCD Provider Specific
@@ -157,11 +156,10 @@ var KnownComponents = map[string]ParseParams{
 		End:       commonEndPattern,
 	},
 	"cloud-provider-cloud-director": {
-		Tag:        "https://github.com/giantswarm/cloud-provider-cloud-director-app/releases/tag/v{{.Version}}",
-		Changelog:  "https://raw.githubusercontent.com/giantswarm/cloud-provider-cloud-director-app/v{{.Version}}/CHANGELOG.md",
-		Start:      commonStartPattern,
-		End:        commonEndPattern,
-		AutoDetect: true,
+		Tag:       "https://github.com/giantswarm/cloud-provider-cloud-director-app/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/cloud-provider-cloud-director-app/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
 	},
 
 	// Common Apps
