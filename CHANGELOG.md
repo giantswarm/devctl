@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.10.3] - 2025-09-10
+
 ### Changed
 
 - Releases: Fix split character for dependencies.
@@ -1245,7 +1247,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.10.2...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.10.3...HEAD
+[7.10.3]: https://github.com/giantswarm/devctl/compare/v7.10.2...v7.10.3
 [7.10.2]: https://github.com/giantswarm/devctl/compare/v7.10.1...v7.10.2
 [7.10.1]: https://github.com/giantswarm/devctl/compare/v7.10.0...v7.10.1
 [7.10.0]: https://github.com/giantswarm/devctl/compare/v7.9.0...v7.10.0
