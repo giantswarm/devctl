@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.10.4] - 2025-09-10
+
 ### Changed
 
 - Releases: Disable auto-detect for CAPVCD & CAPV, fix dependency concatenation.
@@ -1251,7 +1253,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.10.3...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.10.4...HEAD
+[7.10.4]: https://github.com/giantswarm/devctl/compare/v7.10.3...v7.10.4
 [7.10.3]: https://github.com/giantswarm/devctl/compare/v7.10.2...v7.10.3
 [7.10.2]: https://github.com/giantswarm/devctl/compare/v7.10.1...v7.10.2
 [7.10.1]: https://github.com/giantswarm/devctl/compare/v7.10.0...v7.10.1
