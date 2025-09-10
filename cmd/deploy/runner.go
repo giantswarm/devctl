@@ -13,6 +13,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
+	"github.com/giantswarm/devctl/v7/internal/env"
 	"github.com/giantswarm/devctl/v7/pkg/appstatus"
 	"github.com/giantswarm/devctl/v7/pkg/githubclient"
 )
@@ -34,7 +35,7 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 	}
 
 	// Get GitHub token from environment variables
-	token := getGitHubToken()
+	token := env.GitHubToken.Val()
 	if token == "" {
 		return microerror.Maskf(envVarNotFoundError, "GitHub token not found in environment variables. Please set GITHUB_TOKEN or OPSCTL_GITHUB_TOKEN")
 	}
@@ -141,18 +142,4 @@ func parseGitOpsRepo(repo string) (string, string, error) {
 		return "", "", microerror.Maskf(invalidArgError, "invalid GitOps repository format: %q", repo)
 	}
 	return s[0], s[1], nil
-}
-
-func getGitHubToken() string {
-	// Try GITHUB_TOKEN first
-	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
-		return token
-	}
-
-	// Try OPSCTL_GITHUB_TOKEN as fallback
-	if token := os.Getenv("OPSCTL_GITHUB_TOKEN"); token != "" {
-		return token
-	}
-
-	return ""
 }

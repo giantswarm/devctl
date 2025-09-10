@@ -25,6 +25,7 @@ import (
 
 	"golang.org/x/exp/slices"
 
+	"github.com/giantswarm/devctl/v7/internal/env"
 	"github.com/giantswarm/devctl/v7/pkg/githubclient"
 	"github.com/giantswarm/devctl/v7/pkg/release/changelog"
 )
@@ -540,7 +541,7 @@ func findNewestComponent(name string) (componentVersion, error) {
 }
 
 func getLatestGithubRelease(owner string, name string) (string, error) {
-	token := os.Getenv("OPSCTL_GITHUB_TOKEN")
+	token := env.GitHubToken.Val()
 
 	ctx := context.Background()
 	ts := oauth2.StaticTokenSource(
@@ -580,7 +581,7 @@ func getLatestGithubRelease(owner string, name string) (string, error) {
 
 // getLatestK8sVersion returns the latest patch version for a given k8s major.minor version.
 func getLatestK8sVersion(major uint64) (string, error) {
-	token := os.Getenv("OPSCTL_GITHUB_TOKEN")
+	token := env.GitHubToken.Val()
 	ctx := context.Background()
 	ts := oauth2.StaticTokenSource(
 		&oauth2.Token{AccessToken: token},
@@ -633,7 +634,7 @@ func getLatestK8sVersion(major uint64) (string, error) {
 // getLatestReleaseForMinor fetches the latest patch version for a given minor version of a component.
 // e.g., for minorVersion "1.31", it might return "1.31.9"
 func getLatestReleaseForMinor(owner, repo, minorVersion string) (string, error) {
-	token := os.Getenv("OPSCTL_GITHUB_TOKEN")
+	token := env.GitHubToken.Val()
 
 	ctx := context.Background()
 	ts := oauth2.StaticTokenSource(
@@ -837,7 +838,7 @@ func getLatestFlatcarRelease() (string, error) {
 func getAppVersionFromHelmChart(name string, ref string) (string, error) {
 	c := githubclient.Config{
 		Logger:      logrus.StandardLogger(),
-		AccessToken: os.Getenv("OPSCTL_GITHUB_TOKEN"),
+		AccessToken: env.GitHubToken.Val(),
 	}
 
 	client, err := githubclient.New(c)
