@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Releases: Disable auto-detect for CAPVCD & CAPV, fix dependency concatenation.
+
 ## [7.10.3] - 2025-09-10
 
 ### Changed
