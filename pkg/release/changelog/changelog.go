@@ -614,7 +614,7 @@ func ParseChangelog(componentName, currentVersion, endVersion string) (*Version,
 		sb.WriteString("\n")
 	}
 
-	consolidatedContent := sb.String()
+	consolidatedContent := strings.TrimSpace(sb.String())
 
 	currentVersionStruct := Version{
 		Name:    compareRange,
