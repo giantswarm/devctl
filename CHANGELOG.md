@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Environment: Unify GitHub token retrieval.
+
 ## [7.10.5] - 2025-09-10
 
 ### Changed

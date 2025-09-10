@@ -10,6 +10,7 @@ import (
 var (
 	ConfigDir                = configDir{}
 	DevctlUnsafeForceVersion = devctlUnsafeForceVersion{}
+	GitHubToken              = gitHubToken{}
 )
 
 type configDir struct{}
@@ -32,3 +33,25 @@ type devctlUnsafeForceVersion struct{}
 
 func (devctlUnsafeForceVersion) Key() string { return "DEVCTL_UNSAFE_FORCE_VERSION" } // nolint:gosec
 func (devctlUnsafeForceVersion) Val() string { return os.Getenv(devctlUnsafeForceVersion{}.Key()) }
+
+type gitHubToken struct{}
+
+// Tries to get the GitHub token from environment variables.
+func (gitHubToken) Val() string {
+	// Try DEVCTL_GITHUB_TOKEN first.
+	if token := os.Getenv("DEVCTL_GITHUB_TOKEN"); token != "" {
+		return token
+	}
+
+	// Try GITHUB_TOKEN.
+	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
+		return token
+	}
+
+	// Fallback to OPSCTL_GITHUB_TOKEN.
+	if token := os.Getenv("OPSCTL_GITHUB_TOKEN"); token != "" {
+		return token
+	}
+
+	return ""
+}
