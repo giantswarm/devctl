@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Releases: Fix split character for dependencies.
+
 ## [7.10.2] - 2025-09-09
 
 ### Fixed
