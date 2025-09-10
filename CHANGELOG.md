@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.11.0] - 2025-09-10
+
 ### Changed
 
 - Environment: Unify GitHub token retrieval.
@@ -1263,7 +1265,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.10.5...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.11.0...HEAD
+[7.11.0]: https://github.com/giantswarm/devctl/compare/v7.10.5...v7.11.0
 [7.10.5]: https://github.com/giantswarm/devctl/compare/v7.10.4...v7.10.5
 [7.10.4]: https://github.com/giantswarm/devctl/compare/v7.10.3...v7.10.4
 [7.10.3]: https://github.com/giantswarm/devctl/compare/v7.10.2...v7.10.3
