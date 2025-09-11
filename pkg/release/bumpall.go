@@ -688,8 +688,8 @@ func getLatestReleaseForMinor(owner, repo, minorVersion string) (string, error) 
 			// Strip "v" prefix if present
 			versionStr = strings.TrimPrefix(versionStr, "v")
 
-			// Allow our -gs extensions.
-			if (strings.Contains(versionStr, "-") && !strings.Contains(versionStr, "-gs")) || !strings.HasPrefix(versionStr, minorVersion+".") {
+			// Skip releases of other minors.
+			if !strings.HasPrefix(versionStr, minorVersion+".") {
 				continue
 			}
 
