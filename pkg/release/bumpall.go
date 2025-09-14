@@ -25,6 +25,7 @@ import (
 
 	"golang.org/x/exp/slices"
 
+	"github.com/giantswarm/devctl/v7/internal/env"
 	"github.com/giantswarm/devctl/v7/pkg/githubclient"
 	"github.com/giantswarm/devctl/v7/pkg/release/changelog"
 )
@@ -43,7 +44,7 @@ type appVersion struct {
 
 // BumpAll takes all apps and components in the `input` release and looks up on github for the latest version of each.
 // If the version is not specified in the `manuallyRequestedComponents` or `manuallyRequestedApps` it will be bumped to the latest version.
-func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manuallyRequestedApps []string, appsToDrop map[string]bool, yes bool) ([]string, []string, error) {
+func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manuallyRequestedApps []string, appsToDrop map[string]bool, yes bool, output string, changesOnly bool, requestedOnly bool, k8sMajorVersion uint64) ([]string, []string, error) {
 	requestedComponents := map[string]componentVersion{}
 	requestedApps := map[string]appVersion{}
 
@@ -72,7 +73,15 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 				v.Version = req.Version
 				v.UserRequested = true
 			} else {
-				version, err := findNewestComponent(comp.Name)
+				var err error
+				version := componentVersion{}
+
+				if comp.Name == "kubernetes" {
+					version.Version, err = getLatestK8sVersion(k8sMajorVersion)
+				} else {
+					version, err = findNewestComponent(comp.Name)
+				}
+
 				if err != nil {
 					return nil, nil, microerror.Mask(err)
 				}
@@ -185,7 +194,7 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 	}
 
 	// Show a recap table with all the updates being applied.
-	err := printTable(input, components, apps, appsToDrop)
+	err := printTable(input, components, apps, appsToDrop, output, changesOnly, requestedOnly)
 	if err != nil {
 		return nil, nil, microerror.Mask(err)
 	}
@@ -206,8 +215,6 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 		}
 	}
 
-	fmt.Println("Generating release")
-
 	// Prepare list of components and apps to bump.
 	componentsRet := make([]string, 0)
 	appsRet := make([]string, 0)
@@ -219,7 +226,7 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 		upstreamVersion := app.UpstreamVersion
 		dependencies := ""
 		if len(app.DependsOn) > 0 {
-			dependencies = strings.Join(app.DependsOn, ",")
+			dependencies = strings.Join(app.DependsOn, "#")
 		}
 
 		if dependencies != "" {
@@ -235,14 +242,26 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 }
 
 // Just print a table with a list of apps and components with old and new version for easy checking by user.
-func printTable(input v1alpha1.Release, components map[string]componentVersion, apps map[string]appVersion, appsToDrop map[string]bool) error {
+func printTable(input v1alpha1.Release, components map[string]componentVersion, apps map[string]appVersion, appsToDrop map[string]bool, output string, changesOnly bool, requestedOnly bool) error {
 	tm.Clear()
 
-	t := table.NewWriter()
-	t.SetOutputMirror(tm.Output)
-	t.AppendHeader(table.Row{"APP NAME", "CURRENT APP VERSION", "DESIRED APP VERSION", "DEPENDENCIES"})
-	t.AppendSeparator()
+	// --- APPS TABLE ---
+	var appRows []table.Row
 	for _, app := range input.Spec.Apps {
+		req, isUpdated := apps[app.Name]
+		_, isDropped := appsToDrop[app.Name]
+		isChanged := isUpdated || isDropped
+
+		if requestedOnly {
+			if !isUpdated || !req.UserRequested {
+				continue
+			}
+		} else if changesOnly {
+			if !isChanged {
+				continue
+			}
+		}
+
 		version := app.Version
 		if app.ComponentVersion != "" {
 			version = fmt.Sprintf("%s (upstream version %s)", app.Version, app.ComponentVersion)
@@ -253,14 +272,6 @@ func printTable(input v1alpha1.Release, components map[string]componentVersion, 
 
 		if _, dropped := appsToDrop[app.Name]; dropped {
 			desiredVersion = "Removed"
-			// Color row red
-			t.AppendRow(table.Row{
-				text.FgRed.Sprint(app.Name),
-				text.FgRed.Sprint(version),
-				text.FgRed.Sprint(desiredVersion),
-				text.FgRed.Sprint(dependencies),
-			})
-			continue
 		}
 
 		if req, found := apps[app.Name]; found {
@@ -273,7 +284,11 @@ func printTable(input v1alpha1.Release, components map[string]componentVersion, 
 			}
 
 			if req.Version != app.Version {
-				desiredVersion = text.FgGreen.Sprint(desiredVersionStr)
+				if output == "text" {
+					desiredVersion = text.FgGreen.Sprint(desiredVersionStr)
+				} else {
+					desiredVersion = fmt.Sprintf("**%s**", desiredVersionStr)
+				}
 			} else {
 				desiredVersion = desiredVersionStr
 			}
@@ -295,14 +310,22 @@ func printTable(input v1alpha1.Release, components map[string]componentVersion, 
 					if _, ok := newDeps[dep]; ok {
 						unchanged = append(unchanged, dep)
 					} else {
-						removed = append(removed, text.FgRed.Sprintf("%s", dep))
+						if output == "text" {
+							removed = append(removed, text.FgRed.Sprintf("~~%s~~", dep))
+						} else {
+							removed = append(removed, fmt.Sprintf("~~%s~~", dep))
+						}
 					}
 				}
 
 				// Find added
 				for _, dep := range req.DependsOn {
 					if _, ok := oldDeps[dep]; !ok {
-						added = append(added, text.FgGreen.Sprintf("%s", dep))
+						if output == "text" {
+							added = append(added, text.FgGreen.Sprintf("**%s**", dep))
+						} else {
+							added = append(added, fmt.Sprintf("**%s**", dep))
+						}
 					}
 				}
 
@@ -317,7 +340,7 @@ func printTable(input v1alpha1.Release, components map[string]componentVersion, 
 				dependencies = strings.Join(req.DependsOn, ", ")
 			}
 		}
-		t.AppendRow(table.Row{app.Name, version, desiredVersion, dependencies})
+		appRows = append(appRows, table.Row{app.Name, version, desiredVersion, dependencies})
 	}
 
 	// Add new apps that don't exist in the base release
@@ -337,28 +360,65 @@ func printTable(input v1alpha1.Release, components map[string]componentVersion, 
 			if req.UserRequested {
 				desiredVersionStr = fmt.Sprintf("%s - requested by user", desiredVersionStr)
 			}
-			desiredVersion := text.FgGreen.Sprint(desiredVersionStr)
-			dependencies := text.FgGreen.Sprint(strings.Join(req.DependsOn, ", "))
-			t.AppendRow(table.Row{name, "New app", desiredVersion, dependencies})
+			var desiredVersion, dependencies string
+			if output == "text" {
+				desiredVersion = text.FgGreen.Sprint(desiredVersionStr)
+				dependencies = text.FgGreen.Sprint(strings.Join(req.DependsOn, ", "))
+			} else {
+				desiredVersion = fmt.Sprintf("**%s**", desiredVersionStr)
+				dependencies = fmt.Sprintf("**%s**", strings.Join(req.DependsOn, ", "))
+			}
+			appRows = append(appRows, table.Row{name, "New app", desiredVersion, dependencies})
 		}
 	}
-	t.AppendSeparator()
-	t.Render()
 
-	t = table.NewWriter()
-	t.SetOutputMirror(tm.Output)
-	t.AppendHeader(table.Row{"COMPONENT NAME", "CURRENT VERSION", "DESIRED VERSION"})
-	t.AppendSeparator()
+	if len(appRows) > 0 {
+		t := table.NewWriter()
+		if output == "text" {
+			t.SetOutputMirror(tm.Output)
+		}
+		t.AppendHeader(table.Row{"APP NAME", "CURRENT APP VERSION", "DESIRED APP VERSION", "DEPENDENCIES"})
+		t.AppendSeparator()
+		t.AppendRows(appRows)
+		t.AppendSeparator()
+		switch output {
+		case "markdown":
+			fmt.Println(t.RenderMarkdown())
+		default:
+			t.Render()
+		}
+	}
+
+	fmt.Println() // Add a blank line between tables
+
+	// --- COMPONENTS TABLE ---
+	var componentRows []table.Row
 	for _, component := range input.Spec.Components {
+		req, isUpdated := components[component.Name]
+
+		if requestedOnly {
+			if !isUpdated || !req.UserRequested {
+				continue
+			}
+		} else if changesOnly {
+			if !isUpdated {
+				continue
+			}
+		}
+
 		var desiredVersion interface{} = "Unchanged"
 		if req, found := components[component.Name]; found {
 			desiredVersionStr := req.Version
 			if req.UserRequested {
 				desiredVersionStr = fmt.Sprintf("%s - requested by user", desiredVersionStr)
 			}
-			desiredVersion = text.FgGreen.Sprint(desiredVersionStr)
+			if output == "text" {
+				desiredVersion = text.FgGreen.Sprint(desiredVersionStr)
+			} else {
+				desiredVersion = fmt.Sprintf("**%s**", desiredVersionStr)
+			}
 		}
-		t.AppendRow(table.Row{component.Name, component.Version, desiredVersion})
+		componentRows = append(componentRows, table.Row{component.Name, component.Version, desiredVersion})
 	}
 
 	// Add new components that don't exist in the base release
@@ -375,12 +435,32 @@ func printTable(input v1alpha1.Release, components map[string]componentVersion, 
 			if req.UserRequested {
 				desiredVersionStr = fmt.Sprintf("%s - requested by user", desiredVersionStr)
 			}
-			desiredVersion := text.FgGreen.Sprint(desiredVersionStr)
-			t.AppendRow(table.Row{name, "New component", desiredVersion})
+			var desiredVersion string
+			if output == "text" {
+				desiredVersion = text.FgGreen.Sprint(desiredVersionStr)
+			} else {
+				desiredVersion = fmt.Sprintf("**%s**", desiredVersionStr)
+			}
+			componentRows = append(componentRows, table.Row{name, "New component", desiredVersion})
 		}
 	}
-	t.AppendSeparator()
-	t.Render()
+
+	if len(componentRows) > 0 {
+		t := table.NewWriter()
+		if output == "text" {
+			t.SetOutputMirror(tm.Output)
+		}
+		t.AppendHeader(table.Row{"COMPONENT NAME", "CURRENT VERSION", "DESIRED VERSION"})
+		t.AppendSeparator()
+		t.AppendRows(componentRows)
+		t.AppendSeparator()
+		switch output {
+		case "markdown":
+			fmt.Println(t.RenderMarkdown())
+		default:
+			t.Render()
+		}
+	}
 
 	tm.Flush()
 	return nil
@@ -461,7 +541,7 @@ func findNewestComponent(name string) (componentVersion, error) {
 }
 
 func getLatestGithubRelease(owner string, name string) (string, error) {
-	token := os.Getenv("OPSCTL_GITHUB_TOKEN")
+	token := env.GitHubToken.Val()
 
 	ctx := context.Background()
 	ts := oauth2.StaticTokenSource(
@@ -499,10 +579,62 @@ func getLatestGithubRelease(owner string, name string) (string, error) {
 	return version, nil
 }
 
+// getLatestK8sVersion returns the latest patch version for a given k8s major.minor version.
+func getLatestK8sVersion(major uint64) (string, error) {
+	token := env.GitHubToken.Val()
+	ctx := context.Background()
+	ts := oauth2.StaticTokenSource(
+		&oauth2.Token{AccessToken: token},
+	)
+	tc := oauth2.NewClient(ctx, ts)
+	client := github.NewClient(tc)
+
+	opt := &github.ListOptions{PerPage: 100}
+	var allReleases []*github.RepositoryRelease
+	for {
+		releases, resp, err := client.Repositories.ListReleases(context.Background(), "kubernetes", "kubernetes", opt)
+		if err != nil {
+			return "", microerror.Mask(err)
+		}
+		allReleases = append(allReleases, releases...)
+		if resp.NextPage == 0 {
+			break
+		}
+		opt.Page = resp.NextPage
+	}
+
+	var latest semver.Version
+	for _, rel := range allReleases {
+		if rel.GetPrerelease() {
+			continue
+		}
+
+		versionName := rel.GetName()
+		// Some release names have a "Kubernetes " prefix
+		versionName = strings.TrimPrefix(versionName, "Kubernetes ")
+		v, err := semver.ParseTolerant(versionName)
+		if err != nil {
+			continue
+		}
+
+		if v.Major == 1 && v.Minor == major {
+			if v.GT(latest) {
+				latest = v
+			}
+		}
+	}
+
+	if latest.Equals(semver.Version{}) {
+		return "", microerror.Maskf(releaseNotFoundError, "no kubernetes release found for major version v1.%d", major)
+	}
+
+	return latest.String(), nil
+}
+
 // getLatestReleaseForMinor fetches the latest patch version for a given minor version of a component.
 // e.g., for minorVersion "1.31", it might return "1.31.9"
 func getLatestReleaseForMinor(owner, repo, minorVersion string) (string, error) {
-	token := os.Getenv("OPSCTL_GITHUB_TOKEN")
+	token := env.GitHubToken.Val()
 
 	ctx := context.Background()
 	ts := oauth2.StaticTokenSource(
@@ -556,8 +688,8 @@ func getLatestReleaseForMinor(owner, repo, minorVersion string) (string, error) 
 			// Strip "v" prefix if present
 			versionStr = strings.TrimPrefix(versionStr, "v")
 
-			// Allow our -gs extensions.
-			if (strings.Contains(versionStr, "-") && !strings.Contains(versionStr, "-gs")) || !strings.HasPrefix(versionStr, minorVersion+".") {
+			// Skip releases of other minors.
+			if !strings.HasPrefix(versionStr, minorVersion+".") {
 				continue
 			}
 
@@ -706,7 +838,7 @@ func getLatestFlatcarRelease() (string, error) {
 func getAppVersionFromHelmChart(name string, ref string) (string, error) {
 	c := githubclient.Config{
 		Logger:      logrus.StandardLogger(),
-		AccessToken: os.Getenv("OPSCTL_GITHUB_TOKEN"),
+		AccessToken: env.GitHubToken.Val(),
 	}
 
 	client, err := githubclient.New(c)

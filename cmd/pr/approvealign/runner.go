@@ -4,18 +4,14 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 
 	"github.com/giantswarm/microerror"
 	"github.com/google/go-github/v74/github"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
+	"github.com/giantswarm/devctl/v7/internal/env"
 	"github.com/giantswarm/devctl/v7/pkg/githubclient"
-)
-
-const (
-	githubTokenEnvVar = "GITHUB_TOKEN" // Standard environment variable for GitHub token
 )
 
 type runner struct {
@@ -38,9 +34,9 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 	fmt.Fprintln(r.stdout, "Auto-approving all 'Align files' PRs that have passing status checks...")
 
-	githubToken, found := os.LookupEnv(githubTokenEnvVar)
-	if !found {
-		return microerror.Maskf(executionFailedError, "environment variable %#q not found, please set it to your GitHub personal access token", githubTokenEnvVar)
+	githubToken := env.GitHubToken.Val()
+	if githubToken == "" {
+		return microerror.Maskf(executionFailedError, "environment variable GITHUB_TOKEN not found, please set it to your GitHub personal access token")
 	}
 
 	ghClientService, err := githubclient.New(githubclient.Config{

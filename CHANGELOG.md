@@ -11,6 +11,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Create branch from parent version tag create-release workflow
 
+## [7.11.1] - 2025-09-11
+
+### Changed
+
+- Releases: Allow revisions in versions.
+
+## [7.11.0] - 2025-09-10
+
+### Changed
+
+- Environment: Unify GitHub token retrieval.
+
+## [7.10.5] - 2025-09-10
+
+### Changed
+
+- Releases: Rework release notes templating.
+
+## [7.10.4] - 2025-09-10
+
+### Changed
+
+- Releases: Disable auto-detect for CAPVCD & CAPV, fix dependency concatenation.
+
+## [7.10.3] - 2025-09-10
+
+### Changed
+
+- Releases: Fix split character for dependencies.
+
+## [7.10.2] - 2025-09-09
+
+### Fixed
+
+- Correctly pin Kubernetes version to the release's major version during `devctl release create --bumpall` to prevent accidentally upgrading to a new minor version.
+
+## [7.10.1] - 2025-09-09
+
+### Fixed
+
+- Prevent auto-detected components from being shown when using `--requested-only`.
+- Prevent empty tables from being printed when using filtering flags like `--changes-only` or `--requested-only`.
+
+## [7.10.0] - 2025-09-09
+
+### Added
+
+- Add `--requested-only` flag to `devctl release create` command to only show components and apps requested by the user.
+
+## [7.9.0] - 2025-09-09
+
+### Added
+
+- Add `--changes-only` flag to `devctl release create` command to only show components and apps that were changed.
+
+## [7.8.0] - 2025-09-09
+
+### Added
+
+- Add `--output markdown` flag to `devctl release create` command to print the output in Markdown format.
+
 ## [7.7.2] - 2025-09-05
 
 ### Changed
@@ -1214,7 +1275,17 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.7.2...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.11.1...HEAD
+[7.11.1]: https://github.com/giantswarm/devctl/compare/v7.11.0...v7.11.1
+[7.11.0]: https://github.com/giantswarm/devctl/compare/v7.10.5...v7.11.0
+[7.10.5]: https://github.com/giantswarm/devctl/compare/v7.10.4...v7.10.5
+[7.10.4]: https://github.com/giantswarm/devctl/compare/v7.10.3...v7.10.4
+[7.10.3]: https://github.com/giantswarm/devctl/compare/v7.10.2...v7.10.3
+[7.10.2]: https://github.com/giantswarm/devctl/compare/v7.10.1...v7.10.2
+[7.10.1]: https://github.com/giantswarm/devctl/compare/v7.10.0...v7.10.1
+[7.10.0]: https://github.com/giantswarm/devctl/compare/v7.9.0...v7.10.0
+[7.9.0]: https://github.com/giantswarm/devctl/compare/v7.8.0...v7.9.0
+[7.8.0]: https://github.com/giantswarm/devctl/compare/v7.7.2...v7.8.0
 [7.7.2]: https://github.com/giantswarm/devctl/compare/v7.7.1...v7.7.2
 [7.7.1]: https://github.com/giantswarm/devctl/compare/v7.7.0...v7.7.1
 [7.7.0]: https://github.com/giantswarm/devctl/compare/v7.6.0...v7.7.0

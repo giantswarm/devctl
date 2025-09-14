@@ -8,39 +8,54 @@ import (
 )
 
 const (
-	flagApp       = "app"
-	flagBase      = "base"
-	flagComponent = "component"
-	flagName      = "name"
-	flagOverwrite = "overwrite"
-	flagProvider  = "provider"
-	flagReleases  = "releases"
-	flagBumpAll   = "bumpall"
-	flagYes       = "yes"
+	flagName          = "name"
+	flagBase          = "base"
+	flagProvider      = "provider"
+	flagComponents    = "component"
+	flagApps          = "app"
+	flagOverwrite     = "overwrite"
+	flagReleases      = "releases"
+	flagBumpAll       = "bumpall"
+	flagYes           = "yes"
+	flagDrop          = "drop"
+	flagOutput        = "output"
+	flagVerbose       = "verbose"
+	flagChangesOnly   = "changes-only"
+	flagRequestedOnly = "requested-only"
 )
 
 type flag struct {
-	Base       string
-	Apps       []string
-	BumpAll    bool
-	Components []string
-	Name       string
-	Overwrite  bool
-	Provider   string
-	Releases   string
-	Yes        bool
+	Base          string
+	Apps          []string
+	BumpAll       bool
+	Components    []string
+	Name          string
+	Overwrite     bool
+	Provider      string
+	Releases      string
+	Yes           bool
+	Drop          []string
+	Output        string
+	Verbose       bool
+	ChangesOnly   bool
+	RequestedOnly bool
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
-	cmd.Flags().StringArrayVar(&f.Apps, flagApp, nil, `Updated app version to apply to created release. Can be specified multiple times. Must follow a format of <name>@<version>[@<component version>][@<dependencies>].`)
-	cmd.Flags().StringVar(&f.Base, flagBase, "", `Existing release upon which to base the new release. Must follow semver format.`)
-	cmd.Flags().StringArrayVar(&f.Components, flagComponent, nil, `Updated component version to apply to created release. Can be specified multiple times. Must follow a format of <name>@<version>.`)
-	cmd.Flags().StringVar(&f.Name, flagName, "", `Name of the new release. Must follow semver format.`)
-	cmd.Flags().BoolVar(&f.Overwrite, flagOverwrite, false, `If true, allow overwriting existing release with the same name.`)
-	cmd.Flags().BoolVar(&f.BumpAll, flagBumpAll, false, `If true, automatically get a list of updated components and apps.`)
-	cmd.Flags().StringVar(&f.Provider, flagProvider, "", `Target provider for the new release.`)
-	cmd.Flags().StringVar(&f.Releases, flagReleases, ".", `Path to releases repository. Defaults to current working directory.`)
-	cmd.Flags().BoolVarP(&f.Yes, flagYes, "y", false, `If true, skip confirmation prompt.`)
+	cmd.Flags().StringVar(&f.Name, flagName, "", "Name of the new release. Must follow semver format.")
+	cmd.Flags().StringVar(&f.Base, flagBase, "", "Existing release upon which to base the new release. Must follow semver format.")
+	cmd.Flags().StringVar(&f.Provider, flagProvider, "", "Provider of the release.")
+	cmd.Flags().StringSliceVarP(&f.Components, flagComponents, "c", nil, "Updated component version to apply to created release. Can be specified multiple times. Must follow a format of <name>@<version>.")
+	cmd.Flags().StringSliceVarP(&f.Apps, flagApps, "a", nil, "Updated app version to apply to created release. Can be specified multiple times. Must follow a format of <name>@<version>[@<component_version>][@<dependencies>].")
+	cmd.Flags().BoolVar(&f.Overwrite, flagOverwrite, false, "If true, allow overwriting existing release with the same name.")
+	cmd.Flags().StringVar(&f.Releases, flagReleases, ".", "Path to releases repository. Defaults to current working directory.")
+	cmd.Flags().BoolVar(&f.BumpAll, flagBumpAll, false, "Bump all components to the latest version.")
+	cmd.Flags().BoolVarP(&f.Yes, flagYes, "y", false, "Do not ask for confirmation.")
+	cmd.Flags().StringVar(&f.Output, "output", "text", "Output format (text|markdown).")
+	cmd.Flags().BoolVarP(&f.Verbose, flagVerbose, "v", false, "Print verbose output.")
+	cmd.Flags().BoolVar(&f.ChangesOnly, flagChangesOnly, false, "Only print changed components and apps.")
+	cmd.Flags().BoolVar(&f.RequestedOnly, flagRequestedOnly, false, "Only print components and apps requested by the user.")
+	cmd.Flags().StringSliceVar(&f.Drop, flagDrop, nil, "App to drop from the release.")
 }
 
 func (f *flag) Validate() error {

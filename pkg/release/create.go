@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Masterminds/semver/v3"
+	"github.com/blang/semver"
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/release-operator/v4/api/v1alpha1"
 	"github.com/mohae/deepcopy"
@@ -33,9 +33,12 @@ var appsToBeDropped = []droppedAppConfig{
 
 // CreateRelease creates a release on the filesystem from the given parameters. This is the entry point
 // for the `devctl create release` command logic.
-func CreateRelease(name, base, releases, provider string, components, apps []string, overwrite bool, creationCommand string, bumpall, yes bool) error {
+func CreateRelease(name, base, releases, provider string, components, apps []string, overwrite bool, creationCommand string, bumpall bool, appsToDrop []string, yes bool, output string, verbose bool, changesOnly bool, requestedOnly bool) error {
 	// Paths
-	baseVersion := *semver.MustParse(base) // already validated to be a valid semver string
+	baseVersion, err := semver.Parse(strings.TrimPrefix(base, "v"))
+	if err != nil {
+		return microerror.Mask(err)
+	}
 	providerDirectory := ""
 	if provider == "aws" {
 		// TODO: Directory for AWS provider is currently 'capa' because of old vintage releases located in aws directory
@@ -55,92 +58,107 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 
 	// Determine which apps to drop based on the new release version.
 	appsToDropForThisRelease := make(map[string]bool)
-	releaseVersion, err := semver.NewVersion(strings.TrimPrefix(name, "v"))
+	releaseVersion, err := semver.Parse(strings.TrimPrefix(name, "v"))
 	if err == nil {
 		for _, appToDrop := range appsToBeDropped {
-			if releaseVersion.Major() >= appToDrop.MajorVersion {
+			if releaseVersion.Major >= appToDrop.MajorVersion {
 				appsToDropForThisRelease[appToDrop.Name] = true
 			}
 		}
 	}
 
 	// Auto-detect components that are not explicitly provided by the user.
-	// The auto-detection logic is driven by the `AutoDetect` flag in the `KnownComponents` map.
-	// For each component with this flag, we check if it was present in the base release
-	// and if the user has not already provided a version for it.
-	for componentName, params := range changelog.KnownComponents {
-		if !params.AutoDetect {
-			continue
-		}
-
-		// Check if the component is in the base release.
-		inBaseRelease := false
-		for _, component := range baseRelease.Spec.Components {
-			if component.Name == componentName {
-				inBaseRelease = true
-				break
+	if !requestedOnly {
+		for componentName, params := range changelog.KnownComponents {
+			if !params.AutoDetect {
+				continue
 			}
-		}
-		for _, app := range baseRelease.Spec.Apps {
-			if app.Name == componentName {
-				inBaseRelease = true
-				break
-			}
-		}
-		if !inBaseRelease {
-			continue
-		}
 
-		// Check if the user has already provided the component.
-		isProvidedByUser := false
-		for _, componentVersion := range components {
-			split := strings.Split(componentVersion, "@")
-			if len(split) >= 1 && split[0] == componentName {
-				fmt.Printf("Explicit component specified by user: %s\n", componentVersion)
-				isProvidedByUser = true
-				break
-			}
-		}
-		if isProvidedByUser {
-			continue
-		}
-		for _, appVersion := range apps {
-			split := strings.Split(appVersion, "@")
-			if len(split) >= 1 && split[0] == componentName {
-				fmt.Printf("Explicit app specified by user: %s\n", appVersion)
-				isProvidedByUser = true
-				break
-			}
-		}
-		if isProvidedByUser {
-			continue
-		}
-
-		// Attempt to auto-detect the component version.
-		fmt.Printf("No explicit %s component specified by user. Attempting auto-detection based on release name pattern...\n", componentName)
-		var detectedVersion string
-		var err error
-		detectedVersion, err = autoDetectVersion(name, componentName)
-
-		if err != nil {
-			fmt.Printf("Warning: Could not auto-detect %s version: %v\n", componentName, err)
-			fmt.Printf("You can manually specify the version using --component %s@<version> or --app %s@<version>\n", componentName, componentName)
-		} else {
+			// This is now handled in BumpAll.
 			if componentName == "kubernetes" {
-				component := fmt.Sprintf("%s@%s", componentName, detectedVersion)
-				components = append(components, component)
-				fmt.Printf("Auto-detected and added component: %s\n", component)
+				continue
+			}
+
+			// Check if the component is in the base release.
+			inBaseRelease := false
+			for _, component := range baseRelease.Spec.Components {
+				if component.Name == componentName {
+					inBaseRelease = true
+					break
+				}
+			}
+			for _, app := range baseRelease.Spec.Apps {
+				if app.Name == componentName {
+					inBaseRelease = true
+					break
+				}
+			}
+			if !inBaseRelease {
+				continue
+			}
+
+			// Check if the user has already provided the component.
+			isProvidedByUser := false
+			for _, componentVersion := range components {
+				split := strings.Split(componentVersion, "@")
+				if len(split) >= 1 && split[0] == componentName {
+					if verbose {
+						fmt.Printf("Explicit component specified by user: %s\n", componentVersion)
+					}
+					isProvidedByUser = true
+					break
+				}
+			}
+			if isProvidedByUser {
+				continue
+			}
+			for _, appVersion := range apps {
+				split := strings.Split(appVersion, "@")
+				if len(split) >= 1 && split[0] == componentName {
+					if verbose {
+						fmt.Printf("Explicit app specified by user: %s\n", appVersion)
+					}
+					isProvidedByUser = true
+					break
+				}
+			}
+			if isProvidedByUser {
+				continue
+			}
+
+			// Attempt to auto-detect the component version.
+			if verbose {
+				fmt.Printf("No explicit %s component specified by user. Attempting auto-detection based on release name pattern...\n", componentName)
+			}
+			var detectedVersion string
+			var err error
+			detectedVersion, err = autoDetectVersion(name, componentName)
+
+			if err != nil {
+				fmt.Printf("Warning: Could not auto-detect %s version: %v\n", componentName, err)
+				fmt.Printf("You can manually specify the version using --component %s@<version> or --app %s@<version>\n", componentName, componentName)
 			} else {
 				app := fmt.Sprintf("%s@%s", componentName, detectedVersion)
 				apps = append(apps, app)
-				fmt.Printf("Auto-detected and added app: %s\n", app)
+				if verbose {
+					fmt.Printf("Auto-detected and added app: %s\n", app)
+				}
 			}
 		}
 	}
 
 	if bumpall {
-		fmt.Println("Requested automated bumping of all components and apps.")
-		components, apps, err = BumpAll(baseRelease, components, apps, appsToDropForThisRelease, yes)
+		if verbose {
+			fmt.Println("Requested automated bumping of all components and apps.")
+		}
+		// Pin k8s version to the release major version.
+		releaseVersionForK8s, err := semver.Parse(strings.TrimPrefix(name, "v"))
+		if err != nil {
+			return microerror.Mask(err)
+		}
+		major := releaseVersionForK8s.Major
+
+		components, apps, err = BumpAll(baseRelease, components, apps, appsToDropForThisRelease, yes, output, changesOnly, requestedOnly, major)
 		if err != nil {
 			return microerror.Mask(err)
 		}
@@ -148,7 +166,10 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 
 	// Define release CR
 	var updatesRelease v1alpha1.Release
-	newVersion := *semver.MustParse(name) // already validated to be a valid semver string
+	newVersion, err := semver.Parse(strings.TrimPrefix(name, "v"))
+	if err != nil {
+		return microerror.Mask(err)
+	}
 	updatesRelease.Name = fmt.Sprintf("%s-%s", provider, newVersion.String())
 	now := metav1.Now()
 	updatesRelease.Spec.Date = &now
@@ -167,7 +188,7 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 	for _, appVersion := range apps {
 		split := strings.Split(appVersion, "@")
 		if len(split) < 2 || len(split) > 4 {
-			fmt.Println("App must be specified as <name>@<version>[@<component_version>][@<dependencies>], got", appVersion)
+			fmt.Println("App must be specified as <name>@<version>[@<component_version>][@<dependency>[#<another-dependency]>], got", appVersion)
 			return microerror.Mask(badFormatError)
 		}
 		name := split[0]
@@ -180,7 +201,7 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 
 		var dependencies []string
 		if len(split) > 3 && split[3] != "" {
-			dependencies = strings.Split(split[3], ",")
+			dependencies = strings.Split(split[3], "#")
 		}
 
 		updatesRelease.Spec.Apps = append(updatesRelease.Spec.Apps, v1alpha1.ReleaseSpecApp{
@@ -198,7 +219,9 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 		var filteredMergedApps []v1alpha1.ReleaseSpecApp
 		for _, app := range newRelease.Spec.Apps {
 			if _, shouldDrop := appsToDropForThisRelease[app.Name]; shouldDrop {
-				fmt.Printf("Dropping %s from release %s as it is no longer supported.\n", app.Name, name)
+				if verbose {
+					fmt.Printf("Dropping %s from release %s as it is no longer supported.\n", app.Name, name)
+				}
 				continue
 			}
 			filteredMergedApps = append(filteredMergedApps, app)
@@ -315,9 +338,15 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 
 	// sort releases in json by version
 	sort.SliceStable(releasesJson.Releases, func(i, j int) bool {
-		vi := semver.MustParse(releasesJson.Releases[i].Version)
-		vj := semver.MustParse(releasesJson.Releases[j].Version)
-		return vi.LessThan(vj)
+		vi, err := semver.Parse(strings.TrimPrefix(releasesJson.Releases[i].Version, "v"))
+		if err != nil {
+			return false
+		}
+		vj, err := semver.Parse(strings.TrimPrefix(releasesJson.Releases[j].Version, "v"))
+		if err != nil {
+			return false
+		}
+		return vi.LT(vj)
 	})
 
 	updatedReleasesData, err := json.MarshalIndent(releasesJson, "", "  ")
