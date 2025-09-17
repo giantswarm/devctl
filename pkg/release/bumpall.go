@@ -450,7 +450,6 @@ func printTable(input v1alpha1.Release, components map[string]componentVersion, 
 
 	if len(appRows) > 0 {
 		t := table.NewWriter()
-		t.SetOutputMirror(os.Stdout)
 		t.SetStyle(table.StyleDefault)
 		t.AppendHeader(table.Row{"APP NAME", "CURRENT APP VERSION", "DESIRED APP VERSION", "DEPENDENCIES"})
 		t.AppendSeparator()
@@ -460,6 +459,7 @@ func printTable(input v1alpha1.Release, components map[string]componentVersion, 
 		case "markdown":
 			fmt.Println(t.RenderMarkdown())
 		default:
+			t.SetOutputMirror(os.Stdout)
 			t.Render()
 		}
 	}
@@ -522,7 +522,6 @@ func printTable(input v1alpha1.Release, components map[string]componentVersion, 
 
 	if len(componentRows) > 0 {
 		t := table.NewWriter()
-		t.SetOutputMirror(os.Stdout)
 		t.SetStyle(table.StyleDefault)
 		t.AppendHeader(table.Row{"COMPONENT NAME", "CURRENT VERSION", "DESIRED VERSION"})
 		t.AppendSeparator()
@@ -532,6 +531,7 @@ func printTable(input v1alpha1.Release, components map[string]componentVersion, 
 		case "markdown":
 			fmt.Println(t.RenderMarkdown())
 		default:
+			t.SetOutputMirror(os.Stdout)
 			t.Render()
 		}
 	}

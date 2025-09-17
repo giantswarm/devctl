@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Prevented duplicate output when using the `--output markdown` flag by correcting the table rendering logic.
+
 ## [7.12.0] - 2025-09-17
 
 ### Changed
