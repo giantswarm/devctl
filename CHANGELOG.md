@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `devctl release create --bumpall`:
+  - The release type (`major`, `minor`, `patch`) is now inferred from the `--base` and `--name` versions instead of requiring a separate flag.
+  - The release type is used to enforce version bumping rules for `kubernetes`, `flatcar`, and other components.
+  - Includes version constraints defined in provider-specific `requests.yaml` files.
+
+### Fixed
+
+- Fix a table rendering issue in the `devctl release create --bumpall` output.
+
 ## [7.11.1] - 2025-09-11
 
 ### Changed

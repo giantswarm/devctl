@@ -15,6 +15,7 @@ import (
 	"github.com/giantswarm/release-operator/v4/api/v1alpha1"
 	"github.com/mohae/deepcopy"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/yaml"
 
 	"github.com/giantswarm/devctl/v7/pkg/release/changelog"
 )
@@ -34,6 +35,27 @@ var appsToBeDropped = []droppedAppConfig{
 // CreateRelease creates a release on the filesystem from the given parameters. This is the entry point
 // for the `devctl create release` command logic.
 func CreateRelease(name, base, releases, provider string, components, apps []string, overwrite bool, creationCommand string, bumpall bool, appsToDrop []string, yes bool, output string, verbose bool, changesOnly bool, requestedOnly bool) error {
+	// Determine release type from base and new versions.
+	releaseType := ""
+	{
+		baseV, err := semver.Parse(strings.TrimPrefix(base, "v"))
+		if err != nil {
+			return microerror.Mask(err)
+		}
+		newV, err := semver.Parse(strings.TrimPrefix(name, "v"))
+		if err != nil {
+			return microerror.Mask(err)
+		}
+
+		if newV.Major > baseV.Major {
+			releaseType = "major"
+		} else if newV.Minor > baseV.Minor {
+			releaseType = "minor"
+		} else {
+			releaseType = "patch"
+		}
+	}
+
 	// Paths
 	baseVersion, err := semver.Parse(strings.TrimPrefix(base, "v"))
 	if err != nil {
@@ -46,6 +68,11 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 		providerDirectory = filepath.Join(releases, "capa")
 	} else {
 		providerDirectory = filepath.Join(releases, provider)
+	}
+
+	requests, err := readRequests(providerDirectory, name)
+	if err != nil {
+		return microerror.Mask(err)
 	}
 
 	baseRelease, baseReleasePath, err := findRelease(providerDirectory, baseVersion)
@@ -68,7 +95,7 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 	}
 
 	// Auto-detect components that are not explicitly provided by the user.
-	if !requestedOnly {
+	if !requestedOnly && releaseType != "patch" {
 		for componentName, params := range changelog.KnownComponents {
 			if !params.AutoDetect {
 				continue
@@ -151,6 +178,12 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 		if verbose {
 			fmt.Println("Requested automated bumping of all components and apps.")
 		}
+
+		if releaseType == "patch" && len(components) == 0 && len(apps) == 0 && output != "markdown" {
+			fmt.Println("For patch releases, --bumpall does not automatically bump any component or app.")
+			fmt.Println("To bump a specific component or app, please use the --component or --app flags.")
+		}
+
 		// Pin k8s version to the release major version.
 		releaseVersionForK8s, err := semver.Parse(strings.TrimPrefix(name, "v"))
 		if err != nil {
@@ -158,7 +191,7 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 		}
 		major := releaseVersionForK8s.Major
 
-		components, apps, err = BumpAll(baseRelease, components, apps, appsToDropForThisRelease, yes, output, changesOnly, requestedOnly, major)
+		components, apps, err = BumpAll(baseRelease, components, apps, releaseType, appsToDropForThisRelease, requests, yes, output, changesOnly, requestedOnly, major)
 		if err != nil {
 			return microerror.Mask(err)
 		}
@@ -360,4 +393,23 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 	}
 
 	return nil
+}
+
+func readRequests(providerDirectory, version string) ([]Request, error) {
+	requestsYAMLPath := filepath.Join(providerDirectory, "requests.yaml")
+	data, err := os.ReadFile(requestsYAMLPath)
+	if os.IsNotExist(err) {
+		return nil, nil
+	} else if err != nil {
+		return nil, microerror.Mask(err)
+	}
+
+	var requests Requests
+	err = yaml.Unmarshal(data, &requests)
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
+
+	version = strings.TrimPrefix(version, "v")
+	return requests.ForVersion(version)
 }
