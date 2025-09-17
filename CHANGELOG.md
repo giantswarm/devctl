@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.12.0] - 2025-09-17
+
 ### Changed
 
 - `devctl release create --bumpall`:
@@ -1282,7 +1284,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.11.1...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.12.0...HEAD
+[7.12.0]: https://github.com/giantswarm/devctl/compare/v7.11.1...v7.12.0
 [7.11.1]: https://github.com/giantswarm/devctl/compare/v7.11.0...v7.11.1
 [7.11.0]: https://github.com/giantswarm/devctl/compare/v7.10.5...v7.11.0
 [7.10.5]: https://github.com/giantswarm/devctl/compare/v7.10.4...v7.10.5
