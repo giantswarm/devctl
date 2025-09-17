@@ -35,6 +35,27 @@ var appsToBeDropped = []droppedAppConfig{
 // CreateRelease creates a release on the filesystem from the given parameters. This is the entry point
 // for the `devctl create release` command logic.
 func CreateRelease(name, base, releases, provider string, components, apps []string, overwrite bool, creationCommand string, bumpall bool, appsToDrop []string, yes bool, output string, verbose bool, changesOnly bool, requestedOnly bool) error {
+	// Determine release type from base and new versions.
+	releaseType := ""
+	{
+		baseV, err := semver.Parse(strings.TrimPrefix(base, "v"))
+		if err != nil {
+			return microerror.Mask(err)
+		}
+		newV, err := semver.Parse(strings.TrimPrefix(name, "v"))
+		if err != nil {
+			return microerror.Mask(err)
+		}
+
+		if newV.Major > baseV.Major {
+			releaseType = "major"
+		} else if newV.Minor > baseV.Minor {
+			releaseType = "minor"
+		} else {
+			releaseType = "patch"
+		}
+	}
+
 	// Paths
 	baseVersion, err := semver.Parse(strings.TrimPrefix(base, "v"))
 	if err != nil {
@@ -74,7 +95,7 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 	}
 
 	// Auto-detect components that are not explicitly provided by the user.
-	if !requestedOnly {
+	if !requestedOnly && releaseType != "patch" {
 		for componentName, params := range changelog.KnownComponents {
 			if !params.AutoDetect {
 				continue
@@ -158,25 +179,9 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 			fmt.Println("Requested automated bumping of all components and apps.")
 		}
 
-		// Determine release type from base and new versions.
-		releaseType := ""
-		{
-			baseV, err := semver.Parse(strings.TrimPrefix(base, "v"))
-			if err != nil {
-				return microerror.Mask(err)
-			}
-			newV, err := semver.Parse(strings.TrimPrefix(name, "v"))
-			if err != nil {
-				return microerror.Mask(err)
-			}
-
-			if newV.Major > baseV.Major {
-				releaseType = "major"
-			} else if newV.Minor > baseV.Minor {
-				releaseType = "minor"
-			} else {
-				releaseType = "patch"
-			}
+		if releaseType == "patch" && len(components) == 0 && len(apps) == 0 && output != "markdown" {
+			fmt.Println("For patch releases, --bumpall does not automatically bump any component or app.")
+			fmt.Println("To bump a specific component or app, please use the --component or --app flags.")
 		}
 
 		// Pin k8s version to the release major version.

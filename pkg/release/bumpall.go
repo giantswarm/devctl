@@ -75,23 +75,18 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 				var err error
 				version := componentVersion{}
 
-				currentVersion, err := semver.Parse(strings.TrimPrefix(comp.Version, "v"))
-				if err != nil {
-					return nil, nil, microerror.Mask(err)
-				}
-
 				if comp.Name == "kubernetes" {
 					if releaseType == "patch" {
+						// For a patch release, we don't want to automatically bump anything.
+						// The user must manually request a bump for a component.
 						version.Version = comp.Version
-					} else {
+					} else { // major or minor
 						version.Version, err = getLatestK8sVersion(k8sMajorVersion)
 					}
 				} else if comp.Name == "flatcar" {
 					if releaseType == "patch" {
 						version.Version = comp.Version
-					} else if releaseType == "minor" {
-						version.Version, err = getLatestFlatcarReleaseForMinor(fmt.Sprintf("%d.%d", currentVersion.Major, currentVersion.Minor))
-					} else { // major
+					} else { // minor or major
 						version.Version, err = getLatestFlatcarRelease()
 					}
 				} else {
@@ -99,17 +94,9 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 					latestVersionString, err = findNewestComponentVersion(comp.Name)
 					if err == nil {
 						if releaseType == "patch" {
-							latestVersion, errSemver := semver.Parse(strings.TrimPrefix(latestVersionString, "v"))
-							if errSemver != nil {
-								return nil, nil, microerror.Mask(errSemver)
-							}
-
-							if latestVersion.Major > currentVersion.Major || latestVersion.Minor > currentVersion.Minor {
-								// Major or minor bump, not allowed for patch release.
-								version.Version = comp.Version
-							} else {
-								version.Version = latestVersionString
-							}
+							// For a patch release, we don't want to automatically bump anything.
+							// The user must manually request a bump for a component.
+							version.Version = comp.Version
 						} else { // major or minor, no restrictions for other components
 							version.Version = latestVersionString
 						}
@@ -215,37 +202,20 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 					v.DependsOn = app.DependsOn
 				}
 			} else {
-				version, err := findNewestApp(app.Name, app.ComponentVersion != "")
-				if err != nil {
-					return nil, nil, microerror.Mask(err)
-				}
-
-				v.Version = version.Version
-				v.UpstreamVersion = version.UpstreamVersion
-				v.UserRequested = false
-				v.DependsOn = app.DependsOn
-
 				if releaseType == "patch" {
-					currentVersion, errSemver := semver.Parse(strings.TrimPrefix(app.Version, "v"))
-					if errSemver != nil {
-						return nil, nil, microerror.Mask(errSemver)
-					}
-					latestVersion, errSemver := semver.Parse(strings.TrimPrefix(version.Version, "v"))
-					if errSemver != nil {
-						return nil, nil, microerror.Mask(errSemver)
-					}
-
-					if latestVersion.Major > currentVersion.Major || latestVersion.Minor > currentVersion.Minor {
-						// Not a patch bump, keep old version.
-						v.Version = app.Version
-						v.UpstreamVersion = app.ComponentVersion
-					} else {
-						v.Version = version.Version
-						v.UpstreamVersion = version.UpstreamVersion
-					}
+					v.Version = app.Version
+					v.UpstreamVersion = app.ComponentVersion
+					v.UserRequested = false
+					v.DependsOn = app.DependsOn
 				} else { // major or minor
+					version, err := findNewestApp(app.Name, app.ComponentVersion != "")
+					if err != nil {
+						return nil, nil, microerror.Mask(err)
+					}
 					v.Version = version.Version
 					v.UpstreamVersion = version.UpstreamVersion
+					v.UserRequested = false
+					v.DependsOn = app.DependsOn
 				}
 			}
 			if v.Version != app.Version || !slices.Equal(v.DependsOn, app.DependsOn) {
@@ -738,56 +708,6 @@ func getLatestK8sVersion(major uint64) (string, error) {
 
 	if latest.Equals(semver.Version{}) {
 		return "", microerror.Maskf(releaseNotFoundError, "no kubernetes release found for major version v1.%d", major)
-	}
-
-	return latest.String(), nil
-}
-
-func getLatestFlatcarReleaseForMinor(minorVersion string) (string, error) {
-	url := "https://www.flatcar.org/releases-json/releases-stable.json"
-
-	var myClient = &http.Client{Timeout: 10 * time.Second}
-
-	r, err := myClient.Get(url)
-	if err != nil {
-		return "", microerror.Mask(err)
-	}
-	defer func() { _ = r.Body.Close() }()
-
-	type release struct {
-		Channel string
-	}
-
-	target := make(map[string]release)
-
-	data, err := io.ReadAll(r.Body)
-	if err != nil {
-		return "", microerror.Mask(err)
-	}
-
-	err = json.Unmarshal(data, &target)
-	if err != nil {
-		return "", microerror.Mask(err)
-	}
-
-	var latest semver.Version
-	for name, rel := range target {
-		if rel.Channel == "stable" {
-			ver, err := semver.ParseTolerant(name)
-			if err != nil {
-				continue
-			}
-
-			if fmt.Sprintf("%d.%d", ver.Major, ver.Minor) == minorVersion {
-				if ver.GT(latest) {
-					latest = ver
-				}
-			}
-		}
-	}
-
-	if latest.Equals(semver.Version{}) {
-		return "", microerror.Maskf(releaseNotFoundError, "no flatcar release found for minor version %s", minorVersion)
 	}
 
 	return latest.String(), nil
