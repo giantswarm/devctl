@@ -1,7 +1,6 @@
 package create
 
 import (
-	"github.com/Masterminds/semver/v3"
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/microerror"
@@ -39,6 +38,7 @@ type flag struct {
 	Verbose       bool
 	ChangesOnly   bool
 	RequestedOnly bool
+	FromBranch    bool
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
@@ -51,6 +51,7 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.Releases, flagReleases, ".", "Path to releases repository. Defaults to current working directory.")
 	cmd.Flags().BoolVar(&f.BumpAll, flagBumpAll, false, "Bump all components to the latest version.")
 	cmd.Flags().BoolVarP(&f.Yes, flagYes, "y", false, "Do not ask for confirmation.")
+	cmd.Flags().BoolVarP(&f.FromBranch, "from-branch", "", false, "Create release from the current branch instead of a base release.")
 	cmd.Flags().StringVar(&f.Output, "output", "text", "Output format (text|markdown).")
 	cmd.Flags().BoolVarP(&f.Verbose, flagVerbose, "v", false, "Print verbose output.")
 	cmd.Flags().BoolVar(&f.ChangesOnly, flagChangesOnly, false, "Only print changed components and apps.")
@@ -59,23 +60,17 @@ func (f *flag) Init(cmd *cobra.Command) {
 }
 
 func (f *flag) Validate() error {
-	if f.Base == "" {
-		return microerror.Maskf(invalidFlagError, "--%s must not be empty", flagBase)
-	}
-	if _, err := semver.NewVersion(f.Base); err != nil {
-		return microerror.Maskf(invalidFlagError, "--%s must be a valid semver", flagBase)
-	}
 	if f.Name == "" {
 		return microerror.Maskf(invalidFlagError, "--%s must not be empty", flagName)
 	}
-	if _, err := semver.NewVersion(f.Name); err != nil {
-		return microerror.Maskf(invalidFlagError, "--%s must be a valid semver", flagName)
+	if f.Base == "" && !f.FromBranch {
+		return microerror.Maskf(invalidFlagError, "--%s must not be empty when --from-branch is not used", flagBase)
+	}
+	if f.Base != "" && f.FromBranch {
+		return microerror.Maskf(invalidFlagError, "cannot use --%s and --%s at the same time", flagBase, "from-branch")
 	}
 	if f.Provider == "" {
 		return microerror.Maskf(invalidFlagError, "--%s must not be empty", flagProvider)
-	}
-	if f.Provider != "aws" && f.Provider != "azure" && f.Provider != "vsphere" && f.Provider != "cloud-director" {
-		return microerror.Maskf(invalidFlagError, "--%s must be one of 'aws', 'azure', 'vsphere', 'cloud-director'", flagProvider)
 	}
 
 	return nil

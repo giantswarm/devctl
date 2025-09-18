@@ -34,7 +34,11 @@ var appsToBeDropped = []droppedAppConfig{
 
 // CreateRelease creates a release on the filesystem from the given parameters. This is the entry point
 // for the `devctl create release` command logic.
-func CreateRelease(name, base, releases, provider string, components, apps []string, overwrite bool, creationCommand string, bumpall bool, appsToDrop []string, yes bool, output string, verbose bool, changesOnly bool, requestedOnly bool) error {
+func CreateRelease(name, base, releases, provider string, components, apps []string, overwrite bool, creationCommand string, bumpall bool, appsToDrop []string, yes bool, output string, verbose bool, changesOnly bool, requestedOnly bool, fromBranch bool) error {
+	if fromBranch {
+		base = name
+	}
+
 	// Determine release type from base and new versions.
 	releaseType := ""
 	{
@@ -53,6 +57,10 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 			releaseType = "minor"
 		} else {
 			releaseType = "patch"
+		}
+
+		if fromBranch && releaseType == "patch" {
+			releaseType = "minor"
 		}
 	}
 

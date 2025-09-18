@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add `--from-branch` flag to `devctl release create` to allow creating a release from the current branch's state instead of a previous base release. This is useful for making incremental updates to a release in a pull request.
+- Make `--base` flag optional when using `--from-branch`.
+
 ## [7.12.1] - 2025-09-17
 
 ### Fixed
