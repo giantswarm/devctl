@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.14.0] - 2025-09-18
+
 ### Added
 
 - Add `--update-existing` flag to `devctl release create` to update an existing release in the current branch instead of creating from a base release.
@@ -1306,7 +1308,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.13.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.14.0...HEAD
+[7.14.0]: https://github.com/giantswarm/devctl/compare/v7.13.0...v7.14.0
 [7.13.0]: https://github.com/giantswarm/devctl/compare/v7.12.1...v7.13.0
 [7.12.1]: https://github.com/giantswarm/devctl/compare/v7.12.0...v7.12.1
 [7.12.0]: https://github.com/giantswarm/devctl/compare/v7.11.1...v7.12.0
