@@ -71,7 +71,10 @@ func mergeReleases(base, override v1alpha1.Release) v1alpha1.Release {
 			if app.Name == overrideApp.Name {
 				merged.Spec.Apps[i].Version = overrideApp.Version
 				merged.Spec.Apps[i].ComponentVersion = overrideApp.ComponentVersion
-				merged.Spec.Apps[i].DependsOn = overrideApp.DependsOn
+				// Only update DependsOn if it's not nil (meaning it was explicitly set)
+				if overrideApp.DependsOn != nil {
+					merged.Spec.Apps[i].DependsOn = overrideApp.DependsOn
+				}
 				break
 			}
 		}
@@ -154,6 +157,41 @@ func findRelease(providerDirectory string, targetVersion semver.Version) (v1alph
 	}
 
 	return release, releaseYAMLPath, nil
+}
+
+// findPreviousReleaseVersion finds the previous release version in the provider directory
+func findPreviousReleaseVersion(providerDirectory string, currentVersion semver.Version) (semver.Version, error) {
+	fileInfos, err := os.ReadDir(providerDirectory)
+	if err != nil {
+		return semver.Version{}, microerror.Mask(err)
+	}
+
+	var versions []semver.Version
+	for _, fileInfo := range fileInfos {
+		if !fileInfo.IsDir() || fileInfo.Name() == "archived" {
+			continue
+		}
+		version, err := semver.Parse(strings.TrimPrefix(fileInfo.Name(), "v"))
+		if err != nil {
+			continue
+		}
+		// Only consider versions less than the current version
+		if version.LT(currentVersion) {
+			versions = append(versions, version)
+		}
+	}
+
+	if len(versions) == 0 {
+		return semver.Version{}, microerror.Maskf(releaseNotFoundError, "no previous release found")
+	}
+
+	// Sort versions in descending order
+	sort.Slice(versions, func(i, j int) bool {
+		return versions[i].GT(versions[j])
+	})
+
+	// Return the highest version that's less than currentVersion
+	return versions[0], nil
 }
 
 // marshalReleaseYAML creates a custom YAML representation of the release

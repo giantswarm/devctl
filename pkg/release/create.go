@@ -34,8 +34,8 @@ var appsToBeDropped = []droppedAppConfig{
 
 // CreateRelease creates a release on the filesystem from the given parameters. This is the entry point
 // for the `devctl create release` command logic.
-func CreateRelease(name, base, releases, provider string, components, apps []string, overwrite bool, creationCommand string, bumpall bool, appsToDrop []string, yes bool, output string, verbose bool, changesOnly bool, requestedOnly bool, fromBranch bool) error {
-	if fromBranch {
+func CreateRelease(name, base, releases, provider string, components, apps []string, overwrite bool, creationCommand string, bumpall bool, appsToDrop []string, yes bool, output string, verbose bool, changesOnly bool, requestedOnly bool, updateExisting bool) error {
+	if updateExisting {
 		base = name
 	}
 
@@ -59,7 +59,7 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 			releaseType = "patch"
 		}
 
-		if fromBranch && releaseType == "patch" {
+		if updateExisting && releaseType == "patch" {
 			releaseType = "minor"
 		}
 	}
@@ -83,9 +83,37 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 		return microerror.Mask(err)
 	}
 
+	// Find the base release
 	baseRelease, baseReleasePath, err := findRelease(providerDirectory, baseVersion)
 	if err != nil {
 		return microerror.Mask(err)
+	}
+
+	// When using --update-existing with specific component/app updates, use existing release as base
+	// to preserve all previous modifications
+	var effectiveBaseRelease v1alpha1.Release
+	if updateExisting && (len(components) > 0 || len(apps) > 0) && !bumpall {
+		// Try to read the existing release in the current branch
+		newVersion, err := semver.Parse(strings.TrimPrefix(name, "v"))
+		if err != nil {
+			return microerror.Mask(err)
+		}
+		existingRelease, _, err := findRelease(providerDirectory, newVersion)
+		if err == nil {
+			// Use the existing release as base to preserve previous modifications
+			effectiveBaseRelease = existingRelease
+			if verbose {
+				fmt.Printf("Using existing release %s as base to preserve previous modifications\n", name)
+			}
+		} else {
+			// No existing release found, use the original base
+			effectiveBaseRelease = baseRelease
+			if verbose {
+				fmt.Printf("No existing release found for %s, using base release\n", name)
+			}
+		}
+	} else {
+		effectiveBaseRelease = baseRelease
 	}
 
 	// Store the base release for later use because it gets modified
@@ -116,13 +144,13 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 
 			// Check if the component is in the base release.
 			inBaseRelease := false
-			for _, component := range baseRelease.Spec.Components {
+			for _, component := range effectiveBaseRelease.Spec.Components {
 				if component.Name == componentName {
 					inBaseRelease = true
 					break
 				}
 			}
-			for _, app := range baseRelease.Spec.Apps {
+			for _, app := range effectiveBaseRelease.Spec.Apps {
 				if app.Name == componentName {
 					inBaseRelease = true
 					break
@@ -199,7 +227,7 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 		}
 		major := releaseVersionForK8s.Major
 
-		components, apps, err = BumpAll(baseRelease, components, apps, releaseType, appsToDropForThisRelease, requests, yes, output, changesOnly, requestedOnly, major)
+		components, apps, err = BumpAll(effectiveBaseRelease, components, apps, releaseType, appsToDropForThisRelease, requests, yes, output, changesOnly, requestedOnly, major)
 		if err != nil {
 			return microerror.Mask(err)
 		}
@@ -253,7 +281,7 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 		})
 
 	}
-	newRelease := mergeReleases(baseRelease, updatesRelease)
+	newRelease := mergeReleases(effectiveBaseRelease, updatesRelease)
 
 	// Drop apps that are no longer supported in this release.
 	if len(appsToDropForThisRelease) > 0 {
@@ -312,7 +340,26 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 
 	// Release diff
 	diffPath := filepath.Join(releasePath, "release.diff")
-	diff, err := createDiff(baseReleasePath, releaseYAMLPath)
+	// For update-existing, we need to find the actual previous version for a meaningful diff
+	var diffBaseReleasePath string
+	if updateExisting {
+		// Find the previous version to diff against
+		previousVersion, err := findPreviousReleaseVersion(providerDirectory, newVersion)
+		if err == nil {
+			_, diffBaseReleasePath, err = findRelease(providerDirectory, previousVersion)
+			if err != nil {
+				// Fall back to using the base release path
+				diffBaseReleasePath = baseReleasePath
+			}
+		} else {
+			// Fall back to using the base release path
+			diffBaseReleasePath = baseReleasePath
+		}
+	} else {
+		diffBaseReleasePath = baseReleasePath
+	}
+	
+	diff, err := createDiff(diffBaseReleasePath, releaseYAMLPath)
 	if err != nil {
 		return microerror.Mask(err)
 	}

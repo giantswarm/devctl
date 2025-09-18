@@ -38,7 +38,8 @@ type flag struct {
 	Verbose       bool
 	ChangesOnly   bool
 	RequestedOnly bool
-	FromBranch    bool
+	FromBranch    bool // Deprecated: use UpdateExisting instead
+	UpdateExisting bool
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
@@ -51,7 +52,8 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.Releases, flagReleases, ".", "Path to releases repository. Defaults to current working directory.")
 	cmd.Flags().BoolVar(&f.BumpAll, flagBumpAll, false, "Bump all components to the latest version.")
 	cmd.Flags().BoolVarP(&f.Yes, flagYes, "y", false, "Do not ask for confirmation.")
-	cmd.Flags().BoolVarP(&f.FromBranch, "from-branch", "", false, "Create release from the current branch instead of a base release.")
+	cmd.Flags().BoolVarP(&f.FromBranch, "from-branch", "", false, "Deprecated: use --update-existing instead.")
+	cmd.Flags().BoolVar(&f.UpdateExisting, "update-existing", false, "Update an existing release in the current branch instead of creating from a base release.")
 	cmd.Flags().StringVar(&f.Output, "output", "text", "Output format (text|markdown).")
 	cmd.Flags().BoolVarP(&f.Verbose, flagVerbose, "v", false, "Print verbose output.")
 	cmd.Flags().BoolVar(&f.ChangesOnly, flagChangesOnly, false, "Only print changed components and apps.")
@@ -63,11 +65,16 @@ func (f *flag) Validate() error {
 	if f.Name == "" {
 		return microerror.Maskf(invalidFlagError, "--%s must not be empty", flagName)
 	}
-	if f.Base == "" && !f.FromBranch {
-		return microerror.Maskf(invalidFlagError, "--%s must not be empty when --from-branch is not used", flagBase)
+	// Handle backward compatibility: --from-branch sets --update-existing
+	if f.FromBranch {
+		f.UpdateExisting = true
 	}
-	if f.Base != "" && f.FromBranch {
-		return microerror.Maskf(invalidFlagError, "cannot use --%s and --%s at the same time", flagBase, "from-branch")
+	
+	if f.Base == "" && !f.UpdateExisting {
+		return microerror.Maskf(invalidFlagError, "--%s must not be empty when --update-existing is not used", flagBase)
+	}
+	if f.Base != "" && f.UpdateExisting {
+		return microerror.Maskf(invalidFlagError, "cannot use --%s and --%s at the same time", flagBase, "update-existing")
 	}
 	if f.Provider == "" {
 		return microerror.Maskf(invalidFlagError, "--%s must not be empty", flagProvider)
