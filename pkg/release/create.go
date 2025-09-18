@@ -358,7 +358,7 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 	} else {
 		diffBaseReleasePath = baseReleasePath
 	}
-	
+
 	diff, err := createDiff(diffBaseReleasePath, releaseYAMLPath)
 	if err != nil {
 		return microerror.Mask(err)

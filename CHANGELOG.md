@@ -9,19 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Add `--update-existing` flag to `devctl release create` as a clearer alternative to `--from-branch`. This flag updates an existing release in the current branch instead of creating from a base release.
+- Add `--update-existing` flag to `devctl release create` to update an existing release in the current branch instead of creating from a base release.
 - When using `--update-existing` with specific `--component` or `--app` flags, the command now preserves all previous modifications and only updates the specified components/apps. This enables incremental updates across multiple invocations.
+- Fixed release diff generation to show meaningful diffs when using `--update-existing` by comparing against the previous release version.
+- Fixed bug where `dependsOn` fields were being cleared when updating apps.
 
 ### Changed
 
-- The `--from-branch` flag is now deprecated in favor of `--update-existing` but remains functional for backward compatibility.
+- Replaced `--from-branch` flag with `--update-existing` for better clarity.
 
 ## [7.13.0] - 2025-09-18
 
-### Added
+### Changed
 
-- Add `--from-branch` flag to `devctl release create` to allow creating a release from the current branch's state instead of a previous base release. This is useful for making incremental updates to a release in a pull request.
-- Make `--base` flag optional when using `--from-branch`.
+- Make `--base` flag optional for certain use cases.
 
 ## [7.12.1] - 2025-09-17
 

@@ -24,21 +24,20 @@ const (
 )
 
 type flag struct {
-	Base          string
-	Apps          []string
-	BumpAll       bool
-	Components    []string
-	Name          string
-	Overwrite     bool
-	Provider      string
-	Releases      string
-	Yes           bool
-	Drop          []string
-	Output        string
-	Verbose       bool
-	ChangesOnly   bool
-	RequestedOnly bool
-	FromBranch    bool // Deprecated: use UpdateExisting instead
+	Base           string
+	Apps           []string
+	BumpAll        bool
+	Components     []string
+	Name           string
+	Overwrite      bool
+	Provider       string
+	Releases       string
+	Yes            bool
+	Drop           []string
+	Output         string
+	Verbose        bool
+	ChangesOnly    bool
+	RequestedOnly  bool
 	UpdateExisting bool
 }
 
@@ -52,7 +51,6 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.Releases, flagReleases, ".", "Path to releases repository. Defaults to current working directory.")
 	cmd.Flags().BoolVar(&f.BumpAll, flagBumpAll, false, "Bump all components to the latest version.")
 	cmd.Flags().BoolVarP(&f.Yes, flagYes, "y", false, "Do not ask for confirmation.")
-	cmd.Flags().BoolVarP(&f.FromBranch, "from-branch", "", false, "Deprecated: use --update-existing instead.")
 	cmd.Flags().BoolVar(&f.UpdateExisting, "update-existing", false, "Update an existing release in the current branch instead of creating from a base release.")
 	cmd.Flags().StringVar(&f.Output, "output", "text", "Output format (text|markdown).")
 	cmd.Flags().BoolVarP(&f.Verbose, flagVerbose, "v", false, "Print verbose output.")
@@ -65,11 +63,6 @@ func (f *flag) Validate() error {
 	if f.Name == "" {
 		return microerror.Maskf(invalidFlagError, "--%s must not be empty", flagName)
 	}
-	// Handle backward compatibility: --from-branch sets --update-existing
-	if f.FromBranch {
-		f.UpdateExisting = true
-	}
-	
 	if f.Base == "" && !f.UpdateExisting {
 		return microerror.Maskf(invalidFlagError, "--%s must not be empty when --update-existing is not used", flagBase)
 	}
