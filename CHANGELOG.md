@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Releases: Remove CAPI Node Labeler from CAPI v33.0.0 and higher.
+
 ## [7.14.0] - 2025-09-18
 
 ### Added

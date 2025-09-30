@@ -27,6 +27,10 @@ type droppedAppConfig struct {
 
 var appsToBeDropped = []droppedAppConfig{
 	{
+		Name:         "capi-node-labeler",
+		MajorVersion: 33,
+	},
+	{
 		Name:         "karpenter-nodepools",
 		MajorVersion: 32,
 	},
