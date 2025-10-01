@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.16.0] - 2025-10-01
+
 ### Removed
 
 - Removed AutoDetect feature for Azure components.
@@ -1325,7 +1327,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.15.1...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.16.0...HEAD
+[7.16.0]: https://github.com/giantswarm/devctl/compare/v7.15.1...v7.16.0
 [7.15.1]: https://github.com/giantswarm/devctl/compare/v7.15.0...v7.15.1
 [7.15.0]: https://github.com/giantswarm/devctl/compare/v7.14.0...v7.15.0
 [7.14.0]: https://github.com/giantswarm/devctl/compare/v7.13.0...v7.14.0
