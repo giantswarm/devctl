@@ -554,26 +554,6 @@ func findNewestApp(name string, getUpstreamVersion bool) (appVersion, error) {
 		if err != nil {
 			return appVersion{}, microerror.Mask(err)
 		}
-	case "azuredisk-csi-driver":
-		version, err = getLatestGithubRelease("giantswarm", "azuredisk-csi-driver-app")
-		if err != nil {
-			return appVersion{}, microerror.Mask(err)
-		}
-	case "azurefile-csi-driver":
-		version, err = getLatestGithubRelease("giantswarm", "azurefile-csi-driver-app")
-		if err != nil {
-			return appVersion{}, microerror.Mask(err)
-		}
-	case "azure-cloud-node-manager":
-		version, err = getLatestGithubRelease("giantswarm", "azure-cloud-node-manager-app")
-		if err != nil {
-			return appVersion{}, microerror.Mask(err)
-		}
-	case "azure-cloud-controller-manager":
-		version, err = getLatestGithubRelease("giantswarm", "azure-cloud-controller-manager-app")
-		if err != nil {
-			return appVersion{}, microerror.Mask(err)
-		}
 	case "os-tooling":
 		version, err = getLatestGithubRelease("giantswarm", "capi-image-builder")
 		if err != nil {
@@ -634,17 +614,6 @@ func findNewestComponentVersion(name string) (string, error) {
 	version = strings.TrimPrefix(version, "v")
 
 	return version, nil
-}
-
-func findNewestComponent(name string) (componentVersion, error) {
-	version, err := findNewestComponentVersion(name)
-	if err != nil {
-		return componentVersion{}, microerror.Mask(err)
-	}
-
-	return componentVersion{
-		Version: version,
-	}, nil
 }
 
 func getLatestGithubRelease(owner string, name string) (string, error) {
