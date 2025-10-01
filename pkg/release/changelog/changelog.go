@@ -85,9 +85,21 @@ var KnownComponents = map[string]ParseParams{
 		Start:     commonStartPattern,
 		End:       commonEndPattern,
 	},
+	"karpenter": {
+		Tag:       "https://github.com/giantswarm/karpenter-app/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/karpenter-app/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
+	},
 	"karpenter-bundle": {
 		Tag:       "https://github.com/giantswarm/karpenter-bundle/releases/tag/v{{.Version}}",
 		Changelog: "https://raw.githubusercontent.com/giantswarm/karpenter-bundle/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
+	},
+	"karpenter-crossplane-resources": {
+		Tag:       "https://github.com/giantswarm/karpenter-crossplane-resources/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/karpenter-crossplane-resources/v{{.Version}}/CHANGELOG.md",
 		Start:     commonStartPattern,
 		End:       commonEndPattern,
 	},
@@ -461,7 +473,11 @@ func ParseChangelog(componentName, currentVersion, endVersion string) (*Version,
 	compareRange := ""
 	compareLink := ""
 
-	if endVersion == "" || currentVersion == endVersion {
+	if endVersion == "" {
+		endVersion = currentVersion
+	}
+
+	if currentVersion == endVersion {
 		// When there's no previous version or they're the same, link to single release
 		compareRange = fmt.Sprintf("v%s", currentVersion)
 		compareLink = strings.Replace(params.Tag, "{{.Version}}", currentVersion, 1)

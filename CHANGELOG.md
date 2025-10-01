@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Releases: Add Karpenter and Karpenter Crossplane Resources.
+
 ## [7.17.0] - 2025-10-01
 
 ### Changed
