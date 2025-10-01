@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.15.1] - 2025-10-01
+
 ### Fixed
 
 - Fixed component auto-detection for Azure components that were renamed with `-app` suffix:
@@ -1319,7 +1321,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.15.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.15.1...HEAD
+[7.15.1]: https://github.com/giantswarm/devctl/compare/v7.15.0...v7.15.1
 [7.15.0]: https://github.com/giantswarm/devctl/compare/v7.14.0...v7.15.0
 [7.14.0]: https://github.com/giantswarm/devctl/compare/v7.13.0...v7.14.0
 [7.13.0]: https://github.com/giantswarm/devctl/compare/v7.12.1...v7.13.0
