@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed component auto-detection for Azure components that were renamed with `-app` suffix:
+- Fixed component auto-detection for `os-tooling` to correctly map to `capi-image-builder` repository
+
 ## [7.15.0] - 2025-09-30
 
 ### Changed
