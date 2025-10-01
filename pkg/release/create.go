@@ -31,6 +31,10 @@ var appsToBeDropped = []droppedAppConfig{
 		MajorVersion: 33,
 	},
 	{
+		Name:         "karpenter-bundle",
+		MajorVersion: 33,
+	},
+	{
 		Name:         "karpenter-nodepools",
 		MajorVersion: 32,
 	},
