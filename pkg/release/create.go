@@ -420,7 +420,7 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 	newReleaseInfo := ReleaseJsonInfo{
 		Version:          newVersion.String(),
 		IsDeprecated:     false,
-		ReleaseTimestamp: now.Format(time.RFC3339),
+		ReleaseTimestamp: now.UTC().Format(time.RFC3339),
 		ChangelogUrl:     fmt.Sprintf("https://github.com/giantswarm/releases/blob/master/%s/%s/README.md", provider, releaseDirectory),
 		IsStable:         true,
 	}
