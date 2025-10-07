@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.19.0] - 2025-10-07
+
 ### Added
 
 - Release: Add `--preserve-readme` flag to preserve existing README.md when using `--overwrite`.
@@ -1354,7 +1356,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.18.1...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.19.0...HEAD
+[7.19.0]: https://github.com/giantswarm/devctl/compare/v7.18.1...v7.19.0
 [7.18.1]: https://github.com/giantswarm/devctl/compare/v7.18.0...v7.18.1
 [7.18.0]: https://github.com/giantswarm/devctl/compare/v7.17.0...v7.18.0
 [7.17.0]: https://github.com/giantswarm/devctl/compare/v7.16.0...v7.17.0
