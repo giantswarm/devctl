@@ -7,38 +7,42 @@ import (
 )
 
 const (
-	flagName          = "name"
-	flagBase          = "base"
-	flagProvider      = "provider"
-	flagComponents    = "component"
-	flagApps          = "app"
-	flagOverwrite     = "overwrite"
-	flagReleases      = "releases"
-	flagBumpAll       = "bumpall"
-	flagYes           = "yes"
-	flagDrop          = "drop"
-	flagOutput        = "output"
-	flagVerbose       = "verbose"
-	flagChangesOnly   = "changes-only"
-	flagRequestedOnly = "requested-only"
+	flagName           = "name"
+	flagBase           = "base"
+	flagProvider       = "provider"
+	flagComponents     = "component"
+	flagApps           = "app"
+	flagOverwrite      = "overwrite"
+	flagReleases       = "releases"
+	flagBumpAll        = "bumpall"
+	flagYes            = "yes"
+	flagDrop           = "drop"
+	flagOutput         = "output"
+	flagVerbose        = "verbose"
+	flagChangesOnly    = "changes-only"
+	flagRequestedOnly  = "requested-only"
+	flagPreserveReadme = "preserve-readme"
+	flagRegenerateReadme = "regenerate-readme"
 )
 
 type flag struct {
-	Base           string
-	Apps           []string
-	BumpAll        bool
-	Components     []string
-	Name           string
-	Overwrite      bool
-	Provider       string
-	Releases       string
-	Yes            bool
-	Drop           []string
-	Output         string
-	Verbose        bool
-	ChangesOnly    bool
-	RequestedOnly  bool
-	UpdateExisting bool
+	Base             string
+	Apps             []string
+	BumpAll          bool
+	Components       []string
+	Name             string
+	Overwrite        bool
+	Provider         string
+	Releases         string
+	Yes              bool
+	Drop             []string
+	Output           string
+	Verbose          bool
+	ChangesOnly      bool
+	RequestedOnly    bool
+	UpdateExisting   bool
+	PreserveReadme   bool
+	RegenerateReadme bool
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
@@ -57,6 +61,8 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&f.ChangesOnly, flagChangesOnly, false, "Only print changed components and apps.")
 	cmd.Flags().BoolVar(&f.RequestedOnly, flagRequestedOnly, false, "Only print components and apps requested by the user.")
 	cmd.Flags().StringSliceVar(&f.Drop, flagDrop, nil, "App to drop from the release.")
+	cmd.Flags().BoolVar(&f.PreserveReadme, flagPreserveReadme, false, "Preserve existing README.md instead of regenerating it.")
+	cmd.Flags().BoolVar(&f.RegenerateReadme, flagRegenerateReadme, false, "When used with --update-existing, regenerate README.md with full changelogs by finding the previous release version.")
 }
 
 func (f *flag) Validate() error {

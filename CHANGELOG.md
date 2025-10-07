@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Release: Add `--preserve-readme` flag to preserve existing README.md when using `--overwrite`.
+- Release: Add `--regenerate-readme` flag to regenerate README.md with full changelogs when using `--update-existing` with specific app/component updates.
+
+### Fixed
+
+- Release: Fix README.md generation with `--regenerate-readme` to include all apps, not just the requested ones.
+
 ## [7.18.1] - 2025-10-07
 
 ### Changed

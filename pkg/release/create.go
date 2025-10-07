@@ -42,7 +42,7 @@ var appsToBeDropped = []droppedAppConfig{
 
 // CreateRelease creates a release on the filesystem from the given parameters. This is the entry point
 // for the `devctl create release` command logic.
-func CreateRelease(name, base, releases, provider string, components, apps []string, overwrite bool, creationCommand string, bumpall bool, appsToDrop []string, yes bool, output string, verbose bool, changesOnly bool, requestedOnly bool, updateExisting bool) error {
+func CreateRelease(name, base, releases, provider string, components, apps []string, overwrite bool, creationCommand string, bumpall bool, appsToDrop []string, yes bool, output string, verbose bool, changesOnly bool, requestedOnly bool, updateExisting bool, preserveReadme bool, regenerateReadme bool) error {
 	if updateExisting {
 		base = name
 	}
@@ -309,6 +309,13 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 	releaseDirectory := releaseToDirectory(newRelease)
 	releasePath := filepath.Join(providerDirectory, releaseDirectory)
 
+	// Backup README.md if preserve-readme is enabled
+	var readmeBackup []byte
+	if preserveReadme && overwrite {
+		readmePath := filepath.Join(releasePath, "README.md")
+		readmeBackup, _ = os.ReadFile(readmePath)
+	}
+
 	// Delete existing if overwrite
 	if overwrite {
 		err = os.RemoveAll(releasePath)
@@ -337,13 +344,42 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 
 	// Release notes
 	releaseNotesPath := filepath.Join(releasePath, "README.md")
-	releaseNotes, err := createReleaseNotes(updatesRelease, previousRelease, provider)
-	if err != nil {
-		return microerror.Mask(err)
-	}
-	err = os.WriteFile(releaseNotesPath, []byte(releaseNotes), 0644) //nolint:gosec
-	if err != nil {
-		return microerror.Mask(err)
+	if preserveReadme {
+		if len(readmeBackup) > 0 {
+			// Restore backed up README.md
+			err = os.WriteFile(releaseNotesPath, readmeBackup, 0644) //nolint:gosec
+			if err != nil {
+				return microerror.Mask(err)
+			}
+		}
+		// If no backup exists, skip creating README.md (preserve means don't touch it)
+	} else {
+		// Determine which base release to use for README generation
+		readmeBaseRelease := previousRelease
+		if regenerateReadme && updateExisting {
+			// Find the actual previous release version for full changelog generation
+			previousVersion, err := findPreviousReleaseVersion(providerDirectory, newVersion)
+			if err == nil {
+				prevRelease, _, err := findRelease(providerDirectory, previousVersion)
+				if err == nil {
+					readmeBaseRelease = prevRelease
+					if verbose {
+						fmt.Printf("Using previous release %s as base for README generation\n", releaseToDirectory(prevRelease))
+					}
+				}
+			}
+		}
+		
+		// Generate new README.md
+		// Use newRelease (merged) instead of updatesRelease to include all apps, not just requested ones
+		releaseNotes, err := createReleaseNotes(newRelease, readmeBaseRelease, provider)
+		if err != nil {
+			return microerror.Mask(err)
+		}
+		err = os.WriteFile(releaseNotesPath, []byte(releaseNotes), 0644) //nolint:gosec
+		if err != nil {
+			return microerror.Mask(err)
+		}
 	}
 
 	// Release diff
