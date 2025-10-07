@@ -369,7 +369,7 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 				}
 			}
 		}
-		
+
 		// Generate new README.md
 		// Use newRelease (merged) instead of updatesRelease to include all apps, not just requested ones
 		releaseNotes, err := createReleaseNotes(newRelease, readmeBaseRelease, provider)
