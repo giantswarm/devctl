@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.18.1] - 2025-10-07
+
 ### Changed
 
 - Releases: always use UTC to format `releaseTimestamp` field for consistency
@@ -1343,7 +1345,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.18.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.18.1...HEAD
+[7.18.1]: https://github.com/giantswarm/devctl/compare/v7.18.0...v7.18.1
 [7.18.0]: https://github.com/giantswarm/devctl/compare/v7.17.0...v7.18.0
 [7.17.0]: https://github.com/giantswarm/devctl/compare/v7.16.0...v7.17.0
 [7.16.0]: https://github.com/giantswarm/devctl/compare/v7.15.1...v7.16.0
