@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.20.0] - 2025-10-15
+
 ### Added
 
 - Release: Add validation to prevent type conflicts when adding apps/components. When trying to add a component that exists as an app (or vice versa), an error message suggesting the correct flag to use is now displayed.
@@ -1360,7 +1362,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.19.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.20.0...HEAD
+[7.20.0]: https://github.com/giantswarm/devctl/compare/v7.19.0...v7.20.0
 [7.19.0]: https://github.com/giantswarm/devctl/compare/v7.18.1...v7.19.0
 [7.18.1]: https://github.com/giantswarm/devctl/compare/v7.18.0...v7.18.1
 [7.18.0]: https://github.com/giantswarm/devctl/compare/v7.17.0...v7.18.0
