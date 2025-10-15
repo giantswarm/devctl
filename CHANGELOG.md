@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Release: Add validation to prevent type conflicts when adding apps/components. When trying to add a component that exists as an app (or vice versa), an error message suggesting the correct flag to use is now displayed.
+
 ## [7.19.0] - 2025-10-07
 
 ### Added

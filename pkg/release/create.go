@@ -251,6 +251,38 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 	now := metav1.Now()
 	updatesRelease.Spec.Date = &now
 	updatesRelease.Spec.State = "active"
+
+	// Validate component/app type conflicts before processing
+	for _, componentVersion := range components {
+		split := strings.Split(componentVersion, "@")
+		if len(split) != 2 {
+			continue // Will be caught by format validation below
+		}
+		itemName := split[0]
+
+		// Check if this component name exists as an app in the base release
+		for _, existingApp := range effectiveBaseRelease.Spec.Apps {
+			if existingApp.Name == itemName {
+				return microerror.Maskf(invalidItemTypeError, "'%s' exists as an app, not a component.\nUse: --app %s@%s", itemName, itemName, split[1])
+			}
+		}
+	}
+
+	for _, appVersion := range apps {
+		split := strings.Split(appVersion, "@")
+		if len(split) < 2 {
+			continue // Will be caught by format validation below
+		}
+		itemName := split[0]
+
+		// Check if this app name exists as a component in the base release
+		for _, existingComponent := range effectiveBaseRelease.Spec.Components {
+			if existingComponent.Name == itemName {
+				return microerror.Maskf(invalidItemTypeError, "'%s' exists as a component, not an app.\nUse: --component %s@%s", itemName, itemName, split[1])
+			}
+		}
+	}
+
 	for _, componentVersion := range components {
 		split := strings.Split(componentVersion, "@")
 		if len(split) != 2 {

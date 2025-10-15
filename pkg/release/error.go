@@ -25,6 +25,16 @@ func IsBadFormat(err error) bool {
 	return microerror.Cause(err) == badFormatError
 }
 
+// Indicates that an item exists as a different type (e.g. trying to add a component that exists as an app).
+var invalidItemTypeError = &microerror.Error{
+	Kind: "invalidItemTypeError",
+}
+
+// IsInvalidItemType asserts invalidItemTypeError.
+func IsInvalidItemType(err error) bool {
+	return microerror.Cause(err) == invalidItemTypeError
+}
+
 func IsGithubNotFound(err error) bool {
 	if err == nil {
 		return false
