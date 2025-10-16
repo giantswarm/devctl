@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add extra credentials to `fix-vulnerabilities` workflow. Needed for OSS Index access.
+
 ## [7.20.0] - 2025-10-15
 
 ### Added
