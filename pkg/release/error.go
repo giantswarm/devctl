@@ -2,7 +2,7 @@ package release
 
 import (
 	"github.com/giantswarm/microerror"
-	"github.com/google/go-github/v75/github"
+	"github.com/google/go-github/v76/github"
 )
 
 // Indicates that the release was not found for the given provider and version.
