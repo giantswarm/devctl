@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The `devctl repo setup` command now also generates a ruleset to enable Renovate to merge approved PRs.
+
 ## [7.20.1] - 2025-10-17
 
 ### Added
