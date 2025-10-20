@@ -55,7 +55,7 @@ func New(config Config) (*cobra.Command, error) {
 		Long:    longDescription,
 		RunE:    r.Run,
 		Args:    cobra.ExactArgs(1),
-		Example: "  devctl setup renovate --remove giantswarm/myrepo",
+		Example: "  devctl repo setup renovate --remove giantswarm/myrepo",
 	}
 
 	f.Init(c)
