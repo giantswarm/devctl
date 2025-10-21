@@ -104,6 +104,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 
+	// Branch protection
 	if r.flag.DisableBranchProtection {
 		err = client.RemoveRepositoryBranchProtection(ctx, repository)
 		if err != nil {
@@ -116,11 +117,58 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		}
 	}
 
+	// Renovate-related setup
 	if r.flag.SetupRenovate {
-		r.logger.Printf("Adding %s/%s to repositories accessible by Renovate...", owner, *repository.Name)
+		rulesetNeedsUpdate := false
+
+		// Add repository to Renovate permissions
+		r.logger.Infof("Adding %s/%s to repositories accessible by Renovate...", owner, repo)
 		err = client.AddRepoToRenovatePermissions(ctx, owner, repository)
 		if err != nil {
 			return microerror.Mask(err)
+		}
+
+		// Find ruleset in repository
+		ruleset, err := client.ReadRenovateRuleset(ctx, owner, repo)
+		if ruleset != nil {
+			r.logger.Printf("Ruleset %s (ID %d) already exists in repository %s/%s", ruleset.Name, ruleset.GetID(), owner, repo)
+
+			// check if up-to-date
+			if client.IsRulesetUpToDate(*ruleset) {
+				r.logger.Infof("Ruleset %s (ID %d) is up-to-date in repository %s/%s", ruleset.Name, ruleset.GetID(), owner, repo)
+			} else {
+				r.logger.Infof("Ruleset %s (ID %d) is not up-to-date in repository %s/%s", ruleset.Name, ruleset.GetID(), owner, repo)
+				rulesetNeedsUpdate = true
+				r.logger.Infof("Deleting ruleset %s (ID %d) in repository %s/%s", ruleset.Name, ruleset.GetID(), owner, repo)
+				err = client.DeleteRuleset(ctx, owner, repo, ruleset.GetID())
+				if err != nil {
+					return microerror.Mask(err)
+				}
+			}
+		} else {
+			// handle not found error
+			if githubclient.IsRulesetNotFound(err) {
+				r.logger.Infof("Ruleset for renovate not found in repository %s/%s, creating it...", owner, repo)
+				rulesetNeedsUpdate = true
+			} else {
+				return microerror.Mask(err)
+			}
+		}
+
+		if rulesetNeedsUpdate {
+			r.logger.Infof("Creating ruleset for renovate in repository %s/%s", owner, repo)
+			_, err = client.CreateRenovateRuleset(ctx, owner, repo)
+			if err != nil {
+				return microerror.Mask(err)
+			}
+		}
+
+	} else {
+		r.logger.Printf("Removing %s/%s from repositories accessible by Renovate...", owner, *repository.Name)
+		err = client.RemoveRepoFromRenovatePermissions(ctx, owner, repository)
+		if err != nil {
+			// Not a critical error, we can continue
+			r.logger.Errorf("error removing %s/%s from repositories accessible by Renovate: %v", owner, *repository.Name, err)
 		}
 	}
 
