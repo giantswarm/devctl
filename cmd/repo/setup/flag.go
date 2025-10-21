@@ -5,7 +5,6 @@ import (
 )
 
 type flag struct {
-	DryRun            bool
 	GithubTokenEnvVar string
 
 	// Features
@@ -40,9 +39,6 @@ type flag struct {
 func (f *flag) Init(cmd *cobra.Command) {
 	// Persistent flags are also available to subcommands.
 	cmd.PersistentFlags().StringVar(&f.GithubTokenEnvVar, "github-token-envvar", "GITHUB_TOKEN", "Environment variable name for Github token.")
-
-	// Standard flags
-	cmd.Flags().BoolVar(&f.DryRun, "dry-run", false, "Dry-run or ready-only mode. Show what is being made but do not apply any change.")
 
 	// Features
 	cmd.Flags().BoolVar(&f.EnableWiki, "enable-wiki", false, "Enable wiki for this repo, false to remove it.")

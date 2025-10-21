@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The `devctl repo setup` command now also generates a ruleset to enable Renovate to merge approved PRs, if `--renovate=true` (default).
 
+### Removed
+
+- Removed the flag `--dry-run` from the `devctl repo setup` command, as it had no function.
+
 ## [7.20.1] - 2025-10-17
 
 ### Added
