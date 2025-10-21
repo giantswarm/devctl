@@ -1,3 +1,4 @@
+// Package updater provides a way to self-update devctl.
 package updater
 
 import (
