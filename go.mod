@@ -15,6 +15,7 @@ require (
 	github.com/giantswarm/micrologger v1.1.2
 	github.com/giantswarm/release-operator/v4 v4.2.1
 	github.com/go-git/go-git/v5 v5.16.3
+	github.com/google/go-cmp v0.7.0
 	github.com/google/go-github/v76 v76.0.0
 	github.com/jedib0t/go-pretty/v6 v6.6.8
 	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826
