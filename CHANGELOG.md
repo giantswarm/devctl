@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.20.2] - 2025-10-21
+
 ### Added
 
 - Add `capa-karpenter-taint-remover` application support.
@@ -1372,7 +1374,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.20.1...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.20.2...HEAD
+[7.20.2]: https://github.com/giantswarm/devctl/compare/v7.20.1...v7.20.2
 [7.20.1]: https://github.com/giantswarm/devctl/compare/v7.20.0...v7.20.1
 [7.20.0]: https://github.com/giantswarm/devctl/compare/v7.19.0...v7.20.0
 [7.19.0]: https://github.com/giantswarm/devctl/compare/v7.18.1...v7.19.0
