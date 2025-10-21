@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add `capa-karpenter-taint-remover` application support.
+
 ## [7.20.1] - 2025-10-17
 
 ### Added

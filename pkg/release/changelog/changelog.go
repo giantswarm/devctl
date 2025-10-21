@@ -97,6 +97,12 @@ var KnownComponents = map[string]ParseParams{
 		Start:     commonStartPattern,
 		End:       commonEndPattern,
 	},
+	"karpenter-taint-remover": {
+		Tag:       "https://github.com/giantswarm/capa-karpenter-taint-remover/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/capa-karpenter-taint-remover/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
+	},
 	"karpenter-crossplane-resources": {
 		Tag:       "https://github.com/giantswarm/karpenter-crossplane-resources/releases/tag/v{{.Version}}",
 		Changelog: "https://raw.githubusercontent.com/giantswarm/karpenter-crossplane-resources/v{{.Version}}/CHANGELOG.md",
