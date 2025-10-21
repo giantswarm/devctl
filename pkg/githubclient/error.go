@@ -46,3 +46,12 @@ var prMergeTimeoutError = &microerror.Error{
 func IsPRMergeTimeout(err error) bool {
 	return microerror.Cause(err) == prMergeTimeoutError
 }
+
+var rulesetNotFoundError = &microerror.Error{
+	Kind: "rulesetNotFoundError",
+}
+
+// IsRulesetNotFound asserts rulesetNotFoundError.
+func IsRulesetNotFound(err error) bool {
+	return microerror.Cause(err) == rulesetNotFoundError
+}
