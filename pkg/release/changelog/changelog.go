@@ -349,7 +349,7 @@ var KnownComponents = map[string]ParseParams{
 
 	// Core Components
 	"flatcar": {
-		Tag:       "https://www.flatcar-linux.org/releases/#release-{{.Version}}",
+		Tag:       "https://www.flatcar.org/releases/#release-{{.Version}}",
 		Changelog: "https://www.flatcar.org/releases-json/releases-stable.json",
 	},
 	"kubernetes": {
