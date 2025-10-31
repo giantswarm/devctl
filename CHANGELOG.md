@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.20.3] - 2025-10-31
+
+### Changed
+
+- Releases: Update Flatcar tag URL.
+
 ## [7.20.2] - 2025-10-21
 
 ### Added
@@ -1374,7 +1380,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.20.2...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.20.3...HEAD
+[7.20.3]: https://github.com/giantswarm/devctl/compare/v7.20.2...v7.20.3
 [7.20.2]: https://github.com/giantswarm/devctl/compare/v7.20.1...v7.20.2
 [7.20.1]: https://github.com/giantswarm/devctl/compare/v7.20.0...v7.20.1
 [7.20.0]: https://github.com/giantswarm/devctl/compare/v7.19.0...v7.20.0
