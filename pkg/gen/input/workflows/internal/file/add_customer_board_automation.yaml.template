@@ -1,20 +1,13 @@
 {{{{ .Header }}}}
-name: Add Customer Ticket to general Customer Board
+
+name: Add issue to general customer board
+
 on:
   issues:
     types: [opened]
 
-env:
-  BOARD_URL: https://github.com/orgs/giantswarm/projects/345
-
 jobs:
-  add_issue_customer_board:
-    name: Add issue to general customer board
-    runs-on: ubuntu-24.04
-    steps:
-    - name: Add issue to general customer board
-      if: ${{ env.BOARD_URL != 'null' && env.BOARD_URL != '' }}
-      uses: actions/add-to-project@244f685bbc3b7adfa8466e08b698b5577571133e # v1.0.2
-      with:
-        project-url: ${{ env.BOARD_URL }}
-        github-token: ${{ secrets.ISSUE_AUTOMATION }}
+  add-to-board:
+    uses: giantswarm/github-workflows/.github/workflows/issue-to-customer-board.yaml@main
+    secrets:
+      ISSUE_AUTOMATION: ${{ secrets.ISSUE_AUTOMATION }}
