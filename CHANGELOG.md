@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Replace "Add issue to general customer board" workflow with reusable workflow call
+- Fix and tweak Cursor rules so that they actually get applied
 
 ## [7.20.3] - 2025-10-31
 
