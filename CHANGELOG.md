@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.20.4] - 2025-11-07
+
 ### Changed
 
 - Replace "Add issue to general customer board" workflow with reusable workflow call
@@ -1385,7 +1387,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.20.3...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.20.4...HEAD
+[7.20.4]: https://github.com/giantswarm/devctl/compare/v7.20.3...v7.20.4
 [7.20.3]: https://github.com/giantswarm/devctl/compare/v7.20.2...v7.20.3
 [7.20.2]: https://github.com/giantswarm/devctl/compare/v7.20.1...v7.20.2
 [7.20.1]: https://github.com/giantswarm/devctl/compare/v7.20.0...v7.20.1
