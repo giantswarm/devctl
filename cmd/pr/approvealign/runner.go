@@ -6,7 +6,7 @@ import (
 	"io"
 
 	"github.com/giantswarm/microerror"
-	"github.com/google/go-github/v77/github"
+	"github.com/google/go-github/v78/github"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 

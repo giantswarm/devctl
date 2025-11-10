@@ -13,7 +13,7 @@ import (
 	"github.com/briandowns/spinner"
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
-	"github.com/google/go-github/v77/github"
+	"github.com/google/go-github/v78/github"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
