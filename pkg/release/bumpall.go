@@ -208,7 +208,7 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 					v.UserRequested = false
 					v.DependsOn = app.DependsOn
 				} else { // major or minor
-					version, err := findNewestApp(app.Name, app.ComponentVersion != "")
+					version, err := FindNewestApp(app.Name, app.ComponentVersion != "")
 					if err != nil {
 						return nil, nil, microerror.Mask(err)
 					}
@@ -439,10 +439,16 @@ func printTable(input v1alpha1.Release, components map[string]componentVersion, 
 			var desiredVersion, dependencies string
 			if output == "text" {
 				desiredVersion = text.FgGreen.Sprint(desiredVersionStr)
-				dependencies = text.FgGreen.Sprint(strings.Join(req.DependsOn, ", "))
+				dependenciesStr := strings.Join(req.DependsOn, ", ")
+				if dependenciesStr != "" {
+					dependencies = text.FgGreen.Sprint(dependenciesStr)
+				}
 			} else {
 				desiredVersion = fmt.Sprintf("**%s**", desiredVersionStr)
-				dependencies = fmt.Sprintf("**%s**", strings.Join(req.DependsOn, ", "))
+				dependenciesStr := strings.Join(req.DependsOn, ", ")
+				if dependenciesStr != "" {
+					dependencies = fmt.Sprintf("**%s**", dependenciesStr)
+				}
 			}
 			appRows = append(appRows, table.Row{name, "New app", desiredVersion, dependencies})
 		}
@@ -451,7 +457,7 @@ func printTable(input v1alpha1.Release, components map[string]componentVersion, 
 	if len(appRows) > 0 {
 		t := table.NewWriter()
 		t.SetStyle(table.StyleDefault)
-		t.AppendHeader(table.Row{"APP NAME", "CURRENT APP VERSION", "DESIRED APP VERSION", "DEPENDENCIES"})
+		t.AppendHeader(table.Row{"APP NAME", "CURRENT VERSION", "DESIRED VERSION", "DEPENDENCIES"})
 		t.AppendSeparator()
 		t.AppendRows(appRows)
 		t.AppendSeparator()
@@ -539,13 +545,18 @@ func printTable(input v1alpha1.Release, components map[string]componentVersion, 
 	return nil
 }
 
-func findNewestApp(name string, getUpstreamVersion bool) (appVersion, error) {
+func FindNewestApp(name string, getUpstreamVersion bool) (appVersion, error) {
 	var err error
 	version := ""
 
 	switch name {
 	case "cloud-provider-aws":
-		version, err = getLatestGithubRelease("giantswarm", "aws-cloud-controller-manager")
+		version, err = getLatestGithubRelease("giantswarm", "aws-cloud-controller-manager-app")
+		if err != nil {
+			return appVersion{}, microerror.Mask(err)
+		}
+	case "cluster-autoscaler":
+		version, err = getLatestGithubRelease("giantswarm", "cluster-autoscaler-app")
 		if err != nil {
 			return appVersion{}, microerror.Mask(err)
 		}
@@ -720,13 +731,14 @@ func getLatestReleaseForMinor(owner, repo, minorVersion string) (string, error) 
 
 	client := github.NewClient(tc)
 
-	owner, candidateNames := getRepoCandidates(owner, repo)
-
+	// Note: repo is already the resolved repository name from GetRepoName,
+	// so we use it directly without calling getRepoCandidates
 	var latestVersion string
 	var latestSemver semver.Version
 	var lastErr error
 
-	for _, repoCandidate := range candidateNames {
+	// Use the repo name directly as it's already resolved
+	for _, repoCandidate := range []string{repo} {
 		// Get all releases from the repository
 		opt := &github.ListOptions{
 			PerPage: 100, // Get more releases to ensure we find the latest patch
@@ -803,15 +815,19 @@ func getLatestReleaseForMinor(owner, repo, minorVersion string) (string, error) 
 }
 
 func getRepoCandidates(owner, name string) (string, []string) {
+	// Try to get repo name from KnownComponents map
 	var repoName string
 	var newOwner string
 	newOwner, repoName = changelog.GetRepoName(name)
 	if repoName != "" {
 		owner = newOwner
+		// The repo name from GetRepoName is already the full repo name (e.g., "aws-cloud-controller-manager-app")
+		// so we should use it directly without the fallback suffix logic
 		return owner, []string{repoName}
 	}
 
 	// Fallback to old logic if not in map.
+	// This handles apps that aren't explicitly configured in KnownComponents
 	var candidateNames []string
 	if strings.HasSuffix(name, "-app") {
 		candidateNames = []string{name, strings.TrimSuffix(name, "-app")}
