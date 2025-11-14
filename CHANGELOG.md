@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.21.0] - 2025-11-14
+
 ### Added
 
 - Add `priority-classes` as a new app in v34 release.
@@ -1395,7 +1397,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.20.4...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.21.0...HEAD
+[7.21.0]: https://github.com/giantswarm/devctl/compare/v7.20.4...v7.21.0
 [7.20.4]: https://github.com/giantswarm/devctl/compare/v7.20.3...v7.20.4
 [7.20.3]: https://github.com/giantswarm/devctl/compare/v7.20.2...v7.20.3
 [7.20.2]: https://github.com/giantswarm/devctl/compare/v7.20.1...v7.20.2
