@@ -40,6 +40,20 @@ var appsToBeDropped = []droppedAppConfig{
 	},
 }
 
+type addedAppConfig struct {
+	Name         string
+	MajorVersion uint64
+	DependsOn    []string
+}
+
+var appsToBeAdded = []addedAppConfig{
+	{
+		Name:         "priority-classes",
+		MajorVersion: 34,
+		DependsOn:    nil,
+	},
+}
+
 // CreateRelease creates a release on the filesystem from the given parameters. This is the entry point
 // for the `devctl create release` command logic.
 func CreateRelease(name, base, releases, provider string, components, apps []string, overwrite bool, creationCommand string, bumpall bool, appsToDrop []string, yes bool, output string, verbose bool, changesOnly bool, requestedOnly bool, updateExisting bool, preserveReadme bool, regenerateReadme bool) error {
@@ -138,6 +152,31 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 		}
 	}
 
+	// Prepare list of new apps to be added for this release version.
+	// We'll add them to the apps list later, just before bumpall, so they show as "New app" in the table.
+	var newAppsToAdd []addedAppConfig
+	if len(appsToBeAdded) > 0 {
+		for _, appToAdd := range appsToBeAdded {
+			if releaseVersion.Major >= appToAdd.MajorVersion {
+				// Check if the app already exists in the base release
+				appExists := false
+				for _, existingApp := range effectiveBaseRelease.Spec.Apps {
+					if existingApp.Name == appToAdd.Name {
+						appExists = true
+						break
+					}
+				}
+
+				if !appExists {
+					if verbose {
+						fmt.Printf("Adding new app %s to release %s (introduced in v%d).\n", appToAdd.Name, name, appToAdd.MajorVersion)
+					}
+					newAppsToAdd = append(newAppsToAdd, appToAdd)
+				}
+			}
+		}
+	}
+
 	// Auto-detect components that are not explicitly provided by the user.
 	if !requestedOnly && releaseType != "patch" {
 		for componentName, params := range changelog.KnownComponents {
@@ -206,8 +245,9 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 			detectedVersion, err = autoDetectVersion(name, componentName)
 
 			if err != nil {
-				fmt.Printf("Warning: Could not auto-detect %s version: %v\n", componentName, err)
-				fmt.Printf("You can manually specify the version using --component %s@<version> or --app %s@<version>\n", componentName, componentName)
+				fmt.Printf("\n⚠️  Warning: Could not auto-detect version for '%s'\n", componentName)
+				fmt.Printf("   Reason: %v\n", err)
+				fmt.Printf("   💡 Tip: Manually specify using --component %s@<version> or --app %s@<version>\n\n", componentName, componentName)
 			} else {
 				app := fmt.Sprintf("%s@%s", componentName, detectedVersion)
 				apps = append(apps, app)
@@ -226,6 +266,27 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 		if releaseType == "patch" && len(components) == 0 && len(apps) == 0 && output != "markdown" {
 			fmt.Println("For patch releases, --bumpall does not automatically bump any component or app.")
 			fmt.Println("To bump a specific component or app, please use the --component or --app flags.")
+		}
+
+		// Add new apps to the apps list so BumpAll will process them and display as "New app"
+		// We fetch the latest version first, then add them as requested apps
+		for _, newApp := range newAppsToAdd {
+			// Fetch the latest version for the new app
+			latestVersion, err := FindNewestApp(newApp.Name, false)
+			if err != nil {
+				if verbose {
+					fmt.Printf("Warning: Could not fetch latest version for new app %s: %v\n", newApp.Name, err)
+				}
+				continue
+			}
+
+			// Format as name@version[@dependencies] for BumpAll
+			appSpec := fmt.Sprintf("%s@%s", newApp.Name, latestVersion.Version)
+			if len(newApp.DependsOn) > 0 {
+				// Add dependencies as the 4th part (after empty component version)
+				appSpec = fmt.Sprintf("%s@@%s", appSpec, strings.Join(newApp.DependsOn, ","))
+			}
+			apps = append(apps, appSpec)
 		}
 
 		// Pin k8s version to the release major version.

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add `priority-classes` as a new app in v34.x.x releases.
+
+### Fixed
+
+- Fix lookup for new releases for certain apps.
+
 ## [7.20.4] - 2025-11-07
 
 ### Changed
