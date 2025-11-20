@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.22.0] - 2025-11-20
+
 ### Added
 
 - Add support for `Breaking Changes` category in release notes generation.
@@ -1401,7 +1403,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.21.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.22.0...HEAD
+[7.22.0]: https://github.com/giantswarm/devctl/compare/v7.21.0...v7.22.0
 [7.21.0]: https://github.com/giantswarm/devctl/compare/v7.20.4...v7.21.0
 [7.20.4]: https://github.com/giantswarm/devctl/compare/v7.20.3...v7.20.4
 [7.20.3]: https://github.com/giantswarm/devctl/compare/v7.20.2...v7.20.3
