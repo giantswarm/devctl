@@ -402,14 +402,15 @@ type Version struct {
 }
 
 type CategorizedChanges struct {
-	Added   []string
-	Changed []string
-	Fixed   []string
-	Removed []string
+	Breaking []string
+	Added    []string
+	Changed  []string
+	Fixed    []string
+	Removed  []string
 	// Add more categories if needed
 }
 
-var categoryRegex = regexp.MustCompile(`^### (\w+)`)
+var categoryRegex = regexp.MustCompile(`^###\s+(?:\W+\s+)?(\w+)`)
 
 func ParseChangelog(componentName, currentVersion, endVersion string) (*Version, error) {
 	params, ok := KnownComponents[componentName]
@@ -563,6 +564,10 @@ func ParseChangelog(componentName, currentVersion, endVersion string) (*Version,
 				item = strings.TrimSpace(item)
 				// Append to the last item in the current category with proper indentation
 				switch currentCategory {
+				case "Breaking":
+					if len(categorizedChanges.Breaking) > 0 {
+						categorizedChanges.Breaking[len(categorizedChanges.Breaking)-1] += "\n  - " + item
+					}
 				case "Added":
 					if len(categorizedChanges.Added) > 0 {
 						categorizedChanges.Added[len(categorizedChanges.Added)-1] += "\n  - " + item
@@ -585,6 +590,8 @@ func ParseChangelog(componentName, currentVersion, endVersion string) (*Version,
 				item := strings.TrimPrefix(strings.TrimPrefix(line, "- "), "* ")
 				item = strings.TrimSpace(item)
 				switch currentCategory {
+				case "Breaking":
+					categorizedChanges.Breaking = append(categorizedChanges.Breaking, item)
 				case "Added":
 					categorizedChanges.Added = append(categorizedChanges.Added, item)
 				case "Changed":
@@ -605,6 +612,14 @@ func ParseChangelog(componentName, currentVersion, endVersion string) (*Version,
 
 	// Build the consolidated changelog
 	var sb strings.Builder
+
+	if len(categorizedChanges.Breaking) > 0 {
+		sb.WriteString("#### :warning: Breaking Changes\n\n")
+		for _, item := range categorizedChanges.Breaking {
+			sb.WriteString(fmt.Sprintf("- %s\n", item))
+		}
+		sb.WriteString("\n")
+	}
 
 	if len(categorizedChanges.Added) > 0 {
 		sb.WriteString("#### Added\n\n")
