@@ -657,7 +657,6 @@ func getLatestGithubRelease(owner string, name string, constraint *semver.Range)
 
 					vStr := *release.Name
 					vStr = strings.TrimPrefix(vStr, "v")
-					vStr = strings.TrimPrefix(vStr, "Kubernetes ") // just in case
 
 					v, err := semver.ParseTolerant(vStr)
 					if err != nil {
