@@ -2,7 +2,7 @@ module github.com/giantswarm/devctl/v7
 
 go 1.24.3
 
-toolchain go1.25.4
+toolchain go1.25.5
 
 require (
 	github.com/Masterminds/semver/v3 v3.4.0
