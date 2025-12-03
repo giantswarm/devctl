@@ -272,7 +272,7 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 		// We fetch the latest version first, then add them as requested apps
 		for _, newApp := range newAppsToAdd {
 			// Fetch the latest version for the new app
-			latestVersion, err := FindNewestApp(newApp.Name, false)
+			latestVersion, err := FindNewestApp(newApp.Name, false, nil)
 			if err != nil {
 				if verbose {
 					fmt.Printf("Warning: Could not fetch latest version for new app %s: %v\n", newApp.Name, err)

@@ -75,6 +75,20 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 				var err error
 				version := componentVersion{}
 
+				// Look up constraints from requests
+				var constraint *semver.Range
+				for _, r := range requests {
+					if r.Name == comp.Name {
+						c, err := semver.ParseRange(r.Version)
+						if err != nil {
+							// Ignore invalid constraints.
+							continue
+						}
+						constraint = &c
+						break
+					}
+				}
+
 				if comp.Name == "kubernetes" {
 					if releaseType == "patch" {
 						// For a patch release, we don't want to automatically bump anything.
@@ -91,7 +105,7 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 					}
 				} else {
 					var latestVersionString string
-					latestVersionString, err = findNewestComponentVersion(comp.Name)
+					latestVersionString, err = findNewestComponentVersion(comp.Name, constraint)
 					if err == nil {
 						if releaseType == "patch" {
 							// For a patch release, we don't want to automatically bump anything.
@@ -111,31 +125,6 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 				v.UserRequested = false
 			}
 			if v.Version != comp.Version {
-				// We have a new version, let's check against requests.
-				var constraint semver.Range
-				for _, r := range requests {
-					if r.Name == comp.Name {
-						c, err := semver.ParseRange(r.Version)
-						if err != nil {
-							// Ignore invalid constraints.
-							continue
-						}
-						constraint = c
-						break
-					}
-				}
-
-				if constraint != nil {
-					newV, err := semver.Parse(v.Version)
-					if err != nil {
-						return nil, nil, microerror.Mask(err)
-					}
-					if !constraint(newV) {
-						// Does not meet constraint, reverting to old version.
-						v.Version = comp.Version
-					}
-				}
-
 				components[comp.Name] = v
 			}
 		}
@@ -208,7 +197,21 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 					v.UserRequested = false
 					v.DependsOn = app.DependsOn
 				} else { // major or minor
-					version, err := FindNewestApp(app.Name, app.ComponentVersion != "")
+					// Look up constraints from requests
+					var constraint *semver.Range
+					for _, r := range requests {
+						if r.Name == app.Name {
+							c, err := semver.ParseRange(r.Version)
+							if err != nil {
+								// Ignore invalid constraints.
+								continue
+							}
+							constraint = &c
+							break
+						}
+					}
+
+					version, err := FindNewestApp(app.Name, app.ComponentVersion != "", constraint)
 					if err != nil {
 						return nil, nil, microerror.Mask(err)
 					}
@@ -219,32 +222,6 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 				}
 			}
 			if v.Version != app.Version || !slices.Equal(v.DependsOn, app.DependsOn) {
-				// We have a new version, let's check against requests.
-				var constraint semver.Range
-				for _, r := range requests {
-					if r.Name == app.Name {
-						c, err := semver.ParseRange(r.Version)
-						if err != nil {
-							// Ignore invalid constraints.
-							continue
-						}
-						constraint = c
-						break
-					}
-				}
-
-				if constraint != nil {
-					newV, err := semver.Parse(v.Version)
-					if err != nil {
-						return nil, nil, microerror.Mask(err)
-					}
-					if !constraint(newV) {
-						// Does not meet constraint, reverting to old version.
-						v.Version = app.Version
-						v.UpstreamVersion = app.ComponentVersion
-					}
-				}
-
 				apps[app.Name] = v
 			}
 		}
@@ -545,34 +522,34 @@ func printTable(input v1alpha1.Release, components map[string]componentVersion, 
 	return nil
 }
 
-func FindNewestApp(name string, getUpstreamVersion bool) (appVersion, error) {
+func FindNewestApp(name string, getUpstreamVersion bool, constraint *semver.Range) (appVersion, error) {
 	var err error
 	version := ""
 
 	switch name {
 	case "cloud-provider-aws":
-		version, err = getLatestGithubRelease("giantswarm", "aws-cloud-controller-manager-app")
+		version, err = getLatestGithubRelease("giantswarm", "aws-cloud-controller-manager-app", constraint)
 		if err != nil {
 			return appVersion{}, microerror.Mask(err)
 		}
 	case "cluster-autoscaler":
-		version, err = getLatestGithubRelease("giantswarm", "cluster-autoscaler-app")
+		version, err = getLatestGithubRelease("giantswarm", "cluster-autoscaler-app", constraint)
 		if err != nil {
 			return appVersion{}, microerror.Mask(err)
 		}
 	case "etcd-k8s-res-count-exporter":
-		version, err = getLatestGithubRelease("giantswarm", "etcd-kubernetes-resources-count-exporter")
+		version, err = getLatestGithubRelease("giantswarm", "etcd-kubernetes-resources-count-exporter", constraint)
 		if err != nil {
 			return appVersion{}, microerror.Mask(err)
 		}
 	case "os-tooling":
-		version, err = getLatestGithubRelease("giantswarm", "capi-image-builder")
+		version, err = getLatestGithubRelease("giantswarm", "capi-image-builder", constraint)
 		if err != nil {
 			return appVersion{}, microerror.Mask(err)
 		}
 
 	default:
-		version, err = getLatestGithubRelease("giantswarm", name)
+		version, err = getLatestGithubRelease("giantswarm", name, constraint)
 		if err != nil {
 			return appVersion{}, microerror.Mask(err)
 		}
@@ -593,7 +570,7 @@ func FindNewestApp(name string, getUpstreamVersion bool) (appVersion, error) {
 	return ret, nil
 }
 
-func findNewestComponentVersion(name string) (string, error) {
+func findNewestComponentVersion(name string, constraint *semver.Range) (string, error) {
 	var err error
 	version := ""
 
@@ -604,19 +581,19 @@ func findNewestComponentVersion(name string) (string, error) {
 			return "", microerror.Mask(err)
 		}
 	case "kubernetes":
-		version, err = getLatestGithubRelease("kubernetes", "kubernetes")
+		version, err = getLatestGithubRelease("kubernetes", "kubernetes", nil)
 		// strip the "Kubernetes " prefix from the version
 		version, _ = strings.CutPrefix(version, "Kubernetes ")
 		if err != nil {
 			return "", microerror.Mask(err)
 		}
 	case "os-tooling":
-		version, err = getLatestGithubRelease("giantswarm", "capi-image-builder")
+		version, err = getLatestGithubRelease("giantswarm", "capi-image-builder", constraint)
 		if err != nil {
 			return "", microerror.Mask(err)
 		}
 	default:
-		version, err = getLatestGithubRelease("giantswarm", name)
+		version, err = getLatestGithubRelease("giantswarm", name, constraint)
 		if err != nil {
 			return "", microerror.Mask(err)
 		}
@@ -627,7 +604,7 @@ func findNewestComponentVersion(name string) (string, error) {
 	return version, nil
 }
 
-func getLatestGithubRelease(owner string, name string) (string, error) {
+func getLatestGithubRelease(owner string, name string, constraint *semver.Range) (string, error) {
 	token := env.GitHubToken.Val()
 
 	ctx := context.Background()
@@ -644,17 +621,66 @@ func getLatestGithubRelease(owner string, name string) (string, error) {
 	var latestErr error
 
 	for _, n := range candidateNames {
-		release, _, err := client.Repositories.GetLatestRelease(context.Background(), owner, n)
-		if IsGithubNotFound(err) {
-			// try with next candidate
-			latestErr = err
-			continue
-		} else if err != nil {
-			return "", microerror.Mask(err)
-		}
+		if constraint == nil {
+			release, _, err := client.Repositories.GetLatestRelease(context.Background(), owner, n)
+			if IsGithubNotFound(err) {
+				// try with next candidate
+				latestErr = err
+				continue
+			} else if err != nil {
+				return "", microerror.Mask(err)
+			}
 
-		version = *release.Name
-		break
+			version = *release.Name
+			break
+		} else {
+			opt := &github.ListOptions{
+				PerPage: 100,
+			}
+			foundMatch := false
+			for i := 0; i < 5; i++ { // Cap at 5 pages to be safe
+				releases, resp, err := client.Repositories.ListReleases(context.Background(), owner, n, opt)
+				if IsGithubNotFound(err) {
+					latestErr = err
+					break // Try next candidate
+				} else if err != nil {
+					return "", microerror.Mask(err)
+				}
+
+				for _, release := range releases {
+					if release.GetPrerelease() || release.GetDraft() {
+						continue
+					}
+					if release.Name == nil {
+						continue
+					}
+
+					vStr := *release.Name
+					vStr = strings.TrimPrefix(vStr, "v")
+
+					v, err := semver.ParseTolerant(vStr)
+					if err != nil {
+						continue
+					}
+
+					if (*constraint)(v) {
+						version = *release.Name
+						foundMatch = true
+						break
+					}
+				}
+				if foundMatch {
+					break
+				}
+				if resp.NextPage == 0 {
+					break
+				}
+				opt.Page = resp.NextPage
+			}
+			if foundMatch {
+				break
+			}
+		}
 	}
 
 	if version == "" {
@@ -842,6 +868,7 @@ func getRepoCandidates(owner, name string) (string, []string) {
 // from a release name pattern. For example:
 // - "v31.0.0" -> "1.31" (mapping v31 to k8s 1.31)
 // - "v30.0.0" -> "1.30" (mapping v30 to k8s 1.30)
+// - "v33.0.0" -> "1.33"
 // Returns the minor version string (like "1.31") or empty string if pattern doesn't match
 func extractKubernetesMinorFromReleaseName(releaseName string) string {
 	releaseName = strings.TrimPrefix(releaseName, "v")
