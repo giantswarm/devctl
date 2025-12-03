@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.23.0] - 2025-12-03
+
 ### Fixed
 
 - Fix `bumpall` logic to correctly respect version constraints from `requests.yaml` when finding the latest version of a component or app.
@@ -1407,7 +1409,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.22.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.23.0...HEAD
+[7.23.0]: https://github.com/giantswarm/devctl/compare/v7.22.0...v7.23.0
 [7.22.0]: https://github.com/giantswarm/devctl/compare/v7.21.0...v7.22.0
 [7.21.0]: https://github.com/giantswarm/devctl/compare/v7.20.4...v7.21.0
 [7.20.4]: https://github.com/giantswarm/devctl/compare/v7.20.3...v7.20.4
