@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/giantswarm/microerror"
-	"github.com/google/go-github/v79/github"
+	"github.com/google/go-github/v80/github"
 )
 
 func (c *Client) GetFile(ctx context.Context, owner, repo, path, ref string) (RepositoryFile, error) {
