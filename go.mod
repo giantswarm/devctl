@@ -16,7 +16,7 @@ require (
 	github.com/giantswarm/release-operator/v4 v4.2.1
 	github.com/go-git/go-git/v5 v5.16.4
 	github.com/google/go-github/v80 v80.0.0
-	github.com/jedib0t/go-pretty/v6 v6.7.5
+	github.com/jedib0t/go-pretty/v6 v6.7.7
 	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826
 	github.com/pelletier/go-toml/v2 v2.2.4
 	github.com/rhysd/go-github-selfupdate v1.2.3
