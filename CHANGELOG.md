@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- LLM rules for Go: fix globs syntax
+
 ## [7.23.1] - 2025-12-04
 
 ### Changed
