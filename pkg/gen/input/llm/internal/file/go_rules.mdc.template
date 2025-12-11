@@ -1,6 +1,6 @@
 ---
 description: Go language-specific development guidelines and patterns
-globs: ["**/*.go"]
+globs: **/*.go,go.mod,go.sum
 ---
 
 These guidelines apply to Go code and supplement any other general development instructions or workflows.
