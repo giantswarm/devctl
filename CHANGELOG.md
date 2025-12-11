@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.23.2] - 2025-12-11
+
 ### Fixed
 
 - LLM rules for Go: fix globs syntax
@@ -1419,7 +1421,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.23.1...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.23.2...HEAD
+[7.23.2]: https://github.com/giantswarm/devctl/compare/v7.23.1...v7.23.2
 [7.23.1]: https://github.com/giantswarm/devctl/compare/v7.23.0...v7.23.1
 [7.23.0]: https://github.com/giantswarm/devctl/compare/v7.22.0...v7.23.0
 [7.22.0]: https://github.com/giantswarm/devctl/compare/v7.21.0...v7.22.0
