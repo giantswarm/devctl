@@ -1,0 +1,18 @@
+package approvemergerenovate
+
+import (
+	"github.com/giantswarm/microerror"
+)
+
+var invalidConfigError = &microerror.Error{
+	Kind: "invalidConfigError",
+}
+
+var invalidFlagsError = &microerror.Error{
+	Kind: "invalidFlagsError",
+}
+
+var executionFailedError = &microerror.Error{
+	Kind: "executionFailedError",
+}
+
