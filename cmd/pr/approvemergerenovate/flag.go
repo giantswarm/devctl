@@ -17,4 +17,3 @@ func (f *flag) Init(cmd *cobra.Command) {
 func (f *flag) Validate() error {
 	return nil
 }
-

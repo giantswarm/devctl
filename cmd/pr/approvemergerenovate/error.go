@@ -15,4 +15,3 @@ var invalidFlagsError = &microerror.Error{
 var executionFailedError = &microerror.Error{
 	Kind: "executionFailedError",
 }
-
