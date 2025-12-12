@@ -2,12 +2,18 @@
 
 ## Overview
 
-The `devctl pr approve-merge-renovate` command automates the approval and merging of Renovate-generated pull requests across multiple repositories.
+The `devctl pr approve-merge-renovate` command automates the approval and merging of Renovate-generated pull requests across multiple repositories. It continuously monitors for new PRs matching your query, processes them in parallel, and handles both auto-merge enabled PRs and direct merging.
 
 ## Usage
 
 ```bash
-devctl pr approve-merge-renovate "architect v6.7.0"
+devctl pr approve-merge-renovate QUERY
+```
+
+Example:
+
+```bash
+devctl pr approve-merge-renovate "architect v1.2.3"
 ```
 
 ## Arguments
@@ -17,7 +23,6 @@ devctl pr approve-merge-renovate "architect v6.7.0"
 ## Options
 
 - `--dry-run`: Show what would be done without making changes
-- `--merge-method`: Override merge method (merge, squash, rebase). If not set, uses repository's default merge method.
 
 ## How It Works
 
@@ -32,18 +37,18 @@ devctl pr approve-merge-renovate "architect v6.7.0"
 3. **Continuous Polling**: Every 10 seconds, re-runs the search query to discover newly created PRs that match the criteria and automatically processes them
 
 4. **Live Table UI**: Displays a real-time updating table showing:
-   - PR number (as a clickable hyperlink)
+   - PR number (as a clickable hyperlink in supported terminals)
    - Repository name
-   - Current status with icons
+   - Current status (text-based, no emojis)
 
 5. **For Each PR**:
    - Checks if already merged (skip if yes)
-   - Checks if auto-merge is enabled (skip if yes)
-   - Verifies status checks are passing
+   - Verifies status checks are passing (reports "Failed checks" if failing)
    - **Polls and waits** if checks are pending (retries up to 60 times over 5 minutes)
-   - Approves when checks pass (if not already approved)
-   - Determines appropriate merge method from repository settings
-   - Merges the PR
+   - Checks if auto-merge is enabled after checks pass
+   - Approves the PR when checks pass (if not already approved)
+   - **If auto-merge enabled**: Waits up to 1 minute for auto-merge to complete
+   - **If no auto-merge**: Determines merge method from repository settings and merges directly
 
 6. **Auto-retry Logic**: 
    - PRs with pending checks are automatically polled every 5 seconds
@@ -61,22 +66,22 @@ devctl pr approve-merge-renovate "architect v6.7.0"
 ### Approve and merge all Renovate PRs for a specific dependency update
 
 ```bash
-devctl pr approve-merge-renovate "architect v6.7.0"
+devctl pr approve-merge-renovate "architect v1.2.3"
 ```
 
 ### Preview what would happen without making changes
 
 ```bash
-devctl pr approve-merge-renovate "Update Go to v1.21" --dry-run
+devctl pr approve-merge-renovate "helmclient v4.12.7" --dry-run
 ```
 
-### Override the merge method (only if allowed in the repository)
+### Process PRs matching a partial string
 
 ```bash
-devctl pr approve-merge-renovate "renovate dependency" --merge-method rebase
+devctl pr approve-merge-renovate "helm v3"
 ```
 
-**Note**: If the specified merge method is not allowed in a repository, that PR will be skipped with a warning.
+This will match any Renovate PRs with "helm v3" in the title (e.g., "Update helm to v3.15.0", "Update helm to v3.16.0").
 
 ## Requirements
 
@@ -88,13 +93,28 @@ devctl pr approve-merge-renovate "renovate dependency" --merge-method rebase
 
 ## UI Features
 
-The command displays a live-updating table with status indicators:
+The command displays a live-updating table with text-based status messages:
 
-- **🔍** Checking status
-- **⏳** Waiting for checks to pass (with retry count)
-- **☑️** Already handled (merged or auto-merge enabled)
-- **✅** Successfully approved or merged
-- **❌** Failed or skipped
+**Common Status Messages:**
+- `Checking...` - Retrieving PR information
+- `Failed checks` - PR has failing status checks (skipped)
+- `Waiting for checks (N/60)` - Polling until checks pass
+- `Approving...` - Approving the PR
+- `Approved` - PR approved, ready to merge
+- `Approved (auto-merge)` - PR approved, waiting for auto-merge
+- `Auto-merge enabled` - PR already approved with auto-merge
+- `Merged (squash/merge/rebase)` - PR successfully merged
+- `Would approve (auto-merge)` - Dry-run: would approve auto-merge PR
+- `Would approve & merge` - Dry-run: would approve and merge PR
+- `Already merged` - PR was already merged
+
+**Table Format:**
+```
+PR      Repository                               Status
+────────────────────────────────────────────────────────────────────────────────
+#442    app-build-suite                          Failed checks
+#638    apptestctl                               Merged (squash)
+```
 
 PR numbers are clickable hyperlinks (in supported terminals) that open the PR in your browser.
 
@@ -108,21 +128,31 @@ PR numbers are clickable hyperlinks (in supported terminals) that open the PR in
 
 ## Notes
 
-- The command processes PRs in the `giantswarm` organization
+- The command searches for PRs with `review-requested:@me` and `author:app/renovate` in any organization
+- PRs are displayed with only the repository name (owner prefix removed for cleaner display)
 - PRs with pending checks are automatically polled every 5 seconds for up to 5 minutes
-- PRs with merge conflicts or permanently failed checks will be skipped
-- Auto-merge enabled PRs are skipped (no need to merge manually)
+- PRs with failed checks are skipped and reported as "Failed checks"
+- PRs with merge conflicts are skipped with error message
+- **Auto-merge behavior**:
+  - PRs with auto-merge enabled and failing checks: Show "Failed checks"
+  - PRs with auto-merge enabled and passing checks: Approve and wait up to 1 minute for auto-merge
+  - PRs without auto-merge: Approve and merge directly using repository's default merge method
+- New PRs matching the query are automatically discovered every 10 seconds during execution
+- The command continues until all PRs are processed (merged, approved, or failed)
 
 ## Comparison with `pr approvealign`
 
 | Feature | `approvealign` | `approve-merge-renovate` |
 |---------|----------------|--------------------------|
 | Scope | "Align files" PRs | Renovate PRs with custom query |
-| Query | Fixed | User-specified |
-| Approve | ✅ | ✅ |
-| Merge | ❌ | ✅ |
-| Dry-run | ❌ | ✅ |
-| Merge method | N/A | Configurable |
+| Query | Fixed | User-specified (positional arg) |
+| Approve | Yes | Yes |
+| Merge | No | Yes (auto-detected method) |
+| Dry-run | No | Yes |
+| Live table | No | Yes |
+| Continuous polling | No | Yes (every 10s) |
+| Auto-merge support | No | Yes |
+| Parallel processing | No | Yes |
 
 ## Implementation
 

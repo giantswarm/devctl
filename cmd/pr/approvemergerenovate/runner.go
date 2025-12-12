@@ -435,38 +435,17 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 			return
 		}
 
-		// Determine merge method
+		// Determine merge method from repository settings
 		var mergeMethod string
-		if r.flag.MergeMethod != "" {
-			mergeMethod = r.flag.MergeMethod
-			switch mergeMethod {
-			case "squash":
-				if !repo.GetAllowSquashMerge() {
-					ps.UpdateStatus("Squash not allowed")
-					return
-				}
-			case "merge":
-				if !repo.GetAllowMergeCommit() {
-					ps.UpdateStatus("Merge not allowed")
-					return
-				}
-			case "rebase":
-				if !repo.GetAllowRebaseMerge() {
-					ps.UpdateStatus("Rebase not allowed")
-					return
-				}
-			}
+		if repo.GetAllowSquashMerge() {
+			mergeMethod = "squash"
+		} else if repo.GetAllowMergeCommit() {
+			mergeMethod = "merge"
+		} else if repo.GetAllowRebaseMerge() {
+			mergeMethod = "rebase"
 		} else {
-			if repo.GetAllowSquashMerge() {
-				mergeMethod = "squash"
-			} else if repo.GetAllowMergeCommit() {
-				mergeMethod = "merge"
-			} else if repo.GetAllowRebaseMerge() {
-				mergeMethod = "rebase"
-			} else {
-				ps.UpdateStatus("No merge methods")
-				return
-			}
+			ps.UpdateStatus("No merge methods")
+			return
 		}
 
 		// Attempt to merge
