@@ -118,9 +118,9 @@ The command displays a live-updating table with text-based status messages:
 - `Waiting for checks (N/60)` - Polling until checks pass
 - `Approving...` - Approving the PR
 - `Approved` - PR approved, ready to merge
-- `Approved (auto-merge)` - PR approved, waiting for auto-merge
-- `Auto-merge enabled` - PR already approved with auto-merge
+- `Queued to merge` - PR approved with auto-merge/merge queue (will merge automatically)
 - `Merged (squash/merge/rebase)` - PR successfully merged
+- `Merged (auto-merge)` - PR merged via auto-merge or merge queue
 - `Would approve (auto-merge)` - Dry-run: would approve auto-merge PR
 - `Would approve & merge` - Dry-run: would approve and merge PR
 - `Already merged` - PR was already merged
@@ -160,10 +160,12 @@ Watch mode (`--watch`) is particularly useful for:
 - PRs with pending checks are automatically polled every 5 seconds for up to 5 minutes
 - PRs with failed checks are skipped and reported as "Failed checks"
 - PRs with merge conflicts are skipped with error message
-- **Auto-merge behavior**:
+- **Auto-merge and Merge Queue behavior**:
   - PRs with auto-merge enabled and failing checks: Show "Failed checks"
-  - PRs with auto-merge enabled and passing checks: Approve and wait up to 1 minute for auto-merge
+  - PRs with auto-merge enabled and passing checks: Approve, check once after 5s, then show "Queued to merge"
+  - PRs in merge queue: Show "Queued to merge" after approval
   - PRs without auto-merge: Approve and merge directly using repository's default merge method
+  - The command trusts auto-merge/merge queue to handle the actual merging
 - **Normal mode**: New PRs are discovered every 10 seconds; command exits when all PRs are processed
 - **Watch mode (`--watch`)**: 
   - New PRs are discovered every minute

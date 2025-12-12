@@ -451,40 +451,33 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 				}
 
 				if hasAutoMerge {
-					// Wait for auto-merge to complete
-					ps.UpdateStatus("Approved, waiting for auto-merge...")
-					for waitAttempt := 0; waitAttempt < 12; waitAttempt++ { // Wait up to 1 minute
-						time.Sleep(5 * time.Second)
+					// Approve and let auto-merge/merge queue handle it
+					ps.UpdateStatus("Approved, checking merge status...")
+					time.Sleep(5 * time.Second)
 
-						// Check if merged
-						prCheck, _, err := githubClient.PullRequests.Get(ctx, ps.Owner, ps.Repo, ps.Number)
-						if err == nil && prCheck.GetMerged() {
-							ps.UpdateStatus("Merged (auto-merge)")
-							return
-						}
-
-						ps.UpdateStatus(fmt.Sprintf("Waiting for auto-merge (%d/12)", waitAttempt+1))
+					// Check once if it merged immediately
+					prCheck, _, err := githubClient.PullRequests.Get(ctx, ps.Owner, ps.Repo, ps.Number)
+					if err == nil && prCheck.GetMerged() {
+						ps.UpdateStatus("Merged (auto-merge)")
+						return
 					}
-					ps.UpdateStatus("Approved (auto-merge pending)")
+
+					// Not merged yet - likely in merge queue or waiting for other reasons
+					ps.UpdateStatus("Queued to merge")
 					return
 				}
 				ps.UpdateStatus("Approved")
 			}
 		} else if hasAutoMerge {
-			// Already approved and has auto-merge - check if it will merge
-			ps.UpdateStatus("Waiting for auto-merge...")
-			for waitAttempt := 0; waitAttempt < 12; waitAttempt++ {
-				time.Sleep(5 * time.Second)
-
-				prCheck, _, err := githubClient.PullRequests.Get(ctx, ps.Owner, ps.Repo, ps.Number)
-				if err == nil && prCheck.GetMerged() {
-					ps.UpdateStatus("Merged (auto-merge)")
-					return
-				}
-
-				ps.UpdateStatus(fmt.Sprintf("Waiting for auto-merge (%d/12)", waitAttempt+1))
+			// Already approved with auto-merge - check once if merged
+			prCheck, _, err := githubClient.PullRequests.Get(ctx, ps.Owner, ps.Repo, ps.Number)
+			if err == nil && prCheck.GetMerged() {
+				ps.UpdateStatus("Merged (auto-merge)")
+				return
 			}
-			ps.UpdateStatus("Auto-merge enabled")
+
+			// Not merged yet - queued
+			ps.UpdateStatus("Queued to merge")
 			return
 		}
 
@@ -553,6 +546,7 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 func (r *runner) printSummary(prStatuses []*prStatus) {
 	merged := 0
 	approved := 0
+	queued := 0
 	skipped := 0
 	failed := 0
 	waiting := 0
@@ -561,6 +555,8 @@ func (r *runner) printSummary(prStatuses []*prStatus) {
 		status := ps.GetStatus()
 		if strings.Contains(status, "Merged") {
 			merged++
+		} else if strings.Contains(status, "Queued to merge") {
+			queued++
 		} else if strings.Contains(status, "Approved") && !strings.Contains(status, "Would") {
 			approved++
 		} else if strings.Contains(status, "Already") || strings.Contains(status, "Auto-merge enabled") {
@@ -579,6 +575,9 @@ func (r *runner) printSummary(prStatuses []*prStatus) {
 	} else {
 		fmt.Fprintf(r.stdout, "  PRs merged: %d\n", merged)
 		fmt.Fprintf(r.stdout, "  PRs approved: %d\n", approved)
+		if queued > 0 {
+			fmt.Fprintf(r.stdout, "  PRs queued to merge: %d\n", queued)
+		}
 	}
 	fmt.Fprintf(r.stdout, "  PRs skipped: %d\n", skipped)
 	fmt.Fprintf(r.stdout, "  PRs failed: %d\n", failed)
