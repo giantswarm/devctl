@@ -80,7 +80,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 	// Validate that a query argument was provided
 	if len(args) == 0 {
-		return microerror.Maskf(invalidFlagsError, "query argument is required\n\nUsage: devctl pr approve-merge-renovate <query>\n\nExample:\n  devctl pr approve-merge-renovate \"helmclient v4.12.7\"")
+		return microerror.Maskf(invalidFlagsError, "query argument is required\n\nUsage: devctl pr approve-merge-renovate <query>\n\nExample:\n  devctl pr approve-merge-renovate \"architect v1.2.3\"\n")
 	}
 
 	query := args[0]
