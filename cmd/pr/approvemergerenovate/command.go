@@ -46,7 +46,8 @@ func New(config Config) (*cobra.Command, error) {
 		Use:     usage,
 		Short:   description,
 		Long:    description,
-		Aliases: []string{name},
+		Aliases: []string{name, "amr"},
+		Example: "  devctl pr amr --watch \"architect v1.2.3\"",
 		RunE:    r.Run,
 	}
 
@@ -54,4 +55,3 @@ func New(config Config) (*cobra.Command, error) {
 
 	return c, nil
 }
-
