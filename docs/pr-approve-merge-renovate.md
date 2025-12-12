@@ -23,6 +23,7 @@ devctl pr approve-merge-renovate "architect v1.2.3"
 ## Options
 
 - `--dry-run`: Show what would be done without making changes
+- `--watch`, `-w`: Keep running and continuously watch for new PRs (polls every minute, exit with Ctrl+C)
 
 ## How It Works
 
@@ -34,7 +35,9 @@ devctl pr approve-merge-renovate "architect v1.2.3"
 
 2. **Parallel Processing**: All PRs are processed simultaneously using goroutines for maximum speed
 
-3. **Continuous Polling**: Every 10 seconds, re-runs the search query to discover newly created PRs that match the criteria and automatically processes them
+3. **Continuous Polling**: Re-runs the search query to discover newly created PRs that match the criteria and automatically processes them
+   - Normal mode: Polls every 10 seconds until all PRs are processed
+   - Watch mode (`--watch`): Polls every minute and runs indefinitely
 
 4. **Live Table UI**: Displays a real-time updating table showing:
    - PR number (as a clickable hyperlink in supported terminals)
@@ -83,6 +86,20 @@ devctl pr approve-merge-renovate "helm v3"
 
 This will match any Renovate PRs with "helm v3" in the title (e.g., "Update helm to v3.15.0", "Update helm to v3.16.0").
 
+### Watch mode - continuously monitor for new PRs
+
+```bash
+devctl pr approve-merge-renovate "architect v1" --watch
+```
+
+In watch mode:
+- The command keeps running after all current PRs are processed
+- Polls for new matching PRs every minute (instead of every 10 seconds)
+- Automatically processes any new PRs that appear
+- Exit with Ctrl+C (or Cmd+C on macOS)
+
+This is useful when you expect multiple Renovate PRs to be created over time.
+
 ## Requirements
 
 - `GITHUB_TOKEN` environment variable must be set with appropriate permissions:
@@ -123,8 +140,18 @@ PR numbers are clickable hyperlinks (in supported terminals) that open the PR in
 - **Parallel Processing**: All PRs are processed simultaneously
 - **No waiting**: You don't need to wait for one PR to finish before the next starts
 - **Auto-retry**: PRs with pending checks are automatically retried until ready
-- **Continuous Discovery**: New PRs matching the query are automatically detected every 10 seconds
-- Example: 13 PRs can be processed in the time it takes for the slowest one to become ready
+- **Continuous Discovery**: 
+  - Normal mode: New PRs detected every 10 seconds
+  - Watch mode: New PRs detected every minute
+- **Example**: 13 PRs can be processed in the time it takes for the slowest one to become ready
+
+## Watch Mode Use Cases
+
+Watch mode (`--watch`) is particularly useful for:
+- **Mass dependency updates**: When Renovate creates many PRs for the same update across multiple repositories
+- **Gradual rollouts**: When PRs are created over time as different repositories become eligible
+- **Long-running automation**: Keep the command running in CI/CD or as a background process
+- **Batch operations**: Process all PRs of a certain type as they appear without manual intervention
 
 ## Notes
 
@@ -137,29 +164,9 @@ PR numbers are clickable hyperlinks (in supported terminals) that open the PR in
   - PRs with auto-merge enabled and failing checks: Show "Failed checks"
   - PRs with auto-merge enabled and passing checks: Approve and wait up to 1 minute for auto-merge
   - PRs without auto-merge: Approve and merge directly using repository's default merge method
-- New PRs matching the query are automatically discovered every 10 seconds during execution
-- The command continues until all PRs are processed (merged, approved, or failed)
-
-## Comparison with `pr approvealign`
-
-| Feature | `approvealign` | `approve-merge-renovate` |
-|---------|----------------|--------------------------|
-| Scope | "Align files" PRs | Renovate PRs with custom query |
-| Query | Fixed | User-specified (positional arg) |
-| Approve | Yes | Yes |
-| Merge | No | Yes (auto-detected method) |
-| Dry-run | No | Yes |
-| Live table | No | Yes |
-| Continuous polling | No | Yes (every 10s) |
-| Auto-merge support | No | Yes |
-| Parallel processing | No | Yes |
-
-## Implementation
-
-The command is implemented in `cmd/pr/approvemergerenovate/` with the following files:
-
-- `command.go`: Command definition and configuration
-- `runner.go`: Main implementation logic
-- `flag.go`: Command-line flag definitions and validation
-- `error.go`: Error definitions
-
+- **Normal mode**: New PRs are discovered every 10 seconds; command exits when all PRs are processed
+- **Watch mode (`--watch`)**: 
+  - New PRs are discovered every minute
+  - Command runs indefinitely, never exits automatically
+  - Perfect for long-running Renovate batch updates
+  - Exit gracefully with Ctrl+C or Cmd+C

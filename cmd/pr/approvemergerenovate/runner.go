@@ -4,8 +4,11 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
+	"os/signal"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/giantswarm/microerror"
@@ -118,8 +121,13 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	}
 
 	if searchResults.GetTotal() == 0 {
-		fmt.Fprintln(r.stdout, "No PRs found.")
-		return nil
+		if !r.flag.Watch {
+			fmt.Fprintln(r.stdout, "No PRs found.")
+			return nil
+		}
+		// In watch mode, continue even if no PRs found initially
+		fmt.Fprintln(r.stdout, "No PRs found yet. Watching for new PRs...")
+		fmt.Fprintln(r.stdout, "")
 	}
 
 	// Initialize PR statuses with mutex protection for concurrent updates
@@ -182,10 +190,16 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		}(ps)
 	}
 
-	// Start background goroutine to poll for new PRs every 10 seconds
+	// Start background goroutine to poll for new PRs
+	// Interval: 10 seconds in normal mode, 1 minute in watch mode
+	pollInterval := 10 * time.Second
+	if r.flag.Watch {
+		pollInterval = 1 * time.Minute
+	}
+
 	stopPolling := make(chan bool)
 	go func() {
-		ticker := time.NewTicker(10 * time.Second)
+		ticker := time.NewTicker(pollInterval)
 		defer ticker.Stop()
 
 		for {
@@ -222,19 +236,52 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		}
 	}()
 
-	// Update display periodically until all PRs are done
+	// Setup signal handling for graceful shutdown (Ctrl+C)
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+
+	// Update display periodically until all PRs are done (or forever in watch mode)
 	done := make(chan bool)
 	go func() {
 		wg.Wait()
-		done <- true
+		if !r.flag.Watch {
+			done <- true
+		}
+		// In watch mode, don't signal done - keep running
 	}()
 
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 
+	if r.flag.Watch {
+		fmt.Fprintln(r.stdout, "👁️  Watch mode enabled - monitoring for new PRs every minute (press Ctrl+C to exit)")
+		fmt.Fprintln(r.stdout, "")
+	}
+
 	for {
 		select {
+		case <-sigChan:
+			// User pressed Ctrl+C
+			fmt.Fprintln(r.stdout, "\n\n⏹️  Interrupted by user")
+
+			// Stop polling
+			close(stopPolling)
+
+			// Final update
+			prStatusesMu.Lock()
+			r.updateTable(prStatuses)
+			prStatusesMu.Unlock()
+
+			fmt.Fprintln(r.stdout, "")
+
+			prStatusesMu.Lock()
+			r.printSummary(prStatuses)
+			prStatusesMu.Unlock()
+
+			return nil
+
 		case <-done:
+			// All current PRs processed (only happens in non-watch mode)
 			// Stop polling for new PRs
 			close(stopPolling)
 
@@ -250,6 +297,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 			prStatusesMu.Unlock()
 
 			return nil
+
 		case <-ticker.C:
 			prStatusesMu.Lock()
 			r.updateTable(prStatuses)
