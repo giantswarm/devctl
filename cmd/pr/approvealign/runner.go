@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/giantswarm/microerror"
 	"github.com/google/go-github/v80/github"
@@ -27,6 +28,19 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 		return microerror.Mask(err)
 	}
 	return r.run(ctx, cmd, args)
+}
+
+// parseRepoFromURL extracts owner and repo name from GitHub PR URL
+// e.g., "https://github.com/giantswarm/backstage/pull/1033" -> "giantswarm", "backstage"
+func parseRepoFromURL(url string) (string, string, error) {
+	parts := strings.Split(url, "/")
+	if len(parts) < 5 {
+		return "", "", fmt.Errorf("invalid GitHub URL format: %s", url)
+	}
+	// URL format: https://github.com/{owner}/{repo}/pull/{number}
+	owner := parts[3]
+	repo := parts[4]
+	return owner, repo, nil
 }
 
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
@@ -69,9 +83,15 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	approvedCount := 0
 	for _, issue := range searchResults.Issues {
 		prNumber := issue.GetNumber()
+		url := issue.GetHTMLURL()
 
-		owner := issue.GetRepository().GetOrganization().GetLogin()
-		repoName := issue.GetRepository().GetName()
+		// Parse owner and repo from URL since repository object may not be fully populated
+		owner, repoName, err := parseRepoFromURL(url)
+		if err != nil {
+			r.logger.Errorf("Failed to parse repository from URL %s: %v", url, err)
+			fmt.Fprintf(r.stderr, "Failed to parse repository from URL: %v\n", err)
+			continue
+		}
 
 		r.logger.Infof("Attempting to approve PR #%d in %s/%s", prNumber, owner, repoName)
 
