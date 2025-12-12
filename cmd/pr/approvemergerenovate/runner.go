@@ -360,26 +360,46 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 		combinedStatus, _, _ := githubClient.Repositories.GetCombinedStatus(ctx, ps.Owner, ps.Repo, headSHA, nil)
 		checkRuns, _, _ := githubClient.Checks.ListCheckRunsForRef(ctx, ps.Owner, ps.Repo, headSHA, nil)
 
-		// Check if any checks are failing
+		// Check if any checks are failing or pending
 		hasFailedChecks := false
 		checksPending := false
 
+		// Check combined status first - this is for traditional status checks
 		if combinedStatus != nil {
-			if combinedStatus.GetState() == "failure" {
+			state := combinedStatus.GetState()
+			totalCount := combinedStatus.GetTotalCount()
+
+			if state == "success" {
+				// All required checks passed
+				checksPending = false
+				hasFailedChecks = false
+			} else if state == "failure" || state == "error" {
 				hasFailedChecks = true
-			} else if combinedStatus.GetState() == "pending" {
+			} else if state == "pending" && totalCount > 0 {
+				// Only treat as pending if there are actual status checks
+				// pending with totalCount=0 just means no checks exist, not that checks are waiting
 				checksPending = true
 			}
 		}
 
-		if checkRuns != nil {
-			for _, run := range checkRuns.CheckRuns {
-				if run.GetStatus() == "completed" && run.GetConclusion() == "failure" {
-					hasFailedChecks = true
-					break
-				}
-				if run.GetStatus() != "completed" {
-					checksPending = true
+		// Check individual check runs (GitHub Actions checks)
+		if checkRuns != nil && len(checkRuns.CheckRuns) > 0 && !hasFailedChecks {
+			// Only check runs if combinedStatus didn't already give us a definitive answer
+			if combinedStatus == nil || (combinedStatus.GetState() != "success" && combinedStatus.GetState() != "failure") {
+				for _, run := range checkRuns.CheckRuns {
+					conclusion := run.GetConclusion()
+					status := run.GetStatus()
+
+					if status == "completed" {
+						if conclusion == "failure" || conclusion == "cancelled" || conclusion == "timed_out" {
+							hasFailedChecks = true
+							break
+						}
+						// success, neutral, skipped are OK
+					} else {
+						// Check is not completed (queued, in_progress)
+						checksPending = true
+					}
 				}
 			}
 		}
