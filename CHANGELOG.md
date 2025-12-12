@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add command `pr approve-merge-renovate` to approve and merge Renovate PRs
+
 ## [7.23.2] - 2025-12-11
 
 ### Fixed
