@@ -7,12 +7,15 @@ The `devctl pr approve-merge-renovate` command automates the approval and mergin
 ## Usage
 
 ```bash
-devctl pr approve-merge-renovate --query "architect v6.7.0"
+devctl pr approve-merge-renovate "architect v6.7.0"
 ```
+
+## Arguments
+
+- `<query>` (required): Search query to filter Renovate PRs
 
 ## Options
 
-- `--query, -q` (required): Search query to filter Renovate PRs
 - `--dry-run`: Show what would be done without making changes
 - `--merge-method`: Override merge method (merge, squash, rebase). If not set, uses repository's default merge method.
 
@@ -24,47 +27,53 @@ devctl pr approve-merge-renovate --query "architect v6.7.0"
    - `review-requested:@me`
    - `author:app/renovate`
 
-2. **Check Status**: For each PR found:
+2. **Parallel Processing**: All PRs are processed simultaneously using goroutines for maximum speed
+
+3. **Continuous Polling**: Every 10 seconds, re-runs the search query to discover newly created PRs that match the criteria and automatically processes them
+
+4. **Live Table UI**: Displays a real-time updating table showing:
+   - PR number (as a clickable hyperlink)
+   - Repository name
+   - Current status with icons
+
+5. **For Each PR**:
+   - Checks if already merged (skip if yes)
+   - Checks if auto-merge is enabled (skip if yes)
    - Verifies status checks are passing
-   - Skips PRs with failed checks
+   - **Polls and waits** if checks are pending (retries up to 60 times over 5 minutes)
+   - Approves when checks pass (if not already approved)
+   - Determines appropriate merge method from repository settings
+   - Merges the PR
 
-3. **Check Auto-merge**: 
-   - Skips PRs that already have auto-merge enabled
-   - Only merges PRs without auto-merge to avoid duplicate actions
+6. **Auto-retry Logic**: 
+   - PRs with pending checks are automatically polled every 5 seconds
+   - Once checks pass, they're immediately approved and merged
+   - No manual intervention needed
 
-4. **Approve**: If not already approved:
-   - Approves the PR
-
-5. **Determine Merge Method**:
-   - If `--merge-method` is specified, validates it's allowed in the repository
-   - Otherwise, uses repository's default (prefers squash > merge > rebase)
-
-6. **Merge**: If not already merged:
-   - Attempts to merge the PR using the determined merge method
-
-7. **Summary**: Displays statistics about:
-   - PRs approved
+7. **Summary**: Displays final statistics about:
    - PRs merged
+   - PRs approved
    - PRs skipped
+   - PRs failed
 
 ## Examples
 
 ### Approve and merge all Renovate PRs for a specific dependency update
 
 ```bash
-devctl pr approve-merge-renovate --query "architect v6.7.0"
+devctl pr approve-merge-renovate "architect v6.7.0"
 ```
 
 ### Preview what would happen without making changes
 
 ```bash
-devctl pr approve-merge-renovate --query "Update Go to v1.21" --dry-run
+devctl pr approve-merge-renovate "Update Go to v1.21" --dry-run
 ```
 
 ### Override the merge method (only if allowed in the repository)
 
 ```bash
-devctl pr approve-merge-renovate --query "renovate dependency" --merge-method rebase
+devctl pr approve-merge-renovate "renovate dependency" --merge-method rebase
 ```
 
 **Note**: If the specified merge method is not allowed in a repository, that PR will be skipped with a warning.
@@ -74,13 +83,35 @@ devctl pr approve-merge-renovate --query "renovate dependency" --merge-method re
 - `GITHUB_TOKEN` environment variable must be set with appropriate permissions:
   - Read access to repositories
   - Write access to pull requests (approve, merge)
+- Terminal with ANSI escape code support for live table updates
+- Terminal with OSC 8 support for clickable hyperlinks (optional, but recommended)
+
+## UI Features
+
+The command displays a live-updating table with status indicators:
+
+- **🔍** Checking status
+- **⏳** Waiting for checks to pass (with retry count)
+- **☑️** Already handled (merged or auto-merge enabled)
+- **✅** Successfully approved or merged
+- **❌** Failed or skipped
+
+PR numbers are clickable hyperlinks (in supported terminals) that open the PR in your browser.
+
+## Performance
+
+- **Parallel Processing**: All PRs are processed simultaneously
+- **No waiting**: You don't need to wait for one PR to finish before the next starts
+- **Auto-retry**: PRs with pending checks are automatically retried until ready
+- **Continuous Discovery**: New PRs matching the query are automatically detected every 10 seconds
+- Example: 13 PRs can be processed in the time it takes for the slowest one to become ready
 
 ## Notes
 
 - The command processes PRs in the `giantswarm` organization
-- PRs must have passing status checks to be processed
-- PRs with merge conflicts or missing required checks will be skipped
-- Auto-merge is attempted immediately after approval
+- PRs with pending checks are automatically polled every 5 seconds for up to 5 minutes
+- PRs with merge conflicts or permanently failed checks will be skipped
+- Auto-merge enabled PRs are skipped (no need to merge manually)
 
 ## Comparison with `pr approvealign`
 

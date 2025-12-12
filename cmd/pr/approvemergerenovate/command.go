@@ -13,6 +13,7 @@ const (
 	name        = "approvemergerenovate"
 	longCmd     = "approve-merge-renovate"
 	description = "Approves and auto-merges Renovate PRs matching a search query."
+	usage       = "approve-merge-renovate <query>"
 )
 
 type Config struct {
@@ -42,7 +43,7 @@ func New(config Config) (*cobra.Command, error) {
 	}
 
 	c := &cobra.Command{
-		Use:     longCmd,
+		Use:     usage,
 		Short:   description,
 		Long:    description,
 		Aliases: []string{name},
