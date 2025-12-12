@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/v7/cmd/pr/approvealign"
+	"github.com/giantswarm/devctl/v7/cmd/pr/approvemergerenovate"
 )
 
 const (
@@ -49,6 +50,20 @@ func New(config Config) (*cobra.Command, error) {
 		}
 	}
 
+	var approveMergeRenovateCmd *cobra.Command
+	{
+		c := approvemergerenovate.Config{
+			Logger: config.Logger,
+			Stderr: config.Stderr,
+			Stdout: config.Stdout,
+		}
+
+		approveMergeRenovateCmd, err = approvemergerenovate.New(c)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+	}
+
 	f := &flag{}
 
 	r := &runner{
@@ -68,6 +83,7 @@ func New(config Config) (*cobra.Command, error) {
 	f.Init(c)
 
 	c.AddCommand(approveAlignCmd)
+	c.AddCommand(approveMergeRenovateCmd)
 
 	return c, nil
 }
