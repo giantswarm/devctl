@@ -93,6 +93,18 @@ devctl gen makefile
 devctl gen license
 ```
 
+### Pull request batch management
+
+```bash
+# Merge all ready PRs for updating architect-orb to v7.8.9
+# where you or your team is requested for review
+devctl pr approve-merge-renovate "architect-orb v7.8.9"
+
+# Approve "Align files" PRs
+# where you are requested for review
+devctl pr approve-align-files
+```
+
 ### Release Management (`devctl release`)
 
 Helps manage releases in Giant Swarm repositories:
