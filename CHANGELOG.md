@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add command `pr approve-merge-renovate` to approve and merge Renovate PRs
+
 ### Fixed
 
 - Fixed problem in `pr approve-align-files` command where the repository owner could not be detected.
