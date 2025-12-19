@@ -161,6 +161,12 @@ var KnownComponents = map[string]ParseParams{
 		Start:     commonStartPattern,
 		End:       commonEndPattern,
 	},
+	"vsphere-csi-driver": {
+		Tag:       "https://github.com/giantswarm/vsphere-csi-driver-app/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/vsphere-csi-driver-app/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
+	},
 
 	// CAPVCD Provider Specific
 	"cluster-cloud-director": {
