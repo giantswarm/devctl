@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [7.24.1] - 2025-12-19
 
+### Added
+
+- Releases: Add `vsphere-csi-driver`.
+
 ## [7.24.0] - 2025-12-18
 
 ### Added
