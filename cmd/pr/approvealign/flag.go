@@ -5,14 +5,13 @@ import (
 )
 
 type flag struct {
-	// No flags for this command
+	DryRun bool
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
-	// No flags to initialize
+	cmd.Flags().BoolVar(&f.DryRun, "dry-run", false, "Only show what would be done without making changes")
 }
 
 func (f *flag) Validate() error {
-	// No flags to validate
 	return nil
 }
