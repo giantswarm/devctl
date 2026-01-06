@@ -4,7 +4,25 @@
 
 The `devctl pr approve-merge-renovate` command automates the approval and merging of Renovate-generated pull requests across multiple repositories. It continuously monitors for new PRs matching your query, processes them in parallel, and handles both auto-merge enabled PRs and direct merging.
 
+The command supports two modes:
+- **Interactive mode**: When called without arguments, presents a grouped list of PRs for selection
+- **Direct mode**: When called with a query, processes PRs matching that query
+
 ## Usage
+
+### Interactive Mode
+
+```bash
+devctl pr approve-merge-renovate
+```
+
+This will:
+1. Fetch all Renovate PRs requesting your review
+2. Group them by dependency name
+3. Present an interactive selector (arrow keys + Enter)
+4. Process the selected group
+
+### Direct Mode
 
 ```bash
 devctl pr approve-merge-renovate QUERY
@@ -18,7 +36,7 @@ devctl pr approve-merge-renovate "architect v1.2.3"
 
 ## Arguments
 
-- `<query>` (required): Search query to filter Renovate PRs
+- `[query]` (optional): Search query to filter Renovate PRs. If omitted, interactive mode is activated.
 
 ## Options
 
@@ -64,7 +82,66 @@ devctl pr approve-merge-renovate "architect v1.2.3"
    - PRs skipped
    - PRs failed
 
+## Interactive Mode Details
+
+When you run the command without arguments, it:
+
+1. Fetches all Renovate PRs requesting your review across all repositories
+2. Groups them by dependency using intelligent clustering algorithms
+3. Displays an interactive selector showing:
+   - Dependency name
+   - Number of PRs in each group
+   - Groups sorted by PR count (most PRs first)
+4. After selection, proceeds with normal processing
+
+### Clustering Algorithms
+
+The command uses three algorithms in sequence to group PRs:
+
+1. **Pattern-Based Extraction**: Recognizes common Renovate title patterns:
+   - `Update dependency <name> to ...`
+   - `Update module <name> to ...`
+   - `Update Helm release <name> to ...`
+   - `Update <name> digest to ...`
+   - `chore(deps): update <name> ...`
+   - And more...
+
+2. **Version-Stripped Normalization**: For titles that don't match patterns, strips version numbers and common words to extract the core dependency name
+
+3. **Exact Title Match**: Groups by exact title for any remaining PRs (rare)
+
+**Important notes:**
+- Groups are sorted by PR count (most PRs first)
+- **ALL groups are shown**, including those with only 1 PR
+- Version suffixes like `/v80` are normalized so `go-github/v80` and `go-github/v81` group together
+
 ## Examples
+
+### Interactive mode - select from grouped PRs
+
+```bash
+devctl pr approve-merge-renovate
+```
+
+Example output:
+
+```
+Fetching Renovate PRs...
+Found 47 PRs in 8 groups.
+
+Select a dependency group to process:
+▸ github.com/google/go-github (12 PRs)
+  k8s.io/utils (8 PRs)
+  ghcr.io/astral-sh/uv (6 PRs)
+  kube-prometheus-stack (5 PRs)
+  storybook (2 PRs)
+  @types/cors (1 PR)
+  ...
+
+✓ github.com/google/go-github (12 PRs)
+
+[Proceeds with normal table UI and processing]
+```
 
 ### Approve and merge all Renovate PRs for a specific dependency update
 

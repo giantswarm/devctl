@@ -15,8 +15,10 @@ require (
 	github.com/giantswarm/micrologger v1.1.2
 	github.com/giantswarm/release-operator/v4 v4.2.1
 	github.com/go-git/go-git/v5 v5.16.4
+	github.com/google/go-cmp v0.7.0
 	github.com/google/go-github/v81 v81.0.0
 	github.com/jedib0t/go-pretty/v6 v6.7.8
+	github.com/manifoldco/promptui v0.9.0
 	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826
 	github.com/pelletier/go-toml/v2 v2.2.4
 	github.com/rhysd/go-github-selfupdate v1.2.3
@@ -35,6 +37,7 @@ require (
 	dario.cat/mergo v1.0.0 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/ProtonMail/go-crypto v1.1.6 // indirect
+	github.com/chzyer/readline v0.0.0-20180603132655-2972be24d48e // indirect
 	github.com/cloudflare/circl v1.6.1 // indirect
 	github.com/cyphar/filepath-securejoin v0.4.1 // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect

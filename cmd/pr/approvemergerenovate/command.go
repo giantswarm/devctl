@@ -12,8 +12,8 @@ import (
 const (
 	name        = "approvemergerenovate"
 	longCmd     = "approve-merge-renovate"
-	description = "Approves and auto-merges Renovate PRs matching a search query."
-	usage       = "approve-merge-renovate <query>"
+	description = "Approves and auto-merges Renovate PRs matching a search query. If no query is provided, presents an interactive group selector."
+	usage       = "approve-merge-renovate [query]"
 )
 
 type Config struct {
@@ -43,12 +43,19 @@ func New(config Config) (*cobra.Command, error) {
 	}
 
 	c := &cobra.Command{
-		Use:     usage,
-		Short:   description,
-		Long:    description,
+		Use:   usage,
+		Short: description,
+		Long:  description,
 		Aliases: []string{name, "amr"},
-		Example: "  devctl pr amr --watch \"architect v1.2.3\"",
-		RunE:    r.Run,
+		Example: `  # Interactive mode - select from grouped PRs
+  devctl pr amr
+
+  # Direct mode - search for specific PRs
+  devctl pr amr "architect v1.2.3"
+  
+  # Watch mode with query
+  devctl pr amr --watch "architect v1.2.3"`,
+		RunE: r.Run,
 	}
 
 	f.Init(c)
