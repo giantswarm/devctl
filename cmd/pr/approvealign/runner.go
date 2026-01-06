@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/giantswarm/microerror"
 	"github.com/google/go-github/v81/github"
@@ -12,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/v7/internal/env"
+	"github.com/giantswarm/devctl/v7/internal/pr"
 	"github.com/giantswarm/devctl/v7/pkg/githubclient"
 )
 
@@ -30,23 +33,14 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 	return r.run(ctx, cmd, args)
 }
 
-// parseRepoFromURL extracts owner and repo name from GitHub PR URL
-// e.g., "https://github.com/giantswarm/backstage/pull/1033" -> "giantswarm", "backstage"
-func parseRepoFromURL(url string) (string, string, error) {
-	parts := strings.Split(url, "/")
-	if len(parts) < 5 {
-		return "", "", fmt.Errorf("invalid GitHub URL format: %s", url)
-	}
-	// URL format: https://github.com/{owner}/{repo}/pull/{number}
-	owner := parts[3]
-	repo := parts[4]
-	return owner, repo, nil
-}
-
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
-	r.logger.Debug("running approvealign command")
+	// Set logger to only show errors to avoid cluttering the table UI
+	r.logger.SetLevel(logrus.ErrorLevel)
 
-	fmt.Fprintln(r.stdout, "Auto-approving all 'Align files' PRs that have passing status checks...")
+	if r.flag.DryRun {
+		fmt.Fprintln(r.stdout, "🔍 DRY RUN MODE")
+		fmt.Fprintln(r.stdout, "")
+	}
 
 	githubToken := env.GitHubToken.Val()
 	if githubToken == "" {
@@ -56,6 +50,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	ghClientService, err := githubclient.New(githubclient.Config{
 		Logger:      r.logger,
 		AccessToken: githubToken,
+		DryRun:      r.flag.DryRun,
 	})
 	if err != nil {
 		return microerror.Mask(err)
@@ -63,8 +58,10 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 	githubClient := ghClientService.GetUnderlyingClient(ctx)
 
-	searchQuery := `is:pr is:open status:success org:giantswarm review-requested:@me "Align files"`
-	r.logger.Infof("Searching for PRs with query: %s", searchQuery)
+	// Search for "Align files" PRs
+	// Note: We don't filter by status:success here because we want to find all PRs
+	// and then check/wait for their status in processPR (similar to approve-merge-renovate)
+	searchQuery := `is:pr is:open archived:false org:giantswarm review-requested:@me "Align files"`
 
 	searchOpts := &github.SearchOptions{
 		ListOptions: github.ListOptions{PerPage: 100},
@@ -75,46 +72,276 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	}
 
 	if searchResults.GetTotal() == 0 {
-		fmt.Fprintln(r.stdout, "No PRs found matching the criteria.")
-	} else {
-		fmt.Fprintf(r.stdout, "Found %d PRs to review.\n", searchResults.GetTotal())
+		fmt.Fprintln(r.stdout, "No PRs found.")
+		return nil
 	}
 
-	approvedCount := 0
-	for _, issue := range searchResults.Issues {
-		prNumber := issue.GetNumber()
-		url := issue.GetHTMLURL()
+	// Initialize PR statuses with mutex protection for concurrent updates
+	var prStatusesMu sync.Mutex
+	prStatuses := make([]*pr.PRStatus, 0, len(searchResults.Issues))
 
-		// Parse owner and repo from URL since repository object may not be fully populated
-		owner, repoName, err := parseRepoFromURL(url)
+	for _, issue := range searchResults.Issues {
+		owner, repoName, err := pr.ParseRepoFromURL(issue.GetHTMLURL())
 		if err != nil {
-			r.logger.Errorf("Failed to parse repository from URL %s: %v", url, err)
-			fmt.Fprintf(r.stderr, "Failed to parse repository from URL: %v\n", err)
 			continue
 		}
 
-		r.logger.Infof("Attempting to approve PR #%d in %s/%s", prNumber, owner, repoName)
+		ps := &pr.PRStatus{
+			Number:     issue.GetNumber(),
+			Owner:      owner,
+			Repo:       repoName,
+			Title:      issue.GetTitle(),
+			URL:        issue.GetHTMLURL(),
+			Status:     "Queued",
+			LastUpdate: time.Now(),
+		}
+		prStatuses = append(prStatuses, ps)
+	}
 
+	// Print table header
+	pr.PrintTableHeader(r.stdout)
+
+	// Print initial empty rows for all PRs
+	for range prStatuses {
+		fmt.Fprintln(r.stdout, "")
+	}
+
+	// Start processing all PRs in parallel
+	var wg sync.WaitGroup
+	for _, ps := range prStatuses {
+		wg.Add(1)
+		go func(ps *pr.PRStatus) {
+			defer wg.Done()
+			r.processPR(ctx, githubClient, ps)
+		}(ps)
+	}
+
+	// Update display periodically until all PRs are done
+	done := make(chan bool)
+	go func() {
+		wg.Wait()
+		done <- true
+	}()
+
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-done:
+			// Final update
+			prStatusesMu.Lock()
+			pr.UpdateTable(r.stdout, prStatuses)
+			prStatusesMu.Unlock()
+
+			fmt.Fprintln(r.stdout, "")
+
+			prStatusesMu.Lock()
+			r.printSummary(prStatuses)
+			prStatusesMu.Unlock()
+
+			return nil
+
+		case <-ticker.C:
+			prStatusesMu.Lock()
+			pr.UpdateTable(r.stdout, prStatuses)
+			prStatusesMu.Unlock()
+		}
+	}
+}
+
+func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps *pr.PRStatus) {
+	maxRetries := 60 // Poll for up to 5 minutes (60 * 5 seconds)
+	retryDelay := 5 * time.Second
+
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		if attempt > 0 {
+			time.Sleep(retryDelay)
+		}
+
+		// Get PR details
+		ps.UpdateStatus("Checking...")
+		prData, _, err := githubClient.PullRequests.Get(ctx, ps.Owner, ps.Repo, ps.Number)
+		if err != nil {
+			ps.UpdateStatus("Failed to get PR")
+			return
+		}
+
+		// Check if already merged
+		if prData.GetMerged() {
+			ps.UpdateStatus("Already merged")
+			return
+		}
+
+		// Check if auto-merge is enabled
+		hasAutoMerge := prData.GetAutoMerge() != nil
+		if !hasAutoMerge {
+			ps.UpdateStatus("No auto-merge")
+			return
+		}
+
+		// Check status checks BEFORE checking if already approved
+		headSHA := prData.GetHead().GetSHA()
+		combinedStatus, _, _ := githubClient.Repositories.GetCombinedStatus(ctx, ps.Owner, ps.Repo, headSHA, nil)
+		checkRuns, _, _ := githubClient.Checks.ListCheckRunsForRef(ctx, ps.Owner, ps.Repo, headSHA, nil)
+
+		// Check if any checks are failing or pending
+		hasFailedChecks := false
+		checksPending := false
+
+		// Check combined status first - this is for traditional status checks
+		if combinedStatus != nil {
+			state := combinedStatus.GetState()
+			totalCount := combinedStatus.GetTotalCount()
+
+			if state == "success" {
+				// All required checks passed
+				checksPending = false
+				hasFailedChecks = false
+			} else if state == "failure" || state == "error" {
+				hasFailedChecks = true
+			} else if state == "pending" && totalCount > 0 {
+				// Only treat as pending if there are actual status checks
+				// pending with totalCount=0 just means no checks exist, not that checks are waiting
+				checksPending = true
+			}
+		}
+
+		// Check individual check runs (GitHub Actions checks)
+		if checkRuns != nil && len(checkRuns.CheckRuns) > 0 && !hasFailedChecks {
+			// Only check runs if combinedStatus didn't already give us a definitive answer
+			if combinedStatus == nil || (combinedStatus.GetState() != "success" && combinedStatus.GetState() != "failure") {
+				for _, run := range checkRuns.CheckRuns {
+					conclusion := run.GetConclusion()
+					status := run.GetStatus()
+
+					if status == "completed" {
+						if conclusion == "failure" || conclusion == "cancelled" || conclusion == "timed_out" {
+							hasFailedChecks = true
+							break
+						}
+						// success, neutral, skipped are OK
+					} else {
+						// Check is not completed (queued, in_progress)
+						checksPending = true
+					}
+				}
+			}
+		}
+
+		if hasFailedChecks {
+			ps.UpdateStatus("Failed checks")
+			return
+		}
+
+		if checksPending {
+			ps.UpdateStatus(fmt.Sprintf("Waiting for checks (%d/%d)", attempt+1, maxRetries))
+			continue
+		}
+
+		// Checks are passing, proceed with approval
+		// Check if already approved
+		reviews, _, err := githubClient.PullRequests.ListReviews(ctx, ps.Owner, ps.Repo, ps.Number, nil)
+		if err != nil {
+			ps.UpdateStatus("Failed to get reviews")
+			return
+		}
+
+		alreadyApproved := false
+		for _, review := range reviews {
+			if review.GetState() == "APPROVED" {
+				alreadyApproved = true
+				break
+			}
+		}
+
+		if alreadyApproved {
+			// Check if it merged after being approved
+			prCheck, _, err := githubClient.PullRequests.Get(ctx, ps.Owner, ps.Repo, ps.Number)
+			if err == nil && prCheck.GetMerged() {
+				ps.UpdateStatus("Merged (auto-merge)")
+				return
+			}
+			ps.UpdateStatus("Already approved")
+			return
+		}
+
+		// Approve the PR
+		if r.flag.DryRun {
+			ps.UpdateStatus("Would approve")
+			return
+		}
+
+		ps.UpdateStatus("Approving...")
 		reviewRequest := &github.PullRequestReviewRequest{
 			Event: github.String("APPROVE"),
 		}
-		_, _, err = githubClient.PullRequests.CreateReview(ctx, owner, repoName, prNumber, reviewRequest)
+		_, _, err = githubClient.PullRequests.CreateReview(ctx, ps.Owner, ps.Repo, ps.Number, reviewRequest)
 		if err != nil {
-			r.logger.Errorf("Failed to approve PR #%d in %s/%s: %v", prNumber, owner, repoName, err)
-			fmt.Fprintf(r.stderr, "Failed to approve PR #%d in %s/%s: %v\n", prNumber, owner, repoName, err)
-			continue
+			ps.UpdateStatus("Failed to approve")
+			return
 		}
 
-		fmt.Fprintf(r.stdout, "Successfully approved PR #%d in %s/%s\n", prNumber, owner, repoName)
-		approvedCount++
+		// After approval, check if it merged immediately
+		time.Sleep(2 * time.Second)
+		prCheck, _, err := githubClient.PullRequests.Get(ctx, ps.Owner, ps.Repo, ps.Number)
+		if err == nil && prCheck.GetMerged() {
+			ps.UpdateStatus("Merged (auto-merge)")
+			return
+		}
+
+		// Not merged yet - likely in merge queue
+		ps.UpdateStatus("Approved, queued to merge")
+		return
 	}
 
-	if approvedCount > 0 {
-		fmt.Fprintf(r.stdout, "Successfully approved %d PR(s).\n", approvedCount)
+	// Timed out waiting for checks
+	ps.UpdateStatus("Timeout waiting for checks")
+}
+
+func (r *runner) printSummary(prStatuses []*pr.PRStatus) {
+	merged := 0
+	approved := 0
+	queued := 0
+	skipped := 0
+	failed := 0
+	waiting := 0
+
+	for _, ps := range prStatuses {
+		status := ps.GetStatus()
+		if strings.Contains(status, "Merged") {
+			merged++
+		} else if strings.Contains(status, "queued to merge") {
+			queued++
+		} else if strings.Contains(status, "Approved") && !strings.Contains(status, "Would") && !strings.Contains(status, "Already") {
+			approved++
+		} else if strings.Contains(status, "Already") {
+			skipped++
+		} else if strings.Contains(status, "Failed") || strings.Contains(status, "No auto-merge") {
+			failed++
+		} else if strings.Contains(status, "Waiting") || strings.Contains(status, "Timeout") {
+			waiting++
+		}
 	}
 
-	fmt.Fprintln(r.stdout, "\nAll remaining PRs (including any that failed approval or are pending) can be seen with this search query:")
-	fmt.Fprintln(r.stdout, "https://github.com/pulls?q=sort%3Aupdated-desc+is%3Apr+is%3Aopen+archived%3Afalse+review-requested%3A%40me+status%3Apending+org%3Agiantswarm+%22Align+files%22")
-
-	return nil
+	fmt.Fprintln(r.stdout, "─────────────────────────────")
+	fmt.Fprintln(r.stdout, "Summary:")
+	if r.flag.DryRun {
+		fmt.Fprintf(r.stdout, "  PRs that would be approved: %d\n", len(prStatuses)-skipped-failed-waiting)
+	} else {
+		if merged > 0 {
+			fmt.Fprintf(r.stdout, "  PRs merged: %d\n", merged)
+		}
+		fmt.Fprintf(r.stdout, "  PRs approved: %d\n", approved)
+		if queued > 0 {
+			fmt.Fprintf(r.stdout, "  PRs queued to merge: %d\n", queued)
+		}
+	}
+	fmt.Fprintf(r.stdout, "  PRs skipped: %d\n", skipped)
+	if failed > 0 {
+		fmt.Fprintf(r.stdout, "  PRs failed: %d\n", failed)
+	}
+	if waiting > 0 {
+		fmt.Fprintf(r.stdout, "  PRs still waiting: %d\n", waiting)
+	}
 }

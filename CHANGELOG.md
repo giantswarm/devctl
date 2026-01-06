@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Changed `devctl pr approve-align-files` to
+  - also include PRs where the filter `status:success` would not match, e. g. no checks, pending checks.
+  - process PRs in parallel
+
 ## [7.24.1] - 2025-12-19
 
 ### Added
