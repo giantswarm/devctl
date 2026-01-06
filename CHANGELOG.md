@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added instructions to the Go-specific LLM rules to perform formatting checks.
+
 ### Changed
 
 - Changed `devctl pr approve-align-files` to
