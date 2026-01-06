@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `pr approve-merge-renovate` now supports interactive mode. When called without arguments, it groups Renovate PRs by dependency and presents an interactive selector for choosing which group to process.
+
 ## [7.25.0] - 2026-01-06
 
 ### Added
