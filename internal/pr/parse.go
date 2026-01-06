@@ -17,4 +17,3 @@ func ParseRepoFromURL(url string) (string, string, error) {
 	repo := parts[4]
 	return owner, repo, nil
 }
-

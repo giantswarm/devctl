@@ -182,14 +182,14 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 					}
 					prStatusesMu.Unlock()
 
-				// Start processing new PRs
-				for _, ps := range newPRs {
-					wg.Add(1)
-					go func(ps *pr.PRStatus) {
-						defer wg.Done()
-						r.processPR(ctx, githubClient, ps)
-					}(ps)
-				}
+					// Start processing new PRs
+					for _, ps := range newPRs {
+						wg.Add(1)
+						go func(ps *pr.PRStatus) {
+							defer wg.Done()
+							r.processPR(ctx, githubClient, ps)
+						}(ps)
+					}
 				}
 			}
 		}

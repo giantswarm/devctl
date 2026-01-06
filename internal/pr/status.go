@@ -31,4 +31,3 @@ func (ps *PRStatus) GetStatus() string {
 	defer ps.mu.Unlock()
 	return ps.Status
 }
-

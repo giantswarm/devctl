@@ -37,4 +37,3 @@ func UpdateTable(w io.Writer, prStatuses []*PRStatus) {
 		fmt.Fprintf(w, "\033[2K%s\n", line)
 	}
 }
-
