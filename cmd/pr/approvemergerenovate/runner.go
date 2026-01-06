@@ -17,6 +17,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/v7/internal/env"
+	"github.com/giantswarm/devctl/v7/internal/pr"
 	"github.com/giantswarm/devctl/v7/pkg/githubclient"
 )
 
@@ -27,54 +28,12 @@ type runner struct {
 	stderr io.Writer
 }
 
-type prStatus struct {
-	Number     int
-	Owner      string
-	Repo       string
-	Title      string
-	URL        string
-	Status     string
-	LastUpdate time.Time
-	mu         sync.Mutex
-}
-
-func (ps *prStatus) UpdateStatus(status string) {
-	ps.mu.Lock()
-	defer ps.mu.Unlock()
-	ps.Status = status
-	ps.LastUpdate = time.Now()
-}
-
-func (ps *prStatus) GetStatus() string {
-	ps.mu.Lock()
-	defer ps.mu.Unlock()
-	return ps.Status
-}
-
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 	if err := r.flag.Validate(); err != nil {
 		return microerror.Mask(err)
 	}
 	return r.run(ctx, cmd, args)
-}
-
-// parseRepoFromURL extracts owner and repo name from GitHub PR URL
-// e.g., "https://github.com/giantswarm/backstage/pull/1033" -> "giantswarm", "backstage"
-func parseRepoFromURL(url string) (string, string, error) {
-	parts := strings.Split(url, "/")
-	if len(parts) < 5 {
-		return "", "", fmt.Errorf("invalid GitHub URL format: %s", url)
-	}
-	// URL format: https://github.com/{owner}/{repo}/pull/{number}
-	owner := parts[3]
-	repo := parts[4]
-	return owner, repo, nil
-}
-
-// makeHyperlink creates an ANSI hyperlink (OSC 8) for terminals that support it
-func makeHyperlink(url, text string) string {
-	return fmt.Sprintf("\033]8;;%s\033\\%s\033]8;;\033\\", url, text)
 }
 
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
@@ -132,14 +91,14 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 	// Initialize PR statuses with mutex protection for concurrent updates
 	var prStatusesMu sync.Mutex
-	prStatuses := make([]*prStatus, 0, len(searchResults.Issues))
+	prStatuses := make([]*pr.PRStatus, 0, len(searchResults.Issues))
 	prNumbersMap := make(map[int]bool) // Track PR numbers to avoid duplicates
 
-	addPRs := func(issues []*github.Issue) []*prStatus {
+	addPRs := func(issues []*github.Issue) []*pr.PRStatus {
 		prStatusesMu.Lock()
 		defer prStatusesMu.Unlock()
 
-		newPRs := make([]*prStatus, 0)
+		newPRs := make([]*pr.PRStatus, 0)
 		for _, issue := range issues {
 			prNumber := issue.GetNumber()
 
@@ -148,12 +107,12 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 				continue
 			}
 
-			owner, repoName, err := parseRepoFromURL(issue.GetHTMLURL())
+			owner, repoName, err := pr.ParseRepoFromURL(issue.GetHTMLURL())
 			if err != nil {
 				continue
 			}
 
-			ps := &prStatus{
+			ps := &pr.PRStatus{
 				Number:     prNumber,
 				Owner:      owner,
 				Repo:       repoName,
@@ -173,7 +132,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	initialPRs := addPRs(searchResults.Issues)
 
 	// Print table header
-	r.printTableHeader()
+	pr.PrintTableHeader(r.stdout)
 
 	// Print initial empty rows for all PRs
 	for range initialPRs {
@@ -184,7 +143,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	var wg sync.WaitGroup
 	for _, ps := range initialPRs {
 		wg.Add(1)
-		go func(ps *prStatus) {
+		go func(ps *pr.PRStatus) {
 			defer wg.Done()
 			r.processPR(ctx, githubClient, ps)
 		}(ps)
@@ -226,7 +185,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 					// Start processing new PRs
 					for _, ps := range newPRs {
 						wg.Add(1)
-						go func(ps *prStatus) {
+						go func(ps *pr.PRStatus) {
 							defer wg.Done()
 							r.processPR(ctx, githubClient, ps)
 						}(ps)
@@ -269,7 +228,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 			// Final update
 			prStatusesMu.Lock()
-			r.updateTable(prStatuses)
+			pr.UpdateTable(r.stdout, prStatuses)
 			prStatusesMu.Unlock()
 
 			fmt.Fprintln(r.stdout, "")
@@ -287,7 +246,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 			// Final update
 			prStatusesMu.Lock()
-			r.updateTable(prStatuses)
+			pr.UpdateTable(r.stdout, prStatuses)
 			prStatusesMu.Unlock()
 
 			fmt.Fprintln(r.stdout, "")
@@ -300,38 +259,13 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 		case <-ticker.C:
 			prStatusesMu.Lock()
-			r.updateTable(prStatuses)
+			pr.UpdateTable(r.stdout, prStatuses)
 			prStatusesMu.Unlock()
 		}
 	}
 }
 
-func (r *runner) printTableHeader() {
-	header := fmt.Sprintf("%-7s %-40s %-30s", "PR", "Repository", "Status")
-	fmt.Fprintln(r.stdout, header)
-	fmt.Fprintln(r.stdout, strings.Repeat("─", 80))
-}
-
-func (r *runner) updateTable(prStatuses []*prStatus) {
-	// Move cursor up to redraw table
-	if len(prStatuses) > 0 {
-		fmt.Fprintf(r.stdout, "\033[%dA", len(prStatuses))
-	}
-
-	for _, ps := range prStatuses {
-		// Pad PR number to consistent width (6 chars for "#12345")
-		prText := fmt.Sprintf("#%-5d", ps.Number)
-		prLink := makeHyperlink(ps.URL, prText)
-		status := ps.GetStatus()
-
-		// Don't use padding in format string for hyperlink, just add spaces after
-		line := fmt.Sprintf("%s  %-40s %-30s", prLink, ps.Repo, status)
-		// Clear line and print
-		fmt.Fprintf(r.stdout, "\033[2K%s\n", line)
-	}
-}
-
-func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps *prStatus) {
+func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps *pr.PRStatus) {
 	maxRetries := 60 // Poll for up to 5 minutes (60 * 5 seconds)
 	retryDelay := 5 * time.Second
 
@@ -543,7 +477,7 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 	ps.UpdateStatus("Timeout waiting")
 }
 
-func (r *runner) printSummary(prStatuses []*prStatus) {
+func (r *runner) printSummary(prStatuses []*pr.PRStatus) {
 	merged := 0
 	approved := 0
 	queued := 0
