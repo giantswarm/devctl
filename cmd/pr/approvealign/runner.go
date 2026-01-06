@@ -173,12 +173,8 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 			return
 		}
 
-		// Check if auto-merge is enabled
+		// Check if auto-merge is enabled (for status display later)
 		hasAutoMerge := prData.GetAutoMerge() != nil
-		if !hasAutoMerge {
-			ps.UpdateStatus("No auto-merge")
-			return
-		}
 
 		// Check status checks BEFORE checking if already approved
 		headSHA := prData.GetHead().GetSHA()
@@ -262,13 +258,21 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 				ps.UpdateStatus("Merged (auto-merge)")
 				return
 			}
-			ps.UpdateStatus("Already approved")
+			if hasAutoMerge {
+				ps.UpdateStatus("Already approved, queued")
+			} else {
+				ps.UpdateStatus("Already approved")
+			}
 			return
 		}
 
 		// Approve the PR
 		if r.flag.DryRun {
-			ps.UpdateStatus("Would approve")
+			if hasAutoMerge {
+				ps.UpdateStatus("Would approve (auto-merge)")
+			} else {
+				ps.UpdateStatus("Would approve")
+			}
 			return
 		}
 
@@ -282,16 +286,19 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 			return
 		}
 
-		// After approval, check if it merged immediately
-		time.Sleep(2 * time.Second)
-		prCheck, _, err := githubClient.PullRequests.Get(ctx, ps.Owner, ps.Repo, ps.Number)
-		if err == nil && prCheck.GetMerged() {
-			ps.UpdateStatus("Merged (auto-merge)")
-			return
+		// After approval, check if it merged immediately (if auto-merge is enabled)
+		if hasAutoMerge {
+			time.Sleep(2 * time.Second)
+			prCheck, _, err := githubClient.PullRequests.Get(ctx, ps.Owner, ps.Repo, ps.Number)
+			if err == nil && prCheck.GetMerged() {
+				ps.UpdateStatus("Merged (auto-merge)")
+				return
+			}
+			// Not merged yet - likely in merge queue
+			ps.UpdateStatus("Approved, queued to merge")
+		} else {
+			ps.UpdateStatus("Approved")
 		}
-
-		// Not merged yet - likely in merge queue
-		ps.UpdateStatus("Approved, queued to merge")
 		return
 	}
 
@@ -317,7 +324,7 @@ func (r *runner) printSummary(prStatuses []*pr.PRStatus) {
 			approved++
 		} else if strings.Contains(status, "Already") {
 			skipped++
-		} else if strings.Contains(status, "Failed") || strings.Contains(status, "No auto-merge") {
+		} else if strings.Contains(status, "Failed") {
 			failed++
 		} else if strings.Contains(status, "Waiting") || strings.Contains(status, "Timeout") {
 			waiting++
