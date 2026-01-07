@@ -422,4 +422,3 @@ func TestGroupRenovatePRs_Stability(t *testing.T) {
 		}
 	}
 }
-

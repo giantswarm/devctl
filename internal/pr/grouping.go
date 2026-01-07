@@ -115,10 +115,10 @@ func normalizeWithVersionStrip(title string) string {
 	// Strip version patterns
 	versionPatterns := []string{
 		`v?\d+\.\d+\.\d+(?:-[\w.]+)?`, // Semantic versions
-		`v\d+`,                         // Major versions only
+		`v\d+`,                        // Major versions only
 		`\b[a-f0-9]{7,40}\b`,          // Git SHA/digest hashes
-		`to v?\d+`,                     // "to v1.2.3"
-		`\[SECURITY\]`,                 // Security tags
+		`to v?\d+`,                    // "to v1.2.3"
+		`\[SECURITY\]`,                // Security tags
 	}
 
 	for _, pattern := range versionPatterns {
@@ -179,4 +179,3 @@ func generateSearchQuery(depName string, prs []*PRInfo) string {
 	// The GitHub search will match this against PR titles
 	return depName
 }
-

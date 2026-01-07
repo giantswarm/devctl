@@ -43,9 +43,9 @@ func New(config Config) (*cobra.Command, error) {
 	}
 
 	c := &cobra.Command{
-		Use:   usage,
-		Short: description,
-		Long:  description,
+		Use:     usage,
+		Short:   description,
+		Long:    description,
 		Aliases: []string{name, "amr"},
 		Example: `  # Interactive mode - select from grouped PRs
   devctl pr amr
