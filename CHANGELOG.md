@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.26.0] - 2026-01-08
+
 ### Changed
 
 - `pr approve-merge-renovate` now supports interactive mode. When called without arguments, it groups Renovate PRs by dependency and presents an interactive selector for choosing which group to process.
@@ -1453,7 +1455,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.25.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.26.0...HEAD
+[7.26.0]: https://github.com/giantswarm/devctl/compare/v7.25.0...v7.26.0
 [7.25.0]: https://github.com/giantswarm/devctl/compare/v7.24.1...v7.25.0
 [7.24.1]: https://github.com/giantswarm/devctl/compare/v7.24.0...v7.24.1
 [7.24.0]: https://github.com/giantswarm/devctl/compare/v7.23.2...v7.24.0
