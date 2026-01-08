@@ -13,6 +13,7 @@ import (
 
 	"github.com/giantswarm/microerror"
 	"github.com/google/go-github/v81/github"
+	"github.com/manifoldco/promptui"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
@@ -40,18 +41,6 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	// Set logger to only show errors to avoid cluttering the table UI
 	r.logger.SetLevel(logrus.ErrorLevel)
 
-	// Validate that a query argument was provided
-	if len(args) == 0 {
-		return microerror.Maskf(invalidFlagsError, "query argument is required\n\nUsage: devctl pr approve-merge-renovate <query>\n\nExample:\n  devctl pr approve-merge-renovate \"architect v1.2.3\"\n")
-	}
-
-	query := args[0]
-
-	if r.flag.DryRun {
-		fmt.Fprintln(r.stdout, "🔍 DRY RUN MODE")
-		fmt.Fprintln(r.stdout, "")
-	}
-
 	githubToken := env.GitHubToken.Val()
 	if githubToken == "" {
 		return microerror.Maskf(executionFailedError, "environment variable GITHUB_TOKEN not found, please set it to your GitHub personal access token")
@@ -67,6 +56,24 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	}
 
 	githubClient := ghClientService.GetUnderlyingClient(ctx)
+
+	var query string
+	if len(args) == 0 {
+		// Interactive mode: let user select from grouped PRs
+		selectedQuery, err := r.selectGroupInteractively(ctx, githubClient)
+		if err != nil {
+			return microerror.Mask(err)
+		}
+		query = selectedQuery
+	} else {
+		// Direct mode: use provided query
+		query = args[0]
+	}
+
+	if r.flag.DryRun {
+		fmt.Fprintln(r.stdout, "🔍 DRY RUN MODE")
+		fmt.Fprintln(r.stdout, "")
+	}
 
 	// Build search query
 	searchQuery := fmt.Sprintf("%s is:pr is:open archived:false review-requested:@me author:app/renovate", query)
@@ -263,6 +270,79 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 			prStatusesMu.Unlock()
 		}
 	}
+}
+
+func (r *runner) selectGroupInteractively(ctx context.Context, githubClient *github.Client) (string, error) {
+	fmt.Fprintln(r.stdout, "Fetching Renovate PRs...")
+
+	// Search for all Renovate PRs requesting review from the user
+	searchQuery := "is:pr is:open archived:false review-requested:@me author:app/renovate"
+	searchOpts := &github.SearchOptions{
+		ListOptions: github.ListOptions{PerPage: 100},
+	}
+
+	searchResults, _, err := githubClient.Search.Issues(ctx, searchQuery, searchOpts)
+	if err != nil {
+		return "", microerror.Maskf(executionFailedError, "failed to search for PRs: %v", err)
+	}
+
+	if searchResults.GetTotal() == 0 {
+		return "", microerror.Maskf(executionFailedError, "no Renovate PRs found requesting your review")
+	}
+
+	// Convert GitHub issues to PRInfo
+	var prInfos []*pr.PRInfo
+	for _, issue := range searchResults.Issues {
+		owner, repoName, err := pr.ParseRepoFromURL(issue.GetHTMLURL())
+		if err != nil {
+			continue
+		}
+
+		prInfos = append(prInfos, &pr.PRInfo{
+			Number: issue.GetNumber(),
+			Owner:  owner,
+			Repo:   repoName,
+			Title:  issue.GetTitle(),
+			URL:    issue.GetHTMLURL(),
+		})
+	}
+
+	// Group PRs by dependency
+	groups := pr.GroupRenovatePRs(prInfos)
+
+	if len(groups) == 0 {
+		return "", microerror.Maskf(executionFailedError, "no PR groups found")
+	}
+
+	fmt.Fprintf(r.stdout, "Found %d PRs in %d groups.\n\n", len(prInfos), len(groups))
+
+	// Create promptui selector
+	templates := &promptui.SelectTemplates{
+		Label:    "{{ . }}",
+		Active:   "▸ {{ .DependencyName | cyan }} ({{ len .PRs }} PRs)",
+		Inactive: "  {{ .DependencyName }} ({{ len .PRs }} PRs)",
+		Selected: "✓ {{ .DependencyName | green }} ({{ len .PRs }} PRs)",
+	}
+
+	prompt := promptui.Select{
+		Label:     "Select a dependency group to process",
+		Items:     groups,
+		Templates: templates,
+		Size:      15,
+	}
+
+	idx, _, err := prompt.Run()
+	if err != nil {
+		if err == promptui.ErrInterrupt {
+			return "", microerror.Maskf(executionFailedError, "selection cancelled by user")
+		}
+		return "", microerror.Maskf(executionFailedError, "selection failed: %v", err)
+	}
+
+	selectedGroup := groups[idx]
+	fmt.Fprintln(r.stdout, "")
+
+	return selectedGroup.SearchQuery, nil
 }
 
 func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps *pr.PRStatus) {
