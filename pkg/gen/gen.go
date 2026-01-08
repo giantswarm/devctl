@@ -76,8 +76,19 @@ func execute(ctx context.Context, file input.Input) error {
 // isRegenerable returns true if the file should be overridden with the
 // regenerated content. All files with "zz_generated." prefix qualify for that
 // but there are also some exceptions usually when the name is conventional.
+// Files within directories that have the "zz_generated." prefix are also
+// considered regenerable (e.g., files in .cursor/rules/zz_generated.* folders).
 func isRegenerable(path string) bool {
 	base := filepath.Base(path)
+
+	// Check if the file is in a zz_generated.* directory
+	dir := filepath.Dir(path)
+	if dir != "." && dir != "/" {
+		dirBase := filepath.Base(dir)
+		if strings.HasPrefix(dirBase, internal.RegenerableFilePrefix) {
+			return true
+		}
+	}
 
 	switch {
 	case base == "Makefile" || strings.HasPrefix(base, "Makefile.gen."):
