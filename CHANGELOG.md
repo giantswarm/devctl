@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Fix the problem in `pr approve-merge-renovate` that a query like `@actions/core` would fail due to the leading `@` sign.
+
 ## [7.26.0] - 2026-01-08
 
 ### Changed

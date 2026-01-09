@@ -175,7 +175,8 @@ func isCommonWord(word string) bool {
 
 // generateSearchQuery creates a search query string from the dependency name.
 func generateSearchQuery(depName string, prs []*PRInfo) string {
-	// Use the dependency name directly as the search query
-	// The GitHub search will match this against PR titles
-	return depName
+	// Wrap the dependency name in quotes to handle special characters
+	// like @ in scoped packages (e.g., @actions/core, @types/cors)
+	// This ensures GitHub search treats it as a literal string
+	return `"` + depName + `"`
 }
