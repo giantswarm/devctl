@@ -16,7 +16,7 @@ var baseLLMRulesTemplateSha string
 
 func NewBaseLLMRulesInput(p params.Params) input.Input {
 	i := input.Input{
-		Path:         params.RegenerableFileName(p, "base-llm-rules.mdc"),
+		Path:         params.RegenerableFolderRuleFileName(p, "base-llm-rules"),
 		TemplateBody: baseLLMRulesTemplate,
 		TemplateData: map[string]interface{}{
 			"Header":       params.Header(baseLLMRulesTemplateSha),
