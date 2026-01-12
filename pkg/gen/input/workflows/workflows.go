@@ -87,3 +87,7 @@ func (w *Workflows) UpdateChart() input.Input {
 func (w *Workflows) ValidateChangelog() input.Input {
 	return file.NewValidateChangelogInput(w.params)
 }
+
+func (w *Workflows) TestKyvernoPoliciesWithChainsaw() input.Input {
+	return file.NewTestKyvernoPoliciesWithChainsawInput(w.params)
+}
