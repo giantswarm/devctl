@@ -21,6 +21,7 @@ func NewChainsawHackKindSetup(p params.Params) input.Input {
 		TemplateData: map[string]interface{}{
 			"Header": params.Header("#", chainsawHackScaffoldingSha),
 		},
+		SkipRegenCheck: true,
 	}
 
 	return i
