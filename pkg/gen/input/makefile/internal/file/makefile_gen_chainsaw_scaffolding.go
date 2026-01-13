@@ -10,10 +10,17 @@ import (
 //go:embed chainsaw-hack-kind-setup.sh.template
 var chainsawHackScaffolding string
 
+//go:generate go run ../../../update-template-sha.go chainsaw-hack-kind-setup.sh.template
+//go:embed chainsaw-hack-kind-setup.sh.template.sha
+var chainsawHackScaffoldingSha string
+
 func NewChainsawHackKindSetup(p params.Params) input.Input {
 	i := input.Input{
 		Path:         "hack/kind-with-registry.sh",
 		TemplateBody: chainsawHackScaffolding,
+		TemplateData: map[string]interface{}{
+			"Header": params.Header("#", chainsawHackScaffoldingSha),
+		},
 	}
 
 	return i
