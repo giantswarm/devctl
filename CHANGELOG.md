@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.26.1] - 2026-01-09
+
+### Fixed
+
+- Fix the problem in `pr approve-merge-renovate` that a query like `@actions/core` would fail due to the leading `@` sign.
+
 ## [7.26.0] - 2026-01-08
 
 ### Changed
@@ -1455,7 +1461,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.26.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.26.1...HEAD
+[7.26.1]: https://github.com/giantswarm/devctl/compare/v7.26.0...v7.26.1
 [7.26.0]: https://github.com/giantswarm/devctl/compare/v7.25.0...v7.26.0
 [7.25.0]: https://github.com/giantswarm/devctl/compare/v7.24.1...v7.25.0
 [7.24.1]: https://github.com/giantswarm/devctl/compare/v7.24.0...v7.24.1
