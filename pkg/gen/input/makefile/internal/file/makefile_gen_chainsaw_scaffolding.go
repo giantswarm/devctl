@@ -32,8 +32,9 @@ var chainsawTestStepTemplate string
 
 func NewChainsawTestStepTemplate(p params.Params) input.Input {
 	i := input.Input{
-		Path:         "tests/chainsaw/_steps-templates/cluster-policy-ready.yaml",
-		TemplateBody: chainsawTestStepTemplate,
+		Path:           "tests/chainsaw/_steps-templates/cluster-policy-ready.yaml",
+		TemplateBody:   chainsawTestStepTemplate,
+		SkipRegenCheck: true,
 	}
 
 	return i
@@ -44,8 +45,9 @@ var chainsawTestPolicyReadyTemplate string
 
 func NewChainsawTestExampleTest(p params.Params) input.Input {
 	i := input.Input{
-		Path:         "tests/chainsaw/check-policy-ready/check-policy-ready.yaml",
-		TemplateBody: chainsawTestPolicyReadyTemplate,
+		Path:           "tests/chainsaw/check-policy-ready/check-policy-ready.yaml",
+		TemplateBody:   chainsawTestPolicyReadyTemplate,
+		SkipRegenCheck: true,
 	}
 
 	return i
