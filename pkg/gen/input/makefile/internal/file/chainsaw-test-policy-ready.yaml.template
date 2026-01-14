@@ -1,5 +1,5 @@
 # Example of how to check if a Policy is ready using templates
-# Note: The policy needs to be already applied
+# Note: The policy needs to already exist in the test cluster.
 apiVersion: chainsaw.kyverno.io/v1alpha1
 kind: Test
 metadata:
