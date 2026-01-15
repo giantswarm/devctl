@@ -621,65 +621,68 @@ func getLatestGithubRelease(owner string, name string, constraint *semver.Range)
 	var latestErr error
 
 	for _, n := range candidateNames {
-		if constraint == nil {
-			release, _, err := client.Repositories.GetLatestRelease(context.Background(), owner, n)
+		opt := &github.ListOptions{
+			PerPage: 100,
+		}
+
+		// Collect all valid releases and find the highest version by semver
+		type releaseVersion struct {
+			name    string
+			version semver.Version
+		}
+		var validReleases []releaseVersion
+
+		for i := 0; i < 5; i++ { // Cap at 5 pages to be safe
+			releases, resp, err := client.Repositories.ListReleases(context.Background(), owner, n, opt)
 			if IsGithubNotFound(err) {
-				// try with next candidate
 				latestErr = err
-				continue
+				break // Try next candidate
 			} else if err != nil {
 				return "", microerror.Mask(err)
 			}
 
-			version = *release.Name
-			break
-		} else {
-			opt := &github.ListOptions{
-				PerPage: 100,
+			for _, release := range releases {
+				if release.GetPrerelease() || release.GetDraft() {
+					continue
+				}
+				if release.Name == nil {
+					continue
+				}
+
+				vStr := *release.Name
+				vStr = strings.TrimPrefix(vStr, "v")
+
+				v, err := semver.ParseTolerant(vStr)
+				if err != nil {
+					continue
+				}
+
+				// Skip pre-release versions (e.g., v1.0.0-alpha) even if not marked as prerelease
+				if len(v.Pre) > 0 {
+					continue
+				}
+
+				// If constraint is provided, only include versions that match it
+				if constraint != nil && !(*constraint)(v) {
+					continue
+				}
+
+				validReleases = append(validReleases, releaseVersion{name: *release.Name, version: v})
 			}
-			foundMatch := false
-			for i := 0; i < 5; i++ { // Cap at 5 pages to be safe
-				releases, resp, err := client.Repositories.ListReleases(context.Background(), owner, n, opt)
-				if IsGithubNotFound(err) {
-					latestErr = err
-					break // Try next candidate
-				} else if err != nil {
-					return "", microerror.Mask(err)
-				}
 
-				for _, release := range releases {
-					if release.GetPrerelease() || release.GetDraft() {
-						continue
-					}
-					if release.Name == nil {
-						continue
-					}
-
-					vStr := *release.Name
-					vStr = strings.TrimPrefix(vStr, "v")
-
-					v, err := semver.ParseTolerant(vStr)
-					if err != nil {
-						continue
-					}
-
-					if (*constraint)(v) {
-						version = *release.Name
-						foundMatch = true
-						break
-					}
-				}
-				if foundMatch {
-					break
-				}
-				if resp.NextPage == 0 {
-					break
-				}
-				opt.Page = resp.NextPage
-			}
-			if foundMatch {
+			if resp.NextPage == 0 {
 				break
 			}
+			opt.Page = resp.NextPage
+		}
+
+		if len(validReleases) > 0 {
+			// Sort by version descending to get the highest version first
+			sort.Slice(validReleases, func(i, j int) bool {
+				return validReleases[i].version.GT(validReleases[j].version)
+			})
+			version = validReleases[0].name
+			break
 		}
 	}
 
