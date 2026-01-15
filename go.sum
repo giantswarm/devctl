@@ -43,14 +43,12 @@ github.com/fatih/color v1.18.0/go.mod h1:4FelSpRwEGDpQ12mAdzqdOukCy4u8WUtOY6lkT/
 github.com/fsnotify/fsnotify v1.4.7/go.mod h1:jwhsz4b93w/PPRr/qN1Yymfu8t87LnFCMoQvtojpjFo=
 github.com/fxamacker/cbor/v2 v2.9.0 h1:NpKPmjDBgUfBms6tr6JZkTHtfFGcMKsw3eGcmD/sapM=
 github.com/fxamacker/cbor/v2 v2.9.0/go.mod h1:vM4b+DJCtHn+zz7h3FFp/hDAI9WNWCsZj23V5ytsSxQ=
-github.com/giantswarm/k8smetadata v0.25.0 h1:6mKmmm4xHPuBvxDMAkIhU5oj6KJkJSaR2s5esIsnHs4=
-github.com/giantswarm/k8smetadata v0.25.0/go.mod h1:QiQAyaZnwco1U0lENLF0Kp4bSN4dIPwIlHWEvUo3ES8=
 github.com/giantswarm/microerror v0.4.1 h1:WMiD7HQASoUA9lZzPlPK+erCEOJ0uT4cyo18VfCXHD0=
 github.com/giantswarm/microerror v0.4.1/go.mod h1:URFj0gFCmZihjya6saQCXxslBrgctXb4NsXYHB5JdrI=
 github.com/giantswarm/micrologger v1.1.2 h1:dNmnGZgAT0rnZkpc2ivj1shJ3Stnnjsy7jIi84//Jqc=
 github.com/giantswarm/micrologger v1.1.2/go.mod h1:lJe2gBm3O3miycXjWOgDh6vVuaKCACsPjBcobc0dvPM=
-github.com/giantswarm/release-operator/v4 v4.2.1 h1:qqYHlLGsoHe0FZkkHzKDueGHoMZUq/SA6boaPXo5WtU=
-github.com/giantswarm/release-operator/v4 v4.2.1/go.mod h1:9TSANhfSsprjwD2NRI+jXMo7MDedt+/oVdOCEGPjaCE=
+github.com/giantswarm/releases/sdk v0.11.0 h1:U638lrR11uJdWT6BYQTlhJUmPgnWTnGQyCo9R5TZ67M=
+github.com/giantswarm/releases/sdk v0.11.0/go.mod h1:erDNpK2kG15S2WcDxkUUcX5Wj5f63OW3yxzvaEMUlyU=
 github.com/gliderlabs/ssh v0.3.8 h1:a4YXD1V7xMF9g5nTkdfnja3Sxy1PVDCj1Zg4Wb8vY6c=
 github.com/gliderlabs/ssh v0.3.8/go.mod h1:xYoytBv1sV0aL3CavoDuJIQNURXkkfPA/wxQ1pL1fAU=
 github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 h1:+zs/tPmkDkHx3U66DAb0lQFJrpS6731Oaa12ikc+DiI=
