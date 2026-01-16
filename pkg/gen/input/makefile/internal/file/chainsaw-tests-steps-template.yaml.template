@@ -1,5 +1,7 @@
+{{ .Header }}
+
 # This is a reusable policy template that will be called from the cluster-policy-ready test.
-# Do not modify this file
+
 apiVersion: chainsaw.kyverno.io/v1alpha1
 kind: StepTemplate
 metadata:
