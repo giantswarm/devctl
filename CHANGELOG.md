@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.27.0] - 2026-01-16
+
+### Changed
+
+- Replace `github.com/giantswarm/release-operator/v4/api/v1alpha1` with `github.com/giantswarm/releases/sdk/api/v1alpha1` for Release CRD types.
+
+### Fixed
+
+- Fix `getLatestGithubRelease` to return the semantically highest version instead of the most recently created GitHub release.
+  This prevents backport releases (e.g., `v5.4.0`) from being incorrectly selected over newer versions (e.g., `v6.4.x`) when auto-bumping components.
+
 ## [7.26.1] - 2026-01-09
 
 ### Fixed
@@ -1461,7 +1472,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.26.1...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.27.0...HEAD
+[7.27.0]: https://github.com/giantswarm/devctl/compare/v7.26.1...v7.27.0
 [7.26.1]: https://github.com/giantswarm/devctl/compare/v7.26.0...v7.26.1
 [7.26.0]: https://github.com/giantswarm/devctl/compare/v7.25.0...v7.26.0
 [7.25.0]: https://github.com/giantswarm/devctl/compare/v7.24.1...v7.25.0

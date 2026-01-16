@@ -5,7 +5,7 @@ import (
 	"text/template"
 
 	"github.com/giantswarm/microerror"
-	"github.com/giantswarm/release-operator/v4/api/v1alpha1"
+	"github.com/giantswarm/releases/sdk/api/v1alpha1"
 )
 
 const announcementNotesTemplate = `**Workload cluster release {{ .Release }} for {{ .Provider }} is available**. {{ .Description }}
