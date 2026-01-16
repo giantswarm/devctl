@@ -8,9 +8,10 @@ import (
 )
 
 const (
-	LanguageGo      Language = "go"
-	LanguagePython  Language = "python"
-	LanguageGeneric Language = "generic"
+	LanguageGo            Language = "go"
+	LanguagePython        Language = "python"
+	LanguageGeneric       Language = "generic"
+	LanguageKyvernoPolicy Language = "kyverno-policy"
 )
 
 func AllLanguages() []string {
@@ -18,6 +19,7 @@ func AllLanguages() []string {
 		LanguageGo.String(),
 		LanguagePython.String(),
 		LanguageGeneric.String(),
+		LanguageKyvernoPolicy.String(),
 	}
 }
 
@@ -31,6 +33,8 @@ func NewLanguage(s string) (Language, error) {
 		return LanguagePython, nil
 	case LanguageGeneric.String():
 		return LanguageGeneric, nil
+	case LanguageKyvernoPolicy.String():
+		return LanguageKyvernoPolicy, nil
 	}
 
 	return Language("unknown"), microerror.Maskf(invalidConfigError, "language must be one of %s", strings.Join(AllLanguages(), "|"))

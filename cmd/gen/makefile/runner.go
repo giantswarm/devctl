@@ -71,6 +71,10 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		if r.flag.Language == gen.LanguageGo {
 			inputs = append(inputs, in.MakefileGenGo()...)
 		}
+
+		if r.flag.Language == "kyverno-policy" {
+			inputs = append(inputs, in.MakefileGenChainsaw()...)
+		}
 	}
 
 	err = gen.Execute(ctx, inputs...)
