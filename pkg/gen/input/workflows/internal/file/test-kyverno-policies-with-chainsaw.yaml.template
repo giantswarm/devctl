@@ -9,7 +9,7 @@ env:
   # repository: kubernetes-sigs/kind
   KIND_VERSION: v0.25.0
   # repository: kindest/node
-  KUBERNETES_VERSION: v1.33.4
+  KUBERNETES_VERSION: v1.33.7
   # repository: giantswarm/kyverno-crds
   KYVERNO_VERSION: v1.16.0
   HELM_VERSION: 4
