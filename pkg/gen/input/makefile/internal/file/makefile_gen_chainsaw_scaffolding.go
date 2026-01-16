@@ -7,26 +7,37 @@ import (
 	"github.com/giantswarm/devctl/v7/pkg/gen/input/makefile/internal/params"
 )
 
-//go:embed chainsaw-test-steps-template.yaml.template
-var chainsawTestStepTemplate string
+//go:embed chainsaw-tests-steps-template.yaml.template
+var chainsawTestsStepTemplate string
 
-func NewChainsawTestStepTemplate(p params.Params) input.Input {
+func NewChainsawTestsStepTemplate(p params.Params) input.Input {
 	i := input.Input{
-		Path:           "tests/chainsaw/_steps-templates/cluster-policy-ready.yaml",
-		TemplateBody:   chainsawTestStepTemplate,
-		SkipRegenCheck: true,
+		Path:         "tests/chainsaw/_steps-templates/cluster-policy-ready.yaml",
+		TemplateBody: chainsawTestsStepTemplate,
 	}
 
 	return i
 }
 
-//go:embed chainsaw-test-policy-ready.yaml.template
-var chainsawTestPolicyReadyTemplate string
+//go:embed chainsaw-tests-policy-ready.yaml.template
+var chainsawTestsPolicyReadyTemplate string
 
-func NewChainsawTestExampleTest(p params.Params) input.Input {
+func NewChainsawTestsExampleTest(p params.Params) input.Input {
 	i := input.Input{
 		Path:         "tests/chainsaw/check-policy-ready/check-policy-ready.yaml",
-		TemplateBody: chainsawTestPolicyReadyTemplate,
+		TemplateBody: chainsawTestsPolicyReadyTemplate,
+	}
+
+	return i
+}
+
+//go:embed chainsaw-tests-extra-values.yaml.template
+var chainsawTestsExtraValuesTemplate string
+
+func NewChainsawTestsExtraValues(p params.Params) input.Input {
+	i := input.Input{
+		Path:         "tests/chainsaw/values.yaml",
+		TemplateBody: chainsawTestsExtraValuesTemplate,
 	}
 
 	return i
