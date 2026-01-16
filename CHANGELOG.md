@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.27.0] - 2026-01-16
+
 ### Changed
 
 - Replace `github.com/giantswarm/release-operator/v4/api/v1alpha1` with `github.com/giantswarm/releases/sdk/api/v1alpha1` for Release CRD types.
@@ -1470,7 +1472,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.26.1...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.27.0...HEAD
+[7.27.0]: https://github.com/giantswarm/devctl/compare/v7.26.1...v7.27.0
 [7.26.1]: https://github.com/giantswarm/devctl/compare/v7.26.0...v7.26.1
 [7.26.0]: https://github.com/giantswarm/devctl/compare/v7.25.0...v7.26.0
 [7.25.0]: https://github.com/giantswarm/devctl/compare/v7.24.1...v7.25.0
