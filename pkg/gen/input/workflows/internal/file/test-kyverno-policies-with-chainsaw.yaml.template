@@ -8,6 +8,7 @@ env:
   KYVERNO_POLICIES_APP_NAME: {{{{ .Repository }}}}
   KIND_VERSION: v0.25.0
   KUBERNETES_VERSION: v1.33.4
+  # repository: giantswarm/kyverno-crds
   KYVERNO_VERSION: v1.16.0
   HELM_VERSION: 4
 jobs:

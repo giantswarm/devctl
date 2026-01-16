@@ -7,26 +7,6 @@ import (
 	"github.com/giantswarm/devctl/v7/pkg/gen/input/makefile/internal/params"
 )
 
-//go:embed chainsaw-hack-kind-setup.sh.template
-var chainsawHackScaffolding string
-
-//go:generate go run ../../../update-template-sha.go chainsaw-hack-kind-setup.sh.template
-//go:embed chainsaw-hack-kind-setup.sh.template.sha
-var chainsawHackScaffoldingSha string
-
-func NewChainsawHackKindSetup(p params.Params) input.Input {
-	i := input.Input{
-		Path:         "hack/kind-with-registry.sh",
-		TemplateBody: chainsawHackScaffolding,
-		TemplateData: map[string]interface{}{
-			"Header": params.Header("#", chainsawHackScaffoldingSha),
-		},
-		SkipRegenCheck: true,
-	}
-
-	return i
-}
-
 //go:embed chainsaw-test-steps-template.yaml.template
 var chainsawTestStepTemplate string
 
@@ -45,9 +25,8 @@ var chainsawTestPolicyReadyTemplate string
 
 func NewChainsawTestExampleTest(p params.Params) input.Input {
 	i := input.Input{
-		Path:           "tests/chainsaw/check-policy-ready/check-policy-ready.yaml",
-		TemplateBody:   chainsawTestPolicyReadyTemplate,
-		SkipRegenCheck: true,
+		Path:         "tests/chainsaw/check-policy-ready/check-policy-ready.yaml",
+		TemplateBody: chainsawTestPolicyReadyTemplate,
 	}
 
 	return i
