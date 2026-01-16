@@ -26,7 +26,7 @@ install-kyverno:
 .PHONY: install-policies
 install-policies:
 	touch tests/chainsaw/values.yaml
-	helm upgrade --install $(KYVERNO_POLICIES_APP_NAME) ./helm/$(KYVERNO_POLICIES_APP_NAME) --values ./tests/values.yaml
+	helm upgrade --install $(KYVERNO_POLICIES_APP_NAME) ./helm/$(KYVERNO_POLICIES_APP_NAME) --values ./tests/chainsaw/values.yaml
 
 .PHONY: kind-get-kubeconfig
 kind-get-kubeconfig:
