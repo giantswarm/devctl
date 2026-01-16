@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/giantswarm/release-operator/v4/api/v1alpha1"
+	"github.com/giantswarm/releases/sdk/api/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 

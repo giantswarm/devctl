@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/giantswarm/microerror"
-	"github.com/giantswarm/release-operator/v4/api/v1alpha1"
+	"github.com/giantswarm/releases/sdk/api/v1alpha1"
 	"sigs.k8s.io/yaml"
 )
 
