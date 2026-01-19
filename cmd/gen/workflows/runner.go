@@ -75,6 +75,9 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		if r.flag.InstallUpdateChart {
 			inputs = append(inputs, workflowsInput.UpdateChart())
 		}
+		if r.flag.Language == "kyverno-policy" {
+			inputs = append(inputs, workflowsInput.TestKyvernoPoliciesWithChainsaw())
+		}
 	}
 
 	if r.flag.Flavours.Contains(gen.FlavourCustomer) {
