@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.28.1] - 2026-01-20
+
 ### Changed
 
 - Rename the `_steps-templates` in `Test Kyverno Policies with Chainsaw` example test.
@@ -1482,7 +1484,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.28.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.28.1...HEAD
+[7.28.1]: https://github.com/giantswarm/devctl/compare/v7.28.0...v7.28.1
 [7.28.0]: https://github.com/giantswarm/devctl/compare/v7.27.0...v7.28.0
 [7.27.0]: https://github.com/giantswarm/devctl/compare/v7.26.1...v7.27.0
 [7.26.1]: https://github.com/giantswarm/devctl/compare/v7.26.0...v7.26.1
