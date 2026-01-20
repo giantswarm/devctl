@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Rename the `_steps-templates` in `Test Kyverno Policies with Chainsaw` example test.
+
 ## [7.28.0] - 2026-01-19
 
 ### Added
