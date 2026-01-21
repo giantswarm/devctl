@@ -33,6 +33,7 @@ func execute(ctx context.Context, file input.Input) error {
 
 	// Create the file's directory if it doesn't exist. Check if the file
 	// itself is a directory. Error if it is.
+	var fileExists bool
 	{
 		dir := path.Dir(file.Path)
 		err := os.MkdirAll(dir, 0750)
@@ -41,8 +42,10 @@ func execute(ctx context.Context, file input.Input) error {
 		}
 
 		f, err := os.Stat(file.Path)
+		fileExists = true
 		if os.IsNotExist(err) {
-			// Fall through.
+			// Fall through but add a condition for later so the file gets created.
+			fileExists = false
 		} else if err != nil {
 			return microerror.Mask(err)
 		} else if f.IsDir() {
@@ -50,7 +53,7 @@ func execute(ctx context.Context, file input.Input) error {
 		}
 	}
 
-	if !file.SkipRegenCheck && !isRegenerable(file.Path) {
+	if !file.SkipRegenCheck && !isRegenerable(file.Path) && fileExists {
 		return nil
 	}
 
