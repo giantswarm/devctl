@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- fix-vulnerabilities GH action supports log_level variable
+
 ## [7.28.1] - 2026-01-20
 
 ### Changed
