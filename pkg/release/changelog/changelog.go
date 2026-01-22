@@ -69,7 +69,6 @@ var KnownComponents = map[string]ParseParams{
 		Changelog:  "https://raw.githubusercontent.com/giantswarm/aws-cloud-controller-manager-app/v{{.Version}}/CHANGELOG.md",
 		Start:      commonStartPattern,
 		End:        commonEndPattern,
-		AutoDetect: true,
 	},
 	"irsa-servicemonitors": {
 		Tag:       "https://github.com/giantswarm/irsa-servicemonitors-app/releases/tag/v{{.Version}}",
