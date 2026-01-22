@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - fix-vulnerabilities GH action supports log_level variable
+- Releases: Disable version auto-detection for `cloud-provider-aws`.
 
 ## [7.28.1] - 2026-01-20
 
