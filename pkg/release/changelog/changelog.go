@@ -65,10 +65,10 @@ var KnownComponents = map[string]ParseParams{
 		End:       commonEndPattern,
 	},
 	"cloud-provider-aws": {
-		Tag:        "https://github.com/giantswarm/aws-cloud-controller-manager-app/releases/tag/v{{.Version}}",
-		Changelog:  "https://raw.githubusercontent.com/giantswarm/aws-cloud-controller-manager-app/v{{.Version}}/CHANGELOG.md",
-		Start:      commonStartPattern,
-		End:        commonEndPattern,
+		Tag:       "https://github.com/giantswarm/aws-cloud-controller-manager-app/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/aws-cloud-controller-manager-app/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
 	},
 	"irsa-servicemonitors": {
 		Tag:       "https://github.com/giantswarm/irsa-servicemonitors-app/releases/tag/v{{.Version}}",
