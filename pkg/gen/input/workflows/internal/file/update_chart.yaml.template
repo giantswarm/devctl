@@ -15,6 +15,9 @@ on:
       branch:
         required: true
         type: string
+
+permissions: {}
+
 jobs:
   debug_info:
     name: Debug info
@@ -70,6 +73,8 @@ jobs:
   create_update_pr:
     name: Create update PR
     runs-on: ubuntu-22.04
+    permissions:
+      contents: read
     needs:
       - gather_facts
     if: ${{ needs.gather_facts.outputs.skip != 'true' }}
