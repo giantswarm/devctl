@@ -6,6 +6,8 @@ on:
   issues:
     types: [opened]
 
+permissions: {}
+
 jobs:
   add-to-board:
     uses: giantswarm/github-workflows/.github/workflows/issue-to-customer-board.yaml@main

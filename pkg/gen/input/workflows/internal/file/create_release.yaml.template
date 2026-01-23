@@ -9,6 +9,9 @@ on:
       - 'release-v*.*.x'
       # "!" negates previous positive patterns so it has to be at the end.
       - '!release-v*.x.x'
+
+permissions: {}
+
 jobs:
   debug_info:
     name: Debug info
@@ -22,6 +25,8 @@ jobs:
   gather_facts:
     name: Gather facts
     runs-on: ubuntu-22.04
+    permissions:
+      contents: read
     outputs:
       project_go_path: ${{ steps.get_project_go_path.outputs.path }}
       ref_version: ${{ steps.ref_version.outputs.refversion }}
@@ -80,6 +85,8 @@ jobs:
   update_project_go:
     name: Update project.go
     runs-on: ubuntu-22.04
+    permissions:
+      contents: read
     if: ${{ needs.gather_facts.outputs.version != '' && needs.gather_facts.outputs.project_go_path != '' && needs.gather_facts.outputs.ref_version != 'true' }}
     needs:
       - gather_facts
@@ -148,6 +155,8 @@ jobs:
   create_release:
     name: Create release
     runs-on: ubuntu-22.04
+    permissions:
+      contents: read
     needs:
       - gather_facts
     if: ${{ needs.gather_facts.outputs.version }}
@@ -195,6 +204,8 @@ jobs:
   ensure_floating_major_version_tags:
     name: Ensure floating major version tags
     runs-on: ubuntu-22.04
+    permissions:
+      contents: write
     needs:
       - gather_facts
       - create_release
@@ -207,6 +218,8 @@ jobs:
   create-release-branch:
     name: Create release branch
     runs-on: ubuntu-22.04
+    permissions:
+      contents: write
     needs:
       - gather_facts
     if: ${{ needs.gather_facts.outputs.version }}
@@ -269,6 +282,8 @@ jobs:
   create_and_upload_build_artifacts:
     name: Create and upload build artifacts
     runs-on: ubuntu-22.04
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:

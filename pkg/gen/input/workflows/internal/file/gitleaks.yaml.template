@@ -4,6 +4,8 @@ name: gitleaks
 on:
   - pull_request
 
+permissions: {}
+
 jobs:
   publish:
     uses: giantswarm/github-workflows/.github/workflows/gitleaks.yaml@main

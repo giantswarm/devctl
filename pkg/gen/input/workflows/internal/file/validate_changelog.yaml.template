@@ -7,9 +7,7 @@ on:
     paths:
       - 'CHANGELOG.md'
 
-permissions:
-  contents: read
-  pull-requests: write
+permissions: {}
 
 jobs:
   validate-changelog:

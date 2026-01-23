@@ -16,6 +16,8 @@ on:
         default: "info"
         type: string
 
+permissions: {}
+
 jobs:
   fix:
     uses: giantswarm/github-workflows/.github/workflows/fix-vulnerabilities.yaml@main
