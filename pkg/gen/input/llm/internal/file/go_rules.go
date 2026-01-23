@@ -16,7 +16,7 @@ var goRulesTemplateSha string
 
 func NewGoLLMRulesInput(p params.Params) input.Input {
 	i := input.Input{
-		Path:         params.RegenerableFileName(p, "go-llm-rules.mdc"),
+		Path:         params.RegenerableFolderRuleFileName(p, "go-llm-rules"),
 		TemplateBody: goRulesTemplate,
 		TemplateData: map[string]interface{}{
 			"Header": params.Header(goRulesTemplateSha),

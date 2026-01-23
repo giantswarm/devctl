@@ -69,3 +69,13 @@ func Package(dir string) string {
 func RegenerableFileName(dir, suffix string) string {
 	return filepath.Join(dir, RegenerableFilePrefix+suffix)
 }
+
+// RegenerableFolderRuleFileName returns the path for a RULE.md file in a
+// folder-based Cursor rule structure. The folder name is prefixed with
+// "zz_generated." to denote it can be regenerated.
+//
+// For example: .cursor/rules/zz_generated.base-llm-rules/RULE.md
+func RegenerableFolderRuleFileName(dir, ruleName string) string {
+	folderName := RegenerableFilePrefix + ruleName
+	return filepath.Join(dir, folderName, "RULE.md")
+}
