@@ -309,6 +309,12 @@ var KnownComponents = map[string]ParseParams{
 		Start:     commonStartPattern,
 		End:       commonEndPattern,
 	},
+	"node-problem-detector": {
+		Tag:       "https://github.com/giantswarm/node-problem-detector-app/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/node-problem-detector-app/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
+	},
 	"observability-bundle": {
 		Tag:       "https://github.com/giantswarm/observability-bundle/releases/tag/v{{.Version}}",
 		Changelog: "https://raw.githubusercontent.com/giantswarm/observability-bundle/v{{.Version}}/CHANGELOG.md",
