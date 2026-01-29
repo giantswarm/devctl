@@ -32,7 +32,7 @@ var chainsawTestsPolicyReadyTemplate string
 
 func NewChainsawTestsExampleTest(p params.Params) input.Input {
 	i := input.Input{
-		Path:         "tests/chainsaw/check-policy-ready/check-policy-ready.yaml",
+		Path:         "tests/chainsaw/check-policy-ready/chainsaw-test.yaml",
 		TemplateBody: chainsawTestsPolicyReadyTemplate,
 		TemplateData: map[string]interface{}{
 			"Header": params.Header("#", makefileGenChainsawMkTemplateSha),
