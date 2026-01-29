@@ -1,4 +1,4 @@
-FROM gsoci.azurecr.io/giantswarm/alpine:3.23.2
+FROM gsoci.azurecr.io/giantswarm/alpine:3.23.3
 
 COPY ./devctl /usr/bin/devctl
 
