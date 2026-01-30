@@ -17,6 +17,8 @@ permissions: {}
 jobs:
   publish:
     uses: giantswarm/github-workflows/.github/workflows/publish-techdocs.yaml@main
+    permissions:
+      contents: read
     secrets:
       aws_access_key_id: ${{ secrets.TECHDOCS_S3_ACCESS_KEY_ID }}
       aws_secret_access_key: ${{ secrets.TECHDOCS_S3_SECRET_ACCESS_KEY }}

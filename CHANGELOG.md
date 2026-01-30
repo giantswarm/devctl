@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed permissions for workflow templates calling reusable workflows. The calling workflow must grant permissions that the reusable workflow's jobs need.
+
 ## [7.30.1] - 2026-01-30
 
 ### Changed

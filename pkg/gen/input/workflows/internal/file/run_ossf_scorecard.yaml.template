@@ -24,5 +24,9 @@ permissions: {}
 jobs:
   analysis:
     uses: giantswarm/github-workflows/.github/workflows/ossf-scorecard.yaml@main
+    permissions:
+      contents: read
+      security-events: write
+      id-token: write
     secrets:
       scorecard_token: ${{ secrets.SCORECARD_TOKEN }}

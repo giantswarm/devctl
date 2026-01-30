@@ -21,6 +21,8 @@ permissions: {}
 jobs:
   fix:
     uses: giantswarm/github-workflows/.github/workflows/fix-vulnerabilities.yaml@main
+    permissions:
+      contents: read
     with:
       branch: ${{ inputs.branch || github.ref }}
       log_level: ${{ inputs.log_level }}
