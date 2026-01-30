@@ -19,6 +19,8 @@ on:
       - master
   workflow_dispatch: {}
 
+permissions: {}
+
 jobs:
   analysis:
     uses: giantswarm/github-workflows/.github/workflows/ossf-scorecard.yaml@main

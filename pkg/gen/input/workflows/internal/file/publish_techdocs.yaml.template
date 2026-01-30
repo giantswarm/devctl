@@ -12,6 +12,8 @@ on:
       - master
   workflow_dispatch: {}
 
+permissions: {}
+
 jobs:
   publish:
     uses: giantswarm/github-workflows/.github/workflows/publish-techdocs.yaml@main

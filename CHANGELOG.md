@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Restricted GITHUB_TOKEN permission in all generated workflows
 - Change name of generated chainsaw example to `chainsaw-test.yaml`.
 
 ## [7.30.0] - 2026-01-23

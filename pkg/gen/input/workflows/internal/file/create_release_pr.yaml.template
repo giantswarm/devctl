@@ -25,6 +25,8 @@ on:
         required: true
         type: string
 
+permissions: {}
+
 jobs:
   publish:
     uses: giantswarm/github-workflows/.github/workflows/create-release-pr.yaml@main
