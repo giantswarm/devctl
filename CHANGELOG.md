@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.30.2] - 2026-01-30
+
 ### Fixed
 
 - Fixed permissions for workflow templates calling reusable workflows. The calling workflow must grant permissions that the reusable workflow's jobs need.
@@ -1508,7 +1510,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.30.1...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.30.2...HEAD
+[7.30.2]: https://github.com/giantswarm/devctl/compare/v7.30.1...v7.30.2
 [7.30.1]: https://github.com/giantswarm/devctl/compare/v7.30.0...v7.30.1
 [7.30.0]: https://github.com/giantswarm/devctl/compare/v7.29.0...v7.30.0
 [7.29.0]: https://github.com/giantswarm/devctl/compare/v7.28.1...v7.29.0
