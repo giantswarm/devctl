@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed permissions for OSSF Scorecard workflow.
+
 ## [7.30.2] - 2026-01-30
 
 ### Fixed
