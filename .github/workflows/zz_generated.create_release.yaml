@@ -111,6 +111,8 @@ jobs:
           smoke_test: "${binary} --version"
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
       - name: Update project.go
         id: update_project_go
         env:
@@ -175,6 +177,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: ${{ github.sha }}
+          persist-credentials: false
       - name: Ensure correct version in project.go
         if: ${{ needs.gather_facts.outputs.project_go_path != '' && needs.gather_facts.outputs.ref_version != 'true' }}
         run: |
