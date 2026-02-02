@@ -12,11 +12,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Fixed `create_release` workflow template: added `persist-credentials: false` to checkout steps that push using PAT credentials, preventing git from using cached GITHUB_TOKEN credentials.
-
-## [7.30.3] - 2026-02-02
-
-### Fixed
-
 - Fixed permissions for OSSF Scorecard workflow.
 
 ## [7.30.2] - 2026-01-30
@@ -1523,7 +1518,6 @@ Renovate config
  - First release.
 
 [Unreleased]: https://github.com/giantswarm/devctl/compare/v7.30.3...HEAD
-[7.30.3]: https://github.com/giantswarm/devctl/compare/v7.30.3...v7.30.3
 [7.30.3]: https://github.com/giantswarm/devctl/compare/v7.30.2...v7.30.3
 [7.30.2]: https://github.com/giantswarm/devctl/compare/v7.30.1...v7.30.2
 [7.30.1]: https://github.com/giantswarm/devctl/compare/v7.30.0...v7.30.1
