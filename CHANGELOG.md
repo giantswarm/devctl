@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Set default log level for fix_vulnerabilities workflow template to `info`.
+
 ## [7.30.4] - 2026-02-02
 
 ### Fixed
