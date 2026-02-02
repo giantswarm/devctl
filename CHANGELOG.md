@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.30.5] - 2026-02-02
+
 ### Fixed
 
 - Set default log level for fix_vulnerabilities workflow template to `info`.
@@ -1527,7 +1529,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.30.4...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.30.5...HEAD
+[7.30.5]: https://github.com/giantswarm/devctl/compare/v7.30.4...v7.30.5
 [7.30.4]: https://github.com/giantswarm/devctl/compare/v7.30.3...v7.30.4
 [7.30.3]: https://github.com/giantswarm/devctl/compare/v7.30.2...v7.30.3
 [7.30.2]: https://github.com/giantswarm/devctl/compare/v7.30.1...v7.30.2
