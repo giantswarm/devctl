@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed `create_release` workflow template: added `persist-credentials: false` to checkout steps that push using PAT credentials, preventing git from using cached GITHUB_TOKEN credentials.
+
 ## [7.30.3] - 2026-02-02
 
 ### Fixed
