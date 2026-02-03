@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.30.6] - 2026-02-03
+
 ### Added
 
 - Add aliases `upgrade` to `devctl version update` command, so it can be called as `devctl version upgrade`.
@@ -1537,7 +1539,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.30.5...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.30.6...HEAD
+[7.30.6]: https://github.com/giantswarm/devctl/compare/v7.30.5...v7.30.6
 [7.30.5]: https://github.com/giantswarm/devctl/compare/v7.30.4...v7.30.5
 [7.30.4]: https://github.com/giantswarm/devctl/compare/v7.30.3...v7.30.4
 [7.30.3]: https://github.com/giantswarm/devctl/compare/v7.30.2...v7.30.3
