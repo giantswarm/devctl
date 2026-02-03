@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Migrate `cluster_app_documentation_validation` workflow to call reusable workflow from `giantswarm/github-workflows`.
+- Migrate `cluster_app_schema_validation` workflow to call reusable workflow from `giantswarm/github-workflows`.
+- Migrate `cluster_app_values_validation_using_schema` workflow to call reusable workflow from `giantswarm/github-workflows`.
+- Migrate `helm_render_diff` workflow to call reusable workflow from `giantswarm/github-workflows`.
+- Migrate `update_chart` workflow to call reusable workflow from `giantswarm/github-workflows`.
 
 ## [7.30.6] - 2026-02-03
 
