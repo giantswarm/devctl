@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Migrate `update_chart` workflow to call reusable workflow from `giantswarm/github-workflows`.
+
 ## [7.30.6] - 2026-02-03
 
 ### Added
