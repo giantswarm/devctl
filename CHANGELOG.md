@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add aliases `upgrade` to `devctl version update` command, so it can be called as `devctl version upgrade`.
+
 ### Fixed
 
 - Fix string quoting in `fix_vulnerabilities` workflow template: use single quotes for string literals in GitHub Actions expressions.
