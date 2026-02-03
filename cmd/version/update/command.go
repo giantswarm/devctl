@@ -44,10 +44,11 @@ func New(config Config) (*cobra.Command, error) {
 	}
 
 	c := &cobra.Command{
-		Use:   name,
-		Short: shortDescription,
-		Long:  longDescription,
-		RunE:  r.Run,
+		Aliases: []string{"upgrade"},
+		Use:     name,
+		Short:   shortDescription,
+		Long:    longDescription,
+		RunE:    r.Run,
 	}
 
 	f.Init(c)
