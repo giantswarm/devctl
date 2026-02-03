@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add aliases `upgrade` to `devctl version update` command, so it can be called as `devctl version upgrade`.
+
 ## [7.30.5] - 2026-02-02
 
 ### Fixed
