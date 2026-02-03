@@ -1,25 +1,13 @@
 {{{{ .Header }}}}
 name: Ensure major version tags
+
 on:
   workflow_dispatch: {}
 
 permissions: {}
 
 jobs:
-  debug_info:
-    name: Debug info
-    runs-on: ubuntu-22.04
-    steps:
-      - name: Print github context JSON
-        run: |
-          cat <<EOF
-          ${{ toJson(github) }}
-          EOF
   ensure_major_version_tags:
-    name: Ensure major version tags
-    runs-on: ubuntu-22.04
+    uses: giantswarm/github-workflows/.github/workflows/ensure-major-version-tags.yaml@main
     permissions:
       contents: write
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: giantswarm/floating-tags-action@ce8d4d60ddeaf45623e82954987f1644775db3f1 # v1.2.0
