@@ -21,9 +21,5 @@ jobs:
       fetch-deep-gitlog-for-build: {{{{ .IsDevctl }}}}
     secrets:
       TAYLORBOT_GITHUB_ACTION: ${{ secrets.TAYLORBOT_GITHUB_ACTION }}
-{{{{- if .IsFlavourCLI }}}}
-      CODE_SIGNING_CERT_BUNDLE_BASE64: ${{ secrets.CODE_SIGNING_CERT_BUNDLE_BASE64 }}
-      CODE_SIGNING_CERT_BUNDLE_PASSWORD: ${{ secrets.CODE_SIGNING_CERT_BUNDLE_PASSWORD }}
-{{{{- end }}}}
     permissions:
       contents: write
