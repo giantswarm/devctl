@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.31.0] - 2026-02-04
+
 ### Changed
 
 - Migrate `ensure_major_version_tags` workflow to call reusable workflow from `giantswarm/github-workflows`.
@@ -1548,7 +1550,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.30.6...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.31.0...HEAD
+[7.31.0]: https://github.com/giantswarm/devctl/compare/v7.30.6...v7.31.0
 [7.30.6]: https://github.com/giantswarm/devctl/compare/v7.30.5...v7.30.6
 [7.30.5]: https://github.com/giantswarm/devctl/compare/v7.30.4...v7.30.5
 [7.30.4]: https://github.com/giantswarm/devctl/compare/v7.30.3...v7.30.4
