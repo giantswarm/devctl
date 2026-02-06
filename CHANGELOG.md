@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.32.0] - 2026-02-06
+
 ### Changed
 
 - Migrate `create_release` workflow to call reusable workflow from `giantswarm/github-workflows`.
@@ -1558,7 +1560,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.31.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.32.0...HEAD
+[7.32.0]: https://github.com/giantswarm/devctl/compare/v7.31.0...v7.32.0
 [7.31.0]: https://github.com/giantswarm/devctl/compare/v7.30.6...v7.31.0
 [7.30.6]: https://github.com/giantswarm/devctl/compare/v7.30.5...v7.30.6
 [7.30.5]: https://github.com/giantswarm/devctl/compare/v7.30.4...v7.30.5
