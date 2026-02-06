@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [7.33.0] - 2026-02-06
 
+### Removed
+
+- Remove the `--enable-floating-major-tags` and templating of the `ensure_major_version_tags` workflow.
+
 ## [7.32.0] - 2026-02-06
 
 ### Changed
