@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Migrate `create_release` workflow to call reusable workflow from `giantswarm/github-workflows`.
+
+### Removed
+
+- Remove code signing support from `create_release` workflow (no longer functional).
+
 ## [7.31.0] - 2026-02-04
 
 ### Changed
