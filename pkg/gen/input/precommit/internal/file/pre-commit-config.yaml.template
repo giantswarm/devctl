@@ -1,0 +1,77 @@
+# DO NOT EDIT. Generated with:
+#
+#    devctl gen precommit
+#
+minimum_pre_commit_version: '2.17'
+repos:
+  # base hooks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-added-large-files
+      - id: check-merge-conflict
+      - id: detect-private-key
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+{{- if eq .Language "go" }}
+
+  # Go hooks
+  - repo: https://github.com/dnephin/pre-commit-golang
+    rev: v0.5.1
+    hooks:
+      - id: go-fmt
+      - id: go-mod-tidy
+      - id: golangci-lint
+        args:
+          - --timeout=300s
+          - --max-same-issues=0
+          - --max-issues-per-linter=0
+{{- end }}
+{{- if .HasBash }}
+
+  # Bash/shell hooks
+  - repo: https://github.com/detailyang/pre-commit-shell
+    rev: '1.0.5'
+    hooks:
+      - id: shell-lint
+        args: [ --format=json ]
+        exclude: ".*\\.template"
+{{- end }}
+{{- if .HasMd }}
+
+  # Markdown hooks
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.44.0
+    hooks:
+      - id: markdownlint
+{{- end }}
+{{- if .HasHelmchart }}
+
+  # Helm chart hooks
+   - repo: https://github.com/losisin/helm-values-schema-json
+    rev: v2.3.1
+    hooks:
+      - id: helm-schema
+        args:
+          - --config
+          - helm/hello-world/.schema.yaml
+  - repo: https://github.com/giantswarm/schemalint
+    rev: v2.6.1
+    hooks:
+      - id: schemalint-normalize
+        args:
+          - helm/hello-world/values.schema.json
+          - -o
+          - helm/hello-world/values.schema.json
+          - --force
+      - id: schemalint-verify
+        args:
+          - helm/hello-world/values.schema.json
+  - repo: https://github.com/norwoodj/helm-docs
+    rev: "v1.14.2"
+    hooks:
+      - id: helm-docs
+        args:
+          - --chart-search-root=helm
+          - --sort-values-order=file
+{{- end }}
