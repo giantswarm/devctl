@@ -1,0 +1,108 @@
+# DO NOT EDIT. Generated with:
+#
+#    devctl gen precommit
+#
+minimum_pre_commit_version: '2.17'
+repos:
+  # base hooks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-merge-conflict
+      - id: check-shebang-scripts-are-executable
+      - id: detect-private-key
+      - id: end-of-file-fixer
+        exclude: ".*testdata/.*"
+      - id: mixed-line-ending
+      - id: trailing-whitespace
+        exclude: ".*testdata/.*"
+{{- if eq .Language "python" }}
+
+  # Python hooks
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    # Ruff version.
+    rev: v0.15.0
+    hooks:
+      # Run the linter.
+      - id: ruff-check
+        args: [--fix]
+      # Run the formatter.
+      - id: ruff-format
+
+  # static type checking with mypy
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.19.1
+    hooks:
+      - id: mypy
+{{- end }}
+{{- if eq .Language "go" }}
+
+  # Go hooks
+  - repo: https://github.com/dnephin/pre-commit-golang
+    rev: v0.5.1
+    hooks:
+      - id: go-fmt
+      - id: go-mod-tidy
+      - id: golangci-lint
+        args:
+          - -E=gosec
+          - -E=goconst
+          - -E=govet
+          # timeout is needed for CI
+          - --timeout=300s
+          # List all issues found
+          - --max-same-issues=0
+          - --max-issues-per-linter=0
+      - id: go-imports
+        args: [ -local, github.com/giantswarm/{{.RepoName}} ]
+{{- end }}
+{{- if .HasBash }}
+
+  # Bash/shell hooks
+  - repo: https://github.com/detailyang/pre-commit-shell
+    rev: '1.0.5'
+    hooks:
+      - id: shell-lint
+        args: [ --format=json ]
+        exclude: ".*\\.template"
+{{- end }}
+{{- if .HasMd }}
+
+  # Markdown hooks
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.44.0
+    hooks:
+      - id: markdownlint
+{{- end }}
+{{- if .HasHelmchart }}
+{{- range .HelmCharts }}
+
+  # Helm chart hooks for {{.}}
+   - repo: https://github.com/losisin/helm-values-schema-json
+    rev: v2.3.1
+    hooks:
+      - id: helm-schema
+        args:
+          - --config
+          - helm/{{.}}/.schema.yaml
+  - repo: https://github.com/giantswarm/schemalint
+    rev: v2.6.1
+    hooks:
+      - id: schemalint-normalize
+        args:
+          - helm/{{.}}/values.schema.json
+          - -o
+          - helm/{{.}}/values.schema.json
+          - --force
+      - id: schemalint-verify
+        args:
+          - helm/{{.}}/values.schema.json
+{{- end }}
+  - repo: https://github.com/norwoodj/helm-docs
+    rev: "v1.14.2"
+    hooks:
+      - id: helm-docs
+        args:
+          - --chart-search-root=helm
+          - --sort-values-order=file
+{{- end }}

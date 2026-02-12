@@ -13,6 +13,7 @@ import (
 	"github.com/giantswarm/devctl/v7/cmd/gen/dependabot"
 	"github.com/giantswarm/devctl/v7/cmd/gen/llm"
 	"github.com/giantswarm/devctl/v7/cmd/gen/makefile"
+	"github.com/giantswarm/devctl/v7/cmd/gen/precommit"
 	"github.com/giantswarm/devctl/v7/cmd/gen/renovate"
 	"github.com/giantswarm/devctl/v7/cmd/gen/workflows"
 )
@@ -110,6 +111,21 @@ func New(config Config) (*cobra.Command, error) {
 			return nil, microerror.Mask(err)
 		}
 	}
+
+	var precommitCmd *cobra.Command
+	{
+		c := precommit.Config{
+			Logger: config.Logger,
+			Stderr: config.Stderr,
+			Stdout: config.Stdout,
+		}
+
+		precommitCmd, err = precommit.New(c)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+	}
+
 	var renovateCmd *cobra.Command
 	{
 		c := renovate.Config{
@@ -160,6 +176,7 @@ func New(config Config) (*cobra.Command, error) {
 	c.AddCommand(dependabotCmd)
 	c.AddCommand(llmCmd)
 	c.AddCommand(makefileCmd)
+	c.AddCommand(precommitCmd)
 	c.AddCommand(renovateCmd)
 	c.AddCommand(workflowsCmd)
 	c.AddCommand(apptestCmd)
