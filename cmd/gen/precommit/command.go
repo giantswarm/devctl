@@ -12,9 +12,9 @@ import (
 const (
 	name        = "precommit"
 	description = "Generates pre-commit configuration (.pre-commit-config.yaml)."
-	example     = `  devctl gen precommit --language go
-  devctl gen precommit --language go --flavors bash,helmchart
-  devctl gen precommit --language generic --flavors md,bash`
+	example     = `  devctl gen precommit --language go --repo-name devctl
+  devctl gen precommit --language go --repo-name my-app --flavors bash,helmchart
+  devctl gen precommit --language generic --repo-name my-service --flavors md,bash`
 )
 
 type Config struct {

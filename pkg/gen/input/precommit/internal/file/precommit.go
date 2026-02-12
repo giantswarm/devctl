@@ -12,6 +12,13 @@ import (
 var createPreCommitConfigTemplate string
 
 func NewCreatePreCommitConfigInput(p params.Params) input.Input {
+	// Find all helm charts in the helm/ directory
+	helmCharts, err := findHelmCharts(p.WorkingDir)
+	if err != nil {
+		// If we can't find helm charts, use empty list
+		helmCharts = []string{}
+	}
+
 	i := input.Input{
 		Path:         filepath.Join(p.Dir, ".pre-commit-config.yaml"),
 		TemplateBody: createPreCommitConfigTemplate,
@@ -20,6 +27,8 @@ func NewCreatePreCommitConfigInput(p params.Params) input.Input {
 			"HasBash":      params.HasFlavor(p, "bash"),
 			"HasMd":        params.HasFlavor(p, "md"),
 			"HasHelmchart": params.HasFlavor(p, "helmchart"),
+			"RepoName":     p.RepoName,
+			"HelmCharts":   helmCharts,
 		},
 	}
 

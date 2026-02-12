@@ -9,6 +9,7 @@ import (
 type Config struct {
 	Language string
 	Flavors  []string
+	RepoName string
 }
 
 type PreCommit struct {
@@ -16,11 +17,16 @@ type PreCommit struct {
 }
 
 func New(config Config) (*PreCommit, error) {
+	// Get current working directory for detecting repo name and helm charts
+	workingDir := "."
+
 	p := &PreCommit{
 		params: params.Params{
-			Dir:      "",
-			Language: config.Language,
-			Flavors:  config.Flavors,
+			Dir:        "",
+			Language:   config.Language,
+			Flavors:    config.Flavors,
+			RepoName:   config.RepoName,
+			WorkingDir: workingDir,
 		},
 	}
 
