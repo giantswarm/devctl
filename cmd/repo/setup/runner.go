@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/giantswarm/microerror"
-	"github.com/google/go-github/v82/github"
+	"github.com/google/go-github/v83/github"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
