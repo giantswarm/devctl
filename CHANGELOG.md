@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Add EKS to provider title and doc maps so release notes and announcements show the correct provider name.
+
 ## [7.33.0] - 2026-02-06
 
 ### Removed
