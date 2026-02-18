@@ -76,6 +76,7 @@ type releaseNotesTemplateData struct {
 var providerTitleMap = map[string]string{
 	"aws":            "CAPA",
 	"azure":          "Azure",
+	"eks":            "EKS",
 	"kvm":            "KVM",
 	"vsphere":        "vSphere",
 	"cloud-director": "VMware Cloud Director",
