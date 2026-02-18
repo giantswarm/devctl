@@ -13,10 +13,6 @@ func StepSetUpGitIdentity() string {
 	return internal.StepSetUpGitIdentity()
 }
 
-func EnableFloatingMajorVersionTags(p Params) bool {
-	return p.EnableFloatingMajorVersionTags
-}
-
 func IsFlavourCLI(p Params) bool {
 	return p.Flavours.Contains(gen.FlavourCLI)
 }

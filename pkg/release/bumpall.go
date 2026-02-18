@@ -15,7 +15,7 @@ import (
 	"github.com/blang/semver"
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/releases/sdk/api/v1alpha1"
-	"github.com/google/go-github/v81/github"
+	"github.com/google/go-github/v83/github"
 	"github.com/jedib0t/go-pretty/v6/table"
 	"github.com/jedib0t/go-pretty/v6/text"
 	"github.com/sirupsen/logrus"

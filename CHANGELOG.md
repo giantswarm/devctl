@@ -7,6 +7,102 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.33.0] - 2026-02-06
+
+### Removed
+
+- Remove the `--enable-floating-major-tags` and templating of the `ensure_major_version_tags` workflow.
+
+## [7.32.0] - 2026-02-06
+
+### Changed
+
+- Migrate `create_release` workflow to call reusable workflow from `giantswarm/github-workflows`.
+
+### Removed
+
+- Remove code signing support from `create_release` workflow (no longer functional).
+
+## [7.31.0] - 2026-02-04
+
+### Changed
+
+- Migrate `ensure_major_version_tags` workflow to call reusable workflow from `giantswarm/github-workflows`.
+- Migrate `cluster_app_documentation_validation` workflow to call reusable workflow from `giantswarm/github-workflows`.
+- Migrate `cluster_app_schema_validation` workflow to call reusable workflow from `giantswarm/github-workflows`.
+- Migrate `cluster_app_values_validation_using_schema` workflow to call reusable workflow from `giantswarm/github-workflows`.
+- Migrate `helm_render_diff` workflow to call reusable workflow from `giantswarm/github-workflows`.
+- Migrate `update_chart` workflow to call reusable workflow from `giantswarm/github-workflows`.
+
+## [7.30.6] - 2026-02-03
+
+### Added
+
+- Add aliases `upgrade` to `devctl version update` command, so it can be called as `devctl version upgrade`.
+
+### Fixed
+
+- Fix string quoting in `fix_vulnerabilities` workflow template: use single quotes for string literals in GitHub Actions expressions.
+
+## [7.30.5] - 2026-02-02
+
+### Fixed
+
+- Set default log level for fix_vulnerabilities workflow template to `info`.
+
+## [7.30.4] - 2026-02-02
+
+### Fixed
+
+- Fixed `create_release` workflow template: pass PAT via `token` input to `ncipollo/release-action` instead of env var.
+
+## [7.30.3] - 2026-02-02
+
+### Fixed
+
+- Fixed `create_release` workflow template: added `persist-credentials: false` to checkout steps that push using PAT credentials, preventing git from using cached GITHUB_TOKEN credentials.
+- Fixed permissions for OSSF Scorecard workflow.
+
+## [7.30.2] - 2026-01-30
+
+### Fixed
+
+- Fixed permissions for workflow templates calling reusable workflows. The calling workflow must grant permissions that the reusable workflow's jobs need.
+
+## [7.30.1] - 2026-01-30
+
+### Changed
+
+- Restricted GITHUB_TOKEN permission in all generated workflows
+- Change name of generated chainsaw example to `chainsaw-test.yaml`.
+
+## [7.30.0] - 2026-01-23
+
+### Added
+
+- Releases: Add `node-problem-detector`.
+
+## [7.29.0] - 2026-01-22
+
+### Changed
+
+- fix-vulnerabilities GH action supports log_level variable
+- Releases: Disable version auto-detection for `cloud-provider-aws`.
+
+## [7.28.1] - 2026-01-20
+
+### Changed
+
+- Rename the `_steps-templates` in `Test Kyverno Policies with Chainsaw` example test.
+
+## [7.28.0] - 2026-01-19
+
+### Added
+
+- Add new `Test Kyverno Policies with Chainsaw` workflow and makefiles to gen commands.
+
+## [7.27.0] - 2026-01-16
+
 ### Changed
 
 - Replace `github.com/giantswarm/release-operator/v4/api/v1alpha1` with `github.com/giantswarm/releases/sdk/api/v1alpha1` for Release CRD types.
@@ -1470,7 +1566,21 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.26.1...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.33.0...HEAD
+[7.33.0]: https://github.com/giantswarm/devctl/compare/v7.32.0...v7.33.0
+[7.32.0]: https://github.com/giantswarm/devctl/compare/v7.31.0...v7.32.0
+[7.31.0]: https://github.com/giantswarm/devctl/compare/v7.30.6...v7.31.0
+[7.30.6]: https://github.com/giantswarm/devctl/compare/v7.30.5...v7.30.6
+[7.30.5]: https://github.com/giantswarm/devctl/compare/v7.30.4...v7.30.5
+[7.30.4]: https://github.com/giantswarm/devctl/compare/v7.30.3...v7.30.4
+[7.30.3]: https://github.com/giantswarm/devctl/compare/v7.30.2...v7.30.3
+[7.30.2]: https://github.com/giantswarm/devctl/compare/v7.30.1...v7.30.2
+[7.30.1]: https://github.com/giantswarm/devctl/compare/v7.30.0...v7.30.1
+[7.30.0]: https://github.com/giantswarm/devctl/compare/v7.29.0...v7.30.0
+[7.29.0]: https://github.com/giantswarm/devctl/compare/v7.28.1...v7.29.0
+[7.28.1]: https://github.com/giantswarm/devctl/compare/v7.28.0...v7.28.1
+[7.28.0]: https://github.com/giantswarm/devctl/compare/v7.27.0...v7.28.0
+[7.27.0]: https://github.com/giantswarm/devctl/compare/v7.26.1...v7.27.0
 [7.26.1]: https://github.com/giantswarm/devctl/compare/v7.26.0...v7.26.1
 [7.26.0]: https://github.com/giantswarm/devctl/compare/v7.25.0...v7.26.0
 [7.25.0]: https://github.com/giantswarm/devctl/compare/v7.24.1...v7.25.0

@@ -8,8 +8,7 @@ import (
 )
 
 type Config struct {
-	EnableFloatingMajorVersionTags bool
-	Flavours                       gen.FlavourSlice
+	Flavours gen.FlavourSlice
 }
 
 type Workflows struct {
@@ -19,10 +18,8 @@ type Workflows struct {
 func New(config Config) (*Workflows, error) {
 	w := &Workflows{
 		params: params.Params{
-			Dir: ".github/workflows",
-
-			EnableFloatingMajorVersionTags: config.EnableFloatingMajorVersionTags,
-			Flavours:                       config.Flavours,
+			Dir:      ".github/workflows",
+			Flavours: config.Flavours,
 		},
 	}
 
@@ -56,10 +53,6 @@ func (w *Workflows) CreateReleasePR() input.Input {
 	return file.NewCreateReleasePRInput(w.params)
 }
 
-func (w *Workflows) EnsureMajorVersionTags() input.Input {
-	return file.NewEnsureMajorVersionTagsInput(w.params)
-}
-
 func (w *Workflows) FixVulnerabilities() input.Input {
 	return file.NewFixVulnerabilitiesInput(w.params)
 }
@@ -86,4 +79,8 @@ func (w *Workflows) UpdateChart() input.Input {
 
 func (w *Workflows) ValidateChangelog() input.Input {
 	return file.NewValidateChangelogInput(w.params)
+}
+
+func (w *Workflows) TestKyvernoPoliciesWithChainsaw() input.Input {
+	return file.NewTestKyvernoPoliciesWithChainsawInput(w.params)
 }

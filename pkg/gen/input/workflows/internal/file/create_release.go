@@ -24,11 +24,9 @@ func NewCreateReleaseInput(p params.Params) input.Input {
 			Right: "}}}}",
 		},
 		TemplateData: map[string]interface{}{
-			"Header":                         params.Header("#", createReleaseTemplateSha),
-			"EnableFloatingMajorVersionTags": params.EnableFloatingMajorVersionTags(p),
-			"IsFlavourCLI":                   params.IsFlavourCLI(p),
-			"StepSetUpGitIdentity":           params.StepSetUpGitIdentity(),
-			"IsDevctl":                       strings.HasPrefix(createReleaseTemplateSha, "https://github.com/giantswarm/devctl"),
+			"Header":       params.Header("#", createReleaseTemplateSha),
+			"IsFlavourCLI": params.IsFlavourCLI(p),
+			"IsDevctl":     strings.HasPrefix(createReleaseTemplateSha, "https://github.com/giantswarm/devctl"),
 		},
 	}
 

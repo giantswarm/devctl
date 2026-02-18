@@ -12,6 +12,10 @@ on:
       - 'helm/**/values.schema.json'  # schema
       - 'helm/**/ci/ci-values.yaml'   # overrides for CI (can contain required entries)
 
+permissions: {}
+
 jobs:
   check:
     uses: giantswarm/github-workflows/.github/workflows/chart-values.yaml@main
+    permissions:
+      contents: read

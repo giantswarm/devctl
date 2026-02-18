@@ -2,21 +2,21 @@ module github.com/giantswarm/devctl/v7
 
 go 1.25.0
 
-toolchain go1.25.6
+toolchain go1.26.0
 
 require (
 	github.com/Masterminds/semver/v3 v3.4.0
 	github.com/aws/aws-sdk-go v1.55.8
 	github.com/blang/semver v3.5.1+incompatible
-	github.com/bmatcuk/doublestar/v4 v4.9.2
+	github.com/bmatcuk/doublestar/v4 v4.10.0
 	github.com/briandowns/spinner v1.23.2
 	github.com/fatih/color v1.18.0
 	github.com/giantswarm/microerror v0.4.1
 	github.com/giantswarm/micrologger v1.1.2
 	github.com/giantswarm/releases/sdk v0.11.0
-	github.com/go-git/go-git/v5 v5.16.4
+	github.com/go-git/go-git/v5 v5.16.5
 	github.com/google/go-cmp v0.7.0
-	github.com/google/go-github/v81 v81.0.0
+	github.com/google/go-github/v83 v83.0.0
 	github.com/jedib0t/go-pretty/v6 v6.7.8
 	github.com/manifoldco/promptui v0.9.0
 	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826
@@ -25,11 +25,11 @@ require (
 	github.com/sirupsen/logrus v1.9.4
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
-	golang.org/x/exp v0.0.0-20260112195511-716be5621a96
-	golang.org/x/net v0.49.0
-	golang.org/x/oauth2 v0.34.0
+	golang.org/x/exp v0.0.0-20260212183809-81e46e3db34a
+	golang.org/x/net v0.50.0
+	golang.org/x/oauth2 v0.35.0
 	gopkg.in/yaml.v3 v3.0.1
-	k8s.io/apimachinery v0.35.0
+	k8s.io/apimachinery v0.35.1
 	sigs.k8s.io/yaml v1.6.0
 )
 
@@ -51,7 +51,7 @@ require (
 	github.com/go-stack/stack v1.8.1 // indirect
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
 	github.com/google/go-github/v30 v30.1.0 // indirect
-	github.com/google/go-querystring v1.1.0 // indirect
+	github.com/google/go-querystring v1.2.0 // indirect
 	github.com/inconshreveable/go-update v0.0.0-20160112193335-8152e7eb6ccf // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
@@ -72,10 +72,10 @@ require (
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	go.yaml.in/yaml/v2 v2.4.3 // indirect
-	golang.org/x/crypto v0.47.0 // indirect
-	golang.org/x/sys v0.40.0 // indirect
-	golang.org/x/term v0.39.0 // indirect
-	golang.org/x/text v0.33.0 // indirect
+	golang.org/x/crypto v0.48.0 // indirect
+	golang.org/x/sys v0.41.0 // indirect
+	golang.org/x/term v0.40.0 // indirect
+	golang.org/x/text v0.34.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	k8s.io/klog/v2 v2.130.1 // indirect

@@ -33,6 +33,15 @@ func (m *Makefile) MakefileGenApp() input.Input {
 	return file.NewMakefileGenAppMkInput(m.params)
 }
 
+func (m *Makefile) MakefileGenChainsaw() []input.Input {
+	return []input.Input{
+		file.NewMakefileGenChainsawMkInput(m.params),
+		file.NewChainsawTestsStepTemplate(m.params),
+		file.NewChainsawTestsExampleTest(m.params),
+		file.NewChainsawTestsExtraValues(m.params),
+	}
+}
+
 func (m *Makefile) MakefileGenGo() []input.Input {
 	return file.NewMakefileGenGoMkInput(m.params)
 }

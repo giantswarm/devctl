@@ -65,11 +65,10 @@ var KnownComponents = map[string]ParseParams{
 		End:       commonEndPattern,
 	},
 	"cloud-provider-aws": {
-		Tag:        "https://github.com/giantswarm/aws-cloud-controller-manager-app/releases/tag/v{{.Version}}",
-		Changelog:  "https://raw.githubusercontent.com/giantswarm/aws-cloud-controller-manager-app/v{{.Version}}/CHANGELOG.md",
-		Start:      commonStartPattern,
-		End:        commonEndPattern,
-		AutoDetect: true,
+		Tag:       "https://github.com/giantswarm/aws-cloud-controller-manager-app/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/aws-cloud-controller-manager-app/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
 	},
 	"irsa-servicemonitors": {
 		Tag:       "https://github.com/giantswarm/irsa-servicemonitors-app/releases/tag/v{{.Version}}",
@@ -307,6 +306,12 @@ var KnownComponents = map[string]ParseParams{
 	"node-exporter": {
 		Tag:       "https://github.com/giantswarm/node-exporter-app/releases/tag/v{{.Version}}",
 		Changelog: "https://raw.githubusercontent.com/giantswarm/node-exporter-app/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
+	},
+	"node-problem-detector": {
+		Tag:       "https://github.com/giantswarm/node-problem-detector-app/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/node-problem-detector-app/v{{.Version}}/CHANGELOG.md",
 		Start:     commonStartPattern,
 		End:       commonEndPattern,
 	},

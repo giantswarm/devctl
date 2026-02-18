@@ -1,7 +1,5 @@
 {{{{ .Header }}}}
 
-# This workflow validates the values passed to a cluster-app against the JSON schema of the cluster-app.
-
 name: Validate Cluster Values using JSON Schema
 
 on:
@@ -12,101 +10,10 @@ on:
       - main
       - master
 
+permissions: {}
+
 jobs:
   validate:
-    runs-on: ubuntu-24.04
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
-
-      - name: Set up Helm
-        run: |
-          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-
-      - name: Add Helm repo and update
-        run: |
-          helm repo add cluster-catalog https://giantswarm.github.io/cluster-catalog/
-          helm repo update
-
-      - name: Install jv for JSON schema validation
-        run: |
-          go install github.com/santhosh-tekuri/jsonschema/cmd/jv@latest
-          echo "${HOME}/go/bin" >> $GITHUB_PATH
-
-      - name: Checkout GiantSwarm Releases repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
-        with:
-          repository: giantswarm/releases
-          path: releases
-
-      - name: Get modified files on this branch
-        run: |
-          # Fetch the latest changes from the main branch
-          git fetch origin main
-
-          # Get the list of modified files between the current branch and the main branch
-          MODIFIED_FILES=$(git diff --name-only origin/main HEAD | grep -E 'management-clusters/.*/cluster-app-manifests.yaml')
-
-          if [ -z "$MODIFIED_FILES" ]; then
-            echo "No relevant modified values files detected."
-            exit 0
-          fi
-
-          # Write the modified files to the environment file
-          echo "modified_files<<EOF" >> $GITHUB_ENV
-          echo "$MODIFIED_FILES" >> $GITHUB_ENV
-          echo "EOF" >> $GITHUB_ENV
-
-      - name: Validate cluster values using cluster app JSON schema
-        run: |
-          # Load modified files into an array
-          modified_files=($(echo $modified_files))
-
-          for file in "${modified_files[@]}"; do
-            echo "Processing file: $file"
-
-            # Extract the cluster name from the file path
-            cluster_name=$(basename $(dirname "$file"))
-            extracted_values_file="${cluster_name}-extracted-values.yaml"
-
-            # Extract values from the ConfigMap into the new file
-            yq e '. | select(.kind == "ConfigMap").data.values' "$file" > "./$extracted_values_file"
-
-            # Extract the release version from the extracted values
-            release_version=$(yq e '.global.release.version' "./$extracted_values_file")
-
-            # Extract the provider (suffix of spec.name, e.g., aws or azure) from the App resource
-            app_name=$(yq e '. | select(.kind == "App").spec.name' "$file")
-            provider=${app_name#cluster-}
-            if [ "$provider" == "aws" ]; then
-              provider="capa"
-            fi
-
-            echo "Extracted values - Release: $release_version, Provider: $provider, App Name: $app_name"
-
-            # Navigate to the correct folder based on provider and release version
-            release_file="./releases/${provider}/v${release_version}/release.yaml"
-
-            if [ ! -f "$release_file" ]; then
-              echo "Error: Release file not found for provider $provider and version $release_version"
-              exit 1
-            fi
-
-            # Extract the version of the cluster app
-            cluster_app_version=$(yq e '.spec.components[] | select(.name == "'$app_name'") | .version' "$release_file")
-
-            echo "Extracted cluster app version: $cluster_app_version"
-
-            # Fetch the Helm chart for validation
-            helm fetch cluster-catalog/${app_name} --version "$cluster_app_version" --untar --untardir ./chart
-
-            # Validate the values against the JSON schema using the extracted values file
-            jv ./chart/${app_name}/values.schema.json ./$extracted_values_file
-
-            # Clean up: remove the extracted values file and the chart directory
-            rm -rf ./$extracted_values_file ./chart
-
-            echo -e "\n\n\n"
-
-          done
+    uses: giantswarm/github-workflows/.github/workflows/cluster-values-validation.yaml@main
+    permissions:
+      contents: read

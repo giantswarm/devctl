@@ -19,8 +19,18 @@ on:
       - master
   workflow_dispatch: {}
 
+permissions: {}
+
 jobs:
   analysis:
     uses: giantswarm/github-workflows/.github/workflows/ossf-scorecard.yaml@main
+    permissions:
+      contents: read
+      actions: read
+      issues: read
+      pull-requests: read
+      checks: read
+      security-events: write
+      id-token: write
     secrets:
       scorecard_token: ${{ secrets.SCORECARD_TOKEN }}

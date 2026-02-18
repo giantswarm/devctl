@@ -42,8 +42,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	var workflowsInput *workflows.Workflows
 	{
 		c := workflows.Config{
-			EnableFloatingMajorVersionTags: r.flag.EnableFloatingMajorVersionTags,
-			Flavours:                       r.flag.Flavours,
+			Flavours: r.flag.Flavours,
 		}
 
 		workflowsInput, err = workflows.New(c)
@@ -66,14 +65,13 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		inputs = append(inputs, workflowsInput.Gitleaks())
 	}
 
-	if r.flag.EnableFloatingMajorVersionTags {
-		inputs = append(inputs, workflowsInput.EnsureMajorVersionTags())
-	}
-
 	if r.flag.Flavours.Contains(gen.FlavourApp) {
 		inputs = append(inputs, workflowsInput.CheckValuesSchema())
 		if r.flag.InstallUpdateChart {
 			inputs = append(inputs, workflowsInput.UpdateChart())
+		}
+		if r.flag.Language == "kyverno-policy" {
+			inputs = append(inputs, workflowsInput.TestKyvernoPoliciesWithChainsaw())
 		}
 	}
 
