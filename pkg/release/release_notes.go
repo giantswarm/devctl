@@ -1,12 +1,17 @@
 package release
 
 import (
+	"fmt"
+	"io"
+	"net/http"
 	"sort"
 	"strings"
 	"text/template"
 
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/releases/sdk/api/v1alpha1"
+	"github.com/sirupsen/logrus"
+	"sigs.k8s.io/yaml"
 
 	"github.com/giantswarm/devctl/v7/pkg/release/changelog"
 )
@@ -121,6 +126,58 @@ func createReleaseNotes(release, baseRelease v1alpha1.Release, provider string) 
 		})
 	}
 
+	// Include cluster chart changelog when a provider chart bumps its cluster dependency
+	providerCharts := map[string]bool{
+		"cluster-aws":            true,
+		"cluster-azure":          true,
+		"cluster-vsphere":        true,
+		"cluster-cloud-director": true,
+		"cluster-eks":            true,
+	}
+	for _, component := range release.Spec.Components {
+		if !providerCharts[component.Name] {
+			continue
+		}
+		previousVersion := ""
+		for _, base := range baseRelease.Spec.Components {
+			if component.Name == base.Name {
+				previousVersion = base.Version
+				break
+			}
+		}
+		if previousVersion == "" || previousVersion == component.Version {
+			continue
+		}
+
+		currentClusterVer, err := getClusterDependencyVersion(component.Name, component.Version)
+		if err != nil {
+			logrus.Warnf("Could not get cluster dependency version from %s v%s: %v", component.Name, component.Version, err)
+			continue
+		}
+		previousClusterVer, err := getClusterDependencyVersion(component.Name, previousVersion)
+		if err != nil {
+			logrus.Warnf("Could not get cluster dependency version from %s v%s: %v", component.Name, previousVersion, err)
+			continue
+		}
+
+		if currentClusterVer != "" && previousClusterVer != "" && currentClusterVer != previousClusterVer {
+			clusterChangelog, err := changelog.ParseChangelog("cluster", currentClusterVer, previousClusterVer)
+			if err != nil {
+				logrus.Warnf("Could not parse cluster changelog for %s...%s: %v", previousClusterVer, currentClusterVer, err)
+				continue
+			}
+			if clusterChangelog != nil {
+				components = append(components, releaseNotes{
+					Name:            "cluster",
+					Version:         currentClusterVer,
+					PreviousVersion: previousClusterVer,
+					Link:            clusterChangelog.Link,
+					Changelog:       clusterChangelog.Content,
+				})
+			}
+		}
+	}
+
 	for _, app := range release.Spec.Apps {
 		previousAppVersion := ""
 		for _, baseApp := range baseRelease.Spec.Apps {
@@ -175,4 +232,50 @@ func createReleaseNotes(release, baseRelease v1alpha1.Release, provider string) 
 	}
 
 	return writer.String(), nil
+}
+
+// getClusterDependencyVersion fetches the Chart.yaml from a provider chart repo
+// at the given version tag and extracts the cluster dependency version.
+func getClusterDependencyVersion(providerChartName, version string) (string, error) {
+	ref := version
+	if !strings.HasPrefix(ref, "v") {
+		ref = "v" + ref
+	}
+
+	url := fmt.Sprintf("https://raw.githubusercontent.com/giantswarm/%s/%s/helm/%s/Chart.yaml", providerChartName, ref, providerChartName)
+	resp, err := http.Get(url)
+	if err != nil {
+		return "", microerror.Mask(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", microerror.Mask(fmt.Errorf("failed to fetch Chart.yaml from %s: HTTP %d", url, resp.StatusCode))
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", microerror.Mask(err)
+	}
+
+	type helmDependency struct {
+		Name    string `json:"name"`
+		Version string `json:"version"`
+	}
+	type helmChart struct {
+		Dependencies []helmDependency `json:"dependencies"`
+	}
+
+	var chart helmChart
+	if err := yaml.Unmarshal(body, &chart); err != nil {
+		return "", microerror.Mask(err)
+	}
+
+	for _, dep := range chart.Dependencies {
+		if dep.Name == "cluster" {
+			return strings.TrimPrefix(dep.Version, "v"), nil
+		}
+	}
+
+	return "", nil
 }

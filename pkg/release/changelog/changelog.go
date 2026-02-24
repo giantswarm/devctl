@@ -236,6 +236,12 @@ var KnownComponents = map[string]ParseParams{
 		Start:     commonStartPattern,
 		End:       commonEndPattern,
 	},
+	"cluster": {
+		Tag:       "https://github.com/giantswarm/cluster/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/cluster/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
+	},
 	"cluster-autoscaler": {
 		Tag:        "https://github.com/giantswarm/cluster-autoscaler-app/releases/tag/v{{.Version}}",
 		Changelog:  "https://raw.githubusercontent.com/giantswarm/cluster-autoscaler-app/v{{.Version}}/CHANGELOG.md",
