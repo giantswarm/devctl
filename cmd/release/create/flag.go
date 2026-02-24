@@ -7,41 +7,43 @@ import (
 )
 
 const (
-	flagName             = "name"
-	flagBase             = "base"
-	flagProvider         = "provider"
-	flagComponents       = "component"
-	flagApps             = "app"
-	flagOverwrite        = "overwrite"
-	flagReleases         = "releases"
-	flagBumpAll          = "bumpall"
-	flagYes              = "yes"
-	flagDrop             = "drop"
-	flagVerbose          = "verbose"
-	flagChangesOnly      = "changes-only"
-	flagRequestedOnly    = "requested-only"
-	flagPreserveReadme   = "preserve-readme"
-	flagRegenerateReadme = "regenerate-readme"
+	flagName                   = "name"
+	flagBase                   = "base"
+	flagProvider               = "provider"
+	flagComponents             = "component"
+	flagApps                   = "app"
+	flagOverwrite              = "overwrite"
+	flagReleases               = "releases"
+	flagBumpAll                = "bumpall"
+	flagYes                    = "yes"
+	flagDrop                   = "drop"
+	flagVerbose                = "verbose"
+	flagChangesOnly            = "changes-only"
+	flagRequestedOnly          = "requested-only"
+	flagPreserveReadme         = "preserve-readme"
+	flagRegenerateReadme       = "regenerate-readme"
+	flagChangelogNoisePattern  = "changelog-noise-pattern"
 )
 
 type flag struct {
-	Base             string
-	Apps             []string
-	BumpAll          bool
-	Components       []string
-	Name             string
-	Overwrite        bool
-	Provider         string
-	Releases         string
-	Yes              bool
-	Drop             []string
-	Output           string
-	Verbose          bool
-	ChangesOnly      bool
-	RequestedOnly    bool
-	UpdateExisting   bool
-	PreserveReadme   bool
-	RegenerateReadme bool
+	Base                   string
+	Apps                   []string
+	BumpAll                bool
+	Components             []string
+	Name                   string
+	Overwrite              bool
+	Provider               string
+	Releases               string
+	Yes                    bool
+	Drop                   []string
+	Output                 string
+	Verbose                bool
+	ChangesOnly            bool
+	RequestedOnly          bool
+	UpdateExisting         bool
+	PreserveReadme         bool
+	RegenerateReadme       bool
+	ChangelogNoisePatterns []string
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
@@ -62,6 +64,7 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().StringSliceVar(&f.Drop, flagDrop, nil, "App to drop from the release.")
 	cmd.Flags().BoolVar(&f.PreserveReadme, flagPreserveReadme, false, "Preserve existing README.md instead of regenerating it.")
 	cmd.Flags().BoolVar(&f.RegenerateReadme, flagRegenerateReadme, false, "When used with --update-existing, regenerate README.md with full changelogs by finding the previous release version.")
+	cmd.Flags().StringSliceVar(&f.ChangelogNoisePatterns, flagChangelogNoisePattern, nil, "Changelog entries containing this substring are filtered out. Can be specified multiple times.")
 }
 
 func (f *flag) Validate() error {

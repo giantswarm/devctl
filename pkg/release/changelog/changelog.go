@@ -23,12 +23,13 @@ const (
 )
 
 type ParseParams struct {
-	Tag          string
-	Changelog    string
-	Start        string
-	Intermediate string
-	End          string
-	AutoDetect   bool
+	Tag            string
+	Changelog      string
+	Start          string
+	Intermediate   string
+	End            string
+	AutoDetect     bool
+	FilterPatterns []string // Changelog entries matching these are excluded
 }
 
 // Parameters defining how to parse and extract release info about all known components
@@ -59,10 +60,11 @@ var KnownComponents = map[string]ParseParams{
 		End:       commonEndPattern,
 	},
 	"cluster-aws": {
-		Tag:       "https://github.com/giantswarm/cluster-aws/releases/tag/v{{.Version}}",
-		Changelog: "https://raw.githubusercontent.com/giantswarm/cluster-aws/v{{.Version}}/CHANGELOG.md",
-		Start:     commonStartPattern,
-		End:       commonEndPattern,
+		Tag:            "https://github.com/giantswarm/cluster-aws/releases/tag/v{{.Version}}",
+		Changelog:      "https://raw.githubusercontent.com/giantswarm/cluster-aws/v{{.Version}}/CHANGELOG.md",
+		Start:          commonStartPattern,
+		End:            commonEndPattern,
+		FilterPatterns: []string{"Chart: Update `cluster`"},
 	},
 	"cloud-provider-aws": {
 		Tag:       "https://github.com/giantswarm/aws-cloud-controller-manager-app/releases/tag/v{{.Version}}",
@@ -79,10 +81,11 @@ var KnownComponents = map[string]ParseParams{
 
 	// EKS Provider Specific
 	"cluster-eks": {
-		Tag:       "https://github.com/giantswarm/cluster-eks/releases/tag/v{{.Version}}",
-		Changelog: "https://raw.githubusercontent.com/giantswarm/cluster-eks/v{{.Version}}/CHANGELOG.md",
-		Start:     commonStartPattern,
-		End:       commonEndPattern,
+		Tag:            "https://github.com/giantswarm/cluster-eks/releases/tag/v{{.Version}}",
+		Changelog:      "https://raw.githubusercontent.com/giantswarm/cluster-eks/v{{.Version}}/CHANGELOG.md",
+		Start:          commonStartPattern,
+		End:            commonEndPattern,
+		FilterPatterns: []string{"Chart: Update `cluster`"},
 	},
 	"karpenter": {
 		Tag:       "https://github.com/giantswarm/karpenter-app/releases/tag/v{{.Version}}",
@@ -117,10 +120,11 @@ var KnownComponents = map[string]ParseParams{
 
 	// CAPZ Provider Specific
 	"cluster-azure": {
-		Tag:       "https://github.com/giantswarm/cluster-azure/releases/tag/v{{.Version}}",
-		Changelog: "https://raw.githubusercontent.com/giantswarm/cluster-azure/v{{.Version}}/CHANGELOG.md",
-		Start:     commonStartPattern,
-		End:       commonEndPattern,
+		Tag:            "https://github.com/giantswarm/cluster-azure/releases/tag/v{{.Version}}",
+		Changelog:      "https://raw.githubusercontent.com/giantswarm/cluster-azure/v{{.Version}}/CHANGELOG.md",
+		Start:          commonStartPattern,
+		End:            commonEndPattern,
+		FilterPatterns: []string{"Chart: Update `cluster`"},
 	},
 	"azure-cloud-controller-manager": {
 		Tag:       "https://github.com/giantswarm/azure-cloud-controller-manager-app/releases/tag/v{{.Version}}",
@@ -149,10 +153,11 @@ var KnownComponents = map[string]ParseParams{
 
 	// CAPV Provider Specific
 	"cluster-vsphere": {
-		Tag:       "https://github.com/giantswarm/cluster-vsphere/releases/tag/v{{.Version}}",
-		Changelog: "https://raw.githubusercontent.com/giantswarm/cluster-vsphere/v{{.Version}}/CHANGELOG.md",
-		Start:     commonStartPattern,
-		End:       commonEndPattern,
+		Tag:            "https://github.com/giantswarm/cluster-vsphere/releases/tag/v{{.Version}}",
+		Changelog:      "https://raw.githubusercontent.com/giantswarm/cluster-vsphere/v{{.Version}}/CHANGELOG.md",
+		Start:          commonStartPattern,
+		End:            commonEndPattern,
+		FilterPatterns: []string{"Chart: Update `cluster`"},
 	},
 	"cloud-provider-vsphere": {
 		Tag:       "https://github.com/giantswarm/cloud-provider-vsphere-app/releases/tag/v{{.Version}}",
@@ -169,10 +174,11 @@ var KnownComponents = map[string]ParseParams{
 
 	// CAPVCD Provider Specific
 	"cluster-cloud-director": {
-		Tag:       "https://github.com/giantswarm/cluster-cloud-director/releases/tag/v{{.Version}}",
-		Changelog: "https://raw.githubusercontent.com/giantswarm/cluster-cloud-director/v{{.Version}}/CHANGELOG.md",
-		Start:     commonStartPattern,
-		End:       commonEndPattern,
+		Tag:            "https://github.com/giantswarm/cluster-cloud-director/releases/tag/v{{.Version}}",
+		Changelog:      "https://raw.githubusercontent.com/giantswarm/cluster-cloud-director/v{{.Version}}/CHANGELOG.md",
+		Start:          commonStartPattern,
+		End:            commonEndPattern,
+		FilterPatterns: []string{"Chart: Update `cluster`"},
 	},
 	"cloud-provider-cloud-director": {
 		Tag:       "https://github.com/giantswarm/cloud-provider-cloud-director-app/releases/tag/v{{.Version}}",
@@ -429,7 +435,7 @@ type CategorizedChanges struct {
 
 var categoryRegex = regexp.MustCompile(`^###\s+(?:\W+\s+)?(\w+)`)
 
-func ParseChangelog(componentName, currentVersion, endVersion string) (*Version, error) {
+func ParseChangelog(componentName, currentVersion, endVersion string, extraFilterPatterns ...string) (*Version, error) {
 	params, ok := KnownComponents[componentName]
 	if !ok {
 		return nil, microerror.Mask(fmt.Errorf("unknown component: %s", componentName))
@@ -576,47 +582,50 @@ func ParseChangelog(componentName, currentVersion, endVersion string) (*Version,
 
 			// Use originalLine to preserve indentation for bullet point detection
 			if strings.HasPrefix(originalLine, "  - ") || strings.HasPrefix(originalLine, "  * ") {
-				// Sub bullet point (indented)
-				item := strings.TrimPrefix(strings.TrimPrefix(originalLine, "  - "), "  * ")
-				item = strings.TrimSpace(item)
-				// Append to the last item in the current category with proper indentation
+				// Sub bullet point (indented) — skip the 4-char prefix ("  - " or "  * ")
+				item := strings.TrimSpace(originalLine[4:])
+				subBullet := "\n  - " + item
+				// Append to the last item in the current category, avoiding duplicates
 				switch currentCategory {
 				case "Breaking":
-					if len(categorizedChanges.Breaking) > 0 {
-						categorizedChanges.Breaking[len(categorizedChanges.Breaking)-1] += "\n  - " + item
+					if len(categorizedChanges.Breaking) > 0 && !strings.Contains(categorizedChanges.Breaking[len(categorizedChanges.Breaking)-1], subBullet) {
+						categorizedChanges.Breaking[len(categorizedChanges.Breaking)-1] += subBullet
 					}
 				case "Added":
-					if len(categorizedChanges.Added) > 0 {
-						categorizedChanges.Added[len(categorizedChanges.Added)-1] += "\n  - " + item
+					if len(categorizedChanges.Added) > 0 && !strings.Contains(categorizedChanges.Added[len(categorizedChanges.Added)-1], subBullet) {
+						categorizedChanges.Added[len(categorizedChanges.Added)-1] += subBullet
 					}
 				case "Changed":
-					if len(categorizedChanges.Changed) > 0 {
-						categorizedChanges.Changed[len(categorizedChanges.Changed)-1] += "\n  - " + item
+					if len(categorizedChanges.Changed) > 0 && !strings.Contains(categorizedChanges.Changed[len(categorizedChanges.Changed)-1], subBullet) {
+						categorizedChanges.Changed[len(categorizedChanges.Changed)-1] += subBullet
 					}
 				case "Fixed":
-					if len(categorizedChanges.Fixed) > 0 {
-						categorizedChanges.Fixed[len(categorizedChanges.Fixed)-1] += "\n  - " + item
+					if len(categorizedChanges.Fixed) > 0 && !strings.Contains(categorizedChanges.Fixed[len(categorizedChanges.Fixed)-1], subBullet) {
+						categorizedChanges.Fixed[len(categorizedChanges.Fixed)-1] += subBullet
 					}
 				case "Removed":
-					if len(categorizedChanges.Removed) > 0 {
-						categorizedChanges.Removed[len(categorizedChanges.Removed)-1] += "\n  - " + item
+					if len(categorizedChanges.Removed) > 0 && !strings.Contains(categorizedChanges.Removed[len(categorizedChanges.Removed)-1], subBullet) {
+						categorizedChanges.Removed[len(categorizedChanges.Removed)-1] += subBullet
 					}
 				}
 			} else if strings.HasPrefix(line, "- ") || strings.HasPrefix(line, "* ") {
 				// Main bullet point
 				item := strings.TrimPrefix(strings.TrimPrefix(line, "- "), "* ")
 				item = strings.TrimSpace(item)
+				if matchesFilterPatterns(item, params.FilterPatterns) || matchesFilterPatterns(item, extraFilterPatterns) {
+					continue
+				}
 				switch currentCategory {
 				case "Breaking":
-					categorizedChanges.Breaking = append(categorizedChanges.Breaking, item)
+					categorizedChanges.Breaking = appendUnique(categorizedChanges.Breaking, item)
 				case "Added":
-					categorizedChanges.Added = append(categorizedChanges.Added, item)
+					categorizedChanges.Added = appendUnique(categorizedChanges.Added, item)
 				case "Changed":
-					categorizedChanges.Changed = append(categorizedChanges.Changed, item)
+					categorizedChanges.Changed = appendUnique(categorizedChanges.Changed, item)
 				case "Fixed":
-					categorizedChanges.Fixed = append(categorizedChanges.Fixed, item)
+					categorizedChanges.Fixed = appendUnique(categorizedChanges.Fixed, item)
 				case "Removed":
-					categorizedChanges.Removed = append(categorizedChanges.Removed, item)
+					categorizedChanges.Removed = appendUnique(categorizedChanges.Removed, item)
 				}
 			}
 		}
@@ -679,6 +688,26 @@ func ParseChangelog(componentName, currentVersion, endVersion string) (*Version,
 	}
 
 	return &currentVersionStruct, nil
+}
+
+// appendUnique appends item to slice only if it doesn't already exist.
+func appendUnique(slice []string, item string) []string {
+	for _, existing := range slice {
+		if existing == item {
+			return slice
+		}
+	}
+	return append(slice, item)
+}
+
+// matchesFilterPatterns returns true if the item matches any of the given filter patterns.
+func matchesFilterPatterns(item string, patterns []string) bool {
+	for _, pattern := range patterns {
+		if strings.Contains(item, pattern) {
+			return true
+		}
+	}
+	return false
 }
 
 func splitBaseURL(fullURL string) string {
