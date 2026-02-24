@@ -7,22 +7,22 @@ import (
 )
 
 const (
-	flagName                   = "name"
-	flagBase                   = "base"
-	flagProvider               = "provider"
-	flagComponents             = "component"
-	flagApps                   = "app"
-	flagOverwrite              = "overwrite"
-	flagReleases               = "releases"
-	flagBumpAll                = "bumpall"
-	flagYes                    = "yes"
-	flagDrop                   = "drop"
-	flagVerbose                = "verbose"
-	flagChangesOnly            = "changes-only"
-	flagRequestedOnly          = "requested-only"
-	flagPreserveReadme         = "preserve-readme"
-	flagRegenerateReadme       = "regenerate-readme"
-	flagChangelogNoisePattern  = "changelog-noise-pattern"
+	flagName                  = "name"
+	flagBase                  = "base"
+	flagProvider              = "provider"
+	flagComponents            = "component"
+	flagApps                  = "app"
+	flagOverwrite             = "overwrite"
+	flagReleases              = "releases"
+	flagBumpAll               = "bumpall"
+	flagYes                   = "yes"
+	flagDrop                  = "drop"
+	flagVerbose               = "verbose"
+	flagChangesOnly           = "changes-only"
+	flagRequestedOnly         = "requested-only"
+	flagPreserveReadme        = "preserve-readme"
+	flagRegenerateReadme      = "regenerate-readme"
+	flagChangelogNoisePattern = "changelog-noise-pattern"
 )
 
 type flag struct {

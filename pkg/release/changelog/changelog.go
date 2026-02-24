@@ -580,10 +580,13 @@ func ParseChangelog(componentName, currentVersion, endVersion string, extraFilte
 				continue
 			}
 
-			// Use originalLine to preserve indentation for bullet point detection
-			if strings.HasPrefix(originalLine, "  - ") || strings.HasPrefix(originalLine, "  * ") {
-				// Sub bullet point (indented) — skip the 4-char prefix ("  - " or "  * ")
-				item := strings.TrimSpace(originalLine[4:])
+			// Use originalLine to preserve indentation for bullet point detection.
+			// Detect sub-bullets: any line starting with 2+ spaces then "- " or "* "
+			// (covers both 2-space and 4-space indentation conventions).
+			trimmedLeft := strings.TrimLeft(originalLine, " \t")
+			indent := len(originalLine) - len(trimmedLeft)
+			if indent >= 2 && (strings.HasPrefix(trimmedLeft, "- ") || strings.HasPrefix(trimmedLeft, "* ")) {
+				item := strings.TrimSpace(trimmedLeft[2:])
 				subBullet := "\n  - " + item
 				// Append to the last item in the current category, avoiding duplicates
 				switch currentCategory {
