@@ -209,10 +209,35 @@ func createReleaseNotes(release, baseRelease v1alpha1.Release, provider string) 
 		})
 	}
 
-	// Sort components and apps alphabetically by name
+	// Sort components and apps alphabetically by name,
+	// but place "cluster" right after its parent provider chart.
 	sort.Slice(components, func(i, j int) bool {
 		return components[i].Name < components[j].Name
 	})
+	// Move "cluster" entry to right after its provider chart
+	clusterIdx := -1
+	providerIdx := -1
+	for i, c := range components {
+		if c.Name == "cluster" {
+			clusterIdx = i
+		}
+		if providerCharts[c.Name] {
+			providerIdx = i
+		}
+	}
+	if clusterIdx >= 0 && providerIdx >= 0 && clusterIdx != providerIdx+1 {
+		entry := components[clusterIdx]
+		components = append(components[:clusterIdx], components[clusterIdx+1:]...)
+		// Recalculate providerIdx after removal
+		for i, c := range components {
+			if providerCharts[c.Name] {
+				providerIdx = i
+				break
+			}
+		}
+		insertAt := providerIdx + 1
+		components = append(components[:insertAt], append([]releaseNotes{entry}, components[insertAt:]...)...)
+	}
 	sort.Slice(apps, func(i, j int) bool {
 		return apps[i].Name < apps[j].Name
 	})
