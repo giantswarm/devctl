@@ -56,7 +56,7 @@ var appsToBeAdded = []addedAppConfig{
 
 // CreateRelease creates a release on the filesystem from the given parameters. This is the entry point
 // for the `devctl create release` command logic.
-func CreateRelease(name, base, releases, provider string, components, apps []string, overwrite bool, creationCommand string, bumpall bool, appsToDrop []string, yes bool, output string, verbose bool, changesOnly bool, requestedOnly bool, updateExisting bool, preserveReadme bool, regenerateReadme bool) error {
+func CreateRelease(name, base, releases, provider string, components, apps []string, overwrite bool, creationCommand string, bumpall bool, appsToDrop []string, yes bool, output string, verbose bool, changesOnly bool, requestedOnly bool, updateExisting bool, preserveReadme bool, regenerateReadme bool, changelogNoisePatterns []string) error {
 	if updateExisting {
 		base = name
 	}
@@ -465,7 +465,7 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 
 		// Generate new README.md
 		// Use newRelease (merged) instead of updatesRelease to include all apps, not just requested ones
-		releaseNotes, err := createReleaseNotes(newRelease, readmeBaseRelease, provider)
+		releaseNotes, err := createReleaseNotes(newRelease, readmeBaseRelease, provider, changelogNoisePatterns)
 		if err != nil {
 			return microerror.Mask(err)
 		}

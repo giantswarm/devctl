@@ -8,7 +8,7 @@ import (
 	"github.com/giantswarm/releases/sdk/api/v1alpha1"
 )
 
-const announcementNotesTemplate = `**Workload cluster release {{ .Release }} for {{ .Provider }} is available**. {{ .Description }}
+const announcementNotesTemplate = `**Workload cluster release {{ .Release }} for {{ .Provider }} is available**.
 
 Further details can be found in the [release notes](https://docs.giantswarm.io/changes/workload-cluster-releases-{{ .DocProvider }}/releases/{{ .ReleaseDirectory }}).
 `
@@ -26,7 +26,6 @@ type announcementNotesTemplateData struct {
 	ReleaseDirectory string
 	Provider         string
 	DocProvider      string
-	Description      string
 	Components       []releaseNotes
 	Apps             []releaseNotes
 }
@@ -43,7 +42,6 @@ func createAnnouncement(release v1alpha1.Release, provider string) (string, erro
 		ReleaseDirectory: release.Name,
 		Provider:         providerTitleMap[provider],
 		DocProvider:      providerDocMap[provider],
-		Description:      "<< Add description here >>",
 	}
 	err = templ.Execute(&writer, data)
 	if err != nil {
