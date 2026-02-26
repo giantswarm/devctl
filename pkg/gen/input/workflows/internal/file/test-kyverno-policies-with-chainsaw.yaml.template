@@ -42,6 +42,9 @@ jobs:
       - name: Create kind cluster and install kyverno
         run: |
           make kind-create kind-get-kubeconfig install-kyverno
+      - name: Install extra resources
+        run: |
+          make install-extras
       - name: Install Kyverno Policies
         run: |
           make install-policies

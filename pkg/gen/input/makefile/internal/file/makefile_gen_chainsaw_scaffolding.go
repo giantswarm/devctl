@@ -53,3 +53,14 @@ func NewChainsawTestsExtraValues(p params.Params) input.Input {
 
 	return i
 }
+
+//go:embed hack-chainsaw-extra-resources.sh.template
+var chainsawExtraResourcesShTemplate string
+
+func NewChainsawExtraResourcesScript(p params.Params) input.Input {
+	return input.Input{
+		Path:         "hack/chainsaw-extra-resources.sh",
+		TemplateBody: chainsawExtraResourcesShTemplate,
+		Permissions:  0755,
+	}
+}
