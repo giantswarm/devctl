@@ -50,6 +50,9 @@ func New(config Config) (*cobra.Command, error) {
 		Example: `  # Interactive mode - select from grouped PRs
   devctl pr amr
 
+  # Interactive mode - group by repository instead of dependency
+  devctl pr amr --by-repo
+
   # Direct mode - search for specific PRs
   devctl pr amr "architect v1.2.3"
   

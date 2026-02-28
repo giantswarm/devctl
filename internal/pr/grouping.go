@@ -173,6 +173,32 @@ func isCommonWord(word string) bool {
 	return common[strings.ToLower(word)]
 }
 
+// GroupRenovatePRsByRepo clusters PRs by repository (owner/repo).
+// Returns groups sorted by PR count (descending).
+func GroupRenovatePRsByRepo(prs []*PRInfo) []*PRGroup {
+	groups := make(map[string][]*PRInfo)
+
+	for _, p := range prs {
+		key := p.Owner + "/" + p.Repo
+		groups[key] = append(groups[key], p)
+	}
+
+	var result []*PRGroup
+	for repoName, prList := range groups {
+		result = append(result, &PRGroup{
+			DependencyName: repoName,
+			PRs:            prList,
+			SearchQuery:    "repo:" + repoName,
+		})
+	}
+
+	sort.Slice(result, func(i, j int) bool {
+		return len(result[i].PRs) > len(result[j].PRs)
+	})
+
+	return result
+}
+
 // generateSearchQuery creates a search query string from the dependency name.
 func generateSearchQuery(depName string, prs []*PRInfo) string {
 	// Wrap the dependency name in quotes to handle special characters

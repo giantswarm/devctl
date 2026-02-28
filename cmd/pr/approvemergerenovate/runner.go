@@ -307,8 +307,13 @@ func (r *runner) selectGroupInteractively(ctx context.Context, githubClient *git
 		})
 	}
 
-	// Group PRs by dependency
-	groups := pr.GroupRenovatePRs(prInfos)
+	// Group PRs by dependency or repository
+	var groups []*pr.PRGroup
+	if r.flag.ByRepo {
+		groups = pr.GroupRenovatePRsByRepo(prInfos)
+	} else {
+		groups = pr.GroupRenovatePRs(prInfos)
+	}
 
 	if len(groups) == 0 {
 		return "", microerror.Maskf(executionFailedError, "no PR groups found")
@@ -324,8 +329,13 @@ func (r *runner) selectGroupInteractively(ctx context.Context, githubClient *git
 		Selected: "✓ {{ .DependencyName | green }} ({{ len .PRs }} PRs)",
 	}
 
+	promptLabel := "Select a dependency group to process"
+	if r.flag.ByRepo {
+		promptLabel = "Select a repository to process"
+	}
+
 	prompt := promptui.Select{
-		Label:     "Select a dependency group to process",
+		Label:     promptLabel,
 		Items:     groups,
 		Templates: templates,
 		Size:      15,

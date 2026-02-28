@@ -401,6 +401,76 @@ func TestIsCommonWord(t *testing.T) {
 	}
 }
 
+func TestGroupRenovatePRsByRepo(t *testing.T) {
+	prs := []*PRInfo{
+		{Number: 1, Owner: "giantswarm", Repo: "cluster-aws", Title: "Update module github.com/google/go-github/v80 to v81", URL: "url1"},
+		{Number: 2, Owner: "giantswarm", Repo: "cluster-aws", Title: "Update k8s.io/utils digest to 0fe9cd7", URL: "url2"},
+		{Number: 3, Owner: "giantswarm", Repo: "cluster-aws", Title: "Update dependency storybook to v7.6.21", URL: "url3"},
+		{Number: 4, Owner: "giantswarm", Repo: "happa", Title: "Update dependency @types/cors to v2.8.19", URL: "url4"},
+		{Number: 5, Owner: "giantswarm", Repo: "happa", Title: "Update dependency storybook to v7.6.21", URL: "url5"},
+		{Number: 6, Owner: "giantswarm", Repo: "operatorkit", Title: "Update k8s.io/utils digest to 0fe9cd7", URL: "url6"},
+	}
+
+	groups := GroupRenovatePRsByRepo(prs)
+
+	if len(groups) != 3 {
+		t.Fatalf("Expected 3 groups, got %d", len(groups))
+	}
+
+	// First group should have 3 PRs (cluster-aws)
+	if len(groups[0].PRs) != 3 {
+		t.Errorf("First group should have 3 PRs, got %d", len(groups[0].PRs))
+	}
+	if groups[0].DependencyName != "giantswarm/cluster-aws" {
+		t.Errorf("First group should be giantswarm/cluster-aws, got %s", groups[0].DependencyName)
+	}
+	if groups[0].SearchQuery != "repo:giantswarm/cluster-aws" {
+		t.Errorf("First group search query should be repo:giantswarm/cluster-aws, got %s", groups[0].SearchQuery)
+	}
+
+	// Second group should have 2 PRs (happa)
+	if len(groups[1].PRs) != 2 {
+		t.Errorf("Second group should have 2 PRs, got %d", len(groups[1].PRs))
+	}
+	if groups[1].DependencyName != "giantswarm/happa" {
+		t.Errorf("Second group should be giantswarm/happa, got %s", groups[1].DependencyName)
+	}
+	if groups[1].SearchQuery != "repo:giantswarm/happa" {
+		t.Errorf("Second group search query should be repo:giantswarm/happa, got %s", groups[1].SearchQuery)
+	}
+
+	// Third group should have 1 PR (operatorkit)
+	if len(groups[2].PRs) != 1 {
+		t.Errorf("Third group should have 1 PR, got %d", len(groups[2].PRs))
+	}
+}
+
+func TestGroupRenovatePRsByRepo_EmptyInput(t *testing.T) {
+	groups := GroupRenovatePRsByRepo([]*PRInfo{})
+	if len(groups) != 0 {
+		t.Errorf("Expected 0 groups for empty input, got %d", len(groups))
+	}
+}
+
+func TestGroupRenovatePRsByRepo_Stability(t *testing.T) {
+	prs := []*PRInfo{
+		{Number: 1, Owner: "giantswarm", Repo: "repo-a", Title: "Update dependency a to v1"},
+		{Number: 2, Owner: "giantswarm", Repo: "repo-b", Title: "Update dependency b to v1"},
+		{Number: 3, Owner: "giantswarm", Repo: "repo-a", Title: "Update dependency c to v1"},
+	}
+
+	results := make([][]*PRGroup, 10)
+	for i := 0; i < 10; i++ {
+		results[i] = GroupRenovatePRsByRepo(prs)
+	}
+
+	for i := 1; i < len(results); i++ {
+		if diff := cmp.Diff(results[0], results[i]); diff != "" {
+			t.Errorf("Repo grouping is not deterministic, iteration %d differs (-want +got):\n%s", i, diff)
+		}
+	}
+}
+
 // TestGroupRenovatePRs_Stability verifies that grouping is deterministic
 func TestGroupRenovatePRs_Stability(t *testing.T) {
 	prs := []*PRInfo{
