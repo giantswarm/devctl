@@ -31,7 +31,7 @@ func GroupRenovatePRs(prs []*PRInfo) []*PRGroup {
 
 	// Group PRs by extracted dependency name
 	for _, pr := range prs {
-		depName := extractName(pr.Title)
+		depName := ExtractDependencyName(pr.Title)
 		groups[depName] = append(groups[depName], pr)
 	}
 
@@ -60,11 +60,11 @@ func GroupRenovatePRs(prs []*PRInfo) []*PRGroup {
 	return result
 }
 
-// extractName applies clustering algorithms in sequence.
+// ExtractDependencyName applies clustering algorithms in sequence.
 // Algorithm 1: Pattern-based extraction (primary)
 // Algorithm 2: Version-stripped normalization (fallback)
 // Algorithm 3: Exact title match (last resort)
-func extractName(title string) string {
+func ExtractDependencyName(title string) string {
 	// Algorithm 1: Pattern-Based Extraction
 	patterns := []string{
 		`[Uu]pdate dependency (@?[\w\-./]+(?:/[\w\-./]+)*) to`,

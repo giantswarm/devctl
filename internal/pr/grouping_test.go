@@ -6,7 +6,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-func TestExtractName(t *testing.T) {
+func TestExtractDependencyName(t *testing.T) {
 	tests := []struct {
 		name     string
 		title    string
@@ -88,9 +88,9 @@ func TestExtractName(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := extractName(tt.title)
+			got := ExtractDependencyName(tt.title)
 			if got != tt.expected {
-				t.Errorf("extractName(%q) = %q, want %q", tt.title, got, tt.expected)
+				t.Errorf("ExtractDependencyName(%q) = %q, want %q", tt.title, got, tt.expected)
 			}
 		})
 	}

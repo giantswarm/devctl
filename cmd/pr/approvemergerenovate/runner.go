@@ -119,14 +119,21 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 				continue
 			}
 
+			title := issue.GetTitle()
+			displayLabel := repoName
+			if r.flag.ByRepo {
+				displayLabel = pr.ExtractDependencyName(title)
+			}
+
 			ps := &pr.PRStatus{
-				Number:     prNumber,
-				Owner:      owner,
-				Repo:       repoName,
-				Title:      issue.GetTitle(),
-				URL:        issue.GetHTMLURL(),
-				Status:     "Queued",
-				LastUpdate: time.Now(),
+				Number:       prNumber,
+				Owner:        owner,
+				Repo:         repoName,
+				Title:        title,
+				URL:          issue.GetHTMLURL(),
+				Status:       "Queued",
+				DisplayLabel: displayLabel,
+				LastUpdate:   time.Now(),
 			}
 			prStatuses = append(prStatuses, ps)
 			prNumbersMap[prNumber] = true
@@ -138,8 +145,11 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	// Add initial PRs
 	initialPRs := addPRs(searchResults.Issues)
 
-	// Print table header
-	pr.PrintTableHeader(r.stdout)
+	columnHeader := "Repository"
+	if r.flag.ByRepo {
+		columnHeader = "Dependency"
+	}
+	pr.PrintTableHeader(r.stdout, columnHeader)
 
 	// Print initial empty rows for all PRs
 	for range initialPRs {

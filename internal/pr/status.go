@@ -7,14 +7,15 @@ import (
 
 // PRStatus tracks the status of a PR during processing.
 type PRStatus struct {
-	Number     int
-	Owner      string
-	Repo       string
-	Title      string
-	URL        string
-	Status     string
-	LastUpdate time.Time
-	mu         sync.Mutex
+	Number       int
+	Owner        string
+	Repo         string
+	Title        string
+	URL          string
+	Status       string
+	DisplayLabel string
+	LastUpdate   time.Time
+	mu           sync.Mutex
 }
 
 // UpdateStatus updates the status of a PR in a thread-safe manner.

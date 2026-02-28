@@ -42,7 +42,7 @@ devctl pr approve-merge-renovate "architect v1.2.3"
 
 - `--dry-run`: Show what would be done without making changes
 - `--watch`, `-w`: Keep running and continuously watch for new PRs (polls every minute, exit with Ctrl+C)
-- `--by-repo`: In interactive mode, group PRs by repository instead of dependency name. The selector shows `owner/repo` entries, and selecting one processes all Renovate PRs in that repository.
+- `--by-repo`: In interactive mode, group PRs by repository instead of dependency name. The selector shows `owner/repo` entries, and selecting one processes all Renovate PRs in that repository. The table then shows the dependency being updated instead of the repository name.
 
 ## How It Works
 
@@ -164,7 +164,11 @@ Select a repository to process:
 
 ✓ giantswarm/cluster-aws (5 PRs)
 
-[Proceeds with normal table UI and processing]
+PR      Dependency                               Status
+────────────────────────────────────────────────────────────────────────────────
+#1072   github.com/google/go-github              Merged (squash)
+#896    k8s.io/utils                             Approved
+...
 ```
 
 ### Approve and merge all Renovate PRs for a specific dependency update
