@@ -6,7 +6,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-func TestExtractDependencyName(t *testing.T) {
+func TestExtractName(t *testing.T) {
 	tests := []struct {
 		name     string
 		title    string
@@ -88,9 +88,9 @@ func TestExtractDependencyName(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := extractDependencyName(tt.title)
+			got := extractName(tt.title)
 			if got != tt.expected {
-				t.Errorf("extractDependencyName(%q) = %q, want %q", tt.title, got, tt.expected)
+				t.Errorf("extractName(%q) = %q, want %q", tt.title, got, tt.expected)
 			}
 		})
 	}
@@ -117,24 +117,24 @@ func TestGroupRenovatePRs(t *testing.T) {
 	if len(groups[0].PRs) != 3 {
 		t.Errorf("First group should have 3 PRs, got %d", len(groups[0].PRs))
 	}
-	if groups[0].DependencyName != "github.com/google/go-github" {
-		t.Errorf("First group should be github.com/google/go-github, got %s", groups[0].DependencyName)
+	if groups[0].Name != "github.com/google/go-github" {
+		t.Errorf("First group should be github.com/google/go-github, got %s", groups[0].Name)
 	}
 
 	// Second group should have 2 PRs (k8s.io/utils)
 	if len(groups[1].PRs) != 2 {
 		t.Errorf("Second group should have 2 PRs, got %d", len(groups[1].PRs))
 	}
-	if groups[1].DependencyName != "k8s.io/utils" {
-		t.Errorf("Second group should be k8s.io/utils, got %s", groups[1].DependencyName)
+	if groups[1].Name != "k8s.io/utils" {
+		t.Errorf("Second group should be k8s.io/utils, got %s", groups[1].Name)
 	}
 
 	// Third group should have 1 PR (storybook)
 	if len(groups[2].PRs) != 1 {
 		t.Errorf("Third group should have 1 PR, got %d", len(groups[2].PRs))
 	}
-	if groups[2].DependencyName != "storybook" {
-		t.Errorf("Third group should be storybook, got %s", groups[2].DependencyName)
+	if groups[2].Name != "storybook" {
+		t.Errorf("Third group should be storybook, got %s", groups[2].Name)
 	}
 
 	// Verify search queries are generated
@@ -298,7 +298,7 @@ func TestGroupRenovatePRs_Integration(t *testing.T) {
 	if len(groups) != expectedGroupCount {
 		t.Errorf("Expected %d groups, got %d", expectedGroupCount, len(groups))
 		for i, g := range groups {
-			t.Logf("Group %d: %s (%d PRs)", i, g.DependencyName, len(g.PRs))
+			t.Logf("Group %d: %s (%d PRs)", i, g.Name, len(g.PRs))
 		}
 	}
 
@@ -316,7 +316,7 @@ func TestGroupRenovatePRs_Integration(t *testing.T) {
 	// Verify go-github group has 3 PRs
 	var goGithubGroup *PRGroup
 	for _, g := range groups {
-		if g.DependencyName == "github.com/google/go-github" {
+		if g.Name == "github.com/google/go-github" {
 			goGithubGroup = g
 			break
 		}
@@ -421,8 +421,8 @@ func TestGroupRenovatePRsByRepo(t *testing.T) {
 	if len(groups[0].PRs) != 3 {
 		t.Errorf("First group should have 3 PRs, got %d", len(groups[0].PRs))
 	}
-	if groups[0].DependencyName != "giantswarm/cluster-aws" {
-		t.Errorf("First group should be giantswarm/cluster-aws, got %s", groups[0].DependencyName)
+	if groups[0].Name != "giantswarm/cluster-aws" {
+		t.Errorf("First group should be giantswarm/cluster-aws, got %s", groups[0].Name)
 	}
 	if groups[0].SearchQuery != "repo:giantswarm/cluster-aws" {
 		t.Errorf("First group search query should be repo:giantswarm/cluster-aws, got %s", groups[0].SearchQuery)
@@ -432,8 +432,8 @@ func TestGroupRenovatePRsByRepo(t *testing.T) {
 	if len(groups[1].PRs) != 2 {
 		t.Errorf("Second group should have 2 PRs, got %d", len(groups[1].PRs))
 	}
-	if groups[1].DependencyName != "giantswarm/happa" {
-		t.Errorf("Second group should be giantswarm/happa, got %s", groups[1].DependencyName)
+	if groups[1].Name != "giantswarm/happa" {
+		t.Errorf("Second group should be giantswarm/happa, got %s", groups[1].Name)
 	}
 	if groups[1].SearchQuery != "repo:giantswarm/happa" {
 		t.Errorf("Second group search query should be repo:giantswarm/happa, got %s", groups[1].SearchQuery)
@@ -456,7 +456,7 @@ func TestGroupRenovatePRsByRepo_Stability(t *testing.T) {
 	prs := []*PRInfo{
 		{Number: 1, Owner: "giantswarm", Repo: "repo-a", Title: "Update dependency a to v1"},
 		{Number: 2, Owner: "giantswarm", Repo: "repo-b", Title: "Update dependency b to v1"},
-		{Number: 3, Owner: "giantswarm", Repo: "repo-a", Title: "Update dependency c to v1"},
+		{Number: 3, Owner: "giantswarm", Repo: "repo-c", Title: "Update dependency c to v1"},
 	}
 
 	results := make([][]*PRGroup, 10)
@@ -469,26 +469,33 @@ func TestGroupRenovatePRsByRepo_Stability(t *testing.T) {
 			t.Errorf("Repo grouping is not deterministic, iteration %d differs (-want +got):\n%s", i, diff)
 		}
 	}
+
+	if results[0][0].Name != "giantswarm/repo-a" {
+		t.Errorf("Expected first group to be giantswarm/repo-a (alphabetical tiebreak), got %s", results[0][0].Name)
+	}
 }
 
-// TestGroupRenovatePRs_Stability verifies that grouping is deterministic
+// TestGroupRenovatePRs_Stability verifies that grouping is deterministic,
+// including when groups have equal PR counts (alphabetical tiebreak).
 func TestGroupRenovatePRs_Stability(t *testing.T) {
 	prs := []*PRInfo{
 		{Number: 1, Title: "Update dependency a to v1"},
 		{Number: 2, Title: "Update dependency b to v1"},
-		{Number: 3, Title: "Update dependency a to v1"},
+		{Number: 3, Title: "Update dependency c to v1"},
 	}
 
-	// Run grouping multiple times
 	results := make([][]*PRGroup, 10)
 	for i := 0; i < 10; i++ {
 		results[i] = GroupRenovatePRs(prs)
 	}
 
-	// All results should be identical
 	for i := 1; i < len(results); i++ {
 		if diff := cmp.Diff(results[0], results[i]); diff != "" {
 			t.Errorf("Grouping is not deterministic, iteration %d differs (-want +got):\n%s", i, diff)
 		}
+	}
+
+	if results[0][0].Name != "a" {
+		t.Errorf("Expected first group to be 'a' (alphabetical tiebreak), got %s", results[0][0].Name)
 	}
 }

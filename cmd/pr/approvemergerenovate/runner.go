@@ -324,9 +324,9 @@ func (r *runner) selectGroupInteractively(ctx context.Context, githubClient *git
 	// Create promptui selector
 	templates := &promptui.SelectTemplates{
 		Label:    "{{ . }}",
-		Active:   "▸ {{ .DependencyName | cyan }} ({{ len .PRs }} PRs)",
-		Inactive: "  {{ .DependencyName }} ({{ len .PRs }} PRs)",
-		Selected: "✓ {{ .DependencyName | green }} ({{ len .PRs }} PRs)",
+		Active:   "▸ {{ .Name | cyan }} ({{ len .PRs }} PRs)",
+		Inactive: "  {{ .Name }} ({{ len .PRs }} PRs)",
+		Selected: "✓ {{ .Name | green }} ({{ len .PRs }} PRs)",
 	}
 
 	promptLabel := "Select a dependency group to process"

@@ -6,11 +6,11 @@ import (
 	"strings"
 )
 
-// PRGroup represents a group of related PRs based on dependency.
+// PRGroup represents a group of related PRs (e.g. by dependency or repository).
 type PRGroup struct {
-	DependencyName string
-	PRs            []*PRInfo
-	SearchQuery    string // Query to pass to existing search flow
+	Name        string
+	PRs         []*PRInfo
+	SearchQuery string
 }
 
 // PRInfo contains essential information about a PR.
@@ -31,7 +31,7 @@ func GroupRenovatePRs(prs []*PRInfo) []*PRGroup {
 
 	// Group PRs by extracted dependency name
 	for _, pr := range prs {
-		depName := extractDependencyName(pr.Title)
+		depName := extractName(pr.Title)
 		groups[depName] = append(groups[depName], pr)
 	}
 
@@ -43,25 +43,28 @@ func GroupRenovatePRs(prs []*PRInfo) []*PRGroup {
 		searchQuery := generateSearchQuery(depName, prList)
 
 		result = append(result, &PRGroup{
-			DependencyName: depName,
-			PRs:            prList,
-			SearchQuery:    searchQuery,
+			Name:        depName,
+			PRs:         prList,
+			SearchQuery: searchQuery,
 		})
 	}
 
-	// Sort by PR count (descending) - groups with most PRs first
+	// Sort by PR count (descending), then alphabetically by name for determinism
 	sort.Slice(result, func(i, j int) bool {
-		return len(result[i].PRs) > len(result[j].PRs)
+		if len(result[i].PRs) != len(result[j].PRs) {
+			return len(result[i].PRs) > len(result[j].PRs)
+		}
+		return result[i].Name < result[j].Name
 	})
 
 	return result
 }
 
-// extractDependencyName applies clustering algorithms in sequence.
+// extractName applies clustering algorithms in sequence.
 // Algorithm 1: Pattern-based extraction (primary)
 // Algorithm 2: Version-stripped normalization (fallback)
 // Algorithm 3: Exact title match (last resort)
-func extractDependencyName(title string) string {
+func extractName(title string) string {
 	// Algorithm 1: Pattern-Based Extraction
 	patterns := []string{
 		`[Uu]pdate dependency (@?[\w\-./]+(?:/[\w\-./]+)*) to`,
@@ -186,14 +189,17 @@ func GroupRenovatePRsByRepo(prs []*PRInfo) []*PRGroup {
 	var result []*PRGroup
 	for repoName, prList := range groups {
 		result = append(result, &PRGroup{
-			DependencyName: repoName,
-			PRs:            prList,
-			SearchQuery:    "repo:" + repoName,
+			Name:        repoName,
+			PRs:         prList,
+			SearchQuery: "repo:" + repoName,
 		})
 	}
 
 	sort.Slice(result, func(i, j int) bool {
-		return len(result[i].PRs) > len(result[j].PRs)
+		if len(result[i].PRs) != len(result[j].PRs) {
+			return len(result[i].PRs) > len(result[j].PRs)
+		}
+		return result[i].Name < result[j].Name
 	})
 
 	return result
