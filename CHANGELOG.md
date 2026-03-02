@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Support Go main module in other source file `cmd/main.go` for new, kubebuilder-based projects
+
 ## [7.34.1] - 2026-03-02
 
 ### Added
