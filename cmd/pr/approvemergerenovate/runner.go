@@ -121,7 +121,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 			title := issue.GetTitle()
 			displayLabel := repoName
-			if r.flag.ByRepo {
+			if r.flag.Grouping == GroupingRepo {
 				displayLabel = pr.ExtractDependencyName(title)
 			}
 
@@ -146,7 +146,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	initialPRs := addPRs(searchResults.Issues)
 
 	columnHeader := "Repository"
-	if r.flag.ByRepo {
+	if r.flag.Grouping == GroupingRepo {
 		columnHeader = "Dependency"
 	}
 	pr.PrintTableHeader(r.stdout, columnHeader)
@@ -319,7 +319,7 @@ func (r *runner) selectGroupInteractively(ctx context.Context, githubClient *git
 
 	// Group PRs by dependency or repository
 	var groups []*pr.PRGroup
-	if r.flag.ByRepo {
+	if r.flag.Grouping == GroupingRepo {
 		groups = pr.GroupRenovatePRsByRepo(prInfos)
 	} else {
 		groups = pr.GroupRenovatePRs(prInfos)
@@ -340,7 +340,7 @@ func (r *runner) selectGroupInteractively(ctx context.Context, githubClient *git
 	}
 
 	promptLabel := "Select a dependency group to process"
-	if r.flag.ByRepo {
+	if r.flag.Grouping == GroupingRepo {
 		promptLabel = "Select a repository to process"
 	}
 

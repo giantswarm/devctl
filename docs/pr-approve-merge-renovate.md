@@ -42,7 +42,7 @@ devctl pr approve-merge-renovate "architect v1.2.3"
 
 - `--dry-run`: Show what would be done without making changes
 - `--watch`, `-w`: Keep running and continuously watch for new PRs (polls every minute, exit with Ctrl+C)
-- `--by-repo`: In interactive mode, group PRs by repository instead of dependency name. The selector shows `owner/repo` entries, and selecting one processes all Renovate PRs in that repository. The table then shows the dependency being updated instead of the repository name.
+- `--grouping`: In interactive mode, controls how PRs are grouped. Values: `dependency` (default) groups by dependency name; `repo` groups by repository. When using `repo`, the selector shows `owner/repo` entries, and selecting one processes all Renovate PRs in that repository. The table then shows the dependency being updated instead of the repository name.
 
 ## How It Works
 
@@ -147,7 +147,7 @@ Select a dependency group to process:
 ### Interactive mode - group by repository
 
 ```bash
-devctl pr approve-merge-renovate --by-repo
+devctl pr approve-merge-renovate --grouping repo
 ```
 
 Example output:

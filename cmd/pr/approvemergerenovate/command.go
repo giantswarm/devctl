@@ -47,11 +47,11 @@ func New(config Config) (*cobra.Command, error) {
 		Short:   description,
 		Long:    description,
 		Aliases: []string{name, "amr"},
-		Example: `  # Interactive mode - select from grouped PRs
+		Example: `  # Interactive mode - select from grouped PRs (default: group by dependency)
   devctl pr amr
 
   # Interactive mode - group by repository instead of dependency
-  devctl pr amr --by-repo
+  devctl pr amr --grouping repo
 
   # Direct mode - search for specific PRs
   devctl pr amr "architect v1.2.3"
