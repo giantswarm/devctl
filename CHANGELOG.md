@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.34.1] - 2026-03-02
+
 ### Added
 
 - Added an extra step to Chainsaw testing workflow to install extra resources.
@@ -1588,7 +1590,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.34.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.34.1...HEAD
+[7.34.1]: https://github.com/giantswarm/devctl/compare/v7.34.0...v7.34.1
 [7.34.0]: https://github.com/giantswarm/devctl/compare/v7.33.1...v7.34.0
 [7.33.1]: https://github.com/giantswarm/devctl/compare/v7.33.0...v7.33.1
 [7.33.0]: https://github.com/giantswarm/devctl/compare/v7.32.0...v7.33.0
