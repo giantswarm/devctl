@@ -10,6 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Added an extra step to Chainsaw testing workflow to install extra resources.
+- Add `--grouping` flag to `pr approve-merge-renovate` with values `dependency` (default) and `repo`, for controlling how PRs are grouped in interactive mode. When set to `repo`, PRs are grouped by repository and the table shows the dependency being updated.
+
+### Changed
+
+- Rename `PRGroup.DependencyName` to `PRGroup.Name` for clarity since the field can hold either a dependency or repository name.
+- Make PR group sorting deterministic by adding alphabetical tiebreak when groups have equal PR counts.
 
 ## [7.34.0] - 2026-02-24
 
