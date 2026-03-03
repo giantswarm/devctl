@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.35.0] - 2026-03-03
+
 ### Added
 
 - Releases: Add `kube-vip`.
@@ -1594,7 +1596,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.34.1...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.35.0...HEAD
+[7.35.0]: https://github.com/giantswarm/devctl/compare/v7.34.1...v7.35.0
 [7.34.1]: https://github.com/giantswarm/devctl/compare/v7.34.0...v7.34.1
 [7.34.0]: https://github.com/giantswarm/devctl/compare/v7.33.1...v7.34.0
 [7.33.1]: https://github.com/giantswarm/devctl/compare/v7.33.0...v7.33.1
