@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Added an extra step to Chainsaw testing workflow to install extra resources.
 - Add `--grouping` flag to `pr approve-merge-renovate` with values `dependency` (default) and `repo`, for controlling how PRs are grouped in interactive mode. When set to `repo`, PRs are grouped by repository and the table shows the dependency being updated.
+- Releases: Add `kube-vip`.
 
 ### Changed
 
