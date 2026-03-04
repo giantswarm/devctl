@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Add optional `analyze-github-actions` workflow for GitHub Action security scanning.
 
+### Changed
+
+- Change permissions for Update Chart workflow from "contents: read" to "contents: write" to allow PR creation.
+
 ## [7.35.0] - 2026-03-03
 
 ### Added
