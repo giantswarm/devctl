@@ -85,6 +85,6 @@ func (w *Workflows) ValidateChangelog() input.Input {
 	return file.NewValidateChangelogInput(w.params)
 }
 
-func (w *Workflows) Zizmor() input.Input {
-	return file.NewZizmorInput(w.params)
+func (w *Workflows) AnalyzeGithubActions() input.Input {
+	return file.NewAnalyzeGithubActionsInput(w.params)
 }

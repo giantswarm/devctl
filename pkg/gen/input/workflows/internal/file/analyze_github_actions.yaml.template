@@ -1,5 +1,5 @@
 {{{{ .Header }}}}
-name: zizmor
+name: analyze-github-actions
 
 on:
   - pull_request
@@ -7,8 +7,8 @@ on:
 permissions: {}
 
 jobs:
-  zizmor:
-    uses: giantswarm/github-workflows/.github/workflows/zizmor.yaml@main
+  analyze-github-actions:
+    uses: giantswarm/github-workflows/.github/workflows/analyze-github-actions.yaml@main
     permissions:
       security-events: write
       contents: read

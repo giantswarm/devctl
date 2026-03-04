@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Add optional `zizmor` workflow for GitHub Action security scanning.
+- Add optional `analyze-github-actions` workflow for GitHub Action security scanning.
 
 ## [7.35.0] - 2026-03-03
 
