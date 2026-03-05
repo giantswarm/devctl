@@ -16,10 +16,9 @@ var zizmorBaseTemplateSha string
 
 func NewZizmorBaseInput(p params.Params) input.Input {
 	i := input.Input{
-		// Hardcoding .github/zizmor.base.yml as it belongs in .github, not .github/workflows
 		Path:           ".github/zizmor.base.yml",
 		TemplateBody:   zizmorBaseTemplate,
-		SkipRegenCheck: true, // we omit zz_generated. prefix but still want to regenerate
+		SkipRegenCheck: true,
 		TemplateDelims: input.InputTemplateDelims{
 			Left:  "{{{{",
 			Right: "}}}}",
