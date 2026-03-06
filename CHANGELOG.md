@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Support Go main module in other source file `cmd/main.go` for new, kubebuilder-based projects
 - Add optional `analyze-github-actions` workflow for GitHub Action security scanning.
 
 ### Changed
