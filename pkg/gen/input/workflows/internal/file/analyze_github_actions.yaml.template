@@ -1,0 +1,15 @@
+{{{{ .Header }}}}
+name: analyze-github-actions
+
+on:
+  - pull_request
+
+permissions: {}
+
+jobs:
+  analyze-github-actions:
+    uses: giantswarm/github-workflows/.github/workflows/analyze-github-actions.yaml@main
+    permissions:
+      security-events: write
+      contents: read
+      actions: read
