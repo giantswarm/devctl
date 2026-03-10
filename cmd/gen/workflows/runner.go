@@ -91,6 +91,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 	if r.flag.AnalyzeGithubActions {
 		inputs = append(inputs, workflowsInput.AnalyzeGithubActions())
+		inputs = append(inputs, workflowsInput.ZizmorBaseYml())
 	}
 
 	if r.flag.Flavours.Contains(gen.FlavourManagementClustersFleet) {
