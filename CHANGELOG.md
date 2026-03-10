@@ -7,8 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.36.0] - 2026-03-06
+
 ### Added
 
+- Support Go main module in other source file `cmd/main.go` for new, kubebuilder-based projects
 - Add optional `analyze-github-actions` workflow for GitHub Action security scanning.
 - Add exception mechanism for GitHub Action security scanning.
 
@@ -1605,7 +1608,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.35.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.36.0...HEAD
+[7.36.0]: https://github.com/giantswarm/devctl/compare/v7.35.0...v7.36.0
 [7.35.0]: https://github.com/giantswarm/devctl/compare/v7.34.1...v7.35.0
 [7.34.1]: https://github.com/giantswarm/devctl/compare/v7.34.0...v7.34.1
 [7.34.0]: https://github.com/giantswarm/devctl/compare/v7.33.1...v7.34.0
