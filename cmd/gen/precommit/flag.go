@@ -2,6 +2,7 @@ package precommit
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/giantswarm/microerror"
@@ -55,5 +56,6 @@ func allowedFlavorsList() []string {
 	for k := range allowedFlavors {
 		result = append(result, k)
 	}
+	sort.Strings(result)
 	return result
 }

@@ -12,11 +12,13 @@ import (
 var createPreCommitConfigTemplate string
 
 func NewCreatePreCommitConfigInput(p params.Params) input.Input {
-	// Find all helm charts in the helm/ directory
-	helmCharts, err := findHelmCharts(p.WorkingDir)
-	if err != nil {
-		// If we can't find helm charts, use empty list
-		helmCharts = []string{}
+	var helmCharts []string
+	if params.HasFlavor(p, "helmchart") {
+		var err error
+		helmCharts, err = findHelmCharts(p.WorkingDir)
+		if err != nil {
+			helmCharts = []string{}
+		}
 	}
 
 	i := input.Input{

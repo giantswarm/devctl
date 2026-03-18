@@ -11,21 +11,15 @@ import (
 func findHelmCharts(dir string) ([]string, error) {
 	helmDir := filepath.Join(dir, "helm")
 
-	// Check if helm directory exists
-	if _, err := os.Stat(helmDir); os.IsNotExist(err) {
-		// No helm directory, return empty list
-		return []string{}, nil
-	} else if err != nil {
+	entries, err := os.ReadDir(helmDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []string{}, nil
+		}
 		return nil, microerror.Mask(err)
 	}
 
 	var charts []string
-
-	// Read all subdirectories in helm/
-	entries, err := os.ReadDir(helmDir)
-	if err != nil {
-		return nil, microerror.Mask(err)
-	}
 
 	for _, entry := range entries {
 		if !entry.IsDir() {
