@@ -73,6 +73,10 @@ func (w *Workflows) RunOSSFScorecard() input.Input {
 	return file.NewRunOSSFScorecardInput(w.params)
 }
 
+func (w *Workflows) TestKyvernoPoliciesWithChainsaw() input.Input {
+	return file.NewTestKyvernoPoliciesWithChainsawInput(w.params)
+}
+
 func (w *Workflows) UpdateChart() input.Input {
 	return file.NewUpdateChartInput(w.params)
 }
@@ -81,6 +85,10 @@ func (w *Workflows) ValidateChangelog() input.Input {
 	return file.NewValidateChangelogInput(w.params)
 }
 
-func (w *Workflows) TestKyvernoPoliciesWithChainsaw() input.Input {
-	return file.NewTestKyvernoPoliciesWithChainsawInput(w.params)
+func (w *Workflows) AnalyzeGithubActions() input.Input {
+	return file.NewAnalyzeGithubActionsInput(w.params)
+}
+
+func (w *Workflows) ZizmorBaseYml() input.Input {
+	return file.NewZizmorBaseInput(w.params)
 }

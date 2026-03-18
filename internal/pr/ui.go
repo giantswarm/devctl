@@ -12,28 +12,27 @@ func MakeHyperlink(url, text string) string {
 }
 
 // PrintTableHeader prints the header for the PR status table.
-func PrintTableHeader(w io.Writer) {
-	header := fmt.Sprintf("%-7s %-40s %-30s", "PR", "Repository", "Status")
+// The columnHeader parameter controls the label of the second column
+// (e.g. "Repository" or "Dependency").
+func PrintTableHeader(w io.Writer, columnHeader string) {
+	header := fmt.Sprintf("%-7s %-40s %-30s", "PR", columnHeader, "Status")
 	fmt.Fprintln(w, header)
 	fmt.Fprintln(w, strings.Repeat("─", 80))
 }
 
 // UpdateTable redraws the PR status table.
+// Each PRStatus.DisplayLabel is shown in the second column.
 func UpdateTable(w io.Writer, prStatuses []*PRStatus) {
-	// Move cursor up to redraw table
 	if len(prStatuses) > 0 {
 		fmt.Fprintf(w, "\033[%dA", len(prStatuses))
 	}
 
 	for _, ps := range prStatuses {
-		// Pad PR number to consistent width (6 chars for "#12345")
 		prText := fmt.Sprintf("#%-5d", ps.Number)
 		prLink := MakeHyperlink(ps.URL, prText)
 		status := ps.GetStatus()
 
-		// Don't use padding in format string for hyperlink, just add spaces after
-		line := fmt.Sprintf("%s  %-40s %-30s", prLink, ps.Repo, status)
-		// Clear line and print
+		line := fmt.Sprintf("%s  %-40s %-30s", prLink, ps.DisplayLabel, status)
 		fmt.Fprintf(w, "\033[2K%s\n", line)
 	}
 }

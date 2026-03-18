@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/giantswarm/microerror"
-	"github.com/google/go-github/v82/github"
+	"github.com/google/go-github/v84/github"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
@@ -87,19 +87,19 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		}
 
 		ps := &pr.PRStatus{
-			Number:     issue.GetNumber(),
-			Owner:      owner,
-			Repo:       repoName,
-			Title:      issue.GetTitle(),
-			URL:        issue.GetHTMLURL(),
-			Status:     "Queued",
-			LastUpdate: time.Now(),
+			Number:       issue.GetNumber(),
+			Owner:        owner,
+			Repo:         repoName,
+			Title:        issue.GetTitle(),
+			URL:          issue.GetHTMLURL(),
+			Status:       "Queued",
+			DisplayLabel: repoName,
+			LastUpdate:   time.Now(),
 		}
 		prStatuses = append(prStatuses, ps)
 	}
 
-	// Print table header
-	pr.PrintTableHeader(r.stdout)
+	pr.PrintTableHeader(r.stdout, "Repository")
 
 	// Print initial empty rows for all PRs
 	for range prStatuses {

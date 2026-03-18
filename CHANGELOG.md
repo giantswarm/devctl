@@ -10,6 +10,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - `devctl gen precommit`: Add required `--repo-name` flag and automatically detect helm charts in `helm/` directory to generate chart-specific configuration sections.
+## [7.36.0] - 2026-03-06
+
+### Added
+
+- Support Go main module in other source file `cmd/main.go` for new, kubebuilder-based projects
+- Add optional `analyze-github-actions` workflow for GitHub Action security scanning.
+- Add exception mechanism for GitHub Action security scanning.
+
+### Changed
+
+- Change permissions for Update Chart workflow from "contents: read" to "contents: write" to allow PR creation.
+
+## [7.35.0] - 2026-03-03
+
+### Added
+
+- Releases: Add `kube-vip`.
+
+## [7.34.1] - 2026-03-02
+
+### Added
+
+- Added an extra step to Chainsaw testing workflow to install extra resources.
+- Add `--grouping` flag to `pr approve-merge-renovate` with values `dependency` (default) and `repo`, for controlling how PRs are grouped in interactive mode. When set to `repo`, PRs are grouped by repository and the table shows the dependency being updated.
+
+### Changed
+
+- Rename `PRGroup.DependencyName` to `PRGroup.Name` for clarity since the field can hold either a dependency or repository name.
+- Make PR group sorting deterministic by adding alphabetical tiebreak when groups have equal PR counts.
+
+## [7.34.0] - 2026-02-24
+
+### Added
+
+- Include `cluster` chart changelog in release notes.
+
+## [7.33.1] - 2026-02-18
+
+### Fixed
+
+- Add EKS to provider title and doc maps so release notes and announcements show the correct provider name.
 
 ## [7.33.0] - 2026-02-06
 
@@ -1570,7 +1611,12 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.33.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.36.0...HEAD
+[7.36.0]: https://github.com/giantswarm/devctl/compare/v7.35.0...v7.36.0
+[7.35.0]: https://github.com/giantswarm/devctl/compare/v7.34.1...v7.35.0
+[7.34.1]: https://github.com/giantswarm/devctl/compare/v7.34.0...v7.34.1
+[7.34.0]: https://github.com/giantswarm/devctl/compare/v7.33.1...v7.34.0
+[7.33.1]: https://github.com/giantswarm/devctl/compare/v7.33.0...v7.33.1
 [7.33.0]: https://github.com/giantswarm/devctl/compare/v7.32.0...v7.33.0
 [7.32.0]: https://github.com/giantswarm/devctl/compare/v7.31.0...v7.32.0
 [7.31.0]: https://github.com/giantswarm/devctl/compare/v7.30.6...v7.31.0

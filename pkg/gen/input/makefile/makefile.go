@@ -39,6 +39,7 @@ func (m *Makefile) MakefileGenChainsaw() []input.Input {
 		file.NewChainsawTestsStepTemplate(m.params),
 		file.NewChainsawTestsExampleTest(m.params),
 		file.NewChainsawTestsExtraValues(m.params),
+		file.NewChainsawExtraResourcesScript(m.params),
 	}
 }
 

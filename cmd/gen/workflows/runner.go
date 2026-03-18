@@ -89,6 +89,11 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		inputs = append(inputs, workflowsInput.RunOSSFScorecard())
 	}
 
+	if r.flag.AnalyzeGithubActions {
+		inputs = append(inputs, workflowsInput.AnalyzeGithubActions())
+		inputs = append(inputs, workflowsInput.ZizmorBaseYml())
+	}
+
 	if r.flag.Flavours.Contains(gen.FlavourManagementClustersFleet) {
 		inputs = append(inputs, workflowsInput.ClusterAppValuesValidationUsingSchema())
 	}
