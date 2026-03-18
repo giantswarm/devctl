@@ -34,10 +34,6 @@ func (f *flag) Init(cmd *cobra.Command) {
 }
 
 func (f *flag) Validate() error {
-	if f.Language == "" {
-		return microerror.Maskf(invalidFlagError, "--%s cannot be empty", flagLanguage)
-	}
-
 	if f.RepoName == "" {
 		return microerror.Maskf(invalidFlagError, "--%s cannot be empty", flagRepoName)
 	}
