@@ -28,6 +28,24 @@ Example:
 devctl gen workflows --flavour cli --language go
 ```
 
+## Generating pre-commit configuration
+
+Creates a `.pre-commit-config.yaml` file in the repo root with hooks appropriate for the repository's language and content.
+
+The `--language` flag sets the primary language (`go`, `python`, `generic`). The `--flavors` flag enables additional hook groups:
+
+- `bash` — shell script linting via `pre-commit-shell`
+- `md` — Markdown linting via `markdownlint-cli`
+- `helmchart` — Helm chart schema and docs hooks (auto-detects charts under `helm/`)
+
+Examples:
+
+```nohighlight
+devctl gen precommit --language go --repo-name devctl
+devctl gen precommit --language go --repo-name my-app --flavors bash,helmchart
+devctl gen precommit --language generic --repo-name my-service --flavors md,bash
+```
+
 ## Generating renovate configuration
 
 Generates a `renovate.json5` file in the repo root to configure [renovate](https://docs.renovatebot.com/), which automatically updates dependencies in the configured repository.
