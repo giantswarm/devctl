@@ -15,7 +15,7 @@ permissions: {}
 
 jobs:
   create-release:
-    uses: giantswarm/github-workflows/.github/workflows/create-release.yaml@main
+    uses: giantswarm/github-workflows/.github/workflows/create-release.yaml@d99b0e49654737f20447beccd25e3dfd111dec69 # main
     with:
       build-release-artifacts: {{{{ .IsFlavourCLI }}}}
       fetch-deep-gitlog-for-build: {{{{ .IsDevctl }}}}

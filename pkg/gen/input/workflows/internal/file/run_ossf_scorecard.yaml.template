@@ -23,7 +23,7 @@ permissions: {}
 
 jobs:
   analysis:
-    uses: giantswarm/github-workflows/.github/workflows/ossf-scorecard.yaml@main
+    uses: giantswarm/github-workflows/.github/workflows/ossf-scorecard.yaml@d99b0e49654737f20447beccd25e3dfd111dec69 # main
     permissions:
       contents: read
       actions: read

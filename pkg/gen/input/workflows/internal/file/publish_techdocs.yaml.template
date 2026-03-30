@@ -16,7 +16,7 @@ permissions: {}
 
 jobs:
   publish:
-    uses: giantswarm/github-workflows/.github/workflows/publish-techdocs.yaml@main
+    uses: giantswarm/github-workflows/.github/workflows/publish-techdocs.yaml@d99b0e49654737f20447beccd25e3dfd111dec69 # main
     permissions:
       contents: read
     secrets:

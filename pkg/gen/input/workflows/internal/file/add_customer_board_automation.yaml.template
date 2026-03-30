@@ -10,6 +10,6 @@ permissions: {}
 
 jobs:
   add-to-board:
-    uses: giantswarm/github-workflows/.github/workflows/issue-to-customer-board.yaml@main
+    uses: giantswarm/github-workflows/.github/workflows/issue-to-customer-board.yaml@d99b0e49654737f20447beccd25e3dfd111dec69 # main
     secrets:
       ISSUE_AUTOMATION: ${{ secrets.ISSUE_AUTOMATION }}

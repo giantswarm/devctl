@@ -16,6 +16,6 @@ permissions: {}
 
 jobs:
   check:
-    uses: giantswarm/github-workflows/.github/workflows/chart-values.yaml@main
+    uses: giantswarm/github-workflows/.github/workflows/chart-values.yaml@d99b0e49654737f20447beccd25e3dfd111dec69 # main
     permissions:
       contents: read

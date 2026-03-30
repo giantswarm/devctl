@@ -17,6 +17,6 @@ permissions: {}
 
 jobs:
   validate:
-    uses: giantswarm/github-workflows/.github/workflows/json-schema-validation.yaml@main
+    uses: giantswarm/github-workflows/.github/workflows/json-schema-validation.yaml@d99b0e49654737f20447beccd25e3dfd111dec69 # main
     permissions:
       contents: read

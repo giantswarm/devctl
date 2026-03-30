@@ -8,6 +8,6 @@ permissions: {}
 
 jobs:
   publish:
-    uses: giantswarm/github-workflows/.github/workflows/gitleaks.yaml@main
+    uses: giantswarm/github-workflows/.github/workflows/gitleaks.yaml@d99b0e49654737f20447beccd25e3dfd111dec69 # main
     permissions:
       contents: read

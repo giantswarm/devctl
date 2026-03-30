@@ -17,7 +17,7 @@ permissions: {}
 
 jobs:
   update-chart:
-    uses: giantswarm/github-workflows/.github/workflows/update-chart.yaml@main
+    uses: giantswarm/github-workflows/.github/workflows/update-chart.yaml@d99b0e49654737f20447beccd25e3dfd111dec69 # main
     with:
       branch: ${{ inputs.branch }}
     secrets:

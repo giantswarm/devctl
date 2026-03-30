@@ -29,7 +29,7 @@ permissions: {}
 
 jobs:
   publish:
-    uses: giantswarm/github-workflows/.github/workflows/create-release-pr.yaml@main
+    uses: giantswarm/github-workflows/.github/workflows/create-release-pr.yaml@d99b0e49654737f20447beccd25e3dfd111dec69 # main
     permissions:
       contents: read
     with:
