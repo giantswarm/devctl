@@ -11,7 +11,7 @@
   },
   packageRules: [
     {
-      matchFileNames: ['pkg/gen/input/workflows/**/*.yaml.template'],
+      matchPackageNames: ['giantswarm/github-workflows'],
       matchUpdateTypes: ['pinDigest'],
       enabled: false,
     },
