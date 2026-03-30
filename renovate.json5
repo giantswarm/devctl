@@ -9,4 +9,11 @@
       '/.*.yaml.template$/',
     ],
   },
+  packageRules: [
+    {
+      matchPackageNames: ['giantswarm/github-workflows'],
+      matchUpdateTypes: ['pinDigest'],
+      enabled: false,
+    },
+  ],
 }
