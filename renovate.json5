@@ -9,4 +9,11 @@
       '/.*.yaml.template$/',
     ],
   },
+  packageRules: [
+    {
+      matchFileNames: ['pkg/gen/input/workflows/**/*.yaml.template'],
+      matchUpdateTypes: ['pinDigest'],
+      enabled: false,
+    },
+  ],
 }
