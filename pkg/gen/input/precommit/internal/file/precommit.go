@@ -15,7 +15,7 @@ func NewCreatePreCommitConfigInput(p params.Params) input.Input {
 	var helmCharts []string
 	if params.HasFlavor(p, "helmchart") {
 		var err error
-		helmCharts, err = findHelmCharts(p.WorkingDir)
+		helmCharts, err = FindHelmCharts(p.WorkingDir)
 		if err != nil {
 			helmCharts = []string{}
 		}

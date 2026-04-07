@@ -36,3 +36,21 @@ func New(config Config) (*PreCommit, error) {
 func (p *PreCommit) CreatePreCommitConfig() input.Input {
 	return file.NewCreatePreCommitConfigInput(p.params)
 }
+
+func (p *PreCommit) CreateSchemaYamlInputs() []input.Input {
+	if !params.HasFlavor(p.params, "helmchart") {
+		return nil
+	}
+
+	helmCharts, err := file.FindHelmCharts(p.params.WorkingDir)
+	if err != nil {
+		return nil
+	}
+
+	var inputs []input.Input
+	for _, chartName := range helmCharts {
+		inputs = append(inputs, file.NewCreateSchemaYamlInput(p.params, chartName))
+	}
+
+	return inputs
+}
