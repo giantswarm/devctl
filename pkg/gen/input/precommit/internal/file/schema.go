@@ -18,12 +18,6 @@ func NewCreateSchemaYamlInput(p params.Params, chartName string) input.Input {
 		Path:         filepath.Join(p.Dir, "helm", chartName, ".schema.yaml"),
 		TemplateBody: createSchemaYamlTemplate,
 		TemplateData: map[string]interface{}{
-			"Language":         params.Language(p),
-			"HasBash":          params.HasFlavor(p, "bash"),
-			"HasMd":            params.HasFlavor(p, "md"),
-			"HasHelmchart":     params.HasFlavor(p, "helmchart"),
-			"RepoName":         p.RepoName,
-			"HelmCharts":       []string{chartName},
 			"ChartName":        chartName,
 			"K8sSchemaVersion": k8sSchemaVersion,
 		},

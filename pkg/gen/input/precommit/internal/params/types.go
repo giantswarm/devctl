@@ -12,4 +12,6 @@ type Params struct {
 	RepoName string
 	// WorkingDir is the root directory of the repository (used for detecting helm charts).
 	WorkingDir string
+	// HelmCharts is the list of helm chart names discovered under helm/ in WorkingDir.
+	HelmCharts []string
 }
