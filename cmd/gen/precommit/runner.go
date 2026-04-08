@@ -58,6 +58,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	{
 		inputs = append(inputs, precommitInput.CreatePreCommitConfig())
 		inputs = append(inputs, precommitInput.CreateSchemaYamlInputs()...)
+		inputs = append(inputs, precommitInput.CreateHelmReadmeInputs()...)
 	}
 
 	err = gen.Execute(ctx, inputs...)
