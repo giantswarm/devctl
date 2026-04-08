@@ -53,3 +53,11 @@ func (p *PreCommit) CreateSchemaYamlInputs() []input.Input {
 	}
 	return inputs
 }
+
+func (p *PreCommit) CreateHelmReadmeInputs() []input.Input {
+	var inputs []input.Input
+	for _, chartName := range p.params.HelmCharts {
+		inputs = append(inputs, file.NewCreateHelmReadmeInput(p.params, chartName))
+	}
+	return inputs
+}

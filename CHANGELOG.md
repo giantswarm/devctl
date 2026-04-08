@@ -2,10 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to
+[Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+### Added
+
+- When setting up helm chart tools, bootstrap `helm/<chart>/README.md.gotmpl` if it doesn't exist
 
 ## [7.37.0] - 2026-04-08
 
@@ -16,7 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Exclude `giantswarm/github-workflows` from Renovate digest pinning to keep `@main` references in workflow templates.
+- Exclude `giantswarm/github-workflows` from Renovate digest pinning to keep `@main` references in workflow
+  templates.
 
 ## [7.36.0] - 2026-03-06
 
@@ -28,7 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Change permissions for Update Chart workflow from "contents: read" to "contents: write" to allow PR creation.
+- Change permissions for Update Chart workflow from "contents: read" to "contents: write" to allow PR
+  creation.
 
 ## [7.35.0] - 2026-03-03
 
@@ -41,11 +47,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Added an extra step to Chainsaw testing workflow to install extra resources.
-- Add `--grouping` flag to `pr approve-merge-renovate` with values `dependency` (default) and `repo`, for controlling how PRs are grouped in interactive mode. When set to `repo`, PRs are grouped by repository and the table shows the dependency being updated.
+- Add `--grouping` flag to `pr approve-merge-renovate` with values `dependency` (default) and `repo`, for
+  controlling how PRs are grouped in interactive mode. When set to `repo`, PRs are grouped by repository and
+  the table shows the dependency being updated.
 
 ### Changed
 
-- Rename `PRGroup.DependencyName` to `PRGroup.Name` for clarity since the field can hold either a dependency or repository name.
+- Rename `PRGroup.DependencyName` to `PRGroup.Name` for clarity since the field can hold either a dependency
+  or repository name.
 - Make PR group sorting deterministic by adding alphabetical tiebreak when groups have equal PR counts.
 
 ## [7.34.0] - 2026-02-24
@@ -81,9 +90,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Migrate `ensure_major_version_tags` workflow to call reusable workflow from `giantswarm/github-workflows`.
-- Migrate `cluster_app_documentation_validation` workflow to call reusable workflow from `giantswarm/github-workflows`.
-- Migrate `cluster_app_schema_validation` workflow to call reusable workflow from `giantswarm/github-workflows`.
-- Migrate `cluster_app_values_validation_using_schema` workflow to call reusable workflow from `giantswarm/github-workflows`.
+- Migrate `cluster_app_documentation_validation` workflow to call reusable workflow from
+  `giantswarm/github-workflows`.
+- Migrate `cluster_app_schema_validation` workflow to call reusable workflow from
+  `giantswarm/github-workflows`.
+- Migrate `cluster_app_values_validation_using_schema` workflow to call reusable workflow from
+  `giantswarm/github-workflows`.
 - Migrate `helm_render_diff` workflow to call reusable workflow from `giantswarm/github-workflows`.
 - Migrate `update_chart` workflow to call reusable workflow from `giantswarm/github-workflows`.
 
@@ -95,7 +107,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Fix string quoting in `fix_vulnerabilities` workflow template: use single quotes for string literals in GitHub Actions expressions.
+- Fix string quoting in `fix_vulnerabilities` workflow template: use single quotes for string literals in
+  GitHub Actions expressions.
 
 ## [7.30.5] - 2026-02-02
 
@@ -107,20 +120,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Fixed `create_release` workflow template: pass PAT via `token` input to `ncipollo/release-action` instead of env var.
+- Fixed `create_release` workflow template: pass PAT via `token` input to `ncipollo/release-action` instead of
+  env var.
 
 ## [7.30.3] - 2026-02-02
 
 ### Fixed
 
-- Fixed `create_release` workflow template: added `persist-credentials: false` to checkout steps that push using PAT credentials, preventing git from using cached GITHUB_TOKEN credentials.
+- Fixed `create_release` workflow template: added `persist-credentials: false` to checkout steps that push
+  using PAT credentials, preventing git from using cached GITHUB_TOKEN credentials.
 - Fixed permissions for OSSF Scorecard workflow.
 
 ## [7.30.2] - 2026-01-30
 
 ### Fixed
 
-- Fixed permissions for workflow templates calling reusable workflows. The calling workflow must grant permissions that the reusable workflow's jobs need.
+- Fixed permissions for workflow templates calling reusable workflows. The calling workflow must grant
+  permissions that the reusable workflow's jobs need.
 
 ## [7.30.1] - 2026-01-30
 
@@ -158,24 +174,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Replace `github.com/giantswarm/release-operator/v4/api/v1alpha1` with `github.com/giantswarm/releases/sdk/api/v1alpha1` for Release CRD types.
+- Replace `github.com/giantswarm/release-operator/v4/api/v1alpha1` with
+  `github.com/giantswarm/releases/sdk/api/v1alpha1` for Release CRD types.
 
 ### Fixed
 
-- Fix `getLatestGithubRelease` to return the semantically highest version instead of the most recently created GitHub release.
-  This prevents backport releases (e.g., `v5.4.0`) from being incorrectly selected over newer versions (e.g., `v6.4.x`) when auto-bumping components.
+- Fix `getLatestGithubRelease` to return the semantically highest version instead of the most recently created
+  GitHub release. This prevents backport releases (e.g., `v5.4.0`) from being incorrectly selected over newer
+  versions (e.g., `v6.4.x`) when auto-bumping components.
 
 ## [7.26.1] - 2026-01-09
 
 ### Fixed
 
-- Fix the problem in `pr approve-merge-renovate` that a query like `@actions/core` would fail due to the leading `@` sign.
+- Fix the problem in `pr approve-merge-renovate` that a query like `@actions/core` would fail due to the
+  leading `@` sign.
 
 ## [7.26.0] - 2026-01-08
 
 ### Changed
 
-- `pr approve-merge-renovate` now supports interactive mode. When called without arguments, it groups Renovate PRs by dependency and presents an interactive selector for choosing which group to process.
+- `pr approve-merge-renovate` now supports interactive mode. When called without arguments, it groups Renovate
+  PRs by dependency and presents an interactive selector for choosing which group to process.
 
 ## [7.25.0] - 2026-01-06
 
@@ -221,7 +241,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Fix `bumpall` logic to correctly respect version constraints from `requests.yaml` when finding the latest version of a component or app.
+- Fix `bumpall` logic to correctly respect version constraints from `requests.yaml` when finding the latest
+  version of a component or app.
 
 ## [7.22.0] - 2025-11-20
 
@@ -268,18 +289,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Release: Add validation to prevent type conflicts when adding apps/components. When trying to add a component that exists as an app (or vice versa), an error message suggesting the correct flag to use is now displayed.
+- Release: Add validation to prevent type conflicts when adding apps/components. When trying to add a
+  component that exists as an app (or vice versa), an error message suggesting the correct flag to use is now
+  displayed.
 
 ## [7.19.0] - 2025-10-07
 
 ### Added
 
 - Release: Add `--preserve-readme` flag to preserve existing README.md when using `--overwrite`.
-- Release: Add `--regenerate-readme` flag to regenerate README.md with full changelogs when using `--update-existing` with specific app/component updates.
+- Release: Add `--regenerate-readme` flag to regenerate README.md with full changelogs when using
+  `--update-existing` with specific app/component updates.
 
 ### Fixed
 
-- Release: Fix README.md generation with `--regenerate-readme` to include all apps, not just the requested ones.
+- Release: Fix README.md generation with `--regenerate-readme` to include all apps, not just the requested
+  ones.
 
 ## [7.18.1] - 2025-10-07
 
@@ -322,9 +347,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Add `--update-existing` flag to `devctl release create` to update an existing release in the current branch instead of creating from a base release.
-- When using `--update-existing` with specific `--component` or `--app` flags, the command now preserves all previous modifications and only updates the specified components/apps. This enables incremental updates across multiple invocations.
-- Fixed release diff generation to show meaningful diffs when using `--update-existing` by comparing against the previous release version.
+- Add `--update-existing` flag to `devctl release create` to update an existing release in the current branch
+  instead of creating from a base release.
+- When using `--update-existing` with specific `--component` or `--app` flags, the command now preserves all
+  previous modifications and only updates the specified components/apps. This enables incremental updates
+  across multiple invocations.
+- Fixed release diff generation to show meaningful diffs when using `--update-existing` by comparing against
+  the previous release version.
 - Fixed bug where `dependsOn` fields were being cleared when updating apps.
 
 ### Changed
@@ -340,6 +369,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [7.12.1] - 2025-09-17
 
 ### Fixed
+
 - Prevented duplicate output when using the `--output markdown` flag by correcting the table rendering logic.
 
 ## [7.12.0] - 2025-09-17
@@ -347,8 +377,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - `devctl release create --bumpall`:
-  - The release type (`major`, `minor`, `patch`) is now inferred from the `--base` and `--name` versions instead of requiring a separate flag.
-  - The release type is used to enforce version bumping rules for `kubernetes`, `flatcar`, and other components.
+  - The release type (`major`, `minor`, `patch`) is now inferred from the `--base` and `--name` versions
+    instead of requiring a separate flag.
+  - The release type is used to enforce version bumping rules for `kubernetes`, `flatcar`, and other
+    components.
   - Includes version constraints defined in provider-specific `requests.yaml` files.
 
 ### Fixed
@@ -389,26 +421,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Correctly pin Kubernetes version to the release's major version during `devctl release create --bumpall` to prevent accidentally upgrading to a new minor version.
+- Correctly pin Kubernetes version to the release's major version during `devctl release create --bumpall` to
+  prevent accidentally upgrading to a new minor version.
 
 ## [7.10.1] - 2025-09-09
 
 ### Fixed
 
 - Prevent auto-detected components from being shown when using `--requested-only`.
-- Prevent empty tables from being printed when using filtering flags like `--changes-only` or `--requested-only`.
+- Prevent empty tables from being printed when using filtering flags like `--changes-only` or
+  `--requested-only`.
 
 ## [7.10.0] - 2025-09-09
 
 ### Added
 
-- Add `--requested-only` flag to `devctl release create` command to only show components and apps requested by the user.
+- Add `--requested-only` flag to `devctl release create` command to only show components and apps requested by
+  the user.
 
 ## [7.9.0] - 2025-09-09
 
 ### Added
 
-- Add `--changes-only` flag to `devctl release create` command to only show components and apps that were changed.
+- Add `--changes-only` flag to `devctl release create` command to only show components and apps that were
+  changed.
 
 ## [7.8.0] - 2025-09-09
 
@@ -437,8 +473,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - `devctl release create`: Fix auto-detection for Azure provider components.
-- `devctl release create --bumpall`: Fix an issue where dependencies were dropped for automatically bumped apps.
-- `devctl release create`: Stop parsing component changelogs when the specified `endVersion` is not found, preventing huge outputs.
+- `devctl release create --bumpall`: Fix an issue where dependencies were dropped for automatically bumped
+  apps.
+- `devctl release create`: Stop parsing component changelogs when the specified `endVersion` is not found,
+  preventing huge outputs.
 
 ## [7.6.0] - 2025-08-27
 
@@ -481,7 +519,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Enabled installing via the `go install github.com/giantswarm/devctl/v7@latest` command by removing replace directives in `go.mod`.
+- Enabled installing via the `go install github.com/giantswarm/devctl/v7@latest` command by removing replace
+  directives in `go.mod`.
 
 ### Changed
 
@@ -506,7 +545,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Align release creation with our current approach.
-- The following GitHub workflows are now calling external, reusable workflows in `giantswarm/github-workflows`:
+- The following GitHub workflows are now calling external, reusable workflows in
+  `giantswarm/github-workflows`:
   - "Scorecard supply-chain security"
   - "Validate chart values and schema"
 - Fix line ending in workflow template "Fix Go vulnerabilities"
@@ -516,14 +556,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Update "Publish TechDocs" workflow reference
-- The following GitHub workflows are now calling external, reusable workflows in `giantswarm/github-workflows`:
+- The following GitHub workflows are now calling external, reusable workflows in
+  `giantswarm/github-workflows`:
   - "Fix vulnerabilities"
 
 ## [7.2.5] - 2025-05-30
 
 ### Changed
 
-- The following GitHub workflows are now calling external, reusable workflows in `giantswarm/github-workflows`:
+- The following GitHub workflows are now calling external, reusable workflows in
+  `giantswarm/github-workflows`:
   - "Create Release"
   - "Create Release PR"
   - "gitleaks"
@@ -647,7 +689,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Bump `github.com/marwan-at-work/mod/cmd/mod` to `v0.7.1` in the "Create release PR" workflow template, to fix compatibility with Go 1.23 an re-enable majore version relases.
+- Bump `github.com/marwan-at-work/mod/cmd/mod` to `v0.7.1` in the "Create release PR" workflow template, to
+  fix compatibility with Go 1.23 an re-enable majore version relases.
 
 ## [6.27.0] - 2024-08-20
 
@@ -679,7 +722,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Add logic to fetch the whole git history when generating the "Create Release" GitHub actions workflow file for devctl.
+- Add logic to fetch the whole git history when generating the "Create Release" GitHub actions workflow file
+  for devctl.
 - Fetch whole git history for releases to fix GitHub Urls in templated file headers.
 
 ## [6.26.0] - 2024-04-24
@@ -693,13 +737,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Set the CI webhook secret
-- Made `generate-go` Make task show up in `make help` and added a note to the readme about the template generation.
+- Made `generate-go` Make task show up in `make help` and added a note to the readme about the template
+  generation.
 
 ## [6.25.0] - 2024-04-18
 
 ### Added
 
-- Add `--bumpall` flag to `release create` command to automatically bump all apps and components to the latest version.
+- Add `--bumpall` flag to `release create` command to automatically bump all apps and components to the latest
+  version.
 
 ## [6.24.0] - 2024-04-10
 
@@ -742,14 +788,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Added a new `ci-webhooks` command under the `repo setup` command that configures webhooks to our Tekton installation
+- Added a new `ci-webhooks` command under the `repo setup` command that configures webhooks to our Tekton
+  installation
 - Added a new `gen apptest` command that creates the files needed by apptest-framework
 
 ## [6.21.0] - 2024-03-07
 
 ### Changed
 
-- Compare Helm Rendering (only used for cluster charts): put matrix of diff rendering comments into single comment and upgrade dependencies
+- Compare Helm Rendering (only used for cluster charts): put matrix of diff rendering comments into single
+  comment and upgrade dependencies
 
 ## [6.20.2] - 2024-02-06
 
@@ -775,7 +823,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Include cluster-test-catalog in "Compare Helm Rendering" action, so we can more easily test dev builds of subcharts.
+- Include cluster-test-catalog in "Compare Helm Rendering" action, so we can more easily test dev builds of
+  subcharts.
 
 ## [6.18.3] - 2024-01-31
 
@@ -806,11 +855,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Fix Compare Helm Rendering action, so that, when it renders Helm with main branch code, it takes the CI test values from the main branch and not from the current branch.
+- Fix Compare Helm Rendering action, so that, when it renders Helm with main branch code, it takes the CI test
+  values from the main branch and not from the current branch.
 
 ## [6.17.1] - 2023-11-23
 
-- Replace unmaintained GitHub action for release creation in "Create Release" workflow with `ncipollo/release-action`.
+- Replace unmaintained GitHub action for release creation in "Create Release" workflow with
+  `ncipollo/release-action`.
 
 ## [6.17.0] - 2023-11-14
 
@@ -883,7 +934,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Bump release operator dependency to v4 to add support for dependencies on release apps.
 - Add some apps to the changelog apps list.
-- Change `gen ami` command in order to work with aws-operator >= 14.22.0 where AMI Ids have been moved to the config repo.
+- Change `gen ami` command in order to work with aws-operator >= 14.22.0 where AMI Ids have been moved to the
+  config repo.
 
 ### Fixed
 
@@ -899,7 +951,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Exclude `.github/workflows/pre_commit_*.yaml` from renovate dependency updates, as this file is managed centrally.
+- Exclude `.github/workflows/pre_commit_*.yaml` from renovate dependency updates, as this file is managed
+  centrally.
 
 ## [6.5.0] - 2023-07-27
 
@@ -911,8 +964,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Helm schema validation GitHub Action now skips when the `values.schema.json` file is not present for the Helm chart
-  - Repositories can contain multiple Helm chart, only folders that does not have the file will be skipped and the check will be considered successful for those folders
+- Helm schema validation GitHub Action now skips when the `values.schema.json` file is not present for the
+  Helm chart
+  - Repositories can contain multiple Helm chart, only folders that does not have the file will be skipped and
+    the check will be considered successful for those folders
 
 ### Removed
 
@@ -922,13 +977,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Fix "Compare Helm Rendering" workflow to use correct CI values path when rendering the default branch version.
+- Fix "Compare Helm Rendering" workflow to use correct CI values path when rendering the default branch
+  version.
 
 ## [6.3.0] - 2023-06-01
 
 ### Added
 
-- For flavor `cluster-app`, the make target `generate-docs` is added, to generate Markdown documentation on values.
+- For flavor `cluster-app`, the make target `generate-docs` is added, to generate Markdown documentation on
+  values.
 
 ## [6.2.0] - 2023-06-01
 
@@ -940,7 +997,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Fix Github action that renders Helm templates on "cluster-app" repositories, by using variables instead of hardcoding repositories names and branches.
+- Fix Github action that renders Helm templates on "cluster-app" repositories, by using variables instead of
+  hardcoding repositories names and branches.
 
 ## [6.1.0] - 2023-05-09
 
@@ -1045,7 +1103,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Merge `ci/ci-values.yaml` with `values.yaml` before doing the schema validation.
 - Update `Makefile` to prevent recursion when looking for deps.
-- Use `GITHUB_SHA` in values validation workflow in git diff. This makes the action work with contributions from external repositories.
+- Use `GITHUB_SHA` in values validation workflow in git diff. This makes the action work with contributions
+  from external repositories.
 
 ## [5.18.2] - 2023-01-31
 
@@ -1080,7 +1139,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Change Makefile target `update-deps` to only check chart dependencies with a local `Chart.yaml` in generated app Makefile template
+- Change Makefile target `update-deps` to only check chart dependencies with a local `Chart.yaml` in generated
+  app Makefile template
 
 ## [5.15.0] - 2022-12-15
 
@@ -1091,7 +1151,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Catch release/latest "Not Found" in workflow `create_release_pr`
-- Update vendir to [v0.32.2](https://github.com/vmware-tanzu/carvel-vendir/releases/tag/v0.32.2) in update_chart workflow
+- Update vendir to [v0.32.2](https://github.com/vmware-tanzu/carvel-vendir/releases/tag/v0.32.2) in
+  update_chart workflow
 
 ## [5.14.0] - 2022-12-02
 
@@ -1150,7 +1211,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Add `nancy` command to Go makefile for a convenient method to run the Nancy checks the same way as they are done on the CI
+- Add `nancy` command to Go makefile for a convenient method to run the Nancy checks the same way as they are
+  done on the CI
 
 ### Changed
 
@@ -1194,7 +1256,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Update github.com/marwan-at-work/mod/cmd/mod to v0.4.2 to include fix: https://github.com/marwan-at-work/mod/pull/14
+- Update github.com/marwan-at-work/mod/cmd/mod to v0.4.2 to include fix:
+  https://github.com/marwan-at-work/mod/pull/14
 
 ## [5.3.0] - 2022-05-10
 
@@ -1206,7 +1269,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [5.2.1] - 2022-04-26
 
 ### Added
-- Added file system permissions field to file generation `Input` struct. If not set, the default value remains: `0644`.
+
+- Added file system permissions field to file generation `Input` struct. If not set, the default value
+  remains: `0644`.
 - Added executable flags for generated `windows-code-signing.sh` script.
 
 ### Fixed
@@ -1235,7 +1300,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Change release automation so that it automatically bumps `go.mod` module version when releasing a new major release.
+- Change release automation so that it automatically bumps `go.mod` module version when releasing a new major
+  release.
 
 ## [5.0.0] - 2022-04-04
 
@@ -1262,7 +1328,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Creation of GitHub workflow file to validate values.schema.json if it exists for `gen workflows --flavour app`.
+- Creation of GitHub workflow file to validate values.schema.json if it exists for
+  `gen workflows --flavour app`.
 
 ## [4.22.0] - 2022-03-30
 
@@ -1376,8 +1443,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Upgrade `fsaintjacques/semver-tool` to `3.2.0` to fix problem with releases
-with high minor version.
+- Upgrade `fsaintjacques/semver-tool` to `3.2.0` to fix problem with releases with high minor version.
 
 ## [4.10.0] - 2021-09-10
 
@@ -1396,6 +1462,7 @@ with high minor version.
 ## Changed
 
 Renovate config
+
 - ignore updates of stuff generated by our automation (github actions, architect version)
 - add global renovate dashboard
 - add python project default config
@@ -1496,10 +1563,10 @@ Renovate config
 
 ### Fixed
 
-- Compile binaries statically only on Linux to avoid linking issues on other
-  platforms in generated Makefiles for Go.
-- Fix generated Makefile for Go language for cases where there are no Go source
-  files in the root module directory. In particular `make imports` is fixed.
+- Compile binaries statically only on Linux to avoid linking issues on other platforms in generated Makefiles
+  for Go.
+- Fix generated Makefile for Go language for cases where there are no Go source files in the root module
+  directory. In particular `make imports` is fixed.
 - Fix open PR check in generated "Create release PR" workflow.
 
 ## [4.0.1] - 2020-12-14
@@ -1556,26 +1623,21 @@ Renovate config
 
 ### Removed
 
-- Remove `operator` flavour from `gen` commands. `app` flavour should be used
-  instead.
-- Remove `library` flavour from `gen` commands. `generic` flavour should be used
-  instead.
+- Remove `operator` flavour from `gen` commands. `app` flavour should be used instead.
+- Remove `library` flavour from `gen` commands. `generic` flavour should be used instead.
 
 ## [2.0.4] - 2020-10-21
 
 ### Fixed
 
-- Fix generated workflows warnings. E.g.
-  https://github.com/kopiczko/test-gh-workflows/actions/runs/319535662
-- Fix regression in "Create release branch" job in generated "Create Release"
-  workflow.
+- Fix generated workflows warnings. E.g. https://github.com/kopiczko/test-gh-workflows/actions/runs/319535662
+- Fix regression in "Create release branch" job in generated "Create Release" workflow.
 
 ## [2.0.3] - 2020-10-20
 
 ### Fixed
 
-- Replace leftover install-tools-action with install-binary-action in generated
-  workflow.
+- Replace leftover install-tools-action with install-binary-action in generated workflow.
 
 ### Security
 
@@ -1585,15 +1647,14 @@ Renovate config
 
 ### Fixed
 
-- Replace install-tools-action with install-binary-action to break circular
-  dependency between devctl and install-tools-action.
+- Replace install-tools-action with install-binary-action to break circular dependency between devctl and
+  install-tools-action.
 
 ## [2.0.1] - 2020-10-16
 
 ### Fixed
 
-- Skip generated "Create Release PR" workflow execution when release PR already
-  exists.
+- Skip generated "Create Release PR" workflow execution when release PR already exists.
 
 ## [2.0.0] - 2020-10-14
 
@@ -1608,8 +1669,7 @@ Renovate config
 
 ### Fixed
 
-- Update architect to v3.0.0 to fix the issue with updating Go module version.
-  E.g.:
+- Update architect to v3.0.0 to fix the issue with updating Go module version. E.g.:
   https://github.com/giantswarm/operatorkit/commit/db6fafc711528b5d7474d2717cf7f4bb850f8812#diff-37aff102a57d3d7b797f152915a6dc16R1
 - Update architect to v3.0.2 to allow release names to have suffixes.
 
@@ -1617,7 +1677,7 @@ Renovate config
 
 ### Added
 
- - First release.
+- First release.
 
 [Unreleased]: https://github.com/giantswarm/devctl/compare/v7.37.0...HEAD
 [7.37.0]: https://github.com/giantswarm/devctl/compare/v7.36.0...v7.37.0
