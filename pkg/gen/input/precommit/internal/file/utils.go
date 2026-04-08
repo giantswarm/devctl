@@ -7,8 +7,8 @@ import (
 	"github.com/giantswarm/microerror"
 )
 
-// findHelmCharts looks for subdirectories in helm/ that contain Chart.yaml
-func findHelmCharts(dir string) ([]string, error) {
+// FindHelmCharts looks for subdirectories in helm/ that contain Chart.yaml
+func FindHelmCharts(dir string) ([]string, error) {
 	helmDir := filepath.Join(dir, "helm")
 
 	entries, err := os.ReadDir(helmDir)
