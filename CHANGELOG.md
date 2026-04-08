@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.37.0] - 2026-04-08
+
 ### Added
 
 - `devctl gen precommit`: Generates opinionated `.pre-commit-config.yaml` file based on projects language,
@@ -1617,7 +1619,8 @@ Renovate config
 
  - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.36.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.37.0...HEAD
+[7.37.0]: https://github.com/giantswarm/devctl/compare/v7.36.0...v7.37.0
 [7.36.0]: https://github.com/giantswarm/devctl/compare/v7.35.0...v7.36.0
 [7.35.0]: https://github.com/giantswarm/devctl/compare/v7.34.1...v7.35.0
 [7.34.1]: https://github.com/giantswarm/devctl/compare/v7.34.0...v7.34.1
