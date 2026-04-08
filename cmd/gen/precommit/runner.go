@@ -42,9 +42,10 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	var precommitInput *precommit.PreCommit
 	{
 		c := precommit.Config{
-			Language: r.flag.Language,
-			Flavors:  r.flag.Flavors,
-			RepoName: r.flag.RepoName,
+			Language:         r.flag.Language,
+			Flavors:          r.flag.Flavors,
+			RepoName:         r.flag.RepoName,
+			K8sSchemaVersion: r.flag.K8sSchemaVersion,
 		}
 
 		precommitInput, err = precommit.New(c)

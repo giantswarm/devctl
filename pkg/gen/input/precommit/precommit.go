@@ -9,9 +9,10 @@ import (
 )
 
 type Config struct {
-	Language string
-	Flavors  []string
-	RepoName string
+	Language         string
+	Flavors          []string
+	RepoName         string
+	K8sSchemaVersion string
 }
 
 type PreCommit struct {
@@ -22,11 +23,12 @@ func New(config Config) (*PreCommit, error) {
 	workingDir := "."
 
 	p := params.Params{
-		Dir:        "",
-		Language:   config.Language,
-		Flavors:    config.Flavors,
-		RepoName:   config.RepoName,
-		WorkingDir: workingDir,
+		Dir:              "",
+		Language:         config.Language,
+		Flavors:          config.Flavors,
+		RepoName:         config.RepoName,
+		WorkingDir:       workingDir,
+		K8sSchemaVersion: config.K8sSchemaVersion,
 	}
 
 	if params.HasFlavor(p, "helmchart") {

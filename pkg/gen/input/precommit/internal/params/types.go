@@ -14,4 +14,6 @@ type Params struct {
 	WorkingDir string
 	// HelmCharts is the list of helm chart names discovered under helm/ in WorkingDir.
 	HelmCharts []string
+	// K8sSchemaVersion is the Kubernetes JSON schema version used in helm chart .schema.yaml.
+	K8sSchemaVersion string
 }

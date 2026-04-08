@@ -17,14 +17,14 @@ func Test_NewCreateSchemaYamlInput(t *testing.T) {
 	}{
 		{
 			name:          "case 1: basic chart",
-			p:             params.Params{Dir: ""},
+			p:             params.Params{Dir: "", K8sSchemaVersion: "v1.33.1"},
 			chartName:     "my-app",
 			expectedPath:  "helm/my-app/.schema.yaml",
 			expectChartIn: "my-app",
 		},
 		{
 			name:          "case 2: chart in subdirectory output",
-			p:             params.Params{Dir: ""},
+			p:             params.Params{Dir: "", K8sSchemaVersion: "v1.29.0"},
 			chartName:     "platform-chart",
 			expectedPath:  "helm/platform-chart/.schema.yaml",
 			expectChartIn: "platform-chart",
