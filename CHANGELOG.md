@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [7.37.1] - 2026-04-08
+
 ### Added
 
 - When setting up helm chart tools, bootstrap `helm/<chart>/README.md.gotmpl` if it doesn't exist
@@ -1679,7 +1681,8 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.37.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.37.1...HEAD
+[7.37.1]: https://github.com/giantswarm/devctl/compare/v7.37.0...v7.37.1
 [7.37.0]: https://github.com/giantswarm/devctl/compare/v7.36.0...v7.37.0
 [7.36.0]: https://github.com/giantswarm/devctl/compare/v7.35.0...v7.36.0
 [7.35.0]: https://github.com/giantswarm/devctl/compare/v7.34.1...v7.35.0
