@@ -82,6 +82,7 @@ func (r *runner) persistentPreRun(ctx context.Context, cmd *cobra.Command, args 
 		}
 
 		config := updater.Config{
+			GithubToken:    env.GitHubToken.Val(),
 			CurrentVersion: project.Version(),
 			RepositoryURL:  project.Source(),
 			CacheDir:       cacheDir,
