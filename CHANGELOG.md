@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- The new "gen precommit" option generates now also github action to run the pre-commit
+
 ## [7.37.1] - 2026-04-08
 
 ### Added
