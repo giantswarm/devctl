@@ -9,7 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
-- The new "gen precommit" option generates now also github action to run the pre-commit
+- Extended command `gen precommit` to generate a Github workflow to run pre-commit in CI
 
 ## [7.37.1] - 2026-04-08
 
