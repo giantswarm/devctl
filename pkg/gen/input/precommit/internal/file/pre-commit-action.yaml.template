@@ -1,7 +1,4 @@
-# DO NOT EDIT. Generated with:
-#
-#    devctl gen precommit
-#
+[[ .Header ]]
 name: pre-commit
 
 on:

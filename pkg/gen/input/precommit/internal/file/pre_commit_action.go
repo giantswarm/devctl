@@ -8,8 +8,12 @@ import (
 	"github.com/giantswarm/devctl/v7/pkg/gen/input/precommit/internal/params"
 )
 
+//go:generate go run ../../../update-template-sha.go pre-commit-action.yaml.template
 //go:embed pre-commit-action.yaml.template
 var createPreCommitActionTemplate string
+
+//go:embed pre-commit-action.yaml.template.sha
+var createPreCommitActionTemplateSha string
 
 func NewCreatePreCommitActionInput(p params.Params) input.Input {
 	return input.Input{
@@ -19,6 +23,7 @@ func NewCreatePreCommitActionInput(p params.Params) input.Input {
 		// the GitHub Actions ${{ }} expressions in the file content.
 		TemplateDelims: input.InputTemplateDelims{Left: "[[", Right: "]]"},
 		TemplateData: map[string]interface{}{
+			"Header":       params.Header("#", createPreCommitActionTemplateSha),
 			"Language":     p.Language,
 			"HasBash":      params.HasFlavor(p, "bash"),
 			"HasMd":        params.HasFlavor(p, "md"),

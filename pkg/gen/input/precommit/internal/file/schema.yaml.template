@@ -1,10 +1,7 @@
 # .schema.yaml
 # yaml-language-server: $schema=https://github.com/losisin/helm-values-schema-json/raw/refs/heads/main/config.schema.json
 
-# DO NOT EDIT. Generated with:
-#
-#    devctl gen precommit
-#
+{{ .Header }}
 
 values:
   - helm/{{ .ChartName }}/values.yaml
