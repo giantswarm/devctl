@@ -10,7 +10,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Fixed
 
 - Pass GitHub token to the update checker to avoid unauthenticated API rate limits.
-- Make update check non-fatal so network/rate-limit errors don't block commands.
 
 ## [7.37.1] - 2026-04-08
 

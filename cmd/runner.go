@@ -103,7 +103,7 @@ func (r *runner) persistentPreRun(ctx context.Context, cmd *cobra.Command, args 
 
 		return microerror.Mask(err)
 	} else if err != nil {
-		_, _ = fmt.Fprintf(r.stderr, "WARNING: Update check failed: %s\n", err)
+		return microerror.Mask(err)
 	}
 
 	return nil
