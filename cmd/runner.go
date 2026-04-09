@@ -82,6 +82,7 @@ func (r *runner) persistentPreRun(ctx context.Context, cmd *cobra.Command, args 
 		}
 
 		config := updater.Config{
+			GithubToken:    env.GitHubToken.Val(),
 			CurrentVersion: project.Version(),
 			RepositoryURL:  project.Source(),
 			CacheDir:       cacheDir,
@@ -102,7 +103,7 @@ func (r *runner) persistentPreRun(ctx context.Context, cmd *cobra.Command, args 
 
 		return microerror.Mask(err)
 	} else if err != nil {
-		return microerror.Mask(err)
+		_, _ = fmt.Fprintf(r.stderr, "WARNING: Update check failed: %s\n", err)
 	}
 
 	return nil
