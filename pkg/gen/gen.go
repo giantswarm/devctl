@@ -93,6 +93,8 @@ func isRegenerable(path string) bool {
 		return true
 	case base == ".pre-commit-config.yaml":
 		return true
+	case base == ".schema.yaml":
+		return true
 	case base == "aws-ami.yaml.template":
 		return true
 	case strings.HasPrefix(base, internal.RegenerableFilePrefix):
