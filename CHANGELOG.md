@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- Change workflow "Fix go vulnerabilities": Set default branch to `main` for manual workflow execution
+
 ## [7.37.2] - 2026-04-09
 
 ### Fixed
