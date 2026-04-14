@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- `repo setup --dry-run`: forward the dry-run flag to the GitHub client and skip `UpdateDefaultWorkflowPermissions` in dry-run mode.
+
 ## [7.38.0] - 2026-04-14
 
 ### Changed
