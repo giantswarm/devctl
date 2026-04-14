@@ -107,15 +107,7 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 					// For minor releases, add an implicit constraint to prevent major version jumps.
 					// Users can still force a major bump via --component flag.
 					if releaseType == "minor" && constraint == nil {
-						currentVersion, parseErr := semver.ParseTolerant(comp.Version)
-						if parseErr == nil {
-							nextMajor := currentVersion.Major + 1
-							rangeStr := fmt.Sprintf(">=%d.0.0 <%d.0.0", currentVersion.Major, nextMajor)
-							c, rangeErr := semver.ParseRange(rangeStr)
-							if rangeErr == nil {
-								constraint = &c
-							}
-						}
+						constraint = sameMajorConstraint(comp.Version)
 					}
 
 					var latestVersionString string
@@ -582,6 +574,23 @@ func FindNewestApp(name string, getUpstreamVersion bool, constraint *semver.Rang
 	}
 
 	return ret, nil
+}
+
+// sameMajorConstraint returns a semver range that constrains versions to the
+// same major version as the given version string. Returns nil if the version
+// cannot be parsed.
+func sameMajorConstraint(version string) *semver.Range {
+	v, err := semver.ParseTolerant(version)
+	if err != nil {
+		return nil
+	}
+	nextMajor := v.Major + 1
+	rangeStr := fmt.Sprintf(">=%d.0.0 <%d.0.0", v.Major, nextMajor)
+	c, err := semver.ParseRange(rangeStr)
+	if err != nil {
+		return nil
+	}
+	return &c
 }
 
 func findNewestComponentVersion(name string, constraint *semver.Range) (string, error) {
