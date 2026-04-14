@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Changed
 
 - Change workflow "Fix go vulnerabilities": Set default branch to `main` for manual workflow execution
+- Prevent major version bumps of components (e.g. cluster provider charts) when using `--bump-all` in minor releases.
 
 ## [7.37.2] - 2026-04-09
 
