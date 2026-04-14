@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- `devctl repo setup`: Use check runs API instead of commit statuses to correctly detect required checks. Change default `--checks-filter` from `aliyun` to `create-release`.
+
 ## [7.38.0] - 2026-04-14
 
 ### Changed

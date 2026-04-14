@@ -117,6 +117,8 @@ func (c *Client) SetRepositorySettings(ctx context.Context, repository, reposito
 	return repository, nil
 }
 
+// SetRepositoryPermissions grants team permissions on the repository and
+// sets the default workflow permission to "write" for GitHub Actions.
 func (c *Client) SetRepositoryPermissions(ctx context.Context, repository *github.Repository, permissions map[string]string) error {
 	org := repository.GetOrganization().GetLogin()
 	owner := repository.GetOwner().GetLogin()
@@ -156,6 +158,9 @@ func (c *Client) SetRepositoryPermissions(ctx context.Context, repository *githu
 	return nil
 }
 
+// SetRepositoryBranchProtection configures branch protection rules on the
+// default branch. If checkNames is nil, checks are auto-detected from recent
+// CI runs and optionally filtered by checksFilter.
 func (c *Client) SetRepositoryBranchProtection(ctx context.Context, repository *github.Repository, checkNames []string, checksFilter *regexp.Regexp) (err error) {
 	owner := repository.GetOwner().GetLogin()
 	repo := repository.GetName()
@@ -262,41 +267,41 @@ func (c *Client) getGithubChecks(ctx context.Context, repository *github.Reposit
 	}
 	c.logger.Debugf("get commit statuses for ref: %q", ref)
 
-	var allCombinedStatus []*github.CombinedStatus
+	// Fetch all check runs
+	var allCheckRuns []*github.CheckRun
 	{
-		opt := &github.ListOptions{
-			PerPage: 10,
+		opt := &github.ListCheckRunsOptions{
+			ListOptions: github.ListOptions{
+				PerPage: 10,
+			},
 		}
 
 		underlyingClient := c.GetUnderlyingClient(ctx)
 
 		for {
-			combinedStatus, resp, err := underlyingClient.Repositories.GetCombinedStatus(ctx, owner, repo, ref, opt)
+			listCheckRunsResults, resp, err := underlyingClient.Checks.ListCheckRunsForRef(ctx, owner, repo, ref, opt)
 			if err != nil {
 				return nil, microerror.Mask(err)
 			}
-			allCombinedStatus = append(allCombinedStatus, combinedStatus)
+
+			allCheckRuns = append(allCheckRuns, listCheckRunsResults.CheckRuns...)
 			if resp.NextPage == 0 {
 				break
 			}
 			opt.Page = resp.NextPage
-
 		}
 	}
 
+	// List all check names and apply filter if needed.
 	var checks []string
-	for _, combinedStatus := range allCombinedStatus {
-		for _, status := range combinedStatus.Statuses {
-			if checksFilter == nil || !checksFilter.MatchString(status.GetContext()) {
-				checks = append(checks, status.GetContext())
-			}
+	for _, checkRun := range allCheckRuns {
+		check := checkRun.GetName()
+		if check != "" && (checksFilter == nil || !checksFilter.MatchString(check)) {
+			checks = append(checks, check)
+			c.logger.Debugf(" - status check found: %q", check)
 		}
 	}
-
 	c.logger.Debugf("found %d commit statuses for ref %q:", len(checks), ref)
-	for id, check := range checks {
-		c.logger.Debugf(" - checks[%d] = %q", id, check)
-	}
 
 	return checks, nil
 }
