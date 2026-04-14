@@ -104,6 +104,20 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 						version.Version, err = getLatestFlatcarRelease()
 					}
 				} else {
+					// For minor releases, add an implicit constraint to prevent major version jumps.
+					// Users can still force a major bump via --component flag.
+					if releaseType == "minor" && constraint == nil {
+						currentVersion, parseErr := semver.ParseTolerant(comp.Version)
+						if parseErr == nil {
+							nextMajor := currentVersion.Major + 1
+							rangeStr := fmt.Sprintf(">=%d.0.0 <%d.0.0", currentVersion.Major, nextMajor)
+							c, rangeErr := semver.ParseRange(rangeStr)
+							if rangeErr == nil {
+								constraint = &c
+							}
+						}
+					}
+
 					var latestVersionString string
 					latestVersionString, err = findNewestComponentVersion(comp.Name, constraint)
 					if err == nil {
@@ -111,7 +125,7 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 							// For a patch release, we don't want to automatically bump anything.
 							// The user must manually request a bump for a component.
 							version.Version = comp.Version
-						} else { // major or minor, no restrictions for other components
+						} else { // major or minor
 							version.Version = latestVersionString
 						}
 					}
