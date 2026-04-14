@@ -117,6 +117,8 @@ func (c *Client) SetRepositorySettings(ctx context.Context, repository, reposito
 	return repository, nil
 }
 
+// SetRepositoryPermissions grants team permissions on the repository and
+// sets the default workflow permission to "write" for GitHub Actions.
 func (c *Client) SetRepositoryPermissions(ctx context.Context, repository *github.Repository, permissions map[string]string) error {
 	org := repository.GetOrganization().GetLogin()
 	owner := repository.GetOwner().GetLogin()
@@ -156,6 +158,9 @@ func (c *Client) SetRepositoryPermissions(ctx context.Context, repository *githu
 	return nil
 }
 
+// SetRepositoryBranchProtection configures branch protection rules on the
+// default branch. If checkNames is nil, checks are auto-detected from recent
+// CI runs and optionally filtered by checksFilter.
 func (c *Client) SetRepositoryBranchProtection(ctx context.Context, repository *github.Repository, checkNames []string, checksFilter *regexp.Regexp) (err error) {
 	owner := repository.GetOwner().GetLogin()
 	repo := repository.GetName()
