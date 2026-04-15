@@ -73,6 +73,10 @@ func (w *Workflows) RunOSSFScorecard() input.Input {
 	return file.NewRunOSSFScorecardInput(w.params)
 }
 
+func (w *Workflows) SyncFromUpstream() input.Input {
+	return file.NewSyncFromUpstreamInput(w.params)
+}
+
 func (w *Workflows) TestKyvernoPoliciesWithChainsaw() input.Input {
 	return file.NewTestKyvernoPoliciesWithChainsawInput(w.params)
 }
