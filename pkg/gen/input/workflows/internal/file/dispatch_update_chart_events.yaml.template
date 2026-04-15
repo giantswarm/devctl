@@ -1,0 +1,23 @@
+{{{{ .Header }}}}
+name: Dispatch update-chart events to {{{{ .TargetRepository }}}}
+
+on:
+  push:
+    branches:
+      - 'main#update-chart'
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  dispatch-events:
+    uses: giantswarm/github-workflows/.github/workflows/dispatch-update-chart-events.yaml@main
+    permissions:
+      actions: read
+      statuses: read
+    with:
+      target_repository: '{{{{ .TargetRepository }}}}'
+    secrets: inherit

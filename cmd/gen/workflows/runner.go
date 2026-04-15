@@ -69,6 +69,12 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		inputs = append(inputs, workflowsInput.CheckValuesSchema())
 		if r.flag.InstallUpdateChart {
 			inputs = append(inputs, workflowsInput.UpdateChart())
+			if r.flag.UpstreamSyncAutomation {
+				inputs = append(inputs, workflowsInput.SyncFromUpstream())
+			}
+			if r.flag.DispatchUpdateChartEventsRepo != "" {
+				inputs = append(inputs, workflowsInput.DispatchUpdateChartEvents(r.flag.DispatchUpdateChartEventsRepo))
+			}
 		}
 		if r.flag.Language == "kyverno-policy" {
 			inputs = append(inputs, workflowsInput.TestKyvernoPoliciesWithChainsaw())
