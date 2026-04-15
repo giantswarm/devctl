@@ -53,6 +53,10 @@ func (w *Workflows) CreateReleasePR() input.Input {
 	return file.NewCreateReleasePRInput(w.params)
 }
 
+func (w *Workflows) DispatchUpdateChartEvents(targetRepo string) input.Input {
+	return file.NewDispatchUpdateChartEventsInput(w.params, targetRepo)
+}
+
 func (w *Workflows) FixVulnerabilities() input.Input {
 	return file.NewFixVulnerabilitiesInput(w.params)
 }
