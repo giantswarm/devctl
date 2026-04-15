@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [7.39.0] - 2026-04-15
+
 ### Added
 
 - Add new `sync-from-upstream` and `dispatch-update-chart-events` workflows to apps that have the `update-chart` workflow enabled.
@@ -1698,7 +1700,8 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.38.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.39.0...HEAD
+[7.39.0]: https://github.com/giantswarm/devctl/compare/v7.38.0...v7.39.0
 [7.38.0]: https://github.com/giantswarm/devctl/compare/v7.37.2...v7.38.0
 [7.37.2]: https://github.com/giantswarm/devctl/compare/v7.37.1...v7.37.2
 [7.37.1]: https://github.com/giantswarm/devctl/compare/v7.37.0...v7.37.1
