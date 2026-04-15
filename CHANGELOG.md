@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Add new `sync-from-upstream` and `dispatch-update-chart-events` workflows to apps that have the `update-chart` workflow enabled.
+
 ## [7.38.0] - 2026-04-14
 
 ### Changed
