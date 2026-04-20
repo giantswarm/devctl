@@ -21,7 +21,7 @@ jobs:
         uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
 [[- if .HasHelmchart ]]
       - name: Install helm-docs
-        uses: giantswarm/install-binary-action@c37eb401e5092993fc76d545030b1d1769e61237 # v3.0.0
+        uses: giantswarm/install-binary-action@e2730babbc89f02ef1559b042d33cbe24f5c3547 # v4.0.2
         with:
           binary: helm-docs
           version: "${{ env.HELM_DOCS_VERSION }}"
