@@ -11,23 +11,27 @@ import (
 )
 
 const (
-	flagCheckSecrets         = "check-secrets"
-	flagFlavour              = "flavour"
-	flagLanguage             = "language"
-	flagInstallUpdateChart   = "install-update-chart"
-	flagRunSecurityScorecard = "run-security-scorecard"
-	flagAnalyzeGithubActions = "analyze-github-actions"
-	flagPublishTechdocs      = "publish-techdocs"
+	flagCheckSecrets                  = "check-secrets"
+	flagFlavour                       = "flavour"
+	flagLanguage                      = "language"
+	flagInstallUpdateChart            = "install-update-chart"
+	flagRunSecurityScorecard          = "run-security-scorecard"
+	flagAnalyzeGithubActions          = "analyze-github-actions"
+	flagPublishTechdocs               = "publish-techdocs"
+	flagUpstreamSyncAutomation        = "upstream-sync-automation"
+	flagDispatchUpdateChartEventsRepo = "dispatch-update-chart-events-repo"
 )
 
 type flag struct {
-	CheckSecrets         bool
-	Flavours             gen.FlavourSlice
-	Language             string
-	InstallUpdateChart   bool
-	RunSecurityScorecard bool
-	AnalyzeGithubActions bool
-	PublishTechdocs      bool
+	CheckSecrets                  bool
+	Flavours                      gen.FlavourSlice
+	Language                      string
+	InstallUpdateChart            bool
+	RunSecurityScorecard          bool
+	AnalyzeGithubActions          bool
+	PublishTechdocs               bool
+	UpstreamSyncAutomation        bool
+	DispatchUpdateChartEventsRepo string
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
@@ -38,6 +42,8 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&f.RunSecurityScorecard, flagRunSecurityScorecard, true, "If true, also generate a security scorecard workflow. Possible values: true (default), false.")
 	cmd.Flags().BoolVar(&f.AnalyzeGithubActions, flagAnalyzeGithubActions, false, "If true, also generate a workflow for GitHub Actions security scanning. Possible values: false (default), true.")
 	cmd.Flags().BoolVar(&f.PublishTechdocs, flagPublishTechdocs, false, "If true, also generate the Publish Techdocs workflow. Possible values: false (default), true.")
+	cmd.Flags().BoolVar(&f.UpstreamSyncAutomation, flagUpstreamSyncAutomation, false, "If true, also generate a workflow to dispatch update events for charts. Only valid for app flavor.")
+	cmd.Flags().StringVar(&f.DispatchUpdateChartEventsRepo, flagDispatchUpdateChartEventsRepo, "", "The repository to dispatch update chart events to. Only valid if --upstream-sync-automation is true.")
 }
 
 func (f *flag) Validate() error {

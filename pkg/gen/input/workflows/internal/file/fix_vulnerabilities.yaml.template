@@ -9,11 +9,12 @@ on:
     inputs:
       branch:
         description: Branch on which to fix vulnerabilities
+        default: main
         required: true
         type: string
       log_level:
         description: Log Level (info / error / debug)
-        default: "info"
+        default: info
         type: string
 
 permissions: {}

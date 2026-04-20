@@ -1,0 +1,17 @@
+{{{{ .Header }}}}
+name: Sync from upstream
+
+on:
+  push:
+    branches:
+      - 'renovate/vendir/**'
+  workflow_dispatch:
+
+jobs:
+  sync-from-upstream:
+    uses: giantswarm/github-workflows/.github/workflows/sync-from-upstream.yaml@main
+    permissions:
+      contents: write
+    with:
+      update_branch: 'main#update-chart'
+    secrets: inherit

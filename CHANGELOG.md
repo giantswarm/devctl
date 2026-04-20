@@ -11,6 +11,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Extended command `gen precommit` to generate a Github workflow to run pre-commit in CI
 
+## [7.39.0] - 2026-04-15
+
+### Added
+
+- Add new `sync-from-upstream` and `dispatch-update-chart-events` workflows to apps that have the `update-chart` workflow enabled.
+
+## [7.38.0] - 2026-04-14
+
+### Changed
+
+- Change workflow "Fix go vulnerabilities": Set default branch to `main` for manual workflow execution
+- Prevent major version bumps of components (e.g. cluster provider charts) when using `--bump-all` in minor releases.
+
+## [7.37.2] - 2026-04-09
+
+### Fixed
+
+- Pass GitHub token to the update checker to avoid unauthenticated API rate limits.
+
 ## [7.37.1] - 2026-04-08
 
 ### Added
@@ -1685,7 +1704,10 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.37.1...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.39.0...HEAD
+[7.39.0]: https://github.com/giantswarm/devctl/compare/v7.38.0...v7.39.0
+[7.38.0]: https://github.com/giantswarm/devctl/compare/v7.37.2...v7.38.0
+[7.37.2]: https://github.com/giantswarm/devctl/compare/v7.37.1...v7.37.2
 [7.37.1]: https://github.com/giantswarm/devctl/compare/v7.37.0...v7.37.1
 [7.37.0]: https://github.com/giantswarm/devctl/compare/v7.36.0...v7.37.0
 [7.36.0]: https://github.com/giantswarm/devctl/compare/v7.35.0...v7.36.0

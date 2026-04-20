@@ -14,7 +14,7 @@ require (
 	github.com/giantswarm/microerror v0.4.1
 	github.com/giantswarm/micrologger v1.1.2
 	github.com/giantswarm/releases/sdk v0.12.0
-	github.com/go-git/go-git/v5 v5.17.2
+	github.com/go-git/go-git/v5 v5.18.0
 	github.com/google/go-cmp v0.7.0
 	github.com/google/go-github/v84 v84.0.0
 	github.com/jedib0t/go-pretty/v6 v6.7.9
@@ -25,11 +25,11 @@ require (
 	github.com/sirupsen/logrus v1.9.4
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
-	golang.org/x/exp v0.0.0-20260312153236-7ab1446f8b90
-	golang.org/x/net v0.52.0
+	golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f
+	golang.org/x/net v0.53.0
 	golang.org/x/oauth2 v0.36.0
 	gopkg.in/yaml.v3 v3.0.1
-	k8s.io/apimachinery v0.35.3
+	k8s.io/apimachinery v0.35.4
 	sigs.k8s.io/yaml v1.6.0
 )
 
@@ -72,10 +72,10 @@ require (
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	go.yaml.in/yaml/v2 v2.4.3 // indirect
-	golang.org/x/crypto v0.49.0 // indirect
-	golang.org/x/sys v0.42.0 // indirect
-	golang.org/x/term v0.41.0 // indirect
-	golang.org/x/text v0.35.0 // indirect
+	golang.org/x/crypto v0.50.0 // indirect
+	golang.org/x/sys v0.43.0 // indirect
+	golang.org/x/term v0.42.0 // indirect
+	golang.org/x/text v0.36.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	k8s.io/klog/v2 v2.130.1 // indirect

@@ -53,6 +53,10 @@ func (w *Workflows) CreateReleasePR() input.Input {
 	return file.NewCreateReleasePRInput(w.params)
 }
 
+func (w *Workflows) DispatchUpdateChartEvents(targetRepo string) input.Input {
+	return file.NewDispatchUpdateChartEventsInput(w.params, targetRepo)
+}
+
 func (w *Workflows) FixVulnerabilities() input.Input {
 	return file.NewFixVulnerabilitiesInput(w.params)
 }
@@ -71,6 +75,10 @@ func (w *Workflows) PublishTechdocsInput() input.Input {
 
 func (w *Workflows) RunOSSFScorecard() input.Input {
 	return file.NewRunOSSFScorecardInput(w.params)
+}
+
+func (w *Workflows) SyncFromUpstream() input.Input {
+	return file.NewSyncFromUpstreamInput(w.params)
 }
 
 func (w *Workflows) TestKyvernoPoliciesWithChainsaw() input.Input {
