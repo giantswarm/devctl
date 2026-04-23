@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Extended command `gen precommit` to generate a Github workflow to run pre-commit in CI
+
 ## [7.39.0] - 2026-04-15
 
 ### Added

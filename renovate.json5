@@ -9,6 +9,62 @@
       '/.*.yaml.template$/',
     ],
   },
+  customManagers: [
+    // Pre-commit hook revisions in the pre-commit config template.
+    // The built-in pre-commit manager cannot parse this file because it contains
+    // Go template directives ({{- if ... }}) that make the YAML invalid.
+    {
+      customType: 'regex',
+      managerFilePatterns: ['/pre-commit-config\\.yaml\\.template$/'],
+      matchStrings: [
+        '- repo: https://github\\.com/(?<depName>[^\\n]+)\\n\\s+rev: [\'"]?(?<currentValue>[^\'"\\n]+)',
+      ],
+      datasourceTemplate: 'github-tags',
+    },
+    // Helm CLI version pinned as an env var in the pre-commit GitHub Actions workflow template.
+    {
+      customType: 'regex',
+      managerFilePatterns: ['/pre-commit-action\\.yaml\\.template$/'],
+      matchStrings: ['HELM_VERSION: "(?<currentValue>[^"]+)"'],
+      depNameTemplate: 'helm/helm',
+      datasourceTemplate: 'github-releases',
+    },
+    // helm-docs version pinned as an env var in the pre-commit GitHub Actions workflow template.
+    // Renovate will consolidate updates with the pre-commit hook rev for the same package.
+    {
+      customType: 'regex',
+      managerFilePatterns: ['/pre-commit-action\\.yaml\\.template$/'],
+      matchStrings: ['HELM_DOCS_VERSION: "(?<currentValue>[^"]+)"'],
+      depNameTemplate: 'norwoodj/helm-docs',
+      datasourceTemplate: 'github-releases',
+    },
+    // helm-values-schema-json version pinned as an env var in the pre-commit GitHub Actions workflow template.
+    // Renovate will consolidate updates with the pre-commit hook rev for the same package.
+    {
+      customType: 'regex',
+      managerFilePatterns: ['/pre-commit-action\\.yaml\\.template$/'],
+      matchStrings: ['HELM_VALUES_SCHEMA_JSON_VERSION: "(?<currentValue>[^"]+)"'],
+      depNameTemplate: 'losisin/helm-values-schema-json',
+      datasourceTemplate: 'github-releases',
+    },
+    // golangci-lint version used in install-binary-action. The two-line match avoids
+    // false-positives with other `version:` fields in the same file.
+    {
+      customType: 'regex',
+      managerFilePatterns: ['/pre-commit-action\\.yaml\\.template$/'],
+      matchStrings: ['binary: golangci-lint\\n\\s+version: "(?<currentValue>[^"]+)"'],
+      depNameTemplate: 'golangci/golangci-lint',
+      datasourceTemplate: 'github-releases',
+    },
+    // goimports module version pinned in a `go install` run step.
+    {
+      customType: 'regex',
+      managerFilePatterns: ['/pre-commit-action\\.yaml\\.template$/'],
+      matchStrings: ['go install golang\\.org/x/tools/cmd/goimports@(?<currentValue>[^\\s]+)'],
+      depNameTemplate: 'golang.org/x/tools',
+      datasourceTemplate: 'go',
+    },
+  ],
   packageRules: [
     {
       matchPackageNames: ['giantswarm/github-workflows'],
