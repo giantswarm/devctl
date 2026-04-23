@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- `pr approve-align-files`: also evaluate GitHub Actions check_runs when the legacy commit status (e.g. CircleCI) is `success`, so a failing Actions check such as `pre-commit` no longer slips through and gets approved.
+
 ## [7.40.0] - 2026-04-23
 
 ### Added
