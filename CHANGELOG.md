@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [7.40.0] - 2026-04-23
+
 ### Added
 
 - Extended command `gen precommit` to generate a Github workflow to run pre-commit in CI
@@ -1704,7 +1706,8 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.39.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.40.0...HEAD
+[7.40.0]: https://github.com/giantswarm/devctl/compare/v7.39.0...v7.40.0
 [7.39.0]: https://github.com/giantswarm/devctl/compare/v7.38.0...v7.39.0
 [7.38.0]: https://github.com/giantswarm/devctl/compare/v7.37.2...v7.38.0
 [7.37.2]: https://github.com/giantswarm/devctl/compare/v7.37.1...v7.37.2
