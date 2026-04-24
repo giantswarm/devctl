@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- `gen precommit`: Removed badges from helm-docs template, to avoid workflow failures due to version changes outside the PR.
+
 ## [7.40.1] - 2026-04-24
 
 ### Changed
