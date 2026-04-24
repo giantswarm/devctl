@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [7.40.5] - 2026-04-24
+
 ### Fixed
 
 - Fix whitespace in pre-commit workflow for Helm charts
@@ -1738,7 +1740,8 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.40.4...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.40.5...HEAD
+[7.40.5]: https://github.com/giantswarm/devctl/compare/v7.40.4...v7.40.5
 [7.40.4]: https://github.com/giantswarm/devctl/compare/v7.40.3...v7.40.4
 [7.40.3]: https://github.com/giantswarm/devctl/compare/v7.40.2...v7.40.3
 [7.40.2]: https://github.com/giantswarm/devctl/compare/v7.40.1...v7.40.2
