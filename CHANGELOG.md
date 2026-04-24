@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- Bumped architect-orb to v7.0.0 and applied `clone_depth: 0` to the go-build job, to fix the problem that all generated files' headers pointed to the HEAD commit for the last change.
+
 ## [7.40.2] - 2026-04-24
 
 ### Changed

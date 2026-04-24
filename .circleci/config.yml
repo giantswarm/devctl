@@ -1,7 +1,7 @@
 version: 2.1
 
 orbs:
-  architect: giantswarm/architect@6.15.0
+  architect: giantswarm/architect@7.0.0
 
 workflows:
   go-build:
@@ -9,6 +9,7 @@ workflows:
     - architect/go-build:
         name: go-build-devctl
         binary: devctl
+        clone_depth: 0
         pre_test_target: generate-go
           # Needed to trigger job also on git tag.
         filters:
