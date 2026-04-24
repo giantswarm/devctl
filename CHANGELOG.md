@@ -7,6 +7,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- `gen precommit`: Also trigger for branch `master` in addition to `main`
+
+### Fixed
+
+- `gen precommit`: Fix line ending, pin action version to full semver
+
 ## [7.40.0] - 2026-04-23
 
 ### Added
