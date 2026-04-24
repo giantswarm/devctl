@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [7.40.4] - 2026-04-24
+
 ## [7.40.3] - 2026-04-24
 
 ### Changed
@@ -1728,7 +1730,8 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.40.3...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.40.4...HEAD
+[7.40.4]: https://github.com/giantswarm/devctl/compare/v7.40.3...v7.40.4
 [7.40.3]: https://github.com/giantswarm/devctl/compare/v7.40.2...v7.40.3
 [7.40.2]: https://github.com/giantswarm/devctl/compare/v7.40.1...v7.40.2
 [7.40.1]: https://github.com/giantswarm/devctl/compare/v7.40.0...v7.40.1
