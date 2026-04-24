@@ -4,7 +4,9 @@ name: pre-commit
 on:
   pull_request:
   push:
-    branches: [main]
+    branches:
+      - main
+      - master
 
 env:
   HELM_VERSION: "3.20.2"
