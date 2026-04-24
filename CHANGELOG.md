@@ -9,6 +9,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [7.40.4] - 2026-04-24
 
+### Fixed
+
+- Code-wise nothing changed compared to v7.40.3. However, the build pipeline changed, so this release hopefully includes commit SHAs for each template modification.
+
 ## [7.40.3] - 2026-04-24
 
 ### Changed
