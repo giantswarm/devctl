@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [7.40.2] - 2026-04-24
+
+### Changed
+
+- `gen precommit`: Removed badges from helm-docs template, to avoid workflow failures due to version changes outside the PR.
+
 ## [7.40.1] - 2026-04-24
 
 ### Changed
@@ -1716,7 +1722,8 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.40.1...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.40.2...HEAD
+[7.40.2]: https://github.com/giantswarm/devctl/compare/v7.40.1...v7.40.2
 [7.40.1]: https://github.com/giantswarm/devctl/compare/v7.40.0...v7.40.1
 [7.40.0]: https://github.com/giantswarm/devctl/compare/v7.39.0...v7.40.0
 [7.39.0]: https://github.com/giantswarm/devctl/compare/v7.38.0...v7.39.0
