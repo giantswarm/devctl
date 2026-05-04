@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [7.40.6] - 2026-05-04
+
 ### Changed
 
 - Update `dispatch-update-chart-events` workflows to now send closed PRs events to a central repository.
@@ -1744,7 +1746,8 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.40.5...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.40.6...HEAD
+[7.40.6]: https://github.com/giantswarm/devctl/compare/v7.40.5...v7.40.6
 [7.40.5]: https://github.com/giantswarm/devctl/compare/v7.40.4...v7.40.5
 [7.40.4]: https://github.com/giantswarm/devctl/compare/v7.40.3...v7.40.4
 [7.40.3]: https://github.com/giantswarm/devctl/compare/v7.40.2...v7.40.3
