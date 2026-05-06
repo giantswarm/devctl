@@ -9,6 +9,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [7.40.7] - 2026-05-06
 
+### Changed
+
+- Dependency updates
+
 ## [7.40.6] - 2026-05-04
 
 ### Changed
