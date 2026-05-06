@@ -76,7 +76,7 @@ repos:
 
   # Helm chart hooks for {{.}}
   - repo: https://github.com/losisin/helm-values-schema-json
-    rev: v2.3.1
+    rev: v2.4.0
     hooks:
       - id: helm-schema
         args:
