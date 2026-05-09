@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+###  Changed
+
+- Added the ability to allow test catalogs to be populated when an app or component uses a dev version(app-version-sha) in its release creation
+
 ## [7.40.7] - 2026-05-06
 
 ### Changed
