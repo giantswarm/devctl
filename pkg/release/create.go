@@ -384,6 +384,37 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 	}
 	newRelease := mergeReleases(effectiveBaseRelease, updatesRelease)
 
+	// Rewrite catalogs to their test variants for apps/components carrying development
+	// (pre-release) versions, so the release-operator can locate the build artifact.
+	for i, app := range newRelease.Spec.Apps {
+		if isDevVersion(app.Version) {
+			catalog := app.Catalog
+			if catalog == "" {
+				catalog = "default" // CRD default for apps
+			}
+			testCatalog := toTestCatalog(catalog)
+			if verbose {
+				fmt.Printf("Dev version detected for app %s (%s): catalog %q → %q\n",
+					app.Name, app.Version, catalog, testCatalog)
+			}
+			newRelease.Spec.Apps[i].Catalog = testCatalog
+		}
+	}
+	for i, comp := range newRelease.Spec.Components {
+		if isDevVersion(comp.Version) {
+			catalog := comp.Catalog
+			if catalog == "" {
+				catalog = "control-plane-catalog" // CRD default for components
+			}
+			testCatalog := toTestCatalog(catalog)
+			if verbose {
+				fmt.Printf("Dev version detected for component %s (%s): catalog %q → %q\n",
+					comp.Name, comp.Version, catalog, testCatalog)
+			}
+			newRelease.Spec.Components[i].Catalog = testCatalog
+		}
+	}
+
 	// Drop apps that are no longer supported in this release.
 	if len(appsToDropForThisRelease) > 0 {
 		var filteredMergedApps []v1alpha1.ReleaseSpecApp
