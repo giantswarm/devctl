@@ -17,9 +17,9 @@ func isDevVersion(version string) bool {
 }
 
 // toTestCatalog returns the test-catalog value for the given catalog value.
-// The caller must normalise empty strings to the appropriate type default
-// ("default" for apps, "control-plane-catalog" for components) before calling.
-// Strips any trailing "-catalog" suffix, then appends "-test".
+// Strips any trailing "-catalog" suffix, then appends "-test"
+// (e.g. "cluster" → "cluster-test", "default" → "default-test").
+// An empty value maps to "default-test".
 // Already-test values (suffix "-test") are returned unchanged.
 func toTestCatalog(catalog string) string {
 	if strings.HasSuffix(catalog, "-test") {

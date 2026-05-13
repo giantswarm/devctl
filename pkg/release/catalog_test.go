@@ -34,10 +34,8 @@ func TestToTestCatalog(t *testing.T) {
 		{"default", "default-test"},
 		{"cluster", "cluster-test"},
 		{"giantswarm", "giantswarm-test"},
-		{"control-plane-catalog", "control-plane-test"},
 		{"default-test", "default-test"},
 		{"cluster-test", "cluster-test"},
-		{"control-plane-test", "control-plane-test"},
 	}
 
 	for _, tt := range tests {

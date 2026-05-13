@@ -402,14 +402,15 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 	}
 	for i, comp := range newRelease.Spec.Components {
 		if isDevVersion(comp.Version) {
-			catalog := comp.Catalog
-			if catalog == "" {
-				catalog = "control-plane-catalog" // CRD default for components
+			// Components with no explicit catalog (e.g. kubernetes, flatcar, os-tooling)
+			// are used for AMI name lookup, not helm chart deployment — no catalog change needed.
+			if comp.Catalog == "" {
+				continue
 			}
-			testCatalog := toTestCatalog(catalog)
+			testCatalog := toTestCatalog(comp.Catalog)
 			if verbose {
 				fmt.Printf("Dev version detected for component %s (%s): catalog %q → %q\n",
-					comp.Name, comp.Version, catalog, testCatalog)
+					comp.Name, comp.Version, comp.Catalog, testCatalog)
 			}
 			newRelease.Spec.Components[i].Catalog = testCatalog
 		}
