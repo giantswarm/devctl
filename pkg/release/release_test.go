@@ -11,6 +11,54 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+func TestMergeReleases_EmptyVersion(t *testing.T) {
+	makeRelease := func(appVersion, componentVersion string, deps []string) v1alpha1.Release {
+		return v1alpha1.Release{
+			ObjectMeta: metav1.ObjectMeta{Name: "aws-1.0.0"},
+			Spec: v1alpha1.ReleaseSpec{
+				Date:  &metav1.Time{Time: time.Now()},
+				State: "active",
+				Apps: []v1alpha1.ReleaseSpecApp{
+					{Name: "cert-manager", Version: appVersion, ComponentVersion: componentVersion, DependsOn: deps},
+				},
+			},
+		}
+	}
+
+	t.Run("empty override version preserves base version", func(t *testing.T) {
+		base := makeRelease("3.9.1", "", nil)
+		override := makeRelease("", "", []string{"cilium"})
+		merged := mergeReleases(base, override)
+		app := merged.Spec.Apps[0]
+		if app.Version != "3.9.1" {
+			t.Errorf("expected version %q, got %q", "3.9.1", app.Version)
+		}
+		if len(app.DependsOn) != 1 || app.DependsOn[0] != "cilium" {
+			t.Errorf("expected DependsOn [cilium], got %v", app.DependsOn)
+		}
+	})
+
+	t.Run("empty override componentVersion preserves base componentVersion", func(t *testing.T) {
+		base := makeRelease("3.9.1", "1.30.2", nil)
+		override := makeRelease("", "", []string{"cilium"})
+		merged := mergeReleases(base, override)
+		app := merged.Spec.Apps[0]
+		if app.ComponentVersion != "1.30.2" {
+			t.Errorf("expected componentVersion %q, got %q", "1.30.2", app.ComponentVersion)
+		}
+	})
+
+	t.Run("non-empty override version updates version", func(t *testing.T) {
+		base := makeRelease("3.9.1", "", nil)
+		override := makeRelease("3.10.0", "", []string{"cilium"})
+		merged := mergeReleases(base, override)
+		app := merged.Spec.Apps[0]
+		if app.Version != "3.10.0" {
+			t.Errorf("expected version %q, got %q", "3.10.0", app.Version)
+		}
+	})
+}
+
 // TestMarshalReleaseYAML_GoldenFile tests that the YAML marshalling of a release matches the golden file.
 func TestMarshalReleaseYAML_GoldenFile(t *testing.T) {
 	testTime := time.Date(2025, 5, 28, 15, 52, 8, 0, time.UTC)
