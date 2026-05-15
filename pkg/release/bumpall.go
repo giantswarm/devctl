@@ -186,10 +186,39 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 		for _, app := range input.Spec.Apps {
 			v := appVersion{}
 			if req, found := requestedApps[app.Name]; found {
-				// User requested specific version.
-				v.Version = req.Version
-				v.UpstreamVersion = req.UpstreamVersion
-				v.UserRequested = true
+				if req.Version != "" {
+					// User provided an explicit version — use it as-is.
+					v.Version = req.Version
+					v.UpstreamVersion = req.UpstreamVersion
+					v.UserRequested = true
+				} else {
+					// No version specified — keep current or auto-bump, same as
+					// if this app were not in the override list at all.
+					if releaseType == "patch" {
+						v.Version = app.Version
+						v.UpstreamVersion = app.ComponentVersion
+					} else { // major or minor: auto-bump
+						var constraint *semver.Range
+						for _, r := range requests {
+							if r.Name == app.Name {
+								c, err := semver.ParseRange(r.Version)
+								if err != nil {
+									// Ignore invalid constraints.
+									continue
+								}
+								constraint = &c
+								break
+							}
+						}
+						version, err := FindNewestApp(app.Name, app.ComponentVersion != "", constraint)
+						if err != nil {
+							return nil, nil, microerror.Mask(err)
+						}
+						v.Version = version.Version
+						v.UpstreamVersion = version.UpstreamVersion
+					}
+					v.UserRequested = false
+				}
 				if req.DependsOn != nil {
 					v.DependsOn = req.DependsOn
 				} else {
@@ -242,6 +271,9 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 				}
 			}
 			if !found {
+				if req.Version == "" {
+					return nil, nil, microerror.Maskf(badFormatError, "app %q not found in base release; version is required for new apps", name)
+				}
 				// This is a new app not in the base release
 				apps[name] = appVersion{
 					Version:         req.Version,

@@ -358,11 +358,27 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 	for _, appVersion := range apps {
 		split := strings.Split(appVersion, "@")
 		if len(split) < 2 || len(split) > 4 {
-			fmt.Println("App must be specified as <name>@<version>[@<component_version>][@<dependency>[#<another-dependency]>], got", appVersion)
+			fmt.Println("App must be specified as <name>@[<version>][@<component_version>][@<dependency>[#<another-dependency>]], got", appVersion)
 			return microerror.Mask(badFormatError)
 		}
 		name := split[0]
 		version := split[1]
+
+		// Empty version means "inherit from base / let bumpall decide".
+		// This is only valid for apps that already exist in the base release.
+		if version == "" {
+			foundInBase := false
+			for _, baseApp := range effectiveBaseRelease.Spec.Apps {
+				if baseApp.Name == name {
+					foundInBase = true
+					break
+				}
+			}
+			if !foundInBase {
+				fmt.Printf("App %q not found in base release; version is required for new apps.\n", name)
+				return microerror.Mask(badFormatError)
+			}
+		}
 
 		var componentVersion string
 		if len(split) > 2 {

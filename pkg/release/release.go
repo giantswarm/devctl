@@ -69,8 +69,14 @@ func mergeReleases(base, override v1alpha1.Release) v1alpha1.Release {
 	for i, app := range merged.Spec.Apps {
 		for _, overrideApp := range override.Spec.Apps {
 			if app.Name == overrideApp.Name {
-				merged.Spec.Apps[i].Version = overrideApp.Version
-				merged.Spec.Apps[i].ComponentVersion = overrideApp.ComponentVersion
+				// Only update Version/ComponentVersion if the override provides a non-empty
+				// value; an empty string means "inherit from base" (e.g. deps-only override).
+				if overrideApp.Version != "" {
+					merged.Spec.Apps[i].Version = overrideApp.Version
+				}
+				if overrideApp.ComponentVersion != "" {
+					merged.Spec.Apps[i].ComponentVersion = overrideApp.ComponentVersion
+				}
 				// Only update DependsOn if it's not nil (meaning it was explicitly set)
 				if overrideApp.DependsOn != nil {
 					merged.Spec.Apps[i].DependsOn = overrideApp.DependsOn
