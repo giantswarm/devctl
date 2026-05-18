@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- Upgrade `github.com/google/go-github` from v85 to v86.
+
 ## [7.40.7] - 2026-05-06
 
 ### Changed
