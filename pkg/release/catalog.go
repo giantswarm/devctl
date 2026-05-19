@@ -1,19 +1,18 @@
 package release
 
 import (
+	"regexp"
 	"strings"
-
-	"github.com/blang/semver"
 )
 
-// isDevVersion returns true when the version string carries a semver pre-release
-// identifier (e.g. "7.3.0-abc123sha"), indicating a development build.
+// gitSHASuffix matches a version string ending with a git commit hash,
+// e.g. "7.3.0-abc1234f". A SHA is 7–40 lowercase hex characters.
+var gitSHASuffix = regexp.MustCompile(`-[0-9a-f]{7,40}$`)
+
+// isDevVersion returns true when the version string ends with a git commit
+// hash suffix (e.g. "7.3.0-abc123f"), indicating a development build.
 func isDevVersion(version string) bool {
-	v, err := semver.ParseTolerant(version)
-	if err != nil {
-		return false
-	}
-	return len(v.Pre) > 0
+	return gitSHASuffix.MatchString(version)
 }
 
 // toTestCatalog returns the test-catalog value for the given catalog value.

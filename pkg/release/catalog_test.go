@@ -9,9 +9,10 @@ func TestIsDevVersion(t *testing.T) {
 	}{
 		{"3.9.2", false},
 		{"v3.9.2", false},
-		{"7.3.0-abc123", true},
-		{"v7.3.0-abc123", true},
-		{"1.0.0-alpha.1", true},
+		{"7.3.0-abc1234f", true},
+		{"v7.3.0-abc1234f", true},
+		{"7.3.0-abc123456789abcdef", true}, // longer SHA
+		{"1.0.0-alpha.1", false},           // semver pre-release, not a git SHA
 		{"", false},
 		{"not-a-version", false},
 	}
