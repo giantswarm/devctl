@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/google/go-github/v85/github"
+	"github.com/google/go-github/v86/github"
 )
 
 const (
@@ -22,12 +22,12 @@ func (c *Client) AddRepoToRenovatePermissions(ctx context.Context, org string, r
 	path := fmt.Sprintf("/user/installations/%d/repositories/%d", renovateInstallationID, repo.GetID())
 	realClient := c.GetUnderlyingClient(ctx)
 
-	req, err := realClient.NewRequest(http.MethodPut, path, nil, github.WithVersion(githubApiVersion))
+	req, err := realClient.NewRequest(ctx, http.MethodPut, path, nil, github.WithVersion(githubApiVersion))
 	if err != nil {
 		return err
 	}
 
-	resp, err := realClient.Do(ctx, req, nil)
+	resp, err := realClient.Do(req, nil)
 	if err != nil {
 		c.logger.Printf("response: %v", resp)
 		return err
@@ -44,12 +44,12 @@ func (c *Client) RemoveRepoFromRenovatePermissions(ctx context.Context, org stri
 	path := fmt.Sprintf("/user/installations/%d/repositories/%d", renovateInstallationID, repo.GetID())
 	realClient := c.GetUnderlyingClient(ctx)
 
-	req, err := realClient.NewRequest(http.MethodDelete, path, nil, github.WithVersion(githubApiVersion))
+	req, err := realClient.NewRequest(ctx, http.MethodDelete, path, nil, github.WithVersion(githubApiVersion))
 	if err != nil {
 		return err
 	}
 
-	resp, err := realClient.Do(ctx, req, nil)
+	resp, err := realClient.Do(req, nil)
 	if err != nil {
 		c.logger.Printf("response: %v", resp)
 		return err
