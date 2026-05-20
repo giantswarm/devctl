@@ -7,6 +7,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Generate a `semantic_pull_request.yaml` GitHub Actions workflow in every repo. It calls the new `giantswarm/github-workflows/.github/workflows/semantic-pull-request.yaml` reusable workflow, which validates that the PR title follows Conventional Commits. The check runs on `pull_request` (`opened`, `edited`, `synchronize`) and uses the action's default type set (`build`, `chore`, `ci`, `docs`, `feat`, `fix`, `perf`, `refactor`, `revert`, `style`, `test`).
+- Add `compilerla/conventional-pre-commit` hook to the generated `.pre-commit-config.yaml`, gated to the `commit-msg` stage. Contributors enable it locally with `pre-commit install --hook-type commit-msg`.
+
 ### Changed
 
 - Upgrade `github.com/google/go-github` from v85 to v86.

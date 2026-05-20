@@ -1,0 +1,17 @@
+{{{{ .Header }}}}
+name: semantic-pull-request
+
+on:
+  pull_request:
+    types:
+      - opened
+      - edited
+      - synchronize
+
+permissions: {}
+
+jobs:
+  semantic-pull-request:
+    uses: giantswarm/github-workflows/.github/workflows/semantic-pull-request.yaml@main
+    permissions:
+      pull-requests: read

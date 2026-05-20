@@ -77,6 +77,10 @@ func (w *Workflows) RunOSSFScorecard() input.Input {
 	return file.NewRunOSSFScorecardInput(w.params)
 }
 
+func (w *Workflows) SemanticPullRequest() input.Input {
+	return file.NewSemanticPullRequestInput(w.params)
+}
+
 func (w *Workflows) SyncFromUpstream() input.Input {
 	return file.NewSyncFromUpstreamInput(w.params)
 }
