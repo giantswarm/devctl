@@ -7,6 +7,56 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- Upgrade `github.com/google/go-github` from v85 to v86.
+
+## [7.40.7] - 2026-05-06
+
+### Changed
+
+- Dependency updates
+
+## [7.40.6] - 2026-05-04
+
+### Changed
+
+- Update `dispatch-update-chart-events` workflows to now send closed PRs events to a central repository.
+
+## [7.40.5] - 2026-04-24
+
+### Fixed
+
+- Fix whitespace in pre-commit workflow for Helm charts
+
+## [7.40.4] - 2026-04-24
+
+### Fixed
+
+- Code-wise nothing changed compared to v7.40.3. However, the build pipeline changed, so this release hopefully includes commit SHAs for each template modification.
+
+## [7.40.3] - 2026-04-24
+
+### Changed
+
+- Bumped architect-orb to v7.0.0 and applied `clone_depth: 0` to the go-build job, to fix the problem that all generated files' headers pointed to the HEAD commit for the last change.
+
+## [7.40.2] - 2026-04-24
+
+### Changed
+
+- `gen precommit`: Removed badges from helm-docs template, to avoid workflow failures due to version changes outside the PR.
+
+## [7.40.1] - 2026-04-24
+
+### Changed
+
+- `gen precommit`: Also trigger for branch `master` in addition to `main`
+
+### Fixed
+
+- `gen precommit`: Fix line ending, pin action version to full semver
+
 ## [7.40.0] - 2026-04-23
 
 ### Added
@@ -1706,7 +1756,14 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.40.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.40.7...HEAD
+[7.40.7]: https://github.com/giantswarm/devctl/compare/v7.40.6...v7.40.7
+[7.40.6]: https://github.com/giantswarm/devctl/compare/v7.40.5...v7.40.6
+[7.40.5]: https://github.com/giantswarm/devctl/compare/v7.40.4...v7.40.5
+[7.40.4]: https://github.com/giantswarm/devctl/compare/v7.40.3...v7.40.4
+[7.40.3]: https://github.com/giantswarm/devctl/compare/v7.40.2...v7.40.3
+[7.40.2]: https://github.com/giantswarm/devctl/compare/v7.40.1...v7.40.2
+[7.40.1]: https://github.com/giantswarm/devctl/compare/v7.40.0...v7.40.1
 [7.40.0]: https://github.com/giantswarm/devctl/compare/v7.39.0...v7.40.0
 [7.39.0]: https://github.com/giantswarm/devctl/compare/v7.38.0...v7.39.0
 [7.38.0]: https://github.com/giantswarm/devctl/compare/v7.37.2...v7.38.0

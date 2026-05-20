@@ -5,6 +5,8 @@ on:
   push:
     branches:
       - 'main#update-chart'
+  pull_request:
+    types: [closed]
 
 concurrency:
   group: ${{ github.workflow }}
@@ -13,11 +15,19 @@ concurrency:
 permissions: {}
 
 jobs:
-  dispatch-events:
+  dispatch-update-events:
+    if: github.event_name == 'push'
     uses: giantswarm/github-workflows/.github/workflows/dispatch-update-chart-events.yaml@main
     permissions:
       actions: read
       statuses: read
+    with:
+      target_repository: '{{{{ .TargetRepository }}}}'
+    secrets: inherit
+
+  dispatch-pr-closed-events:
+    if: github.event_name == 'pull_request' && github.head_ref == 'main#update-chart'
+    uses: giantswarm/github-workflows/.github/workflows/dispatch-update-chart-pr-closed-events.yaml@main
     with:
       target_repository: '{{{{ .TargetRepository }}}}'
     secrets: inherit

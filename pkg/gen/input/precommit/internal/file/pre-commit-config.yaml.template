@@ -28,7 +28,7 @@ repos:
 
   # static type checking with mypy
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.19.1
+    rev: v2.1.0
     hooks:
       - id: mypy
 {{- end }}
@@ -57,7 +57,7 @@ repos:
 
   # Bash/shell hooks
   - repo: https://github.com/detailyang/pre-commit-shell
-    rev: '1.0.5'
+    rev: 'v1.0.6'
     hooks:
       - id: shell-lint
         args: [ --format=json ]
@@ -76,7 +76,7 @@ repos:
 
   # Helm chart hooks for {{.}}
   - repo: https://github.com/losisin/helm-values-schema-json
-    rev: v2.3.1
+    rev: v2.4.0
     hooks:
       - id: helm-schema
         args:
