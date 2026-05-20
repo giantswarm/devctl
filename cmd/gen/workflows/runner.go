@@ -54,6 +54,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	inputs := []input.Input{
 		workflowsInput.CreateRelease(),
 		workflowsInput.CreateReleasePR(),
+		workflowsInput.SemanticPullRequest(),
 		workflowsInput.ValidateChangelog(),
 	}
 
