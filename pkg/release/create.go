@@ -358,11 +358,27 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 	for _, appVersion := range apps {
 		split := strings.Split(appVersion, "@")
 		if len(split) < 2 || len(split) > 4 {
-			fmt.Println("App must be specified as <name>@<version>[@<component_version>][@<dependency>[#<another-dependency]>], got", appVersion)
+			fmt.Println("App must be specified as <name>@[<version>][@<component_version>][@<dependency>[#<another-dependency>]], got", appVersion)
 			return microerror.Mask(badFormatError)
 		}
 		name := split[0]
 		version := split[1]
+
+		// Empty version means "inherit from base / let bumpall decide".
+		// This is only valid for apps that already exist in the base release.
+		if version == "" {
+			foundInBase := false
+			for _, baseApp := range effectiveBaseRelease.Spec.Apps {
+				if baseApp.Name == name {
+					foundInBase = true
+					break
+				}
+			}
+			if !foundInBase {
+				fmt.Printf("App %q not found in base release; version is required for new apps.\n", name)
+				return microerror.Mask(badFormatError)
+			}
+		}
 
 		var componentVersion string
 		if len(split) > 2 {
@@ -383,6 +399,38 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 
 	}
 	newRelease := mergeReleases(effectiveBaseRelease, updatesRelease)
+
+	// Rewrite catalogs to their test variants for apps/components carrying development
+	// (pre-release) versions, so the release-operator can locate the build artifact.
+	for i, app := range newRelease.Spec.Apps {
+		if isDevVersion(app.Version) {
+			catalog := app.Catalog
+			if catalog == "" {
+				catalog = "default" // CRD default for apps
+			}
+			testCatalog := toTestCatalog(catalog)
+			if verbose {
+				fmt.Printf("Dev version detected for app %s (%s): catalog %q → %q\n",
+					app.Name, app.Version, catalog, testCatalog)
+			}
+			newRelease.Spec.Apps[i].Catalog = testCatalog
+		}
+	}
+	for i, comp := range newRelease.Spec.Components {
+		if isDevVersion(comp.Version) {
+			// Components with no explicit catalog (e.g. kubernetes, flatcar, os-tooling)
+			// are used for AMI name lookup, not helm chart deployment — no catalog change needed.
+			if comp.Catalog == "" {
+				continue
+			}
+			testCatalog := toTestCatalog(comp.Catalog)
+			if verbose {
+				fmt.Printf("Dev version detected for component %s (%s): catalog %q → %q\n",
+					comp.Name, comp.Version, comp.Catalog, testCatalog)
+			}
+			newRelease.Spec.Components[i].Catalog = testCatalog
+		}
+	}
 
 	// Drop apps that are no longer supported in this release.
 	if len(appsToDropForThisRelease) > 0 {
