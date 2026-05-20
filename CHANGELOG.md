@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [7.41.1] - 2026-05-20
+
 ### Changed
 
 - Change the PR name looked for in `devctl pr approve-align-files` from `Align files` to `chore: align files according to platform standards`
@@ -1767,7 +1769,8 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.41.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.41.1...HEAD
+[7.41.1]: https://github.com/giantswarm/devctl/compare/v7.41.0...v7.41.1
 [7.41.0]: https://github.com/giantswarm/devctl/compare/v7.40.7...v7.41.0
 [7.40.7]: https://github.com/giantswarm/devctl/compare/v7.40.6...v7.40.7
 [7.40.6]: https://github.com/giantswarm/devctl/compare/v7.40.5...v7.40.6
