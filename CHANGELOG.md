@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [7.41.0] - 2026-05-20
+
 ### Added
 
 - Generate a `semantic_pull_request.yaml` GitHub Actions workflow in every repo. It calls the new `giantswarm/github-workflows/.github/workflows/semantic-pull-request.yaml` reusable workflow, which validates that the PR title follows Conventional Commits. The check runs on `pull_request` (`opened`, `edited`, `synchronize`) and uses the action's default type set (`build`, `chore`, `ci`, `docs`, `feat`, `fix`, `perf`, `refactor`, `revert`, `style`, `test`).
@@ -1761,7 +1763,8 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.40.7...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.41.0...HEAD
+[7.41.0]: https://github.com/giantswarm/devctl/compare/v7.40.7...v7.41.0
 [7.40.7]: https://github.com/giantswarm/devctl/compare/v7.40.6...v7.40.7
 [7.40.6]: https://github.com/giantswarm/devctl/compare/v7.40.5...v7.40.6
 [7.40.5]: https://github.com/giantswarm/devctl/compare/v7.40.4...v7.40.5
