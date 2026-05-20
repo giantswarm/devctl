@@ -100,8 +100,9 @@ devctl gen license
 # where you or your team is requested for review
 devctl pr approve-merge-renovate "architect-orb v7.8.9"
 
-# Approve "Align files" PRs
+# Approve align-files PRs
 # where you are requested for review
+# (full PR title: "chore: align files according to platform standards")
 devctl pr approve-align-files
 ```
 

@@ -58,10 +58,10 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 	githubClient := ghClientService.GetUnderlyingClient(ctx)
 
-	// Search for "Align files" PRs
+	// Search for align-files PRs
 	// Note: We don't filter by status:success here because we want to find all PRs
 	// and then check/wait for their status in processPR (similar to approve-merge-renovate)
-	searchQuery := `is:pr is:open archived:false org:giantswarm review-requested:@me "Align files"`
+	searchQuery := `is:pr is:open archived:false org:giantswarm review-requested:@me "chore: align files according to platform standards"`
 
 	searchOpts := &github.SearchOptions{
 		ListOptions: github.ListOptions{PerPage: 100},

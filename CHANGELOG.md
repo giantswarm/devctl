@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- Change the PR name looked for in `devctl pr approve-align-files` from `Align files` to `chore: align files according to platform standards`
+
 ## [7.41.0] - 2026-05-20
 
 ### Added
