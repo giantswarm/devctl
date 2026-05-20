@@ -7,6 +7,7 @@ workflows:
   go-build:
     jobs:
     - architect/go-build:
+        context: architect
         name: go-build-devctl
         binary: devctl
         clone_depth: 0
