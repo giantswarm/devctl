@@ -57,7 +57,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 	if r.flag.ReleaseWorkflow == "release-please" {
 		inputs = append(inputs,
-			workflowsInput.ReleasePlease(r.flag.AutoRelease),
+			workflowsInput.ReleasePlease(),
 			workflowsInput.ReleasePleaseConfig(r.flag.ChangelogStyle),
 			workflowsInput.ReleasePleaseManifest(),
 		)

@@ -105,8 +105,8 @@ func (w *Workflows) ZizmorBaseYml() input.Input {
 	return file.NewZizmorBaseInput(w.params)
 }
 
-func (w *Workflows) ReleasePlease(autoRelease string) input.Input {
-	return file.NewReleasePleaseInput(w.params, autoRelease)
+func (w *Workflows) ReleasePlease() input.Input {
+	return file.NewReleasePleaseInput(w.params)
 }
 
 func (w *Workflows) ReleasePleaseConfig(changelogStyle string) input.Input {

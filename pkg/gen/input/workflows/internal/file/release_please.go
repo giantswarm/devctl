@@ -14,7 +14,7 @@ var releasePleaseTemplate string
 //go:embed release_please.yaml.template.sha
 var releasePleaseTemplateSha string
 
-func NewReleasePleaseInput(p params.Params, autoRelease string) input.Input {
+func NewReleasePleaseInput(p params.Params) input.Input {
 	return input.Input{
 		Path:         params.RegenerableFileName(p, "release-please.yaml"),
 		TemplateBody: releasePleaseTemplate,
@@ -23,8 +23,7 @@ func NewReleasePleaseInput(p params.Params, autoRelease string) input.Input {
 			Right: "}}}}",
 		},
 		TemplateData: map[string]interface{}{
-			"Header":      params.Header("#", releasePleaseTemplateSha),
-			"AutoRelease": autoRelease,
+			"Header": params.Header("#", releasePleaseTemplateSha),
 		},
 	}
 }

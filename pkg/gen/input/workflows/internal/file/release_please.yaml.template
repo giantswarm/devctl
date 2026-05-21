@@ -15,9 +15,5 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
-{{{{- if ne .AutoRelease "none" }}}}
-    with:
-      auto-release: '{{{{ .AutoRelease }}}}'
-{{{{- end }}}}
     secrets:
       TAYLORBOT_GITHUB_ACTION: ${{ secrets.TAYLORBOT_GITHUB_ACTION }}
