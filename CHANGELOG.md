@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `devctl gen workflows --release-workflow=release-please` generates a Release Please workflow instead of the legacy `create-release-pr` / `create-release` / `validate-changelog` trio. Two additional flags control the output: `--changelog-style` (`legacy` maps commit types to `### Added/Changed/Fixed`; `release-please` uses the Angular preset) and `--auto-release` (`patch`, `minor`, or `major` enables auto-merge of the Release Please PR up to that bump level). The Release Please config and manifest are written as scaffolding files (generate-once, not overwritten on subsequent runs).
+
 ## [7.41.1] - 2026-05-20
 
 ### Changed
