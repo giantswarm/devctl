@@ -3,6 +3,7 @@ package githubclient
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"time"
 
@@ -10,7 +11,7 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/google/go-github/v86/github"
+	"github.com/google/go-github/v87/github"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/oauth2"
 )
@@ -26,6 +27,7 @@ type Client struct {
 	accessToken string
 	workDir     string
 	dryRun      bool
+	ghClient    *github.Client
 }
 
 func New(config Config) (*Client, error) {
@@ -36,14 +38,25 @@ func New(config Config) (*Client, error) {
 		return nil, microerror.Maskf(invalidConfigError, "%T.AccessToken must not be empty", config)
 	}
 
+	var transport http.RoundTripper = &oauth2.Transport{
+		Source: oauth2.StaticTokenSource(&oauth2.Token{AccessToken: config.AccessToken}),
+		Base:   http.DefaultTransport,
+	}
+	if config.DryRun {
+		transport = &dryRunTransport{inner: transport, logger: config.Logger}
+		config.Logger.Info("[dry-run] GitHub API mutations will be skipped")
+	}
+
+	ghClient, err := github.NewClient(github.WithHTTPClient(&http.Client{Transport: transport}))
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
+
 	c := &Client{
 		dryRun:      config.DryRun,
 		logger:      config.Logger,
 		accessToken: config.AccessToken,
-	}
-
-	if c.dryRun {
-		c.logger.Info("[dry-run] GitHub API mutations will be skipped")
+		ghClient:    ghClient,
 	}
 
 	return c, nil
@@ -174,21 +187,6 @@ func (c *Client) WaitForPRMerge(ctx context.Context, owner, repo string, prNumbe
 }
 
 // GetUnderlyingClient returns the underlying go-github client.
-// This allows access to the full GitHub API if needed.
 func (c *Client) GetUnderlyingClient(ctx context.Context) *github.Client {
-	ts := oauth2.StaticTokenSource(
-		&oauth2.Token{
-			AccessToken: c.accessToken,
-		},
-	)
-	tc := oauth2.NewClient(ctx, ts)
-
-	if c.dryRun {
-		tc.Transport = &dryRunTransport{
-			inner:  tc.Transport,
-			logger: c.logger,
-		}
-	}
-
-	return github.NewClient(tc)
+	return c.ghClient
 }
