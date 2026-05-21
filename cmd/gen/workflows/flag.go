@@ -51,7 +51,7 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&f.UpstreamSyncAutomation, flagUpstreamSyncAutomation, false, "If true, also generate a workflow to dispatch update events for charts. Only valid for app flavor.")
 	cmd.Flags().StringVar(&f.DispatchUpdateChartEventsRepo, flagDispatchUpdateChartEventsRepo, "", "The repository to dispatch update chart events to. Only valid if --upstream-sync-automation is true.")
 	cmd.Flags().StringVar(&f.ReleaseWorkflow, flagReleaseWorkflow, "legacy", "Release workflow to generate. Possible values: legacy (default), release-please.")
-	cmd.Flags().StringVar(&f.ChangelogStyle, flagChangelogStyle, "legacy", "Changelog section style for release-please. 'legacy' maps conventional commit types to ### Added/Changed/Fixed. 'default' uses the Release Please Angular preset. Possible values: legacy (default), default.")
+	cmd.Flags().StringVar(&f.ChangelogStyle, flagChangelogStyle, "legacy", "Changelog section style for release-please. 'legacy' maps conventional commit types to ### Added/Changed/Fixed. 'release-please' uses the Release Please Angular preset. Possible values: legacy (default), release-please.")
 	cmd.Flags().StringVar(&f.AutoRelease, flagAutoRelease, "none", "Automatically merge the Release Please PR when CI passes, up to this bump level. Only valid when --release-workflow=release-please. Possible values: none (default), patch, minor, major.")
 }
 

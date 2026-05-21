@@ -22,7 +22,7 @@ func NewReleasePleaseConfigInput(changelogStyle string) input.Input {
 			Right: "}}}}",
 		},
 		TemplateData: map[string]interface{}{
-			"LegacyChangelog": changelogStyle == "legacy",
+			"LegacyChangelog": changelogStyle != "release-please",
 		},
 	}
 }
