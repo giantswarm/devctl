@@ -12,7 +12,6 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/google/go-github/v87/github"
 	"github.com/sirupsen/logrus"
-	"golang.org/x/oauth2"
 )
 
 type Config struct {
@@ -26,6 +25,7 @@ type Client struct {
 	accessToken string
 	workDir     string
 	dryRun      bool
+	ghClient    *github.Client
 }
 
 func New(config Config) (*Client, error) {
@@ -36,10 +36,16 @@ func New(config Config) (*Client, error) {
 		return nil, microerror.Maskf(invalidConfigError, "%T.AccessToken must not be empty", config)
 	}
 
+	ghClient, err := github.NewClient(github.WithAuthToken(config.AccessToken))
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
+
 	c := &Client{
 		dryRun:      config.DryRun,
 		logger:      config.Logger,
 		accessToken: config.AccessToken,
+		ghClient:    ghClient,
 	}
 
 	return c, nil
@@ -170,16 +176,6 @@ func (c *Client) WaitForPRMerge(ctx context.Context, owner, repo string, prNumbe
 }
 
 // GetUnderlyingClient returns the underlying go-github client.
-// This allows access to the full GitHub API if needed.
 func (c *Client) GetUnderlyingClient(ctx context.Context) *github.Client {
-	ts := oauth2.StaticTokenSource(
-		&oauth2.Token{
-			AccessToken: c.accessToken,
-		},
-	)
-	tc := oauth2.NewClient(ctx, ts)
-
-	client := github.NewClient(tc)
-
-	return client
+	return c.ghClient
 }

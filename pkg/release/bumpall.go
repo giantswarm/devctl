@@ -19,7 +19,6 @@ import (
 	"github.com/jedib0t/go-pretty/v6/table"
 	"github.com/jedib0t/go-pretty/v6/text"
 	"github.com/sirupsen/logrus"
-	"golang.org/x/oauth2"
 	"sigs.k8s.io/yaml"
 
 	"golang.org/x/exp/slices"
@@ -630,13 +629,10 @@ func findNewestComponentVersion(name string, constraint *semver.Range) (string, 
 func getLatestGithubRelease(owner string, name string, constraint *semver.Range) (string, error) {
 	token := env.GitHubToken.Val()
 
-	ctx := context.Background()
-	ts := oauth2.StaticTokenSource(
-		&oauth2.Token{AccessToken: token},
-	)
-	tc := oauth2.NewClient(ctx, ts)
-
-	client := github.NewClient(tc)
+	client, err := github.NewClient(github.WithAuthToken(token))
+	if err != nil {
+		return "", microerror.Mask(err)
+	}
 
 	owner, candidateNames := getRepoCandidates(owner, name)
 
@@ -721,12 +717,10 @@ func getLatestGithubRelease(owner string, name string, constraint *semver.Range)
 // getLatestK8sVersion returns the latest patch version for a given k8s major.minor version.
 func getLatestK8sVersion(major uint64) (string, error) {
 	token := env.GitHubToken.Val()
-	ctx := context.Background()
-	ts := oauth2.StaticTokenSource(
-		&oauth2.Token{AccessToken: token},
-	)
-	tc := oauth2.NewClient(ctx, ts)
-	client := github.NewClient(tc)
+	client, err := github.NewClient(github.WithAuthToken(token))
+	if err != nil {
+		return "", microerror.Mask(err)
+	}
 
 	opt := &github.ListOptions{PerPage: 100}
 	var allReleases []*github.RepositoryRelease
@@ -776,12 +770,10 @@ func getLatestReleaseForMinor(owner, repo, minorVersion string) (string, error) 
 	token := env.GitHubToken.Val()
 
 	ctx := context.Background()
-	ts := oauth2.StaticTokenSource(
-		&oauth2.Token{AccessToken: token},
-	)
-	tc := oauth2.NewClient(ctx, ts)
-
-	client := github.NewClient(tc)
+	client, err := github.NewClient(github.WithAuthToken(token))
+	if err != nil {
+		return "", microerror.Mask(err)
+	}
 
 	// Note: repo is already the resolved repository name from GetRepoName,
 	// so we use it directly without calling getRepoCandidates
