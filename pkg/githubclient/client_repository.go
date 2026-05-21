@@ -251,40 +251,64 @@ func (c *Client) getGithubChecks(ctx context.Context, repository *github.Reposit
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}
-	c.logger.Debugf("get commit statuses for ref: %q", ref)
+	c.logger.Debugf("get commit statuses and check runs for ref: %q", ref)
 
-	var allCombinedStatus []*github.CombinedStatus
-	{
-		opt := &github.ListOptions{
-			PerPage: 10,
+	underlyingClient := c.GetUnderlyingClient(ctx)
+	seen := make(map[string]bool)
+	var checks []string
+
+	addCheck := func(name string) {
+		if seen[name] {
+			return
 		}
+		if checksFilter != nil && checksFilter.MatchString(name) {
+			return
+		}
+		seen[name] = true
+		checks = append(checks, name)
+	}
 
-		underlyingClient := c.GetUnderlyingClient(ctx)
-
+	// Legacy commit statuses (CircleCI, etc.)
+	{
+		opt := &github.ListOptions{PerPage: 100}
 		for {
 			combinedStatus, resp, err := underlyingClient.Repositories.GetCombinedStatus(ctx, owner, repo, ref, opt)
 			if err != nil {
 				return nil, microerror.Mask(err)
 			}
-			allCombinedStatus = append(allCombinedStatus, combinedStatus)
+			for _, status := range combinedStatus.Statuses {
+				addCheck(status.GetContext())
+			}
 			if resp.NextPage == 0 {
 				break
 			}
 			opt.Page = resp.NextPage
-
 		}
 	}
 
-	var checks []string
-	for _, combinedStatus := range allCombinedStatus {
-		for _, status := range combinedStatus.Statuses {
-			if checksFilter == nil || !checksFilter.MatchString(status.GetContext()) {
-				checks = append(checks, status.GetContext())
+	// GitHub Actions check runs.
+	{
+		completed := "completed"
+		opt := &github.ListCheckRunsOptions{
+			Status:      &completed,
+			ListOptions: github.ListOptions{PerPage: 100},
+		}
+		for {
+			results, resp, err := underlyingClient.Checks.ListCheckRunsForRef(ctx, owner, repo, ref, opt)
+			if err != nil {
+				return nil, microerror.Mask(err)
 			}
+			for _, run := range results.CheckRuns {
+				addCheck(run.GetName())
+			}
+			if resp.NextPage == 0 {
+				break
+			}
+			opt.Page = resp.NextPage
 		}
 	}
 
-	c.logger.Debugf("found %d commit statuses for ref %q:", len(checks), ref)
+	c.logger.Debugf("found %d checks for ref %q:", len(checks), ref)
 	for id, check := range checks {
 		c.logger.Debugf(" - checks[%d] = %q", id, check)
 	}
