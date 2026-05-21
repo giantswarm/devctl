@@ -1,6 +1,6 @@
 package githubclient
 
-import "github.com/google/go-github/v87/github"
+import "github.com/google/go-github/v88/github"
 
 func isGithub404(err error) bool {
 	if err == nil {
