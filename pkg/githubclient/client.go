@@ -7,11 +7,14 @@ import (
 	"time"
 
 	"github.com/giantswarm/microerror"
+	"net/http"
+
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/google/go-github/v87/github"
 	"github.com/sirupsen/logrus"
+	"golang.org/x/oauth2"
 )
 
 type Config struct {
@@ -36,7 +39,16 @@ func New(config Config) (*Client, error) {
 		return nil, microerror.Maskf(invalidConfigError, "%T.AccessToken must not be empty", config)
 	}
 
-	ghClient, err := github.NewClient(github.WithAuthToken(config.AccessToken))
+	var transport http.RoundTripper = &oauth2.Transport{
+		Source: oauth2.StaticTokenSource(&oauth2.Token{AccessToken: config.AccessToken}),
+		Base:   http.DefaultTransport,
+	}
+	if config.DryRun {
+		transport = &dryRunTransport{inner: transport, logger: config.Logger}
+		config.Logger.Info("[dry-run] GitHub API mutations will be skipped")
+	}
+
+	ghClient, err := github.NewClient(github.WithHTTPClient(&http.Client{Transport: transport}))
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}

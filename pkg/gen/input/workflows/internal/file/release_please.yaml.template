@@ -1,0 +1,19 @@
+{{{{ .Header }}}}
+name: Release Please
+
+on:
+  push:
+    branches:
+      - main
+      - master
+
+permissions: {}
+
+jobs:
+  release_please:
+    uses: giantswarm/github-workflows/.github/workflows/release-please.yaml@main
+    permissions:
+      contents: write
+      pull-requests: write
+    secrets:
+      TAYLORBOT_GITHUB_ACTION: ${{ secrets.TAYLORBOT_GITHUB_ACTION }}

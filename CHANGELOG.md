@@ -7,6 +7,40 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `devctl repo checks --update --checks <list> REPOSITORY` adds named checks to the required status checks on the default branch protection rule without touching any other branch protection or repo settings.
+- Rename the generated `Values and schema` workflow name and its `check` job to `check-values-schema` for an unambiguous required-check reference in branch protection rules.
+- `devctl repo setup` auto-detection now includes GitHub Actions check runs in addition to legacy commit statuses, so Actions-based checks are picked up as required checks.
+- `devctl gen workflows --release-workflow=release-please` generates a Release Please workflow instead of the legacy `create-release-pr` / `create-release` / `validate-changelog` trio. `--changelog-style` controls the section headers: `legacy` maps commit types to `### Added/Changed/Fixed` (required by the `giantswarm/releases` changelog scraper); `release-please` uses the Angular preset. The Release Please config and manifest are written as scaffolding files (generate-once, not overwritten on subsequent runs).
+- CHANGELOG scraper now parses `### Security` and `### Deprecated` sections from component changelogs. Output follows KaC canonical order: Added, Changed, Deprecated, Removed, Fixed, Security.
+- Route the `security:` conventional commit type to `### Security` in the generated `release-please-config.json` (both `--changelog-style=legacy` and `--changelog-style=release-please`). Use `security:` (or `security(scope):`) for CVE fixes and vulnerability mitigations.
+
+### Changed
+
+- `devctl gen workflows --changelog-style=release-please` now writes the full Keep a Changelog mapping: `feat` to `### Added`, `fix` to `### Fixed`, `security` to `### Security`, and the remaining Angular types (`perf`, `revert`, `refactor`, `docs`, `style`, `test`, `build`, `ci`, `chore`) to `### Changed`.
+
+### Changed
+
+- `repo setup`, `repo setup renovate`: log a past-tense confirmation after the Renovate installation step. `repo setup --dry-run` logs `[dry-run] would add ...`.
+
+### Fixed
+
+- `repo setup --dry-run`: now actually skips GitHub mutations; the `DryRun` flag was never forwarded into the GitHub client.
+
+## [7.41.1] - 2026-05-20
+
+### Changed
+
+- Change the PR name looked for in `devctl pr approve-align-files` from `Align files` to `chore: align files according to platform standards`
+
+## [7.41.0] - 2026-05-20
+
+### Added
+
+- Generate a `semantic_pull_request.yaml` GitHub Actions workflow in every repo. It calls the new `giantswarm/github-workflows/.github/workflows/semantic-pull-request.yaml` reusable workflow, which validates that the PR title follows Conventional Commits. The check runs on `pull_request` (`opened`, `edited`, `synchronize`) and uses the action's default type set (`build`, `chore`, `ci`, `docs`, `feat`, `fix`, `perf`, `refactor`, `revert`, `style`, `test`).
+- Add `compilerla/conventional-pre-commit` hook to the generated `.pre-commit-config.yaml`, gated to the `commit-msg` stage. Contributors enable it locally with `pre-commit install --hook-type commit-msg`.
+
 ### Changed
 
 - Upgrade `github.com/google/go-github` from v85 to v86.
@@ -1756,7 +1790,9 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.40.7...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.41.1...HEAD
+[7.41.1]: https://github.com/giantswarm/devctl/compare/v7.41.0...v7.41.1
+[7.41.0]: https://github.com/giantswarm/devctl/compare/v7.40.7...v7.41.0
 [7.40.7]: https://github.com/giantswarm/devctl/compare/v7.40.6...v7.40.7
 [7.40.6]: https://github.com/giantswarm/devctl/compare/v7.40.5...v7.40.6
 [7.40.5]: https://github.com/giantswarm/devctl/compare/v7.40.4...v7.40.5

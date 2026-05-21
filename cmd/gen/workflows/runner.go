@@ -52,9 +52,21 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	}
 
 	inputs := []input.Input{
-		workflowsInput.CreateRelease(),
-		workflowsInput.CreateReleasePR(),
-		workflowsInput.ValidateChangelog(),
+		workflowsInput.SemanticPullRequest(),
+	}
+
+	if r.flag.ReleaseWorkflow == "release-please" {
+		inputs = append(inputs,
+			workflowsInput.ReleasePlease(),
+			workflowsInput.ReleasePleaseConfig(r.flag.ChangelogStyle),
+			workflowsInput.ReleasePleaseManifest(),
+		)
+	} else {
+		inputs = append(inputs,
+			workflowsInput.CreateRelease(),
+			workflowsInput.CreateReleasePR(),
+			workflowsInput.ValidateChangelog(),
+		)
 	}
 
 	if r.flag.Language == "go" {

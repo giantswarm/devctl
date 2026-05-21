@@ -27,15 +27,8 @@ func (c *Client) AddRepoToRenovatePermissions(ctx context.Context, org string, r
 		return err
 	}
 
-	resp, err := realClient.Do(req, nil)
-	if err != nil {
-		c.logger.Printf("response: %v", resp)
-		return err
-	}
-
-	c.logger.Printf("response status: %q", resp.Status)
-
-	return nil
+	_, err = realClient.Do(req, nil)
+	return err
 }
 
 // Remove repository from the Renovate installation. Corresponds to
@@ -49,13 +42,6 @@ func (c *Client) RemoveRepoFromRenovatePermissions(ctx context.Context, org stri
 		return err
 	}
 
-	resp, err := realClient.Do(req, nil)
-	if err != nil {
-		c.logger.Printf("response: %v", resp)
-		return err
-	}
-
-	c.logger.Printf("response status: %q", resp.Status)
-
-	return nil
+	_, err = realClient.Do(req, nil)
+	return err
 }
