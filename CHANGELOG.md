@@ -7,6 +7,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `devctl repo checks --update --checks <list> REPOSITORY` adds named checks to the required status checks on the default branch protection rule without touching any other branch protection or repo settings.
+- Rename the generated `Values and schema` workflow name and its `check` job to `check-values-schema` for an unambiguous required-check reference in branch protection rules.
+- `devctl repo setup` auto-detection now includes GitHub Actions check runs in addition to legacy commit statuses, so Actions-based checks are picked up as required checks.
+- `devctl gen workflows --release-workflow=release-please` generates a Release Please workflow instead of the legacy `create-release-pr` / `create-release` / `validate-changelog` trio. `--changelog-style` controls the section headers: `legacy` maps commit types to `### Added/Changed/Fixed` (required by the `giantswarm/releases` changelog scraper); `release-please` uses the Angular preset. The Release Please config and manifest are written as scaffolding files (generate-once, not overwritten on subsequent runs).
+
+## [7.41.1] - 2026-05-20
+
+### Changed
+
+- Change the PR name looked for in `devctl pr approve-align-files` from `Align files` to `chore: align files according to platform standards`
+
 ## [7.41.0] - 2026-05-20
 
 ### Added
@@ -1763,7 +1776,8 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.41.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.41.1...HEAD
+[7.41.1]: https://github.com/giantswarm/devctl/compare/v7.41.0...v7.41.1
 [7.41.0]: https://github.com/giantswarm/devctl/compare/v7.40.7...v7.41.0
 [7.40.7]: https://github.com/giantswarm/devctl/compare/v7.40.6...v7.40.7
 [7.40.6]: https://github.com/giantswarm/devctl/compare/v7.40.5...v7.40.6
