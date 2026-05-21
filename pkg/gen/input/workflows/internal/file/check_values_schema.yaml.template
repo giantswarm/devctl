@@ -1,6 +1,6 @@
 {{{{ .Header }}}}
 
-name: 'Values and schema'
+name: check-values-schema
 
 on:
   pull_request:
@@ -15,7 +15,7 @@ on:
 permissions: {}
 
 jobs:
-  check:
+  check-values-schema:
     uses: giantswarm/github-workflows/.github/workflows/chart-values.yaml@main
     permissions:
       contents: read
