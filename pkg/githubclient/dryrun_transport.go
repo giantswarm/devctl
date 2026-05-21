@@ -24,7 +24,7 @@ func (t *dryRunTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		_ = req.Body.Close()
 	}
 
-	t.logger.Infof("[dry-run] skipped %s %s", req.Method, req.URL.Path)
+	t.logger.Debugf("[dry-run] skipped %s %s", req.Method, req.URL.Path)
 
 	return &http.Response{
 		Status:     "200 OK",

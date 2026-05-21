@@ -118,10 +118,14 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	}
 
 	if r.flag.SetupRenovate {
-		r.logger.Printf("Adding %s/%s to repositories accessible by Renovate...", owner, *repository.Name)
 		err = client.AddRepoToRenovatePermissions(ctx, owner, repository)
 		if err != nil {
 			return microerror.Mask(err)
+		}
+		if r.flag.DryRun {
+			r.logger.Printf("[dry-run] would add %s/%s to repositories accessible by Renovate", owner, *repository.Name)
+		} else {
+			r.logger.Printf("added %s/%s to repositories accessible by Renovate", owner, *repository.Name)
 		}
 	}
 

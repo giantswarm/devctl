@@ -15,6 +15,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - `repo setup --dry-run`: actually skip remote mutations. The flag is now forwarded into the GitHub client and non-safe HTTP methods are short-circuited at the transport layer, so team permission, default workflow permission, branch protection, and Renovate installation calls are skipped in dry-run mode.
 
+### Changed
+
+- `repo setup` and `repo setup renovate`: log a past-tense confirmation (`added foo/bar to repositories accessible by Renovate` or `[dry-run] would add ...`) after the Renovate installation call, instead of the present-progressive intent line followed only by the raw HTTP status.
+
 ## [7.41.1] - 2026-05-20
 
 ### Changed
