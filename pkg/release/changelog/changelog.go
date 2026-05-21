@@ -431,12 +431,13 @@ type Version struct {
 }
 
 type CategorizedChanges struct {
-	Breaking []string
-	Added    []string
-	Changed  []string
-	Fixed    []string
-	Removed  []string
-	// Add more categories if needed
+	Breaking   []string
+	Added      []string
+	Changed    []string
+	Deprecated []string
+	Removed    []string
+	Fixed      []string
+	Security   []string
 }
 
 var categoryRegex = regexp.MustCompile(`^###\s+(?:\W+\s+)?(\w+)`)
@@ -608,13 +609,21 @@ func ParseChangelog(componentName, currentVersion, endVersion string, extraFilte
 					if len(categorizedChanges.Changed) > 0 && !strings.Contains(categorizedChanges.Changed[len(categorizedChanges.Changed)-1], subBullet) {
 						categorizedChanges.Changed[len(categorizedChanges.Changed)-1] += subBullet
 					}
-				case "Fixed":
-					if len(categorizedChanges.Fixed) > 0 && !strings.Contains(categorizedChanges.Fixed[len(categorizedChanges.Fixed)-1], subBullet) {
-						categorizedChanges.Fixed[len(categorizedChanges.Fixed)-1] += subBullet
+				case "Deprecated":
+					if len(categorizedChanges.Deprecated) > 0 && !strings.Contains(categorizedChanges.Deprecated[len(categorizedChanges.Deprecated)-1], subBullet) {
+						categorizedChanges.Deprecated[len(categorizedChanges.Deprecated)-1] += subBullet
 					}
 				case "Removed":
 					if len(categorizedChanges.Removed) > 0 && !strings.Contains(categorizedChanges.Removed[len(categorizedChanges.Removed)-1], subBullet) {
 						categorizedChanges.Removed[len(categorizedChanges.Removed)-1] += subBullet
+					}
+				case "Fixed":
+					if len(categorizedChanges.Fixed) > 0 && !strings.Contains(categorizedChanges.Fixed[len(categorizedChanges.Fixed)-1], subBullet) {
+						categorizedChanges.Fixed[len(categorizedChanges.Fixed)-1] += subBullet
+					}
+				case "Security":
+					if len(categorizedChanges.Security) > 0 && !strings.Contains(categorizedChanges.Security[len(categorizedChanges.Security)-1], subBullet) {
+						categorizedChanges.Security[len(categorizedChanges.Security)-1] += subBullet
 					}
 				}
 			} else if strings.HasPrefix(line, "- ") || strings.HasPrefix(line, "* ") {
@@ -631,10 +640,14 @@ func ParseChangelog(componentName, currentVersion, endVersion string, extraFilte
 					categorizedChanges.Added = appendUnique(categorizedChanges.Added, item)
 				case "Changed":
 					categorizedChanges.Changed = appendUnique(categorizedChanges.Changed, item)
-				case "Fixed":
-					categorizedChanges.Fixed = appendUnique(categorizedChanges.Fixed, item)
+				case "Deprecated":
+					categorizedChanges.Deprecated = appendUnique(categorizedChanges.Deprecated, item)
 				case "Removed":
 					categorizedChanges.Removed = appendUnique(categorizedChanges.Removed, item)
+				case "Fixed":
+					categorizedChanges.Fixed = appendUnique(categorizedChanges.Fixed, item)
+				case "Security":
+					categorizedChanges.Security = appendUnique(categorizedChanges.Security, item)
 				}
 			}
 		}
@@ -672,9 +685,9 @@ func ParseChangelog(componentName, currentVersion, endVersion string, extraFilte
 		sb.WriteString("\n")
 	}
 
-	if len(categorizedChanges.Fixed) > 0 {
-		sb.WriteString("#### Fixed\n\n")
-		for _, item := range categorizedChanges.Fixed {
+	if len(categorizedChanges.Deprecated) > 0 {
+		sb.WriteString("#### Deprecated\n\n")
+		for _, item := range categorizedChanges.Deprecated {
 			sb.WriteString(fmt.Sprintf("- %s\n", item))
 		}
 		sb.WriteString("\n")
@@ -683,6 +696,22 @@ func ParseChangelog(componentName, currentVersion, endVersion string, extraFilte
 	if len(categorizedChanges.Removed) > 0 {
 		sb.WriteString("#### Removed\n\n")
 		for _, item := range categorizedChanges.Removed {
+			sb.WriteString(fmt.Sprintf("- %s\n", item))
+		}
+		sb.WriteString("\n")
+	}
+
+	if len(categorizedChanges.Fixed) > 0 {
+		sb.WriteString("#### Fixed\n\n")
+		for _, item := range categorizedChanges.Fixed {
+			sb.WriteString(fmt.Sprintf("- %s\n", item))
+		}
+		sb.WriteString("\n")
+	}
+
+	if len(categorizedChanges.Security) > 0 {
+		sb.WriteString("#### Security\n\n")
+		for _, item := range categorizedChanges.Security {
 			sb.WriteString(fmt.Sprintf("- %s\n", item))
 		}
 		sb.WriteString("\n")
