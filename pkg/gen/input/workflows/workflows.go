@@ -104,3 +104,15 @@ func (w *Workflows) AnalyzeGithubActions() input.Input {
 func (w *Workflows) ZizmorBaseYml() input.Input {
 	return file.NewZizmorBaseInput(w.params)
 }
+
+func (w *Workflows) ReleasePlease(autoRelease string) input.Input {
+	return file.NewReleasePleaseInput(w.params, autoRelease)
+}
+
+func (w *Workflows) ReleasePleaseConfig(changelogStyle string) input.Input {
+	return file.NewReleasePleaseConfigInput(changelogStyle)
+}
+
+func (w *Workflows) ReleasePleaseManifest() input.Input {
+	return file.NewReleasePleaseManifestInput()
+}
