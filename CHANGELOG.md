@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [7.42.0] - 2026-05-21
+
 ### Added
 
 - `devctl repo checks --update --checks <list> REPOSITORY` adds named checks to the required status checks on the default branch protection rule without touching any other branch protection or repo settings.
@@ -1790,7 +1792,8 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.41.1...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.42.0...HEAD
+[7.42.0]: https://github.com/giantswarm/devctl/compare/v7.41.1...v7.42.0
 [7.41.1]: https://github.com/giantswarm/devctl/compare/v7.41.0...v7.41.1
 [7.41.0]: https://github.com/giantswarm/devctl/compare/v7.40.7...v7.41.0
 [7.40.7]: https://github.com/giantswarm/devctl/compare/v7.40.6...v7.40.7
