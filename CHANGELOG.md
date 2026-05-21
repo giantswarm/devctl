@@ -14,6 +14,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - `devctl repo setup` auto-detection now includes GitHub Actions check runs in addition to legacy commit statuses, so Actions-based checks are picked up as required checks.
 - `devctl gen workflows --release-workflow=release-please` generates a Release Please workflow instead of the legacy `create-release-pr` / `create-release` / `validate-changelog` trio. `--changelog-style` controls the section headers: `legacy` maps commit types to `### Added/Changed/Fixed` (required by the `giantswarm/releases` changelog scraper); `release-please` uses the Angular preset. The Release Please config and manifest are written as scaffolding files (generate-once, not overwritten on subsequent runs).
 - CHANGELOG scraper now parses `### Security` and `### Deprecated` sections from component changelogs. Output follows KaC canonical order: Added, Changed, Deprecated, Removed, Fixed, Security.
+- Route the `security:` conventional commit type to `### Security` in the generated `release-please-config.json` (both `--changelog-style=legacy` and `--changelog-style=release-please`). Use `security:` (or `security(scope):`) for CVE fixes and vulnerability mitigations.
+
+### Changed
+
+- `devctl gen workflows --changelog-style=release-please` now writes the full Keep a Changelog mapping: `feat` to `### Added`, `fix` to `### Fixed`, `security` to `### Security`, and the remaining Angular types (`perf`, `revert`, `refactor`, `docs`, `style`, `test`, `build`, `ci`, `chore`) to `### Changed`.
 
 ## [7.41.1] - 2026-05-20
 
