@@ -3,6 +3,7 @@ package workflows
 import (
 	"context"
 	"io"
+	"os"
 
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
@@ -36,7 +37,7 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
+func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 	var err error
 
 	var workflowsInput *workflows.Workflows
@@ -56,9 +57,11 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	}
 
 	if r.flag.ReleaseWorkflow == "release-please" {
+		_, statErr := os.Stat("pkg/project/project.go")
+		hasProjectGo := r.flag.Language == "go" && statErr == nil
 		inputs = append(inputs,
 			workflowsInput.ReleasePlease(),
-			workflowsInput.ReleasePleaseConfig(r.flag.ChangelogStyle),
+			workflowsInput.ReleasePleaseConfig(r.flag.ChangelogStyle, hasProjectGo),
 			workflowsInput.ReleasePleaseManifest(),
 		)
 	} else {
