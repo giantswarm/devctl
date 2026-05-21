@@ -52,9 +52,21 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	}
 
 	inputs := []input.Input{
-		workflowsInput.CreateRelease(),
-		workflowsInput.CreateReleasePR(),
-		workflowsInput.ValidateChangelog(),
+		workflowsInput.SemanticPullRequest(),
+	}
+
+	if r.flag.ReleaseWorkflow == "release-please" {
+		inputs = append(inputs,
+			workflowsInput.ReleasePlease(),
+			workflowsInput.ReleasePleaseConfig(r.flag.ChangelogStyle),
+			workflowsInput.ReleasePleaseManifest(),
+		)
+	} else {
+		inputs = append(inputs,
+			workflowsInput.CreateRelease(),
+			workflowsInput.CreateReleasePR(),
+			workflowsInput.ValidateChangelog(),
+		)
 	}
 
 	if r.flag.Language == "go" {
@@ -69,6 +81,12 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		inputs = append(inputs, workflowsInput.CheckValuesSchema())
 		if r.flag.InstallUpdateChart {
 			inputs = append(inputs, workflowsInput.UpdateChart())
+			if r.flag.UpstreamSyncAutomation {
+				inputs = append(inputs, workflowsInput.SyncFromUpstream())
+			}
+			if r.flag.DispatchUpdateChartEventsRepo != "" {
+				inputs = append(inputs, workflowsInput.DispatchUpdateChartEvents(r.flag.DispatchUpdateChartEventsRepo))
+			}
 		}
 		if r.flag.Language == "kyverno-policy" {
 			inputs = append(inputs, workflowsInput.TestKyvernoPoliciesWithChainsaw())

@@ -57,6 +57,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	var inputs []input.Input
 	{
 		inputs = append(inputs, precommitInput.CreatePreCommitConfig())
+		inputs = append(inputs, precommitInput.CreatePreCommitAction())
 		inputs = append(inputs, precommitInput.CreateSchemaYamlInputs()...)
 		inputs = append(inputs, precommitInput.CreateHelmReadmeInputs()...)
 	}

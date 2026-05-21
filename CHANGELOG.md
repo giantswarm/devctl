@@ -7,9 +7,88 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `devctl gen workflows --release-workflow=release-please` generates a Release Please workflow instead of the legacy `create-release-pr` / `create-release` / `validate-changelog` trio. `--changelog-style` controls the section headers: `legacy` maps commit types to `### Added/Changed/Fixed` (required by the `giantswarm/releases` changelog scraper); `release-please` uses the Angular preset. The Release Please config and manifest are written as scaffolding files (generate-once, not overwritten on subsequent runs).
+
 ### Fixed
 
-- `repo setup --dry-run`: forward the dry-run flag to the GitHub client and skip `UpdateDefaultWorkflowPermissions` in dry-run mode.
+- `repo setup --dry-run`: actually skip remote mutations. The flag is now forwarded into the GitHub client and non-safe HTTP methods are short-circuited at the transport layer, so team permission, default workflow permission, branch protection, and Renovate installation calls are skipped in dry-run mode.
+
+## [7.41.1] - 2026-05-20
+
+### Changed
+
+- Change the PR name looked for in `devctl pr approve-align-files` from `Align files` to `chore: align files according to platform standards`
+
+## [7.41.0] - 2026-05-20
+
+### Added
+
+- Generate a `semantic_pull_request.yaml` GitHub Actions workflow in every repo. It calls the new `giantswarm/github-workflows/.github/workflows/semantic-pull-request.yaml` reusable workflow, which validates that the PR title follows Conventional Commits. The check runs on `pull_request` (`opened`, `edited`, `synchronize`) and uses the action's default type set (`build`, `chore`, `ci`, `docs`, `feat`, `fix`, `perf`, `refactor`, `revert`, `style`, `test`).
+- Add `compilerla/conventional-pre-commit` hook to the generated `.pre-commit-config.yaml`, gated to the `commit-msg` stage. Contributors enable it locally with `pre-commit install --hook-type commit-msg`.
+
+### Changed
+
+- Upgrade `github.com/google/go-github` from v85 to v86.
+
+## [7.40.7] - 2026-05-06
+
+### Changed
+
+- Dependency updates
+
+## [7.40.6] - 2026-05-04
+
+### Changed
+
+- Update `dispatch-update-chart-events` workflows to now send closed PRs events to a central repository.
+
+## [7.40.5] - 2026-04-24
+
+### Fixed
+
+- Fix whitespace in pre-commit workflow for Helm charts
+
+## [7.40.4] - 2026-04-24
+
+### Fixed
+
+- Code-wise nothing changed compared to v7.40.3. However, the build pipeline changed, so this release hopefully includes commit SHAs for each template modification.
+
+## [7.40.3] - 2026-04-24
+
+### Changed
+
+- Bumped architect-orb to v7.0.0 and applied `clone_depth: 0` to the go-build job, to fix the problem that all generated files' headers pointed to the HEAD commit for the last change.
+
+## [7.40.2] - 2026-04-24
+
+### Changed
+
+- `gen precommit`: Removed badges from helm-docs template, to avoid workflow failures due to version changes outside the PR.
+
+## [7.40.1] - 2026-04-24
+
+### Changed
+
+- `gen precommit`: Also trigger for branch `master` in addition to `main`
+
+### Fixed
+
+- `gen precommit`: Fix line ending, pin action version to full semver
+
+## [7.40.0] - 2026-04-23
+
+### Added
+
+- Extended command `gen precommit` to generate a Github workflow to run pre-commit in CI
+
+## [7.39.0] - 2026-04-15
+
+### Added
+
+- Add new `sync-from-upstream` and `dispatch-update-chart-events` workflows to apps that have the `update-chart` workflow enabled.
 
 ## [7.38.0] - 2026-04-14
 
@@ -1698,7 +1777,18 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.38.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.41.1...HEAD
+[7.41.1]: https://github.com/giantswarm/devctl/compare/v7.41.0...v7.41.1
+[7.41.0]: https://github.com/giantswarm/devctl/compare/v7.40.7...v7.41.0
+[7.40.7]: https://github.com/giantswarm/devctl/compare/v7.40.6...v7.40.7
+[7.40.6]: https://github.com/giantswarm/devctl/compare/v7.40.5...v7.40.6
+[7.40.5]: https://github.com/giantswarm/devctl/compare/v7.40.4...v7.40.5
+[7.40.4]: https://github.com/giantswarm/devctl/compare/v7.40.3...v7.40.4
+[7.40.3]: https://github.com/giantswarm/devctl/compare/v7.40.2...v7.40.3
+[7.40.2]: https://github.com/giantswarm/devctl/compare/v7.40.1...v7.40.2
+[7.40.1]: https://github.com/giantswarm/devctl/compare/v7.40.0...v7.40.1
+[7.40.0]: https://github.com/giantswarm/devctl/compare/v7.39.0...v7.40.0
+[7.39.0]: https://github.com/giantswarm/devctl/compare/v7.38.0...v7.39.0
 [7.38.0]: https://github.com/giantswarm/devctl/compare/v7.37.2...v7.38.0
 [7.37.2]: https://github.com/giantswarm/devctl/compare/v7.37.1...v7.37.2
 [7.37.1]: https://github.com/giantswarm/devctl/compare/v7.37.0...v7.37.1

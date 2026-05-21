@@ -10,7 +10,7 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/google/go-github/v84/github"
+	"github.com/google/go-github/v86/github"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/oauth2"
 )
@@ -40,6 +40,10 @@ func New(config Config) (*Client, error) {
 		dryRun:      config.DryRun,
 		logger:      config.Logger,
 		accessToken: config.AccessToken,
+	}
+
+	if c.dryRun {
+		c.logger.Info("[dry-run] GitHub API mutations will be skipped")
 	}
 
 	return c, nil
@@ -179,7 +183,12 @@ func (c *Client) GetUnderlyingClient(ctx context.Context) *github.Client {
 	)
 	tc := oauth2.NewClient(ctx, ts)
 
-	client := github.NewClient(tc)
+	if c.dryRun {
+		tc.Transport = &dryRunTransport{
+			inner:  tc.Transport,
+			logger: c.logger,
+		}
+	}
 
-	return client
+	return github.NewClient(tc)
 }

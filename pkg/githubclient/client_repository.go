@@ -8,7 +8,7 @@ import (
 	"regexp"
 
 	"github.com/giantswarm/microerror"
-	"github.com/google/go-github/v84/github"
+	"github.com/google/go-github/v86/github"
 )
 
 func (c *Client) ListRepositories(ctx context.Context, owner string) ([]Repository, error) {
@@ -102,14 +102,10 @@ func (c *Client) SetRepositorySettings(ctx context.Context, repository, reposito
 	// HTTP 422 This organization does not allow private repository forking
 	repository.AllowForking = nil
 
-	if !c.dryRun {
-		var err error
-
-		underlyingClient := c.GetUnderlyingClient(ctx)
-		repository, _, err = underlyingClient.Repositories.Edit(ctx, repository.GetOwner().GetLogin(), repository.GetName(), repository)
-		if err != nil {
-			return nil, microerror.Mask(err)
-		}
+	underlyingClient := c.GetUnderlyingClient(ctx)
+	repository, _, err := underlyingClient.Repositories.Edit(ctx, repository.GetOwner().GetLogin(), repository.GetName(), repository)
+	if err != nil {
+		return nil, microerror.Mask(err)
 	}
 
 	c.logger.Debug("configured repository settings")
@@ -133,24 +129,20 @@ func (c *Client) SetRepositoryPermissions(ctx context.Context, repository *githu
 
 		c.logger.Debugf("grant %q permission to %q", permission, teamSlug)
 
-		if !c.dryRun {
-			_, err := underlyingClient.Teams.AddTeamRepoBySlug(ctx, org, teamSlug, owner, repo, opt)
-			if err != nil {
-				return microerror.Mask(err)
-			}
+		_, err := underlyingClient.Teams.AddTeamRepoBySlug(ctx, org, teamSlug, owner, repo, opt)
+		if err != nil {
+			return microerror.Mask(err)
 		}
 
 		c.logger.Debugf("granted %q permission to %q", permission, teamSlug)
 	}
 
-	if !c.dryRun {
-		input := &github.DefaultWorkflowPermissionRepository{
-			DefaultWorkflowPermissions: github.Ptr("write"),
-		}
-		_, _, err := underlyingClient.Repositories.UpdateDefaultWorkflowPermissions(ctx, owner, repo, *input)
-		if err != nil {
-			return microerror.Mask(err)
-		}
+	input := &github.DefaultWorkflowPermissionRepository{
+		DefaultWorkflowPermissions: github.Ptr("write"),
+	}
+	_, _, err := underlyingClient.Repositories.UpdateDefaultWorkflowPermissions(ctx, owner, repo, *input)
+	if err != nil {
+		return microerror.Mask(err)
 	}
 	c.logger.Debug("set default workflow permissions to write")
 
@@ -204,12 +196,10 @@ func (c *Client) SetRepositoryBranchProtection(ctx context.Context, repository *
 	b, _ := json.MarshalIndent(opts, "", "  ")
 	c.logger.Debugf("branch protection settings\n%s", b)
 
-	if !c.dryRun {
-		underlyingClient := c.GetUnderlyingClient(ctx)
-		_, _, err = underlyingClient.Repositories.UpdateBranchProtection(ctx, owner, repo, default_branch, opts)
-		if err != nil {
-			return microerror.Mask(err)
-		}
+	underlyingClient := c.GetUnderlyingClient(ctx)
+	_, _, err = underlyingClient.Repositories.UpdateBranchProtection(ctx, owner, repo, default_branch, opts)
+	if err != nil {
+		return microerror.Mask(err)
 	}
 
 	c.logger.Debugf("configured protection for %q branch", default_branch)
@@ -235,11 +225,9 @@ func (c *Client) RemoveRepositoryBranchProtection(ctx context.Context, repositor
 		return microerror.Mask(err)
 	}
 
-	if !c.dryRun {
-		_, err = underlyingClient.Repositories.RemoveBranchProtection(ctx, owner, repo, default_branch)
-		if err != nil {
-			return microerror.Mask(err)
-		}
+	_, err = underlyingClient.Repositories.RemoveBranchProtection(ctx, owner, repo, default_branch)
+	if err != nil {
+		return microerror.Mask(err)
 	}
 
 	c.logger.Debugf("disabled protection for %q branch", default_branch)
@@ -312,12 +300,10 @@ func (c *Client) SetRepositoryDefaultBranch(ctx context.Context, repository *git
 
 		c.logger.Infof("renaming default branch from %q to %q", currentDefaultBranch, newDefaultBranch)
 
-		if !c.dryRun {
-			underlyingClient := c.GetUnderlyingClient(ctx)
-			_, _, err := underlyingClient.Repositories.RenameBranch(ctx, owner, repo, currentDefaultBranch, newDefaultBranch)
-			if err != nil {
-				return microerror.Mask(err)
-			}
+		underlyingClient := c.GetUnderlyingClient(ctx)
+		_, _, err := underlyingClient.Repositories.RenameBranch(ctx, owner, repo, currentDefaultBranch, newDefaultBranch)
+		if err != nil {
+			return microerror.Mask(err)
 		}
 
 		*repository.DefaultBranch = newDefaultBranch
@@ -419,13 +405,15 @@ func (c *Client) SetRepositoryWebhooks(ctx context.Context, repository *github.R
 		if *existingHook.Config.URL == *hook.Config.URL {
 			c.logger.Debugf("found existing webhook. ID=%d\n", *existingHook.ID)
 
-			if !c.dryRun {
-				hook.ID = existingHook.ID
+			if c.dryRun {
+				return nil
+			}
 
-				hook, _, err = underlyingClient.Repositories.EditHook(ctx, owner, repo, *hook.ID, hook)
-				if err != nil {
-					return microerror.Mask(err)
-				}
+			hook.ID = existingHook.ID
+
+			hook, _, err = underlyingClient.Repositories.EditHook(ctx, owner, repo, *hook.ID, hook)
+			if err != nil {
+				return microerror.Mask(err)
 			}
 			c.logger.Infof("updated existing webhook. ID=%d\n", *hook.ID)
 
@@ -434,11 +422,13 @@ func (c *Client) SetRepositoryWebhooks(ctx context.Context, repository *github.R
 	}
 
 	c.logger.Debugf("Creating new webhook\n")
-	if !c.dryRun {
-		hook, _, err = underlyingClient.Repositories.CreateHook(ctx, owner, repo, hook)
-		if err != nil {
-			return microerror.Mask(err)
-		}
+	if c.dryRun {
+		return nil
+	}
+
+	hook, _, err = underlyingClient.Repositories.CreateHook(ctx, owner, repo, hook)
+	if err != nil {
+		return microerror.Mask(err)
 	}
 
 	c.logger.Infof("new webhook added. ID=%d\n", *hook.ID)
@@ -448,6 +438,10 @@ func (c *Client) SetRepositoryWebhooks(ctx context.Context, repository *github.R
 
 func (c *Client) CreateFromTemplate(ctx context.Context, templateOwner, templateRepo, newOwner string, repository *github.Repository) (*github.Repository, error) {
 	c.logger.Infof("creating repository %s/%s from template %s/%s", newOwner, repository.GetName(), templateOwner, templateRepo)
+
+	if c.dryRun {
+		return repository, nil
+	}
 
 	underlyingClient := c.GetUnderlyingClient(ctx)
 
@@ -460,10 +454,6 @@ func (c *Client) CreateFromTemplate(ctx context.Context, templateOwner, template
 
 	repo, _, err := underlyingClient.Repositories.CreateFromTemplate(ctx, templateOwner, templateRepo, req)
 	if err != nil {
-		if c.dryRun {
-			c.logger.Infof("[dry-run] would have created repository %s/%s from template %s/%s", newOwner, repository.GetName(), templateOwner, templateRepo)
-			return repository, nil
-		}
 		return nil, microerror.Mask(err)
 	}
 
