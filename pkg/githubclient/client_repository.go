@@ -102,6 +102,11 @@ func (c *Client) SetRepositorySettings(ctx context.Context, repository, reposito
 	// HTTP 422 This organization does not allow private repository forking
 	repository.AllowForking = nil
 
+	if c.dryRun {
+		c.logger.Debug("configured repository settings")
+		return repository, nil
+	}
+
 	underlyingClient := c.GetUnderlyingClient(ctx)
 	repository, _, err := underlyingClient.Repositories.Edit(ctx, repository.GetOwner().GetLogin(), repository.GetName(), repository)
 	if err != nil {
