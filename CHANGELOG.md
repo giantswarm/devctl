@@ -9,6 +9,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `devctl repo checks --update --checks <list> REPOSITORY` adds named checks to the required status checks on the default branch protection rule without touching any other branch protection or repo settings.
+- Rename the generated `Values and schema` workflow name and its `check` job to `check-values-schema` for an unambiguous required-check reference in branch protection rules.
 - `devctl gen workflows --release-workflow=release-please` generates a Release Please workflow instead of the legacy `create-release-pr` / `create-release` / `validate-changelog` trio. `--changelog-style` controls the section headers: `legacy` maps commit types to `### Added/Changed/Fixed` (required by the `giantswarm/releases` changelog scraper); `release-please` uses the Angular preset. The Release Please config and manifest are written as scaffolding files (generate-once, not overwritten on subsequent runs).
 
 ## [7.41.1] - 2026-05-20
