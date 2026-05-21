@@ -385,7 +385,7 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 	newRelease := mergeReleases(effectiveBaseRelease, updatesRelease)
 
 	// Rewrite catalogs to their test variants for apps/components carrying development
-	// (pre-release) versions, so the release-operator can locate the build artifact.
+	// versions, so the cluster chart lookup can locate the build artifact.
 	for i, app := range newRelease.Spec.Apps {
 		if isDevVersion(app.Version) {
 			catalog := app.Catalog

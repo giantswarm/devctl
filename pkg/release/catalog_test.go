@@ -9,10 +9,10 @@ func TestIsDevVersion(t *testing.T) {
 	}{
 		{"3.9.2", false},
 		{"v3.9.2", false},
-		{"7.3.0-abc1234f", true},
-		{"v7.3.0-abc1234f", true},
-		{"7.3.0-abc123456789abcdef", true}, // longer SHA
-		{"1.0.0-alpha.1", false},           // semver pre-release, not a git SHA
+		{"7.3.0-a3f1e2b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0", true},  // full 40-char SHA
+		{"v7.3.0-a3f1e2b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0", true}, // with v prefix
+		{"7.3.0-abc1234f", false},  // short SHA, no longer matches
+		{"1.0.0-alpha.1", false},   // semver pre-release, not a git SHA
 		{"", false},
 		{"not-a-version", false},
 	}

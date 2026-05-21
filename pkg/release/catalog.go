@@ -5,9 +5,9 @@ import (
 	"strings"
 )
 
-// gitSHASuffix matches a version string ending with a git commit hash,
-// e.g. "7.3.0-abc1234f". A SHA is 7–40 lowercase hex characters.
-var gitSHASuffix = regexp.MustCompile(`-[0-9a-f]{7,40}$`)
+// gitSHASuffix matches a version string ending with a full-length git commit
+// hash, e.g. "7.3.0-abc123...40chars". A full SHA is exactly 40 hex characters.
+var gitSHASuffix = regexp.MustCompile(`-[0-9a-f]{40}$`)
 
 // isDevVersion returns true when the version string ends with a git commit
 // hash suffix (e.g. "7.3.0-abc123f"), indicating a development build.
