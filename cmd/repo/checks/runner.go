@@ -131,8 +131,8 @@ func (r *runner) enableViaFullProtection(ctx context.Context, underlying *github
 	if rpr := protection.GetRequiredPullRequestReviews(); rpr != nil {
 		req.RequiredPullRequestReviews = &github.PullRequestReviewsEnforcementRequest{
 			RequiredApprovingReviewCount: rpr.RequiredApprovingReviewCount,
-			DismissStaleReviews:         rpr.DismissStaleReviews,
-			RequireCodeOwnerReviews:     rpr.RequireCodeOwnerReviews,
+			DismissStaleReviews:          rpr.DismissStaleReviews,
+			RequireCodeOwnerReviews:      rpr.RequireCodeOwnerReviews,
 		}
 	}
 
