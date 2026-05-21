@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [7.43.0] - 2026-05-21
+
 ### Added
 
 - `devctl gen workflows --release-workflow=release-please` now adds `pkg/project/project.go` to `extra-files` in `release-please-config.json` when the language is Go and the file exists, so release-please updates the version constant in the release PR. No post-release dev-bump PR is needed.
@@ -1802,7 +1804,8 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.42.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.43.0...HEAD
+[7.43.0]: https://github.com/giantswarm/devctl/compare/v7.42.0...v7.43.0
 [7.42.0]: https://github.com/giantswarm/devctl/compare/v7.41.1...v7.42.0
 [7.41.1]: https://github.com/giantswarm/devctl/compare/v7.41.0...v7.41.1
 [7.41.0]: https://github.com/giantswarm/devctl/compare/v7.40.7...v7.41.0
