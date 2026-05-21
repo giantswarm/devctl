@@ -8,6 +8,11 @@ import (
 	"text/template"
 )
 
+type releasePleaseExtraFile struct {
+	Type string `json:"type"`
+	Path string `json:"path"`
+}
+
 type releasePleaseSection struct {
 	Type    string `json:"type"`
 	Section string `json:"section"`
@@ -15,19 +20,23 @@ type releasePleaseSection struct {
 }
 
 type releasePleaseConfig struct {
-	ReleaseType       string                 `json:"release-type"`
-	ChangelogSections []releasePleaseSection `json:"changelog-sections"`
+	ReleaseType       string                   `json:"release-type"`
+	ExtraFiles        []releasePleaseExtraFile `json:"extra-files"`
+	ChangelogSections []releasePleaseSection   `json:"changelog-sections"`
 }
 
 func Test_NewReleasePleaseConfigInput(t *testing.T) {
 	testCases := []struct {
 		name             string
 		changelogStyle   string
+		hasProjectGo     bool
 		expectedSections map[string]string
+		expectExtraFiles []releasePleaseExtraFile
 	}{
 		{
-			name:           "release-please style writes full Angular-to-KaC mapping plus security",
+			name:           "release-please style without project.go",
 			changelogStyle: "release-please",
+			hasProjectGo:   false,
 			expectedSections: map[string]string{
 				"feat":     "### Added",
 				"fix":      "### Fixed",
@@ -44,8 +53,31 @@ func Test_NewReleasePleaseConfigInput(t *testing.T) {
 			},
 		},
 		{
-			name:           "legacy style keeps existing types and adds security",
+			name:           "release-please style with project.go",
+			changelogStyle: "release-please",
+			hasProjectGo:   true,
+			expectedSections: map[string]string{
+				"feat":     "### Added",
+				"fix":      "### Fixed",
+				"perf":     "### Changed",
+				"revert":   "### Changed",
+				"refactor": "### Changed",
+				"docs":     "### Changed",
+				"style":    "### Changed",
+				"test":     "### Changed",
+				"build":    "### Changed",
+				"ci":       "### Changed",
+				"chore":    "### Changed",
+				"security": "### Security",
+			},
+			expectExtraFiles: []releasePleaseExtraFile{
+				{Type: "generic", Path: "pkg/project/project.go"},
+			},
+		},
+		{
+			name:           "legacy style without project.go",
 			changelogStyle: "legacy",
+			hasProjectGo:   false,
 			expectedSections: map[string]string{
 				"feat":     "### Added",
 				"fix":      "### Fixed",
@@ -59,11 +91,31 @@ func Test_NewReleasePleaseConfigInput(t *testing.T) {
 				"security": "### Security",
 			},
 		},
+		{
+			name:           "legacy style with project.go",
+			changelogStyle: "legacy",
+			hasProjectGo:   true,
+			expectedSections: map[string]string{
+				"feat":     "### Added",
+				"fix":      "### Fixed",
+				"refactor": "### Changed",
+				"perf":     "### Changed",
+				"docs":     "### Changed",
+				"chore":    "### Changed",
+				"test":     "### Changed",
+				"build":    "### Changed",
+				"ci":       "### Changed",
+				"security": "### Security",
+			},
+			expectExtraFiles: []releasePleaseExtraFile{
+				{Type: "generic", Path: "pkg/project/project.go"},
+			},
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			in := NewReleasePleaseConfigInput(tc.changelogStyle)
+			in := NewReleasePleaseConfigInput(tc.changelogStyle, tc.hasProjectGo)
 
 			tpl, err := template.New("release-please-config").
 				Delims(in.TemplateDelims.Left, in.TemplateDelims.Right).
@@ -95,6 +147,10 @@ func Test_NewReleasePleaseConfigInput(t *testing.T) {
 			}
 			if !reflect.DeepEqual(gotSections, tc.expectedSections) {
 				t.Errorf("changelog-sections mismatch\ngot:  %#v\nwant: %#v", gotSections, tc.expectedSections)
+			}
+
+			if !reflect.DeepEqual(got.ExtraFiles, tc.expectExtraFiles) {
+				t.Errorf("extra-files mismatch\ngot:  %#v\nwant: %#v", got.ExtraFiles, tc.expectExtraFiles)
 			}
 		})
 	}

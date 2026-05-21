@@ -13,7 +13,7 @@ var releasePleaseConfigTemplate string
 // NewReleasePleaseConfigInput returns a scaffolding Input (generate-once) for
 // release-please-config.json in the repository root. Existing files are never
 // overwritten so users can extend the config (e.g. add version-files).
-func NewReleasePleaseConfigInput(changelogStyle string) input.Input {
+func NewReleasePleaseConfigInput(changelogStyle string, hasProjectGo bool) input.Input {
 	return input.Input{
 		Path:         filepath.Join(".", "release-please-config.json"),
 		TemplateBody: releasePleaseConfigTemplate,
@@ -23,6 +23,7 @@ func NewReleasePleaseConfigInput(changelogStyle string) input.Input {
 		},
 		TemplateData: map[string]interface{}{
 			"LegacyChangelog": changelogStyle != "release-please",
+			"HasProjectGo":    hasProjectGo,
 		},
 	}
 }

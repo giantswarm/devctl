@@ -1,5 +1,10 @@
 {{{{- if .LegacyChangelog }}}}{
   "release-type": "simple",
+  {{{{- if .HasProjectGo }}}}
+  "extra-files": [
+    {"type": "generic", "path": "pkg/project/project.go"}
+  ],
+  {{{{- end }}}}
   "changelog-sections": [
     {"type": "feat",     "section": "### Added"},
     {"type": "fix",      "section": "### Fixed"},
@@ -15,6 +20,11 @@
 }
 {{{{- else }}}}{
   "release-type": "simple",
+  {{{{- if .HasProjectGo }}}}
+  "extra-files": [
+    {"type": "generic", "path": "pkg/project/project.go"}
+  ],
+  {{{{- end }}}}
   "changelog-sections": [
     {"type": "feat",     "section": "### Added"},
     {"type": "fix",      "section": "### Fixed"},

@@ -7,6 +7,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `devctl gen workflows --release-workflow=release-please` now adds `pkg/project/project.go` to `extra-files` in `release-please-config.json` when the language is Go and the file exists, so release-please updates the version constant in the release PR. No post-release dev-bump PR is needed.
+- `Makefile.gen.go.mk` now injects the version into the binary via `-X .../pkg/project.version=$(VERSION)` in `LDFLAGS`, alongside the existing `buildTimestamp` and `gitSHA` flags. `VERSION` is derived from `architect project version` (git tag), so local and CI builds self-report correctly without modifying `project.go` at build time.
+
+### Fixed
+
+- The generated `Release Please` workflow referenced a non-existent reusable workflow (`release-please.yaml`); corrected to `release.yaml`.
+- `Makefile.gen.app.mk` used `$(APPLICATION)/charts` for Helm dependency paths; all repos place charts under `helm/$(APPLICATION)/`, so the `DEPS`, `update-deps`, `$(DEPS)`, and `helm-docs` targets now use `helm/$(APPLICATION)/` as the base path.
+
 ## [7.42.0] - 2026-05-21
 
 ### Added

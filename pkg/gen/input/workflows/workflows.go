@@ -109,8 +109,8 @@ func (w *Workflows) ReleasePlease() input.Input {
 	return file.NewReleasePleaseInput(w.params)
 }
 
-func (w *Workflows) ReleasePleaseConfig(changelogStyle string) input.Input {
-	return file.NewReleasePleaseConfigInput(changelogStyle)
+func (w *Workflows) ReleasePleaseConfig(changelogStyle string, hasProjectGo bool) input.Input {
+	return file.NewReleasePleaseConfigInput(changelogStyle, hasProjectGo)
 }
 
 func (w *Workflows) ReleasePleaseManifest() input.Input {

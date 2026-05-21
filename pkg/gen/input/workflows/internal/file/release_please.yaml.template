@@ -11,7 +11,7 @@ permissions: {}
 
 jobs:
   release_please:
-    uses: giantswarm/github-workflows/.github/workflows/release-please.yaml@main
+    uses: giantswarm/github-workflows/.github/workflows/release.yaml@main
     permissions:
       contents: write
       pull-requests: write
