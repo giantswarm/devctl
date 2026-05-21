@@ -42,6 +42,10 @@ func New(config Config) (*Client, error) {
 		accessToken: config.AccessToken,
 	}
 
+	if c.dryRun {
+		c.logger.Info("[dry-run] GitHub API mutations will be skipped")
+	}
+
 	return c, nil
 }
 
@@ -179,7 +183,12 @@ func (c *Client) GetUnderlyingClient(ctx context.Context) *github.Client {
 	)
 	tc := oauth2.NewClient(ctx, ts)
 
-	client := github.NewClient(tc)
+	if c.dryRun {
+		tc.Transport = &dryRunTransport{
+			inner:  tc.Transport,
+			logger: c.logger,
+		}
+	}
 
-	return client
+	return github.NewClient(tc)
 }

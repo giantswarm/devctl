@@ -20,6 +20,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - `devctl gen workflows --changelog-style=release-please` now writes the full Keep a Changelog mapping: `feat` to `### Added`, `fix` to `### Fixed`, `security` to `### Security`, and the remaining Angular types (`perf`, `revert`, `refactor`, `docs`, `style`, `test`, `build`, `ci`, `chore`) to `### Changed`.
 
+### Changed
+
+- `repo setup`, `repo setup renovate`: log a past-tense confirmation after the Renovate installation step. `repo setup --dry-run` logs `[dry-run] would add ...`.
+
+### Fixed
+
+- `repo setup --dry-run`: now actually skips GitHub mutations; the `DryRun` flag was never forwarded into the GitHub client.
+
 ## [7.41.1] - 2026-05-20
 
 ### Changed
