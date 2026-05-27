@@ -60,7 +60,7 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 		_, statErr := os.Stat("pkg/project/project.go")
 		hasProjectGo := r.flag.Language == "go" && statErr == nil
 		inputs = append(inputs,
-			workflowsInput.ReleasePlease(),
+			workflowsInput.ReleasePlease(r.flag.AutoReleaseLevel),
 			workflowsInput.ReleasePleaseConfig(r.flag.ChangelogStyle, hasProjectGo),
 			workflowsInput.ReleasePleaseManifest(),
 		)

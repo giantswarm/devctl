@@ -25,13 +25,15 @@ To opt a repository into [Release Please](https://github.com/googleapis/release-
 ```nohighlight
 devctl gen workflows --flavour app --language go \
   --release-workflow release-please \
-  --changelog-style legacy
+  --changelog-style legacy \
+  --auto-release-level minor
 ```
 
 | Flag | Values | Default | Notes |
 |------|--------|---------|-------|
 | `--release-workflow` | `legacy`, `release-please` | `legacy` | Switches between the legacy `create-release-pr` flow and Release Please |
 | `--changelog-style` | `legacy`, `release-please` | `legacy` | `legacy` maps commit types to `### Added/Changed/Fixed` (required by the `giantswarm/releases` changelog scraper). `release-please` uses the Angular preset (`### Features`, `### Bug Fixes`, etc.) |
+| `--auto-release-level` | `none`, `patch`, `minor`, `major` | `none` | Auto-merges the Release Please PR when CI passes, up to this bump level (sets the reusable workflow's `auto-merge-level` input). `none` disables auto-merge. Requires "Allow auto-merge" enabled on the repo and the `release-please` GitHub App on its branch-protection bypass list. |
 
 In `release-please` mode, three files are written:
 
