@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Release: Add ExternalDNS Crossplane Resources & RBAC Bootstrap.
+
 ## [7.45.0] - 2026-05-28
 
 ### Added
