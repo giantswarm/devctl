@@ -20,9 +20,10 @@ type releasePleaseSection struct {
 }
 
 type releasePleaseConfig struct {
-	ReleaseType       string                   `json:"release-type"`
-	ExtraFiles        []releasePleaseExtraFile `json:"extra-files"`
-	ChangelogSections []releasePleaseSection   `json:"changelog-sections"`
+	ReleaseType       string                            `json:"release-type"`
+	ExtraFiles        []releasePleaseExtraFile          `json:"extra-files"`
+	ChangelogSections []releasePleaseSection            `json:"changelog-sections"`
+	Packages          map[string]map[string]interface{} `json:"packages"`
 }
 
 func Test_NewReleasePleaseConfigInput(t *testing.T) {
@@ -151,6 +152,13 @@ func Test_NewReleasePleaseConfigInput(t *testing.T) {
 
 			if !reflect.DeepEqual(got.ExtraFiles, tc.expectExtraFiles) {
 				t.Errorf("extra-files mismatch\ngot:  %#v\nwant: %#v", got.ExtraFiles, tc.expectExtraFiles)
+			}
+
+			// `packages` is required at the top level of release-please-config.json
+			// per the official schema. Without it release-please loads the config,
+			// finds no packages to release, and exits without opening a PR.
+			if _, ok := got.Packages["."]; !ok {
+				t.Errorf("packages must declare the root \".\" entry; got %#v", got.Packages)
 			}
 		})
 	}

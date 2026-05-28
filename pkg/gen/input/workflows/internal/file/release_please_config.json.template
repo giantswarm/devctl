@@ -1,5 +1,8 @@
 {{{{- if .LegacyChangelog }}}}{
   "release-type": "simple",
+  "packages": {
+    ".": {}
+  },
   {{{{- if .HasProjectGo }}}}
   "extra-files": [
     {"type": "generic", "path": "pkg/project/project.go"}
@@ -20,6 +23,9 @@
 }
 {{{{- else }}}}{
   "release-type": "simple",
+  "packages": {
+    ".": {}
+  },
   {{{{- if .HasProjectGo }}}}
   "extra-files": [
     {"type": "generic", "path": "pkg/project/project.go"}
