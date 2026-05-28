@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [7.46.0] - 2026-05-28
+
 ### Added
 
 - Release: Add ExternalDNS Crossplane Resources & RBAC Bootstrap.
@@ -1824,7 +1826,8 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.45.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.46.0...HEAD
+[7.46.0]: https://github.com/giantswarm/devctl/compare/v7.45.0...v7.46.0
 [7.45.0]: https://github.com/giantswarm/devctl/compare/v7.44.0...v7.45.0
 [7.44.0]: https://github.com/giantswarm/devctl/compare/v7.43.0...v7.44.0
 [7.43.0]: https://github.com/giantswarm/devctl/compare/v7.42.0...v7.43.0
