@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [7.44.0] - 2026-05-28
+
 ### Added
 
 - `gen workflows`: Add `--auto-release-level` flag (`none`, `patch`, `minor`, `major`; default `none`), only used with `--release-workflow=release-please`. It sets the `auto-merge-level` input of the `giantswarm/github-workflows` `release.yaml` reusable workflow, which auto-merges the Release Please PR once CI passes, up to the given bump level (`none` disables auto-merge). The consuming repo must have "Allow auto-merge" enabled and the `release-please` GitHub App on its branch-protection bypass list.
@@ -1812,7 +1814,8 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.43.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.44.0...HEAD
+[7.44.0]: https://github.com/giantswarm/devctl/compare/v7.43.0...v7.44.0
 [7.43.0]: https://github.com/giantswarm/devctl/compare/v7.42.0...v7.43.0
 [7.42.0]: https://github.com/giantswarm/devctl/compare/v7.41.1...v7.42.0
 [7.41.1]: https://github.com/giantswarm/devctl/compare/v7.41.0...v7.41.1
