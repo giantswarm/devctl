@@ -7,6 +7,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `gen workflows`: Add `--auto-release-level` flag (`none`, `patch`, `minor`, `major`; default `none`), only used with `--release-workflow=release-please`. It sets the `auto-merge-level` input of the `giantswarm/github-workflows` `release.yaml` reusable workflow, which auto-merges the Release Please PR once CI passes, up to the given bump level (`none` disables auto-merge). The consuming repo must have "Allow auto-merge" enabled and the `release-please` GitHub App on its branch-protection bypass list.
+
+### Changed
+
+- Generated `release-please.yaml` workflow now passes `RELEASE_PLEASE_CLIENT_ID` and `RELEASE_PLEASE_PRIVATE_KEY` secrets to the `giantswarm/github-workflows` `release.yaml` reusable workflow instead of `TAYLORBOT_GITHUB_ACTION`. This matches the App-based authentication in the reusable workflow (the reusable workflow feeds `RELEASE_PLEASE_CLIENT_ID` to `create-github-app-token`'s `client-id`). Requires those two org secrets to be available to the consuming repo.
+
 ## [7.43.0] - 2026-05-21
 
 ### Added

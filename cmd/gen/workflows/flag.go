@@ -22,6 +22,7 @@ const (
 	flagDispatchUpdateChartEventsRepo = "dispatch-update-chart-events-repo"
 	flagReleaseWorkflow               = "release-workflow"
 	flagChangelogStyle                = "changelog-style"
+	flagAutoReleaseLevel              = "auto-release-level"
 )
 
 type flag struct {
@@ -36,6 +37,7 @@ type flag struct {
 	DispatchUpdateChartEventsRepo string
 	ReleaseWorkflow               string
 	ChangelogStyle                string
+	AutoReleaseLevel              string
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
@@ -50,11 +52,19 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.DispatchUpdateChartEventsRepo, flagDispatchUpdateChartEventsRepo, "", "The repository to dispatch update chart events to. Only valid if --upstream-sync-automation is true.")
 	cmd.Flags().StringVar(&f.ReleaseWorkflow, flagReleaseWorkflow, "legacy", "Release workflow to generate. Possible values: legacy (default), release-please.")
 	cmd.Flags().StringVar(&f.ChangelogStyle, flagChangelogStyle, "legacy", "Changelog section style for release-please. 'legacy' maps conventional commit types to ### Added/Changed/Fixed. 'release-please' uses the Release Please Angular preset. Possible values: legacy (default), release-please.")
+	cmd.Flags().StringVar(&f.AutoReleaseLevel, flagAutoReleaseLevel, "none", "Automatically merge the release-please Release PR when CI passes, up to this bump level. Sets the reusable workflow's 'auto-merge-level' input. Only used with --release-workflow=release-please. Possible values: none (default), patch, minor, major.")
 }
 
 func (f *flag) Validate() error {
 	if len(f.Flavours) == 0 {
 		return microerror.Maskf(invalidFlagError, "--%s must be one of: %s", flagFlavour, strings.Join(gen.AllFlavours(), ", "))
+	}
+
+	switch f.AutoReleaseLevel {
+	case "none", "patch", "minor", "major":
+		// valid
+	default:
+		return microerror.Maskf(invalidFlagError, "--%s must be one of: none, patch, minor, major", flagAutoReleaseLevel)
 	}
 
 	return nil

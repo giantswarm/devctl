@@ -15,5 +15,8 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+    with:
+      auto-merge-level: {{{{ .AutoMergeLevel }}}}
     secrets:
-      TAYLORBOT_GITHUB_ACTION: ${{ secrets.TAYLORBOT_GITHUB_ACTION }}
+      RELEASE_PLEASE_CLIENT_ID: ${{ secrets.RELEASE_PLEASE_CLIENT_ID }}
+      RELEASE_PLEASE_PRIVATE_KEY: ${{ secrets.RELEASE_PLEASE_PRIVATE_KEY }}
