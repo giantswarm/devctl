@@ -297,6 +297,12 @@ var KnownComponents = map[string]ParseParams{
 		Start:     commonStartPattern,
 		End:       commonEndPattern,
 	},
+	"external-dns-crossplane-resources": {
+		Tag:       "https://github.com/giantswarm/external-dns-crossplane-resources/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/external-dns-crossplane-resources/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
+	},
 	"k8s-audit-metrics": {
 		Tag:       "https://github.com/giantswarm/k8s-audit-metrics/releases/tag/v{{.Version}}",
 		Changelog: "https://raw.githubusercontent.com/giantswarm/k8s-audit-metrics/v{{.Version}}/CHANGELOG.md",
@@ -360,6 +366,12 @@ var KnownComponents = map[string]ParseParams{
 	"prometheus-blackbox-exporter": {
 		Tag:       "https://github.com/giantswarm/prometheus-blackbox-exporter-app/releases/tag/v{{.Version}}",
 		Changelog: "https://raw.githubusercontent.com/giantswarm/prometheus-blackbox-exporter-app/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
+	},
+	"rbac-bootstrap": {
+		Tag:       "https://github.com/giantswarm/rbac-bootstrap-app/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/rbac-bootstrap-app/v{{.Version}}/CHANGELOG.md",
 		Start:     commonStartPattern,
 		End:       commonEndPattern,
 	},
