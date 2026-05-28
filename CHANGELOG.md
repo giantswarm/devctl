@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Changed
 
 - `gen workflows` (`--release-workflow=release-please`): also delete the legacy release workflow files (`.github/workflows/zz_generated.create_release.yaml`, `zz_generated.create_release_pr.yaml`, `zz_generated.validate_changelog.yaml`) on every run. A repo uses either the legacy `create-release` flow or release-please — never both. Previously devctl stopped generating the legacy files in release-please mode but left whatever was already on disk, so a migrating repo carried orphaned workflows that still triggered on the legacy branch/tag patterns. Uses the existing `input.Input{Delete: true}` primitive, so the change is a no-op for green-field release-please repos.
+- `gen workflows` (`--release-workflow=release-please`): also remove the `## [Unreleased]` section from `CHANGELOG.md` (heading line plus content up to the next `## ` heading). release-please is commit-driven and inserts the next version above the most recent `## ` heading; with `[Unreleased]` present it landed below the new version, stranding the header mid-file. Linked-form (`## [Unreleased](https://…)`) is recognised. No-op when `CHANGELOG.md` doesn't exist or no `[Unreleased]` section is present, so this is safe for green-field release-please repos. Legacy-mode runs are untouched — those still curate from `[Unreleased]`.
 
 ### Fixed
 

@@ -47,6 +47,8 @@ In `release-please` mode, three files are written:
 - `.github/workflows/zz_generated.create_release_pr.yaml`
 - `.github/workflows/zz_generated.validate_changelog.yaml`
 
+The `## [Unreleased]` section is also removed from `CHANGELOG.md` if present (heading line up to the next `## ` heading). release-please builds release notes from conventional commits, not from a curated section, and would otherwise strand the `[Unreleased]` heading mid-file on its next-version insert. No-op for repos that don't have a `[Unreleased]` section.
+
 ## Generating Makefiles
 
 Creates common `Makefile` and includes in the root directory.
