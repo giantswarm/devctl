@@ -141,9 +141,15 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 	// release-please is commit-driven, so the curated "## [Unreleased]"
 	// section is no longer the source of upcoming release notes. Drop it on
 	// every gen run; otherwise release-please's next-version insert lands
-	// above it and the "[Unreleased]" header gets stranded mid-file.
+	// above it and the "[Unreleased]" header gets stranded mid-file. Also
+	// rewrite legacy "## [X.Y.Z] - YYYY-MM-DD" headers into release-please's
+	// compare-URL inline-link form so old releases match the style new
+	// releases get.
 	if r.flag.ReleaseWorkflow == "release-please" {
 		if err := workflows.RemoveChangelogUnreleasedSection("CHANGELOG.md"); err != nil {
+			return microerror.Mask(err)
+		}
+		if err := workflows.LinkChangelogVersionHeaders("CHANGELOG.md"); err != nil {
 			return microerror.Mask(err)
 		}
 	}

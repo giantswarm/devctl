@@ -49,6 +49,8 @@ In `release-please` mode, three files are written:
 
 The `## [Unreleased]` section is also removed from `CHANGELOG.md` if present (heading line up to the next `## ` heading). release-please builds release notes from conventional commits, not from a curated section, and would otherwise strand the `[Unreleased]` heading mid-file on its next-version insert. No-op for repos that don't have a `[Unreleased]` section.
 
+Legacy `## [X.Y.Z] - YYYY-MM-DD` headers in `CHANGELOG.md` are rewritten into the same inline-link form release-please uses for new releases: `## [X.Y.Z](https://<host>/<owner>/<repo>/compare/vPREV...vX.Y.Z) (YYYY-MM-DD)` (the oldest version falls back to a release-tag link). Keeps the file's old and new release sections in a single visual style. Idempotent and a no-op for repos without legacy headers.
+
 ## Generating Makefiles
 
 Creates common `Makefile` and includes in the root directory.
