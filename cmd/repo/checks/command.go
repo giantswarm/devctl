@@ -15,12 +15,15 @@ const (
 	shortDesc       = "Manage required status checks on the default branch"
 	longDescription = `Manage required status checks on the default branch protection rule.
 
-Use --update to add required checks. Checks already present are left as-is;
-checks not in --checks are left unchanged. The branch must already have
-protection configured.
+Use --update to add or remove required checks. --checks names are added
+(checks already present are left as-is). --remove names are dropped if
+present. Anything not listed is left unchanged. The branch must already
+have protection configured.
 
 Examples:
-  devctl repo checks --update --checks semantic-pull-request,pre-commit giantswarm/my-repo`
+  devctl repo checks --update --checks 'semantic-pull-request / Validate PR title' giantswarm/my-repo
+  devctl repo checks --update --remove semantic-pull-request giantswarm/my-repo
+  devctl repo checks --update --checks 'semantic-pull-request / Validate PR title' --remove semantic-pull-request giantswarm/my-repo`
 )
 
 type Config struct {

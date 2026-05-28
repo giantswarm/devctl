@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `devctl repo checks --update` now accepts `--remove <names>` to drop required status checks. Combined with `--checks`, a single invocation can migrate a check from one name to another (subtract `--remove`, then union `--checks`). Existing checks not named in either flag are left untouched.
+
 ## [7.46.0] - 2026-05-28
 
 ### Added

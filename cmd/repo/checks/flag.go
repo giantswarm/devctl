@@ -6,12 +6,14 @@ type flag struct {
 	GithubTokenEnvVar string
 	Update            bool
 	Checks            []string
+	Remove            []string
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
 	cmd.PersistentFlags().StringVar(&f.GithubTokenEnvVar, "github-token-envvar", "GITHUB_TOKEN", "Environment variable name for Github token.")
-	cmd.Flags().BoolVar(&f.Update, "update", false, "Add required status checks on the default branch.")
+	cmd.Flags().BoolVar(&f.Update, "update", false, "Update required status checks on the default branch.")
 	cmd.Flags().StringSliceVar(&f.Checks, "checks", nil, "Check names to add to required status checks. Requires --update.")
+	cmd.Flags().StringSliceVar(&f.Remove, "remove", nil, "Check names to remove from required status checks. Requires --update.")
 }
 
 func (f *flag) Validate() error {
