@@ -30,3 +30,13 @@ func NewCreateReleasePRInput(p params.Params) input.Input {
 
 	return i
 }
+
+// NewCreateReleasePRDeletionInput returns an Input that deletes the file
+// NewCreateReleasePRInput would generate. Used when switching a repo to the
+// release-please flow so the legacy workflow is removed in the same gen run.
+func NewCreateReleasePRDeletionInput(p params.Params) input.Input {
+	return input.Input{
+		Delete: true,
+		Path:   params.RegenerableFileName(p, "create_release_pr.yaml"),
+	}
+}
