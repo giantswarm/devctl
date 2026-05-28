@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- `gen workflows` (`--release-workflow=release-please`): seed `.release-please-manifest.json` with the latest existing `v<major>.<minor>.<patch>` tag found in the target repo (`{".": "<latest>"}`) instead of always writing `{}`. Without this, repos migrating from the legacy `create_release` flow that already had release tags would get an empty manifest, causing release-please to log `Found release tag with component '', but not configured in manifest` and exit without opening a Release PR (no per-path baseline to compute "what changed since the last release" against). Green-field repos with no tags continue to get `{}`; pre-release tags and non-`v<major>.<minor>.<patch>` tags are ignored when picking the baseline; the file is still write-once, so an existing manifest is never overwritten.
+
 ## [7.46.0] - 2026-05-28
 
 ### Added
