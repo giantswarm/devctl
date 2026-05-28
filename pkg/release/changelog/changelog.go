@@ -261,6 +261,12 @@ var KnownComponents = map[string]ParseParams{
 		End:        commonEndPattern,
 		AutoDetect: true,
 	},
+	"cluster-autoscaler-crossplane-resources": {
+		Tag:       "https://github.com/giantswarm/cluster-autoscaler-crossplane-resources/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/cluster-autoscaler-crossplane-resources/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
+	},
 	"coredns": {
 		Tag:       "https://github.com/giantswarm/coredns-app/releases/tag/v{{.Version}}",
 		Changelog: "https://raw.githubusercontent.com/giantswarm/coredns-app/v{{.Version}}/CHANGELOG.md",
