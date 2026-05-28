@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- `gen workflows` (`--release-workflow=release-please`): also delete the legacy release workflow files (`.github/workflows/zz_generated.create_release.yaml`, `zz_generated.create_release_pr.yaml`, `zz_generated.validate_changelog.yaml`) on every run. A repo uses either the legacy `create-release` flow or release-please — never both. Previously devctl stopped generating the legacy files in release-please mode but left whatever was already on disk, so a migrating repo carried orphaned workflows that still triggered on the legacy branch/tag patterns. Uses the existing `input.Input{Delete: true}` primitive, so the change is a no-op for green-field release-please repos.
+
 ### Fixed
 
 - `gen workflows` (`--release-workflow=release-please`): declare the root package in the generated `release-please-config.json`. The template now renders `"packages": {".": {}}` at the top level. `packages` is `required` per release-please's official `schemas/config.json`; without it release-please loads the config but has no package to release, logs `Found release tag with component '', but not configured in manifest` for every existing tag, and exits without opening a Release PR even when conventional commits exist. The top-level `release-type: "simple"` continues to apply as the per-package default. Pairs with the manifest seeding fix below — both are needed for a legacy → release-please migration to produce a Release PR on first run.
