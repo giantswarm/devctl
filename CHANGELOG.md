@@ -9,6 +9,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [7.48.0] - 2026-05-31
 
+### Added
+
+- `gen circleci`: new generator that emits a standard `.circleci/config.yml` for the Go-service-with-Helm-chart use-case. The pipeline is derived from existing signals rather than a per-repo CI parameter block: `--language go` selects `architect/go-build`; a `Dockerfile` in the repo selects `architect/push-to-registries` (multiarch + split-china-push) plus the paired `architect/sync-china-registry`; the `app` flavour selects `architect/push-to-app-catalog` (app-build-suite executor) plus `architect/run-tests-with-ats`. Emits the aligned standard (orb pinned via `--orb-version`, default `8.3.0`; loose `/^v.*/` tags; branch builds amd64-only, tag builds multi-arch + publish chart). Configs with no applicable signal are rejected instead of rendering an empty `jobs:` list. `.circleci/config.yml` is registered as regenerable.
+
 ### Changed
 
 - `gen workflows` (`--release-workflow=release-please`): also delete the legacy release workflow files (`.github/workflows/zz_generated.create_release.yaml`, `zz_generated.create_release_pr.yaml`, `zz_generated.validate_changelog.yaml`) on every run. A repo uses either the legacy `create-release` flow or release-please — never both. Previously devctl stopped generating the legacy files in release-please mode but left whatever was already on disk, so a migrating repo carried orphaned workflows that still triggered on the legacy branch/tag patterns. Uses the existing `input.Input{Delete: true}` primitive, so the change is a no-op for green-field release-please repos.
