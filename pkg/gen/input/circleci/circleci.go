@@ -1,6 +1,8 @@
 package circleci
 
 import (
+	"github.com/giantswarm/microerror"
+
 	"github.com/giantswarm/devctl/v7/pkg/gen"
 	"github.com/giantswarm/devctl/v7/pkg/gen/input"
 	"github.com/giantswarm/devctl/v7/pkg/gen/input/circleci/internal/file"
@@ -33,6 +35,13 @@ type CircleCI struct {
 }
 
 func New(config Config) (*CircleCI, error) {
+	// Every job is derived from a signal. With none of them set the template
+	// renders an empty `jobs:` list, which is an invalid CircleCI config.
+	hasApp := config.Flavours.Contains(gen.FlavourApp)
+	if config.Language != gen.LanguageGo && !config.HasDockerfile && !hasApp {
+		return nil, microerror.Maskf(invalidConfigError, "no jobs would be generated: set --language=go, add a Dockerfile, or use the app flavour")
+	}
+
 	orbVersion := config.OrbVersion
 	if orbVersion == "" {
 		orbVersion = DefaultOrbVersion
@@ -43,7 +52,7 @@ func New(config Config) (*CircleCI, error) {
 			RepoName:      config.RepoName,
 			Language:      config.Language.String(),
 			HasDockerfile: config.HasDockerfile,
-			HasApp:        config.Flavours.Contains(gen.FlavourApp),
+			HasApp:        hasApp,
 			OrbVersion:    orbVersion,
 		},
 	}

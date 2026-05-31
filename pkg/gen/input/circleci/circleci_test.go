@@ -130,6 +130,20 @@ func Test_BinaryOnlyEmitsGoBuildAlone(t *testing.T) {
 	}
 }
 
+// Test_NoSignalsRejected verifies that a config with no language, Dockerfile,
+// or app flavour is rejected rather than rendering an empty jobs list.
+func Test_NoSignalsRejected(t *testing.T) {
+	_, err := New(Config{
+		RepoName:      "foo",
+		Language:      gen.Language(""),
+		Flavours:      gen.FlavourSlice{},
+		HasDockerfile: false,
+	})
+	if !IsInvalidConfig(err) {
+		t.Errorf("expected invalidConfigError, got %v", err)
+	}
+}
+
 // Test_ChartOnlyOmitsImage verifies derivation: a chart repo without a
 // Dockerfile gets the chart pipeline but no image jobs, and the chart push
 // requires drop the image-job references.
