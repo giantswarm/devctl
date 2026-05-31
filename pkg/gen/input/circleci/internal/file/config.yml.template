@@ -1,0 +1,138 @@
+version: 2.1
+orbs:
+  architect: giantswarm/architect@{{ .OrbVersion }}
+
+workflows:
+  build:
+    jobs:
+{{- if eq .Language "go" }}
+    - architect/go-build:
+        name: go-build-{{ .RepoName }}
+        binary: {{ .RepoName }}
+        context: architect
+        filters:
+          tags:
+            only: /^v.*/
+{{- end }}
+{{- if .HasDockerfile }}
+
+    # Branch builds: amd64 only for faster PR feedback
+    - architect/push-to-registries:
+        context: architect
+        multiarch: true
+        name: push-to-registries
+        platforms: "linux/amd64"
+{{- if eq .Language "go" }}
+        requires:
+        - go-build-{{ .RepoName }}
+{{- end }}
+        filters:
+          branches:
+            ignore:
+            - main
+
+    # Tag builds: push multi-arch image to gsoci + gsociprivate. Aliyun is
+    # handled by the sync-china-registry job below (orb's split-china-push
+    # mechanism), so the buildx push no longer crosses the Pacific.
+    - architect/push-to-registries:
+        context: architect
+        multiarch: true
+        name: push-to-registries-release
+        split-china-push: true
+{{- if eq .Language "go" }}
+        requires:
+        - go-build-{{ .RepoName }}
+{{- end }}
+        filters:
+          tags:
+            only: /^v.*/
+          branches:
+            ignore: /.*/
+
+    # Mirror gsoci -> Aliyun via the in-China giantswarm/galaxy-runner. Runs
+    # in parallel with the chart catalog push; Aliyun mirror failures do NOT
+    # block the chart publish.
+    - architect/sync-china-registry:
+        context: architect
+        name: sync-china-registry
+        requires:
+        - push-to-registries-release
+        filters:
+          tags:
+            only: /^v.*/
+          branches:
+            ignore: /.*/
+{{- end }}
+{{- if .HasApp }}
+
+    - architect/push-to-app-catalog:
+        executor: app-build-suite
+        context: architect
+        name: build-{{ .RepoName }}-chart
+        app_catalog: giantswarm-catalog
+        app_catalog_test: giantswarm-test-catalog
+        chart: {{ .RepoName }}
+        push_to_appcatalog: false
+        push_to_oci_registry: false
+        persist_chart_archive: true
+{{- if eq .Language "go" }}
+        requires:
+        - go-build-{{ .RepoName }}
+{{- end }}
+        filters:
+          tags:
+            only: /^v.*/
+          branches:
+            ignore:
+            - main
+
+    - architect/run-tests-with-ats:
+        name: execute chart tests
+        requires:
+        - build-{{ .RepoName }}-chart
+        filters:
+          tags:
+            only: /^v.*/
+          branches:
+            ignore:
+            - main
+
+    # Branch: push chart (git catalog + OCI per architect default) after tests + amd64 image
+    - architect/push-to-app-catalog:
+        executor: app-build-suite
+        context: architect
+        name: push-{{ .RepoName }}-to-giantswarm-app-catalog
+        app_catalog: giantswarm-catalog
+        app_catalog_test: giantswarm-test-catalog
+        chart: {{ .RepoName }}
+        requires:
+        - execute chart tests
+{{- if .HasDockerfile }}
+        - push-to-registries
+{{- end }}
+        filters:
+          branches:
+            ignore:
+            - main
+
+    # Tag: push chart after tests + the gsoci image. Intentionally does NOT
+    # depend on sync-china-registry so the chart catalog can publish even if
+    # the in-China Aliyun mirror is slow or fails.
+    - architect/push-to-app-catalog:
+        executor: app-build-suite
+        context: architect
+        name: push-{{ .RepoName }}-to-giantswarm-app-catalog-release
+        app_catalog: giantswarm-catalog
+        app_catalog_test: giantswarm-test-catalog
+        chart: {{ .RepoName }}
+        requires:
+        - execute chart tests
+{{- if .HasDockerfile }}
+        - push-to-registries-release
+{{- end }}
+        filters:
+          tags:
+            only: /^v.*/
+          branches:
+            ignore: /.*/
+{{- end }}
