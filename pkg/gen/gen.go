@@ -85,6 +85,8 @@ func isRegenerable(path string) bool {
 	switch {
 	case base == "Makefile" || strings.HasPrefix(base, "Makefile.gen."):
 		return true
+	case path == ".circleci/config.yml" || strings.HasSuffix(path, "/.circleci/config.yml"):
+		return true
 	case base == ".gitignore":
 		return true
 	case base == "renovate.json" || base == "renovate.json5":
