@@ -74,16 +74,33 @@ workflows:
             ignore:
             - main
 
+    # Branch: run chart tests after the image is pushed. run-tests-with-ats
+    # deploys the chart, which pulls the freshly built dev image from gsoci.
+    # Without depending on push-to-registries the test races the image push and
+    # flakes on ImagePullBackOff (the kubelet's pull backoff outlasts the test
+    # deadline once an early pull attempt fails).
     - architect/run-tests-with-ats:
         name: execute chart tests
         requires:
         - build-mcp-kubernetes-chart
+        - push-to-registries
+        filters:
+          branches:
+            ignore:
+            - main
+
+    # Tag: run chart tests after the release image is pushed, for the same
+    # image-availability reason as the branch job above.
+    - architect/run-tests-with-ats:
+        name: execute chart tests on release
+        requires:
+        - build-mcp-kubernetes-chart
+        - push-to-registries-release
         filters:
           tags:
             only: /^v.*/
           branches:
-            ignore:
-            - main
+            ignore: /.*/
 
     # Branch: push chart (git catalog + OCI per architect default) after tests + image
     - architect/push-to-app-catalog:
@@ -112,7 +129,7 @@ workflows:
         app_catalog_test: giantswarm-test-catalog
         chart: mcp-kubernetes
         requires:
-        - execute chart tests
+        - execute chart tests on release
         - push-to-registries-release
         filters:
           tags:

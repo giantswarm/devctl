@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- `gen circleci`: the chart-test job (`architect/run-tests-with-ats`, "execute chart tests") now waits for the image push before deploying. It previously required only `build-<repo>-chart`, so on image-bearing chart repos it deployed the chart and tried to pull the freshly built dev image from gsoci before `push-to-registries` had finished, racing the push and flaking on `ImagePullBackOff` (the kubelet's pull backoff outlasts the test deadline once an early pull attempt fails). The job is now split into a branch variant requiring `push-to-registries` and a release variant (`execute chart tests on release`) requiring `push-to-registries-release`, each gated on `HasDockerfile` so chart-only repos are unaffected.
+
 ## [8.3.0] - 2026-06-01
 
 ### Changed
