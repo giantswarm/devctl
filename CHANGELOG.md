@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [8.3.0] - 2026-06-01
+
 ### Changed
 
 - `gen circleci`: **dropped the `--orb-version` flag**. The giantswarm/architect orb version is now baked into devctl as a constant (`OrbVersion`) next to the config template, with a Renovate custom manager keeping it current. The orb major and the template's required job/param shape are two halves of one compatibility contract; combining them at generation time via a passthrough let `architect@9.0.0` pair with a stale v8 template and emit silently-invalid config. Baking the version in means a major orb bump lands as a devctl PR → release → align-files pin bump, instead of a `giantswarm/github` literal that can skew against the template. Callers (`giantswarm/github` align-files) must stop passing `--orb-version`.
@@ -1908,7 +1910,8 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.2.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.3.0...HEAD
+[8.3.0]: https://github.com/giantswarm/devctl/compare/v8.2.0...v8.3.0
 [8.2.0]: https://github.com/giantswarm/devctl/compare/v8.1.0...v8.2.0
 [8.1.0]: https://github.com/giantswarm/devctl/compare/v8.0.0...v8.1.0
 [8.0.0]: https://github.com/giantswarm/devctl/compare/v7.48.0...v8.0.0
