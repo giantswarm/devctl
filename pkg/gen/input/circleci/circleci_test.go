@@ -56,7 +56,7 @@ func contains(got, substr string) bool {
 // signals (language go, app flavour, a Dockerfile) must reproduce the aligned
 // standard byte-for-byte. The golden file is mcp-kubernetes's checked-in
 // .circleci/config.yml with the only allowed drift -- the orb bump to the
-// aligned 8.3.0 -- applied.
+// aligned 9.0.0 and the v9 buildx/multi-arch shape -- applied.
 func Test_GoldenServiceConfig(t *testing.T) {
 	got := render(t, Config{
 		RepoName:      "mcp-kubernetes",

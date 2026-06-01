@@ -18,14 +18,14 @@ The pipeline is fully derived from existing signals -- there is no CI parameter
 block. Jobs are selected by:
 
   - language go        -> architect/go-build
-  - Dockerfile present -> architect/push-to-registries (multiarch + split-china-push)
+  - Dockerfile present -> architect/push-to-registries (buildx + split-china-push)
                           and architect/sync-china-registry
   - app flavour        -> architect/push-to-app-catalog (app-build-suite executor)
                           and architect/run-tests-with-ats
 
 The orb is pinned to the aligned standard and tag/branch filters follow the
-giantswarm convention (branch builds amd64-only, tags build multi-arch and
-publish the chart).`
+giantswarm convention (branch builds validate the image, tags push multi-arch
+and publish the chart).`
 	example = `  devctl gen circleci --repo-name mcp-kubernetes --language go --flavour app
   devctl gen circleci --repo-name crd-docs-generator --language go`
 )
