@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- `gen workflows` (`--release-workflow=release-please`): fall back to the GitHub REST API when local git has no `v*.*.*` tags, so manifest seeding still finds the latest released version under shallow clones. The previous code only consulted `git tag --list` in the cwd. The `giantswarm/github` `align-files` action (which is how most repos get devctl re-run) does `git clone --depth=1` without fetching tags, so `git tag --list` returns nothing and the manifest was seeded with `{}` — silently dropping the release baseline. Repos hit by this would then get a "1.0.0" release PR aggregating commits from inception, because release-please had no per-path baseline to compute "since last release" against. The fallback queries `api.github.com/repos/<owner>/<repo>/tags` using `GS_GITHUB_TOKEN`/`GH_TOKEN`/`GITHUB_TOKEN` when available (or unauthenticated for public repos), parses `v<major>.<minor>.<patch>` tags only (matching the existing local-git filter), and picks the highest. Empty result on any error preserves the pre-fallback behavior (write `{}`).
+
 ## [8.1.0] - 2026-06-01
 
 ### Changed
