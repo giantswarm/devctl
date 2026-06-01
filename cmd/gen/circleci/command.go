@@ -23,9 +23,11 @@ block. Jobs are selected by:
   - app flavour        -> architect/push-to-app-catalog (app-build-suite executor)
                           and architect/run-tests-with-ats
 
-The orb is pinned to the aligned standard and tag/branch filters follow the
-giantswarm convention (branch builds validate the image, tags push multi-arch
-and publish the chart).`
+The giantswarm/architect orb is pinned to a version baked into devctl (not a
+flag): a major orb bump changes the template's required job/param shape, so it
+must ship as a new devctl release rather than being passed in at generation
+time. Tag/branch filters follow the giantswarm convention (branch builds
+validate the image, tags push multi-arch and publish the chart).`
 	example = `  devctl gen circleci --repo-name mcp-kubernetes --language go --flavour app
   devctl gen circleci --repo-name crd-docs-generator --language go`
 )

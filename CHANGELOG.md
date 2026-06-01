@@ -7,11 +7,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- `gen circleci`: **dropped the `--orb-version` flag**. The giantswarm/architect orb version is now baked into devctl as a constant (`OrbVersion`) next to the config template, with a Renovate custom manager keeping it current. The orb major and the template's required job/param shape are two halves of one compatibility contract; combining them at generation time via a passthrough let `architect@9.0.0` pair with a stale v8 template and emit silently-invalid config. Baking the version in means a major orb bump lands as a devctl PR → release → align-files pin bump, instead of a `giantswarm/github` literal that can skew against the template. Callers (`giantswarm/github` align-files) must stop passing `--orb-version`.
+
 ## [8.2.0] - 2026-06-01
 
 ### Changed
 
-- `gen circleci`: rework the generated `.circleci/config.yml` for architect-orb **v9.0.0** (default `--orb-version` bumped `8.3.0` → `9.0.0`). v9 removed the `multiarch:` parameter on `architect/push-to-registries` (the job always uses `docker buildx` now), so it is dropped from both the branch and the release image jobs. v9 also defaults `architect/go-build` to `linux/amd64,linux/arm64`; the previous branch-build `platforms: "linux/amd64"` optimization is dropped so branch builds validate the full multi-arch image (auto-derived from go-build's `.platforms`), matching the v9-idiomatic single-path model. The golden fixture and generator help text are updated to the v9 shape. No new fields or parameters.
+- `gen circleci`: rework the generated `.circleci/config.yml` for architect-orb **v9.0.0**. v9 removed the `multiarch:` parameter on `architect/push-to-registries` (the job always uses `docker buildx` now), so it is dropped from both the branch and the release image jobs. v9 also defaults `architect/go-build` to `linux/amd64,linux/arm64`; the previous branch-build `platforms: "linux/amd64"` optimization is dropped so branch builds validate the full multi-arch image (auto-derived from go-build's `.platforms`), matching the v9-idiomatic single-path model. The golden fixture and generator help text are updated to the v9 shape. No new fields or parameters.
 
 ## [8.1.0] - 2026-06-01
 

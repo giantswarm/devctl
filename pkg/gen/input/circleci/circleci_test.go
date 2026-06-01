@@ -75,7 +75,7 @@ func Test_GoldenServiceConfig(t *testing.T) {
 	}
 }
 
-func Test_DefaultOrbVersion(t *testing.T) {
+func Test_OrbVersion(t *testing.T) {
 	got := render(t, Config{
 		RepoName:      "mcp-kubernetes",
 		Language:      gen.LanguageGo,
@@ -83,8 +83,8 @@ func Test_DefaultOrbVersion(t *testing.T) {
 		HasDockerfile: true,
 	})
 
-	if !contains(got, "giantswarm/architect@"+DefaultOrbVersion) {
-		t.Errorf("expected generated config to pin orb %s, got:\n%s", DefaultOrbVersion, got)
+	if !contains(got, "giantswarm/architect@"+OrbVersion) {
+		t.Errorf("expected generated config to pin orb %s, got:\n%s", OrbVersion, got)
 	}
 }
 

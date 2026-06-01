@@ -9,10 +9,18 @@ import (
 	"github.com/giantswarm/devctl/v8/pkg/gen/input/circleci/internal/params"
 )
 
-// DefaultOrbVersion is the aligned giantswarm/architect orb version every
-// generated CircleCI config pins. Bumping the org-wide standard is a one-line
-// change here.
-const DefaultOrbVersion = "9.0.0"
+// OrbVersion is the aligned giantswarm/architect orb version every generated
+// CircleCI config pins. It is baked in next to the template -- not a flag and
+// not passed in by callers -- so that an orb bump (which can change the
+// template's required job/param shape, i.e. a cross-major compatibility
+// contract) forces a new devctl release rather than silently combining a stale
+// template with a newer orb at generation time.
+//
+// Renovate keeps this current; a major bump lands as a devctl PR, gets released,
+// and only then reaches repos via the align-files devctl pin.
+//
+// renovate: datasource=orb depName=giantswarm/architect
+const OrbVersion = "9.0.0"
 
 type Config struct {
 	// RepoName is the repository name, used for the binary, chart, and job
@@ -26,8 +34,6 @@ type Config struct {
 	// HasDockerfile selects the image pipeline. The runner derives this from
 	// the presence of a Dockerfile in the repo.
 	HasDockerfile bool
-	// OrbVersion overrides DefaultOrbVersion when set.
-	OrbVersion string
 }
 
 type CircleCI struct {
@@ -42,18 +48,13 @@ func New(config Config) (*CircleCI, error) {
 		return nil, microerror.Maskf(invalidConfigError, "no jobs would be generated: set --language=go, add a Dockerfile, or use the app flavour")
 	}
 
-	orbVersion := config.OrbVersion
-	if orbVersion == "" {
-		orbVersion = DefaultOrbVersion
-	}
-
 	c := &CircleCI{
 		params: params.Params{
 			RepoName:      config.RepoName,
 			Language:      config.Language.String(),
 			HasDockerfile: config.HasDockerfile,
 			HasApp:        hasApp,
-			OrbVersion:    orbVersion,
+			OrbVersion:    OrbVersion,
 		},
 	}
 
