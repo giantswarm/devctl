@@ -7,6 +7,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Test catalogs can now be populated when an app or component uses a dev version (`app-version-sha`) in its release creation.
+
+### Changed
+
+- Dev version detection now uses the git SHA suffix instead of the semver pre-release format, since app dev versions are typically identified by their appended git SHA.
+- Changelog fetch is skipped for dev versions during release notes generation.
+
 ## [7.48.0] - 2026-05-31
 
 ### Added
