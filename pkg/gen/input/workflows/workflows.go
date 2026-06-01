@@ -49,8 +49,16 @@ func (w *Workflows) CreateRelease() input.Input {
 	return file.NewCreateReleaseInput(w.params)
 }
 
+func (w *Workflows) CreateReleaseDeletion() input.Input {
+	return file.NewCreateReleaseDeletionInput(w.params)
+}
+
 func (w *Workflows) CreateReleasePR() input.Input {
 	return file.NewCreateReleasePRInput(w.params)
+}
+
+func (w *Workflows) CreateReleasePRDeletion() input.Input {
+	return file.NewCreateReleasePRDeletionInput(w.params)
 }
 
 func (w *Workflows) DispatchUpdateChartEvents(targetRepo string) input.Input {
@@ -97,6 +105,10 @@ func (w *Workflows) ValidateChangelog() input.Input {
 	return file.NewValidateChangelogInput(w.params)
 }
 
+func (w *Workflows) ValidateChangelogDeletion() input.Input {
+	return file.NewValidateChangelogDeletionInput(w.params)
+}
+
 func (w *Workflows) AnalyzeGithubActions() input.Input {
 	return file.NewAnalyzeGithubActionsInput(w.params)
 }
@@ -105,8 +117,8 @@ func (w *Workflows) ZizmorBaseYml() input.Input {
 	return file.NewZizmorBaseInput(w.params)
 }
 
-func (w *Workflows) ReleasePlease() input.Input {
-	return file.NewReleasePleaseInput(w.params)
+func (w *Workflows) ReleasePlease(autoMergeLevel string) input.Input {
+	return file.NewReleasePleaseInput(w.params, autoMergeLevel)
 }
 
 func (w *Workflows) ReleasePleaseConfig(changelogStyle string, hasProjectGo bool) input.Input {

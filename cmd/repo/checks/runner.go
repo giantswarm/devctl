@@ -85,7 +85,7 @@ func (r *runner) update(ctx context.Context, owner, repo string) error {
 		return microerror.Mask(r.enableViaFullProtection(ctx, underlying, owner, repo, defaultBranch))
 	}
 
-	merged := mergeChecks(current.GetChecks(), r.flag.Checks)
+	merged := applyChecks(current.GetChecks(), r.flag.Checks, r.flag.Remove)
 
 	strict := current.Strict
 	_, _, err = underlying.Repositories.UpdateRequiredStatusChecks(ctx, owner, repo, defaultBranch, &github.RequiredStatusChecksRequest{
@@ -93,7 +93,7 @@ func (r *runner) update(ctx context.Context, owner, repo string) error {
 		Checks: merged,
 	})
 
-	r.logger.Infof("%s/%s: added %v to required checks on %q", owner, repo, r.flag.Checks, defaultBranch)
+	r.logger.Infof("%s/%s: required checks on %q: added %v, removed %v", owner, repo, defaultBranch, r.flag.Checks, r.flag.Remove)
 
 	return microerror.Mask(err)
 }
@@ -107,7 +107,7 @@ func (r *runner) enableViaFullProtection(ctx context.Context, underlying *github
 		return microerror.Mask(err)
 	}
 
-	merged := mergeChecks(nil, r.flag.Checks)
+	merged := applyChecks(nil, r.flag.Checks, nil)
 	False := false
 
 	req := &github.ProtectionRequest{
@@ -142,16 +142,25 @@ func (r *runner) enableViaFullProtection(ctx context.Context, underlying *github
 	return microerror.Mask(err)
 }
 
-func mergeChecks(existing []*github.RequiredStatusCheck, add []string) []*github.RequiredStatusCheck {
+func applyChecks(existing []*github.RequiredStatusCheck, add, remove []string) []*github.RequiredStatusCheck {
+	drop := make(map[string]bool, len(remove))
+	for _, name := range remove {
+		drop[name] = true
+	}
+
 	seen := make(map[string]bool, len(existing))
 	merged := make([]*github.RequiredStatusCheck, 0, len(existing)+len(add))
 	for _, c := range existing {
+		if drop[c.GetContext()] {
+			continue
+		}
 		merged = append(merged, c)
 		seen[c.GetContext()] = true
 	}
 	for _, name := range add {
 		if !seen[name] {
 			merged = append(merged, &github.RequiredStatusCheck{Context: name})
+			seen[name] = true
 		}
 	}
 	return merged
