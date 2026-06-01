@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- `gen circleci`: rework the generated `.circleci/config.yml` for architect-orb **v9.0.0** (default `--orb-version` bumped `8.3.0` → `9.0.0`). v9 removed the `multiarch:` parameter on `architect/push-to-registries` (the job always uses `docker buildx` now), so it is dropped from both the branch and the release image jobs. v9 also defaults `architect/go-build` to `linux/amd64,linux/arm64`; the previous branch-build `platforms: "linux/amd64"` optimization is dropped so branch builds validate the full multi-arch image (auto-derived from go-build's `.platforms`), matching the v9-idiomatic single-path model. The golden fixture and generator help text are updated to the v9 shape. No new fields or parameters.
+
 ## [8.1.0] - 2026-06-01
 
 ### Changed

@@ -12,7 +12,7 @@ type Params struct {
 	// job.
 	Language string
 	// HasDockerfile is true when the repo ships a Dockerfile. It selects the
-	// image pipeline (push-to-registries multiarch + split-china-push and the
+	// image pipeline (push-to-registries with split-china-push and the
 	// paired sync-china-registry job).
 	HasDockerfile bool
 	// HasApp is true when the repo carries the "app" flavour (at least one

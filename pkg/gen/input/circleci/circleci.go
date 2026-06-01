@@ -12,7 +12,7 @@ import (
 // DefaultOrbVersion is the aligned giantswarm/architect orb version every
 // generated CircleCI config pins. Bumping the org-wide standard is a one-line
 // change here.
-const DefaultOrbVersion = "8.3.0"
+const DefaultOrbVersion = "9.0.0"
 
 type Config struct {
 	// RepoName is the repository name, used for the binary, chart, and job
