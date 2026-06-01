@@ -63,49 +63,78 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
-- `devctl gen workflows --release-workflow=release-please` now adds `pkg/project/project.go` to `extra-files` in `release-please-config.json` when the language is Go and the file exists, so release-please updates the version constant in the release PR. No post-release dev-bump PR is needed.
-- `Makefile.gen.go.mk` now injects the version into the binary via `-X .../pkg/project.version=$(VERSION)` in `LDFLAGS`, alongside the existing `buildTimestamp` and `gitSHA` flags. `VERSION` is derived from `architect project version` (git tag), so local and CI builds self-report correctly without modifying `project.go` at build time.
+- `devctl gen workflows --release-workflow=release-please` now adds `pkg/project/project.go` to `extra-files`
+  in `release-please-config.json` when the language is Go and the file exists, so release-please updates the
+  version constant in the release PR. No post-release dev-bump PR is needed.
+- `Makefile.gen.go.mk` now injects the version into the binary via `-X .../pkg/project.version=$(VERSION)` in
+  `LDFLAGS`, alongside the existing `buildTimestamp` and `gitSHA` flags. `VERSION` is derived from
+  `architect project version` (git tag), so local and CI builds self-report correctly without modifying
+  `project.go` at build time.
+- Version is created in the Makefiles by using `gitsemver version` instead of `architect project version`
 
 ### Fixed
 
-- The generated `Release Please` workflow referenced a non-existent reusable workflow (`release-please.yaml`); corrected to `release.yaml`.
-- `Makefile.gen.app.mk` used `$(APPLICATION)/charts` for Helm dependency paths; all repos place charts under `helm/$(APPLICATION)/`, so the `DEPS`, `update-deps`, `$(DEPS)`, and `helm-docs` targets now use `helm/$(APPLICATION)/` as the base path.
+- The generated `Release Please` workflow referenced a non-existent reusable workflow (`release-please.yaml`);
+  corrected to `release.yaml`.
+- `Makefile.gen.app.mk` used `$(APPLICATION)/charts` for Helm dependency paths; all repos place charts under
+  `helm/$(APPLICATION)/`, so the `DEPS`, `update-deps`, `$(DEPS)`, and `helm-docs` targets now use
+  `helm/$(APPLICATION)/` as the base path.
 
 ## [7.42.0] - 2026-05-21
 
 ### Added
 
-- `devctl repo checks --update --checks <list> REPOSITORY` adds named checks to the required status checks on the default branch protection rule without touching any other branch protection or repo settings.
-- Rename the generated `Values and schema` workflow name and its `check` job to `check-values-schema` for an unambiguous required-check reference in branch protection rules.
-- `devctl repo setup` auto-detection now includes GitHub Actions check runs in addition to legacy commit statuses, so Actions-based checks are picked up as required checks.
-- `devctl gen workflows --release-workflow=release-please` generates a Release Please workflow instead of the legacy `create-release-pr` / `create-release` / `validate-changelog` trio. `--changelog-style` controls the section headers: `legacy` maps commit types to `### Added/Changed/Fixed` (required by the `giantswarm/releases` changelog scraper); `release-please` uses the Angular preset. The Release Please config and manifest are written as scaffolding files (generate-once, not overwritten on subsequent runs).
-- CHANGELOG scraper now parses `### Security` and `### Deprecated` sections from component changelogs. Output follows KaC canonical order: Added, Changed, Deprecated, Removed, Fixed, Security.
-- Route the `security:` conventional commit type to `### Security` in the generated `release-please-config.json` (both `--changelog-style=legacy` and `--changelog-style=release-please`). Use `security:` (or `security(scope):`) for CVE fixes and vulnerability mitigations.
+- `devctl repo checks --update --checks <list> REPOSITORY` adds named checks to the required status checks on
+  the default branch protection rule without touching any other branch protection or repo settings.
+- Rename the generated `Values and schema` workflow name and its `check` job to `check-values-schema` for an
+  unambiguous required-check reference in branch protection rules.
+- `devctl repo setup` auto-detection now includes GitHub Actions check runs in addition to legacy commit
+  statuses, so Actions-based checks are picked up as required checks.
+- `devctl gen workflows --release-workflow=release-please` generates a Release Please workflow instead of the
+  legacy `create-release-pr` / `create-release` / `validate-changelog` trio. `--changelog-style` controls the
+  section headers: `legacy` maps commit types to `### Added/Changed/Fixed` (required by the
+  `giantswarm/releases` changelog scraper); `release-please` uses the Angular preset. The Release Please
+  config and manifest are written as scaffolding files (generate-once, not overwritten on subsequent runs).
+- CHANGELOG scraper now parses `### Security` and `### Deprecated` sections from component changelogs. Output
+  follows KaC canonical order: Added, Changed, Deprecated, Removed, Fixed, Security.
+- Route the `security:` conventional commit type to `### Security` in the generated
+  `release-please-config.json` (both `--changelog-style=legacy` and `--changelog-style=release-please`). Use
+  `security:` (or `security(scope):`) for CVE fixes and vulnerability mitigations.
 
 ### Changed
 
-- `devctl gen workflows --changelog-style=release-please` now writes the full Keep a Changelog mapping: `feat` to `### Added`, `fix` to `### Fixed`, `security` to `### Security`, and the remaining Angular types (`perf`, `revert`, `refactor`, `docs`, `style`, `test`, `build`, `ci`, `chore`) to `### Changed`.
+- `devctl gen workflows --changelog-style=release-please` now writes the full Keep a Changelog mapping: `feat`
+  to `### Added`, `fix` to `### Fixed`, `security` to `### Security`, and the remaining Angular types (`perf`,
+  `revert`, `refactor`, `docs`, `style`, `test`, `build`, `ci`, `chore`) to `### Changed`.
 
 ### Changed
 
-- `repo setup`, `repo setup renovate`: log a past-tense confirmation after the Renovate installation step. `repo setup --dry-run` logs `[dry-run] would add ...`.
+- `repo setup`, `repo setup renovate`: log a past-tense confirmation after the Renovate installation step.
+  `repo setup --dry-run` logs `[dry-run] would add ...`.
 
 ### Fixed
 
-- `repo setup --dry-run`: now actually skips GitHub mutations; the `DryRun` flag was never forwarded into the GitHub client.
+- `repo setup --dry-run`: now actually skips GitHub mutations; the `DryRun` flag was never forwarded into the
+  GitHub client.
 
 ## [7.41.1] - 2026-05-20
 
 ### Changed
 
-- Change the PR name looked for in `devctl pr approve-align-files` from `Align files` to `chore: align files according to platform standards`
+- Change the PR name looked for in `devctl pr approve-align-files` from `Align files` to
+  `chore: align files according to platform standards`
 
 ## [7.41.0] - 2026-05-20
 
 ### Added
 
-- Generate a `semantic_pull_request.yaml` GitHub Actions workflow in every repo. It calls the new `giantswarm/github-workflows/.github/workflows/semantic-pull-request.yaml` reusable workflow, which validates that the PR title follows Conventional Commits. The check runs on `pull_request` (`opened`, `edited`, `synchronize`) and uses the action's default type set (`build`, `chore`, `ci`, `docs`, `feat`, `fix`, `perf`, `refactor`, `revert`, `style`, `test`).
-- Add `compilerla/conventional-pre-commit` hook to the generated `.pre-commit-config.yaml`, gated to the `commit-msg` stage. Contributors enable it locally with `pre-commit install --hook-type commit-msg`.
+- Generate a `semantic_pull_request.yaml` GitHub Actions workflow in every repo. It calls the new
+  `giantswarm/github-workflows/.github/workflows/semantic-pull-request.yaml` reusable workflow, which
+  validates that the PR title follows Conventional Commits. The check runs on `pull_request` (`opened`,
+  `edited`, `synchronize`) and uses the action's default type set (`build`, `chore`, `ci`, `docs`, `feat`,
+  `fix`, `perf`, `refactor`, `revert`, `style`, `test`).
+- Add `compilerla/conventional-pre-commit` hook to the generated `.pre-commit-config.yaml`, gated to the
+  `commit-msg` stage. Contributors enable it locally with `pre-commit install --hook-type commit-msg`.
 
 ### Changed
 
@@ -133,19 +162,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
-- Code-wise nothing changed compared to v7.40.3. However, the build pipeline changed, so this release hopefully includes commit SHAs for each template modification.
+- Code-wise nothing changed compared to v7.40.3. However, the build pipeline changed, so this release
+  hopefully includes commit SHAs for each template modification.
 
 ## [7.40.3] - 2026-04-24
 
 ### Changed
 
-- Bumped architect-orb to v7.0.0 and applied `clone_depth: 0` to the go-build job, to fix the problem that all generated files' headers pointed to the HEAD commit for the last change.
+- Bumped architect-orb to v7.0.0 and applied `clone_depth: 0` to the go-build job, to fix the problem that all
+  generated files' headers pointed to the HEAD commit for the last change.
 
 ## [7.40.2] - 2026-04-24
 
 ### Changed
 
-- `gen precommit`: Removed badges from helm-docs template, to avoid workflow failures due to version changes outside the PR.
+- `gen precommit`: Removed badges from helm-docs template, to avoid workflow failures due to version changes
+  outside the PR.
 
 ## [7.40.1] - 2026-04-24
 
@@ -167,14 +199,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
-- Add new `sync-from-upstream` and `dispatch-update-chart-events` workflows to apps that have the `update-chart` workflow enabled.
+- Add new `sync-from-upstream` and `dispatch-update-chart-events` workflows to apps that have the
+  `update-chart` workflow enabled.
 
 ## [7.38.0] - 2026-04-14
 
 ### Changed
 
 - Change workflow "Fix go vulnerabilities": Set default branch to `main` for manual workflow execution
-- Prevent major version bumps of components (e.g. cluster provider charts) when using `--bump-all` in minor releases.
+- Prevent major version bumps of components (e.g. cluster provider charts) when using `--bump-all` in minor
+  releases.
 
 ## [7.37.2] - 2026-04-09
 
