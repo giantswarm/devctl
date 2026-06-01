@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- `gen workflows` (`--release-workflow=release-please`): generated `release-please.yaml` now passes `RELEASE_PLEASE_APPROVER_CLIENT_ID` and `RELEASE_PLEASE_APPROVER_PRIVATE_KEY` through to the reusable `release.yaml` workflow. These back the dedicated `release-please-approver` GitHub App that satisfies branch protection's required-approval rule on release-please PRs, so `--auto --squash` can complete the merge once required checks pass. The two new secrets are `required: false` upstream — repos that don't have the App installed or the org secrets configured see no behavior change. Requires the `release-please-approver` App to be installed with `Pull requests: Read and write` AND `Contents: Read and write` permissions (Contents: Read alone is silently disregarded by branch protection — empirically verified).
+
 ## [8.0.0] - 2026-06-01
 
 ### Added
