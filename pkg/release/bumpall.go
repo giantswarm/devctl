@@ -193,7 +193,7 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 					v.UserRequested = true
 				} else {
 					// No version specified — keep current or auto-bump, same as
-					// if this app were not in the override list at all.
+					// if this app was not in the override list at all.
 					if releaseType == "patch" {
 						v.Version = app.Version
 						v.UpstreamVersion = app.ComponentVersion
