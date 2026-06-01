@@ -8,8 +8,8 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
-	"github.com/giantswarm/devctl/v7/cmd/repo/checks"
-	"github.com/giantswarm/devctl/v7/cmd/repo/setup"
+	"github.com/giantswarm/devctl/v8/cmd/repo/checks"
+	"github.com/giantswarm/devctl/v8/cmd/repo/setup"
 )
 
 const (

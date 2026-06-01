@@ -23,9 +23,9 @@ import (
 
 	"golang.org/x/exp/slices"
 
-	"github.com/giantswarm/devctl/v7/internal/env"
-	"github.com/giantswarm/devctl/v7/pkg/githubclient"
-	"github.com/giantswarm/devctl/v7/pkg/release/changelog"
+	"github.com/giantswarm/devctl/v8/internal/env"
+	"github.com/giantswarm/devctl/v8/pkg/githubclient"
+	"github.com/giantswarm/devctl/v8/pkg/release/changelog"
 )
 
 type componentVersion struct {

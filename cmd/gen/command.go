@@ -8,15 +8,15 @@ import (
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
 
-	"github.com/giantswarm/devctl/v7/cmd/gen/ami"
-	"github.com/giantswarm/devctl/v7/cmd/gen/apptest"
-	"github.com/giantswarm/devctl/v7/cmd/gen/circleci"
-	"github.com/giantswarm/devctl/v7/cmd/gen/dependabot"
-	"github.com/giantswarm/devctl/v7/cmd/gen/llm"
-	"github.com/giantswarm/devctl/v7/cmd/gen/makefile"
-	"github.com/giantswarm/devctl/v7/cmd/gen/precommit"
-	"github.com/giantswarm/devctl/v7/cmd/gen/renovate"
-	"github.com/giantswarm/devctl/v7/cmd/gen/workflows"
+	"github.com/giantswarm/devctl/v8/cmd/gen/ami"
+	"github.com/giantswarm/devctl/v8/cmd/gen/apptest"
+	"github.com/giantswarm/devctl/v8/cmd/gen/circleci"
+	"github.com/giantswarm/devctl/v8/cmd/gen/dependabot"
+	"github.com/giantswarm/devctl/v8/cmd/gen/llm"
+	"github.com/giantswarm/devctl/v8/cmd/gen/makefile"
+	"github.com/giantswarm/devctl/v8/cmd/gen/precommit"
+	"github.com/giantswarm/devctl/v8/cmd/gen/renovate"
+	"github.com/giantswarm/devctl/v8/cmd/gen/workflows"
 )
 
 const (

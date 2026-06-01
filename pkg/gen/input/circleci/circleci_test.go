@@ -6,7 +6,7 @@ import (
 	"testing"
 	"text/template"
 
-	"github.com/giantswarm/devctl/v7/pkg/gen"
+	"github.com/giantswarm/devctl/v8/pkg/gen"
 )
 
 const (

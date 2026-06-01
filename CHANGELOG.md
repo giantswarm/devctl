@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [8.0.0] - 2026-06-01
+
 ### Added
 
 - Test catalogs can now be populated when an app or component uses a dev version (`app-version-sha`) in its release creation.
@@ -1890,7 +1892,8 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.48.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.0.0...HEAD
+[8.0.0]: https://github.com/giantswarm/devctl/compare/v7.48.0...v8.0.0
 [7.48.0]: https://github.com/giantswarm/devctl/compare/v7.47.0...v7.48.0
 [7.47.0]: https://github.com/giantswarm/devctl/compare/v7.46.0...v7.47.0
 [7.46.0]: https://github.com/giantswarm/devctl/compare/v7.45.0...v7.46.0

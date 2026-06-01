@@ -3,10 +3,10 @@ package circleci
 import (
 	"github.com/giantswarm/microerror"
 
-	"github.com/giantswarm/devctl/v7/pkg/gen"
-	"github.com/giantswarm/devctl/v7/pkg/gen/input"
-	"github.com/giantswarm/devctl/v7/pkg/gen/input/circleci/internal/file"
-	"github.com/giantswarm/devctl/v7/pkg/gen/input/circleci/internal/params"
+	"github.com/giantswarm/devctl/v8/pkg/gen"
+	"github.com/giantswarm/devctl/v8/pkg/gen/input"
+	"github.com/giantswarm/devctl/v8/pkg/gen/input/circleci/internal/file"
+	"github.com/giantswarm/devctl/v8/pkg/gen/input/circleci/internal/params"
 )
 
 // DefaultOrbVersion is the aligned giantswarm/architect orb version every

@@ -8,7 +8,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/giantswarm/devctl/v7/pkg/gen/input"
+	"github.com/giantswarm/devctl/v8/pkg/gen/input"
 )
 
 //go:embed release_please_manifest.json.template

@@ -1,8 +1,8 @@
 package params
 
 import (
-	"github.com/giantswarm/devctl/v7/pkg/gen"
-	"github.com/giantswarm/devctl/v7/pkg/gen/internal"
+	"github.com/giantswarm/devctl/v8/pkg/gen"
+	"github.com/giantswarm/devctl/v8/pkg/gen/internal"
 )
 
 func IsFlavourCLI(p Params) bool {

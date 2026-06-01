@@ -3,9 +3,9 @@ package precommit
 import (
 	"github.com/giantswarm/microerror"
 
-	"github.com/giantswarm/devctl/v7/pkg/gen/input"
-	"github.com/giantswarm/devctl/v7/pkg/gen/input/precommit/internal/file"
-	"github.com/giantswarm/devctl/v7/pkg/gen/input/precommit/internal/params"
+	"github.com/giantswarm/devctl/v8/pkg/gen/input"
+	"github.com/giantswarm/devctl/v8/pkg/gen/input/precommit/internal/file"
+	"github.com/giantswarm/devctl/v8/pkg/gen/input/precommit/internal/params"
 )
 
 type Config struct {
