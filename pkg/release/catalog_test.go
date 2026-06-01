@@ -32,6 +32,7 @@ func TestToTestCatalog(t *testing.T) {
 		catalog string
 		want    string
 	}{
+		{"", "default-test"},
 		{"default", "default-test"},
 		{"cluster", "cluster-test"},
 		{"giantswarm", "giantswarm-test"},

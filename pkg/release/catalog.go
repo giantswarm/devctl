@@ -21,6 +21,9 @@ func isDevVersion(version string) bool {
 // An empty value maps to "default-test".
 // Already-test values (suffix "-test") are returned unchanged.
 func toTestCatalog(catalog string) string {
+	if catalog == "" {
+		return "default-test"
+	}
 	if strings.HasSuffix(catalog, "-test") {
 		return catalog
 	}
