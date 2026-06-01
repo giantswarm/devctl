@@ -403,7 +403,9 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 	for i, comp := range newRelease.Spec.Components {
 		if isDevVersion(comp.Version) {
 			// Components with no explicit catalog (e.g. kubernetes, flatcar, os-tooling)
-			// are used for AMI name lookup, not helm chart deployment — no catalog change needed.
+			// are used for AMI name lookup, not helm chart deployment so they do not have a catalog specified
+			// but are set to use the default catalog.
+			// The exception is the cluster-<provider> component which is a Helm chart and normally references cluster catalog.
 			if comp.Catalog == "" {
 				continue
 			}
