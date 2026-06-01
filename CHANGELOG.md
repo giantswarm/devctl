@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `devctl repo setup`: new `--allow-release-please-bypass` flag (default `false`). When set, the configured default-branch protection lists the `release-please-workflow` GitHub App in `bypass_pull_request_allowances`, so release-please's Release PR can auto-merge without a human review. Pairs with `gen workflows --auto-release-level`, which previously required this bypass to be configured manually.
+
 ## [7.48.0] - 2026-05-31
 
 ### Added

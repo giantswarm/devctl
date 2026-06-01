@@ -111,7 +111,11 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 			return microerror.Mask(err)
 		}
 	} else {
-		err = client.SetRepositoryBranchProtection(ctx, repository, r.flag.Checks, ChecksFilterRegexp)
+		var bypassApps []string
+		if r.flag.AllowReleasePleaseBypass {
+			bypassApps = []string{"release-please-workflow"}
+		}
+		err = client.SetRepositoryBranchProtection(ctx, repository, r.flag.Checks, ChecksFilterRegexp, bypassApps)
 		if err != nil {
 			return microerror.Mask(err)
 		}

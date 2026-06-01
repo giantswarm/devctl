@@ -156,7 +156,7 @@ func (c *Client) SetRepositoryPermissions(ctx context.Context, repository *githu
 	return nil
 }
 
-func (c *Client) SetRepositoryBranchProtection(ctx context.Context, repository *github.Repository, checkNames []string, checksFilter *regexp.Regexp) (err error) {
+func (c *Client) SetRepositoryBranchProtection(ctx context.Context, repository *github.Repository, checkNames []string, checksFilter *regexp.Regexp, bypassApps []string) (err error) {
 	owner := repository.GetOwner().GetLogin()
 	repo := repository.GetName()
 	default_branch := repository.GetDefaultBranch()
@@ -165,13 +165,22 @@ func (c *Client) SetRepositoryBranchProtection(ctx context.Context, repository *
 
 	c.logger.Infof("configure protection for %q branch", default_branch)
 
+	reviews := &github.PullRequestReviewsEnforcementRequest{
+		RequiredApprovingReviewCount: 1,
+	}
+	if len(bypassApps) > 0 {
+		reviews.BypassPullRequestAllowancesRequest = &github.BypassPullRequestAllowancesRequest{
+			Users: []string{},
+			Teams: []string{},
+			Apps:  bypassApps,
+		}
+	}
+
 	opts := &github.ProtectionRequest{
-		RequiredPullRequestReviews: &github.PullRequestReviewsEnforcementRequest{
-			RequiredApprovingReviewCount: 1,
-		},
-		AllowForcePushes: &False,
-		AllowDeletions:   &False,
-		EnforceAdmins:    true,
+		RequiredPullRequestReviews: reviews,
+		AllowForcePushes:           &False,
+		AllowDeletions:             &False,
+		EnforceAdmins:              true,
 	}
 
 	if checkNames == nil {
