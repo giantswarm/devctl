@@ -20,9 +20,10 @@ type releasePleaseSection struct {
 }
 
 type releasePleaseConfig struct {
-	ReleaseType       string                   `json:"release-type"`
-	ExtraFiles        []releasePleaseExtraFile `json:"extra-files"`
-	ChangelogSections []releasePleaseSection   `json:"changelog-sections"`
+	ReleaseType       string                            `json:"release-type"`
+	ExtraFiles        []releasePleaseExtraFile          `json:"extra-files"`
+	ChangelogSections []releasePleaseSection            `json:"changelog-sections"`
+	Packages          map[string]map[string]interface{} `json:"packages"`
 }
 
 func Test_NewReleasePleaseConfigInput(t *testing.T) {
@@ -38,18 +39,18 @@ func Test_NewReleasePleaseConfigInput(t *testing.T) {
 			changelogStyle: "release-please",
 			hasProjectGo:   false,
 			expectedSections: map[string]string{
-				"feat":     "### Added",
-				"fix":      "### Fixed",
-				"perf":     "### Changed",
-				"revert":   "### Changed",
-				"refactor": "### Changed",
-				"docs":     "### Changed",
-				"style":    "### Changed",
-				"test":     "### Changed",
-				"build":    "### Changed",
-				"ci":       "### Changed",
-				"chore":    "### Changed",
-				"security": "### Security",
+				"feat":     "Added",
+				"fix":      "Fixed",
+				"perf":     "Changed",
+				"revert":   "Changed",
+				"refactor": "Changed",
+				"docs":     "Changed",
+				"style":    "Changed",
+				"test":     "Changed",
+				"build":    "Changed",
+				"ci":       "Changed",
+				"chore":    "Changed",
+				"security": "Security",
 			},
 		},
 		{
@@ -57,18 +58,18 @@ func Test_NewReleasePleaseConfigInput(t *testing.T) {
 			changelogStyle: "release-please",
 			hasProjectGo:   true,
 			expectedSections: map[string]string{
-				"feat":     "### Added",
-				"fix":      "### Fixed",
-				"perf":     "### Changed",
-				"revert":   "### Changed",
-				"refactor": "### Changed",
-				"docs":     "### Changed",
-				"style":    "### Changed",
-				"test":     "### Changed",
-				"build":    "### Changed",
-				"ci":       "### Changed",
-				"chore":    "### Changed",
-				"security": "### Security",
+				"feat":     "Added",
+				"fix":      "Fixed",
+				"perf":     "Changed",
+				"revert":   "Changed",
+				"refactor": "Changed",
+				"docs":     "Changed",
+				"style":    "Changed",
+				"test":     "Changed",
+				"build":    "Changed",
+				"ci":       "Changed",
+				"chore":    "Changed",
+				"security": "Security",
 			},
 			expectExtraFiles: []releasePleaseExtraFile{
 				{Type: "generic", Path: "pkg/project/project.go"},
@@ -79,16 +80,16 @@ func Test_NewReleasePleaseConfigInput(t *testing.T) {
 			changelogStyle: "legacy",
 			hasProjectGo:   false,
 			expectedSections: map[string]string{
-				"feat":     "### Added",
-				"fix":      "### Fixed",
-				"refactor": "### Changed",
-				"perf":     "### Changed",
-				"docs":     "### Changed",
-				"chore":    "### Changed",
-				"test":     "### Changed",
-				"build":    "### Changed",
-				"ci":       "### Changed",
-				"security": "### Security",
+				"feat":     "Added",
+				"fix":      "Fixed",
+				"refactor": "Changed",
+				"perf":     "Changed",
+				"docs":     "Changed",
+				"chore":    "Changed",
+				"test":     "Changed",
+				"build":    "Changed",
+				"ci":       "Changed",
+				"security": "Security",
 			},
 		},
 		{
@@ -96,16 +97,16 @@ func Test_NewReleasePleaseConfigInput(t *testing.T) {
 			changelogStyle: "legacy",
 			hasProjectGo:   true,
 			expectedSections: map[string]string{
-				"feat":     "### Added",
-				"fix":      "### Fixed",
-				"refactor": "### Changed",
-				"perf":     "### Changed",
-				"docs":     "### Changed",
-				"chore":    "### Changed",
-				"test":     "### Changed",
-				"build":    "### Changed",
-				"ci":       "### Changed",
-				"security": "### Security",
+				"feat":     "Added",
+				"fix":      "Fixed",
+				"refactor": "Changed",
+				"perf":     "Changed",
+				"docs":     "Changed",
+				"chore":    "Changed",
+				"test":     "Changed",
+				"build":    "Changed",
+				"ci":       "Changed",
+				"security": "Security",
 			},
 			expectExtraFiles: []releasePleaseExtraFile{
 				{Type: "generic", Path: "pkg/project/project.go"},
@@ -151,6 +152,13 @@ func Test_NewReleasePleaseConfigInput(t *testing.T) {
 
 			if !reflect.DeepEqual(got.ExtraFiles, tc.expectExtraFiles) {
 				t.Errorf("extra-files mismatch\ngot:  %#v\nwant: %#v", got.ExtraFiles, tc.expectExtraFiles)
+			}
+
+			// `packages` is required at the top level of release-please-config.json
+			// per the official schema. Without it release-please loads the config,
+			// finds no packages to release, and exits without opening a PR.
+			if _, ok := got.Packages["."]; !ok {
+				t.Errorf("packages must declare the root \".\" entry; got %#v", got.Packages)
 			}
 		})
 	}

@@ -7,6 +7,58 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Test catalogs can now be populated when an app or component uses a dev version (`app-version-sha`) in its release creation.
+
+### Changed
+
+- Dev version detection now uses the git SHA suffix instead of the semver pre-release format, since app dev versions are typically identified by their appended git SHA.
+- Changelog fetch is skipped for dev versions during release notes generation.
+
+## [7.48.0] - 2026-05-31
+
+### Added
+
+- `gen circleci`: new generator that emits a standard `.circleci/config.yml` for the Go-service-with-Helm-chart use-case. The pipeline is derived from existing signals rather than a per-repo CI parameter block: `--language go` selects `architect/go-build`; a `Dockerfile` in the repo selects `architect/push-to-registries` (multiarch + split-china-push) plus the paired `architect/sync-china-registry`; the `app` flavour selects `architect/push-to-app-catalog` (app-build-suite executor) plus `architect/run-tests-with-ats`. Emits the aligned standard (orb pinned via `--orb-version`, default `8.3.0`; loose `/^v.*/` tags; branch builds amd64-only, tag builds multi-arch + publish chart). Configs with no applicable signal are rejected instead of rendering an empty `jobs:` list. `.circleci/config.yml` is registered as regenerable.
+
+### Changed
+
+- `gen workflows` (`--release-workflow=release-please`): also delete the legacy release workflow files (`.github/workflows/zz_generated.create_release.yaml`, `zz_generated.create_release_pr.yaml`, `zz_generated.validate_changelog.yaml`) on every run. A repo uses either the legacy `create-release` flow or release-please — never both. Previously devctl stopped generating the legacy files in release-please mode but left whatever was already on disk, so a migrating repo carried orphaned workflows that still triggered on the legacy branch/tag patterns. Uses the existing `input.Input{Delete: true}` primitive, so the change is a no-op for green-field release-please repos.
+
+### Fixed
+
+- `gen workflows` (`--release-workflow=release-please`): declare the root package in the generated `release-please-config.json`. The template now renders `"packages": {".": {}}` at the top level. `packages` is `required` per release-please's official `schemas/config.json`; without it release-please loads the config but has no package to release, logs `Found release tag with component '', but not configured in manifest` for every existing tag, and exits without opening a Release PR even when conventional commits exist. The top-level `release-type: "simple"` continues to apply as the per-package default. Pairs with the manifest seeding fix below — both are needed for a legacy → release-please migration to produce a Release PR on first run.
+- `gen workflows` (`--release-workflow=release-please`): seed `.release-please-manifest.json` with the latest existing `v<major>.<minor>.<patch>` tag found in the target repo (`{".": "<latest>"}`) instead of always writing `{}`. Without this, repos migrating from the legacy `create_release` flow that already had release tags would get an empty manifest, causing release-please to log `Found release tag with component '', but not configured in manifest` and exit without opening a Release PR (no per-path baseline to compute "what changed since the last release" against). Green-field repos with no tags continue to get `{}`; pre-release tags and non-`v<major>.<minor>.<patch>` tags are ignored when picking the baseline; the file is still write-once, so an existing manifest is never overwritten.
+
+## [7.47.0] - 2026-05-28
+
+### Added
+
+- `devctl repo checks --update` now accepts `--remove <names>` to drop required status checks. Combined with `--checks`, a single invocation can migrate a check from one name to another (subtract `--remove`, then union `--checks`). Existing checks not named in either flag are left untouched.
+
+## [7.46.0] - 2026-05-28
+
+### Added
+
+- Release: Add ExternalDNS Crossplane Resources & RBAC Bootstrap.
+
+## [7.45.0] - 2026-05-28
+
+### Added
+
+- Release: Add Cluster Autoscaler Crossplane Resources.
+
+## [7.44.0] - 2026-05-28
+
+### Added
+
+- `gen workflows`: Add `--auto-release-level` flag (`none`, `patch`, `minor`, `major`; default `none`), only used with `--release-workflow=release-please`. It sets the `auto-merge-level` input of the `giantswarm/github-workflows` `release.yaml` reusable workflow, which auto-merges the Release Please PR once CI passes, up to the given bump level (`none` disables auto-merge). The consuming repo must have "Allow auto-merge" enabled and the `release-please` GitHub App on its branch-protection bypass list.
+
+### Changed
+
+- Generated `release-please.yaml` workflow now passes `RELEASE_PLEASE_CLIENT_ID` and `RELEASE_PLEASE_PRIVATE_KEY` secrets to the `giantswarm/github-workflows` `release.yaml` reusable workflow instead of `TAYLORBOT_GITHUB_ACTION`. This matches the App-based authentication in the reusable workflow (the reusable workflow feeds `RELEASE_PLEASE_CLIENT_ID` to `create-github-app-token`'s `client-id`). Requires those two org secrets to be available to the consuming repo.
+
 ## [7.43.0] - 2026-05-21
 
 ### Added
@@ -1838,7 +1890,12 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.43.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.48.0...HEAD
+[7.48.0]: https://github.com/giantswarm/devctl/compare/v7.47.0...v7.48.0
+[7.47.0]: https://github.com/giantswarm/devctl/compare/v7.46.0...v7.47.0
+[7.46.0]: https://github.com/giantswarm/devctl/compare/v7.45.0...v7.46.0
+[7.45.0]: https://github.com/giantswarm/devctl/compare/v7.44.0...v7.45.0
+[7.44.0]: https://github.com/giantswarm/devctl/compare/v7.43.0...v7.44.0
 [7.43.0]: https://github.com/giantswarm/devctl/compare/v7.42.0...v7.43.0
 [7.42.0]: https://github.com/giantswarm/devctl/compare/v7.41.1...v7.42.0
 [7.41.1]: https://github.com/giantswarm/devctl/compare/v7.41.0...v7.41.1
