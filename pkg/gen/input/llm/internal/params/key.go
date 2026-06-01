@@ -3,7 +3,7 @@ package params
 import (
 	"fmt"
 
-	"github.com/giantswarm/devctl/v7/pkg/gen/internal"
+	"github.com/giantswarm/devctl/v8/pkg/gen/internal"
 )
 
 func RegenerableFileName(p Params, suffix string) string {

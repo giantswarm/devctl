@@ -8,7 +8,7 @@ import (
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
 
-	"github.com/giantswarm/devctl/v7/cmd/app/bootstrap"
+	"github.com/giantswarm/devctl/v8/cmd/app/bootstrap"
 )
 
 const (

@@ -9,16 +9,16 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
-	"github.com/giantswarm/devctl/v7/cmd/app"
-	"github.com/giantswarm/devctl/v7/cmd/completion"
-	"github.com/giantswarm/devctl/v7/cmd/deploy"
-	"github.com/giantswarm/devctl/v7/cmd/gen"
-	"github.com/giantswarm/devctl/v7/cmd/pr"
-	"github.com/giantswarm/devctl/v7/cmd/release"
-	"github.com/giantswarm/devctl/v7/cmd/replace"
-	"github.com/giantswarm/devctl/v7/cmd/repo"
-	"github.com/giantswarm/devctl/v7/cmd/version"
-	"github.com/giantswarm/devctl/v7/pkg/project"
+	"github.com/giantswarm/devctl/v8/cmd/app"
+	"github.com/giantswarm/devctl/v8/cmd/completion"
+	"github.com/giantswarm/devctl/v8/cmd/deploy"
+	"github.com/giantswarm/devctl/v8/cmd/gen"
+	"github.com/giantswarm/devctl/v8/cmd/pr"
+	"github.com/giantswarm/devctl/v8/cmd/release"
+	"github.com/giantswarm/devctl/v8/cmd/replace"
+	"github.com/giantswarm/devctl/v8/cmd/repo"
+	"github.com/giantswarm/devctl/v8/cmd/version"
+	"github.com/giantswarm/devctl/v8/pkg/project"
 )
 
 type Config struct {

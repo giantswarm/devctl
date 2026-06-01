@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/giantswarm/devctl/v7/pkg/gen/input/precommit/internal/params"
+	"github.com/giantswarm/devctl/v8/pkg/gen/input/precommit/internal/params"
 )
 
 func Test_NewCreateSchemaYamlInput(t *testing.T) {

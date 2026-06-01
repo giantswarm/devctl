@@ -17,7 +17,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/yaml"
 
-	"github.com/giantswarm/devctl/v7/pkg/release/changelog"
+	"github.com/giantswarm/devctl/v8/pkg/release/changelog"
 )
 
 type droppedAppConfig struct {

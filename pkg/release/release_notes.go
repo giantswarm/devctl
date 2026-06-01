@@ -13,7 +13,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"sigs.k8s.io/yaml"
 
-	"github.com/giantswarm/devctl/v7/pkg/release/changelog"
+	"github.com/giantswarm/devctl/v8/pkg/release/changelog"
 )
 
 const releaseNotesTemplate = `# :zap: Giant Swarm Release {{ .Name }} for {{ .Provider }} :zap:

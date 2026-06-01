@@ -1,4 +1,4 @@
-module github.com/giantswarm/devctl/v7
+module github.com/giantswarm/devctl/v8
 
 go 1.26.0
 
