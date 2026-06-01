@@ -52,7 +52,6 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 			Language:      r.flag.Language,
 			Flavours:      r.flag.Flavours,
 			HasDockerfile: hasDockerfile,
-			OrbVersion:    r.flag.OrbVersion,
 		}
 
 		circleciInput, err = circleci.New(c)
