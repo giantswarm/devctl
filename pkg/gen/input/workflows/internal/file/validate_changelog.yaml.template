@@ -4,6 +4,8 @@ name: Validate changelog
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+    paths:
+      - 'CHANGELOG.md'
 
 permissions: {}
 
