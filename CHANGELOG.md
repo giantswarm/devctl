@@ -15,6 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `gen workflows`: remove the `paths:` filter from the generated `check-values-schema` calling workflow. With the filter in place, PRs that do not touch Helm values files never triggered the workflow, leaving the `check-values-schema / validate` required status check permanently unsatisfied and blocking all merges. Without the filter the workflow fires on every PR; the reusable workflow iterates over `helm/*/Chart.yaml` globs that evaluate to empty on non-chart PRs, so the job exits 0 with no work done.
 - `gen circleci`: the chart-test job (`architect/run-tests-with-ats`, "execute chart tests") now waits for the image push before deploying. It previously required only `build-<repo>-chart`, so on image-bearing chart repos it deployed the chart and tried to pull the freshly built dev image from gsoci before `push-to-registries` had finished, racing the push and flaking on `ImagePullBackOff` (the kubelet's pull backoff outlasts the test deadline once an early pull attempt fails). The job is now split into a branch variant requiring `push-to-registries` and a release variant (`execute chart tests on release`) requiring `push-to-registries-release`, each gated on `HasDockerfile` so chart-only repos are unaffected.
 
 ## [8.3.0] - 2026-06-01
