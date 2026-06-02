@@ -11,7 +11,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
-- Release artifacts now build correctly; the CI workflow pins Go 1.26.3 and gitsemver v2.0.0.
+- Release artifacts now build correctly; the CI workflow pins Go 1.26.3.
 
 ## [8.3.3] - 2026-06-02
 
