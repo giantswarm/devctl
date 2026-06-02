@@ -11,6 +11,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [8.3.4] - 2026-06-02
 
+## [8.3.4] - 2026-06-02
+
 ### Fixed
 
 - Release artifacts now build correctly; the CI workflow pins Go 1.26.3.
@@ -1942,6 +1944,7 @@ Renovate config
 - First release.
 
 [Unreleased]: https://github.com/giantswarm/devctl/compare/v8.3.4...HEAD
+[8.3.4]: https://github.com/giantswarm/devctl/compare/v8.3.4...v8.3.4
 [8.3.4]: https://github.com/giantswarm/devctl/compare/v8.3.3...v8.3.4
 [8.3.3]: https://github.com/giantswarm/devctl/compare/v8.3.2...v8.3.3
 [8.3.2]: https://github.com/giantswarm/devctl/compare/v8.3.1...v8.3.2
