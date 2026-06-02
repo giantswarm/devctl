@@ -20,7 +20,7 @@ import (
 // and only then reaches repos via the align-files devctl pin.
 //
 // renovate: datasource=orb depName=giantswarm/architect
-const OrbVersion = "9.0.0"
+const OrbVersion = "9.0.2"
 
 type Config struct {
 	// RepoName is the repository name, used for the binary, chart, and job
