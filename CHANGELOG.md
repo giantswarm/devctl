@@ -9,6 +9,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [8.3.3] - 2026-06-02
 
+### Fixed
+
+- CI release artifacts now build correctly after the `gitsemver get` rename in v8.3.1; the CI workflow now pins gitsemver v2.0.0.
+
 ## [8.3.2] - 2026-06-02
 
 ### Fixed
