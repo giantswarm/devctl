@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [8.3.1] - 2026-06-02
+
+### Changed
+
+- `gen makefile` (`--language go`): the generated `Makefile.gen.go.mk` now resolves the build version with `gitsemver get` instead of `gitsemver version`. gitsemver [v2.0.0](https://github.com/giantswarm/gitsemver/releases/tag/v2.0.0) renamed the `version` subcommand to `get` (to avoid confusion with the `--version` flag), a breaking change: with gitsemver v2 the old `gitsemver version` invocation fails, leaving `VERSION` empty and breaking the build/package targets. Repos must have gitsemver v2.0.0+ on `PATH` after re-running `devctl gen makefile`.
+
 ### Fixed
 
 - `gen workflows`: remove the `paths:` filter from the generated `check-values-schema` calling workflow. With the filter in place, PRs that do not touch Helm values files never triggered the workflow, leaving the `check-values-schema / validate` required status check permanently unsatisfied and blocking all merges. Without the filter the workflow fires on every PR; the reusable workflow iterates over `helm/*/Chart.yaml` globs that evaluate to empty on non-chart PRs, so the job exits 0 with no work done.
@@ -1915,7 +1921,8 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.3.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.3.1...HEAD
+[8.3.1]: https://github.com/giantswarm/devctl/compare/v8.3.0...v8.3.1
 [8.3.0]: https://github.com/giantswarm/devctl/compare/v8.2.0...v8.3.0
 [8.2.0]: https://github.com/giantswarm/devctl/compare/v8.1.0...v8.2.0
 [8.1.0]: https://github.com/giantswarm/devctl/compare/v8.0.0...v8.1.0
