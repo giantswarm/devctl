@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [8.3.3] - 2026-06-02
+
 ## [8.3.2] - 2026-06-02
 
 ### Fixed
@@ -1927,7 +1929,8 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.3.2...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.3.3...HEAD
+[8.3.3]: https://github.com/giantswarm/devctl/compare/v8.3.2...v8.3.3
 [8.3.2]: https://github.com/giantswarm/devctl/compare/v8.3.1...v8.3.2
 [8.3.1]: https://github.com/giantswarm/devctl/compare/v8.3.0...v8.3.1
 [8.3.0]: https://github.com/giantswarm/devctl/compare/v8.2.0...v8.3.0
