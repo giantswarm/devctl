@@ -7,10 +7,6 @@ on:
     branches:
       - master
       - main
-    paths:
-      - 'helm/**/values.yaml'         # default helm chart values
-      - 'helm/**/values.schema.json'  # schema
-      - 'helm/**/ci/ci-values.yaml'   # overrides for CI (can contain required entries)
 
 permissions: {}
 
