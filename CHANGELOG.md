@@ -7,8 +7,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Removed
+
+- `gen workflows --release-workflow=release-please` (along with `--changelog-style` and `--auto-release-level`) no longer exists. `gen workflows` always emits the legacy `create-release-pr` / `create-release` / `validate-changelog` trio. The release-please opt-in is reverted (see giantswarm/github), and a push-based git-cliff alternative is planned to take its place later. The generator (`pkg/gen/input/workflows/internal/file/release_please*`) is deleted.
+
 ### Changed
 
+- `gen workflows` now also emits deletion inputs for stale `zz_generated.release-please.yaml`, `release-please-config.json`, and `.release-please-manifest.json` files. This is one-shot cleanup for the 16 bumblebee repos that had been on `releaseWorkflow: release-please` before the revert — every `align-files` cycle over them will sweep the leftover release-please files. No-op on any repo that never had release-please. The cleanup wiring can be removed once those repos have all been swept.
 - Release binaries now include darwin/amd64, darwin/arm64, windows/amd64, and windows/arm64 alongside the existing linux targets. Windows binaries are named `devctl-windows-<arch>.exe`.
 
 ## [8.4.0] - 2026-06-03

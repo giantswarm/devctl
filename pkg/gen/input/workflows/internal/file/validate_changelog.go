@@ -31,8 +31,11 @@ func NewValidateChangelogInput(p params.Params) input.Input {
 }
 
 // NewValidateChangelogDeletionInput returns an Input that deletes the file
-// NewValidateChangelogInput would generate. Used when switching a repo to the
-// release-please flow so the legacy workflow is removed in the same gen run.
+// NewValidateChangelogInput would generate. Reusable when a repo opts into an
+// alternative release flow that supersedes validate-changelog so the legacy
+// workflow is removed in the same gen run. Currently unused (the only
+// alternative — release-please — was reverted) but kept as infrastructure
+// for the planned push-based git-cliff flow.
 func NewValidateChangelogDeletionInput(p params.Params) input.Input {
 	return input.Input{
 		Delete: true,

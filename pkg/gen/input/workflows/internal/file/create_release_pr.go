@@ -32,8 +32,11 @@ func NewCreateReleasePRInput(p params.Params) input.Input {
 }
 
 // NewCreateReleasePRDeletionInput returns an Input that deletes the file
-// NewCreateReleasePRInput would generate. Used when switching a repo to the
-// release-please flow so the legacy workflow is removed in the same gen run.
+// NewCreateReleasePRInput would generate. Reusable when a repo opts into an
+// alternative release flow that supersedes create-release-pr so the legacy
+// workflow is removed in the same gen run. Currently unused (the only
+// alternative — release-please — was reverted) but kept as infrastructure
+// for the planned push-based git-cliff flow.
 func NewCreateReleasePRDeletionInput(p params.Params) input.Input {
 	return input.Input{
 		Delete: true,
