@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [8.4.0] - 2026-06-03
+
 ### Added
 
 - `gen circleci`: `--branch-publish` flag opts a repo into publishing a coupled amd64 dev image and dev chart on branch builds.
@@ -1953,7 +1955,8 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.3.5...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.4.0...HEAD
+[8.4.0]: https://github.com/giantswarm/devctl/compare/v8.3.5...v8.4.0
 [8.3.5]: https://github.com/giantswarm/devctl/compare/v8.3.4...v8.3.5
 [8.3.4]: https://github.com/giantswarm/devctl/compare/v8.3.4...v8.3.4
 [8.3.4]: https://github.com/giantswarm/devctl/compare/v8.3.4...v8.3.4
