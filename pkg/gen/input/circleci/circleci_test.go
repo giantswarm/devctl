@@ -17,6 +17,8 @@ const (
 	jobRunTests       = "architect/run-tests-with-ats"
 
 	goldenPath = "testdata/mcp-kubernetes.config.yml"
+
+	repoMCPKubernetes = "mcp-kubernetes"
 )
 
 // render executes an input.Input the same way pkg/gen/internal.Execute does,
@@ -53,13 +55,13 @@ func contains(got, substr string) bool {
 }
 
 // Test_GoldenServiceConfig is the golden test: generating with mcp-kubernetes's
-// signals (language go, app flavour, a Dockerfile) must reproduce the aligned
-// standard byte-for-byte. The golden file is mcp-kubernetes's checked-in
-// .circleci/config.yml with the only allowed drift -- the orb bump to the
-// aligned OrbVersion and the v9 buildx/multi-arch shape -- applied.
+// signals (language go, app flavour, a Dockerfile, branch-publish off) must
+// reproduce the aligned standard byte-for-byte. The golden reflects the
+// build+test-only branch default: branches run go-build, build-chart, and
+// execute-chart-tests, while the image and chart pushes are tag-only.
 func Test_GoldenServiceConfig(t *testing.T) {
 	got := render(t, Config{
-		RepoName:      "mcp-kubernetes",
+		RepoName:      repoMCPKubernetes,
 		Language:      gen.LanguageGo,
 		Flavours:      gen.FlavourSlice{gen.FlavourApp},
 		HasDockerfile: true,
@@ -77,7 +79,7 @@ func Test_GoldenServiceConfig(t *testing.T) {
 
 func Test_OrbVersion(t *testing.T) {
 	got := render(t, Config{
-		RepoName:      "mcp-kubernetes",
+		RepoName:      repoMCPKubernetes,
 		Language:      gen.LanguageGo,
 		Flavours:      gen.FlavourSlice{gen.FlavourApp},
 		HasDockerfile: true,
@@ -163,6 +165,68 @@ func Test_ChartOnlyOmitsImage(t *testing.T) {
 	for _, unwanted := range []string{jobGoBuild, jobPushRegistries, jobSyncChina, "- push-to-registries"} {
 		if contains(got, unwanted) {
 			t.Errorf("chart config should not contain %q:\n%s", unwanted, got)
+		}
+	}
+}
+
+// Test_BranchPublishOffOmitsBranchPushes verifies the default branch shape:
+// branches build + test only. The branch image push (name: push-to-registries)
+// and the branch chart push (name: push-chart) must be absent, while the
+// tag-only release jobs and the shared build-chart job remain.
+func Test_BranchPublishOffOmitsBranchPushes(t *testing.T) {
+	got := render(t, Config{
+		RepoName:      repoMCPKubernetes,
+		Language:      gen.LanguageGo,
+		Flavours:      gen.FlavourSlice{gen.FlavourApp},
+		HasDockerfile: true,
+		BranchPublish: false,
+	})
+
+	for _, want := range []string{
+		"name: go-build",
+		"name: build-chart",
+		"name: execute-chart-tests",
+		"name: push-to-registries-release",
+		"name: sync-china-registry",
+		"name: push-chart-release",
+	} {
+		if !contains(got, want) {
+			t.Errorf("default config missing %q:\n%s", want, got)
+		}
+	}
+	for _, unwanted := range []string{
+		"name: push-to-registries\n",
+		"name: push-chart\n",
+		"platforms: linux/amd64",
+	} {
+		if contains(got, unwanted) {
+			t.Errorf("default config should not contain branch-publish %q:\n%s", unwanted, got)
+		}
+	}
+}
+
+// Test_BranchPublishOnAddsCoupledBranchPushes verifies the opt-in branch shape:
+// the branch path additionally emits an amd64 image push (name:
+// push-to-registries with platforms: linux/amd64) and the coupled branch chart
+// push (name: push-chart), without disturbing the tag-only release jobs.
+func Test_BranchPublishOnAddsCoupledBranchPushes(t *testing.T) {
+	got := render(t, Config{
+		RepoName:      repoMCPKubernetes,
+		Language:      gen.LanguageGo,
+		Flavours:      gen.FlavourSlice{gen.FlavourApp},
+		HasDockerfile: true,
+		BranchPublish: true,
+	})
+
+	for _, want := range []string{
+		"name: push-to-registries\n",
+		"platforms: linux/amd64",
+		"name: push-chart\n",
+		"name: push-to-registries-release",
+		"name: push-chart-release",
+	} {
+		if !contains(got, want) {
+			t.Errorf("branch-publish config missing %q:\n%s", want, got)
 		}
 	}
 }

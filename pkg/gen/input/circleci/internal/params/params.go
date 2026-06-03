@@ -19,6 +19,11 @@ type Params struct {
 	// Helm chart). It selects the chart pipeline (push-to-app-catalog with the
 	// app-build-suite executor and run-tests-with-ats).
 	HasApp bool
+	// BranchPublish is true when the repo opts into publishing a dev image and
+	// chart on branch builds. By default branches build + test only; when set,
+	// the branch path additionally pushes an amd64 dev image and the dev chart
+	// (coupled).
+	BranchPublish bool
 	// OrbVersion is the giantswarm/architect orb version to pin.
 	OrbVersion string
 }
