@@ -20,7 +20,7 @@ jobs:
     uses: giantswarm/github-workflows/.github/workflows/dispatch-update-chart-events.yaml@main
     permissions:
       actions: read
-      content: read
+      contents: read
       statuses: read
     with:
       target_repository: '{{{{ .TargetRepository }}}}'
