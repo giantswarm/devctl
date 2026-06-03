@@ -7,6 +7,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `gen circleci`: `--branch-publish` flag opts a repo into publishing a coupled amd64 dev image and dev chart on branch builds.
+
+### Changed
+
+- `gen circleci`: branch builds now run build + test only by default (`go-build`, `build-chart`, `execute-chart-tests`); image and chart pushes moved to the tag path. Job `name:` labels dropped the repo-name suffix for consistent labels (`go-build`, `push-to-registries`, `push-to-registries-release`, `sync-china-registry`, `build-chart`, `execute-chart-tests`, `execute-chart-tests-release`, `push-chart`, `push-chart-release`). Pinned architect orb bumped to `9.0.2`.
+
 ## [8.3.5] - 2026-06-03
 
 ### Changed
