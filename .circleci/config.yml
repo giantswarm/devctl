@@ -1,7 +1,7 @@
 version: 2.1
 
 orbs:
-  architect: giantswarm/architect@9.0.2
+  architect: giantswarm/architect@9.1.0
 
 workflows:
   go-build:
@@ -12,6 +12,7 @@ workflows:
         binary: devctl
         clone_depth: 0
         pre_test_target: generate-go
+        architectures: "linux/amd64,linux/arm64,darwin/amd64,darwin/arm64,windows/amd64,windows/arm64"
           # Needed to trigger job also on git tag.
         filters:
           tags:
@@ -20,6 +21,7 @@ workflows:
     - architect/push-to-registries:
         context: architect
         name: push-to-registries
+        platforms: "linux/amd64,linux/arm64"
         requires:
         - go-build-devctl
         filters:
@@ -30,3 +32,15 @@ workflows:
             ignore:
             - main
             - master
+
+    - architect/upload-release-assets:
+        context: architect
+        name: upload-release-assets
+        binary: devctl
+        requires:
+        - go-build-devctl
+        filters:
+          tags:
+            only: /^v.*/
+          branches:
+            ignore: /.*/
