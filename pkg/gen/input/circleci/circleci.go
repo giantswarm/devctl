@@ -34,6 +34,11 @@ type Config struct {
 	// HasDockerfile selects the image pipeline. The runner derives this from
 	// the presence of a Dockerfile in the repo.
 	HasDockerfile bool
+	// BranchPublish opts the repo into publishing a dev image and chart on
+	// branch builds. By default branches build + test only (no push). When
+	// set, the branch path additionally pushes an amd64 dev image and the
+	// dev chart, coupled (both or neither).
+	BranchPublish bool
 }
 
 type CircleCI struct {
@@ -54,6 +59,7 @@ func New(config Config) (*CircleCI, error) {
 			Language:      config.Language.String(),
 			HasDockerfile: config.HasDockerfile,
 			HasApp:        hasApp,
+			BranchPublish: config.BranchPublish,
 			OrbVersion:    OrbVersion,
 		},
 	}

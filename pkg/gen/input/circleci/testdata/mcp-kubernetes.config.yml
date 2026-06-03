@@ -6,25 +6,12 @@ workflows:
   build:
     jobs:
     - architect/go-build:
-        name: go-build-mcp-kubernetes
+        name: go-build
         binary: mcp-kubernetes
         context: architect
         filters:
           tags:
             only: /^v.*/
-
-    # Branch builds: multi-arch image to gsoci for PR validation. v9's
-    # push-to-registries always uses buildx and derives the platforms from
-    # go-build's .platforms file (linux/amd64,linux/arm64 by default).
-    - architect/push-to-registries:
-        context: architect
-        name: push-to-registries
-        requires:
-        - go-build-mcp-kubernetes
-        filters:
-          branches:
-            ignore:
-            - main
 
     # Tag builds: push multi-arch image to gsoci + gsociprivate. Aliyun is
     # handled by the sync-china-registry job below (orb's split-china-push
@@ -34,7 +21,7 @@ workflows:
         name: push-to-registries-release
         split-china-push: true
         requires:
-        - go-build-mcp-kubernetes
+        - go-build
         filters:
           tags:
             only: /^v.*/
@@ -55,10 +42,13 @@ workflows:
           branches:
             ignore: /.*/
 
+    # build-chart: package + lint via app-build-suite and persist the archive
+    # (no push). Shared by the branch and tag paths -- branches get build + test
+    # only by default.
     - architect/push-to-app-catalog:
         executor: app-build-suite
         context: architect
-        name: build-mcp-kubernetes-chart
+        name: build-chart
         app_catalog: giantswarm-catalog
         app_catalog_test: giantswarm-test-catalog
         chart: mcp-kubernetes
@@ -66,7 +56,7 @@ workflows:
         push_to_oci_registry: false
         persist_chart_archive: true
         requires:
-        - go-build-mcp-kubernetes
+        - go-build
         filters:
           tags:
             only: /^v.*/
@@ -74,16 +64,14 @@ workflows:
             ignore:
             - main
 
-    # Branch: run chart tests after the image is pushed. run-tests-with-ats
-    # deploys the chart, which pulls the freshly built dev image from gsoci.
-    # Without depending on push-to-registries the test races the image push and
-    # flakes on ImagePullBackOff (the kubelet's pull backoff outlasts the test
-    # deadline once an early pull attempt fails).
+    # Branch: run chart tests after build-chart. When branchPublish pushes a dev
+    # image, the test also waits on push-to-registries -- run-tests-with-ats
+    # deploys the chart, which pulls that image from gsoci, and gating on the
+    # push avoids an ImagePullBackOff race.
     - architect/run-tests-with-ats:
-        name: execute chart tests
+        name: execute-chart-tests
         requires:
-        - build-mcp-kubernetes-chart
-        - push-to-registries
+        - build-chart
         filters:
           branches:
             ignore:
@@ -92,9 +80,9 @@ workflows:
     # Tag: run chart tests after the release image is pushed, for the same
     # image-availability reason as the branch job above.
     - architect/run-tests-with-ats:
-        name: execute chart tests on release
+        name: execute-chart-tests-release
         requires:
-        - build-mcp-kubernetes-chart
+        - build-chart
         - push-to-registries-release
         filters:
           tags:
@@ -102,34 +90,18 @@ workflows:
           branches:
             ignore: /.*/
 
-    # Branch: push chart (git catalog + OCI per architect default) after tests + image
-    - architect/push-to-app-catalog:
-        executor: app-build-suite
-        context: architect
-        name: push-mcp-kubernetes-to-giantswarm-app-catalog
-        app_catalog: giantswarm-catalog
-        app_catalog_test: giantswarm-test-catalog
-        chart: mcp-kubernetes
-        requires:
-        - execute chart tests
-        - push-to-registries
-        filters:
-          branches:
-            ignore:
-            - main
-
     # Tag: push chart after tests + the gsoci image. Intentionally does NOT
     # depend on sync-china-registry so the chart catalog can publish even if
     # the in-China Aliyun mirror is slow or fails.
     - architect/push-to-app-catalog:
         executor: app-build-suite
         context: architect
-        name: push-mcp-kubernetes-to-giantswarm-app-catalog-release
+        name: push-chart-release
         app_catalog: giantswarm-catalog
         app_catalog_test: giantswarm-test-catalog
         chart: mcp-kubernetes
         requires:
-        - execute chart tests on release
+        - execute-chart-tests-release
         - push-to-registries-release
         filters:
           tags:

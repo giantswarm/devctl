@@ -19,6 +19,7 @@ func NewConfigInput(p params.Params) input.Input {
 			"Language":      p.Language,
 			"HasDockerfile": p.HasDockerfile,
 			"HasApp":        p.HasApp,
+			"BranchPublish": p.BranchPublish,
 			"OrbVersion":    p.OrbVersion,
 		},
 	}
