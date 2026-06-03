@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [8.3.5] - 2026-06-03
+
 ### Changed
 
 - Update `dispatch-update-chart-events` workflow permissions to allow reading commit datetime.
@@ -1943,7 +1945,8 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.3.4...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.3.5...HEAD
+[8.3.5]: https://github.com/giantswarm/devctl/compare/v8.3.4...v8.3.5
 [8.3.4]: https://github.com/giantswarm/devctl/compare/v8.3.4...v8.3.4
 [8.3.4]: https://github.com/giantswarm/devctl/compare/v8.3.4...v8.3.4
 [8.3.4]: https://github.com/giantswarm/devctl/compare/v8.3.3...v8.3.4
