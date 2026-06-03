@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- `gen circleci`: remove `build-release-artifacts: true` from the generated `create_release` workflow for CLI-flavored repos. Binaries are now produced and signed by the architect-orb `upload-release-assets` path instead.
+
 ## [8.4.0] - 2026-06-03
 
 ### Added
