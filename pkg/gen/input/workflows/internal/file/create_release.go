@@ -32,16 +32,3 @@ func NewCreateReleaseInput(p params.Params) input.Input {
 
 	return i
 }
-
-// NewCreateReleaseDeletionInput returns an Input that deletes the file
-// NewCreateReleaseInput would generate. Reusable when a repo opts into an
-// alternative release flow that supersedes create-release so the legacy
-// workflow is removed in the same gen run. Currently unused (the only
-// alternative — release-please — was reverted) but kept as infrastructure
-// for the planned push-based git-cliff flow.
-func NewCreateReleaseDeletionInput(p params.Params) input.Input {
-	return input.Input{
-		Delete: true,
-		Path:   params.RegenerableFileName(p, "create_release.yaml"),
-	}
-}

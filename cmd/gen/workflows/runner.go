@@ -56,17 +56,6 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 		workflowsInput.CreateRelease(),
 		workflowsInput.CreateReleasePR(),
 		workflowsInput.ValidateChangelog(),
-		// release-please cleanup: devctl previously generated a release-please
-		// workflow + config + manifest for repos with `releaseWorkflow:
-		// release-please`. That opt-in was reverted (see giantswarm/github).
-		// These deletion inputs sweep the stale files from any repo that had
-		// been on release-please so the next align-files cycle leaves only
-		// the legacy workflow trio. No-op on any repo that never had
-		// release-please. Remove this block once every previously-affected
-		// repo has been swept (search the org for the file paths to confirm).
-		workflowsInput.ReleasePleaseDeletion(),
-		workflowsInput.ReleasePleaseConfigDeletion(),
-		workflowsInput.ReleasePleaseManifestDeletion(),
 	}
 
 	if r.flag.Language == "go" {
