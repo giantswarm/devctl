@@ -17,7 +17,6 @@ jobs:
   create-release:
     uses: giantswarm/github-workflows/.github/workflows/create-release.yaml@main
     with:
-      build-release-artifacts: {{{{ .IsFlavourCLI }}}}
       fetch-deep-gitlog-for-build: {{{{ .IsDevctl }}}}
     secrets:
       TAYLORBOT_GITHUB_ACTION: ${{ secrets.TAYLORBOT_GITHUB_ACTION }}
