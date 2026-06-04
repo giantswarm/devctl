@@ -39,10 +39,6 @@ func (f *flag) Init(cmd *cobra.Command) {
 }
 
 func (f *flag) Validate() error {
-	if f.RepoName == "" {
-		return microerror.Maskf(invalidFlagError, "--%s cannot be empty", flagRepoName)
-	}
-
 	for _, flavor := range f.Flavors {
 		if !allowedFlavors[flavor] {
 			return microerror.Maskf(invalidFlagError, "--%s contains invalid value %q, must be one of <%s>", flagFlavors, flavor, strings.Join(allowedFlavorsList(), "|"))

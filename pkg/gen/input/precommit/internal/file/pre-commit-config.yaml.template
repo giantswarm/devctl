@@ -59,7 +59,7 @@ repos:
           - --max-same-issues=0
           - --max-issues-per-linter=0
       - id: go-imports
-        args: [ -local, github.com/giantswarm/{{.RepoName}} ]
+        args: [ -local, {{.RepoName}} ]
 {{- end }}
 {{- if .HasBash }}
 

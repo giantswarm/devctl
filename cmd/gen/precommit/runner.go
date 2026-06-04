@@ -2,11 +2,14 @@ package precommit
 
 import (
 	"context"
+	"fmt"
 	"io"
+	"os"
 
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
+	"golang.org/x/mod/modfile"
 
 	"github.com/giantswarm/devctl/v8/pkg/gen"
 	"github.com/giantswarm/devctl/v8/pkg/gen/input"
@@ -38,6 +41,21 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
 	var err error
+
+	// When --repo-name is not provided, auto-detect it from the local go.mod
+	// module path (e.g. github.com/giantswarm/devctl/v8). This value is used as
+	// the goimports -local prefix in the generated pre-commit config.
+	if r.flag.RepoName == "" {
+		content, err := os.ReadFile("go.mod")
+		if err != nil {
+			return fmt.Errorf("failed to read go.mod: %w", err)
+		}
+		modulePath := modfile.ModulePath(content)
+		if modulePath == "" {
+			return fmt.Errorf("failed to parse module path from go.mod: %w", err)
+		}
+		r.flag.RepoName = modulePath
+	}
 
 	var precommitInput *precommit.PreCommit
 	{
