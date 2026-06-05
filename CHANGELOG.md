@@ -7,8 +7,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [8.5.0] - 2026-06-05
+
 ### Changed
 
+- `gen circleci`: pinned architect orb bumped to `9.1.0` (adds signed SBOM attestations; no generated job/param shape change from `9.0.2`).
 - `gen circleci`: remove `build-release-artifacts: true` from the generated `create_release` workflow for CLI-flavored repos. Binaries are now produced and signed by the architect-orb `upload-release-assets` path instead.
 - Release binaries now include darwin/amd64, darwin/arm64, windows/amd64, and windows/arm64 alongside the existing linux targets. Windows binaries are named `devctl-windows-<arch>.exe`.
 
@@ -1960,7 +1963,8 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.4.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.5.0...HEAD
+[8.5.0]: https://github.com/giantswarm/devctl/compare/v8.4.0...v8.5.0
 [8.4.0]: https://github.com/giantswarm/devctl/compare/v8.3.5...v8.4.0
 [8.3.5]: https://github.com/giantswarm/devctl/compare/v8.3.4...v8.3.5
 [8.3.4]: https://github.com/giantswarm/devctl/compare/v8.3.4...v8.3.4
