@@ -11,7 +11,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - `gen circleci`: remove `build-release-artifacts: true` from the generated `create_release` workflow for CLI-flavored repos. Binaries are now produced and signed by the architect-orb `upload-release-assets` path instead.
 - Release binaries now include darwin/amd64, darwin/arm64, windows/amd64, and windows/arm64 alongside the existing linux targets. Windows binaries are named `devctl-windows-<arch>.exe`.
-- Auto-detect the `RepoName` used in the `gen pre-commit' command and make the `--repo-name` flag optional
+- Auto-detect the `RepoName` used in the `gen precommit` command and make the `--repo-name` flag optional
 
 ### Fixed
 
