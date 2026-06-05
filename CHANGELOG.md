@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [8.5.0] - 2026-06-05
+
 ### Changed
 
 - `gen circleci`: remove `build-release-artifacts: true` from the generated `create_release` workflow for CLI-flavored repos. Binaries are now produced and signed by the architect-orb `upload-release-assets` path instead.
@@ -1960,7 +1962,8 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.4.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.5.0...HEAD
+[8.5.0]: https://github.com/giantswarm/devctl/compare/v8.4.0...v8.5.0
 [8.4.0]: https://github.com/giantswarm/devctl/compare/v8.3.5...v8.4.0
 [8.3.5]: https://github.com/giantswarm/devctl/compare/v8.3.4...v8.3.5
 [8.3.4]: https://github.com/giantswarm/devctl/compare/v8.3.4...v8.3.4
