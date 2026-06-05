@@ -48,7 +48,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	if r.flag.RepoName == "" && r.flag.Language == "go" {
 		content, err := os.ReadFile("go.mod")
 		if err != nil {
-			return fmt.Errorf("failed to read go.mod: %w", err)
+			return fmt.Errorf("failed to read go.mod (run from repo root or pass --%s): %w", flagRepoName, err)
 		}
 
 		mf, err := modfile.Parse("go.mod", content, nil)
