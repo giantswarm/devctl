@@ -45,7 +45,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	// When --repo-name is not provided, auto-detect it from the local go.mod
 	// module path (e.g. github.com/giantswarm/devctl/v8). This value is used as
 	// the goimports -local prefix in the generated pre-commit config.
-	if r.flag.RepoName == "" {
+	if r.flag.RepoName == "" && r.flag.Language == "go" {
 		content, err := os.ReadFile("go.mod")
 		if err != nil {
 			return fmt.Errorf("failed to read go.mod: %w", err)
