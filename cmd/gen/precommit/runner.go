@@ -56,7 +56,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 			return fmt.Errorf("failed to parse go.mod: %w", err)
 		}
 		if mf.Module == nil || mf.Module.Mod.Path == "" {
-			return fmt.Errorf("go.mod does not declare a module path")
+			return fmt.Errorf("go.mod does not declare a module path (missing 'module' directive); alternatively pass --%s", flagRepoName)
 		}
 
 		r.flag.RepoName = mf.Module.Mod.Path
