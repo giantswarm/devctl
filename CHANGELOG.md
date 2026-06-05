@@ -7,7 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
-## [8.6.0] - 2026-06-05
+### Added
+
+- `gen workflows`: `--release-workflow=auto-release` flow. It generates the push-based git-cliff release setup -- `.github/workflows/zz_generated.auto-release.yaml` (tags on push to `main`/`release-*` from conventional commits and creates the GitHub Release atomically) plus a `cliff.toml` (bump rules, Keep-a-Changelog section mapping, `[remote.github]` integration) -- and removes the legacy `create-release`/`create-release-pr`/`validate-changelog` trio, the same way `release-please` does. Requires `--repo-name`, which is templated into `cliff.toml`.
+- `gen circleci`: `--release-binaries` flag. When set (Go repos only), `go-build` gets the six-platform `architectures` matrix, an `architect/upload-release-assets` job is added (tag-only) to attach the binaries to the GitHub Release, and the multi-arch release image push is capped to `linux/amd64,linux/arm64` so buildx does not try the darwin/windows targets under QEMU.
 
 ### Added
 

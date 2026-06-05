@@ -23,6 +23,7 @@ const (
 	flagReleaseWorkflow               = "release-workflow"
 	flagChangelogStyle                = "changelog-style"
 	flagAutoReleaseLevel              = "auto-release-level"
+	flagRepoName                      = "repo-name"
 )
 
 type flag struct {
@@ -38,6 +39,7 @@ type flag struct {
 	ReleaseWorkflow               string
 	ChangelogStyle                string
 	AutoReleaseLevel              string
+	RepoName                      string
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
@@ -50,9 +52,10 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&f.PublishTechdocs, flagPublishTechdocs, false, "If true, also generate the Publish Techdocs workflow. Possible values: false (default), true.")
 	cmd.Flags().BoolVar(&f.UpstreamSyncAutomation, flagUpstreamSyncAutomation, false, "If true, also generate a workflow to dispatch update events for charts. Only valid for app flavor.")
 	cmd.Flags().StringVar(&f.DispatchUpdateChartEventsRepo, flagDispatchUpdateChartEventsRepo, "", "The repository to dispatch update chart events to. Only valid if --upstream-sync-automation is true.")
-	cmd.Flags().StringVar(&f.ReleaseWorkflow, flagReleaseWorkflow, "legacy", "Release workflow to generate. Possible values: legacy (default), release-please.")
+	cmd.Flags().StringVar(&f.ReleaseWorkflow, flagReleaseWorkflow, "legacy", "Release workflow to generate. legacy: the create-release-pr/create-release/validate-changelog trio. release-please: the Release Please flow. auto-release: the push-based git-cliff flow (auto-release.yaml + cliff.toml; tags on push to main/release-* from conventional commits). Possible values: legacy (default), release-please, auto-release.")
 	cmd.Flags().StringVar(&f.ChangelogStyle, flagChangelogStyle, "legacy", "Changelog section style for release-please. 'legacy' maps conventional commit types to ### Added/Changed/Fixed. 'release-please' uses the Release Please Angular preset. Possible values: legacy (default), release-please.")
 	cmd.Flags().StringVar(&f.AutoReleaseLevel, flagAutoReleaseLevel, "none", "Automatically merge the release-please Release PR when CI passes, up to this bump level. Sets the reusable workflow's 'auto-merge-level' input. Only used with --release-workflow=release-please. Possible values: none (default), patch, minor, major.")
+	cmd.Flags().StringVar(&f.RepoName, flagRepoName, "", "Repository name under the giantswarm organization. Required with --release-workflow=auto-release: templated into cliff.toml's [remote.github] section so git-cliff resolves PR links and authors.")
 }
 
 func (f *flag) Validate() error {
@@ -60,11 +63,22 @@ func (f *flag) Validate() error {
 		return microerror.Maskf(invalidFlagError, "--%s must be one of: %s", flagFlavour, strings.Join(gen.AllFlavours(), ", "))
 	}
 
+	switch f.ReleaseWorkflow {
+	case "legacy", "release-please", "auto-release":
+		// valid
+	default:
+		return microerror.Maskf(invalidFlagError, "--%s must be one of: legacy, release-please, auto-release", flagReleaseWorkflow)
+	}
+
 	switch f.AutoReleaseLevel {
 	case "none", "patch", "minor", "major":
 		// valid
 	default:
 		return microerror.Maskf(invalidFlagError, "--%s must be one of: none, patch, minor, major", flagAutoReleaseLevel)
+	}
+
+	if f.ReleaseWorkflow == "auto-release" && f.RepoName == "" {
+		return microerror.Maskf(invalidFlagError, "--%s is required with --%s=auto-release (it is templated into cliff.toml)", flagRepoName, flagReleaseWorkflow)
 	}
 
 	return nil

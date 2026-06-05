@@ -9,6 +9,7 @@ import (
 
 type Config struct {
 	Flavours gen.FlavourSlice
+	RepoName string
 }
 
 type Workflows struct {
@@ -20,10 +21,19 @@ func New(config Config) (*Workflows, error) {
 		params: params.Params{
 			Dir:      ".github/workflows",
 			Flavours: config.Flavours,
+			RepoName: config.RepoName,
 		},
 	}
 
 	return w, nil
+}
+
+func (w *Workflows) AutoRelease() input.Input {
+	return file.NewAutoReleaseInput(w.params)
+}
+
+func (w *Workflows) Cliff() input.Input {
+	return file.NewCliffInput(w.params.RepoName)
 }
 
 func (w *Workflows) AddCustomerBoardAutomation() input.Input {

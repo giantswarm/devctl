@@ -16,7 +16,8 @@ const (
 	jobPushCatalog    = "architect/push-to-app-catalog"
 	jobRunTests       = "architect/run-tests-with-ats"
 
-	goldenPath = "testdata/mcp-kubernetes.config.yml"
+	goldenPath               = "testdata/mcp-kubernetes.config.yml"
+	goldenReleaseBinarysPath = "testdata/mcp-kubernetes.release-binaries.config.yml"
 
 	repoMCPKubernetes = "mcp-kubernetes"
 )
@@ -74,6 +75,29 @@ func Test_GoldenServiceConfig(t *testing.T) {
 
 	if got != string(want) {
 		t.Errorf("generated config does not match golden %s\n--- got ---\n%s\n--- want ---\n%s", goldenPath, got, string(want))
+	}
+}
+
+// Test_GoldenReleaseBinariesConfig is the golden test for the release-binaries
+// opt-in: generating with mcp-kubernetes's signals plus ReleaseBinaries must
+// reproduce the aligned standard byte-for-byte (six-platform architectures on
+// go-build, the upload-release-assets job, and the capped release image push).
+func Test_GoldenReleaseBinariesConfig(t *testing.T) {
+	got := render(t, Config{
+		RepoName:        repoMCPKubernetes,
+		Language:        gen.LanguageGo,
+		Flavours:        gen.FlavourSlice{gen.FlavourApp},
+		HasDockerfile:   true,
+		ReleaseBinaries: true,
+	})
+
+	want, err := os.ReadFile(goldenReleaseBinarysPath) // #nosec G304 -- fixed in-package testdata path
+	if err != nil {
+		t.Fatalf("read golden: %v", err)
+	}
+
+	if got != string(want) {
+		t.Errorf("generated config does not match golden %s\n--- got ---\n%s\n--- want ---\n%s", goldenReleaseBinarysPath, got, string(want))
 	}
 }
 
@@ -228,5 +252,68 @@ func Test_BranchPublishOnAddsCoupledBranchPushes(t *testing.T) {
 		if !contains(got, want) {
 			t.Errorf("branch-publish config missing %q:\n%s", want, got)
 		}
+	}
+}
+
+// Test_ReleaseBinariesOffOmitsAssets verifies the default: without the
+// release-binaries opt-in go-build carries no architectures matrix, there is no
+// upload-release-assets job, and the release image push does not pin platforms.
+func Test_ReleaseBinariesOffOmitsAssets(t *testing.T) {
+	got := render(t, Config{
+		RepoName:      repoMCPKubernetes,
+		Language:      gen.LanguageGo,
+		Flavours:      gen.FlavourSlice{gen.FlavourApp},
+		HasDockerfile: true,
+	})
+
+	for _, unwanted := range []string{
+		"architectures:",
+		"name: upload-release-assets",
+		"platforms: \"linux/amd64,linux/arm64\"",
+	} {
+		if contains(got, unwanted) {
+			t.Errorf("default config should not contain release-binaries %q:\n%s", unwanted, got)
+		}
+	}
+}
+
+// Test_ReleaseBinariesOnAddsAssets verifies the opt-in: go-build gets the
+// six-platform architectures matrix, an upload-release-assets job is emitted
+// (tag-only), and the multi-arch release image push is capped to the two linux
+// platforms so buildx does not try the darwin/windows targets under QEMU.
+func Test_ReleaseBinariesOnAddsAssets(t *testing.T) {
+	got := render(t, Config{
+		RepoName:        repoMCPKubernetes,
+		Language:        gen.LanguageGo,
+		Flavours:        gen.FlavourSlice{gen.FlavourApp},
+		HasDockerfile:   true,
+		ReleaseBinaries: true,
+	})
+
+	for _, want := range []string{
+		`architectures: "linux/amd64,linux/arm64,darwin/amd64,darwin/arm64,windows/amd64,windows/arm64"`,
+		"name: upload-release-assets",
+		`platforms: "linux/amd64,linux/arm64"`,
+	} {
+		if !contains(got, want) {
+			t.Errorf("release-binaries config missing %q:\n%s", want, got)
+		}
+	}
+}
+
+// Test_ReleaseBinariesIgnoredWithoutGo verifies the guard at the input layer:
+// a non-go repo never gets the binary jobs even if ReleaseBinaries is set, so a
+// stray flag cannot emit an upload-release-assets job with no binary to upload.
+func Test_ReleaseBinariesIgnoredWithoutGo(t *testing.T) {
+	got := render(t, Config{
+		RepoName:        "sitesearch",
+		Language:        gen.Language(""),
+		Flavours:        gen.FlavourSlice{gen.FlavourApp},
+		HasDockerfile:   false,
+		ReleaseBinaries: true,
+	})
+
+	if contains(got, "name: upload-release-assets") {
+		t.Errorf("non-go config should not contain upload-release-assets:\n%s", got)
 	}
 }

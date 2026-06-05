@@ -8,4 +8,9 @@ type Params struct {
 	Dir string
 
 	Flavours gen.FlavourSlice
+
+	// RepoName is the repository name under the giantswarm organization. It is
+	// templated into cliff.toml's [remote.github] section so git-cliff resolves
+	// PR links and authors against the consuming repo.
+	RepoName string
 }

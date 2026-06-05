@@ -24,6 +24,12 @@ type Params struct {
 	// the branch path additionally pushes an amd64 dev image and the dev chart
 	// (coupled).
 	BranchPublish bool
+	// ReleaseBinaries is true when the repo distributes cross-platform Go
+	// binaries on its GitHub Release. It adds the six-platform architectures
+	// matrix to go-build and an upload-release-assets job, and caps the
+	// multi-arch image push to linux/amd64,linux/arm64 (otherwise buildx tries
+	// the darwin/windows targets under QEMU and hangs).
+	ReleaseBinaries bool
 	// OrbVersion is the giantswarm/architect orb version to pin.
 	OrbVersion string
 }

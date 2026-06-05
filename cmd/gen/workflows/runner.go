@@ -44,6 +44,7 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 	{
 		c := workflows.Config{
 			Flavours: r.flag.Flavours,
+			RepoName: r.flag.RepoName,
 		}
 
 		workflowsInput, err = workflows.New(c)
@@ -56,7 +57,8 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 		workflowsInput.SemanticPullRequest(),
 	}
 
-	if r.flag.ReleaseWorkflow == "release-please" {
+	switch r.flag.ReleaseWorkflow {
+	case "release-please":
 		_, statErr := os.Stat("pkg/project/project.go")
 		hasProjectGo := r.flag.Language == "go" && statErr == nil
 		inputs = append(inputs,
@@ -71,7 +73,20 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 			workflowsInput.CreateReleasePRDeletion(),
 			workflowsInput.ValidateChangelogDeletion(),
 		)
-	} else {
+	case "auto-release":
+		// Push-based git-cliff flow: a single workflow tags on push to
+		// main/release-* from conventional commits and creates the GitHub
+		// Release, with cliff.toml driving the bump decision and release notes.
+		// Like release-please, it replaces the legacy trio, so remove those
+		// files a previous gen run may have left behind.
+		inputs = append(inputs,
+			workflowsInput.AutoRelease(),
+			workflowsInput.Cliff(),
+			workflowsInput.CreateReleaseDeletion(),
+			workflowsInput.CreateReleasePRDeletion(),
+			workflowsInput.ValidateChangelogDeletion(),
+		)
+	default:
 		inputs = append(inputs,
 			workflowsInput.CreateRelease(),
 			workflowsInput.CreateReleasePR(),

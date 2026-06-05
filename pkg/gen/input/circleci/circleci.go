@@ -39,6 +39,13 @@ type Config struct {
 	// set, the branch path additionally pushes an amd64 dev image and the
 	// dev chart, coupled (both or neither).
 	BranchPublish bool
+	// ReleaseBinaries opts the repo into cross-platform binary distribution on
+	// the GitHub Release. It adds the six-platform architectures matrix to
+	// go-build and an upload-release-assets job, and caps the multi-arch image
+	// push to the two linux platforms (without the cap buildx would try to
+	// build the darwin/windows targets from go-build's .platforms file under
+	// QEMU and hang). Only meaningful with Language == go.
+	ReleaseBinaries bool
 }
 
 type CircleCI struct {
@@ -55,12 +62,13 @@ func New(config Config) (*CircleCI, error) {
 
 	c := &CircleCI{
 		params: params.Params{
-			RepoName:      config.RepoName,
-			Language:      config.Language.String(),
-			HasDockerfile: config.HasDockerfile,
-			HasApp:        hasApp,
-			BranchPublish: config.BranchPublish,
-			OrbVersion:    OrbVersion,
+			RepoName:        config.RepoName,
+			Language:        config.Language.String(),
+			HasDockerfile:   config.HasDockerfile,
+			HasApp:          hasApp,
+			BranchPublish:   config.BranchPublish,
+			ReleaseBinaries: config.ReleaseBinaries && config.Language == gen.LanguageGo,
+			OrbVersion:      OrbVersion,
 		},
 	}
 

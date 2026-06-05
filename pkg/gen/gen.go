@@ -91,6 +91,8 @@ func isRegenerable(path string) bool {
 		return true
 	case base == "renovate.json" || base == "renovate.json5":
 		return true
+	case base == "cliff.toml":
+		return true
 	case base == "dependabot.yml":
 		return true
 	case base == ".pre-commit-config.yaml":

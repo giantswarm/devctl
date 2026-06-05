@@ -48,11 +48,12 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 	var circleciInput *circleci.CircleCI
 	{
 		c := circleci.Config{
-			RepoName:      r.flag.RepoName,
-			Language:      r.flag.Language,
-			Flavours:      r.flag.Flavours,
-			HasDockerfile: hasDockerfile,
-			BranchPublish: r.flag.BranchPublish,
+			RepoName:        r.flag.RepoName,
+			Language:        r.flag.Language,
+			Flavours:        r.flag.Flavours,
+			HasDockerfile:   hasDockerfile,
+			BranchPublish:   r.flag.BranchPublish,
+			ReleaseBinaries: r.flag.ReleaseBinaries,
 		}
 
 		circleciInput, err = circleci.New(c)
