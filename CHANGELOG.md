@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `gen circleci`: Go repos that also carry the `cli` flavour now ship cross-platform binaries on their GitHub Release. `go-build` gets the six-platform `architectures` matrix, an `architect/upload-release-assets` job is added (tag-only) to attach the binaries, and the multi-arch release image push is capped to `linux/amd64,linux/arm64` so buildx does not try the darwin/windows targets under QEMU. Derived from the `cli` flavour -- no new flag or config. Non-cli Go repos (services, operators) are unaffected.
+
 ## [8.6.0] - 2026-06-05
 
 ### Added
