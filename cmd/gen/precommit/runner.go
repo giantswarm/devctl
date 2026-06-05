@@ -50,11 +50,16 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		if err != nil {
 			return fmt.Errorf("failed to read go.mod: %w", err)
 		}
-		modulePath := modfile.ModulePath(content)
-		if modulePath == "" {
-			return fmt.Errorf("failed to parse module path from go.mod: %w", err)
+
+		mf, err := modfile.Parse("go.mod", content, nil)
+		if err != nil {
+			return fmt.Errorf("failed to parse go.mod: %w", err)
 		}
-		r.flag.RepoName = modulePath
+		if mf.Module == nil || mf.Module.Mod.Path == "" {
+			return fmt.Errorf("go.mod does not declare a module path")
+		}
+
+		r.flag.RepoName = mf.Module.Mod.Path
 	}
 
 	var precommitInput *precommit.PreCommit
