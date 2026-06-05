@@ -53,7 +53,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 		mf, err := modfile.Parse("go.mod", content, nil)
 		if err != nil {
-			return fmt.Errorf("failed to parse go.mod: %w", err)
+			return fmt.Errorf("failed to parse go.mod (fix go.mod or pass --%s): %w", flagRepoName, err)
 		}
 		if mf.Module == nil || mf.Module.Mod.Path == "" {
 			return fmt.Errorf("go.mod does not declare a module path (missing 'module' directive); alternatively pass --%s", flagRepoName)
