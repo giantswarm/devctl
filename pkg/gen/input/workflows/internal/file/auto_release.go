@@ -15,20 +15,16 @@ var autoReleaseTemplate string
 //go:embed auto_release.yaml.template.sha
 var autoReleaseTemplateSha string
 
-// NewAutoReleaseInput emits .github/workflows/auto-release.yaml -- the
-// push-based release tagger + GitHub-Release publisher used by the
-// `releaseWorkflow: auto-release` flow.
-//
-// The file is NOT prefixed with `zz_generated.` because the same path is
-// already in use across the 13+ repos manually migrated to this flow. Using
-// the prefix would cause both files to coexist and race. `SkipRegenCheck`
-// forces overwrite-on-every-run, restoring the regenerable-file behavior the
-// prefix would otherwise provide.
+// NewAutoReleaseInput emits .github/workflows/zz_generated.auto_release.yaml --
+// the push-based release tagger + GitHub-Release publisher used by the
+// `releaseWorkflow: auto-release` flow. The `zz_generated.` prefix marks the
+// file as regenerable so subsequent `devctl gen` runs overwrite it. Repos
+// that adopted this flow before the rename still carry the un-prefixed
+// `auto-release.yaml`; NewAutoReleaseLegacyDeletionInput removes it.
 func NewAutoReleaseInput(p params.Params) input.Input {
 	return input.Input{
-		Path:           filepath.Join(p.Dir, "auto-release.yaml"),
-		SkipRegenCheck: true,
-		TemplateBody:   autoReleaseTemplate,
+		Path:         params.RegenerableFileName(p, "auto_release.yaml"),
+		TemplateBody: autoReleaseTemplate,
 		TemplateDelims: input.InputTemplateDelims{
 			Left:  "{{{{",
 			Right: "}}}}",
@@ -42,8 +38,20 @@ func NewAutoReleaseInput(p params.Params) input.Input {
 // NewAutoReleaseDeletionInput returns an Input that deletes the file
 // NewAutoReleaseInput would generate. Wired into the `legacy` branch in
 // runner.go so a repo switched back from `auto-release` to `legacy` (or
-// never on it in the first place) doesn't keep a stale auto-release.yaml.
+// never on it in the first place) doesn't keep a stale workflow.
 func NewAutoReleaseDeletionInput(p params.Params) input.Input {
+	return input.Input{
+		Delete: true,
+		Path:   params.RegenerableFileName(p, "auto_release.yaml"),
+	}
+}
+
+// NewAutoReleaseLegacyDeletionInput deletes the un-prefixed
+// `.github/workflows/auto-release.yaml` from repos that adopted the
+// auto-release flow before the file was migrated to use the `zz_generated.`
+// prefix. Wired into BOTH branches in runner.go so every regeneration
+// cleans up the legacy path regardless of which flow the repo is on.
+func NewAutoReleaseLegacyDeletionInput(p params.Params) input.Input {
 	return input.Input{
 		Delete: true,
 		Path:   filepath.Join(p.Dir, "auto-release.yaml"),

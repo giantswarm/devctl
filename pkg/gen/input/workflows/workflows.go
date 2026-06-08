@@ -53,6 +53,10 @@ func (w *Workflows) AutoReleaseDeletion() input.Input {
 	return file.NewAutoReleaseDeletionInput(w.params)
 }
 
+func (w *Workflows) AutoReleaseLegacyDeletion() input.Input {
+	return file.NewAutoReleaseLegacyDeletionInput(w.params)
+}
+
 func (w *Workflows) CliffToml() input.Input {
 	return file.NewCliffTomlInput()
 }
