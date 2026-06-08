@@ -29,3 +29,15 @@ func NewValidateChangelogInput(p params.Params) input.Input {
 
 	return i
 }
+
+// NewValidateChangelogDeletionInput returns an Input that deletes the file
+// NewValidateChangelogInput would generate. Wired into the `auto-release`
+// branch in runner.go: the auto-release flow drives release notes from
+// conventional commits via git-cliff, so the validate-changelog gate
+// (which enforces a CHANGELOG.md update on every PR) is incompatible.
+func NewValidateChangelogDeletionInput(p params.Params) input.Input {
+	return input.Input{
+		Delete: true,
+		Path:   params.RegenerableFileName(p, "validate_changelog.yaml"),
+	}
+}

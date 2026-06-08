@@ -20,6 +20,10 @@ const (
 	flagPublishTechdocs               = "publish-techdocs"
 	flagUpstreamSyncAutomation        = "upstream-sync-automation"
 	flagDispatchUpdateChartEventsRepo = "dispatch-update-chart-events-repo"
+	flagReleaseWorkflow               = "release-workflow"
+
+	releaseWorkflowLegacy      = "legacy"
+	releaseWorkflowAutoRelease = "auto-release"
 )
 
 type flag struct {
@@ -32,6 +36,7 @@ type flag struct {
 	PublishTechdocs               bool
 	UpstreamSyncAutomation        bool
 	DispatchUpdateChartEventsRepo string
+	ReleaseWorkflow               string
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
@@ -44,11 +49,19 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&f.PublishTechdocs, flagPublishTechdocs, false, "If true, also generate the Publish Techdocs workflow. Possible values: false (default), true.")
 	cmd.Flags().BoolVar(&f.UpstreamSyncAutomation, flagUpstreamSyncAutomation, false, "If true, also generate a workflow to dispatch update events for charts. Only valid for app flavor.")
 	cmd.Flags().StringVar(&f.DispatchUpdateChartEventsRepo, flagDispatchUpdateChartEventsRepo, "", "The repository to dispatch update chart events to. Only valid if --upstream-sync-automation is true.")
+	cmd.Flags().StringVar(&f.ReleaseWorkflow, flagReleaseWorkflow, releaseWorkflowLegacy, fmt.Sprintf("Release workflow to generate. Possible values: %s (default), %s. %s generates the create-release-pr / create-release / validate-changelog trio; %s generates a single push-based auto-release.yaml + cliff.toml that tags + publishes a GitHub Release from conventional commits.", releaseWorkflowLegacy, releaseWorkflowAutoRelease, releaseWorkflowLegacy, releaseWorkflowAutoRelease))
 }
 
 func (f *flag) Validate() error {
 	if len(f.Flavours) == 0 {
 		return microerror.Maskf(invalidFlagError, "--%s must be one of: %s", flagFlavour, strings.Join(gen.AllFlavours(), ", "))
+	}
+
+	switch f.ReleaseWorkflow {
+	case releaseWorkflowLegacy, releaseWorkflowAutoRelease:
+		// valid
+	default:
+		return microerror.Maskf(invalidFlagError, "--%s must be one of: %s, %s", flagReleaseWorkflow, releaseWorkflowLegacy, releaseWorkflowAutoRelease)
 	}
 
 	return nil

@@ -53,9 +53,31 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 
 	inputs := []input.Input{
 		workflowsInput.SemanticPullRequest(),
-		workflowsInput.CreateRelease(),
-		workflowsInput.CreateReleasePR(),
-		workflowsInput.ValidateChangelog(),
+	}
+
+	// Two mutually-exclusive release flows. Each branch emits the workflow
+	// files it owns AND deletion inputs for the OTHER flow's files, so
+	// flipping `--release-workflow` (or the matching `releaseWorkflow:` in
+	// giantswarm/github) in either direction leaves the repo with exactly
+	// one set of release files. Stale stragglers from manual migrations
+	// (cliff.toml at root, .github/workflows/auto-release.yaml without the
+	// zz_generated. prefix) are covered by the same deletion inputs.
+	if r.flag.ReleaseWorkflow == releaseWorkflowAutoRelease {
+		inputs = append(inputs,
+			workflowsInput.AutoRelease(),
+			workflowsInput.CliffToml(),
+			workflowsInput.CreateReleaseDeletion(),
+			workflowsInput.CreateReleasePRDeletion(),
+			workflowsInput.ValidateChangelogDeletion(),
+		)
+	} else {
+		inputs = append(inputs,
+			workflowsInput.CreateRelease(),
+			workflowsInput.CreateReleasePR(),
+			workflowsInput.ValidateChangelog(),
+			workflowsInput.AutoReleaseDeletion(),
+			workflowsInput.CliffTomlDeletion(),
+		)
 	}
 
 	if r.flag.Language == "go" {

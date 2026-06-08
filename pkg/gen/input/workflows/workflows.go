@@ -45,12 +45,36 @@ func (w *Workflows) ClusterAppSchemaValidation() input.Input {
 	return file.NewClusterAppSchemaValidation(w.params)
 }
 
+func (w *Workflows) AutoRelease() input.Input {
+	return file.NewAutoReleaseInput(w.params)
+}
+
+func (w *Workflows) AutoReleaseDeletion() input.Input {
+	return file.NewAutoReleaseDeletionInput(w.params)
+}
+
+func (w *Workflows) CliffToml() input.Input {
+	return file.NewCliffTomlInput()
+}
+
+func (w *Workflows) CliffTomlDeletion() input.Input {
+	return file.NewCliffTomlDeletionInput()
+}
+
 func (w *Workflows) CreateRelease() input.Input {
 	return file.NewCreateReleaseInput(w.params)
 }
 
+func (w *Workflows) CreateReleaseDeletion() input.Input {
+	return file.NewCreateReleaseDeletionInput(w.params)
+}
+
 func (w *Workflows) CreateReleasePR() input.Input {
 	return file.NewCreateReleasePRInput(w.params)
+}
+
+func (w *Workflows) CreateReleasePRDeletion() input.Input {
+	return file.NewCreateReleasePRDeletionInput(w.params)
 }
 
 func (w *Workflows) DispatchUpdateChartEvents(targetRepo string) input.Input {
@@ -95,6 +119,10 @@ func (w *Workflows) UpdateChart() input.Input {
 
 func (w *Workflows) ValidateChangelog() input.Input {
 	return file.NewValidateChangelogInput(w.params)
+}
+
+func (w *Workflows) ValidateChangelogDeletion() input.Input {
+	return file.NewValidateChangelogDeletionInput(w.params)
 }
 
 func (w *Workflows) AnalyzeGithubActions() input.Input {
