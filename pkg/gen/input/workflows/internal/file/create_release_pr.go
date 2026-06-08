@@ -32,8 +32,10 @@ func NewCreateReleasePRInput(p params.Params) input.Input {
 }
 
 // NewCreateReleasePRDeletionInput returns an Input that deletes the file
-// NewCreateReleasePRInput would generate. Used when switching a repo to the
-// release-please flow so the legacy workflow is removed in the same gen run.
+// NewCreateReleasePRInput would generate. Wired into the `auto-release`
+// branch in runner.go so a repo that switches from the legacy flow no
+// longer has the legacy create-release-pr.yaml sitting alongside
+// auto-release.yaml.
 func NewCreateReleasePRDeletionInput(p params.Params) input.Input {
 	return input.Input{
 		Delete: true,

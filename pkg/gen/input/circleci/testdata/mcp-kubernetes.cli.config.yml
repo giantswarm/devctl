@@ -3,34 +3,30 @@
 # (pkg/gen/input/circleci) or the gen.ci config in giantswarm/github, not here.
 version: 2.1
 orbs:
-  architect: giantswarm/architect@{{ .OrbVersion }}
+  architect: giantswarm/architect@9.1.0
 
 workflows:
   build:
     jobs:
-{{- if eq .Language "go" }}
     - architect/go-build:
         name: go-build
-        binary: {{ .RepoName }}
+        binary: mcp-kubernetes
         context: architect
-{{- if .ReleaseBinaries }}
         # Cross-platform binaries attached to the GitHub Release by the
         # upload-release-assets job below (cli flavour). yamllint disables the
         # line-length rule for the 132-char matrix value.
         # yamllint disable-line rule:line-length
         architectures: "linux/amd64,linux/arm64,darwin/amd64,darwin/arm64,windows/amd64,windows/arm64"
-{{- end }}
         filters:
           tags:
             only: /^v.*/
-{{- if .ReleaseBinaries }}
 
     # Attach the cross-platform go-build binaries to the GitHub Release on tag
     # builds. The release itself is created by the repo's auto-release flow.
     - architect/upload-release-assets:
         context: architect
         name: upload-release-assets
-        binary: {{ .RepoName }}
+        binary: mcp-kubernetes
         requires:
         - go-build
         filters:
@@ -38,27 +34,6 @@ workflows:
             only: /^v.*/
           branches:
             ignore: /.*/
-{{- end }}
-{{- end }}
-{{- if .HasDockerfile }}
-{{- if .BranchPublish }}
-
-    # Branch builds (opt-in): amd64 dev image to gsoci for PR validation,
-    # coupled with the branch chart push below. v9's push-to-registries always
-    # uses buildx; platforms is pinned to amd64 to keep branch builds fast.
-    - architect/push-to-registries:
-        context: architect
-        name: push-to-registries
-        platforms: linux/amd64
-{{- if eq .Language "go" }}
-        requires:
-        - go-build
-{{- end }}
-        filters:
-          branches:
-            ignore:
-            - main
-{{- end }}
 
     # Tag builds: push multi-arch image to gsoci + gsociprivate. Aliyun is
     # handled by the sync-china-registry job below (orb's split-china-push
@@ -67,17 +42,13 @@ workflows:
         context: architect
         name: push-to-registries-release
         split-china-push: true
-{{- if .ReleaseBinaries }}
         # Cap buildx to the two linux platforms. go-build's architectures
         # matrix above writes all six targets to .platforms; without this cap
         # the orb auto-derives --platform from that file and buildx tries to
         # build the darwin/windows manifests under QEMU and hangs.
         platforms: "linux/amd64,linux/arm64"
-{{- end }}
-{{- if eq .Language "go" }}
         requires:
         - go-build
-{{- end }}
         filters:
           tags:
             only: /^v.*/
@@ -97,8 +68,6 @@ workflows:
             only: /^v.*/
           branches:
             ignore: /.*/
-{{- end }}
-{{- if .HasApp }}
 
     # build-chart: package + lint via app-build-suite and persist the archive
     # (no push). Shared by the branch and tag paths -- branches get build + test
@@ -109,14 +78,12 @@ workflows:
         name: build-chart
         app_catalog: giantswarm-catalog
         app_catalog_test: giantswarm-test-catalog
-        chart: {{ .RepoName }}
+        chart: mcp-kubernetes
         push_to_appcatalog: false
         push_to_oci_registry: false
         persist_chart_archive: true
-{{- if eq .Language "go" }}
         requires:
         - go-build
-{{- end }}
         filters:
           tags:
             only: /^v.*/
@@ -132,9 +99,6 @@ workflows:
         name: execute-chart-tests
         requires:
         - build-chart
-{{- if and .HasDockerfile .BranchPublish }}
-        - push-to-registries
-{{- end }}
         filters:
           branches:
             ignore:
@@ -146,35 +110,12 @@ workflows:
         name: execute-chart-tests-release
         requires:
         - build-chart
-{{- if .HasDockerfile }}
         - push-to-registries-release
-{{- end }}
         filters:
           tags:
             only: /^v.*/
           branches:
             ignore: /.*/
-{{- if .BranchPublish }}
-
-    # Branch chart push (opt-in): publish the dev chart after tests + the amd64
-    # branch image, coupled with push-to-registries above.
-    - architect/push-to-app-catalog:
-        executor: app-build-suite
-        context: architect
-        name: push-chart
-        app_catalog: giantswarm-catalog
-        app_catalog_test: giantswarm-test-catalog
-        chart: {{ .RepoName }}
-        requires:
-        - execute-chart-tests
-{{- if .HasDockerfile }}
-        - push-to-registries
-{{- end }}
-        filters:
-          branches:
-            ignore:
-            - main
-{{- end }}
 
     # Tag: push chart after tests + the gsoci image. Intentionally does NOT
     # depend on sync-china-registry so the chart catalog can publish even if
@@ -185,15 +126,12 @@ workflows:
         name: push-chart-release
         app_catalog: giantswarm-catalog
         app_catalog_test: giantswarm-test-catalog
-        chart: {{ .RepoName }}
+        chart: mcp-kubernetes
         requires:
         - execute-chart-tests-release
-{{- if .HasDockerfile }}
         - push-to-registries-release
-{{- end }}
         filters:
           tags:
             only: /^v.*/
           branches:
             ignore: /.*/
-{{- end }}

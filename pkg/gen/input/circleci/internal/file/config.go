@@ -15,12 +15,13 @@ func NewConfigInput(p params.Params) input.Input {
 		Path:         ".circleci/config.yml",
 		TemplateBody: configTemplate,
 		TemplateData: map[string]interface{}{
-			"RepoName":      p.RepoName,
-			"Language":      p.Language,
-			"HasDockerfile": p.HasDockerfile,
-			"HasApp":        p.HasApp,
-			"BranchPublish": p.BranchPublish,
-			"OrbVersion":    p.OrbVersion,
+			"RepoName":        p.RepoName,
+			"Language":        p.Language,
+			"HasDockerfile":   p.HasDockerfile,
+			"HasApp":          p.HasApp,
+			"BranchPublish":   p.BranchPublish,
+			"ReleaseBinaries": p.ReleaseBinaries,
+			"OrbVersion":      p.OrbVersion,
 		},
 	}
 

@@ -18,34 +18,22 @@ Example:
 devctl gen workflows --flavour cli
 ```
 
-### Release Please
+### Release workflow
 
-To opt a repository into [Release Please](https://github.com/googleapis/release-please) instead of the legacy release workflow:
+`--release-workflow` selects which release flow to generate. Two values:
+
+| Value | What's emitted | When to use |
+|-------|----------------|-------------|
+| `legacy` (default) | `.github/workflows/zz_generated.create_release.yaml`, `zz_generated.create_release_pr.yaml`, `zz_generated.validate_changelog.yaml`. Releases driven by manually-pushed `main#release#patch`-style branches that open a release PR for human approval. | The historical flow; in use by most giantswarm repos today. |
+| `auto-release` | `.github/workflows/auto-release.yaml` and `cliff.toml` (at repo root). Releases driven by conventional commits on `main` -- the workflow runs `git-cliff --unreleased --bump` on every push, computes the next semver, and creates the matching tag + GitHub Release atomically. No release PR, no human approval. | Repos that want push-button releases from conventional commits. Requires `semantic_pull_request` enforcement on PR titles. |
+
+Switching between values is bidirectional and self-cleaning: the chosen branch generates its own files and emits deletion inputs for the files of the other branch, so a flipped `--release-workflow` value over two consecutive gen runs leaves the repo with exactly one set of release files.
 
 ```nohighlight
-devctl gen workflows --flavour app --language go \
-  --release-workflow release-please \
-  --changelog-style legacy \
-  --auto-release-level minor
+devctl gen workflows --flavour app --language go --release-workflow=auto-release
 ```
 
-| Flag | Values | Default | Notes |
-|------|--------|---------|-------|
-| `--release-workflow` | `legacy`, `release-please` | `legacy` | Switches between the legacy `create-release-pr` flow and Release Please |
-| `--changelog-style` | `legacy`, `release-please` | `legacy` | `legacy` maps commit types to `### Added/Changed/Fixed` (required by the `giantswarm/releases` changelog scraper). `release-please` uses the Angular preset (`### Features`, `### Bug Fixes`, etc.) |
-| `--auto-release-level` | `none`, `patch`, `minor`, `major` | `none` | Auto-merges the Release Please PR when CI passes, up to this bump level (sets the reusable workflow's `auto-merge-level` input). `none` disables auto-merge. Requires "Allow auto-merge" enabled on the repo and the `release-please` GitHub App on its branch-protection bypass list. |
-
-In `release-please` mode, three files are written:
-
-- `.github/workflows/zz_generated.release-please.yaml` — regenerated on every `devctl gen` run
-- `release-please-config.json` — written once; edit freely to add `version-files` or other Release Please settings
-- `.release-please-manifest.json` — written once; updated by Release Please on every run to track the current version
-
-…and the legacy release workflow files, if present, are removed on every run (a repo uses one flow or the other, never both):
-
-- `.github/workflows/zz_generated.create_release.yaml`
-- `.github/workflows/zz_generated.create_release_pr.yaml`
-- `.github/workflows/zz_generated.validate_changelog.yaml`
+`cliff.toml`'s `[remote.github].repo` is auto-detected from the consuming repo's `origin` git remote URL. Run from a directory whose `git config remote.origin.url` points at `github.com/giantswarm/<repo>`; outside a git repo the value renders as `""` and git-cliff's GitHub API lookups fail at workflow runtime.
 
 ## Generating Makefiles
 

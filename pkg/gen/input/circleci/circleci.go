@@ -20,7 +20,7 @@ import (
 // and only then reaches repos via the align-files devctl pin.
 //
 // renovate: datasource=orb depName=giantswarm/architect
-const OrbVersion = "9.0.2"
+const OrbVersion = "9.1.0"
 
 type Config struct {
 	// RepoName is the repository name, used for the binary, chart, and job
@@ -41,6 +41,14 @@ type Config struct {
 	BranchPublish bool
 }
 
+// shipsBinaries reports whether the repo distributes cross-platform Go binaries
+// on its GitHub Release. The "cli" flavour is the signal: it marks a repo whose
+// users download a binary, as opposed to a chart-wrapped service or operator.
+// Requires Go -- the binary comes from go-build.
+func (c Config) shipsBinaries() bool {
+	return c.Language == gen.LanguageGo && c.Flavours.Contains(gen.FlavourCLI)
+}
+
 type CircleCI struct {
 	params params.Params
 }
@@ -55,12 +63,13 @@ func New(config Config) (*CircleCI, error) {
 
 	c := &CircleCI{
 		params: params.Params{
-			RepoName:      config.RepoName,
-			Language:      config.Language.String(),
-			HasDockerfile: config.HasDockerfile,
-			HasApp:        hasApp,
-			BranchPublish: config.BranchPublish,
-			OrbVersion:    OrbVersion,
+			RepoName:        config.RepoName,
+			Language:        config.Language.String(),
+			HasDockerfile:   config.HasDockerfile,
+			HasApp:          hasApp,
+			BranchPublish:   config.BranchPublish,
+			ReleaseBinaries: config.shipsBinaries(),
+			OrbVersion:      OrbVersion,
 		},
 	}
 

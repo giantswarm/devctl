@@ -16,8 +16,9 @@ func NewCreateRenovateInput(p params.Params) input.Input {
 		Path:         filepath.Join(p.Dir, "renovate.json5"),
 		TemplateBody: createRenovateTemplate,
 		TemplateData: map[string]interface{}{
-			"Interval": params.Interval(p),
-			"Language": params.Language(p),
+			"Interval":          params.Interval(p),
+			"Language":          params.Language(p),
+			"CircleCIGenerated": params.CircleCIGenerated(p),
 		},
 	}
 

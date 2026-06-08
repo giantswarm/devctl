@@ -45,6 +45,22 @@ func (w *Workflows) ClusterAppSchemaValidation() input.Input {
 	return file.NewClusterAppSchemaValidation(w.params)
 }
 
+func (w *Workflows) AutoRelease() input.Input {
+	return file.NewAutoReleaseInput(w.params)
+}
+
+func (w *Workflows) AutoReleaseDeletion() input.Input {
+	return file.NewAutoReleaseDeletionInput(w.params)
+}
+
+func (w *Workflows) CliffToml() input.Input {
+	return file.NewCliffTomlInput()
+}
+
+func (w *Workflows) CliffTomlDeletion() input.Input {
+	return file.NewCliffTomlDeletionInput()
+}
+
 func (w *Workflows) CreateRelease() input.Input {
 	return file.NewCreateReleaseInput(w.params)
 }
@@ -115,16 +131,4 @@ func (w *Workflows) AnalyzeGithubActions() input.Input {
 
 func (w *Workflows) ZizmorBaseYml() input.Input {
 	return file.NewZizmorBaseInput(w.params)
-}
-
-func (w *Workflows) ReleasePlease(autoMergeLevel string) input.Input {
-	return file.NewReleasePleaseInput(w.params, autoMergeLevel)
-}
-
-func (w *Workflows) ReleasePleaseConfig(changelogStyle string, hasProjectGo bool) input.Input {
-	return file.NewReleasePleaseConfigInput(changelogStyle, hasProjectGo)
-}
-
-func (w *Workflows) ReleasePleaseManifest() input.Input {
-	return file.NewReleasePleaseManifestInput()
 }
