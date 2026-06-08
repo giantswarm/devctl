@@ -32,3 +32,14 @@ func NewCreateReleaseInput(p params.Params) input.Input {
 
 	return i
 }
+
+// NewCreateReleaseDeletionInput returns an Input that deletes the file
+// NewCreateReleaseInput would generate. Wired into the `auto-release` branch
+// in runner.go so a repo that switches from the legacy flow no longer has
+// the legacy create-release.yaml sitting next to auto-release.yaml.
+func NewCreateReleaseDeletionInput(p params.Params) input.Input {
+	return input.Input{
+		Delete: true,
+		Path:   params.RegenerableFileName(p, "create_release.yaml"),
+	}
+}
