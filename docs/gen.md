@@ -18,35 +18,6 @@ Example:
 devctl gen workflows --flavour cli
 ```
 
-### Release Please
-
-To opt a repository into [Release Please](https://github.com/googleapis/release-please) instead of the legacy release workflow:
-
-```nohighlight
-devctl gen workflows --flavour app --language go \
-  --release-workflow release-please \
-  --changelog-style legacy \
-  --auto-release-level minor
-```
-
-| Flag | Values | Default | Notes |
-|------|--------|---------|-------|
-| `--release-workflow` | `legacy`, `release-please` | `legacy` | Switches between the legacy `create-release-pr` flow and Release Please |
-| `--changelog-style` | `legacy`, `release-please` | `legacy` | `legacy` maps commit types to `### Added/Changed/Fixed` (required by the `giantswarm/releases` changelog scraper). `release-please` uses the Angular preset (`### Features`, `### Bug Fixes`, etc.) |
-| `--auto-release-level` | `none`, `patch`, `minor`, `major` | `none` | Auto-merges the Release Please PR when CI passes, up to this bump level (sets the reusable workflow's `auto-merge-level` input). `none` disables auto-merge. Requires "Allow auto-merge" enabled on the repo and the `release-please` GitHub App on its branch-protection bypass list. |
-
-In `release-please` mode, three files are written:
-
-- `.github/workflows/zz_generated.release-please.yaml` — regenerated on every `devctl gen` run
-- `release-please-config.json` — written once; edit freely to add `version-files` or other Release Please settings
-- `.release-please-manifest.json` — written once; updated by Release Please on every run to track the current version
-
-…and the legacy release workflow files, if present, are removed on every run (a repo uses one flow or the other, never both):
-
-- `.github/workflows/zz_generated.create_release.yaml`
-- `.github/workflows/zz_generated.create_release_pr.yaml`
-- `.github/workflows/zz_generated.validate_changelog.yaml`
-
 ## Generating Makefiles
 
 Creates common `Makefile` and includes in the root directory.

@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Removed
+
+- `gen workflows --release-workflow=release-please` (along with `--changelog-style` and `--auto-release-level`) no longer exists. `gen workflows` always emits the legacy `create-release-pr` / `create-release` / `validate-changelog` trio. The release-please opt-in is reverted (see giantswarm/github), and a push-based git-cliff alternative is planned to take its place later. The generator (`pkg/gen/input/workflows/internal/file/release_please*`) is deleted, together with the unused `Create*Deletion` / `ValidateChangelogDeletion` helpers that previously fed it.
+
 ## [8.7.0] - 2026-06-05
 
 ### Added

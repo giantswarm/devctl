@@ -3,7 +3,6 @@ package workflows
 import (
 	"context"
 	"io"
-	"os"
 
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
@@ -54,29 +53,9 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 
 	inputs := []input.Input{
 		workflowsInput.SemanticPullRequest(),
-	}
-
-	if r.flag.ReleaseWorkflow == "release-please" {
-		_, statErr := os.Stat("pkg/project/project.go")
-		hasProjectGo := r.flag.Language == "go" && statErr == nil
-		inputs = append(inputs,
-			workflowsInput.ReleasePlease(r.flag.AutoReleaseLevel),
-			workflowsInput.ReleasePleaseConfig(r.flag.ChangelogStyle, hasProjectGo),
-			workflowsInput.ReleasePleaseManifest(),
-			// A repo uses either the legacy create-release flow or release-please,
-			// never both — the two would race over CHANGELOG.md and tags. When a
-			// repo opts into release-please, remove the legacy workflow files that
-			// a previous gen run may have left behind.
-			workflowsInput.CreateReleaseDeletion(),
-			workflowsInput.CreateReleasePRDeletion(),
-			workflowsInput.ValidateChangelogDeletion(),
-		)
-	} else {
-		inputs = append(inputs,
-			workflowsInput.CreateRelease(),
-			workflowsInput.CreateReleasePR(),
-			workflowsInput.ValidateChangelog(),
-		)
+		workflowsInput.CreateRelease(),
+		workflowsInput.CreateReleasePR(),
+		workflowsInput.ValidateChangelog(),
 	}
 
 	if r.flag.Language == "go" {
