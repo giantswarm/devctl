@@ -11,6 +11,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - `gen workflows --release-workflow=auto-release` now writes `.github/workflows/zz_generated.auto_release.yaml` instead of the un-prefixed `auto-release.yaml`, bringing the file in line with the rest of the generated workflows (regenerable-via-`zz_generated.`-prefix instead of via `SkipRegenCheck`). Both the `auto-release` and `legacy` branches now also delete the legacy un-prefixed `auto-release.yaml`, so repos that adopted the flow before the rename are migrated automatically on next `devctl gen` run.
 
+### Fixed
+
+- `repo setup`: auto-detected required status checks now ignore check runs whose `conclusion` is `skipped` on the observed commit. Reusable release workflows (release-please's `create-release / Create release`, `auto-release`'s tag-only steps) emit skipped check_runs on every push to the default branch; previously these leaked into the required-checks list, producing entries that didn't reflect any real PR gate.
+
 ## [8.8.0] - 2026-06-08
 
 ### Added
