@@ -35,7 +35,7 @@ func NewCreateReleasePRInput(p params.Params) input.Input {
 // NewCreateReleasePRInput would generate. Wired into the `auto-release`
 // branch in runner.go so a repo that switches from the legacy flow no
 // longer has the legacy create-release-pr.yaml sitting alongside
-// auto-release.yaml.
+// zz_generated.auto_release.yaml.
 func NewCreateReleasePRDeletionInput(p params.Params) input.Input {
 	return input.Input{
 		Delete: true,
