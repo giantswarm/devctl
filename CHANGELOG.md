@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [8.9.0] - 2026-06-08
+
 ### Changed
 
 - `gen workflows --release-workflow=auto-release` now writes `.github/workflows/zz_generated.auto_release.yaml` instead of the un-prefixed `auto-release.yaml`, bringing the file in line with the rest of the generated workflows (regenerable-via-`zz_generated.`-prefix instead of via `SkipRegenCheck`). Both the `auto-release` and `legacy` branches now also delete the legacy un-prefixed `auto-release.yaml`, so repos that adopted the flow before the rename are migrated automatically on next `devctl gen` run.
@@ -1995,7 +1997,8 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.8.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.9.0...HEAD
+[8.9.0]: https://github.com/giantswarm/devctl/compare/v8.8.0...v8.9.0
 [8.8.0]: https://github.com/giantswarm/devctl/compare/v8.7.0...v8.8.0
 [8.7.0]: https://github.com/giantswarm/devctl/compare/v8.6.0...v8.7.0
 [8.6.0]: https://github.com/giantswarm/devctl/compare/v8.5.0...v8.6.0
