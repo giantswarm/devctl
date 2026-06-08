@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- `gen makefile`: the generated `make help` target now aligns target descriptions to the longest target name instead of a fixed 20-character column. Previously, target names longer than 20 characters overflowed the column and pushed their descriptions out of alignment. The `awk` script now computes the maximum target name width in a first pass and pads every entry to that width.
+
 ## [8.8.0] - 2026-06-08
 
 ### Added
