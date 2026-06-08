@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [8.8.0] - 2026-06-08
+
 ### Added
 
 - `gen workflows --release-workflow=auto-release` emits a push-based release flow: `.github/workflows/auto-release.yaml` + `cliff.toml` at repo root. On every push to `main` / a backport branch matching `release-[0-9]*` or `release-v[0-9]*` (so `release-2.x`, `release-v3.7.x` -- but not `release-notes` or other unrelated branches), the workflow runs `git-cliff --unreleased --bump --context` to compute the next semver from conventional commits since the latest reachable v*.*.* tag and `gh release create --target $GITHUB_SHA` to produce the tag + GitHub Release atomically. `cliff.toml`'s `[remote.github].repo` is auto-detected from the consuming repo's `origin` git remote URL. Mirrors the canonical version already deployed in muster, mcp-kubernetes, klaus-operator, agentic-platform, agentic-platform-mcps, agentic-platform-ui, mcp-toolkit, telemetrydeck-go, mcp-prometheus, klausctl, klaus-oci, mcp-debug, mcp-oauth (13 repos).
@@ -1989,7 +1991,8 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.7.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.8.0...HEAD
+[8.8.0]: https://github.com/giantswarm/devctl/compare/v8.7.0...v8.8.0
 [8.7.0]: https://github.com/giantswarm/devctl/compare/v8.6.0...v8.7.0
 [8.6.0]: https://github.com/giantswarm/devctl/compare/v8.5.0...v8.6.0
 [8.5.0]: https://github.com/giantswarm/devctl/compare/v8.4.0...v8.5.0
