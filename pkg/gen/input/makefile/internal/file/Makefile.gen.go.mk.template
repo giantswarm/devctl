@@ -14,7 +14,7 @@ MODULE         := $(shell go list -m)
 MAIN_SOURCE    := $(shell if test -e cmd/main.go; then echo cmd/main.go; else echo main.go; fi)
 OS             := $(shell go env GOOS)
 SOURCES        := $(shell find . -name '*.go')
-VERSION        := $(shell gitsemver version)
+VERSION        := $(shell gitsemver get)
 ifeq ($(OS), linux)
 EXTLDFLAGS := -static
 endif

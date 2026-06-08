@@ -10,6 +10,17 @@
     ],
   },
   customManagers: [
+    // The architect orb version baked into the `gen circleci` generator.
+    // Pinned as a Go constant next to the config template so a major orb bump
+    // forces a devctl release rather than silently skewing against a stale
+    // template. Renovate bumps it here, not in giantswarm/github.
+    {
+      customType: 'regex',
+      managerFilePatterns: ['/pkg/gen/input/circleci/circleci\\.go$/'],
+      matchStrings: [
+        '// renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n\\s*const OrbVersion = "(?<currentValue>[^"]+)"',
+      ],
+    },
     // Pre-commit hook revisions in the pre-commit config template.
     // The built-in pre-commit manager cannot parse this file because it contains
     // Go template directives ({{- if ... }}) that make the YAML invalid.
