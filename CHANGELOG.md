@@ -11,6 +11,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - `gen makefile`: the generated `make help` target now aligns target descriptions to the longest target name instead of a fixed 20-character column.
 
+## [8.9.0] - 2026-06-08
+
+### Changed
+
+- `gen workflows --release-workflow=auto-release` now writes `.github/workflows/zz_generated.auto_release.yaml` instead of the un-prefixed `auto-release.yaml`, bringing the file in line with the rest of the generated workflows (regenerable-via-`zz_generated.`-prefix instead of via `SkipRegenCheck`). Both the `auto-release` and `legacy` branches now also delete the legacy un-prefixed `auto-release.yaml`, so repos that adopted the flow before the rename are migrated automatically on next `devctl gen` run.
+
 ## [8.8.0] - 2026-06-08
 
 ### Added
@@ -46,6 +52,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - `gen circleci`: pinned architect orb bumped to `9.1.0` (adds signed SBOM attestations; no generated job/param shape change from `9.0.2`).
 - `gen circleci`: remove `build-release-artifacts: true` from the generated `create_release` workflow for CLI-flavored repos. Binaries are now produced and signed by the architect-orb `upload-release-assets` path instead.
 - Release binaries now include darwin/amd64, darwin/arm64, windows/amd64, and windows/arm64 alongside the existing linux targets. Windows binaries are named `devctl-windows-<arch>.exe`.
+### Fixed
+
+- Fix pre-commit config by adding a directive to install both pre-commit and commit-msg hooks
 
 ## [8.4.0] - 2026-06-03
 
@@ -1995,7 +2004,8 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.8.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.9.0...HEAD
+[8.9.0]: https://github.com/giantswarm/devctl/compare/v8.8.0...v8.9.0
 [8.8.0]: https://github.com/giantswarm/devctl/compare/v8.7.0...v8.8.0
 [8.7.0]: https://github.com/giantswarm/devctl/compare/v8.6.0...v8.7.0
 [8.6.0]: https://github.com/giantswarm/devctl/compare/v8.5.0...v8.6.0

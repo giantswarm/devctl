@@ -1,5 +1,6 @@
 {{ .Header }}
 minimum_pre_commit_version: '2.17'
+default_install_hook_types: [pre-commit, commit-msg]
 repos:
   # base hooks
   - repo: https://github.com/pre-commit/pre-commit-hooks

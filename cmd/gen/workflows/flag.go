@@ -49,7 +49,7 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&f.PublishTechdocs, flagPublishTechdocs, false, "If true, also generate the Publish Techdocs workflow. Possible values: false (default), true.")
 	cmd.Flags().BoolVar(&f.UpstreamSyncAutomation, flagUpstreamSyncAutomation, false, "If true, also generate a workflow to dispatch update events for charts. Only valid for app flavor.")
 	cmd.Flags().StringVar(&f.DispatchUpdateChartEventsRepo, flagDispatchUpdateChartEventsRepo, "", "The repository to dispatch update chart events to. Only valid if --upstream-sync-automation is true.")
-	cmd.Flags().StringVar(&f.ReleaseWorkflow, flagReleaseWorkflow, releaseWorkflowLegacy, fmt.Sprintf("Release workflow to generate. Possible values: %s (default), %s. %s generates the create-release-pr / create-release / validate-changelog trio; %s generates a single push-based auto-release.yaml + cliff.toml that tags + publishes a GitHub Release from conventional commits.", releaseWorkflowLegacy, releaseWorkflowAutoRelease, releaseWorkflowLegacy, releaseWorkflowAutoRelease))
+	cmd.Flags().StringVar(&f.ReleaseWorkflow, flagReleaseWorkflow, releaseWorkflowLegacy, fmt.Sprintf("Release workflow to generate. Possible values: %s (default), %s. %s generates the create-release-pr / create-release / validate-changelog trio; %s generates a single push-based zz_generated.auto_release.yaml + cliff.toml that tags + publishes a GitHub Release from conventional commits.", releaseWorkflowLegacy, releaseWorkflowAutoRelease, releaseWorkflowLegacy, releaseWorkflowAutoRelease))
 }
 
 func (f *flag) Validate() error {
