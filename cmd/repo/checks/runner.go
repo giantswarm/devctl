@@ -87,6 +87,15 @@ func (r *runner) update(ctx context.Context, owner, repo string) error {
 
 	merged := applyChecks(current.GetChecks(), r.flag.Checks, r.flag.Remove)
 
+	// UpdateRequiredStatusChecks uses omitempty, so an empty Checks slice is
+	// dropped from the request and GitHub leaves the existing checks unchanged.
+	// Use the DELETE endpoint when the result is empty.
+	if len(merged) == 0 {
+		_, err = underlying.Repositories.RemoveRequiredStatusChecks(ctx, owner, repo, defaultBranch)
+		r.logger.Infof("%s/%s: removed all required checks on %q", owner, repo, defaultBranch)
+		return microerror.Mask(err)
+	}
+
 	strict := current.Strict
 	_, _, err = underlying.Repositories.UpdateRequiredStatusChecks(ctx, owner, repo, defaultBranch, &github.RequiredStatusChecksRequest{
 		Strict: &strict,
