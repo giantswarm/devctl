@@ -22,6 +22,15 @@ import (
 // renovate: datasource=orb depName=giantswarm/architect
 const OrbVersion = "9.3.0"
 
+// ContinuationOrbVersion pins the circleci/continuation orb used by the
+// generated setup config (.circleci/config.yml) to merge the optional
+// repo-owned .circleci/custom.yml into .circleci/workflows.yml at pipeline
+// runtime. Baked in for the same reason as OrbVersion: a bump ships with a
+// devctl release and reaches repos via align-files.
+//
+// renovate: datasource=orb depName=circleci/continuation
+const ContinuationOrbVersion = "2.0.1"
+
 type Config struct {
 	// RepoName is the repository name, used for the binary, chart, and job
 	// names.
@@ -63,19 +72,29 @@ func New(config Config) (*CircleCI, error) {
 
 	c := &CircleCI{
 		params: params.Params{
-			RepoName:        config.RepoName,
-			Language:        config.Language.String(),
-			HasDockerfile:   config.HasDockerfile,
-			HasApp:          hasApp,
-			BranchPublish:   config.BranchPublish,
-			ReleaseBinaries: config.shipsBinaries(),
-			OrbVersion:      OrbVersion,
+			RepoName:               config.RepoName,
+			Language:               config.Language.String(),
+			HasDockerfile:          config.HasDockerfile,
+			HasApp:                 hasApp,
+			BranchPublish:          config.BranchPublish,
+			ReleaseBinaries:        config.shipsBinaries(),
+			OrbVersion:             OrbVersion,
+			ContinuationOrbVersion: ContinuationOrbVersion,
 		},
 	}
 
 	return c, nil
 }
 
-func (c *CircleCI) Config() input.Input {
-	return file.NewConfigInput(c.params)
+// SetupConfig is the static dynamic-config setup workflow written to
+// .circleci/config.yml. It merges the optional repo-owned custom.yml into
+// workflows.yml at pipeline runtime.
+func (c *CircleCI) SetupConfig() input.Input {
+	return file.NewSetupConfigInput(c.params)
+}
+
+// Workflows is the derived golden pipeline content written to
+// .circleci/workflows.yml.
+func (c *CircleCI) Workflows() input.Input {
+	return file.NewWorkflowsInput(c.params)
 }

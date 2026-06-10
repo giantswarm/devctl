@@ -62,7 +62,8 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 	}
 
 	inputs := []input.Input{
-		circleciInput.Config(),
+		circleciInput.SetupConfig(),
+		circleciInput.Workflows(),
 	}
 
 	err = gen.Execute(ctx, inputs...)
