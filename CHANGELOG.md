@@ -7,6 +7,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `gen workflows`: the generated `create_release_pr.yaml` now triggers on release-candidate branches (`<base>#release#{major-rc,minor-rc,patch-rc,rc,rc-release}`) for the `main`, `master`, and `release` bases, so RC releases get an automatic release PR just like the stable `major`/`minor`/`patch` tokens. Requires the matching support in [giantswarm/github-workflows#195](https://github.com/giantswarm/github-workflows/pull/195).
+
+### Changed
+
+- `gen circleci` now emits a dynamic-config pair instead of a single static config. `.circleci/config.yml` becomes a tiny repo-agnostic setup workflow (`circleci/continuation` orb, pinned like the architect orb), and the derived golden pipeline moves verbatim to `.circleci/workflows.yml`. At pipeline runtime the setup job deep-merges an optional repo-owned `.circleci/custom.yml` into `workflows.yml` (yq `*+`: maps merge, workflow job lists append) and continues with the result. Repo-specific jobs and workflows (e2e, nightly crons, mirrors) go in `custom.yml`, reference generated jobs by their bare names (`requires: [go-build]`), take effect on the PR that adds or edits them, and are never touched by devctl or align-files. A malformed `custom.yml` fails the setup job on the same PR. Known limitation (accepted): the merge appends -- a custom job cannot inject itself into a generated job's `requires`, so tag publishes are not gated on custom jobs; gate merges via GitHub required checks instead.
+
+## [8.10.0] - 2026-06-10
+
+### Changed
+
+- `gen circleci`: bump the baked architect orb pin to 9.3.0 (additive `push-to-app-catalog` override params, cosign duplicate-Rekor-entry fix, gitsemver 2.0.1; no template shape change). Golden fixtures regenerated.
+
+### Fixed
+
+- Bump `golang.org/x/crypto` to v0.53.0 to resolve CVE-2026-46598 (`ssh/agent` ed25519 panic), which failed the nancy vulnerability check on every CI run.
+
+## [8.9.0] - 2026-06-08
+
 ### Changed
 
 - `gen workflows --release-workflow=auto-release` now writes `.github/workflows/zz_generated.auto_release.yaml` instead of the un-prefixed `auto-release.yaml`, bringing the file in line with the rest of the generated workflows (regenerable-via-`zz_generated.`-prefix instead of via `SkipRegenCheck`). Both the `auto-release` and `legacy` branches now also delete the legacy un-prefixed `auto-release.yaml`, so repos that adopted the flow before the rename are migrated automatically on next `devctl gen` run.
@@ -53,6 +73,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - `gen circleci`: pinned architect orb bumped to `9.1.0` (adds signed SBOM attestations; no generated job/param shape change from `9.0.2`).
 - `gen circleci`: remove `build-release-artifacts: true` from the generated `create_release` workflow for CLI-flavored repos. Binaries are now produced and signed by the architect-orb `upload-release-assets` path instead.
 - Release binaries now include darwin/amd64, darwin/arm64, windows/amd64, and windows/arm64 alongside the existing linux targets. Windows binaries are named `devctl-windows-<arch>.exe`.
+### Fixed
+
+- Fix pre-commit config by adding a directive to install both pre-commit and commit-msg hooks
 
 ## [8.4.0] - 2026-06-03
 
@@ -2002,7 +2025,9 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.8.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.10.0...HEAD
+[8.10.0]: https://github.com/giantswarm/devctl/compare/v8.9.0...v8.10.0
+[8.9.0]: https://github.com/giantswarm/devctl/compare/v8.8.0...v8.9.0
 [8.8.0]: https://github.com/giantswarm/devctl/compare/v8.7.0...v8.8.0
 [8.7.0]: https://github.com/giantswarm/devctl/compare/v8.6.0...v8.7.0
 [8.6.0]: https://github.com/giantswarm/devctl/compare/v8.5.0...v8.6.0
