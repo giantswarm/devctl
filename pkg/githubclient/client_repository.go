@@ -304,6 +304,13 @@ func (c *Client) getGithubChecks(ctx context.Context, repository *github.Reposit
 				return nil, microerror.Mask(err)
 			}
 			for _, run := range results.CheckRuns {
+				// A check_run reported as `skipped` on the observed commit gives us no
+				// signal that it gates PRs -- reusable release workflows (release-please,
+				// auto-release) commonly emit skipped jobs on every push to the default
+				// branch. Requiring such a check produces an unsatisfiable gate.
+				if run.GetConclusion() == "skipped" {
+					continue
+				}
 				addCheck(run.GetName())
 			}
 			if resp.NextPage == 0 {
