@@ -21,6 +21,17 @@
         '// renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n\\s*const OrbVersion = "(?<currentValue>[^"]+)"',
       ],
     },
+    // The golden fixtures pin the same orb version the generator emits. Same
+    // depName/datasource as the OrbVersion constant above, so Renovate bumps
+    // constant and goldens in one PR and the byte-for-byte golden tests stay
+    // green -- without this, every orb bump needs a manual fixture regen.
+    {
+      customType: 'regex',
+      managerFilePatterns: ['/pkg/gen/input/circleci/testdata/.*\\.config\\.yml$/'],
+      matchStrings: ['architect: giantswarm/architect@(?<currentValue>\\S+)'],
+      depNameTemplate: 'giantswarm/architect',
+      datasourceTemplate: 'orb',
+    },
     // Pre-commit hook revisions in the pre-commit config template.
     // The built-in pre-commit manager cannot parse this file because it contains
     // Go template directives ({{- if ... }}) that make the YAML invalid.
