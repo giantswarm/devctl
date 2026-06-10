@@ -16,7 +16,8 @@ const (
 	jobPushCatalog    = "architect/push-to-app-catalog"
 	jobRunTests       = "architect/run-tests-with-ats"
 
-	goldenPath = "testdata/mcp-kubernetes.config.yml"
+	goldenPath    = "testdata/mcp-kubernetes.config.yml"
+	goldenCLIPath = "testdata/mcp-kubernetes.cli.config.yml"
 
 	repoMCPKubernetes = "mcp-kubernetes"
 )
@@ -74,6 +75,29 @@ func Test_GoldenServiceConfig(t *testing.T) {
 
 	if got != string(want) {
 		t.Errorf("generated config does not match golden %s\n--- got ---\n%s\n--- want ---\n%s", goldenPath, got, string(want))
+	}
+}
+
+// Test_GoldenCLIConfig is the golden test for the cli-flavour shape: a Go repo
+// that also carries the cli flavour ships cross-platform binaries on its GitHub
+// Release. Generating must reproduce the aligned standard byte-for-byte (the
+// six-platform architectures on go-build, the upload-release-assets job, and the
+// capped release image push).
+func Test_GoldenCLIConfig(t *testing.T) {
+	got := render(t, Config{
+		RepoName:      repoMCPKubernetes,
+		Language:      gen.LanguageGo,
+		Flavours:      gen.FlavourSlice{gen.FlavourApp, gen.FlavourCLI},
+		HasDockerfile: true,
+	})
+
+	want, err := os.ReadFile(goldenCLIPath) // #nosec G304 -- fixed in-package testdata path
+	if err != nil {
+		t.Fatalf("read golden: %v", err)
+	}
+
+	if got != string(want) {
+		t.Errorf("generated config does not match golden %s\n--- got ---\n%s\n--- want ---\n%s", goldenCLIPath, got, string(want))
 	}
 }
 
@@ -228,5 +252,67 @@ func Test_BranchPublishOnAddsCoupledBranchPushes(t *testing.T) {
 		if !contains(got, want) {
 			t.Errorf("branch-publish config missing %q:\n%s", want, got)
 		}
+	}
+}
+
+// Test_NoCLIOmitsReleaseBinaries verifies the default: a Go service/chart repo
+// without the cli flavour carries no architectures matrix, no
+// upload-release-assets job, and no platforms cap on the release image push.
+func Test_NoCLIOmitsReleaseBinaries(t *testing.T) {
+	got := render(t, Config{
+		RepoName:      repoMCPKubernetes,
+		Language:      gen.LanguageGo,
+		Flavours:      gen.FlavourSlice{gen.FlavourApp},
+		HasDockerfile: true,
+	})
+
+	for _, unwanted := range []string{
+		"architectures:",
+		"name: upload-release-assets",
+		"platforms: \"linux/amd64,linux/arm64\"",
+	} {
+		if contains(got, unwanted) {
+			t.Errorf("non-cli config should not contain release-binaries %q:\n%s", unwanted, got)
+		}
+	}
+}
+
+// Test_CLIAddsReleaseBinaries verifies the derivation: the cli flavour on a Go
+// repo emits the six-platform architectures matrix on go-build, an
+// upload-release-assets job (tag-only), and caps the multi-arch release image
+// push to the two linux platforms so buildx does not try darwin/windows under
+// QEMU.
+func Test_CLIAddsReleaseBinaries(t *testing.T) {
+	got := render(t, Config{
+		RepoName:      repoMCPKubernetes,
+		Language:      gen.LanguageGo,
+		Flavours:      gen.FlavourSlice{gen.FlavourApp, gen.FlavourCLI},
+		HasDockerfile: true,
+	})
+
+	for _, want := range []string{
+		`architectures: "linux/amd64,linux/arm64,darwin/amd64,darwin/arm64,windows/amd64,windows/arm64"`,
+		"name: upload-release-assets",
+		`platforms: "linux/amd64,linux/arm64"`,
+	} {
+		if !contains(got, want) {
+			t.Errorf("cli config missing %q:\n%s", want, got)
+		}
+	}
+}
+
+// Test_CLIWithoutGoOmitsReleaseBinaries verifies the Go guard: the cli flavour
+// on a repo with no Go build never emits the binary jobs (there would be no
+// binary to upload).
+func Test_CLIWithoutGoOmitsReleaseBinaries(t *testing.T) {
+	got := render(t, Config{
+		RepoName:      "sitesearch",
+		Language:      gen.Language(""),
+		Flavours:      gen.FlavourSlice{gen.FlavourApp, gen.FlavourCLI},
+		HasDockerfile: false,
+	})
+
+	if contains(got, "name: upload-release-assets") {
+		t.Errorf("non-go config should not contain upload-release-assets:\n%s", got)
 	}
 }

@@ -31,8 +31,10 @@ func NewValidateChangelogInput(p params.Params) input.Input {
 }
 
 // NewValidateChangelogDeletionInput returns an Input that deletes the file
-// NewValidateChangelogInput would generate. Used when switching a repo to the
-// release-please flow so the legacy workflow is removed in the same gen run.
+// NewValidateChangelogInput would generate. Wired into the `auto-release`
+// branch in runner.go: the auto-release flow drives release notes from
+// conventional commits via git-cliff, so the validate-changelog gate
+// (which enforces a CHANGELOG.md update on every PR) is incompatible.
 func NewValidateChangelogDeletionInput(p params.Params) input.Input {
 	return input.Input{
 		Delete: true,
