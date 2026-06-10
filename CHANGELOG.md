@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [8.11.0] - 2026-06-10
+
 ### Added
 
 - `gen workflows`: the generated `create_release_pr.yaml` now triggers on release-candidate branches (`<base>#release#{major-rc,minor-rc,patch-rc,rc,rc-release}`) for the `main`, `master`, and `release` bases, so RC releases get an automatic release PR just like the stable `major`/`minor`/`patch` tokens. Requires the matching support in [giantswarm/github-workflows#195](https://github.com/giantswarm/github-workflows/pull/195).
@@ -2022,7 +2024,8 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.10.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.11.0...HEAD
+[8.11.0]: https://github.com/giantswarm/devctl/compare/v8.10.0...v8.11.0
 [8.10.0]: https://github.com/giantswarm/devctl/compare/v8.9.0...v8.10.0
 [8.9.0]: https://github.com/giantswarm/devctl/compare/v8.8.0...v8.9.0
 [8.8.0]: https://github.com/giantswarm/devctl/compare/v8.7.0...v8.8.0
