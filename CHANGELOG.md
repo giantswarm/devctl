@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [8.10.0] - 2026-06-10
+
 ### Changed
 
 - `gen circleci`: bump the baked architect orb pin to 9.3.0 (additive `push-to-app-catalog` override params, cosign duplicate-Rekor-entry fix, gitsemver 2.0.1; no template shape change). Golden fixtures regenerated.
@@ -2008,7 +2010,8 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.9.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.10.0...HEAD
+[8.10.0]: https://github.com/giantswarm/devctl/compare/v8.9.0...v8.10.0
 [8.9.0]: https://github.com/giantswarm/devctl/compare/v8.8.0...v8.9.0
 [8.8.0]: https://github.com/giantswarm/devctl/compare/v8.7.0...v8.8.0
 [8.7.0]: https://github.com/giantswarm/devctl/compare/v8.6.0...v8.7.0
