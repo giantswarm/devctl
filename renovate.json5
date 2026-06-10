@@ -18,18 +18,25 @@
       customType: 'regex',
       managerFilePatterns: ['/pkg/gen/input/circleci/circleci\\.go$/'],
       matchStrings: [
-        '// renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n\\s*const OrbVersion = "(?<currentValue>[^"]+)"',
+        '// renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n\\s*const \\w*OrbVersion = "(?<currentValue>[^"]+)"',
       ],
     },
-    // The golden fixtures pin the same orb version the generator emits. Same
-    // depName/datasource as the OrbVersion constant above, so Renovate bumps
+    // The golden fixtures pin the same orb versions the generator emits. Same
+    // depName/datasource as the orb constants above, so Renovate bumps
     // constant and goldens in one PR and the byte-for-byte golden tests stay
     // green -- without this, every orb bump needs a manual fixture regen.
     {
       customType: 'regex',
-      managerFilePatterns: ['/pkg/gen/input/circleci/testdata/.*\\.config\\.yml$/'],
+      managerFilePatterns: ['/pkg/gen/input/circleci/testdata/.*\\.workflows\\.yml$/'],
       matchStrings: ['architect: giantswarm/architect@(?<currentValue>\\S+)'],
       depNameTemplate: 'giantswarm/architect',
+      datasourceTemplate: 'orb',
+    },
+    {
+      customType: 'regex',
+      managerFilePatterns: ['/pkg/gen/input/circleci/testdata/setup\\.config\\.yml$/'],
+      matchStrings: ['continuation: circleci/continuation@(?<currentValue>\\S+)'],
+      depNameTemplate: 'circleci/continuation',
       datasourceTemplate: 'orb',
     },
     // Pre-commit hook revisions in the pre-commit config template.
