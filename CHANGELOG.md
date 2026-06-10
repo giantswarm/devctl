@@ -7,6 +7,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- `gen circleci`: bump the baked architect orb pin to 9.3.0 (additive `push-to-app-catalog` override params, cosign duplicate-Rekor-entry fix, gitsemver 2.0.1; no template shape change). Golden fixtures regenerated.
+
+### Fixed
+
+- Bump `golang.org/x/crypto` to v0.53.0 to resolve CVE-2026-46598 (`ssh/agent` ed25519 panic), which failed the nancy vulnerability check on every CI run.
+
 ## [8.9.0] - 2026-06-08
 
 ### Changed
