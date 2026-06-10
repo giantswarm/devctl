@@ -33,4 +33,7 @@ type Params struct {
 	ReleaseBinaries bool
 	// OrbVersion is the giantswarm/architect orb version to pin.
 	OrbVersion string
+	// ContinuationOrbVersion is the circleci/continuation orb version the
+	// setup config pins.
+	ContinuationOrbVersion string
 }

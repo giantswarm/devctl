@@ -3,10 +3,14 @@ package circleci
 import (
 	"bytes"
 	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
 	"testing"
 	"text/template"
 
 	"github.com/giantswarm/devctl/v8/pkg/gen"
+	"github.com/giantswarm/devctl/v8/pkg/gen/input"
 )
 
 const (
@@ -16,29 +20,30 @@ const (
 	jobPushCatalog    = "architect/push-to-app-catalog"
 	jobRunTests       = "architect/run-tests-with-ats"
 
-	goldenPath    = "testdata/mcp-kubernetes.config.yml"
-	goldenCLIPath = "testdata/mcp-kubernetes.cli.config.yml"
+	goldenSetupPath        = "testdata/setup.config.yml"
+	goldenWorkflowsPath    = "testdata/mcp-kubernetes.workflows.yml"
+	goldenCLIWorkflowsPath = "testdata/mcp-kubernetes.cli.workflows.yml"
 
 	repoMCPKubernetes = "mcp-kubernetes"
+	repoSitesearch    = "sitesearch"
 )
 
-// render executes an input.Input the same way pkg/gen/internal.Execute does,
-// returning the bytes that would be written to disk.
-func render(t *testing.T, c Config) string {
+// mergeExpression is the yq deep-merge the generated setup config runs to
+// fold .circleci/custom.yml into .circleci/workflows.yml: maps merge, lists
+// (workflow job lists) append. Test_SetupConfigCarriesMergeExpression pins
+// this copy to the template so the two cannot drift.
+const mergeExpression = `. as $item ireduce ({}; . *+ $item)`
+
+// renderInput executes an input.Input the same way pkg/gen/internal.Execute
+// does, returning the bytes that would be written to disk.
+func renderInput(t *testing.T, file input.Input) string {
 	t.Helper()
-
-	in, err := New(c)
-	if err != nil {
-		t.Fatalf("New() returned unexpected error: %v", err)
-	}
-
-	file := in.Config()
 
 	tpl := template.New("config")
 	if file.TemplateDelims.Left != "" {
 		tpl = tpl.Delims(file.TemplateDelims.Left, file.TemplateDelims.Right)
 	}
-	tpl, err = tpl.Parse(file.TemplateBody)
+	tpl, err := tpl.Parse(file.TemplateBody)
 	if err != nil {
 		t.Fatalf("parse template: %v", err)
 	}
@@ -51,16 +56,259 @@ func render(t *testing.T, c Config) string {
 	return rendered.String()
 }
 
+func newCircleCI(t *testing.T, c Config) *CircleCI {
+	t.Helper()
+
+	in, err := New(c)
+	if err != nil {
+		t.Fatalf("New() returned unexpected error: %v", err)
+	}
+
+	return in
+}
+
+// render renders the workflows file (.circleci/workflows.yml), which carries
+// all derived repo-specific content.
+func render(t *testing.T, c Config) string {
+	t.Helper()
+
+	return renderInput(t, newCircleCI(t, c).Workflows())
+}
+
 func contains(got, substr string) bool {
 	return bytes.Contains([]byte(got), []byte(substr))
 }
 
-// Test_GoldenServiceConfig is the golden test: generating with mcp-kubernetes's
-// signals (language go, app flavour, a Dockerfile, branch-publish off) must
-// reproduce the aligned standard byte-for-byte. The golden reflects the
-// build+test-only branch default: branches run go-build, build-chart, and
-// execute-chart-tests, while the image and chart pushes are tag-only.
-func Test_GoldenServiceConfig(t *testing.T) {
+// Test_GoldenSetupConfig is the golden test for the static setup config: it
+// carries zero repo-specific content, so one golden covers every repo. Only
+// the continuation orb pin varies, and only with devctl releases.
+func Test_GoldenSetupConfig(t *testing.T) {
+	got := renderInput(t, newCircleCI(t, Config{
+		RepoName:      repoMCPKubernetes,
+		Language:      gen.LanguageGo,
+		Flavours:      gen.FlavourSlice{gen.FlavourApp},
+		HasDockerfile: true,
+	}).SetupConfig())
+
+	want, err := os.ReadFile(goldenSetupPath) // #nosec G304 -- fixed in-package testdata path
+	if err != nil {
+		t.Fatalf("read golden: %v", err)
+	}
+
+	if got != string(want) {
+		t.Errorf("generated setup config does not match golden %s\n--- got ---\n%s\n--- want ---\n%s", goldenSetupPath, got, string(want))
+	}
+}
+
+// Test_SetupConfigIsRepoAgnostic verifies the setup config contains no
+// repo-derived content: two repos with entirely different signals must render
+// byte-identical setup configs.
+func Test_SetupConfigIsRepoAgnostic(t *testing.T) {
+	a := renderInput(t, newCircleCI(t, Config{
+		RepoName:      repoMCPKubernetes,
+		Language:      gen.LanguageGo,
+		Flavours:      gen.FlavourSlice{gen.FlavourApp, gen.FlavourCLI},
+		HasDockerfile: true,
+		BranchPublish: true,
+	}).SetupConfig())
+	b := renderInput(t, newCircleCI(t, Config{
+		RepoName: repoSitesearch,
+		Language: gen.Language(""),
+		Flavours: gen.FlavourSlice{gen.FlavourApp},
+	}).SetupConfig())
+
+	if a != b {
+		t.Errorf("setup config must be identical for every repo\n--- a ---\n%s\n--- b ---\n%s", a, b)
+	}
+}
+
+// Test_SetupConfigCarriesMergeExpression pins the test's copy of the yq merge
+// expression to the one in the template, so Test_CustomMerge* keep testing
+// what the setup config actually runs.
+func Test_SetupConfigCarriesMergeExpression(t *testing.T) {
+	got := renderInput(t, newCircleCI(t, Config{
+		RepoName:      repoMCPKubernetes,
+		Language:      gen.LanguageGo,
+		Flavours:      gen.FlavourSlice{gen.FlavourApp},
+		HasDockerfile: true,
+	}).SetupConfig())
+
+	if !contains(got, mergeExpression) {
+		t.Errorf("setup config does not contain the merge expression %q:\n%s", mergeExpression, got)
+	}
+	if !contains(got, "continuation: circleci/continuation@"+ContinuationOrbVersion) {
+		t.Errorf("setup config does not pin continuation orb %s:\n%s", ContinuationOrbVersion, got)
+	}
+}
+
+// findYq locates a mikefarah yq v4 binary -- the variant cimg/base ships and
+// the setup config's merge expression is written for. Some distros package it
+// as go-yq, and a plain `yq` may be the incompatible Python jq-wrapper, so
+// the version banner is checked.
+func findYq(t *testing.T) string {
+	t.Helper()
+
+	for _, name := range []string{"yq", "go-yq"} {
+		path, err := exec.LookPath(name)
+		if err != nil {
+			continue
+		}
+		out, err := exec.Command(path, "--version").CombinedOutput() // #nosec G204 -- fixed args, test-only
+		if err == nil && strings.Contains(string(out), "mikefarah") {
+			return path
+		}
+	}
+
+	t.Skip("mikefarah yq v4 not installed; skipping merge test")
+	return ""
+}
+
+// yqMerge runs the setup config's merge expression over workflows.yml +
+// custom.yml the same way the setup job does, returning the merged config.
+func yqMerge(t *testing.T, workflows, custom string) string {
+	t.Helper()
+
+	yq := findYq(t)
+
+	dir := t.TempDir()
+	workflowsPath := filepath.Join(dir, "workflows.yml")
+	customPath := filepath.Join(dir, "custom.yml")
+	if err := os.WriteFile(workflowsPath, []byte(workflows), 0600); err != nil { // #nosec G703 -- t.TempDir() path, test-only
+		t.Fatalf("write workflows.yml: %v", err)
+	}
+	if err := os.WriteFile(customPath, []byte(custom), 0600); err != nil {
+		t.Fatalf("write custom.yml: %v", err)
+	}
+
+	var out, stderr bytes.Buffer
+	cmd := exec.Command(yq, "eval-all", mergeExpression, workflowsPath, customPath) // #nosec G204 -- fixed args, test-only
+	cmd.Stdout = &out
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("yq merge failed: %v\nstderr: %s", err, stderr.String())
+	}
+
+	return out.String()
+}
+
+// yqQuery evaluates a yq expression against a YAML document and returns the
+// trimmed result.
+func yqQuery(t *testing.T, doc, expr string) string {
+	t.Helper()
+
+	yq := findYq(t)
+
+	var out, stderr bytes.Buffer
+	cmd := exec.Command(yq, "eval", expr, "-") // #nosec G204 -- fixed args, test-only
+	cmd.Stdin = strings.NewReader(doc)
+	cmd.Stdout = &out
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("yq query %q failed: %v\nstderr: %s", expr, err, stderr.String())
+	}
+
+	return strings.TrimSpace(out.String())
+}
+
+// customFixture is a representative custom.yml: a repo-owned e2e job with its
+// own job definition and a workflow entry appended into the generated build
+// workflow, requiring a generated job by its bare name.
+const customFixture = `jobs:
+  e2e-smoke:
+    machine:
+      image: ubuntu-2404:current
+    steps:
+    - checkout
+    - run: make e2e
+
+workflows:
+  build:
+    jobs:
+    - e2e-smoke:
+        requires:
+        - go-build
+        filters:
+          tags:
+            only: /^v.*/
+`
+
+// Test_CustomMergeAppendsJobs runs the setup config's yq expression over the
+// service golden + a custom.yml fixture and verifies the merge contract: the
+// custom job definition lands in .jobs (map merge), the custom workflow entry
+// is appended to the generated build workflow's job list (list append), and
+// the generated content is untouched.
+func Test_CustomMergeAppendsJobs(t *testing.T) {
+	workflows, err := os.ReadFile(goldenWorkflowsPath) // #nosec G304 -- fixed in-package testdata path
+	if err != nil {
+		t.Fatalf("read golden: %v", err)
+	}
+
+	merged := yqMerge(t, string(workflows), customFixture)
+
+	baseJobs := yqQuery(t, string(workflows), ".workflows.build.jobs | length")
+	mergedJobs := yqQuery(t, merged, ".workflows.build.jobs | length")
+	if baseJobs == mergedJobs {
+		t.Errorf("custom workflow entry was not appended: %s jobs before and after merge", mergedJobs)
+	}
+
+	if got := yqQuery(t, merged, `.workflows.build.jobs[-1] | keys | .[0]`); got != "e2e-smoke" {
+		t.Errorf("expected custom job appended last to build workflow, got %q", got)
+	}
+	if got := yqQuery(t, merged, `.jobs.e2e-smoke.machine.image`); got != "ubuntu-2404:current" {
+		t.Errorf("custom job definition not merged into .jobs, got image %q", got)
+	}
+	if got := yqQuery(t, merged, `.orbs.architect`); !strings.HasPrefix(got, "giantswarm/architect@") {
+		t.Errorf("generated orbs map damaged by merge, got %q", got)
+	}
+	if got := yqQuery(t, merged, `.version`); got != "2.1" {
+		t.Errorf("version damaged by merge, got %q", got)
+	}
+	if got := yqQuery(t, merged, `[.workflows.build.jobs[] | select(has("architect/go-build"))] | length`); got != "1" {
+		t.Errorf("generated go-build entry damaged by merge, got %s entries", got)
+	}
+}
+
+// Test_CustomMergeOwnWorkflow verifies a custom.yml that adds its own workflow
+// (e.g. a nightly cron) merges as a sibling of the generated build workflow.
+func Test_CustomMergeOwnWorkflow(t *testing.T) {
+	workflows, err := os.ReadFile(goldenWorkflowsPath) // #nosec G304 -- fixed in-package testdata path
+	if err != nil {
+		t.Fatalf("read golden: %v", err)
+	}
+
+	custom := `workflows:
+  nightly:
+    triggers:
+    - schedule:
+        cron: "0 3 * * *"
+        filters:
+          branches:
+            only:
+            - main
+    jobs:
+    - architect/go-build:
+        name: go-build
+        binary: mcp-kubernetes
+        context: architect
+`
+
+	merged := yqMerge(t, string(workflows), custom)
+
+	if got := yqQuery(t, merged, ".workflows | keys | length"); got != "2" {
+		t.Errorf("expected build + nightly workflows after merge, got %s", got)
+	}
+	if got := yqQuery(t, merged, `.workflows.nightly.triggers[0].schedule.cron`); got != "0 3 * * *" {
+		t.Errorf("nightly cron not merged, got %q", got)
+	}
+}
+
+// Test_GoldenServiceWorkflows is the golden test: generating with
+// mcp-kubernetes's signals (language go, app flavour, a Dockerfile,
+// branch-publish off) must reproduce the aligned standard byte-for-byte. The
+// golden reflects the build+test-only branch default: branches run go-build,
+// build-chart, and execute-chart-tests, while the image and chart pushes are
+// tag-only.
+func Test_GoldenServiceWorkflows(t *testing.T) {
 	got := render(t, Config{
 		RepoName:      repoMCPKubernetes,
 		Language:      gen.LanguageGo,
@@ -68,22 +316,22 @@ func Test_GoldenServiceConfig(t *testing.T) {
 		HasDockerfile: true,
 	})
 
-	want, err := os.ReadFile(goldenPath) // #nosec G304 -- fixed in-package testdata path
+	want, err := os.ReadFile(goldenWorkflowsPath) // #nosec G304 -- fixed in-package testdata path
 	if err != nil {
 		t.Fatalf("read golden: %v", err)
 	}
 
 	if got != string(want) {
-		t.Errorf("generated config does not match golden %s\n--- got ---\n%s\n--- want ---\n%s", goldenPath, got, string(want))
+		t.Errorf("generated workflows do not match golden %s\n--- got ---\n%s\n--- want ---\n%s", goldenWorkflowsPath, got, string(want))
 	}
 }
 
-// Test_GoldenCLIConfig is the golden test for the cli-flavour shape: a Go repo
-// that also carries the cli flavour ships cross-platform binaries on its GitHub
-// Release. Generating must reproduce the aligned standard byte-for-byte (the
-// six-platform architectures on go-build, the upload-release-assets job, and the
-// capped release image push).
-func Test_GoldenCLIConfig(t *testing.T) {
+// Test_GoldenCLIWorkflows is the golden test for the cli-flavour shape: a Go
+// repo that also carries the cli flavour ships cross-platform binaries on its
+// GitHub Release. Generating must reproduce the aligned standard
+// byte-for-byte (the six-platform architectures on go-build, the
+// upload-release-assets job, and the capped release image push).
+func Test_GoldenCLIWorkflows(t *testing.T) {
 	got := render(t, Config{
 		RepoName:      repoMCPKubernetes,
 		Language:      gen.LanguageGo,
@@ -91,13 +339,13 @@ func Test_GoldenCLIConfig(t *testing.T) {
 		HasDockerfile: true,
 	})
 
-	want, err := os.ReadFile(goldenCLIPath) // #nosec G304 -- fixed in-package testdata path
+	want, err := os.ReadFile(goldenCLIWorkflowsPath) // #nosec G304 -- fixed in-package testdata path
 	if err != nil {
 		t.Fatalf("read golden: %v", err)
 	}
 
 	if got != string(want) {
-		t.Errorf("generated config does not match golden %s\n--- got ---\n%s\n--- want ---\n%s", goldenCLIPath, got, string(want))
+		t.Errorf("generated workflows do not match golden %s\n--- got ---\n%s\n--- want ---\n%s", goldenCLIWorkflowsPath, got, string(want))
 	}
 }
 
@@ -110,7 +358,7 @@ func Test_OrbVersion(t *testing.T) {
 	})
 
 	if !contains(got, "giantswarm/architect@"+OrbVersion) {
-		t.Errorf("expected generated config to pin orb %s, got:\n%s", OrbVersion, got)
+		t.Errorf("expected generated workflows to pin orb %s, got:\n%s", OrbVersion, got)
 	}
 }
 
@@ -175,7 +423,7 @@ func Test_NoSignalsRejected(t *testing.T) {
 // requires drop the image-job references.
 func Test_ChartOnlyOmitsImage(t *testing.T) {
 	got := render(t, Config{
-		RepoName:      "sitesearch",
+		RepoName:      repoSitesearch,
 		Language:      gen.Language(""),
 		Flavours:      gen.FlavourSlice{gen.FlavourApp},
 		HasDockerfile: false,
@@ -306,7 +554,7 @@ func Test_CLIAddsReleaseBinaries(t *testing.T) {
 // binary to upload).
 func Test_CLIWithoutGoOmitsReleaseBinaries(t *testing.T) {
 	got := render(t, Config{
-		RepoName:      "sitesearch",
+		RepoName:      repoSitesearch,
 		Language:      gen.Language(""),
 		Flavours:      gen.FlavourSlice{gen.FlavourApp, gen.FlavourCLI},
 		HasDockerfile: false,
