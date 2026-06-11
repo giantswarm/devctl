@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [8.12.0] - 2026-06-11
+
 ### Added
 
 - `gen circleci`: the default branch path now emits a `build-image` job (`push-to-registries` with
@@ -2047,7 +2049,8 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.11.1...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.12.0...HEAD
+[8.12.0]: https://github.com/giantswarm/devctl/compare/v8.11.1...v8.12.0
 [8.11.1]: https://github.com/giantswarm/devctl/compare/v8.11.0...v8.11.1
 [8.11.0]: https://github.com/giantswarm/devctl/compare/v8.10.0...v8.11.0
 [8.10.0]: https://github.com/giantswarm/devctl/compare/v8.9.0...v8.10.0
