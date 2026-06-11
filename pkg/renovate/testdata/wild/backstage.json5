@@ -1,0 +1,33 @@
+{
+  extends: ['github>giantswarm/renovate-presets:default.json5'],
+  reviewers: ['marians'],
+  reviewersFromCodeOwners: false,
+  packageRules: [
+    {
+      groupName: 'ai-sdk packages',
+      matchPackageNames: ['@ai-sdk{/,}**'],
+    },
+    {
+      groupName: 'assistant-ui packages',
+      matchPackageNames: ['@assistant-ui{/,}**'],
+    },
+    {
+      groupName: 'backstage packages',
+      matchPackageNames: ['@backstage{/,}**'],
+    },
+    {
+      groupName: 'testing-library packages',
+      matchPackageNames: ['@testing-library{/,}**'],
+    },
+    {
+      groupName: 'date-fns packages',
+      matchPackageNames: ['date-fns', 'date-fns-tz'],
+    },
+  ],
+  prConcurrentLimit: 2,
+  schedule: [
+    'every weekend',
+    'every weekday after 5pm',
+    'every weekday before 8am',
+  ],
+}

@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"text/template"
+
+	"github.com/titanous/json5"
 )
 
 // render executes the renovate input the same way pkg/gen/internal.Execute
@@ -34,6 +36,49 @@ func render(t *testing.T, c Config) string {
 	}
 
 	return rendered.String()
+}
+
+// Test_ReviewersOmittedByDefault verifies that without reviewers the generated
+// config has no `reviewers` key at all.
+func Test_ReviewersOmittedByDefault(t *testing.T) {
+	got := render(t, Config{Language: "go"})
+
+	if strings.Contains(got, "reviewers") {
+		t.Errorf("default renovate config should not contain a reviewers key:\n%s", got)
+	}
+}
+
+// Test_ReviewersRendered verifies that the reviewers flag is baked into the
+// generated config as a valid, double-quoted top-level array, and survives a
+// round-trip through a JSON5 parser.
+func Test_ReviewersRendered(t *testing.T) {
+	reviewers := []string{"team:team-rocket", "team:team-honeybadger"}
+	got := render(t, Config{Language: "go", Reviewers: reviewers})
+
+	for _, want := range []string{
+		`"reviewers": [`,
+		`"team:team-rocket",`,
+		`"team:team-honeybadger",`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("generated config missing %q:\n%s", want, got)
+		}
+	}
+
+	var parsed struct {
+		Reviewers []string `json:"reviewers"`
+	}
+	if err := json5.Unmarshal([]byte(got), &parsed); err != nil {
+		t.Fatalf("generated config is not valid JSON5: %v\n%s", err, got)
+	}
+	if len(parsed.Reviewers) != len(reviewers) {
+		t.Fatalf("parsed reviewers = %v, want %v", parsed.Reviewers, reviewers)
+	}
+	for i, r := range reviewers {
+		if parsed.Reviewers[i] != r {
+			t.Errorf("reviewer[%d] = %q, want %q", i, parsed.Reviewers[i], r)
+		}
+	}
 }
 
 // Test_CircleCIGeneratedOffOmitsPackageRules verifies the default: without the

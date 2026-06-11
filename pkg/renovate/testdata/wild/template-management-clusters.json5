@@ -1,0 +1,29 @@
+{
+  "extends": [
+    // Base config - https://github.com/giantswarm/renovate-presets/blob/main/default.json5
+    "github>giantswarm/renovate-presets:default.json5",
+  ],
+  "ignorePaths": [
+    ".github/**"
+  ],
+  "packageRules": [
+    // Ensure each Management Cluster has their own PR generated
+    {
+      "groupName": "{{parentDir}}",
+      "commitMessageTopic": "{{parentDir}}",
+      "matchDepNames": ["capa", "capz"],
+      "additionalReviewers": ["team:team-phoenix"],
+    }
+  ],
+  "regexManagers": [
+    {
+      "fileMatch": [
+        "^management-clusters\\/.+\\/cluster-app-manifests\\.yaml$",
+        "^management-clusters\\/.+\\/default-apps-manifests\\.yaml$"
+      ],
+      "matchStrings": ["repo: (?<depName>.*)\n(\\s)*version:(\\s)*(?<currentValue>.*?)(\\s)*\n"],
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^\"?(?<version>.*)\"?$"
+    }
+  ],
+}
