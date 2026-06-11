@@ -63,7 +63,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 	s.Stop()
-	fmt.Fprintln(r.stdout, "✓ Repository created from template")
+	_, _ = fmt.Fprintln(r.stdout, "✓ Repository created from template")
 
 	// Wait for repository to be fully created and initialized
 	s.Suffix = " Waiting for repository to be initialized..."
@@ -80,7 +80,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 	s.Stop()
-	fmt.Fprintln(r.stdout, "✓ Repository cloned locally")
+	_, _ = fmt.Fprintln(r.stdout, "✓ Repository cloned locally")
 
 	// Replace placeholders
 	s.Suffix = " Replacing placeholders..."
@@ -91,7 +91,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 	s.Stop()
-	fmt.Fprintln(r.stdout, "✓ Placeholders replaced")
+	_, _ = fmt.Fprintln(r.stdout, "✓ Placeholders replaced")
 
 	// Configure sync method (vendir/kustomize)
 	s.Suffix = fmt.Sprintf(" Configuring sync method (%s)...", r.flag.SyncMethod)
@@ -102,7 +102,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 	s.Stop()
-	fmt.Fprintln(r.stdout, "✓ Sync method configured")
+	_, _ = fmt.Fprintln(r.stdout, "✓ Sync method configured")
 
 	// Configure patch method (script/kustomize)
 	s.Suffix = fmt.Sprintf(" Configuring patch method (%s)...", r.flag.PatchMethod)
@@ -113,7 +113,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 	s.Stop()
-	fmt.Fprintln(r.stdout, "✓ Patch method configured")
+	_, _ = fmt.Fprintln(r.stdout, "✓ Patch method configured")
 
 	// Setup CI/CD without branch protection
 	s.Suffix = " Setting up CI/CD..."
@@ -124,7 +124,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 	s.Stop()
-	fmt.Fprintln(r.stdout, "✓ CI/CD setup complete")
+	_, _ = fmt.Fprintln(r.stdout, "✓ CI/CD setup complete")
 
 	// Generate workflows and Makefile
 	s.Suffix = " Generating workflows and Makefile..."
@@ -135,19 +135,19 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 	s.Stop()
-	fmt.Fprintln(r.stdout, "✓ Workflows and Makefile generated")
+	_, _ = fmt.Fprintln(r.stdout, "✓ Workflows and Makefile generated")
 
 	// Create PR for giantswarm/github repository
 	s.Suffix = " Creating PR for giantswarm/github..."
 	s.Start()
 	var prURL string
-	err, prURL = r.createGithubRepoPR(ctx)
+	prURL, err = r.createGithubRepoPR(ctx)
 	if err != nil {
 		s.Stop()
 		return microerror.Mask(err)
 	}
 	s.Stop()
-	fmt.Fprintln(r.stdout, "✓ PR created in giantswarm/github")
+	_, _ = fmt.Fprintln(r.stdout, "✓ PR created in giantswarm/github")
 
 	// Initial commit and push
 	s.Suffix = " Pushing changes to main branch..."
@@ -158,7 +158,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 	s.Stop()
-	fmt.Fprintln(r.stdout, "✓ Changes pushed to main branch")
+	_, _ = fmt.Fprintln(r.stdout, "✓ Changes pushed to main branch")
 
 	// Enable branch protection
 	s.Suffix = " Enabling branch protection..."
@@ -169,20 +169,20 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 	s.Stop()
-	fmt.Fprintln(r.stdout, "✓ Branch protection enabled")
+	_, _ = fmt.Fprintln(r.stdout, "✓ Branch protection enabled")
 
-	fmt.Fprintf(r.stdout, "\n✨ Successfully bootstrapped app repository %s\n\n", r.flag.Name)
-	fmt.Fprintf(r.stdout, "Next steps:\n")
-	fmt.Fprintf(r.stdout, "1. Visit your new repository: https://github.com/giantswarm/%s-app\n", r.flag.Name)
+	_, _ = fmt.Fprintf(r.stdout, "\n✨ Successfully bootstrapped app repository %s\n\n", r.flag.Name)
+	_, _ = fmt.Fprintf(r.stdout, "Next steps:\n")
+	_, _ = fmt.Fprintf(r.stdout, "1. Visit your new repository: https://github.com/giantswarm/%s-app\n", r.flag.Name)
 	if prURL != "" {
-		fmt.Fprintf(r.stdout, "2. Review and merge the PR: %s\n", prURL)
+		_, _ = fmt.Fprintf(r.stdout, "2. Review and merge the PR: %s\n", prURL)
 	} else {
-		fmt.Fprintf(r.stdout, "2. Review and merge the PR: https://github.com/giantswarm/github/pulls\n")
+		_, _ = fmt.Fprintf(r.stdout, "2. Review and merge the PR: https://github.com/giantswarm/github/pulls\n")
 	}
-	fmt.Fprintf(r.stdout, "3. Update the Chart.yaml with appropriate metadata and version\n")
-	fmt.Fprintf(r.stdout, "4. Configure your image registry in values.yaml\n")
-	fmt.Fprintf(r.stdout, "5. Create a release by pushing a tag (e.g., v0.1.0)\n")
-	fmt.Fprintf(r.stdout, "\nFor more information, visit: https://intranet.giantswarm.io/docs/dev-and-releng/app-developer-guide/\n")
+	_, _ = fmt.Fprintf(r.stdout, "3. Update the Chart.yaml with appropriate metadata and version\n")
+	_, _ = fmt.Fprintf(r.stdout, "4. Configure your image registry in values.yaml\n")
+	_, _ = fmt.Fprintf(r.stdout, "5. Create a release by pushing a tag (e.g., v0.1.0)\n")
+	_, _ = fmt.Fprintf(r.stdout, "\nFor more information, visit: https://intranet.giantswarm.io/docs/dev-and-releng/app-developer-guide/\n")
 
 	return nil
 }
@@ -585,10 +585,10 @@ func (r *runner) generateWorkflowsAndMakefile(ctx context.Context, repoPath stri
 	return nil
 }
 
-func (r *runner) createGithubRepoPR(ctx context.Context) (error, string) {
+func (r *runner) createGithubRepoPR(ctx context.Context) (string, error) {
 	token := os.Getenv(r.flag.GithubToken)
 	if token == "" {
-		return microerror.Maskf(envVarNotFoundError, "environment variable %#q not found", r.flag.GithubToken), ""
+		return "", microerror.Maskf(envVarNotFoundError, "environment variable %#q not found", r.flag.GithubToken)
 	}
 
 	// Create a logger that only outputs in debug mode
@@ -608,7 +608,7 @@ func (r *runner) createGithubRepoPR(ctx context.Context) (error, string) {
 
 	client, err := githubclient.New(config)
 	if err != nil {
-		return microerror.Mask(err), ""
+		return "", microerror.Mask(err)
 	}
 
 	// Clone giantswarm/github repository
@@ -617,14 +617,14 @@ func (r *runner) createGithubRepoPR(ctx context.Context) (error, string) {
 
 	err = r.execCommand(ctx, "", "git", "clone", "git@github.com:giantswarm/github.git", repoPath)
 	if err != nil {
-		return microerror.Mask(err), ""
+		return "", microerror.Mask(err)
 	}
 
 	// Create new branch
 	branchName := fmt.Sprintf("add-%s-app", r.flag.Name)
 	err = r.execCommand(ctx, repoPath, "git", "checkout", "-b", branchName)
 	if err != nil {
-		return microerror.Mask(err), ""
+		return "", microerror.Mask(err)
 	}
 
 	// Update team YAML file
@@ -641,7 +641,7 @@ func (r *runner) createGithubRepoPR(ctx context.Context) (error, string) {
 	// Read existing file
 	content, err := os.ReadFile(teamFile)
 	if err != nil {
-		return microerror.Mask(err), ""
+		return "", microerror.Mask(err)
 	}
 
 	// Parse YAML as a list, preserving comments
@@ -651,14 +651,14 @@ func (r *runner) createGithubRepoPR(ctx context.Context) (error, string) {
 	var repositories []map[string]interface{}
 	err = decoder.Decode(&repositories)
 	if err != nil {
-		return microerror.Mask(err), ""
+		return "", microerror.Mask(err)
 	}
 
 	// Parse new entry
 	var newEntries []map[string]interface{}
 	err = yaml.Unmarshal([]byte(newEntry), &newEntries)
 	if err != nil {
-		return microerror.Mask(err), ""
+		return "", microerror.Mask(err)
 	}
 	newRepo := newEntries[0]
 
@@ -682,29 +682,29 @@ func (r *runner) createGithubRepoPR(ctx context.Context) (error, string) {
 	encoder.SetIndent(2)
 	err = encoder.Encode(repositories)
 	if err != nil {
-		return microerror.Mask(err), ""
+		return "", microerror.Mask(err)
 	}
 
 	err = os.WriteFile(teamFile, buf.Bytes(), fileMode0600)
 	if err != nil {
-		return microerror.Mask(err), ""
+		return "", microerror.Mask(err)
 	}
 
 	// Commit changes
 	err = r.execCommand(ctx, repoPath, "git", "add", teamFile)
 	if err != nil {
-		return microerror.Mask(err), ""
+		return "", microerror.Mask(err)
 	}
 
 	err = r.execCommand(ctx, repoPath, "git", "commit", "-m", fmt.Sprintf("Add %s-app to team-%s repositories", r.flag.Name, r.flag.Team))
 	if err != nil {
-		return microerror.Mask(err), ""
+		return "", microerror.Mask(err)
 	}
 
 	// Push changes using token
 	err = r.execCommand(ctx, repoPath, "git", "push", "origin", branchName)
 	if err != nil {
-		return microerror.Mask(err), ""
+		return "", microerror.Mask(err)
 	}
 
 	// Create pull request using githubclient
@@ -712,12 +712,12 @@ func (r *runner) createGithubRepoPR(ctx context.Context) (error, string) {
 
 	createdPR, err := client.CreatePullRequest(ctx, "giantswarm", "github", branchName, prTitle)
 	if err != nil {
-		return microerror.Mask(err), ""
+		return "", microerror.Mask(err)
 	}
 
 	// Store PR URL for final message
 	if createdPR.HTMLURL != nil {
-		return nil, *createdPR.HTMLURL
+		return *createdPR.HTMLURL, nil
 	}
-	return nil, ""
+	return "", nil
 }
