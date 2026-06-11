@@ -1,0 +1,97 @@
+{
+  extends: ["github>giantswarm/renovate-presets:default.json5"],
+  reviewers: ["teemow"],
+  packageRules: [
+    {
+      groupName: "jest packages",
+      matchPackageNames: ["@types/jest{/,}**", "jest{/,}**"],
+    },
+    {
+      groupName: "eslint packages",
+      matchPackageNames: ["eslint{/,}**", "@typescript-eslint{/,}**"],
+    },
+    {
+      groupName: "date-fns packages",
+      matchPackageNames: ["date-fns{/,}**"],
+    },
+    {
+      groupName: "storybook packages",
+      matchPackageNames: ["@storybook{/,}**"],
+    },
+    {
+      groupName: "babel packages",
+      matchPackageNames: ["@babel{/,}**", "babel{/,}**"],
+    },
+    {
+      groupName: "sentry packages",
+      matchPackageNames: ["@sentry{/,}**"],
+    },
+    {
+      groupName: "testing-library packages",
+      matchPackageNames: ["@testing-library{/,}**"],
+    },
+    {
+      groupName: "react packages",
+      matchPackageNames: [
+        "@types/react{/,}**",
+        "react{/,}**",
+        "react-refresh{/,}**",
+      ],
+    },
+    {
+      groupName: "react-router packages",
+      matchPackageNames: ["@types/react-router{/,}**", "react-router{/,}**"],
+    },
+    {
+      groupName: "webpack packages",
+      matchPackageNames: [
+        "@webpack{/,}**",
+        "webpack{/,}**",
+        "@types/copy-webpack-plugin{/,}**",
+        "copy-webpack-plugin{/,}**",
+        "css-minimizer-webpack-plugin{/,}**",
+        "@types/mini-css-extract-plugin{/,}**",
+        "mini-css-extract-plugin{/,}**",
+        "@types/terser-webpack-plugin{/,}**",
+        "terser-webpack-plugin{/,}**",
+        "clean-webpack-plugin{/,}**",
+        "html-webpack-plugin{/,}**",
+        "css-loader{/,}**",
+        "sass-loader{/,}**",
+        "style-loader{/,}**",
+        "json-loader{/,}**",
+        "file-loader{/,}**",
+        "imports-loader{/,}**",
+        "webpack-bundle-analyzer{/,}**",
+        "@types/webpack-bundle-analyzer{/,}**",
+        "@pmmmwh/react-refresh-webpack-plugin{/,}**",
+      ],
+    },
+    {
+      groupName: "react-jsonschema-form packages",
+      matchPackageNames: ["@rjsf{/,}**"],
+    },
+    {
+      groupName: "node packages",
+      matchPackageNames: ["@types/node{/,}**"],
+    },
+    {
+      matchPackageNames: ["@types/bootstrap", "bootstrap"],
+      enabled: false,
+    },
+    {
+      // brace-expansion v5 is ESM-only and breaks the CJS `require(...).default`
+      // interop used by Storybook's bundled minimatch, failing the build-fe-docs
+      // job. Stay on the ReDoS-patched v2 line until our toolchain supports v5.
+      matchPackageNames: ["brace-expansion"],
+      allowedVersions: "<3",
+    },
+    {
+      // pytest 9 conflicts with pytest-helm-charts (<9). Hold pytest on the 8.x
+      // line until pytest-helm-charts allows pytest 9.
+      matchPackageNames: ["pytest"],
+      allowedVersions: "<9",
+    },
+  ],
+  prConcurrentLimit: 5,
+}

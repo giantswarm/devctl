@@ -1,0 +1,33 @@
+{
+  extends: [
+    'github>giantswarm/renovate-presets:default.json5',
+    'github>giantswarm/renovate-presets:lang-go.json5',
+  ],
+  customManagers: [
+    {
+      customType: 'regex',
+      managerFilePatterns: [
+        '/^go\\.mod$/',
+      ],
+      matchStrings: [
+        '^[[:space:]]*github\\.com/prometheus/alertmanager => github\\.com/grafana/prometheus-alertmanager (?<currentValue>v.+)',
+      ],
+      datasourceTemplate: 'github-releases',
+      depNameTemplate: 'grafana/mimir',
+      versioningTemplate: 'regex:^mimir-(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)$',
+    },
+  ],
+  packageRules: [
+    {
+      matchDatasources: [
+        'github-releases',
+      ],
+      matchPackageNames: [
+        'grafana/mimir',
+      ],
+      enabled: true,
+      groupName: 'Mimir version tracking',
+      allowedVersions: '!/-(rc|alpha|beta)/',
+    },
+  ],
+}

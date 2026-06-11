@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `gen renovate reviewers`: new subcommand that sets the top-level `reviewers` array in an existing Renovate config (`renovate.json5` or `renovate.json`) in the current directory. It edits the file in place, replacing the `reviewers` value (or inserting the key if absent) while preserving all comments, key order and formatting, and matching the quote style the file already uses. Fails if no Renovate config is found. Generation via `gen renovate` is unchanged.
+
 ### Fixed
 
 - `repo setup`: auto-detection now inspects the head commits of the 3 most recently merged PRs in addition to the latest non-tag commit on the default branch. Checks that only run on `pull_request` events (PR gatekeepers like `Heimdall - PR Gatekeeper`, CircleCI chart-package status checks that fire on PRs but not on push-to-main) never reported on the default-branch ref and were therefore silently dropped from the required-checks list on every `repo setup` re-run.

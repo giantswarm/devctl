@@ -1,4 +1,4 @@
-package renovate
+package reviewers
 
 import (
 	"io"
@@ -7,16 +7,19 @@ import (
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
-
-	"github.com/giantswarm/devctl/v8/cmd/gen/renovate/reviewers"
 )
 
 const (
-	name        = "renovate"
-	description = "Generates Renovate config for go and docker dependencies (renovate.json5)."
-	example     = `  devctl gen renovate
-  devctl gen renovate --interval "after 9am on thursday"
-  devctl gen renovate --language go --circleci-generated`
+	name        = "reviewers"
+	description = "Set the reviewers array in an existing Renovate config (renovate.json or renovate.json5)."
+	example     = `  devctl gen renovate reviewers --reviewers team:team-rocket
+  devctl gen renovate reviewers -r team:team-rocket -r team:team-honeybadger`
+	longDescription = `Set the top-level "reviewers" array in an existing Renovate config.
+
+The command edits renovate.json5 (preferred) or renovate.json in the current
+directory in place, replacing the value of the "reviewers" key (or inserting it
+if absent) while preserving all comments, quoting and formatting. It fails if no
+Renovate config is found.`
 )
 
 type Config struct {
@@ -36,22 +39,6 @@ func New(config Config) (*cobra.Command, error) {
 		config.Stdout = os.Stdout
 	}
 
-	var err error
-
-	var reviewersCmd *cobra.Command
-	{
-		c := reviewers.Config{
-			Logger: config.Logger,
-			Stderr: config.Stderr,
-			Stdout: config.Stdout,
-		}
-
-		reviewersCmd, err = reviewers.New(c)
-		if err != nil {
-			return nil, microerror.Mask(err)
-		}
-	}
-
 	f := &flag{}
 
 	r := &runner{
@@ -64,14 +51,12 @@ func New(config Config) (*cobra.Command, error) {
 	c := &cobra.Command{
 		Use:     name,
 		Short:   description,
-		Long:    description,
+		Long:    longDescription,
 		Example: example,
 		RunE:    r.Run,
 	}
 
 	f.Init(c)
-
-	c.AddCommand(reviewersCmd)
 
 	return c, nil
 }
