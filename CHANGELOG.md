@@ -7,9 +7,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `gen circleci`: the default branch path now emits a `build-image` job (`push-to-registries` with
+  `push: false`, new in architect orb 9.4.0) that validates the multi-arch image build on every
+  branch without pushing anything. Dockerfile regressions now surface on the PR instead of at tag
+  time. Repos with `branchPublish` keep their pushing branch job instead (it already exercises the
+  Dockerfile); cli-flavour repos get the same two-linux-platform cap as the release push.
+
 ### Changed
 
 - Auto-detect the `RepoName` used in the `gen precommit` command and make the `--repo-name` flag optional.
+- The baked architect orb pin moved to 9.4.0 (adds the `push` parameter on `push-to-registries`).
 
 ## [8.11.1] - 2026-06-11
 

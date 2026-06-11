@@ -442,9 +442,11 @@ func Test_ChartOnlyOmitsImage(t *testing.T) {
 }
 
 // Test_BranchPublishOffOmitsBranchPushes verifies the default branch shape:
-// branches build + test only. The branch image push (name: push-to-registries)
-// and the branch chart push (name: push-chart) must be absent, while the
-// tag-only release jobs and the shared build-chart job remain.
+// branches build + test only, plus the push-less image validation. The branch
+// image push (name: push-to-registries) and the branch chart push (name:
+// push-chart) must be absent, while the build-only image validation (name:
+// build-image with push: false), the tag-only release jobs, and the shared
+// build-chart job remain.
 func Test_BranchPublishOffOmitsBranchPushes(t *testing.T) {
 	got := render(t, Config{
 		RepoName:      repoMCPKubernetes,
@@ -456,6 +458,8 @@ func Test_BranchPublishOffOmitsBranchPushes(t *testing.T) {
 
 	for _, want := range []string{
 		"name: go-build",
+		"name: build-image",
+		"push: false",
 		"name: build-chart",
 		"name: execute-chart-tests",
 		"name: push-to-registries-release",
@@ -480,7 +484,9 @@ func Test_BranchPublishOffOmitsBranchPushes(t *testing.T) {
 // Test_BranchPublishOnAddsCoupledBranchPushes verifies the opt-in branch shape:
 // the branch path additionally emits an amd64 image push (name:
 // push-to-registries with platforms: linux/amd64) and the coupled branch chart
-// push (name: push-chart), without disturbing the tag-only release jobs.
+// push (name: push-chart), without disturbing the tag-only release jobs. The
+// push-less build-image validation is omitted -- the branch image push already
+// exercises the Dockerfile.
 func Test_BranchPublishOnAddsCoupledBranchPushes(t *testing.T) {
 	got := render(t, Config{
 		RepoName:      repoMCPKubernetes,
@@ -499,6 +505,14 @@ func Test_BranchPublishOnAddsCoupledBranchPushes(t *testing.T) {
 	} {
 		if !contains(got, want) {
 			t.Errorf("branch-publish config missing %q:\n%s", want, got)
+		}
+	}
+	for _, unwanted := range []string{
+		"name: build-image",
+		"push: false",
+	} {
+		if contains(got, unwanted) {
+			t.Errorf("branch-publish config should not contain build-only validation %q:\n%s", unwanted, got)
 		}
 	}
 }
