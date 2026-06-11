@@ -11,6 +11,13 @@
     "github>giantswarm/renovate-presets:lang-python.json5",
     {{- end }}
   ],
+  {{- if .Reviewers }}
+  "reviewers": [
+    {{- range .Reviewers }}
+    {{ . | printf "%q" }},
+    {{- end }}
+  ],
+  {{- end }}
   {{- if .CircleCIGenerated }}
   "packageRules": [
     {

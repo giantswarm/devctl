@@ -19,7 +19,12 @@ const (
 The command edits renovate.json5 (preferred) or renovate.json in the current
 directory in place, replacing the value of the "reviewers" key (or inserting it
 if absent) while preserving all comments, quoting and formatting. It fails if no
-Renovate config is found.`
+Renovate config is found.
+
+Note: for repos whose Renovate config is generated (and re-synced by
+align-files) via "devctl gen renovate", set reviewers with
+"devctl gen renovate --reviewers ..." instead, so they survive regeneration.
+This subcommand is for editing existing, hand-maintained configs in place.`
 )
 
 type Config struct {

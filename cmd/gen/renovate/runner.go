@@ -46,6 +46,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		c := renovate.Config{
 			Interval:          r.flag.Interval,
 			Language:          r.flag.Language,
+			Reviewers:         r.flag.Reviewers,
 			CircleCIGenerated: r.flag.CircleCIGenerated,
 		}
 
