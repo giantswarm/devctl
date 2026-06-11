@@ -240,25 +240,13 @@ func (c *Client) RemoveRepositoryBranchProtection(ctx context.Context, repositor
 	return nil
 }
 
+// recentMergedPRsForChecks bounds how many recently-merged PR heads we inspect
+// for required-check candidates. Three smooths over a single noisy PR (a check
+// that ran on the latest PR but is being retired, or one that was newly added
+// and only ran once) without making the API cost meaningful.
+const recentMergedPRsForChecks = 3
+
 func (c *Client) getGithubChecks(ctx context.Context, repository *github.Repository, branch string, checksFilter *regexp.Regexp) ([]string, error) {
-	owner := repository.GetOwner().GetLogin()
-	repo := repository.GetName()
-
-	// Tags have specific workflows, that are not run in PRs.
-	// So, we need to find checks for a commit that is not tagged.
-	// Otherwise PRs would be blocked by not-run checks.
-	allTags, err := c.getTags(ctx, repository)
-	if err != nil {
-		return nil, microerror.Mask(err)
-	}
-
-	ref, err := c.getLatestNonTagCommit(ctx, repository, branch, allTags)
-	if err != nil {
-		return nil, microerror.Mask(err)
-	}
-	c.logger.Debugf("get commit statuses and check runs for ref: %q", ref)
-
-	underlyingClient := c.GetUnderlyingClient(ctx)
 	seen := make(map[string]bool)
 	var checks []string
 
@@ -273,13 +261,73 @@ func (c *Client) getGithubChecks(ctx context.Context, repository *github.Reposit
 		checks = append(checks, name)
 	}
 
+	refs, err := c.collectChecksRefs(ctx, repository, branch)
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
+
+	for _, ref := range refs {
+		c.logger.Debugf("get commit statuses and check runs for ref: %q", ref)
+		if err := c.collectChecksForRef(ctx, repository, ref, addCheck); err != nil {
+			return nil, microerror.Mask(err)
+		}
+	}
+
+	c.logger.Debugf("found %d checks across %d refs:", len(checks), len(refs))
+	for id, check := range checks {
+		c.logger.Debugf(" - checks[%d] = %q", id, check)
+	}
+
+	return checks, nil
+}
+
+// collectChecksRefs returns the set of commit SHAs to inspect for required-check
+// candidates: the latest non-tag commit on the default branch (to catch checks
+// that run on `push`) plus the head commits of the most recently merged PRs (to
+// catch checks that only run on `pull_request` events, e.g. PR gatekeepers like
+// Heimdall). The default-branch ref is always first; PR heads are appended,
+// deduped against it.
+func (c *Client) collectChecksRefs(ctx context.Context, repository *github.Repository, branch string) ([]string, error) {
+	// Tags have specific workflows that are not run in PRs. Skip tagged commits
+	// so PRs aren't blocked by checks that only ever ran for a release.
+	allTags, err := c.getTags(ctx, repository)
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
+
+	mainRef, err := c.getLatestNonTagCommit(ctx, repository, branch, allTags)
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
+
+	prHeads, err := c.getRecentMergedPRHeads(ctx, repository, recentMergedPRsForChecks)
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
+
+	refs := []string{mainRef}
+	seen := map[string]bool{mainRef: true}
+	for _, sha := range prHeads {
+		if !seen[sha] {
+			refs = append(refs, sha)
+			seen[sha] = true
+		}
+	}
+	return refs, nil
+}
+
+func (c *Client) collectChecksForRef(ctx context.Context, repository *github.Repository, ref string, addCheck func(string)) error {
+	owner := repository.GetOwner().GetLogin()
+	repo := repository.GetName()
+	underlyingClient := c.GetUnderlyingClient(ctx)
+
 	// Legacy commit statuses (CircleCI, etc.)
 	{
 		opt := &github.ListOptions{PerPage: 100}
 		for {
 			combinedStatus, resp, err := underlyingClient.Repositories.GetCombinedStatus(ctx, owner, repo, ref, opt)
 			if err != nil {
-				return nil, microerror.Mask(err)
+				return microerror.Mask(err)
 			}
 			for _, status := range combinedStatus.Statuses {
 				addCheck(status.GetContext())
@@ -301,9 +349,16 @@ func (c *Client) getGithubChecks(ctx context.Context, repository *github.Reposit
 		for {
 			results, resp, err := underlyingClient.Checks.ListCheckRunsForRef(ctx, owner, repo, ref, opt)
 			if err != nil {
-				return nil, microerror.Mask(err)
+				return microerror.Mask(err)
 			}
 			for _, run := range results.CheckRuns {
+				// A check_run reported as `skipped` on the observed commit gives us no
+				// signal that it gates PRs -- reusable release workflows (release-please,
+				// auto-release) commonly emit skipped jobs on every push to the default
+				// branch. Requiring such a check produces an unsatisfiable gate.
+				if run.GetConclusion() == "skipped" {
+					continue
+				}
 				addCheck(run.GetName())
 			}
 			if resp.NextPage == 0 {
@@ -313,12 +368,45 @@ func (c *Client) getGithubChecks(ctx context.Context, repository *github.Reposit
 		}
 	}
 
-	c.logger.Debugf("found %d checks for ref %q:", len(checks), ref)
-	for id, check := range checks {
-		c.logger.Debugf(" - checks[%d] = %q", id, check)
+	return nil
+}
+
+// getRecentMergedPRHeads returns the head SHAs of up to n most recently merged
+// pull requests, newest first. Closed-without-merge PRs are skipped: their
+// check_runs typically reflect a failed gate and we don't want failed checks
+// leaking into the required-checks list.
+func (c *Client) getRecentMergedPRHeads(ctx context.Context, repository *github.Repository, n int) ([]string, error) {
+	owner := repository.GetOwner().GetLogin()
+	repo := repository.GetName()
+	underlyingClient := c.GetUnderlyingClient(ctx)
+
+	opt := &github.PullRequestListOptions{
+		State:       "closed",
+		Sort:        "updated",
+		Direction:   "desc",
+		ListOptions: github.ListOptions{PerPage: 30},
 	}
 
-	return checks, nil
+	var heads []string
+	for {
+		prs, resp, err := underlyingClient.PullRequests.List(ctx, owner, repo, opt)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+		for _, pr := range prs {
+			if pr.MergedAt == nil {
+				continue
+			}
+			heads = append(heads, pr.GetHead().GetSHA())
+			if len(heads) >= n {
+				return heads, nil
+			}
+		}
+		if resp.NextPage == 0 {
+			return heads, nil
+		}
+		opt.Page = resp.NextPage
+	}
 }
 
 func (c *Client) SetRepositoryDefaultBranch(ctx context.Context, repository *github.Repository, newDefaultBranch string) (err error) {

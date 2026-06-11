@@ -7,9 +7,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- `repo setup`: auto-detection now inspects the head commits of the 3 most recently merged PRs in addition to the latest non-tag commit on the default branch. Checks that only run on `pull_request` events (PR gatekeepers like `Heimdall - PR Gatekeeper`, CircleCI chart-package status checks that fire on PRs but not on push-to-main) never reported on the default-branch ref and were therefore silently dropped from the required-checks list on every `repo setup` re-run.
+- `repo setup`: default `--checks-filter` now excludes `validate-changelog` and `check-values-schema` in addition to `aliyun`. `validate-changelog` is path-conditional (`on.pull_request.paths: CHANGELOG.md`) so auto-pinning it blocks PRs that don't touch that file. `check-values-schema` is managed explicitly by the align-files cycle (app-flavour repos only, with the correct `/ validate` suffix); auto-pinning the bare name produces the wrong required-check context.
+- `repo checks --update --remove`: removing the last remaining required check no longer silently no-ops. Previously an empty check list was serialised with `omitempty`, so GitHub never received the field and left the requirement in place. The command now falls back to the `DELETE /required_status_checks` endpoint when the merged list is empty.
+
+## [8.11.0] - 2026-06-10
+
 ### Added
 
 - `gen workflows`: the generated `create_release_pr.yaml` now triggers on release-candidate branches (`<base>#release#{major-rc,minor-rc,patch-rc,rc,rc-release}`) for the `main`, `master`, and `release` bases, so RC releases get an automatic release PR just like the stable `major`/`minor`/`patch` tokens. Requires the matching support in [giantswarm/github-workflows#195](https://github.com/giantswarm/github-workflows/pull/195).
+
+### Changed
+
+- `gen circleci` now emits a dynamic-config pair instead of a single static config. `.circleci/config.yml` becomes a tiny repo-agnostic setup workflow (`circleci/continuation` orb, pinned like the architect orb), and the derived golden pipeline moves verbatim to `.circleci/workflows.yml`. At pipeline runtime the setup job deep-merges an optional repo-owned `.circleci/custom.yml` into `workflows.yml` (yq `*+`: maps merge, workflow job lists append) and continues with the result. Repo-specific jobs and workflows (e2e, nightly crons, mirrors) go in `custom.yml`, reference generated jobs by their bare names (`requires: [go-build]`), take effect on the PR that adds or edits them, and are never touched by devctl or align-files. A malformed `custom.yml` fails the setup job on the same PR. Known limitation (accepted): the merge appends -- a custom job cannot inject itself into a generated job's `requires`, so tag publishes are not gated on custom jobs; gate merges via GitHub required checks instead.
 
 ## [8.10.0] - 2026-06-10
 
@@ -26,6 +38,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Changed
 
 - `gen workflows --release-workflow=auto-release` now writes `.github/workflows/zz_generated.auto_release.yaml` instead of the un-prefixed `auto-release.yaml`, bringing the file in line with the rest of the generated workflows (regenerable-via-`zz_generated.`-prefix instead of via `SkipRegenCheck`). Both the `auto-release` and `legacy` branches now also delete the legacy un-prefixed `auto-release.yaml`, so repos that adopted the flow before the rename are migrated automatically on next `devctl gen` run.
+
+### Fixed
+
+- `repo setup`: auto-detected required status checks now ignore check runs whose `conclusion` is `skipped` on the observed commit. Reusable release workflows (release-please's `create-release / Create release`, `auto-release`'s tag-only steps) emit skipped check_runs on every push to the default branch; previously these leaked into the required-checks list, producing entries that didn't reflect any real PR gate.
 
 ## [8.8.0] - 2026-06-08
 
@@ -2014,7 +2030,8 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.10.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.11.0...HEAD
+[8.11.0]: https://github.com/giantswarm/devctl/compare/v8.10.0...v8.11.0
 [8.10.0]: https://github.com/giantswarm/devctl/compare/v8.9.0...v8.10.0
 [8.9.0]: https://github.com/giantswarm/devctl/compare/v8.8.0...v8.9.0
 [8.8.0]: https://github.com/giantswarm/devctl/compare/v8.7.0...v8.8.0
