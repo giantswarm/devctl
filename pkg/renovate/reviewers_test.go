@@ -160,6 +160,40 @@ func TestSetReviewers(t *testing.T) {
 			singleQuote: false,
 			expected:    "{\n  reviewers: ['r'],\n  matchStrings: ['version = \"(?<v>[^\"]+)\"'],\n}",
 		},
+		{
+			// Single-quote house style with a customManagers block whose regex
+			// matchStrings are double-quoted. A flat quote count would be
+			// dominated by the nested double quotes; the shallow count must
+			// keep the file single-quoted.
+			name:        "nested double-quoted regex does not outvote shallow single quotes",
+			input:       "{\n  extends: ['foo'],\n  customManagers: [\n    { matchStrings: [\"a\", \"b\", \"c\", \"d\"] },\n  ],\n}",
+			reviewers:   []string{"r"},
+			singleQuote: true,
+			expected:    "{\n  reviewers: ['r'],\n  extends: ['foo'],\n  customManagers: [\n    { matchStrings: [\"a\", \"b\", \"c\", \"d\"] },\n  ],\n}",
+		},
+		{
+			// Double-quoted keys with single-quoted values: the inserted key
+			// must use the key style (double), the value the value style.
+			name:        "key quote follows first key, value quote follows values",
+			input:       "{\n  \"extends\": ['foo'],\n  \"x\": ['a', 'b'],\n}",
+			reviewers:   []string{"r"},
+			singleQuote: true,
+			expected:    "{\n  \"reviewers\": ['r'],\n  \"extends\": ['foo'],\n  \"x\": ['a', 'b'],\n}",
+		},
+		{
+			name:        "tab indentation is reused",
+			input:       "{\n\textends: ['foo'],\n}",
+			reviewers:   []string{"r"},
+			singleQuote: true,
+			expected:    "{\n\treviewers: ['r'],\n\textends: ['foo'],\n}",
+		},
+		{
+			name:        "four-space indentation is reused",
+			input:       "{\n    extends: ['foo'],\n}",
+			reviewers:   []string{"r"},
+			singleQuote: true,
+			expected:    "{\n    reviewers: ['r'],\n    extends: ['foo'],\n}",
+		},
 	}
 
 	for _, tc := range testCases {
@@ -357,6 +391,27 @@ func TestSetReviewersRoundTrip(t *testing.T) {
 		got := readFile(t, path)
 		if !strings.Contains(got, "\"reviewers\": [\"alice\"]") {
 			t.Errorf("expected double-quoted reviewers, got:\n%s", got)
+		}
+	})
+
+	t.Run("file mode is preserved", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "renovate.json5")
+		writeFile(t, path, "{\n  extends: ['foo'],\n}")
+		if err := os.Chmod(path, 0640); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := SetReviewers(path, []string{"r"}); err != nil {
+			t.Fatal(err)
+		}
+
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := info.Mode().Perm(); got != 0640 {
+			t.Errorf("mode = %o, want 640", got)
 		}
 	})
 

@@ -64,8 +64,39 @@ func SetReviewers(path string, reviewers []string) error {
 		return microerror.Mask(err)
 	}
 
-	err = os.WriteFile(path, out, info.Mode())
+	err = writeFileAtomic(path, out, info.Mode())
 	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	return nil
+}
+
+// writeFileAtomic writes data to path by writing to a temporary file in the
+// same directory and renaming it into place. The rename is atomic, so an
+// interrupted or failed write never leaves the original file truncated.
+func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return microerror.Mask(err)
+	}
+	tmpName := tmp.Name()
+	// Best effort: if we return before a successful rename, drop the temp file.
+	defer func() { _ = os.Remove(tmpName) }()
+
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return microerror.Mask(err)
+	}
+	if err := tmp.Chmod(mode); err != nil {
+		_ = tmp.Close()
+		return microerror.Mask(err)
+	}
+	if err := tmp.Close(); err != nil {
+		return microerror.Mask(err)
+	}
+
+	if err := os.Rename(tmpName, path); err != nil {
 		return microerror.Mask(err)
 	}
 
@@ -87,8 +118,8 @@ func setReviewers(src []byte, reviewers []string, defaultSingle bool) ([]byte, e
 		return nil, microerror.Mask(err)
 	}
 
-	quote := detectQuoteStyle(src, defaultSingle)
-	array := renderArray(reviewers, quote)
+	style := analyzeRootStyle(src, objStart, defaultSingle)
+	array := renderArray(reviewers, style.valueQuote)
 
 	out := make([]byte, 0, len(src)+len(array)+16)
 
@@ -103,10 +134,10 @@ func setReviewers(src []byte, reviewers []string, defaultSingle bool) ([]byte, e
 
 	// Insert `reviewers: [...]` as the first key of the root object, right
 	// after the opening brace, matching the file's existing key-quoting style
-	// (bare identifier vs quoted string).
+	// (bare identifier vs quoted string) and member indentation.
 	key := "reviewers"
-	if rootKeysAreQuoted(src, objStart, !defaultSingle) {
-		key = string(quote) + "reviewers" + string(quote)
+	if style.keyQuoted {
+		key = string(style.keyQuote) + "reviewers" + string(style.keyQuote)
 	}
 
 	// When the root object already has members, a trailing comma after our
@@ -115,9 +146,9 @@ func setReviewers(src []byte, reviewers []string, defaultSingle bool) ([]byte, e
 	// trailing comma which strict JSON (renovate.json) rejects, so omit it.
 	var insertion string
 	if rootObjectIsEmpty(src, objStart) {
-		insertion = "\n  " + key + ": " + array + "\n"
+		insertion = "\n" + style.indent + key + ": " + array + "\n"
 	} else {
-		insertion = "\n  " + key + ": " + array + ","
+		insertion = "\n" + style.indent + key + ": " + array + ","
 	}
 
 	out = append(out, src[:objStart+1]...)

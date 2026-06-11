@@ -53,6 +53,7 @@ func New(config Config) (*cobra.Command, error) {
 		Short:   description,
 		Long:    longDescription,
 		Example: example,
+		Args:    cobra.NoArgs,
 		RunE:    r.Run,
 	}
 

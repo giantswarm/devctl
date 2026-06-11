@@ -11,65 +11,154 @@ type keySpan struct {
 	valueEnd   int
 }
 
-// detectQuoteStyle inspects the string literals already present in src and
-// returns the dominant quote character ('\” or '"'). Configs in the wild mix
-// the two styles, so the majority wins; ties and quote-less files fall back to
-// the extension-based default.
-func detectQuoteStyle(src []byte, defaultSingle bool) byte {
-	single, double := countStringQuotes(src)
-	switch {
-	case single > double:
-		return '\''
-	case double > single:
-		return '"'
-	default:
-		if defaultSingle {
-			return '\''
-		}
-		return '"'
-	}
+// rootStyle captures the formatting conventions of the root object, so an
+// inserted `reviewers` entry blends in with what is already there.
+type rootStyle struct {
+	// valueQuote is the dominant quote character (single or double) used by
+	// the file's top-level string values.
+	valueQuote byte
+	// keyQuoted reports whether root keys are written as quoted strings
+	// ("reviewers":) rather than bare JSON5 identifiers (reviewers:).
+	keyQuoted bool
+	// keyQuote is the quote character used for keys when keyQuoted is true.
+	keyQuote byte
+	// indent is the leading whitespace shared by the root members.
+	indent string
 }
 
-// countStringQuotes counts how many string literals are opened with a single
-// vs a double quote. It is comment-aware and skips the interior of each string,
-// so quote characters appearing inside another string or a comment (a common
-// case in Renovate regex managers) are not counted.
-func countStringQuotes(src []byte) (single, double int) {
-	i := 0
-	for i < len(src) {
+// analyzeRootStyle walks the top-level members of the root object once and
+// derives the conventions used to render an inserted entry: the dominant quote
+// of the top-level values, the key-quoting style taken from the first key, and
+// the members' indentation.
+//
+// Only string literals shallow within each top-level value are counted toward
+// the quote vote (a scalar value, or the direct elements of a top-level array
+// such as `extends`). Strings buried deeper - notably the double-quoted regex
+// in a `customManagers`/`packageRules` block - are ignored so they cannot
+// outvote the file's house style.
+func analyzeRootStyle(src []byte, objStart int, defaultSingle bool) rootStyle {
+	st := rootStyle{indent: "  "}
+
+	var single, double int
+	first := true
+	i := objStart + 1
+	for {
 		i = skipSpaceAndComments(src, i)
-		if i >= len(src) {
+		if i >= len(src) || src[i] == '}' {
 			break
 		}
-		switch src[i] {
-		case '\'', '"':
-			if src[i] == '\'' {
-				single++
-			} else {
-				double++
+
+		keyStart := i
+		_, afterKey, err := readKey(src, i)
+		if err != nil {
+			break
+		}
+
+		if first {
+			if c := src[keyStart]; c == '"' || c == '\'' {
+				st.keyQuoted = true
+				st.keyQuote = c
+			}
+			if indent, ok := lineIndent(src, keyStart); ok {
+				st.indent = indent
+			}
+			first = false
+		}
+
+		i = skipSpaceAndComments(src, afterKey)
+		if i >= len(src) || src[i] != ':' {
+			break
+		}
+		i++
+
+		valueStart := skipSpaceAndComments(src, i)
+		valueEnd, err := skipValue(src, valueStart)
+		if err != nil {
+			break
+		}
+		addShallowStringQuotes(src, valueStart, valueEnd, &single, &double)
+
+		i = skipSpaceAndComments(src, valueEnd)
+		if i < len(src) && src[i] == ',' {
+			i++
+		}
+	}
+
+	switch {
+	case single > double:
+		st.valueQuote = '\''
+	case double > single:
+		st.valueQuote = '"'
+	default:
+		if defaultSingle {
+			st.valueQuote = '\''
+		} else {
+			st.valueQuote = '"'
+		}
+	}
+
+	// An empty (or quote-less) object reveals no key-quoting convention, so
+	// fall back to the strictness implied by the extension: strict JSON quotes
+	// its keys, the JSON5 house style does not.
+	if first {
+		st.keyQuoted = !defaultSingle
+		st.keyQuote = st.valueQuote
+	}
+
+	return st
+}
+
+// addShallowStringQuotes counts the single- vs double-quoted string literals in
+// src[start:end] that sit at most one container deep, so the direct elements of
+// a top-level array are counted but anything nested further is not.
+func addShallowStringQuotes(src []byte, start, end int, single, double *int) {
+	depth := 0
+	i := start
+	for i < end {
+		i = skipSpaceAndComments(src, i)
+		if i >= end {
+			break
+		}
+		switch c := src[i]; {
+		case c == '{' || c == '[':
+			depth++
+			i++
+		case c == '}' || c == ']':
+			depth--
+			i++
+		case c == '\'' || c == '"':
+			if depth <= 1 {
+				if c == '\'' {
+					*single++
+				} else {
+					*double++
+				}
 			}
 			_, next, err := readString(src, i)
 			if err != nil {
-				return single, double
+				return
 			}
 			i = next
 		default:
 			i++
 		}
 	}
-	return single, double
 }
 
-// rootKeysAreQuoted reports whether the keys of the root object are written as
-// quoted strings (e.g. "reviewers":) rather than bare JSON5 identifiers
-// (reviewers:). It inspects the first key; an empty object falls back to the
-// provided default.
-func rootKeysAreQuoted(src []byte, objStart int, fallback bool) bool {
-	i := skipSpaceAndComments(src, objStart+1)
-	if i >= len(src) || src[i] == '}' {
-		return fallback
+// lineIndent returns the run of leading whitespace on pos's line, up to pos. ok
+// is false when pos is preceded by non-whitespace on its line (e.g. a
+// single-line object), so the caller can keep its default indentation.
+func lineIndent(src []byte, pos int) (string, bool) {
+	start := pos
+	for start > 0 && src[start-1] != '\n' {
+		start--
 	}
-	return src[i] == '"' || src[i] == '\''
+	for j := start; j < pos; j++ {
+		if src[j] != ' ' && src[j] != '\t' {
+			return "", false
+		}
+	}
+	return string(src[start:pos]), true
 }
 
 // findRootObjectStart returns the index of the root object's opening brace,
