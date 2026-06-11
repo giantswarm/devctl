@@ -20,6 +20,8 @@ func NewCreateRenovateInput(p params.Params) input.Input {
 			"Language":          params.Language(p),
 			"Reviewers":         params.Reviewers(p),
 			"CircleCIGenerated": params.CircleCIGenerated(p),
+			"RepoName":          params.RepoName(p),
+			"HasCustomConfig":   params.HasCustomConfig(p),
 		},
 	}
 

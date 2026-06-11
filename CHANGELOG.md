@@ -7,6 +7,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `gen renovate`: support for an optional repo-owned `renovate-custom.json5`. When the file exists
+  in the repo root at generation time, the generated `renovate.json5` references it as the last
+  `extends` entry (`github>giantswarm/<repo>:renovate-custom.json5`), so repo-specific rules win
+  over the shared presets. devctl never generates or touches the custom file, and because Renovate
+  resolves `extends` from the default branch on every run, edits to it are live on merge without
+  regeneration. A new optional `--repo-name` flag (defaulting to the working directory's basename)
+  supplies the repo name for the preset reference. The generated file now also carries a DO-NOT-EDIT
+  header pointing repo-specific rules at `renovate-custom.json5`.
+
 ## [8.13.0] - 2026-06-11
 
 ### Added

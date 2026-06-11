@@ -15,3 +15,11 @@ func Reviewers(p Params) []string {
 func CircleCIGenerated(p Params) bool {
 	return p.CircleCIGenerated
 }
+
+func RepoName(p Params) string {
+	return p.RepoName
+}
+
+func HasCustomConfig(p Params) bool {
+	return p.HasCustomConfig
+}
