@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [8.11.1] - 2026-06-11
+
 ### Fixed
 
 - `repo setup`: auto-detection now inspects the head commits of the 3 most recently merged PRs in addition to the latest non-tag commit on the default branch. Checks that only run on `pull_request` events (PR gatekeepers like `Heimdall - PR Gatekeeper`, CircleCI chart-package status checks that fire on PRs but not on push-to-main) never reported on the default-branch ref and were therefore silently dropped from the required-checks list on every `repo setup` re-run.
@@ -2030,7 +2032,8 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.11.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.11.1...HEAD
+[8.11.1]: https://github.com/giantswarm/devctl/compare/v8.11.0...v8.11.1
 [8.11.0]: https://github.com/giantswarm/devctl/compare/v8.10.0...v8.11.0
 [8.10.0]: https://github.com/giantswarm/devctl/compare/v8.9.0...v8.10.0
 [8.9.0]: https://github.com/giantswarm/devctl/compare/v8.8.0...v8.9.0
