@@ -17,6 +17,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- `gen precommit`: exclude the `.yarn/` directory from the `trailing-whitespace` and
+  `end-of-file-fixer` hooks. Vendored yarn releases (`.yarn/releases/yarn-*.cjs`) must not be
+  modified; yarn 4.15.0 ships with trailing whitespace in its bundle, which made the hooks fail.
 - Auto-detect the `RepoName` used in the `gen precommit` command and make the `--repo-name` flag optional.
 - The baked architect orb pin moved to 9.4.0 (adds the `push` parameter on `push-to-registries`).
 
