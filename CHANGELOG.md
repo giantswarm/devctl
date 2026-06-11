@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- `repo setup`: auto-detection now inspects the head commits of the 3 most recently merged PRs in addition to the latest non-tag commit on the default branch. Checks that only run on `pull_request` events (PR gatekeepers like `Heimdall - PR Gatekeeper`, CircleCI chart-package status checks that fire on PRs but not on push-to-main) never reported on the default-branch ref and were therefore silently dropped from the required-checks list on every `repo setup` re-run.
+- `repo setup`: default `--checks-filter` now excludes `validate-changelog` and `check-values-schema` in addition to `aliyun`. `validate-changelog` is path-conditional (`on.pull_request.paths: CHANGELOG.md`) so auto-pinning it blocks PRs that don't touch that file. `check-values-schema` is managed explicitly by the align-files cycle (app-flavour repos only, with the correct `/ validate` suffix); auto-pinning the bare name produces the wrong required-check context.
+- `repo checks --update --remove`: removing the last remaining required check no longer silently no-ops. Previously an empty check list was serialised with `omitempty`, so GitHub never received the field and left the requirement in place. The command now falls back to the `DELETE /required_status_checks` endpoint when the merged list is empty.
+
 ## [8.11.0] - 2026-06-10
 
 ### Added
