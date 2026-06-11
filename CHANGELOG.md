@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [8.14.0] - 2026-06-11
+
 ### Added
 
 - `gen renovate`: support for an optional repo-owned `renovate-custom.json5`. When the file exists
@@ -2070,7 +2072,8 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.13.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.14.0...HEAD
+[8.14.0]: https://github.com/giantswarm/devctl/compare/v8.13.0...v8.14.0
 [8.13.0]: https://github.com/giantswarm/devctl/compare/v8.12.0...v8.13.0
 [8.12.0]: https://github.com/giantswarm/devctl/compare/v8.11.1...v8.12.0
 [8.11.1]: https://github.com/giantswarm/devctl/compare/v8.11.0...v8.11.1
