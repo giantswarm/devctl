@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [8.14.1] - 2026-06-11
+
 ### Changed
 
 - Nancy: Use `go list -json -m all` for producing the dependency list.
@@ -2076,7 +2078,8 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.14.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.14.1...HEAD
+[8.14.1]: https://github.com/giantswarm/devctl/compare/v8.14.0...v8.14.1
 [8.14.0]: https://github.com/giantswarm/devctl/compare/v8.13.0...v8.14.0
 [8.13.0]: https://github.com/giantswarm/devctl/compare/v8.12.0...v8.13.0
 [8.12.0]: https://github.com/giantswarm/devctl/compare/v8.11.1...v8.12.0
