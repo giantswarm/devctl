@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [8.11.1] - 2026-06-11
+
 ### Fixed
 
 - `gen makefile`: the generated `make help` target now aligns target descriptions to the longest target name instead of a fixed 20-character column.
@@ -2031,7 +2033,8 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.11.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.11.1...HEAD
+[8.11.1]: https://github.com/giantswarm/devctl/compare/v8.11.0...v8.11.1
 [8.11.0]: https://github.com/giantswarm/devctl/compare/v8.10.0...v8.11.0
 [8.10.0]: https://github.com/giantswarm/devctl/compare/v8.9.0...v8.10.0
 [8.9.0]: https://github.com/giantswarm/devctl/compare/v8.8.0...v8.9.0
