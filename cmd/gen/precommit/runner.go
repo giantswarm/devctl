@@ -2,11 +2,14 @@ package precommit
 
 import (
 	"context"
+	"fmt"
 	"io"
+	"os"
 
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
+	"golang.org/x/mod/modfile"
 
 	"github.com/giantswarm/devctl/v8/pkg/gen"
 	"github.com/giantswarm/devctl/v8/pkg/gen/input"
@@ -38,6 +41,26 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
 	var err error
+
+	// When --repo-name is not provided, auto-detect it from the local go.mod
+	// module path (e.g. github.com/giantswarm/devctl/v8). This value is used as
+	// the goimports -local prefix in the generated pre-commit config.
+	if r.flag.RepoName == "" && r.flag.Language == "go" {
+		content, err := os.ReadFile("go.mod")
+		if err != nil {
+			return fmt.Errorf("failed to read go.mod (run from repo root or pass --%s): %w", flagRepoName, err)
+		}
+
+		mf, err := modfile.Parse("go.mod", content, nil)
+		if err != nil {
+			return fmt.Errorf("failed to parse go.mod (fix go.mod or pass --%s): %w", flagRepoName, err)
+		}
+		if mf.Module == nil || mf.Module.Mod.Path == "" {
+			return fmt.Errorf("go.mod does not declare a module path (missing 'module' directive); alternatively pass --%s", flagRepoName)
+		}
+
+		r.flag.RepoName = mf.Module.Mod.Path
+	}
 
 	var precommitInput *precommit.PreCommit
 	{
