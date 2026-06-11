@@ -110,3 +110,51 @@ func Test_CircleCIGeneratedOnDisablesArchitectOrb(t *testing.T) {
 		}
 	}
 }
+
+// Test_CustomConfigOmittedByDefault verifies that without HasCustomConfig the
+// generated config carries no renovate-custom.json5 extends entry, so repos
+// without the file see no behavior change.
+func Test_CustomConfigOmittedByDefault(t *testing.T) {
+	got := render(t, Config{Language: "go", RepoName: "some-repo"})
+
+	if strings.Contains(got, "renovate-custom.json5\"") {
+		t.Errorf("default renovate config should not extend renovate-custom.json5:\n%s", got)
+	}
+
+	var parsed struct {
+		Extends []string `json:"extends"`
+	}
+	if err := json5.Unmarshal([]byte(got), &parsed); err != nil {
+		t.Fatalf("generated config is not valid JSON5: %v\n%s", err, got)
+	}
+}
+
+// Test_CustomConfigExtendsLast verifies that with HasCustomConfig the
+// repo-owned renovate-custom.json5 is referenced as the LAST extends entry,
+// so its rules win over the shared presets per Renovate's merge order.
+func Test_CustomConfigExtendsLast(t *testing.T) {
+	got := render(t, Config{Language: "go", RepoName: "some-repo", HasCustomConfig: true})
+
+	var parsed struct {
+		Extends []string `json:"extends"`
+	}
+	if err := json5.Unmarshal([]byte(got), &parsed); err != nil {
+		t.Fatalf("generated config is not valid JSON5: %v\n%s", err, got)
+	}
+
+	if len(parsed.Extends) == 0 {
+		t.Fatalf("generated config has no extends entries:\n%s", got)
+	}
+
+	want := "github>giantswarm/some-repo:renovate-custom.json5"
+	last := parsed.Extends[len(parsed.Extends)-1]
+	if last != want {
+		t.Errorf("last extends entry = %q, want %q (full list: %v)", last, want, parsed.Extends)
+	}
+
+	for _, e := range parsed.Extends[:len(parsed.Extends)-1] {
+		if strings.Contains(e, "renovate-custom.json5") {
+			t.Errorf("renovate-custom.json5 must only appear as the last extends entry, found %q (full list: %v)", e, parsed.Extends)
+		}
+	}
+}

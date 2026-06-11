@@ -41,6 +41,21 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
 	var err error
 
+	// The optional repo-owned renovate-custom.json5 is referenced from the
+	// generated config's `extends` when present. Its presence is the signal;
+	// devctl never generates or touches the file itself.
+	_, statErr := os.Stat("renovate-custom.json5")
+	hasCustomConfig := statErr == nil
+
+	repoName := r.flag.RepoName
+	if repoName == "" {
+		wd, err := os.Getwd()
+		if err != nil {
+			return microerror.Mask(err)
+		}
+		repoName = filepath.Base(wd)
+	}
+
 	var renovateInput *renovate.Renovate
 	{
 		c := renovate.Config{
@@ -48,6 +63,8 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 			Language:          r.flag.Language,
 			Reviewers:         r.flag.Reviewers,
 			CircleCIGenerated: r.flag.CircleCIGenerated,
+			RepoName:          repoName,
+			HasCustomConfig:   hasCustomConfig,
 		}
 
 		renovateInput, err = renovate.New(c)
