@@ -3,6 +3,7 @@ name: analyze-github-actions
 
 on:
   - pull_request
+  - merge_group
 
 permissions: {}
 
