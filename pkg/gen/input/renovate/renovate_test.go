@@ -89,6 +89,26 @@ func Test_ReviewersRendered(t *testing.T) {
 	}
 }
 
+// Test_FreeTextValuesEscaped verifies that the free-text --interval value is
+// escaped into a valid single-quoted JSON5 string. Embedded quotes,
+// backslashes and newlines must not break the generated file -- emitting the
+// raw value verbatim would produce malformed JSON5.
+func Test_FreeTextValuesEscaped(t *testing.T) {
+	interval := `before 5am 'monday' \ "x"` + "\n!"
+	got := render(t, Config{Language: "go", Interval: interval})
+
+	var parsed struct {
+		Schedule []string `json:"schedule"`
+	}
+	if err := json5.Unmarshal([]byte(got), &parsed); err != nil {
+		t.Fatalf("generated config is not valid JSON5 with a hostile interval: %v\n%s", err, got)
+	}
+
+	if len(parsed.Schedule) != 1 || parsed.Schedule[0] != interval {
+		t.Errorf("schedule = %q, want exactly [%q]", parsed.Schedule, interval)
+	}
+}
+
 // Test_CircleCIGeneratedOffOmitsPackageRules verifies the default: without the
 // flag the generated Renovate config has no architect orb override.
 func Test_CircleCIGeneratedOffOmitsPackageRules(t *testing.T) {
