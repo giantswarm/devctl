@@ -18,8 +18,6 @@ import (
 
 const releaseNotesTemplate = `# :zap: Giant Swarm Release {{ .Name }} for {{ .Provider }} :zap:
 
-{{ .Description }}
-
 ## Changes compared to {{ .PreviousName }}
 {{ if .Components }}
 ### Components
@@ -77,7 +75,6 @@ type releaseNotesTemplateData struct {
 	Name         string
 	PreviousName string
 	Provider     string
-	Description  string
 	Components   []releaseNotes
 	Apps         []releaseNotes
 }
@@ -276,7 +273,6 @@ func createReleaseNotes(release, baseRelease v1alpha1.Release, provider string, 
 		Name:         releaseToDirectory(release),
 		PreviousName: releaseToDirectory(baseRelease),
 		Provider:     providerTitleMap[provider],
-		Description:  "<< Add description here >>",
 		Components:   components,
 		Apps:         apps,
 	}
