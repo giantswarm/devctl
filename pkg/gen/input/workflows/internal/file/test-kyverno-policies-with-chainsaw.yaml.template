@@ -3,6 +3,7 @@
 name: "Test Kyverno Policies with Chainsaw"
 on:
   pull_request: {}
+  merge_group: {}
   workflow_dispatch: {}
 env:
   KYVERNO_POLICIES_APP_NAME: {{{{ .Repository }}}}

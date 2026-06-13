@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- `gen workflows` / `gen precommit`: add the `merge_group` trigger to the generated GitHub Actions workflows so they also run for GitHub merge queues.
+
 ## [8.14.1] - 2026-06-11
 
 ### Changed
