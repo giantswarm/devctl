@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- `gen renovate`: the generated `renovate.json5` now uses idiomatic JSON5 formatting -- unquoted keys, single-quoted values, and one array item per line with trailing commas -- matching the style of hand-maintained configs and the `renovate-presets`. This is a cosmetic change with no effect on Renovate's behavior; repos will see a one-time formatting diff on the next align-files sync.
+
 ## [8.15.0] - 2026-06-15
 
 ### Removed
