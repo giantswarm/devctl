@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [8.15.0] - 2026-06-15
+
 ### Removed
 
 - Releases: Remove description placeholder.
@@ -2082,7 +2084,8 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.14.1...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.15.0...HEAD
+[8.15.0]: https://github.com/giantswarm/devctl/compare/v8.14.1...v8.15.0
 [8.14.1]: https://github.com/giantswarm/devctl/compare/v8.14.0...v8.14.1
 [8.14.0]: https://github.com/giantswarm/devctl/compare/v8.13.0...v8.14.0
 [8.13.0]: https://github.com/giantswarm/devctl/compare/v8.12.0...v8.13.0
