@@ -255,11 +255,10 @@ var KnownComponents = map[string]ParseParams{
 		End:       commonEndPattern,
 	},
 	"cluster-autoscaler": {
-		Tag:        "https://github.com/giantswarm/cluster-autoscaler-app/releases/tag/v{{.Version}}",
-		Changelog:  "https://raw.githubusercontent.com/giantswarm/cluster-autoscaler-app/v{{.Version}}/CHANGELOG.md",
-		Start:      commonStartPattern,
-		End:        commonEndPattern,
-		AutoDetect: true,
+		Tag:       "https://github.com/giantswarm/cluster-autoscaler-app/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/cluster-autoscaler-app/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
 	},
 	"cluster-autoscaler-crossplane-resources": {
 		Tag:       "https://github.com/giantswarm/cluster-autoscaler-crossplane-resources/releases/tag/v{{.Version}}",
