@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [8.15.1] - 2026-06-15
+
 ### Changed
 
 - `gen renovate`: the generated `renovate.json5` now uses idiomatic JSON5 formatting -- unquoted keys, single-quoted values, and one array item per line with trailing commas -- matching the style of hand-maintained configs and the `renovate-presets`. This is a cosmetic change with no effect on Renovate's behavior; repos will see a one-time formatting diff on the next align-files sync.
@@ -2088,7 +2090,8 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.15.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.15.1...HEAD
+[8.15.1]: https://github.com/giantswarm/devctl/compare/v8.15.0...v8.15.1
 [8.15.0]: https://github.com/giantswarm/devctl/compare/v8.14.1...v8.15.0
 [8.14.1]: https://github.com/giantswarm/devctl/compare/v8.14.0...v8.14.1
 [8.14.0]: https://github.com/giantswarm/devctl/compare/v8.13.0...v8.14.0
