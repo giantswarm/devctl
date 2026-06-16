@@ -31,6 +31,15 @@ const OrbVersion = "9.4.0"
 // renovate: datasource=orb depName=circleci/continuation
 const ContinuationOrbVersion = "2.0.1"
 
+// DefaultAppCatalog and DefaultAppCatalogTest are the catalogs the chart
+// pipeline publishes to when a repo does not override them. They match the
+// long-standing template hardcodes, so repos that do not set a catalog get the
+// identical config they had before the override existed.
+const (
+	DefaultAppCatalog     = "giantswarm-catalog"
+	DefaultAppCatalogTest = "giantswarm-test-catalog"
+)
+
 type Config struct {
 	// RepoName is the repository name, used for the binary, chart, and job
 	// names.
@@ -43,6 +52,14 @@ type Config struct {
 	// HasDockerfile selects the image pipeline. The runner derives this from
 	// the presence of a Dockerfile in the repo.
 	HasDockerfile bool
+	// AppCatalog overrides the catalog the chart pipeline publishes to. Empty
+	// defaults to "giantswarm-catalog". Set it for repos that ship to a
+	// different catalog (e.g. the internal "giantswarm-operations-platform")
+	// so generation does not migrate their chart to the public catalog.
+	AppCatalog string
+	// AppCatalogTest overrides the test catalog. Empty defaults to
+	// "giantswarm-test-catalog". Kept paired with AppCatalog.
+	AppCatalogTest string
 	// BranchPublish opts the repo into publishing a dev image and chart on
 	// branch builds. By default branches build + test only (no push). When
 	// set, the branch path additionally pushes an amd64 dev image and the
@@ -70,12 +87,23 @@ func New(config Config) (*CircleCI, error) {
 		return nil, microerror.Maskf(invalidConfigError, "no jobs would be generated: set --language=go, add a Dockerfile, or use the app flavour")
 	}
 
+	appCatalog := config.AppCatalog
+	if appCatalog == "" {
+		appCatalog = DefaultAppCatalog
+	}
+	appCatalogTest := config.AppCatalogTest
+	if appCatalogTest == "" {
+		appCatalogTest = DefaultAppCatalogTest
+	}
+
 	c := &CircleCI{
 		params: params.Params{
 			RepoName:               config.RepoName,
 			Language:               config.Language.String(),
 			HasDockerfile:          config.HasDockerfile,
 			HasApp:                 hasApp,
+			AppCatalog:             appCatalog,
+			AppCatalogTest:         appCatalogTest,
 			BranchPublish:          config.BranchPublish,
 			ReleaseBinaries:        config.shipsBinaries(),
 			OrbVersion:             OrbVersion,

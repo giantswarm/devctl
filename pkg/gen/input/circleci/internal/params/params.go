@@ -19,6 +19,16 @@ type Params struct {
 	// Helm chart). It selects the chart pipeline (push-to-app-catalog with the
 	// app-build-suite executor and run-tests-with-ats).
 	HasApp bool
+	// AppCatalog is the catalog the chart pipeline publishes to (the
+	// push-to-app-catalog `app_catalog` param). Defaults to "giantswarm-catalog".
+	// Repos that ship to a different catalog (e.g. the internal
+	// "giantswarm-operations-platform") set it so generation does not silently
+	// migrate their chart to the public catalog.
+	AppCatalog string
+	// AppCatalogTest is the test catalog the chart pipeline publishes to (the
+	// push-to-app-catalog `app_catalog_test` param). Defaults to
+	// "giantswarm-test-catalog". Kept paired with AppCatalog.
+	AppCatalogTest string
 	// BranchPublish is true when the repo opts into publishing a dev image and
 	// chart on branch builds. By default branches build + test only; when set,
 	// the branch path additionally pushes an amd64 dev image and the dev chart

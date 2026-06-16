@@ -349,6 +349,40 @@ func Test_GoldenCLIWorkflows(t *testing.T) {
 	}
 }
 
+// Test_AppCatalogOverride verifies the chart pipeline publishes to the
+// overridden catalog when set, and falls back to the public defaults when not.
+// Repos on the internal giantswarm-operations-platform catalog rely on this so
+// generation does not silently migrate their chart to the public catalog.
+func Test_AppCatalogOverride(t *testing.T) {
+	got := render(t, Config{
+		RepoName:       repoSitesearch,
+		Flavours:       gen.FlavourSlice{gen.FlavourApp},
+		AppCatalog:     "giantswarm-operations-platform-catalog",
+		AppCatalogTest: "giantswarm-operations-platform-test-catalog",
+	})
+
+	if !contains(got, "app_catalog: giantswarm-operations-platform-catalog") {
+		t.Errorf("override not applied; want app_catalog override in:\n%s", got)
+	}
+	if !contains(got, "app_catalog_test: giantswarm-operations-platform-test-catalog") {
+		t.Errorf("override not applied; want app_catalog_test override in:\n%s", got)
+	}
+	if contains(got, "app_catalog: giantswarm-catalog") {
+		t.Errorf("default catalog leaked through despite override:\n%s", got)
+	}
+
+	def := render(t, Config{
+		RepoName: repoSitesearch,
+		Flavours: gen.FlavourSlice{gen.FlavourApp},
+	})
+	if !contains(def, "app_catalog: "+DefaultAppCatalog) {
+		t.Errorf("empty override should default to %q:\n%s", DefaultAppCatalog, def)
+	}
+	if !contains(def, "app_catalog_test: "+DefaultAppCatalogTest) {
+		t.Errorf("empty override should default to %q:\n%s", DefaultAppCatalogTest, def)
+	}
+}
+
 func Test_OrbVersion(t *testing.T) {
 	got := render(t, Config{
 		RepoName:      repoMCPKubernetes,
