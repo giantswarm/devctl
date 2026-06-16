@@ -57,6 +57,8 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 			BranchPublish:    r.flag.BranchPublish,
 			ImagePreBuildJob: r.flag.ImagePreBuildJob,
 			ImagePrivateOnly: r.flag.ImagePrivateOnly,
+			ImageName:        r.flag.ImageName,
+			ImagePlatforms:   r.flag.ImagePlatforms,
 		}
 
 		circleciInput, err = circleci.New(c)

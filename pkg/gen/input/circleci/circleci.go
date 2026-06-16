@@ -74,6 +74,15 @@ type Config struct {
 	// (gsociprivate), replacing split-china-push and omitting sync-china-registry.
 	// Set it for private repos whose image must not land in the public catalog.
 	ImagePrivateOnly bool
+	// ImageName overrides the `giantswarm/<repo>` default image name on the
+	// image jobs. Set it for repos whose published image differs from the repo
+	// name (e.g. kserve -> giantswarm/kserve-controller). Empty keeps the orb
+	// default.
+	ImageName string
+	// ImagePlatforms overrides the buildx platform list on the image jobs.
+	// Empty lets the orb default apply. Set it for single-architecture images
+	// (e.g. vllm -> linux/arm64).
+	ImagePlatforms string
 }
 
 // shipsBinaries reports whether the repo distributes cross-platform Go binaries
@@ -116,6 +125,8 @@ func New(config Config) (*CircleCI, error) {
 			BranchPublish:          config.BranchPublish,
 			ImagePreBuildJob:       config.ImagePreBuildJob,
 			ImagePrivateOnly:       config.ImagePrivateOnly,
+			ImageName:              config.ImageName,
+			ImagePlatforms:         config.ImagePlatforms,
 			ReleaseBinaries:        config.shipsBinaries(),
 			OrbVersion:             OrbVersion,
 			ContinuationOrbVersion: ContinuationOrbVersion,

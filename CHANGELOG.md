@@ -7,6 +7,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `gen circleci`: new `--image-name` and `--image-platforms` flags for repos whose image pipeline
+  does not fit the default shape. `--image-name` overrides the `giantswarm/<repo>` default image name
+  on the generated image jobs (`push-to-registries` branch + release and `sync-china-registry`) for
+  repos whose published image differs from the repo name (e.g. `kserve` publishes
+  `giantswarm/kserve-controller`). `--image-platforms` overrides the buildx platform list on the
+  `build-image` and `push-to-registries-release` jobs for single-architecture images (e.g. `vllm`
+  ships `linux/arm64` only; an amd64 build has no prebuilt wheels and fails). The append-only
+  `.circleci/custom.yml` merge cannot rename or re-platform a generated job, so the generator carries
+  both. Both default off, so repos that do not set them get the identical config as before.
+
 ### Changed
 
 - `gen workflows` / `gen precommit`: add the `merge_group` trigger to the generated GitHub Actions workflows so they also run for GitHub merge queues.

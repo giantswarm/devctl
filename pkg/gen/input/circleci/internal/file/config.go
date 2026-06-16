@@ -47,6 +47,8 @@ func NewWorkflowsInput(p params.Params) input.Input {
 			"BranchPublish":    p.BranchPublish,
 			"ImagePreBuildJob": p.ImagePreBuildJob,
 			"ImagePrivateOnly": p.ImagePrivateOnly,
+			"ImageName":        p.ImageName,
+			"ImagePlatforms":   p.ImagePlatforms,
 			"ReleaseBinaries":  p.ReleaseBinaries,
 			"OrbVersion":       p.OrbVersion,
 		},

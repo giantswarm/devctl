@@ -51,7 +51,14 @@ workflows:
     - architect/push-to-registries:
         context: architect
         name: push-to-registries
+{{- if .ImageName }}
+        image: {{ .ImageName }}
+{{- end }}
+{{- if .ImagePlatforms }}
+        platforms: {{ .ImagePlatforms }}
+{{- else }}
         platforms: linux/amd64
+{{- end }}
 {{- if eq .Language "go" }}
         requires:
         - go-build
@@ -70,7 +77,12 @@ workflows:
         context: architect
         name: build-image
         push: false
-{{- if .ReleaseBinaries }}
+{{- if .ImageName }}
+        image: {{ .ImageName }}
+{{- end }}
+{{- if .ImagePlatforms }}
+        platforms: {{ .ImagePlatforms }}
+{{- else if .ReleaseBinaries }}
         # Same platform cap as the release job: go-build's six-target
         # architectures matrix writes all of them to .platforms, and buildx
         # must not attempt the darwin/windows manifests under QEMU.
@@ -92,6 +104,9 @@ workflows:
     - architect/push-to-registries:
         context: architect
         name: push-to-registries-release
+{{- if .ImageName }}
+        image: {{ .ImageName }}
+{{- end }}
 {{- if .ImagePrivateOnly }}
         # Private repo: ship the image to the private registry only. No public
         # gsoci copy and no Aliyun mirror, so split-china-push and the paired
@@ -101,7 +116,9 @@ workflows:
 {{- else }}
         split-china-push: true
 {{- end }}
-{{- if .ReleaseBinaries }}
+{{- if .ImagePlatforms }}
+        platforms: {{ .ImagePlatforms }}
+{{- else if .ReleaseBinaries }}
         # Cap buildx to the two linux platforms. go-build's architectures
         # matrix above writes all six targets to .platforms; without this cap
         # the orb auto-derives --platform from that file and buildx tries to
@@ -133,6 +150,9 @@ workflows:
     - architect/sync-china-registry:
         context: architect
         name: sync-china-registry
+{{- if .ImageName }}
+        image: {{ .ImageName }}
+{{- end }}
         requires:
         - push-to-registries-release
         filters:

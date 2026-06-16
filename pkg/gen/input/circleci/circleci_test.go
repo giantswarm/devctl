@@ -447,6 +447,68 @@ func Test_ImagePrivateOnly(t *testing.T) {
 	}
 }
 
+// Test_ImageName verifies the image-name override is applied to every image
+// job (the branch validation, the release push, and the sync-china-registry
+// mirror) so a repo whose published image differs from its repo name (e.g.
+// kserve -> giantswarm/kserve-controller) is generated correctly, and that
+// omitting it leaves the orb's giantswarm/<repo> default in place (no image
+// param emitted).
+func Test_ImageName(t *testing.T) {
+	got := render(t, Config{
+		RepoName:      "kserve",
+		Language:      gen.Language(""),
+		Flavours:      gen.FlavourSlice{},
+		HasDockerfile: true,
+		ImageName:     "giantswarm/kserve-controller",
+	})
+
+	// Every image job (build-image, push-to-registries-release,
+	// sync-china-registry) must carry the overridden image name.
+	if n := strings.Count(got, "image: giantswarm/kserve-controller"); n != 3 {
+		t.Errorf("expected image override on all 3 image jobs, found %d:\n%s", n, got)
+	}
+
+	def := render(t, Config{
+		RepoName:      "kserve",
+		Language:      gen.Language(""),
+		Flavours:      gen.FlavourSlice{},
+		HasDockerfile: true,
+	})
+	if contains(def, "image:") {
+		t.Errorf("no image param should be emitted without ImageName (orb default applies):\n%s", def)
+	}
+}
+
+// Test_ImagePlatforms verifies the platform override caps the buildx platform
+// list on both the branch validation (build-image) and the release push for a
+// single-architecture image (e.g. vllm -> linux/arm64), and that omitting it
+// emits no platforms param (the orb falls back to its default).
+func Test_ImagePlatforms(t *testing.T) {
+	got := render(t, Config{
+		RepoName:       "vllm",
+		Language:       gen.Language(""),
+		Flavours:       gen.FlavourSlice{},
+		HasDockerfile:  true,
+		ImagePlatforms: "linux/arm64",
+	})
+
+	// build-image (branch) and push-to-registries-release (tag) must both
+	// carry the single-arch cap.
+	if n := strings.Count(got, "platforms: linux/arm64"); n != 2 {
+		t.Errorf("expected platforms cap on build-image and release push, found %d:\n%s", n, got)
+	}
+
+	def := render(t, Config{
+		RepoName:      "vllm",
+		Language:      gen.Language(""),
+		Flavours:      gen.FlavourSlice{},
+		HasDockerfile: true,
+	})
+	if contains(def, "platforms:") {
+		t.Errorf("no platforms param should be emitted without ImagePlatforms (orb default applies):\n%s", def)
+	}
+}
+
 func Test_OrbVersion(t *testing.T) {
 	got := render(t, Config{
 		RepoName:      repoMCPKubernetes,
