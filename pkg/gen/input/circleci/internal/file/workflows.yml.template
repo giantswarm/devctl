@@ -92,7 +92,15 @@ workflows:
     - architect/push-to-registries:
         context: architect
         name: push-to-registries-release
+{{- if .ImagePrivateOnly }}
+        # Private repo: ship the image to the private registry only. No public
+        # gsoci copy and no Aliyun mirror, so split-china-push and the paired
+        # sync-china-registry job are both omitted.
+        registries-data: |-
+          private gsociprivate.azurecr.io ACR_GSOCIPRIVATE_USERNAME ACR_GSOCIPRIVATE_PASSWORD true
+{{- else }}
         split-china-push: true
+{{- end }}
 {{- if .ReleaseBinaries }}
         # Cap buildx to the two linux platforms. go-build's architectures
         # matrix above writes all six targets to .platforms; without this cap
@@ -100,15 +108,24 @@ workflows:
         # build the darwin/windows manifests under QEMU and hangs.
         platforms: "linux/amd64,linux/arm64"
 {{- end }}
-{{- if eq .Language "go" }}
+{{- if or (eq .Language "go") .ImagePreBuildJob }}
         requires:
+{{- if eq .Language "go" }}
         - go-build
+{{- end }}
+{{- if .ImagePreBuildJob }}
+        # Repo-owned pre-build job (defined in .circleci/custom.yml). The
+        # generated job cannot be injected with this dependency via the
+        # append-only custom.yml merge, so the generator carries it.
+        - {{ .ImagePreBuildJob }}
+{{- end }}
 {{- end }}
         filters:
           tags:
             only: /^v.*/
           branches:
             ignore: /.*/
+{{- if not .ImagePrivateOnly }}
 
     # Mirror gsoci -> Aliyun via the in-China giantswarm/galaxy-runner. Runs
     # in parallel with the chart catalog push; Aliyun mirror failures do NOT
@@ -124,6 +141,7 @@ workflows:
           branches:
             ignore: /.*/
 {{- end }}
+{{- end }}
 {{- if .HasApp }}
 
     # build-chart: package + lint via app-build-suite and persist the archive
@@ -133,8 +151,8 @@ workflows:
         executor: app-build-suite
         context: architect
         name: build-chart
-        app_catalog: giantswarm-catalog
-        app_catalog_test: giantswarm-test-catalog
+        app_catalog: {{ .AppCatalog }}
+        app_catalog_test: {{ .AppCatalogTest }}
         chart: {{ .RepoName }}
         push_to_appcatalog: false
         push_to_oci_registry: false
@@ -188,8 +206,8 @@ workflows:
         executor: app-build-suite
         context: architect
         name: push-chart
-        app_catalog: giantswarm-catalog
-        app_catalog_test: giantswarm-test-catalog
+        app_catalog: {{ .AppCatalog }}
+        app_catalog_test: {{ .AppCatalogTest }}
         chart: {{ .RepoName }}
         requires:
         - execute-chart-tests
@@ -209,8 +227,8 @@ workflows:
         executor: app-build-suite
         context: architect
         name: push-chart-release
-        app_catalog: giantswarm-catalog
-        app_catalog_test: giantswarm-test-catalog
+        app_catalog: {{ .AppCatalog }}
+        app_catalog_test: {{ .AppCatalogTest }}
         chart: {{ .RepoName }}
         requires:
         - execute-chart-tests-release

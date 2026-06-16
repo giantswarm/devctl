@@ -11,6 +11,68 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - `gen workflows` / `gen precommit`: add the `merge_group` trigger to the generated GitHub Actions workflows so they also run for GitHub merge queues.
 
+## [8.17.1] - 2026-06-16
+
+### Fixed
+
+- `gen workflows`: the generated `cliff.toml` now pins `[bump].initial_tag = "v0.1.0"`, so the first
+  auto-release in a repo with no tags yet is tagged `v0.1.0` instead of git-cliff's default `0.1.0`.
+  This keeps the inception release on the leading-`v` scheme the rest of the giantswarm stack expects
+  (architect's `/^v.*/` tag filter, the workflow's `--match='v*.*.*'` describe, gitsemver). Once any
+  `v*.*.*` tag exists, git-cliff already carries the prefix forward, so only the first release was
+  affected.
+
+## [8.17.0] - 2026-06-16
+
+### Added
+
+- `gen circleci`: new `--image-pre-build-job` and `--image-private-only` flags for repos whose
+  image build does not fit the default shape. `--image-pre-build-job` adds a `requires` entry on the
+  generated `push-to-registries-release` job for a repo-owned job defined in `.circleci/custom.yml`
+  (e.g. a workspace-handoff pre-step that persists a file the Docker build context overlays) — a
+  dependency the append-only `custom.yml` merge cannot inject into a generated job.
+  `--image-private-only` ships the image to the private registry only (`gsociprivate`) via an
+  explicit `registries-data`, replacing `split-china-push` and omitting the `sync-china-registry`
+  job, so a private repo's image does not land in the public catalog. Both default off, so repos
+  that do not set them get the identical config as before.
+
+## [8.16.0] - 2026-06-16
+
+### Added
+
+- `gen circleci`: new `--app-catalog`/`--app-catalog-test` flags override the catalog the chart
+  pipeline publishes to (the `push-to-app-catalog` `app_catalog`/`app_catalog_test` params). Empty
+  defaults to `giantswarm-catalog`/`giantswarm-test-catalog`, so repos that do not set them get the
+  identical config as before. Repos that ship to a different catalog (e.g. the internal
+  `giantswarm-operations-platform`) set them so generation does not silently migrate their chart to
+  the public catalog.
+- `gen renovate`: support for an optional repo-owned `renovate-custom.json5`. When the file exists
+  in the repo root at generation time, the generated `renovate.json5` references it as the last
+  `extends` entry (`github>giantswarm/<repo>:renovate-custom.json5`), so repo-specific rules win
+  over the shared presets. devctl never generates or touches the custom file, and because Renovate
+  resolves `extends` from the default branch on every run, edits to it are live on merge without
+  regeneration. A new optional `--repo-name` flag (defaulting to the working directory's basename)
+  supplies the repo name for the preset reference. The generated file now also carries a DO-NOT-EDIT
+  header pointing repo-specific rules at `renovate-custom.json5`.
+
+## [8.15.2] - 2026-06-15
+
+### Changed
+
+- Releases: Disable minor version detection for Cluster Autoscaler.
+
+## [8.15.1] - 2026-06-15
+
+### Changed
+
+- `gen renovate`: the generated `renovate.json5` now uses idiomatic JSON5 formatting -- unquoted keys, single-quoted values, and one array item per line with trailing commas -- matching the style of hand-maintained configs and the `renovate-presets`. This is a cosmetic change with no effect on Renovate's behavior; repos will see a one-time formatting diff on the next align-files sync.
+
+## [8.15.0] - 2026-06-15
+
+### Removed
+
+- Releases: Remove description placeholder.
+
 ## [8.14.1] - 2026-06-11
 
 ### Changed
@@ -21,6 +83,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `gen circleci`: new `--app-catalog`/`--app-catalog-test` flags override the catalog the chart
+  pipeline publishes to (the `push-to-app-catalog` `app_catalog`/`app_catalog_test` params). Empty
+  defaults to `giantswarm-catalog`/`giantswarm-test-catalog`, so repos that do not set them get the
+  identical config as before. Repos that ship to a different catalog (e.g. the internal
+  `giantswarm-operations-platform`) set them so generation does not silently migrate their chart to
+  the public catalog.
 - `gen renovate`: support for an optional repo-owned `renovate-custom.json5`. When the file exists
   in the repo root at generation time, the generated `renovate.json5` references it as the last
   `extends` entry (`github>giantswarm/<repo>:renovate-custom.json5`), so repo-specific rules win
@@ -2082,7 +2150,13 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.14.1...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.17.1...HEAD
+[8.17.1]: https://github.com/giantswarm/devctl/compare/v8.17.0...v8.17.1
+[8.17.0]: https://github.com/giantswarm/devctl/compare/v8.16.0...v8.17.0
+[8.16.0]: https://github.com/giantswarm/devctl/compare/v8.15.2...v8.16.0
+[8.15.2]: https://github.com/giantswarm/devctl/compare/v8.15.1...v8.15.2
+[8.15.1]: https://github.com/giantswarm/devctl/compare/v8.15.0...v8.15.1
+[8.15.0]: https://github.com/giantswarm/devctl/compare/v8.14.1...v8.15.0
 [8.14.1]: https://github.com/giantswarm/devctl/compare/v8.14.0...v8.14.1
 [8.14.0]: https://github.com/giantswarm/devctl/compare/v8.13.0...v8.14.0
 [8.13.0]: https://github.com/giantswarm/devctl/compare/v8.12.0...v8.13.0

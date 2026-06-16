@@ -19,11 +19,36 @@ type Params struct {
 	// Helm chart). It selects the chart pipeline (push-to-app-catalog with the
 	// app-build-suite executor and run-tests-with-ats).
 	HasApp bool
+	// AppCatalog is the catalog the chart pipeline publishes to (the
+	// push-to-app-catalog `app_catalog` param). Defaults to "giantswarm-catalog".
+	// Repos that ship to a different catalog (e.g. the internal
+	// "giantswarm-operations-platform") set it so generation does not silently
+	// migrate their chart to the public catalog.
+	AppCatalog string
+	// AppCatalogTest is the test catalog the chart pipeline publishes to (the
+	// push-to-app-catalog `app_catalog_test` param). Defaults to
+	// "giantswarm-test-catalog". Kept paired with AppCatalog.
+	AppCatalogTest string
 	// BranchPublish is true when the repo opts into publishing a dev image and
 	// chart on branch builds. By default branches build + test only; when set,
 	// the branch path additionally pushes an amd64 dev image and the dev chart
 	// (coupled).
 	BranchPublish bool
+	// ImagePreBuildJob names a repo-owned job (defined in .circleci/custom.yml)
+	// that the release image build must wait on. The generated
+	// push-to-registries-release job gains a `requires` entry for it, which the
+	// append-only custom.yml merge cannot inject into a generated job. Used for
+	// workspace-handoff pre-steps (e.g. a job that persists a generated file the
+	// Docker build context overlays via attach_workspace). Empty for the common
+	// case.
+	ImagePreBuildJob string
+	// ImagePrivateOnly is true when the repo's image must ship only to the
+	// private registry (gsociprivate). It replaces the default split-china-push
+	// (which also publishes the public gsoci copy and mirrors to Aliyun) with an
+	// explicit private-only registries-data, and omits the sync-china-registry
+	// job. Set it for private repos whose image must not land in the public
+	// catalog.
+	ImagePrivateOnly bool
 	// ReleaseBinaries is true when the repo distributes cross-platform Go
 	// binaries on its GitHub Release (derived from the "cli" flavour on a Go
 	// repo). It adds the six-platform architectures matrix to go-build and an

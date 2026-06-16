@@ -349,6 +349,104 @@ func Test_GoldenCLIWorkflows(t *testing.T) {
 	}
 }
 
+// Test_AppCatalogOverride verifies the chart pipeline publishes to the
+// overridden catalog when set, and falls back to the public defaults when not.
+// Repos on the internal giantswarm-operations-platform catalog rely on this so
+// generation does not silently migrate their chart to the public catalog.
+func Test_AppCatalogOverride(t *testing.T) {
+	got := render(t, Config{
+		RepoName:       repoSitesearch,
+		Flavours:       gen.FlavourSlice{gen.FlavourApp},
+		AppCatalog:     "giantswarm-operations-platform-catalog",
+		AppCatalogTest: "giantswarm-operations-platform-test-catalog",
+	})
+
+	if !contains(got, "app_catalog: giantswarm-operations-platform-catalog") {
+		t.Errorf("override not applied; want app_catalog override in:\n%s", got)
+	}
+	if !contains(got, "app_catalog_test: giantswarm-operations-platform-test-catalog") {
+		t.Errorf("override not applied; want app_catalog_test override in:\n%s", got)
+	}
+	if contains(got, "app_catalog: giantswarm-catalog") {
+		t.Errorf("default catalog leaked through despite override:\n%s", got)
+	}
+
+	def := render(t, Config{
+		RepoName: repoSitesearch,
+		Flavours: gen.FlavourSlice{gen.FlavourApp},
+	})
+	if !contains(def, "app_catalog: "+DefaultAppCatalog) {
+		t.Errorf("empty override should default to %q:\n%s", DefaultAppCatalog, def)
+	}
+	if !contains(def, "app_catalog_test: "+DefaultAppCatalogTest) {
+		t.Errorf("empty override should default to %q:\n%s", DefaultAppCatalogTest, def)
+	}
+}
+
+// Test_ImagePreBuildJob verifies the release image build gains a requires
+// entry for the named repo-owned pre-build job (a workspace-handoff pre-step
+// the append-only custom.yml merge cannot inject into a generated job), and
+// that omitting it leaves the release job's requires untouched.
+func Test_ImagePreBuildJob(t *testing.T) {
+	got := render(t, Config{
+		RepoName:         "agentic-platform-ui",
+		Flavours:         gen.FlavourSlice{gen.FlavourApp},
+		HasDockerfile:    true,
+		ImagePreBuildJob: "fetch-release-notes",
+	})
+
+	// The release image job must require the custom pre-build job.
+	if !contains(got, "- fetch-release-notes") {
+		t.Errorf("release image job missing requires on pre-build job:\n%s", got)
+	}
+
+	def := render(t, Config{
+		RepoName:      "agentic-platform-ui",
+		Flavours:      gen.FlavourSlice{gen.FlavourApp},
+		HasDockerfile: true,
+	})
+	if contains(def, "- fetch-release-notes") {
+		t.Errorf("pre-build requires leaked without ImagePreBuildJob:\n%s", def)
+	}
+}
+
+// Test_ImagePrivateOnly verifies a private-only image build pushes to the
+// private registry via registries-data and omits split-china-push and the
+// sync-china-registry job, while the default keeps the public split-china shape.
+func Test_ImagePrivateOnly(t *testing.T) {
+	got := render(t, Config{
+		RepoName:         "agentic-platform-ui",
+		Flavours:         gen.FlavourSlice{gen.FlavourApp},
+		HasDockerfile:    true,
+		ImagePrivateOnly: true,
+	})
+
+	if !contains(got, "registries-data: |-") {
+		t.Errorf("private-only image missing registries-data:\n%s", got)
+	}
+	if !contains(got, "private gsociprivate.azurecr.io") {
+		t.Errorf("private-only image missing private registry target:\n%s", got)
+	}
+	if contains(got, "split-china-push: true") {
+		t.Errorf("private-only image should not use split-china-push:\n%s", got)
+	}
+	if contains(got, jobSyncChina) {
+		t.Errorf("private-only image should omit sync-china-registry:\n%s", got)
+	}
+
+	def := render(t, Config{
+		RepoName:      "agentic-platform-ui",
+		Flavours:      gen.FlavourSlice{gen.FlavourApp},
+		HasDockerfile: true,
+	})
+	if !contains(def, "split-china-push: true") {
+		t.Errorf("default image should use split-china-push:\n%s", def)
+	}
+	if !contains(def, jobSyncChina) {
+		t.Errorf("default image should include sync-china-registry:\n%s", def)
+	}
+}
+
 func Test_OrbVersion(t *testing.T) {
 	got := render(t, Config{
 		RepoName:      repoMCPKubernetes,
