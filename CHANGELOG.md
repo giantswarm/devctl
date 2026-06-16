@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [8.17.1] - 2026-06-16
+
 ### Fixed
 
 - `gen workflows`: the generated `cliff.toml` now pins `[bump].initial_tag = "v0.1.0"`, so the first
@@ -2144,7 +2146,8 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.17.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.17.1...HEAD
+[8.17.1]: https://github.com/giantswarm/devctl/compare/v8.17.0...v8.17.1
 [8.17.0]: https://github.com/giantswarm/devctl/compare/v8.16.0...v8.17.0
 [8.16.0]: https://github.com/giantswarm/devctl/compare/v8.15.2...v8.16.0
 [8.15.2]: https://github.com/giantswarm/devctl/compare/v8.15.1...v8.15.2
