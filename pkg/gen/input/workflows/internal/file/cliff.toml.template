@@ -13,6 +13,13 @@
 features_always_bump_minor = true
 # `feat!:`/`BREAKING CHANGE` always bumps major.
 breaking_always_bump_major = true
+# First release in a repo with no tags yet. git-cliff defaults this to
+# "0.1.0" (no prefix); we pin it to "v0.1.0" because the whole giantswarm
+# stack (architect's /^v.*/ tag filter, the auto-release workflow's
+# `--match='v*.*.*'` describe, gitsemver) expects the leading `v`. Once any
+# v*.*.* tag exists, git-cliff carries that prefix forward on every bump, so
+# this only governs the inception release.
+initial_tag = "v0.1.0"
 
 [git]
 conventional_commits = true

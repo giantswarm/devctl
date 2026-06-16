@@ -7,6 +7,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- `gen workflows`: the generated `cliff.toml` now pins `[bump].initial_tag = "v0.1.0"`, so the first
+  auto-release in a repo with no tags yet is tagged `v0.1.0` instead of git-cliff's default `0.1.0`.
+  This keeps the inception release on the leading-`v` scheme the rest of the giantswarm stack expects
+  (architect's `/^v.*/` tag filter, the workflow's `--match='v*.*.*'` describe, gitsemver). Once any
+  `v*.*.*` tag exists, git-cliff already carries the prefix forward, so only the first release was
+  affected.
+
 ## [8.17.0] - 2026-06-16
 
 ### Added
