@@ -49,6 +49,22 @@ type Params struct {
 	// job. Set it for private repos whose image must not land in the public
 	// catalog.
 	ImagePrivateOnly bool
+	// ImageName overrides the `giantswarm/<repo>` default the architect orb
+	// derives for the published image (the push-to-registries / sync-china-registry
+	// `image` param). Set it for repos whose image name differs from the repo
+	// name (e.g. kserve publishes `giantswarm/kserve-controller`). The
+	// append-only custom.yml merge cannot rename a generated job's image, so the
+	// generator carries it. Empty keeps the orb default.
+	ImageName string
+	// ImagePlatforms overrides the buildx platform list for the image build
+	// (the push-to-registries `platforms` param on the build-image and
+	// push-to-registries-release jobs). Empty lets the orb fall back to its
+	// default (linux/amd64,linux/arm64 when no go-build .platforms file). Set it
+	// for repos whose image targets a single architecture (e.g. vllm ships an
+	// arm64-only image for DGX Spark; an amd64 build has no prebuilt wheels and
+	// fails). The append-only custom.yml merge cannot cap a generated job's
+	// platforms, so the generator carries it.
+	ImagePlatforms string
 	// ReleaseBinaries is true when the repo distributes cross-platform Go
 	// binaries on its GitHub Release (derived from the "cli" flavour on a Go
 	// repo). It adds the six-platform architectures matrix to go-build and an
