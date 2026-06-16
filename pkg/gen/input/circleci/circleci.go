@@ -65,6 +65,15 @@ type Config struct {
 	// set, the branch path additionally pushes an amd64 dev image and the
 	// dev chart, coupled (both or neither).
 	BranchPublish bool
+	// ImagePreBuildJob names a repo-owned custom.yml job the release image
+	// build must wait on (adds a `requires` entry to push-to-registries-release).
+	// Used for workspace-handoff pre-steps the append-only custom.yml merge
+	// cannot inject into a generated job. Empty for the common case.
+	ImagePreBuildJob string
+	// ImagePrivateOnly ships the image to the private registry only
+	// (gsociprivate), replacing split-china-push and omitting sync-china-registry.
+	// Set it for private repos whose image must not land in the public catalog.
+	ImagePrivateOnly bool
 }
 
 // shipsBinaries reports whether the repo distributes cross-platform Go binaries
@@ -105,6 +114,8 @@ func New(config Config) (*CircleCI, error) {
 			AppCatalog:             appCatalog,
 			AppCatalogTest:         appCatalogTest,
 			BranchPublish:          config.BranchPublish,
+			ImagePreBuildJob:       config.ImagePreBuildJob,
+			ImagePrivateOnly:       config.ImagePrivateOnly,
 			ReleaseBinaries:        config.shipsBinaries(),
 			OrbVersion:             OrbVersion,
 			ContinuationOrbVersion: ContinuationOrbVersion,

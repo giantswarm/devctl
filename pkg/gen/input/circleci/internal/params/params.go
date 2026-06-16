@@ -34,6 +34,21 @@ type Params struct {
 	// the branch path additionally pushes an amd64 dev image and the dev chart
 	// (coupled).
 	BranchPublish bool
+	// ImagePreBuildJob names a repo-owned job (defined in .circleci/custom.yml)
+	// that the release image build must wait on. The generated
+	// push-to-registries-release job gains a `requires` entry for it, which the
+	// append-only custom.yml merge cannot inject into a generated job. Used for
+	// workspace-handoff pre-steps (e.g. a job that persists a generated file the
+	// Docker build context overlays via attach_workspace). Empty for the common
+	// case.
+	ImagePreBuildJob string
+	// ImagePrivateOnly is true when the repo's image must ship only to the
+	// private registry (gsociprivate). It replaces the default split-china-push
+	// (which also publishes the public gsoci copy and mirrors to Aliyun) with an
+	// explicit private-only registries-data, and omits the sync-china-registry
+	// job. Set it for private repos whose image must not land in the public
+	// catalog.
+	ImagePrivateOnly bool
 	// ReleaseBinaries is true when the repo distributes cross-platform Go
 	// binaries on its GitHub Release (derived from the "cli" flavour on a Go
 	// repo). It adds the six-platform architectures matrix to go-build and an
