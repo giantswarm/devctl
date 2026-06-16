@@ -60,6 +60,16 @@ type Config struct {
 	// AppCatalogTest overrides the test catalog. Empty defaults to
 	// "giantswarm-test-catalog". Kept paired with AppCatalog.
 	AppCatalogTest string
+	// ChartName overrides the chart name (the push-to-app-catalog `chart`
+	// param and the helm/<chart> directory). Empty defaults to RepoName. Set it
+	// for repos whose chart directory does not match the repo name (e.g.
+	// docs-proxy ships helm/docs-proxy-app).
+	ChartName string
+	// ForcePublic pushes the image and chart as public artifacts even though
+	// the repo is private (architect force-public: true). Set it for private
+	// repos that publish public artifacts (e.g. web-assets). Mutually exclusive
+	// with ImagePrivateOnly.
+	ForcePublic bool
 	// BranchPublish opts the repo into publishing a dev image and chart on
 	// branch builds. By default branches build + test only (no push). When
 	// set, the branch path additionally pushes an amd64 dev image and the
@@ -105,6 +115,10 @@ func New(config Config) (*CircleCI, error) {
 		return nil, microerror.Maskf(invalidConfigError, "no jobs would be generated: set --language=go, add a Dockerfile, or use the app flavour")
 	}
 
+	if config.ForcePublic && config.ImagePrivateOnly {
+		return nil, microerror.Maskf(invalidConfigError, "ForcePublic and ImagePrivateOnly are mutually exclusive")
+	}
+
 	appCatalog := config.AppCatalog
 	if appCatalog == "" {
 		appCatalog = DefaultAppCatalog
@@ -114,12 +128,19 @@ func New(config Config) (*CircleCI, error) {
 		appCatalogTest = DefaultAppCatalogTest
 	}
 
+	chartName := config.ChartName
+	if chartName == "" {
+		chartName = config.RepoName
+	}
+
 	c := &CircleCI{
 		params: params.Params{
 			RepoName:               config.RepoName,
 			Language:               config.Language.String(),
 			HasDockerfile:          config.HasDockerfile,
 			HasApp:                 hasApp,
+			ChartName:              chartName,
+			ForcePublic:            config.ForcePublic,
 			AppCatalog:             appCatalog,
 			AppCatalogTest:         appCatalogTest,
 			BranchPublish:          config.BranchPublish,

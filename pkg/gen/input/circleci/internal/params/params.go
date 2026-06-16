@@ -19,6 +19,18 @@ type Params struct {
 	// Helm chart). It selects the chart pipeline (push-to-app-catalog with the
 	// app-build-suite executor and run-tests-with-ats).
 	HasApp bool
+	// ChartName is the chart name used for the push-to-app-catalog `chart`
+	// param and the helm/<chart> directory. Defaults to RepoName. Set it for
+	// repos whose chart directory does not match the repo name (e.g.
+	// docs-proxy ships helm/docs-proxy-app). The append-only custom.yml merge
+	// cannot rename a generated job's chart, so the generator carries it.
+	ChartName string
+	// ForcePublic pushes the image and chart as public artifacts even though
+	// the repo is private (architect `force-public: true` on push-to-registries
+	// and push-to-app-catalog). Set it for private repos that publish public
+	// artifacts (e.g. web-assets); architect otherwise derives private from the
+	// repo visibility. Mutually exclusive with ImagePrivateOnly.
+	ForcePublic bool
 	// AppCatalog is the catalog the chart pipeline publishes to (the
 	// push-to-app-catalog `app_catalog` param). Defaults to "giantswarm-catalog".
 	// Repos that ship to a different catalog (e.g. the internal

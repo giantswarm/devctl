@@ -9,6 +9,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `gen circleci`: new `--chart-name` and `--force-public` flags for repos whose chart/registry shape
+  does not fit the default. `--chart-name` overrides the chart name on every chart job (the
+  `push-to-app-catalog` `chart` param and the `helm/<chart>` directory) for repos whose chart
+  directory does not match the repo name (e.g. `docs-proxy` ships `helm/docs-proxy-app`).
+  `--force-public` adds architect's `force-public: true` to the image (`push-to-registries`) and chart
+  (`push-to-app-catalog`) release pushes for private repos that publish public artifacts (e.g.
+  `web-assets`), which architect otherwise derives as private from the repo visibility; it is mutually
+  exclusive with `--image-private-only`. The append-only `.circleci/custom.yml` merge cannot rename a
+  generated job's chart or add `force-public` to it, so the generator carries both. Both default off,
+  so repos that do not set them get the identical config as before.
 - `gen circleci`: new `--image-name` and `--image-platforms` flags for repos whose image pipeline
   does not fit the default shape. `--image-name` overrides the `giantswarm/<repo>` default image name
   on the generated image jobs (`push-to-registries` branch + release and `sync-china-registry`) for

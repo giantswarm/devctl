@@ -14,6 +14,8 @@ const (
 	flagAppCatalog       = "app-catalog"
 	flagAppCatalogTest   = "app-catalog-test"
 	flagBranchPublish    = "branch-publish"
+	flagChartName        = "chart-name"
+	flagForcePublic      = "force-public"
 	flagImagePreBuildJob = "image-pre-build-job"
 	flagImagePrivateOnly = "image-private-only"
 	flagImageName        = "image-name"
@@ -27,6 +29,8 @@ type flag struct {
 	AppCatalog       string
 	AppCatalogTest   string
 	BranchPublish    bool
+	ChartName        string
+	ForcePublic      bool
 	ImagePreBuildJob string
 	ImagePrivateOnly bool
 	ImageName        string
@@ -40,6 +44,8 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.AppCatalog, flagAppCatalog, "", `Catalog the chart pipeline publishes to (push-to-app-catalog app_catalog). Empty defaults to "giantswarm-catalog"; set it for repos that ship to a different catalog (e.g. the internal "giantswarm-operations-platform") so generation does not migrate the chart to the public catalog.`)
 	cmd.Flags().StringVar(&f.AppCatalogTest, flagAppCatalogTest, "", `Test catalog the chart pipeline publishes to (push-to-app-catalog app_catalog_test). Empty defaults to "giantswarm-test-catalog". Kept paired with --app-catalog.`)
 	cmd.Flags().BoolVar(&f.BranchPublish, flagBranchPublish, false, "Publish a dev image and chart on branch builds. By default branches build + test only (no push); when set, the branch path additionally pushes an amd64 dev image and the dev chart (coupled).")
+	cmd.Flags().StringVar(&f.ChartName, flagChartName, "", "Override the chart name (the push-to-app-catalog `chart` param and the helm/<chart> directory). Empty defaults to the repo name. Set it for repos whose chart directory does not match the repo name (e.g. docs-proxy -> docs-proxy-app). The append-only custom.yml merge cannot rename a generated job's chart.")
+	cmd.Flags().BoolVar(&f.ForcePublic, flagForcePublic, false, "Push the image and chart as public artifacts even though the repo is private (architect `force-public: true`). Set it for private repos that publish public artifacts (e.g. web-assets). Mutually exclusive with --image-private-only. The append-only custom.yml merge cannot add this to a generated job.")
 	cmd.Flags().StringVar(&f.ImagePreBuildJob, flagImagePreBuildJob, "", "Name of a repo-owned job (defined in .circleci/custom.yml) the release image build must wait on. Adds a `requires` entry to push-to-registries-release, which the append-only custom.yml merge cannot inject into a generated job. Used for workspace-handoff pre-steps. Empty for the common case.")
 	cmd.Flags().BoolVar(&f.ImagePrivateOnly, flagImagePrivateOnly, false, "Ship the image to the private registry only (gsociprivate), replacing split-china-push and omitting the sync-china-registry job. Set it for private repos whose image must not land in the public catalog.")
 	cmd.Flags().StringVar(&f.ImageName, flagImageName, "", "Override the `giantswarm/<repo>` default image name on the image jobs (push-to-registries / sync-china-registry `image` param). Set it for repos whose published image differs from the repo name (e.g. kserve -> giantswarm/kserve-controller). The append-only custom.yml merge cannot rename a generated job's image. Empty keeps the orb default.")
@@ -52,6 +58,9 @@ func (f *flag) Init(cmd *cobra.Command) {
 func (f *flag) Validate() error {
 	if f.RepoName == "" {
 		return microerror.Maskf(invalidFlagError, "--%s must not be empty", flagRepoName)
+	}
+	if f.ForcePublic && f.ImagePrivateOnly {
+		return microerror.Maskf(invalidFlagError, "--%s and --%s are mutually exclusive", flagForcePublic, flagImagePrivateOnly)
 	}
 
 	return nil
