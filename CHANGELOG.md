@@ -9,6 +9,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [8.16.0] - 2026-06-16
 
+### Added
+
+- `gen circleci`: new `--app-catalog`/`--app-catalog-test` flags override the catalog the chart
+  pipeline publishes to (the `push-to-app-catalog` `app_catalog`/`app_catalog_test` params). Empty
+  defaults to `giantswarm-catalog`/`giantswarm-test-catalog`, so repos that do not set them get the
+  identical config as before. Repos that ship to a different catalog (e.g. the internal
+  `giantswarm-operations-platform`) set them so generation does not silently migrate their chart to
+  the public catalog.
+- `gen renovate`: support for an optional repo-owned `renovate-custom.json5`. When the file exists
+  in the repo root at generation time, the generated `renovate.json5` references it as the last
+  `extends` entry (`github>giantswarm/<repo>:renovate-custom.json5`), so repo-specific rules win
+  over the shared presets. devctl never generates or touches the custom file, and because Renovate
+  resolves `extends` from the default branch on every run, edits to it are live on merge without
+  regeneration. A new optional `--repo-name` flag (defaulting to the working directory's basename)
+  supplies the repo name for the preset reference. The generated file now also carries a DO-NOT-EDIT
+  header pointing repo-specific rules at `renovate-custom.json5`.
+
 ## [8.15.2] - 2026-06-15
 
 ### Changed
