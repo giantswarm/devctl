@@ -383,6 +383,70 @@ func Test_AppCatalogOverride(t *testing.T) {
 	}
 }
 
+// Test_ImagePreBuildJob verifies the release image build gains a requires
+// entry for the named repo-owned pre-build job (a workspace-handoff pre-step
+// the append-only custom.yml merge cannot inject into a generated job), and
+// that omitting it leaves the release job's requires untouched.
+func Test_ImagePreBuildJob(t *testing.T) {
+	got := render(t, Config{
+		RepoName:         "agentic-platform-ui",
+		Flavours:         gen.FlavourSlice{gen.FlavourApp},
+		HasDockerfile:    true,
+		ImagePreBuildJob: "fetch-release-notes",
+	})
+
+	// The release image job must require the custom pre-build job.
+	if !contains(got, "- fetch-release-notes") {
+		t.Errorf("release image job missing requires on pre-build job:\n%s", got)
+	}
+
+	def := render(t, Config{
+		RepoName:      "agentic-platform-ui",
+		Flavours:      gen.FlavourSlice{gen.FlavourApp},
+		HasDockerfile: true,
+	})
+	if contains(def, "- fetch-release-notes") {
+		t.Errorf("pre-build requires leaked without ImagePreBuildJob:\n%s", def)
+	}
+}
+
+// Test_ImagePrivateOnly verifies a private-only image build pushes to the
+// private registry via registries-data and omits split-china-push and the
+// sync-china-registry job, while the default keeps the public split-china shape.
+func Test_ImagePrivateOnly(t *testing.T) {
+	got := render(t, Config{
+		RepoName:         "agentic-platform-ui",
+		Flavours:         gen.FlavourSlice{gen.FlavourApp},
+		HasDockerfile:    true,
+		ImagePrivateOnly: true,
+	})
+
+	if !contains(got, "registries-data: |-") {
+		t.Errorf("private-only image missing registries-data:\n%s", got)
+	}
+	if !contains(got, "private gsociprivate.azurecr.io") {
+		t.Errorf("private-only image missing private registry target:\n%s", got)
+	}
+	if contains(got, "split-china-push: true") {
+		t.Errorf("private-only image should not use split-china-push:\n%s", got)
+	}
+	if contains(got, jobSyncChina) {
+		t.Errorf("private-only image should omit sync-china-registry:\n%s", got)
+	}
+
+	def := render(t, Config{
+		RepoName:      "agentic-platform-ui",
+		Flavours:      gen.FlavourSlice{gen.FlavourApp},
+		HasDockerfile: true,
+	})
+	if !contains(def, "split-china-push: true") {
+		t.Errorf("default image should use split-china-push:\n%s", def)
+	}
+	if !contains(def, jobSyncChina) {
+		t.Errorf("default image should include sync-china-registry:\n%s", def)
+	}
+}
+
 func Test_OrbVersion(t *testing.T) {
 	got := render(t, Config{
 		RepoName:      repoMCPKubernetes,

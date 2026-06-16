@@ -7,6 +7,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `gen circleci`: new `--image-pre-build-job` and `--image-private-only` flags for repos whose
+  image build does not fit the default shape. `--image-pre-build-job` adds a `requires` entry on the
+  generated `push-to-registries-release` job for a repo-owned job defined in `.circleci/custom.yml`
+  (e.g. a workspace-handoff pre-step that persists a file the Docker build context overlays) — a
+  dependency the append-only `custom.yml` merge cannot inject into a generated job.
+  `--image-private-only` ships the image to the private registry only (`gsociprivate`) via an
+  explicit `registries-data`, replacing `split-china-push` and omitting the `sync-china-registry`
+  job, so a private repo's image does not land in the public catalog. Both default off, so repos
+  that do not set them get the identical config as before.
+
 ## [8.16.0] - 2026-06-16
 
 ### Added
