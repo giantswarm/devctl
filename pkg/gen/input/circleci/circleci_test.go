@@ -509,6 +509,83 @@ func Test_ImagePlatforms(t *testing.T) {
 	}
 }
 
+// Test_ChartName verifies the chart-name override is applied to every chart
+// job (build-chart and the tag-only push-chart-release) for a repo whose chart
+// directory does not match the repo name (e.g. docs-proxy ships
+// helm/docs-proxy-app), and that omitting it falls back to the repo name.
+func Test_ChartName(t *testing.T) {
+	got := render(t, Config{
+		RepoName:      "docs-proxy",
+		Language:      gen.Language(""),
+		Flavours:      gen.FlavourSlice{gen.FlavourApp},
+		HasDockerfile: true,
+		ChartName:     "docs-proxy-app",
+	})
+
+	// build-chart and push-chart-release must both carry the chart name.
+	if n := strings.Count(got, "chart: docs-proxy-app"); n != 2 {
+		t.Errorf("expected chart-name override on build-chart and push-chart-release, found %d:\n%s", n, got)
+	}
+	if contains(got, "chart: docs-proxy\n") {
+		t.Errorf("repo name leaked through despite chart-name override:\n%s", got)
+	}
+
+	def := render(t, Config{
+		RepoName:      "docs-proxy",
+		Language:      gen.Language(""),
+		Flavours:      gen.FlavourSlice{gen.FlavourApp},
+		HasDockerfile: true,
+	})
+	if !contains(def, "chart: docs-proxy\n") {
+		t.Errorf("empty chart-name should default to the repo name:\n%s", def)
+	}
+}
+
+// Test_ForcePublic verifies that force-public: true lands on the release image
+// push and the release chart push for a private repo that publishes public
+// artifacts (e.g. web-assets), and that the default emits no force-public.
+func Test_ForcePublic(t *testing.T) {
+	got := render(t, Config{
+		RepoName:      "web-assets",
+		Language:      gen.Language(""),
+		Flavours:      gen.FlavourSlice{gen.FlavourApp},
+		HasDockerfile: true,
+		ForcePublic:   true,
+	})
+
+	// push-to-registries-release (image) and push-chart-release (chart) must
+	// both force the public push.
+	if n := strings.Count(got, "force-public: true"); n != 2 {
+		t.Errorf("expected force-public on the release image and chart pushes, found %d:\n%s", n, got)
+	}
+
+	def := render(t, Config{
+		RepoName:      "web-assets",
+		Language:      gen.Language(""),
+		Flavours:      gen.FlavourSlice{gen.FlavourApp},
+		HasDockerfile: true,
+	})
+	if contains(def, "force-public: true") {
+		t.Errorf("force-public leaked without ForcePublic:\n%s", def)
+	}
+}
+
+// Test_ForcePublicPrivateOnlyConflict verifies the two mutually-exclusive
+// registry-scope knobs are rejected when both are set (one forces public, the
+// other forces private).
+func Test_ForcePublicPrivateOnlyConflict(t *testing.T) {
+	_, err := New(Config{
+		RepoName:         "web-assets",
+		Flavours:         gen.FlavourSlice{gen.FlavourApp},
+		HasDockerfile:    true,
+		ForcePublic:      true,
+		ImagePrivateOnly: true,
+	})
+	if !IsInvalidConfig(err) {
+		t.Errorf("expected invalidConfigError for ForcePublic+ImagePrivateOnly, got %v", err)
+	}
+}
+
 func Test_OrbVersion(t *testing.T) {
 	got := render(t, Config{
 		RepoName:      repoMCPKubernetes,

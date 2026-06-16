@@ -51,6 +51,11 @@ workflows:
     - architect/push-to-registries:
         context: architect
         name: push-to-registries
+{{- if .ForcePublic }}
+        # Private repo that publishes a public image: architect otherwise
+        # derives private from the repo visibility, so force the public push.
+        force-public: true
+{{- end }}
 {{- if .ImageName }}
         image: {{ .ImageName }}
 {{- end }}
@@ -104,6 +109,11 @@ workflows:
     - architect/push-to-registries:
         context: architect
         name: push-to-registries-release
+{{- if .ForcePublic }}
+        # Private repo that publishes a public image: architect otherwise
+        # derives private from the repo visibility, so force the public push.
+        force-public: true
+{{- end }}
 {{- if .ImageName }}
         image: {{ .ImageName }}
 {{- end }}
@@ -173,7 +183,7 @@ workflows:
         name: build-chart
         app_catalog: {{ .AppCatalog }}
         app_catalog_test: {{ .AppCatalogTest }}
-        chart: {{ .RepoName }}
+        chart: {{ .ChartName }}
         push_to_appcatalog: false
         push_to_oci_registry: false
         persist_chart_archive: true
@@ -226,9 +236,13 @@ workflows:
         executor: app-build-suite
         context: architect
         name: push-chart
+{{- if .ForcePublic }}
+        # Private repo that publishes a public chart: force the public catalog push.
+        force-public: true
+{{- end }}
         app_catalog: {{ .AppCatalog }}
         app_catalog_test: {{ .AppCatalogTest }}
-        chart: {{ .RepoName }}
+        chart: {{ .ChartName }}
         requires:
         - execute-chart-tests
 {{- if .HasDockerfile }}
@@ -247,9 +261,13 @@ workflows:
         executor: app-build-suite
         context: architect
         name: push-chart-release
+{{- if .ForcePublic }}
+        # Private repo that publishes a public chart: force the public catalog push.
+        force-public: true
+{{- end }}
         app_catalog: {{ .AppCatalog }}
         app_catalog_test: {{ .AppCatalogTest }}
-        chart: {{ .RepoName }}
+        chart: {{ .ChartName }}
         requires:
         - execute-chart-tests-release
 {{- if .HasDockerfile }}

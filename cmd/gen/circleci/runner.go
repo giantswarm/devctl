@@ -54,6 +54,8 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 			HasDockerfile:    hasDockerfile,
 			AppCatalog:       r.flag.AppCatalog,
 			AppCatalogTest:   r.flag.AppCatalogTest,
+			ChartName:        r.flag.ChartName,
+			ForcePublic:      r.flag.ForcePublic,
 			BranchPublish:    r.flag.BranchPublish,
 			ImagePreBuildJob: r.flag.ImagePreBuildJob,
 			ImagePrivateOnly: r.flag.ImagePrivateOnly,
