@@ -5,7 +5,7 @@ var (
 	gitSHA      = "n/a"
 	name        = "devctl"
 	source      = "https://github.com/giantswarm/devctl"
-	version     = "8.16.0"
+	version     = "8.15.3-dev"
 )
 
 func Description() string {
