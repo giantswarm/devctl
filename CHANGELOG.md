@@ -7,8 +7,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
-## [8.18.0] - 2026-06-16
-
 ### Added
 
 - `gen circleci`: new `--chart-name` and `--force-public` flags for repos whose chart/registry shape
@@ -21,6 +19,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   exclusive with `--image-private-only`. The append-only `.circleci/custom.yml` merge cannot rename a
   generated job's chart or add `force-public` to it, so the generator carries both. Both default off,
   so repos that do not set them get the identical config as before.
+
+## [8.18.0] - 2026-06-16
+
+### Added
+
 - `gen circleci`: new `--image-name` and `--image-platforms` flags for repos whose image pipeline
   does not fit the default shape. `--image-name` overrides the `giantswarm/<repo>` default image name
   on the generated image jobs (`push-to-registries` branch + release and `sync-china-registry`) for
