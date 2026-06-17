@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [8.20.0] - 2026-06-17
+
 ### Added
 
 - `gen circleci`: new `--image-dockerfile` flag for repos whose Dockerfile is not at the repo root
@@ -2196,7 +2198,8 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.19.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.20.0...HEAD
+[8.20.0]: https://github.com/giantswarm/devctl/compare/v8.19.0...v8.20.0
 [8.19.0]: https://github.com/giantswarm/devctl/compare/v8.18.0...v8.19.0
 [8.18.0]: https://github.com/giantswarm/devctl/compare/v8.17.1...v8.18.0
 [8.17.1]: https://github.com/giantswarm/devctl/compare/v8.17.0...v8.17.1
