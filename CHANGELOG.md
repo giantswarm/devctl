@@ -7,6 +7,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- `gen workflows`: the auto-release `cliff.toml` now scopes `git-cliff --bump`'s
+  baseline to the current branch (`use_branch_tags = true`) and ignores
+  pre-release tags (`ignore_tags`). Previously `--bump` picked the globally
+  highest-semver tag in the repo regardless of reachability, which (a) broke
+  backports — a fix on `release-2.x` would bump from the latest `main` tag and
+  tag e.g. `v3.1.1` on the 2.x line instead of `v2.8.1` — and (b) let a stray
+  pre-release tag on an unmerged side branch (e.g. `v1.2.9-dev.0`) become the
+  baseline for `main`, so a real `feat:` produced `v1.2.9-dev.1` instead of
+  `v1.3.0`. Also corrects the misleading `topo_order` comment (it governs
+  changelog section order, not the bump baseline).
+
 ## [8.20.0] - 2026-06-17
 
 ### Added
