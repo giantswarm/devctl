@@ -27,9 +27,9 @@ conventional_commits = true
 # unclassified work -- the bump-decider should only act on intent-bearing
 # commits.
 filter_unconventional = true
-# `topo_order` only governs the ORDER of sections in the rendered changelog,
-# NOT which tag `--bump` treats as the baseline. Left false (version-ordered
-# output).
+# Changelog presentation order. `topo_order = false` orders releases
+# chronologically (by tag date); `sort_commits = "oldest"` lists the commits
+# within each release oldest-first.
 topo_order = false
 sort_commits = "oldest"
 
