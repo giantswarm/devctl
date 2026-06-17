@@ -56,6 +56,9 @@ workflows:
         # derives private from the repo visibility, so force the public push.
         force-public: true
 {{- end }}
+{{- if .ImageDockerfile }}
+        dockerfile: {{ .ImageDockerfile }}
+{{- end }}
 {{- if .ImageName }}
         image: {{ .ImageName }}
 {{- end }}
@@ -64,9 +67,17 @@ workflows:
 {{- else }}
         platforms: linux/amd64
 {{- end }}
-{{- if eq .Language "go" }}
+{{- if or (eq .Language "go") .ImagePreBuildJob }}
         requires:
+{{- if eq .Language "go" }}
         - go-build
+{{- end }}
+{{- if .ImagePreBuildJob }}
+        # Repo-owned pre-build job (defined in .circleci/custom.yml). The
+        # branch image build needs the same workspace handoff as the release
+        # job, so the generator carries the dependency.
+        - {{ .ImagePreBuildJob }}
+{{- end }}
 {{- end }}
         filters:
           branches:
@@ -82,6 +93,9 @@ workflows:
         context: architect
         name: build-image
         push: false
+{{- if .ImageDockerfile }}
+        dockerfile: {{ .ImageDockerfile }}
+{{- end }}
 {{- if .ImageName }}
         image: {{ .ImageName }}
 {{- end }}
@@ -93,9 +107,18 @@ workflows:
         # must not attempt the darwin/windows manifests under QEMU.
         platforms: "linux/amd64,linux/arm64"
 {{- end }}
-{{- if eq .Language "go" }}
+{{- if or (eq .Language "go") .ImagePreBuildJob }}
         requires:
+{{- if eq .Language "go" }}
         - go-build
+{{- end }}
+{{- if .ImagePreBuildJob }}
+        # Repo-owned pre-build job (defined in .circleci/custom.yml). The
+        # branch image validation needs the same workspace handoff as the
+        # release job (it builds the same Dockerfile), so the generator carries
+        # the dependency.
+        - {{ .ImagePreBuildJob }}
+{{- end }}
 {{- end }}
         filters:
           branches:
@@ -113,6 +136,9 @@ workflows:
         # Private repo that publishes a public image: architect otherwise
         # derives private from the repo visibility, so force the public push.
         force-public: true
+{{- end }}
+{{- if .ImageDockerfile }}
+        dockerfile: {{ .ImageDockerfile }}
 {{- end }}
 {{- if .ImageName }}
         image: {{ .ImageName }}

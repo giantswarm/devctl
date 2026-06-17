@@ -51,8 +51,10 @@ type Params struct {
 	// push-to-registries-release job gains a `requires` entry for it, which the
 	// append-only custom.yml merge cannot inject into a generated job. Used for
 	// workspace-handoff pre-steps (e.g. a job that persists a generated file the
-	// Docker build context overlays via attach_workspace). Empty for the common
-	// case.
+	// Docker build context overlays via attach_workspace). The branch
+	// build-image (and branch-publish push-to-registries) job gains the same
+	// `requires` entry, so the branch image validation also gets the workspace.
+	// Empty for the common case.
 	ImagePreBuildJob string
 	// ImagePrivateOnly is true when the repo's image must ship only to the
 	// private registry (gsociprivate). It replaces the default split-china-push
@@ -77,6 +79,15 @@ type Params struct {
 	// fails). The append-only custom.yml merge cannot cap a generated job's
 	// platforms, so the generator carries it.
 	ImagePlatforms string
+	// ImageDockerfile overrides the Dockerfile path on the image jobs (the
+	// architect push-to-registries `dockerfile` param). Set it for repos whose
+	// Dockerfile is not at the repo root (e.g. backstage builds from
+	// packages/backend/Dockerfile). A non-empty value also forces the image
+	// pipeline on, since the root-Dockerfile derivation misses a nested
+	// Dockerfile. The append-only custom.yml merge cannot set this on a
+	// generated job, so the generator carries it. Empty keeps the orb default
+	// ("Dockerfile").
+	ImageDockerfile string
 	// ReleaseBinaries is true when the repo distributes cross-platform Go
 	// binaries on its GitHub Release (derived from the "cli" flavour on a Go
 	// repo). It adds the six-platform architectures matrix to go-build and an

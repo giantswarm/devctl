@@ -75,11 +75,19 @@ type Config struct {
 	// set, the branch path additionally pushes an amd64 dev image and the
 	// dev chart, coupled (both or neither).
 	BranchPublish bool
-	// ImagePreBuildJob names a repo-owned custom.yml job the release image
-	// build must wait on (adds a `requires` entry to push-to-registries-release).
-	// Used for workspace-handoff pre-steps the append-only custom.yml merge
-	// cannot inject into a generated job. Empty for the common case.
+	// ImagePreBuildJob names a repo-owned custom.yml job the image build must
+	// wait on (adds a `requires` entry to push-to-registries-release and the
+	// branch build-image / push-to-registries job). Used for workspace-handoff
+	// pre-steps the append-only custom.yml merge cannot inject into a generated
+	// job. Empty for the common case.
 	ImagePreBuildJob string
+	// ImageDockerfile overrides the Dockerfile path on the image jobs (the
+	// architect push-to-registries `dockerfile` param). A non-empty value also
+	// forces the image pipeline on, so a repo whose Dockerfile is not at the
+	// repo root (e.g. backstage -> packages/backend/Dockerfile) still generates
+	// image jobs. Empty keeps the orb default ("Dockerfile") and leaves the
+	// root-Dockerfile derivation untouched.
+	ImageDockerfile string
 	// ImagePrivateOnly ships the image to the private registry only
 	// (gsociprivate), replacing split-china-push and omitting sync-china-registry.
 	// Set it for private repos whose image must not land in the public catalog.
@@ -111,7 +119,11 @@ func New(config Config) (*CircleCI, error) {
 	// Every job is derived from a signal. With none of them set the template
 	// renders an empty `jobs:` list, which is an invalid CircleCI config.
 	hasApp := config.Flavours.Contains(gen.FlavourApp)
-	if config.Language != gen.LanguageGo && !config.HasDockerfile && !hasApp {
+	// A non-root Dockerfile is signalled by ImageDockerfile: the runner derives
+	// HasDockerfile from a root os.Stat that misses it, so the explicit path
+	// also turns the image pipeline on.
+	hasDockerfile := config.HasDockerfile || config.ImageDockerfile != ""
+	if config.Language != gen.LanguageGo && !hasDockerfile && !hasApp {
 		return nil, microerror.Maskf(invalidConfigError, "no jobs would be generated: set --language=go, add a Dockerfile, or use the app flavour")
 	}
 
@@ -137,7 +149,7 @@ func New(config Config) (*CircleCI, error) {
 		params: params.Params{
 			RepoName:               config.RepoName,
 			Language:               config.Language.String(),
-			HasDockerfile:          config.HasDockerfile,
+			HasDockerfile:          hasDockerfile,
 			HasApp:                 hasApp,
 			ChartName:              chartName,
 			ForcePublic:            config.ForcePublic,
@@ -148,6 +160,7 @@ func New(config Config) (*CircleCI, error) {
 			ImagePrivateOnly:       config.ImagePrivateOnly,
 			ImageName:              config.ImageName,
 			ImagePlatforms:         config.ImagePlatforms,
+			ImageDockerfile:        config.ImageDockerfile,
 			ReleaseBinaries:        config.shipsBinaries(),
 			OrbVersion:             OrbVersion,
 			ContinuationOrbVersion: ContinuationOrbVersion,
