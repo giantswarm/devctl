@@ -61,6 +61,7 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 			ImagePrivateOnly: r.flag.ImagePrivateOnly,
 			ImageName:        r.flag.ImageName,
 			ImagePlatforms:   r.flag.ImagePlatforms,
+			ImageDockerfile:  r.flag.ImageDockerfile,
 		}
 
 		circleciInput, err = circleci.New(c)

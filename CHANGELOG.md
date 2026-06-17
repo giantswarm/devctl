@@ -7,6 +7,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `gen circleci`: new `--image-dockerfile` flag for repos whose Dockerfile is not at the repo root
+  (e.g. `backstage` builds from `packages/backend/Dockerfile`). It sets the `dockerfile` param on the
+  generated image build jobs (`build-image` and `push-to-registries-release`) and, because the image
+  pipeline is otherwise derived from a root `os.Stat("Dockerfile")` that misses a nested Dockerfile, a
+  non-empty value also turns the image pipeline on. The append-only `.circleci/custom.yml` merge cannot
+  set the Dockerfile path on a generated job, so the generator carries it. Default off, so repos that do
+  not set it get the identical config as before.
+
+- `gen circleci`: the branch image-validation job (`build-image`, and the branch-publish
+  `push-to-registries` when `--branch-publish` is set) now also gains the `--image-pre-build-job`
+  `requires` entry. Previously only the release image (`push-to-registries-release`) waited on the
+  pre-build job; the branch build compiles the same Dockerfile and needs the same workspace handoff, so
+  it would otherwise fail building a Dockerfile that consumes pre-build artifacts. No change for repos
+  that do not set `--image-pre-build-job`.
+
 ## [8.19.0] - 2026-06-17
 
 ### Added

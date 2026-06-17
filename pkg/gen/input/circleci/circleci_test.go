@@ -395,9 +395,11 @@ func Test_ImagePreBuildJob(t *testing.T) {
 		ImagePreBuildJob: "fetch-release-notes",
 	})
 
-	// The release image job must require the custom pre-build job.
-	if !contains(got, "- fetch-release-notes") {
-		t.Errorf("release image job missing requires on pre-build job:\n%s", got)
+	// Both the branch validation (build-image) and the release push must
+	// require the custom pre-build job: the branch build compiles the same
+	// Dockerfile and needs the same workspace handoff.
+	if n := strings.Count(got, "- fetch-release-notes"); n != 2 {
+		t.Errorf("expected pre-build requires on build-image and release push, found %d:\n%s", n, got)
 	}
 
 	def := render(t, Config{
@@ -506,6 +508,43 @@ func Test_ImagePlatforms(t *testing.T) {
 	})
 	if contains(def, "platforms:") {
 		t.Errorf("no platforms param should be emitted without ImagePlatforms (orb default applies):\n%s", def)
+	}
+}
+
+// Test_ImageDockerfile verifies the dockerfile-path override turns the image
+// pipeline on even when no root Dockerfile is detected (HasDockerfile false)
+// and applies the path to the build jobs (build-image and
+// push-to-registries-release; the sync-china-registry mirror does not build).
+// This is the backstage shape: a chart repo (app flavour, generic language)
+// whose image is built from packages/backend/Dockerfile. Omitting it emits no
+// dockerfile param so the orb default applies.
+func Test_ImageDockerfile(t *testing.T) {
+	got := render(t, Config{
+		RepoName:        "backstage",
+		Language:        gen.Language(""),
+		Flavours:        gen.FlavourSlice{gen.FlavourApp},
+		HasDockerfile:   false,
+		ImageDockerfile: "packages/backend/Dockerfile",
+	})
+
+	// The image pipeline must be generated despite HasDockerfile=false.
+	if !contains(got, "name: push-to-registries-release") {
+		t.Errorf("ImageDockerfile did not turn the image pipeline on:\n%s", got)
+	}
+	// build-image (branch) and push-to-registries-release (tag) carry the path;
+	// sync-china-registry mirrors and does not build, so it must not.
+	if n := strings.Count(got, "dockerfile: packages/backend/Dockerfile"); n != 2 {
+		t.Errorf("expected dockerfile path on build-image and release push, found %d:\n%s", n, got)
+	}
+
+	def := render(t, Config{
+		RepoName:      "backstage",
+		Language:      gen.Language(""),
+		Flavours:      gen.FlavourSlice{gen.FlavourApp},
+		HasDockerfile: true,
+	})
+	if contains(def, "dockerfile:") {
+		t.Errorf("no dockerfile param should be emitted without ImageDockerfile (orb default applies):\n%s", def)
 	}
 }
 
