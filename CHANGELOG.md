@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [8.20.2] - 2026-06-18
+
 ### Added
 
 - `gen renovate`: the generated `renovate.json5` now sets `assignAutomerge: true`
@@ -2220,7 +2222,8 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.20.1...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.20.2...HEAD
+[8.20.2]: https://github.com/giantswarm/devctl/compare/v8.20.1...v8.20.2
 [8.20.1]: https://github.com/giantswarm/devctl/compare/v8.20.0...v8.20.1
 [8.20.0]: https://github.com/giantswarm/devctl/compare/v8.19.0...v8.20.0
 [8.19.0]: https://github.com/giantswarm/devctl/compare/v8.18.0...v8.19.0
