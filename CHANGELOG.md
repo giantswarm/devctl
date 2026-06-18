@@ -7,6 +7,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `gen renovate`: the generated `renovate.json5` now sets `assignAutomerge: true`
+  automatically whenever `reviewers` are configured. By default Renovate does not
+  request reviewers on PRs it auto-merges; this ensures the configured reviewer is
+  still requested for review on auto-merged Renovate PRs.
+
 ## [8.20.1] - 2026-06-17
 
 ### Fixed
