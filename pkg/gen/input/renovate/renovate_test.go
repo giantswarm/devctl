@@ -54,6 +54,9 @@ func Test_ReviewersOmittedByDefault(t *testing.T) {
 	if strings.Contains(got, "reviewers") {
 		t.Errorf("default renovate config should not contain a reviewers key:\n%s", got)
 	}
+	if strings.Contains(got, "assignAutomerge") {
+		t.Errorf("default renovate config should not contain assignAutomerge without reviewers:\n%s", got)
+	}
 }
 
 // Test_ReviewersRendered verifies that the reviewers flag is baked into the
@@ -67,6 +70,7 @@ func Test_ReviewersRendered(t *testing.T) {
 		`reviewers: [`,
 		`'team:team-rocket',`,
 		`'team:team-honeybadger',`,
+		`assignAutomerge: true,`,
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("generated config missing %q:\n%s", want, got)
