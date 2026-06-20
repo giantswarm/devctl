@@ -7,6 +7,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- `gen circleci`: bumped the pinned `giantswarm/architect` orb from `9.4.1` to `9.4.3`. v9.4.3 makes
+  nancy tolerate the new Sonatype Guide API error (`guide API request failed`) the same way it already
+  skips `error accessing OSS Index`, so a Guide outage or credit exhaustion no longer fails `go-build`
+  (and the dependent `push-to-*` jobs). Reaches repos via the next align-files run.
+
 ## [8.20.2] - 2026-06-18
 
 ### Added
