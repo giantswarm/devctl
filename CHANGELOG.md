@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [8.20.3] - 2026-06-20
+
 ### Changed
 
 - `gen circleci`: bumped the pinned `giantswarm/architect` orb from `9.4.1` to `9.4.3`. v9.4.3 makes
@@ -2229,7 +2231,8 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.20.2...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.20.3...HEAD
+[8.20.3]: https://github.com/giantswarm/devctl/compare/v8.20.2...v8.20.3
 [8.20.2]: https://github.com/giantswarm/devctl/compare/v8.20.1...v8.20.2
 [8.20.1]: https://github.com/giantswarm/devctl/compare/v8.20.0...v8.20.1
 [8.20.0]: https://github.com/giantswarm/devctl/compare/v8.19.0...v8.20.0
