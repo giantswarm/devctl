@@ -7,6 +7,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- `gen circleci`: bumped the pinned `giantswarm/architect` orb from `9.4.3` to `9.5.1`. v9.5.1 makes the
+  cosign SBOM attestation degrade gracefully when its transparency-log upload fails persistently (a
+  multi-MB SPDX predicate — e.g. the `vllm` CUDA image — overruns the public Rekor gateway and returns
+  `502`): the orb re-attests with `--tlog-upload=false` so the signed SBOM stays attached as an OCI
+  referrer (without a public Rekor entry) instead of failing the whole release. Image signing stays
+  strict and the normal sub-limit path keeps its Rekor entry. Reaches repos via the next align-files run.
+
 ## [8.20.3] - 2026-06-20
 
 ### Changed
