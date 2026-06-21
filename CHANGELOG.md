@@ -7,6 +7,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- `gen circleci`: bumped the pinned `giantswarm/architect` orb from `9.5.1` to `9.5.2`. v9.5.1's oversized-SBOM
+  fallback used `cosign attest --tlog-upload=false`, which cosign v3 rejects (`--tlog-upload=false is not
+  supported with --signing-config`), so large-SBOM releases (e.g. `vllm`) still failed at the attest step.
+  v9.5.2 opts out of the transparency log the cosign-v3 way: it re-attests through a signing config with Rekor
+  removed but the TSA kept (`--signing-config <file> --new-bundle-format`), so the SBOM attestation keeps a
+  trusted timestamp (no Rekor body-size limit) and stays attached as an OCI referrer. Reaches repos via the
+  next align-files run.
+
 ## [8.20.4] - 2026-06-21
 
 ### Changed
