@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 	"text/template"
+	"time"
 
 	"github.com/Masterminds/semver/v3"
 	"github.com/giantswarm/microerror"
@@ -401,8 +402,9 @@ var KnownComponents = map[string]ParseParams{
 
 	// Core Components
 	"flatcar": {
-		Tag:       "https://www.flatcar.org/releases/#release-{{.Version}}",
-		Changelog: "https://www.flatcar.org/releases-json/releases-stable.json",
+		// Flatcar has no parseable changelog: the release notes only link to
+		// the Flatcar release page (Tag), so no Changelog URL is fetched.
+		Tag: "https://www.flatcar.org/releases/#release-{{.Version}}",
 	},
 	"kubernetes": {
 		Tag:          "https://github.com/kubernetes/kubernetes/releases/tag/v{{.Version}}",
@@ -465,6 +467,17 @@ func ParseChangelog(componentName, currentVersion, endVersion string, extraFilte
 		return nil, microerror.Mask(fmt.Errorf("unknown component: %s", componentName))
 	}
 
+	if componentName == "flatcar" {
+		// Flatcar's "changelog" is a large JSON manifest we don't parse. Skip
+		// fetching it entirely and just return a link to the release notes.
+		// This avoids a wasted (and frequently slow/timing-out) network request.
+		return &Version{
+			Name:    currentVersion,
+			Link:    strings.Replace(params.Tag, "{{.Version}}", currentVersion, 1),
+			Content: "",
+		}, nil
+	}
+
 	templateData := &versionTemplateData{}
 	templateData.Version = currentVersion
 
@@ -487,7 +500,8 @@ func ParseChangelog(componentName, currentVersion, endVersion string, extraFilte
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}
-	response, err := http.Get(changelogURLBuilder.String())
+	client := &http.Client{Timeout: 30 * time.Second}
+	response, err := client.Get(changelogURLBuilder.String())
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}
@@ -496,15 +510,6 @@ func ParseChangelog(componentName, currentVersion, endVersion string, extraFilte
 	body, err := io.ReadAll(response.Body)
 	if err != nil {
 		return nil, microerror.Mask(err)
-	}
-
-	if componentName == "flatcar" {
-		// Skip parsing Flatcar
-		return &Version{
-			Name:    currentVersion,
-			Link:    strings.Replace(params.Tag, "{{.Version}}", currentVersion, 1),
-			Content: "",
-		}, nil
 	}
 
 	if componentName == "kubernetes" {
