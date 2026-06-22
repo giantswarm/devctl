@@ -961,7 +961,8 @@ func autoDetectVersion(releaseName, componentName string) (string, error) {
 }
 
 func getLatestFlatcarRelease() (string, error) {
-	url := "https://www.flatcar.org/releases-json/releases-stable.json"
+	url := env.FlatcarReleasesURL.Val()
+	channel := env.FlatcarChannel.Val()
 
 	var myClient = &http.Client{Timeout: 10 * time.Second}
 
@@ -989,7 +990,7 @@ func getLatestFlatcarRelease() (string, error) {
 
 	var latest semver.Version
 	for name, rel := range target {
-		if rel.Channel == "stable" {
+		if rel.Channel == channel {
 			ver, err := semver.ParseTolerant(name)
 			if err != nil {
 				continue

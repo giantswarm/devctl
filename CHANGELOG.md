@@ -7,6 +7,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- `release create`: stop fetching the Flatcar releases JSON manifest during release-notes generation. The
+  manifest was downloaded and then discarded for Flatcar, and the request had no timeout, so a slow
+  `flatcar.org` would hang `devctl` even when the Flatcar version was pinned via `--component flatcar@<version>`.
+
+### Changed
+
+- `release create`: the changelog HTTP fetch now uses a 30s timeout instead of relying on the default client.
+- `release create`: the Flatcar releases JSON URL and channel are now configurable via the `FLATCAR_RELEASES_URL`
+  and `FLATCAR_CHANNEL` environment variables (defaulting to the stable channel).
+
 ## [8.20.5] - 2026-06-21
 
 ### Changed
