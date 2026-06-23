@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [8.21.1] - 2026-06-23
+
 ### Changed
 
 - `gen circleci`: for `cli`-flavour Go repos (the six-arch cross-compile that attaches binaries to the
@@ -2278,7 +2280,8 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.21.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.21.1...HEAD
+[8.21.1]: https://github.com/giantswarm/devctl/compare/v8.21.0...v8.21.1
 [8.21.0]: https://github.com/giantswarm/devctl/compare/v8.20.5...v8.21.0
 [8.20.5]: https://github.com/giantswarm/devctl/compare/v8.20.4...v8.20.5
 [8.20.4]: https://github.com/giantswarm/devctl/compare/v8.20.3...v8.20.4
