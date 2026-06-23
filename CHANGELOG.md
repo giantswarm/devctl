@@ -7,6 +7,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- `gen circleci`: for `cli`-flavour Go repos (the six-arch cross-compile that attaches binaries to the
+  GitHub Release), the generated `go-build` job now sets `build_concurrency: auto` and
+  `resource_class: large`. The GOCACHE persistence from architect-orb #838 (orb v9.5.0+) makes warm
+  builds fast, but the cross-compile is still cold after every `go.sum` bump; compiling the six
+  architectures concurrently on a larger box instead of sequentially on 2 vCPUs removes the remaining
+  critical-path cost. Service (non-cli) repos are unchanged. No signing or nancy changes. Reaches repos
+  via the next align-files run.
+
 ## [8.21.0] - 2026-06-22
 
 ### Fixed

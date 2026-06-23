@@ -349,6 +349,38 @@ func Test_GoldenCLIWorkflows(t *testing.T) {
 	}
 }
 
+// Test_CLIParallelBuild verifies the cli flavour (six-arch cross-compile)
+// gets the orb's build_concurrency + a larger resource_class so the cold
+// post-go.sum-bump build parallelises, and that a non-cli Go service does not
+// pay for the larger box (the knobs live in the ReleaseBinaries block).
+func Test_CLIParallelBuild(t *testing.T) {
+	cli := render(t, Config{
+		RepoName:      repoMCPKubernetes,
+		Language:      gen.LanguageGo,
+		Flavours:      gen.FlavourSlice{gen.FlavourApp, gen.FlavourCLI},
+		HasDockerfile: true,
+	})
+	if !contains(cli, "build_concurrency: auto") {
+		t.Errorf("cli flavour missing build_concurrency: auto:\n%s", cli)
+	}
+	if !contains(cli, "resource_class: large") {
+		t.Errorf("cli flavour missing resource_class: large:\n%s", cli)
+	}
+
+	svc := render(t, Config{
+		RepoName:      repoMCPKubernetes,
+		Language:      gen.LanguageGo,
+		Flavours:      gen.FlavourSlice{gen.FlavourApp},
+		HasDockerfile: true,
+	})
+	if contains(svc, "build_concurrency") {
+		t.Errorf("non-cli service should not set build_concurrency:\n%s", svc)
+	}
+	if contains(svc, "resource_class") {
+		t.Errorf("non-cli service should not set resource_class:\n%s", svc)
+	}
+}
+
 // Test_AppCatalogOverride verifies the chart pipeline publishes to the
 // overridden catalog when set, and falls back to the public defaults when not.
 // Repos on the internal giantswarm-operations-platform catalog rely on this so
