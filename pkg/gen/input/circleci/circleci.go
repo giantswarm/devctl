@@ -19,7 +19,13 @@ import (
 // Renovate keeps this current; a major bump lands as a devctl PR, gets released,
 // and only then reaches repos via the align-files devctl pin.
 //
-// renovate: datasource=orb depName=giantswarm/architect
+// Tracked via github-tags on the architect-orb source repo rather than the
+// `orb` datasource: the generated renovate.json5 disables `orb` updates for
+// giantswarm/architect (so they stop fighting align-files in .circleci/config.yml),
+// and that root packageRule would otherwise also block this constant. The
+// custom manager that reads this annotation lives in renovate-custom.json5.
+//
+// renovate: datasource=github-tags depName=giantswarm/architect-orb
 const OrbVersion = "9.5.2"
 
 // ContinuationOrbVersion pins the circleci/continuation orb used by the
