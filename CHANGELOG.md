@@ -7,6 +7,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- Bump the aligned `giantswarm/architect` orb to `9.5.4` (from `9.5.2`/`9.5.3`). `9.5.4` writes
+  the nancy scan log to `/tmp` instead of the repo root, so it no longer dirties the working tree
+  between `make test` and the binary link. Without it, every `go-build` release binary (devctl
+  included) embedded `vX.Y.Z+dirty`, which broke the align-files `DEVCTL_UNSAFE_FORCE_VERSION`
+  self-update bypass that compares against a `+dirty`-stripped version.
+
 ### Fixed
 
 - `update-template-sha`: derive the embedded provenance SHA from `git rev-list -1 HEAD`
