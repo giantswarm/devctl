@@ -7,7 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
-## [8.22.1] - 2026-06-24
+## [8.23.0] - 2026-06-24
 
 ### Changed
 
@@ -16,6 +16,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   `*.template.sha` provenance files (consumed via `//go:embed`) are regenerated before tests
   and the cross-compile run. This lets the generated `go-build` job (`test_target: test`) build
   devctl from a clean CI checkout and also fixes clean local `make test`.
+
+## [8.22.1] - 2026-06-24
+
+### Changed
+
 - `gen makefile`: the generated `make test` target is now cgo-adaptive. It runs `go test … -race ./...`
   wherever a C toolchain is available (laptops, coding agents, GitHub Actions, any cgo-capable runner)
   and degrades to cgo-free `go test … ./...` where it is not. This unblocks the make-target CI interface
@@ -2312,7 +2317,8 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.22.1...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.23.0...HEAD
+[8.23.0]: https://github.com/giantswarm/devctl/compare/v8.22.1...v8.23.0
 [8.22.1]: https://github.com/giantswarm/devctl/compare/v8.22.0...v8.22.1
 [8.22.0]: https://github.com/giantswarm/devctl/compare/v8.21.1...v8.22.0
 [8.21.1]: https://github.com/giantswarm/devctl/compare/v8.21.0...v8.21.1
