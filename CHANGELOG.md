@@ -11,15 +11,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
-- `gen circleci` / `gen makefile`: the make-target CI command interface. The generated `go-build` job now
-  sets `test_target: test`, so the architect orb runs `make test` instead of its hardcoded
-  `go test ./...`; CI and local agent runs converge on one command. The generic `gen makefile` `test`
-  target is now plain `go test ./...` (previously `go test -ldflags … -race ./...`). `-race` becomes a
-  per-repo decision: repos with real concurrency override their own `make test` (`go test -race ./...`),
-  as do repos that need integration suites, `govulncheck`, `helm-unittest`, or CRD-freshness checks.
-  This is the relocation target for the hand-written `ci.yaml` removal and is the configurable-default /
-  make-target interface resolved in the make-target-ci-interface ADR (no architect-orb change required —
-  the orb already exposes `test_target`). Reaches repos via the next align-files run.
+- `gen circleci`: the make-target CI command interface. The generated `go-build` job now sets
+  `test_target: test`, so the architect orb runs the repo's `make test` instead of its hardcoded
+  `go test … ./...`; CI and local runs converge on one command. The generated `make test`
+  (`gen makefile`) is unchanged (`go test -ldflags … -race ./...`), so CI runs the same test command
+  developers already run locally. A repo that wants a different CI test command (e.g. drop `-race`, add
+  an integration suite, `govulncheck`, `helm-unittest`, or a CRD-freshness check) overrides its own
+  `make test`. This is the relocation target for the hand-written `ci.yaml` removal and the make-target
+  interface from the make-target-ci-interface ADR (no architect-orb change — the orb already exposes
+  `test_target`). Reaches repos via the next align-files run.
 - `gen circleci`: for `cli`-flavour Go repos (the six-arch cross-compile that attaches binaries to the
   GitHub Release), the generated `go-build` job now sets `build_concurrency: auto` and
   `resource_class: large`. The GOCACHE persistence from architect-orb #838 (orb v9.5.0+) makes warm
