@@ -11,6 +11,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- devctl now dogfoods its own generated CircleCI + auto-release standard. The repo-owned
+  `Makefile.zzz.custom.mk` makes `make test` depend on `generate-go`, so the gitignored
+  `*.template.sha` provenance files (consumed via `//go:embed`) are regenerated before tests
+  and the cross-compile run. This lets the generated `go-build` job (`test_target: test`) build
+  devctl from a clean CI checkout and also fixes clean local `make test`.
 - `gen makefile`: the generated `make test` target is now cgo-adaptive. It runs `go test … -race ./...`
   wherever a C toolchain is available (laptops, coding agents, GitHub Actions, any cgo-capable runner)
   and degrades to cgo-free `go test … ./...` where it is not. This unblocks the make-target CI interface
