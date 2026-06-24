@@ -670,6 +670,34 @@ func Test_OrbVersion(t *testing.T) {
 	}
 }
 
+// Test_GoBuildTestTarget verifies the go-build job routes unit tests through
+// the `make test` target (architect test_target) so CI and local agent runs
+// share one command. The generic Makefile target is `go test ./...`; per-repo
+// Makefiles override it for -race, integration suites, etc. (make-target CI
+// interface). A repo with no Go build emits no go-build job and thus no
+// test_target.
+func Test_GoBuildTestTarget(t *testing.T) {
+	got := render(t, Config{
+		RepoName:      repoMCPKubernetes,
+		Language:      gen.LanguageGo,
+		Flavours:      gen.FlavourSlice{gen.FlavourApp},
+		HasDockerfile: true,
+	})
+	if !contains(got, "test_target: test") {
+		t.Errorf("go-build job missing test_target: test:\n%s", got)
+	}
+
+	chartOnly := render(t, Config{
+		RepoName:      repoSitesearch,
+		Language:      gen.Language(""),
+		Flavours:      gen.FlavourSlice{gen.FlavourApp},
+		HasDockerfile: false,
+	})
+	if contains(chartOnly, "test_target") {
+		t.Errorf("non-go config should not emit test_target:\n%s", chartOnly)
+	}
+}
+
 // Test_ImageOnlyOmitsChart verifies derivation: an image repo without the app
 // flavour gets the image pipeline but no chart jobs.
 func Test_ImageOnlyOmitsChart(t *testing.T) {
