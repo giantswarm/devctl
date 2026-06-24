@@ -7,8 +7,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
-## [8.21.1] - 2026-06-23
-
 ### Changed
 
 - `gen circleci`: the make-target CI command interface. The generated `go-build` job now sets
@@ -20,6 +18,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   `make test`. This is the relocation target for the hand-written `ci.yaml` removal and the make-target
   interface from the make-target-ci-interface ADR (no architect-orb change — the orb already exposes
   `test_target`). Reaches repos via the next align-files run.
+
+## [8.21.1] - 2026-06-23
+
+### Changed
+
 - `gen circleci`: for `cli`-flavour Go repos (the six-arch cross-compile that attaches binaries to the
   GitHub Release), the generated `go-build` job now sets `build_concurrency: auto` and
   `resource_class: large`. The GOCACHE persistence from architect-orb #838 (orb v9.5.0+) makes warm
