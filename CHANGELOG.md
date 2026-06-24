@@ -7,6 +7,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- `update-template-sha`: derive the embedded provenance SHA from `git rev-list -1 HEAD`
+  instead of `git rev-list --all`. `--all` spanned unmerged `origin/renovate/*` branches in
+  the build checkout, so the `*.template.sha` link could resolve to a commit that only exists
+  on an open PR branch. That made the SHA non-deterministic across release builds even when the
+  template content was unchanged, causing the align-files automation to emit no-op PRs (only the
+  source-link SHA in generated file headers changed) to every consuming repo.
+
 ## [8.23.0] - 2026-06-24
 
 ### Changed
