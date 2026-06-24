@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [8.22.0] - 2026-06-24
+
 ### Changed
 
 - `gen circleci`: the make-target CI command interface. The generated `go-build` job now sets
@@ -2292,7 +2294,8 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.21.1...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.22.0...HEAD
+[8.22.0]: https://github.com/giantswarm/devctl/compare/v8.21.1...v8.22.0
 [8.21.1]: https://github.com/giantswarm/devctl/compare/v8.21.0...v8.21.1
 [8.21.0]: https://github.com/giantswarm/devctl/compare/v8.20.5...v8.21.0
 [8.20.5]: https://github.com/giantswarm/devctl/compare/v8.20.4...v8.20.5
