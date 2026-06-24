@@ -24,7 +24,15 @@ func main() {
 		log.Fatal(err)
 	}
 
-	shaCmd := exec.Command("git", "rev-list", "--all", "-1", "--", fmt.Sprintf("%s/%s", currentWorkingDirectory, filename))
+	// Scope the lookup to the current HEAD's history, not `--all`. `git rev-list --all`
+	// spans every ref in the checkout (including unmerged origin/renovate/* branches), so
+	// the "last commit that touched this template" could resolve to a commit that only
+	// exists on an open PR branch. That made the embedded provenance SHA non-deterministic:
+	// it churned release-to-release with no template content change, and the align-files
+	// automation propagated each flip as a no-op PR to every consuming repo. Restricting to
+	// HEAD resolves to the last commit reachable from the build's checkout (the release tag
+	// on tag builds) that touched the template, so the SHA only changes when the template does.
+	shaCmd := exec.Command("git", "rev-list", "-1", "HEAD", "--", fmt.Sprintf("%s/%s", currentWorkingDirectory, filename))
 	sha, err := shaCmd.CombinedOutput()
 	if err != nil {
 		log.Fatal(err)
