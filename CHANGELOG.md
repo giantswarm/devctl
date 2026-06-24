@@ -9,11 +9,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
-- Bump the aligned `giantswarm/architect` orb to `9.5.4` (from `9.5.2`/`9.5.3`). `9.5.4` writes
+- Bump the aligned `giantswarm/architect` orb to `9.5.5` (from `9.5.2`/`9.5.3`). `9.5.4` writes
   the nancy scan log to `/tmp` instead of the repo root, so it no longer dirties the working tree
   between `make test` and the binary link. Without it, every `go-build` release binary (devctl
   included) embedded `vX.Y.Z+dirty`, which broke the align-files `DEVCTL_UNSAFE_FORCE_VERSION`
-  self-update bypass that compares against a `+dirty`-stripped version.
+  self-update bypass that compares against a `+dirty`-stripped version. `9.5.5` additionally bumps
+  the Go build-cache key (`go-build-cache-v1-` -> `v2-`) so `restore_cache` stops unpacking the
+  stale `9.5.2`-era archive at the wrong `GOCACHE` path; the permanent cold compile that caused
+  was OOM-killing memory-heavy parallel cross-compiles (observed on `mcp-kubernetes`).
 
 ### Fixed
 
