@@ -3,6 +3,12 @@ devctl*
 bin-dist/
 TODO
 
+# Scratch files architect's go-build/go-test write into the worktree. Ignored so
+# an untracked artifact doesn't mark the build +dirty in the version embedded
+# via runtime/debug build info (pkg/project).
+.ldflags
+.platforms
+
 # OS & IDE
 .DS_Store
 .idea/
