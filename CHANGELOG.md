@@ -9,8 +9,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [8.23.0] - 2026-06-24
 
-## [8.22.1] - 2026-06-24
-
 ### Changed
 
 - devctl now dogfoods its own generated CircleCI + auto-release standard. The repo-owned
@@ -18,6 +16,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   `*.template.sha` provenance files (consumed via `//go:embed`) are regenerated before tests
   and the cross-compile run. This lets the generated `go-build` job (`test_target: test`) build
   devctl from a clean CI checkout and also fixes clean local `make test`.
+
+## [8.22.1] - 2026-06-24
+
+### Changed
+
 - `gen makefile`: the generated `make test` target is now cgo-adaptive. It runs `go test … -race ./...`
   wherever a C toolchain is available (laptops, coding agents, GitHub Actions, any cgo-capable runner)
   and degrades to cgo-free `go test … ./...` where it is not. This unblocks the make-target CI interface
