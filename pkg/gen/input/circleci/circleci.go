@@ -20,7 +20,7 @@ import (
 // and only then reaches repos via the align-files devctl pin.
 //
 // renovate: datasource=orb depName=giantswarm/architect
-const OrbVersion = "9.5.2"
+const OrbVersion = "9.5.3"
 
 // ContinuationOrbVersion pins the circleci/continuation orb used by the
 // generated setup config (.circleci/config.yml) to merge the optional
