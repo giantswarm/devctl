@@ -7,6 +7,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- `gen makefile`: the generated `make test` target is now cgo-adaptive. It runs `go test … -race ./...`
+  wherever a C toolchain is available (laptops, coding agents, GitHub Actions, any cgo-capable runner)
+  and degrades to cgo-free `go test … ./...` where it is not. This unblocks the make-target CI interface
+  (8.22.0's `test_target: test`): the architect `go-build`/`go-test` image has no C compiler and runs
+  with `CGO_ENABLED=0`, so a hardcoded `-race` made `make test` fail with `-race requires cgo` on every
+  generated-CircleCI Go repo. The single `make test` command is now correct in every environment — CI
+  runs it verbatim and local runs keep race detection — so it stays the one relocation target for the
+  hand-written `ci.yaml` removal workstream.
+
 ## [8.22.0] - 2026-06-24
 
 ### Changed
