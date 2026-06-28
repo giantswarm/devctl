@@ -1143,10 +1143,10 @@ func Test_NodePackageManagers(t *testing.T) {
 		cacheKey    string
 		wantCorepak bool
 	}{
-		{PackageManagerNPM, "npm ci", "~/.npm", `node-deps-npm-{{ checksum "package-lock.json" }}`, false},
-		{PackageManagerYarn, "yarn install --immutable", ".yarn/cache", `node-deps-yarn-{{ checksum "yarn.lock" }}`, false},
-		{PackageManagerYarnClassic, "yarn install --frozen-lockfile", "~/.cache/yarn", `node-deps-yarn-classic-{{ checksum "yarn.lock" }}`, false},
-		{PackageManagerPNPM, "pnpm install --frozen-lockfile", "~/.local/share/pnpm/store", `node-deps-pnpm-{{ checksum "pnpm-lock.yaml" }}`, true},
+		{PackageManagerNPM, "npm ci", "~/.npm", `node-deps-npm-v1-{{ checksum "package-lock.json" }}`, false},
+		{PackageManagerYarn, "yarn install --immutable", ".yarn/cache", `node-deps-yarn-v1-{{ checksum "yarn.lock" }}`, false},
+		{PackageManagerYarnClassic, "yarn install --frozen-lockfile", "~/.cache/yarn", `node-deps-yarn-classic-v1-{{ checksum "yarn.lock" }}`, false},
+		{PackageManagerPNPM, "pnpm install --frozen-lockfile", "~/.local/share/pnpm/store", `node-deps-pnpm-v1-{{ checksum "pnpm-lock.yaml" }}`, true},
 	}
 
 	for _, tc := range cases {

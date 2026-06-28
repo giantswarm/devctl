@@ -7,6 +7,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- `gen circleci`: the generated Node dependency-cache key now carries a `v1` version salt
+  (`node-deps-<pm>-v1-{{ checksum "<lockfile>" }}`, restore prefix `node-deps-<pm>-v1-`). CircleCI
+  cache keys are immutable, so a repo that first adopts the Node job while still on Yarn's default
+  global cache would seed an empty `.yarn/cache` under the lockfile hash and could never save a real
+  cache until the lockfile changed. The salt invalidates such stale/empty seeds in one release and
+  gives a lever to bust caches on future cache-shape changes.
+
 ### Added
 
 - `gen renovate` gained a `--deprecated` flag. When set, the generated `renovate.json5`
