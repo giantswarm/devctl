@@ -308,7 +308,13 @@ func New(config Config) (*CircleCI, error) {
 		if pm == "" {
 			pm = PackageManagerYarn
 		}
-		nodeCacheRestoreKey = "node-deps-" + pm + "-"
+		// `v1` is a cache-version salt. CircleCI cache keys are immutable, so a
+		// repo that first adopts the Node job while still on Yarn's default
+		// global cache seeds an empty .yarn/cache under the lockfile hash; the
+		// real cache can then never be saved until the lockfile changes. Bumping
+		// the salt invalidates such stale/empty seeds in one release and gives a
+		// lever to invalidate caches on future cache-shape changes.
+		nodeCacheRestoreKey = "node-deps-" + pm + "-v1-"
 		nodeCacheKey = nodeCacheRestoreKey + `{{ checksum "` + tc.lockfile + `" }}`
 
 		nodeTestTarget = config.NodeTestTarget
