@@ -15,6 +15,11 @@
     // Python specific config - https://github.com/giantswarm/renovate-presets/blob/main/lang-python.json5
     'github>giantswarm/renovate-presets:lang-python.json5',
     {{- end }}
+    {{- if .Deprecated }}
+    // Deprecated repo - https://github.com/giantswarm/renovate-presets/blob/main/deprecated.json5
+    // Disables all routine updates and keeps only security/vulnerability remediation.
+    'github>giantswarm/renovate-presets:deprecated.json5',
+    {{- end }}
     {{- if .HasCustomConfig }}
     // Repo-owned overrides -- last entry, so its rules win over the presets.
     // Renovate resolves this from the default branch on every run: edits are

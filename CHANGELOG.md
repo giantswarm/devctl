@@ -9,6 +9,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `gen renovate` gained a `--deprecated` flag. When set, the generated `renovate.json5`
+  extends `github>giantswarm/renovate-presets:deprecated.json5` (before any repo-owned
+  `renovate-custom.json5`), which disables all routine updates and keeps only
+  security/vulnerability remediation. The `giantswarm/github` align-files workflow passes it
+  for repos marked `lifecycle: deprecated` that have `gen.ci.generate`.
 - `gen circleci` now generates a Node/TypeScript build path (`--language=node`), mirroring the Go
   path. It emits a self-contained `node-build`/`node-test` job on a `cimg/node` executor (architect
   ships no Node job) with a dependency cache keyed on the lockfile checksum — the Node analogue of

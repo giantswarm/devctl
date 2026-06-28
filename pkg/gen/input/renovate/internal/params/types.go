@@ -25,4 +25,9 @@ type Params struct {
 	// it is appended as the last `extends` entry so repo-specific rules win
 	// over the shared presets. devctl never generates or touches that file.
 	HasCustomConfig bool
+	// Deprecated indicates the repo is marked lifecycle: deprecated. When true,
+	// the generated config extends the renovate-presets deprecated.json5 preset,
+	// which disables all routine updates and keeps only security/vulnerability
+	// remediation.
+	Deprecated bool
 }

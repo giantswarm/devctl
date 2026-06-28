@@ -9,6 +9,9 @@
     'github>giantswarm/renovate-presets:default.json5',
     // Go specific config - https://github.com/giantswarm/renovate-presets/blob/main/lang-go.json5
     'github>giantswarm/renovate-presets:lang-go.json5',
+    // Deprecated repo - https://github.com/giantswarm/renovate-presets/blob/main/deprecated.json5
+    // Disables all routine updates and keeps only security/vulnerability remediation.
+    'github>giantswarm/renovate-presets:deprecated.json5',
     // Repo-owned overrides -- last entry, so its rules win over the presets.
     // Renovate resolves this from the default branch on every run: edits are
     // live on merge, no regeneration needed.

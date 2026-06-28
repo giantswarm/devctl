@@ -56,6 +56,7 @@ func NewCreateRenovateInput(p params.Params) input.Input {
 			"CircleCIGenerated": params.CircleCIGenerated(p),
 			"RepoName":          params.RepoName(p),
 			"HasCustomConfig":   params.HasCustomConfig(p),
+			"Deprecated":        params.Deprecated(p),
 		},
 	}
 
