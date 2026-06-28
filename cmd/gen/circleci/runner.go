@@ -88,6 +88,11 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 		circleciInput.SetupConfig(),
 		circleciInput.Workflows(),
 	}
+	// The canonical ATS Pipfile rides on the same chart/app (.HasApp) signal
+	// that emits the run-tests-with-ats jobs, so it is folded into this
+	// generator rather than invoked separately (which would risk leaking it
+	// into non-generated-CI repos). ATSInputs returns nil for non-app repos.
+	inputs = append(inputs, circleciInput.ATSInputs()...)
 
 	err = gen.Execute(ctx, inputs...)
 	if err != nil {

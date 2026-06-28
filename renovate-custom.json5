@@ -118,5 +118,19 @@
       matchPackageNames: ['giantswarm/architect-orb'],
       extractVersion: '^v(?<version>.+)$',
     },
+    {
+      // The canonical ATS (app-test-suite) Pipfile is embedded here and
+      // generated verbatim into every chart/app repo's tests/ats/Pipfile by
+      // `devctl gen circleci`. It is the single source the built-in pipenv
+      // manager bumps -- group the whole stack into one PR so the pins move
+      // together (and stay mutually resolvable, e.g. pytest<9 for
+      // pytest-helm-charts), then propagate to all repos via one align-files
+      // regeneration. The per-repo copies are disabled for Renovate via
+      // renovate-presets:tests-ats.json5, so this is the only place the stack
+      // is updated.
+      matchManagers: ['pipenv'],
+      matchFileNames: ['pkg/gen/input/ats/internal/file/Pipfile'],
+      groupName: 'ATS test dependencies',
+    },
   ],
 }

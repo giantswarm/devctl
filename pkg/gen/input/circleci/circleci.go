@@ -5,6 +5,7 @@ import (
 
 	"github.com/giantswarm/devctl/v8/pkg/gen"
 	"github.com/giantswarm/devctl/v8/pkg/gen/input"
+	"github.com/giantswarm/devctl/v8/pkg/gen/input/ats"
 	"github.com/giantswarm/devctl/v8/pkg/gen/input/circleci/internal/file"
 	"github.com/giantswarm/devctl/v8/pkg/gen/input/circleci/internal/params"
 )
@@ -405,4 +406,20 @@ func (c *CircleCI) SetupConfig() input.Input {
 // .circleci/workflows.yml.
 func (c *CircleCI) Workflows() input.Input {
 	return file.NewWorkflowsInput(c.params)
+}
+
+// ATSInputs returns the canonical app-test-suite (ATS) Pipfile input for
+// chart/app (.HasApp) repos, and nil otherwise. ATS chart tests run only for
+// .HasApp -- the same signal that gates the run-tests-with-ats jobs -- so the
+// Pipfile is emitted under exactly that condition and from the same generator
+// call site (devctl gen circleci, the only generator invoked inside align's
+// `if (ci && ci.generate)` guard). That makes "ATS Pipfile only when CI is
+// generated, and only for chart/app repos" structurally guaranteed rather than
+// dependent on a separate, differently-scoped invocation.
+func (c *CircleCI) ATSInputs() []input.Input {
+	if !c.params.HasApp {
+		return nil
+	}
+
+	return ats.CreateATS()
 }
