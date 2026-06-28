@@ -1206,6 +1206,49 @@ func Test_NodeTestTargetConfigurable(t *testing.T) {
 	}
 }
 
+// Test_ATSPipfileForAppRepo verifies the canonical ATS Pipfile is emitted for
+// a chart/app (.HasApp) repo -- the same signal that gates run-tests-with-ats
+// -- and that it carries the centrally-pinned content at tests/ats/Pipfile.
+func Test_ATSPipfileForAppRepo(t *testing.T) {
+	inputs := newCircleCI(t, Config{
+		RepoName:      repoMCPKubernetes,
+		Language:      gen.LanguageGo,
+		Flavours:      gen.FlavourSlice{gen.FlavourApp},
+		HasDockerfile: true,
+	}).ATSInputs()
+
+	if len(inputs) != 1 {
+		t.Fatalf("expected 1 ATS input for an app repo, got %d", len(inputs))
+	}
+	if inputs[0].Path != "tests/ats/Pipfile" {
+		t.Errorf("ATS input Path = %q, want tests/ats/Pipfile", inputs[0].Path)
+	}
+
+	got := renderInput(t, inputs[0])
+	if !contains(got, `pytest-helm-charts = "==1.3.4"`) {
+		t.Errorf("generated ATS Pipfile missing the canonical pytest-helm-charts pin:\n%s", got)
+	}
+	if !contains(got, `pytest = "==8.4.2"`) {
+		t.Errorf("generated ATS Pipfile missing the canonical pytest pin:\n%s", got)
+	}
+}
+
+// Test_ATSPipfileOmittedForNonApp verifies a repo without the app flavour gets
+// no ATS Pipfile -- the file is scoped to chart/app repos exactly like the
+// run-tests-with-ats jobs.
+func Test_ATSPipfileOmittedForNonApp(t *testing.T) {
+	inputs := newCircleCI(t, Config{
+		RepoName:      "klausctl",
+		Language:      gen.LanguageGo,
+		Flavours:      gen.FlavourSlice{},
+		HasDockerfile: false,
+	}).ATSInputs()
+
+	if len(inputs) != 0 {
+		t.Errorf("expected no ATS inputs for a non-app repo, got %d: %+v", len(inputs), inputs)
+	}
+}
+
 // Test_GoUnaffectedByBuildJobName is a regression guard: generalizing the
 // image/chart requires wiring to BuildJobName must keep the Go path gating on
 // go-build exactly as before.
