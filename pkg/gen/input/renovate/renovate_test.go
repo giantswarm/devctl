@@ -145,6 +145,45 @@ func Test_CircleCIGeneratedOnDisablesArchitectOrb(t *testing.T) {
 	}
 }
 
+// Test_TestsATSOmittedByDefault verifies that without the CircleCIGenerated
+// flag the generated config does not extend the tests-ats.json5 preset -- a
+// non-generated-CI repo keeps its hand-written renovate behaviour.
+func Test_TestsATSOmittedByDefault(t *testing.T) {
+	got := render(t, Config{Language: "go"})
+
+	if strings.Contains(got, "tests-ats.json5") {
+		t.Errorf("default renovate config should not extend the tests-ats preset:\n%s", got)
+	}
+}
+
+// Test_TestsATSExtendedWhenCircleCIGenerated verifies the generated path
+// extends tests-ats.json5, so every generated-CI repo gets the ATS
+// per-repo-Renovate disable by default (gated on the same condition that marks
+// an align-managed renovate config, no new flag).
+func Test_TestsATSExtendedWhenCircleCIGenerated(t *testing.T) {
+	got := render(t, Config{Language: "go", CircleCIGenerated: true})
+
+	want := "github>giantswarm/renovate-presets:tests-ats.json5"
+
+	var parsed struct {
+		Extends []string `json:"extends"`
+	}
+	if err := json5.Unmarshal([]byte(got), &parsed); err != nil {
+		t.Fatalf("generated config is not valid JSON5: %v\n%s", err, got)
+	}
+
+	found := false
+	for _, e := range parsed.Extends {
+		if e == want {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("generated config missing %q in extends (full list: %v)", want, parsed.Extends)
+	}
+}
+
 // Test_CustomConfigOmittedByDefault verifies that without HasCustomConfig the
 // generated config carries no renovate-custom.json5 extends entry, so repos
 // without the file see no behavior change.
