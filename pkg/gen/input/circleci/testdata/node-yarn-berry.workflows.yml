@@ -39,11 +39,6 @@ jobs:
         key: node-deps-yarn-v1-{{ checksum "yarn.lock" }}
         paths:
         - .yarn/cache
-    - save_cache:
-        key: node-build-yarn-v1-24.18.0-{{ checksum "yarn.lock" }}
-        paths:
-        - node_modules
-        - .yarn/install-state.gz
     - run:
         # The repo composes typecheck/lint/format/test into this one script
         # (the make-target interface), so CI and local runs share a command.
@@ -52,6 +47,17 @@ jobs:
     - run:
         name: Build
         command: yarn run build:backend
+    # Save the build-output cache *after* verify/build so it captures both the
+    # node_modules native addons compiled during install AND the tsc/eslint/jest
+    # incremental caches those steps write under node_modules/.cache -- the
+    # compute-side analogue of persisting $GOCACHE. Write-once per lockfile (the
+    # restore prefix keeps every run warm-started from the last good cache, so a
+    # red build never leaves a repo cold).
+    - save_cache:
+        key: node-build-yarn-v1-24.18.0-{{ checksum "yarn.lock" }}
+        paths:
+        - node_modules
+        - .yarn/install-state.gz
     - persist_to_workspace:
         # Hand the build output to the image jobs, which attach_workspace and
         # overlay it into the Docker build context (gen.ci.image.preBuildJob).

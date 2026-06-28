@@ -69,6 +69,7 @@ func NewWorkflowsInput(p params.Params) input.Input {
 			"NodeBuildCacheKey":        p.NodeBuildCacheKey,
 			"NodeBuildCacheRestoreKey": p.NodeBuildCacheRestoreKey,
 			"NodeCorepack":             p.NodeCorepack,
+			"NodeResourceClass":        p.NodeResourceClass,
 			"NodeTestTarget":           p.NodeTestTarget,
 			"NodeBuildTarget":          p.NodeBuildTarget,
 			"NodeBuildOutput":          p.NodeBuildOutput,

@@ -9,6 +9,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `gen circleci`: the generated Node job now honours a per-repo **`resource_class`**
+  (reusing the `gen.ci.resourceClass` knob the cli `go-build` job uses), defaulting to
+  `large`. The Node verify chain (tsc + lint + test + build over a whole monorepo) is
+  memory-hungry — backstage's `ci:verify` pins `NODE_OPTIONS` `max-old-space-size` to 6 GiB —
+  so a bigger monorepo can size up to `xlarge` without forking the generated job.
 - `gen circleci`: the generated Node job now also caches the **build output**
   (`node_modules` + Yarn's `.yarn/install-state.gz`) for the Yarn package managers,
   keyed on the node image version and the lockfile checksum
@@ -23,6 +28,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- `gen circleci`: the generated Node build-output cache is now saved **after** the
+  verify/build steps (it previously saved right after install). The same `node_modules`
+  cache therefore also persists the tsc/eslint/jest incremental caches those steps write
+  under `node_modules/.cache` — the compute-side analogue of persisting `$GOCACHE`, not just
+  the install-time native-addon rebuild. Still write-once per lockfile; the lockfile-agnostic
+  restore prefix keeps every run warm-started from the last good cache, so a red build never
+  leaves a repo cold.
 - `gen circleci`: the generated Node dependency-cache key now carries a `v1` version salt
   (`node-deps-<pm>-v1-{{ checksum "<lockfile>" }}`, restore prefix `node-deps-<pm>-v1-`). CircleCI
   cache keys are immutable, so a repo that first adopts the Node job while still on Yarn's default

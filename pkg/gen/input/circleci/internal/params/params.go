@@ -151,6 +151,10 @@ type Params struct {
 	// NodeCorepack is true when the package manager needs `corepack enable`
 	// (pnpm, which cimg/node does not bundle).
 	NodeCorepack bool
+	// NodeResourceClass is the CircleCI resource_class the Node job runs on.
+	// Defaults to "large"; raised per repo via gen.ci.resourceClass (the same
+	// knob the cli go-build job uses) for a memory-hungry monorepo verify/build.
+	NodeResourceClass string
 	// NodeTestTarget is the package.json script the Node job runs for the
 	// verify phase (the make-target interface). Defaults to "test".
 	NodeTestTarget string

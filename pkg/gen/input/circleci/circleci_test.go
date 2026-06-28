@@ -35,6 +35,8 @@ const (
 	backstageDockerfile  = "packages/backend/Dockerfile"
 	backstageBuildOutput = "packages/*/dist/*"
 	nodeBuildTarget      = "build:backend"
+
+	resourceClassXLarge = "xlarge"
 )
 
 // mergeExpression is the yq deep-merge the generated setup config runs to
@@ -403,14 +405,14 @@ func Test_CLIParallelBuildOverride(t *testing.T) {
 		Flavours:         gen.FlavourSlice{gen.FlavourApp, gen.FlavourCLI},
 		HasDockerfile:    true,
 		BuildConcurrency: "2",
-		ResourceClass:    "xlarge",
+		ResourceClass:    resourceClassXLarge,
 	})
 	// A numeric override must be rendered as a quoted string: the orb's
 	// build_concurrency param is string-typed and rejects a bare int.
 	if !contains(cli, `build_concurrency: "2"`) {
 		t.Errorf("override not applied; want build_concurrency: \"2\" in:\n%s", cli)
 	}
-	if !contains(cli, "resource_class: xlarge") {
+	if !contains(cli, "resource_class: "+resourceClassXLarge) {
 		t.Errorf("override not applied; want resource_class: xlarge in:\n%s", cli)
 	}
 	if contains(cli, "build_concurrency: "+DefaultBuildConcurrency) {
@@ -439,7 +441,7 @@ func Test_CLIParallelBuildOverride(t *testing.T) {
 		Flavours:         gen.FlavourSlice{gen.FlavourApp},
 		HasDockerfile:    true,
 		BuildConcurrency: "2",
-		ResourceClass:    "xlarge",
+		ResourceClass:    resourceClassXLarge,
 	})
 	if contains(svc, "build_concurrency") {
 		t.Errorf("non-cli service should not render build_concurrency even when set:\n%s", svc)
@@ -1278,6 +1280,60 @@ func Test_NodeBuildOutputCache(t *testing.T) {
 		if contains(got, "node-build-"+pm) || contains(got, "- node_modules") {
 			t.Errorf("%s should not emit a build-output cache:\n%s", pm, got)
 		}
+	}
+}
+
+// Test_NodeResourceClass verifies the Node job renders the default resource
+// class when unset and honours the gen.ci.resourceClass override (the same knob
+// the cli go-build job uses), so a memory-hungry monorepo verify/build can be
+// sized up per repo without forking the generated job.
+func Test_NodeResourceClass(t *testing.T) {
+	def := render(t, Config{
+		RepoName:       repoK8sTypes,
+		Language:       gen.LanguageNode,
+		PackageManager: PackageManagerNPM,
+	})
+	if !contains(def, "resource_class: "+DefaultNodeResourceClass) {
+		t.Errorf("Node job should default resource_class to %q:\n%s", DefaultNodeResourceClass, def)
+	}
+
+	override := render(t, Config{
+		RepoName:       repoK8sTypes,
+		Language:       gen.LanguageNode,
+		PackageManager: PackageManagerNPM,
+		ResourceClass:  resourceClassXLarge,
+	})
+	if !contains(override, "resource_class: "+resourceClassXLarge) {
+		t.Errorf("Node job resource_class override not applied:\n%s", override)
+	}
+	if contains(override, "resource_class: "+DefaultNodeResourceClass) {
+		t.Errorf("default resource_class leaked through despite override:\n%s", override)
+	}
+}
+
+// Test_NodeBuildCacheSavedAfterBuild verifies the build-output cache is saved
+// after the verify/build steps (not right after install), so it captures the
+// tsc/eslint/jest incremental caches under node_modules/.cache in addition to
+// the native addons compiled during install -- the compute-side win.
+func Test_NodeBuildCacheSavedAfterBuild(t *testing.T) {
+	got := render(t, Config{
+		RepoName:        repoBackstage,
+		Language:        gen.LanguageNode,
+		Flavours:        gen.FlavourSlice{gen.FlavourApp},
+		PackageManager:  PackageManagerYarn,
+		NodeBuildTarget: nodeBuildTarget,
+		NodeBuildOutput: backstageBuildOutput,
+		ImageDockerfile: backstageDockerfile,
+	})
+
+	buildSave := strings.Index(got, "key: node-build-yarn-v1-")
+	verify := strings.Index(got, "name: Verify")
+	build := strings.Index(got, "name: Build")
+	if buildSave < 0 || verify < 0 || build < 0 {
+		t.Fatalf("missing expected steps (buildSave=%d verify=%d build=%d):\n%s", buildSave, verify, build, got)
+	}
+	if buildSave < verify || buildSave < build {
+		t.Errorf("build-output save_cache must come after Verify and Build to capture compute caches; got save=%d verify=%d build=%d:\n%s", buildSave, verify, build, got)
 	}
 }
 
