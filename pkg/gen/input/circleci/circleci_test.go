@@ -1249,6 +1249,38 @@ func Test_ATSPipfileOmittedForNonApp(t *testing.T) {
 	}
 }
 
+// Test_NodeBuildOutputCache verifies the build-output cache (node_modules +
+// Yarn install-state) is emitted for the Yarn package managers, keyed on the
+// node image version, and is absent for npm (npm ci wipes node_modules) and
+// pnpm (its store already caches build side-effects).
+func Test_NodeBuildOutputCache(t *testing.T) {
+	berryKey := "node-build-yarn-v1-" + NodeImageVersion + `-{{ checksum "yarn.lock" }}`
+	classicKey := "node-build-yarn-classic-v1-" + NodeImageVersion + `-{{ checksum "yarn.lock" }}`
+
+	berry := render(t, Config{RepoName: repoK8sTypes, Language: gen.LanguageNode, PackageManager: PackageManagerYarn})
+	if !contains(berry, berryKey) {
+		t.Errorf("yarn-berry should emit the build cache key %q:\n%s", berryKey, berry)
+	}
+	if !contains(berry, "- node_modules") || !contains(berry, "- .yarn/install-state.gz") {
+		t.Errorf("yarn-berry build cache should save node_modules + install-state:\n%s", berry)
+	}
+
+	classic := render(t, Config{RepoName: repoK8sTypes, Language: gen.LanguageNode, PackageManager: PackageManagerYarnClassic})
+	if !contains(classic, classicKey) {
+		t.Errorf("yarn-classic should emit the build cache key %q:\n%s", classicKey, classic)
+	}
+	if contains(classic, "- .yarn/install-state.gz") {
+		t.Errorf("yarn-classic build cache should not reference Berry install-state:\n%s", classic)
+	}
+
+	for _, pm := range []string{PackageManagerNPM, PackageManagerPNPM} {
+		got := render(t, Config{RepoName: repoK8sTypes, Language: gen.LanguageNode, PackageManager: pm})
+		if contains(got, "node-build-"+pm) || contains(got, "- node_modules") {
+			t.Errorf("%s should not emit a build-output cache:\n%s", pm, got)
+		}
+	}
+}
+
 // Test_GoUnaffectedByBuildJobName is a regression guard: generalizing the
 // image/chart requires wiring to BuildJobName must keep the Go path gating on
 // go-build exactly as before.

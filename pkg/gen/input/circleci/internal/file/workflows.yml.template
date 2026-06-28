@@ -29,6 +29,17 @@ jobs:
         keys:
         - {{ .NodeCacheKey }}
         - {{ .NodeCacheRestoreKey }}
+{{- if .NodeBuildCachePaths }}
+    # Build-output cache: restore the materialized node_modules (with its
+    # compiled native addons) so the install reconciles incrementally instead
+    # of recompiling better-sqlite3/isolated-vm/etc. from source via node-gyp
+    # every run. Keyed on the node image version -- a node bump must not restore
+    # stale-ABI binaries. The Node analogue of go-build's $GOCACHE persist.
+    - restore_cache:
+        keys:
+        - {{ .NodeBuildCacheKey }}
+        - {{ .NodeBuildCacheRestoreKey }}
+{{- end }}
     - run:
         name: Install dependencies
         command: {{ .NodeInstallCommand }}
@@ -36,6 +47,14 @@ jobs:
         key: {{ .NodeCacheKey }}
         paths:
         - {{ .NodeCachePath }}
+{{- if .NodeBuildCachePaths }}
+    - save_cache:
+        key: {{ .NodeBuildCacheKey }}
+        paths:
+{{- range .NodeBuildCachePaths }}
+        - {{ . }}
+{{- end }}
+{{- end }}
 {{- if .NodeTestTarget }}
     - run:
         # The repo composes typecheck/lint/format/test into this one script

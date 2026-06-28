@@ -91,6 +91,19 @@ type nodeToolchain struct {
 	cachePath      string
 	lockfile       string
 	corepack       bool
+	// buildCachePaths is the build-output cache: the materialized dependency
+	// tree (and Yarn's install-state) that holds compiled native addons. The
+	// dependency cache (cachePath) only holds package *tarballs*; the expensive
+	// part of `install` on a node-modules-linker repo is the Link step
+	// (unpacking + node-gyp builds of better-sqlite3, isolated-vm, etc.), whose
+	// output lives in node_modules, not the tarball cache. Restoring it lets the
+	// install reconcile incrementally instead of recompiling from source every
+	// run -- the Node analogue of go-build persisting $GOCACHE. Keyed on the
+	// node image version too (native ABI is node-version-specific). Empty for
+	// package managers where it does not apply: npm (`npm ci` wipes node_modules
+	// first) and pnpm (its content-addressable store already caches build
+	// side-effects, and that store is the dependency cache).
+	buildCachePaths []string
 }
 
 func nodeToolchainFor(packageManager string) nodeToolchain {
@@ -115,10 +128,11 @@ func nodeToolchainFor(packageManager string) nodeToolchain {
 		}
 	case PackageManagerYarnClassic:
 		return nodeToolchain{
-			installCommand: "yarn install --frozen-lockfile",
-			runPrefix:      "yarn run",
-			cachePath:      "~/.cache/yarn",
-			lockfile:       lockfileYarn,
+			installCommand:  "yarn install --frozen-lockfile",
+			runPrefix:       "yarn run",
+			cachePath:       "~/.cache/yarn",
+			lockfile:        lockfileYarn,
+			buildCachePaths: []string{"node_modules"},
 		}
 	default: // PackageManagerYarn (Berry) is the default for an unset value.
 		return nodeToolchain{
@@ -126,6 +140,10 @@ func nodeToolchainFor(packageManager string) nodeToolchain {
 			runPrefix:      "yarn run",
 			cachePath:      ".yarn/cache",
 			lockfile:       lockfileYarn,
+			// .yarn/install-state.gz records which packages have been built, so
+			// restoring it alongside node_modules lets `yarn install
+			// --immutable` skip the native rebuild instead of redoing it.
+			buildCachePaths: []string{"node_modules", ".yarn/install-state.gz"},
 		}
 	}
 }
@@ -284,22 +302,26 @@ func New(config Config) (*CircleCI, error) {
 	// in workflows.yml. Its name signals what it produces: node-build when the
 	// build output is persisted for an image handoff, node-test otherwise.
 	var (
-		nodeJobName         string
-		nodeInstallCommand  string
-		nodeRunPrefix       string
-		nodeCachePath       string
-		nodeCacheKey        string
-		nodeCacheRestoreKey string
-		nodeCorepack        bool
-		nodeTestTarget      string
-		nodeBuildTarget     string
-		nodeBuildOutput     string
+		nodeJobName              string
+		nodeInstallCommand       string
+		nodeRunPrefix            string
+		nodeCachePath            string
+		nodeCacheKey             string
+		nodeCacheRestoreKey      string
+		nodeBuildCachePaths      []string
+		nodeBuildCacheKey        string
+		nodeBuildCacheRestoreKey string
+		nodeCorepack             bool
+		nodeTestTarget           string
+		nodeBuildTarget          string
+		nodeBuildOutput          string
 	)
 	if isNode {
 		tc := nodeToolchainFor(config.PackageManager)
 		nodeInstallCommand = tc.installCommand
 		nodeRunPrefix = tc.runPrefix
 		nodeCachePath = tc.cachePath
+		nodeBuildCachePaths = tc.buildCachePaths
 		nodeCorepack = tc.corepack
 		// Embed the literal CircleCI `{{ checksum }}` expression as a plain Go
 		// string so it survives Go-template rendering untouched and is
@@ -317,6 +339,18 @@ func New(config Config) (*CircleCI, error) {
 		// lever to invalidate caches on future cache-shape changes.
 		nodeCacheRestoreKey = "node-deps-" + pm + "-v1-"
 		nodeCacheKey = nodeCacheRestoreKey + `{{ checksum "` + tc.lockfile + `" }}`
+
+		// Build-output cache (yarn only -- see nodeToolchain.buildCachePaths).
+		// Keyed on the node image version as well as the lockfile because the
+		// cached node_modules holds compiled native addons whose ABI is tied to
+		// the node version, so a node bump must not restore stale binaries. The
+		// restore prefix omits the lockfile checksum, so a changed lockfile
+		// still warm-starts from the previous node_modules and the install only
+		// reconciles (and rebuilds) the diff.
+		if len(nodeBuildCachePaths) > 0 {
+			nodeBuildCacheRestoreKey = "node-build-" + pm + "-v1-" + NodeImageVersion + "-"
+			nodeBuildCacheKey = nodeBuildCacheRestoreKey + `{{ checksum "` + tc.lockfile + `" }}`
+		}
 
 		nodeTestTarget = config.NodeTestTarget
 		if nodeTestTarget == "" {
@@ -358,37 +392,40 @@ func New(config Config) (*CircleCI, error) {
 
 	c := &CircleCI{
 		params: params.Params{
-			RepoName:               config.RepoName,
-			Language:               config.Language.String(),
-			HasDockerfile:          hasDockerfile,
-			HasApp:                 hasApp,
-			ChartName:              chartName,
-			ForcePublic:            config.ForcePublic,
-			AppCatalog:             appCatalog,
-			AppCatalogTest:         appCatalogTest,
-			BranchPublish:          config.BranchPublish,
-			ImagePreBuildJob:       config.ImagePreBuildJob,
-			ImagePrivateOnly:       config.ImagePrivateOnly,
-			ImageName:              config.ImageName,
-			ImagePlatforms:         config.ImagePlatforms,
-			ImageDockerfile:        config.ImageDockerfile,
-			ReleaseBinaries:        config.shipsBinaries(),
-			BuildConcurrency:       buildConcurrency,
-			ResourceClass:          resourceClass,
-			OrbVersion:             OrbVersion,
-			ContinuationOrbVersion: ContinuationOrbVersion,
-			BuildJobName:           buildJobName,
-			NodeJobName:            nodeJobName,
-			NodeImageVersion:       NodeImageVersion,
-			NodeInstallCommand:     nodeInstallCommand,
-			NodeRunPrefix:          nodeRunPrefix,
-			NodeCachePath:          nodeCachePath,
-			NodeCacheKey:           nodeCacheKey,
-			NodeCacheRestoreKey:    nodeCacheRestoreKey,
-			NodeCorepack:           nodeCorepack,
-			NodeTestTarget:         nodeTestTarget,
-			NodeBuildTarget:        nodeBuildTarget,
-			NodeBuildOutput:        nodeBuildOutput,
+			RepoName:                 config.RepoName,
+			Language:                 config.Language.String(),
+			HasDockerfile:            hasDockerfile,
+			HasApp:                   hasApp,
+			ChartName:                chartName,
+			ForcePublic:              config.ForcePublic,
+			AppCatalog:               appCatalog,
+			AppCatalogTest:           appCatalogTest,
+			BranchPublish:            config.BranchPublish,
+			ImagePreBuildJob:         config.ImagePreBuildJob,
+			ImagePrivateOnly:         config.ImagePrivateOnly,
+			ImageName:                config.ImageName,
+			ImagePlatforms:           config.ImagePlatforms,
+			ImageDockerfile:          config.ImageDockerfile,
+			ReleaseBinaries:          config.shipsBinaries(),
+			BuildConcurrency:         buildConcurrency,
+			ResourceClass:            resourceClass,
+			OrbVersion:               OrbVersion,
+			ContinuationOrbVersion:   ContinuationOrbVersion,
+			BuildJobName:             buildJobName,
+			NodeJobName:              nodeJobName,
+			NodeImageVersion:         NodeImageVersion,
+			NodeInstallCommand:       nodeInstallCommand,
+			NodeRunPrefix:            nodeRunPrefix,
+			NodeCachePath:            nodeCachePath,
+			NodeCacheKey:             nodeCacheKey,
+			NodeCacheRestoreKey:      nodeCacheRestoreKey,
+			NodeBuildCachePaths:      nodeBuildCachePaths,
+			NodeBuildCacheKey:        nodeBuildCacheKey,
+			NodeBuildCacheRestoreKey: nodeBuildCacheRestoreKey,
+			NodeCorepack:             nodeCorepack,
+			NodeTestTarget:           nodeTestTarget,
+			NodeBuildTarget:          nodeBuildTarget,
+			NodeBuildOutput:          nodeBuildOutput,
 		},
 	}
 
