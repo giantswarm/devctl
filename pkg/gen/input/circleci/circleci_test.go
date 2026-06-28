@@ -405,8 +405,10 @@ func Test_CLIParallelBuildOverride(t *testing.T) {
 		BuildConcurrency: "2",
 		ResourceClass:    "xlarge",
 	})
-	if !contains(cli, "build_concurrency: 2") {
-		t.Errorf("override not applied; want build_concurrency: 2 in:\n%s", cli)
+	// A numeric override must be rendered as a quoted string: the orb's
+	// build_concurrency param is string-typed and rejects a bare int.
+	if !contains(cli, `build_concurrency: "2"`) {
+		t.Errorf("override not applied; want build_concurrency: \"2\" in:\n%s", cli)
 	}
 	if !contains(cli, "resource_class: xlarge") {
 		t.Errorf("override not applied; want resource_class: xlarge in:\n%s", cli)
@@ -423,8 +425,8 @@ func Test_CLIParallelBuildOverride(t *testing.T) {
 		HasDockerfile:    true,
 		BuildConcurrency: "2",
 	})
-	if !contains(partial, "build_concurrency: 2") {
-		t.Errorf("partial override not applied; want build_concurrency: 2 in:\n%s", partial)
+	if !contains(partial, `build_concurrency: "2"`) {
+		t.Errorf("partial override not applied; want build_concurrency: \"2\" in:\n%s", partial)
 	}
 	if !contains(partial, "resource_class: "+DefaultResourceClass) {
 		t.Errorf("unset resource_class should default to %q:\n%s", DefaultResourceClass, partial)
