@@ -193,6 +193,74 @@ func Test_CustomConfigExtendsLast(t *testing.T) {
 	}
 }
 
+// Test_DeprecatedOmittedByDefault verifies that without the flag the generated
+// config does not extend the deprecated preset.
+func Test_DeprecatedOmittedByDefault(t *testing.T) {
+	got := render(t, Config{Language: "go"})
+
+	if strings.Contains(got, "deprecated.json5") {
+		t.Errorf("default renovate config should not extend the deprecated preset:\n%s", got)
+	}
+}
+
+// Test_DeprecatedExtendsPreset verifies that with the flag the generated config
+// extends the renovate-presets deprecated.json5 preset.
+func Test_DeprecatedExtendsPreset(t *testing.T) {
+	got := render(t, Config{Language: "go", Deprecated: true})
+
+	want := "github>giantswarm/renovate-presets:deprecated.json5"
+
+	var parsed struct {
+		Extends []string `json:"extends"`
+	}
+	if err := json5.Unmarshal([]byte(got), &parsed); err != nil {
+		t.Fatalf("generated config is not valid JSON5: %v\n%s", err, got)
+	}
+
+	found := false
+	for _, e := range parsed.Extends {
+		if e == want {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("generated config missing %q in extends (full list: %v)", want, parsed.Extends)
+	}
+}
+
+// Test_DeprecatedBeforeCustomConfig verifies the deprecated preset is extended
+// before the repo-owned renovate-custom.json5, so a repo override still wins.
+func Test_DeprecatedBeforeCustomConfig(t *testing.T) {
+	got := render(t, Config{Language: "go", RepoName: "some-repo", Deprecated: true, HasCustomConfig: true})
+
+	var parsed struct {
+		Extends []string `json:"extends"`
+	}
+	if err := json5.Unmarshal([]byte(got), &parsed); err != nil {
+		t.Fatalf("generated config is not valid JSON5: %v\n%s", err, got)
+	}
+
+	deprecatedIdx, customIdx := -1, -1
+	for i, e := range parsed.Extends {
+		switch e {
+		case "github>giantswarm/renovate-presets:deprecated.json5":
+			deprecatedIdx = i
+		case "github>giantswarm/some-repo:renovate-custom.json5":
+			customIdx = i
+		}
+	}
+	if deprecatedIdx == -1 {
+		t.Fatalf("deprecated preset not found in extends: %v", parsed.Extends)
+	}
+	if customIdx == -1 {
+		t.Fatalf("renovate-custom.json5 not found in extends: %v", parsed.Extends)
+	}
+	if deprecatedIdx > customIdx {
+		t.Errorf("deprecated preset (idx %d) must come before renovate-custom.json5 (idx %d): %v", deprecatedIdx, customIdx, parsed.Extends)
+	}
+}
+
 // Test_Golden pins the exact rendered output -- quoting, trailing commas, and
 // one-item-per-line layout -- for representative config combinations. Unlike
 // the substring assertions above, it catches structural and formatting
@@ -218,6 +286,11 @@ func Test_Golden(t *testing.T) {
 			config: Config{Language: "go", Interval: "before 5am on monday"},
 		},
 		{
+			// Deprecated preset isolated from the other optional blocks.
+			name:   "deprecated",
+			config: Config{Language: "go", Deprecated: true},
+		},
+		{
 			// Every optional block on at once, so the golden pins how they
 			// compose and order.
 			name: "full",
@@ -228,6 +301,7 @@ func Test_Golden(t *testing.T) {
 				RepoName:          "some-repo",
 				HasCustomConfig:   true,
 				Interval:          "before 5am on monday",
+				Deprecated:        true,
 			},
 		},
 	}

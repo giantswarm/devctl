@@ -17,7 +17,8 @@ const (
 	example     = `  devctl gen renovate
   devctl gen renovate --interval "after 9am on thursday"
   devctl gen renovate --language go --circleci-generated
-  devctl gen renovate --language go --reviewers team:team-rocket`
+  devctl gen renovate --language go --reviewers team:team-rocket
+  devctl gen renovate --language go --deprecated`
 )
 
 type Config struct {

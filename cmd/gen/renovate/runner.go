@@ -65,6 +65,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 			CircleCIGenerated: r.flag.CircleCIGenerated,
 			RepoName:          repoName,
 			HasCustomConfig:   hasCustomConfig,
+			Deprecated:        r.flag.Deprecated,
 		}
 
 		renovateInput, err = renovate.New(c)

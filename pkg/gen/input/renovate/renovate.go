@@ -24,6 +24,11 @@ type Config struct {
 	// as the last `extends` entry so repo-specific rules win over the shared
 	// presets. The file itself is never generated or touched by devctl.
 	HasCustomConfig bool
+	// Deprecated, when true, extends the renovate-presets deprecated.json5
+	// preset, which disables all routine updates and keeps only
+	// security/vulnerability remediation. Set for repos marked
+	// lifecycle: deprecated.
+	Deprecated bool
 }
 
 type Renovate struct {
@@ -41,6 +46,7 @@ func New(config Config) (*Renovate, error) {
 			CircleCIGenerated: config.CircleCIGenerated,
 			RepoName:          config.RepoName,
 			HasCustomConfig:   config.HasCustomConfig,
+			Deprecated:        config.Deprecated,
 		},
 	}
 

@@ -23,3 +23,7 @@ func RepoName(p Params) string {
 func HasCustomConfig(p Params) bool {
 	return p.HasCustomConfig
 }
+
+func Deprecated(p Params) bool {
+	return p.Deprecated
+}
