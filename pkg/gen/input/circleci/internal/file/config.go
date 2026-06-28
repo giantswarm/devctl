@@ -54,6 +54,19 @@ func NewWorkflowsInput(p params.Params) input.Input {
 			"ImageDockerfile":  p.ImageDockerfile,
 			"ReleaseBinaries":  p.ReleaseBinaries,
 			"OrbVersion":       p.OrbVersion,
+
+			"BuildJobName":        p.BuildJobName,
+			"NodeJobName":         p.NodeJobName,
+			"NodeImageVersion":    p.NodeImageVersion,
+			"NodeInstallCommand":  p.NodeInstallCommand,
+			"NodeRunPrefix":       p.NodeRunPrefix,
+			"NodeCachePath":       p.NodeCachePath,
+			"NodeCacheKey":        p.NodeCacheKey,
+			"NodeCacheRestoreKey": p.NodeCacheRestoreKey,
+			"NodeCorepack":        p.NodeCorepack,
+			"NodeTestTarget":      p.NodeTestTarget,
+			"NodeBuildTarget":     p.NodeBuildTarget,
+			"NodeBuildOutput":     p.NodeBuildOutput,
 		},
 	}
 

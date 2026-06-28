@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
@@ -45,6 +46,13 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 	_, statErr := os.Stat("Dockerfile")
 	hasDockerfile := statErr == nil
 
+	// Node package manager is derived from the lockfile, the same content-signal
+	// style as the Dockerfile probe. An explicit --package-manager wins.
+	packageManager := r.flag.PackageManager
+	if packageManager == "" && r.flag.Language == gen.LanguageNode {
+		packageManager = detectPackageManager()
+	}
+
 	var circleciInput *circleci.CircleCI
 	{
 		c := circleci.Config{
@@ -62,6 +70,10 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 			ImageName:        r.flag.ImageName,
 			ImagePlatforms:   r.flag.ImagePlatforms,
 			ImageDockerfile:  r.flag.ImageDockerfile,
+			PackageManager:   packageManager,
+			NodeTestTarget:   r.flag.NodeTestTarget,
+			NodeBuildTarget:  r.flag.NodeBuildTarget,
+			NodeBuildOutput:  r.flag.NodeBuildOutput,
 		}
 
 		circleciInput, err = circleci.New(c)
@@ -81,4 +93,25 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 	}
 
 	return nil
+}
+
+// detectPackageManager picks the Node package manager from the lockfile present
+// in the working directory, mirroring the Dockerfile content-probe. npm and
+// pnpm are unambiguous by lockfile name; a yarn.lock is Classic only if it
+// carries the v1 header comment, otherwise it is Berry (the empty default).
+func detectPackageManager() string {
+	if _, err := os.Stat("package-lock.json"); err == nil {
+		return circleci.PackageManagerNPM
+	}
+	if _, err := os.Stat("pnpm-lock.yaml"); err == nil {
+		return circleci.PackageManagerPNPM
+	}
+	if data, err := os.ReadFile("yarn.lock"); err == nil {
+		if strings.Contains(string(data), "yarn lockfile v1") {
+			return circleci.PackageManagerYarnClassic
+		}
+		return circleci.PackageManagerYarn
+	}
+
+	return ""
 }

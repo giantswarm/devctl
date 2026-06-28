@@ -46,6 +46,89 @@ const (
 	DefaultAppCatalogTest = "giantswarm-test-catalog"
 )
 
+// NodeImageVersion is the cimg/node Docker tag the generated Node job runs on.
+// Baked in (not a flag) and Renovate-managed, for the same reason as the orb
+// pins: a toolchain bump ships with a devctl release and reaches repos via
+// align-files rather than drifting per repo.
+//
+// renovate: datasource=docker depName=cimg/node
+const NodeImageVersion = "24.18.0"
+
+// DefaultNodeTestTarget is the package.json script the Node job runs for the
+// verify phase when a repo does not override it. The repo composes
+// typecheck/lint/format/test into its own `test` script -- the make-target
+// interface (the Node analogue of `make test`), so CI and local runs share one
+// command.
+const DefaultNodeTestTarget = "test"
+
+// Package-manager values detected from the lockfile. Yarn Berry and Yarn
+// Classic are distinguished because their install commands and cache
+// directories differ (Berry: `--immutable` + .yarn/cache; Classic:
+// `--frozen-lockfile` + ~/.cache/yarn), and the two cannot be told apart from
+// the lockfile name alone.
+const (
+	PackageManagerNPM         = "npm"
+	PackageManagerYarn        = "yarn"
+	PackageManagerYarnClassic = "yarn-classic"
+	PackageManagerPNPM        = "pnpm"
+)
+
+// Lockfile names the cache is keyed on, per package manager.
+const (
+	lockfileNPM  = "package-lock.json"
+	lockfileYarn = "yarn.lock"
+	lockfilePNPM = "pnpm-lock.yaml"
+)
+
+// nodeToolchain is the per-package-manager install command, cache location,
+// and script-run prefix the Node job renders. Detection of which package
+// manager a repo uses happens in the runner (from the lockfile); this maps the
+// detected manager to its concrete commands.
+type nodeToolchain struct {
+	installCommand string
+	runPrefix      string
+	cachePath      string
+	lockfile       string
+	corepack       bool
+}
+
+func nodeToolchainFor(packageManager string) nodeToolchain {
+	switch packageManager {
+	case PackageManagerNPM:
+		return nodeToolchain{
+			installCommand: "npm ci",
+			runPrefix:      "npm run",
+			cachePath:      "~/.npm",
+			lockfile:       lockfileNPM,
+		}
+	case PackageManagerPNPM:
+		// pnpm is not bundled with cimg/node, so it is activated via corepack.
+		// ponytail: the cache assumes pnpm's default store location; a repo
+		// with a custom store-dir would need the path threaded through.
+		return nodeToolchain{
+			installCommand: "pnpm install --frozen-lockfile",
+			runPrefix:      "pnpm run",
+			cachePath:      "~/.local/share/pnpm/store",
+			lockfile:       lockfilePNPM,
+			corepack:       true,
+		}
+	case PackageManagerYarnClassic:
+		return nodeToolchain{
+			installCommand: "yarn install --frozen-lockfile",
+			runPrefix:      "yarn run",
+			cachePath:      "~/.cache/yarn",
+			lockfile:       lockfileYarn,
+		}
+	default: // PackageManagerYarn (Berry) is the default for an unset value.
+		return nodeToolchain{
+			installCommand: "yarn install --immutable",
+			runPrefix:      "yarn run",
+			cachePath:      ".yarn/cache",
+			lockfile:       lockfileYarn,
+		}
+	}
+}
+
 type Config struct {
 	// RepoName is the repository name, used for the binary, chart, and job
 	// names.
@@ -107,6 +190,25 @@ type Config struct {
 	// Empty lets the orb default apply. Set it for single-architecture images
 	// (e.g. vllm -> linux/arm64).
 	ImagePlatforms string
+	// PackageManager selects the Node package manager the build/test job uses
+	// (one of "npm", "yarn", "yarn-classic", "pnpm"). The runner detects it
+	// from the lockfile; empty defaults to Yarn Berry. Only applies to a Node
+	// repo (Language == "node").
+	PackageManager string
+	// NodeTestTarget overrides the package.json script the Node job runs for
+	// the verify phase. Empty defaults to "test". The repo composes
+	// typecheck/lint/format/test into this one script (make-target interface).
+	// Only applies to a Node repo.
+	NodeTestTarget string
+	// NodeBuildTarget is the package.json script the Node job runs to build.
+	// Empty omits the build step (a library that only verifies). Only applies
+	// to a Node repo.
+	NodeBuildTarget string
+	// NodeBuildOutput is the workspace path the Node job persists for an image
+	// handoff (e.g. backstage's "packages/*/dist/*"). Non-empty names the job
+	// "node-build" and emits persist_to_workspace; empty names it "node-test".
+	// Only applies to a Node repo.
+	NodeBuildOutput string
 }
 
 // shipsBinaries reports whether the repo distributes cross-platform Go binaries
@@ -129,8 +231,9 @@ func New(config Config) (*CircleCI, error) {
 	// HasDockerfile from a root os.Stat that misses it, so the explicit path
 	// also turns the image pipeline on.
 	hasDockerfile := config.HasDockerfile || config.ImageDockerfile != ""
-	if config.Language != gen.LanguageGo && !hasDockerfile && !hasApp {
-		return nil, microerror.Maskf(invalidConfigError, "no jobs would be generated: set --language=go, add a Dockerfile, or use the app flavour")
+	isNode := config.Language == gen.LanguageNode
+	if config.Language != gen.LanguageGo && !isNode && !hasDockerfile && !hasApp {
+		return nil, microerror.Maskf(invalidConfigError, "no jobs would be generated: set --language=go or --language=node, add a Dockerfile, or use the app flavour")
 	}
 
 	if config.ForcePublic && config.ImagePrivateOnly {
@@ -149,6 +252,62 @@ func New(config Config) (*CircleCI, error) {
 	chartName := config.ChartName
 	if chartName == "" {
 		chartName = config.RepoName
+	}
+
+	// Node toolchain. The build/test job is self-contained on a cimg/node
+	// executor (not an architect orb job -- the orb ships none), defined inline
+	// in workflows.yml. Its name signals what it produces: node-build when the
+	// build output is persisted for an image handoff, node-test otherwise.
+	var (
+		nodeJobName         string
+		nodeInstallCommand  string
+		nodeRunPrefix       string
+		nodeCachePath       string
+		nodeCacheKey        string
+		nodeCacheRestoreKey string
+		nodeCorepack        bool
+		nodeTestTarget      string
+		nodeBuildTarget     string
+		nodeBuildOutput     string
+	)
+	if isNode {
+		tc := nodeToolchainFor(config.PackageManager)
+		nodeInstallCommand = tc.installCommand
+		nodeRunPrefix = tc.runPrefix
+		nodeCachePath = tc.cachePath
+		nodeCorepack = tc.corepack
+		// Embed the literal CircleCI `{{ checksum }}` expression as a plain Go
+		// string so it survives Go-template rendering untouched and is
+		// evaluated by CircleCI at pipeline time. Key on the package manager so
+		// switching managers cannot collide cache entries.
+		pm := config.PackageManager
+		if pm == "" {
+			pm = PackageManagerYarn
+		}
+		nodeCacheRestoreKey = "node-deps-" + pm + "-"
+		nodeCacheKey = nodeCacheRestoreKey + `{{ checksum "` + tc.lockfile + `" }}`
+
+		nodeTestTarget = config.NodeTestTarget
+		if nodeTestTarget == "" {
+			nodeTestTarget = DefaultNodeTestTarget
+		}
+		nodeBuildTarget = config.NodeBuildTarget
+		nodeBuildOutput = config.NodeBuildOutput
+		if nodeBuildOutput != "" {
+			nodeJobName = "node-build"
+		} else {
+			nodeJobName = "node-test"
+		}
+	}
+
+	// BuildJobName unifies the language-derived `requires` wiring: the image
+	// and chart jobs gate on whichever build/test job the language emits.
+	buildJobName := ""
+	switch config.Language {
+	case gen.LanguageGo:
+		buildJobName = "go-build"
+	case gen.LanguageNode:
+		buildJobName = nodeJobName
 	}
 
 	c := &CircleCI{
@@ -170,6 +329,18 @@ func New(config Config) (*CircleCI, error) {
 			ReleaseBinaries:        config.shipsBinaries(),
 			OrbVersion:             OrbVersion,
 			ContinuationOrbVersion: ContinuationOrbVersion,
+			BuildJobName:           buildJobName,
+			NodeJobName:            nodeJobName,
+			NodeImageVersion:       NodeImageVersion,
+			NodeInstallCommand:     nodeInstallCommand,
+			NodeRunPrefix:          nodeRunPrefix,
+			NodeCachePath:          nodeCachePath,
+			NodeCacheKey:           nodeCacheKey,
+			NodeCacheRestoreKey:    nodeCacheRestoreKey,
+			NodeCorepack:           nodeCorepack,
+			NodeTestTarget:         nodeTestTarget,
+			NodeBuildTarget:        nodeBuildTarget,
+			NodeBuildOutput:        nodeBuildOutput,
 		},
 	}
 

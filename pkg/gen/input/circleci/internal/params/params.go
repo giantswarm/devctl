@@ -100,4 +100,42 @@ type Params struct {
 	// ContinuationOrbVersion is the circleci/continuation orb version the
 	// setup config pins.
 	ContinuationOrbVersion string
+	// BuildJobName is the build/test job the image and chart jobs gate on via
+	// `requires` -- "go-build" for Go, "node-build"/"node-test" for Node. Empty
+	// for languageless repos (the image/chart jobs then gate on nothing extra).
+	BuildJobName string
+	// NodeJobName is the generated Node job's name: "node-build" when it
+	// persists a build output for an image handoff, "node-test" otherwise.
+	// Empty for non-Node repos.
+	NodeJobName string
+	// NodeImageVersion is the cimg/node Docker tag the Node job runs on.
+	NodeImageVersion string
+	// NodeInstallCommand installs dependencies for the detected package manager
+	// (e.g. "npm ci", "yarn install --immutable").
+	NodeInstallCommand string
+	// NodeRunPrefix prefixes a package.json script invocation for the detected
+	// package manager (e.g. "npm run", "yarn run").
+	NodeRunPrefix string
+	// NodeCachePath is the dependency cache directory for the detected package
+	// manager (e.g. "~/.npm", ".yarn/cache").
+	NodeCachePath string
+	// NodeCacheKey is the full save_cache key, embedding the literal CircleCI
+	// `{{ checksum "<lockfile>" }}` expression so the cache invalidates when the
+	// lockfile changes.
+	NodeCacheKey string
+	// NodeCacheRestoreKey is the lockfile-agnostic restore_cache prefix, so a
+	// changed lockfile still warm-starts from the last good cache.
+	NodeCacheRestoreKey string
+	// NodeCorepack is true when the package manager needs `corepack enable`
+	// (pnpm, which cimg/node does not bundle).
+	NodeCorepack bool
+	// NodeTestTarget is the package.json script the Node job runs for the
+	// verify phase (the make-target interface). Defaults to "test".
+	NodeTestTarget string
+	// NodeBuildTarget is the package.json script the Node job runs to build.
+	// Empty omits the build step.
+	NodeBuildTarget string
+	// NodeBuildOutput is the workspace path the Node job persists for an image
+	// handoff (e.g. "packages/*/dist/*"). Empty omits persist_to_workspace.
+	NodeBuildOutput string
 }
