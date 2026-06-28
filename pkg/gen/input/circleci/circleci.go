@@ -62,6 +62,14 @@ const NodeImageVersion = "24.18.0"
 // command.
 const DefaultNodeTestTarget = "test"
 
+// DefaultNodeResourceClass is the CircleCI resource_class the Node job runs on
+// when a repo does not override it. The Node verify chain (tsc + lint + test +
+// build over a whole monorepo) is memory-hungry -- backstage's ci:verify pins
+// NODE_OPTIONS max-old-space-size to 6 GiB -- so "large" (4 vCPU / 8 GiB) is the
+// floor. A bigger monorepo raises it via gen.ci.resourceClass, the same knob the
+// cli go-build job uses.
+const DefaultNodeResourceClass = "large"
+
 // Package-manager values detected from the lockfile. Yarn Berry and Yarn
 // Classic are distinguished because their install commands and cache
 // directories differ (Berry: `--immutable` + .yarn/cache; Classic:
@@ -99,10 +107,13 @@ type nodeToolchain struct {
 	// output lives in node_modules, not the tarball cache. Restoring it lets the
 	// install reconcile incrementally instead of recompiling from source every
 	// run -- the Node analogue of go-build persisting $GOCACHE. Keyed on the
-	// node image version too (native ABI is node-version-specific). Empty for
-	// package managers where it does not apply: npm (`npm ci` wipes node_modules
-	// first) and pnpm (its content-addressable store already caches build
-	// side-effects, and that store is the dependency cache).
+	// node image version too (native ABI is node-version-specific). The template
+	// saves it after the verify/build steps, so the same cache also persists the
+	// tsc/eslint/jest incremental caches those tools write under
+	// node_modules/.cache (the compute-side win). Empty for package managers
+	// where it does not apply: npm (`npm ci` wipes node_modules first) and pnpm
+	// (its content-addressable store already caches build side-effects, and that
+	// store is the dependency cache).
 	buildCachePaths []string
 }
 
@@ -312,6 +323,7 @@ func New(config Config) (*CircleCI, error) {
 		nodeBuildCacheKey        string
 		nodeBuildCacheRestoreKey string
 		nodeCorepack             bool
+		nodeResourceClass        string
 		nodeTestTarget           string
 		nodeBuildTarget          string
 		nodeBuildOutput          string
@@ -323,6 +335,13 @@ func New(config Config) (*CircleCI, error) {
 		nodeCachePath = tc.cachePath
 		nodeBuildCachePaths = tc.buildCachePaths
 		nodeCorepack = tc.corepack
+		// The cli go-build resourceClass knob (gen.ci.resourceClass) is shared:
+		// a Node repo reuses it to size the verify/build box, defaulting to
+		// "large" when unset.
+		nodeResourceClass = config.ResourceClass
+		if nodeResourceClass == "" {
+			nodeResourceClass = DefaultNodeResourceClass
+		}
 		// Embed the literal CircleCI `{{ checksum }}` expression as a plain Go
 		// string so it survives Go-template rendering untouched and is
 		// evaluated by CircleCI at pipeline time. Key on the package manager so
@@ -346,7 +365,10 @@ func New(config Config) (*CircleCI, error) {
 		// the node version, so a node bump must not restore stale binaries. The
 		// restore prefix omits the lockfile checksum, so a changed lockfile
 		// still warm-starts from the previous node_modules and the install only
-		// reconciles (and rebuilds) the diff.
+		// reconciles (and rebuilds) the diff. The template saves this cache
+		// *after* the verify/build steps, so it captures the tsc/eslint/jest
+		// incremental caches those tools write under node_modules/.cache too --
+		// the compute-side analogue of go-build persisting $GOCACHE.
 		if len(nodeBuildCachePaths) > 0 {
 			nodeBuildCacheRestoreKey = "node-build-" + pm + "-v1-" + NodeImageVersion + "-"
 			nodeBuildCacheKey = nodeBuildCacheRestoreKey + `{{ checksum "` + tc.lockfile + `" }}`
@@ -423,6 +445,7 @@ func New(config Config) (*CircleCI, error) {
 			NodeBuildCacheKey:        nodeBuildCacheKey,
 			NodeBuildCacheRestoreKey: nodeBuildCacheRestoreKey,
 			NodeCorepack:             nodeCorepack,
+			NodeResourceClass:        nodeResourceClass,
 			NodeTestTarget:           nodeTestTarget,
 			NodeBuildTarget:          nodeBuildTarget,
 			NodeBuildOutput:          nodeBuildOutput,

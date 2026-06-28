@@ -17,7 +17,7 @@ jobs:
   {{ .NodeJobName }}:
     docker:
     - image: cimg/node:{{ .NodeImageVersion }}
-    resource_class: large
+    resource_class: {{ .NodeResourceClass }}
     steps:
     - checkout
 {{- if .NodeCorepack }}
@@ -47,14 +47,6 @@ jobs:
         key: {{ .NodeCacheKey }}
         paths:
         - {{ .NodeCachePath }}
-{{- if .NodeBuildCachePaths }}
-    - save_cache:
-        key: {{ .NodeBuildCacheKey }}
-        paths:
-{{- range .NodeBuildCachePaths }}
-        - {{ . }}
-{{- end }}
-{{- end }}
 {{- if .NodeTestTarget }}
     - run:
         # The repo composes typecheck/lint/format/test into this one script
@@ -66,6 +58,20 @@ jobs:
     - run:
         name: Build
         command: {{ .NodeRunPrefix }} {{ .NodeBuildTarget }}
+{{- end }}
+{{- if .NodeBuildCachePaths }}
+    # Save the build-output cache *after* verify/build so it captures both the
+    # node_modules native addons compiled during install AND the tsc/eslint/jest
+    # incremental caches those steps write under node_modules/.cache -- the
+    # compute-side analogue of persisting $GOCACHE. Write-once per lockfile (the
+    # restore prefix keeps every run warm-started from the last good cache, so a
+    # red build never leaves a repo cold).
+    - save_cache:
+        key: {{ .NodeBuildCacheKey }}
+        paths:
+{{- range .NodeBuildCachePaths }}
+        - {{ . }}
+{{- end }}
 {{- end }}
 {{- if .NodeBuildOutput }}
     - persist_to_workspace:
