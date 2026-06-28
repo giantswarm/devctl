@@ -21,6 +21,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   the build output for an image handoff (`gen.ci.image.preBuildJob`), otherwise it is `node-test`.
   The image and chart jobs' `requires` wiring was generalized so they gate on the language's build
   job (`go-build` or `node-build`/`node-test`).
+- `gen circleci`: add `--build-concurrency` and `--resource-class` flags (surfaced as `gen.ci.buildConcurrency`
+  / `gen.ci.resourceClass` in giantswarm/github) to override the cli-flavour `go-build` job's
+  `build_concurrency` (default `auto`) and `resource_class` (default `large`). The orb 9.5.5 cache-key fix
+  makes warm caching take effect, but the *first* cold full-matrix cross-compile must still complete to
+  populate the fresh `v2` cache. For an unusually large binary (e.g. `mcp-kubernetes`, ~99 MB, k8s-linked)
+  six concurrent cold `go build`s OOM-kill the `large` runner before the cache is stored, so the repo stays
+  permanently cold. Lowering `build_concurrency` (memory, not CPU, is the binding constraint) lets the cold
+  build survive once and warm the cache. Empty keeps the existing `auto`/`large` defaults, so cli repos that
+  set neither are unchanged; non-cli `go-build` jobs ignore both.
 
 ### Changed
 

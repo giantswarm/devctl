@@ -95,6 +95,15 @@ type Params struct {
 	// linux/amd64,linux/arm64 (otherwise buildx tries the darwin/windows
 	// targets under QEMU and hangs).
 	ReleaseBinaries bool
+	// BuildConcurrency is the architect go-build `build_concurrency` value the
+	// cli-flavour job renders (how many architectures compile concurrently).
+	// Defaulted to "auto" by the generator for cli repos; empty for non-cli
+	// repos, where the template omits the go-build resource block entirely.
+	BuildConcurrency string
+	// ResourceClass is the CircleCI resource_class the cli-flavour go-build job
+	// renders. Defaulted to "large" by the generator for cli repos; empty for
+	// non-cli repos.
+	ResourceClass string
 	// OrbVersion is the giantswarm/architect orb version to pin.
 	OrbVersion string
 	// ContinuationOrbVersion is the circleci/continuation orb version the

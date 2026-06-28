@@ -129,6 +129,17 @@ func nodeToolchainFor(packageManager string) nodeToolchain {
 	}
 }
 
+// DefaultBuildConcurrency and DefaultResourceClass are the go-build knobs the
+// cli flavour applies when a repo does not override them. They match the
+// long-standing template hardcodes, so cli repos that set neither render the
+// identical config they had before the overrides existed. Only the cli flavour
+// (ReleaseBinaries) emits these; a non-cli go-build job stays on the orb/CircleCI
+// defaults.
+const (
+	DefaultBuildConcurrency = "auto"
+	DefaultResourceClass    = "large"
+)
+
 type Config struct {
 	// RepoName is the repository name, used for the binary, chart, and job
 	// names.
@@ -190,6 +201,19 @@ type Config struct {
 	// Empty lets the orb default apply. Set it for single-architecture images
 	// (e.g. vllm -> linux/arm64).
 	ImagePlatforms string
+	// BuildConcurrency overrides how many architectures the cli-flavour
+	// go-build job compiles concurrently (the architect go-build
+	// `build_concurrency` param). Empty defaults to "auto" (nproc). Lower it
+	// (e.g. "2") for repos whose binary is large enough that a cold full-matrix
+	// cross-compile OOMs the runner at `auto` -- memory, not CPU, is the binding
+	// constraint, and a killed build never stores the build cache, so the repo
+	// stays permanently cold. Only applies to the cli flavour (ReleaseBinaries).
+	BuildConcurrency string
+	// ResourceClass overrides the CircleCI resource_class on the cli-flavour
+	// go-build job. Empty defaults to "large". Raise it (e.g. "xlarge") for
+	// repos that need more RAM/CPU headroom for the cold cross-compile. Only
+	// applies to the cli flavour (ReleaseBinaries).
+	ResourceClass string
 	// PackageManager selects the Node package manager the build/test job uses
 	// (one of "npm", "yarn", "yarn-classic", "pnpm"). The runner detects it
 	// from the lockfile; empty defaults to Yarn Berry. Only applies to a Node
@@ -310,6 +334,21 @@ func New(config Config) (*CircleCI, error) {
 		buildJobName = nodeJobName
 	}
 
+	// The cli flavour emits build_concurrency + resource_class; default the
+	// pair to the long-standing template hardcodes when unset so existing cli
+	// repos are unchanged. Non-cli repos leave both empty -- the template only
+	// renders them inside the ReleaseBinaries block.
+	buildConcurrency := config.BuildConcurrency
+	resourceClass := config.ResourceClass
+	if config.shipsBinaries() {
+		if buildConcurrency == "" {
+			buildConcurrency = DefaultBuildConcurrency
+		}
+		if resourceClass == "" {
+			resourceClass = DefaultResourceClass
+		}
+	}
+
 	c := &CircleCI{
 		params: params.Params{
 			RepoName:               config.RepoName,
@@ -327,6 +366,8 @@ func New(config Config) (*CircleCI, error) {
 			ImagePlatforms:         config.ImagePlatforms,
 			ImageDockerfile:        config.ImageDockerfile,
 			ReleaseBinaries:        config.shipsBinaries(),
+			BuildConcurrency:       buildConcurrency,
+			ResourceClass:          resourceClass,
 			OrbVersion:             OrbVersion,
 			ContinuationOrbVersion: ContinuationOrbVersion,
 			BuildJobName:           buildJobName,
