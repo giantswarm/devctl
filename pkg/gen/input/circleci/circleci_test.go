@@ -369,11 +369,11 @@ func Test_CLIParallelBuild(t *testing.T) {
 		Flavours:      gen.FlavourSlice{gen.FlavourApp, gen.FlavourCLI},
 		HasDockerfile: true,
 	})
-	if !contains(cli, "build_concurrency: auto") {
-		t.Errorf("cli flavour missing build_concurrency: auto:\n%s", cli)
+	if !contains(cli, "build_concurrency: "+DefaultBuildConcurrency) {
+		t.Errorf("cli flavour missing build_concurrency: %s:\n%s", DefaultBuildConcurrency, cli)
 	}
-	if !contains(cli, "resource_class: large") {
-		t.Errorf("cli flavour missing resource_class: large:\n%s", cli)
+	if !contains(cli, "resource_class: "+DefaultResourceClass) {
+		t.Errorf("cli flavour missing resource_class: %s:\n%s", DefaultResourceClass, cli)
 	}
 
 	svc := render(t, Config{
@@ -387,6 +387,63 @@ func Test_CLIParallelBuild(t *testing.T) {
 	}
 	if contains(svc, "resource_class") {
 		t.Errorf("non-cli service should not set resource_class:\n%s", svc)
+	}
+}
+
+// Test_CLIParallelBuildOverride verifies a cli repo can lower build_concurrency
+// and raise resource_class when the cold full-matrix cross-compile of a large
+// binary OOMs the runner at the "auto"/"large" defaults (observed on
+// mcp-kubernetes: a killed build never stores the cache, so the repo stays
+// permanently cold). An unset knob keeps its default; a non-cli repo ignores
+// both, since the template only renders them inside the ReleaseBinaries block.
+func Test_CLIParallelBuildOverride(t *testing.T) {
+	cli := render(t, Config{
+		RepoName:         repoMCPKubernetes,
+		Language:         gen.LanguageGo,
+		Flavours:         gen.FlavourSlice{gen.FlavourApp, gen.FlavourCLI},
+		HasDockerfile:    true,
+		BuildConcurrency: "2",
+		ResourceClass:    "xlarge",
+	})
+	if !contains(cli, "build_concurrency: 2") {
+		t.Errorf("override not applied; want build_concurrency: 2 in:\n%s", cli)
+	}
+	if !contains(cli, "resource_class: xlarge") {
+		t.Errorf("override not applied; want resource_class: xlarge in:\n%s", cli)
+	}
+	if contains(cli, "build_concurrency: "+DefaultBuildConcurrency) {
+		t.Errorf("default build_concurrency leaked through despite override:\n%s", cli)
+	}
+
+	// A partial override keeps the unset knob on its default.
+	partial := render(t, Config{
+		RepoName:         repoMCPKubernetes,
+		Language:         gen.LanguageGo,
+		Flavours:         gen.FlavourSlice{gen.FlavourApp, gen.FlavourCLI},
+		HasDockerfile:    true,
+		BuildConcurrency: "2",
+	})
+	if !contains(partial, "build_concurrency: 2") {
+		t.Errorf("partial override not applied; want build_concurrency: 2 in:\n%s", partial)
+	}
+	if !contains(partial, "resource_class: "+DefaultResourceClass) {
+		t.Errorf("unset resource_class should default to %q:\n%s", DefaultResourceClass, partial)
+	}
+
+	// A non-cli Go service ignores the knobs (no ReleaseBinaries block).
+	svc := render(t, Config{
+		RepoName:         repoMCPKubernetes,
+		Language:         gen.LanguageGo,
+		Flavours:         gen.FlavourSlice{gen.FlavourApp},
+		HasDockerfile:    true,
+		BuildConcurrency: "2",
+		ResourceClass:    "xlarge",
+	})
+	if contains(svc, "build_concurrency") {
+		t.Errorf("non-cli service should not render build_concurrency even when set:\n%s", svc)
+	}
+	if contains(svc, "resource_class") {
+		t.Errorf("non-cli service should not render resource_class even when set:\n%s", svc)
 	}
 }
 

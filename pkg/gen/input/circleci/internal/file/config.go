@@ -53,6 +53,8 @@ func NewWorkflowsInput(p params.Params) input.Input {
 			"ImagePlatforms":   p.ImagePlatforms,
 			"ImageDockerfile":  p.ImageDockerfile,
 			"ReleaseBinaries":  p.ReleaseBinaries,
+			"BuildConcurrency": p.BuildConcurrency,
+			"ResourceClass":    p.ResourceClass,
 			"OrbVersion":       p.OrbVersion,
 
 			"BuildJobName":        p.BuildJobName,

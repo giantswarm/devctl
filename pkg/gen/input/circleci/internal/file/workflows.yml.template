@@ -82,9 +82,12 @@ workflows:
         # The six-arch cross-compile is cold after every go.sum bump (the GOCACHE
         # restore misses), so compile the architectures concurrently on a larger
         # box instead of sequentially on 2 vCPUs. build_concurrency is opt-in in
-        # the orb because it only pays off at a bigger resource_class.
-        build_concurrency: auto
-        resource_class: large
+        # the orb because it only pays off at a bigger resource_class. A repo
+        # whose binary is large enough that the cold full-matrix build OOMs at
+        # `auto` lowers build_concurrency (and/or raises resource_class) via
+        # gen.ci.buildConcurrency / gen.ci.resourceClass.
+        build_concurrency: {{ .BuildConcurrency }}
+        resource_class: {{ .ResourceClass }}
 {{- end }}
         filters:
           tags:
