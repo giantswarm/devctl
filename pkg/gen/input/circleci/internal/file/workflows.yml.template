@@ -6,6 +6,57 @@
 version: 2.1
 orbs:
   architect: giantswarm/architect@{{ .OrbVersion }}
+{{- if eq .Language "node" }}
+
+jobs:
+  # Self-contained Node build/test on a cimg/node executor (architect ships no
+  # Node job). Dependencies are restored from a cache keyed on the lockfile
+  # checksum and saved write-once-per-lockfile, the Node analogue of go-build's
+  # GOCACHE persist. The verify/build steps invoke package.json scripts, so a
+  # repo redirects its bespoke toolchain by editing those scripts, not this job.
+  {{ .NodeJobName }}:
+    docker:
+    - image: cimg/node:{{ .NodeImageVersion }}
+    resource_class: large
+    steps:
+    - checkout
+{{- if .NodeCorepack }}
+    - run:
+        name: Enable corepack
+        command: sudo corepack enable
+{{- end }}
+    - restore_cache:
+        keys:
+        - {{ .NodeCacheKey }}
+        - {{ .NodeCacheRestoreKey }}
+    - run:
+        name: Install dependencies
+        command: {{ .NodeInstallCommand }}
+    - save_cache:
+        key: {{ .NodeCacheKey }}
+        paths:
+        - {{ .NodeCachePath }}
+{{- if .NodeTestTarget }}
+    - run:
+        # The repo composes typecheck/lint/format/test into this one script
+        # (the make-target interface), so CI and local runs share a command.
+        name: Verify
+        command: {{ .NodeRunPrefix }} {{ .NodeTestTarget }}
+{{- end }}
+{{- if .NodeBuildTarget }}
+    - run:
+        name: Build
+        command: {{ .NodeRunPrefix }} {{ .NodeBuildTarget }}
+{{- end }}
+{{- if .NodeBuildOutput }}
+    - persist_to_workspace:
+        # Hand the build output to the image jobs, which attach_workspace and
+        # overlay it into the Docker build context (gen.ci.image.preBuildJob).
+        root: .
+        paths:
+        - {{ .NodeBuildOutput }}
+{{- end }}
+{{- end }}
 
 workflows:
   build:
@@ -55,6 +106,12 @@ workflows:
             ignore: /.*/
 {{- end }}
 {{- end }}
+{{- if eq .Language "node" }}
+    - {{ .NodeJobName }}:
+        filters:
+          tags:
+            only: /^v.*/
+{{- end }}
 {{- if .HasDockerfile }}
 {{- if .BranchPublish }}
 
@@ -80,10 +137,10 @@ workflows:
 {{- else }}
         platforms: linux/amd64
 {{- end }}
-{{- if or (eq .Language "go") .ImagePreBuildJob }}
+{{- if or .BuildJobName .ImagePreBuildJob }}
         requires:
-{{- if eq .Language "go" }}
-        - go-build
+{{- if .BuildJobName }}
+        - {{ .BuildJobName }}
 {{- end }}
 {{- if .ImagePreBuildJob }}
         # Repo-owned pre-build job (defined in .circleci/custom.yml). The
@@ -120,10 +177,10 @@ workflows:
         # must not attempt the darwin/windows manifests under QEMU.
         platforms: "linux/amd64,linux/arm64"
 {{- end }}
-{{- if or (eq .Language "go") .ImagePreBuildJob }}
+{{- if or .BuildJobName .ImagePreBuildJob }}
         requires:
-{{- if eq .Language "go" }}
-        - go-build
+{{- if .BuildJobName }}
+        - {{ .BuildJobName }}
 {{- end }}
 {{- if .ImagePreBuildJob }}
         # Repo-owned pre-build job (defined in .circleci/custom.yml). The
@@ -174,10 +231,10 @@ workflows:
         # build the darwin/windows manifests under QEMU and hangs.
         platforms: "linux/amd64,linux/arm64"
 {{- end }}
-{{- if or (eq .Language "go") .ImagePreBuildJob }}
+{{- if or .BuildJobName .ImagePreBuildJob }}
         requires:
-{{- if eq .Language "go" }}
-        - go-build
+{{- if .BuildJobName }}
+        - {{ .BuildJobName }}
 {{- end }}
 {{- if .ImagePreBuildJob }}
         # Repo-owned pre-build job (defined in .circleci/custom.yml). The
@@ -226,9 +283,9 @@ workflows:
         push_to_appcatalog: false
         push_to_oci_registry: false
         persist_chart_archive: true
-{{- if eq .Language "go" }}
+{{- if .BuildJobName }}
         requires:
-        - go-build
+        - {{ .BuildJobName }}
 {{- end }}
         filters:
           tags:

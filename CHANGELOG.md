@@ -7,6 +7,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `gen circleci` now generates a Node/TypeScript build path (`--language=node`), mirroring the Go
+  path. It emits a self-contained `node-build`/`node-test` job on a `cimg/node` executor (architect
+  ships no Node job) with a dependency cache keyed on the lockfile checksum — the Node analogue of
+  `go-build`'s `GOCACHE` persist. The package manager is detected from the lockfile
+  (`package-lock.json` → npm, `pnpm-lock.yaml` → pnpm, `yarn.lock` → Yarn Berry or `yarn-classic`
+  by its `# yarn lockfile v1` header) or set with `--package-manager`. The verify/build commands are
+  `package.json` scripts (the make-target interface): `--node-test-target` (default `test`) and
+  `--node-build-target`, so bespoke toolchains (backstage-cli, Next.js, headlamp-plugin) redirect
+  without forking the generated job. `--node-build-output` names the job `node-build` and persists
+  the build output for an image handoff (`gen.ci.image.preBuildJob`), otherwise it is `node-test`.
+  The image and chart jobs' `requires` wiring was generalized so they gate on the language's build
+  job (`go-build` or `node-build`/`node-test`).
+
 ### Changed
 
 - Bump the aligned `giantswarm/architect` orb to `9.5.5` (from `9.5.2`/`9.5.3`). `9.5.4` writes

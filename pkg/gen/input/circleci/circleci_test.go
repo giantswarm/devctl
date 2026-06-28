@@ -24,8 +24,17 @@ const (
 	goldenWorkflowsPath    = "testdata/mcp-kubernetes.workflows.yml"
 	goldenCLIWorkflowsPath = "testdata/mcp-kubernetes.cli.workflows.yml"
 
+	goldenNodeNPMPath       = "testdata/node-npm.workflows.yml"
+	goldenNodeYarnBerryPath = "testdata/node-yarn-berry.workflows.yml"
+
 	repoMCPKubernetes = "mcp-kubernetes"
 	repoSitesearch    = "sitesearch"
+	repoK8sTypes      = "k8s-typescript-types"
+	repoBackstage     = "backstage"
+
+	backstageDockerfile  = "packages/backend/Dockerfile"
+	backstageBuildOutput = "packages/*/dist/*"
+	nodeBuildTarget      = "build:backend"
 )
 
 // mergeExpression is the yq deep-merge the generated setup config runs to
@@ -912,5 +921,247 @@ func Test_CLIWithoutGoOmitsReleaseBinaries(t *testing.T) {
 
 	if contains(got, "name: upload-release-assets") {
 		t.Errorf("non-go config should not contain upload-release-assets:\n%s", got)
+	}
+}
+
+// Test_GoldenNodeNPMWorkflows is the golden test for a Node library on npm with
+// no image or chart (the k8s-typescript-types shape, AC: node-test only): a
+// self-contained node-test job on cimg/node with an npm-keyed dependency cache
+// and the default `npm run test` verify, and no architect image/chart jobs.
+func Test_GoldenNodeNPMWorkflows(t *testing.T) {
+	got := render(t, Config{
+		RepoName:       repoK8sTypes,
+		Language:       gen.LanguageNode,
+		PackageManager: PackageManagerNPM,
+	})
+
+	want, err := os.ReadFile(goldenNodeNPMPath) // #nosec G304 -- fixed in-package testdata path
+	if err != nil {
+		t.Fatalf("read golden: %v", err)
+	}
+
+	if got != string(want) {
+		t.Errorf("generated workflows do not match golden %s\n--- got ---\n%s\n--- want ---\n%s", goldenNodeNPMPath, got, string(want))
+	}
+}
+
+// Test_GoldenNodeYarnBerryWorkflows is the golden test for the backstage shape
+// (AC: Yarn-Berry + gen.ci.image.preBuildJob): a node-build job on cimg/node
+// with a Yarn-Berry-keyed cache, a configurable build target, and a persisted
+// build output, feeding an image (non-root Dockerfile) and a chart whose image
+// and chart jobs gate on node-build.
+func Test_GoldenNodeYarnBerryWorkflows(t *testing.T) {
+	got := render(t, Config{
+		RepoName:        repoBackstage,
+		Language:        gen.LanguageNode,
+		Flavours:        gen.FlavourSlice{gen.FlavourApp},
+		PackageManager:  PackageManagerYarn,
+		NodeBuildTarget: nodeBuildTarget,
+		NodeBuildOutput: backstageBuildOutput,
+		ImageDockerfile: backstageDockerfile,
+	})
+
+	want, err := os.ReadFile(goldenNodeYarnBerryPath) // #nosec G304 -- fixed in-package testdata path
+	if err != nil {
+		t.Fatalf("read golden: %v", err)
+	}
+
+	if got != string(want) {
+		t.Errorf("generated workflows do not match golden %s\n--- got ---\n%s\n--- want ---\n%s", goldenNodeYarnBerryPath, got, string(want))
+	}
+}
+
+// Test_NodeLibraryNeedsNoOtherSignal verifies the relaxed no-jobs guard: a Node
+// repo with no Dockerfile and no app flavour is a valid config (the node-test
+// job is the signal), where the same shape without a language is rejected.
+func Test_NodeLibraryNeedsNoOtherSignal(t *testing.T) {
+	got := render(t, Config{
+		RepoName:       repoK8sTypes,
+		Language:       gen.LanguageNode,
+		PackageManager: PackageManagerNPM,
+	})
+	if !contains(got, "node-test:") {
+		t.Errorf("Node library missing node-test job:\n%s", got)
+	}
+
+	_, err := New(Config{
+		RepoName: repoK8sTypes,
+		Language: gen.Language(""),
+	})
+	if !IsInvalidConfig(err) {
+		t.Errorf("expected invalidConfigError for a languageless repo with no other signal, got %v", err)
+	}
+}
+
+// Test_NodeJobNameFromBuildOutput verifies the job is named node-build and
+// persists its workspace when a build output is set (the image-feeding shape),
+// and is named node-test with no persist_to_workspace otherwise.
+func Test_NodeJobNameFromBuildOutput(t *testing.T) {
+	build := render(t, Config{
+		RepoName:        repoBackstage,
+		Language:        gen.LanguageNode,
+		PackageManager:  PackageManagerYarn,
+		NodeBuildTarget: nodeBuildTarget,
+		NodeBuildOutput: backstageBuildOutput,
+		ImageDockerfile: backstageDockerfile,
+	})
+	if !contains(build, "node-build:") {
+		t.Errorf("build output should name the job node-build:\n%s", build)
+	}
+	if !contains(build, "persist_to_workspace:") {
+		t.Errorf("build output should persist the workspace:\n%s", build)
+	}
+	if !contains(build, "- "+backstageBuildOutput) {
+		t.Errorf("persisted path missing the build output:\n%s", build)
+	}
+
+	test := render(t, Config{
+		RepoName:       repoK8sTypes,
+		Language:       gen.LanguageNode,
+		PackageManager: PackageManagerNPM,
+	})
+	if !contains(test, "node-test:") {
+		t.Errorf("no build output should name the job node-test:\n%s", test)
+	}
+	if contains(test, "persist_to_workspace:") {
+		t.Errorf("node-test should not persist a workspace:\n%s", test)
+	}
+}
+
+// Test_NodeImageGatesOnBuildJob verifies the generalized requires wiring: a
+// Node repo feeding an image and a chart gates the image jobs (build-image,
+// push-to-registries-release) and the chart job (build-chart) on node-build,
+// the same way a Go repo gates them on go-build.
+func Test_NodeImageGatesOnBuildJob(t *testing.T) {
+	got := render(t, Config{
+		RepoName:        repoBackstage,
+		Language:        gen.LanguageNode,
+		Flavours:        gen.FlavourSlice{gen.FlavourApp},
+		PackageManager:  PackageManagerYarn,
+		NodeBuildTarget: nodeBuildTarget,
+		NodeBuildOutput: backstageBuildOutput,
+		ImageDockerfile: backstageDockerfile,
+	})
+
+	// build-image, push-to-registries-release, and build-chart each gate on
+	// node-build via a `- node-build` requires entry.
+	if n := strings.Count(got, "- node-build\n"); n != 3 {
+		t.Errorf("expected 3 requires entries on node-build (build-image, release push, build-chart), found %d:\n%s", n, got)
+	}
+	if contains(got, "- go-build") {
+		t.Errorf("Node repo should not reference go-build:\n%s", got)
+	}
+}
+
+// Test_NodePreBuildJobCoexists verifies gen.ci.image.preBuildJob still works
+// with a Node build job: the image jobs require both node-build and the
+// repo-owned pre-build job.
+func Test_NodePreBuildJobCoexists(t *testing.T) {
+	got := render(t, Config{
+		RepoName:         repoBackstage,
+		Language:         gen.LanguageNode,
+		PackageManager:   PackageManagerYarn,
+		NodeBuildTarget:  nodeBuildTarget,
+		NodeBuildOutput:  backstageBuildOutput,
+		ImageDockerfile:  backstageDockerfile,
+		ImagePreBuildJob: "fetch-release-notes",
+	})
+
+	if !contains(got, "- node-build\n") {
+		t.Errorf("image jobs should require node-build:\n%s", got)
+	}
+	if n := strings.Count(got, "- fetch-release-notes"); n != 2 {
+		t.Errorf("expected pre-build requires on build-image and release push, found %d:\n%s", n, got)
+	}
+}
+
+// Test_NodePackageManagers verifies each detected package manager renders its
+// own install command, cache path, and lockfile-keyed cache key, and that only
+// pnpm activates corepack.
+func Test_NodePackageManagers(t *testing.T) {
+	cases := []struct {
+		pm          string
+		install     string
+		cachePath   string
+		cacheKey    string
+		wantCorepak bool
+	}{
+		{PackageManagerNPM, "npm ci", "~/.npm", `node-deps-npm-{{ checksum "package-lock.json" }}`, false},
+		{PackageManagerYarn, "yarn install --immutable", ".yarn/cache", `node-deps-yarn-{{ checksum "yarn.lock" }}`, false},
+		{PackageManagerYarnClassic, "yarn install --frozen-lockfile", "~/.cache/yarn", `node-deps-yarn-classic-{{ checksum "yarn.lock" }}`, false},
+		{PackageManagerPNPM, "pnpm install --frozen-lockfile", "~/.local/share/pnpm/store", `node-deps-pnpm-{{ checksum "pnpm-lock.yaml" }}`, true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.pm, func(t *testing.T) {
+			got := render(t, Config{
+				RepoName:       repoK8sTypes,
+				Language:       gen.LanguageNode,
+				PackageManager: tc.pm,
+			})
+			if !contains(got, "command: "+tc.install) {
+				t.Errorf("%s missing install command %q:\n%s", tc.pm, tc.install, got)
+			}
+			if !contains(got, "- "+tc.cachePath) {
+				t.Errorf("%s missing cache path %q:\n%s", tc.pm, tc.cachePath, got)
+			}
+			if !contains(got, tc.cacheKey) {
+				t.Errorf("%s missing cache key %q:\n%s", tc.pm, tc.cacheKey, got)
+			}
+			corepack := contains(got, "corepack enable")
+			if corepack != tc.wantCorepak {
+				t.Errorf("%s corepack = %v, want %v:\n%s", tc.pm, corepack, tc.wantCorepak, got)
+			}
+		})
+	}
+}
+
+// Test_NodeTestTargetConfigurable verifies the verify step runs the default
+// `test` script and an override redirects it (the make-target interface),
+// while the build step is omitted unless a build target is set.
+func Test_NodeTestTargetConfigurable(t *testing.T) {
+	def := render(t, Config{
+		RepoName:       repoK8sTypes,
+		Language:       gen.LanguageNode,
+		PackageManager: PackageManagerNPM,
+	})
+	if !contains(def, "command: npm run "+DefaultNodeTestTarget) {
+		t.Errorf("default verify should run %q:\n%s", DefaultNodeTestTarget, def)
+	}
+	if contains(def, "name: Build") {
+		t.Errorf("no build target should omit the Build step:\n%s", def)
+	}
+
+	override := render(t, Config{
+		RepoName:        repoK8sTypes,
+		Language:        gen.LanguageNode,
+		PackageManager:  PackageManagerNPM,
+		NodeTestTarget:  "ci:verify",
+		NodeBuildTarget: "compile",
+	})
+	if !contains(override, "command: npm run ci:verify") {
+		t.Errorf("verify override not applied:\n%s", override)
+	}
+	if !contains(override, "command: npm run compile") {
+		t.Errorf("build target not applied:\n%s", override)
+	}
+}
+
+// Test_GoUnaffectedByBuildJobName is a regression guard: generalizing the
+// image/chart requires wiring to BuildJobName must keep the Go path gating on
+// go-build exactly as before.
+func Test_GoUnaffectedByBuildJobName(t *testing.T) {
+	got := render(t, Config{
+		RepoName:      repoMCPKubernetes,
+		Language:      gen.LanguageGo,
+		Flavours:      gen.FlavourSlice{gen.FlavourApp},
+		HasDockerfile: true,
+	})
+	// build-image, push-to-registries-release, and build-chart gate on go-build.
+	if n := strings.Count(got, "- go-build\n"); n != 3 {
+		t.Errorf("expected 3 go-build requires entries, found %d:\n%s", n, got)
+	}
+	if contains(got, "- node-build") {
+		t.Errorf("Go repo should not reference node-build:\n%s", got)
 	}
 }

@@ -9,6 +9,7 @@ import (
 
 const (
 	LanguageGo            Language = "go"
+	LanguageNode          Language = "node"
 	LanguagePython        Language = "python"
 	LanguageGeneric       Language = "generic"
 	LanguageKyvernoPolicy Language = "kyverno-policy"
@@ -17,6 +18,7 @@ const (
 func AllLanguages() []string {
 	return []string{
 		LanguageGo.String(),
+		LanguageNode.String(),
 		LanguagePython.String(),
 		LanguageGeneric.String(),
 		LanguageKyvernoPolicy.String(),
@@ -29,6 +31,8 @@ func NewLanguage(s string) (Language, error) {
 	switch s {
 	case LanguageGo.String():
 		return LanguageGo, nil
+	case LanguageNode.String():
+		return LanguageNode, nil
 	case LanguagePython.String():
 		return LanguagePython, nil
 	case LanguageGeneric.String():
