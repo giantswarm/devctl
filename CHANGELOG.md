@@ -49,6 +49,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `gen circleci`: quote a non-`auto` `--build-concurrency` value in the generated
+  `go-build` job. The orb's `build_concurrency` param is string-typed, so a bare integer
+  (e.g. `build_concurrency: 2`) parses as YAML int and CircleCI rejects the config with
+  `Type error for argument build_concurrency: expected type: string`. `auto` is still
+  emitted bare (a valid string scalar), so repos on the default are byte-for-byte unchanged.
 - `update-template-sha`: derive the embedded provenance SHA from `git rev-list -1 HEAD`
   instead of `git rev-list --all`. `--all` spanned unmerged `origin/renovate/*` branches in
   the build checkout, so the `*.template.sha` link could resolve to a commit that only exists
