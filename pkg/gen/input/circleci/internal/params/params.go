@@ -135,6 +135,19 @@ type Params struct {
 	// NodeCacheRestoreKey is the lockfile-agnostic restore_cache prefix, so a
 	// changed lockfile still warm-starts from the last good cache.
 	NodeCacheRestoreKey string
+	// NodeBuildCachePaths is the build-output cache: the materialized
+	// dependency tree (node_modules, Yarn install-state) holding compiled
+	// native addons, so a warm run skips the node-gyp rebuild the dependency
+	// (tarball) cache cannot avoid. Empty for npm/pnpm (see nodeToolchain).
+	NodeBuildCachePaths []string
+	// NodeBuildCacheKey is the full save_cache key for the build-output cache,
+	// salted with the node image version (native ABI is node-version-specific)
+	// and the lockfile checksum. Empty when NodeBuildCachePaths is empty.
+	NodeBuildCacheKey string
+	// NodeBuildCacheRestoreKey is the restore_cache prefix for the build-output
+	// cache (node-image-versioned, lockfile-agnostic), so a changed lockfile
+	// warm-starts from the previous node_modules and only reconciles the diff.
+	NodeBuildCacheRestoreKey string
 	// NodeCorepack is true when the package manager needs `corepack enable`
 	// (pnpm, which cimg/node does not bundle).
 	NodeCorepack bool

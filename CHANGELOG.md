@@ -7,6 +7,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `gen circleci`: the generated Node job now also caches the **build output**
+  (`node_modules` + Yarn's `.yarn/install-state.gz`) for the Yarn package managers,
+  keyed on the node image version and the lockfile checksum
+  (`node-build-<pm>-v1-<nodeimage>-<checksum>`). The existing dependency cache only
+  holds package *tarballs*; on a `nodeLinker: node-modules` repo the dominant install
+  cost is the Link step recompiling native addons (better-sqlite3, isolated-vm,
+  tree-sitter, …) from source via node-gyp, whose output lives in `node_modules`.
+  Restoring it lets the install reconcile incrementally instead of recompiling every
+  run — the Node analogue of `go-build` persisting `$GOCACHE`. Omitted for npm
+  (`npm ci` wipes `node_modules` first) and pnpm (its content-addressable store already
+  caches build side-effects).
+
 ### Changed
 
 - `gen circleci`: the generated Node dependency-cache key now carries a `v1` version salt
