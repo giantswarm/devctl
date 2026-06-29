@@ -68,7 +68,7 @@ repos:
   # headlamp-plugin) in node-build, and a generic eslint hook fails against
   # their legacy .eslintrc configs.
   - repo: https://github.com/rbubley/mirrors-prettier
-    rev: v3.8.5
+    rev: v3.9.1
     hooks:
       - id: prettier
         types_or: [javascript, jsx, ts, tsx, json, yaml, css, scss, markdown]
