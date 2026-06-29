@@ -15,14 +15,6 @@ type Config struct {
 	Flavors          []string
 	RepoName         string
 	K8sSchemaVersion string
-	// NodeLintTarget and NodeFormatTarget are the package.json lint/format-check
-	// scripts the dev-only pre-push hooks run (Node only). Empty omits the
-	// respective hook. They are repo-owned because every Node repo ships a
-	// bespoke eslint/prettier toolchain under a different script name (backstage:
-	// lint:all / prettier:check; happa: lint / validate-prettier), so they are
-	// configured per repo rather than baked into the generator.
-	NodeLintTarget   string
-	NodeFormatTarget string
 }
 
 type PreCommit struct {
@@ -49,13 +41,12 @@ func New(config Config) (*PreCommit, error) {
 		p.HelmCharts = helmCharts
 	}
 
-	// Dev-only Node lint/format hooks: emitted only when a target script is
-	// configured. The run prefix is detected from the lockfile, mirroring the
-	// circleci generator's package-manager probe.
-	if config.Language == "node" && (config.NodeLintTarget != "" || config.NodeFormatTarget != "") {
+	// Dev-only Node lint hook: a single `ci:lint` pre-push hook for every Node
+	// repo (the convention, no per-script knob). The run prefix is detected from
+	// the lockfile, mirroring the circleci generator's package-manager probe.
+	if config.Language == "node" {
+		p.NodeDevLintHook = true
 		p.NodeRunPrefix = nodeRunPrefix(workingDir)
-		p.NodeLintTarget = config.NodeLintTarget
-		p.NodeFormatTarget = config.NodeFormatTarget
 	}
 
 	return &PreCommit{params: p}, nil

@@ -14,8 +14,6 @@ const (
 	flagFlavors          = "flavors"
 	flagRepoName         = "repo-name"
 	flagK8sSchemaVersion = "k8s-schema-version"
-	flagNodeLintTarget   = "node-lint-target"
-	flagNodeFormatTarget = "node-format-target"
 
 	defaultK8sSchemaVersion = "v1.33.1"
 )
@@ -31,8 +29,6 @@ type flag struct {
 	Flavors          []string
 	RepoName         string
 	K8sSchemaVersion string
-	NodeLintTarget   string
-	NodeFormatTarget string
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
@@ -40,8 +36,6 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().StringSliceVarP(&f.Flavors, flagFlavors, "f", []string{}, fmt.Sprintf("Comma-separated list of additional checker flavors (%s).", strings.Join(allowedFlavorsList(), ", ")))
 	cmd.Flags().StringVarP(&f.RepoName, flagRepoName, "r", "", "Repository name under giantswarm organization (e.g. devctl). Optional for --language go: auto-detected from the local go.mod when omitted.")
 	cmd.Flags().StringVar(&f.K8sSchemaVersion, flagK8sSchemaVersion, defaultK8sSchemaVersion, "Kubernetes JSON schema version used in helm chart .schema.yaml (e.g. v1.33.1).")
-	cmd.Flags().StringVar(&f.NodeLintTarget, flagNodeLintTarget, "", "package.json lint script for the dev-only pre-push lint hook (e.g. lint, lint:all). Empty omits the hook; the hook is scoped to pre-push so the CI pre-commit job skips it. --language=node only.")
-	cmd.Flags().StringVar(&f.NodeFormatTarget, flagNodeFormatTarget, "", "package.json format-check script for the dev-only pre-push format hook (e.g. prettier:check, validate-prettier). Empty omits the hook; scoped to pre-push so the CI pre-commit job skips it. --language=node only.")
 }
 
 func (f *flag) Validate() error {
