@@ -1,6 +1,6 @@
 {{ .Header }}
 minimum_pre_commit_version: '2.17'
-default_install_hook_types: [pre-commit, commit-msg]
+default_install_hook_types: [pre-commit, commit-msg{{ if .NodeLocalHooks }}, pre-push{{ end }}]
 repos:
   # base hooks
   - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -21,6 +21,35 @@ repos:
       - id: conventional-pre-commit
         stages: [commit-msg]
         args: [--strict]
+{{- if .NodeLocalHooks }}
+
+  # Dev-only Node lint/format. These run the repo's own bespoke eslint/prettier
+  # toolchain (resolved against the installed node_modules) at the PRE-PUSH
+  # stage, so the CI pre-commit job -- which runs `pre-commit run --all-files`
+  # at the pre-commit stage on a runner with no node_modules -- never executes
+  # them. CI lint and format run in ci:verify (the node-build job) instead;
+  # lint/format are therefore verify-canonical (here for dev feedback, ci:verify
+  # for the gate) and never in the CI pre-commit job. See the
+  # node-precommit-single-source and node-ci-verify-build-single-pass ADRs.
+  - repo: local
+    hooks:
+{{- if .NodeLintTarget }}
+      - id: node-lint
+        name: node lint (dev-only, pre-push)
+        entry: {{ .NodeRunPrefix }} {{ .NodeLintTarget }}
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+{{- end }}
+{{- if .NodeFormatTarget }}
+      - id: node-format
+        name: node format check (dev-only, pre-push)
+        entry: {{ .NodeRunPrefix }} {{ .NodeFormatTarget }}
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+{{- end }}
+{{- end }}
 {{- if eq .Language "python" }}
 
   # Python hooks

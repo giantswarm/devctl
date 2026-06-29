@@ -21,9 +21,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   pre-commit, replacing the static `languages/node/.pre-commit-config.yaml` in
   `giantswarm/github` that clobbered the generated `conventional-pre-commit` + helm
   hooks and shipped a broken eslint hook.
+- `gen circleci`: the generated Node job's `Verify`/`Build` step comments now document
+  the **`ci:verify`/`ci:build` single-pass contract** (the node analogue of the
+  make-target interface): `ci:verify` is the one composed correctness gate (tsc + lint +
+  prettier `--check` + tests) and owns lint/format CI-wide; `ci:build` is bundle/emit-only
+  and redoes nothing verify did; neither re-installs; the default `testTarget: test` is
+  only a floor. The `--node-test-target`/`--node-build-target` flag help and the
+  `DefaultNodeTestTarget` doc carry the same contract. Comment/doc-only — no generated
+  pipeline behaviour change.
 
 ### Added
 
+- `gen precommit --language node`: optional **dev-only lint/format pre-push hooks**
+  via `--node-lint-target` / `--node-format-target` (wired from `gen.ci.node.lintTarget`
+  / `formatTarget` in `giantswarm/github`). When a target is set, a `repo: local` hook
+  runs the named package.json script (`<pm> run <target>`, package manager detected from
+  the lockfile) and the config gains `pre-push` in `default_install_hook_types`. The
+  hooks are scoped `stages: [pre-push]`, so the CI pre-commit job — which runs
+  `pre-commit run --all-files` at the pre-commit stage on a runner with no `node_modules`
+  — never executes them; they run only on a developer's machine against the installed
+  bespoke eslint/prettier toolchain. Lint/format are thus verify-canonical: here for dev
+  feedback and in `ci:verify` (node-build) for the gate, never in the CI pre-commit job.
+  Empty targets (the default) emit nothing, so existing repos are unchanged. The script
+  names are configurable because every node repo names them differently (backstage
+  `lint:all` / `prettier:check`; happa `lint` / `validate-prettier`).
 - `gen circleci`: the generated Node job now honours a per-repo **`resource_class`**
   (reusing the `gen.ci.resourceClass` knob the cli `go-build` job uses), defaulting to
   `large`. The Node verify chain (tsc + lint + test + build over a whole monorepo) is

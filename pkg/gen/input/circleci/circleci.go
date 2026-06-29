@@ -57,9 +57,18 @@ const NodeImageVersion = "24.18.0"
 
 // DefaultNodeTestTarget is the package.json script the Node job runs for the
 // verify phase when a repo does not override it. The repo composes
-// typecheck/lint/format/test into its own `test` script -- the make-target
+// typecheck/lint/format/test into its own ci:verify script -- the make-target
 // interface (the Node analogue of `make test`), so CI and local runs share one
 // command.
+//
+// `test` is only a FLOOR, not the convention: a bare `test` script yields a
+// green job but gates tests alone, silently skipping typecheck/lint/format. The
+// convention is an explicit composed ci:verify (tsc --noEmit + lint + prettier
+// --check + tests, in one process; backstage is the reference), set via
+// gen.ci.node.testTarget. ci:verify owns lint/format CI-wide (verify-canonical:
+// the CI pre-commit job carries no JS/TS hook), and the companion ci:build
+// (NodeBuildTarget) is bundle/emit-only so nothing runs twice -- the single-pass
+// contract recorded in the node-ci-verify-build-single-pass ADR.
 const DefaultNodeTestTarget = "test"
 
 // DefaultNodeResourceClass is the CircleCI resource_class the Node job runs on
@@ -250,12 +259,16 @@ type Config struct {
 	// repo (Language == "node").
 	PackageManager string
 	// NodeTestTarget overrides the package.json script the Node job runs for
-	// the verify phase. Empty defaults to "test". The repo composes
-	// typecheck/lint/format/test into this one script (make-target interface).
-	// Only applies to a Node repo.
+	// the verify phase (ci:verify). Empty defaults to "test". The repo composes
+	// its entire correctness gate -- tsc --noEmit + lint + prettier --check +
+	// unit tests, in one process -- into this one script (the make-target
+	// interface). The default "test" is only a floor; the convention is an
+	// explicit composed ci:verify. Only applies to a Node repo.
 	NodeTestTarget string
-	// NodeBuildTarget is the package.json script the Node job runs to build.
-	// Empty omits the build step (a library that only verifies). Only applies
+	// NodeBuildTarget is the package.json script the Node job runs to build
+	// (ci:build). Empty omits the build step (a library that only verifies).
+	// It must be bundle/emit-only -- it must redo nothing NodeTestTarget already
+	// did (no second typecheck/lint/test) and must not re-install. Only applies
 	// to a Node repo.
 	NodeBuildTarget string
 	// NodeBuildOutput is the workspace path the Node job persists for an image
