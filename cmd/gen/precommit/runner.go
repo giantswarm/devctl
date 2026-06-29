@@ -69,6 +69,8 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 			Flavors:          r.flag.Flavors,
 			RepoName:         r.flag.RepoName,
 			K8sSchemaVersion: r.flag.K8sSchemaVersion,
+			NodeLintTarget:   r.flag.NodeLintTarget,
+			NodeFormatTarget: r.flag.NodeFormatTarget,
 		}
 
 		precommitInput, err = precommit.New(c)

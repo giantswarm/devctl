@@ -16,4 +16,16 @@ type Params struct {
 	HelmCharts []string
 	// K8sSchemaVersion is the Kubernetes JSON schema version used in helm chart .schema.yaml.
 	K8sSchemaVersion string
+	// NodeRunPrefix is the package-manager script-run prefix ("npm run" /
+	// "yarn run" / "pnpm run") the dev-only Node lint/format hooks invoke. Set
+	// only for Node repos that configure NodeLintTarget/NodeFormatTarget;
+	// detected from the lockfile.
+	NodeRunPrefix string
+	// NodeLintTarget is the package.json lint script the dev-only pre-push lint
+	// hook runs (e.g. "lint", "lint:all"). Empty omits the hook. Node only.
+	NodeLintTarget string
+	// NodeFormatTarget is the package.json format-check script the dev-only
+	// pre-push format hook runs (e.g. "prettier:check", "validate-prettier").
+	// Empty omits the hook. Node only.
+	NodeFormatTarget string
 }
