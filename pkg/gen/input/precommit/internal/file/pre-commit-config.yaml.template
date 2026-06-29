@@ -61,6 +61,19 @@ repos:
       - id: go-imports
         args: [ -local, {{.RepoName}} ]
 {{- end }}
+{{- if eq .Language "node" }}
+
+  # JS/TS formatting. Linting is intentionally omitted: every Giant Swarm node
+  # repo lints through its own toolchain (@backstage/cli, Next.js,
+  # headlamp-plugin) in node-build, and a generic eslint hook fails against
+  # their legacy .eslintrc configs.
+  - repo: https://github.com/rbubley/mirrors-prettier
+    rev: v3.8.5
+    hooks:
+      - id: prettier
+        types_or: [javascript, jsx, ts, tsx, json, yaml, css, scss, markdown]
+        exclude: "(^\\.yarn/.*|.*/dist/.*|.*/node_modules/.*)"
+{{- end }}
 {{- if .HasBash }}
 
   # Bash/shell hooks

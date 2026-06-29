@@ -9,6 +9,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `gen precommit`: the generated `.pre-commit-config.yaml` now emits a **node**
+  formatting hook (`rbubley/mirrors-prettier`) when `--language node`. Linting is
+  intentionally omitted — every Giant Swarm node repo lints through its own
+  toolchain (`@backstage/cli`, Next.js, headlamp-plugin) in `node-build`, and a
+  generic eslint hook fails against their legacy `.eslintrc` configs. This makes
+  `devctl gen precommit` the single source of truth for node pre-commit (replacing
+  the static `languages/node/.pre-commit-config.yaml` in `giantswarm/github`, which
+  clobbered the generated `conventional-pre-commit` + per-chart helm hooks and shipped
+  the broken eslint hook).
+
 - `gen circleci`: the generated Node job now honours a per-repo **`resource_class`**
   (reusing the `gen.ci.resourceClass` knob the cli `go-build` job uses), defaulting to
   `large`. The Node verify chain (tsc + lint + test + build over a whole monorepo) is
