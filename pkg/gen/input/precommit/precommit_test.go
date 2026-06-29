@@ -29,36 +29,31 @@ func renderConfig(t *testing.T, c Config) string {
 	return out.String()
 }
 
-// Test_NodeLocalHooks verifies the dev-only lint/format hooks are emitted at the
+// Test_NodeDevLintHook verifies the dev-only ci:lint hook is emitted at the
 // pre-push stage (so the CI pre-commit job, which runs the pre-commit stage,
-// skips them) only when a target script is configured, and that pre-push is then
-// added to default_install_hook_types so `pre-commit install` wires it up.
-func Test_NodeLocalHooks(t *testing.T) {
-	t.Run("omitted when no targets", func(t *testing.T) {
-		got := renderConfig(t, Config{Language: "node"})
+// skips it) for every node repo and never for other languages, and that pre-push
+// is then added to default_install_hook_types so `pre-commit install` wires it
+// up.
+func Test_NodeDevLintHook(t *testing.T) {
+	t.Run("omitted for non-node", func(t *testing.T) {
+		got := renderConfig(t, Config{Language: "go", RepoName: "my-repo"})
 		if strings.Contains(got, "pre-push") {
-			t.Errorf("expected no pre-push hooks without targets, got:\n%s", got)
+			t.Errorf("expected no pre-push hook for go, got:\n%s", got)
 		}
-		if strings.Contains(got, "node-lint") || strings.Contains(got, "node-format") {
-			t.Errorf("expected no local node hooks without targets, got:\n%s", got)
+		if strings.Contains(got, "id: ci-lint") {
+			t.Errorf("expected no ci:lint hook for go, got:\n%s", got)
 		}
 	})
 
-	t.Run("emitted when targets set", func(t *testing.T) {
-		got := renderConfig(t, Config{
-			Language:         "node",
-			NodeLintTarget:   "lint:all",
-			NodeFormatTarget: "prettier:check",
-		})
+	t.Run("emitted for node", func(t *testing.T) {
+		got := renderConfig(t, Config{Language: "node"})
 		if !strings.Contains(got, "default_install_hook_types: [pre-commit, commit-msg, pre-push]") {
 			t.Errorf("expected pre-push in default_install_hook_types, got:\n%s", got)
 		}
 		for _, want := range []string{
 			"- repo: local",
-			"id: node-lint",
-			"id: node-format",
-			"entry: npm run lint:all", // no lockfile in test dir -> npm fallback
-			"entry: npm run prettier:check",
+			"id: ci-lint",
+			"entry: npm run ci:lint", // no lockfile in test dir -> npm fallback
 			"stages: [pre-push]",
 		} {
 			if !strings.Contains(got, want) {

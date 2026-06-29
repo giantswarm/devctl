@@ -32,19 +32,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
-- `gen precommit --language node`: optional **dev-only lint/format pre-push hooks**
-  via `--node-lint-target` / `--node-format-target` (wired from `gen.ci.node.lintTarget`
-  / `formatTarget` in `giantswarm/github`). When a target is set, a `repo: local` hook
-  runs the named package.json script (`<pm> run <target>`, package manager detected from
-  the lockfile) and the config gains `pre-push` in `default_install_hook_types`. The
-  hooks are scoped `stages: [pre-push]`, so the CI pre-commit job — which runs
-  `pre-commit run --all-files` at the pre-commit stage on a runner with no `node_modules`
-  — never executes them; they run only on a developer's machine against the installed
-  bespoke eslint/prettier toolchain. Lint/format are thus verify-canonical: here for dev
-  feedback and in `ci:verify` (node-build) for the gate, never in the CI pre-commit job.
-  Empty targets (the default) emit nothing, so existing repos are unchanged. The script
-  names are configurable because every node repo names them differently (backstage
-  `lint:all` / `prettier:check`; happa `lint` / `validate-prettier`).
+- `gen precommit --language node`: a **dev-only `ci:lint` pre-push hook**. Every node
+  repo gets a `repo: local` hook that runs `<pm> run ci:lint` (package manager detected
+  from the lockfile) and the config gains `pre-push` in `default_install_hook_types`.
+  `ci:lint` is a single convention script name — like `ci:verify`/`ci:build` — that each
+  repo defines pointing at its own eslint/prettier toolchain; the generator does not take
+  a per-script knob (no `--node-lint-target`/`--node-format-target`), the repo converges
+  its script names to the convention. The hook is scoped `stages: [pre-push]`, so the CI
+  pre-commit job — which runs `pre-commit run --all-files` at the pre-commit stage on a
+  runner with no `node_modules` — never executes it; it runs only on a developer's machine
+  against the installed toolchain. Lint/format are thus verify-canonical: here for fast dev
+  feedback and in `ci:verify` (which composes `ci:lint`) for the gate, never in the CI
+  pre-commit job.
 - `gen circleci`: the generated Node job now honours a per-repo **`resource_class`**
   (reusing the `gen.ci.resourceClass` knob the cli `go-build` job uses), defaulting to
   `large`. The Node verify chain (tsc + lint + test + build over a whole monorepo) is
