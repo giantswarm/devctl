@@ -7,17 +7,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
-### Added
+### Changed
 
-- `gen precommit`: the generated `.pre-commit-config.yaml` now emits a **node**
-  formatting hook (`rbubley/mirrors-prettier`) when `--language node`. Linting is
-  intentionally omitted — every Giant Swarm node repo lints through its own
-  toolchain (`@backstage/cli`, Next.js, headlamp-plugin) in `node-build`, and a
-  generic eslint hook fails against their legacy `.eslintrc` configs. This makes
-  `devctl gen precommit` the single source of truth for node pre-commit (replacing
-  the static `languages/node/.pre-commit-config.yaml` in `giantswarm/github`, which
-  clobbered the generated `conventional-pre-commit` + per-chart helm hooks and shipped
-  the broken eslint hook).
+- `gen precommit --language node`: emits **no** JS/TS formatting or linting hook
+  (no prettier, no eslint). Both are repo-owned for every Giant Swarm node repo —
+  `@backstage/cli`, Next.js and headlamp-plugin each ship their own prettier/eslint
+  config that resolves only against the repo's installed `node_modules`, so a
+  standalone pre-commit `mirrors-prettier`/`mirrors-eslint` hook hard-fails
+  (`Cannot find package '@backstage/cli'` / `couldn't find eslint.config.js`).
+  Formatting and linting for these repos run in `node-build` (`ci:verify`). Node
+  pre-commit is therefore base hooks + `conventional-pre-commit` + per-chart helm
+  hooks only. This makes `devctl gen precommit` the single source of truth for node
+  pre-commit, replacing the static `languages/node/.pre-commit-config.yaml` in
+  `giantswarm/github` that clobbered the generated `conventional-pre-commit` + helm
+  hooks and shipped a broken eslint hook.
+
+### Added
 
 - `gen circleci`: the generated Node job now honours a per-repo **`resource_class`**
   (reusing the `gen.ci.resourceClass` knob the cli `go-build` job uses), defaulting to
