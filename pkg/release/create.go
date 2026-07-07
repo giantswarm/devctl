@@ -35,6 +35,10 @@ var appsToBeDropped = []droppedAppConfig{
 		MajorVersion: 33,
 	},
 	{
+		Name:         "karpenter-crossplane-resources",
+		MajorVersion: 35,
+	},
+	{
 		Name:         "karpenter-nodepools",
 		MajorVersion: 32,
 	},
