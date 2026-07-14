@@ -10,7 +10,7 @@ on:
       - master
 
 env:
-  HELM_VERSION: "3.21.2"
+  HELM_VERSION: "3.21.3"
   HELM_DOCS_VERSION: "1.14.2"
   HELM_VALUES_SCHEMA_JSON_VERSION: "2.5.0"
 
