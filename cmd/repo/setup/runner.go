@@ -8,11 +8,11 @@ import (
 	"strings"
 
 	"github.com/giantswarm/microerror"
-	"github.com/google/go-github/v84/github"
+	"github.com/google/go-github/v89/github"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
-	"github.com/giantswarm/devctl/v7/pkg/githubclient"
+	"github.com/giantswarm/devctl/v8/pkg/githubclient"
 )
 
 type runner struct {
@@ -55,6 +55,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	c := githubclient.Config{
 		Logger:      r.logger,
 		AccessToken: token,
+		DryRun:      r.flag.DryRun,
 	}
 
 	client, err := githubclient.New(c)
@@ -117,10 +118,14 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	}
 
 	if r.flag.SetupRenovate {
-		r.logger.Printf("Adding %s/%s to repositories accessible by Renovate...", owner, *repository.Name)
 		err = client.AddRepoToRenovatePermissions(ctx, owner, repository)
 		if err != nil {
 			return microerror.Mask(err)
+		}
+		if r.flag.DryRun {
+			r.logger.Printf("[dry-run] would add %s/%s to repositories accessible by Renovate", owner, *repository.Name)
+		} else {
+			r.logger.Printf("added %s/%s to repositories accessible by Renovate", owner, *repository.Name)
 		}
 	}
 

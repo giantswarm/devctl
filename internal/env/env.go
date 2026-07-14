@@ -1,15 +1,18 @@
 package env
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 
-	"github.com/giantswarm/devctl/v7/pkg/project"
+	"github.com/giantswarm/devctl/v8/pkg/project"
 )
 
 var (
 	ConfigDir                = configDir{}
 	DevctlUnsafeForceVersion = devctlUnsafeForceVersion{}
+	FlatcarChannel           = flatcarChannel{}
+	FlatcarReleasesURL       = flatcarReleasesURL{}
 	GitHubToken              = gitHubToken{}
 )
 
@@ -33,6 +36,33 @@ type devctlUnsafeForceVersion struct{}
 
 func (devctlUnsafeForceVersion) Key() string { return "DEVCTL_UNSAFE_FORCE_VERSION" } // nolint:gosec
 func (devctlUnsafeForceVersion) Val() string { return os.Getenv(devctlUnsafeForceVersion{}.Key()) }
+
+type flatcarChannel struct{}
+
+func (flatcarChannel) Key() string { return "FLATCAR_CHANNEL" }
+
+// Val returns the Flatcar release channel to fetch versions from. Defaults to "stable".
+func (flatcarChannel) Val() string {
+	if c := os.Getenv(flatcarChannel{}.Key()); c != "" {
+		return c
+	}
+
+	return "stable"
+}
+
+type flatcarReleasesURL struct{}
+
+func (flatcarReleasesURL) Key() string { return "FLATCAR_RELEASES_URL" }
+
+// Val returns the URL of the Flatcar releases JSON manifest. If FLATCAR_RELEASES_URL
+// is not set, it is derived from the configured channel.
+func (flatcarReleasesURL) Val() string {
+	if u := os.Getenv(flatcarReleasesURL{}.Key()); u != "" {
+		return u
+	}
+
+	return fmt.Sprintf("https://www.flatcar.org/releases-json/releases-%s.json", FlatcarChannel.Val())
+}
 
 type gitHubToken struct{}
 

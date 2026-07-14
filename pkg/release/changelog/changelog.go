@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 	"text/template"
+	"time"
 
 	"github.com/Masterminds/semver/v3"
 	"github.com/giantswarm/microerror"
@@ -255,11 +256,16 @@ var KnownComponents = map[string]ParseParams{
 		End:       commonEndPattern,
 	},
 	"cluster-autoscaler": {
-		Tag:        "https://github.com/giantswarm/cluster-autoscaler-app/releases/tag/v{{.Version}}",
-		Changelog:  "https://raw.githubusercontent.com/giantswarm/cluster-autoscaler-app/v{{.Version}}/CHANGELOG.md",
-		Start:      commonStartPattern,
-		End:        commonEndPattern,
-		AutoDetect: true,
+		Tag:       "https://github.com/giantswarm/cluster-autoscaler-app/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/cluster-autoscaler-app/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
+	},
+	"cluster-autoscaler-crossplane-resources": {
+		Tag:       "https://github.com/giantswarm/cluster-autoscaler-crossplane-resources/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/cluster-autoscaler-crossplane-resources/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
 	},
 	"coredns": {
 		Tag:       "https://github.com/giantswarm/coredns-app/releases/tag/v{{.Version}}",
@@ -288,6 +294,12 @@ var KnownComponents = map[string]ParseParams{
 	"external-dns": {
 		Tag:       "https://github.com/giantswarm/external-dns-app/releases/tag/v{{.Version}}",
 		Changelog: "https://raw.githubusercontent.com/giantswarm/external-dns-app/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
+	},
+	"external-dns-crossplane-resources": {
+		Tag:       "https://github.com/giantswarm/external-dns-crossplane-resources/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/external-dns-crossplane-resources/v{{.Version}}/CHANGELOG.md",
 		Start:     commonStartPattern,
 		End:       commonEndPattern,
 	},
@@ -357,6 +369,12 @@ var KnownComponents = map[string]ParseParams{
 		Start:     commonStartPattern,
 		End:       commonEndPattern,
 	},
+	"rbac-bootstrap": {
+		Tag:       "https://github.com/giantswarm/rbac-bootstrap-app/releases/tag/v{{.Version}}",
+		Changelog: "https://raw.githubusercontent.com/giantswarm/rbac-bootstrap-app/v{{.Version}}/CHANGELOG.md",
+		Start:     commonStartPattern,
+		End:       commonEndPattern,
+	},
 	"security-bundle": {
 		Tag:       "https://github.com/giantswarm/security-bundle/releases/tag/v{{.Version}}",
 		Changelog: "https://raw.githubusercontent.com/giantswarm/security-bundle/v{{.Version}}/CHANGELOG.md",
@@ -384,8 +402,9 @@ var KnownComponents = map[string]ParseParams{
 
 	// Core Components
 	"flatcar": {
-		Tag:       "https://www.flatcar.org/releases/#release-{{.Version}}",
-		Changelog: "https://www.flatcar.org/releases-json/releases-stable.json",
+		// Flatcar has no parseable changelog: the release notes only link to
+		// the Flatcar release page (Tag), so no Changelog URL is fetched.
+		Tag: "https://www.flatcar.org/releases/#release-{{.Version}}",
 	},
 	"kubernetes": {
 		Tag:          "https://github.com/kubernetes/kubernetes/releases/tag/v{{.Version}}",
@@ -431,12 +450,13 @@ type Version struct {
 }
 
 type CategorizedChanges struct {
-	Breaking []string
-	Added    []string
-	Changed  []string
-	Fixed    []string
-	Removed  []string
-	// Add more categories if needed
+	Breaking   []string
+	Added      []string
+	Changed    []string
+	Deprecated []string
+	Removed    []string
+	Fixed      []string
+	Security   []string
 }
 
 var categoryRegex = regexp.MustCompile(`^###\s+(?:\W+\s+)?(\w+)`)
@@ -445,6 +465,17 @@ func ParseChangelog(componentName, currentVersion, endVersion string, extraFilte
 	params, ok := KnownComponents[componentName]
 	if !ok {
 		return nil, microerror.Mask(fmt.Errorf("unknown component: %s", componentName))
+	}
+
+	if componentName == "flatcar" {
+		// Flatcar's "changelog" is a large JSON manifest we don't parse. Skip
+		// fetching it entirely and just return a link to the release notes.
+		// This avoids a wasted (and frequently slow/timing-out) network request.
+		return &Version{
+			Name:    currentVersion,
+			Link:    strings.Replace(params.Tag, "{{.Version}}", currentVersion, 1),
+			Content: "",
+		}, nil
 	}
 
 	templateData := &versionTemplateData{}
@@ -469,7 +500,8 @@ func ParseChangelog(componentName, currentVersion, endVersion string, extraFilte
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}
-	response, err := http.Get(changelogURLBuilder.String())
+	client := &http.Client{Timeout: 30 * time.Second}
+	response, err := client.Get(changelogURLBuilder.String())
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}
@@ -478,15 +510,6 @@ func ParseChangelog(componentName, currentVersion, endVersion string, extraFilte
 	body, err := io.ReadAll(response.Body)
 	if err != nil {
 		return nil, microerror.Mask(err)
-	}
-
-	if componentName == "flatcar" {
-		// Skip parsing Flatcar
-		return &Version{
-			Name:    currentVersion,
-			Link:    strings.Replace(params.Tag, "{{.Version}}", currentVersion, 1),
-			Content: "",
-		}, nil
 	}
 
 	if componentName == "kubernetes" {
@@ -608,13 +631,21 @@ func ParseChangelog(componentName, currentVersion, endVersion string, extraFilte
 					if len(categorizedChanges.Changed) > 0 && !strings.Contains(categorizedChanges.Changed[len(categorizedChanges.Changed)-1], subBullet) {
 						categorizedChanges.Changed[len(categorizedChanges.Changed)-1] += subBullet
 					}
-				case "Fixed":
-					if len(categorizedChanges.Fixed) > 0 && !strings.Contains(categorizedChanges.Fixed[len(categorizedChanges.Fixed)-1], subBullet) {
-						categorizedChanges.Fixed[len(categorizedChanges.Fixed)-1] += subBullet
+				case "Deprecated":
+					if len(categorizedChanges.Deprecated) > 0 && !strings.Contains(categorizedChanges.Deprecated[len(categorizedChanges.Deprecated)-1], subBullet) {
+						categorizedChanges.Deprecated[len(categorizedChanges.Deprecated)-1] += subBullet
 					}
 				case "Removed":
 					if len(categorizedChanges.Removed) > 0 && !strings.Contains(categorizedChanges.Removed[len(categorizedChanges.Removed)-1], subBullet) {
 						categorizedChanges.Removed[len(categorizedChanges.Removed)-1] += subBullet
+					}
+				case "Fixed":
+					if len(categorizedChanges.Fixed) > 0 && !strings.Contains(categorizedChanges.Fixed[len(categorizedChanges.Fixed)-1], subBullet) {
+						categorizedChanges.Fixed[len(categorizedChanges.Fixed)-1] += subBullet
+					}
+				case "Security":
+					if len(categorizedChanges.Security) > 0 && !strings.Contains(categorizedChanges.Security[len(categorizedChanges.Security)-1], subBullet) {
+						categorizedChanges.Security[len(categorizedChanges.Security)-1] += subBullet
 					}
 				}
 			} else if strings.HasPrefix(line, "- ") || strings.HasPrefix(line, "* ") {
@@ -631,10 +662,14 @@ func ParseChangelog(componentName, currentVersion, endVersion string, extraFilte
 					categorizedChanges.Added = appendUnique(categorizedChanges.Added, item)
 				case "Changed":
 					categorizedChanges.Changed = appendUnique(categorizedChanges.Changed, item)
-				case "Fixed":
-					categorizedChanges.Fixed = appendUnique(categorizedChanges.Fixed, item)
+				case "Deprecated":
+					categorizedChanges.Deprecated = appendUnique(categorizedChanges.Deprecated, item)
 				case "Removed":
 					categorizedChanges.Removed = appendUnique(categorizedChanges.Removed, item)
+				case "Fixed":
+					categorizedChanges.Fixed = appendUnique(categorizedChanges.Fixed, item)
+				case "Security":
+					categorizedChanges.Security = appendUnique(categorizedChanges.Security, item)
 				}
 			}
 		}
@@ -672,9 +707,9 @@ func ParseChangelog(componentName, currentVersion, endVersion string, extraFilte
 		sb.WriteString("\n")
 	}
 
-	if len(categorizedChanges.Fixed) > 0 {
-		sb.WriteString("#### Fixed\n\n")
-		for _, item := range categorizedChanges.Fixed {
+	if len(categorizedChanges.Deprecated) > 0 {
+		sb.WriteString("#### Deprecated\n\n")
+		for _, item := range categorizedChanges.Deprecated {
 			sb.WriteString(fmt.Sprintf("- %s\n", item))
 		}
 		sb.WriteString("\n")
@@ -683,6 +718,22 @@ func ParseChangelog(componentName, currentVersion, endVersion string, extraFilte
 	if len(categorizedChanges.Removed) > 0 {
 		sb.WriteString("#### Removed\n\n")
 		for _, item := range categorizedChanges.Removed {
+			sb.WriteString(fmt.Sprintf("- %s\n", item))
+		}
+		sb.WriteString("\n")
+	}
+
+	if len(categorizedChanges.Fixed) > 0 {
+		sb.WriteString("#### Fixed\n\n")
+		for _, item := range categorizedChanges.Fixed {
+			sb.WriteString(fmt.Sprintf("- %s\n", item))
+		}
+		sb.WriteString("\n")
+	}
+
+	if len(categorizedChanges.Security) > 0 {
+		sb.WriteString("#### Security\n\n")
+		for _, item := range categorizedChanges.Security {
 			sb.WriteString(fmt.Sprintf("- %s\n", item))
 		}
 		sb.WriteString("\n")

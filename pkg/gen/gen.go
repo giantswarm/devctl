@@ -10,8 +10,8 @@ import (
 
 	"github.com/giantswarm/microerror"
 
-	"github.com/giantswarm/devctl/v7/pkg/gen/input"
-	"github.com/giantswarm/devctl/v7/pkg/gen/internal"
+	"github.com/giantswarm/devctl/v8/pkg/gen/input"
+	"github.com/giantswarm/devctl/v8/pkg/gen/internal"
 )
 
 func Execute(ctx context.Context, files ...input.Input) error {
@@ -84,6 +84,10 @@ func isRegenerable(path string) bool {
 
 	switch {
 	case base == "Makefile" || strings.HasPrefix(base, "Makefile.gen."):
+		return true
+	case path == ".circleci/config.yml" || strings.HasSuffix(path, "/.circleci/config.yml"):
+		return true
+	case path == ".circleci/workflows.yml" || strings.HasSuffix(path, "/.circleci/workflows.yml"):
 		return true
 	case base == ".gitignore":
 		return true

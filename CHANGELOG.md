@@ -10,6 +10,738 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Fixed
 
 - `pr approve-align-files`: also evaluate GitHub Actions check_runs when the legacy commit status (e.g. CircleCI) is `success`, so a failing Actions check such as `pre-commit` no longer slips through and gets approved.
+### Changed
+
+- `gen precommit --language node`: emits **no** JS/TS formatting or linting hook
+  (no prettier, no eslint). Both are repo-owned for every Giant Swarm node repo —
+  `@backstage/cli`, Next.js and headlamp-plugin each ship their own prettier/eslint
+  config that resolves only against the repo's installed `node_modules`, so a
+  standalone pre-commit `mirrors-prettier`/`mirrors-eslint` hook hard-fails
+  (`Cannot find package '@backstage/cli'` / `couldn't find eslint.config.js`).
+  Formatting and linting for these repos run in `node-build` (`ci:verify`). Node
+  pre-commit is therefore base hooks + `conventional-pre-commit` + per-chart helm
+  hooks only. This makes `devctl gen precommit` the single source of truth for node
+  pre-commit, replacing the static `languages/node/.pre-commit-config.yaml` in
+  `giantswarm/github` that clobbered the generated `conventional-pre-commit` + helm
+  hooks and shipped a broken eslint hook.
+- `gen circleci`: the generated Node job's `Verify`/`Build` step comments now document
+  the **`ci:verify`/`ci:build` single-pass contract** (the node analogue of the
+  make-target interface): `ci:verify` is the one composed correctness gate (tsc + lint +
+  prettier `--check` + tests) and owns lint/format CI-wide; `ci:build` is bundle/emit-only
+  and redoes nothing verify did; neither re-installs; the default `testTarget: test` is
+  only a floor. The `--node-test-target`/`--node-build-target` flag help and the
+  `DefaultNodeTestTarget` doc carry the same contract. Comment/doc-only — no generated
+  pipeline behaviour change.
+
+### Added
+
+- `gen precommit --language node`: a **dev-only `ci:lint` pre-push hook**. Every node
+  repo gets a `repo: local` hook that runs `<pm> run ci:lint` (package manager detected
+  from the lockfile) and the config gains `pre-push` in `default_install_hook_types`.
+  `ci:lint` is a single convention script name — like `ci:verify`/`ci:build` — that each
+  repo defines pointing at its own eslint/prettier toolchain; the generator does not take
+  a per-script knob (no `--node-lint-target`/`--node-format-target`), the repo converges
+  its script names to the convention. The hook is scoped `stages: [pre-push]`, so the CI
+  pre-commit job — which runs `pre-commit run --all-files` at the pre-commit stage on a
+  runner with no `node_modules` — never executes it; it runs only on a developer's machine
+  against the installed toolchain. Lint/format are thus verify-canonical: here for fast dev
+  feedback and in `ci:verify` (which composes `ci:lint`) for the gate, never in the CI
+  pre-commit job.
+- `gen circleci`: the generated Node job now honours a per-repo **`resource_class`**
+  (reusing the `gen.ci.resourceClass` knob the cli `go-build` job uses), defaulting to
+  `large`. The Node verify chain (tsc + lint + test + build over a whole monorepo) is
+  memory-hungry — backstage's `ci:verify` pins `NODE_OPTIONS` `max-old-space-size` to 6 GiB —
+  so a bigger monorepo can size up to `xlarge` without forking the generated job.
+- `gen circleci`: the generated Node job now also caches the **build output**
+  (`node_modules` + Yarn's `.yarn/install-state.gz`) for the Yarn package managers,
+  keyed on the node image version and the lockfile checksum
+  (`node-build-<pm>-v1-<nodeimage>-<checksum>`). The existing dependency cache only
+  holds package *tarballs*; on a `nodeLinker: node-modules` repo the dominant install
+  cost is the Link step recompiling native addons (better-sqlite3, isolated-vm,
+  tree-sitter, …) from source via node-gyp, whose output lives in `node_modules`.
+  Restoring it lets the install reconcile incrementally instead of recompiling every
+  run — the Node analogue of `go-build` persisting `$GOCACHE`. Omitted for npm
+  (`npm ci` wipes `node_modules` first) and pnpm (its content-addressable store already
+  caches build side-effects).
+
+### Changed
+
+- `gen circleci`: the generated Node build-output cache is now saved **after** the
+  verify/build steps (it previously saved right after install). The same `node_modules`
+  cache therefore also persists the tsc/eslint/jest incremental caches those steps write
+  under `node_modules/.cache` — the compute-side analogue of persisting `$GOCACHE`, not just
+  the install-time native-addon rebuild. Still write-once per lockfile; the lockfile-agnostic
+  restore prefix keeps every run warm-started from the last good cache, so a red build never
+  leaves a repo cold.
+- `gen circleci`: the generated Node dependency-cache key now carries a `v1` version salt
+  (`node-deps-<pm>-v1-{{ checksum "<lockfile>" }}`, restore prefix `node-deps-<pm>-v1-`). CircleCI
+  cache keys are immutable, so a repo that first adopts the Node job while still on Yarn's default
+  global cache would seed an empty `.yarn/cache` under the lockfile hash and could never save a real
+  cache until the lockfile changed. The salt invalidates such stale/empty seeds in one release and
+  gives a lever to bust caches on future cache-shape changes.
+
+### Added
+
+- `gen renovate` gained a `--deprecated` flag. When set, the generated `renovate.json5`
+  extends `github>giantswarm/renovate-presets:deprecated.json5` (before any repo-owned
+  `renovate-custom.json5`), which disables all routine updates and keeps only
+  security/vulnerability remediation. The `giantswarm/github` align-files workflow passes it
+  for repos marked `lifecycle: deprecated` that have `gen.ci.generate`.
+- `gen circleci` now generates a Node/TypeScript build path (`--language=node`), mirroring the Go
+  path. It emits a self-contained `node-build`/`node-test` job on a `cimg/node` executor (architect
+  ships no Node job) with a dependency cache keyed on the lockfile checksum — the Node analogue of
+  `go-build`'s `GOCACHE` persist. The package manager is detected from the lockfile
+  (`package-lock.json` → npm, `pnpm-lock.yaml` → pnpm, `yarn.lock` → Yarn Berry or `yarn-classic`
+  by its `# yarn lockfile v1` header) or set with `--package-manager`. The verify/build commands are
+  `package.json` scripts (the make-target interface): `--node-test-target` (default `test`) and
+  `--node-build-target`, so bespoke toolchains (backstage-cli, Next.js, headlamp-plugin) redirect
+  without forking the generated job. `--node-build-output` names the job `node-build` and persists
+  the build output for an image handoff (`gen.ci.image.preBuildJob`), otherwise it is `node-test`.
+  The image and chart jobs' `requires` wiring was generalized so they gate on the language's build
+  job (`go-build` or `node-build`/`node-test`).
+- `gen circleci`: add `--build-concurrency` and `--resource-class` flags (surfaced as `gen.ci.buildConcurrency`
+  / `gen.ci.resourceClass` in giantswarm/github) to override the cli-flavour `go-build` job's
+  `build_concurrency` (default `auto`) and `resource_class` (default `large`). The orb 9.5.5 cache-key fix
+  makes warm caching take effect, but the *first* cold full-matrix cross-compile must still complete to
+  populate the fresh `v2` cache. For an unusually large binary (e.g. `mcp-kubernetes`, ~99 MB, k8s-linked)
+  six concurrent cold `go build`s OOM-kill the `large` runner before the cache is stored, so the repo stays
+  permanently cold. Lowering `build_concurrency` (memory, not CPU, is the binding constraint) lets the cold
+  build survive once and warm the cache. Empty keeps the existing `auto`/`large` defaults, so cli repos that
+  set neither are unchanged; non-cli `go-build` jobs ignore both.
+
+### Changed
+
+- Bump the aligned `giantswarm/architect` orb to `9.5.5` (from `9.5.2`/`9.5.3`). `9.5.4` writes
+  the nancy scan log to `/tmp` instead of the repo root, so it no longer dirties the working tree
+  between `make test` and the binary link. Without it, every `go-build` release binary (devctl
+  included) embedded `vX.Y.Z+dirty`, which broke the align-files `DEVCTL_UNSAFE_FORCE_VERSION`
+  self-update bypass that compares against a `+dirty`-stripped version. `9.5.5` additionally bumps
+  the Go build-cache key (`go-build-cache-v1-` -> `v2-`) so `restore_cache` stops unpacking the
+  stale `9.5.2`-era archive at the wrong `GOCACHE` path; the permanent cold compile that caused
+  was OOM-killing memory-heavy parallel cross-compiles (observed on `mcp-kubernetes`).
+
+### Fixed
+
+- `gen circleci`: quote a non-`auto` `--build-concurrency` value in the generated
+  `go-build` job. The orb's `build_concurrency` param is string-typed, so a bare integer
+  (e.g. `build_concurrency: 2`) parses as YAML int and CircleCI rejects the config with
+  `Type error for argument build_concurrency: expected type: string`. `auto` is still
+  emitted bare (a valid string scalar), so repos on the default are byte-for-byte unchanged.
+- `update-template-sha`: derive the embedded provenance SHA from `git rev-list -1 HEAD`
+  instead of `git rev-list --all`. `--all` spanned unmerged `origin/renovate/*` branches in
+  the build checkout, so the `*.template.sha` link could resolve to a commit that only exists
+  on an open PR branch. That made the SHA non-deterministic across release builds even when the
+  template content was unchanged, causing the align-files automation to emit no-op PRs (only the
+  source-link SHA in generated file headers changed) to every consuming repo.
+
+## [8.23.0] - 2026-06-24
+
+### Changed
+
+- devctl now dogfoods its own generated CircleCI + auto-release standard. The repo-owned
+  `Makefile.zzz.custom.mk` makes `make test` depend on `generate-go`, so the gitignored
+  `*.template.sha` provenance files (consumed via `//go:embed`) are regenerated before tests
+  and the cross-compile run. This lets the generated `go-build` job (`test_target: test`) build
+  devctl from a clean CI checkout and also fixes clean local `make test`.
+
+## [8.22.1] - 2026-06-24
+
+### Changed
+
+- `gen makefile`: the generated `make test` target is now cgo-adaptive. It runs `go test … -race ./...`
+  wherever a C toolchain is available (laptops, coding agents, GitHub Actions, any cgo-capable runner)
+  and degrades to cgo-free `go test … ./...` where it is not. This unblocks the make-target CI interface
+  (8.22.0's `test_target: test`): the architect `go-build`/`go-test` image has no C compiler and runs
+  with `CGO_ENABLED=0`, so a hardcoded `-race` made `make test` fail with `-race requires cgo` on every
+  generated-CircleCI Go repo. The single `make test` command is now correct in every environment — CI
+  runs it verbatim and local runs keep race detection — so it stays the one relocation target for the
+  hand-written `ci.yaml` removal workstream.
+
+## [8.22.0] - 2026-06-24
+
+### Changed
+
+- `gen circleci`: the make-target CI command interface. The generated `go-build` job now sets
+  `test_target: test`, so the architect orb runs the repo's `make test` instead of its hardcoded
+  `go test … ./...`; CI and local runs converge on one command. The generated `make test`
+  (`gen makefile`) is unchanged (`go test -ldflags … -race ./...`), so CI runs the same test command
+  developers already run locally. A repo that wants a different CI test command (e.g. drop `-race`, add
+  an integration suite, `govulncheck`, `helm-unittest`, or a CRD-freshness check) overrides its own
+  `make test`. This is the relocation target for the hand-written `ci.yaml` removal and the make-target
+  interface from the make-target-ci-interface ADR (no architect-orb change — the orb already exposes
+  `test_target`). Reaches repos via the next align-files run.
+
+## [8.21.1] - 2026-06-23
+
+### Changed
+
+- `gen circleci`: for `cli`-flavour Go repos (the six-arch cross-compile that attaches binaries to the
+  GitHub Release), the generated `go-build` job now sets `build_concurrency: auto` and
+  `resource_class: large`. The GOCACHE persistence from architect-orb #838 (orb v9.5.0+) makes warm
+  builds fast, but the cross-compile is still cold after every `go.sum` bump; compiling the six
+  architectures concurrently on a larger box instead of sequentially on 2 vCPUs removes the remaining
+  critical-path cost. Service (non-cli) repos are unchanged. No signing or nancy changes. Reaches repos
+  via the next align-files run.
+
+## [8.21.0] - 2026-06-22
+
+### Fixed
+
+- `release create`: stop fetching the Flatcar releases JSON manifest during release-notes generation. The
+  manifest was downloaded and then discarded for Flatcar, and the request had no timeout, so a slow
+  `flatcar.org` would hang `devctl` even when the Flatcar version was pinned via `--component flatcar@<version>`.
+
+### Changed
+
+- `release create`: the changelog HTTP fetch now uses a 30s timeout instead of relying on the default client.
+- `release create`: the Flatcar releases JSON URL and channel are now configurable via the `FLATCAR_RELEASES_URL`
+  and `FLATCAR_CHANNEL` environment variables (defaulting to the stable channel).
+
+## [8.20.5] - 2026-06-21
+
+### Changed
+
+- `gen circleci`: bumped the pinned `giantswarm/architect` orb from `9.5.1` to `9.5.2`. v9.5.1's oversized-SBOM
+  fallback used `cosign attest --tlog-upload=false`, which cosign v3 rejects (`--tlog-upload=false is not
+  supported with --signing-config`), so large-SBOM releases (e.g. `vllm`) still failed at the attest step.
+  v9.5.2 opts out of the transparency log the cosign-v3 way: it re-attests through a signing config with Rekor
+  removed but the TSA kept (`--signing-config <file> --new-bundle-format`), so the SBOM attestation keeps a
+  trusted timestamp (no Rekor body-size limit) and stays attached as an OCI referrer. Reaches repos via the
+  next align-files run.
+
+## [8.20.4] - 2026-06-21
+
+### Changed
+
+- `gen circleci`: bumped the pinned `giantswarm/architect` orb from `9.4.3` to `9.5.1`. v9.5.1 makes the
+  cosign SBOM attestation degrade gracefully when its transparency-log upload fails persistently (a
+  multi-MB SPDX predicate — e.g. the `vllm` CUDA image — overruns the public Rekor gateway and returns
+  `502`): the orb re-attests with `--tlog-upload=false` so the signed SBOM stays attached as an OCI
+  referrer (without a public Rekor entry) instead of failing the whole release. Image signing stays
+  strict and the normal sub-limit path keeps its Rekor entry. Reaches repos via the next align-files run.
+
+## [8.20.3] - 2026-06-20
+
+### Changed
+
+- `gen circleci`: bumped the pinned `giantswarm/architect` orb from `9.4.1` to `9.4.3`. v9.4.3 makes
+  nancy tolerate the new Sonatype Guide API error (`guide API request failed`) the same way it already
+  skips `error accessing OSS Index`, so a Guide outage or credit exhaustion no longer fails `go-build`
+  (and the dependent `push-to-*` jobs). Reaches repos via the next align-files run.
+
+## [8.20.2] - 2026-06-18
+
+### Added
+
+- `gen renovate`: the generated `renovate.json5` now sets `assignAutomerge: true`
+  automatically whenever `reviewers` are configured. By default Renovate does not
+  request reviewers on PRs it auto-merges; this ensures the configured reviewer is
+  still requested for review on auto-merged Renovate PRs.
+
+## [8.20.1] - 2026-06-17
+
+### Fixed
+
+- `gen workflows`: the auto-release `cliff.toml` now scopes `git-cliff --bump`'s
+  baseline to the current branch (`use_branch_tags = true`) and ignores
+  pre-release tags (`ignore_tags`). Previously `--bump` picked the globally
+  highest-semver tag in the repo regardless of reachability, which (a) broke
+  backports — a fix on `release-2.x` would bump from the latest `main` tag and
+  tag e.g. `v3.1.1` on the 2.x line instead of `v2.8.1` — and (b) let a stray
+  pre-release tag on an unmerged side branch (e.g. `v1.2.9-dev.0`) become the
+  baseline for `main`, so a real `feat:` produced `v1.2.9-dev.1` instead of
+  `v1.3.0`. Also corrects the misleading `topo_order` comment (it governs
+  changelog section order, not the bump baseline).
+
+## [8.20.0] - 2026-06-17
+
+### Added
+
+- `gen circleci`: new `--image-dockerfile` flag for repos whose Dockerfile is not at the repo root
+  (e.g. `backstage` builds from `packages/backend/Dockerfile`). It sets the `dockerfile` param on the
+  generated image build jobs (`build-image` and `push-to-registries-release`) and, because the image
+  pipeline is otherwise derived from a root `os.Stat("Dockerfile")` that misses a nested Dockerfile, a
+  non-empty value also turns the image pipeline on. The append-only `.circleci/custom.yml` merge cannot
+  set the Dockerfile path on a generated job, so the generator carries it. Default off, so repos that do
+  not set it get the identical config as before.
+
+- `gen circleci`: the branch image-validation job (`build-image`, and the branch-publish
+  `push-to-registries` when `--branch-publish` is set) now also gains the `--image-pre-build-job`
+  `requires` entry. Previously only the release image (`push-to-registries-release`) waited on the
+  pre-build job; the branch build compiles the same Dockerfile and needs the same workspace handoff, so
+  it would otherwise fail building a Dockerfile that consumes pre-build artifacts. No change for repos
+  that do not set `--image-pre-build-job`.
+
+## [8.19.0] - 2026-06-17
+
+### Added
+
+- `gen circleci`: new `--chart-name` and `--force-public` flags for repos whose chart/registry shape
+  does not fit the default. `--chart-name` overrides the chart name on every chart job (the
+  `push-to-app-catalog` `chart` param and the `helm/<chart>` directory) for repos whose chart
+  directory does not match the repo name (e.g. `docs-proxy` ships `helm/docs-proxy-app`).
+  `--force-public` adds architect's `force-public: true` to the image (`push-to-registries`) and chart
+  (`push-to-app-catalog`) release pushes for private repos that publish public artifacts (e.g.
+  `web-assets`), which architect otherwise derives as private from the repo visibility; it is mutually
+  exclusive with `--image-private-only`. The append-only `.circleci/custom.yml` merge cannot rename a
+  generated job's chart or add `force-public` to it, so the generator carries both. Both default off,
+  so repos that do not set them get the identical config as before.
+
+## [8.18.0] - 2026-06-16
+
+### Added
+
+- `gen circleci`: new `--image-name` and `--image-platforms` flags for repos whose image pipeline
+  does not fit the default shape. `--image-name` overrides the `giantswarm/<repo>` default image name
+  on the generated image jobs (`push-to-registries` branch + release and `sync-china-registry`) for
+  repos whose published image differs from the repo name (e.g. `kserve` publishes
+  `giantswarm/kserve-controller`). `--image-platforms` overrides the buildx platform list on the
+  `build-image` and `push-to-registries-release` jobs for single-architecture images (e.g. `vllm`
+  ships `linux/arm64` only; an amd64 build has no prebuilt wheels and fails). The append-only
+  `.circleci/custom.yml` merge cannot rename or re-platform a generated job, so the generator carries
+  both. Both default off, so repos that do not set them get the identical config as before.
+
+### Changed
+
+- `gen workflows` / `gen precommit`: add the `merge_group` trigger to the generated GitHub Actions workflows so they also run for GitHub merge queues.
+
+## [8.17.1] - 2026-06-16
+
+### Fixed
+
+- `gen workflows`: the generated `cliff.toml` now pins `[bump].initial_tag = "v0.1.0"`, so the first
+  auto-release in a repo with no tags yet is tagged `v0.1.0` instead of git-cliff's default `0.1.0`.
+  This keeps the inception release on the leading-`v` scheme the rest of the giantswarm stack expects
+  (architect's `/^v.*/` tag filter, the workflow's `--match='v*.*.*'` describe, gitsemver). Once any
+  `v*.*.*` tag exists, git-cliff already carries the prefix forward, so only the first release was
+  affected.
+
+## [8.17.0] - 2026-06-16
+
+### Added
+
+- `gen circleci`: new `--image-pre-build-job` and `--image-private-only` flags for repos whose
+  image build does not fit the default shape. `--image-pre-build-job` adds a `requires` entry on the
+  generated `push-to-registries-release` job for a repo-owned job defined in `.circleci/custom.yml`
+  (e.g. a workspace-handoff pre-step that persists a file the Docker build context overlays) — a
+  dependency the append-only `custom.yml` merge cannot inject into a generated job.
+  `--image-private-only` ships the image to the private registry only (`gsociprivate`) via an
+  explicit `registries-data`, replacing `split-china-push` and omitting the `sync-china-registry`
+  job, so a private repo's image does not land in the public catalog. Both default off, so repos
+  that do not set them get the identical config as before.
+
+## [8.16.0] - 2026-06-16
+
+### Added
+
+- `gen circleci`: new `--app-catalog`/`--app-catalog-test` flags override the catalog the chart
+  pipeline publishes to (the `push-to-app-catalog` `app_catalog`/`app_catalog_test` params). Empty
+  defaults to `giantswarm-catalog`/`giantswarm-test-catalog`, so repos that do not set them get the
+  identical config as before. Repos that ship to a different catalog (e.g. the internal
+  `giantswarm-operations-platform`) set them so generation does not silently migrate their chart to
+  the public catalog.
+- `gen renovate`: support for an optional repo-owned `renovate-custom.json5`. When the file exists
+  in the repo root at generation time, the generated `renovate.json5` references it as the last
+  `extends` entry (`github>giantswarm/<repo>:renovate-custom.json5`), so repo-specific rules win
+  over the shared presets. devctl never generates or touches the custom file, and because Renovate
+  resolves `extends` from the default branch on every run, edits to it are live on merge without
+  regeneration. A new optional `--repo-name` flag (defaulting to the working directory's basename)
+  supplies the repo name for the preset reference. The generated file now also carries a DO-NOT-EDIT
+  header pointing repo-specific rules at `renovate-custom.json5`.
+
+## [8.15.2] - 2026-06-15
+
+### Changed
+
+- Releases: Disable minor version detection for Cluster Autoscaler.
+
+## [8.15.1] - 2026-06-15
+
+### Changed
+
+- `gen renovate`: the generated `renovate.json5` now uses idiomatic JSON5 formatting -- unquoted keys, single-quoted values, and one array item per line with trailing commas -- matching the style of hand-maintained configs and the `renovate-presets`. This is a cosmetic change with no effect on Renovate's behavior; repos will see a one-time formatting diff on the next align-files sync.
+
+## [8.15.0] - 2026-06-15
+
+### Removed
+
+- Releases: Remove description placeholder.
+
+## [8.14.1] - 2026-06-11
+
+### Changed
+
+- Nancy: Use `go list -json -m all` for producing the dependency list.
+
+## [8.14.0] - 2026-06-11
+
+### Added
+
+- `gen circleci`: new `--app-catalog`/`--app-catalog-test` flags override the catalog the chart
+  pipeline publishes to (the `push-to-app-catalog` `app_catalog`/`app_catalog_test` params). Empty
+  defaults to `giantswarm-catalog`/`giantswarm-test-catalog`, so repos that do not set them get the
+  identical config as before. Repos that ship to a different catalog (e.g. the internal
+  `giantswarm-operations-platform`) set them so generation does not silently migrate their chart to
+  the public catalog.
+- `gen renovate`: support for an optional repo-owned `renovate-custom.json5`. When the file exists
+  in the repo root at generation time, the generated `renovate.json5` references it as the last
+  `extends` entry (`github>giantswarm/<repo>:renovate-custom.json5`), so repo-specific rules win
+  over the shared presets. devctl never generates or touches the custom file, and because Renovate
+  resolves `extends` from the default branch on every run, edits to it are live on merge without
+  regeneration. A new optional `--repo-name` flag (defaulting to the working directory's basename)
+  supplies the repo name for the preset reference. The generated file now also carries a DO-NOT-EDIT
+  header pointing repo-specific rules at `renovate-custom.json5`.
+
+## [8.13.0] - 2026-06-11
+
+### Added
+
+- `gen renovate`: new `--reviewers`/`-r` flag bakes a top-level `reviewers` array into the generated `renovate.json5`. This is the single-source-of-truth path for repos whose config is regenerated by align-files (`devctl gen renovate`), where reviewers set by the subcommand below would otherwise be wiped on the next sync.
+- `gen renovate reviewers`: new subcommand that sets the top-level `reviewers` array in an existing Renovate config (`renovate.json5` or `renovate.json`) in the current directory. It edits the file in place, replacing the `reviewers` value (or inserting the key if absent) while preserving all comments, key order and formatting, and matching the quote style the file already uses. Fails if no Renovate config is found. Intended for hand-maintained (non-generated) configs.
+
+## [8.12.0] - 2026-06-11
+
+### Added
+
+- `gen circleci`: the default branch path now emits a `build-image` job (`push-to-registries` with
+  `push: false`, new in architect orb 9.4.0) that validates the multi-arch image build on every
+  branch without pushing anything. Dockerfile regressions now surface on the PR instead of at tag
+  time. Repos with `branchPublish` keep their pushing branch job instead (it already exercises the
+  Dockerfile); cli-flavour repos get the same two-linux-platform cap as the release push.
+
+### Changed
+
+- `gen precommit`: exclude the `.yarn/` directory from the `trailing-whitespace` and
+  `end-of-file-fixer` hooks. Vendored yarn releases (`.yarn/releases/yarn-*.cjs`) must not be
+  modified; yarn 4.15.0 ships with trailing whitespace in its bundle, which made the hooks fail.
+- Auto-detect the `RepoName` used in the `gen precommit` command and make the `--repo-name` flag optional.
+- The baked architect orb pin moved to 9.4.0 (adds the `push` parameter on `push-to-registries`).
+
+## [8.11.1] - 2026-06-11
+
+### Fixed
+
+- `gen makefile`: the generated `make help` target now aligns target descriptions to the longest target name instead of a fixed 20-character column.
+- `repo setup`: auto-detection now inspects the head commits of the 3 most recently merged PRs in addition to the latest non-tag commit on the default branch. Checks that only run on `pull_request` events (PR gatekeepers like `Heimdall - PR Gatekeeper`, CircleCI chart-package status checks that fire on PRs but not on push-to-main) never reported on the default-branch ref and were therefore silently dropped from the required-checks list on every `repo setup` re-run.
+- `repo setup`: default `--checks-filter` now excludes `validate-changelog` and `check-values-schema` in addition to `aliyun`. `validate-changelog` is path-conditional (`on.pull_request.paths: CHANGELOG.md`) so auto-pinning it blocks PRs that don't touch that file. `check-values-schema` is managed explicitly by the align-files cycle (app-flavour repos only, with the correct `/ validate` suffix); auto-pinning the bare name produces the wrong required-check context.
+- `repo checks --update --remove`: removing the last remaining required check no longer silently no-ops. Previously an empty check list was serialised with `omitempty`, so GitHub never received the field and left the requirement in place. The command now falls back to the `DELETE /required_status_checks` endpoint when the merged list is empty.
+
+## [8.11.0] - 2026-06-10
+
+### Added
+
+- `gen workflows`: the generated `create_release_pr.yaml` now triggers on release-candidate branches (`<base>#release#{major-rc,minor-rc,patch-rc,rc,rc-release}`) for the `main`, `master`, and `release` bases, so RC releases get an automatic release PR just like the stable `major`/`minor`/`patch` tokens. Requires the matching support in [giantswarm/github-workflows#195](https://github.com/giantswarm/github-workflows/pull/195).
+
+### Changed
+
+- `gen circleci` now emits a dynamic-config pair instead of a single static config. `.circleci/config.yml` becomes a tiny repo-agnostic setup workflow (`circleci/continuation` orb, pinned like the architect orb), and the derived golden pipeline moves verbatim to `.circleci/workflows.yml`. At pipeline runtime the setup job deep-merges an optional repo-owned `.circleci/custom.yml` into `workflows.yml` (yq `*+`: maps merge, workflow job lists append) and continues with the result. Repo-specific jobs and workflows (e2e, nightly crons, mirrors) go in `custom.yml`, reference generated jobs by their bare names (`requires: [go-build]`), take effect on the PR that adds or edits them, and are never touched by devctl or align-files. A malformed `custom.yml` fails the setup job on the same PR. Known limitation (accepted): the merge appends -- a custom job cannot inject itself into a generated job's `requires`, so tag publishes are not gated on custom jobs; gate merges via GitHub required checks instead.
+
+## [8.10.0] - 2026-06-10
+
+### Changed
+
+- `gen circleci`: bump the baked architect orb pin to 9.3.0 (additive `push-to-app-catalog` override params, cosign duplicate-Rekor-entry fix, gitsemver 2.0.1; no template shape change). Golden fixtures regenerated.
+
+### Fixed
+
+- Bump `golang.org/x/crypto` to v0.53.0 to resolve CVE-2026-46598 (`ssh/agent` ed25519 panic), which failed the nancy vulnerability check on every CI run.
+
+## [8.9.0] - 2026-06-08
+
+### Changed
+
+- `gen workflows --release-workflow=auto-release` now writes `.github/workflows/zz_generated.auto_release.yaml` instead of the un-prefixed `auto-release.yaml`, bringing the file in line with the rest of the generated workflows (regenerable-via-`zz_generated.`-prefix instead of via `SkipRegenCheck`). Both the `auto-release` and `legacy` branches now also delete the legacy un-prefixed `auto-release.yaml`, so repos that adopted the flow before the rename are migrated automatically on next `devctl gen` run.
+
+### Fixed
+
+- `repo setup`: auto-detected required status checks now ignore check runs whose `conclusion` is `skipped` on the observed commit. Reusable release workflows (release-please's `create-release / Create release`, `auto-release`'s tag-only steps) emit skipped check_runs on every push to the default branch; previously these leaked into the required-checks list, producing entries that didn't reflect any real PR gate.
+
+## [8.8.0] - 2026-06-08
+
+### Added
+
+- `gen workflows --release-workflow=auto-release` emits a push-based release flow: `.github/workflows/auto-release.yaml` + `cliff.toml` at repo root. On every push to `main` / a backport branch matching `release-[0-9]*` or `release-v[0-9]*` (so `release-2.x`, `release-v3.7.x` -- but not `release-notes` or other unrelated branches), the workflow runs `git-cliff --unreleased --bump --context` to compute the next semver from conventional commits since the latest reachable v*.*.* tag and `gh release create --target $GITHUB_SHA` to produce the tag + GitHub Release atomically. `cliff.toml`'s `[remote.github].repo` is auto-detected from the consuming repo's `origin` git remote URL. Mirrors the canonical version already deployed in muster, mcp-kubernetes, klaus-operator, agentic-platform, agentic-platform-mcps, agentic-platform-ui, mcp-toolkit, telemetrydeck-go, mcp-prometheus, klausctl, klaus-oci, mcp-debug, mcp-oauth (13 repos).
+- `--release-workflow=auto-release` and `=legacy` are bidirectional: each branch emits the workflow files it owns and deletion inputs for the OTHER branch's files. Flipping the value (in either direction) leaves the repo with exactly one set of release files after the next gen run.
+
+### Removed
+
+- `gen workflows --release-workflow=release-please` (along with `--changelog-style` and `--auto-release-level`) no longer exists. `gen workflows` always emits the legacy `create-release-pr` / `create-release` / `validate-changelog` trio. The release-please opt-in is reverted (see giantswarm/github), and a push-based git-cliff alternative is planned to take its place later. The generator (`pkg/gen/input/workflows/internal/file/release_please*`) is deleted, together with the unused `Create*Deletion` / `ValidateChangelogDeletion` helpers that previously fed it.
+
+## [8.7.0] - 2026-06-05
+
+### Added
+
+- `gen circleci`: Go repos that also carry the `cli` flavour now ship cross-platform binaries on their GitHub Release. `go-build` gets the six-platform `architectures` matrix, an `architect/upload-release-assets` job is added (tag-only) to attach the binaries, and the multi-arch release image push is capped to `linux/amd64,linux/arm64` so buildx does not try the darwin/windows targets under QEMU. Derived from the `cli` flavour -- no new flag or config. Non-cli Go repos (services, operators) are unaffected.
+
+## [8.6.0] - 2026-06-05
+
+### Added
+
+- `gen renovate`: `--circleci-generated` flag. When set, the generated `renovate.json5` adds a `packageRules` entry that disables Renovate updates for the `giantswarm/architect` orb, because `.circleci/config.yml` (and the orb version it pins) is generated by `devctl gen circleci`. This stops Renovate from fighting align-files regeneration on circleci-generated repos.
+- `gen circleci`: the generated `.circleci/config.yml` now carries a `DO NOT EDIT` header noting it is generated by `devctl gen circleci` and kept in sync by the giantswarm/github align-files workflow.
+
+### Fixed
+
+- `gen renovate`: the `--interval` schedule block produced invalid JSON5 (a stray leading comma after the `extends` array). It now renders a valid trailing-comma block.
+
+## [8.5.0] - 2026-06-05
+
+### Changed
+
+- `gen circleci`: pinned architect orb bumped to `9.1.0` (adds signed SBOM attestations; no generated job/param shape change from `9.0.2`).
+- `gen circleci`: remove `build-release-artifacts: true` from the generated `create_release` workflow for CLI-flavored repos. Binaries are now produced and signed by the architect-orb `upload-release-assets` path instead.
+- Release binaries now include darwin/amd64, darwin/arm64, windows/amd64, and windows/arm64 alongside the existing linux targets. Windows binaries are named `devctl-windows-<arch>.exe`.
+
+### Fixed
+
+- Fix pre-commit config by adding a directive to install both pre-commit and commit-msg hooks
+
+## [8.4.0] - 2026-06-03
+
+### Added
+
+- `gen circleci`: `--branch-publish` flag opts a repo into publishing a coupled amd64 dev image and dev chart on branch builds.
+
+### Changed
+
+- `gen circleci`: branch builds now run build + test only by default (`go-build`, `build-chart`, `execute-chart-tests`); image and chart pushes moved to the tag path. Job `name:` labels dropped the repo-name suffix for consistent labels (`go-build`, `push-to-registries`, `push-to-registries-release`, `sync-china-registry`, `build-chart`, `execute-chart-tests`, `execute-chart-tests-release`, `push-chart`, `push-chart-release`). Pinned architect orb bumped to `9.0.2`.
+
+## [8.3.5] - 2026-06-03
+
+### Changed
+
+- Update `dispatch-update-chart-events` workflow permissions to allow reading commit datetime.
+
+## [8.3.4] - 2026-06-02
+
+### Fixed
+
+- Release artifacts now build correctly; the CI workflow pins Go 1.26.3.
+
+## [8.3.3] - 2026-06-02
+
+### Fixed
+
+- CI release artifacts now build correctly after the `gitsemver get` rename in v8.3.1; the CI workflow now pins gitsemver v2.0.0.
+
+## [8.3.2] - 2026-06-02
+
+### Fixed
+
+- remove path filter from check-values-schema calling workflow
+
+## [8.3.1] - 2026-06-02
+
+### Changed
+
+- `gen makefile` (`--language go`): the generated `Makefile.gen.go.mk` now resolves the build version with `gitsemver get` instead of `gitsemver version`. gitsemver [v2.0.0](https://github.com/giantswarm/gitsemver/releases/tag/v2.0.0) renamed the `version` subcommand to `get` (to avoid confusion with the `--version` flag), a breaking change: with gitsemver v2 the old `gitsemver version` invocation fails, leaving `VERSION` empty and breaking the build/package targets. Repos must have gitsemver v2.0.0+ on `PATH` after re-running `devctl gen makefile`.
+
+### Fixed
+
+- `gen workflows`: remove the `paths:` filter from the generated `check-values-schema` calling workflow. With the filter in place, PRs that do not touch Helm values files never triggered the workflow, leaving the `check-values-schema / validate` required status check permanently unsatisfied and blocking all merges. Without the filter the workflow fires on every PR; the reusable workflow iterates over `helm/*/Chart.yaml` globs that evaluate to empty on non-chart PRs, so the job exits 0 with no work done.
+- `gen circleci`: the chart-test job (`architect/run-tests-with-ats`, "execute chart tests") now waits for the image push before deploying. It previously required only `build-<repo>-chart`, so on image-bearing chart repos it deployed the chart and tried to pull the freshly built dev image from gsoci before `push-to-registries` had finished, racing the push and flaking on `ImagePullBackOff` (the kubelet's pull backoff outlasts the test deadline once an early pull attempt fails). The job is now split into a branch variant requiring `push-to-registries` and a release variant (`execute chart tests on release`) requiring `push-to-registries-release`, each gated on `HasDockerfile` so chart-only repos are unaffected.
+
+## [8.3.0] - 2026-06-01
+
+### Changed
+
+- `gen circleci`: **dropped the `--orb-version` flag**. The giantswarm/architect orb version is now baked into devctl as a constant (`OrbVersion`) next to the config template, with a Renovate custom manager keeping it current. The orb major and the template's required job/param shape are two halves of one compatibility contract; combining them at generation time via a passthrough let `architect@9.0.0` pair with a stale v8 template and emit silently-invalid config. Baking the version in means a major orb bump lands as a devctl PR → release → align-files pin bump, instead of a `giantswarm/github` literal that can skew against the template. Callers (`giantswarm/github` align-files) must stop passing `--orb-version`.
+
+## [8.2.0] - 2026-06-01
+
+### Changed
+
+- `gen circleci`: rework the generated `.circleci/config.yml` for architect-orb **v9.0.0**. v9 removed the `multiarch:` parameter on `architect/push-to-registries` (the job always uses `docker buildx` now), so it is dropped from both the branch and the release image jobs. v9 also defaults `architect/go-build` to `linux/amd64,linux/arm64`; the previous branch-build `platforms: "linux/amd64"` optimization is dropped so branch builds validate the full multi-arch image (auto-derived from go-build's `.platforms`), matching the v9-idiomatic single-path model. The golden fixture and generator help text are updated to the v9 shape. No new fields or parameters.
+
+## [8.1.0] - 2026-06-01
+
+### Changed
+
+- `gen workflows` (`--release-workflow=release-please`): generated `release-please.yaml` now passes `RELEASE_PLEASE_APPROVER_CLIENT_ID` and `RELEASE_PLEASE_APPROVER_PRIVATE_KEY` through to the reusable `release.yaml` workflow. These back the dedicated `release-please-approver` GitHub App that satisfies branch protection's required-approval rule on release-please PRs, so `--auto --squash` can complete the merge once required checks pass. The two new secrets are `required: false` upstream — repos that don't have the App installed or the org secrets configured see no behavior change. Requires the `release-please-approver` App to be installed with `Pull requests: Read and write` AND `Contents: Read and write` permissions (Contents: Read alone is silently disregarded by branch protection — empirically verified).
+
+## [8.0.0] - 2026-06-01
+
+### Added
+
+- Test catalogs can now be populated when an app or component uses a dev version (`app-version-sha`) in its release creation.
+
+### Changed
+
+- Dev version detection now uses the git SHA suffix instead of the semver pre-release format, since app dev versions are typically identified by their appended git SHA.
+- Changelog fetch is skipped for dev versions during release notes generation.
+
+## [7.48.0] - 2026-05-31
+
+### Added
+
+- `gen circleci`: new generator that emits a standard `.circleci/config.yml` for the Go-service-with-Helm-chart use-case. The pipeline is derived from existing signals rather than a per-repo CI parameter block: `--language go` selects `architect/go-build`; a `Dockerfile` in the repo selects `architect/push-to-registries` (multiarch + split-china-push) plus the paired `architect/sync-china-registry`; the `app` flavour selects `architect/push-to-app-catalog` (app-build-suite executor) plus `architect/run-tests-with-ats`. Emits the aligned standard (orb pinned via `--orb-version`, default `8.3.0`; loose `/^v.*/` tags; branch builds amd64-only, tag builds multi-arch + publish chart). Configs with no applicable signal are rejected instead of rendering an empty `jobs:` list. `.circleci/config.yml` is registered as regenerable.
+
+### Changed
+
+- `gen workflows` (`--release-workflow=release-please`): also delete the legacy release workflow files (`.github/workflows/zz_generated.create_release.yaml`, `zz_generated.create_release_pr.yaml`, `zz_generated.validate_changelog.yaml`) on every run. A repo uses either the legacy `create-release` flow or release-please — never both. Previously devctl stopped generating the legacy files in release-please mode but left whatever was already on disk, so a migrating repo carried orphaned workflows that still triggered on the legacy branch/tag patterns. Uses the existing `input.Input{Delete: true}` primitive, so the change is a no-op for green-field release-please repos.
+
+### Fixed
+
+- `gen workflows` (`--release-workflow=release-please`): declare the root package in the generated `release-please-config.json`. The template now renders `"packages": {".": {}}` at the top level. `packages` is `required` per release-please's official `schemas/config.json`; without it release-please loads the config but has no package to release, logs `Found release tag with component '', but not configured in manifest` for every existing tag, and exits without opening a Release PR even when conventional commits exist. The top-level `release-type: "simple"` continues to apply as the per-package default. Pairs with the manifest seeding fix below — both are needed for a legacy → release-please migration to produce a Release PR on first run.
+- `gen workflows` (`--release-workflow=release-please`): seed `.release-please-manifest.json` with the latest existing `v<major>.<minor>.<patch>` tag found in the target repo (`{".": "<latest>"}`) instead of always writing `{}`. Without this, repos migrating from the legacy `create_release` flow that already had release tags would get an empty manifest, causing release-please to log `Found release tag with component '', but not configured in manifest` and exit without opening a Release PR (no per-path baseline to compute "what changed since the last release" against). Green-field repos with no tags continue to get `{}`; pre-release tags and non-`v<major>.<minor>.<patch>` tags are ignored when picking the baseline; the file is still write-once, so an existing manifest is never overwritten.
+
+## [7.47.0] - 2026-05-28
+
+### Added
+
+- `devctl repo checks --update` now accepts `--remove <names>` to drop required status checks. Combined with `--checks`, a single invocation can migrate a check from one name to another (subtract `--remove`, then union `--checks`). Existing checks not named in either flag are left untouched.
+
+## [7.46.0] - 2026-05-28
+
+### Added
+
+- Release: Add ExternalDNS Crossplane Resources & RBAC Bootstrap.
+
+## [7.45.0] - 2026-05-28
+
+### Added
+
+- Release: Add Cluster Autoscaler Crossplane Resources.
+
+## [7.44.0] - 2026-05-28
+
+### Added
+
+- `gen workflows`: Add `--auto-release-level` flag (`none`, `patch`, `minor`, `major`; default `none`), only used with `--release-workflow=release-please`. It sets the `auto-merge-level` input of the `giantswarm/github-workflows` `release.yaml` reusable workflow, which auto-merges the Release Please PR once CI passes, up to the given bump level (`none` disables auto-merge). The consuming repo must have "Allow auto-merge" enabled and the `release-please` GitHub App on its branch-protection bypass list.
+
+### Changed
+
+- Generated `release-please.yaml` workflow now passes `RELEASE_PLEASE_CLIENT_ID` and `RELEASE_PLEASE_PRIVATE_KEY` secrets to the `giantswarm/github-workflows` `release.yaml` reusable workflow instead of `TAYLORBOT_GITHUB_ACTION`. This matches the App-based authentication in the reusable workflow (the reusable workflow feeds `RELEASE_PLEASE_CLIENT_ID` to `create-github-app-token`'s `client-id`). Requires those two org secrets to be available to the consuming repo.
+
+## [7.43.0] - 2026-05-21
+
+### Added
+
+- `devctl gen workflows --release-workflow=release-please` now adds `pkg/project/project.go` to `extra-files`
+  in `release-please-config.json` when the language is Go and the file exists, so release-please updates the
+  version constant in the release PR. No post-release dev-bump PR is needed.
+- `Makefile.gen.go.mk` now injects the version into the binary via `-X .../pkg/project.version=$(VERSION)` in
+  `LDFLAGS`, alongside the existing `buildTimestamp` and `gitSHA` flags. `VERSION` is derived from
+  `architect project version` (git tag), so local and CI builds self-report correctly without modifying
+  `project.go` at build time.
+- Version is created in the Makefiles by using `gitsemver version` instead of `architect project version`
+
+### Fixed
+
+- The generated `Release Please` workflow referenced a non-existent reusable workflow (`release-please.yaml`);
+  corrected to `release.yaml`.
+- `Makefile.gen.app.mk` used `$(APPLICATION)/charts` for Helm dependency paths; all repos place charts under
+  `helm/$(APPLICATION)/`, so the `DEPS`, `update-deps`, `$(DEPS)`, and `helm-docs` targets now use
+  `helm/$(APPLICATION)/` as the base path.
+
+## [7.42.0] - 2026-05-21
+
+### Added
+
+- `devctl repo checks --update --checks <list> REPOSITORY` adds named checks to the required status checks on
+  the default branch protection rule without touching any other branch protection or repo settings.
+- Rename the generated `Values and schema` workflow name and its `check` job to `check-values-schema` for an
+  unambiguous required-check reference in branch protection rules.
+- `devctl repo setup` auto-detection now includes GitHub Actions check runs in addition to legacy commit
+  statuses, so Actions-based checks are picked up as required checks.
+- `devctl gen workflows --release-workflow=release-please` generates a Release Please workflow instead of the
+  legacy `create-release-pr` / `create-release` / `validate-changelog` trio. `--changelog-style` controls the
+  section headers: `legacy` maps commit types to `### Added/Changed/Fixed` (required by the
+  `giantswarm/releases` changelog scraper); `release-please` uses the Angular preset. The Release Please
+  config and manifest are written as scaffolding files (generate-once, not overwritten on subsequent runs).
+- CHANGELOG scraper now parses `### Security` and `### Deprecated` sections from component changelogs. Output
+  follows KaC canonical order: Added, Changed, Deprecated, Removed, Fixed, Security.
+- Route the `security:` conventional commit type to `### Security` in the generated
+  `release-please-config.json` (both `--changelog-style=legacy` and `--changelog-style=release-please`). Use
+  `security:` (or `security(scope):`) for CVE fixes and vulnerability mitigations.
+
+### Changed
+
+- `devctl gen workflows --changelog-style=release-please` now writes the full Keep a Changelog mapping: `feat`
+  to `### Added`, `fix` to `### Fixed`, `security` to `### Security`, and the remaining Angular types (`perf`,
+  `revert`, `refactor`, `docs`, `style`, `test`, `build`, `ci`, `chore`) to `### Changed`.
+
+### Changed
+
+- `repo setup`, `repo setup renovate`: log a past-tense confirmation after the Renovate installation step.
+  `repo setup --dry-run` logs `[dry-run] would add ...`.
+
+### Fixed
+
+- `repo setup --dry-run`: now actually skips GitHub mutations; the `DryRun` flag was never forwarded into the
+  GitHub client.
+
+## [7.41.1] - 2026-05-20
+
+### Changed
+
+- Change the PR name looked for in `devctl pr approve-align-files` from `Align files` to
+  `chore: align files according to platform standards`
+
+## [7.41.0] - 2026-05-20
+
+### Added
+
+- Generate a `semantic_pull_request.yaml` GitHub Actions workflow in every repo. It calls the new
+  `giantswarm/github-workflows/.github/workflows/semantic-pull-request.yaml` reusable workflow, which
+  validates that the PR title follows Conventional Commits. The check runs on `pull_request` (`opened`,
+  `edited`, `synchronize`) and uses the action's default type set (`build`, `chore`, `ci`, `docs`, `feat`,
+  `fix`, `perf`, `refactor`, `revert`, `style`, `test`).
+- Add `compilerla/conventional-pre-commit` hook to the generated `.pre-commit-config.yaml`, gated to the
+  `commit-msg` stage. Contributors enable it locally with `pre-commit install --hook-type commit-msg`.
+
+### Changed
+
+- Upgrade `github.com/google/go-github` from v85 to v86.
+
+## [7.40.7] - 2026-05-06
+
+### Changed
+
+- Dependency updates
+
+## [7.40.6] - 2026-05-04
+
+### Changed
+
+- Update `dispatch-update-chart-events` workflows to now send closed PRs events to a central repository.
+
+## [7.40.5] - 2026-04-24
+
+### Fixed
+
+- Fix whitespace in pre-commit workflow for Helm charts
+
+## [7.40.4] - 2026-04-24
+
+### Fixed
+
+- Code-wise nothing changed compared to v7.40.3. However, the build pipeline changed, so this release
+  hopefully includes commit SHAs for each template modification.
+
+## [7.40.3] - 2026-04-24
+
+### Changed
+
+- Bumped architect-orb to v7.0.0 and applied `clone_depth: 0` to the go-build job, to fix the problem that all
+  generated files' headers pointed to the HEAD commit for the last change.
+
+## [7.40.2] - 2026-04-24
+
+### Changed
+
+- `gen precommit`: Removed badges from helm-docs template, to avoid workflow failures due to version changes
+  outside the PR.
+
+## [7.40.1] - 2026-04-24
+
+### Changed
+
+- `gen precommit`: Also trigger for branch `master` in addition to `main`
+
+### Fixed
+
+- `gen precommit`: Fix line ending, pin action version to full semver
 
 ## [7.40.0] - 2026-04-23
 
@@ -21,14 +753,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
-- Add new `sync-from-upstream` and `dispatch-update-chart-events` workflows to apps that have the `update-chart` workflow enabled.
+- Add new `sync-from-upstream` and `dispatch-update-chart-events` workflows to apps that have the
+  `update-chart` workflow enabled.
 
 ## [7.38.0] - 2026-04-14
 
 ### Changed
 
 - Change workflow "Fix go vulnerabilities": Set default branch to `main` for manual workflow execution
-- Prevent major version bumps of components (e.g. cluster provider charts) when using `--bump-all` in minor releases.
+- Prevent major version bumps of components (e.g. cluster provider charts) when using `--bump-all` in minor
+  releases.
 
 ## [7.37.2] - 2026-04-09
 
@@ -1710,7 +2444,66 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v7.40.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.23.0...HEAD
+[8.23.0]: https://github.com/giantswarm/devctl/compare/v8.22.1...v8.23.0
+[8.22.1]: https://github.com/giantswarm/devctl/compare/v8.22.0...v8.22.1
+[8.22.0]: https://github.com/giantswarm/devctl/compare/v8.21.1...v8.22.0
+[8.21.1]: https://github.com/giantswarm/devctl/compare/v8.21.0...v8.21.1
+[8.21.0]: https://github.com/giantswarm/devctl/compare/v8.20.5...v8.21.0
+[8.20.5]: https://github.com/giantswarm/devctl/compare/v8.20.4...v8.20.5
+[8.20.4]: https://github.com/giantswarm/devctl/compare/v8.20.3...v8.20.4
+[8.20.3]: https://github.com/giantswarm/devctl/compare/v8.20.2...v8.20.3
+[8.20.2]: https://github.com/giantswarm/devctl/compare/v8.20.1...v8.20.2
+[8.20.1]: https://github.com/giantswarm/devctl/compare/v8.20.0...v8.20.1
+[8.20.0]: https://github.com/giantswarm/devctl/compare/v8.19.0...v8.20.0
+[8.19.0]: https://github.com/giantswarm/devctl/compare/v8.18.0...v8.19.0
+[8.18.0]: https://github.com/giantswarm/devctl/compare/v8.17.1...v8.18.0
+[8.17.1]: https://github.com/giantswarm/devctl/compare/v8.17.0...v8.17.1
+[8.17.0]: https://github.com/giantswarm/devctl/compare/v8.16.0...v8.17.0
+[8.16.0]: https://github.com/giantswarm/devctl/compare/v8.15.2...v8.16.0
+[8.15.2]: https://github.com/giantswarm/devctl/compare/v8.15.1...v8.15.2
+[8.15.1]: https://github.com/giantswarm/devctl/compare/v8.15.0...v8.15.1
+[8.15.0]: https://github.com/giantswarm/devctl/compare/v8.14.1...v8.15.0
+[8.14.1]: https://github.com/giantswarm/devctl/compare/v8.14.0...v8.14.1
+[8.14.0]: https://github.com/giantswarm/devctl/compare/v8.13.0...v8.14.0
+[8.13.0]: https://github.com/giantswarm/devctl/compare/v8.12.0...v8.13.0
+[8.12.0]: https://github.com/giantswarm/devctl/compare/v8.11.1...v8.12.0
+[8.11.1]: https://github.com/giantswarm/devctl/compare/v8.11.0...v8.11.1
+[8.11.0]: https://github.com/giantswarm/devctl/compare/v8.10.0...v8.11.0
+[8.10.0]: https://github.com/giantswarm/devctl/compare/v8.9.0...v8.10.0
+[8.9.0]: https://github.com/giantswarm/devctl/compare/v8.8.0...v8.9.0
+[8.8.0]: https://github.com/giantswarm/devctl/compare/v8.7.0...v8.8.0
+[8.7.0]: https://github.com/giantswarm/devctl/compare/v8.6.0...v8.7.0
+[8.6.0]: https://github.com/giantswarm/devctl/compare/v8.5.0...v8.6.0
+[8.5.0]: https://github.com/giantswarm/devctl/compare/v8.4.0...v8.5.0
+[8.4.0]: https://github.com/giantswarm/devctl/compare/v8.3.5...v8.4.0
+[8.3.5]: https://github.com/giantswarm/devctl/compare/v8.3.4...v8.3.5
+[8.3.4]: https://github.com/giantswarm/devctl/compare/v8.3.4...v8.3.4
+[8.3.4]: https://github.com/giantswarm/devctl/compare/v8.3.4...v8.3.4
+[8.3.4]: https://github.com/giantswarm/devctl/compare/v8.3.3...v8.3.4
+[8.3.3]: https://github.com/giantswarm/devctl/compare/v8.3.2...v8.3.3
+[8.3.2]: https://github.com/giantswarm/devctl/compare/v8.3.1...v8.3.2
+[8.3.1]: https://github.com/giantswarm/devctl/compare/v8.3.0...v8.3.1
+[8.3.0]: https://github.com/giantswarm/devctl/compare/v8.2.0...v8.3.0
+[8.2.0]: https://github.com/giantswarm/devctl/compare/v8.1.0...v8.2.0
+[8.1.0]: https://github.com/giantswarm/devctl/compare/v8.0.0...v8.1.0
+[8.0.0]: https://github.com/giantswarm/devctl/compare/v7.48.0...v8.0.0
+[7.48.0]: https://github.com/giantswarm/devctl/compare/v7.47.0...v7.48.0
+[7.47.0]: https://github.com/giantswarm/devctl/compare/v7.46.0...v7.47.0
+[7.46.0]: https://github.com/giantswarm/devctl/compare/v7.45.0...v7.46.0
+[7.45.0]: https://github.com/giantswarm/devctl/compare/v7.44.0...v7.45.0
+[7.44.0]: https://github.com/giantswarm/devctl/compare/v7.43.0...v7.44.0
+[7.43.0]: https://github.com/giantswarm/devctl/compare/v7.42.0...v7.43.0
+[7.42.0]: https://github.com/giantswarm/devctl/compare/v7.41.1...v7.42.0
+[7.41.1]: https://github.com/giantswarm/devctl/compare/v7.41.0...v7.41.1
+[7.41.0]: https://github.com/giantswarm/devctl/compare/v7.40.7...v7.41.0
+[7.40.7]: https://github.com/giantswarm/devctl/compare/v7.40.6...v7.40.7
+[7.40.6]: https://github.com/giantswarm/devctl/compare/v7.40.5...v7.40.6
+[7.40.5]: https://github.com/giantswarm/devctl/compare/v7.40.4...v7.40.5
+[7.40.4]: https://github.com/giantswarm/devctl/compare/v7.40.3...v7.40.4
+[7.40.3]: https://github.com/giantswarm/devctl/compare/v7.40.2...v7.40.3
+[7.40.2]: https://github.com/giantswarm/devctl/compare/v7.40.1...v7.40.2
+[7.40.1]: https://github.com/giantswarm/devctl/compare/v7.40.0...v7.40.1
 [7.40.0]: https://github.com/giantswarm/devctl/compare/v7.39.0...v7.40.0
 [7.39.0]: https://github.com/giantswarm/devctl/compare/v7.38.0...v7.39.0
 [7.38.0]: https://github.com/giantswarm/devctl/compare/v7.37.2...v7.38.0

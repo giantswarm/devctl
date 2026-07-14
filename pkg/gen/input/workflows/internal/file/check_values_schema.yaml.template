@@ -1,21 +1,18 @@
 {{{{ .Header }}}}
 
-name: 'Values and schema'
+name: check-values-schema
 
 on:
   pull_request:
     branches:
       - master
       - main
-    paths:
-      - 'helm/**/values.yaml'         # default helm chart values
-      - 'helm/**/values.schema.json'  # schema
-      - 'helm/**/ci/ci-values.yaml'   # overrides for CI (can contain required entries)
+  merge_group: {}
 
 permissions: {}
 
 jobs:
-  check:
+  check-values-schema:
     uses: giantswarm/github-workflows/.github/workflows/chart-values.yaml@main
     permissions:
       contents: read

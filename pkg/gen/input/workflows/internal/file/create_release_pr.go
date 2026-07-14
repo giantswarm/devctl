@@ -3,8 +3,8 @@ package file
 import (
 	_ "embed"
 
-	"github.com/giantswarm/devctl/v7/pkg/gen/input"
-	"github.com/giantswarm/devctl/v7/pkg/gen/input/workflows/internal/params"
+	"github.com/giantswarm/devctl/v8/pkg/gen/input"
+	"github.com/giantswarm/devctl/v8/pkg/gen/input/workflows/internal/params"
 )
 
 //go:embed create_release_pr.yaml.template
@@ -29,4 +29,16 @@ func NewCreateReleasePRInput(p params.Params) input.Input {
 	}
 
 	return i
+}
+
+// NewCreateReleasePRDeletionInput returns an Input that deletes the file
+// NewCreateReleasePRInput would generate. Wired into the `auto-release`
+// branch in runner.go so a repo that switches from the legacy flow no
+// longer has the legacy create-release-pr.yaml sitting alongside
+// zz_generated.auto_release.yaml.
+func NewCreateReleasePRDeletionInput(p params.Params) input.Input {
+	return input.Input{
+		Delete: true,
+		Path:   params.RegenerableFileName(p, "create_release_pr.yaml"),
+	}
 }

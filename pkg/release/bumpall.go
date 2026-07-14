@@ -15,18 +15,17 @@ import (
 	"github.com/blang/semver"
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/releases/sdk/api/v1alpha1"
-	"github.com/google/go-github/v84/github"
+	"github.com/google/go-github/v89/github"
 	"github.com/jedib0t/go-pretty/v6/table"
 	"github.com/jedib0t/go-pretty/v6/text"
 	"github.com/sirupsen/logrus"
-	"golang.org/x/oauth2"
 	"sigs.k8s.io/yaml"
 
 	"golang.org/x/exp/slices"
 
-	"github.com/giantswarm/devctl/v7/internal/env"
-	"github.com/giantswarm/devctl/v7/pkg/githubclient"
-	"github.com/giantswarm/devctl/v7/pkg/release/changelog"
+	"github.com/giantswarm/devctl/v8/internal/env"
+	"github.com/giantswarm/devctl/v8/pkg/githubclient"
+	"github.com/giantswarm/devctl/v8/pkg/release/changelog"
 )
 
 type componentVersion struct {
@@ -187,10 +186,39 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 		for _, app := range input.Spec.Apps {
 			v := appVersion{}
 			if req, found := requestedApps[app.Name]; found {
-				// User requested specific version.
-				v.Version = req.Version
-				v.UpstreamVersion = req.UpstreamVersion
-				v.UserRequested = true
+				if req.Version != "" {
+					// User provided an explicit version — use it as-is.
+					v.Version = req.Version
+					v.UpstreamVersion = req.UpstreamVersion
+					v.UserRequested = true
+				} else {
+					// No version specified — keep current or auto-bump, same as
+					// if this app was not in the override list at all.
+					if releaseType == "patch" {
+						v.Version = app.Version
+						v.UpstreamVersion = app.ComponentVersion
+					} else { // major or minor: auto-bump
+						var constraint *semver.Range
+						for _, r := range requests {
+							if r.Name == app.Name {
+								c, err := semver.ParseRange(r.Version)
+								if err != nil {
+									// Ignore invalid constraints.
+									continue
+								}
+								constraint = &c
+								break
+							}
+						}
+						version, err := FindNewestApp(app.Name, app.ComponentVersion != "", constraint)
+						if err != nil {
+							return nil, nil, microerror.Mask(err)
+						}
+						v.Version = version.Version
+						v.UpstreamVersion = version.UpstreamVersion
+					}
+					v.UserRequested = false
+				}
 				if req.DependsOn != nil {
 					v.DependsOn = req.DependsOn
 				} else {
@@ -243,6 +271,9 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 				}
 			}
 			if !found {
+				if req.Version == "" {
+					return nil, nil, microerror.Maskf(badFormatError, "app %q not found in base release; version is required for new apps", name)
+				}
 				// This is a new app not in the base release
 				apps[name] = appVersion{
 					Version:         req.Version,
@@ -630,13 +661,10 @@ func findNewestComponentVersion(name string, constraint *semver.Range) (string, 
 func getLatestGithubRelease(owner string, name string, constraint *semver.Range) (string, error) {
 	token := env.GitHubToken.Val()
 
-	ctx := context.Background()
-	ts := oauth2.StaticTokenSource(
-		&oauth2.Token{AccessToken: token},
-	)
-	tc := oauth2.NewClient(ctx, ts)
-
-	client := github.NewClient(tc)
+	client, err := github.NewClient(github.WithAuthToken(token))
+	if err != nil {
+		return "", microerror.Mask(err)
+	}
 
 	owner, candidateNames := getRepoCandidates(owner, name)
 
@@ -721,12 +749,10 @@ func getLatestGithubRelease(owner string, name string, constraint *semver.Range)
 // getLatestK8sVersion returns the latest patch version for a given k8s major.minor version.
 func getLatestK8sVersion(major uint64) (string, error) {
 	token := env.GitHubToken.Val()
-	ctx := context.Background()
-	ts := oauth2.StaticTokenSource(
-		&oauth2.Token{AccessToken: token},
-	)
-	tc := oauth2.NewClient(ctx, ts)
-	client := github.NewClient(tc)
+	client, err := github.NewClient(github.WithAuthToken(token))
+	if err != nil {
+		return "", microerror.Mask(err)
+	}
 
 	opt := &github.ListOptions{PerPage: 100}
 	var allReleases []*github.RepositoryRelease
@@ -776,12 +802,10 @@ func getLatestReleaseForMinor(owner, repo, minorVersion string) (string, error) 
 	token := env.GitHubToken.Val()
 
 	ctx := context.Background()
-	ts := oauth2.StaticTokenSource(
-		&oauth2.Token{AccessToken: token},
-	)
-	tc := oauth2.NewClient(ctx, ts)
-
-	client := github.NewClient(tc)
+	client, err := github.NewClient(github.WithAuthToken(token))
+	if err != nil {
+		return "", microerror.Mask(err)
+	}
 
 	// Note: repo is already the resolved repository name from GetRepoName,
 	// so we use it directly without calling getRepoCandidates
@@ -937,7 +961,8 @@ func autoDetectVersion(releaseName, componentName string) (string, error) {
 }
 
 func getLatestFlatcarRelease() (string, error) {
-	url := "https://www.flatcar.org/releases-json/releases-stable.json"
+	url := env.FlatcarReleasesURL.Val()
+	channel := env.FlatcarChannel.Val()
 
 	var myClient = &http.Client{Timeout: 10 * time.Second}
 
@@ -965,7 +990,7 @@ func getLatestFlatcarRelease() (string, error) {
 
 	var latest semver.Version
 	for name, rel := range target {
-		if rel.Channel == "stable" {
+		if rel.Channel == channel {
 			ver, err := semver.ParseTolerant(name)
 			if err != nil {
 				continue

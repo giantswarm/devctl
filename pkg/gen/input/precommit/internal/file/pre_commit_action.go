@@ -4,8 +4,8 @@ import (
 	_ "embed"
 	"path/filepath"
 
-	"github.com/giantswarm/devctl/v7/pkg/gen/input"
-	"github.com/giantswarm/devctl/v7/pkg/gen/input/precommit/internal/params"
+	"github.com/giantswarm/devctl/v8/pkg/gen/input"
+	"github.com/giantswarm/devctl/v8/pkg/gen/input/precommit/internal/params"
 )
 
 //go:generate go run ../../../update-template-sha.go pre-commit-action.yaml.template

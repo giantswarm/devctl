@@ -10,7 +10,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
-	"github.com/giantswarm/devctl/v7/pkg/githubclient"
+	"github.com/giantswarm/devctl/v8/pkg/githubclient"
 )
 
 type runner struct {
@@ -73,14 +73,17 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	}
 
 	if r.flag.Remove {
-		r.logger.Printf("Removing %s/%s from repositories accessible by Renovate...", owner, *repository.Name)
 		err = client.RemoveRepoFromRenovatePermissions(ctx, owner, repository)
+		if err != nil {
+			return microerror.Mask(err)
+		}
+		r.logger.Printf("removed %s/%s from repositories accessible by Renovate", owner, *repository.Name)
 	} else {
-		r.logger.Printf("Adding %s/%s to repositories accessible by Renovate...", owner, *repository.Name)
 		err = client.AddRepoToRenovatePermissions(ctx, owner, repository)
-	}
-	if err != nil {
-		return microerror.Mask(err)
+		if err != nil {
+			return microerror.Mask(err)
+		}
+		r.logger.Printf("added %s/%s to repositories accessible by Renovate", owner, *repository.Name)
 	}
 
 	return nil

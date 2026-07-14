@@ -1,0 +1,16 @@
+{
+  "extends": [
+    "github>giantswarm/renovate-presets:default.json5",
+    "github>giantswarm/renovate-presets:lang-go.json5",
+  ],
+  "packageRules": [
+    {
+      // Prevent Teleport updating every time the repo has a new commit, instead update weekly
+      "matchPackagePatterns": ["github.com/gravitational/teleport/.*"],
+      "groupName": "Teleport Modules",
+      "matchManagers": ["gomod"],
+      "additionalReviewers": ["team:team-bigmac"],
+      "schedule": ["before 5am on Monday"],
+    },
+  ],
+}

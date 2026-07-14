@@ -8,9 +8,9 @@ import (
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
 
-	"github.com/giantswarm/devctl/v7/pkg/gen"
-	"github.com/giantswarm/devctl/v7/pkg/gen/input"
-	"github.com/giantswarm/devctl/v7/pkg/gen/input/workflows"
+	"github.com/giantswarm/devctl/v8/pkg/gen"
+	"github.com/giantswarm/devctl/v8/pkg/gen/input"
+	"github.com/giantswarm/devctl/v8/pkg/gen/input/workflows"
 )
 
 type runner struct {
@@ -36,7 +36,7 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
+func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 	var err error
 
 	var workflowsInput *workflows.Workflows
@@ -52,9 +52,34 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	}
 
 	inputs := []input.Input{
-		workflowsInput.CreateRelease(),
-		workflowsInput.CreateReleasePR(),
-		workflowsInput.ValidateChangelog(),
+		workflowsInput.SemanticPullRequest(),
+	}
+
+	// Two mutually-exclusive release flows. Each branch emits the workflow
+	// files it owns AND deletion inputs for the OTHER flow's files, so
+	// flipping `--release-workflow` (or the matching `releaseWorkflow:` in
+	// giantswarm/github) in either direction leaves the repo with exactly
+	// one set of release files. The un-prefixed `auto-release.yaml` left
+	// over from manual migrations predating the `zz_generated.` rename is
+	// deleted in BOTH branches via AutoReleaseLegacyDeletion.
+	if r.flag.ReleaseWorkflow == releaseWorkflowAutoRelease {
+		inputs = append(inputs,
+			workflowsInput.AutoReleaseLegacyDeletion(),
+			workflowsInput.AutoRelease(),
+			workflowsInput.CliffToml(),
+			workflowsInput.CreateReleaseDeletion(),
+			workflowsInput.CreateReleasePRDeletion(),
+			workflowsInput.ValidateChangelogDeletion(),
+		)
+	} else {
+		inputs = append(inputs,
+			workflowsInput.CreateRelease(),
+			workflowsInput.CreateReleasePR(),
+			workflowsInput.ValidateChangelog(),
+			workflowsInput.AutoReleaseLegacyDeletion(),
+			workflowsInput.AutoReleaseDeletion(),
+			workflowsInput.CliffTomlDeletion(),
+		)
 	}
 
 	if r.flag.Language == "go" {

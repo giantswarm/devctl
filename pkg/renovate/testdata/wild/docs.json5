@@ -1,0 +1,29 @@
+{
+  extends: [
+    'github>giantswarm/renovate-presets:default.json5',
+  ],
+  customManagers: [
+    {
+      customType: 'regex',
+      managerFilePatterns: [
+        '/.*\\.sh/',
+      ],
+      matchStrings: [
+        '# renovate: datasource=(?<datasource>.*?) depName=(?<depName>.*?)( versioning=(?<versioning>.*?))?\\s[A-Z_]+=(?<currentValue>\\S+)',
+      ],
+      versioningTemplate: '{{#if versioning}}{{{versioning}}}{{else}}semver{{/if}}',
+    },
+    {
+      customType: 'regex',
+      datasourceTemplate: 'github-tags',
+      managerFilePatterns: [
+        '/^scripts/update-crd-reference/config\\.yaml$/',
+      ],
+      matchStrings: [
+        'short_name:\\s*(?<depName>\\S+)\\s+commit_reference:\\s*(?<currentValue>\\S+)',
+      ],
+      packageNameTemplate: 'giantswarm/{{{depName}}}',
+      versioningTemplate: 'semver-coerced',
+    },
+  ],
+}

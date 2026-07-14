@@ -8,8 +8,8 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
-	"github.com/giantswarm/devctl/v7/cmd/pr/approvealign"
-	"github.com/giantswarm/devctl/v7/cmd/pr/approvemergerenovate"
+	"github.com/giantswarm/devctl/v8/cmd/pr/approvealign"
+	"github.com/giantswarm/devctl/v8/cmd/pr/approvemergerenovate"
 )
 
 const (

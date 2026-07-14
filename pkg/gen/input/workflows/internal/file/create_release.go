@@ -4,8 +4,8 @@ import (
 	_ "embed"
 	"strings"
 
-	"github.com/giantswarm/devctl/v7/pkg/gen/input"
-	"github.com/giantswarm/devctl/v7/pkg/gen/input/workflows/internal/params"
+	"github.com/giantswarm/devctl/v8/pkg/gen/input"
+	"github.com/giantswarm/devctl/v8/pkg/gen/input/workflows/internal/params"
 )
 
 //go:embed create_release.yaml.template
@@ -31,4 +31,15 @@ func NewCreateReleaseInput(p params.Params) input.Input {
 	}
 
 	return i
+}
+
+// NewCreateReleaseDeletionInput returns an Input that deletes the file
+// NewCreateReleaseInput would generate. Wired into the `auto-release` branch
+// in runner.go so a repo that switches from the legacy flow no longer has
+// the legacy create-release.yaml sitting next to zz_generated.auto_release.yaml.
+func NewCreateReleaseDeletionInput(p params.Params) input.Input {
+	return input.Input{
+		Delete: true,
+		Path:   params.RegenerableFileName(p, "create_release.yaml"),
+	}
 }

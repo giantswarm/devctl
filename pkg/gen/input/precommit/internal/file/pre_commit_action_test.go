@@ -3,8 +3,8 @@ package file
 import (
 	"testing"
 
-	"github.com/giantswarm/devctl/v7/pkg/gen/input"
-	"github.com/giantswarm/devctl/v7/pkg/gen/input/precommit/internal/params"
+	"github.com/giantswarm/devctl/v8/pkg/gen/input"
+	"github.com/giantswarm/devctl/v8/pkg/gen/input/precommit/internal/params"
 )
 
 func Test_NewCreatePreCommitActionInput(t *testing.T) {

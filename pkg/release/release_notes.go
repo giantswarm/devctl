@@ -13,12 +13,10 @@ import (
 	"github.com/sirupsen/logrus"
 	"sigs.k8s.io/yaml"
 
-	"github.com/giantswarm/devctl/v7/pkg/release/changelog"
+	"github.com/giantswarm/devctl/v8/pkg/release/changelog"
 )
 
 const releaseNotesTemplate = `# :zap: Giant Swarm Release {{ .Name }} for {{ .Provider }} :zap:
-
-{{ .Description }}
 
 ## Changes compared to {{ .PreviousName }}
 {{ if .Components }}
@@ -77,7 +75,6 @@ type releaseNotesTemplateData struct {
 	Name         string
 	PreviousName string
 	Provider     string
-	Description  string
 	Components   []releaseNotes
 	Apps         []releaseNotes
 }
@@ -110,6 +107,16 @@ func createReleaseNotes(release, baseRelease v1alpha1.Release, provider string, 
 
 		if previousComponentVersion == component.Version {
 			// Skip components that haven't changed
+			continue
+		}
+
+		// Dev versions have no published CHANGELOG — include in notes without changelog detail.
+		if isDevVersion(component.Version) {
+			components = append(components, releaseNotes{
+				Name:            component.Name,
+				Version:         component.Version,
+				PreviousVersion: previousComponentVersion,
+			})
 			continue
 		}
 
@@ -153,6 +160,11 @@ func createReleaseNotes(release, baseRelease v1alpha1.Release, provider string, 
 			continue
 		}
 
+		// Dev versions have no published release to fetch cluster dependency from.
+		if isDevVersion(component.Version) {
+			continue
+		}
+
 		currentClusterVer, err := getClusterDependencyVersion(component.Name, component.Version)
 		if err != nil {
 			logrus.Warnf("Could not get cluster dependency version from %s v%s: %v", component.Name, component.Version, err)
@@ -193,6 +205,16 @@ func createReleaseNotes(release, baseRelease v1alpha1.Release, provider string, 
 
 		if previousAppVersion == app.Version {
 			// Skip apps that haven't changed
+			continue
+		}
+
+		// Dev versions have no published CHANGELOG — include in notes without changelog detail.
+		if isDevVersion(app.Version) {
+			apps = append(apps, releaseNotes{
+				Name:            app.Name,
+				Version:         app.Version,
+				PreviousVersion: previousAppVersion,
+			})
 			continue
 		}
 
@@ -251,7 +273,6 @@ func createReleaseNotes(release, baseRelease v1alpha1.Release, provider string, 
 		Name:         releaseToDirectory(release),
 		PreviousName: releaseToDirectory(baseRelease),
 		Provider:     providerTitleMap[provider],
-		Description:  "<< Add description here >>",
 		Components:   components,
 		Apps:         apps,
 	}

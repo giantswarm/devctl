@@ -1,5 +1,6 @@
 {{ .Header }}
 minimum_pre_commit_version: '2.17'
+default_install_hook_types: [pre-commit, commit-msg{{ if .NodeDevLintHook }}, pre-push{{ end }}]
 repos:
   # base hooks
   - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -9,10 +10,38 @@ repos:
       - id: check-shebang-scripts-are-executable
       - id: detect-private-key
       - id: end-of-file-fixer
-        exclude: ".*testdata/.*"
+        exclude: "(.*testdata/.*|^\\.yarn/.*)"
       - id: mixed-line-ending
       - id: trailing-whitespace
-        exclude: ".*testdata/.*"
+        exclude: "(.*testdata/.*|^\\.yarn/.*)"
+
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v4.4.0
+    hooks:
+      - id: conventional-pre-commit
+        stages: [commit-msg]
+        args: [--strict]
+{{- if .NodeDevLintHook }}
+
+  # Dev-only Node lint. Runs the repo's standard `ci:lint` script (a single
+  # convention name, like ci:verify/ci:build, that the repo defines pointing at
+  # its own eslint/prettier toolchain, resolved against the installed
+  # node_modules) at the PRE-PUSH stage, so the CI pre-commit job -- which runs
+  # `pre-commit run --all-files` at the pre-commit stage on a runner with no
+  # node_modules -- never executes it. CI lint/format run in ci:verify (which
+  # composes ci:lint) instead; lint/format are therefore verify-canonical (here
+  # for fast dev feedback, ci:verify for the gate) and never in the CI
+  # pre-commit job. See the node-precommit-single-source and
+  # node-ci-verify-build-single-pass ADRs.
+  - repo: local
+    hooks:
+      - id: ci-lint
+        name: ci:lint (dev-only, pre-push)
+        entry: {{ .NodeRunPrefix }} ci:lint
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+{{- end }}
 {{- if eq .Language "python" }}
 
   # Python hooks
@@ -28,7 +57,7 @@ repos:
 
   # static type checking with mypy
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.19.1
+    rev: v2.1.0
     hooks:
       - id: mypy
 {{- end }}
@@ -51,13 +80,13 @@ repos:
           - --max-same-issues=0
           - --max-issues-per-linter=0
       - id: go-imports
-        args: [ -local, github.com/giantswarm/{{.RepoName}} ]
+        args: [ -local, {{.RepoName}} ]
 {{- end }}
 {{- if .HasBash }}
 
   # Bash/shell hooks
   - repo: https://github.com/detailyang/pre-commit-shell
-    rev: '1.0.5'
+    rev: 'v1.0.6'
     hooks:
       - id: shell-lint
         args: [ --format=json ]
@@ -67,7 +96,7 @@ repos:
 
   # Markdown hooks
   - repo: https://github.com/igorshubovych/markdownlint-cli
-    rev: v0.48.0
+    rev: v0.49.0
     hooks:
       - id: markdownlint
 {{- end }}
@@ -76,7 +105,7 @@ repos:
 
   # Helm chart hooks for {{.}}
   - repo: https://github.com/losisin/helm-values-schema-json
-    rev: v2.3.1
+    rev: v2.5.0
     hooks:
       - id: helm-schema
         args:

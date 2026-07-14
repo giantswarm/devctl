@@ -1,6 +1,6 @@
 package params
 
-import "github.com/giantswarm/devctl/v7/pkg/gen/internal"
+import "github.com/giantswarm/devctl/v8/pkg/gen/internal"
 
 func HasFlavor(p Params, flavor string) bool {
 	for _, f := range p.Flavors {

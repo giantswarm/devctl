@@ -1,6 +1,6 @@
 package params
 
-import "github.com/giantswarm/devctl/v7/pkg/gen"
+import "github.com/giantswarm/devctl/v8/pkg/gen"
 
 type Params struct {
 	// Dir is the name of the directory where the files of the resource

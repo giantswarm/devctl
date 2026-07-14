@@ -1,0 +1,136 @@
+// Repo-specific Renovate rules for devctl, layered on top of the generated
+// renovate.json5 (which extends this file last). devctl never touches this
+// file. Rules for a whole class of repos belong in giantswarm/renovate-presets.
+//
+// devctl is special: it is the generator. Several upstream tool versions are
+// pinned inside the generator's own source (Go constants, golden fixtures, and
+// workflow templates) rather than in a manifest a built-in manager understands,
+// so the custom managers below keep them current. These were dropped from
+// renovate.json5 by the 2026-06-24 align-files run (#2030) and restored here.
+{
+  // Let the github-actions manager also scan the workflow templates devctl
+  // emits, so action versions baked into the templates get bumped too.
+  'github-actions': {
+    managerFilePatterns: [
+      '/.*.yaml.template$/',
+    ],
+  },
+  customManagers: [
+    // The orb versions baked into the `gen circleci` generator, pinned as Go
+    // constants next to the config template so a major orb bump forces a devctl
+    // release rather than silently skewing against a stale template. Renovate
+    // bumps them here, not in giantswarm/github.
+    //
+    // The giantswarm/architect entry is tracked via github-tags on the
+    // architect-orb source repo (not the `orb` datasource): the generated
+    // renovate.json5 disables `orb` updates for giantswarm/architect (so they
+    // stop fighting align-files in .circleci/config.yml), and that root rule
+    // would otherwise also block the constant. github-tags on architect-orb
+    // carries the same versions and is not matched by the disable rule.
+    {
+      customType: 'regex',
+      managerFilePatterns: ['/pkg/gen/input/circleci/circleci\\.go$/'],
+      matchStrings: [
+        '// renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n\\s*const \\w*OrbVersion = "(?<currentValue>[^"]+)"',
+      ],
+    },
+    // The golden fixtures pin the same orb versions the generator emits. Same
+    // depName/datasource as the constants above, so Renovate bumps constant and
+    // goldens in one PR and the byte-for-byte golden tests stay green -- without
+    // this, every orb bump needs a manual fixture regen.
+    {
+      customType: 'regex',
+      managerFilePatterns: ['/pkg/gen/input/circleci/testdata/.*\\.workflows\\.yml$/'],
+      matchStrings: ['architect: giantswarm/architect@(?<currentValue>\\S+)'],
+      depNameTemplate: 'giantswarm/architect-orb',
+      datasourceTemplate: 'github-tags',
+    },
+    {
+      customType: 'regex',
+      managerFilePatterns: ['/pkg/gen/input/circleci/testdata/setup\\.config\\.yml$/'],
+      matchStrings: ['continuation: circleci/continuation@(?<currentValue>\\S+)'],
+      depNameTemplate: 'circleci/continuation',
+      datasourceTemplate: 'orb',
+    },
+    // Pre-commit hook revisions in the pre-commit config template.
+    // The built-in pre-commit manager cannot parse this file because it contains
+    // Go template directives ({{- if ... }}) that make the YAML invalid.
+    {
+      customType: 'regex',
+      managerFilePatterns: ['/pre-commit-config\\.yaml\\.template$/'],
+      matchStrings: [
+        '- repo: https://github\\.com/(?<depName>[^\\n]+)\\n\\s+rev: [\'"]?(?<currentValue>[^\'"\\n]+)',
+      ],
+      datasourceTemplate: 'github-tags',
+    },
+    // Helm CLI version pinned as an env var in the pre-commit GitHub Actions workflow template.
+    {
+      customType: 'regex',
+      managerFilePatterns: ['/pre-commit-action\\.yaml\\.template$/'],
+      matchStrings: ['HELM_VERSION: "(?<currentValue>[^"]+)"'],
+      depNameTemplate: 'helm/helm',
+      datasourceTemplate: 'github-releases',
+    },
+    // helm-docs version pinned as an env var in the pre-commit GitHub Actions workflow template.
+    // Renovate will consolidate updates with the pre-commit hook rev for the same package.
+    {
+      customType: 'regex',
+      managerFilePatterns: ['/pre-commit-action\\.yaml\\.template$/'],
+      matchStrings: ['HELM_DOCS_VERSION: "(?<currentValue>[^"]+)"'],
+      depNameTemplate: 'norwoodj/helm-docs',
+      datasourceTemplate: 'github-releases',
+    },
+    // helm-values-schema-json version pinned as an env var in the pre-commit GitHub Actions workflow template.
+    // Renovate will consolidate updates with the pre-commit hook rev for the same package.
+    {
+      customType: 'regex',
+      managerFilePatterns: ['/pre-commit-action\\.yaml\\.template$/'],
+      matchStrings: ['HELM_VALUES_SCHEMA_JSON_VERSION: "(?<currentValue>[^"]+)"'],
+      depNameTemplate: 'losisin/helm-values-schema-json',
+      datasourceTemplate: 'github-releases',
+    },
+    // golangci-lint version used in install-binary-action. The two-line match avoids
+    // false-positives with other `version:` fields in the same file.
+    {
+      customType: 'regex',
+      managerFilePatterns: ['/pre-commit-action\\.yaml\\.template$/'],
+      matchStrings: ['binary: golangci-lint\\n\\s+version: "(?<currentValue>[^"]+)"'],
+      depNameTemplate: 'golangci/golangci-lint',
+      datasourceTemplate: 'github-releases',
+    },
+    // goimports module version pinned in a `go install` run step.
+    {
+      customType: 'regex',
+      managerFilePatterns: ['/pre-commit-action\\.yaml\\.template$/'],
+      matchStrings: ['go install golang\\.org/x/tools/cmd/goimports@(?<currentValue>[^\\s]+)'],
+      depNameTemplate: 'golang.org/x/tools',
+      datasourceTemplate: 'go',
+    },
+  ],
+  packageRules: [
+    {
+      // architect-orb git tags are vX.Y.Z; the pinned constant and the golden
+      // fixtures hold the bare version, so strip the leading `v` before
+      // comparison. Scoped to the architect-orb source repo, so it never
+      // touches the `orb`-datasource giantswarm/architect the root config
+      // disables.
+      matchDatasources: ['github-tags'],
+      matchPackageNames: ['giantswarm/architect-orb'],
+      extractVersion: '^v(?<version>.+)$',
+    },
+    {
+      // The canonical ATS (app-test-suite) Pipfile is embedded here and
+      // generated verbatim into every chart/app repo's tests/ats/Pipfile by
+      // `devctl gen circleci`. It is the single source the built-in pipenv
+      // manager bumps -- group the whole stack into one PR so the pins move
+      // together (and stay mutually resolvable, e.g. pytest<9 for
+      // pytest-helm-charts), then propagate to all repos via one align-files
+      // regeneration. The per-repo copies are disabled for Renovate via
+      // renovate-presets:tests-ats.json5, so this is the only place the stack
+      // is updated.
+      matchManagers: ['pipenv'],
+      matchFileNames: ['pkg/gen/input/ats/internal/file/Pipfile'],
+      groupName: 'ATS test dependencies',
+    },
+  ],
+}

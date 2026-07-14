@@ -9,13 +9,13 @@ import (
 	"time"
 
 	"github.com/giantswarm/microerror"
-	"github.com/google/go-github/v84/github"
+	"github.com/google/go-github/v89/github"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
-	"github.com/giantswarm/devctl/v7/internal/env"
-	"github.com/giantswarm/devctl/v7/internal/pr"
-	"github.com/giantswarm/devctl/v7/pkg/githubclient"
+	"github.com/giantswarm/devctl/v8/internal/env"
+	"github.com/giantswarm/devctl/v8/internal/pr"
+	"github.com/giantswarm/devctl/v8/pkg/githubclient"
 )
 
 type runner struct {
@@ -58,10 +58,10 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 	githubClient := ghClientService.GetUnderlyingClient(ctx)
 
-	// Search for "Align files" PRs
+	// Search for align-files PRs
 	// Note: We don't filter by status:success here because we want to find all PRs
 	// and then check/wait for their status in processPR (similar to approve-merge-renovate)
-	searchQuery := `is:pr is:open archived:false org:giantswarm review-requested:@me "Align files"`
+	searchQuery := `is:pr is:open archived:false org:giantswarm review-requested:@me "chore: align files according to platform standards"`
 
 	searchOpts := &github.SearchOptions{
 		ListOptions: github.ListOptions{PerPage: 100},
