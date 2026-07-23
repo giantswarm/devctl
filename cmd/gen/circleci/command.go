@@ -21,7 +21,8 @@ block. Jobs are selected by:
   - Dockerfile present -> architect/push-to-registries (buildx + split-china-push)
                           and architect/sync-china-registry
   - app flavour        -> architect/push-to-app-catalog (app-build-suite executor)
-                          and architect/run-tests-with-ats
+                          and architect/run-tests-with-ats (--skip-ats opts out
+                          of the ATS chart tests)
 
 The giantswarm/architect orb is pinned to a version baked into devctl (not a
 flag): a major orb bump changes the template's required job/param shape, so it

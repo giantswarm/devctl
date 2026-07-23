@@ -1251,6 +1251,45 @@ func Test_ATSPipfileOmittedForNonApp(t *testing.T) {
 	}
 }
 
+// Test_SkipATSOmitsChartTests verifies the ATS opt-out: an app repo with
+// SkipATS gets the chart pipeline but no run-tests-with-ats jobs, and the
+// chart push jobs gate directly on build-chart instead of the test jobs. The
+// canonical Pipfile is suppressed too.
+func Test_SkipATSOmitsChartTests(t *testing.T) {
+	c := Config{
+		RepoName:      repoMCPKubernetes,
+		Language:      gen.LanguageGo,
+		Flavours:      gen.FlavourSlice{gen.FlavourApp},
+		HasDockerfile: true,
+		BranchPublish: true,
+		SkipATS:       true,
+	}
+
+	got := render(t, c)
+
+	// The chart pipeline itself stays.
+	for _, want := range []string{"name: build-chart", "name: push-chart", "name: push-chart-release"} {
+		if !contains(got, want) {
+			t.Errorf("SkipATS config missing %q:\n%s", want, got)
+		}
+	}
+	// The ATS test jobs are gone.
+	for _, unwanted := range []string{jobRunTests, "execute-chart-tests", "execute-chart-tests-release"} {
+		if contains(got, unwanted) {
+			t.Errorf("SkipATS config should not contain %q:\n%s", unwanted, got)
+		}
+	}
+	// The chart push jobs gate on build-chart now that the test jobs are gone.
+	if !contains(got, "requires:\n        - build-chart") {
+		t.Errorf("SkipATS chart push should require build-chart directly:\n%s", got)
+	}
+
+	// No canonical ATS Pipfile is emitted.
+	if inputs := newCircleCI(t, c).ATSInputs(); len(inputs) != 0 {
+		t.Errorf("expected no ATS inputs with SkipATS, got %d: %+v", len(inputs), inputs)
+	}
+}
+
 // Test_NodeBuildOutputCache verifies the build-output cache (node_modules +
 // Yarn install-state) is emitted for the Yarn package managers, keyed on the
 // node image version, and is absent for npm (npm ci wipes node_modules) and

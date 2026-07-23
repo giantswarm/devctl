@@ -19,6 +19,12 @@ type Params struct {
 	// Helm chart). It selects the chart pipeline (push-to-app-catalog with the
 	// app-build-suite executor and run-tests-with-ats).
 	HasApp bool
+	// SkipATS opts the chart pipeline out of app-test-suite (ATS) chart tests.
+	// When true the run-tests-with-ats jobs (execute-chart-tests /
+	// execute-chart-tests-release) and the canonical tests/ats/Pipfile are not
+	// emitted, and the chart push jobs gate directly on build-chart instead.
+	// Only meaningful for a chart/app repo (HasApp); ignored otherwise.
+	SkipATS bool
 	// ChartName is the chart name used for the push-to-app-catalog `chart`
 	// param and the helm/<chart> directory. Defaults to RepoName. Set it for
 	// repos whose chart directory does not match the repo name (e.g.
