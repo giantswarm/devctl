@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Fixed
 
 - `gen precommit`: the generated `schemalint-normalize` and `schemalint-verify` hooks now set `pass_filenames: false`. Without it, pre-commit appended the matched schema file on top of the filename already in `args`, so `schemalint` received two positional arguments, errored with `accepts 1 arg(s)`, and silently did nothing — leaving the schema unnormalized and unverified.
+- `semantic-pull-request`: the generated workflow now allows to be run in merge groups, avoiding stale queues because of the required check not running.
 
 ### Changed
 
