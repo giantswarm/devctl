@@ -9,6 +9,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `gen precommit` (helm charts): the generated `.pre-commit-config.yaml` now generates
+  and fixes each chart's `values.schema.json` in a single `repo: local` hook that runs
+  `helm schema` and then rewrites every `$ref` sibling `additionalProperties: false` to
+  `unevaluatedProperties: false`. `helm-values-schema-json` emits
+  `additionalProperties: false` next to bare `$ref`s under `noAdditionalProperties: true`,
+  which (per JSON Schema 2020-12) rejects every property the referenced schema defines —
+  e.g. `helm template` failing with `additional properties 'podAntiAffinity' not allowed`.
+  Generation and the fix are combined into one hook so `pre-commit run -a` runs clean: as
+  two separate mutating hooks, `helm-schema` rewrites the fixed schema back to the buggy
+  form every run and the fix rewrites it forward again, so both always report "files were
+  modified". This replaces the external `losisin/helm-values-schema-json` pre-commit hook
+  (the plugin is still installed by the pre-commit CI workflow) until the upstream bug is
+  fixed. Valid values pass while genuinely unknown keys are still rejected. Workaround for
+  the open upstream bug <https://github.com/losisin/helm-values-schema-json/issues/317>.
 - `semantic-pull-request`: the generated workflow now allows to be run in merge groups, avoiding stale queues because of the required check not running.
 
 ### Changed

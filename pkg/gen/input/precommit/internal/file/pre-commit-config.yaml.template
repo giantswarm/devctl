@@ -103,14 +103,42 @@ repos:
 {{- if .HasHelmchart }}
 {{- range .HelmCharts }}
 
-  # Helm chart hooks for {{.}}
-  - repo: https://github.com/losisin/helm-values-schema-json
-    rev: v2.5.0
+  # Helm chart schema for {{.}}.
+  #
+  # Schema generation (`helm schema`) and a post-processing fix are COMBINED into this
+  # single local hook on purpose. The generator (losisin/helm-values-schema-json, run
+  # via the `helm schema` plugin) has a bug: with `noAdditionalProperties: true` it
+  # emits `additionalProperties: false` as a sibling of every `$ref`. Per JSON Schema
+  # 2020-12, `additionalProperties` only sees sibling `properties`/`patternProperties`
+  # -- NOT properties pulled in through `$ref` -- so it wrongly rejects every field the
+  # referenced schema defines (e.g. `helm template` fails with "additional properties
+  # 'podAntiAffinity' not allowed" for a k8s Affinity). The correct 2020-12 keyword is
+  # `unevaluatedProperties`, which DOES consider $ref-evaluated properties, but the tool
+  # cannot emit it and does not drop the bogus `additionalProperties` when annotated. So
+  # we regenerate and then rewrite in place: for every object that has both `$ref` and
+  # `additionalProperties: false`, drop `additionalProperties` and set
+  # `unevaluatedProperties: false`.
+  #
+  # Generation and the fix MUST be one hook. As two separate hooks, `helm schema` would
+  # rewrite the committed (fixed) schema back to the buggy form on every run and the fix
+  # hook would rewrite it forward again -- so BOTH would always report "files were
+  # modified" and `pre-commit run -a` could never pass. Combined, the net effect on an
+  # already-fixed committed schema is a no-op, so the hook runs clean.
+  #
+  # This replaces the standard `- repo: https://github.com/losisin/helm-values-schema-json`
+  # hook until the upstream bug is fixed. Requires the `schema` helm plugin (installed in
+  # the pre-commit CI workflow; same requirement the upstream hook had -- it just runs
+  # `helm schema`). Upstream bug: https://github.com/losisin/helm-values-schema-json/issues/317
+  - repo: local
     hooks:
-      - id: helm-schema
+      - id: helm-schema-{{.}}
+        name: "generate + fix helm/{{.}}/values.schema.json"
+        language: system
+        files: ^helm/{{.}}/(values\.yaml|\.schema\.yaml)$
+        pass_filenames: false
+        entry: sh -c
         args:
-          - --config
-          - helm/{{.}}/.schema.yaml
+          - 'helm schema --config helm/{{.}}/.schema.yaml && python3 -c ''import json,sys; h=lambda o: ({**{k:v for k,v in o.items() if k!="additionalProperties"},"unevaluatedProperties":False}) if ("$ref" in o and o.get("additionalProperties") is False) else o; p=sys.argv[1]; d=json.load(open(p),object_hook=h); f=open(p,"w"); json.dump(d,f,indent=4); f.write(chr(10))'' helm/{{.}}/values.schema.json'
   - repo: https://github.com/giantswarm/schemalint
     rev: v2.6.1
     hooks:
