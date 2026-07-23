@@ -63,6 +63,20 @@
       ],
       datasourceTemplate: 'github-tags',
     },
+    // schemalint pinned in `additional_dependencies` of the local helm-schema pipeline
+    // hook in the pre-commit config template. depName matches the `- repo:`/`rev:` entry
+    // for the same tool above, so Renovate consolidates both into one update and the
+    // normalizing binary never drifts from the verifying one -- a version skew between
+    // them could reintroduce the rival-formatter conflict (giantswarm/giantswarm#37267).
+    {
+      customType: 'regex',
+      managerFilePatterns: ['/pre-commit-config\\.yaml\\.template$/'],
+      matchStrings: [
+        'additional_dependencies: \\[\'github\\.com/giantswarm/schemalint/v2@(?<currentValue>[^\']+)\'\\]',
+      ],
+      depNameTemplate: 'giantswarm/schemalint',
+      datasourceTemplate: 'github-tags',
+    },
     // Helm CLI version pinned as an env var in the pre-commit GitHub Actions workflow template.
     {
       customType: 'regex',
