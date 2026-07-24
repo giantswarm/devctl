@@ -14,6 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- `gen makefile --language kyverno-policy`: enable PolicyExceptions in all namespaces in the Kyverno installed for chainsaw tests.
 - `gen precommit --language node`: emits **no** JS/TS formatting or linting hook
   (no prettier, no eslint). Both are repo-owned for every Giant Swarm node repo —
   `@backstage/cli`, Next.js and headlamp-plugin each ship their own prettier/eslint
