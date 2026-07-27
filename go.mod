@@ -17,7 +17,7 @@ require (
 	github.com/go-git/go-git/v5 v5.19.1
 	github.com/google/go-cmp v0.7.0
 	github.com/google/go-github/v89 v89.0.0
-	github.com/jedib0t/go-pretty/v6 v6.8.2
+	github.com/jedib0t/go-pretty/v6 v6.8.3
 	github.com/manifoldco/promptui v0.9.0
 	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826
 	github.com/pelletier/go-toml/v2 v2.4.3
@@ -27,8 +27,8 @@ require (
 	github.com/spf13/pflag v1.0.10
 	github.com/stretchr/testify v1.11.1
 	github.com/titanous/json5 v1.0.0
-	golang.org/x/exp v0.0.0-20260611194520-c48552f49976
-	golang.org/x/mod v0.37.0
+	golang.org/x/exp v0.0.0-20260718201538-764159d718ef
+	golang.org/x/mod v0.38.0
 	golang.org/x/net v0.57.0
 	golang.org/x/oauth2 v0.36.0
 	gopkg.in/yaml.v3 v3.0.1
