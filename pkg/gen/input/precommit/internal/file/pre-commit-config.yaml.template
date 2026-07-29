@@ -148,7 +148,7 @@ repos:
       - id: helm-schema-{{.}}
         name: "generate + fix + normalize helm/{{.}}/values.schema.json"
         language: golang
-        additional_dependencies: ['github.com/giantswarm/schemalint/v2@v2.6.1']
+        additional_dependencies: ['github.com/giantswarm/schemalint/v2@v2.6.2']
         files: ^helm/{{.}}/(values\.yaml|\.schema\.yaml|values\.schema\.json)$
         pass_filenames: false
         require_serial: true
@@ -156,7 +156,7 @@ repos:
         args:
           - 'helm plugin list | grep -q "^schema[[:space:]]" || { echo "helm schema plugin missing, install it with: helm plugin install https://github.com/losisin/helm-values-schema-json"; exit 1; }; helm schema --config helm/{{.}}/.schema.yaml && python3 -c ''{{ $.RefFixPython }}'' helm/{{.}}/values.schema.json && schemalint normalize helm/{{.}}/values.schema.json -o helm/{{.}}/values.schema.json --force'
   - repo: https://github.com/giantswarm/schemalint
-    rev: v2.6.1
+    rev: v2.6.2
     hooks:
       - id: schemalint-verify
         pass_filenames: false
