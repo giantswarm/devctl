@@ -140,7 +140,7 @@ func Test_HelmSchemaFixHook(t *testing.T) {
 		"helm-values-schema-json/issues/317",
 		"schemalint normalize helm/test-chart/values.schema.json",
 		// schemalint is installed by the hook itself, so no new tooling is required.
-		"additional_dependencies: ['github.com/giantswarm/schemalint/v2@v2.6.1']",
+		"additional_dependencies: ['github.com/giantswarm/schemalint/v2@v2.6.2']",
 		"language: golang",
 	} {
 		if !strings.Contains(got, want) {
