@@ -10,6 +10,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Fixed
 
 - `gen precommit`: the generated `schemalint-normalize` and `schemalint-verify` hooks now set `pass_filenames: false`. Without it, pre-commit appended the matched schema file on top of the filename already in `args`, so `schemalint` received two positional arguments, errored with `accepts 1 arg(s)`, and silently did nothing — leaving the schema unnormalized and unverified.
+- `gen precommit` (helm charts): each chart's `values.schema.json` is now generated,
+  fixed and normalized by a **single** `repo: local` pipeline hook that runs
+  `helm schema` → rewrite `$ref` siblings → `schemalint normalize`. This replaces both
+  the external `losisin/helm-values-schema-json` hook and the separate
+  `schemalint-normalize` hook (read-only `schemalint-verify` stays). It fixes two
+  independent reasons `pre-commit run -a` could never converge:
+  - **Rival formatters** (giantswarm/giantswarm#37267): `helm-schema` rewrote the schema
+    wholesale in its own key ordering while `schemalint-normalize` rewrote it into
+    schemalint's canonical ordering. pre-commit runs each hook independently against the
+    file on disk and fails the run if any hook modifies it, so with two different resting
+    formats there was no fixed point — exactly one hook always failed and reruns
+    ping-ponged forever. `schemalint normalize` is now the last writer inside the single
+    hook, making the normalized form the one resting format.
+  - **Invalid schema with `$ref`** (losisin/helm-values-schema-json#317): under
+    `noAdditionalProperties: true` the generator emits `additionalProperties: false` as a
+    sibling of every bare `$ref`. Per JSON Schema 2020-12 `additionalProperties` only sees
+    sibling `properties`/`patternProperties` — not properties pulled in through `$ref` —
+    so it rejected every field the referenced schema defines, e.g. `helm template` failing
+    with `additional properties 'podAntiAffinity' not allowed`. The hook now rewrites those
+    to `unevaluatedProperties: false`, which does consider `$ref`-evaluated properties.
+    Valid values pass while genuinely unknown keys are still rejected.
+
+  `schemalint` is installed by the hook itself via `additional_dependencies` (pinned and
+  Renovate-managed), and the `helm schema` plugin is still installed by the generated
+  pre-commit CI workflow — so no new tooling is required. The hook checks for the plugin
+  first and points at its install command, keeping the actionable message the replaced
+  hook's wrapper script printed.
 - `semantic-pull-request`: the generated workflow now allows to be run in merge groups, avoiding stale queues because of the required check not running.
 - `test-kyverno-policies-with-chainsaw.yaml.template`: the template now uses installation actions to set up Helm and Kind, which reduces the number of manual steps.
 

@@ -103,24 +103,61 @@ repos:
 {{- if .HasHelmchart }}
 {{- range .HelmCharts }}
 
-  # Helm chart hooks for {{.}}
-  - repo: https://github.com/losisin/helm-values-schema-json
-    rev: v2.5.0
+  # Helm chart schema for {{.}}: generate -> fix $ref -> normalize, as ONE hook.
+  #
+  # This single local hook deliberately runs the whole schema pipeline. pre-commit does
+  # NOT feed hooks into each other: it runs each hook independently against the file on
+  # disk and fails the run if any hook modified it. So for a multi-fixer setup to pass,
+  # all fixers must agree on ONE resting format. Splitting these steps into separate
+  # hooks gives them rival resting formats and `pre-commit run -a` can then never
+  # converge -- reruns just ping-pong between formats and one hook always fails:
+  #
+  #   * `helm schema` regenerates the schema from values.yaml wholesale, in the
+  #     generator's own key ordering, and does not preserve existing formatting.
+  #   * `schemalint normalize` rewrites it into schemalint's canonical key ordering
+  #     (and unicode escaping), which is NOT the generator's ordering.
+  #   * the $ref fix below rewrites the generator's output again.
+  #
+  # Chained here, `schemalint normalize` is always the LAST writer, so the normalized
+  # form is the single resting format and the committed file is a fixed point -- the
+  # hook is a no-op on an already-processed schema and the run is clean. Read-only
+  # `schemalint-verify` then checks that resting format (it never rewrites, so it is not
+  # part of the conflict). See giantswarm/giantswarm#37267.
+  #
+  # The `$ref` step works around a generator bug: with `noAdditionalProperties: true` it
+  # emits `additionalProperties: false` as a sibling of every bare `$ref`. Per JSON Schema
+  # 2020-12, `additionalProperties` only sees sibling `properties`/`patternProperties`
+  # -- NOT properties pulled in through `$ref` -- so it wrongly rejects every field the
+  # referenced schema defines (e.g. `helm template` fails with "additional properties
+  # 'podAntiAffinity' not allowed" for a k8s Affinity). The correct 2020-12 keyword is
+  # `unevaluatedProperties`, which DOES consider $ref-evaluated properties, but the tool
+  # cannot emit it and does not drop the bogus `additionalProperties` when annotated. So
+  # for every object that has both `$ref` and `additionalProperties: false` we drop
+  # `additionalProperties` and set `unevaluatedProperties: false`.
+  # Upstream bug: https://github.com/losisin/helm-values-schema-json/issues/317
+  #
+  # This replaces both the external `losisin/helm-values-schema-json` hook and the
+  # separate `schemalint-normalize` hook. `schemalint` is installed by the hook itself
+  # (`additional_dependencies`, hence `language: golang`); `helm schema` needs the `schema`
+  # helm plugin -- the same requirement the external hook had, installed in the pre-commit
+  # CI workflow. The external hook wrapped `helm schema` in a script that checked for the
+  # plugin first, so the leading `helm plugin list` guard below keeps that actionable
+  # message (a dev without the plugin would otherwise just get `unknown command "schema"`).
+  - repo: local
     hooks:
-      - id: helm-schema
+      - id: helm-schema-{{.}}
+        name: "generate + fix + normalize helm/{{.}}/values.schema.json"
+        language: golang
+        additional_dependencies: ['github.com/giantswarm/schemalint/v2@v2.6.1']
+        files: ^helm/{{.}}/(values\.yaml|\.schema\.yaml|values\.schema\.json)$
+        pass_filenames: false
+        require_serial: true
+        entry: sh -c
         args:
-          - --config
-          - helm/{{.}}/.schema.yaml
+          - 'helm plugin list | grep -q "^schema[[:space:]]" || { echo "helm schema plugin missing, install it with: helm plugin install https://github.com/losisin/helm-values-schema-json"; exit 1; }; helm schema --config helm/{{.}}/.schema.yaml && python3 -c ''{{ $.RefFixPython }}'' helm/{{.}}/values.schema.json && schemalint normalize helm/{{.}}/values.schema.json -o helm/{{.}}/values.schema.json --force'
   - repo: https://github.com/giantswarm/schemalint
     rev: v2.6.1
     hooks:
-      - id: schemalint-normalize
-        pass_filenames: false
-        args:
-          - helm/{{.}}/values.schema.json
-          - -o
-          - helm/{{.}}/values.schema.json
-          - --force
       - id: schemalint-verify
         pass_filenames: false
         args:
