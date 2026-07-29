@@ -64,18 +64,26 @@
       datasourceTemplate: 'github-tags',
     },
     // schemalint pinned in `additional_dependencies` of the local helm-schema pipeline
-    // hook in the pre-commit config template. depName matches the `- repo:`/`rev:` entry
-    // for the same tool above, so Renovate consolidates both into one update and the
-    // normalizing binary never drifts from the verifying one -- a version skew between
-    // them could reintroduce the rival-formatter conflict (giantswarm/giantswarm#37267).
+    // hook in the pre-commit config template. The `schemalint` packageRule below groups
+    // this with the `- repo:`/`rev:` entry for the same tool, so the normalizing binary
+    // never drifts from the verifying one -- a version skew between them could reintroduce
+    // the rival-formatter conflict (giantswarm/giantswarm#37267).
+    //
+    // This is the Go module path, tracked with the `go` datasource rather than
+    // github-tags on the repo: a regex manager only rewrites the captured version, not the
+    // `/v2` in the path, so github-tags offering a v3 tag would produce
+    // `github.com/giantswarm/schemalint/v2@v3.0.0`, which `go install` rejects -- and the
+    // breakage would only surface downstream, at pre-commit env install in every generated
+    // chart repo. The `go` datasource for the `/v2` path can only ever offer v2.x, so the
+    // pin cannot go invalid; a schemalint major needs a manual edit of both the path here
+    // and the `rev:` (see the major-update rule below).
     {
       customType: 'regex',
       managerFilePatterns: ['/pre-commit-config\\.yaml\\.template$/'],
       matchStrings: [
-        'additional_dependencies: \\[\'github\\.com/giantswarm/schemalint/v2@(?<currentValue>[^\']+)\'\\]',
+        'additional_dependencies: \\[\'(?<depName>github\\.com/giantswarm/schemalint/v2)@(?<currentValue>[^\']+)\'\\]',
       ],
-      depNameTemplate: 'giantswarm/schemalint',
-      datasourceTemplate: 'github-tags',
+      datasourceTemplate: 'go',
     },
     // Helm CLI version pinned as an env var in the pre-commit GitHub Actions workflow template.
     {
@@ -145,6 +153,24 @@
       matchManagers: ['pipenv'],
       matchFileNames: ['pkg/gen/input/ats/internal/file/Pipfile'],
       groupName: 'ATS test dependencies',
+    },
+    {
+      // schemalint is pinned twice in the pre-commit config template: as the
+      // `schemalint-verify` hook `rev:` (github-tags on the repo) and as the Go module in
+      // the pipeline hook's `additional_dependencies` (the `go` datasource -- the two
+      // datasources are unavoidable, see the custom manager above). Keep them in one PR so
+      // the normalizing binary and the verifying one never land on different versions.
+      matchDepNames: ['giantswarm/schemalint', 'github.com/giantswarm/schemalint/v2'],
+      groupName: 'schemalint',
+    },
+    {
+      // A schemalint major moves the Go module path (`/v2` -> `/v3`), which no regex
+      // manager can rewrite -- the template needs a hand edit. Park majors on the
+      // dependency dashboard instead of opening a PR that would bump `rev:` while leaving
+      // an uninstallable module pin behind.
+      matchDepNames: ['giantswarm/schemalint', 'github.com/giantswarm/schemalint/v2'],
+      matchUpdateTypes: ['major'],
+      dependencyDashboardApproval: true,
     },
   ],
 }

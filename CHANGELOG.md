@@ -34,7 +34,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
   `schemalint` is installed by the hook itself via `additional_dependencies` (pinned and
   Renovate-managed), and the `helm schema` plugin is still installed by the generated
-  pre-commit CI workflow — so no new tooling is required.
+  pre-commit CI workflow — so no new tooling is required. The hook checks for the plugin
+  first and points at its install command, keeping the actionable message the replaced
+  hook's wrapper script printed.
 - `semantic-pull-request`: the generated workflow now allows to be run in merge groups, avoiding stale queues because of the required check not running.
 - `test-kyverno-policies-with-chainsaw.yaml.template`: the template now uses installation actions to set up Helm and Kind, which reduces the number of manual steps.
 
