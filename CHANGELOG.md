@@ -94,6 +94,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   run — the Node analogue of `go-build` persisting `$GOCACHE`. Omitted for npm
   (`npm ci` wipes `node_modules` first) and pnpm (its content-addressable store already
   caches build side-effects).
+- Releases: Add `kube-vip-cloud-provider`.
 
 ### Changed
 
