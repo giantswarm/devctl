@@ -23,6 +23,7 @@ const (
 	flagImagePlatforms   = "image-platforms"
 	flagImageDockerfile  = "image-dockerfile"
 	flagResourceClass    = "resource-class"
+	flagSkipATS          = "skip-ats"
 	flagFlavour          = "flavour"
 	flagLanguage         = "language"
 	flagRepoName         = "repo-name"
@@ -45,6 +46,7 @@ type flag struct {
 	ImagePlatforms   string
 	ImageDockerfile  string
 	ResourceClass    string
+	SkipATS          bool
 	Flavours         gen.FlavourSlice
 	Language         gen.Language
 	RepoName         string
@@ -67,6 +69,7 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.ImagePlatforms, flagImagePlatforms, "", "Override the buildx platform list on the image jobs (push-to-registries `platforms` param). Empty lets the orb default apply (linux/amd64,linux/arm64 when no go-build .platforms file). Set it for single-architecture images (e.g. vllm -> linux/arm64, whose amd64 build has no prebuilt wheels).")
 	cmd.Flags().StringVar(&f.ImageDockerfile, flagImageDockerfile, "", "Override the Dockerfile path on the image jobs (push-to-registries `dockerfile` param). Set it for repos whose Dockerfile is not at the repo root (e.g. backstage -> packages/backend/Dockerfile); a non-empty value also turns the image pipeline on, since the root-Dockerfile derivation misses a nested Dockerfile. The append-only custom.yml merge cannot set this on a generated job. Empty keeps the orb default.")
 	cmd.Flags().StringVar(&f.ResourceClass, flagResourceClass, "", `Override the CircleCI resource_class on the cli-flavour go-build job. Empty defaults to "large". Raise it (e.g. "xlarge") for repos that need more RAM/CPU headroom for the cold cross-compile. Only applies to the cli flavour.`)
+	cmd.Flags().BoolVar(&f.SkipATS, flagSkipATS, false, `Opt the chart pipeline out of app-test-suite (ATS) chart tests. By default an "app" flavour repo runs architect/run-tests-with-ats between build-chart and the chart push, and generation emits the canonical tests/ats/Pipfile. When set, those test jobs and the Pipfile are not generated and the chart push gates directly on build-chart. Only applies to the app flavour.`)
 	cmd.Flags().VarP(gen.NewFlavourSliceFlagValue(&f.Flavours, gen.FlavourSlice{}), flagFlavour, "f", fmt.Sprintf(`List of project flavours. The "app" flavour selects the chart pipeline. Possible values: <%s>`, strings.Join(gen.AllFlavours(), "|")))
 	cmd.Flags().VarP(gen.NewLanguageFlagValue(&f.Language, gen.Language("")), flagLanguage, "l", fmt.Sprintf(`The programming language. "go" selects the go-build job. Possible values: <%s>`, strings.Join(gen.AllLanguages(), "|")))
 	cmd.Flags().StringVarP(&f.RepoName, flagRepoName, "r", "", "Repository name under the giantswarm organization (used for the binary, chart, and job names).")
