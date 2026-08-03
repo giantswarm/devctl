@@ -14,7 +14,7 @@ require (
 	github.com/giantswarm/microerror v0.4.1
 	github.com/giantswarm/micrologger v1.1.2
 	github.com/giantswarm/releases/sdk v0.13.0
-	github.com/go-git/go-git/v5 v5.19.1
+	github.com/go-git/go-git/v5 v5.19.2
 	github.com/google/go-cmp v0.7.0
 	github.com/google/go-github/v89 v89.0.0
 	github.com/jedib0t/go-pretty/v6 v6.8.3
@@ -27,7 +27,7 @@ require (
 	github.com/spf13/pflag v1.0.10
 	github.com/stretchr/testify v1.11.1
 	github.com/titanous/json5 v1.0.0
-	golang.org/x/exp v0.0.0-20260718201538-764159d718ef
+	golang.org/x/exp v0.0.0-20260727155853-b88d891fe743
 	golang.org/x/mod v0.38.0
 	golang.org/x/net v0.57.0
 	golang.org/x/oauth2 v0.36.0
