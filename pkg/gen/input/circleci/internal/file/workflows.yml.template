@@ -340,6 +340,7 @@ workflows:
           branches:
             ignore:
             - main
+{{- if not .SkipATS }}
 
     # Branch: run chart tests after build-chart. When branchPublish pushes a dev
     # image, the test also waits on push-to-registries -- run-tests-with-ats
@@ -371,6 +372,7 @@ workflows:
             only: /^v.*/
           branches:
             ignore: /.*/
+{{- end }}
 {{- if .BranchPublish }}
 
     # Branch chart push (opt-in): publish the dev chart after tests + the amd64
@@ -387,7 +389,11 @@ workflows:
         app_catalog_test: {{ .AppCatalogTest }}
         chart: {{ .ChartName }}
         requires:
+{{- if .SkipATS }}
+        - build-chart
+{{- else }}
         - execute-chart-tests
+{{- end }}
 {{- if .HasDockerfile }}
         - push-to-registries
 {{- end }}
@@ -412,7 +418,11 @@ workflows:
         app_catalog_test: {{ .AppCatalogTest }}
         chart: {{ .ChartName }}
         requires:
+{{- if .SkipATS }}
+        - build-chart
+{{- else }}
         - execute-chart-tests-release
+{{- end }}
 {{- if .HasDockerfile }}
         - push-to-registries-release
 {{- end }}

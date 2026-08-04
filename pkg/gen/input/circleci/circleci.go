@@ -188,6 +188,11 @@ type Config struct {
 	// Flavours are the devctl gen flavours. The "app" flavour selects the
 	// chart pipeline.
 	Flavours gen.FlavourSlice
+	// SkipATS opts the chart pipeline out of app-test-suite (ATS) chart tests.
+	// When set, the run-tests-with-ats jobs and the canonical tests/ats/Pipfile
+	// are not generated, and the chart push jobs gate directly on build-chart.
+	// Only applies to a chart/app repo (the "app" flavour).
+	SkipATS bool
 	// HasDockerfile selects the image pipeline. The runner derives this from
 	// the presence of a Dockerfile in the repo.
 	HasDockerfile bool
@@ -431,6 +436,7 @@ func New(config Config) (*CircleCI, error) {
 			Language:                 config.Language.String(),
 			HasDockerfile:            hasDockerfile,
 			HasApp:                   hasApp,
+			SkipATS:                  config.SkipATS,
 			ChartName:                chartName,
 			ForcePublic:              config.ForcePublic,
 			AppCatalog:               appCatalog,
@@ -488,9 +494,10 @@ func (c *CircleCI) Workflows() input.Input {
 // call site (devctl gen circleci, the only generator invoked inside align's
 // `if (ci && ci.generate)` guard). That makes "ATS Pipfile only when CI is
 // generated, and only for chart/app repos" structurally guaranteed rather than
-// dependent on a separate, differently-scoped invocation.
+// dependent on a separate, differently-scoped invocation. A repo that opts out
+// of ATS (SkipATS) gets no Pipfile either, matching the suppressed jobs.
 func (c *CircleCI) ATSInputs() []input.Input {
-	if !c.params.HasApp {
+	if !c.params.HasApp || c.params.SkipATS {
 		return nil
 	}
 

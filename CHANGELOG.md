@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `gen circleci`: `--skip-ats` opts an app repo out of the ATS chart tests, suppressing the `run-tests-with-ats` jobs and the `tests/ats/Pipfile`; the chart push then gates directly on `build-chart`.
+
 ### Fixed
 
 - `gen makefile --language kyverno-policy` / `gen workflows --language kyverno-policy`: bump the Kyverno
@@ -107,6 +111,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   run — the Node analogue of `go-build` persisting `$GOCACHE`. Omitted for npm
   (`npm ci` wipes `node_modules` first) and pnpm (its content-addressable store already
   caches build side-effects).
+- Releases: Add `kube-vip-cloud-provider`.
 
 ### Changed
 
