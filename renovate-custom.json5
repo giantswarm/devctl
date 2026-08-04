@@ -128,6 +128,28 @@
       depNameTemplate: 'golang.org/x/tools',
       datasourceTemplate: 'go',
     },
+    // Kyverno version installed for chainsaw tests, pinned in both the Makefile fragment
+    // (`?=` form) and the workflow env block (`:` form) of the kyverno-policy templates.
+    // Tracked against giantswarm/kyverno-crds so the tests run the Kyverno version we ship
+    // rather than whatever upstream released last. Both pins must stay in sync: the workflow
+    // env wins in CI, the Makefile default is what a local `make install-kyverno` uses.
+    // This manager is the only thing keeping the pin current. The `# repository:` comments
+    // above the pins are inert -- they match no manager in renovate-presets, which keys off
+    // `repo:`/`registry:` -- and the generated files in consuming repos cannot be renovated
+    // because the align-files automation regenerates them from these templates.
+    {
+      customType: 'regex',
+      managerFilePatterns: [
+        '/Makefile\\.gen\\.chainsaw\\.mk\\.template$/',
+        '/test-kyverno-policies-with-chainsaw\\.yaml\\.template$/',
+      ],
+      matchStrings: [
+        'KYVERNO_VERSION \\?= (?<currentValue>v\\S+)',
+        'KYVERNO_VERSION: (?<currentValue>v\\S+)',
+      ],
+      depNameTemplate: 'giantswarm/kyverno-crds',
+      datasourceTemplate: 'github-releases',
+    },
   ],
   packageRules: [
     {
