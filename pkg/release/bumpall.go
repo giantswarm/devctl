@@ -184,6 +184,13 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 
 		// Iterate over all apps in the input release and bump them if a version was not manually requested by user.
 		for _, app := range input.Spec.Apps {
+			// Apps being dropped from this release are removed later on, so there is no point in
+			// looking up a new version for them. The lookup would also fail for apps whose
+			// repository is already gone, which is a common reason for dropping them.
+			if appsToDrop[app.Name] {
+				continue
+			}
+
 			v := appVersion{}
 			if req, found := requestedApps[app.Name]; found {
 				if req.Version != "" {

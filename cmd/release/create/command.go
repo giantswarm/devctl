@@ -47,6 +47,15 @@ const (
         --bumpall \
         --app cilium@1.2.3@@
 
+  # Bump all components and remove one or more apps from the release
+  devctl release create \
+        --name v30.1.0 \
+        --provider capa \
+        --base v30.0.0 \
+        --bumpall \
+        --drop capi-node-labeler \
+        --drop karpenter-bundle
+
   # Bump all components and override an app's component version and dependencies
   devctl release create \
         --name v30.1.0 \
