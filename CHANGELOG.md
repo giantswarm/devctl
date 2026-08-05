@@ -56,6 +56,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   hook's wrapper script printed.
 - `semantic-pull-request`: the generated workflow now allows to be run in merge groups, avoiding stale queues because of the required check not running.
 - `test-kyverno-policies-with-chainsaw.yaml.template`: the template now uses installation actions to set up Helm and Kind, which reduces the number of manual steps.
+- Releases: Consider `--drop` flag in release creation.
 
 ### Changed
 

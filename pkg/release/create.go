@@ -156,6 +156,31 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 		}
 	}
 
+	// Apps requested for removal via --drop are dropped regardless of the release version.
+	for _, appToDrop := range appsToDrop {
+		appToDrop = strings.TrimSpace(appToDrop)
+		if appToDrop == "" {
+			continue
+		}
+
+		inBaseRelease := false
+		for _, existingApp := range effectiveBaseRelease.Spec.Apps {
+			if existingApp.Name == appToDrop {
+				inBaseRelease = true
+				break
+			}
+		}
+		if !inBaseRelease {
+			fmt.Printf("\n⚠️  Warning: App %q requested via --drop is not present in the base release, nothing to drop.\n\n", appToDrop)
+			continue
+		}
+
+		if verbose {
+			fmt.Printf("Dropping %s from release %s as requested via --drop.\n", appToDrop, name)
+		}
+		appsToDropForThisRelease[appToDrop] = true
+	}
+
 	// Prepare list of new apps to be added for this release version.
 	// We'll add them to the apps list later, just before bumpall, so they show as "New app" in the table.
 	var newAppsToAdd []addedAppConfig
