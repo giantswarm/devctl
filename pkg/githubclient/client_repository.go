@@ -8,7 +8,7 @@ import (
 	"regexp"
 
 	"github.com/giantswarm/microerror"
-	"github.com/google/go-github/v89/github"
+	"github.com/google/go-github/v90/github"
 )
 
 func (c *Client) ListRepositories(ctx context.Context, owner string) ([]Repository, error) {
@@ -562,8 +562,8 @@ func (c *Client) CreateFromTemplate(ctx context.Context, templateOwner, template
 
 	underlyingClient := c.GetUnderlyingClient(ctx)
 
-	req := &github.TemplateRepoRequest{
-		Name:        repository.Name,
+	req := github.TemplateRepoRequest{
+		Name:        repository.GetName(),
 		Owner:       github.Ptr(newOwner),
 		Description: repository.Description,
 		Private:     repository.Private,

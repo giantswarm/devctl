@@ -11,7 +11,7 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/google/go-github/v89/github"
+	"github.com/google/go-github/v90/github"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/oauth2"
 )
@@ -143,10 +143,10 @@ func (c *Client) CommitAndPush(ctx context.Context, owner, repo, branch, message
 
 func (c *Client) CreatePullRequest(ctx context.Context, owner, repo, head, title string) (*github.PullRequest, error) {
 	client := c.GetUnderlyingClient(ctx)
-	newPR := &github.NewPullRequest{
+	newPR := github.CreatePullRequest{
 		Title: github.Ptr(title),
-		Head:  github.Ptr(head),
-		Base:  github.Ptr("main"),
+		Head:  head,
+		Base:  "main",
 		Body:  github.Ptr(title),
 	}
 
