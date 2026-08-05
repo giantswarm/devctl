@@ -562,8 +562,8 @@ func (c *Client) CreateFromTemplate(ctx context.Context, templateOwner, template
 
 	underlyingClient := c.GetUnderlyingClient(ctx)
 
-	req := &github.TemplateRepoRequest{
-		Name:        repository.Name,
+	req := github.TemplateRepoRequest{
+		Name:        repository.GetName(),
 		Owner:       github.Ptr(newOwner),
 		Description: repository.Description,
 		Private:     repository.Private,

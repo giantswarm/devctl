@@ -143,10 +143,10 @@ func (c *Client) CommitAndPush(ctx context.Context, owner, repo, branch, message
 
 func (c *Client) CreatePullRequest(ctx context.Context, owner, repo, head, title string) (*github.PullRequest, error) {
 	client := c.GetUnderlyingClient(ctx)
-	newPR := &github.NewPullRequest{
+	newPR := github.CreatePullRequest{
 		Title: github.Ptr(title),
-		Head:  github.Ptr(head),
-		Base:  github.Ptr("main"),
+		Head:  head,
+		Base:  "main",
 		Body:  github.Ptr(title),
 	}
 
