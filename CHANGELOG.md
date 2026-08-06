@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Added
 
 - `gen circleci`: `--skip-ats` opts an app repo out of the ATS chart tests, suppressing the `run-tests-with-ats` jobs and the `tests/ats/Pipfile`; the chart push then gates directly on `build-chart`.
+- Releases: Add `cluster-aks`.
 
 ### Fixed
 

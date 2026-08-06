@@ -152,6 +152,15 @@ var KnownComponents = map[string]ParseParams{
 		End:       commonEndPattern,
 	},
 
+	// AKS Provider Specific
+	"cluster-aks": {
+		Tag:            "https://github.com/giantswarm/cluster-aks/releases/tag/v{{.Version}}",
+		Changelog:      "https://raw.githubusercontent.com/giantswarm/cluster-azure/v{{.Version}}/CHANGELOG.md",
+		Start:          commonStartPattern,
+		End:            commonEndPattern,
+		FilterPatterns: []string{"Chart: Update `cluster`"},
+	},
+
 	// CAPV Provider Specific
 	"cluster-vsphere": {
 		Tag:            "https://github.com/giantswarm/cluster-vsphere/releases/tag/v{{.Version}}",
