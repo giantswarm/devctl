@@ -21,13 +21,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   `setup-node` via `node-version-file`, and — through this probe — both the executor image and the cache-key
   salt, which now cannot disagree. Renovate's built-in `nvm` manager owns `.nvmrc` natively, so the bump also
   groups with the repo's other node deps and is LTS-gated, neither of which a rendered `cimg/node` tag can
-  express. Only an exact `major.minor.patch` is honoured — aliases (`lts/*`, `node`) and partial versions
-  (`24`) name no `cimg/node` tag and keep the default. Repos without a `.nvmrc` (all of them today) render
-  byte-identical output.
+  express. Only an exact `major.minor.patch` is read, and an unusable value is reported on stderr rather than
+  silently ignored: aliases (`lts/*`) and less specific versions are rejected because a floating tag would
+  drift from the exact patch the repo's Dockerfile pins and would coarsen the cache-key salt — note that
+  `cimg/node:24.19` does exist, so this is a deliberate choice, not a missing tag. Repos without a `.nvmrc`
+  (all of them today) render byte-identical output. One caveat: `.nvmrc` is tracked against the
+  `node-version` datasource (Node releases), which CircleCI trails by hours to days, so a repo bumped inside
+  that window renders a not-yet-published tag and fails at container spin-up until it lands.
 - Releases: Add `cluster-aks`.
 
 ### Fixed
 
+- devctl's own Renovate config: the `cimg/node` version baked into `gen circleci` was never actually
+  tracked. The constant carries a `// renovate: datasource=docker depName=cimg/node` annotation, but the
+  custom manager in `renovate-custom.json5` is anchored on `const \w*OrbVersion`, which never matched
+  `NodeImageVersion` — so it sat at its introduction value from #2052 with no bump PR ever opened, while
+  `cimg/node` moved on. Since that constant is the floor for every repo that pins no `.nvmrc`, a frozen
+  default meant a frozen Node fleet-wide. Added a manager for `const \w*ImageVersion` plus one for the
+  golden fixtures (which render both the image and the cache-key salt), so constant and goldens bump in one
+  PR and the byte-for-byte golden tests stay green.
 - `gen makefile --language kyverno-policy` / `gen workflows --language kyverno-policy`: bump the Kyverno
   version installed for chainsaw tests from `v1.16.0` to `v1.17.0`, and add a Renovate custom manager so the
   pin tracks `giantswarm/kyverno-crds` releases from now on. The pin was frozen at `v1.16.0` because nothing
@@ -37,7 +49,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   `policies.kyverno.io/v1` `MutatingPolicy` kind, which only exists from Kyverno 1.17, so after an
   align-files run reset the version its chainsaw job failed with `no matches for kind "MutatingPolicy"`.
 - `gen makefile --language kyverno-policy`: `KUBERNETES_VERSION` and `KYVERNO_VERSION` in the generated
-  `Makefile.gen.chainsaw.mk` are now `?=` assignments. `VAR: value` is a make _rule_, not an assignment, so
+  `Makefile.gen.chainsaw.mk` are now `?=` assignments. `VAR: value` is a make *rule*, not an assignment, so
   both expanded to the empty string and `make kind-create` / `make install-kyverno` were only usable when the
   outer environment happened to set them — locally they built `kindest/node:` and a release download URL with
   an empty version. The CI workflow still overrides both via its env block.
@@ -69,7 +81,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   pre-commit CI workflow — so no new tooling is required. The hook checks for the plugin
   first and points at its install command, keeping the actionable message the replaced
   hook's wrapper script printed.
-
 - `semantic-pull-request`: the generated workflow now allows to be run in merge groups, avoiding stale queues because of the required check not running.
 - `test-kyverno-policies-with-chainsaw.yaml.template`: the template now uses installation actions to set up Helm and Kind, which reduces the number of manual steps.
 - Releases: Consider `--drop` flag in release creation.
@@ -121,7 +132,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   (`node_modules` + Yarn's `.yarn/install-state.gz`) for the Yarn package managers,
   keyed on the node image version and the lockfile checksum
   (`node-build-<pm>-v1-<nodeimage>-<checksum>`). The existing dependency cache only
-  holds package _tarballs_; on a `nodeLinker: node-modules` repo the dominant install
+  holds package *tarballs*; on a `nodeLinker: node-modules` repo the dominant install
   cost is the Link step recompiling native addons (better-sqlite3, isolated-vm,
   tree-sitter, …) from source via node-gyp, whose output lives in `node_modules`.
   Restoring it lets the install reconcile incrementally instead of recompiling every
@@ -168,7 +179,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - `gen circleci`: add `--build-concurrency` and `--resource-class` flags (surfaced as `gen.ci.buildConcurrency`
   / `gen.ci.resourceClass` in giantswarm/github) to override the cli-flavour `go-build` job's
   `build_concurrency` (default `auto`) and `resource_class` (default `large`). The orb 9.5.5 cache-key fix
-  makes warm caching take effect, but the _first_ cold full-matrix cross-compile must still complete to
+  makes warm caching take effect, but the *first* cold full-matrix cross-compile must still complete to
   populate the fresh `v2` cache. For an unusually large binary (e.g. `mcp-kubernetes`, ~99 MB, k8s-linked)
   six concurrent cold `go build`s OOM-kill the `large` runner before the cache is stored, so the repo stays
   permanently cold. Lowering `build_concurrency` (memory, not CPU, is the binding constraint) lets the cold
@@ -269,7 +280,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - `gen circleci`: bumped the pinned `giantswarm/architect` orb from `9.5.1` to `9.5.2`. v9.5.1's oversized-SBOM
   fallback used `cosign attest --tlog-upload=false`, which cosign v3 rejects (`--tlog-upload=false is not
-supported with --signing-config`), so large-SBOM releases (e.g. `vllm`) still failed at the attest step.
+  supported with --signing-config`), so large-SBOM releases (e.g. `vllm`) still failed at the attest step.
   v9.5.2 opts out of the transparency log the cosign-v3 way: it re-attests through a signing config with Rekor
   removed but the TSA kept (`--signing-config <file> --new-bundle-format`), so the SBOM attestation keeps a
   trusted timestamp (no Rekor body-size limit) and stays attached as an OCI referrer. Reaches repos via the
@@ -526,7 +537,7 @@ supported with --signing-config`), so large-SBOM releases (e.g. `vllm`) still fa
 
 ### Added
 
-- `gen workflows --release-workflow=auto-release` emits a push-based release flow: `.github/workflows/auto-release.yaml` + `cliff.toml` at repo root. On every push to `main` / a backport branch matching `release-[0-9]*` or `release-v[0-9]*` (so `release-2.x`, `release-v3.7.x` -- but not `release-notes` or other unrelated branches), the workflow runs `git-cliff --unreleased --bump --context` to compute the next semver from conventional commits since the latest reachable v*._._ tag and `gh release create --target $GITHUB_SHA` to produce the tag + GitHub Release atomically. `cliff.toml`'s `[remote.github].repo` is auto-detected from the consuming repo's `origin` git remote URL. Mirrors the canonical version already deployed in muster, mcp-kubernetes, klaus-operator, agentic-platform, agentic-platform-mcps, agentic-platform-ui, mcp-toolkit, telemetrydeck-go, mcp-prometheus, klausctl, klaus-oci, mcp-debug, mcp-oauth (13 repos).
+- `gen workflows --release-workflow=auto-release` emits a push-based release flow: `.github/workflows/auto-release.yaml` + `cliff.toml` at repo root. On every push to `main` / a backport branch matching `release-[0-9]*` or `release-v[0-9]*` (so `release-2.x`, `release-v3.7.x` -- but not `release-notes` or other unrelated branches), the workflow runs `git-cliff --unreleased --bump --context` to compute the next semver from conventional commits since the latest reachable v*.*.* tag and `gh release create --target $GITHUB_SHA` to produce the tag + GitHub Release atomically. `cliff.toml`'s `[remote.github].repo` is auto-detected from the consuming repo's `origin` git remote URL. Mirrors the canonical version already deployed in muster, mcp-kubernetes, klaus-operator, agentic-platform, agentic-platform-mcps, agentic-platform-ui, mcp-toolkit, telemetrydeck-go, mcp-prometheus, klausctl, klaus-oci, mcp-debug, mcp-oauth (13 repos).
 - `--release-workflow=auto-release` and `=legacy` are bidirectional: each branch emits the workflow files it owns and deletion inputs for the OTHER branch's files. Flipping the value (in either direction) leaves the repo with exactly one set of release files after the next gen run.
 
 ### Removed

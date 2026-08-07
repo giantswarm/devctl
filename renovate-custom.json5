@@ -34,6 +34,35 @@
         '// renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n\\s*const \\w*OrbVersion = "(?<currentValue>[^"]+)"',
       ],
     },
+    // The cimg/node tag the generated Node job runs on, pinned as a Go constant
+    // beside the orb pins and for the same reason. It carries the same
+    // `// renovate:` annotation, but the rule above is anchored on
+    // `\w*OrbVersion` and so never matched it: the constant sat at its
+    // introduction value from #2052 with no PR ever opened against it, while
+    // cimg/node moved on. It is the floor for every repo that pins no .nvmrc,
+    // so a frozen default is a frozen Node for all of them.
+    {
+      customType: 'regex',
+      managerFilePatterns: ['/pkg/gen/input/circleci/circleci\\.go$/'],
+      matchStrings: [
+        '// renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n\\s*const \\w*ImageVersion = "(?<currentValue>[^"]+)"',
+      ],
+    },
+    // The golden fixtures render the same cimg/node tag the constant above
+    // sets, so they must move in the same PR or the byte-for-byte golden tests
+    // go red on every Node bump -- the same coupling the architect-orb fixture
+    // manager below solves. Both the executor image and the cache-key salt are
+    // matched, since the generator derives them from one value.
+    {
+      customType: 'regex',
+      managerFilePatterns: ['/pkg/gen/input/circleci/testdata/.*\\.workflows\\.yml$/'],
+      matchStrings: [
+        'image: cimg/node:(?<currentValue>\\S+)',
+        'node-build-[\\w-]+-v\\d+-(?<currentValue>\\d+\\.\\d+\\.\\d+)-',
+      ],
+      depNameTemplate: 'cimg/node',
+      datasourceTemplate: 'docker',
+    },
     // The golden fixtures pin the same orb versions the generator emits. Same
     // depName/datasource as the constants above, so Renovate bumps constant and
     // goldens in one PR and the byte-for-byte golden tests stay green -- without

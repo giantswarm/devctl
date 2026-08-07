@@ -1358,7 +1358,11 @@ func Test_NodeResourceClass(t *testing.T) {
 // to the node version. Bumping only one is exactly the failure a per-file
 // dependency bot causes when it edits the rendered image line alone.
 func Test_NodeImageVersion(t *testing.T) {
-	const pinned = "24.19.0"
+	// Deliberately a version that can never become the real default, so the
+	// leak assertion below stays meaningful. A plausible next version (24.19.0)
+	// would silently pass once DefaultNodeImageVersion caught up to it, and
+	// then fail with a message describing the opposite of what happened.
+	const pinned = "99.0.0"
 
 	def := render(t, Config{
 		RepoName:       repoK8sTypes,

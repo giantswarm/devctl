@@ -19,9 +19,13 @@ func Test_detectNodeVersion(t *testing.T) {
 		nvmrc  string
 		absent bool
 		want   string
+		// wantRejected is the raw value the caller warns about. It must stay
+		// empty whenever there is nothing for a repo owner to act on -- that is
+		// what separates "no .nvmrc" (expected) from "unusable .nvmrc" (warn).
+		wantRejected string
 	}{
 		{
-			name:   "no .nvmrc keeps the baked-in default",
+			name:   "no .nvmrc keeps the baked-in default silently",
 			absent: true,
 			want:   "",
 		},
@@ -66,24 +70,32 @@ func Test_detectNodeVersion(t *testing.T) {
 			want:  "",
 		},
 		{
-			name:  "lts alias names no cimg/node tag",
-			nvmrc: "lts/*\n",
-			want:  "",
+			name:         "lts alias is rejected and reported",
+			nvmrc:        "lts/*\n",
+			want:         "",
+			wantRejected: "lts/*",
 		},
 		{
-			name:  "node alias names no cimg/node tag",
-			nvmrc: "node\n",
-			want:  "",
+			name:         "node alias is rejected and reported",
+			nvmrc:        "node\n",
+			want:         "",
+			wantRejected: "node",
 		},
 		{
-			name:  "major-only version names no cimg/node tag",
-			nvmrc: "24\n",
-			want:  "",
+			name:         "bare major names no cimg/node tag",
+			nvmrc:        "24\n",
+			want:         "",
+			wantRejected: "24",
 		},
 		{
-			name:  "major.minor version names no cimg/node tag",
-			nvmrc: "24.19\n",
-			want:  "",
+			// cimg/node:24.19 does exist, so this is rejected on purpose, not
+			// because the tag is missing: a floating tag would drift from the
+			// exact patch the repo's Dockerfile pins and would coarsen the
+			// node-build cache-key salt.
+			name:         "major.minor is rejected despite the tag existing",
+			nvmrc:        "24.19\n",
+			want:         "",
+			wantRejected: "24.19",
 		},
 	}
 
@@ -100,9 +112,12 @@ func Test_detectNodeVersion(t *testing.T) {
 			}
 			t.Chdir(dir)
 
-			got := detectNodeVersion()
+			got, rejected := detectNodeVersion()
 			if got != tc.want {
-				t.Errorf("detectNodeVersion() = %q, want %q", got, tc.want)
+				t.Errorf("detectNodeVersion() version = %q, want %q", got, tc.want)
+			}
+			if rejected != tc.wantRejected {
+				t.Errorf("detectNodeVersion() rejected = %q, want %q", rejected, tc.wantRejected)
 			}
 		})
 	}

@@ -61,6 +61,16 @@ const (
 // so it groups with the repo's other node deps and is LTS-gated, neither of
 // which a rendered cimg/node tag can express.
 //
+// That trade has one cost worth knowing. This constant is tracked against the
+// docker datasource, so "a cimg/node tag with this name exists" is a
+// precondition of any bump. A .nvmrc is tracked against node-version -- Node
+// releases, which CircleCI trails by hours to days. A repo whose .nvmrc is
+// bumped inside that window renders an image that cannot be pulled yet, and
+// every job fails at container spin-up with a manifest error until CircleCI
+// catches up. It is self-healing and confined to that one repo, but the cause
+// is not obvious from the error; a consuming repo that wants the guarantee back
+// can hold .nvmrc on the docker datasource in its own renovate config.
+//
 // renovate: datasource=docker depName=cimg/node
 const DefaultNodeImageVersion = "24.18.0"
 
