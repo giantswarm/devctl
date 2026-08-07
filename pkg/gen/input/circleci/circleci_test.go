@@ -1295,8 +1295,8 @@ func Test_SkipATSOmitsChartTests(t *testing.T) {
 // node image version, and is absent for npm (npm ci wipes node_modules) and
 // pnpm (its store already caches build side-effects).
 func Test_NodeBuildOutputCache(t *testing.T) {
-	berryKey := "node-build-yarn-v1-" + NodeImageVersion + `-{{ checksum "yarn.lock" }}`
-	classicKey := "node-build-yarn-classic-v1-" + NodeImageVersion + `-{{ checksum "yarn.lock" }}`
+	berryKey := "node-build-yarn-v1-" + DefaultNodeImageVersion + `-{{ checksum "yarn.lock" }}`
+	classicKey := "node-build-yarn-classic-v1-" + DefaultNodeImageVersion + `-{{ checksum "yarn.lock" }}`
 
 	berry := render(t, Config{RepoName: repoK8sTypes, Language: gen.LanguageNode, PackageManager: PackageManagerYarn})
 	if !contains(berry, berryKey) {
@@ -1347,6 +1347,48 @@ func Test_NodeResourceClass(t *testing.T) {
 	}
 	if contains(override, "resource_class: "+DefaultNodeResourceClass) {
 		t.Errorf("default resource_class leaked through despite override:\n%s", override)
+	}
+}
+
+// Test_NodeImageVersion verifies the Node job renders devctl's baked-in default
+// when a repo pins nothing, and honours a repo's own pin (detected from .nvmrc
+// by the runner) otherwise. The pin must reach the executor image AND the
+// node-build cache-key salt together: those two are the pair that must never
+// disagree, since the cached node_modules holds native addons whose ABI is tied
+// to the node version. Bumping only one is exactly the failure a per-file
+// dependency bot causes when it edits the rendered image line alone.
+func Test_NodeImageVersion(t *testing.T) {
+	// Deliberately a version that can never become the real default, so the
+	// leak assertion below stays meaningful. A plausible next version (24.19.0)
+	// would silently pass once DefaultNodeImageVersion caught up to it, and
+	// then fail with a message describing the opposite of what happened.
+	const pinned = "99.0.0"
+
+	def := render(t, Config{
+		RepoName:       repoK8sTypes,
+		Language:       gen.LanguageNode,
+		PackageManager: PackageManagerYarn,
+	})
+	if !contains(def, "image: cimg/node:"+DefaultNodeImageVersion) {
+		t.Errorf("Node job should default the image to %q:\n%s", DefaultNodeImageVersion, def)
+	}
+
+	override := render(t, Config{
+		RepoName:         repoK8sTypes,
+		Language:         gen.LanguageNode,
+		PackageManager:   PackageManagerYarn,
+		NodeImageVersion: pinned,
+	})
+	for _, want := range []string{
+		"image: cimg/node:" + pinned,
+		"node-build-yarn-v1-" + pinned + "-",
+	} {
+		if !contains(override, want) {
+			t.Errorf("Node image version override should render %q:\n%s", want, override)
+		}
+	}
+	if contains(override, DefaultNodeImageVersion) {
+		t.Errorf("default node image version leaked through despite override:\n%s", override)
 	}
 }
 

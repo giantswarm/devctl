@@ -2,8 +2,10 @@ package circleci
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/giantswarm/microerror"
@@ -53,6 +55,21 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 		packageManager = detectPackageManager()
 	}
 
+	// Node version is derived from .nvmrc, the same content-signal style. An
+	// explicit --node-image-version wins; neither set falls back to devctl's
+	// baked-in default.
+	nodeImageVersion := r.flag.NodeImageVersion
+	if nodeImageVersion == "" && r.flag.Language == gen.LanguageNode {
+		var rejected string
+		nodeImageVersion, rejected = detectNodeVersion()
+		// A .nvmrc that names no cimg/node tag is the one case worth saying out
+		// loud: the repo asked for a Node version and did not get it, and the
+		// only visible symptom would be an unchanged workflows.yml.
+		if rejected != "" {
+			fmt.Fprintf(r.stderr, "warning: ignoring .nvmrc value %q -- the Node job needs an exact major.minor.patch (e.g. 24.19.0); falling back to %s\n", rejected, circleci.DefaultNodeImageVersion)
+		}
+	}
+
 	var circleciInput *circleci.CircleCI
 	{
 		c := circleci.Config{
@@ -74,6 +91,7 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 			ImageDockerfile:  r.flag.ImageDockerfile,
 			ResourceClass:    r.flag.ResourceClass,
 			PackageManager:   packageManager,
+			NodeImageVersion: nodeImageVersion,
 			NodeTestTarget:   r.flag.NodeTestTarget,
 			NodeBuildTarget:  r.flag.NodeBuildTarget,
 			NodeBuildOutput:  r.flag.NodeBuildOutput,
@@ -123,3 +141,54 @@ func detectPackageManager() string {
 
 	return ""
 }
+
+// detectNodeVersion reads the repo's .nvmrc, mirroring the lockfile probe. It
+// is the opt-in that lets a repo own its Node version in ONE place: the same
+// file drives local dev (nvm/fnm/asdf/volta), actions/setup-node via
+// node-version-file, and -- through this probe -- the generated cimg/node tag
+// and the node-build cache-key salt, which are otherwise the copies most prone
+// to silent drift.
+//
+// Only an exact major.minor.patch is honoured, and deliberately so. .nvmrc also
+// accepts aliases ("lts/*", "node") and partial versions; of those only a bare
+// major names no cimg/node tag at all, since cimg does publish a floating
+// major.minor (cimg/node:24.19 exists). Accepting major.minor would still
+// defeat the point: the repo's Dockerfile FROM pins an exact patch, so a
+// floating .nvmrc would drift from it -- reintroducing exactly the divergence
+// this probe removes -- and it would coarsen the node-build cache-key salt,
+// which exists to be exact. A repo using an unusable form therefore keeps
+// devctl's baked-in default, and the caller says so out loud (see the second
+// return value): silently falling back is what would make CI run a different
+// Node than local dev without anyone noticing.
+//
+// Comments and surrounding whitespace are stripped, matching how nvm and
+// Renovate's nvm manager read the file.
+//
+// The second return value is the raw .nvmrc value when the file exists but
+// names no usable version -- empty both when there is no .nvmrc (the expected
+// case, no warning warranted) and when a version was parsed.
+func detectNodeVersion() (version, rejected string) {
+	data, err := os.ReadFile(".nvmrc")
+	if err != nil {
+		return "", ""
+	}
+
+	for line := range strings.Lines(string(data)) {
+		value, _, _ := strings.Cut(line, "#")
+		value = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(value), "v"))
+		if value == "" {
+			continue
+		}
+		if !exactNodeVersionRE.MatchString(value) {
+			return "", value
+		}
+		return value, ""
+	}
+
+	return "", ""
+}
+
+// exactNodeVersionRE matches a fully-qualified Node version (major.minor.patch).
+// See detectNodeVersion for why the less specific forms cimg does publish are
+// still rejected.
+var exactNodeVersionRE = regexp.MustCompile(`^\d+\.\d+\.\d+$`)

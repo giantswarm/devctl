@@ -10,10 +10,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Added
 
 - `gen circleci`: `--skip-ats` opts an app repo out of the ATS chart tests, suppressing the `run-tests-with-ats` jobs and the `tests/ats/Pipfile`; the chart push then gates directly on `build-chart`.
+- `gen circleci --language node`: the `cimg/node` tag is now read from the repo's `.nvmrc` when it pins an
+  exact version, falling back to devctl's baked-in default otherwise (also settable explicitly via
+  `--node-image-version`). A Node repo typically repeats its Node version across a Dockerfile `FROM`, an
+  `actions/setup-node` step and the generated CI job, and only the last of those was devctl's — so a
+  dependency bot would bump the rendered `image:` line in `.circleci/workflows.yml` on its own. That is wrong
+  twice over: it leaves the `node-build` cache keys, which are salted with the node version precisely so a
+  bump cannot restore stale-ABI native addons, pointing at the old version, and align-files reverts it on the
+  next run. With a `.nvmrc` the repo has one file to change: it drives local dev (nvm/fnm/asdf/volta),
+  `setup-node` via `node-version-file`, and — through this probe — both the executor image and the cache-key
+  salt, which now cannot disagree. Renovate's built-in `nvm` manager owns `.nvmrc` natively, so the bump also
+  groups with the repo's other node deps and is LTS-gated, neither of which a rendered `cimg/node` tag can
+  express. Only an exact `major.minor.patch` is read, and an unusable value is reported on stderr rather than
+  silently ignored: aliases (`lts/*`) and less specific versions are rejected because a floating tag would
+  drift from the exact patch the repo's Dockerfile pins and would coarsen the cache-key salt — note that
+  `cimg/node:24.19` does exist, so this is a deliberate choice, not a missing tag. Repos without a `.nvmrc`
+  (all of them today) render byte-identical output. One caveat: `.nvmrc` is tracked against the
+  `node-version` datasource (Node releases), which CircleCI trails by hours to days, so a repo bumped inside
+  that window renders a not-yet-published tag and fails at container spin-up until it lands.
 - Releases: Add `cluster-aks`.
 
 ### Fixed
 
+- devctl's own Renovate config: the `cimg/node` version baked into `gen circleci` was never actually
+  tracked. The constant carries a `// renovate: datasource=docker depName=cimg/node` annotation, but the
+  custom manager in `renovate-custom.json5` is anchored on `const \w*OrbVersion`, which never matched
+  `NodeImageVersion` — so it sat at its introduction value from #2052 with no bump PR ever opened, while
+  `cimg/node` moved on. Since that constant is the floor for every repo that pins no `.nvmrc`, a frozen
+  default meant a frozen Node fleet-wide. Added a manager for `const \w*ImageVersion` plus one for the
+  golden fixtures (which render both the image and the cache-key salt), so constant and goldens bump in one
+  PR and the byte-for-byte golden tests stay green.
 - `gen makefile --language kyverno-policy` / `gen workflows --language kyverno-policy`: bump the Kyverno
   version installed for chainsaw tests from `v1.16.0` to `v1.17.0`, and add a Renovate custom manager so the
   pin tracks `giantswarm/kyverno-crds` releases from now on. The pin was frozen at `v1.16.0` because nothing
