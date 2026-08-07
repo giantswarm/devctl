@@ -9,6 +9,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `gen renovate --language node`: extends the new
+  [`lang-node.json5`](https://github.com/giantswarm/renovate-presets/blob/main/lang-node.json5) preset, which
+  groups every Node.js version pin (a `.nvmrc`, a Dockerfile `FROM node:`, a `setup-node` step) into one PR.
+  Renovate's own `group:nodeJs` sets a `commitMessageTopic` but no `groupName`, so each pin otherwise gets its
+  own identically titled PR and merging one alone splits the version CI runs from the version the image ships.
+- `gen renovate --language node` on the generated-CI path: disables Renovate for the `cimg/node` tag in
+  `.circleci/workflows.yml`, mirroring the existing architect-orb disable. That tag is rendered by
+  `gen circleci` from the repo's `.nvmrc`, so a per-repo bump edits only the `image:` line and leaves the
+  `node-build` cache keys salted with the old version — the job then restores a `node_modules` whose native
+  addons were built for a different Node — and align-files reverts it on the next run regardless. Gated on
+  both the language and the generated-CI flag: a Node repo with a hand-written `.circleci/config.yml` owns its
+  executor image and keeps receiving bumps.
 - `gen circleci`: `--skip-ats` opts an app repo out of the ATS chart tests, suppressing the `run-tests-with-ats` jobs and the `tests/ats/Pipfile`; the chart push then gates directly on `build-chart`.
 - `gen circleci --language node`: the `cimg/node` tag is now read from the repo's `.nvmrc` when it pins an
   exact version, falling back to devctl's baked-in default otherwise (also settable explicitly via
