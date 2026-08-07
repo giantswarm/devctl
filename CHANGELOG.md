@@ -42,6 +42,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   that window renders a not-yet-published tag and fails at container spin-up until it lands.
 - Releases: Add `cluster-aks`.
 
+### Changed
+
+- `gen renovate --language node`: the generated Node rules now carry a single Renovate `description` field instead of a multi-line comment block, matching how Renovate itself documents a `packageRule`.
+
 ### Fixed
 
 - devctl's own Renovate config: the `cimg/node` version baked into `gen circleci` was never actually
