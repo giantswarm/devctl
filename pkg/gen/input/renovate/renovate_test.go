@@ -145,6 +145,72 @@ func Test_CircleCIGeneratedOnDisablesArchitectOrb(t *testing.T) {
 	}
 }
 
+// Test_LangNodeExtendedForNodeRepos verifies the language switch reaches the
+// node branch, so a Node repo gets the grouping rule that puts every Node
+// version pin (.nvmrc, a Dockerfile `FROM node:`, a setup-node step) in one PR.
+func Test_LangNodeExtendedForNodeRepos(t *testing.T) {
+	node := render(t, Config{Language: "node"})
+	if !strings.Contains(node, "github>giantswarm/renovate-presets:lang-node.json5") {
+		t.Errorf("node repo should extend the lang-node preset:\n%s", node)
+	}
+
+	// The language branches are mutually exclusive -- a Go repo must not pick
+	// up Node rules and vice versa.
+	goRepo := render(t, Config{Language: "go"})
+	if strings.Contains(goRepo, "lang-node.json5") {
+		t.Errorf("go repo should not extend the lang-node preset:\n%s", goRepo)
+	}
+	if strings.Contains(node, "lang-go.json5") {
+		t.Errorf("node repo should not extend the lang-go preset:\n%s", node)
+	}
+}
+
+// Test_CimgNodeDisableGating verifies the cimg/node disable is emitted only
+// where the tag is actually generated: a Node repo on the devctl-generated CI
+// path. The gating is the whole point -- a Node repo with a hand-written
+// .circleci/config.yml owns its own executor image and must keep receiving
+// cimg/node bumps, and a Go repo has no Node job at all.
+func Test_CimgNodeDisableGating(t *testing.T) {
+	testCases := []struct {
+		name   string
+		config Config
+		want   bool
+	}{
+		{
+			name:   "node repo with generated CI is disabled",
+			config: Config{Language: "node", CircleCIGenerated: true},
+			want:   true,
+		},
+		{
+			name:   "node repo with hand-written CI keeps bumps",
+			config: Config{Language: "node"},
+			want:   false,
+		},
+		{
+			name:   "go repo with generated CI has no node job",
+			config: Config{Language: "go", CircleCIGenerated: true},
+			want:   false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := render(t, tc.config)
+
+			// Every rendering must stay valid JSON5 -- the disable sits inside
+			// a packageRules array that another conditional also writes to.
+			var parsed map[string]interface{}
+			if err := json5.Unmarshal([]byte(got), &parsed); err != nil {
+				t.Fatalf("rendered config is not valid JSON5: %v\n%s", err, got)
+			}
+
+			if strings.Contains(got, "'cimg/node',") != tc.want {
+				t.Errorf("cimg/node disable present = %t, want %t:\n%s", !tc.want, tc.want, got)
+			}
+		})
+	}
+}
+
 // Test_TestsATSOmittedByDefault verifies that without the CircleCIGenerated
 // flag the generated config does not extend the tests-ats.json5 preset -- a
 // non-generated-CI repo keeps its hand-written renovate behaviour.
@@ -318,6 +384,12 @@ func Test_Golden(t *testing.T) {
 			// Python branch of the language switch.
 			name:   "python",
 			config: Config{Language: "python"},
+		},
+		{
+			// Node branch of the language switch, on the generated-CI path so
+			// the golden also pins the cimg/node disable beside the orb one.
+			name:   "node",
+			config: Config{Language: "node", CircleCIGenerated: true},
 		},
 		{
 			// Schedule branch isolated from the other optional blocks.
