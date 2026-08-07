@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/giantswarm/microerror"
@@ -53,6 +54,14 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 		packageManager = detectPackageManager()
 	}
 
+	// Node version is derived from .nvmrc, the same content-signal style. An
+	// explicit --node-image-version wins; neither set falls back to devctl's
+	// baked-in default.
+	nodeImageVersion := r.flag.NodeImageVersion
+	if nodeImageVersion == "" && r.flag.Language == gen.LanguageNode {
+		nodeImageVersion = detectNodeVersion()
+	}
+
 	var circleciInput *circleci.CircleCI
 	{
 		c := circleci.Config{
@@ -74,6 +83,7 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 			ImageDockerfile:  r.flag.ImageDockerfile,
 			ResourceClass:    r.flag.ResourceClass,
 			PackageManager:   packageManager,
+			NodeImageVersion: nodeImageVersion,
 			NodeTestTarget:   r.flag.NodeTestTarget,
 			NodeBuildTarget:  r.flag.NodeBuildTarget,
 			NodeBuildOutput:  r.flag.NodeBuildOutput,
@@ -123,3 +133,40 @@ func detectPackageManager() string {
 
 	return ""
 }
+
+// detectNodeVersion reads the repo's .nvmrc, mirroring the lockfile probe. It
+// is the opt-in that lets a repo own its Node version in ONE place: the same
+// file drives local dev (nvm/fnm/asdf/volta), actions/setup-node via
+// node-version-file, and -- through this probe -- the generated cimg/node tag
+// and the node-build cache-key salt, which are otherwise the copies most prone
+// to silent drift.
+//
+// Only an exact version is honoured. .nvmrc also accepts aliases ("lts/*",
+// "node") and partial versions ("24"), none of which name a cimg/node tag; a
+// repo using one of those keeps devctl's baked-in default rather than
+// rendering an image that does not exist. Comments and surrounding whitespace
+// are stripped, matching how nvm and Renovate's nvm manager read the file.
+func detectNodeVersion() string {
+	data, err := os.ReadFile(".nvmrc")
+	if err != nil {
+		return ""
+	}
+
+	for line := range strings.Lines(string(data)) {
+		version, _, _ := strings.Cut(line, "#")
+		version = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(version), "v"))
+		if version == "" {
+			continue
+		}
+		if !exactNodeVersionRE.MatchString(version) {
+			return ""
+		}
+		return version
+	}
+
+	return ""
+}
+
+// exactNodeVersionRE matches a fully-qualified Node version (major.minor.patch)
+// -- the only form that maps 1:1 onto a cimg/node tag.
+var exactNodeVersionRE = regexp.MustCompile(`^\d+\.\d+\.\d+$`)

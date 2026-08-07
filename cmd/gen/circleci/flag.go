@@ -28,6 +28,7 @@ const (
 	flagLanguage         = "language"
 	flagRepoName         = "repo-name"
 	flagPackageManager   = "package-manager"
+	flagNodeImageVersion = "node-image-version"
 	flagNodeTestTarget   = "node-test-target"
 	flagNodeBuildTarget  = "node-build-target"
 	flagNodeBuildOutput  = "node-build-output"
@@ -51,6 +52,7 @@ type flag struct {
 	Language         gen.Language
 	RepoName         string
 	PackageManager   string
+	NodeImageVersion string
 	NodeTestTarget   string
 	NodeBuildTarget  string
 	NodeBuildOutput  string
@@ -74,6 +76,7 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().VarP(gen.NewLanguageFlagValue(&f.Language, gen.Language("")), flagLanguage, "l", fmt.Sprintf(`The programming language. "go" selects the go-build job. Possible values: <%s>`, strings.Join(gen.AllLanguages(), "|")))
 	cmd.Flags().StringVarP(&f.RepoName, flagRepoName, "r", "", "Repository name under the giantswarm organization (used for the binary, chart, and job names).")
 	cmd.Flags().StringVar(&f.PackageManager, flagPackageManager, "", `Node package manager for the build/test job (one of "npm", "yarn", "yarn-classic", "pnpm"). Empty detects it from the lockfile (package-lock.json -> npm, pnpm-lock.yaml -> pnpm, yarn.lock -> yarn Berry or yarn-classic by its header). Only applies with --language=node.`)
+	cmd.Flags().StringVar(&f.NodeImageVersion, flagNodeImageVersion, "", `cimg/node tag the build/test job runs on, which also salts the node-build cache key. Empty detects it from the repo's .nvmrc (exact major.minor.patch only -- an alias like "lts/*" or a partial "24" names no cimg/node tag and is ignored), and falls back to devctl's baked-in default when there is none. Committing a .nvmrc is how a repo keeps CI in step with a Node version it also bakes into artifacts devctl does not generate (a Dockerfile FROM, a setup-node step) from one place. Only applies with --language=node.`)
 	cmd.Flags().StringVar(&f.NodeTestTarget, flagNodeTestTarget, "", `package.json script the Node job runs for the verify phase, ci:verify (the make-target interface; the repo composes its whole correctness gate -- tsc --noEmit + lint + prettier --check + tests, in one process -- into it). Empty defaults to "test", which is only a floor: the convention is an explicit composed ci:verify (lint/format live here CI-wide). Only applies with --language=node.`)
 	cmd.Flags().StringVar(&f.NodeBuildTarget, flagNodeBuildTarget, "", "package.json script the Node job runs to build, ci:build. Empty omits the build step (a library that only verifies). Must be bundle/emit-only -- redo nothing the verify script did (no second typecheck/lint/test) and no re-install. Only applies with --language=node.")
 	cmd.Flags().StringVar(&f.NodeBuildOutput, flagNodeBuildOutput, "", `Workspace path the Node job persists for an image handoff (e.g. "packages/*/dist/*"). Non-empty names the job "node-build" and emits persist_to_workspace so the image jobs can attach it; empty names it "node-test". Only applies with --language=node.`)

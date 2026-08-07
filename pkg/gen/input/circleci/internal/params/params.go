@@ -123,7 +123,10 @@ type Params struct {
 	// persists a build output for an image handoff, "node-test" otherwise.
 	// Empty for non-Node repos.
 	NodeJobName string
-	// NodeImageVersion is the cimg/node Docker tag the Node job runs on.
+	// NodeImageVersion is the cimg/node Docker tag the Node job runs on, taken
+	// from the repo's .nvmrc when it pins one and from devctl's baked-in
+	// default otherwise. It also salts NodeBuildCacheKey, so the image and the
+	// cache it restores can never disagree.
 	NodeImageVersion string
 	// NodeInstallCommand installs dependencies for the detected package manager
 	// (e.g. "npm ci", "yarn install --immutable").

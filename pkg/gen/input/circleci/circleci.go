@@ -47,13 +47,22 @@ const (
 	DefaultAppCatalogTest = "giantswarm-test-catalog"
 )
 
-// NodeImageVersion is the cimg/node Docker tag the generated Node job runs on.
-// Baked in (not a flag) and Renovate-managed, for the same reason as the orb
-// pins: a toolchain bump ships with a devctl release and reaches repos via
-// align-files rather than drifting per repo.
+// DefaultNodeImageVersion is the cimg/node Docker tag the generated Node job
+// runs on when a repo does not pin its own. Baked in and Renovate-managed, for
+// the same reason as the orb pins: a toolchain bump ships with a devctl release
+// and reaches repos via align-files rather than drifting per repo.
+//
+// A repo that needs to own its Node version -- because the version is also
+// baked into artifacts devctl does not generate (a Dockerfile FROM, a
+// setup-node step) and must not diverge from CI -- overrides this by committing
+// a .nvmrc, which the runner probes. That keeps the version in ONE place per
+// repo instead of trading a central default for N copies: Renovate's built-in
+// nvm manager owns .nvmrc natively (datasource node-version, depName "node"),
+// so it groups with the repo's other node deps and is LTS-gated, neither of
+// which a rendered cimg/node tag can express.
 //
 // renovate: datasource=docker depName=cimg/node
-const NodeImageVersion = "24.18.0"
+const DefaultNodeImageVersion = "24.18.0"
 
 // DefaultNodeTestTarget is the package.json script the Node job runs for the
 // verify phase when a repo does not override it. The repo composes
@@ -263,6 +272,11 @@ type Config struct {
 	// from the lockfile; empty defaults to Yarn Berry. Only applies to a Node
 	// repo (Language == "node").
 	PackageManager string
+	// NodeImageVersion pins the cimg/node tag the build/test job runs on, and
+	// with it the node-build cache-key salt. The runner detects it from the
+	// repo's .nvmrc; empty falls back to DefaultNodeImageVersion. Only applies
+	// to a Node repo (Language == "node").
+	NodeImageVersion string
 	// NodeTestTarget overrides the package.json script the Node job runs for
 	// the verify phase (ci:verify). Empty defaults to "test". The repo composes
 	// its entire correctness gate -- tsc --noEmit + lint + prettier --check +
@@ -341,6 +355,7 @@ func New(config Config) (*CircleCI, error) {
 		nodeBuildCacheKey        string
 		nodeBuildCacheRestoreKey string
 		nodeCorepack             bool
+		nodeImageVersion         string
 		nodeResourceClass        string
 		nodeTestTarget           string
 		nodeBuildTarget          string
@@ -353,6 +368,13 @@ func New(config Config) (*CircleCI, error) {
 		nodeCachePath = tc.cachePath
 		nodeBuildCachePaths = tc.buildCachePaths
 		nodeCorepack = tc.corepack
+		// The repo's own pin (.nvmrc, detected by the runner) wins over the
+		// baked-in default, so a repo that must keep CI in step with a Node
+		// version it also bakes elsewhere has one place to change.
+		nodeImageVersion = config.NodeImageVersion
+		if nodeImageVersion == "" {
+			nodeImageVersion = DefaultNodeImageVersion
+		}
 		// The cli go-build resourceClass knob (gen.ci.resourceClass) is shared:
 		// a Node repo reuses it to size the verify/build box, defaulting to
 		// "large" when unset.
@@ -388,7 +410,7 @@ func New(config Config) (*CircleCI, error) {
 		// incremental caches those tools write under node_modules/.cache too --
 		// the compute-side analogue of go-build persisting $GOCACHE.
 		if len(nodeBuildCachePaths) > 0 {
-			nodeBuildCacheRestoreKey = "node-build-" + pm + "-v1-" + NodeImageVersion + "-"
+			nodeBuildCacheRestoreKey = "node-build-" + pm + "-v1-" + nodeImageVersion + "-"
 			nodeBuildCacheKey = nodeBuildCacheRestoreKey + `{{ checksum "` + tc.lockfile + `" }}`
 		}
 
@@ -454,7 +476,7 @@ func New(config Config) (*CircleCI, error) {
 			ContinuationOrbVersion:   ContinuationOrbVersion,
 			BuildJobName:             buildJobName,
 			NodeJobName:              nodeJobName,
-			NodeImageVersion:         NodeImageVersion,
+			NodeImageVersion:         nodeImageVersion,
 			NodeInstallCommand:       nodeInstallCommand,
 			NodeRunPrefix:            nodeRunPrefix,
 			NodeCachePath:            nodeCachePath,
