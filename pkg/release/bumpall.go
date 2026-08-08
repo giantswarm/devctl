@@ -102,6 +102,10 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 					} else { // minor or major
 						version.Version, err = getLatestFlatcarRelease()
 					}
+				} else if comp.Name == containerdComponentName {
+					// Derived from os-tooling below, never bumped to the latest upstream
+					// release: nodes run whatever image-builder baked into the image.
+					version.Version = comp.Version
 				} else {
 					// For minor releases, add an implicit constraint to prevent major version jumps.
 					// Users can still force a major bump via --component flag.
@@ -150,6 +154,21 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 					Version:       req.Version,
 					UserRequested: true,
 				}
+			}
+		}
+
+		// Derive containerd from the os-tooling version this release ends up with, so the
+		// recap table shows it alongside everything else that changes. The version itself is
+		// applied when the release is written, not returned as a bump below.
+		osToolingVersion := lookupComponentVersion(input.Spec.Components, osToolingComponentName)
+		if bumped, found := components[osToolingComponentName]; found {
+			osToolingVersion = bumped.Version
+		}
+
+		containerdVersion := deriveContainerdVersion(osToolingVersion)
+		if containerdVersion != "" && containerdVersion != lookupComponentVersion(input.Spec.Components, containerdComponentName) {
+			components[containerdComponentName] = componentVersion{
+				Version: containerdVersion,
 			}
 		}
 	}
@@ -319,6 +338,11 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 	appsRet := make([]string, 0)
 
 	for name, comp := range components {
+		if name == containerdComponentName {
+			// Shown in the table above, but derived again from os-tooling when the release is
+			// written rather than carried through as a requested bump.
+			continue
+		}
 		componentsRet = append(componentsRet, fmt.Sprintf("%s@%s", name, comp.Version))
 	}
 	for name, app := range apps {

@@ -287,6 +287,14 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 		}
 	}
 
+	// containerd always follows the os-tooling version, so setting it by hand would only
+	// record a version no node runs.
+	for _, componentVersion := range components {
+		if strings.Split(componentVersion, "@")[0] == containerdComponentName {
+			return microerror.Maskf(invalidItemTypeError, "'%s' is derived from the release's %s version and cannot be set directly.\nBump %s instead: --component %s@<version>", containerdComponentName, osToolingComponentName, osToolingComponentName, osToolingComponentName)
+		}
+	}
+
 	if bumpall {
 		if verbose {
 			fmt.Println("Requested automated bumping of all components and apps.")
@@ -427,6 +435,11 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 		})
 
 	}
+
+	// containerd is not bumped on its own: it comes from whichever upstream image-builder the
+	// release's os-tooling version pins, so it is derived from that rather than requested.
+	applyContainerdComponent(&updatesRelease, effectiveBaseRelease, verbose)
+
 	newRelease := mergeReleases(effectiveBaseRelease, updatesRelease)
 
 	// Rewrite catalogs to their test variants for apps/components carrying development

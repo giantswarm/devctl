@@ -22,12 +22,16 @@ const releaseNotesTemplate = `# :zap: Giant Swarm Release {{ .Name }} for {{ .Pr
 {{ if .Components }}
 ### Components
 {{ range .Components }}
-{{- if eq .PreviousVersion "" }}
+{{- if and (eq .PreviousVersion "") (eq .Name "containerd") }}
+- Added containerd [v{{ .Version }}]({{ .Link }})
+{{- else if eq .PreviousVersion "" }}
 - Added {{ .Name }} v{{ .Version }}
 {{- else if eq .Name "kubernetes" }}
 - Kubernetes from v{{ .PreviousVersion }} to [v{{ .Version }}]({{ .Link }})
 {{- else if eq .Name "flatcar" }}
 - Flatcar from v{{ .PreviousVersion }} to [v{{ .Version }}]({{ .Link }})
+{{- else if eq .Name "containerd" }}
+- containerd from v{{ .PreviousVersion }} to [v{{ .Version }}]({{ .Link }})
 {{- else }}
 - {{ .Name }} from v{{ .PreviousVersion }} to v{{ .Version }}
 {{- end }}
