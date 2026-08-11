@@ -435,6 +435,11 @@ var KnownComponents = map[string]ParseParams{
 		Start:     commonStartPattern,
 		End:       commonEndPattern,
 	},
+	"containerd": {
+		// containerd keeps its release notes on the GitHub release rather than in a
+		// CHANGELOG we could parse, so only the tag URL is used.
+		Tag: "https://github.com/containerd/containerd/releases/tag/v{{.Version}}",
+	},
 }
 
 // GetRepoName extracts the repository name for a given component from its tag URL.
@@ -480,6 +485,16 @@ func ParseChangelog(componentName, currentVersion, endVersion string, extraFilte
 	params, ok := KnownComponents[componentName]
 	if !ok {
 		return nil, microerror.Mask(fmt.Errorf("unknown component: %s", componentName))
+	}
+
+	if componentName == "containerd" {
+		// containerd is derived from the image-builder release our os-tooling version pins,
+		// and has no CHANGELOG in the format parsed below. Link to the release and stop.
+		return &Version{
+			Name:    currentVersion,
+			Link:    strings.Replace(params.Tag, "{{.Version}}", currentVersion, 1),
+			Content: "",
+		}, nil
 	}
 
 	if componentName == "flatcar" {

@@ -9,6 +9,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `release create`: records the containerd version as a `containerd` component and links it in the release
+  notes. It is derived from the release's `os-tooling` version, since that is the version nodes run rather
+  than the one Flatcar embeds.
 - `gen renovate --language node`: extends the new
   [`lang-node.json5`](https://github.com/giantswarm/renovate-presets/blob/main/lang-node.json5) preset, which
   groups every Node.js version pin (a `.nvmrc`, a Dockerfile `FROM node:`, a `setup-node` step) into one PR.

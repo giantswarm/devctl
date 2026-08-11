@@ -51,3 +51,8 @@ func IsGithubNotFound(err error) bool {
 var fileNotFoundError = &microerror.Error{
 	Kind: "fileNotFoundError",
 }
+
+// Indicates that an external lookup returned something we cannot work with.
+var executionFailedError = &microerror.Error{
+	Kind: "executionFailedError",
+}
