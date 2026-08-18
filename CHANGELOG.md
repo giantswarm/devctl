@@ -47,6 +47,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- `gen circleci`: builds the image with one `architect/build-image` job per architecture, each on a
+  resource class of that architecture, and points the existing `push-to-registries` job at them with
+  `requires:`. Nothing is emulated and the builds run concurrently. Requires architect-orb v10, which
+  `OrbVersion` is pinned to here.
+
+  **Breaking for `.circleci/custom.yml`:** the branch job `build-image` becomes `build-image-amd64` and
+  `build-image-arm64`, so a repo with `requires: build-image` must update it in the same PR.
+  `push-to-registries` and `push-to-registries-release` keep their names.
+
+  `--image-platforms` now decides how many build jobs exist, and rejects a platform with no matching
+  CircleCI resource class. `--image-pre-build-job` attaches to every build job. The branch-publish path no
+  longer pins its dev image to `linux/amd64`.
+
 - `gen renovate --language node`: the generated Node rules now carry a single Renovate `description` field instead of a multi-line comment block, matching how Renovate itself documents a `packageRule`.
 
 ### Fixed
