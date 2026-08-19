@@ -51,6 +51,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `gen makefile` (Go flavour): the `nancy` target scans `go list -json -deps ./...` again instead of
+  `go list -json -m all`, so it reports vulnerabilities only in packages actually compiled into the
+  module. `-m all` walks the whole module graph and flags modules that are never built: on
+  `team-stamper` it reported 7 vulnerable modules of which 5 are absent from the build, including
+  `golang.org/x/crypto` and the 13 CVEs attributed to it. #680 adopted `-deps ./...` for precisely
+  this reason in 2023; #1964 reverted to `-m all` in June only to work around nancy's 10 MB stdin
+  cap, which nancy had introduced days earlier in v2.0.0 and then made configurable, defaulting to
+  100 MB, in [v2.1.0](https://github.com/sonatype-nexus-community/nancy/releases/tag/v2.1.0) six
+  days later. The cap that motivated the workaround is therefore gone: `cluster-standup-teardown`,
+  the repository that hit it, emits 12 MB, and CI already runs nancy 2.1.0. The target's doc comment
+  now says v2.1.0 rather than v1.0.37.
+
 - devctl's own Renovate config: the `cimg/node` version baked into `gen circleci` was never actually
   tracked. The constant carries a `// renovate: datasource=docker depName=cimg/node` annotation, but the
   custom manager in `renovate-custom.json5` is anchored on `const \w*OrbVersion`, which never matched
