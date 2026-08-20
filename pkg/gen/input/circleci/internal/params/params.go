@@ -47,6 +47,12 @@ type Params struct {
 	// push-to-app-catalog `app_catalog_test` param). Defaults to
 	// "giantswarm-test-catalog". Kept paired with AppCatalog.
 	AppCatalogTest string
+	// SkipAppCatalog is true when the chart must not be published to a GitHub
+	// app catalog (push-to-app-catalog push_to_appcatalog: false), keeping the
+	// OCI registry push. Every GitHub app catalog is a public repository, so a
+	// private chart published to one is world-readable; when set, the chart
+	// ships only to gsociprivate.azurecr.io.
+	SkipAppCatalog bool
 	// BranchPublish is true when the repo opts into publishing a dev image and
 	// chart on branch builds. By default branches build + test only; when set,
 	// the branch path additionally pushes an amd64 dev image and the dev chart
