@@ -387,8 +387,10 @@ func Test_CLIParallelBuild(t *testing.T) {
 	if contains(svc, "build_concurrency") {
 		t.Errorf("non-cli service should not set build_concurrency:\n%s", svc)
 	}
-	if contains(svc, "resource_class") {
-		t.Errorf("non-cli service should not set resource_class:\n%s", svc)
+	// Narrowed to go-build's own class: every build-image job carries a
+	// resource_class of its architecture, so the bare key is always present.
+	if contains(svc, "resource_class: large") {
+		t.Errorf("non-cli service should not set go-build resource_class:\n%s", svc)
 	}
 }
 
@@ -446,8 +448,8 @@ func Test_CLIParallelBuildOverride(t *testing.T) {
 	if contains(svc, "build_concurrency") {
 		t.Errorf("non-cli service should not render build_concurrency even when set:\n%s", svc)
 	}
-	if contains(svc, "resource_class") {
-		t.Errorf("non-cli service should not render resource_class even when set:\n%s", svc)
+	if contains(svc, "resource_class: "+resourceClassXLarge) {
+		t.Errorf("non-cli service should not render go-build resource_class even when set:\n%s", svc)
 	}
 }
 
@@ -497,11 +499,12 @@ func Test_ImagePreBuildJob(t *testing.T) {
 		ImagePreBuildJob: "fetch-release-notes",
 	})
 
-	// Both the branch validation (build-image) and the release push must
-	// require the custom pre-build job: the branch build compiles the same
-	// Dockerfile and needs the same workspace handoff.
-	if n := strings.Count(got, "- fetch-release-notes"); n != 2 {
-		t.Errorf("expected pre-build requires on build-image and release push, found %d:\n%s", n, got)
+	// Every build-image job must require the custom pre-build job -- two per
+	// path, branch and release. The branch builds compile the same Dockerfile
+	// and need the same workspace handoff. push-to-registries does not need it:
+	// it reaches the pre-build job transitively through the release builds.
+	if n := strings.Count(got, "- fetch-release-notes"); n != 4 {
+		t.Errorf("expected pre-build requires on all four build-image jobs, found %d:\n%s", n, got)
 	}
 
 	def := render(t, Config{
@@ -568,8 +571,10 @@ func Test_ImageName(t *testing.T) {
 
 	// Every image job (build-image, push-to-registries-release,
 	// sync-china-registry) must carry the overridden image name.
-	if n := strings.Count(got, "image: giantswarm/kserve-controller"); n != 3 {
-		t.Errorf("expected image override on all 3 image jobs, found %d:\n%s", n, got)
+	// Two branch builds, two release builds, the release push, and
+	// sync-china-registry.
+	if n := strings.Count(got, "image: giantswarm/kserve-controller"); n != 6 {
+		t.Errorf("expected image override on all 6 image jobs, found %d:\n%s", n, got)
 	}
 
 	def := render(t, Config{
@@ -578,15 +583,17 @@ func Test_ImageName(t *testing.T) {
 		Flavours:      gen.FlavourSlice{},
 		HasDockerfile: true,
 	})
-	if contains(def, "image:") {
+	// Matched with the parameter indentation: the `- architect/build-image:`
+	// job key also ends in "image:".
+	if contains(def, "        image: ") {
 		t.Errorf("no image param should be emitted without ImageName (orb default applies):\n%s", def)
 	}
 }
 
-// Test_ImagePlatforms verifies the platform override caps the buildx platform
-// list on both the branch validation (build-image) and the release push for a
-// single-architecture image (e.g. vllm -> linux/arm64), and that omitting it
-// emits no platforms param (the orb falls back to its default).
+// Test_ImagePlatforms verifies the platform override drives the whole image
+// pipeline: it decides how many build-image jobs exist (one per architecture)
+// and what push-to-registries expects to merge. A single-architecture image
+// (e.g. vllm -> linux/arm64) gets one build job per path and no amd64 anywhere.
 func Test_ImagePlatforms(t *testing.T) {
 	got := render(t, Config{
 		RepoName:       "vllm",
@@ -596,10 +603,19 @@ func Test_ImagePlatforms(t *testing.T) {
 		ImagePlatforms: "linux/arm64",
 	})
 
-	// build-image (branch) and push-to-registries-release (tag) must both
-	// carry the single-arch cap.
-	if n := strings.Count(got, "platforms: linux/arm64"); n != 2 {
-		t.Errorf("expected platforms cap on build-image and release push, found %d:\n%s", n, got)
+	// One build job per path, both on an Arm class.
+	if n := strings.Count(got, "platform: linux/arm64"); n != 2 {
+		t.Errorf("expected one arm64 build job per path, found %d:\n%s", n, got)
+	}
+	if n := strings.Count(got, "resource_class: arm.medium"); n != 2 {
+		t.Errorf("expected both arm64 build jobs on an Arm class, found %d:\n%s", n, got)
+	}
+	// The release push must expect exactly that set.
+	if !contains(got, `platforms: "linux/arm64"`) {
+		t.Errorf("release push missing the single-arch platform list:\n%s", got)
+	}
+	if contains(got, "amd64") {
+		t.Errorf("arm64-only config should not mention amd64:\n%s", got)
 	}
 
 	def := render(t, Config{
@@ -608,8 +624,32 @@ func Test_ImagePlatforms(t *testing.T) {
 		Flavours:      gen.FlavourSlice{},
 		HasDockerfile: true,
 	})
-	if contains(def, "platforms:") {
-		t.Errorf("no platforms param should be emitted without ImagePlatforms (orb default applies):\n%s", def)
+	// The default is explicit rather than left to the orb: the job list and the
+	// merge's expected set have to agree, so the generator states both.
+	for _, want := range []string{
+		"platform: linux/amd64",
+		"platform: linux/arm64",
+		`platforms: "linux/amd64,linux/arm64"`,
+	} {
+		if !contains(def, want) {
+			t.Errorf("default config missing %q:\n%s", want, def)
+		}
+	}
+}
+
+// Test_ImagePlatformsRejectsUnmappedPlatform verifies an architecture with no
+// CircleCI resource class is a generation error. Defaulting it to an x86 class
+// would emit a silently emulated build that looks native.
+func Test_ImagePlatformsRejectsUnmappedPlatform(t *testing.T) {
+	_, err := New(Config{
+		RepoName:       "vllm",
+		Language:       gen.Language(""),
+		Flavours:       gen.FlavourSlice{},
+		HasDockerfile:  true,
+		ImagePlatforms: "linux/riscv64",
+	})
+	if err == nil {
+		t.Error("expected an unmapped platform to be rejected")
 	}
 }
 
@@ -633,10 +673,10 @@ func Test_ImageDockerfile(t *testing.T) {
 	if !contains(got, "name: push-to-registries-release") {
 		t.Errorf("ImageDockerfile did not turn the image pipeline on:\n%s", got)
 	}
-	// build-image (branch) and push-to-registries-release (tag) carry the path;
-	// sync-china-registry mirrors and does not build, so it must not.
-	if n := strings.Count(got, "dockerfile: packages/backend/Dockerfile"); n != 2 {
-		t.Errorf("expected dockerfile path on build-image and release push, found %d:\n%s", n, got)
+	// The four build-image jobs carry the path. push-to-registries no longer
+	// builds, and sync-china-registry only mirrors, so neither has the parameter.
+	if n := strings.Count(got, "dockerfile: packages/backend/Dockerfile"); n != 4 {
+		t.Errorf("expected dockerfile path on all four build-image jobs, found %d:\n%s", n, got)
 	}
 
 	def := render(t, Config{
@@ -696,8 +736,9 @@ func Test_ForcePublic(t *testing.T) {
 
 	// push-to-registries-release (image) and push-chart-release (chart) must
 	// both force the public push.
-	if n := strings.Count(got, "force-public: true"); n != 2 {
-		t.Errorf("expected force-public on the release image and chart pushes, found %d:\n%s", n, got)
+	// The two release builds, the release push, and the chart push.
+	if n := strings.Count(got, "force-public: true"); n != 4 {
+		t.Errorf("expected force-public on the release image jobs and chart push, found %d:\n%s", n, got)
 	}
 
 	def := render(t, Config{
@@ -888,11 +929,10 @@ func Test_BranchPublishOffOmitsBranchPushes(t *testing.T) {
 }
 
 // Test_BranchPublishOnAddsCoupledBranchPushes verifies the opt-in branch shape:
-// the branch path additionally emits an amd64 image push (name:
-// push-to-registries with platforms: linux/amd64) and the coupled branch chart
-// push (name: push-chart), without disturbing the tag-only release jobs. The
-// push-less build-image validation is omitted -- the branch image push already
-// exercises the Dockerfile.
+// the branch path publishes a dev image (its build-image jobs push by digest,
+// joined by a push-to-registries job) alongside the coupled branch chart push
+// (name: push-chart), without disturbing the tag-only release jobs. No job on
+// this path uses push: false -- the dev image is published, not just validated.
 func Test_BranchPublishOnAddsCoupledBranchPushes(t *testing.T) {
 	got := render(t, Config{
 		RepoName:      repoMCPKubernetes,
@@ -904,28 +944,26 @@ func Test_BranchPublishOnAddsCoupledBranchPushes(t *testing.T) {
 
 	for _, want := range []string{
 		"name: push-to-registries\n",
-		"platforms: linux/amd64",
+		"name: build-image-amd64\n",
+		"name: build-image-arm64\n",
 		"name: push-chart\n",
 		"name: push-to-registries-release",
+		"name: build-image-release-amd64\n",
 		"name: push-chart-release",
 	} {
 		if !contains(got, want) {
 			t.Errorf("branch-publish config missing %q:\n%s", want, got)
 		}
 	}
-	for _, unwanted := range []string{
-		"name: build-image",
-		"push: false",
-	} {
-		if contains(got, unwanted) {
-			t.Errorf("branch-publish config should not contain build-only validation %q:\n%s", unwanted, got)
-		}
+	if contains(got, "push: false") {
+		t.Errorf("branch-publish config should publish, not validate:\n%s", got)
 	}
 }
 
 // Test_NoCLIOmitsReleaseBinaries verifies the default: a Go service/chart repo
-// without the cli flavour carries no architectures matrix, no
-// upload-release-assets job, and no platforms cap on the release image push.
+// without the cli flavour carries no architectures matrix and no
+// upload-release-assets job. The image platform list is no longer derived from
+// the flavour -- it is always explicit -- so it is not checked here.
 func Test_NoCLIOmitsReleaseBinaries(t *testing.T) {
 	got := render(t, Config{
 		RepoName:      repoMCPKubernetes,
@@ -937,7 +975,6 @@ func Test_NoCLIOmitsReleaseBinaries(t *testing.T) {
 	for _, unwanted := range []string{
 		"architectures:",
 		"name: upload-release-assets",
-		"platforms: \"linux/amd64,linux/arm64\"",
 	} {
 		if contains(got, unwanted) {
 			t.Errorf("non-cli config should not contain release-binaries %q:\n%s", unwanted, got)
@@ -1104,10 +1141,11 @@ func Test_NodeImageGatesOnBuildJob(t *testing.T) {
 		ImageDockerfile: backstageDockerfile,
 	})
 
-	// build-image, push-to-registries-release, and build-chart each gate on
-	// node-build via a `- node-build` requires entry.
-	if n := strings.Count(got, "- node-build\n"); n != 3 {
-		t.Errorf("expected 3 requires entries on node-build (build-image, release push, build-chart), found %d:\n%s", n, got)
+	// The four build-image jobs and build-chart each gate on node-build via a
+	// `- node-build` requires entry. push-to-registries gates on the release
+	// builds instead.
+	if n := strings.Count(got, "- node-build\n"); n != 5 {
+		t.Errorf("expected 5 requires entries on node-build (four build-image jobs, build-chart), found %d:\n%s", n, got)
 	}
 	if contains(got, "- go-build") {
 		t.Errorf("Node repo should not reference go-build:\n%s", got)
@@ -1131,8 +1169,8 @@ func Test_NodePreBuildJobCoexists(t *testing.T) {
 	if !contains(got, "- node-build\n") {
 		t.Errorf("image jobs should require node-build:\n%s", got)
 	}
-	if n := strings.Count(got, "- fetch-release-notes"); n != 2 {
-		t.Errorf("expected pre-build requires on build-image and release push, found %d:\n%s", n, got)
+	if n := strings.Count(got, "- fetch-release-notes"); n != 4 {
+		t.Errorf("expected pre-build requires on all four build-image jobs, found %d:\n%s", n, got)
 	}
 }
 
@@ -1429,8 +1467,8 @@ func Test_GoUnaffectedByBuildJobName(t *testing.T) {
 		HasDockerfile: true,
 	})
 	// build-image, push-to-registries-release, and build-chart gate on go-build.
-	if n := strings.Count(got, "- go-build\n"); n != 3 {
-		t.Errorf("expected 3 go-build requires entries, found %d:\n%s", n, got)
+	if n := strings.Count(got, "- go-build\n"); n != 5 {
+		t.Errorf("expected 5 go-build requires entries, found %d:\n%s", n, got)
 	}
 	if contains(got, "- node-build") {
 		t.Errorf("Go repo should not reference node-build:\n%s", got)

@@ -25,13 +25,31 @@ workflows:
           tags:
             only: /^v.*/
 
-    # Branches: validate the image build without pushing anything (push: false
-    # keeps the buildx result in the BuildKit cache). Same hadolint lint and
-    # multi-arch build as the release job, so Dockerfile regressions surface
-    # on the PR instead of at tag time.
-    - architect/push-to-registries:
+    # Branch image build: one job per architecture, each on a machine of that
+    # architecture, so no RUN step is emulated. The jobs run concurrently, so
+    # wall clock is the slower single build rather than the sum.
+    #
+    # push: false validates that the Dockerfile still builds for each
+    # architecture without pushing anything, so regressions surface on the PR
+    # instead of at tag time. Nothing is pushed, so there is no digest to join
+    # and no push-to-registries job on this path.
+    - architect/build-image:
         context: architect
-        name: build-image
+        name: build-image-amd64
+        platform: linux/amd64
+        resource_class: small
+        push: false
+        requires:
+        - go-build
+        filters:
+          branches:
+            ignore:
+            - main
+    - architect/build-image:
+        context: architect
+        name: build-image-arm64
+        platform: linux/arm64
+        resource_class: arm.medium
         push: false
         requires:
         - go-build
@@ -40,15 +58,53 @@ workflows:
             ignore:
             - main
 
-    # Tag builds: push multi-arch image to gsoci + gsociprivate. Aliyun is
-    # handled by the sync-china-registry job below (orb's split-china-push
-    # mechanism), so the buildx push no longer crosses the Pacific.
-    - architect/push-to-registries:
+    # Tag builds: one build job per architecture, then a single job that joins
+    # their digests into a tagged index in gsoci + gsociprivate, signs it and
+    # attests it. Aliyun is handled by the sync-china-registry job below (the
+    # orb's split-china-push mechanism), so no push crosses the Pacific.
+    #
+    # Each build job pushes its platform BY DIGEST, setting no tag: a
+    # single-architecture manifest is not independently useful, and tagging one
+    # would publish something consumers could pull by accident.
+    #
+    # registries-data / split-china-push must be identical on the build jobs and
+    # the push-to-registries job below, or the two disagree about which
+    # registries hold the per-architecture digests.
+    - architect/build-image:
         context: architect
-        name: push-to-registries-release
+        name: build-image-release-amd64
+        platform: linux/amd64
+        resource_class: small
         split-china-push: true
         requires:
         - go-build
+        filters:
+          tags:
+            only: /^v.*/
+          branches:
+            ignore: /.*/
+    - architect/build-image:
+        context: architect
+        name: build-image-release-arm64
+        platform: linux/arm64
+        resource_class: arm.medium
+        split-china-push: true
+        requires:
+        - go-build
+        filters:
+          tags:
+            only: /^v.*/
+          branches:
+            ignore: /.*/
+
+    - architect/push-to-registries:
+        context: architect
+        name: push-to-registries-release
+        platforms: "linux/amd64,linux/arm64"
+        split-china-push: true
+        requires:
+        - build-image-release-amd64
+        - build-image-release-arm64
         filters:
           tags:
             only: /^v.*/

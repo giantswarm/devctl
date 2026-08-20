@@ -53,14 +53,12 @@ type Params struct {
 	// (coupled).
 	BranchPublish bool
 	// ImagePreBuildJob names a repo-owned job (defined in .circleci/custom.yml)
-	// that the release image build must wait on. The generated
-	// push-to-registries-release job gains a `requires` entry for it, which the
-	// append-only custom.yml merge cannot inject into a generated job. Used for
-	// workspace-handoff pre-steps (e.g. a job that persists a generated file the
-	// Docker build context overlays via attach_workspace). The branch
-	// build-image (and branch-publish push-to-registries) job gains the same
-	// `requires` entry, so the branch image validation also gets the workspace.
-	// Empty for the common case.
+	// that the image build must wait on. Every generated build-image job gains a
+	// `requires` entry for it, which the append-only custom.yml merge cannot
+	// inject into a generated job. Used for workspace-handoff pre-steps (e.g. a
+	// job that persists a generated file the Docker build context overlays via
+	// attach_workspace). The branch jobs get it too, so the branch image
+	// validation also gets the workspace. Empty for the common case.
 	ImagePreBuildJob string
 	// ImagePrivateOnly is true when the repo's image must ship only to the
 	// private registry (gsociprivate). It replaces the default split-china-push
@@ -76,15 +74,21 @@ type Params struct {
 	// append-only custom.yml merge cannot rename a generated job's image, so the
 	// generator carries it. Empty keeps the orb default.
 	ImageName string
-	// ImagePlatforms overrides the buildx platform list for the image build
-	// (the push-to-registries `platforms` param on the build-image and
-	// push-to-registries-release jobs). Empty lets the orb fall back to its
-	// default (linux/amd64,linux/arm64 when no go-build .platforms file). Set it
-	// for repos whose image targets a single architecture (e.g. vllm ships an
-	// arm64-only image for DGX Spark; an amd64 build has no prebuilt wheels and
-	// fails). The append-only custom.yml merge cannot cap a generated job's
-	// platforms, so the generator carries it.
+	// ImagePlatforms is the resolved, comma-separated platform list the image is
+	// built for, e.g. "linux/amd64,linux/arm64". It is the `platforms` parameter
+	// of the push-to-registries jobs, and it must list exactly the platforms the
+	// BranchImageBuilds / ReleaseImageBuilds jobs cover -- the orb fails the
+	// merge in either direction rather than publishing an index that is missing
+	// an architecture.
 	ImagePlatforms string
+	// BranchImageBuilds and ReleaseImageBuilds are the per-architecture
+	// build-image jobs of the branch and tag paths. One job per platform, each
+	// pinned to a resource class of that platform's architecture, because a
+	// CircleCI job runs on one machine and a machine is native for one
+	// architecture. Building both platforms in one job would emulate one of them
+	// under QEMU.
+	BranchImageBuilds  []ImageBuild
+	ReleaseImageBuilds []ImageBuild
 	// ImageDockerfile overrides the Dockerfile path on the image jobs (the
 	// architect push-to-registries `dockerfile` param). Set it for repos whose
 	// Dockerfile is not at the repo root (e.g. backstage builds from
@@ -173,4 +177,18 @@ type Params struct {
 	// NodeBuildOutput is the workspace path the Node job persists for an image
 	// handoff (e.g. "packages/*/dist/*"). Empty omits persist_to_workspace.
 	NodeBuildOutput string
+}
+
+// ImageBuild is one architect/build-image job: one platform, on a machine of
+// that platform's architecture.
+type ImageBuild struct {
+	// Name is the CircleCI job name, e.g. "build-image-arm64". Branch and tag
+	// paths need distinct names because both appear in the same workflow.
+	Name string
+	// Platform is the buildx platform, e.g. "linux/arm64".
+	Platform string
+	// ResourceClass is a CircleCI class whose architecture matches Platform.
+	// CircleCI gives the setup_remote_docker VM the architecture of the job's
+	// class, so this is what decides whether the build is native or emulated.
+	ResourceClass string
 }
