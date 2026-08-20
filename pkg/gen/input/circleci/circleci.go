@@ -27,7 +27,7 @@ import (
 // custom manager that reads this annotation lives in renovate-custom.json5.
 //
 // renovate: datasource=github-tags depName=giantswarm/architect-orb
-const OrbVersion = "9.6.0"
+const OrbVersion = "10.0.0"
 
 // ContinuationOrbVersion pins the circleci/continuation orb used by the
 // generated setup config (.circleci/config.yml) to merge the optional
