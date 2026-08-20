@@ -1342,6 +1342,76 @@ func Test_ImageReferenceCheckExemptsOwnImageInBuildChart(t *testing.T) {
 	}
 }
 
+// Test_SkipAppCatalogOffKeepsCatalogPush verifies the default: the chart
+// publish jobs push to a GitHub app catalog, so push_to_appcatalog is left at
+// the orb's default and never emitted.
+func Test_SkipAppCatalogOffKeepsCatalogPush(t *testing.T) {
+	got := render(t, Config{
+		RepoName:       repoMCPKubernetes,
+		Language:       gen.LanguageGo,
+		Flavours:       gen.FlavourSlice{gen.FlavourApp},
+		BranchPublish:  true,
+		SkipAppCatalog: false,
+	})
+
+	// build-chart is push-less by construction and always carries the flag;
+	// the two publish jobs must not.
+	if want := 1; strings.Count(got, "push_to_appcatalog: false") != want {
+		t.Errorf("default config should carry push_to_appcatalog: false exactly %d time (build-chart only):\n%s", want, got)
+	}
+}
+
+// Test_SkipAppCatalogOnDropsCatalogPush verifies the opt-in: both the branch
+// and the tag chart publish jobs disable the GitHub app catalog push, leaving
+// the OCI registry push as the only destination. Every GitHub app catalog is a
+// public repository, so this is what keeps a private chart private.
+func Test_SkipAppCatalogOnDropsCatalogPush(t *testing.T) {
+	got := render(t, Config{
+		RepoName:       repoMCPKubernetes,
+		Language:       gen.LanguageGo,
+		Flavours:       gen.FlavourSlice{gen.FlavourApp},
+		BranchPublish:  true,
+		SkipAppCatalog: true,
+	})
+
+	// build-chart plus both publish jobs.
+	if want := 3; strings.Count(got, "push_to_appcatalog: false") != want {
+		t.Errorf("skip-app-catalog config should carry push_to_appcatalog: false exactly %d times:\n%s", want, got)
+	}
+	// The OCI push must survive -- it is the only remaining destination, and
+	// the private one. Only build-chart, which pushes nothing, disables it.
+	if want := 1; strings.Count(got, "push_to_oci_registry: false") != want {
+		t.Errorf("skip-app-catalog should leave the OCI push enabled on the publish jobs, disabling it exactly %d time (build-chart only):\n%s", want, got)
+	}
+	for _, want := range []string{
+		"name: push-chart\n",
+		"name: push-chart-release",
+	} {
+		if !contains(got, want) {
+			t.Errorf("skip-app-catalog config missing %q:\n%s", want, got)
+		}
+	}
+}
+
+// Test_SkipAppCatalogOnWithoutBranchPublishDropsTagPushOnly verifies the flag
+// without branch publishing: there is no branch publish job, so only the tag
+// chart publish job (plus the push-less build-chart) carries the opt-out.
+func Test_SkipAppCatalogOnWithoutBranchPublishDropsTagPushOnly(t *testing.T) {
+	got := render(t, Config{
+		RepoName:       repoMCPKubernetes,
+		Language:       gen.LanguageGo,
+		Flavours:       gen.FlavourSlice{gen.FlavourApp},
+		SkipAppCatalog: true,
+	})
+
+	if want := 2; strings.Count(got, "push_to_appcatalog: false") != want {
+		t.Errorf("expected push_to_appcatalog: false exactly %d times (build-chart and push-chart-release):\n%s", want, got)
+	}
+	if contains(got, "name: push-chart\n") {
+		t.Errorf("push-chart must not be generated without branch publish:\n%s", got)
+	}
+}
+
 // Test_NoCLIOmitsReleaseBinaries verifies the default: a Go service/chart repo
 // without the cli flavour carries no architectures matrix, no
 // upload-release-assets job, and no platforms cap on the release image push.
