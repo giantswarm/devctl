@@ -76,6 +76,7 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 			RepoName:         r.flag.RepoName,
 			Language:         r.flag.Language,
 			Flavours:         r.flag.Flavours,
+			SkipAppCatalog:   r.flag.SkipAppCatalog,
 			SkipATS:          r.flag.SkipATS,
 			HasDockerfile:    hasDockerfile,
 			AppCatalog:       r.flag.AppCatalog,

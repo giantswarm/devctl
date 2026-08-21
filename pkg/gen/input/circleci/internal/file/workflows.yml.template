@@ -388,6 +388,11 @@ workflows:
         app_catalog: {{ .AppCatalog }}
         app_catalog_test: {{ .AppCatalogTest }}
         chart: {{ .ChartName }}
+{{- if .SkipAppCatalog }}
+        # Private chart: every GitHub app catalog is a public repository, so the
+        # chart ships only to gsociprivate. The catalog params above are inert.
+        push_to_appcatalog: false
+{{- end }}
         requires:
 {{- if .SkipATS }}
         - build-chart
@@ -417,6 +422,11 @@ workflows:
         app_catalog: {{ .AppCatalog }}
         app_catalog_test: {{ .AppCatalogTest }}
         chart: {{ .ChartName }}
+{{- if .SkipAppCatalog }}
+        # Private chart: every GitHub app catalog is a public repository, so the
+        # chart ships only to gsociprivate. The catalog params above are inert.
+        push_to_appcatalog: false
+{{- end }}
         requires:
 {{- if .SkipATS }}
         - build-chart
