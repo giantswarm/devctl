@@ -82,6 +82,7 @@ func (p *PreCommit) CreateSchemaYamlInputs() []input.Input {
 	var inputs []input.Input
 	for _, chartName := range p.params.HelmCharts {
 		inputs = append(inputs, file.NewCreateSchemaYamlInput(p.params, chartName))
+		inputs = append(inputs, file.NewCreateAppPlatformValuesInput(p.params, chartName))
 	}
 	return inputs
 }

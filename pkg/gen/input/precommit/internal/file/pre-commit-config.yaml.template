@@ -156,7 +156,7 @@ repos:
         name: "generate + fix + normalize helm/{{.}}/values.schema.json"
         language: golang
         additional_dependencies: ['github.com/giantswarm/schemalint/v2@v2.6.3']
-        files: ^helm/{{.}}/(values\.yaml|\.schema\.yaml|values\.schema\.json)$
+        files: ^helm/{{.}}/(values\.yaml|\.schema\.yaml|values\.schema\.json|zz_generated\.app-platform\.values\.yaml)$
         pass_filenames: false
         require_serial: true
         entry: sh -c
