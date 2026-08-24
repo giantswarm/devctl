@@ -160,82 +160,74 @@ workflows:
             only: /^v.*/
 {{- end }}
 {{- if .HasDockerfile }}
+
+    # Branch image build: one job per architecture, each on a machine of that
+    # architecture, so no RUN step is emulated. The jobs run concurrently, so
+    # wall clock is the slower single build rather than the sum.
+    #
+{{- if .BranchPublish }}
+    # Branch builds (opt-in) publish a dev image, so these push by digest and the
+    # push-to-registries job below joins them into a tagged index.
+{{- else }}
+    # push: false validates that the Dockerfile still builds for each
+    # architecture without pushing anything, so regressions surface on the PR
+    # instead of at tag time. Nothing is pushed, so there is no digest to join
+    # and no push-to-registries job on this path.
+{{- end }}
+{{- range .BranchImageBuilds }}
+    - architect/build-image:
+        context: architect
+        name: {{ .Name }}
+        platform: {{ .Platform }}
+        resource_class: {{ .ResourceClass }}
+{{- if not $.BranchPublish }}
+        push: false
+{{- end }}
+{{- if and $.BranchPublish $.ForcePublic }}
+        # Private repo that publishes a public image: architect otherwise
+        # derives private from the repo visibility, so force the public push.
+        force-public: true
+{{- end }}
+{{- if $.ImageDockerfile }}
+        dockerfile: {{ $.ImageDockerfile }}
+{{- end }}
+{{- if $.ImageName }}
+        image: {{ $.ImageName }}
+{{- end }}
+{{- if or $.BuildJobName $.ImagePreBuildJob }}
+        requires:
+{{- if $.BuildJobName }}
+        - {{ $.BuildJobName }}
+{{- end }}
+{{- if $.ImagePreBuildJob }}
+        # Repo-owned pre-build job (defined in .circleci/custom.yml). The branch
+        # image build needs the same workspace handoff as the release build, so
+        # the generator carries the dependency.
+        - {{ $.ImagePreBuildJob }}
+{{- end }}
+{{- end }}
+        filters:
+          branches:
+            ignore:
+            - main
+{{- end }}
 {{- if .BranchPublish }}
 
-    # Branch builds (opt-in): amd64 dev image to gsoci for PR validation,
-    # coupled with the branch chart push below. v9's push-to-registries always
-    # uses buildx; platforms is pinned to amd64 to keep branch builds fast.
+    # Joins the per-architecture digests into a tagged dev index, coupled with
+    # the branch chart push below.
     - architect/push-to-registries:
         context: architect
         name: push-to-registries
+        platforms: "{{ .ImagePlatforms }}"
 {{- if .ForcePublic }}
-        # Private repo that publishes a public image: architect otherwise
-        # derives private from the repo visibility, so force the public push.
         force-public: true
 {{- end }}
-{{- if .ImageDockerfile }}
-        dockerfile: {{ .ImageDockerfile }}
-{{- end }}
 {{- if .ImageName }}
         image: {{ .ImageName }}
 {{- end }}
-{{- if .ImagePlatforms }}
-        platforms: {{ .ImagePlatforms }}
-{{- else }}
-        platforms: linux/amd64
-{{- end }}
-{{- if or .BuildJobName .ImagePreBuildJob }}
         requires:
-{{- if .BuildJobName }}
-        - {{ .BuildJobName }}
-{{- end }}
-{{- if .ImagePreBuildJob }}
-        # Repo-owned pre-build job (defined in .circleci/custom.yml). The
-        # branch image build needs the same workspace handoff as the release
-        # job, so the generator carries the dependency.
-        - {{ .ImagePreBuildJob }}
-{{- end }}
-{{- end }}
-        filters:
-          branches:
-            ignore:
-            - main
-{{- else }}
-
-    # Branches: validate the image build without pushing anything (push: false
-    # keeps the buildx result in the BuildKit cache). Same hadolint lint and
-    # multi-arch build as the release job, so Dockerfile regressions surface
-    # on the PR instead of at tag time.
-    - architect/push-to-registries:
-        context: architect
-        name: build-image
-        push: false
-{{- if .ImageDockerfile }}
-        dockerfile: {{ .ImageDockerfile }}
-{{- end }}
-{{- if .ImageName }}
-        image: {{ .ImageName }}
-{{- end }}
-{{- if .ImagePlatforms }}
-        platforms: {{ .ImagePlatforms }}
-{{- else if .ReleaseBinaries }}
-        # Same platform cap as the release job: go-build's six-target
-        # architectures matrix writes all of them to .platforms, and buildx
-        # must not attempt the darwin/windows manifests under QEMU.
-        platforms: "linux/amd64,linux/arm64"
-{{- end }}
-{{- if or .BuildJobName .ImagePreBuildJob }}
-        requires:
-{{- if .BuildJobName }}
-        - {{ .BuildJobName }}
-{{- end }}
-{{- if .ImagePreBuildJob }}
-        # Repo-owned pre-build job (defined in .circleci/custom.yml). The
-        # branch image validation needs the same workspace handoff as the
-        # release job (it builds the same Dockerfile), so the generator carries
-        # the dependency.
-        - {{ .ImagePreBuildJob }}
-{{- end }}
+{{- range .BranchImageBuilds }}
+        - {{ .Name }}
 {{- end }}
         filters:
           branches:
@@ -243,52 +235,85 @@ workflows:
             - main
 {{- end }}
 
-    # Tag builds: push multi-arch image to gsoci + gsociprivate. Aliyun is
-    # handled by the sync-china-registry job below (orb's split-china-push
-    # mechanism), so the buildx push no longer crosses the Pacific.
-    - architect/push-to-registries:
-        context: architect
-        name: push-to-registries-release
-{{- if .ForcePublic }}
-        # Private repo that publishes a public image: architect otherwise
-        # derives private from the repo visibility, so force the public push.
-        force-public: true
-{{- end }}
-{{- if .ImageDockerfile }}
-        dockerfile: {{ .ImageDockerfile }}
-{{- end }}
-{{- if .ImageName }}
-        image: {{ .ImageName }}
-{{- end }}
+    # Tag builds: one build job per architecture, then a single job that joins
+    # their digests into a tagged index in gsoci + gsociprivate, signs it and
+    # attests it. Aliyun is handled by the sync-china-registry job below (the
+    # orb's split-china-push mechanism), so no push crosses the Pacific.
+    #
+    # Each build job pushes its platform BY DIGEST, setting no tag: a
+    # single-architecture manifest is not independently useful, and tagging one
+    # would publish something consumers could pull by accident.
+    #
+    # registries-data / split-china-push must be identical on the build jobs and
+    # the push-to-registries job below, or the two disagree about which
+    # registries hold the per-architecture digests.
 {{- if .ImagePrivateOnly }}
-        # Private repo: ship the image to the private registry only. No public
-        # gsoci copy and no Aliyun mirror, so split-china-push and the paired
-        # sync-china-registry job are both omitted.
+    #
+    # Private repo: ship the image to the private registry only. No public gsoci
+    # copy and no Aliyun mirror, so split-china-push and the paired
+    # sync-china-registry job are both omitted.
+{{- end }}
+{{- range .ReleaseImageBuilds }}
+    - architect/build-image:
+        context: architect
+        name: {{ .Name }}
+        platform: {{ .Platform }}
+        resource_class: {{ .ResourceClass }}
+{{- if $.ForcePublic }}
+        # Private repo that publishes a public image: architect otherwise
+        # derives private from the repo visibility, so force the public push.
+        force-public: true
+{{- end }}
+{{- if $.ImageDockerfile }}
+        dockerfile: {{ $.ImageDockerfile }}
+{{- end }}
+{{- if $.ImageName }}
+        image: {{ $.ImageName }}
+{{- end }}
+{{- if $.ImagePrivateOnly }}
         registries-data: |-
           private gsociprivate.azurecr.io ACR_GSOCIPRIVATE_USERNAME ACR_GSOCIPRIVATE_PASSWORD true
 {{- else }}
         split-china-push: true
 {{- end }}
-{{- if .ImagePlatforms }}
-        platforms: {{ .ImagePlatforms }}
-{{- else if .ReleaseBinaries }}
-        # Cap buildx to the two linux platforms. go-build's architectures
-        # matrix above writes all six targets to .platforms; without this cap
-        # the orb auto-derives --platform from that file and buildx tries to
-        # build the darwin/windows manifests under QEMU and hangs.
-        platforms: "linux/amd64,linux/arm64"
-{{- end }}
-{{- if or .BuildJobName .ImagePreBuildJob }}
+{{- if or $.BuildJobName $.ImagePreBuildJob }}
         requires:
-{{- if .BuildJobName }}
-        - {{ .BuildJobName }}
+{{- if $.BuildJobName }}
+        - {{ $.BuildJobName }}
 {{- end }}
-{{- if .ImagePreBuildJob }}
+{{- if $.ImagePreBuildJob }}
         # Repo-owned pre-build job (defined in .circleci/custom.yml). The
         # generated job cannot be injected with this dependency via the
         # append-only custom.yml merge, so the generator carries it.
-        - {{ .ImagePreBuildJob }}
+        - {{ $.ImagePreBuildJob }}
 {{- end }}
+{{- end }}
+        filters:
+          tags:
+            only: /^v.*/
+          branches:
+            ignore: /.*/
+{{- end }}
+
+    - architect/push-to-registries:
+        context: architect
+        name: push-to-registries-release
+        platforms: "{{ .ImagePlatforms }}"
+{{- if .ForcePublic }}
+        force-public: true
+{{- end }}
+{{- if .ImageName }}
+        image: {{ .ImageName }}
+{{- end }}
+{{- if .ImagePrivateOnly }}
+        registries-data: |-
+          private gsociprivate.azurecr.io ACR_GSOCIPRIVATE_USERNAME ACR_GSOCIPRIVATE_PASSWORD true
+{{- else }}
+        split-china-push: true
+{{- end }}
+        requires:
+{{- range .ReleaseImageBuilds }}
+        - {{ .Name }}
 {{- end }}
         filters:
           tags:
