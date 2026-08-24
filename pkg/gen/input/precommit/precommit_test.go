@@ -90,11 +90,14 @@ func Test_New_WithHelmchartFlavor(t *testing.T) {
 	}
 
 	inputs := p.CreateSchemaYamlInputs()
-	if len(inputs) != 1 {
-		t.Fatalf("expected 1 schema input, got %d", len(inputs))
+	if len(inputs) != 2 {
+		t.Fatalf("expected 2 schema inputs, got %d", len(inputs))
 	}
 	if inputs[0].Path != "helm/test-chart/.schema.yaml" {
 		t.Errorf("path: expected %q, got %q", "helm/test-chart/.schema.yaml", inputs[0].Path)
+	}
+	if inputs[1].Path != "helm/test-chart/zz_generated.app-platform.values.yaml" {
+		t.Errorf("path: expected %q, got %q", "helm/test-chart/zz_generated.app-platform.values.yaml", inputs[1].Path)
 	}
 }
 
