@@ -207,6 +207,14 @@ type Config struct {
 	// Flavours are the devctl gen flavours. The "app" flavour selects the
 	// chart pipeline.
 	Flavours gen.FlavourSlice
+	// SkipAppCatalog drops the GitHub app catalog push from the chart pipeline
+	// (push-to-app-catalog push_to_appcatalog: false), keeping the OCI registry
+	// push. Every GitHub app catalog is a public repository, so a private chart
+	// published to one is world-readable regardless of the source repo's
+	// visibility. Set it for private charts that must stay private: the chart
+	// then ships only to gsociprivate.azurecr.io, which Flux consumes via an
+	// OCIRepository. Only applies to a chart/app repo (the "app" flavour).
+	SkipAppCatalog bool
 	// SkipATS opts the chart pipeline out of app-test-suite (ATS) chart tests.
 	// When set, the run-tests-with-ats jobs and the canonical tests/ats/Pipfile
 	// are not generated, and the chart push jobs gate directly on build-chart.
@@ -468,6 +476,7 @@ func New(config Config) (*CircleCI, error) {
 			Language:                 config.Language.String(),
 			HasDockerfile:            hasDockerfile,
 			HasApp:                   hasApp,
+			SkipAppCatalog:           config.SkipAppCatalog,
 			SkipATS:                  config.SkipATS,
 			ChartName:                chartName,
 			ForcePublic:              config.ForcePublic,
