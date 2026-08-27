@@ -682,41 +682,92 @@ func Test_ChartName(t *testing.T) {
 	}
 }
 
-// Test_KeepChartAppVersion verifies that override_app_version: false lands on
-// every generated chart job for a chart that vendors an upstream release, and
-// that the default leaves appVersion stamping on.
-func Test_KeepChartAppVersion(t *testing.T) {
-	got := render(t, Config{
-		RepoName:            "agentgateway",
-		Language:            gen.Language(""),
-		Flavours:            gen.FlavourSlice{gen.FlavourApp},
-		KeepChartAppVersion: true,
-	})
+// Test_AppVersionFollowsRepoShape verifies which chart jobs keep the appVersion
+// declared in Chart.yaml, and that an explicit OverrideChartAppVersion
+// overrules the derivation in either direction.
+//
+// appVersion is the version of the packaged application. A repo that builds its
+// own image ships the app it packages, so appVersion is its own version and
+// app-build-suite stamps it. A chart-only repo packages an app built elsewhere,
+// so the declared appVersion has to survive packaging.
+func Test_AppVersionFollowsRepoShape(t *testing.T) {
+	yes, no := true, false
 
-	// build-chart and push-chart-release. A branch push job only exists with
-	// BranchPublish, so two is the whole set here.
-	if n := strings.Count(got, "override_app_version: false"); n != 2 {
-		t.Errorf("expected override_app_version on build-chart and push-chart-release, found %d:\n%s", n, got)
+	testCases := []struct {
+		name     string
+		config   Config
+		expected int // occurrences of `override_app_version: false`
+	}{
+		{
+			name: "chart-only repo keeps the declared appVersion",
+			config: Config{
+				RepoName: "agentgateway",
+				Language: gen.Language(""),
+				Flavours: gen.FlavourSlice{gen.FlavourApp},
+			},
+			// build-chart and push-chart-release; the branch push job needs BranchPublish.
+			expected: 2,
+		},
+		{
+			name: "the branch chart push keeps it too",
+			config: Config{
+				RepoName:      "agentgateway",
+				Language:      gen.Language(""),
+				Flavours:      gen.FlavourSlice{gen.FlavourApp},
+				BranchPublish: true,
+			},
+			expected: 3,
+		},
+		{
+			name: "a repo that builds its own image stamps it",
+			config: Config{
+				RepoName:      "observability-operator",
+				Language:      gen.LanguageGo,
+				Flavours:      gen.FlavourSlice{gen.FlavourApp},
+				HasDockerfile: true,
+			},
+			expected: 0,
+		},
+		{
+			name: "a nested Dockerfile counts as building the app",
+			config: Config{
+				RepoName:        "backstage",
+				Language:        gen.LanguageNode,
+				Flavours:        gen.FlavourSlice{gen.FlavourApp},
+				ImageDockerfile: "packages/backend/Dockerfile",
+			},
+			expected: 0,
+		},
+		{
+			name: "an image-building repo can keep a foreign appVersion",
+			config: Config{
+				RepoName:                "observability-operator",
+				Language:                gen.LanguageGo,
+				Flavours:                gen.FlavourSlice{gen.FlavourApp},
+				HasDockerfile:           true,
+				OverrideChartAppVersion: &no,
+			},
+			expected: 2,
+		},
+		{
+			name: "a chart-only repo can ask to be stamped anyway",
+			config: Config{
+				RepoName:                "agentgateway",
+				Language:                gen.Language(""),
+				Flavours:                gen.FlavourSlice{gen.FlavourApp},
+				OverrideChartAppVersion: &yes,
+			},
+			expected: 0,
+		},
 	}
 
-	branch := render(t, Config{
-		RepoName:            "agentgateway",
-		Language:            gen.Language(""),
-		Flavours:            gen.FlavourSlice{gen.FlavourApp},
-		KeepChartAppVersion: true,
-		BranchPublish:       true,
-	})
-	if n := strings.Count(branch, "override_app_version: false"); n != 3 {
-		t.Errorf("expected override_app_version on the branch chart push too, found %d:\n%s", n, branch)
-	}
-
-	def := render(t, Config{
-		RepoName: "agentgateway",
-		Language: gen.Language(""),
-		Flavours: gen.FlavourSlice{gen.FlavourApp},
-	})
-	if contains(def, "override_app_version") {
-		t.Errorf("override_app_version leaked without KeepChartAppVersion:\n%s", def)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := render(t, tc.config)
+			if n := strings.Count(got, "override_app_version: false"); n != tc.expected {
+				t.Errorf("expected override_app_version on %d chart jobs, found %d:\n%s", tc.expected, n, got)
+			}
+		})
 	}
 }
 

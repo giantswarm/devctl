@@ -328,9 +328,9 @@ workflows:
         app_catalog_test: {{ .AppCatalogTest }}
         chart: {{ .ChartName }}
 {{- if .KeepChartAppVersion }}
-        # The chart vendors an upstream release and declares that release as its
-        # appVersion, so app-build-suite must not stamp the chart's own version
-        # over it.
+        # `appVersion` is the version of the packaged application, and this chart
+        # packages an app built elsewhere, so that app's version is what
+        # Chart.yaml declares. Keep it; the chart version is still stamped.
         override_app_version: false
 {{- end }}
         push_to_appcatalog: false
@@ -395,9 +395,9 @@ workflows:
         app_catalog_test: {{ .AppCatalogTest }}
         chart: {{ .ChartName }}
 {{- if .KeepChartAppVersion }}
-        # The chart vendors an upstream release and declares that release as its
-        # appVersion, so app-build-suite must not stamp the chart's own version
-        # over it.
+        # `appVersion` is the version of the packaged application, and this chart
+        # packages an app built elsewhere, so that app's version is what
+        # Chart.yaml declares. Keep it; the chart version is still stamped.
         override_app_version: false
 {{- end }}
         requires:
@@ -430,9 +430,9 @@ workflows:
         app_catalog_test: {{ .AppCatalogTest }}
         chart: {{ .ChartName }}
 {{- if .KeepChartAppVersion }}
-        # The chart vendors an upstream release and declares that release as its
-        # appVersion, so app-build-suite must not stamp the chart's own version
-        # over it.
+        # `appVersion` is the version of the packaged application, and this chart
+        # packages an app built elsewhere, so that app's version is what
+        # Chart.yaml declares. Keep it; the chart version is still stamped.
         override_app_version: false
 {{- end }}
         requires:
