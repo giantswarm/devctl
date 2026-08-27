@@ -40,7 +40,7 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
+func (r *runner) run(ctx context.Context, cmd *cobra.Command, _ []string) error {
 	var err error
 
 	// The image pipeline is derived from repo content: architect already
@@ -50,6 +50,18 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 
 	// Node package manager is derived from the lockfile, the same content-signal
 	// style as the Dockerfile probe. An explicit --package-manager wins.
+	// appVersion is the version of the packaged application, so whether the
+	// build stamps it follows from the repo's shape (see the generator). nil
+	// means "derive"; an explicit flag overrules it in either direction.
+	var overrideChartAppVersion *bool
+	if cmd.Flags().Changed(flagOverrideChartAppVersion) {
+		value := r.flag.OverrideChartAppVersion
+		overrideChartAppVersion = &value
+	} else if r.flag.KeepChartAppVersion {
+		value := false
+		overrideChartAppVersion = &value
+	}
+
 	packageManager := r.flag.PackageManager
 	if packageManager == "" && r.flag.Language == gen.LanguageNode {
 		packageManager = detectPackageManager()
@@ -73,29 +85,29 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 	var circleciInput *circleci.CircleCI
 	{
 		c := circleci.Config{
-			RepoName:            r.flag.RepoName,
-			Language:            r.flag.Language,
-			Flavours:            r.flag.Flavours,
-			SkipATS:             r.flag.SkipATS,
-			HasDockerfile:       hasDockerfile,
-			AppCatalog:          r.flag.AppCatalog,
-			AppCatalogTest:      r.flag.AppCatalogTest,
-			ChartName:           r.flag.ChartName,
-			KeepChartAppVersion: r.flag.KeepChartAppVersion,
-			ForcePublic:         r.flag.ForcePublic,
-			BranchPublish:       r.flag.BranchPublish,
-			BuildConcurrency:    r.flag.BuildConcurrency,
-			ImagePreBuildJob:    r.flag.ImagePreBuildJob,
-			ImagePrivateOnly:    r.flag.ImagePrivateOnly,
-			ImageName:           r.flag.ImageName,
-			ImagePlatforms:      r.flag.ImagePlatforms,
-			ImageDockerfile:     r.flag.ImageDockerfile,
-			ResourceClass:       r.flag.ResourceClass,
-			PackageManager:      packageManager,
-			NodeImageVersion:    nodeImageVersion,
-			NodeTestTarget:      r.flag.NodeTestTarget,
-			NodeBuildTarget:     r.flag.NodeBuildTarget,
-			NodeBuildOutput:     r.flag.NodeBuildOutput,
+			RepoName:                r.flag.RepoName,
+			Language:                r.flag.Language,
+			Flavours:                r.flag.Flavours,
+			SkipATS:                 r.flag.SkipATS,
+			HasDockerfile:           hasDockerfile,
+			AppCatalog:              r.flag.AppCatalog,
+			AppCatalogTest:          r.flag.AppCatalogTest,
+			ChartName:               r.flag.ChartName,
+			OverrideChartAppVersion: overrideChartAppVersion,
+			ForcePublic:             r.flag.ForcePublic,
+			BranchPublish:           r.flag.BranchPublish,
+			BuildConcurrency:        r.flag.BuildConcurrency,
+			ImagePreBuildJob:        r.flag.ImagePreBuildJob,
+			ImagePrivateOnly:        r.flag.ImagePrivateOnly,
+			ImageName:               r.flag.ImageName,
+			ImagePlatforms:          r.flag.ImagePlatforms,
+			ImageDockerfile:         r.flag.ImageDockerfile,
+			ResourceClass:           r.flag.ResourceClass,
+			PackageManager:          packageManager,
+			NodeImageVersion:        nodeImageVersion,
+			NodeTestTarget:          r.flag.NodeTestTarget,
+			NodeBuildTarget:         r.flag.NodeBuildTarget,
+			NodeBuildOutput:         r.flag.NodeBuildOutput,
 		}
 
 		circleciInput, err = circleci.New(c)

@@ -228,14 +228,15 @@ type Config struct {
 	// for repos whose chart directory does not match the repo name (e.g.
 	// docs-proxy ships helm/docs-proxy-app).
 	ChartName string
-	// KeepChartAppVersion forces `override_app_version: false` on the chart jobs
-	// for a repo that DOES build its own image. It is rarely needed: a repo
-	// with no image pipeline gets that already, because the chart then packages
-	// an app built elsewhere and `appVersion` is that app's version. Set it only
-	// for a repo that builds an image and still declares an appVersion that is
-	// not its own version. The append-only custom.yml merge cannot add a param
-	// to a generated job, so the generator carries it.
-	KeepChartAppVersion bool
+	// OverrideChartAppVersion decides whether app-build-suite stamps the
+	// computed build version into the chart's appVersion. nil derives it from
+	// the repo's shape: a repo that builds its own image ships the app it
+	// packages, so its appVersion is its own version and is stamped; a
+	// chart-only repo packages an app built elsewhere, so the appVersion
+	// declared in Chart.yaml is kept. A non-nil value overrules that in either
+	// direction. The append-only custom.yml merge cannot add a param to a
+	// generated job, so the generator carries it.
+	OverrideChartAppVersion *bool
 	// ForcePublic pushes the image and chart as public artifacts even though
 	// the repo is private (architect force-public: true). Set it for private
 	// repos that publish public artifacts (e.g. web-assets). Mutually exclusive
@@ -335,6 +336,15 @@ func New(config Config) (*CircleCI, error) {
 	// HasDockerfile from a root os.Stat that misses it, so the explicit path
 	// also turns the image pipeline on.
 	hasDockerfile := config.HasDockerfile || config.ImageDockerfile != ""
+	// appVersion is the version of the packaged application. A repo that builds
+	// its own image ships the app it packages, so appVersion is its own version
+	// and app-build-suite stamps it. A chart-only repo packages an app built
+	// elsewhere, so the appVersion declared in Chart.yaml has to survive
+	// packaging. An explicit OverrideChartAppVersion overrules the derivation.
+	keepChartAppVersion := !hasDockerfile
+	if config.OverrideChartAppVersion != nil {
+		keepChartAppVersion = !*config.OverrideChartAppVersion
+	}
 	isNode := config.Language == gen.LanguageNode
 	if config.Language != gen.LanguageGo && !isNode && !hasDockerfile && !hasApp {
 		return nil, microerror.Maskf(invalidConfigError, "no jobs would be generated: set --language=go or --language=node, add a Dockerfile, or use the app flavour")
@@ -478,7 +488,7 @@ func New(config Config) (*CircleCI, error) {
 			HasApp:                   hasApp,
 			SkipATS:                  config.SkipATS,
 			ChartName:                chartName,
-			KeepChartAppVersion:      config.KeepChartAppVersion,
+			KeepChartAppVersion:      keepChartAppVersion,
 			ForcePublic:              config.ForcePublic,
 			AppCatalog:               appCatalog,
 			AppCatalogTest:           appCatalogTest,

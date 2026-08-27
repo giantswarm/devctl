@@ -11,53 +11,55 @@ import (
 )
 
 const (
-	flagAppCatalog          = "app-catalog"
-	flagAppCatalogTest      = "app-catalog-test"
-	flagBranchPublish       = "branch-publish"
-	flagBuildConcurrency    = "build-concurrency"
-	flagChartName           = "chart-name"
-	flagKeepChartAppVersion = "keep-chart-app-version"
-	flagForcePublic         = "force-public"
-	flagImagePreBuildJob    = "image-pre-build-job"
-	flagImagePrivateOnly    = "image-private-only"
-	flagImageName           = "image-name"
-	flagImagePlatforms      = "image-platforms"
-	flagImageDockerfile     = "image-dockerfile"
-	flagResourceClass       = "resource-class"
-	flagSkipATS             = "skip-ats"
-	flagFlavour             = "flavour"
-	flagLanguage            = "language"
-	flagRepoName            = "repo-name"
-	flagPackageManager      = "package-manager"
-	flagNodeImageVersion    = "node-image-version"
-	flagNodeTestTarget      = "node-test-target"
-	flagNodeBuildTarget     = "node-build-target"
-	flagNodeBuildOutput     = "node-build-output"
+	flagAppCatalog              = "app-catalog"
+	flagAppCatalogTest          = "app-catalog-test"
+	flagBranchPublish           = "branch-publish"
+	flagBuildConcurrency        = "build-concurrency"
+	flagChartName               = "chart-name"
+	flagKeepChartAppVersion     = "keep-chart-app-version"
+	flagOverrideChartAppVersion = "override-chart-app-version"
+	flagForcePublic             = "force-public"
+	flagImagePreBuildJob        = "image-pre-build-job"
+	flagImagePrivateOnly        = "image-private-only"
+	flagImageName               = "image-name"
+	flagImagePlatforms          = "image-platforms"
+	flagImageDockerfile         = "image-dockerfile"
+	flagResourceClass           = "resource-class"
+	flagSkipATS                 = "skip-ats"
+	flagFlavour                 = "flavour"
+	flagLanguage                = "language"
+	flagRepoName                = "repo-name"
+	flagPackageManager          = "package-manager"
+	flagNodeImageVersion        = "node-image-version"
+	flagNodeTestTarget          = "node-test-target"
+	flagNodeBuildTarget         = "node-build-target"
+	flagNodeBuildOutput         = "node-build-output"
 )
 
 type flag struct {
-	AppCatalog          string
-	AppCatalogTest      string
-	BranchPublish       bool
-	BuildConcurrency    string
-	ChartName           string
-	KeepChartAppVersion bool
-	ForcePublic         bool
-	ImagePreBuildJob    string
-	ImagePrivateOnly    bool
-	ImageName           string
-	ImagePlatforms      string
-	ImageDockerfile     string
-	ResourceClass       string
-	SkipATS             bool
-	Flavours            gen.FlavourSlice
-	Language            gen.Language
-	RepoName            string
-	PackageManager      string
-	NodeImageVersion    string
-	NodeTestTarget      string
-	NodeBuildTarget     string
-	NodeBuildOutput     string
+	AppCatalog              string
+	AppCatalogTest          string
+	BranchPublish           bool
+	BuildConcurrency        string
+	ChartName               string
+	KeepChartAppVersion     bool
+	OverrideChartAppVersion bool
+	ForcePublic             bool
+	ImagePreBuildJob        string
+	ImagePrivateOnly        bool
+	ImageName               string
+	ImagePlatforms          string
+	ImageDockerfile         string
+	ResourceClass           string
+	SkipATS                 bool
+	Flavours                gen.FlavourSlice
+	Language                gen.Language
+	RepoName                string
+	PackageManager          string
+	NodeImageVersion        string
+	NodeTestTarget          string
+	NodeBuildTarget         string
+	NodeBuildOutput         string
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
@@ -66,7 +68,9 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&f.BranchPublish, flagBranchPublish, false, "Publish a dev image and chart on branch builds. By default branches build + test only (no push); when set, the branch path additionally pushes an amd64 dev image and the dev chart (coupled).")
 	cmd.Flags().StringVar(&f.BuildConcurrency, flagBuildConcurrency, "", `Override how many architectures the cli-flavour go-build job compiles concurrently (architect go-build "build_concurrency" param). Empty defaults to "auto" (nproc). Lower it (e.g. "2") for repos whose binary is large enough that a cold full-matrix cross-compile OOMs the runner at "auto" -- memory, not CPU, is the binding constraint, and a killed build never stores the build cache. Only applies to the cli flavour.`)
 	cmd.Flags().StringVar(&f.ChartName, flagChartName, "", "Override the chart name (the push-to-app-catalog `chart` param and the helm/<chart> directory). Empty defaults to the repo name. Set it for repos whose chart directory does not match the repo name (e.g. docs-proxy -> docs-proxy-app). The append-only custom.yml merge cannot rename a generated job's chart.")
-	cmd.Flags().BoolVar(&f.KeepChartAppVersion, flagKeepChartAppVersion, false, "Force `override_app_version: false` on the chart jobs even for a repo that builds its own image. Rarely needed: a repo with no image pipeline gets it already, because the chart then packages an app built elsewhere and its appVersion is that app's version. Set it only for a repo that builds an image and still declares an appVersion that is not its own version.")
+	cmd.Flags().BoolVar(&f.OverrideChartAppVersion, flagOverrideChartAppVersion, true, "Whether app-build-suite stamps the computed build version into the chart's appVersion. Leave it UNSET to derive it from the repo: a repo that builds its own image ships the app it packages, so its appVersion is its own version and gets stamped; a chart-only repo packages an app built elsewhere, so the appVersion declared in Chart.yaml is kept. Pass it explicitly only to overrule that: `=false` for a repo that builds an image and still declares a foreign appVersion, `=true` for a chart-only repo that wants its appVersion stamped anyway. The chart version is always stamped either way.")
+	cmd.Flags().BoolVar(&f.KeepChartAppVersion, flagKeepChartAppVersion, false, "Deprecated alias for --override-chart-app-version=false.")
+	_ = cmd.Flags().MarkDeprecated(flagKeepChartAppVersion, fmt.Sprintf("use --%s=false", flagOverrideChartAppVersion))
 	cmd.Flags().BoolVar(&f.ForcePublic, flagForcePublic, false, "Push the image and chart as public artifacts even though the repo is private (architect `force-public: true`). Set it for private repos that publish public artifacts (e.g. web-assets). Mutually exclusive with --image-private-only. The append-only custom.yml merge cannot add this to a generated job.")
 	cmd.Flags().StringVar(&f.ImagePreBuildJob, flagImagePreBuildJob, "", "Name of a repo-owned job (defined in .circleci/custom.yml) the release image build must wait on. Adds a `requires` entry to push-to-registries-release, which the append-only custom.yml merge cannot inject into a generated job. Used for workspace-handoff pre-steps. Empty for the common case.")
 	cmd.Flags().BoolVar(&f.ImagePrivateOnly, flagImagePrivateOnly, false, "Ship the image to the private registry only (gsociprivate), replacing split-china-push and omitting the sync-china-registry job. Set it for private repos whose image must not land in the public catalog.")
