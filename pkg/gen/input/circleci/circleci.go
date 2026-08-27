@@ -72,7 +72,7 @@ const (
 // can hold .nvmrc on the docker datasource in its own renovate config.
 //
 // renovate: datasource=docker depName=cimg/node
-const DefaultNodeImageVersion = "24.19.0"
+const DefaultNodeImageVersion = "24.20.0"
 
 // DefaultNodeTestTarget is the package.json script the Node job runs for the
 // verify phase when a repo does not override it. The repo composes
