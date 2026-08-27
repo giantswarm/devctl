@@ -31,6 +31,14 @@ type Params struct {
 	// docs-proxy ships helm/docs-proxy-app). The append-only custom.yml merge
 	// cannot rename a generated job's chart, so the generator carries it.
 	ChartName string
+	// KeepChartAppVersion leaves the appVersion declared in Chart.yaml alone
+	// (the push-to-app-catalog `override_app_version: false` param). By default
+	// app-build-suite stamps appVersion with the computed build version, so the
+	// published chart advertises the chart's own version. Set it for a chart
+	// that vendors an upstream release and whose Chart.yaml appVersion is that
+	// upstream version, which is what appVersion means. Only meaningful for a
+	// chart/app repo (HasApp); ignored otherwise.
+	KeepChartAppVersion bool
 	// ForcePublic pushes the image and chart as public artifacts even though
 	// the repo is private (architect `force-public: true` on push-to-registries
 	// and push-to-app-catalog). Set it for private repos that publish public

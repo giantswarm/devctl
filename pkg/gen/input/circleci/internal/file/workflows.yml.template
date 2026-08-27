@@ -327,6 +327,12 @@ workflows:
         app_catalog: {{ .AppCatalog }}
         app_catalog_test: {{ .AppCatalogTest }}
         chart: {{ .ChartName }}
+{{- if .KeepChartAppVersion }}
+        # The chart vendors an upstream release and declares that release as its
+        # appVersion, so app-build-suite must not stamp the chart's own version
+        # over it.
+        override_app_version: false
+{{- end }}
         push_to_appcatalog: false
         push_to_oci_registry: false
         persist_chart_archive: true
@@ -388,6 +394,12 @@ workflows:
         app_catalog: {{ .AppCatalog }}
         app_catalog_test: {{ .AppCatalogTest }}
         chart: {{ .ChartName }}
+{{- if .KeepChartAppVersion }}
+        # The chart vendors an upstream release and declares that release as its
+        # appVersion, so app-build-suite must not stamp the chart's own version
+        # over it.
+        override_app_version: false
+{{- end }}
         requires:
 {{- if .SkipATS }}
         - build-chart
@@ -417,6 +429,12 @@ workflows:
         app_catalog: {{ .AppCatalog }}
         app_catalog_test: {{ .AppCatalogTest }}
         chart: {{ .ChartName }}
+{{- if .KeepChartAppVersion }}
+        # The chart vendors an upstream release and declares that release as its
+        # appVersion, so app-build-suite must not stamp the chart's own version
+        # over it.
+        override_app_version: false
+{{- end }}
         requires:
 {{- if .SkipATS }}
         - build-chart

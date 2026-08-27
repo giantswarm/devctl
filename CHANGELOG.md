@@ -9,6 +9,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `gen circleci --keep-chart-app-version`: emits `override_app_version: false` on every generated
+  chart job, so app-build-suite leaves the `appVersion` declared in `Chart.yaml` alone. The default is
+  unchanged: appVersion is stamped with the computed build version. Set it for a chart that vendors an
+  upstream release and declares that release as its `appVersion` (giantswarm/agentgateway, whose chart
+  version line is its own). The append-only `custom.yml` merge cannot add a parameter to a generated
+  job, so the generator has to carry it. Requires architect-orb v9.3.0+ (the parameter it sets).
 - `release create`: records the containerd version as a `containerd` component and links it in the release
   notes. It is derived from the release's `os-tooling` version, since that is the version nodes run rather
   than the one Flatcar embeds.
