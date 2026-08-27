@@ -682,41 +682,65 @@ func Test_ChartName(t *testing.T) {
 	}
 }
 
-// Test_KeepChartAppVersion verifies that override_app_version: false lands on
-// every generated chart job for a chart that vendors an upstream release, and
-// that the default leaves appVersion stamping on.
-func Test_KeepChartAppVersion(t *testing.T) {
-	got := render(t, Config{
-		RepoName:            "agentgateway",
-		Language:            gen.Language(""),
-		Flavours:            gen.FlavourSlice{gen.FlavourApp},
-		KeepChartAppVersion: true,
-	})
-
-	// build-chart and push-chart-release. A branch push job only exists with
-	// BranchPublish, so two is the whole set here.
-	if n := strings.Count(got, "override_app_version: false"); n != 2 {
-		t.Errorf("expected override_app_version on build-chart and push-chart-release, found %d:\n%s", n, got)
-	}
-
-	branch := render(t, Config{
-		RepoName:            "agentgateway",
-		Language:            gen.Language(""),
-		Flavours:            gen.FlavourSlice{gen.FlavourApp},
-		KeepChartAppVersion: true,
-		BranchPublish:       true,
-	})
-	if n := strings.Count(branch, "override_app_version: false"); n != 3 {
-		t.Errorf("expected override_app_version on the branch chart push too, found %d:\n%s", n, branch)
-	}
-
-	def := render(t, Config{
+// Test_AppVersionFollowsRepoShape verifies which chart jobs keep the appVersion
+// declared in Chart.yaml. A repo that builds its own image ships the app it
+// packages, so appVersion is that repo's version and app-build-suite stamps it.
+// A chart-only repo packages an app built elsewhere, so its appVersion is that
+// app's version and has to survive packaging.
+func Test_AppVersionFollowsRepoShape(t *testing.T) {
+	chartOnly := render(t, Config{
 		RepoName: "agentgateway",
 		Language: gen.Language(""),
 		Flavours: gen.FlavourSlice{gen.FlavourApp},
 	})
-	if contains(def, "override_app_version") {
-		t.Errorf("override_app_version leaked without KeepChartAppVersion:\n%s", def)
+	// build-chart and push-chart-release; the branch push job needs BranchPublish.
+	if n := strings.Count(chartOnly, "override_app_version: false"); n != 2 {
+		t.Errorf("expected the appVersion kept on both chart jobs of a chart-only repo, found %d:\n%s", n, chartOnly)
+	}
+
+	branchPublish := render(t, Config{
+		RepoName:      "agentgateway",
+		Language:      gen.Language(""),
+		Flavours:      gen.FlavourSlice{gen.FlavourApp},
+		BranchPublish: true,
+	})
+	if n := strings.Count(branchPublish, "override_app_version: false"); n != 3 {
+		t.Errorf("expected the branch chart push to keep it too, found %d:\n%s", n, branchPublish)
+	}
+
+	buildsImage := render(t, Config{
+		RepoName:      "observability-operator",
+		Language:      gen.LanguageGo,
+		Flavours:      gen.FlavourSlice{gen.FlavourApp},
+		HasDockerfile: true,
+	})
+	if contains(buildsImage, "override_app_version") {
+		t.Errorf("a repo that builds its own image must keep appVersion == version:\n%s", buildsImage)
+	}
+
+	// A nested Dockerfile turns the image pipeline on the same way, so the repo
+	// counts as building the app it packages.
+	nested := render(t, Config{
+		RepoName:        "backstage",
+		Language:        gen.LanguageNode,
+		Flavours:        gen.FlavourSlice{gen.FlavourApp},
+		ImageDockerfile: "packages/backend/Dockerfile",
+	})
+	if contains(nested, "override_app_version") {
+		t.Errorf("ImageDockerfile forces the image pipeline on, so appVersion is stamped:\n%s", nested)
+	}
+
+	// The escape hatch: an image-building repo that declares an appVersion which
+	// is not its own version.
+	forced := render(t, Config{
+		RepoName:            "observability-operator",
+		Language:            gen.LanguageGo,
+		Flavours:            gen.FlavourSlice{gen.FlavourApp},
+		HasDockerfile:       true,
+		KeepChartAppVersion: true,
+	})
+	if n := strings.Count(forced, "override_app_version: false"); n != 2 {
+		t.Errorf("KeepChartAppVersion must still force it on an image-building repo, found %d:\n%s", n, forced)
 	}
 }
 

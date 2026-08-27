@@ -228,14 +228,13 @@ type Config struct {
 	// for repos whose chart directory does not match the repo name (e.g.
 	// docs-proxy ships helm/docs-proxy-app).
 	ChartName string
-	// KeepChartAppVersion leaves the appVersion declared in Chart.yaml alone
-	// (push-to-app-catalog `override_app_version: false`). By default
-	// app-build-suite stamps appVersion with the computed build version, so the
-	// published chart advertises the chart's own version. Set it for a chart
-	// that vendors an upstream release and declares that upstream version as
-	// its appVersion (e.g. agentgateway, whose chart line is its own). The
-	// append-only custom.yml merge cannot add a param to a generated job, so
-	// the generator carries it.
+	// KeepChartAppVersion forces `override_app_version: false` on the chart jobs
+	// for a repo that DOES build its own image. It is rarely needed: a repo
+	// with no image pipeline gets that already, because the chart then packages
+	// an app built elsewhere and `appVersion` is that app's version. Set it only
+	// for a repo that builds an image and still declares an appVersion that is
+	// not its own version. The append-only custom.yml merge cannot add a param
+	// to a generated job, so the generator carries it.
 	KeepChartAppVersion bool
 	// ForcePublic pushes the image and chart as public artifacts even though
 	// the repo is private (architect force-public: true). Set it for private

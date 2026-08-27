@@ -327,10 +327,11 @@ workflows:
         app_catalog: {{ .AppCatalog }}
         app_catalog_test: {{ .AppCatalogTest }}
         chart: {{ .ChartName }}
-{{- if .KeepChartAppVersion }}
-        # The chart vendors an upstream release and declares that release as its
-        # appVersion, so app-build-suite must not stamp the chart's own version
-        # over it.
+{{- if or (not .HasDockerfile) .KeepChartAppVersion }}
+        # `appVersion` is the version of the packaged application. This repo has
+        # no image pipeline, so the chart packages an app built elsewhere and
+        # `appVersion` is that app's version, not this repo's. Keep what
+        # Chart.yaml declares; the chart version is still stamped.
         override_app_version: false
 {{- end }}
         push_to_appcatalog: false
@@ -394,10 +395,11 @@ workflows:
         app_catalog: {{ .AppCatalog }}
         app_catalog_test: {{ .AppCatalogTest }}
         chart: {{ .ChartName }}
-{{- if .KeepChartAppVersion }}
-        # The chart vendors an upstream release and declares that release as its
-        # appVersion, so app-build-suite must not stamp the chart's own version
-        # over it.
+{{- if or (not .HasDockerfile) .KeepChartAppVersion }}
+        # `appVersion` is the version of the packaged application. This repo has
+        # no image pipeline, so the chart packages an app built elsewhere and
+        # `appVersion` is that app's version, not this repo's. Keep what
+        # Chart.yaml declares; the chart version is still stamped.
         override_app_version: false
 {{- end }}
         requires:
@@ -429,10 +431,11 @@ workflows:
         app_catalog: {{ .AppCatalog }}
         app_catalog_test: {{ .AppCatalogTest }}
         chart: {{ .ChartName }}
-{{- if .KeepChartAppVersion }}
-        # The chart vendors an upstream release and declares that release as its
-        # appVersion, so app-build-suite must not stamp the chart's own version
-        # over it.
+{{- if or (not .HasDockerfile) .KeepChartAppVersion }}
+        # `appVersion` is the version of the packaged application. This repo has
+        # no image pipeline, so the chart packages an app built elsewhere and
+        # `appVersion` is that app's version, not this repo's. Keep what
+        # Chart.yaml declares; the chart version is still stamped.
         override_app_version: false
 {{- end }}
         requires:

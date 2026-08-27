@@ -7,6 +7,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- `gen circleci`: a chart repo with **no image pipeline** now gets `override_app_version: false` on its
+  chart jobs, so app-build-suite keeps the `appVersion` declared in `Chart.yaml`. The chart version is
+  still always stamped.
+
+  `appVersion` is the version of the packaged application. A repo that builds its own image ships the app
+  it packages, so `appVersion` equals the chart version and stamping it is correct. A chart-only repo
+  packages an app built elsewhere, so its `appVersion` is that app's version. Of the organisation's 249
+  chart repos, 97 chart-only repos declare a real upstream `appVersion` that packaging overwrote, while 65
+  of the 82 image-building repos already declare `appVersion` == `version`.
+
+  Derived from the same signal as the image pipeline (`HasDockerfile`, or a non-empty `ImageDockerfile`),
+  so no repo has to opt in. `--keep-chart-app-version` (v8.39.0) is now only the escape hatch for a repo
+  that builds an image and still declares an `appVersion` that is not its own version; the repos it was
+  added for get the behaviour from the rule and no longer need to set it.
+
 ### Added
 
 - `gen circleci --keep-chart-app-version`: emits `override_app_version: false` on every generated
