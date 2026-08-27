@@ -682,6 +682,44 @@ func Test_ChartName(t *testing.T) {
 	}
 }
 
+// Test_KeepChartAppVersion verifies that override_app_version: false lands on
+// every generated chart job for a chart that vendors an upstream release, and
+// that the default leaves appVersion stamping on.
+func Test_KeepChartAppVersion(t *testing.T) {
+	got := render(t, Config{
+		RepoName:            "agentgateway",
+		Language:            gen.Language(""),
+		Flavours:            gen.FlavourSlice{gen.FlavourApp},
+		KeepChartAppVersion: true,
+	})
+
+	// build-chart and push-chart-release. A branch push job only exists with
+	// BranchPublish, so two is the whole set here.
+	if n := strings.Count(got, "override_app_version: false"); n != 2 {
+		t.Errorf("expected override_app_version on build-chart and push-chart-release, found %d:\n%s", n, got)
+	}
+
+	branch := render(t, Config{
+		RepoName:            "agentgateway",
+		Language:            gen.Language(""),
+		Flavours:            gen.FlavourSlice{gen.FlavourApp},
+		KeepChartAppVersion: true,
+		BranchPublish:       true,
+	})
+	if n := strings.Count(branch, "override_app_version: false"); n != 3 {
+		t.Errorf("expected override_app_version on the branch chart push too, found %d:\n%s", n, branch)
+	}
+
+	def := render(t, Config{
+		RepoName: "agentgateway",
+		Language: gen.Language(""),
+		Flavours: gen.FlavourSlice{gen.FlavourApp},
+	})
+	if contains(def, "override_app_version") {
+		t.Errorf("override_app_version leaked without KeepChartAppVersion:\n%s", def)
+	}
+}
+
 // Test_ForcePublic verifies that force-public: true lands on the release image
 // push and the release chart push for a private repo that publishes public
 // artifacts (e.g. web-assets), and that the default emits no force-public.
