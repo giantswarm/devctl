@@ -9,6 +9,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- `gen workflows`: run the generated "Fix Go vulnerabilities" (nancy-fixer) workflow every Wednesday night.
+
 - `gen circleci`: whether the chart's `appVersion` is stamped now follows the repo's shape. A repo with
   **no image pipeline** gets `override_app_version: false` on its chart jobs, so app-build-suite keeps the
   `appVersion` declared in `Chart.yaml`. The chart version is still always stamped.
