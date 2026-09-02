@@ -28,6 +28,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   unset for the derived behaviour; pass `=false` for a repo that builds an image and still declares a
   foreign `appVersion`, or `=true` for a chart-only repo that wants its `appVersion` stamped anyway.
 
+- align helm-docs command in `Makefile.gen.app.mk.template` with the `pre-commit-config.yaml.template` configuration
+
 ### Deprecated
 
 - `gen circleci --keep-chart-app-version` (added in v8.39.0): use `--override-chart-app-version=false`. It
