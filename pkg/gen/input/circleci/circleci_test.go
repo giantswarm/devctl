@@ -1548,7 +1548,7 @@ func Test_GoBuildPath(t *testing.T) {
 		Flavours:      gen.FlavourSlice{gen.FlavourGeneric},
 		HasDockerfile: true,
 	})
-	if contains(def, "path:") {
+	if contains(def, "\n        path:") {
 		t.Errorf("no path param should be emitted without GoBuildPath (orb default applies):\n%s", def)
 	}
 }

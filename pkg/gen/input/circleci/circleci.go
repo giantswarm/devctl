@@ -294,6 +294,11 @@ type Config struct {
 	// executable, and the image build has nothing to copy. The append-only
 	// custom.yml merge cannot change a generated job's params, so the
 	// generator carries it. Only applies to a Go repo (Language == "go").
+	// The orb also passes `path` to its go-test step, where `go list <path>`
+	// supplies the module prefix for the -X .../pkg/project.{gitSHA,
+	// buildTimestamp} ldflags. A repo whose pkg/project sits at the module
+	// root loses that stamping when path is set: the linker ignores an
+	// unresolvable -X target silently.
 	GoBuildPath string
 	// PackageManager selects the Node package manager the build/test job uses
 	// (one of "npm", "yarn", "yarn-classic", "pnpm"). The runner detects it

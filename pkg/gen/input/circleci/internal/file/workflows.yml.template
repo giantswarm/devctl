@@ -115,9 +115,8 @@ workflows:
         # make-target-ci-interface ADR.
         test_target: test
 {{- if .GoBuildPath }}
-        # Main package to compile. This repo's module root is a library (e.g. a
-        # CoreDNS plugin); building "." would yield a Go archive, not the server
-        # binary the image build copies.
+        # Main package to compile. This repo's module root is not a main package,
+        # so building "." would yield a Go archive rather than a binary.
         path: {{ .GoBuildPath }}
 {{- end }}
 {{- if .ReleaseBinaries }}
