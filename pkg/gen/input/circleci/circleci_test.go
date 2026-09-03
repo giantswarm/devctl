@@ -1527,9 +1527,7 @@ func Test_GoUnaffectedByBuildJobName(t *testing.T) {
 }
 
 // Test_GoBuildPath verifies the go-build job compiles the configured package
-// for repos whose module root is a library (e.g. a CoreDNS plugin whose server
-// main lives in ./cmd/coredns), and that the default emits no path param so
-// the orb's "." applies.
+// for repos whose main lives under a different path.
 func Test_GoBuildPath(t *testing.T) {
 	got := render(t, Config{
 		RepoName:      "coredns-warnlist-plugin",

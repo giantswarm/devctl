@@ -288,17 +288,7 @@ type Config struct {
 	ResourceClass string
 	// GoBuildPath overrides the package the go-build job compiles (the
 	// architect go-build `path` param). Empty keeps the orb default ".", the
-	// module root. Set it for Go repos whose module root is a library and
-	// whose server main lives elsewhere (e.g. coredns-warnlist-plugin ->
-	// ./cmd/coredns): building "." there yields a Go archive, not an
-	// executable, and the image build has nothing to copy. The append-only
-	// custom.yml merge cannot change a generated job's params, so the
-	// generator carries it. Only applies to a Go repo (Language == "go").
-	// The orb also passes `path` to its go-test step, where `go list <path>`
-	// supplies the module prefix for the -X .../pkg/project.{gitSHA,
-	// buildTimestamp} ldflags. A repo whose pkg/project sits at the module
-	// root loses that stamping when path is set: the linker ignores an
-	// unresolvable -X target silently.
+	// module root.
 	GoBuildPath string
 	// PackageManager selects the Node package manager the build/test job uses
 	// (one of "npm", "yarn", "yarn-classic", "pnpm"). The runner detects it
@@ -369,7 +359,7 @@ func New(config Config) (*CircleCI, error) {
 	}
 
 	if config.GoBuildPath != "" && config.Language != gen.LanguageGo {
-		return nil, microerror.Maskf(invalidConfigError, "GoBuildPath requires Language go: only the go-build job has a package path")
+		return nil, microerror.Maskf(invalidConfigError, "GoBuildPath requires Language go")
 	}
 
 	appCatalog := config.AppCatalog
