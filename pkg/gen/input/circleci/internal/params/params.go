@@ -93,6 +93,23 @@ type Params struct {
 	// fails). The append-only custom.yml merge cannot cap a generated job's
 	// platforms, so the generator carries it.
 	ImagePlatforms string
+	// ImageNativeBuilds selects the per-architecture image build: one
+	// architect/build-image job per platform (BranchImageBuilds /
+	// ReleaseImageBuilds), each on a resource class of that architecture, and
+	// the push-to-registries jobs with `merge-digests: true`, joining the
+	// recorded digests into the tagged index instead of building. False keeps
+	// the single multi-platform buildx job. When true, ImagePlatforms is the
+	// resolved list and must name exactly the platforms the build jobs cover --
+	// the orb fails the merge in either direction rather than publishing an
+	// index that is missing an architecture.
+	ImageNativeBuilds bool
+	// BranchImageBuilds and ReleaseImageBuilds are the per-architecture
+	// build-image jobs of the branch and tag paths when ImageNativeBuilds is
+	// set. One job per platform, each pinned to a resource class of that
+	// platform's architecture, because a CircleCI job runs on one machine and a
+	// machine is native for one architecture. Empty otherwise.
+	BranchImageBuilds  []ImageBuild
+	ReleaseImageBuilds []ImageBuild
 	// ImageDockerfile overrides the Dockerfile path on the image jobs (the
 	// architect push-to-registries `dockerfile` param). Set it for repos whose
 	// Dockerfile is not at the repo root (e.g. backstage builds from
@@ -181,4 +198,18 @@ type Params struct {
 	// NodeBuildOutput is the workspace path the Node job persists for an image
 	// handoff (e.g. "packages/*/dist/*"). Empty omits persist_to_workspace.
 	NodeBuildOutput string
+}
+
+// ImageBuild is one architect/build-image job: one platform, on a machine of
+// that platform's architecture.
+type ImageBuild struct {
+	// Name is the CircleCI job name, e.g. "build-image-arm64". Branch and tag
+	// paths need distinct names because both appear in the same workflow.
+	Name string
+	// Platform is the buildx platform, e.g. "linux/arm64".
+	Platform string
+	// ResourceClass is a CircleCI class whose architecture matches Platform.
+	// CircleCI gives the setup_remote_docker VM the architecture of the job's
+	// class, so this is what decides whether the build is native or emulated.
+	ResourceClass string
 }

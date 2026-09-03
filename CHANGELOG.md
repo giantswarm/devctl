@@ -7,6 +7,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `gen circleci`: new `--image-native-builds` flag (`gen.ci.image.nativeBuilds` in giantswarm/github),
+  the opt-in for native per-architecture image builds. It emits one `architect/build-image` job per
+  platform in `--image-platforms` (default `linux/amd64,linux/arm64`), each on a resource class of that
+  architecture (`small` for amd64, `arm.medium` for arm64), and switches the generated
+  `push-to-registries` / `push-to-registries-release` jobs to `merge-digests: true`, so they join the
+  per-architecture digests into the tagged index instead of building. Nothing is emulated and the
+  builds run concurrently, so wall clock is the slower single native build: on `giantswarm/backstage`
+  the image path went from 14m16s to 3m22s. Job names downstream (`push-to-registries`,
+  `push-to-registries-release`, `sync-china-registry`) are unchanged; the validate-only branch job
+  `build-image` becomes `build-image-<arch>` jobs, so a `custom.yml` that requires `build-image` must
+  follow when a repo opts in. A platform with no native class is rejected at generation time. Off by
+  default: the generated output for every repo that does not set it is unchanged. Pays off for
+  Dockerfiles with real work in `RUN` steps; a `COPY` of a cross-compiled binary gains nothing.
+- The architect orb pin moves to `10.2.0`, which ships `build-image` and `merge-digests`.
+
 ### Changed
 
 - `gen workflows`: run the generated "Fix Go vulnerabilities" (nancy-fixer) workflow every Wednesday night.

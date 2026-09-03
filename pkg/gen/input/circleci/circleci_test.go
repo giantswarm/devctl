@@ -27,6 +27,9 @@ const (
 	goldenNodeNPMPath       = "testdata/node-npm.workflows.yml"
 	goldenNodeYarnBerryPath = "testdata/node-yarn-berry.workflows.yml"
 
+	goldenNativeWorkflowsPath     = "testdata/mcp-kubernetes.native.workflows.yml"
+	goldenNativeNodeWorkflowsPath = "testdata/node-yarn-berry.native.workflows.yml"
+
 	repoMCPKubernetes = "mcp-kubernetes"
 	repoSitesearch    = "sitesearch"
 	repoK8sTypes      = "k8s-typescript-types"
@@ -1523,5 +1526,169 @@ func Test_GoUnaffectedByBuildJobName(t *testing.T) {
 	}
 	if contains(got, "- node-build") {
 		t.Errorf("Go repo should not reference node-build:\n%s", got)
+	}
+}
+
+// nativeNodeConfig is the backstage shape with the native per-architecture
+// image build opted in: a Node monorepo whose Dockerfile does real work in RUN
+// steps, publishing a dev image on branches (BranchPublish), so both the branch
+// and the release path get the build-image jobs plus a merge.
+func nativeNodeConfig() Config {
+	return Config{
+		RepoName:          repoBackstage,
+		Language:          gen.LanguageNode,
+		Flavours:          gen.FlavourSlice{gen.FlavourApp},
+		PackageManager:    PackageManagerYarn,
+		NodeBuildTarget:   nodeBuildTarget,
+		NodeBuildOutput:   backstageBuildOutput,
+		ImageDockerfile:   backstageDockerfile,
+		ImagePlatforms:    "linux/amd64,linux/arm64",
+		BranchPublish:     true,
+		ImageNativeBuilds: true,
+	}
+}
+
+// Test_ImageNativeBuilds verifies the opt-in per-architecture image build: one
+// architect/build-image job per platform on a class of that architecture, and
+// the push-to-registries jobs switched to merge-digests with a platform list
+// that matches the build jobs -- on both the branch (BranchPublish) and the
+// release path. Off, the output is the single-job shape, which the other
+// goldens pin.
+func Test_ImageNativeBuilds(t *testing.T) {
+	got := render(t, nativeNodeConfig())
+
+	for _, want := range []string{
+		"name: build-image-amd64\n        platform: linux/amd64\n        resource_class: small",
+		"name: build-image-arm64\n        platform: linux/arm64\n        resource_class: arm.medium",
+		"name: build-image-release-amd64\n        platform: linux/amd64\n        resource_class: small",
+		"name: build-image-release-arm64\n        platform: linux/arm64\n        resource_class: arm.medium",
+		"name: push-to-registries\n        merge-digests: true\n        platforms: \"linux/amd64,linux/arm64\"",
+		"name: push-to-registries-release\n        merge-digests: true\n        platforms: \"linux/amd64,linux/arm64\"",
+		"requires:\n        - build-image-amd64\n        - build-image-arm64",
+		"requires:\n        - build-image-release-amd64\n        - build-image-release-arm64",
+	} {
+		if !contains(got, want) {
+			t.Errorf("native builds output missing %q:\n%s", want, got)
+		}
+	}
+
+	// The Dockerfile path belongs to the four build jobs; the merge jobs do not
+	// build and must not carry it. split-china-push has to be identical on the
+	// release build jobs and the release merge job (three in total).
+	if n := strings.Count(got, "dockerfile: "+backstageDockerfile); n != 4 {
+		t.Errorf("expected dockerfile on the four build-image jobs, found %d:\n%s", n, got)
+	}
+	if n := strings.Count(got, "split-china-push: true"); n != 3 {
+		t.Errorf("expected split-china-push on two release builds + the merge, found %d:\n%s", n, got)
+	}
+	// Nothing is emulated: the single multi-platform push job must be gone.
+	if contains(got, "platforms: linux/amd64,linux/arm64\n") {
+		t.Errorf("unquoted single-job platforms param leaked into the native shape:\n%s", got)
+	}
+	// The downstream edges keep resolving by the unchanged job names.
+	for _, want := range []string{
+		"- execute-chart-tests\n        - push-to-registries\n",
+		"- build-chart\n        - push-to-registries-release\n",
+	} {
+		if !contains(got, want) {
+			t.Errorf("downstream requires lost the push-to-registries edge %q:\n%s", want, got)
+		}
+	}
+}
+
+// Test_ImageNativeBuildsValidateOnlyBranch verifies the branch path without
+// BranchPublish: the per-architecture builds run with push: false and there
+// is no branch push-to-registries job, since nothing was pushed to merge. This
+// is the Go service shape (mcp-kubernetes).
+func Test_ImageNativeBuildsValidateOnlyBranch(t *testing.T) {
+	got := render(t, Config{
+		RepoName:          repoMCPKubernetes,
+		Language:          gen.LanguageGo,
+		Flavours:          gen.FlavourSlice{gen.FlavourApp},
+		HasDockerfile:     true,
+		ImageNativeBuilds: true,
+	})
+
+	if n := strings.Count(got, "push: false"); n != 2 {
+		t.Errorf("expected push: false on the two branch build-image jobs, found %d:\n%s", n, got)
+	}
+	if contains(got, "name: push-to-registries\n") {
+		t.Errorf("validate-only branch path must not emit a branch push-to-registries job:\n%s", got)
+	}
+	if !contains(got, "name: push-to-registries-release\n        merge-digests: true") {
+		t.Errorf("release path must merge digests:\n%s", got)
+	}
+	// Empty ImagePlatforms resolves to the default pair, and the merge job must
+	// name it explicitly: the orb needs the set to match the build jobs.
+	if !contains(got, "platforms: \"linux/amd64,linux/arm64\"") {
+		t.Errorf("default platform list not resolved onto the merge job:\n%s", got)
+	}
+	if !contains(got, "name: build-image\n") == false {
+		t.Errorf("single-job branch validation job must not appear next to the native builds:\n%s", got)
+	}
+}
+
+// Test_ImageNativeBuildsRejectsUnmappedPlatform verifies a platform with no
+// native CircleCI class is refused at generation time when native builds are
+// on -- the orb has no emulated fallback -- and passes through untouched when
+// they are off, where the single-job buildx build emulates it as before.
+func Test_ImageNativeBuildsRejectsUnmappedPlatform(t *testing.T) {
+	_, err := New(Config{
+		RepoName:          "vllm",
+		Language:          gen.Language(""),
+		Flavours:          gen.FlavourSlice{},
+		HasDockerfile:     true,
+		ImagePlatforms:    "linux/arm64,linux/arm/v7",
+		ImageNativeBuilds: true,
+	})
+	if !IsInvalidConfig(err) {
+		t.Errorf("expected invalidConfigError for an unmapped platform with native builds, got %v", err)
+	}
+
+	got := render(t, Config{
+		RepoName:       "vllm",
+		Language:       gen.Language(""),
+		Flavours:       gen.FlavourSlice{},
+		HasDockerfile:  true,
+		ImagePlatforms: "linux/arm64,linux/arm/v7",
+	})
+	if n := strings.Count(got, "platforms: linux/arm64,linux/arm/v7"); n != 2 {
+		t.Errorf("single-job build must pass the platform list through, found %d:\n%s", n, got)
+	}
+}
+
+// Test_GoldenNativeWorkflows pins the native per-architecture shape for a Go
+// service (validate-only branch path, merged release path).
+func Test_GoldenNativeWorkflows(t *testing.T) {
+	got := render(t, Config{
+		RepoName:          repoMCPKubernetes,
+		Language:          gen.LanguageGo,
+		Flavours:          gen.FlavourSlice{gen.FlavourApp},
+		HasDockerfile:     true,
+		ImageNativeBuilds: true,
+	})
+
+	want, err := os.ReadFile(goldenNativeWorkflowsPath) // #nosec G304 -- fixed in-package testdata path
+	if err != nil {
+		t.Fatalf("read golden: %v", err)
+	}
+
+	if got != string(want) {
+		t.Errorf("generated workflows do not match golden %s\n--- got ---\n%s\n--- want ---\n%s", goldenNativeWorkflowsPath, got, string(want))
+	}
+}
+
+// Test_GoldenNativeNodeWorkflows pins the native per-architecture shape for the
+// backstage case: Node monorepo, nested Dockerfile, BranchPublish.
+func Test_GoldenNativeNodeWorkflows(t *testing.T) {
+	got := render(t, nativeNodeConfig())
+
+	want, err := os.ReadFile(goldenNativeNodeWorkflowsPath) // #nosec G304 -- fixed in-package testdata path
+	if err != nil {
+		t.Fatalf("read golden: %v", err)
+	}
+
+	if got != string(want) {
+		t.Errorf("generated workflows do not match golden %s\n--- got ---\n%s\n--- want ---\n%s", goldenNativeNodeWorkflowsPath, got, string(want))
 	}
 }

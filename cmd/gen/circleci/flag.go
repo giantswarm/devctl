@@ -24,6 +24,7 @@ const (
 	flagImageName               = "image-name"
 	flagImagePlatforms          = "image-platforms"
 	flagImageDockerfile         = "image-dockerfile"
+	flagImageNativeBuilds       = "image-native-builds"
 	flagResourceClass           = "resource-class"
 	flagSkipATS                 = "skip-ats"
 	flagFlavour                 = "flavour"
@@ -50,6 +51,7 @@ type flag struct {
 	ImageName               string
 	ImagePlatforms          string
 	ImageDockerfile         string
+	ImageNativeBuilds       bool
 	ResourceClass           string
 	SkipATS                 bool
 	Flavours                gen.FlavourSlice
@@ -77,6 +79,7 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.ImageName, flagImageName, "", "Override the `giantswarm/<repo>` default image name on the image jobs (push-to-registries / sync-china-registry `image` param). Set it for repos whose published image differs from the repo name (e.g. kserve -> giantswarm/kserve-controller). The append-only custom.yml merge cannot rename a generated job's image. Empty keeps the orb default.")
 	cmd.Flags().StringVar(&f.ImagePlatforms, flagImagePlatforms, "", "Override the buildx platform list on the image jobs (push-to-registries `platforms` param). Empty lets the orb default apply (linux/amd64,linux/arm64 when no go-build .platforms file). Set it for single-architecture images (e.g. vllm -> linux/arm64, whose amd64 build has no prebuilt wheels).")
 	cmd.Flags().StringVar(&f.ImageDockerfile, flagImageDockerfile, "", "Override the Dockerfile path on the image jobs (push-to-registries `dockerfile` param). Set it for repos whose Dockerfile is not at the repo root (e.g. backstage -> packages/backend/Dockerfile); a non-empty value also turns the image pipeline on, since the root-Dockerfile derivation misses a nested Dockerfile. The append-only custom.yml merge cannot set this on a generated job. Empty keeps the orb default.")
+	cmd.Flags().BoolVar(&f.ImageNativeBuilds, flagImageNativeBuilds, false, "Build the image one architecture per job on a native resource class instead of one multi-platform buildx job. Emits an architect/build-image job per entry in --image-platforms (linux/amd64 on small, linux/arm64 on arm.medium) and switches the generated push-to-registries jobs to merge-digests: true, which joins the per-architecture digests into the tagged index. Nothing is emulated and the builds run concurrently, so wall clock is the slower single native build; pays off for Dockerfiles with real work in RUN steps (apt, pip, yarn, native modules), not for a COPY of a cross-compiled binary. A platform with no native class is rejected at generation time. On the branch path the validate-only build-image job becomes build-image-<arch> jobs, so a custom.yml that requires build-image must follow. Requires architect-orb 10.2.0.")
 	cmd.Flags().StringVar(&f.ResourceClass, flagResourceClass, "", `Override the CircleCI resource_class on the cli-flavour go-build job. Empty defaults to "large". Raise it (e.g. "xlarge") for repos that need more RAM/CPU headroom for the cold cross-compile. Only applies to the cli flavour.`)
 	cmd.Flags().BoolVar(&f.SkipATS, flagSkipATS, false, `Opt the chart pipeline out of app-test-suite (ATS) chart tests. By default an "app" flavour repo runs architect/run-tests-with-ats between build-chart and the chart push, and generation emits the canonical tests/ats/Pipfile. When set, those test jobs and the Pipfile are not generated and the chart push gates directly on build-chart. Only applies to the app flavour.`)
 	cmd.Flags().VarP(gen.NewFlavourSliceFlagValue(&f.Flavours, gen.FlavourSlice{}), flagFlavour, "f", fmt.Sprintf(`List of project flavours. The "app" flavour selects the chart pipeline. Possible values: <%s>`, strings.Join(gen.AllFlavours(), "|")))

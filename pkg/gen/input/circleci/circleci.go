@@ -1,6 +1,9 @@
 package circleci
 
 import (
+	"sort"
+	"strings"
+
 	"github.com/giantswarm/microerror"
 
 	"github.com/giantswarm/devctl/v8/pkg/gen"
@@ -27,7 +30,7 @@ import (
 // custom manager that reads this annotation lives in renovate-custom.json5.
 //
 // renovate: datasource=github-tags depName=giantswarm/architect-orb
-const OrbVersion = "10.1.0"
+const OrbVersion = "10.2.0"
 
 // ContinuationOrbVersion pins the circleci/continuation orb used by the
 // generated setup config (.circleci/config.yml) to merge the optional
@@ -273,6 +276,16 @@ type Config struct {
 	// Empty lets the orb default apply. Set it for single-architecture images
 	// (e.g. vllm -> linux/arm64).
 	ImagePlatforms string
+	// ImageNativeBuilds builds the image one architecture per job on a native
+	// resource class (architect build-image, one per platform) and switches
+	// the push-to-registries jobs to `merge-digests: true`, which joins the
+	// per-architecture digests into the tagged index instead of building.
+	// False (default) keeps the single multi-platform buildx job. Set it for
+	// Dockerfiles with real work in RUN steps (apt, pip, yarn, native
+	// modules), where the emulated architecture is the whole critical path; a
+	// COPY of a cross-compiled binary gains nothing. Requires architect-orb
+	// 10.2.0. Every platform in ImagePlatforms must have a native class.
+	ImageNativeBuilds bool
 	// BuildConcurrency overrides how many architectures the cli-flavour
 	// go-build job compiles concurrently (the architect go-build
 	// `build_concurrency` param). Empty defaults to "auto" (nproc). Lower it
@@ -328,6 +341,81 @@ type CircleCI struct {
 	params params.Params
 }
 
+// DefaultImagePlatforms is the platform list a native per-architecture image
+// build covers when the repo does not override it. It matches the orb's own
+// default for the single-job build, so opting in does not change the set.
+const DefaultImagePlatforms = "linux/amd64,linux/arm64"
+
+// imageResourceClasses maps a build platform to a CircleCI resource class of the
+// same architecture. This mapping is the whole point of building one
+// architecture per job: CircleCI gives the setup_remote_docker VM the
+// architecture of the job's resource class, so a class from this table is what
+// keeps the build native. The orb refuses a mismatch rather than falling back to
+// QEMU, so a wrong entry here is a failed build, not a slow one.
+//
+// amd64 sits on `small` rather than `medium` because a small docker executor is
+// already given a medium remote-docker VM, which is where the build runs.
+// arm.medium is the floor on the Arm side; there is no arm.small.
+var imageResourceClasses = map[string]string{
+	"linux/amd64": "small",
+	"linux/arm64": "arm.medium",
+}
+
+// resolveImageBuilds turns a comma-separated platform list into one build-image
+// job per platform, for each of the branch and tag paths, and returns the
+// normalised list to put on the push-to-registries merge jobs.
+//
+// Branch and tag jobs need distinct names because both appear in the same
+// workflow. An unmapped platform is an error rather than a default class: the
+// orb has no emulated fallback, so guessing a class here would generate a
+// pipeline that fails at build time instead of at generation time.
+func resolveImageBuilds(platforms string) (string, []params.ImageBuild, []params.ImageBuild, error) {
+	if platforms == "" {
+		platforms = DefaultImagePlatforms
+	}
+
+	var resolved []string
+	var branch, release []params.ImageBuild
+	for _, platform := range strings.Split(platforms, ",") {
+		platform = strings.TrimSpace(platform)
+		if platform == "" {
+			continue
+		}
+
+		resourceClass, ok := imageResourceClasses[platform]
+		if !ok {
+			supported := make([]string, 0, len(imageResourceClasses))
+			for p := range imageResourceClasses {
+				supported = append(supported, p)
+			}
+			sort.Strings(supported)
+
+			return "", nil, nil, microerror.Maskf(invalidConfigError,
+				"ImageNativeBuilds: no CircleCI resource class is mapped for platform %#q; supported platforms are %s",
+				platform, strings.Join(supported, ", "))
+		}
+
+		suffix := strings.ReplaceAll(strings.TrimPrefix(platform, "linux/"), "/", "")
+		resolved = append(resolved, platform)
+		branch = append(branch, params.ImageBuild{
+			Name:          "build-image-" + suffix,
+			Platform:      platform,
+			ResourceClass: resourceClass,
+		})
+		release = append(release, params.ImageBuild{
+			Name:          "build-image-release-" + suffix,
+			Platform:      platform,
+			ResourceClass: resourceClass,
+		})
+	}
+
+	if len(resolved) == 0 {
+		return "", nil, nil, microerror.Maskf(invalidConfigError, "ImageNativeBuilds: ImagePlatforms resolved to an empty platform list")
+	}
+
+	return strings.Join(resolved, ","), branch, release, nil
+}
+
 func New(config Config) (*CircleCI, error) {
 	// Every job is derived from a signal. With none of them set the template
 	// renders an empty `jobs:` list, which is an invalid CircleCI config.
@@ -352,6 +440,19 @@ func New(config Config) (*CircleCI, error) {
 
 	if config.ForcePublic && config.ImagePrivateOnly {
 		return nil, microerror.Maskf(invalidConfigError, "ForcePublic and ImagePrivateOnly are mutually exclusive")
+	}
+
+	// The single-job build passes ImagePlatforms through untouched (empty lets
+	// the orb derive it). The native per-architecture build has to know the
+	// set at generation time, because it emits one job per platform.
+	imagePlatforms := config.ImagePlatforms
+	var branchImageBuilds, releaseImageBuilds []params.ImageBuild
+	if config.ImageNativeBuilds {
+		var err error
+		imagePlatforms, branchImageBuilds, releaseImageBuilds, err = resolveImageBuilds(config.ImagePlatforms)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
 	}
 
 	appCatalog := config.AppCatalog
@@ -496,7 +597,10 @@ func New(config Config) (*CircleCI, error) {
 			ImagePreBuildJob:         config.ImagePreBuildJob,
 			ImagePrivateOnly:         config.ImagePrivateOnly,
 			ImageName:                config.ImageName,
-			ImagePlatforms:           config.ImagePlatforms,
+			ImagePlatforms:           imagePlatforms,
+			ImageNativeBuilds:        config.ImageNativeBuilds,
+			BranchImageBuilds:        branchImageBuilds,
+			ReleaseImageBuilds:       releaseImageBuilds,
 			ImageDockerfile:          config.ImageDockerfile,
 			ReleaseBinaries:          config.shipsBinaries(),
 			BuildConcurrency:         buildConcurrency,
