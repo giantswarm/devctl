@@ -118,6 +118,11 @@ type Params struct {
 	// renders. Defaulted to "large" by the generator for cli repos; empty for
 	// non-cli repos.
 	ResourceClass string
+	// GoBuildPath is the architect go-build `path` param: the package the job
+	// compiles. Empty omits the param so the orb default "." applies. Set for
+	// Go repos whose module root is a library and whose main package lives in
+	// a subdirectory (e.g. ./cmd/coredns).
+	GoBuildPath string
 	// OrbVersion is the giantswarm/architect orb version to pin.
 	OrbVersion string
 	// ContinuationOrbVersion is the circleci/continuation orb version the

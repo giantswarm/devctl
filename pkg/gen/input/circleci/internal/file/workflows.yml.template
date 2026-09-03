@@ -114,6 +114,12 @@ workflows:
         # override their own `make test`. See devctl makefile gen and the
         # make-target-ci-interface ADR.
         test_target: test
+{{- if .GoBuildPath }}
+        # Main package to compile. This repo's module root is a library (e.g. a
+        # CoreDNS plugin); building "." would yield a Go archive, not the server
+        # binary the image build copies.
+        path: {{ .GoBuildPath }}
+{{- end }}
 {{- if .ReleaseBinaries }}
         # Cross-platform binaries attached to the GitHub Release by the
         # upload-release-assets job below (cli flavour). yamllint disables the

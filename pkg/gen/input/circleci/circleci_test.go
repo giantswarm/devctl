@@ -1525,3 +1525,45 @@ func Test_GoUnaffectedByBuildJobName(t *testing.T) {
 		t.Errorf("Go repo should not reference node-build:\n%s", got)
 	}
 }
+
+// Test_GoBuildPath verifies the go-build job compiles the configured package
+// for repos whose module root is a library (e.g. a CoreDNS plugin whose server
+// main lives in ./cmd/coredns), and that the default emits no path param so
+// the orb's "." applies.
+func Test_GoBuildPath(t *testing.T) {
+	got := render(t, Config{
+		RepoName:      "coredns-warnlist-plugin",
+		Language:      gen.LanguageGo,
+		Flavours:      gen.FlavourSlice{gen.FlavourGeneric},
+		HasDockerfile: true,
+		GoBuildPath:   "./cmd/coredns",
+	})
+	if n := strings.Count(got, "        path: ./cmd/coredns\n"); n != 1 {
+		t.Errorf("expected exactly one go-build path param, found %d:\n%s", n, got)
+	}
+
+	def := render(t, Config{
+		RepoName:      "coredns-warnlist-plugin",
+		Language:      gen.LanguageGo,
+		Flavours:      gen.FlavourSlice{gen.FlavourGeneric},
+		HasDockerfile: true,
+	})
+	if contains(def, "path:") {
+		t.Errorf("no path param should be emitted without GoBuildPath (orb default applies):\n%s", def)
+	}
+}
+
+// Test_GoBuildPathRequiresGo verifies the knob is rejected for a repo that
+// renders no go-build job, so a misplaced setting fails at generation time
+// instead of silently doing nothing.
+func Test_GoBuildPathRequiresGo(t *testing.T) {
+	_, err := New(Config{
+		RepoName:      "coredns-warnlist-plugin",
+		Flavours:      gen.FlavourSlice{gen.FlavourApp},
+		HasDockerfile: true,
+		GoBuildPath:   "./cmd/coredns",
+	})
+	if !IsInvalidConfig(err) {
+		t.Fatalf("expected invalidConfigError, got %v", err)
+	}
+}

@@ -286,6 +286,15 @@ type Config struct {
 	// repos that need more RAM/CPU headroom for the cold cross-compile. Only
 	// applies to the cli flavour (ReleaseBinaries).
 	ResourceClass string
+	// GoBuildPath overrides the package the go-build job compiles (the
+	// architect go-build `path` param). Empty keeps the orb default ".", the
+	// module root. Set it for Go repos whose module root is a library and
+	// whose server main lives elsewhere (e.g. coredns-warnlist-plugin ->
+	// ./cmd/coredns): building "." there yields a Go archive, not an
+	// executable, and the image build has nothing to copy. The append-only
+	// custom.yml merge cannot change a generated job's params, so the
+	// generator carries it. Only applies to a Go repo (Language == "go").
+	GoBuildPath string
 	// PackageManager selects the Node package manager the build/test job uses
 	// (one of "npm", "yarn", "yarn-classic", "pnpm"). The runner detects it
 	// from the lockfile; empty defaults to Yarn Berry. Only applies to a Node
@@ -352,6 +361,10 @@ func New(config Config) (*CircleCI, error) {
 
 	if config.ForcePublic && config.ImagePrivateOnly {
 		return nil, microerror.Maskf(invalidConfigError, "ForcePublic and ImagePrivateOnly are mutually exclusive")
+	}
+
+	if config.GoBuildPath != "" && config.Language != gen.LanguageGo {
+		return nil, microerror.Maskf(invalidConfigError, "GoBuildPath requires Language go: only the go-build job has a package path")
 	}
 
 	appCatalog := config.AppCatalog
@@ -501,6 +514,7 @@ func New(config Config) (*CircleCI, error) {
 			ReleaseBinaries:          config.shipsBinaries(),
 			BuildConcurrency:         buildConcurrency,
 			ResourceClass:            resourceClass,
+			GoBuildPath:              config.GoBuildPath,
 			OrbVersion:               OrbVersion,
 			ContinuationOrbVersion:   ContinuationOrbVersion,
 			BuildJobName:             buildJobName,
