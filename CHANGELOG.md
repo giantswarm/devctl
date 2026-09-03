@@ -7,6 +7,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `gen circleci`: new `--go-build-path` flag setting the architect `go-build` job's `path` param for Go
+  repos whose module root is a library and whose server main lives in a subdirectory (e.g.
+  `coredns-warnlist-plugin` -> `./cmd/coredns`). Without it the job compiles `.`, which for such a repo
+  yields a Go archive that is then signed and persisted as if it were a binary, and the image build has
+  no executable to copy. Empty keeps the orb default; the flag is rejected for non-Go repos. The
+  append-only `.circleci/custom.yml` merge cannot change a generated job's params, so the generator
+  carries it. Surfaced in giantswarm/github as `gen.ci.go.buildPath`.
+
 ### Changed
 
 - `gen workflows`: run the generated "Fix Go vulnerabilities" (nancy-fixer) workflow every Wednesday night.
