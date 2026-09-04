@@ -37,6 +37,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- `gen workflows --release-workflow auto-release`: `cliff.toml` skips `docs` commits the way it skips
+  `style`. git-cliff bumps at least the patch for every commit that is not skipped, so a docs-only
+  merge tagged and published an identical artifact (agent-platform-standalone v0.35.2 and v0.35.3,
+  both CLAUDE.md-only); now such a push computes the current version and the workflow logs
+  `No releasable commits since vX.Y.Z; skipping tag.` The template comment that claimed the bump
+  ignores the parser groups is replaced by the actual rule. `chore` and `ci` keep releasing.
 - `gen workflows`: run the generated "Fix Go vulnerabilities" (nancy-fixer) workflow every Wednesday night.
 
 - `gen circleci`: whether the chart's `appVersion` is stamped now follows the repo's shape. A repo with
