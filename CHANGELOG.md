@@ -7,6 +7,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- `gen circleci`: the default app-test-suite tag moves to `1.0.1`. The `1.0.0` image ships a CRD bundle whose
+  `gateway-api.yaml` starts with helm's `Pulled:`/`Digest:` lines (captured from stdout while syncing), so
+  `kubectl apply --server-side -f /etc/ats/crds` rejects the directory and every 1.0.0 run fails at CRD
+  bootstrap before a single test runs. 1.0.1 fixes the bundle and guards it with a unit test.
+
 ### Added
 
 - `gen circleci`: new `--ats-on-release` flag (`gen.ci.atsOnRelease` in giantswarm/github). Restores
