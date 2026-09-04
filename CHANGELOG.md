@@ -20,6 +20,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   `*-cluster-type` keys, tests that install with Helm instead of an App CR) is the repo's own; see the
   app-test-suite CHANGELOG. Mutually exclusive with `--skip-ats`. The canonical uv layout is embedded
   next to the Pipfile and Renovate bumps both layouts in the one `ATS test dependencies` PR.
+- The architect orb pin moves to `10.3.0`, which ships `run-tests-with-ats`'s `create_kind_cluster`
+  (architect-orb#917): the job installs kind, creates the cluster and hands its kubeconfig to
+  app-test-suite 1.x, which provisions none. `--ats-version` with a 1.x tag emits that parameter, and
+  10.2.0 rejects it as unknown, so the pin and the knob ship together.
 - `gen circleci`: new `--image-native-builds` flag (`gen.ci.image.nativeBuilds` in giantswarm/github),
   the opt-in for native per-architecture image builds. It emits one `architect/build-image` job per
   platform in `--image-platforms` (default `linux/amd64,linux/arm64`), each on a resource class of that
