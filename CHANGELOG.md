@@ -9,6 +9,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `gen circleci`: the default app-test-suite tag moves to `1.0.2`, which accepts `oci://` values for
+  `upgrade-tests-app-catalog-url` at config validation (1.0.0 and 1.0.1 rejected them as `Wrong catalog URL`
+  although the resolver supports OCI catalogs), so upgrade scenarios can take their stable chart from
+  `oci://gsoci.azurecr.io/charts/giantswarm`.
+
+### Fixed
+
 - `gen circleci`: the default app-test-suite tag moves to `1.0.1`. The `1.0.0` image ships a CRD bundle whose
   `gateway-api.yaml` starts with helm's `Pulled:`/`Digest:` lines (captured from stdout while syncing), so
   `kubectl apply --server-side -f /etc/ats/crds` rejects the directory and every 1.0.0 run fails at CRD
