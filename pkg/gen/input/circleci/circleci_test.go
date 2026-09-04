@@ -1695,6 +1695,9 @@ func Test_GoBuildPathRequiresGo(t *testing.T) {
 	})
 	if !IsInvalidConfig(err) {
 		t.Fatalf("expected invalidConfigError, got %v", err)
+	}
+}
+
 // nativeNodeConfig is the backstage shape with the native per-architecture
 // image build opted in: a Node monorepo whose Dockerfile does real work in RUN
 // steps, publishing a dev image on branches (BranchPublish), so both the branch
