@@ -45,7 +45,7 @@ func NewWorkflowsInput(p params.Params) input.Input {
 			"SkipATS":             p.SkipATS,
 			"ATSVersion":          p.ATSVersion,
 			"ATSKindCluster":      p.ATSKindCluster,
-			"ATSBranchOnly":       p.ATSBranchOnly,
+			"ATSOnRelease":        p.ATSOnRelease,
 			"ChartName":           p.ChartName,
 			"KeepChartAppVersion": p.KeepChartAppVersion,
 			"ForcePublic":         p.ForcePublic,

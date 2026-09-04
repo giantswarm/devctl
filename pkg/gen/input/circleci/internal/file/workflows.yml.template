@@ -538,7 +538,7 @@ workflows:
           branches:
             ignore:
             - main
-{{- if not .ATSBranchOnly }}
+{{- if .ATSOnRelease }}
 
     # Tag: run chart tests after the release image is pushed, for the same
     # image-availability reason as the branch job above.
@@ -599,21 +599,21 @@ workflows:
             ignore:
             - main
 {{- end }}
-{{- if .ATSBranchOnly }}
-
-    # Tag: push the chart after build-chart (+ the gsoci image) without a
-    # second chart-test run (atsBranchOnly). The tag is cut from the merge
-    # commit of a PR whose execute-chart-tests already passed on this exact
-    # tree: the ci/circleci statuses are required checks on the default branch
-    # and the branch had to be up to date with it (strict) to merge, so a
-    # tag-time re-run only added its wall clock to the release. Intentionally
-    # does NOT depend on sync-china-registry so the chart catalog can publish
-    # even if the in-China Aliyun mirror is slow or fails.
-{{- else }}
+{{- if or .ATSOnRelease .SkipATS }}
 
     # Tag: push chart after tests + the gsoci image. Intentionally does NOT
     # depend on sync-china-registry so the chart catalog can publish even if
     # the in-China Aliyun mirror is slow or fails.
+{{- else }}
+
+    # Tag: push the chart after build-chart (+ the gsoci image). The chart
+    # tests ran on the branch (execute-chart-tests) and the tag is cut from the
+    # merge commit of a PR whose branch run tested this tree, so they are not
+    # re-run here (atsOnRelease brings the tag-time run back). Make the
+    # ci/circleci statuses required checks on the default branch, with
+    # up-to-date branches (strict), so a PR cannot merge before that run is
+    # green. Intentionally does NOT depend on sync-china-registry so the chart
+    # catalog can publish even if the in-China Aliyun mirror is slow or fails.
 {{- end }}
     - architect/push-to-app-catalog:
         executor: app-build-suite
@@ -633,10 +633,10 @@ workflows:
         override_app_version: false
 {{- end }}
         requires:
-{{- if or .SkipATS .ATSBranchOnly }}
-        - build-chart
-{{- else }}
+{{- if .ATSOnRelease }}
         - execute-chart-tests-release
+{{- else }}
+        - build-chart
 {{- end }}
 {{- if .HasDockerfile }}
         - push-to-registries-release
