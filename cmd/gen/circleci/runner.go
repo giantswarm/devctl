@@ -89,6 +89,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, _ []string) error 
 			Language:                r.flag.Language,
 			Flavours:                r.flag.Flavours,
 			SkipATS:                 r.flag.SkipATS,
+			ATSVersion:              r.flag.ATSVersion,
 			ATSBranchOnly:           r.flag.ATSBranchOnly,
 			HasDockerfile:           hasDockerfile,
 			AppCatalog:              r.flag.AppCatalog,

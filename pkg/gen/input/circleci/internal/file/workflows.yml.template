@@ -521,6 +521,14 @@ workflows:
     # push avoids an ImagePullBackOff race.
     - architect/run-tests-with-ats:
         name: execute-chart-tests
+{{- if .ATSVersion }}
+        app-test-suite_container_tag: "{{ .ATSVersion }}"
+{{- end }}
+{{- if .ATSKindCluster }}
+        # app-test-suite 1.x provisions no cluster: the job creates the kind
+        # cluster and runs the pinned image against its kubeconfig.
+        create_kind_cluster: true
+{{- end }}
         requires:
         - build-chart
 {{- if and .HasDockerfile .BranchPublish }}
@@ -536,6 +544,14 @@ workflows:
     # image-availability reason as the branch job above.
     - architect/run-tests-with-ats:
         name: execute-chart-tests-release
+{{- if .ATSVersion }}
+        app-test-suite_container_tag: "{{ .ATSVersion }}"
+{{- end }}
+{{- if .ATSKindCluster }}
+        # app-test-suite 1.x provisions no cluster: the job creates the kind
+        # cluster and runs the pinned image against its kubeconfig.
+        create_kind_cluster: true
+{{- end }}
         requires:
         - build-chart
 {{- if .HasDockerfile }}

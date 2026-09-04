@@ -9,6 +9,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `gen circleci`: new `--ats-version` flag (`gen.ci.atsVersion` in giantswarm/github). Pins the
+  app-test-suite container tag on both `run-tests-with-ats` jobs (`app-test-suite_container_tag`). A
+  1.x tag also emits `create_kind_cluster: true` on both jobs -- app-test-suite 1.x no longer
+  provisions clusters, the job creates the kind cluster and hands over its kubeconfig (the architect
+  orb's `run-tests-with-ats` `create_kind_cluster` opt-in) -- and switches the generated test
+  dependency file from `tests/ats/Pipfile` (pipenv, ATS <= 0.15) to `tests/ats/pyproject.toml` +
+  `uv.lock` (uv, ATS 1.x), deleting the Pipfile. Empty, the default, changes nothing; a 0.x tag pins
+  the tag on the legacy `dats.sh` path. The rest of a repo's migration (`.ats/main.yaml` without the
+  `*-cluster-type` keys, tests that install with Helm instead of an App CR) is the repo's own; see the
+  app-test-suite CHANGELOG. Mutually exclusive with `--skip-ats`. The canonical uv layout is embedded
+  next to the Pipfile and Renovate bumps both layouts in the one `ATS test dependencies` PR.
 - `gen circleci`: new `--image-native-builds` flag (`gen.ci.image.nativeBuilds` in giantswarm/github),
   the opt-in for native per-architecture image builds. It emits one `architect/build-image` job per
   platform in `--image-platforms` (default `linux/amd64,linux/arm64`), each on a resource class of that
