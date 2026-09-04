@@ -106,6 +106,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, _ []string) error 
 			ImageDockerfile:         r.flag.ImageDockerfile,
 			ImageNativeBuilds:       r.flag.ImageNativeBuilds,
 			ResourceClass:           r.flag.ResourceClass,
+			GoBuildPath:             r.flag.GoBuildPath,
 			PackageManager:          packageManager,
 			NodeImageVersion:        nodeImageVersion,
 			NodeTestTarget:          r.flag.NodeTestTarget,

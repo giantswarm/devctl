@@ -23,10 +23,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `gen circleci`: new `--go-build-path` flag setting the architect `go-build` job's `path` param for
+  Go repos.
 - `gen circleci`: new `--ats-on-release` flag (`gen.ci.atsOnRelease` in giantswarm/github). Restores
   the pre-v8.45.0 chart pipeline: an `execute-chart-tests-release` job on the tag, after the release
   image, with `push-chart-release` gating on it. Mutually exclusive with `--skip-ats`.
-
 - `gen circleci`: new `--ats-version` flag (`gen.ci.atsVersion` in giantswarm/github). Pins the
   app-test-suite container tag on both `run-tests-with-ats` jobs (`app-test-suite_container_tag`). A
   1.x tag also emits `create_kind_cluster: true` on both jobs -- app-test-suite 1.x no longer

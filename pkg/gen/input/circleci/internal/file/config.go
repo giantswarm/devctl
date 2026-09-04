@@ -63,6 +63,7 @@ func NewWorkflowsInput(p params.Params) input.Input {
 			"ReleaseBinaries":     p.ReleaseBinaries,
 			"BuildConcurrency":    p.BuildConcurrency,
 			"ResourceClass":       p.ResourceClass,
+			"GoBuildPath":         p.GoBuildPath,
 			"OrbVersion":          p.OrbVersion,
 
 			"BuildJobName":             p.BuildJobName,

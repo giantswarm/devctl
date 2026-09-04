@@ -332,6 +332,10 @@ type Config struct {
 	// repos that need more RAM/CPU headroom for the cold cross-compile. Only
 	// applies to the cli flavour (ReleaseBinaries).
 	ResourceClass string
+	// GoBuildPath overrides the package the go-build job compiles (the
+	// architect go-build `path` param). Empty keeps the orb default ".", the
+	// module root.
+	GoBuildPath string
 	// PackageManager selects the Node package manager the build/test job uses
 	// (one of "npm", "yarn", "yarn-classic", "pnpm"). The runner detects it
 	// from the lockfile; empty defaults to Yarn Berry. Only applies to a Node
@@ -500,6 +504,10 @@ func New(config Config) (*CircleCI, error) {
 		}
 	}
 
+	if config.GoBuildPath != "" && config.Language != gen.LanguageGo {
+		return nil, microerror.Maskf(invalidConfigError, "GoBuildPath requires Language go")
+	}
+
 	appCatalog := config.AppCatalog
 	if appCatalog == "" {
 		appCatalog = DefaultAppCatalog
@@ -653,6 +661,7 @@ func New(config Config) (*CircleCI, error) {
 			ReleaseBinaries:          config.shipsBinaries(),
 			BuildConcurrency:         buildConcurrency,
 			ResourceClass:            resourceClass,
+			GoBuildPath:              config.GoBuildPath,
 			OrbVersion:               OrbVersion,
 			ContinuationOrbVersion:   ContinuationOrbVersion,
 			BuildJobName:             buildJobName,
