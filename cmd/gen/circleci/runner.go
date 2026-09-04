@@ -90,7 +90,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, _ []string) error 
 			Flavours:                r.flag.Flavours,
 			SkipATS:                 r.flag.SkipATS,
 			ATSVersion:              r.flag.ATSVersion,
-			ATSBranchOnly:           r.flag.ATSBranchOnly,
+			ATSOnRelease:            r.flag.ATSOnRelease,
 			HasDockerfile:           hasDockerfile,
 			AppCatalog:              r.flag.AppCatalog,
 			AppCatalogTest:          r.flag.AppCatalogTest,

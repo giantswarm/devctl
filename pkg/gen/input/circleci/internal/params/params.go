@@ -25,17 +25,14 @@ type Params struct {
 	// emitted, and the chart push jobs gate directly on build-chart instead.
 	// Only meaningful for a chart/app repo (HasApp); ignored otherwise.
 	SkipATS bool
-	// ATSBranchOnly keeps the branch chart-test job (execute-chart-tests) and
-	// the canonical tests/ats/Pipfile but omits the tag-time re-run
-	// (execute-chart-tests-release); push-chart-release then gates directly on
-	// build-chart. The tag is cut from the merge commit of a PR whose
-	// execute-chart-tests already passed on that tree, so the tag-time run
-	// re-tests an identical tree -- provided the repo's branch protection makes
-	// the CircleCI statuses required checks and requires the branch to be up to
-	// date with the default branch (strict) before merging. Mutually exclusive
-	// with SkipATS. Only meaningful for a chart/app repo (HasApp); ignored
-	// otherwise.
-	ATSBranchOnly bool
+	// ATSOnRelease adds the tag-time chart-test job (execute-chart-tests-release,
+	// gating push-chart-release) next to the branch job. False, the default,
+	// runs the chart tests on branches only and lets the tag build and push
+	// the chart straight after build-chart: the tag is cut from the merge
+	// commit of a PR whose branch run already tested that tree. Mutually
+	// exclusive with SkipATS. Only meaningful for a chart/app repo (HasApp);
+	// ignored otherwise.
+	ATSOnRelease bool
 	// ATSVersion is the app-test-suite container tag emitted as
 	// `app-test-suite_container_tag` on both run-tests-with-ats jobs. Empty
 	// emits nothing and the orb default applies.

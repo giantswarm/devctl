@@ -9,6 +9,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `gen circleci`: new `--ats-on-release` flag (`gen.ci.atsOnRelease` in giantswarm/github). Restores
+  the pre-v8.45.0 chart pipeline: an `execute-chart-tests-release` job on the tag, after the release
+  image, with `push-chart-release` gating on it. Mutually exclusive with `--skip-ats`.
+
 - `gen circleci`: new `--ats-version` flag (`gen.ci.atsVersion` in giantswarm/github). Pins the
   app-test-suite container tag on both `run-tests-with-ats` jobs (`app-test-suite_container_tag`). A
   1.x tag also emits `create_kind_cluster: true` on both jobs -- app-test-suite 1.x no longer
@@ -52,6 +56,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- `gen circleci`: the chart tests run on branches only. The generated chart pipeline no longer carries
+  `execute-chart-tests-release`; `push-chart-release` gates directly on `build-chart` (plus the release
+  image when there is one), so a release is the build + push alone. The tag is cut from the merge commit
+  of a PR whose `execute-chart-tests` already ran on that tree; on `agent-platform-standalone` the
+  tag-time re-run was ~4m10 of a ~6 min release, never caught a chart regression and failed only on the
+  apptestctl bootstrap race. Every app-flavour repo changes shape at its next alignment. For the tag to
+  be the tree the PR tested, make the `ci/circleci` statuses required checks on the default branch with
+  up-to-date branches (strict); a repo that cannot, or whose `custom.yml` jobs require
+  `execute-chart-tests-release` (backstage's second catalog push did), sets `--ats-on-release`.
+
 - `gen workflows --release-workflow auto-release`: `cliff.toml` skips `docs` commits the way it skips
   `style`. git-cliff bumps at least the patch for every commit that is not skipped, so a docs-only
   merge tagged and published an identical artifact (agent-platform-standalone v0.35.2 and v0.35.3,
@@ -80,6 +94,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - align helm-docs command in `Makefile.gen.app.mk.template` with the `pre-commit-config.yaml.template` configuration
 
 ### Deprecated
+
+- `gen circleci --ats-branch-only` (added in v8.43.0): branch-only chart tests are the default now. The
+  flag is accepted and ignored; `gen.ci.atsBranchOnly` in giantswarm/github is ignored the same way.
 
 - `gen circleci --keep-chart-app-version` (added in v8.39.0): use `--override-chart-app-version=false`. It
   is still honoured, and the repos it was added for no longer need either flag — the derivation covers

@@ -216,16 +216,19 @@ type Config struct {
 	// are not generated, and the chart push jobs gate directly on build-chart.
 	// Only applies to a chart/app repo (the "app" flavour).
 	SkipATS bool
-	// ATSBranchOnly runs the app-test-suite (ATS) chart tests on branches only:
-	// execute-chart-tests and the canonical tests/ats/Pipfile stay, the tag-time
-	// execute-chart-tests-release is not generated and push-chart-release gates
-	// directly on build-chart. The tag is cut from the merge commit of a PR
-	// whose execute-chart-tests already passed on that tree, so the tag-time
-	// run re-tests an identical tree -- provided the repo's branch protection
-	// makes the CircleCI statuses required checks and requires branches to be
-	// up to date with the default branch (strict) before merging. Mutually
-	// exclusive with SkipATS. Only applies to a chart/app repo.
-	ATSBranchOnly bool
+	// ATSOnRelease also runs the app-test-suite (ATS) chart tests on the
+	// release tag. By default the chart pipeline runs them once, as
+	// execute-chart-tests on every branch build, and the tag only builds and
+	// pushes the chart (push-chart-release gates on build-chart): the tag is
+	// cut from the merge commit of a PR whose branch run already tested that
+	// tree. When set, the pre-v8.45.0 shape is generated: an additional
+	// execute-chart-tests-release job on the tag (after the release image when
+	// there is one) that push-chart-release gates on. For repos whose custom.yml
+	// jobs require execute-chart-tests-release, or whose branch protection does
+	// not make the CircleCI statuses required checks so the tag-time run is the
+	// only enforced one. Mutually exclusive with SkipATS. Only applies to a
+	// chart/app repo.
+	ATSOnRelease bool
 	// ATSVersion pins the app-test-suite container tag the chart-test jobs run
 	// (run-tests-with-ats `app-test-suite_container_tag`). Empty keeps the orb
 	// default. A tag of major 1 or higher selects app-test-suite 1.x, which no
@@ -462,8 +465,8 @@ func New(config Config) (*CircleCI, error) {
 	if config.ForcePublic && config.ImagePrivateOnly {
 		return nil, microerror.Maskf(invalidConfigError, "ForcePublic and ImagePrivateOnly are mutually exclusive")
 	}
-	if config.SkipATS && config.ATSBranchOnly {
-		return nil, microerror.Maskf(invalidConfigError, "SkipATS and ATSBranchOnly are mutually exclusive")
+	if config.SkipATS && config.ATSOnRelease {
+		return nil, microerror.Maskf(invalidConfigError, "SkipATS and ATSOnRelease are mutually exclusive")
 	}
 	if config.SkipATS && config.ATSVersion != "" {
 		return nil, microerror.Maskf(invalidConfigError, "SkipATS and ATSVersion are mutually exclusive")
@@ -621,7 +624,7 @@ func New(config Config) (*CircleCI, error) {
 			SkipATS:                  config.SkipATS,
 			ATSVersion:               config.ATSVersion,
 			ATSKindCluster:           atsKindCluster,
-			ATSBranchOnly:            config.ATSBranchOnly,
+			ATSOnRelease:             config.ATSOnRelease,
 			ChartName:                chartName,
 			KeepChartAppVersion:      keepChartAppVersion,
 			ForcePublic:              config.ForcePublic,
@@ -684,9 +687,9 @@ func (c *CircleCI) Workflows() input.Input {
 // `if (ci && ci.generate)` guard). That makes "ATS Pipfile only when CI is
 // generated, and only for chart/app repos" structurally guaranteed rather than
 // dependent on a separate, differently-scoped invocation. A repo that opts out
-// of ATS (SkipATS) gets no Pipfile either, matching the suppressed jobs. A repo
-// that only drops the tag-time re-run (ATSBranchOnly) keeps the Pipfile: its
-// branch job still runs the tests.
+// of ATS (SkipATS) gets no Pipfile either, matching the suppressed jobs. The
+// default branch-only shape keeps the file (the branch job runs the tests);
+// ATSOnRelease only adds the tag-time job.
 func (c *CircleCI) ATSInputs() []input.Input {
 	if !c.params.HasApp || c.params.SkipATS {
 		return nil
