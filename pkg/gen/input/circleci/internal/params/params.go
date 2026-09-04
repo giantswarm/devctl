@@ -25,6 +25,17 @@ type Params struct {
 	// emitted, and the chart push jobs gate directly on build-chart instead.
 	// Only meaningful for a chart/app repo (HasApp); ignored otherwise.
 	SkipATS bool
+	// ATSBranchOnly keeps the branch chart-test job (execute-chart-tests) and
+	// the canonical tests/ats/Pipfile but omits the tag-time re-run
+	// (execute-chart-tests-release); push-chart-release then gates directly on
+	// build-chart. The tag is cut from the merge commit of a PR whose
+	// execute-chart-tests already passed on that tree, so the tag-time run
+	// re-tests an identical tree -- provided the repo's branch protection makes
+	// the CircleCI statuses required checks and requires the branch to be up to
+	// date with the default branch (strict) before merging. Mutually exclusive
+	// with SkipATS. Only meaningful for a chart/app repo (HasApp); ignored
+	// otherwise.
+	ATSBranchOnly bool
 	// ChartName is the chart name used for the push-to-app-catalog `chart`
 	// param and the helm/<chart> directory. Defaults to RepoName. Set it for
 	// repos whose chart directory does not match the repo name (e.g.

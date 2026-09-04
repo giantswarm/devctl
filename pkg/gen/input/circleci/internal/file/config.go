@@ -43,6 +43,7 @@ func NewWorkflowsInput(p params.Params) input.Input {
 			"HasDockerfile":       p.HasDockerfile,
 			"HasApp":              p.HasApp,
 			"SkipATS":             p.SkipATS,
+			"ATSBranchOnly":       p.ATSBranchOnly,
 			"ChartName":           p.ChartName,
 			"KeepChartAppVersion": p.KeepChartAppVersion,
 			"ForcePublic":         p.ForcePublic,
