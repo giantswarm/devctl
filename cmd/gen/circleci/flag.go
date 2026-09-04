@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/v8/pkg/gen"
+	"github.com/giantswarm/devctl/v8/pkg/gen/input/circleci"
 )
 
 const (
@@ -91,7 +92,7 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&f.ATSBranchOnly, flagATSBranchOnly, false, "Deprecated and ignored: chart tests on branches only is the default since v8.45.0.")
 	_ = cmd.Flags().MarkDeprecated(flagATSBranchOnly, fmt.Sprintf("branch-only chart tests are the default; drop the flag, or pass --%s to run them on the release tag as well", flagATSOnRelease))
 	cmd.Flags().BoolVar(&f.ATSOnRelease, flagATSOnRelease, false, `Also run the app-test-suite (ATS) chart tests on the release tag. By default the chart pipeline runs architect/run-tests-with-ats once, as execute-chart-tests on every branch build, and the release tag only builds and pushes the chart (push-chart-release gates on build-chart): the tag is cut from the merge commit of a PR whose branch run already tested that tree. When set, the pre-v8.45.0 shape is generated: an additional execute-chart-tests-release job runs on the tag, after the release image when there is one, and push-chart-release gates on it. Set it for a repo whose .circleci/custom.yml jobs require execute-chart-tests-release, or whose branch protection does not make the ci/circleci statuses required checks so the tag-time run is the only enforced one. Mutually exclusive with --skip-ats. Only applies to the app flavour.`)
-	cmd.Flags().StringVar(&f.ATSVersion, flagATSVersion, "", `app-test-suite container tag the generated chart-test jobs run (run-tests-with-ats app-test-suite_container_tag). Empty keeps the orb default. A 1.x tag also sets create_kind_cluster: true on both jobs -- app-test-suite 1.x no longer provisions clusters, the job creates the kind cluster and hands over its kubeconfig -- and switches the generated test dependency file from tests/ats/Pipfile (pipenv, ATS <= 0.15) to tests/ats/pyproject.toml + uv.lock (uv, ATS 1.x), deleting the Pipfile. The repo migrates the rest itself (.ats/main.yaml without the *-cluster-type keys, tests that install with Helm instead of an App CR). Mutually exclusive with --skip-ats. Only applies to the app flavour.`)
+	cmd.Flags().StringVar(&f.ATSVersion, flagATSVersion, circleci.DefaultATSVersion, `app-test-suite container tag the generated chart-test jobs run (run-tests-with-ats app-test-suite_container_tag). A 1.x tag (the default) also sets create_kind_cluster: true on both jobs -- app-test-suite 1.x no longer provisions clusters, the job creates the kind cluster and hands over its kubeconfig -- and switches the generated test dependency file from tests/ats/Pipfile (pipenv, ATS <= 0.15) to tests/ats/pyproject.toml + uv.lock (uv, ATS 1.x), deleting the Pipfile. The repo migrates the rest itself (.ats/main.yaml without the *-cluster-type keys, tests that install with Helm instead of an App CR); until it has, a 0.x tag such as 0.15.0 keeps the legacy dats.sh path and the Pipfile. Empty selects the default. Ignored with --skip-ats. Only applies to the app flavour.`)
 	cmd.Flags().VarP(gen.NewFlavourSliceFlagValue(&f.Flavours, gen.FlavourSlice{}), flagFlavour, "f", fmt.Sprintf(`List of project flavours. The "app" flavour selects the chart pipeline. Possible values: <%s>`, strings.Join(gen.AllFlavours(), "|")))
 	cmd.Flags().VarP(gen.NewLanguageFlagValue(&f.Language, gen.Language("")), flagLanguage, "l", fmt.Sprintf(`The programming language. "go" selects the go-build job. Possible values: <%s>`, strings.Join(gen.AllLanguages(), "|")))
 	cmd.Flags().StringVarP(&f.RepoName, flagRepoName, "r", "", "Repository name under the giantswarm organization (used for the binary, chart, and job names).")
@@ -114,9 +115,6 @@ func (f *flag) Validate() error {
 	}
 	if f.ATSBranchOnly && f.ATSOnRelease {
 		return microerror.Maskf(invalidFlagError, "--%s (deprecated, the default) and --%s are mutually exclusive", flagATSBranchOnly, flagATSOnRelease)
-	}
-	if f.SkipATS && f.ATSVersion != "" {
-		return microerror.Maskf(invalidFlagError, "--%s and --%s are mutually exclusive", flagSkipATS, flagATSVersion)
 	}
 
 	return nil

@@ -1305,10 +1305,12 @@ func Test_NodeTestTargetConfigurable(t *testing.T) {
 	}
 }
 
-// Test_ATSPipfileForAppRepo verifies the canonical ATS Pipfile is emitted for
-// a chart/app (.HasApp) repo -- the same signal that gates run-tests-with-ats
-// -- and that it carries the centrally-pinned content at tests/ats/Pipfile.
-func Test_ATSPipfileForAppRepo(t *testing.T) {
+// Test_ATSInputsForAppRepo verifies the canonical ATS test dependencies are
+// emitted for a chart/app (.HasApp) repo -- the same signal that gates
+// run-tests-with-ats -- in the uv layout app-test-suite 1.x (the default tag)
+// consumes: tests/ats/pyproject.toml + uv.lock with the centrally-pinned
+// content, and the pipenv files the generator used to emit deleted.
+func Test_ATSInputsForAppRepo(t *testing.T) {
 	inputs := newCircleCI(t, Config{
 		RepoName:      repoMCPKubernetes,
 		Language:      gen.LanguageGo,
@@ -1316,19 +1318,19 @@ func Test_ATSPipfileForAppRepo(t *testing.T) {
 		HasDockerfile: true,
 	}).ATSInputs()
 
-	if len(inputs) != 1 {
-		t.Fatalf("expected 1 ATS input for an app repo, got %d", len(inputs))
+	if len(inputs) != 4 {
+		t.Fatalf("expected 4 ATS inputs for an app repo (uv layout), got %d: %+v", len(inputs), inputs)
 	}
-	if inputs[0].Path != "tests/ats/Pipfile" {
-		t.Errorf("ATS input Path = %q, want tests/ats/Pipfile", inputs[0].Path)
+	if inputs[0].Path != "tests/ats/pyproject.toml" {
+		t.Errorf("ATS input Path = %q, want tests/ats/pyproject.toml", inputs[0].Path)
 	}
 
 	got := renderInput(t, inputs[0])
-	if !contains(got, `pytest-helm-charts = "==1.3.4"`) {
-		t.Errorf("generated ATS Pipfile missing the canonical pytest-helm-charts pin:\n%s", got)
+	if !contains(got, `"pytest-helm-charts==1.3.4"`) {
+		t.Errorf("generated ATS pyproject.toml missing the canonical pytest-helm-charts pin:\n%s", got)
 	}
-	if !contains(got, `pytest = "==8.4.2"`) {
-		t.Errorf("generated ATS Pipfile missing the canonical pytest pin:\n%s", got)
+	if !contains(got, `"pytest==8.4.2"`) {
+		t.Errorf("generated ATS pyproject.toml missing the canonical pytest pin:\n%s", got)
 	}
 }
 
@@ -1419,9 +1421,10 @@ func Test_DefaultChartTestsRunOnBranchesOnly(t *testing.T) {
 		t.Errorf("default chart push should require build-chart + push-to-registries-release exactly once, found %d:\n%s", n, got)
 	}
 
-	// The canonical ATS Pipfile stays: the branch job runs the tests.
-	if inputs := newCircleCI(t, c).ATSInputs(); len(inputs) != 1 {
-		t.Errorf("expected 1 ATS input by default, got %d: %+v", len(inputs), inputs)
+	// The canonical ATS test dependencies stay (uv layout: pyproject.toml,
+	// uv.lock, the two Pipfile deletes): the branch job runs the tests.
+	if inputs := newCircleCI(t, c).ATSInputs(); len(inputs) != 4 {
+		t.Errorf("expected 4 ATS inputs by default, got %d: %+v", len(inputs), inputs)
 	}
 }
 
@@ -1443,14 +1446,20 @@ func Test_ATSOnReleaseAddsTagRun(t *testing.T) {
 	if n := strings.Count(got, jobRunTests); n != 2 {
 		t.Errorf("ATSOnRelease config should carry two %s jobs, found %d:\n%s", jobRunTests, n, got)
 	}
-	if !contains(got, "name: execute-chart-tests-release\n        requires:\n        - build-chart\n        - push-to-registries-release") {
+	// The tag-time job carries the ATS 1.x parameters between its name and its
+	// requires block, so locate the job and check its requires separately.
+	tagJob := got[strings.Index(got, "name: execute-chart-tests-release\n"):]
+	if next := strings.Index(tagJob, "\n    - "); next > 0 {
+		tagJob = tagJob[:next]
+	}
+	if !contains(tagJob, "requires:\n        - build-chart\n        - push-to-registries-release") {
 		t.Errorf("ATSOnRelease tag test should require build-chart + push-to-registries-release:\n%s", got)
 	}
 	if !contains(got, "requires:\n        - execute-chart-tests-release\n        - push-to-registries-release") {
 		t.Errorf("ATSOnRelease chart push should require execute-chart-tests-release:\n%s", got)
 	}
-	if inputs := newCircleCI(t, c).ATSInputs(); len(inputs) != 1 {
-		t.Errorf("expected 1 ATS input with ATSOnRelease, got %d: %+v", len(inputs), inputs)
+	if inputs := newCircleCI(t, c).ATSInputs(); len(inputs) != 4 {
+		t.Errorf("expected 4 ATS inputs with ATSOnRelease, got %d: %+v", len(inputs), inputs)
 	}
 
 	c.SkipATS = true
@@ -1882,24 +1891,38 @@ func Test_ATSVersionLegacy(t *testing.T) {
 	}
 }
 
-// Test_ATSVersionUnset verifies the default emits neither parameter, so every
-// repo that does not set the knob regenerates identical config.
+// Test_ATSVersionUnset verifies an unset tag selects DefaultATSVersion: the
+// generated config is byte-identical to pinning the default explicitly, and
+// that default is app-test-suite 1.x (pinned image, job-owned kind cluster), so
+// every generated-CI chart repo runs ATS 1.x unless it pins a 0.x tag.
 func Test_ATSVersionUnset(t *testing.T) {
-	got := render(t, Config{
+	base := Config{
 		RepoName:      repoMCPKubernetes,
 		Language:      gen.LanguageGo,
 		Flavours:      gen.FlavourSlice{gen.FlavourApp},
 		HasDockerfile: true,
-	})
-	for _, unwanted := range []string{"app-test-suite_container_tag", "create_kind_cluster"} {
-		if contains(got, unwanted) {
-			t.Errorf("default config must not contain %q:\n%s", unwanted, got)
+	}
+	got := render(t, base)
+
+	explicit := base
+	explicit.ATSVersion = DefaultATSVersion
+	if want := render(t, explicit); got != want {
+		t.Errorf("unset ATSVersion must render like ATSVersion=%q\n--- unset ---\n%s\n--- explicit ---\n%s", DefaultATSVersion, got, want)
+	}
+	if !strings.HasPrefix(DefaultATSVersion, "1.") {
+		t.Errorf("DefaultATSVersion = %q, want an app-test-suite 1.x tag", DefaultATSVersion)
+	}
+	for _, want := range []string{`app-test-suite_container_tag: "` + DefaultATSVersion + `"`, "create_kind_cluster: true"} {
+		if !contains(got, want) {
+			t.Errorf("default config must contain %q:\n%s", want, got)
 		}
 	}
 }
 
-// Test_ATSVersionInvalid verifies the tag has to be a semantic version and
-// cannot be combined with the ATS opt-out.
+// Test_ATSVersionInvalid verifies the tag has to be a semantic version, and
+// that the ATS opt-out simply wins over the tag: SkipATS carries the default
+// (or an explicit) tag without error and still emits no chart-test job and no
+// test dependency file.
 func Test_ATSVersionInvalid(t *testing.T) {
 	base := Config{
 		RepoName:      repoMCPKubernetes,
@@ -1917,8 +1940,12 @@ func Test_ATSVersionInvalid(t *testing.T) {
 	c = base
 	c.ATSVersion = "1.0.0"
 	c.SkipATS = true
-	if _, err := New(c); !IsInvalidConfig(err) {
-		t.Errorf("expected invalidConfigError for SkipATS + ATSVersion, got %v", err)
+	got := render(t, c)
+	if contains(got, jobRunTests) || contains(got, "create_kind_cluster") {
+		t.Errorf("SkipATS must drop the chart-test jobs regardless of ATSVersion:\n%s", got)
+	}
+	if inputs := newCircleCI(t, c).ATSInputs(); len(inputs) != 0 {
+		t.Errorf("SkipATS must emit no ATS inputs regardless of ATSVersion, got %+v", inputs)
 	}
 }
 

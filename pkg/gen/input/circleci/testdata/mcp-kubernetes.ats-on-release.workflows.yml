@@ -97,6 +97,10 @@ workflows:
     # push avoids an ImagePullBackOff race.
     - architect/run-tests-with-ats:
         name: execute-chart-tests
+        app-test-suite_container_tag: "1.0.0"
+        # app-test-suite 1.x provisions no cluster: the job creates the kind
+        # cluster and runs the pinned image against its kubeconfig.
+        create_kind_cluster: true
         requires:
         - build-chart
         filters:
@@ -108,6 +112,10 @@ workflows:
     # image-availability reason as the branch job above.
     - architect/run-tests-with-ats:
         name: execute-chart-tests-release
+        app-test-suite_container_tag: "1.0.0"
+        # app-test-suite 1.x provisions no cluster: the job creates the kind
+        # cluster and runs the pinned image against its kubeconfig.
+        create_kind_cluster: true
         requires:
         - build-chart
         - push-to-registries-release

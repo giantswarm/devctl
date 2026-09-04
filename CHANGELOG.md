@@ -56,6 +56,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- `gen circleci`: **app-test-suite 1.0.0 is the default** for every generated-CI chart repo
+  (`DefaultATSVersion`, next to the orb pin). Unset, `--ats-version` now renders exactly what
+  `--ats-version 1.0.0` renders: `app-test-suite_container_tag: "1.0.0"` and `create_kind_cluster: true`
+  on the chart-test jobs, and `tests/ats/pyproject.toml` + `uv.lock` instead of the Pipfile. The repo owns
+  the rest of its migration (`.ats/main.yaml` without the `*-cluster-type` keys, tests that install with
+  Helm instead of an App CR); a repo that has not migrated yet pins a 0.x tag (`--ats-version 0.15.0`,
+  `gen.ci.atsVersion: "0.15.0"` in giantswarm/github) to stay on the legacy dats.sh path with the Pipfile.
+  `--skip-ats` no longer conflicts with the tag: the opt-out wins and the tag is ignored.
 - `gen circleci`: the chart tests run on branches only. The generated chart pipeline no longer carries
   `execute-chart-tests-release`; `push-chart-release` gates directly on `build-chart` (plus the release
   image when there is one), so a release is the build + push alone. The tag is cut from the merge commit

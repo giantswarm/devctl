@@ -33,6 +33,14 @@ import (
 // renovate: datasource=github-tags depName=giantswarm/architect-orb
 const OrbVersion = "10.3.0"
 
+// DefaultATSVersion is the app-test-suite container tag the generated chart-test
+// jobs run when a repo pins none (`gen circleci --ats-version`). app-test-suite
+// 1.x is the default for every generated-CI chart repo: the job creates the kind
+// cluster, the tests live in a uv project and the chart is installed with Helm.
+// A repo that has not migrated its .ats/main.yaml and tests yet pins a 0.x tag
+// (e.g. "0.15.0") to stay on the legacy dats.sh path until it has.
+const DefaultATSVersion = "1.0.0"
+
 // ContinuationOrbVersion pins the circleci/continuation orb used by the
 // generated setup config (.circleci/config.yml) to merge the optional
 // repo-owned .circleci/custom.yml into .circleci/workflows.yml at pipeline
@@ -230,14 +238,15 @@ type Config struct {
 	// chart/app repo.
 	ATSOnRelease bool
 	// ATSVersion pins the app-test-suite container tag the chart-test jobs run
-	// (run-tests-with-ats `app-test-suite_container_tag`). Empty keeps the orb
-	// default. A tag of major 1 or higher selects app-test-suite 1.x, which no
-	// longer provisions clusters: both jobs get `create_kind_cluster: true` (the
-	// job creates the kind cluster and hands over its kubeconfig) and the
-	// generated test dependency file switches from tests/ats/Pipfile (pipenv) to
-	// tests/ats/pyproject.toml + uv.lock (uv), with the Pipfile deleted. Must be
-	// a semantic version; mutually exclusive with SkipATS. Only applies to a
-	// chart/app repo.
+	// (run-tests-with-ats `app-test-suite_container_tag`). Empty selects
+	// DefaultATSVersion. A tag of major 1 or
+	// higher selects app-test-suite 1.x, which no longer provisions clusters:
+	// both jobs get `create_kind_cluster: true` (the job creates the kind
+	// cluster and hands over its kubeconfig) and the generated test dependency
+	// file switches from tests/ats/Pipfile (pipenv) to tests/ats/pyproject.toml
+	// + uv.lock (uv), with the Pipfile deleted. A 0.x tag keeps the legacy
+	// dats.sh path and the Pipfile. Must be a semantic version. Ignored with
+	// SkipATS. Only applies to a chart/app repo.
 	ATSVersion string
 	// HasDockerfile selects the image pipeline. The runner derives this from
 	// the presence of a Dockerfile in the repo.
@@ -468,8 +477,10 @@ func New(config Config) (*CircleCI, error) {
 	if config.SkipATS && config.ATSOnRelease {
 		return nil, microerror.Maskf(invalidConfigError, "SkipATS and ATSOnRelease are mutually exclusive")
 	}
-	if config.SkipATS && config.ATSVersion != "" {
-		return nil, microerror.Maskf(invalidConfigError, "SkipATS and ATSVersion are mutually exclusive")
+	// SkipATS drops the chart-test jobs and the test dependency files, so the
+	// ATS tag is moot; it is not an error to carry the default alongside it.
+	if config.ATSVersion == "" {
+		config.ATSVersion = DefaultATSVersion
 	}
 	atsKindCluster, err := atsCreatesKindCluster(config.ATSVersion)
 	if err != nil {
@@ -702,7 +713,8 @@ func (c *CircleCI) ATSInputs() []input.Input {
 // the chart-test jobs must create the kind cluster themselves: app-test-suite
 // 1.0 dropped its built-in kind lifecycle, so every 1.x tag needs
 // `create_kind_cluster: true` (and the uv test layout), while 0.x tags keep the
-// legacy dats.sh path. An empty tag keeps the orb default. The tag has to parse
+// legacy dats.sh path. New substitutes DefaultATSVersion for an empty tag before
+// this runs; an empty tag here still means "no opinion". The tag has to parse
 // as a semantic version (an optional leading "v" is tolerated); a dev tag such
 // as 0.15.1-dev.<branch>.<date>.<hash> counts as 0.x.
 func atsCreatesKindCluster(tag string) (bool, error) {
