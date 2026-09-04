@@ -1,10 +1,10 @@
 package circleci
 
 import (
-	"github.com/Masterminds/semver/v3"
 	"sort"
 	"strings"
 
+	"github.com/Masterminds/semver/v3"
 	"github.com/giantswarm/microerror"
 
 	"github.com/giantswarm/devctl/v8/pkg/gen"
