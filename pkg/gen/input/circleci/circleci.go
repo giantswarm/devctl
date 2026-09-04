@@ -39,7 +39,7 @@ const OrbVersion = "10.3.0"
 // cluster, the tests live in a uv project and the chart is installed with Helm.
 // A repo that has not migrated its .ats/main.yaml and tests yet pins a 0.x tag
 // (e.g. "0.15.0") to stay on the legacy dats.sh path until it has.
-const DefaultATSVersion = "1.0.1"
+const DefaultATSVersion = "1.0.2"
 
 // ContinuationOrbVersion pins the circleci/continuation orb used by the
 // generated setup config (.circleci/config.yml) to merge the optional
