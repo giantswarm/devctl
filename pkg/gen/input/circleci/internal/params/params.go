@@ -36,6 +36,16 @@ type Params struct {
 	// with SkipATS. Only meaningful for a chart/app repo (HasApp); ignored
 	// otherwise.
 	ATSBranchOnly bool
+	// ATSVersion is the app-test-suite container tag emitted as
+	// `app-test-suite_container_tag` on both run-tests-with-ats jobs. Empty
+	// emits nothing and the orb default applies.
+	ATSVersion string
+	// ATSKindCluster emits `create_kind_cluster: true` on both
+	// run-tests-with-ats jobs (app-test-suite 1.x: the job creates the kind
+	// cluster) and selects the uv layout of the generated test dependencies
+	// (tests/ats/pyproject.toml + uv.lock instead of tests/ats/Pipfile). Derived
+	// from ATSVersion (major >= 1).
+	ATSKindCluster bool
 	// ChartName is the chart name used for the push-to-app-catalog `chart`
 	// param and the helm/<chart> directory. Defaults to RepoName. Set it for
 	// repos whose chart directory does not match the repo name (e.g.

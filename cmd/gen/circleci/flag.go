@@ -28,6 +28,7 @@ const (
 	flagResourceClass           = "resource-class"
 	flagSkipATS                 = "skip-ats"
 	flagATSBranchOnly           = "ats-branch-only"
+	flagATSVersion              = "ats-version"
 	flagFlavour                 = "flavour"
 	flagLanguage                = "language"
 	flagRepoName                = "repo-name"
@@ -56,6 +57,7 @@ type flag struct {
 	ResourceClass           string
 	SkipATS                 bool
 	ATSBranchOnly           bool
+	ATSVersion              string
 	Flavours                gen.FlavourSlice
 	Language                gen.Language
 	RepoName                string
@@ -85,6 +87,7 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.ResourceClass, flagResourceClass, "", `Override the CircleCI resource_class on the cli-flavour go-build job. Empty defaults to "large". Raise it (e.g. "xlarge") for repos that need more RAM/CPU headroom for the cold cross-compile. Only applies to the cli flavour.`)
 	cmd.Flags().BoolVar(&f.SkipATS, flagSkipATS, false, `Opt the chart pipeline out of app-test-suite (ATS) chart tests. By default an "app" flavour repo runs architect/run-tests-with-ats between build-chart and the chart push, and generation emits the canonical tests/ats/Pipfile. When set, those test jobs and the Pipfile are not generated and the chart push gates directly on build-chart. Only applies to the app flavour.`)
 	cmd.Flags().BoolVar(&f.ATSBranchOnly, flagATSBranchOnly, false, `Run the app-test-suite (ATS) chart tests on branches only and not again on the release tag. By default the chart pipeline runs architect/run-tests-with-ats twice: execute-chart-tests on every branch build and execute-chart-tests-release on the tag, between build-chart and push-chart-release. When set, execute-chart-tests-release is not generated and push-chart-release gates directly on build-chart, so the release is the build + push alone. The tests/ats/Pipfile is still generated. The trade: the tag is cut from the merge commit of a PR whose execute-chart-tests already passed on that tree, so the tag-time run re-tests an identical tree -- but only if the repo's branch protection makes the CircleCI statuses required checks on the default branch and requires branches to be up to date with it (strict) before merging. Set that first. Mutually exclusive with --skip-ats. Only applies to the app flavour.`)
+	cmd.Flags().StringVar(&f.ATSVersion, flagATSVersion, "", `app-test-suite container tag the generated chart-test jobs run (run-tests-with-ats app-test-suite_container_tag). Empty keeps the orb default. A 1.x tag also sets create_kind_cluster: true on both jobs -- app-test-suite 1.x no longer provisions clusters, the job creates the kind cluster and hands over its kubeconfig -- and switches the generated test dependency file from tests/ats/Pipfile (pipenv, ATS <= 0.15) to tests/ats/pyproject.toml + uv.lock (uv, ATS 1.x), deleting the Pipfile. The repo migrates the rest itself (.ats/main.yaml without the *-cluster-type keys, tests that install with Helm instead of an App CR). Mutually exclusive with --skip-ats. Only applies to the app flavour.`)
 	cmd.Flags().VarP(gen.NewFlavourSliceFlagValue(&f.Flavours, gen.FlavourSlice{}), flagFlavour, "f", fmt.Sprintf(`List of project flavours. The "app" flavour selects the chart pipeline. Possible values: <%s>`, strings.Join(gen.AllFlavours(), "|")))
 	cmd.Flags().VarP(gen.NewLanguageFlagValue(&f.Language, gen.Language("")), flagLanguage, "l", fmt.Sprintf(`The programming language. "go" selects the go-build job. Possible values: <%s>`, strings.Join(gen.AllLanguages(), "|")))
 	cmd.Flags().StringVarP(&f.RepoName, flagRepoName, "r", "", "Repository name under the giantswarm organization (used for the binary, chart, and job names).")
@@ -104,6 +107,9 @@ func (f *flag) Validate() error {
 	}
 	if f.SkipATS && f.ATSBranchOnly {
 		return microerror.Maskf(invalidFlagError, "--%s and --%s are mutually exclusive", flagSkipATS, flagATSBranchOnly)
+	}
+	if f.SkipATS && f.ATSVersion != "" {
+		return microerror.Maskf(invalidFlagError, "--%s and --%s are mutually exclusive", flagSkipATS, flagATSVersion)
 	}
 
 	return nil

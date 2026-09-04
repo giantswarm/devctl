@@ -4,6 +4,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/Masterminds/semver/v3"
 	"github.com/giantswarm/microerror"
 
 	"github.com/giantswarm/devctl/v8/pkg/gen"
@@ -30,7 +31,7 @@ import (
 // custom manager that reads this annotation lives in renovate-custom.json5.
 //
 // renovate: datasource=github-tags depName=giantswarm/architect-orb
-const OrbVersion = "10.2.0"
+const OrbVersion = "10.3.0"
 
 // ContinuationOrbVersion pins the circleci/continuation orb used by the
 // generated setup config (.circleci/config.yml) to merge the optional
@@ -225,6 +226,16 @@ type Config struct {
 	// up to date with the default branch (strict) before merging. Mutually
 	// exclusive with SkipATS. Only applies to a chart/app repo.
 	ATSBranchOnly bool
+	// ATSVersion pins the app-test-suite container tag the chart-test jobs run
+	// (run-tests-with-ats `app-test-suite_container_tag`). Empty keeps the orb
+	// default. A tag of major 1 or higher selects app-test-suite 1.x, which no
+	// longer provisions clusters: both jobs get `create_kind_cluster: true` (the
+	// job creates the kind cluster and hands over its kubeconfig) and the
+	// generated test dependency file switches from tests/ats/Pipfile (pipenv) to
+	// tests/ats/pyproject.toml + uv.lock (uv), with the Pipfile deleted. Must be
+	// a semantic version; mutually exclusive with SkipATS. Only applies to a
+	// chart/app repo.
+	ATSVersion string
 	// HasDockerfile selects the image pipeline. The runner derives this from
 	// the presence of a Dockerfile in the repo.
 	HasDockerfile bool
@@ -454,6 +465,13 @@ func New(config Config) (*CircleCI, error) {
 	if config.SkipATS && config.ATSBranchOnly {
 		return nil, microerror.Maskf(invalidConfigError, "SkipATS and ATSBranchOnly are mutually exclusive")
 	}
+	if config.SkipATS && config.ATSVersion != "" {
+		return nil, microerror.Maskf(invalidConfigError, "SkipATS and ATSVersion are mutually exclusive")
+	}
+	atsKindCluster, err := atsCreatesKindCluster(config.ATSVersion)
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
 
 	// The single-job build passes ImagePlatforms through untouched (empty lets
 	// the orb derive it). The native per-architecture build has to know the
@@ -601,6 +619,8 @@ func New(config Config) (*CircleCI, error) {
 			HasDockerfile:            hasDockerfile,
 			HasApp:                   hasApp,
 			SkipATS:                  config.SkipATS,
+			ATSVersion:               config.ATSVersion,
+			ATSKindCluster:           atsKindCluster,
 			ATSBranchOnly:            config.ATSBranchOnly,
 			ChartName:                chartName,
 			KeepChartAppVersion:      keepChartAppVersion,
@@ -672,5 +692,23 @@ func (c *CircleCI) ATSInputs() []input.Input {
 		return nil
 	}
 
-	return ats.CreateATS()
+	return ats.CreateATS(c.params.ATSKindCluster)
+}
+
+// atsCreatesKindCluster decides from the app-test-suite container tag whether
+// the chart-test jobs must create the kind cluster themselves: app-test-suite
+// 1.0 dropped its built-in kind lifecycle, so every 1.x tag needs
+// `create_kind_cluster: true` (and the uv test layout), while 0.x tags keep the
+// legacy dats.sh path. An empty tag keeps the orb default. The tag has to parse
+// as a semantic version (an optional leading "v" is tolerated); a dev tag such
+// as 0.15.1-dev.<branch>.<date>.<hash> counts as 0.x.
+func atsCreatesKindCluster(tag string) (bool, error) {
+	if tag == "" {
+		return false, nil
+	}
+	v, err := semver.NewVersion(strings.TrimPrefix(tag, "v"))
+	if err != nil {
+		return false, microerror.Maskf(invalidConfigError, "ATSVersion %q is not a semantic version: %v", tag, err)
+	}
+	return v.Major() >= 1, nil
 }

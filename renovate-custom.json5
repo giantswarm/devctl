@@ -201,8 +201,11 @@
       // regeneration. The per-repo copies are disabled for Renovate via
       // renovate-presets:tests-ats.json5, so this is the only place the stack
       // is updated.
-      matchManagers: ['pipenv'],
-      matchFileNames: ['pkg/gen/input/ats/internal/file/Pipfile'],
+      // The uv layout of the same stack (pyproject.toml + uv.lock, emitted for
+      // app-test-suite 1.x repos) lives next to it and is bumped by the pep621
+      // manager; the group keeps both layouts on identical pins in one PR.
+      matchManagers: ['pipenv', 'pep621'],
+      matchFileNames: ['pkg/gen/input/ats/internal/file/Pipfile', 'pkg/gen/input/ats/internal/file/pyproject.toml'],
       groupName: 'ATS test dependencies',
     },
     {
