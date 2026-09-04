@@ -25,6 +25,24 @@ type Params struct {
 	// emitted, and the chart push jobs gate directly on build-chart instead.
 	// Only meaningful for a chart/app repo (HasApp); ignored otherwise.
 	SkipATS bool
+	// ATSOnRelease adds the tag-time chart-test job (execute-chart-tests-release,
+	// gating push-chart-release) next to the branch job. False, the default,
+	// runs the chart tests on branches only and lets the tag build and push
+	// the chart straight after build-chart: the tag is cut from the merge
+	// commit of a PR whose branch run already tested that tree. Mutually
+	// exclusive with SkipATS. Only meaningful for a chart/app repo (HasApp);
+	// ignored otherwise.
+	ATSOnRelease bool
+	// ATSVersion is the app-test-suite container tag emitted as
+	// `app-test-suite_container_tag` on both run-tests-with-ats jobs. Empty
+	// emits nothing and the orb default applies.
+	ATSVersion string
+	// ATSKindCluster emits `create_kind_cluster: true` on both
+	// run-tests-with-ats jobs (app-test-suite 1.x: the job creates the kind
+	// cluster) and selects the uv layout of the generated test dependencies
+	// (tests/ats/pyproject.toml + uv.lock instead of tests/ats/Pipfile). Derived
+	// from ATSVersion (major >= 1).
+	ATSKindCluster bool
 	// ChartName is the chart name used for the push-to-app-catalog `chart`
 	// param and the helm/<chart> directory. Defaults to RepoName. Set it for
 	// repos whose chart directory does not match the repo name (e.g.
@@ -93,6 +111,23 @@ type Params struct {
 	// fails). The append-only custom.yml merge cannot cap a generated job's
 	// platforms, so the generator carries it.
 	ImagePlatforms string
+	// ImageNativeBuilds selects the per-architecture image build: one
+	// architect/build-image job per platform (BranchImageBuilds /
+	// ReleaseImageBuilds), each on a resource class of that architecture, and
+	// the push-to-registries jobs with `merge-digests: true`, joining the
+	// recorded digests into the tagged index instead of building. False keeps
+	// the single multi-platform buildx job. When true, ImagePlatforms is the
+	// resolved list and must name exactly the platforms the build jobs cover --
+	// the orb fails the merge in either direction rather than publishing an
+	// index that is missing an architecture.
+	ImageNativeBuilds bool
+	// BranchImageBuilds and ReleaseImageBuilds are the per-architecture
+	// build-image jobs of the branch and tag paths when ImageNativeBuilds is
+	// set. One job per platform, each pinned to a resource class of that
+	// platform's architecture, because a CircleCI job runs on one machine and a
+	// machine is native for one architecture. Empty otherwise.
+	BranchImageBuilds  []ImageBuild
+	ReleaseImageBuilds []ImageBuild
 	// ImageDockerfile overrides the Dockerfile path on the image jobs (the
 	// architect push-to-registries `dockerfile` param). Set it for repos whose
 	// Dockerfile is not at the repo root (e.g. backstage builds from
@@ -185,4 +220,18 @@ type Params struct {
 	// NodeBuildOutput is the workspace path the Node job persists for an image
 	// handoff (e.g. "packages/*/dist/*"). Empty omits persist_to_workspace.
 	NodeBuildOutput string
+}
+
+// ImageBuild is one architect/build-image job: one platform, on a machine of
+// that platform's architecture.
+type ImageBuild struct {
+	// Name is the CircleCI job name, e.g. "build-image-arm64". Branch and tag
+	// paths need distinct names because both appear in the same workflow.
+	Name string
+	// Platform is the buildx platform, e.g. "linux/arm64".
+	Platform string
+	// ResourceClass is a CircleCI class whose architecture matches Platform.
+	// CircleCI gives the setup_remote_docker VM the architecture of the job's
+	// class, so this is what decides whether the build is native or emulated.
+	ResourceClass string
 }

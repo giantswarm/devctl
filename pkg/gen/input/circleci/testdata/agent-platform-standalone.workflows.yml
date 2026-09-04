@@ -10,64 +10,6 @@ orbs:
 workflows:
   build:
     jobs:
-    - architect/go-build:
-        name: go-build
-        binary: mcp-kubernetes
-        context: architect
-        # Run unit tests through `make test` rather than the orb's hardcoded
-        # `go test ./...`, so CI and local agent runs use the same command.
-        # The generic Makefile target is `go test ./...`; repos that need more
-        # (-race, integration suites, govulncheck, helm-unittest, CRD-freshness)
-        # override their own `make test`. See devctl makefile gen and the
-        # make-target-ci-interface ADR.
-        test_target: test
-        filters:
-          tags:
-            only: /^v.*/
-
-    # Branches: validate the image build without pushing anything (push: false
-    # keeps the buildx result in the BuildKit cache). Same hadolint lint and
-    # multi-arch build as the release job, so Dockerfile regressions surface
-    # on the PR instead of at tag time.
-    - architect/push-to-registries:
-        context: architect
-        name: build-image
-        push: false
-        requires:
-        - go-build
-        filters:
-          branches:
-            ignore:
-            - main
-
-    # Tag builds: push multi-arch image to gsoci + gsociprivate. Aliyun is
-    # handled by the sync-china-registry job below (orb's split-china-push
-    # mechanism), so the buildx push no longer crosses the Pacific.
-    - architect/push-to-registries:
-        context: architect
-        name: push-to-registries-release
-        split-china-push: true
-        requires:
-        - go-build
-        filters:
-          tags:
-            only: /^v.*/
-          branches:
-            ignore: /.*/
-
-    # Mirror gsoci -> Aliyun via the in-China giantswarm/galaxy-runner. Runs
-    # in parallel with the chart catalog push; Aliyun mirror failures do NOT
-    # block the chart publish.
-    - architect/sync-china-registry:
-        context: architect
-        name: sync-china-registry
-        requires:
-        - push-to-registries-release
-        filters:
-          tags:
-            only: /^v.*/
-          branches:
-            ignore: /.*/
 
     # build-chart: package + lint via app-build-suite and persist the archive
     # (no push). Shared by the branch and tag paths -- branches get build + test
@@ -78,12 +20,10 @@ workflows:
         name: build-chart
         app_catalog: giantswarm-catalog
         app_catalog_test: giantswarm-test-catalog
-        chart: mcp-kubernetes
+        chart: agent-platform-standalone
         push_to_appcatalog: false
         push_to_oci_registry: false
         persist_chart_archive: true
-        requires:
-        - go-build
         filters:
           tags:
             only: /^v.*/
@@ -122,10 +62,9 @@ workflows:
         name: push-chart-release
         app_catalog: giantswarm-catalog
         app_catalog_test: giantswarm-test-catalog
-        chart: mcp-kubernetes
+        chart: agent-platform-standalone
         requires:
         - build-chart
-        - push-to-registries-release
         filters:
           tags:
             only: /^v.*/

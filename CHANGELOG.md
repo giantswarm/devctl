@@ -7,13 +7,87 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- `gen circleci`: the default app-test-suite tag moves to `1.0.1`. The `1.0.0` image ships a CRD bundle whose
+  `gateway-api.yaml` starts with helm's `Pulled:`/`Digest:` lines (captured from stdout while syncing), so
+  `kubectl apply --server-side -f /etc/ats/crds` rejects the directory and every 1.0.0 run fails at CRD
+  bootstrap before a single test runs. 1.0.1 fixes the bundle and guards it with a unit test.
+
 ### Added
 
 - `gen circleci`: new `--go-build-path` flag setting the architect `go-build` job's `path` param for
   Go repos.
+- `gen circleci`: new `--ats-on-release` flag (`gen.ci.atsOnRelease` in giantswarm/github). Restores
+  the pre-v8.45.0 chart pipeline: an `execute-chart-tests-release` job on the tag, after the release
+  image, with `push-chart-release` gating on it. Mutually exclusive with `--skip-ats`.
+- `gen circleci`: new `--ats-version` flag (`gen.ci.atsVersion` in giantswarm/github). Pins the
+  app-test-suite container tag on both `run-tests-with-ats` jobs (`app-test-suite_container_tag`). A
+  1.x tag also emits `create_kind_cluster: true` on both jobs -- app-test-suite 1.x no longer
+  provisions clusters, the job creates the kind cluster and hands over its kubeconfig (the architect
+  orb's `run-tests-with-ats` `create_kind_cluster` opt-in) -- and switches the generated test
+  dependency file from `tests/ats/Pipfile` (pipenv, ATS <= 0.15) to `tests/ats/pyproject.toml` +
+  `uv.lock` (uv, ATS 1.x), deleting the Pipfile. Empty, the default, changes nothing; a 0.x tag pins
+  the tag on the legacy `dats.sh` path. The rest of a repo's migration (`.ats/main.yaml` without the
+  `*-cluster-type` keys, tests that install with Helm instead of an App CR) is the repo's own; see the
+  app-test-suite CHANGELOG. Mutually exclusive with `--skip-ats`. The canonical uv layout is embedded
+  next to the Pipfile and Renovate bumps both layouts in the one `ATS test dependencies` PR.
+- The architect orb pin moves to `10.3.0`, which ships `run-tests-with-ats`'s `create_kind_cluster`
+  (architect-orb#917): the job installs kind, creates the cluster and hands its kubeconfig to
+  app-test-suite 1.x, which provisions none. `--ats-version` with a 1.x tag emits that parameter, and
+  10.2.0 rejects it as unknown, so the pin and the knob ship together.
+- `gen circleci`: new `--image-native-builds` flag (`gen.ci.image.nativeBuilds` in giantswarm/github),
+  the opt-in for native per-architecture image builds. It emits one `architect/build-image` job per
+  platform in `--image-platforms` (default `linux/amd64,linux/arm64`), each on a resource class of that
+  architecture (`small` for amd64, `arm.medium` for arm64), and switches the generated
+  `push-to-registries` / `push-to-registries-release` jobs to `merge-digests: true`, so they join the
+  per-architecture digests into the tagged index instead of building. Nothing is emulated and the
+  builds run concurrently, so wall clock is the slower single native build: on `giantswarm/backstage`
+  the image path went from 14m16s to 3m22s. Job names downstream (`push-to-registries`,
+  `push-to-registries-release`, `sync-china-registry`) are unchanged; the validate-only branch job
+  `build-image` becomes `build-image-<arch>` jobs, so a `custom.yml` that requires `build-image` must
+  follow when a repo opts in. A platform with no native class is rejected at generation time. Off by
+  default: the generated output for every repo that does not set it is unchanged. Pays off for
+  Dockerfiles with real work in `RUN` steps; a `COPY` of a cross-compiled binary gains nothing.
+- The architect orb pin moves to `10.2.0`, which ships `build-image` and `merge-digests`.
+- `gen circleci`: new `--ats-branch-only` flag (`gen.ci.atsBranchOnly` in giantswarm/github). The chart
+  pipeline keeps `execute-chart-tests` on branches and the canonical `tests/ats/Pipfile`, but no longer
+  generates the tag-time `execute-chart-tests-release`; `push-chart-release` gates directly on
+  `build-chart`. The tag is cut from the merge commit of a PR whose `execute-chart-tests` already passed
+  on that tree, so the tag-time run re-tested an identical tree: on `agent-platform-standalone` it was
+  4m10s of a 5m57s release (p50 over 53 tag pipelines since 2026-08-31) and its only three failures were
+  the apptestctl bootstrap race, never a chart regression. It is only sound when the repo's branch
+  protection makes the `ci/circleci` statuses required checks on the default branch and requires
+  branches to be up to date with it (strict); set that first. Mutually exclusive with `--skip-ats`,
+  which drops both jobs and the Pipfile. Off by default: the generated output for every repo that does
+  not set it is unchanged.
 
 ### Changed
 
+- `gen circleci`: **app-test-suite 1.0.0 is the default** for every generated-CI chart repo
+  (`DefaultATSVersion`, next to the orb pin). Unset, `--ats-version` now renders exactly what
+  `--ats-version 1.0.0` renders: `app-test-suite_container_tag: "1.0.0"` and `create_kind_cluster: true`
+  on the chart-test jobs, and `tests/ats/pyproject.toml` + `uv.lock` instead of the Pipfile. The repo owns
+  the rest of its migration (`.ats/main.yaml` without the `*-cluster-type` keys, tests that install with
+  Helm instead of an App CR); a repo that has not migrated yet pins a 0.x tag (`--ats-version 0.15.0`,
+  `gen.ci.atsVersion: "0.15.0"` in giantswarm/github) to stay on the legacy dats.sh path with the Pipfile.
+  `--skip-ats` no longer conflicts with the tag: the opt-out wins and the tag is ignored.
+- `gen circleci`: the chart tests run on branches only. The generated chart pipeline no longer carries
+  `execute-chart-tests-release`; `push-chart-release` gates directly on `build-chart` (plus the release
+  image when there is one), so a release is the build + push alone. The tag is cut from the merge commit
+  of a PR whose `execute-chart-tests` already ran on that tree; on `agent-platform-standalone` the
+  tag-time re-run was ~4m10 of a ~6 min release, never caught a chart regression and failed only on the
+  apptestctl bootstrap race. Every app-flavour repo changes shape at its next alignment. For the tag to
+  be the tree the PR tested, make the `ci/circleci` statuses required checks on the default branch with
+  up-to-date branches (strict); a repo that cannot, or whose `custom.yml` jobs require
+  `execute-chart-tests-release` (backstage's second catalog push did), sets `--ats-on-release`.
+
+- `gen workflows --release-workflow auto-release`: `cliff.toml` skips `docs` commits the way it skips
+  `style`. git-cliff bumps at least the patch for every commit that is not skipped, so a docs-only
+  merge tagged and published an identical artifact (agent-platform-standalone v0.35.2 and v0.35.3,
+  both CLAUDE.md-only); now such a push computes the current version and the workflow logs
+  `No releasable commits since vX.Y.Z; skipping tag.` The template comment that claimed the bump
+  ignores the parser groups is replaced by the actual rule. `chore` and `ci` keep releasing.
 - `gen workflows`: run the generated "Fix Go vulnerabilities" (nancy-fixer) workflow every Wednesday night.
 
 - `gen circleci`: whether the chart's `appVersion` is stamped now follows the repo's shape. A repo with
@@ -36,6 +110,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - align helm-docs command in `Makefile.gen.app.mk.template` with the `pre-commit-config.yaml.template` configuration
 
 ### Deprecated
+
+- `gen circleci --ats-branch-only` (added in v8.43.0): branch-only chart tests are the default now. The
+  flag is accepted and ignored; `gen.ci.atsBranchOnly` in giantswarm/github is ignored the same way.
 
 - `gen circleci --keep-chart-app-version` (added in v8.39.0): use `--override-chart-app-version=false`. It
   is still honoured, and the repos it was added for no longer need either flag — the derivation covers

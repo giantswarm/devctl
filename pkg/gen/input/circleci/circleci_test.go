@@ -27,7 +27,15 @@ const (
 	goldenNodeNPMPath       = "testdata/node-npm.workflows.yml"
 	goldenNodeYarnBerryPath = "testdata/node-yarn-berry.workflows.yml"
 
+	goldenNativeWorkflowsPath     = "testdata/mcp-kubernetes.native.workflows.yml"
+	goldenNativeNodeWorkflowsPath = "testdata/node-yarn-berry.native.workflows.yml"
+
+	goldenChartOnlyWorkflowsPath    = "testdata/agent-platform-standalone.workflows.yml"
+	goldenATSOnReleaseWorkflowsPath = "testdata/mcp-kubernetes.ats-on-release.workflows.yml"
+	goldenATSOnePointXWorkflowsPath = "testdata/agent-platform-standalone.ats-1.workflows.yml"
+
 	repoMCPKubernetes = "mcp-kubernetes"
+	repoAPStandalone  = "agent-platform-standalone"
 	repoSitesearch    = "sitesearch"
 	repoK8sTypes      = "k8s-typescript-types"
 	repoBackstage     = "backstage"
@@ -1297,10 +1305,12 @@ func Test_NodeTestTargetConfigurable(t *testing.T) {
 	}
 }
 
-// Test_ATSPipfileForAppRepo verifies the canonical ATS Pipfile is emitted for
-// a chart/app (.HasApp) repo -- the same signal that gates run-tests-with-ats
-// -- and that it carries the centrally-pinned content at tests/ats/Pipfile.
-func Test_ATSPipfileForAppRepo(t *testing.T) {
+// Test_ATSInputsForAppRepo verifies the canonical ATS test dependencies are
+// emitted for a chart/app (.HasApp) repo -- the same signal that gates
+// run-tests-with-ats -- in the uv layout app-test-suite 1.x (the default tag)
+// consumes: tests/ats/pyproject.toml + uv.lock with the centrally-pinned
+// content, and the pipenv files the generator used to emit deleted.
+func Test_ATSInputsForAppRepo(t *testing.T) {
 	inputs := newCircleCI(t, Config{
 		RepoName:      repoMCPKubernetes,
 		Language:      gen.LanguageGo,
@@ -1308,19 +1318,19 @@ func Test_ATSPipfileForAppRepo(t *testing.T) {
 		HasDockerfile: true,
 	}).ATSInputs()
 
-	if len(inputs) != 1 {
-		t.Fatalf("expected 1 ATS input for an app repo, got %d", len(inputs))
+	if len(inputs) != 4 {
+		t.Fatalf("expected 4 ATS inputs for an app repo (uv layout), got %d: %+v", len(inputs), inputs)
 	}
-	if inputs[0].Path != "tests/ats/Pipfile" {
-		t.Errorf("ATS input Path = %q, want tests/ats/Pipfile", inputs[0].Path)
+	if inputs[0].Path != "tests/ats/pyproject.toml" {
+		t.Errorf("ATS input Path = %q, want tests/ats/pyproject.toml", inputs[0].Path)
 	}
 
 	got := renderInput(t, inputs[0])
-	if !contains(got, `pytest-helm-charts = "==1.3.4"`) {
-		t.Errorf("generated ATS Pipfile missing the canonical pytest-helm-charts pin:\n%s", got)
+	if !contains(got, `"pytest-helm-charts==1.3.4"`) {
+		t.Errorf("generated ATS pyproject.toml missing the canonical pytest-helm-charts pin:\n%s", got)
 	}
-	if !contains(got, `pytest = "==8.4.2"`) {
-		t.Errorf("generated ATS Pipfile missing the canonical pytest pin:\n%s", got)
+	if !contains(got, `"pytest==8.4.2"`) {
+		t.Errorf("generated ATS pyproject.toml missing the canonical pytest pin:\n%s", got)
 	}
 }
 
@@ -1376,6 +1386,128 @@ func Test_SkipATSOmitsChartTests(t *testing.T) {
 	// No canonical ATS Pipfile is emitted.
 	if inputs := newCircleCI(t, c).ATSInputs(); len(inputs) != 0 {
 		t.Errorf("expected no ATS inputs with SkipATS, got %d: %+v", len(inputs), inputs)
+	}
+}
+
+// Test_DefaultChartTestsRunOnBranchesOnly verifies the default chart-test
+// shape: an app repo gets execute-chart-tests on branches and the canonical
+// Pipfile, no execute-chart-tests-release, and push-chart-release gates
+// directly on build-chart (plus the release image).
+func Test_DefaultChartTestsRunOnBranchesOnly(t *testing.T) {
+	c := Config{
+		RepoName:      repoMCPKubernetes,
+		Language:      gen.LanguageGo,
+		Flavours:      gen.FlavourSlice{gen.FlavourApp},
+		HasDockerfile: true,
+	}
+
+	got := render(t, c)
+
+	for _, want := range []string{"name: build-chart", "name: execute-chart-tests\n", "name: push-chart-release"} {
+		if !contains(got, want) {
+			t.Errorf("default config missing %q:\n%s", want, got)
+		}
+	}
+	// Exactly one run-tests-with-ats job: no tag-time re-run by default.
+	if contains(got, "execute-chart-tests-release") {
+		t.Errorf("default config should not contain execute-chart-tests-release:\n%s", got)
+	}
+	if n := strings.Count(got, jobRunTests); n != 1 {
+		t.Errorf("default config should carry exactly one %s job, found %d:\n%s", jobRunTests, n, got)
+	}
+	// push-chart-release gates on build-chart and the release image, and is
+	// the only job with that requires block.
+	if n := strings.Count(got, "requires:\n        - build-chart\n        - push-to-registries-release"); n != 1 {
+		t.Errorf("default chart push should require build-chart + push-to-registries-release exactly once, found %d:\n%s", n, got)
+	}
+
+	// The canonical ATS test dependencies stay (uv layout: pyproject.toml,
+	// uv.lock, the two Pipfile deletes): the branch job runs the tests.
+	if inputs := newCircleCI(t, c).ATSInputs(); len(inputs) != 4 {
+		t.Errorf("expected 4 ATS inputs by default, got %d: %+v", len(inputs), inputs)
+	}
+}
+
+// Test_ATSOnReleaseAddsTagRun verifies the opt-in back to the pre-v8.45.0
+// shape: ATSOnRelease adds execute-chart-tests-release on the tag, after the
+// release image, and push-chart-release gates on it. SkipATS and ATSOnRelease
+// together are rejected.
+func Test_ATSOnReleaseAddsTagRun(t *testing.T) {
+	c := Config{
+		RepoName:      repoMCPKubernetes,
+		Language:      gen.LanguageGo,
+		Flavours:      gen.FlavourSlice{gen.FlavourApp},
+		HasDockerfile: true,
+		ATSOnRelease:  true,
+	}
+
+	got := render(t, c)
+
+	if n := strings.Count(got, jobRunTests); n != 2 {
+		t.Errorf("ATSOnRelease config should carry two %s jobs, found %d:\n%s", jobRunTests, n, got)
+	}
+	// The tag-time job carries the ATS 1.x parameters between its name and its
+	// requires block, so locate the job and check its requires separately.
+	tagJob := got[strings.Index(got, "name: execute-chart-tests-release\n"):]
+	if next := strings.Index(tagJob, "\n    - "); next > 0 {
+		tagJob = tagJob[:next]
+	}
+	if !contains(tagJob, "requires:\n        - build-chart\n        - push-to-registries-release") {
+		t.Errorf("ATSOnRelease tag test should require build-chart + push-to-registries-release:\n%s", got)
+	}
+	if !contains(got, "requires:\n        - execute-chart-tests-release\n        - push-to-registries-release") {
+		t.Errorf("ATSOnRelease chart push should require execute-chart-tests-release:\n%s", got)
+	}
+	if inputs := newCircleCI(t, c).ATSInputs(); len(inputs) != 4 {
+		t.Errorf("expected 4 ATS inputs with ATSOnRelease, got %d: %+v", len(inputs), inputs)
+	}
+
+	c.SkipATS = true
+	if _, err := New(c); !IsInvalidConfig(err) {
+		t.Errorf("expected invalidConfigError for SkipATS + ATSOnRelease, got %v", err)
+	}
+}
+
+// Test_GoldenChartOnlyWorkflows pins the chart-only default shape: the
+// agent-platform-standalone case (generic language, app flavour, no
+// Dockerfile, appVersion stamped), chart tests on branches only.
+func Test_GoldenChartOnlyWorkflows(t *testing.T) {
+	stamp := true
+	got := render(t, Config{
+		RepoName:                repoAPStandalone,
+		Language:                gen.LanguageGeneric,
+		Flavours:                gen.FlavourSlice{gen.FlavourApp},
+		OverrideChartAppVersion: &stamp,
+	})
+
+	want, err := os.ReadFile(goldenChartOnlyWorkflowsPath) // #nosec G304 -- fixed in-package testdata path
+	if err != nil {
+		t.Fatalf("read golden: %v", err)
+	}
+
+	if got != string(want) {
+		t.Errorf("generated workflows do not match golden %s\n--- got ---\n%s\n--- want ---\n%s", goldenChartOnlyWorkflowsPath, got, string(want))
+	}
+}
+
+// Test_GoldenATSOnReleaseWorkflows pins the opt-in tag-time chart-test shape
+// for the Go service: the pre-v8.45.0 default, byte for byte.
+func Test_GoldenATSOnReleaseWorkflows(t *testing.T) {
+	got := render(t, Config{
+		RepoName:      repoMCPKubernetes,
+		Language:      gen.LanguageGo,
+		Flavours:      gen.FlavourSlice{gen.FlavourApp},
+		HasDockerfile: true,
+		ATSOnRelease:  true,
+	})
+
+	want, err := os.ReadFile(goldenATSOnReleaseWorkflowsPath) // #nosec G304 -- fixed in-package testdata path
+	if err != nil {
+		t.Fatalf("read golden: %v", err)
+	}
+
+	if got != string(want) {
+		t.Errorf("generated workflows do not match golden %s\n--- got ---\n%s\n--- want ---\n%s", goldenATSOnReleaseWorkflowsPath, got, string(want))
 	}
 }
 
@@ -1563,5 +1695,317 @@ func Test_GoBuildPathRequiresGo(t *testing.T) {
 	})
 	if !IsInvalidConfig(err) {
 		t.Fatalf("expected invalidConfigError, got %v", err)
+// nativeNodeConfig is the backstage shape with the native per-architecture
+// image build opted in: a Node monorepo whose Dockerfile does real work in RUN
+// steps, publishing a dev image on branches (BranchPublish), so both the branch
+// and the release path get the build-image jobs plus a merge.
+func nativeNodeConfig() Config {
+	return Config{
+		RepoName:          repoBackstage,
+		Language:          gen.LanguageNode,
+		Flavours:          gen.FlavourSlice{gen.FlavourApp},
+		PackageManager:    PackageManagerYarn,
+		NodeBuildTarget:   nodeBuildTarget,
+		NodeBuildOutput:   backstageBuildOutput,
+		ImageDockerfile:   backstageDockerfile,
+		ImagePlatforms:    "linux/amd64,linux/arm64",
+		BranchPublish:     true,
+		ImageNativeBuilds: true,
+	}
+}
+
+// Test_ImageNativeBuilds verifies the opt-in per-architecture image build: one
+// architect/build-image job per platform on a class of that architecture, and
+// the push-to-registries jobs switched to merge-digests with a platform list
+// that matches the build jobs -- on both the branch (BranchPublish) and the
+// release path. Off, the output is the single-job shape, which the other
+// goldens pin.
+func Test_ImageNativeBuilds(t *testing.T) {
+	got := render(t, nativeNodeConfig())
+
+	for _, want := range []string{
+		"name: build-image-amd64\n        platform: linux/amd64\n        resource_class: small",
+		"name: build-image-arm64\n        platform: linux/arm64\n        resource_class: arm.medium",
+		"name: build-image-release-amd64\n        platform: linux/amd64\n        resource_class: small",
+		"name: build-image-release-arm64\n        platform: linux/arm64\n        resource_class: arm.medium",
+		"name: push-to-registries\n        merge-digests: true\n        platforms: \"linux/amd64,linux/arm64\"",
+		"name: push-to-registries-release\n        merge-digests: true\n        platforms: \"linux/amd64,linux/arm64\"",
+		"requires:\n        - build-image-amd64\n        - build-image-arm64",
+		"requires:\n        - build-image-release-amd64\n        - build-image-release-arm64",
+	} {
+		if !contains(got, want) {
+			t.Errorf("native builds output missing %q:\n%s", want, got)
+		}
+	}
+
+	// The Dockerfile path belongs to the four build jobs; the merge jobs do not
+	// build and must not carry it. split-china-push has to be identical on the
+	// release build jobs and the release merge job (three in total).
+	if n := strings.Count(got, "dockerfile: "+backstageDockerfile); n != 4 {
+		t.Errorf("expected dockerfile on the four build-image jobs, found %d:\n%s", n, got)
+	}
+	if n := strings.Count(got, "split-china-push: true"); n != 3 {
+		t.Errorf("expected split-china-push on two release builds + the merge, found %d:\n%s", n, got)
+	}
+	// Nothing is emulated: the single multi-platform push job must be gone.
+	if contains(got, "platforms: linux/amd64,linux/arm64\n") {
+		t.Errorf("unquoted single-job platforms param leaked into the native shape:\n%s", got)
+	}
+	// The downstream edges keep resolving by the unchanged job names.
+	for _, want := range []string{
+		"- execute-chart-tests\n        - push-to-registries\n",
+		"- build-chart\n        - push-to-registries-release\n",
+	} {
+		if !contains(got, want) {
+			t.Errorf("downstream requires lost the push-to-registries edge %q:\n%s", want, got)
+		}
+	}
+}
+
+// Test_ImageNativeBuildsValidateOnlyBranch verifies the branch path without
+// BranchPublish: the per-architecture builds run with push: false and there
+// is no branch push-to-registries job, since nothing was pushed to merge. This
+// is the Go service shape (mcp-kubernetes).
+func Test_ImageNativeBuildsValidateOnlyBranch(t *testing.T) {
+	got := render(t, Config{
+		RepoName:          repoMCPKubernetes,
+		Language:          gen.LanguageGo,
+		Flavours:          gen.FlavourSlice{gen.FlavourApp},
+		HasDockerfile:     true,
+		ImageNativeBuilds: true,
+	})
+
+	if n := strings.Count(got, "push: false"); n != 2 {
+		t.Errorf("expected push: false on the two branch build-image jobs, found %d:\n%s", n, got)
+	}
+	if contains(got, "name: push-to-registries\n") {
+		t.Errorf("validate-only branch path must not emit a branch push-to-registries job:\n%s", got)
+	}
+	if !contains(got, "name: push-to-registries-release\n        merge-digests: true") {
+		t.Errorf("release path must merge digests:\n%s", got)
+	}
+	// Empty ImagePlatforms resolves to the default pair, and the merge job must
+	// name it explicitly: the orb needs the set to match the build jobs.
+	if !contains(got, "platforms: \"linux/amd64,linux/arm64\"") {
+		t.Errorf("default platform list not resolved onto the merge job:\n%s", got)
+	}
+	if !contains(got, "name: build-image\n") == false {
+		t.Errorf("single-job branch validation job must not appear next to the native builds:\n%s", got)
+	}
+}
+
+// Test_ImageNativeBuildsRejectsUnmappedPlatform verifies a platform with no
+// native CircleCI class is refused at generation time when native builds are
+// on -- the orb has no emulated fallback -- and passes through untouched when
+// they are off, where the single-job buildx build emulates it as before.
+func Test_ImageNativeBuildsRejectsUnmappedPlatform(t *testing.T) {
+	_, err := New(Config{
+		RepoName:          "vllm",
+		Language:          gen.Language(""),
+		Flavours:          gen.FlavourSlice{},
+		HasDockerfile:     true,
+		ImagePlatforms:    "linux/arm64,linux/arm/v7",
+		ImageNativeBuilds: true,
+	})
+	if !IsInvalidConfig(err) {
+		t.Errorf("expected invalidConfigError for an unmapped platform with native builds, got %v", err)
+	}
+
+	got := render(t, Config{
+		RepoName:       "vllm",
+		Language:       gen.Language(""),
+		Flavours:       gen.FlavourSlice{},
+		HasDockerfile:  true,
+		ImagePlatforms: "linux/arm64,linux/arm/v7",
+	})
+	if n := strings.Count(got, "platforms: linux/arm64,linux/arm/v7"); n != 2 {
+		t.Errorf("single-job build must pass the platform list through, found %d:\n%s", n, got)
+	}
+}
+
+// Test_GoldenNativeWorkflows pins the native per-architecture shape for a Go
+// service (validate-only branch path, merged release path).
+func Test_GoldenNativeWorkflows(t *testing.T) {
+	got := render(t, Config{
+		RepoName:          repoMCPKubernetes,
+		Language:          gen.LanguageGo,
+		Flavours:          gen.FlavourSlice{gen.FlavourApp},
+		HasDockerfile:     true,
+		ImageNativeBuilds: true,
+	})
+
+	want, err := os.ReadFile(goldenNativeWorkflowsPath) // #nosec G304 -- fixed in-package testdata path
+	if err != nil {
+		t.Fatalf("read golden: %v", err)
+	}
+
+	if got != string(want) {
+		t.Errorf("generated workflows do not match golden %s\n--- got ---\n%s\n--- want ---\n%s", goldenNativeWorkflowsPath, got, string(want))
+	}
+}
+
+// Test_GoldenNativeNodeWorkflows pins the native per-architecture shape for the
+// backstage case: Node monorepo, nested Dockerfile, BranchPublish.
+func Test_GoldenNativeNodeWorkflows(t *testing.T) {
+	got := render(t, nativeNodeConfig())
+
+	want, err := os.ReadFile(goldenNativeNodeWorkflowsPath) // #nosec G304 -- fixed in-package testdata path
+	if err != nil {
+		t.Fatalf("read golden: %v", err)
+	}
+
+	if got != string(want) {
+		t.Errorf("generated workflows do not match golden %s\n--- got ---\n%s\n--- want ---\n%s", goldenNativeNodeWorkflowsPath, got, string(want))
+	}
+}
+
+// Test_ATSVersionOnePointX verifies a 1.x app-test-suite tag pins the image on
+// the chart-test job, turns on the job-owned kind cluster (app-test-suite 1.x
+// provisions none), and switches the generated test dependencies to the uv
+// layout, deleting the pipenv files the generator used to emit.
+func Test_ATSVersionOnePointX(t *testing.T) {
+	c := Config{
+		RepoName:      repoMCPKubernetes,
+		Language:      gen.LanguageGo,
+		Flavours:      gen.FlavourSlice{gen.FlavourApp},
+		HasDockerfile: true,
+		ATSVersion:    "1.0.0",
+	}
+
+	got := render(t, c)
+	if n := strings.Count(got, `app-test-suite_container_tag: "1.0.0"`); n != 1 {
+		t.Errorf("expected the ATS tag on the chart-test job, found %d:\n%s", n, got)
+	}
+	if n := strings.Count(got, "create_kind_cluster: true"); n != 1 {
+		t.Errorf("expected create_kind_cluster on the chart-test job, found %d:\n%s", n, got)
+	}
+
+	inputs := newCircleCI(t, c).ATSInputs()
+	want := []struct {
+		path   string
+		delete bool
+	}{
+		{"tests/ats/pyproject.toml", false},
+		{"tests/ats/uv.lock", false},
+		{"tests/ats/Pipfile", true},
+		{"tests/ats/Pipfile.lock", true},
+	}
+	if len(inputs) != len(want) {
+		t.Fatalf("expected %d ATS inputs for the uv layout, got %d: %+v", len(want), len(inputs), inputs)
+	}
+	for i, w := range want {
+		if inputs[i].Path != w.path || inputs[i].Delete != w.delete {
+			t.Errorf("ATS input %d = {Path: %q, Delete: %v}, want {Path: %q, Delete: %v}", i, inputs[i].Path, inputs[i].Delete, w.path, w.delete)
+		}
+	}
+	if pyproject := renderInput(t, inputs[0]); !contains(pyproject, `"pytest-helm-charts==1.3.4"`) {
+		t.Errorf("generated pyproject.toml missing the canonical pytest-helm-charts pin:\n%s", pyproject)
+	}
+}
+
+// Test_ATSVersionLegacy verifies a 0.x tag (a release or a dev build of the
+// pre-1.0 tool) only pins the image: the dats.sh path and the Pipfile stay.
+func Test_ATSVersionLegacy(t *testing.T) {
+	for _, tag := range []string{"0.15.0", "v0.15.0", "0.15.1-dev.gh-readonl--ab3270cae7f.2026-08-20.21-58-02.h4162ff7"} {
+		c := Config{
+			RepoName:      repoMCPKubernetes,
+			Language:      gen.LanguageGo,
+			Flavours:      gen.FlavourSlice{gen.FlavourApp},
+			HasDockerfile: true,
+			ATSVersion:    tag,
+		}
+
+		got := render(t, c)
+		if n := strings.Count(got, `app-test-suite_container_tag: "`+tag+`"`); n != 1 {
+			t.Errorf("%s: expected the ATS tag on the chart-test job, found %d:\n%s", tag, n, got)
+		}
+		if contains(got, "create_kind_cluster") {
+			t.Errorf("%s: a 0.x tag must not turn on create_kind_cluster:\n%s", tag, got)
+		}
+		if inputs := newCircleCI(t, c).ATSInputs(); len(inputs) != 1 || inputs[0].Path != "tests/ats/Pipfile" {
+			t.Errorf("%s: expected the Pipfile as the only ATS input, got %+v", tag, inputs)
+		}
+	}
+}
+
+// Test_ATSVersionUnset verifies an unset tag selects DefaultATSVersion: the
+// generated config is byte-identical to pinning the default explicitly, and
+// that default is app-test-suite 1.x (pinned image, job-owned kind cluster), so
+// every generated-CI chart repo runs ATS 1.x unless it pins a 0.x tag.
+func Test_ATSVersionUnset(t *testing.T) {
+	base := Config{
+		RepoName:      repoMCPKubernetes,
+		Language:      gen.LanguageGo,
+		Flavours:      gen.FlavourSlice{gen.FlavourApp},
+		HasDockerfile: true,
+	}
+	got := render(t, base)
+
+	explicit := base
+	explicit.ATSVersion = DefaultATSVersion
+	if want := render(t, explicit); got != want {
+		t.Errorf("unset ATSVersion must render like ATSVersion=%q\n--- unset ---\n%s\n--- explicit ---\n%s", DefaultATSVersion, got, want)
+	}
+	if !strings.HasPrefix(DefaultATSVersion, "1.") {
+		t.Errorf("DefaultATSVersion = %q, want an app-test-suite 1.x tag", DefaultATSVersion)
+	}
+	for _, want := range []string{`app-test-suite_container_tag: "` + DefaultATSVersion + `"`, "create_kind_cluster: true"} {
+		if !contains(got, want) {
+			t.Errorf("default config must contain %q:\n%s", want, got)
+		}
+	}
+}
+
+// Test_ATSVersionInvalid verifies the tag has to be a semantic version, and
+// that the ATS opt-out simply wins over the tag: SkipATS carries the default
+// (or an explicit) tag without error and still emits no chart-test job and no
+// test dependency file.
+func Test_ATSVersionInvalid(t *testing.T) {
+	base := Config{
+		RepoName:      repoMCPKubernetes,
+		Language:      gen.LanguageGo,
+		Flavours:      gen.FlavourSlice{gen.FlavourApp},
+		HasDockerfile: true,
+	}
+
+	c := base
+	c.ATSVersion = "latest"
+	if _, err := New(c); !IsInvalidConfig(err) {
+		t.Errorf("expected invalidConfigError for a non-semver ATS tag, got %v", err)
+	}
+
+	c = base
+	c.ATSVersion = "1.0.0"
+	c.SkipATS = true
+	got := render(t, c)
+	if contains(got, jobRunTests) || contains(got, "create_kind_cluster") {
+		t.Errorf("SkipATS must drop the chart-test jobs regardless of ATSVersion:\n%s", got)
+	}
+	if inputs := newCircleCI(t, c).ATSInputs(); len(inputs) != 0 {
+		t.Errorf("SkipATS must emit no ATS inputs regardless of ATSVersion, got %+v", inputs)
+	}
+}
+
+// Test_GoldenATSOnePointXWorkflows pins the chart-only shape on app-test-suite
+// 1.x: the agent-platform-standalone case (generic language, app flavour, no
+// Dockerfile, appVersion stamped, branch-only chart tests) with the pinned
+// image and the job-owned kind cluster.
+func Test_GoldenATSOnePointXWorkflows(t *testing.T) {
+	stamp := true
+	got := render(t, Config{
+		RepoName:                repoAPStandalone,
+		Language:                gen.LanguageGeneric,
+		Flavours:                gen.FlavourSlice{gen.FlavourApp},
+		OverrideChartAppVersion: &stamp,
+		ATSVersion:              "1.0.0",
+	})
+
+	want, err := os.ReadFile(goldenATSOnePointXWorkflowsPath) // #nosec G304 -- fixed in-package testdata path
+	if err != nil {
+		t.Fatalf("read golden: %v", err)
+	}
+
+	if got != string(want) {
+		t.Errorf("generated workflows do not match golden %s\n--- got ---\n%s\n--- want ---\n%s", goldenATSOnePointXWorkflowsPath, got, string(want))
 	}
 }

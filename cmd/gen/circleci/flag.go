@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/v8/pkg/gen"
+	"github.com/giantswarm/devctl/v8/pkg/gen/input/circleci"
 )
 
 const (
@@ -25,8 +26,12 @@ const (
 	flagImageName               = "image-name"
 	flagImagePlatforms          = "image-platforms"
 	flagImageDockerfile         = "image-dockerfile"
+	flagImageNativeBuilds       = "image-native-builds"
 	flagResourceClass           = "resource-class"
 	flagSkipATS                 = "skip-ats"
+	flagATSBranchOnly           = "ats-branch-only"
+	flagATSOnRelease            = "ats-on-release"
+	flagATSVersion              = "ats-version"
 	flagFlavour                 = "flavour"
 	flagLanguage                = "language"
 	flagRepoName                = "repo-name"
@@ -51,9 +56,13 @@ type flag struct {
 	ImageName               string
 	ImagePlatforms          string
 	ImageDockerfile         string
+	ImageNativeBuilds       bool
 	ResourceClass           string
 	GoBuildPath             string
 	SkipATS                 bool
+	ATSBranchOnly           bool
+	ATSOnRelease            bool
+	ATSVersion              string
 	Flavours                gen.FlavourSlice
 	Language                gen.Language
 	RepoName                string
@@ -79,9 +88,14 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.ImageName, flagImageName, "", "Override the `giantswarm/<repo>` default image name on the image jobs (push-to-registries / sync-china-registry `image` param). Set it for repos whose published image differs from the repo name (e.g. kserve -> giantswarm/kserve-controller). The append-only custom.yml merge cannot rename a generated job's image. Empty keeps the orb default.")
 	cmd.Flags().StringVar(&f.ImagePlatforms, flagImagePlatforms, "", "Override the buildx platform list on the image jobs (push-to-registries `platforms` param). Empty lets the orb default apply (linux/amd64,linux/arm64 when no go-build .platforms file). Set it for single-architecture images (e.g. vllm -> linux/arm64, whose amd64 build has no prebuilt wheels).")
 	cmd.Flags().StringVar(&f.ImageDockerfile, flagImageDockerfile, "", "Override the Dockerfile path on the image jobs (push-to-registries `dockerfile` param). Set it for repos whose Dockerfile is not at the repo root (e.g. backstage -> packages/backend/Dockerfile); a non-empty value also turns the image pipeline on, since the root-Dockerfile derivation misses a nested Dockerfile. The append-only custom.yml merge cannot set this on a generated job. Empty keeps the orb default.")
+	cmd.Flags().BoolVar(&f.ImageNativeBuilds, flagImageNativeBuilds, false, "Build the image one architecture per job on a native resource class instead of one multi-platform buildx job. Emits an architect/build-image job per entry in --image-platforms (linux/amd64 on small, linux/arm64 on arm.medium) and switches the generated push-to-registries jobs to merge-digests: true, which joins the per-architecture digests into the tagged index. Nothing is emulated and the builds run concurrently, so wall clock is the slower single native build; pays off for Dockerfiles with real work in RUN steps (apt, pip, yarn, native modules), not for a COPY of a cross-compiled binary. A platform with no native class is rejected at generation time. On the branch path the validate-only build-image job becomes build-image-<arch> jobs, so a custom.yml that requires build-image must follow. Requires architect-orb 10.2.0.")
 	cmd.Flags().StringVar(&f.ResourceClass, flagResourceClass, "", `Override the CircleCI resource_class on the cli-flavour go-build job. Empty defaults to "large". Raise it (e.g. "xlarge") for repos that need more RAM/CPU headroom for the cold cross-compile. Only applies to the cli flavour.`)
 	cmd.Flags().StringVar(&f.GoBuildPath, flagGoBuildPath, "", `Override the package the go-build job compiles. Empty keeps the orb default "." (the module root).`)
 	cmd.Flags().BoolVar(&f.SkipATS, flagSkipATS, false, `Opt the chart pipeline out of app-test-suite (ATS) chart tests. By default an "app" flavour repo runs architect/run-tests-with-ats between build-chart and the chart push, and generation emits the canonical tests/ats/Pipfile. When set, those test jobs and the Pipfile are not generated and the chart push gates directly on build-chart. Only applies to the app flavour.`)
+	cmd.Flags().BoolVar(&f.ATSBranchOnly, flagATSBranchOnly, false, "Deprecated and ignored: chart tests on branches only is the default since v8.45.0.")
+	_ = cmd.Flags().MarkDeprecated(flagATSBranchOnly, fmt.Sprintf("branch-only chart tests are the default; drop the flag, or pass --%s to run them on the release tag as well", flagATSOnRelease))
+	cmd.Flags().BoolVar(&f.ATSOnRelease, flagATSOnRelease, false, `Also run the app-test-suite (ATS) chart tests on the release tag. By default the chart pipeline runs architect/run-tests-with-ats once, as execute-chart-tests on every branch build, and the release tag only builds and pushes the chart (push-chart-release gates on build-chart): the tag is cut from the merge commit of a PR whose branch run already tested that tree. When set, the pre-v8.45.0 shape is generated: an additional execute-chart-tests-release job runs on the tag, after the release image when there is one, and push-chart-release gates on it. Set it for a repo whose .circleci/custom.yml jobs require execute-chart-tests-release, or whose branch protection does not make the ci/circleci statuses required checks so the tag-time run is the only enforced one. Mutually exclusive with --skip-ats. Only applies to the app flavour.`)
+	cmd.Flags().StringVar(&f.ATSVersion, flagATSVersion, circleci.DefaultATSVersion, `app-test-suite container tag the generated chart-test jobs run (run-tests-with-ats app-test-suite_container_tag). A 1.x tag (the default) also sets create_kind_cluster: true on both jobs -- app-test-suite 1.x no longer provisions clusters, the job creates the kind cluster and hands over its kubeconfig -- and switches the generated test dependency file from tests/ats/Pipfile (pipenv, ATS <= 0.15) to tests/ats/pyproject.toml + uv.lock (uv, ATS 1.x), deleting the Pipfile. The repo migrates the rest itself (.ats/main.yaml without the *-cluster-type keys, tests that install with Helm instead of an App CR); until it has, a 0.x tag such as 0.15.0 keeps the legacy dats.sh path and the Pipfile. Empty selects the default. Ignored with --skip-ats. Only applies to the app flavour.`)
 	cmd.Flags().VarP(gen.NewFlavourSliceFlagValue(&f.Flavours, gen.FlavourSlice{}), flagFlavour, "f", fmt.Sprintf(`List of project flavours. The "app" flavour selects the chart pipeline. Possible values: <%s>`, strings.Join(gen.AllFlavours(), "|")))
 	cmd.Flags().VarP(gen.NewLanguageFlagValue(&f.Language, gen.Language("")), flagLanguage, "l", fmt.Sprintf(`The programming language. "go" selects the go-build job. Possible values: <%s>`, strings.Join(gen.AllLanguages(), "|")))
 	cmd.Flags().StringVarP(&f.RepoName, flagRepoName, "r", "", "Repository name under the giantswarm organization (used for the binary, chart, and job names).")
@@ -98,6 +112,12 @@ func (f *flag) Validate() error {
 	}
 	if f.ForcePublic && f.ImagePrivateOnly {
 		return microerror.Maskf(invalidFlagError, "--%s and --%s are mutually exclusive", flagForcePublic, flagImagePrivateOnly)
+	}
+	if f.SkipATS && f.ATSOnRelease {
+		return microerror.Maskf(invalidFlagError, "--%s and --%s are mutually exclusive", flagSkipATS, flagATSOnRelease)
+	}
+	if f.ATSBranchOnly && f.ATSOnRelease {
+		return microerror.Maskf(invalidFlagError, "--%s (deprecated, the default) and --%s are mutually exclusive", flagATSBranchOnly, flagATSOnRelease)
 	}
 
 	return nil
