@@ -30,7 +30,10 @@ const (
 	goldenNativeWorkflowsPath     = "testdata/mcp-kubernetes.native.workflows.yml"
 	goldenNativeNodeWorkflowsPath = "testdata/node-yarn-berry.native.workflows.yml"
 
+	goldenATSBranchOnlyWorkflowsPath = "testdata/agent-platform-standalone.ats-branch-only.workflows.yml"
+
 	repoMCPKubernetes = "mcp-kubernetes"
+	repoAPStandalone  = "agent-platform-standalone"
 	repoSitesearch    = "sitesearch"
 	repoK8sTypes      = "k8s-typescript-types"
 	repoBackstage     = "backstage"
@@ -1379,6 +1382,77 @@ func Test_SkipATSOmitsChartTests(t *testing.T) {
 	// No canonical ATS Pipfile is emitted.
 	if inputs := newCircleCI(t, c).ATSInputs(); len(inputs) != 0 {
 		t.Errorf("expected no ATS inputs with SkipATS, got %d: %+v", len(inputs), inputs)
+	}
+}
+
+// Test_ATSBranchOnlyKeepsBranchTests verifies the tag-time opt-out: an app
+// repo with ATSBranchOnly keeps execute-chart-tests on branches and the
+// canonical Pipfile, generates no execute-chart-tests-release, and gates
+// push-chart-release directly on build-chart (plus the release image).
+// SkipATS and ATSBranchOnly together are rejected.
+func Test_ATSBranchOnlyKeepsBranchTests(t *testing.T) {
+	c := Config{
+		RepoName:      repoMCPKubernetes,
+		Language:      gen.LanguageGo,
+		Flavours:      gen.FlavourSlice{gen.FlavourApp},
+		HasDockerfile: true,
+		ATSBranchOnly: true,
+	}
+
+	got := render(t, c)
+
+	// The chart pipeline and the branch test job stay.
+	for _, want := range []string{"name: build-chart", "name: execute-chart-tests\n", "name: push-chart-release"} {
+		if !contains(got, want) {
+			t.Errorf("ATSBranchOnly config missing %q:\n%s", want, got)
+		}
+	}
+	// Exactly one run-tests-with-ats job: the tag-time re-run is gone.
+	if contains(got, "execute-chart-tests-release") {
+		t.Errorf("ATSBranchOnly config should not contain execute-chart-tests-release:\n%s", got)
+	}
+	if n := strings.Count(got, jobRunTests); n != 1 {
+		t.Errorf("ATSBranchOnly config should carry exactly one %s job, found %d:\n%s", jobRunTests, n, got)
+	}
+	// push-chart-release gates on build-chart and the release image. With the
+	// tag test gone this requires block occurs exactly once (the tag test job
+	// used to carry the same one).
+	if n := strings.Count(got, "requires:\n        - build-chart\n        - push-to-registries-release"); n != 1 {
+		t.Errorf("ATSBranchOnly chart push should require build-chart + push-to-registries-release exactly once, found %d:\n%s", n, got)
+	}
+
+	// The canonical ATS Pipfile stays: the branch job still runs the tests.
+	if inputs := newCircleCI(t, c).ATSInputs(); len(inputs) != 1 {
+		t.Errorf("expected 1 ATS input with ATSBranchOnly, got %d: %+v", len(inputs), inputs)
+	}
+
+	// Both opt-outs at once is a contradiction.
+	c.SkipATS = true
+	if _, err := New(c); !IsInvalidConfig(err) {
+		t.Errorf("expected invalidConfigError for SkipATS + ATSBranchOnly, got %v", err)
+	}
+}
+
+// Test_GoldenATSBranchOnlyWorkflows pins the chart-only shape with the
+// tag-time chart-test re-run dropped: the agent-platform-standalone case
+// (generic language, app flavour, no Dockerfile, appVersion stamped).
+func Test_GoldenATSBranchOnlyWorkflows(t *testing.T) {
+	stamp := true
+	got := render(t, Config{
+		RepoName:                repoAPStandalone,
+		Language:                gen.LanguageGeneric,
+		Flavours:                gen.FlavourSlice{gen.FlavourApp},
+		OverrideChartAppVersion: &stamp,
+		ATSBranchOnly:           true,
+	})
+
+	want, err := os.ReadFile(goldenATSBranchOnlyWorkflowsPath) // #nosec G304 -- fixed in-package testdata path
+	if err != nil {
+		t.Fatalf("read golden: %v", err)
+	}
+
+	if got != string(want) {
+		t.Errorf("generated workflows do not match golden %s\n--- got ---\n%s\n--- want ---\n%s", goldenATSBranchOnlyWorkflowsPath, got, string(want))
 	}
 }
 

@@ -23,6 +23,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   default: the generated output for every repo that does not set it is unchanged. Pays off for
   Dockerfiles with real work in `RUN` steps; a `COPY` of a cross-compiled binary gains nothing.
 - The architect orb pin moves to `10.2.0`, which ships `build-image` and `merge-digests`.
+- `gen circleci`: new `--ats-branch-only` flag (`gen.ci.atsBranchOnly` in giantswarm/github). The chart
+  pipeline keeps `execute-chart-tests` on branches and the canonical `tests/ats/Pipfile`, but no longer
+  generates the tag-time `execute-chart-tests-release`; `push-chart-release` gates directly on
+  `build-chart`. The tag is cut from the merge commit of a PR whose `execute-chart-tests` already passed
+  on that tree, so the tag-time run re-tested an identical tree: on `agent-platform-standalone` it was
+  4m10s of a 5m57s release (p50 over 53 tag pipelines since 2026-08-31) and its only three failures were
+  the apptestctl bootstrap race, never a chart regression. It is only sound when the repo's branch
+  protection makes the `ci/circleci` statuses required checks on the default branch and requires
+  branches to be up to date with it (strict); set that first. Mutually exclusive with `--skip-ats`,
+  which drops both jobs and the Pipfile. Off by default: the generated output for every repo that does
+  not set it is unchanged.
 
 ### Changed
 

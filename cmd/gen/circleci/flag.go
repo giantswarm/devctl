@@ -27,6 +27,7 @@ const (
 	flagImageNativeBuilds       = "image-native-builds"
 	flagResourceClass           = "resource-class"
 	flagSkipATS                 = "skip-ats"
+	flagATSBranchOnly           = "ats-branch-only"
 	flagFlavour                 = "flavour"
 	flagLanguage                = "language"
 	flagRepoName                = "repo-name"
@@ -54,6 +55,7 @@ type flag struct {
 	ImageNativeBuilds       bool
 	ResourceClass           string
 	SkipATS                 bool
+	ATSBranchOnly           bool
 	Flavours                gen.FlavourSlice
 	Language                gen.Language
 	RepoName                string
@@ -82,6 +84,7 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&f.ImageNativeBuilds, flagImageNativeBuilds, false, "Build the image one architecture per job on a native resource class instead of one multi-platform buildx job. Emits an architect/build-image job per entry in --image-platforms (linux/amd64 on small, linux/arm64 on arm.medium) and switches the generated push-to-registries jobs to merge-digests: true, which joins the per-architecture digests into the tagged index. Nothing is emulated and the builds run concurrently, so wall clock is the slower single native build; pays off for Dockerfiles with real work in RUN steps (apt, pip, yarn, native modules), not for a COPY of a cross-compiled binary. A platform with no native class is rejected at generation time. On the branch path the validate-only build-image job becomes build-image-<arch> jobs, so a custom.yml that requires build-image must follow. Requires architect-orb 10.2.0.")
 	cmd.Flags().StringVar(&f.ResourceClass, flagResourceClass, "", `Override the CircleCI resource_class on the cli-flavour go-build job. Empty defaults to "large". Raise it (e.g. "xlarge") for repos that need more RAM/CPU headroom for the cold cross-compile. Only applies to the cli flavour.`)
 	cmd.Flags().BoolVar(&f.SkipATS, flagSkipATS, false, `Opt the chart pipeline out of app-test-suite (ATS) chart tests. By default an "app" flavour repo runs architect/run-tests-with-ats between build-chart and the chart push, and generation emits the canonical tests/ats/Pipfile. When set, those test jobs and the Pipfile are not generated and the chart push gates directly on build-chart. Only applies to the app flavour.`)
+	cmd.Flags().BoolVar(&f.ATSBranchOnly, flagATSBranchOnly, false, `Run the app-test-suite (ATS) chart tests on branches only and not again on the release tag. By default the chart pipeline runs architect/run-tests-with-ats twice: execute-chart-tests on every branch build and execute-chart-tests-release on the tag, between build-chart and push-chart-release. When set, execute-chart-tests-release is not generated and push-chart-release gates directly on build-chart, so the release is the build + push alone. The tests/ats/Pipfile is still generated. The trade: the tag is cut from the merge commit of a PR whose execute-chart-tests already passed on that tree, so the tag-time run re-tests an identical tree -- but only if the repo's branch protection makes the CircleCI statuses required checks on the default branch and requires branches to be up to date with it (strict) before merging. Set that first. Mutually exclusive with --skip-ats. Only applies to the app flavour.`)
 	cmd.Flags().VarP(gen.NewFlavourSliceFlagValue(&f.Flavours, gen.FlavourSlice{}), flagFlavour, "f", fmt.Sprintf(`List of project flavours. The "app" flavour selects the chart pipeline. Possible values: <%s>`, strings.Join(gen.AllFlavours(), "|")))
 	cmd.Flags().VarP(gen.NewLanguageFlagValue(&f.Language, gen.Language("")), flagLanguage, "l", fmt.Sprintf(`The programming language. "go" selects the go-build job. Possible values: <%s>`, strings.Join(gen.AllLanguages(), "|")))
 	cmd.Flags().StringVarP(&f.RepoName, flagRepoName, "r", "", "Repository name under the giantswarm organization (used for the binary, chart, and job names).")
@@ -98,6 +101,9 @@ func (f *flag) Validate() error {
 	}
 	if f.ForcePublic && f.ImagePrivateOnly {
 		return microerror.Maskf(invalidFlagError, "--%s and --%s are mutually exclusive", flagForcePublic, flagImagePrivateOnly)
+	}
+	if f.SkipATS && f.ATSBranchOnly {
+		return microerror.Maskf(invalidFlagError, "--%s and --%s are mutually exclusive", flagSkipATS, flagATSBranchOnly)
 	}
 
 	return nil
