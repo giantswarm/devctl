@@ -7,7 +7,7 @@ repos:
   # helm/<chart>/charts/ holds vendored upstream subcharts (vendir-synced).
   # Those files are not repo-authored: the auto-fixing hooks would rewrite
   # them on every vendir bump and the next vendir sync would revert the fix,
-  # so the whitespace/shebang hooks skip the vendored subtree.
+  # so the whitespace/shebang/private-key hooks skip the vendored subtree.
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
@@ -15,6 +15,10 @@ repos:
       - id: check-shebang-scripts-are-executable
         exclude: "^helm/[^/]+/charts/.*"
       - id: detect-private-key
+        # Upstream charts document key formats with placeholder PEM headers
+        # (redis-ha's restore.ssh.key example) that the hook cannot tell from
+        # a key; gitleaks stays the scanner of record for the vendored subtree.
+        exclude: "^helm/[^/]+/charts/.*"
       - id: end-of-file-fixer
         exclude: "(.*testdata/.*|^\\.yarn/.*|^helm/[^/]+/charts/.*)"
       - id: mixed-line-ending
