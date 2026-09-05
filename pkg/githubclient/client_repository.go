@@ -240,6 +240,19 @@ func (c *Client) RemoveRepositoryBranchProtection(ctx context.Context, repositor
 	return nil
 }
 
+// ReportedChecks returns the names of the commit status contexts and the
+// completed, non-skipped check runs observed on the latest non-tag commit of
+// branch and on the heads of the most recently merged pull requests: the
+// checks that demonstrably run in this repository. Callers use it to require a
+// check only once it exists (devctl repo checks --checks-if-reported).
+func (c *Client) ReportedChecks(ctx context.Context, repository *github.Repository, branch string) ([]string, error) {
+	checks, err := c.getGithubChecks(ctx, repository, branch, nil)
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
+	return checks, nil
+}
+
 // recentMergedPRsForChecks bounds how many recently-merged PR heads we inspect
 // for required-check candidates. Three smooths over a single noisy PR (a check
 // that ran on the latest PR but is being retired, or one that was newly added
