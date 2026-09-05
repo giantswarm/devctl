@@ -81,7 +81,15 @@ func (r *runner) update(ctx context.Context, owner, repo string) error {
 		}
 		reported, err := client.ReportedChecks(ctx, repository, defaultBranch)
 		if err != nil {
-			return nil, microerror.Mask(err)
+			// Discovery reads commit statuses and check runs, which a GitHub App
+			// token can only do on a private repository when the App holds the
+			// "Commit statuses" / "Checks" read permissions (403 "Resource not
+			// accessible by integration" otherwise). The conditional checks are
+			// best-effort by definition: leave them for a later run and keep the
+			// unconditional --checks update going instead of failing the caller
+			// (align-files aborts the whole repository alignment on a non-zero exit).
+			r.logger.Warnf("%s/%s: cannot read the reported checks on %q (%v); not requiring %v in this run", owner, repo, defaultBranch, err, r.flag.ChecksIfReported)
+			return add, nil
 		}
 		found, skipped := splitReported(r.flag.ChecksIfReported, reported)
 		if len(skipped) > 0 {
