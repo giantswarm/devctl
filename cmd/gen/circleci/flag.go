@@ -21,6 +21,7 @@ const (
 	flagOverrideChartAppVersion = "override-chart-app-version"
 	flagForcePublic             = "force-public"
 	flagGoBuildPath             = "go-build-path"
+	flagGoTestArtifacts         = "go-test-artifacts"
 	flagImagePreBuildJob        = "image-pre-build-job"
 	flagImagePrivateOnly        = "image-private-only"
 	flagImageName               = "image-name"
@@ -59,6 +60,7 @@ type flag struct {
 	ImageNativeBuilds       bool
 	ResourceClass           string
 	GoBuildPath             string
+	GoTestArtifacts         string
 	SkipATS                 bool
 	ATSBranchOnly           bool
 	ATSOnRelease            bool
@@ -91,6 +93,7 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&f.ImageNativeBuilds, flagImageNativeBuilds, false, "Build the image one architecture per job on a native resource class instead of one multi-platform buildx job. Emits an architect/build-image job per entry in --image-platforms (linux/amd64 on small, linux/arm64 on arm.medium) and switches the generated push-to-registries jobs to merge-digests: true, which joins the per-architecture digests into the tagged index. Nothing is emulated and the builds run concurrently, so wall clock is the slower single native build; pays off for Dockerfiles with real work in RUN steps (apt, pip, yarn, native modules), not for a COPY of a cross-compiled binary. A platform with no native class is rejected at generation time. On the branch path the validate-only build-image job becomes build-image-<arch> jobs, so a custom.yml that requires build-image must follow. Requires architect-orb 10.2.0.")
 	cmd.Flags().StringVar(&f.ResourceClass, flagResourceClass, "", `Override the CircleCI resource_class on the cli-flavour go-build job. Empty defaults to "large". Raise it (e.g. "xlarge") for repos that need more RAM/CPU headroom for the cold cross-compile. Only applies to the cli flavour.`)
 	cmd.Flags().StringVar(&f.GoBuildPath, flagGoBuildPath, "", `Override the package the go-build job compiles. Empty keeps the orb default "." (the module root).`)
+	cmd.Flags().StringVar(&f.GoTestArtifacts, flagGoTestArtifacts, "", "Directory under the checkout that `make test` writes and that the go-build job keeps as a CircleCI build artifact when it fails (e.g. test-reports). Renders post-steps on the generated architect/go-build job: the directory is staged when: on_fail and uploaded with store_artifacts, so a green run stores nothing. For test suites whose full report (per-scenario logs, JSON results) the console output only shows a trimmed tail of, so that a failure is attributable from the artifact. The append-only custom.yml merge cannot add post-steps to a generated job. Must be a relative path under the checkout ([A-Za-z0-9._/-]). Empty renders no post-steps. Only applies with --language=go.")
 	cmd.Flags().BoolVar(&f.SkipATS, flagSkipATS, false, `Opt the chart pipeline out of app-test-suite (ATS) chart tests. By default an "app" flavour repo runs architect/run-tests-with-ats between build-chart and the chart push, and generation emits the canonical tests/ats/Pipfile. When set, those test jobs and the Pipfile are not generated and the chart push gates directly on build-chart. Only applies to the app flavour.`)
 	cmd.Flags().BoolVar(&f.ATSBranchOnly, flagATSBranchOnly, false, "Deprecated and ignored: chart tests on branches only is the default since v8.45.0.")
 	_ = cmd.Flags().MarkDeprecated(flagATSBranchOnly, fmt.Sprintf("branch-only chart tests are the default; drop the flag, or pass --%s to run them on the release tag as well", flagATSOnRelease))

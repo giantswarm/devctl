@@ -1,6 +1,8 @@
 package circleci
 
 import (
+	"path"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -336,6 +338,15 @@ type Config struct {
 	// architect go-build `path` param). Empty keeps the orb default ".", the
 	// module root.
 	GoBuildPath string
+	// GoTestArtifacts names a directory under the checkout that `make test`
+	// writes and that the go-build job keeps as a CircleCI build artifact when
+	// it fails: the job gains post-steps that stage the directory when: on_fail
+	// and upload the staging directory with store_artifacts, so a green run
+	// stores nothing. Empty renders no post-steps. Cleaned with path.Clean; must
+	// stay a relative path under the checkout made of [A-Za-z0-9._/-], because
+	// the template splices it into a shell command and into the artifact
+	// destination verbatim. Requires Language go.
+	GoTestArtifacts string
 	// PackageManager selects the Node package manager the build/test job uses
 	// (one of "npm", "yarn", "yarn-classic", "pnpm"). The runner detects it
 	// from the lockfile; empty defaults to Yarn Berry. Only applies to a Node
@@ -453,6 +464,12 @@ func resolveImageBuilds(platforms string) (string, []params.ImageBuild, []params
 	return strings.Join(resolved, ","), branch, release, nil
 }
 
+// goTestArtifactsPattern bounds what GoTestArtifacts may contain: the template
+// splices the value into a shell command (cp) and into the store_artifacts
+// destination without quoting, so anything beyond a plain path is rejected at
+// generation time rather than interpreted by the CI shell.
+var goTestArtifactsPattern = regexp.MustCompile(`^[A-Za-z0-9._/-]+$`)
+
 func New(config Config) (*CircleCI, error) {
 	// Every job is derived from a signal. With none of them set the template
 	// renders an empty `jobs:` list, which is an invalid CircleCI config.
@@ -506,6 +523,17 @@ func New(config Config) (*CircleCI, error) {
 
 	if config.GoBuildPath != "" && config.Language != gen.LanguageGo {
 		return nil, microerror.Maskf(invalidConfigError, "GoBuildPath requires Language go")
+	}
+
+	goTestArtifacts := ""
+	if config.GoTestArtifacts != "" {
+		if config.Language != gen.LanguageGo {
+			return nil, microerror.Maskf(invalidConfigError, "GoTestArtifacts requires Language go")
+		}
+		goTestArtifacts = path.Clean(config.GoTestArtifacts)
+		if path.IsAbs(goTestArtifacts) || goTestArtifacts == "." || goTestArtifacts == ".." || strings.HasPrefix(goTestArtifacts, "../") || !goTestArtifactsPattern.MatchString(goTestArtifacts) {
+			return nil, microerror.Maskf(invalidConfigError, "GoTestArtifacts must be a relative directory under the checkout made of [A-Za-z0-9._/-], got %q", config.GoTestArtifacts)
+		}
 	}
 
 	appCatalog := config.AppCatalog
@@ -662,6 +690,7 @@ func New(config Config) (*CircleCI, error) {
 			BuildConcurrency:         buildConcurrency,
 			ResourceClass:            resourceClass,
 			GoBuildPath:              config.GoBuildPath,
+			GoTestArtifacts:          goTestArtifacts,
 			OrbVersion:               OrbVersion,
 			ContinuationOrbVersion:   ContinuationOrbVersion,
 			BuildJobName:             buildJobName,

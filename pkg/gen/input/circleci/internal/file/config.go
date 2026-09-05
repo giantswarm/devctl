@@ -64,6 +64,7 @@ func NewWorkflowsInput(p params.Params) input.Input {
 			"BuildConcurrency":    p.BuildConcurrency,
 			"ResourceClass":       p.ResourceClass,
 			"GoBuildPath":         p.GoBuildPath,
+			"GoTestArtifacts":     p.GoTestArtifacts,
 			"OrbVersion":          p.OrbVersion,
 
 			"BuildJobName":             p.BuildJobName,
