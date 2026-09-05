@@ -7,6 +7,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- `repo checks --update --checks-if-reported`: when the reported checks cannot be read, the names are skipped for
+  this run with a warning instead of failing the command. The discovery reads commit statuses and check runs,
+  which a GitHub App token can only do on a private repository when the App holds the "Commit statuses" and
+  "Checks" read permissions (`403 Resource not accessible by integration` otherwise); the align-files App did
+  not, so the first alignment with `gen.ci.requireCircleCIChecks` aborted on the three private repositories
+  (muster-runbooks, agent-platform-ui, web-assets) before syncing any file. `--checks` and `--remove` are applied
+  as before in that case.
+
 ### Added
 
 - `repo checks --update --checks-if-reported <names>`: adds a required status check only when that context
