@@ -70,13 +70,36 @@ func (r *runner) update(ctx context.Context, owner, repo string) error {
 	defaultBranch := repository.GetDefaultBranch()
 	underlying := client.GetUnderlyingClient(ctx)
 
-	// The names to add: --checks unconditionally, --checks-if-reported only
-	// when the context has already reported on the default branch or a
-	// recently merged PR. Resolved lazily so an unprotected branch costs no
-	// discovery calls.
+	// --circleci-dir: the pipeline's branch-side jobs become reported-only
+	// candidates, and the required "ci/circleci:" contexts they no longer
+	// explain are removed below (once the current checks are known). A
+	// pipeline that cannot be read is left alone: nothing is removed on a
+	// guess.
+	ifReported := append([]string{}, r.flag.ChecksIfReported...)
+	var liveCircleCI []string
+	reconcileCircleCI := false
+	if r.flag.CircleCIDir != "" {
+		contexts, found, err := circleCIGateContexts(r.flag.CircleCIDir)
+		switch {
+		case err != nil:
+			r.logger.Warnf("%s/%s: cannot read the CircleCI pipeline in %q (%v); its jobs are neither required nor removed in this run", owner, repo, r.flag.CircleCIDir, err)
+		case !found:
+			r.logger.Warnf("%s/%s: no workflows.yml or custom.yml in %q; CircleCI contexts are left as they are", owner, repo, r.flag.CircleCIDir)
+		default:
+			liveCircleCI = contexts
+			reconcileCircleCI = true
+			ifReported = append(ifReported, contexts...)
+			r.logger.Infof("%s/%s: CircleCI jobs gating pull requests: %s", owner, repo, describeContexts(contexts))
+		}
+	}
+
+	// The names to add: --checks unconditionally, --checks-if-reported (and
+	// the pipeline's jobs) only when the context has already reported on the
+	// default branch or a recently merged PR. Resolved lazily so an
+	// unprotected branch costs no discovery calls.
 	resolveAdd := func() ([]string, error) {
 		add := append([]string{}, r.flag.Checks...)
-		if len(r.flag.ChecksIfReported) == 0 {
+		if len(ifReported) == 0 {
 			return add, nil
 		}
 		reported, err := client.ReportedChecks(ctx, repository, defaultBranch)
@@ -88,10 +111,10 @@ func (r *runner) update(ctx context.Context, owner, repo string) error {
 			// best-effort by definition: leave them for a later run and keep the
 			// unconditional --checks update going instead of failing the caller
 			// (align-files aborts the whole repository alignment on a non-zero exit).
-			r.logger.Warnf("%s/%s: cannot read the reported checks on %q (%v); not requiring %v in this run", owner, repo, defaultBranch, err, r.flag.ChecksIfReported)
+			r.logger.Warnf("%s/%s: cannot read the reported checks on %q (%v); not requiring %v in this run", owner, repo, defaultBranch, err, ifReported)
 			return add, nil
 		}
-		found, skipped := splitReported(r.flag.ChecksIfReported, reported)
+		found, skipped := splitReported(ifReported, reported)
 		if len(skipped) > 0 {
 			r.logger.Infof("%s/%s: not requiring %v yet: not reported on %q or a recently merged pull request", owner, repo, skipped, defaultBranch)
 		}
@@ -122,7 +145,16 @@ func (r *runner) update(ctx context.Context, owner, repo string) error {
 		return microerror.Mask(err)
 	}
 
-	merged := applyChecks(current.GetChecks(), add, r.flag.Remove)
+	remove := append([]string{}, r.flag.Remove...)
+	if reconcileCircleCI {
+		stale := staleCircleCIContexts(current.GetChecks(), liveCircleCI)
+		if len(stale) > 0 {
+			r.logger.Infof("%s/%s: removing required CircleCI contexts without a job in the pipeline: %v", owner, repo, stale)
+			remove = append(remove, stale...)
+		}
+	}
+
+	merged := applyChecks(current.GetChecks(), add, remove)
 
 	// UpdateRequiredStatusChecks uses omitempty, so an empty Checks slice is
 	// dropped from the request and GitHub leaves the existing checks unchanged.
@@ -139,7 +171,7 @@ func (r *runner) update(ctx context.Context, owner, repo string) error {
 		Checks: merged,
 	})
 
-	r.logger.Infof("%s/%s: required checks on %q: added %v, removed %v", owner, repo, defaultBranch, add, r.flag.Remove)
+	r.logger.Infof("%s/%s: required checks on %q: added %v, removed %v", owner, repo, defaultBranch, add, remove)
 
 	return microerror.Mask(err)
 }
