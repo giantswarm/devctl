@@ -9,6 +9,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `gen circleci --image-resource-class <platform>=<class>` (repeatable): overrides the CircleCI resource class
+  of the native per-architecture `build-image` jobs for one platform, on both the branch and the release leg.
+  Defaults stay linux/amd64 on `small` and linux/arm64 on `arm.medium`. For an image whose leg is dominated by
+  exporting, compressing and SBOM-scanning a very large result rather than by the build itself: vllm's 22 GB
+  arm64-only image spent 36 of its 37 release-leg minutes there on the 2-vCPU `arm.medium`, after the build
+  proper had taken 8. The class must belong to the platform's architecture (the orb refuses a mismatch instead
+  of emulating) and the platform must be in `--image-platforms`; both are checked at generation time. Requires
+  `--image-native-builds`.
 - `gen circleci`: the chart-test jobs (`execute-chart-tests`, `execute-chart-tests-release`) run with the
   architect context, and the architect orb pin moves to 10.4.0. The orb's `run-tests-with-ats` turns the
   context's registry credentials into `/var/lib/kubelet/config.json` on the kind cluster it creates, so a chart

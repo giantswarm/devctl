@@ -28,6 +28,7 @@ const (
 	flagImagePlatforms          = "image-platforms"
 	flagImageDockerfile         = "image-dockerfile"
 	flagImageNativeBuilds       = "image-native-builds"
+	flagImageResourceClass      = "image-resource-class"
 	flagResourceClass           = "resource-class"
 	flagSkipATS                 = "skip-ats"
 	flagATSBranchOnly           = "ats-branch-only"
@@ -58,6 +59,7 @@ type flag struct {
 	ImagePlatforms          string
 	ImageDockerfile         string
 	ImageNativeBuilds       bool
+	ImageResourceClass      []string
 	ResourceClass           string
 	GoBuildPath             string
 	GoTestArtifacts         string
@@ -91,6 +93,7 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.ImagePlatforms, flagImagePlatforms, "", "Override the buildx platform list on the image jobs (push-to-registries `platforms` param). Empty lets the orb default apply (linux/amd64,linux/arm64 when no go-build .platforms file). Set it for single-architecture images (e.g. vllm -> linux/arm64, whose amd64 build has no prebuilt wheels).")
 	cmd.Flags().StringVar(&f.ImageDockerfile, flagImageDockerfile, "", "Override the Dockerfile path on the image jobs (push-to-registries `dockerfile` param). Set it for repos whose Dockerfile is not at the repo root (e.g. backstage -> packages/backend/Dockerfile); a non-empty value also turns the image pipeline on, since the root-Dockerfile derivation misses a nested Dockerfile. The append-only custom.yml merge cannot set this on a generated job. Empty keeps the orb default.")
 	cmd.Flags().BoolVar(&f.ImageNativeBuilds, flagImageNativeBuilds, false, "Build the image one architecture per job on a native resource class instead of one multi-platform buildx job. Emits an architect/build-image job per entry in --image-platforms (linux/amd64 on small, linux/arm64 on arm.medium) and switches the generated push-to-registries jobs to merge-digests: true, which joins the per-architecture digests into the tagged index. Nothing is emulated and the builds run concurrently, so wall clock is the slower single native build; pays off for Dockerfiles with real work in RUN steps (apt, pip, yarn, native modules), not for a COPY of a cross-compiled binary. A platform with no native class is rejected at generation time. On the branch path the validate-only build-image job becomes build-image-<arch> jobs, so a custom.yml that requires build-image must follow. Requires architect-orb 10.2.0.")
+	cmd.Flags().StringSliceVar(&f.ImageResourceClass, flagImageResourceClass, nil, "Override the CircleCI resource_class of a native build-image job, as <platform>=<class> (repeatable, e.g. linux/arm64=arm.large). Applies to both the branch and the release leg of that platform. Defaults are linux/amd64 on small and linux/arm64 on arm.medium; raise it for an image whose export, compression or SBOM scan of a very large result dominates the leg (vllm: 22 GB on the 2-vCPU arm.medium). The class must belong to the platform's architecture (amd64: small, medium, medium+, large, xlarge; arm64: arm.medium, arm.large, arm.xlarge, arm.2xlarge) and the platform must be in --image-platforms; both are checked at generation time, since the orb has no emulated fallback. Only applies with --image-native-builds.")
 	cmd.Flags().StringVar(&f.ResourceClass, flagResourceClass, "", `Override the CircleCI resource_class on the cli-flavour go-build job. Empty defaults to "large". Raise it (e.g. "xlarge") for repos that need more RAM/CPU headroom for the cold cross-compile. Only applies to the cli flavour.`)
 	cmd.Flags().StringVar(&f.GoBuildPath, flagGoBuildPath, "", `Override the package the go-build job compiles. Empty keeps the orb default "." (the module root).`)
 	cmd.Flags().StringVar(&f.GoTestArtifacts, flagGoTestArtifacts, "", "Directory under the checkout that `make test` writes and that the go-build job keeps as a CircleCI build artifact when it fails (e.g. test-reports). Renders post-steps on the generated architect/go-build job: the directory is staged when: on_fail and uploaded with store_artifacts, so a green run stores nothing. For test suites whose full report (per-scenario logs, JSON results) the console output only shows a trimmed tail of, so that a failure is attributable from the artifact. The append-only custom.yml merge cannot add post-steps to a generated job. Must be a relative path under the checkout ([A-Za-z0-9._/-]). Empty renders no post-steps. Only applies with --language=go.")
@@ -122,6 +125,37 @@ func (f *flag) Validate() error {
 	if f.ATSBranchOnly && f.ATSOnRelease {
 		return microerror.Maskf(invalidFlagError, "--%s (deprecated, the default) and --%s are mutually exclusive", flagATSBranchOnly, flagATSOnRelease)
 	}
+	if len(f.ImageResourceClass) > 0 && !f.ImageNativeBuilds {
+		return microerror.Maskf(invalidFlagError, "--%s only applies with --%s", flagImageResourceClass, flagImageNativeBuilds)
+	}
+	if _, err := f.imageResourceClasses(); err != nil {
+		return microerror.Mask(err)
+	}
 
 	return nil
+}
+
+// imageResourceClasses parses the repeatable --image-resource-class
+// <platform>=<class> entries into the per-platform override map. Whether the
+// class fits the platform is the generator's check (it owns the class table);
+// this only rejects malformed and duplicate entries.
+func (f *flag) imageResourceClasses() (map[string]string, error) {
+	if len(f.ImageResourceClass) == 0 {
+		return nil, nil
+	}
+
+	classes := make(map[string]string, len(f.ImageResourceClass))
+	for _, entry := range f.ImageResourceClass {
+		platform, class, ok := strings.Cut(strings.TrimSpace(entry), "=")
+		platform, class = strings.TrimSpace(platform), strings.TrimSpace(class)
+		if !ok || platform == "" || class == "" {
+			return nil, microerror.Maskf(invalidFlagError, "--%s expects <platform>=<class> (e.g. linux/arm64=arm.large), got %#q", flagImageResourceClass, entry)
+		}
+		if _, dup := classes[platform]; dup {
+			return nil, microerror.Maskf(invalidFlagError, "--%s names platform %#q twice", flagImageResourceClass, platform)
+		}
+		classes[platform] = class
+	}
+
+	return classes, nil
 }

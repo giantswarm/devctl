@@ -84,6 +84,13 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, _ []string) error 
 
 	var circleciInput *circleci.CircleCI
 	{
+		// Validated in flag.Validate; parsed again here because the map is what
+		// the generator takes.
+		imageResourceClasses, err := r.flag.imageResourceClasses()
+		if err != nil {
+			return microerror.Mask(err)
+		}
+
 		c := circleci.Config{
 			RepoName:                r.flag.RepoName,
 			Language:                r.flag.Language,
@@ -105,6 +112,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, _ []string) error 
 			ImagePlatforms:          r.flag.ImagePlatforms,
 			ImageDockerfile:         r.flag.ImageDockerfile,
 			ImageNativeBuilds:       r.flag.ImageNativeBuilds,
+			ImageResourceClasses:    imageResourceClasses,
 			ResourceClass:           r.flag.ResourceClass,
 			GoBuildPath:             r.flag.GoBuildPath,
 			GoTestArtifacts:         r.flag.GoTestArtifacts,
