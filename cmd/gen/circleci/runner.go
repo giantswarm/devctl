@@ -107,6 +107,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, _ []string) error 
 			ImageNativeBuilds:       r.flag.ImageNativeBuilds,
 			ResourceClass:           r.flag.ResourceClass,
 			GoBuildPath:             r.flag.GoBuildPath,
+			GoTestArtifacts:         r.flag.GoTestArtifacts,
 			PackageManager:          packageManager,
 			NodeImageVersion:        nodeImageVersion,
 			NodeTestTarget:          r.flag.NodeTestTarget,

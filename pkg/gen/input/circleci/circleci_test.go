@@ -34,6 +34,8 @@ const (
 	goldenATSOnReleaseWorkflowsPath = "testdata/mcp-kubernetes.ats-on-release.workflows.yml"
 	goldenATSOnePointXWorkflowsPath = "testdata/agent-platform-standalone.ats-1.workflows.yml"
 
+	goldenGoTestArtifactsWorkflowsPath = "testdata/muster.workflows.yml"
+
 	repoMCPKubernetes = "mcp-kubernetes"
 	repoAPStandalone  = "agent-platform-standalone"
 	repoSitesearch    = "sitesearch"
@@ -1695,6 +1697,104 @@ func Test_GoBuildPathRequiresGo(t *testing.T) {
 	})
 	if !IsInvalidConfig(err) {
 		t.Fatalf("expected invalidConfigError, got %v", err)
+	}
+}
+
+// Test_GoTestArtifacts verifies the go-build job gains post-steps that keep
+// the configured directory as a build artifact on failure, that the path is
+// normalized, and that nothing else changes: the same config without the knob
+// renders no post-steps at all and the job list is identical.
+func Test_GoTestArtifacts(t *testing.T) {
+	base := Config{
+		RepoName:      repoMCPKubernetes,
+		Language:      gen.LanguageGo,
+		Flavours:      gen.FlavourSlice{gen.FlavourApp, gen.FlavourCLI},
+		HasDockerfile: true,
+	}
+	def := render(t, base)
+	if contains(def, "post-steps:") || contains(def, "store_artifacts") {
+		t.Errorf("no post-steps should be emitted without GoTestArtifacts:\n%s", def)
+	}
+
+	withKnob := base
+	withKnob.GoTestArtifacts = "test-reports/"
+	got := render(t, withKnob)
+	for _, want := range []string{
+		"        post-steps:\n",
+		"            name: Collect test artifacts\n",
+		"              mkdir -p /tmp/go-test-artifacts\n",
+		"              cp -r test-reports/. /tmp/go-test-artifacts/ 2>/dev/null || true\n",
+		"            when: on_fail\n",
+		"        - store_artifacts:\n            path: /tmp/go-test-artifacts\n            destination: test-reports\n",
+	} {
+		if n := strings.Count(got, want); n != 1 {
+			t.Errorf("expected exactly one %q, found %d:\n%s", want, n, got)
+		}
+	}
+	if contains(got, "test-reports//") {
+		t.Errorf("trailing slash must be normalized away:\n%s", got)
+	}
+	// Confined to the go-build job: workflow job entries sit at a 4-space
+	// indent, the post-steps entries at 8, so the job count must not move.
+	if strings.Count(got, "\n    - ") != strings.Count(def, "\n    - ") {
+		t.Errorf("GoTestArtifacts must not add or remove workflow jobs:\n%s", got)
+	}
+}
+
+// Test_GoldenGoTestArtifacts pins the whole rendering for muster's shape (Go
+// service with a chart and cli binaries, the repo that motivated the knob:
+// its integration suite writes one JSON per scenario to test-reports/).
+func Test_GoldenGoTestArtifacts(t *testing.T) {
+	got := render(t, Config{
+		RepoName:        "muster",
+		Language:        gen.LanguageGo,
+		Flavours:        gen.FlavourSlice{gen.FlavourGeneric, gen.FlavourApp, gen.FlavourCLI},
+		HasDockerfile:   true,
+		GoTestArtifacts: "test-reports",
+	})
+
+	want, err := os.ReadFile(goldenGoTestArtifactsWorkflowsPath) // #nosec G304 -- fixed in-package testdata path
+	if err != nil {
+		t.Fatalf("read golden: %v", err)
+	}
+
+	if got != string(want) {
+		t.Errorf("generated workflows do not match golden %s\n--- got ---\n%s\n--- want ---\n%s", goldenGoTestArtifactsWorkflowsPath, got, string(want))
+	}
+}
+
+// Test_GoTestArtifactsRejects verifies the knob fails at generation time for a
+// repo that renders no go-build job and for paths the generated post-steps
+// cannot stage safely (the value is spliced into a shell command unquoted).
+func Test_GoTestArtifactsRejects(t *testing.T) {
+	goRepo := func(dir string) Config {
+		return Config{
+			RepoName:        repoMCPKubernetes,
+			Language:        gen.LanguageGo,
+			Flavours:        gen.FlavourSlice{gen.FlavourGeneric},
+			HasDockerfile:   true,
+			GoTestArtifacts: dir,
+		}
+	}
+	cases := map[string]Config{
+		"non-go repo": {
+			RepoName:        "agent-platform-standalone",
+			Flavours:        gen.FlavourSlice{gen.FlavourApp},
+			GoTestArtifacts: "test-reports",
+		},
+		"absolute path":        goRepo("/tmp/test-reports"),
+		"escapes the checkout": goRepo("../test-reports"),
+		"checkout root":        goRepo("."),
+		"shell metacharacters": goRepo("test-reports; rm -rf /"),
+		"whitespace":           goRepo("test reports"),
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			_, err := New(c)
+			if !IsInvalidConfig(err) {
+				t.Fatalf("expected invalidConfigError, got %v", err)
+			}
+		})
 	}
 }
 

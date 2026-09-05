@@ -23,6 +23,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `gen circleci`: new `--go-test-artifacts <dir>` flag (`gen.ci.go.testArtifacts` in giantswarm/github).
+  Renders `post-steps` on the generated `architect/go-build` job that keep a directory `make test` writes
+  (e.g. muster's `test-reports/`: the integration suite's per-scenario JSON with the complete instance
+  logs, which the console shows only a trimmed tail of) as a CircleCI build artifact when the job fails:
+  staged `when: on_fail`, uploaded with `store_artifacts`, so a green run stores nothing. The append-only
+  custom.yml merge cannot add post-steps to a generated job (yq `*+` appends a second `architect/go-build`
+  entry, which CircleCI rejects), so the generator carries it. Go repos only; the path must be a relative
+  directory under the checkout.
 - `gen circleci`: new `--go-build-path` flag setting the architect `go-build` job's `path` param for
   Go repos.
 - `gen circleci`: new `--ats-on-release` flag (`gen.ci.atsOnRelease` in giantswarm/github). Restores
