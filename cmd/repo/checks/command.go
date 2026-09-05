@@ -22,14 +22,21 @@ non-tag commit or on the head of one of the three most recently merged pull
 requests; names that have not reported yet are logged and skipped, so a job
 that never ran (no CI project, first run after it was added) cannot become a
 required check nothing can satisfy. --remove names are dropped if present.
-Anything not listed, including the "up to date" (strict) setting, is left
-unchanged. The branch must already have protection configured.
+--circleci-dir points at the repository's .circleci directory: the
+branch-side jobs of workflows.yml and custom.yml (a job counts unless its
+branch filter has only: or ignores every branch) are added like
+--checks-if-reported, and every required "ci/circleci: <job>" context whose
+job the pipeline no longer has is removed, so a renamed or dropped job cannot
+leave behind a required check nothing can satisfy. Anything not listed,
+including the "up to date" (strict) setting, is left unchanged. The branch
+must already have protection configured.
 
 Examples:
   devctl repo checks --update --checks 'semantic-pull-request / Validate PR title' giantswarm/my-repo
   devctl repo checks --update --remove semantic-pull-request giantswarm/my-repo
   devctl repo checks --update --checks 'semantic-pull-request / Validate PR title' --remove semantic-pull-request giantswarm/my-repo
-  devctl repo checks --update --checks-if-reported 'ci/circleci: build-chart,ci/circleci: execute-chart-tests' giantswarm/my-repo`
+  devctl repo checks --update --checks-if-reported 'ci/circleci: build-chart,ci/circleci: execute-chart-tests' giantswarm/my-repo
+  devctl repo checks --update --circleci-dir my-repo/.circleci giantswarm/my-repo`
 )
 
 type Config struct {

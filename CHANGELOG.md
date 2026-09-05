@@ -7,6 +7,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `repo checks --update --circleci-dir <repo>/.circleci`: reconciles the required `ci/circleci: <job>` contexts
+  with the pipeline itself. The branch-side jobs of the generated `workflows.yml` and the repo-owned `custom.yml`
+  (every workflow; a job counts unless its branch filter has `only:` or ignores every branch) are required once
+  they have reported, exactly like `--checks-if-reported`, and every required `ci/circleci:` context whose job the
+  pipeline no longer has is removed. Until now the align-files action computed the jobs itself and could only
+  add: when `gen.ci.branchPublish` renamed the branch image job from `build-image` to `push-to-registries`, the
+  stale `ci/circleci: build-image` requirement stayed on model-manager and tunnelport and blocked every pull
+  request with a check nothing could report. A pipeline that cannot be read leaves the CircleCI contexts as they
+  are; contexts of other systems (GitHub Actions workflows) are never touched.
+
 ### Changed
 
 - `gen circleci`: the default app-test-suite tag moves to `1.0.3`, which waits for the bootstrapped CRDs
