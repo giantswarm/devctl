@@ -3,6 +3,7 @@ package circleci
 import (
 	"path"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -321,6 +322,16 @@ type Config struct {
 	// COPY of a cross-compiled binary gains nothing. Requires architect-orb
 	// 10.2.0. Every platform in ImagePlatforms must have a native class.
 	ImageNativeBuilds bool
+	// ImageResourceClasses overrides the CircleCI resource_class of the native
+	// build-image jobs per platform (both the branch and the release leg of that
+	// platform), e.g. {"linux/arm64": "arm.large"}. Empty keeps the defaults
+	// (linux/amd64 on small, linux/arm64 on arm.medium). Raise it for images
+	// whose export, compression or SBOM scan of a very large result is what the
+	// leg spends its time on (vllm: 22 GB on the 2-vCPU arm.medium). A class
+	// must belong to the platform's architecture -- the orb has no emulated
+	// fallback, so a mismatch is rejected here rather than failing the build.
+	// Only applies with ImageNativeBuilds.
+	ImageResourceClasses map[string]string
 	// BuildConcurrency overrides how many architectures the cli-flavour
 	// go-build job compiles concurrently (the architect go-build
 	// `build_concurrency` param). Empty defaults to "auto" (nproc). Lower it
@@ -409,6 +420,17 @@ var imageResourceClasses = map[string]string{
 	"linux/arm64": "arm.medium",
 }
 
+// imageResourceClassesByPlatform lists the classes a native build-image job may
+// run on per platform: the architect build-image job's resource_class enum,
+// split by architecture. CircleCI gives the setup_remote_docker VM the
+// architecture (and size) of the job's class, so an x86 class under a
+// linux/arm64 build would emulate, which the orb refuses; the split keeps that a
+// generation-time error.
+var imageResourceClassesByPlatform = map[string][]string{
+	"linux/amd64": {"small", "medium", "medium+", "large", "xlarge"},
+	"linux/arm64": {"arm.medium", "arm.large", "arm.xlarge", "arm.2xlarge"},
+}
+
 // resolveImageBuilds turns a comma-separated platform list into one build-image
 // job per platform, for each of the branch and tag paths, and returns the
 // normalised list to put on the push-to-registries merge jobs.
@@ -417,7 +439,11 @@ var imageResourceClasses = map[string]string{
 // workflow. An unmapped platform is an error rather than a default class: the
 // orb has no emulated fallback, so guessing a class here would generate a
 // pipeline that fails at build time instead of at generation time.
-func resolveImageBuilds(platforms string) (string, []params.ImageBuild, []params.ImageBuild, error) {
+//
+// resourceClasses overrides the class per platform (ImageResourceClasses). An
+// override for a platform that is not built, or a class that is not one of the
+// platform's architecture, is an error for the same reason.
+func resolveImageBuilds(platforms string, resourceClasses map[string]string) (string, []params.ImageBuild, []params.ImageBuild, error) {
 	if platforms == "" {
 		platforms = DefaultImagePlatforms
 	}
@@ -443,6 +469,16 @@ func resolveImageBuilds(platforms string) (string, []params.ImageBuild, []params
 				platform, strings.Join(supported, ", "))
 		}
 
+		if override, ok := resourceClasses[platform]; ok {
+			allowed := imageResourceClassesByPlatform[platform]
+			if !slices.Contains(allowed, override) {
+				return "", nil, nil, microerror.Maskf(invalidConfigError,
+					"ImageResourceClasses: %#q is not a CircleCI resource class for platform %#q; allowed: %s",
+					override, platform, strings.Join(allowed, ", "))
+			}
+			resourceClass = override
+		}
+
 		suffix := strings.ReplaceAll(strings.TrimPrefix(platform, "linux/"), "/", "")
 		resolved = append(resolved, platform)
 		branch = append(branch, params.ImageBuild{
@@ -459,6 +495,16 @@ func resolveImageBuilds(platforms string) (string, []params.ImageBuild, []params
 
 	if len(resolved) == 0 {
 		return "", nil, nil, microerror.Maskf(invalidConfigError, "ImageNativeBuilds: ImagePlatforms resolved to an empty platform list")
+	}
+
+	// An override for a platform the image does not build is a typo (or a
+	// stale entry after the platform list shrank), not a no-op.
+	for platform := range resourceClasses {
+		if !slices.Contains(resolved, platform) {
+			return "", nil, nil, microerror.Maskf(invalidConfigError,
+				"ImageResourceClasses: platform %#q is not in the image platform list (%s)",
+				platform, strings.Join(resolved, ","))
+		}
 	}
 
 	return strings.Join(resolved, ","), branch, release, nil
@@ -515,10 +561,12 @@ func New(config Config) (*CircleCI, error) {
 	var branchImageBuilds, releaseImageBuilds []params.ImageBuild
 	if config.ImageNativeBuilds {
 		var err error
-		imagePlatforms, branchImageBuilds, releaseImageBuilds, err = resolveImageBuilds(config.ImagePlatforms)
+		imagePlatforms, branchImageBuilds, releaseImageBuilds, err = resolveImageBuilds(config.ImagePlatforms, config.ImageResourceClasses)
 		if err != nil {
 			return nil, microerror.Mask(err)
 		}
+	} else if len(config.ImageResourceClasses) > 0 {
+		return nil, microerror.Maskf(invalidConfigError, "ImageResourceClasses requires ImageNativeBuilds: the single multi-platform job runs on the orb's default class")
 	}
 
 	if config.GoBuildPath != "" && config.Language != gen.LanguageGo {

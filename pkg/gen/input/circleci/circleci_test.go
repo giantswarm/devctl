@@ -2112,3 +2112,87 @@ func Test_GoldenATSOnePointXWorkflows(t *testing.T) {
 		t.Errorf("generated workflows do not match golden %s\n--- got ---\n%s\n--- want ---\n%s", goldenATSOnePointXWorkflowsPath, got, string(want))
 	}
 }
+
+// Test_ImageResourceClasses verifies the per-platform class override lands on
+// both legs (branch and release) of that platform only, and that the other
+// platform keeps its default class.
+func Test_ImageResourceClasses(t *testing.T) {
+	got := render(t, Config{
+		RepoName:             "vllm",
+		Language:             gen.Language(""),
+		Flavours:             gen.FlavourSlice{},
+		HasDockerfile:        true,
+		ImageNativeBuilds:    true,
+		ImageResourceClasses: map[string]string{"linux/arm64": "arm.large"},
+	})
+	if n := strings.Count(got, "resource_class: arm.large"); n != 2 {
+		t.Errorf("expected arm.large on the branch and release arm64 legs, found %d:\n%s", n, got)
+	}
+	if contains(got, "resource_class: arm.medium") {
+		t.Errorf("the arm64 default class must be replaced, not added to:\n%s", got)
+	}
+	if n := strings.Count(got, "resource_class: small"); n != 2 {
+		t.Errorf("the amd64 legs must keep their default class, found %d:\n%s", n, got)
+	}
+
+	// Single-platform image: the override applies to the only leg pair and no
+	// amd64 job is emitted.
+	single := render(t, Config{
+		RepoName:             "vllm",
+		Language:             gen.Language(""),
+		Flavours:             gen.FlavourSlice{},
+		HasDockerfile:        true,
+		ImagePlatforms:       "linux/arm64",
+		ImageNativeBuilds:    true,
+		ImageResourceClasses: map[string]string{"linux/arm64": "arm.large"},
+	})
+	if n := strings.Count(single, "resource_class: arm.large"); n != 2 {
+		t.Errorf("expected arm.large on both arm64 legs of the single-platform image, found %d:\n%s", n, single)
+	}
+	if contains(single, "linux/amd64") {
+		t.Errorf("no amd64 job for a single-platform image:\n%s", single)
+	}
+}
+
+// Test_ImageResourceClassesRejects verifies the override is refused at
+// generation time when the class is not one of the platform's architecture
+// (the orb has no emulated fallback), when it names a platform the image does
+// not build, and when native builds are off (the single job runs on the orb
+// default class, so the override would be silently ignored).
+func Test_ImageResourceClassesRejects(t *testing.T) {
+	base := func() Config {
+		return Config{
+			RepoName:          "vllm",
+			Language:          gen.Language(""),
+			Flavours:          gen.FlavourSlice{},
+			HasDockerfile:     true,
+			ImageNativeBuilds: true,
+		}
+	}
+
+	wrongArch := base()
+	wrongArch.ImageResourceClasses = map[string]string{"linux/arm64": "large"}
+	if _, err := New(wrongArch); !IsInvalidConfig(err) {
+		t.Errorf("expected invalidConfigError for an x86 class on linux/arm64, got %v", err)
+	}
+
+	unknownClass := base()
+	unknownClass.ImageResourceClasses = map[string]string{"linux/amd64": "arm.large"}
+	if _, err := New(unknownClass); !IsInvalidConfig(err) {
+		t.Errorf("expected invalidConfigError for an Arm class on linux/amd64, got %v", err)
+	}
+
+	notBuilt := base()
+	notBuilt.ImagePlatforms = "linux/arm64"
+	notBuilt.ImageResourceClasses = map[string]string{"linux/amd64": "large"}
+	if _, err := New(notBuilt); !IsInvalidConfig(err) {
+		t.Errorf("expected invalidConfigError for an override on a platform that is not built, got %v", err)
+	}
+
+	noNative := base()
+	noNative.ImageNativeBuilds = false
+	noNative.ImageResourceClasses = map[string]string{"linux/arm64": "arm.large"}
+	if _, err := New(noNative); !IsInvalidConfig(err) {
+		t.Errorf("expected invalidConfigError for ImageResourceClasses without ImageNativeBuilds, got %v", err)
+	}
+}
