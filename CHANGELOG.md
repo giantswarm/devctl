@@ -45,6 +45,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   custom.yml merge cannot add post-steps to a generated job (yq `*+` appends a second `architect/go-build`
   entry, which CircleCI rejects), so the generator carries it. Go repos only; the path must be a relative
   directory under the checkout.
+- `gen workflows --release-workflow auto-release`: after creating the release, the generated
+  `zz_generated.auto_release.yaml` verifies that CircleCI picked up the tag (repos with a
+  `.circleci/config.yml` only): it polls the v2 pipeline list for up to 120 s and, if no pipeline appears,
+  triggers one through the API with the org secret `CIRCLECI_API_TOKEN`. Without the secret the step is a
+  detector (a missing pipeline on a public project fails the run with the manual `curl`; a 404 on a private
+  project is a warning). GitHub delivers the tag-push webhook once and never retries; on 2026-09-04 CircleCI
+  answered three of ~55 tag pushes with an empty HTTP 400 and those releases had no pipeline.
 - `gen circleci`: new `--go-build-path` flag setting the architect `go-build` job's `path` param for
   Go repos.
 - `gen circleci`: new `--ats-on-release` flag (`gen.ci.atsOnRelease` in giantswarm/github). Restores
