@@ -7,6 +7,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- `gen circleci`: the default app-test-suite tag moves to `1.0.3`, which waits for the bootstrapped CRDs
+  (`--cluster-crds`) to be `Established` before the Helm deploy. On 1.0.2 a chart whose templates render a
+  kind from those CRDs (giantswarm/agent renders a kagent `Agent`) failed `helm upgrade --install` with
+  `no matches for kind`, because `kubectl apply` returns before the API server serves the new kinds.
+
 ### Fixed
 
 - `repo checks --update --checks-if-reported`: when the reported checks cannot be read, the names are skipped for
