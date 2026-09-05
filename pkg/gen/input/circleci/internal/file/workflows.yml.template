@@ -544,9 +544,12 @@ workflows:
     # Branch: run chart tests after build-chart. When branchPublish pushes a dev
     # image, the test also waits on push-to-registries -- run-tests-with-ats
     # deploys the chart, which pulls that image from gsoci, and gating on the
-    # push avoids an ImagePullBackOff race.
+    # push avoids an ImagePullBackOff race. The architect context carries the
+    # registry credentials the job hands to its kind node, so the chart can pull
+    # private images (gsociprivate) without imagePullSecrets.
     - architect/run-tests-with-ats:
         name: execute-chart-tests
+        context: architect
 {{- if .ATSVersion }}
         app-test-suite_container_tag: "{{ .ATSVersion }}"
 {{- end }}
@@ -570,6 +573,7 @@ workflows:
     # image-availability reason as the branch job above.
     - architect/run-tests-with-ats:
         name: execute-chart-tests-release
+        context: architect
 {{- if .ATSVersion }}
         app-test-suite_container_tag: "{{ .ATSVersion }}"
 {{- end }}

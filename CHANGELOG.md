@@ -9,6 +9,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `gen circleci`: the chart-test jobs (`execute-chart-tests`, `execute-chart-tests-release`) run with the
+  architect context, and the architect orb pin moves to 10.4.0. The orb's `run-tests-with-ats` turns the
+  context's registry credentials into `/var/lib/kubelet/config.json` on the kind cluster it creates, so a chart
+  whose image lives in gsociprivate.azurecr.io can be smoke-tested without `imagePullSecrets` (first users:
+  alfred-app, mcp-runbooks). Without the context the orb step only prints a notice.
 - `repo checks --update --circleci-dir <repo>/.circleci`: reconciles the required `ci/circleci: <job>` contexts
   with the pipeline itself. The branch-side jobs of the generated `workflows.yml` and the repo-owned `custom.yml`
   (every workflow; a job counts unless its branch filter has `only:` or ignores every branch) are required once
