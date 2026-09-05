@@ -7,6 +7,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `repo checks --update --checks-if-reported <names>`: adds a required status check only when that context
+  has reported on the default branch's latest non-tag commit or on the head of one of the three most recently
+  merged pull requests (the `repo setup` discovery, reused). Names that have not reported yet are logged and
+  skipped, so a generated CircleCI job that never ran (no CircleCI project, first alignment after the job
+  appeared) cannot become a required check nothing can satisfy and block every PR. giantswarm/github's
+  align-files uses it to make the generated pipeline's branch-side jobs (`ci/circleci: build-chart`,
+  `ci/circleci: execute-chart-tests`, `ci/circleci: go-build`, …) required checks on repos that set
+  `gen.ci.requireCircleCIChecks`; today only the GitHub-Actions checks are required, so GitHub auto-merge
+  (align PRs, Renovate platform automerge) merges before CircleCI reports or past a red chart build
+  (tunnelport#80 released v1.2.6 without a chart). `--checks` keeps adding unconditionally; `strict` and
+  checks not named stay untouched as before.
+
 ### Fixed
 
 - `gen circleci`: the default app-test-suite tag moves to `1.0.2`, which accepts `oci://` values for

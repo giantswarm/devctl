@@ -16,14 +16,20 @@ const (
 	longDescription = `Manage required status checks on the default branch protection rule.
 
 Use --update to add or remove required checks. --checks names are added
-(checks already present are left as-is). --remove names are dropped if
-present. Anything not listed is left unchanged. The branch must already
-have protection configured.
+(checks already present are left as-is). --checks-if-reported names are
+added only if that context has reported on the default branch's latest
+non-tag commit or on the head of one of the three most recently merged pull
+requests; names that have not reported yet are logged and skipped, so a job
+that never ran (no CI project, first run after it was added) cannot become a
+required check nothing can satisfy. --remove names are dropped if present.
+Anything not listed, including the "up to date" (strict) setting, is left
+unchanged. The branch must already have protection configured.
 
 Examples:
   devctl repo checks --update --checks 'semantic-pull-request / Validate PR title' giantswarm/my-repo
   devctl repo checks --update --remove semantic-pull-request giantswarm/my-repo
-  devctl repo checks --update --checks 'semantic-pull-request / Validate PR title' --remove semantic-pull-request giantswarm/my-repo`
+  devctl repo checks --update --checks 'semantic-pull-request / Validate PR title' --remove semantic-pull-request giantswarm/my-repo
+  devctl repo checks --update --checks-if-reported 'ci/circleci: build-chart,ci/circleci: execute-chart-tests' giantswarm/my-repo`
 )
 
 type Config struct {
