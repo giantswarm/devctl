@@ -9,6 +9,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `version update` installs a release binary only after its cosign Sigstore bundle verifies. Every devctl release
+  asset comes with a `<asset>.bundle` next to it: cosign's keyless signature made by the CircleCI pipeline and
+  recorded in Rekor. The download is verified against that bundle for a CircleCI build of
+  `github.com/giantswarm/devctl` (Sigstore public-good trust root, fetched through TUF and cached under
+  `~/.sigstore/root`) before anything is written: a release without a bundle is refused before the download, a
+  download that does not match its signature before the write, and the installed binary stays untouched either
+  way. Version lookups (`version check`, and the check that runs before every command) do not look at the bundle,
+  so an unsigned release can never block devctl; cache, exit status 125 and `DEVCTL_UNSAFE_FORCE_VERSION` behave
+  as before.
 - `gen circleci --image-resource-class <platform>=<class>` (repeatable): overrides the CircleCI resource class
   of the native per-architecture `build-image` jobs for one platform, on both the branch and the release leg.
   Defaults stay linux/amd64 on `small` and linux/arm64 on `arm.medium`. For an image whose leg is dominated by
@@ -34,6 +43,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- `pkg/updater` moves from the unmaintained `rhysd/go-github-selfupdate` to `creativeprojects/go-selfupdate`,
+  which the shared validator `github.com/giantswarm/selfupdate-cosign` plugs into. Same GitHub API calls, same
+  asset selection (`devctl-<os>-<arch>`), same in-place replacement of the running binary. The one fallback that
+  goes away: without a token in the environment the old library also read `github.token` from the git config;
+  the new one calls the GitHub API anonymously in that case, which works for the public devctl repository.
 - `gen circleci`: the default app-test-suite tag moves to `1.0.3`, which waits for the bootstrapped CRDs
   (`--cluster-crds`) to be `Established` before the Helm deploy. On 1.0.2 a chart whose templates render a
   kind from those CRDs (giantswarm/agent renders a kagent `Agent`) failed `helm upgrade --install` with
