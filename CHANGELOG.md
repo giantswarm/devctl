@@ -7,6 +7,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- `gen circleci`: the architect orb pin moves to `10.4.1`, which ships the `sync-china-registry` fix
+  (architect-orb#921): the job now waits until the image the push job published is visible from the
+  in-China runner, child manifests included, before `regctl image copy` starts. The runner reads the
+  Southeast Asia replica of `gsoci.azurecr.io`, which receives a pushed image asynchronously, and the old
+  fixed 10 × 5 s retry never fit a multi-GiB image (every `vllm` tag since v0.4.7 needed a manual rerun).
+  No template change; the generated jobs take the orb's new `replica-wait-minutes` default of 60. Golden
+  workflows regenerated.
+
 ### Fixed
 
 - `gen workflows`: the generated `sync_from_upstream.yaml` now passes `helm_docs_version` and
