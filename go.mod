@@ -97,9 +97,9 @@ require (
 	github.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78 // indirect
 	gitlab.com/gitlab-org/api/client-go v1.46.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
-	go.opentelemetry.io/otel v1.44.0 // indirect
-	go.opentelemetry.io/otel/metric v1.44.0 // indirect
-	go.opentelemetry.io/otel/trace v1.44.0 // indirect
+	go.opentelemetry.io/otel v1.46.0 // indirect
+	go.opentelemetry.io/otel/metric v1.46.0 // indirect
+	go.opentelemetry.io/otel/trace v1.46.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260526163538-3dc84a4a5aaa // indirect
@@ -143,6 +143,8 @@ require (
 	github.com/ulikunitz/xz v0.5.16 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
+	go.opentelemetry.io/otel/sdk v1.46.0 // indirect
+	go.opentelemetry.io/otel/sdk/metric v1.46.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.4 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/crypto v0.56.0 // indirect
@@ -157,4 +159,22 @@ require (
 	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 // indirect
 	sigs.k8s.io/randfill v1.0.0 // indirect
 	sigs.k8s.io/structured-merge-diff/v6 v6.4.2 // indirect
+)
+
+// Graph-only pins: sigstore-go (via pkg/updater's cosign verification) pulls
+// github.com/sigstore/rekor into the module graph, and rekor's go.mod requires
+// its server-side dependencies at versions OSS Index flags (nancy in the
+// architect orb this repo pins audits `go list -m all`). None of these modules
+// is compiled into devctl; `go mod tidy` drops a plain require for them, so
+// they are pinned with replace. Drop each pin once rekor (through sigstore-go)
+// requires the fixed version itself.
+replace (
+	github.com/jackc/pgx/v5 => github.com/jackc/pgx/v5 v5.11.0 // CVE-2026-33815 CVE-2026-33816 CVE-2026-41889
+	github.com/klauspost/compress => github.com/klauspost/compress v1.20.0 // CVE-2026-63209
+	github.com/prometheus/prometheus => github.com/prometheus/prometheus v0.314.0 // CVE-2026-42154 CVE-2026-40179
+	go.etcd.io/etcd/client/pkg/v3 => go.etcd.io/etcd/client/pkg/v3 v3.7.1 // CVE-2026-73500
+	go.etcd.io/etcd/server/v3 => go.etcd.io/etcd/server/v3 v3.7.1 // CVE-2026-44283 CVE-2026-73499
+	go.etcd.io/etcd/v3 => go.etcd.io/etcd/v3 v3.7.1 // CVE-2026-33413 CVE-2026-59818 CVE-2026-73500 CVE-2026-33343 CVE-2026-44283
+	go.opentelemetry.io/otel/exporters/otlp/otlptrace => go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.46.0 // CVE-2026-81870
+	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc => go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.46.0 // CVE-2026-81870
 )
