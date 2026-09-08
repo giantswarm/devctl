@@ -14,7 +14,9 @@ const (
 	shortDescription = `Update the application to the newest version available.`
 	longDescription  = `Update the application to the newest version available.
 
-The auto-updater will automatically fetch the newest version archive from the GitHub release. It will then unarchive it, and replace the binary that is currently installed with the one from the archive.`
+The auto-updater will automatically fetch the newest version archive from the GitHub release. It will then unarchive it, and replace the binary that is currently installed with the one from the archive.
+
+Release binaries are signed in CI (cosign, keyless) and published next to their Sigstore bundle. The downloaded binary is installed only after that bundle verifies for a CircleCI build of giantswarm/devctl; a release without a bundle, or a download that does not match its signature, is refused and the installed binary stays as it is.`
 )
 
 type Config struct {
