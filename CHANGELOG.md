@@ -7,6 +7,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- `gen workflows`: the generated `sync_from_upstream.yaml` now passes `helm_docs_version` and
+  `helm_values_schema_json_version` instead of letting the reusable `sync-from-upstream`
+  workflow default them. A skew against the pins in `zz_generated.pre-commit.yaml` made every
+  sync PR commit a `values.schema.json` built by the wrong plugin version and then fail its
+  own schema check.
+
 ### Added
 
 - `version update` installs a release binary only after its cosign Sigstore bundle verifies. Every devctl release
