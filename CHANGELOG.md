@@ -19,11 +19,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
-- `gen workflows`: the generated `sync_from_upstream.yaml` now passes `helm_docs_version` and
-  `helm_values_schema_json_version` instead of letting the reusable `sync-from-upstream`
-  workflow default them. A skew against the pins in `zz_generated.pre-commit.yaml` made every
-  sync PR commit a `values.schema.json` built by the wrong plugin version and then fail its
-  own schema check.
+- `gen precommit`: the `helm-schema-<chart>` hook now installs and pins its own generator
+  (`github.com/losisin/helm-values-schema-json/v2@v2.6.0` in `additional_dependencies`, next to the
+  existing `schemalint` pin) and calls that binary directly, instead of calling a bare `helm schema`
+  resolved from the developer's global helm plugin dir. The old guard only checked that *a* plugin was
+  installed, never which version, so a dev machine on a different version silently rewrote the committed
+  `values.schema.json` (v2.3.1 vs v2.6.0 is 40 lines in `hello-world-app`) and reported `Passed` while CI
+  then rejected it. The pin now lives in exactly one place: `HELM_VALUES_SCHEMA_JSON_VERSION` is gone from
+  the generated pre-commit workflow (with its plugin cache and install steps), `helm_values_schema_json_version`
+  is no longer passed to the reusable `sync-from-upstream` workflow, and the Renovate custom manager for
+  `losisin/helm-values-schema-json` is replaced by the existing `go`-datasource manager on
+  `additional_dependencies`. Regenerated chart repos need no helm plugin at all; the hook env costs ~16 s
+  cold and ~0.3 s warm.
+- `gen workflows`: the generated `sync_from_upstream.yaml` now passes `helm_docs_version` instead of
+  letting the reusable `sync-from-upstream` workflow default it. A skew against the pins in
+  `zz_generated.pre-commit.yaml` made every sync PR commit a chart README or `values.schema.json`
+  built by the wrong tool version and then fail its own check. (The matching
+  `helm_values_schema_json_version` pin added here is superseded by the `gen precommit` fix above,
+  which removes that pin entirely; neither has shipped yet.)
 
 ### Added
 
