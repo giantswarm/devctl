@@ -70,8 +70,14 @@ ignore_tags = '.*-(dev|rc|alpha|beta)\..*'
 # commit text -- git-cliff's default regex mode is single-line). This
 # anchoring keeps `(#N)` references that appear inside commit bodies
 # untouched.
+#
+# feat-rc/fix-rc mark a release candidate. The auto-release workflow reads the
+# raw subjects to spot them; git-cliff must see the plain type, because
+# `features_always_bump_minor` keys off the type being exactly "feat" and an
+# un-normalised feat-rc would bump patch instead of minor.
 commit_preprocessors = [
   { pattern = '(?m) \(#\d+\)$', replace = "" },
+  { pattern = '^(feat|fix)-rc', replace = "${1}" },
 ]
 
 # Map commit types to changelog groups (Keep-a-Changelog convention):
