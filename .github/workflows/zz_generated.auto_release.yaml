@@ -147,6 +147,7 @@ jobs:
         env:
           NEXT: ${{ steps.cliff.outputs.version }}
           WANT: ${{ inputs.release-type || 'auto' }}
+          CLIFF_CONTEXT: cliff-context.json
         run: |
           set -euo pipefail
           # `git describe --tags --abbrev=0` returns the closest tag reachable
@@ -165,18 +166,29 @@ jobs:
           echo "branch: ${GITHUB_REF_NAME}"
           echo "last reachable stable tag: ${last:-<none>}"
 
+          # Records are NUL-separated, so a multi-line body cannot be read as
+          # the next commit. Inside a record the first line is the subject and
+          # the rest is the body.
           marked=0
           blocking=0
-          while IFS= read -r subject; do
-            # The two patterns are mutually exclusive: after "feat" the second
-            # one needs "(", "!" or ":" and finds "-", so it never matches a
-            # feat-rc subject.
+          while IFS= read -r -d '' commit; do
+            subject=${commit%%$'\n'*}
+            # The two subject patterns are mutually exclusive: after "feat" the
+            # second one needs "(", "!" or ":" and finds "-", so it never
+            # matches a feat-rc subject.
+            #
+            # A breaking change counts whether it is declared by `!` in the
+            # subject or by a `BREAKING CHANGE:`/`BREAKING-CHANGE:` footer in
+            # the body: git-cliff bumps the major on either spelling, so both
+            # have to be able to close a cycle. Miss the footer and the cycle
+            # stays open on rc.N of a major version nobody marked.
             if printf '%s' "$subject" | grep -qE '^(feat|fix)-rc(\([^)]*\))?!?:'; then
               marked=$((marked + 1))
-            elif printf '%s' "$subject" | grep -qE '^(feat|fix)(\([^)]*\))?!?:|^[a-z]+(\([^)]*\))?!:'; then
+            elif printf '%s' "$subject" | grep -qE '^(feat|fix)(\([^)]*\))?!?:|^[a-z]+(\([^)]*\))?!:' \
+              || printf '%s' "$commit" | grep -qE '^BREAKING[ -]CHANGE:'; then
               blocking=$((blocking + 1))
             fi
-          done < <(git log ${last:+"${last}..HEAD"} --format=%s)
+          done < <(git log ${last:+"${last}..HEAD"} -z --format='%s%n%b')
           echo "unreleased commits: ${marked} marked -rc, ${blocking} unmarked deciding"
 
           if [ "$marked" -gt 0 ] && [ "$blocking" -eq 0 ]; then
@@ -199,10 +211,41 @@ jobs:
           if [ "$is_rc" = true ]; then
             # Highest existing RC for this exact target, so a moved target
             # (a breaking change during a cycle) restarts at rc.1, and rc.9 is
-            # followed by rc.10 rather than rc.2.
+            # followed by rc.10 rather than rc.2. `--merged HEAD` scopes the
+            # search the way the describe baseline above is scoped: a candidate
+            # for the same target cut on another branch must not shift the
+            # numbering on this one.
             # `|| true`: grep exits 1 on the first candidate of a series,
             # when no ${NEXT}-rc.* tag exists yet, and pipefail would abort.
-            n=$(git tag --list "${NEXT}-rc.*" | sed 's/.*-rc\.//' | { grep -E '^[0-9]+$' || true; } | sort -n | tail -1)
+            n=$(git tag --list --merged HEAD "${NEXT}-rc.*" | sed 's/.*-rc\.//' | { grep -E '^[0-9]+$' || true; } | sort -n | tail -1)
+
+            # A stable release refuses to tag when nothing releasable landed,
+            # through the `NEXT = last` comparison above. The candidate path
+            # needs its own form of that check: `NEXT` stays ahead of `last`
+            # for the whole cycle, so without it every push cuts another
+            # candidate, including a push that carries only commits git-cliff
+            # skips (docs, style) or drops as non-conventional. That spends an
+            # rc number, a GitHub pre-release and a publish pipeline on a
+            # README typo.
+            #
+            # cliff-context.json holds exactly the commits git-cliff counted
+            # for this release, so intersecting it with the range since the
+            # last candidate needs no second copy of cliff.toml's skip rules.
+            # An explicit `release-type: rc` overrides the check.
+            if [ -n "${n}" ] && [ "$WANT" = auto ]; then
+              counted=$(jq -r '.[0].commits[].id' "$CLIFF_CONTEXT")
+              since=$(git rev-list "${NEXT}-rc.${n}..HEAD")
+              fresh=0
+              if [ -n "$counted" ] && [ -n "$since" ]; then
+                fresh=$(printf '%s\n' "$since" | { grep -cxF "$counted" || true; })
+              fi
+              if [ "$fresh" -eq 0 ]; then
+                echo "No releasable commits since ${NEXT}-rc.${n}; skipping tag."
+                echo "tag=" >> "$GITHUB_OUTPUT"
+                echo "prerelease=" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+            fi
             tag="${NEXT}-rc.$(( ${n:-0} + 1 ))"
           else
             tag="${NEXT}"

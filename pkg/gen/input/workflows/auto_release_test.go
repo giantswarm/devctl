@@ -1,9 +1,12 @@
 package workflows
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -42,36 +45,104 @@ func decideScript(t *testing.T) string {
 	return ""
 }
 
+// gitIn runs git in dir and returns its combined output, leaving the error for
+// the caller. Use it where a non-zero exit is a legitimate answer.
+func gitIn(t *testing.T, dir string, args ...string) (string, error) {
+	t.Helper()
+
+	cmd := exec.CommandContext(t.Context(), "git", args...)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(),
+		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.com",
+		"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@example.com",
+	)
+	out, err := cmd.CombinedOutput()
+
+	return string(out), err
+}
+
+// mustGit runs git in dir and fails the test on a non-zero exit.
+func mustGit(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+
+	out, err := gitIn(t, dir, args...)
+	if err != nil {
+		t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
+	}
+
+	return out
+}
+
 // repo builds a git history for one test case. A "vX.Y.Z" entry tags the
-// current HEAD, anything else becomes an empty commit with that subject.
+// current HEAD, anything else becomes an empty commit with that subject. An
+// entry split by a blank line becomes a subject plus a commit body, which is
+// how a case declares a `BREAKING CHANGE:` footer.
 func repo(t *testing.T, history ...string) string {
 	t.Helper()
 
 	dir := t.TempDir()
-	run := func(args ...string) {
-		t.Helper()
-		cmd := exec.CommandContext(t.Context(), "git", args...)
-		cmd.Dir = dir
-		cmd.Env = append(os.Environ(),
-			"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.com",
-			"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@example.com",
-		)
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
-		}
-	}
 
-	run("init", "--initial-branch=main")
-	run("commit", "--allow-empty", "-m", "chore: inception")
+	mustGit(t, dir, "init", "--initial-branch=main")
+	mustGit(t, dir, "commit", "--allow-empty", "-m", "chore: inception")
 	for _, entry := range history {
 		if strings.HasPrefix(entry, "v") {
-			run("tag", entry)
+			mustGit(t, dir, "tag", entry)
 			continue
 		}
-		run("commit", "--allow-empty", "-m", entry)
+		subject, body, hasBody := strings.Cut(entry, "\n\n")
+		args := []string{"commit", "--allow-empty", "-m", subject}
+		if hasBody {
+			args = append(args, "-m", body)
+		}
+		mustGit(t, dir, args...)
 	}
 
 	return dir
+}
+
+// cliffSkippedTypes are the commit_parsers in cliff.toml that carry
+// `skip = true`. git-cliff leaves them out of both the release notes and the
+// bump, so they are not releasable on their own.
+var cliffSkippedTypes = []string{"docs", "style"}
+
+// countedSubject matches a conventional subject and captures its type. The
+// optional -rc mirrors cliff.toml's commit_preprocessor, which normalises
+// feat-rc/fix-rc to feat/fix before git-cliff parses the type.
+var countedSubject = regexp.MustCompile(`^([a-z]+)(?:-rc)?(?:\([^)]*\))?!?: `)
+
+// cliffContext writes the cliff-context.json that the decide step reads. The
+// test environment has no git-cliff, so this stands in for it: the file holds
+// the commits git-cliff would count for the bumped release, which is every
+// commit since the last stable tag that is conventional
+// (`filter_unconventional`) and not marked skip in cliff.toml.
+func cliffContext(t *testing.T, dir string) {
+	t.Helper()
+
+	args := []string{"log", "-z", "--format=%H %s"}
+	if last, err := gitIn(t, dir, "describe", "--tags", "--abbrev=0", "--match=v*.*.*", "--exclude=*-*"); err == nil {
+		args = append(args, strings.TrimSpace(last)+"..HEAD")
+	}
+
+	commits := []map[string]string{}
+	for _, record := range strings.Split(mustGit(t, dir, args...), "\x00") {
+		id, subject, ok := strings.Cut(record, " ")
+		if !ok {
+			continue
+		}
+		match := countedSubject.FindStringSubmatch(subject)
+		if match == nil || slices.Contains(cliffSkippedTypes, match[1]) {
+			continue
+		}
+		commits = append(commits, map[string]string{"id": id})
+	}
+
+	raw, err := json.Marshal([]map[string]any{{"commits": commits}})
+	if err != nil {
+		t.Fatalf("marshal cliff context: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "cliff-context.json"), raw, 0o600); err != nil {
+		t.Fatalf("write cliff context: %v", err)
+	}
 }
 
 // decide runs the extracted step in dir and returns its GITHUB_OUTPUT as a map.
@@ -83,11 +154,14 @@ func decide(t *testing.T, script, dir, next, want string) map[string]string {
 		t.Fatalf("seed GITHUB_OUTPUT: %v", err)
 	}
 
+	cliffContext(t, dir)
+
 	cmd := exec.CommandContext(t.Context(), "bash", "-c", script)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(),
 		"NEXT="+next,
 		"WANT="+want,
+		"CLIFF_CONTEXT=cliff-context.json",
 		"GITHUB_REF_NAME=main",
 		"GITHUB_OUTPUT="+outPath,
 	)
@@ -148,11 +222,18 @@ func Test_AutoReleaseDecide(t *testing.T) {
 			expectPrerelse: "true",
 		},
 		{
-			name:           "case 3: docs does not decide either",
-			history:        []string{"v1.2.9", "feat-rc: add x", "v1.3.0-rc.1", "docs: fix typo"},
-			next:           "v1.3.0",
-			expectTag:      "v1.3.0-rc.2",
-			expectPrerelse: "true",
+			// `docs` neither decides nor releases: cliff.toml skips it, so
+			// there is nothing new to put in a candidate and the cycle waits.
+			name:      "case 3: a docs-only push during a cycle releases nothing",
+			history:   []string{"v1.2.9", "feat-rc: add x", "v1.3.0-rc.1", "docs: fix typo"},
+			next:      "v1.3.0",
+			expectTag: "",
+		},
+		{
+			name:      "a non-conventional push during a cycle releases nothing",
+			history:   []string{"v1.2.9", "feat-rc: add x", "v1.3.0-rc.1", "Merge pull request #12 from foo/bar"},
+			next:      "v1.3.0",
+			expectTag: "",
 		},
 		{
 			name:           "case 4: an unmarked fix closes the cycle at the stable target",
@@ -167,6 +248,32 @@ func Test_AutoReleaseDecide(t *testing.T) {
 			next:           "v2.0.0",
 			expectTag:      "v2.0.0",
 			expectPrerelse: "false",
+		},
+		{
+			// git-cliff bumps the major on a `BREAKING CHANGE:` footer as
+			// readily as on `!`, so the footer has to close the cycle too.
+			// Otherwise the cycle ships rc.N of a major nobody marked.
+			name:           "case 5b: an unmarked breaking footer closes the cycle",
+			history:        []string{"v1.2.9", "feat-rc: add x", "v1.3.0-rc.1", "refactor: drop the v1 API\n\nBREAKING CHANGE: v1 is gone"},
+			next:           "v2.0.0",
+			expectTag:      "v2.0.0",
+			expectPrerelse: "false",
+		},
+		{
+			name:           "the BREAKING-CHANGE spelling closes it as well",
+			history:        []string{"v1.2.9", "feat-rc: add x", "v1.3.0-rc.1", "chore: tidy\n\nBREAKING-CHANGE: gone"},
+			next:           "v2.0.0",
+			expectTag:      "v2.0.0",
+			expectPrerelse: "false",
+		},
+		{
+			// The marked commit stays marked: it carries the -rc, so its own
+			// footer must not count against it.
+			name:           "a marked breaking footer keeps the cycle open",
+			history:        []string{"v1.2.9", "feat-rc: rework\n\nBREAKING CHANGE: v1 is gone"},
+			next:           "v2.0.0",
+			expectTag:      "v2.0.0-rc.1",
+			expectPrerelse: "true",
 		},
 		{
 			name:           "a marked breaking change gives a major RC",
@@ -258,6 +365,30 @@ func Test_AutoReleaseDecide(t *testing.T) {
 	}
 }
 
+// Test_AutoReleaseDecideIgnoresUnmergedCandidates pins that the rc counter is
+// scoped to reachable tags. The describe baseline is scoped for the backport
+// case; a candidate for the same target cut on another branch must not shift
+// the numbering on this one either.
+func Test_AutoReleaseDecideIgnoresUnmergedCandidates(t *testing.T) {
+	script := decideScript(t)
+
+	dir := repo(t, "v1.2.9", "feat-rc: add x")
+
+	// A candidate cut on a side branch that never merged. cliff.toml keeps it
+	// out of git-cliff's baseline through use_branch_tags, so `NEXT` below is
+	// still v1.3.0; the step has to agree.
+	mustGit(t, dir, "checkout", "-q", "-b", "side", "v1.2.9")
+	mustGit(t, dir, "commit", "--allow-empty", "-m", "feat-rc: something else")
+	mustGit(t, dir, "tag", "v1.3.0-rc.7")
+	mustGit(t, dir, "checkout", "-q", "main")
+
+	got := decide(t, script, dir, "v1.3.0", "auto")
+
+	if got["tag"] != "v1.3.0-rc.1" {
+		t.Errorf("tag = %q, want v1.3.0-rc.1: the unmerged v1.3.0-rc.7 must not count", got["tag"])
+	}
+}
+
 // Test_AutoReleaseDescribeExcludesPreReleases pins the --exclude flag. Without
 // it `git describe --match='v*.*.*'` returns a reachable v1.3.0-rc.N as the
 // baseline, the "nothing to release" comparison can never be true again, and
@@ -309,9 +440,11 @@ func Test_SemanticPullRequestAcceptsRcTypes(t *testing.T) {
 
 	// `types` replaces the action's default list rather than extending it, so
 	// dropping one of these silently blocks that type on every repository.
+	// `security` is not one of the action's defaults, so it needs the explicit
+	// list to be accepted at all; cliff.toml maps it to the Security group.
 	for _, want := range []string{
 		"feat(-rc)?", "fix(-rc)?", "docs", "style", "refactor",
-		"perf", "test", "build", "ci", "chore", "revert",
+		"perf", "test", "build", "ci", "chore", "revert", "security",
 	} {
 		if !strings.Contains(with["types"], want+"\n") {
 			t.Errorf("types is missing %q:\n%s", want, with["types"])

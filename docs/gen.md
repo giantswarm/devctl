@@ -39,13 +39,18 @@ A pull request title of `feat-rc:` or `fix-rc:` marks its change as belonging to
 
 > Tag a release candidate when at least one unreleased commit is `feat-rc` or `fix-rc`, and no unreleased `feat`, `fix` or breaking commit lacks the `-rc`.
 
+A commit is breaking through either spelling: a `!` in the subject, or a `BREAKING CHANGE:` (or `BREAKING-CHANGE:`) footer in the body. git-cliff bumps the major on both, so both close a cycle.
+
 `feat` and `fix` decide, everything else follows. A cycle is therefore sticky without any extra state:
 
 | Merge | Tag | Why |
 |-------|-----|-----|
 | `feat-rc: add x` | `v1.3.0-rc.1` | one marked, none unmarked |
 | `chore(deps): bump y` | `v1.3.0-rc.2` | `chore` does not decide, so a Renovate auto-merge cannot end a cycle |
+| `docs: fix a typo` | none | `docs` is skipped, so there is nothing new to put in a candidate |
 | `fix: last thing` | `v1.3.0` | an unmarked `fix` closes the cycle |
+
+A candidate needs something releasable to carry. A push whose commits git-cliff all skips (`docs`, `style`) or drops as non-conventional tags nothing, exactly as it does outside a cycle, so a README typo cannot spend an rc number and a publish pipeline.
 
 The version does not drift while a cycle runs: the unreleased set still holds the original `feat`, so the closing commit lands on exactly the version the candidates were leading to. A candidate is flagged as a GitHub pre-release, so it does not surface as the repo's "Latest release", and the `/^v.*/` CircleCI tag filter publishes it like any other tag.
 

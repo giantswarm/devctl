@@ -25,11 +25,16 @@ jobs:
       headerPattern: '^(\w*(?:-rc)?)(?:\((.*)\))?!?: (.*)$'
       # `types` REPLACES the action's default list rather than extending it, so
       # all eleven defaults from commitizen/conventional-commit-types are
-      # repeated here. Entries are regexes the action wraps in `^ $`.
+      # repeated here, plus the additions below. Entries are regexes the action
+      # wraps in `^ $`.
       #
       # feat-rc/fix-rc mark a release candidate for the auto-release flow. They
       # are accepted everywhere but only act in repositories generated with
       # --release-workflow=auto-release; in a legacy repository they are inert.
+      #
+      # `security` is not one of the action's defaults and has to be listed to
+      # be accepted at all. cliff.toml maps it to the Security changelog group,
+      # which no title can reach while the type is rejected.
       types: |
         feat(-rc)?
         fix(-rc)?
@@ -42,3 +47,4 @@ jobs:
         ci
         chore
         revert
+        security
