@@ -7,6 +7,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `gen workflows`: the `auto-release` flow can now cut release candidates. A pull request titled
+  `feat-rc:` or `fix-rc:` marks its change as part of a candidate, and the workflow tags
+  `vX.Y.Z-rc.N` instead of `vX.Y.Z`, flagged as a GitHub pre-release. The decision is taken over
+  every unreleased commit: a candidate is tagged when at least one of them carries `-rc` and no
+  unreleased `feat`, `fix` or breaking commit does not, so an unmarked `chore(deps)` from Renovate
+  cannot end a candidate cycle and an unmarked `feat` or `fix` closes it at the stable version the
+  candidates were leading to. A commit counts as breaking through either spelling, a `!` in the
+  subject or a `BREAKING CHANGE:`/`BREAKING-CHANGE:` footer. A push that carries nothing releasable
+  tags no candidate, so a `docs`- or `style`-only push behaves inside a cycle the way it does
+  outside one. `zz_generated.auto_release.yaml` also gains a `workflow_dispatch` trigger with a
+  `release-type` input to close a cycle when no pull request is left to merge.
+- `gen workflows`: `zz_generated.semantic_pull_request.yaml` passes `types` and `headerPattern` to
+  `giantswarm/github-workflows`, so `feat-rc` and `fix-rc` pass the PR title check. The action's
+  stock parser reads the type with `\w*` and cannot match a hyphen, so the `headerPattern`
+  override is what admits the type at all. The titles are accepted in every repository but only
+  act under `--release-workflow=auto-release`. `security` joins the accepted types, which the
+  action's default list never held although `cliff.toml` maps it to a Security changelog group.
+
 ### Changed
 
 - `gen circleci`: the canonical app-test-suite (ATS) test stack moves to `pytest==9.0.3` and
