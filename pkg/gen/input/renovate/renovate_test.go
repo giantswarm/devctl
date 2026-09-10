@@ -447,3 +447,28 @@ func Test_Golden(t *testing.T) {
 		})
 	}
 }
+
+// Test_GitIgnoredAuthorsAlwaysPresent verifies every generated config lists
+// the taylorbot author the generated workflows (helm-docs-regen, update-chart,
+// sync-from-upstream) commit with, so Renovate keeps rebasing and autoclosing
+// a branch those workflows pushed to. It is unconditional: a repo without such
+// a workflow never sees a commit by that author, so the entry is inert there.
+func Test_GitIgnoredAuthorsAlwaysPresent(t *testing.T) {
+	for _, c := range []Config{
+		{Language: "go"},
+		{Language: "node", CircleCIGenerated: true},
+		{Language: "go", Deprecated: true, HasCustomConfig: true, RepoName: "some-repo"},
+	} {
+		got := render(t, c)
+
+		var parsed struct {
+			GitIgnoredAuthors []string `json:"gitIgnoredAuthors"`
+		}
+		if err := json5.Unmarshal([]byte(got), &parsed); err != nil {
+			t.Fatalf("generated config is not valid JSON5: %v\n%s", err, got)
+		}
+		if len(parsed.GitIgnoredAuthors) != 1 || parsed.GitIgnoredAuthors[0] != "dev@giantswarm.io" {
+			t.Errorf("gitIgnoredAuthors = %v for %+v, want [dev@giantswarm.io]", parsed.GitIgnoredAuthors, c)
+		}
+	}
+}

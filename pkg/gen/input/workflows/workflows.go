@@ -93,6 +93,10 @@ func (w *Workflows) Gitleaks() input.Input {
 	return file.NewGitleaksInput(w.params)
 }
 
+func (w *Workflows) HelmDocsRegen() input.Input {
+	return file.NewHelmDocsRegenInput(w.params)
+}
+
 func (w *Workflows) HelmRenderDiff() input.Input {
 	return file.NewHelmRenderDiff(w.params)
 }

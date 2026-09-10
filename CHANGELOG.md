@@ -49,6 +49,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `gen workflows --helm-docs-regen` (app flavour) generates `zz_generated.helm-docs-regen.yaml`: on pull requests
+  from `renovate/**` and `dependabot/**` branches it regenerates the chart README (helm-docs) and
+  `values.schema.json` (the `helm-schema-<chart>` hooks) and pushes the result back onto the PR branch with the
+  taylorbot PAT, so an image-tag or values-key bump no longer fails the `pre-commit` check on files only the hooks
+  can rewrite (giantswarm/agent-platform#295, #301, #302, #320; agent-sandbox#38; agentgateway#3). The hooks and
+  their tool pins are read from the repo's own `.pre-commit-config.yaml` at run time, every hook runs twice with
+  the second pass required clean, a clean tree is a no-op so the run the push triggers exits without pushing again,
+  and the job is skipped with a warning where the secret is not available (fork and Dependabot-triggered runs).
+  Opt in through `gen.helmDocsRegen: true` in giantswarm/github. Closes #2185.
+- `gen renovate` lists `dev@giantswarm.io` in `gitIgnoredAuthors`: the author the generated workflows commit
+  with (helm-docs-regen, update-chart, sync-from-upstream) now counts as Renovate's own, so a branch they pushed
+  to keeps being rebased and autoclosed instead of retitled "- abandoned".
 - `version update` installs a release binary only after its cosign Sigstore bundle verifies. Every devctl release
   asset comes with a `<asset>.bundle` next to it: cosign's keyless signature made by the CircleCI pipeline and
   recorded in Rekor. The download is verified against that bundle for a CircleCI build of
