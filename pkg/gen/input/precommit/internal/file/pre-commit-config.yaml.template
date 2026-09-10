@@ -135,17 +135,27 @@ repos:
   # `schemalint-verify` then checks that resting format (it never rewrites, so it is not
   # part of the conflict). See giantswarm/giantswarm#37267.
   #
-  # The `$ref` step works around a generator bug: with `noAdditionalProperties: true` it
-  # emits `additionalProperties: false` as a sibling of every bare `$ref`. Per JSON Schema
-  # 2020-12, `additionalProperties` only sees sibling `properties`/`patternProperties`
-  # -- NOT properties pulled in through `$ref` -- so it wrongly rejects every field the
-  # referenced schema defines (e.g. `helm template` fails with "additional properties
-  # 'podAntiAffinity' not allowed" for a k8s Affinity). The correct 2020-12 keyword is
-  # `unevaluatedProperties`, which DOES consider $ref-evaluated properties, but the tool
-  # cannot emit it and does not drop the bogus `additionalProperties` when annotated. So
-  # for every object that has both `$ref` and `additionalProperties: false` we drop
-  # `additionalProperties` and set `unevaluatedProperties: false`.
-  # Upstream bug: https://github.com/losisin/helm-values-schema-json/issues/317
+  # The `$ref` step repairs a JSON Schema 2020-12 defect: `additionalProperties: false` as
+  # a sibling of a `$ref`. `additionalProperties` only sees sibling
+  # `properties`/`patternProperties` -- NOT properties pulled in through `$ref` -- so such
+  # a node rejects every field the referenced schema defines (e.g. `helm template` fails
+  # with "additional properties 'podAntiAffinity' not allowed" for a k8s Affinity). The
+  # correct keyword is `unevaluatedProperties`, which DOES consider $ref-evaluated
+  # properties. So for every object that has both `$ref` and `additionalProperties: false`
+  # we drop `additionalProperties` and set `unevaluatedProperties: false`.
+  #
+  # The generator itself no longer produces this. It did until v2.6.0, which shipped
+  # losisin/helm-values-schema-json#378 (fixing #317): with `noAdditionalProperties: true`
+  # it now closes applicator-bearing nodes with `unevaluatedProperties` instead. Measured
+  # against v2.6.0 over all 21 helmchart repos, the step is a no-op on generated output.
+  #
+  # It stays for schemas the generator BUNDLES rather than generates. `bundle: true`
+  # inlines a `# @schema $ref: <file>` target verbatim, defect included, and the tool
+  # cannot be expected to rewrite third-party content. One repo depends on this today:
+  # security-profiles-operator-app vendors the upstream chart's own `values.schema.json`,
+  # whose `daemon.tolerations` items close a `$ref`ed k8s Toleration with
+  # `additionalProperties: false` and so reject `value` and `tolerationSeconds`.
+  # Before removing this step, re-run that measurement -- do not assume it is dead.
   #
   # This replaces both the external `losisin/helm-values-schema-json` hook and the
   # separate `schemalint-normalize` hook. BOTH binaries are installed and pinned by the

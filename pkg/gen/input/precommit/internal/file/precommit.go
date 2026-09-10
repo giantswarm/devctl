@@ -18,8 +18,13 @@ var createPreCommitConfigTemplateSha string
 // refFixPython is the middle step of the generated helm-schema pipeline hook: for every
 // object that has both `$ref` and `additionalProperties: false` it drops
 // `additionalProperties` and sets `unevaluatedProperties: false` instead. Only the latter
-// keyword considers properties pulled in through `$ref` in JSON Schema 2020-12
-// (losisin/helm-values-schema-json#317); see the template for the full rationale.
+// keyword considers properties pulled in through `$ref` in JSON Schema 2020-12.
+//
+// The generator stopped emitting that combination in v2.6.0, which shipped
+// losisin/helm-values-schema-json#378 (fixing #317). This step is kept for schemas the
+// generator BUNDLES rather than generates: `bundle: true` inlines a `# @schema $ref:
+// <file>` target verbatim, defect included. See the template for the full rationale and
+// for the repo that still depends on it.
 //
 // It lives here rather than inline in the template so Test_RefFixPython can execute the
 // exact program that gets generated. Two constraints:
