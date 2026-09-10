@@ -140,7 +140,12 @@ func Test_HelmSchemaFixHook(t *testing.T) {
 		"id: helm-schema-test-chart",
 		"helm-values-schema-json --config helm/test-chart/.schema.yaml",
 		"unevaluatedProperties",
-		"helm-values-schema-json/issues/317",
+		// The rationale must keep its upstream provenance: #378 (in v2.6.0) is what
+		// stopped the GENERATOR from emitting the defect, and the named repo is the
+		// one that still needs the step for a schema the generator BUNDLES. Whoever
+		// deletes this step next has to know both, or they regress that repo.
+		"losisin/helm-values-schema-json#378",
+		"security-profiles-operator-app",
 		"schemalint normalize helm/test-chart/values.schema.json",
 		// Both binaries are installed AND pinned by the hook itself, so no tooling comes
 		// from the environment and dev machines run the same versions CI does.

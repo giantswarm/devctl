@@ -9,6 +9,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- `gen precommit`: the `$ref` step of the `helm-schema-<chart>` hook keeps its behaviour but its
+  rationale is corrected. It was documented as working around an unfixed generator bug
+  (losisin/helm-values-schema-json#317). That bug is fixed: v2.6.0 ships #378, and measured against
+  v2.6.0 across all 21 helmchart repos the step is a no-op on generated output. It stays for schemas
+  the generator *bundles* rather than generates — `bundle: true` inlines a `# @schema $ref: <file>`
+  target verbatim, defect included — and `security-profiles-operator-app` depends on that today: the
+  vendored upstream chart's own schema closes a `$ref`ed k8s Toleration with
+  `additionalProperties: false`, which rejects `value` and `tolerationSeconds`. Comment-only, but it
+  moves the template, so every generated `.pre-commit-config.yaml` header URL changes on the next
+  align run.
 - `gen circleci`: the canonical app-test-suite (ATS) test stack moves to `pytest==9.0.3` and
   `pytest-helm-charts==1.3.5` (`uv.lock` re-resolved). pytest 9.0.3 carries the fix for GHSA-6w46-j5rx-g56g
   (CVE-2025-71176), which Dependabot flags on the generated `tests/ats/pyproject.toml` of every chart repo;
