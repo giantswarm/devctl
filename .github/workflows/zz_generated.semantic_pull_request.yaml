@@ -18,7 +18,7 @@ permissions: {}
 
 jobs:
   semantic-pull-request:
-    uses: giantswarm/github-workflows/.github/workflows/semantic-pull-request.yaml@main
+    uses: giantswarm/github-workflows/.github/workflows/semantic-pull-request.yaml@feat-rc-title-types
     permissions:
       pull-requests: read
     with:
