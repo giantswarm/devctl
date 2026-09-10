@@ -92,6 +92,9 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 
 	if r.flag.Flavours.Contains(gen.FlavourApp) {
 		inputs = append(inputs, workflowsInput.CheckValuesSchema())
+		if r.flag.HelmDocsRegen {
+			inputs = append(inputs, workflowsInput.HelmDocsRegen())
+		}
 		if r.flag.InstallUpdateChart {
 			inputs = append(inputs, workflowsInput.UpdateChart())
 			if r.flag.UpstreamSyncAutomation {

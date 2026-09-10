@@ -23,8 +23,8 @@ func NewFixVulnerabilitiesInput(p params.Params) input.Input {
 			Right: "}}}}",
 		},
 		TemplateData: map[string]interface{}{
-			"Header":               params.Header("#", fixVulnerabilitiesTemplateSha),
-			"StepSetUpGitIdentity": params.StepSetUpGitIdentity(),
+			"Header":                        params.Header("#", fixVulnerabilitiesTemplateSha),
+			templateKeyStepSetUpGitIdentity: params.StepSetUpGitIdentity(),
 		},
 	}
 

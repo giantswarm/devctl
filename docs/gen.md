@@ -35,6 +35,23 @@ devctl gen workflows --flavour app --language go --release-workflow=auto-release
 
 `cliff.toml`'s `[remote.github].repo` is auto-detected from the consuming repo's `origin` git remote URL. Run from a directory whose `git config remote.origin.url` points at `github.com/giantswarm/<repo>`; outside a git repo the value renders as `""` and git-cliff's GitHub API lookups fail at workflow runtime.
 
+### helm-docs regen workflow
+
+`--helm-docs-regen` (app flavour only, off by default) adds `.github/workflows/zz_generated.helm-docs-regen.yaml`. On pull requests from `renovate/**` and `dependabot/**` branches that touch `helm/**` or `.pre-commit-config.yaml`, the workflow regenerates the files the generated pre-commit hooks derive from a chart's `values.yaml` -- the helm-docs README and `values.schema.json` -- and pushes the result back onto the PR branch. Without it, every dependency bump that changes an image tag or a values key fails the `pre-commit` check on files only the hooks can rewrite ("files were modified by this hook"), and the PR waits for a human to run the hooks and push. The Mend-hosted Renovate app cannot run `postUpgradeTasks`, so the regeneration has to happen in the consuming repo.
+
+How it works:
+
+- A `preflight` job reads the repo's own `.pre-commit-config.yaml`: every `helm-schema-<chart>` hook plus the hooks of the `norwoodj/helm-docs` entry, whose `rev` names the helm-docs release to install. Nothing in the workflow is repo-specific, so it needs no regeneration when a chart is added or a tool is bumped. No hooks (or no `TAYLORBOT_GITHUB_ACTION` secret, as on fork and Dependabot-triggered runs, which only see Dependabot secrets) skips the second job with a warning.
+- A `regen` job checks out the head branch with `secrets.TAYLORBOT_GITHUB_ACTION`, installs that helm-docs release (the schema hook installs and pins its own generator through `additional_dependencies`), and runs each hook twice through pre-commit: the first pass may rewrite files, the second pass has to be clean. A hook that still rewrites, or errors out, fails the job and nothing is pushed.
+- A changed tree is committed as `taylorbot <dev@giantswarm.io>` and pushed. The push uses the PAT because a `GITHUB_TOKEN` push does not re-trigger the required checks on the new commit. A clean tree is a no-op, so the run the push triggers on the new head exits without pushing again. Runs are serialised per head ref with `cancel-in-progress`.
+- `devctl gen renovate` lists `dev@giantswarm.io` in `gitIgnoredAuthors`, so Renovate treats the regen commit as its own and keeps rebasing and autoclosing the PR. A repo whose `renovate-custom.json5` sets its own `gitIgnoredAuthors` must repeat the address: Renovate replaces the array instead of merging it.
+
+In giantswarm/github the flag is `gen.helmDocsRegen: true` on the repository entry.
+
+```nohighlight
+devctl gen workflows --flavour app --language generic --helm-docs-regen
+```
+
 ## Generating Makefiles
 
 Creates common `Makefile` and includes in the root directory.

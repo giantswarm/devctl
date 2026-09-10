@@ -23,8 +23,8 @@ func NewCreateReleasePRInput(p params.Params) input.Input {
 			Right: "}}}}",
 		},
 		TemplateData: map[string]interface{}{
-			"Header":               params.Header("#", createReleasePRTemplateSha),
-			"StepSetUpGitIdentity": params.StepSetUpGitIdentity(),
+			"Header":                        params.Header("#", createReleasePRTemplateSha),
+			templateKeyStepSetUpGitIdentity: params.StepSetUpGitIdentity(),
 		},
 	}
 
