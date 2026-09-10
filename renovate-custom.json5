@@ -92,35 +92,31 @@
       ],
       datasourceTemplate: 'github-tags',
     },
-    // schemalint pinned in `additional_dependencies` of the local helm-schema pipeline
-    // hook in the pre-commit config template. The `schemalint` packageRule below groups
-    // this with the `- repo:`/`rev:` entry for the same tool, so the normalizing binary
-    // never drifts from the verifying one -- a version skew between them could reintroduce
-    // the rival-formatter conflict (giantswarm/giantswarm#37267).
+    // The two binaries pinned in `additional_dependencies` of the local helm-schema
+    // pipeline hook in the pre-commit config template: `schemalint` (normalizer) and
+    // `helm-values-schema-json` (generator). This is the ONLY pin for either of them --
+    // the hook installs both itself, so a developer machine and CI run identical versions.
+    // The `schemalint` packageRule below groups this with the `- repo:`/`rev:` entry for
+    // the same tool, so the normalizing binary never drifts from the verifying one -- a
+    // version skew between them could reintroduce the rival-formatter conflict
+    // (giantswarm/giantswarm#37267).
     //
-    // This is the Go module path, tracked with the `go` datasource rather than
-    // github-tags on the repo: a regex manager only rewrites the captured version, not the
-    // `/v2` in the path, so github-tags offering a v3 tag would produce
+    // These are Go module paths, tracked with the `go` datasource rather than github-tags
+    // on the repos: a regex manager only rewrites the captured version, not the `/v2` in
+    // the path, so github-tags offering a v3 tag would produce
     // `github.com/giantswarm/schemalint/v2@v3.0.0`, which `go install` rejects -- and the
     // breakage would only surface downstream, at pre-commit env install in every generated
-    // chart repo. The `go` datasource for the `/v2` path can only ever offer v2.x, so the
-    // pin cannot go invalid; a schemalint major needs a manual edit of both the path here
-    // and the `rev:` (see the major-update rule below).
+    // chart repo. The `go` datasource for a `/v2` path can only ever offer v2.x, so the
+    // pins cannot go invalid; a major needs a manual edit of the path here (and, for
+    // schemalint, of the `rev:` too -- see the major-update rule below).
     {
       customType: 'regex',
       managerFilePatterns: ['/pre-commit-config\\.yaml\\.template$/'],
       matchStrings: [
-        'additional_dependencies: \\[\'(?<depName>github\\.com/giantswarm/schemalint/v2)@(?<currentValue>[^\']+)\'\\]',
+        '\'(?<depName>github\\.com/giantswarm/schemalint/v2)@(?<currentValue>[^\']+)\'',
+        '\'(?<depName>github\\.com/losisin/helm-values-schema-json/v2)@(?<currentValue>[^\']+)\'',
       ],
       datasourceTemplate: 'go',
-    },
-    // Helm CLI version pinned as an env var in the pre-commit GitHub Actions workflow template.
-    {
-      customType: 'regex',
-      managerFilePatterns: ['/pre-commit-action\\.yaml\\.template$/'],
-      matchStrings: ['HELM_VERSION: "(?<currentValue>[^"]+)"'],
-      depNameTemplate: 'helm/helm',
-      datasourceTemplate: 'github-releases',
     },
     // helm-docs version pinned as an env var in the pre-commit GitHub Actions workflow
     // template, and passed to the reusable sync-from-upstream workflow, which installs the
@@ -139,25 +135,6 @@
         'helm_docs_version: \'(?<currentValue>[^\']+)\'',
       ],
       depNameTemplate: 'norwoodj/helm-docs',
-      datasourceTemplate: 'github-releases',
-    },
-    // helm-values-schema-json version pinned as an env var in the pre-commit GitHub Actions workflow
-    // template, and passed to the reusable sync-from-upstream workflow, which installs the
-    // same tools to run the same hooks. Both pins have to move in one PR: sync-from-upstream
-    // commits whatever the hooks rewrite, so a skew against the consumer's own pre-commit
-    // job makes every sync PR fail its schema check.
-    // Renovate will consolidate updates with the pre-commit hook rev for the same package.
-    {
-      customType: 'regex',
-      managerFilePatterns: [
-        '/pre-commit-action\\.yaml\\.template$/',
-        '/sync_from_upstream\\.yaml\\.template$/',
-      ],
-      matchStrings: [
-        'HELM_VALUES_SCHEMA_JSON_VERSION: "(?<currentValue>[^"]+)"',
-        'helm_values_schema_json_version: \'(?<currentValue>[^\']+)\'',
-      ],
-      depNameTemplate: 'losisin/helm-values-schema-json',
       datasourceTemplate: 'github-releases',
     },
     // golangci-lint version used in install-binary-action. The two-line match avoids

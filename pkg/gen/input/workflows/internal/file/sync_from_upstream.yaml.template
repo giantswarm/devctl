@@ -14,10 +14,10 @@ jobs:
       contents: write
     with:
       update_branch: 'main#update-chart'
-      # Must match HELM_DOCS_VERSION / HELM_VALUES_SCHEMA_JSON_VERSION in
-      # pre-commit-action.yaml.template: the reusable workflow runs pre-commit
-      # and commits what the hooks rewrite, so a skew against the consumer's
-      # own pre-commit job makes every sync PR fail its schema check.
+      # Must match HELM_DOCS_VERSION in pre-commit-action.yaml.template: the
+      # reusable workflow runs pre-commit and commits what the hooks rewrite, so
+      # a skew against the consumer's own pre-commit job makes every sync PR fail
+      # its schema check. The values-schema-json generator needs no pin here --
+      # the helm-schema hook installs and pins it itself.
       helm_docs_version: '1.14.2'
-      helm_values_schema_json_version: '2.6.0'
     secrets: inherit
