@@ -118,14 +118,6 @@
       ],
       datasourceTemplate: 'go',
     },
-    // Helm CLI version pinned as an env var in the pre-commit GitHub Actions workflow template.
-    {
-      customType: 'regex',
-      managerFilePatterns: ['/pre-commit-action\\.yaml\\.template$/'],
-      matchStrings: ['HELM_VERSION: "(?<currentValue>[^"]+)"'],
-      depNameTemplate: 'helm/helm',
-      datasourceTemplate: 'github-releases',
-    },
     // helm-docs version pinned as an env var in the pre-commit GitHub Actions workflow
     // template, and passed to the reusable sync-from-upstream workflow, which installs the
     // same tools to run the same hooks. Both pins have to move in one PR: sync-from-upstream

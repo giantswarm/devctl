@@ -30,7 +30,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   is no longer passed to the reusable `sync-from-upstream` workflow, and the Renovate custom manager for
   `losisin/helm-values-schema-json` is replaced by the existing `go`-datasource manager on
   `additional_dependencies`. Regenerated chart repos need no helm plugin at all; the hook env costs ~16 s
-  cold and ~0.3 s warm.
+  cold and ~0.3 s warm. With the last `helm` caller gone, the dead `HELM_VERSION` env var and its
+  Renovate custom manager are removed too: nothing in the generated workflow installs helm, and
+  `helm-docs` is a separate binary.
 - `gen workflows`: the generated `sync_from_upstream.yaml` now passes `helm_docs_version` instead of
   letting the reusable `sync-from-upstream` workflow default it. A skew against the pins in
   `zz_generated.pre-commit.yaml` made every sync PR commit a chart README or `values.schema.json`

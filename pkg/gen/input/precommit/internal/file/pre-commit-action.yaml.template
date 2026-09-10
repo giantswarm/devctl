@@ -10,7 +10,6 @@ on:
       - master
 
 env:
-  HELM_VERSION: "3.21.4"
   HELM_DOCS_VERSION: "1.14.2"
 
 jobs:
