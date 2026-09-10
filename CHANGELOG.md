@@ -9,6 +9,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- `gen circleci`: the canonical app-test-suite (ATS) test stack moves to `pytest==9.0.3` and
+  `pytest-helm-charts==1.3.5` (`uv.lock` re-resolved). pytest 9.0.3 carries the fix for GHSA-6w46-j5rx-g56g
+  (CVE-2025-71176), which Dependabot flags on the generated `tests/ats/pyproject.toml` of every chart repo;
+  pytest-helm-charts 1.3.5 is the first PyPI release that allows pytest 9 (`pytest>=9.0.2,<10`). The
+  generator tests no longer hardcode the stack's versions -- they assert the pins exist, that both layouts
+  (Pipfile and pyproject.toml) agree and that `uv.lock` locks them -- so the grouped Renovate bumps of this
+  stack stop failing `go-build`.
 - `gen circleci`: the architect orb pin moves to `10.4.1`, which ships the `sync-china-registry` fix
   (architect-orb#921): the job now waits until the image the push job published is visible from the
   in-China runner, child manifests included, before `regctl image copy` starts. The runner reads the

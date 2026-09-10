@@ -76,20 +76,15 @@ func Test_PipfileRendersVerbatim(t *testing.T) {
 	}
 }
 
-// Test_PipfileCanonicalPins pins the exact == versions of the standard ATS
-// stack. The pytest pin must stay below 9 to remain compatible with
-// pytest-helm-charts (which requires pytest<9); a bare `pytest = "==9..."`
-// would reintroduce the resolution conflict this centralization exists to
-// prevent.
+// Test_PipfileCanonicalPins verifies the Pipfile carries the standard ATS stack
+// as exact == pins. Versions are deliberately not asserted: Renovate bumps them
+// in one grouped PR (renovate-custom.json5, "ATS test dependencies"), and whether
+// the set still resolves is proven by uv.lock, which
+// Test_PyprojectMatchesPipfilePins checks against the same pins.
 func Test_PipfileCanonicalPins(t *testing.T) {
 	got := renderPipfile(t)
 
 	for _, want := range []string{
-		`pytest-helm-charts = "==1.3.4"`,
-		`pytest = "==8.4.2"`,
-		`pykube-ng = "==23.6.0"`,
-		`pytest-rerunfailures = "==16.3"`,
-		`requests = "==2.34.2"`,
 		`[packages]`,
 		`url = "https://pypi.org/simple"`,
 	} {
@@ -98,8 +93,14 @@ func Test_PipfileCanonicalPins(t *testing.T) {
 		}
 	}
 
-	if strings.Contains(got, `pytest = "==9`) {
-		t.Errorf("pytest must stay <9 for pytest-helm-charts compatibility:\n%s", got)
+	pins := map[string]string{}
+	for _, m := range pipfilePin.FindAllStringSubmatch(got, -1) {
+		pins[m[1]] = m[2]
+	}
+	for _, name := range canonicalStack {
+		if _, ok := pins[name]; !ok {
+			t.Errorf("canonical Pipfile does not pin %s to an exact == version:\n%s", name, got)
+		}
 	}
 }
 
@@ -141,6 +142,10 @@ func Test_UVLayoutInputs(t *testing.T) {
 		}
 	}
 }
+
+// canonicalStack lists the packages every ATS consumer gets pinned; the versions
+// live only in the embedded sources so Renovate can move them.
+var canonicalStack = []string{"pytest-helm-charts", "pytest", "pykube-ng", "pytest-rerunfailures", "requests"}
 
 // pinRegexps extract the canonical pins from both layouts: Pipfile
 // `name = "==version"` and pyproject `"name==version"`.
