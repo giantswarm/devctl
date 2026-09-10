@@ -1328,11 +1328,10 @@ func Test_ATSInputsForAppRepo(t *testing.T) {
 	}
 
 	got := renderInput(t, inputs[0])
-	if !contains(got, `"pytest-helm-charts==1.3.4"`) {
-		t.Errorf("generated ATS pyproject.toml missing the canonical pytest-helm-charts pin:\n%s", got)
-	}
-	if !contains(got, `"pytest==8.4.2"`) {
-		t.Errorf("generated ATS pyproject.toml missing the canonical pytest pin:\n%s", got)
+	for _, pin := range []string{`"pytest-helm-charts==`, `"pytest==`} {
+		if !contains(got, pin) {
+			t.Errorf("generated ATS pyproject.toml missing the canonical %s pin:\n%s", pin, got)
+		}
 	}
 }
 
@@ -2001,7 +2000,7 @@ func Test_ATSVersionOnePointX(t *testing.T) {
 			t.Errorf("ATS input %d = {Path: %q, Delete: %v}, want {Path: %q, Delete: %v}", i, inputs[i].Path, inputs[i].Delete, w.path, w.delete)
 		}
 	}
-	if pyproject := renderInput(t, inputs[0]); !contains(pyproject, `"pytest-helm-charts==1.3.4"`) {
+	if pyproject := renderInput(t, inputs[0]); !contains(pyproject, `"pytest-helm-charts==`) {
 		t.Errorf("generated pyproject.toml missing the canonical pytest-helm-charts pin:\n%s", pyproject)
 	}
 }

@@ -193,8 +193,8 @@
       // generated verbatim into every chart/app repo's tests/ats/Pipfile by
       // `devctl gen circleci`. It is the single source the built-in pipenv
       // manager bumps -- group the whole stack into one PR so the pins move
-      // together (and stay mutually resolvable, e.g. pytest<9 for
-      // pytest-helm-charts), then propagate to all repos via one align-files
+      // together (and stay mutually resolvable, e.g. pytest inside the range
+      // pytest-helm-charts declares), then propagate to all repos via one align-files
       // regeneration. The per-repo copies are disabled for Renovate via
       // renovate-presets:tests-ats.json5, so this is the only place the stack
       // is updated.
