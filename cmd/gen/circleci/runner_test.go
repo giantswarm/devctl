@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/giantswarm/devctl/v8/pkg/gen/input/circleci"
 )
 
 // Test_detectNodeVersion covers the .nvmrc probe that lets a repo own its Node
@@ -120,5 +122,27 @@ func Test_detectNodeVersion(t *testing.T) {
 				t.Errorf("detectNodeVersion() rejected = %q, want %q", rejected, tc.wantRejected)
 			}
 		})
+	}
+}
+
+// Test_detectATSKindConfig covers the .ats/kind-config.yaml probe: presence is
+// the whole signal, and the default -- no file -- is the state of every repo
+// predating it.
+func Test_detectATSKindConfig(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	if detectATSKindConfig() {
+		t.Fatal("no .ats/kind-config.yaml must probe false")
+	}
+
+	if err := os.MkdirAll(filepath.Join(dir, ".ats"), 0o750); err != nil {
+		t.Fatalf("mkdir .ats: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, circleci.ATSKindConfigPath), []byte("kind: Cluster\n"), 0o600); err != nil {
+		t.Fatalf("write kind config: %v", err)
+	}
+	if !detectATSKindConfig() {
+		t.Fatal(".ats/kind-config.yaml present must probe true")
 	}
 }

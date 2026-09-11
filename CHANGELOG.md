@@ -7,8 +7,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `gen circleci`: the generated chart-test jobs (`execute-chart-tests` and, with `--ats-on-release`,
+  `execute-chart-tests-release`) let the repository shape and size the kind cluster they test on
+  (devctl#2188, architect-orb#928):
+  - A kind `Cluster` configuration at `.ats/kind-config.yaml` is passed to both jobs as `kind_config`
+    (architect-orb 10.5.0), derived from the file's presence the way the image pipeline is derived from a
+    `Dockerfile` and the Node version from `.nvmrc` -- no `gen.ci` key. The cluster's shape (feature gates,
+    runtime config, kubeadm or containerd patches, extra nodes) is test content that changes with
+    `.ats/main.yaml` and the tests, so it lives next to them and one repository edits one place. The job
+    keeps naming the cluster and choosing the node image. Without the file the jobs render as before. First
+    use: the kagent API v2 chart smokes, whose runtime (Agent Substrate) needs the `ClusterTrustBundle`,
+    `ClusterTrustBundleProjection` and `PodCertificateRequest` gates and `certificates.k8s.io/v1beta1` on
+    the cluster -- gates that are fixed at `kind create` and that app-test-suite 1.x, which provisions no
+    cluster, cannot set.
+  - `--ats-resource-class <class>` renders `resource_class` on both jobs (`medium`, `large`, `xlarge`,
+    `2xlarge`, the orb job's enum; a class outside it, or the flag on a repo without chart-test jobs, is
+    rejected at generation time). Unset renders nothing and the orb default `medium` applies. Deliberately
+    separate from `--resource-class`, which sizes the cli `go-build` and the Node job: a chart smoke that runs
+    a real workload on the job's kind cluster has nothing in common with a cross-compile. Surfaced as
+    `gen.ci.atsResourceClass` in giantswarm/github.
+  - `gen circleci --help` and the comment above the generated job name both conventions. New golden
+    `agent.ats-kind-config.workflows.yml`; `go test ./pkg/gen/input/circleci/ -update` now rewrites the golden
+    files from the current template instead of each test carrying its own compare-and-print block.
+
 ### Changed
 
+- `gen circleci`: the architect orb pin moves to `10.5.0`, which adds the `run-tests-with-ats` `kind_config`
+  parameter the generated chart-test jobs now set (architect-orb#929). Golden workflows regenerated.
 - `gen circleci`: the canonical app-test-suite (ATS) test stack moves to `pytest==9.0.3` and
   `pytest-helm-charts==1.3.5` (`uv.lock` re-resolved). pytest 9.0.3 carries the fix for GHSA-6w46-j5rx-g56g
   (CVE-2025-71176), which Dependabot flags on the generated `tests/ats/pyproject.toml` of every chart repo;

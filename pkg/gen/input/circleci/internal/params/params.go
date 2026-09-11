@@ -43,6 +43,16 @@ type Params struct {
 	// (tests/ats/pyproject.toml + uv.lock instead of tests/ats/Pipfile). Derived
 	// from ATSVersion (major >= 1).
 	ATSKindCluster bool
+	// ATSKindConfig is the repo-owned kind Cluster configuration emitted as
+	// `kind_config` on both run-tests-with-ats jobs (the job passes it to
+	// `kind create cluster --config`: feature gates, runtime config, patches,
+	// extra nodes). Set to the conventional path when the repo carries the
+	// file; empty emits nothing and the job creates the cluster as before.
+	ATSKindConfig string
+	// ATSResourceClass is the CircleCI resource_class emitted on both
+	// run-tests-with-ats jobs (medium, large, xlarge, 2xlarge). Empty emits
+	// nothing and the orb default (medium) applies.
+	ATSResourceClass string
 	// ChartName is the chart name used for the push-to-app-catalog `chart`
 	// param and the helm/<chart> directory. Defaults to RepoName. Set it for
 	// repos whose chart directory does not match the repo name (e.g.
