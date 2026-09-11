@@ -2,6 +2,7 @@ package circleci
 
 import (
 	"bytes"
+	"flag"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -36,11 +37,14 @@ const (
 
 	goldenGoTestArtifactsWorkflowsPath = "testdata/muster.workflows.yml"
 
+	goldenATSKindConfigWorkflowsPath = "testdata/agent.ats-kind-config.workflows.yml"
+
 	repoMCPKubernetes = "mcp-kubernetes"
 	repoAPStandalone  = "agent-platform-standalone"
 	repoSitesearch    = "sitesearch"
 	repoK8sTypes      = "k8s-typescript-types"
 	repoBackstage     = "backstage"
+	repoAgent         = "agent"
 
 	backstageDockerfile  = "packages/backend/Dockerfile"
 	backstageBuildOutput = "packages/*/dist/*"
@@ -54,6 +58,32 @@ const (
 // (workflow job lists) append. Test_SetupConfigCarriesMergeExpression pins
 // this copy to the template so the two cannot drift.
 const mergeExpression = `. as $item ireduce ({}; . *+ $item)`
+
+// update rewrites the golden files under testdata/ from the current template
+// instead of comparing against them: `go test ./pkg/gen/input/circleci/ -update`
+// after a deliberate template or orb-pin change, then review the diff.
+var update = flag.Bool("update", false, "rewrite the golden files under testdata/ from the current template")
+
+// assertGolden compares a rendered file with its golden, or rewrites the golden
+// when the test runs with -update.
+func assertGolden(t *testing.T, path, got string) {
+	t.Helper()
+
+	if *update {
+		if err := os.WriteFile(path, []byte(got), 0o600); err != nil {
+			t.Fatalf("write golden %s: %v", path, err)
+		}
+		return
+	}
+
+	want, err := os.ReadFile(path) // #nosec G304 -- fixed in-package testdata path
+	if err != nil {
+		t.Fatalf("read golden %s: %v", path, err)
+	}
+	if got != string(want) {
+		t.Errorf("generated file does not match golden %s\n--- got ---\n%s\n--- want ---\n%s", path, got, string(want))
+	}
+}
 
 // renderInput executes an input.Input the same way pkg/gen/internal.Execute
 // does, returning the bytes that would be written to disk.
@@ -111,14 +141,7 @@ func Test_GoldenSetupConfig(t *testing.T) {
 		HasDockerfile: true,
 	}).SetupConfig())
 
-	want, err := os.ReadFile(goldenSetupPath) // #nosec G304 -- fixed in-package testdata path
-	if err != nil {
-		t.Fatalf("read golden: %v", err)
-	}
-
-	if got != string(want) {
-		t.Errorf("generated setup config does not match golden %s\n--- got ---\n%s\n--- want ---\n%s", goldenSetupPath, got, string(want))
-	}
+	assertGolden(t, goldenSetupPath, got)
 }
 
 // Test_SetupConfigIsRepoAgnostic verifies the setup config contains no
@@ -337,14 +360,7 @@ func Test_GoldenServiceWorkflows(t *testing.T) {
 		HasDockerfile: true,
 	})
 
-	want, err := os.ReadFile(goldenWorkflowsPath) // #nosec G304 -- fixed in-package testdata path
-	if err != nil {
-		t.Fatalf("read golden: %v", err)
-	}
-
-	if got != string(want) {
-		t.Errorf("generated workflows do not match golden %s\n--- got ---\n%s\n--- want ---\n%s", goldenWorkflowsPath, got, string(want))
-	}
+	assertGolden(t, goldenWorkflowsPath, got)
 }
 
 // Test_GoldenCLIWorkflows is the golden test for the cli-flavour shape: a Go
@@ -360,14 +376,7 @@ func Test_GoldenCLIWorkflows(t *testing.T) {
 		HasDockerfile: true,
 	})
 
-	want, err := os.ReadFile(goldenCLIWorkflowsPath) // #nosec G304 -- fixed in-package testdata path
-	if err != nil {
-		t.Fatalf("read golden: %v", err)
-	}
-
-	if got != string(want) {
-		t.Errorf("generated workflows do not match golden %s\n--- got ---\n%s\n--- want ---\n%s", goldenCLIWorkflowsPath, got, string(want))
-	}
+	assertGolden(t, goldenCLIWorkflowsPath, got)
 }
 
 // Test_CLIParallelBuild verifies the cli flavour (six-arch cross-compile)
@@ -1095,14 +1104,7 @@ func Test_GoldenNodeNPMWorkflows(t *testing.T) {
 		PackageManager: PackageManagerNPM,
 	})
 
-	want, err := os.ReadFile(goldenNodeNPMPath) // #nosec G304 -- fixed in-package testdata path
-	if err != nil {
-		t.Fatalf("read golden: %v", err)
-	}
-
-	if got != string(want) {
-		t.Errorf("generated workflows do not match golden %s\n--- got ---\n%s\n--- want ---\n%s", goldenNodeNPMPath, got, string(want))
-	}
+	assertGolden(t, goldenNodeNPMPath, got)
 }
 
 // Test_GoldenNodeYarnBerryWorkflows is the golden test for the backstage shape
@@ -1121,14 +1123,7 @@ func Test_GoldenNodeYarnBerryWorkflows(t *testing.T) {
 		ImageDockerfile: backstageDockerfile,
 	})
 
-	want, err := os.ReadFile(goldenNodeYarnBerryPath) // #nosec G304 -- fixed in-package testdata path
-	if err != nil {
-		t.Fatalf("read golden: %v", err)
-	}
-
-	if got != string(want) {
-		t.Errorf("generated workflows do not match golden %s\n--- got ---\n%s\n--- want ---\n%s", goldenNodeYarnBerryPath, got, string(want))
-	}
+	assertGolden(t, goldenNodeYarnBerryPath, got)
 }
 
 // Test_NodeLibraryNeedsNoOtherSignal verifies the relaxed no-jobs guard: a Node
@@ -1481,14 +1476,7 @@ func Test_GoldenChartOnlyWorkflows(t *testing.T) {
 		OverrideChartAppVersion: &stamp,
 	})
 
-	want, err := os.ReadFile(goldenChartOnlyWorkflowsPath) // #nosec G304 -- fixed in-package testdata path
-	if err != nil {
-		t.Fatalf("read golden: %v", err)
-	}
-
-	if got != string(want) {
-		t.Errorf("generated workflows do not match golden %s\n--- got ---\n%s\n--- want ---\n%s", goldenChartOnlyWorkflowsPath, got, string(want))
-	}
+	assertGolden(t, goldenChartOnlyWorkflowsPath, got)
 }
 
 // Test_GoldenATSOnReleaseWorkflows pins the opt-in tag-time chart-test shape
@@ -1502,14 +1490,7 @@ func Test_GoldenATSOnReleaseWorkflows(t *testing.T) {
 		ATSOnRelease:  true,
 	})
 
-	want, err := os.ReadFile(goldenATSOnReleaseWorkflowsPath) // #nosec G304 -- fixed in-package testdata path
-	if err != nil {
-		t.Fatalf("read golden: %v", err)
-	}
-
-	if got != string(want) {
-		t.Errorf("generated workflows do not match golden %s\n--- got ---\n%s\n--- want ---\n%s", goldenATSOnReleaseWorkflowsPath, got, string(want))
-	}
+	assertGolden(t, goldenATSOnReleaseWorkflowsPath, got)
 }
 
 // Test_NodeBuildOutputCache verifies the build-output cache (node_modules +
@@ -1752,14 +1733,7 @@ func Test_GoldenGoTestArtifacts(t *testing.T) {
 		GoTestArtifacts: "test-reports",
 	})
 
-	want, err := os.ReadFile(goldenGoTestArtifactsWorkflowsPath) // #nosec G304 -- fixed in-package testdata path
-	if err != nil {
-		t.Fatalf("read golden: %v", err)
-	}
-
-	if got != string(want) {
-		t.Errorf("generated workflows do not match golden %s\n--- got ---\n%s\n--- want ---\n%s", goldenGoTestArtifactsWorkflowsPath, got, string(want))
-	}
+	assertGolden(t, goldenGoTestArtifactsWorkflowsPath, got)
 }
 
 // Test_GoTestArtifactsRejects verifies the knob fails at generation time for a
@@ -1936,14 +1910,7 @@ func Test_GoldenNativeWorkflows(t *testing.T) {
 		ImageNativeBuilds: true,
 	})
 
-	want, err := os.ReadFile(goldenNativeWorkflowsPath) // #nosec G304 -- fixed in-package testdata path
-	if err != nil {
-		t.Fatalf("read golden: %v", err)
-	}
-
-	if got != string(want) {
-		t.Errorf("generated workflows do not match golden %s\n--- got ---\n%s\n--- want ---\n%s", goldenNativeWorkflowsPath, got, string(want))
-	}
+	assertGolden(t, goldenNativeWorkflowsPath, got)
 }
 
 // Test_GoldenNativeNodeWorkflows pins the native per-architecture shape for the
@@ -1951,14 +1918,7 @@ func Test_GoldenNativeWorkflows(t *testing.T) {
 func Test_GoldenNativeNodeWorkflows(t *testing.T) {
 	got := render(t, nativeNodeConfig())
 
-	want, err := os.ReadFile(goldenNativeNodeWorkflowsPath) // #nosec G304 -- fixed in-package testdata path
-	if err != nil {
-		t.Fatalf("read golden: %v", err)
-	}
-
-	if got != string(want) {
-		t.Errorf("generated workflows do not match golden %s\n--- got ---\n%s\n--- want ---\n%s", goldenNativeNodeWorkflowsPath, got, string(want))
-	}
+	assertGolden(t, goldenNativeNodeWorkflowsPath, got)
 }
 
 // Test_ATSVersionOnePointX verifies a 1.x app-test-suite tag pins the image on
@@ -2102,14 +2062,128 @@ func Test_GoldenATSOnePointXWorkflows(t *testing.T) {
 		ATSVersion:              "1.0.0",
 	})
 
-	want, err := os.ReadFile(goldenATSOnePointXWorkflowsPath) // #nosec G304 -- fixed in-package testdata path
-	if err != nil {
-		t.Fatalf("read golden: %v", err)
+	assertGolden(t, goldenATSOnePointXWorkflowsPath, got)
+}
+
+// Test_ATSKindConfig verifies the repo-owned kind configuration lands as
+// kind_config on both chart-test jobs when the repo carries the file, and that
+// nothing else changes: the same config without the file renders no kind_config
+// at all.
+func Test_ATSKindConfig(t *testing.T) {
+	base := Config{
+		RepoName:     repoAgent,
+		Language:     gen.LanguageGeneric,
+		Flavours:     gen.FlavourSlice{gen.FlavourApp},
+		ATSOnRelease: true,
+	}
+	def := render(t, base)
+	if contains(def, "kind_config") {
+		t.Errorf("no kind_config should be emitted without the repo file:\n%s", def)
 	}
 
-	if got != string(want) {
-		t.Errorf("generated workflows do not match golden %s\n--- got ---\n%s\n--- want ---\n%s", goldenATSOnePointXWorkflowsPath, got, string(want))
+	withFile := base
+	withFile.HasATSKindConfig = true
+	got := render(t, withFile)
+	want := "        kind_config: \"" + ATSKindConfigPath + "\"\n"
+	if n := strings.Count(got, want); n != 2 {
+		t.Errorf("kind_config should be on both chart-test jobs (execute-chart-tests and execute-chart-tests-release), got %d:\n%s", n, got)
 	}
+	if strings.ReplaceAll(got, want, "") != def {
+		t.Errorf("the kind configuration must change nothing but the kind_config lines\n--- with ---\n%s\n--- without ---\n%s", got, def)
+	}
+
+	// The probe is content, not configuration: a repo without chart-test jobs
+	// carrying the file renders exactly as without it.
+	noATS := Config{RepoName: repoMCPKubernetes, Language: gen.LanguageGo, Flavours: gen.FlavourSlice{gen.FlavourApp}, HasDockerfile: true, SkipATS: true}
+	withoutJobs := render(t, noATS)
+	noATS.HasATSKindConfig = true
+	if got := render(t, noATS); got != withoutJobs {
+		t.Errorf("a kind configuration without chart-test jobs must render nothing:\n%s", got)
+	}
+}
+
+// Test_ATSResourceClass verifies the class lands as resource_class on both
+// chart-test jobs and only there, and that unset renders no resource_class on
+// them (the orb default applies).
+func Test_ATSResourceClass(t *testing.T) {
+	base := Config{
+		RepoName:     repoAgent,
+		Language:     gen.LanguageGeneric,
+		Flavours:     gen.FlavourSlice{gen.FlavourApp},
+		ATSOnRelease: true,
+	}
+	def := render(t, base)
+	if contains(def, "resource_class") {
+		t.Errorf("no resource_class should be emitted on a chart-only repo without ATSResourceClass:\n%s", def)
+	}
+
+	withClass := base
+	withClass.ATSResourceClass = resourceClassXLarge
+	got := render(t, withClass)
+	want := "        resource_class: " + resourceClassXLarge + "\n"
+	if n := strings.Count(got, want); n != 2 {
+		t.Errorf("resource_class should be on both chart-test jobs, got %d:\n%s", n, got)
+	}
+	if strings.ReplaceAll(got, want, "") != def {
+		t.Errorf("ATSResourceClass must change nothing but the resource_class lines\n--- with ---\n%s\n--- without ---\n%s", got, def)
+	}
+}
+
+// Test_ATSResourceClassRejects covers the classes the orb job does not accept
+// and the repos that render no chart-test job for the class to land on.
+func Test_ATSResourceClassRejects(t *testing.T) {
+	chartRepo := func(class string) Config {
+		return Config{RepoName: repoAgent, Language: gen.LanguageGeneric, Flavours: gen.FlavourSlice{gen.FlavourApp}, ATSResourceClass: class}
+	}
+	cases := map[string]Config{
+		"class outside the orb enum": chartRepo("medium+"),
+		"an image class":             chartRepo("arm.large"),
+		"a go-build class":           chartRepo("small"),
+		"non-app repo": {
+			RepoName:         repoMCPKubernetes,
+			Language:         gen.LanguageGo,
+			HasDockerfile:    true,
+			ATSResourceClass: "large",
+		},
+		"chart tests skipped": {
+			RepoName:         repoMCPKubernetes,
+			Language:         gen.LanguageGo,
+			Flavours:         gen.FlavourSlice{gen.FlavourApp},
+			HasDockerfile:    true,
+			SkipATS:          true,
+			ATSResourceClass: "large",
+		},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			if _, err := New(c); !IsInvalidConfig(err) {
+				t.Errorf("expected an invalid config error, got %v", err)
+			}
+		})
+	}
+
+	for _, class := range atsResourceClasses {
+		if _, err := New(chartRepo(class)); err != nil {
+			t.Errorf("class %q is in the orb enum and must be accepted: %v", class, err)
+		}
+	}
+}
+
+// Test_GoldenATSKindConfigWorkflows is the golden test for a chart-only repo
+// whose tests shape the job's kind cluster (.ats/kind-config.yaml) and size the
+// job (--ats-resource-class), with the tag-time run: the shape the kagent API
+// v2 chart smokes use.
+func Test_GoldenATSKindConfigWorkflows(t *testing.T) {
+	got := render(t, Config{
+		RepoName:         repoAgent,
+		Language:         gen.LanguageGeneric,
+		Flavours:         gen.FlavourSlice{gen.FlavourApp},
+		ATSOnRelease:     true,
+		HasATSKindConfig: true,
+		ATSResourceClass: "large",
+	})
+
+	assertGolden(t, goldenATSKindConfigWorkflowsPath, got)
 }
 
 // Test_ImageResourceClasses verifies the per-platform class override lands on
