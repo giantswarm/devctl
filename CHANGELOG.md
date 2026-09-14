@@ -53,6 +53,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `gen makefile`: the `app` flavour's targets (`helm-docs`, `lint-chart`, `update-chart`, `update-deps`) work
+  on repositories that also have the `go` flavour. The root `Makefile` includes `Makefile.*.mk` in name order,
+  so `Makefile.gen.app.mk` is parsed before `Makefile.gen.go.mk` sets `APPLICATION` from the Go module; the
+  `check-env` guard was a parse-time `ifndef` and `DEPS` a parse-time `:=`, so every go+app repository
+  (vm-manager, model-manager) failed with `Makefile.gen.app.mk:47: *** APPLICATION is not defined` although the
+  variable is set once make runs a recipe. The guard is now a recipe line and `DEPS` is recursively expanded, so
+  both read `APPLICATION` at recipe time; the per-dependency `$(DEPS)` targets, whose names were also fixed at
+  parse time, become a loop inside `update-deps`. App-only repositories keep working as before: `APPLICATION`
+  from `Makefile.custom.mk` or the command line is honoured, and an unset `APPLICATION` still fails the target
+  with a message (and `make help` no longer trips over it).
 - `gen precommit`: the `helm-schema-<chart>` hook now installs and pins its own generator
   (`github.com/losisin/helm-values-schema-json/v2@v2.6.0` in `additional_dependencies`, next to the
   existing `schemalint` pin) and calls that binary directly, instead of calling a bare `helm schema`
