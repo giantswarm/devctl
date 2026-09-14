@@ -22,6 +22,8 @@ A specific type of app repository which provides a values schema that aims to fu
 
 A repository used to track mostly issues and provide project boards, shared with a customer.
 
+Its generated setup is the GitHub workflows (`gen workflows`, including the customer board automation) plus `renovate.json5` (`gen renovate --language generic`: the giantswarm base preset, nothing language- or CI-specific). There is no CircleCI for customer repositories, so align-files runs `gen renovate` for this flavour without `--circleci-generated`, and a newly registered customer repository has its Renovate config before Renovate's first run instead of receiving the onboarding PR.
+
 ## `k8sapi`
 
 A repository that provides a Kubernetes API (usually one or several custom resource definitions).
