@@ -48,6 +48,13 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, _ []string) error 
 	_, statErr := os.Stat("Dockerfile")
 	hasDockerfile := statErr == nil
 
+	// The chart-test kind cluster's configuration is derived from repo content
+	// the same way: a kind Cluster file at the conventional path is handed to
+	// the run-tests-with-ats jobs as kind_config. The cluster's shape (feature
+	// gates, runtime config) is test content, so it lives next to .ats/main.yaml
+	// and the tests rather than in a gen.ci key.
+	hasATSKindConfig := detectATSKindConfig()
+
 	// Node package manager is derived from the lockfile, the same content-signal
 	// style as the Dockerfile probe. An explicit --package-manager wins.
 	// appVersion is the version of the packaged application, so whether the
@@ -78,7 +85,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, _ []string) error 
 		// loud: the repo asked for a Node version and did not get it, and the
 		// only visible symptom would be an unchanged workflows.yml.
 		if rejected != "" {
-			fmt.Fprintf(r.stderr, "warning: ignoring .nvmrc value %q -- the Node job needs an exact major.minor.patch (e.g. 24.19.0); falling back to %s\n", rejected, circleci.DefaultNodeImageVersion)
+			_, _ = fmt.Fprintf(r.stderr, "warning: ignoring .nvmrc value %q -- the Node job needs an exact major.minor.patch (e.g. 24.19.0); falling back to %s\n", rejected, circleci.DefaultNodeImageVersion)
 		}
 	}
 
@@ -98,6 +105,8 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, _ []string) error 
 			SkipATS:                 r.flag.SkipATS,
 			ATSVersion:              r.flag.ATSVersion,
 			ATSOnRelease:            r.flag.ATSOnRelease,
+			ATSResourceClass:        r.flag.ATSResourceClass,
+			HasATSKindConfig:        hasATSKindConfig,
 			HasDockerfile:           hasDockerfile,
 			AppCatalog:              r.flag.AppCatalog,
 			AppCatalogTest:          r.flag.AppCatalogTest,
@@ -145,6 +154,15 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, _ []string) error 
 	}
 
 	return nil
+}
+
+// detectATSKindConfig reports whether the repo carries a kind Cluster
+// configuration for the chart-test jobs at circleci.ATSKindConfigPath. Presence
+// is the whole signal, mirroring the Dockerfile probe: the generator fixes the
+// path and the orb job validates the file when it creates the cluster.
+func detectATSKindConfig() bool {
+	_, err := os.Stat(circleci.ATSKindConfigPath)
+	return err == nil
 }
 
 // detectPackageManager picks the Node package manager from the lockfile present

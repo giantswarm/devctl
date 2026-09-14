@@ -33,6 +33,7 @@ const (
 	flagSkipATS                 = "skip-ats"
 	flagATSBranchOnly           = "ats-branch-only"
 	flagATSOnRelease            = "ats-on-release"
+	flagATSResourceClass        = "ats-resource-class"
 	flagATSVersion              = "ats-version"
 	flagFlavour                 = "flavour"
 	flagLanguage                = "language"
@@ -66,6 +67,7 @@ type flag struct {
 	SkipATS                 bool
 	ATSBranchOnly           bool
 	ATSOnRelease            bool
+	ATSResourceClass        string
 	ATSVersion              string
 	Flavours                gen.FlavourSlice
 	Language                gen.Language
@@ -101,6 +103,7 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&f.ATSBranchOnly, flagATSBranchOnly, false, "Deprecated and ignored: chart tests on branches only is the default since v8.45.0.")
 	_ = cmd.Flags().MarkDeprecated(flagATSBranchOnly, fmt.Sprintf("branch-only chart tests are the default; drop the flag, or pass --%s to run them on the release tag as well", flagATSOnRelease))
 	cmd.Flags().BoolVar(&f.ATSOnRelease, flagATSOnRelease, false, `Also run the app-test-suite (ATS) chart tests on the release tag. By default the chart pipeline runs architect/run-tests-with-ats once, as execute-chart-tests on every branch build, and the release tag only builds and pushes the chart (push-chart-release gates on build-chart): the tag is cut from the merge commit of a PR whose branch run already tested that tree. When set, the pre-v8.45.0 shape is generated: an additional execute-chart-tests-release job runs on the tag, after the release image when there is one, and push-chart-release gates on it. Set it for a repo whose .circleci/custom.yml jobs require execute-chart-tests-release, or whose branch protection does not make the ci/circleci statuses required checks so the tag-time run is the only enforced one. Mutually exclusive with --skip-ats. Only applies to the app flavour.`)
+	cmd.Flags().StringVar(&f.ATSResourceClass, flagATSResourceClass, "", `Override the CircleCI resource_class of the generated chart-test jobs (run-tests-with-ats resource_class on execute-chart-tests and, with --ats-on-release, execute-chart-tests-release). One of "medium", "large", "xlarge", "2xlarge"; empty renders nothing and the orb default "medium" (2 vCPU / 7.5 GB) applies. Raise it for chart tests that run a real workload on the job's kind cluster beside the chart under test (e.g. the kagent API v2 runtime with Agent Substrate). Deliberately separate from --resource-class, which sizes the cli go-build and the Node job. The kind cluster's configuration is not a flag: a kind Cluster file at .ats/kind-config.yaml in the repo is passed to both jobs as kind_config. Only applies to the app flavour without --skip-ats; rejected otherwise.`)
 	cmd.Flags().StringVar(&f.ATSVersion, flagATSVersion, circleci.DefaultATSVersion, `app-test-suite container tag the generated chart-test jobs run (run-tests-with-ats app-test-suite_container_tag). A 1.x tag (the default) also sets create_kind_cluster: true on both jobs -- app-test-suite 1.x no longer provisions clusters, the job creates the kind cluster and hands over its kubeconfig -- and switches the generated test dependency file from tests/ats/Pipfile (pipenv, ATS <= 0.15) to tests/ats/pyproject.toml + uv.lock (uv, ATS 1.x), deleting the Pipfile. The repo migrates the rest itself (.ats/main.yaml without the *-cluster-type keys, tests that install with Helm instead of an App CR); until it has, a 0.x tag such as 0.15.0 keeps the legacy dats.sh path and the Pipfile. Empty selects the default. Ignored with --skip-ats. Only applies to the app flavour.`)
 	cmd.Flags().VarP(gen.NewFlavourSliceFlagValue(&f.Flavours, gen.FlavourSlice{}), flagFlavour, "f", fmt.Sprintf(`List of project flavours. The "app" flavour selects the chart pipeline. Possible values: <%s>`, strings.Join(gen.AllFlavours(), "|")))
 	cmd.Flags().VarP(gen.NewLanguageFlagValue(&f.Language, gen.Language("")), flagLanguage, "l", fmt.Sprintf(`The programming language. "go" selects the go-build job. Possible values: <%s>`, strings.Join(gen.AllLanguages(), "|")))
