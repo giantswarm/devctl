@@ -29,6 +29,7 @@ func NewCreatePreCommitActionInput(p params.Params) input.Input {
 			"HasMd":        params.HasFlavor(p, "md"),
 			"HasHelmchart": params.HasFlavor(p, "helmchart"),
 			"RepoName":     p.RepoName,
+			"GoGenerate":   p.GoGenerate,
 		},
 	}
 }
