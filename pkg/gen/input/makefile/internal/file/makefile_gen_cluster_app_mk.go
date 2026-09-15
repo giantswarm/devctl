@@ -19,7 +19,7 @@ func NewMakefileGenClusterAppMkInput(p params.Params) input.Input {
 		Path:         "Makefile.gen.cluster_app.mk",
 		TemplateBody: makefileGenClusterAppMkTemplate,
 		TemplateData: map[string]interface{}{
-			"Header": params.Header("#", makefileGenClusterAppMkTemplateSha),
+			templateKeyHeader: params.Header("#", makefileGenClusterAppMkTemplateSha),
 		},
 	}
 

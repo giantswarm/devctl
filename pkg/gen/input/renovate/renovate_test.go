@@ -430,13 +430,13 @@ func Test_Golden(t *testing.T) {
 			golden := filepath.Join("testdata", tc.name+".json5.golden")
 
 			if *update {
-				if err := os.WriteFile(golden, []byte(got), 0o644); err != nil {
+				if err := os.WriteFile(golden, []byte(got), 0o600); err != nil {
 					t.Fatalf("update golden %s: %v", golden, err)
 				}
 				return
 			}
 
-			want, err := os.ReadFile(golden)
+			want, err := os.ReadFile(golden) // #nosec G304 -- fixed in-package testdata path
 			if err != nil {
 				t.Fatalf("read golden %s: %v (run with -update to create it)", golden, err)
 			}

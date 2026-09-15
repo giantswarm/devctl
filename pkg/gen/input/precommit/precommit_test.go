@@ -67,10 +67,10 @@ func Test_New_WithHelmchartFlavor(t *testing.T) {
 	dir := t.TempDir()
 
 	chartDir := filepath.Join(dir, "helm", "test-chart")
-	if err := os.MkdirAll(chartDir, 0755); err != nil {
+	if err := os.MkdirAll(chartDir, 0750); err != nil {
 		t.Fatalf("setup failed: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(chartDir, "Chart.yaml"), []byte("name: test-chart\n"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(chartDir, "Chart.yaml"), []byte("name: test-chart\n"), 0600); err != nil {
 		t.Fatalf("setup failed: %v", err)
 	}
 
@@ -117,10 +117,10 @@ func Test_HelmSchemaFixHook(t *testing.T) {
 	dir := t.TempDir()
 
 	chartDir := filepath.Join(dir, "helm", "test-chart")
-	if err := os.MkdirAll(chartDir, 0755); err != nil {
+	if err := os.MkdirAll(chartDir, 0750); err != nil {
 		t.Fatalf("setup failed: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(chartDir, "Chart.yaml"), []byte("name: test-chart\n"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(chartDir, "Chart.yaml"), []byte("name: test-chart\n"), 0600); err != nil {
 		t.Fatalf("setup failed: %v", err)
 	}
 
@@ -189,7 +189,7 @@ func Test_HelmSchemaFixHook(t *testing.T) {
 	genIdx := strings.Index(pipeline, "helm-values-schema-json --config")
 	fixIdx := strings.Index(pipeline, "unevaluatedProperties")
 	normIdx := strings.Index(pipeline, "schemalint normalize")
-	if !(genIdx >= 0 && genIdx < fixIdx && fixIdx < normIdx) {
+	if genIdx < 0 || genIdx >= fixIdx || fixIdx >= normIdx {
 		t.Errorf("pipeline order must be generate -> $ref fix -> normalize (normalize last); "+
 			"got positions generate=%d, fix=%d, normalize=%d in:\n%s", genIdx, fixIdx, normIdx, pipeline)
 	}
@@ -197,7 +197,7 @@ func Test_HelmSchemaFixHook(t *testing.T) {
 	// Read-only verify still runs, and only after the pipeline produced the resting format.
 	hookIdx := strings.Index(got, "id: helm-schema-test-chart")
 	verifyIdx := strings.Index(got, "id: schemalint-verify")
-	if !(hookIdx >= 0 && hookIdx < verifyIdx) {
+	if hookIdx < 0 || hookIdx >= verifyIdx {
 		t.Errorf("schemalint-verify must run after the pipeline hook; got pipeline=%d, verify=%d in:\n%s",
 			hookIdx, verifyIdx, got)
 	}

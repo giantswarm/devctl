@@ -19,11 +19,11 @@ func NewSyncFromUpstreamInput(p params.Params) input.Input {
 		Path:         params.RegenerableFileName(p, "sync_from_upstream.yaml"),
 		TemplateBody: syncFromUpstreamTemplate,
 		TemplateDelims: input.InputTemplateDelims{
-			Left:  "{{{{",
-			Right: "}}}}",
+			Left:  templateDelimLeft,
+			Right: templateDelimRight,
 		},
 		TemplateData: map[string]interface{}{
-			"Header": params.Header("#", syncFromUpstreamTemplateSha),
+			templateKeyHeader: params.Header("#", syncFromUpstreamTemplateSha),
 		},
 	}
 

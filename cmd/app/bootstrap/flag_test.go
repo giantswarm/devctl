@@ -16,7 +16,7 @@ func validFlag() *flag {
 		Team:          "atlas",
 		SyncMethod:    methodVendir,
 		PatchMethod:   methodScript,
-		GithubToken:   "GITHUB_TOKEN",
+		GithubToken:   "GITHUB_TOKEN", // #nosec G101 -- the name of an environment variable, not a token
 	}
 }
 

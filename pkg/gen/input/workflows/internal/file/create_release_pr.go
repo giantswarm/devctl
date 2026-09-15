@@ -19,11 +19,11 @@ func NewCreateReleasePRInput(p params.Params) input.Input {
 		Path:         params.RegenerableFileName(p, "create_release_pr.yaml"),
 		TemplateBody: createReleasePRTemplate,
 		TemplateDelims: input.InputTemplateDelims{
-			Left:  "{{{{",
-			Right: "}}}}",
+			Left:  templateDelimLeft,
+			Right: templateDelimRight,
 		},
 		TemplateData: map[string]interface{}{
-			"Header":                        params.Header("#", createReleasePRTemplateSha),
+			templateKeyHeader:               params.Header("#", createReleasePRTemplateSha),
 			templateKeyStepSetUpGitIdentity: params.StepSetUpGitIdentity(),
 		},
 	}

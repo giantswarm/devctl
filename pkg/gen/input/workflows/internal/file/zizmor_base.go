@@ -20,11 +20,11 @@ func NewZizmorBaseInput(p params.Params) input.Input {
 		TemplateBody:   zizmorBaseTemplate,
 		SkipRegenCheck: true,
 		TemplateDelims: input.InputTemplateDelims{
-			Left:  "{{{{",
-			Right: "}}}}",
+			Left:  templateDelimLeft,
+			Right: templateDelimRight,
 		},
 		TemplateData: map[string]interface{}{
-			"Header": params.Header("#", zizmorBaseTemplateSha),
+			templateKeyHeader: params.Header("#", zizmorBaseTemplateSha),
 		},
 	}
 

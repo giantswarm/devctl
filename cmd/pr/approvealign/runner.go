@@ -38,8 +38,8 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	r.logger.SetLevel(logrus.ErrorLevel)
 
 	if r.flag.DryRun {
-		fmt.Fprintln(r.stdout, "🔍 DRY RUN MODE")
-		fmt.Fprintln(r.stdout, "")
+		_, _ = fmt.Fprintln(r.stdout, "🔍 DRY RUN MODE")
+		_, _ = fmt.Fprintln(r.stdout, "")
 	}
 
 	githubToken := env.GitHubToken.Val()
@@ -72,7 +72,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	}
 
 	if searchResults.GetTotal() == 0 {
-		fmt.Fprintln(r.stdout, "No PRs found.")
+		_, _ = fmt.Fprintln(r.stdout, "No PRs found.")
 		return nil
 	}
 
@@ -103,7 +103,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 	// Print initial empty rows for all PRs
 	for range prStatuses {
-		fmt.Fprintln(r.stdout, "")
+		_, _ = fmt.Fprintln(r.stdout, "")
 	}
 
 	// Start processing all PRs in parallel
@@ -134,7 +134,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 			pr.UpdateTable(r.stdout, prStatuses)
 			prStatusesMu.Unlock()
 
-			fmt.Fprintln(r.stdout, "")
+			_, _ = fmt.Fprintln(r.stdout, "")
 
 			prStatusesMu.Lock()
 			r.printSummary(prStatuses)
@@ -194,7 +194,7 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 				// All required checks passed
 				checksPending = false
 				hasFailedChecks = false
-			} else if state == "failure" || state == "error" {
+			} else if state == stateFailure || state == "error" {
 				hasFailedChecks = true
 			} else if state == "pending" && totalCount > 0 {
 				// Only treat as pending if there are actual status checks
@@ -206,13 +206,13 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 		// Check individual check runs (GitHub Actions checks)
 		if checkRuns != nil && len(checkRuns.CheckRuns) > 0 && !hasFailedChecks {
 			// Only check runs if combinedStatus didn't already give us a definitive answer
-			if combinedStatus == nil || (combinedStatus.GetState() != "success" && combinedStatus.GetState() != "failure") {
+			if combinedStatus == nil || (combinedStatus.GetState() != "success" && combinedStatus.GetState() != stateFailure) {
 				for _, run := range checkRuns.CheckRuns {
 					conclusion := run.GetConclusion()
 					status := run.GetStatus()
 
 					if status == "completed" {
-						if conclusion == "failure" || conclusion == "cancelled" || conclusion == "timed_out" {
+						if conclusion == stateFailure || conclusion == "cancelled" || conclusion == "timed_out" {
 							hasFailedChecks = true
 							break
 						}
@@ -309,7 +309,7 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 
 		ps.UpdateStatus("Approving...")
 		reviewRequest := &github.PullRequestReviewRequest{
-			Event: github.String("APPROVE"),
+			Event: new("APPROVE"),
 		}
 		_, _, err = githubClient.PullRequests.CreateReview(ctx, ps.Owner, ps.Repo, ps.Number, reviewRequest)
 		if err != nil {
@@ -395,27 +395,27 @@ func (r *runner) printSummary(prStatuses []*pr.PRStatus) {
 		}
 	}
 
-	fmt.Fprintln(r.stdout, "─────────────────────────────")
-	fmt.Fprintln(r.stdout, "Summary:")
+	_, _ = fmt.Fprintln(r.stdout, "─────────────────────────────")
+	_, _ = fmt.Fprintln(r.stdout, "Summary:")
 	if r.flag.DryRun {
-		fmt.Fprintf(r.stdout, "  PRs that would be approved: %d\n", len(prStatuses)-skipped-failed-waiting)
+		_, _ = fmt.Fprintf(r.stdout, "  PRs that would be approved: %d\n", len(prStatuses)-skipped-failed-waiting)
 	} else {
 		if merged > 0 {
-			fmt.Fprintf(r.stdout, "  PRs merged: %d\n", merged)
+			_, _ = fmt.Fprintf(r.stdout, "  PRs merged: %d\n", merged)
 		}
-		fmt.Fprintf(r.stdout, "  PRs approved: %d\n", approved)
+		_, _ = fmt.Fprintf(r.stdout, "  PRs approved: %d\n", approved)
 		if queued > 0 {
-			fmt.Fprintf(r.stdout, "  PRs queued to merge: %d\n", queued)
+			_, _ = fmt.Fprintf(r.stdout, "  PRs queued to merge: %d\n", queued)
 		}
 		if updated > 0 {
-			fmt.Fprintf(r.stdout, "  PRs with branch updated: %d\n", updated)
+			_, _ = fmt.Fprintf(r.stdout, "  PRs with branch updated: %d\n", updated)
 		}
 	}
-	fmt.Fprintf(r.stdout, "  PRs skipped: %d\n", skipped)
+	_, _ = fmt.Fprintf(r.stdout, "  PRs skipped: %d\n", skipped)
 	if failed > 0 {
-		fmt.Fprintf(r.stdout, "  PRs failed: %d\n", failed)
+		_, _ = fmt.Fprintf(r.stdout, "  PRs failed: %d\n", failed)
 	}
 	if waiting > 0 {
-		fmt.Fprintf(r.stdout, "  PRs still waiting: %d\n", waiting)
+		_, _ = fmt.Fprintf(r.stdout, "  PRs still waiting: %d\n", waiting)
 	}
 }

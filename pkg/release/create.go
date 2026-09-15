@@ -81,13 +81,13 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 		if newV.Major > baseV.Major {
 			releaseType = "major"
 		} else if newV.Minor > baseV.Minor {
-			releaseType = "minor"
+			releaseType = releaseTypeMinor
 		} else {
-			releaseType = "patch"
+			releaseType = releaseTypePatch
 		}
 
-		if updateExisting && releaseType == "patch" {
-			releaseType = "minor"
+		if updateExisting && releaseType == releaseTypePatch {
+			releaseType = releaseTypeMinor
 		}
 	}
 
@@ -103,7 +103,7 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 	}
 
 	providerDirectory := ""
-	if provider == "aws" {
+	if provider == providerAWS {
 		// TODO: Directory for AWS provider is currently 'capa' because of old vintage releases located in aws directory
 		// This will change in the future
 		providerDirectory = filepath.Join(releases, "capa")
@@ -214,14 +214,14 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 	}
 
 	// Auto-detect components that are not explicitly provided by the user.
-	if !requestedOnly && releaseType != "patch" {
+	if !requestedOnly && releaseType != releaseTypePatch {
 		for componentName, params := range changelog.KnownComponents {
 			if !params.AutoDetect {
 				continue
 			}
 
 			// This is now handled in BumpAll.
-			if componentName == "kubernetes" {
+			if componentName == kubernetesComponentName {
 				continue
 			}
 
@@ -307,7 +307,7 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 			fmt.Println("Requested automated bumping of all components and apps.")
 		}
 
-		if releaseType == "patch" && len(components) == 0 && len(apps) == 0 && output != "markdown" {
+		if releaseType == releaseTypePatch && len(components) == 0 && len(apps) == 0 && output != outputMarkdown {
 			fmt.Println("For patch releases, --bumpall does not automatically bump any component or app.")
 			fmt.Println("To bump a specific component or app, please use the --component or --app flags.")
 		}
@@ -641,7 +641,7 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 		return microerror.Mask(err)
 	}
 
-	if provider == "aws" {
+	if provider == providerAWS {
 		provider = "capa"
 	}
 

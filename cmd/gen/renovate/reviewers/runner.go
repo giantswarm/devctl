@@ -46,7 +46,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 
-	fmt.Fprintf(r.stdout, "Set reviewers in %s to %v\n", path, r.flag.Reviewers)
+	_, _ = fmt.Fprintf(r.stdout, "Set reviewers in %s to %v\n", path, r.flag.Reviewers)
 
 	return nil
 }

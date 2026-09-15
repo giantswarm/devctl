@@ -19,11 +19,11 @@ func NewCustomerBoardAutomationInput(p params.Params) input.Input {
 		Path:         params.RegenerableFileName(p, "add_customer_board_automation.yaml"),
 		TemplateBody: customerBoardAutomationTemplate,
 		TemplateDelims: input.InputTemplateDelims{
-			Left:  "{{{{",
-			Right: "}}}}",
+			Left:  templateDelimLeft,
+			Right: templateDelimRight,
 		},
 		TemplateData: map[string]interface{}{
-			"Header": params.Header("#", customerBoardAutomationTemplateSha),
+			templateKeyHeader: params.Header("#", customerBoardAutomationTemplateSha),
 		},
 	}
 

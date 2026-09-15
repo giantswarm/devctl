@@ -366,6 +366,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Fixed
 
 - `pr`: the parent command reports an error from `--help` instead of discarding it.
+- `gen precommit`: new `--go-generate` flag renders a `go generate ./...` step into
+  `zz_generated.pre-commit.yaml` before the hooks, and devctl sets it for itself. golangci-lint
+  compiles the packages it analyses, and devctl embeds 37 gitignored `*.template.sha` provenance
+  files, so the job stopped at a load error instead of linting. The flag is opt-in and requires
+  `--language go`: the job installs no code generators, so a repository whose directives need
+  `controller-gen` or `mockgen` must not get the step.
+- `release`: `getLatestGithubRelease` and the Kubernetes release lookup name the upstream
+  repository through `kubernetesGitHubOwner`/`kubernetesGitHubRepo` rather than repeat a literal
+  that also means the component name.
+
+### Changed
+
+- `release bumpall`: reads `slices` from the standard library instead of `golang.org/x/exp/slices`,
+  which is deprecated. `golang.org/x/exp` is dropped from `go.mod`.
+- The `github.Ptr` and `github.String` helpers, deprecated in go-github v92, are replaced by the
+  `new` builtin.
+- Repeated string literals are named: template data keys and delimiters in the `workflows`,
+  `precommit` and `makefile` generators, and provider names, release types, output formats and
+  component names in `pkg/release`.
+- Unchecked `fmt.Fprint*` results are discarded explicitly, and permissive file and directory modes
+  in tests are tightened to `0600` and `0750`.
+- `.golangci.yml` sets `goconst.ignore-tests`. A table test repeats a fixture across its cases so
+  that the input and the expectation can be read together.
 
 ## [8.23.0] - 2026-06-24
 

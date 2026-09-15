@@ -73,7 +73,7 @@ func decideScript(t *testing.T) string {
 func gitIn(t *testing.T, dir string, args ...string) (string, error) {
 	t.Helper()
 
-	cmd := exec.CommandContext(t.Context(), "git", args...)
+	cmd := exec.CommandContext(t.Context(), "git", args...) // #nosec G204 -- fixed binary, args are built by this test, test-only
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(),
 		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.com",
@@ -179,7 +179,7 @@ func decide(t *testing.T, script, dir, next, want string) map[string]string {
 
 	cliffContext(t, dir)
 
-	cmd := exec.CommandContext(t.Context(), "bash", "-c", script)
+	cmd := exec.CommandContext(t.Context(), "bash", "-c", script) // #nosec G204 -- the script is a literal in this test, test-only
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(),
 		"NEXT="+next,
@@ -531,7 +531,7 @@ func notesEnv(t *testing.T, context string) (dir, bin string) {
 func runNotes(t *testing.T, script, dir, bin, tag string) ([]byte, error) {
 	t.Helper()
 
-	cmd := exec.CommandContext(t.Context(), "bash", "-c", script)
+	cmd := exec.CommandContext(t.Context(), "bash", "-c", script) // #nosec G204 -- the script is a literal in this test, test-only
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(),
 		"TAG="+tag,

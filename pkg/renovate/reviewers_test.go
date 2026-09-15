@@ -247,7 +247,7 @@ func TestSetReviewersWild(t *testing.T) {
 
 	for _, file := range files {
 		t.Run(filepath.Base(file), func(t *testing.T) {
-			src, err := os.ReadFile(file)
+			src, err := os.ReadFile(file) // #nosec G304 -- t.TempDir() path, test-only
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -398,7 +398,7 @@ func TestSetReviewersRoundTrip(t *testing.T) {
 		dir := t.TempDir()
 		path := filepath.Join(dir, "renovate.json5")
 		writeFile(t, path, "{\n  extends: ['foo'],\n}")
-		if err := os.Chmod(path, 0640); err != nil {
+		if err := os.Chmod(path, 0600); err != nil {
 			t.Fatal(err)
 		}
 
@@ -410,8 +410,8 @@ func TestSetReviewersRoundTrip(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := info.Mode().Perm(); got != 0640 {
-			t.Errorf("mode = %o, want 640", got)
+		if got := info.Mode().Perm(); got != 0600 {
+			t.Errorf("mode = %o, want 600", got)
 		}
 	})
 
@@ -462,14 +462,14 @@ func sortedKeys(m map[string]any) []string {
 
 func writeFile(t *testing.T, path, content string) {
 	t.Helper()
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func readFile(t *testing.T, path string) string {
 	t.Helper()
-	b, err := os.ReadFile(path)
+	b, err := os.ReadFile(path) // #nosec G304 -- t.TempDir() path, test-only
 	if err != nil {
 		t.Fatal(err)
 	}

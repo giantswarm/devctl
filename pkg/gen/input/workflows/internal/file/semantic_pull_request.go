@@ -19,11 +19,11 @@ func NewSemanticPullRequestInput(p params.Params) input.Input {
 		Path:         params.RegenerableFileName(p, "semantic_pull_request.yaml"),
 		TemplateBody: semanticPullRequestTemplate,
 		TemplateDelims: input.InputTemplateDelims{
-			Left:  "{{{{",
-			Right: "}}}}",
+			Left:  templateDelimLeft,
+			Right: templateDelimRight,
 		},
 		TemplateData: map[string]interface{}{
-			"Header": params.Header("#", semanticPullRequestTemplateSha),
+			templateKeyHeader: params.Header("#", semanticPullRequestTemplateSha),
 		},
 	}
 

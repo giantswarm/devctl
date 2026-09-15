@@ -61,7 +61,7 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 		return microerror.Mask(err)
 	}
 	r.Logger.Infof("Created temporary directory: %s", tempDir)
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	// Clone repository
 	err = githubClient.CloneRepository(ctx, owner, repo, tempDir)

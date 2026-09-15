@@ -65,7 +65,7 @@ var KnownComponents = map[string]ParseParams{
 		Changelog:      "https://raw.githubusercontent.com/giantswarm/cluster-aws/v{{.Version}}/CHANGELOG.md",
 		Start:          commonStartPattern,
 		End:            commonEndPattern,
-		FilterPatterns: []string{"Chart: Update `cluster`"},
+		FilterPatterns: []string{clusterChartUpdateFilter},
 	},
 	"cloud-provider-aws": {
 		Tag:       "https://github.com/giantswarm/aws-cloud-controller-manager-app/releases/tag/v{{.Version}}",
@@ -86,7 +86,7 @@ var KnownComponents = map[string]ParseParams{
 		Changelog:      "https://raw.githubusercontent.com/giantswarm/cluster-eks/v{{.Version}}/CHANGELOG.md",
 		Start:          commonStartPattern,
 		End:            commonEndPattern,
-		FilterPatterns: []string{"Chart: Update `cluster`"},
+		FilterPatterns: []string{clusterChartUpdateFilter},
 	},
 	"karpenter": {
 		Tag:       "https://github.com/giantswarm/karpenter-app/releases/tag/v{{.Version}}",
@@ -125,7 +125,7 @@ var KnownComponents = map[string]ParseParams{
 		Changelog:      "https://raw.githubusercontent.com/giantswarm/cluster-azure/v{{.Version}}/CHANGELOG.md",
 		Start:          commonStartPattern,
 		End:            commonEndPattern,
-		FilterPatterns: []string{"Chart: Update `cluster`"},
+		FilterPatterns: []string{clusterChartUpdateFilter},
 	},
 	"azure-cloud-controller-manager": {
 		Tag:       "https://github.com/giantswarm/azure-cloud-controller-manager-app/releases/tag/v{{.Version}}",
@@ -158,7 +158,7 @@ var KnownComponents = map[string]ParseParams{
 		Changelog:      "https://raw.githubusercontent.com/giantswarm/cluster-azure/v{{.Version}}/CHANGELOG.md",
 		Start:          commonStartPattern,
 		End:            commonEndPattern,
-		FilterPatterns: []string{"Chart: Update `cluster`"},
+		FilterPatterns: []string{clusterChartUpdateFilter},
 	},
 
 	// CAPV Provider Specific
@@ -167,7 +167,7 @@ var KnownComponents = map[string]ParseParams{
 		Changelog:      "https://raw.githubusercontent.com/giantswarm/cluster-vsphere/v{{.Version}}/CHANGELOG.md",
 		Start:          commonStartPattern,
 		End:            commonEndPattern,
-		FilterPatterns: []string{"Chart: Update `cluster`"},
+		FilterPatterns: []string{clusterChartUpdateFilter},
 	},
 	"cloud-provider-vsphere": {
 		Tag:       "https://github.com/giantswarm/cloud-provider-vsphere-app/releases/tag/v{{.Version}}",
@@ -200,7 +200,7 @@ var KnownComponents = map[string]ParseParams{
 		Changelog:      "https://raw.githubusercontent.com/giantswarm/cluster-cloud-director/v{{.Version}}/CHANGELOG.md",
 		Start:          commonStartPattern,
 		End:            commonEndPattern,
-		FilterPatterns: []string{"Chart: Update `cluster`"},
+		FilterPatterns: []string{clusterChartUpdateFilter},
 	},
 	"cloud-provider-cloud-director": {
 		Tag:       "https://github.com/giantswarm/cloud-provider-cloud-director-app/releases/tag/v{{.Version}}",
@@ -511,7 +511,7 @@ func ParseChangelog(componentName, currentVersion, endVersion string, extraFilte
 	templateData := &versionTemplateData{}
 	templateData.Version = currentVersion
 
-	if componentName == "kubernetes" {
+	if componentName == kubernetesComponentName {
 		semVer, err := semver.NewVersion(currentVersion)
 		if err != nil {
 			return nil, microerror.Mask(err)
@@ -542,7 +542,7 @@ func ParseChangelog(componentName, currentVersion, endVersion string, extraFilte
 		return nil, microerror.Mask(err)
 	}
 
-	if componentName == "kubernetes" {
+	if componentName == kubernetesComponentName {
 		// Skip parsing Kubernetes
 		return &Version{
 			Name:    currentVersion,
@@ -716,7 +716,7 @@ func ParseChangelog(componentName, currentVersion, endVersion string, extraFilte
 	if len(categorizedChanges.Breaking) > 0 {
 		sb.WriteString("#### :warning: Breaking Changes\n\n")
 		for _, item := range categorizedChanges.Breaking {
-			sb.WriteString(fmt.Sprintf("- %s\n", item))
+			sb.WriteString("- " + item + "\n")
 		}
 		sb.WriteString("\n")
 	}
@@ -724,7 +724,7 @@ func ParseChangelog(componentName, currentVersion, endVersion string, extraFilte
 	if len(categorizedChanges.Added) > 0 {
 		sb.WriteString("#### Added\n\n")
 		for _, item := range categorizedChanges.Added {
-			sb.WriteString(fmt.Sprintf("- %s\n", item))
+			sb.WriteString("- " + item + "\n")
 		}
 		sb.WriteString("\n")
 	}
@@ -732,7 +732,7 @@ func ParseChangelog(componentName, currentVersion, endVersion string, extraFilte
 	if len(categorizedChanges.Changed) > 0 {
 		sb.WriteString("#### Changed\n\n")
 		for _, item := range categorizedChanges.Changed {
-			sb.WriteString(fmt.Sprintf("- %s\n", item))
+			sb.WriteString("- " + item + "\n")
 		}
 		sb.WriteString("\n")
 	}
@@ -740,7 +740,7 @@ func ParseChangelog(componentName, currentVersion, endVersion string, extraFilte
 	if len(categorizedChanges.Deprecated) > 0 {
 		sb.WriteString("#### Deprecated\n\n")
 		for _, item := range categorizedChanges.Deprecated {
-			sb.WriteString(fmt.Sprintf("- %s\n", item))
+			sb.WriteString("- " + item + "\n")
 		}
 		sb.WriteString("\n")
 	}
@@ -748,7 +748,7 @@ func ParseChangelog(componentName, currentVersion, endVersion string, extraFilte
 	if len(categorizedChanges.Removed) > 0 {
 		sb.WriteString("#### Removed\n\n")
 		for _, item := range categorizedChanges.Removed {
-			sb.WriteString(fmt.Sprintf("- %s\n", item))
+			sb.WriteString("- " + item + "\n")
 		}
 		sb.WriteString("\n")
 	}
@@ -756,7 +756,7 @@ func ParseChangelog(componentName, currentVersion, endVersion string, extraFilte
 	if len(categorizedChanges.Fixed) > 0 {
 		sb.WriteString("#### Fixed\n\n")
 		for _, item := range categorizedChanges.Fixed {
-			sb.WriteString(fmt.Sprintf("- %s\n", item))
+			sb.WriteString("- " + item + "\n")
 		}
 		sb.WriteString("\n")
 	}
@@ -764,7 +764,7 @@ func ParseChangelog(componentName, currentVersion, endVersion string, extraFilte
 	if len(categorizedChanges.Security) > 0 {
 		sb.WriteString("#### Security\n\n")
 		for _, item := range categorizedChanges.Security {
-			sb.WriteString(fmt.Sprintf("- %s\n", item))
+			sb.WriteString("- " + item + "\n")
 		}
 		sb.WriteString("\n")
 	}

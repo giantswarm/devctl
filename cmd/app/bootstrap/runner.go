@@ -214,9 +214,9 @@ func (r *runner) createRepository(ctx context.Context, name string, owner string
 
 	repoName := fmt.Sprintf("%s-app", name)
 	repo := &github.Repository{
-		Name:        github.Ptr(repoName),
-		Private:     github.Ptr(false),
-		Description: github.Ptr(fmt.Sprintf("Helm chart for %s", name)),
+		Name:        new(repoName),
+		Private:     new(false),
+		Description: new(fmt.Sprintf("Helm chart for %s", name)),
 	}
 
 	_, err = client.CreateFromTemplate(ctx, owner, templateRepo, owner, repo)

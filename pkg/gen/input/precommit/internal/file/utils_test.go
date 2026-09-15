@@ -20,7 +20,7 @@ func Test_FindHelmCharts(t *testing.T) {
 		{
 			name: "case 2: helm dir exists but no charts",
 			setup: func(dir string) error {
-				return os.MkdirAll(filepath.Join(dir, "helm", "not-a-chart"), 0755)
+				return os.MkdirAll(filepath.Join(dir, "helm", "not-a-chart"), 0750)
 			},
 			expected: nil,
 		},
@@ -28,10 +28,10 @@ func Test_FindHelmCharts(t *testing.T) {
 			name: "case 3: single chart with Chart.yaml",
 			setup: func(dir string) error {
 				chartDir := filepath.Join(dir, "helm", "my-app")
-				if err := os.MkdirAll(chartDir, 0755); err != nil {
+				if err := os.MkdirAll(chartDir, 0750); err != nil {
 					return err
 				}
-				return os.WriteFile(filepath.Join(chartDir, "Chart.yaml"), []byte("name: my-app\n"), 0644)
+				return os.WriteFile(filepath.Join(chartDir, "Chart.yaml"), []byte("name: my-app\n"), 0600)
 			},
 			expected: []string{"my-app"},
 		},
@@ -40,10 +40,10 @@ func Test_FindHelmCharts(t *testing.T) {
 			setup: func(dir string) error {
 				for _, name := range []string{"chart-a", "chart-b"} {
 					chartDir := filepath.Join(dir, "helm", name)
-					if err := os.MkdirAll(chartDir, 0755); err != nil {
+					if err := os.MkdirAll(chartDir, 0750); err != nil {
 						return err
 					}
-					if err := os.WriteFile(filepath.Join(chartDir, "Chart.yaml"), []byte("name: "+name+"\n"), 0644); err != nil {
+					if err := os.WriteFile(filepath.Join(chartDir, "Chart.yaml"), []byte("name: "+name+"\n"), 0600); err != nil {
 						return err
 					}
 				}
@@ -54,14 +54,14 @@ func Test_FindHelmCharts(t *testing.T) {
 		{
 			name: "case 5: mix of charts and non-charts",
 			setup: func(dir string) error {
-				if err := os.MkdirAll(filepath.Join(dir, "helm", "not-a-chart"), 0755); err != nil {
+				if err := os.MkdirAll(filepath.Join(dir, "helm", "not-a-chart"), 0750); err != nil {
 					return err
 				}
 				chartDir := filepath.Join(dir, "helm", "real-chart")
-				if err := os.MkdirAll(chartDir, 0755); err != nil {
+				if err := os.MkdirAll(chartDir, 0750); err != nil {
 					return err
 				}
-				return os.WriteFile(filepath.Join(chartDir, "Chart.yaml"), []byte("name: real-chart\n"), 0644)
+				return os.WriteFile(filepath.Join(chartDir, "Chart.yaml"), []byte("name: real-chart\n"), 0600)
 			},
 			expected: []string{"real-chart"},
 		},

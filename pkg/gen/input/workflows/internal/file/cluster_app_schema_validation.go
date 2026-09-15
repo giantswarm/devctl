@@ -19,11 +19,11 @@ func NewClusterAppSchemaValidation(p params.Params) input.Input {
 		Path:         params.RegenerableFileName(p, "json_schema_validation.yaml"),
 		TemplateBody: clusterAppSchemaValidationTemplate,
 		TemplateDelims: input.InputTemplateDelims{
-			Left:  "{{{{",
-			Right: "}}}}",
+			Left:  templateDelimLeft,
+			Right: templateDelimRight,
 		},
 		TemplateData: map[string]interface{}{
-			"Header": params.Header("#", clusterAppSchemaValidationTemplateSha),
+			templateKeyHeader: params.Header("#", clusterAppSchemaValidationTemplateSha),
 		},
 	}
 

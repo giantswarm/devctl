@@ -119,14 +119,14 @@ func addShallowStringQuotes(src []byte, start, end int, single, double *int) {
 		if i >= end {
 			break
 		}
-		switch c := src[i]; {
-		case c == '{' || c == '[':
+		switch c := src[i]; c {
+		case '{', '[':
 			depth++
 			i++
-		case c == '}' || c == ']':
+		case '}', ']':
 			depth--
 			i++
-		case c == '\'' || c == '"':
+		case '\'', '"':
 			if depth <= 1 {
 				if c == '\'' {
 					*single++
@@ -275,15 +275,15 @@ func readString(src []byte, i int) (string, int, error) {
 	var b []byte
 	for i < len(src) {
 		c := src[i]
-		switch {
-		case c == '\\':
+		switch c {
+		case '\\':
 			if i+1 < len(src) {
 				b = append(b, src[i+1])
 				i += 2
 			} else {
 				i++
 			}
-		case c == quote:
+		case quote:
 			return string(b), i + 1, nil
 		default:
 			b = append(b, c)
@@ -301,10 +301,10 @@ func skipValue(src []byte, i int) (int, error) {
 		return i, microerror.Maskf(invalidConfigError, "unexpected end of file, expected a value")
 	}
 
-	switch c := src[i]; {
-	case c == '{' || c == '[':
+	switch c := src[i]; c {
+	case '{', '[':
 		return skipBracketed(src, i)
-	case c == '"' || c == '\'':
+	case '"', '\'':
 		_, next, err := readString(src, i)
 		return next, microerror.Mask(err)
 	default:
@@ -378,7 +378,7 @@ func skipSpaceAndComments(src []byte, i int) int {
 			}
 		case c == '/' && i+1 < len(src) && src[i+1] == '*':
 			i += 2
-			for i+1 < len(src) && !(src[i] == '*' && src[i+1] == '/') {
+			for i+1 < len(src) && (src[i] != '*' || src[i+1] != '/') {
 				i++
 			}
 			i += 2 // step past the closing */

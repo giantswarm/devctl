@@ -19,11 +19,11 @@ func NewAnalyzeGithubActionsInput(p params.Params) input.Input {
 		Path:         params.RegenerableFileName(p, "analyze-github-actions.yaml"),
 		TemplateBody: analyzeGithubActionsTemplate,
 		TemplateDelims: input.InputTemplateDelims{
-			Left:  "{{{{",
-			Right: "}}}}",
+			Left:  templateDelimLeft,
+			Right: templateDelimRight,
 		},
 		TemplateData: map[string]interface{}{
-			"Header": params.Header("#", analyzeGithubActionsTemplateSha),
+			templateKeyHeader: params.Header("#", analyzeGithubActionsTemplateSha),
 		},
 	}
 

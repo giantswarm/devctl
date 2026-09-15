@@ -27,8 +27,8 @@ func NewMakefileGenGoMkInput(p params.Params) []input.Input {
 			Path:         "Makefile.gen.go.mk",
 			TemplateBody: makefileGenGoMkTemplate,
 			TemplateData: map[string]interface{}{
-				"IsFlavourCLI": params.IsFlavourCLI(p),
-				"Header":       params.Header("#", makefileGenGoMkTemplateSha),
+				"IsFlavourCLI":    params.IsFlavourCLI(p),
+				templateKeyHeader: params.Header("#", makefileGenGoMkTemplateSha),
 			},
 		},
 	}
@@ -39,7 +39,7 @@ func NewMakefileGenGoMkInput(p params.Params) []input.Input {
 			Permissions:  0755,
 			TemplateBody: windowsCodeSigningShellScriptTemplate,
 			TemplateData: map[string]interface{}{
-				"Header": params.Header("#", windowsCodeSigningShellScriptTemplateSha),
+				templateKeyHeader: params.Header("#", windowsCodeSigningShellScriptTemplateSha),
 			},
 		})
 	}
