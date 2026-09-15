@@ -76,17 +76,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - `gen workflows`: the `auto-release` flow renders the release notes after it decides which tag to cut, so
   the "Full Changelog" compare link on a release candidate points at the tag that was created
   (`compare/v0.1.5...v0.1.6-rc.1`) instead of at the stable target, which has no tag until the cycle closes.
-- `gen workflows`: `cliff.toml` counts only `vX.Y.Z` tags as releases (`tag_pattern`), so a `vX.Y.Z-rc.N`
-  candidate tag no longer ends the range the `auto-release` flow releases from. The version and the notes now
-  span the whole candidate cycle: the stable release that closes a cycle lists every commit the candidates
-  carried instead of only the ones since the last candidate (devctl#2202), a `workflow_dispatch` run with a
-  candidate tag on `HEAD` computes the target of the cycle rather than the last stable version, so
-  `release-type: stable` closes the cycle and `release-type: rc` cuts the next candidate instead of one below
-  the published version (devctl#2201), and a candidate pushed during a cycle keeps the target the cycle
-  established instead of bumping a patch off the last stable version. Candidate notes become cumulative as a
-  result: `rc.2` lists what `rc.1` listed, plus what is new. The pre-release tag filter this replaces
-  (`ignore_tags`) is dropped: `tag_pattern` excludes every name it matched, and the spellings it missed
-  (`v1.2.9-beta`, `v1.2.4+build.1`) as well.
+- `gen workflows`: `cliff.toml` counts only `vX.Y.Z` tags as releases (`tag_pattern`, replacing the
+  `ignore_tags` pre-release filter), so a `vX.Y.Z-rc.N` candidate tag no longer ends the range the
+  `auto-release` flow releases from. The version and the notes span the whole candidate cycle: the stable
+  release that closes a cycle carries every commit the candidates carried (devctl#2202), a
+  `workflow_dispatch` run with a candidate tag on `HEAD` names the target of the cycle rather than the last
+  stable version (devctl#2201), and a candidate pushed during a cycle keeps the target the cycle
+  established. Candidate notes become cumulative as a result: `rc.2` lists what `rc.1` listed, plus what is
+  new. The `decide` step's describe baseline also excludes build-metadata tags (`--exclude='*+*'`), so both
+  ends of the flow read the same set of tags.
 - `gen makefile`: the `app` flavour's targets (`helm-docs`, `lint-chart`, `update-chart`, `update-deps`) work
   on repositories that also have the `go` flavour. The root `Makefile` includes `Makefile.*.mk` in name order,
   so `Makefile.gen.app.mk` is parsed before `Makefile.gen.go.mk` sets `APPLICATION` from the Go module; the

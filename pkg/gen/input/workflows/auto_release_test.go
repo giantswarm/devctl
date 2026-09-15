@@ -142,7 +142,7 @@ func cliffContext(t *testing.T, dir string) {
 	t.Helper()
 
 	args := []string{"log", "-z", "--format=%H %s"}
-	if last, err := gitIn(t, dir, "describe", "--tags", "--abbrev=0", "--match=v*.*.*", "--exclude=*-*"); err == nil {
+	if last, err := gitIn(t, dir, "describe", "--tags", "--abbrev=0", "--match=v*.*.*", "--exclude=*-*", "--exclude=*+*"); err == nil {
 		args = append(args, strings.TrimSpace(last)+"..HEAD")
 	}
 
@@ -412,15 +412,34 @@ func Test_AutoReleaseDecideIgnoresUnmergedCandidates(t *testing.T) {
 	}
 }
 
-// Test_AutoReleaseDescribeExcludesPreReleases pins the --exclude flag. Without
-// it `git describe --match='v*.*.*'` returns a reachable v1.3.0-rc.N as the
-// baseline, the "nothing to release" comparison can never be true again, and
-// the job tags on every push.
-func Test_AutoReleaseDescribeExcludesPreReleases(t *testing.T) {
+// Test_AutoReleaseDescribeExcludesNonReleaseTags pins the --exclude flags.
+// `--match='v*.*.*'` is a glob and matches v1.3.0-rc.1 and v1.2.4+build.1 as
+// readily as v1.2.3. Either one left in returns a baseline cliff.toml's
+// tag_pattern does not count as a release, the "nothing to release"
+// comparison can never be true again, and the job tags on every push.
+func Test_AutoReleaseDescribeExcludesNonReleaseTags(t *testing.T) {
 	script := decideScript(t)
 
-	if !strings.Contains(script, "--exclude='*-*'") {
-		t.Errorf("decide step must exclude pre-release tags from the describe baseline:\n%s", script)
+	for _, exclude := range []string{"--exclude='*-*'", "--exclude='*+*'"} {
+		if !strings.Contains(script, exclude) {
+			t.Errorf("decide step describe baseline is missing %s:\n%s", exclude, script)
+		}
+	}
+}
+
+// Test_AutoReleaseDecideIgnoresBuildMetadataTags runs the case `*+*` exists
+// for. cliff.toml's tag_pattern does not count v1.2.3+build.1 as a release, so
+// git-cliff reports v1.2.3 as the target of a push that carries nothing
+// releasable. The step reaches the same baseline and cuts nothing; a describe
+// that returns the build-metadata tag makes the comparison false and tags
+// v1.2.3 a second time.
+func Test_AutoReleaseDecideIgnoresBuildMetadataTags(t *testing.T) {
+	dir := repo(t, "v1.2.3", "v1.2.3+build.1", "docs: tidy")
+
+	got := decide(t, decideScript(t), dir, "v1.2.3", "auto")
+
+	if got["tag"] != "" {
+		t.Errorf("tag = %q, want none: v1.2.3+build.1 is not a release", got["tag"])
 	}
 }
 
@@ -599,6 +618,27 @@ func Test_AutoReleaseRenderOrder(t *testing.T) {
 	}
 }
 
+// cliffRemoteSection matches the [remote.github] header and every line after
+// it that does not open a new section.
+var cliffRemoteSection = regexp.MustCompile(`(?m)^\[remote\.github\]\n(?:(?:[^\[\n].*)?\n)*`)
+
+// requireGitCliff resolves the git-cliff the cases below run. A workstation
+// without it skips; CI fails. `make test` installs the binary, so a CI run
+// that cannot find it has lost every case that exercises the tag selection
+// cliff.toml configures, and has to say so rather than report green.
+func requireGitCliff(t *testing.T) {
+	t.Helper()
+
+	if _, err := exec.LookPath("git-cliff"); err == nil {
+		return
+	}
+	if os.Getenv("CI") != "" {
+		t.Fatal("git-cliff is not on PATH; `make test` installs it")
+	}
+
+	t.Skip("git-cliff is not installed; run `make test` or put it on PATH")
+}
+
 // cliffTomlIn renders cliff.toml into dir for a git-cliff run. The
 // [remote.github] block is dropped: it drives the PR and author links in the
 // notes through the GitHub API, which a test has no token and no network for,
@@ -609,17 +649,12 @@ func cliffTomlIn(t *testing.T, dir string) {
 
 	rendered := renderInput(t, newWorkflows(t, gen.FlavourApp).CliffToml())
 
-	start := strings.Index(rendered, "[remote.github]")
-	if start < 0 {
+	stripped := cliffRemoteSection.ReplaceAllString(rendered, "")
+	if stripped == rendered {
 		t.Fatalf("rendered cliff.toml has no [remote.github] block:\n%s", rendered)
 	}
-	end := strings.Index(rendered[start+1:], "\n[")
-	if end < 0 {
-		t.Fatalf("rendered cliff.toml has no section after [remote.github]:\n%s", rendered)
-	}
-	rendered = rendered[:start] + rendered[start+1+end+1:]
 
-	if err := os.WriteFile(filepath.Join(dir, "cliff.toml"), []byte(rendered), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "cliff.toml"), []byte(stripped), 0o600); err != nil {
 		t.Fatalf("write cliff.toml: %v", err)
 	}
 }
@@ -674,9 +709,7 @@ func (r cliffRelease) subjects() []string {
 // release, so the version and the notes cover every commit since the last
 // stable tag rather than only the ones since the last candidate.
 func Test_AutoReleaseCliffSpansTheWholeCandidateCycle(t *testing.T) {
-	if _, err := exec.LookPath("git-cliff"); err != nil {
-		t.Skip("git-cliff is not installed")
-	}
+	requireGitCliff(t)
 
 	testCases := []struct {
 		name           string
@@ -733,19 +766,15 @@ func Test_AutoReleaseCliffSpansTheWholeCandidateCycle(t *testing.T) {
 }
 
 // Test_AutoReleaseCliffCountsOnlyStableTags pins the config key the behaviour
-// above rests on, for the environments where git-cliff is absent and the test
-// above skips. The decide step reads the same set of tags through
-// `git describe --match='v*.*.*' --exclude='*-*'`, and compares `NEXT` against
-// what it returns; a baseline one of the two does not recognise makes the step
-// either tag on every push or never tag at all.
+// above rests on. The decide step reaches the same set of tags through
+// `git describe`, and compares `NEXT` against what it returns; a baseline one
+// of the two does not recognise makes the step either tag on every push or
+// never tag at all. Test_AutoReleaseDescribeExcludesNonReleaseTags pins the
+// describe end of that pair.
 func Test_AutoReleaseCliffCountsOnlyStableTags(t *testing.T) {
 	cliff := renderInput(t, newWorkflows(t, gen.FlavourApp).CliffToml())
 
 	if !strings.Contains(cliff, `tag_pattern = '^v[0-9]+\.[0-9]+\.[0-9]+$'`) {
 		t.Errorf("cliff.toml does not restrict releases to stable v tags:\n%s", cliff)
-	}
-
-	if script := decideScript(t); !strings.Contains(script, "--match='v*.*.*'") {
-		t.Errorf("decide step baseline does not match the same tags:\n%s", script)
 	}
 }
