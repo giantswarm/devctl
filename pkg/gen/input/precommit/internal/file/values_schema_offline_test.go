@@ -46,7 +46,8 @@ func Test_NewCreateValuesSchemaInput_unreachableSchemaHost(t *testing.T) {
 	}
 	defer func() { _ = os.Chdir(origDir) }()
 
-	p := params.Params{K8sSchemaVersion: "v1.33.1"}
+	// Not the default v1.33.1: the version in the URL must come from the parameter.
+	p := params.Params{K8sSchemaVersion: "v1.29.0"}
 	in := NewCreateValuesSchemaInput(p, "test-chart")
 
 	got, err := in.Generate(t.Context())
@@ -55,7 +56,7 @@ func Test_NewCreateValuesSchemaInput_unreachableSchemaHost(t *testing.T) {
 	}
 	// The whole URL, not only the host: an operator who reads a failed `devctl gen
 	// precommit` must see which document devctl could not read.
-	const wantURL = "http://127.0.0.1:1/v1.33.1/_definitions.json"
+	const wantURL = "http://127.0.0.1:1/v1.29.0/_definitions.json"
 	if !strings.Contains(err.Error(), wantURL) {
 		t.Errorf("error does not name %q: %v", wantURL, err)
 	}

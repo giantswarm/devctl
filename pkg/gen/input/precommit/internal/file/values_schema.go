@@ -67,8 +67,13 @@ func generateValuesSchema(ctx context.Context, p params.Params, chartName string
 		BundleRoot:      "",
 		BundleWithoutID: true,
 
+		// Both fields read the same parameter. K8sSchemaURL is already resolved here,
+		// the way the rendered .schema.yaml resolves it, so the library's own
+		// {{ .K8sSchemaVersion }} substitution finds nothing left to do -- but the
+		// library rejects an empty K8sSchemaVersion, and a second literal here would
+		// drift from the URL the moment somebody passes --k8s-schema-version.
 		K8sSchemaURL:     fmt.Sprintf(k8sSchemaURLFormat, p.K8sSchemaVersion),
-		K8sSchemaVersion: "v1.33.1",
+		K8sSchemaVersion: p.K8sSchemaVersion,
 
 		UseHelmDocs: true,
 

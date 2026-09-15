@@ -1,10 +1,12 @@
 package file
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 
 	"github.com/giantswarm/devctl/v8/pkg/gen/input/precommit/internal/params"
+	"github.com/giantswarm/devctl/v8/pkg/gen/internal"
 )
 
 func Test_NewCreateSchemaYamlInput(t *testing.T) {
@@ -59,6 +61,24 @@ func Test_NewCreateSchemaYamlInput(t *testing.T) {
 
 			if !strings.Contains(got.TemplateBody, "{{ .ChartName }}") {
 				t.Error("template body should reference .ChartName")
+			}
+
+			// k8sSchemaURL and k8sSchemaVersion must name the same version. The
+			// read-only pre-commit hook runs helm-values-schema-json against this
+			// file, and generateValuesSchema builds the same config in Go, so a
+			// version that appears in one field and not the other splits the
+			// pipeline devctl and the hook are supposed to share.
+			var rendered bytes.Buffer
+			if err := internal.Execute(t.Context(), &rendered, got); err != nil {
+				t.Fatalf("render: %v", err)
+			}
+			for _, line := range []string{
+				"master/" + tc.p.K8sSchemaVersion + "/",
+				`k8sSchemaVersion: "` + tc.p.K8sSchemaVersion + `"`,
+			} {
+				if !strings.Contains(rendered.String(), line) {
+					t.Errorf("rendered .schema.yaml does not contain %q:\n%s", line, rendered.String())
+				}
 			}
 		})
 	}

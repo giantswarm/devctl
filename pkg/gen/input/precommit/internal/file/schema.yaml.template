@@ -22,7 +22,7 @@ bundleWithoutID: true
 
 k8sSchemaURL:
   https://raw.githubusercontent.com/yannh/kubernetes-json-schema/refs/heads/master/{{ .K8sSchemaVersion }}/
-k8sSchemaVersion: "v1.33.1"
+k8sSchemaVersion: "{{ .K8sSchemaVersion }}"
 
 useHelmDocs: true
 

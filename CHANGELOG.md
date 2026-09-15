@@ -43,6 +43,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   `invalidInputError` instead of silently running `Generate` and ignoring the template. The two
   fields are two ways to produce the same file, and which one won was only an accident of the order
   of the branches in `internal.Execute`.
+- `gen precommit`: `--k8s-schema-version` now reaches `k8sSchemaVersion` as well as `k8sSchemaURL`.
+  Both the generated `helm/<chart>/.schema.yaml` and the Go config behind
+  `helm/<chart>/values.schema.json` carried a hardcoded `v1.33.1` in the version field while the
+  URL followed the flag, so a repository on another Kubernetes version described itself with two
+  different versions. Output is unchanged for the default version.
 
 - `gen circleci`: the generated chart-test jobs (`execute-chart-tests` and, with `--ats-on-release`,
   `execute-chart-tests-release`) let the repository shape and size the kind cluster they test on
