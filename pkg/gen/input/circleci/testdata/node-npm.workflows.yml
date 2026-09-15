@@ -5,7 +5,7 @@
 # workflow in .circleci/config.yml merges into this file at pipeline runtime.
 version: 2.1
 orbs:
-  architect: giantswarm/architect@10.5.0
+  architect: giantswarm/architect@10.6.0
 
 jobs:
   # Self-contained Node build/test on a cimg/node executor (architect ships no
@@ -47,6 +47,12 @@ jobs:
 workflows:
   build:
     jobs:
+    # Build gate. Every job below that produces an image or a chart carries
+    # `require_open_pull_request: true`: the orb halts it unless an open pull
+    # request covers the commit being built. So a push to a branch with no
+    # pull request builds nothing, while go-build -- which also runs
+    # `make test` -- still gives fast feedback on that push. The tag-path jobs
+    # are never gated: a tag has no pull request to find.
     - node-test:
         filters:
           tags:

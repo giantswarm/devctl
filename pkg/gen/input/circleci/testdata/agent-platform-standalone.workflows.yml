@@ -5,11 +5,17 @@
 # workflow in .circleci/config.yml merges into this file at pipeline runtime.
 version: 2.1
 orbs:
-  architect: giantswarm/architect@10.5.0
+  architect: giantswarm/architect@10.6.0
 
 workflows:
   build:
     jobs:
+    # Build gate. Every job below that produces an image or a chart carries
+    # `require_open_pull_request: true`: the orb halts it unless an open pull
+    # request covers the commit being built. So a push to a branch with no
+    # pull request builds nothing, while go-build -- which also runs
+    # `make test` -- still gives fast feedback on that push. The tag-path jobs
+    # are never gated: a tag has no pull request to find.
 
     # build-chart: package + lint via app-build-suite and persist the archive
     # (no push). Shared by the branch and tag paths -- branches get build + test
@@ -24,6 +30,7 @@ workflows:
         push_to_appcatalog: false
         push_to_oci_registry: false
         persist_chart_archive: true
+        require_open_pull_request: true
         filters:
           tags:
             only: /^v.*/
@@ -50,6 +57,7 @@ workflows:
         create_kind_cluster: true
         requires:
         - build-chart
+        require_open_pull_request: true
         filters:
           branches:
             ignore:

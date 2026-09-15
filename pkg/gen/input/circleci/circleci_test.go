@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"text/template"
@@ -2267,5 +2268,62 @@ func Test_ImageResourceClassesRejects(t *testing.T) {
 	noNative.ImageResourceClasses = map[string]string{"linux/arm64": "arm.large"}
 	if _, err := New(noNative); !IsInvalidConfig(err) {
 		t.Errorf("expected invalidConfigError for ImageResourceClasses without ImageNativeBuilds, got %v", err)
+	}
+}
+
+// gatedJobs returns the names of the workflow jobs that carry
+// `require_open_pull_request: true`, in the order they appear. The generated
+// workflows file is a flat list of `- architect/<job>:` entries whose first
+// key is always `name:` or `context:`, so a line scan that remembers the last
+// `name:` is enough to attribute the parameter to its job.
+func gatedJobs(got string) []string {
+	var names []string
+	current := ""
+	for _, line := range strings.Split(got, "\n") {
+		trimmed := strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(trimmed, "- architect/"):
+			current = ""
+		case strings.HasPrefix(trimmed, "name: "):
+			current = strings.TrimPrefix(trimmed, "name: ")
+		case trimmed == "require_open_pull_request: true":
+			names = append(names, current)
+		}
+	}
+	return names
+}
+
+// Test_BranchJobsRequireOpenPullRequest pins the build rule: a push to a
+// branch with no pull request must build no image and no chart, while the
+// basic checks (go-build, which also runs `make test`) still run. The orb
+// halts a job carrying `require_open_pull_request` when no open pull request
+// covers the build, so the generator sets it on exactly the branch-path build
+// jobs -- never on go-build, and never on the tag-path jobs, which have no
+// pull request to find.
+func Test_BranchJobsRequireOpenPullRequest(t *testing.T) {
+	service := render(t, Config{
+		RepoName:      repoMCPKubernetes,
+		Language:      gen.LanguageGo,
+		Flavours:      gen.FlavourSlice{gen.FlavourApp},
+		HasDockerfile: true,
+	})
+
+	want := []string{"build-image", "build-chart", "execute-chart-tests"}
+	if got := gatedJobs(service); !reflect.DeepEqual(got, want) {
+		t.Errorf("gated jobs = %v, want %v:\n%s", got, want, service)
+	}
+
+	// branchPublish adds the two dev pushes, and both are builds.
+	publish := render(t, Config{
+		RepoName:      repoMCPKubernetes,
+		Language:      gen.LanguageGo,
+		Flavours:      gen.FlavourSlice{gen.FlavourApp},
+		HasDockerfile: true,
+		BranchPublish: true,
+	})
+
+	want = []string{"push-to-registries", "build-chart", "execute-chart-tests", "push-chart"}
+	if got := gatedJobs(publish); !reflect.DeepEqual(got, want) {
+		t.Errorf("gated jobs with branchPublish = %v, want %v:\n%s", got, want, publish)
 	}
 }

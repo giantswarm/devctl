@@ -9,6 +9,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `gen circleci`: the branch-path build jobs (`build-image` / `push-to-registries`, `build-chart`,
+  `execute-chart-tests`, `push-chart`) now carry `require_open_pull_request: true`, and the pinned
+  orb moves to `giantswarm/architect@10.6.0`, which added the parameter. The orb halts a job
+  carrying it unless an open pull request covers the commit being built, so a push to a branch with
+  no pull request builds no image and no chart, while `go-build` -- which also runs `make test` --
+  still runs on that push. The tag path is untouched: a tag has no pull request to find, and the
+  chart version `app-build-suite` stamps is unchanged. Requires architect orb 10.6.0 or newer;
+  generating with an older pin leaves the parameter undeclared and CircleCI rejects the config.
 - `gen workflows`: the `auto-release` flow can now cut release candidates. A pull request titled
   `feat-rc:` or `fix-rc:` marks its change as part of a candidate, and the workflow tags
   `vX.Y.Z-rc.N` instead of `vX.Y.Z`, flagged as a GitHub pre-release. The decision is taken over
