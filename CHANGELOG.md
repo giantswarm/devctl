@@ -9,6 +9,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `reservation reserve`: a new command that points one management cluster's copy of one collection
+  app at the dev builds of one branch for 10 hours. It clones the GitOps repository holding the
+  cluster, writes a Kustomize component that carries a second `OCIRepository` following the
+  branch's dev tags plus the patch that points the app's `HelmRelease` at it, records the holder in
+  the cluster's `configmap-reservations.yaml`, and pushes one commit. The new source object is a
+  copy of the resolved original with only its name, annotations, interval and version selector
+  changed, so the registry credentials, the signature verification and the layer selector come
+  along. The version filter is built from `gitsemver.DevVersionBranch`, which is what a dev tag
+  actually carries after the 63-character truncation. Before committing, the command renders the
+  cluster's collections and refuses to push unless the rendered output really carries the
+  reservation, because a component that merges in the wrong order leaves the cluster on its release
+  version with no error anywhere. The app's own release and release-candidate selectors are never
+  touched. A cluster is opted in by adding `configmap-reservations.yaml`; the command says so when
+  it is missing, and one app holds at most one reservation per cluster.
 - `gen circleci`: the branch-path build jobs (`build-image` / `push-to-registries`, `build-chart`,
   `execute-chart-tests`, `push-chart`) now carry `require_open_pull_request: true`, and the pinned
   orb moves to `giantswarm/architect@10.6.0`, which added the parameter. The orb halts a job

@@ -128,7 +128,17 @@ func (c *Client) CommitAndPush(ctx context.Context, owner, repo, branch, message
 		return microerror.Mask(err)
 	}
 
-	// Push changes
+	return microerror.Mask(c.Push(ctx, branch))
+}
+
+// Push pushes branch to origin. Callers that commit in the working tree
+// themselves need the push half of CommitAndPush on its own.
+func (c *Client) Push(ctx context.Context, branch string) error {
+	gitRepo, err := git.PlainOpen(c.workDir)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
 	err = gitRepo.Push(&git.PushOptions{
 		RemoteName: "origin",
 		RefSpecs:   []config.RefSpec{config.RefSpec(fmt.Sprintf("refs/heads/%s:refs/heads/%s", branch, branch))},
