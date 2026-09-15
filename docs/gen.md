@@ -54,7 +54,7 @@ A candidate needs something releasable to carry. A push whose commits git-cliff 
 
 The version does not drift while a cycle runs: the unreleased set still holds the original `feat`, so the closing commit lands on exactly the version the candidates were leading to. A candidate is flagged as a GitHub pre-release, so it does not surface as the repo's "Latest release", and the `/^v.*/` CircleCI tag filter publishes it like any other tag.
 
-To close a cycle when the last candidate is good and no pull request is left to merge, run the workflow by hand with `release-type: stable`. `release-type: rc` forces one more candidate.
+To close a cycle when the last candidate is good and no pull request is left to merge, run the workflow by hand with `release-type: stable`. `release-type: rc` forces one more candidate. Both need something unreleased on the branch: once the cycle has closed, a forced run tags nothing and reports it.
 
 `feat-rc` and `fix-rc` are accepted as PR titles in every repo, because `semantic_pull_request` is generated for both release flows, but they only act under `auto-release`. In a `legacy` repo they are inert.
 

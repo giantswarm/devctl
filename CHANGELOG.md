@@ -73,6 +73,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `gen workflows`: the `auto-release` flow applies its "nothing releasable" check to a forced
+  `release-type: rc` as well. A candidate extends an open cycle, and once the stable release has closed
+  the cycle there is none to extend: the run now skips and says so, the way `release-type: stable`
+  already did, instead of tagging `vX.Y.Z-rc.N` above the shipped `vX.Y.Z`.
 - `gen workflows`: the `auto-release` flow renders the release notes after it decides which tag to cut, so
   the "Full Changelog" compare link on a release candidate points at the tag that was created
   (`compare/v0.1.5...v0.1.6-rc.1`) instead of at the stable target, which has no tag until the cycle closes.

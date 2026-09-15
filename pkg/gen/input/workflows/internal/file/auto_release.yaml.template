@@ -41,6 +41,8 @@ on:
   # Manual escape hatch. `auto` applies the same rule as a push, which is what
   # a re-run wants. `stable` closes a release-candidate cycle when the last RC
   # is good and there is no pull request left to merge; `rc` forces one more.
+  # Neither tags anything once the cycle has closed: both need something
+  # unreleased on the branch.
   workflow_dispatch:
     inputs:
       release-type:
@@ -193,7 +195,12 @@ jobs:
             stable) is_rc=false ;;
           esac
 
-          if [ -z "${NEXT}" ] || { [ "$is_rc" = false ] && [ "${NEXT}" = "${last}" ]; }; then
+          # `NEXT` equal to `last` means nothing releasable landed since the
+          # last stable release. A candidate needs an open cycle to extend and
+          # there is none in that state, so this covers a forced `rc` too:
+          # without it the run cuts ${last}-rc.$(( n + 1 )), a candidate for a
+          # version that already shipped.
+          if [ -z "${NEXT}" ] || [ "${NEXT}" = "${last}" ]; then
             echo "No releasable commits since ${last:-inception}; skipping tag."
             echo "tag=" >> "$GITHUB_OUTPUT"
             echo "prerelease=" >> "$GITHUB_OUTPUT"
