@@ -350,6 +350,15 @@ func Test_AutoReleaseDecide(t *testing.T) {
 			expectPrerelse: "true",
 		},
 		{
+			// The cycle closed at v1.3.0 and nothing landed after it, so
+			// there is no cycle left for a candidate to extend.
+			name:      "workflow_dispatch rc after the cycle closed tags nothing",
+			history:   []string{"v1.2.9", "feat-rc: add x", "v1.3.0-rc.1", "v1.3.0"},
+			next:      "v1.3.0",
+			want:      "rc",
+			expectTag: "",
+		},
+		{
 			name:           "workflow_dispatch stable closes a cycle with nothing left to merge",
 			history:        []string{"v1.2.9", "feat-rc: add x", "v1.3.0-rc.1"},
 			next:           "v1.3.0",
