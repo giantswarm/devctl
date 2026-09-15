@@ -20,9 +20,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   tags no candidate, so a `docs`- or `style`-only push behaves inside a cycle the way it does
   outside one. `zz_generated.auto_release.yaml` also gains a `workflow_dispatch` trigger with a
   `release-type` input to close a cycle when no pull request is left to merge.
-- `gen workflows`: `zz_generated.semantic_pull_request.yaml` passes `types` and `headerPattern` to
+- `gen workflows`: `zz_generated.semantic_pull_request.yaml` passes `types` and `header_pattern` to
   `giantswarm/github-workflows`, so `feat-rc` and `fix-rc` pass the PR title check. The action's
-  stock parser reads the type with `\w*` and cannot match a hyphen, so the `headerPattern`
+  stock parser reads the type with `\w*` and cannot match a hyphen, so the `header_pattern`
   override is what admits the type at all. The titles are accepted in every repository but only
   act under `--release-workflow=auto-release`. `security` joins the accepted types, which the
   action's default list never held although `cliff.toml` maps it to a Security changelog group.

@@ -27,7 +27,7 @@ jobs:
       # Widen the type group by exactly the -rc suffix and nothing else; the
       # three capturing groups stay type, scope, subject, which is the
       # correspondence the action already defaults to.
-      headerPattern: '^(\w*(?:-rc)?)(?:\((.*)\))?!?: (.*)$'
+      header_pattern: '^(\w*(?:-rc)?)(?:\((.*)\))?!?: (.*)$'
       # `types` REPLACES the action's default list rather than extending it, so
       # all eleven defaults from commitizen/conventional-commit-types are
       # repeated here, plus the additions below. Entries are regexes the action

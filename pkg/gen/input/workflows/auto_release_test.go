@@ -418,7 +418,7 @@ func Test_AutoReleaseCliffNormalisesRcTypes(t *testing.T) {
 
 // Test_SemanticPullRequestAcceptsRcTypes pins the other half of that contract.
 // The action's stock parser reads the type with `\w*`, so the widened
-// headerPattern is what lets a hyphenated type through at all; `types` alone
+// header_pattern is what lets a hyphenated type through at all; `types` alone
 // would not.
 func Test_SemanticPullRequestAcceptsRcTypes(t *testing.T) {
 	got := renderInput(t, newWorkflows(t, gen.FlavourApp).SemanticPullRequest())
@@ -434,8 +434,8 @@ func Test_SemanticPullRequestAcceptsRcTypes(t *testing.T) {
 
 	with := wf.Jobs["semantic-pull-request"].With
 
-	if with["headerPattern"] != `^(\w*(?:-rc)?)(?:\((.*)\))?!?: (.*)$` {
-		t.Errorf("headerPattern = %q, want the type group widened by exactly the -rc suffix", with["headerPattern"])
+	if with["header_pattern"] != `^(\w*(?:-rc)?)(?:\((.*)\))?!?: (.*)$` {
+		t.Errorf("header_pattern = %q, want the type group widened by exactly the -rc suffix", with["header_pattern"])
 	}
 
 	// `types` replaces the action's default list rather than extending it, so
