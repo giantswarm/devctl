@@ -19,7 +19,9 @@ test: generate-go
 # version reads the rendered config.
 GIT_CLIFF_VERSION := 2.13.1
 GIT_CLIFF_DIR := $(CURDIR)/.build/git-cliff/$(GIT_CLIFF_VERSION)
-GIT_CLIFF_TARGET := $(shell uname -m | sed 's/arm64/aarch64/')-$(shell uname -s | sed 's/Linux/unknown-linux-gnu/;s/Darwin/apple-darwin/')
+# The musl build on Linux: it is static, so it also runs on the Alpine-based
+# architect image CI builds in, where the glibc build cannot resolve its loader.
+GIT_CLIFF_TARGET := $(shell uname -m | sed 's/arm64/aarch64/')-$(shell uname -s | sed 's/Linux/unknown-linux-musl/;s/Darwin/apple-darwin/')
 GIT_CLIFF_URL := https://github.com/orhun/git-cliff/releases/download/v$(GIT_CLIFF_VERSION)/git-cliff-$(GIT_CLIFF_VERSION)-$(GIT_CLIFF_TARGET).tar.gz
 
 export PATH := $(GIT_CLIFF_DIR):$(PATH)

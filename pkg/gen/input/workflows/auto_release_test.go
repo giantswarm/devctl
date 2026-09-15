@@ -623,20 +623,23 @@ func Test_AutoReleaseRenderOrder(t *testing.T) {
 var cliffRemoteSection = regexp.MustCompile(`(?m)^\[remote\.github\]\n(?:(?:[^\[\n].*)?\n)*`)
 
 // requireGitCliff resolves the git-cliff the cases below run. A workstation
-// without it skips; CI fails. `make test` installs the binary, so a CI run
-// that cannot find it has lost every case that exercises the tag selection
-// cliff.toml configures, and has to say so rather than report green.
+// without a working one skips; CI fails. `make test` installs the binary, so
+// a CI run that cannot run it has lost every case that exercises the tag
+// selection cliff.toml configures, and has to say so rather than report
+// green. The probe runs the binary rather than looking it up: a build for the
+// wrong libc is on PATH and executable, and fails only when a case calls it.
 func requireGitCliff(t *testing.T) {
 	t.Helper()
 
-	if _, err := exec.LookPath("git-cliff"); err == nil {
+	err := exec.CommandContext(t.Context(), "git-cliff", "--version").Run()
+	if err == nil {
 		return
 	}
 	if os.Getenv("CI") != "" {
-		t.Fatal("git-cliff is not on PATH; `make test` installs it")
+		t.Fatalf("git-cliff does not run (`make test` installs it): %v", err)
 	}
 
-	t.Skip("git-cliff is not installed; run `make test` or put it on PATH")
+	t.Skipf("no usable git-cliff; run `make test` or put one on PATH: %v", err)
 }
 
 // cliffTomlIn renders cliff.toml into dir for a git-cliff run. The
