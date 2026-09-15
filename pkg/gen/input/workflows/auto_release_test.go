@@ -15,34 +15,57 @@ import (
 	"github.com/giantswarm/devctl/v8/pkg/gen"
 )
 
-// decideScript extracts the shell of the auto-release "Decide whether to tag"
-// step from the rendered workflow, so the tests below exercise the script that
-// actually ships rather than a copy of it.
-func decideScript(t *testing.T) string {
+// autoReleaseStep is one step of the tag job as the rendered workflow declares
+// it.
+type autoReleaseStep struct {
+	ID   string `yaml:"id"`
+	Name string `yaml:"name"`
+	If   string `yaml:"if"`
+	Run  string `yaml:"run"`
+}
+
+// tagJobSteps returns the steps of the auto-release tag job from the rendered
+// workflow, so the tests below exercise the scripts that actually ship rather
+// than a copy of them. The rendered workflow comes back with them, for the
+// failure messages: a step looked up by id or name and not found says nothing
+// on its own about what the template does declare.
+func tagJobSteps(t *testing.T) ([]autoReleaseStep, string) {
 	t.Helper()
 
 	rendered := renderInput(t, newWorkflows(t, gen.FlavourApp).AutoRelease())
 
 	var wf struct {
 		Jobs map[string]struct {
-			Steps []struct {
-				ID  string `yaml:"id"`
-				Run string `yaml:"run"`
-			} `yaml:"steps"`
+			Steps []autoReleaseStep `yaml:"steps"`
 		} `yaml:"jobs"`
 	}
 	if err := yaml.Unmarshal([]byte(rendered), &wf); err != nil {
 		t.Fatalf("rendered workflow is not valid YAML: %v\n%s", err, rendered)
 	}
 
-	for _, step := range wf.Jobs["tag"].Steps {
-		if step.ID == "decide" {
-			return step.Run
+	return wf.Jobs["tag"].Steps, rendered
+}
+
+// tagJobStep returns the tag-job step with the given id.
+func tagJobStep(t *testing.T, id string) autoReleaseStep {
+	t.Helper()
+
+	steps, rendered := tagJobSteps(t)
+	for _, s := range steps {
+		if s.ID == id {
+			return s
 		}
 	}
 
-	t.Fatalf("no step with id \"decide\" in the tag job:\n%s", rendered)
-	return ""
+	t.Fatalf("no step with id %q in the tag job:\n%s", id, rendered)
+	return autoReleaseStep{}
+}
+
+// decideScript extracts the shell of the "Decide whether to tag" step.
+func decideScript(t *testing.T) string {
+	t.Helper()
+
+	return tagJobStep(t, "decide").Run
 }
 
 // gitIn runs git in dir and returns its combined output, leaving the error for
@@ -449,5 +472,129 @@ func Test_SemanticPullRequestAcceptsRcTypes(t *testing.T) {
 		if !strings.Contains(with["types"], want+"\n") {
 			t.Errorf("types is missing %q:\n%s", want, with["types"])
 		}
+	}
+}
+
+// notesEnv lays out a working directory for the notes step: the cliff context
+// it reads, and a stub git-cliff on PATH that writes out the version it is
+// handed. The stub is what lets the assertion read the version the real render
+// would put in the compare link.
+func notesEnv(t *testing.T, context string) (dir, bin string) {
+	t.Helper()
+
+	dir = t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "cliff-context.json"), []byte(context), 0o600); err != nil {
+		t.Fatalf("write cliff context: %v", err)
+	}
+
+	bin = filepath.Join(dir, "bin")
+	if err := os.Mkdir(bin, 0o750); err != nil {
+		t.Fatalf("make stub bin dir: %v", err)
+	}
+
+	stub := "#!/usr/bin/env bash\nset -euo pipefail\n" +
+		"while [ $# -gt 0 ]; do\n" +
+		"  case \"$1\" in\n" +
+		"    --from-context) ctx=$2; shift 2 ;;\n" +
+		"    --output) out=$2; shift 2 ;;\n" +
+		"    *) shift ;;\n" +
+		"  esac\n" +
+		"done\n" +
+		"sed -n 's/.*\"version\": *\"\\([^\"]*\\)\".*/\\1/p' \"$ctx\" | head -1 > \"$out\"\n"
+	if err := os.WriteFile(filepath.Join(bin, "git-cliff"), []byte(stub), 0o700); err != nil { // #nosec G306 -- the stub has to be executable
+		t.Fatalf("write git-cliff stub: %v", err)
+	}
+
+	return dir, bin
+}
+
+// runNotes runs the extracted notes step and returns its combined output.
+func runNotes(t *testing.T, script, dir, bin, tag string) ([]byte, error) {
+	t.Helper()
+
+	cmd := exec.CommandContext(t.Context(), "bash", "-c", script)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(),
+		"TAG="+tag,
+		"PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"),
+	)
+
+	return cmd.CombinedOutput()
+}
+
+// Test_AutoReleaseNotesUseTheTaggedVersion pins the version the notes carry.
+// cliff.toml renders `{{ version }}` from the context into the "Full Changelog"
+// compare link, so the context has to name the tag the workflow cuts, not the
+// stable target it bumped to. The stub stands in for git-cliff, so what is
+// pinned is the version the render is handed, not the link cliff.toml builds
+// out of it.
+func Test_AutoReleaseNotesUseTheTaggedVersion(t *testing.T) {
+	notes := tagJobStep(t, "notes")
+
+	if notes.If != "steps.decide.outputs.tag != ''" {
+		t.Errorf("notes step condition = %q, want it skipped when nothing is tagged", notes.If)
+	}
+
+	dir, bin := notesEnv(t, `[{"version":"v0.1.6","commits":[]}]`)
+
+	if out, err := runNotes(t, notes.Run, dir, bin, "v0.1.6-rc.1"); err != nil {
+		t.Fatalf("notes step failed: %v\n%s", err, out)
+	}
+
+	rendered, err := os.ReadFile(filepath.Join(dir, "release-notes.md")) // #nosec G304 -- path built from t.TempDir
+	if err != nil {
+		t.Fatalf("read release notes: %v", err)
+	}
+
+	if strings.TrimSpace(string(rendered)) != "v0.1.6-rc.1" {
+		t.Errorf("rendered version = %q, want the tag the workflow cuts", strings.TrimSpace(string(rendered)))
+	}
+}
+
+// Test_AutoReleaseNotesRejectAnEmptyContext pins the guard on the patch. jq
+// builds `[{"version": $tag}]` out of an empty context, which renders empty
+// notes onto a tag that is about to be created. The decide step reads the same
+// field and skips the tag when it is empty, so the guard only catches a context
+// that the two steps disagree about.
+func Test_AutoReleaseNotesRejectAnEmptyContext(t *testing.T) {
+	dir, bin := notesEnv(t, `[]`)
+
+	out, err := runNotes(t, tagJobStep(t, "notes").Run, dir, bin, "v0.1.6-rc.1")
+	if err == nil {
+		t.Fatalf("notes step succeeded on an empty context:\n%s", out)
+	}
+	if !strings.Contains(string(out), "carries no version") {
+		t.Errorf("notes step failed without naming the cause:\n%s", out)
+	}
+}
+
+// Test_AutoReleaseRenderOrder pins where the render sits. The tag is only known
+// after the decision, so a render above it can only name the stable target, and
+// `gh release create` reads release-notes.md, so a render below the release
+// fails the run on a missing file.
+func Test_AutoReleaseRenderOrder(t *testing.T) {
+	steps, rendered := tagJobSteps(t)
+
+	decideAt, notesAt, releaseAt := -1, -1, -1
+	for i, s := range steps {
+		switch s.ID {
+		case "decide":
+			decideAt = i
+		case "notes":
+			notesAt = i
+		case "release":
+			releaseAt = i
+		}
+	}
+
+	if decideAt < 0 || notesAt < 0 || releaseAt < 0 {
+		t.Fatalf("tag job is missing decide (%d), notes (%d) or release (%d):\n%s",
+			decideAt, notesAt, releaseAt, rendered)
+	}
+	if notesAt < decideAt {
+		t.Errorf("notes step is at %d, before the decide step at %d", notesAt, decideAt)
+	}
+	if notesAt > releaseAt {
+		t.Errorf("notes step is at %d, after the release step at %d", notesAt, releaseAt)
 	}
 }
