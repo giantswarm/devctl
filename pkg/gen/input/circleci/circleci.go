@@ -1,6 +1,13 @@
 package circleci
 
 import (
+	"path"
+	"regexp"
+	"slices"
+	"sort"
+	"strings"
+
+	"github.com/Masterminds/semver/v3"
 	"github.com/giantswarm/microerror"
 
 	"github.com/giantswarm/devctl/v8/pkg/gen"
@@ -27,7 +34,33 @@ import (
 // custom manager that reads this annotation lives in renovate-custom.json5.
 //
 // renovate: datasource=github-tags depName=giantswarm/architect-orb
-const OrbVersion = "10.0.0"
+const OrbVersion = "10.5.0"
+
+// DefaultATSVersion is the app-test-suite container tag the generated chart-test
+// jobs run when a repo pins none (`gen circleci --ats-version`). app-test-suite
+// 1.x is the default for every generated-CI chart repo: the job creates the kind
+// cluster, the tests live in a uv project and the chart is installed with Helm.
+// A repo that has not migrated its .ats/main.yaml and tests yet pins a 0.x tag
+// (e.g. "0.15.0") to stay on the legacy dats.sh path until it has.
+const DefaultATSVersion = "1.0.3"
+
+// ATSKindConfigPath is the repo-owned kind Cluster configuration the chart-test
+// jobs hand to `kind create cluster --config` (run-tests-with-ats `kind_config`)
+// when the repository carries it. It is a content signal like the Dockerfile
+// and .nvmrc probes, not a gen.ci key: the cluster's shape is test content that
+// changes with .ats/main.yaml and the tests, all repo-owned, so it lives next to
+// them and one repository edits one place. Feature gates and runtime config are
+// fixed at `kind create`, and app-test-suite 1.x provisions no cluster, so this
+// file is the only way a chart's tests get them (first use: Agent Substrate's
+// ClusterTrustBundle, ClusterTrustBundleProjection and PodCertificateRequest
+// gates for the kagent API v2 chart smokes). The job keeps naming the cluster
+// and choosing the node image, so the file carries only what the job does not
+// decide. Absent, the jobs render exactly as before.
+const ATSKindConfigPath = ".ats/kind-config.yaml"
+
+// atsResourceClasses are the classes the orb's run-tests-with-ats job accepts
+// (its resource_class enum). The orb default is medium (2 vCPU / 7.5 GB).
+var atsResourceClasses = []string{"medium", "large", "xlarge", "2xlarge"}
 
 // ContinuationOrbVersion pins the circleci/continuation orb used by the
 // generated setup config (.circleci/config.yml) to merge the optional
@@ -72,7 +105,7 @@ const (
 // can hold .nvmrc on the docker datasource in its own renovate config.
 //
 // renovate: datasource=docker depName=cimg/node
-const DefaultNodeImageVersion = "24.19.0"
+const DefaultNodeImageVersion = "24.20.0"
 
 // DefaultNodeTestTarget is the package.json script the Node job runs for the
 // verify phase when a repo does not override it. The repo composes
@@ -212,6 +245,45 @@ type Config struct {
 	// are not generated, and the chart push jobs gate directly on build-chart.
 	// Only applies to a chart/app repo (the "app" flavour).
 	SkipATS bool
+	// ATSOnRelease also runs the app-test-suite (ATS) chart tests on the
+	// release tag. By default the chart pipeline runs them once, as
+	// execute-chart-tests on every branch build, and the tag only builds and
+	// pushes the chart (push-chart-release gates on build-chart): the tag is
+	// cut from the merge commit of a PR whose branch run already tested that
+	// tree. When set, the pre-v8.45.0 shape is generated: an additional
+	// execute-chart-tests-release job on the tag (after the release image when
+	// there is one) that push-chart-release gates on. For repos whose custom.yml
+	// jobs require execute-chart-tests-release, or whose branch protection does
+	// not make the CircleCI statuses required checks so the tag-time run is the
+	// only enforced one. Mutually exclusive with SkipATS. Only applies to a
+	// chart/app repo.
+	ATSOnRelease bool
+	// ATSVersion pins the app-test-suite container tag the chart-test jobs run
+	// (run-tests-with-ats `app-test-suite_container_tag`). Empty selects
+	// DefaultATSVersion. A tag of major 1 or
+	// higher selects app-test-suite 1.x, which no longer provisions clusters:
+	// both jobs get `create_kind_cluster: true` (the job creates the kind
+	// cluster and hands over its kubeconfig) and the generated test dependency
+	// file switches from tests/ats/Pipfile (pipenv) to tests/ats/pyproject.toml
+	// + uv.lock (uv), with the Pipfile deleted. A 0.x tag keeps the legacy
+	// dats.sh path and the Pipfile. Must be a semantic version. Ignored with
+	// SkipATS. Only applies to a chart/app repo.
+	ATSVersion string
+	// HasATSKindConfig is true when the repo carries a kind Cluster
+	// configuration at ATSKindConfigPath. The runner derives it from the file's
+	// presence, the way HasDockerfile is derived; both run-tests-with-ats jobs
+	// then get `kind_config: <that path>`. Ignored when no chart-test job is
+	// rendered.
+	HasATSKindConfig bool
+	// ATSResourceClass overrides the CircleCI resource_class of both
+	// run-tests-with-ats jobs: one of medium, large, xlarge, 2xlarge (the orb's
+	// enum; its default is medium). Empty renders nothing. For chart tests that
+	// run a real workload on the job's kind cluster beside the chart under
+	// test. Deliberately separate from ResourceClass, which sizes the cli
+	// go-build and the Node job. Requires the chart-test jobs (app flavour
+	// without SkipATS); rejected otherwise, since the value would silently
+	// render nothing.
+	ATSResourceClass string
 	// HasDockerfile selects the image pipeline. The runner derives this from
 	// the presence of a Dockerfile in the repo.
 	HasDockerfile bool
@@ -228,6 +300,15 @@ type Config struct {
 	// for repos whose chart directory does not match the repo name (e.g.
 	// docs-proxy ships helm/docs-proxy-app).
 	ChartName string
+	// OverrideChartAppVersion decides whether app-build-suite stamps the
+	// computed build version into the chart's appVersion. nil derives it from
+	// the repo's shape: a repo that builds its own image ships the app it
+	// packages, so its appVersion is its own version and is stamped; a
+	// chart-only repo packages an app built elsewhere, so the appVersion
+	// declared in Chart.yaml is kept. A non-nil value overrules that in either
+	// direction. The append-only custom.yml merge cannot add a param to a
+	// generated job, so the generator carries it.
+	OverrideChartAppVersion *bool
 	// ForcePublic pushes the image and chart as public artifacts even though
 	// the repo is private (architect force-public: true). Set it for private
 	// repos that publish public artifacts (e.g. web-assets). Mutually exclusive
@@ -264,6 +345,26 @@ type Config struct {
 	// Empty lets the orb default apply. Set it for single-architecture images
 	// (e.g. vllm -> linux/arm64).
 	ImagePlatforms string
+	// ImageNativeBuilds builds the image one architecture per job on a native
+	// resource class (architect build-image, one per platform) and switches
+	// the push-to-registries jobs to `merge-digests: true`, which joins the
+	// per-architecture digests into the tagged index instead of building.
+	// False (default) keeps the single multi-platform buildx job. Set it for
+	// Dockerfiles with real work in RUN steps (apt, pip, yarn, native
+	// modules), where the emulated architecture is the whole critical path; a
+	// COPY of a cross-compiled binary gains nothing. Requires architect-orb
+	// 10.2.0. Every platform in ImagePlatforms must have a native class.
+	ImageNativeBuilds bool
+	// ImageResourceClasses overrides the CircleCI resource_class of the native
+	// build-image jobs per platform (both the branch and the release leg of that
+	// platform), e.g. {"linux/arm64": "arm.large"}. Empty keeps the defaults
+	// (linux/amd64 on small, linux/arm64 on arm.medium). Raise it for images
+	// whose export, compression or SBOM scan of a very large result is what the
+	// leg spends its time on (vllm: 22 GB on the 2-vCPU arm.medium). A class
+	// must belong to the platform's architecture -- the orb has no emulated
+	// fallback, so a mismatch is rejected here rather than failing the build.
+	// Only applies with ImageNativeBuilds.
+	ImageResourceClasses map[string]string
 	// BuildConcurrency overrides how many architectures the cli-flavour
 	// go-build job compiles concurrently (the architect go-build
 	// `build_concurrency` param). Empty defaults to "auto" (nproc). Lower it
@@ -277,6 +378,19 @@ type Config struct {
 	// repos that need more RAM/CPU headroom for the cold cross-compile. Only
 	// applies to the cli flavour (ReleaseBinaries).
 	ResourceClass string
+	// GoBuildPath overrides the package the go-build job compiles (the
+	// architect go-build `path` param). Empty keeps the orb default ".", the
+	// module root.
+	GoBuildPath string
+	// GoTestArtifacts names a directory under the checkout that `make test`
+	// writes and that the go-build job keeps as a CircleCI build artifact when
+	// it fails: the job gains post-steps that stage the directory when: on_fail
+	// and upload the staging directory with store_artifacts, so a green run
+	// stores nothing. Empty renders no post-steps. Cleaned with path.Clean; must
+	// stay a relative path under the checkout made of [A-Za-z0-9._/-], because
+	// the template splices it into a shell command and into the artifact
+	// destination verbatim. Requires Language go.
+	GoTestArtifacts string
 	// PackageManager selects the Node package manager the build/test job uses
 	// (one of "npm", "yarn", "yarn-classic", "pnpm"). The runner detects it
 	// from the lockfile; empty defaults to Yarn Berry. Only applies to a Node
@@ -319,6 +433,122 @@ type CircleCI struct {
 	params params.Params
 }
 
+// DefaultImagePlatforms is the platform list a native per-architecture image
+// build covers when the repo does not override it. It matches the orb's own
+// default for the single-job build, so opting in does not change the set.
+const DefaultImagePlatforms = "linux/amd64,linux/arm64"
+
+// imageResourceClasses maps a build platform to a CircleCI resource class of the
+// same architecture. This mapping is the whole point of building one
+// architecture per job: CircleCI gives the setup_remote_docker VM the
+// architecture of the job's resource class, so a class from this table is what
+// keeps the build native. The orb refuses a mismatch rather than falling back to
+// QEMU, so a wrong entry here is a failed build, not a slow one.
+//
+// amd64 sits on `small` rather than `medium` because a small docker executor is
+// already given a medium remote-docker VM, which is where the build runs.
+// arm.medium is the floor on the Arm side; there is no arm.small.
+var imageResourceClasses = map[string]string{
+	"linux/amd64": "small",
+	"linux/arm64": "arm.medium",
+}
+
+// imageResourceClassesByPlatform lists the classes a native build-image job may
+// run on per platform: the architect build-image job's resource_class enum,
+// split by architecture. CircleCI gives the setup_remote_docker VM the
+// architecture (and size) of the job's class, so an x86 class under a
+// linux/arm64 build would emulate, which the orb refuses; the split keeps that a
+// generation-time error.
+var imageResourceClassesByPlatform = map[string][]string{
+	"linux/amd64": {"small", "medium", "medium+", "large", "xlarge"},
+	"linux/arm64": {"arm.medium", "arm.large", "arm.xlarge", "arm.2xlarge"},
+}
+
+// resolveImageBuilds turns a comma-separated platform list into one build-image
+// job per platform, for each of the branch and tag paths, and returns the
+// normalised list to put on the push-to-registries merge jobs.
+//
+// Branch and tag jobs need distinct names because both appear in the same
+// workflow. An unmapped platform is an error rather than a default class: the
+// orb has no emulated fallback, so guessing a class here would generate a
+// pipeline that fails at build time instead of at generation time.
+//
+// resourceClasses overrides the class per platform (ImageResourceClasses). An
+// override for a platform that is not built, or a class that is not one of the
+// platform's architecture, is an error for the same reason.
+func resolveImageBuilds(platforms string, resourceClasses map[string]string) (string, []params.ImageBuild, []params.ImageBuild, error) {
+	if platforms == "" {
+		platforms = DefaultImagePlatforms
+	}
+
+	var resolved []string
+	var branch, release []params.ImageBuild
+	for _, platform := range strings.Split(platforms, ",") {
+		platform = strings.TrimSpace(platform)
+		if platform == "" {
+			continue
+		}
+
+		resourceClass, ok := imageResourceClasses[platform]
+		if !ok {
+			supported := make([]string, 0, len(imageResourceClasses))
+			for p := range imageResourceClasses {
+				supported = append(supported, p)
+			}
+			sort.Strings(supported)
+
+			return "", nil, nil, microerror.Maskf(invalidConfigError,
+				"ImageNativeBuilds: no CircleCI resource class is mapped for platform %#q; supported platforms are %s",
+				platform, strings.Join(supported, ", "))
+		}
+
+		if override, ok := resourceClasses[platform]; ok {
+			allowed := imageResourceClassesByPlatform[platform]
+			if !slices.Contains(allowed, override) {
+				return "", nil, nil, microerror.Maskf(invalidConfigError,
+					"ImageResourceClasses: %#q is not a CircleCI resource class for platform %#q; allowed: %s",
+					override, platform, strings.Join(allowed, ", "))
+			}
+			resourceClass = override
+		}
+
+		suffix := strings.ReplaceAll(strings.TrimPrefix(platform, "linux/"), "/", "")
+		resolved = append(resolved, platform)
+		branch = append(branch, params.ImageBuild{
+			Name:          "build-image-" + suffix,
+			Platform:      platform,
+			ResourceClass: resourceClass,
+		})
+		release = append(release, params.ImageBuild{
+			Name:          "build-image-release-" + suffix,
+			Platform:      platform,
+			ResourceClass: resourceClass,
+		})
+	}
+
+	if len(resolved) == 0 {
+		return "", nil, nil, microerror.Maskf(invalidConfigError, "ImageNativeBuilds: ImagePlatforms resolved to an empty platform list")
+	}
+
+	// An override for a platform the image does not build is a typo (or a
+	// stale entry after the platform list shrank), not a no-op.
+	for platform := range resourceClasses {
+		if !slices.Contains(resolved, platform) {
+			return "", nil, nil, microerror.Maskf(invalidConfigError,
+				"ImageResourceClasses: platform %#q is not in the image platform list (%s)",
+				platform, strings.Join(resolved, ","))
+		}
+	}
+
+	return strings.Join(resolved, ","), branch, release, nil
+}
+
+// goTestArtifactsPattern bounds what GoTestArtifacts may contain: the template
+// splices the value into a shell command (cp) and into the store_artifacts
+// destination without quoting, so anything beyond a plain path is rejected at
+// generation time rather than interpreted by the CI shell.
+var goTestArtifactsPattern = regexp.MustCompile(`^[A-Za-z0-9._/-]+$`)
+
 func New(config Config) (*CircleCI, error) {
 	// Every job is derived from a signal. With none of them set the template
 	// renders an empty `jobs:` list, which is an invalid CircleCI config.
@@ -327,6 +557,15 @@ func New(config Config) (*CircleCI, error) {
 	// HasDockerfile from a root os.Stat that misses it, so the explicit path
 	// also turns the image pipeline on.
 	hasDockerfile := config.HasDockerfile || config.ImageDockerfile != ""
+	// appVersion is the version of the packaged application. A repo that builds
+	// its own image ships the app it packages, so appVersion is its own version
+	// and app-build-suite stamps it. A chart-only repo packages an app built
+	// elsewhere, so the appVersion declared in Chart.yaml has to survive
+	// packaging. An explicit OverrideChartAppVersion overrules the derivation.
+	keepChartAppVersion := !hasDockerfile
+	if config.OverrideChartAppVersion != nil {
+		keepChartAppVersion = !*config.OverrideChartAppVersion
+	}
 	isNode := config.Language == gen.LanguageNode
 	if config.Language != gen.LanguageGo && !isNode && !hasDockerfile && !hasApp {
 		return nil, microerror.Maskf(invalidConfigError, "no jobs would be generated: set --language=go or --language=node, add a Dockerfile, or use the app flavour")
@@ -334,6 +573,62 @@ func New(config Config) (*CircleCI, error) {
 
 	if config.ForcePublic && config.ImagePrivateOnly {
 		return nil, microerror.Maskf(invalidConfigError, "ForcePublic and ImagePrivateOnly are mutually exclusive")
+	}
+	if config.SkipATS && config.ATSOnRelease {
+		return nil, microerror.Maskf(invalidConfigError, "SkipATS and ATSOnRelease are mutually exclusive")
+	}
+	// SkipATS drops the chart-test jobs and the test dependency files, so the
+	// ATS tag is moot; it is not an error to carry the default alongside it.
+	if config.ATSVersion == "" {
+		config.ATSVersion = DefaultATSVersion
+	}
+	atsKindCluster, err := atsCreatesKindCluster(config.ATSVersion)
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
+	if config.ATSResourceClass != "" {
+		if !hasApp || config.SkipATS {
+			return nil, microerror.Maskf(invalidConfigError, "ATSResourceClass requires the chart-test jobs (app flavour without SkipATS)")
+		}
+		if !slices.Contains(atsResourceClasses, config.ATSResourceClass) {
+			return nil, microerror.Maskf(invalidConfigError, "ATSResourceClass %#q is not a resource class run-tests-with-ats accepts; allowed: %s", config.ATSResourceClass, strings.Join(atsResourceClasses, ", "))
+		}
+	}
+	// The kind configuration is a content signal: the generator fixes the path
+	// and the runner reports whether the file is there.
+	atsKindConfig := ""
+	if config.HasATSKindConfig {
+		atsKindConfig = ATSKindConfigPath
+	}
+
+	// The single-job build passes ImagePlatforms through untouched (empty lets
+	// the orb derive it). The native per-architecture build has to know the
+	// set at generation time, because it emits one job per platform.
+	imagePlatforms := config.ImagePlatforms
+	var branchImageBuilds, releaseImageBuilds []params.ImageBuild
+	if config.ImageNativeBuilds {
+		var err error
+		imagePlatforms, branchImageBuilds, releaseImageBuilds, err = resolveImageBuilds(config.ImagePlatforms, config.ImageResourceClasses)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+	} else if len(config.ImageResourceClasses) > 0 {
+		return nil, microerror.Maskf(invalidConfigError, "ImageResourceClasses requires ImageNativeBuilds: the single multi-platform job runs on the orb's default class")
+	}
+
+	if config.GoBuildPath != "" && config.Language != gen.LanguageGo {
+		return nil, microerror.Maskf(invalidConfigError, "GoBuildPath requires Language go")
+	}
+
+	goTestArtifacts := ""
+	if config.GoTestArtifacts != "" {
+		if config.Language != gen.LanguageGo {
+			return nil, microerror.Maskf(invalidConfigError, "GoTestArtifacts requires Language go")
+		}
+		goTestArtifacts = path.Clean(config.GoTestArtifacts)
+		if path.IsAbs(goTestArtifacts) || goTestArtifacts == "." || goTestArtifacts == ".." || strings.HasPrefix(goTestArtifacts, "../") || !goTestArtifactsPattern.MatchString(goTestArtifacts) {
+			return nil, microerror.Maskf(invalidConfigError, "GoTestArtifacts must be a relative directory under the checkout made of [A-Za-z0-9._/-], got %q", config.GoTestArtifacts)
+		}
 	}
 
 	appCatalog := config.AppCatalog
@@ -469,7 +764,13 @@ func New(config Config) (*CircleCI, error) {
 			HasDockerfile:            hasDockerfile,
 			HasApp:                   hasApp,
 			SkipATS:                  config.SkipATS,
+			ATSVersion:               config.ATSVersion,
+			ATSKindCluster:           atsKindCluster,
+			ATSKindConfig:            atsKindConfig,
+			ATSResourceClass:         config.ATSResourceClass,
+			ATSOnRelease:             config.ATSOnRelease,
 			ChartName:                chartName,
+			KeepChartAppVersion:      keepChartAppVersion,
 			ForcePublic:              config.ForcePublic,
 			AppCatalog:               appCatalog,
 			AppCatalogTest:           appCatalogTest,
@@ -477,11 +778,16 @@ func New(config Config) (*CircleCI, error) {
 			ImagePreBuildJob:         config.ImagePreBuildJob,
 			ImagePrivateOnly:         config.ImagePrivateOnly,
 			ImageName:                config.ImageName,
-			ImagePlatforms:           config.ImagePlatforms,
+			ImagePlatforms:           imagePlatforms,
+			ImageNativeBuilds:        config.ImageNativeBuilds,
+			BranchImageBuilds:        branchImageBuilds,
+			ReleaseImageBuilds:       releaseImageBuilds,
 			ImageDockerfile:          config.ImageDockerfile,
 			ReleaseBinaries:          config.shipsBinaries(),
 			BuildConcurrency:         buildConcurrency,
 			ResourceClass:            resourceClass,
+			GoBuildPath:              config.GoBuildPath,
+			GoTestArtifacts:          goTestArtifacts,
 			OrbVersion:               OrbVersion,
 			ContinuationOrbVersion:   ContinuationOrbVersion,
 			BuildJobName:             buildJobName,
@@ -527,11 +833,32 @@ func (c *CircleCI) Workflows() input.Input {
 // `if (ci && ci.generate)` guard). That makes "ATS Pipfile only when CI is
 // generated, and only for chart/app repos" structurally guaranteed rather than
 // dependent on a separate, differently-scoped invocation. A repo that opts out
-// of ATS (SkipATS) gets no Pipfile either, matching the suppressed jobs.
+// of ATS (SkipATS) gets no Pipfile either, matching the suppressed jobs. The
+// default branch-only shape keeps the file (the branch job runs the tests);
+// ATSOnRelease only adds the tag-time job.
 func (c *CircleCI) ATSInputs() []input.Input {
 	if !c.params.HasApp || c.params.SkipATS {
 		return nil
 	}
 
-	return ats.CreateATS()
+	return ats.CreateATS(c.params.ATSKindCluster)
+}
+
+// atsCreatesKindCluster decides from the app-test-suite container tag whether
+// the chart-test jobs must create the kind cluster themselves: app-test-suite
+// 1.0 dropped its built-in kind lifecycle, so every 1.x tag needs
+// `create_kind_cluster: true` (and the uv test layout), while 0.x tags keep the
+// legacy dats.sh path. New substitutes DefaultATSVersion for an empty tag before
+// this runs; an empty tag here still means "no opinion". The tag has to parse
+// as a semantic version (an optional leading "v" is tolerated); a dev tag such
+// as 0.15.1-dev.<branch>.<date>.<hash> counts as 0.x.
+func atsCreatesKindCluster(tag string) (bool, error) {
+	if tag == "" {
+		return false, nil
+	}
+	v, err := semver.NewVersion(strings.TrimPrefix(tag, "v"))
+	if err != nil {
+		return false, microerror.Maskf(invalidConfigError, "ATSVersion %q is not a semantic version: %v", tag, err)
+	}
+	return v.Major() >= 1, nil
 }

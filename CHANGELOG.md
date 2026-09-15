@@ -9,226 +9,332 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
-- `release create`: records the containerd version as a `containerd` component and links it in the release
-  notes. It is derived from the release's `os-tooling` version, since that is the version nodes run rather
-  than the one Flatcar embeds.
-- `gen renovate --language node`: extends the new
-  [`lang-node.json5`](https://github.com/giantswarm/renovate-presets/blob/main/lang-node.json5) preset, which
-  groups every Node.js version pin (a `.nvmrc`, a Dockerfile `FROM node:`, a `setup-node` step) into one PR.
-  Renovate's own `group:nodeJs` sets a `commitMessageTopic` but no `groupName`, so each pin otherwise gets its
-  own identically titled PR and merging one alone splits the version CI runs from the version the image ships.
-- `gen renovate --language node` on the generated-CI path: disables Renovate for the `cimg/node` tag in
-  `.circleci/workflows.yml`, mirroring the existing architect-orb disable. That tag is rendered by
-  `gen circleci` from the repo's `.nvmrc`, so a per-repo bump edits only the `image:` line and leaves the
-  `node-build` cache keys salted with the old version — the job then restores a `node_modules` whose native
-  addons were built for a different Node — and align-files reverts it on the next run regardless. Gated on
-  both the language and the generated-CI flag: a Node repo with a hand-written `.circleci/config.yml` owns its
-  executor image and keeps receiving bumps.
-- `gen circleci`: `--skip-ats` opts an app repo out of the ATS chart tests, suppressing the `run-tests-with-ats` jobs and the `tests/ats/Pipfile`; the chart push then gates directly on `build-chart`.
-- `gen circleci --language node`: the `cimg/node` tag is now read from the repo's `.nvmrc` when it pins an
-  exact version, falling back to devctl's baked-in default otherwise (also settable explicitly via
-  `--node-image-version`). A Node repo typically repeats its Node version across a Dockerfile `FROM`, an
-  `actions/setup-node` step and the generated CI job, and only the last of those was devctl's — so a
-  dependency bot would bump the rendered `image:` line in `.circleci/workflows.yml` on its own. That is wrong
-  twice over: it leaves the `node-build` cache keys, which are salted with the node version precisely so a
-  bump cannot restore stale-ABI native addons, pointing at the old version, and align-files reverts it on the
-  next run. With a `.nvmrc` the repo has one file to change: it drives local dev (nvm/fnm/asdf/volta),
-  `setup-node` via `node-version-file`, and — through this probe — both the executor image and the cache-key
-  salt, which now cannot disagree. Renovate's built-in `nvm` manager owns `.nvmrc` natively, so the bump also
-  groups with the repo's other node deps and is LTS-gated, neither of which a rendered `cimg/node` tag can
-  express. Only an exact `major.minor.patch` is read, and an unusable value is reported on stderr rather than
-  silently ignored: aliases (`lts/*`) and less specific versions are rejected because a floating tag would
-  drift from the exact patch the repo's Dockerfile pins and would coarsen the cache-key salt — note that
-  `cimg/node:24.19` does exist, so this is a deliberate choice, not a missing tag. Repos without a `.nvmrc`
-  (all of them today) render byte-identical output. One caveat: `.nvmrc` is tracked against the
-  `node-version` datasource (Node releases), which CircleCI trails by hours to days, so a repo bumped inside
-  that window renders a not-yet-published tag and fails at container spin-up until it lands.
-- Releases: Add `cluster-aks`.
+- `gen workflows`: the `auto-release` flow can now cut release candidates. A pull request titled
+  `feat-rc:` or `fix-rc:` marks its change as part of a candidate, and the workflow tags
+  `vX.Y.Z-rc.N` instead of `vX.Y.Z`, flagged as a GitHub pre-release. The decision is taken over
+  every unreleased commit: a candidate is tagged when at least one of them carries `-rc` and no
+  unreleased `feat`, `fix` or breaking commit does not, so an unmarked `chore(deps)` from Renovate
+  cannot end a candidate cycle and an unmarked `feat` or `fix` closes it at the stable version the
+  candidates were leading to. A commit counts as breaking through either spelling, a `!` in the
+  subject or a `BREAKING CHANGE:`/`BREAKING-CHANGE:` footer. A push that carries nothing releasable
+  tags no candidate, so a `docs`- or `style`-only push behaves inside a cycle the way it does
+  outside one. `zz_generated.auto_release.yaml` also gains a `workflow_dispatch` trigger with a
+  `release-type` input to close a cycle when no pull request is left to merge.
+- `gen workflows`: `zz_generated.semantic_pull_request.yaml` passes `types` and `header_pattern` to
+  `giantswarm/github-workflows`, so `feat-rc` and `fix-rc` pass the PR title check. The action's
+  stock parser reads the type with `\w*` and cannot match a hyphen, so the `header_pattern`
+  override is what admits the type at all. The titles are accepted in every repository but only
+  act under `--release-workflow=auto-release`. `security` joins the accepted types, which the
+  action's default list never held although `cliff.toml` maps it to a Security changelog group.
 
 ### Changed
 
-- `gen renovate --language node`: the generated Node rules now carry a single Renovate `description` field instead of a multi-line comment block, matching how Renovate itself documents a `packageRule`.
+- `gen circleci`: the generated chart-test jobs (`execute-chart-tests` and, with `--ats-on-release`,
+  `execute-chart-tests-release`) let the repository shape and size the kind cluster they test on
+  (devctl#2188, architect-orb#928):
+  - A kind `Cluster` configuration at `.ats/kind-config.yaml` is passed to both jobs as `kind_config`
+    (architect-orb 10.5.0), derived from the file's presence the way the image pipeline is derived from a
+    `Dockerfile` and the Node version from `.nvmrc` -- no `gen.ci` key. The cluster's shape (feature gates,
+    runtime config, kubeadm or containerd patches, extra nodes) is test content that changes with
+    `.ats/main.yaml` and the tests, so it lives next to them and one repository edits one place. The job
+    keeps naming the cluster and choosing the node image. Without the file the jobs render as before. First
+    use: the kagent API v2 chart smokes, whose runtime (Agent Substrate) needs the `ClusterTrustBundle`,
+    `ClusterTrustBundleProjection` and `PodCertificateRequest` gates and `certificates.k8s.io/v1beta1` on
+    the cluster -- gates that are fixed at `kind create` and that app-test-suite 1.x, which provisions no
+    cluster, cannot set.
+  - `--ats-resource-class <class>` renders `resource_class` on both jobs (`medium`, `large`, `xlarge`,
+    `2xlarge`, the orb job's enum; a class outside it, or the flag on a repo without chart-test jobs, is
+    rejected at generation time). Unset renders nothing and the orb default `medium` applies. Deliberately
+    separate from `--resource-class`, which sizes the cli `go-build` and the Node job: a chart smoke that runs
+    a real workload on the job's kind cluster has nothing in common with a cross-compile. Surfaced as
+    `gen.ci.atsResourceClass` in giantswarm/github.
+  - `gen circleci --help` and the comment above the generated job name both conventions. New golden
+    `agent.ats-kind-config.workflows.yml`; `go test ./pkg/gen/input/circleci/ -update` now rewrites the golden
+    files from the current template instead of each test carrying its own compare-and-print block.
+
+### Changed
+
+- `gen circleci`: the architect orb pin moves to `10.5.0`, which adds the `run-tests-with-ats` `kind_config`
+  parameter the generated chart-test jobs now set (architect-orb#929). Golden workflows regenerated.
+- `gen circleci`: the canonical app-test-suite (ATS) test stack moves to `pytest==9.0.3` and
+  `pytest-helm-charts==1.3.5` (`uv.lock` re-resolved). pytest 9.0.3 carries the fix for GHSA-6w46-j5rx-g56g
+  (CVE-2025-71176), which Dependabot flags on the generated `tests/ats/pyproject.toml` of every chart repo;
+  pytest-helm-charts 1.3.5 is the first PyPI release that allows pytest 9 (`pytest>=9.0.2,<10`). The
+  generator tests no longer hardcode the stack's versions -- they assert the pins exist, that both layouts
+  (Pipfile and pyproject.toml) agree and that `uv.lock` locks them -- so the grouped Renovate bumps of this
+  stack stop failing `go-build`.
+- `gen circleci`: the architect orb pin moves to `10.4.1`, which ships the `sync-china-registry` fix
+  (architect-orb#921): the job now waits until the image the push job published is visible from the
+  in-China runner, child manifests included, before `regctl image copy` starts. The runner reads the
+  Southeast Asia replica of `gsoci.azurecr.io`, which receives a pushed image asynchronously, and the old
+  fixed 10 × 5 s retry never fit a multi-GiB image (every `vllm` tag since v0.4.7 needed a manual rerun).
+  No template change; the generated jobs take the orb's new `replica-wait-minutes` default of 60. Golden
+  workflows regenerated.
 
 ### Fixed
 
-- devctl's own Renovate config: the `cimg/node` version baked into `gen circleci` was never actually
-  tracked. The constant carries a `// renovate: datasource=docker depName=cimg/node` annotation, but the
-  custom manager in `renovate-custom.json5` is anchored on `const \w*OrbVersion`, which never matched
-  `NodeImageVersion` — so it sat at its introduction value from #2052 with no bump PR ever opened, while
-  `cimg/node` moved on. Since that constant is the floor for every repo that pins no `.nvmrc`, a frozen
-  default meant a frozen Node fleet-wide. Added a manager for `const \w*ImageVersion` plus one for the
-  golden fixtures (which render both the image and the cache-key salt), so constant and goldens bump in one
-  PR and the byte-for-byte golden tests stay green.
-- `gen makefile --language kyverno-policy` / `gen workflows --language kyverno-policy`: bump the Kyverno
-  version installed for chainsaw tests from `v1.16.0` to `v1.17.0`, and add a Renovate custom manager so the
-  pin tracks `giantswarm/kyverno-crds` releases from now on. The pin was frozen at `v1.16.0` because nothing
-  ever updated it: the `# repository:` comments above it match no manager in `renovate-presets` (which keys
-  off `repo:`/`registry:`), and the generated files in consuming repos are regenerated by the align-files
-  automation, so a downstream bump is always reverted. `kyverno-policies-ux` hit this — its policies use the
-  `policies.kyverno.io/v1` `MutatingPolicy` kind, which only exists from Kyverno 1.17, so after an
-  align-files run reset the version its chainsaw job failed with `no matches for kind "MutatingPolicy"`.
-- `gen makefile --language kyverno-policy`: `KUBERNETES_VERSION` and `KYVERNO_VERSION` in the generated
-  `Makefile.gen.chainsaw.mk` are now `?=` assignments. `VAR: value` is a make *rule*, not an assignment, so
-  both expanded to the empty string and `make kind-create` / `make install-kyverno` were only usable when the
-  outer environment happened to set them — locally they built `kindest/node:` and a release download URL with
-  an empty version. The CI workflow still overrides both via its env block.
-- `gen precommit`: the generated `schemalint-normalize` and `schemalint-verify` hooks now set `pass_filenames: false`. Without it, pre-commit appended the matched schema file on top of the filename already in `args`, so `schemalint` received two positional arguments, errored with `accepts 1 arg(s)`, and silently did nothing — leaving the schema unnormalized and unverified.
-- `gen precommit` (helm charts): each chart's `values.schema.json` is now generated,
-  fixed and normalized by a **single** `repo: local` pipeline hook that runs
-  `helm schema` → rewrite `$ref` siblings → `schemalint normalize`. This replaces both
-  the external `losisin/helm-values-schema-json` hook and the separate
-  `schemalint-normalize` hook (read-only `schemalint-verify` stays). It fixes two
-  independent reasons `pre-commit run -a` could never converge:
-  - **Rival formatters** (giantswarm/giantswarm#37267): `helm-schema` rewrote the schema
-    wholesale in its own key ordering while `schemalint-normalize` rewrote it into
-    schemalint's canonical ordering. pre-commit runs each hook independently against the
-    file on disk and fails the run if any hook modifies it, so with two different resting
-    formats there was no fixed point — exactly one hook always failed and reruns
-    ping-ponged forever. `schemalint normalize` is now the last writer inside the single
-    hook, making the normalized form the one resting format.
-  - **Invalid schema with `$ref`** (losisin/helm-values-schema-json#317): under
-    `noAdditionalProperties: true` the generator emits `additionalProperties: false` as a
-    sibling of every bare `$ref`. Per JSON Schema 2020-12 `additionalProperties` only sees
-    sibling `properties`/`patternProperties` — not properties pulled in through `$ref` —
-    so it rejected every field the referenced schema defines, e.g. `helm template` failing
-    with `additional properties 'podAntiAffinity' not allowed`. The hook now rewrites those
-    to `unevaluatedProperties: false`, which does consider `$ref`-evaluated properties.
-    Valid values pass while genuinely unknown keys are still rejected.
-
-  `schemalint` is installed by the hook itself via `additional_dependencies` (pinned and
-  Renovate-managed), and the `helm schema` plugin is still installed by the generated
-  pre-commit CI workflow — so no new tooling is required. The hook checks for the plugin
-  first and points at its install command, keeping the actionable message the replaced
-  hook's wrapper script printed.
-- `semantic-pull-request`: the generated workflow now allows to be run in merge groups, avoiding stale queues because of the required check not running.
-- `test-kyverno-policies-with-chainsaw.yaml.template`: the template now uses installation actions to set up Helm and Kind, which reduces the number of manual steps.
-- Releases: Consider `--drop` flag in release creation.
-
-### Changed
-
-- `gen makefile --language kyverno-policy`: enable PolicyExceptions in all namespaces in the Kyverno installed for chainsaw tests.
-- `gen precommit --language node`: emits **no** JS/TS formatting or linting hook
-  (no prettier, no eslint). Both are repo-owned for every Giant Swarm node repo —
-  `@backstage/cli`, Next.js and headlamp-plugin each ship their own prettier/eslint
-  config that resolves only against the repo's installed `node_modules`, so a
-  standalone pre-commit `mirrors-prettier`/`mirrors-eslint` hook hard-fails
-  (`Cannot find package '@backstage/cli'` / `couldn't find eslint.config.js`).
-  Formatting and linting for these repos run in `node-build` (`ci:verify`). Node
-  pre-commit is therefore base hooks + `conventional-pre-commit` + per-chart helm
-  hooks only. This makes `devctl gen precommit` the single source of truth for node
-  pre-commit, replacing the static `languages/node/.pre-commit-config.yaml` in
-  `giantswarm/github` that clobbered the generated `conventional-pre-commit` + helm
-  hooks and shipped a broken eslint hook.
-- `gen circleci`: the generated Node job's `Verify`/`Build` step comments now document
-  the **`ci:verify`/`ci:build` single-pass contract** (the node analogue of the
-  make-target interface): `ci:verify` is the one composed correctness gate (tsc + lint +
-  prettier `--check` + tests) and owns lint/format CI-wide; `ci:build` is bundle/emit-only
-  and redoes nothing verify did; neither re-installs; the default `testTarget: test` is
-  only a floor. The `--node-test-target`/`--node-build-target` flag help and the
-  `DefaultNodeTestTarget` doc carry the same contract. Comment/doc-only — no generated
-  pipeline behaviour change.
+- `gen workflows`: the `auto-release` flow renders the release notes after it decides which tag to cut, so
+  the "Full Changelog" compare link on a release candidate points at the tag that was created
+  (`compare/v0.1.5...v0.1.6-rc.1`) instead of at the stable target, which has no tag until the cycle closes.
+- `gen makefile`: the `app` flavour's targets (`helm-docs`, `lint-chart`, `update-chart`, `update-deps`) work
+  on repositories that also have the `go` flavour. The root `Makefile` includes `Makefile.*.mk` in name order,
+  so `Makefile.gen.app.mk` is parsed before `Makefile.gen.go.mk` sets `APPLICATION` from the Go module; the
+  `check-env` guard was a parse-time `ifndef` and `DEPS` a parse-time `:=`, so every go+app repository
+  (vm-manager, model-manager) failed with `Makefile.gen.app.mk:47: *** APPLICATION is not defined` although the
+  variable is set once make runs a recipe. The guard is now a recipe line and `DEPS` is recursively expanded, so
+  both read `APPLICATION` at recipe time; the per-dependency `$(DEPS)` targets, whose names were also fixed at
+  parse time, become a loop inside `update-deps`. App-only repositories keep working as before: `APPLICATION`
+  from `Makefile.custom.mk` or the command line is honoured, and an unset `APPLICATION` still fails the target
+  with a message (and `make help` no longer trips over it).
+- `gen precommit`: the `helm-schema-<chart>` hook now installs and pins its own generator
+  (`github.com/losisin/helm-values-schema-json/v2@v2.6.0` in `additional_dependencies`, next to the
+  existing `schemalint` pin) and calls that binary directly, instead of calling a bare `helm schema`
+  resolved from the developer's global helm plugin dir. The old guard only checked that *a* plugin was
+  installed, never which version, so a dev machine on a different version silently rewrote the committed
+  `values.schema.json` (v2.3.1 vs v2.6.0 is 40 lines in `hello-world-app`) and reported `Passed` while CI
+  then rejected it. The pin now lives in exactly one place: `HELM_VALUES_SCHEMA_JSON_VERSION` is gone from
+  the generated pre-commit workflow (with its plugin cache and install steps), `helm_values_schema_json_version`
+  is no longer passed to the reusable `sync-from-upstream` workflow, and the Renovate custom manager for
+  `losisin/helm-values-schema-json` is replaced by the existing `go`-datasource manager on
+  `additional_dependencies`. Regenerated chart repos need no helm plugin at all; the hook env costs ~16 s
+  cold and ~0.3 s warm. With the last `helm` caller gone, the dead `HELM_VERSION` env var and its
+  Renovate custom manager are removed too: nothing in the generated workflow installs helm, and
+  `helm-docs` is a separate binary.
+- `gen workflows`: the generated `sync_from_upstream.yaml` now passes `helm_docs_version` instead of
+  letting the reusable `sync-from-upstream` workflow default it. A skew against the pins in
+  `zz_generated.pre-commit.yaml` made every sync PR commit a chart README or `values.schema.json`
+  built by the wrong tool version and then fail its own check. (The matching
+  `helm_values_schema_json_version` pin added here is superseded by the `gen precommit` fix above,
+  which removes that pin entirely; neither has shipped yet.)
 
 ### Added
 
-- `gen precommit --language node`: a **dev-only `ci:lint` pre-push hook**. Every node
-  repo gets a `repo: local` hook that runs `<pm> run ci:lint` (package manager detected
-  from the lockfile) and the config gains `pre-push` in `default_install_hook_types`.
-  `ci:lint` is a single convention script name — like `ci:verify`/`ci:build` — that each
-  repo defines pointing at its own eslint/prettier toolchain; the generator does not take
-  a per-script knob (no `--node-lint-target`/`--node-format-target`), the repo converges
-  its script names to the convention. The hook is scoped `stages: [pre-push]`, so the CI
-  pre-commit job — which runs `pre-commit run --all-files` at the pre-commit stage on a
-  runner with no `node_modules` — never executes it; it runs only on a developer's machine
-  against the installed toolchain. Lint/format are thus verify-canonical: here for fast dev
-  feedback and in `ci:verify` (which composes `ci:lint`) for the gate, never in the CI
-  pre-commit job.
-- `gen circleci`: the generated Node job now honours a per-repo **`resource_class`**
-  (reusing the `gen.ci.resourceClass` knob the cli `go-build` job uses), defaulting to
-  `large`. The Node verify chain (tsc + lint + test + build over a whole monorepo) is
-  memory-hungry — backstage's `ci:verify` pins `NODE_OPTIONS` `max-old-space-size` to 6 GiB —
-  so a bigger monorepo can size up to `xlarge` without forking the generated job.
-- `gen circleci`: the generated Node job now also caches the **build output**
-  (`node_modules` + Yarn's `.yarn/install-state.gz`) for the Yarn package managers,
-  keyed on the node image version and the lockfile checksum
-  (`node-build-<pm>-v1-<nodeimage>-<checksum>`). The existing dependency cache only
-  holds package *tarballs*; on a `nodeLinker: node-modules` repo the dominant install
-  cost is the Link step recompiling native addons (better-sqlite3, isolated-vm,
-  tree-sitter, …) from source via node-gyp, whose output lives in `node_modules`.
-  Restoring it lets the install reconcile incrementally instead of recompiling every
-  run — the Node analogue of `go-build` persisting `$GOCACHE`. Omitted for npm
-  (`npm ci` wipes `node_modules` first) and pnpm (its content-addressable store already
-  caches build side-effects).
-- Releases: Add `kube-vip-cloud-provider`.
+- `gen workflows --helm-docs-regen` (app flavour) generates `zz_generated.helm-docs-regen.yaml`: on pull requests
+  from `renovate/**` and `dependabot/**` branches it regenerates the chart README (helm-docs) and
+  `values.schema.json` (the `helm-schema-<chart>` hooks) and pushes the result back onto the PR branch with the
+  taylorbot PAT, so an image-tag or values-key bump no longer fails the `pre-commit` check on files only the hooks
+  can rewrite (giantswarm/agent-platform#295, #301, #302, #320; agent-sandbox#38; agentgateway#3). The hooks and
+  their tool pins are read from the repo's own `.pre-commit-config.yaml` at run time, every hook runs twice with
+  the second pass required clean, a clean tree is a no-op so the run the push triggers exits without pushing again,
+  and the job is skipped with a warning where the secret is not available (fork and Dependabot-triggered runs).
+  Opt in through `gen.helmDocsRegen: true` in giantswarm/github. Closes #2185.
+- `gen renovate` lists `dev@giantswarm.io` in `gitIgnoredAuthors`: the author the generated workflows commit
+  with (helm-docs-regen, update-chart, sync-from-upstream) now counts as Renovate's own, so a branch they pushed
+  to keeps being rebased and autoclosed instead of retitled "- abandoned".
+- `version update` installs a release binary only after its cosign Sigstore bundle verifies. Every devctl release
+  asset comes with a `<asset>.bundle` next to it: cosign's keyless signature made by the CircleCI pipeline and
+  recorded in Rekor. The download is verified against that bundle for a CircleCI build of
+  `github.com/giantswarm/devctl` (Sigstore public-good trust root, fetched through TUF and cached under
+  `~/.sigstore/root`) before anything is written: a release without a bundle is refused before the download, a
+  download that does not match its signature before the write, and the installed binary stays untouched either
+  way. Version lookups (`version check`, and the check that runs before every command) do not look at the bundle,
+  so an unsigned release can never block devctl; cache, exit status 125 and `DEVCTL_UNSAFE_FORCE_VERSION` behave
+  as before.
+- `gen circleci --image-resource-class <platform>=<class>` (repeatable): overrides the CircleCI resource class
+  of the native per-architecture `build-image` jobs for one platform, on both the branch and the release leg.
+  Defaults stay linux/amd64 on `small` and linux/arm64 on `arm.medium`. For an image whose leg is dominated by
+  exporting, compressing and SBOM-scanning a very large result rather than by the build itself: vllm's 22 GB
+  arm64-only image spent 36 of its 37 release-leg minutes there on the 2-vCPU `arm.medium`, after the build
+  proper had taken 8. The class must belong to the platform's architecture (the orb refuses a mismatch instead
+  of emulating) and the platform must be in `--image-platforms`; both are checked at generation time. Requires
+  `--image-native-builds`.
+- `gen circleci`: the chart-test jobs (`execute-chart-tests`, `execute-chart-tests-release`) run with the
+  architect context, and the architect orb pin moves to 10.4.0. The orb's `run-tests-with-ats` turns the
+  context's registry credentials into `/var/lib/kubelet/config.json` on the kind cluster it creates, so a chart
+  whose image lives in gsociprivate.azurecr.io can be smoke-tested without `imagePullSecrets` (first users:
+  alfred-app, mcp-runbooks). Without the context the orb step only prints a notice.
+- `repo checks --update --circleci-dir <repo>/.circleci`: reconciles the required `ci/circleci: <job>` contexts
+  with the pipeline itself. The branch-side jobs of the generated `workflows.yml` and the repo-owned `custom.yml`
+  (every workflow; a job counts unless its branch filter has `only:` or ignores every branch) are required once
+  they have reported, exactly like `--checks-if-reported`, and every required `ci/circleci:` context whose job the
+  pipeline no longer has is removed. Until now the align-files action computed the jobs itself and could only
+  add: when `gen.ci.branchPublish` renamed the branch image job from `build-image` to `push-to-registries`, the
+  stale `ci/circleci: build-image` requirement stayed on model-manager and tunnelport and blocked every pull
+  request with a check nothing could report. A pipeline that cannot be read leaves the CircleCI contexts as they
+  are; contexts of other systems (GitHub Actions workflows) are never touched.
 
 ### Changed
 
-- `gen circleci`: the generated Node build-output cache is now saved **after** the
-  verify/build steps (it previously saved right after install). The same `node_modules`
-  cache therefore also persists the tsc/eslint/jest incremental caches those steps write
-  under `node_modules/.cache` — the compute-side analogue of persisting `$GOCACHE`, not just
-  the install-time native-addon rebuild. Still write-once per lockfile; the lockfile-agnostic
-  restore prefix keeps every run warm-started from the last good cache, so a red build never
-  leaves a repo cold.
-- `gen circleci`: the generated Node dependency-cache key now carries a `v1` version salt
-  (`node-deps-<pm>-v1-{{ checksum "<lockfile>" }}`, restore prefix `node-deps-<pm>-v1-`). CircleCI
-  cache keys are immutable, so a repo that first adopts the Node job while still on Yarn's default
-  global cache would seed an empty `.yarn/cache` under the lockfile hash and could never save a real
-  cache until the lockfile changed. The salt invalidates such stale/empty seeds in one release and
-  gives a lever to bust caches on future cache-shape changes.
-
-### Added
-
-- `gen renovate` gained a `--deprecated` flag. When set, the generated `renovate.json5`
-  extends `github>giantswarm/renovate-presets:deprecated.json5` (before any repo-owned
-  `renovate-custom.json5`), which disables all routine updates and keeps only
-  security/vulnerability remediation. The `giantswarm/github` align-files workflow passes it
-  for repos marked `lifecycle: deprecated` that have `gen.ci.generate`.
-- `gen circleci` now generates a Node/TypeScript build path (`--language=node`), mirroring the Go
-  path. It emits a self-contained `node-build`/`node-test` job on a `cimg/node` executor (architect
-  ships no Node job) with a dependency cache keyed on the lockfile checksum — the Node analogue of
-  `go-build`'s `GOCACHE` persist. The package manager is detected from the lockfile
-  (`package-lock.json` → npm, `pnpm-lock.yaml` → pnpm, `yarn.lock` → Yarn Berry or `yarn-classic`
-  by its `# yarn lockfile v1` header) or set with `--package-manager`. The verify/build commands are
-  `package.json` scripts (the make-target interface): `--node-test-target` (default `test`) and
-  `--node-build-target`, so bespoke toolchains (backstage-cli, Next.js, headlamp-plugin) redirect
-  without forking the generated job. `--node-build-output` names the job `node-build` and persists
-  the build output for an image handoff (`gen.ci.image.preBuildJob`), otherwise it is `node-test`.
-  The image and chart jobs' `requires` wiring was generalized so they gate on the language's build
-  job (`go-build` or `node-build`/`node-test`).
-- `gen circleci`: add `--build-concurrency` and `--resource-class` flags (surfaced as `gen.ci.buildConcurrency`
-  / `gen.ci.resourceClass` in giantswarm/github) to override the cli-flavour `go-build` job's
-  `build_concurrency` (default `auto`) and `resource_class` (default `large`). The orb 9.5.5 cache-key fix
-  makes warm caching take effect, but the *first* cold full-matrix cross-compile must still complete to
-  populate the fresh `v2` cache. For an unusually large binary (e.g. `mcp-kubernetes`, ~99 MB, k8s-linked)
-  six concurrent cold `go build`s OOM-kill the `large` runner before the cache is stored, so the repo stays
-  permanently cold. Lowering `build_concurrency` (memory, not CPU, is the binding constraint) lets the cold
-  build survive once and warm the cache. Empty keeps the existing `auto`/`large` defaults, so cli repos that
-  set neither are unchanged; non-cli `go-build` jobs ignore both.
-
-### Changed
-
-- Bump the aligned `giantswarm/architect` orb to `9.5.5` (from `9.5.2`/`9.5.3`). `9.5.4` writes
-  the nancy scan log to `/tmp` instead of the repo root, so it no longer dirties the working tree
-  between `make test` and the binary link. Without it, every `go-build` release binary (devctl
-  included) embedded `vX.Y.Z+dirty`, which broke the align-files `DEVCTL_UNSAFE_FORCE_VERSION`
-  self-update bypass that compares against a `+dirty`-stripped version. `9.5.5` additionally bumps
-  the Go build-cache key (`go-build-cache-v1-` -> `v2-`) so `restore_cache` stops unpacking the
-  stale `9.5.2`-era archive at the wrong `GOCACHE` path; the permanent cold compile that caused
-  was OOM-killing memory-heavy parallel cross-compiles (observed on `mcp-kubernetes`).
+- `pkg/updater` moves from the unmaintained `rhysd/go-github-selfupdate` to `creativeprojects/go-selfupdate`,
+  which the shared validator `github.com/giantswarm/selfupdate-cosign` plugs into. Same GitHub API calls, same
+  asset selection (`devctl-<os>-<arch>`), same in-place replacement of the running binary. The one fallback that
+  goes away: without a token in the environment the old library also read `github.token` from the git config;
+  the new one calls the GitHub API anonymously in that case, which works for the public devctl repository.
+- `gen circleci`: the default app-test-suite tag moves to `1.0.3`, which waits for the bootstrapped CRDs
+  (`--cluster-crds`) to be `Established` before the Helm deploy. On 1.0.2 a chart whose templates render a
+  kind from those CRDs (giantswarm/agent renders a kagent `Agent`) failed `helm upgrade --install` with
+  `no matches for kind`, because `kubectl apply` returns before the API server serves the new kinds.
 
 ### Fixed
 
-- `gen circleci`: quote a non-`auto` `--build-concurrency` value in the generated
-  `go-build` job. The orb's `build_concurrency` param is string-typed, so a bare integer
-  (e.g. `build_concurrency: 2`) parses as YAML int and CircleCI rejects the config with
-  `Type error for argument build_concurrency: expected type: string`. `auto` is still
-  emitted bare (a valid string scalar), so repos on the default are byte-for-byte unchanged.
-- `update-template-sha`: derive the embedded provenance SHA from `git rev-list -1 HEAD`
-  instead of `git rev-list --all`. `--all` spanned unmerged `origin/renovate/*` branches in
-  the build checkout, so the `*.template.sha` link could resolve to a commit that only exists
-  on an open PR branch. That made the SHA non-deterministic across release builds even when the
-  template content was unchanged, causing the align-files automation to emit no-op PRs (only the
-  source-link SHA in generated file headers changed) to every consuming repo.
+- `repo checks --update --checks-if-reported`: when the reported checks cannot be read, the names are skipped for
+  this run with a warning instead of failing the command. The discovery reads commit statuses and check runs,
+  which a GitHub App token can only do on a private repository when the App holds the "Commit statuses" and
+  "Checks" read permissions (`403 Resource not accessible by integration` otherwise); the align-files App did
+  not, so the first alignment with `gen.ci.requireCircleCIChecks` aborted on the three private repositories
+  (muster-runbooks, agent-platform-ui, web-assets) before syncing any file. `--checks` and `--remove` are applied
+  as before in that case.
+
+### Added
+
+- `repo checks --update --checks-if-reported <names>`: adds a required status check only when that context
+  has reported on the default branch's latest non-tag commit or on the head of one of the three most recently
+  merged pull requests (the `repo setup` discovery, reused). Names that have not reported yet are logged and
+  skipped, so a generated CircleCI job that never ran (no CircleCI project, first alignment after the job
+  appeared) cannot become a required check nothing can satisfy and block every PR. giantswarm/github's
+  align-files uses it to make the generated pipeline's branch-side jobs (`ci/circleci: build-chart`,
+  `ci/circleci: execute-chart-tests`, `ci/circleci: go-build`, …) required checks on repos that set
+  `gen.ci.requireCircleCIChecks`; today only the GitHub-Actions checks are required, so GitHub auto-merge
+  (align PRs, Renovate platform automerge) merges before CircleCI reports or past a red chart build
+  (tunnelport#80 released v1.2.6 without a chart). `--checks` keeps adding unconditionally; `strict` and
+  checks not named stay untouched as before.
+
+### Fixed
+
+- `gen circleci`: the default app-test-suite tag moves to `1.0.2`, which accepts `oci://` values for
+  `upgrade-tests-app-catalog-url` at config validation (1.0.0 and 1.0.1 rejected them as `Wrong catalog URL`
+  although the resolver supports OCI catalogs), so upgrade scenarios can take their stable chart from
+  `oci://gsoci.azurecr.io/charts/giantswarm`.
+
+### Fixed
+
+- `gen circleci`: the default app-test-suite tag moves to `1.0.1`. The `1.0.0` image ships a CRD bundle whose
+  `gateway-api.yaml` starts with helm's `Pulled:`/`Digest:` lines (captured from stdout while syncing), so
+  `kubectl apply --server-side -f /etc/ats/crds` rejects the directory and every 1.0.0 run fails at CRD
+  bootstrap before a single test runs. 1.0.1 fixes the bundle and guards it with a unit test.
+
+### Added
+
+- `gen circleci`: new `--go-test-artifacts <dir>` flag (`gen.ci.go.testArtifacts` in giantswarm/github).
+  Renders `post-steps` on the generated `architect/go-build` job that keep a directory `make test` writes
+  (e.g. muster's `test-reports/`: the integration suite's per-scenario JSON with the complete instance
+  logs, which the console shows only a trimmed tail of) as a CircleCI build artifact when the job fails:
+  staged `when: on_fail`, uploaded with `store_artifacts`, so a green run stores nothing. The append-only
+  custom.yml merge cannot add post-steps to a generated job (yq `*+` appends a second `architect/go-build`
+  entry, which CircleCI rejects), so the generator carries it. Go repos only; the path must be a relative
+  directory under the checkout.
+- `gen workflows --release-workflow auto-release`: after creating the release, the generated
+  `zz_generated.auto_release.yaml` verifies that CircleCI picked up the tag (repos with a
+  `.circleci/config.yml` only): it polls the v2 pipeline list for up to 120 s and, if no pipeline appears,
+  triggers one through the API with the org secret `CIRCLECI_API_TOKEN`. Without the secret the step is a
+  detector (a missing pipeline on a public project fails the run with the manual `curl`; a 404 on a private
+  project is a warning). GitHub delivers the tag-push webhook once and never retries; on 2026-09-04 CircleCI
+  answered three of ~55 tag pushes with an empty HTTP 400 and those releases had no pipeline.
+- `gen circleci`: new `--go-build-path` flag setting the architect `go-build` job's `path` param for
+  Go repos.
+- `gen circleci`: new `--ats-on-release` flag (`gen.ci.atsOnRelease` in giantswarm/github). Restores
+  the pre-v8.45.0 chart pipeline: an `execute-chart-tests-release` job on the tag, after the release
+  image, with `push-chart-release` gating on it. Mutually exclusive with `--skip-ats`.
+- `gen circleci`: new `--ats-version` flag (`gen.ci.atsVersion` in giantswarm/github). Pins the
+  app-test-suite container tag on both `run-tests-with-ats` jobs (`app-test-suite_container_tag`). A
+  1.x tag also emits `create_kind_cluster: true` on both jobs -- app-test-suite 1.x no longer
+  provisions clusters, the job creates the kind cluster and hands over its kubeconfig (the architect
+  orb's `run-tests-with-ats` `create_kind_cluster` opt-in) -- and switches the generated test
+  dependency file from `tests/ats/Pipfile` (pipenv, ATS <= 0.15) to `tests/ats/pyproject.toml` +
+  `uv.lock` (uv, ATS 1.x), deleting the Pipfile. Empty, the default, changes nothing; a 0.x tag pins
+  the tag on the legacy `dats.sh` path. The rest of a repo's migration (`.ats/main.yaml` without the
+  `*-cluster-type` keys, tests that install with Helm instead of an App CR) is the repo's own; see the
+  app-test-suite CHANGELOG. Mutually exclusive with `--skip-ats`. The canonical uv layout is embedded
+  next to the Pipfile and Renovate bumps both layouts in the one `ATS test dependencies` PR.
+- The architect orb pin moves to `10.3.0`, which ships `run-tests-with-ats`'s `create_kind_cluster`
+  (architect-orb#917): the job installs kind, creates the cluster and hands its kubeconfig to
+  app-test-suite 1.x, which provisions none. `--ats-version` with a 1.x tag emits that parameter, and
+  10.2.0 rejects it as unknown, so the pin and the knob ship together.
+- `gen circleci`: new `--image-native-builds` flag (`gen.ci.image.nativeBuilds` in giantswarm/github),
+  the opt-in for native per-architecture image builds. It emits one `architect/build-image` job per
+  platform in `--image-platforms` (default `linux/amd64,linux/arm64`), each on a resource class of that
+  architecture (`small` for amd64, `arm.medium` for arm64), and switches the generated
+  `push-to-registries` / `push-to-registries-release` jobs to `merge-digests: true`, so they join the
+  per-architecture digests into the tagged index instead of building. Nothing is emulated and the
+  builds run concurrently, so wall clock is the slower single native build: on `giantswarm/backstage`
+  the image path went from 14m16s to 3m22s. Job names downstream (`push-to-registries`,
+  `push-to-registries-release`, `sync-china-registry`) are unchanged; the validate-only branch job
+  `build-image` becomes `build-image-<arch>` jobs, so a `custom.yml` that requires `build-image` must
+  follow when a repo opts in. A platform with no native class is rejected at generation time. Off by
+  default: the generated output for every repo that does not set it is unchanged. Pays off for
+  Dockerfiles with real work in `RUN` steps; a `COPY` of a cross-compiled binary gains nothing.
+- The architect orb pin moves to `10.2.0`, which ships `build-image` and `merge-digests`.
+- `gen circleci`: new `--ats-branch-only` flag (`gen.ci.atsBranchOnly` in giantswarm/github). The chart
+  pipeline keeps `execute-chart-tests` on branches and the canonical `tests/ats/Pipfile`, but no longer
+  generates the tag-time `execute-chart-tests-release`; `push-chart-release` gates directly on
+  `build-chart`. The tag is cut from the merge commit of a PR whose `execute-chart-tests` already passed
+  on that tree, so the tag-time run re-tested an identical tree: on `agent-platform-standalone` it was
+  4m10s of a 5m57s release (p50 over 53 tag pipelines since 2026-08-31) and its only three failures were
+  the apptestctl bootstrap race, never a chart regression. It is only sound when the repo's branch
+  protection makes the `ci/circleci` statuses required checks on the default branch and requires
+  branches to be up to date with it (strict); set that first. Mutually exclusive with `--skip-ats`,
+  which drops both jobs and the Pipfile. Off by default: the generated output for every repo that does
+  not set it is unchanged.
+
+### Changed
+
+- `gen circleci`: **app-test-suite 1.0.0 is the default** for every generated-CI chart repo
+  (`DefaultATSVersion`, next to the orb pin). Unset, `--ats-version` now renders exactly what
+  `--ats-version 1.0.0` renders: `app-test-suite_container_tag: "1.0.0"` and `create_kind_cluster: true`
+  on the chart-test jobs, and `tests/ats/pyproject.toml` + `uv.lock` instead of the Pipfile. The repo owns
+  the rest of its migration (`.ats/main.yaml` without the `*-cluster-type` keys, tests that install with
+  Helm instead of an App CR); a repo that has not migrated yet pins a 0.x tag (`--ats-version 0.15.0`,
+  `gen.ci.atsVersion: "0.15.0"` in giantswarm/github) to stay on the legacy dats.sh path with the Pipfile.
+  `--skip-ats` no longer conflicts with the tag: the opt-out wins and the tag is ignored.
+- `gen circleci`: the chart tests run on branches only. The generated chart pipeline no longer carries
+  `execute-chart-tests-release`; `push-chart-release` gates directly on `build-chart` (plus the release
+  image when there is one), so a release is the build + push alone. The tag is cut from the merge commit
+  of a PR whose `execute-chart-tests` already ran on that tree; on `agent-platform-standalone` the
+  tag-time re-run was ~4m10 of a ~6 min release, never caught a chart regression and failed only on the
+  apptestctl bootstrap race. Every app-flavour repo changes shape at its next alignment. For the tag to
+  be the tree the PR tested, make the `ci/circleci` statuses required checks on the default branch with
+  up-to-date branches (strict); a repo that cannot, or whose `custom.yml` jobs require
+  `execute-chart-tests-release` (backstage's second catalog push did), sets `--ats-on-release`.
+
+- `gen workflows --release-workflow auto-release`: `cliff.toml` skips `docs` commits the way it skips
+  `style`. git-cliff bumps at least the patch for every commit that is not skipped, so a docs-only
+  merge tagged and published an identical artifact (agent-platform-standalone v0.35.2 and v0.35.3,
+  both CLAUDE.md-only); now such a push computes the current version and the workflow logs
+  `No releasable commits since vX.Y.Z; skipping tag.` The template comment that claimed the bump
+  ignores the parser groups is replaced by the actual rule. `chore` and `ci` keep releasing.
+- `gen workflows`: run the generated "Fix Go vulnerabilities" (nancy-fixer) workflow every Wednesday night.
+
+- `gen circleci`: whether the chart's `appVersion` is stamped now follows the repo's shape. A repo with
+  **no image pipeline** gets `override_app_version: false` on its chart jobs, so app-build-suite keeps the
+  `appVersion` declared in `Chart.yaml`. The chart version is still always stamped.
+
+  `appVersion` is the version of the packaged application. A repo that builds its own image ships the app
+  it packages, so `appVersion` equals the chart version and stamping it is correct. A chart-only repo
+  packages an app built elsewhere, so its `appVersion` is that app's version. Of the organisation's 249
+  chart repos, 97 chart-only repos declare a real upstream `appVersion` that packaging overwrote, while 65
+  of the 82 image-building repos already declare `appVersion` == `version`.
+
+  Derived from the same signal as the image pipeline (`HasDockerfile`, or a non-empty `ImageDockerfile`),
+  so no repo has to opt in.
+
+- `gen circleci --override-chart-app-version`: overrules that derivation in either direction. Leave it
+  unset for the derived behaviour; pass `=false` for a repo that builds an image and still declares a
+  foreign `appVersion`, or `=true` for a chart-only repo that wants its `appVersion` stamped anyway.
+
+- align helm-docs command in `Makefile.gen.app.mk.template` with the `pre-commit-config.yaml.template` configuration
+
+### Deprecated
+
+- `gen circleci --ats-branch-only` (added in v8.43.0): branch-only chart tests are the default now. The
+  flag is accepted and ignored; `gen.ci.atsBranchOnly` in giantswarm/github is ignored the same way.
+
+- `gen circleci --keep-chart-app-version` (added in v8.39.0): use `--override-chart-app-version=false`. It
+  is still honoured, and the repos it was added for no longer need either flag — the derivation covers
+  them.
+
+### Fixed
+
+- `gen makefile` (Go flavour): the `nancy` target scans `go list -json -deps ./...` again instead of
+  `go list -json -m all`, so it reports vulnerabilities only in packages actually compiled into the
+  module. `-m all` walks the whole module graph and flags modules that are never built: on
+  `team-stamper` it reported 7 vulnerable modules of which 5 are absent from the build, including
+  `golang.org/x/crypto` and the 13 CVEs attributed to it. #680 adopted `-deps ./...` for precisely
+  this reason in 2023; #1964 reverted to `-m all` in June only to work around nancy's 10 MB stdin
+  cap, which nancy had introduced days earlier in v2.0.0 and then made configurable, defaulting to
+  100 MB, in [v2.1.0](https://github.com/sonatype-nexus-community/nancy/releases/tag/v2.1.0) six
+  days later. The cap that motivated the workaround is therefore gone: `cluster-standup-teardown`,
+  the repository that hit it, emits 12 MB, and CI already runs nancy 2.1.0. The target's doc comment
+  now says v2.1.0 rather than v1.0.37.
 
 ## [8.23.0] - 2026-06-24
 

@@ -40,7 +40,7 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
+func (r *runner) run(ctx context.Context, cmd *cobra.Command, _ []string) error {
 	var err error
 
 	// The image pipeline is derived from repo content: architect already
@@ -48,8 +48,27 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 	_, statErr := os.Stat("Dockerfile")
 	hasDockerfile := statErr == nil
 
+	// The chart-test kind cluster's configuration is derived from repo content
+	// the same way: a kind Cluster file at the conventional path is handed to
+	// the run-tests-with-ats jobs as kind_config. The cluster's shape (feature
+	// gates, runtime config) is test content, so it lives next to .ats/main.yaml
+	// and the tests rather than in a gen.ci key.
+	hasATSKindConfig := detectATSKindConfig()
+
 	// Node package manager is derived from the lockfile, the same content-signal
 	// style as the Dockerfile probe. An explicit --package-manager wins.
+	// appVersion is the version of the packaged application, so whether the
+	// build stamps it follows from the repo's shape (see the generator). nil
+	// means "derive"; an explicit flag overrules it in either direction.
+	var overrideChartAppVersion *bool
+	if cmd.Flags().Changed(flagOverrideChartAppVersion) {
+		value := r.flag.OverrideChartAppVersion
+		overrideChartAppVersion = &value
+	} else if r.flag.KeepChartAppVersion {
+		value := false
+		overrideChartAppVersion = &value
+	}
+
 	packageManager := r.flag.PackageManager
 	if packageManager == "" && r.flag.Language == gen.LanguageNode {
 		packageManager = detectPackageManager()
@@ -66,35 +85,51 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 		// loud: the repo asked for a Node version and did not get it, and the
 		// only visible symptom would be an unchanged workflows.yml.
 		if rejected != "" {
-			fmt.Fprintf(r.stderr, "warning: ignoring .nvmrc value %q -- the Node job needs an exact major.minor.patch (e.g. 24.19.0); falling back to %s\n", rejected, circleci.DefaultNodeImageVersion)
+			_, _ = fmt.Fprintf(r.stderr, "warning: ignoring .nvmrc value %q -- the Node job needs an exact major.minor.patch (e.g. 24.19.0); falling back to %s\n", rejected, circleci.DefaultNodeImageVersion)
 		}
 	}
 
 	var circleciInput *circleci.CircleCI
 	{
+		// Validated in flag.Validate; parsed again here because the map is what
+		// the generator takes.
+		imageResourceClasses, err := r.flag.imageResourceClasses()
+		if err != nil {
+			return microerror.Mask(err)
+		}
+
 		c := circleci.Config{
-			RepoName:         r.flag.RepoName,
-			Language:         r.flag.Language,
-			Flavours:         r.flag.Flavours,
-			SkipATS:          r.flag.SkipATS,
-			HasDockerfile:    hasDockerfile,
-			AppCatalog:       r.flag.AppCatalog,
-			AppCatalogTest:   r.flag.AppCatalogTest,
-			ChartName:        r.flag.ChartName,
-			ForcePublic:      r.flag.ForcePublic,
-			BranchPublish:    r.flag.BranchPublish,
-			BuildConcurrency: r.flag.BuildConcurrency,
-			ImagePreBuildJob: r.flag.ImagePreBuildJob,
-			ImagePrivateOnly: r.flag.ImagePrivateOnly,
-			ImageName:        r.flag.ImageName,
-			ImagePlatforms:   r.flag.ImagePlatforms,
-			ImageDockerfile:  r.flag.ImageDockerfile,
-			ResourceClass:    r.flag.ResourceClass,
-			PackageManager:   packageManager,
-			NodeImageVersion: nodeImageVersion,
-			NodeTestTarget:   r.flag.NodeTestTarget,
-			NodeBuildTarget:  r.flag.NodeBuildTarget,
-			NodeBuildOutput:  r.flag.NodeBuildOutput,
+			RepoName:                r.flag.RepoName,
+			Language:                r.flag.Language,
+			Flavours:                r.flag.Flavours,
+			SkipATS:                 r.flag.SkipATS,
+			ATSVersion:              r.flag.ATSVersion,
+			ATSOnRelease:            r.flag.ATSOnRelease,
+			ATSResourceClass:        r.flag.ATSResourceClass,
+			HasATSKindConfig:        hasATSKindConfig,
+			HasDockerfile:           hasDockerfile,
+			AppCatalog:              r.flag.AppCatalog,
+			AppCatalogTest:          r.flag.AppCatalogTest,
+			ChartName:               r.flag.ChartName,
+			OverrideChartAppVersion: overrideChartAppVersion,
+			ForcePublic:             r.flag.ForcePublic,
+			BranchPublish:           r.flag.BranchPublish,
+			BuildConcurrency:        r.flag.BuildConcurrency,
+			ImagePreBuildJob:        r.flag.ImagePreBuildJob,
+			ImagePrivateOnly:        r.flag.ImagePrivateOnly,
+			ImageName:               r.flag.ImageName,
+			ImagePlatforms:          r.flag.ImagePlatforms,
+			ImageDockerfile:         r.flag.ImageDockerfile,
+			ImageNativeBuilds:       r.flag.ImageNativeBuilds,
+			ImageResourceClasses:    imageResourceClasses,
+			ResourceClass:           r.flag.ResourceClass,
+			GoBuildPath:             r.flag.GoBuildPath,
+			GoTestArtifacts:         r.flag.GoTestArtifacts,
+			PackageManager:          packageManager,
+			NodeImageVersion:        nodeImageVersion,
+			NodeTestTarget:          r.flag.NodeTestTarget,
+			NodeBuildTarget:         r.flag.NodeBuildTarget,
+			NodeBuildOutput:         r.flag.NodeBuildOutput,
 		}
 
 		circleciInput, err = circleci.New(c)
@@ -119,6 +154,15 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 	}
 
 	return nil
+}
+
+// detectATSKindConfig reports whether the repo carries a kind Cluster
+// configuration for the chart-test jobs at circleci.ATSKindConfigPath. Presence
+// is the whole signal, mirroring the Dockerfile probe: the generator fixes the
+// path and the orb job validates the file when it creates the cluster.
+func detectATSKindConfig() bool {
+	_, err := os.Stat(circleci.ATSKindConfigPath)
+	return err == nil
 }
 
 // detectPackageManager picks the Node package manager from the lockfile present

@@ -73,3 +73,56 @@ func TestApplyChecks(t *testing.T) {
 		})
 	}
 }
+
+func TestSplitReported(t *testing.T) {
+	const (
+		buildChart = "ci/circleci: build-chart"
+		chartTests = "ci/circleci: execute-chart-tests"
+		goBuild    = "ci/circleci: go-build"
+	)
+
+	tests := []struct {
+		name        string
+		candidates  []string
+		reported    []string
+		wantFound   []string
+		wantSkipped []string
+	}{
+		{
+			name:        "reported names are found, the rest skipped, candidate order kept",
+			candidates:  []string{buildChart, chartTests, goBuild},
+			reported:    []string{"pre-commit", goBuild, buildChart},
+			wantFound:   []string{buildChart, goBuild},
+			wantSkipped: []string{chartTests},
+		},
+		{
+			name:        "nothing reported skips everything",
+			candidates:  []string{buildChart},
+			reported:    nil,
+			wantFound:   nil,
+			wantSkipped: []string{buildChart},
+		},
+		{
+			name:        "duplicate candidates collapse",
+			candidates:  []string{"a", "a", "b"},
+			reported:    []string{"a"},
+			wantFound:   []string{"a"},
+			wantSkipped: []string{"b"},
+		},
+		{
+			name:        "no candidates",
+			candidates:  nil,
+			reported:    []string{"a"},
+			wantFound:   nil,
+			wantSkipped: nil,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			found, skipped := splitReported(tc.candidates, tc.reported)
+			require.Equal(t, tc.wantFound, found)
+			require.Equal(t, tc.wantSkipped, skipped)
+		})
+	}
+}

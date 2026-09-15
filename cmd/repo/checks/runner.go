@@ -70,6 +70,57 @@ func (r *runner) update(ctx context.Context, owner, repo string) error {
 	defaultBranch := repository.GetDefaultBranch()
 	underlying := client.GetUnderlyingClient(ctx)
 
+	// --circleci-dir: the pipeline's branch-side jobs become reported-only
+	// candidates, and the required "ci/circleci:" contexts they no longer
+	// explain are removed below (once the current checks are known). A
+	// pipeline that cannot be read is left alone: nothing is removed on a
+	// guess.
+	ifReported := append([]string{}, r.flag.ChecksIfReported...)
+	var liveCircleCI []string
+	reconcileCircleCI := false
+	if r.flag.CircleCIDir != "" {
+		contexts, found, err := circleCIGateContexts(r.flag.CircleCIDir)
+		switch {
+		case err != nil:
+			r.logger.Warnf("%s/%s: cannot read the CircleCI pipeline in %q (%v); its jobs are neither required nor removed in this run", owner, repo, r.flag.CircleCIDir, err)
+		case !found:
+			r.logger.Warnf("%s/%s: no workflows.yml or custom.yml in %q; CircleCI contexts are left as they are", owner, repo, r.flag.CircleCIDir)
+		default:
+			liveCircleCI = contexts
+			reconcileCircleCI = true
+			ifReported = append(ifReported, contexts...)
+			r.logger.Infof("%s/%s: CircleCI jobs gating pull requests: %s", owner, repo, describeContexts(contexts))
+		}
+	}
+
+	// The names to add: --checks unconditionally, --checks-if-reported (and
+	// the pipeline's jobs) only when the context has already reported on the
+	// default branch or a recently merged PR. Resolved lazily so an
+	// unprotected branch costs no discovery calls.
+	resolveAdd := func() ([]string, error) {
+		add := append([]string{}, r.flag.Checks...)
+		if len(ifReported) == 0 {
+			return add, nil
+		}
+		reported, err := client.ReportedChecks(ctx, repository, defaultBranch)
+		if err != nil {
+			// Discovery reads commit statuses and check runs, which a GitHub App
+			// token can only do on a private repository when the App holds the
+			// "Commit statuses" / "Checks" read permissions (403 "Resource not
+			// accessible by integration" otherwise). The conditional checks are
+			// best-effort by definition: leave them for a later run and keep the
+			// unconditional --checks update going instead of failing the caller
+			// (align-files aborts the whole repository alignment on a non-zero exit).
+			r.logger.Warnf("%s/%s: cannot read the reported checks on %q (%v); not requiring %v in this run", owner, repo, defaultBranch, err, ifReported)
+			return add, nil
+		}
+		found, skipped := splitReported(ifReported, reported)
+		if len(skipped) > 0 {
+			r.logger.Infof("%s/%s: not requiring %v yet: not reported on %q or a recently merged pull request", owner, repo, skipped, defaultBranch)
+		}
+		return append(add, found...), nil
+	}
+
 	current, _, err := underlying.Repositories.GetRequiredStatusChecks(ctx, owner, repo, defaultBranch)
 	if err != nil {
 		if errors.Is(err, github.ErrBranchNotProtected) {
@@ -82,10 +133,28 @@ func (r *runner) update(ctx context.Context, owner, repo string) error {
 		}
 		// Branch is protected but required status checks not yet configured.
 		// PATCH won't work in this state; fall back to a full UpdateBranchProtection.
-		return microerror.Mask(r.enableViaFullProtection(ctx, underlying, owner, repo, defaultBranch))
+		add, err := resolveAdd()
+		if err != nil {
+			return microerror.Mask(err)
+		}
+		return microerror.Mask(r.enableViaFullProtection(ctx, underlying, owner, repo, defaultBranch, add))
 	}
 
-	merged := applyChecks(current.GetChecks(), r.flag.Checks, r.flag.Remove)
+	add, err := resolveAdd()
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	remove := append([]string{}, r.flag.Remove...)
+	if reconcileCircleCI {
+		stale := staleCircleCIContexts(current.GetChecks(), liveCircleCI)
+		if len(stale) > 0 {
+			r.logger.Infof("%s/%s: removing required CircleCI contexts without a job in the pipeline: %v", owner, repo, stale)
+			remove = append(remove, stale...)
+		}
+	}
+
+	merged := applyChecks(current.GetChecks(), add, remove)
 
 	// UpdateRequiredStatusChecks uses omitempty, so an empty Checks slice is
 	// dropped from the request and GitHub leaves the existing checks unchanged.
@@ -102,7 +171,7 @@ func (r *runner) update(ctx context.Context, owner, repo string) error {
 		Checks: merged,
 	})
 
-	r.logger.Infof("%s/%s: required checks on %q: added %v, removed %v", owner, repo, defaultBranch, r.flag.Checks, r.flag.Remove)
+	r.logger.Infof("%s/%s: required checks on %q: added %v, removed %v", owner, repo, defaultBranch, add, remove)
 
 	return microerror.Mask(err)
 }
@@ -110,13 +179,13 @@ func (r *runner) update(ctx context.Context, owner, repo string) error {
 // enableViaFullProtection reads the current branch protection and issues a full
 // UpdateBranchProtection that enables required status checks while preserving
 // all other existing protection settings.
-func (r *runner) enableViaFullProtection(ctx context.Context, underlying *github.Client, owner, repo, branch string) error {
+func (r *runner) enableViaFullProtection(ctx context.Context, underlying *github.Client, owner, repo, branch string, add []string) error {
 	protection, _, err := underlying.Repositories.GetBranchProtection(ctx, owner, repo, branch)
 	if err != nil {
 		return microerror.Mask(err)
 	}
 
-	merged := applyChecks(nil, r.flag.Checks, nil)
+	merged := applyChecks(nil, add, nil)
 	False := false
 
 	req := &github.ProtectionRequest{
@@ -145,7 +214,7 @@ func (r *runner) enableViaFullProtection(ctx context.Context, underlying *github
 		}
 	}
 
-	r.logger.Infof("%s/%s: enabling required checks %v on %q via full branch protection update", owner, repo, r.flag.Checks, branch)
+	r.logger.Infof("%s/%s: enabling required checks %v on %q via full branch protection update", owner, repo, add, branch)
 
 	_, _, err = underlying.Repositories.UpdateBranchProtection(ctx, owner, repo, branch, req)
 	return microerror.Mask(err)
@@ -173,4 +242,26 @@ func applyChecks(existing []*github.RequiredStatusCheck, add, remove []string) [
 		}
 	}
 	return merged
+}
+
+// splitReported partitions candidates into the names that appear in reported
+// (found) and the rest (skipped), in candidate order and without duplicates.
+func splitReported(candidates, reported []string) (found, skipped []string) {
+	seen := make(map[string]bool, len(reported))
+	for _, name := range reported {
+		seen[name] = true
+	}
+	done := make(map[string]bool, len(candidates))
+	for _, name := range candidates {
+		if done[name] {
+			continue
+		}
+		done[name] = true
+		if seen[name] {
+			found = append(found, name)
+		} else {
+			skipped = append(skipped, name)
+		}
+	}
+	return found, skipped
 }

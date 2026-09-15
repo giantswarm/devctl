@@ -8,54 +8,75 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/v8/pkg/gen"
+	"github.com/giantswarm/devctl/v8/pkg/gen/input/circleci"
 )
 
 const (
-	flagAppCatalog       = "app-catalog"
-	flagAppCatalogTest   = "app-catalog-test"
-	flagBranchPublish    = "branch-publish"
-	flagBuildConcurrency = "build-concurrency"
-	flagChartName        = "chart-name"
-	flagForcePublic      = "force-public"
-	flagImagePreBuildJob = "image-pre-build-job"
-	flagImagePrivateOnly = "image-private-only"
-	flagImageName        = "image-name"
-	flagImagePlatforms   = "image-platforms"
-	flagImageDockerfile  = "image-dockerfile"
-	flagResourceClass    = "resource-class"
-	flagSkipATS          = "skip-ats"
-	flagFlavour          = "flavour"
-	flagLanguage         = "language"
-	flagRepoName         = "repo-name"
-	flagPackageManager   = "package-manager"
-	flagNodeImageVersion = "node-image-version"
-	flagNodeTestTarget   = "node-test-target"
-	flagNodeBuildTarget  = "node-build-target"
-	flagNodeBuildOutput  = "node-build-output"
+	flagAppCatalog              = "app-catalog"
+	flagAppCatalogTest          = "app-catalog-test"
+	flagBranchPublish           = "branch-publish"
+	flagBuildConcurrency        = "build-concurrency"
+	flagChartName               = "chart-name"
+	flagKeepChartAppVersion     = "keep-chart-app-version"
+	flagOverrideChartAppVersion = "override-chart-app-version"
+	flagForcePublic             = "force-public"
+	flagGoBuildPath             = "go-build-path"
+	flagGoTestArtifacts         = "go-test-artifacts"
+	flagImagePreBuildJob        = "image-pre-build-job"
+	flagImagePrivateOnly        = "image-private-only"
+	flagImageName               = "image-name"
+	flagImagePlatforms          = "image-platforms"
+	flagImageDockerfile         = "image-dockerfile"
+	flagImageNativeBuilds       = "image-native-builds"
+	flagImageResourceClass      = "image-resource-class"
+	flagResourceClass           = "resource-class"
+	flagSkipATS                 = "skip-ats"
+	flagATSBranchOnly           = "ats-branch-only"
+	flagATSOnRelease            = "ats-on-release"
+	flagATSResourceClass        = "ats-resource-class"
+	flagATSVersion              = "ats-version"
+	flagFlavour                 = "flavour"
+	flagLanguage                = "language"
+	flagRepoName                = "repo-name"
+	flagPackageManager          = "package-manager"
+	flagNodeImageVersion        = "node-image-version"
+	flagNodeTestTarget          = "node-test-target"
+	flagNodeBuildTarget         = "node-build-target"
+	flagNodeBuildOutput         = "node-build-output"
 )
 
 type flag struct {
-	AppCatalog       string
-	AppCatalogTest   string
-	BranchPublish    bool
-	BuildConcurrency string
-	ChartName        string
-	ForcePublic      bool
-	ImagePreBuildJob string
-	ImagePrivateOnly bool
-	ImageName        string
-	ImagePlatforms   string
-	ImageDockerfile  string
-	ResourceClass    string
-	SkipATS          bool
-	Flavours         gen.FlavourSlice
-	Language         gen.Language
-	RepoName         string
-	PackageManager   string
-	NodeImageVersion string
-	NodeTestTarget   string
-	NodeBuildTarget  string
-	NodeBuildOutput  string
+	AppCatalog              string
+	AppCatalogTest          string
+	BranchPublish           bool
+	BuildConcurrency        string
+	ChartName               string
+	KeepChartAppVersion     bool
+	OverrideChartAppVersion bool
+	ForcePublic             bool
+	ImagePreBuildJob        string
+	ImagePrivateOnly        bool
+	ImageName               string
+	ImagePlatforms          string
+	ImageDockerfile         string
+	ImageNativeBuilds       bool
+	ImageResourceClass      []string
+	ResourceClass           string
+	GoBuildPath             string
+	GoTestArtifacts         string
+	SkipATS                 bool
+	ATSBranchOnly           bool
+	ATSOnRelease            bool
+	ATSResourceClass        string
+	ATSVersion              string
+	Flavours                gen.FlavourSlice
+	Language                gen.Language
+	RepoName                string
+	PackageManager          string
+	NodeImageVersion        string
+	NodeTestTarget          string
+	NodeBuildTarget         string
+	NodeBuildOutput         string
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
@@ -64,14 +85,26 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&f.BranchPublish, flagBranchPublish, false, "Publish a dev image and chart on branch builds. By default branches build + test only (no push); when set, the branch path additionally pushes an amd64 dev image and the dev chart (coupled).")
 	cmd.Flags().StringVar(&f.BuildConcurrency, flagBuildConcurrency, "", `Override how many architectures the cli-flavour go-build job compiles concurrently (architect go-build "build_concurrency" param). Empty defaults to "auto" (nproc). Lower it (e.g. "2") for repos whose binary is large enough that a cold full-matrix cross-compile OOMs the runner at "auto" -- memory, not CPU, is the binding constraint, and a killed build never stores the build cache. Only applies to the cli flavour.`)
 	cmd.Flags().StringVar(&f.ChartName, flagChartName, "", "Override the chart name (the push-to-app-catalog `chart` param and the helm/<chart> directory). Empty defaults to the repo name. Set it for repos whose chart directory does not match the repo name (e.g. docs-proxy -> docs-proxy-app). The append-only custom.yml merge cannot rename a generated job's chart.")
+	cmd.Flags().BoolVar(&f.OverrideChartAppVersion, flagOverrideChartAppVersion, true, "Whether app-build-suite stamps the computed build version into the chart's appVersion. Leave it UNSET to derive it from the repo: a repo that builds its own image ships the app it packages, so its appVersion is its own version and gets stamped; a chart-only repo packages an app built elsewhere, so the appVersion declared in Chart.yaml is kept. Pass it explicitly only to overrule that: `=false` for a repo that builds an image and still declares a foreign appVersion, `=true` for a chart-only repo that wants its appVersion stamped anyway. The chart version is always stamped either way.")
+	cmd.Flags().BoolVar(&f.KeepChartAppVersion, flagKeepChartAppVersion, false, "Deprecated alias for --override-chart-app-version=false.")
+	_ = cmd.Flags().MarkDeprecated(flagKeepChartAppVersion, fmt.Sprintf("use --%s=false", flagOverrideChartAppVersion))
 	cmd.Flags().BoolVar(&f.ForcePublic, flagForcePublic, false, "Push the image and chart as public artifacts even though the repo is private (architect `force-public: true`). Set it for private repos that publish public artifacts (e.g. web-assets). Mutually exclusive with --image-private-only. The append-only custom.yml merge cannot add this to a generated job.")
 	cmd.Flags().StringVar(&f.ImagePreBuildJob, flagImagePreBuildJob, "", "Name of a repo-owned job (defined in .circleci/custom.yml) the release image build must wait on. Adds a `requires` entry to push-to-registries-release, which the append-only custom.yml merge cannot inject into a generated job. Used for workspace-handoff pre-steps. Empty for the common case.")
 	cmd.Flags().BoolVar(&f.ImagePrivateOnly, flagImagePrivateOnly, false, "Ship the image to the private registry only (gsociprivate), replacing split-china-push and omitting the sync-china-registry job. Set it for private repos whose image must not land in the public catalog.")
 	cmd.Flags().StringVar(&f.ImageName, flagImageName, "", "Override the `giantswarm/<repo>` default image name on the image jobs (push-to-registries / sync-china-registry `image` param). Set it for repos whose published image differs from the repo name (e.g. kserve -> giantswarm/kserve-controller). The append-only custom.yml merge cannot rename a generated job's image. Empty keeps the orb default.")
 	cmd.Flags().StringVar(&f.ImagePlatforms, flagImagePlatforms, "", "Override the buildx platform list on the image jobs (push-to-registries `platforms` param). Empty lets the orb default apply (linux/amd64,linux/arm64 when no go-build .platforms file). Set it for single-architecture images (e.g. vllm -> linux/arm64, whose amd64 build has no prebuilt wheels).")
 	cmd.Flags().StringVar(&f.ImageDockerfile, flagImageDockerfile, "", "Override the Dockerfile path on the image jobs (push-to-registries `dockerfile` param). Set it for repos whose Dockerfile is not at the repo root (e.g. backstage -> packages/backend/Dockerfile); a non-empty value also turns the image pipeline on, since the root-Dockerfile derivation misses a nested Dockerfile. The append-only custom.yml merge cannot set this on a generated job. Empty keeps the orb default.")
+	cmd.Flags().BoolVar(&f.ImageNativeBuilds, flagImageNativeBuilds, false, "Build the image one architecture per job on a native resource class instead of one multi-platform buildx job. Emits an architect/build-image job per entry in --image-platforms (linux/amd64 on small, linux/arm64 on arm.medium) and switches the generated push-to-registries jobs to merge-digests: true, which joins the per-architecture digests into the tagged index. Nothing is emulated and the builds run concurrently, so wall clock is the slower single native build; pays off for Dockerfiles with real work in RUN steps (apt, pip, yarn, native modules), not for a COPY of a cross-compiled binary. A platform with no native class is rejected at generation time. On the branch path the validate-only build-image job becomes build-image-<arch> jobs, so a custom.yml that requires build-image must follow. Requires architect-orb 10.2.0.")
+	cmd.Flags().StringSliceVar(&f.ImageResourceClass, flagImageResourceClass, nil, "Override the CircleCI resource_class of a native build-image job, as <platform>=<class> (repeatable, e.g. linux/arm64=arm.large). Applies to both the branch and the release leg of that platform. Defaults are linux/amd64 on small and linux/arm64 on arm.medium; raise it for an image whose export, compression or SBOM scan of a very large result dominates the leg (vllm: 22 GB on the 2-vCPU arm.medium). The class must belong to the platform's architecture (amd64: small, medium, medium+, large, xlarge; arm64: arm.medium, arm.large, arm.xlarge, arm.2xlarge) and the platform must be in --image-platforms; both are checked at generation time, since the orb has no emulated fallback. Only applies with --image-native-builds.")
 	cmd.Flags().StringVar(&f.ResourceClass, flagResourceClass, "", `Override the CircleCI resource_class on the cli-flavour go-build job. Empty defaults to "large". Raise it (e.g. "xlarge") for repos that need more RAM/CPU headroom for the cold cross-compile. Only applies to the cli flavour.`)
+	cmd.Flags().StringVar(&f.GoBuildPath, flagGoBuildPath, "", `Override the package the go-build job compiles. Empty keeps the orb default "." (the module root).`)
+	cmd.Flags().StringVar(&f.GoTestArtifacts, flagGoTestArtifacts, "", "Directory under the checkout that `make test` writes and that the go-build job keeps as a CircleCI build artifact when it fails (e.g. test-reports). Renders post-steps on the generated architect/go-build job: the directory is staged when: on_fail and uploaded with store_artifacts, so a green run stores nothing. For test suites whose full report (per-scenario logs, JSON results) the console output only shows a trimmed tail of, so that a failure is attributable from the artifact. The append-only custom.yml merge cannot add post-steps to a generated job. Must be a relative path under the checkout ([A-Za-z0-9._/-]). Empty renders no post-steps. Only applies with --language=go.")
 	cmd.Flags().BoolVar(&f.SkipATS, flagSkipATS, false, `Opt the chart pipeline out of app-test-suite (ATS) chart tests. By default an "app" flavour repo runs architect/run-tests-with-ats between build-chart and the chart push, and generation emits the canonical tests/ats/Pipfile. When set, those test jobs and the Pipfile are not generated and the chart push gates directly on build-chart. Only applies to the app flavour.`)
+	cmd.Flags().BoolVar(&f.ATSBranchOnly, flagATSBranchOnly, false, "Deprecated and ignored: chart tests on branches only is the default since v8.45.0.")
+	_ = cmd.Flags().MarkDeprecated(flagATSBranchOnly, fmt.Sprintf("branch-only chart tests are the default; drop the flag, or pass --%s to run them on the release tag as well", flagATSOnRelease))
+	cmd.Flags().BoolVar(&f.ATSOnRelease, flagATSOnRelease, false, `Also run the app-test-suite (ATS) chart tests on the release tag. By default the chart pipeline runs architect/run-tests-with-ats once, as execute-chart-tests on every branch build, and the release tag only builds and pushes the chart (push-chart-release gates on build-chart): the tag is cut from the merge commit of a PR whose branch run already tested that tree. When set, the pre-v8.45.0 shape is generated: an additional execute-chart-tests-release job runs on the tag, after the release image when there is one, and push-chart-release gates on it. Set it for a repo whose .circleci/custom.yml jobs require execute-chart-tests-release, or whose branch protection does not make the ci/circleci statuses required checks so the tag-time run is the only enforced one. Mutually exclusive with --skip-ats. Only applies to the app flavour.`)
+	cmd.Flags().StringVar(&f.ATSResourceClass, flagATSResourceClass, "", `Override the CircleCI resource_class of the generated chart-test jobs (run-tests-with-ats resource_class on execute-chart-tests and, with --ats-on-release, execute-chart-tests-release). One of "medium", "large", "xlarge", "2xlarge"; empty renders nothing and the orb default "medium" (2 vCPU / 7.5 GB) applies. Raise it for chart tests that run a real workload on the job's kind cluster beside the chart under test (e.g. the kagent API v2 runtime with Agent Substrate). Deliberately separate from --resource-class, which sizes the cli go-build and the Node job. The kind cluster's configuration is not a flag: a kind Cluster file at .ats/kind-config.yaml in the repo is passed to both jobs as kind_config. Only applies to the app flavour without --skip-ats; rejected otherwise.`)
+	cmd.Flags().StringVar(&f.ATSVersion, flagATSVersion, circleci.DefaultATSVersion, `app-test-suite container tag the generated chart-test jobs run (run-tests-with-ats app-test-suite_container_tag). A 1.x tag (the default) also sets create_kind_cluster: true on both jobs -- app-test-suite 1.x no longer provisions clusters, the job creates the kind cluster and hands over its kubeconfig -- and switches the generated test dependency file from tests/ats/Pipfile (pipenv, ATS <= 0.15) to tests/ats/pyproject.toml + uv.lock (uv, ATS 1.x), deleting the Pipfile. The repo migrates the rest itself (.ats/main.yaml without the *-cluster-type keys, tests that install with Helm instead of an App CR); until it has, a 0.x tag such as 0.15.0 keeps the legacy dats.sh path and the Pipfile. Empty selects the default. Ignored with --skip-ats. Only applies to the app flavour.`)
 	cmd.Flags().VarP(gen.NewFlavourSliceFlagValue(&f.Flavours, gen.FlavourSlice{}), flagFlavour, "f", fmt.Sprintf(`List of project flavours. The "app" flavour selects the chart pipeline. Possible values: <%s>`, strings.Join(gen.AllFlavours(), "|")))
 	cmd.Flags().VarP(gen.NewLanguageFlagValue(&f.Language, gen.Language("")), flagLanguage, "l", fmt.Sprintf(`The programming language. "go" selects the go-build job. Possible values: <%s>`, strings.Join(gen.AllLanguages(), "|")))
 	cmd.Flags().StringVarP(&f.RepoName, flagRepoName, "r", "", "Repository name under the giantswarm organization (used for the binary, chart, and job names).")
@@ -89,6 +122,43 @@ func (f *flag) Validate() error {
 	if f.ForcePublic && f.ImagePrivateOnly {
 		return microerror.Maskf(invalidFlagError, "--%s and --%s are mutually exclusive", flagForcePublic, flagImagePrivateOnly)
 	}
+	if f.SkipATS && f.ATSOnRelease {
+		return microerror.Maskf(invalidFlagError, "--%s and --%s are mutually exclusive", flagSkipATS, flagATSOnRelease)
+	}
+	if f.ATSBranchOnly && f.ATSOnRelease {
+		return microerror.Maskf(invalidFlagError, "--%s (deprecated, the default) and --%s are mutually exclusive", flagATSBranchOnly, flagATSOnRelease)
+	}
+	if len(f.ImageResourceClass) > 0 && !f.ImageNativeBuilds {
+		return microerror.Maskf(invalidFlagError, "--%s only applies with --%s", flagImageResourceClass, flagImageNativeBuilds)
+	}
+	if _, err := f.imageResourceClasses(); err != nil {
+		return microerror.Mask(err)
+	}
 
 	return nil
+}
+
+// imageResourceClasses parses the repeatable --image-resource-class
+// <platform>=<class> entries into the per-platform override map. Whether the
+// class fits the platform is the generator's check (it owns the class table);
+// this only rejects malformed and duplicate entries.
+func (f *flag) imageResourceClasses() (map[string]string, error) {
+	if len(f.ImageResourceClass) == 0 {
+		return nil, nil
+	}
+
+	classes := make(map[string]string, len(f.ImageResourceClass))
+	for _, entry := range f.ImageResourceClass {
+		platform, class, ok := strings.Cut(strings.TrimSpace(entry), "=")
+		platform, class = strings.TrimSpace(platform), strings.TrimSpace(class)
+		if !ok || platform == "" || class == "" {
+			return nil, microerror.Maskf(invalidFlagError, "--%s expects <platform>=<class> (e.g. linux/arm64=arm.large), got %#q", flagImageResourceClass, entry)
+		}
+		if _, dup := classes[platform]; dup {
+			return nil, microerror.Maskf(invalidFlagError, "--%s names platform %#q twice", flagImageResourceClass, platform)
+		}
+		classes[platform] = class
+	}
+
+	return classes, nil
 }

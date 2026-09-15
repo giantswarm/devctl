@@ -5,7 +5,7 @@
 # workflow in .circleci/config.yml merges into this file at pipeline runtime.
 version: 2.1
 orbs:
-  architect: giantswarm/architect@10.0.0
+  architect: giantswarm/architect@10.5.0
 
 jobs:
   # Self-contained Node build/test on a cimg/node executor (architect ships no
@@ -15,7 +15,7 @@ jobs:
   # repo redirects its bespoke toolchain by editing those scripts, not this job.
   node-test:
     docker:
-    - image: cimg/node:24.19.0
+    - image: cimg/node:24.20.0
     resource_class: large
     steps:
     - checkout
