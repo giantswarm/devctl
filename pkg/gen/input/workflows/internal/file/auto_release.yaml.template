@@ -281,6 +281,7 @@ jobs:
       # gitsemver, gh release view -- both behave identically. Nothing in the
       # giantswarm stack distinguishes them.
       - name: Create release (and the tag, atomically)
+        id: release
         if: steps.decide.outputs.tag != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -75,9 +75,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - `gen workflows`: the `auto-release` flow renders the release notes after it decides which tag to cut, so
   the "Full Changelog" compare link on a release candidate points at the tag that was created
-  (`compare/v0.1.5...v0.1.6-rc.1`). It pointed at the stable target the candidates lead to, which has no tag
-  until the cycle closes, so the link 404d on every candidate page. The render still reads the cached
-  git-cliff context, so the workflow still makes one expensive git-cliff call.
+  (`compare/v0.1.5...v0.1.6-rc.1`) instead of at the stable target, which has no tag until the cycle closes.
 - `gen makefile`: the `app` flavour's targets (`helm-docs`, `lint-chart`, `update-chart`, `update-deps`) work
   on repositories that also have the `go` flavour. The root `Makefile` includes `Makefile.*.mk` in name order,
   so `Makefile.gen.app.mk` is parsed before `Makefile.gen.go.mk` sets `APPLICATION` from the Go module; the

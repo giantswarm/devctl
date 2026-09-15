@@ -525,7 +525,9 @@ func runNotes(t *testing.T, script, dir, bin, tag string) ([]byte, error) {
 // Test_AutoReleaseNotesUseTheTaggedVersion pins the version the notes carry.
 // cliff.toml renders `{{ version }}` from the context into the "Full Changelog"
 // compare link, so the context has to name the tag the workflow cuts, not the
-// stable target it bumped to.
+// stable target it bumped to. The stub stands in for git-cliff, so what is
+// pinned is the version the render is handed, not the link cliff.toml builds
+// out of it.
 func Test_AutoReleaseNotesUseTheTaggedVersion(t *testing.T) {
 	notes := tagJobStep(t, "notes")
 
@@ -551,7 +553,9 @@ func Test_AutoReleaseNotesUseTheTaggedVersion(t *testing.T) {
 
 // Test_AutoReleaseNotesRejectAnEmptyContext pins the guard on the patch. jq
 // builds `[{"version": $tag}]` out of an empty context, which renders empty
-// notes onto a tag that is about to be created.
+// notes onto a tag that is about to be created. The decide step reads the same
+// field and skips the tag when it is empty, so the guard only catches a context
+// that the two steps disagree about.
 func Test_AutoReleaseNotesRejectAnEmptyContext(t *testing.T) {
 	dir, bin := notesEnv(t, `[]`)
 
@@ -569,25 +573,23 @@ func Test_AutoReleaseNotesRejectAnEmptyContext(t *testing.T) {
 // `gh release create` reads release-notes.md, so a render below the release
 // fails the run on a missing file.
 func Test_AutoReleaseRenderOrder(t *testing.T) {
-	const releaseStep = "Create release (and the tag, atomically)"
-
 	steps, rendered := tagJobSteps(t)
 
 	decideAt, notesAt, releaseAt := -1, -1, -1
 	for i, s := range steps {
-		switch {
-		case s.ID == "decide":
+		switch s.ID {
+		case "decide":
 			decideAt = i
-		case s.ID == "notes":
+		case "notes":
 			notesAt = i
-		case s.Name == releaseStep:
+		case "release":
 			releaseAt = i
 		}
 	}
 
 	if decideAt < 0 || notesAt < 0 || releaseAt < 0 {
-		t.Fatalf("tag job is missing decide (%d), notes (%d) or %q (%d):\n%s",
-			decideAt, notesAt, releaseStep, releaseAt, rendered)
+		t.Fatalf("tag job is missing decide (%d), notes (%d) or release (%d):\n%s",
+			decideAt, notesAt, releaseAt, rendered)
 	}
 	if notesAt < decideAt {
 		t.Errorf("notes step is at %d, before the decide step at %d", notesAt, decideAt)
