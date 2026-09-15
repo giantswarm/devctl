@@ -92,32 +92,13 @@
       ],
       datasourceTemplate: 'github-tags',
     },
-    // The two binaries pinned in `additional_dependencies` of the local helm-schema
-    // pipeline hook in the pre-commit config template: `schemalint` (normalizer) and
-    // `helm-values-schema-json` (generator). This is the ONLY pin for either of them --
-    // the hook installs both itself, so a developer machine and CI run identical versions.
-    // The `schemalint` packageRule below groups this with the `- repo:`/`rev:` entry for
-    // the same tool, so the normalizing binary never drifts from the verifying one -- a
-    // version skew between them could reintroduce the rival-formatter conflict
-    // (giantswarm/giantswarm#37267).
-    //
-    // These are Go module paths, tracked with the `go` datasource rather than github-tags
-    // on the repos: a regex manager only rewrites the captured version, not the `/v2` in
-    // the path, so github-tags offering a v3 tag would produce
-    // `github.com/giantswarm/schemalint/v2@v3.0.0`, which `go install` rejects -- and the
-    // breakage would only surface downstream, at pre-commit env install in every generated
-    // chart repo. The `go` datasource for a `/v2` path can only ever offer v2.x, so the
-    // pins cannot go invalid; a major needs a manual edit of the path here (and, for
-    // schemalint, of the `rev:` too -- see the major-update rule below).
-    {
-      customType: 'regex',
-      managerFilePatterns: ['/pre-commit-config\\.yaml\\.template$/'],
-      matchStrings: [
-        '\'(?<depName>github\\.com/giantswarm/schemalint/v2)@(?<currentValue>[^\']+)\'',
-        '\'(?<depName>github\\.com/losisin/helm-values-schema-json/v2)@(?<currentValue>[^\']+)\'',
-      ],
-      datasourceTemplate: 'go',
-    },
+    // `schemalint` (normalizer) and `helm-values-schema-json` (generator) used to be
+    // pinned as literals in the pre-commit config template and needed a custom manager
+    // here. devctl#2195 made it import both as Go libraries and stamp the template's
+    // `additional_dependencies` and the `schemalint-verify` `rev:` from its own go.mod, so
+    // the built-in gomod manager is now the single place either version moves. Nothing in
+    // the template carries a literal version for them any more, and a regex manager that
+    // matched one would fight go.mod.
     // helm-docs version pinned as an env var in the pre-commit GitHub Actions workflow
     // template, and passed to the reusable sync-from-upstream workflow, which installs the
     // same tools to run the same hooks. Both pins have to move in one PR: sync-from-upstream
@@ -206,20 +187,20 @@
       groupName: 'ATS test dependencies',
     },
     {
-      // schemalint is pinned twice in the pre-commit config template: as the
-      // `schemalint-verify` hook `rev:` (github-tags on the repo) and as the Go module in
-      // the pipeline hook's `additional_dependencies` (the `go` datasource -- the two
-      // datasources are unavoidable, see the custom manager above). Keep them in one PR so
-      // the normalizing binary and the verifying one never land on different versions.
-      matchDepNames: ['giantswarm/schemalint', 'github.com/giantswarm/schemalint/v2'],
-      groupName: 'schemalint',
+      // The `schemalint-verify` `rev:` in the pre-commit config template is now
+      // `{{ $.SchemalintVersion }}`, stamped from devctl's own go.mod (devctl#2195), so the
+      // generic `- repo:`/`rev:` manager above captures a template expression instead of a
+      // version. Disable that entry: go.mod is the single pin, and the gomod manager moves
+      // it under the `github.com/giantswarm/schemalint/v2` name below.
+      matchDepNames: ['giantswarm/schemalint'],
+      enabled: false,
     },
     {
-      // A schemalint major moves the Go module path (`/v2` -> `/v3`), which no regex
-      // manager can rewrite -- the template needs a hand edit. Park majors on the
-      // dependency dashboard instead of opening a PR that would bump `rev:` while leaving
-      // an uninstallable module pin behind.
-      matchDepNames: ['giantswarm/schemalint', 'github.com/giantswarm/schemalint/v2'],
+      // A schemalint major moves the Go module path (`/v2` -> `/v3`), which the gomod
+      // manager cannot rewrite -- go.mod and the import in
+      // pkg/gen/input/precommit/internal/file/values_schema.go need a hand edit together.
+      // Park majors on the dependency dashboard instead of opening a PR that cannot build.
+      matchDepNames: ['github.com/giantswarm/schemalint/v2'],
       matchUpdateTypes: ['major'],
       dependencyDashboardApproval: true,
     },

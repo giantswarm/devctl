@@ -35,10 +35,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   generated pre-commit hook. The hook is now read-only: it reproduces the same pipeline to a
   scratch file and fails on a diff against the committed file, but never rewrites it, so it can no
   longer fight `schemalint-verify` or itself over key ordering (giantswarm/giantswarm#37267). Its
-  failure message points at `devctl gen precommit` as the fix. Both `helm-values-schema-json` and
-  `schemalint` versions pinned by the hook's `additional_dependencies` are now read from devctl's
-  own `go.mod` at build time, so it is the single source of truth instead of a second hardcoded
-  literal in the template. See giantswarm/devctl#2195.
+  failure message points at `devctl gen precommit` as the fix. Every `schemalint` and
+  `helm-values-schema-json` version in the generated config -- the hook's
+  `additional_dependencies` and the `schemalint-verify` hook's `rev:` -- is now read from devctl's
+  own `go.mod` at build time, so it is the single source of truth instead of a hardcoded literal
+  in the template. The normalizing binary and the verifying one cannot land on different versions
+  any more. Output is unchanged at the current pin. See giantswarm/devctl#2195.
+
+  This moves one network call from pre-commit into `devctl gen precommit`. A chart whose
+  `values.yaml` uses the `$ref: $k8s/...` alias makes the generator fetch the Kubernetes JSON
+  schema from `raw.githubusercontent.com` and bundle it, so `gen precommit` fails for that chart
+  while the host is unreachable. It names the URL it could not read. Charts without the alias
+  generate offline, as before.
 - `gen`: an `input.Input` that sets both `Generate` and `TemplateBody` is now rejected with an
   `invalidInputError` instead of silently running `Generate` and ignoring the template. The two
   fields are two ways to produce the same file, and which one won was only an accident of the order

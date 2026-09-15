@@ -33,11 +33,7 @@ func Test_NewCreateValuesSchemaInput(t *testing.T) {
 		t.Fatalf("setup failed: %v", err)
 	}
 
-	origDir, _ := os.Getwd()
-	if err := os.Chdir(dir); err != nil {
-		t.Fatalf("chdir failed: %v", err)
-	}
-	defer func() { _ = os.Chdir(origDir) }()
+	t.Chdir(dir)
 
 	p := params.Params{K8sSchemaVersion: "v1.33.1"}
 	in := NewCreateValuesSchemaInput(p, "test-chart")

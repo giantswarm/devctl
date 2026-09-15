@@ -171,8 +171,12 @@ repos:
               echo "helm/{{.}}/values.schema.json is out of date -- run 'devctl gen precommit' and commit the result" >&2
               exit 1
             fi
+{{- /* `rev:` is stamped from the same go.mod pin as the hook above, not a literal: it is
+a git tag, and the module version of a module rooted at the repo root IS that tag, so the
+normalizing binary cannot drift from the verifying one (giantswarm/giantswarm#37267).
+A template comment, so the generated config stays byte-identical to the old literal. */}}
   - repo: https://github.com/giantswarm/schemalint
-    rev: v2.6.3
+    rev: {{ $.SchemalintVersion }}
     hooks:
       - id: schemalint-verify
         pass_filenames: false

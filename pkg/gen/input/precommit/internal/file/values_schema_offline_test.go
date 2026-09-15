@@ -40,11 +40,7 @@ func Test_NewCreateValuesSchemaInput_unreachableSchemaHost(t *testing.T) {
 		t.Fatalf("setup failed: %v", err)
 	}
 
-	origDir, _ := os.Getwd()
-	if err := os.Chdir(dir); err != nil {
-		t.Fatalf("chdir failed: %v", err)
-	}
-	defer func() { _ = os.Chdir(origDir) }()
+	t.Chdir(dir)
 
 	// Not the default v1.33.1: the version in the URL must come from the parameter.
 	p := params.Params{K8sSchemaVersion: "v1.29.0"}

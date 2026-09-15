@@ -38,30 +38,21 @@ var k8sSchemaURLFormat = "https://raw.githubusercontent.com/yannh/kubernetes-jso
 // *bool (nil means "unset", vs. an explicit false).
 func boolPtr(b bool) *bool { return &b }
 
-func generateValuesSchema(ctx context.Context, p params.Params, chartName string) ([]byte, error) {
-	// helm-values-schema-json only writes its output to a file path (there is no
-	// bytes-returning API), so we point it at a scratch file and read the result back
-	// rather than at the real committed path -- the pipeline's later steps still have to
-	// run before anything is written to helm/<chart>/values.schema.json.
-	tmp, err := os.CreateTemp("", "values.schema-*.json")
-	if err != nil {
-		return nil, microerror.Mask(err)
-	}
-	tmpPath := tmp.Name()
-	_ = tmp.Close()
-	defer func() { _ = os.Remove(tmpPath) }()
-
-	// Field-for-field the same config as schema.yaml.template; see that file for the
-	// rationale behind each value (bundling, the k8sSchemaURL/k8sSchemaVersion split,
-	// noAdditionalProperties, etc.).
-	cfg := &schemagen.Config{
+// newSchemaGenConfig builds the helm-values-schema-json config for chartName, writing the
+// generated schema to output. It is field-for-field the same config as
+// schema.yaml.template, which the read-only pre-commit hook passes to the same library via
+// --config; see that file for the rationale behind each value (bundling, the
+// k8sSchemaURL/k8sSchemaVersion split, noAdditionalProperties, etc.), and
+// values_schema_config_test.go for the guard that keeps the two from drifting apart.
+func newSchemaGenConfig(p params.Params, chartName, output string) *schemagen.Config {
+	return &schemagen.Config{
 		Values: []string{
 			filepath.Join(p.Dir, "helm", chartName, "zz_generated.app-platform.values.yaml"),
 			filepath.Join(p.Dir, "helm", chartName, "values.yaml"),
 		},
 		Draft:  2020,
 		Indent: 4,
-		Output: tmpPath,
+		Output: output,
 
 		Bundle:          true,
 		BundleRoot:      "",
@@ -84,6 +75,22 @@ func generateValuesSchema(ctx context.Context, p params.Params, chartName string
 			AdditionalProperties: boolPtr(false),
 		},
 	}
+}
+
+func generateValuesSchema(ctx context.Context, p params.Params, chartName string) ([]byte, error) {
+	// helm-values-schema-json only writes its output to a file path (there is no
+	// bytes-returning API), so we point it at a scratch file and read the result back
+	// rather than at the real committed path -- the pipeline's later steps still have to
+	// run before anything is written to helm/<chart>/values.schema.json.
+	tmp, err := os.CreateTemp("", "values.schema-*.json")
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
+	tmpPath := tmp.Name()
+	_ = tmp.Close()
+	defer func() { _ = os.Remove(tmpPath) }()
+
+	cfg := newSchemaGenConfig(p, chartName, tmpPath)
 
 	if err := schemagen.GenerateJsonSchema(ctx, cfg); err != nil {
 		return nil, microerror.Mask(err)

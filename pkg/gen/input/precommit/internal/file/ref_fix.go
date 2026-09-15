@@ -1,7 +1,6 @@
 package file
 
 import (
-	"bytes"
 	"encoding/json"
 
 	"github.com/giantswarm/microerror"
@@ -19,11 +18,8 @@ import (
 // See Test_RefFixGo_MatchesPython, which checks exactly that against Test_RefFixPython's
 // fixture.
 func refFixGo(data []byte) ([]byte, error) {
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.UseNumber() // preserve numeric formatting instead of round-tripping through float64
-
 	var doc interface{}
-	if err := dec.Decode(&doc); err != nil {
+	if err := json.Unmarshal(data, &doc); err != nil {
 		return nil, microerror.Mask(err)
 	}
 

@@ -141,13 +141,14 @@ func pinnedVersions() (helmValuesSchemaJSONVersion, schemalintVersion string) {
 		return helmValuesSchemaJSONVersion, schemalintVersion
 	}
 
-	// ponytail: debug.ReadBuildInfo().Deps is only populated for a real `go build`
-	// binary -- a `go test` binary always reports it empty -- so tests exercising this
-	// path would otherwise never see a version. Fall back to reading go.mod straight off
-	// disk, found by walking up from this very source file. Only `go test`/`go run`
-	// invocations take this path; the released `devctl` binary always resolves both
-	// versions from build info above. Upgrade path: none needed unless Go starts
-	// populating test-binary build info, at which point this fallback just stops firing.
+	// ponytail: debug.ReadBuildInfo().Deps is only populated for a real `go build` binary
+	// -- a `go test` binary always reports it empty -- so tests would otherwise never see
+	// a version. Fall back to reading go.mod straight off disk, found by walking up from
+	// this very source file. Ceiling: that only resolves while the source tree is on disk
+	// (`go test`, `go run`). Released binaries are built with -trimpath
+	// (Makefile.gen.go.mk), which rewrites runtime.Caller(0) to a path that exists
+	// nowhere, so there the fallback returns empty and New() fails with the clear error
+	// above -- build info, not this, is what covers a released binary.
 	return pinnedVersionsFromGoMod()
 }
 
