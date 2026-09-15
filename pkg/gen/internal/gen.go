@@ -14,6 +14,17 @@ import (
 func Execute(ctx context.Context, w io.Writer, f input.Input) error {
 	var err error
 
+	if f.Generate != nil {
+		content, err := f.Generate(ctx)
+		if err != nil {
+			return microerror.Mask(err)
+		}
+		if _, err := w.Write(content); err != nil {
+			return microerror.Mask(err)
+		}
+		return nil
+	}
+
 	tmpl := template.New(fmt.Sprintf("%T", f))
 
 	emptyDelims := input.InputTemplateDelims{}

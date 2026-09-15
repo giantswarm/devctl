@@ -1,6 +1,7 @@
 package input
 
 import (
+	"context"
 	"io/fs"
 )
 
@@ -23,6 +24,12 @@ type Input struct {
 	TemplateDelims InputTemplateDelims
 	// SkipRegenCheck if set skips over the `isRegenerable` check when creating files
 	SkipRegenCheck bool
+	// Generate, when set, produces the file's content directly instead of
+	// executing TemplateBody. Used for content that isn't template-shaped Go
+	// text, e.g. computed by calling another library in-process (such as
+	// helm/<chart>/values.schema.json, see the precommit input package).
+	// TemplateBody is ignored when Generate is set.
+	Generate func(ctx context.Context) ([]byte, error)
 }
 
 type InputTemplateDelims struct {

@@ -32,4 +32,11 @@ type Params struct {
 	// eslint/prettier toolchain. No per-script knob: the repo converges its
 	// scripts to the convention, the generator does not bend to the repo.
 	NodeDevLintHook bool
+	// HelmValuesSchemaJSONVersion and SchemalintVersion pin the generated helm-schema
+	// hook's `additional_dependencies`. Read from devctl's own build info (go.mod is
+	// the single source of truth) rather than hardcoded in the template, so the hook
+	// always installs the exact versions devctl itself uses to generate
+	// values.schema.json. Set only when the helmchart flavor is active.
+	HelmValuesSchemaJSONVersion string
+	SchemalintVersion           string
 }

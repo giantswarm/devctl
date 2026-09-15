@@ -29,6 +29,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- `gen precommit`: `devctl gen precommit` now writes `helm/<chart>/values.schema.json` itself,
+  in-process (generate via `helm-values-schema-json`, fix `$ref`+`additionalProperties: false` ->
+  `unevaluatedProperties: false`, normalize via `schemalint`), instead of leaving it to the
+  generated pre-commit hook. The hook is now read-only: it reproduces the same pipeline to a
+  scratch file and fails on a diff against the committed file, but never rewrites it, so it can no
+  longer fight `schemalint-verify` or itself over key ordering (giantswarm/giantswarm#37267). Its
+  failure message points at `devctl gen precommit` as the fix. Both `helm-values-schema-json` and
+  `schemalint` versions pinned by the hook's `additional_dependencies` are now read from devctl's
+  own `go.mod` at build time, so it is the single source of truth instead of a second hardcoded
+  literal in the template. See giantswarm/devctl#2195.
+
 - `gen circleci`: the generated chart-test jobs (`execute-chart-tests` and, with `--ats-on-release`,
   `execute-chart-tests-release`) let the repository shape and size the kind cluster they test on
   (devctl#2188, architect-orb#928):
