@@ -19,11 +19,11 @@ func NewGitleaksInput(p params.Params) input.Input {
 		Path:         params.RegenerableFileName(p, "gitleaks.yaml"),
 		TemplateBody: gitleaksTemplate,
 		TemplateDelims: input.InputTemplateDelims{
-			Left:  "{{{{",
-			Right: "}}}}",
+			Left:  templateDelimLeft,
+			Right: templateDelimRight,
 		},
 		TemplateData: map[string]interface{}{
-			"Header": params.Header("#", gitleaksTemplateSha),
+			templateKeyHeader: params.Header("#", gitleaksTemplateSha),
 		},
 	}
 

@@ -57,12 +57,12 @@ func NewCliffTomlInput() input.Input {
 		SkipRegenCheck: true,
 		TemplateBody:   cliffTomlTemplate,
 		TemplateDelims: input.InputTemplateDelims{
-			Left:  "{{{{",
-			Right: "}}}}",
+			Left:  templateDelimLeft,
+			Right: templateDelimRight,
 		},
 		TemplateData: map[string]interface{}{
-			"Header":   params.Header("#", cliffTomlTemplateSha),
-			"RepoName": detectRepoName(),
+			templateKeyHeader: params.Header("#", cliffTomlTemplateSha),
+			"RepoName":        detectRepoName(),
 		},
 	}
 }

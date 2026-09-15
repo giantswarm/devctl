@@ -19,11 +19,11 @@ func NewUpdateChartInput(p params.Params) input.Input {
 		Path:         params.RegenerableFileName(p, "update_chart.yaml"),
 		TemplateBody: updateChartTemplate,
 		TemplateDelims: input.InputTemplateDelims{
-			Left:  "{{{{",
-			Right: "}}}}",
+			Left:  templateDelimLeft,
+			Right: templateDelimRight,
 		},
 		TemplateData: map[string]interface{}{
-			"Header": params.Header("#", updateChartTemplateSha),
+			templateKeyHeader: params.Header("#", updateChartTemplateSha),
 		},
 	}
 

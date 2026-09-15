@@ -19,12 +19,12 @@ func NewCheckValuesSchemaInput(p params.Params) input.Input {
 		Path:         params.RegenerableFileName(p, "check_values_schema.yaml"),
 		TemplateBody: checkValuesSchemaTemplate,
 		TemplateDelims: input.InputTemplateDelims{
-			Left:  "{{{{",
-			Right: "}}}}",
+			Left:  templateDelimLeft,
+			Right: templateDelimRight,
 		},
 		TemplateData: map[string]interface{}{
-			"Header":        params.Header("#", checkValuesSchemaTemplateSha),
-			"SchemaDocsURL": "https://intranet.giantswarm.io/docs/organizational-structure/teams/cabbage/app-updates/helm-values-schema/",
+			templateKeyHeader: params.Header("#", checkValuesSchemaTemplateSha),
+			"SchemaDocsURL":   "https://intranet.giantswarm.io/docs/organizational-structure/teams/cabbage/app-updates/helm-values-schema/",
 		},
 	}
 

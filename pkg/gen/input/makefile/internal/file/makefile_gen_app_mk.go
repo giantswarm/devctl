@@ -19,7 +19,7 @@ func NewMakefileGenAppMkInput(p params.Params) input.Input {
 		Path:         "Makefile.gen.app.mk",
 		TemplateBody: makefileGenAppMkTemplate,
 		TemplateData: map[string]interface{}{
-			"Header": params.Header("#", makefileGenAppMkTemplateSha),
+			templateKeyHeader: params.Header("#", makefileGenAppMkTemplateSha),
 		},
 	}
 

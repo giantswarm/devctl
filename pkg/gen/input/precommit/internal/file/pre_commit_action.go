@@ -21,14 +21,15 @@ func NewCreatePreCommitActionInput(p params.Params) input.Input {
 		TemplateBody: createPreCommitActionTemplate,
 		// Use non-default delimiters so Go's template engine does not interpret
 		// the GitHub Actions ${{ }} expressions in the file content.
-		TemplateDelims: input.InputTemplateDelims{Left: "[[", Right: "]]"},
+		TemplateDelims: input.InputTemplateDelims{Left: templateDelimLeft, Right: templateDelimRight},
 		TemplateData: map[string]interface{}{
-			"Header":       params.Header("#", createPreCommitActionTemplateSha),
-			"Language":     p.Language,
-			"HasBash":      params.HasFlavor(p, "bash"),
-			"HasMd":        params.HasFlavor(p, "md"),
-			"HasHelmchart": params.HasFlavor(p, "helmchart"),
-			"RepoName":     p.RepoName,
+			templateKeyHeader: params.Header("#", createPreCommitActionTemplateSha),
+			"Language":        p.Language,
+			"HasBash":         params.HasFlavor(p, "bash"),
+			"HasMd":           params.HasFlavor(p, "md"),
+			"HasHelmchart":    params.HasFlavor(p, "helmchart"),
+			"RepoName":        p.RepoName,
+			"GoGenerate":      p.GoGenerate,
 		},
 	}
 }

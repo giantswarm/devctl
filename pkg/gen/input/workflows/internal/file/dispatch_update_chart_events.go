@@ -19,11 +19,11 @@ func NewDispatchUpdateChartEventsInput(p params.Params, targetRepo string) input
 		Path:         params.RegenerableFileName(p, "dispatch_update_chart_events.yaml"),
 		TemplateBody: dispatchUpdateChartEventsTemplate,
 		TemplateDelims: input.InputTemplateDelims{
-			Left:  "{{{{",
-			Right: "}}}}",
+			Left:  templateDelimLeft,
+			Right: templateDelimRight,
 		},
 		TemplateData: map[string]interface{}{
-			"Header":           params.Header("#", dispatchUpdateChartEventsTemplateSha),
+			templateKeyHeader:  params.Header("#", dispatchUpdateChartEventsTemplateSha),
 			"TargetRepository": targetRepo,
 		},
 	}

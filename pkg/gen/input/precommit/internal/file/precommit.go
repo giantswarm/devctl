@@ -38,7 +38,7 @@ func NewCreatePreCommitConfigInput(p params.Params) input.Input {
 		Path:         filepath.Join(p.Dir, ".pre-commit-config.yaml"),
 		TemplateBody: createPreCommitConfigTemplate,
 		TemplateData: map[string]interface{}{
-			"Header":          params.Header("#", createPreCommitConfigTemplateSha),
+			templateKeyHeader: params.Header("#", createPreCommitConfigTemplateSha),
 			"Language":        p.Language,
 			"HasBash":         params.HasFlavor(p, "bash"),
 			"HasMd":           params.HasFlavor(p, "md"),

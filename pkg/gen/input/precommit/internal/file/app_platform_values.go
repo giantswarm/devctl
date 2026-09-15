@@ -24,7 +24,7 @@ func NewCreateAppPlatformValuesInput(p params.Params, chartName string) input.In
 		Path:         filepath.Join(p.Dir, "helm", chartName, "zz_generated.app-platform.values.yaml"),
 		TemplateBody: createAppPlatformValuesTemplate,
 		TemplateData: map[string]interface{}{
-			"Header": params.Header("#", createAppPlatformValuesTemplateSha),
+			templateKeyHeader: params.Header("#", createAppPlatformValuesTemplateSha),
 		},
 	}
 }

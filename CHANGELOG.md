@@ -345,6 +345,52 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   the repository that hit it, emits 12 MB, and CI already runs nancy 2.1.0. The target's doc comment
   now says v2.1.0 rather than v1.0.37.
 
+### Security
+
+- `app bootstrap`: `--name` and `--team` are now validated as identifiers. `--team` is joined into
+  `repositories/team-<team>.yaml` inside the `giantswarm/github` checkout, so a value carrying `..`
+  or `/` reached a file outside that directory; `--name` becomes an argument of `devctl repo setup`,
+  so a value starting with `-` was read as a flag. The bootstrap flow also runs only `devctl`, `git`
+  and `vendir`, checked against an allow list before the subprocess starts.
+- `deploy`: `--app-name`, `--app-catalog`, `--target-namespace`, `--management-cluster`,
+  `--organization` and `--workload-cluster` are now validated as identifiers, and `--app-version` as
+  a version. All seven are passed to `kubectl gs gitops add app`, where a value starting with `-`
+  was read as a kubectl flag.
+- `pkg/appstatus`: `WaitForAppDeployment` validates the app name, organization namespace and
+  management cluster it passes to `tsh` and `kubectl`, rather than trust its callers.
+- `release create`: the provider name is validated before it is joined into the releases directory,
+  so it cannot address a directory outside it. The chart name and version read from a release
+  manifest are validated before they are interpolated into the `raw.githubusercontent.com` URL the
+  cluster dependency lookup fetches.
+
+### Fixed
+
+- `pr`: the parent command reports an error from `--help` instead of discarding it.
+- `gen precommit`: new `--go-generate` flag renders a `go generate ./...` step into
+  `zz_generated.pre-commit.yaml` before the hooks, and devctl sets it for itself. golangci-lint
+  compiles the packages it analyses, and devctl embeds 37 gitignored `*.template.sha` provenance
+  files, so the job stopped at a load error instead of linting. The flag is opt-in and requires
+  `--language go`: the job installs no code generators, so a repository whose directives need
+  `controller-gen` or `mockgen` must not get the step.
+- `release`: `getLatestGithubRelease` and the Kubernetes release lookup name the upstream
+  repository through `kubernetesGitHubOwner`/`kubernetesGitHubRepo` rather than repeat a literal
+  that also means the component name.
+
+### Changed
+
+- `release bumpall`: reads `slices` from the standard library instead of `golang.org/x/exp/slices`,
+  which is deprecated. `golang.org/x/exp` is dropped from `go.mod`.
+- The `github.Ptr` and `github.String` helpers, deprecated in go-github v92, are replaced by the
+  `new` builtin.
+- Repeated string literals are named: template data keys and delimiters in the `workflows`,
+  `precommit` and `makefile` generators, and provider names, release types, output formats and
+  component names in `pkg/release`.
+- Permissive file and directory modes in tests are tightened to `0600` and `0750`.
+- `.golangci.yml` sets `goconst.ignore-tests`. A table test repeats a fixture across its cases so
+  that the input and the expectation can be read together. It also excludes `fmt.Fprint`,
+  `fmt.Fprintf` and `fmt.Fprintln` from errcheck: the runners print to an injected `io.Writer`,
+  and a failed write to the user's terminal cannot be reported to the user's terminal.
+
 ## [8.23.0] - 2026-06-24
 
 ### Changed

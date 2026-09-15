@@ -19,7 +19,7 @@ func NewChainsawTestsStepTemplate(p params.Params) input.Input {
 		Path:         "tests/chainsaw/_steps-templates/cluster-policy-ready.yaml",
 		TemplateBody: chainsawTestsStepTemplate,
 		TemplateData: map[string]interface{}{
-			"Header": params.Header("#", chainsawTestsStepTemplateSha),
+			templateKeyHeader: params.Header("#", chainsawTestsStepTemplateSha),
 		},
 		SkipRegenCheck: true,
 	}
@@ -35,7 +35,7 @@ func NewChainsawTestsExampleTest(p params.Params) input.Input {
 		Path:         "tests/chainsaw/check-policy-ready/chainsaw-test.yaml",
 		TemplateBody: chainsawTestsPolicyReadyTemplate,
 		TemplateData: map[string]interface{}{
-			"Header": params.Header("#", makefileGenChainsawMkTemplateSha),
+			templateKeyHeader: params.Header("#", makefileGenChainsawMkTemplateSha),
 		},
 	}
 

@@ -19,11 +19,11 @@ func NewPublishTechdocs(p params.Params) input.Input {
 		Path:         params.RegenerableFileName(p, "publish_techdocs.yaml"),
 		TemplateBody: publishTechdocsTemplate,
 		TemplateDelims: input.InputTemplateDelims{
-			Left:  "{{{{",
-			Right: "}}}}",
+			Left:  templateDelimLeft,
+			Right: templateDelimRight,
 		},
 		TemplateData: map[string]interface{}{
-			"Header": params.Header("#", publishTechdocsTemplateSha),
+			templateKeyHeader: params.Header("#", publishTechdocsTemplateSha),
 		},
 	}
 

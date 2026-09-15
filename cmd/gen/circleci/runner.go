@@ -85,7 +85,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, _ []string) error 
 		// loud: the repo asked for a Node version and did not get it, and the
 		// only visible symptom would be an unchanged workflows.yml.
 		if rejected != "" {
-			_, _ = fmt.Fprintf(r.stderr, "warning: ignoring .nvmrc value %q -- the Node job needs an exact major.minor.patch (e.g. 24.19.0); falling back to %s\n", rejected, circleci.DefaultNodeImageVersion)
+			fmt.Fprintf(r.stderr, "warning: ignoring .nvmrc value %q -- the Node job needs an exact major.minor.patch (e.g. 24.19.0); falling back to %s\n", rejected, circleci.DefaultNodeImageVersion)
 		}
 	}
 

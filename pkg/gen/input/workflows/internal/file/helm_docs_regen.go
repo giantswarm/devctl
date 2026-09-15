@@ -26,11 +26,11 @@ func NewHelmDocsRegenInput(p params.Params) input.Input {
 		Path:         params.RegenerableFileName(p, "helm-docs-regen.yaml"),
 		TemplateBody: helmDocsRegenTemplate,
 		TemplateDelims: input.InputTemplateDelims{
-			Left:  "{{{{",
-			Right: "}}}}",
+			Left:  templateDelimLeft,
+			Right: templateDelimRight,
 		},
 		TemplateData: map[string]interface{}{
-			"Header":                        params.Header("#", helmDocsRegenTemplateSha),
+			templateKeyHeader:               params.Header("#", helmDocsRegenTemplateSha),
 			templateKeyStepSetUpGitIdentity: params.StepSetUpGitIdentity(),
 		},
 	}

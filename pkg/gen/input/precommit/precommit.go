@@ -15,6 +15,7 @@ type Config struct {
 	Flavors          []string
 	RepoName         string
 	K8sSchemaVersion string
+	GoGenerate       bool
 }
 
 type PreCommit struct {
@@ -31,6 +32,7 @@ func New(config Config) (*PreCommit, error) {
 		RepoName:         config.RepoName,
 		WorkingDir:       workingDir,
 		K8sSchemaVersion: config.K8sSchemaVersion,
+		GoGenerate:       config.GoGenerate,
 	}
 
 	if params.HasFlavor(p, "helmchart") {

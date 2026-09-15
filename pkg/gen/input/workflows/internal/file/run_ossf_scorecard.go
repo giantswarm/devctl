@@ -19,11 +19,11 @@ func NewRunOSSFScorecardInput(p params.Params) input.Input {
 		Path:         params.RegenerableFileName(p, "run_ossf_scorecard.yaml"),
 		TemplateBody: runOSSFScorecardTemplate,
 		TemplateDelims: input.InputTemplateDelims{
-			Left:  "{{{{",
-			Right: "}}}}",
+			Left:  templateDelimLeft,
+			Right: templateDelimRight,
 		},
 		TemplateData: map[string]interface{}{
-			"Header": params.Header("#", runOSSFScorecardTemplateSha),
+			templateKeyHeader: params.Header("#", runOSSFScorecardTemplateSha),
 		},
 	}
 

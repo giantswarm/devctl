@@ -15,3 +15,7 @@ var invalidFlagsError = &microerror.Error{
 var executionFailedError = &microerror.Error{
 	Kind: "executionFailedError",
 }
+
+// stateFailure is the GitHub commit-status state and check-run conclusion that
+// marks a failed run.
+const stateFailure = "failure"

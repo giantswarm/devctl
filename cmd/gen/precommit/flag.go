@@ -14,6 +14,7 @@ const (
 	flagFlavors          = "flavors"
 	flagRepoName         = "repo-name"
 	flagK8sSchemaVersion = "k8s-schema-version"
+	flagGoGenerate       = "go-generate"
 
 	defaultK8sSchemaVersion = "v1.33.1"
 )
@@ -29,6 +30,7 @@ type flag struct {
 	Flavors          []string
 	RepoName         string
 	K8sSchemaVersion string
+	GoGenerate       bool
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
@@ -36,9 +38,13 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().StringSliceVarP(&f.Flavors, flagFlavors, "f", []string{}, fmt.Sprintf("Comma-separated list of additional checker flavors (%s).", strings.Join(allowedFlavorsList(), ", ")))
 	cmd.Flags().StringVarP(&f.RepoName, flagRepoName, "r", "", "Repository name under giantswarm organization (e.g. devctl). Optional for --language go: auto-detected from the local go.mod when omitted.")
 	cmd.Flags().StringVar(&f.K8sSchemaVersion, flagK8sSchemaVersion, defaultK8sSchemaVersion, "Kubernetes JSON schema version used in helm chart .schema.yaml (e.g. v1.33.1).")
+	cmd.Flags().BoolVar(&f.GoGenerate, flagGoGenerate, false, "Run `go generate ./...` in the pre-commit workflow before the hooks. Set it for a repository that does not compile from a clean checkout. Requires --language go.")
 }
 
 func (f *flag) Validate() error {
+	if f.GoGenerate && f.Language != "go" {
+		return microerror.Maskf(invalidFlagError, "--%s requires --%s go, got %#q", flagGoGenerate, flagLanguage, f.Language)
+	}
 	for _, flavor := range f.Flavors {
 		if !allowedFlavors[flavor] {
 			return microerror.Maskf(invalidFlagError, "--%s contains invalid value %q, must be one of <%s>", flagFlavors, flavor, strings.Join(allowedFlavorsList(), "|"))

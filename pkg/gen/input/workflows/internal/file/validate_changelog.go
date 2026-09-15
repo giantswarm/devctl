@@ -19,11 +19,11 @@ func NewValidateChangelogInput(p params.Params) input.Input {
 		Path:         params.RegenerableFileName(p, "validate_changelog.yaml"),
 		TemplateBody: validateChangelogTemplate,
 		TemplateDelims: input.InputTemplateDelims{
-			Left:  "{{{{",
-			Right: "}}}}",
+			Left:  templateDelimLeft,
+			Right: templateDelimRight,
 		},
 		TemplateData: map[string]interface{}{
-			"Header": params.Header("#", validateChangelogTemplateSha),
+			templateKeyHeader: params.Header("#", validateChangelogTemplateSha),
 		},
 	}
 

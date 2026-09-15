@@ -19,11 +19,11 @@ func NewClusterAppValuesValidationUsingSchemaTemplate(p params.Params) input.Inp
 		Path:         params.RegenerableFileName(p, "cluster_app_values_validation_schema.yaml"),
 		TemplateBody: clusterAppValuesValidationUsingSchemaTemplate,
 		TemplateDelims: input.InputTemplateDelims{
-			Left:  "{{{{",
-			Right: "}}}}",
+			Left:  templateDelimLeft,
+			Right: templateDelimRight,
 		},
 		TemplateData: map[string]interface{}{
-			"Header": params.Header("#", clusterAppValuesValidationUsingSchemaTemplateSha),
+			templateKeyHeader: params.Header("#", clusterAppValuesValidationUsingSchemaTemplateSha),
 		},
 	}
 

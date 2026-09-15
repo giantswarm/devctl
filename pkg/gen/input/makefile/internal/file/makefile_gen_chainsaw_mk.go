@@ -19,7 +19,7 @@ func NewMakefileGenChainsawMkInput(p params.Params) input.Input {
 		Path:         "Makefile.gen.chainsaw.mk",
 		TemplateBody: makefileGenChainsawMkTemplate,
 		TemplateData: map[string]interface{}{
-			"Header": params.Header("#", makefileGenChainsawMkTemplateSha),
+			templateKeyHeader: params.Header("#", makefileGenChainsawMkTemplateSha),
 		},
 	}
 
