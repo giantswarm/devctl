@@ -76,12 +76,12 @@ func devSemverFilter(branch string) (string, error) {
 // A hand-built object silently loses secretRef, provider, verify, insecure and
 // layerSelector. A lost secretRef is a registry authentication failure that
 // looks exactly like a missing chart.
-func devSource(original object, req Request, semverFilter string, from, until time.Time) object {
+func devSource(original object, sourceName string, req Request, semverFilter string, from, until time.Time) object {
 	source, _ := deepcopy.Copy(map[string]any(original)).(map[string]any)
 	o := object(source)
 
 	metadata := o.metadata()
-	metadata["name"] = req.App + SourceNameSuffix
+	metadata["name"] = sourceName
 
 	annotations, _ := metadata["annotations"].(map[string]any)
 	if annotations == nil {
@@ -112,7 +112,7 @@ func devSource(original object, req Request, semverFilter string, from, until ti
 // reservationEntry renders one reservation as the one-line YAML flow mapping the
 // reservations ConfigMap stores, so `kubectl get cm reservations -o yaml` stays
 // readable and a machine can still parse it.
-func reservationEntry(req Request, from, until time.Time) (string, error) {
+func reservationEntry(chart string, req Request, from, until time.Time) (string, error) {
 	fields := [][2]string{
 		{"user", req.User},
 		{"branch", req.Branch},
@@ -129,5 +129,5 @@ func reservationEntry(req Request, from, until time.Time) (string, error) {
 
 	// A single-quoted YAML scalar, so a branch name carrying a comma or a brace
 	// cannot break the ConfigMap for every other reservation on the cluster.
-	return fmt.Sprintf("%s: '%s'", req.App, strings.ReplaceAll(flow, "'", "''")), nil
+	return fmt.Sprintf("%s: '%s'", chart, strings.ReplaceAll(flow, "'", "''")), nil
 }

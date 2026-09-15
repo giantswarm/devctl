@@ -23,6 +23,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   version with no error anywhere. The app's own release and release-candidate selectors are never
   touched. A cluster is opted in by adding `configmap-reservations.yaml`; the command says so when
   it is missing, and one app holds at most one reservation per cluster.
+- `reservation reserve`: the app is now located by matching the rendered source objects of the
+  cluster on the chart their OCI URL serves, taking the chart name from the app repository's
+  `helm/*/Chart.yaml`. It never matches on the object name, because 17 of 90 collection names
+  repeat across collections and 5 clusters reference several collections at once, so a name match
+  is ambiguous by construction. `--app` stays available: it is required when the app repository
+  holds several charts, and it overrides the chart name when a chart is named differently from the
+  chart its URL serves. An app that runs several times on one cluster gets one source object and a
+  patch for every instance. Every case this version does not cover is refused with the reason: no
+  match in the render, an app served from the cluster's `extras` folder rather than its
+  collections, and a release carrying its chart inline under `spec.chart` instead of referencing it
+  with `spec.chartRef`. A wrong lookup looks exactly like an app that does not move, so none of
+  them is allowed to pass quietly.
 - `gen circleci`: the branch-path build jobs (`build-image` / `push-to-registries`, `build-chart`,
   `execute-chart-tests`, `push-chart`) now carry `require_open_pull_request: true`, and the pinned
   orb moves to `giantswarm/architect@10.6.0`, which added the parameter. The orb halts a job

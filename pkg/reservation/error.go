@@ -76,3 +76,26 @@ var alreadyReservedError = &microerror.Error{
 func IsAlreadyReserved(err error) bool {
 	return microerror.Cause(err) == alreadyReservedError
 }
+
+// appNotSupportedError indicates that the app was located but is shaped in a way
+// this version cannot move: an extras app, or a release carrying its chart
+// inline.
+var appNotSupportedError = &microerror.Error{
+	Kind: "appNotSupportedError",
+}
+
+// IsAppNotSupported asserts appNotSupportedError.
+func IsAppNotSupported(err error) bool {
+	return microerror.Cause(err) == appNotSupportedError
+}
+
+// appAmbiguousError indicates that the app repository holds several charts and
+// the caller named none of them.
+var appAmbiguousError = &microerror.Error{
+	Kind: "appAmbiguousError",
+}
+
+// IsAppAmbiguous asserts appAmbiguousError.
+func IsAppAmbiguous(err error) bool {
+	return microerror.Cause(err) == appAmbiguousError
+}

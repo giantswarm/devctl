@@ -60,7 +60,7 @@ func marshalYAML(v any) ([]byte, error) {
 // writeComponent writes the reservation's own Kustomize component: the new
 // source object, and the strategic-merge patch that points the app's release at
 // it.
-func writeComponent(dir, sourceName, helmReleaseName string, source object) error {
+func writeComponent(dir, sourceName string, helmReleases []string, source object) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil { //nolint:gosec // the GitOps repo is a checkout humans and Flux read
 		return microerror.Mask(err)
 	}
@@ -73,15 +73,16 @@ func writeComponent(dir, sourceName, helmReleaseName string, source object) erro
 		return microerror.Mask(err)
 	}
 
+	// One patch per instance. An app can run several times on one cluster, and
+	// all its instances share the chart and the branch, so they share the one
+	// source object above.
+	//
 	// A strategic-merge patch, not a JSON6902 one: the shape of the release
 	// differs between stages, so an op-based patch would need per-stage
 	// branching.
-	component := generatedBy + fmt.Sprintf(`apiVersion: kustomize.config.k8s.io/v1alpha1
-kind: Component
-resources:
-  - %s.yaml
-patches:
-  - patch: |
+	var patches strings.Builder
+	for _, name := range helmReleases {
+		fmt.Fprintf(&patches, `  - patch: |
       apiVersion: helm.toolkit.fluxcd.io/v2
       kind: %s
       metadata:
@@ -90,7 +91,15 @@ patches:
       spec:
         chartRef:
           name: %s
-`, sourceName, helmReleaseKind, helmReleaseName, Namespace, sourceName)
+`, helmReleaseKind, name, Namespace, sourceName)
+	}
+
+	component := generatedBy + fmt.Sprintf(`apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+resources:
+  - %s.yaml
+patches:
+%s`, sourceName, patches.String())
 
 	return microerror.Mask(os.WriteFile(filepath.Join(dir, "kustomization.yaml"), []byte(component), 0o644)) //nolint:gosec // a file committed to a GitOps repo
 }

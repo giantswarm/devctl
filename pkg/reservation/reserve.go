@@ -39,8 +39,14 @@ type Request struct {
 	RepoDir string
 	// Cluster is the management cluster name, e.g. "graveler".
 	Cluster string
-	// App is the collection app to point at the dev builds.
+	// App names the collection app to point at the dev builds. Empty means the
+	// chart the app repository at AppDir builds. It is required when that
+	// repository holds several charts, and it overrides the chart name when a
+	// chart is named differently from the chart its URL serves.
 	App string
+	// AppDir is a working tree of the app repository, read only to take the
+	// chart name from helm/*/Chart.yaml. It is unused when App is set.
+	AppDir string
 	// Branch is the app repo branch whose dev builds the cluster follows.
 	Branch string
 	// User is the GitHub login of the holder.
@@ -53,6 +59,9 @@ type Request struct {
 
 // Result reports what Reserve wrote.
 type Result struct {
+	// App is the chart Reserve resolved the request to. It is the reservation's
+	// key on the cluster.
+	App string
 	// Commit is the hash of the commit Reserve made.
 	Commit string
 	// SourceName is the name of the new OCIRepository.
@@ -69,7 +78,6 @@ func (r Request) validate() error {
 	for _, f := range []struct{ name, value string }{
 		{"RepoDir", r.RepoDir},
 		{"Cluster", r.Cluster},
-		{"App", r.App},
 		{"Branch", r.Branch},
 		{"User", r.User},
 	} {
@@ -122,8 +130,15 @@ func Reserve(req Request) (Result, error) {
 		return Result{}, microerror.Mask(err)
 	}
 
+	// The chart name, not the app repository name and not the object name, is
+	// what the reservation is keyed and matched on.
+	chart, err := resolveChart(req)
+	if err != nil {
+		return Result{}, microerror.Mask(err)
+	}
+
 	configMapPath := filepath.Join(req.RepoDir, clustersDir, req.Cluster, ConfigMapFile)
-	if err := checkNotReserved(configMapPath, req.App); err != nil {
+	if err := checkNotReserved(configMapPath, chart); err != nil {
 		return Result{}, microerror.Mask(err)
 	}
 
@@ -140,11 +155,7 @@ func Reserve(req Request) (Result, error) {
 	if err != nil {
 		return Result{}, microerror.Mask(err)
 	}
-	original, err := findSource(before, req.App)
-	if err != nil {
-		return Result{}, microerror.Mask(err)
-	}
-	helmReleaseName, err := findHelmRelease(before, req.App)
+	resolved, err := resolveApp(before, req, chart)
 	if err != nil {
 		return Result{}, microerror.Mask(err)
 	}
@@ -154,25 +165,25 @@ func Reserve(req Request) (Result, error) {
 		return Result{}, microerror.Mask(err)
 	}
 
-	sourceName := req.App + SourceNameSuffix
-	component := path.Join(reservationsDir, req.App)
+	sourceName := chart + SourceNameSuffix
+	component := path.Join(reservationsDir, chart)
 
 	// The entry and the component are one change. Everything below is staged in
 	// the working tree and lands in a single commit, or the run fails and the
 	// clone is thrown away.
-	err = writeComponent(filepath.Join(collectionsPath, reservationsDir, req.App),
-		sourceName, helmReleaseName, devSource(original, req, semverFilter, from, until))
+	err = writeComponent(filepath.Join(collectionsPath, reservationsDir, chart),
+		sourceName, resolved.helmReleases, devSource(resolved.original, sourceName, req, semverFilter, from, until))
 	if err != nil {
 		return Result{}, microerror.Mask(err)
 	}
 	if err := addComponent(filepath.Join(collectionsPath, "kustomization.yaml"), component); err != nil {
 		return Result{}, microerror.Mask(err)
 	}
-	entry, err := reservationEntry(req, from, until)
+	entry, err := reservationEntry(chart, req, from, until)
 	if err != nil {
 		return Result{}, microerror.Mask(err)
 	}
-	if err := addReservationEntry(configMapPath, req.App, entry); err != nil {
+	if err := addReservationEntry(configMapPath, chart, entry); err != nil {
 		return Result{}, microerror.Mask(err)
 	}
 
@@ -180,7 +191,7 @@ func Reserve(req Request) (Result, error) {
 	if err != nil {
 		return Result{}, microerror.Mask(err)
 	}
-	if err := assertReserved(after, req.App, sourceName, semverFilter, original.nested("spec", "ref")); err != nil {
+	if err := assertReserved(after, resolved, sourceName, semverFilter); err != nil {
 		return Result{}, microerror.Mask(err)
 	}
 
@@ -194,12 +205,13 @@ func Reserve(req Request) (Result, error) {
 
 	commit, err := commitAll(req, fmt.Sprintf(
 		"reserve %s on %s for %s (branch %s, until %s)",
-		req.App, req.Cluster, req.User, req.Branch, until.Format(time.RFC3339)))
+		chart, req.Cluster, req.User, req.Branch, until.Format(time.RFC3339)))
 	if err != nil {
 		return Result{}, microerror.Mask(err)
 	}
 
 	return Result{
+		App:          chart,
 		Commit:       commit,
 		SourceName:   sourceName,
 		SemverFilter: semverFilter,

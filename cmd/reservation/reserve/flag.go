@@ -9,6 +9,7 @@ import (
 
 const (
 	flagApp         = "app"
+	flagAppDir      = "app-dir"
 	flagBranch      = "branch"
 	flagCluster     = "cluster"
 	flagGitOpsRepo  = "gitops-repo"
@@ -18,6 +19,7 @@ const (
 
 type flag struct {
 	App         string
+	AppDir      string
 	Branch      string
 	Cluster     string
 	GitOpsRepo  string
@@ -26,7 +28,8 @@ type flag struct {
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
-	cmd.Flags().StringVar(&f.App, flagApp, "", "Name of the collection app to reserve.")
+	cmd.Flags().StringVar(&f.App, flagApp, "", "Chart of the collection app to reserve. Empty takes the name from the app repository's helm/*/Chart.yaml. Required when that repository holds several charts, and also the override when a chart is named differently from the chart its OCI URL serves.")
+	cmd.Flags().StringVar(&f.AppDir, flagAppDir, ".", "Checkout of the app repository, read only to take the chart name when --app is empty.")
 	cmd.Flags().StringVar(&f.Branch, flagBranch, "", "Branch of the app repository whose dev builds the cluster follows.")
 	cmd.Flags().StringVar(&f.Cluster, flagCluster, "", "Name of the management cluster to reserve the app on.")
 	cmd.Flags().StringVar(&f.GitOpsRepo, flagGitOpsRepo, "", "GitOps repository holding the management cluster, as owner/repo.")
@@ -36,7 +39,6 @@ func (f *flag) Init(cmd *cobra.Command) {
 
 func (f *flag) Validate() error {
 	for _, r := range []struct{ name, value string }{
-		{flagApp, f.App},
 		{flagBranch, f.Branch},
 		{flagCluster, f.Cluster},
 		{flagGitOpsRepo, f.GitOpsRepo},
@@ -45,6 +47,10 @@ func (f *flag) Validate() error {
 		if r.value == "" {
 			return microerror.Maskf(invalidFlagError, "--%s must not be empty", r.name)
 		}
+	}
+	if f.App == "" && f.AppDir == "" {
+		return microerror.Maskf(invalidFlagError,
+			"pass --%s, or --%s pointing at a checkout of the app repository: the chart name is not the repository name", flagApp, flagAppDir)
 	}
 	if _, _, err := splitRepo(f.GitOpsRepo); err != nil {
 		return microerror.Mask(err)

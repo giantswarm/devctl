@@ -77,6 +77,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		RepoDir:     dir,
 		Cluster:     r.flag.Cluster,
 		App:         r.flag.App,
+		AppDir:      r.flag.AppDir,
 		Branch:      r.flag.Branch,
 		User:        r.flag.User,
 		PullRequest: r.flag.PullRequest,
@@ -95,7 +96,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	}
 
 	_, _ = fmt.Fprintf(r.stdout, "Reserved %s on %s for %s until %s.\n",
-		r.flag.App, r.flag.Cluster, r.flag.User, result.Until.Format("2006-01-02 15:04 MST"))
+		result.App, r.flag.Cluster, r.flag.User, result.Until.Format("2006-01-02 15:04 MST"))
 	_, _ = fmt.Fprintf(r.stdout, "Source %s follows %s\n", result.SourceName, result.SemverFilter)
 	_, _ = fmt.Fprintf(r.stdout, "Commit %s on %s/%s@%s\n", result.Commit, owner, repo, branch)
 

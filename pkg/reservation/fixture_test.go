@@ -15,8 +15,13 @@ import (
 // under bases/, standing in for the remote `management-cluster-bases` URL that a
 // real cluster references, so a render needs no network.
 const (
-	fixtureCluster = "graveler"
-	fixtureApp     = "hello-world"
+	fixtureCluster  = "graveler"
+	fixtureApp      = "hello-world"
+	fixtureOtherApp = "other-app"
+
+	// fixtureAppFile is the collection base file carrying fixtureApp. A test
+	// reshapes the app by overriding it through fixtureOptions.extraFiles.
+	fixtureAppFile = "bases/collections/demo/hello-world.yaml"
 )
 
 type fixtureOptions struct {
@@ -28,6 +33,9 @@ type fixtureOptions struct {
 	// clusters names the management clusters to write. Empty means one cluster,
 	// fixtureCluster.
 	clusters []string
+	// extraFiles are written last, so an entry replaces the default file of the
+	// same name. It is how a test reshapes the collection base.
+	extraFiles map[string]string
 }
 
 // newGitOpsFixture writes the fixture into a temporary directory, commits it and
@@ -49,7 +57,7 @@ components:
   # testing stage does.
   - ../shared/semver-rc-or-stable
 `,
-		"bases/collections/demo/hello-world.yaml": `---
+		fixtureAppFile: `---
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: OCIRepository
 metadata:
@@ -164,6 +172,10 @@ metadata:
 data: {}
 `
 		}
+	}
+
+	for name, content := range opts.extraFiles {
+		files[name] = content
 	}
 
 	for name, content := range files {

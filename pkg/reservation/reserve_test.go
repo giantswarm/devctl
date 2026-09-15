@@ -376,7 +376,7 @@ func TestReserveHoldsTwoAppsOnOneCluster(t *testing.T) {
 	}
 
 	second := testRequest(dir)
-	second.App = "other-app"
+	second.App = fixtureOtherApp
 	second.User = testOtherUser
 	second.Branch = "feat/other"
 	if _, err := reservation.Reserve(second); err != nil {
@@ -387,13 +387,13 @@ func TestReserveHoldsTwoAppsOnOneCluster(t *testing.T) {
 	if got, want := entries[fixtureApp]["user"], testUser; got != want {
 		t.Errorf("%s holder: got %q, want %q", fixtureApp, got, want)
 	}
-	if got, want := entries["other-app"]["user"], testOtherUser; got != want {
+	if got, want := entries[fixtureOtherApp]["user"], testOtherUser; got != want {
 		t.Errorf("other-app holder: got %q, want %q", got, want)
 	}
 
 	// Both reservations have to survive the same render.
 	objects := renderCluster(t, dir, fixtureCluster)
-	for _, app := range []string{fixtureApp, "other-app"} {
+	for _, app := range []string{fixtureApp, fixtureOtherApp} {
 		release := mustObject(t, objects, "HelmRelease/"+app)
 		chartRef, _ := release["spec"].(map[string]any)["chartRef"].(map[string]any)
 		if got, want := chartRef["name"], app+"-dev-reservation"; got != want {

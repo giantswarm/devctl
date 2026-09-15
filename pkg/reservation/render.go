@@ -80,52 +80,25 @@ func renderCollections(dir string) ([]object, error) {
 	return objects, nil
 }
 
-// findSource returns the OCIRepository the app is served from.
-func findSource(objects []object, app string) (object, error) {
+// findSource returns the OCIRepository with the given name. It is a lookup of a
+// name the reservation itself chose, never the way an app is located: an app is
+// resolved on the chart its URL serves, in resolveApp.
+func findSource(objects []object, name string) (object, bool) {
 	for _, o := range objects {
-		if o.kind() == ociRepositoryKind && o.namespace() == Namespace && o.name() == app {
-			return o, nil
+		if o.kind() == ociRepositoryKind && o.namespace() == Namespace && o.name() == name {
+			return o, true
 		}
 	}
 
-	return nil, microerror.Maskf(appNotFoundError,
-		"the rendered collections hold no %s named %q in namespace %s. Only collection apps can be reserved",
-		ociRepositoryKind, app, Namespace)
-}
-
-// findHelmRelease returns the name of the HelmRelease that takes its chart from
-// the given source object.
-func findHelmRelease(objects []object, sourceName string) (string, error) {
-	var names []string
-	for _, o := range objects {
-		if o.kind() != helmReleaseKind || o.namespace() != Namespace {
-			continue
-		}
-		if name, _ := o.nested("spec", "chartRef", "name").(string); name == sourceName {
-			names = append(names, o.name())
-		}
-	}
-
-	switch len(names) {
-	case 1:
-		return names[0], nil
-	case 0:
-		return "", microerror.Maskf(appNotFoundError,
-			"the rendered collections hold no %s in namespace %s taking its chart from %q",
-			helmReleaseKind, Namespace, sourceName)
-	default:
-		return "", microerror.Maskf(appNotFoundError,
-			"%q runs %d times on this cluster (%v). This version reserves an app that runs once",
-			sourceName, len(names), names)
-	}
+	return nil, false
 }
 
 // assertReserved refuses a render that does not carry the reservation. A render
 // that only succeeds proves nothing: a component merged in the wrong order
 // leaves the cluster on its release version with no error anywhere.
-func assertReserved(objects []object, app, sourceName, semverFilter string, originalRef any) error {
-	source, err := findSource(objects, sourceName)
-	if err != nil {
+func assertReserved(objects []object, resolved resolution, sourceName, semverFilter string) error {
+	source, ok := findSource(objects, sourceName)
+	if !ok {
 		return microerror.Maskf(renderAssertionError,
 			"the rendered collections carry no %s named %q", ociRepositoryKind, sourceName)
 	}
@@ -134,32 +107,38 @@ func assertReserved(objects []object, app, sourceName, semverFilter string, orig
 			"the rendered %s %q selects %q, want %q", ociRepositoryKind, sourceName, got, semverFilter)
 	}
 
-	var patched bool
+	// Every instance has to follow the reservation. One instance left behind is
+	// a cluster running two versions of one app with no error anywhere.
+	patched := map[string]bool{}
 	for _, o := range objects {
 		if o.kind() != helmReleaseKind || o.namespace() != Namespace {
 			continue
 		}
 		if name, _ := o.nested("spec", "chartRef", "name").(string); name == sourceName {
-			patched = true
+			patched[o.name()] = true
 		}
 	}
-	if !patched {
-		return microerror.Maskf(renderAssertionError,
-			"no %s in the rendered collections takes its chart from %q, so the reservation would change nothing on the cluster",
-			helmReleaseKind, sourceName)
+	for _, name := range resolved.helmReleases {
+		if !patched[name] {
+			return microerror.Maskf(renderAssertionError,
+				"%s %q does not take its chart from %q in the rendered collections, so the reservation would change nothing for that instance",
+				helmReleaseKind, name, sourceName)
+		}
 	}
 
 	// The release and release-candidate version selection has to keep working
-	// untouched, so the app's own source object must come out of the render
-	// exactly as it went in.
-	original, err := findSource(objects, app)
-	if err != nil {
-		return microerror.Maskf(renderAssertionError,
-			"the reservation removed the app's own %s %q from the render", ociRepositoryKind, app)
-	}
-	if got := original.nested("spec", "ref"); !reflect.DeepEqual(got, originalRef) {
-		return microerror.Maskf(renderAssertionError,
-			"the reservation changed the version selector of %q from %v to %v", app, originalRef, got)
+	// untouched, so every source object the app is served from must come out of
+	// the render exactly as it went in.
+	for _, name := range resolved.sourceNames {
+		original, ok := findSource(objects, name)
+		if !ok {
+			return microerror.Maskf(renderAssertionError,
+				"the reservation removed the app's own %s %q from the render", ociRepositoryKind, name)
+		}
+		if got := original.nested("spec", "ref"); !reflect.DeepEqual(got, resolved.originalRefs[name]) {
+			return microerror.Maskf(renderAssertionError,
+				"the reservation changed the version selector of %q from %v to %v", name, resolved.originalRefs[name], got)
+		}
 	}
 
 	return nil
