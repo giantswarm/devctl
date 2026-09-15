@@ -22,7 +22,11 @@ block. Jobs are selected by:
                           and architect/sync-china-registry
   - app flavour        -> architect/push-to-app-catalog (app-build-suite executor)
                           and architect/run-tests-with-ats (--skip-ats opts out
-                          of the ATS chart tests)
+                          of the ATS chart tests). A kind Cluster configuration
+                          at .ats/kind-config.yaml in the repo is passed to the
+                          chart-test jobs as kind_config (feature gates, runtime
+                          config, patches, extra nodes; repo-owned like
+                          .ats/main.yaml), and --ats-resource-class sizes them.
 
 The giantswarm/architect orb is pinned to a version baked into devctl (not a
 flag): a major orb bump changes the template's required job/param shape, so it

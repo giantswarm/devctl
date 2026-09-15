@@ -43,6 +43,16 @@ type Params struct {
 	// (tests/ats/pyproject.toml + uv.lock instead of tests/ats/Pipfile). Derived
 	// from ATSVersion (major >= 1).
 	ATSKindCluster bool
+	// ATSKindConfig is the repo-owned kind Cluster configuration emitted as
+	// `kind_config` on both run-tests-with-ats jobs (the job passes it to
+	// `kind create cluster --config`: feature gates, runtime config, patches,
+	// extra nodes). Set to the conventional path when the repo carries the
+	// file; empty emits nothing and the job creates the cluster as before.
+	ATSKindConfig string
+	// ATSResourceClass is the CircleCI resource_class emitted on both
+	// run-tests-with-ats jobs (medium, large, xlarge, 2xlarge). Empty emits
+	// nothing and the orb default (medium) applies.
+	ATSResourceClass string
 	// ChartName is the chart name used for the push-to-app-catalog `chart`
 	// param and the helm/<chart> directory. Defaults to RepoName. Set it for
 	// repos whose chart directory does not match the repo name (e.g.
@@ -153,6 +163,20 @@ type Params struct {
 	// renders. Defaulted to "large" by the generator for cli repos; empty for
 	// non-cli repos.
 	ResourceClass string
+	// GoBuildPath is the architect go-build `path` param: the package the job
+	// compiles. Empty omits the param so the orb default "." applies. Set for
+	// Go repos whose main package lives in a subdirectory (e.g. ./cmd/coredns).
+	GoBuildPath string
+	// GoTestArtifacts is a directory under the checkout that `make test` (the
+	// go-build test_target) writes and that the job keeps as a CircleCI build
+	// artifact when it FAILS. Non-empty renders `post-steps` on the
+	// architect/go-build job: a run step stages the directory when: on_fail
+	// and store_artifacts uploads the staging directory, so a green run stores
+	// nothing. Empty omits the post-steps. Set for repos whose test suite
+	// writes a report the console output only shows a trimmed tail of (e.g.
+	// muster's integration suite writes one JSON per scenario, with the
+	// complete instance logs, to test-reports/). Normalized by the generator.
+	GoTestArtifacts string
 	// OrbVersion is the giantswarm/architect orb version to pin.
 	OrbVersion string
 	// ContinuationOrbVersion is the circleci/continuation orb version the

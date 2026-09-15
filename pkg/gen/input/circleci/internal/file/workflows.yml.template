@@ -114,6 +114,32 @@ workflows:
         # override their own `make test`. See devctl makefile gen and the
         # make-target-ci-interface ADR.
         test_target: test
+{{- if .GoBuildPath }}
+        # Main package to compile. This repo's module root is not a main package,
+        # so building "." would yield a Go archive rather than a binary.
+        path: {{ .GoBuildPath }}
+{{- end }}
+{{- if .GoTestArtifacts }}
+        # On failure, keep {{ .GoTestArtifacts }}/ (written by `make test`) as a
+        # build artifact: the console output only shows a trimmed tail of what
+        # the test suite writes there, and a failure is only attributable with
+        # the full report. store_artifacts has no `when` of its own, so the
+        # directory is staged by a step that only runs when the job failed; a
+        # green run uploads nothing. post-steps is the one hook CircleCI offers
+        # on an orb job invocation, and the repo-owned custom.yml cannot carry
+        # it: the setup workflow's yq `*+` merge appends a second
+        # architect/go-build entry instead of amending this one.
+        post-steps:
+        - run:
+            name: Collect test artifacts
+            command: |
+              mkdir -p /tmp/go-test-artifacts
+              cp -r {{ .GoTestArtifacts }}/. /tmp/go-test-artifacts/ 2>/dev/null || true
+            when: on_fail
+        - store_artifacts:
+            path: /tmp/go-test-artifacts
+            destination: {{ .GoTestArtifacts }}
+{{- end }}
 {{- if .ReleaseBinaries }}
         # Cross-platform binaries attached to the GitHub Release by the
         # upload-release-assets job below (cli flavour). yamllint disables the
@@ -518,9 +544,16 @@ workflows:
     # Branch: run chart tests after build-chart. When branchPublish pushes a dev
     # image, the test also waits on push-to-registries -- run-tests-with-ats
     # deploys the chart, which pulls that image from gsoci, and gating on the
-    # push avoids an ImagePullBackOff race.
+    # push avoids an ImagePullBackOff race. The architect context carries the
+    # registry credentials the job hands to its kind node, so the chart can pull
+    # private images (gsociprivate) without imagePullSecrets. The kind cluster
+    # the job creates takes its configuration (feature gates, runtime config,
+    # patches, extra nodes) from .ats/kind-config.yaml when the repo carries one
+    # -- repo-owned, like .ats/main.yaml -- and its resource class from
+    # gen.ci.atsResourceClass in giantswarm/github (the orb default is medium).
     - architect/run-tests-with-ats:
         name: execute-chart-tests
+        context: architect
 {{- if .ATSVersion }}
         app-test-suite_container_tag: "{{ .ATSVersion }}"
 {{- end }}
@@ -528,6 +561,12 @@ workflows:
         # app-test-suite 1.x provisions no cluster: the job creates the kind
         # cluster and runs the pinned image against its kubeconfig.
         create_kind_cluster: true
+{{- end }}
+{{- if .ATSKindConfig }}
+        kind_config: "{{ .ATSKindConfig }}"
+{{- end }}
+{{- if .ATSResourceClass }}
+        resource_class: {{ .ATSResourceClass }}
 {{- end }}
         requires:
         - build-chart
@@ -544,6 +583,7 @@ workflows:
     # image-availability reason as the branch job above.
     - architect/run-tests-with-ats:
         name: execute-chart-tests-release
+        context: architect
 {{- if .ATSVersion }}
         app-test-suite_container_tag: "{{ .ATSVersion }}"
 {{- end }}
@@ -551,6 +591,12 @@ workflows:
         # app-test-suite 1.x provisions no cluster: the job creates the kind
         # cluster and runs the pinned image against its kubeconfig.
         create_kind_cluster: true
+{{- end }}
+{{- if .ATSKindConfig }}
+        kind_config: "{{ .ATSKindConfig }}"
+{{- end }}
+{{- if .ATSResourceClass }}
+        resource_class: {{ .ATSResourceClass }}
 {{- end }}
         requires:
         - build-chart

@@ -12,7 +12,7 @@ workflows:
     jobs:
     - architect/go-build:
         name: go-build
-        binary: mcp-kubernetes
+        binary: muster
         context: architect
         # Run unit tests through `make test` rather than the orb's hardcoded
         # `go test ./...`, so CI and local agent runs use the same command.
@@ -21,6 +21,25 @@ workflows:
         # override their own `make test`. See devctl makefile gen and the
         # make-target-ci-interface ADR.
         test_target: test
+        # On failure, keep test-reports/ (written by `make test`) as a
+        # build artifact: the console output only shows a trimmed tail of what
+        # the test suite writes there, and a failure is only attributable with
+        # the full report. store_artifacts has no `when` of its own, so the
+        # directory is staged by a step that only runs when the job failed; a
+        # green run uploads nothing. post-steps is the one hook CircleCI offers
+        # on an orb job invocation, and the repo-owned custom.yml cannot carry
+        # it: the setup workflow's yq `*+` merge appends a second
+        # architect/go-build entry instead of amending this one.
+        post-steps:
+        - run:
+            name: Collect test artifacts
+            command: |
+              mkdir -p /tmp/go-test-artifacts
+              cp -r test-reports/. /tmp/go-test-artifacts/ 2>/dev/null || true
+            when: on_fail
+        - store_artifacts:
+            path: /tmp/go-test-artifacts
+            destination: test-reports
         # Cross-platform binaries attached to the GitHub Release by the
         # upload-release-assets job below (cli flavour). yamllint disables the
         # line-length rule for the 132-char matrix value.
@@ -47,7 +66,7 @@ workflows:
     - architect/upload-release-assets:
         context: architect
         name: upload-release-assets
-        binary: mcp-kubernetes
+        binary: muster
         requires:
         - go-build
         filters:
@@ -118,7 +137,7 @@ workflows:
         name: build-chart
         app_catalog: giantswarm-catalog
         app_catalog_test: giantswarm-test-catalog
-        chart: mcp-kubernetes
+        chart: muster
         push_to_appcatalog: false
         push_to_oci_registry: false
         persist_chart_archive: true
@@ -169,7 +188,7 @@ workflows:
         name: push-chart-release
         app_catalog: giantswarm-catalog
         app_catalog_test: giantswarm-test-catalog
-        chart: mcp-kubernetes
+        chart: muster
         requires:
         - build-chart
         - push-to-registries-release

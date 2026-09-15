@@ -102,7 +102,7 @@ func Test_New_WithHelmchartFlavor(t *testing.T) {
 }
 
 // Test_HelmSchemaFixHook verifies the whole schema pipeline is emitted as a SINGLE local
-// hook per chart: `helm schema` generate -> $ref fix (additionalProperties:false ->
+// hook per chart: `helm-values-schema-json` generate -> $ref fix (additionalProperties:false ->
 // unevaluatedProperties:false, losisin/helm-values-schema-json#317) -> `schemalint
 // normalize`.
 //
@@ -138,12 +138,13 @@ func Test_HelmSchemaFixHook(t *testing.T) {
 
 	for _, want := range []string{
 		"id: helm-schema-test-chart",
-		"helm schema --config helm/test-chart/.schema.yaml",
+		"helm-values-schema-json --config helm/test-chart/.schema.yaml",
 		"unevaluatedProperties",
 		"helm-values-schema-json/issues/317",
 		"schemalint normalize helm/test-chart/values.schema.json",
-		// schemalint is installed by the hook itself, so no new tooling is required.
-		"additional_dependencies: ['github.com/giantswarm/schemalint/v2@v2.6.3']",
+		// Both binaries are installed AND pinned by the hook itself, so no tooling comes
+		// from the environment and dev machines run the same versions CI does.
+		"additional_dependencies: ['github.com/giantswarm/schemalint/v2@v2.6.3', 'github.com/losisin/helm-values-schema-json/v2@v2.6.0']",
 		"language: golang",
 	} {
 		if !strings.Contains(got, want) {
@@ -156,10 +157,15 @@ func Test_HelmSchemaFixHook(t *testing.T) {
 	// Any of those reintroduces rival resting formats (see the function doc). The
 	// generator's `repo:`+`rev:` line pair is matched rather than the bare URL, because
 	// the explanatory comment legitimately mentions the URL in prose.
+	//
+	// `helm plugin list` must not appear either: the generator used to be a bare
+	// `helm schema` resolved from the developer's global helm plugin dir, guarded only by
+	// an existence check that any (wrong) version passed. See giantswarm/devctl#2179.
 	for _, unwanted := range []string{
 		"helm-values-schema-json\n    rev:",
 		"id: fix-schema-ref-unevaluated-test-chart",
 		"id: schemalint-normalize",
+		"helm plugin list",
 	} {
 		if strings.Contains(got, unwanted) {
 			t.Errorf("did not expect %q in rendered config (the whole schema pipeline must be one local hook), got:\n%s", unwanted, got)
@@ -172,7 +178,7 @@ func Test_HelmSchemaFixHook(t *testing.T) {
 	// not the whole config, since the explanatory comment mentions the same tool names.
 	var pipeline string
 	for _, line := range strings.Split(got, "\n") {
-		if strings.Contains(line, "helm schema --config") {
+		if strings.Contains(line, "helm-values-schema-json --config") {
 			pipeline = line
 			break
 		}
@@ -180,7 +186,7 @@ func Test_HelmSchemaFixHook(t *testing.T) {
 	if pipeline == "" {
 		t.Fatalf("no pipeline command line found in rendered config:\n%s", got)
 	}
-	genIdx := strings.Index(pipeline, "helm schema --config")
+	genIdx := strings.Index(pipeline, "helm-values-schema-json --config")
 	fixIdx := strings.Index(pipeline, "unevaluatedProperties")
 	normIdx := strings.Index(pipeline, "schemalint normalize")
 	if !(genIdx >= 0 && genIdx < fixIdx && fixIdx < normIdx) {

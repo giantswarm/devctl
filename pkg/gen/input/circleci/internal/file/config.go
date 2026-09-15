@@ -45,6 +45,8 @@ func NewWorkflowsInput(p params.Params) input.Input {
 			"SkipATS":             p.SkipATS,
 			"ATSVersion":          p.ATSVersion,
 			"ATSKindCluster":      p.ATSKindCluster,
+			"ATSKindConfig":       p.ATSKindConfig,
+			"ATSResourceClass":    p.ATSResourceClass,
 			"ATSOnRelease":        p.ATSOnRelease,
 			"ChartName":           p.ChartName,
 			"KeepChartAppVersion": p.KeepChartAppVersion,
@@ -63,6 +65,8 @@ func NewWorkflowsInput(p params.Params) input.Input {
 			"ReleaseBinaries":     p.ReleaseBinaries,
 			"BuildConcurrency":    p.BuildConcurrency,
 			"ResourceClass":       p.ResourceClass,
+			"GoBuildPath":         p.GoBuildPath,
+			"GoTestArtifacts":     p.GoTestArtifacts,
 			"OrbVersion":          p.OrbVersion,
 
 			"BuildJobName":             p.BuildJobName,
