@@ -39,6 +39,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   `schemalint` versions pinned by the hook's `additional_dependencies` are now read from devctl's
   own `go.mod` at build time, so it is the single source of truth instead of a second hardcoded
   literal in the template. See giantswarm/devctl#2195.
+- `gen`: an `input.Input` that sets both `Generate` and `TemplateBody` is now rejected with an
+  `invalidInputError` instead of silently running `Generate` and ignoring the template. The two
+  fields are two ways to produce the same file, and which one won was only an accident of the order
+  of the branches in `internal.Execute`.
 
 - `gen circleci`: the generated chart-test jobs (`execute-chart-tests` and, with `--ats-on-release`,
   `execute-chart-tests-release`) let the repository shape and size the kind cluster they test on

@@ -15,6 +15,10 @@ func Execute(ctx context.Context, w io.Writer, f input.Input) error {
 	var err error
 
 	if f.Generate != nil {
+		if f.TemplateBody != "" {
+			return microerror.Maskf(invalidInputError, "%T sets both Generate and TemplateBody, only one of them can produce the file", f)
+		}
+
 		content, err := f.Generate(ctx)
 		if err != nil {
 			return microerror.Mask(err)

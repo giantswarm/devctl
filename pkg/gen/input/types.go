@@ -28,7 +28,8 @@ type Input struct {
 	// executing TemplateBody. Used for content that isn't template-shaped Go
 	// text, e.g. computed by calling another library in-process (such as
 	// helm/<chart>/values.schema.json, see the precommit input package).
-	// TemplateBody is ignored when Generate is set.
+	// Generate and TemplateBody are mutually exclusive: an Input that sets
+	// both is rejected.
 	Generate func(ctx context.Context) ([]byte, error)
 }
 

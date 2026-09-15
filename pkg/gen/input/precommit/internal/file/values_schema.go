@@ -29,6 +29,11 @@ func NewCreateValuesSchemaInput(p params.Params, chartName string) input.Input {
 	}
 }
 
+// k8sSchemaURLFormat is the base URL a "$ref: $k8s/..." alias in values.yaml
+// expands to. %s is the Kubernetes schema version. It is a variable so the tests
+// can point the fetch at an unreachable host.
+var k8sSchemaURLFormat = "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/refs/heads/master/%s/"
+
 // boolPtr, not the *bool literal Go lacks: schemagen.SchemaRoot.AdditionalProperties is a
 // *bool (nil means "unset", vs. an explicit false).
 func boolPtr(b bool) *bool { return &b }
@@ -62,7 +67,7 @@ func generateValuesSchema(ctx context.Context, p params.Params, chartName string
 		BundleRoot:      "",
 		BundleWithoutID: true,
 
-		K8sSchemaURL:     fmt.Sprintf("https://raw.githubusercontent.com/yannh/kubernetes-json-schema/refs/heads/master/%s/", p.K8sSchemaVersion),
+		K8sSchemaURL:     fmt.Sprintf(k8sSchemaURLFormat, p.K8sSchemaVersion),
 		K8sSchemaVersion: "v1.33.1",
 
 		UseHelmDocs: true,
