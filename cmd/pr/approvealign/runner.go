@@ -38,8 +38,8 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	r.logger.SetLevel(logrus.ErrorLevel)
 
 	if r.flag.DryRun {
-		_, _ = fmt.Fprintln(r.stdout, "🔍 DRY RUN MODE")
-		_, _ = fmt.Fprintln(r.stdout, "")
+		fmt.Fprintln(r.stdout, "🔍 DRY RUN MODE")
+		fmt.Fprintln(r.stdout, "")
 	}
 
 	githubToken := env.GitHubToken.Val()
@@ -72,7 +72,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	}
 
 	if searchResults.GetTotal() == 0 {
-		_, _ = fmt.Fprintln(r.stdout, "No PRs found.")
+		fmt.Fprintln(r.stdout, "No PRs found.")
 		return nil
 	}
 
@@ -103,7 +103,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 	// Print initial empty rows for all PRs
 	for range prStatuses {
-		_, _ = fmt.Fprintln(r.stdout, "")
+		fmt.Fprintln(r.stdout, "")
 	}
 
 	// Start processing all PRs in parallel
@@ -134,7 +134,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 			pr.UpdateTable(r.stdout, prStatuses)
 			prStatusesMu.Unlock()
 
-			_, _ = fmt.Fprintln(r.stdout, "")
+			fmt.Fprintln(r.stdout, "")
 
 			prStatusesMu.Lock()
 			r.printSummary(prStatuses)
@@ -395,27 +395,27 @@ func (r *runner) printSummary(prStatuses []*pr.PRStatus) {
 		}
 	}
 
-	_, _ = fmt.Fprintln(r.stdout, "─────────────────────────────")
-	_, _ = fmt.Fprintln(r.stdout, "Summary:")
+	fmt.Fprintln(r.stdout, "─────────────────────────────")
+	fmt.Fprintln(r.stdout, "Summary:")
 	if r.flag.DryRun {
-		_, _ = fmt.Fprintf(r.stdout, "  PRs that would be approved: %d\n", len(prStatuses)-skipped-failed-waiting)
+		fmt.Fprintf(r.stdout, "  PRs that would be approved: %d\n", len(prStatuses)-skipped-failed-waiting)
 	} else {
 		if merged > 0 {
-			_, _ = fmt.Fprintf(r.stdout, "  PRs merged: %d\n", merged)
+			fmt.Fprintf(r.stdout, "  PRs merged: %d\n", merged)
 		}
-		_, _ = fmt.Fprintf(r.stdout, "  PRs approved: %d\n", approved)
+		fmt.Fprintf(r.stdout, "  PRs approved: %d\n", approved)
 		if queued > 0 {
-			_, _ = fmt.Fprintf(r.stdout, "  PRs queued to merge: %d\n", queued)
+			fmt.Fprintf(r.stdout, "  PRs queued to merge: %d\n", queued)
 		}
 		if updated > 0 {
-			_, _ = fmt.Fprintf(r.stdout, "  PRs with branch updated: %d\n", updated)
+			fmt.Fprintf(r.stdout, "  PRs with branch updated: %d\n", updated)
 		}
 	}
-	_, _ = fmt.Fprintf(r.stdout, "  PRs skipped: %d\n", skipped)
+	fmt.Fprintf(r.stdout, "  PRs skipped: %d\n", skipped)
 	if failed > 0 {
-		_, _ = fmt.Fprintf(r.stdout, "  PRs failed: %d\n", failed)
+		fmt.Fprintf(r.stdout, "  PRs failed: %d\n", failed)
 	}
 	if waiting > 0 {
-		_, _ = fmt.Fprintf(r.stdout, "  PRs still waiting: %d\n", waiting)
+		fmt.Fprintf(r.stdout, "  PRs still waiting: %d\n", waiting)
 	}
 }

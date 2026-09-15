@@ -385,10 +385,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Repeated string literals are named: template data keys and delimiters in the `workflows`,
   `precommit` and `makefile` generators, and provider names, release types, output formats and
   component names in `pkg/release`.
-- Unchecked `fmt.Fprint*` results are discarded explicitly, and permissive file and directory modes
-  in tests are tightened to `0600` and `0750`.
+- Permissive file and directory modes in tests are tightened to `0600` and `0750`.
 - `.golangci.yml` sets `goconst.ignore-tests`. A table test repeats a fixture across its cases so
-  that the input and the expectation can be read together.
+  that the input and the expectation can be read together. It also excludes `fmt.Fprint`,
+  `fmt.Fprintf` and `fmt.Fprintln` from errcheck: the runners print to an injected `io.Writer`,
+  and a failed write to the user's terminal cannot be reported to the user's terminal.
 
 ## [8.23.0] - 2026-06-24
 

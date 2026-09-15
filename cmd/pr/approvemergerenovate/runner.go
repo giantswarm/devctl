@@ -71,8 +71,8 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	}
 
 	if r.flag.DryRun {
-		_, _ = fmt.Fprintln(r.stdout, "🔍 DRY RUN MODE")
-		_, _ = fmt.Fprintln(r.stdout, "")
+		fmt.Fprintln(r.stdout, "🔍 DRY RUN MODE")
+		fmt.Fprintln(r.stdout, "")
 	}
 
 	// Build search query
@@ -88,12 +88,12 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 	if searchResults.GetTotal() == 0 {
 		if !r.flag.Watch {
-			_, _ = fmt.Fprintln(r.stdout, "No PRs found.")
+			fmt.Fprintln(r.stdout, "No PRs found.")
 			return nil
 		}
 		// In watch mode, continue even if no PRs found initially
-		_, _ = fmt.Fprintln(r.stdout, "No PRs found yet. Watching for new PRs...")
-		_, _ = fmt.Fprintln(r.stdout, "")
+		fmt.Fprintln(r.stdout, "No PRs found yet. Watching for new PRs...")
+		fmt.Fprintln(r.stdout, "")
 	}
 
 	// Initialize PR statuses with mutex protection for concurrent updates
@@ -153,7 +153,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 	// Print initial empty rows for all PRs
 	for range initialPRs {
-		_, _ = fmt.Fprintln(r.stdout, "")
+		fmt.Fprintln(r.stdout, "")
 	}
 
 	// Start processing initial PRs in parallel
@@ -195,7 +195,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 					// Add empty rows for new PRs
 					prStatusesMu.Lock()
 					for range newPRs {
-						_, _ = fmt.Fprintln(r.stdout, "")
+						fmt.Fprintln(r.stdout, "")
 					}
 					prStatusesMu.Unlock()
 
@@ -230,15 +230,15 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	defer ticker.Stop()
 
 	if r.flag.Watch {
-		_, _ = fmt.Fprintln(r.stdout, "👁️  Watch mode enabled - monitoring for new PRs every minute (press Ctrl+C to exit)")
-		_, _ = fmt.Fprintln(r.stdout, "")
+		fmt.Fprintln(r.stdout, "👁️  Watch mode enabled - monitoring for new PRs every minute (press Ctrl+C to exit)")
+		fmt.Fprintln(r.stdout, "")
 	}
 
 	for {
 		select {
 		case <-sigChan:
 			// User pressed Ctrl+C
-			_, _ = fmt.Fprintln(r.stdout, "\n\n⏹️  Interrupted by user")
+			fmt.Fprintln(r.stdout, "\n\n⏹️  Interrupted by user")
 
 			// Stop polling
 			close(stopPolling)
@@ -248,7 +248,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 			pr.UpdateTable(r.stdout, prStatuses)
 			prStatusesMu.Unlock()
 
-			_, _ = fmt.Fprintln(r.stdout, "")
+			fmt.Fprintln(r.stdout, "")
 
 			prStatusesMu.Lock()
 			r.printSummary(prStatuses)
@@ -266,7 +266,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 			pr.UpdateTable(r.stdout, prStatuses)
 			prStatusesMu.Unlock()
 
-			_, _ = fmt.Fprintln(r.stdout, "")
+			fmt.Fprintln(r.stdout, "")
 
 			prStatusesMu.Lock()
 			r.printSummary(prStatuses)
@@ -283,7 +283,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 }
 
 func (r *runner) selectGroupInteractively(ctx context.Context, githubClient *github.Client) (string, error) {
-	_, _ = fmt.Fprintln(r.stdout, "Fetching Renovate PRs...")
+	fmt.Fprintln(r.stdout, "Fetching Renovate PRs...")
 
 	// Search for all Renovate PRs requesting review from the user
 	searchQuery := "is:pr is:open archived:false review-requested:@me author:app/renovate"
@@ -329,7 +329,7 @@ func (r *runner) selectGroupInteractively(ctx context.Context, githubClient *git
 		return "", microerror.Maskf(executionFailedError, "no PR groups found")
 	}
 
-	_, _ = fmt.Fprintf(r.stdout, "Found %d PRs in %d groups.\n\n", len(prInfos), len(groups))
+	fmt.Fprintf(r.stdout, "Found %d PRs in %d groups.\n\n", len(prInfos), len(groups))
 
 	// Create promptui selector
 	templates := &promptui.SelectTemplates{
@@ -360,7 +360,7 @@ func (r *runner) selectGroupInteractively(ctx context.Context, githubClient *git
 	}
 
 	selectedGroup := groups[idx]
-	_, _ = fmt.Fprintln(r.stdout, "")
+	fmt.Fprintln(r.stdout, "")
 
 	return selectedGroup.SearchQuery, nil
 }
@@ -602,20 +602,20 @@ func (r *runner) printSummary(prStatuses []*pr.PRStatus) {
 		}
 	}
 
-	_, _ = fmt.Fprintln(r.stdout, "─────────────────────────────")
-	_, _ = fmt.Fprintln(r.stdout, "Summary:")
+	fmt.Fprintln(r.stdout, "─────────────────────────────")
+	fmt.Fprintln(r.stdout, "Summary:")
 	if r.flag.DryRun {
-		_, _ = fmt.Fprintf(r.stdout, "  PRs that would be processed: %d\n", len(prStatuses)-skipped-failed)
+		fmt.Fprintf(r.stdout, "  PRs that would be processed: %d\n", len(prStatuses)-skipped-failed)
 	} else {
-		_, _ = fmt.Fprintf(r.stdout, "  PRs merged: %d\n", merged)
-		_, _ = fmt.Fprintf(r.stdout, "  PRs approved: %d\n", approved)
+		fmt.Fprintf(r.stdout, "  PRs merged: %d\n", merged)
+		fmt.Fprintf(r.stdout, "  PRs approved: %d\n", approved)
 		if queued > 0 {
-			_, _ = fmt.Fprintf(r.stdout, "  PRs queued to merge: %d\n", queued)
+			fmt.Fprintf(r.stdout, "  PRs queued to merge: %d\n", queued)
 		}
 	}
-	_, _ = fmt.Fprintf(r.stdout, "  PRs skipped: %d\n", skipped)
-	_, _ = fmt.Fprintf(r.stdout, "  PRs failed: %d\n", failed)
+	fmt.Fprintf(r.stdout, "  PRs skipped: %d\n", skipped)
+	fmt.Fprintf(r.stdout, "  PRs failed: %d\n", failed)
 	if waiting > 0 {
-		_, _ = fmt.Fprintf(r.stdout, "  PRs still waiting: %d\n", waiting)
+		fmt.Fprintf(r.stdout, "  PRs still waiting: %d\n", waiting)
 	}
 }

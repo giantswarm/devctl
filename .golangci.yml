@@ -2,6 +2,16 @@ version: "2"
 
 linters:
   settings:
+    errcheck:
+      # The runners print to an injected io.Writer, so these read as Fprint
+      # rather than Print and errcheck stops treating them as terminal output.
+      # A failed write to the user's terminal cannot be reported to the user's
+      # terminal, so there is nothing to handle. Writes whose result the code
+      # does act on are checked as usual.
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
     goconst:
       # A table test repeats a fixture across its cases on purpose: the input
       # and the expectation have to sit next to each other as literals for a

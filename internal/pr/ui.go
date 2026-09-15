@@ -16,15 +16,15 @@ func MakeHyperlink(url, text string) string {
 // (e.g. "Repository" or "Dependency").
 func PrintTableHeader(w io.Writer, columnHeader string) {
 	header := fmt.Sprintf("%-7s %-40s %-30s", "PR", columnHeader, "Status")
-	_, _ = fmt.Fprintln(w, header)
-	_, _ = fmt.Fprintln(w, strings.Repeat("─", 80))
+	fmt.Fprintln(w, header)
+	fmt.Fprintln(w, strings.Repeat("─", 80))
 }
 
 // UpdateTable redraws the PR status table.
 // Each PRStatus.DisplayLabel is shown in the second column.
 func UpdateTable(w io.Writer, prStatuses []*PRStatus) {
 	if len(prStatuses) > 0 {
-		_, _ = fmt.Fprintf(w, "\033[%dA", len(prStatuses))
+		fmt.Fprintf(w, "\033[%dA", len(prStatuses))
 	}
 
 	for _, ps := range prStatuses {
@@ -33,6 +33,6 @@ func UpdateTable(w io.Writer, prStatuses []*PRStatus) {
 		status := ps.GetStatus()
 
 		line := fmt.Sprintf("%s  %-40s %-30s", prLink, ps.DisplayLabel, status)
-		_, _ = fmt.Fprintf(w, "\033[2K%s\n", line)
+		fmt.Fprintf(w, "\033[2K%s\n", line)
 	}
 }
