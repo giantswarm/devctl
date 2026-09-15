@@ -52,6 +52,13 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 
+	// Already accepted by Validate; the cluster's own maximum is checked once the
+	// clone is on disk, in Reserve.
+	duration, err := reservation.ParseDuration(r.flag.Duration)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
 	client, err := githubclient.New(githubclient.Config{
 		Logger:      logrus.StandardLogger(),
 		AccessToken: token,
@@ -81,6 +88,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		Branch:      r.flag.Branch,
 		User:        r.flag.User,
 		PullRequest: r.flag.PullRequest,
+		Duration:    duration,
 	})
 	if err != nil {
 		return microerror.Mask(err)

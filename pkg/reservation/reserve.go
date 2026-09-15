@@ -23,8 +23,11 @@ const (
 	// ConfigMapFile is the per-cluster reservation state file. Its presence,
 	// wired into the cluster root kustomization, is the opt-in.
 	ConfigMapFile = "configmap-reservations.yaml"
-	// DefaultDuration is how long a reservation lasts.
+	// DefaultDuration is how long a reservation lasts when nobody says.
 	DefaultDuration = 10 * time.Hour
+	// MaxDuration is the longest reservation any cluster allows. A cluster can
+	// set a lower one of its own.
+	MaxDuration = 7 * 24 * time.Hour
 	// ScopeApp is the only scope this version supports.
 	ScopeApp = "app"
 
@@ -55,6 +58,8 @@ type Request struct {
 	PullRequest string
 	// Now is the start of the reservation. Zero means time.Now().
 	Now time.Time
+	// Duration is how long the reservation lasts. Zero means DefaultDuration.
+	Duration time.Duration
 }
 
 // Result reports what Reserve wrote.
@@ -130,6 +135,20 @@ func Reserve(req Request) (Result, error) {
 		return Result{}, microerror.Mask(err)
 	}
 
+	from := req.Now
+	if from.IsZero() {
+		from = time.Now()
+	}
+	from = from.UTC().Truncate(time.Second)
+
+	configMapPath := filepath.Join(req.RepoDir, clustersDir, req.Cluster, ConfigMapFile)
+
+	duration, err := clampedDuration(req, configMapPath)
+	if err != nil {
+		return Result{}, microerror.Mask(err)
+	}
+	until := from.Add(duration)
+
 	// The chart name, not the app repository name and not the object name, is
 	// what the reservation is keyed and matched on.
 	chart, err := resolveChart(req)
@@ -137,17 +156,9 @@ func Reserve(req Request) (Result, error) {
 		return Result{}, microerror.Mask(err)
 	}
 
-	configMapPath := filepath.Join(req.RepoDir, clustersDir, req.Cluster, ConfigMapFile)
 	if err := checkNotReserved(configMapPath, chart); err != nil {
 		return Result{}, microerror.Mask(err)
 	}
-
-	from := req.Now
-	if from.IsZero() {
-		from = time.Now()
-	}
-	from = from.UTC().Truncate(time.Second)
-	until := from.Add(DefaultDuration)
 
 	collectionsPath := filepath.Join(req.RepoDir, clustersDir, req.Cluster, collectionsDir)
 

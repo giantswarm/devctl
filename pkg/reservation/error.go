@@ -89,6 +89,18 @@ func IsAppNotSupported(err error) bool {
 	return microerror.Cause(err) == appNotSupportedError
 }
 
+// invalidDurationError indicates that the requested duration is not a duration
+// this version accepts, or is longer than the cluster allows. The message, not
+// the kind, carries which of the two it is: a caller reports both the same way.
+var invalidDurationError = &microerror.Error{
+	Kind: "invalidDurationError",
+}
+
+// IsInvalidDuration asserts invalidDurationError.
+func IsInvalidDuration(err error) bool {
+	return microerror.Cause(err) == invalidDurationError
+}
+
 // appAmbiguousError indicates that the app repository holds several charts and
 // the caller named none of them.
 var appAmbiguousError = &microerror.Error{

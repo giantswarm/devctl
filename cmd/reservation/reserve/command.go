@@ -26,14 +26,20 @@ The chart name comes from the app repository's helm/*/Chart.yaml unless --app
 gives it. Every instance of the app on the cluster is patched, and all of them
 share one source object.
 
-The reservation lasts 10 hours. The cluster has to be enabled for reservations
-first; the command says how when it is not.`
+The reservation lasts 10 hours unless --duration says otherwise. A duration is a
+whole number of minutes, hours or days: 30m, 4h, 2d. The longest is 7d, or less
+when the cluster's reservations ConfigMap carries a lower
+reservations.giantswarm.io/max-duration annotation.
+
+The cluster has to be enabled for reservations first; the command says how when
+it is not.`
 	example = `  devctl reservation reserve \
     --gitops-repo giantswarm/giantswarm-management-clusters \
     --cluster graveler \
     --app hello-world \
     --branch fix/crash \
     --user alice \
+    --duration 4h \
     --pull-request giantswarm/hello-world#123`
 )
 

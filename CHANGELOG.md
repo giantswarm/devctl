@@ -35,6 +35,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   collections, and a release carrying its chart inline under `spec.chart` instead of referencing it
   with `spec.chartRef`. A wrong lookup looks exactly like an app that does not move, so none of
   them is allowed to pass quietly.
+- `reservation reserve`: a new `--duration` flag. A duration is a whole number of minutes, hours or
+  days — `30m`, `4h`, `2d` — and anything else is refused with that list, so the fix is in the
+  message rather than in documentation. Empty stays the 10 hour default. The longest reservation is
+  7 days, or less when the cluster's reservations ConfigMap carries a lower
+  `reservations.giantswarm.io/max-duration` annotation; a cluster can only lower that limit, never
+  raise it, and a request over it is refused with the limit named. A malformed annotation is
+  refused too rather than quietly falling back, because falling back would hand out the longest
+  reservation on a cluster whose owners asked for the shortest. The window lands as RFC3339 UTC
+  timestamps in the reservation entry and in the annotations on the new source object.
 - `gen circleci`: the branch-path build jobs (`build-image` / `push-to-registries`, `build-chart`,
   `execute-chart-tests`, `push-chart`) now carry `require_open_pull_request: true`, and the pinned
   orb moves to `giantswarm/architect@10.6.0`, which added the parameter. The orb halts a job
