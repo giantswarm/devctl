@@ -25,13 +25,38 @@ devctl gen workflows --flavour cli
 | Value | What's emitted | When to use |
 |-------|----------------|-------------|
 | `legacy` (default) | `.github/workflows/zz_generated.create_release.yaml`, `zz_generated.create_release_pr.yaml`, `zz_generated.validate_changelog.yaml`. Releases driven by manually-pushed `main#release#patch`-style branches that open a release PR for human approval. | The historical flow; in use by most giantswarm repos today. |
-| `auto-release` | `.github/workflows/auto-release.yaml` and `cliff.toml` (at repo root). Releases driven by conventional commits on `main` -- the workflow runs `git-cliff --unreleased --bump` on every push, computes the next semver, and creates the matching tag + GitHub Release atomically. No release PR, no human approval. `feat` bumps the minor version, a breaking change the major, every other type the patch; `docs` and `style` commits are skipped and release nothing. | Repos that want push-button releases from conventional commits. Requires `semantic_pull_request` enforcement on PR titles. |
+| `auto-release` | `.github/workflows/zz_generated.auto_release.yaml` and `cliff.toml` (at repo root). Releases driven by conventional commits on `main` -- the workflow runs `git-cliff --unreleased --bump` on every push, computes the next semver, and creates the matching tag + GitHub Release atomically. No release PR, no human approval. `feat` bumps the minor version, a breaking change the major, every other type the patch; `docs` and `style` commits are skipped and release nothing. | Repos that want push-button releases from conventional commits. Requires `semantic_pull_request` enforcement on PR titles. |
 
 Switching between values is bidirectional and self-cleaning: the chosen branch generates its own files and emits deletion inputs for the files of the other branch, so a flipped `--release-workflow` value over two consecutive gen runs leaves the repo with exactly one set of release files.
 
 ```nohighlight
 devctl gen workflows --flavour app --language go --release-workflow=auto-release
 ```
+
+#### Release candidates
+
+A pull request title of `feat-rc:` or `fix-rc:` marks its change as belonging to a release candidate. The scope and the breaking marker are unchanged, so `feat-rc(auth)!: drop the v1 API` is valid. The workflow then decides over **every unreleased commit**, not just the ones in the push it handles:
+
+> Tag a release candidate when at least one unreleased commit is `feat-rc` or `fix-rc`, and no unreleased `feat`, `fix` or breaking commit lacks the `-rc`.
+
+A commit is breaking through either spelling: a `!` in the subject, or a `BREAKING CHANGE:` (or `BREAKING-CHANGE:`) footer in the body. git-cliff bumps the major on both, so both close a cycle.
+
+`feat` and `fix` decide, everything else follows. A cycle is therefore sticky without any extra state:
+
+| Merge | Tag | Why |
+|-------|-----|-----|
+| `feat-rc: add x` | `v1.3.0-rc.1` | one marked, none unmarked |
+| `chore(deps): bump y` | `v1.3.0-rc.2` | `chore` does not decide, so a Renovate auto-merge cannot end a cycle |
+| `docs: fix a typo` | none | `docs` is skipped, so there is nothing new to put in a candidate |
+| `fix: last thing` | `v1.3.0` | an unmarked `fix` closes the cycle |
+
+A candidate needs something releasable to carry. A push whose commits git-cliff all skips (`docs`, `style`) or drops as non-conventional tags nothing, exactly as it does outside a cycle, so a README typo cannot spend an rc number and a publish pipeline.
+
+The version does not drift while a cycle runs: the unreleased set still holds the original `feat`, so the closing commit lands on exactly the version the candidates were leading to. A candidate is flagged as a GitHub pre-release, so it does not surface as the repo's "Latest release", and the `/^v.*/` CircleCI tag filter publishes it like any other tag.
+
+To close a cycle when the last candidate is good and no pull request is left to merge, run the workflow by hand with `release-type: stable`. `release-type: rc` forces one more candidate.
+
+`feat-rc` and `fix-rc` are accepted as PR titles in every repo, because `semantic_pull_request` is generated for both release flows, but they only act under `auto-release`. In a `legacy` repo they are inert.
 
 `cliff.toml`'s `[remote.github].repo` is auto-detected from the consuming repo's `origin` git remote URL. Run from a directory whose `git config remote.origin.url` points at `github.com/giantswarm/<repo>`; outside a git repo the value renders as `""` and git-cliff's GitHub API lookups fail at workflow runtime.
 
