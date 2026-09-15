@@ -33,6 +33,7 @@ const (
 	testUser        = "alice"
 	testOtherUser   = "bob"
 	testBranch      = "fix/crash"
+	testOtherBranch = "feat/other"
 	testPullRequest = "giantswarm/hello-world#123"
 )
 
@@ -378,7 +379,7 @@ func TestReserveHoldsTwoAppsOnOneCluster(t *testing.T) {
 	second := testRequest(dir)
 	second.App = fixtureOtherApp
 	second.User = testOtherUser
-	second.Branch = "feat/other"
+	second.Branch = testOtherBranch
 	if _, err := reservation.Reserve(second); err != nil {
 		t.Fatal(err)
 	}
@@ -433,7 +434,7 @@ func TestReserveRefusesAnAppThatIsAlreadyReserved(t *testing.T) {
 
 	second := testRequest(dir)
 	second.User = testOtherUser
-	second.Branch = "feat/other"
+	second.Branch = testOtherBranch
 
 	_, err := reservation.Reserve(second)
 	if err == nil {

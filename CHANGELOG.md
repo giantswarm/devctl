@@ -44,6 +44,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   refused too rather than quietly falling back, because falling back would hand out the longest
   reservation on a cluster whose owners asked for the shortest. The window lands as RFC3339 UTC
   timestamps in the reservation entry and in the annotations on the new source object.
+- `reservation release` and `reservation list`: `release` undoes exactly what `reserve` wrote for
+  one app on one cluster — the Kustomize component, the line in `collections/kustomization.yaml`
+  that references it, and the entry in `configmap-reservations.yaml` — in one commit, restoring the
+  working tree byte for byte to the state before the reservation. It resolves the chart the same
+  way `reserve` does, and refuses an app that holds no reservation without changing anything.
+  `list` prints every active reservation on a cluster — app, user, branch, pull request, scope and
+  expiry — reading them straight from the fields `reserve` wrote, never reconstructed from
+  anywhere else. Both commands work on an existing checkout (`--repo-dir`, default `.`): neither
+  clones, and `release`'s own push runs the plain `git` binary against the checkout's already
+  configured remote, so neither needs a GitHub token or any credential beyond what a laptop's
+  checkout already has.
 - `gen circleci`: the branch-path build jobs (`build-image` / `push-to-registries`, `build-chart`,
   `execute-chart-tests`, `push-chart`) now carry `require_open_pull_request: true`, and the pinned
   orb moves to `giantswarm/architect@10.6.0`, which added the parameter. The orb halts a job

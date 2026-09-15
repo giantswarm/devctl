@@ -8,6 +8,8 @@ import (
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
 
+	"github.com/giantswarm/devctl/v8/cmd/reservation/list"
+	"github.com/giantswarm/devctl/v8/cmd/reservation/release"
 	"github.com/giantswarm/devctl/v8/cmd/reservation/reserve"
 )
 
@@ -48,6 +50,36 @@ func New(config Config) (*cobra.Command, error) {
 		}
 	}
 
+	var releaseCmd *cobra.Command
+	{
+		c := release.Config{
+			Logger: config.Logger,
+			Stderr: config.Stderr,
+			Stdout: config.Stdout,
+		}
+
+		var err error
+		releaseCmd, err = release.New(c)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+	}
+
+	var listCmd *cobra.Command
+	{
+		c := list.Config{
+			Logger: config.Logger,
+			Stderr: config.Stderr,
+			Stdout: config.Stdout,
+		}
+
+		var err error
+		listCmd, err = list.New(c)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+	}
+
 	f := &flag{}
 
 	r := &runner{
@@ -67,6 +99,8 @@ func New(config Config) (*cobra.Command, error) {
 	f.Init(c)
 
 	c.AddCommand(reserveCmd)
+	c.AddCommand(releaseCmd)
+	c.AddCommand(listCmd)
 
 	return c, nil
 }

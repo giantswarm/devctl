@@ -52,21 +52,24 @@ func chartFromURL(url string) string {
 	return path.Base(url)
 }
 
-// resolveChart returns the chart name the reservation matches on.
+// resolveChart returns the chart name a reservation matches on. Reserve,
+// Release and List all key their files and their ConfigMap entry on this
+// return value, never on whatever a caller typed, so all three call it the
+// same way.
 //
-// The app argument wins whenever it is given. It is both the disambiguator for
-// a repo holding several charts and the override for a chart whose name does
-// not match the chart its URL serves.
-func resolveChart(req Request) (string, error) {
-	if req.App != "" {
-		return req.App, nil
+// app wins whenever it is given. It is both the disambiguator for a repo
+// holding several charts and the override for a chart whose name does not
+// match the chart its URL serves.
+func resolveChart(app, appDir string) (string, error) {
+	if app != "" {
+		return app, nil
 	}
-	if req.AppDir == "" {
+	if appDir == "" {
 		return "", microerror.Maskf(invalidConfigError,
-			"%T needs App or AppDir: the chart name comes from the app repository, never from the repository name", req)
+			"an app is required: pass App, or AppDir pointing at a checkout of the app repository. The chart name comes from the app repository, never from the repository name")
 	}
 
-	return chartFromRepo(req.AppDir)
+	return chartFromRepo(appDir)
 }
 
 // chartFromRepo reads the chart name out of the app repository's

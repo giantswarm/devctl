@@ -111,3 +111,14 @@ var appAmbiguousError = &microerror.Error{
 func IsAppAmbiguous(err error) bool {
 	return microerror.Cause(err) == appAmbiguousError
 }
+
+// notReservedError indicates that the app holds no reservation on the cluster,
+// so there is nothing for Release to undo.
+var notReservedError = &microerror.Error{
+	Kind: "notReservedError",
+}
+
+// IsNotReserved asserts notReservedError.
+func IsNotReserved(err error) bool {
+	return microerror.Cause(err) == notReservedError
+}

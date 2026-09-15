@@ -94,30 +94,37 @@ func (r Request) validate() error {
 	return nil
 }
 
+// clusterPath returns the repo-relative path of a file under the directory of
+// cluster.
+func clusterPath(cluster string, elem ...string) string {
+	return filepath.ToSlash(filepath.Join(append([]string{clustersDir, cluster}, elem...)...))
+}
+
 // clusterPath returns the repo-relative path of a file under the cluster
 // directory.
 func (r Request) clusterPath(elem ...string) string {
-	return filepath.ToSlash(filepath.Join(append([]string{clustersDir, r.Cluster}, elem...)...))
+	return clusterPath(r.Cluster, elem...)
 }
 
 // checkEnabled refuses a cluster the GitOps repo does not know, and a cluster
-// whose owners have not opted in to reservations.
-func checkEnabled(req Request) error {
-	clusterDir := filepath.Join(req.RepoDir, clustersDir, req.Cluster)
+// whose owners have not opted in to reservations. Reserve, Release and List all
+// need the same check before they touch a cluster's files.
+func checkEnabled(repoDir, cluster string) error {
+	clusterDir := filepath.Join(repoDir, clustersDir, cluster)
 	if fi, err := os.Stat(clusterDir); err != nil || !fi.IsDir() {
 		return microerror.Maskf(clusterNotFoundError,
 			"management cluster %q does not exist in this GitOps repo (no %s)",
-			req.Cluster, req.clusterPath())
+			cluster, clusterPath(cluster))
 	}
 
 	if _, err := os.Stat(filepath.Join(clusterDir, ConfigMapFile)); err != nil {
 		return microerror.Maskf(clusterNotEnabledError,
 			"management cluster %q is not enabled for reservations. To enable it, open a pull request on this repo that adds %s holding a ConfigMap named reservations in namespace %s with `data: {}`, and lists %s under `resources:` in %s",
-			req.Cluster,
-			req.clusterPath(ConfigMapFile),
+			cluster,
+			clusterPath(cluster, ConfigMapFile),
 			Namespace,
 			ConfigMapFile,
-			req.clusterPath("kustomization.yaml"))
+			clusterPath(cluster, "kustomization.yaml"))
 	}
 
 	return nil
@@ -131,7 +138,7 @@ func Reserve(req Request) (Result, error) {
 	if err := req.validate(); err != nil {
 		return Result{}, microerror.Mask(err)
 	}
-	if err := checkEnabled(req); err != nil {
+	if err := checkEnabled(req.RepoDir, req.Cluster); err != nil {
 		return Result{}, microerror.Mask(err)
 	}
 
@@ -151,7 +158,7 @@ func Reserve(req Request) (Result, error) {
 
 	// The chart name, not the app repository name and not the object name, is
 	// what the reservation is keyed and matched on.
-	chart, err := resolveChart(req)
+	chart, err := resolveChart(req.App, req.AppDir)
 	if err != nil {
 		return Result{}, microerror.Mask(err)
 	}
@@ -214,7 +221,7 @@ func Reserve(req Request) (Result, error) {
 	}
 	sort.Strings(files)
 
-	commit, err := commitAll(req, fmt.Sprintf(
+	commit, err := commitAll(req.RepoDir, req.User, fmt.Sprintf(
 		"reserve %s on %s for %s (branch %s, until %s)",
 		chart, req.Cluster, req.User, req.Branch, until.Format(time.RFC3339)))
 	if err != nil {
@@ -232,10 +239,11 @@ func Reserve(req Request) (Result, error) {
 	}, nil
 }
 
-// commitAll stages the whole working tree and commits it as the requesting user,
-// so `git log` answers who reserved what without any other lookup.
-func commitAll(req Request, message string) (string, error) {
-	repo, err := git.PlainOpen(req.RepoDir)
+// commitAll stages the whole working tree and commits it as user, so `git log`
+// answers who reserved or released what without any other lookup. Reserve and
+// Release share it: both make exactly one commit of a fully-staged tree.
+func commitAll(repoDir, user, message string) (string, error) {
+	repo, err := git.PlainOpen(repoDir)
 	if err != nil {
 		return "", microerror.Mask(err)
 	}
@@ -249,8 +257,8 @@ func commitAll(req Request, message string) (string, error) {
 
 	hash, err := worktree.Commit(message, &git.CommitOptions{
 		Author: &gitobject.Signature{
-			Name:  req.User,
-			Email: fmt.Sprintf("%s@users.noreply.github.com", req.User),
+			Name:  user,
+			Email: fmt.Sprintf("%s@users.noreply.github.com", user),
 			When:  time.Now(),
 		},
 	})
