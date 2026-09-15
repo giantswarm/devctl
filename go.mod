@@ -13,7 +13,7 @@ require (
 	github.com/giantswarm/microerror v0.4.1
 	github.com/giantswarm/micrologger v1.1.2
 	github.com/giantswarm/releases/sdk v0.13.0
-	github.com/giantswarm/selfupdate-cosign v0.1.0
+	github.com/giantswarm/selfupdate-cosign v0.2.0
 	github.com/go-git/go-git/v5 v5.19.2
 	github.com/google/go-cmp v0.7.0
 	github.com/google/go-github/v90 v90.0.0
