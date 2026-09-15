@@ -55,7 +55,7 @@ func New(config Config) (*cobra.Command, error) {
 
   # Direct mode - search for specific PRs
   devctl pr amr "architect v1.2.3"
-  
+
   # Watch mode with query
   devctl pr amr --watch "architect v1.2.3"`,
 		RunE: r.Run,

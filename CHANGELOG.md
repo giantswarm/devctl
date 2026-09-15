@@ -345,6 +345,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   the repository that hit it, emits 12 MB, and CI already runs nancy 2.1.0. The target's doc comment
   now says v2.1.0 rather than v1.0.37.
 
+### Security
+
+- `app bootstrap`: `--name` and `--team` are now validated as identifiers. `--team` is joined into
+  `repositories/team-<team>.yaml` inside the `giantswarm/github` checkout, so a value carrying `..`
+  or `/` reached a file outside that directory; `--name` becomes an argument of `devctl repo setup`,
+  so a value starting with `-` was read as a flag. The bootstrap flow also runs only `devctl`, `git`
+  and `vendir`, checked against an allow list before the subprocess starts.
+- `deploy`: `--app-name`, `--app-catalog`, `--target-namespace`, `--management-cluster`,
+  `--organization` and `--workload-cluster` are now validated as identifiers, and `--app-version` as
+  a version. All seven are passed to `kubectl gs gitops add app`, where a value starting with `-`
+  was read as a kubectl flag.
+- `pkg/appstatus`: `WaitForAppDeployment` validates the app name, organization namespace and
+  management cluster it passes to `tsh` and `kubectl`, rather than trust its callers.
+- `release create`: the provider name is validated before it is joined into the releases directory,
+  so it cannot address a directory outside it. The chart name and version read from a release
+  manifest are validated before they are interpolated into the `raw.githubusercontent.com` URL the
+  cluster dependency lookup fetches.
+
+### Fixed
+
+- `pr`: the parent command reports an error from `--help` instead of discarding it.
+
 ## [8.23.0] - 2026-06-24
 
 ### Changed

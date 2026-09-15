@@ -115,7 +115,7 @@ func (r *runner) processFile(fileName string, regex *regexp.Regexp, replacement 
 	}
 
 	// Open file, do not attempt to create it (last argument for file permission is ignored in this case).
-	f, err := os.OpenFile(fileName, flag, 0)
+	f, err := os.OpenFile(fileName, flag, 0) // #nosec G304 -- `devctl replace` exists to rewrite the files its caller names, so the path cannot be constrained without removing the command
 	if err != nil {
 		return microerror.Mask(err)
 	}

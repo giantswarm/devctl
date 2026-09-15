@@ -1,10 +1,14 @@
 package deploy
 
 import (
+	"maps"
+	"slices"
 	"time"
 
 	"github.com/giantswarm/microerror"
 	"github.com/spf13/cobra"
+
+	"github.com/giantswarm/devctl/v8/internal/validate"
 )
 
 type flag struct {
@@ -46,11 +50,24 @@ func (f *flag) Init(cmd *cobra.Command) {
 }
 
 func (f *flag) Validate() error {
-	if f.AppName == "" {
-		return microerror.Maskf(invalidConfigError, "app name must not be empty")
+	// Every value below is interpolated into the argument list of kubectl, so
+	// each is constrained to an identifier and cannot be read as a flag.
+	names := map[string]string{
+		"--app-name":           f.AppName,
+		"--app-catalog":        f.AppCatalog,
+		"--target-namespace":   f.AppNamespace,
+		"--management-cluster": f.ManagementCluster,
+		"--organization":       f.Organization,
+		"--workload-cluster":   f.WorkloadCluster,
 	}
-	if f.AppVersion == "" {
-		return microerror.Maskf(invalidConfigError, "app version must not be empty")
+	for _, kind := range slices.Sorted(maps.Keys(names)) {
+		if err := validate.Name(kind, names[kind]); err != nil {
+			return microerror.Maskf(invalidConfigError, "%s", err)
+		}
 	}
+	if err := validate.Version("--app-version", f.AppVersion); err != nil {
+		return microerror.Maskf(invalidConfigError, "%s", err)
+	}
+
 	return nil
 }

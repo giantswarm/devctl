@@ -13,6 +13,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"sigs.k8s.io/yaml"
 
+	"github.com/giantswarm/devctl/v8/internal/validate"
 	"github.com/giantswarm/devctl/v8/pkg/release/changelog"
 )
 
@@ -296,8 +297,18 @@ func getClusterDependencyVersion(providerChartName, version string) (string, err
 		ref = "v" + ref
 	}
 
+	// Both values come from a release manifest, so they are checked before they
+	// reach the URL: an unconstrained value could move the request to another
+	// host or path.
+	if err := validate.Name("component name", providerChartName); err != nil {
+		return "", microerror.Mask(err)
+	}
+	if err := validate.Version("component version", ref); err != nil {
+		return "", microerror.Mask(err)
+	}
+
 	url := fmt.Sprintf("https://raw.githubusercontent.com/giantswarm/%s/%s/helm/%s/Chart.yaml", providerChartName, ref, providerChartName)
-	resp, err := http.Get(url)
+	resp, err := http.Get(url) // #nosec G107 -- fixed host and path template; the two interpolated values are checked above
 	if err != nil {
 		return "", microerror.Mask(err)
 	}

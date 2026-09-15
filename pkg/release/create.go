@@ -17,6 +17,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/yaml"
 
+	"github.com/giantswarm/devctl/v8/internal/validate"
 	"github.com/giantswarm/devctl/v8/pkg/release/changelog"
 )
 
@@ -95,6 +96,12 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 	if err != nil {
 		return microerror.Mask(err)
 	}
+	// provider is joined into every path below, so it is constrained to an
+	// identifier and cannot climb out of the releases directory.
+	if err := validate.Name("provider", provider); err != nil {
+		return microerror.Mask(err)
+	}
+
 	providerDirectory := ""
 	if provider == "aws" {
 		// TODO: Directory for AWS provider is currently 'capa' because of old vintage releases located in aws directory
@@ -498,7 +505,7 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 	var readmeBackup []byte
 	if preserveReadme && overwrite {
 		readmePath := filepath.Join(releasePath, "README.md")
-		readmeBackup, _ = os.ReadFile(readmePath)
+		readmeBackup, _ = os.ReadFile(readmePath) // #nosec G304 -- path joined from the checked provider directory and a fixed file name
 	}
 
 	// Delete existing if overwrite
@@ -681,7 +688,7 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 
 func readRequests(providerDirectory, version string) ([]Request, error) {
 	requestsYAMLPath := filepath.Join(providerDirectory, "requests.yaml")
-	data, err := os.ReadFile(requestsYAMLPath)
+	data, err := os.ReadFile(requestsYAMLPath) // #nosec G304 -- path joined from the checked provider directory and a fixed file name
 	if os.IsNotExist(err) {
 		return nil, nil
 	} else if err != nil {

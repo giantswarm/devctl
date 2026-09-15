@@ -484,7 +484,7 @@ func (r *runner) setupCICD(ctx context.Context, repoPath string) error {
 
 	// Run devctl repo setup with GITHUB_TOKEN set
 	repoFullName := fmt.Sprintf("giantswarm/%s-app", r.flag.Name)
-	cmd := exec.CommandContext(ctx, "devctl", "repo", "setup", repoFullName, "--disable-branch-protection")
+	cmd := exec.CommandContext(ctx, "devctl", "repo", "setup", repoFullName, "--disable-branch-protection") // #nosec G204 -- fixed binary; repoFullName derives from --name, which flag.Validate constrains to an identifier
 	cmd.Dir = repoPath
 
 	// Only show output in debug mode
@@ -531,7 +531,7 @@ func (r *runner) enableBranchProtection(ctx context.Context, repoPath string) er
 
 	// Run devctl repo setup with GITHUB_TOKEN set (without --disable-branch-protection)
 	repoFullName := fmt.Sprintf("giantswarm/%s-app", r.flag.Name)
-	cmd := exec.CommandContext(ctx, "devctl", "repo", "setup", repoFullName)
+	cmd := exec.CommandContext(ctx, "devctl", "repo", "setup", repoFullName) // #nosec G204 -- fixed binary; repoFullName derives from --name, which flag.Validate constrains to an identifier
 	cmd.Dir = repoPath
 
 	// Only show output in debug mode
@@ -550,8 +550,19 @@ func (r *runner) enableBranchProtection(ctx context.Context, repoPath string) er
 	return nil
 }
 
+// allowedCommands are the external binaries the bootstrap flow may run.
+var allowedCommands = map[string]bool{
+	"devctl": true,
+	"git":    true,
+	"vendir": true,
+}
+
 func (r *runner) execCommand(ctx context.Context, dir string, command string, args ...string) error {
-	cmd := exec.CommandContext(ctx, command, args...)
+	if !allowedCommands[command] {
+		return microerror.Maskf(executionFailedError, "refusing to run %#q: not an allowed command", command)
+	}
+
+	cmd := exec.CommandContext(ctx, command, args...) // #nosec G204 -- command is checked against allowedCommands, args are passed as separate elements and never reach a shell
 	if dir != "" {
 		cmd.Dir = dir
 	}
@@ -639,7 +650,7 @@ func (r *runner) createGithubRepoPR(ctx context.Context) (string, error) {
 `, r.flag.Name)
 
 	// Read existing file
-	content, err := os.ReadFile(teamFile)
+	content, err := os.ReadFile(teamFile) // #nosec G304 -- teamFile joins the checkout directory with --team, which flag.Validate constrains to an identifier, so it cannot escape the directory
 	if err != nil {
 		return "", microerror.Mask(err)
 	}
