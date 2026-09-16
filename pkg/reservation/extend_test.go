@@ -242,3 +242,54 @@ func TestExtendRefusesOneReservationOverTheLoweredCap(t *testing.T) {
 		t.Errorf("%s entry not reset: %+v", fixtureOtherApp, entries[fixtureOtherApp])
 	}
 }
+
+// TestExtendContinuesAfterABrokenCluster is the acceptance criterion "one
+// failing cluster must not stop the sweep": a cluster whose ConfigMap fails to
+// parse costs its own error, but another cluster's matching reservation is
+// still extended and pushed, and the broken cluster's failure comes back for
+// the caller to report -- Extend never returns a bare nil, err when some
+// reservations did get extended.
+func TestExtendContinuesAfterABrokenCluster(t *testing.T) {
+	const brokenCluster = "broken-cluster"
+
+	dir, origin := newReapFixture(t, fixtureOptions{clusters: []string{fixtureCluster, brokenCluster}})
+
+	req := testRequest(dir)
+	req.Now = time.Date(2026, 9, 15, 10, 0, 0, 0, time.UTC)
+	req.Duration = 4 * time.Hour
+	reserveAndPush(t, dir, req)
+
+	// Corrupt the broken cluster's ConfigMap so List fails on it. It need not be
+	// committed -- Extend reads the working tree directly, exactly as Reap does.
+	brokenConfigMap := filepath.Join(dir, "management-clusters", brokenCluster, "configmap-reservations.yaml")
+	corrupt := "apiVersion: v1\n" +
+		"kind: ConfigMap\n" +
+		"metadata:\n" +
+		"  name: reservations\n" +
+		"  namespace: giantswarm\n" +
+		"data:\n" +
+		"  broken-app: '{user: mallory, branch: x, pr: \"\", scope: app, from: not-a-date, until: not-a-date}'\n"
+	if err := os.WriteFile(brokenConfigMap, []byte(corrupt), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Date(2026, 9, 15, 11, 0, 0, 0, time.UTC) // before the 14:00 expiry
+	extended, err := reservation.Extend(context.Background(), reservation.ExtendRequest{
+		RepoDir:     dir,
+		PullRequest: testPullRequest,
+		User:        testExtender,
+		Now:         now,
+	})
+	if err == nil {
+		t.Fatal("expected an error reporting the broken cluster, got none")
+	}
+	if len(extended) != 1 || extended[0].Cluster != fixtureCluster {
+		t.Fatalf("got %+v, want the enabled cluster's extension despite the broken one", extended)
+	}
+
+	head := gitOutput(t, dir, "rev-parse", "HEAD")
+	tip := gitOutput(t, origin, "rev-parse", gitOutput(t, dir, "branch", "--show-current"))
+	if head != tip {
+		t.Errorf("the good cluster's extension did not land on origin: local HEAD %s, origin %s", head, tip)
+	}
+}
