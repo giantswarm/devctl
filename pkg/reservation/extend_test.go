@@ -127,3 +127,55 @@ func TestExtendIgnoresAnExpiredReservation(t *testing.T) {
 		t.Errorf("origin moved even though nothing was extended: %s -> %s", beforeTip, afterTip)
 	}
 }
+
+// TestExtendResetsEveryMatchingReservation is the acceptance criterion "extend
+// EVERY match, not just the first": a pull request holding reservations on two
+// different apps on the same cluster gets both reset, not only the one List
+// happens to return first.
+func TestExtendResetsEveryMatchingReservation(t *testing.T) {
+	dir, _ := newReapFixture(t, fixtureOptions{})
+
+	first := testRequest(dir)
+	first.Now = time.Date(2026, 9, 15, 10, 0, 0, 0, time.UTC)
+	first.Duration = 4 * time.Hour
+	reserveAndPush(t, dir, first)
+
+	second := testRequest(dir)
+	second.App = fixtureOtherApp
+	second.Now = time.Date(2026, 9, 15, 10, 0, 0, 0, time.UTC)
+	second.Duration = 2 * time.Hour
+	reserveAndPush(t, dir, second)
+
+	now := time.Date(2026, 9, 15, 11, 30, 0, 0, time.UTC) // before both expiries
+	extended, err := reservation.Extend(context.Background(), reservation.ExtendRequest{
+		RepoDir:     dir,
+		PullRequest: testPullRequest,
+		User:        testExtender,
+		Now:         now,
+	})
+	if err != nil {
+		t.Fatalf("Extend: %v", err)
+	}
+	if len(extended) != 2 {
+		t.Fatalf("got %d extended reservations, want 2: %+v", len(extended), extended)
+	}
+
+	byApp := map[string]reservation.Extended{}
+	for _, e := range extended {
+		byApp[e.App] = e
+	}
+	if got := byApp[fixtureApp]; !got.Until.Equal(now.Add(4 * time.Hour)) {
+		t.Errorf("%s until: got %+v, want Until %s", fixtureApp, got, now.Add(4*time.Hour))
+	}
+	if got := byApp[fixtureOtherApp]; !got.Until.Equal(now.Add(2 * time.Hour)) {
+		t.Errorf("%s until: got %+v, want Until %s", fixtureOtherApp, got, now.Add(2*time.Hour))
+	}
+
+	entries := reservationEntries(t, dir, fixtureCluster)
+	if entries[fixtureApp]["from"] != now.Format(time.RFC3339) {
+		t.Errorf("%s entry not reset: %+v", fixtureApp, entries[fixtureApp])
+	}
+	if entries[fixtureOtherApp]["from"] != now.Format(time.RFC3339) {
+		t.Errorf("%s entry not reset: %+v", fixtureOtherApp, entries[fixtureOtherApp])
+	}
+}
