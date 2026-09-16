@@ -2,6 +2,7 @@ package reservation_test
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -162,5 +163,39 @@ func TestPushWithRetryRerendersAfterAnotherReservationLands(t *testing.T) {
 	}
 	if got, want := entries[fixtureOtherApp]["user"], testOtherUser; got != want {
 		t.Errorf("other-app holder: got %q, want %q (the reservation that landed first must survive the rebase)", got, want)
+	}
+}
+
+// TestPushWithRetryGivesUpAfterMaxAttempts checks the ceiling: a push that
+// loses the race every single time stops after MaxPushAttempts and reports
+// the failure, instead of retrying forever.
+func TestPushWithRetryGivesUpAfterMaxAttempts(t *testing.T) {
+	dir, origin := newPushFixture(t)
+	saboteur := t.TempDir()
+	runGit(t, saboteur, "clone", origin, ".")
+
+	calls := 0
+	render := func() error {
+		calls++
+		writeAndCommit(t, dir, "change.txt", fmt.Sprintf("change %d\n", calls))
+
+		// However dir's push turns out, someone else's push always lands first,
+		// so dir's is rejected again on every attempt.
+		runGit(t, saboteur, "pull", "--rebase", "origin", "main")
+		writeAndCommit(t, saboteur, "sabotage.txt", fmt.Sprintf("sabotage %d\n", calls))
+		runGit(t, saboteur, "push", "origin", "main")
+
+		return nil
+	}
+
+	err := reservation.PushWithRetry(context.Background(), dir, "main", render)
+	if err == nil {
+		t.Fatal("expected a failure, got none")
+	}
+	if !reservation.IsPushRetriesExhausted(err) {
+		t.Fatalf("expected a push-retries-exhausted error, got %v", err)
+	}
+	if calls != reservation.MaxPushAttempts {
+		t.Errorf("render called %d times, want %d", calls, reservation.MaxPushAttempts)
 	}
 }
