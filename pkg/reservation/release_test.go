@@ -151,6 +151,47 @@ func TestReleaseRepeatedCyclesLeaveNothingBehind(t *testing.T) {
 	}
 }
 
+// TestReleaseRestoresAPreexistingEmptyComponentsList covers the cluster whose
+// collections/kustomization.yaml already carries `components: []` before its
+// first reservation: addComponent turns that line into a real list, and
+// release has to put `components: []` back rather than deleting the key or
+// dropping whatever follows it, which byte-for-byte restoration would catch
+// either way.
+func TestReleaseRestoresAPreexistingEmptyComponentsList(t *testing.T) {
+	dir := newGitOpsFixture(t, fixtureOptions{
+		collectionsKustomization: `apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  # Stands in for the remote management-cluster-bases collection stage.
+  - ../../../bases/collections/demo
+components: []
+patches: []
+`,
+	})
+
+	repo, err := git.PlainOpen(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := commitAt(t, repo)
+
+	if _, err := reservation.Reserve(testRequest(dir)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reservation.Release(testReleaseRequest(dir)); err != nil {
+		t.Fatal(err)
+	}
+
+	after := commitAt(t, repo)
+	patch, err := before.Patch(after)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fp := patch.FilePatches(); len(fp) != 0 {
+		t.Errorf("the worktree after release differs from before the reserve:\n%s", patch.String())
+	}
+}
+
 // TestReleaseLeavesOtherReservationsIntact makes sure removing one app's
 // component and ConfigMap entry does not disturb its neighbor: the
 // components: list and the data: block both hold more than the one item

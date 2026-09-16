@@ -160,10 +160,14 @@ func addComponent(path, entry string) error {
 }
 
 // removeComponent removes entry from the components list of a kustomization
-// file, reversing addComponent exactly. When entry was the only item, it
-// deletes the whole components: block addComponent introduced, plus the single
-// trailing blank line that came with it, so a cluster that had no components:
-// key before the reservation has none after it is released.
+// file, reversing addComponent exactly. When entry was the only item and
+// nothing but blank lines follows the block, addComponent appended it from
+// scratch, so removeComponent deletes the whole block, plus the single
+// trailing blank line that came with it, and a cluster that had no
+// components: key before the reservation has none after it is released. When
+// real content follows the block instead, the key already existed as
+// `components: []` — the only other form addComponent recognizes — so that
+// line is restored rather than dropped, along with everything after it.
 func removeComponent(path, entry string) error {
 	lines, err := readLines(path)
 	if err != nil {
@@ -215,9 +219,17 @@ func removeComponent(path, entry string) error {
 		return microerror.Mask(writeLines(path, lines))
 	}
 
-	// entry was the only item: undo the whole block addComponent appended from
-	// scratch, restoring the single trailing newline the file had before it.
-	lines = append(trimTrailingBlank(lines[:start]), "")
+	if len(trimTrailingBlank(lines[last+1:])) == 0 {
+		// Nothing but blank lines follows: addComponent appended the whole block
+		// from scratch, so undo it entirely, restoring the single trailing
+		// newline the file had before it.
+		lines = append(trimTrailingBlank(lines[:start]), "")
+	} else {
+		// Real content follows the block: the key pre-existed as `components: []`,
+		// so put that back instead of deleting a key that was already there,
+		// which would silently drop everything after it.
+		lines = append(lines[:start], append([]string{"components: []"}, lines[last+1:]...)...)
+	}
 
 	return microerror.Mask(writeLines(path, lines))
 }

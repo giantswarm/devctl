@@ -117,6 +117,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   because `reap` and the collision check both rely on seeing the ones past expiry too; only the
   `list` command's own output is now filtered to the ones still active as of now, matching what its
   doc comment and user story 26 always said it printed.
+- `reservation release`: releasing an app whose cluster already had `components: []` in
+  `collections/kustomization.yaml` before its first reservation no longer leaves the key deleted, and
+  no longer drops whatever followed it in the file. `reserve` turns that literal `[]` into a real
+  list to insert its entry, and `release` now puts `components: []` back in that case instead of
+  assuming the key never existed, which used to also discard any content after it.
 
 ### Changed
 
