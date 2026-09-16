@@ -1,7 +1,7 @@
 // Package circleciclient is devctl's client for the CircleCI API: the calls
 // the repository set-up engine makes for a project — follow and unfollow
-// (v1.1), the project, its settings and checkout keys, its pipelines and
-// their workflows and jobs (v2) — and nothing else. The token is a personal
+// (v1.1), the token's user, the project, its settings and checkout keys, its
+// pipelines and their workflows and jobs (v2) — and nothing else. The token is a personal
 // API token (architectbot's `CIRCLECI_API_TOKEN` for the reconciler, the
 // person's for `devctl repo reconcile`); the org and repository name a
 // project by their GitHub slug.
@@ -168,6 +168,24 @@ type Job struct {
 	Name   string `json:"name"`
 	Status string `json:"status"`
 	Type   string `json:"type"`
+}
+
+// User is the token's CircleCI user (GET /api/v2/me). For an account
+// connected through GitHub, Login is the GitHub login: the user CircleCI
+// follows a project as.
+type User struct {
+	ID    string `json:"id"`
+	Login string `json:"login"`
+	Name  string `json:"name"`
+}
+
+// Me returns the token's user.
+func (c *Client) Me(ctx context.Context) (*User, error) {
+	var u User
+	if err := c.do(ctx, http.MethodGet, "/api/v2/me", nil, &u); err != nil {
+		return nil, microerror.Mask(err)
+	}
+	return &u, nil
 }
 
 // GetProject returns the project of org/repo; IsNotFound when CircleCI does
