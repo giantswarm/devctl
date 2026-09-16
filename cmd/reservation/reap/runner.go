@@ -71,7 +71,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	}
 
 	if reapErr != nil {
-		return microerror.Maskf(reapError, "%s", reapErr)
+		return microerror.Mask(reapErr)
 	}
 
 	return nil

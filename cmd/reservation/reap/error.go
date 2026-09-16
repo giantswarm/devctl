@@ -30,15 +30,3 @@ var invalidPullRequestError = &microerror.Error{
 func IsInvalidPullRequest(err error) bool {
 	return microerror.Cause(err) == invalidPullRequestError
 }
-
-// reapError wraps whatever reservation.Reap reports once it has already
-// printed every release it did manage: a broken cluster or a failed push
-// among several must not hide the releases that landed.
-var reapError = &microerror.Error{
-	Kind: "reapError",
-}
-
-// IsReap asserts reapError.
-func IsReap(err error) bool {
-	return microerror.Cause(err) == reapError
-}

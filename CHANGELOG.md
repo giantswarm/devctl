@@ -122,6 +122,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   no longer drops whatever followed it in the file. `reserve` turns that literal `[]` into a real
   list to insert its entry, and `release` now puts `components: []` back in that case instead of
   assuming the key never existed, which used to also discard any content after it.
+- `reservation release` and `reservation reap`: a failed push or a failed sweep is now reported the
+  same way `reserve` already reports one, by masking the underlying error directly instead of
+  wrapping it in a package-local `pushError` / `reapError`. Neither local kind was ever asserted
+  anywhere, and wrapping discarded the identity of the real error underneath, such as
+  `reservation.IsPush` or `reservation.IsPushRetriesExhausted`; the CLI's own output is unchanged.
+  `release.IsPush` and `reap.IsReap` are removed along with them.
 
 ### Changed
 

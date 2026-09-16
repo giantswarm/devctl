@@ -19,15 +19,3 @@ var invalidFlagError = &microerror.Error{
 func IsInvalidFlag(err error) bool {
 	return microerror.Cause(err) == invalidFlagError
 }
-
-// pushError indicates that `git push` failed once Release had already
-// committed. The commit stays: re-running the command would refuse with a
-// not-reserved error, so the fix is `git push` by hand in --repo-dir.
-var pushError = &microerror.Error{
-	Kind: "pushError",
-}
-
-// IsPush asserts pushError.
-func IsPush(err error) bool {
-	return microerror.Cause(err) == pushError
-}

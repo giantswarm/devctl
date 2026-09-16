@@ -55,7 +55,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	}
 
 	if err := reservation.PushWithRetry(ctx, r.flag.RepoDir, render); err != nil {
-		return microerror.Maskf(pushError, "%s", err)
+		return microerror.Mask(err)
 	}
 
 	_, _ = fmt.Fprintf(r.stdout, "Released %s on %s.\n", result.App, r.flag.Cluster)
