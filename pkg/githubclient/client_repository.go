@@ -8,7 +8,7 @@ import (
 	"regexp"
 
 	"github.com/giantswarm/microerror"
-	"github.com/google/go-github/v90/github"
+	"github.com/google/go-github/v92/github"
 )
 
 func (c *Client) ListRepositories(ctx context.Context, owner string) ([]Repository, error) {
@@ -143,7 +143,7 @@ func (c *Client) SetRepositoryPermissions(ctx context.Context, repository *githu
 	}
 
 	input := &github.DefaultWorkflowPermissionRepository{
-		DefaultWorkflowPermissions: github.Ptr("write"),
+		DefaultWorkflowPermissions: new("write"),
 	}
 	_, _, err := underlyingClient.Repositories.UpdateDefaultWorkflowPermissions(ctx, owner, repo, *input)
 	if err != nil {
@@ -577,7 +577,7 @@ func (c *Client) CreateFromTemplate(ctx context.Context, templateOwner, template
 
 	req := github.TemplateRepoRequest{
 		Name:        repository.GetName(),
-		Owner:       github.Ptr(newOwner),
+		Owner:       new(newOwner),
 		Description: repository.Description,
 		Private:     repository.Private,
 	}

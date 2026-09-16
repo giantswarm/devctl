@@ -19,7 +19,7 @@ func NewMakefileGenKubernetesAPIMkInput(p params.Params) input.Input {
 		Path:         "Makefile.gen.k8sapi.mk",
 		TemplateBody: makefileGenKubernetesAPITemplate,
 		TemplateData: map[string]interface{}{
-			"Header": params.Header("#", makefileGenKubernetesAPITemplateSha),
+			templateKeyHeader: params.Header("#", makefileGenKubernetesAPITemplateSha),
 		},
 	}
 

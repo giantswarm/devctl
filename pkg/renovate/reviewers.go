@@ -47,7 +47,7 @@ func FindConfigFile(dir string) (string, error) {
 // quotes (the Giant Swarm house style), renovate.json to strict-JSON double
 // quotes.
 func SetReviewers(path string, reviewers []string) error {
-	src, err := os.ReadFile(path)
+	src, err := os.ReadFile(path) // #nosec G304 -- SetReviewers exists to rewrite the Renovate config its caller names, so the path cannot be constrained without removing the function
 	if err != nil {
 		return microerror.Mask(err)
 	}

@@ -26,11 +26,11 @@ func NewAutoReleaseInput(p params.Params) input.Input {
 		Path:         params.RegenerableFileName(p, "auto_release.yaml"),
 		TemplateBody: autoReleaseTemplate,
 		TemplateDelims: input.InputTemplateDelims{
-			Left:  "{{{{",
-			Right: "}}}}",
+			Left:  templateDelimLeft,
+			Right: templateDelimRight,
 		},
 		TemplateData: map[string]interface{}{
-			"Header": params.Header("#", autoReleaseTemplateSha),
+			templateKeyHeader: params.Header("#", autoReleaseTemplateSha),
 		},
 	}
 }

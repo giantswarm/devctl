@@ -20,13 +20,13 @@ func NewCreateReleaseInput(p params.Params) input.Input {
 		Path:         params.RegenerableFileName(p, "create_release.yaml"),
 		TemplateBody: createReleaseTemplate,
 		TemplateDelims: input.InputTemplateDelims{
-			Left:  "{{{{",
-			Right: "}}}}",
+			Left:  templateDelimLeft,
+			Right: templateDelimRight,
 		},
 		TemplateData: map[string]interface{}{
-			"Header":       params.Header("#", createReleaseTemplateSha),
-			"IsFlavourCLI": params.IsFlavourCLI(p),
-			"IsDevctl":     strings.HasPrefix(createReleaseTemplateSha, "https://github.com/giantswarm/devctl"),
+			templateKeyHeader: params.Header("#", createReleaseTemplateSha),
+			"IsFlavourCLI":    params.IsFlavourCLI(p),
+			"IsDevctl":        strings.HasPrefix(createReleaseTemplateSha, "https://github.com/giantswarm/devctl"),
 		},
 	}
 

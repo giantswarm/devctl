@@ -13,7 +13,7 @@ import (
 	"github.com/briandowns/spinner"
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
-	"github.com/google/go-github/v90/github"
+	"github.com/google/go-github/v92/github"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
@@ -63,7 +63,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 	s.Stop()
-	_, _ = fmt.Fprintln(r.stdout, "✓ Repository created from template")
+	fmt.Fprintln(r.stdout, "✓ Repository created from template")
 
 	// Wait for repository to be fully created and initialized
 	s.Suffix = " Waiting for repository to be initialized..."
@@ -80,7 +80,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 	s.Stop()
-	_, _ = fmt.Fprintln(r.stdout, "✓ Repository cloned locally")
+	fmt.Fprintln(r.stdout, "✓ Repository cloned locally")
 
 	// Replace placeholders
 	s.Suffix = " Replacing placeholders..."
@@ -91,7 +91,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 	s.Stop()
-	_, _ = fmt.Fprintln(r.stdout, "✓ Placeholders replaced")
+	fmt.Fprintln(r.stdout, "✓ Placeholders replaced")
 
 	// Configure sync method (vendir/kustomize)
 	s.Suffix = fmt.Sprintf(" Configuring sync method (%s)...", r.flag.SyncMethod)
@@ -102,7 +102,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 	s.Stop()
-	_, _ = fmt.Fprintln(r.stdout, "✓ Sync method configured")
+	fmt.Fprintln(r.stdout, "✓ Sync method configured")
 
 	// Configure patch method (script/kustomize)
 	s.Suffix = fmt.Sprintf(" Configuring patch method (%s)...", r.flag.PatchMethod)
@@ -113,7 +113,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 	s.Stop()
-	_, _ = fmt.Fprintln(r.stdout, "✓ Patch method configured")
+	fmt.Fprintln(r.stdout, "✓ Patch method configured")
 
 	// Setup CI/CD without branch protection
 	s.Suffix = " Setting up CI/CD..."
@@ -124,7 +124,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 	s.Stop()
-	_, _ = fmt.Fprintln(r.stdout, "✓ CI/CD setup complete")
+	fmt.Fprintln(r.stdout, "✓ CI/CD setup complete")
 
 	// Generate workflows and Makefile
 	s.Suffix = " Generating workflows and Makefile..."
@@ -135,7 +135,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 	s.Stop()
-	_, _ = fmt.Fprintln(r.stdout, "✓ Workflows and Makefile generated")
+	fmt.Fprintln(r.stdout, "✓ Workflows and Makefile generated")
 
 	// Create PR for giantswarm/github repository
 	s.Suffix = " Creating PR for giantswarm/github..."
@@ -147,7 +147,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 	s.Stop()
-	_, _ = fmt.Fprintln(r.stdout, "✓ PR created in giantswarm/github")
+	fmt.Fprintln(r.stdout, "✓ PR created in giantswarm/github")
 
 	// Initial commit and push
 	s.Suffix = " Pushing changes to main branch..."
@@ -158,7 +158,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 	s.Stop()
-	_, _ = fmt.Fprintln(r.stdout, "✓ Changes pushed to main branch")
+	fmt.Fprintln(r.stdout, "✓ Changes pushed to main branch")
 
 	// Enable branch protection
 	s.Suffix = " Enabling branch protection..."
@@ -169,20 +169,20 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 	s.Stop()
-	_, _ = fmt.Fprintln(r.stdout, "✓ Branch protection enabled")
+	fmt.Fprintln(r.stdout, "✓ Branch protection enabled")
 
-	_, _ = fmt.Fprintf(r.stdout, "\n✨ Successfully bootstrapped app repository %s\n\n", r.flag.Name)
-	_, _ = fmt.Fprintf(r.stdout, "Next steps:\n")
-	_, _ = fmt.Fprintf(r.stdout, "1. Visit your new repository: https://github.com/giantswarm/%s-app\n", r.flag.Name)
+	fmt.Fprintf(r.stdout, "\n✨ Successfully bootstrapped app repository %s\n\n", r.flag.Name)
+	fmt.Fprintf(r.stdout, "Next steps:\n")
+	fmt.Fprintf(r.stdout, "1. Visit your new repository: https://github.com/giantswarm/%s-app\n", r.flag.Name)
 	if prURL != "" {
-		_, _ = fmt.Fprintf(r.stdout, "2. Review and merge the PR: %s\n", prURL)
+		fmt.Fprintf(r.stdout, "2. Review and merge the PR: %s\n", prURL)
 	} else {
-		_, _ = fmt.Fprintf(r.stdout, "2. Review and merge the PR: https://github.com/giantswarm/github/pulls\n")
+		fmt.Fprintf(r.stdout, "2. Review and merge the PR: https://github.com/giantswarm/github/pulls\n")
 	}
-	_, _ = fmt.Fprintf(r.stdout, "3. Update the Chart.yaml with appropriate metadata and version\n")
-	_, _ = fmt.Fprintf(r.stdout, "4. Configure your image registry in values.yaml\n")
-	_, _ = fmt.Fprintf(r.stdout, "5. Create a release by pushing a tag (e.g., v0.1.0)\n")
-	_, _ = fmt.Fprintf(r.stdout, "\nFor more information, visit: https://intranet.giantswarm.io/docs/dev-and-releng/app-developer-guide/\n")
+	fmt.Fprintf(r.stdout, "3. Update the Chart.yaml with appropriate metadata and version\n")
+	fmt.Fprintf(r.stdout, "4. Configure your image registry in values.yaml\n")
+	fmt.Fprintf(r.stdout, "5. Create a release by pushing a tag (e.g., v0.1.0)\n")
+	fmt.Fprintf(r.stdout, "\nFor more information, visit: https://intranet.giantswarm.io/docs/dev-and-releng/app-developer-guide/\n")
 
 	return nil
 }
@@ -214,9 +214,9 @@ func (r *runner) createRepository(ctx context.Context, name string, owner string
 
 	repoName := fmt.Sprintf("%s-app", name)
 	repo := &github.Repository{
-		Name:        github.Ptr(repoName),
-		Private:     github.Ptr(false),
-		Description: github.Ptr(fmt.Sprintf("Helm chart for %s", name)),
+		Name:        new(repoName),
+		Private:     new(false),
+		Description: new(fmt.Sprintf("Helm chart for %s", name)),
 	}
 
 	_, err = client.CreateFromTemplate(ctx, owner, templateRepo, owner, repo)
@@ -484,7 +484,7 @@ func (r *runner) setupCICD(ctx context.Context, repoPath string) error {
 
 	// Run devctl repo setup with GITHUB_TOKEN set
 	repoFullName := fmt.Sprintf("giantswarm/%s-app", r.flag.Name)
-	cmd := exec.CommandContext(ctx, "devctl", "repo", "setup", repoFullName, "--disable-branch-protection")
+	cmd := exec.CommandContext(ctx, "devctl", "repo", "setup", repoFullName, "--disable-branch-protection") // #nosec G204 -- fixed binary; repoFullName derives from --name, which flag.Validate constrains to an identifier
 	cmd.Dir = repoPath
 
 	// Only show output in debug mode
@@ -531,7 +531,7 @@ func (r *runner) enableBranchProtection(ctx context.Context, repoPath string) er
 
 	// Run devctl repo setup with GITHUB_TOKEN set (without --disable-branch-protection)
 	repoFullName := fmt.Sprintf("giantswarm/%s-app", r.flag.Name)
-	cmd := exec.CommandContext(ctx, "devctl", "repo", "setup", repoFullName)
+	cmd := exec.CommandContext(ctx, "devctl", "repo", "setup", repoFullName) // #nosec G204 -- fixed binary; repoFullName derives from --name, which flag.Validate constrains to an identifier
 	cmd.Dir = repoPath
 
 	// Only show output in debug mode
@@ -550,8 +550,19 @@ func (r *runner) enableBranchProtection(ctx context.Context, repoPath string) er
 	return nil
 }
 
+// allowedCommands are the external binaries the bootstrap flow may run.
+var allowedCommands = map[string]bool{
+	"devctl": true,
+	"git":    true,
+	"vendir": true,
+}
+
 func (r *runner) execCommand(ctx context.Context, dir string, command string, args ...string) error {
-	cmd := exec.CommandContext(ctx, command, args...)
+	if !allowedCommands[command] {
+		return microerror.Maskf(executionFailedError, "refusing to run %#q: not an allowed command", command)
+	}
+
+	cmd := exec.CommandContext(ctx, command, args...) // #nosec G204 -- command is checked against allowedCommands, args are passed as separate elements and never reach a shell
 	if dir != "" {
 		cmd.Dir = dir
 	}
@@ -639,7 +650,7 @@ func (r *runner) createGithubRepoPR(ctx context.Context) (string, error) {
 `, r.flag.Name)
 
 	// Read existing file
-	content, err := os.ReadFile(teamFile)
+	content, err := os.ReadFile(teamFile) // #nosec G304 -- teamFile joins the checkout directory with --team, which flag.Validate constrains to an identifier, so it cannot escape the directory
 	if err != nil {
 		return "", microerror.Mask(err)
 	}

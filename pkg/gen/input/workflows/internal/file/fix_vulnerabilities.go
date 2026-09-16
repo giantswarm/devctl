@@ -19,11 +19,11 @@ func NewFixVulnerabilitiesInput(p params.Params) input.Input {
 		Path:         params.RegenerableFileName(p, "fix_vulnerabilities.yaml"),
 		TemplateBody: fixVulnerabilitiesTemplate,
 		TemplateDelims: input.InputTemplateDelims{
-			Left:  "{{{{",
-			Right: "}}}}",
+			Left:  templateDelimLeft,
+			Right: templateDelimRight,
 		},
 		TemplateData: map[string]interface{}{
-			"Header":                        params.Header("#", fixVulnerabilitiesTemplateSha),
+			templateKeyHeader:               params.Header("#", fixVulnerabilitiesTemplateSha),
 			templateKeyStepSetUpGitIdentity: params.StepSetUpGitIdentity(),
 		},
 	}

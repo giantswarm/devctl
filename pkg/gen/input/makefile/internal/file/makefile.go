@@ -19,7 +19,7 @@ func NewMakefileInput(p params.Params) input.Input {
 		Path:         "Makefile",
 		TemplateBody: makefileTemplate,
 		TemplateData: map[string]interface{}{
-			"Header": params.Header("#", makefileTemplateSha),
+			templateKeyHeader: params.Header("#", makefileTemplateSha),
 		},
 	}
 

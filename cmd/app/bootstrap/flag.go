@@ -3,6 +3,8 @@ package bootstrap
 import (
 	"github.com/giantswarm/microerror"
 	"github.com/spf13/cobra"
+
+	"github.com/giantswarm/devctl/v8/internal/validate"
 )
 
 const (
@@ -58,8 +60,10 @@ func (f *flag) Init(cmd *cobra.Command) {
 }
 
 func (f *flag) Validate() error {
-	if f.Name == "" {
-		return microerror.Maskf(invalidFlagError, "--%s must not be empty", flagName)
+	// Name and Team are interpolated into a repository path and into the
+	// argument list of a subprocess, so they are constrained to identifiers.
+	if err := validate.Name("--"+flagName, f.Name); err != nil {
+		return microerror.Maskf(invalidFlagError, "%s", err)
 	}
 	if f.UpstreamRepo == "" {
 		return microerror.Maskf(invalidFlagError, "--%s must not be empty", flagUpstreamRepo)
@@ -67,8 +71,8 @@ func (f *flag) Validate() error {
 	if f.UpstreamChart == "" {
 		return microerror.Maskf(invalidFlagError, "--%s must not be empty", flagUpstreamChart)
 	}
-	if f.Team == "" {
-		return microerror.Maskf(invalidFlagError, "--%s must not be empty", flagTeam)
+	if err := validate.Name("--"+flagTeam, f.Team); err != nil {
+		return microerror.Maskf(invalidFlagError, "%s", err)
 	}
 	if f.SyncMethod != methodVendir && f.SyncMethod != methodKustomize {
 		return microerror.Maskf(invalidFlagError, "--%s must be either '%s' or '%s'", flagSyncMethod, methodVendir, methodKustomize)

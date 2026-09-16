@@ -13,6 +13,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"sigs.k8s.io/yaml"
 
+	"github.com/giantswarm/devctl/v8/internal/validate"
 	"github.com/giantswarm/devctl/v8/pkg/release/changelog"
 )
 
@@ -84,12 +85,12 @@ type releaseNotesTemplateData struct {
 }
 
 var providerTitleMap = map[string]string{
-	"aws":            "CAPA",
-	"azure":          "Azure",
-	"eks":            "EKS",
-	"kvm":            "KVM",
-	"vsphere":        "vSphere",
-	"cloud-director": "VMware Cloud Director",
+	providerAWS:           "CAPA",
+	providerAzure:         "Azure",
+	providerEKS:           "EKS",
+	"kvm":                 "KVM",
+	providerVSphere:       "vSphere",
+	providerCloudDirector: "VMware Cloud Director",
 }
 
 func createReleaseNotes(release, baseRelease v1alpha1.Release, provider string, changelogNoisePatterns []string) (string, error) {
@@ -181,14 +182,14 @@ func createReleaseNotes(release, baseRelease v1alpha1.Release, provider string, 
 		}
 
 		if currentClusterVer != "" && previousClusterVer != "" && currentClusterVer != previousClusterVer {
-			clusterChangelog, err := changelog.ParseChangelog("cluster", currentClusterVer, previousClusterVer, changelogNoisePatterns...)
+			clusterChangelog, err := changelog.ParseChangelog(clusterComponentName, currentClusterVer, previousClusterVer, changelogNoisePatterns...)
 			if err != nil {
 				logrus.Warnf("Could not parse cluster changelog for %s...%s: %v", previousClusterVer, currentClusterVer, err)
 				continue
 			}
 			if clusterChangelog != nil {
 				components = append(components, releaseNotes{
-					Name:            "cluster",
+					Name:            clusterComponentName,
 					Version:         currentClusterVer,
 					PreviousVersion: previousClusterVer,
 					Link:            clusterChangelog.Link,
@@ -248,7 +249,7 @@ func createReleaseNotes(release, baseRelease v1alpha1.Release, provider string, 
 	clusterIdx := -1
 	providerIdx := -1
 	for i, c := range components {
-		if c.Name == "cluster" {
+		if c.Name == clusterComponentName {
 			clusterIdx = i
 		}
 		if providerCharts[c.Name] {
@@ -296,8 +297,18 @@ func getClusterDependencyVersion(providerChartName, version string) (string, err
 		ref = "v" + ref
 	}
 
+	// Both values come from a release manifest, so they are checked before they
+	// reach the URL: an unconstrained value could move the request to another
+	// host or path.
+	if err := validate.Name("component name", providerChartName); err != nil {
+		return "", microerror.Mask(err)
+	}
+	if err := validate.Version("component version", ref); err != nil {
+		return "", microerror.Mask(err)
+	}
+
 	url := fmt.Sprintf("https://raw.githubusercontent.com/giantswarm/%s/%s/helm/%s/Chart.yaml", providerChartName, ref, providerChartName)
-	resp, err := http.Get(url)
+	resp, err := http.Get(url) // #nosec G107 -- fixed host and path template; the two interpolated values are checked above
 	if err != nil {
 		return "", microerror.Mask(err)
 	}
@@ -326,7 +337,7 @@ func getClusterDependencyVersion(providerChartName, version string) (string, err
 	}
 
 	for _, dep := range chart.Dependencies {
-		if dep.Name == "cluster" {
+		if dep.Name == clusterComponentName {
 			return strings.TrimPrefix(dep.Version, "v"), nil
 		}
 	}

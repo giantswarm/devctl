@@ -149,6 +149,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- `gen precommit`: `devctl gen precommit` now writes `helm/<chart>/values.schema.json` itself,
+  in-process (generate via `helm-values-schema-json`, fix `$ref`+`additionalProperties: false` ->
+  `unevaluatedProperties: false`, normalize via `schemalint`), instead of leaving it to the
+  generated pre-commit hook. The hook is now read-only: it reproduces the same pipeline to a
+  scratch file and fails on a diff against the committed file, but never rewrites it, so it can no
+  longer fight `schemalint-verify` or itself over key ordering (giantswarm/giantswarm#37267). Its
+  failure message points at `devctl gen precommit` as the fix. Every `schemalint` and
+  `helm-values-schema-json` version in the generated config -- the hook's
+  `additional_dependencies` and the `schemalint-verify` hook's `rev:` -- is now read from devctl's
+  own `go.mod` at build time, so it is the single source of truth instead of a hardcoded literal
+  in the template. The normalizing binary and the verifying one cannot land on different versions
+  any more. Output is unchanged at the current pin. See giantswarm/devctl#2195.
+
+  This moves one network call from pre-commit into `devctl gen precommit`. A chart whose
+  `values.yaml` uses the `$ref: $k8s/...` alias makes the generator fetch the Kubernetes JSON
+  schema from `raw.githubusercontent.com` and bundle it, so `gen precommit` fails for that chart
+  while the host is unreachable. It names the URL it could not read. Charts without the alias
+  generate offline, as before.
+- `gen`: an `input.Input` that sets both `Generate` and `TemplateBody` is now rejected with an
+  `invalidInputError` instead of silently running `Generate` and ignoring the template. The two
+  fields are two ways to produce the same file, and which one won was only an accident of the order
+  of the branches in `internal.Execute`.
+- `gen precommit`: `--k8s-schema-version` now reaches `k8sSchemaVersion` as well as `k8sSchemaURL`.
+  Both the generated `helm/<chart>/.schema.yaml` and the Go config behind
+  `helm/<chart>/values.schema.json` carried a hardcoded `v1.33.1` in the version field while the
+  URL followed the flag, so a repository on another Kubernetes version described itself with two
+  different versions. Output is unchanged for the default version.
+
 - `gen circleci`: the generated chart-test jobs (`execute-chart-tests` and, with `--ats-on-release`,
   `execute-chart-tests-release`) let the repository shape and size the kind cluster they test on
   (devctl#2188, architect-orb#928):
@@ -193,6 +221,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `gen workflows`: the `auto-release` flow applies its "nothing releasable" check to a forced
+  `release-type: rc` as well. A candidate extends an open cycle, and once the stable release has closed
+  the cycle there is none to extend: the run now skips and says so, the way `release-type: stable`
+  already did, instead of tagging `vX.Y.Z-rc.N` above the shipped `vX.Y.Z`.
+- `gen workflows`: the `auto-release` flow renders the release notes after it decides which tag to cut, so
+  the "Full Changelog" compare link on a release candidate points at the tag that was created
+  (`compare/v0.1.5...v0.1.6-rc.1`) instead of at the stable target, which has no tag until the cycle closes.
+- `gen workflows`: `cliff.toml` counts only `vX.Y.Z` tags as releases (`tag_pattern`, replacing the
+  `ignore_tags` pre-release filter), so a `vX.Y.Z-rc.N` candidate tag no longer ends the range the
+  `auto-release` flow releases from. The version and the notes span the whole candidate cycle: the stable
+  release that closes a cycle carries every commit the candidates carried (devctl#2202), a
+  `workflow_dispatch` run with a candidate tag on `HEAD` names the target of the cycle rather than the last
+  stable version (devctl#2201), and a candidate pushed during a cycle keeps the target the cycle
+  established. Candidate notes become cumulative as a result: `rc.2` lists what `rc.1` listed, plus what is
+  new. The `decide` step's describe baseline also excludes build-metadata tags (`--exclude='*+*'`), so both
+  ends of the flow read the same set of tags.
 - `gen makefile`: the `app` flavour's targets (`helm-docs`, `lint-chart`, `update-chart`, `update-deps`) work
   on repositories that also have the `go` flavour. The root `Makefile` includes `Makefile.*.mk` in name order,
   so `Makefile.gen.app.mk` is parsed before `Makefile.gen.go.mk` sets `APPLICATION` from the Go module; the
@@ -452,6 +496,52 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   days later. The cap that motivated the workaround is therefore gone: `cluster-standup-teardown`,
   the repository that hit it, emits 12 MB, and CI already runs nancy 2.1.0. The target's doc comment
   now says v2.1.0 rather than v1.0.37.
+
+### Security
+
+- `app bootstrap`: `--name` and `--team` are now validated as identifiers. `--team` is joined into
+  `repositories/team-<team>.yaml` inside the `giantswarm/github` checkout, so a value carrying `..`
+  or `/` reached a file outside that directory; `--name` becomes an argument of `devctl repo setup`,
+  so a value starting with `-` was read as a flag. The bootstrap flow also runs only `devctl`, `git`
+  and `vendir`, checked against an allow list before the subprocess starts.
+- `deploy`: `--app-name`, `--app-catalog`, `--target-namespace`, `--management-cluster`,
+  `--organization` and `--workload-cluster` are now validated as identifiers, and `--app-version` as
+  a version. All seven are passed to `kubectl gs gitops add app`, where a value starting with `-`
+  was read as a kubectl flag.
+- `pkg/appstatus`: `WaitForAppDeployment` validates the app name, organization namespace and
+  management cluster it passes to `tsh` and `kubectl`, rather than trust its callers.
+- `release create`: the provider name is validated before it is joined into the releases directory,
+  so it cannot address a directory outside it. The chart name and version read from a release
+  manifest are validated before they are interpolated into the `raw.githubusercontent.com` URL the
+  cluster dependency lookup fetches.
+
+### Fixed
+
+- `pr`: the parent command reports an error from `--help` instead of discarding it.
+- `gen precommit`: new `--go-generate` flag renders a `go generate ./...` step into
+  `zz_generated.pre-commit.yaml` before the hooks, and devctl sets it for itself. golangci-lint
+  compiles the packages it analyses, and devctl embeds 37 gitignored `*.template.sha` provenance
+  files, so the job stopped at a load error instead of linting. The flag is opt-in and requires
+  `--language go`: the job installs no code generators, so a repository whose directives need
+  `controller-gen` or `mockgen` must not get the step.
+- `release`: `getLatestGithubRelease` and the Kubernetes release lookup name the upstream
+  repository through `kubernetesGitHubOwner`/`kubernetesGitHubRepo` rather than repeat a literal
+  that also means the component name.
+
+### Changed
+
+- `release bumpall`: reads `slices` from the standard library instead of `golang.org/x/exp/slices`,
+  which is deprecated. `golang.org/x/exp` is dropped from `go.mod`.
+- The `github.Ptr` and `github.String` helpers, deprecated in go-github v92, are replaced by the
+  `new` builtin.
+- Repeated string literals are named: template data keys and delimiters in the `workflows`,
+  `precommit` and `makefile` generators, and provider names, release types, output formats and
+  component names in `pkg/release`.
+- Permissive file and directory modes in tests are tightened to `0600` and `0750`.
+- `.golangci.yml` sets `goconst.ignore-tests`. A table test repeats a fixture across its cases so
+  that the input and the expectation can be read together. It also excludes `fmt.Fprint`,
+  `fmt.Fprintf` and `fmt.Fprintln` from errcheck: the runners print to an injected `io.Writer`,
+  and a failed write to the user's terminal cannot be reported to the user's terminal.
 
 ## [8.23.0] - 2026-06-24
 

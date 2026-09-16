@@ -19,11 +19,11 @@ func NewHelmRenderDiff(p params.Params) input.Input {
 		Path:         params.RegenerableFileName(p, "diff_helm_render_templates.yaml"),
 		TemplateBody: helmRenderDiffTemplate,
 		TemplateDelims: input.InputTemplateDelims{
-			Left:  "{{{{",
-			Right: "}}}}",
+			Left:  templateDelimLeft,
+			Right: templateDelimRight,
 		},
 		TemplateData: map[string]interface{}{
-			"Header": params.Header("#", helmRenderDiffTemplateSha),
+			templateKeyHeader: params.Header("#", helmRenderDiffTemplateSha),
 		},
 	}
 

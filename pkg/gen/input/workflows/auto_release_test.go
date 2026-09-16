@@ -15,34 +15,57 @@ import (
 	"github.com/giantswarm/devctl/v8/pkg/gen"
 )
 
-// decideScript extracts the shell of the auto-release "Decide whether to tag"
-// step from the rendered workflow, so the tests below exercise the script that
-// actually ships rather than a copy of it.
-func decideScript(t *testing.T) string {
+// autoReleaseStep is one step of the tag job as the rendered workflow declares
+// it.
+type autoReleaseStep struct {
+	ID   string `yaml:"id"`
+	Name string `yaml:"name"`
+	If   string `yaml:"if"`
+	Run  string `yaml:"run"`
+}
+
+// tagJobSteps returns the steps of the auto-release tag job from the rendered
+// workflow, so the tests below exercise the scripts that actually ship rather
+// than a copy of them. The rendered workflow comes back with them, for the
+// failure messages: a step looked up by id or name and not found says nothing
+// on its own about what the template does declare.
+func tagJobSteps(t *testing.T) ([]autoReleaseStep, string) {
 	t.Helper()
 
 	rendered := renderInput(t, newWorkflows(t, gen.FlavourApp).AutoRelease())
 
 	var wf struct {
 		Jobs map[string]struct {
-			Steps []struct {
-				ID  string `yaml:"id"`
-				Run string `yaml:"run"`
-			} `yaml:"steps"`
+			Steps []autoReleaseStep `yaml:"steps"`
 		} `yaml:"jobs"`
 	}
 	if err := yaml.Unmarshal([]byte(rendered), &wf); err != nil {
 		t.Fatalf("rendered workflow is not valid YAML: %v\n%s", err, rendered)
 	}
 
-	for _, step := range wf.Jobs["tag"].Steps {
-		if step.ID == "decide" {
-			return step.Run
+	return wf.Jobs["tag"].Steps, rendered
+}
+
+// tagJobStep returns the tag-job step with the given id.
+func tagJobStep(t *testing.T, id string) autoReleaseStep {
+	t.Helper()
+
+	steps, rendered := tagJobSteps(t)
+	for _, s := range steps {
+		if s.ID == id {
+			return s
 		}
 	}
 
-	t.Fatalf("no step with id \"decide\" in the tag job:\n%s", rendered)
-	return ""
+	t.Fatalf("no step with id %q in the tag job:\n%s", id, rendered)
+	return autoReleaseStep{}
+}
+
+// decideScript extracts the shell of the "Decide whether to tag" step.
+func decideScript(t *testing.T) string {
+	t.Helper()
+
+	return tagJobStep(t, "decide").Run
 }
 
 // gitIn runs git in dir and returns its combined output, leaving the error for
@@ -50,7 +73,7 @@ func decideScript(t *testing.T) string {
 func gitIn(t *testing.T, dir string, args ...string) (string, error) {
 	t.Helper()
 
-	cmd := exec.CommandContext(t.Context(), "git", args...)
+	cmd := exec.CommandContext(t.Context(), "git", args...) // #nosec G204 -- fixed binary, args are built by this test, test-only
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(),
 		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.com",
@@ -119,7 +142,7 @@ func cliffContext(t *testing.T, dir string) {
 	t.Helper()
 
 	args := []string{"log", "-z", "--format=%H %s"}
-	if last, err := gitIn(t, dir, "describe", "--tags", "--abbrev=0", "--match=v*.*.*", "--exclude=*-*"); err == nil {
+	if last, err := gitIn(t, dir, "describe", "--tags", "--abbrev=0", "--match=v*.*.*", "--exclude=*-*", "--exclude=*+*"); err == nil {
 		args = append(args, strings.TrimSpace(last)+"..HEAD")
 	}
 
@@ -156,7 +179,7 @@ func decide(t *testing.T, script, dir, next, want string) map[string]string {
 
 	cliffContext(t, dir)
 
-	cmd := exec.CommandContext(t.Context(), "bash", "-c", script)
+	cmd := exec.CommandContext(t.Context(), "bash", "-c", script) // #nosec G204 -- the script is a literal in this test, test-only
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(),
 		"NEXT="+next,
@@ -327,6 +350,15 @@ func Test_AutoReleaseDecide(t *testing.T) {
 			expectPrerelse: "true",
 		},
 		{
+			// The cycle closed at v1.3.0 and nothing landed after it, so
+			// there is no cycle left for a candidate to extend.
+			name:      "workflow_dispatch rc after the cycle closed tags nothing",
+			history:   []string{"v1.2.9", "feat-rc: add x", "v1.3.0-rc.1", "v1.3.0"},
+			next:      "v1.3.0",
+			want:      "rc",
+			expectTag: "",
+		},
+		{
 			name:           "workflow_dispatch stable closes a cycle with nothing left to merge",
 			history:        []string{"v1.2.9", "feat-rc: add x", "v1.3.0-rc.1"},
 			next:           "v1.3.0",
@@ -389,15 +421,34 @@ func Test_AutoReleaseDecideIgnoresUnmergedCandidates(t *testing.T) {
 	}
 }
 
-// Test_AutoReleaseDescribeExcludesPreReleases pins the --exclude flag. Without
-// it `git describe --match='v*.*.*'` returns a reachable v1.3.0-rc.N as the
-// baseline, the "nothing to release" comparison can never be true again, and
-// the job tags on every push.
-func Test_AutoReleaseDescribeExcludesPreReleases(t *testing.T) {
+// Test_AutoReleaseDescribeExcludesNonReleaseTags pins the --exclude flags.
+// `--match='v*.*.*'` is a glob and matches v1.3.0-rc.1 and v1.2.4+build.1 as
+// readily as v1.2.3. Either one left in returns a baseline cliff.toml's
+// tag_pattern does not count as a release, the "nothing to release"
+// comparison can never be true again, and the job tags on every push.
+func Test_AutoReleaseDescribeExcludesNonReleaseTags(t *testing.T) {
 	script := decideScript(t)
 
-	if !strings.Contains(script, "--exclude='*-*'") {
-		t.Errorf("decide step must exclude pre-release tags from the describe baseline:\n%s", script)
+	for _, exclude := range []string{"--exclude='*-*'", "--exclude='*+*'"} {
+		if !strings.Contains(script, exclude) {
+			t.Errorf("decide step describe baseline is missing %s:\n%s", exclude, script)
+		}
+	}
+}
+
+// Test_AutoReleaseDecideIgnoresBuildMetadataTags runs the case `*+*` exists
+// for. cliff.toml's tag_pattern does not count v1.2.3+build.1 as a release, so
+// git-cliff reports v1.2.3 as the target of a push that carries nothing
+// releasable. The step reaches the same baseline and cuts nothing; a describe
+// that returns the build-metadata tag makes the comparison false and tags
+// v1.2.3 a second time.
+func Test_AutoReleaseDecideIgnoresBuildMetadataTags(t *testing.T) {
+	dir := repo(t, "v1.2.3", "v1.2.3+build.1", "docs: tidy")
+
+	got := decide(t, decideScript(t), dir, "v1.2.3", "auto")
+
+	if got["tag"] != "" {
+		t.Errorf("tag = %q, want none: v1.2.3+build.1 is not a release", got["tag"])
 	}
 }
 
@@ -449,5 +500,293 @@ func Test_SemanticPullRequestAcceptsRcTypes(t *testing.T) {
 		if !strings.Contains(with["types"], want+"\n") {
 			t.Errorf("types is missing %q:\n%s", want, with["types"])
 		}
+	}
+}
+
+// notesEnv lays out a working directory for the notes step: the cliff context
+// it reads, and a stub git-cliff on PATH that writes out the version it is
+// handed. The stub is what lets the assertion read the version the real render
+// would put in the compare link.
+func notesEnv(t *testing.T, context string) (dir, bin string) {
+	t.Helper()
+
+	dir = t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "cliff-context.json"), []byte(context), 0o600); err != nil {
+		t.Fatalf("write cliff context: %v", err)
+	}
+
+	bin = filepath.Join(dir, "bin")
+	if err := os.Mkdir(bin, 0o750); err != nil {
+		t.Fatalf("make stub bin dir: %v", err)
+	}
+
+	stub := "#!/usr/bin/env bash\nset -euo pipefail\n" +
+		"while [ $# -gt 0 ]; do\n" +
+		"  case \"$1\" in\n" +
+		"    --from-context) ctx=$2; shift 2 ;;\n" +
+		"    --output) out=$2; shift 2 ;;\n" +
+		"    *) shift ;;\n" +
+		"  esac\n" +
+		"done\n" +
+		"sed -n 's/.*\"version\": *\"\\([^\"]*\\)\".*/\\1/p' \"$ctx\" | head -1 > \"$out\"\n"
+	if err := os.WriteFile(filepath.Join(bin, "git-cliff"), []byte(stub), 0o700); err != nil { // #nosec G306 -- the stub has to be executable
+		t.Fatalf("write git-cliff stub: %v", err)
+	}
+
+	return dir, bin
+}
+
+// runNotes runs the extracted notes step and returns its combined output.
+func runNotes(t *testing.T, script, dir, bin, tag string) ([]byte, error) {
+	t.Helper()
+
+	cmd := exec.CommandContext(t.Context(), "bash", "-c", script) // #nosec G204 -- the script is a literal in this test, test-only
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(),
+		"TAG="+tag,
+		"PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"),
+	)
+
+	return cmd.CombinedOutput()
+}
+
+// Test_AutoReleaseNotesUseTheTaggedVersion pins the version the notes carry.
+// cliff.toml renders `{{ version }}` from the context into the "Full Changelog"
+// compare link, so the context has to name the tag the workflow cuts, not the
+// stable target it bumped to. The stub stands in for git-cliff, so what is
+// pinned is the version the render is handed, not the link cliff.toml builds
+// out of it.
+func Test_AutoReleaseNotesUseTheTaggedVersion(t *testing.T) {
+	notes := tagJobStep(t, "notes")
+
+	if notes.If != "steps.decide.outputs.tag != ''" {
+		t.Errorf("notes step condition = %q, want it skipped when nothing is tagged", notes.If)
+	}
+
+	dir, bin := notesEnv(t, `[{"version":"v0.1.6","commits":[]}]`)
+
+	if out, err := runNotes(t, notes.Run, dir, bin, "v0.1.6-rc.1"); err != nil {
+		t.Fatalf("notes step failed: %v\n%s", err, out)
+	}
+
+	rendered, err := os.ReadFile(filepath.Join(dir, "release-notes.md")) // #nosec G304 -- path built from t.TempDir
+	if err != nil {
+		t.Fatalf("read release notes: %v", err)
+	}
+
+	if strings.TrimSpace(string(rendered)) != "v0.1.6-rc.1" {
+		t.Errorf("rendered version = %q, want the tag the workflow cuts", strings.TrimSpace(string(rendered)))
+	}
+}
+
+// Test_AutoReleaseNotesRejectAnEmptyContext pins the guard on the patch. jq
+// builds `[{"version": $tag}]` out of an empty context, which renders empty
+// notes onto a tag that is about to be created. The decide step reads the same
+// field and skips the tag when it is empty, so the guard only catches a context
+// that the two steps disagree about.
+func Test_AutoReleaseNotesRejectAnEmptyContext(t *testing.T) {
+	dir, bin := notesEnv(t, `[]`)
+
+	out, err := runNotes(t, tagJobStep(t, "notes").Run, dir, bin, "v0.1.6-rc.1")
+	if err == nil {
+		t.Fatalf("notes step succeeded on an empty context:\n%s", out)
+	}
+	if !strings.Contains(string(out), "carries no version") {
+		t.Errorf("notes step failed without naming the cause:\n%s", out)
+	}
+}
+
+// Test_AutoReleaseRenderOrder pins where the render sits. The tag is only known
+// after the decision, so a render above it can only name the stable target, and
+// `gh release create` reads release-notes.md, so a render below the release
+// fails the run on a missing file.
+func Test_AutoReleaseRenderOrder(t *testing.T) {
+	steps, rendered := tagJobSteps(t)
+
+	decideAt, notesAt, releaseAt := -1, -1, -1
+	for i, s := range steps {
+		switch s.ID {
+		case "decide":
+			decideAt = i
+		case "notes":
+			notesAt = i
+		case "release":
+			releaseAt = i
+		}
+	}
+
+	if decideAt < 0 || notesAt < 0 || releaseAt < 0 {
+		t.Fatalf("tag job is missing decide (%d), notes (%d) or release (%d):\n%s",
+			decideAt, notesAt, releaseAt, rendered)
+	}
+	if notesAt < decideAt {
+		t.Errorf("notes step is at %d, before the decide step at %d", notesAt, decideAt)
+	}
+	if notesAt > releaseAt {
+		t.Errorf("notes step is at %d, after the release step at %d", notesAt, releaseAt)
+	}
+}
+
+// cliffRemoteSection matches the [remote.github] header and every line after
+// it that does not open a new section.
+var cliffRemoteSection = regexp.MustCompile(`(?m)^\[remote\.github\]\n(?:(?:[^\[\n].*)?\n)*`)
+
+// requireGitCliff resolves the git-cliff the cases below run. A workstation
+// without a working one skips; CI fails. `make test` installs the binary, so
+// a CI run that cannot run it has lost every case that exercises the tag
+// selection cliff.toml configures, and has to say so rather than report
+// green. The probe runs the binary rather than looking it up: a build for the
+// wrong libc is on PATH and executable, and fails only when a case calls it.
+func requireGitCliff(t *testing.T) {
+	t.Helper()
+
+	err := exec.CommandContext(t.Context(), "git-cliff", "--version").Run()
+	if err == nil {
+		return
+	}
+	if os.Getenv("CI") != "" {
+		t.Fatalf("git-cliff does not run (`make test` installs it): %v", err)
+	}
+
+	t.Skipf("no usable git-cliff; run `make test` or put one on PATH: %v", err)
+}
+
+// cliffTomlIn renders cliff.toml into dir for a git-cliff run. The
+// [remote.github] block is dropped: it drives the PR and author links in the
+// notes through the GitHub API, which a test has no token and no network for,
+// and git-cliff aborts on the failed lookup. Nothing in tag selection or the
+// bump reads it.
+func cliffTomlIn(t *testing.T, dir string) {
+	t.Helper()
+
+	rendered := renderInput(t, newWorkflows(t, gen.FlavourApp).CliffToml())
+
+	stripped := cliffRemoteSection.ReplaceAllString(rendered, "")
+	if stripped == rendered {
+		t.Fatalf("rendered cliff.toml has no [remote.github] block:\n%s", rendered)
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, "cliff.toml"), []byte(stripped), 0o600); err != nil {
+		t.Fatalf("write cliff.toml: %v", err)
+	}
+}
+
+// cliffRelease is the part of git-cliff's JSON context the tests below read.
+type cliffRelease struct {
+	Version string `json:"version"`
+	Commits []struct {
+		Message string `json:"message"`
+	} `json:"commits"`
+}
+
+// cliffBump runs what the "Compute next version" step runs and returns the
+// release git-cliff bumped to.
+func cliffBump(t *testing.T, dir string) cliffRelease {
+	t.Helper()
+
+	cliffTomlIn(t, dir)
+
+	cmd := exec.CommandContext(t.Context(), "git-cliff", "--unreleased", "--bump", "--context")
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("git-cliff: %v\n%s", err, out)
+	}
+
+	var releases []cliffRelease
+	if err := json.Unmarshal(out, &releases); err != nil {
+		t.Fatalf("git-cliff context is not valid JSON: %v\n%s", err, out)
+	}
+	if len(releases) != 1 {
+		t.Fatalf("git-cliff returned %d releases, want 1:\n%s", len(releases), out)
+	}
+
+	return releases[0]
+}
+
+// subjects returns the first line of each commit of a release.
+func (r cliffRelease) subjects() []string {
+	out := make([]string, 0, len(r.Commits))
+	for _, c := range r.Commits {
+		subject, _, _ := strings.Cut(c.Message, "\n")
+		out = append(out, subject)
+	}
+
+	return out
+}
+
+// Test_AutoReleaseCliffSpansTheWholeCandidateCycle pins what `--unreleased`
+// means while a candidate cycle is open. A vX.Y.Z-rc.N tag sits on the branch
+// head for most of a cycle; cliff.toml's tag_pattern keeps it from being a
+// release, so the version and the notes cover every commit since the last
+// stable tag rather than only the ones since the last candidate.
+func Test_AutoReleaseCliffSpansTheWholeCandidateCycle(t *testing.T) {
+	requireGitCliff(t)
+
+	testCases := []struct {
+		name           string
+		history        []string
+		expectVersion  string
+		expectSubjects []string
+	}{
+		{
+			// The stable release that closes a cycle carries what the
+			// candidates carried, and the minor the feat-rc earned.
+			name:           "the closing stable release covers the whole cycle",
+			history:        []string{"v1.2.9", "feat-rc: add x", "v1.3.0-rc.1", "fix: last thing"},
+			expectVersion:  "v1.3.0",
+			expectSubjects: []string{"add x", "last thing"},
+		},
+		{
+			// The second candidate of a cycle keeps the target the first one
+			// established, instead of bumping a patch off the last stable.
+			name:           "a later candidate keeps the target of the cycle",
+			history:        []string{"v1.2.9", "feat-rc: add x", "v1.3.0-rc.1", "fix-rc: tweak"},
+			expectVersion:  "v1.3.0",
+			expectSubjects: []string{"add x", "tweak"},
+		},
+		{
+			// workflow_dispatch runs with the candidate tag on HEAD and
+			// nothing pushed since, which is how a cycle is closed by hand.
+			name:           "a candidate tag on HEAD still names the target",
+			history:        []string{"v1.2.9", "feat-rc: add x", "v1.3.0-rc.1"},
+			expectVersion:  "v1.3.0",
+			expectSubjects: []string{"add x"},
+		},
+		{
+			// use_branch_tags is what scopes the baseline to the branch, and
+			// tag_pattern must not cost the 2.x line its own candidates.
+			name:           "a maintenance branch cuts its own cycle",
+			history:        []string{"v2.3.5", "feat-rc: backport", "v2.4.0-rc.1", "fix: last thing"},
+			expectVersion:  "v2.4.0",
+			expectSubjects: []string{"backport", "last thing"},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			release := cliffBump(t, repo(t, tc.history...))
+
+			if release.Version != tc.expectVersion {
+				t.Errorf("version = %q, want %q", release.Version, tc.expectVersion)
+			}
+			if got := release.subjects(); !slices.Equal(got, tc.expectSubjects) {
+				t.Errorf("commits = %q, want %q", got, tc.expectSubjects)
+			}
+		})
+	}
+}
+
+// Test_AutoReleaseCliffCountsOnlyStableTags pins the config key the behaviour
+// above rests on. The decide step reaches the same set of tags through
+// `git describe`, and compares `NEXT` against what it returns; a baseline one
+// of the two does not recognise makes the step either tag on every push or
+// never tag at all. Test_AutoReleaseDescribeExcludesNonReleaseTags pins the
+// describe end of that pair.
+func Test_AutoReleaseCliffCountsOnlyStableTags(t *testing.T) {
+	cliff := renderInput(t, newWorkflows(t, gen.FlavourApp).CliffToml())
+
+	if !strings.Contains(cliff, `tag_pattern = '^v[0-9]+\.[0-9]+\.[0-9]+$'`) {
+		t.Errorf("cliff.toml does not restrict releases to stable v tags:\n%s", cliff)
 	}
 }

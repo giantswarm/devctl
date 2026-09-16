@@ -44,17 +44,17 @@ func Test_RefFixPython(t *testing.T) {
 }`
 
 	path := filepath.Join(t.TempDir(), "values.schema.json")
-	if err := os.WriteFile(path, []byte(in), 0644); err != nil {
+	if err := os.WriteFile(path, []byte(in), 0600); err != nil {
 		t.Fatalf("setup failed: %v", err)
 	}
 
-	cmd := exec.Command(python, "-c", refFixPython, path)
+	cmd := exec.Command(python, "-c", refFixPython, path) // #nosec G204 -- interpreter and script are fixed, path is a t.TempDir() path, test-only
 	cmd.Env = append(os.Environ(), "LC_ALL=C", "LC_CTYPE=C", "PYTHONUTF8=0")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("$ref fix step failed: %v\n%s", err, out)
 	}
 
-	raw, err := os.ReadFile(path)
+	raw, err := os.ReadFile(path) // #nosec G304 -- t.TempDir() path, test-only
 	if err != nil {
 		t.Fatalf("read back: %v", err)
 	}
