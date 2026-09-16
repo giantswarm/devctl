@@ -137,6 +137,7 @@ func extendCluster(ctx context.Context, req ExtendRequest, cluster string, now t
 func extendAndPush(ctx context.Context, req ExtendRequest, cluster string, r Reservation, now time.Time) (Extended, error) {
 	duration := r.Until.Sub(r.From)
 	configMapPath := filepath.Join(req.RepoDir, clustersDir, cluster, ConfigMapFile)
+	sourcePath := filepath.Join(req.RepoDir, clustersDir, cluster, collectionsDir, reservationsDir, r.App, r.App+SourceNameSuffix+".yaml")
 
 	var result Extended
 	render := func() error {
@@ -156,6 +157,12 @@ func extendAndPush(ctx context.Context, req ExtendRequest, cluster string, r Res
 			return microerror.Mask(err)
 		}
 		if err := writeReservationEntry(configMapPath, r.App, entry); err != nil {
+			return microerror.Mask(err)
+		}
+		// The ConfigMap entry above and this are one change: a human with no
+		// access to the GitOps repo reads /from and /until off the OCIRepository
+		// with kubectl, and the two must never disagree, in any commit.
+		if err := writeSourceAnnotations(sourcePath, now, until); err != nil {
 			return microerror.Mask(err)
 		}
 

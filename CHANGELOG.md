@@ -114,7 +114,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   reservation keeps its own stored cluster, app, scope and duration — only the window moves,
   starting now and lasting as long as the existing record already did — by rewriting its
   `configmap-reservations.yaml` entry directly rather than going through `reservation.Reserve`,
-  which would immediately refuse the app's own still-active reservation as a collision. A
+  which would immediately refuse the app's own still-active reservation as a collision. The same
+  commit also moves the `reservation.giantswarm.io/from` and `/until` annotations on the
+  reservation's own `OCIRepository`, so `kubectl` never shows a stale window. A
   reservation whose expiry already passed is treated as if it did not exist, because reviving it
   could silently break a lock someone else legally took over the same cluster while the dead record
   sat unswept; if every record a pull request holds is expired, the command refuses exactly as if it

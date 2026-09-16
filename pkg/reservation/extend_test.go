@@ -93,6 +93,58 @@ func TestExtendResetsTheExpiryOfAMatchingReservation(t *testing.T) {
 	}
 }
 
+// TestExtendUpdatesTheReservationSourceAnnotations is the spec's own
+// end-to-end check (reservation-flow-spec.md line 543): an engineer with no
+// access to the GitOps repo reads /from and /until off the reservation
+// OCIRepository with kubectl, so Extend has to move them there too, in the
+// same commit as the ConfigMap entry. The holder's own annotations never
+// change -- Extend only moves the window.
+func TestExtendUpdatesTheReservationSourceAnnotations(t *testing.T) {
+	dir, _ := newReapFixture(t, fixtureOptions{})
+
+	req := testRequest(dir)
+	req.Now = time.Date(2026, 9, 15, 10, 0, 0, 0, time.UTC)
+	req.Duration = 4 * time.Hour
+	result := reserveAndPush(t, dir, req)
+
+	now := time.Date(2026, 9, 15, 13, 0, 0, 0, time.UTC) // before the original 14:00 expiry
+	extended, err := reservation.Extend(context.Background(), reservation.ExtendRequest{
+		RepoDir:     dir,
+		PullRequest: testPullRequest,
+		User:        testExtender,
+		Now:         now,
+	})
+	if err != nil {
+		t.Fatalf("Extend: %v", err)
+	}
+	if len(extended) != 1 {
+		t.Fatalf("got %d extended reservations, want 1: %+v", len(extended), extended)
+	}
+	wantUntil := now.Add(4 * time.Hour) // the original 4h duration, not reset to the default
+
+	source := mustObject(t, renderCluster(t, dir, fixtureCluster), "OCIRepository/"+result.SourceName)
+	annotations, _ := source["metadata"].(map[string]any)["annotations"].(map[string]any)
+	if got, want := annotations[reservation.AnnotationPrefix+"from"], now.Format(time.RFC3339); got != want {
+		t.Errorf("annotation from: got %v, want %q", got, want)
+	}
+	if got, want := annotations[reservation.AnnotationPrefix+"until"], wantUntil.Format(time.RFC3339); got != want {
+		t.Errorf("annotation until: got %v, want %q", got, want)
+	}
+	// Everything that names the holder stays exactly as it was.
+	if got := annotations[reservation.AnnotationPrefix+"user"]; got != testUser {
+		t.Errorf("annotation user: got %v, want %q", got, testUser)
+	}
+	if got := annotations[reservation.AnnotationPrefix+"branch"]; got != testBranch {
+		t.Errorf("annotation branch: got %v, want %q", got, testBranch)
+	}
+	if got := annotations[reservation.AnnotationPrefix+"pr"]; got != testPullRequest {
+		t.Errorf("annotation pr: got %v, want %q", got, testPullRequest)
+	}
+	if got := annotations[reservation.AnnotationPrefix+"scope"]; got != reservation.ScopeApp {
+		t.Errorf("annotation scope: got %v, want %q", got, reservation.ScopeApp)
+	}
+}
+
 // TestExtendIgnoresAnExpiredReservation is the MANDATORY rule: a record whose
 // Until has already passed is treated as if it did not exist at all, even
 // though it still names the pull request, because reviving it could silently

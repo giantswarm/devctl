@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/giantswarm/microerror"
 	"gopkg.in/yaml.v3"
@@ -25,6 +26,10 @@ var (
 	flowFold = regexp.MustCompile(`\n\s*`)
 	// dataKey matches a key inside the ConfigMap data block.
 	dataKey = regexp.MustCompile(`^\s+([A-Za-z0-9][A-Za-z0-9.\-_]*)\s*:`)
+	// sourceAnnotation matches one reservation annotation line inside a source
+	// object's metadata.annotations block, capturing the indentation and the
+	// key that follows AnnotationPrefix.
+	sourceAnnotation = regexp.MustCompile(`^(\s*)` + regexp.QuoteMeta(AnnotationPrefix) + `(\S+):`)
 )
 
 // flowMapping renders the fields as a single-line YAML flow mapping, with the
@@ -106,6 +111,40 @@ patches:
 %s`, sourceName, patches.String())
 
 	return microerror.Mask(os.WriteFile(filepath.Join(dir, "kustomization.yaml"), []byte(component), 0o644)) //nolint:gosec // a file committed to a GitOps repo
+}
+
+// writeSourceAnnotations rewrites the from and until reservation annotations
+// on the source object at path, in place: it edits the two lines rather than
+// re-encoding the document, exactly as writeReservationEntry edits the
+// ConfigMap, so nothing else in the file -- key order, quoting, the
+// generatedBy header -- moves. Extend calls it alongside writeReservationEntry
+// so a `kubectl` read of either one always shows the current window.
+func writeSourceAnnotations(path string, from, until time.Time) error {
+	lines, err := readLines(path)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	want := map[string]string{
+		"from":  from.Format(time.RFC3339),
+		"until": until.Format(time.RFC3339),
+	}
+	found := 0
+	for i, l := range lines {
+		m := sourceAnnotation.FindStringSubmatch(l)
+		if m == nil {
+			continue
+		}
+		if value, ok := want[m[2]]; ok {
+			lines[i] = m[1] + AnnotationPrefix + m[2] + `: "` + value + `"`
+			found++
+		}
+	}
+	if found != len(want) {
+		return microerror.Maskf(invalidConfigError, "%s carries no %sfrom/%suntil annotations to update", path, AnnotationPrefix, AnnotationPrefix)
+	}
+
+	return microerror.Mask(writeLines(path, lines))
 }
 
 // addComponent appends entry to the components list of a kustomization file. It

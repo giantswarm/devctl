@@ -73,10 +73,11 @@ func gitOutput(t *testing.T, dir string, args ...string) string {
 const testPullRequest = "giantswarm/hello-world#123"
 
 // newExtendableFixture builds the smallest checkout Extend needs: an enabled
-// cluster with one reservation, no collections or component directory --
-// Extend only ever touches the ConfigMap. It pushes to a local bare "origin",
-// so a plain `git push` after Extend succeeds with no network or credentials,
-// exactly as it would from a laptop.
+// cluster with one reservation, the ConfigMap entry and the reservation's own
+// source object -- Extend rewrites both, in the same commit, so a `kubectl`
+// read of either one always shows the current window. It pushes to a local
+// bare "origin", so a plain `git push` after Extend succeeds with no network
+// or credentials, exactly as it would from a laptop.
 func newExtendableFixture(t *testing.T, cluster, app, from, until string) (dir, origin string) {
 	t.Helper()
 
@@ -103,6 +104,26 @@ func newExtendableFixture(t *testing.T, cluster, app, from, until string) (dir, 
 		"data:\n" +
 		"  " + app + ": '{user: alice, branch: fix/crash, pr: \"" + testPullRequest + "\", scope: app, from: " + from + ", until: " + until + "}'\n"
 	if err := os.WriteFile(configMap, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	sourceDir := filepath.Join(clusterDir, "collections", "reservations", app)
+	if err := os.MkdirAll(sourceDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	source := "apiVersion: source.toolkit.fluxcd.io/v1\n" +
+		"kind: OCIRepository\n" +
+		"metadata:\n" +
+		"  annotations:\n" +
+		"    reservation.giantswarm.io/branch: fix/crash\n" +
+		"    reservation.giantswarm.io/from: \"" + from + "\"\n" +
+		"    reservation.giantswarm.io/pr: \"" + testPullRequest + "\"\n" +
+		"    reservation.giantswarm.io/scope: app\n" +
+		"    reservation.giantswarm.io/until: \"" + until + "\"\n" +
+		"    reservation.giantswarm.io/user: alice\n" +
+		"  name: " + app + "-dev-reservation\n" +
+		"  namespace: giantswarm\n"
+	if err := os.WriteFile(filepath.Join(sourceDir, app+"-dev-reservation.yaml"), []byte(source), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
