@@ -88,7 +88,7 @@ func TestPushWithRetrySucceedsOnFirstAttempt(t *testing.T) {
 		return nil
 	}
 
-	if err := reservation.PushWithRetry(context.Background(), dir, "main", render); err != nil {
+	if err := reservation.PushWithRetry(context.Background(), dir, render); err != nil {
 		t.Fatalf("PushWithRetry: %v", err)
 	}
 	if calls != 1 {
@@ -130,7 +130,7 @@ func TestPushWithRetryRerendersAfterAnotherReservationLands(t *testing.T) {
 	if _, err := reservation.Reserve(req2); err != nil {
 		t.Fatalf("reserving other-app: %v", err)
 	}
-	if err := reservation.Push(context.Background(), dir2, branch); err != nil {
+	if err := reservation.Push(context.Background(), dir2); err != nil {
 		t.Fatalf("pushing other-app: %v", err)
 	}
 
@@ -144,7 +144,7 @@ func TestPushWithRetryRerendersAfterAnotherReservationLands(t *testing.T) {
 		return err
 	}
 
-	if err := reservation.PushWithRetry(context.Background(), dir1, branch, render); err != nil {
+	if err := reservation.PushWithRetry(context.Background(), dir1, render); err != nil {
 		t.Fatalf("PushWithRetry: %v", err)
 	}
 	if calls != 2 {
@@ -188,7 +188,7 @@ func TestPushWithRetryGivesUpAfterMaxAttempts(t *testing.T) {
 		return nil
 	}
 
-	err := reservation.PushWithRetry(context.Background(), dir, "main", render)
+	err := reservation.PushWithRetry(context.Background(), dir, render)
 	if err == nil {
 		t.Fatal("expected a failure, got none")
 	}
