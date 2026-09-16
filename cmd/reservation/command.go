@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/v8/cmd/reservation/list"
+	"github.com/giantswarm/devctl/v8/cmd/reservation/reap"
 	"github.com/giantswarm/devctl/v8/cmd/reservation/release"
 	"github.com/giantswarm/devctl/v8/cmd/reservation/reserve"
 )
@@ -80,6 +81,21 @@ func New(config Config) (*cobra.Command, error) {
 		}
 	}
 
+	var reapCmd *cobra.Command
+	{
+		c := reap.Config{
+			Logger: config.Logger,
+			Stderr: config.Stderr,
+			Stdout: config.Stdout,
+		}
+
+		var err error
+		reapCmd, err = reap.New(c)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+	}
+
 	f := &flag{}
 
 	r := &runner{
@@ -101,6 +117,7 @@ func New(config Config) (*cobra.Command, error) {
 	c.AddCommand(reserveCmd)
 	c.AddCommand(releaseCmd)
 	c.AddCommand(listCmd)
+	c.AddCommand(reapCmd)
 
 	return c, nil
 }
