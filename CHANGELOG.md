@@ -109,6 +109,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   its own push, so it does the same work from a laptop that a scheduled job would do in CI. For each
   release it prints one tab-separated line — cluster, app, user, branch, pull request, reason
   (`expired` or `renamed`), until (RFC 3339) and commit — and nothing at all when it finds nothing.
+- `reservation extend`: a new command that resets the expiry of every reservation a pull request
+  holds across every enabled cluster, one at a time through `reservation.PushWithRetry`. Each
+  reservation keeps its own stored cluster, app, scope and duration — only the window moves,
+  starting now and lasting as long as the existing record already did — by rewriting its
+  `configmap-reservations.yaml` entry directly rather than going through `reservation.Reserve`,
+  which would immediately refuse the app's own still-active reservation as a collision. A
+  reservation whose expiry already passed is treated as if it did not exist, because reviving it
+  could silently break a lock someone else legally took over the same cluster while the dead record
+  sat unswept; if every record a pull request holds is expired, the command refuses exactly as if it
+  found none, naming `/deploy` as the way to create one. A single reservation whose stored duration
+  now exceeds its cluster's cap (7 days, or lower per `reservations.giantswarm.io/max-duration`) is
+  refused on its own and does not stop the rest of the sweep. The command works on an existing
+  checkout (`--repo-dir`, default `.`): it never clones and needs no GitHub token, so it does the
+  same work from a laptop that a workflow run would do in CI. For each reservation reset it prints
+  one tab-separated line — cluster, app and the new expiry (RFC 3339) — and nothing at all when it
+  finds nothing.
 
 ### Fixed
 
