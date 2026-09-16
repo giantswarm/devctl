@@ -45,14 +45,14 @@ func Test_RefFixGo_MatchesPython(t *testing.T) {
 	}
 
 	path := t.TempDir() + "/values.schema.json"
-	if err := os.WriteFile(path, []byte(refFixTestFixture), 0644); err != nil {
+	if err := os.WriteFile(path, []byte(refFixTestFixture), 0600); err != nil {
 		t.Fatalf("setup failed: %v", err)
 	}
-	cmd := exec.Command(python, "-c", refFixPython, path)
+	cmd := exec.Command(python, "-c", refFixPython, path) // #nosec G204 -- interpreter from exec.LookPath, script is a package constant, path is a t.TempDir() path, test-only
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("python fix step failed: %v\n%s", err, out)
 	}
-	pyOut, err := os.ReadFile(path)
+	pyOut, err := os.ReadFile(path) // #nosec G304 -- t.TempDir() path, test-only
 	if err != nil {
 		t.Fatalf("read back: %v", err)
 	}

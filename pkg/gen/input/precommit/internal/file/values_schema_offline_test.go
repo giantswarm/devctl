@@ -26,17 +26,17 @@ func Test_NewCreateValuesSchemaInput_unreachableSchemaHost(t *testing.T) {
 
 	dir := t.TempDir()
 	chartDir := filepath.Join(dir, "helm", "test-chart")
-	if err := os.MkdirAll(chartDir, 0755); err != nil {
+	if err := os.MkdirAll(chartDir, 0750); err != nil {
 		t.Fatalf("setup failed: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(chartDir, "values.yaml"), []byte(
 		"resources: {} # @schema $ref: $k8s/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements\n",
-	), 0644); err != nil {
+	), 0600); err != nil {
 		t.Fatalf("setup failed: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(chartDir, "zz_generated.app-platform.values.yaml"), []byte(
 		"global:\n  podSecurityStandards:\n    enforced: \"\"\n",
-	), 0644); err != nil {
+	), 0600); err != nil {
 		t.Fatalf("setup failed: %v", err)
 	}
 

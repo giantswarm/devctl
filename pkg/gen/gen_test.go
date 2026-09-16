@@ -20,7 +20,7 @@ func Test_Execute_GenerateFailure_DoesNotTruncateExistingFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "values.schema.json")
 	const original = `{"committed":"content"}`
-	if err := os.WriteFile(path, []byte(original), 0644); err != nil {
+	if err := os.WriteFile(path, []byte(original), 0600); err != nil {
 		t.Fatalf("setup failed: %v", err)
 	}
 
@@ -36,7 +36,7 @@ func Test_Execute_GenerateFailure_DoesNotTruncateExistingFile(t *testing.T) {
 		t.Fatal("expected execute to return an error")
 	}
 
-	got, err := os.ReadFile(path)
+	got, err := os.ReadFile(path) // #nosec G304 -- t.TempDir() path, test-only
 	if err != nil {
 		t.Fatalf("ReadFile: %v", err)
 	}

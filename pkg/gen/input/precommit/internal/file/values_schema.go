@@ -96,7 +96,7 @@ func generateValuesSchema(ctx context.Context, p params.Params, chartName string
 		return nil, microerror.Mask(err)
 	}
 
-	generated, err := os.ReadFile(tmpPath)
+	generated, err := os.ReadFile(tmpPath) // #nosec G304 -- os.CreateTemp path made a few lines above; never caller-supplied
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}

@@ -159,7 +159,7 @@ func pinnedVersionsFromGoMod() (helmValuesSchemaJSONVersion, schemalintVersion s
 	}
 
 	for dir := filepath.Dir(thisFile); ; {
-		content, err := os.ReadFile(filepath.Join(dir, "go.mod"))
+		content, err := os.ReadFile(filepath.Join(dir, "go.mod")) // #nosec G304 -- path walked up from runtime.Caller(0), a compile-time source path, plus a fixed file name
 		if err == nil {
 			mf, err := modfile.Parse("go.mod", content, nil)
 			if err != nil {
