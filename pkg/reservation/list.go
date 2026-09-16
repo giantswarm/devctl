@@ -46,9 +46,13 @@ func (r ListRequest) validate() error {
 	return nil
 }
 
-// List returns every active reservation on the cluster, sorted by app, read
-// straight from its ConfigMap. Like Release, it works on an existing checkout:
-// no render, no clone.
+// List returns every reservation recorded on the cluster, sorted by app, read
+// straight from its ConfigMap, including one whose Until has already passed
+// but the reaper has not swept yet: Reap and checkCollision both rely on
+// seeing those too, and do their own "active as of now" filtering. A caller
+// that wants only the active ones, such as the list command, must filter
+// Until against its own idea of now. Like Release, List works on an existing
+// checkout: no render, no clone.
 func List(req ListRequest) ([]Reservation, error) {
 	if err := req.validate(); err != nil {
 		return nil, microerror.Mask(err)

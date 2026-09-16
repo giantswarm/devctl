@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"text/tabwriter"
+	"time"
 
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
@@ -37,12 +38,23 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 // run reads the checkout at --repo-dir directly: no clone, no GitHub token, so
 // it works from a laptop exactly like release.
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
-	reservations, err := reservation.List(reservation.ListRequest{
+	all, err := reservation.List(reservation.ListRequest{
 		RepoDir: r.flag.RepoDir,
 		Cluster: r.flag.Cluster,
 	})
 	if err != nil {
 		return microerror.Mask(err)
+	}
+
+	// List returns every entry on record, including one already past its
+	// Until that the reaper has not swept yet: that one is not active, and
+	// must not be printed as if it still held the app.
+	now := time.Now()
+	var reservations []reservation.Reservation
+	for _, res := range all {
+		if res.Until.After(now) {
+			reservations = append(reservations, res)
+		}
 	}
 
 	if len(reservations) == 0 {

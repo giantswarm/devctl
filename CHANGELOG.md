@@ -110,6 +110,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   release it prints one tab-separated line — cluster, app, user, branch, pull request, reason
   (`expired` or `renamed`), until (RFC 3339) and commit — and nothing at all when it finds nothing.
 
+### Fixed
+
+- `reservation list`: no longer prints a reservation whose expiry has already passed but `reap` has
+  not swept yet. `reservation.List` itself still returns every entry on record, expired or not,
+  because `reap` and the collision check both rely on seeing the ones past expiry too; only the
+  `list` command's own output is now filtered to the ones still active as of now, matching what its
+  doc comment and user story 26 always said it printed.
+
 ### Changed
 
 - `gen circleci`: the generated chart-test jobs (`execute-chart-tests` and, with `--ats-on-release`,
