@@ -69,6 +69,7 @@ func TestValidateEntries(t *testing.T) {
 		{name: "twice", template: TemplateGo, verdict: VerdictFree, fields: []string{"name"}},
 		{name: "taken-name", template: TemplateGo, verdict: VerdictTaken, fields: []string{"name"}},
 		{name: "renamed-name", template: TemplateGo, verdict: VerdictTaken, fields: []string{"name"}},
+		{name: "no-ci-jobs", template: TemplateMinimal, verdict: VerdictFree, fields: []string{"gen.ci.generate"}},
 	}
 
 	for _, tc := range tests {

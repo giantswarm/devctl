@@ -54,6 +54,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   act under `--release-workflow=auto-release`. `security` joins the accepted types, which the
   action's default list never held although `cliff.toml` maps it to a Security changelog group.
 
+- `pkg/reposetup`: scaffold rendering, the back half of the repository set-up engine
+  (giantswarm/giantswarm#37726, #2213). `Renderer.Render` renders an accepted entry into a directory: the
+  template's tree (tarball of `giantswarm/template` or `giantswarm/template-app` main, or a `TemplateSource`
+  of the caller's) with its placeholders replaced (`REPOSITORY_NAME`, `{APP-NAME}` in paths and files,
+  `{TEAM-NAME}` as the chart's team annotation, `{APP HELM REPOSITORY}`), CODEOWNERS as align-files writes
+  it, the minimal scaffold (README, LICENSE, DCO, SECURITY.md, CODEOWNERS, `.gitignore`) for configuration,
+  customer, python and kyverno-policy repositories, and the generated files — through the same `devctl gen
+  makefile|workflows|llm|precommit|circleci|renovate` commands align-files runs, in its order and with its
+  flags, so the first align run after creation changes nothing (`Scaffold.Commands` lists them). The
+  chart-only template offers the vendir sync and patch-script scaffolding of `devctl app bootstrap` as
+  `Entry.Options` of the dry run, chosen through `RenderRequest.Options`. Golden trees for every kind of the
+  derivation (Node deferred with its template) and a test that runs the generators a second time over each
+  scaffold and asserts no change.
+- `repo validate` refuses `gen.ci.generate: true` for a declaration the CircleCI generator has no job for
+  (a language other than go or node, no app flavour, no `gen.ci.image.dockerfile`): align-files' `devctl
+  gen circleci` would fail on the created repository. The field is `gen.ci.generate`.
 ### Changed
 
 - `gen precommit`: `devctl gen precommit` now writes `helm/<chart>/values.schema.json` itself,

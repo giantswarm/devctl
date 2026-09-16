@@ -46,8 +46,25 @@
 // flavour → giantswarm/template-app; the customer flavour or component type,
 // the languages python and kyverno-policy, and generic repositories without
 // a chart → the minimal scaffold (README, LICENSE, DCO, SECURITY.md,
-// CODEOWNERS, .gitignore plus the generated files). Rendering the scaffold is
-// the engine's back half.
+// CODEOWNERS, .gitignore plus the generated files).
+//
+// # Rendering
+//
+// [Renderer.Render] renders the scaffold of an accepted [Entry] into a
+// directory: the template's tree (the tarball of its main branch, or a
+// [TemplateSource] of the caller's) with its placeholders replaced -- what
+// `devctl replace` does by hand -- CODEOWNERS for the team, the chart's team
+// annotation and default icon, and the files the generators write for the
+// declared flavours and language: Makefile, workflows including
+// auto-release, LLM rules, pre-commit, and CircleCI and Renovate when
+// gen.ci.generate is on. The generators run through the same `devctl gen`
+// commands align-files runs, in align-files' order and with its flags, so
+// the generated files are byte-identical to what the first align run would
+// write and that run changes nothing. [Scaffold.Commands] lists the command
+// lines. The chart-only template offers [Option]s -- the vendir sync and
+// patch-script scaffolding `devctl app bootstrap` used to write by flag --
+// listed on [Entry.Options] by the dry run and chosen through
+// [RenderRequest.Options].
 //
 // # Guards
 //
