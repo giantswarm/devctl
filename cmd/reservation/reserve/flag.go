@@ -15,6 +15,7 @@ const (
 	flagBranch      = "branch"
 	flagCluster     = "cluster"
 	flagDuration    = "duration"
+	flagExclusive   = "exclusive"
 	flagGitOpsRepo  = "gitops-repo"
 	flagPullRequest = "pull-request"
 	flagUser        = "user"
@@ -26,6 +27,7 @@ type flag struct {
 	Branch      string
 	Cluster     string
 	Duration    string
+	Exclusive   bool
 	GitOpsRepo  string
 	PullRequest string
 	User        string
@@ -37,6 +39,7 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.Branch, flagBranch, "", "Branch of the app repository whose dev builds the cluster follows.")
 	cmd.Flags().StringVar(&f.Cluster, flagCluster, "", "Name of the management cluster to reserve the app on.")
 	cmd.Flags().StringVar(&f.Duration, flagDuration, "", "How long the reservation lasts, as 30m, 4h or 2d. Empty is the default of 10h. The maximum is 7d, or less when the management cluster sets its own.")
+	cmd.Flags().BoolVar(&f.Exclusive, flagExclusive, false, "Lock the whole cluster instead of just --app: the reservation fails against any other active reservation, and succeeds as a promotion in place when the only one active belongs to the same user and app.")
 	cmd.Flags().StringVar(&f.GitOpsRepo, flagGitOpsRepo, "", "GitOps repository holding the management cluster, as owner/repo.")
 	cmd.Flags().StringVar(&f.PullRequest, flagPullRequest, "", "Pull request the reservation belongs to, as owner/repo#number.")
 	cmd.Flags().StringVar(&f.User, flagUser, "", "GitHub login of the person holding the reservation.")

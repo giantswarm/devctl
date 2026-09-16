@@ -80,6 +80,11 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 
+	scope := reservation.ScopeApp
+	if r.flag.Exclusive {
+		scope = reservation.ScopeExclusive
+	}
+
 	result, err := reservation.Reserve(reservation.Request{
 		RepoDir:     dir,
 		Cluster:     r.flag.Cluster,
@@ -89,6 +94,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		User:        r.flag.User,
 		PullRequest: r.flag.PullRequest,
 		Duration:    duration,
+		Scope:       scope,
 	})
 	if err != nil {
 		return microerror.Mask(err)

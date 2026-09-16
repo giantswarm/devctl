@@ -32,6 +32,24 @@ func newCommand(t *testing.T) *cobra.Command {
 	return cmd
 }
 
+// TestExclusiveFlagDefaultsToFalse checks the cobra surface a caller like
+// slice 09 depends on: an --exclusive bool flag, off by default, so a plain
+// reserve keeps requesting the app scope it always has.
+func TestExclusiveFlagDefaultsToFalse(t *testing.T) {
+	cmd := newCommand(t)
+
+	f := cmd.Flags().Lookup("exclusive")
+	if f == nil {
+		t.Fatal("no --exclusive flag registered")
+	}
+	if f.Value.Type() != "bool" {
+		t.Errorf("--exclusive type: got %q, want bool", f.Value.Type())
+	}
+	if f.DefValue != "false" {
+		t.Errorf("--exclusive default: got %q, want false", f.DefValue)
+	}
+}
+
 // TestRefusesAWrongDurationBeforeItClones checks the refusal lands on the flags,
 // not after a clone: a run that has already reached the network is slow, and it
 // reports the wrong problem.
