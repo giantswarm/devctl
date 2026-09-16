@@ -116,3 +116,12 @@ Validates entries of a local team file and prints the dry run as JSON -- what th
 
 `repo status` and `repo reconcile` validate a declared repository's entry in existing mode (`repo
 reconcile --added` in create mode: the repository is created). See `devctl repo validate --help`.
+
+## `devctl repo reconcile`
+
+Runs the set-up steps as the person (`--dry-run` checks only; `--output json` prints the result the
+reconciler stores). An entry the validator refuses is a result too: one step, `entry`, verdict
+`reported`, one finding per problem (`gen-circleci-refused` for `gen.ci.generate`, `entry-refused`
+otherwise) with the field to fix, exit 0 -- the declaration is at fault, not the run. A flag or token
+error exits 2. `--enforce-admins` (default true) is the one baseline knob: whether the branch protection
+binds administrators too; the default stands until giantswarm/giantswarm#36733 decides the baseline.

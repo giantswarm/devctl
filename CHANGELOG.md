@@ -9,6 +9,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `repo reconcile`: an entry the validator refuses is a result, not exit 2 without output — one step `entry`,
+  verdict `reported`, one finding per problem (`gen-circleci-refused` for `gen.ci.generate`, the new `entry-refused`
+  otherwise) with the field to fix, exit 0: the declaration is at fault, not the run; a flag or token error still
+  exits 2. The reconciler workflow of giantswarm/github ran one invocation per declared repository, and 26 of
+  Bumblebee's 72 jobs died on the empty result (giantswarm/giantswarm#37726, #2229). `reconcile.Refused` builds the
+  result. `--enforce-admins` (default true, the baseline's) is the documented knob for whether the branch protection
+  binds administrators, for the reconciler to pass once giantswarm/giantswarm#36733 decides.
 - `pkg/githubclient.ReportedChecks`, `repo reconcile`, `repo checks`: on a repository whose every commit on the
   default branch is tagged — a fresh repository whose only commit is the scaffold, tagged v0.1.0 by auto-release
   within seconds — the head is the candidate commit instead of a not-found error, so the checks that reported on it

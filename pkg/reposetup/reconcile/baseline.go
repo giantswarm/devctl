@@ -33,8 +33,13 @@ type Baseline struct {
 	TeamPermissions map[string]string `json:"teamPermissions"`
 
 	// Branch protection.
-	RequiredReviews int  `json:"requiredReviews"`
-	EnforceAdmins   bool `json:"enforceAdmins"`
+	RequiredReviews int `json:"requiredReviews"`
+	// EnforceAdmins binds administrators to the protection too. True in
+	// [DefaultBaseline] — what `devctl repo setup` applies and gs-pr-merge
+	// lifts and restores for a merge; giantswarm/giantswarm#36733 lists it
+	// as downgraded, one field to flip once the baseline decides. `repo
+	// reconcile --enforce-admins` passes it.
+	EnforceAdmins bool `json:"enforceAdmins"`
 	// StrictChecks requires branches to be up to date before merging.
 	StrictChecks bool `json:"strictChecks"`
 	// RequiredChecks are required whatever reported.

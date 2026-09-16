@@ -19,12 +19,3 @@ var invalidFlagError = &microerror.Error{
 func IsInvalidFlag(err error) bool {
 	return microerror.Cause(err) == invalidFlagError
 }
-
-var refusedError = &microerror.Error{
-	Kind: "refusedError",
-}
-
-// IsRefused asserts refusedError: the entry is not accepted.
-func IsRefused(err error) bool {
-	return microerror.Cause(err) == refusedError
-}

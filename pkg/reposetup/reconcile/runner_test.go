@@ -729,6 +729,36 @@ func TestRunRefusesWhatCannotRun(t *testing.T) {
 	require.True(t, IsInvalidConfig(err), "no GitHub client: %v", err)
 }
 
+// TestRefused: an entry the validator refused is a result the callers parse,
+// not an exit without one.
+func TestRefused(t *testing.T) {
+	now := time.Date(2026, 9, 16, 22, 0, 0, 0, time.UTC)
+	entry := reposetup.Entry{Name: name, Problems: []reposetup.Problem{
+		{Field: "gen.ci.generate", Message: "no CircleCI job for language generic without the app flavour or gen.ci.image.dockerfile; set it to false"},
+		{Field: "gen.language", Message: "the Node template is not available yet"},
+	}}
+	res := Refused(Request{Team: team, Entry: entry, Added: true}, now)
+
+	require.Equal(t, owner+"/"+name, res.Repository)
+	require.Equal(t, res.Repository, res.Declared)
+	require.Equal(t, ModeCheck, res.Mode, "empty mode defaults as Run does")
+	require.True(t, res.Added)
+	require.True(t, res.Converged, "nothing failed, nothing drifted: the declaration is at fault")
+	require.Empty(t, res.Failed(), "exit 0")
+	require.Len(t, res.Steps, 1)
+	sr := res.Steps[0]
+	require.Equal(t, StepEntry, sr.Step)
+	require.Equal(t, VerdictReported, sr.Verdict)
+	require.Equal(t, []FindingKind{FindingGenCircleCIRefused, FindingEntryRefused}, kinds(sr.Findings))
+	require.Equal(t, "gen.ci.generate: no CircleCI job for language generic without the app flavour or gen.ci.image.dockerfile; set it to false", sr.Findings[0].Message)
+	require.Equal(t, `edit gen.language of the entry "sample-service" in repositories/team-bumblebee.yaml: the Node template is not available yet`, sr.Findings[1].Fix)
+
+	data, err := json.Marshal(res)
+	require.NoError(t, err)
+	require.Contains(t, string(data), `"step":"entry","verdict":"reported"`)
+	require.Contains(t, string(data), `"kind":"entry-refused"`)
+}
+
 func TestRequiredChecks(t *testing.T) {
 	b := DefaultBaseline()
 	b.RequiredChecks = []string{"PR Gatekeeper"}
