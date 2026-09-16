@@ -135,3 +135,14 @@ var notReservedError = &microerror.Error{
 func IsNotReserved(err error) bool {
 	return microerror.Cause(err) == notReservedError
 }
+
+// pushError indicates that `git push` itself failed, once render had already
+// committed.
+var pushError = &microerror.Error{
+	Kind: "pushError",
+}
+
+// IsPush asserts pushError.
+func IsPush(err error) bool {
+	return microerror.Cause(err) == pushError
+}
