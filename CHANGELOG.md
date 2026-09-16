@@ -52,12 +52,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   `list` prints every active reservation on a cluster — app, user, branch, pull request, scope and
   expiry — reading them straight from the fields `reserve` wrote, never reconstructed from
   anywhere else. Both commands work on an existing checkout (`--repo-dir`, default `.`): neither
-  clones, and `release`'s own push runs the plain `git` binary against the checkout's already
-  configured remote, so neither needs a GitHub token or any credential beyond what a laptop's
+  clones, and `release`'s own push needs no GitHub token or any credential beyond what a laptop's
   checkout already has.
 - `reservation reserve`: a new `--exclusive` flag locks the whole cluster instead of just the app,
   refusing any other active reservation, ignoring one already expired but unswept, and promoting its
   own sole active reservation of the same user and app in place rather than duplicating it.
+- `reservation reserve` and `reservation release`: both commands now push through one
+  `reservation.PushWithRetry`, instead of `reserve` pushing through a `githubclient` token clone and
+  `release` shelling out to `git push` on its own. A rejected push fetches, hard-resets the checkout
+  to its upstream's new tip and reruns the command's own render step — `Reserve` or `Release` — from
+  there, rather than replaying the stale commit it already made: a rebase that only replayed the old
+  commit would carry whatever it rendered against the old tip, so a reservation that collided on the
+  same `kustomization.yaml` or `configmap-reservations.yaml` entry would be corrupted instead of
+  folded in. This is what lets two reservations, or two releases, that start together both land. The
+  retry gives up and reports the failure after `reservation.MaxPushAttempts` (5) attempts. Neither
+  command needs to name its branch or remote: `git push` / `git fetch` / `git reset --hard
+  @{upstream}` follow whatever upstream the checkout already tracks, a token-embedded clone in CI or
+  the engineer's own checkout on a laptop alike.
 - `gen circleci`: the branch-path build jobs (`build-image` / `push-to-registries`, `build-chart`,
   `execute-chart-tests`, `push-chart`) now carry `require_open_pull_request: true`, and the pinned
   orb moves to `giantswarm/architect@10.6.0`, which added the parameter. The orb halts a job
