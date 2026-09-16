@@ -146,3 +146,14 @@ var pushError = &microerror.Error{
 func IsPush(err error) bool {
 	return microerror.Cause(err) == pushError
 }
+
+// pushRetriesExhaustedError indicates that a push kept being rejected until
+// PushWithRetry gave up after MaxPushAttempts.
+var pushRetriesExhaustedError = &microerror.Error{
+	Kind: "pushRetriesExhaustedError",
+}
+
+// IsPushRetriesExhausted asserts pushRetriesExhaustedError.
+func IsPushRetriesExhausted(err error) bool {
+	return microerror.Cause(err) == pushRetriesExhaustedError
+}

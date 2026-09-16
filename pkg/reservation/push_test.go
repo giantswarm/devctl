@@ -100,3 +100,67 @@ func TestPushWithRetrySucceedsOnFirstAttempt(t *testing.T) {
 		t.Errorf("push did not land: local HEAD %s, origin main %s", head, tip)
 	}
 }
+
+// TestPushWithRetryRerendersAfterAnotherReservationLands proves the ticket's
+// hard case: a rejected push must not just replay the stale commit render
+// already made. It fetches, resets to the new tip, and reruns Reserve from
+// there, so a reservation that landed first is folded in rather than
+// corrupted or lost.
+func TestPushWithRetryRerendersAfterAnotherReservationLands(t *testing.T) {
+	seed := newGitOpsFixture(t, fixtureOptions{})
+	branch := gitOutput(t, seed, "branch", "--show-current")
+
+	origin := t.TempDir()
+	runGit(t, origin, "init", "--bare", "-b", branch)
+	runGit(t, seed, "remote", "add", "origin", origin)
+	runGit(t, seed, "push", "-u", "origin", branch)
+
+	dir1 := t.TempDir()
+	runGit(t, dir1, "clone", origin, ".")
+	dir2 := t.TempDir()
+	runGit(t, dir2, "clone", origin, ".")
+
+	// dir2 reserves other-app and lands first, exactly as a second, unrelated
+	// pull request's reservation would.
+	req2 := testRequest(dir2)
+	req2.App = fixtureOtherApp
+	req2.User = testOtherUser
+	req2.Branch = testOtherBranch
+	if _, err := reservation.Reserve(req2); err != nil {
+		t.Fatalf("reserving other-app: %v", err)
+	}
+	if err := reservation.Push(context.Background(), dir2, branch); err != nil {
+		t.Fatalf("pushing other-app: %v", err)
+	}
+
+	// dir1 started from the same tip as dir2 and still reserves hello-world
+	// against it: its first push is rejected.
+	calls := 0
+	req1 := testRequest(dir1)
+	render := func() error {
+		calls++
+		_, err := reservation.Reserve(req1)
+		return err
+	}
+
+	if err := reservation.PushWithRetry(context.Background(), dir1, branch, render); err != nil {
+		t.Fatalf("PushWithRetry: %v", err)
+	}
+	if calls != 2 {
+		t.Errorf("render called %d times, want 2 (the rejected attempt and the rebased retry)", calls)
+	}
+
+	head := gitOutput(t, dir1, "rev-parse", "HEAD")
+	tip := gitOutput(t, origin, "rev-parse", branch)
+	if head != tip {
+		t.Errorf("push did not land: local HEAD %s, origin %s %s", head, branch, tip)
+	}
+
+	entries := reservationEntries(t, dir1, fixtureCluster)
+	if got, want := entries[fixtureApp]["user"], testUser; got != want {
+		t.Errorf("%s holder: got %q, want %q", fixtureApp, got, want)
+	}
+	if got, want := entries[fixtureOtherApp]["user"], testOtherUser; got != want {
+		t.Errorf("other-app holder: got %q, want %q (the reservation that landed first must survive the rebase)", got, want)
+	}
+}
