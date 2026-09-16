@@ -92,7 +92,7 @@ func devSource(original object, sourceName string, req Request, semverFilter str
 		"user":   req.User,
 		"branch": req.Branch,
 		"pr":     req.PullRequest,
-		"scope":  ScopeApp,
+		"scope":  req.Scope,
 		"from":   from.Format(time.RFC3339),
 		"until":  until.Format(time.RFC3339),
 	} {
@@ -117,7 +117,7 @@ func reservationEntry(chart string, req Request, from, until time.Time) (string,
 		{"user", req.User},
 		{"branch", req.Branch},
 		{"pr", req.PullRequest},
-		{"scope", ScopeApp},
+		{"scope", req.Scope},
 		{"from", from.Format(time.RFC3339)},
 		{"until", until.Format(time.RFC3339)},
 	}

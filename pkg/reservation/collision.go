@@ -27,9 +27,25 @@ func checkCollision(req Request, chart string, now time.Time) (*Reservation, err
 		}
 	}
 
+	if req.Scope == ScopeExclusive {
+		if len(active) == 1 && active[0].User == req.User && active[0].App == chart {
+			promoted := active[0]
+			return &promoted, nil
+		}
+		if len(active) > 0 {
+			return nil, refusal(clusterLockedError, active[0])
+		}
+		return nil, nil
+	}
+
 	for _, r := range active {
 		if r.App == chart {
 			return nil, refusal(alreadyReservedError, r)
+		}
+	}
+	for _, r := range active {
+		if r.Scope == ScopeExclusive {
+			return nil, refusal(clusterLockedError, r)
 		}
 	}
 

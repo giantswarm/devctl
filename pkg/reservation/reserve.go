@@ -28,8 +28,14 @@ const (
 	// MaxDuration is the longest reservation any cluster allows. A cluster can
 	// set a lower one of its own.
 	MaxDuration = 7 * 24 * time.Hour
-	// ScopeApp is the only scope this version supports.
+	// ScopeApp is a reservation that locks only its own app: it fails when the
+	// same app already holds one, or when an exclusive reservation is active,
+	// but leaves every other app on the cluster free. It is the default.
 	ScopeApp = "app"
+	// ScopeExclusive is a reservation that locks the whole cluster: it fails
+	// against any other active reservation, unless it promotes the requester's
+	// own sole one, but it still patches only the requester's own app.
+	ScopeExclusive = "exclusive"
 
 	clustersDir     = "management-clusters"
 	collectionsDir  = "collections"
@@ -60,6 +66,9 @@ type Request struct {
 	Now time.Time
 	// Duration is how long the reservation lasts. Zero means DefaultDuration.
 	Duration time.Duration
+	// Scope is the reservation's lock: ScopeApp locks only App, ScopeExclusive
+	// locks the whole cluster. Empty means ScopeApp.
+	Scope string
 }
 
 // Result reports what Reserve wrote.
@@ -89,6 +98,12 @@ func (r Request) validate() error {
 		if f.value == "" {
 			return microerror.Maskf(invalidConfigError, "%T.%s must not be empty", r, f.name)
 		}
+	}
+
+	switch r.Scope {
+	case "", ScopeApp, ScopeExclusive:
+	default:
+		return microerror.Maskf(invalidConfigError, "%T.Scope must be %q or %q, got %q", r, ScopeApp, ScopeExclusive, r.Scope)
 	}
 
 	return nil
@@ -141,6 +156,9 @@ func Reserve(req Request) (Result, error) {
 	if err := checkEnabled(req.RepoDir, req.Cluster); err != nil {
 		return Result{}, microerror.Mask(err)
 	}
+	if req.Scope == "" {
+		req.Scope = ScopeApp
+	}
 
 	from := req.Now
 	if from.IsZero() {
@@ -163,8 +181,18 @@ func Reserve(req Request) (Result, error) {
 		return Result{}, microerror.Mask(err)
 	}
 
-	if _, err := checkCollision(req, chart, from); err != nil {
+	promoted, err := checkCollision(req, chart, from)
+	if err != nil {
 		return Result{}, microerror.Mask(err)
+	}
+	if promoted != nil {
+		// A promotion keeps the reservation exactly as it was: same holder, same
+		// branch, same window. Only the scope changes.
+		req.Branch = promoted.Branch
+		req.User = promoted.User
+		req.PullRequest = promoted.PullRequest
+		from = promoted.From
+		until = promoted.Until
 	}
 
 	collectionsPath := filepath.Join(req.RepoDir, clustersDir, req.Cluster, collectionsDir)

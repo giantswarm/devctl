@@ -77,6 +77,19 @@ func IsAlreadyReserved(err error) bool {
 	return microerror.Cause(err) == alreadyReservedError
 }
 
+// clusterLockedError indicates that the request collided with an exclusive
+// reservation: either an app-scoped request meets one active anywhere on the
+// cluster, or an exclusive request meets any reservation that is not its own
+// sole one to promote.
+var clusterLockedError = &microerror.Error{
+	Kind: "clusterLockedError",
+}
+
+// IsClusterLocked asserts clusterLockedError.
+func IsClusterLocked(err error) bool {
+	return microerror.Cause(err) == clusterLockedError
+}
+
 // appNotSupportedError indicates that the app was located but is shaped in a way
 // this version cannot move: an extras app, or a release carrying its chart
 // inline.
