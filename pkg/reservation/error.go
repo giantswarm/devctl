@@ -136,6 +136,17 @@ func IsNotReserved(err error) bool {
 	return microerror.Cause(err) == notReservedError
 }
 
+// nothingToExtendError indicates that a pull request holds no unexpired
+// reservation on any enabled cluster, so there is nothing for Extend to reset.
+var nothingToExtendError = &microerror.Error{
+	Kind: "nothingToExtendError",
+}
+
+// IsNothingToExtend asserts nothingToExtendError.
+func IsNothingToExtend(err error) bool {
+	return microerror.Cause(err) == nothingToExtendError
+}
+
 // pushError indicates that `git push` itself failed, once render had already
 // committed.
 var pushError = &microerror.Error{
