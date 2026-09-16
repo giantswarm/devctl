@@ -65,8 +65,11 @@ func (r *Runner) stepCodeowners(ctx context.Context, s *run, sr *StepResult) err
 		}); err != nil {
 			return err
 		}
+		// Conventional like the pull request's title: whichever of the two
+		// the squash merge keeps, auto-release counts the commit.
+		subject := fmt.Sprintf("chore: set CODEOWNERS to @%s/%s", s.owner, s.req.Team)
 		opts := &github.RepositoryContentFileOptions{
-			Message: new(fmt.Sprintf("Set CODEOWNERS to @%s/%s", s.owner, s.req.Team)),
+			Message: new(subject),
 			Content: []byte(want),
 			Branch:  new(codeownersBranch),
 		}
@@ -80,7 +83,7 @@ func (r *Runner) stepCodeowners(ctx context.Context, s *run, sr *StepResult) err
 			return err
 		}
 		pr, _, err := r.GitHub.PullRequests.Create(ctx, s.owner, s.name, github.CreatePullRequest{
-			Title: new(fmt.Sprintf("chore: set CODEOWNERS to @%s/%s", s.owner, s.req.Team)),
+			Title: new(subject),
 			Head:  codeownersBranch,
 			Base:  s.branch(),
 			Body: new(fmt.Sprintf("The repository is declared in repositories/%s.yaml of %s/github; CODEOWNERS follows the declaration.\n\nOpened by the repository set-up reconciler.",

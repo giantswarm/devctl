@@ -129,8 +129,13 @@ func (r *Runner) pushScaffold(ctx context.Context, s *run, sr *StepResult, empty
 	if err != nil {
 		return err
 	}
+	// The conventional subject is load-bearing: the scaffold's auto-release
+	// workflow reads the version to tag from the conventional commits since
+	// the last tag and drops every other commit (cliff.toml's
+	// filter_unconventional), so a first commit without the prefix leaves the
+	// repository without its v0.1.0 for good.
 	commit, _, err := r.GitHub.Git.CreateCommit(ctx, s.owner, s.name, github.Commit{
-		Message: new(fmt.Sprintf("Scaffold %s from %s\n\nRendered by devctl for the entry in repositories/%s.yaml.", s.name, scaffoldOrigin(scaffold.Template), s.req.Team)),
+		Message: new(fmt.Sprintf("feat: initial scaffold of %s from %s\n\nRendered by devctl for the entry in repositories/%s.yaml.", s.name, scaffoldOrigin(scaffold.Template), s.req.Team)),
 		Tree:    &github.Tree{SHA: tree.SHA},
 	}, nil)
 	if err != nil {

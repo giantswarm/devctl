@@ -43,6 +43,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   team. `pkg/reposetup.UndeclaredEntry` is the accepted entry of a repository without a team-file
   declaration.
 
+### Fixed
+
+- The repository set-up engine pushes the scaffold as a conventional commit, `feat: initial scaffold of <name> from
+  <template>`, so the generated auto-release workflow tags the created repository `v0.1.0` from it: git-cliff drops a
+  non-conventional commit (`filter_unconventional`), and with the old `Scaffold <name> from <template>` subject a new
+  repository never got a release and the first-release check could not pass. The CODEOWNERS pull request's commit
+  follows the same rule (#2214).
+
 ### Changed
 
 - `repo setup` and `repo checks` run the set-up engine's steps instead of their own GitHub calls

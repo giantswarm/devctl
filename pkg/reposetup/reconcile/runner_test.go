@@ -33,6 +33,10 @@ const (
 `
 	archivedEntryYAML = entryYAML + "  lifecycle: archived\n"
 
+	// scaffoldSubject is the first commit's subject: conventional, so the
+	// generated auto-release workflow tags v0.1.0 from it.
+	scaffoldSubject = "feat: initial scaffold of sample-service from giantswarm/template"
+
 	ctxGoBuild  = "ci/circleci: go-build"
 	ctxSetup    = "ci/circleci: setup"
 	ctxDepGraph = "update-go_modules-graph"
@@ -194,6 +198,7 @@ func TestSteps(t *testing.T) {
 			wantAfter: VerdictReported, // the default icon
 			verify: func(t *testing.T, h *harness, res *Result) {
 				require.Equal(t, scaffoldFiles, h.repo().files)
+				require.Equal(t, scaffoldSubject, h.repo().headSubject("main"), "auto-release tags v0.1.0 from a conventional first commit")
 				require.Equal(t, []FindingKind{FindingDefaultIcon}, kinds(res.Step(StepScaffold).Findings))
 			},
 		},
@@ -206,6 +211,7 @@ func TestSteps(t *testing.T) {
 			wantCheck: VerdictDrift, wantChange: "render the scaffold", wantAfter: VerdictReported,
 			verify: func(t *testing.T, h *harness, _ *Result) {
 				require.Equal(t, scaffoldFiles, h.repo().files)
+				require.Equal(t, scaffoldSubject, h.repo().headSubject("main"), "the initial README's commit is replaced, not built on")
 				require.False(t, h.repo().empty)
 			},
 		},
@@ -367,6 +373,7 @@ func TestSteps(t *testing.T) {
 				r := h.repo()
 				require.Len(t, r.prs, 1)
 				require.Equal(t, reposetup.Codeowners(team), r.branchFiles[codeownersBranch]["CODEOWNERS"])
+				require.Equal(t, "chore: set CODEOWNERS to @giantswarm/team-bumblebee", r.headSubject(codeownersBranch), "a conventional commit for auto-release")
 				require.Equal(t, "* @giantswarm/team-other\n", r.files["CODEOWNERS"], "main is untouched")
 				require.Equal(t, []FindingKind{FindingPendingPullRequest}, kinds(res.Step(StepCodeowners).Findings))
 			},
