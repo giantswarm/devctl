@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/giantswarm/microerror"
 	"github.com/sirupsen/logrus"
@@ -67,19 +68,7 @@ func (r *runner) run(ctx context.Context, arg string) error {
 	for _, s := range r.flag.Steps {
 		steps = append(steps, reconcile.Step(strings.TrimSpace(s)))
 	}
-
-	runner := reconcile.Runner{
-		GitHub:   gh.GetUnderlyingClient(ctx),
-		Checks:   gh,
-		CircleCI: ci,
-		// The token downloads the templates: giantswarm/template is private.
-		Renderer: reposetup.Renderer{
-			Templates: reposetup.GitHubTemplates{Token: token},
-			Log:       engine.LogWriter(r.logger),
-		},
-		Log: engine.LogWriter(r.logger),
-	}
-	res, err := runner.Run(ctx, reconcile.Request{
+	req := reconcile.Request{
 		Owner:         owner,
 		Team:          team,
 		Entry:         entry,
@@ -89,7 +78,30 @@ func (r *runner) run(ctx context.Context, arg string) error {
 		RenderOptions: r.flag.Options,
 		// nil: the protection step reads the pipeline from the repository.
 		Pipeline: nil,
-	})
+	}
+
+	if !entry.Accepted {
+		// The declaration is at fault, not the run: the refusal is the
+		// result, a finding per problem, for the callers to parse.
+		r.logger.Warnf("entry %q of %s is refused: %d problem(s); nothing runs", name, r.flag.TeamFile, len(entry.Problems))
+		return microerror.Mask(engine.Report(r.stdout, reconcile.Refused(req, time.Now()), r.flag.Output))
+	}
+
+	baseline := reconcile.DefaultBaseline()
+	baseline.EnforceAdmins = r.flag.EnforceAdmins
+	runner := reconcile.Runner{
+		GitHub:   gh.GetUnderlyingClient(ctx),
+		Checks:   gh,
+		CircleCI: ci,
+		// The token downloads the templates: giantswarm/template is private.
+		Renderer: reposetup.Renderer{
+			Templates: reposetup.GitHubTemplates{Token: token},
+			Log:       engine.LogWriter(r.logger),
+		},
+		Baseline: &baseline,
+		Log:      engine.LogWriter(r.logger),
+	}
+	res, err := runner.Run(ctx, req)
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -98,8 +110,8 @@ func (r *runner) run(ctx context.Context, arg string) error {
 }
 
 // entry is the desired state: the repository's entry of --team-file,
-// validated the way the reconciler validates it, or the undeclared entry of
-// --team.
+// validated the way the reconciler validates it (refused when not accepted:
+// the caller reports the problems), or the undeclared entry of --team.
 func (r *runner) entry(ctx context.Context, gh *githubclient.Client, name string) (string, reposetup.Entry, error) {
 	if r.flag.TeamFile == "" {
 		return r.flag.Team, reposetup.UndeclaredEntry(reposetup.Undeclared{Name: name, ComponentType: r.flag.ComponentType}), nil
@@ -126,13 +138,5 @@ func (r *runner) entry(ctx context.Context, gh *githubclient.Client, name string
 	if err != nil {
 		return "", reposetup.Entry{}, microerror.Mask(err)
 	}
-	entry := result.Entries[0]
-	if !entry.Accepted {
-		problems := make([]string, 0, len(entry.Problems))
-		for _, p := range entry.Problems {
-			problems = append(problems, p.String())
-		}
-		return "", reposetup.Entry{}, microerror.Maskf(refusedError, "entry %q of %s is refused: %s", name, r.flag.TeamFile, strings.Join(problems, "; "))
-	}
-	return teamFile.Team, entry, nil
+	return teamFile.Team, result.Entries[0], nil
 }

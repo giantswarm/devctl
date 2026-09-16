@@ -51,6 +51,10 @@ const (
 	StepLifecycle   Step = "lifecycle"
 	StepCatalog     Step = "catalog"
 	StepRelease     Step = "release"
+
+	// StepEntry is the declaration itself: the one step of a [Refused]
+	// result, never run by [Runner.Run].
+	StepEntry Step = "entry"
 )
 
 // Steps lists every step in execution order.
@@ -122,6 +126,9 @@ const (
 	FindingPendingPullRequest FindingKind = "pending-pull-request"
 	// FindingUnchecked: a check could not run with the caller's access.
 	FindingUnchecked FindingKind = "unchecked"
+	// FindingEntryRefused: the validator refused the entry for a reason
+	// other than the CircleCI generator; the fix names the field.
+	FindingEntryRefused FindingKind = "entry-refused"
 )
 
 // Finding is something a step reports for a person, with the fix.

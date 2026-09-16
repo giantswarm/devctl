@@ -36,7 +36,13 @@ required once it has reported on the default branch or a recently merged
 pull request, ghosts are removed), circleci (follow, setup workflows,
 checkout key), webhooks, renovate (check only), codeowners (a pull
 request), metadata, lifecycle, catalog, release. The CircleCI steps need a
-token in $CIRCLECI_TOKEN and are skipped without one.
+token in $CIRCLECI_TOKEN and are skipped without one. --enforce-admins
+(default true) is the one baseline knob: whether the branch protection binds
+administrators too.
+
+An entry the validator refuses is a result too: one step, entry, reported,
+with a finding per problem naming the field to fix, and exit 0 — the
+declaration is at fault, not the run. A flag or token error still exits 2.
 
 Examples:
   devctl repo reconcile --team-file repositories/team-bumblebee.yaml giantswarm/my-repo

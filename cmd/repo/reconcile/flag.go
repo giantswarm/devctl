@@ -6,6 +6,7 @@ import (
 
 	"github.com/giantswarm/devctl/v8/cmd/repo/internal/engine"
 	"github.com/giantswarm/devctl/v8/pkg/reposetup"
+	"github.com/giantswarm/devctl/v8/pkg/reposetup/reconcile"
 )
 
 type flag struct {
@@ -18,6 +19,7 @@ type flag struct {
 	Owner               string
 	DryRun              bool
 	Added               bool
+	EnforceAdmins       bool
 	Steps               []string
 	Options             map[string]string
 	Output              string
@@ -33,6 +35,7 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.Owner, "owner", reposetup.DefaultOwner, "GitHub organisation of a repository given without an owner.")
 	cmd.Flags().BoolVar(&f.DryRun, "dry-run", false, "Check only: print what a repair would change, change nothing.")
 	cmd.Flags().BoolVar(&f.Added, "added", false, "The entry was added by the change at hand: a missing repository is created. Never inferred.")
+	cmd.Flags().BoolVar(&f.EnforceAdmins, "enforce-admins", reconcile.DefaultBaseline().EnforceAdmins, "Branch protection binds administrators too (enforce_admins). The baseline's default; =false until giantswarm/giantswarm#36733 decides otherwise.")
 	cmd.Flags().StringSliceVar(&f.Steps, "steps", nil, "Run only these steps (create,scaffold,settings,permissions,protection,circleci,webhooks,renovate,codeowners,metadata,lifecycle,catalog,release); every step when not given.")
 	cmd.Flags().StringToStringVar(&f.Options, "option", nil, "Scaffold option as name=value, the template's options; repeatable.")
 	cmd.Flags().StringVar(&f.Output, "output", engine.OutputTable, "Output format: table or json.")
