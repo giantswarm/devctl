@@ -8,6 +8,7 @@ import (
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
 
+	"github.com/giantswarm/devctl/v8/cmd/reservation/extend"
 	"github.com/giantswarm/devctl/v8/cmd/reservation/list"
 	"github.com/giantswarm/devctl/v8/cmd/reservation/reap"
 	"github.com/giantswarm/devctl/v8/cmd/reservation/release"
@@ -96,6 +97,21 @@ func New(config Config) (*cobra.Command, error) {
 		}
 	}
 
+	var extendCmd *cobra.Command
+	{
+		c := extend.Config{
+			Logger: config.Logger,
+			Stderr: config.Stderr,
+			Stdout: config.Stdout,
+		}
+
+		var err error
+		extendCmd, err = extend.New(c)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+	}
+
 	f := &flag{}
 
 	r := &runner{
@@ -118,6 +134,7 @@ func New(config Config) (*cobra.Command, error) {
 	c.AddCommand(releaseCmd)
 	c.AddCommand(listCmd)
 	c.AddCommand(reapCmd)
+	c.AddCommand(extendCmd)
 
 	return c, nil
 }
