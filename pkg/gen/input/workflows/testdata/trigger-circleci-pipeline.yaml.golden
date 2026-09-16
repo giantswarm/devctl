@@ -1,0 +1,17 @@
+# DO NOT EDIT. Generated with:
+#
+#    devctl
+#
+name: trigger-circleci-pipeline
+
+on:
+  pull_request:
+    types: [opened, reopened]
+
+permissions: {}
+
+jobs:
+  build:
+    permissions: {}
+    uses: giantswarm/github-workflows/.github/workflows/trigger-circleci-pipeline.yaml@main
+    secrets: inherit

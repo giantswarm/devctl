@@ -25,6 +25,8 @@ var update = flag.Bool("update", false, "update golden files")
 const (
 	goldenHelmDocsRegenPath = "testdata/helm-docs-regen.yaml.golden"
 
+	goldenTriggerCircleCIPipelinePath = "testdata/trigger-circleci-pipeline.yaml.golden"
+
 	// fixedHeader replaces the real header in golden renders. The real one
 	// carries the URL of the last commit that touched the template, which
 	// differs between a local checkout and the release build.
@@ -99,6 +101,28 @@ func assertGolden(t *testing.T, golden, got string) {
 	if got != string(want) {
 		t.Errorf("rendered workflow does not match %s (run with -update to regenerate)\n--- got ---\n%s\n--- want ---\n%s", golden, got, want)
 	}
+}
+
+// Test_TriggerCircleCIPipelinePath pins the generated file name: slice 03b's
+// reusable workflow is called by this exact path, next to the other
+// generated workflows.
+func Test_TriggerCircleCIPipelinePath(t *testing.T) {
+	in := newWorkflows(t, gen.FlavourApp).TriggerCircleCIPipeline()
+
+	want := filepath.Join(".github", "workflows", "zz_generated.trigger-circleci-pipeline.yaml")
+	if in.Path != want {
+		t.Errorf("path = %q, want %q", in.Path, want)
+	}
+}
+
+// Test_GoldenTriggerCircleCIPipeline pins the exact rendered workflow against
+// the caller contract slice 03b declares: pull_request opened/reopened calls
+// the reusable trigger-circleci-pipeline.yaml with secrets: inherit. The
+// workflow has no repo-specific content, so one golden covers every repo.
+func Test_GoldenTriggerCircleCIPipeline(t *testing.T) {
+	got := renderInput(t, withFixedHeader(t, newWorkflows(t, gen.FlavourApp).TriggerCircleCIPipeline()))
+
+	assertGolden(t, goldenTriggerCircleCIPipelinePath, got)
 }
 
 // Test_HelmDocsRegenPath pins the generated file name: it is what the
