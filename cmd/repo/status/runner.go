@@ -145,9 +145,10 @@ func (r *runner) fromEngine(ctx context.Context, owner, repo string) (*output, e
 		}
 	}
 
-	// The name is not checked: the repository exists, that is the point.
+	// Existing mode, and the name is not checked: the repository exists,
+	// that is the point.
 	validator := reposetup.Validator{Schema: schema, Owner: owner}
-	result, err := validator.Validate(ctx, reposetup.Request{TeamFile: teamFile.TeamFile, Names: []string{repo}})
+	result, err := validator.Validate(ctx, reposetup.Request{TeamFile: teamFile.TeamFile, Names: []string{repo}, Mode: reposetup.ModeExisting})
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}

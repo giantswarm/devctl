@@ -63,6 +63,7 @@ func (r *runner) run(ctx context.Context) error {
 	result, err := validator.Validate(ctx, reposetup.Request{
 		TeamFile:    teamFile,
 		Names:       r.flag.Entries,
+		Mode:        r.flag.mode(),
 		Author:      r.flag.Author,
 		AuthorTeams: r.flag.AuthorTeams,
 	})

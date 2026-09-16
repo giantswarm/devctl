@@ -1,10 +1,10 @@
 // Package reposetup is the front half of the repository set-up engine: it
-// reads a team file of giantswarm/github, validates the entries about to
-// create a repository against the repositories schema and the creation
-// rules, derives the template each repository is scaffolded from and
-// returns the dry-run value the clients render — the team-file entry as it
-// would be written, the implied template, the verdict of the name check and
-// the guard notices.
+// reads a team file of giantswarm/github, validates its entries against the
+// repositories schema — and, for the entries about to create a repository,
+// the creation rules — derives the template each repository is scaffolded
+// from and returns the dry-run value the clients render — the team-file
+// entry as it would be written, the implied template, the verdict of the
+// name check and the guard notices.
 //
 // The package is imported by `devctl repo validate` (and `repo create`), by
 // the validation workflow of giantswarm/github and by giantswarm-repo-manager's
@@ -23,8 +23,13 @@
 //
 // # Rules
 //
-// Every entry named in [Request.Names] (all entries when nil) is treated as a
-// repository the reconciler creates and must satisfy, on top of the schema:
+// [Request.Mode] says what the entries named in [Request.Names] (all entries
+// when nil) are validated for. In [ModeExisting] they declare repositories
+// that exist and the schema alone decides: an entry the schema accepts is
+// valid, however it predates the creation rules; the name check's verdict
+// is reported and never refuses, a missing repository being the
+// reconciler's finding. In [ModeCreate] (the default) they are repositories
+// the reconciler creates and must satisfy, on top of the schema:
 //
 //   - gen.flavours and gen.language are set; gen.ci.generate defaults to
 //     true and is written into the rendered entry;

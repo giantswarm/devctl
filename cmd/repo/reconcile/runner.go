@@ -113,10 +113,16 @@ func (r *runner) entry(ctx context.Context, gh *githubclient.Client, name string
 	if err != nil {
 		return "", reposetup.Entry{}, microerror.Mask(err)
 	}
-	// No name check: the repository exists, or --added creates it from an
-	// entry the creation PR already validated.
+	// The entry of a repository that exists is validated in existing mode,
+	// the schema alone; --added creates the repository, so the creation
+	// rules apply. No name check either way: the repository exists, or the
+	// creation PR checked the name.
+	mode := reposetup.ModeExisting
+	if r.flag.Added {
+		mode = reposetup.ModeCreate
+	}
 	validator := reposetup.Validator{Schema: schema, Owner: r.flag.Owner}
-	result, err := validator.Validate(ctx, reposetup.Request{TeamFile: teamFile, Names: []string{name}})
+	result, err := validator.Validate(ctx, reposetup.Request{TeamFile: teamFile, Names: []string{name}, Mode: mode})
 	if err != nil {
 		return "", reposetup.Entry{}, microerror.Mask(err)
 	}

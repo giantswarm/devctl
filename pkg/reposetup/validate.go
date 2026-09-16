@@ -23,8 +23,25 @@ const (
 	MaxMachineApprovedEntries = 3
 )
 
-// Validator validates the entries of a team file that are about to create
-// repositories and returns the dry-run value.
+// Mode says what the entries are validated for: their creation, or the
+// set-up of repositories that exist.
+type Mode string
+
+const (
+	// ModeCreate: the entries are being added and the reconciler creates
+	// their repositories — the schema, the creation rules and a free name.
+	ModeCreate Mode = "create"
+	// ModeExisting: the entries declare repositories that exist — the schema
+	// alone; the creation rules are for a repository the reconciler creates.
+	// The name is checked when a [NameChecker] is configured and the verdict
+	// reported, but it never refuses: a missing repository is a finding of
+	// the reconciler's, not a validation error.
+	ModeExisting Mode = "existing"
+)
+
+// Validator validates the entries of a team file — the ones about to create
+// repositories, or the ones declaring repositories that exist — and returns
+// the dry-run value.
 type Validator struct {
 	// Schema the entries are validated against. Required.
 	Schema *Schema
@@ -40,9 +57,12 @@ type Validator struct {
 type Request struct {
 	// TeamFile the entries live in; its team is the owning team. Required.
 	TeamFile *TeamFile
-	// Names of the entries being added, the ones the creation rules apply
-	// to. Nil means every entry of the file.
+	// Names of the entries to validate. Nil means every entry of the file.
 	Names []string
+	// Mode says what the entries are validated for: [ModeCreate] applies the
+	// creation rules to entries being added, [ModeExisting] the schema alone
+	// to entries whose repositories exist. Empty means ModeCreate.
+	Mode Mode
 	// Author is the GitHub login of the person opening the change; empty
 	// when unknown, which skips the team guard.
 	Author string
@@ -58,6 +78,8 @@ type Request struct {
 type Result struct {
 	// Team that owns the entries: the team file's.
 	Team string `json:"team"`
+	// Mode the entries were validated in.
+	Mode Mode `json:"mode"`
 	// Schema the entries were validated against.
 	Schema SchemaOrigin `json:"schema"`
 	// Entries in request order.
@@ -136,6 +158,14 @@ func (v Validator) Validate(ctx context.Context, req Request) (*Result, error) {
 	if owner == "" {
 		owner = DefaultOwner
 	}
+	mode := req.Mode
+	switch mode {
+	case "":
+		mode = ModeCreate
+	case ModeCreate, ModeExisting:
+	default:
+		return nil, microerror.Maskf(invalidConfigError, "%T.Mode %q: want %s or %s", req, req.Mode, ModeCreate, ModeExisting)
+	}
 
 	entries, err := selectEntries(req.TeamFile, req.Names)
 	if err != nil {
@@ -145,12 +175,13 @@ func (v Validator) Validate(ctx context.Context, req Request) (*Result, error) {
 
 	result := &Result{
 		Team:     req.TeamFile.Team,
+		Mode:     mode,
 		Schema:   v.Schema.Origin,
 		Entries:  make([]Entry, 0, len(entries)),
 		Accepted: true,
 	}
 	for _, d := range entries {
-		entry, err := v.validateEntry(ctx, owner, req.TeamFile, d, duplicates[d.Name])
+		entry, err := v.validateEntry(ctx, owner, mode, req.TeamFile, d, duplicates[d.Name])
 		if err != nil {
 			return nil, microerror.Mask(err)
 		}
@@ -159,7 +190,7 @@ func (v Validator) Validate(ctx context.Context, req Request) (*Result, error) {
 			result.Accepted = false
 		}
 	}
-	result.Notices = v.notices(req, len(entries))
+	result.Notices = v.notices(req, mode, len(entries))
 
 	return result, nil
 }
@@ -197,13 +228,10 @@ func duplicateNames(tf *TeamFile) map[string]bool {
 	return duplicates
 }
 
-func (v Validator) validateEntry(ctx context.Context, owner string, tf *TeamFile, d Declaration, duplicate bool) (Entry, error) {
+func (v Validator) validateEntry(ctx context.Context, owner string, mode Mode, tf *TeamFile, d Declaration, duplicate bool) (Entry, error) {
 	entry := Entry{
 		Name:      d.Name,
 		NameCheck: NameCheck{Verdict: VerdictUnchecked, Detail: "not checked"},
-	}
-	refuse := func(field, format string, args ...any) {
-		entry.Problems = append(entry.Problems, Problem{Field: field, Message: fmt.Sprintf(format, args...)})
 	}
 
 	// The entry as the team file would carry it, defaults written out: that
@@ -214,104 +242,30 @@ func (v Validator) validateEntry(ctx context.Context, owner string, tf *TeamFile
 	// fields, so the rules below can read the fields they need.
 	instance, err := d.Instance()
 	if err != nil {
-		refuse(entryField, "cannot read the entry: %v", err)
+		entry.refuse(entryField, "cannot read the entry: %v", err)
 	} else {
 		entry.Problems = append(entry.Problems, v.Schema.Problems(instance)...)
 	}
 	if duplicate {
-		refuse("name", "%q is declared more than once in the team file of %s", d.Name, tf.Team)
+		entry.refuse("name", "%q is declared more than once in the team file of %s", d.Name, tf.Team)
 	}
 
 	fields, err := d.Fields()
 	if err != nil {
 		if len(entry.Problems) == 0 {
-			refuse(entryField, "cannot read the entry: %v", err)
+			entry.refuse(entryField, "cannot read the entry: %v", err)
 		}
 		fields = Fields{Name: d.Name}
 	}
 
-	// The creation rules: the declaration has to say what to generate.
-	var flavours []string
-	var language string
-	if fields.Gen == nil {
-		refuse("gen.flavours", "required for a repository the reconciler creates")
-		refuse("gen.language", "required for a repository the reconciler creates")
-	} else {
-		flavours, language = fields.Gen.Flavours, fields.Gen.Language
-		if len(flavours) == 0 {
-			refuse("gen.flavours", "required for a repository the reconciler creates")
-		}
-		if language == "" {
-			refuse("gen.language", "required for a repository the reconciler creates")
-		}
+	switch mode {
+	case ModeExisting:
+		err = v.existingRules(ctx, owner, &entry, fields)
+	default:
+		err = v.creationRules(ctx, owner, &entry, fields)
 	}
-	known := true
-	for i, f := range flavours {
-		if _, err := gen.NewFlavour(f); err != nil {
-			refuse(fmt.Sprintf("gen.flavours[%d]", i), "must be one of %s", strings.Join(gen.AllFlavours(), "|"))
-			known = false
-		}
-	}
-	if language != "" {
-		if _, err := gen.NewLanguage(language); err != nil {
-			refuse("gen.language", "must be one of %s", strings.Join(gen.AllLanguages(), "|"))
-			known = false
-		}
-	}
-
-	// The template: derived, never declared.
-	if known && len(flavours) > 0 && language != "" {
-		template, err := DeriveTemplate(fields.ComponentType, flavours, language)
-		switch {
-		case IsTemplateUnavailable(err):
-			refuse("gen.language", "%s", nodeTemplateUnavailable)
-		case err != nil:
-			return Entry{}, microerror.Mask(err)
-		default:
-			entry.Template = template
-			entry.Options = templateOptions(template)
-		}
-	}
-
-	// Generated CI needs something to build: align-files' `devctl gen
-	// circleci` refuses a declaration with no job, so the dry run does.
-	if known && len(flavours) > 0 && language != "" && fields.Gen.CI != nil && fields.Gen.CI.Generate != nil && *fields.Gen.CI.Generate && !hasCIJob(fields) {
-		refuse("gen.ci.generate", "no CircleCI job for language %s without the app flavour or gen.ci.image.dockerfile; set it to false", language)
-	}
-
-	// The name: lowercase, the chart's name where a chart exists, free on
-	// GitHub. A name the schema already refused is not checked on GitHub.
-	nameValid := d.Name != ""
-	if d.Name != "" {
-		switch {
-		case HasChart(flavours) && !chartNamePattern.MatchString(d.Name):
-			refuse("name", "%s", chartNameRule)
-			nameValid = false
-		case !repositoryNamePattern.MatchString(d.Name):
-			refuse("name", "%s", repositoryNameRule)
-			nameValid = false
-		}
-		if HasChart(flavours) {
-			if strings.HasSuffix(d.Name, chartSuffix) {
-				refuse("name", "a chart repository is named after its chart, without the %s suffix", chartSuffix)
-			}
-			if fields.Gen != nil && fields.Gen.CI != nil && fields.Gen.CI.ChartName != "" && fields.Gen.CI.ChartName != d.Name {
-				refuse("gen.ci.chartName", "must equal the repository name %q: the repository is named after its chart", d.Name)
-			}
-		}
-	}
-	if nameValid && v.Names == nil {
-		entry.NameCheck = NameCheck{Verdict: VerdictUnchecked, Detail: "not checked: no GitHub client"}
-	}
-	if nameValid && v.Names != nil {
-		check, err := v.Names.CheckName(ctx, owner, d.Name)
-		if err != nil {
-			return Entry{}, microerror.Mask(err)
-		}
-		entry.NameCheck = check
-		if check.Verdict == VerdictTaken {
-			refuse("name", "taken: %s", check.Detail)
-		}
+	if err != nil {
+		return Entry{}, microerror.Mask(err)
 	}
 
 	rendered, err := d.YAML()
@@ -344,18 +298,165 @@ func withDefaults(d Declaration) Declaration {
 	return Declaration{Name: d.Name, node: node}
 }
 
-// notices are the guards on the change as a whole.
-func (v Validator) notices(req Request, added int) []Notice {
+// refuse adds a problem naming the field.
+func (e *Entry) refuse(field, format string, args ...any) {
+	e.Problems = append(e.Problems, Problem{Field: field, Message: fmt.Sprintf(format, args...)})
+}
+
+// creationRules are the rules of a repository the reconciler creates, on top
+// of the schema: the declaration says what to generate and a template exists
+// for it, generated CI has a job, the name follows the convention and is free
+// on GitHub.
+func (v Validator) creationRules(ctx context.Context, owner string, entry *Entry, fields Fields) error {
+	var flavours []string
+	var language string
+	if fields.Gen == nil {
+		entry.refuse("gen.flavours", "required for a repository the reconciler creates")
+		entry.refuse("gen.language", "required for a repository the reconciler creates")
+	} else {
+		flavours, language = fields.Gen.Flavours, fields.Gen.Language
+		if len(flavours) == 0 {
+			entry.refuse("gen.flavours", "required for a repository the reconciler creates")
+		}
+		if language == "" {
+			entry.refuse("gen.language", "required for a repository the reconciler creates")
+		}
+	}
+	entry.Problems = append(entry.Problems, unknownGen(flavours, language)...)
+
+	// The template: derived, never declared.
+	if derivesTemplate(fields) {
+		switch err := derive(entry, fields); {
+		case IsTemplateUnavailable(err):
+			entry.refuse("gen.language", "%s", nodeTemplateUnavailable)
+		case err != nil:
+			return microerror.Mask(err)
+		}
+	}
+
+	// Generated CI needs something to build: align-files' `devctl gen
+	// circleci` refuses a declaration with no job, so the dry run does.
+	if derivesTemplate(fields) && fields.Gen.CI != nil && fields.Gen.CI.Generate != nil && *fields.Gen.CI.Generate && !hasCIJob(fields) {
+		entry.refuse("gen.ci.generate", "no CircleCI job for language %s without the app flavour or gen.ci.image.dockerfile; set it to false", language)
+	}
+
+	// The name: lowercase, the chart's name where a chart exists, free on
+	// GitHub. A name the schema already refused is not checked on GitHub.
+	name := entry.Name
+	nameValid := name != ""
+	if name != "" {
+		switch {
+		case HasChart(flavours) && !chartNamePattern.MatchString(name):
+			entry.refuse("name", "%s", chartNameRule)
+			nameValid = false
+		case !repositoryNamePattern.MatchString(name):
+			entry.refuse("name", "%s", repositoryNameRule)
+			nameValid = false
+		}
+		if HasChart(flavours) {
+			if strings.HasSuffix(name, chartSuffix) {
+				entry.refuse("name", "a chart repository is named after its chart, without the %s suffix", chartSuffix)
+			}
+			if fields.Gen != nil && fields.Gen.CI != nil && fields.Gen.CI.ChartName != "" && fields.Gen.CI.ChartName != name {
+				entry.refuse("gen.ci.chartName", "must equal the repository name %q: the repository is named after its chart", name)
+			}
+		}
+	}
+	if !nameValid {
+		return nil
+	}
+	if err := v.checkName(ctx, owner, entry); err != nil {
+		return microerror.Mask(err)
+	}
+	if entry.NameCheck.Verdict == VerdictTaken {
+		entry.refuse("name", "taken: %s", entry.NameCheck.Detail)
+	}
+	return nil
+}
+
+// existingRules are what an existing declaration adds to the schema: the
+// template, where the declaration is complete enough to derive one (the
+// scaffold step has nothing to render otherwise), and the verdict of the
+// name check, which never refuses — the repository is expected to exist,
+// and one that is missing is the reconciler's finding.
+func (v Validator) existingRules(ctx context.Context, owner string, entry *Entry, fields Fields) error {
+	if derivesTemplate(fields) {
+		if err := derive(entry, fields); err != nil && !IsTemplateUnavailable(err) {
+			return microerror.Mask(err)
+		}
+	}
+	if entry.Name == "" {
+		return nil
+	}
+	return microerror.Mask(v.checkName(ctx, owner, entry))
+}
+
+// unknownGen returns a problem for each flavour and the language devctl has
+// no generator for (the schema accepts helmchart; devctl has no such
+// flavour).
+func unknownGen(flavours []string, language string) []Problem {
+	var problems []Problem
+	for i, f := range flavours {
+		if _, err := gen.NewFlavour(f); err != nil {
+			problems = append(problems, Problem{Field: fmt.Sprintf("gen.flavours[%d]", i), Message: "must be one of " + strings.Join(gen.AllFlavours(), "|")})
+		}
+	}
+	if language != "" {
+		if _, err := gen.NewLanguage(language); err != nil {
+			problems = append(problems, Problem{Field: "gen.language", Message: "must be one of " + strings.Join(gen.AllLanguages(), "|")})
+		}
+	}
+	return problems
+}
+
+// derivesTemplate says whether the declaration is complete, and known to
+// devctl, enough for [DeriveTemplate].
+func derivesTemplate(fields Fields) bool {
+	g := fields.Gen
+	return g != nil && len(g.Flavours) > 0 && g.Language != "" && len(unknownGen(g.Flavours, g.Language)) == 0
+}
+
+// derive sets the entry's template and its options from the declaration.
+// The unavailable Node template is returned as it is, for the caller to
+// judge with [IsTemplateUnavailable].
+func derive(entry *Entry, fields Fields) error {
+	template, err := DeriveTemplate(fields.ComponentType, fields.Gen.Flavours, fields.Gen.Language)
+	if err != nil {
+		return err
+	}
+	entry.Template = template
+	entry.Options = templateOptions(template)
+	return nil
+}
+
+// checkName records the verdict of the name check on GitHub, or that none
+// ran for want of a [NameChecker].
+func (v Validator) checkName(ctx context.Context, owner string, entry *Entry) error {
+	if v.Names == nil {
+		entry.NameCheck = NameCheck{Verdict: VerdictUnchecked, Detail: "not checked: no GitHub client"}
+		return nil
+	}
+	check, err := v.Names.CheckName(ctx, owner, entry.Name)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+	entry.NameCheck = check
+	return nil
+}
+
+// notices are the guards on the change as a whole. The review guards are
+// about entries being added; existing entries get none.
+func (v Validator) notices(req Request, mode Mode, added int) []Notice {
 	var notices []Notice
 
 	team := req.TeamFile.Team
-	if req.Author != "" && !memberOf(req.AuthorTeams, team) && !memberOf(req.AuthorTeams, FallbackTeam) {
+	if mode == ModeCreate && req.Author != "" && !memberOf(req.AuthorTeams, team) && !memberOf(req.AuthorTeams, FallbackTeam) {
 		notices = append(notices, Notice{
 			Kind:    NoticeTeamReview,
 			Message: fmt.Sprintf("your team's review will be required: %s is not a member of %s or %s, so the machine does not approve the pull request", req.Author, team, FallbackTeam),
 		})
 	}
-	if added > MaxMachineApprovedEntries {
+	if mode == ModeCreate && added > MaxMachineApprovedEntries {
 		notices = append(notices, Notice{
 			Kind:    NoticeBatchReview,
 			Message: fmt.Sprintf("a person will review: %d entries are added and the machine approves at most %d", added, MaxMachineApprovedEntries),
