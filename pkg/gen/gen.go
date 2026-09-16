@@ -1,6 +1,7 @@
 package gen
 
 import (
+	"bytes"
 	"context"
 	"io/fs"
 	"os"
@@ -62,14 +63,23 @@ func execute(ctx context.Context, file input.Input) error {
 		permissions = file.Permissions
 	}
 
+	// Render into a buffer first and only then open (and truncate) the destination. A
+	// File.Generate callback can fail for reasons entirely outside devctl -- e.g. a network
+	// fetch, see values_schema.go -- and opening with O_TRUNC up front would already have
+	// wiped a previously-committed file by the time that failure surfaces, leaving the repo
+	// worse off than before the run. See giantswarm/devctl#2195.
+	var buf bytes.Buffer
+	if err := internal.Execute(ctx, &buf, file); err != nil {
+		return microerror.Mask(err)
+	}
+
 	w, err := os.OpenFile(file.Path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, permissions)
 	if err != nil {
 		return microerror.Mask(err)
 	}
 	defer func() { _ = w.Close() }()
 
-	err = internal.Execute(ctx, w, file)
-	if err != nil {
+	if _, err := w.Write(buf.Bytes()); err != nil {
 		return microerror.Mask(err)
 	}
 
@@ -98,6 +108,8 @@ func isRegenerable(path string) bool {
 	case base == ".pre-commit-config.yaml":
 		return true
 	case base == ".schema.yaml":
+		return true
+	case base == "values.schema.json":
 		return true
 	case base == "aws-ami.yaml.template":
 		return true
