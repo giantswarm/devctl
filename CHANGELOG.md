@@ -55,6 +55,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   clones, and `release`'s own push runs the plain `git` binary against the checkout's already
   configured remote, so neither needs a GitHub token or any credential beyond what a laptop's
   checkout already has.
+- `reservation reserve`: a new `--exclusive` flag locks the whole cluster instead of just the app,
+  refusing any other active reservation, ignoring one already expired but unswept, and promoting its
+  own sole active reservation of the same user and app in place rather than duplicating it.
 - `gen circleci`: the branch-path build jobs (`build-image` / `push-to-registries`, `build-chart`,
   `execute-chart-tests`, `push-chart`) now carry `require_open_pull_request: true`, and the pinned
   orb moves to `giantswarm/architect@10.6.0`, which added the parameter. The orb halts a job
