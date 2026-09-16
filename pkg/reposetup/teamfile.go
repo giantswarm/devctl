@@ -139,10 +139,10 @@ func (d Declaration) YAML() (string, error) {
 	return renderEntry(d.node)
 }
 
-// entryFields are the fields of an entry the creation rules and the
+// Fields are the fields of an entry the creation rules and the
 // scaffold rendering read: what align-files reads when it runs the
 // generators for the repository.
-type entryFields struct {
+type Fields struct {
 	Name           string   `yaml:"name"`
 	ComponentType  string   `yaml:"componentType"`
 	Description    string   `yaml:"description"`
@@ -152,11 +152,11 @@ type entryFields struct {
 	Replace        *struct {
 		Precommit bool `yaml:"precommit"`
 	} `yaml:"replace"`
-	Gen *genFields `yaml:"gen"`
+	Gen *GenFields `yaml:"gen"`
 }
 
-// genFields is the gen block: the generators' inputs.
-type genFields struct {
+// GenFields is the gen block: the generators' inputs.
+type GenFields struct {
 	Flavours                      []string  `yaml:"flavours"`
 	Language                      string    `yaml:"language"`
 	InstallUpdateChart            bool      `yaml:"installUpdateChart"`
@@ -167,11 +167,11 @@ type genFields struct {
 	PreCommit                     []string  `yaml:"preCommit"`
 	EnableUpstreamSyncAutomation  bool      `yaml:"enableUpstreamSyncAutomation"`
 	DispatchUpdateChartEventsRepo string    `yaml:"dispatchUpdateChartEventsRepo"`
-	CI                            *ciFields `yaml:"ci"`
+	CI                            *CIFields `yaml:"ci"`
 }
 
-// ciFields is the gen.ci block: the CircleCI generator's knobs.
-type ciFields struct {
+// CIFields is the gen.ci block: the CircleCI generator's knobs.
+type CIFields struct {
 	Generate                *bool  `yaml:"generate"`
 	ReleaseWorkflow         string `yaml:"releaseWorkflow"`
 	AppCatalog              string `yaml:"appCatalog"`
@@ -208,10 +208,10 @@ type ciFields struct {
 
 // fields decodes the fields the creation rules read; a type mismatch is an
 // error the schema validation already names.
-func (d Declaration) fields() (entryFields, error) {
-	var f entryFields
+func (d Declaration) Fields() (Fields, error) {
+	var f Fields
 	if err := d.node.Decode(&f); err != nil {
-		return entryFields{}, microerror.Mask(err)
+		return Fields{}, microerror.Mask(err)
 	}
 	return f, nil
 }

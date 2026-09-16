@@ -1,0 +1,729 @@
+package reconcile
+
+import (
+	"context"
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/google/go-github/v92/github"
+
+	"github.com/giantswarm/devctl/v8/pkg/circleciclient"
+	"github.com/giantswarm/devctl/v8/pkg/reposetup"
+)
+
+// The fakes below stand in for GitHub's and CircleCI's REST surfaces: an
+// in-memory state behind the endpoints the steps use, seeded by a test and
+// inspected afterwards. Every non-GET request is recorded as a mutation so a
+// test can assert that a converged run changes nothing.
+
+// fakeRepo is one repository's state.
+type fakeRepo struct {
+	owner, name, description string
+	private, archived        bool
+	hasWiki, hasIssues, hasProjects, allowMerge, allowSquash, allowRebase,
+	allowUpdate, allowAuto, deleteOnMerge bool
+	defaultBranch string
+	workflowPerm  string
+	teams         map[string]string
+	empty         bool
+	files         map[string]string            // default-branch files
+	branchFiles   map[string]map[string]string // other branches
+	protection    *fakeProtection
+	hooks         []*github.Hook
+	release       string
+	releaseAt     time.Time
+	statuses      []string // commit statuses reported on the head
+	checkRuns     []string // check runs reported on the head
+	prs           []*github.PullRequest
+	blobs         map[string][]byte
+	trees         map[string][]*github.TreeEntry
+	commits       map[string]string // commit sha → tree sha
+	seq           int
+}
+
+type fakeProtection struct {
+	reviews                             int
+	enforceAdmins, allowForce, allowDel bool
+	strict                              bool
+	checks                              []string
+}
+
+// fakeGitHub is the GitHub fake.
+type fakeGitHub struct {
+	mu        sync.Mutex
+	repos     map[string]*fakeRepo // owner/name
+	redirects map[string]string    // owner/old → owner/new
+	// installation is GET /user/installations/{id}/repositories.
+	installation struct {
+		status    int
+		selection string
+		repos     []string
+	}
+	runs       map[string][]string // owner/repo/workflow → run statuses
+	dispatches []string
+	// onDispatch simulates what a dispatched workflow lands.
+	onDispatch func(workflow string, inputs map[string]any)
+	mutations  []string
+	srv        *httptest.Server
+}
+
+func newFakeGitHub() *fakeGitHub {
+	f := &fakeGitHub{repos: map[string]*fakeRepo{}, redirects: map[string]string{}, runs: map[string][]string{}}
+	f.installation.status = http.StatusOK
+	f.installation.selection = "selected"
+	mux := http.NewServeMux()
+	f.routes(mux)
+	f.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.URL.Path = strings.TrimPrefix(r.URL.Path, "/api/v3") // go-github's enterprise prefix
+		f.mu.Lock()
+		if r.Method != http.MethodGet {
+			f.mutations = append(f.mutations, r.Method+" "+r.URL.Path)
+		}
+		f.mu.Unlock()
+		mux.ServeHTTP(w, r)
+	}))
+	return f
+}
+
+// addRepo seeds a repository at the baseline with a scaffold, active and
+// unprotected; the test adjusts it.
+func (f *fakeGitHub) addRepo(owner, name string) *fakeRepo {
+	r := &fakeRepo{
+		owner: owner, name: name,
+		hasIssues: true, allowSquash: true, allowUpdate: true, allowAuto: true, deleteOnMerge: true,
+		defaultBranch: "main", workflowPerm: "write",
+		teams:       map[string]string{"employees": "admin", "bots": "push"},
+		files:       map[string]string{},
+		branchFiles: map[string]map[string]string{},
+		blobs:       map[string][]byte{}, trees: map[string][]*github.TreeEntry{}, commits: map[string]string{},
+	}
+	for p, c := range scaffoldFiles {
+		r.files[p] = c
+	}
+	f.repos[owner+"/"+name] = r
+	return r
+}
+
+func (f *fakeGitHub) repo(owner, name string) (*fakeRepo, bool) {
+	slug := owner + "/" + name
+	if target, ok := f.redirects[strings.ToLower(slug)]; ok {
+		slug = target
+	}
+	r, ok := f.repos[strings.ToLower(slug)]
+	if !ok {
+		r, ok = f.repos[slug]
+	}
+	return r, ok
+}
+
+func (r *fakeRepo) next(prefix string) string {
+	r.seq++
+	return fmt.Sprintf("%s%04d", prefix, r.seq)
+}
+
+func (r *fakeRepo) toGitHub() *github.Repository {
+	return &github.Repository{
+		Name:                new(r.name),
+		FullName:            new(r.owner + "/" + r.name),
+		Owner:               &github.User{Login: new(r.owner)},
+		Description:         new(r.description),
+		Private:             new(r.private),
+		Archived:            new(r.archived),
+		HasWiki:             new(r.hasWiki),
+		HasIssues:           new(r.hasIssues),
+		HasProjects:         new(r.hasProjects),
+		AllowMergeCommit:    new(r.allowMerge),
+		AllowSquashMerge:    new(r.allowSquash),
+		AllowRebaseMerge:    new(r.allowRebase),
+		AllowUpdateBranch:   new(r.allowUpdate),
+		AllowAutoMerge:      new(r.allowAuto),
+		DeleteBranchOnMerge: new(r.deleteOnMerge),
+		DefaultBranch:       new(r.defaultBranch),
+	}
+}
+
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+func notFound(w http.ResponseWriter, msg string) {
+	writeJSON(w, http.StatusNotFound, map[string]string{"message": msg})
+}
+
+func decode(r *http.Request, v any) {
+	_ = json.NewDecoder(r.Body).Decode(v)
+}
+
+func (f *fakeGitHub) withRepo(h func(w http.ResponseWriter, r *http.Request, repo *fakeRepo)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		repo, ok := f.repo(r.PathValue("owner"), r.PathValue("repo"))
+		if !ok {
+			notFound(w, "Not Found")
+			return
+		}
+		h(w, r, repo)
+	}
+}
+
+func (f *fakeGitHub) routes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /repos/{owner}/{repo}", f.withRepo(func(w http.ResponseWriter, _ *http.Request, repo *fakeRepo) {
+		writeJSON(w, 200, repo.toGitHub())
+	}))
+	mux.HandleFunc("POST /orgs/{owner}/repos", func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		var in github.Repository
+		decode(r, &in)
+		repo := f.addRepo(r.PathValue("owner"), in.GetName())
+		repo.description, repo.private = in.GetDescription(), in.GetPrivate()
+		repo.hasWiki, repo.teams = true, map[string]string{} // GitHub's defaults, not the baseline
+		repo.files = map[string]string{}
+		repo.empty = !in.GetAutoInit()
+		if in.GetAutoInit() {
+			repo.files["README.md"] = "# " + repo.name + "\n"
+		}
+		writeJSON(w, 201, repo.toGitHub())
+	})
+	mux.HandleFunc("PATCH /repos/{owner}/{repo}", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		var in map[string]any
+		decode(r, &in)
+		set := func(key string, dst *bool) {
+			if v, ok := in[key].(bool); ok {
+				*dst = v
+			}
+		}
+		set("private", &repo.private)
+		set("archived", &repo.archived)
+		set("has_wiki", &repo.hasWiki)
+		set("has_issues", &repo.hasIssues)
+		set("has_projects", &repo.hasProjects)
+		set("allow_merge_commit", &repo.allowMerge)
+		set("allow_squash_merge", &repo.allowSquash)
+		set("allow_rebase_merge", &repo.allowRebase)
+		set("allow_update_branch", &repo.allowUpdate)
+		set("allow_auto_merge", &repo.allowAuto)
+		set("delete_branch_on_merge", &repo.deleteOnMerge)
+		if v, ok := in["description"].(string); ok {
+			repo.description = v
+		}
+		writeJSON(w, 200, repo.toGitHub())
+	}))
+	mux.HandleFunc("GET /repos/{owner}/{repo}/commits", f.withRepo(func(w http.ResponseWriter, _ *http.Request, repo *fakeRepo) {
+		if repo.empty {
+			writeJSON(w, http.StatusConflict, map[string]string{"message": "Git Repository is empty."})
+			return
+		}
+		writeJSON(w, 200, []map[string]any{{"sha": "head"}})
+	}))
+	mux.HandleFunc("GET /repos/{owner}/{repo}/commits/{sha}/status", f.withRepo(func(w http.ResponseWriter, _ *http.Request, repo *fakeRepo) {
+		statuses := []map[string]string{}
+		for _, c := range repo.statuses {
+			statuses = append(statuses, map[string]string{"context": c, "state": "success"})
+		}
+		writeJSON(w, 200, map[string]any{"state": "success", "statuses": statuses})
+	}))
+	mux.HandleFunc("GET /repos/{owner}/{repo}/commits/{sha}/check-runs", f.withRepo(func(w http.ResponseWriter, _ *http.Request, repo *fakeRepo) {
+		runs := []map[string]string{}
+		for _, c := range repo.checkRuns {
+			runs = append(runs, map[string]string{"name": c, "status": "completed", "conclusion": "success"})
+		}
+		writeJSON(w, 200, map[string]any{"total_count": len(runs), "check_runs": runs})
+	}))
+	mux.HandleFunc("GET /repos/{owner}/{repo}/tags", f.withRepo(func(w http.ResponseWriter, _ *http.Request, _ *fakeRepo) {
+		writeJSON(w, 200, []any{})
+	}))
+	mux.HandleFunc("GET /repos/{owner}/{repo}/pulls", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		var out []*github.PullRequest
+		for _, pr := range repo.prs {
+			if s := r.URL.Query().Get("state"); s != "" && s != "all" && pr.GetState() != s {
+				continue
+			}
+			if h := r.URL.Query().Get("head"); h != "" && repo.owner+":"+pr.GetHead().GetRef() != h {
+				continue
+			}
+			out = append(out, pr)
+		}
+		if out == nil {
+			out = []*github.PullRequest{}
+		}
+		writeJSON(w, 200, out)
+	}))
+	mux.HandleFunc("POST /repos/{owner}/{repo}/pulls", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		var in github.CreatePullRequest
+		decode(r, &in)
+		n := len(repo.prs) + 1
+		pr := &github.PullRequest{
+			Number:  new(n),
+			State:   new("open"),
+			Title:   in.Title,
+			HTMLURL: new(fmt.Sprintf("https://github.com/%s/%s/pull/%d", repo.owner, repo.name, n)),
+			Head:    &github.PullRequestBranch{Ref: new(in.Head)},
+			Base:    &github.PullRequestBranch{Ref: new(in.Base)},
+		}
+		repo.prs = append(repo.prs, pr)
+		writeJSON(w, 201, pr)
+	}))
+	mux.HandleFunc("GET /repos/{owner}/{repo}/contents/{path...}", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		path := strings.TrimSuffix(r.PathValue("path"), "/")
+		files := repo.files
+		if ref := r.URL.Query().Get("ref"); ref != "" && ref != repo.defaultBranch {
+			files = repo.branchFiles[ref]
+		}
+		if repo.empty {
+			notFound(w, "This repository is empty.")
+			return
+		}
+		if content, ok := files[path]; ok {
+			writeJSON(w, 200, map[string]any{
+				"type": "file", "name": filepath.Base(path), "path": path, "encoding": "base64",
+				"content": base64.StdEncoding.EncodeToString([]byte(content)), "sha": "blob-" + path, "size": len(content),
+			})
+			return
+		}
+		var listing []map[string]string
+		seen := map[string]bool{}
+		for p := range files {
+			if path != "" && !strings.HasPrefix(p, path+"/") {
+				continue
+			}
+			rest := strings.TrimPrefix(p, path+"/")
+			if path == "" {
+				rest = p
+			}
+			top := strings.SplitN(rest, "/", 2)[0]
+			if seen[top] {
+				continue
+			}
+			seen[top] = true
+			kind := "file"
+			if strings.Contains(rest, "/") {
+				kind = "dir"
+			}
+			listing = append(listing, map[string]string{"type": kind, "name": top, "path": strings.TrimPrefix(path+"/"+top, "/")})
+		}
+		if listing == nil {
+			notFound(w, "Not Found")
+			return
+		}
+		sort.Slice(listing, func(i, j int) bool { return listing[i]["name"] < listing[j]["name"] })
+		writeJSON(w, 200, listing)
+	}))
+	mux.HandleFunc("PUT /repos/{owner}/{repo}/contents/{path...}", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		var in struct {
+			Content string `json:"content"`
+			Branch  string `json:"branch"`
+		}
+		decode(r, &in)
+		data, _ := base64.StdEncoding.DecodeString(in.Content)
+		path := r.PathValue("path")
+		if in.Branch == "" || in.Branch == repo.defaultBranch {
+			repo.files[path] = string(data)
+			repo.empty = false
+		} else {
+			if repo.branchFiles[in.Branch] == nil {
+				repo.branchFiles[in.Branch] = map[string]string{}
+			}
+			repo.branchFiles[in.Branch][path] = string(data)
+		}
+		writeJSON(w, 201, map[string]any{"content": map[string]string{"path": path}, "commit": map[string]string{"sha": repo.next("c")}})
+	}))
+	mux.HandleFunc("GET /repos/{owner}/{repo}/git/ref/{ref...}", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		writeJSON(w, 200, map[string]any{"ref": "refs/" + r.PathValue("ref"), "object": map[string]string{"sha": "head", "type": "commit"}})
+	}))
+	mux.HandleFunc("POST /repos/{owner}/{repo}/git/refs", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		var in github.CreateRef
+		decode(r, &in)
+		branch := strings.TrimPrefix(in.Ref, "refs/heads/")
+		repo.branchFiles[branch] = map[string]string{}
+		for p, c := range repo.files {
+			repo.branchFiles[branch][p] = c
+		}
+		writeJSON(w, 201, map[string]any{"ref": in.Ref, "object": map[string]string{"sha": in.SHA}})
+	}))
+	mux.HandleFunc("PATCH /repos/{owner}/{repo}/git/refs/{ref...}", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		var in github.UpdateRef
+		decode(r, &in)
+		treeSHA, ok := repo.commits[in.SHA]
+		if !ok {
+			writeJSON(w, 422, map[string]string{"message": "unknown commit " + in.SHA})
+			return
+		}
+		files := map[string]string{}
+		for _, e := range repo.trees[treeSHA] {
+			switch {
+			case e.Content != nil:
+				files[e.GetPath()] = e.GetContent()
+			case e.SHA != nil:
+				files[e.GetPath()] = string(repo.blobs[e.GetSHA()])
+			}
+		}
+		repo.files = files
+		repo.empty = false
+		writeJSON(w, 200, map[string]any{"ref": "refs/" + r.PathValue("ref"), "object": map[string]string{"sha": in.SHA}})
+	}))
+	mux.HandleFunc("POST /repos/{owner}/{repo}/git/blobs", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		var in github.Blob
+		decode(r, &in)
+		data, _ := base64.StdEncoding.DecodeString(in.GetContent())
+		sha := repo.next("b")
+		repo.blobs[sha] = data
+		writeJSON(w, 201, map[string]string{"sha": sha})
+	}))
+	mux.HandleFunc("POST /repos/{owner}/{repo}/git/trees", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		if repo.empty {
+			writeJSON(w, http.StatusConflict, map[string]string{"message": "Git Repository is empty."})
+			return
+		}
+		var in struct {
+			Tree []*github.TreeEntry `json:"tree"`
+		}
+		decode(r, &in)
+		sha := repo.next("t")
+		repo.trees[sha] = in.Tree
+		writeJSON(w, 201, map[string]any{"sha": sha, "tree": in.Tree})
+	}))
+	mux.HandleFunc("POST /repos/{owner}/{repo}/git/commits", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		var in struct {
+			Tree string `json:"tree"` // the tree's SHA, as go-github sends it
+		}
+		decode(r, &in)
+		sha := repo.next("c")
+		repo.commits[sha] = in.Tree
+		writeJSON(w, 201, map[string]string{"sha": sha})
+	}))
+	mux.HandleFunc("GET /repos/{owner}/{repo}/actions/permissions/workflow", f.withRepo(func(w http.ResponseWriter, _ *http.Request, repo *fakeRepo) {
+		writeJSON(w, 200, map[string]any{"default_workflow_permissions": repo.workflowPerm, "can_approve_pull_request_reviews": false})
+	}))
+	mux.HandleFunc("PUT /repos/{owner}/{repo}/actions/permissions/workflow", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		var in github.DefaultWorkflowPermissionRepository
+		decode(r, &in)
+		repo.workflowPerm = in.GetDefaultWorkflowPermissions()
+		w.WriteHeader(204)
+	}))
+	mux.HandleFunc("GET /repos/{owner}/{repo}/teams", f.withRepo(func(w http.ResponseWriter, _ *http.Request, repo *fakeRepo) {
+		teams := []map[string]string{}
+		for slug, perm := range repo.teams {
+			teams = append(teams, map[string]string{"slug": slug, "permission": perm})
+		}
+		writeJSON(w, 200, teams)
+	}))
+	mux.HandleFunc("PUT /orgs/{org}/teams/{slug}/repos/{owner}/{repo}", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		var in github.TeamAddTeamRepoOptions
+		decode(r, &in)
+		repo.teams[strings.ToLower(r.PathValue("slug"))] = in.Permission
+		w.WriteHeader(204)
+	}))
+	mux.HandleFunc("GET /repos/{owner}/{repo}/branches/{branch}/protection", f.withRepo(func(w http.ResponseWriter, _ *http.Request, repo *fakeRepo) {
+		p := repo.protection
+		if p == nil {
+			notFound(w, "Branch not protected")
+			return
+		}
+		checks := []map[string]any{}
+		for _, c := range p.checks {
+			checks = append(checks, map[string]any{"context": c, "app_id": nil})
+		}
+		writeJSON(w, 200, map[string]any{
+			"required_status_checks":        map[string]any{"strict": p.strict, "contexts": p.checks, "checks": checks},
+			"enforce_admins":                map[string]bool{"enabled": p.enforceAdmins},
+			"required_pull_request_reviews": map[string]int{"required_approving_review_count": p.reviews},
+			"allow_force_pushes":            map[string]bool{"enabled": p.allowForce},
+			"allow_deletions":               map[string]bool{"enabled": p.allowDel},
+		})
+	}))
+	mux.HandleFunc("PUT /repos/{owner}/{repo}/branches/{branch}/protection", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		var in github.ProtectionRequest
+		decode(r, &in)
+		p := &fakeProtection{enforceAdmins: in.EnforceAdmins}
+		if in.RequiredPullRequestReviews != nil {
+			p.reviews = in.RequiredPullRequestReviews.RequiredApprovingReviewCount
+		}
+		if in.AllowForcePushes != nil {
+			p.allowForce = *in.AllowForcePushes
+		}
+		if in.AllowDeletions != nil {
+			p.allowDel = *in.AllowDeletions
+		}
+		if in.RequiredStatusChecks != nil {
+			p.strict = in.RequiredStatusChecks.Strict
+			if in.RequiredStatusChecks.Checks != nil {
+				for _, c := range *in.RequiredStatusChecks.Checks {
+					p.checks = append(p.checks, c.Context)
+				}
+			}
+		}
+		repo.protection = p
+		writeJSON(w, 200, map[string]any{})
+	}))
+	mux.HandleFunc("GET /repos/{owner}/{repo}/hooks", f.withRepo(func(w http.ResponseWriter, _ *http.Request, repo *fakeRepo) {
+		hooks := repo.hooks
+		if hooks == nil {
+			hooks = []*github.Hook{}
+		}
+		writeJSON(w, 200, hooks)
+	}))
+	mux.HandleFunc("POST /repos/{owner}/{repo}/hooks", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		var in github.Hook
+		decode(r, &in)
+		in.ID = new(int64(len(repo.hooks) + 1))
+		in.Config.Secret = nil
+		repo.hooks = append(repo.hooks, &in)
+		writeJSON(w, 201, in)
+	}))
+	mux.HandleFunc("PATCH /repos/{owner}/{repo}/hooks/{id}", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		var in github.Hook
+		decode(r, &in)
+		for i, h := range repo.hooks {
+			if h.GetID() == id {
+				in.ID = h.ID
+				in.Config.Secret = nil
+				repo.hooks[i] = &in
+			}
+		}
+		writeJSON(w, 200, in)
+	}))
+	mux.HandleFunc("GET /user/installations/{id}/repositories", func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		if f.installation.status != http.StatusOK {
+			writeJSON(w, f.installation.status, map[string]string{"message": "Resource not accessible by integration"})
+			return
+		}
+		repos := []map[string]string{}
+		for _, slug := range f.installation.repos {
+			repos = append(repos, map[string]string{"full_name": slug})
+		}
+		writeJSON(w, 200, map[string]any{"total_count": len(repos), "repository_selection": f.installation.selection, "repositories": repos})
+	})
+	mux.HandleFunc("GET /repos/{owner}/{repo}/releases/latest", f.withRepo(func(w http.ResponseWriter, _ *http.Request, repo *fakeRepo) {
+		if repo.release == "" {
+			notFound(w, "Not Found")
+			return
+		}
+		writeJSON(w, 200, map[string]any{"tag_name": repo.release, "created_at": repo.releaseAt.Format(time.RFC3339)})
+	}))
+	mux.HandleFunc("GET /repos/{owner}/{repo}/actions/workflows/{file}/runs", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		runs := []map[string]any{}
+		for i, status := range f.runs[repo.owner+"/"+repo.name+"/"+r.PathValue("file")] {
+			runs = append(runs, map[string]any{"run_number": i + 1, "status": status})
+		}
+		writeJSON(w, 200, map[string]any{"total_count": len(runs), "workflow_runs": runs})
+	}))
+	mux.HandleFunc("POST /repos/{owner}/{repo}/actions/workflows/{file}/dispatches", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		var in github.CreateWorkflowDispatchEventRequest
+		decode(r, &in)
+		f.dispatches = append(f.dispatches, r.PathValue("file"))
+		if f.onDispatch != nil {
+			f.onDispatch(r.PathValue("file"), in.Inputs)
+		}
+		w.WriteHeader(204)
+	}))
+}
+
+// fakeCircleCI is the CircleCI fake.
+type fakeCircleCI struct {
+	mu        sync.Mutex
+	projects  map[string]*fakeProject // org/repo
+	workflows map[string][]circleciclient.Workflow
+	jobs      map[string][]circleciclient.Job
+	mutations []string
+	seq       int
+	srv       *httptest.Server
+}
+
+type fakeProject struct {
+	setupWorkflows bool
+	keys           []circleciclient.CheckoutKey
+	pipelines      []circleciclient.Pipeline
+}
+
+func newFakeCircleCI() *fakeCircleCI {
+	f := &fakeCircleCI{projects: map[string]*fakeProject{}, workflows: map[string][]circleciclient.Workflow{}, jobs: map[string][]circleciclient.Job{}}
+	mux := http.NewServeMux()
+	f.routes(mux)
+	f.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		if r.Method != http.MethodGet {
+			f.mutations = append(f.mutations, r.Method+" "+r.URL.Path)
+		}
+		f.mu.Unlock()
+		mux.ServeHTTP(w, r)
+	}))
+	return f
+}
+
+// follow seeds a followed project set up as the baseline wants.
+func (f *fakeCircleCI) follow(org, repo string) *fakeProject {
+	p := &fakeProject{setupWorkflows: true, keys: []circleciclient.CheckoutKey{{Type: "deploy-key", Preferred: true}}}
+	f.projects[org+"/"+repo] = p
+	return p
+}
+
+// addPipeline seeds a pipeline for tag with one workflow of status and,
+// when it failed, one failed job.
+func (f *fakeCircleCI) addPipeline(p *fakeProject, tag, status string) {
+	f.seq++
+	id := fmt.Sprintf("pipeline-%d", f.seq)
+	p.pipelines = append([]circleciclient.Pipeline{{ID: id, Number: int64(f.seq), State: "created", CreatedAt: time.Now(), VCS: circleciclient.PipelineVCS{Tag: tag}}}, p.pipelines...)
+	wfID := id + "-wf"
+	f.workflows[id] = []circleciclient.Workflow{{ID: wfID, Name: "build", Status: status, PipelineNumber: int64(f.seq)}}
+	if circleciclient.WorkflowFailed(status) {
+		f.jobs[wfID] = []circleciclient.Job{{Name: "go-build", Status: "success"}, {Name: "push-to-registries-release", Status: "failed"}}
+	} else {
+		f.jobs[wfID] = []circleciclient.Job{{Name: "go-build", Status: status}}
+	}
+}
+
+func (f *fakeCircleCI) withProject(h func(w http.ResponseWriter, r *http.Request, p *fakeProject)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		p, ok := f.projects[r.PathValue("org")+"/"+r.PathValue("repo")]
+		if !ok {
+			notFound(w, "Project not found")
+			return
+		}
+		h(w, r, p)
+	}
+}
+
+func (f *fakeCircleCI) routes(mux *http.ServeMux) {
+	mux.HandleFunc("POST /api/v1.1/project/github/{org}/{repo}/follow", func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		slug := r.PathValue("org") + "/" + r.PathValue("repo")
+		if _, ok := f.projects[slug]; !ok {
+			f.projects[slug] = &fakeProject{} // CircleCI's defaults: no setup workflows, no key yet
+		}
+		writeJSON(w, 200, map[string]any{"followed": true})
+	})
+	mux.HandleFunc("POST /api/v1.1/project/github/{org}/{repo}/unfollow", func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		delete(f.projects, r.PathValue("org")+"/"+r.PathValue("repo"))
+		writeJSON(w, 200, map[string]any{"followed": false})
+	})
+	mux.HandleFunc("GET /api/v2/project/gh/{org}/{repo}", f.withProject(func(w http.ResponseWriter, r *http.Request, _ *fakeProject) {
+		writeJSON(w, 200, circleciclient.Project{Slug: "gh/" + r.PathValue("org") + "/" + r.PathValue("repo"), Name: r.PathValue("repo")})
+	}))
+	mux.HandleFunc("GET /api/v2/project/gh/{org}/{repo}/settings", f.withProject(func(w http.ResponseWriter, _ *http.Request, p *fakeProject) {
+		writeJSON(w, 200, map[string]any{"advanced": map[string]any{"setup_workflows": p.setupWorkflows, "autocancel_builds": true}})
+	}))
+	mux.HandleFunc("PATCH /api/v2/project/gh/{org}/{repo}/settings", f.withProject(func(w http.ResponseWriter, r *http.Request, p *fakeProject) {
+		var in circleciclient.ProjectSettings
+		decode(r, &in)
+		if in.Advanced.SetupWorkflows != nil {
+			p.setupWorkflows = *in.Advanced.SetupWorkflows
+		}
+		writeJSON(w, 200, map[string]any{"advanced": map[string]any{"setup_workflows": p.setupWorkflows}})
+	}))
+	mux.HandleFunc("GET /api/v2/project/gh/{org}/{repo}/checkout-key", f.withProject(func(w http.ResponseWriter, _ *http.Request, p *fakeProject) {
+		keys := p.keys
+		if keys == nil {
+			keys = []circleciclient.CheckoutKey{}
+		}
+		writeJSON(w, 200, map[string]any{"items": keys, "next_page_token": nil})
+	}))
+	mux.HandleFunc("POST /api/v2/project/gh/{org}/{repo}/checkout-key", f.withProject(func(w http.ResponseWriter, r *http.Request, p *fakeProject) {
+		var in map[string]string
+		decode(r, &in)
+		k := circleciclient.CheckoutKey{Type: in["type"], Preferred: true, Fingerprint: "aa:bb", CreatedAt: time.Now()}
+		p.keys = append(p.keys, k)
+		writeJSON(w, 201, k)
+	}))
+	mux.HandleFunc("GET /api/v2/project/gh/{org}/{repo}/pipeline", f.withProject(func(w http.ResponseWriter, _ *http.Request, p *fakeProject) {
+		items := p.pipelines
+		if items == nil {
+			items = []circleciclient.Pipeline{}
+		}
+		writeJSON(w, 200, map[string]any{"items": items, "next_page_token": nil})
+	}))
+	mux.HandleFunc("POST /api/v2/project/gh/{org}/{repo}/pipeline", f.withProject(func(w http.ResponseWriter, r *http.Request, p *fakeProject) {
+		var in circleciclient.TriggerRequest
+		decode(r, &in)
+		f.addPipeline(p, in.Tag, "success")
+		writeJSON(w, 201, p.pipelines[0])
+	}))
+	mux.HandleFunc("GET /api/v2/pipeline/{id}/workflow", func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		writeJSON(w, 200, map[string]any{"items": f.workflows[r.PathValue("id")]})
+	})
+	mux.HandleFunc("GET /api/v2/workflow/{id}/job", func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		writeJSON(w, 200, map[string]any{"items": f.jobs[r.PathValue("id")]})
+	})
+}
+
+// scaffoldFiles is what the fake renderer renders and what a seeded
+// repository carries: the files the steps read.
+var scaffoldFiles = map[string]string{
+	"README.md":  "# sample-service\n",
+	"CODEOWNERS": reposetup.Codeowners("team-bumblebee"),
+	"Makefile":   "include Makefile.*.mk\n",
+	".circleci/workflows.yml": `version: 2.1
+workflows:
+  build:
+    jobs:
+    - architect/go-build:
+        name: go-build
+        filters:
+          tags:
+            only: /^v.*/
+    - architect/push-to-registries:
+        name: push-to-registries-release
+        filters:
+          branches:
+            ignore: /.*/
+          tags:
+            only: /^v.*/
+`,
+	"helm/sample-service/Chart.yaml": `apiVersion: v2
+name: sample-service
+version: 0.0.1
+icon: ` + defaultChartIcon + `
+annotations:
+  io.giantswarm.application.team: bumblebee
+`,
+	"helm/sample-service/values.schema.json": "{}\n",
+}
+
+// fakeRenderer writes scaffoldFiles, or fails.
+type fakeRenderer struct {
+	fail error
+}
+
+func (f fakeRenderer) Render(_ context.Context, req reposetup.RenderRequest) (*reposetup.Scaffold, error) {
+	if f.fail != nil {
+		return nil, f.fail
+	}
+	var files []string
+	for p, c := range scaffoldFiles {
+		full := filepath.Join(req.Dir, filepath.FromSlash(p))
+		if err := os.MkdirAll(filepath.Dir(full), 0o750); err != nil {
+			return nil, err
+		}
+		if err := os.WriteFile(full, []byte(c), 0o600); err != nil {
+			return nil, err
+		}
+		files = append(files, p)
+	}
+	sort.Strings(files)
+	return &reposetup.Scaffold{Dir: req.Dir, Template: req.Entry.Template, Files: files}, nil
+}

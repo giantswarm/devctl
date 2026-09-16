@@ -86,7 +86,7 @@ func (r Renderer) Render(ctx context.Context, req RenderRequest) (*Scaffold, err
 	if len(tf.Entries) != 1 {
 		return nil, microerror.Maskf(invalidConfigError, "entry %q: Rendered holds %d entries, want 1", req.Entry.Name, len(tf.Entries))
 	}
-	fields, err := tf.Entries[0].fields()
+	fields, err := tf.Entries[0].Fields()
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}

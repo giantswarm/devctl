@@ -124,7 +124,7 @@ func Test_Render_alignRunIsNoop(t *testing.T) {
 			if err != nil {
 				t.Fatalf("parse rendered entry: %v", err)
 			}
-			fields, err := tf.Entries[0].fields()
+			fields, err := tf.Entries[0].Fields()
 			if err != nil {
 				t.Fatalf("fields: %v", err)
 			}

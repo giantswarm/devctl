@@ -82,9 +82,9 @@ func DeriveTemplate(componentType string, flavours []string, language string) (T
 	}
 }
 
-// hasChart says whether the declared flavours produce a Helm chart, which
+// HasChart says whether the declared flavours produce a Helm chart, which
 // is where the chart-name convention applies.
-func hasChart(flavours []string) bool {
+func HasChart(flavours []string) bool {
 	for _, f := range flavours {
 		if f == gen.FlavourApp.String() || f == gen.FlavourClusterApp.String() {
 			return true
