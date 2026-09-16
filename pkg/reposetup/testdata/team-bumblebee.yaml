@@ -31,24 +31,32 @@
     flavours:
       - generic
     language: generic
+    ci:
+      generate: false
 - name: customer-configs
   componentType: customer
   gen:
     flavours:
       - customer
     language: generic
+    ci:
+      generate: false
 - name: policies
   componentType: configuration
   gen:
     flavours:
       - generic
     language: kyverno-policy
+    ci:
+      generate: false
 - name: python-tool
   componentType: cli
   gen:
     flavours:
       - generic
     language: python
+    ci:
+      generate: false
 - name: hello-world-app
   componentType: service
   gen:
@@ -73,6 +81,8 @@
     flavours:
       - generic
     language: generic
+    ci:
+      generate: false
 - name: chart-name-mismatch
   componentType: service
   gen:
@@ -126,3 +136,9 @@
     flavours:
       - app
     language: go
+- name: no-ci-jobs
+  componentType: configuration
+  gen:
+    flavours:
+      - generic
+    language: generic

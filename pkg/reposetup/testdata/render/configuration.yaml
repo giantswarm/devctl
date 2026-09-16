@@ -1,0 +1,10 @@
+# yaml-language-server: $schema=../.github/repositories.schema.json
+- name: example-configs
+  componentType: configuration
+  description: Configuration of the example installations.
+  gen:
+    flavours:
+      - generic
+    language: generic
+    ci:
+      generate: false

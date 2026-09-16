@@ -139,18 +139,71 @@ func (d Declaration) YAML() (string, error) {
 	return renderEntry(d.node)
 }
 
-// entryFields are the fields of an entry the creation rules read.
+// entryFields are the fields of an entry the creation rules and the
+// scaffold rendering read: what align-files reads when it runs the
+// generators for the repository.
 type entryFields struct {
-	Name          string `yaml:"name"`
-	ComponentType string `yaml:"componentType"`
-	Gen           *struct {
-		Flavours []string `yaml:"flavours"`
-		Language string   `yaml:"language"`
-		CI       *struct {
-			Generate  *bool  `yaml:"generate"`
-			ChartName string `yaml:"chartName"`
-		} `yaml:"ci"`
-	} `yaml:"gen"`
+	Name           string   `yaml:"name"`
+	ComponentType  string   `yaml:"componentType"`
+	Description    string   `yaml:"description"`
+	Visibility     string   `yaml:"visibility"`
+	Lifecycle      string   `yaml:"lifecycle"`
+	ChoreReviewers []string `yaml:"choreReviewers"`
+	Replace        *struct {
+		Precommit bool `yaml:"precommit"`
+	} `yaml:"replace"`
+	Gen *genFields `yaml:"gen"`
+}
+
+// genFields is the gen block: the generators' inputs.
+type genFields struct {
+	Flavours                      []string  `yaml:"flavours"`
+	Language                      string    `yaml:"language"`
+	InstallUpdateChart            bool      `yaml:"installUpdateChart"`
+	HelmDocsRegen                 bool      `yaml:"helmDocsRegen"`
+	RunSecurityScorecard          *bool     `yaml:"runSecurityScorecard"`
+	GenerateLlmRules              *bool     `yaml:"generateLlmRules"`
+	GoGenerate                    bool      `yaml:"goGenerate"`
+	PreCommit                     []string  `yaml:"preCommit"`
+	EnableUpstreamSyncAutomation  bool      `yaml:"enableUpstreamSyncAutomation"`
+	DispatchUpdateChartEventsRepo string    `yaml:"dispatchUpdateChartEventsRepo"`
+	CI                            *ciFields `yaml:"ci"`
+}
+
+// ciFields is the gen.ci block: the CircleCI generator's knobs.
+type ciFields struct {
+	Generate                *bool  `yaml:"generate"`
+	ReleaseWorkflow         string `yaml:"releaseWorkflow"`
+	AppCatalog              string `yaml:"appCatalog"`
+	AppCatalogTest          string `yaml:"appCatalogTest"`
+	ChartName               string `yaml:"chartName"`
+	OverrideChartAppVersion *bool  `yaml:"overrideChartAppVersion"`
+	ForcePublic             bool   `yaml:"forcePublic"`
+	Image                   *struct {
+		PreBuildJob     string            `yaml:"preBuildJob"`
+		PrivateOnly     bool              `yaml:"privateOnly"`
+		Name            string            `yaml:"name"`
+		Platforms       string            `yaml:"platforms"`
+		Dockerfile      string            `yaml:"dockerfile"`
+		NativeBuilds    bool              `yaml:"nativeBuilds"`
+		ResourceClasses map[string]string `yaml:"resourceClasses"`
+	} `yaml:"image"`
+	BranchPublish    bool   `yaml:"branchPublish"`
+	SkipAppCatalog   bool   `yaml:"skipAppCatalog"`
+	SkipATS          bool   `yaml:"skipATS"`
+	ATSOnRelease     bool   `yaml:"atsOnRelease"`
+	ATSVersion       string `yaml:"atsVersion"`
+	ATSResourceClass string `yaml:"atsResourceClass"`
+	BuildConcurrency string `yaml:"buildConcurrency"`
+	ResourceClass    string `yaml:"resourceClass"`
+	Go               *struct {
+		TestArtifacts string `yaml:"testArtifacts"`
+	} `yaml:"go"`
+	Node *struct {
+		TestTarget  string `yaml:"testTarget"`
+		BuildTarget string `yaml:"buildTarget"`
+		BuildOutput string `yaml:"buildOutput"`
+	} `yaml:"node"`
 }
 
 // fields decodes the fields the creation rules read; a type mismatch is an

@@ -50,3 +50,23 @@ var templateUnavailableError = &microerror.Error{
 func IsTemplateUnavailable(err error) bool {
 	return microerror.Cause(err) == templateUnavailableError
 }
+
+var templateFetchError = &microerror.Error{
+	Kind: "templateFetchError",
+}
+
+// IsTemplateFetch asserts templateFetchError: a template repository could
+// not be fetched.
+func IsTemplateFetch(err error) bool {
+	return microerror.Cause(err) == templateFetchError
+}
+
+var renderFailedError = &microerror.Error{
+	Kind: "renderFailedError",
+}
+
+// IsRenderFailed asserts renderFailedError: a generator failed while the
+// scaffold was rendered.
+func IsRenderFailed(err error) bool {
+	return microerror.Cause(err) == renderFailedError
+}

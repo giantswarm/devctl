@@ -78,6 +78,9 @@ type Entry struct {
 	// Template the repository would be scaffolded from; empty when the
 	// declaration does not derive one.
 	Template Template `json:"template,omitempty"`
+	// Options the template's scaffold offers, selected by name through
+	// [RenderRequest.Options]; nil when the template has none.
+	Options []Option `json:"options,omitempty"`
 	// NameCheck is the verdict of the GitHub name check.
 	NameCheck NameCheck `json:"nameCheck"`
 	// Problems are the refusals, each naming the field. Empty when accepted.
@@ -266,7 +269,14 @@ func (v Validator) validateEntry(ctx context.Context, owner string, tf *TeamFile
 			return Entry{}, microerror.Mask(err)
 		default:
 			entry.Template = template
+			entry.Options = templateOptions(template)
 		}
+	}
+
+	// Generated CI needs something to build: align-files' `devctl gen
+	// circleci` refuses a declaration with no job, so the dry run does.
+	if known && len(flavours) > 0 && language != "" && fields.Gen.CI != nil && fields.Gen.CI.Generate != nil && *fields.Gen.CI.Generate && !hasCIJob(fields) {
+		refuse("gen.ci.generate", "no CircleCI job for language %s without the app flavour or gen.ci.image.dockerfile; set it to false", language)
 	}
 
 	// The name: lowercase, the chart's name where a chart exists, free on
@@ -367,6 +377,25 @@ func memberOf(teams []string, team string) bool {
 	for _, t := range teams {
 		t = strings.TrimPrefix(strings.TrimPrefix(t, "@"), DefaultOwner+"/")
 		if strings.EqualFold(t, team) {
+			return true
+		}
+	}
+	return false
+}
+
+// hasCIJob says whether the CircleCI generator has a job for the
+// declaration: a Go or Node build, an image (a scaffold has a Dockerfile only
+// where gen.ci.image.dockerfile names one) or a chart.
+func hasCIJob(f entryFields) bool {
+	g := f.Gen
+	switch {
+	case g.Language == gen.LanguageGo.String(), g.Language == gen.LanguageNode.String():
+		return true
+	case g.CI != nil && g.CI.Image != nil && g.CI.Image.Dockerfile != "":
+		return true
+	}
+	for _, flavour := range g.Flavours {
+		if flavour == gen.FlavourApp.String() {
 			return true
 		}
 	}
