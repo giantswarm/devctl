@@ -28,8 +28,9 @@ type TemplateSource interface {
 type GitHubTemplates struct {
 	// Ref is the branch or tag; default main.
 	Ref string
-	// Token authenticates the download when set; the templates are public,
-	// so it only raises the rate limit.
+	// Token authenticates the download. giantswarm/template is private, so
+	// the Go template needs it (GitHub answers 404 without); for the public
+	// templates it raises the rate limit.
 	Token string
 	// Client is the HTTP client; default [http.DefaultClient].
 	Client *http.Client

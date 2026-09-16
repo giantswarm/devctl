@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/v8/cmd/repo/checks"
+	"github.com/giantswarm/devctl/v8/cmd/repo/reconcile"
 	"github.com/giantswarm/devctl/v8/cmd/repo/setup"
 	"github.com/giantswarm/devctl/v8/cmd/repo/validate"
 )
@@ -46,6 +47,20 @@ func New(config Config) (*cobra.Command, error) {
 		}
 
 		checksCmd, err = checks.New(c)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+	}
+
+	var reconcileCmd *cobra.Command
+	{
+		c := reconcile.Config{
+			Logger: config.Logger,
+			Stderr: config.Stderr,
+			Stdout: config.Stdout,
+		}
+
+		reconcileCmd, err = reconcile.New(c)
 		if err != nil {
 			return nil, microerror.Mask(err)
 		}
@@ -98,6 +113,7 @@ func New(config Config) (*cobra.Command, error) {
 	f.Init(c)
 
 	c.AddCommand(checksCmd)
+	c.AddCommand(reconcileCmd)
 	c.AddCommand(setupCmd)
 	c.AddCommand(validateCmd)
 
