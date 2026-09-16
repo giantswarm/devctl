@@ -116,3 +116,23 @@ devctl gen renovate --language LANGUAGE
 Note: The `LANGUAGE` value is not validated currently. `go`, `python` and `node` add the matching language preset; every other value (e.g. `generic`) renders the base preset alone.
 
 The giantswarm/github align-files workflow runs this generator for repositories on devctl-generated CI (with `--circleci-generated`, which disables Renovate's architect-orb updates and extends the ATS preset because `gen circleci` bakes those in) and for the [`customer` flavour](flavours.md#customer) (without it: customer repositories have no CircleCI). Every other repository keeps its hand-maintained `renovate.json5`.
+
+## Generating CircleCI configuration
+
+Generates the dynamic-config pipeline of a repository on devctl-generated CI: `.circleci/config.yml` (the static setup workflow, which merges the optional repo-owned `.circleci/custom.yml` in at pipeline runtime) and `.circleci/workflows.yml` (the pipeline), plus the canonical `tests/ats` dependency file of a chart repository.
+
+```nohighlight
+devctl gen circleci --repo-name REPOSITORY --language LANGUAGE --flavour FLAVOUR[,FLAVOUR]
+```
+
+The pipeline is derived from the repository's signals — the language, the flavours, the presence of a `Dockerfile`, a `.ats/kind-config.yaml`, a lockfile or `.nvmrc` — rather than configured: `go` and `node` select a build/test job, a `Dockerfile` the image jobs, the `app` flavour the chart jobs (build, chart tests, push on the release tag). The knobs the giantswarm/github team file exposes under `gen.ci` are the flags of this command; `devctl gen circleci --help` documents each, and the architect-orb version is baked into devctl next to the template.
+
+### Template repositories
+
+A repository other repositories are created from (`componentType: template` in the team file, e.g. `giantswarm/template-app`) carries a chart at `helm/{APP-NAME}` with the placeholders the set-up engine fills in — `{APP-NAME}`, `{TEAM-NAME}` (the chart's `io.giantswarm.application.team` label) and `{APP HELM REPOSITORY}` — so app-build-suite cannot build it as it is. With `--component-type template --team TEAM` the chart job renders the checkout first and builds the rendered chart:
+
+```nohighlight
+devctl gen circleci --repo-name template-app --language generic --flavour app --component-type template --team team-honeybadger
+```
+
+The app name (`sample-app`) and the Helm repository (`https://charts.example.com`) are fixtures; the team is the owning team from the team file (`team-honeybadger` and `honeybadger` both name it), because the team label is what the first chart build of a created repository is validated on. Green means a repository created from the template passes that first build. Nothing is released from a template, so the pipeline has no chart-test job, no push jobs and no release leg, the build runs on every branch including `main`, and no `tests/ats` files are written. A template without a chart (no `app` flavour) is unchanged by the flag; every other `--component-type` value is inert.
