@@ -9,6 +9,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `repo create` and `repo status`, the laptop's client of the repository set-up engine
+  (giantswarm/giantswarm#37726, #2215). `repo create --team … --name … --component-type … --flavour … --language …
+  --description … --visibility …` renders the declaration as an entry of the team's file in giantswarm/github
+  (`gen.ci.generate` as the CircleCI generator decides), placed alphabetically with the rest of the file kept byte
+  for byte, validates it through the engine (schema, creation rules, the name on GitHub), prints the dry run and
+  opens the team-file pull request as the person with their own token (`$GITHUB_TOKEN` or the gh CLI's login) --
+  a taken name or a wrong flavour is refused before a pull request exists, and the guard notices say beforehand
+  whether the machine approves the change or the team reviews it (membership read from GitHub as the person). It
+  never creates a repository or touches settings. `repo status [owner/]repo` prints the set-up state -- every step
+  with its verdict -- from giantswarm-repo-manager through a muster endpoint (`--muster-endpoint`,
+  `$MUSTER_ENDPOINT`) when reachable, else from the engine's checks in read mode with the person's tokens.
+  Documented in `docs/repo.md`.
+- `pkg/reposetup`: `Creation` renders a declaration from fields, `InsertEntry` places it in a team file's
+  text, `Remote` reads team files and memberships from giantswarm/github and opens the pull request as the
+  caller, `CreationPullRequest` shapes it; `pkg/reposetup/manager` is the client of giantswarm-repo-manager's
+  `get_repository` tool over MCP's streamable HTTP transport.
 - `repo reconcile REPOSITORY` (giantswarm/giantswarm#37726, #2214): runs the repository set-up steps of
   `pkg/reposetup/reconcile` locally as the person — the way to repair a repository when the reconciler
   workflow is down and to develop the engine against a real repository. The desired state is the
@@ -498,6 +514,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   that the input and the expectation can be read together. It also excludes `fmt.Fprint`,
   `fmt.Fprintf` and `fmt.Fprintln` from errcheck: the runners print to an injected `io.Writer`,
   and a failed write to the user's terminal cannot be reported to the user's terminal.
+
+### Removed
+
+- `app bootstrap`. Its replacement is `repo create`: the declaration goes through the engine's validation and
+  the team-file pull request instead of a hard-coded `-app` suffix, an unvalidated team-file write, an SSH clone
+  and a push-then-protect sequence; the reconciler creates the repository from the merged entry. The vendir and
+  kustomize sync and the patch-script scaffolding live on as options of the chart-only template's dry run
+  (`pkg/reposetup` options). The `app` command group is gone with its only subcommand.
 
 ## [8.23.0] - 2026-06-24
 

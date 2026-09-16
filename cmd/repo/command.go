@@ -9,8 +9,10 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/v8/cmd/repo/checks"
+	"github.com/giantswarm/devctl/v8/cmd/repo/create"
 	"github.com/giantswarm/devctl/v8/cmd/repo/reconcile"
 	"github.com/giantswarm/devctl/v8/cmd/repo/setup"
+	"github.com/giantswarm/devctl/v8/cmd/repo/status"
 	"github.com/giantswarm/devctl/v8/cmd/repo/validate"
 )
 
@@ -52,6 +54,20 @@ func New(config Config) (*cobra.Command, error) {
 		}
 	}
 
+	var createCmd *cobra.Command
+	{
+		c := create.Config{
+			Logger: config.Logger,
+			Stderr: config.Stderr,
+			Stdout: config.Stdout,
+		}
+
+		createCmd, err = create.New(c)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+	}
+
 	var reconcileCmd *cobra.Command
 	{
 		c := reconcile.Config{
@@ -75,6 +91,20 @@ func New(config Config) (*cobra.Command, error) {
 		}
 
 		setupCmd, err = setup.New(c)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+	}
+
+	var statusCmd *cobra.Command
+	{
+		c := status.Config{
+			Logger: config.Logger,
+			Stderr: config.Stderr,
+			Stdout: config.Stdout,
+		}
+
+		statusCmd, err = status.New(c)
 		if err != nil {
 			return nil, microerror.Mask(err)
 		}
@@ -113,8 +143,10 @@ func New(config Config) (*cobra.Command, error) {
 	f.Init(c)
 
 	c.AddCommand(checksCmd)
+	c.AddCommand(createCmd)
 	c.AddCommand(reconcileCmd)
 	c.AddCommand(setupCmd)
+	c.AddCommand(statusCmd)
 	c.AddCommand(validateCmd)
 
 	return c, nil
