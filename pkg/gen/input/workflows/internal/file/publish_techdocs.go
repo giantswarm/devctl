@@ -1,7 +1,7 @@
 package file
 
 import (
-	_ "embed"
+	"embed"
 
 	"github.com/giantswarm/devctl/v8/pkg/gen/input"
 	"github.com/giantswarm/devctl/v8/pkg/gen/input/workflows/internal/params"
@@ -11,8 +11,10 @@ import (
 var publishTechdocsTemplate string
 
 //go:generate go run ../../../update-template-sha.go publish_techdocs.yaml.template
-//go:embed publish_techdocs.yaml.template.sha
-var publishTechdocsTemplateSha string
+//go:embed publish_techdocs.yaml.template*
+var publishTechdocsTemplateFiles embed.FS
+
+var publishTechdocsTemplateSha = input.TemplateSHA(publishTechdocsTemplateFiles, "publish_techdocs.yaml.template")
 
 func NewPublishTechdocs(p params.Params) input.Input {
 	i := input.Input{

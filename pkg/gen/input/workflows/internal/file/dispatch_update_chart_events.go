@@ -1,7 +1,7 @@
 package file
 
 import (
-	_ "embed"
+	"embed"
 
 	"github.com/giantswarm/devctl/v8/pkg/gen/input"
 	"github.com/giantswarm/devctl/v8/pkg/gen/input/workflows/internal/params"
@@ -11,8 +11,10 @@ import (
 var dispatchUpdateChartEventsTemplate string
 
 //go:generate go run ../../../update-template-sha.go dispatch_update_chart_events.yaml.template
-//go:embed dispatch_update_chart_events.yaml.template.sha
-var dispatchUpdateChartEventsTemplateSha string
+//go:embed dispatch_update_chart_events.yaml.template*
+var dispatchUpdateChartEventsTemplateFiles embed.FS
+
+var dispatchUpdateChartEventsTemplateSha = input.TemplateSHA(dispatchUpdateChartEventsTemplateFiles, "dispatch_update_chart_events.yaml.template")
 
 func NewDispatchUpdateChartEventsInput(p params.Params, targetRepo string) input.Input {
 	i := input.Input{

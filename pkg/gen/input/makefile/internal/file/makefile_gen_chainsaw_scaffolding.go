@@ -1,7 +1,7 @@
 package file
 
 import (
-	_ "embed"
+	"embed"
 
 	"github.com/giantswarm/devctl/v8/pkg/gen/input"
 	"github.com/giantswarm/devctl/v8/pkg/gen/input/makefile/internal/params"
@@ -11,8 +11,10 @@ import (
 var chainsawTestsStepTemplate string
 
 //go:generate go run ../../../update-template-sha.go chainsaw-tests-steps-template.yaml.template
-//go:embed chainsaw-tests-steps-template.yaml.template.sha
-var chainsawTestsStepTemplateSha string
+//go:embed chainsaw-tests-steps-template.yaml.template*
+var chainsawTestsStepTemplateFiles embed.FS
+
+var chainsawTestsStepTemplateSha = input.TemplateSHA(chainsawTestsStepTemplateFiles, "chainsaw-tests-steps-template.yaml.template")
 
 func NewChainsawTestsStepTemplate(p params.Params) input.Input {
 	i := input.Input{

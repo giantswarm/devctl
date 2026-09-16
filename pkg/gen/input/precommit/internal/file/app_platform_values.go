@@ -1,7 +1,7 @@
 package file
 
 import (
-	_ "embed"
+	"embed"
 	"path/filepath"
 
 	"github.com/giantswarm/devctl/v8/pkg/gen/input"
@@ -12,8 +12,10 @@ import (
 //go:embed app-platform-values.yaml.template
 var createAppPlatformValuesTemplate string
 
-//go:embed app-platform-values.yaml.template.sha
-var createAppPlatformValuesTemplateSha string
+//go:embed app-platform-values.yaml.template*
+var createAppPlatformValuesTemplateFiles embed.FS
+
+var createAppPlatformValuesTemplateSha = input.TemplateSHA(createAppPlatformValuesTemplateFiles, "app-platform-values.yaml.template")
 
 // NewCreateAppPlatformValuesInput generates the schema-only values file with
 // the keys the Giant Swarm app platform injects into every App via the

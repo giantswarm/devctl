@@ -1,7 +1,7 @@
 package file
 
 import (
-	_ "embed"
+	"embed"
 	"path/filepath"
 
 	"github.com/giantswarm/devctl/v8/pkg/gen/input"
@@ -12,8 +12,10 @@ import (
 var createDependabotTemplate string
 
 //go:generate go run ../../../update-template-sha.go dependabot.yml.template
-//go:embed dependabot.yml.template.sha
-var createDependabotTemplateSha string
+//go:embed dependabot.yml.template*
+var createDependabotTemplateFiles embed.FS
+
+var createDependabotTemplateSha = input.TemplateSHA(createDependabotTemplateFiles, "dependabot.yml.template")
 
 func NewCreateDependabotInput(p params.Params) input.Input {
 	i := input.Input{

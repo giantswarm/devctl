@@ -1,7 +1,7 @@
 package file
 
 import (
-	_ "embed"
+	"embed"
 	"strings"
 
 	"github.com/giantswarm/devctl/v8/pkg/gen/input"
@@ -12,8 +12,10 @@ import (
 var createReleaseTemplate string
 
 //go:generate go run ../../../update-template-sha.go create_release.yaml.template
-//go:embed create_release.yaml.template.sha
-var createReleaseTemplateSha string
+//go:embed create_release.yaml.template*
+var createReleaseTemplateFiles embed.FS
+
+var createReleaseTemplateSha = input.TemplateSHA(createReleaseTemplateFiles, "create_release.yaml.template")
 
 func NewCreateReleaseInput(p params.Params) input.Input {
 	i := input.Input{

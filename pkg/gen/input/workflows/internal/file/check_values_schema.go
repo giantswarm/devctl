@@ -1,7 +1,7 @@
 package file
 
 import (
-	_ "embed"
+	"embed"
 
 	"github.com/giantswarm/devctl/v8/pkg/gen/input"
 	"github.com/giantswarm/devctl/v8/pkg/gen/input/workflows/internal/params"
@@ -11,8 +11,10 @@ import (
 var checkValuesSchemaTemplate string
 
 //go:generate go run ../../../update-template-sha.go check_values_schema.yaml.template
-//go:embed check_values_schema.yaml.template.sha
-var checkValuesSchemaTemplateSha string
+//go:embed check_values_schema.yaml.template*
+var checkValuesSchemaTemplateFiles embed.FS
+
+var checkValuesSchemaTemplateSha = input.TemplateSHA(checkValuesSchemaTemplateFiles, "check_values_schema.yaml.template")
 
 func NewCheckValuesSchemaInput(p params.Params) input.Input {
 	i := input.Input{

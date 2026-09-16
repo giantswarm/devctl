@@ -1,7 +1,7 @@
 package file
 
 import (
-	_ "embed"
+	"embed"
 	"path/filepath"
 
 	"github.com/giantswarm/devctl/v8/pkg/gen/input"
@@ -12,8 +12,10 @@ import (
 //go:embed pre-commit-config.yaml.template
 var createPreCommitConfigTemplate string
 
-//go:embed pre-commit-config.yaml.template.sha
-var createPreCommitConfigTemplateSha string
+//go:embed pre-commit-config.yaml.template*
+var createPreCommitConfigTemplateFiles embed.FS
+
+var createPreCommitConfigTemplateSha = input.TemplateSHA(createPreCommitConfigTemplateFiles, "pre-commit-config.yaml.template")
 
 // refFixPython is the middle step of the generated helm-schema pipeline hook: for every
 // object that has both `$ref` and `additionalProperties: false` it drops

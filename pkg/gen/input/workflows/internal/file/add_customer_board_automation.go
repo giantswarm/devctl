@@ -1,7 +1,7 @@
 package file
 
 import (
-	_ "embed"
+	"embed"
 
 	"github.com/giantswarm/devctl/v8/pkg/gen/input"
 	"github.com/giantswarm/devctl/v8/pkg/gen/input/workflows/internal/params"
@@ -11,8 +11,10 @@ import (
 var customerBoardAutomationTemplate string
 
 //go:generate go run ../../../update-template-sha.go add_customer_board_automation.yaml.template
-//go:embed add_customer_board_automation.yaml.template.sha
-var customerBoardAutomationTemplateSha string
+//go:embed add_customer_board_automation.yaml.template*
+var customerBoardAutomationTemplateFiles embed.FS
+
+var customerBoardAutomationTemplateSha = input.TemplateSHA(customerBoardAutomationTemplateFiles, "add_customer_board_automation.yaml.template")
 
 func NewCustomerBoardAutomationInput(p params.Params) input.Input {
 	i := input.Input{

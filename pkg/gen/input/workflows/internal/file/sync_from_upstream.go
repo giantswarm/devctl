@@ -1,7 +1,7 @@
 package file
 
 import (
-	_ "embed"
+	"embed"
 
 	"github.com/giantswarm/devctl/v8/pkg/gen/input"
 	"github.com/giantswarm/devctl/v8/pkg/gen/input/workflows/internal/params"
@@ -11,8 +11,10 @@ import (
 var syncFromUpstreamTemplate string
 
 //go:generate go run ../../../update-template-sha.go sync_from_upstream.yaml.template
-//go:embed sync_from_upstream.yaml.template.sha
-var syncFromUpstreamTemplateSha string
+//go:embed sync_from_upstream.yaml.template*
+var syncFromUpstreamTemplateFiles embed.FS
+
+var syncFromUpstreamTemplateSha = input.TemplateSHA(syncFromUpstreamTemplateFiles, "sync_from_upstream.yaml.template")
 
 func NewSyncFromUpstreamInput(p params.Params) input.Input {
 	i := input.Input{
