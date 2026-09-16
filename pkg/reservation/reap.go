@@ -97,10 +97,63 @@ func enabledClusters(repoDir string) ([]string, error) {
 	return enabled, nil
 }
 
-// reapCluster is the per-cluster sweep. It is not yet implemented: no
-// reservation is released.
+// reapCluster sweeps one cluster: every reservation whose expiry passed is
+// released, reported and pushed before the next one is even considered, so a
+// push that fails on one reservation never costs the release of another.
 func reapCluster(ctx context.Context, req ReapRequest, cluster string, now time.Time) []Reaped {
-	return nil
+	reservations, err := List(ListRequest{RepoDir: req.RepoDir, Cluster: cluster})
+	if err != nil {
+		return nil
+	}
+
+	var reaped []Reaped
+	for _, r := range reservations {
+		if r.Until.After(now) {
+			continue
+		}
+
+		result, err := releaseAndPush(ctx, req, cluster, r)
+		if err != nil {
+			continue
+		}
+
+		reaped = append(reaped, Reaped{
+			Cluster:     cluster,
+			App:         result.App,
+			User:        r.User,
+			Branch:      r.Branch,
+			PullRequest: r.PullRequest,
+			Reason:      ReasonExpired,
+			Until:       r.Until,
+			Commit:      result.Commit,
+		})
+	}
+
+	return reaped
+}
+
+// releaseAndPush releases one reservation and pushes the commit, exactly as
+// the release command does for a single reservation: render (Release),
+// assert, commit, then PushWithRetry rebases and re-renders should another
+// release land first.
+func releaseAndPush(ctx context.Context, req ReapRequest, cluster string, r Reservation) (ReleaseResult, error) {
+	var result ReleaseResult
+	render := func() error {
+		var err error
+		result, err = Release(ReleaseRequest{
+			RepoDir: req.RepoDir,
+			Cluster: cluster,
+			App:     r.App,
+			User:    req.User,
+		})
+		return microerror.Mask(err)
+	}
+
+	if err := PushWithRetry(ctx, req.RepoDir, render); err != nil {
+		return ReleaseResult{}, microerror.Mask(err)
+	}
+
+	return result, nil
 }
 
 // Reaped reports one reservation Reap released.

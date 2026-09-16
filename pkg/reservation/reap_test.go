@@ -31,6 +31,23 @@ func newReapFixture(t *testing.T, opts fixtureOptions) (dir, origin string) {
 
 const testReaper = "reservation-reaper"
 
+// reserveAndPush reserves req against dir and pushes the resulting commit, so
+// dir starts even with its origin exactly like a laptop checkout that is up
+// to date.
+func reserveAndPush(t *testing.T, dir string, req reservation.Request) reservation.Result {
+	t.Helper()
+
+	result, err := reservation.Reserve(req)
+	if err != nil {
+		t.Fatalf("Reserve: %v", err)
+	}
+	if err := reservation.Push(context.Background(), dir); err != nil {
+		t.Fatalf("pushing the fixture reservation: %v", err)
+	}
+
+	return result
+}
+
 // TestReapDoesNothingWhenNoReservations is the walking skeleton: an enabled
 // cluster with no reservations at all reaps nothing and fails on nothing.
 func TestReapDoesNothingWhenNoReservations(t *testing.T) {
@@ -46,5 +63,49 @@ func TestReapDoesNothingWhenNoReservations(t *testing.T) {
 	}
 	if len(reaped) != 0 {
 		t.Errorf("got %d reaped reservations, want 0: %+v", len(reaped), reaped)
+	}
+}
+
+// TestReapReleasesAnExpiredReservation is the first acceptance criterion:
+// Reap releases a reservation whose expiry passed, reports it, commits the
+// release and pushes it -- with no remote push fixture standing in for a
+// GitHub token, exactly as it would from a laptop.
+func TestReapReleasesAnExpiredReservation(t *testing.T) {
+	dir, origin := newReapFixture(t, fixtureOptions{})
+
+	req := testRequest(dir)
+	req.Now = time.Date(2026, 9, 15, 10, 0, 0, 0, time.UTC)
+	req.Duration = time.Hour
+	reserveAndPush(t, dir, req)
+
+	reaped, err := reservation.Reap(context.Background(), reservation.ReapRequest{
+		RepoDir: dir,
+		User:    testReaper,
+		Now:     time.Date(2026, 9, 15, 12, 0, 0, 0, time.UTC), // 1h past Until
+	})
+	if err != nil {
+		t.Fatalf("Reap: %v", err)
+	}
+	if len(reaped) != 1 {
+		t.Fatalf("got %d reaped reservations, want 1: %+v", len(reaped), reaped)
+	}
+
+	got := reaped[0]
+	if got.Cluster != fixtureCluster || got.App != fixtureApp || got.User != testUser ||
+		got.Branch != testBranch || got.PullRequest != testPullRequest || got.Reason != reservation.ReasonExpired {
+		t.Errorf("reaped entry: %+v", got)
+	}
+	if got.Commit == "" {
+		t.Error("reaped entry carries no commit hash")
+	}
+
+	if entries := reservationEntries(t, dir, fixtureCluster); entries[fixtureApp] != nil {
+		t.Errorf("%s reservation still present after reaping: %+v", fixtureApp, entries[fixtureApp])
+	}
+
+	head := gitOutput(t, dir, "rev-parse", "HEAD")
+	tip := gitOutput(t, origin, "rev-parse", gitOutput(t, dir, "branch", "--show-current"))
+	if head != tip {
+		t.Errorf("the release did not land on origin: local HEAD %s, origin %s", head, tip)
 	}
 }
