@@ -107,4 +107,12 @@ Nothing is changed by `repo status`.
 ## `devctl repo validate`
 
 Validates entries of a local team file and prints the dry run as JSON -- what the validation check on
-`giantswarm/github` runs. See `devctl repo validate --help`.
+`giantswarm/github` runs. `--mode create|existing` says what the entries are validated for:
+
+| Mode | Applies | Default when |
+|---|---|---|
+| `create` | the schema, the creation rules (`gen.flavours` and `gen.language` set, a template for them, a job for generated CI, the chart-name convention) and a free name on GitHub; the guard notices say what review the change gets | `--entry` names the entries being added |
+| `existing` | the schema alone -- an entry the schema accepts is valid however it predates the creation rules; the name check's verdict is reported and never refuses, a missing repository being the reconciler's finding | no `--entry`: the whole file is on main already |
+
+`repo status` and `repo reconcile` validate a declared repository's entry in existing mode (`repo
+reconcile --added` in create mode: the repository is created). See `devctl repo validate --help`.

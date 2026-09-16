@@ -9,6 +9,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `pkg/reposetup`, `repo validate`, `repo status`, `repo reconcile`: the creation rules (`gen.flavours`/`gen.language`
+  set, the chart-name convention, generated CI has a job, the name free on GitHub) apply to entries being added
+  only; an existing entry is valid if the schema accepts it (giantswarm/giantswarm#37726, #2213). The Validator
+  takes `Request.Mode` -- `ModeCreate` (the default, as before) or `ModeExisting` (schema alone; the name check's
+  verdict is reported, never refuses -- a missing repository is the reconciler's finding; no review guard notices)
+  -- and `Result.Mode` says which ran. `repo validate --mode create|existing` defaults to `create` with `--entry`
+  and to `existing` for a whole file, so the validation check on giantswarm/github, which names the added entries,
+  runs as before. `repo status` and `repo reconcile` validate in existing mode (`reconcile --added` in create
+  mode). Before, 222 of the 443 entries declared in the real team files were refused and the read-mode checks of
+  giantswarm-repo-manager could not run over them; in existing mode none is.
+
 - `pkg/gen/input`: devctl builds as a module dependency again. The template provenance files (`*.template.sha`, written by `go generate`, gitignored) were embedded by name, so `pkg/reposetup` — which renders scaffolds with the gen inputs since v8.60.0 — could not compile from the module proxy (`pattern x.template.sha: no matching files found`). Each site now embeds `<template>*` and reads the `.sha` through `input.TemplateSHA`, which falls back to the module version's tree link when the file is absent; generated output is unchanged where `go generate` ran.
 
 ### Added

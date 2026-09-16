@@ -259,4 +259,110 @@ func TestNotices(t *testing.T) {
 		require.Equal(t, VerdictUnchecked, result.Entries[0].NameCheck.Verdict)
 		require.True(t, result.Accepted)
 	})
+
+	t.Run("existing entries get no review guard", func(t *testing.T) {
+		result, err := v.Validate(ctx, Request{TeamFile: tf, Names: four, Author: "someone", AuthorTeams: []string{"team-rocket"}, Mode: ModeExisting})
+		require.NoError(t, err)
+		require.Empty(t, result.Notices)
+
+		unchecked := Validator{Schema: v.Schema}
+		result, err = unchecked.Validate(ctx, Request{TeamFile: tf, Names: four, Author: "someone", AuthorTeams: []string{"team-rocket"}, Mode: ModeExisting})
+		require.NoError(t, err)
+		require.Equal(t, []NoticeKind{NoticeNamesUnchecked}, kinds(result.Notices))
+		require.Equal(t, "not checked: no GitHub client", result.Entries[0].NameCheck.Detail)
+	})
+}
+
+func TestValidateExistingMode(t *testing.T) {
+	v, tf := fixtureValidator(t)
+
+	tests := []struct {
+		name     string
+		template Template
+		verdict  Verdict
+		// fields the problems name, sorted; nil for an accepted entry
+		fields []string
+	}{
+		{name: "good-service", template: TemplateGo, verdict: VerdictFree},
+		{name: "good-chart", template: TemplateChart, verdict: VerdictFree},
+		// The creation rules do not apply: entries that predate gen, the
+		// chart-name convention, an unavailable template, a taken name.
+		{name: "no-gen", verdict: VerdictFree},
+		{name: "node-ui", verdict: VerdictFree},
+		{name: "unknown-flavour", verdict: VerdictFree},
+		{name: "hello-world-app", template: TemplateChart, verdict: VerdictFree},
+		{name: "chart-name-mismatch", template: TemplateChart, verdict: VerdictFree},
+		{name: "Bad_Name", template: TemplateMinimal, verdict: VerdictFree},
+		{name: "no-ci-jobs", template: TemplateMinimal, verdict: VerdictFree},
+		{name: "taken-name", template: TemplateGo, verdict: VerdictTaken},
+		{name: "renamed-name", template: TemplateGo, verdict: VerdictTaken},
+		// The schema and the file's integrity still refuse: gen, once
+		// present, needs flavours and language by the schema.
+		{name: "empty-gen", verdict: VerdictFree, fields: []string{"gen.language"}},
+		{name: "internal-visibility", template: TemplateGo, verdict: VerdictFree, fields: []string{"lifecycle", "visibility"}},
+		{name: "unknown-field", template: TemplateGo, verdict: VerdictFree, fields: []string{"template"}},
+		{name: "twice", template: TemplateGo, verdict: VerdictFree, fields: []string{"name"}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := v.Validate(context.Background(), Request{TeamFile: tf, Names: []string{tc.name}, Mode: ModeExisting})
+			require.NoError(t, err)
+			require.Len(t, result.Entries, 1)
+			entry := result.Entries[0]
+
+			require.Equal(t, ModeExisting, result.Mode)
+			require.Equal(t, tc.template, entry.Template)
+			require.Equal(t, tc.verdict, entry.NameCheck.Verdict)
+			require.Equal(t, problemFields(entry.Problems), tc.fields, "problems: %v", entry.Problems)
+			require.Equal(t, tc.fields == nil, entry.Accepted)
+			require.True(t, strings.HasPrefix(entry.Rendered, "- name: "+tc.name+"\n"), "rendered: %q", entry.Rendered)
+		})
+	}
+
+	t.Run("the whole file: only the schema and the duplicate refuse", func(t *testing.T) {
+		result, err := v.Validate(context.Background(), Request{TeamFile: tf, Mode: ModeExisting})
+		require.NoError(t, err)
+		require.Len(t, result.Entries, len(tf.Entries))
+		var refused []string
+		for _, entry := range result.Entries {
+			if !entry.Accepted {
+				refused = append(refused, entry.Name)
+			}
+		}
+		require.Equal(t, []string{"empty-gen", "internal-visibility", "unknown-field", "twice", "twice"}, refused)
+		require.False(t, result.Accepted)
+	})
+
+	t.Run("a missing repository is not a refusal", func(t *testing.T) {
+		result, err := v.Validate(context.Background(), Request{TeamFile: tf, Names: []string{"good-service"}, Mode: ModeExisting})
+		require.NoError(t, err)
+		require.Equal(t, VerdictFree, result.Entries[0].NameCheck.Verdict)
+		require.True(t, result.Entries[0].Accepted, "the reconciler reports it, the validation does not refuse it")
+	})
+}
+
+func TestValidateMode(t *testing.T) {
+	v, tf := fixtureValidator(t)
+	ctx := context.Background()
+
+	t.Run("empty means create", func(t *testing.T) {
+		result, err := v.Validate(ctx, Request{TeamFile: tf, Names: []string{"no-gen"}})
+		require.NoError(t, err)
+		require.Equal(t, ModeCreate, result.Mode)
+		require.False(t, result.Accepted)
+	})
+
+	t.Run("create, said so", func(t *testing.T) {
+		result, err := v.Validate(ctx, Request{TeamFile: tf, Names: []string{"no-gen"}, Mode: ModeCreate})
+		require.NoError(t, err)
+		require.Equal(t, ModeCreate, result.Mode)
+		require.Equal(t, []string{"gen.flavours", "gen.language"}, problemFields(result.Entries[0].Problems))
+	})
+
+	t.Run("unknown mode", func(t *testing.T) {
+		_, err := v.Validate(ctx, Request{TeamFile: tf, Mode: "repair"})
+		require.True(t, IsInvalidConfig(err), "%v", err)
+		require.Contains(t, err.Error(), "want create or existing")
+	})
 }
