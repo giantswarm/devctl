@@ -36,3 +36,57 @@ func TestExtendRefusesWhenNothingMatches(t *testing.T) {
 		t.Errorf("got %d extended reservations, want 0: %+v", len(extended), extended)
 	}
 }
+
+// TestExtendResetsTheExpiryOfAMatchingReservation is the first acceptance
+// criterion: a single active reservation matching the pull request gets a
+// fresh window that starts now and keeps its own stored duration, and the
+// new window lands in the ConfigMap entry and is pushed.
+func TestExtendResetsTheExpiryOfAMatchingReservation(t *testing.T) {
+	dir, origin := newReapFixture(t, fixtureOptions{})
+
+	req := testRequest(dir)
+	req.Now = time.Date(2026, 9, 15, 10, 0, 0, 0, time.UTC)
+	req.Duration = 4 * time.Hour
+	reserveAndPush(t, dir, req)
+
+	now := time.Date(2026, 9, 15, 13, 0, 0, 0, time.UTC) // before the original 14:00 expiry
+	extended, err := reservation.Extend(context.Background(), reservation.ExtendRequest{
+		RepoDir:     dir,
+		PullRequest: testPullRequest,
+		User:        testExtender,
+		Now:         now,
+	})
+	if err != nil {
+		t.Fatalf("Extend: %v", err)
+	}
+	if len(extended) != 1 {
+		t.Fatalf("got %d extended reservations, want 1: %+v", len(extended), extended)
+	}
+
+	got := extended[0]
+	wantUntil := now.Add(4 * time.Hour) // the original 4h duration, not reset to the default
+	if got.Cluster != fixtureCluster || got.App != fixtureApp || !got.From.Equal(now) || !got.Until.Equal(wantUntil) {
+		t.Errorf("extended entry: %+v, want From %s Until %s", got, now, wantUntil)
+	}
+
+	entry := reservationEntries(t, dir, fixtureCluster)[fixtureApp]
+	if got := entry["from"]; got != now.Format(time.RFC3339) {
+		t.Errorf("entry from: got %q, want %q", got, now.Format(time.RFC3339))
+	}
+	if got := entry["until"]; got != wantUntil.Format(time.RFC3339) {
+		t.Errorf("entry until: got %q, want %q", got, wantUntil.Format(time.RFC3339))
+	}
+	// Everything else about the reservation stays put.
+	if got := entry["user"]; got != testUser {
+		t.Errorf("entry user: got %q, want %q", got, testUser)
+	}
+	if got := entry["branch"]; got != testBranch {
+		t.Errorf("entry branch: got %q, want %q", got, testBranch)
+	}
+
+	head := gitOutput(t, dir, "rev-parse", "HEAD")
+	tip := gitOutput(t, origin, "rev-parse", gitOutput(t, dir, "branch", "--show-current"))
+	if head != tip {
+		t.Errorf("the extension did not land on origin: local HEAD %s, origin %s", head, tip)
+	}
+}
