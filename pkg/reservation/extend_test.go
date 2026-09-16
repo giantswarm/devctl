@@ -2,6 +2,8 @@ package reservation_test
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -174,6 +176,67 @@ func TestExtendResetsEveryMatchingReservation(t *testing.T) {
 	entries := reservationEntries(t, dir, fixtureCluster)
 	if entries[fixtureApp]["from"] != now.Format(time.RFC3339) {
 		t.Errorf("%s entry not reset: %+v", fixtureApp, entries[fixtureApp])
+	}
+	if entries[fixtureOtherApp]["from"] != now.Format(time.RFC3339) {
+		t.Errorf("%s entry not reset: %+v", fixtureOtherApp, entries[fixtureOtherApp])
+	}
+}
+
+// TestExtendRefusesOneReservationOverTheLoweredCap is the acceptance criterion
+// that a single reservation whose stored duration now exceeds its cluster's
+// cap is refused on its own -- one failing cluster (or record) must not stop
+// the sweep, and Extend must still return what did succeed rather than a bare
+// nil, err.
+func TestExtendRefusesOneReservationOverTheLoweredCap(t *testing.T) {
+	dir, _ := newReapFixture(t, fixtureOptions{})
+
+	// Reserved while the cap still allowed it.
+	first := testRequest(dir)
+	first.Now = time.Date(2026, 9, 15, 10, 0, 0, 0, time.UTC)
+	first.Duration = 4 * time.Hour
+	reserveAndPush(t, dir, first)
+
+	second := testRequest(dir)
+	second.App = fixtureOtherApp
+	second.Now = time.Date(2026, 9, 15, 10, 0, 0, 0, time.UTC)
+	second.Duration = 2 * time.Hour // still unexpired, and exactly at the lowered cap below
+	reserveAndPush(t, dir, second)
+
+	// The cluster's owners lower the cap after the fact, below the first
+	// reservation's already-stored 4h but still at or above the second's 2h.
+	configMapPath := filepath.Join(dir, "management-clusters", fixtureCluster, "configmap-reservations.yaml")
+	content, err := os.ReadFile(configMapPath) //nolint:gosec // a test fixture
+	if err != nil {
+		t.Fatal(err)
+	}
+	lowered := strings.Replace(string(content), "max-duration: 7d", "max-duration: 2h", 1)
+	if lowered == string(content) {
+		t.Fatal("fixture no longer carries the max-duration annotation this test rewrites")
+	}
+	if err := os.WriteFile(configMapPath, []byte(lowered), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Date(2026, 9, 15, 11, 30, 0, 0, time.UTC) // before both expiries
+	extended, err := reservation.Extend(context.Background(), reservation.ExtendRequest{
+		RepoDir:     dir,
+		PullRequest: testPullRequest,
+		User:        testExtender,
+		Now:         now,
+	})
+	if err == nil {
+		t.Fatal("expected an error reporting the over-cap reservation, got none")
+	}
+	if !reservation.IsInvalidDuration(err) {
+		t.Fatalf("expected an invalid-duration error, got %v", err)
+	}
+	if len(extended) != 1 || extended[0].App != fixtureOtherApp {
+		t.Fatalf("got %+v, want only %s extended despite %s being over the lowered cap", extended, fixtureOtherApp, fixtureApp)
+	}
+
+	entries := reservationEntries(t, dir, fixtureCluster)
+	if entries[fixtureApp]["from"] != first.Now.Format(time.RFC3339) {
+		t.Errorf("%s was extended despite exceeding the lowered cap: %+v", fixtureApp, entries[fixtureApp])
 	}
 	if entries[fixtureOtherApp]["from"] != now.Format(time.RFC3339) {
 		t.Errorf("%s entry not reset: %+v", fixtureOtherApp, entries[fixtureOtherApp])
