@@ -95,6 +95,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   act under `--release-workflow=auto-release`. `security` joins the accepted types, which the
   action's default list never held although `cliff.toml` maps it to a Security changelog group.
 - `gen workflows`: generates `zz_generated.trigger-circleci-pipeline.yaml`, which calls `giantswarm/github-workflows`' reusable workflow to trigger a CircleCI build when a pull request opens or reopens.
+- `reservation reap`: a new command that sweeps every management cluster enabled for reservations in
+  a GitOps repo and releases every reservation whose expiry passed, one at a time through
+  `reservation.Release` and `reservation.PushWithRetry`, exactly as `release` does for a single one.
+  It also releases a reservation that is not yet expired when its pull request's current head
+  branch no longer matches the reservation's stored branch, because a rename means the old branch
+  builds nothing; that check needs a GitHub token (`DEVCTL_GITHUB_TOKEN`, `GITHUB_TOKEN` or
+  `OPSCTL_GITHUB_TOKEN`), and without one the command still releases everything past its expiry. A
+  cluster that never opted in is skipped, not a failure, and a cluster or a reservation that does
+  fail does not stop the sweep from reaching the next one — its error is joined into the one the
+  command reports only after printing every release that did land. The command works on an existing
+  checkout (`--repo-dir`, default `.`): it never clones, and needs no GitHub token for the sweep or
+  its own push, so it does the same work from a laptop that a scheduled job would do in CI. For each
+  release it prints one tab-separated line — cluster, app, user, branch, pull request, reason
+  (`expired` or `renamed`), until (RFC 3339) and commit — and nothing at all when it finds nothing.
 
 ### Changed
 
