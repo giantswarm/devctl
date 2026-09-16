@@ -1,4 +1,4 @@
-package bootstrap
+package create
 
 import "github.com/giantswarm/microerror"
 
@@ -20,20 +20,12 @@ func IsInvalidFlag(err error) bool {
 	return microerror.Cause(err) == invalidFlagError
 }
 
-var envVarNotFoundError = &microerror.Error{
-	Kind: "envVarNotFoundError",
+var refusedError = &microerror.Error{
+	Kind: "refusedError",
 }
 
-// IsEnvVarNotFound asserts envVarNotFoundError.
-func IsEnvVarNotFound(err error) bool {
-	return microerror.Cause(err) == envVarNotFoundError
-}
-
-var executionFailedError = &microerror.Error{
-	Kind: "executionFailedError",
-}
-
-// IsExecutionFailed asserts executionFailedError.
-func IsExecutionFailed(err error) bool {
-	return microerror.Cause(err) == executionFailedError
+// IsRefused asserts refusedError: the declaration was refused, the problems
+// name the fields, and no pull request was opened.
+func IsRefused(err error) bool {
+	return microerror.Cause(err) == refusedError
 }

@@ -70,3 +70,13 @@ var renderFailedError = &microerror.Error{
 func IsRenderFailed(err error) bool {
 	return microerror.Cause(err) == renderFailedError
 }
+
+var branchExistsError = &microerror.Error{
+	Kind: "branchExistsError",
+}
+
+// IsBranchExists asserts branchExistsError: the head branch of a pull
+// request to open exists already, so the change may be proposed already.
+func IsBranchExists(err error) bool {
+	return microerror.Cause(err) == branchExistsError
+}
