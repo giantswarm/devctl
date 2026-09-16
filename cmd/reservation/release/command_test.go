@@ -15,6 +15,14 @@ import (
 	"github.com/giantswarm/devctl/v8/cmd/reservation/release"
 )
 
+// Flag names, shared across tests that build a release command's --args.
+const (
+	flagRepoDir = "--repo-dir"
+	flagCluster = "--cluster"
+	flagApp     = "--app"
+	flagUser    = "--user"
+)
+
 // newCommand builds the release command the way cmd/reservation does.
 func newCommand(t *testing.T, stdout io.Writer) *cobra.Command {
 	t.Helper()
@@ -40,9 +48,9 @@ func newCommand(t *testing.T, stdout io.Writer) *cobra.Command {
 func TestRefusesAMissingUser(t *testing.T) {
 	cmd := newCommand(t, io.Discard)
 	cmd.SetArgs([]string{
-		"--repo-dir", t.TempDir(),
-		"--cluster", "graveler",
-		"--app", "hello-world",
+		flagRepoDir, t.TempDir(),
+		flagCluster, "graveler",
+		flagApp, "hello-world",
 	})
 
 	err := cmd.Execute()
@@ -158,10 +166,10 @@ func TestReleaseCommitsAndPushesWithNoToken(t *testing.T) {
 	var stdout bytes.Buffer
 	cmd := newCommand(t, &stdout)
 	cmd.SetArgs([]string{
-		"--repo-dir", dir,
-		"--cluster", cluster,
-		"--app", chart,
-		"--user", "alice",
+		flagRepoDir, dir,
+		flagCluster, cluster,
+		flagApp, chart,
+		flagUser, "alice",
 	})
 
 	if err := cmd.Execute(); err != nil {
@@ -200,10 +208,10 @@ func TestReleaseRetriesAPushRejectedByAnotherRelease(t *testing.T) {
 	var stdout2 bytes.Buffer
 	cmd2 := newCommand(t, &stdout2)
 	cmd2.SetArgs([]string{
-		"--repo-dir", dir2,
-		"--cluster", cluster,
-		"--app", chartB,
-		"--user", "bob",
+		flagRepoDir, dir2,
+		flagCluster, cluster,
+		flagApp, chartB,
+		flagUser, "bob",
 	})
 	if err := cmd2.Execute(); err != nil {
 		t.Fatalf("release chartB: %v", err)
@@ -214,10 +222,10 @@ func TestReleaseRetriesAPushRejectedByAnotherRelease(t *testing.T) {
 	var stdout1 bytes.Buffer
 	cmd1 := newCommand(t, &stdout1)
 	cmd1.SetArgs([]string{
-		"--repo-dir", dir1,
-		"--cluster", cluster,
-		"--app", chartA,
-		"--user", "alice",
+		flagRepoDir, dir1,
+		flagCluster, cluster,
+		flagApp, chartA,
+		flagUser, "alice",
 	})
 	if err := cmd1.Execute(); err != nil {
 		t.Fatalf("release chartA: %v", err)
