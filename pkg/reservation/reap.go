@@ -2,6 +2,8 @@ package reservation
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -46,8 +48,9 @@ func (r ReapRequest) validate() error {
 // directory and releases every reservation that ran out of time or whose
 // stored branch no longer matches its pull request's current head branch. A
 // cluster that fails -- an unparsable ConfigMap, a push that never lands --
-// does not stop the sweep from reaching the next one; its error comes back
-// alongside whatever Reap did manage to release.
+// does not stop the sweep from reaching the next one; its error is joined into
+// the one Reap returns alongside whatever it did manage to release, so a
+// caller can report every failure rather than just the first.
 func Reap(ctx context.Context, req ReapRequest) ([]Reaped, error) {
 	if err := req.validate(); err != nil {
 		return nil, microerror.Mask(err)
@@ -64,12 +67,16 @@ func Reap(ctx context.Context, req ReapRequest) ([]Reaped, error) {
 	}
 
 	var reaped []Reaped
+	var errs []error
 	for _, cluster := range clusters {
-		released := reapCluster(ctx, req, cluster, now)
+		released, err := reapCluster(ctx, req, cluster, now)
 		reaped = append(reaped, released...)
+		if err != nil {
+			errs = append(errs, err)
+		}
 	}
 
-	return reaped, nil
+	return reaped, errors.Join(errs...)
 }
 
 // enabledClusters returns the management clusters under repoDir that have
@@ -99,22 +106,30 @@ func enabledClusters(repoDir string) ([]string, error) {
 
 // reapCluster sweeps one cluster: every reservation whose expiry passed is
 // released, reported and pushed before the next one is even considered, so a
-// push that fails on one reservation never costs the release of another.
-func reapCluster(ctx context.Context, req ReapRequest, cluster string, now time.Time) []Reaped {
+// push that fails on one reservation never costs the release of another. A
+// reservation that fails its reason check or its release/push is joined into
+// the returned error rather than stopping the rest of the cluster's sweep.
+func reapCluster(ctx context.Context, req ReapRequest, cluster string, now time.Time) ([]Reaped, error) {
 	reservations, err := List(ListRequest{RepoDir: req.RepoDir, Cluster: cluster})
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("listing reservations on cluster %q: %w", cluster, err)
 	}
 
 	var reaped []Reaped
+	var errs []error
 	for _, r := range reservations {
 		reason, err := reapReason(ctx, req.HeadBranch, r, now)
-		if err != nil || reason == "" {
+		if err != nil {
+			errs = append(errs, fmt.Errorf("checking whether to release %q on cluster %q: %w", r.App, cluster, err))
+			continue
+		}
+		if reason == "" {
 			continue
 		}
 
 		result, err := releaseAndPush(ctx, req, cluster, r)
 		if err != nil {
+			errs = append(errs, fmt.Errorf("releasing %q on cluster %q: %w", r.App, cluster, err))
 			continue
 		}
 
@@ -130,7 +145,7 @@ func reapCluster(ctx context.Context, req ReapRequest, cluster string, now time.
 		})
 	}
 
-	return reaped
+	return reaped, errors.Join(errs...)
 }
 
 // reapReason decides whether r must go: an expired Until is checked first, so

@@ -3,6 +3,7 @@ package reservation_test
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -216,5 +217,52 @@ func TestReapSkipsAClusterThatNeverOptedIn(t *testing.T) {
 	}
 	if reaped[0].Cluster != fixtureCluster {
 		t.Errorf("reaped cluster: got %q, want %q", reaped[0].Cluster, fixtureCluster)
+	}
+}
+
+// TestReapContinuesAfterABrokenCluster is the sixth acceptance criterion: one
+// cluster whose ConfigMap fails to parse costs its own error, not the sweep --
+// another cluster's overdue reservation is still released and pushed, and the
+// broken cluster's failure comes back for the caller to report.
+func TestReapContinuesAfterABrokenCluster(t *testing.T) {
+	const brokenCluster = "broken-cluster"
+
+	dir, origin := newReapFixture(t, fixtureOptions{clusters: []string{fixtureCluster, brokenCluster}})
+
+	req := testRequest(dir)
+	req.Now = time.Date(2026, 9, 15, 10, 0, 0, 0, time.UTC)
+	req.Duration = time.Hour
+	reserveAndPush(t, dir, req)
+
+	// Corrupt the broken cluster's ConfigMap so List fails on it. It need not be
+	// committed -- Reap reads the working tree directly.
+	brokenConfigMap := filepath.Join(dir, "management-clusters", brokenCluster, "configmap-reservations.yaml")
+	corrupt := "apiVersion: v1\n" +
+		"kind: ConfigMap\n" +
+		"metadata:\n" +
+		"  name: reservations\n" +
+		"  namespace: giantswarm\n" +
+		"data:\n" +
+		"  broken-app: '{user: mallory, branch: x, pr: \"\", scope: app, from: not-a-date, until: not-a-date}'\n"
+	if err := os.WriteFile(brokenConfigMap, []byte(corrupt), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	reaped, err := reservation.Reap(context.Background(), reservation.ReapRequest{
+		RepoDir: dir,
+		User:    testReaper,
+		Now:     time.Date(2026, 9, 15, 12, 0, 0, 0, time.UTC),
+	})
+	if err == nil {
+		t.Fatal("expected an error reporting the broken cluster, got none")
+	}
+	if len(reaped) != 1 || reaped[0].Cluster != fixtureCluster {
+		t.Fatalf("got %+v, want the enabled cluster's release despite the broken one", reaped)
+	}
+
+	head := gitOutput(t, dir, "rev-parse", "HEAD")
+	tip := gitOutput(t, origin, "rev-parse", gitOutput(t, dir, "branch", "--show-current"))
+	if head != tip {
+		t.Errorf("the good cluster's release did not land on origin: local HEAD %s, origin %s", head, tip)
 	}
 }
