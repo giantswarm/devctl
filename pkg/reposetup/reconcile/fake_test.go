@@ -602,9 +602,12 @@ type fakeCircleCI struct {
 }
 
 type fakeProject struct {
-	setupWorkflows bool
-	keys           []circleciclient.CheckoutKey
-	pipelines      []circleciclient.Pipeline
+	// following is the token user's follow; building whether the project
+	// builds for the organization. Neither removes the project.
+	following, building bool
+	setupWorkflows      bool
+	keys                []circleciclient.CheckoutKey
+	pipelines           []circleciclient.Pipeline
 }
 
 func newFakeCircleCI() *fakeCircleCI {
@@ -624,7 +627,7 @@ func newFakeCircleCI() *fakeCircleCI {
 
 // follow seeds a followed project set up as the baseline wants.
 func (f *fakeCircleCI) follow(org, repo string) *fakeProject {
-	p := &fakeProject{setupWorkflows: true, keys: []circleciclient.CheckoutKey{{Type: "deploy-key", Preferred: true}}}
+	p := &fakeProject{following: true, building: true, setupWorkflows: true, keys: []circleciclient.CheckoutKey{{Type: "deploy-key", Preferred: true}}}
 	f.projects[org+"/"+repo] = p
 	return p
 }
@@ -670,14 +673,22 @@ func (f *fakeCircleCI) routes(mux *http.ServeMux) {
 		if _, ok := f.projects[slug]; !ok {
 			f.projects[slug] = &fakeProject{} // CircleCI's defaults: no setup workflows, no key yet
 		}
+		f.projects[slug].following, f.projects[slug].building = true, true
 		writeJSON(w, 200, map[string]any{"followed": true})
 	})
-	mux.HandleFunc("POST /api/v1.1/project/github/{org}/{repo}/unfollow", func(w http.ResponseWriter, r *http.Request) {
-		f.mu.Lock()
-		defer f.mu.Unlock()
-		delete(f.projects, r.PathValue("org")+"/"+r.PathValue("repo"))
+	// The v1.1 routes of the user's follow and of "stop building": neither
+	// removes the project, as on CircleCI.
+	mux.HandleFunc("POST /api/v1.1/project/github/{org}/{repo}/unfollow", f.withProject(func(w http.ResponseWriter, _ *http.Request, p *fakeProject) {
+		p.following = false
 		writeJSON(w, 200, map[string]any{"followed": false})
-	})
+	}))
+	mux.HandleFunc("DELETE /api/v1.1/project/github/{org}/{repo}/enable", f.withProject(func(w http.ResponseWriter, _ *http.Request, p *fakeProject) {
+		p.building = false
+		writeJSON(w, 200, map[string]any{"following": p.following})
+	}))
+	mux.HandleFunc("GET /api/v1.1/project/github/{org}/{repo}/settings", f.withProject(func(w http.ResponseWriter, _ *http.Request, p *fakeProject) {
+		writeJSON(w, 200, map[string]any{"following": p.following, "has_usable_key": len(p.keys) > 0})
+	}))
 	mux.HandleFunc("GET /api/v2/project/gh/{org}/{repo}", f.withProject(func(w http.ResponseWriter, r *http.Request, _ *fakeProject) {
 		writeJSON(w, 200, circleciclient.Project{Slug: "gh/" + r.PathValue("org") + "/" + r.PathValue("repo"), Name: r.PathValue("repo")})
 	}))

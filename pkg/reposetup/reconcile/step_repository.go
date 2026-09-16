@@ -95,10 +95,16 @@ func (r *Runner) stepMetadata(ctx context.Context, s *run, sr *StepResult) error
 	})
 }
 
-// stepLifecycle applies lifecycle: archived — archived on GitHub and
-// unfollowed on CircleCI; the entry stays as the record. A repository
-// archived on GitHub without the lifecycle is reported: the declaration is
-// the desired state, and a person decides which side is right.
+// stepLifecycle applies lifecycle: archived — archived on GitHub, and on
+// CircleCI unfollowed by the token's user and stopped from building; the
+// entry stays as the record. The CircleCI state read is the one the
+// unfollow changes, the user's follow in the v1.1 project settings: the v2
+// project answers 200 for ever, unfollowed or stopped alike (checked live
+// 2026-09-17), and reading it planned the unfollow again on every run. A
+// project the token's user does not follow is left alone — an archived
+// repository receives no push to build anyway. A repository archived on
+// GitHub without the lifecycle is reported: the declaration is the desired
+// state, and a person decides which side is right.
 func (r *Runner) stepLifecycle(ctx context.Context, s *run, sr *StepResult) error {
 	declared := s.fields.Lifecycle == LifecycleArchived
 	switch {
@@ -129,12 +135,33 @@ func (r *Runner) stepLifecycle(ctx context.Context, s *run, sr *StepResult) erro
 		sr.Summary = "archived; CircleCI not checked (no client)"
 		return nil
 	}
-	followed, err := r.circleCIFollowed(ctx, s)
-	if err != nil {
+	following, err := r.CircleCI.Following(ctx, s.owner, s.name)
+	switch {
+	case circleciclient.IsNotFound(err):
+		following = false // never set up on CircleCI
+	case err != nil:
 		return err
 	}
-	if followed {
-		if err := s.plan(sr, "unfollow on CircleCI", func() error { return r.CircleCI.Unfollow(ctx, s.owner, s.name) }); err != nil {
+	if following {
+		err := s.plan(sr, "unfollow on CircleCI and stop building", func() error {
+			if err := r.CircleCI.Unfollow(ctx, s.owner, s.name); err != nil {
+				return err
+			}
+			if err := r.CircleCI.StopBuilding(ctx, s.owner, s.name); err != nil {
+				return err
+			}
+			// The unfollow is done when CircleCI says so; a follow that
+			// stuck is a failed step, not a repair planned again next run.
+			still, err := r.CircleCI.Following(ctx, s.owner, s.name)
+			if err != nil && !circleciclient.IsNotFound(err) {
+				return err
+			}
+			if still {
+				return fmt.Errorf("CircleCI still reports the token's user following %s after the unfollow", s.slug())
+			}
+			return nil
+		})
+		if err != nil {
 			return err
 		}
 	}

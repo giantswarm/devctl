@@ -9,6 +9,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `repo reconcile`: `lifecycle: archived` unfollows on CircleCI once. The step read the v2 project to decide
+  "followed", which answers 200 for ever — unfollowed or stopped alike (checked live) — so every run planned and
+  re-applied `unfollow on CircleCI` on every archived repository. It now reads the token user's follow from the v1.1
+  project settings (the state the unfollow changes), unfollows and stops the project building
+  (`circleciclient.StopBuilding`, the UI's "Stop building"), and verifies the follow is gone before calling the
+  repair done; a second run is `ok` (giantswarm/giantswarm#37726, #2231). `circleciclient.Following` reads the state.
 - `repo reconcile`: an entry the validator refuses is a result, not exit 2 without output — one step `entry`,
   verdict `reported`, one finding per problem (`gen-circleci-refused` for `gen.ci.generate`, the new `entry-refused`
   otherwise) with the field to fix, exit 0: the declaration is at fault, not the run; a flag or token error still

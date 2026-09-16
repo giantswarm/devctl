@@ -466,11 +466,22 @@ func TestSteps(t *testing.T) {
 				h.gh.addRepo(owner, name)
 				h.cc.follow(owner, name)
 			},
-			wantCheck: VerdictDrift, wantChange: "archive on GitHub; unfollow on CircleCI",
+			wantCheck: VerdictDrift, wantChange: "archive on GitHub; unfollow on CircleCI and stop building",
 			verify: func(t *testing.T, h *harness, _ *Result) {
 				require.True(t, h.repo().archived)
-				require.NotContains(t, h.cc.projects, owner+"/"+name)
+				p := h.cc.projects[owner+"/"+name]
+				require.NotNil(t, p, "the project stays on CircleCI, as it does live")
+				require.False(t, p.following, "the token's user unfollowed")
+				require.False(t, p.building, "stopped building")
 			},
+		},
+		{
+			name: "lifecycle: an archived repository the token's user does not follow is left alone", step: StepLifecycle, entry: archivedEntryYAML,
+			seed: func(h *harness) {
+				h.gh.addRepo(owner, name).archived = true
+				h.cc.follow(owner, name).following = false // set up by someone else, or unfollowed by an earlier run
+			},
+			wantCheck: VerdictOK,
 		},
 		{
 			name: "lifecycle: archived on GitHub without the lifecycle is reported", step: StepLifecycle,
