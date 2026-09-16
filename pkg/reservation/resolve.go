@@ -142,6 +142,12 @@ func resolveApp(objects []object, req Request, chart string) (resolution, error)
 		if o.kind() != ociRepositoryKind || o.namespace() != Namespace {
 			continue
 		}
+		// A reservation's own source, from an earlier reservation of this chart
+		// that expired but was never released, is not an original: it is about to
+		// be overwritten, not preserved.
+		if strings.HasSuffix(o.name(), SourceNameSuffix) {
+			continue
+		}
 		if url, _ := o.nested("spec", "url").(string); chartFromURL(url) == chart {
 			sources = append(sources, o)
 		}
@@ -161,11 +167,15 @@ func resolveApp(objects []object, req Request, chart string) (resolution, error)
 		res.originalRefs[s.name()] = s.nested("spec", "ref")
 	}
 
+	// A HelmRelease may already point at this chart's own reservation source, from
+	// an earlier reservation that expired but was never released: that is still
+	// the instance to patch, even though its source was excluded above.
+	reservationSourceName := chart + SourceNameSuffix
 	for _, o := range objects {
 		if o.kind() != helmReleaseKind || o.namespace() != Namespace {
 			continue
 		}
-		if name, _ := o.nested("spec", "chartRef", "name").(string); slices.Contains(res.sourceNames, name) {
+		if name, _ := o.nested("spec", "chartRef", "name").(string); slices.Contains(res.sourceNames, name) || name == reservationSourceName {
 			res.helmReleases = append(res.helmReleases, o.name())
 		}
 	}

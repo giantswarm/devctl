@@ -163,7 +163,7 @@ func Reserve(req Request) (Result, error) {
 		return Result{}, microerror.Mask(err)
 	}
 
-	if err := checkNotReserved(configMapPath, chart); err != nil {
+	if _, err := checkCollision(req, chart, from); err != nil {
 		return Result{}, microerror.Mask(err)
 	}
 
@@ -201,7 +201,7 @@ func Reserve(req Request) (Result, error) {
 	if err != nil {
 		return Result{}, microerror.Mask(err)
 	}
-	if err := addReservationEntry(configMapPath, chart, entry); err != nil {
+	if err := writeReservationEntry(configMapPath, chart, entry); err != nil {
 		return Result{}, microerror.Mask(err)
 	}
 

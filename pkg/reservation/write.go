@@ -267,25 +267,15 @@ func findEntry(lines []string, app string) (string, bool) {
 	return "", false
 }
 
-// checkNotReserved refuses an app that already holds a reservation on the
-// cluster. One entry per app is the lock, and it is checked before anything is
-// written so the second caller is told who holds it rather than which file
-// failed to render.
-func checkNotReserved(path, app string) error {
-	lines, err := readLines(path)
-	if err != nil {
-		return microerror.Mask(err)
-	}
-	if entry, ok := findEntry(lines, app); ok {
-		return microerror.Maskf(alreadyReservedError,
-			"%q already holds a reservation on this cluster: %s", app, entry)
-	}
-
-	return nil
-}
-
-// addReservationEntry adds one reservation to the ConfigMap data block.
-func addReservationEntry(path, app, entry string) error {
+// writeReservationEntry adds app's entry to the ConfigMap data block, or
+// replaces it in place, at the same line, when app already holds one.
+//
+// The caller (checkCollision) is the sole authority on whether the write is
+// allowed: an existing entry here is either an expired reservation the reaper
+// has not swept yet, freeing the app for a fresh one, or a promotion. Either
+// way the line is rewritten, never duplicated, so a promotion never removes
+// and re-adds the reservation.
+func writeReservationEntry(path, app, entry string) error {
 	lines, err := readLines(path)
 	if err != nil {
 		return microerror.Mask(err)
@@ -295,12 +285,15 @@ func addReservationEntry(path, app, entry string) error {
 	if !ok {
 		return microerror.Maskf(invalidConfigError, "%s holds no `data:` key", path)
 	}
-	if held, ok := findEntry(lines, app); ok {
-		return microerror.Maskf(alreadyReservedError,
-			"%q already holds a reservation on this cluster: %s", app, held)
-	}
-	lines[start] = "data:"
 
+	for i := start + 1; i <= last; i++ {
+		if m := dataKey.FindStringSubmatch(lines[i]); m != nil && m[1] == app {
+			lines[i] = "  " + entry
+			return microerror.Mask(writeLines(path, lines))
+		}
+	}
+
+	lines[start] = "data:"
 	lines = append(lines[:last+1], append([]string{"  " + entry}, lines[last+1:]...)...)
 
 	return microerror.Mask(writeLines(path, lines))
