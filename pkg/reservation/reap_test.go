@@ -2,6 +2,7 @@ package reservation_test
 
 import (
 	"context"
+	"os"
 	"testing"
 	"time"
 
@@ -175,5 +176,45 @@ func TestReapLeavesAnActiveUnrenamedReservationAlone(t *testing.T) {
 	afterTip := gitOutput(t, origin, "rev-parse", gitOutput(t, dir, "branch", "--show-current"))
 	if afterTip != beforeTip {
 		t.Errorf("origin moved even though nothing was reaped: %s -> %s", beforeTip, afterTip)
+	}
+}
+
+// TestReapSkipsAClusterThatNeverOptedIn is the fifth acceptance criterion's
+// other half: a management cluster the GitOps repo holds but that carries no
+// reservations ConfigMap is skipped, not a failure that stops the sweep.
+func TestReapSkipsAClusterThatNeverOptedIn(t *testing.T) {
+	const notEnabled = "not-enabled-cluster"
+
+	dir, _ := newReapFixture(t, fixtureOptions{})
+
+	// A cluster directory with no configmap-reservations.yaml: never enabled.
+	// It need not be committed -- Reap reads the working tree directly, exactly
+	// as List and Release do.
+	notEnabledDir := dir + "/management-clusters/" + notEnabled
+	if err := os.MkdirAll(notEnabledDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(notEnabledDir+"/kustomization.yaml", []byte("apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	req := testRequest(dir)
+	req.Now = time.Date(2026, 9, 15, 10, 0, 0, 0, time.UTC)
+	req.Duration = time.Hour
+	reserveAndPush(t, dir, req)
+
+	reaped, err := reservation.Reap(context.Background(), reservation.ReapRequest{
+		RepoDir: dir,
+		User:    testReaper,
+		Now:     time.Date(2026, 9, 15, 12, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("Reap: %v", err)
+	}
+	if len(reaped) != 1 {
+		t.Fatalf("got %d reaped reservations, want 1 (the enabled cluster's): %+v", len(reaped), reaped)
+	}
+	if reaped[0].Cluster != fixtureCluster {
+		t.Errorf("reaped cluster: got %q, want %q", reaped[0].Cluster, fixtureCluster)
 	}
 }
