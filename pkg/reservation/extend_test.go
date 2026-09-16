@@ -90,3 +90,40 @@ func TestExtendResetsTheExpiryOfAMatchingReservation(t *testing.T) {
 		t.Errorf("the extension did not land on origin: local HEAD %s, origin %s", head, tip)
 	}
 }
+
+// TestExtendIgnoresAnExpiredReservation is the MANDATORY rule: a record whose
+// Until has already passed is treated as if it did not exist at all, even
+// though it still names the pull request, because reviving it could silently
+// break an exclusive lock someone else legally took over the same cluster
+// while the dead record sat unswept. Extend refuses exactly as if it found
+// nothing, and never pushes.
+func TestExtendIgnoresAnExpiredReservation(t *testing.T) {
+	dir, origin := newReapFixture(t, fixtureOptions{})
+
+	req := testRequest(dir)
+	req.Now = time.Date(2026, 9, 15, 10, 0, 0, 0, time.UTC)
+	req.Duration = time.Hour
+	reserveAndPush(t, dir, req)
+	beforeTip := gitOutput(t, origin, "rev-parse", gitOutput(t, dir, "branch", "--show-current"))
+
+	extended, err := reservation.Extend(context.Background(), reservation.ExtendRequest{
+		RepoDir:     dir,
+		PullRequest: testPullRequest,
+		User:        testExtender,
+		Now:         time.Date(2026, 9, 15, 12, 0, 0, 0, time.UTC), // 1h past the 11:00 expiry
+	})
+	if err == nil {
+		t.Fatal("expected a refusal, got none")
+	}
+	if !reservation.IsNothingToExtend(err) {
+		t.Fatalf("expected a nothing-to-extend error, got %v", err)
+	}
+	if len(extended) != 0 {
+		t.Errorf("got %d extended reservations, want 0: %+v", len(extended), extended)
+	}
+
+	afterTip := gitOutput(t, origin, "rev-parse", gitOutput(t, dir, "branch", "--show-current"))
+	if afterTip != beforeTip {
+		t.Errorf("origin moved even though nothing was extended: %s -> %s", beforeTip, afterTip)
+	}
+}
