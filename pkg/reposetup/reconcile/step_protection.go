@@ -40,15 +40,23 @@ func (r *Runner) stepProtection(ctx context.Context, s *run, sr *StepResult) err
 	reportedKnown := false
 	if r.Checks != nil {
 		reported, err = r.Checks.ReportedChecks(ctx, s.repo, branch)
-		if err != nil {
+		switch code := statusCode(err); {
+		case err == nil:
+			reportedKnown = true
+		case isNotFound(nil, err):
+			// No commit on the branch: nothing has reported yet, and nothing
+			// is required or removed on a guess.
+			fmt.Fprintf(s.log, "%s/%s %s: nothing has reported on %s yet\n", s.owner, s.name, sr.Step, branch)
+		case code == 401 || code == 403:
 			// Discovery reads statuses and check runs, which an App token
-			// can only do with the Checks permission; nothing is required or
-			// removed on a guess.
+			// can only do with the statuses and checks read permissions.
+			s.report(sr, FindingUnchecked,
+				fmt.Sprintf("cannot read the checks reported on %s with this token: %v", branch, err),
+				"grant the token the commit-status and checks read permissions (statuses: read, checks: read); the conditional checks are required on a later run")
+		default:
 			s.report(sr, FindingUnchecked,
 				fmt.Sprintf("cannot read the checks reported on %s: %v", branch, err),
-				"the conditional checks are required on a later run; grant the token the commit-status and checks read permissions")
-		} else {
-			reportedKnown = true
+				"the read failed for a reason other than access; the conditional checks are required on a later run")
 		}
 	}
 
@@ -198,6 +206,15 @@ func requiredChecks(b Baseline, current, reported []string, reportedKnown bool, 
 		}
 	}
 	return want, nil
+}
+
+// statusCode is the HTTP status of a go-github error, 0 for any other.
+func statusCode(err error) int {
+	var ghErr *github.ErrorResponse
+	if errors.As(err, &ghErr) && ghErr.Response != nil {
+		return ghErr.Response.StatusCode
+	}
+	return 0
 }
 
 func toSet(names []string) map[string]bool {

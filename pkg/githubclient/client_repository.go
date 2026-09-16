@@ -472,8 +472,13 @@ func (c *Client) getTags(ctx context.Context, repository *github.Repository) ([]
 	return allTags, nil
 }
 
-// getLatestNonTagCommit gets latest commit that is not tagged
-// because we want one that is not a release
+// getLatestNonTagCommit gets the latest commit of branch that is not tagged,
+// because we want one that is not a release: a tag's workflows never run on
+// a pull request. When every commit is tagged — a fresh repository whose
+// only commit is the scaffold, tagged v0.1.0 by auto-release within
+// seconds — the head is taken anyway: the checks that reported on it are
+// what the repository has, and the reported-only rule requires a context
+// only once it reported. notFoundError when the branch has no commit.
 func (c *Client) getLatestNonTagCommit(ctx context.Context, repository *github.Repository, branch string, tags []*github.RepositoryTag) (string, error) {
 	owner := repository.GetOwner().GetLogin()
 	repo := repository.GetName()
@@ -487,6 +492,7 @@ func (c *Client) getLatestNonTagCommit(ctx context.Context, repository *github.R
 		},
 	}
 
+	var head string
 	// Loop through commits
 	for {
 		commits, resp, err := underlyingClient.Repositories.ListCommits(ctx, owner, repo, opt)
@@ -495,6 +501,9 @@ func (c *Client) getLatestNonTagCommit(ctx context.Context, repository *github.R
 		}
 		for _, commit := range commits {
 			c.logger.Debugf("Checking commit: %s\n", commit.GetSHA())
+			if head == "" {
+				head = commit.GetSHA()
+			}
 			// Is this commit tagged?
 			if !isCommitTagged(commit, tags) {
 				return commit.GetSHA(), nil
@@ -504,6 +513,10 @@ func (c *Client) getLatestNonTagCommit(ctx context.Context, repository *github.R
 			break
 		}
 		opt.Page = resp.NextPage
+	}
+	if head != "" {
+		c.logger.Debugf("every commit of %s is tagged; taking its head %s", branch, head)
+		return head, nil
 	}
 	return "", microerror.Mask(notFoundError)
 }

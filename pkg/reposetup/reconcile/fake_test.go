@@ -45,6 +45,8 @@ type fakeRepo struct {
 	releaseAt     time.Time
 	statuses      []string // commit statuses reported on the head
 	checkRuns     []string // check runs reported on the head
+	checksStatus  int      // HTTP status of the status and check-run reads when not 200
+	tags          []string // tags, all on the head commit
 	prs           []*github.PullRequest
 	blobs         map[string][]byte
 	trees         map[string][]*github.TreeEntry
@@ -246,6 +248,10 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 		writeJSON(w, 200, []map[string]any{{"sha": "head"}})
 	}))
 	mux.HandleFunc("GET /repos/{owner}/{repo}/commits/{sha}/status", f.withRepo(func(w http.ResponseWriter, _ *http.Request, repo *fakeRepo) {
+		if repo.checksStatus != 0 {
+			writeJSON(w, repo.checksStatus, map[string]string{"message": "Resource not accessible by integration"})
+			return
+		}
 		statuses := []map[string]string{}
 		for _, c := range repo.statuses {
 			statuses = append(statuses, map[string]string{"context": c, "state": "success"})
@@ -259,8 +265,12 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 		}
 		writeJSON(w, 200, map[string]any{"total_count": len(runs), "check_runs": runs})
 	}))
-	mux.HandleFunc("GET /repos/{owner}/{repo}/tags", f.withRepo(func(w http.ResponseWriter, _ *http.Request, _ *fakeRepo) {
-		writeJSON(w, 200, []any{})
+	mux.HandleFunc("GET /repos/{owner}/{repo}/tags", f.withRepo(func(w http.ResponseWriter, _ *http.Request, repo *fakeRepo) {
+		tags := []map[string]any{}
+		for _, t := range repo.tags {
+			tags = append(tags, map[string]any{"name": t, "commit": map[string]string{"sha": "head"}})
+		}
+		writeJSON(w, 200, tags)
 	}))
 	mux.HandleFunc("GET /repos/{owner}/{repo}/pulls", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
 		var out []*github.PullRequest
