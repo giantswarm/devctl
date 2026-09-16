@@ -7,6 +7,8 @@ import (
 
 	"github.com/google/go-github/v92/github"
 	"github.com/stretchr/testify/require"
+
+	"github.com/giantswarm/devctl/v8/pkg/reposetup/reconcile"
 )
 
 // generatedWorkflows is the shape `devctl gen circleci` renders for an app
@@ -110,18 +112,18 @@ const (
 )
 
 func TestCircleCIGateJobs(t *testing.T) {
-	jobs, err := circleCIGateJobs([]byte(generatedWorkflows))
+	jobs, err := reconcile.GateJobs([]byte(generatedWorkflows))
 	require.NoError(t, err)
 	require.ElementsMatch(t, []string{"go-build", "push-to-registries", "build-chart", "execute-chart-tests"}, jobs)
 
-	jobs, err = circleCIGateJobs([]byte(customWorkflows))
+	jobs, err = reconcile.GateJobs([]byte(customWorkflows))
 	require.NoError(t, err)
 	require.ElementsMatch(t, []string{"chart-test", "e2e-smoke", "go-test"}, jobs)
 
-	_, err = circleCIGateJobs([]byte("workflows: [not: a, map"))
+	_, err = reconcile.GateJobs([]byte("workflows: [not: a, map"))
 	require.Error(t, err)
 
-	jobs, err = circleCIGateJobs([]byte("version: 2.1\njobs:\n  build:\n    steps: []\n"))
+	jobs, err = reconcile.GateJobs([]byte("version: 2.1\njobs:\n  build:\n    steps: []\n"))
 	require.NoError(t, err)
 	require.Empty(t, jobs)
 }

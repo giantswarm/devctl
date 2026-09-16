@@ -20,6 +20,9 @@ type Config struct {
 	Logger      *logrus.Logger
 	AccessToken string
 	DryRun      bool
+	// BaseURL points the client at another GitHub API host (an enterprise
+	// instance, a test double); empty means api.github.com.
+	BaseURL string
 }
 
 type Client struct {
@@ -47,7 +50,11 @@ func New(config Config) (*Client, error) {
 		config.Logger.Info("[dry-run] GitHub API mutations will be skipped")
 	}
 
-	ghClient, err := github.NewClient(github.WithHTTPClient(&http.Client{Transport: transport}))
+	opts := []github.ClientOptionsFunc{github.WithHTTPClient(&http.Client{Transport: transport})}
+	if config.BaseURL != "" {
+		opts = append(opts, github.WithEnterpriseURLs(config.BaseURL, config.BaseURL))
+	}
+	ghClient, err := github.NewClient(opts...)
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}

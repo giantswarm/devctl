@@ -222,12 +222,12 @@ func (v Validator) validateEntry(ctx context.Context, owner string, tf *TeamFile
 		refuse("name", "%q is declared more than once in the team file of %s", d.Name, tf.Team)
 	}
 
-	fields, err := d.fields()
+	fields, err := d.Fields()
 	if err != nil {
 		if len(entry.Problems) == 0 {
 			refuse(entryField, "cannot read the entry: %v", err)
 		}
-		fields = entryFields{Name: d.Name}
+		fields = Fields{Name: d.Name}
 	}
 
 	// The creation rules: the declaration has to say what to generate.
@@ -284,14 +284,14 @@ func (v Validator) validateEntry(ctx context.Context, owner string, tf *TeamFile
 	nameValid := d.Name != ""
 	if d.Name != "" {
 		switch {
-		case hasChart(flavours) && !chartNamePattern.MatchString(d.Name):
+		case HasChart(flavours) && !chartNamePattern.MatchString(d.Name):
 			refuse("name", "%s", chartNameRule)
 			nameValid = false
 		case !repositoryNamePattern.MatchString(d.Name):
 			refuse("name", "%s", repositoryNameRule)
 			nameValid = false
 		}
-		if hasChart(flavours) {
+		if HasChart(flavours) {
 			if strings.HasSuffix(d.Name, chartSuffix) {
 				refuse("name", "a chart repository is named after its chart, without the %s suffix", chartSuffix)
 			}
@@ -386,7 +386,7 @@ func memberOf(teams []string, team string) bool {
 // hasCIJob says whether the CircleCI generator has a job for the
 // declaration: a Go or Node build, an image (a scaffold has a Dockerfile only
 // where gen.ci.image.dockerfile names one) or a chart.
-func hasCIJob(f entryFields) bool {
+func hasCIJob(f Fields) bool {
 	g := f.Gen
 	switch {
 	case g.Language == gen.LanguageGo.String(), g.Language == gen.LanguageNode.String():

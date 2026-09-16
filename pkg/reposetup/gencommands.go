@@ -55,7 +55,7 @@ type genContext struct {
 // pre-commit, then CircleCI and Renovate when gen.ci.generate is on. Each
 // line is an argv starting with devctl gen. The declaration has to have
 // gen.flavours and gen.language; the validator refuses one that has not.
-func genCommands(f entryFields, gc genContext) [][]string {
+func genCommands(f Fields, gc genContext) [][]string {
 	g := f.Gen
 	if g == nil || len(g.Flavours) == 0 || g.Language == "" {
 		return nil
