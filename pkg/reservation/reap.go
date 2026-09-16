@@ -108,7 +108,8 @@ func reapCluster(ctx context.Context, req ReapRequest, cluster string, now time.
 
 	var reaped []Reaped
 	for _, r := range reservations {
-		if r.Until.After(now) {
+		reason, err := reapReason(ctx, req.HeadBranch, r, now)
+		if err != nil || reason == "" {
 			continue
 		}
 
@@ -123,13 +124,35 @@ func reapCluster(ctx context.Context, req ReapRequest, cluster string, now time.
 			User:        r.User,
 			Branch:      r.Branch,
 			PullRequest: r.PullRequest,
-			Reason:      ReasonExpired,
+			Reason:      reason,
 			Until:       r.Until,
 			Commit:      result.Commit,
 		})
 	}
 
 	return reaped
+}
+
+// reapReason decides whether r must go: an expired Until is checked first, so
+// a reservation already past its time never costs a GitHub call for the
+// rename check. It returns "" when r is still good.
+func reapReason(ctx context.Context, headBranch HeadBranchFunc, r Reservation, now time.Time) (string, error) {
+	if !r.Until.After(now) {
+		return ReasonExpired, nil
+	}
+	if r.PullRequest == "" || headBranch == nil {
+		return "", nil
+	}
+
+	current, err := headBranch(ctx, r.PullRequest)
+	if err != nil {
+		return "", microerror.Mask(err)
+	}
+	if current != r.Branch {
+		return ReasonRenamed, nil
+	}
+
+	return "", nil
 }
 
 // releaseAndPush releases one reservation and pushes the commit, exactly as

@@ -109,3 +109,71 @@ func TestReapReleasesAnExpiredReservation(t *testing.T) {
 		t.Errorf("the release did not land on origin: local HEAD %s, origin %s", head, tip)
 	}
 }
+
+// constantHeadBranch stubs HeadBranchFunc: every pull request has the same
+// current head branch, whatever the reservation stored.
+func constantHeadBranch(branch string) reservation.HeadBranchFunc {
+	return func(ctx context.Context, pullRequest string) (string, error) {
+		return branch, nil
+	}
+}
+
+// TestReapReleasesARenamedReservation is the second acceptance criterion: a
+// reservation not yet expired is still released when its pull request's
+// branch was renamed out from under it, because the old branch makes no more
+// builds.
+func TestReapReleasesARenamedReservation(t *testing.T) {
+	dir, _ := newReapFixture(t, fixtureOptions{})
+
+	req := testRequest(dir)
+	req.Now = time.Date(2026, 9, 15, 10, 0, 0, 0, time.UTC)
+	req.Duration = 10 * time.Hour // still active at the Now below
+	reserveAndPush(t, dir, req)
+
+	reaped, err := reservation.Reap(context.Background(), reservation.ReapRequest{
+		RepoDir:    dir,
+		User:       testReaper,
+		Now:        time.Date(2026, 9, 15, 12, 0, 0, 0, time.UTC),
+		HeadBranch: constantHeadBranch("fix/renamed"),
+	})
+	if err != nil {
+		t.Fatalf("Reap: %v", err)
+	}
+	if len(reaped) != 1 {
+		t.Fatalf("got %d reaped reservations, want 1: %+v", len(reaped), reaped)
+	}
+	if got := reaped[0].Reason; got != reservation.ReasonRenamed {
+		t.Errorf("Reason: got %q, want %q", got, reservation.ReasonRenamed)
+	}
+}
+
+// TestReapLeavesAnActiveUnrenamedReservationAlone is the fourth acceptance
+// criterion, "stays silent when it finds nothing": a reservation that is
+// neither expired nor renamed is not released, and Reap never even pushes.
+func TestReapLeavesAnActiveUnrenamedReservationAlone(t *testing.T) {
+	dir, origin := newReapFixture(t, fixtureOptions{})
+
+	req := testRequest(dir)
+	req.Now = time.Date(2026, 9, 15, 10, 0, 0, 0, time.UTC)
+	req.Duration = 10 * time.Hour
+	reserveAndPush(t, dir, req)
+	beforeTip := gitOutput(t, origin, "rev-parse", gitOutput(t, dir, "branch", "--show-current"))
+
+	reaped, err := reservation.Reap(context.Background(), reservation.ReapRequest{
+		RepoDir:    dir,
+		User:       testReaper,
+		Now:        time.Date(2026, 9, 15, 12, 0, 0, 0, time.UTC),
+		HeadBranch: constantHeadBranch(testBranch), // unchanged
+	})
+	if err != nil {
+		t.Fatalf("Reap: %v", err)
+	}
+	if len(reaped) != 0 {
+		t.Errorf("got %d reaped reservations, want 0: %+v", len(reaped), reaped)
+	}
+
+	afterTip := gitOutput(t, origin, "rev-parse", gitOutput(t, dir, "branch", "--show-current"))
+	if afterTip != beforeTip {
+		t.Errorf("origin moved even though nothing was reaped: %s -> %s", beforeTip, afterTip)
+	}
+}
