@@ -1,7 +1,7 @@
 package file
 
 import (
-	_ "embed"
+	"embed"
 
 	"github.com/giantswarm/devctl/v8/pkg/gen/input"
 	"github.com/giantswarm/devctl/v8/pkg/gen/input/workflows/internal/params"
@@ -11,8 +11,10 @@ import (
 var helmDocsRegenTemplate string
 
 //go:generate go run ../../../update-template-sha.go helm-docs-regen.yaml.template
-//go:embed helm-docs-regen.yaml.template.sha
-var helmDocsRegenTemplateSha string
+//go:embed helm-docs-regen.yaml.template*
+var helmDocsRegenTemplateFiles embed.FS
+
+var helmDocsRegenTemplateSha = input.TemplateSHA(helmDocsRegenTemplateFiles, "helm-docs-regen.yaml.template")
 
 // NewHelmDocsRegenInput generates the workflow that regenerates the chart
 // README (helm-docs) and values.schema.json (helm-schema-<chart>) on Renovate

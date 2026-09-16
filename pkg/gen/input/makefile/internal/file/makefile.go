@@ -1,7 +1,7 @@
 package file
 
 import (
-	_ "embed"
+	"embed"
 
 	"github.com/giantswarm/devctl/v8/pkg/gen/input"
 	"github.com/giantswarm/devctl/v8/pkg/gen/input/makefile/internal/params"
@@ -11,8 +11,10 @@ import (
 var makefileTemplate string
 
 //go:generate go run ../../../update-template-sha.go Makefile.template
-//go:embed Makefile.template.sha
-var makefileTemplateSha string
+//go:embed Makefile.template*
+var makefileTemplateFiles embed.FS
+
+var makefileTemplateSha = input.TemplateSHA(makefileTemplateFiles, "Makefile.template")
 
 func NewMakefileInput(p params.Params) input.Input {
 	i := input.Input{

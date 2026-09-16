@@ -1,7 +1,7 @@
 package file
 
 import (
-	_ "embed"
+	"embed"
 	"path/filepath"
 
 	"github.com/giantswarm/devctl/v8/pkg/gen/input"
@@ -12,8 +12,10 @@ import (
 //go:embed pre-commit-action.yaml.template
 var createPreCommitActionTemplate string
 
-//go:embed pre-commit-action.yaml.template.sha
-var createPreCommitActionTemplateSha string
+//go:embed pre-commit-action.yaml.template*
+var createPreCommitActionTemplateFiles embed.FS
+
+var createPreCommitActionTemplateSha = input.TemplateSHA(createPreCommitActionTemplateFiles, "pre-commit-action.yaml.template")
 
 func NewCreatePreCommitActionInput(p params.Params) input.Input {
 	return input.Input{

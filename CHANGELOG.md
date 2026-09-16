@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- `pkg/gen/input`: devctl builds as a module dependency again. The template provenance files (`*.template.sha`, written by `go generate`, gitignored) were embedded by name, so `pkg/reposetup` — which renders scaffolds with the gen inputs since v8.60.0 — could not compile from the module proxy (`pattern x.template.sha: no matching files found`). Each site now embeds `<template>*` and reads the `.sha` through `input.TemplateSHA`, which falls back to the module version's tree link when the file is absent; generated output is unchanged where `go generate` ran.
+
 ### Added
 
 - `repo create` and `repo status`, the laptop's client of the repository set-up engine

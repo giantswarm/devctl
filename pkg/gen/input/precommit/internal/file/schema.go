@@ -1,7 +1,7 @@
 package file
 
 import (
-	_ "embed"
+	"embed"
 	"path/filepath"
 
 	"github.com/giantswarm/devctl/v8/pkg/gen/input"
@@ -12,8 +12,10 @@ import (
 //go:embed schema.yaml.template
 var createSchemaYamlTemplate string
 
-//go:embed schema.yaml.template.sha
-var createSchemaYamlTemplateSha string
+//go:embed schema.yaml.template*
+var createSchemaYamlTemplateFiles embed.FS
+
+var createSchemaYamlTemplateSha = input.TemplateSHA(createSchemaYamlTemplateFiles, "schema.yaml.template")
 
 func NewCreateSchemaYamlInput(p params.Params, chartName string) input.Input {
 	return input.Input{
