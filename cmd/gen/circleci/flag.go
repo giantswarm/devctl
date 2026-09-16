@@ -17,6 +17,8 @@ const (
 	flagBranchPublish           = "branch-publish"
 	flagBuildConcurrency        = "build-concurrency"
 	flagChartName               = "chart-name"
+	flagComponentType           = "component-type"
+	flagTeam                    = "team"
 	flagKeepChartAppVersion     = "keep-chart-app-version"
 	flagOverrideChartAppVersion = "override-chart-app-version"
 	flagForcePublic             = "force-public"
@@ -51,6 +53,8 @@ type flag struct {
 	BranchPublish           bool
 	BuildConcurrency        string
 	ChartName               string
+	ComponentType           string
+	Team                    string
 	KeepChartAppVersion     bool
 	OverrideChartAppVersion bool
 	ForcePublic             bool
@@ -85,6 +89,8 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&f.BranchPublish, flagBranchPublish, false, "Publish a dev image and chart on branch builds. By default branches build + test only (no push); when set, the branch path additionally pushes an amd64 dev image and the dev chart (coupled).")
 	cmd.Flags().StringVar(&f.BuildConcurrency, flagBuildConcurrency, "", `Override how many architectures the cli-flavour go-build job compiles concurrently (architect go-build "build_concurrency" param). Empty defaults to "auto" (nproc). Lower it (e.g. "2") for repos whose binary is large enough that a cold full-matrix cross-compile OOMs the runner at "auto" -- memory, not CPU, is the binding constraint, and a killed build never stores the build cache. Only applies to the cli flavour.`)
 	cmd.Flags().StringVar(&f.ChartName, flagChartName, "", "Override the chart name (the push-to-app-catalog `chart` param and the helm/<chart> directory). Empty defaults to the repo name. Set it for repos whose chart directory does not match the repo name (e.g. docs-proxy -> docs-proxy-app). The append-only custom.yml merge cannot rename a generated job's chart.")
+	cmd.Flags().StringVar(&f.ComponentType, flagComponentType, "", fmt.Sprintf(`The repository's componentType from the giantswarm/github team file. Only %q changes the output, and only for the app flavour: a template repository's chart lives at helm/%s and carries the placeholders %s, %s and %s that a repository created from it fills in, so its chart job renders the checkout with fixture values (%s, --%s, %s) before app-build-suite builds the rendered chart -- green means a repository created from the template passes its first chart build. Nothing is released from a template, so the chart-test and chart push jobs are not generated and no tests/ats files are written. Every other value, and a template without a chart, renders the pipeline as before. Requires --%s.`, circleci.ComponentTypeTemplate, circleci.TemplateAppNamePlaceholder, circleci.TemplateAppNamePlaceholder, circleci.TemplateTeamPlaceholder, circleci.TemplateHelmRepositoryPlaceholder, circleci.TemplateAppName, flagTeam, circleci.TemplateHelmRepository, flagTeam))
+	cmd.Flags().StringVar(&f.Team, flagTeam, "", fmt.Sprintf("The owning team, as the giantswarm/github team file names it (team-honeybadger or honeybadger; a leading team- is dropped). The template chart job renders %s with it, so the rendered chart carries the team label a created repository gets. Only applies with --%s %s.", circleci.TemplateTeamPlaceholder, flagComponentType, circleci.ComponentTypeTemplate))
 	cmd.Flags().BoolVar(&f.OverrideChartAppVersion, flagOverrideChartAppVersion, true, "Whether app-build-suite stamps the computed build version into the chart's appVersion. Leave it UNSET to derive it from the repo: a repo that builds its own image ships the app it packages, so its appVersion is its own version and gets stamped; a chart-only repo packages an app built elsewhere, so the appVersion declared in Chart.yaml is kept. Pass it explicitly only to overrule that: `=false` for a repo that builds an image and still declares a foreign appVersion, `=true` for a chart-only repo that wants its appVersion stamped anyway. The chart version is always stamped either way.")
 	cmd.Flags().BoolVar(&f.KeepChartAppVersion, flagKeepChartAppVersion, false, "Deprecated alias for --override-chart-app-version=false.")
 	_ = cmd.Flags().MarkDeprecated(flagKeepChartAppVersion, fmt.Sprintf("use --%s=false", flagOverrideChartAppVersion))
@@ -121,6 +127,9 @@ func (f *flag) Validate() error {
 	}
 	if f.ForcePublic && f.ImagePrivateOnly {
 		return microerror.Maskf(invalidFlagError, "--%s and --%s are mutually exclusive", flagForcePublic, flagImagePrivateOnly)
+	}
+	if f.ComponentType == circleci.ComponentTypeTemplate && f.Team == "" {
+		return microerror.Maskf(invalidFlagError, "--%s %s requires --%s: the rendered chart carries the owning team's name as its team label", flagComponentType, circleci.ComponentTypeTemplate, flagTeam)
 	}
 	if f.SkipATS && f.ATSOnRelease {
 		return microerror.Maskf(invalidFlagError, "--%s and --%s are mutually exclusive", flagSkipATS, flagATSOnRelease)

@@ -240,6 +240,26 @@ type Params struct {
 	// NodeBuildOutput is the workspace path the Node job persists for an image
 	// handoff (e.g. "packages/*/dist/*"). Empty omits persist_to_workspace.
 	NodeBuildOutput string
+	// TemplateChart is true for a chart repository whose componentType is
+	// template: the chart at helm/{APP-NAME} carries placeholders, so the
+	// chart job is an inline job that renders the checkout with fixture values
+	// (the app name and Helm repository fixtures, the team from Team) and runs
+	// app-build-suite on the rendered chart. The chart-test and chart push
+	// jobs are not emitted: nothing is released from a template. Derived by
+	// the generator from Config.ComponentType and the app flavour.
+	TemplateChart bool
+	// Team is the owning team's short name (honeybadger), rendered into the
+	// template chart's team label. Empty unless TemplateChart.
+	Team string
+	// The template contract the render step spells out: the placeholders a
+	// template carries and the fixture values two of them are rendered with
+	// (the third is Team). Constants of the circleci package, passed through
+	// like OrbVersion so the template and the generator name them in one place.
+	TemplateAppNamePlaceholder        string
+	TemplateTeamPlaceholder           string
+	TemplateHelmRepositoryPlaceholder string
+	TemplateAppName                   string
+	TemplateHelmRepository            string
 }
 
 // ImageBuild is one architect/build-image job: one platform, on a machine of

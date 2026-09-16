@@ -9,6 +9,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `gen circleci`: `--component-type template --team TEAM` renders a template repository's chart before it builds
+  (giantswarm/giantswarm#37726, #2217). A template's chart lives at `helm/{APP-NAME}` and carries the
+  placeholders a repository created from it fills in (`{APP-NAME}`, `{TEAM-NAME}`, `{APP HELM REPOSITORY}`),
+  so the generated `build-chart` of `giantswarm/template-app` was red on every pipeline. For
+  `componentType: template` the chart job is now an inline job on the app-build-suite executor that renders
+  the checkout with fixture values (`sample-app`, the owning team from the team file, an example Helm
+  repository) and runs app-build-suite on the rendered chart, so green means a repository created from the
+  template passes its first chart build. Nothing is released from a template: no chart-test job, no push
+  jobs, no release leg, no `tests/ats` files, and the job runs on `main` too. A template without a chart
+  and every other component type render the pipeline as before.
 - `repo validate` and the `pkg/reposetup` package, the front half of the repository set-up engine
   (giantswarm/giantswarm#37726, #2213): an entry of a giantswarm/github team file is validated against
   the repositories schema — fetched from `giantswarm/github` main, with an embedded copy that already

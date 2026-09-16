@@ -102,6 +102,8 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, _ []string) error 
 			RepoName:                r.flag.RepoName,
 			Language:                r.flag.Language,
 			Flavours:                r.flag.Flavours,
+			ComponentType:           r.flag.ComponentType,
+			Team:                    r.flag.Team,
 			SkipATS:                 r.flag.SkipATS,
 			ATSVersion:              r.flag.ATSVersion,
 			ATSOnRelease:            r.flag.ATSOnRelease,
