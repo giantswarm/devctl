@@ -9,6 +9,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `pkg/githubclient.ReportedChecks`, `repo reconcile`, `repo checks`: on a repository whose every commit on the
+  default branch is tagged — a fresh repository whose only commit is the scaffold, tagged v0.1.0 by auto-release
+  within seconds — the head is the candidate commit instead of a not-found error, so the checks that reported on it
+  (`pre-commit`, the pipeline's jobs) are required on the first run. The protection step's `unchecked` finding is
+  worded by cause: a 401/403 names the permissions to grant (`statuses: read`, `checks: read`), a branch without a
+  commit is "nothing reported yet" without a finding (giantswarm/giantswarm#37726, #2228).
 - `repo reconcile`: the `catalog` step maps by chart, not by repository name: the component's
   `giantswarm.io/helmcharts` annotation in `catalog/components.yaml` names the charts to look for in the
   apps-to-teams mapping, matched by chart name (`chartName` overrides and `-app` suffixes differ from the

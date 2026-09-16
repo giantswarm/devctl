@@ -299,6 +299,33 @@ func TestSteps(t *testing.T) {
 			},
 		},
 		{
+			name: "protection: a fresh repository whose only commit is tagged requires what reported on it", step: StepProtection,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.tags = []string{"v0.1.0"} // auto-release tagged the scaffold within seconds
+				r.statuses = []string{ctxGoBuild, ctxSetup}
+				r.checkRuns = []string{"pre-commit", ctxRelease}
+			},
+			wantCheck: VerdictDrift, wantChange: "protect main; require pre-commit, " + ctxGoBuild,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Equal(t, []string{"pre-commit", ctxGoBuild}, h.repo().protection.checks)
+				require.Empty(t, res.Step(StepProtection).Findings, "a tagged head is not a permission gap")
+			},
+		},
+		{
+			name: "protection: reports the token cannot read are a permission gap, nothing is removed", step: StepProtection,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.checksStatus = 403
+				r.protection = &fakeProtection{reviews: 1, enforceAdmins: true, strict: true, checks: []string{ctxGoBuild, "execute-smoke-test"}}
+			},
+			wantCheck: VerdictReported, wantFinding: FindingUnchecked, wantAfter: VerdictReported,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Equal(t, []string{ctxGoBuild, "execute-smoke-test"}, h.repo().protection.checks)
+				require.Contains(t, res.Step(StepProtection).Findings[0].Fix, "statuses: read, checks: read")
+			},
+		},
+		{
 			name: "protection: ghost contexts are removed", step: StepProtection,
 			seed: func(h *harness) {
 				r := h.gh.addRepo(owner, name)
