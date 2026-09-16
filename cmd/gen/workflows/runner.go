@@ -53,6 +53,12 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 
 	inputs := []input.Input{
 		workflowsInput.SemanticPullRequest(),
+		// CircleCI builds on push, not on pull request open, so the commit
+		// pushed before the pull request existed is never built. Every
+		// generated CircleCI pipeline gates its branch-path build jobs on an
+		// open pull request (require_open_pull_request), so every repo needs
+		// this trigger regardless of flavour.
+		workflowsInput.TriggerCircleCIPipeline(),
 	}
 
 	// Two mutually-exclusive release flows. Each branch emits the workflow

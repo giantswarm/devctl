@@ -117,6 +117,10 @@ func (w *Workflows) SyncFromUpstream() input.Input {
 	return file.NewSyncFromUpstreamInput(w.params)
 }
 
+func (w *Workflows) TriggerCircleCIPipeline() input.Input {
+	return file.NewTriggerCircleCIPipelineInput(w.params)
+}
+
 func (w *Workflows) TestKyvernoPoliciesWithChainsaw() input.Input {
 	return file.NewTestKyvernoPoliciesWithChainsawInput(w.params)
 }

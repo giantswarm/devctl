@@ -83,6 +83,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   override is what admits the type at all. The titles are accepted in every repository but only
   act under `--release-workflow=auto-release`. `security` joins the accepted types, which the
   action's default list never held although `cliff.toml` maps it to a Security changelog group.
+- `gen workflows`: generates `zz_generated.trigger-circleci-pipeline.yaml`, which calls `giantswarm/github-workflows`' reusable workflow to trigger a CircleCI build when a pull request opens or reopens.
 
 ### Changed
 
