@@ -8,7 +8,6 @@ import (
 
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
-	"github.com/go-git/go-git/v5"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
@@ -85,52 +84,34 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		scope = reservation.ScopeExclusive
 	}
 
-	result, err := reservation.Reserve(reservation.Request{
-		RepoDir:     dir,
-		Cluster:     r.flag.Cluster,
-		App:         r.flag.App,
-		AppDir:      r.flag.AppDir,
-		Branch:      r.flag.Branch,
-		User:        r.flag.User,
-		PullRequest: r.flag.PullRequest,
-		Duration:    duration,
-		Scope:       scope,
-	})
-	if err != nil {
+	// render re-runs Reserve itself, so a retry after a rejected push (see
+	// PushWithRetry) reserves against whatever another reservation just landed,
+	// rather than replaying a commit made against a stale tree.
+	var result reservation.Result
+	render := func() error {
+		var err error
+		result, err = reservation.Reserve(reservation.Request{
+			RepoDir:     dir,
+			Cluster:     r.flag.Cluster,
+			App:         r.flag.App,
+			AppDir:      r.flag.AppDir,
+			Branch:      r.flag.Branch,
+			User:        r.flag.User,
+			PullRequest: r.flag.PullRequest,
+			Duration:    duration,
+			Scope:       scope,
+		})
 		return microerror.Mask(err)
 	}
 
-	branch, err := defaultBranch(dir)
-	if err != nil {
-		return microerror.Mask(err)
-	}
-	err = client.Push(ctx, branch)
-	if err != nil {
+	if err := reservation.PushWithRetry(ctx, dir, render); err != nil {
 		return microerror.Mask(err)
 	}
 
 	_, _ = fmt.Fprintf(r.stdout, "Reserved %s on %s for %s until %s.\n",
 		result.App, r.flag.Cluster, r.flag.User, result.Until.Format("2006-01-02 15:04 MST"))
 	_, _ = fmt.Fprintf(r.stdout, "Source %s follows %s\n", result.SourceName, result.SemverFilter)
-	_, _ = fmt.Fprintf(r.stdout, "Commit %s on %s/%s@%s\n", result.Commit, owner, repo, branch)
+	_, _ = fmt.Fprintf(r.stdout, "Commit %s on %s/%s\n", result.Commit, owner, repo)
 
 	return nil
-}
-
-// defaultBranch returns the branch the clone checked out, so the push does not
-// depend on a guess about main or master.
-func defaultBranch(dir string) (string, error) {
-	repo, err := git.PlainOpen(dir)
-	if err != nil {
-		return "", microerror.Mask(err)
-	}
-	head, err := repo.Head()
-	if err != nil {
-		return "", microerror.Mask(err)
-	}
-	if !head.Name().IsBranch() {
-		return "", microerror.Maskf(invalidConfigError, "the clone is not on a branch (%s)", head.Name())
-	}
-
-	return head.Name().Short(), nil
 }
