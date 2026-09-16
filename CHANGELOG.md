@@ -9,6 +9,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `repo reconcile`: the `catalog` step maps by chart, not by repository name: the component's
+  `giantswarm.io/helmcharts` annotation in `catalog/components.yaml` names the charts to look for in the
+  apps-to-teams mapping, matched by chart name (`chartName` overrides and `-app` suffixes differ from the
+  repository), private-registry charts left out; a component without a public chart — a Go service without a chart,
+  a library, a CLI — ends the step `ok` ("in the catalog; no public chart to map") instead of dispatching the
+  mapping run on every reconcile for a repair that cannot converge (giantswarm/giantswarm#37726, #2227).
 - `repo reconcile`: the `circleci` step grants the CircleCI token's GitHub user `admin` on the repository before
   following the project and revokes the grant right after, when that user is not an administrator already — CircleCI
   follows a project for a repository administrator only ("only a project's Github administrator may setup Circle"),

@@ -112,27 +112,54 @@ func (h *harness) repo() *fakeRepo {
 // land what its run lands: the catalog run adds the component and the
 // mapping (which follows the catalog push), the mapping run the mapping.
 func (h *harness) seedCatalog(inCatalog, inMapping bool) {
+	h.seedCatalogCharts(inCatalog, inMapping, []string{name})
+}
+
+// seedCatalogCharts is seedCatalog with the repository's component annotated
+// with charts (public unless the reference says otherwise) — none for a
+// repository without a chart.
+func (h *harness) seedCatalogCharts(inCatalog, inMapping bool, charts []string) {
 	catalog := h.gh.addRepo(owner, "github")
-	catalog.files = map[string]string{"catalog/components.yaml": componentYAML("other-service")}
+	catalog.files = map[string]string{"catalog/components.yaml": componentYAML("other-service", "other-service")}
 	mapping := h.gh.addRepo(owner, "management-cluster-bases")
 	mapping.files = map[string]string{"bases/apps-to-teams-mapping/configmap.yaml": "data:\n  other-service: rocket\n"}
+	mapCharts := func() {
+		for _, chart := range charts {
+			mapping.files["bases/apps-to-teams-mapping/configmap.yaml"] += "  " + chartName(chart) + ": bumblebee\n"
+		}
+	}
 	if inCatalog {
-		catalog.files["catalog/components.yaml"] += componentYAML(name)
+		catalog.files["catalog/components.yaml"] += componentYAML(name, charts...)
 	}
 	if inMapping {
-		mapping.files["bases/apps-to-teams-mapping/configmap.yaml"] += "  " + name + ": bumblebee\n"
+		mapCharts()
 	}
 	h.gh.onDispatch = func(workflow string, _ map[string]any) {
 		if workflow == h.baseline.CatalogWorkflow {
-			catalog.files["catalog/components.yaml"] += componentYAML(name)
+			catalog.files["catalog/components.yaml"] += componentYAML(name, charts...)
 		}
-		mapping.files["bases/apps-to-teams-mapping/configmap.yaml"] += "  " + name + ": bumblebee\n"
+		mapCharts()
 	}
 }
 
-func componentYAML(n string) string {
-	return "---\napiVersion: backstage.io/v1alpha1\nkind: Component\nmetadata:\n    name: " + n + "\n"
+// componentYAML is a catalog Component; charts are chart names or full
+// registry references (a private one: gsociprivate.azurecr.io/…).
+func componentYAML(n string, charts ...string) string {
+	doc := "---\napiVersion: backstage.io/v1alpha1\nkind: Component\nmetadata:\n    name: " + n + "\n"
+	if len(charts) == 0 {
+		return doc
+	}
+	refs := make([]string, 0, len(charts))
+	for _, c := range charts {
+		if !strings.Contains(c, "/") {
+			c = "gsoci.azurecr.io/charts/giantswarm/" + c
+		}
+		refs = append(refs, c)
+	}
+	return doc + "    annotations:\n        giantswarm.io/helmcharts: " + strings.Join(refs, ",") + "\n"
 }
+
+func chartName(ref string) string { return ref[strings.LastIndexByte(ref, '/')+1:] }
 
 type stepCase struct {
 	name  string
@@ -441,6 +468,51 @@ func TestSteps(t *testing.T) {
 				h.seedCatalog(true, false)
 			},
 			wantCheck: VerdictDrift, wantChange: "dispatch apps-to-teams-mapping.yaml in giantswarm/github for sample-service",
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				require.Equal(t, []string{"apps-to-teams-mapping.yaml"}, h.gh.dispatches)
+			},
+		},
+		{
+			name: "catalog: a component without a chart has nothing to map", step: StepCatalog,
+			seed: func(h *harness) {
+				h.gh.addRepo(owner, name)
+				h.seedCatalogCharts(true, false, nil)
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Empty(t, h.gh.dispatches)
+				require.Equal(t, "in the catalog; no public chart to map", res.Step(StepCatalog).Summary)
+			},
+		},
+		{
+			name: "catalog: a private chart has nothing to map", step: StepCatalog,
+			seed: func(h *harness) {
+				h.gh.addRepo(owner, name)
+				h.seedCatalogCharts(true, false, []string{"gsociprivate.azurecr.io/charts/giantswarm/" + name})
+			},
+			wantCheck: VerdictOK,
+			verify:    func(t *testing.T, h *harness, _ *Result) { require.Empty(t, h.gh.dispatches) },
+		},
+		{
+			name: "catalog: the mapping is matched by chart name, not repository name", step: StepCatalog,
+			seed: func(h *harness) {
+				h.gh.addRepo(owner, name)
+				h.seedCatalogCharts(true, true, []string{"sample-chart", "sample-crds"})
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Empty(t, h.gh.dispatches)
+				require.Equal(t, "in the catalog and the mapping (sample-chart, sample-crds)", res.Step(StepCatalog).Summary)
+			},
+		},
+		{
+			name: "catalog: one chart of two missing from the mapping dispatches the mapping run once", step: StepCatalog,
+			seed: func(h *harness) {
+				h.gh.addRepo(owner, name)
+				h.seedCatalogCharts(true, false, []string{"sample-chart", "sample-crds"})
+				h.gh.repos[owner+"/management-cluster-bases"].files["bases/apps-to-teams-mapping/configmap.yaml"] += "  sample-chart: bumblebee\n"
+			},
+			wantCheck: VerdictDrift, wantChange: "the mapping lacks sample-crds",
 			verify: func(t *testing.T, h *harness, _ *Result) {
 				require.Equal(t, []string{"apps-to-teams-mapping.yaml"}, h.gh.dispatches)
 			},
