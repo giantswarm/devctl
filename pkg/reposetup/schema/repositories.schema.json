@@ -1,0 +1,386 @@
+{
+  "$id": "https://github.com/giantswarm/github/repositorylist",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": [
+      "name",
+      "componentType"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "artifactHub": {
+        "type": "boolean",
+        "description": "Opts the repository's public Helm chart(s) into publication on Artifact Hub under the giantswarm organization (https://artifacthub.io/packages/search?org=giantswarm). The nightly artifacthub-sync workflow resolves the chart name(s) via the 'giantswarm.io/helmcharts' catalog annotation and registers those that exist in gsoci; removing the flag deregisters them. Components tagged 'private' in the catalog are never published. Default: not published. See https://github.com/giantswarm/roadmap/issues/3940."
+      },
+      "botPRsSweep": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "Exception to the team's bot PR sweep policy for this repository alone. Every key only narrows what the team's bot-prs-sweep/team-<name>.yaml allows. A key that widens is refused by marge and stops the whole team sweep, not this repository alone: this schema cannot see the team file, so jv does not catch it here. See https://github.com/giantswarm/roadmap/issues/4354.",
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "description": "false leaves every bot PR of this repository untouched by the sweep, the classification label included. Default: the sweep runs."
+          },
+          "updateTypes": {
+            "type": "array",
+            "uniqueItems": true,
+            "description": "Update types that may merge when green in this repository, intersected with the team's Renovate and Dependabot lists. An empty list is a list: it merges no Renovate or Dependabot PR at all, while an Align files or Herald PR still merges. An Align files or Herald PR names no version and is not affected, so \"none\" cannot be named here. An update type the team merges for no kind is refused, and an update whose size the sweep cannot read always waits for a person.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "major",
+                "minor",
+                "patch",
+                "digest",
+                "pin",
+                "lockfile"
+              ]
+            }
+          },
+          "rescue": {
+            "type": "boolean",
+            "description": "false dispatches no rescue on the bot PRs of this repository. Default: the team's setting."
+          }
+        }
+      },
+      "componentType": {
+        "type": "string",
+        "title": "Component type",
+        "description": "Sets the component type of this repository, specifically for our developer portal catalog, where the component type influences the type of information displayed.",
+        "enum": [
+          "appcatalog",
+          "cli",
+          "configuration",
+          "customer",
+          "library",
+          "service",
+          "template",
+          "unspecified"
+        ],
+        "default": "unspecified"
+      },
+      "choreReviewers": {
+        "type": "array",
+        "description": "Reviewers to request on Renovate (\"chore\") PRs in this repo. Each entry is a GitHub username or a 'team:<slug>' team reference. Passed to 'devctl gen renovate --reviewers' for repos whose renovate.json5 is generated (gen.ci.generate or the customer flavour), otherwise applied to the existing Renovate config via 'devctl gen renovate reviewers'.",
+        "items": {
+          "type": "string"
+        }
+      },
+      "deploymentNames": {
+        "type": "array",
+        "description": "List of names of apps which are deployed from this repository. Setting this will overwrite the default discovery of apps named REPONAME and REPONAME-app.",
+        "items": {
+          "type": "string"
+        }
+      },
+      "description": {
+        "type": "string",
+        "description": "The repository's description on GitHub (the 'About' text). The repository set-up reconciler keeps it in sync with this value; a description changed by hand on GitHub is drift and is set back. See https://github.com/giantswarm/giantswarm/issues/37726."
+      },
+      "gen": {
+        "type": "object",
+        "required": [
+          "flavours",
+          "language"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "flavours": {
+            "type": "array",
+            "description": "devctl flavours of the repository (see devctl docs/flavours.md), passed to every 'devctl gen' the sync runs. 'customer' repositories get the generated GitHub workflows plus a generated renovate.json5 extending the giantswarm base preset, and no CircleCI.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "app",
+                "cli",
+                "cluster-app",
+                "customer",
+                "generic",
+                "helmchart",
+                "k8sapi",
+                "fleet"
+              ],
+              "minItems": 1
+            }
+          },
+          "generateLlmRules": {
+            "type": "boolean"
+          },
+          "goGenerate": {
+            "type": "boolean",
+            "description": "Passes --go-generate to 'devctl gen precommit', which runs 'go generate ./...' in the pre-commit workflow before the hooks. Set it for a Go repository that does not compile from a bare checkout, for example one that embeds a file 'go generate' writes; golangci-lint compiles what it analyses. Off by default: the job installs no code generators, so a repository whose directives need controller-gen or mockgen must not get the step."
+          },
+          "installUpdateChart": {
+            "type": "boolean"
+          },
+          "helmDocsRegen": {
+            "type": "boolean",
+            "description": "Generate zz_generated.helm-docs-regen.yaml (passed to 'devctl gen workflows --helm-docs-regen'; app flavour only). On pull requests from renovate/ and dependabot/ branches that touch helm/ or .pre-commit-config.yaml, the workflow reruns the repo's helm-docs and helm-schema-<chart> pre-commit hooks and pushes the regenerated README and values.schema.json back onto the PR branch with the taylorbot PAT, so an image-tag or values-key bump no longer fails the pre-commit check on files only the hooks can rewrite. Requires devctl v8.55.0+."
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "generic",
+              "go",
+              "node",
+              "python",
+              "kyverno-policy"
+            ]
+          },
+          "runSecurityScorecard": {
+            "type": "boolean"
+          },
+          "preCommit": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]*$"
+            },
+            "description": "List of flavors passed to 'devctl gen precommit --flavors'. When set, generates .pre-commit-config.yaml via devctl. When absent, no pre-commit config is generated. Empty array runs devctl without --flavors."
+          },
+          "enableUpstreamSyncAutomation": {
+            "type": "boolean"
+          },
+          "dispatchUpdateChartEventsRepo": {
+            "type": "string"
+          },
+          "ci": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "generate"
+            ],
+            "properties": {
+              "generate": {
+                "type": "boolean",
+                "description": "Opt this repo into devctl-generated .circleci/config.yml. The pipeline is derived from gen.flavours / gen.language / Dockerfile presence -- there is no per-repo parameter block. The architect-orb version is baked into devctl, not configured here."
+              },
+              "releaseWorkflow": {
+                "type": "string",
+                "enum": [
+                  "legacy",
+                  "auto-release"
+                ],
+                "description": "Release workflow to generate. 'auto-release' produces a single push-based auto-release.yaml + cliff.toml that tags + publishes a GitHub Release from conventional commits on every push to main (no release PR, no manual approval). 'legacy' produces the create-release-pr / create-release / validate-changelog trio (releases driven by manually-pushed `main#release#patch`-style branches). When omitted, the effective default depends on `gen.ci.generate`: `true` defaults to 'auto-release' (a devctl-managed CI surface implies a devctl-managed release surface), `false`/unset defaults to 'legacy'. Set `releaseWorkflow: legacy` explicitly to opt a `gen.ci.generate: true` repo back to the legacy trio. Requires devctl v8.8.0+."
+              },
+              "appCatalog": {
+                "type": "string",
+                "description": "Catalog the generated chart pipeline publishes to (passed to 'devctl gen circleci --app-catalog'). Defaults to 'giantswarm-catalog' when omitted. Set it for repos that ship to a different catalog (e.g. the internal 'giantswarm-operations-platform-catalog') so generation does not migrate their chart to the public catalog. Requires devctl v8.16.0+."
+              },
+              "appCatalogTest": {
+                "type": "string",
+                "description": "Test catalog the generated chart pipeline publishes to (passed to 'devctl gen circleci --app-catalog-test'). Defaults to 'giantswarm-test-catalog' when omitted. Kept paired with appCatalog. Requires devctl v8.16.0+."
+              },
+              "chartName": {
+                "type": "string",
+                "description": "Override the chart name on the generated chart jobs (the push-to-app-catalog 'chart' param and the helm/<chart> directory; passed to '--chart-name'). Defaults to the repo name when omitted. Set it for repos whose chart directory does not match the repo name (e.g. docs-proxy ships helm/docs-proxy-app). The append-only custom.yml merge cannot rename a generated job's chart. Requires devctl v8.19.0+."
+              },
+              "overrideChartAppVersion": {
+                "type": "boolean",
+                "description": "Overrule devctl's derivation of whether app-build-suite stamps the computed build version into the chart's appVersion (passed to 'devctl gen circleci --override-chart-app-version'). Omit it in almost every case: devctl derives it from the repo's shape, because a repo that builds its own image ships the app it packages (appVersion is its own version, stamped) while a chart-only repo packages an app built elsewhere (the appVersion declared in Chart.yaml is kept). Set false for a repo that builds an image and still declares a foreign appVersion, or true for a chart-only repo that wants its appVersion stamped anyway. The chart version is always stamped either way. Requires devctl with --override-chart-app-version."
+              },
+              "forcePublic": {
+                "type": "boolean",
+                "description": "Push the image and chart as public artifacts even though the repo is private (architect 'force-public: true' on the generated push-to-registries and push-to-app-catalog release jobs; passed to '--force-public'). Set it for private repos that publish public artifacts (e.g. web-assets); architect otherwise derives private from the GitHub repo visibility. Mutually exclusive with image.privateOnly. Requires devctl v8.19.0+."
+              },
+              "image": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "Image-build knobs for repos whose image pipeline does not fit the default shape. Both are passed to 'devctl gen circleci'. The append-only custom.yml merge cannot express either against a generated job, so the generator carries them. Requires devctl v8.17.0+.",
+                "properties": {
+                  "preBuildJob": {
+                    "type": "string",
+                    "description": "Name of a repo-owned job (defined in .circleci/custom.yml) the release image build must wait on (passed to '--image-pre-build-job'). Adds a 'requires' entry to the generated push-to-registries-release job. Used for workspace-handoff pre-steps (e.g. a job that persists a file the Docker build context overlays via attach_workspace)."
+                  },
+                  "privateOnly": {
+                    "type": "boolean",
+                    "description": "Ship the image to the private registry only (gsociprivate), via an explicit registries-data that replaces split-china-push and omits the sync-china-registry job (passed to '--image-private-only'). Set it for private repos whose image must not land in the public catalog."
+                  },
+                  "name": {
+                    "type": "string",
+                    "description": "Override the 'giantswarm/<repo>' default image name on the generated image jobs (passed to '--image-name'). Set it for repos whose published image differs from the repo name (e.g. kserve publishes 'giantswarm/kserve-controller'). The append-only custom.yml merge cannot rename a generated job's image. Requires devctl v8.18.0+."
+                  },
+                  "platforms": {
+                    "type": "string",
+                    "description": "Override the buildx platform list on the generated image jobs (passed to '--image-platforms'). Empty lets the orb default apply (linux/amd64,linux/arm64). Set it for single-architecture images (e.g. vllm ships 'linux/arm64' for DGX Spark; an amd64 build has no prebuilt wheels and fails). The append-only custom.yml merge cannot cap a generated job's platforms. Requires devctl v8.18.0+."
+                  },
+                  "dockerfile": {
+                    "type": "string",
+                    "description": "Override the Dockerfile path on the generated image jobs (passed to '--image-dockerfile'). Set it for repos whose Dockerfile is not at the repo root (e.g. backstage builds from 'packages/backend/Dockerfile'); a non-empty value also turns the image pipeline on, since the root-Dockerfile derivation misses a nested Dockerfile. The append-only custom.yml merge cannot set the Dockerfile path on a generated job. Requires devctl v8.20.0+."
+                  },
+                  "nativeBuilds": {
+                    "type": "boolean",
+                    "description": "Build the image one architecture per job on a native resource class instead of one multi-platform buildx job (passed to '--image-native-builds'). Emits an architect/build-image job per platform in image.platforms (linux/amd64 on small, linux/arm64 on arm.medium) and switches the generated push-to-registries jobs to merge-digests: true, which joins the per-architecture digests into the tagged index. Nothing is emulated and the builds run concurrently, so wall clock is the slower single native build (backstage: 14 min -> 3.5 min). Set it for Dockerfiles with real work in RUN steps (apt, pip, yarn, native modules); a COPY of a cross-compiled binary gains nothing. Downstream job names are unchanged; the validate-only branch job build-image becomes build-image-<arch> jobs, so a custom.yml that requires build-image must follow. Requires architect-orb 10.2.0 and devctl v8.42.0+; align-files skips the flag with a notice until its devctl pin supports it."
+                  },
+                  "resourceClasses": {
+                    "type": "object",
+                    "description": "Override the CircleCI resource class of the native build-image jobs per platform (passed to '--image-resource-class <platform>=<class>', one per entry). Applies to both the branch and the release leg of that platform; the defaults stay linux/amd64 on small and linux/arm64 on arm.medium. For an image whose leg is dominated by exporting, compressing and SBOM-scanning a very large result rather than by the build (vllm: 22 GB arm64-only, 36 of 37 release-leg minutes on the 2-vCPU arm.medium). The class must belong to the platform's architecture (amd64: small, medium, medium+, large, xlarge; arm64: arm.medium, arm.large, arm.xlarge, arm.2xlarge) and the platform must be in image.platforms; devctl rejects both at generation time because the orb has no emulated fallback. Requires image.nativeBuilds and devctl v8.53.0+; align-files skips it with a notice until its devctl pin supports it.",
+                    "propertyNames": {
+                      "enum": [
+                        "linux/amd64",
+                        "linux/arm64"
+                      ]
+                    },
+                    "additionalProperties": {
+                      "type": "string",
+                      "enum": [
+                        "small",
+                        "medium",
+                        "medium+",
+                        "large",
+                        "xlarge",
+                        "arm.medium",
+                        "arm.large",
+                        "arm.xlarge",
+                        "arm.2xlarge"
+                      ]
+                    }
+                  }
+                }
+              },
+              "branchPublish": {
+                "type": "boolean",
+                "description": "Opt the branch path into pushing an amd64 dev image (and dev chart, when the app flavour is present) instead of the default push-less build validation (passed to '--branch-publish'). Requires devctl v8.18.0+."
+              },
+              "skipAppCatalog": {
+                "type": "boolean",
+                "description": "Do not publish the chart to a GitHub app catalog (passed to '--skip-app-catalog'), keeping the OCI registry push. Every GitHub app catalog is a public repository, so a private chart published to one is world-readable regardless of the source repository's visibility. Set this for private charts that must stay private: the chart then ships only to gsociprivate.azurecr.io, which Flux consumes through an OCIRepository. Only applies to the app flavour."
+              },
+              "skipATS": {
+                "type": "boolean",
+                "description": "Opt the generated chart pipeline out of the app-test-suite (ATS) chart tests (passed to '--skip-ats'). By default an 'app' flavour repo runs architect/run-tests-with-ats between build-chart and the chart push, and generation emits the canonical tests/ats/Pipfile; setting this omits the execute-chart-tests / execute-chart-tests-release jobs and the Pipfile, and the chart push gates directly on build-chart. Only applies to the app flavour. Requires devctl v8.35.0+."
+              },
+              "atsBranchOnly": {
+                "type": "boolean",
+                "description": "Deprecated, no effect: chart tests on branches only is the default since devctl v8.45.0 (the align action stops passing '--ats-branch-only'). Remove the key; set atsOnRelease to bring the tag-time run back."
+              },
+              "atsOnRelease": {
+                "type": "boolean",
+                "description": "Also run the app-test-suite (ATS) chart tests on the release tag (passed to '--ats-on-release'). By default the generated chart pipeline runs run-tests-with-ats once, as execute-chart-tests on every branch build, and the release tag only builds and pushes the chart (push-chart-release gates on build-chart): the tag is cut from the merge commit of a PR whose branch run already tested that tree. Setting this restores the pre-v8.45.0 shape: an execute-chart-tests-release job on the tag, after the release image when there is one, with push-chart-release gating on it. Set it for a repo whose .circleci/custom.yml jobs require execute-chart-tests-release, or whose branch protection does not make the ci/circleci statuses required checks so the tag-time run is the only enforced one. Mutually exclusive with skipATS. Only applies to the app flavour. Requires devctl v8.45.0+."
+              },
+              "requireCircleCIChecks": {
+                "type": "boolean",
+                "description": "Default true for every repo with generated CI: the pipeline's branch-side CircleCI jobs are required status checks on the default branch, and nothing else under 'ci/circleci:' is. After generation align-files hands the repository's .circleci directory to 'devctl repo checks --update --circleci-dir', which reads workflows.yml (generated) and custom.yml (repo-owned) and takes every job whose branch filter has no 'only:' and does not ignore all branches (build-chart, execute-chart-tests, go-build, the node build job, build-image or build-image-<arch>, push-to-registries and push-chart with branchPublish, the repo's own custom.yml jobs; tag-only jobs such as push-chart-release are not gates). A context is required only once it has reported on the default branch or a recently merged PR, so a repo without a CircleCI project, or a job in its first cycle, is never blocked by a check nothing can satisfy; later cycles add it. A required 'ci/circleci: <job>' context whose job the pipeline no longer has (a renamed job, e.g. build-image after branchPublish) is removed in the same run, so the required checks follow the generated pipeline instead of drifting. Contexts of other systems (the GitHub Actions workflows) and the up-to-date (strict) setting are left as they are. Set false to opt a repo out (only the GitHub-Actions checks stay required, and GitHub auto-merge -- align PRs, Renovate platform automerge -- merges before CircleCI reports or past a red build-chart). Private repos need the align-files App to hold the Commit statuses and Checks read permissions; otherwise devctl skips the CircleCI gates with a warning. Requires devctl v8.50.1+; align-files skips the flag with a notice until its devctl pin supports it."
+              },
+              "atsVersion": {
+                "type": "string",
+                "description": "Override the app-test-suite container tag the generated chart-test jobs run (passed to '--ats-version'; the run-tests-with-ats app-test-suite_container_tag parameter). Unset, devctl's default applies: app-test-suite 1.0.0 (devctl v8.45.0+), so every generated-CI chart repo runs ATS 1.x unless it pins a 0.x tag such as '0.15.0' here to stay on the legacy dats.sh path (apptestctl, App CR, Pipfile) until its .ats/main.yaml and tests are migrated. A 1.x tag also turns on create_kind_cluster on both jobs -- app-test-suite 1.x no longer provisions clusters, the CI job creates the kind cluster and hands over its kubeconfig -- and switches the generated test dependency file from tests/ats/Pipfile (pipenv, ATS <= 0.15) to tests/ats/pyproject.toml + uv.lock (uv, ATS 1.x), deleting the Pipfile. The repo migrates the rest itself before opting in: .ats/main.yaml without the *-cluster-type keys, tests that install with Helm instead of an App CR (see the app-test-suite CHANGELOG). Must be a semantic version. Mutually exclusive with skipATS. Only applies to the app flavour. Requires an architect-orb release with run-tests-with-ats create_kind_cluster and devctl v8.44.0+; align-files skips the flag with a notice until its devctl pin supports it."
+              },
+              "atsResourceClass": {
+                "type": "string",
+                "enum": [
+                  "medium",
+                  "large",
+                  "xlarge",
+                  "2xlarge"
+                ],
+                "description": "Override the CircleCI resource_class of the generated chart-test jobs (passed to '--ats-resource-class'; the run-tests-with-ats resource_class parameter on execute-chart-tests and, with atsOnRelease, execute-chart-tests-release). Unset, the orb default 'medium' (2 vCPU / 7.5 GB) applies and nothing is rendered. Raise it for chart tests that run a real workload on the job's kind cluster beside the chart under test (the kagent API v2 chart smokes run kagent's controller, Agent Substrate's control plane and a gVisor worker per WorkerPool replica there); size it from a measured run. Deliberately not resourceClass, which sizes the cli go-build job and the Node job -- a chart smoke's footprint has nothing to do with a cross-compile's. The kind cluster's configuration is no key here: a kind Cluster file at .ats/kind-config.yaml in the repository is passed to the same jobs as kind_config (feature gates, runtime config, patches, extra nodes; repo-owned like .ats/main.yaml), because the cluster's shape is test content that changes with the tests. Only applies to the app flavour without skipATS; devctl rejects the key otherwise. Requires architect-orb 10.5.0 and devctl v8.56.0+; align-files skips the flag with a notice until its devctl pin supports it."
+              },
+              "buildConcurrency": {
+                "type": "string",
+                "description": "Override how many architectures the cli-flavour go-build job compiles concurrently (architect go-build 'build_concurrency'; passed to '--build-concurrency'). Defaults to 'auto' (nproc). Lower it (e.g. '2') for repos whose binary is large enough that a cold full-matrix cross-compile OOMs the runner at 'auto' -- memory, not CPU, is the binding constraint, and a killed build never stores the build cache, so the repo stays permanently cold (observed on mcp-kubernetes, ~99 MB k8s-linked). Only applies to the cli flavour. Requires devctl v8.26.1+ (v8.25.0 rendered the value as a bare YAML int, which the string-typed orb param rejects)."
+              },
+              "resourceClass": {
+                "type": "string",
+                "description": "Override the CircleCI resource_class on the cli-flavour go-build job (passed to '--resource-class'). Defaults to 'large'. Raise it (e.g. 'xlarge') for repos that need more RAM/CPU headroom for the cold cross-compile. Only applies to the cli flavour. Requires devctl v8.25.0+."
+              },
+              "go": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "Knobs for the generated go-build job (language 'go'). Passed to 'devctl gen circleci'. Only applies with language 'go'.",
+                "properties": {
+                  "testArtifacts": {
+                    "type": "string",
+                    "description": "Directory under the checkout that 'make test' writes and that the generated go-build job keeps as a CircleCI build artifact when it fails (passed to '--go-test-artifacts', e.g. 'test-reports'). Renders post-steps on the generated architect/go-build job: the directory is staged when: on_fail and uploaded with store_artifacts, so a green run stores nothing. Set it for test suites whose full report (per-scenario logs, JSON results) the console output only shows a trimmed tail of, so that a failure is attributable from the artifact (muster's integration suite writes one JSON per scenario, with the complete instance logs, to test-reports/). The append-only custom.yml merge cannot add post-steps to a generated job (yq '*+' appends a second architect/go-build entry, which CircleCI rejects), so the generator carries it. Must be a relative directory under the checkout made of [A-Za-z0-9._/-]. Requires devctl v8.48.0+ (devctl#2161); align-files skips the flag with a notice until its devctl pin supports it."
+                  }
+                }
+              },
+              "node": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "Build/test knobs for the generated Node job (language 'node'). The job restores a lockfile-keyed dependency cache, then invokes package.json scripts -- a repo redirects its bespoke toolchain by editing those scripts, not the generated job. All three are passed to 'devctl gen circleci'. Only applies with language 'node'. Requires devctl v8.26.0+.",
+                "properties": {
+                  "testTarget": {
+                    "type": "string",
+                    "description": "package.json script the Node job runs for the verify phase (passed to '--node-test-target'). Defaults to 'test'. The repo composes typecheck/lint/format/test into this one script (the make-target interface, the Node analogue of 'make test'), so CI and local runs share a command."
+                  },
+                  "buildTarget": {
+                    "type": "string",
+                    "description": "package.json script the Node job runs to build (passed to '--node-build-target'). Omitted means no build step (a library that only verifies). Set it for repos whose build output feeds an image (e.g. backstage builds the backend bundle)."
+                  },
+                  "buildOutput": {
+                    "type": "string",
+                    "description": "Workspace path the Node job persists for an image handoff (passed to '--node-build-output', e.g. 'packages/*/dist/*'). A non-empty value names the job 'node-build' and emits persist_to_workspace so the image jobs attach it via attach_workspace (replacing a hand-written custom.yml pre-build job); empty names it 'node-test'."
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "lifecycle": {
+        "type": "string",
+        "enum": [
+          "deprecated",
+          "production",
+          "archived"
+        ],
+        "default": "production",
+        "description": "Lifecycle stage of the repository. Surfaces in the developer portal catalog. Setting 'deprecated' also makes align-files extend the renovate-presets deprecated.json5 preset (disable routine updates, keep only security/vulnerability remediation) for repos whose Renovate config is generated (gen.ci.generate or the customer flavour); every other repo keeps its hand-maintained renovate.json5. Requires devctl v8.26.0+. Setting 'archived' makes the repository set-up reconciler archive the repository on GitHub and unfollow its CircleCI project; the entry stays in the team file as the record and is never recreated. Deletion is not expressible. See https://github.com/giantswarm/giantswarm/issues/37726."
+      },
+      "name": {
+        "type": "string",
+        "title": "Repository name",
+        "description": "The SLUG part as in the repository's URL https://github.com/giantswarm/SLUG",
+        "minLength": 1
+      },
+      "replace": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "precommit": {
+            "type": "boolean"
+          }
+        }
+      },
+      "system": {
+        "type": "string",
+        "title": "System",
+        "description": "Sets the component system of this repository, specifically for our developer portal catalog."
+      },
+      "upstreamCheck": {
+        "type": "object",
+        "description": "Opts repo into monthly upstream update check workflow.",
+        "additionalProperties": false,
+        "required": [
+          "chartPath",
+          "upstreamRepo"
+        ],
+        "properties": {
+          "chartPath": {
+            "type": "string",
+            "description": "Path to Helm chart dir with Chart.yaml, e.g. 'helm/zot'"
+          },
+          "upstreamRepo": {
+            "type": "string",
+            "description": "Upstream GitHub org/repo, e.g. 'project-zot/zot'"
+          },
+          "releasePrefix": {
+            "type": "string",
+            "description": "Filter upstream releases to those whose tag starts with this prefix, e.g. 'external-dns-helm-chart-'"
+          }
+        }
+      },
+      "visibility": {
+        "type": "string",
+        "enum": [
+          "public",
+          "private"
+        ],
+        "description": "The repository's visibility on GitHub. The repository set-up reconciler creates the repository with this visibility and keeps it in sync; 'internal' is not offered. A repository whose visibility is changed by hand is drift and is set back. See https://github.com/giantswarm/giantswarm/issues/37726."
+      }
+    }
+  }
+}

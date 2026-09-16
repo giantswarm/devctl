@@ -10,6 +10,7 @@ import (
 
 	"github.com/giantswarm/devctl/v8/cmd/repo/checks"
 	"github.com/giantswarm/devctl/v8/cmd/repo/setup"
+	"github.com/giantswarm/devctl/v8/cmd/repo/validate"
 )
 
 const (
@@ -64,6 +65,20 @@ func New(config Config) (*cobra.Command, error) {
 		}
 	}
 
+	var validateCmd *cobra.Command
+	{
+		c := validate.Config{
+			Logger: config.Logger,
+			Stderr: config.Stderr,
+			Stdout: config.Stdout,
+		}
+
+		validateCmd, err = validate.New(c)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+	}
+
 	f := &flag{}
 
 	r := &runner{
@@ -84,6 +99,7 @@ func New(config Config) (*cobra.Command, error) {
 
 	c.AddCommand(checksCmd)
 	c.AddCommand(setupCmd)
+	c.AddCommand(validateCmd)
 
 	return c, nil
 }
