@@ -9,6 +9,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `repo reconcile`: the `circleci` step grants the CircleCI token's GitHub user `admin` on the repository before
+  following the project and revokes the grant right after, when that user is not an administrator already — CircleCI
+  follows a project for a repository administrator only ("only a project's Github administrator may setup Circle"),
+  and the reconciler's identity holds push through the bots team, so the first live run on two fresh repositories
+  failed at the follow and left the scaffold's v0.1.0 tag unbuilt (giantswarm/giantswarm#37726, #2226). The grant and
+  the follow are two changes of the step (`--dry-run` plans both); `pkg/circleciclient` gains `Me` (`GET /api/v2/me`).
+
 - `pkg/reposetup`, `repo validate`, `repo status`, `repo reconcile`: the creation rules (`gen.flavours`/`gen.language`
   set, the chart-name convention, generated CI has a job, the name free on GitHub) apply to entries being added
   only; an existing entry is valid if the schema accepts it (giantswarm/giantswarm#37726, #2213). The Validator

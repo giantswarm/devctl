@@ -304,6 +304,22 @@ func TestSteps(t *testing.T) {
 			},
 		},
 		{
+			name: "circleci: the follow identity without admin is granted it for the follow and revoked after", step: StepCircleCI,
+			seed: func(h *harness) {
+				h.gh.addRepo(owner, name)
+				h.gh.permission = "write" // architectbot holds push through the bots team
+			},
+			wantCheck:  VerdictDrift,
+			wantChange: "grant architectbot admin for the CircleCI follow, revoked after it; follow giantswarm/sample-service; enable setup workflows; create a deploy key",
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				require.Contains(t, h.cc.projects, owner+"/"+name)
+				require.Empty(t, h.repo().collaborators, "the grant is revoked once the project is followed")
+				mutations := strings.Join(h.gh.mutations, "\n")
+				require.Contains(t, mutations, "PUT /repos/giantswarm/sample-service/collaborators/architectbot")
+				require.Contains(t, mutations, "DELETE /repos/giantswarm/sample-service/collaborators/architectbot")
+			},
+		},
+		{
 			name: "circleci: a followed project without setup workflows and key (template-app's defects)", step: StepCircleCI,
 			seed: func(h *harness) {
 				h.gh.addRepo(owner, name)

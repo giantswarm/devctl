@@ -35,6 +35,7 @@ type fakeRepo struct {
 	defaultBranch string
 	workflowPerm  string
 	teams         map[string]string
+	collaborators map[string]string // login → permission granted directly
 	empty         bool
 	files         map[string]string            // default-branch files
 	branchFiles   map[string]map[string]string // other branches
@@ -81,6 +82,9 @@ type fakeGitHub struct {
 	}
 	runs       map[string][]string // owner/repo/workflow → run statuses
 	dispatches []string
+	// permission is what any user holds on any repository through the
+	// organization's teams unless a direct grant says otherwise.
+	permission string
 	// onDispatch simulates what a dispatched workflow lands.
 	onDispatch func(workflow string, inputs map[string]any)
 	mutations  []string
@@ -88,7 +92,7 @@ type fakeGitHub struct {
 }
 
 func newFakeGitHub() *fakeGitHub {
-	f := &fakeGitHub{repos: map[string]*fakeRepo{}, redirects: map[string]string{}, runs: map[string][]string{}}
+	f := &fakeGitHub{repos: map[string]*fakeRepo{}, redirects: map[string]string{}, runs: map[string][]string{}, permission: "admin"}
 	f.installation.status = http.StatusOK
 	f.installation.selection = "selected"
 	mux := http.NewServeMux()
@@ -112,10 +116,11 @@ func (f *fakeGitHub) addRepo(owner, name string) *fakeRepo {
 		owner: owner, name: name,
 		hasIssues: true, allowSquash: true, allowUpdate: true, allowAuto: true, deleteOnMerge: true,
 		defaultBranch: "main", workflowPerm: "write",
-		teams:       map[string]string{"employees": "admin", "bots": "push"},
-		files:       map[string]string{},
-		branchFiles: map[string]map[string]string{},
-		blobs:       map[string][]byte{}, trees: map[string][]*github.TreeEntry{}, commits: map[string]fakeCommit{},
+		teams:         map[string]string{"employees": "admin", "bots": "push"},
+		collaborators: map[string]string{},
+		files:         map[string]string{},
+		branchFiles:   map[string]map[string]string{},
+		blobs:         map[string][]byte{}, trees: map[string][]*github.TreeEntry{}, commits: map[string]fakeCommit{},
 		heads: map[string]string{},
 	}
 	for p, c := range scaffoldFiles {
@@ -448,6 +453,24 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 		repo.teams[strings.ToLower(r.PathValue("slug"))] = in.Permission
 		w.WriteHeader(204)
 	}))
+	mux.HandleFunc("GET /repos/{owner}/{repo}/collaborators/{login}/permission", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		login := r.PathValue("login")
+		permission, ok := repo.collaborators[login]
+		if !ok {
+			permission = f.permission
+		}
+		writeJSON(w, 200, map[string]any{"permission": permission, "user": map[string]string{"login": login}})
+	}))
+	mux.HandleFunc("PUT /repos/{owner}/{repo}/collaborators/{login}", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		var in github.RepositoryAddCollaboratorOptions
+		decode(r, &in)
+		repo.collaborators[r.PathValue("login")] = in.Permission
+		writeJSON(w, 201, map[string]any{})
+	}))
+	mux.HandleFunc("DELETE /repos/{owner}/{repo}/collaborators/{login}", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		delete(repo.collaborators, r.PathValue("login"))
+		w.WriteHeader(204)
+	}))
 	mux.HandleFunc("GET /repos/{owner}/{repo}/branches/{branch}/protection", f.withRepo(func(w http.ResponseWriter, _ *http.Request, repo *fakeRepo) {
 		p := repo.protection
 		if p == nil {
@@ -559,6 +582,7 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 // fakeCircleCI is the CircleCI fake.
 type fakeCircleCI struct {
 	mu        sync.Mutex
+	login     string                  // the token's user
 	projects  map[string]*fakeProject // org/repo
 	workflows map[string][]circleciclient.Workflow
 	jobs      map[string][]circleciclient.Job
@@ -574,7 +598,7 @@ type fakeProject struct {
 }
 
 func newFakeCircleCI() *fakeCircleCI {
-	f := &fakeCircleCI{projects: map[string]*fakeProject{}, workflows: map[string][]circleciclient.Workflow{}, jobs: map[string][]circleciclient.Job{}}
+	f := &fakeCircleCI{login: "architectbot", projects: map[string]*fakeProject{}, workflows: map[string][]circleciclient.Workflow{}, jobs: map[string][]circleciclient.Job{}}
 	mux := http.NewServeMux()
 	f.routes(mux)
 	f.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -624,6 +648,11 @@ func (f *fakeCircleCI) withProject(h func(w http.ResponseWriter, r *http.Request
 }
 
 func (f *fakeCircleCI) routes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /api/v2/me", func(w http.ResponseWriter, _ *http.Request) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		writeJSON(w, 200, circleciclient.User{ID: "user-1", Login: f.login, Name: f.login})
+	})
 	mux.HandleFunc("POST /api/v1.1/project/github/{org}/{repo}/follow", func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		defer f.mu.Unlock()

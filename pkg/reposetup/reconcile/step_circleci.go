@@ -2,8 +2,11 @@ package reconcile
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/google/go-github/v92/github"
 
 	"github.com/giantswarm/devctl/v8/pkg/circleciclient"
 )
@@ -26,7 +29,31 @@ func (r *Runner) stepCircleCI(ctx context.Context, s *run, sr *StepResult) error
 		if s.renamed {
 			change = fmt.Sprintf("follow %s under its new slug (declared as %s)", s.slug(), s.declared)
 		}
-		if err := s.plan(sr, change, func() error { return r.CircleCI.Follow(ctx, s.owner, s.name) }); err != nil {
+		grantee, err := r.followGrantee(ctx, s)
+		if err != nil {
+			return err
+		}
+		if grantee != "" {
+			grant := fmt.Sprintf("grant %s admin for the CircleCI follow, revoked after it", grantee)
+			err := s.plan(sr, grant, func() error {
+				_, _, err := r.GitHub.Repositories.AddCollaborator(ctx, s.owner, s.name, grantee, &github.RepositoryAddCollaboratorOptions{Permission: permissionAdmin})
+				return err
+			})
+			if err != nil {
+				return err
+			}
+		}
+		err = s.plan(sr, change, func() error {
+			err := r.CircleCI.Follow(ctx, s.owner, s.name)
+			if grantee != "" {
+				// The grant is for the follow alone, kept or not.
+				if _, rerr := r.GitHub.Repositories.RemoveCollaborator(ctx, s.owner, s.name, grantee); rerr != nil {
+					err = errors.Join(err, fmt.Errorf("revoke the admin grant of %s: %w", grantee, rerr))
+				}
+			}
+			return err
+		})
+		if err != nil {
 			return err
 		}
 		if s.req.Mode == ModeCheck {
@@ -69,6 +96,34 @@ func (r *Runner) stepCircleCI(ctx context.Context, s *run, sr *StepResult) error
 		sr.Summary = "followed, setup workflows on, checkout key present"
 	}
 	return nil
+}
+
+// permissionAdmin is GitHub's name for the administrator permission.
+const permissionAdmin = "admin"
+
+// followGrantee returns the login of the CircleCI token's GitHub user when
+// that user is not an administrator of the repository: CircleCI follows a
+// project for a repository administrator only ("only a project's Github
+// administrator may setup Circle"), and the reconciler's identity holds push
+// through the bots team. Empty when no grant is needed.
+func (r *Runner) followGrantee(ctx context.Context, s *run) (string, error) {
+	me, err := r.CircleCI.Me(ctx)
+	if err != nil {
+		return "", fmt.Errorf("the CircleCI token's user: %w", err)
+	}
+	if me.Login == "" {
+		return "", nil
+	}
+	level, resp, err := r.GitHub.Repositories.GetPermissionLevel(ctx, s.owner, s.name, me.Login)
+	switch {
+	case isNotFound(resp, err):
+		return me.Login, nil // no access at all
+	case err != nil:
+		return "", err
+	case level.GetPermission() == permissionAdmin:
+		return "", nil
+	}
+	return me.Login, nil
 }
 
 // stepRelease verifies the latest release: its tag has a pipeline and the
