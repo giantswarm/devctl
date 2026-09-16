@@ -1,7 +1,10 @@
 package setup
 
 import (
+	"github.com/giantswarm/microerror"
 	"github.com/spf13/cobra"
+
+	"github.com/giantswarm/devctl/v8/cmd/repo/internal/engine"
 )
 
 type flag struct {
@@ -35,6 +38,8 @@ type flag struct {
 
 	// Renovate
 	SetupRenovate bool
+
+	Output string
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
@@ -70,9 +75,11 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.ChecksFilter, "checks-filter", "aliyun|validate-changelog|check-values-schema", "Provide a regex to filter checks. Checks matching the regex will be ignored. Empty string disables filter (all checks are accepted).")
 
 	// Renovate
-	cmd.Flags().BoolVar(&f.SetupRenovate, "renovate", true, "Sets up renovate for the repo")
+	cmd.Flags().BoolVar(&f.SetupRenovate, "renovate", true, "Check that the Renovate installation covers the repo; a missing repo is reported with the fix, the installation is edited by an organization owner.")
+
+	cmd.Flags().StringVar(&f.Output, "output", engine.OutputTable, "Output format: table or json.")
 }
 
 func (f *flag) Validate() error {
-	return nil
+	return microerror.Mask(engine.ValidateOutput(f.Output))
 }

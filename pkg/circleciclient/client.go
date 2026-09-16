@@ -190,8 +190,17 @@ func (c *Client) Follow(ctx context.Context, org, repo string) error {
 	if err := c.do(ctx, http.MethodPost, c.v1Project(org, repo)+"/follow", nil, &out); err != nil {
 		return microerror.Mask(err)
 	}
-	if !out.Followed {
-		return microerror.Maskf(apiError, "follow %s/%s: CircleCI answered followed=false", org, repo)
+	if out.Followed {
+		return nil
+	}
+	// The first follow of a fresh project answers followed=false although
+	// the project is followed from then on (seen live on a repository
+	// created minutes before); the project itself is the truth.
+	if _, err := c.GetProject(ctx, org, repo); err != nil {
+		if IsNotFound(err) {
+			return microerror.Maskf(apiError, "follow %s/%s: CircleCI answered followed=false and knows no such project", org, repo)
+		}
+		return microerror.Mask(err)
 	}
 	return nil
 }

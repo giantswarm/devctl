@@ -199,7 +199,7 @@ func (r *Runner) stepRenovate(ctx context.Context, s *run, sr *StepResult) error
 		if err != nil {
 			if resp != nil && resp.Response != nil && (resp.StatusCode == 403 || resp.StatusCode == 404) {
 				sr.Verdict = VerdictSkipped
-				sr.Summary = fmt.Sprintf("cannot read the Renovate installation with this token (HTTP %d): a GitHub App token cannot list a user's installations", resp.StatusCode)
+				sr.Summary = fmt.Sprintf("cannot read the Renovate installation with this token (HTTP %d): listing its repositories takes an organization owner's token; a GitHub App token cannot list a user's installations at all", resp.StatusCode)
 				return nil
 			}
 			return err

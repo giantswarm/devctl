@@ -117,18 +117,20 @@ func (r *Runner) stepProtection(ctx context.Context, s *run, sr *StepResult) err
 	})
 }
 
-// pipelineGates reads the generated pipeline from the repository and
-// returns the contexts of its branch-side jobs; known is false when the
-// repository has no pipeline file.
+// pipelineGates reads the generated pipeline — the request's documents, or
+// the repository's .circleci — and returns the contexts of its branch-side
+// jobs; known is false when there is no pipeline file.
 func (r *Runner) pipelineGates(ctx context.Context, s *run) (gates []string, known bool, err error) {
-	var files [][]byte
-	for _, name := range PipelineFiles {
-		data, found, err := r.fileContent(ctx, s.owner, s.name, ".circleci/"+name, s.branch())
-		if err != nil {
-			return nil, false, err
-		}
-		if found {
-			files = append(files, data)
+	files := s.req.Pipeline
+	if files == nil {
+		for _, name := range PipelineFiles {
+			data, found, err := r.fileContent(ctx, s.owner, s.name, ".circleci/"+name, s.branch())
+			if err != nil {
+				return nil, false, err
+			}
+			if found {
+				files = append(files, data)
+			}
 		}
 	}
 	if len(files) == 0 {

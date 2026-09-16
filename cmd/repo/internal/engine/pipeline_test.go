@@ -1,11 +1,10 @@
-package checks
+package engine
 
 import (
 	"os"
 	"path/filepath"
 	"testing"
 
-	"github.com/google/go-github/v92/github"
 	"github.com/stretchr/testify/require"
 
 	"github.com/giantswarm/devctl/v8/pkg/reposetup/reconcile"
@@ -104,14 +103,12 @@ workflows:
 
 const (
 	ctxBuildChart   = "ci/circleci: build-chart"
-	ctxBuildImage   = "ci/circleci: build-image"
 	ctxChartTests   = "ci/circleci: execute-chart-tests"
 	ctxGoBuild      = "ci/circleci: go-build"
 	ctxPushRegistry = "ci/circleci: push-to-registries"
-	ctxSemanticPR   = "semantic-pull-request / Validate PR title"
 )
 
-func TestCircleCIGateJobs(t *testing.T) {
+func TestGateJobs(t *testing.T) {
 	jobs, err := reconcile.GateJobs([]byte(generatedWorkflows))
 	require.NoError(t, err)
 	require.ElementsMatch(t, []string{"go-build", "push-to-registries", "build-chart", "execute-chart-tests"}, jobs)
@@ -128,12 +125,12 @@ func TestCircleCIGateJobs(t *testing.T) {
 	require.Empty(t, jobs)
 }
 
-func TestCircleCIGateContexts(t *testing.T) {
+func TestPipelineFilesGateContexts(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "workflows.yml"), []byte(generatedWorkflows), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "custom.yml"), []byte(customWorkflows), 0o600))
 
-	contexts, found, err := circleCIGateContexts(dir)
+	contexts, found, err := gateContexts(dir)
 	require.NoError(t, err)
 	require.True(t, found)
 	require.Equal(t, []string{
@@ -148,7 +145,7 @@ func TestCircleCIGateContexts(t *testing.T) {
 
 	// Only the generated file: the same result minus the custom jobs.
 	require.NoError(t, os.Remove(filepath.Join(dir, "custom.yml")))
-	contexts, found, err = circleCIGateContexts(dir)
+	contexts, found, err = gateContexts(dir)
 	require.NoError(t, err)
 	require.True(t, found)
 	require.Equal(t, []string{ctxBuildChart, ctxChartTests, ctxGoBuild, ctxPushRegistry}, contexts)
@@ -156,32 +153,28 @@ func TestCircleCIGateContexts(t *testing.T) {
 	// No pipeline at all is reported, not an error, so the caller leaves the
 	// contexts alone.
 	empty := t.TempDir()
-	contexts, found, err = circleCIGateContexts(empty)
+	contexts, found, err = gateContexts(empty)
 	require.NoError(t, err)
 	require.False(t, found)
 	require.Empty(t, contexts)
 
 	// An unreadable pipeline is an error: nothing may be removed on a guess.
 	require.NoError(t, os.WriteFile(filepath.Join(empty, "workflows.yml"), []byte("workflows: [oops"), 0o600))
-	_, found, err = circleCIGateContexts(empty)
+	_, found, err = gateContexts(empty)
 	require.Error(t, err)
 	require.True(t, found)
 }
 
-func TestStaleCircleCIContexts(t *testing.T) {
-	existing := []*github.RequiredStatusCheck{
-		{Context: ctxGoBuild},
-		{Context: ctxBuildImage},
-		{Context: ctxPushRegistry},
-		{Context: "pre-commit"},
-		{Context: ctxSemanticPR},
+// gateContexts is what `repo checks --circleci-dir` computes: the pipeline
+// documents of dir through PipelineFiles, their branch-side jobs as contexts.
+func gateContexts(dir string) ([]string, bool, error) {
+	files, err := PipelineFiles(dir)
+	if err != nil {
+		return nil, true, err
 	}
-	live := []string{ctxGoBuild, ctxPushRegistry, ctxBuildChart}
-
-	// The renamed job's old context goes; other systems' contexts and the live
-	// jobs stay, and a live job that is not required yet is not this function's
-	// business.
-	require.Equal(t, []string{ctxBuildImage}, staleCircleCIContexts(existing, live))
-	require.Empty(t, staleCircleCIContexts(existing[3:], nil))
-	require.Equal(t, []string{ctxGoBuild, ctxBuildImage, ctxPushRegistry}, staleCircleCIContexts(existing, nil))
+	if len(files) == 0 {
+		return nil, false, nil
+	}
+	contexts, err := reconcile.GateContexts(files...)
+	return contexts, true, err
 }

@@ -3,16 +3,15 @@ package setup
 import (
 	"context"
 	"io"
-	"os"
-	"regexp"
 	"strings"
 
 	"github.com/giantswarm/microerror"
-	"github.com/google/go-github/v92/github"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
-	"github.com/giantswarm/devctl/v8/pkg/githubclient"
+	"github.com/giantswarm/devctl/v8/cmd/repo/internal/engine"
+	"github.com/giantswarm/devctl/v8/pkg/reposetup"
+	"github.com/giantswarm/devctl/v8/pkg/reposetup/reconcile"
 )
 
 type runner struct {
@@ -30,7 +29,7 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 		return microerror.Mask(err)
 	}
 
-	err = r.run(ctx, cmd, args)
+	err = r.run(ctx, args[0])
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -38,27 +37,19 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
-	s := strings.Split(args[0], "/")
-	if len(s) != 2 {
-		return microerror.Maskf(invalidArgError, "expected owner/repo, got %s", args[0])
+// run applies the flags as the baseline of the set-up engine's settings,
+// permissions, protection and Renovate steps (lifecycle with --archived).
+// The default-branch rename and --disable-branch-protection have no step
+// and stay direct calls.
+func (r *runner) run(ctx context.Context, arg string) error {
+	r.logger.SetOutput(r.stderr)
+
+	owner, repo, err := engine.Slug(arg, "")
+	if err != nil {
+		return microerror.Mask(err)
 	}
 
-	owner := s[0]
-	repo := s[1]
-
-	token, found := os.LookupEnv(r.flag.GithubTokenEnvVar)
-	if !found {
-		return microerror.Maskf(envVarNotFoundError, "environment variable %#q was not found", r.flag.GithubTokenEnvVar)
-	}
-
-	c := githubclient.Config{
-		Logger:      r.logger,
-		AccessToken: token,
-		DryRun:      r.flag.DryRun,
-	}
-
-	client, err := githubclient.New(c)
+	client, err := engine.GitHubClient(r.logger, r.flag.GithubTokenEnvVar, r.flag.DryRun)
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -68,68 +59,79 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 
-	var ChecksFilterRegexp *regexp.Regexp
-	if r.flag.ChecksFilter != "" {
-		ChecksFilterRegexp, err = regexp.Compile(r.flag.ChecksFilter)
-		if err != nil {
-			return microerror.Mask(err)
-		}
-	}
-	repositorySettings := &github.Repository{
-		HasWiki:     &r.flag.EnableWiki,
-		HasIssues:   &r.flag.EnableIssues,
-		HasProjects: &r.flag.EnableProjects,
-		Archived:    &r.flag.Archived,
-
-		AllowMergeCommit: &r.flag.AllowMergeCommit,
-		AllowSquashMerge: &r.flag.AllowSquashMerge,
-		AllowRebaseMerge: &r.flag.AllowRebaseMerge,
-
-		AllowUpdateBranch:   &r.flag.AllowUpdateBranch,
-		AllowAutoMerge:      &r.flag.AllowAutoMerge,
-		DeleteBranchOnMerge: &r.flag.DeleteBranchOnMerge,
-	}
-
-	repository, err = client.SetRepositorySettings(ctx, repository, repositorySettings)
-	if err != nil {
-		return microerror.Mask(err)
-	}
-
-	err = client.SetRepositoryPermissions(ctx, repository, r.flag.Permissions)
-	if err != nil {
-		return microerror.Mask(err)
-	}
-
 	err = client.SetRepositoryDefaultBranch(ctx, repository, r.flag.DefaultBranch)
 	if err != nil {
 		return microerror.Mask(err)
 	}
 
+	steps := []reconcile.Step{reconcile.StepSettings, reconcile.StepPermissions}
 	if r.flag.DisableBranchProtection {
 		err = client.RemoveRepositoryBranchProtection(ctx, repository)
 		if err != nil {
 			return microerror.Mask(err)
 		}
 	} else {
-		err = client.SetRepositoryBranchProtection(ctx, repository, r.flag.Checks, ChecksFilterRegexp)
-		if err != nil {
-			return microerror.Mask(err)
-		}
+		steps = append(steps, reconcile.StepProtection)
+	}
+	steps = append(steps, reconcile.StepRenovate)
+
+	entry := reposetup.Undeclared{Name: repo}
+	if r.flag.Archived {
+		entry.Lifecycle = reconcile.LifecycleArchived
+		steps = append(steps, reconcile.StepLifecycle)
 	}
 
-	if r.flag.SetupRenovate {
-		err = client.AddRepoToRenovatePermissions(ctx, owner, repository)
-		if err != nil {
-			return microerror.Mask(err)
-		}
-		if r.flag.DryRun {
-			r.logger.Printf("[dry-run] would add %s/%s to repositories accessible by Renovate", owner, *repository.Name)
-		} else {
-			r.logger.Printf("added %s/%s to repositories accessible by Renovate", owner, *repository.Name)
-		}
+	mode := reconcile.ModeRepair
+	if r.flag.DryRun {
+		mode = reconcile.ModeCheck
+	}
+	baseline := r.baseline()
+	engineRunner := reconcile.Runner{
+		GitHub:   client.GetUnderlyingClient(ctx),
+		Checks:   client,
+		Baseline: &baseline,
+		Log:      engine.LogWriter(r.logger),
+	}
+	res, err := engineRunner.Run(ctx, reconcile.Request{
+		Owner: owner,
+		Entry: reposetup.UndeclaredEntry(entry),
+		Mode:  mode,
+		Steps: steps,
+	})
+	if err != nil {
+		return microerror.Mask(err)
 	}
 
-	r.logger.Info("completed repository setup")
+	return microerror.Mask(engine.Report(r.stdout, res, r.flag.Output))
+}
 
-	return nil
+// baseline is the company baseline with the flags applied: the features,
+// merge and pull-request settings, the team permissions (team names as
+// slugs), the default branch, --checks as the unconditional contexts and
+// --checks-filter as one more ignored pattern.
+func (r *runner) baseline() reconcile.Baseline {
+	f := r.flag
+	b := reconcile.DefaultBaseline()
+	b.DefaultBranch = f.DefaultBranch
+	b.HasWiki = f.EnableWiki
+	b.HasIssues = f.EnableIssues
+	b.HasProjects = f.EnableProjects
+	b.AllowMergeCommit = f.AllowMergeCommit
+	b.AllowSquashMerge = f.AllowSquashMerge
+	b.AllowRebaseMerge = f.AllowRebaseMerge
+	b.AllowUpdateBranch = f.AllowUpdateBranch
+	b.AllowAutoMerge = f.AllowAutoMerge
+	b.DeleteBranchOnMerge = f.DeleteBranchOnMerge
+	b.TeamPermissions = make(map[string]string, len(f.Permissions))
+	for team, permission := range f.Permissions {
+		b.TeamPermissions[strings.ToLower(team)] = permission
+	}
+	b.RequiredChecks = f.Checks
+	if f.ChecksFilter != "" {
+		b.IgnoredChecks = append(b.IgnoredChecks, f.ChecksFilter)
+	}
+	if !f.SetupRenovate {
+		b.RenovateInstallationID = 0
+	}
+	return b
 }

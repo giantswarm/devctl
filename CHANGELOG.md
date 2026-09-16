@@ -9,6 +9,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `repo reconcile REPOSITORY` (giantswarm/giantswarm#37726, #2214): runs the repository set-up steps of
+  `pkg/reposetup/reconcile` locally as the person — the way to repair a repository when the reconciler
+  workflow is down and to develop the engine against a real repository. The desired state is the
+  repository's entry of a giantswarm/github team file (`--team-file`, validated as the reconciler validates
+  it; the scaffold is rendered from it on an empty repository) or, for a repository without a declaration,
+  `--team` alone. `--dry-run` prints what a repair would change; `--steps` restricts the run; `--added`
+  allows the create step; the result is a table, or the structured value with `--output json`. The CircleCI
+  steps read the token from `$CIRCLECI_TOKEN` (`--circleci-token-envvar`) and are skipped without one.
+- `pkg/reposetup/reconcile`: `Result.WriteTable` renders a run for a person, `Result.Failed` lists the
+  steps that could not run; `Request.Pipeline` hands the protection step just-generated pipeline documents
+  instead of the repository's `.circleci`; a run restricted to steps that do not read the team needs no
+  team. `pkg/reposetup.UndeclaredEntry` is the accepted entry of a repository without a team-file
+  declaration.
+
+### Changed
+
+- `repo setup` and `repo checks` run the set-up engine's steps instead of their own GitHub calls
+  (giantswarm/giantswarm#37726, #2214). Required checks follow the reported-only rule: a context is required
+  once it has reported on the default branch or a recently merged pull request, and a required context
+  nothing reports any more is removed — `repo setup` no longer requires the contexts of whatever ran on the
+  default branch so far (the `create-release / …`, `update-go_modules-graph` and `ci/circleci: setup` ghosts
+  of a fresh repository cannot recur), and `repo checks` removes ghosts without being told. `repo checks`
+  without `--update` prints the drift; the CircleCI pipeline's branch-side jobs are read from the
+  repository's `.circleci` when `--circleci-dir` is not given; the release workflows, `update-go_modules-graph`,
+  `aliyun`, `validate-changelog` and `check-values-schema` are never required. `repo setup --renovate` checks
+  that the Renovate installation covers the repository and reports a missing one with the fix instead of
+  failing on the `PUT` an organization owner alone may make. Both commands print the run's result as a table
+  (`--output json` for the structured value); a step that could not run to its end is the non-zero exit.
+
 - `pkg/reposetup/reconcile`: the repository set-up steps as check and repair, idempotent — create (only from an added entry), scaffold push before protection, settings baseline, team permissions, branch protection with required checks on the reported-only rule (ghost contexts removed, contexts following the generated pipeline), CircleCI follow, setup workflows and checkout key, webhooks, Renovate installation (check only), CODEOWNERS (a pull request), description and visibility, lifecycle `archived` (archive and unfollow), catalog and mapping (the giantswarm/github workflows), first-release verification (a missed tag build is triggered). `reconcile.Runner.Run` returns a structured `reconcile.Result`; a redirect on the declared name is followed as a rename, and what is not repaired (repository gone, `gen circleci` refusal, ABS prerequisites, red release, default icon) is reported with the fix. Table-tested against in-process fakes of GitHub's and CircleCI's REST surfaces.
 - `pkg/circleciclient`: a CircleCI client for follow and unfollow (v1.1), the project, its settings, checkout keys, pipelines, workflows and jobs (v2).
 - `pkg/githubclient`: `Config.BaseURL` points the client at another GitHub API host.

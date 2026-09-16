@@ -74,6 +74,29 @@ type Request struct {
 	Steps []Step
 	// RenderOptions selects among the template's options for the scaffold.
 	RenderOptions map[string]string
+	// Pipeline holds the documents of the generated CircleCI pipeline
+	// (workflows.yml, custom.yml) the protection step reads the branch-side
+	// jobs from instead of the repository's .circleci — the files a caller
+	// has just generated and not pushed yet. Nil reads the repository.
+	Pipeline [][]byte
+}
+
+// teamSteps are the steps that read the team: the scaffold names it in
+// CODEOWNERS and the chart, the CODEOWNERS step writes it, the catalog
+// maps the repository to it.
+var teamSteps = []Step{StepScaffold, StepCodeowners, StepCatalog}
+
+// needsTeam says whether a run over steps (nil: every step) reads the team.
+func needsTeam(steps []Step) bool {
+	if steps == nil {
+		return true
+	}
+	for _, s := range steps {
+		if containsStep(teamSteps, s) {
+			return true
+		}
+	}
+	return false
 }
 
 // run is the state the steps share.
@@ -88,6 +111,11 @@ type run struct {
 	repo           *github.Repository // nil when the repository does not exist
 	renamed        bool
 	empty          bool // no commits on the default branch
+	// scaffoldFailed says the scaffold step could not push the scaffold:
+	// the steps that need it on the default branch wait for the next run,
+	// as they do on an empty repository — protecting the branch first
+	// would keep the scaffold from ever landing.
+	scaffoldFailed bool
 	log            io.Writer
 }
 
@@ -104,8 +132,8 @@ func (r *Runner) Run(ctx context.Context, req Request) (*Result, error) {
 	if !req.Entry.Accepted {
 		return nil, microerror.Maskf(invalidConfigError, "entry %q is not accepted: %d problems", req.Entry.Name, len(req.Entry.Problems))
 	}
-	if req.Team == "" {
-		return nil, microerror.Maskf(invalidConfigError, "%T.Team must not be empty", req)
+	if req.Team == "" && needsTeam(req.Steps) {
+		return nil, microerror.Maskf(invalidConfigError, "%T.Team must not be empty: the scaffold, codeowners and catalog steps name the team", req)
 	}
 	switch req.Mode {
 	case "":
@@ -221,6 +249,9 @@ func (r *Runner) execute(ctx context.Context, s *run, step Step) *StepResult {
 	if err != nil && !errors.Is(err, errReported) {
 		sr.Verdict = VerdictFailed
 		sr.Summary = err.Error()
+		if step == StepScaffold {
+			s.scaffoldFailed = true
+		}
 	}
 	s.finish(sr)
 	fmt.Fprintf(s.log, "%s/%s %s: %s%s\n", s.owner, s.name, step, sr.Verdict, summaryLine(sr))
@@ -246,10 +277,13 @@ func (s *run) skipReason(step Step) string {
 			return "archived on GitHub"
 		}
 	}
-	if s.empty {
-		switch step {
-		case StepProtection, StepCircleCI, StepCodeowners, StepRelease:
+	switch step {
+	case StepProtection, StepCircleCI, StepCodeowners, StepRelease:
+		if s.empty {
 			return "repository is empty: the scaffold comes first"
+		}
+		if s.scaffoldFailed {
+			return "the scaffold step failed: the scaffold comes first"
 		}
 	}
 	return ""
