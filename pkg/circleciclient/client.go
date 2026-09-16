@@ -1,7 +1,8 @@
 // Package circleciclient is devctl's client for the CircleCI API: the calls
 // the repository set-up engine makes for a project — follow and unfollow
-// (v1.1), the token's user, the project, its settings and checkout keys, its
-// pipelines and their workflows and jobs (v2) — and nothing else. The token is a personal
+// and stop building (v1.1), the token's user, the project, its settings and
+// checkout keys, its pipelines and their workflows and jobs (v2) — and
+// nothing else. The token is a personal
 // API token (architectbot's `CIRCLECI_API_TOKEN` for the reconciler, the
 // person's for `devctl repo reconcile`); the org and repository name a
 // project by their GitHub slug.
@@ -223,10 +224,36 @@ func (c *Client) Follow(ctx context.Context, org, repo string) error {
 	return nil
 }
 
-// Unfollow unfollows org/repo (v1.1): no more builds, the project stays
-// readable.
+// Unfollow makes the token's user unfollow org/repo (v1.1). The project
+// stays, set up and building for the organization — see StopBuilding; what
+// the unfollow changes is Following.
 func (c *Client) Unfollow(ctx context.Context, org, repo string) error {
 	return microerror.Mask(c.do(ctx, http.MethodPost, c.v1Project(org, repo)+"/unfollow", nil, nil))
+}
+
+// StopBuilding stops the project org/repo from building (v1.1 "Stop
+// building", DELETE …/enable): no pipeline runs for it from then on. The
+// project stays readable — GET /api/v2/project answers as before, so
+// GetProject cannot tell a stopped project from a building one.
+func (c *Client) StopBuilding(ctx context.Context, org, repo string) error {
+	return microerror.Mask(c.do(ctx, http.MethodDelete, c.v1Project(org, repo)+"/enable", nil, nil))
+}
+
+// v1ProjectSettings is the part of the v1.1 project settings the engine
+// reads.
+type v1ProjectSettings struct {
+	Following bool `json:"following"`
+}
+
+// Following says whether the token's user follows org/repo (v1.1 project
+// settings): the state Follow and Unfollow change. IsNotFound when CircleCI
+// does not know the project.
+func (c *Client) Following(ctx context.Context, org, repo string) (bool, error) {
+	var settings v1ProjectSettings
+	if err := c.do(ctx, http.MethodGet, c.v1Project(org, repo)+"/settings", nil, &settings); err != nil {
+		return false, microerror.Mask(err)
+	}
+	return settings.Following, nil
 }
 
 // GetProjectSettings returns the v2 project settings.
