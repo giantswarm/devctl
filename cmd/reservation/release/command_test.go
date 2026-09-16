@@ -76,6 +76,15 @@ func runGit(t *testing.T, dir string, args ...string) {
 func newReleasableFixture(t *testing.T, cluster, chart string) (dir, origin string) {
 	t.Helper()
 
+	return newReleasableFixtureWithCharts(t, cluster, chart)
+}
+
+// newReleasableFixtureWithCharts is newReleasableFixture for one or more
+// charts reserved on the same cluster, so a test can release them from
+// separate clones and drive a genuine rejected push.
+func newReleasableFixtureWithCharts(t *testing.T, cluster string, charts ...string) (dir, origin string) {
+	t.Helper()
+
 	origin = t.TempDir()
 	runGit(t, origin, "init", "--bare", "-b", "main")
 
@@ -85,27 +94,33 @@ func newReleasableFixture(t *testing.T, cluster, chart string) (dir, origin stri
 
 	clusterDir := filepath.Join(dir, "management-clusters", cluster)
 	collectionsDir := filepath.Join(clusterDir, "collections")
-	componentDir := filepath.Join(collectionsDir, "reservations", chart)
-	if err := os.MkdirAll(componentDir, 0o750); err != nil {
-		t.Fatal(err)
-	}
 
-	files := map[string]string{
-		filepath.Join(clusterDir, "configmap-reservations.yaml"): "apiVersion: v1\n" +
-			"kind: ConfigMap\n" +
-			"metadata:\n" +
-			"  name: reservations\n" +
-			"  namespace: giantswarm\n" +
-			"data:\n" +
-			"  " + chart + ": '{user: alice, branch: fix/crash, pr: giantswarm/hello-world#123, scope: app, from: 2026-09-15T10:00:00Z, until: 2026-09-15T20:00:00Z}'\n",
-		filepath.Join(collectionsDir, "kustomization.yaml"): "apiVersion: kustomize.config.k8s.io/v1beta1\n" +
-			"kind: Kustomization\n" +
-			"resources: []\n" +
-			"components:\n" +
-			"  - reservations/" + chart + "\n",
-		filepath.Join(componentDir, "kustomization.yaml"):                    "apiVersion: kustomize.config.k8s.io/v1alpha1\nkind: Component\nresources:\n  - " + chart + "-dev-reservation.yaml\n",
-		filepath.Join(componentDir, chart+"-dev-reservation.yaml"): "apiVersion: source.toolkit.fluxcd.io/v1\nkind: OCIRepository\n",
+	configMap := "apiVersion: v1\n" +
+		"kind: ConfigMap\n" +
+		"metadata:\n" +
+		"  name: reservations\n" +
+		"  namespace: giantswarm\n" +
+		"data:\n"
+	kustomization := "apiVersion: kustomize.config.k8s.io/v1beta1\n" +
+		"kind: Kustomization\n" +
+		"resources: []\n" +
+		"components:\n"
+
+	files := map[string]string{}
+	for _, chart := range charts {
+		componentDir := filepath.Join(collectionsDir, "reservations", chart)
+		if err := os.MkdirAll(componentDir, 0o750); err != nil {
+			t.Fatal(err)
+		}
+
+		configMap += "  " + chart + ": '{user: alice, branch: fix/crash, pr: giantswarm/hello-world#123, scope: app, from: 2026-09-15T10:00:00Z, until: 2026-09-15T20:00:00Z}'\n"
+		kustomization += "  - reservations/" + chart + "\n"
+		files[filepath.Join(componentDir, "kustomization.yaml")] = "apiVersion: kustomize.config.k8s.io/v1alpha1\nkind: Component\nresources:\n  - " + chart + "-dev-reservation.yaml\n"
+		files[filepath.Join(componentDir, chart+"-dev-reservation.yaml")] = "apiVersion: source.toolkit.fluxcd.io/v1\nkind: OCIRepository\n"
 	}
+	files[filepath.Join(clusterDir, "configmap-reservations.yaml")] = configMap
+	files[filepath.Join(collectionsDir, "kustomization.yaml")] = kustomization
+
 	for path, content := range files {
 		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 			t.Fatal(err)
@@ -113,7 +128,7 @@ func newReleasableFixture(t *testing.T, cluster, chart string) (dir, origin stri
 	}
 
 	runGit(t, dir, "add", "-A")
-	runGit(t, dir, "commit", "-m", "reserve "+chart)
+	runGit(t, dir, "commit", "-m", "reserve "+strings.Join(charts, ", "))
 	runGit(t, dir, "push", "-u", "origin", "main")
 
 	return dir, origin
@@ -164,5 +179,64 @@ func TestReleaseCommitsAndPushesWithNoToken(t *testing.T) {
 	pushed := gitOutput(t, origin, "rev-parse", "main")
 	if head != pushed {
 		t.Errorf("push did not land: local HEAD %s, origin main %s", head, pushed)
+	}
+}
+
+// TestReleaseRetriesAPushRejectedByAnotherRelease is the cobra-command-surface
+// proof for the ticket's hard case: two `release` commands, run from separate
+// clones against the same cluster, both land. The second command's push is
+// rejected because the first already landed; it must rebase and rerun Release
+// against the rebased tree, not just replay its stale commit.
+func TestReleaseRetriesAPushRejectedByAnotherRelease(t *testing.T) {
+	const cluster, chartA, chartB = "graveler", "hello-world", "other-app"
+	_, origin := newReleasableFixtureWithCharts(t, cluster, chartA, chartB)
+
+	dir1 := t.TempDir()
+	runGit(t, dir1, "clone", origin, ".")
+	dir2 := t.TempDir()
+	runGit(t, dir2, "clone", origin, ".")
+
+	// dir2 releases chartB and lands first.
+	var stdout2 bytes.Buffer
+	cmd2 := newCommand(t, &stdout2)
+	cmd2.SetArgs([]string{
+		"--repo-dir", dir2,
+		"--cluster", cluster,
+		"--app", chartB,
+		"--user", "bob",
+	})
+	if err := cmd2.Execute(); err != nil {
+		t.Fatalf("release chartB: %v", err)
+	}
+
+	// dir1 started from the same tip as dir2 and still releases chartA against
+	// it: its first push is rejected, so it must rebase and rerun Release.
+	var stdout1 bytes.Buffer
+	cmd1 := newCommand(t, &stdout1)
+	cmd1.SetArgs([]string{
+		"--repo-dir", dir1,
+		"--cluster", cluster,
+		"--app", chartA,
+		"--user", "alice",
+	})
+	if err := cmd1.Execute(); err != nil {
+		t.Fatalf("release chartA: %v", err)
+	}
+	if !strings.Contains(stdout1.String(), chartA) {
+		t.Errorf("stdout does not mention %q: %s", chartA, stdout1.String())
+	}
+
+	head := gitOutput(t, dir1, "rev-parse", "HEAD")
+	tip := gitOutput(t, origin, "rev-parse", "main")
+	if head != tip {
+		t.Errorf("push did not land: local HEAD %s, origin main %s", head, tip)
+	}
+
+	configMap := gitOutput(t, origin, "show", "main:management-clusters/"+cluster+"/configmap-reservations.yaml")
+	if strings.Contains(configMap, chartA+":") {
+		t.Errorf("chartA reservation still present after release: %s", configMap)
+	}
+	if strings.Contains(configMap, chartB+":") {
+		t.Errorf("chartB reservation still present after release: %s", configMap)
 	}
 }
