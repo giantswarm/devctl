@@ -1,0 +1,128 @@
+# yaml-language-server: $schema=../.github/repositories.schema.json
+- name: good-service
+  description: A Go service with a chart.
+  visibility: public
+  system: agent-platform
+  componentType: service
+  gen:
+    flavours:
+      - app
+    language: go
+    ci:
+      generate: true
+      releaseWorkflow: auto-release
+- name: good-chart
+  # A chart-only repository: the ci block is left out, generate defaults to true.
+  componentType: service
+  gen:
+    flavours:
+      - app
+    language: generic
+- name: good-cli
+  componentType: cli
+  gen:
+    flavours:
+      - cli
+    language: go
+- name: minimal-config
+  componentType: configuration
+  lifecycle: archived
+  gen:
+    flavours:
+      - generic
+    language: generic
+- name: customer-configs
+  componentType: customer
+  gen:
+    flavours:
+      - customer
+    language: generic
+- name: policies
+  componentType: configuration
+  gen:
+    flavours:
+      - generic
+    language: kyverno-policy
+- name: python-tool
+  componentType: cli
+  gen:
+    flavours:
+      - generic
+    language: python
+- name: hello-world-app
+  componentType: service
+  gen:
+    flavours:
+      - app
+    language: generic
+- name: no-gen
+  componentType: configuration
+- name: empty-gen
+  componentType: configuration
+  gen:
+    flavours: []
+- name: node-ui
+  componentType: service
+  gen:
+    flavours:
+      - generic
+    language: node
+- name: Bad_Name
+  componentType: library
+  gen:
+    flavours:
+      - generic
+    language: generic
+- name: chart-name-mismatch
+  componentType: service
+  gen:
+    flavours:
+      - app
+    language: generic
+    ci:
+      chartName: other-chart
+- name: internal-visibility
+  componentType: service
+  visibility: internal
+  lifecycle: deleted
+  gen:
+    flavours:
+      - app
+    language: go
+- name: unknown-field
+  componentType: service
+  template: giantswarm/template
+  gen:
+    flavours:
+      - app
+    language: go
+- name: unknown-flavour
+  componentType: service
+  gen:
+    flavours:
+      - helmchart
+    language: generic
+- name: twice
+  componentType: library
+  gen:
+    flavours:
+      - generic
+    language: go
+- name: twice
+  componentType: library
+  gen:
+    flavours:
+      - generic
+    language: go
+- name: taken-name
+  componentType: service
+  gen:
+    flavours:
+      - app
+    language: go
+- name: renamed-name
+  componentType: service
+  gen:
+    flavours:
+      - app
+    language: go

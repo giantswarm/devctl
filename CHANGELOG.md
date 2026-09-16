@@ -9,6 +9,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `repo validate` and the `pkg/reposetup` package, the front half of the repository set-up engine
+  (giantswarm/giantswarm#37726, #2213): an entry of a giantswarm/github team file is validated against
+  the repositories schema — fetched from `giantswarm/github` main, with an embedded copy that already
+  carries the plan's `description`, `visibility` and `lifecycle: archived` fields as the fallback — and
+  against the rules for a repository the reconciler creates: `gen.flavours` and `gen.language` are
+  mandatory, `gen.ci.generate` defaults to `true` (written into the rendered entry), the name is
+  lowercase and free on GitHub (an existing repository or a redirect from a renamed one is taken), a
+  chart repository is named after its chart (no `-app` suffix, `gen.ci.chartName` equal to the name),
+  and `language: node` is refused until the Node template exists. Every refusal names the field. The
+  template is derived, never declared: Go → `giantswarm/template`, chart-only (`generic` with the `app`
+  flavour) → `giantswarm/template-app`, customer, configuration, python and kyverno-policy → the minimal
+  scaffold. The command prints the dry run as JSON on stdout (log lines go to stderr) — the rendered
+  entry, the implied template, the name verdict, the problems and the guard notices: an author outside
+  the owning team and team-planeteers keeps the team's review, more than three added entries get a
+  person — and exits non-zero on a refusal. The package is the one place validation and rendering live
+  for the reconciler workflow, `repo create` and giantswarm-repo-manager; the scaffold rendering is the
+  engine's next half.
 - `gen workflows`: the `auto-release` flow can now cut release candidates. A pull request titled
   `feat-rc:` or `fix-rc:` marks its change as part of a candidate, and the workflow tags
   `vX.Y.Z-rc.N` instead of `vX.Y.Z`, flagged as a GitHub pre-release. The decision is taken over
