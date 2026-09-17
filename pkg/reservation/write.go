@@ -147,6 +147,27 @@ func writeSourceAnnotations(path string, from, until time.Time) error {
 	return microerror.Mask(writeLines(path, lines))
 }
 
+// blockEnd returns the index of the last line in the indented block after
+// start for which match is true, skipping blank lines and stopping at the
+// first line back at start's indentation. addComponent, removeComponent and
+// dataBlock share this walk; only what counts as a match differs.
+func blockEnd(lines []string, start int, match func(line string) bool) (last int) {
+	last = start
+	for i := start + 1; i < len(lines); i++ {
+		if strings.TrimSpace(lines[i]) == "" {
+			continue
+		}
+		if lines[i] == strings.TrimLeft(lines[i], " \t") {
+			break // a line at the outer indentation ends the block
+		}
+		if match(lines[i]) {
+			last = i
+		}
+	}
+
+	return last
+}
+
 // addComponent appends entry to the components list of a kustomization file. It
 // edits the text rather than re-encoding the document, so releasing the
 // reservation restores the file byte for byte and a hand-written comment
@@ -176,20 +197,17 @@ func addComponent(path, entry string) error {
 		return microerror.Mask(writeLines(path, lines))
 	}
 
-	last, indent := start, "  "
-	for i := start + 1; i < len(lines); i++ {
-		if strings.TrimSpace(lines[i]) == "" {
-			continue
-		}
-		if lines[i] == strings.TrimLeft(lines[i], " \t") {
-			break // a line at the outer indentation ends the block
-		}
-		if item := strings.TrimSpace(lines[i]); strings.HasPrefix(item, "- ") {
-			if item == "- "+entry {
-				return nil
-			}
-			last = i
-			indent = lines[i][:len(lines[i])-len(strings.TrimLeft(lines[i], " \t"))]
+	last := blockEnd(lines, start, func(line string) bool {
+		return strings.HasPrefix(strings.TrimSpace(line), "- ")
+	})
+
+	indent := "  "
+	if last != start {
+		indent = lines[last][:len(lines[last])-len(strings.TrimLeft(lines[last], " \t"))]
+	}
+	for i := start + 1; i <= last; i++ {
+		if strings.TrimSpace(lines[i]) == "- "+entry {
+			return nil
 		}
 	}
 
@@ -227,19 +245,14 @@ func removeComponent(path, entry string) error {
 		return microerror.Maskf(componentNotFoundError, "%s holds no %q key to remove %q from", path, componentsKey, entry)
 	}
 
-	itemIdx, last := -1, start
-	for i := start + 1; i < len(lines); i++ {
-		if strings.TrimSpace(lines[i]) == "" {
-			continue
-		}
-		if lines[i] == strings.TrimLeft(lines[i], " \t") {
-			break // a line at the outer indentation ends the block
-		}
-		if item := strings.TrimSpace(lines[i]); strings.HasPrefix(item, "- ") {
-			last = i
-			if item == "- "+entry {
-				itemIdx = i
-			}
+	last := blockEnd(lines, start, func(line string) bool {
+		return strings.HasPrefix(strings.TrimSpace(line), "- ")
+	})
+
+	itemIdx := -1
+	for i := start + 1; i <= last; i++ {
+		if strings.TrimSpace(lines[i]) == "- "+entry {
+			itemIdx = i
 		}
 	}
 	if itemIdx < 0 {
@@ -297,18 +310,7 @@ func dataBlock(lines []string) (start, last int, ok bool) {
 		return 0, 0, false
 	}
 
-	last = start
-	for i := start + 1; i < len(lines); i++ {
-		if strings.TrimSpace(lines[i]) == "" {
-			continue
-		}
-		if lines[i] == strings.TrimLeft(lines[i], " \t") {
-			break // a line at the outer indentation ends the block
-		}
-		if dataKey.MatchString(lines[i]) {
-			last = i
-		}
-	}
+	last = blockEnd(lines, start, dataKey.MatchString)
 
 	return start, last, true
 }
