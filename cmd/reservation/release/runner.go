@@ -41,6 +41,10 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 // reservation released by someone else in the meantime is not lost or
 // replayed onto a stale tree.
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
+	if r.flag.PullRequest != "" {
+		return microerror.Mask(r.releaseAll(ctx))
+	}
+
 	var result reservation.ReleaseResult
 	render := func() error {
 		var err error
@@ -60,6 +64,29 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 	_, _ = fmt.Fprintf(r.stdout, "Released %s on %s.\n", result.App, r.flag.Cluster)
 	_, _ = fmt.Fprintf(r.stdout, "Commit %s\n", result.Commit)
+
+	return nil
+}
+
+// releaseAll runs the --pull-request form: it releases every reservation the
+// pull request holds, on every enabled cluster, and pushes each one. It
+// prints what landed before it looks at the error, exactly as extend does: a
+// cluster nobody can read must not hide the releases that did succeed, since
+// a caller parses this to comment a line per release.
+func (r *runner) releaseAll(ctx context.Context) error {
+	released, releaseErr := reservation.ReleaseAll(ctx, reservation.ReleaseAllRequest{
+		RepoDir:     r.flag.RepoDir,
+		PullRequest: r.flag.PullRequest,
+		User:        r.flag.User,
+	})
+
+	for _, entry := range released {
+		_, _ = fmt.Fprintf(r.stdout, "%s\t%s\t%s\n", entry.Cluster, entry.App, entry.Commit)
+	}
+
+	if releaseErr != nil {
+		return microerror.Mask(releaseErr)
+	}
 
 	return nil
 }

@@ -21,6 +21,8 @@ const (
 	flagCluster = "--cluster"
 	flagApp     = "--app"
 	flagUser    = "--user"
+
+	flagPullRequest = "--pull-request"
 )
 
 // newCommand builds the release command the way cmd/reservation does.
@@ -246,5 +248,44 @@ func TestReleaseRetriesAPushRejectedByAnotherRelease(t *testing.T) {
 	}
 	if strings.Contains(configMap, chartB+":") {
 		t.Errorf("chartB reservation still present after release: %s", configMap)
+	}
+}
+
+// TestReleaseByPullRequestNeedsNoClusterOrApp is the merged-pull-request
+// path: the workflow that runs on a merge knows the pull request and nothing
+// else, so it passes --pull-request alone and every reservation that pull
+// request holds goes.
+func TestReleaseByPullRequestNeedsNoClusterOrApp(t *testing.T) {
+	const cluster, chartA, chartB = "graveler", "hello-world", "other-app"
+	dir, origin := newReleasableFixtureWithCharts(t, cluster, chartA, chartB)
+
+	var stdout bytes.Buffer
+	cmd := newCommand(t, &stdout)
+	cmd.SetArgs([]string{
+		flagRepoDir, dir,
+		flagPullRequest, "giantswarm/hello-world#123",
+		flagUser, "alice",
+	})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("release by pull request: %v", err)
+	}
+	for _, chart := range []string{chartA, chartB} {
+		if !strings.Contains(stdout.String(), chart) {
+			t.Errorf("stdout does not mention %q: %s", chart, stdout.String())
+		}
+	}
+
+	configMap := gitOutput(t, origin, "show", "main:management-clusters/"+cluster+"/configmap-reservations.yaml")
+	for _, chart := range []string{chartA, chartB} {
+		if strings.Contains(configMap, chart+":") {
+			t.Errorf("%s reservation still present after release: %s", chart, configMap)
+		}
+	}
+
+	head := gitOutput(t, dir, "rev-parse", "HEAD")
+	tip := gitOutput(t, origin, "rev-parse", "main")
+	if head != tip {
+		t.Errorf("push did not land: local HEAD %s, origin main %s", head, tip)
 	}
 }
