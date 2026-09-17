@@ -168,3 +168,10 @@ reconciler stores). An entry the validator refuses is a result too: one step, `e
 otherwise) with the field to fix, exit 0 -- the declaration is at fault, not the run. A flag or token
 error exits 2. `--enforce-admins` (default true) is the one baseline knob: whether the branch protection
 binds administrators too; the default stands until giantswarm/giantswarm#36733 decides the baseline.
+
+The `catalog` step dispatches the catalog and mapping workflows of the catalog repository, which needs an
+Actions permission there. `--dispatch-token-envvar` names a second token for those two calls (listing the
+workflow's runs, dispatching it) when the GitHub token's identity has none -- the reconciler passes its
+workflow run's own token, the App holding no Actions permission. Every read stays with the GitHub token,
+the repository lookup included: a private repository the dispatch token cannot see is looked up, checked
+against the catalog and dispatched all the same. Without the flag the GitHub token dispatches.

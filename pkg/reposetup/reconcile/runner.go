@@ -40,6 +40,14 @@ type Runner struct {
 	// GitHub is the client the steps read and write GitHub with, under the
 	// App installation token or the person's.
 	GitHub *github.Client
+	// Dispatch is the client the catalog step lists and dispatches the
+	// catalog and mapping workflow runs with; nil means GitHub. A caller
+	// whose GitHub identity holds no Actions permission on the catalog
+	// repository gives the token that does (a workflow run's own, with
+	// actions: write) here and keeps every read — the repository lookup,
+	// the catalog and the mapping — with GitHub, which sees the private
+	// repositories that token does not.
+	Dispatch *github.Client
 	// Checks answers which check contexts have reported.
 	Checks ReportedChecker
 	// CircleCI is the client for follow, settings, keys and pipelines.
@@ -346,6 +354,14 @@ func (s *run) finish(sr *StepResult) {
 	default:
 		sr.Verdict = VerdictOK
 	}
+}
+
+// dispatcher is the client for the workflow-run calls of the catalog step.
+func (r *Runner) dispatcher() *github.Client {
+	if r.Dispatch != nil {
+		return r.Dispatch
+	}
+	return r.GitHub
 }
 
 func (r *Runner) now() time.Time {

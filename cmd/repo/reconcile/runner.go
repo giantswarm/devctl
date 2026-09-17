@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/giantswarm/microerror"
+	"github.com/google/go-github/v92/github"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
@@ -47,6 +48,10 @@ func (r *runner) run(ctx context.Context, arg string) error {
 		return microerror.Mask(err)
 	}
 	gh, err := engine.GitHubClient(r.logger, r.flag.GithubTokenEnvVar, false)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+	dispatch, err := r.dispatchClient(ctx)
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -91,6 +96,7 @@ func (r *runner) run(ctx context.Context, arg string) error {
 	baseline.EnforceAdmins = r.flag.EnforceAdmins
 	runner := reconcile.Runner{
 		GitHub:   gh.GetUnderlyingClient(ctx),
+		Dispatch: dispatch,
 		Checks:   gh,
 		CircleCI: ci,
 		// The token downloads the templates: giantswarm/template is private.
@@ -107,6 +113,20 @@ func (r *runner) run(ctx context.Context, arg string) error {
 	}
 
 	return microerror.Mask(engine.Report(r.stdout, res, r.flag.Output))
+}
+
+// dispatchClient is the client of --dispatch-token-envvar, the one the
+// catalog step dispatches with; nil without the flag, and the GitHub token
+// dispatches.
+func (r *runner) dispatchClient(ctx context.Context) (*github.Client, error) {
+	if r.flag.DispatchTokenEnvVar == "" {
+		return nil, nil
+	}
+	client, err := engine.GitHubClient(r.logger, r.flag.DispatchTokenEnvVar, false)
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
+	return client.GetUnderlyingClient(ctx), nil
 }
 
 // entry is the desired state: the repository's entry of --team-file,
