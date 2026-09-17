@@ -92,15 +92,31 @@ func Release(req ReleaseRequest) (ReleaseResult, error) {
 	sourceName := chart + SourceNameSuffix
 
 	// The reverse of Reserve's writes, in the same single working-tree commit:
-	// the component directory Reserve created, the line in collections'
-	// kustomization.yaml that references it, and the ConfigMap entry.
-	if err := os.RemoveAll(filepath.Join(collectionsPath, reservationsDir, chart)); err != nil {
-		return ReleaseResult{}, microerror.Mask(err)
-	}
+	// the line in collections' kustomization.yaml that references the
+	// component, the component directory Reserve created, and the ConfigMap
+	// entry. The reference is removed first: removeComponent now refuses when
+	// it cannot find what it is asked to remove, so a components list a human
+	// reformatted since Reserve wrote it fails here, before anything is
+	// deleted, rather than after the directory is already gone and the stale
+	// reference is the only thing left pointing at it.
 	if err := removeComponent(filepath.Join(collectionsPath, "kustomization.yaml"), component); err != nil {
 		return ReleaseResult{}, microerror.Mask(err)
 	}
+	if err := os.RemoveAll(filepath.Join(collectionsPath, reservationsDir, chart)); err != nil {
+		return ReleaseResult{}, microerror.Mask(err)
+	}
 	if err := removeReservationEntry(configMapPath, chart); err != nil {
+		return ReleaseResult{}, microerror.Mask(err)
+	}
+
+	// The only trustworthy check that the release actually took effect: render
+	// the collections the way kustomize-controller does and confirm the
+	// reservation's source, and every instance patched to it, are really gone.
+	after, err := renderCollections(collectionsPath)
+	if err != nil {
+		return ReleaseResult{}, microerror.Mask(err)
+	}
+	if err := assertReleased(after, sourceName); err != nil {
 		return ReleaseResult{}, microerror.Mask(err)
 	}
 
@@ -112,12 +128,37 @@ func Release(req ReleaseRequest) (ReleaseResult, error) {
 	}
 	sort.Strings(files)
 
-	commit, err := commitAll(req.RepoDir, req.User, fmt.Sprintf("release %s on %s (by %s)", chart, req.Cluster, req.User))
+	commit, err := commitAll(req.RepoDir, req.User, fmt.Sprintf("release %s on %s (by %s)", chart, req.Cluster, req.User), files)
 	if err != nil {
 		return ReleaseResult{}, microerror.Mask(err)
 	}
 
 	return ReleaseResult{App: chart, Commit: commit, Files: files}, nil
+}
+
+// assertReleased refuses a render that still carries the reservation after
+// the component reference, the component directory, and the ConfigMap entry
+// have all been removed: the last check before the commit, exactly as
+// Reserve's assertReserved is the last check before its own. A render that
+// only succeeds proves nothing on its own: it just means removeComponent's
+// matcher happened to find and remove a line, not that the release actually
+// took effect on the cluster.
+func assertReleased(objects []object, sourceName string) error {
+	if _, ok := findSource(objects, sourceName); ok {
+		return microerror.Maskf(renderAssertionError,
+			"the rendered collections still carry a %s named %q after release", ociRepositoryKind, sourceName)
+	}
+	for _, o := range objects {
+		if o.kind() != helmReleaseKind || o.namespace() != Namespace {
+			continue
+		}
+		if name, _ := o.nested("spec", "chartRef", "name").(string); name == sourceName {
+			return microerror.Maskf(renderAssertionError,
+				"%s %q still takes its chart from %q after release", helmReleaseKind, o.name(), sourceName)
+		}
+	}
+
+	return nil
 }
 
 // checkReserved refuses an app that holds no reservation on the cluster: there

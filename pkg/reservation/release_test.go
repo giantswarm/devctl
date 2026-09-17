@@ -1,6 +1,8 @@
 package reservation_test
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -228,4 +230,53 @@ func TestReleaseLeavesOtherReservationsIntact(t *testing.T) {
 	if got, want := chartRef["name"], fixtureOtherApp+"-dev-reservation"; got != want {
 		t.Errorf("%s chartRef name: got %v, want %q (release disturbed the other component)", fixtureOtherApp, got, want)
 	}
+}
+
+// TestReleaseRefusesWhenComponentsListWasReformatted is the decisive test for
+// a class of bug where a hand-edited collections/kustomization.yaml (a
+// re-indent, a quoting change, a comment moved) no longer matches
+// removeComponent's plain-text matcher. Release must refuse rather than
+// delete the component directory while leaving the stale reference behind:
+// that combination breaks `kustomize build` for the whole cluster, not just
+// the released app, while reporting success.
+func TestReleaseRefusesWhenComponentsListWasReformatted(t *testing.T) {
+	dir := newGitOpsFixture(t, fixtureOptions{})
+
+	if _, err := reservation.Reserve(testRequest(dir)); err != nil {
+		t.Fatal(err)
+	}
+
+	// Requote the entry addComponent wrote. Kustomize parses it exactly the
+	// same either way; removeComponent's plain string matcher does not.
+	collectionsFile := filepath.Join(dir, pathCollections)
+	original, err := os.ReadFile(collectionsFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := "- reservations/" + fixtureApp
+	reformatted := strings.Replace(string(original), old, `- "reservations/`+fixtureApp+`"`, 1)
+	if reformatted == string(original) {
+		t.Fatal("the fixture's components entry was not found to reformat")
+	}
+	if err := os.WriteFile(collectionsFile, []byte(reformatted), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	componentDir := filepath.Join(dir, "management-clusters", fixtureCluster, "collections", "reservations", fixtureApp)
+
+	if _, err := reservation.Release(testReleaseRequest(dir)); err == nil {
+		t.Fatal("expected Release to refuse a components list it cannot parse, got success")
+	}
+
+	if _, statErr := os.Stat(componentDir); statErr != nil {
+		t.Errorf("the component directory was removed despite the refusal: %v", statErr)
+	}
+	entries := reservationEntries(t, dir, fixtureCluster)
+	if _, held := entries[fixtureApp]; !held {
+		t.Error("the ConfigMap entry was removed despite the refusal")
+	}
+
+	// The strongest check available: the tree kustomize-controller would
+	// actually build still renders, proving the refusal left nothing dangling.
+	renderCluster(t, dir, fixtureCluster)
 }

@@ -136,6 +136,22 @@ func IsNotReserved(err error) bool {
 	return microerror.Cause(err) == notReservedError
 }
 
+// componentNotFoundError indicates that removeComponent could not find, in a
+// kustomization file's components list, the entry it was asked to remove: the
+// file was edited by hand since the reservation wrote it (a re-indent, a
+// quoting change, a comment moved) in a way the matcher does not recognise.
+// Reporting success here would delete the component directory while leaving
+// the stale reference behind, breaking `kustomize build` for the whole
+// cluster, not just the released app.
+var componentNotFoundError = &microerror.Error{
+	Kind: "componentNotFoundError",
+}
+
+// IsComponentNotFound asserts componentNotFoundError.
+func IsComponentNotFound(err error) bool {
+	return microerror.Cause(err) == componentNotFoundError
+}
+
 // nothingToExtendError indicates that a pull request holds no unexpired
 // reservation on any enabled cluster, so there is nothing for Extend to reset.
 var nothingToExtendError = &microerror.Error{
@@ -167,4 +183,16 @@ var pushRetriesExhaustedError = &microerror.Error{
 // IsPushRetriesExhausted asserts pushRetriesExhaustedError.
 func IsPushRetriesExhausted(err error) bool {
 	return microerror.Cause(err) == pushRetriesExhaustedError
+}
+
+// dirtyWorktreeError indicates that a rejected push left the working tree
+// carrying changes outside the operation's own commit, so PushWithRetry
+// refused to hard-reset it onto the remote rather than risk destroying them.
+var dirtyWorktreeError = &microerror.Error{
+	Kind: "dirtyWorktreeError",
+}
+
+// IsDirtyWorktree asserts dirtyWorktreeError.
+func IsDirtyWorktree(err error) bool {
+	return microerror.Cause(err) == dirtyWorktreeError
 }

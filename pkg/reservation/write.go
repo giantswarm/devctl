@@ -221,7 +221,7 @@ func removeComponent(path, entry string) error {
 		}
 	}
 	if start < 0 {
-		return nil // already gone; nothing to undo
+		return microerror.Maskf(componentNotFoundError, "%s holds no %q key to remove %q from", path, componentsKey, entry)
 	}
 
 	itemIdx, last := -1, start
@@ -240,7 +240,7 @@ func removeComponent(path, entry string) error {
 		}
 	}
 	if itemIdx < 0 {
-		return nil // entry not present; nothing to undo
+		return microerror.Maskf(componentNotFoundError, "%s components list holds no entry %q to remove", path, entry)
 	}
 
 	remaining := 0

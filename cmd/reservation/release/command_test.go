@@ -126,7 +126,7 @@ func newReleasableFixtureWithCharts(t *testing.T, cluster string, charts ...stri
 		configMap += "  " + chart + ": '{user: alice, branch: fix/crash, pr: giantswarm/hello-world#123, scope: app, from: 2026-09-15T10:00:00Z, until: 2026-09-15T20:00:00Z}'\n"
 		kustomization += "  - reservations/" + chart + "\n"
 		files[filepath.Join(componentDir, "kustomization.yaml")] = "apiVersion: kustomize.config.k8s.io/v1alpha1\nkind: Component\nresources:\n  - " + chart + "-dev-reservation.yaml\n"
-		files[filepath.Join(componentDir, chart+"-dev-reservation.yaml")] = "apiVersion: source.toolkit.fluxcd.io/v1\nkind: OCIRepository\n"
+		files[filepath.Join(componentDir, chart+"-dev-reservation.yaml")] = "apiVersion: source.toolkit.fluxcd.io/v1\nkind: OCIRepository\nmetadata:\n  name: " + chart + "-dev-reservation\n  namespace: giantswarm\n"
 	}
 	files[filepath.Join(clusterDir, "configmap-reservations.yaml")] = configMap
 	files[filepath.Join(collectionsDir, "kustomization.yaml")] = kustomization
