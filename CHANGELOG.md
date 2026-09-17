@@ -239,7 +239,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   override is what admits the type at all. The titles are accepted in every repository but only
   act under `--release-workflow=auto-release`. `security` joins the accepted types, which the
   action's default list never held although `cliff.toml` maps it to a Security changelog group.
-- `gen workflows`: generates `zz_generated.trigger-circleci-pipeline.yaml`, which calls `giantswarm/github-workflows`' reusable workflow to trigger a CircleCI build when a pull request opens or reopens.
+- `gen workflows`: generates `zz_generated.trigger-circleci-pipeline.yaml`, which calls
+  `giantswarm/github-workflows`' reusable workflow to trigger a CircleCI build when a pull request
+  opens or reopens. It passes only the `CIRCLECI_API_TOKEN` secret that reusable workflow declares,
+  not `secrets: inherit` — the callee is pinned to a moving `@main` ref, so `inherit` would hand it
+  every secret the calling repository can read, organization-wide, for a workflow this generates
+  into every managed repo.
 - `reservation reap`: a new command that sweeps every management cluster enabled for reservations in
   a GitOps repo and releases every reservation whose expiry passed, one at a time through
   `reservation.Release` and `reservation.PushWithRetry`, exactly as `release` does for a single one.

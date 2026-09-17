@@ -1028,7 +1028,8 @@ jobs:
   build:
     permissions: {}
     uses: giantswarm/github-workflows/.github/workflows/trigger-circleci-pipeline.yaml@main
-    secrets: inherit
+    secrets:
+      CIRCLECI_API_TOKEN: ${{ secrets.CIRCLECI_API_TOKEN }}
 
 --- .nancy-ignore
 # Affects all versions of archiver which is required by vault.
