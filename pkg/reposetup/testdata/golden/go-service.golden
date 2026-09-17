@@ -774,10 +774,15 @@ jobs:
                   "Set the CIRCLECI_API_TOKEN org secret to make this check real."
                 exit 0
               fi
-              echo "::error::CircleCI has no project gh/${GITHUB_REPOSITORY} (or the token's account cannot see it)" \
-                "although .circleci/config.yml exists: ${TAG} is released but nothing builds it." \
-                "Set the project up on CircleCI, then trigger the tag: ${manual}"
-              exit 1
+              # The first tag of a repository created pull-request-last lands
+              # before the repository set-up reconciler follows the project on
+              # CircleCI; the reconciler triggers the missed tag build once it
+              # has. Following takes an administrator's token this workflow does
+              # not hold, so this is not the workflow's to fix.
+              echo "::warning::${TAG} is released; CircleCI does not follow this project yet." \
+                "The repository set-up reconciler follows it and triggers this tag's build within minutes —" \
+                "check the tag's pipeline on CircleCI after that: https://app.circleci.com/pipelines/github/${GITHUB_REPOSITORY}"
+              exit 0
               ;;
             401|403)
               echo "::error::CircleCI rejected CIRCLECI_API_TOKEN (HTTP ${last_code}); cannot verify that ${TAG} was built."

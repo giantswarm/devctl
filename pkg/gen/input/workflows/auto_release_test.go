@@ -790,3 +790,134 @@ func Test_AutoReleaseCliffCountsOnlyStableTags(t *testing.T) {
 		t.Errorf("cliff.toml does not restrict releases to stable v tags:\n%s", cliff)
 	}
 }
+
+// tagJobStepNamed returns the tag-job step with the given name, for the steps
+// the template declares without an id.
+func tagJobStepNamed(t *testing.T, name string) autoReleaseStep {
+	t.Helper()
+
+	steps, rendered := tagJobSteps(t)
+	for _, s := range steps {
+		if s.Name == name {
+			return s
+		}
+	}
+
+	t.Fatalf("no step named %q in the tag job:\n%s", name, rendered)
+	return autoReleaseStep{}
+}
+
+// curlStub is the curl the verify step's cases run: it answers a GET with the
+// GET body and code it is handed and a POST with the POST body and code, in
+// the body-newline-code shape the step's `-w '\n%{http_code}'` produces.
+const curlStub = `#!/usr/bin/env bash
+set -euo pipefail
+method=GET
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -X) method=$2; shift 2 ;;
+    *) shift ;;
+  esac
+done
+if [ "$method" = POST ]; then
+  printf '%s\n%s' "$STUB_POST_BODY" "$STUB_POST_CODE"
+else
+  printf '%s\n%s' "$STUB_GET_BODY" "$STUB_GET_CODE"
+fi
+`
+
+// runVerify runs the extracted verify step against the curl stub and returns
+// its combined output. The wait is zero so an empty list is final after one
+// pass; the codes that end the wait at once (404, 401, 403) never reach it.
+func runVerify(t *testing.T, token string, get, post [2]string) ([]byte, error) {
+	t.Helper()
+
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "curl"), []byte(curlStub), 0o700); err != nil { // #nosec G306 -- the stub has to be executable
+		t.Fatalf("write curl stub: %v", err)
+	}
+
+	cmd := exec.CommandContext(t.Context(), "bash", "-c", tagJobStepNamed(t, "Verify CircleCI picked up the tag").Run) // #nosec G204 -- the script is the rendered template, test-only
+	cmd.Env = append(os.Environ(),
+		"TAG=v0.1.0",
+		"GITHUB_REPOSITORY=example/widget",
+		"CIRCLECI_API_TOKEN="+token,
+		"CIRCLECI_PIPELINE_WAIT_SECONDS=0",
+		"STUB_GET_BODY="+get[0], "STUB_GET_CODE="+get[1],
+		"STUB_POST_BODY="+post[0], "STUB_POST_CODE="+post[1],
+		"PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"),
+	)
+
+	return cmd.CombinedOutput()
+}
+
+// Test_AutoReleaseVerifyCircleCI pins what the verify step does with each
+// answer of the pipeline list. A project CircleCI does not follow (404 with a
+// token) is the first tag of a repository created pull-request-last: the
+// repository set-up reconciler follows the project and triggers the missed
+// build minutes later, so the step warns and passes instead of failing every
+// new repository's first run. A followed project whose list stays empty is
+// triggered by the step itself, and a rejected token still fails the run.
+func Test_AutoReleaseVerifyCircleCI(t *testing.T) {
+	testCases := []struct {
+		name       string
+		token      string
+		get, post  [2]string
+		expectFail bool
+		expectOut  []string
+		rejectOut  []string
+	}{
+		{
+			name:      "an unfollowed project warns and passes",
+			token:     "token",
+			get:       [2]string{`{"message":"Project not found"}`, "404"},
+			expectOut: []string{"::warning::v0.1.0 is released; CircleCI does not follow this project yet.", "reconciler"},
+			rejectOut: []string{"::error::"},
+		},
+		{
+			name:      "no token cannot verify and passes",
+			token:     "",
+			get:       [2]string{`{"message":"Project not found"}`, "404"},
+			expectOut: []string{"::warning::cannot verify that CircleCI built v0.1.0"},
+			rejectOut: []string{"::error::"},
+		},
+		{
+			name:      "a followed project with no pipeline is triggered",
+			token:     "token",
+			get:       [2]string{`{"items":[],"next_page_token":null}`, "200"},
+			post:      [2]string{`{"number":7,"state":"pending"}`, "201"},
+			expectOut: []string{"triggered CircleCI pipeline #7 for v0.1.0"},
+			rejectOut: []string{"::error::", "::warning::"},
+		},
+		{
+			name:       "a rejected token fails",
+			token:      "token",
+			get:        [2]string{`{"message":"Unauthorized"}`, "401"},
+			expectFail: true,
+			expectOut:  []string{"::error::CircleCI rejected CIRCLECI_API_TOKEN (HTTP 401)"},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			out, err := runVerify(t, tc.token, tc.get, tc.post)
+
+			if tc.expectFail && err == nil {
+				t.Fatalf("verify step passed:\n%s", out)
+			}
+			if !tc.expectFail && err != nil {
+				t.Fatalf("verify step failed: %v\n%s", err, out)
+			}
+			for _, want := range tc.expectOut {
+				if !strings.Contains(string(out), want) {
+					t.Errorf("output lacks %q:\n%s", want, out)
+				}
+			}
+			for _, reject := range tc.rejectOut {
+				if strings.Contains(string(out), reject) {
+					t.Errorf("output carries %q:\n%s", reject, out)
+				}
+			}
+		})
+	}
+}

@@ -34,6 +34,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   lookup, the catalog, the mapping -- stays with the GitHub token, which sees the repository.
   `reconcile.Runner.Dispatch` is the client behind the flag; nil keeps everything on `GitHub`
   (giantswarm/giantswarm#37726, #2244).
+- `gen workflows` (`--release-workflow=auto-release`): the "Verify CircleCI picked up the tag" step passes with a
+  `::warning::` annotation when CircleCI does not follow the project (HTTP 404 with a token) instead of failing the
+  run. The first tag of a repository created pull-request-last is pushed before the repository set-up reconciler
+  follows the project on CircleCI, and the reconciler triggers the missed tag build minutes later, so every new
+  repository's first Auto Release run was red although the release existed and the build followed. Following takes an
+  administrator's token the workflow does not hold. A followed project whose pipeline is missing after the wait is
+  still triggered by the step (HTTP 200, empty list); API errors still fail it (giantswarm/giantswarm#37726, #2245).
 - `repo reconcile`: the `release` step triggers the missed tag build whenever the latest release's tag has no
   CircleCI pipeline. It skipped the trigger when the most recent pipeline was newer than the release, taking that
   as a sign the tag's pipeline was merely further down the list — but a repository created pull-request-last is
