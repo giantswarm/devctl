@@ -135,12 +135,33 @@ func extendCluster(ctx context.Context, req ExtendRequest, cluster string, now t
 // (which here also re-checks the cap), commit, then PushWithRetry rebases
 // and re-renders should another change land first.
 func extendAndPush(ctx context.Context, req ExtendRequest, cluster string, r Reservation, now time.Time) (Extended, error) {
-	duration := r.Until.Sub(r.From)
 	configMapPath := filepath.Join(req.RepoDir, clustersDir, cluster, ConfigMapFile)
 	sourcePath := filepath.Join(req.RepoDir, clustersDir, cluster, collectionsDir, reservationsDir, r.App, r.App+SourceNameSuffix+".yaml")
 
 	var result Extended
 	render := func() error {
+		// Read the reservation fresh from the working tree render is about to
+		// write to, not from the snapshot List returned before this call: after a
+		// rebase that is the post-rebase state, so a reservation that changed
+		// underneath this one in the meantime is folded in instead of overwritten
+		// with stale data. r.App is only an identifier -- which slot to extend --
+		// and stays stable across retries.
+		reservations, err := List(ListRequest{RepoDir: req.RepoDir, Cluster: cluster})
+		if err != nil {
+			return microerror.Mask(err)
+		}
+		var current *Reservation
+		for i := range reservations {
+			if reservations[i].App == r.App {
+				current = &reservations[i]
+				break
+			}
+		}
+		if current == nil {
+			return microerror.Maskf(notReservedError, "%s on %s no longer holds a reservation to extend", r.App, cluster)
+		}
+		duration := current.Until.Sub(current.From)
+
 		maxDuration, err := clusterMaxDuration(configMapPath)
 		if err != nil {
 			return microerror.Mask(err)
@@ -148,15 +169,15 @@ func extendAndPush(ctx context.Context, req ExtendRequest, cluster string, r Res
 		if duration > maxDuration {
 			return microerror.Maskf(invalidDurationError,
 				"%s's reservation on %s lasts %s, which is now longer than the maximum of %s: release it and reserve it again",
-				r.App, cluster, formatDuration(duration), formatDuration(maxDuration))
+				current.App, cluster, formatDuration(duration), formatDuration(maxDuration))
 		}
 
 		until := now.Add(duration)
-		entry, err := reservationEntry(r.App, Request{User: r.User, Branch: r.Branch, PullRequest: r.PullRequest, Scope: r.Scope}, now, until)
+		entry, err := reservationEntry(current.App, Request{User: current.User, Branch: current.Branch, PullRequest: current.PullRequest, Scope: current.Scope}, now, until)
 		if err != nil {
 			return microerror.Mask(err)
 		}
-		if err := writeReservationEntry(configMapPath, r.App, entry); err != nil {
+		if err := writeReservationEntry(configMapPath, current.App, entry); err != nil {
 			return microerror.Mask(err)
 		}
 		// The ConfigMap entry above and this are one change: a human with no
@@ -167,11 +188,11 @@ func extendAndPush(ctx context.Context, req ExtendRequest, cluster string, r Res
 		}
 
 		if _, err := commitAll(req.RepoDir, req.User, fmt.Sprintf(
-			"extend %s on %s for %s (until %s)", r.App, cluster, r.User, until.Format(time.RFC3339))); err != nil {
+			"extend %s on %s for %s (until %s)", current.App, cluster, current.User, until.Format(time.RFC3339))); err != nil {
 			return microerror.Mask(err)
 		}
 
-		result = Extended{Cluster: cluster, App: r.App, From: now, Until: until}
+		result = Extended{Cluster: cluster, App: current.App, From: now, Until: until}
 		return nil
 	}
 

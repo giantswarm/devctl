@@ -345,3 +345,81 @@ func TestExtendContinuesAfterABrokenCluster(t *testing.T) {
 		t.Errorf("the good cluster's extension did not land on origin: local HEAD %s, origin %s", head, tip)
 	}
 }
+
+// TestExtendUsesThePostRebaseReservationNotTheStaleSnapshot is the race
+// PushWithRetry exists for: Extend lists a reservation, but before its own
+// push lands, the SAME reservation changes underneath it -- released and
+// re-reserved with a new branch and a much shorter duration, exactly as a
+// developer force-pushing a rename while the extend was in flight would do.
+// Extend's own push is rejected, PushWithRetry rebases onto the new tip and
+// reruns render, and render must write what is on disk now -- the new branch,
+// the new duration -- not the snapshot List returned before the race. A
+// render that still writes the stale snapshot both resets the wrong window
+// and desyncs the ConfigMap entry from the OCIRepository it commits alongside
+// unchanged.
+func TestExtendUsesThePostRebaseReservationNotTheStaleSnapshot(t *testing.T) {
+	dir1, origin := newReapFixture(t, fixtureOptions{})
+
+	req := testRequest(dir1)
+	req.Now = time.Date(2026, 9, 15, 10, 0, 0, 0, time.UTC)
+	req.Duration = 4 * time.Hour
+	reserveAndPush(t, dir1, req)
+
+	dir2 := t.TempDir()
+	runGit(t, dir2, "clone", origin, ".")
+
+	// Before dir1's extend push lands, the reservation dir1 listed is replaced:
+	// same pull request and app, but a new branch and a much shorter duration.
+	if _, err := reservation.Release(reservation.ReleaseRequest{
+		RepoDir: dir2, Cluster: fixtureCluster, App: fixtureApp, User: testUser,
+	}); err != nil {
+		t.Fatalf("releasing on dir2: %v", err)
+	}
+	second := testRequest(dir2)
+	second.Branch = "fix/crash-v2"
+	second.Now = time.Date(2026, 9, 15, 11, 0, 0, 0, time.UTC)
+	second.Duration = time.Hour
+	if _, err := reservation.Reserve(second); err != nil {
+		t.Fatalf("re-reserving on dir2: %v", err)
+	}
+	if err := reservation.Push(context.Background(), dir2); err != nil {
+		t.Fatalf("pushing dir2: %v", err)
+	}
+
+	// dir1's own working tree has not fetched dir2's change: it still only
+	// knows the original 4h reservation, so its first push attempt is rejected
+	// and PushWithRetry must rebase and rerun render.
+	now := time.Date(2026, 9, 15, 13, 0, 0, 0, time.UTC)
+	extended, err := reservation.Extend(context.Background(), reservation.ExtendRequest{
+		RepoDir:     dir1,
+		PullRequest: testPullRequest,
+		User:        testExtender,
+		Now:         now,
+	})
+	if err != nil {
+		t.Fatalf("Extend: %v", err)
+	}
+	if len(extended) != 1 {
+		t.Fatalf("got %d extended reservations, want 1: %+v", len(extended), extended)
+	}
+
+	wantUntil := now.Add(time.Hour) // dir2's 1h duration, not the stale 4h
+	if got := extended[0]; !got.Until.Equal(wantUntil) {
+		t.Errorf("Until: got %s, want %s (the post-rebase 1h duration, not the stale 4h snapshot)", got.Until, wantUntil)
+	}
+
+	entries := reservationEntries(t, dir1, fixtureCluster)
+	entry := entries[fixtureApp]
+	if entry["branch"] != "fix/crash-v2" {
+		t.Errorf("entry branch: got %q, want %q (dir2's landed branch must survive the extend, not the stale one)", entry["branch"], "fix/crash-v2")
+	}
+	if entry["until"] != wantUntil.Format(time.RFC3339) {
+		t.Errorf("entry until: got %q, want %q", entry["until"], wantUntil.Format(time.RFC3339))
+	}
+
+	head := gitOutput(t, dir1, "rev-parse", "HEAD")
+	tip := gitOutput(t, origin, "rev-parse", gitOutput(t, dir1, "branch", "--show-current"))
+	if head != tip {
+		t.Errorf("the extension did not land on origin: local HEAD %s, origin %s", head, tip)
+	}
+}
