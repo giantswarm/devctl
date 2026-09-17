@@ -1,7 +1,7 @@
 package file
 
 import (
-	_ "embed"
+	"embed"
 
 	"github.com/giantswarm/devctl/v8/pkg/gen/input"
 	"github.com/giantswarm/devctl/v8/pkg/gen/input/workflows/internal/params"
@@ -11,8 +11,10 @@ import (
 var runOSSFScorecardTemplate string
 
 //go:generate go run ../../../update-template-sha.go run_ossf_scorecard.yaml.template
-//go:embed run_ossf_scorecard.yaml.template.sha
-var runOSSFScorecardTemplateSha string
+//go:embed run_ossf_scorecard.yaml.template*
+var runOSSFScorecardTemplateFiles embed.FS
+
+var runOSSFScorecardTemplateSha = input.TemplateSHA(runOSSFScorecardTemplateFiles, "run_ossf_scorecard.yaml.template")
 
 func NewRunOSSFScorecardInput(p params.Params) input.Input {
 	i := input.Input{

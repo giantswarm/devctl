@@ -1,7 +1,7 @@
 package file
 
 import (
-	_ "embed"
+	"embed"
 
 	"github.com/giantswarm/devctl/v8/pkg/gen/input"
 	"github.com/giantswarm/devctl/v8/pkg/gen/input/workflows/internal/params"
@@ -11,8 +11,10 @@ import (
 var gitleaksTemplate string
 
 //go:generate go run ../../../update-template-sha.go gitleaks.yaml.template
-//go:embed gitleaks.yaml.template.sha
-var gitleaksTemplateSha string
+//go:embed gitleaks.yaml.template*
+var gitleaksTemplateFiles embed.FS
+
+var gitleaksTemplateSha = input.TemplateSHA(gitleaksTemplateFiles, "gitleaks.yaml.template")
 
 func NewGitleaksInput(p params.Params) input.Input {
 	i := input.Input{

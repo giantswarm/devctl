@@ -1,7 +1,7 @@
 package file
 
 import (
-	_ "embed"
+	"embed"
 
 	"github.com/giantswarm/devctl/v8/pkg/gen/input"
 	"github.com/giantswarm/devctl/v8/pkg/gen/input/makefile/internal/params"
@@ -11,8 +11,10 @@ import (
 var makefileGenChainsawMkTemplate string
 
 //go:generate go run ../../../update-template-sha.go Makefile.gen.chainsaw.mk.template
-//go:embed Makefile.gen.chainsaw.mk.template.sha
-var makefileGenChainsawMkTemplateSha string
+//go:embed Makefile.gen.chainsaw.mk.template*
+var makefileGenChainsawMkTemplateFiles embed.FS
+
+var makefileGenChainsawMkTemplateSha = input.TemplateSHA(makefileGenChainsawMkTemplateFiles, "Makefile.gen.chainsaw.mk.template")
 
 func NewMakefileGenChainsawMkInput(p params.Params) input.Input {
 	i := input.Input{

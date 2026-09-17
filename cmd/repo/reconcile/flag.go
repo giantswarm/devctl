@@ -1,0 +1,55 @@
+package reconcile
+
+import (
+	"github.com/giantswarm/microerror"
+	"github.com/spf13/cobra"
+
+	"github.com/giantswarm/devctl/v8/cmd/repo/internal/engine"
+	"github.com/giantswarm/devctl/v8/pkg/reposetup"
+	"github.com/giantswarm/devctl/v8/pkg/reposetup/reconcile"
+)
+
+type flag struct {
+	GithubTokenEnvVar   string
+	CircleCITokenEnvVar string
+	TeamFile            string
+	Team                string
+	ComponentType       string
+	Schema              string
+	Owner               string
+	DryRun              bool
+	Added               bool
+	EnforceAdmins       bool
+	Steps               []string
+	Options             map[string]string
+	Output              string
+}
+
+func (f *flag) Init(cmd *cobra.Command) {
+	cmd.PersistentFlags().StringVar(&f.GithubTokenEnvVar, "github-token-envvar", engine.DefaultGitHubEnvVar, "Environment variable name for the GitHub token.")
+	cmd.Flags().StringVar(&f.CircleCITokenEnvVar, "circleci-token-envvar", engine.DefaultCircleCIEnvVar, "Environment variable name for the CircleCI token. The CircleCI and release steps are skipped when it is unset.")
+	cmd.Flags().StringVar(&f.TeamFile, "team-file", "", "Path of the team file (repositories/<team>.yaml of giantswarm/github) holding the repository's entry; the team is the file's name.")
+	cmd.Flags().StringVar(&f.Team, "team", "", "Team slug (team-bumblebee) of a repository without a team-file entry; the entry is then the name alone.")
+	cmd.Flags().StringVar(&f.ComponentType, "component-type", "", "Component type of a repository without a team-file entry (service, library, ...).")
+	cmd.Flags().StringVar(&f.Schema, "schema", "", "Path of a repositories schema to validate the entry against instead of the one on giantswarm/github main.")
+	cmd.Flags().StringVar(&f.Owner, "owner", reposetup.DefaultOwner, "GitHub organisation of a repository given without an owner.")
+	cmd.Flags().BoolVar(&f.DryRun, "dry-run", false, "Check only: print what a repair would change, change nothing.")
+	cmd.Flags().BoolVar(&f.Added, "added", false, "The entry was added by the change at hand: a missing repository is created. Never inferred.")
+	cmd.Flags().BoolVar(&f.EnforceAdmins, "enforce-admins", reconcile.DefaultBaseline().EnforceAdmins, "Branch protection binds administrators too (enforce_admins). The baseline's default; =false until giantswarm/giantswarm#36733 decides otherwise.")
+	cmd.Flags().StringSliceVar(&f.Steps, "steps", nil, "Run only these steps (create,scaffold,settings,permissions,protection,circleci,webhooks,renovate,codeowners,metadata,lifecycle,catalog,release); every step when not given.")
+	cmd.Flags().StringToStringVar(&f.Options, "option", nil, "Scaffold option as name=value, the template's options; repeatable.")
+	cmd.Flags().StringVar(&f.Output, "output", engine.OutputTable, "Output format: table or json.")
+}
+
+func (f *flag) Validate() error {
+	if f.TeamFile == "" && f.Team == "" {
+		return microerror.Maskf(invalidFlagError, "--team-file or --team is required")
+	}
+	if f.TeamFile != "" && f.Team != "" {
+		return microerror.Maskf(invalidFlagError, "--team-file and --team exclude each other: the team is the file's name")
+	}
+	if f.TeamFile != "" && f.ComponentType != "" {
+		return microerror.Maskf(invalidFlagError, "--component-type is for a repository without a team-file entry")
+	}
+	return microerror.Mask(engine.ValidateOutput(f.Output))
+}

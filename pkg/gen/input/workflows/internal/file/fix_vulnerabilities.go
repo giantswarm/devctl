@@ -1,7 +1,7 @@
 package file
 
 import (
-	_ "embed"
+	"embed"
 
 	"github.com/giantswarm/devctl/v8/pkg/gen/input"
 	"github.com/giantswarm/devctl/v8/pkg/gen/input/workflows/internal/params"
@@ -11,8 +11,10 @@ import (
 var fixVulnerabilitiesTemplate string
 
 //go:generate go run ../../../update-template-sha.go fix_vulnerabilities.yaml.template
-//go:embed fix_vulnerabilities.yaml.template.sha
-var fixVulnerabilitiesTemplateSha string
+//go:embed fix_vulnerabilities.yaml.template*
+var fixVulnerabilitiesTemplateFiles embed.FS
+
+var fixVulnerabilitiesTemplateSha = input.TemplateSHA(fixVulnerabilitiesTemplateFiles, "fix_vulnerabilities.yaml.template")
 
 func NewFixVulnerabilitiesInput(p params.Params) input.Input {
 	i := input.Input{

@@ -1,7 +1,7 @@
 package file
 
 import (
-	_ "embed"
+	"embed"
 
 	"github.com/giantswarm/devctl/v8/pkg/gen/input"
 	"github.com/giantswarm/devctl/v8/pkg/gen/input/workflows/internal/params"
@@ -11,8 +11,10 @@ import (
 var zizmorBaseTemplate string
 
 //go:generate go run ../../../update-template-sha.go zizmor_base.yml.template
-//go:embed zizmor_base.yml.template.sha
-var zizmorBaseTemplateSha string
+//go:embed zizmor_base.yml.template*
+var zizmorBaseTemplateFiles embed.FS
+
+var zizmorBaseTemplateSha = input.TemplateSHA(zizmorBaseTemplateFiles, "zizmor_base.yml.template")
 
 func NewZizmorBaseInput(p params.Params) input.Input {
 	i := input.Input{

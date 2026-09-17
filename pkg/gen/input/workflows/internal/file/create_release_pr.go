@@ -1,7 +1,7 @@
 package file
 
 import (
-	_ "embed"
+	"embed"
 
 	"github.com/giantswarm/devctl/v8/pkg/gen/input"
 	"github.com/giantswarm/devctl/v8/pkg/gen/input/workflows/internal/params"
@@ -11,8 +11,10 @@ import (
 var createReleasePRTemplate string
 
 //go:generate go run ../../../update-template-sha.go create_release_pr.yaml.template
-//go:embed create_release_pr.yaml.template.sha
-var createReleasePRTemplateSha string
+//go:embed create_release_pr.yaml.template*
+var createReleasePRTemplateFiles embed.FS
+
+var createReleasePRTemplateSha = input.TemplateSHA(createReleasePRTemplateFiles, "create_release_pr.yaml.template")
 
 func NewCreateReleasePRInput(p params.Params) input.Input {
 	i := input.Input{

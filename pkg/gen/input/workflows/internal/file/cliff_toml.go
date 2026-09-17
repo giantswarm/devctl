@@ -1,7 +1,7 @@
 package file
 
 import (
-	_ "embed"
+	"embed"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -14,8 +14,10 @@ import (
 var cliffTomlTemplate string
 
 //go:generate go run ../../../update-template-sha.go cliff.toml.template
-//go:embed cliff.toml.template.sha
-var cliffTomlTemplateSha string
+//go:embed cliff.toml.template*
+var cliffTomlTemplateFiles embed.FS
+
+var cliffTomlTemplateSha = input.TemplateSHA(cliffTomlTemplateFiles, "cliff.toml.template")
 
 // detectRepoName runs `git config --get remote.origin.url` in the cwd
 // (which is the consuming repo at gen time) and extracts the bare repo name

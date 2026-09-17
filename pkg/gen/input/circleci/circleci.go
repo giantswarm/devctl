@@ -62,6 +62,50 @@ const ATSKindConfigPath = ".ats/kind-config.yaml"
 // (its resource_class enum). The orb default is medium (2 vCPU / 7.5 GB).
 var atsResourceClasses = []string{"medium", "large", "xlarge", "2xlarge"}
 
+// ComponentTypeTemplate is the giantswarm/github team-file componentType of a
+// repository other repositories are created from (giantswarm/template-app).
+// It is the one component type the generator acts on: a template's chart
+// carries the placeholders below instead of values, so its chart job renders
+// the checkout with fixture values before app-build-suite reads it, and
+// nothing is released from it (no chart-test, no push jobs). Every other
+// component type renders the pipeline as before.
+const ComponentTypeTemplate = "template"
+
+// The placeholders a template repository carries and the set-up engine fills
+// when a repository is created from it (`devctl replace`). They are the
+// contract between the templates and the engine; the generated chart job of a
+// template repository renders exactly these, so it proves what the engine
+// will produce. TemplateAppNamePlaceholder also names the chart directory
+// (helm/{APP-NAME}); TemplateTeamPlaceholder is the value of the chart's
+// io.giantswarm.application.team annotation.
+const (
+	TemplateAppNamePlaceholder        = "{APP-NAME}"
+	TemplateTeamPlaceholder           = "{TEAM-NAME}"
+	TemplateHelmRepositoryPlaceholder = "{APP HELM REPOSITORY}"
+)
+
+// TemplateAppName and TemplateHelmRepository are the fixture values the
+// template chart job renders the app-name and Helm-repository placeholders
+// with. app-build-suite validates neither beyond the chart being well-formed,
+// so fixtures do; the team is not a fixture -- it is the owning team from the
+// team file (Config.Team), because the team label is what the first
+// app-build-suite run of a created repository is validated on (C0001).
+const (
+	TemplateAppName        = "sample-app"
+	TemplateHelmRepository = "https://charts.example.com"
+)
+
+// teamPattern bounds Config.Team: the template splices it into a sed
+// expression and the rendered chart's team annotation, so it is a plain
+// lowercase team short name or nothing.
+var teamPattern = regexp.MustCompile(`^[a-z0-9-]+$`)
+
+// teamFilePrefix is what a giantswarm/github team file's name carries before
+// the team's short name (repositories/team-honeybadger.yaml → honeybadger).
+// align-files passes the file's name; the chart annotation takes the short
+// name, so both spellings are accepted and normalised to the short name.
+const teamFilePrefix = "team-"
+
 // ContinuationOrbVersion pins the circleci/continuation orb used by the
 // generated setup config (.circleci/config.yml) to merge the optional
 // repo-owned .circleci/custom.yml into .circleci/workflows.yml at pipeline
@@ -419,6 +463,20 @@ type Config struct {
 	// "node-build" and emits persist_to_workspace; empty names it "node-test".
 	// Only applies to a Node repo.
 	NodeBuildOutput string
+	// ComponentType is the repository's componentType from the giantswarm/github
+	// team file. Only ComponentTypeTemplate changes the output, and only for a
+	// chart repo (the "app" flavour): the chart job renders the template's
+	// placeholders with fixture values before app-build-suite, and the
+	// chart-test and chart push jobs are omitted (nothing is released from a
+	// template). Every other value, and a template without a chart, renders
+	// the pipeline as before. Requires Team when set to ComponentTypeTemplate.
+	ComponentType string
+	// Team is the owning team, as the team file names it (team-honeybadger or
+	// honeybadger; a leading "team-" is dropped). The template chart job
+	// renders TemplateTeamPlaceholder with it, so the rendered chart carries
+	// the team label a created repository gets. Only applies with ComponentType
+	// template; ignored otherwise.
+	Team string
 }
 
 // shipsBinaries reports whether the repo distributes cross-platform Go binaries
@@ -586,9 +644,26 @@ func New(config Config) (*CircleCI, error) {
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}
+	// A template repository's chart is rendered before it is built, and nothing
+	// is released from it. Without a chart there is nothing to render: the
+	// component type is then a no-op rather than an error, because align-files
+	// passes it for every template repository on generated CI.
+	templateChart := config.ComponentType == ComponentTypeTemplate && hasApp
+	team := strings.TrimPrefix(config.Team, teamFilePrefix)
+	if config.ComponentType == ComponentTypeTemplate {
+		if team == "" {
+			return nil, microerror.Maskf(invalidConfigError, "ComponentType %q requires Team: the rendered chart carries the owning team's name as its io.giantswarm.application.team label", ComponentTypeTemplate)
+		}
+		if !teamPattern.MatchString(team) {
+			return nil, microerror.Maskf(invalidConfigError, "Team must be a team short name made of [a-z0-9-] (e.g. honeybadger or team-honeybadger), got %q", config.Team)
+		}
+	}
+	if templateChart && config.ATSOnRelease {
+		return nil, microerror.Maskf(invalidConfigError, "ATSOnRelease does not apply to a template repository: its chart is built from the rendered template only, with no chart-test or release jobs")
+	}
 	if config.ATSResourceClass != "" {
-		if !hasApp || config.SkipATS {
-			return nil, microerror.Maskf(invalidConfigError, "ATSResourceClass requires the chart-test jobs (app flavour without SkipATS)")
+		if !hasApp || config.SkipATS || templateChart {
+			return nil, microerror.Maskf(invalidConfigError, "ATSResourceClass requires the chart-test jobs (app flavour without SkipATS, not a template repository)")
 		}
 		if !slices.Contains(atsResourceClasses, config.ATSResourceClass) {
 			return nil, microerror.Maskf(invalidConfigError, "ATSResourceClass %#q is not a resource class run-tests-with-ats accepts; allowed: %s", config.ATSResourceClass, strings.Join(atsResourceClasses, ", "))
@@ -806,6 +881,14 @@ func New(config Config) (*CircleCI, error) {
 			NodeTestTarget:           nodeTestTarget,
 			NodeBuildTarget:          nodeBuildTarget,
 			NodeBuildOutput:          nodeBuildOutput,
+			TemplateChart:            templateChart,
+			Team:                     team,
+
+			TemplateAppNamePlaceholder:        TemplateAppNamePlaceholder,
+			TemplateTeamPlaceholder:           TemplateTeamPlaceholder,
+			TemplateHelmRepositoryPlaceholder: TemplateHelmRepositoryPlaceholder,
+			TemplateAppName:                   TemplateAppName,
+			TemplateHelmRepository:            TemplateHelmRepository,
 		},
 	}
 
@@ -835,9 +918,11 @@ func (c *CircleCI) Workflows() input.Input {
 // dependent on a separate, differently-scoped invocation. A repo that opts out
 // of ATS (SkipATS) gets no Pipfile either, matching the suppressed jobs. The
 // default branch-only shape keeps the file (the branch job runs the tests);
-// ATSOnRelease only adds the tag-time job.
+// ATSOnRelease only adds the tag-time job. A template repository gets none: it
+// has no chart-test job, and its tests/ats files are template content for the
+// repositories created from it, not this repository's own.
 func (c *CircleCI) ATSInputs() []input.Input {
-	if !c.params.HasApp || c.params.SkipATS {
+	if !c.params.HasApp || c.params.SkipATS || c.params.TemplateChart {
 		return nil
 	}
 

@@ -1,7 +1,7 @@
 package file
 
 import (
-	_ "embed"
+	"embed"
 
 	"github.com/giantswarm/devctl/v8/pkg/gen/input"
 	"github.com/giantswarm/devctl/v8/pkg/gen/input/workflows/internal/params"
@@ -11,8 +11,10 @@ import (
 var semanticPullRequestTemplate string
 
 //go:generate go run ../../../update-template-sha.go semantic_pull_request.yaml.template
-//go:embed semantic_pull_request.yaml.template.sha
-var semanticPullRequestTemplateSha string
+//go:embed semantic_pull_request.yaml.template*
+var semanticPullRequestTemplateFiles embed.FS
+
+var semanticPullRequestTemplateSha = input.TemplateSHA(semanticPullRequestTemplateFiles, "semantic_pull_request.yaml.template")
 
 func NewSemanticPullRequestInput(p params.Params) input.Input {
 	i := input.Input{

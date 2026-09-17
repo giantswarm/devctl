@@ -7,6 +7,53 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- `repo reconcile`: `lifecycle: archived` unfollows on CircleCI once. The step read the v2 project to decide
+  "followed", which answers 200 for ever — unfollowed or stopped alike (checked live) — so every run planned and
+  re-applied `unfollow on CircleCI` on every archived repository. It now reads the token user's follow from the v1.1
+  project settings (the state the unfollow changes), unfollows and stops the project building
+  (`circleciclient.StopBuilding`, the UI's "Stop building"), and verifies the follow is gone before calling the
+  repair done; a second run is `ok` (giantswarm/giantswarm#37726, #2231). `circleciclient.Following` reads the state.
+- `repo reconcile`: an entry the validator refuses is a result, not exit 2 without output — one step `entry`,
+  verdict `reported`, one finding per problem (`gen-circleci-refused` for `gen.ci.generate`, the new `entry-refused`
+  otherwise) with the field to fix, exit 0: the declaration is at fault, not the run; a flag or token error still
+  exits 2. The reconciler workflow of giantswarm/github ran one invocation per declared repository, and 26 of
+  Bumblebee's 72 jobs died on the empty result (giantswarm/giantswarm#37726, #2229). `reconcile.Refused` builds the
+  result. `--enforce-admins` (default true, the baseline's) is the documented knob for whether the branch protection
+  binds administrators, for the reconciler to pass once giantswarm/giantswarm#36733 decides.
+- `pkg/githubclient.ReportedChecks`, `repo reconcile`, `repo checks`: on a repository whose every commit on the
+  default branch is tagged — a fresh repository whose only commit is the scaffold, tagged v0.1.0 by auto-release
+  within seconds — the head is the candidate commit instead of a not-found error, so the checks that reported on it
+  (`pre-commit`, the pipeline's jobs) are required on the first run. The protection step's `unchecked` finding is
+  worded by cause: a 401/403 names the permissions to grant (`statuses: read`, `checks: read`), a branch without a
+  commit is "nothing reported yet" without a finding (giantswarm/giantswarm#37726, #2228).
+- `repo reconcile`: the `catalog` step maps by chart, not by repository name: the component's
+  `giantswarm.io/helmcharts` annotation in `catalog/components.yaml` names the charts to look for in the
+  apps-to-teams mapping, matched by chart name (`chartName` overrides and `-app` suffixes differ from the
+  repository), private-registry charts left out; a component without a public chart — a Go service without a chart,
+  a library, a CLI — ends the step `ok` ("in the catalog; no public chart to map") instead of dispatching the
+  mapping run on every reconcile for a repair that cannot converge (giantswarm/giantswarm#37726, #2227).
+- `repo reconcile`: the `circleci` step grants the CircleCI token's GitHub user `admin` on the repository before
+  following the project and revokes the grant right after, when that user is not an administrator already — CircleCI
+  follows a project for a repository administrator only ("only a project's Github administrator may setup Circle"),
+  and the reconciler's identity holds push through the bots team, so the first live run on two fresh repositories
+  failed at the follow and left the scaffold's v0.1.0 tag unbuilt (giantswarm/giantswarm#37726, #2226). The grant and
+  the follow are two changes of the step (`--dry-run` plans both); `pkg/circleciclient` gains `Me` (`GET /api/v2/me`).
+
+- `pkg/reposetup`, `repo validate`, `repo status`, `repo reconcile`: the creation rules (`gen.flavours`/`gen.language`
+  set, the chart-name convention, generated CI has a job, the name free on GitHub) apply to entries being added
+  only; an existing entry is valid if the schema accepts it (giantswarm/giantswarm#37726, #2213). The Validator
+  takes `Request.Mode` -- `ModeCreate` (the default, as before) or `ModeExisting` (schema alone; the name check's
+  verdict is reported, never refuses -- a missing repository is the reconciler's finding; no review guard notices)
+  -- and `Result.Mode` says which ran. `repo validate --mode create|existing` defaults to `create` with `--entry`
+  and to `existing` for a whole file, so the validation check on giantswarm/github, which names the added entries,
+  runs as before. `repo status` and `repo reconcile` validate in existing mode (`reconcile --added` in create
+  mode). Before, 222 of the 443 entries declared in the real team files were refused and the read-mode checks of
+  giantswarm-repo-manager could not run over them; in existing mode none is.
+
+- `pkg/gen/input`: devctl builds as a module dependency again. The template provenance files (`*.template.sha`, written by `go generate`, gitignored) were embedded by name, so `pkg/reposetup` — which renders scaffolds with the gen inputs since v8.60.0 — could not compile from the module proxy (`pattern x.template.sha: no matching files found`). Each site now embeds `<template>*` and reads the `.sha` through `input.TemplateSHA`, which falls back to the module version's tree link when the file is absent; generated output is unchanged where `go generate` ran.
+
 ### Added
 
 - `reservation reserve`: a new command that points one management cluster's copy of one collection
@@ -77,6 +124,90 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   still runs on that push. The tag path is untouched: a tag has no pull request to find, and the
   chart version `app-build-suite` stamps is unchanged. Requires architect orb 10.6.0 or newer;
   generating with an older pin leaves the parameter undeclared and CircleCI rejects the config.
+- `repo create` and `repo status`, the laptop's client of the repository set-up engine
+  (giantswarm/giantswarm#37726, #2215). `repo create --team … --name … --component-type … --flavour … --language …
+  --description … --visibility …` renders the declaration as an entry of the team's file in giantswarm/github
+  (`gen.ci.generate` as the CircleCI generator decides), placed alphabetically with the rest of the file kept byte
+  for byte, validates it through the engine (schema, creation rules, the name on GitHub), prints the dry run and
+  opens the team-file pull request as the person with their own token (`$GITHUB_TOKEN` or the gh CLI's login) --
+  a taken name or a wrong flavour is refused before a pull request exists, and the guard notices say beforehand
+  whether the machine approves the change or the team reviews it (membership read from GitHub as the person). It
+  never creates a repository or touches settings. `repo status [owner/]repo` prints the set-up state -- every step
+  with its verdict -- from giantswarm-repo-manager through a muster endpoint (`--muster-endpoint`,
+  `$MUSTER_ENDPOINT`) when reachable, else from the engine's checks in read mode with the person's tokens.
+  Documented in `docs/repo.md`.
+- `pkg/reposetup`: `Creation` renders a declaration from fields, `InsertEntry` places it in a team file's
+  text, `Remote` reads team files and memberships from giantswarm/github and opens the pull request as the
+  caller, `CreationPullRequest` shapes it; `pkg/reposetup/manager` is the client of giantswarm-repo-manager's
+  `get_repository` tool over MCP's streamable HTTP transport.
+- `repo reconcile REPOSITORY` (giantswarm/giantswarm#37726, #2214): runs the repository set-up steps of
+  `pkg/reposetup/reconcile` locally as the person — the way to repair a repository when the reconciler
+  workflow is down and to develop the engine against a real repository. The desired state is the
+  repository's entry of a giantswarm/github team file (`--team-file`, validated as the reconciler validates
+  it; the scaffold is rendered from it on an empty repository) or, for a repository without a declaration,
+  `--team` alone. `--dry-run` prints what a repair would change; `--steps` restricts the run; `--added`
+  allows the create step; the result is a table, or the structured value with `--output json`. The CircleCI
+  steps read the token from `$CIRCLECI_TOKEN` (`--circleci-token-envvar`) and are skipped without one.
+- `pkg/reposetup/reconcile`: `Result.WriteTable` renders a run for a person, `Result.Failed` lists the
+  steps that could not run; `Request.Pipeline` hands the protection step just-generated pipeline documents
+  instead of the repository's `.circleci`; a run restricted to steps that do not read the team needs no
+  team. `pkg/reposetup.UndeclaredEntry` is the accepted entry of a repository without a team-file
+  declaration.
+
+### Fixed
+
+- The repository set-up engine pushes the scaffold as a conventional commit, `feat: initial scaffold of <name> from
+  <template>`, so the generated auto-release workflow tags the created repository `v0.1.0` from it: git-cliff drops a
+  non-conventional commit (`filter_unconventional`), and with the old `Scaffold <name> from <template>` subject a new
+  repository never got a release and the first-release check could not pass. The CODEOWNERS pull request's commit
+  follows the same rule (#2214).
+
+### Changed
+
+- `repo setup` and `repo checks` run the set-up engine's steps instead of their own GitHub calls
+  (giantswarm/giantswarm#37726, #2214). Required checks follow the reported-only rule: a context is required
+  once it has reported on the default branch or a recently merged pull request, and a required context
+  nothing reports any more is removed — `repo setup` no longer requires the contexts of whatever ran on the
+  default branch so far (the `create-release / …`, `update-go_modules-graph` and `ci/circleci: setup` ghosts
+  of a fresh repository cannot recur), and `repo checks` removes ghosts without being told. `repo checks`
+  without `--update` prints the drift; the CircleCI pipeline's branch-side jobs are read from the
+  repository's `.circleci` when `--circleci-dir` is not given; the release workflows, `update-go_modules-graph`,
+  `aliyun`, `validate-changelog` and `check-values-schema` are never required. `repo setup --renovate` checks
+  that the Renovate installation covers the repository and reports a missing one with the fix instead of
+  failing on the `PUT` an organization owner alone may make. Both commands print the run's result as a table
+  (`--output json` for the structured value); a step that could not run to its end is the non-zero exit.
+
+- `pkg/reposetup/reconcile`: the repository set-up steps as check and repair, idempotent — create (only from an added entry), scaffold push before protection, settings baseline, team permissions, branch protection with required checks on the reported-only rule (ghost contexts removed, contexts following the generated pipeline), CircleCI follow, setup workflows and checkout key, webhooks, Renovate installation (check only), CODEOWNERS (a pull request), description and visibility, lifecycle `archived` (archive and unfollow), catalog and mapping (the giantswarm/github workflows), first-release verification (a missed tag build is triggered). `reconcile.Runner.Run` returns a structured `reconcile.Result`; a redirect on the declared name is followed as a rename, and what is not repaired (repository gone, `gen circleci` refusal, ABS prerequisites, red release, default icon) is reported with the fix. Table-tested against in-process fakes of GitHub's and CircleCI's REST surfaces.
+- `pkg/circleciclient`: a CircleCI client for follow and unfollow (v1.1), the project, its settings, checkout keys, pipelines, workflows and jobs (v2).
+- `pkg/githubclient`: `Config.BaseURL` points the client at another GitHub API host.
+
+- `gen circleci`: `--component-type template --team TEAM` renders a template repository's chart before it builds
+  (giantswarm/giantswarm#37726, #2217). A template's chart lives at `helm/{APP-NAME}` and carries the
+  placeholders a repository created from it fills in (`{APP-NAME}`, `{TEAM-NAME}`, `{APP HELM REPOSITORY}`),
+  so the generated `build-chart` of `giantswarm/template-app` was red on every pipeline. For
+  `componentType: template` the chart job is now an inline job on the app-build-suite executor that renders
+  the checkout with fixture values (`sample-app`, the owning team from the team file, an example Helm
+  repository) and runs app-build-suite on the rendered chart, so green means a repository created from the
+  template passes its first chart build. Nothing is released from a template: no chart-test job, no push
+  jobs, no release leg, no `tests/ats` files, and the job runs on `main` too. A template without a chart
+  and every other component type render the pipeline as before.
+- `repo validate` and the `pkg/reposetup` package, the front half of the repository set-up engine
+  (giantswarm/giantswarm#37726, #2213): an entry of a giantswarm/github team file is validated against
+  the repositories schema — fetched from `giantswarm/github` main, with an embedded copy that already
+  carries the plan's `description`, `visibility` and `lifecycle: archived` fields as the fallback — and
+  against the rules for a repository the reconciler creates: `gen.flavours` and `gen.language` are
+  mandatory, `gen.ci.generate` defaults to `true` (written into the rendered entry), the name is
+  lowercase and free on GitHub (an existing repository or a redirect from a renamed one is taken), a
+  chart repository is named after its chart (no `-app` suffix, `gen.ci.chartName` equal to the name),
+  and `language: node` is refused until the Node template exists. Every refusal names the field. The
+  template is derived, never declared: Go → `giantswarm/template`, chart-only (`generic` with the `app`
+  flavour) → `giantswarm/template-app`, customer, configuration, python and kyverno-policy → the minimal
+  scaffold. The command prints the dry run as JSON on stdout (log lines go to stderr) — the rendered
+  entry, the implied template, the name verdict, the problems and the guard notices: an author outside
+  the owning team and team-planeteers keeps the team's review, more than three added entries get a
+  person — and exits non-zero on a refusal. The package is the one place validation and rendering live
+  for the reconciler workflow, `repo create` and giantswarm-repo-manager; the scaffold rendering is the
+  engine's next half.
 - `gen workflows`: the `auto-release` flow can now cut release candidates. A pull request titled
   `feat-rc:` or `fix-rc:` marks its change as part of a candidate, and the workflow tags
   `vX.Y.Z-rc.N` instead of `vX.Y.Z`, flagged as a GitHub pre-release. The decision is taken over
@@ -164,6 +295,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   `reservation.IsPush` or `reservation.IsPushRetriesExhausted`; the CLI's own output is unchanged.
   `release.IsPush` and `reap.IsReap` are removed along with them.
 
+- `pkg/reposetup`: scaffold rendering, the back half of the repository set-up engine
+  (giantswarm/giantswarm#37726, #2213). `Renderer.Render` renders an accepted entry into a directory: the
+  template's tree (tarball of `giantswarm/template` or `giantswarm/template-app` main, or a `TemplateSource`
+  of the caller's) with its placeholders replaced (`REPOSITORY_NAME`, `{APP-NAME}` in paths and files,
+  `{TEAM-NAME}` as the chart's team annotation, `{APP HELM REPOSITORY}`), CODEOWNERS as align-files writes
+  it, the minimal scaffold (README, LICENSE, DCO, SECURITY.md, CODEOWNERS, `.gitignore`) for configuration,
+  customer, python and kyverno-policy repositories, and the generated files — through the same `devctl gen
+  makefile|workflows|llm|precommit|circleci|renovate` commands align-files runs, in its order and with its
+  flags, so the first align run after creation changes nothing (`Scaffold.Commands` lists them). The
+  chart-only template offers the vendir sync and patch-script scaffolding of `devctl app bootstrap` as
+  `Entry.Options` of the dry run, chosen through `RenderRequest.Options`. Golden trees for every kind of the
+  derivation (Node deferred with its template) and a test that runs the generators a second time over each
+  scaffold and asserts no change.
+- `repo validate` refuses `gen.ci.generate: true` for a declaration the CircleCI generator has no job for
+  (a language other than go or node, no app flavour, no `gen.ci.image.dockerfile`): align-files' `devctl
+  gen circleci` would fail on the created repository. The field is `gen.ci.generate`.
 ### Changed
 
 - `gen precommit`: `devctl gen precommit` now writes `helm/<chart>/values.schema.json` itself,
@@ -559,6 +706,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   that the input and the expectation can be read together. It also excludes `fmt.Fprint`,
   `fmt.Fprintf` and `fmt.Fprintln` from errcheck: the runners print to an injected `io.Writer`,
   and a failed write to the user's terminal cannot be reported to the user's terminal.
+
+### Removed
+
+- `app bootstrap`. Its replacement is `repo create`: the declaration goes through the engine's validation and
+  the team-file pull request instead of a hard-coded `-app` suffix, an unvalidated team-file write, an SSH clone
+  and a push-then-protect sequence; the reconciler creates the repository from the merged entry. The vendir and
+  kustomize sync and the patch-script scaffolding live on as options of the chart-only template's dry run
+  (`pkg/reposetup` options). The `app` command group is gone with its only subcommand.
 
 ## [8.23.0] - 2026-06-24
 

@@ -1,0 +1,713 @@
+template: minimal
+command: devctl gen makefile --flavour generic --language kyverno-policy
+command: devctl gen workflows --flavour generic --language kyverno-policy --release-workflow legacy
+command: devctl gen llm --flavour generic --language kyverno-policy
+
+--- .cursor/rules/zz_generated.base-llm-rules.mdc
+---
+description: Instructions for AI/LLM assistants
+alwaysApply: true
+---
+
+# Instructions for AI/LLM assistants
+
+You are an AI assistant acting as an expert software developer and platform engineer working on Giant Swarm platform components. Your task is to act as a pair programmer and help others working in this codebase to keep the code delightful to work with. This includes ensuring that the code adheres to Giant Swarm's quality standards, keeping the project well-architected and organized, and maintaining supporting documentation, diagrams, and rules for other AI assistants.
+
+# Persona: Senior Giant Swarm Platform Engineer
+
+- **Technical Depth**: You are a domain expert in Go (formerly, golang), Helm, Kubernetes APIs and development, software design patterns, software architecture, Go application security, software testing, and software performance optimization,
+- **Problem-Solver**: You approach issues methodically, prioritizing safety and stability. You first investigate deeply with the tools provided to you, before suggesting changes. You find and fix the root cause, not the symptoms.
+- **Clear Communicator**: You explain complex topics clearly and provide actionable steps.
+- **Collaborative**: You guide users, suggest diagnostic paths, and help them think through problems.
+- **Best Practices**: You adhere to Giant Swarm operational and technical standards.
+
+# Reviewer Guidelines
+
+## Core Behaviors
+
+- Unless directed by the user, never use or recommend external linters, code analysis, or other tooling which isn't already recommended in Giant Swarm agent rules or style guides.
+- Always adhere to the central coding guidelines and best practices maintained at: @https://github.com/giantswarm/fmt/
+- Prioritize readability, maintainability, and security.
+- Write comprehensive tests and documentation.
+- If documentation is available in the `docs` folder, keep this up-to-date when changing code.
+- Maintain the main README.md file for correctness.
+- If a changelog is available as CHANGELOG.md, add your changes to it.
+
+## Release Management
+
+- Follow the changelog and release guidelines from @https://github.com/giantswarm/fmt/tree/main/releases
+- Use semantic versioning and conventional commits
+
+
+## Language-Specific Guidelines
+
+Additional language-specific rules can be found in the general style guide and in the other rules files in this repository.
+
+
+
+---
+
+For detailed guidelines and examples, always refer to: @https://github.com/giantswarm/fmt/
+
+
+<!--
+DO NOT EDIT. Generated with devctl.
+This file is maintained at:
+https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/llm/internal/file/base_llm_rules.mdc.template
+Manual changes will be overwritten.
+-->
+
+--- .github/workflows/zz_generated.create_release.yaml
+# DO NOT EDIT. Generated with:
+#
+#    devctl
+#
+#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/create_release.yaml.template
+#
+name: Create Release
+
+on:
+  push:
+    branches:
+      - 'legacy'
+      - 'main'
+      - 'master'
+      - 'release-v*.*.x'
+      # "!" negates previous positive patterns so it has to be at the end.
+      - '!release-v*.x.x'
+
+permissions: {}
+
+jobs:
+  create-release:
+    uses: giantswarm/github-workflows/.github/workflows/create-release.yaml@main
+    with:
+      fetch-deep-gitlog-for-build: true
+    secrets:
+      TAYLORBOT_GITHUB_ACTION: ${{ secrets.TAYLORBOT_GITHUB_ACTION }}
+    permissions:
+      contents: write
+
+--- .github/workflows/zz_generated.create_release_pr.yaml
+# DO NOT EDIT. Generated with:
+#
+#    devctl
+#
+#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/create_release_pr.yaml.template
+#
+name: Create Release PR
+on:
+  push:
+    branches:
+      - 'legacy#release#v*.*.*'
+      - 'main#release#v*.*.*'
+      - 'main#release#major'
+      - 'main#release#minor'
+      - 'main#release#patch'
+      - 'main#release#major-rc'
+      - 'main#release#minor-rc'
+      - 'main#release#patch-rc'
+      - 'main#release#rc'
+      - 'main#release#rc-release'
+      - 'master#release#v*.*.*'
+      - 'master#release#major'
+      - 'master#release#minor'
+      - 'master#release#patch'
+      - 'master#release#major-rc'
+      - 'master#release#minor-rc'
+      - 'master#release#patch-rc'
+      - 'master#release#rc'
+      - 'master#release#rc-release'
+      - 'release#v*.*.*'
+      - 'release#major'
+      - 'release#minor'
+      - 'release#patch'
+      - 'release#major-rc'
+      - 'release#minor-rc'
+      - 'release#patch-rc'
+      - 'release#rc'
+      - 'release#rc-release'
+      - 'release-v*.*.x#release#v*.*.*'
+      # "!" negates previous positive patterns so it has to be at the end.
+      - '!release-v*.x.x#release#v*.*.*'
+  workflow_call:
+    inputs:
+      branch:
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  publish:
+    uses: giantswarm/github-workflows/.github/workflows/create-release-pr.yaml@main
+    permissions:
+      contents: read
+    with:
+      branch: ${{ inputs.branch }}
+    secrets:
+      TAYLORBOT_GITHUB_ACTION: ${{ secrets.TAYLORBOT_GITHUB_ACTION }}
+
+--- .github/workflows/zz_generated.gitleaks.yaml
+# DO NOT EDIT. Generated with:
+#
+#    devctl
+#
+#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/gitleaks.yaml.template
+#
+name: gitleaks
+
+on:
+  - pull_request
+  - merge_group
+
+permissions: {}
+
+jobs:
+  publish:
+    uses: giantswarm/github-workflows/.github/workflows/gitleaks.yaml@main
+    permissions:
+      contents: read
+
+--- .github/workflows/zz_generated.run_ossf_scorecard.yaml
+# DO NOT EDIT. Generated with:
+#
+#    devctl
+#
+#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/run_ossf_scorecard.yaml.template
+#
+
+# This workflow uses actions that are not certified by GitHub. They are provided
+# by a third-party and are governed by separate terms of service, privacy
+# policy, and support documentation.
+
+name: Scorecard supply-chain security
+on:
+  # For Branch-Protection check. Only the default branch is supported. See
+  # https://github.com/ossf/scorecard/blob/main/docs/checks.md#branch-protection
+  branch_protection_rule: {}
+  # To guarantee Maintained check is occasionally updated. See
+  # https://github.com/ossf/scorecard/blob/main/docs/checks.md#maintained
+  schedule:
+    - cron: '15 15 15 * *'
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch: {}
+
+permissions: {}
+
+jobs:
+  analysis:
+    uses: giantswarm/github-workflows/.github/workflows/ossf-scorecard.yaml@main
+    permissions:
+      contents: read
+      actions: read
+      issues: read
+      pull-requests: read
+      checks: read
+      security-events: write
+      id-token: write
+    secrets:
+      scorecard_token: ${{ secrets.SCORECARD_TOKEN }}
+
+--- .github/workflows/zz_generated.semantic_pull_request.yaml
+# DO NOT EDIT. Generated with:
+#
+#    devctl
+#
+#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/semantic_pull_request.yaml.template
+#
+name: semantic-pull-request
+
+on:
+  pull_request:
+    types:
+      - opened
+      - edited
+      - synchronize
+  merge_group: {}
+
+permissions: {}
+
+jobs:
+  semantic-pull-request:
+    uses: giantswarm/github-workflows/.github/workflows/semantic-pull-request.yaml@main
+    permissions:
+      pull-requests: read
+    with:
+      # The action's stock parser reads the type with `\w*`, which cannot match
+      # a hyphen, so feat-rc/fix-rc fail to parse whatever `types` allows.
+      # Widen the type group by exactly the -rc suffix and nothing else; the
+      # three capturing groups stay type, scope, subject, which is the
+      # correspondence the action already defaults to.
+      header_pattern: '^(\w*(?:-rc)?)(?:\((.*)\))?!?: (.*)$'
+      # `types` REPLACES the action's default list rather than extending it, so
+      # all eleven defaults from commitizen/conventional-commit-types are
+      # repeated here, plus the additions below. Entries are regexes the action
+      # wraps in `^ $`.
+      #
+      # feat-rc/fix-rc mark a release candidate for the auto-release flow. They
+      # are accepted everywhere but only act in repositories generated with
+      # --release-workflow=auto-release; in a legacy repository they are inert.
+      #
+      # `security` is not one of the action's defaults and has to be listed to
+      # be accepted at all. cliff.toml maps it to the Security changelog group,
+      # which no title can reach while the type is rejected.
+      types: |
+        feat(-rc)?
+        fix(-rc)?
+        docs
+        style
+        refactor
+        perf
+        test
+        build
+        ci
+        chore
+        revert
+        security
+
+--- .github/workflows/zz_generated.trigger-circleci-pipeline.yaml
+# DO NOT EDIT. Generated with:
+#
+#    devctl
+#
+#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/trigger_circleci_pipeline.yaml.template
+#
+name: trigger-circleci-pipeline
+
+on:
+  pull_request:
+    types: [opened, reopened]
+
+permissions: {}
+
+jobs:
+  build:
+    permissions: {}
+    uses: giantswarm/github-workflows/.github/workflows/trigger-circleci-pipeline.yaml@main
+    secrets: inherit
+
+--- .github/workflows/zz_generated.validate_changelog.yaml
+# DO NOT EDIT. Generated with:
+#
+#    devctl
+#
+#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/validate_changelog.yaml.template
+#
+name: Validate changelog
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'CHANGELOG.md'
+
+permissions: {}
+
+jobs:
+  validate-changelog:
+    uses: giantswarm/github-workflows/.github/workflows/validate-changelog.yaml@main
+    permissions:
+      contents: read
+      pull-requests: write
+
+--- .gitignore
+# Editor and OS files
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+--- CODEOWNERS
+# generated by giantswarm/github actions - changes will be overwritten
+* @giantswarm/team-shield
+
+--- DCO
+Developer Certificate of Origin
+Version 1.1
+
+Copyright (C) 2004, 2006 The Linux Foundation and its contributors.
+660 York Street, Suite 102,
+San Francisco, CA 94110 USA
+
+Everyone is permitted to copy and distribute verbatim copies of this
+license document, but changing it is not allowed.
+
+
+Developer's Certificate of Origin 1.1
+
+By making a contribution to this project, I certify that:
+
+(a) The contribution was created in whole or in part by me and I
+    have the right to submit it under the open source license
+    indicated in the file; or
+
+(b) The contribution is based upon previous work that, to the best
+    of my knowledge, is covered under an appropriate open source
+    license and I have the right under that license to submit that
+    work with modifications, whether created in whole or in part
+    by me, under the same open source license (unless I am
+    permitted to submit under a different license), as indicated
+    in the file; or
+
+(c) The contribution was provided directly to me by some other
+    person who certified (a), (b) or (c) and I have not modified
+    it.
+
+(d) I understand and agree that this project and the contribution
+    are public and that a record of the contribution (including all
+    personal information I submit with it, including my sign-off) is
+    maintained indefinitely and may be redistributed consistent with
+    this project or the open source license(s) involved.
+
+--- LICENSE
+                                 Apache License
+                           Version 2.0, January 2004
+                        http://www.apache.org/licenses/
+
+   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
+
+   1. Definitions.
+
+      "License" shall mean the terms and conditions for use, reproduction,
+      and distribution as defined by Sections 1 through 9 of this document.
+
+      "Licensor" shall mean the copyright owner or entity authorized by
+      the copyright owner that is granting the License.
+
+      "Legal Entity" shall mean the union of the acting entity and all
+      other entities that control, are controlled by, or are under common
+      control with that entity. For the purposes of this definition,
+      "control" means (i) the power, direct or indirect, to cause the
+      direction or management of such entity, whether by contract or
+      otherwise, or (ii) ownership of fifty percent (50%) or more of the
+      outstanding shares, or (iii) beneficial ownership of such entity.
+
+      "You" (or "Your") shall mean an individual or Legal Entity
+      exercising permissions granted by this License.
+
+      "Source" form shall mean the preferred form for making modifications,
+      including but not limited to software source code, documentation
+      source, and configuration files.
+
+      "Object" form shall mean any form resulting from mechanical
+      transformation or translation of a Source form, including but
+      not limited to compiled object code, generated documentation,
+      and conversions to other media types.
+
+      "Work" shall mean the work of authorship, whether in Source or
+      Object form, made available under the License, as indicated by a
+      copyright notice that is included in or attached to the work
+      (an example is provided in the Appendix below).
+
+      "Derivative Works" shall mean any work, whether in Source or Object
+      form, that is based on (or derived from) the Work and for which the
+      editorial revisions, annotations, elaborations, or other modifications
+      represent, as a whole, an original work of authorship. For the purposes
+      of this License, Derivative Works shall not include works that remain
+      separable from, or merely link (or bind by name) to the interfaces of,
+      the Work and Derivative Works thereof.
+
+      "Contribution" shall mean any work of authorship, including
+      the original version of the Work and any modifications or additions
+      to that Work or Derivative Works thereof, that is intentionally
+      submitted to Licensor for inclusion in the Work by the copyright owner
+      or by an individual or Legal Entity authorized to submit on behalf of
+      the copyright owner. For the purposes of this definition, "submitted"
+      means any form of electronic, verbal, or written communication sent
+      to the Licensor or its representatives, including but not limited to
+      communication on electronic mailing lists, source code control systems,
+      and issue tracking systems that are managed by, or on behalf of, the
+      Licensor for the purpose of discussing and improving the Work, but
+      excluding communication that is conspicuously marked or otherwise
+      designated in writing by the copyright owner as "Not a Contribution."
+
+      "Contributor" shall mean Licensor and any individual or Legal Entity
+      on behalf of whom a Contribution has been received by Licensor and
+      subsequently incorporated within the Work.
+
+   2. Grant of Copyright License. Subject to the terms and conditions of
+      this License, each Contributor hereby grants to You a perpetual,
+      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
+      copyright license to reproduce, prepare Derivative Works of,
+      publicly display, publicly perform, sublicense, and distribute the
+      Work and such Derivative Works in Source or Object form.
+
+   3. Grant of Patent License. Subject to the terms and conditions of
+      this License, each Contributor hereby grants to You a perpetual,
+      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
+      (except as stated in this section) patent license to make, have made,
+      use, offer to sell, sell, import, and otherwise transfer the Work,
+      where such license applies only to those patent claims licensable
+      by such Contributor that are necessarily infringed by their
+      Contribution(s) alone or by combination of their Contribution(s)
+      with the Work to which such Contribution(s) was submitted. If You
+      institute patent litigation against any entity (including a
+      cross-claim or counterclaim in a lawsuit) alleging that the Work
+      or a Contribution incorporated within the Work constitutes direct
+      or contributory patent infringement, then any patent licenses
+      granted to You under this License for that Work shall terminate
+      as of the date such litigation is filed.
+
+   4. Redistribution. You may reproduce and distribute copies of the
+      Work or Derivative Works thereof in any medium, with or without
+      modifications, and in Source or Object form, provided that You
+      meet the following conditions:
+
+      (a) You must give any other recipients of the Work or
+          Derivative Works a copy of this License; and
+
+      (b) You must cause any modified files to carry prominent notices
+          stating that You changed the files; and
+
+      (c) You must retain, in the Source form of any Derivative Works
+          that You distribute, all copyright, patent, trademark, and
+          attribution notices from the Source form of the Work,
+          excluding those notices that do not pertain to any part of
+          the Derivative Works; and
+
+      (d) If the Work includes a "NOTICE" text file as part of its
+          distribution, then any Derivative Works that You distribute must
+          include a readable copy of the attribution notices contained
+          within such NOTICE file, excluding those notices that do not
+          pertain to any part of the Derivative Works, in at least one
+          of the following places: within a NOTICE text file distributed
+          as part of the Derivative Works; within the Source form or
+          documentation, if provided along with the Derivative Works; or,
+          within a display generated by the Derivative Works, if and
+          wherever such third-party notices normally appear. The contents
+          of the NOTICE file are for informational purposes only and
+          do not modify the License. You may add Your own attribution
+          notices within Derivative Works that You distribute, alongside
+          or as an addendum to the NOTICE text from the Work, provided
+          that such additional attribution notices cannot be construed
+          as modifying the License.
+
+      You may add Your own copyright statement to Your modifications and
+      may provide additional or different license terms and conditions
+      for use, reproduction, or distribution of Your modifications, or
+      for any such Derivative Works as a whole, provided Your use,
+      reproduction, and distribution of the Work otherwise complies with
+      the conditions stated in this License.
+
+   5. Submission of Contributions. Unless You explicitly state otherwise,
+      any Contribution intentionally submitted for inclusion in the Work
+      by You to the Licensor shall be under the terms and conditions of
+      this License, without any additional terms or conditions.
+      Notwithstanding the above, nothing herein shall supersede or modify
+      the terms of any separate license agreement you may have executed
+      with Licensor regarding such Contributions.
+
+   6. Trademarks. This License does not grant permission to use the trade
+      names, trademarks, service marks, or product names of the Licensor,
+      except as required for reasonable and customary use in describing the
+      origin of the Work and reproducing the content of the NOTICE file.
+
+   7. Disclaimer of Warranty. Unless required by applicable law or
+      agreed to in writing, Licensor provides the Work (and each
+      Contributor provides its Contributions) on an "AS IS" BASIS,
+      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+      implied, including, without limitation, any warranties or conditions
+      of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
+      PARTICULAR PURPOSE. You are solely responsible for determining the
+      appropriateness of using or redistributing the Work and assume any
+      risks associated with Your exercise of permissions under this License.
+
+   8. Limitation of Liability. In no event and under no legal theory,
+      whether in tort (including negligence), contract, or otherwise,
+      unless required by applicable law (such as deliberate and grossly
+      negligent acts) or agreed to in writing, shall any Contributor be
+      liable to You for damages, including any direct, indirect, special,
+      incidental, or consequential damages of any character arising as a
+      result of this License or out of the use or inability to use the
+      Work (including but not limited to damages for loss of goodwill,
+      work stoppage, computer failure or malfunction, or any and all
+      other commercial damages or losses), even if such Contributor
+      has been advised of the possibility of such damages.
+
+   9. Accepting Warranty or Additional Liability. While redistributing
+      the Work or Derivative Works thereof, You may choose to offer,
+      and charge a fee for, acceptance of support, warranty, indemnity,
+      or other liability obligations and/or rights consistent with this
+      License. However, in accepting such obligations, You may act only
+      on Your own behalf and on Your sole responsibility, not on behalf
+      of any other Contributor, and only if You agree to indemnify,
+      defend, and hold each Contributor harmless for any liability
+      incurred by, or claims asserted against, such Contributor by reason
+      of your accepting any such warranty or additional liability.
+
+   END OF TERMS AND CONDITIONS
+
+   APPENDIX: How to apply the Apache License to your work.
+
+      To apply the Apache License to your work, attach the following
+      boilerplate notice, with the fields enclosed by brackets "{}"
+      replaced with your own identifying information. (Don't include
+      the brackets!)  The text should be enclosed in the appropriate
+      comment syntax for the file format. We also recommend that a
+      file or class name and description of purpose be included on the
+      same "printed page" as the copyright notice for easier
+      identification within third-party archives.
+
+   Copyright 2016 - 2026 Giant Swarm GmbH
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+
+--- Makefile
+# DO NOT EDIT. Generated with:
+#
+#    devctl
+#
+#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/makefile/internal/file/Makefile.template
+#
+
+include Makefile.*.mk
+
+##@ General
+
+# The help target prints out all targets with their descriptions organized
+# beneath their categories. The categories are represented by '##@' and the
+# target descriptions by '##'. The awk commands is responsible for reading the
+# entire set of makefiles included in this invocation, looking for lines of the
+# file as xyz: ## something, and then pretty-format the target and help. Then,
+# if there's a line with ##@ something, that gets pretty-printed as a category.
+# More info on the usage of ANSI control characters for terminal formatting:
+# https://en.wikipedia.org/wiki/ANSI_escape_code#SGR_parameters
+# More info on the awk command:
+# http://linuxcommand.org/lc3_adv_awk.php
+
+.PHONY: help
+help: ## Display this help.
+	@awk 'BEGIN {FS = ":.*##"; n = 0; w = 0} /^[a-zA-Z%\\\/_0-9-]+:.*?##/ { order[n] = "t"; targets[n] = $$1; descs[n] = $$2; if (length($$1) > w) w = length($$1); n++ } /^##@/ { order[n] = "c"; cats[n] = substr($$0, 5); n++ } END { printf "\nUsage:\n  make \033[36m<target>\033[0m\n"; for (i = 0; i < n; i++) { if (order[i] == "c") printf "\n\033[1m%s\033[0m\n", cats[i]; else printf "  \033[36m%-*s\033[0m  %s\n", w, targets[i], descs[i] } }' $(MAKEFILE_LIST)
+
+--- Makefile.gen.chainsaw.mk
+# DO NOT EDIT. Generated with:
+#
+#    devctl
+#
+#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/makefile/internal/file/Makefile.gen.chainsaw.mk.template
+#
+
+SHELL:=/usr/bin/env bash
+
+# Kind cluster name to use
+KIND_CLUSTER_NAME ?= chainsaw-kyverno-cluster
+
+# Defaults for local runs; the outer environment / CircleCI environment config overrides them.
+# `VAR: value` is a make *rule*, not an assignment, so these have to be `?=` to be usable
+# as $(KUBERNETES_VERSION) / $(KYVERNO_VERSION) below.
+# repository: kindest/node
+KUBERNETES_VERSION ?= v1.33.7
+# repository: giantswarm/kyverno-crds
+KYVERNO_VERSION ?= v1.17.0
+KYVERNO_POLICIES_APP_NAME ?= "kyverno-policies"
+
+##@ Test
+
+.PHONY: kind-create
+kind-create: ## create kind cluster if needed
+	kind create cluster --name="${KIND_CLUSTER_NAME}" --image="kindest/node:${KUBERNETES_VERSION}"
+
+.PHONY: install-kyverno
+install-kyverno:
+	# Install Kyverno, enable PolicyExceptions, allowed in all namespaces so tests can use them
+	curl -sL https://github.com/kyverno/kyverno/releases/download/$(KYVERNO_VERSION)/install.yaml \
+		| sed -E 's/^([[:space:]]*)- --enablePolicyException=false$$/\1- --enablePolicyException=true\n\1- --exceptionNamespace=*/' \
+		| kubectl create -f -
+	# Sometimes the next check executes faster than the deployment show up for the Kube API Server, so we need to wait for a second
+	sleep 5
+	kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=kyverno -l app.kubernetes.io/component=admission-controller -n kyverno --timeout 300s
+
+.PHONY: install-policies
+install-policies:
+	touch tests/chainsaw/values.yaml
+	helm upgrade --install $(KYVERNO_POLICIES_APP_NAME) ./helm/$(KYVERNO_POLICIES_APP_NAME) --values ./tests/chainsaw/values.yaml
+
+.PHONY: install-extras
+install-extras:
+	hack/chainsaw-extra-resources.sh
+
+.PHONY: kind-get-kubeconfig
+kind-get-kubeconfig:
+	kind get kubeconfig --name $(KIND_CLUSTER_NAME) > $(PWD)/kube.config
+
+.PHONY: dabs
+dabs: generate
+	dabs.sh --generate-metadata --chart-dir helm/kyverno-policies
+
+--- README.md
+# example-policies
+
+Example Kyverno policies.
+
+--- SECURITY.md
+# Security Policy
+
+## Reporting a Vulnerability
+
+Please visit <https://www.giantswarm.io/responsible-disclosure> for information on reporting security issues.
+
+--- hack/chainsaw-extra-resources.sh (executable)
+#!/usr/bin/env bash
+
+--- tests/chainsaw/_steps-templates/cluster-policy-ready.yaml
+# DO NOT EDIT. Generated with:
+#
+#    devctl
+#
+#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/makefile/internal/file/chainsaw-tests-steps-template.yaml.template
+#
+
+# This is a reusable policy template that will be called from the cluster-policy-ready test.
+
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: StepTemplate
+metadata:
+  name: cluster-policy-ready
+spec:
+  try:
+  - assert:
+      template: true
+      resource:
+        apiVersion: kyverno.io/v1
+        kind: ClusterPolicy
+        metadata:
+          name: ($name)
+        status:
+          conditions:
+          - reason: Succeeded
+            status: "True"
+            type: Ready
+
+--- tests/chainsaw/check-policy-ready/chainsaw-test.yaml
+# Example of how to check if a Policy is ready using templates
+# Note: The policy needs to already exist in the test cluster.
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: check-policy-is-ready
+spec:
+  steps:
+  - name: check if policy is ready
+    use:
+      template: ../_steps-templates/cluster-policy-ready.yaml
+      with:
+        bindings:
+        - name: name
+          value: my-policy-name
+
+--- tests/chainsaw/values.yaml
+# Placeholder for extra testing values

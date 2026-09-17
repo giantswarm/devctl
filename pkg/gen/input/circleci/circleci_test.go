@@ -40,6 +40,9 @@ const (
 
 	goldenATSKindConfigWorkflowsPath = "testdata/agent.ats-kind-config.workflows.yml"
 
+	goldenTemplateChartWorkflowsPath = "testdata/template-app.workflows.yml"
+
+	repoTemplateApp   = "template-app"
 	repoMCPKubernetes = "mcp-kubernetes"
 	repoAPStandalone  = "agent-platform-standalone"
 	repoSitesearch    = "sitesearch"
@@ -2325,5 +2328,134 @@ func Test_BranchJobsRequireOpenPullRequest(t *testing.T) {
 	want = []string{"push-to-registries", "build-chart", "execute-chart-tests", "push-chart"}
 	if got := gatedJobs(publish); !reflect.DeepEqual(got, want) {
 		t.Errorf("gated jobs with branchPublish = %v, want %v:\n%s", got, want, publish)
+	}
+}
+
+// templateChartRepo is the giantswarm/template-app declaration: a chart-only
+// template repository (generic language, app flavour, no Dockerfile) owned by
+// team-honeybadger, as align-files passes it.
+func templateChartRepo() Config {
+	return Config{
+		RepoName:      repoTemplateApp,
+		Language:      gen.LanguageGeneric,
+		Flavours:      gen.FlavourSlice{gen.FlavourApp},
+		ComponentType: ComponentTypeTemplate,
+		Team:          "team-honeybadger",
+	}
+}
+
+// Test_GoldenTemplateChartWorkflows is the golden test for a template
+// repository's chart pipeline (giantswarm/template-app): one inline build-chart
+// job that renders the placeholders with fixture values and the owning team,
+// then runs app-build-suite on the rendered chart; no chart-test job, no push
+// jobs, no release leg, and the job runs on main as well.
+func Test_GoldenTemplateChartWorkflows(t *testing.T) {
+	got := render(t, templateChartRepo())
+
+	assertGolden(t, goldenTemplateChartWorkflowsPath, got)
+
+	for _, job := range []string{jobPushCatalog, jobRunTests, jobPushRegistries} {
+		if contains(got, job) {
+			t.Errorf("a template repository releases nothing, but the pipeline carries %s", job)
+		}
+	}
+	for _, want := range []string{
+		"executor: architect/app-build-suite",
+		"- architect/determine-catalog-name:",
+		"chart: " + TemplateAppName,
+		"'s/" + TemplateAppNamePlaceholder + "/" + TemplateAppName + "/g'",
+		"'s/" + TemplateTeamPlaceholder + "/honeybadger/g'",
+		"'s#" + TemplateHelmRepositoryPlaceholder + "#" + TemplateHelmRepository + "#g'",
+		"mv 'helm/" + TemplateAppNamePlaceholder + "' 'helm/" + TemplateAppName + "'",
+		// A chart-only repository keeps the appVersion Chart.yaml declares.
+		"override_app_version: false",
+	} {
+		if !contains(got, want) {
+			t.Errorf("template chart pipeline lacks %q", want)
+		}
+	}
+	if contains(got, "team-honeybadger") {
+		t.Errorf("the team file prefix must be dropped from the rendered team label")
+	}
+	if contains(got, "branches:") {
+		t.Errorf("the template chart job must run on every branch, main included")
+	}
+}
+
+// Test_TemplateChartNoATSInputs verifies a template repository gets no
+// tests/ats files: it has no chart-test job, and its ATS files are template
+// content for the repositories created from it.
+func Test_TemplateChartNoATSInputs(t *testing.T) {
+	if got := newCircleCI(t, templateChartRepo()).ATSInputs(); got != nil {
+		t.Errorf("expected no ATS inputs for a template repository, got %d", len(got))
+	}
+}
+
+// Test_TemplateWithoutChartIsNoop verifies the component type only acts on a
+// chart repository: a template without the app flavour (giantswarm/template,
+// the Go template) renders exactly the pipeline it would without the flag, so
+// align-files can pass componentType for every template repository.
+func Test_TemplateWithoutChartIsNoop(t *testing.T) {
+	plain := Config{
+		RepoName:      repoMCPKubernetes,
+		Language:      gen.LanguageGo,
+		Flavours:      gen.FlavourSlice{},
+		HasDockerfile: true,
+	}
+	template := plain
+	template.ComponentType = ComponentTypeTemplate
+	template.Team = "honeybadger"
+
+	if got, want := render(t, template), render(t, plain); got != want {
+		t.Errorf("a template repository without a chart must render the plain pipeline\n--- got ---\n%s\n--- want ---\n%s", got, want)
+	}
+	if got := newCircleCI(t, template).ATSInputs(); got != nil {
+		t.Errorf("expected no ATS inputs without the app flavour, got %d", len(got))
+	}
+}
+
+// Test_TemplateChartRejects covers the generation-time errors of the template
+// shape: no team, a team that is not a plain short name, and chart-test knobs
+// that have no job to land on.
+func Test_TemplateChartRejects(t *testing.T) {
+	noTeam := templateChartRepo()
+	noTeam.Team = ""
+	if _, err := New(noTeam); !IsInvalidConfig(err) {
+		t.Errorf("expected invalidConfigError for a template without Team, got %v", err)
+	}
+
+	// The team is spliced into a sed expression and a YAML value.
+	badTeam := templateChartRepo()
+	badTeam.Team = "Honey Badger/'"
+	if _, err := New(badTeam); !IsInvalidConfig(err) {
+		t.Errorf("expected invalidConfigError for a team that is not a short name, got %v", err)
+	}
+
+	// Without a chart the team is still required when the type is template:
+	// align-files passes both together, and a missing team is a declaration
+	// error rather than something to guess.
+	noChartNoTeam := Config{RepoName: repoMCPKubernetes, Language: gen.LanguageGo, ComponentType: ComponentTypeTemplate}
+	if _, err := New(noChartNoTeam); !IsInvalidConfig(err) {
+		t.Errorf("expected invalidConfigError for a template without Team even without a chart, got %v", err)
+	}
+
+	onRelease := templateChartRepo()
+	onRelease.ATSOnRelease = true
+	if _, err := New(onRelease); !IsInvalidConfig(err) {
+		t.Errorf("expected invalidConfigError for ATSOnRelease on a template, got %v", err)
+	}
+
+	class := templateChartRepo()
+	class.ATSResourceClass = "large"
+	if _, err := New(class); !IsInvalidConfig(err) {
+		t.Errorf("expected invalidConfigError for ATSResourceClass on a template, got %v", err)
+	}
+
+	// Any other component type is inert.
+	service := templateChartRepo()
+	service.ComponentType = "service"
+	service.Team = ""
+	if got, want := render(t, service), render(t, Config{RepoName: repoTemplateApp, Language: gen.LanguageGeneric, Flavours: gen.FlavourSlice{gen.FlavourApp}}); got != want {
+		t.Errorf("componentType service must render the plain chart pipeline")
 	}
 }

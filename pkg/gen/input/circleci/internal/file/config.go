@@ -85,6 +85,16 @@ func NewWorkflowsInput(p params.Params) input.Input {
 			"NodeTestTarget":           p.NodeTestTarget,
 			"NodeBuildTarget":          p.NodeBuildTarget,
 			"NodeBuildOutput":          p.NodeBuildOutput,
+
+			"TemplateChart": p.TemplateChart,
+			"Team":          p.Team,
+			// The template contract, handed to the template so the placeholders
+			// and fixtures are spelled in one place (the circleci package).
+			"TemplateAppNamePlaceholder":        p.TemplateAppNamePlaceholder,
+			"TemplateTeamPlaceholder":           p.TemplateTeamPlaceholder,
+			"TemplateHelmRepositoryPlaceholder": p.TemplateHelmRepositoryPlaceholder,
+			"TemplateAppName":                   p.TemplateAppName,
+			"TemplateHelmRepository":            p.TemplateHelmRepository,
 		},
 	}
 
