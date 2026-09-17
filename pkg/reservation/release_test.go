@@ -280,3 +280,45 @@ func TestReleaseRefusesWhenComponentsListWasReformatted(t *testing.T) {
 	// actually build still renders, proving the refusal left nothing dangling.
 	renderCluster(t, dir, fixtureCluster)
 }
+
+// TestReleasePreservesCommentsAndBlankLinesInTheComponentsBlock covers drift
+// finding 1's test does not: a components block a human annotated, rather
+// than reformatted, since Reserve wrote it. A GitOps repository's comments
+// carry operational intent, so removing the sole reservation entry must not
+// silently discard them along with the rest of the block.
+func TestReleasePreservesCommentsAndBlankLinesInTheComponentsBlock(t *testing.T) {
+	dir := newGitOpsFixture(t, fixtureOptions{})
+
+	if _, err := reservation.Reserve(testRequest(dir)); err != nil {
+		t.Fatal(err)
+	}
+
+	// An ops engineer annotates the entry Reserve wrote, before it is released.
+	collectionsFile := filepath.Join(dir, pathCollections)
+	original, err := os.ReadFile(collectionsFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const comment = "  # ops: keep this reservation until the incident bridge closes"
+	old := "  - reservations/" + fixtureApp
+	annotated := strings.Replace(string(original), old, "\n"+comment+"\n"+old, 1)
+	if annotated == string(original) {
+		t.Fatal("the fixture's components entry was not found to annotate")
+	}
+	if err := os.WriteFile(collectionsFile, []byte(annotated), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := reservation.Release(testReleaseRequest(dir)); err != nil {
+		t.Fatal(err)
+	}
+
+	after := readFixtureFile(t, dir, pathCollections)
+	if !strings.Contains(after, "ops: keep this reservation until the incident bridge closes") {
+		t.Errorf("release discarded the comment in the components block:\n%s", after)
+	}
+
+	// The comment survives only if the file still parses: this is also the
+	// strongest available check that the release itself took effect cleanly.
+	renderCluster(t, dir, fixtureCluster)
+}

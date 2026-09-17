@@ -199,14 +199,17 @@ func addComponent(path, entry string) error {
 }
 
 // removeComponent removes entry from the components list of a kustomization
-// file, reversing addComponent exactly. When entry was the only item and
-// nothing but blank lines follows the block, addComponent appended it from
-// scratch, so removeComponent deletes the whole block, plus the single
-// trailing blank line that came with it, and a cluster that had no
-// components: key before the reservation has none after it is released. When
-// real content follows the block instead, the key already existed as
-// `components: []` — the only other form addComponent recognizes — so that
-// line is restored rather than dropped, along with everything after it.
+// file, reversing addComponent exactly. When entry was the only item, nothing
+// else — no comment, no blank line a human left in the block — carries any
+// operational intent, and nothing but blank lines follows the block,
+// addComponent appended it from scratch, so removeComponent deletes the whole
+// block, plus the single trailing blank line that came with it, and a cluster
+// that had no components: key before the reservation has none after it is
+// released. When real content follows the block instead, the key already
+// existed as `components: []` — the only other form addComponent recognizes —
+// so that line is restored rather than dropped, along with everything after
+// it. Either way, a comment or blank line a human added inside the block
+// since Reserve wrote it is left in place rather than collapsed away with it.
 func removeComponent(path, entry string) error {
 	lines, err := readLines(path)
 	if err != nil {
@@ -243,17 +246,24 @@ func removeComponent(path, entry string) error {
 		return microerror.Maskf(componentNotFoundError, "%s components list holds no entry %q to remove", path, entry)
 	}
 
-	remaining := 0
+	// remaining counts the other items left in the block; extra flags anything
+	// else in it — a comment or a deliberate blank line — that a human added
+	// since Reserve wrote the block. Either one means the block carries more
+	// than what addComponent put there, so it is not safe to collapse: only a
+	// plain single-line delete preserves it.
+	remaining, extra := 0, false
 	for i := start + 1; i <= last; i++ {
 		if i == itemIdx {
 			continue
 		}
 		if strings.HasPrefix(strings.TrimSpace(lines[i]), "- ") {
 			remaining++
+		} else {
+			extra = true
 		}
 	}
 
-	if remaining > 0 {
+	if remaining > 0 || extra {
 		lines = append(lines[:itemIdx], lines[itemIdx+1:]...)
 		return microerror.Mask(writeLines(path, lines))
 	}
