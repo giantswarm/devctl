@@ -156,6 +156,9 @@ func (r *runner) run(ctx context.Context) error {
 			return microerror.Mask(err)
 		}
 		out.DryRun = existing
+		if r.flag.Output == outputText {
+			fmt.Fprintf(r.stdout, "resuming:   %s/%s exists and you administer it; the declaration validated for an existing repository is %s\n\n", r.flag.Owner, r.flag.Name, verdictWord(existing.Accepted))
+		}
 		if !existing.Accepted {
 			r.print(out)
 			return microerror.Maskf(refusedError, "%s is refused; the problems name the fields, nothing was created and no pull request was opened", r.flag.Name)
@@ -318,6 +321,13 @@ func (r *runner) printCreate(res *reconcile.CreateResult) {
 		}
 	}
 	fmt.Fprintln(r.stdout)
+}
+
+func verdictWord(accepted bool) string {
+	if accepted {
+		return "accepted"
+	}
+	return "refused"
 }
 
 // print writes the JSON output; text output is written as it happens.
