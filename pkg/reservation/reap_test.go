@@ -112,6 +112,57 @@ func TestReapReleasesAnExpiredReservation(t *testing.T) {
 	}
 }
 
+// TestReapDoesNotDeleteAFreshReservationThatWonTheRace is the hard case: Reap
+// reads dir's stale local state and decides the app's reservation is expired,
+// but before its push lands a second clone reserves the very same app afresh
+// and pushes first. Reap's push is rejected, PushWithRetry rebases dir onto
+// the new tip and reruns render -- which must notice the record it is about
+// to delete is no longer the expired one it decided to release, and leave the
+// fresh reservation alone instead of deleting it under the old holder's name.
+func TestReapDoesNotDeleteAFreshReservationThatWonTheRace(t *testing.T) {
+	dir1, origin := newReapFixture(t, fixtureOptions{})
+
+	// dir1 reserves and pushes the reservation that will have expired by the
+	// time Reap runs.
+	stale := testRequest(dir1)
+	stale.Now = time.Date(2026, 9, 15, 10, 0, 0, 0, time.UTC)
+	stale.Duration = time.Hour
+	reserveAndPush(t, dir1, stale)
+
+	// dir2 clones the tip that still carries the stale reservation and
+	// replaces it with a fresh one for the same app and cluster -- exactly
+	// the developer who grabs the cluster the instant it frees up, before the
+	// reaper gets around to it -- and lands it first.
+	dir2 := t.TempDir()
+	runGit(t, dir2, "clone", origin, ".")
+	fresh := testRequest(dir2)
+	fresh.User = testOtherUser
+	fresh.Branch = testOtherBranch
+	fresh.Now = time.Date(2026, 9, 15, 11, 30, 0, 0, time.UTC)
+	fresh.Duration = 10 * time.Hour
+	reserveAndPush(t, dir2, fresh)
+
+	// dir1 never fetched dir2's push: its local List still shows the stale,
+	// expired reservation, so Reap decides to release it before it has any
+	// idea a fresh one has taken its place on origin.
+	reaped, err := reservation.Reap(context.Background(), reservation.ReapRequest{
+		RepoDir: dir1,
+		User:    testReaper,
+		Now:     time.Date(2026, 9, 15, 12, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("Reap: %v", err)
+	}
+	if len(reaped) != 0 {
+		t.Errorf("got %d reaped reservations, want 0: the fresh reservation must survive uninvolved, not be deleted and reported as the stale one: %+v", len(reaped), reaped)
+	}
+
+	entries := reservationEntries(t, dir1, fixtureCluster)
+	if got, want := entries[fixtureApp]["user"], testOtherUser; got != want {
+		t.Errorf("%s holder: got %q, want %q (the fresh reservation that won the race must survive the reap)", fixtureApp, got, want)
+	}
+}
+
 // constantHeadBranch stubs HeadBranchFunc: every pull request has the same
 // current head branch, whatever the reservation stored.
 func constantHeadBranch(branch string) reservation.HeadBranchFunc {
