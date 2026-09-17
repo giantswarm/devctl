@@ -109,6 +109,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   its own push, so it does the same work from a laptop that a scheduled job would do in CI. For each
   release it prints one tab-separated line — cluster, app, user, branch, pull request, reason
   (`expired` or `renamed`), until (RFC 3339) and commit — and nothing at all when it finds nothing.
+- `reservation release --pull-request`: the command now releases by pull request. Without
+  `--cluster` it scans every enabled cluster and releases every reservation that pull request
+  holds, one at a time through `reservation.PushWithRetry`, printing a tab-separated cluster, app
+  and commit per release. A merged or closed pull request knows neither the cluster nor the app it
+  reserved, so it could not call the existing form, which needs both. Unlike `reservation extend`
+  it releases an expired record too: that is cleanup the reaper would do anyway, and leaving it
+  behind keeps a dead entry in the ConfigMap after the pull request merges. A pull request that
+  holds nothing is no error, because a merged pull request that reserved nothing is the ordinary
+  case. A cluster whose ConfigMap fails to parse costs its own error and does not stop the sweep.
+- `reservation release --pull-request` with `--cluster`: releasing one app now checks the pull
+  request too, and refuses a reservation another pull request holds. `Release` keys a reservation
+  on the cluster and the chart alone, and every pull request in an app repository resolves to the
+  same chart, so without this check `/undeploy <MC>` from any pull request frees a cluster somebody
+  else is testing on. The check runs inside the retrying push's render closure, so a rebase that
+  brings in somebody else's reservation for the same app is refused as well. Passing no
+  `--pull-request` still releases regardless, which is the force-release a human runs from a laptop
+  to clear a stuck lock, and the form the reaper uses.
 - `reservation extend`: a new command that resets the expiry of every reservation a pull request
   holds across every enabled cluster, one at a time through `reservation.PushWithRetry`. Each
   reservation keeps its own stored cluster, app, scope and duration — only the window moves,
