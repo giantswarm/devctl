@@ -25,6 +25,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `repo reconcile`: the `renovate` step no longer reports `renovate-not-scanned` on a repository younger than a day
+  that has a configuration but no trace of a run: Renovate's first run is not due yet (the hosted App picks a new
+  repository up within hours, the Dependency Dashboard issue follows), so the step is `ok` with a summary saying so,
+  and a repository created by the same run counts as young. An older repository without a trace stays a finding
+  (giantswarm/giantswarm#37726).
 - `repo reconcile`: the `renovate` step no longer fails on a private repository whose issues the token cannot read —
   a GitHub App without `issues: read` is answered 403 there (and, on a public repository, a list of pull requests
   only, without the Dependency Dashboard issue). The refused read falls through to the commit trace on the default

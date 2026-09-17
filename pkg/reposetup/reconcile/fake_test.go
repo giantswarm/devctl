@@ -43,10 +43,11 @@ type fakeRepo struct {
 	hooks         []*github.Hook
 	release       string
 	releaseAt     time.Time
-	statuses      []string // commit statuses reported on the head
-	checkRuns     []string // check runs reported on the head
-	checksStatus  int      // HTTP status of the status and check-run reads when not 200
-	tags          []string // tags, all on the head commit
+	createdAt     time.Time // when the repository was created; a month ago for a seeded one
+	statuses      []string  // commit statuses reported on the head
+	checkRuns     []string  // check runs reported on the head
+	checksStatus  int       // HTTP status of the status and check-run reads when not 200
+	tags          []string  // tags, all on the head commit
 	prs           []*github.PullRequest
 	issues        []*github.Issue            // what GET /repos/{owner}/{repo}/issues lists
 	history       []*github.RepositoryCommit // the commits behind the head of the default branch
@@ -154,6 +155,7 @@ func (f *fakeGitHub) addRepo(owner, name string) *fakeRepo {
 		owner: owner, name: name,
 		hasIssues: true, allowSquash: true, allowUpdate: true, allowAuto: true, deleteOnMerge: true,
 		defaultBranch: "main", workflowPerm: "write",
+		createdAt:     time.Now().Add(-30 * 24 * time.Hour),
 		teams:         map[string]string{"employees": "admin", "bots": "push"},
 		collaborators: map[string]string{},
 		files:         map[string]string{},
@@ -205,6 +207,7 @@ func (r *fakeRepo) toGitHub() *github.Repository {
 		Owner:               &github.User{Login: new(r.owner)},
 		Description:         new(r.description),
 		Private:             new(r.private),
+		CreatedAt:           &github.Timestamp{Time: r.createdAt},
 		Archived:            new(r.archived),
 		HasWiki:             new(r.hasWiki),
 		HasIssues:           new(r.hasIssues),
@@ -273,6 +276,7 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 		decode(r, &in)
 		repo := f.addRepo(r.PathValue("owner"), in.GetName())
 		repo.description, repo.private = in.GetDescription(), in.GetPrivate()
+		repo.createdAt = time.Now()
 		repo.hasWiki, repo.teams = true, map[string]string{} // GitHub's defaults, not the baseline
 		repo.files = map[string]string{}
 		repo.empty = !in.GetAutoInit()
