@@ -127,7 +127,7 @@ func reapCluster(ctx context.Context, req ReapRequest, cluster string, now time.
 			continue
 		}
 
-		result, err := releaseAndPush(ctx, req, cluster, r)
+		result, err := releaseAndPush(ctx, req.RepoDir, req.User, cluster, r)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("releasing %q on cluster %q: %w", r.App, cluster, err))
 			continue
@@ -174,20 +174,20 @@ func reapReason(ctx context.Context, headBranch HeadBranchFunc, r Reservation, n
 // the release command does for a single reservation: render (Release),
 // assert, commit, then PushWithRetry rebases and re-renders should another
 // release land first.
-func releaseAndPush(ctx context.Context, req ReapRequest, cluster string, r Reservation) (ReleaseResult, error) {
+func releaseAndPush(ctx context.Context, repoDir, user, cluster string, r Reservation) (ReleaseResult, error) {
 	var result ReleaseResult
 	render := func() error {
 		var err error
 		result, err = Release(ReleaseRequest{
-			RepoDir: req.RepoDir,
+			RepoDir: repoDir,
 			Cluster: cluster,
 			App:     r.App,
-			User:    req.User,
+			User:    user,
 		})
 		return microerror.Mask(err)
 	}
 
-	if err := PushWithRetry(ctx, req.RepoDir, render); err != nil {
+	if err := PushWithRetry(ctx, repoDir, render); err != nil {
 		return ReleaseResult{}, microerror.Mask(err)
 	}
 
