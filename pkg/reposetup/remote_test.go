@@ -166,11 +166,11 @@ func TestCreationPullRequest(t *testing.T) {
 		NameCheck: NameCheck{Verdict: VerdictFree, Detail: "repository giantswarm/my-service does not exist"},
 	}}, Notices: []Notice{{Kind: NoticeTeamReview, Message: "your team's review will be required"}}}
 
-	pr := CreationPullRequest(tf, []byte("file"), result)
+	pr := CreationPullRequest(tf, []byte("file"), result, CreatedRepository{URL: "https://github.com/giantswarm/my-service", ScaffoldCommit: "def456"})
 	if pr.Title != "feat(bumblebee): declare my-service" || pr.Branch != "repo-create/my-service" || pr.SHA != "abc" || pr.Path != tf.Path {
 		t.Errorf("pull request: %+v", pr)
 	}
-	for _, want := range []string{"```yaml\n- name: my-service\n```", "Template: `giantswarm/template`", "Name check: free -- repository giantswarm/my-service does not exist", "- team-review: your team's review will be required"} {
+	for _, want := range []string{"The repository exists, created by the author: https://github.com/giantswarm/my-service (scaffold commit `def456`).", "```yaml\n- name: my-service\n```", "Template: `giantswarm/template`", "Name check: free -- repository giantswarm/my-service does not exist", "- team-review: your team's review will be required", "the reconciler sets the repository up after the merge"} {
 		if !strings.Contains(pr.Body, want) {
 			t.Errorf("body lacks %q:\n%s", want, pr.Body)
 		}

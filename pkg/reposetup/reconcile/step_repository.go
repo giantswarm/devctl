@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/giantswarm/microerror"
 	"github.com/google/go-github/v92/github"
 
 	"github.com/giantswarm/devctl/v8/pkg/circleciclient"
@@ -33,9 +34,13 @@ func (r *Runner) stepCreate(ctx context.Context, s *run, sr *StepResult) error {
 					AutoInit: new(true),
 				})
 				if err != nil {
+					if isForbidden(err) {
+						return microerror.Maskf(notOwnerError, "%s", NotOwnerRefusal(s.owner))
+					}
 					return err
 				}
 				s.repo = created
+				s.created = true
 				return nil
 			})
 		}

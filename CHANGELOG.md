@@ -7,6 +7,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- `repo create` is pull-request-last: the dry run, then the repository created with the person's GitHub login
+  (description and visibility from the declaration), the scaffold pushed as the one commit on `main`, then the
+  declaration's pull request in `giantswarm/github`, validated in existing mode for a repository that exists and is
+  the author's. The output names the repository, the scaffold commit and the pull request (text and
+  `--output json`); `--dry-run` prints the plan and writes nothing. The organisation does not let members create
+  repositories: the caller's role is read before the first write and anyone but an owner is refused with the way
+  out (`reconcile.NotOwnerRefusal`, `IsNotOwner`); a 403 on the creation gives the same text. A run interrupted
+  after the creation resumes: a repository of the declared name the caller administers is continued (scaffold
+  pushed when missing, the open pull request reported), anyone else's stays a refusal
+  (`Entry.RefusedForTakenName`, `Remote.FindPullRequest`). `reconcile.Runner.Create` runs the create and scaffold
+  steps standalone for one accepted entry with any authenticated client — the same steps `Run` executes for the
+  reconciler — and returns the repository URL, the scaffold commit and the step results; giantswarm-repo-manager
+  imports it to create as the person (giantswarm/giantswarm#37726, #2238).
+
 ### Fixed
 
 - `repo reconcile`: `lifecycle: archived` unfollows on CircleCI once. The step read the v2 project to decide

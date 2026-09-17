@@ -8,7 +8,8 @@ the Repositories page and giantswarm-repo-manager produce.
 
 ## `devctl repo create`
 
-Declares a new repository and opens the team-file pull request as you:
+Creates a repository as you and declares it: the repository, its scaffold, then the team-file pull
+request.
 
 ```nohighlight
 devctl repo create --team bumblebee --name my-service \
@@ -25,17 +26,56 @@ The command
    `giantswarm/github` `main`, the embedded copy as the fallback), the creation rules and the name on
    GitHub (an existing repository or the redirect of a renamed one is taken),
 4. prints the dry run -- the rendered entry, the template it derives, the name check, the verdict and
-   the notices -- and
-5. opens the pull request on a `repo-create/<name>` branch with the conventional-commit title
-   `feat(<team>): declare <name>` and a body naming the declaration.
+   the notices,
+5. reads your role in the organisation and refuses anyone who is not an owner (below), before
+   anything is written,
+6. creates the repository with your GitHub login -- description and visibility from the declaration;
+   you are its admin, as the creator of an organisation repository is,
+7. pushes the rendered scaffold as the one commit on `main` (`feat: initial scaffold of <name> from
+   <template>`); the scaffold's auto-release workflow tags `v0.1.0` from it and CircleCI builds the
+   tag once the reconciler has followed the project, and
+8. opens the pull request on a `repo-create/<name>` branch with the conventional-commit title
+   `feat(<team>): declare <name>` and a body naming the repository, its scaffold commit and the
+   declaration -- validated in existing mode now, since the repository exists.
 
-A refusal (a taken name, a wrong flavour, a schema violation) ends the command with a non-zero exit
-before any pull request exists; the problems name the fields. `--dry-run` stops after the dry run,
-`--output json` prints the dry run (and the pull request URL) as JSON.
+The output names the repository, the scaffold commit and the pull request; `--output json` prints the
+dry run, the creation (`create`: the two steps, `url`, `created`, `scaffoldCommit`) and the pull
+request URL as one document. `--dry-run` prints the dry run and the plan of the creation (the two
+steps as `drift`, what each would do) and writes nothing.
 
-The command never creates a repository and never touches GitHub settings: a repository without its
-declaration is the drift the reconciler reports. After the merge the reconciler creates the
-repository, pushes the scaffold, applies the set-up and runs the first release.
+The create and scaffold steps are the engine's own (`reconcile.Runner.Create`, the same steps the
+reconciler runs), so the repository the command creates and the one the reconciler would have created
+are the same. Everything after the scaffold -- settings, team permissions, branch protection and the
+required checks, CircleCI, webhooks, CODEOWNERS, the catalog, the first-release check -- the
+reconciler applies from the merged entry; it repairs, and never creates.
+
+### Only an organisation owner creates
+
+The organisation does not let members create repositories: GitHub answers a member's creation with
+403. The command reads your role (`GET /user/memberships/orgs/giantswarm`) before the first write and
+refuses anyone but an owner with
+
+```nohighlight
+only an organization owner may create a repository in giantswarm — ask an owner, or create it from
+the Dev Portal (which also creates it as you and needs the same role)
+```
+
+The engine gives the same answer to a 403 on the creation itself. The Dev Portal creates the
+repository as the signed-in person too, so the role is needed there as well.
+
+### A refusal, an interrupted run
+
+A refusal of the declaration (a taken name, a wrong flavour, a schema violation) ends the command with
+a non-zero exit before anything exists; the problems name the fields.
+
+A run interrupted after the creation resumes on the next call: a repository of the declared name that
+you administer -- the name itself, not a redirect -- is yours to continue. The dry run then validates
+the entry in existing mode, the create step finds the repository (`exists`), the scaffold step pushes
+the scaffold when `main` has none (`present` otherwise), and the pull request is opened when none is
+open for the `repo-create/<name>` branch (the open one is reported otherwise). A repository of that
+name that someone else administers stays a refusal. A step that fails (the scaffold's template cannot
+be downloaded, the CircleCI generator refuses the declaration) ends the command with the step's
+message; the rerun resumes where it stopped.
 
 ### What review the pull request gets
 
@@ -56,10 +96,10 @@ it the notice is not given and the command says so.
 | `--component-type` | `componentType` | the schema's enum -- `devctl repo create --help` lists it |
 | `--flavour` (repeatable) | `gen.flavours` | devctl's flavours -- `devctl repo create --help` lists them; see [flavours](flavours.md) |
 | `--language` | `gen.language` | devctl's languages -- `devctl repo create --help` lists them; `node` is refused until its template exists |
-| `--description` | `description` | free text, set on GitHub by the reconciler |
+| `--description` | `description` | free text, set on the repository at its creation |
 | `--visibility` | `visibility` | the schema's enum -- `devctl repo create --help` lists it |
 
-`gen.flavours` and `gen.language` are mandatory for a repository the reconciler creates;
+`gen.flavours` and `gen.language` are mandatory for a repository the command creates;
 `gen.ci.generate` is written as the CircleCI generator decides: `true` when it has a job for the
 declaration (a Go or Node build, a chart from the `app` flavour), `false` when the pipeline would be empty. The help text takes the enums from the schema devctl ships
 (`pkg/reposetup/schema/repositories.schema.json`) and the flavours and languages from devctl's own
@@ -74,7 +114,10 @@ with the `app` flavour gives `giantswarm/template-app`; a customer repository, `
 ### Token
 
 `$GITHUB_TOKEN` (`--github-token-envvar` names another variable) or, when unset, the login of your
-`gh` CLI (`gh auth token`). The pull request is yours: it is opened with that identity.
+`gh` CLI (`gh auth token`). The repository, its scaffold commit and the pull request are yours: all
+three are written with that identity. The token creates the repository and pushes its scaffold
+(`repo`, and `workflow` for the scaffold's GitHub Actions workflows), reads the organisation's teams
+and your role in it (`read:org`) and writes `giantswarm/github` for the pull request.
 
 ## `devctl repo status`
 

@@ -87,6 +87,13 @@ type fakeGitHub struct {
 	// permission is what any user holds on any repository through the
 	// organization's teams unless a direct grant says otherwise.
 	permission string
+	// orgRole is the caller's role in any organization (GET
+	// /user/memberships/orgs/{org}); "" answers 404, not a member.
+	orgRole string
+	// createStatus, when not 0, is the status POST /orgs/{org}/repos answers
+	// instead of creating — 403 for a member of an organization that does
+	// not let members create repositories.
+	createStatus int
 	// onDispatch simulates what a dispatched workflow lands.
 	onDispatch func(workflow string, inputs map[string]any)
 	mutations  []string
@@ -94,7 +101,7 @@ type fakeGitHub struct {
 }
 
 func newFakeGitHub() *fakeGitHub {
-	f := &fakeGitHub{repos: map[string]*fakeRepo{}, redirects: map[string]string{}, runs: map[string][]string{}, permission: "admin"}
+	f := &fakeGitHub{repos: map[string]*fakeRepo{}, redirects: map[string]string{}, runs: map[string][]string{}, permission: "admin", orgRole: "admin"}
 	f.installation.status = http.StatusOK
 	f.installation.selection = "selected"
 	mux := http.NewServeMux()
@@ -153,6 +160,7 @@ func (r *fakeRepo) toGitHub() *github.Repository {
 	return &github.Repository{
 		Name:                new(r.name),
 		FullName:            new(r.owner + "/" + r.name),
+		HTMLURL:             new("https://github.com/" + r.owner + "/" + r.name),
 		Owner:               &github.User{Login: new(r.owner)},
 		Description:         new(r.description),
 		Private:             new(r.private),
@@ -201,9 +209,20 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /repos/{owner}/{repo}", f.withRepo(func(w http.ResponseWriter, _ *http.Request, repo *fakeRepo) {
 		writeJSON(w, 200, repo.toGitHub())
 	}))
+	mux.HandleFunc("GET /user/memberships/orgs/{org}", func(w http.ResponseWriter, r *http.Request) {
+		if f.orgRole == "" {
+			writeJSON(w, 404, map[string]string{"message": "Not Found"})
+			return
+		}
+		writeJSON(w, 200, map[string]string{"state": "active", "role": f.orgRole, "organization_url": "https://api.github.com/orgs/" + r.PathValue("org")})
+	})
 	mux.HandleFunc("POST /orgs/{owner}/repos", func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		defer f.mu.Unlock()
+		if f.createStatus != 0 {
+			writeJSON(w, f.createStatus, map[string]string{"message": "Resource not accessible by personal access token"})
+			return
+		}
 		var in github.Repository
 		decode(r, &in)
 		repo := f.addRepo(r.PathValue("owner"), in.GetName())

@@ -109,8 +109,13 @@ type run struct {
 	declared, name string
 	fields         reposetup.Fields
 	repo           *github.Repository // nil when the repository does not exist
-	renamed        bool
-	empty          bool // no commits on the default branch
+	// created says the create step created the repository in this run.
+	created bool
+	renamed bool
+	empty   bool // no commits on the default branch
+	// headSHA is the commit at the head of the default branch as the
+	// scaffold step found it; scaffoldSHA the scaffold commit it pushed.
+	headSHA, scaffoldSHA string
 	// scaffoldFailed says the scaffold step could not push the scaffold:
 	// the steps that need it on the default branch wait for the next run,
 	// as they do on an empty repository — protecting the branch first
@@ -126,6 +131,44 @@ var errReported = errors.New("reported")
 // run could not start (an unaccepted entry, no GitHub client); a step that
 // fails is a [VerdictFailed] in the result and the run continues.
 func (r *Runner) Run(ctx context.Context, req Request) (*Result, error) {
+	s, err := r.newRun(req)
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
+	req = s.req
+
+	res := &Result{
+		Declared:  s.owner + "/" + s.declared,
+		Team:      req.Team,
+		Mode:      req.Mode,
+		Added:     req.Added,
+		StartedAt: r.now(),
+	}
+	res.Converged = true
+	for _, step := range Steps {
+		selected := req.Steps == nil || containsStep(req.Steps, step)
+		if !selected && step != StepCreate {
+			continue
+		}
+		sr := r.execute(ctx, s, step)
+		if !selected {
+			continue // the lookup ran for the other steps; not part of the result
+		}
+		res.Steps = append(res.Steps, *sr)
+		if sr.Verdict == VerdictDrift || sr.Verdict == VerdictFailed {
+			res.Converged = false
+		}
+	}
+	res.Repository = s.owner + "/" + s.name
+	res.FinishedAt = r.now()
+	return res, nil
+}
+
+// newRun checks what every run needs — a GitHub client, an accepted entry,
+// the team where a step reads it, a known mode and known steps — fills the
+// request's defaults and parses the rendered entry into the state the steps
+// share. [Run] and [Create] start here.
+func (r *Runner) newRun(req Request) (*run, error) {
 	if r.GitHub == nil {
 		return nil, microerror.Maskf(invalidConfigError, "%T.GitHub must not be empty", r)
 	}
@@ -178,32 +221,7 @@ func (r *Runner) Run(ctx context.Context, req Request) (*Result, error) {
 	if r.Log != nil {
 		s.log = r.Log
 	}
-
-	res := &Result{
-		Declared:  s.owner + "/" + s.declared,
-		Team:      req.Team,
-		Mode:      req.Mode,
-		Added:     req.Added,
-		StartedAt: r.now(),
-	}
-	res.Converged = true
-	for _, step := range Steps {
-		selected := req.Steps == nil || containsStep(req.Steps, step)
-		if !selected && step != StepCreate {
-			continue
-		}
-		sr := r.execute(ctx, s, step)
-		if !selected {
-			continue // the lookup ran for the other steps; not part of the result
-		}
-		res.Steps = append(res.Steps, *sr)
-		if sr.Verdict == VerdictDrift || sr.Verdict == VerdictFailed {
-			res.Converged = false
-		}
-	}
-	res.Repository = s.owner + "/" + s.name
-	res.FinishedAt = r.now()
-	return res, nil
+	return s, nil
 }
 
 // execute runs one step, applying the conditions under which a step does
