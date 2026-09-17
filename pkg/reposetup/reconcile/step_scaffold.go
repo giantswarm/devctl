@@ -59,7 +59,7 @@ func (r *Runner) stepScaffold(ctx context.Context, s *run, sr *StepResult) error
 // scaffoldState says whether the default branch has no commits, or only the
 // initial commit of the creation (a lone README).
 func (r *Runner) scaffoldState(ctx context.Context, s *run) (empty, initialOnly bool, err error) {
-	_, resp, err := r.GitHub.Repositories.ListCommits(ctx, s.owner, s.name, &github.CommitsListOptions{
+	commits, resp, err := r.GitHub.Repositories.ListCommits(ctx, s.owner, s.name, &github.CommitsListOptions{
 		SHA:         s.branch(),
 		ListOptions: github.ListOptions{PerPage: 1},
 	})
@@ -68,6 +68,9 @@ func (r *Runner) scaffoldState(ctx context.Context, s *run) (empty, initialOnly 
 		return true, false, nil // "Git Repository is empty"
 	case err != nil:
 		return false, false, err
+	}
+	if len(commits) > 0 {
+		s.headSHA = commits[0].GetSHA()
 	}
 	_, dir, resp, err := r.GitHub.Repositories.GetContents(ctx, s.owner, s.name, "", &github.RepositoryContentGetOptions{Ref: s.branch()})
 	switch {
@@ -145,7 +148,11 @@ func (r *Runner) pushScaffold(ctx context.Context, s *run, sr *StepResult, empty
 		SHA:   commit.GetSHA(),
 		Force: new(true),
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	s.scaffoldSHA = commit.GetSHA()
+	return nil
 }
 
 // treeEntries turns the rendered files into tree entries: text inline,

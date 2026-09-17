@@ -111,6 +111,14 @@ type Entry struct {
 	Accepted bool `json:"accepted"`
 }
 
+// RefusedForTakenName says whether the entry's one refusal is its taken
+// name — the repository exists. A caller resuming a creation of its own
+// (the repository is there and the caller administers it) validates the
+// entry again in [ModeExisting]; anyone else's repository stays refused.
+func (e Entry) RefusedForTakenName() bool {
+	return !e.Accepted && len(e.Problems) == 1 && e.Problems[0].Field == "name" && e.NameCheck.Verdict == VerdictTaken
+}
+
 // Problem is one refusal: the field in dotted form (gen.ci.chartName,
 // gen.flavours[1]; "(entry)" for the entry as a whole) and why.
 type Problem struct {

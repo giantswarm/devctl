@@ -205,6 +205,29 @@ func (r Remote) OpenPullRequest(ctx context.Context, pr PullRequest) (*github.Pu
 	return created, nil
 }
 
+// FindPullRequest returns the open pull request whose head is branch, or
+// nil when none is open: what a caller looks for when the branch of the
+// change it wants to open exists already.
+func (r Remote) FindPullRequest(ctx context.Context, branch string) (*github.PullRequest, error) {
+	if r.GitHub == nil {
+		return nil, microerror.Maskf(invalidConfigError, "%T.GitHub must not be nil", r)
+	}
+	owner, repo := r.owner(), r.repo()
+	prs, _, err := r.GitHub.PullRequests.List(ctx, owner, repo, &github.PullRequestListOptions{
+		State:       "open",
+		Head:        owner + ":" + branch,
+		Base:        r.ref(),
+		ListOptions: github.ListOptions{PerPage: 1},
+	})
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
+	if len(prs) == 0 {
+		return nil, nil
+	}
+	return prs[0], nil
+}
+
 // Person is the caller as GitHub knows them: the login and the slugs of
 // the owner organisation's teams they belong to -- the inputs of the team
 // guard. Teams need the token to read the organisation (read:org); a token
@@ -243,14 +266,31 @@ func (r Remote) Person(ctx context.Context, owner string) (Person, error) {
 	}
 }
 
+// CreatedRepository is the repository `devctl repo create` created as the
+// person before opening the declaration's pull request: its URL and the
+// commit holding its scaffold.
+type CreatedRepository struct {
+	URL            string
+	ScaffoldCommit string
+}
+
 // CreationPullRequest is the pull request `devctl repo create` opens for an
-// accepted dry run: the branch, the conventional-commit title the
-// semantic-pull-request check of giantswarm/github accepts, and a body that
-// names the declaration, the template, the name check and the guard notices.
-func CreationPullRequest(tf *RemoteTeamFile, content []byte, result *Result) PullRequest {
+// accepted declaration of a repository the person has just created: the
+// branch, the conventional-commit title the semantic-pull-request check of
+// giantswarm/github accepts, and a body that names the repository and its
+// scaffold commit, the declaration, the template, the name check and the
+// guard notices.
+func CreationPullRequest(tf *RemoteTeamFile, content []byte, result *Result, created CreatedRepository) PullRequest {
 	entry := result.Entries[0]
 	var body bytes.Buffer
 	fmt.Fprintf(&body, "Declares the repository `%s/%s` in `%s`, opened by `devctl repo create`.\n\n", DefaultOwner, entry.Name, tf.Path)
+	if created.URL != "" {
+		fmt.Fprintf(&body, "The repository exists, created by the author: %s", created.URL)
+		if created.ScaffoldCommit != "" {
+			fmt.Fprintf(&body, " (scaffold commit `%s`)", created.ScaffoldCommit)
+		}
+		body.WriteString(".\n\n")
+	}
 	fmt.Fprintf(&body, "```yaml\n%s```\n\n", entry.Rendered)
 	if entry.Template != "" {
 		fmt.Fprintf(&body, "Template: `%s`\n", entry.Template)
@@ -266,7 +306,7 @@ func CreationPullRequest(tf *RemoteTeamFile, content []byte, result *Result) Pul
 			fmt.Fprintf(&body, "- %s: %s\n", n.Kind, n.Message)
 		}
 	}
-	body.WriteString("\nThe validation check classifies this change; a creation-only change is approved by the machine and the reconciler creates the repository after the merge.\n")
+	body.WriteString("\nThe validation check classifies this change; a creation-only change is approved by the machine and the reconciler sets the repository up after the merge.\n")
 
 	title := fmt.Sprintf("feat(%s): declare %s", strings.TrimPrefix(tf.Team, "team-"), entry.Name)
 	return PullRequest{
