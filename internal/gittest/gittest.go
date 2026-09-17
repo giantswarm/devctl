@@ -1,6 +1,5 @@
-// Package gittest runs git for the reservation commands' fixture builders:
-// the thin exec wrappers that set up and inspect a test checkout, failing
-// the test on error.
+// Package gittest runs git for reservation test fixtures, in both
+// cmd/reservation and pkg/reservation, failing the test on error.
 package gittest
 
 import (

@@ -11,8 +11,8 @@ import (
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
 
-	"github.com/giantswarm/devctl/v8/cmd/reservation/internal/gittest"
 	"github.com/giantswarm/devctl/v8/cmd/reservation/release"
+	"github.com/giantswarm/devctl/v8/internal/gittest"
 )
 
 // Flag names, shared across tests that build a release command's --args.

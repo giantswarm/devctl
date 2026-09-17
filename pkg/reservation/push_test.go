@@ -4,40 +4,20 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 
+	"github.com/giantswarm/devctl/v8/internal/gittest"
 	"github.com/giantswarm/devctl/v8/pkg/reservation"
 )
 
-// runGit runs git in dir for a push test fixture, failing the test on error.
-func runGit(t *testing.T, dir string, args ...string) {
-	t.Helper()
-
-	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...) //nolint:gosec // test-only, fixed args
-	cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@example.com",
-		"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@example.com")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
-	}
-}
-
-// gitOutput runs git in dir and returns its trimmed stdout, failing the test
-// on error.
-func gitOutput(t *testing.T, dir string, args ...string) string {
-	t.Helper()
-
-	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...) //nolint:gosec // test-only, fixed args
-	out, err := cmd.Output()
-	if err != nil {
-		t.Fatalf("git %s: %v", strings.Join(args, " "), err)
-	}
-
-	return strings.TrimSpace(string(out))
-}
+// runGit and gitOutput alias the shared gittest helpers at package scope:
+// extend_test.go, reap_test.go and release_all_test.go still call them
+// unqualified, and are out of this change's scope to touch.
+var (
+	runGit    = gittest.RunGit
+	gitOutput = gittest.GitOutput
+)
 
 // newPushFixture builds a bare "origin" holding one commit on main, and a
 // clone of it at dir, so a test can commit into dir and push it for real.
@@ -45,20 +25,20 @@ func newPushFixture(t *testing.T) (dir, origin string) {
 	t.Helper()
 
 	origin = t.TempDir()
-	runGit(t, origin, "init", "--bare", "-b", "main")
+	gittest.RunGit(t, origin, "init", "--bare", "-b", "main")
 
 	seed := t.TempDir()
-	runGit(t, seed, "init", "-b", "main")
+	gittest.RunGit(t, seed, "init", "-b", "main")
 	if err := os.WriteFile(filepath.Join(seed, "seed.txt"), []byte("seed\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	runGit(t, seed, "add", "-A")
-	runGit(t, seed, "commit", "-m", "seed")
-	runGit(t, seed, "remote", "add", "origin", origin)
-	runGit(t, seed, "push", "-u", "origin", "main")
+	gittest.RunGit(t, seed, "add", "-A")
+	gittest.RunGit(t, seed, "commit", "-m", "seed")
+	gittest.RunGit(t, seed, "remote", "add", "origin", origin)
+	gittest.RunGit(t, seed, "push", "-u", "origin", "main")
 
 	dir = t.TempDir()
-	runGit(t, dir, "clone", origin, ".")
+	gittest.RunGit(t, dir, "clone", origin, ".")
 
 	return dir, origin
 }
@@ -71,8 +51,8 @@ func writeAndCommit(t *testing.T, dir, name, content string) {
 	if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	runGit(t, dir, "add", "-A")
-	runGit(t, dir, "commit", "-m", "add "+name)
+	gittest.RunGit(t, dir, "add", "-A")
+	gittest.RunGit(t, dir, "commit", "-m", "add "+name)
 }
 
 // TestPushWithRetrySucceedsOnFirstAttempt checks the plain case: dir is
@@ -95,8 +75,8 @@ func TestPushWithRetrySucceedsOnFirstAttempt(t *testing.T) {
 		t.Errorf("render called %d times, want 1", calls)
 	}
 
-	head := gitOutput(t, dir, "rev-parse", "HEAD")
-	tip := gitOutput(t, origin, "rev-parse", "main")
+	head := gittest.GitOutput(t, dir, "rev-parse", "HEAD")
+	tip := gittest.GitOutput(t, origin, "rev-parse", "main")
 	if head != tip {
 		t.Errorf("push did not land: local HEAD %s, origin main %s", head, tip)
 	}
@@ -109,17 +89,17 @@ func TestPushWithRetrySucceedsOnFirstAttempt(t *testing.T) {
 // corrupted or lost.
 func TestPushWithRetryRerendersAfterAnotherReservationLands(t *testing.T) {
 	seed := newGitOpsFixture(t, fixtureOptions{})
-	branch := gitOutput(t, seed, "branch", "--show-current")
+	branch := gittest.GitOutput(t, seed, "branch", "--show-current")
 
 	origin := t.TempDir()
-	runGit(t, origin, "init", "--bare", "-b", branch)
-	runGit(t, seed, "remote", "add", "origin", origin)
-	runGit(t, seed, "push", "-u", "origin", branch)
+	gittest.RunGit(t, origin, "init", "--bare", "-b", branch)
+	gittest.RunGit(t, seed, "remote", "add", "origin", origin)
+	gittest.RunGit(t, seed, "push", "-u", "origin", branch)
 
 	dir1 := t.TempDir()
-	runGit(t, dir1, "clone", origin, ".")
+	gittest.RunGit(t, dir1, "clone", origin, ".")
 	dir2 := t.TempDir()
-	runGit(t, dir2, "clone", origin, ".")
+	gittest.RunGit(t, dir2, "clone", origin, ".")
 
 	// dir2 reserves other-app and lands first, exactly as a second, unrelated
 	// pull request's reservation would.
@@ -151,8 +131,8 @@ func TestPushWithRetryRerendersAfterAnotherReservationLands(t *testing.T) {
 		t.Errorf("render called %d times, want 2 (the rejected attempt and the rebased retry)", calls)
 	}
 
-	head := gitOutput(t, dir1, "rev-parse", "HEAD")
-	tip := gitOutput(t, origin, "rev-parse", branch)
+	head := gittest.GitOutput(t, dir1, "rev-parse", "HEAD")
+	tip := gittest.GitOutput(t, origin, "rev-parse", branch)
 	if head != tip {
 		t.Errorf("push did not land: local HEAD %s, origin %s %s", head, branch, tip)
 	}
@@ -175,7 +155,7 @@ func TestPushWithRetryRerendersAfterAnotherReservationLands(t *testing.T) {
 func TestPushWithRetryRefusesToRebaseADirtyWorktree(t *testing.T) {
 	dir, origin := newPushFixture(t)
 	saboteur := t.TempDir()
-	runGit(t, saboteur, "clone", origin, ".")
+	gittest.RunGit(t, saboteur, "clone", origin, ".")
 
 	const unrelated = "wip.txt"
 	const wipContent = "someone else's in-progress edit\n"
@@ -192,14 +172,14 @@ func TestPushWithRetryRefusesToRebaseADirtyWorktree(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(dir, "change.txt"), []byte(fmt.Sprintf("change %d\n", calls)), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		runGit(t, dir, "add", "change.txt")
-		runGit(t, dir, "commit", "-m", "add change.txt")
+		gittest.RunGit(t, dir, "add", "change.txt")
+		gittest.RunGit(t, dir, "commit", "-m", "add change.txt")
 
 		if calls == 1 {
 			// Someone else's push lands first, so dir's own push is rejected and
 			// PushWithRetry must rebase before it may render again.
 			writeAndCommit(t, saboteur, "sabotage.txt", "sabotage\n")
-			runGit(t, saboteur, "push", "origin", "main")
+			gittest.RunGit(t, saboteur, "push", "origin", "main")
 		}
 
 		return nil
@@ -231,7 +211,7 @@ func TestPushWithRetryRefusesToRebaseADirtyWorktree(t *testing.T) {
 func TestPushWithRetryGivesUpAfterMaxAttempts(t *testing.T) {
 	dir, origin := newPushFixture(t)
 	saboteur := t.TempDir()
-	runGit(t, saboteur, "clone", origin, ".")
+	gittest.RunGit(t, saboteur, "clone", origin, ".")
 
 	calls := 0
 	render := func() error {
@@ -240,9 +220,9 @@ func TestPushWithRetryGivesUpAfterMaxAttempts(t *testing.T) {
 
 		// However dir's push turns out, someone else's push always lands first,
 		// so dir's is rejected again on every attempt.
-		runGit(t, saboteur, "pull", "--rebase", "origin", "main")
+		gittest.RunGit(t, saboteur, "pull", "--rebase", "origin", "main")
 		writeAndCommit(t, saboteur, "sabotage.txt", fmt.Sprintf("sabotage %d\n", calls))
-		runGit(t, saboteur, "push", "origin", "main")
+		gittest.RunGit(t, saboteur, "push", "origin", "main")
 
 		return nil
 	}
