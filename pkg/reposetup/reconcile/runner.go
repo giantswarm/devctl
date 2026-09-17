@@ -298,13 +298,13 @@ func (s *run) skipReason(step Step) string {
 	}
 	if s.repo.GetArchived() && !declaredArchived {
 		switch step {
-		case StepLifecycle, StepRenovate, StepRelease:
+		case StepLifecycle, StepRelease:
 		default:
 			return "archived on GitHub"
 		}
 	}
 	switch step {
-	case StepProtection, StepCircleCI, StepCodeowners, StepRelease:
+	case StepProtection, StepCircleCI, StepRenovate, StepCodeowners, StepRelease:
 		if s.empty {
 			return "repository is empty: the scaffold comes first"
 		}

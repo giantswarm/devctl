@@ -48,6 +48,8 @@ type fakeRepo struct {
 	checksStatus  int      // HTTP status of the status and check-run reads when not 200
 	tags          []string // tags, all on the head commit
 	prs           []*github.PullRequest
+	issues        []*github.Issue            // what GET /repos/{owner}/{repo}/issues lists
+	history       []*github.RepositoryCommit // the commits behind the head of the default branch
 	blobs         map[string][]byte
 	trees         map[string][]*github.TreeEntry
 	commits       map[string]fakeCommit // commit sha → tree sha and message
@@ -182,6 +184,18 @@ func (r *fakeRepo) next(prefix string) string {
 	return fmt.Sprintf("%s%04d", prefix, r.seq)
 }
 
+// addIssue seeds an open issue created by login — or a pull request, as the
+// issues endpoint lists pull requests too.
+func (r *fakeRepo) addIssue(login, title string, pullRequest bool) *github.Issue {
+	n := len(r.issues) + 1
+	is := &github.Issue{Number: new(n), State: new("open"), Title: new(title), User: &github.User{Login: new(login)}}
+	if pullRequest {
+		is.PullRequestLinks = &github.PullRequestLinks{URL: new(fmt.Sprintf("https://api.github.com/repos/%s/%s/pulls/%d", r.owner, r.name, n))}
+	}
+	r.issues = append(r.issues, is)
+	return is
+}
+
 func (r *fakeRepo) toGitHub() *github.Repository {
 	return &github.Repository{
 		Name:                new(r.name),
@@ -295,7 +309,7 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 			writeJSON(w, http.StatusConflict, map[string]string{"message": "Git Repository is empty."})
 			return
 		}
-		writeJSON(w, 200, []map[string]any{{"sha": "head"}})
+		writeJSON(w, 200, append([]*github.RepositoryCommit{{SHA: new("head")}}, repo.history...))
 	}))
 	mux.HandleFunc("GET /repos/{owner}/{repo}/commits/{sha}/status", f.withRepo(func(w http.ResponseWriter, _ *http.Request, repo *fakeRepo) {
 		if repo.checksStatus != 0 {
@@ -335,6 +349,19 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 		}
 		if out == nil {
 			out = []*github.PullRequest{}
+		}
+		writeJSON(w, 200, out)
+	}))
+	mux.HandleFunc("GET /repos/{owner}/{repo}/issues", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		out := []*github.Issue{}
+		for _, is := range repo.issues {
+			if c := r.URL.Query().Get("creator"); c != "" && is.GetUser().GetLogin() != c {
+				continue
+			}
+			if s := r.URL.Query().Get("state"); s != "" && s != "all" && is.GetState() != s {
+				continue
+			}
+			out = append(out, is)
 		}
 		writeJSON(w, 200, out)
 	}))
@@ -823,9 +850,10 @@ func (f *fakeCircleCI) routes(mux *http.ServeMux) {
 // scaffoldFiles is what the fake renderer renders and what a seeded
 // repository carries: the files the steps read.
 var scaffoldFiles = map[string]string{
-	"README.md":  "# sample-service\n",
-	"CODEOWNERS": reposetup.Codeowners("team-bumblebee"),
-	"Makefile":   "include Makefile.*.mk\n",
+	"README.md":      "# sample-service\n",
+	"CODEOWNERS":     reposetup.Codeowners("team-bumblebee"),
+	"Makefile":       "include Makefile.*.mk\n",
+	"renovate.json5": "{\n  extends: ['github>giantswarm/renovate-presets:default.json5'],\n}\n",
 	".circleci/workflows.yml": `version: 2.1
 workflows:
   build:
