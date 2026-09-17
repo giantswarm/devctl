@@ -28,6 +28,13 @@ type ReleaseRequest struct {
 	// be the original holder: a colleague or an on-call engineer can release for
 	// someone else.
 	User string
+	// PullRequest, when set, restricts the release to a reservation that pull
+	// request holds, e.g. "giantswarm/hello-world#123". Any other pull
+	// request's reservation is refused, so /undeploy <MC> cannot free a
+	// cluster somebody else is testing on. Empty means no check: that is the
+	// force-release a human runs from a laptop to clear a stuck lock, and it
+	// is what Reap uses.
+	PullRequest string
 }
 
 // ReleaseResult reports what Release removed.
@@ -76,6 +83,9 @@ func Release(req ReleaseRequest) (ReleaseResult, error) {
 	if err := checkReserved(configMapPath, chart); err != nil {
 		return ReleaseResult{}, microerror.Mask(err)
 	}
+	if err := checkPullRequestHolds(req, chart); err != nil {
+		return ReleaseResult{}, microerror.Mask(err)
+	}
 
 	collectionsPath := filepath.Join(req.RepoDir, clustersDir, req.Cluster, collectionsDir)
 	component := path.Join(reservationsDir, chart)
@@ -120,6 +130,39 @@ func checkReserved(path, app string) error {
 	if _, ok := findEntry(lines, app); !ok {
 		return microerror.Maskf(notReservedError,
 			"%q holds no reservation on this cluster", app)
+	}
+
+	return nil
+}
+
+// checkPullRequestHolds refuses to release a reservation another pull request
+// holds. Without it, /undeploy <MC> run from any pull request in the repo
+// frees a cluster somebody else is testing on: Release keys a reservation on
+// the cluster and the chart alone, and every pull request in an app repo
+// resolves to the same chart.
+//
+// An empty req.PullRequest skips the check. That is the force-release a human
+// runs from a laptop to clear a stuck lock, and it is the form Reap uses.
+func checkPullRequestHolds(req ReleaseRequest, chart string) error {
+	if req.PullRequest == "" {
+		return nil
+	}
+
+	reservations, err := List(ListRequest{RepoDir: req.RepoDir, Cluster: req.Cluster})
+	if err != nil {
+		return microerror.Mask(err)
+	}
+	for _, r := range reservations {
+		if r.App != chart {
+			continue
+		}
+		if r.PullRequest != req.PullRequest {
+			return microerror.Maskf(notReservedError,
+				"%q on %s is reserved by pull request %q, not by %q: release it from the pull request that holds it",
+				chart, req.Cluster, r.PullRequest, req.PullRequest)
+		}
+
+		return nil
 	}
 
 	return nil

@@ -127,7 +127,14 @@ func reapCluster(ctx context.Context, req ReapRequest, cluster string, now time.
 			continue
 		}
 
-		result, err := releaseAndPush(ctx, req.RepoDir, req.User, cluster, r)
+		result, err := releaseAndPush(ctx, ReleaseRequest{
+			RepoDir: req.RepoDir,
+			Cluster: cluster,
+			App:     r.App,
+			User:    req.User,
+			// No PullRequest: the reaper releases by expiry and by rename,
+			// not on behalf of a pull request.
+		})
 		if err != nil {
 			errs = append(errs, fmt.Errorf("releasing %q on cluster %q: %w", r.App, cluster, err))
 			continue
@@ -173,21 +180,18 @@ func reapReason(ctx context.Context, headBranch HeadBranchFunc, r Reservation, n
 // releaseAndPush releases one reservation and pushes the commit, exactly as
 // the release command does for a single reservation: render (Release),
 // assert, commit, then PushWithRetry rebases and re-renders should another
-// release land first.
-func releaseAndPush(ctx context.Context, repoDir, user, cluster string, r Reservation) (ReleaseResult, error) {
+// release land first. Re-rendering is why req carries the caller's
+// PullRequest: after a rebase the ConfigMap may hold somebody else's
+// reservation for the same app, and Release must refuse that one.
+func releaseAndPush(ctx context.Context, req ReleaseRequest) (ReleaseResult, error) {
 	var result ReleaseResult
 	render := func() error {
 		var err error
-		result, err = Release(ReleaseRequest{
-			RepoDir: repoDir,
-			Cluster: cluster,
-			App:     r.App,
-			User:    user,
-		})
+		result, err = Release(req)
 		return microerror.Mask(err)
 	}
 
-	if err := PushWithRetry(ctx, repoDir, render); err != nil {
+	if err := PushWithRetry(ctx, req.RepoDir, render); err != nil {
 		return ReleaseResult{}, microerror.Mask(err)
 	}
 

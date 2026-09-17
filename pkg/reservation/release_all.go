@@ -93,7 +93,13 @@ func releaseAllCluster(ctx context.Context, req ReleaseAllRequest, cluster strin
 			continue
 		}
 
-		result, err := releaseAndPush(ctx, req.RepoDir, req.User, cluster, r)
+		result, err := releaseAndPush(ctx, ReleaseRequest{
+			RepoDir:     req.RepoDir,
+			Cluster:     cluster,
+			App:         r.App,
+			User:        req.User,
+			PullRequest: req.PullRequest,
+		})
 		if err != nil {
 			errs = append(errs, fmt.Errorf("releasing %q on cluster %q: %w", r.App, cluster, err))
 			continue

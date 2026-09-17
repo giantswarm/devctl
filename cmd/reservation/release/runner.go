@@ -41,7 +41,7 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 // reservation released by someone else in the meantime is not lost or
 // replayed onto a stale tree.
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
-	if r.flag.PullRequest != "" {
+	if r.flag.Cluster == "" {
 		return microerror.Mask(r.releaseAll(ctx))
 	}
 
@@ -54,6 +54,9 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 			App:     r.flag.App,
 			AppDir:  r.flag.AppDir,
 			User:    r.flag.User,
+			// Empty unless the caller runs from a pull request. A human
+			// clearing a stuck lock passes none and releases regardless.
+			PullRequest: r.flag.PullRequest,
 		})
 		return microerror.Mask(err)
 	}

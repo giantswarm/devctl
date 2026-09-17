@@ -42,28 +42,29 @@ func (f *flag) Validate() error {
 		}
 	}
 
-	// --pull-request releases whatever the scan finds, so a cluster or an app
-	// alongside it would be silently ignored. Refuse instead: a caller that
-	// passes both means one of the two, and guessing which is worse than
-	// asking.
-	if f.PullRequest != "" {
+	// --cluster picks the form. With one, this releases that cluster's app,
+	// and --pull-request restricts it to a reservation that pull request
+	// holds. Without one, --pull-request releases every reservation the pull
+	// request holds, wherever it holds one, and an app would be ignored.
+	if f.Cluster == "" {
+		if f.PullRequest == "" {
+			return microerror.Maskf(invalidFlagError,
+				"pass --%s, or --%s to release every reservation a pull request holds", flagCluster, flagPullRequest)
+		}
 		for _, r := range []struct{ name, value string }{
-			{flagCluster, f.Cluster},
 			{flagApp, f.App},
 			{flagAppDir, f.AppDir},
 		} {
 			if r.value != "" {
 				return microerror.Maskf(invalidFlagError,
-					"--%s releases every reservation the pull request holds, so it takes no --%s", flagPullRequest, r.name)
+					"--%s without --%s releases every reservation the pull request holds, so it takes no --%s",
+					flagPullRequest, flagCluster, r.name)
 			}
 		}
 
 		return nil
 	}
 
-	if f.Cluster == "" {
-		return microerror.Maskf(invalidFlagError, "--%s must not be empty", flagCluster)
-	}
 	if f.App == "" && f.AppDir == "" {
 		return microerror.Maskf(invalidFlagError,
 			"pass --%s, or --%s pointing at a checkout of the app repository: the chart name is not the repository name", flagApp, flagAppDir)

@@ -289,3 +289,44 @@ func TestReleaseByPullRequestNeedsNoClusterOrApp(t *testing.T) {
 		t.Errorf("push did not land: local HEAD %s, origin main %s", head, tip)
 	}
 }
+
+// TestReleaseOneClusterChecksThePullRequest is the /undeploy <MC> form: it
+// names a cluster and an app, and it also names the pull request it runs
+// from, so a pull request cannot free a cluster another one is testing on.
+func TestReleaseOneClusterChecksThePullRequest(t *testing.T) {
+	const cluster, chart = "graveler", "hello-world"
+
+	// The holder's pull request releases its own reservation.
+	dir, _ := newReleasableFixture(t, cluster, chart)
+	var stdout bytes.Buffer
+	cmd := newCommand(t, &stdout)
+	cmd.SetArgs([]string{
+		flagRepoDir, dir,
+		flagCluster, cluster,
+		flagApp, chart,
+		flagUser, "alice",
+		flagPullRequest, "giantswarm/hello-world#123",
+	})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("release from the holding pull request: %v", err)
+	}
+
+	// An unrelated pull request is refused, and the reservation survives.
+	other, otherOrigin := newReleasableFixture(t, cluster, chart)
+	otherCmd := newCommand(t, io.Discard)
+	otherCmd.SetArgs([]string{
+		flagRepoDir, other,
+		flagCluster, cluster,
+		flagApp, chart,
+		flagUser, "mallory",
+		flagPullRequest, "giantswarm/hello-world#999",
+	})
+	if err := otherCmd.Execute(); err == nil {
+		t.Fatal("expected a refusal from an unrelated pull request, got none")
+	}
+
+	configMap := gitOutput(t, otherOrigin, "show", "main:management-clusters/"+cluster+"/configmap-reservations.yaml")
+	if !strings.Contains(configMap, chart+":") {
+		t.Errorf("the refusal removed the reservation: %s", configMap)
+	}
+}

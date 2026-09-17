@@ -136,3 +136,31 @@ func TestReleaseAllContinuesAfterABrokenCluster(t *testing.T) {
 		t.Errorf("the healthy cluster's release did not land on origin: local HEAD %s, origin %s", head, tip)
 	}
 }
+
+// TestReleaseRefusesAnotherPullRequestsReservation is the ticket's
+// authorization rule: a release that names a pull request may only remove
+// what that pull request holds. Without it, /undeploy <MC> from any pull
+// request in the repo frees a cluster somebody else is testing on.
+func TestReleaseRefusesAnotherPullRequestsReservation(t *testing.T) {
+	dir, _ := newReapFixture(t, fixtureOptions{})
+
+	reserveAndPush(t, dir, testRequest(dir))
+
+	_, err := reservation.Release(reservation.ReleaseRequest{
+		RepoDir:     dir,
+		Cluster:     fixtureCluster,
+		App:         fixtureApp,
+		User:        testOtherUser,
+		PullRequest: "giantswarm/hello-world#999",
+	})
+	if err == nil {
+		t.Fatal("expected a refusal, got none")
+	}
+	if !reservation.IsNotReserved(err) {
+		t.Fatalf("expected a not-reserved error, got %v", err)
+	}
+
+	if entries := reservationEntries(t, dir, fixtureCluster); len(entries) != 1 {
+		t.Errorf("the refusal removed the reservation: %+v", entries)
+	}
+}
