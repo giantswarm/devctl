@@ -1,7 +1,7 @@
 // Package circleciclient is devctl's client for the CircleCI API: the calls
 // the repository set-up engine makes for a project — follow and unfollow
 // and stop building (v1.1), the token's user, the project, its settings and
-// checkout keys, its pipelines and their workflows and jobs (v2) — and
+// checkout keys, its pipelines (paged) and their workflows and jobs (v2) — and
 // nothing else. The token is a personal
 // API token (architectbot's `CIRCLECI_API_TOKEN` for the reconciler, the
 // person's for `devctl repo reconcile`); the org and repository name a
@@ -297,16 +297,26 @@ func (c *Client) CreateCheckoutKey(ctx context.Context, org, repo, keyType strin
 	return &k, nil
 }
 
-// ListPipelines returns the project's most recent pipelines (the first page,
-// newest first).
-func (c *Client) ListPipelines(ctx context.Context, org, repo string) ([]Pipeline, error) {
-	var out struct {
-		Items []Pipeline `json:"items"`
+// PipelinePage is one page of a project's pipelines, newest first, and the
+// token of the page after it — empty on the last page.
+type PipelinePage struct {
+	Items         []Pipeline `json:"items"`
+	NextPageToken string     `json:"next_page_token"`
+}
+
+// ListPipelines returns one page of the project's pipelines, newest first:
+// the most recent ones for an empty pageToken, the page after a page for its
+// NextPageToken.
+func (c *Client) ListPipelines(ctx context.Context, org, repo, pageToken string) (*PipelinePage, error) {
+	path := c.v2Project(org, repo) + "/pipeline"
+	if pageToken != "" {
+		path += "?page-token=" + url.QueryEscape(pageToken)
 	}
-	if err := c.do(ctx, http.MethodGet, c.v2Project(org, repo)+"/pipeline", nil, &out); err != nil {
+	var page PipelinePage
+	if err := c.do(ctx, http.MethodGet, path, nil, &page); err != nil {
 		return nil, microerror.Mask(err)
 	}
-	return out.Items, nil
+	return &page, nil
 }
 
 // TriggerPipeline triggers a pipeline for the tag or branch in req: the way

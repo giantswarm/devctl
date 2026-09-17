@@ -617,7 +617,11 @@ type fakeCircleCI struct {
 	jobs      map[string][]circleciclient.Job
 	mutations []string
 	seq       int
-	srv       *httptest.Server
+	// pageSize is how many pipelines a page of the pipeline list holds, all
+	// of them when 0; pages records the page tokens the list was read with.
+	pageSize int
+	pages    []string
+	srv      *httptest.Server
 }
 
 type fakeProject struct {
@@ -651,12 +655,18 @@ func (f *fakeCircleCI) follow(org, repo string) *fakeProject {
 	return p
 }
 
-// addPipeline seeds a pipeline for tag with one workflow of status and,
-// when it failed, one failed job.
+// addPipeline seeds a pipeline for tag, created now, with one workflow of
+// status and, when it failed, one failed job.
 func (f *fakeCircleCI) addPipeline(p *fakeProject, tag, status string) {
+	f.seedPipeline(p, circleciclient.PipelineVCS{Tag: tag}, time.Now(), status)
+}
+
+// seedPipeline seeds a pipeline of vcs created at createdAt, newest first,
+// with one workflow of status and, when it failed, one failed job.
+func (f *fakeCircleCI) seedPipeline(p *fakeProject, vcs circleciclient.PipelineVCS, createdAt time.Time, status string) {
 	f.seq++
 	id := fmt.Sprintf("pipeline-%d", f.seq)
-	p.pipelines = append([]circleciclient.Pipeline{{ID: id, Number: int64(f.seq), State: "created", CreatedAt: time.Now(), VCS: circleciclient.PipelineVCS{Tag: tag}}}, p.pipelines...)
+	p.pipelines = append([]circleciclient.Pipeline{{ID: id, Number: int64(f.seq), State: "created", CreatedAt: createdAt, VCS: vcs}}, p.pipelines...)
 	wfID := id + "-wf"
 	f.workflows[id] = []circleciclient.Workflow{{ID: wfID, Name: "build", Status: status, PipelineNumber: int64(f.seq)}}
 	if circleciclient.WorkflowFailed(status) {
@@ -736,12 +746,21 @@ func (f *fakeCircleCI) routes(mux *http.ServeMux) {
 		p.keys = append(p.keys, k)
 		writeJSON(w, 201, k)
 	}))
-	mux.HandleFunc("GET /api/v2/project/gh/{org}/{repo}/pipeline", f.withProject(func(w http.ResponseWriter, _ *http.Request, p *fakeProject) {
-		items := p.pipelines
+	mux.HandleFunc("GET /api/v2/project/gh/{org}/{repo}/pipeline", f.withProject(func(w http.ResponseWriter, r *http.Request, p *fakeProject) {
+		// The page token is the offset of the page's first pipeline.
+		token := r.URL.Query().Get("page-token")
+		f.pages = append(f.pages, token)
+		from, _ := strconv.Atoi(token)
+		items := p.pipelines[min(from, len(p.pipelines)):]
+		var next any
+		if f.pageSize > 0 && len(items) > f.pageSize {
+			items = items[:f.pageSize]
+			next = strconv.Itoa(from + f.pageSize)
+		}
 		if items == nil {
 			items = []circleciclient.Pipeline{}
 		}
-		writeJSON(w, 200, map[string]any{"items": items, "next_page_token": nil})
+		writeJSON(w, 200, map[string]any{"items": items, "next_page_token": next})
 	}))
 	mux.HandleFunc("POST /api/v2/project/gh/{org}/{repo}/pipeline", f.withProject(func(w http.ResponseWriter, r *http.Request, p *fakeProject) {
 		var in circleciclient.TriggerRequest

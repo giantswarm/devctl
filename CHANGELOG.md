@@ -25,6 +25,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `repo reconcile`: the `release` step triggers the missed tag build whenever the latest release's tag has no
+  CircleCI pipeline. It skipped the trigger when the most recent pipeline was newer than the release, taking that
+  as a sign the tag's pipeline was merely further down the list — but a repository created pull-request-last is
+  followed on CircleCI after its first tag, and the follow builds the default branch right away, so the first
+  release stayed unbuilt with `pipeline not among the 1 most recent, not verified`. The step now decides from the
+  tag alone: it pages through the project's pipelines until the tag's pipeline is found, until a pipeline older
+  than the release is seen (the tag's would have been listed before it) or until the pages end, and triggers only
+  when none exists — never twice. `circleciclient.ListPipelines` reads one page at a time (`PipelinePage`,
+  `NextPageToken`) (giantswarm/giantswarm#37726, #2243).
 - `repo reconcile`: `lifecycle: archived` unfollows on CircleCI once. The step read the v2 project to decide
   "followed", which answers 200 for ever — unfollowed or stopped alike (checked live) — so every run planned and
   re-applied `unfollow on CircleCI` on every archived repository. It now reads the token user's follow from the v1.1

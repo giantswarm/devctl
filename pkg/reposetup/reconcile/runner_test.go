@@ -608,6 +608,65 @@ func TestSteps(t *testing.T) {
 				require.Contains(t, res.Step(StepRelease).Summary, "release v0.1.0 built")
 			},
 		},
+		{
+			// A repository created pull-request-last: the tag exists before
+			// the project is followed, and the follow builds the default
+			// branch first. The newer pipeline is no evidence for the tag.
+			name: "release: a newer pipeline of another ref does not hide the missed tag build", step: StepRelease,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.release, r.releaseAt = "v0.1.0", time.Now().Add(-time.Hour)
+				h.cc.seedPipeline(h.cc.follow(owner, name), circleciclient.PipelineVCS{Branch: "main"}, time.Now(), "success")
+			},
+			wantCheck: VerdictDrift, wantChange: "trigger the missed tag build for v0.1.0",
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				p := h.cc.projects[owner+"/"+name]
+				require.Len(t, p.pipelines, 2, "one trigger, once")
+				require.Equal(t, "v0.1.0", p.pipelines[0].VCS.Tag)
+			},
+		},
+		{
+			// The tag's pipeline is behind a full first page of newer
+			// pipelines: the step pages on and finds it, no second trigger.
+			name: "release: the tag pipeline on a later page is verified, not triggered again", step: StepRelease,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.release, r.releaseAt = "v0.1.0", time.Now().Add(-time.Hour)
+				h.cc.pageSize = 1
+				p := h.cc.follow(owner, name)
+				h.cc.seedPipeline(p, circleciclient.PipelineVCS{Tag: "v0.1.0"}, time.Now().Add(-time.Minute), "success")
+				h.cc.seedPipeline(p, circleciclient.PipelineVCS{Branch: "main"}, time.Now(), "success")
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Contains(t, res.Step(StepRelease).Summary, "release v0.1.0 built")
+				require.Len(t, h.cc.projects[owner+"/"+name].pipelines, 2)
+				require.Contains(t, h.cc.pages, "1", "the second page was read")
+			},
+		},
+		{
+			// Paging stops at the first pipeline older than the release: the
+			// tag's pipeline would have been listed before it. The pages
+			// behind it are never read; the tag is triggered.
+			name: "release: paging stops behind the release and triggers the missed tag build", step: StepRelease,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.release, r.releaseAt = "v0.1.0", time.Now().Add(-time.Hour)
+				h.cc.pageSize = 1
+				p := h.cc.follow(owner, name)
+				h.cc.seedPipeline(p, circleciclient.PipelineVCS{Branch: "main"}, time.Now().Add(-3*time.Hour), "success")
+				h.cc.seedPipeline(p, circleciclient.PipelineVCS{Branch: "main"}, time.Now().Add(-2*time.Hour), "success")
+				h.cc.seedPipeline(p, circleciclient.PipelineVCS{Branch: "main"}, time.Now(), "success")
+			},
+			wantCheck: VerdictDrift, wantChange: "trigger the missed tag build for v0.1.0",
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				p := h.cc.projects[owner+"/"+name]
+				require.Len(t, p.pipelines, 4, "one trigger, once")
+				require.Equal(t, "v0.1.0", p.pipelines[0].VCS.Tag)
+				require.Contains(t, h.cc.pages, "1", "the page with the older pipeline was read")
+				require.NotContains(t, h.cc.pages, "2", "the pages behind the release were not read")
+			},
+		},
 	}
 
 	for _, tc := range cases {
