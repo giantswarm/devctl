@@ -2,6 +2,7 @@ package reservation
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/giantswarm/microerror"
@@ -64,29 +65,48 @@ func ReleaseAll(ctx context.Context, req ReleaseAllRequest) ([]Released, error) 
 	}
 
 	var released []Released
+	var errs []error
 	for _, cluster := range clusters {
-		reservations, err := List(ListRequest{RepoDir: req.RepoDir, Cluster: cluster})
+		rel, err := releaseAllCluster(ctx, req, cluster)
+		released = append(released, rel...)
 		if err != nil {
-			return nil, fmt.Errorf("listing reservations on cluster %q: %w", cluster, err)
-		}
-		for _, r := range reservations {
-			if r.PullRequest != req.PullRequest {
-				continue
-			}
-			result, err := releaseAndPush(ctx, req.RepoDir, req.User, cluster, r)
-			if err != nil {
-				return nil, fmt.Errorf("releasing %q on cluster %q: %w", r.App, cluster, err)
-			}
-
-			released = append(released, Released{
-				Cluster: cluster,
-				App:     result.App,
-				User:    r.User,
-				Branch:  r.Branch,
-				Commit:  result.Commit,
-			})
+			errs = append(errs, err)
 		}
 	}
 
-	return released, nil
+	return released, errors.Join(errs...)
+}
+
+// releaseAllCluster releases every reservation on cluster that names the pull
+// request, pushing each one before the next is even considered, so a push
+// that fails on one reservation never costs the release of another.
+func releaseAllCluster(ctx context.Context, req ReleaseAllRequest, cluster string) ([]Released, error) {
+	reservations, err := List(ListRequest{RepoDir: req.RepoDir, Cluster: cluster})
+	if err != nil {
+		return nil, fmt.Errorf("listing reservations on cluster %q: %w", cluster, err)
+	}
+
+	var released []Released
+	var errs []error
+	for _, r := range reservations {
+		if r.PullRequest != req.PullRequest {
+			continue
+		}
+
+		result, err := releaseAndPush(ctx, req.RepoDir, req.User, cluster, r)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("releasing %q on cluster %q: %w", r.App, cluster, err))
+			continue
+		}
+
+		released = append(released, Released{
+			Cluster: cluster,
+			App:     result.App,
+			User:    r.User,
+			Branch:  r.Branch,
+			Commit:  result.Commit,
+		})
+	}
+
+	return released, errors.Join(errs...)
 }
