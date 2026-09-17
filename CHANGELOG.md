@@ -25,6 +25,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `repo reconcile`: the `catalog` step dispatches for a private repository. The reconciler runs the step as its
+  workflow run, whose token holds the `actions: write` the App does not, and that token sees public repositories
+  only: the run's repository lookup answered 404 and every step of the invocation ended
+  `skipped — repository does not exist`, so the catalog regeneration was never dispatched and the step's
+  `in the catalog` verdict was out of reach for a private repository. `--dispatch-token-envvar` names the token
+  for the step's two workflow-run calls (listing the runs, dispatching) alone; every read -- the repository
+  lookup, the catalog, the mapping -- stays with the GitHub token, which sees the repository.
+  `reconcile.Runner.Dispatch` is the client behind the flag; nil keeps everything on `GitHub`
+  (giantswarm/giantswarm#37726, #2244).
 - `repo reconcile`: the `release` step triggers the missed tag build whenever the latest release's tag has no
   CircleCI pipeline. It skipped the trigger when the most recent pipeline was newer than the release, taking that
   as a sign the tag's pipeline was merely further down the list — but a repository created pull-request-last is

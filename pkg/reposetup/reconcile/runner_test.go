@@ -32,6 +32,14 @@ const (
     language: go
 `
 	archivedEntryYAML = entryYAML + "  lifecycle: archived\n"
+	privateEntryYAML  = `- name: sample-service
+  componentType: service
+  description: A sample service
+  visibility: private
+  gen:
+    flavours: [app]
+    language: go
+`
 
 	// scaffoldSubject is the first commit's subject: conventional, so the
 	// generated auto-release workflow tags v0.1.0 from it.
@@ -91,6 +99,18 @@ func (h *harness) run(mode Mode, added bool, steps ...Step) *Result {
 	res, err := h.runner.Run(context.Background(), Request{Team: team, Entry: h.entry, Added: added, Mode: mode, Steps: steps})
 	require.NoError(h.t, err)
 	return res
+}
+
+// dispatchAsRun gives the runner the workflow run's own token for the
+// catalog step's dispatches, the reconciler's set-up: the run token holds
+// the Actions permission the default identity lacks and sees public
+// repositories only (fakeGitHub.runToken).
+func (h *harness) dispatchAsRun() {
+	h.t.Helper()
+	h.gh.runToken = "run-token"
+	client, err := github.NewClient(github.WithAuthToken(h.gh.runToken), github.WithEnterpriseURLs(h.gh.srv.URL, h.gh.srv.URL))
+	require.NoError(h.t, err)
+	h.runner.Dispatch = client
 }
 
 func (h *harness) mutations() []string {
@@ -566,6 +586,35 @@ func TestSteps(t *testing.T) {
 			verify: func(t *testing.T, h *harness, res *Result) {
 				require.Empty(t, h.gh.dispatches)
 				require.Contains(t, res.Step(StepCatalog).Summary, "run #2 in_progress")
+			},
+		},
+		{
+			name: "catalog: a private repository is looked up as the App and dispatched as the run", step: StepCatalog,
+			entry: privateEntryYAML,
+			seed: func(h *harness) {
+				h.gh.addRepo(owner, name).private = true
+				h.seedCatalog(false, false)
+				h.dispatchAsRun()
+			},
+			wantCheck: VerdictDrift, wantChange: "dispatch update-devportal-catalog.yaml in giantswarm/github (force)",
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Equal(t, []string{"update-devportal-catalog.yaml"}, h.gh.dispatches)
+				require.Equal(t, []string{"run-token"}, h.gh.dispatchedBy, "the dispatch carries the run's token")
+				require.Equal(t, VerdictRepaired, res.Step(StepCatalog).Verdict)
+			},
+		},
+		{
+			name: "catalog: a private repository in the catalog reaches its verdict with the run's token dispatching", step: StepCatalog,
+			entry: privateEntryYAML,
+			seed: func(h *harness) {
+				h.gh.addRepo(owner, name).private = true
+				h.seedCatalogCharts(true, false, []string{"gsociprivate.azurecr.io/charts/giantswarm/" + name})
+				h.dispatchAsRun()
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Empty(t, h.gh.dispatches)
+				require.Equal(t, "in the catalog; no public chart to map", res.Step(StepCatalog).Summary)
 			},
 		},
 		{

@@ -36,9 +36,13 @@ required once it has reported on the default branch or a recently merged
 pull request, ghosts are removed), circleci (follow, setup workflows,
 checkout key), webhooks, renovate (check only), codeowners (a pull
 request), metadata, lifecycle, catalog, release. The CircleCI steps need a
-token in $CIRCLECI_TOKEN and are skipped without one. --enforce-admins
-(default true) is the one baseline knob: whether the branch protection binds
-administrators too.
+token in $CIRCLECI_TOKEN and are skipped without one. The catalog step
+dispatches the catalog and mapping workflows of the catalog repository, which
+needs an Actions permission there: --dispatch-token-envvar names a second
+token for those two calls when the GitHub token's identity has none (a
+workflow run's own token); every read, the repository lookup included, stays
+with the GitHub token. --enforce-admins (default true) is the one baseline
+knob: whether the branch protection binds administrators too.
 
 An entry the validator refuses is a result too: one step, entry, reported,
 with a finding per problem naming the field to fix, and exit 0 — the

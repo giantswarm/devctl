@@ -96,8 +96,34 @@ type fakeGitHub struct {
 	createStatus int
 	// onDispatch simulates what a dispatched workflow lands.
 	onDispatch func(workflow string, inputs map[string]any)
-	mutations  []string
-	srv        *httptest.Server
+	// runToken, when set, is a workflow run's own token beside the fake's
+	// default identity (no bearer: the App or a person). It sees public
+	// repositories only — a private one answers 404 to it on every
+	// endpoint — and is the one identity that may list and dispatch
+	// workflow runs: the default identity gets 403 there, GitHub's answer
+	// to an App without an Actions permission. Empty models one identity
+	// that may do everything.
+	runToken string
+	// dispatchedBy records the bearer token of every dispatch, "" for none.
+	dispatchedBy []string
+	mutations    []string
+	srv          *httptest.Server
+}
+
+// bearer is the request's bearer token, "" without one.
+func bearer(r *http.Request) string {
+	return strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+}
+
+// isRunToken says whether r runs under the workflow run's token.
+func (f *fakeGitHub) isRunToken(r *http.Request) bool {
+	return f.runToken != "" && bearer(r) == f.runToken
+}
+
+// mayDispatch says whether r's identity holds the Actions permission: any
+// without a run token, the run token alone with one.
+func (f *fakeGitHub) mayDispatch(r *http.Request) bool {
+	return f.runToken == "" || f.isRunToken(r)
 }
 
 func newFakeGitHub() *fakeGitHub {
@@ -188,6 +214,11 @@ func notFound(w http.ResponseWriter, msg string) {
 	writeJSON(w, http.StatusNotFound, map[string]string{"message": msg})
 }
 
+// forbidden is GitHub's answer to an identity without the permission.
+func forbidden(w http.ResponseWriter) {
+	writeJSON(w, http.StatusForbidden, map[string]string{"message": "Resource not accessible by integration"})
+}
+
 func decode(r *http.Request, v any) {
 	_ = json.NewDecoder(r.Body).Decode(v)
 }
@@ -197,7 +228,7 @@ func (f *fakeGitHub) withRepo(h func(w http.ResponseWriter, r *http.Request, rep
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		repo, ok := f.repo(r.PathValue("owner"), r.PathValue("repo"))
-		if !ok {
+		if !ok || (repo.private && f.isRunToken(r)) {
 			notFound(w, "Not Found")
 			return
 		}
@@ -591,6 +622,10 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 		writeJSON(w, 200, map[string]any{"tag_name": repo.release, "created_at": repo.releaseAt.Format(time.RFC3339)})
 	}))
 	mux.HandleFunc("GET /repos/{owner}/{repo}/actions/workflows/{file}/runs", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		if !f.mayDispatch(r) {
+			forbidden(w)
+			return
+		}
 		runs := []map[string]any{}
 		for i, status := range f.runs[repo.owner+"/"+repo.name+"/"+r.PathValue("file")] {
 			runs = append(runs, map[string]any{"run_number": i + 1, "status": status})
@@ -598,9 +633,14 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 		writeJSON(w, 200, map[string]any{"total_count": len(runs), "workflow_runs": runs})
 	}))
 	mux.HandleFunc("POST /repos/{owner}/{repo}/actions/workflows/{file}/dispatches", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		if !f.mayDispatch(r) {
+			forbidden(w)
+			return
+		}
 		var in github.CreateWorkflowDispatchEventRequest
 		decode(r, &in)
 		f.dispatches = append(f.dispatches, r.PathValue("file"))
+		f.dispatchedBy = append(f.dispatchedBy, bearer(r))
 		if f.onDispatch != nil {
 			f.onDispatch(r.PathValue("file"), in.Inputs)
 		}

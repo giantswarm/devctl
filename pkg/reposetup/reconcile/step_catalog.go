@@ -125,9 +125,11 @@ func findComponent(catalog []byte, name string) (component, bool) {
 
 // dispatchOnce dispatches workflow on its default branch unless a run of it
 // is already queued or in progress, in which case the step stays in drift
-// until that run has landed its change.
+// until that run has landed its change. The runs are listed and dispatched
+// with the Dispatch client: the two calls that need an Actions permission.
 func (r *Runner) dispatchOnce(ctx context.Context, s *run, sr *StepResult, owner, repo, workflow string, inputs map[string]any, change string) error {
-	runs, _, err := r.GitHub.Actions.ListWorkflowRunsByFileName(ctx, owner, repo, workflow, &github.ListWorkflowRunsOptions{
+	actions := r.dispatcher().Actions
+	runs, _, err := actions.ListWorkflowRunsByFileName(ctx, owner, repo, workflow, &github.ListWorkflowRunsOptions{
 		ListOptions: github.ListOptions{PerPage: 5},
 	})
 	if err != nil && !isNotFound(nil, err) {
@@ -144,7 +146,7 @@ func (r *Runner) dispatchOnce(ctx context.Context, s *run, sr *StepResult, owner
 		}
 	}
 	return s.plan(sr, change, func() error {
-		_, _, err := r.GitHub.Actions.CreateWorkflowDispatchEventByFileName(ctx, owner, repo, workflow, github.CreateWorkflowDispatchEventRequest{
+		_, _, err := actions.CreateWorkflowDispatchEventByFileName(ctx, owner, repo, workflow, github.CreateWorkflowDispatchEventRequest{
 			Ref:    s.baseline.DefaultBranch,
 			Inputs: inputs,
 		})
