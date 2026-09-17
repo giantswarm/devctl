@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/google/go-github/v92/github"
 
@@ -129,7 +130,9 @@ func (r *Runner) followGrantee(ctx context.Context, s *run) (string, error) {
 // stepRelease verifies the latest release: its tag has a pipeline and the
 // pipeline's workflows succeeded. A tag without a pipeline — the project
 // was followed or renamed after the tag — is triggered; a red pipeline is
-// reported: the tag is dead and the fix is the next tag.
+// reported: the tag is dead and the fix is the next tag. The decision is
+// made from the tag alone: a newer pipeline of another ref (the follow
+// itself builds the default branch) is no evidence that the tag was built.
 func (r *Runner) stepRelease(ctx context.Context, s *run, sr *StepResult) error {
 	release, resp, err := r.GitHub.Repositories.GetLatestRelease(ctx, s.owner, s.name)
 	switch {
@@ -146,7 +149,7 @@ func (r *Runner) stepRelease(ctx context.Context, s *run, sr *StepResult) error 
 		return nil
 	}
 
-	pipelines, err := r.CircleCI.ListPipelines(ctx, s.owner, s.name)
+	pipeline, err := r.tagPipeline(ctx, s, tag, release.GetCreatedAt().Time)
 	if err != nil {
 		if circleciclient.IsNotFound(err) {
 			sr.Verdict = VerdictSkipped
@@ -155,20 +158,7 @@ func (r *Runner) stepRelease(ctx context.Context, s *run, sr *StepResult) error 
 		}
 		return err
 	}
-	var pipeline *circleciclient.Pipeline
-	for i := range pipelines {
-		if pipelines[i].VCS.Tag == tag {
-			pipeline = &pipelines[i]
-			break
-		}
-	}
 	if pipeline == nil {
-		// The list is the first page, newest first. The tag's pipeline is
-		// missing for sure only when the page reaches back past the release.
-		if n := len(pipelines); n > 0 && pipelines[n-1].CreatedAt.After(release.GetCreatedAt().Time) {
-			sr.Summary = fmt.Sprintf("release %s: pipeline not among the %d most recent, not verified", tag, n)
-			return nil
-		}
 		return s.plan(sr, fmt.Sprintf("trigger the missed tag build for %s", tag), func() error {
 			_, err := r.CircleCI.TriggerPipeline(ctx, s.owner, s.name, circleciclient.TriggerRequest{Tag: tag})
 			return err
@@ -213,4 +203,34 @@ func (r *Runner) stepRelease(ctx context.Context, s *run, sr *StepResult) error 
 		sr.Summary = fmt.Sprintf("release %s built: pipeline %d, workflows %s succeeded", tag, pipeline.Number, strings.Join(succeeded, ", "))
 	}
 	return nil
+}
+
+// tagPipeline finds the pipeline that built tag among the project's
+// pipelines, newest first, paging as far as needed to be sure: until the
+// tag's pipeline is found, until a pipeline older than the release is seen
+// — the tag's pipeline builds a commit no older than that, so it would have
+// been listed before — or until the pages end. Nil when the tag has no
+// pipeline; a trigger is safe then and only then, as CircleCI runs a new
+// pipeline per trigger.
+func (r *Runner) tagPipeline(ctx context.Context, s *run, tag string, releasedAt time.Time) (*circleciclient.Pipeline, error) {
+	var pageToken string
+	for {
+		page, err := r.CircleCI.ListPipelines(ctx, s.owner, s.name, pageToken)
+		if err != nil {
+			return nil, err
+		}
+		for i := range page.Items {
+			p := &page.Items[i]
+			if p.VCS.Tag == tag {
+				return p, nil
+			}
+			if p.CreatedAt.Before(releasedAt) {
+				return nil, nil
+			}
+		}
+		if page.NextPageToken == "" || len(page.Items) == 0 {
+			return nil, nil
+		}
+		pageToken = page.NextPageToken
+	}
 }
