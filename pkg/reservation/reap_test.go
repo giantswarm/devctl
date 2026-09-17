@@ -163,6 +163,63 @@ func TestReapDoesNotDeleteAFreshReservationThatWonTheRace(t *testing.T) {
 	}
 }
 
+// TestReapReportsTheRecordItActuallyDeletedAfterARebase is the sibling of
+// TestReapDoesNotDeleteAFreshReservationThatWonTheRace: the rebase's
+// replacement reservation is also already expired by the time Reap runs, so
+// the re-check inside render still finds a reason and the delete is correct.
+// But reapCluster must report the record render actually deleted -- the
+// replacement's holder, branch, pull request and expiry -- not the stale
+// pre-push List read it started the sweep with.
+func TestReapReportsTheRecordItActuallyDeletedAfterARebase(t *testing.T) {
+	dir1, origin := newReapFixture(t, fixtureOptions{})
+
+	// dir1 reserves and pushes the reservation that will have expired by the
+	// time Reap runs.
+	stale := testRequest(dir1)
+	stale.Now = time.Date(2026, 9, 15, 10, 0, 0, 0, time.UTC)
+	stale.Duration = time.Hour
+	reserveAndPush(t, dir1, stale)
+
+	// dir2 clones the tip that still carries the stale reservation and
+	// replaces it with a DIFFERENT reservation for the same app -- a
+	// different holder, branch and pull request -- that has also already
+	// expired by the time Reap runs, and lands it first.
+	dir2 := t.TempDir()
+	runGit(t, dir2, "clone", origin, ".")
+	replacement := testRequest(dir2)
+	replacement.User = testOtherUser
+	replacement.Branch = testOtherBranch
+	replacement.PullRequest = "giantswarm/hello-world#456"
+	replacement.Now = time.Date(2026, 9, 15, 11, 10, 0, 0, time.UTC) // after stale's Until (11:00), so it no longer blocks
+	replacement.Duration = 15 * time.Minute                          // expires 11:25, still well before Reap's Now
+	replacementResult := reserveAndPush(t, dir2, replacement)
+
+	// dir1 never fetched dir2's push: its local List still shows the stale
+	// reservation under the first holder's name, so Reap decides to release
+	// it before it has any idea a different, also-expired reservation has
+	// taken its place on origin.
+	reaped, err := reservation.Reap(context.Background(), reservation.ReapRequest{
+		RepoDir: dir1,
+		User:    testReaper,
+		Now:     time.Date(2026, 9, 15, 12, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("Reap: %v", err)
+	}
+	if len(reaped) != 1 {
+		t.Fatalf("got %d reaped reservations, want 1: the replacement is also expired, so the re-check must still allow the delete: %+v", len(reaped), reaped)
+	}
+
+	got := reaped[0]
+	if got.User != testOtherUser || got.Branch != testOtherBranch || got.PullRequest != replacement.PullRequest {
+		t.Errorf("reaped entry: got %+v, want the record render actually deleted (user %q, branch %q, pr %q), not the stale pre-push read",
+			got, testOtherUser, testOtherBranch, replacement.PullRequest)
+	}
+	if !got.Until.Equal(replacementResult.Until) {
+		t.Errorf("reaped Until: got %s, want the replacement's own expiry %s", got.Until, replacementResult.Until)
+	}
+}
+
 // constantHeadBranch stubs HeadBranchFunc: every pull request has the same
 // current head branch, whatever the reservation stored.
 func constantHeadBranch(branch string) reservation.HeadBranchFunc {

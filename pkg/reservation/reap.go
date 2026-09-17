@@ -127,7 +127,7 @@ func reapCluster(ctx context.Context, req ReapRequest, cluster string, now time.
 			continue
 		}
 
-		result, err := reapAndPush(ctx, ReleaseRequest{
+		result, condemned, condemnedReason, err := reapAndPush(ctx, ReleaseRequest{
 			RepoDir: req.RepoDir,
 			Cluster: cluster,
 			App:     r.App,
@@ -146,14 +146,17 @@ func reapCluster(ctx context.Context, req ReapRequest, cluster string, now time.
 			continue
 		}
 
+		// condemned and condemnedReason describe the record render actually
+		// re-checked and deleted, which after a rebase can differ from r: r is
+		// only the stale pre-push List read this sweep started from.
 		reaped = append(reaped, Reaped{
 			Cluster:     cluster,
 			App:         result.App,
-			User:        r.User,
-			Branch:      r.Branch,
-			PullRequest: r.PullRequest,
-			Reason:      reason,
-			Until:       r.Until,
+			User:        condemned.User,
+			Branch:      condemned.Branch,
+			PullRequest: condemned.PullRequest,
+			Reason:      condemnedReason,
+			Until:       condemned.Until,
 			Commit:      result.Commit,
 		})
 	}
@@ -214,8 +217,15 @@ func releaseAndPush(ctx context.Context, req ReleaseRequest) (ReleaseResult, err
 // is about to write. When that re-check finds nothing left to condemn, render
 // skips Release entirely and reports a zero ReleaseResult: nothing needed
 // doing, and the fresh reservation is left untouched.
-func reapAndPush(ctx context.Context, req ReleaseRequest, headBranch HeadBranchFunc, now time.Time) (ReleaseResult, error) {
+//
+// It also returns the Reservation the re-check found and the reason it
+// condemned it: after a rebase this can be a different record than the one
+// the caller's req.App lookup started from, and the caller reports this one,
+// not its own stale pre-push read.
+func reapAndPush(ctx context.Context, req ReleaseRequest, headBranch HeadBranchFunc, now time.Time) (ReleaseResult, Reservation, string, error) {
 	var result ReleaseResult
+	var condemned Reservation
+	var reason string
 	render := func() error {
 		reservations, err := List(ListRequest{RepoDir: req.RepoDir, Cluster: req.Cluster})
 		if err != nil {
@@ -225,14 +235,15 @@ func reapAndPush(ctx context.Context, req ReleaseRequest, headBranch HeadBranchF
 			if current.App != req.App {
 				continue
 			}
-			reason, err := reapReason(ctx, headBranch, current, now)
+			r, err := reapReason(ctx, headBranch, current, now)
 			if err != nil {
 				return microerror.Mask(err)
 			}
-			if reason == "" {
+			if r == "" {
 				result = ReleaseResult{}
 				return nil
 			}
+			condemned, reason = current, r
 			break
 		}
 
@@ -241,10 +252,10 @@ func reapAndPush(ctx context.Context, req ReleaseRequest, headBranch HeadBranchF
 	}
 
 	if err := PushWithRetry(ctx, req.RepoDir, render); err != nil {
-		return ReleaseResult{}, microerror.Mask(err)
+		return ReleaseResult{}, Reservation{}, "", microerror.Mask(err)
 	}
 
-	return result, nil
+	return result, condemned, reason, nil
 }
 
 // Reaped reports one reservation Reap released.
