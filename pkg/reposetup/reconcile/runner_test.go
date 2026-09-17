@@ -474,6 +474,26 @@ func TestSteps(t *testing.T) {
 			},
 		},
 		{
+			name: "renovate: no trace on a repository younger than a day is ok, Renovate's first run is not due", step: StepRenovate,
+			seed: func(h *harness) {
+				h.gh.addRepo(owner, name).createdAt = time.Now().Add(-time.Hour)
+				h.gh.installation.status = 403
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, _ *harness, res *Result) {
+				require.Equal(t, "renovate.json5; no Renovate run yet and none due: the repository is younger than a day, Renovate's first run follows",
+					res.Step(StepRenovate).Summary)
+			},
+		},
+		{
+			name: "renovate: no trace on a repository a day old is reported", step: StepRenovate,
+			seed: func(h *harness) {
+				h.gh.addRepo(owner, name).createdAt = time.Now().Add(-25 * time.Hour)
+				h.gh.installation.status = 403
+			},
+			wantCheck: VerdictReported, wantFinding: FindingRenovateNotScanned, wantAfter: VerdictReported,
+		},
+		{
 			name: "renovate: no configuration is reported", step: StepRenovate,
 			seed: func(h *harness) {
 				delete(h.gh.addRepo(owner, name).files, "renovate.json5")
@@ -905,7 +925,8 @@ func TestRunFullRepositorySetUp(t *testing.T) {
 	for _, sr := range second.Steps {
 		require.Contains(t, []Verdict{VerdictOK, VerdictReported}, sr.Verdict, "%s: %+v", sr.Step, sr)
 	}
-	require.Equal(t, []FindingKind{FindingDefaultIcon, FindingRenovateNotScanned}, kinds(second.Findings()), "the default icon, and Renovate that has not run yet")
+	require.Equal(t, []FindingKind{FindingDefaultIcon}, kinds(second.Findings()), "the default icon alone: Renovate's first run is not due on a repository created minutes ago")
+	require.Contains(t, second.Step(StepRenovate).Summary, "none due", "%+v", second.Step(StepRenovate))
 
 	data, err := json.Marshal(second)
 	require.NoError(t, err)

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/google/go-github/v92/github"
 )
@@ -17,6 +18,12 @@ const (
 	// renovateDashboardTitle is the issue Renovate keeps on every repository
 	// it scans, unless the configuration turns the dashboard off.
 	renovateDashboardTitle = "Dependency Dashboard"
+	// renovateGrace is how long after its creation a repository may show no
+	// trace of a Renovate run without that being a finding: the hosted
+	// Renovate App picks a new repository up on one of its next scheduled
+	// runs, within hours, and the Dependency Dashboard issue follows that
+	// run. A repository created minutes ago has nothing to report.
+	renovateGrace = 24 * time.Hour
 )
 
 // renovateConfigPaths are the configuration files Renovate reads, in its
@@ -43,7 +50,9 @@ type installationRepositories struct {
 // Renovate. The Renovate installation covers every repository of the
 // organization, so what is missing is reported for a person and never
 // repaired: a configuration to add, or a run that has not happened yet or a
-// configuration Renovate refuses. The installation's repository list, which
+// configuration Renovate refuses. A repository younger than renovateGrace
+// without a trace is ok: Renovate's first run is not due yet. The
+// installation's repository list, which
 // only an organization owner's token reads, is detail in the summary and
 // never decides the verdict.
 func (r *Runner) stepRenovate(ctx context.Context, s *run, sr *StepResult) error {
@@ -68,6 +77,8 @@ func (r *Runner) stepRenovate(ctx context.Context, s *run, sr *StepResult) error
 		sr.Summary = config + " disables Renovate"
 	case trace != "":
 		sr.Summary = config + "; " + trace
+	case s.young(r.now(), renovateGrace):
+		sr.Summary = config + "; no Renovate run yet and none due: the repository is younger than a day, Renovate's first run follows"
 	case issuesRefused:
 		s.report(sr, FindingUnchecked,
 			fmt.Sprintf("%s has %s, and whether Renovate runs is out of this token's reach: the repository's issues and pull requests are refused, and no commit of %s is among the latest hundred on %s", s.slug(), config, renovateLogin, s.branch()),
@@ -146,6 +157,16 @@ func (r *Runner) renovateTrace(ctx context.Context, s *run) (trace string, issue
 		}
 	}
 	return "", issuesRefused, nil
+}
+
+// young says whether the repository is younger than d at now: created by
+// this run, or created less than d ago by GitHub's account of it.
+func (s *run) young(now time.Time, d time.Duration) bool {
+	if s.created {
+		return true
+	}
+	created := s.repo.GetCreatedAt()
+	return !created.IsZero() && now.Sub(created.Time) < d
 }
 
 // isRenovate says whether a login, an author name or an email is Renovate's.
