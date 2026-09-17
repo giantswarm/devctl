@@ -166,6 +166,65 @@ func TestPushWithRetryRerendersAfterAnotherReservationLands(t *testing.T) {
 	}
 }
 
+// TestPushWithRetryRefusesToRebaseADirtyWorktree is the regression for a HIGH
+// finding: release, reap and extend all default --repo-dir to ".", running
+// directly against a developer's own checkout rather than a clone. A rejected
+// push must never fall back to blindly hard-resetting that checkout, because
+// `git reset --hard` cannot spare a file it never wrote -- it would destroy
+// whatever unrelated, uncommitted work the developer had in progress there.
+func TestPushWithRetryRefusesToRebaseADirtyWorktree(t *testing.T) {
+	dir, origin := newPushFixture(t)
+	saboteur := t.TempDir()
+	runGit(t, saboteur, "clone", origin, ".")
+
+	const unrelated = "wip.txt"
+	const wipContent = "someone else's in-progress edit\n"
+	if err := os.WriteFile(filepath.Join(dir, unrelated), []byte(wipContent), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	calls := 0
+	render := func() error {
+		calls++
+		// commitAll only ever stages its own files, never -A, so render's own
+		// commit here must do the same: staying oblivious to wip.txt is exactly
+		// what leaves it dirty for rebaseOntoRemote to catch.
+		if err := os.WriteFile(filepath.Join(dir, "change.txt"), []byte(fmt.Sprintf("change %d\n", calls)), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		runGit(t, dir, "add", "change.txt")
+		runGit(t, dir, "commit", "-m", "add change.txt")
+
+		if calls == 1 {
+			// Someone else's push lands first, so dir's own push is rejected and
+			// PushWithRetry must rebase before it may render again.
+			writeAndCommit(t, saboteur, "sabotage.txt", "sabotage\n")
+			runGit(t, saboteur, "push", "origin", "main")
+		}
+
+		return nil
+	}
+
+	err := reservation.PushWithRetry(context.Background(), dir, render)
+	if err == nil {
+		t.Fatal("expected a failure, got none")
+	}
+	if !reservation.IsDirtyWorktree(err) {
+		t.Fatalf("expected a dirty-worktree error, got %v", err)
+	}
+	if calls != 1 {
+		t.Errorf("render called %d times, want 1: the rebase must be refused before a second render", calls)
+	}
+
+	got, err := os.ReadFile(filepath.Join(dir, unrelated))
+	if err != nil {
+		t.Fatalf("the unrelated file was removed from the working tree: %v", err)
+	}
+	if string(got) != wipContent {
+		t.Errorf("unrelated file content: got %q, want %q", got, wipContent)
+	}
+}
+
 // TestPushWithRetryGivesUpAfterMaxAttempts checks the ceiling: a push that
 // loses the race every single time stops after MaxPushAttempts and reports
 // the failure, instead of retrying forever.

@@ -2,6 +2,8 @@ package reservation_test
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -10,6 +12,7 @@ import (
 
 	"github.com/giantswarm/gitsemver/v3/pkg/gitsemver"
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/google/go-cmp/cmp"
 	"gopkg.in/yaml.v3"
 
@@ -423,6 +426,53 @@ func TestReserveHoldsOneAppOnTwoClusters(t *testing.T) {
 			t.Errorf("%s holder on %s: got %q", fixtureApp, cluster, got)
 		}
 		mustObject(t, renderCluster(t, dir, cluster), "OCIRepository/"+fixtureApp+"-dev-reservation")
+	}
+}
+
+// TestReserveDoesNotCommitAnUnrelatedDirtyFile is the regression for a HIGH
+// finding: Reserve (like Release and Extend) is meant to run against a
+// checkout of the whole GitOps repo, at --repo-dir's own default of ".". A
+// developer who runs it from a checkout that also holds their own
+// in-progress edits must never have that file staged or committed under the
+// reservation's commit message -- Reserve only ever wrote res.Files.
+func TestReserveDoesNotCommitAnUnrelatedDirtyFile(t *testing.T) {
+	dir := newGitOpsFixture(t, fixtureOptions{})
+
+	const unrelated = "wip.txt"
+	const wipContent = "someone else's in-progress edit\n"
+	if err := os.WriteFile(filepath.Join(dir, unrelated), []byte(wipContent), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := reservation.Reserve(testRequest(dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	repo, err := git.PlainOpen(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commit, err := repo.CommitObject(plumbing.NewHash(res.Commit))
+	if err != nil {
+		t.Fatal(err)
+	}
+	stats, err := commit.Stats()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range stats {
+		if s.Name == unrelated {
+			t.Fatalf("Reserve's commit carries %s, a file it never wrote: %+v", unrelated, stats)
+		}
+	}
+
+	got, err := os.ReadFile(filepath.Join(dir, unrelated))
+	if err != nil {
+		t.Fatalf("the unrelated file was removed from the working tree: %v", err)
+	}
+	if string(got) != wipContent {
+		t.Errorf("unrelated file content: got %q, want %q", got, wipContent)
 	}
 }
 

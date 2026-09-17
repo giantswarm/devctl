@@ -187,8 +187,12 @@ func extendAndPush(ctx context.Context, req ExtendRequest, cluster string, r Res
 			return microerror.Mask(err)
 		}
 
+		files := []string{
+			clusterPath(cluster, ConfigMapFile),
+			clusterPath(cluster, collectionsDir, reservationsDir, current.App, current.App+SourceNameSuffix+".yaml"),
+		}
 		if _, err := commitAll(req.RepoDir, req.User, fmt.Sprintf(
-			"extend %s on %s for %s (until %s)", current.App, cluster, current.User, until.Format(time.RFC3339))); err != nil {
+			"extend %s on %s for %s (until %s)", current.App, cluster, current.User, until.Format(time.RFC3339)), files); err != nil {
 			return microerror.Mask(err)
 		}
 

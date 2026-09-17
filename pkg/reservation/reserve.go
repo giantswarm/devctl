@@ -248,7 +248,7 @@ func Reserve(req Request) (Result, error) {
 
 	commit, err := commitAll(req.RepoDir, req.User, fmt.Sprintf(
 		"reserve %s on %s for %s (branch %s, until %s)",
-		chart, req.Cluster, req.User, req.Branch, until.Format(time.RFC3339)))
+		chart, req.Cluster, req.User, req.Branch, until.Format(time.RFC3339)), files)
 	if err != nil {
 		return Result{}, microerror.Mask(err)
 	}
@@ -264,10 +264,15 @@ func Reserve(req Request) (Result, error) {
 	}, nil
 }
 
-// commitAll stages the whole working tree and commits it as user, so `git log`
-// answers who reserved or released what without any other lookup. Reserve and
-// Release share it: both make exactly one commit of a fully-staged tree.
-func commitAll(repoDir, user, message string) (string, error) {
+// commitAll stages exactly files -- the repo-relative paths the caller's own
+// operation wrote, added, or removed -- and commits them as user, so `git log`
+// answers who reserved or released what without any other lookup. Reserve,
+// Release and Extend share it: each makes exactly one commit of its own
+// files, never of whatever else happens to be dirty in the working tree. A
+// caller's RepoDir defaults to "." on the commands that never clone, so a
+// developer running one from a GitOps checkout that also holds unrelated
+// in-progress edits must never have those staged, committed or pushed here.
+func commitAll(repoDir, user, message string, files []string) (string, error) {
 	repo, err := git.PlainOpen(repoDir)
 	if err != nil {
 		return "", microerror.Mask(err)
@@ -276,8 +281,10 @@ func commitAll(repoDir, user, message string) (string, error) {
 	if err != nil {
 		return "", microerror.Mask(err)
 	}
-	if err := worktree.AddGlob("."); err != nil {
-		return "", microerror.Mask(err)
+	for _, f := range files {
+		if _, err := worktree.Add(f); err != nil {
+			return "", microerror.Mask(err)
+		}
 	}
 
 	hash, err := worktree.Commit(message, &git.CommitOptions{

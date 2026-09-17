@@ -64,9 +64,31 @@ func PushWithRetry(ctx context.Context, dir string, render func() error) error {
 // rebaseOntoRemote discards the local commit render just made and moves dir
 // to match its upstream's new tip, so the next render call starts from
 // whatever a rejected push means someone else already landed.
+//
+// `git reset --hard` cannot be scoped to a set of paths: it always rewrites
+// the whole working tree. render's own commit is meant to hold exactly its
+// own files (commitAll stages nothing else), so the working tree should be
+// clean the instant render returns. If it is not, the extra dirt did not come
+// from this operation -- most likely dir defaults to ".", a checkout that
+// also holds a developer's own in-progress edits, on a command that never
+// clones (release, reap, extend all default --repo-dir to "."). Resetting
+// anyway would take that unrelated work down with the stale commit, silently
+// and unrecoverably. Refusing is the only safe move: there is no path to
+// spare it from a hard reset, so this is the smallest change that actually
+// closes the hole.
 func rebaseOntoRemote(ctx context.Context, dir string) error {
 	if err := runGit(ctx, dir, "fetch"); err != nil {
 		return microerror.Mask(err)
+	}
+
+	status, err := gitStatusPorcelain(ctx, dir)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+	if status != "" {
+		return microerror.Maskf(dirtyWorktreeError,
+			"refusing to reset %s to its upstream: the working tree carries changes outside the reservation's own commit, which a hard reset would destroy:\n%s",
+			dir, status)
 	}
 
 	return runGit(ctx, dir, "reset", "--hard", "@{upstream}")
@@ -83,4 +105,19 @@ func runGit(ctx context.Context, dir string, args ...string) error {
 	}
 
 	return nil
+}
+
+// gitStatusPorcelain returns dir's `git status --porcelain` output, trimmed:
+// empty means a clean working tree.
+func gitStatusPorcelain(ctx context.Context, dir string) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", "-C", dir, "status", "--porcelain") //nolint:gosec // dir is trusted, not user data
+	var stdout, stderr strings.Builder
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("git status --porcelain: %w: %s", err, strings.TrimSpace(stderr.String()))
+	}
+
+	return strings.TrimSpace(stdout.String()), nil
 }
