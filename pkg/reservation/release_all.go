@@ -63,6 +63,7 @@ func ReleaseAll(ctx context.Context, req ReleaseAllRequest) ([]Released, error) 
 		return nil, microerror.Mask(err)
 	}
 
+	var released []Released
 	for _, cluster := range clusters {
 		reservations, err := List(ListRequest{RepoDir: req.RepoDir, Cluster: cluster})
 		if err != nil {
@@ -77,15 +78,15 @@ func ReleaseAll(ctx context.Context, req ReleaseAllRequest) ([]Released, error) 
 				return nil, fmt.Errorf("releasing %q on cluster %q: %w", r.App, cluster, err)
 			}
 
-			return []Released{{
+			released = append(released, Released{
 				Cluster: cluster,
 				App:     result.App,
 				User:    r.User,
 				Branch:  r.Branch,
 				Commit:  result.Commit,
-			}}, nil
+			})
 		}
 	}
 
-	return nil, nil
+	return released, nil
 }

@@ -48,3 +48,40 @@ func TestReleaseAllReleasesTheReservationAPullRequestHolds(t *testing.T) {
 		t.Errorf("the release did not land on origin: local HEAD %s, origin %s", head, tip)
 	}
 }
+
+// TestReleaseAllReleasesEveryAppOnOneCluster is the "every reservation it
+// holds" criterion at its smallest: one pull request reserving two apps on
+// one cluster loses both, not just the first one found.
+func TestReleaseAllReleasesEveryAppOnOneCluster(t *testing.T) {
+	dir, _ := newReapFixture(t, fixtureOptions{})
+
+	first := testRequest(dir)
+	reserveAndPush(t, dir, first)
+
+	second := testRequest(dir)
+	second.App = fixtureOtherApp
+	reserveAndPush(t, dir, second)
+
+	released, err := reservation.ReleaseAll(context.Background(), reservation.ReleaseAllRequest{
+		RepoDir:     dir,
+		PullRequest: testPullRequest,
+		User:        testReleaser,
+	})
+	if err != nil {
+		t.Fatalf("ReleaseAll: %v", err)
+	}
+	if len(released) != 2 {
+		t.Fatalf("got %d released reservations, want 2: %+v", len(released), released)
+	}
+
+	apps := map[string]bool{}
+	for _, r := range released {
+		apps[r.App] = true
+	}
+	if !apps[fixtureApp] || !apps[fixtureOtherApp] {
+		t.Errorf("released apps: %+v, want both %q and %q", released, fixtureApp, fixtureOtherApp)
+	}
+	if entries := reservationEntries(t, dir, fixtureCluster); len(entries) != 0 {
+		t.Errorf("the ConfigMap still holds %d entries, want 0: %+v", len(entries), entries)
+	}
+}
