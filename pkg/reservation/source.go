@@ -29,10 +29,10 @@ const (
 // devSemverFilter returns the semVer filter that selects every dev build of
 // branch.
 //
-// A dev tag carries the branch as a fixed-width CRC32 fingerprint
-// (gitsemver v3), so the filter no longer depends on the app's version base.
-// It cannot: nothing in the GitOps repo records that base -- collection source
-// objects carry `semver: x.x.x`, which the stage rewrites to a range.
+// A dev tag carries the branch as a fixed-width CRC32 fingerprint, so the
+// filter does not depend on the app's version base. It cannot: nothing in the
+// GitOps repo records that base -- collection source objects carry
+// `semver: x.x.x`, which the stage rewrites to a range.
 //
 // Every field is width-pinned. A loose tail would let the filter match an
 // `-rc.N` tag, and a reservation that follows release candidates is worse than

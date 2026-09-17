@@ -62,9 +62,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   guess the app's version base: the old filter carried one alternative per possible base length,
   nine of them for a Renovate branch, and now it carries none. devctl moves from a pseudo-version
   pin on an unmerged `gitsemver` branch to the released `github.com/giantswarm/gitsemver/v3 v3.0.1`.
-  The filter matches the v3 grammar only. An app whose CI still runs a pre-v3 `gitsemver` publishes
-  the old `-dev.<branch>.<date>.<time>.h<sha>` tags, and a reservation on it follows nothing, so
-  roll the CLI out before the reservation flow.
+  gitsemver v3 is the only supported version: nothing in devctl reads, writes or tolerates the
+  older grammar any more, so an app publishes dev builds a reservation can follow only once its CI
+  runs the v3 CLI.
 
 - `reservation reserve`: a new command that points one management cluster's copy of one collection
   app at the dev builds of one branch for 10 hours. It clones the GitOps repository holding the

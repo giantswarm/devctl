@@ -1972,15 +1972,13 @@ func Test_ATSVersionOnePointX(t *testing.T) {
 // Test_ATSVersionLegacy verifies a 0.x tag (a release or a dev build of the
 // pre-1.0 tool) only pins the image: the dats.sh path and the Pipfile stay.
 func Test_ATSVersionLegacy(t *testing.T) {
-	// The last two are dev builds: the gitsemver v3 grammar, whose whole
-	// pre-release is one dot-free 33-character identifier, and the pre-v3 one
-	// still carried by tags cut earlier. Both have to parse, or a repo pinned
-	// to a dev app-test-suite build fails to generate at all.
+	// The last is a dev build. Its whole pre-release is one dot-free
+	// 33-character identifier, which has to parse, or a repo pinned to a dev
+	// app-test-suite build fails to generate at all.
 	for _, tag := range []string{
 		"0.15.0",
 		"v0.15.0",
 		"0.15.1-r3e63797dt20260820215802h4162ff7",
-		"0.15.1-dev.gh-readonl--ab3270cae7f.2026-08-20.21-58-02.h4162ff7",
 	} {
 		c := Config{
 			RepoName:      repoMCPKubernetes,
