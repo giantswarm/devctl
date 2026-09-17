@@ -52,8 +52,9 @@ func (r *Runner) stepRenovate(ctx context.Context, s *run, sr *StepResult) error
 		return err
 	}
 	var trace string
+	var issuesRefused bool
 	if config != "" && !disabled {
-		trace, err = r.renovateTrace(ctx, s)
+		trace, issuesRefused, err = r.renovateTrace(ctx, s)
 		if err != nil {
 			return err
 		}
@@ -65,12 +66,16 @@ func (r *Runner) stepRenovate(ctx context.Context, s *run, sr *StepResult) error
 			"add renovate.json5 (`devctl gen renovate` writes it; align-files renders it for repositories on devctl-generated CI) or merge Renovate's onboarding pull request; the installation covers all repositories, there is nothing to add there")
 	case disabled:
 		sr.Summary = config + " disables Renovate"
-	case trace == "":
+	case trace != "":
+		sr.Summary = config + "; " + trace
+	case issuesRefused:
+		s.report(sr, FindingUnchecked,
+			fmt.Sprintf("%s has %s, and whether Renovate runs is out of this token's reach: the repository's issues and pull requests are refused, and no commit of %s is among the latest hundred on %s", s.slug(), config, renovateLogin, s.branch()),
+			fmt.Sprintf("grant the App `issues: read` so the step sees the %s issue and Renovate's pull requests, or run the check with a person's token", renovateDashboardTitle))
+	default:
 		s.report(sr, FindingRenovateNotScanned,
 			fmt.Sprintf("%s has %s but no trace of a Renovate run: no %s issue, no pull request and no commit of %s on %s", s.slug(), config, renovateDashboardTitle, renovateLogin, s.branch()),
-			fmt.Sprintf("the Renovate installation covers all repositories of the organization, so Renovate has not run yet (the %s issue follows its first run) or refuses the configuration: check the repository's job log on the Renovate dashboard", renovateDashboardTitle))
-	default:
-		sr.Summary = config + "; " + trace
+			fmt.Sprintf("the Renovate installation covers all repositories of the organization, so Renovate has not run yet (the %s issue follows its first run) or refuses the configuration: check the repository's job log on the Renovate dashboard; a GitHub App token lists the %s issue only with the App's `issues: read` permission", renovateDashboardTitle, renovateDashboardTitle))
 	}
 	if detail := r.renovateInstallation(ctx, s); detail != "" {
 		if sr.Summary != "" {
@@ -99,14 +104,20 @@ func (r *Runner) renovateConfig(ctx context.Context, s *run) (string, bool, erro
 // renovateTrace is the trace of a Renovate run on the repository, or "": the
 // Dependency Dashboard issue, else a pull request of Renovate's (open, merged
 // or closed), else a commit of Renovate's among the latest hundred on the
-// default branch — a squash merge keeps Renovate as the author.
-func (r *Runner) renovateTrace(ctx context.Context, s *run) (string, error) {
-	items, _, err := r.GitHub.Issues.ListByRepo(ctx, s.owner, s.name, &github.IssueListByRepoOptions{
+// default branch — a squash merge keeps Renovate as the author. issuesRefused
+// says the issues and pull requests were out of the token's reach — a GitHub
+// App without `issues: read` is answered 403 on a private repository — so
+// only the commits were read.
+func (r *Runner) renovateTrace(ctx context.Context, s *run) (trace string, issuesRefused bool, err error) {
+	items, resp, err := r.GitHub.Issues.ListByRepo(ctx, s.owner, s.name, &github.IssueListByRepoOptions{
 		Creator: renovateLogin, State: "all", Sort: "created", Direction: "asc",
 		ListOptions: github.ListOptions{PerPage: 100},
 	})
-	if err != nil {
-		return "", err
+	switch {
+	case isForbiddenOrNotFound(resp):
+		issuesRefused = true
+	case err != nil:
+		return "", false, err
 	}
 	var pull *github.Issue
 	for _, item := range items {
@@ -116,25 +127,25 @@ func (r *Runner) renovateTrace(ctx context.Context, s *run) (string, error) {
 				pull = item
 			}
 		case strings.EqualFold(item.GetTitle(), renovateDashboardTitle):
-			return fmt.Sprintf("%s issue #%d", renovateDashboardTitle, item.GetNumber()), nil
+			return fmt.Sprintf("%s issue #%d", renovateDashboardTitle, item.GetNumber()), false, nil
 		}
 	}
 	if pull != nil {
-		return fmt.Sprintf("Renovate pull request #%d", pull.GetNumber()), nil
+		return fmt.Sprintf("Renovate pull request #%d", pull.GetNumber()), false, nil
 	}
 	commits, _, err := r.GitHub.Repositories.ListCommits(ctx, s.owner, s.name, &github.CommitsListOptions{
 		SHA:         s.branch(),
 		ListOptions: github.ListOptions{PerPage: 100},
 	})
 	if err != nil {
-		return "", err
+		return "", issuesRefused, err
 	}
 	for _, c := range commits {
 		if isRenovate(c.GetAuthor().GetLogin(), c.GetCommit().GetAuthor().GetName(), c.GetCommit().GetAuthor().GetEmail()) {
-			return fmt.Sprintf("Renovate commit %.7s on %s", c.GetSHA(), s.branch()), nil
+			return fmt.Sprintf("Renovate commit %.7s on %s", c.GetSHA(), s.branch()), issuesRefused, nil
 		}
 	}
-	return "", nil
+	return "", issuesRefused, nil
 }
 
 // isRenovate says whether a login, an author name or an email is Renovate's.

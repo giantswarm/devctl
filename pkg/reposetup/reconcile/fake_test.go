@@ -50,6 +50,7 @@ type fakeRepo struct {
 	prs           []*github.PullRequest
 	issues        []*github.Issue            // what GET /repos/{owner}/{repo}/issues lists
 	history       []*github.RepositoryCommit // the commits behind the head of the default branch
+	issuesStatus  int                        // HTTP status of the issues list when not 200
 	blobs         map[string][]byte
 	trees         map[string][]*github.TreeEntry
 	commits       map[string]fakeCommit // commit sha → tree sha and message
@@ -353,6 +354,10 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 		writeJSON(w, 200, out)
 	}))
 	mux.HandleFunc("GET /repos/{owner}/{repo}/issues", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		if repo.issuesStatus != 0 {
+			writeJSON(w, repo.issuesStatus, map[string]string{"message": "Resource not accessible by integration"})
+			return
+		}
 		out := []*github.Issue{}
 		for _, is := range repo.issues {
 			if c := r.URL.Query().Get("creator"); c != "" && is.GetUser().GetLogin() != c {

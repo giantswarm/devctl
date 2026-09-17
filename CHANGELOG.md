@@ -25,6 +25,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `repo reconcile`: the `renovate` step no longer fails on a private repository whose issues the token cannot read —
+  a GitHub App without `issues: read` is answered 403 there (and, on a public repository, a list of pull requests
+  only, without the Dependency Dashboard issue). The refused read falls through to the commit trace on the default
+  branch; without one the step reports the `unchecked` finding naming the permission to grant, never `failed`, and
+  the `renovate-not-scanned` fix names the permission the dashboard's visibility takes (#2251).
 - `repo reconcile`: the `catalog` step dispatches for a private repository. The reconciler runs the step as its
   workflow run, whose token holds the `actions: write` the App does not, and that token sees public repositories
   only: the run's repository lookup answered 404 and every step of the invocation ended

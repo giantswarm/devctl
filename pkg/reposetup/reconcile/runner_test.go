@@ -507,6 +507,32 @@ func TestSteps(t *testing.T) {
 			},
 		},
 		{
+			name: "renovate: issues out of the token's reach, a commit of Renovate's still proves the run", step: StepRenovate,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.issuesStatus = 403 // a GitHub App without issues: read on a private repository
+				r.history = []*github.RepositoryCommit{{SHA: new("abc1234def"), Commit: &github.Commit{Author: &github.CommitAuthor{Name: new("renovate[bot]"), Email: new("29139614+renovate[bot]@users.noreply.github.com")}}}}
+				h.gh.installation.status = 403
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, _ *harness, res *Result) {
+				require.Equal(t, "renovate.json5; Renovate commit abc1234 on main", res.Step(StepRenovate).Summary)
+			},
+		},
+		{
+			name: "renovate: issues out of the token's reach and no commit is unchecked, naming the permission", step: StepRenovate,
+			seed: func(h *harness) {
+				h.gh.addRepo(owner, name).issuesStatus = 403
+				h.gh.installation.status = 403
+			},
+			wantCheck: VerdictReported, wantFinding: FindingUnchecked, wantAfter: VerdictReported,
+			verify: func(t *testing.T, _ *harness, res *Result) {
+				f := res.Findings()[0]
+				require.Equal(t, FindingUnchecked, f.Kind)
+				require.Contains(t, f.Fix, "issues: read")
+			},
+		},
+		{
 			name: "codeowners: drift opens one pull request", step: StepCodeowners,
 			seed:      func(h *harness) { h.gh.addRepo(owner, name).files["CODEOWNERS"] = "* @giantswarm/team-other\n" },
 			wantCheck: VerdictDrift, wantChange: "open a pull request setting CODEOWNERS to @giantswarm/team-bumblebee",
