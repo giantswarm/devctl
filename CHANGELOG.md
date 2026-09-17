@@ -127,14 +127,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   command needs to name its branch or remote: `git push` / `git fetch` / `git reset --hard
   @{upstream}` follow whatever upstream the checkout already tracks, a token-embedded clone in CI or
   the engineer's own checkout on a laptop alike.
-- `gen circleci`: the branch-path build jobs (`build-image` / `push-to-registries`, `build-chart`,
+- `gen circleci`: the branch-path build jobs (`build-image` / `push-to-registries`,
   `execute-chart-tests`, `push-chart`) now carry `require_open_pull_request: true`, and the pinned
   orb moves to `giantswarm/architect@10.6.0`, which added the parameter. The orb halts a job
   carrying it unless an open pull request covers the commit being built, so a push to a branch with
   no pull request builds no image and no chart, while `go-build` -- which also runs `make test` --
-  still runs on that push. The tag path is untouched: a tag has no pull request to find, and the
-  chart version `app-build-suite` stamps is unchanged. Requires architect orb 10.6.0 or newer;
-  generating with an older pin leaves the parameter undeclared and CircleCI rejects the config.
+  still runs on that push. `build-chart` stays ungated: it is the only job here whose filters also
+  match release tags (it is shared by the branch and tag paths), and a tag never has a pull
+  request to find, so gating it would have silently dropped the chart from every release without
+  either the build or an error. No gated job here filters on tags, and the chart version
+  `app-build-suite` stamps is unchanged. Requires architect orb 10.6.0 or newer; generating with an
+  older pin leaves the parameter undeclared and CircleCI rejects the config.
 - `repo create` and `repo status`, the laptop's client of the repository set-up engine
   (giantswarm/giantswarm#37726, #2215). `repo create --team … --name … --component-type … --flavour … --language …
   --description … --visibility …` renders the declaration as an entry of the team's file in giantswarm/github

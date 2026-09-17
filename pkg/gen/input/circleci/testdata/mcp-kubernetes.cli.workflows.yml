@@ -10,12 +10,15 @@ orbs:
 workflows:
   build:
     jobs:
-    # Build gate. Every job below that produces an image or a chart carries
-    # `require_open_pull_request: true`: the orb halts it unless an open pull
-    # request covers the commit being built. So a push to a branch with no
-    # pull request builds nothing, while go-build -- which also runs
-    # `make test` -- still gives fast feedback on that push. The tag-path jobs
-    # are never gated: a tag has no pull request to find.
+    # Build gate. Every job below that pushes an image or publishes a chart
+    # carries `require_open_pull_request: true`: the orb halts it unless an
+    # open pull request covers the commit being built. So a push to a branch
+    # with no pull request builds nothing, while go-build -- which also runs
+    # `make test` -- still gives fast feedback on that push. None of these
+    # gated jobs filter on tags: a release tag has no pull request to find,
+    # so gating a job that also runs on tags would silently drop it from
+    # every release. build-chart is the one job filtered on both branches and
+    # tags, and it is never gated for exactly that reason (see below).
     - architect/go-build:
         name: go-build
         binary: mcp-kubernetes
@@ -118,7 +121,11 @@ workflows:
 
     # build-chart: package + lint via app-build-suite and persist the archive
     # (no push). Shared by the branch and tag paths -- branches get build + test
-    # only by default.
+    # only by default. No require_open_pull_request here: this is the only job
+    # whose filters match both branches and tags, and the orb has no pull
+    # request to find for a tag, so gating it would silently drop every chart
+    # release (nothing downstream would push a chart, and nothing would error).
+    # It stays ungated on the branch path too since it never pushes anything.
     - architect/push-to-app-catalog:
         executor: app-build-suite
         context: architect
@@ -131,7 +138,6 @@ workflows:
         persist_chart_archive: true
         requires:
         - go-build
-        require_open_pull_request: true
         filters:
           tags:
             only: /^v.*/
