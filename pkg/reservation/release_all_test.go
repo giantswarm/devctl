@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/giantswarm/devctl/v8/internal/gittest"
 	"github.com/giantswarm/devctl/v8/pkg/reservation"
 )
 
@@ -46,8 +47,8 @@ func TestReleaseAllReleasesTheReservationAPullRequestHolds(t *testing.T) {
 		t.Errorf("the ConfigMap still holds %d entries, want 0: %+v", len(entries), entries)
 	}
 
-	head := gitOutput(t, dir, "rev-parse", "HEAD")
-	tip := gitOutput(t, origin, "rev-parse", gitOutput(t, dir, "branch", "--show-current"))
+	head := gittest.GitOutput(t, dir, "rev-parse", "HEAD")
+	tip := gittest.GitOutput(t, origin, "rev-parse", gittest.GitOutput(t, dir, "branch", "--show-current"))
 	if head != tip {
 		t.Errorf("the release did not land on origin: local HEAD %s, origin %s", head, tip)
 	}
@@ -131,8 +132,8 @@ func TestReleaseAllContinuesAfterABrokenCluster(t *testing.T) {
 		t.Errorf("released cluster: got %q, want %q", released[0].Cluster, fixtureCluster)
 	}
 
-	head := gitOutput(t, dir, "rev-parse", "HEAD")
-	tip := gitOutput(t, origin, "rev-parse", gitOutput(t, dir, "branch", "--show-current"))
+	head := gittest.GitOutput(t, dir, "rev-parse", "HEAD")
+	tip := gittest.GitOutput(t, origin, "rev-parse", gittest.GitOutput(t, dir, "branch", "--show-current"))
 	if head != tip {
 		t.Errorf("the healthy cluster's release did not land on origin: local HEAD %s, origin %s", head, tip)
 	}

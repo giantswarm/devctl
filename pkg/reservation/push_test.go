@@ -11,14 +11,6 @@ import (
 	"github.com/giantswarm/devctl/v8/pkg/reservation"
 )
 
-// runGit and gitOutput alias the shared gittest helpers at package scope:
-// extend_test.go, reap_test.go and release_all_test.go still call them
-// unqualified, and are out of this change's scope to touch.
-var (
-	runGit    = gittest.RunGit
-	gitOutput = gittest.GitOutput
-)
-
 // newPushFixture builds a bare "origin" holding one commit on main, and a
 // clone of it at dir, so a test can commit into dir and push it for real.
 func newPushFixture(t *testing.T) (dir, origin string) {

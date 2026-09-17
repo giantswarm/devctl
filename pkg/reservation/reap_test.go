@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/giantswarm/devctl/v8/internal/gittest"
 	"github.com/giantswarm/devctl/v8/pkg/reservation"
 )
 
@@ -18,15 +19,15 @@ func newReapFixture(t *testing.T, opts fixtureOptions) (dir, origin string) {
 	t.Helper()
 
 	seed := newGitOpsFixture(t, opts)
-	branch := gitOutput(t, seed, "branch", "--show-current")
+	branch := gittest.GitOutput(t, seed, "branch", "--show-current")
 
 	origin = t.TempDir()
-	runGit(t, origin, "init", "--bare", "-b", branch)
-	runGit(t, seed, "remote", "add", "origin", origin)
-	runGit(t, seed, "push", "-u", "origin", branch)
+	gittest.RunGit(t, origin, "init", "--bare", "-b", branch)
+	gittest.RunGit(t, seed, "remote", "add", "origin", origin)
+	gittest.RunGit(t, seed, "push", "-u", "origin", branch)
 
 	dir = t.TempDir()
-	runGit(t, dir, "clone", origin, ".")
+	gittest.RunGit(t, dir, "clone", origin, ".")
 
 	return dir, origin
 }
@@ -105,8 +106,8 @@ func TestReapReleasesAnExpiredReservation(t *testing.T) {
 		t.Errorf("%s reservation still present after reaping: %+v", fixtureApp, entries[fixtureApp])
 	}
 
-	head := gitOutput(t, dir, "rev-parse", "HEAD")
-	tip := gitOutput(t, origin, "rev-parse", gitOutput(t, dir, "branch", "--show-current"))
+	head := gittest.GitOutput(t, dir, "rev-parse", "HEAD")
+	tip := gittest.GitOutput(t, origin, "rev-parse", gittest.GitOutput(t, dir, "branch", "--show-current"))
 	if head != tip {
 		t.Errorf("the release did not land on origin: local HEAD %s, origin %s", head, tip)
 	}
@@ -134,7 +135,7 @@ func TestReapDoesNotDeleteAFreshReservationThatWonTheRace(t *testing.T) {
 	// the developer who grabs the cluster the instant it frees up, before the
 	// reaper gets around to it -- and lands it first.
 	dir2 := t.TempDir()
-	runGit(t, dir2, "clone", origin, ".")
+	gittest.RunGit(t, dir2, "clone", origin, ".")
 	fresh := testRequest(dir2)
 	fresh.User = testOtherUser
 	fresh.Branch = testOtherBranch
@@ -185,7 +186,7 @@ func TestReapReportsTheRecordItActuallyDeletedAfterARebase(t *testing.T) {
 	// different holder, branch and pull request -- that has also already
 	// expired by the time Reap runs, and lands it first.
 	dir2 := t.TempDir()
-	runGit(t, dir2, "clone", origin, ".")
+	gittest.RunGit(t, dir2, "clone", origin, ".")
 	replacement := testRequest(dir2)
 	replacement.User = testOtherUser
 	replacement.Branch = testOtherBranch
@@ -267,7 +268,7 @@ func TestReapLeavesAnActiveUnrenamedReservationAlone(t *testing.T) {
 	req.Now = time.Date(2026, 9, 15, 10, 0, 0, 0, time.UTC)
 	req.Duration = 10 * time.Hour
 	reserveAndPush(t, dir, req)
-	beforeTip := gitOutput(t, origin, "rev-parse", gitOutput(t, dir, "branch", "--show-current"))
+	beforeTip := gittest.GitOutput(t, origin, "rev-parse", gittest.GitOutput(t, dir, "branch", "--show-current"))
 
 	reaped, err := reservation.Reap(context.Background(), reservation.ReapRequest{
 		RepoDir:    dir,
@@ -282,7 +283,7 @@ func TestReapLeavesAnActiveUnrenamedReservationAlone(t *testing.T) {
 		t.Errorf("got %d reaped reservations, want 0: %+v", len(reaped), reaped)
 	}
 
-	afterTip := gitOutput(t, origin, "rev-parse", gitOutput(t, dir, "branch", "--show-current"))
+	afterTip := gittest.GitOutput(t, origin, "rev-parse", gittest.GitOutput(t, dir, "branch", "--show-current"))
 	if afterTip != beforeTip {
 		t.Errorf("origin moved even though nothing was reaped: %s -> %s", beforeTip, afterTip)
 	}
@@ -368,8 +369,8 @@ func TestReapContinuesAfterABrokenCluster(t *testing.T) {
 		t.Fatalf("got %+v, want the enabled cluster's release despite the broken one", reaped)
 	}
 
-	head := gitOutput(t, dir, "rev-parse", "HEAD")
-	tip := gitOutput(t, origin, "rev-parse", gitOutput(t, dir, "branch", "--show-current"))
+	head := gittest.GitOutput(t, dir, "rev-parse", "HEAD")
+	tip := gittest.GitOutput(t, origin, "rev-parse", gittest.GitOutput(t, dir, "branch", "--show-current"))
 	if head != tip {
 		t.Errorf("the good cluster's release did not land on origin: local HEAD %s, origin %s", head, tip)
 	}

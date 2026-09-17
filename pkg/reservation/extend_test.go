@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/giantswarm/devctl/v8/internal/gittest"
 	"github.com/giantswarm/devctl/v8/pkg/reservation"
 )
 
@@ -86,8 +87,8 @@ func TestExtendResetsTheExpiryOfAMatchingReservation(t *testing.T) {
 		t.Errorf("entry branch: got %q, want %q", got, testBranch)
 	}
 
-	head := gitOutput(t, dir, "rev-parse", "HEAD")
-	tip := gitOutput(t, origin, "rev-parse", gitOutput(t, dir, "branch", "--show-current"))
+	head := gittest.GitOutput(t, dir, "rev-parse", "HEAD")
+	tip := gittest.GitOutput(t, origin, "rev-parse", gittest.GitOutput(t, dir, "branch", "--show-current"))
 	if head != tip {
 		t.Errorf("the extension did not land on origin: local HEAD %s, origin %s", head, tip)
 	}
@@ -158,7 +159,7 @@ func TestExtendIgnoresAnExpiredReservation(t *testing.T) {
 	req.Now = time.Date(2026, 9, 15, 10, 0, 0, 0, time.UTC)
 	req.Duration = time.Hour
 	reserveAndPush(t, dir, req)
-	beforeTip := gitOutput(t, origin, "rev-parse", gitOutput(t, dir, "branch", "--show-current"))
+	beforeTip := gittest.GitOutput(t, origin, "rev-parse", gittest.GitOutput(t, dir, "branch", "--show-current"))
 
 	extended, err := reservation.Extend(context.Background(), reservation.ExtendRequest{
 		RepoDir:     dir,
@@ -176,7 +177,7 @@ func TestExtendIgnoresAnExpiredReservation(t *testing.T) {
 		t.Errorf("got %d extended reservations, want 0: %+v", len(extended), extended)
 	}
 
-	afterTip := gitOutput(t, origin, "rev-parse", gitOutput(t, dir, "branch", "--show-current"))
+	afterTip := gittest.GitOutput(t, origin, "rev-parse", gittest.GitOutput(t, dir, "branch", "--show-current"))
 	if afterTip != beforeTip {
 		t.Errorf("origin moved even though nothing was extended: %s -> %s", beforeTip, afterTip)
 	}
@@ -339,8 +340,8 @@ func TestExtendContinuesAfterABrokenCluster(t *testing.T) {
 		t.Fatalf("got %+v, want the enabled cluster's extension despite the broken one", extended)
 	}
 
-	head := gitOutput(t, dir, "rev-parse", "HEAD")
-	tip := gitOutput(t, origin, "rev-parse", gitOutput(t, dir, "branch", "--show-current"))
+	head := gittest.GitOutput(t, dir, "rev-parse", "HEAD")
+	tip := gittest.GitOutput(t, origin, "rev-parse", gittest.GitOutput(t, dir, "branch", "--show-current"))
 	if head != tip {
 		t.Errorf("the good cluster's extension did not land on origin: local HEAD %s, origin %s", head, tip)
 	}
@@ -366,7 +367,7 @@ func TestExtendUsesThePostRebaseReservationNotTheStaleSnapshot(t *testing.T) {
 	reserveAndPush(t, dir1, req)
 
 	dir2 := t.TempDir()
-	runGit(t, dir2, "clone", origin, ".")
+	gittest.RunGit(t, dir2, "clone", origin, ".")
 
 	// Before dir1's extend push lands, the reservation dir1 listed is replaced:
 	// same pull request and app, but a new branch and a much shorter duration.
@@ -417,8 +418,8 @@ func TestExtendUsesThePostRebaseReservationNotTheStaleSnapshot(t *testing.T) {
 		t.Errorf("entry until: got %q, want %q", entry["until"], wantUntil.Format(time.RFC3339))
 	}
 
-	head := gitOutput(t, dir1, "rev-parse", "HEAD")
-	tip := gitOutput(t, origin, "rev-parse", gitOutput(t, dir1, "branch", "--show-current"))
+	head := gittest.GitOutput(t, dir1, "rev-parse", "HEAD")
+	tip := gittest.GitOutput(t, origin, "rev-parse", gittest.GitOutput(t, dir1, "branch", "--show-current"))
 	if head != tip {
 		t.Errorf("the extension did not land on origin: local HEAD %s, origin %s", head, tip)
 	}
