@@ -135,12 +135,11 @@ func (c *Client) CommitAndPush(ctx context.Context, owner, repo, branch, message
 		return microerror.Mask(err)
 	}
 
-	return microerror.Mask(c.Push(ctx, branch))
+	return microerror.Mask(c.push(ctx, branch))
 }
 
-// Push pushes branch to origin. Callers that commit in the working tree
-// themselves need the push half of CommitAndPush on its own.
-func (c *Client) Push(ctx context.Context, branch string) error {
+// push pushes branch to origin. It is the push half of CommitAndPush.
+func (c *Client) push(ctx context.Context, branch string) error {
 	gitRepo, err := git.PlainOpen(c.workDir)
 	if err != nil {
 		return microerror.Mask(err)
