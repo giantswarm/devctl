@@ -2,11 +2,10 @@ package reservation
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 	"time"
 
-	"github.com/giantswarm/gitsemver/v2/pkg/gitsemver"
+	"github.com/giantswarm/gitsemver/v3/pkg/gitsemver"
 	"github.com/giantswarm/microerror"
 	"github.com/mohae/deepcopy"
 )
@@ -25,48 +24,21 @@ const (
 	// devSemverRange selects every version, including pre-releases. The filter
 	// does the actual selecting.
 	devSemverRange = ">=0.0.0-0"
-
-	// minVersionBaseLen and maxVersionBaseLen bound the length of an "X.Y.Z"
-	// version base. gitsemver spends what is left of the 63-character budget on
-	// the branch, so the branch segment of a dev tag depends on how long the
-	// base is, and the base is a property of the app repo that the GitOps repo
-	// never records.
-	// ponytail: 14 covers "9999.9999.9999"; widen it if an app ever ships a
-	// longer version base.
-	minVersionBaseLen = 5
-	maxVersionBaseLen = 14
 )
 
 // devSemverFilter returns the semVer filter that selects every dev build of
 // branch.
 //
-// The branch segment of a dev tag is the sanitized branch after a middle
-// truncation whose budget is 63 minus the fixed parts, and the version base is
-// one of those fixed parts. Nothing in the GitOps repo records the app's version
-// base: collection source objects carry `semver: x.x.x`, which the stage
-// rewrites to a range, so there is no version to read a base from. The filter
-// therefore accepts the segment for every base length a real "X.Y.Z" can have,
-// and every alternative comes from gitsemver itself.
-func devSemverFilter(branch string) (string, error) {
-	var segments []string
-	seen := map[string]bool{}
-
-	for n := minVersionBaseLen; n <= maxVersionBaseLen; n++ {
-		// Only the length of the base moves the branch budget, so any valid
-		// "X.Y.Z" string of that length will do.
-		base := strings.Repeat("9", n-4) + ".9.9"
-
-		segment, err := gitsemver.DevVersionBranch(branch, base, 0)
-		if err != nil {
-			return "", microerror.Maskf(invalidConfigError, "building a version filter for branch %q: %v", branch, err)
-		}
-		if !seen[segment] {
-			seen[segment] = true
-			segments = append(segments, regexp.QuoteMeta(segment))
-		}
-	}
-
-	return `^[0-9]+\.[0-9]+\.[0-9]+-dev\.(` + strings.Join(segments, "|") + `)\..*$`, nil
+// A dev tag carries the branch as a fixed-width CRC32 fingerprint
+// (gitsemver v3), so the filter no longer depends on the app's version base.
+// It cannot: nothing in the GitOps repo records that base -- collection source
+// objects carry `semver: x.x.x`, which the stage rewrites to a range.
+//
+// Every field is width-pinned. A loose tail would let the filter match an
+// `-rc.N` tag, and a reservation that follows release candidates is worse than
+// one that follows nothing, because it looks like it works.
+func devSemverFilter(branch string) string {
+	return `^[0-9]+\.[0-9]+\.[0-9]+-r` + gitsemver.BranchHash(branch) + `t[0-9]{14}h[0-9a-f]{7}$`
 }
 
 // devSource builds the reservation's source object as a copy of the app's

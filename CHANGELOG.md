@@ -56,6 +56,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `reservation reserve`: dev builds are now followed through the gitsemver v3 tag grammar,
+  `X.Y.Z-r<branch-hash>t<timestamp>h<sha7>`. The branch reaches the tag as a fixed-width CRC32
+  fingerprint instead of a sanitized, middle-truncated name, so the version filter no longer has to
+  guess the app's version base: the old filter carried one alternative per possible base length,
+  nine of them for a Renovate branch, and now it carries none. devctl moves from a pseudo-version
+  pin on an unmerged `gitsemver` branch to the released `github.com/giantswarm/gitsemver/v3 v3.0.1`.
+  The filter matches the v3 grammar only. An app whose CI still runs a pre-v3 `gitsemver` publishes
+  the old `-dev.<branch>.<date>.<time>.h<sha>` tags, and a reservation on it follows nothing, so
+  roll the CLI out before the reservation flow.
+
 - `reservation reserve`: a new command that points one management cluster's copy of one collection
   app at the dev builds of one branch for 10 hours. It clones the GitOps repository holding the
   cluster, writes a Kustomize component that carries a second `OCIRepository` following the
@@ -63,8 +73,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   the cluster's `configmap-reservations.yaml`, and pushes one commit. The new source object is a
   copy of the resolved original with only its name, annotations, interval and version selector
   changed, so the registry credentials, the signature verification and the layer selector come
-  along. The version filter is built from `gitsemver.DevVersionBranch`, which is what a dev tag
-  actually carries after the 63-character truncation. Before committing, the command renders the
+  along. The version filter is built from `gitsemver.BranchHash`, the fixed-width CRC32 fingerprint
+  a dev tag carries in place of the branch name, and every field of the filter is width-pinned so it
+  can never match a release candidate. Before committing, the command renders the
   cluster's collections and refuses to push unless the rendered output really carries the
   reservation, because a component that merges in the wrong order leaves the cluster on its release
   version with no error anywhere. The app's own release and release-candidate selectors are never

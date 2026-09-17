@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/giantswarm/gitsemver/v2/pkg/gitsemver"
+	"github.com/giantswarm/gitsemver/v3/pkg/gitsemver"
 	"github.com/go-git/go-git/v5"
 	"github.com/google/go-cmp/cmp"
 	"gopkg.in/yaml.v3"
@@ -213,21 +213,16 @@ func TestReserveSourceIsACopyOfTheOriginal(t *testing.T) {
 }
 
 // devTag builds a dev version exactly as gitsemver does, taking the branch
-// segment from the library so the test cannot drift from it.
-func devTag(t *testing.T, base, branch string) string {
-	t.Helper()
-
-	segment, err := gitsemver.DevVersionBranch(branch, base, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	return fmt.Sprintf("%s-dev.%s.2026-09-15.10-00-00.h1a2b3c4", base, segment)
+// fingerprint from the library so the test cannot drift from it.
+func devTag(base, branch string) string {
+	return fmt.Sprintf("%s-r%st20260915100000h1a2b3c4", base, gitsemver.BranchHash(branch))
 }
 
 func TestReserveFilterMatchesRealDevTags(t *testing.T) {
-	// The second branch is long enough that gitsemver truncates its middle, which
-	// is the case a filter built from the plain sanitizer gets wrong.
+	// The second branch is long, and carries a slash and hyphens. Under
+	// gitsemver v3 none of that reaches the tag: the branch is a CRC32
+	// fingerprint, so length and illegal characters stop mattering. The case
+	// stays to prove it.
 	for _, branch := range []string{
 		testBranch,
 		"renovate/update-all-non-major-dependencies",
@@ -248,10 +243,17 @@ func TestReserveFilterMatchesRealDevTags(t *testing.T) {
 			}
 
 			// The version base is a property of the app repo, not of the GitOps
-			// repo, and its length moves the branch budget. Every base a real app
-			// can carry has to match.
+			// repo. Every base a real app can carry has to match.
 			for _, base := range []string{"1.2.3", "0.0.1", "10.11.12", "1234.5678.9012"} {
-				if tag := devTag(t, base, branch); !filter.MatchString(tag) {
+				tag := devTag(base, branch)
+
+				// devTag writes the grammar out by hand. If that spelling ever
+				// drifts from gitsemver, every assertion below tests a tag no
+				// build produces, and the whole test goes quietly worthless.
+				if !gitsemver.IsValidDev(tag) {
+					t.Fatalf("devTag built %q, which gitsemver does not accept as a dev version", tag)
+				}
+				if !filter.MatchString(tag) {
 					t.Errorf("filter %q does not match the dev tag %q", res.SemverFilter, tag)
 				}
 			}
@@ -261,7 +263,15 @@ func TestReserveFilterMatchesRealDevTags(t *testing.T) {
 			for _, tag := range []string{
 				"1.2.3",
 				"1.2.3-rc.1",
-				devTag(t, "1.2.3", "some/other-branch"),
+				devTag("1.2.3", "some/other-branch"),
+				// A gitsemver v2 dev tag of this very branch. The filter is
+				// deliberately v3-only: rebuilding v2's sanitize-and-truncate
+				// rule inside devctl is the duplication the gitsemver
+				// dependency exists to prevent, and the looser filter that
+				// would avoid the duplication matches every branch. So an app
+				// whose CI still ships the v2 gitsemver binary must be rolled
+				// forward before its developers can reserve a cluster.
+				"1.2.3-dev.fix-crash.2026-09-15.10-00-00.h1a2b3c4",
 			} {
 				if filter.MatchString(tag) {
 					t.Errorf("filter %q matches %q, which is not a dev build of %q", res.SemverFilter, tag, branch)

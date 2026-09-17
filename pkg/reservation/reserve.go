@@ -206,10 +206,7 @@ func Reserve(req Request) (Result, error) {
 		return Result{}, microerror.Mask(err)
 	}
 
-	semverFilter, err := devSemverFilter(req.Branch)
-	if err != nil {
-		return Result{}, microerror.Mask(err)
-	}
+	semverFilter := devSemverFilter(req.Branch)
 
 	sourceName := chart + SourceNameSuffix
 	component := path.Join(reservationsDir, chart)

@@ -148,8 +148,8 @@ github.com/fsnotify/fsnotify v1.9.0 h1:2Ml+OJNzbYCTzsxtv8vKSFD9PbJjmhYF14k/jKC7S
 github.com/fsnotify/fsnotify v1.9.0/go.mod h1:8jBTzvmWwFyi3Pb8djgCCO5IBqzKJ/Jwo8TRcHyHii0=
 github.com/fxamacker/cbor/v2 v2.9.2 h1:X4Ksno9+x3cz0TZv69ec1hxP/+tymuR8PXQJyDwfh78=
 github.com/fxamacker/cbor/v2 v2.9.2/go.mod h1:vM4b+DJCtHn+zz7h3FFp/hDAI9WNWCsZj23V5ytsSxQ=
-github.com/giantswarm/gitsemver/v2 v2.0.2-0.20260915110824-84d570b0b1e0 h1:hizueBR1t9dFcvMF1VzhrfVtWad60hpYNMxlA0WkrEE=
-github.com/giantswarm/gitsemver/v2 v2.0.2-0.20260915110824-84d570b0b1e0/go.mod h1:6kwoM80ZaXMKPA/JprFq5wJod5fBqgsYgnjIcSV/SgM=
+github.com/giantswarm/gitsemver/v3 v3.0.1 h1:LFSmiim+ArIzTK8O/XIPbs37/WHRNEk+uIzwvNjYEto=
+github.com/giantswarm/gitsemver/v3 v3.0.1/go.mod h1:0XlTQzT118MezezrJgVxj86UXV+lT7gc6njwIpxlC1M=
 github.com/giantswarm/microerror v0.4.1 h1:WMiD7HQASoUA9lZzPlPK+erCEOJ0uT4cyo18VfCXHD0=
 github.com/giantswarm/microerror v0.4.1/go.mod h1:URFj0gFCmZihjya6saQCXxslBrgctXb4NsXYHB5JdrI=
 github.com/giantswarm/micrologger v1.1.2 h1:dNmnGZgAT0rnZkpc2ivj1shJ3Stnnjsy7jIi84//Jqc=

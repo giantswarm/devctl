@@ -936,7 +936,9 @@ func (c *CircleCI) ATSInputs() []input.Input {
 // legacy dats.sh path. New substitutes DefaultATSVersion for an empty tag before
 // this runs; an empty tag here still means "no opinion". The tag has to parse
 // as a semantic version (an optional leading "v" is tolerated); a dev tag such
-// as 0.15.1-dev.<branch>.<date>.<hash> counts as 0.x.
+// as 0.15.1-r<branch-hash>t<timestamp>h<sha7> counts as 0.x. Tags cut before
+// gitsemver v3 spell the same thing as 0.15.1-dev.<branch>.<date>.<hash>, and
+// both still parse.
 func atsCreatesKindCluster(tag string) (bool, error) {
 	if tag == "" {
 		return false, nil
