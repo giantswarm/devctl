@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -12,6 +11,7 @@ import (
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
 
+	"github.com/giantswarm/devctl/v8/cmd/reservation/internal/gittest"
 	"github.com/giantswarm/devctl/v8/cmd/reservation/release"
 )
 
@@ -64,19 +64,6 @@ func TestRefusesAMissingUser(t *testing.T) {
 	}
 }
 
-// runGit runs git in dir, failing the test on error.
-func runGit(t *testing.T, dir string, args ...string) {
-	t.Helper()
-
-	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...) //nolint:gosec // test-only, fixed args
-	cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@example.com",
-		"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@example.com")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
-	}
-}
-
 // newReleasableFixture builds the smallest checkout Release needs: a
 // reservations ConfigMap holding one entry for chart, and the Kustomize
 // component Reserve would have written for it. It pushes the initial commit to
@@ -96,11 +83,11 @@ func newReleasableFixtureWithCharts(t *testing.T, cluster string, charts ...stri
 	t.Helper()
 
 	origin = t.TempDir()
-	runGit(t, origin, "init", "--bare", "-b", "main")
+	gittest.RunGit(t, origin, "init", "--bare", "-b", "main")
 
 	dir = t.TempDir()
-	runGit(t, dir, "init", "-b", "main")
-	runGit(t, dir, "remote", "add", "origin", origin)
+	gittest.RunGit(t, dir, "init", "-b", "main")
+	gittest.RunGit(t, dir, "remote", "add", "origin", origin)
 
 	clusterDir := filepath.Join(dir, "management-clusters", cluster)
 	collectionsDir := filepath.Join(clusterDir, "collections")
@@ -137,25 +124,11 @@ func newReleasableFixtureWithCharts(t *testing.T, cluster string, charts ...stri
 		}
 	}
 
-	runGit(t, dir, "add", "-A")
-	runGit(t, dir, "commit", "-m", "reserve "+strings.Join(charts, ", "))
-	runGit(t, dir, "push", "-u", "origin", "main")
+	gittest.RunGit(t, dir, "add", "-A")
+	gittest.RunGit(t, dir, "commit", "-m", "reserve "+strings.Join(charts, ", "))
+	gittest.RunGit(t, dir, "push", "-u", "origin", "main")
 
 	return dir, origin
-}
-
-// gitOutput runs git in dir and returns its trimmed stdout, failing the test
-// on error.
-func gitOutput(t *testing.T, dir string, args ...string) string {
-	t.Helper()
-
-	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...) //nolint:gosec // test-only, fixed args
-	out, err := cmd.Output()
-	if err != nil {
-		t.Fatalf("git %s: %v", strings.Join(args, " "), err)
-	}
-
-	return strings.TrimSpace(string(out))
 }
 
 // TestReleaseCommitsAndPushesWithNoToken is the CLI-level proof for "both
@@ -185,8 +158,8 @@ func TestReleaseCommitsAndPushesWithNoToken(t *testing.T) {
 		t.Errorf("component directory still exists: %v", err)
 	}
 
-	head := gitOutput(t, dir, "rev-parse", "HEAD")
-	pushed := gitOutput(t, origin, "rev-parse", "main")
+	head := gittest.GitOutput(t, dir, "rev-parse", "HEAD")
+	pushed := gittest.GitOutput(t, origin, "rev-parse", "main")
 	if head != pushed {
 		t.Errorf("push did not land: local HEAD %s, origin main %s", head, pushed)
 	}
@@ -202,9 +175,9 @@ func TestReleaseRetriesAPushRejectedByAnotherRelease(t *testing.T) {
 	_, origin := newReleasableFixtureWithCharts(t, cluster, chartA, chartB)
 
 	dir1 := t.TempDir()
-	runGit(t, dir1, "clone", origin, ".")
+	gittest.RunGit(t, dir1, "clone", origin, ".")
 	dir2 := t.TempDir()
-	runGit(t, dir2, "clone", origin, ".")
+	gittest.RunGit(t, dir2, "clone", origin, ".")
 
 	// dir2 releases chartB and lands first.
 	var stdout2 bytes.Buffer
@@ -236,13 +209,13 @@ func TestReleaseRetriesAPushRejectedByAnotherRelease(t *testing.T) {
 		t.Errorf("stdout does not mention %q: %s", chartA, stdout1.String())
 	}
 
-	head := gitOutput(t, dir1, "rev-parse", "HEAD")
-	tip := gitOutput(t, origin, "rev-parse", "main")
+	head := gittest.GitOutput(t, dir1, "rev-parse", "HEAD")
+	tip := gittest.GitOutput(t, origin, "rev-parse", "main")
 	if head != tip {
 		t.Errorf("push did not land: local HEAD %s, origin main %s", head, tip)
 	}
 
-	configMap := gitOutput(t, origin, "show", "main:management-clusters/"+cluster+"/configmap-reservations.yaml")
+	configMap := gittest.GitOutput(t, origin, "show", "main:management-clusters/"+cluster+"/configmap-reservations.yaml")
 	if strings.Contains(configMap, chartA+":") {
 		t.Errorf("chartA reservation still present after release: %s", configMap)
 	}
@@ -276,15 +249,15 @@ func TestReleaseByPullRequestNeedsNoClusterOrApp(t *testing.T) {
 		}
 	}
 
-	configMap := gitOutput(t, origin, "show", "main:management-clusters/"+cluster+"/configmap-reservations.yaml")
+	configMap := gittest.GitOutput(t, origin, "show", "main:management-clusters/"+cluster+"/configmap-reservations.yaml")
 	for _, chart := range []string{chartA, chartB} {
 		if strings.Contains(configMap, chart+":") {
 			t.Errorf("%s reservation still present after release: %s", chart, configMap)
 		}
 	}
 
-	head := gitOutput(t, dir, "rev-parse", "HEAD")
-	tip := gitOutput(t, origin, "rev-parse", "main")
+	head := gittest.GitOutput(t, dir, "rev-parse", "HEAD")
+	tip := gittest.GitOutput(t, origin, "rev-parse", "main")
 	if head != tip {
 		t.Errorf("push did not land: local HEAD %s, origin main %s", head, tip)
 	}
@@ -325,7 +298,7 @@ func TestReleaseOneClusterChecksThePullRequest(t *testing.T) {
 		t.Fatal("expected a refusal from an unrelated pull request, got none")
 	}
 
-	configMap := gitOutput(t, otherOrigin, "show", "main:management-clusters/"+cluster+"/configmap-reservations.yaml")
+	configMap := gittest.GitOutput(t, otherOrigin, "show", "main:management-clusters/"+cluster+"/configmap-reservations.yaml")
 	if !strings.Contains(configMap, chart+":") {
 		t.Errorf("the refusal removed the reservation: %s", configMap)
 	}

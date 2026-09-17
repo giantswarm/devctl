@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -14,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/v8/cmd/reservation/extend"
+	"github.com/giantswarm/devctl/v8/cmd/reservation/internal/gittest"
 )
 
 // Flag names, shared across tests that build an extend command's --args.
@@ -43,33 +43,6 @@ func newCommand(t *testing.T, stdout io.Writer) *cobra.Command {
 	return cmd
 }
 
-// runGit runs git in dir, failing the test on error.
-func runGit(t *testing.T, dir string, args ...string) {
-	t.Helper()
-
-	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...) //nolint:gosec // test-only, fixed args
-	cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@example.com",
-		"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@example.com")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
-	}
-}
-
-// gitOutput runs git in dir and returns its trimmed stdout, failing the test
-// on error.
-func gitOutput(t *testing.T, dir string, args ...string) string {
-	t.Helper()
-
-	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...) //nolint:gosec // test-only, fixed args
-	out, err := cmd.Output()
-	if err != nil {
-		t.Fatalf("git %s: %v", strings.Join(args, " "), err)
-	}
-
-	return strings.TrimSpace(string(out))
-}
-
 const testPullRequest = "giantswarm/hello-world#123"
 
 // newExtendableFixture builds the smallest checkout Extend needs: an enabled
@@ -82,11 +55,11 @@ func newExtendableFixture(t *testing.T, cluster, app, from, until string) (dir, 
 	t.Helper()
 
 	origin = t.TempDir()
-	runGit(t, origin, "init", "--bare", "-b", "main")
+	gittest.RunGit(t, origin, "init", "--bare", "-b", "main")
 
 	dir = t.TempDir()
-	runGit(t, dir, "init", "-b", "main")
-	runGit(t, dir, "remote", "add", "origin", origin)
+	gittest.RunGit(t, dir, "init", "-b", "main")
+	gittest.RunGit(t, dir, "remote", "add", "origin", origin)
 
 	clusterDir := filepath.Join(dir, "management-clusters", cluster)
 	if err := os.MkdirAll(clusterDir, 0o750); err != nil {
@@ -127,9 +100,9 @@ func newExtendableFixture(t *testing.T, cluster, app, from, until string) (dir, 
 		t.Fatal(err)
 	}
 
-	runGit(t, dir, "add", "-A")
-	runGit(t, dir, "commit", "-m", "reserve "+app)
-	runGit(t, dir, "push", "-u", "origin", "main")
+	gittest.RunGit(t, dir, "add", "-A")
+	gittest.RunGit(t, dir, "commit", "-m", "reserve "+app)
+	gittest.RunGit(t, dir, "push", "-u", "origin", "main")
 
 	return dir, origin
 }
@@ -165,8 +138,8 @@ func TestExtendCommitsAndPushesWithNoToken(t *testing.T) {
 		t.Errorf("stdout fields: got %q", out)
 	}
 
-	head := gitOutput(t, dir, "rev-parse", "HEAD")
-	pushed := gitOutput(t, origin, "rev-parse", "main")
+	head := gittest.GitOutput(t, dir, "rev-parse", "HEAD")
+	pushed := gittest.GitOutput(t, origin, "rev-parse", "main")
 	if head != pushed {
 		t.Errorf("push did not land: local HEAD %s, origin main %s", head, pushed)
 	}

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -13,6 +12,7 @@ import (
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
 
+	"github.com/giantswarm/devctl/v8/cmd/reservation/internal/gittest"
 	"github.com/giantswarm/devctl/v8/cmd/reservation/reap"
 )
 
@@ -49,33 +49,6 @@ func newCommand(t *testing.T, stdout io.Writer) *cobra.Command {
 	return cmd
 }
 
-// runGit runs git in dir, failing the test on error.
-func runGit(t *testing.T, dir string, args ...string) {
-	t.Helper()
-
-	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...) //nolint:gosec // test-only, fixed args
-	cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@example.com",
-		"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@example.com")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
-	}
-}
-
-// gitOutput runs git in dir and returns its trimmed stdout, failing the test
-// on error.
-func gitOutput(t *testing.T, dir string, args ...string) string {
-	t.Helper()
-
-	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...) //nolint:gosec // test-only, fixed args
-	out, err := cmd.Output()
-	if err != nil {
-		t.Fatalf("git %s: %v", strings.Join(args, " "), err)
-	}
-
-	return strings.TrimSpace(string(out))
-}
-
 // newReapableFixture builds the smallest checkout Reap needs on a cluster: an
 // enabled cluster with one reservation already expired (or not, per until).
 // It pushes to a local bare "origin", so a plain `git push` after Reap
@@ -84,11 +57,11 @@ func newReapableFixture(t *testing.T, cluster, app, until string) (dir, origin s
 	t.Helper()
 
 	origin = t.TempDir()
-	runGit(t, origin, "init", "--bare", "-b", "main")
+	gittest.RunGit(t, origin, "init", "--bare", "-b", "main")
 
 	dir = t.TempDir()
-	runGit(t, dir, "init", "-b", "main")
-	runGit(t, dir, "remote", "add", "origin", origin)
+	gittest.RunGit(t, dir, "init", "-b", "main")
+	gittest.RunGit(t, dir, "remote", "add", "origin", origin)
 
 	clusterDir := filepath.Join(dir, "management-clusters", cluster)
 	collectionsDir := filepath.Join(clusterDir, "collections")
@@ -119,9 +92,9 @@ func newReapableFixture(t *testing.T, cluster, app, until string) (dir, origin s
 		}
 	}
 
-	runGit(t, dir, "add", "-A")
-	runGit(t, dir, "commit", "-m", "reserve "+app)
-	runGit(t, dir, "push", "-u", "origin", "main")
+	gittest.RunGit(t, dir, "add", "-A")
+	gittest.RunGit(t, dir, "commit", "-m", "reserve "+app)
+	gittest.RunGit(t, dir, "push", "-u", "origin", "main")
 
 	return dir, origin
 }
@@ -160,8 +133,8 @@ func TestReapCommitsAndPushesWithNoToken(t *testing.T) {
 		t.Errorf("component directory still exists: %v", err)
 	}
 
-	head := gitOutput(t, dir, "rev-parse", "HEAD")
-	pushed := gitOutput(t, origin, "rev-parse", "main")
+	head := gittest.GitOutput(t, dir, "rev-parse", "HEAD")
+	pushed := gittest.GitOutput(t, origin, "rev-parse", "main")
 	if head != pushed {
 		t.Errorf("push did not land: local HEAD %s, origin main %s", head, pushed)
 	}
@@ -174,7 +147,7 @@ func TestReapStaysSilentWhenNothingToDo(t *testing.T) {
 	const cluster, app = "graveler", "hello-world"
 	until := time.Now().Add(10 * time.Hour).UTC().Format(time.RFC3339)
 	dir, origin := newReapableFixture(t, cluster, app, until)
-	beforeTip := gitOutput(t, origin, "rev-parse", "main")
+	beforeTip := gittest.GitOutput(t, origin, "rev-parse", "main")
 
 	var stdout bytes.Buffer
 	cmd := newCommand(t, &stdout)
@@ -190,7 +163,7 @@ func TestReapStaysSilentWhenNothingToDo(t *testing.T) {
 		t.Errorf("stdout: got %q, want empty", stdout.String())
 	}
 
-	afterTip := gitOutput(t, origin, "rev-parse", "main")
+	afterTip := gittest.GitOutput(t, origin, "rev-parse", "main")
 	if afterTip != beforeTip {
 		t.Errorf("origin moved even though nothing was reaped: %s -> %s", beforeTip, afterTip)
 	}
