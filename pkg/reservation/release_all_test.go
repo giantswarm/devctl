@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/giantswarm/devctl/v8/pkg/reservation"
 )
@@ -162,5 +163,111 @@ func TestReleaseRefusesAnotherPullRequestsReservation(t *testing.T) {
 
 	if entries := reservationEntries(t, dir, fixtureCluster); len(entries) != 1 {
 		t.Errorf("the refusal removed the reservation: %+v", entries)
+	}
+}
+
+// TestReleaseAllReleasesOnEveryCluster locks in the cross-cluster sweep: a
+// branch tested against two providers holds a reservation on each, and a
+// merged pull request loses both.
+func TestReleaseAllReleasesOnEveryCluster(t *testing.T) {
+	const secondCluster = "iridium"
+
+	dir, _ := newReapFixture(t, fixtureOptions{clusters: []string{fixtureCluster, secondCluster}})
+
+	first := testRequest(dir)
+	reserveAndPush(t, dir, first)
+
+	second := testRequest(dir)
+	second.Cluster = secondCluster
+	reserveAndPush(t, dir, second)
+
+	released, err := reservation.ReleaseAll(context.Background(), reservation.ReleaseAllRequest{
+		RepoDir:     dir,
+		PullRequest: testPullRequest,
+		User:        testReleaser,
+	})
+	if err != nil {
+		t.Fatalf("ReleaseAll: %v", err)
+	}
+	if len(released) != 2 {
+		t.Fatalf("got %d released reservations, want 2: %+v", len(released), released)
+	}
+
+	for _, cluster := range []string{fixtureCluster, secondCluster} {
+		if entries := reservationEntries(t, dir, cluster); len(entries) != 0 {
+			t.Errorf("%s still holds %d entries, want 0: %+v", cluster, len(entries), entries)
+		}
+	}
+}
+
+// TestReleaseAllLeavesAnotherPullRequestsReservationAlone locks in the
+// authorization rule at the sweep level: a merged pull request cleans up
+// after itself only.
+func TestReleaseAllLeavesAnotherPullRequestsReservationAlone(t *testing.T) {
+	dir, _ := newReapFixture(t, fixtureOptions{})
+
+	reserveAndPush(t, dir, testRequest(dir))
+
+	released, err := reservation.ReleaseAll(context.Background(), reservation.ReleaseAllRequest{
+		RepoDir:     dir,
+		PullRequest: "giantswarm/hello-world#999",
+		User:        testReleaser,
+	})
+	if err != nil {
+		t.Fatalf("ReleaseAll: %v", err)
+	}
+	if len(released) != 0 {
+		t.Fatalf("got %d released reservations, want 0: %+v", len(released), released)
+	}
+	if entries := reservationEntries(t, dir, fixtureCluster); len(entries) != 1 {
+		t.Errorf("the other pull request's reservation went: %+v", entries)
+	}
+}
+
+// TestReleaseAllSaysNothingWhenThePullRequestHoldsNothing locks in the
+// difference from Extend: a merged pull request that reserved nothing is the
+// ordinary case, not a mistake, so it is no error. Only /undeploy tells the
+// user, and it does that from an empty result.
+func TestReleaseAllSaysNothingWhenThePullRequestHoldsNothing(t *testing.T) {
+	dir, _ := newReapFixture(t, fixtureOptions{})
+
+	released, err := reservation.ReleaseAll(context.Background(), reservation.ReleaseAllRequest{
+		RepoDir:     dir,
+		PullRequest: testPullRequest,
+		User:        testReleaser,
+	})
+	if err != nil {
+		t.Fatalf("ReleaseAll: %v", err)
+	}
+	if len(released) != 0 {
+		t.Fatalf("got %d released reservations, want 0: %+v", len(released), released)
+	}
+}
+
+// TestReleaseAllReleasesAnExpiredReservation locks in the other deliberate
+// difference from Extend, which skips an expired record: releasing one is
+// plain cleanup that the reaper would do anyway, and leaving it behind would
+// keep a dead entry in the ConfigMap after the pull request merged.
+func TestReleaseAllReleasesAnExpiredReservation(t *testing.T) {
+	dir, _ := newReapFixture(t, fixtureOptions{})
+
+	req := testRequest(dir)
+	req.Now = time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC) // long expired by any real clock
+	req.Duration = time.Hour
+	reserveAndPush(t, dir, req)
+
+	released, err := reservation.ReleaseAll(context.Background(), reservation.ReleaseAllRequest{
+		RepoDir:     dir,
+		PullRequest: testPullRequest,
+		User:        testReleaser,
+	})
+	if err != nil {
+		t.Fatalf("ReleaseAll: %v", err)
+	}
+	if len(released) != 1 {
+		t.Fatalf("got %d released reservations, want 1: %+v", len(released), released)
+	}
+	if entries := reservationEntries(t, dir, fixtureCluster); len(entries) != 0 {
+		t.Errorf("the expired entry survived: %+v", entries)
 	}
 }
