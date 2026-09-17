@@ -25,9 +25,10 @@ set-up engine, as the person:
    rule: a context is required once it has reported on the default branch
    or a recently merged pull request, and a required context nothing
    reports is removed — no check nothing can satisfy is ever required
- - Renovate: a check that the installation covers the repository; a missing
-   repository is reported with the fix (an organization owner edits the
-   installation)
+ - Renovate: a check that Renovate scans the repository, from the
+   repository's own evidence (a configuration file, and the Dependency
+   Dashboard issue or a pull request or commit of Renovate's); what is
+   missing is reported with the fix
 
 Every step is a check and a repair: the run converges in one go and a
 second run changes nothing. --dry-run prints what a repair would change.`

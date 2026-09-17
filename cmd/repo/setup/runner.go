@@ -73,7 +73,9 @@ func (r *runner) run(ctx context.Context, arg string) error {
 	} else {
 		steps = append(steps, reconcile.StepProtection)
 	}
-	steps = append(steps, reconcile.StepRenovate)
+	if r.flag.SetupRenovate {
+		steps = append(steps, reconcile.StepRenovate)
+	}
 
 	entry := reposetup.Undeclared{Name: repo}
 	if r.flag.Archived {
@@ -129,9 +131,6 @@ func (r *runner) baseline() reconcile.Baseline {
 	b.RequiredChecks = f.Checks
 	if f.ChecksFilter != "" {
 		b.IgnoredChecks = append(b.IgnoredChecks, f.ChecksFilter)
-	}
-	if !f.SetupRenovate {
-		b.RenovateInstallationID = 0
 	}
 	return b
 }

@@ -428,31 +428,83 @@ func TestSteps(t *testing.T) {
 			},
 		},
 		{
-			name: "renovate: an installation without the repository is reported", step: StepRenovate,
+			name: "renovate: the configuration and the Dependency Dashboard issue", step: StepRenovate,
 			seed: func(h *harness) {
-				h.gh.addRepo(owner, name)
-				h.gh.installation.repos = []string{owner + "/other"}
-			},
-			wantCheck: VerdictReported, wantFinding: FindingRenovateMissing, wantAfter: VerdictReported,
-			verify: func(t *testing.T, _ *harness, res *Result) {
-				require.Contains(t, res.Findings()[0].Fix, "settings/installations/17164699")
-			},
-		},
-		{
-			name: "renovate: an installation on all repositories", step: StepRenovate,
-			seed: func(h *harness) {
-				h.gh.addRepo(owner, name)
-				h.gh.installation.selection = "all"
+				h.gh.addRepo(owner, name).addIssue(renovateLogin, "Dependency Dashboard", false)
+				h.gh.installation.status = 403 // a GitHub App token cannot list a user's installations
 			},
 			wantCheck: VerdictOK,
+			verify: func(t *testing.T, _ *harness, res *Result) {
+				require.Equal(t, "renovate.json5; Dependency Dashboard issue #1", res.Step(StepRenovate).Summary)
+			},
 		},
 		{
-			name: "renovate: unreadable with this token", step: StepRenovate,
+			name: "renovate: a pull request of Renovate's stands in for the dashboard", step: StepRenovate,
+			seed: func(h *harness) {
+				h.gh.addRepo(owner, name).addIssue(renovateLogin, "fix(deps): update module example.com/dep to v2", true)
+				h.gh.installation.status = 403
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, _ *harness, res *Result) {
+				require.Equal(t, "renovate.json5; Renovate pull request #1", res.Step(StepRenovate).Summary)
+			},
+		},
+		{
+			name: "renovate: a commit of Renovate's stands in for the dashboard", step: StepRenovate,
+			seed: func(h *harness) {
+				h.gh.addRepo(owner, name).history = []*github.RepositoryCommit{{SHA: new("abc1234def"), Author: &github.User{Login: new(renovateLogin)}}}
+				h.gh.installation.status = 403
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, _ *harness, res *Result) {
+				require.Equal(t, "renovate.json5; Renovate commit abc1234 on main", res.Step(StepRenovate).Summary)
+			},
+		},
+		{
+			name: "renovate: a configuration without a trace of a run is reported", step: StepRenovate,
 			seed: func(h *harness) {
 				h.gh.addRepo(owner, name)
 				h.gh.installation.status = 403
 			},
-			wantCheck: VerdictSkipped, wantAfter: VerdictSkipped,
+			wantCheck: VerdictReported, wantFinding: FindingRenovateNotScanned, wantAfter: VerdictReported,
+			verify: func(t *testing.T, _ *harness, res *Result) {
+				f := res.Findings()[0]
+				require.Contains(t, f.Message, "no Dependency Dashboard issue")
+				require.Contains(t, f.Fix, "covers all repositories")
+			},
+		},
+		{
+			name: "renovate: no configuration is reported", step: StepRenovate,
+			seed: func(h *harness) {
+				delete(h.gh.addRepo(owner, name).files, "renovate.json5")
+				h.gh.installation.status = 403
+			},
+			wantCheck: VerdictReported, wantFinding: FindingRenovateNotScanned, wantAfter: VerdictReported,
+			verify: func(t *testing.T, _ *harness, res *Result) {
+				require.Contains(t, res.Findings()[0].Fix, "renovate.json5")
+			},
+		},
+		{
+			name: "renovate: a configuration that disables Renovate", step: StepRenovate,
+			seed: func(h *harness) {
+				h.gh.addRepo(owner, name).files["renovate.json5"] = "{\n  enabled: false,\n}\n"
+				h.gh.installation.status = 403
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, _ *harness, res *Result) {
+				require.Equal(t, "renovate.json5 disables Renovate", res.Step(StepRenovate).Summary)
+			},
+		},
+		{
+			name: "renovate: the installation's list is detail when the token reads it, never the verdict", step: StepRenovate,
+			seed: func(h *harness) {
+				h.gh.addRepo(owner, name)
+				h.gh.installation.selection = "all"
+			},
+			wantCheck: VerdictReported, wantFinding: FindingRenovateNotScanned, wantAfter: VerdictReported,
+			verify: func(t *testing.T, _ *harness, res *Result) {
+				require.Equal(t, "the installation covers all repositories", res.Step(StepRenovate).Summary, "detail next to the finding")
+			},
 		},
 		{
 			name: "codeowners: drift opens one pull request", step: StepCodeowners,
@@ -784,6 +836,19 @@ func kinds(findings []Finding) []FindingKind {
 	return out
 }
 
+// TestRenovateWaitsForScaffold: on an empty repository the renovate step
+// waits for the scaffold, which brings the configuration, instead of
+// reporting a configuration nothing could have pushed yet.
+func TestRenovateWaitsForScaffold(t *testing.T) {
+	h := newHarness(t, entryYAML)
+	h.gh.addRepo(owner, name).empty = true
+
+	res := h.run(ModeCheck, false, StepScaffold, StepRenovate)
+	sr := res.Step(StepRenovate)
+	require.Equal(t, VerdictSkipped, sr.Verdict, "%+v", sr)
+	require.Equal(t, "repository is empty: the scaffold comes first", sr.Summary)
+}
+
 // TestRunFullRepositorySetUp runs every step over a repository that only
 // exists as an added entry: the first repair converges the whole set-up
 // (bar the pull request and the findings for a person), the second changes
@@ -814,7 +879,7 @@ func TestRunFullRepositorySetUp(t *testing.T) {
 	for _, sr := range second.Steps {
 		require.Contains(t, []Verdict{VerdictOK, VerdictReported}, sr.Verdict, "%s: %+v", sr.Step, sr)
 	}
-	require.Equal(t, []FindingKind{FindingDefaultIcon}, kinds(second.Findings()))
+	require.Equal(t, []FindingKind{FindingDefaultIcon, FindingRenovateNotScanned}, kinds(second.Findings()), "the default icon, and Renovate that has not run yet")
 
 	data, err := json.Marshal(second)
 	require.NoError(t, err)

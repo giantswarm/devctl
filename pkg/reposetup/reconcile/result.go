@@ -11,8 +11,8 @@
 // spelled out: a declaration whose repository is gone, a redirect on the
 // declared name (a rename the caller follows with a correction PR), a `gen
 // circleci` refusal, the ABS prerequisites of a first chart build, a red
-// first release, a default icon, a Renovate installation without the
-// repository.
+// first release, a default icon, a repository Renovate shows no sign of
+// scanning.
 //
 // The steps, in order ([Steps]): create (only from an entry the caller marks
 // as added — never from a missing repository), scaffold (rendered by the
@@ -115,9 +115,10 @@ const (
 	FindingDefaultIcon FindingKind = "default-icon"
 	// FindingRedRelease: the latest release's tag pipeline failed.
 	FindingRedRelease FindingKind = "red-release"
-	// FindingRenovateMissing: the Renovate installation does not cover the
-	// repository.
-	FindingRenovateMissing FindingKind = "renovate-missing"
+	// FindingRenovateNotScanned: the repository shows no sign that Renovate
+	// scans it — no configuration, or a configuration without a trace of a
+	// run (the Dependency Dashboard issue, a pull request, a commit).
+	FindingRenovateNotScanned FindingKind = "renovate-not-scanned"
 	// FindingArchivedUndeclared: archived on GitHub without lifecycle:
 	// archived.
 	FindingArchivedUndeclared FindingKind = "archived-undeclared"

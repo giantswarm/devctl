@@ -60,7 +60,9 @@ type Baseline struct {
 	Webhooks []Webhook `json:"webhooks,omitempty"`
 
 	// RenovateInstallationID is the Renovate GitHub App installation whose
-	// repository list is checked; 0 skips the check.
+	// repository list the renovate step reads as detail when the token can
+	// (an organization owner's; a GitHub App token cannot); 0 reads none.
+	// The step's verdict comes from the repository's own evidence.
 	RenovateInstallationID int64 `json:"renovateInstallationID"`
 
 	// CatalogRepository holds the catalog and the two workflows, as

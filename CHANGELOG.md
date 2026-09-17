@@ -41,6 +41,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   repository's first Auto Release run was red although the release existed and the build followed. Following takes an
   administrator's token the workflow does not hold. A followed project whose pipeline is missing after the wait is
   still triggered by the step (HTTP 200, empty list); API errors still fail it (giantswarm/giantswarm#37726, #2245).
+- `repo reconcile`: the `renovate` step decides from the repository's own evidence — a Renovate configuration
+  file and a trace of a run (the Dependency Dashboard issue, else a pull request or a commit of Renovate's) —
+  instead of the Renovate installation's repository list, which only an organization owner's token can read:
+  under the reconciler's GitHub App token the step was skipped on every run. Both present is `ok`, as is a
+  configuration that disables Renovate; what is missing is the `renovate-not-scanned` finding (replacing
+  `renovate-missing`) with the fix — the installation covers all repositories, so a missing configuration is
+  added, and a configuration without a trace means Renovate has not run yet or refuses it. The installation's
+  list is read as detail for the summary when the token can. The step waits for the scaffold on an empty
+  repository and is skipped on a repository archived on GitHub; `repo setup --renovate=false` leaves the step
+  out (giantswarm/giantswarm#37726, #2247).
 - `repo reconcile`: the `release` step triggers the missed tag build whenever the latest release's tag has no
   CircleCI pipeline. It skipped the trigger when the most recent pipeline was newer than the release, taking that
   as a sign the tag's pipeline was merely further down the list — but a repository created pull-request-last is
