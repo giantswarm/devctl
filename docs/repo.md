@@ -109,7 +109,11 @@ in giantswarm/github.
 
 The template is derived, not chosen: `language: go` gives `giantswarm/template`; `language: generic`
 with the `app` flavour gives `giantswarm/template-app`; a customer repository, `python`,
-`kyverno-policy` and every other combination give the minimal scaffold.
+`kyverno-policy` and every other combination give the minimal scaffold. A declaration whose flavours
+produce a chart (`app`, `cluster-app`) and whose template has no chart of its own -- the Go service
+with the `app` flavour -- gets the chart of `giantswarm/template-app` at `helm/<name>` beside the
+template, with `.abs/main.yaml` pointing at it, the name substituted and the team annotation set, so
+the first release's chart job builds; the dry run names it on the `chart:` line.
 
 ### Token
 

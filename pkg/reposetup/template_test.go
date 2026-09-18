@@ -58,3 +58,15 @@ func TestTemplateRepository(t *testing.T) {
 	require.Equal(t, "", TemplateMinimal.Repository())
 	require.Equal(t, "minimal", TemplateMinimal.String())
 }
+
+// TestDeriveChart: a template without a chart of its own gets the chart
+// template's chart when the flavours produce one; the chart template and a
+// declaration without a chart get none.
+func TestDeriveChart(t *testing.T) {
+	app := []string{"app"}
+	require.Equal(t, TemplateChart, DeriveChart(TemplateGo, app), "the Go template has no chart: the chart template's is added")
+	require.Equal(t, TemplateChart, DeriveChart(TemplateMinimal, []string{"cluster-app"}))
+	require.Equal(t, Template(""), DeriveChart(TemplateChart, app), "the chart template carries its chart")
+	require.Equal(t, Template(""), DeriveChart(TemplateGo, []string{"generic"}), "no chart declared")
+	require.Equal(t, Template(""), DeriveChart(TemplateGo, nil))
+}

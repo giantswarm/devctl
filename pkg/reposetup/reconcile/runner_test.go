@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -241,7 +242,7 @@ func TestSteps(t *testing.T) {
 			seed: func(h *harness) {
 				h.gh.addRepo(owner, name).files = map[string]string{"README.md": "# sample-service\n"}
 			},
-			wantCheck: VerdictDrift, wantChange: "render the scaffold and push it as the first commit on main",
+			wantCheck: VerdictDrift, wantChange: "render the scaffold with the chart of giantswarm/template-app at helm/sample-service and push it as the first commit on main",
 			wantAfter: VerdictReported, // the default icon
 			verify: func(t *testing.T, h *harness, res *Result) {
 				require.Equal(t, scaffoldFiles, h.repo().files)
@@ -1006,4 +1007,31 @@ func TestRequiredChecks(t *testing.T) {
 	got, err = requiredChecks(b, []string{ctxGoBuild, ctxGhost}, nil, false, nil, false)
 	require.NoError(t, err)
 	require.Equal(t, []string{"PR Gatekeeper", ctxGoBuild, ctxGhost}, got, "unknown reports and pipeline: nothing removed, nothing added")
+}
+
+// TestScaffoldGoServiceWithChart is the engine test of the Go service with
+// the app flavour: the real renderer, on the test templates, scaffolds the
+// Go template with the chart template's chart, so the scaffold step finds
+// the chart at helm/<name> with the team annotation and the values schema
+// and reports nothing app-build-suite would fail on -- only the default
+// icon.
+func TestScaffoldGoServiceWithChart(t *testing.T) {
+	h := newHarness(t, entryYAML)
+	h.runner.Renderer = reposetup.Renderer{Templates: reposetup.DirTemplates{Root: filepath.Join("..", "testdata", "templates")}}
+	r := h.gh.addRepo(owner, name)
+	r.empty, r.files = true, map[string]string{}
+
+	res := h.run(ModeRepair, false, StepScaffold)
+	sr := res.Step(StepScaffold)
+	require.NotNil(t, sr)
+	require.Equal(t, []FindingKind{FindingDefaultIcon}, kinds(sr.Findings), "the chart is there: no prerequisite finding")
+
+	files := h.repo().files
+	require.Contains(t, files, "main.go", "the Go template's files")
+	require.Contains(t, files["helm/sample-service/Chart.yaml"], `io.giantswarm.application.team: "bumblebee"`)
+	require.Contains(t, files, "helm/sample-service/values.yaml")
+	require.Contains(t, files, "helm/sample-service/values.schema.json")
+	require.Contains(t, files, "helm/sample-service/templates/_helpers.tpl")
+	require.Contains(t, files[".abs/main.yaml"], "chart-dir: ./helm/sample-service")
+	require.Equal(t, scaffoldSubject, h.repo().headSubject("main"))
 }

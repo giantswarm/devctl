@@ -260,7 +260,8 @@ func (r *runner) resumable(ctx context.Context, gh *github.Client, entry reposet
 }
 
 // printDryRun writes the dry run as text: the entry as it goes into the
-// team file, the template, the name check, the problems and the notices.
+// team file, the template and the chart added beside it, the name check,
+// the problems and the notices.
 func (r *runner) printDryRun(tf *reposetup.RemoteTeamFile, result *reposetup.Result) {
 	entry := result.Entries[0]
 	fmt.Fprintf(r.stdout, "%s/%s in %s of %s (schema: %s)\n\n", r.flag.Owner, entry.Name, tf.Path, tf.Team, result.Schema)
@@ -268,6 +269,9 @@ func (r *runner) printDryRun(tf *reposetup.RemoteTeamFile, result *reposetup.Res
 	fmt.Fprintln(r.stdout)
 	if entry.Template != "" {
 		fmt.Fprintf(r.stdout, "template:   %s\n", entry.Template)
+	}
+	if entry.Chart != "" {
+		fmt.Fprintf(r.stdout, "chart:      %s at helm/%s\n", entry.Chart, entry.Name)
 	}
 	check := string(entry.NameCheck.Verdict)
 	if entry.NameCheck.Detail != "" {

@@ -47,7 +47,7 @@ func (r *Runner) stepScaffold(ctx context.Context, s *run, sr *StepResult) error
 	if r.Renderer == nil && s.req.Mode == ModeRepair {
 		return fmt.Errorf("the repository has no scaffold and this runner has no renderer")
 	}
-	return s.plan(sr, "render the scaffold and push it as the first commit on "+s.branch(), func() error {
+	return s.plan(sr, s.scaffoldChange(s.branch()), func() error {
 		if err := r.pushScaffold(ctx, s, sr, empty); err != nil {
 			return err
 		}
@@ -138,7 +138,7 @@ func (r *Runner) pushScaffold(ctx context.Context, s *run, sr *StepResult, empty
 	// filter_unconventional), so a first commit without the prefix leaves the
 	// repository without its v0.1.0 for good.
 	commit, _, err := r.GitHub.Git.CreateCommit(ctx, s.owner, s.name, github.Commit{
-		Message: new(fmt.Sprintf("feat: initial scaffold of %s from %s\n\nRendered by devctl for the entry in repositories/%s.yaml.", s.name, scaffoldOrigin(scaffold.Template), s.req.Team)),
+		Message: new(fmt.Sprintf("feat: initial scaffold of %s from %s\n\nRendered by devctl for the entry in repositories/%s.yaml%s.", s.name, scaffoldOrigin(scaffold.Template), s.req.Team, chartClause(scaffold.Chart, s.name))),
 		Tree:    &github.Tree{SHA: tree.SHA},
 	}, nil)
 	if err != nil {
@@ -274,6 +274,21 @@ func afterRefusal(msg string) string {
 		return msg[i:]
 	}
 	return msg
+}
+
+// scaffoldChange is the plan of the scaffold step: what it pushes, and
+// onto which branch.
+func (s *run) scaffoldChange(branch string) string {
+	return "render the scaffold" + chartClause(s.req.Entry.Chart, s.name) + " and push it as the first commit on " + branch
+}
+
+// chartClause names the chart a scaffold carries beside its template, for
+// the plan and the scaffold commit; empty when the template is all there is.
+func chartClause(chart reposetup.Template, name string) string {
+	if chart == "" {
+		return ""
+	}
+	return fmt.Sprintf(" with the chart of %s at helm/%s", chart, name)
 }
 
 func scaffoldOrigin(t reposetup.Template) string {
