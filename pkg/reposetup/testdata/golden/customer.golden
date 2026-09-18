@@ -248,6 +248,28 @@ jobs:
         revert
         security
 
+--- .github/workflows/zz_generated.trigger-circleci-pipeline.yaml
+# DO NOT EDIT. Generated with:
+#
+#    devctl
+#
+#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/trigger_circleci_pipeline.yaml.template
+#
+name: trigger-circleci-pipeline
+
+on:
+  pull_request:
+    types: [opened, reopened]
+
+permissions: {}
+
+jobs:
+  build:
+    permissions: {}
+    uses: giantswarm/github-workflows/.github/workflows/trigger-circleci-pipeline.yaml@main
+    secrets:
+      CIRCLECI_API_TOKEN: ${{ secrets.CIRCLECI_API_TOKEN }}
+
 --- .github/workflows/zz_generated.validate_changelog.yaml
 # DO NOT EDIT. Generated with:
 #

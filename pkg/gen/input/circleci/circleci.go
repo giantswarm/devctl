@@ -34,7 +34,7 @@ import (
 // custom manager that reads this annotation lives in renovate-custom.json5.
 //
 // renovate: datasource=github-tags depName=giantswarm/architect-orb
-const OrbVersion = "10.5.0"
+const OrbVersion = "10.6.0"
 
 // DefaultATSVersion is the app-test-suite container tag the generated chart-test
 // jobs run when a repo pins none (`gen circleci --ats-version`). app-test-suite
@@ -936,7 +936,7 @@ func (c *CircleCI) ATSInputs() []input.Input {
 // legacy dats.sh path. New substitutes DefaultATSVersion for an empty tag before
 // this runs; an empty tag here still means "no opinion". The tag has to parse
 // as a semantic version (an optional leading "v" is tolerated); a dev tag such
-// as 0.15.1-dev.<branch>.<date>.<hash> counts as 0.x.
+// as 0.15.1-r<branch-hash>t<timestamp>h<sha7> counts as 0.x.
 func atsCreatesKindCluster(tag string) (bool, error) {
 	if tag == "" {
 		return false, nil

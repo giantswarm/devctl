@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"text/template"
@@ -1971,7 +1972,14 @@ func Test_ATSVersionOnePointX(t *testing.T) {
 // Test_ATSVersionLegacy verifies a 0.x tag (a release or a dev build of the
 // pre-1.0 tool) only pins the image: the dats.sh path and the Pipfile stay.
 func Test_ATSVersionLegacy(t *testing.T) {
-	for _, tag := range []string{"0.15.0", "v0.15.0", "0.15.1-dev.gh-readonl--ab3270cae7f.2026-08-20.21-58-02.h4162ff7"} {
+	// The last is a dev build. Its whole pre-release is one dot-free
+	// 33-character identifier, which has to parse, or a repo pinned to a dev
+	// app-test-suite build fails to generate at all.
+	for _, tag := range []string{
+		"0.15.0",
+		"v0.15.0",
+		"0.15.1-r3e63797dt20260820215802h4162ff7",
+	} {
 		c := Config{
 			RepoName:      repoMCPKubernetes,
 			Language:      gen.LanguageGo,
@@ -2270,6 +2278,194 @@ func Test_ImageResourceClassesRejects(t *testing.T) {
 	noNative.ImageResourceClasses = map[string]string{"linux/arm64": "arm.large"}
 	if _, err := New(noNative); !IsInvalidConfig(err) {
 		t.Errorf("expected invalidConfigError for ImageResourceClasses without ImageNativeBuilds, got %v", err)
+	}
+}
+
+// gatedJob is a workflow job that carries `require_open_pull_request: true`,
+// together with whether that job's own `filters` block also carries a
+// `tags:` key. The orb halts a gated job unless an open pull request covers
+// the commit being built, but a release tag never has one -- so a gated job
+// filtered to also match tags would silently build nothing on every release.
+type gatedJob struct {
+	name         string
+	hasTagFilter bool
+}
+
+// gatedJobs returns the workflow jobs that carry `require_open_pull_request:
+// true`, in the order they appear, alongside whether each job's filters also
+// match tags. The generated workflows file is a flat list of
+// `- architect/<job>:` entries whose first key is always `name:` or
+// `context:`, so a line scan that remembers the last `name:` and, for the
+// current job, whether `require_open_pull_request` and a `tags:` filter both
+// appeared before the next entry starts, is enough to attribute both to their
+// job.
+func gatedJobs(got string) []gatedJob {
+	var jobs []gatedJob
+	var name string
+	var gated, hasTags bool
+	flush := func() {
+		if gated {
+			jobs = append(jobs, gatedJob{name: name, hasTagFilter: hasTags})
+		}
+	}
+	for _, line := range strings.Split(got, "\n") {
+		trimmed := strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(trimmed, "- architect/"):
+			flush()
+			name, gated, hasTags = "", false, false
+		case strings.HasPrefix(trimmed, "name: "):
+			name = strings.TrimPrefix(trimmed, "name: ")
+		case trimmed == "require_open_pull_request: true":
+			gated = true
+		case trimmed == "tags:":
+			hasTags = true
+		}
+	}
+	flush()
+	return jobs
+}
+
+// gatedJobNames extracts just the names gatedJobs found, in order, for tests
+// that only care which jobs are gated and not their filters.
+func gatedJobNames(got string) []string {
+	jobs := gatedJobs(got)
+	names := make([]string, len(jobs))
+	for i, job := range jobs {
+		names[i] = job.name
+	}
+	return names
+}
+
+// Test_BranchJobsRequireOpenPullRequest pins the build rule: a push to a
+// branch with no pull request must build no image and no chart, while the
+// basic checks (go-build, which also runs `make test`) still run. The orb
+// halts a job carrying `require_open_pull_request` when no open pull request
+// covers the build, so the generator sets it on exactly the branch-path build
+// jobs -- never on go-build, and never on any job whose filters also match
+// tags, which have no pull request to find.
+func Test_BranchJobsRequireOpenPullRequest(t *testing.T) {
+	service := render(t, Config{
+		RepoName:      repoMCPKubernetes,
+		Language:      gen.LanguageGo,
+		Flavours:      gen.FlavourSlice{gen.FlavourApp},
+		HasDockerfile: true,
+	})
+
+	want := []string{"build-image", "execute-chart-tests"}
+	if got := gatedJobNames(service); !reflect.DeepEqual(got, want) {
+		t.Errorf("gated jobs = %v, want %v:\n%s", got, want, service)
+	}
+
+	// branchPublish adds the two dev pushes, and both are builds.
+	publish := render(t, Config{
+		RepoName:      repoMCPKubernetes,
+		Language:      gen.LanguageGo,
+		Flavours:      gen.FlavourSlice{gen.FlavourApp},
+		HasDockerfile: true,
+		BranchPublish: true,
+	})
+
+	want = []string{"push-to-registries", "execute-chart-tests", "push-chart"}
+	if got := gatedJobNames(publish); !reflect.DeepEqual(got, want) {
+		t.Errorf("gated jobs with branchPublish = %v, want %v:\n%s", got, want, publish)
+	}
+}
+
+// Test_GatedJobsNeverFilterOnTags is the regression test for the
+// silent-release-failure bug: build-chart used to carry both
+// `require_open_pull_request: true` and a `tags:` filter, so the orb halted
+// it on every release tag (no open pull request covers a tag), and both
+// push-chart-release and execute-chart-tests-release require build-chart --
+// so a release tag published no chart and nothing errored. gatedJobs is
+// name-only in Test_BranchJobsRequireOpenPullRequest above, which is exactly
+// why that test missed it: it never looks at a job's filters. This test
+// asserts the invariant directly, over every app shape the golden tests
+// cover, so no future gated job can sneak a tags filter back in.
+func Test_GatedJobsNeverFilterOnTags(t *testing.T) {
+	stamp := true
+	configs := map[string]Config{
+		"service": {
+			RepoName:      repoMCPKubernetes,
+			Language:      gen.LanguageGo,
+			Flavours:      gen.FlavourSlice{gen.FlavourApp},
+			HasDockerfile: true,
+		},
+		"cli": {
+			RepoName:      repoMCPKubernetes,
+			Language:      gen.LanguageGo,
+			Flavours:      gen.FlavourSlice{gen.FlavourApp, gen.FlavourCLI},
+			HasDockerfile: true,
+		},
+		"node-npm": {
+			RepoName:       repoK8sTypes,
+			Language:       gen.LanguageNode,
+			PackageManager: PackageManagerNPM,
+		},
+		"node-yarn-berry": {
+			RepoName:        repoBackstage,
+			Language:        gen.LanguageNode,
+			Flavours:        gen.FlavourSlice{gen.FlavourApp},
+			PackageManager:  PackageManagerYarn,
+			NodeBuildTarget: nodeBuildTarget,
+			NodeBuildOutput: backstageBuildOutput,
+			ImageDockerfile: backstageDockerfile,
+		},
+		"chart-only": {
+			RepoName:                repoAPStandalone,
+			Language:                gen.LanguageGeneric,
+			Flavours:                gen.FlavourSlice{gen.FlavourApp},
+			OverrideChartAppVersion: &stamp,
+		},
+		"chart-only-ats-1.x": {
+			RepoName:                repoAPStandalone,
+			Language:                gen.LanguageGeneric,
+			Flavours:                gen.FlavourSlice{gen.FlavourApp},
+			OverrideChartAppVersion: &stamp,
+			ATSVersion:              "1.0.0",
+		},
+		"ats-on-release": {
+			RepoName:      repoMCPKubernetes,
+			Language:      gen.LanguageGo,
+			Flavours:      gen.FlavourSlice{gen.FlavourApp},
+			HasDockerfile: true,
+			ATSOnRelease:  true,
+		},
+		"ats-kind-config": {
+			RepoName:         repoAgent,
+			Language:         gen.LanguageGeneric,
+			Flavours:         gen.FlavourSlice{gen.FlavourApp},
+			ATSOnRelease:     true,
+			HasATSKindConfig: true,
+			ATSResourceClass: "large",
+		},
+		"native-image": {
+			RepoName:          repoMCPKubernetes,
+			Language:          gen.LanguageGo,
+			Flavours:          gen.FlavourSlice{gen.FlavourApp},
+			HasDockerfile:     true,
+			ImageNativeBuilds: true,
+		},
+		"native-node":    nativeNodeConfig(),
+		"template-chart": templateChartRepo(),
+		"go-test-artifacts": {
+			RepoName:        "muster",
+			Language:        gen.LanguageGo,
+			Flavours:        gen.FlavourSlice{gen.FlavourGeneric, gen.FlavourApp, gen.FlavourCLI},
+			HasDockerfile:   true,
+			GoTestArtifacts: "test-reports",
+		},
+	}
+
+	for name, cfg := range configs {
+		t.Run(name, func(t *testing.T) {
+			got := render(t, cfg)
+			for _, job := range gatedJobs(got) {
+				if job.hasTagFilter {
+					t.Errorf("job %q carries require_open_pull_request and a tags filter: a release tag has no pull request, so the orb would silently halt it on every release\n%s", job.name, got)
+				}
+			}
+		})
 	}
 }
 

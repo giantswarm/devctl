@@ -1,0 +1,198 @@
+package reservation
+
+import "github.com/giantswarm/microerror"
+
+var invalidConfigError = &microerror.Error{
+	Kind: "invalidConfigError",
+}
+
+// IsInvalidConfig asserts invalidConfigError.
+func IsInvalidConfig(err error) bool {
+	return microerror.Cause(err) == invalidConfigError
+}
+
+// clusterNotFoundError indicates that the GitOps repo holds no such management
+// cluster.
+var clusterNotFoundError = &microerror.Error{
+	Kind: "clusterNotFoundError",
+}
+
+// IsClusterNotFound asserts clusterNotFoundError.
+func IsClusterNotFound(err error) bool {
+	return microerror.Cause(err) == clusterNotFoundError
+}
+
+// clusterNotEnabledError indicates that the management cluster carries no
+// reservations ConfigMap, which is the per-cluster opt-in.
+var clusterNotEnabledError = &microerror.Error{
+	Kind: "clusterNotEnabledError",
+}
+
+// IsClusterNotEnabled asserts clusterNotEnabledError.
+func IsClusterNotEnabled(err error) bool {
+	return microerror.Cause(err) == clusterNotEnabledError
+}
+
+// appNotFoundError indicates that the rendered collections of the cluster hold
+// no source object for the app.
+var appNotFoundError = &microerror.Error{
+	Kind: "appNotFoundError",
+}
+
+// IsAppNotFound asserts appNotFoundError.
+func IsAppNotFound(err error) bool {
+	return microerror.Cause(err) == appNotFoundError
+}
+
+// renderError indicates that the cluster's collections could not be rendered.
+var renderError = &microerror.Error{
+	Kind: "renderError",
+}
+
+// IsRender asserts renderError.
+func IsRender(err error) bool {
+	return microerror.Cause(err) == renderError
+}
+
+// renderAssertionError indicates that the rendered collections do not carry the
+// reservation. A reservation that does not survive the render is a silent no-op
+// on the cluster, so it must never reach a commit.
+var renderAssertionError = &microerror.Error{
+	Kind: "renderAssertionError",
+}
+
+// IsRenderAssertion asserts renderAssertionError.
+func IsRenderAssertion(err error) bool {
+	return microerror.Cause(err) == renderAssertionError
+}
+
+// alreadyReservedError indicates that the app already holds a reservation on the
+// cluster. One reservation per (app, cluster) is the lock.
+var alreadyReservedError = &microerror.Error{
+	Kind: "alreadyReservedError",
+}
+
+// IsAlreadyReserved asserts alreadyReservedError.
+func IsAlreadyReserved(err error) bool {
+	return microerror.Cause(err) == alreadyReservedError
+}
+
+// clusterLockedError indicates that the request collided with an exclusive
+// reservation: either an app-scoped request meets one active anywhere on the
+// cluster, or an exclusive request meets any reservation that is not its own
+// sole one to promote.
+var clusterLockedError = &microerror.Error{
+	Kind: "clusterLockedError",
+}
+
+// IsClusterLocked asserts clusterLockedError.
+func IsClusterLocked(err error) bool {
+	return microerror.Cause(err) == clusterLockedError
+}
+
+// appNotSupportedError indicates that the app was located but is shaped in a way
+// this version cannot move: an extras app, or a release carrying its chart
+// inline.
+var appNotSupportedError = &microerror.Error{
+	Kind: "appNotSupportedError",
+}
+
+// IsAppNotSupported asserts appNotSupportedError.
+func IsAppNotSupported(err error) bool {
+	return microerror.Cause(err) == appNotSupportedError
+}
+
+// invalidDurationError indicates that the requested duration is not a duration
+// this version accepts, or is longer than the cluster allows. The message, not
+// the kind, carries which of the two it is: a caller reports both the same way.
+var invalidDurationError = &microerror.Error{
+	Kind: "invalidDurationError",
+}
+
+// IsInvalidDuration asserts invalidDurationError.
+func IsInvalidDuration(err error) bool {
+	return microerror.Cause(err) == invalidDurationError
+}
+
+// appAmbiguousError indicates that the app repository holds several charts and
+// the caller named none of them.
+var appAmbiguousError = &microerror.Error{
+	Kind: "appAmbiguousError",
+}
+
+// IsAppAmbiguous asserts appAmbiguousError.
+func IsAppAmbiguous(err error) bool {
+	return microerror.Cause(err) == appAmbiguousError
+}
+
+// notReservedError indicates that the app holds no reservation on the cluster,
+// so there is nothing for Release to undo.
+var notReservedError = &microerror.Error{
+	Kind: "notReservedError",
+}
+
+// IsNotReserved asserts notReservedError.
+func IsNotReserved(err error) bool {
+	return microerror.Cause(err) == notReservedError
+}
+
+// componentNotFoundError indicates that removeComponent could not find, in a
+// kustomization file's components list, the entry it was asked to remove: the
+// file was edited by hand since the reservation wrote it (a re-indent, a
+// quoting change, a comment moved) in a way the matcher does not recognise.
+// Reporting success here would delete the component directory while leaving
+// the stale reference behind, breaking `kustomize build` for the whole
+// cluster, not just the released app.
+var componentNotFoundError = &microerror.Error{
+	Kind: "componentNotFoundError",
+}
+
+// IsComponentNotFound asserts componentNotFoundError.
+func IsComponentNotFound(err error) bool {
+	return microerror.Cause(err) == componentNotFoundError
+}
+
+// nothingToExtendError indicates that a pull request holds no unexpired
+// reservation on any enabled cluster, so there is nothing for Extend to reset.
+var nothingToExtendError = &microerror.Error{
+	Kind: "nothingToExtendError",
+}
+
+// IsNothingToExtend asserts nothingToExtendError.
+func IsNothingToExtend(err error) bool {
+	return microerror.Cause(err) == nothingToExtendError
+}
+
+// pushError indicates that `git push` itself failed, once render had already
+// committed.
+var pushError = &microerror.Error{
+	Kind: "pushError",
+}
+
+// IsPush asserts pushError.
+func IsPush(err error) bool {
+	return microerror.Cause(err) == pushError
+}
+
+// pushRetriesExhaustedError indicates that a push kept being rejected until
+// PushWithRetry gave up after MaxPushAttempts.
+var pushRetriesExhaustedError = &microerror.Error{
+	Kind: "pushRetriesExhaustedError",
+}
+
+// IsPushRetriesExhausted asserts pushRetriesExhaustedError.
+func IsPushRetriesExhausted(err error) bool {
+	return microerror.Cause(err) == pushRetriesExhaustedError
+}
+
+// dirtyWorktreeError indicates that a rejected push left the working tree
+// carrying changes outside the operation's own commit, so PushWithRetry
+// refused to hard-reset it onto the remote rather than risk destroying them.
+var dirtyWorktreeError = &microerror.Error{
+	Kind: "dirtyWorktreeError",
+}
+
+// IsDirtyWorktree asserts dirtyWorktreeError.
+func IsDirtyWorktree(err error) bool {
+	return microerror.Cause(err) == dirtyWorktreeError
+}
