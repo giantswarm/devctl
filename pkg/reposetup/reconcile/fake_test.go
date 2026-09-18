@@ -911,5 +911,5 @@ func (f fakeRenderer) Render(_ context.Context, req reposetup.RenderRequest) (*r
 		files = append(files, p)
 	}
 	sort.Strings(files)
-	return &reposetup.Scaffold{Dir: req.Dir, Template: req.Entry.Template, Files: files}, nil
+	return &reposetup.Scaffold{Dir: req.Dir, Template: req.Entry.Template, Chart: req.Entry.Chart, Files: files}, nil
 }

@@ -100,6 +100,10 @@ type Entry struct {
 	// Template the repository would be scaffolded from; empty when the
 	// declaration does not derive one.
 	Template Template `json:"template,omitempty"`
+	// Chart is the template whose chart is added at helm/<name> when the
+	// flavours produce one and Template has no chart of its own (the Go
+	// template); empty otherwise.
+	Chart Template `json:"chart,omitempty"`
 	// Options the template's scaffold offers, selected by name through
 	// [RenderRequest.Options]; nil when the template has none.
 	Options []Option `json:"options,omitempty"`
@@ -449,6 +453,7 @@ func derive(entry *Entry, fields Fields) error {
 		return err
 	}
 	entry.Template = template
+	entry.Chart = DeriveChart(template, fields.Gen.Flavours)
 	entry.Options = templateOptions(template)
 	return nil
 }

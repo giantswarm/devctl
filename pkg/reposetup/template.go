@@ -92,3 +92,15 @@ func HasChart(flavours []string) bool {
 	}
 	return false
 }
+
+// DeriveChart returns the template whose chart the scaffold carries beside
+// the derived template t: [TemplateChart] when the flavours produce a chart
+// ([HasChart]) and t is not the chart template already -- the Go service
+// with the app flavour is the Go template plus the chart template's chart at
+// helm/<name>. Empty when the flavours produce no chart or t carries it.
+func DeriveChart(t Template, flavours []string) Template {
+	if t == TemplateChart || !HasChart(flavours) {
+		return ""
+	}
+	return TemplateChart
+}

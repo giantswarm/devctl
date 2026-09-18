@@ -16,15 +16,19 @@ import (
 // template or generator change.
 var update = flag.Bool("update", false, "update golden files")
 
-// renderCases are the kinds of the derivation (D2), one golden each. The
-// Node kind is deferred with its template.
+// renderCases are the kinds of the derivation (D2), one golden each, and
+// the Go service with the app flavour, whose scaffold carries the chart
+// template's chart beside the Go template. The Node kind is deferred with
+// its template.
 var renderCases = []struct {
 	name     string
 	team     string
 	template Template
+	chart    Template
 	options  map[string]string
 }{
 	{name: "go-service", team: "team-bumblebee", template: TemplateGo},
+	{name: "go-app", team: "team-bumblebee", template: TemplateGo, chart: TemplateChart},
 	{name: "chart-app", team: "team-shield", template: TemplateChart},
 	{name: "chart-app-vendir", team: "team-shield", template: TemplateChart, options: map[string]string{
 		OptionSync:          SyncVendir,
@@ -86,6 +90,9 @@ func Test_Render(t *testing.T) {
 			entry := declaration(t, strings.TrimSuffix(tc.name, "-vendir"), tc.team)
 			if entry.Template != tc.template {
 				t.Fatalf("template = %s, want %s", entry.Template, tc.template)
+			}
+			if entry.Chart != tc.chart {
+				t.Fatalf("chart = %q, want %q", entry.Chart, tc.chart)
 			}
 
 			dir := filepath.Join(t.TempDir(), entry.Name)
@@ -192,6 +199,9 @@ func manifest(t *testing.T, s *Scaffold) string {
 
 	var b strings.Builder
 	fmt.Fprintf(&b, "template: %s\n", s.Template)
+	if s.Chart != "" {
+		fmt.Fprintf(&b, "chart: %s\n", s.Chart)
+	}
 	for _, c := range s.Commands {
 		fmt.Fprintf(&b, "command: %s\n", c)
 	}

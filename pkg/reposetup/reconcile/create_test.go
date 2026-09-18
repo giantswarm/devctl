@@ -33,7 +33,7 @@ func TestCreateDryRunWritesNothing(t *testing.T) {
 	require.Equal(t, VerdictDrift, res.Step(StepCreate).Verdict)
 	require.Equal(t, []string{"create giantswarm/sample-service from the added entry"}, res.Step(StepCreate).Changes)
 	require.Equal(t, VerdictDrift, res.Step(StepScaffold).Verdict)
-	require.Equal(t, []string{"render the scaffold and push it as the first commit on main"}, res.Step(StepScaffold).Changes)
+	require.Equal(t, []string{"render the scaffold with the chart of giantswarm/template-app at helm/sample-service and push it as the first commit on main"}, res.Step(StepScaffold).Changes)
 	require.False(t, res.Created)
 	require.Empty(t, res.URL)
 	require.Empty(t, res.ScaffoldCommit)

@@ -25,6 +25,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `repo create` and the set-up engine scaffold a repository whose flavours produce a chart (`app`, `cluster-app`)
+  from a template without one -- the Go service with the `app` flavour -- with the chart of `giantswarm/template-app`
+  at `helm/<name>` (and `.abs/main.yaml` pointing at it), the name substituted and the team annotation set, so the
+  first release's chart job builds instead of failing on a chart that is not there. The dry run, the plan and the
+  scaffold commit name the chart (`chart` on the entry and the scaffold in `--output json`).
 - `repo validate`: the embedded repositories schema admits as `gen.flavours` exactly the flavours devctl's generators
   accept -- `helmchart` is gone from the enum (it is a `gen precommit` flavour, the schema's `gen.preCommit`), so a
   declaration naming it is refused at the schema, in existing mode too, instead of by the first `devctl gen` run
