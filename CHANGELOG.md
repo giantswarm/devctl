@@ -25,6 +25,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `repo validate`: the embedded repositories schema admits as `gen.flavours` exactly the flavours devctl's generators
+  accept -- `helmchart` is gone from the enum (it is a `gen precommit` flavour, the schema's `gen.preCommit`), so a
+  declaration naming it is refused at the schema, in existing mode too, instead of by the first `devctl gen` run
+  align-files makes for the repository; a test pins the enum to `gen.AllFlavours()`. The creation rules no longer add
+  a second problem to a field the schema refused. The embedded copy is otherwise level with `giantswarm/github` main
+  again (field descriptions). (giantswarm/github#6122)
 - `repo reconcile`: the `renovate` step no longer reports `renovate-not-scanned` on a repository younger than a day
   that has a configuration but no trace of a run: Renovate's first run is not due yet (the hosted App picks a new
   repository up within hours, the Dependency Dashboard issue follows), so the step is `ok` with a summary saying so,
