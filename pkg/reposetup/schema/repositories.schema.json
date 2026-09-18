@@ -4,6 +4,7 @@
   "type": "array",
   "items": {
     "type": "object",
+    "description": "One repository of the team whose file the entry lives in. The entry is the request for the repository and its desired state: what it declares (settings, branch protection, CircleCI, description, visibility, lifecycle, generated files) is what the automation keeps true. There is no template field; the template a repository is created from is derived from componentType, gen.flavours and gen.language.",
     "required": [
       "name",
       "componentType"
@@ -26,7 +27,8 @@
           "updateTypes": {
             "type": "array",
             "uniqueItems": true,
-            "description": "Update types that may merge when green in this repository, intersected with the team's Renovate and Dependabot lists. An empty list is a list: it merges no Renovate or Dependabot PR at all, while an Align files or Herald PR still merges. An Align files or Herald PR names no version and is not affected, so \"none\" cannot be named here. An update type the team merges for no kind is refused, and an update whose size the sweep cannot read always waits for a person.",
+            "minItems": 1,
+            "description": "Update types that may merge when green in this repository, intersected with the team's Renovate and Dependabot lists. Name at least one: an empty list merges no Renovate or Dependabot PR at all while an Align files or Herald PR still merges, which is one deleted entry away by accident. Set enabled to false to leave the whole repository alone. An Align files or Herald PR names no version and is not affected, so \"none\" cannot be named here. An update type the team merges for no kind is refused, and an update whose size the sweep cannot read always waits for a person.",
             "items": {
               "type": "string",
               "enum": [
@@ -48,7 +50,7 @@
       "componentType": {
         "type": "string",
         "title": "Component type",
-        "description": "Sets the component type of this repository, specifically for our developer portal catalog, where the component type influences the type of information displayed.",
+        "description": "Sets the component type of this repository, specifically for our developer portal catalog, where the component type influences the type of information displayed. Together with gen.flavours and gen.language it also selects the template a repository is created from -- there is no separate template field.",
         "enum": [
           "appcatalog",
           "cli",
@@ -77,10 +79,12 @@
       },
       "description": {
         "type": "string",
-        "description": "The repository's description on GitHub (the 'About' text). The repository set-up reconciler keeps it in sync with this value; a description changed by hand on GitHub is drift and is set back. See https://github.com/giantswarm/giantswarm/issues/37726."
+        "title": "Repository description",
+        "description": "The repository's description as shown on GitHub (the 'About' text). Part of the desired state: the automation sets it when it creates the repository and keeps it in sync afterwards, so it can be declared for an existing repository as well. Absent means the description on GitHub is left as it is."
       },
       "gen": {
         "type": "object",
+        "description": "What devctl generates for the repository. For a repository the automation creates, flavours and language are mandatory (they select the template together with componentType) and ci.generate defaults to true; an existing entry declares only what it wants generated.",
         "required": [
           "flavours",
           "language"
@@ -97,10 +101,9 @@
                 "cli",
                 "cluster-app",
                 "customer",
+                "fleet",
                 "generic",
-                "helmchart",
-                "k8sapi",
-                "fleet"
+                "k8sapi"
               ],
               "minItems": 1
             }
@@ -155,7 +158,7 @@
             "properties": {
               "generate": {
                 "type": "boolean",
-                "description": "Opt this repo into devctl-generated .circleci/config.yml. The pipeline is derived from gen.flavours / gen.language / Dockerfile presence -- there is no per-repo parameter block. The architect-orb version is baked into devctl, not configured here."
+                "description": "Opt this repo into devctl-generated .circleci/config.yml. The pipeline is derived from gen.flavours / gen.language / Dockerfile presence -- there is no per-repo parameter block. The architect-orb version is baked into devctl, not configured here. For a repository the automation creates, a missing gen.ci means generate: true; an existing entry without gen.ci keeps its hand-maintained CircleCI config."
               },
               "releaseWorkflow": {
                 "type": "string",
@@ -323,12 +326,12 @@
       "lifecycle": {
         "type": "string",
         "enum": [
+          "archived",
           "deprecated",
-          "production",
-          "archived"
+          "production"
         ],
         "default": "production",
-        "description": "Lifecycle stage of the repository. Surfaces in the developer portal catalog. Setting 'deprecated' also makes align-files extend the renovate-presets deprecated.json5 preset (disable routine updates, keep only security/vulnerability remediation) for repos whose Renovate config is generated (gen.ci.generate or the customer flavour); every other repo keeps its hand-maintained renovate.json5. Requires devctl v8.26.0+. Setting 'archived' makes the repository set-up reconciler archive the repository on GitHub and unfollow its CircleCI project; the entry stays in the team file as the record and is never recreated. Deletion is not expressible. See https://github.com/giantswarm/giantswarm/issues/37726."
+        "description": "Lifecycle stage of the repository; surfaces in the developer portal catalog. 'production' (the default) is a repository in active use. 'deprecated' is a component we decided to phase out: align-files extends the renovate-presets deprecated.json5 preset (disable routine updates, keep only security/vulnerability remediation) for repos whose Renovate config is generated (gen.ci.generate or the customer flavour), every other repo keeps its hand-maintained renovate.json5 (requires devctl v8.26.0+). 'archived' is a repository whose work is over: it is archived on GitHub and its CircleCI project is unfollowed, and the entry stays in the team file as the record (the automation never recreates it and never removes the entry). Deletion is not expressible."
       },
       "name": {
         "type": "string",
@@ -375,11 +378,12 @@
       },
       "visibility": {
         "type": "string",
+        "title": "Repository visibility",
         "enum": [
-          "public",
-          "private"
+          "private",
+          "public"
         ],
-        "description": "The repository's visibility on GitHub. The repository set-up reconciler creates the repository with this visibility and keeps it in sync; 'internal' is not offered. A repository whose visibility is changed by hand is drift and is set back. See https://github.com/giantswarm/giantswarm/issues/37726."
+        "description": "The repository's visibility on GitHub. Part of the desired state: the automation creates the repository with it and keeps it in sync afterwards, so it can be declared for an existing repository as well. Only 'public' and 'private' exist for us; 'internal' is refused. Absent means the visibility on GitHub is left as it is."
       }
     }
   }

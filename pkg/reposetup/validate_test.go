@@ -111,7 +111,7 @@ func problemFields(problems []Problem) []string {
 func TestValidateMessagesNameTheReason(t *testing.T) {
 	v, tf := fixtureValidator(t)
 	result, err := v.Validate(context.Background(), Request{TeamFile: tf, Names: []string{
-		"node-ui", "hello-world-app", "chart-name-mismatch", "internal-visibility", "unknown-field", "taken-name", "renamed-name", "twice", "no-gen",
+		"node-ui", "hello-world-app", "chart-name-mismatch", "internal-visibility", "unknown-field", "unknown-flavour", "taken-name", "renamed-name", "twice", "no-gen",
 	}})
 	require.NoError(t, err)
 
@@ -128,6 +128,7 @@ func TestValidateMessagesNameTheReason(t *testing.T) {
 	require.Contains(t, messages["internal-visibility/visibility"], "public")
 	require.Contains(t, messages["internal-visibility/lifecycle"], "archived")
 	require.Equal(t, "not a field of the repositories schema", messages["unknown-field/template"])
+	require.Equal(t, "value must be one of 'app', 'cli', 'cluster-app', 'customer', 'fleet', 'generic', 'k8sapi'", messages["unknown-flavour/gen.flavours[0]"])
 	require.Equal(t, "taken: repository giantswarm/taken-name exists", messages["taken-name/name"])
 	require.Contains(t, messages["renamed-name/name"], "redirects to giantswarm/new-name")
 	require.Contains(t, messages["twice/name"], "declared more than once")
@@ -289,7 +290,6 @@ func TestValidateExistingMode(t *testing.T) {
 		// chart-name convention, an unavailable template, a taken name.
 		{name: "no-gen", verdict: VerdictFree},
 		{name: "node-ui", verdict: VerdictFree},
-		{name: "unknown-flavour", verdict: VerdictFree},
 		{name: "hello-world-app", template: TemplateChart, verdict: VerdictFree},
 		{name: "chart-name-mismatch", template: TemplateChart, verdict: VerdictFree},
 		{name: "Bad_Name", template: TemplateMinimal, verdict: VerdictFree},
@@ -297,8 +297,10 @@ func TestValidateExistingMode(t *testing.T) {
 		{name: "taken-name", template: TemplateGo, verdict: VerdictTaken},
 		{name: "renamed-name", template: TemplateGo, verdict: VerdictTaken},
 		// The schema and the file's integrity still refuse: gen, once
-		// present, needs flavours and language by the schema.
+		// present, needs flavours and language by the schema, and a flavour
+		// devctl has no generator for is not in the schema's enum.
 		{name: "empty-gen", verdict: VerdictFree, fields: []string{"gen.language"}},
+		{name: "unknown-flavour", verdict: VerdictFree, fields: []string{"gen.flavours[0]"}},
 		{name: "internal-visibility", template: TemplateGo, verdict: VerdictFree, fields: []string{"lifecycle", "visibility"}},
 		{name: "unknown-field", template: TemplateGo, verdict: VerdictFree, fields: []string{"template"}},
 		{name: "twice", template: TemplateGo, verdict: VerdictFree, fields: []string{"name"}},
@@ -330,7 +332,7 @@ func TestValidateExistingMode(t *testing.T) {
 				refused = append(refused, entry.Name)
 			}
 		}
-		require.Equal(t, []string{"empty-gen", "internal-visibility", "unknown-field", "twice", "twice"}, refused)
+		require.Equal(t, []string{"empty-gen", "internal-visibility", "unknown-field", "unknown-flavour", "twice", "twice"}, refused)
 		require.False(t, result.Accepted)
 	})
 

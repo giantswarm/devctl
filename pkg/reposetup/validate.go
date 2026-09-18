@@ -306,6 +306,16 @@ func withDefaults(d Declaration) Declaration {
 	return Declaration{Name: d.Name, node: node}
 }
 
+// hasProblem says whether a problem names the field already.
+func (e *Entry) hasProblem(field string) bool {
+	for _, p := range e.Problems {
+		if p.Field == field {
+			return true
+		}
+	}
+	return false
+}
+
 // refuse adds a problem naming the field.
 func (e *Entry) refuse(field, format string, args ...any) {
 	e.Problems = append(e.Problems, Problem{Field: field, Message: fmt.Sprintf(format, args...)})
@@ -330,7 +340,12 @@ func (v Validator) creationRules(ctx context.Context, owner string, entry *Entry
 			entry.refuse("gen.language", "required for a repository the reconciler creates")
 		}
 	}
-	entry.Problems = append(entry.Problems, unknownGen(flavours, language)...)
+	// A field the schema refused already is not named twice.
+	for _, p := range unknownGen(flavours, language) {
+		if !entry.hasProblem(p.Field) {
+			entry.Problems = append(entry.Problems, p)
+		}
+	}
 
 	// The template: derived, never declared.
 	if derivesTemplate(fields) {
@@ -400,8 +415,9 @@ func (v Validator) existingRules(ctx context.Context, owner string, entry *Entry
 }
 
 // unknownGen returns a problem for each flavour and the language devctl has
-// no generator for (the schema accepts helmchart; devctl has no such
-// flavour).
+// no generator for. The embedded schema's enums say the same (a test pins
+// them); a schema read from a file or from giantswarm/github may be older
+// than this devctl.
 func unknownGen(flavours []string, language string) []Problem {
 	var problems []Problem
 	for i, f := range flavours {
