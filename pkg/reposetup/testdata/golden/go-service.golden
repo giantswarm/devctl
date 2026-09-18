@@ -1042,11 +1042,11 @@ repos:
         # a key; gitleaks stays the scanner of record for the vendored subtree.
         exclude: "^helm/[^/]+/charts/.*"
       - id: end-of-file-fixer
-        exclude: "(.*testdata/.*|^\\.yarn/.*|^helm/[^/]+/charts/.*)"
+        exclude: "(.*testdata/.*|^\\.yarn/.*|^helm/[^/]+/charts/.*|.*.patch)"
       - id: mixed-line-ending
-        exclude: "^helm/[^/]+/charts/.*"
+        exclude: "(^helm/[^/]+/charts/.*|.*.patch)"
       - id: trailing-whitespace
-        exclude: "(.*testdata/.*|^\\.yarn/.*|^helm/[^/]+/charts/.*)"
+        exclude: "(.*testdata/.*|^\\.yarn/.*|^helm/[^/]+/charts/.*|.*.patch)"
 
   - repo: https://github.com/compilerla/conventional-pre-commit
     rev: v4.4.0

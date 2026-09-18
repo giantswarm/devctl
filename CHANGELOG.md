@@ -22,6 +22,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   steps standalone for one accepted entry with any authenticated client — the same steps `Run` executes for the
   reconciler — and returns the repository URL, the scaffold commit and the step results; giantswarm-repo-manager
   imports it to create as the person (giantswarm/giantswarm#37726, #2238).
+- Ignore `.patch` files in the pre-commit config for the file-checking hooks.
 
 ### Fixed
 
