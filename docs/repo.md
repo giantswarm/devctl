@@ -98,6 +98,7 @@ it the notice is not given and the command says so.
 | `--language` | `gen.language` | devctl's languages -- `devctl repo create --help` lists them; `node` is refused until its template exists |
 | `--description` | `description` | free text, set on the repository at its creation |
 | `--visibility` | `visibility` | the schema's enum -- `devctl repo create --help` lists it |
+| -- | `align` | always `true`: the repository is opted in to alignment by its creation, so the reconciler changes it to its declared set-up on every trigger. An existing repository opts in when its team adds the field to its entry; without it every run is a check that changes nothing |
 
 `gen.flavours` and `gen.language` are mandatory for a repository the command creates;
 `gen.ci.generate` is written as the CircleCI generator decides: `true` when it has a job for the
@@ -149,7 +150,10 @@ those steps are skipped). Both paths print the same verdicts the Repositories pa
 
 The repository must be declared in a team file; an undeclared repository is reported as such with
 `devctl repo create` as the fix. `--team` names the file to read instead of searching them all.
-Nothing is changed by `repo status`.
+When the engine reads the entry it also says whether the repository is opted in to alignment
+(`align: true`; without it the reconciler checks the repository and changes nothing); the manager's
+record carries the set-up state alone, so that path does not name the opt-in. Nothing is changed by
+`repo status`.
 
 ## `devctl repo validate`
 

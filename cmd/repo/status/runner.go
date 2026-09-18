@@ -44,6 +44,10 @@ type output struct {
 	// Result is the engine's check result: the manager's stored one or the
 	// one just run.
 	Result *reconcile.Result `json:"result"`
+	// Align is the repository's opt-in to alignment as its entry declares it
+	// (align: true); nil when the source did not read the entry -- the
+	// manager's record carries the set-up state alone.
+	Align *bool `json:"align,omitempty"`
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
@@ -160,6 +164,11 @@ func (r *runner) fromEngine(ctx context.Context, owner, repo string) (*output, e
 		}
 		return nil, microerror.Maskf(invalidDeclarationError, "the entry for %s in %s is refused by the engine, fix it before its set-up state can be judged: %s", repo, teamFile.Path, strings.Join(problems, "; "))
 	}
+	declared, _ := teamFile.Entry(repo)
+	fields, err := declared.Fields()
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
 
 	runner := reconcile.Runner{GitHub: gh, Checks: client}
 	if circleToken := os.Getenv(r.flag.CircleCITokenEnvVar); circleToken != "" {
@@ -176,7 +185,16 @@ func (r *runner) fromEngine(ctx context.Context, owner, repo string) (*output, e
 		return nil, microerror.Mask(err)
 	}
 
-	return &output{Source: sourceEngine, Result: res}, nil
+	return &output{Source: sourceEngine, Result: res, Align: &fields.Align}, nil
+}
+
+// alignLine names the repository's opt-in to alignment and what it means
+// for the reconciler's runs.
+func alignLine(optedIn bool) string {
+	if optedIn {
+		return "opted in to alignment (align: true): the reconciler changes this repository to its declared set-up on every trigger"
+	}
+	return "not opted in to alignment: the reconciler checks this repository and changes nothing; opt in with align: true in its entry"
 }
 
 func (r *runner) print(out *output) error {
@@ -194,6 +212,9 @@ func (r *runner) print(out *output) error {
 	fmt.Fprintf(r.stdout, "%s declared in %s (%s mode, from %s)\n", res.Repository, res.Team, res.Mode, from)
 	if res.Declared != res.Repository {
 		fmt.Fprintf(r.stdout, "declared as %s: renamed on GitHub\n", res.Declared)
+	}
+	if out.Align != nil {
+		fmt.Fprintln(r.stdout, alignLine(*out.Align))
 	}
 	for _, step := range res.Steps {
 		fmt.Fprintf(r.stdout, "  %-12s %-9s %s\n", step.Step, step.Verdict, step.Summary)

@@ -142,3 +142,17 @@
     flavours:
       - generic
     language: generic
+- name: align-opt-in
+  componentType: service
+  align: true
+  gen:
+    flavours:
+      - app
+    language: go
+- name: align-not-bool
+  componentType: service
+  align: "yes"
+  gen:
+    flavours:
+      - app
+    language: go

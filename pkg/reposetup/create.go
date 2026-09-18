@@ -2,7 +2,6 @@ package reposetup
 
 import (
 	"bytes"
-	"strconv"
 	"strings"
 
 	"github.com/giantswarm/microerror"
@@ -12,7 +11,10 @@ import (
 // Creation is what a person declares to create a repository: the fields of
 // `devctl repo create`, the same the Repositories page and
 // giantswarm-repo-manager's create_repository take. Everything else the
-// entry needs is a default the validation applies.
+// entry needs is a default the validation applies -- and the opt-in to
+// alignment, which a creation always carries: a repository created through
+// the product is opted in by its creation, so the reconciler sets it up
+// from the merged entry instead of only checking it.
 type Creation struct {
 	Name          string
 	ComponentType string
@@ -23,8 +25,10 @@ type Creation struct {
 }
 
 // Declaration renders the creation as a team-file entry in the key order the
-// team files use: name, description, visibility, componentType, gen. Empty
-// fields are left out, so the validation names what is missing.
+// team files use: name, description, visibility, componentType, align, gen.
+// Empty fields are left out, so the validation names what is missing.
+// align is always true: the creation is the repository's opt-in to
+// alignment, and the reconciler reads it from the file on every trigger.
 // gen.ci.generate is written out -- align-files reads the file, not the dry
 // run -- as the CircleCI generator decides: true when it has a job for the
 // declaration (a Go or Node build, a chart from the app flavour), false when
@@ -45,6 +49,7 @@ func (c Creation) Declaration() (Declaration, error) {
 	if c.ComponentType != "" {
 		setMappingValue(node, "componentType", scalarNode(c.ComponentType))
 	}
+	setMappingValue(node, "align", boolNode(true))
 
 	gen := mappingNode()
 	if len(c.Flavours) > 0 {
@@ -59,7 +64,7 @@ func (c Creation) Declaration() (Declaration, error) {
 	}
 	ci := mappingNode()
 	generate := hasCIJob(Fields{Gen: &GenFields{Flavours: c.Flavours, Language: c.Language}})
-	setMappingValue(ci, "generate", &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!bool", Value: strconv.FormatBool(generate)})
+	setMappingValue(ci, "generate", boolNode(generate))
 	setMappingValue(gen, "ci", ci)
 	setMappingValue(node, "gen", gen)
 

@@ -15,6 +15,11 @@
         "type": "boolean",
         "description": "Opts the repository's public Helm chart(s) into publication on Artifact Hub under the giantswarm organization (https://artifacthub.io/packages/search?org=giantswarm). The nightly artifacthub-sync workflow resolves the chart name(s) via the 'giantswarm.io/helmcharts' catalog annotation and registers those that exist in gsoci; removing the flag deregisters them. Components tagged 'private' in the catalog are never published. Default: not published. See https://github.com/giantswarm/roadmap/issues/3940."
       },
+      "align": {
+        "type": "boolean",
+        "default": false,
+        "description": "The repository's opt-in to alignment. With true the reconciler changes the repository to its declared set-up and the company baseline on every trigger: a merged change of this entry, Align now, the nightly. Without it every run is a check -- the drift in the run's summary, the artifact and the inventory, nothing changed on GitHub or CircleCI. A repository created by the automation (devctl repo create, the Repositories page, the Repo Manager) is declared with align: true: its creation is the opt-in. An existing repository opts in when its team adds the field to its entry in a pull request the team reviews; a lifecycle change carries it. The team's policy file repository-setup/team-<name>.yaml names the team's channels and holds no opt-in."
+      },
       "botPRsSweep": {
         "type": "object",
         "additionalProperties": false,

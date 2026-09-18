@@ -25,7 +25,9 @@ commit on main -- the scaffold's auto-release workflow tags v0.1.0 from it
 -- and opens the declaration's pull request last, so the change under
 review declares a repository that exists and is yours. Everything else --
 settings, permissions, protection, CircleCI, the catalog -- the reconciler
-applies from the merged entry.
+applies from the merged entry: the entry declares align: true, the
+repository's opt-in to alignment, so the reconciler sets it up on every
+trigger instead of only checking it.
 
 Only an organization owner may create a repository in giantswarm: the
 organization does not let members create them. Your role is read before
