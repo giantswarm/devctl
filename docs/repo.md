@@ -145,7 +145,7 @@ those steps are skipped). Both paths print the same verdicts the Repositories pa
 | `ok` | no drift |
 | `drift` | drift found; the lines `would: …` are the changes a repair would make |
 | `reported` | nothing the engine repairs, but findings with their fix for a person |
-| `skipped` | the step does not apply (repository missing or empty, archived, no client for the system) |
+| `skipped` | the step does not apply (repository missing or empty, archived or deleted, no client for the system) |
 | `failed` | the step could not run to its end |
 
 The repository must be declared in a team file; an undeclared repository is reported as such with

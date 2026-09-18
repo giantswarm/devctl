@@ -94,7 +94,7 @@
 - name: internal-visibility
   componentType: service
   visibility: internal
-  lifecycle: deleted
+  lifecycle: retired
   gen:
     flavours:
       - app

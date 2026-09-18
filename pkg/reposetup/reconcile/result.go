@@ -20,7 +20,8 @@
 // baseline, team permissions, branch protection with the required checks on
 // the reported-only rule, CircleCI (follow, setup workflows, checkout key),
 // webhooks, Renovate (check only), CODEOWNERS (a pull request), description
-// and visibility, lifecycle (archived → archived on GitHub and unfollowed),
+// and visibility, lifecycle (archived → archived on GitHub and unfollowed;
+// deleted → unfollowed and deleted on GitHub, the entry the record),
 // catalog and mapping (the giantswarm/github workflows), first-release
 // verification (tag → pipeline → workflows; a missed tag build is
 // triggered).
@@ -89,7 +90,7 @@ const (
 	// for a person.
 	VerdictReported Verdict = "reported"
 	// VerdictSkipped: the step did not apply (repository missing or empty,
-	// archived, no client for the system).
+	// archived or deleted, no client for the system).
 	VerdictSkipped Verdict = "skipped"
 	// VerdictFailed: the step could not run to its end; Summary says why.
 	VerdictFailed Verdict = "failed"

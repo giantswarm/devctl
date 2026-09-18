@@ -309,6 +309,10 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 		}
 		writeJSON(w, 200, repo.toGitHub())
 	}))
+	mux.HandleFunc("DELETE /repos/{owner}/{repo}", f.withRepo(func(w http.ResponseWriter, _ *http.Request, repo *fakeRepo) {
+		delete(f.repos, repo.owner+"/"+repo.name)
+		w.WriteHeader(http.StatusNoContent)
+	}))
 	mux.HandleFunc("GET /repos/{owner}/{repo}/commits", f.withRepo(func(w http.ResponseWriter, _ *http.Request, repo *fakeRepo) {
 		if repo.empty {
 			writeJSON(w, http.StatusConflict, map[string]string{"message": "Git Repository is empty."})

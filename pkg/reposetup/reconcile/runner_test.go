@@ -33,6 +33,7 @@ const (
     language: go
 `
 	archivedEntryYAML = entryYAML + "  lifecycle: archived\n"
+	deletedEntryYAML  = entryYAML + "  lifecycle: deleted\n"
 	privateEntryYAML  = `- name: sample-service
   componentType: service
   description: A sample service
@@ -603,6 +604,31 @@ func TestSteps(t *testing.T) {
 			wantCheck: VerdictOK,
 		},
 		{
+			name: "lifecycle: deleted unfollows on CircleCI and deletes on GitHub; the next run finds the record", step: StepLifecycle, entry: deletedEntryYAML,
+			seed: func(h *harness) {
+				h.gh.addRepo(owner, name)
+				h.cc.follow(owner, name)
+			},
+			wantCheck: VerdictDrift, wantChange: "unfollow on CircleCI and stop building; delete on GitHub",
+			// The second repair finds no repository: the create step reads the
+			// declaration as the record and the lifecycle step is skipped on it.
+			wantAfter: VerdictSkipped,
+			verify: func(t *testing.T, h *harness, repair *Result) {
+				_, exists := h.gh.repos[owner+"/"+name]
+				require.False(t, exists, "deleted on GitHub")
+				p := h.cc.projects[owner+"/"+name]
+				require.NotNil(t, p, "the project stays on CircleCI, as it does live")
+				require.False(t, p.following, "the token's user unfollowed")
+				require.False(t, p.building, "stopped building")
+				require.Equal(t, "deleted", repair.Step(StepLifecycle).Summary)
+			},
+		},
+		{
+			name: "lifecycle: deleted on a repository that is archived on GitHub deletes it", step: StepLifecycle, entry: deletedEntryYAML,
+			seed:      func(h *harness) { h.gh.addRepo(owner, name).archived = true },
+			wantCheck: VerdictDrift, wantChange: "delete on GitHub", wantAfter: VerdictSkipped,
+		},
+		{
 			name: "lifecycle: archived on GitHub without the lifecycle is reported", step: StepLifecycle,
 			seed:      func(h *harness) { h.gh.addRepo(owner, name).archived = true },
 			wantCheck: VerdictReported, wantFinding: FindingArchivedUndeclared, wantAfter: VerdictReported,
@@ -948,6 +974,44 @@ func TestRunArchivedDeclarationRunsLifecycleOnly(t *testing.T) {
 			require.Equal(t, VerdictSkipped, sr.Verdict, "%s", sr.Step)
 			require.Equal(t, "lifecycle: archived", sr.Summary)
 		}
+	}
+}
+
+func TestRunDeletedDeclarationRunsLifecycleOnly(t *testing.T) {
+	h := newHarness(t, deletedEntryYAML)
+	h.gh.addRepo(owner, name)
+	res := h.run(ModeCheck, false)
+	require.False(t, res.Converged)
+	for _, sr := range res.Steps {
+		switch sr.Step {
+		case StepCreate:
+			require.Equal(t, VerdictOK, sr.Verdict)
+		case StepLifecycle:
+			require.Equal(t, VerdictDrift, sr.Verdict)
+			require.Equal(t, []string{"delete on GitHub"}, sr.Changes, "not followed on CircleCI: nothing to unfollow")
+		default:
+			require.Equal(t, VerdictSkipped, sr.Verdict, "%s", sr.Step)
+			require.Equal(t, "lifecycle: deleted", sr.Summary)
+		}
+	}
+}
+
+// A declared deletion whose repository is gone is the record: converged, no
+// finding, nothing to do — on the schedule as on a push.
+func TestRunDeletedDeclarationOfAGoneRepositoryIsTheRecord(t *testing.T) {
+	h := newHarness(t, deletedEntryYAML)
+	for _, added := range []bool{false, true} {
+		res := h.run(ModeRepair, added)
+		require.True(t, res.Converged, "added=%v", added)
+		require.Empty(t, res.Findings(), "added=%v", added)
+		require.Equal(t, "deleted, as declared", res.Step(StepCreate).Summary)
+		for _, sr := range res.Steps {
+			if sr.Step != StepCreate {
+				require.Equal(t, VerdictSkipped, sr.Verdict, "%s", sr.Step)
+				require.Equal(t, "deleted, as declared", sr.Summary)
+			}
+		}
+		require.Empty(t, h.mutations(), "added=%v: nothing is created or written", added)
 	}
 }
 

@@ -9,6 +9,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `lifecycle: deleted`, the fourth lifecycle of the repositories schema devctl ships, and the engine's handling of it:
+  the lifecycle step unfollows the repository's CircleCI project and stops it building, then deletes the repository on
+  GitHub -- code, issues, pull requests, releases and packages with it (an organization owner can restore it on GitHub
+  for 90 days) -- and the entry stays in the team file as the record of the deletion. Every other step is skipped on
+  the declaration (`lifecycle: deleted`); a declared deletion whose repository is gone is converged with nothing to
+  report (`deleted, as declared`). The `repository-missing` fix names `lifecycle: deleted` as the record of a
+  repository deleted by hand, in place of removing the entry (#2262).
+
 - The repositories schema devctl ships (`pkg/reposetup/schema/repositories.schema.json`, the copy of
   giantswarm/github's `.github/repositories.schema.json`) knows `align`, the repository's opt-in to alignment: with
   `align: true` in its entry the reconciler changes the repository to its declared set-up on every trigger, without it
