@@ -18,6 +18,17 @@ import (
 // LifecycleArchived is the lifecycle value that archives a repository.
 const LifecycleArchived = "archived"
 
+// LifecycleDeleted is the lifecycle value that deletes a repository on
+// GitHub; the entry stays in the team file as the record of the deletion.
+const LifecycleDeleted = "deleted"
+
+// lifecycleOver says whether the declared lifecycle ends the repository's
+// life — archived or deleted — so that the lifecycle step is the one that
+// applies.
+func lifecycleOver(lifecycle string) bool {
+	return lifecycle == LifecycleArchived || lifecycle == LifecycleDeleted
+}
+
 // ReportedChecker returns the check contexts that have reported on the
 // default branch or a recently merged pull request — the reported-only rule
 // of `devctl repo checks`. *githubclient.Client satisfies it.
@@ -290,13 +301,15 @@ func (s *run) skipReason(step Step) string {
 		return ""
 	}
 	if s.repo == nil {
+		if s.fields.Lifecycle == LifecycleDeleted {
+			return "deleted, as declared"
+		}
 		return "repository does not exist"
 	}
-	declaredArchived := s.fields.Lifecycle == LifecycleArchived
-	if declaredArchived && step != StepLifecycle {
-		return "lifecycle: archived"
+	if lifecycleOver(s.fields.Lifecycle) && step != StepLifecycle {
+		return "lifecycle: " + s.fields.Lifecycle
 	}
-	if s.repo.GetArchived() && !declaredArchived {
+	if s.repo.GetArchived() && s.fields.Lifecycle != LifecycleArchived {
 		switch step {
 		case StepLifecycle, StepRelease:
 		default:

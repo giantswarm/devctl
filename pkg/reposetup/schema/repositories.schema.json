@@ -332,11 +332,12 @@
         "type": "string",
         "enum": [
           "archived",
+          "deleted",
           "deprecated",
           "production"
         ],
         "default": "production",
-        "description": "Lifecycle stage of the repository; surfaces in the developer portal catalog. 'production' (the default) is a repository in active use. 'deprecated' is a component we decided to phase out: align-files extends the renovate-presets deprecated.json5 preset (disable routine updates, keep only security/vulnerability remediation) for repos whose Renovate config is generated (gen.ci.generate or the customer flavour), every other repo keeps its hand-maintained renovate.json5 (requires devctl v8.26.0+). 'archived' is a repository whose work is over: it is archived on GitHub and its CircleCI project is unfollowed, and the entry stays in the team file as the record (the automation never recreates it and never removes the entry). Deletion is not expressible."
+        "description": "Lifecycle stage of the repository; surfaces in the developer portal catalog. 'production' (the default) is a repository in active use. 'deprecated' is a component we decided to phase out: align-files extends the renovate-presets deprecated.json5 preset (disable routine updates, keep only security/vulnerability remediation) for repos whose Renovate config is generated (gen.ci.generate or the customer flavour), every other repo keeps its hand-maintained renovate.json5 (requires devctl v8.26.0+). 'archived' is a repository whose work is over: it is archived on GitHub and its CircleCI project is unfollowed, and the entry stays in the team file as the record (the automation never recreates it and never removes the entry). 'deleted' is a repository that is to be gone: the reconciler unfollows its CircleCI project and deletes it on GitHub -- code, issues, pull requests, releases and packages with it; an organization owner can restore it on GitHub for 90 days -- and the entry stays in the team file as the record of the deletion (never recreated, never removed by the automation). Like an archive it is set in a team-file pull request the owning team reviews."
       },
       "name": {
         "type": "string",
