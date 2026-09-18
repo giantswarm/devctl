@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/giantswarm/microerror"
@@ -143,11 +144,15 @@ func (d Declaration) YAML() (string, error) {
 // scaffold rendering read: what align-files reads when it runs the
 // generators for the repository.
 type Fields struct {
-	Name           string   `yaml:"name"`
-	ComponentType  string   `yaml:"componentType"`
-	Description    string   `yaml:"description"`
-	Visibility     string   `yaml:"visibility"`
-	Lifecycle      string   `yaml:"lifecycle"`
+	Name          string `yaml:"name"`
+	ComponentType string `yaml:"componentType"`
+	Description   string `yaml:"description"`
+	Visibility    string `yaml:"visibility"`
+	Lifecycle     string `yaml:"lifecycle"`
+	// Align is the repository's opt-in to alignment: with it the reconciler
+	// changes the repository to its declared set-up on every trigger,
+	// without it every run is a check that changes nothing.
+	Align          bool     `yaml:"align"`
 	ChoreReviewers []string `yaml:"choreReviewers"`
 	Replace        *struct {
 		Precommit bool `yaml:"precommit"`
@@ -265,6 +270,10 @@ func setMappingValue(m *yaml.Node, key string, value *yaml.Node) {
 
 func scalarNode(value string) *yaml.Node {
 	return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: value}
+}
+
+func boolNode(value bool) *yaml.Node {
+	return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!bool", Value: strconv.FormatBool(value)}
 }
 
 func mappingNode() *yaml.Node {

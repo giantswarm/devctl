@@ -7,8 +7,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- The repositories schema devctl ships (`pkg/reposetup/schema/repositories.schema.json`, the copy of
+  giantswarm/github's `.github/repositories.schema.json`) knows `align`, the repository's opt-in to alignment: with
+  `align: true` in its entry the reconciler changes the repository to its declared set-up on every trigger, without it
+  every run is a check that changes nothing. `reposetup.Fields.Align` carries the field; `repo status` says whether
+  the repository is opted in when the engine reads the entry (#2259).
+
 ### Changed
 
+- `repo create` declares `align: true`: a repository created through the product is opted in to alignment by its
+  creation, so the run that follows its merged pull request sets it up instead of only checking it. The entry's key
+  order is name, description, visibility, componentType, align, gen (#2259).
 - `repo create` is pull-request-last: the dry run, then the repository created with the person's GitHub login
   (description and visibility from the declaration), the scaffold pushed as the one commit on `main`, then the
   declaration's pull request in `giantswarm/github`, validated in existing mode for a repository that exists and is

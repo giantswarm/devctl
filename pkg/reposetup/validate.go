@@ -303,7 +303,7 @@ func withDefaults(d Declaration) Declaration {
 			setMappingValue(genNode, "ci", ci)
 		}
 		if ci.Kind == yaml.MappingNode && mappingValue(ci, "generate") == nil {
-			ci.Content = append([]*yaml.Node{scalarNode("generate"), {Kind: yaml.ScalarNode, Tag: "!!bool", Value: "true"}}, ci.Content...)
+			ci.Content = append([]*yaml.Node{scalarNode("generate"), boolNode(true)}, ci.Content...)
 		}
 	}
 
