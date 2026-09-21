@@ -149,6 +149,11 @@ type Fields struct {
 	Description   string `yaml:"description"`
 	Visibility    string `yaml:"visibility"`
 	Lifecycle     string `yaml:"lifecycle"`
+	// DefaultBranch is the repository's default branch, main unless
+	// declared: the settings step keeps the repository on it and the
+	// protection step protects it. A fork line declares the branch that
+	// carries the upstream release plus the carried patches.
+	DefaultBranch string `yaml:"defaultBranch"`
 	// Align is the repository's opt-in to alignment: with it the reconciler
 	// changes the repository to its declared set-up on every trigger,
 	// without it every run is a check that changes nothing.

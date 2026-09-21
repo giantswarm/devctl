@@ -43,6 +43,11 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, _ []string) error {
 	var err error
 
+	// A fork line carries its upstream's files: nothing is generated for it.
+	if !r.flag.Flavours.Generates() {
+		return nil
+	}
+
 	// The image pipeline is derived from repo content: architect already
 	// requires a Dockerfile to build an image, so its presence is the signal.
 	_, statErr := os.Stat("Dockerfile")

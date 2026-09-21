@@ -80,6 +80,12 @@
           "type": "string"
         }
       },
+      "defaultBranch": {
+        "type": "string",
+        "minLength": 1,
+        "default": "main",
+        "description": "The repository's default branch, 'main' unless declared. The settings step keeps the repository on it and renames a default branch that is not the declared one; the protection step protects it and every other step reads the repository on it. A repository whose default branch is another one declares it here and keeps it. For a fork line, the branch that carries the upstream release plus the carried patches. Requires devctl v8.78.0+."
+      },
       "deploymentNames": {
         "type": "array",
         "description": "List of names of apps which are deployed from this repository. Setting this will overwrite the default discovery of apps named REPONAME and REPONAME-app.",
@@ -103,7 +109,7 @@
         "properties": {
           "flavours": {
             "type": "array",
-            "description": "devctl flavours of the repository (see devctl docs/flavours.md), passed to every 'devctl gen' the sync runs. 'customer' repositories get the generated GitHub workflows plus a generated renovate.json5 extending the giantswarm base preset, and no CircleCI.",
+            "description": "devctl flavours of the repository (see devctl docs/flavours.md), passed to every 'devctl gen' the sync runs. 'customer' repositories get the generated GitHub workflows plus a generated renovate.json5 extending the giantswarm base preset, and no CircleCI. 'fork' is a fork line, a repository that carries an upstream release plus the carried patches on the branch its defaultBranch declares: nothing is generated for it, the scaffold and CODEOWNERS steps are skipped on it, every other step runs as declared. Requires devctl v8.78.0+.",
             "items": {
               "type": "string",
               "enum": [
@@ -112,6 +118,7 @@
                 "cluster-app",
                 "customer",
                 "fleet",
+                "fork",
                 "generic",
                 "k8sapi"
               ],

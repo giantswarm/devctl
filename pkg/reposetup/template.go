@@ -43,9 +43,9 @@ const nodeTemplateUnavailable = "the Node template is not available yet"
 // DeriveTemplate returns the template a declaration is scaffolded from.
 // There is no template field: the component type, flavours and language
 // decide. Language go → [TemplateGo]; language generic with the app flavour
-// → [TemplateChart]; the customer flavour or component type, the languages
-// python and kyverno-policy, and a generic repository without a chart →
-// [TemplateMinimal]. Language node has no template yet and is refused with
+// → [TemplateChart]; the customer flavour or component type, the fork
+// flavour, the languages python and kyverno-policy, and a generic repository
+// without a chart → [TemplateMinimal]. Language node has no template yet and is refused with
 // an error [IsTemplateUnavailable] asserts. An unknown flavour or language
 // is refused with the error [gen.NewFlavour] or [gen.NewLanguage] returns.
 func DeriveTemplate(componentType string, flavours []string, language string) (Template, error) {
@@ -63,7 +63,7 @@ func DeriveTemplate(componentType string, flavours []string, language string) (T
 		fl = append(fl, flavour)
 	}
 
-	if componentType == componentTypeCustomer || fl.Contains(gen.FlavourCustomer) {
+	if componentType == componentTypeCustomer || fl.Contains(gen.FlavourCustomer) || !fl.Generates() {
 		return TemplateMinimal, nil
 	}
 

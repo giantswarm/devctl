@@ -38,6 +38,13 @@ func lifecycleOver(lifecycle string) bool {
 // declared.
 const flavourCustomer = "customer"
 
+// flavourFork is the gen.flavours value of a fork line: the repository
+// carries an upstream release plus the carried patches on the branch its
+// entry declares as defaultBranch. The scaffold and codeowners steps are
+// skipped on it and nothing is generated for it; every other step runs as
+// declared, protection on the declared branch included.
+const flavourFork = "fork"
+
 // ReportedChecker returns the check contexts that have reported on the
 // default branch or a recently merged pull request — the reported-only rule
 // of `devctl repo checks`. *githubclient.Client satisfies it.
@@ -345,6 +352,12 @@ func (r *Runner) skipReason(ctx context.Context, s *run, step Step) (string, err
 			return "flavour " + flavourCustomer, nil
 		}
 	}
+	if s.hasFlavour(flavourFork) {
+		switch step {
+		case StepScaffold, StepCodeowners:
+			return "flavour " + flavourFork, nil
+		}
+	}
 	switch step {
 	case StepProtection, StepCircleCI, StepRenovate, StepCodeowners, StepRelease:
 		if s.empty {
@@ -423,9 +436,21 @@ func (r *Runner) now() time.Time {
 	return time.Now()
 }
 
+// branch is the branch the steps read the repository on: its default branch
+// on GitHub, the declared one until the repository has one.
 func (s *run) branch() string {
 	if b := s.repo.GetDefaultBranch(); b != "" {
 		return b
+	}
+	return s.defaultBranch()
+}
+
+// defaultBranch is the branch the entry declares as the repository's default
+// branch, the baseline's when it declares none: the branch the settings step
+// keeps the repository on and the protection step protects.
+func (s *run) defaultBranch() string {
+	if s.fields.DefaultBranch != "" {
+		return s.fields.DefaultBranch
 	}
 	return s.baseline.DefaultBranch
 }

@@ -10,8 +10,8 @@ import (
 )
 
 // stepSettings applies the settings baseline: features, merge settings,
-// pull-request settings, the default branch and the workflows' default
-// token permission. Only the fields that differ are sent.
+// pull-request settings, the declared default branch and the workflows'
+// default token permission. Only the fields that differ are sent.
 func (r *Runner) stepSettings(ctx context.Context, s *run, sr *StepResult) error {
 	b := s.baseline
 	edit := &github.Repository{}
@@ -46,13 +46,13 @@ func (r *Runner) stepSettings(ctx context.Context, s *run, sr *StepResult) error
 		}
 	}
 
-	if got := repo.GetDefaultBranch(); !s.empty && !s.keepsDefaultBranch() && got != "" && got != b.DefaultBranch {
-		err := s.plan(sr, fmt.Sprintf("default branch %q → %q", got, b.DefaultBranch), func() error {
-			_, _, err := r.GitHub.Repositories.RenameBranch(ctx, s.owner, s.name, got, b.DefaultBranch)
+	if got, want := repo.GetDefaultBranch(), s.defaultBranch(); !s.empty && !s.keepsDefaultBranch() && got != "" && got != want {
+		err := s.plan(sr, fmt.Sprintf("default branch %q → %q", got, want), func() error {
+			_, _, err := r.GitHub.Repositories.RenameBranch(ctx, s.owner, s.name, got, want)
 			if err != nil {
 				return err
 			}
-			s.repo.DefaultBranch = new(b.DefaultBranch)
+			s.repo.DefaultBranch = new(want)
 			return nil
 		})
 		if err != nil {

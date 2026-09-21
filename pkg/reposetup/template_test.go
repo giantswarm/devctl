@@ -27,6 +27,7 @@ func TestDeriveTemplate(t *testing.T) {
 		{name: "fleet configuration", componentType: "configuration", flavours: []string{"fleet"}, language: "generic", want: TemplateMinimal},
 		{name: "customer by component type", componentType: "customer", flavours: []string{"app"}, language: "go", want: TemplateMinimal},
 		{name: "customer by flavour", componentType: "configuration", flavours: []string{"customer"}, language: "generic", want: TemplateMinimal},
+		{name: "fork line", componentType: "service", flavours: []string{"fork"}, language: "go", want: TemplateMinimal},
 		{name: "python", componentType: "cli", flavours: []string{"generic"}, language: "python", want: TemplateMinimal},
 		{name: "kyverno policy", componentType: "configuration", flavours: []string{"generic"}, language: "kyverno-policy", want: TemplateMinimal},
 		{name: "node is deferred", componentType: "service", flavours: []string{"generic"}, language: "node", unavailable: true},

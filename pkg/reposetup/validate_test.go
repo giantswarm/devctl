@@ -55,6 +55,7 @@ func TestValidateEntries(t *testing.T) {
 		{name: "good-cli", template: TemplateGo, verdict: VerdictFree},
 		{name: "minimal-config", template: TemplateMinimal, verdict: VerdictFree},
 		{name: "customer-configs", template: TemplateMinimal, verdict: VerdictFree},
+		{name: "upstream-fork", template: TemplateMinimal, verdict: VerdictFree},
 		{name: "policies", template: TemplateMinimal, verdict: VerdictFree},
 		{name: "python-tool", template: TemplateMinimal, verdict: VerdictFree},
 		{name: "hello-world-app", template: TemplateChart, verdict: VerdictFree, fields: []string{"name"}},
@@ -132,7 +133,7 @@ func TestValidateMessagesNameTheReason(t *testing.T) {
 	require.Contains(t, messages["internal-visibility/visibility"], "public")
 	require.Contains(t, messages["internal-visibility/lifecycle"], "archived")
 	require.Equal(t, "not a field of the repositories schema", messages["unknown-field/template"])
-	require.Equal(t, "value must be one of 'app', 'cli', 'cluster-app', 'customer', 'fleet', 'generic', 'k8sapi'", messages["unknown-flavour/gen.flavours[0]"])
+	require.Equal(t, "value must be one of 'app', 'cli', 'cluster-app', 'customer', 'fleet', 'fork', 'generic', 'k8sapi'", messages["unknown-flavour/gen.flavours[0]"])
 	require.Equal(t, "taken: repository giantswarm/taken-name exists", messages["taken-name/name"])
 	require.Contains(t, messages["renamed-name/name"], "redirects to giantswarm/new-name")
 	require.Contains(t, messages["twice/name"], "declared more than once")
@@ -290,6 +291,7 @@ func TestValidateExistingMode(t *testing.T) {
 	}{
 		{name: "good-service", template: TemplateGo, verdict: VerdictFree},
 		{name: "good-chart", template: TemplateChart, verdict: VerdictFree},
+		{name: "upstream-fork", template: TemplateMinimal, verdict: VerdictFree},
 		// The creation rules do not apply: entries that predate gen, the
 		// chart-name convention, an unavailable template, a taken name.
 		{name: "no-gen", verdict: VerdictFree},

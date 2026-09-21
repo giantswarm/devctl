@@ -11,6 +11,7 @@ const (
 	FlavourApp                     Flavour = "app"
 	FlavourCLI                     Flavour = "cli"
 	FlavourCustomer                Flavour = "customer"
+	FlavourFork                    Flavour = "fork"
 	FlavourGeneric                 Flavour = "generic"
 	FlavourKubernetesAPI           Flavour = "k8sapi"
 	FlavourClusterApp              Flavour = "cluster-app"
@@ -22,6 +23,7 @@ func AllFlavours() []string {
 		FlavourApp.String(),
 		FlavourCLI.String(),
 		FlavourCustomer.String(),
+		FlavourFork.String(),
 		FlavourGeneric.String(),
 		FlavourKubernetesAPI.String(),
 		FlavourClusterApp.String(),
@@ -39,6 +41,8 @@ func NewFlavour(s string) (Flavour, error) {
 		return FlavourCLI, nil
 	case FlavourCustomer.String():
 		return FlavourCustomer, nil
+	case FlavourFork.String():
+		return FlavourFork, nil
 	case FlavourGeneric.String():
 		return FlavourGeneric, nil
 	case FlavourKubernetesAPI.String():
@@ -65,6 +69,14 @@ func (s FlavourSlice) Contains(f Flavour) bool {
 		}
 	}
 	return false
+}
+
+// Generates says whether the generators have anything to produce for the
+// flavours. A fork line carries its upstream's files plus the carried
+// patches: nothing is generated for it, every `devctl gen` leaves it as it
+// is.
+func (s FlavourSlice) Generates() bool {
+	return !s.Contains(FlavourFork)
 }
 
 type FlavourSliceFlagValue struct {

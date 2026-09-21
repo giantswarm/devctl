@@ -53,6 +53,44 @@ func TestPrintAlign(t *testing.T) {
 	}
 }
 
+// The text output names the declared default branch and flavours right
+// under the alignment line when the source read the entry, and the JSON
+// output carries them; a source without the entry says nothing about them.
+func TestPrintDeclaration(t *testing.T) {
+	optedIn := true
+	for _, tc := range []struct {
+		name     string
+		branch   string
+		flavours []string
+		want     string
+		wantJSON string
+	}{
+		{name: "fork line", branch: "giantswarm", flavours: []string{"fork"}, want: "default branch giantswarm, flavours fork", wantJSON: `"defaultBranch": "giantswarm"`},
+		{name: "no gen block", branch: "main", want: "default branch main, flavours none", wantJSON: `"defaultBranch": "main"`},
+		{name: "unknown"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			out := &output{Source: sourceEngine, Result: result(), Align: &optedIn, DefaultBranch: tc.branch, Flavours: tc.flavours}
+
+			var text bytes.Buffer
+			require.NoError(t, (&runner{flag: &flag{Output: outputText}, stdout: &text}).print(out))
+			lines := strings.Split(strings.TrimSuffix(text.String(), "\n"), "\n")
+			var js bytes.Buffer
+			require.NoError(t, (&runner{flag: &flag{Output: outputJSON}, stdout: &js}).print(out))
+			require.True(t, json.Valid(js.Bytes()), js.String())
+
+			if tc.want == "" {
+				require.Equal(t, "converged: set up as declared", lines[2])
+				require.NotContains(t, js.String(), `"defaultBranch"`)
+				require.NotContains(t, js.String(), `"flavours"`)
+				return
+			}
+			require.Equal(t, tc.want, lines[2])
+			require.Contains(t, js.String(), tc.wantJSON)
+		})
+	}
+}
+
 // The text output marks an advisory finding and, when a finding a person
 // must fix remains, says why the run did not converge.
 func TestPrintFindings(t *testing.T) {
