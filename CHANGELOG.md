@@ -240,6 +240,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   commit after the pull request's title (`squash_merge_commit_title: PR_TITLE`), read with the repository or through
   GraphQL like the six merge settings and repaired with them; the auto-release decide step names an unconventional
   subject in the unreleased range as a workflow warning, where before the run only counted zero deciding commits.
+  Every declared repository carries GitHub's default today, so one that is not opted in to alignment reads
+  `settings drift: squash_merge_commit_title COMMIT_OR_PR_TITLE → PR_TITLE` on its next check until its team opts it
+  in (the nightly repairs the opted-in entries) or an administrator sets it by hand.
 
 - `auth login` ran the GitHub device flow with a placeholder client id and GitHub refused it; the binary now carries the
   client id of the `giantswarm-devctl` GitHub App (`Iv23liWio5REm4MfY2Mw`, owned by the `giantswarm` organization),
