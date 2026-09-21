@@ -14,13 +14,14 @@ devctl auth login --github-only
 devctl auth login --circleci-only
 ```
 
-**GitHub** is the device flow of the devctl GitHub App: devctl prints the verification URL and a
-code to stderr, opens the browser on the URL, and polls GitHub at the interval it names until you
+**GitHub** is the device flow of the `giantswarm-devctl` GitHub App, owned by the `giantswarm`
+organization: devctl prints the verification URL and a code to stderr, opens the browser on the URL, and polls GitHub at the interval it names until you
 have entered the code. The result is a user access token: actions are attributed to you and capped
 by the App's permissions. The token expires after eight hours and comes with a refresh token valid
 for six months; a command that finds the access token expired refreshes it itself and stores the new
 pair, no human involved. A GitHub App used through the device flow refreshes without a client
-secret, so the binary carries only the App's client id (`authstore.GitHubAppClientID`).
+secret, so the binary carries only the App's client id (`authstore.GitHubAppClientID`,
+`Iv23liWio5REm4MfY2Mw`); a client id is public, embedding it discloses nothing.
 
 **CircleCI** is the OAuth 2.0 authorization code flow with PKCE (S256) and dynamic client
 registration:
