@@ -102,6 +102,32 @@ func (r *Runner) stepCircleCI(ctx context.Context, s *run, sr *StepResult) error
 // permissionAdmin is GitHub's name for the administrator permission.
 const permissionAdmin = "admin"
 
+// circleCIConfig is the pipeline's entry point on the default branch.
+const circleCIConfig = ".circleci/config.yml"
+
+// hasPipeline says whether the repository has a CircleCI pipeline for the
+// circleci and release steps to act on: the entry declares a generated one
+// (gen.ci.generate: true — on a first creation the config is not on the
+// branch yet), or .circleci/config.yml is on the default branch. A
+// configuration repository, or one released by GitHub Actions, has
+// neither: CircleCI has nothing to build there. The branch is read once
+// per run, the two steps share the answer.
+func (r *Runner) hasPipeline(ctx context.Context, s *run) (bool, error) {
+	if s.pipeline != nil {
+		return *s.pipeline, nil
+	}
+	if g := s.fields.Gen; g != nil && g.CI != nil && g.CI.Generate != nil && *g.CI.Generate {
+		s.pipeline = new(true)
+		return true, nil
+	}
+	_, found, err := r.fileContent(ctx, s.owner, s.name, circleCIConfig, s.branch())
+	if err != nil {
+		return false, err
+	}
+	s.pipeline = &found
+	return found, nil
+}
+
 // followGrantee returns the login of the CircleCI token's GitHub user when
 // that user is not an administrator of the repository: CircleCI follows a
 // project for a repository administrator only ("only a project's Github

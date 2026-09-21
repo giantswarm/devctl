@@ -38,7 +38,19 @@ const (
 	// requiredChecksEntryYAML declares the repository's own GitHub Actions
 	// gate: required whatever reported.
 	requiredChecksEntryYAML = entryYAML + "  requiredChecks: [\"" + ctxValidate + "\"]\n"
-	privateEntryYAML        = `- name: sample-service
+	// configurationEntryYAML is a configuration repository: no template, no
+	// generated pipeline.
+	configurationEntryYAML = `- name: sample-service
+  componentType: configuration
+  description: Configuration of the sample installations
+  visibility: public
+  gen:
+    flavours: [generic]
+    language: generic
+    ci:
+      generate: false
+`
+	privateEntryYAML = `- name: sample-service
   componentType: service
   description: A sample service
   visibility: private
@@ -507,6 +519,57 @@ func TestSteps(t *testing.T) {
 			verify: func(t *testing.T, h *harness, _ *Result) {
 				require.Contains(t, h.cc.projects, owner+"/"+name+"-v2")
 				require.NotContains(t, h.cc.projects, owner+"/"+name)
+			},
+		},
+		{
+			// A configuration repository, or one released by GitHub Actions,
+			// has no .circleci/config.yml and declares no generated pipeline:
+			// CircleCI has nothing to build, so the repository is neither
+			// followed nor given a key, and its release is not held against
+			// a pipeline. A project followed by hand is left as it is.
+			name: "circleci: a repository without a pipeline is not followed, its release not verified", step: StepCircleCI,
+			entry: configurationEntryYAML,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				delete(r.files, ".circleci/config.yml")
+				delete(r.files, ".circleci/workflows.yml")
+				r.release, r.releaseAt = "v0.1.0", time.Now().Add(-time.Hour)
+			},
+			wantCheck: VerdictSkipped, wantAfter: VerdictSkipped,
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				require.NotContains(t, h.cc.projects, owner+"/"+name)
+				config := "/repos/" + owner + "/" + name + "/contents/" + circleCIConfig
+				before := h.gh.reads(config)
+				res := h.run(ModeCheck, false, StepCircleCI, StepRelease)
+				for _, step := range []Step{StepCircleCI, StepRelease} {
+					require.Equal(t, VerdictSkipped, res.Step(step).Verdict, "%s: %+v", step, res.Step(step))
+					require.Equal(t, "no CircleCI pipeline", res.Step(step).Summary)
+				}
+				require.Equal(t, before+1, h.gh.reads(config), "one read of the branch serves both steps")
+
+				h.cc.projects[owner+"/"+name] = &fakeProject{} // followed by hand, no setup workflows, no key
+				res = h.run(ModeRepair, false, StepCircleCI, StepRelease)
+				require.Equal(t, VerdictSkipped, res.Step(StepCircleCI).Verdict, "%+v", res.Step(StepCircleCI))
+				require.Equal(t, VerdictSkipped, res.Step(StepRelease).Verdict, "%+v", res.Step(StepRelease))
+				require.Empty(t, h.mutations(), "a followed project of a repository without a pipeline is left as it is")
+			},
+		},
+		{
+			// On a first creation the generated pipeline is not on the branch
+			// yet: the entry declares it (gen.ci.generate: true, the default
+			// the validator renders for a service with a CI job), and the
+			// follow neither waits for the scaffold's commit nor reads the
+			// branch.
+			name: "circleci: a generated pipeline is followed before its config is on the branch", step: StepCircleCI,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				delete(r.files, ".circleci/config.yml")
+				delete(r.files, ".circleci/workflows.yml")
+			},
+			wantCheck: VerdictDrift, wantChange: "follow giantswarm/sample-service; enable setup workflows; create a deploy key",
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				require.Contains(t, h.cc.projects, owner+"/"+name)
+				require.Zero(t, h.gh.reads("/repos/"+owner+"/"+name+"/contents/"+circleCIConfig), "a declared pipeline is not looked up")
 			},
 		},
 		{

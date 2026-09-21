@@ -140,7 +140,11 @@ type run struct {
 	// as they do on an empty repository — protecting the branch first
 	// would keep the scaffold from ever landing.
 	scaffoldFailed bool
-	log            io.Writer
+	// pipeline says whether the repository has a CircleCI pipeline, once
+	// hasPipeline has read it; nil before. The circleci and release steps
+	// share the one answer.
+	pipeline *bool
+	log      io.Writer
 }
 
 // errReported marks a repair that ended in a finding instead of a change.
@@ -247,13 +251,30 @@ func (r *Runner) newRun(req Request) (*run, error) {
 // not run, and returns its result.
 func (r *Runner) execute(ctx context.Context, s *run, step Step) *StepResult {
 	sr := &StepResult{Step: step}
-	if reason := s.skipReason(step); reason != "" {
-		sr.Verdict = VerdictSkipped
-		sr.Summary = reason
-		fmt.Fprintf(s.log, "%s/%s %s: skipped: %s\n", s.owner, s.name, step, reason)
-		return sr
+	reason, err := r.skipReason(ctx, s, step)
+	if err == nil {
+		if reason != "" {
+			sr.Verdict = VerdictSkipped
+			sr.Summary = reason
+			fmt.Fprintf(s.log, "%s/%s %s: skipped: %s\n", s.owner, s.name, step, reason)
+			return sr
+		}
+		err = r.runStep(ctx, s, step, sr)
 	}
+	if err != nil && !errors.Is(err, errReported) {
+		sr.Verdict = VerdictFailed
+		sr.Summary = err.Error()
+		if step == StepScaffold {
+			s.scaffoldFailed = true
+		}
+	}
+	s.finish(sr)
+	fmt.Fprintf(s.log, "%s/%s %s: %s%s\n", s.owner, s.name, step, sr.Verdict, summaryLine(sr))
+	return sr
+}
 
+// runStep runs one step's body into sr.
+func (r *Runner) runStep(ctx context.Context, s *run, step Step, sr *StepResult) error {
 	var err error
 	switch step {
 	case StepCreate:
@@ -283,49 +304,52 @@ func (r *Runner) execute(ctx context.Context, s *run, step Step) *StepResult {
 	case StepRelease:
 		err = r.stepRelease(ctx, s, sr)
 	}
-	if err != nil && !errors.Is(err, errReported) {
-		sr.Verdict = VerdictFailed
-		sr.Summary = err.Error()
-		if step == StepScaffold {
-			s.scaffoldFailed = true
-		}
-	}
-	s.finish(sr)
-	fmt.Fprintf(s.log, "%s/%s %s: %s%s\n", s.owner, s.name, step, sr.Verdict, summaryLine(sr))
-	return sr
+	return err
 }
 
-// skipReason says why step does not run in the current state, or "".
-func (s *run) skipReason(step Step) string {
+// skipReason says why step does not run in the current state, or "". The
+// circleci and release steps apply to a repository with a pipeline only,
+// which is read from the repository once (hasPipeline).
+func (r *Runner) skipReason(ctx context.Context, s *run, step Step) (string, error) {
 	if step == StepCreate {
-		return ""
+		return "", nil
 	}
 	if s.repo == nil {
 		if s.fields.Lifecycle == LifecycleDeleted {
-			return "deleted, as declared"
+			return "deleted, as declared", nil
 		}
-		return "repository does not exist"
+		return "repository does not exist", nil
 	}
 	if lifecycleOver(s.fields.Lifecycle) && step != StepLifecycle {
-		return "lifecycle: " + s.fields.Lifecycle
+		return "lifecycle: " + s.fields.Lifecycle, nil
 	}
 	if s.repo.GetArchived() && s.fields.Lifecycle != LifecycleArchived {
 		switch step {
 		case StepLifecycle, StepRelease:
 		default:
-			return "archived on GitHub"
+			return "archived on GitHub", nil
 		}
 	}
 	switch step {
 	case StepProtection, StepCircleCI, StepRenovate, StepCodeowners, StepRelease:
 		if s.empty {
-			return "repository is empty: the scaffold comes first"
+			return "repository is empty: the scaffold comes first", nil
 		}
 		if s.scaffoldFailed {
-			return "the scaffold step failed: the scaffold comes first"
+			return "the scaffold step failed: the scaffold comes first", nil
 		}
 	}
-	return ""
+	switch step {
+	case StepCircleCI, StepRelease:
+		pipeline, err := r.hasPipeline(ctx, s)
+		if err != nil {
+			return "", err
+		}
+		if !pipeline {
+			return "no CircleCI pipeline", nil
+		}
+	}
+	return "", nil
 }
 
 // plan records a change: in check mode as what a repair would do, in repair

@@ -30,6 +30,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- The circleci and release steps of `repo reconcile` run only for a repository with a CircleCI pipeline:
+  `.circleci/config.yml` on its default branch, or `gen.ci.generate: true` in its entry (a generated pipeline, on a
+  first creation not on the branch yet). Without one both steps read `skipped: no CircleCI pipeline`: a configuration
+  repository or a repository released by GitHub Actions is not followed, gets no deploy key, and its release is not
+  held against a pipeline; a project someone followed by hand is left as it is. The answer costs one request per run,
+  shared by the two steps, and none when the entry declares the pipeline (#2269).
+
 - `reconcile.DefaultBaseline` has strict status checks off (`StrictChecks: false`): a branch need not be up to date
   to merge, so on a repository with Renovate and sweep traffic a merge no longer invalidates every other open pull
   request and re-runs its CI. The protection step plans `strict checks true → false` where a repository has them on

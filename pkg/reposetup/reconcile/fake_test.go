@@ -111,7 +111,22 @@ type fakeGitHub struct {
 	// dispatchedBy records the bearer token of every dispatch, "" for none.
 	dispatchedBy []string
 	mutations    []string
-	srv          *httptest.Server
+	// gets records the path of every GET: what a run costs in requests.
+	gets []string
+	srv  *httptest.Server
+}
+
+// reads counts the GETs of path so far.
+func (f *fakeGitHub) reads(path string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	n := 0
+	for _, p := range f.gets {
+		if p == path {
+			n++
+		}
+	}
+	return n
 }
 
 // bearer is the request's bearer token, "" without one.
@@ -141,6 +156,8 @@ func newFakeGitHub() *fakeGitHub {
 		f.mu.Lock()
 		if r.Method != http.MethodGet {
 			f.mutations = append(f.mutations, r.Method+" "+r.URL.Path)
+		} else {
+			f.gets = append(f.gets, r.URL.Path)
 		}
 		f.mu.Unlock()
 		mux.ServeHTTP(w, r)
@@ -861,6 +878,8 @@ var scaffoldFiles = map[string]string{
 	"CODEOWNERS":     reposetup.Codeowners("team-bumblebee"),
 	"Makefile":       "include Makefile.*.mk\n",
 	"renovate.json5": "{\n  extends: ['github>giantswarm/renovate-presets:default.json5'],\n}\n",
+	// The generated pipeline: the setup config continues into workflows.yml.
+	".circleci/config.yml": "version: 2.1\nsetup: true\n",
 	".circleci/workflows.yml": `version: 2.1
 workflows:
   build:
