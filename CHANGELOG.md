@@ -233,6 +233,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `auth login` ran the GitHub device flow with a placeholder client id and GitHub refused it; the binary now carries the
+  client id of the `giantswarm-devctl` GitHub App (`Iv23liWio5REm4MfY2Mw`, owned by the `giantswarm` organization),
+  and `docs/auth.md` names the App (#2276).
+
 - `repo status`, `repo checks`, `repo reconcile` and the reconcile engine's settings step as an identity without admin rights on
   the repository (an App installation with `administration: read`, a member with read access) reported `allow_squash_merge`,
   `allow_update_branch`, `allow_auto_merge` and `delete_branch_on_merge` as `false → true` drift on every repository:

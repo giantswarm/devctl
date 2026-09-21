@@ -8,10 +8,11 @@ import (
 	"time"
 )
 
-// GitHubAppClientID is the client id of the devctl GitHub App. The device
-// flow and the refresh need nothing else: an App used through the device
-// flow refreshes without a client secret.
-const GitHubAppClientID = "PLACEHOLDER-CLIENT-ID"
+// GitHubAppClientID is the client id of the giantswarm-devctl GitHub App,
+// owned by the giantswarm organization. The device flow and the refresh need
+// nothing else: an App used through the device flow refreshes without a
+// client secret, and a client id is public, so it is embedded here.
+const GitHubAppClientID = "Iv23liWio5REm4MfY2Mw"
 
 // GitHub's device-flow endpoints under the OAuth host and the grant types.
 const (
