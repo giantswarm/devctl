@@ -70,12 +70,18 @@ func decideScript(t *testing.T) string {
 
 // gitIn runs git in dir and returns its combined output, leaving the error for
 // the caller. Use it where a non-zero exit is a legitimate answer.
+//
+// The user's and the system's git config are not read: a developer's
+// commit.gpgsign or tag.gpgsign would make every commit here ask gpg for a key
+// the test identity does not have, and a core.hooksPath or commit.template
+// would change what the history looks like.
 func gitIn(t *testing.T, dir string, args ...string) (string, error) {
 	t.Helper()
 
 	cmd := exec.CommandContext(t.Context(), "git", args...) // #nosec G204 -- fixed binary, args are built by this test, test-only
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(),
+		"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1",
 		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.com",
 		"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@example.com",
 	)
