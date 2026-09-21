@@ -1,0 +1,7 @@
+- name: align-not-bool
+  componentType: service
+  align: "yes"
+  gen:
+    flavours:
+      - app
+    language: go

@@ -9,6 +9,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `e2e/`: the end-to-end harness of the agent commands, run by `make test`. `TestMain` builds devctl once and
+  every `e2e/scenarios/<slug>/` runs the binary against in-process mocks of the GitHub REST API (rate-limit
+  headers, ETags, 304 on a conditional request), the CircleCI API v2 and an OCI registry (one public, one
+  private; `MANIFEST_UNKNOWN`, the stale-login 401), each answering from the scenario's per-route response
+  sequences: the Nth request gets the Nth response, the last repeats. `expected.json` asserts the exit code and
+  the JSON document with `"*"` wildcards; `DEVCTL_TIME_SCALE=0.001` keeps a thirty-minute wait under two seconds.
+  Adding a scenario is a directory with `scenario.yaml` and `expected.json`; `e2e/README.md` documents the format,
+  the environment seams and the slugs of the known incidents (#2280).
+
 - `requiredChecks` in the repositories schema devctl ships and in `reposetup.Fields`: status-check contexts an entry
   requires on its default branch whatever reported, merged with the baseline's reported-only rule by the protection
   step and never removed as ghosts. For a repository's own GitHub Actions gate that runs on every pull request, such
