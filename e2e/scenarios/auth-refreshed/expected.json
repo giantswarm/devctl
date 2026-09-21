@@ -1,0 +1,30 @@
+{
+  "exitCode": 0,
+  "json": {
+    "command": "auth status",
+    "schemaVersion": 1,
+    "exitCode": 0,
+    "verdict": "green",
+    "reason": "",
+    "warnings": [],
+    "startedAt": "*",
+    "finishedAt": "*",
+    "github": {
+      "present": true,
+      "login": "e2e-engineer",
+      "expiresAt": "2000-01-01T00:00:00Z",
+      "expired": true,
+      "refreshable": true,
+      "refreshExpiresAt": "2099-01-01T00:00:00Z",
+      "warnings": []
+    },
+    "circleci": {
+      "present": true,
+      "login": "e2e-engineer",
+      "expiresAt": "2099-01-01T00:00:00Z",
+      "expired": false,
+      "refreshable": false,
+      "warnings": []
+    }
+  }
+}
