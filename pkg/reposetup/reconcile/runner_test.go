@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"net/http"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -122,15 +123,18 @@ func newHarness(t *testing.T, yaml string) *harness {
 	t.Cleanup(gh.srv.Close)
 	t.Cleanup(cc.srv.Close)
 
-	ghClient, err := github.NewClient(github.WithEnterpriseURLs(gh.srv.URL, gh.srv.URL))
+	// The clients count their requests as the CLI's do: one counter under
+	// both GitHub clients, one under CircleCI.
+	githubRequests, circleciRequests := &Counter{}, &Counter{}
+	ghClient, err := github.NewClient(github.WithHTTPClient(&http.Client{Transport: githubRequests}), github.WithEnterpriseURLs(gh.srv.URL, gh.srv.URL))
 	require.NoError(t, err)
 
 	logger := logrus.New()
 	logger.SetOutput(io.Discard)
-	checks, err := githubclient.New(githubclient.Config{Logger: logger, AccessToken: "token", BaseURL: gh.srv.URL})
+	checks, err := githubclient.New(githubclient.Config{Logger: logger, AccessToken: "token", BaseURL: gh.srv.URL, Transport: githubRequests})
 	require.NoError(t, err)
 
-	ccClient, err := circleciclient.New(circleciclient.Config{Token: "token", BaseURL: cc.srv.URL})
+	ccClient, err := circleciclient.New(circleciclient.Config{Token: "token", BaseURL: cc.srv.URL, Transport: circleciRequests})
 	require.NoError(t, err)
 
 	schema, err := reposetup.EmbeddedSchema()
@@ -142,7 +146,7 @@ func newHarness(t *testing.T, yaml string) *harness {
 	require.True(t, validated.Entries[0].Accepted, "%v", validated.Entries[0].Problems)
 
 	h := &harness{t: t, gh: gh, cc: cc, baseline: DefaultBaseline(), entry: validated.Entries[0]}
-	h.runner = &Runner{GitHub: ghClient, Checks: checks, CircleCI: ccClient, Renderer: fakeRenderer{}, Baseline: &h.baseline, DevctlAppID: testAppID}
+	h.runner = &Runner{GitHub: ghClient, Checks: checks, CircleCI: ccClient, Renderer: fakeRenderer{}, Baseline: &h.baseline, DevctlAppID: testAppID, GitHubRequests: githubRequests, CircleCIRequests: circleciRequests}
 	return h
 }
 
@@ -171,6 +175,13 @@ func (h *harness) mutations() []string {
 
 func (h *harness) resetMutations() {
 	h.gh.mutations, h.cc.mutations = nil, nil
+}
+
+// gets is the path of every GET the fake GitHub served so far, in order.
+func (h *harness) gets() []string {
+	h.gh.mu.Lock()
+	defer h.gh.mu.Unlock()
+	return append([]string{}, h.gh.gets...)
 }
 
 func (h *harness) repo() *fakeRepo {
@@ -416,17 +427,32 @@ func TestSteps(t *testing.T) {
 			},
 		},
 		{
-			name: "protection: a fresh repository whose only commit is tagged requires what reported on it", step: StepProtection,
+			name: "protection: what reported on the merged pull requests is required, tag-only jobs are not", step: StepProtection,
 			seed: func(h *harness) {
 				r := h.gh.addRepo(owner, name)
-				r.tags = []string{"v0.1.0"} // auto-release tagged the scaffold within seconds
 				r.statuses = []string{ctxGoBuild, ctxSetup}
 				r.checkRuns = []string{"pre-commit", ctxRelease}
 			},
 			wantCheck: VerdictDrift, wantChange: "require pre-commit, " + ctxGoBuild,
 			verify: func(t *testing.T, h *harness, res *Result) {
 				require.Equal(t, []string{"pre-commit", ctxGoBuild}, checkContexts(h.repo().ruleset(RulesetName)))
-				require.Empty(t, res.Step(StepProtection).Findings, "a tagged head is not a permission gap")
+				require.Empty(t, res.Step(StepProtection).Findings)
+			},
+		},
+		{
+			// Nothing has been merged: nothing has reported, and nothing is
+			// required or removed on a guess.
+			name: "protection: a repository without a merged pull request keeps its checks", step: StepProtection,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.merged = nil
+				r.statuses = []string{ctxGoBuild}
+				r.protection = &fakeProtection{reviews: 1, enforceAdmins: true, strict: false, checks: []string{"execute-smoke-test"}}
+			},
+			wantCheck: VerdictDrift, wantChange: `create ruleset "devctl: default branch"`,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Equal(t, []string{"execute-smoke-test"}, checkContexts(h.repo().ruleset(RulesetName)), "the current checks carry over, nothing is added")
+				require.Empty(t, res.Step(StepProtection).Findings, "no merged pull request is not a permission gap")
 			},
 		},
 		{
@@ -444,24 +470,33 @@ func TestSteps(t *testing.T) {
 			},
 		},
 		{
-			// An auto-released repository carries a tag per merge, hundreds
-			// of them. The discovery of the reported checks reads the newest
-			// hundred in one request, once per run, whatever else runs.
-			name: "protection: the tags are read once per run, one page of a hundred", step: StepProtection,
+			// The discovery of the reported checks is one page of the merged
+			// pull requests and the statuses and check runs of the newest
+			// head: three requests, once per run, whatever else runs; the
+			// branch's tags are not read.
+			name: "protection: the reported checks cost three requests per run", step: StepProtection,
 			seed: func(h *harness) {
 				r := h.gh.addRepo(owner, name)
-				for i := 120; i > 0; i-- {
-					r.tags = append(r.tags, fmt.Sprintf("v0.%d.0", i))
+				for i := 1; i <= 3; i++ {
+					pr := *r.merged[0]
+					pr.Number, pr.Head = new(i+1), &github.PullRequestBranch{SHA: new(fmt.Sprintf("merged-%d", i)), Ref: new(fmt.Sprintf("merged-%d", i))}
+					r.merged = append(r.merged, &pr)
 				}
 				r.statuses = []string{ctxGoBuild, ctxSetup}
 				r.checkRuns = []string{"pre-commit", ctxRelease}
 			},
 			wantCheck: VerdictDrift, wantChange: "require pre-commit, " + ctxGoBuild,
 			verify: func(t *testing.T, h *harness, _ *Result) {
-				tags := "/repos/" + owner + "/" + name + "/tags"
-				before := h.gh.reads(tags)
+				prefix := "/repos/" + owner + "/" + name
+				before := len(h.gets())
 				h.run(ModeCheck, false) // every step
-				require.Equal(t, before+1, h.gh.reads(tags), "one tags request per run, one page")
+				var discovery []string
+				for _, p := range h.gets()[before:] {
+					if p == prefix+"/pulls" || strings.HasSuffix(p, "/status") || strings.HasSuffix(p, "/check-runs") || p == prefix+"/tags" {
+						discovery = append(discovery, strings.TrimPrefix(p, prefix))
+					}
+				}
+				require.Equal(t, []string{"/pulls", "/commits/merged-head/status", "/commits/merged-head/check-runs"}, discovery)
 			},
 		},
 		{
@@ -1428,6 +1463,20 @@ func TestRunFullRepositorySetUp(t *testing.T) {
 	data, err := json.Marshal(second)
 	require.NoError(t, err)
 	require.Contains(t, string(data), `"repository":"giantswarm/sample-service"`)
+
+	// The budget: a check of the converged repository, every step, costs at
+	// most twenty GitHub requests, and the count is the fake's own.
+	before := len(h.gets())
+	check := h.run(ModeCheck, false)
+	require.True(t, check.Converged, "%+v", check.Steps)
+	gets := h.gets()[before:]
+	require.Equal(t, len(gets), check.Requests.GitHub, "the counter and the fake agree")
+	require.LessOrEqual(t, check.Requests.GitHub, 20, "a converged check within the budget of twenty; the reads:\n%s", strings.Join(gets, "\n"))
+	require.Positive(t, check.Requests.CircleCI, "the circleci and release steps read CircleCI")
+	data, err = json.Marshal(check)
+	require.NoError(t, err)
+	require.Contains(t, string(data), fmt.Sprintf(`"requests":{"github":%d,"circleci":%d}`, check.Requests.GitHub, check.Requests.CircleCI))
+	require.Empty(t, Refused(Request{Team: team, Entry: h.entry}, time.Now()).Requests, "a refused entry costs nothing")
 }
 
 func TestRunArchivedDeclarationRunsLifecycleOnly(t *testing.T) {

@@ -47,15 +47,17 @@ func (r *runner) run(ctx context.Context, arg string) error {
 	if err != nil {
 		return microerror.Mask(err)
 	}
-	gh, err := engine.GitHubClient(r.logger, r.flag.GithubTokenEnvVar, false)
+	// The clients count their requests: the run's cost is in the result.
+	githubRequests, circleciRequests := &reconcile.Counter{}, &reconcile.Counter{}
+	gh, err := engine.GitHubClient(r.logger, r.flag.GithubTokenEnvVar, false, githubRequests)
 	if err != nil {
 		return microerror.Mask(err)
 	}
-	dispatch, err := r.dispatchClient(ctx)
+	dispatch, err := r.dispatchClient(ctx, githubRequests)
 	if err != nil {
 		return microerror.Mask(err)
 	}
-	ci, err := engine.CircleCIClient(r.logger, r.flag.CircleCITokenEnvVar)
+	ci, err := engine.CircleCIClient(r.logger, r.flag.CircleCITokenEnvVar, circleciRequests)
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -103,9 +105,11 @@ func (r *runner) run(ctx context.Context, arg string) error {
 			Templates: reposetup.GitHubTemplates{Token: token},
 			Log:       engine.LogWriter(r.logger),
 		},
-		Baseline:    &baseline,
-		DevctlAppID: r.flag.DevctlAppID,
-		Log:         engine.LogWriter(r.logger),
+		Baseline:         &baseline,
+		DevctlAppID:      r.flag.DevctlAppID,
+		GitHubRequests:   githubRequests,
+		CircleCIRequests: circleciRequests,
+		Log:              engine.LogWriter(r.logger),
 	}
 	res, err := runner.Run(ctx, req)
 	if err != nil {
@@ -116,13 +120,13 @@ func (r *runner) run(ctx context.Context, arg string) error {
 }
 
 // dispatchClient is the client of --dispatch-token-envvar, the one the
-// catalog step dispatches with; nil without the flag, and the GitHub token
-// dispatches.
-func (r *runner) dispatchClient(ctx context.Context) (*github.Client, error) {
+// catalog step dispatches with, counting its requests with the other GitHub
+// client's; nil without the flag, and the GitHub token dispatches.
+func (r *runner) dispatchClient(ctx context.Context, requests *reconcile.Counter) (*github.Client, error) {
 	if r.flag.DispatchTokenEnvVar == "" {
 		return nil, nil
 	}
-	client, err := engine.GitHubClient(r.logger, r.flag.DispatchTokenEnvVar, false)
+	client, err := engine.GitHubClient(r.logger, r.flag.DispatchTokenEnvVar, false, requests)
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}

@@ -36,8 +36,13 @@ type Config struct {
 	Token string
 	// BaseURL overrides the API host; empty means [DefaultBaseURL].
 	BaseURL string
-	// HTTPClient overrides the HTTP client; nil means one with a timeout.
+	// HTTPClient overrides the HTTP client; nil means one with a timeout,
+	// sending through Transport.
 	HTTPClient *http.Client
+	// Transport sends the requests of the default HTTP client; nil means
+	// http.DefaultTransport. A caller counting the requests builds its
+	// counter here.
+	Transport http.RoundTripper
 	// Logger receives one debug line per request; nil discards.
 	Logger *logrus.Logger
 }
@@ -64,7 +69,7 @@ func New(config Config) (*Client, error) {
 	}
 	httpClient := config.HTTPClient
 	if httpClient == nil {
-		httpClient = &http.Client{Timeout: 60 * time.Second}
+		httpClient = &http.Client{Timeout: 60 * time.Second, Transport: config.Transport}
 	}
 	logger := config.Logger
 	if logger == nil {

@@ -139,7 +139,12 @@ func (r *Runner) Create(ctx context.Context, req CreateRequest) (*CreateResult, 
 	res.Created = s.created
 	res.ScaffoldCommit = s.scaffoldSHA
 	if res.ScaffoldCommit == "" && !s.empty && s.repo != nil {
-		res.ScaffoldCommit = s.headSHA
+		// The scaffold was there before: its commit is the head.
+		head, err := r.headCommit(ctx, s)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+		res.ScaffoldCommit = head
 	}
 	res.FinishedAt = r.now()
 	return res, nil

@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -44,8 +45,10 @@ func Token(tokenEnv string) (string, error) {
 	return token, nil
 }
 
-// GitHubClient returns the GitHub client for the token in $tokenEnv.
-func GitHubClient(logger *logrus.Logger, tokenEnv string, dryRun bool) (*githubclient.Client, error) {
+// GitHubClient returns the GitHub client for the token in $tokenEnv, sending
+// through transport (nil: the default transport; a reconcile.Counter to
+// count the requests).
+func GitHubClient(logger *logrus.Logger, tokenEnv string, dryRun bool, transport http.RoundTripper) (*githubclient.Client, error) {
 	token, err := Token(tokenEnv)
 	if err != nil {
 		return nil, microerror.Mask(err)
@@ -54,6 +57,7 @@ func GitHubClient(logger *logrus.Logger, tokenEnv string, dryRun bool) (*githubc
 		Logger:      logger,
 		AccessToken: token,
 		DryRun:      dryRun,
+		Transport:   transport,
 	})
 	if err != nil {
 		return nil, microerror.Mask(err)
@@ -61,16 +65,17 @@ func GitHubClient(logger *logrus.Logger, tokenEnv string, dryRun bool) (*githubc
 	return client, nil
 }
 
-// CircleCIClient returns the CircleCI client for the token in $tokenEnv, or
-// nil when the variable is unset: the steps that need CircleCI are then
-// skipped, which the log says.
-func CircleCIClient(logger *logrus.Logger, tokenEnv string) (*circleciclient.Client, error) {
+// CircleCIClient returns the CircleCI client for the token in $tokenEnv,
+// sending through transport (nil: the default transport; a reconcile.Counter
+// to count the requests), or nil when the variable is unset: the steps that
+// need CircleCI are then skipped, which the log says.
+func CircleCIClient(logger *logrus.Logger, tokenEnv string, transport http.RoundTripper) (*circleciclient.Client, error) {
 	token := os.Getenv(tokenEnv)
 	if token == "" {
 		logger.Warnf("no CircleCI token in $%s: the CircleCI and release steps are skipped", tokenEnv)
 		return nil, nil
 	}
-	client, err := circleciclient.New(circleciclient.Config{Token: token, Logger: logger})
+	client, err := circleciclient.New(circleciclient.Config{Token: token, Logger: logger, Transport: transport})
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}
