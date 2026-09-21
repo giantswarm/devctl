@@ -233,6 +233,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `repo status`, `repo checks`, `repo reconcile` and the reconcile engine's settings step as an identity without admin rights on
+  the repository (an App installation with `administration: read`, a member with read access) reported `allow_squash_merge`,
+  `allow_update_branch`, `allow_auto_merge` and `delete_branch_on_merge` as `false → true` drift on every repository:
+  `GET /repos/{owner}/{repo}` carries the six merge settings for admins only and an absent field read as `false`. The step
+  reads them through GraphQL (`Repository { mergeCommitAllowed squashMergeAllowed … }`, which answers any identity that
+  reads the repository) when the repository came without them, and reports them as an `unchecked` finding — never as
+  drift — when that read fails too. An admin identity costs no extra request.
+
 - `reconcile.Refused` (the result of an entry the schema refuses: `devctl repo reconcile`, the reconciler's
   artifact, giantswarm-repo-manager's check) reports `converged: false`: nothing was checked against the
   declaration, so the repository is not set up as declared, and not drifted either -- the fix is in the entry.

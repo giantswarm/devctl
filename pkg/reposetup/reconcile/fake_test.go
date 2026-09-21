@@ -177,7 +177,15 @@ type fakeGitHub struct {
 	runToken string
 	// dispatchedBy records the bearer token of every dispatch, "" for none.
 	dispatchedBy []string
-	mutations    []string
+	// readOnly says the fake's default identity holds no admin on any
+	// repository: GET /repos/{owner}/{repo} then omits the six merge
+	// settings, as GitHub does for such an identity; GraphQL carries them
+	// to it as to any identity that reads the repository.
+	readOnly bool
+	// graphqlStatus, when not 0, is the status POST /graphql answers instead
+	// of the query.
+	graphqlStatus int
+	mutations     []string
 	// gets records the path of every GET: what a run costs in requests.
 	gets []string
 	srv  *httptest.Server
@@ -221,10 +229,10 @@ func newFakeGitHub() *fakeGitHub {
 	f.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		r.URL.Path = strings.TrimPrefix(r.URL.Path, "/api/v3") // go-github's enterprise prefix
 		f.mu.Lock()
-		if r.Method != http.MethodGet {
+		if r.Method != http.MethodGet && r.URL.Path != "/graphql" {
 			f.mutations = append(f.mutations, r.Method+" "+r.URL.Path)
 		} else {
-			f.gets = append(f.gets, r.URL.Path)
+			f.gets = append(f.gets, r.URL.Path) // a GraphQL query is a read
 		}
 		f.mu.Unlock()
 		mux.ServeHTTP(w, r)
@@ -359,8 +367,37 @@ func (f *fakeGitHub) withRepo(h func(w http.ResponseWriter, r *http.Request, rep
 
 func (f *fakeGitHub) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /repos/{owner}/{repo}", f.withRepo(func(w http.ResponseWriter, _ *http.Request, repo *fakeRepo) {
-		writeJSON(w, 200, repo.toGitHub())
+		out := repo.toGitHub()
+		if f.readOnly {
+			out.AllowMergeCommit, out.AllowSquashMerge, out.AllowRebaseMerge = nil, nil, nil
+			out.AllowUpdateBranch, out.AllowAutoMerge, out.DeleteBranchOnMerge = nil, nil, nil
+		}
+		writeJSON(w, 200, out)
 	}))
+	mux.HandleFunc("POST /graphql", func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		if f.graphqlStatus != 0 {
+			writeJSON(w, f.graphqlStatus, map[string]string{"message": "Resource not accessible by integration"})
+			return
+		}
+		var in struct {
+			Query     string            `json:"query"`
+			Variables map[string]string `json:"variables"`
+		}
+		decode(r, &in)
+		slug := in.Variables["owner"] + "/" + in.Variables["name"]
+		repo, ok := f.repo(in.Variables["owner"], in.Variables["name"])
+		if !ok || !strings.Contains(in.Query, "repository(") {
+			writeJSON(w, 200, map[string]any{"data": map[string]any{"repository": nil},
+				"errors": []map[string]string{{"message": "Could not resolve to a Repository with the name '" + slug + "'."}}})
+			return
+		}
+		writeJSON(w, 200, map[string]any{"data": map[string]any{"repository": map[string]bool{
+			"mergeCommitAllowed": repo.allowMerge, "squashMergeAllowed": repo.allowSquash, "rebaseMergeAllowed": repo.allowRebase,
+			"allowUpdateBranch": repo.allowUpdate, "autoMergeAllowed": repo.allowAuto, "deleteBranchOnMerge": repo.deleteOnMerge,
+		}}})
+	})
 	mux.HandleFunc("GET /user/memberships/orgs/{org}", func(w http.ResponseWriter, r *http.Request) {
 		if f.orgRole == "" {
 			writeJSON(w, 404, map[string]string{"message": "Not Found"})
