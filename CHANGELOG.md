@@ -9,6 +9,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `devctl pr wait <owner/repo> <number> [--timeout 30m] [--progress]`: one bounded, blocking wait until the
+  pull request's head is green as the merge box sees it, red, or in a state no CI can turn green, then one
+  JSON document and an exit code (0 green, 1 red, 2 timeout naming what was unfinished, 3 draft/closed/
+  conflicting/behind a strict base, 4 a required context never reported, 7 usage, 8 authentication). Green
+  is the latest check run per name (a rerun replaces a stale failed run), every CircleCI workflow of the head
+  revision read from CircleCI (a job behind `requires:` has posted nothing to GitHub between stages), no
+  GitHub Actions run open or awaiting a fork's approval, and every required status context of the base's
+  protection and rulesets reported. CircleCI is consulted only when the head carries `.circleci/config.yml`
+  and the project exists; an upstream fork is judged from GitHub alone. Polls are conditional requests
+  (ETags; `githubclient.NewConditional`) at an interval from the rate-limit headers, 15 s to 60 s. The engine
+  is `pkg/prwait`, for `pr merge` to reuse (#2277).
+
 - `devctl auth login` and `devctl auth status`: the identities the agent-facing commands act with. GitHub
   through the device flow of the devctl GitHub App (a user access token refreshed by the commands themselves
   for six months, no client secret in the binary), CircleCI through the OAuth 2.0 authorization code flow with
