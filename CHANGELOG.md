@@ -91,6 +91,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- `repo reconcile`, `repo setup`, `repo checks`: the discovery of the reported checks reads one page of the
+  newest hundred tags (`per_page=100`) instead of walking the whole list ten per page, and the reconciler
+  reads it once per run and shares the answer between the steps. A check run of a repository with 838 tags
+  makes 32 GitHub requests instead of 115, one of them for the tags instead of 84. The package doc of
+  `pkg/reposetup/reconcile` states what a run costs in requests and which steps share which read (#2254).
+
 - The repositories schema devctl ships (`pkg/reposetup/schema/repositories.schema.json`) is regenerated from
   giantswarm/github's `.github/repositories.schema.json` at commit 3a5bbec: it gains `agentMerge`, the repository's
   opt-out from agent merges (boolean, default `true`, with the live schema's description text), so `repo validate`

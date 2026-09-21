@@ -271,12 +271,21 @@ func (r *Runner) ownRuleset(ctx context.Context, s *run, sr *StepResult) (*githu
 
 // reportedChecks asks Checks which contexts have reported on branch; known
 // is false when the answer is not to be had, and the reason is logged or
-// reported so that nothing is required or removed on a guess.
+// reported so that nothing is required or removed on a guess. The
+// discovery is read once per run and shared by every step that asks, the
+// error included: it is the costliest read of a run — one page of the
+// newest hundred tags, the recent commits of the branch until an untagged
+// one, one page of the recently merged pull requests, and the statuses and
+// check runs of each ref inspected.
 func (r *Runner) reportedChecks(ctx context.Context, s *run, sr *StepResult, branch string) (reported []string, known bool) {
 	if r.Checks == nil {
 		return nil, false
 	}
-	reported, err := r.Checks.ReportedChecks(ctx, s.repo, branch)
+	if !s.reportedRead {
+		s.reported, s.reportedErr = r.Checks.ReportedChecks(ctx, s.repo, branch)
+		s.reportedRead = true
+	}
+	reported, err := s.reported, s.reportedErr
 	switch code := statusCode(err); {
 	case err == nil:
 		return reported, true

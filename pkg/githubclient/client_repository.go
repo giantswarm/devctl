@@ -444,32 +444,29 @@ func (c *Client) SetRepositoryDefaultBranch(ctx context.Context, repository *git
 	return nil
 }
 
-// getTags retrieves list of tags
+// tagsPage is the page size of the one tags request: the newest hundred
+// tags, the most a page holds. GitHub lists tags newest version first, so
+// the tags on the recent commits of the default branch are among them.
+const tagsPage = 100
+
+// getTags returns the newest tags of the repository: one request, one page
+// of tagsPage. The tags say which of the recent commits are releases, and
+// the newest hundred answer that; the whole list is hundreds of pages on an
+// auto-released repository and was walked on every run. A commit tagged
+// only beyond the newest hundred counts as untagged, which bounds the walk
+// over the commits too.
 func (c *Client) getTags(ctx context.Context, repository *github.Repository) ([]*github.RepositoryTag, error) {
 	owner := repository.GetOwner().GetLogin()
 	repo := repository.GetName()
 
-	underlyingClient := c.GetUnderlyingClient(ctx)
-
-	var allTags []*github.RepositoryTag
-	opt := &github.ListOptions{
-		PerPage: 10,
+	tags, _, err := c.GetUnderlyingClient(ctx).Repositories.ListTags(ctx, owner, repo, &github.ListOptions{PerPage: tagsPage})
+	if err != nil {
+		return nil, microerror.Mask(err)
 	}
-	for {
-		tags, resp, err := underlyingClient.Repositories.ListTags(ctx, owner, repo, opt)
-		if err != nil {
-			return nil, microerror.Mask(err)
-		}
-		allTags = append(allTags, tags...)
-		if resp.NextPage == 0 {
-			break
-		}
-		opt.Page = resp.NextPage
-	}
-	for _, tag := range allTags {
+	for _, tag := range tags {
 		c.logger.Debugf("Found tag: %s / commit: %s\n", tag.GetName(), tag.GetCommit().GetSHA())
 	}
-	return allTags, nil
+	return tags, nil
 }
 
 // getLatestNonTagCommit gets the latest commit of branch that is not tagged,

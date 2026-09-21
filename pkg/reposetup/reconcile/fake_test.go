@@ -434,10 +434,23 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 		}
 		writeJSON(w, 200, map[string]any{"total_count": len(runs), "check_runs": runs})
 	}))
-	mux.HandleFunc("GET /repos/{owner}/{repo}/tags", f.withRepo(func(w http.ResponseWriter, _ *http.Request, repo *fakeRepo) {
+	mux.HandleFunc("GET /repos/{owner}/{repo}/tags", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		// Paged as GitHub pages them, newest first, so that a walk over the
+		// pages shows in gets.
+		perPage, _ := strconv.Atoi(r.URL.Query().Get("per_page"))
+		if perPage < 1 {
+			perPage = 30
+		}
+		page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+		if page < 1 {
+			page = 1
+		}
 		tags := []map[string]any{}
-		for _, t := range repo.tags {
-			tags = append(tags, map[string]any{"name": t, "commit": map[string]string{"sha": "head"}})
+		for i := (page - 1) * perPage; i < len(repo.tags) && i < page*perPage; i++ {
+			tags = append(tags, map[string]any{"name": repo.tags[i], "commit": map[string]string{"sha": "head"}})
+		}
+		if page*perPage < len(repo.tags) {
+			w.Header().Set("Link", fmt.Sprintf(`<%s%s?per_page=%d&page=%d>; rel="next"`, f.srv.URL, r.URL.Path, perPage, page+1))
 		}
 		writeJSON(w, 200, tags)
 	}))
