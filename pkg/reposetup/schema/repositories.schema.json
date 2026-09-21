@@ -354,6 +354,15 @@
           }
         }
       },
+      "requiredChecks": {
+        "type": "array",
+        "uniqueItems": true,
+        "description": "Status-check contexts required on the repository's default branch whatever reported. The protection step merges them with the baseline's rule, which requires a context only once it has reported on the default branch or a recently merged pull request and removes a required context nothing reports: a context declared here is required before it has ever reported and is never removed, neither as a ghost nor as an ignored context. For a repository's own GitHub Actions gate that runs on every pull request, such as a team-file validation job, under the name GitHub shows for it ('<workflow> / <job>'). Requires devctl v8.72.0+.",
+        "items": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
       "system": {
         "type": "string",
         "title": "System",
