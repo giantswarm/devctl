@@ -154,6 +154,11 @@ type Fields struct {
 	// without it every run is a check that changes nothing.
 	Align          bool     `yaml:"align"`
 	ChoreReviewers []string `yaml:"choreReviewers"`
+	// RequiredChecks are status-check contexts the protection step requires
+	// on the default branch whatever reported, next to the baseline's rule:
+	// the repository's own GitHub Actions gate that runs on every pull
+	// request. A declared context is never removed as a ghost.
+	RequiredChecks []string `yaml:"requiredChecks"`
 	Replace        *struct {
 		Precommit bool `yaml:"precommit"`
 	} `yaml:"replace"`

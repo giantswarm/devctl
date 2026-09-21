@@ -14,7 +14,9 @@ import (
 // keeps the required checks on the reported-only rule: a context is
 // required once it has reported on the default branch or a recently merged
 // pull request; a required context nothing reports, a CircleCI context
-// without a job in the pipeline and an ignored context are removed.
+// without a job in the pipeline and an ignored context are removed. The
+// entry's requiredChecks are required whatever reported, like the
+// baseline's unconditional checks, and never removed.
 func (r *Runner) stepProtection(ctx context.Context, s *run, sr *StepResult) error {
 	b := s.baseline
 	branch := s.branch()
@@ -65,7 +67,7 @@ func (r *Runner) stepProtection(ctx context.Context, s *run, sr *StepResult) err
 		return err
 	}
 
-	want, err := requiredChecks(b, current, reported, reportedKnown, gates, pipelineKnown)
+	want, err := requiredChecks(b, s.fields.RequiredChecks, current, reported, reportedKnown, gates, pipelineKnown)
 	if err != nil {
 		return err
 	}
@@ -152,13 +154,15 @@ func (r *Runner) pipelineGates(ctx context.Context, s *run) (gates []string, kno
 }
 
 // requiredChecks computes the required contexts: the baseline's
-// unconditional checks; the currently required ones that are neither
-// ignored, nor CircleCI jobs the pipeline no longer has, nor unreported
-// (when what reported is known); and the candidates — the baseline's
-// conditional checks and the pipeline's gates — once they have reported.
-// Nothing is added or removed on a guess: an unknown pipeline keeps every
-// CircleCI context, unknown reports keep every current context.
-func requiredChecks(b Baseline, current, reported []string, reportedKnown bool, gates []string, pipelineKnown bool) ([]string, error) {
+// unconditional checks and the entry's declared ones, whatever reported;
+// the currently required ones that are neither ignored, nor CircleCI jobs
+// the pipeline no longer has, nor unreported (when what reported is known);
+// and the candidates — the baseline's conditional checks and the pipeline's
+// gates — once they have reported. A declared context is in the first set,
+// so neither the ignore rule nor the ghost removal reaches it. Nothing is
+// added or removed on a guess: an unknown pipeline keeps every CircleCI
+// context, unknown reports keep every current context.
+func requiredChecks(b Baseline, declared, current, reported []string, reportedKnown bool, gates []string, pipelineKnown bool) ([]string, error) {
 	ignored := make([]*regexp.Regexp, 0, len(b.IgnoredChecks))
 	for _, expr := range b.IgnoredChecks {
 		re, err := regexp.Compile(expr)
@@ -186,7 +190,7 @@ func requiredChecks(b Baseline, current, reported []string, reportedKnown bool, 
 			want = append(want, name)
 		}
 	}
-	for _, name := range b.RequiredChecks {
+	for _, name := range append(append([]string{}, b.RequiredChecks...), declared...) {
 		add(name)
 	}
 	for _, name := range current {

@@ -35,7 +35,10 @@ const (
 `
 	archivedEntryYAML = entryYAML + "  lifecycle: archived\n"
 	deletedEntryYAML  = entryYAML + "  lifecycle: deleted\n"
-	privateEntryYAML  = `- name: sample-service
+	// requiredChecksEntryYAML declares the repository's own GitHub Actions
+	// gate: required whatever reported.
+	requiredChecksEntryYAML = entryYAML + "  requiredChecks: [\"" + ctxValidate + "\"]\n"
+	privateEntryYAML        = `- name: sample-service
   componentType: service
   description: A sample service
   visibility: private
@@ -54,6 +57,7 @@ const (
 	ctxSemantic = "semantic-pull-request / Validate PR title"
 	ctxRelease  = "create-release / Gather facts"
 	ctxGhost    = "CircleCI Pipeline"
+	ctxValidate = "Validate / Repositories YAML"
 )
 
 // harness wires a Runner to the two fakes with a validated entry.
@@ -403,6 +407,32 @@ func TestSteps(t *testing.T) {
 				r.protection = &fakeProtection{reviews: 1, enforceAdmins: true, strict: false, checks: []string{ctxGoBuild, "execute-smoke-test"}}
 			},
 			wantCheck: VerdictOK,
+		},
+		{
+			name: "protection: a declared context is required before it has reported", step: StepProtection, entry: requiredChecksEntryYAML,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.protection = &fakeProtection{reviews: 1, enforceAdmins: true, strict: false, checks: []string{ctxGoBuild}}
+			},
+			wantCheck: VerdictDrift, wantChange: "require " + ctxValidate,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Equal(t, []string{ctxValidate, ctxGoBuild}, h.repo().protection.checks, "declared first, whatever reported")
+				require.Equal(t, []string{"require " + ctxValidate}, res.Step(StepProtection).Changes)
+			},
+		},
+		{
+			name: "protection: a declared context that never reported is no ghost", step: StepProtection, entry: requiredChecksEntryYAML,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.protection = &fakeProtection{reviews: 1, enforceAdmins: true, strict: false, checks: []string{ctxValidate, ctxGoBuild, ctxGhost}}
+			},
+			wantCheck: VerdictDrift, wantChange: "stop requiring " + ctxGhost,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Equal(t, []string{ctxValidate, ctxGoBuild}, h.repo().protection.checks, "the ghost goes, the declared context stays")
+				require.Equal(t, []string{"stop requiring " + ctxGhost}, res.Step(StepProtection).Changes)
+			},
 		},
 		{
 			name: "protection: strict checks are switched off", step: StepProtection,
@@ -1127,7 +1157,7 @@ func TestRequiredChecks(t *testing.T) {
 	b.RequiredChecks = []string{"PR Gatekeeper"}
 	gates := []string{ctxGoBuild, "ci/circleci: build-chart"}
 
-	got, err := requiredChecks(b,
+	got, err := requiredChecks(b, nil,
 		[]string{ctxGoBuild, ctxSetup, ctxDepGraph, "execute-smoke-test", ctxGhost},
 		[]string{ctxGoBuild, ctxSetup, ctxDepGraph, "execute-smoke-test", ctxSemantic, "ci/circleci: build-chart"}, true,
 		gates, true)
@@ -1135,9 +1165,14 @@ func TestRequiredChecks(t *testing.T) {
 	require.Equal(t, []string{"PR Gatekeeper", ctxGoBuild, "execute-smoke-test", ctxSemantic, "ci/circleci: build-chart"}, got,
 		"unconditional first; the reported hand-added gate stays; the stale CircleCI job, the ignored context and the ghost go; the candidates that reported join")
 
-	got, err = requiredChecks(b, []string{ctxGoBuild, ctxGhost}, nil, false, nil, false)
+	got, err = requiredChecks(b, nil, []string{ctxGoBuild, ctxGhost}, nil, false, nil, false)
 	require.NoError(t, err)
 	require.Equal(t, []string{"PR Gatekeeper", ctxGoBuild, ctxGhost}, got, "unknown reports and pipeline: nothing removed, nothing added")
+
+	got, err = requiredChecks(b, []string{ctxValidate, ctxDepGraph, ctxSetup}, []string{ctxGoBuild, ctxSetup}, []string{ctxGoBuild}, true, gates, true)
+	require.NoError(t, err)
+	require.Equal(t, []string{"PR Gatekeeper", ctxValidate, ctxDepGraph, ctxSetup, ctxGoBuild}, got,
+		"the declared contexts follow the baseline's whatever reported: the unreported one, the ignored one and the stale CircleCI job alike")
 }
 
 // TestScaffoldGoServiceWithChart is the engine test of the Go service with

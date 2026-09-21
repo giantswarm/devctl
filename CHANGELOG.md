@@ -9,6 +9,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `requiredChecks` in the repositories schema devctl ships and in `reposetup.Fields`: status-check contexts an entry
+  requires on its default branch whatever reported, merged with the baseline's reported-only rule by the protection
+  step and never removed as ghosts. For a repository's own GitHub Actions gate that runs on every pull request, such
+  as a team-file validation job, which the rule could not require before it had reported (#2273).
+
 - `lifecycle: deleted`, the fourth lifecycle of the repositories schema devctl ships, and the engine's handling of it:
   the lifecycle step unfollows the repository's CircleCI project and stops it building, then deletes the repository on
   GitHub -- code, issues, pull requests, releases and packages with it (an organization owner can restore it on GitHub
