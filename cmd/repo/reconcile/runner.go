@@ -103,8 +103,9 @@ func (r *runner) run(ctx context.Context, arg string) error {
 			Templates: reposetup.GitHubTemplates{Token: token},
 			Log:       engine.LogWriter(r.logger),
 		},
-		Baseline: &baseline,
-		Log:      engine.LogWriter(r.logger),
+		Baseline:    &baseline,
+		DevctlAppID: r.flag.DevctlAppID,
+		Log:         engine.LogWriter(r.logger),
 	}
 	res, err := runner.Run(ctx, req)
 	if err != nil {

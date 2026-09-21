@@ -84,6 +84,13 @@ type Runner struct {
 	// Baseline is the set-up applied on top of the declaration; nil means
 	// [DefaultBaseline].
 	Baseline *Baseline
+	// DevctlAppID is the numeric id of the devctl GitHub App (the App's
+	// settings page; not the client id) and the switch to rulesets: with it
+	// the protection step writes the default branch's ruleset with the App
+	// as bypass actor in pull_request mode (none on agentMerge: false) and
+	// removes classic protection; 0 keeps classic branch protection as
+	// before and reports the missing id.
+	DevctlAppID int64
 	// Log receives one line per step and change; nil discards.
 	Log io.Writer
 	// Now is the clock; nil means time.Now.
@@ -458,6 +465,12 @@ func (s *run) defaultBranch() string {
 // hasFlavour says whether the entry declares flavour in gen.flavours.
 func (s *run) hasFlavour(flavour string) bool {
 	return s.fields.Gen != nil && slices.Contains(s.fields.Gen.Flavours, flavour)
+}
+
+// agentMerge says whether the entry lets agents merge pull requests: true
+// unless it declares agentMerge: false.
+func (s *run) agentMerge() bool {
+	return s.fields.AgentMerge == nil || *s.fields.AgentMerge
 }
 
 // keepsDefaultBranch says the repository's default branch is its own and the

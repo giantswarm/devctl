@@ -41,6 +41,7 @@ type fakeRepo struct {
 	branchFiles   map[string]map[string]string // other branches
 	protection    *fakeProtection
 	protected     string // the branch the last protection PUT named
+	rulesets      []*github.RepositoryRuleset
 	hooks         []*github.Hook
 	release       string
 	releaseAt     time.Time
@@ -74,6 +75,68 @@ type fakeProtection struct {
 	enforceAdmins, allowForce, allowDel bool
 	strict                              bool
 	checks                              []string
+}
+
+// ruleset returns the repository's ruleset named name, nil without one.
+func (r *fakeRepo) ruleset(name string) *github.RepositoryRuleset {
+	for _, rs := range r.rulesets {
+		if rs.Name == name {
+			return rs
+		}
+	}
+	return nil
+}
+
+// addRuleset seeds a ruleset of the shape the engine writes for an aligned
+// repository — active on ~DEFAULT_BRANCH, one review, deletion and force
+// pushes forbidden, the checks given, the bypass actors given — for a test
+// to bend into a drift case.
+func (r *fakeRepo) addRuleset(name string, checks []*github.RuleStatusCheck, bypass ...*github.BypassActor) *github.RepositoryRuleset {
+	rules := &github.RepositoryRulesetRules{
+		PullRequest:    &github.PullRequestRuleParameters{RequiredApprovingReviewCount: 1},
+		Deletion:       &github.EmptyRuleParameters{},
+		NonFastForward: &github.EmptyRuleParameters{},
+	}
+	if len(checks) > 0 {
+		rules.RequiredStatusChecks = &github.RequiredStatusChecksRuleParameters{RequiredStatusChecks: checks}
+	}
+	r.seq++
+	rs := &github.RepositoryRuleset{
+		ID: new(int64(r.seq)), Name: name, Target: new(github.RulesetTargetBranch), Enforcement: github.RulesetEnforcementActive,
+		BypassActors: bypass,
+		Conditions:   &github.RepositoryRulesetConditions{RefName: &github.RepositoryRulesetRefConditionParameters{Include: []string{"~DEFAULT_BRANCH"}, Exclude: []string{}}},
+		Rules:        rules,
+	}
+	r.rulesets = append(r.rulesets, rs)
+	return rs
+}
+
+// statusCheck is a required check any integration satisfies (a CircleCI
+// status); actionsCheck one pinned to the GitHub Actions App.
+func statusCheck(context string) *github.RuleStatusCheck {
+	return &github.RuleStatusCheck{Context: context}
+}
+
+func actionsCheck(context string) *github.RuleStatusCheck {
+	return &github.RuleStatusCheck{Context: context, IntegrationID: new(int64(15368))}
+}
+
+// appBypass is a GitHub App as bypass actor for pull requests.
+func appBypass(id int64) *github.BypassActor {
+	return &github.BypassActor{ActorID: new(id), ActorType: new(github.BypassActorTypeIntegration), BypassMode: new(github.BypassModePullRequest)}
+}
+
+// checkContexts lists the contexts of a ruleset's required_status_checks
+// rule, nil without the rule.
+func checkContexts(rs *github.RepositoryRuleset) []string {
+	if rs == nil || rs.Rules == nil || rs.Rules.RequiredStatusChecks == nil {
+		return nil
+	}
+	var names []string
+	for _, c := range rs.Rules.RequiredStatusChecks.RequiredStatusChecks {
+		names = append(names, c.Context)
+	}
+	return names
 }
 
 // fakeGitHub is the GitHub fake.
@@ -186,6 +249,21 @@ func (f *fakeGitHub) addRepo(owner, name string) *fakeRepo {
 	}
 	f.repos[owner+"/"+name] = r
 	return r
+}
+
+// rulesetIndex is the position of the ruleset with the id in the path, -1
+// without one.
+func (r *fakeRepo) rulesetIndex(id string) int {
+	n, err := strconv.ParseInt(id, 10, 64)
+	if err != nil {
+		return -1
+	}
+	for i, rs := range r.rulesets {
+		if rs.GetID() == n {
+			return i
+		}
+	}
+	return -1
 }
 
 func (f *fakeGitHub) repo(owner, name string) (*fakeRepo, bool) {
@@ -641,6 +719,51 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 		repo.protection = p
 		repo.protected = r.PathValue("branch")
 		writeJSON(w, 200, map[string]any{})
+	}))
+	mux.HandleFunc("DELETE /repos/{owner}/{repo}/branches/{branch}/protection", f.withRepo(func(w http.ResponseWriter, _ *http.Request, repo *fakeRepo) {
+		if repo.protection == nil {
+			notFound(w, "Branch not protected")
+			return
+		}
+		repo.protection = nil
+		w.WriteHeader(204)
+	}))
+	// The rulesets list carries the summary alone, as GitHub's does: the
+	// rules, conditions and bypass actors need the ruleset itself.
+	mux.HandleFunc("GET /repos/{owner}/{repo}/rulesets", f.withRepo(func(w http.ResponseWriter, _ *http.Request, repo *fakeRepo) {
+		list := []map[string]any{}
+		for _, rs := range repo.rulesets {
+			list = append(list, map[string]any{"id": rs.GetID(), "name": rs.Name, "target": rs.GetTarget(), "source_type": "Repository", "source": repo.owner + "/" + repo.name, "enforcement": rs.Enforcement})
+		}
+		writeJSON(w, 200, list)
+	}))
+	mux.HandleFunc("GET /repos/{owner}/{repo}/rulesets/{id}", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		i := repo.rulesetIndex(r.PathValue("id"))
+		if i < 0 {
+			notFound(w, "Not Found")
+			return
+		}
+		writeJSON(w, 200, repo.rulesets[i])
+	}))
+	mux.HandleFunc("POST /repos/{owner}/{repo}/rulesets", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		var in github.RepositoryRuleset
+		decode(r, &in)
+		repo.seq++
+		in.ID = new(int64(repo.seq))
+		repo.rulesets = append(repo.rulesets, &in)
+		writeJSON(w, 201, in)
+	}))
+	mux.HandleFunc("PUT /repos/{owner}/{repo}/rulesets/{id}", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		i := repo.rulesetIndex(r.PathValue("id"))
+		if i < 0 {
+			notFound(w, "Not Found")
+			return
+		}
+		var in github.RepositoryRuleset
+		decode(r, &in)
+		in.ID = repo.rulesets[i].ID
+		repo.rulesets[i] = &in
+		writeJSON(w, 200, in)
 	}))
 	mux.HandleFunc("GET /repos/{owner}/{repo}/hooks", f.withRepo(func(w http.ResponseWriter, _ *http.Request, repo *fakeRepo) {
 		hooks := repo.hooks
