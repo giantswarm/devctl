@@ -1,0 +1,22 @@
+{
+  "exitCode": 2,
+  "json": {
+    "command": "pr wait",
+    "schemaVersion": 1,
+    "exitCode": 2,
+    "verdict": "timeout",
+    "reason": "timeout after 5m0s; unfinished: actions run CI (awaiting approval)",
+    "warnings": [],
+    "startedAt": "*",
+    "finishedAt": "*",
+    "repository": "giantswarm/devctl",
+    "number": 42,
+    "headSha": "abc123",
+    "baseRef": "main",
+    "checks": [],
+    "actions": [
+      {"name": "CI", "runId": 7001, "status": "completed", "conclusion": "action_required", "url": "*"}
+    ],
+    "unfinished": ["actions run CI (awaiting approval)"]
+  }
+}

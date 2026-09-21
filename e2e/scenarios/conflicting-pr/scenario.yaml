@@ -1,0 +1,30 @@
+# The pull request conflicts with its base: GitHub runs no pull_request
+# workflow for it, so a check-list loop waits until it gives up. The wait
+# reads the pull request, sees mergeable_state dirty and exits 3 before
+# reading anything of the head: no other route is scripted, and a poll of the
+# check list would have hit the mock's 404 and turned the run into exit 7.
+description: a conflicting pull request exits 3 before the first poll of its head
+args: [pr, wait, giantswarm/devctl, "42", --timeout, 30m]
+keyring:
+  github:
+    login: e2e-engineer
+    token: ghu_e2e_live
+    expiresAt: "2099-01-01T00:00:00Z"
+    refreshToken: ghr_e2e_live
+    refreshExpiresAt: "2099-01-01T00:00:00Z"
+  circleci:
+    login: e2e-engineer
+    token: CCIPAT_e2e_live
+    expiresAt: "2099-01-01T00:00:00Z"
+github:
+  routes:
+    "GET /repos/giantswarm/devctl/pulls/42":
+      - body:
+          number: 42
+          state: open
+          draft: false
+          merged: false
+          mergeable: false
+          mergeable_state: dirty
+          head: {sha: abc123, ref: feature, repo: {full_name: giantswarm/devctl}}
+          base: {ref: main, repo: {full_name: giantswarm/devctl}}

@@ -1,0 +1,19 @@
+{
+  "exitCode": 3,
+  "json": {
+    "command": "pr wait",
+    "schemaVersion": 1,
+    "exitCode": 3,
+    "verdict": "not_applicable",
+    "reason": "the pull request conflicts with main",
+    "warnings": [],
+    "startedAt": "*",
+    "finishedAt": "*",
+    "repository": "giantswarm/devctl",
+    "number": 42,
+    "headSha": "abc123",
+    "baseRef": "main",
+    "checks": [],
+    "actions": []
+  }
+}

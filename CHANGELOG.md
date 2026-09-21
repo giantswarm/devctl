@@ -9,6 +9,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- e2e scenarios for `devctl pr wait`, the six field incidents the command encodes, each asserting the exit code
+  and the JSON document against the mocked GitHub and CircleCI APIs: `stage-gap` (a CircleCI workflow behind
+  `requires:` still running while the check list reads green ends green once it succeeds), `fork-awaiting-approval`
+  (a fork's workflow run awaiting approval keeps the wait open; exit 2 names the run), `conflicting-pr` (exit 3
+  before the first poll of the head), `retitled-stale-run` (a stale failed title check next to the passed rerun is
+  green), `red-circleci-workflow` (the newest run of a workflow failed: exit 1 naming it), `pr-wait-timeout` (a check
+  that stays queued: exit 2 naming it) (#2277).
+
 - `devctl pr wait <owner/repo> <number> [--timeout 30m] [--progress]`: one bounded, blocking wait until the
   pull request's head is green as the merge box sees it, red, or in a state no CI can turn green, then one
   JSON document and an exit code (0 green, 1 red, 2 timeout naming what was unfinished, 3 draft/closed/
