@@ -35,6 +35,14 @@ devctl auth login
 devctl auth status
 ```
 
+### Waiting for a pull request's CI (`devctl pr wait`)
+
+`devctl pr wait <owner/repo> <number>` blocks until the pull request's head is green as the merge box sees it (the latest run per check, every CircleCI workflow of the head revision, no GitHub Actions run still open or awaiting approval, every required context reported), red, or in a state no CI can turn green (draft, closed, conflicting, behind a strict base), then prints one JSON document and exits 0, 1, 2 (timeout), 3, 4 (a required context never reported), 7 or 8. See [docs/pr-wait.md](docs/pr-wait.md).
+
+```bash
+devctl pr wait giantswarm/devctl 2277 --timeout 45m --progress
+```
+
 ### Repository set-up (`devctl repo`)
 
 Giant Swarm repositories are declared in the team files of [giantswarm/github](https://github.com/giantswarm/github); the reconciler creates and keeps them as declared. `devctl repo create` validates a declaration through the engine, prints the dry run and opens the team-file pull request as you; `devctl repo status` prints a repository's set-up state. See [docs/repo.md](docs/repo.md).
