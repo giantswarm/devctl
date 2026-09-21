@@ -95,7 +95,7 @@ func TestScriptedNotFoundGetsTheErrorBody(t *testing.T) {
 	assert.Contains(t, body, "MANIFEST_UNKNOWN")
 }
 
-func TestStaleLoginRefusesEverything(t *testing.T) {
+func TestStaleLoginRefusesCredentialsOnly(t *testing.T) {
 	s, err := Start(sequence.Routes{
 		"HEAD /v2/giantswarm/devctl/manifests/v1.2.3": {{Status: http.StatusOK}},
 	}, true)
@@ -103,10 +103,20 @@ func TestStaleLoginRefusesEverything(t *testing.T) {
 	defer s.Close()
 
 	for _, target := range []string{"/v2/", "/v2/giantswarm/devctl/manifests/v1.2.3"} {
-		resp, body := do(t, http.MethodGet, s.URL+target)
+		req, err := http.NewRequest(http.MethodGet, s.URL+target, nil)
+		require.NoError(t, err)
+		req.Header.Set("Authorization", "Bearer expired")
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		body, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
 		assert.Equal(t, http.StatusUnauthorized, resp.StatusCode, target)
 		assert.Contains(t, resp.Header.Get("WWW-Authenticate"), `Bearer realm="`+s.URL+`/oauth2/token"`, target)
-		assert.Contains(t, body, "UNAUTHORIZED", target)
+		assert.Contains(t, string(body), "UNAUTHORIZED", target)
 	}
-	assert.Len(t, s.Requests(), 2, "refused requests are recorded")
+
+	resp, _ := do(t, http.MethodHead, s.URL+"/v2/giantswarm/devctl/manifests/v1.2.3")
+	assert.Equal(t, http.StatusOK, resp.StatusCode, "an anonymous request is served by the routes")
+	assert.NotEmpty(t, resp.Header.Get("Docker-Content-Digest"))
+	assert.Len(t, s.Requests(), 3, "refused and served requests are recorded")
 }

@@ -1,0 +1,59 @@
+# The tag pipeline runs and runs, and the registry answers MANIFEST_UNKNOWN
+# for ever: the deadline passes and the wait ends with exit 2, naming the
+# artifacts still missing. Thirty minutes at DEVCTL_TIME_SCALE 0.001 are
+# 1.8 seconds.
+description: artifacts that never appear while the pipeline runs end the wait with exit 2 at the deadline
+args: [release, wait, giantswarm/e2e-app, v1.2.3, --timeout, 30m]
+timeout: 20s
+keyring:
+  github:
+    login: e2e-engineer
+    token: ghu_e2e_live
+    expiresAt: "2099-01-01T00:00:00Z"
+  circleci:
+    login: e2e-engineer
+    token: CCIPAT_e2e_live
+    expiresAt: "2099-01-01T00:00:00Z"
+github:
+  routes:
+    "GET /repos/giantswarm/e2e-app/git/ref/tags/v1.2.3":
+      - body: {ref: refs/tags/v1.2.3, object: {type: commit, sha: aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44}}
+    "GET /repos/giantswarm/e2e-app":
+      - body: {name: e2e-app, full_name: giantswarm/e2e-app, private: false}
+    "GET /repos/giantswarm/e2e-app/contents/?ref=aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44":
+      - body:
+          - {name: Dockerfile, path: Dockerfile, type: file}
+          - {name: helm, path: helm, type: dir}
+          - {name: main.go, path: main.go, type: file}
+    "GET /repos/giantswarm/e2e-app/contents/.github/workflows?ref=aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44":
+      - body:
+          - {name: zz_generated.auto_release.yaml, path: .github/workflows/zz_generated.auto_release.yaml, type: file}
+    "GET /repos/giantswarm/e2e-app/contents/.circleci?ref=aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44":
+      - body:
+          - {name: config.yml, path: .circleci/config.yml, type: file}
+          - {name: workflows.yml, path: .circleci/workflows.yml, type: file}
+    "GET /repos/giantswarm/github/contents/repositories":
+      - body:
+          - {name: team-e2e.yaml, path: repositories/team-e2e.yaml, type: file}
+    "GET /repos/giantswarm/github/contents/repositories/team-e2e.yaml":
+      - body:
+          name: team-e2e.yaml
+          path: repositories/team-e2e.yaml
+          type: file
+          content: |
+            - name: e2e-app
+              componentType: service
+              gen:
+                flavours:
+                  - app
+                language: go
+                ci:
+                  generate: true
+circleci:
+  routes:
+    "GET /api/v2/project/gh/giantswarm/e2e-app/pipeline":
+      - body: {items: [{id: p1, number: 7, state: created, created_at: "2026-09-21T10:00:00Z", vcs: {tag: v1.2.3, revision: aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44}}], next_page_token: null}
+    "GET /api/v2/pipeline/p1/workflow":
+      - body: {items: [{id: w1, name: build, status: running, created_at: "2026-09-21T10:00:05Z"}], next_page_token: null}
+    "GET /api/v2/workflow/w1/job":
+      - body: {items: [{id: j1, name: go-build, status: success}, {id: j2, name: push-e2e-app-to-registries, status: running}, {id: j3, name: push-e2e-app-to-app-catalog, status: blocked}], next_page_token: null}

@@ -8,8 +8,10 @@
 // without a body is a minimal manifest with its Docker-Content-Digest, a 404
 // without a body is the registry's MANIFEST_UNKNOWN error, and a manifest no
 // route scripts is MANIFEST_UNKNOWN too. With the stale-login flag set every
-// request is answered 401 UNAUTHORIZED with a bearer challenge, the answer a
-// registry gives a client whose stored login has expired.
+// request that carries credentials is answered 401 UNAUTHORIZED with a bearer
+// challenge, the answer a registry gives a client whose stored login has
+// expired; an anonymous request is answered by the routes, as a public
+// registry answers a client that sends nothing.
 package registry
 
 import (
@@ -41,7 +43,8 @@ type Server struct {
 }
 
 // Start serves the routes on a loopback port until Close. With staleLogin
-// every request is refused with 401 UNAUTHORIZED.
+// every request carrying an Authorization header is refused with 401
+// UNAUTHORIZED; anonymous requests are served.
 func Start(routes sequence.Routes, staleLogin bool) (*Server, error) {
 	script, err := sequence.New(routes)
 	if err != nil {
@@ -66,7 +69,7 @@ func (s *Server) Requests() []sequence.Request {
 
 func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Docker-Distribution-API-Version", "registry/2.0")
-	if s.staleLogin {
+	if s.staleLogin && r.Header.Get("Authorization") != "" {
 		s.script.Record(r)
 		w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Bearer realm="%s/oauth2/token",service="%s"`, s.URL, s.Host()))
 		_ = sequence.Write(w, r, errorResponse(http.StatusUnauthorized, "UNAUTHORIZED", "authentication required", nil))
