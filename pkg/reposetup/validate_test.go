@@ -72,6 +72,8 @@ func TestValidateEntries(t *testing.T) {
 		{name: "no-ci-jobs", template: TemplateMinimal, verdict: VerdictFree, fields: []string{"gen.ci.generate"}},
 		{name: "align-opt-in", template: TemplateGo, verdict: VerdictFree},
 		{name: "align-not-bool", template: TemplateGo, verdict: VerdictFree, fields: []string{"align"}},
+		{name: "agent-merge-opt-out", template: TemplateGo, verdict: VerdictFree},
+		{name: "agent-merge-not-bool", template: TemplateGo, verdict: VerdictFree, fields: []string{"agentMerge"}},
 	}
 
 	for _, tc := range tests {
@@ -334,7 +336,7 @@ func TestValidateExistingMode(t *testing.T) {
 				refused = append(refused, entry.Name)
 			}
 		}
-		require.Equal(t, []string{"empty-gen", "internal-visibility", "unknown-field", "unknown-flavour", "twice", "twice", "align-not-bool"}, refused)
+		require.Equal(t, []string{"empty-gen", "internal-visibility", "unknown-field", "unknown-flavour", "twice", "twice", "align-not-bool", "agent-merge-not-bool"}, refused)
 		require.False(t, result.Accepted)
 	})
 

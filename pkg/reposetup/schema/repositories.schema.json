@@ -20,6 +20,11 @@
         "default": false,
         "description": "The repository's opt-in to alignment. With true the reconciler changes the repository to its declared set-up and the company baseline on every trigger: a merged change of this entry, Align now, the nightly. Without it every run is a check -- the drift in the run's summary, the artifact and the inventory, nothing changed on GitHub or CircleCI. A repository created by the automation (devctl repo create, the Repositories page, the Repo Manager) is declared with align: true: its creation is the opt-in. An existing repository opts in when its team adds the field to its entry in a pull request the team reviews; a lifecycle change carries it. The team's policy file repository-setup/team-<name>.yaml names the team's channels and holds no opt-in."
       },
+      "agentMerge": {
+        "type": "boolean",
+        "default": true,
+        "description": "The repository's opt-out from agent merges. With false no agent merges pull requests in this repository: devctl pr merge refuses with exit 5, naming this field, and the protection step writes the repository's ruleset without a bypass actor, so nothing merges past the required review. Plans and decision records merged by people after review are the case. With true (the default) agents merge through the ruleset's bypass actor, as everywhere else."
+      },
       "botPRsSweep": {
         "type": "object",
         "additionalProperties": false,
