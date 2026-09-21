@@ -36,7 +36,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   does not keep a repository from counting as set up as declared, while a finding a person must fix
   (`abs-prerequisite`, `renovate-not-scanned`, `red-release`, ...) now clears the mark it left untouched before.
   `repo reconcile` marks an advisory finding in its table and `repo status` in its findings lines (#2268).
-
+- `repo reconcile` never rebuilds a tag. The latest release's tag without a pipeline is the finding
+  `missed-tag-build` (a person's to fix, not advisory), the step reads `reported` and no request is written in any
+  mode; the fix is the next tag, or the tag's pipeline triggered by hand. The triggered rebuild published a chart or
+  an image nobody asked for. `red-release` is unchanged (#2270).
 - The generated `renovate.json5` lists the marge sweep's App
   (`giantswarm-marge[bot]`) in `gitIgnoredAuthors` beside taylorbot. The sweep
   commits a bot PR's changelog entry onto the bot's own branch, and Renovate
@@ -63,6 +66,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - `repo reconcile --enforce-admins`: the branch protection binds administrators too, the baseline's value with no
   knob; the flag and its "until the baseline decides" note are gone (#2267).
+- `circleciclient.Client.TriggerPipeline` and `TriggerRequest`: the reconciler's tag rebuild was their only caller
+  (#2270).
 
 ### Fixed
 
@@ -99,9 +104,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - `gen workflows` (`--release-workflow=auto-release`): the "Verify CircleCI picked up the tag" step passes with a
   `::warning::` annotation when CircleCI does not follow the project (HTTP 404 with a token) instead of failing the
   run. The first tag of a repository created pull-request-last is pushed before the repository set-up reconciler
-  follows the project on CircleCI, and the reconciler triggers the missed tag build minutes later, so every new
-  repository's first Auto Release run was red although the release existed and the build followed. Following takes an
-  administrator's token the workflow does not hold. A followed project whose pipeline is missing after the wait is
+  follows the project on CircleCI, and the reconciler reports the missed tag build, so every new repository's first
+  Auto Release run was red although the release existed. Following takes an administrator's token the workflow does
+  not hold. A followed project whose pipeline is missing after the wait is
   still triggered by the step (HTTP 200, empty list); API errors still fail it (giantswarm/giantswarm#37726, #2245).
 - `repo reconcile`: the `renovate` step decides from the repository's own evidence — a Renovate configuration
   file and a trace of a run (the Dependency Dashboard issue, else a pull request or a commit of Renovate's) —

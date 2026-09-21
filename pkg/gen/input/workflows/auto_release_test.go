@@ -854,9 +854,9 @@ func runVerify(t *testing.T, token string, get, post [2]string) ([]byte, error) 
 // Test_AutoReleaseVerifyCircleCI pins what the verify step does with each
 // answer of the pipeline list. A project CircleCI does not follow (404 with a
 // token) is the first tag of a repository created pull-request-last: the
-// repository set-up reconciler follows the project and triggers the missed
-// build minutes later, so the step warns and passes instead of failing every
-// new repository's first run. A followed project whose list stays empty is
+// repository set-up reconciler follows the project and reports the missed
+// build, so the step warns and passes instead of failing every new
+// repository's first run. A followed project whose list stays empty is
 // triggered by the step itself, and a rejected token still fails the run.
 func Test_AutoReleaseVerifyCircleCI(t *testing.T) {
 	testCases := []struct {

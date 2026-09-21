@@ -135,13 +135,6 @@ type PipelineVCS struct {
 	Revision string `json:"revision"`
 }
 
-// TriggerRequest names the revision a pipeline is triggered for: a tag or a
-// branch, one of the two.
-type TriggerRequest struct {
-	Tag    string `json:"tag,omitempty"`
-	Branch string `json:"branch,omitempty"`
-}
-
 // Workflow is one workflow of a pipeline. Status is one of success,
 // running, not_run, failed, error, failing, on_hold, canceled, unauthorized.
 type Workflow struct {
@@ -317,24 +310,6 @@ func (c *Client) ListPipelines(ctx context.Context, org, repo, pageToken string)
 		return nil, microerror.Mask(err)
 	}
 	return &page, nil
-}
-
-// TriggerPipeline triggers a pipeline for the tag or branch in req: the way
-// a tag build the project missed (followed after the tag, renamed) is run.
-func (c *Client) TriggerPipeline(ctx context.Context, org, repo string, req TriggerRequest) (*Pipeline, error) {
-	if (req.Tag == "") == (req.Branch == "") {
-		return nil, microerror.Maskf(invalidConfigError, "%T: exactly one of Tag and Branch must be set", req)
-	}
-	var p Pipeline
-	if err := c.do(ctx, http.MethodPost, c.v2Project(org, repo)+"/pipeline", req, &p); err != nil {
-		return nil, microerror.Mask(err)
-	}
-	if req.Tag != "" {
-		p.VCS.Tag = req.Tag
-	} else {
-		p.VCS.Branch = req.Branch
-	}
-	return &p, nil
 }
 
 // ListPipelineWorkflows returns the workflows of a pipeline.

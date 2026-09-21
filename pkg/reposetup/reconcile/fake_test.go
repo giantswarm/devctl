@@ -842,12 +842,6 @@ func (f *fakeCircleCI) routes(mux *http.ServeMux) {
 		}
 		writeJSON(w, 200, map[string]any{"items": items, "next_page_token": next})
 	}))
-	mux.HandleFunc("POST /api/v2/project/gh/{org}/{repo}/pipeline", f.withProject(func(w http.ResponseWriter, r *http.Request, p *fakeProject) {
-		var in circleciclient.TriggerRequest
-		decode(r, &in)
-		f.addPipeline(p, in.Tag, "success")
-		writeJSON(w, 201, p.pipelines[0])
-	}))
 	mux.HandleFunc("GET /api/v2/pipeline/{id}/workflow", func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		defer f.mu.Unlock()

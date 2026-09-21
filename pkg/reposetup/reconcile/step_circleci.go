@@ -128,11 +128,13 @@ func (r *Runner) followGrantee(ctx context.Context, s *run) (string, error) {
 }
 
 // stepRelease verifies the latest release: its tag has a pipeline and the
-// pipeline's workflows succeeded. A tag without a pipeline — the project
-// was followed or renamed after the tag — is triggered; a red pipeline is
-// reported: the tag is dead and the fix is the next tag. The decision is
-// made from the tag alone: a newer pipeline of another ref (the follow
-// itself builds the default branch) is no evidence that the tag was built.
+// pipeline's workflows succeeded. Either failure is a finding, never a
+// rebuild: the reconciler publishes nothing. A tag without a pipeline —
+// the project was followed or renamed after the tag — is a missed build;
+// the fix is the next tag, or the tag's pipeline triggered by hand. A red
+// pipeline is a dead tag; the fix is the next tag. The decision is made
+// from the tag alone: a newer pipeline of another ref (the follow itself
+// builds the default branch) is no evidence that the tag was built.
 func (r *Runner) stepRelease(ctx context.Context, s *run, sr *StepResult) error {
 	release, resp, err := r.GitHub.Repositories.GetLatestRelease(ctx, s.owner, s.name)
 	switch {
@@ -159,10 +161,10 @@ func (r *Runner) stepRelease(ctx context.Context, s *run, sr *StepResult) error 
 		return err
 	}
 	if pipeline == nil {
-		return s.plan(sr, fmt.Sprintf("trigger the missed tag build for %s", tag), func() error {
-			_, err := r.CircleCI.TriggerPipeline(ctx, s.owner, s.name, circleciclient.TriggerRequest{Tag: tag})
-			return err
-		})
+		s.report(sr, FindingMissedTagBuild,
+			fmt.Sprintf("release %s of %s has no pipeline: nothing was built or published for the tag", tag, s.slug()),
+			"cut the next tag, or trigger the tag's pipeline by hand")
+		return nil
 	}
 
 	workflows, err := r.CircleCI.ListPipelineWorkflows(ctx, pipeline.ID)
@@ -210,8 +212,7 @@ func (r *Runner) stepRelease(ctx context.Context, s *run, sr *StepResult) error 
 // tag's pipeline is found, until a pipeline older than the release is seen
 // — the tag's pipeline builds a commit no older than that, so it would have
 // been listed before — or until the pages end. Nil when the tag has no
-// pipeline; a trigger is safe then and only then, as CircleCI runs a new
-// pipeline per trigger.
+// pipeline: the build was missed.
 func (r *Runner) tagPipeline(ctx context.Context, s *run, tag string, releasedAt time.Time) (*circleciclient.Pipeline, error) {
 	var pageToken string
 	for {

@@ -807,17 +807,22 @@ func TestSteps(t *testing.T) {
 			},
 		},
 		{
-			name: "release: a tag without a pipeline is a missed build and is triggered", step: StepRelease,
+			// The reconciler never rebuilds a tag: a trigger would publish a
+			// chart or an image nobody asked for. The missed build is a
+			// finding in every mode and no request is written.
+			name: "release: a tag without a pipeline is a missed build, reported and never triggered", step: StepRelease,
 			seed: func(h *harness) {
 				r := h.gh.addRepo(owner, name)
 				r.release, r.releaseAt = "v0.1.0", time.Now().Add(-time.Hour)
 				h.cc.follow(owner, name)
 			},
-			wantCheck: VerdictDrift, wantChange: "trigger the missed tag build for v0.1.0",
-			verify: func(t *testing.T, h *harness, _ *Result) {
-				p := h.cc.projects[owner+"/"+name]
-				require.Len(t, p.pipelines, 1)
-				require.Equal(t, "v0.1.0", p.pipelines[0].VCS.Tag)
+			wantCheck: VerdictReported, wantFinding: FindingMissedTagBuild, wantAfter: VerdictReported,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				f := res.Findings()[0]
+				require.Equal(t, "release v0.1.0 of "+owner+"/"+name+" has no pipeline: nothing was built or published for the tag", f.Message)
+				require.Equal(t, "cut the next tag, or trigger the tag's pipeline by hand", f.Fix)
+				require.Empty(t, h.cc.mutations, "no pipeline is triggered")
+				require.Empty(t, h.cc.projects[owner+"/"+name].pipelines)
 			},
 		},
 		{
@@ -856,17 +861,16 @@ func TestSteps(t *testing.T) {
 				r.release, r.releaseAt = "v0.1.0", time.Now().Add(-time.Hour)
 				h.cc.seedPipeline(h.cc.follow(owner, name), circleciclient.PipelineVCS{Branch: "main"}, time.Now(), "success")
 			},
-			wantCheck: VerdictDrift, wantChange: "trigger the missed tag build for v0.1.0",
+			wantCheck: VerdictReported, wantFinding: FindingMissedTagBuild, wantAfter: VerdictReported,
 			verify: func(t *testing.T, h *harness, _ *Result) {
-				p := h.cc.projects[owner+"/"+name]
-				require.Len(t, p.pipelines, 2, "one trigger, once")
-				require.Equal(t, "v0.1.0", p.pipelines[0].VCS.Tag)
+				require.Empty(t, h.cc.mutations, "no pipeline is triggered")
+				require.Len(t, h.cc.projects[owner+"/"+name].pipelines, 1, "the default branch's pipeline alone")
 			},
 		},
 		{
 			// The tag's pipeline is behind a full first page of newer
-			// pipelines: the step pages on and finds it, no second trigger.
-			name: "release: the tag pipeline on a later page is verified, not triggered again", step: StepRelease,
+			// pipelines: the step pages on and finds it.
+			name: "release: the tag pipeline on a later page is verified", step: StepRelease,
 			seed: func(h *harness) {
 				r := h.gh.addRepo(owner, name)
 				r.release, r.releaseAt = "v0.1.0", time.Now().Add(-time.Hour)
@@ -885,8 +889,8 @@ func TestSteps(t *testing.T) {
 		{
 			// Paging stops at the first pipeline older than the release: the
 			// tag's pipeline would have been listed before it. The pages
-			// behind it are never read; the tag is triggered.
-			name: "release: paging stops behind the release and triggers the missed tag build", step: StepRelease,
+			// behind it are never read; the missed build is reported.
+			name: "release: paging stops behind the release and reports the missed tag build", step: StepRelease,
 			seed: func(h *harness) {
 				r := h.gh.addRepo(owner, name)
 				r.release, r.releaseAt = "v0.1.0", time.Now().Add(-time.Hour)
@@ -896,11 +900,10 @@ func TestSteps(t *testing.T) {
 				h.cc.seedPipeline(p, circleciclient.PipelineVCS{Branch: "main"}, time.Now().Add(-2*time.Hour), "success")
 				h.cc.seedPipeline(p, circleciclient.PipelineVCS{Branch: "main"}, time.Now(), "success")
 			},
-			wantCheck: VerdictDrift, wantChange: "trigger the missed tag build for v0.1.0",
+			wantCheck: VerdictReported, wantFinding: FindingMissedTagBuild, wantAfter: VerdictReported,
 			verify: func(t *testing.T, h *harness, _ *Result) {
-				p := h.cc.projects[owner+"/"+name]
-				require.Len(t, p.pipelines, 4, "one trigger, once")
-				require.Equal(t, "v0.1.0", p.pipelines[0].VCS.Tag)
+				require.Empty(t, h.cc.mutations, "no pipeline is triggered")
+				require.Len(t, h.cc.projects[owner+"/"+name].pipelines, 3)
 				require.Contains(t, h.cc.pages, "1", "the page with the older pipeline was read")
 				require.NotContains(t, h.cc.pages, "2", "the pages behind the release were not read")
 			},
