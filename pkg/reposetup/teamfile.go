@@ -164,7 +164,11 @@ type Fields struct {
 	// the repository's own GitHub Actions gate that runs on every pull
 	// request. A declared context is never removed as a ghost.
 	RequiredChecks []string `yaml:"requiredChecks"`
-	Replace        *struct {
+	// AgentMerge is the repository's opt-out from agent merges: with false
+	// the default branch's ruleset has no bypass actor, so nothing merges
+	// past the required review. Nil is the default, true.
+	AgentMerge *bool `yaml:"agentMerge"`
+	Replace    *struct {
 		Precommit bool `yaml:"precommit"`
 	} `yaml:"replace"`
 	Gen *GenFields `yaml:"gen"`

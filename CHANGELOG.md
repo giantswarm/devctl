@@ -21,6 +21,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   (ETags; `githubclient.NewConditional`) at an interval from the rate-limit headers, 15 s to 60 s. The engine
   is `pkg/prwait`, for `pr merge` to reuse (#2277).
 
+- `devctl repo reconcile --devctl-app-id`: the numeric id of the devctl GitHub App (the App's settings page;
+  not the client id), the bypass actor the protection step writes into the default branch's ruleset in
+  `pull_request` mode, and `reconcile.Runner.DevctlAppID` behind it. Unset, the bypass actors are left as they
+  are and the step reports the missing configuration (#2288).
+
 - `devctl auth login` and `devctl auth status`: the identities the agent-facing commands act with. GitHub
   through the device flow of the devctl GitHub App (a user access token refreshed by the commands themselves
   for six months, no client secret in the binary), CircleCI through the OAuth 2.0 authorization code flow with
@@ -76,6 +81,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   the repository is opted in when the engine reads the entry (#2259).
 
 ### Changed
+
+- The protection step of the repository set-up engine writes a repository ruleset, `devctl: default branch`,
+  instead of classic branch protection: active on `~DEFAULT_BRANCH`, so a rename or a fork line's declared
+  branch needs no change; the baseline's review requirement; the required checks on the reported-only rule,
+  strict off, a GitHub Actions gate pinned to the GitHub Actions App; no deletion, no force push; the devctl
+  App as bypass actor for pull requests unless the entry declares `agentMerge: false` (then none, so nothing
+  merges past the required review). Classic protection gives way in the same run -- its checks carried over,
+  the ruleset written, the classic protection removed; the dry run plans both -- and a second run plans
+  nothing. A ruleset the engine did not create is left alone and reported as the advisory finding
+  `foreign-ruleset`. `enforce_admins` is classic protection's alone: a ruleset binds everyone but its bypass
+  actors. `reposetup.Fields` gains `AgentMerge` (#2288).
 
 - The repositories schema devctl ships (`pkg/reposetup/schema/repositories.schema.json`) is regenerated from
   giantswarm/github's `.github/repositories.schema.json` at commit 3a5bbec: it gains `agentMerge`, the repository's

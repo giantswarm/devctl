@@ -136,6 +136,9 @@ const (
 	// FindingEntryRefused: the validator refused the entry for a reason
 	// other than the CircleCI generator; the fix names the field.
 	FindingEntryRefused FindingKind = "entry-refused"
+	// FindingForeignRuleset: the repository carries a ruleset the engine did
+	// not create. It is left alone; a person decides whether it stays.
+	FindingForeignRuleset FindingKind = "foreign-ruleset"
 )
 
 // Advisory says whether findings of the kind are for a person only and do
@@ -143,7 +146,7 @@ const (
 // the finding stays in the artifact with its fix. Every other kind names
 // something a person must fix before the repository counts as in sync.
 func (k FindingKind) Advisory() bool {
-	return k == FindingDefaultIcon
+	return k == FindingDefaultIcon || k == FindingForeignRuleset
 }
 
 // Finding is something a step reports for a person, with the fix.

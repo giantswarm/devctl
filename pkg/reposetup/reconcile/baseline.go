@@ -32,11 +32,12 @@ type Baseline struct {
 	// repository: pull, triage, push, maintain or admin.
 	TeamPermissions map[string]string `json:"teamPermissions"`
 
-	// Branch protection.
+	// Branch protection: the default branch's ruleset ([RulesetName]).
 	RequiredReviews int `json:"requiredReviews"`
-	// EnforceAdmins binds administrators to the protection too. True in
-	// [DefaultBaseline], the company baseline: what `devctl repo setup`
-	// applies and what the merge tool lifts and restores around a merge.
+	// EnforceAdmins is classic branch protection's switch that binds
+	// administrators too; `repo checks` reads it back from an existing
+	// classic protection. The ruleset has no such switch: everyone but its
+	// bypass actors is bound.
 	EnforceAdmins bool `json:"enforceAdmins"`
 	// StrictChecks requires a branch to be up to date before it merges.
 	// False in [DefaultBaseline]: on a repository with Renovate and sweep

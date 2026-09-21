@@ -38,6 +38,9 @@ const (
 	// requiredChecksEntryYAML declares the repository's own GitHub Actions
 	// gate: required whatever reported.
 	requiredChecksEntryYAML = entryYAML + "  requiredChecks: [\"" + ctxValidate + "\"]\n"
+	// agentMergeFalseEntryYAML opts the repository out of agent merges: the
+	// ruleset has no bypass actor.
+	agentMergeFalseEntryYAML = entryYAML + "  agentMerge: false\n"
 	// configurationEntryYAML is a configuration repository: no template, no
 	// generated pipeline.
 	configurationEntryYAML = `- name: sample-service
@@ -96,6 +99,9 @@ const (
 	ctxRelease  = "create-release / Gather facts"
 	ctxGhost    = "CircleCI Pipeline"
 	ctxValidate = "Validate / Repositories YAML"
+
+	// testAppID is the devctl App's id the harness configures.
+	testAppID int64 = 424242
 )
 
 // harness wires a Runner to the two fakes with a validated entry.
@@ -135,7 +141,7 @@ func newHarness(t *testing.T, yaml string) *harness {
 	require.True(t, validated.Entries[0].Accepted, "%v", validated.Entries[0].Problems)
 
 	h := &harness{t: t, gh: gh, cc: cc, baseline: DefaultBaseline(), entry: validated.Entries[0]}
-	h.runner = &Runner{GitHub: ghClient, Checks: checks, CircleCI: ccClient, Renderer: fakeRenderer{}, Baseline: &h.baseline}
+	h.runner = &Runner{GitHub: ghClient, Checks: checks, CircleCI: ccClient, Renderer: fakeRenderer{}, Baseline: &h.baseline, DevctlAppID: testAppID}
 	return h
 }
 
@@ -387,15 +393,25 @@ func TestSteps(t *testing.T) {
 				r.statuses = []string{ctxGoBuild, ctxSetup, ctxDepGraph}
 				r.checkRuns = []string{ctxSemantic, ctxRelease}
 			},
-			wantCheck: VerdictDrift, wantChange: "protect main; require " + ctxSemantic + ", " + ctxGoBuild,
-			verify: func(t *testing.T, h *harness, _ *Result) {
-				p := h.repo().protection
-				require.NotNil(t, p)
-				require.Equal(t, []string{ctxSemantic, ctxGoBuild}, p.checks)
-				require.Equal(t, 1, p.reviews)
-				require.True(t, p.enforceAdmins)
-				require.False(t, p.strict, "strict checks are off in the baseline")
-				require.False(t, p.allowForce || p.allowDel)
+			wantCheck: VerdictDrift, wantChange: `create ruleset "devctl: default branch"; require ` + ctxSemantic + ", " + ctxGoBuild + "; bypass actor: App 424242 on pull requests",
+			verify: func(t *testing.T, h *harness, res *Result) {
+				rs := h.repo().ruleset("devctl: default branch")
+				require.NotNil(t, rs)
+				require.Equal(t, github.RulesetEnforcementActive, rs.Enforcement)
+				require.Equal(t, github.RulesetTargetBranch, *rs.GetTarget())
+				require.Equal(t, []string{"~DEFAULT_BRANCH"}, rs.Conditions.RefName.Include, "the ruleset follows the default branch")
+				require.Equal(t, []string{ctxSemantic, ctxGoBuild}, checkContexts(rs))
+				checks := rs.Rules.RequiredStatusChecks.RequiredStatusChecks
+				require.Equal(t, int64(15368), checks[0].GetIntegrationID(), "a GitHub Actions gate is pinned to the GitHub Actions App")
+				require.Nil(t, checks[1].IntegrationID, "a CircleCI status is not pinned")
+				require.False(t, rs.Rules.RequiredStatusChecks.StrictRequiredStatusChecksPolicy, "strict checks are off in the baseline")
+				require.Equal(t, 1, rs.Rules.PullRequest.RequiredApprovingReviewCount)
+				require.False(t, rs.Rules.PullRequest.DismissStaleReviewsOnPush)
+				require.NotNil(t, rs.Rules.Deletion)
+				require.NotNil(t, rs.Rules.NonFastForward)
+				require.Equal(t, []*github.BypassActor{appBypass(testAppID)}, rs.BypassActors)
+				require.Nil(t, h.repo().protection, "no classic protection is written")
+				require.Len(t, res.Step(StepProtection).Changes, 1, "one write: the ruleset")
 			},
 		},
 		{
@@ -406,10 +422,24 @@ func TestSteps(t *testing.T) {
 				r.statuses = []string{ctxGoBuild, ctxSetup}
 				r.checkRuns = []string{"pre-commit", ctxRelease}
 			},
-			wantCheck: VerdictDrift, wantChange: "protect main; require pre-commit, " + ctxGoBuild,
+			wantCheck: VerdictDrift, wantChange: "require pre-commit, " + ctxGoBuild,
 			verify: func(t *testing.T, h *harness, res *Result) {
-				require.Equal(t, []string{"pre-commit", ctxGoBuild}, h.repo().protection.checks)
+				require.Equal(t, []string{"pre-commit", ctxGoBuild}, checkContexts(h.repo().ruleset(RulesetName)))
 				require.Empty(t, res.Step(StepProtection).Findings, "a tagged head is not a permission gap")
+			},
+		},
+		{
+			name: "protection: classic protection gives way to the ruleset", step: StepProtection,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.protection = &fakeProtection{reviews: 1, enforceAdmins: true, strict: false, checks: []string{ctxGoBuild}}
+			},
+			wantCheck: VerdictDrift, wantChange: "remove classic protection of main",
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Equal(t, []string{`create ruleset "devctl: default branch"; bypass actor: App 424242 on pull requests`, "remove classic protection of main"}, res.Step(StepProtection).Changes, "the checks carry over, so the ruleset differs from the classic protection in the bypass actor alone")
+				require.Nil(t, h.repo().protection)
+				require.Equal(t, []string{ctxGoBuild}, checkContexts(h.repo().ruleset(RulesetName)))
 			},
 		},
 		{
@@ -419,9 +449,9 @@ func TestSteps(t *testing.T) {
 				r.checksStatus = 403
 				r.protection = &fakeProtection{reviews: 1, enforceAdmins: true, strict: false, checks: []string{ctxGoBuild, "execute-smoke-test"}}
 			},
-			wantCheck: VerdictReported, wantFinding: FindingUnchecked, wantAfter: VerdictReported,
+			wantCheck: VerdictDrift, wantFinding: FindingUnchecked, wantAfter: VerdictReported,
 			verify: func(t *testing.T, h *harness, res *Result) {
-				require.Equal(t, []string{ctxGoBuild, "execute-smoke-test"}, h.repo().protection.checks)
+				require.Equal(t, []string{ctxGoBuild, "execute-smoke-test"}, checkContexts(h.repo().ruleset(RulesetName)), "the classic checks carry over")
 				require.Contains(t, res.Step(StepProtection).Findings[0].Fix, "statuses: read, checks: read")
 			},
 		},
@@ -434,17 +464,21 @@ func TestSteps(t *testing.T) {
 			},
 			wantCheck: VerdictDrift, wantChange: "stop requiring " + strings.Join([]string{ctxSetup, ctxDepGraph, ctxRelease, ctxGhost}, ", "),
 			verify: func(t *testing.T, h *harness, _ *Result) {
-				require.Equal(t, []string{ctxGoBuild}, h.repo().protection.checks)
+				require.Equal(t, []string{ctxGoBuild}, checkContexts(h.repo().ruleset(RulesetName)))
 			},
 		},
 		{
-			name: "protection: unknown reports remove nothing", step: StepProtection,
+			name: "protection: unknown reports remove nothing, the classic checks carry over", step: StepProtection,
 			seed: func(h *harness) {
 				h.runner.Checks = nil
 				r := h.gh.addRepo(owner, name)
 				r.protection = &fakeProtection{reviews: 1, enforceAdmins: true, strict: false, checks: []string{ctxGoBuild, "execute-smoke-test"}}
 			},
-			wantCheck: VerdictOK,
+			wantCheck: VerdictDrift, wantChange: `create ruleset "devctl: default branch"`,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.NotContains(t, strings.Join(res.Step(StepProtection).Changes, "; "), "stop requiring")
+				require.Equal(t, []string{ctxGoBuild, "execute-smoke-test"}, checkContexts(h.repo().ruleset(RulesetName)))
+			},
 		},
 		{
 			name: "protection: a declared context is required before it has reported", step: StepProtection, entry: requiredChecksEntryYAML,
@@ -454,9 +488,10 @@ func TestSteps(t *testing.T) {
 				r.protection = &fakeProtection{reviews: 1, enforceAdmins: true, strict: false, checks: []string{ctxGoBuild}}
 			},
 			wantCheck: VerdictDrift, wantChange: "require " + ctxValidate,
-			verify: func(t *testing.T, h *harness, res *Result) {
-				require.Equal(t, []string{ctxValidate, ctxGoBuild}, h.repo().protection.checks, "declared first, whatever reported")
-				require.Equal(t, []string{"require " + ctxValidate}, res.Step(StepProtection).Changes)
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				rs := h.repo().ruleset(RulesetName)
+				require.Equal(t, []string{ctxValidate, ctxGoBuild}, checkContexts(rs), "declared first, whatever reported")
+				require.Equal(t, int64(15368), rs.Rules.RequiredStatusChecks.RequiredStatusChecks[0].GetIntegrationID(), "a declared gate is a GitHub Actions check")
 			},
 		},
 		{
@@ -464,11 +499,11 @@ func TestSteps(t *testing.T) {
 			seed: func(h *harness) {
 				r := h.gh.addRepo(owner, name)
 				r.statuses = []string{ctxGoBuild}
-				r.protection = &fakeProtection{reviews: 1, enforceAdmins: true, strict: false, checks: []string{ctxValidate, ctxGoBuild, ctxGhost}}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{actionsCheck(ctxValidate), statusCheck(ctxGoBuild), statusCheck(ctxGhost)}, appBypass(testAppID))
 			},
 			wantCheck: VerdictDrift, wantChange: "stop requiring " + ctxGhost,
 			verify: func(t *testing.T, h *harness, res *Result) {
-				require.Equal(t, []string{ctxValidate, ctxGoBuild}, h.repo().protection.checks, "the ghost goes, the declared context stays")
+				require.Equal(t, []string{ctxValidate, ctxGoBuild}, checkContexts(h.repo().ruleset(RulesetName)), "the ghost goes, the declared context stays")
 				require.Equal(t, []string{"stop requiring " + ctxGhost}, res.Step(StepProtection).Changes)
 			},
 		},
@@ -477,27 +512,154 @@ func TestSteps(t *testing.T) {
 			seed: func(h *harness) {
 				r := h.gh.addRepo(owner, name)
 				r.statuses = []string{ctxGoBuild}
-				r.protection = &fakeProtection{reviews: 1, enforceAdmins: true, strict: true, checks: []string{ctxGoBuild}}
+				rs := r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID))
+				rs.Rules.RequiredStatusChecks.StrictRequiredStatusChecksPolicy = true
 			},
 			wantCheck: VerdictDrift, wantChange: "strict checks true → false",
 			verify: func(t *testing.T, h *harness, res *Result) {
-				p := h.repo().protection
-				require.False(t, p.strict)
-				require.Equal(t, []string{ctxGoBuild}, p.checks, "the required checks stay")
+				rs := h.repo().ruleset(RulesetName)
+				require.False(t, rs.Rules.RequiredStatusChecks.StrictRequiredStatusChecksPolicy)
+				require.Equal(t, []string{ctxGoBuild}, checkContexts(rs), "the required checks stay")
 				require.Equal(t, []string{"strict checks true → false"}, res.Step(StepProtection).Changes)
 			},
 		},
 		{
-			name: "protection: administrators are bound too", step: StepProtection,
+			name: "protection: an aligned ruleset plans nothing", step: StepProtection,
 			seed: func(h *harness) {
 				r := h.gh.addRepo(owner, name)
 				r.statuses = []string{ctxGoBuild}
-				r.protection = &fakeProtection{reviews: 1, enforceAdmins: false, strict: false, checks: []string{ctxGoBuild}}
+				r.checkRuns = []string{ctxSemantic}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{actionsCheck(ctxSemantic), statusCheck(ctxGoBuild)}, appBypass(testAppID))
 			},
-			wantCheck: VerdictDrift, wantChange: "enforce admins false → true",
+			wantCheck: VerdictOK,
 			verify: func(t *testing.T, h *harness, res *Result) {
-				require.True(t, h.repo().protection.enforceAdmins)
-				require.Equal(t, []string{"enforce admins false → true"}, res.Step(StepProtection).Changes)
+				require.Equal(t, `main: ruleset "devctl: default branch"; required: `+ctxSemantic+", "+ctxGoBuild, res.Step(StepProtection).Summary)
+			},
+		},
+		{
+			name: "protection: the rules are repaired as data", step: StepProtection,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				rs := r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID))
+				rs.Enforcement = github.RulesetEnforcementEvaluate
+				rs.Conditions.RefName.Include = []string{"refs/heads/main"}
+				rs.Rules.PullRequest.RequiredApprovingReviewCount = 2
+				rs.Rules.Deletion = nil
+				rs.Rules.RequiredSignatures = &github.EmptyRuleParameters{} // not the engine's rule
+			},
+			wantCheck: VerdictDrift, wantChange: "enforcement evaluate → active; target refs/heads/main → ~DEFAULT_BRANCH; required reviews 2 → 1; forbid deletions",
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				rs := h.repo().ruleset(RulesetName)
+				require.Equal(t, github.RulesetEnforcementActive, rs.Enforcement)
+				require.Equal(t, []string{"~DEFAULT_BRANCH"}, rs.Conditions.RefName.Include)
+				require.Equal(t, 1, rs.Rules.PullRequest.RequiredApprovingReviewCount)
+				require.NotNil(t, rs.Rules.Deletion)
+				require.NotNil(t, rs.Rules.RequiredSignatures, "a rule the engine does not manage stays")
+				require.Len(t, h.repo().rulesets, 1, "the ruleset is updated, not recreated")
+			},
+		},
+		{
+			name: "protection: the bypass actor is added to a ruleset without one", step: StepProtection,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)})
+			},
+			wantCheck: VerdictDrift, wantChange: "bypass actor: App 424242 on pull requests",
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Equal(t, []*github.BypassActor{appBypass(testAppID)}, h.repo().ruleset(RulesetName).BypassActors)
+				require.Equal(t, []string{"bypass actor: App 424242 on pull requests"}, res.Step(StepProtection).Changes)
+			},
+		},
+		{
+			name: "protection: agentMerge false plans a ruleset without bypass actors", step: StepProtection, entry: agentMergeFalseEntryYAML,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+			},
+			wantCheck: VerdictDrift, wantChange: `create ruleset "devctl: default branch"; require ` + ctxGoBuild,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.NotContains(t, strings.Join(res.Step(StepProtection).Changes, "; "), "bypass")
+				require.Empty(t, h.repo().ruleset(RulesetName).BypassActors)
+				require.Empty(t, res.Step(StepProtection).Findings, "the opt-out needs no App id")
+			},
+		},
+		{
+			name: "protection: agentMerge false removes the bypass actor", step: StepProtection, entry: agentMergeFalseEntryYAML,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID))
+			},
+			wantCheck: VerdictDrift, wantChange: "remove bypass actors",
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Empty(t, h.repo().ruleset(RulesetName).BypassActors)
+				require.Equal(t, []string{"remove bypass actors"}, res.Step(StepProtection).Changes)
+			},
+		},
+		{
+			name: "protection: without the App id a fresh ruleset has no bypass actor and the gap is reported", step: StepProtection,
+			seed: func(h *harness) {
+				h.runner.DevctlAppID = 0
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+			},
+			wantCheck: VerdictDrift, wantChange: `create ruleset "devctl: default branch"; require ` + ctxGoBuild, wantFinding: FindingUnchecked, wantAfter: VerdictReported,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Empty(t, h.repo().ruleset(RulesetName).BypassActors)
+				f := res.Step(StepProtection).Findings[0]
+				require.Contains(t, f.Message, "no bypass actor")
+				require.Contains(t, f.Fix, "--devctl-app-id")
+				require.False(t, res.Converged, "agents cannot merge as declared")
+			},
+		},
+		{
+			name: "protection: without the App id the bypass actors stay and are reported", step: StepProtection,
+			seed: func(h *harness) {
+				h.runner.DevctlAppID = 0
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID))
+			},
+			wantCheck: VerdictReported, wantFinding: FindingUnchecked, wantAfter: VerdictReported,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Equal(t, []*github.BypassActor{appBypass(testAppID)}, h.repo().ruleset(RulesetName).BypassActors, "a run without the App id removes no bypass actor")
+				require.Contains(t, res.Step(StepProtection).Findings[0].Message, "not checked")
+			},
+		},
+		{
+			name: "protection: a ruleset the engine did not create is left alone and reported", step: StepProtection,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset("renovate-automerge", nil, &github.BypassActor{ActorID: new(int64(2740)), ActorType: new(github.BypassActorTypeIntegration), BypassMode: new(github.BypassModeAlways)})
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID))
+			},
+			wantCheck: VerdictReported, wantFinding: FindingForeignRuleset, wantAfter: VerdictReported,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				foreign := h.repo().ruleset("renovate-automerge")
+				require.NotNil(t, foreign)
+				require.Equal(t, github.BypassModeAlways, *foreign.BypassActors[0].BypassMode, "untouched")
+				f := res.Step(StepProtection).Findings[0]
+				require.True(t, f.Advisory, "a foreign ruleset does not keep the repository from converging")
+				require.Contains(t, f.Message, `"renovate-automerge"`)
+				require.True(t, res.Converged)
+			},
+		},
+		{
+			name: "protection: a classic protection beside an aligned ruleset is removed alone", step: StepProtection,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID))
+				r.protection = &fakeProtection{reviews: 1, enforceAdmins: true, strict: false, checks: []string{ctxGoBuild}}
+			},
+			wantCheck: VerdictDrift, wantChange: "remove classic protection of main",
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Equal(t, []string{"remove classic protection of main"}, res.Step(StepProtection).Changes)
+				require.Nil(t, h.repo().protection)
+				require.Len(t, h.repo().rulesets, 1)
 			},
 		},
 		{
@@ -1197,7 +1359,8 @@ func TestRunFullRepositorySetUp(t *testing.T) {
 	require.Equal(t, VerdictRepaired, first.Step(StepCatalog).Verdict)
 	require.Equal(t, VerdictOK, first.Step(StepCodeowners).Verdict, "the scaffold's CODEOWNERS names the team")
 	require.Equal(t, VerdictOK, first.Step(StepRelease).Verdict, "no release yet")
-	require.Empty(t, h.repo().protection.checks, "nothing has reported on a fresh repository, so nothing is required")
+	require.Empty(t, checkContexts(h.repo().ruleset(RulesetName)), "nothing has reported on a fresh repository, so nothing is required")
+	require.Nil(t, h.repo().protection, "the protection is the ruleset, no classic protection")
 	require.True(t, first.Converged)
 
 	h.resetMutations()

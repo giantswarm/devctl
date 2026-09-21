@@ -22,6 +22,7 @@ type flag struct {
 	Steps               []string
 	Options             map[string]string
 	Output              string
+	DevctlAppID         int64
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
@@ -38,6 +39,7 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().StringSliceVar(&f.Steps, "steps", nil, "Run only these steps (create,scaffold,settings,permissions,protection,circleci,webhooks,renovate,codeowners,metadata,lifecycle,catalog,release); every step when not given.")
 	cmd.Flags().StringToStringVar(&f.Options, "option", nil, "Scaffold option as name=value, the template's options; repeatable.")
 	cmd.Flags().StringVar(&f.Output, "output", engine.OutputTable, "Output format: table or json.")
+	cmd.Flags().Int64Var(&f.DevctlAppID, "devctl-app-id", 0, "Numeric id of the devctl GitHub App (the App's settings page; not the client id): the bypass actor of the default branch's ruleset, in pull_request mode, unless the entry declares agentMerge: false. Unset, the bypass actors are left as they are and the protection step reports the missing configuration.")
 }
 
 func (f *flag) Validate() error {
@@ -49,6 +51,9 @@ func (f *flag) Validate() error {
 	}
 	if f.TeamFile != "" && f.ComponentType != "" {
 		return microerror.Maskf(invalidFlagError, "--component-type is for a repository without a team-file entry")
+	}
+	if f.DevctlAppID < 0 {
+		return microerror.Maskf(invalidFlagError, "--devctl-app-id must be a positive App id, got %d", f.DevctlAppID)
 	}
 	return microerror.Mask(engine.ValidateOutput(f.Output))
 }
