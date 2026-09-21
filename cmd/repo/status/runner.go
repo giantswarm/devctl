@@ -222,13 +222,17 @@ func (r *runner) print(out *output) error {
 			fmt.Fprintf(r.stdout, "  %-12s %-9s would: %s\n", "", "", c)
 		}
 		for _, f := range step.Findings {
-			fmt.Fprintf(r.stdout, "  %-12s %-9s %s: %s -- fix: %s\n", "", "", f.Kind, f.Message, f.Fix)
+			kind := string(f.Kind)
+			if f.Advisory {
+				kind += " (advisory)"
+			}
+			fmt.Fprintf(r.stdout, "  %-12s %-9s %s: %s -- fix: %s\n", "", "", kind, f.Message, f.Fix)
 		}
 	}
 	if res.Converged {
 		fmt.Fprintln(r.stdout, "converged: set up as declared")
 	} else {
-		fmt.Fprintln(r.stdout, "not converged: drift or failed steps above")
+		fmt.Fprintln(r.stdout, "not converged: drift, failed steps or findings to fix above")
 	}
 	return nil
 }

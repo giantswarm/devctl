@@ -174,7 +174,7 @@ func (r *Runner) Run(ctx context.Context, req Request) (*Result, error) {
 			continue // the lookup ran for the other steps; not part of the result
 		}
 		res.Steps = append(res.Steps, *sr)
-		if sr.Verdict == VerdictDrift || sr.Verdict == VerdictFailed {
+		if !sr.Converges() {
 			res.Converged = false
 		}
 	}
@@ -349,7 +349,7 @@ func (s *run) plan(sr *StepResult, change string, apply func() error) error {
 
 // report adds a finding.
 func (s *run) report(sr *StepResult, kind FindingKind, message, fix string) {
-	sr.Findings = append(sr.Findings, Finding{Kind: kind, Message: message, Fix: fix})
+	sr.Findings = append(sr.Findings, newFinding(kind, message, fix))
 }
 
 // finish sets the verdict a step did not set itself.

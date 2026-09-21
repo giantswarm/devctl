@@ -19,6 +19,7 @@ func TestWriteTable(t *testing.T) {
 		Steps: []StepResult{
 			{Step: StepSettings, Verdict: VerdictRepaired, Changes: []string{"settings: has_wiki true → false"}},
 			{Step: StepProtection, Verdict: VerdictOK, Summary: "main protected; required: pre-commit"},
+			{Step: StepScaffold, Verdict: VerdictReported, Summary: "present", Findings: []Finding{newFinding(FindingDefaultIcon, "the default icon", "replace it")}},
 			{Step: StepRenovate, Verdict: VerdictReported, Findings: []Finding{{Kind: FindingRenovateNotScanned, Message: "not covered", Fix: "add it"}}},
 			{Step: StepRelease, Verdict: VerdictFailed, Summary: "boom"},
 		},
@@ -33,9 +34,12 @@ func TestWriteTable(t *testing.T) {
 	require.Contains(t, out, "settings")
 	require.Contains(t, out, "repaired")
 	require.Contains(t, out, "has_wiki true → false")
-	require.Contains(t, out, "1 finding")
+	require.Contains(t, out, "present | 1 advisory finding")
+	require.Contains(t, out, "- [default-icon, advisory] the default icon\n  fix: replace it")
+	require.Contains(t, out, "1 finding\n")
 	require.Contains(t, out, "- [renovate-not-scanned] not covered\n  fix: add it")
-	require.Equal(t, []StepResult{res.Steps[3]}, res.Failed())
+	require.Equal(t, []StepResult{res.Steps[4]}, res.Failed())
+	require.Equal(t, "2 findings, 1 advisory", findingsCount(append(res.Steps[2].Findings, res.Steps[3].Findings...)))
 
 	res.Steps = res.Steps[:2]
 	res.Converged = true

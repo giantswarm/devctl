@@ -133,11 +133,28 @@ const (
 	FindingEntryRefused FindingKind = "entry-refused"
 )
 
+// Advisory says whether findings of the kind are for a person only and do
+// not keep the run from converging: the repository is set up as declared,
+// the finding stays in the artifact with its fix. Every other kind names
+// something a person must fix before the repository counts as in sync.
+func (k FindingKind) Advisory() bool {
+	return k == FindingDefaultIcon
+}
+
 // Finding is something a step reports for a person, with the fix.
 type Finding struct {
 	Kind    FindingKind `json:"kind"`
 	Message string      `json:"message"`
 	Fix     string      `json:"fix"`
+	// Advisory mirrors [FindingKind.Advisory] in the artifact, so a reader
+	// knows the weight of the finding without knowing the kinds.
+	Advisory bool `json:"advisory,omitempty"`
+}
+
+// newFinding is a finding of kind with its message and fix, marked advisory
+// as the kind says.
+func newFinding(kind FindingKind, message, fix string) Finding {
+	return Finding{Kind: kind, Message: message, Fix: fix, Advisory: kind.Advisory()}
 }
 
 // StepResult is the outcome of one step.
@@ -151,6 +168,20 @@ type StepResult struct {
 	Changes []string `json:"changes,omitempty"`
 	// Findings are reported, not repaired; each carries its fix.
 	Findings []Finding `json:"findings,omitempty"`
+}
+
+// Converges says whether the step lets the run converge: it did not drift
+// or fail, and every finding it carries is advisory.
+func (s *StepResult) Converges() bool {
+	if s.Verdict == VerdictDrift || s.Verdict == VerdictFailed {
+		return false
+	}
+	for _, f := range s.Findings {
+		if !f.Advisory {
+			return false
+		}
+	}
+	return true
 }
 
 // Result is the outcome of one run over one repository: the structured
@@ -169,8 +200,9 @@ type Result struct {
 	StartedAt  time.Time    `json:"startedAt"`
 	FinishedAt time.Time    `json:"finishedAt"`
 	Steps      []StepResult `json:"steps"`
-	// Converged says no step ended in drift or failure: the repository is
-	// set up as declared (findings for a person may remain).
+	// Converged says the repository is set up as declared: no step ended in
+	// drift or failure and every finding is advisory ([StepResult.Converges]
+	// for each step). A finding a person must fix clears it.
 	Converged bool `json:"converged"`
 }
 
