@@ -1,0 +1,23 @@
+{
+  "exitCode": 5,
+  "json": {
+    "command": "pr merge",
+    "schemaVersion": 1,
+    "exitCode": 5,
+    "verdict": "refused",
+    "reason": "the pull request was opened by colleague, not by e2e-engineer: devctl pr merge merges the caller's own pull requests and bots' only",
+    "warnings": [],
+    "startedAt": "*",
+    "finishedAt": "*",
+    "repository": "giantswarm/devctl",
+    "number": 42,
+    "headSha": "abc123",
+    "baseRef": "main",
+    "checks": [],
+    "actions": [],
+    "mergeCommitSha": "",
+    "method": "squash",
+    "branchDeleted": false,
+    "enqueued": false
+  }
+}

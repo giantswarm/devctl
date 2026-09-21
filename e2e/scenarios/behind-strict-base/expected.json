@@ -1,0 +1,23 @@
+{
+  "exitCode": 3,
+  "json": {
+    "command": "pr merge",
+    "schemaVersion": 1,
+    "exitCode": 3,
+    "verdict": "not_applicable",
+    "reason": "the pull request is behind main, which requires branches to be up to date",
+    "warnings": [],
+    "startedAt": "*",
+    "finishedAt": "*",
+    "repository": "giantswarm/devctl",
+    "number": 42,
+    "headSha": "abc123",
+    "baseRef": "main",
+    "checks": [],
+    "actions": [],
+    "mergeCommitSha": "",
+    "method": "squash",
+    "branchDeleted": false,
+    "enqueued": false
+  }
+}
