@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"maps"
 	"path/filepath"
@@ -440,6 +441,27 @@ func TestSteps(t *testing.T) {
 				require.Equal(t, []string{`create ruleset "devctl: default branch"; bypass actor: App 424242 on pull requests`, "remove classic protection of main"}, res.Step(StepProtection).Changes, "the checks carry over, so the ruleset differs from the classic protection in the bypass actor alone")
 				require.Nil(t, h.repo().protection)
 				require.Equal(t, []string{ctxGoBuild}, checkContexts(h.repo().ruleset(RulesetName)))
+			},
+		},
+		{
+			// An auto-released repository carries a tag per merge, hundreds
+			// of them. The discovery of the reported checks reads the newest
+			// hundred in one request, once per run, whatever else runs.
+			name: "protection: the tags are read once per run, one page of a hundred", step: StepProtection,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				for i := 120; i > 0; i-- {
+					r.tags = append(r.tags, fmt.Sprintf("v0.%d.0", i))
+				}
+				r.statuses = []string{ctxGoBuild, ctxSetup}
+				r.checkRuns = []string{"pre-commit", ctxRelease}
+			},
+			wantCheck: VerdictDrift, wantChange: "require pre-commit, " + ctxGoBuild,
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				tags := "/repos/" + owner + "/" + name + "/tags"
+				before := h.gh.reads(tags)
+				h.run(ModeCheck, false) // every step
+				require.Equal(t, before+1, h.gh.reads(tags), "one tags request per run, one page")
 			},
 		},
 		{

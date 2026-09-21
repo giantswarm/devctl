@@ -167,7 +167,14 @@ type run struct {
 	// hasPipeline has read it; nil before. The circleci and release steps
 	// share the one answer.
 	pipeline *bool
-	log      io.Writer
+	// reported is what Checks.ReportedChecks answered for the run's branch,
+	// once reportedChecks has read it (reportedRead); the error is kept the
+	// same way. The steps that read the reported checks share the one
+	// discovery.
+	reported     []string
+	reportedErr  error
+	reportedRead bool
+	log          io.Writer
 }
 
 // errReported marks a repair that ended in a finding instead of a change.
