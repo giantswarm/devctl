@@ -38,6 +38,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   command lines) produce nothing for it, every other step runs as declared. `repo status` names the declared
   branch and flavours next to the opt-in (#2271).
 
+- `e2e/scenarios/auth-missing`, `auth-expired` and `auth-refreshed`: `auth status` against the keyring states the
+  gate of the agent-facing commands distinguishes: no record (exit 8 naming `devctl auth login`), both tokens
+  and the GitHub refresh token expired (exit 8, both reported expired), a GitHub token expired under a live
+  refresh token and a valid CircleCI token (exit 0, the GitHub identity `refreshable`). Nothing is contacted and
+  no token material is asserted (#2276).
+
 - `requiredChecks` in the repositories schema devctl ships and in `reposetup.Fields`: status-check contexts an entry
   requires on its default branch whatever reported, merged with the baseline's reported-only rule by the protection
   step and never removed as ghosts. For a repository's own GitHub Actions gate that runs on every pull request, such

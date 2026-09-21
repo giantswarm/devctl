@@ -1,0 +1,25 @@
+{
+  "exitCode": 8,
+  "json": {
+    "command": "auth status",
+    "schemaVersion": 1,
+    "exitCode": 8,
+    "verdict": "auth_required",
+    "reason": "GitHub authentication required (no token in the keychain): run `devctl auth login`.",
+    "warnings": [],
+    "startedAt": "*",
+    "finishedAt": "*",
+    "github": {
+      "present": false,
+      "expired": false,
+      "refreshable": false,
+      "warnings": []
+    },
+    "circleci": {
+      "present": false,
+      "expired": false,
+      "refreshable": false,
+      "warnings": []
+    }
+  }
+}
