@@ -25,6 +25,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- The generated `renovate.json5` lists the marge sweep's App
+  (`giantswarm-marge[bot]`) in `gitIgnoredAuthors` beside taylorbot. The sweep
+  commits a bot PR's changelog entry onto the bot's own branch, and Renovate
+  stops rebasing and autoclosing a branch whose last commit is by an author it
+  does not ignore.
 - `repo create` declares `align: true`: a repository created through the product is opted in to alignment by its
   creation, so the run that follows its merged pull request sets it up instead of only checking it. The entry's key
   order is name, description, visibility, componentType, align, gen (#2259).
