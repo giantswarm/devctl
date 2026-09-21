@@ -43,6 +43,15 @@ devctl auth status
 devctl pr wait giantswarm/devctl 2277 --timeout 45m --progress
 ```
 
+### Waiting for a release (`devctl release wait`)
+
+`devctl release wait <owner/repo> (<vX.Y.Z> | --pr <n>)` blocks until every image and chart of the tag is pullable and prints one JSON document with the digests. The artifact names come from the sources that define them (the team-file entry for generated CI, the tag pipeline's push jobs for hand-written CI), never from the repository name; the public registry is probed anonymously, the private one with the docker keychain; a failed tag pipeline ends the wait as exit 1 with the failed jobs, a timeout as exit 2 naming what is missing. See [docs/release-wait.md](docs/release-wait.md) for the model, the JSON and the exit codes.
+
+```bash
+devctl release wait giantswarm/devctl v8.9.0
+devctl release wait giantswarm/devctl --pr 2289 --progress
+```
+
 ### Repository set-up (`devctl repo`)
 
 Giant Swarm repositories are declared in the team files of [giantswarm/github](https://github.com/giantswarm/github); the reconciler creates and keeps them as declared. `devctl repo create` validates a declaration through the engine, prints the dry run and opens the team-file pull request as you; `devctl repo status` prints a repository's set-up state. See [docs/repo.md](docs/repo.md).

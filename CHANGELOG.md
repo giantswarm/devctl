@@ -35,6 +35,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   reconciler's wiring passes the id, so a devctl release alone moves no repository to rulesets.
   `reposetup.Fields` gains `AgentMerge` (#2288).
 
+- `devctl release wait <owner/repo> (<vX.Y.Z|X.Y.Z> | --pr <n>) [--timeout 30m] [--catalog] [--progress]`:
+  block until a tag's images and charts are pullable (`pkg/releasewait`). The release model comes from the
+  team-file entry (`gen.ci.releaseWorkflow`, defaulting from `gen.ci.generate`) cross-checked against the
+  workflow files at the tag, a disagreement being exit 7 rather than a guess; `--pr` resolves the tag on the
+  merge commit of an auto-release repository and is exit 3 on a legacy one. The artifact names come from the
+  sources that define them: for generated CI what the generator emits for the entry (`gen.ci.image.name`,
+  `gen.ci.chartName`, the app flavour, a Dockerfile at the tag), for hand-written CI the push jobs of the tag
+  pipeline matched with the architect push jobs of the tag's `.circleci` files; a Dockerfile without an image
+  among them is exit 7, never the repository name. A repository without image and chart is waited for through
+  its published release and the tag's workflows. Availability is a digest: the public registry is probed
+  anonymously (a stale docker login cannot produce a false UNAUTHORIZED), the private registry with the docker
+  keychain, and any answer other than a digest or `MANIFEST_UNKNOWN` ends the wait as exit 7. A failed or
+  cancelled workflow of the tag pipeline (newest run per workflow name) is exit 1 with the failed jobs; without
+  CircleCI the Actions runs of the tag decide. One JSON document at the end; `docs/release-wait.md` has the
+  document and the exit codes. `pkg/githubclient` gains the tag, release and directory calls; `pkg/circleciclient` the
+  newest run per workflow name and the pipeline of a tag (#2279).
+
 - `devctl auth login` and `devctl auth status`: the identities the agent-facing commands act with. GitHub
   through the device flow of the devctl GitHub App (a user access token refreshed by the commands themselves
   for six months, no client secret in the binary), CircleCI through the OAuth 2.0 authorization code flow with

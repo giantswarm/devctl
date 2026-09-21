@@ -1,0 +1,220 @@
+# Waiting for a release: `devctl release wait`
+
+```nohighlight
+devctl release wait <owner/repo> (<vX.Y.Z | X.Y.Z> | --pr <number>) [--timeout 30m] [--catalog] [--progress]
+```
+
+Blocks until every image and chart of a release is pullable, then prints one JSON document and exits
+with a code that says what happened. It is the command an agent runs after a merge instead of
+guessing: the tag and the GitHub Release exist about a minute after the merge, the artifacts come
+from the CircleCI pipeline the **tag** triggers, minutes later, under names the repository's CI
+decides. Nothing here is guessed from the repository name, `helm search` or the merge commit's
+Actions run.
+
+```nohighlight
+devctl release wait giantswarm/devctl v8.9.0
+devctl release wait giantswarm/devctl --pr 2289 --timeout 20m --progress
+devctl release wait giantswarm/app-operator 7.5.4 --catalog
+```
+
+Tokens come from the keychain (`devctl auth login`, see [auth.md](auth.md)). GitHub is always
+needed; CircleCI only when the tag carries a `.circleci/config.yml`. A missing token is exit 8 with
+the login command in `reason`, before anything is waited for.
+
+## What the command reads, and why
+
+### The version
+
+- `vX.Y.Z` or `X.Y.Z`: the tag is looked up under both spellings, the given one first, and the wait
+  starts when it exists. A tag that never appears is a timeout (exit 2).
+- `--pr <number>`: the pull request must be merged (otherwise exit 3). In a repository on the
+  **auto-release** model the tag is the one on the merge commit; the command waits for it to appear
+  (auto-release tags within minutes when the commits warrant a bump, and never when they do not). A
+  repository on the **legacy** model (`create_release` workflows, a release pull request) does not
+  tag the merge commit of a feature pull request, so `--pr` is exit 3 with one sentence: pass the
+  version.
+
+### The release model
+
+`releaseModel` is `auto-release` or `legacy`. Two sources say which:
+
+1. The team-file entry of the repository in `repositories/<team>.yaml` of giantswarm/github:
+   `gen.ci.releaseWorkflow` when set, else `auto-release` when `gen.ci.generate` is true and
+   `legacy` otherwise. An entry without a `gen` block declares nothing.
+2. The workflow files at the tag under `.github/workflows`: an `auto_release` / `auto-release`
+   workflow means auto-release, `create_release` / `create-release` workflows mean legacy.
+
+A source that says nothing leaves the decision to the other. Two sources that disagree are exit 7
+naming both; neither saying anything is exit 7 too. The command never picks one.
+
+### The CI model and the artifact names
+
+`ciModel` is `generated`, `hand-written` or `none`, from the files at the tag: no
+`.circleci/config.yml` is `none`; a `.circleci/workflows.yml` beside it is the signature of
+`devctl gen circleci` and means `generated`; a `config.yml` alone is `hand-written`. The entry's
+`gen.ci.generate` is cross-checked against it (`true` without the generated files, or an explicit
+`false` with them, is exit 7).
+
+**Generated CI**: the artifacts are what devctl's generator emits for the entry, derived the way the
+generator derives them:
+
+| Artifact | When | Name | Registry |
+|---|---|---|---|
+| image | a `Dockerfile` at the repository root of the tag, or `gen.ci.image.dockerfile` set | `gen.ci.image.name`, else `giantswarm/<repo>` | private with `gen.ci.image.privateOnly`, or for a private repository without `gen.ci.forcePublic`; public otherwise |
+| chart | `gen.flavours` contains `app` and the repository is not a template | `gen.ci.chartName`, else `<repo>` | private for a private repository without `gen.ci.forcePublic`; public otherwise |
+
+The chart's catalog is `gen.ci.appCatalog`, default `giantswarm-catalog`.
+
+**Hand-written CI**: the artifacts are the push jobs the tag pipeline runs. The command reads the
+`.circleci/config.yml` (and `workflows.yml`, `custom.yml` when present) at the tag, collects every
+`<orb>/push-to-registries`, `push-to-registries-multiarch`, `push-to-docker` and
+`push-to-app-catalog` job of every workflow with its parameters (`name`, `image`, `chart`,
+`app_catalog`, `push`, `push_to_oci_registry`, `registries-data`, `force-public`), and keeps the
+ones whose name CircleCI lists among the jobs of the tag pipeline's workflows. An image job without
+`image` is the orb's default, `<owner>/<repo>`; `push: false` and a chart job that pushes to
+neither the catalog nor the registry are build-only and skipped; `registries-data` that names only
+the private registry makes the image private. Because the pipeline's jobs are the source, the
+command waits for the pipeline to exist before it knows the artifacts.
+
+When a `Dockerfile` exists at the tag and no push job of the pipeline names an image, the sources
+disagree: exit 7 with the jobs seen. The repository name is never used as a fallback.
+
+**Neither image nor chart** (a CLI that ships binaries as release assets, a repository without
+CircleCI): the release is available when the GitHub Release of the tag is published (not a draft) and
+every workflow of the tag finished green. `artifacts` then lists the release assets with the digests
+GitHub reports.
+
+### Availability
+
+An artifact is available when its manifest resolves to a digest:
+
+- images at `<registry>/<name>:<X.Y.Z>`, charts at `<registry>/charts/<owner>/<chart>:<X.Y.Z>`
+  (the version without its `v`);
+- the public registry (`gsoci.azurecr.io`) is probed **anonymously**: it is public, and a stale
+  `docker login` in `~/.docker/config.json` would otherwise make the probe send an expired token and
+  read the registry's `UNAUTHORIZED` as "not yet available" for as long as the timeout;
+- the private registry (`gsociprivate.azurecr.io`) is probed with the docker keychain, the
+  credentials `docker login` stored;
+- `MANIFEST_UNKNOWN` (and `NAME_UNKNOWN`, a first release into a repository nothing was pushed to
+  yet) means not yet; **any other answer** is the probe's failure, not a slow pipeline, and ends the
+  wait as exit 7 at once: a 401 from the private registry names `docker login`, a 401 from the
+  public registry says the artifact is not public. A connection failure is retried twice before it
+  counts as such.
+
+`--catalog` additionally waits until `https://giantswarm.github.io/<catalog>/index.yaml` lists every
+chart at the version; the index is fetched anew every time, so no cached copy answers.
+
+### The tag's CI
+
+Every poll reads the tag pipeline: the newest CircleCI pipeline whose `vcs.tag` is the tag, its
+workflows reduced to the **newest run per workflow name** (a rerun, from failed or in full, is a
+second workflow of the same name in the same pipeline, and the one it replaces keeps its failed
+status for ever). A workflow in `failed`, `error`, `failing`, `canceled` or `unauthorized` ends the
+wait with exit 1 and `pipeline.failedJobs` (`workflow/job`). A repository without CircleCI is judged
+by the GitHub Actions runs on the tag's commit whose branch is the tag: a `failure`, `cancelled`,
+`timed_out` or `startup_failure` conclusion is exit 1.
+
+The wait does not require the pipeline to be green: the artifacts are available when their digests
+resolve, whatever else the pipeline still does (the Aliyun mirror, for one).
+
+### Polling
+
+Requests to GitHub are conditional (`If-None-Match` with the last `ETag`), so an unchanged resource
+costs a 304 that does not count against the rate limit. The interval between polls follows the
+`X-RateLimit-Remaining` / `X-RateLimit-Reset` headers of the responses, between 15 and 60 seconds;
+the rate_limit endpoint is never asked. `DEVCTL_TIME_SCALE` multiplies every sleep and the timeout
+(the end-to-end tests run at 0.001).
+
+## The document
+
+One JSON document on stdout at the end, nothing else; `--progress` writes one line per step to
+stderr.
+
+```json
+{
+  "command": "release wait",
+  "schemaVersion": 1,
+  "exitCode": 0,
+  "verdict": "available",
+  "reason": "",
+  "warnings": [],
+  "startedAt": "2026-09-21T10:00:00Z",
+  "finishedAt": "2026-09-21T10:06:12Z",
+  "repository": "giantswarm/kserve",
+  "tag": "v1.2.3",
+  "sha": "0123456789abcdef0123456789abcdef01234567",
+  "releaseModel": "auto-release",
+  "ciModel": "generated",
+  "artifacts": [
+    {"kind": "image", "reference": "gsoci.azurecr.io/giantswarm/kserve-controller:1.2.3", "digest": "sha256:…", "state": "available"},
+    {"kind": "chart", "reference": "gsoci.azurecr.io/charts/giantswarm/kserve:1.2.3", "digest": "sha256:…", "state": "available"}
+  ],
+  "pipeline": {
+    "id": "8c4b…",
+    "number": 1234,
+    "url": "https://app.circleci.com/pipelines/github/giantswarm/kserve/1234",
+    "workflows": [{"name": "build", "status": "success"}, {"name": "setup", "status": "success"}],
+    "failedJobs": []
+  },
+  "actions": []
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `command`, `schemaVersion`, `exitCode`, `verdict`, `reason`, `warnings`, `startedAt`, `finishedAt` | The envelope every agent-facing command prints. `verdict` is `available`, `ci_failed`, `timeout`, `not_applicable`, `usage` or `auth_required`. `warnings` carries the CircleCI token's seven-day expiry notice. |
+| `repository`, `tag`, `sha` | What was waited for. `tag` is empty when it never appeared; `sha` is the tag's commit (with `--pr` the merge commit). |
+| `releaseModel` | `auto-release` or `legacy`. |
+| `ciModel` | `generated`, `hand-written` or `none`. |
+| `artifacts[]` | `kind` (`image`, `chart`, `release-asset`), `reference` (the pullable reference, or the asset's download URL), `digest` (empty while missing), `state` (`available`, `missing`). Empty until the artifacts are known (hand-written CI before its pipeline exists). |
+| `pipeline` | The tag pipeline on CircleCI: `id`, `number`, `url`, `workflows[{name, status}]` (newest run per name), `failedJobs[]`. `null` for a repository without CircleCI, or while the pipeline does not exist. |
+| `actions[]` | The Actions runs the tag triggered, for a repository without CircleCI: `name`, `runId`, `status`, `conclusion`, `url`. |
+
+## Exit codes
+
+| Code | Verdict | Meaning |
+|---|---|---|
+| 0 | `available` | Every artifact resolves to a digest (and, with `--catalog`, the index lists every chart); or the release of a repository without image and chart is published with its workflows green. |
+| 1 | `ci_failed` | A workflow of the tag pipeline, or an Actions run of the tag, failed or was cancelled. `reason` and `pipeline.failedJobs` name the jobs. The artifacts will not appear until a fix lands as the next tag. |
+| 2 | `timeout` | The deadline passed. `reason` names what is missing: the tag, the pipeline, the artifacts by reference. |
+| 3 | `not_applicable` | The pull request is not merged, or the repository is on the legacy release model so `--pr` cannot resolve a version. |
+| 7 | `usage` | A bad argument; the sources disagree about the release model, the CI model or the artifacts; a registry answer that is neither a digest nor "manifest unknown"; a tooling error. |
+| 8 | `auth_required` | No usable token in the keychain; `reason` names the `devctl auth login` invocation. |
+
+## Environment
+
+The production endpoints are the defaults; the variables exist for another site and for the
+end-to-end tests.
+
+| Variable | Default | Effect |
+|---|---|---|
+| `DEVCTL_GITHUB_API_URL` | `https://api.github.com` | The GitHub REST API. |
+| `DEVCTL_CIRCLECI_API_URL` | `https://circleci.com/api/v2` | The CircleCI API v2. |
+| `DEVCTL_REGISTRY_PUBLIC` | `gsoci.azurecr.io` | The public registry, probed anonymously. |
+| `DEVCTL_REGISTRY_PRIVATE` | `gsociprivate.azurecr.io` | The private registry, probed with the docker keychain. |
+| `DEVCTL_REGISTRY_INSECURE` | unset | `1` talks plain HTTP to the registries (tests). |
+| `DEVCTL_CATALOG_URL` | `https://giantswarm.github.io` | The host of the catalog indexes (`<host>/<catalog>/index.yaml`). |
+| `DEVCTL_KEYRING_FILE` | unset | A 0600 JSON file in place of the OS keychain (tests). |
+| `DEVCTL_TIME_SCALE` | `1` | Multiplies every sleep and the timeout. |
+
+## The requests, for a mock
+
+The end-to-end harness (`e2e/README.md`) scripts these endpoints; a scenario of this command needs
+the ones its path takes.
+
+GitHub: `GET /repos/{o}/{r}/pulls/{n}` (with `--pr`), `GET /repos/{o}/{r}/tags` (with `--pr`, the
+tag on the merge commit), `GET /repos/{o}/{r}/git/ref/tags/{tag}` (and `GET
+/repos/{o}/{r}/git/tags/{sha}` for an annotated tag), `GET /repos/{o}/{r}` (private or not), `GET
+/repos/{o}/{r}/contents/` with `?ref=` (the root listing: the Dockerfile), `GET
+/repos/{o}/{r}/contents/.github/workflows`, `GET /repos/{o}/{r}/contents/.circleci`, `GET
+/repos/{o}/{r}/contents/.circleci/config.yml` (hand-written CI; `workflows.yml`, `custom.yml` when
+listed), `GET /repos/giantswarm/github/contents/repositories` and `GET
+/repos/giantswarm/github/contents/repositories/{team}.yaml` (the team-file entry, until the one that
+declares the repository), `GET /repos/{o}/{r}/releases/tags/{tag}` and `GET
+/repos/{o}/{r}/actions/runs?head_sha={sha}` (release assets, no CircleCI).
+
+CircleCI: `GET /api/v2/project/gh/{o}/{r}/pipeline` (the tag pipeline by `vcs.tag`, newest pages),
+`GET /api/v2/pipeline/{id}/workflow`, `GET /api/v2/workflow/{id}/job`.
+
+Registries: `GET /v2/` then `HEAD /v2/{name}/manifests/{X.Y.Z}`, images under `giantswarm/…`, charts
+under `charts/giantswarm/…`.
