@@ -79,11 +79,13 @@ func TestFileStore(t *testing.T) {
 }
 
 func TestKeyringStore(t *testing.T) {
-	keyring.MockInit()
-	s := OpenStore(agentcli.Endpoints{})
-	if _, ok := s.(KeyringStore); !ok {
-		t.Fatalf("OpenStore without a file = %T", s)
+	if _, ok := OpenStore(agentcli.Endpoints{}).(KeyringStore); !ok {
+		t.Fatalf("OpenStore without a file = %T", OpenStore(agentcli.Endpoints{}))
 	}
+	// The round trip runs on go-keyring's mock; the Secret Service client has
+	// its own tests against a fake on the bus.
+	keyring.MockInit()
+	s := KeyringStore{keychain: goKeyring{}}
 	if _, err := s.Get(UserCircleCI); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("empty keyring Get = %v", err)
 	}

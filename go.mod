@@ -15,6 +15,7 @@ require (
 	github.com/giantswarm/schemalint/v2 v2.6.3
 	github.com/giantswarm/selfupdate-cosign v0.2.0
 	github.com/go-git/go-git/v5 v5.19.2
+	github.com/godbus/dbus/v5 v5.2.2
 	github.com/google/go-cmp v0.7.0
 	github.com/google/go-github/v92 v92.0.0
 	github.com/jedib0t/go-pretty/v6 v6.8.3
@@ -132,7 +133,6 @@ require (
 	github.com/go-logfmt/logfmt v0.6.1 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-stack/stack v1.8.1 // indirect
-	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
 	github.com/google/go-querystring v1.2.0 // indirect
 	github.com/iancoleman/orderedmap v0.3.0 // indirect
