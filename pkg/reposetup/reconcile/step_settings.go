@@ -46,7 +46,7 @@ func (r *Runner) stepSettings(ctx context.Context, s *run, sr *StepResult) error
 		}
 	}
 
-	if got := repo.GetDefaultBranch(); !s.empty && got != "" && got != b.DefaultBranch {
+	if got := repo.GetDefaultBranch(); !s.empty && !s.keepsDefaultBranch() && got != "" && got != b.DefaultBranch {
 		err := s.plan(sr, fmt.Sprintf("default branch %q → %q", got, b.DefaultBranch), func() error {
 			_, _, err := r.GitHub.Repositories.RenameBranch(ctx, s.owner, s.name, got, b.DefaultBranch)
 			if err != nil {

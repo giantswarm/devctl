@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"time"
 
@@ -28,6 +29,14 @@ const LifecycleDeleted = "deleted"
 func lifecycleOver(lifecycle string) bool {
 	return lifecycle == LifecycleArchived || lifecycle == LifecycleDeleted
 }
+
+// flavourCustomer is the gen.flavours value of a customer repository: its
+// branch protection and default branch are the customer's own flow and it
+// has no CircleCI pipeline of ours. The protection, circleci, codeowners and
+// release steps are skipped on it and its default branch is never renamed;
+// settings, permissions, renovate, metadata, lifecycle and catalog run as
+// declared.
+const flavourCustomer = "customer"
 
 // ReportedChecker returns the check contexts that have reported on the
 // default branch or a recently merged pull request — the reported-only rule
@@ -330,6 +339,12 @@ func (r *Runner) skipReason(ctx context.Context, s *run, step Step) (string, err
 			return "archived on GitHub", nil
 		}
 	}
+	if s.hasFlavour(flavourCustomer) {
+		switch step {
+		case StepProtection, StepCircleCI, StepCodeowners, StepRelease:
+			return "flavour " + flavourCustomer, nil
+		}
+	}
 	switch step {
 	case StepProtection, StepCircleCI, StepRenovate, StepCodeowners, StepRelease:
 		if s.empty {
@@ -413,6 +428,18 @@ func (s *run) branch() string {
 		return b
 	}
 	return s.baseline.DefaultBranch
+}
+
+// hasFlavour says whether the entry declares flavour in gen.flavours.
+func (s *run) hasFlavour(flavour string) bool {
+	return s.fields.Gen != nil && slices.Contains(s.fields.Gen.Flavours, flavour)
+}
+
+// keepsDefaultBranch says the repository's default branch is its own and the
+// settings step never renames it: a customer repository's branch is the
+// customer's flow.
+func (s *run) keepsDefaultBranch() bool {
+	return s.hasFlavour(flavourCustomer)
 }
 
 // slug is owner/name as the run addresses the repository.
