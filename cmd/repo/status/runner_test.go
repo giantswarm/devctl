@@ -108,6 +108,24 @@ func TestPrintFindings(t *testing.T) {
 	require.True(t, strings.HasSuffix(out.String(), "not converged: drift, failed steps or findings to fix above\n"), out.String())
 }
 
+// The text output of a refused entry (the manager's record of one, or the
+// engine's result) says the declaration is at fault and nothing was
+// checked, never that something drifted.
+func TestPrintRefused(t *testing.T) {
+	res := result()
+	res.Converged = false
+	res.Steps = []reconcile.StepResult{{Step: reconcile.StepEntry, Verdict: reconcile.VerdictReported, Summary: "refused: 1 problem(s) with the entry in repositories/team-bumblebee.yaml", Findings: []reconcile.Finding{
+		{Kind: reconcile.FindingEntryRefused, Message: "agentMerge: not a field of the repositories schema", Fix: `edit agentMerge of the entry "my-service" in repositories/team-bumblebee.yaml: not a field of the repositories schema`},
+	}}}
+	var out bytes.Buffer
+	r := &runner{flag: &flag{Output: outputText}, stdout: &out}
+	require.NoError(t, r.print(&output{Source: sourceManager, Endpoint: "https://muster.example", Result: res}))
+	require.Contains(t, out.String(), "  entry        reported  refused: 1 problem(s)")
+	require.Contains(t, out.String(), "entry-refused: agentMerge: not a field of the repositories schema -- fix: edit agentMerge")
+	require.True(t, strings.HasSuffix(out.String(), "not converged: the entry is refused and nothing was checked; fix the declaration as the findings above say\n"), out.String())
+	require.NotContains(t, out.String(), "drift")
+}
+
 // The JSON output carries align only when the source read the entry.
 func TestPrintAlignJSON(t *testing.T) {
 	optedIn := true

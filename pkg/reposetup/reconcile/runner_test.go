@@ -1657,7 +1657,8 @@ func TestRefused(t *testing.T) {
 	require.Equal(t, res.Repository, res.Declared)
 	require.Equal(t, ModeCheck, res.Mode, "empty mode defaults as Run does")
 	require.True(t, res.Added)
-	require.True(t, res.Converged, "nothing failed, nothing drifted: the declaration is at fault")
+	require.False(t, res.Converged, "nothing was checked: a refused entry is not set up as declared")
+	require.True(t, res.Refused(), "the entry step tells the refusal from drift")
 	require.Empty(t, res.Failed(), "exit 0")
 	require.Len(t, res.Steps, 1)
 	sr := res.Steps[0]
@@ -1671,6 +1672,14 @@ func TestRefused(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, string(data), `"step":"entry","verdict":"reported"`)
 	require.Contains(t, string(data), `"kind":"entry-refused"`)
+	require.Contains(t, string(data), `"converged":false`)
+
+	var table strings.Builder
+	require.NoError(t, res.WriteTable(&table))
+	require.True(t, strings.HasPrefix(table.String(), owner+"/"+name+" (check): not converged, entry refused in 0s\n"), table.String())
+
+	ran := &Result{Steps: []StepResult{{Step: StepSettings, Verdict: VerdictDrift}}}
+	require.False(t, ran.Refused(), "drift is not a refusal")
 }
 
 func TestRequiredChecks(t *testing.T) {

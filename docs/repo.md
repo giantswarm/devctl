@@ -173,8 +173,8 @@ reconcile --added` in create mode: the repository is created). See `devctl repo 
 Runs the set-up steps as the person (`--dry-run` checks only; `--output json` prints the result the
 reconciler stores). An entry the validator refuses is a result too: one step, `entry`, verdict
 `reported`, one finding per problem (`gen-circleci-refused` for `gen.ci.generate`, `entry-refused`
-otherwise) with the field to fix, exit 0 -- the declaration is at fault, not the run. A flag or token
-error exits 2.
+otherwise) with the field to fix, `converged: false` (nothing was checked; not drift either, the fix is
+in the declaration), exit 0 -- the declaration is at fault, not the run. A flag or token error exits 2.
 
 ### The protection step
 
