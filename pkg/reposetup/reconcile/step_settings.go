@@ -43,6 +43,10 @@ func (r *Runner) stepSettings(ctx context.Context, s *run, sr *StepResult) error
 		want("allow_update_branch", merge.updateBranch, b.AllowUpdateBranch, func(v *bool) { edit.AllowUpdateBranch = v })
 		want("allow_auto_merge", merge.autoMerge, b.AllowAutoMerge, func(v *bool) { edit.AllowAutoMerge = v })
 		want("delete_branch_on_merge", merge.deleteBranchOnMerge, b.DeleteBranchOnMerge, func(v *bool) { edit.DeleteBranchOnMerge = v })
+		if merge.squashTitle != b.SquashMergeCommitTitle {
+			changes = append(changes, fmt.Sprintf("squash_merge_commit_title %s → %s", merge.squashTitle, b.SquashMergeCommitTitle))
+			edit.SquashMergeCommitTitle = new(b.SquashMergeCommitTitle)
+		}
 	}
 	if len(changes) > 0 {
 		err := s.plan(sr, "settings: "+strings.Join(changes, ", "), func() error {
@@ -96,47 +100,51 @@ func (r *Runner) stepSettings(ctx context.Context, s *run, sr *StepResult) error
 	return nil
 }
 
-// mergeSettingFields are the six merge settings of GET /repos/{owner}/{repo}
+// mergeSettingFields are the seven merge settings of GET /repos/{owner}/{repo}
 // that GitHub carries only for an identity with admin rights on the
 // repository. To every other identity — an App installation with
 // administration: read, a member with read access, an anonymous call — the
-// six are null, which go-github's getters read as false; compared with the
-// baseline, the four it wants on would read as drift on every repository.
-// GraphQL's Repository carries them for any identity that reads the
-// repository (checked live 2026-09-21 as an installation with
-// administration: read: REST null, GraphQL the values), so the step reads
-// them there when REST left them out.
-var mergeSettingFields = []string{"allow_merge_commit", "allow_squash_merge", "allow_rebase_merge", "allow_update_branch", "allow_auto_merge", "delete_branch_on_merge"}
+// seven are null, which go-github's getters read as false or empty; compared
+// with the baseline, the four it wants on and the squash title would read
+// as drift on every repository. GraphQL's Repository carries them for any
+// identity that reads the repository (checked live 2026-09-21 as an
+// installation with administration: read: REST null, GraphQL the values),
+// so the step reads them there when REST left them out.
+var mergeSettingFields = []string{"allow_merge_commit", "allow_squash_merge", "allow_rebase_merge", "allow_update_branch", "allow_auto_merge", "delete_branch_on_merge", "squash_merge_commit_title"}
 
 // mergeSettings are the repository's merge settings as the step compares
 // them with the baseline.
 type mergeSettings struct {
 	mergeCommit, squashMerge, rebaseMerge, updateBranch, autoMerge, deleteBranchOnMerge bool
+	// squashTitle is PR_TITLE or COMMIT_OR_PR_TITLE.
+	squashTitle string
 }
 
-// mergeSettings reads the six merge settings: from the repository the run
+// mergeSettings reads the seven merge settings: from the repository the run
 // holds when GitHub returned them (an admin identity), else through GraphQL.
-// An error means neither route answered; the caller reports the six as
+// An error means neither route answered; the caller reports the seven as
 // unchecked, never as drift.
 func (r *Runner) mergeSettings(ctx context.Context, s *run) (mergeSettings, error) {
 	repo := s.repo
 	if repo.AllowMergeCommit != nil && repo.AllowSquashMerge != nil && repo.AllowRebaseMerge != nil &&
-		repo.AllowUpdateBranch != nil && repo.AllowAutoMerge != nil && repo.DeleteBranchOnMerge != nil {
+		repo.AllowUpdateBranch != nil && repo.AllowAutoMerge != nil && repo.DeleteBranchOnMerge != nil &&
+		repo.SquashMergeCommitTitle != nil {
 		return mergeSettings{
 			mergeCommit: repo.GetAllowMergeCommit(), squashMerge: repo.GetAllowSquashMerge(), rebaseMerge: repo.GetAllowRebaseMerge(),
 			updateBranch: repo.GetAllowUpdateBranch(), autoMerge: repo.GetAllowAutoMerge(), deleteBranchOnMerge: repo.GetDeleteBranchOnMerge(),
+			squashTitle: repo.GetSquashMergeCommitTitle(),
 		}, nil
 	}
 	fmt.Fprintf(s.log, "%s/%s settings: the merge settings are not in the repository for this identity (admins only); reading them through GraphQL\n", s.owner, s.name)
 	return r.mergeSettingsGraphQL(ctx, s)
 }
 
-// mergeSettingsGraphQL reads the six merge settings from GraphQL's
+// mergeSettingsGraphQL reads the seven merge settings from GraphQL's
 // Repository, at <REST root>/graphql with the GitHub client's own transport
 // and identity.
 func (r *Runner) mergeSettingsGraphQL(ctx context.Context, s *run) (mergeSettings, error) {
 	body, err := json.Marshal(map[string]any{
-		"query":     `query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) { mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed allowUpdateBranch autoMergeAllowed deleteBranchOnMerge } }`,
+		"query":     `query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) { mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed allowUpdateBranch autoMergeAllowed deleteBranchOnMerge squashMergeCommitTitle } }`,
 		"variables": map[string]string{"owner": s.owner, "name": s.name},
 	})
 	if err != nil {
@@ -164,12 +172,13 @@ func (r *Runner) mergeSettingsGraphQL(ctx context.Context, s *run) (mergeSetting
 	var answer struct {
 		Data struct {
 			Repository *struct {
-				MergeCommitAllowed  bool `json:"mergeCommitAllowed"`
-				SquashMergeAllowed  bool `json:"squashMergeAllowed"`
-				RebaseMergeAllowed  bool `json:"rebaseMergeAllowed"`
-				AllowUpdateBranch   bool `json:"allowUpdateBranch"`
-				AutoMergeAllowed    bool `json:"autoMergeAllowed"`
-				DeleteBranchOnMerge bool `json:"deleteBranchOnMerge"`
+				MergeCommitAllowed     bool   `json:"mergeCommitAllowed"`
+				SquashMergeAllowed     bool   `json:"squashMergeAllowed"`
+				RebaseMergeAllowed     bool   `json:"rebaseMergeAllowed"`
+				AllowUpdateBranch      bool   `json:"allowUpdateBranch"`
+				AutoMergeAllowed       bool   `json:"autoMergeAllowed"`
+				DeleteBranchOnMerge    bool   `json:"deleteBranchOnMerge"`
+				SquashMergeCommitTitle string `json:"squashMergeCommitTitle"`
 			} `json:"repository"`
 		} `json:"data"`
 		Errors []struct {
@@ -180,9 +189,16 @@ func (r *Runner) mergeSettingsGraphQL(ctx context.Context, s *run) (mergeSetting
 		return mergeSettings{}, fmt.Errorf("GraphQL answered with no JSON: %s", strings.TrimSpace(string(raw)))
 	}
 	if got := answer.Data.Repository; got != nil {
+		// The schema declares the enum non-null; an answer without it is
+		// an identity the field is hidden from, unchecked rather than
+		// drift from an empty value.
+		if got.SquashMergeCommitTitle == "" {
+			return mergeSettings{}, fmt.Errorf("GraphQL answered without squashMergeCommitTitle")
+		}
 		return mergeSettings{
 			mergeCommit: got.MergeCommitAllowed, squashMerge: got.SquashMergeAllowed, rebaseMerge: got.RebaseMergeAllowed,
 			updateBranch: got.AllowUpdateBranch, autoMerge: got.AutoMergeAllowed, deleteBranchOnMerge: got.DeleteBranchOnMerge,
+			squashTitle: got.SquashMergeCommitTitle,
 		}, nil
 	}
 	messages := make([]string, 0, len(answer.Errors))

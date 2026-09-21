@@ -378,12 +378,14 @@ func TestSteps(t *testing.T) {
 			seed: func(h *harness) {
 				r := h.gh.addRepo(owner, name)
 				r.hasWiki, r.allowSquash, r.allowAuto, r.workflowPerm = true, false, false, "read"
+				r.squashTitle = "COMMIT_OR_PR_TITLE"
 			},
-			wantCheck: VerdictDrift, wantChange: "has_wiki true → false, allow_squash_merge false → true, allow_auto_merge false → true",
+			wantCheck: VerdictDrift, wantChange: "has_wiki true → false, allow_squash_merge false → true, allow_auto_merge false → true, squash_merge_commit_title COMMIT_OR_PR_TITLE → PR_TITLE",
 			verify: func(t *testing.T, h *harness, res *Result) {
 				r := h.repo()
 				require.False(t, r.hasWiki)
 				require.True(t, r.allowSquash && r.allowAuto)
+				require.Equal(t, "PR_TITLE", r.squashTitle)
 				require.Equal(t, "write", r.workflowPerm)
 				require.Contains(t, strings.Join(res.Step(StepSettings).Changes, ";"), `default workflow permissions "read" → "write"`)
 			},

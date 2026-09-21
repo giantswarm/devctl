@@ -165,6 +165,7 @@ jobs:
           # the rest is the body.
           marked=0
           blocking=0
+          unconventional=0
           while IFS= read -r -d '' commit; do
             subject=${commit%%$'\n'*}
             # The two subject patterns are mutually exclusive: after "feat" the
@@ -181,9 +182,20 @@ jobs:
             elif printf '%s' "$subject" | grep -qE '^(feat|fix)(\([^)]*\))?!?:|^[a-z]+(\([^)]*\))?!:' \
               || printf '%s' "$commit" | grep -qE '^BREAKING[ -]CHANGE:'; then
               blocking=$((blocking + 1))
+            elif ! printf '%s' "$subject" | grep -qE '^[a-z]+(-rc)?(\([^)]*\))?!?: '; then
+              # git-cliff drops a subject it cannot parse as conventional
+              # (`filter_unconventional`): the commit neither bumps the
+              # version nor appears in any release's notes, silently. The
+              # title check guards the pull request's title, but a
+              # one-commit pull request squash-merges under its commit's
+              # own subject unless the repository names the squash commit
+              # after the title (squash_merge_commit_title PR_TITLE, the
+              # repository baseline). Say so where the run is read.
+              unconventional=$((unconventional + 1))
+              echo "::warning title=Unconventional commit subject::\"${subject}\" is not a conventional commit: git-cliff neither releases nor lists it. A one-commit pull request merges under its commit's subject unless the repository's squash commit title is PR_TITLE."
             fi
           done < <(git log ${last:+"${last}..HEAD"} -z --format='%s%n%b')
-          echo "unreleased commits: ${marked} marked -rc, ${blocking} unmarked deciding"
+          echo "unreleased commits: ${marked} marked -rc, ${blocking} unmarked deciding, ${unconventional} unconventional (neither released nor listed)"
 
           if [ "$marked" -gt 0 ] && [ "$blocking" -eq 0 ]; then
             is_rc=true

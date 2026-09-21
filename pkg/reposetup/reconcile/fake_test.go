@@ -32,6 +32,7 @@ type fakeRepo struct {
 	private, archived        bool
 	hasWiki, hasIssues, hasProjects, allowMerge, allowSquash, allowRebase,
 	allowUpdate, allowAuto, deleteOnMerge bool
+	squashTitle   string // PR_TITLE or COMMIT_OR_PR_TITLE
 	defaultBranch string
 	workflowPerm  string
 	teams         map[string]string
@@ -246,6 +247,7 @@ func (f *fakeGitHub) addRepo(owner, name string) *fakeRepo {
 	r := &fakeRepo{
 		owner: owner, name: name,
 		hasIssues: true, allowSquash: true, allowUpdate: true, allowAuto: true, deleteOnMerge: true,
+		squashTitle:   "PR_TITLE",
 		defaultBranch: "main", workflowPerm: "write",
 		createdAt:     time.Now().Add(-30 * 24 * time.Hour),
 		teams:         map[string]string{"employees": "admin", "bots": "push"},
@@ -312,24 +314,25 @@ func (r *fakeRepo) addIssue(login, title string, pullRequest bool) *github.Issue
 
 func (r *fakeRepo) toGitHub() *github.Repository {
 	return &github.Repository{
-		Name:                new(r.name),
-		FullName:            new(r.owner + "/" + r.name),
-		HTMLURL:             new("https://github.com/" + r.owner + "/" + r.name),
-		Owner:               &github.User{Login: new(r.owner)},
-		Description:         new(r.description),
-		Private:             new(r.private),
-		CreatedAt:           &github.Timestamp{Time: r.createdAt},
-		Archived:            new(r.archived),
-		HasWiki:             new(r.hasWiki),
-		HasIssues:           new(r.hasIssues),
-		HasProjects:         new(r.hasProjects),
-		AllowMergeCommit:    new(r.allowMerge),
-		AllowSquashMerge:    new(r.allowSquash),
-		AllowRebaseMerge:    new(r.allowRebase),
-		AllowUpdateBranch:   new(r.allowUpdate),
-		AllowAutoMerge:      new(r.allowAuto),
-		DeleteBranchOnMerge: new(r.deleteOnMerge),
-		DefaultBranch:       new(r.defaultBranch),
+		Name:                   new(r.name),
+		FullName:               new(r.owner + "/" + r.name),
+		HTMLURL:                new("https://github.com/" + r.owner + "/" + r.name),
+		Owner:                  &github.User{Login: new(r.owner)},
+		Description:            new(r.description),
+		Private:                new(r.private),
+		CreatedAt:              &github.Timestamp{Time: r.createdAt},
+		Archived:               new(r.archived),
+		HasWiki:                new(r.hasWiki),
+		HasIssues:              new(r.hasIssues),
+		HasProjects:            new(r.hasProjects),
+		AllowMergeCommit:       new(r.allowMerge),
+		AllowSquashMerge:       new(r.allowSquash),
+		AllowRebaseMerge:       new(r.allowRebase),
+		AllowUpdateBranch:      new(r.allowUpdate),
+		AllowAutoMerge:         new(r.allowAuto),
+		DeleteBranchOnMerge:    new(r.deleteOnMerge),
+		SquashMergeCommitTitle: new(r.squashTitle),
+		DefaultBranch:          new(r.defaultBranch),
 	}
 }
 
@@ -371,6 +374,7 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 		if f.readOnly {
 			out.AllowMergeCommit, out.AllowSquashMerge, out.AllowRebaseMerge = nil, nil, nil
 			out.AllowUpdateBranch, out.AllowAutoMerge, out.DeleteBranchOnMerge = nil, nil, nil
+			out.SquashMergeCommitTitle = nil
 		}
 		writeJSON(w, 200, out)
 	}))
@@ -393,9 +397,10 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 				"errors": []map[string]string{{"message": "Could not resolve to a Repository with the name '" + slug + "'."}}})
 			return
 		}
-		writeJSON(w, 200, map[string]any{"data": map[string]any{"repository": map[string]bool{
+		writeJSON(w, 200, map[string]any{"data": map[string]any{"repository": map[string]any{
 			"mergeCommitAllowed": repo.allowMerge, "squashMergeAllowed": repo.allowSquash, "rebaseMergeAllowed": repo.allowRebase,
 			"allowUpdateBranch": repo.allowUpdate, "autoMergeAllowed": repo.allowAuto, "deleteBranchOnMerge": repo.deleteOnMerge,
+			"squashMergeCommitTitle": repo.squashTitle,
 		}}})
 	})
 	mux.HandleFunc("GET /user/memberships/orgs/{org}", func(w http.ResponseWriter, r *http.Request) {
@@ -418,6 +423,7 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 		repo.description, repo.private = in.GetDescription(), in.GetPrivate()
 		repo.createdAt = time.Now()
 		repo.hasWiki, repo.teams = true, map[string]string{} // GitHub's defaults, not the baseline
+		repo.squashTitle = "COMMIT_OR_PR_TITLE"
 		repo.files = map[string]string{}
 		repo.empty = !in.GetAutoInit()
 		if in.GetAutoInit() {
@@ -444,6 +450,9 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 		set("allow_update_branch", &repo.allowUpdate)
 		set("allow_auto_merge", &repo.allowAuto)
 		set("delete_branch_on_merge", &repo.deleteOnMerge)
+		if v, ok := in["squash_merge_commit_title"].(string); ok {
+			repo.squashTitle = v
+		}
 		if v, ok := in["description"].(string); ok {
 			repo.description = v
 		}

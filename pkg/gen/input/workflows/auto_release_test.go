@@ -178,6 +178,16 @@ func cliffContext(t *testing.T, dir string) {
 func decide(t *testing.T, script, dir, next, want string) map[string]string {
 	t.Helper()
 
+	got, _ := decideWithLog(t, script, dir, next, want)
+
+	return got
+}
+
+// decideWithLog runs the extracted step in dir and returns its GITHUB_OUTPUT
+// as a map together with what the step printed.
+func decideWithLog(t *testing.T, script, dir, next, want string) (map[string]string, string) {
+	t.Helper()
+
 	outPath := filepath.Join(t.TempDir(), "github-output")
 	if err := os.WriteFile(outPath, nil, 0o600); err != nil {
 		t.Fatalf("seed GITHUB_OUTPUT: %v", err)
@@ -211,7 +221,45 @@ func decide(t *testing.T, script, dir, next, want string) map[string]string {
 		}
 	}
 
-	return got
+	return got, string(out)
+}
+
+// Test_AutoReleaseDecideWarnsOnUnconventionalSubjects pins that a commit
+// git-cliff cannot parse is named in the run as a workflow warning. Such a
+// commit neither bumps the version nor appears in any release's notes; a
+// one-commit pull request lands one whenever the repository names the
+// squash commit after the commit rather than the pull request's title. The
+// warning is the only trace the run leaves, so it has to be there, and the
+// conventional subjects must not trigger it.
+func Test_AutoReleaseDecideWarnsOnUnconventionalSubjects(t *testing.T) {
+	script := decideScript(t)
+
+	t.Run("an unconventional subject is warned about and releases nothing", func(t *testing.T) {
+		dir := repo(t, "v1.2.9", "portal Component: no lists on the hub (#110)")
+		got, log := decideWithLog(t, script, dir, "v1.2.9", "auto")
+
+		if got["tag"] != "" {
+			t.Errorf("tag = %q, want none", got["tag"])
+		}
+		if !strings.Contains(log, `::warning title=Unconventional commit subject::"portal Component: no lists on the hub (#110)"`) {
+			t.Errorf("no warning naming the subject in the step's output:\n%s", log)
+		}
+		if !strings.Contains(log, "1 unconventional") {
+			t.Errorf("the summary line does not count the commit:\n%s", log)
+		}
+	})
+
+	t.Run("a conventional subject of any type is not warned about", func(t *testing.T) {
+		dir := repo(t, "v1.2.9", "chore(deps): bump y", "docs: fix typo", "feat-rc(auth): add x", "refactor!: drop y", "fix: last thing")
+		_, log := decideWithLog(t, script, dir, "v2.0.0", "auto")
+
+		if strings.Contains(log, "::warning") {
+			t.Errorf("a warning for a conventional subject:\n%s", log)
+		}
+		if !strings.Contains(log, "0 unconventional") {
+			t.Errorf("the summary line does not read zero:\n%s", log)
+		}
+	})
 }
 
 // Test_AutoReleaseDecide pins the release-candidate rule: tag an RC when at

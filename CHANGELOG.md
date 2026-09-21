@@ -233,6 +233,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- A one-commit pull request squash-merged under its commit's own subject rather than the title the title check had
+  accepted, because GitHub's default names the squash commit `COMMIT_OR_PR_TITLE`; an unconventional subject is then
+  neither released nor listed by auto-release (git-cliff's `filter_unconventional`), and the next merge's release notes
+  omit the pull request. The repository baseline of `repo reconcile`, `repo setup` and `repo status` now names the squash
+  commit after the pull request's title (`squash_merge_commit_title: PR_TITLE`), read with the repository or through
+  GraphQL like the six merge settings and repaired with them; the auto-release decide step names an unconventional
+  subject in the unreleased range as a workflow warning, where before the run only counted zero deciding commits.
+
 - `auth login` ran the GitHub device flow with a placeholder client id and GitHub refused it; the binary now carries the
   client id of the `giantswarm-devctl` GitHub App (`Iv23liWio5REm4MfY2Mw`, owned by the `giantswarm` organization),
   and `docs/auth.md` names the App (#2276).

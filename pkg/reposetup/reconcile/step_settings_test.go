@@ -44,6 +44,35 @@ func TestSettingsMergeSettingsReadIdentity(t *testing.T) {
 		require.Equal(t, []string{"settings: allow_squash_merge false → true, allow_auto_merge false → true"}, sr.Changes)
 		require.False(t, res.Converged)
 	})
+	// A one-commit pull request squash-merges under its commit's own subject
+	// while the repository names the squash commit COMMIT_OR_PR_TITLE: the
+	// title the title check accepted is not what lands, and an unconventional
+	// subject is neither released nor listed by auto-release. The baseline
+	// wants PR_TITLE, read with the repository or through GraphQL.
+	t.Run("a squash commit named after the commit rather than the title is drift", func(t *testing.T) {
+		h := newHarness(t, entryYAML)
+		h.gh.addRepo(owner, name).squashTitle = "COMMIT_OR_PR_TITLE"
+		res := h.run(ModeCheck, false, StepSettings)
+		sr := res.Step(StepSettings)
+		require.Equal(t, VerdictDrift, sr.Verdict, "%+v", sr)
+		require.Equal(t, []string{"settings: squash_merge_commit_title COMMIT_OR_PR_TITLE → PR_TITLE"}, sr.Changes)
+		require.Empty(t, h.mutations(), "a check must not write")
+
+		res = h.run(ModeRepair, false, StepSettings)
+		require.Equal(t, VerdictRepaired, res.Step(StepSettings).Verdict, "%+v", res.Step(StepSettings))
+		require.Equal(t, "PR_TITLE", h.repo().squashTitle)
+		require.True(t, res.Converged)
+	})
+	t.Run("the squash title is read through GraphQL for a read identity", func(t *testing.T) {
+		h := newHarness(t, entryYAML)
+		h.gh.addRepo(owner, name).squashTitle = "COMMIT_OR_PR_TITLE"
+		h.gh.readOnly = true
+		res := h.run(ModeCheck, false, StepSettings)
+		sr := res.Step(StepSettings)
+		require.Equal(t, VerdictDrift, sr.Verdict, "%+v", sr)
+		require.Equal(t, []string{"settings: squash_merge_commit_title COMMIT_OR_PR_TITLE → PR_TITLE"}, sr.Changes)
+		require.Equal(t, 1, h.gh.reads("/graphql"))
+	})
 	t.Run("unreadable both ways is unchecked, never drift", func(t *testing.T) {
 		h := newHarness(t, entryYAML)
 		h.gh.addRepo(owner, name)

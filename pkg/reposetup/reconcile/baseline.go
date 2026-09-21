@@ -18,6 +18,16 @@ type Baseline struct {
 	AllowMergeCommit bool `json:"allowMergeCommit"`
 	AllowSquashMerge bool `json:"allowSquashMerge"`
 	AllowRebaseMerge bool `json:"allowRebaseMerge"`
+	// SquashMergeCommitTitle names the squash commit: PR_TITLE is the pull
+	// request's title; COMMIT_OR_PR_TITLE, GitHub's default, is the title
+	// for a pull request of several commits and the commit's own subject
+	// for one of a single commit. The title check validates the title
+	// alone and auto-release reads the subject that lands on the branch:
+	// under COMMIT_OR_PR_TITLE a one-commit pull request whose title was
+	// made conventional after the commit was written merges under its
+	// unconventional subject, which git-cliff neither releases nor lists.
+	// PR_TITLE in [DefaultBaseline], the subject the merge tool sets too.
+	SquashMergeCommitTitle string `json:"squashMergeCommitTitle"`
 
 	// Pull requests.
 	AllowUpdateBranch   bool `json:"allowUpdateBranch"`
@@ -103,21 +113,22 @@ const renovateInstallationID = 17164699
 // and mapping of giantswarm/github and management-cluster-bases.
 func DefaultBaseline() Baseline {
 	return Baseline{
-		DefaultBranch:       "main",
-		HasWiki:             false,
-		HasIssues:           true,
-		HasProjects:         false,
-		AllowMergeCommit:    false,
-		AllowSquashMerge:    true,
-		AllowRebaseMerge:    false,
-		AllowUpdateBranch:   true,
-		AllowAutoMerge:      true,
-		DeleteBranchOnMerge: true,
-		WorkflowPermissions: "write",
-		TeamPermissions:     map[string]string{"employees": "admin", "bots": "push"},
-		RequiredReviews:     1,
-		EnforceAdmins:       true,
-		StrictChecks:        false,
+		DefaultBranch:          "main",
+		HasWiki:                false,
+		HasIssues:              true,
+		HasProjects:            false,
+		AllowMergeCommit:       false,
+		AllowSquashMerge:       true,
+		AllowRebaseMerge:       false,
+		SquashMergeCommitTitle: "PR_TITLE",
+		AllowUpdateBranch:      true,
+		AllowAutoMerge:         true,
+		DeleteBranchOnMerge:    true,
+		WorkflowPermissions:    "write",
+		TeamPermissions:        map[string]string{"employees": "admin", "bots": "push"},
+		RequiredReviews:        1,
+		EnforceAdmins:          true,
+		StrictChecks:           false,
 		RequiredChecksIfReported: []string{
 			"semantic-pull-request / Validate PR title",
 			"pre-commit",
