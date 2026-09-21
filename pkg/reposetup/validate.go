@@ -519,6 +519,8 @@ func memberOf(teams []string, team string) bool {
 func hasCIJob(f Fields) bool {
 	g := f.Gen
 	switch {
+	case !generates(g.Flavours):
+		return false
 	case g.Language == gen.LanguageGo.String(), g.Language == gen.LanguageNode.String():
 		return true
 	case g.CI != nil && g.CI.Image != nil && g.CI.Image.Dockerfile != "":

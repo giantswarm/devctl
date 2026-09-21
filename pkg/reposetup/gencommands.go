@@ -14,6 +14,7 @@ import (
 	"github.com/giantswarm/micrologger"
 
 	gencmd "github.com/giantswarm/devctl/v8/cmd/gen"
+	"github.com/giantswarm/devctl/v8/pkg/gen"
 )
 
 // The generators and the release workflows, as `devctl gen` names them.
@@ -54,10 +55,11 @@ type genContext struct {
 // a declaration, in align-files' order: makefile, workflows, llm,
 // pre-commit, then CircleCI and Renovate when gen.ci.generate is on. Each
 // line is an argv starting with devctl gen. The declaration has to have
-// gen.flavours and gen.language; the validator refuses one that has not.
+// gen.flavours and gen.language; the validator refuses one that has not. A
+// fork line gets nothing generated ([generates]): no line.
 func genCommands(f Fields, gc genContext) [][]string {
 	g := f.Gen
-	if g == nil || len(g.Flavours) == 0 || g.Language == "" {
+	if g == nil || len(g.Flavours) == 0 || g.Language == "" || !generates(g.Flavours) {
 		return nil
 	}
 	knows := gc.Knows
@@ -242,6 +244,18 @@ func genCommands(f Fields, gc genContext) [][]string {
 	commands = append(commands, line(genRenovate, renovate...))
 
 	return commands
+}
+
+// generates says whether the generators produce anything for the declared
+// flavours, as [gen.FlavourSlice.Generates] says it for the parsed ones: a
+// fork line carries its upstream's files plus the carried patches and gets
+// nothing generated.
+func generates(flavours []string) bool {
+	fl := make(gen.FlavourSlice, len(flavours))
+	for i, f := range flavours {
+		fl[i] = gen.Flavour(f)
+	}
+	return fl.Generates()
 }
 
 // cwdMu serializes the generator runs: the generators read the repository

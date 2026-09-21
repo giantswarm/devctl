@@ -41,6 +41,15 @@
     language: generic
     ci:
       generate: false
+- name: upstream-fork
+  componentType: service
+  defaultBranch: giantswarm
+  gen:
+    flavours:
+      - fork
+    language: go
+    ci:
+      generate: false
 - name: policies
   componentType: configuration
   gen:

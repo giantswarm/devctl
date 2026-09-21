@@ -70,6 +70,20 @@ const (
     ci:
       generate: false
 `
+	// forkEntryYAML declares a fork line: the repository carries an upstream
+	// release plus the carried patches on the branch named after the
+	// organisation, which its entry declares; nothing is generated for it.
+	forkEntryYAML = `- name: sample-service
+  componentType: service
+  description: A fork line
+  visibility: public
+  defaultBranch: giantswarm
+  gen:
+    flavours: [fork]
+    language: go
+    ci:
+      generate: false
+`
 
 	// scaffoldSubject is the first commit's subject: conventional, so the
 	// generated auto-release workflow tags v0.1.0 from it.
@@ -1046,6 +1060,42 @@ func TestSteps(t *testing.T) {
 			seed:      func(h *harness) { h.gh.addRepo(owner, name) },
 			wantCheck: VerdictSkipped, wantAfter: VerdictSkipped,
 		},
+		{
+			name: "settings: a fork line stays on its declared default branch", step: StepSettings, entry: forkEntryYAML,
+			seed:      func(h *harness) { h.gh.addRepo(owner, name).defaultBranch = "giantswarm" },
+			wantCheck: VerdictOK,
+			verify:    func(t *testing.T, h *harness, _ *Result) { require.Equal(t, "giantswarm", h.repo().defaultBranch) },
+		},
+		{
+			name: "settings: a repository off its declared default branch is renamed to it", step: StepSettings, entry: forkEntryYAML,
+			seed:      func(h *harness) { h.gh.addRepo(owner, name) },
+			wantCheck: VerdictDrift, wantChange: `default branch "main" → "giantswarm"`,
+			verify: func(t *testing.T, h *harness, _ *Result) { require.Equal(t, "giantswarm", h.repo().defaultBranch) },
+		},
+		{
+			name: "protection: a fork line's declared default branch is protected", step: StepProtection, entry: forkEntryYAML,
+			seed:      func(h *harness) { h.gh.addRepo(owner, name).defaultBranch = "giantswarm" },
+			wantCheck: VerdictDrift, wantChange: "protect giantswarm",
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				require.Equal(t, "giantswarm", h.repo().protected, "the declared branch is the protected one")
+				require.NotNil(t, h.repo().protection)
+			},
+		},
+		{
+			name: "scaffold: flavour fork carries its upstream's tree", step: StepScaffold, entry: forkEntryYAML,
+			seed:      func(h *harness) { h.gh.addRepo(owner, name).defaultBranch = "giantswarm" },
+			wantCheck: VerdictSkipped, wantAfter: VerdictSkipped,
+		},
+		{
+			name: "codeowners: flavour fork gets no CODEOWNERS pull request", step: StepCodeowners, entry: forkEntryYAML,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.defaultBranch = "giantswarm"
+				delete(r.files, "CODEOWNERS")
+			},
+			wantCheck: VerdictSkipped, wantAfter: VerdictSkipped,
+			verify: func(t *testing.T, h *harness, _ *Result) { require.Empty(t, h.repo().prs) },
+		},
 	}
 
 	for _, tc := range cases {
@@ -1199,6 +1249,41 @@ func TestRunDeletedDeclarationRunsLifecycleOnly(t *testing.T) {
 			require.Equal(t, "lifecycle: deleted", sr.Summary)
 		}
 	}
+}
+
+// TestRunForkLineFollowsItsDeclaredBranch: a fork line is on the branch its
+// entry declares, and that branch is the one the engine keeps and protects.
+// The dry run plans no rename, protection on the declared branch, and skips
+// the scaffold and CODEOWNERS steps; the repair protects the declared branch
+// and leaves the tree alone.
+func TestRunForkLineFollowsItsDeclaredBranch(t *testing.T) {
+	h := newHarness(t, forkEntryYAML)
+	r := h.gh.addRepo(owner, name)
+	r.defaultBranch = "giantswarm"
+	delete(r.files, "CODEOWNERS")
+
+	check := h.run(ModeCheck, false)
+	for _, sr := range check.Steps {
+		require.NotEqual(t, VerdictFailed, sr.Verdict, "%s: %s", sr.Step, sr.Summary)
+		switch sr.Step {
+		case StepScaffold, StepCodeowners:
+			require.Equal(t, VerdictSkipped, sr.Verdict, "%s: %+v", sr.Step, sr)
+			require.Equal(t, "flavour fork", sr.Summary, "%s", sr.Step)
+		case StepSettings:
+			require.Equal(t, VerdictOK, sr.Verdict, "no rename is planned: %+v", sr)
+		case StepProtection:
+			require.Equal(t, VerdictDrift, sr.Verdict, "%+v", sr)
+			require.Contains(t, sr.Changes, "protect giantswarm", "%+v", sr.Changes)
+		}
+	}
+	require.Empty(t, h.mutations(), "a check must not write")
+
+	repair := h.run(ModeRepair, false)
+	require.Equal(t, VerdictRepaired, repair.Step(StepProtection).Verdict, "%+v", repair.Step(StepProtection))
+	require.Equal(t, "giantswarm", r.protected, "the declared branch is the protected one")
+	require.Equal(t, "giantswarm", r.defaultBranch)
+	require.Empty(t, r.prs, "no CODEOWNERS pull request")
+	require.NotContains(t, r.files, "CODEOWNERS", "the tree is upstream's")
 }
 
 // TestRunCustomerFlavourKeepsTheCustomersFlow: a customer repository has

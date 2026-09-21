@@ -29,6 +29,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   Adding a scenario is a directory with `scenario.yaml` and `expected.json`; `e2e/README.md` documents the format,
   the environment seams and the slugs of the known incidents (#2280).
 
+- `defaultBranch` and the flavour `fork` in the repositories schema devctl ships and in `reposetup.Fields`.
+  `defaultBranch` (default `main`) is the repository's default branch: the settings step keeps the repository on it
+  and renames a default branch that is not the declared one, the protection step protects it, so a repository on a
+  branch of its own declares it and keeps it. `fork` is a fork line, a repository that carries an upstream release
+  plus the carried patches on the branch it declares: the scaffold and codeowners steps are skipped on it
+  (`skipped: flavour fork`), the generators (`devctl gen makefile|workflows|llm|circleci`, and the scaffold's
+  command lines) produce nothing for it, every other step runs as declared. `repo status` names the declared
+  branch and flavours next to the opt-in (#2271).
+
 - `requiredChecks` in the repositories schema devctl ships and in `reposetup.Fields`: status-check contexts an entry
   requires on its default branch whatever reported, merged with the baseline's reported-only rule by the protection
   step and never removed as ghosts. For a repository's own GitHub Actions gate that runs on every pull request, such

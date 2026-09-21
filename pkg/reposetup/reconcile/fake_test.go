@@ -40,6 +40,7 @@ type fakeRepo struct {
 	files         map[string]string            // default-branch files
 	branchFiles   map[string]map[string]string // other branches
 	protection    *fakeProtection
+	protected     string // the branch the last protection PUT named
 	hooks         []*github.Hook
 	release       string
 	releaseAt     time.Time
@@ -588,6 +589,16 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 		delete(repo.collaborators, r.PathValue("login"))
 		w.WriteHeader(204)
 	}))
+	mux.HandleFunc("POST /repos/{owner}/{repo}/branches/{branch}/rename", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		var in struct {
+			NewName string `json:"new_name"`
+		}
+		decode(r, &in)
+		if r.PathValue("branch") == repo.defaultBranch {
+			repo.defaultBranch = in.NewName
+		}
+		writeJSON(w, 201, map[string]any{"name": in.NewName})
+	}))
 	mux.HandleFunc("GET /repos/{owner}/{repo}/branches/{branch}/protection", f.withRepo(func(w http.ResponseWriter, _ *http.Request, repo *fakeRepo) {
 		p := repo.protection
 		if p == nil {
@@ -628,6 +639,7 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 			}
 		}
 		repo.protection = p
+		repo.protected = r.PathValue("branch")
 		writeJSON(w, 200, map[string]any{})
 	}))
 	mux.HandleFunc("GET /repos/{owner}/{repo}/hooks", f.withRepo(func(w http.ResponseWriter, _ *http.Request, repo *fakeRepo) {

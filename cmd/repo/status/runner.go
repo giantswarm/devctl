@@ -48,6 +48,12 @@ type output struct {
 	// (align: true); nil when the source did not read the entry -- the
 	// manager's record carries the set-up state alone.
 	Align *bool `json:"align,omitempty"`
+	// DefaultBranch is the repository's default branch as its entry declares
+	// it, the baseline's when it declares none, and Flavours are the entry's
+	// gen.flavours, the profile the reconciler applies; empty when the source
+	// did not read the entry.
+	DefaultBranch string   `json:"defaultBranch,omitempty"`
+	Flavours      []string `json:"flavours,omitempty"`
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
@@ -185,7 +191,24 @@ func (r *runner) fromEngine(ctx context.Context, owner, repo string) (*output, e
 		return nil, microerror.Mask(err)
 	}
 
-	return &output{Source: sourceEngine, Result: res, Align: &fields.Align}, nil
+	out := &output{Source: sourceEngine, Result: res, Align: &fields.Align, DefaultBranch: fields.DefaultBranch}
+	if out.DefaultBranch == "" {
+		out.DefaultBranch = reconcile.DefaultBaseline().DefaultBranch
+	}
+	if fields.Gen != nil {
+		out.Flavours = fields.Gen.Flavours
+	}
+	return out, nil
+}
+
+// declarationLine names the declared default branch and flavours the
+// reconciler follows.
+func declarationLine(branch string, flavours []string) string {
+	profile := "none"
+	if len(flavours) > 0 {
+		profile = strings.Join(flavours, ", ")
+	}
+	return fmt.Sprintf("default branch %s, flavours %s", branch, profile)
 }
 
 // alignLine names the repository's opt-in to alignment and what it means
@@ -215,6 +238,9 @@ func (r *runner) print(out *output) error {
 	}
 	if out.Align != nil {
 		fmt.Fprintln(r.stdout, alignLine(*out.Align))
+	}
+	if out.DefaultBranch != "" {
+		fmt.Fprintln(r.stdout, declarationLine(out.DefaultBranch, out.Flavours))
 	}
 	for _, step := range res.Steps {
 		fmt.Fprintf(r.stdout, "  %-12s %-9s %s\n", step.Step, step.Verdict, step.Summary)

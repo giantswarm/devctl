@@ -126,7 +126,7 @@ func (r *Runner) Create(ctx context.Context, req CreateRequest) (*CreateResult, 
 		// The dry run of a repository that does not exist: the scaffold step
 		// cannot read a repository it would create, so it plans what it
 		// would push instead of reporting the repository missing.
-		sr := &StepResult{Step: StepScaffold, Changes: []string{s.scaffoldChange(s.baseline.DefaultBranch)}}
+		sr := &StepResult{Step: StepScaffold, Changes: []string{s.scaffoldChange(s.defaultBranch())}}
 		s.finish(sr)
 		fmt.Fprintf(s.log, "%s/%s %s: %s%s\n", s.owner, s.name, StepScaffold, sr.Verdict, summaryLine(sr))
 		res.Steps = append(res.Steps, *sr)
