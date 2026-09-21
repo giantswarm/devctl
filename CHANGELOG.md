@@ -113,6 +113,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   refresh token and a valid CircleCI token (exit 0, the GitHub identity `refreshable`). Nothing is contacted and
   no token material is asserted (#2276).
 
+- `e2e/scenarios/renamed-image`, `hand-written-ci`, `release-assets-only`, `failed-tag-pipeline`,
+  `rerun-replaces-failed`, `stale-registry-login` and `release-wait-timeout`: `release wait` against the seven field
+  incidents, each asserting the exit code and the JSON document. Generated CI whose entry renames the image
+  (`gen.ci.image.name`) is probed under the override and never under the repository name; hand-written CI names its
+  two images through the tag pipeline's push jobs and both are probed; a repository with neither image nor chart is
+  available through its published release and green tag workflows (`kind: release-asset`); a failed workflow of the
+  tag pipeline is exit 1 with `pipeline.failedJobs`; a rerun of a failed workflow of the same name reads as green;
+  a stale docker login to the public registry never reaches the anonymous probe; artifacts that never appear while
+  the pipeline runs are exit 2 at the deadline. The registry mock's `staleLogin` refuses the requests that carry
+  credentials and serves anonymous reads, the answer a public registry gives (#2279).
+
 - `requiredChecks` in the repositories schema devctl ships and in `reposetup.Fields`: status-check contexts an entry
   requires on its default branch whatever reported, merged with the baseline's reported-only rule by the protection
   step and never removed as ghosts. For a repository's own GitHub Actions gate that runs on every pull request, such

@@ -1,0 +1,30 @@
+{
+  "exitCode": 0,
+  "json": {
+    "command": "release wait",
+    "schemaVersion": 1,
+    "exitCode": 0,
+    "verdict": "available",
+    "reason": "",
+    "warnings": [],
+    "startedAt": "*",
+    "finishedAt": "*",
+    "repository": "giantswarm/e2e-app",
+    "tag": "v1.2.3",
+    "sha": "aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44",
+    "releaseModel": "auto-release",
+    "ciModel": "generated",
+    "artifacts": [
+      {"kind": "image", "reference": "*", "digest": "*", "state": "available"},
+      {"kind": "chart", "reference": "*", "digest": "*", "state": "available"}
+    ],
+    "pipeline": {
+      "id": "p1",
+      "number": 7,
+      "url": "https://app.circleci.com/pipelines/github/giantswarm/e2e-app/7",
+      "workflows": [{"name": "build", "status": "success"}],
+      "failedJobs": []
+    },
+    "actions": []
+  }
+}

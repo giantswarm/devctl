@@ -195,8 +195,9 @@ login the issuer's registration and token endpoints the command asks for.
 Manifest routes have defaults: a `200` without a body is a minimal manifest with `Content-Type` and
 `Docker-Content-Digest` (set `headers: {Docker-Content-Digest: ...}` to pin a digest for `expected.json`), a
 `404` without a body is the `MANIFEST_UNKNOWN` error, and a manifest no route scripts is `MANIFEST_UNKNOWN` too.
-`GET /v2/` is `200 {}`. With `staleLogin: true` every request is `401 UNAUTHORIZED` with a bearer challenge, the
-answer a registry gives a client whose stored login has expired.
+`GET /v2/` is `200 {}`. With `staleLogin: true` every request that carries an `Authorization` header is `401
+UNAUTHORIZED` with a bearer challenge, the answer a registry gives a client whose stored login has expired; a
+request without credentials is answered by the routes, as a public registry answers an anonymous read.
 
 ## Scenarios
 

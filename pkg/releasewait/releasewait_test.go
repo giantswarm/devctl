@@ -33,7 +33,6 @@ type fixture struct {
 	circleci        sequence.Routes
 	registry        sequence.Routes
 	privateRegistry sequence.Routes
-	staleLogin      bool
 	entry           *reposetup.Fields
 	version         string
 	pr              int
@@ -138,7 +137,7 @@ func run(t *testing.T, fx fixture) (Result, error) {
 		t.Fatalf("circleci mock: %v", err)
 	}
 	t.Cleanup(cc.Close)
-	reg, err := registrymock.Start(fx.registry, fx.staleLogin)
+	reg, err := registrymock.Start(fx.registry, false)
 	if err != nil {
 		t.Fatalf("registry mock: %v", err)
 	}
@@ -300,11 +299,16 @@ func TestWaitTimeoutNamesTheMissing(t *testing.T) {
 	}
 }
 
-func TestWaitStaleLoginIsToolingNotSlow(t *testing.T) {
+// A 401 to the anonymous read of the public registry is the artifact not
+// being public, a tooling failure the wait ends with at once, not a slow
+// pipeline it waits out.
+func TestWaitUnauthorizedIsToolingNotSlow(t *testing.T) {
 	fx := fixture{
-		entry:      generatedEntry(t),
-		staleLogin: true,
-		github:     baseGitHub([]string{"Dockerfile", "helm"}, []string{"zz_generated.auto_release.yaml"}, []string{"config.yml", "workflows.yml"}),
+		entry:  generatedEntry(t),
+		github: baseGitHub([]string{"Dockerfile", "helm"}, []string{"zz_generated.auto_release.yaml"}, []string{"config.yml", "workflows.yml"}),
+		registry: sequence.Routes{
+			"HEAD /v2/giantswarm/kserve-controller/manifests/1.2.3": {{Status: 401}},
+		},
 		circleci: pipelineRoutes(
 			[][]map[string]any{{wf("w1", "build", "running", "2026-09-21T10:00:00Z")}},
 			map[string][]map[string]any{"w1": {job("push-to-registries-release", "running")}},

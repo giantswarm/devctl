@@ -58,7 +58,8 @@ type Mock struct {
 // RegistryMock is a registry's script and state.
 type RegistryMock struct {
 	Mock `yaml:",inline"`
-	// StaleLogin makes the registry refuse every request with 401.
+	// StaleLogin makes the registry refuse every request that carries
+	// credentials with 401; anonymous requests are served by the routes.
 	StaleLogin bool `yaml:"staleLogin"`
 }
 
