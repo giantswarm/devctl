@@ -90,7 +90,8 @@ const (
 	// for a person.
 	VerdictReported Verdict = "reported"
 	// VerdictSkipped: the step did not apply (repository missing or empty,
-	// archived or deleted, no client for the system).
+	// archived or deleted, no client for the system, no CircleCI pipeline
+	// for the circleci and release steps).
 	VerdictSkipped Verdict = "skipped"
 	// VerdictFailed: the step could not run to its end; Summary says why.
 	VerdictFailed Verdict = "failed"
