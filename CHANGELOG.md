@@ -37,6 +37,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   held against a pipeline; a project someone followed by hand is left as it is. The answer costs one request per run,
   shared by the two steps, and none when the entry declares the pipeline (#2269).
 
+- The `customer` flavour is a profile of the repository set-up reconciler: a customer repository's branch protection
+  and default branch are the customer's own flow and it has no CircleCI pipeline of ours, so the protection, circleci,
+  codeowners and release steps are skipped on it (`skipped: flavour customer`) and the settings step never plans the
+  rename of its default branch; settings, permissions, renovate, metadata, lifecycle and catalog run as declared
+  (#2272).
+
 - `reconcile.DefaultBaseline` has strict status checks off (`StrictChecks: false`): a branch need not be up to date
   to merge, so on a repository with Renovate and sweep traffic a merge no longer invalidates every other open pull
   request and re-runs its CI. The protection step plans `strict checks true → false` where a repository has them on

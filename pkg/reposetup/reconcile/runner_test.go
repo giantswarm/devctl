@@ -58,6 +58,18 @@ const (
     flavours: [app]
     language: go
 `
+	// customerEntryYAML declares a customer repository: the flavour is the
+	// profile, the component type the catalog's type.
+	customerEntryYAML = `- name: sample-service
+  componentType: customer
+  description: A customer repository
+  visibility: private
+  gen:
+    flavours: [customer]
+    language: generic
+    ci:
+      generate: false
+`
 
 	// scaffoldSubject is the first commit's subject: conventional, so the
 	// generated auto-release workflow tags v0.1.0 from it.
@@ -1001,6 +1013,39 @@ func TestSteps(t *testing.T) {
 				require.NotContains(t, h.cc.pages, "2", "the pages behind the release were not read")
 			},
 		},
+		{
+			name: "settings: a customer repository's default branch is never renamed", step: StepSettings, entry: customerEntryYAML,
+			seed:      func(h *harness) { h.gh.addRepo(owner, name).defaultBranch = "master" },
+			wantCheck: VerdictOK,
+			verify:    func(t *testing.T, h *harness, _ *Result) { require.Equal(t, "master", h.repo().defaultBranch) },
+		},
+		{
+			name: "protection: flavour customer keeps the customer's protection", step: StepProtection, entry: customerEntryYAML,
+			seed: func(h *harness) {
+				h.gh.addRepo(owner, name).protection = &fakeProtection{reviews: 2, enforceAdmins: false, strict: true, checks: []string{"customer/build"}}
+			},
+			wantCheck: VerdictSkipped, wantAfter: VerdictSkipped,
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				require.Equal(t, &fakeProtection{reviews: 2, enforceAdmins: false, strict: true, checks: []string{"customer/build"}}, h.repo().protection)
+			},
+		},
+		{
+			name: "circleci: flavour customer is not followed", step: StepCircleCI, entry: customerEntryYAML,
+			seed:      func(h *harness) { h.gh.addRepo(owner, name) },
+			wantCheck: VerdictSkipped, wantAfter: VerdictSkipped,
+			verify: func(t *testing.T, h *harness, _ *Result) { require.Empty(t, h.cc.projects, "no follow, no deploy key") },
+		},
+		{
+			name: "codeowners: flavour customer gets no CODEOWNERS pull request", step: StepCodeowners, entry: customerEntryYAML,
+			seed:      func(h *harness) { delete(h.gh.addRepo(owner, name).files, "CODEOWNERS") },
+			wantCheck: VerdictSkipped, wantAfter: VerdictSkipped,
+			verify: func(t *testing.T, h *harness, _ *Result) { require.Empty(t, h.repo().prs) },
+		},
+		{
+			name: "release: flavour customer has no pipeline of ours to verify", step: StepRelease, entry: customerEntryYAML,
+			seed:      func(h *harness) { h.gh.addRepo(owner, name) },
+			wantCheck: VerdictSkipped, wantAfter: VerdictSkipped,
+		},
 	}
 
 	for _, tc := range cases {
@@ -1154,6 +1199,45 @@ func TestRunDeletedDeclarationRunsLifecycleOnly(t *testing.T) {
 			require.Equal(t, "lifecycle: deleted", sr.Summary)
 		}
 	}
+}
+
+// TestRunCustomerFlavourKeepsTheCustomersFlow: a customer repository has
+// branch protection of the customer's own, a default branch that is theirs
+// and no CircleCI pipeline of ours. The dry run plans settings changes at
+// most — no rename, no protection, no follow or deploy key, no CODEOWNERS
+// pull request — and the repair leaves all of that alone too.
+func TestRunCustomerFlavourKeepsTheCustomersFlow(t *testing.T) {
+	h := newHarness(t, customerEntryYAML)
+	r := h.gh.addRepo(owner, name)
+	r.defaultBranch = "master"
+	r.hasWiki = true
+	r.protection = &fakeProtection{reviews: 2, enforceAdmins: false, strict: true, checks: []string{"customer/build"}}
+	delete(r.files, "CODEOWNERS")
+	theirs := *r.protection
+
+	check := h.run(ModeCheck, false)
+	for _, sr := range check.Steps {
+		require.NotEqual(t, VerdictFailed, sr.Verdict, "%s: %s", sr.Step, sr.Summary)
+		switch sr.Step {
+		case StepProtection, StepCircleCI, StepCodeowners, StepRelease:
+			require.Equal(t, VerdictSkipped, sr.Verdict, "%s: %+v", sr.Step, sr)
+			require.Equal(t, "flavour customer", sr.Summary, "%s", sr.Step)
+			require.Empty(t, sr.Changes, "%s plans nothing: no protection, no follow, no deploy key, no CODEOWNERS pull request", sr.Step)
+		case StepSettings:
+			require.Equal(t, VerdictDrift, sr.Verdict, "%+v", sr)
+			require.Equal(t, []string{"settings: has_wiki true → false"}, sr.Changes, "the settings baseline applies, the branch is not renamed")
+		}
+	}
+	require.Empty(t, h.mutations(), "a check must not write")
+
+	repair := h.run(ModeRepair, false)
+	require.Equal(t, VerdictRepaired, repair.Step(StepSettings).Verdict, "%+v", repair.Step(StepSettings))
+	require.False(t, r.hasWiki)
+	require.Equal(t, "master", r.defaultBranch, "the default branch is the customer's")
+	require.Equal(t, theirs, *r.protection, "protection is the customer's")
+	require.Empty(t, h.cc.projects, "not followed on CircleCI, no deploy key")
+	require.NotContains(t, r.files, "CODEOWNERS")
+	require.Empty(t, r.prs, "no CODEOWNERS pull request")
 }
 
 // A declared deletion whose repository is gone is the record: converged, no
