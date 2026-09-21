@@ -17,6 +17,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   green), `red-circleci-workflow` (the newest run of a workflow failed: exit 1 naming it), `pr-wait-timeout` (a check
   that stays queued: exit 2 naming it) (#2277).
 
+- `devctl pr merge <owner/repo> <number> [--timeout 30m] [--rebase] [--update-branch] [--progress]`: the wait of
+  `pr wait` (same verdicts, same codes), then a squash merge (`--rebase`: a rebase merge)
+  through the merge API with the judged head as the expected head and the branch deleted through the refs
+  API; a base with a merge queue is enqueued and waited for instead. Refused before any wait: a draft, closed
+  or conflicting pull request and one behind a strict base (exit 3; `--update-branch` updates the branch and
+  waits for the new head), a pull request another human opened (exit 5; bots, GitHub Apps and the caller are
+  fine) and a repository whose team-file entry in giantswarm/github says `agentMerge: false` (exit 5, naming
+  the field). No protection setting is read to be changed or written: the devctl GitHub App is a bypass actor
+  of the rulesets. The document is `pr wait`'s plus `mergeCommitSha`, `method`, `branchDeleted` and
+  `enqueued`. The engine is `pkg/prmerge` on `pkg/prwait`; `pkg/githubclient` gains the merge, update-branch,
+  ref deletion, merge-queue rule and enqueue calls (#2278).
+
 - `devctl pr wait <owner/repo> <number> [--timeout 30m] [--progress]`: one bounded, blocking wait until the
   pull request's head is green as the merge box sees it, red, or in a state no CI can turn green, then one
   JSON document and an exit code (0 green, 1 red, 2 timeout naming what was unfinished, 3 draft/closed/
