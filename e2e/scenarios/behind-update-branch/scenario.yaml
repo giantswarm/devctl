@@ -1,0 +1,90 @@
+# The same head behind a strict base, with --update-branch: the command asks
+# GitHub to merge the base into the head (PUT update-branch with abc123 as
+# the expected head, answered 202), reads the pull request until the new
+# head def456 is on it, and the wait judges def456: its check run, status,
+# workflow run and CircleCI pipeline are the ones scripted, none exists for
+# abc123. The merge lands def456 and the branch is deleted: exit 0.
+description: a head behind a strict base is updated with --update-branch, the new head waited for and merged
+args: [pr, merge, giantswarm/devctl, "42", --timeout, 30m, --update-branch]
+keyring:
+  github:
+    login: e2e-engineer
+    token: ghu_e2e_live
+    expiresAt: "2099-01-01T00:00:00Z"
+    refreshToken: ghr_e2e_live
+    refreshExpiresAt: "2099-01-01T00:00:00Z"
+  circleci:
+    login: e2e-engineer
+    token: CCIPAT_e2e_live
+    expiresAt: "2099-01-01T00:00:00Z"
+github:
+  routes:
+    "GET /repos/giantswarm/devctl/pulls/42":
+      - body:
+          number: 42
+          node_id: PR_e2e_42
+          title: "feat: the change"
+          state: open
+          draft: false
+          merged: false
+          mergeable: true
+          mergeable_state: behind
+          user: {login: e2e-engineer, type: User}
+          head: {sha: abc123, ref: feature, repo: {full_name: giantswarm/devctl}}
+          base: {ref: main, repo: {full_name: giantswarm/devctl}}
+      - body:
+          number: 42
+          node_id: PR_e2e_42
+          title: "feat: the change"
+          state: open
+          draft: false
+          merged: false
+          mergeable: true
+          mergeable_state: clean
+          user: {login: e2e-engineer, type: User}
+          head: {sha: def456, ref: feature, repo: {full_name: giantswarm/devctl}}
+          base: {ref: main, repo: {full_name: giantswarm/devctl}}
+    "GET /repos/giantswarm/github/contents/repositories":
+      - body:
+          - {type: file, name: team-e2e.yaml, path: repositories/team-e2e.yaml, sha: t1}
+    "GET /repos/giantswarm/github/contents/repositories/team-e2e.yaml":
+      - body: {type: file, name: team-e2e.yaml, path: repositories/team-e2e.yaml, sha: t2, encoding: base64, content: "LSBuYW1lOiBkZXZjdGwKICBjb21wb25lbnRUeXBlOiBjbGkKICBnZW46CiAgICBmbGF2b3VyczoKICAgICAgLSBjbGkKICAgIGxhbmd1YWdlOiBnbwo="}
+    "PUT /repos/giantswarm/devctl/pulls/42/update-branch":
+      - status: 202
+        body: {message: "Updating pull request branch.", url: "https://github.com/giantswarm/devctl/pull/42"}
+    "GET /repos/giantswarm/devctl/contents/.circleci/config.yml":
+      - body: {type: file, name: config.yml, path: .circleci/config.yml, sha: c0ffee, encoding: base64, content: ""}
+    "GET /repos/giantswarm/devctl/commits/def456/check-runs":
+      - body:
+          total_count: 1
+          check_runs:
+            - {id: 102, name: go-test, status: completed, conclusion: success, started_at: "2026-09-21T10:05:00Z", html_url: "https://github.com/giantswarm/devctl/runs/102"}
+    "GET /repos/giantswarm/devctl/commits/def456/status":
+      - body:
+          state: success
+          total_count: 1
+          statuses:
+            - {context: "ci/circleci: build", state: success, target_url: "https://circleci.com/gh/giantswarm/devctl/9002", updated_at: "2026-09-21T10:06:00Z"}
+    "GET /repos/giantswarm/devctl/actions/runs?head_sha=def456":
+      - body:
+          total_count: 1
+          workflow_runs:
+            - {id: 7002, name: CI, status: completed, conclusion: success, html_url: "https://github.com/giantswarm/devctl/actions/runs/7002"}
+    "PUT /repos/giantswarm/devctl/pulls/42/merge":
+      - body: {sha: 1a2b3c4d, merged: true, message: "Pull Request successfully merged"}
+    "DELETE /repos/giantswarm/devctl/git/refs/heads/feature":
+      - status: 204
+circleci:
+  routes:
+    "GET /api/v2/project/gh/giantswarm/devctl":
+      - body: {slug: gh/giantswarm/devctl, name: devctl, organization_name: giantswarm}
+    "GET /api/v2/project/gh/giantswarm/devctl/pipeline?branch=feature":
+      - body:
+          items:
+            - {id: p2, number: 13, state: created, created_at: "2026-09-21T10:05:00Z", vcs: {revision: def456, branch: feature}}
+            - {id: p1, number: 12, state: created, created_at: "2026-09-21T10:00:00Z", vcs: {revision: abc123, branch: feature}}
+          next_page_token: ""
+    "GET /api/v2/pipeline/p2/workflow":
+      - body:
+          items:
+            - {id: w2, name: build, status: success, pipeline_number: 13, created_at: "2026-09-21T10:05:00Z"}

@@ -1,0 +1,35 @@
+{
+  "exitCode": 0,
+  "json": {
+    "command": "pr merge",
+    "schemaVersion": 1,
+    "exitCode": 0,
+    "verdict": "green",
+    "reason": "",
+    "warnings": [],
+    "startedAt": "*",
+    "finishedAt": "*",
+    "repository": "giantswarm/devctl",
+    "number": 42,
+    "headSha": "def456",
+    "baseRef": "main",
+    "checks": [
+      {"name": "ci/circleci: build", "source": "status", "status": "completed", "conclusion": "success", "url": "*", "required": false},
+      {"name": "go-test", "source": "check_run", "status": "completed", "conclusion": "success", "url": "*", "required": false}
+    ],
+    "circleci": {
+      "pipelineId": "p2",
+      "pipelineNumber": 13,
+      "workflows": [
+        {"name": "build", "status": "success", "url": "*"}
+      ]
+    },
+    "actions": [
+      {"name": "CI", "runId": 7002, "status": "completed", "conclusion": "success", "url": "*"}
+    ],
+    "mergeCommitSha": "1a2b3c4d",
+    "method": "squash",
+    "branchDeleted": true,
+    "enqueued": false
+  }
+}

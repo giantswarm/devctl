@@ -209,8 +209,8 @@ The incidents the commands encode, one scenario each, by these slugs:
 
 - `pr wait`: `stage-gap`, `fork-awaiting-approval`, `conflicting-pr`, `retitled-stale-run`,
   `red-circleci-workflow`, `pr-wait-timeout`
-- `pr merge`: `own-green-merged`, `other-human-refused`, `opt-out-refused`, `behind-strict-base`, `merge-queue`,
-  `red-not-merged`
+- `pr merge`: `own-green-merged`, `other-human-refused`, `opt-out-refused`, `behind-strict-base`,
+  `behind-update-branch`, `merge-queue`, `red-not-merged`
 - `release wait`: `renamed-image`, `hand-written-ci`, `release-assets-only`, `failed-tag-pipeline`,
   `rerun-replaces-failed`, `stale-registry-login`, `release-wait-timeout`
 - `auth`: `auth-missing`, `auth-expired`, `auth-refreshed`

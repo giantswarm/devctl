@@ -1,0 +1,23 @@
+{
+  "exitCode": 5,
+  "json": {
+    "command": "pr merge",
+    "schemaVersion": 1,
+    "exitCode": 5,
+    "verdict": "refused",
+    "reason": "the entry devctl in repositories/team-e2e.yaml of giantswarm/github@main says agentMerge: false: agents do not merge in this repository",
+    "warnings": [],
+    "startedAt": "*",
+    "finishedAt": "*",
+    "repository": "giantswarm/devctl",
+    "number": 42,
+    "headSha": "abc123",
+    "baseRef": "main",
+    "checks": [],
+    "actions": [],
+    "mergeCommitSha": "",
+    "method": "squash",
+    "branchDeleted": false,
+    "enqueued": false
+  }
+}

@@ -1,0 +1,29 @@
+# The pull request was opened by another person (user type User, not the
+# keyring's login and no [bot] suffix). The refusal comes before the wait
+# and before the team files are read: no check, status, workflow or team
+# file route is scripted, so a request to any of them would be answered
+# 404 and fail the command with 7 instead of the expected 5. No merge.
+description: another human's pull request is refused with 5 before the wait
+args: [pr, merge, giantswarm/devctl, "42", --timeout, 30m]
+keyring:
+  github:
+    login: e2e-engineer
+    token: ghu_e2e_live
+    expiresAt: "2099-01-01T00:00:00Z"
+    refreshToken: ghr_e2e_live
+    refreshExpiresAt: "2099-01-01T00:00:00Z"
+github:
+  routes:
+    "GET /repos/giantswarm/devctl/pulls/42":
+      - body:
+          number: 42
+          node_id: PR_e2e_42
+          title: "feat: a colleague's change"
+          state: open
+          draft: false
+          merged: false
+          mergeable: true
+          mergeable_state: clean
+          user: {login: colleague, type: User}
+          head: {sha: abc123, ref: feature, repo: {full_name: giantswarm/devctl}}
+          base: {ref: main, repo: {full_name: giantswarm/devctl}}

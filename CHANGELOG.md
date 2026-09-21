@@ -9,6 +9,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- e2e scenarios for `devctl pr merge`, the six paths the command encodes, each asserting the exit code and the JSON
+  document against the mocked GitHub and CircleCI APIs: `own-green-merged` (the caller's own green pull request is
+  squash-merged through the merge API and its branch deleted through the refs API), `other-human-refused` (exit 5
+  before the wait, no team file read), `opt-out-refused` (the team-file entry says `agentMerge: false`: exit 5 naming
+  the field), `behind-strict-base` (exit 3 without `--update-branch`) and `behind-update-branch` (the base merged into
+  the head, the new head waited for and merged), `merge-queue` (enqueued through GraphQL, merged by the queue, the
+  branch deleted), `red-not-merged` (exit 1, nothing merged) (#2278).
+
 - e2e scenarios for `devctl pr wait`, the six field incidents the command encodes, each asserting the exit code
   and the JSON document against the mocked GitHub and CircleCI APIs: `stage-gap` (a CircleCI workflow behind
   `requires:` still running while the check list reads green ends green once it succeeds), `fork-awaiting-approval`
