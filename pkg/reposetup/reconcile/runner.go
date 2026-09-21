@@ -46,8 +46,8 @@ const flavourCustomer = "customer"
 const flavourFork = "fork"
 
 // ReportedChecker returns the check contexts that have reported on the
-// default branch or a recently merged pull request — the reported-only rule
-// of `devctl repo checks`. *githubclient.Client satisfies it.
+// heads of the recently merged pull requests — the reported-only rule of
+// `devctl repo checks`. *githubclient.Client satisfies it.
 type ReportedChecker interface {
 	ReportedChecks(ctx context.Context, repository *github.Repository, branch string) ([]string, error)
 }
@@ -91,6 +91,12 @@ type Runner struct {
 	// removes classic protection; 0 keeps classic branch protection as
 	// before and reports the missing id.
 	DevctlAppID int64
+	// GitHubRequests and CircleCIRequests count the requests the clients
+	// send, when the caller built the clients' transports over them (one
+	// [Counter] under GitHub, Checks and Dispatch, one under CircleCI). The
+	// run's cost is what they counted over the run, in [Result.Requests]
+	// and, per step, in the log. Nil counts nothing.
+	GitHubRequests, CircleCIRequests *Counter
 	// Log receives one line per step and change; nil discards.
 	Log io.Writer
 	// Now is the clock; nil means time.Now.
@@ -155,9 +161,8 @@ type run struct {
 	created bool
 	renamed bool
 	empty   bool // no commits on the default branch
-	// headSHA is the commit at the head of the default branch as the
-	// scaffold step found it; scaffoldSHA the scaffold commit it pushed.
-	headSHA, scaffoldSHA string
+	// scaffoldSHA is the scaffold commit the scaffold step pushed.
+	scaffoldSHA string
 	// scaffoldFailed says the scaffold step could not push the scaffold:
 	// the steps that need it on the default branch wait for the next run,
 	// as they do on an empty repository — protecting the branch first
@@ -190,6 +195,7 @@ func (r *Runner) Run(ctx context.Context, req Request) (*Result, error) {
 	}
 	req = s.req
 
+	before := r.requests()
 	res := &Result{
 		Declared:  s.owner + "/" + s.declared,
 		Team:      req.Team,
@@ -213,8 +219,15 @@ func (r *Runner) Run(ctx context.Context, req Request) (*Result, error) {
 		}
 	}
 	res.Repository = s.owner + "/" + s.name
+	res.Requests = r.requests().since(before)
 	res.FinishedAt = r.now()
 	return res, nil
+}
+
+// requests is the counters' reading now; a run's cost is the difference
+// between two readings.
+func (r *Runner) requests() Requests {
+	return Requests{GitHub: count(r.GitHubRequests), CircleCI: count(r.CircleCIRequests)}
 }
 
 // newRun checks what every run needs — a GitHub client, an accepted entry,
@@ -280,13 +293,14 @@ func (r *Runner) newRun(req Request) (*run, error) {
 // execute runs one step, applying the conditions under which a step does
 // not run, and returns its result.
 func (r *Runner) execute(ctx context.Context, s *run, step Step) *StepResult {
+	before := r.requests()
 	sr := &StepResult{Step: step}
 	reason, err := r.skipReason(ctx, s, step)
 	if err == nil {
 		if reason != "" {
 			sr.Verdict = VerdictSkipped
 			sr.Summary = reason
-			fmt.Fprintf(s.log, "%s/%s %s: skipped: %s\n", s.owner, s.name, step, reason)
+			fmt.Fprintf(s.log, "%s/%s %s: skipped: %s%s\n", s.owner, s.name, step, reason, costLine(r.requests().since(before)))
 			return sr
 		}
 		err = r.runStep(ctx, s, step, sr)
@@ -299,7 +313,7 @@ func (r *Runner) execute(ctx context.Context, s *run, step Step) *StepResult {
 		}
 	}
 	s.finish(sr)
-	fmt.Fprintf(s.log, "%s/%s %s: %s%s\n", s.owner, s.name, step, sr.Verdict, summaryLine(sr))
+	fmt.Fprintf(s.log, "%s/%s %s: %s%s%s\n", s.owner, s.name, step, sr.Verdict, summaryLine(sr), costLine(r.requests().since(before)))
 	return sr
 }
 
@@ -516,6 +530,15 @@ func summaryLine(sr *StepResult) string {
 		return ""
 	}
 	return " — " + strings.Join(parts, " | ")
+}
+
+// costLine is the step's cost at the end of its log line, "" when nothing
+// was counted.
+func costLine(cost Requests) string {
+	if s := cost.String(); s != "" {
+		return " [" + s + "]"
+	}
+	return ""
 }
 
 // isNotFound says whether a go-github call answered 404.

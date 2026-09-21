@@ -23,6 +23,10 @@ type Config struct {
 	// BaseURL points the client at another GitHub API host (an enterprise
 	// instance, a test double); empty means api.github.com.
 	BaseURL string
+	// Transport sends the requests, under the token the client adds; nil
+	// means http.DefaultTransport. A caller counting the requests builds
+	// its counter here.
+	Transport http.RoundTripper
 }
 
 type Client struct {
@@ -41,9 +45,13 @@ func New(config Config) (*Client, error) {
 		return nil, microerror.Maskf(invalidConfigError, "%T.AccessToken must not be empty", config)
 	}
 
+	base := config.Transport
+	if base == nil {
+		base = http.DefaultTransport
+	}
 	var transport http.RoundTripper = &oauth2.Transport{
 		Source: oauth2.StaticTokenSource(&oauth2.Token{AccessToken: config.AccessToken}),
-		Base:   http.DefaultTransport,
+		Base:   base,
 	}
 	if config.DryRun {
 		transport = &dryRunTransport{inner: transport, logger: config.Logger}

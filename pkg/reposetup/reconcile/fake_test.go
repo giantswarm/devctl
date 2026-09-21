@@ -49,16 +49,19 @@ type fakeRepo struct {
 	statuses      []string  // commit statuses reported on the head
 	checkRuns     []string  // check runs reported on the head
 	checksStatus  int       // HTTP status of the status and check-run reads when not 200
-	tags          []string  // tags, all on the head commit
 	prs           []*github.PullRequest
-	issues        []*github.Issue            // what GET /repos/{owner}/{repo}/issues lists
-	history       []*github.RepositoryCommit // the commits behind the head of the default branch
-	issuesStatus  int                        // HTTP status of the issues list when not 200
-	blobs         map[string][]byte
-	trees         map[string][]*github.TreeEntry
-	commits       map[string]fakeCommit // commit sha → tree sha and message
-	heads         map[string]string     // branch → sha of its head commit
-	seq           int
+	// merged are the pull requests merged before the run, closed, as the
+	// discovery of the reported checks lists them; the statuses and check
+	// runs are served for their heads as for any ref.
+	merged       []*github.PullRequest
+	issues       []*github.Issue            // what GET /repos/{owner}/{repo}/issues lists
+	history      []*github.RepositoryCommit // the commits behind the head of the default branch
+	issuesStatus int                        // HTTP status of the issues list when not 200
+	blobs        map[string][]byte
+	trees        map[string][]*github.TreeEntry
+	commits      map[string]fakeCommit // commit sha → tree sha and message
+	heads        map[string]string     // branch → sha of its head commit
+	seq          int
 }
 
 type fakeCommit struct{ tree, message string }
@@ -243,6 +246,10 @@ func (f *fakeGitHub) addRepo(owner, name string) *fakeRepo {
 		branchFiles:   map[string]map[string]string{},
 		blobs:         map[string][]byte{}, trees: map[string][]*github.TreeEntry{}, commits: map[string]fakeCommit{},
 		heads: map[string]string{},
+		merged: []*github.PullRequest{{
+			Number: new(1), State: new("closed"), MergedAt: &github.Timestamp{Time: time.Now().Add(-24 * time.Hour)},
+			Head: &github.PullRequestBranch{SHA: new("merged-head"), Ref: new("merged")}, Base: &github.PullRequestBranch{Ref: new("main")},
+		}},
 	}
 	for p, c := range scaffoldFiles {
 		r.files[p] = c
@@ -434,29 +441,9 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 		}
 		writeJSON(w, 200, map[string]any{"total_count": len(runs), "check_runs": runs})
 	}))
-	mux.HandleFunc("GET /repos/{owner}/{repo}/tags", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
-		// Paged as GitHub pages them, newest first, so that a walk over the
-		// pages shows in gets.
-		perPage, _ := strconv.Atoi(r.URL.Query().Get("per_page"))
-		if perPage < 1 {
-			perPage = 30
-		}
-		page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-		if page < 1 {
-			page = 1
-		}
-		tags := []map[string]any{}
-		for i := (page - 1) * perPage; i < len(repo.tags) && i < page*perPage; i++ {
-			tags = append(tags, map[string]any{"name": repo.tags[i], "commit": map[string]string{"sha": "head"}})
-		}
-		if page*perPage < len(repo.tags) {
-			w.Header().Set("Link", fmt.Sprintf(`<%s%s?per_page=%d&page=%d>; rel="next"`, f.srv.URL, r.URL.Path, perPage, page+1))
-		}
-		writeJSON(w, 200, tags)
-	}))
 	mux.HandleFunc("GET /repos/{owner}/{repo}/pulls", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
 		var out []*github.PullRequest
-		for _, pr := range repo.prs {
+		for _, pr := range append(append([]*github.PullRequest{}, repo.prs...), repo.merged...) {
 			if s := r.URL.Query().Get("state"); s != "" && s != "all" && pr.GetState() != s {
 				continue
 			}

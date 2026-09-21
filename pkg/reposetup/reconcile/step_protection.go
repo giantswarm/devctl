@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"github.com/google/go-github/v92/github"
+
+	"github.com/giantswarm/devctl/v8/pkg/githubclient"
 )
 
 // RulesetName is the name of the repository ruleset the protection step
@@ -273,10 +275,8 @@ func (r *Runner) ownRuleset(ctx context.Context, s *run, sr *StepResult) (*githu
 // is false when the answer is not to be had, and the reason is logged or
 // reported so that nothing is required or removed on a guess. The
 // discovery is read once per run and shared by every step that asks, the
-// error included: it is the costliest read of a run — one page of the
-// newest hundred tags, the recent commits of the branch until an untagged
-// one, one page of the recently merged pull requests, and the statuses and
-// check runs of each ref inspected.
+// error included: one page of the recently merged pull requests, and the
+// statuses and check runs of the newest head.
 func (r *Runner) reportedChecks(ctx context.Context, s *run, sr *StepResult, branch string) (reported []string, known bool) {
 	if r.Checks == nil {
 		return nil, false
@@ -289,8 +289,9 @@ func (r *Runner) reportedChecks(ctx context.Context, s *run, sr *StepResult, bra
 	switch code := statusCode(err); {
 	case err == nil:
 		return reported, true
-	case isNotFound(nil, err):
-		// No commit on the branch: nothing has reported yet.
+	case isNotFound(nil, err), githubclient.IsNotFound(err):
+		// No commit on the branch, or no pull request merged into it:
+		// nothing has reported yet.
 		fmt.Fprintf(s.log, "%s/%s %s: nothing has reported on %s yet\n", s.owner, s.name, sr.Step, branch)
 	case code == 401 || code == 403:
 		// Discovery reads statuses and check runs, which an App token can

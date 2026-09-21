@@ -21,7 +21,11 @@ func (r *Result) WriteTable(w io.Writer) error {
 	if !r.Converged {
 		state = "not converged"
 	}
-	if _, err := fmt.Fprintf(w, "%s: %s in %s\n\n", head, state, r.FinishedAt.Sub(r.StartedAt).Round(time.Millisecond)); err != nil {
+	line := fmt.Sprintf("%s: %s in %s", head, state, r.FinishedAt.Sub(r.StartedAt).Round(time.Millisecond))
+	if cost := r.Requests.String(); cost != "" {
+		line += ", " + cost
+	}
+	if _, err := fmt.Fprintf(w, "%s\n\n", line); err != nil {
 		return err
 	}
 

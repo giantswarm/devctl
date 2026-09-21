@@ -29,6 +29,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   `enqueued`. The engine is `pkg/prmerge` on `pkg/prwait`; `pkg/githubclient` gains the merge, update-branch,
   ref deletion, merge-queue rule and enqueue calls (#2278).
 
+- `reconcile.Result.Requests` (`"requests": {"github": N, "circleci": M}` in the artifact, omitted when
+  nothing was counted) and the count on the summary's header line: what the run cost in requests to each
+  system, counted at the clients' transports through `reconcile.Counter`, an `http.RoundTripper` the CLI
+  builds both clients over (`githubclient.Config.Transport`, `circleciclient.Config.Transport`) and hands
+  to `reconcile.Runner.GitHubRequests` and `.CircleCIRequests`; the log names each step's cost (#2274).
+
 - `devctl pr wait <owner/repo> <number> [--timeout 30m] [--progress]`: one bounded, blocking wait until the
   pull request's head is green as the merge box sees it, red, or in a state no CI can turn green, then one
   JSON document and an exit code (0 green, 1 red, 2 timeout naming what was unfinished, 3 draft/closed/
@@ -128,6 +134,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- `repo reconcile`, `repo setup`, `repo checks`: a check of a converged repository costs at most twenty GitHub
+  requests (giantswarm/backstage 18, giantswarm/klaus 19 measured; the devctl App id's ruleset reads add two).
+  The reported checks are the statuses and check runs of the newest merged pull request's head, from one page
+  of the recently merged pull requests (three requests; the branch's tags and commits are no longer read: a
+  check that reports only on a push to the default branch or on a tag never gates a pull request, and on an
+  auto-released repository every commit is a tag); without a merged pull request nothing has reported and
+  nothing is required or removed. The scaffold step reads the root listing alone (the head commit only when
+  `repo create` reports it); the renovate step looks the installation up only for a repository without a trace
+  of a run, and reads no trace on a repository younger than a day (#2274).
 - `repo reconcile`, `repo setup`, `repo checks`: the discovery of the reported checks reads one page of the
   newest hundred tags (`per_page=100`) instead of walking the whole list ten per page, and the reconciler
   reads it once per run and shares the answer between the steps. A check run of a repository with 838 tags

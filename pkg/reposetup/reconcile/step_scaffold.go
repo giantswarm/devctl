@@ -57,21 +57,9 @@ func (r *Runner) stepScaffold(ctx context.Context, s *run, sr *StepResult) error
 }
 
 // scaffoldState says whether the default branch has no commits, or only the
-// initial commit of the creation (a lone README).
+// initial commit of the creation (a lone README): one listing of the root,
+// which a branch without commits answers 404 ("This repository is empty").
 func (r *Runner) scaffoldState(ctx context.Context, s *run) (empty, initialOnly bool, err error) {
-	commits, resp, err := r.GitHub.Repositories.ListCommits(ctx, s.owner, s.name, &github.CommitsListOptions{
-		SHA:         s.branch(),
-		ListOptions: github.ListOptions{PerPage: 1},
-	})
-	switch {
-	case resp != nil && resp.Response != nil && resp.StatusCode == 409:
-		return true, false, nil // "Git Repository is empty"
-	case err != nil:
-		return false, false, err
-	}
-	if len(commits) > 0 {
-		s.headSHA = commits[0].GetSHA()
-	}
 	_, dir, resp, err := r.GitHub.Repositories.GetContents(ctx, s.owner, s.name, "", &github.RepositoryContentGetOptions{Ref: s.branch()})
 	switch {
 	case isNotFound(resp, err):
@@ -80,6 +68,24 @@ func (r *Runner) scaffoldState(ctx context.Context, s *run) (empty, initialOnly 
 		return false, false, err
 	}
 	return false, len(dir) == 1 && dir[0].GetName() == readmeFile, nil
+}
+
+// headCommit is the SHA at the head of the default branch, "" on a branch
+// without commits.
+func (r *Runner) headCommit(ctx context.Context, s *run) (string, error) {
+	commits, resp, err := r.GitHub.Repositories.ListCommits(ctx, s.owner, s.name, &github.CommitsListOptions{
+		SHA:         s.branch(),
+		ListOptions: github.ListOptions{PerPage: 1},
+	})
+	switch {
+	case resp != nil && resp.Response != nil && resp.StatusCode == 409:
+		return "", nil // "Git Repository is empty"
+	case err != nil:
+		return "", err
+	case len(commits) == 0:
+		return "", nil
+	}
+	return commits[0].GetSHA(), nil
 }
 
 // pushScaffold renders the scaffold and makes it the only commit on the

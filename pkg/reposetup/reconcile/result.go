@@ -26,20 +26,24 @@
 // verification (tag → pipeline → workflows; a missed tag build is
 // reported, never rebuilt).
 //
-// What a run costs in GitHub requests: a check of a converged repository
-// with every step is about thirty, one to three per step — the repository,
-// its workflow permission, teams and protection, the pipeline files (one
-// read of .circleci/config.yml per run, shared by the circleci and release
-// steps), renovate.json5 and the Dependency Dashboard issue, CODEOWNERS and
-// its pull request, the catalog and the mapping, the latest release. The
-// protection step's discovery of the reported checks is the largest share:
-// one page of the newest hundred tags (never more: the tags say which
-// recent commits are releases), the recent commits of the branch until an
-// untagged one (ten per request), one page of the recently merged pull
-// requests, and the statuses and check runs of each ref inspected (two
-// requests for each of up to four refs). The discovery runs once per run
-// and every step that reads it shares the answer, as the pipeline lookup is
-// shared. A repair adds one write per change.
+// What a run costs in requests is counted at the clients' transports
+// ([Counter]) into [Result.Requests], and per step in the log. A check of a
+// converged repository with every step costs at most twenty GitHub
+// requests, the budget of the nightly reconciler: the repository (one read,
+// shared by the create, metadata and lifecycle steps); the root listing and
+// the chart's Chart.yaml and values.schema.json; the workflow permission;
+// the teams; the branch protection and, with the devctl App id, the
+// rulesets and the engine's own; the reported checks — one page of the
+// recently merged pull requests and the statuses and check runs of the
+// newest head, three requests once per run, shared by every step that asks
+// — the pipeline files workflows.yml and custom.yml (and .circleci/
+// config.yml once when the entry does not declare the pipeline);
+// renovate.json5 and the Dependency Dashboard issue; CODEOWNERS; the
+// catalog and the mapping; the latest release. Measured in check mode with
+// a person's token: giantswarm/backstage 18, giantswarm/klaus 19 (one of
+// them a CODEOWNERS drift, which also lists the open pull requests); the
+// App id's ruleset reads add two. A planned change costs the same reads; a
+// repair adds one write per change.
 //
 // The reconciler workflow of giantswarm/github runs the steps under the App
 // identity, `devctl repo reconcile` runs them as the person, `devctl repo
@@ -235,6 +239,10 @@ type Result struct {
 	// drift or failure and every finding is advisory ([StepResult.Converges]
 	// for each step). A finding a person must fix clears it.
 	Converged bool `json:"converged"`
+	// Requests is what the run cost in requests to GitHub and CircleCI,
+	// when the Runner's clients count them ([Runner.GitHubRequests]);
+	// omitted when nothing was counted.
+	Requests Requests `json:"requests,omitzero"`
 }
 
 // Step returns the result of step, or nil when the run did not execute it.

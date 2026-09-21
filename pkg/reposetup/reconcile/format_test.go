@@ -47,6 +47,11 @@ func TestWriteTable(t *testing.T) {
 	b.Reset()
 	require.NoError(t, res.WriteTable(&b))
 	require.True(t, strings.HasPrefix(b.String(), "giantswarm/my-repo-v2 (repair): converged in 1.5s\n"))
+
+	res.Requests = Requests{GitHub: 18, CircleCI: 3}
+	b.Reset()
+	require.NoError(t, res.WriteTable(&b))
+	require.True(t, strings.HasPrefix(b.String(), "giantswarm/my-repo-v2 (repair): converged in 1.5s, 18 GitHub and 3 CircleCI requests\n"), b.String())
 	require.NotContains(t, b.String(), "Findings:")
 	require.Empty(t, res.Failed())
 }

@@ -49,7 +49,7 @@ func (r *runner) run(ctx context.Context, arg string) error {
 		return microerror.Mask(err)
 	}
 
-	client, err := engine.GitHubClient(r.logger, r.flag.GithubTokenEnvVar, r.flag.DryRun)
+	client, err := engine.GitHubClient(r.logger, r.flag.GithubTokenEnvVar, r.flag.DryRun, nil)
 	if err != nil {
 		return microerror.Mask(err)
 	}

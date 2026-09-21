@@ -62,7 +62,8 @@ func (r *Runner) stepRenovate(ctx context.Context, s *run, sr *StepResult) error
 	}
 	var trace string
 	var issuesRefused bool
-	if config != "" && !disabled {
+	// A repository younger than a day owes no trace yet: nothing to read.
+	if config != "" && !disabled && !s.young(r.now(), renovateGrace) {
 		trace, issuesRefused, err = r.renovateTrace(ctx, s)
 		if err != nil {
 			return err
@@ -87,12 +88,15 @@ func (r *Runner) stepRenovate(ctx context.Context, s *run, sr *StepResult) error
 		s.report(sr, FindingRenovateNotScanned,
 			fmt.Sprintf("%s has %s but no trace of a Renovate run: no %s issue, no pull request and no commit of %s on %s", s.slug(), config, renovateDashboardTitle, renovateLogin, s.branch()),
 			fmt.Sprintf("the Renovate installation covers all repositories of the organization, so Renovate has not run yet (the %s issue follows its first run) or refuses the configuration: check the repository's job log on the Renovate dashboard; a GitHub App token lists the %s issue only with the App's `issues: read` permission", renovateDashboardTitle, renovateDashboardTitle))
-	}
-	if detail := r.renovateInstallation(ctx, s); detail != "" {
-		if sr.Summary != "" {
-			sr.Summary += "; "
+		// Whether the installation covers the repository is the detail that
+		// explains a missing run; a repository Renovate demonstrably scans
+		// is not worth the request.
+		if detail := r.renovateInstallation(ctx, s); detail != "" {
+			if sr.Summary != "" {
+				sr.Summary += "; "
+			}
+			sr.Summary += detail
 		}
-		sr.Summary += detail
 	}
 	return nil
 }
@@ -175,7 +179,7 @@ func isRenovate(login, name, email string) bool {
 }
 
 // renovateInstallation says whether the baseline's Renovate installation
-// covers the repository, as detail for the summary; "" when the baseline
+// covers the repository, as detail for the not-scanned finding; "" when the baseline
 // names no installation or the token cannot read it. Listing an
 // installation's repositories takes an organization owner's token: a GitHub
 // App token, which the reconciler workflow runs under, is answered 403.
