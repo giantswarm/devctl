@@ -7,8 +7,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/zalando/go-keyring"
-
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
 )
 
@@ -58,42 +56,51 @@ func OpenStore(endpoints agentcli.Endpoints) Store {
 	return KeyringStore{}
 }
 
-// KeyringStore is the OS keychain: Secret Service on Linux, Keychain on
-// macOS, Credential Manager on Windows.
-type KeyringStore struct{}
+// KeyringStore is the OS keychain: the Secret Service on Linux, Keychain on
+// macOS, Credential Manager on Windows. Each record is one JSON secret.
+type KeyringStore struct {
+	// keychain nil is the OS keychain; tests set go-keyring's mock.
+	keychain keychain
+}
+
+func (s KeyringStore) backend() keychain {
+	if s.keychain != nil {
+		return s.keychain
+	}
+	return osKeychain()
+}
 
 // Get implements [Store].
-func (KeyringStore) Get(user string) (Record, error) {
-	s, err := keyring.Get(Service, user)
-	if errors.Is(err, keyring.ErrNotFound) {
+func (s KeyringStore) Get(user string) (Record, error) {
+	secret, err := s.backend().get(user)
+	if errors.Is(err, ErrNotFound) {
 		return Record{}, ErrNotFound
 	}
 	if err != nil {
 		return Record{}, fmt.Errorf("reading %s/%s from the keychain: %w", Service, user, err)
 	}
 	var r Record
-	if err := json.Unmarshal([]byte(s), &r); err != nil {
+	if err := json.Unmarshal([]byte(secret), &r); err != nil {
 		return Record{}, fmt.Errorf("the keychain record %s/%s is not devctl's: %w", Service, user, err)
 	}
 	return r, nil
 }
 
 // Set implements [Store].
-func (KeyringStore) Set(user string, record Record) error {
+func (s KeyringStore) Set(user string, record Record) error {
 	b, err := json.Marshal(record) //nolint:gosec // G117: the record goes into the keychain, which is its purpose
 	if err != nil {
 		return err
 	}
-	if err := keyring.Set(Service, user, string(b)); err != nil {
+	if err := s.backend().set(user, string(b)); err != nil {
 		return fmt.Errorf("writing %s/%s to the keychain: %w", Service, user, err)
 	}
 	return nil
 }
 
 // Delete implements [Store].
-func (KeyringStore) Delete(user string) error {
-	err := keyring.Delete(Service, user)
-	if err != nil && !errors.Is(err, keyring.ErrNotFound) {
+func (s KeyringStore) Delete(user string) error {
+	if err := s.backend().delete(user); err != nil {
 		return fmt.Errorf("deleting %s/%s from the keychain: %w", Service, user, err)
 	}
 	return nil

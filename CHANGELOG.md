@@ -233,6 +233,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `pkg/authstore` on Linux speaks the Secret Service API over D-Bus itself instead of through go-keyring: the default
+  collection is resolved through `ReadAlias` and unlocked only when its `Locked` property says so (a prompt is
+  completed through `org.freedesktop.Secret.Prompt`), items are searched, created (replacing the record of the same
+  identity), read and deleted on the resolved collection. oo7-daemon and KeePassXC, which refuse `Unlock` on the alias
+  path, now hold devctl's tokens; GNOME Keyring and KWallet keep working with the records written before. A failing
+  call reads `keychain <call> on <collection path> (<Secret Service process>): <error>`. macOS and Windows keep
+  go-keyring's backends (#2304).
+
 - `repo create` and the set-up engine scaffold a repository whose flavours produce a chart (`app`, `cluster-app`)
   from a template without one -- the Go service with the `app` flavour -- with the chart of `giantswarm/template-app`
   at `helm/<name>` (and `.abs/main.yaml` pointing at it), the name substituted and the team annotation set, so the
