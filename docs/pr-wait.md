@@ -39,8 +39,11 @@ system that will produce it:
    is named.
 4. **Every required status context has reported**: the required status checks of the base
    branch's protection and of every ruleset in effect on it. A context nothing has reported under
-   is unfinished, and if that is still so at the timeout the exit code is 4 rather than 2, because
-   more waiting would not have helped: nothing was going to report.
+   is unfinished. While anything of rules 1 to 3 is still pending, the wait goes on and the timeout
+   is exit 2 whatever is absent: the run awaiting approval, the queued check or the running
+   workflow may be what reports the context. Once every check, status, run and workflow of the
+   head has finished and a required context is still absent, nothing is left that could report it:
+   exit 4 at that poll, without waiting for the timeout.
 
 Any failure anywhere is red at once (exit 1): a check run concluded `failure`, `timed_out`,
 `cancelled`, `startup_failure` or `stale`, a status `failure` or `error`, a CircleCI workflow
@@ -126,9 +129,9 @@ timeout (the e2e suite runs at 0.001).
 |---|---|---|
 | 0 | `green` | Every rule above holds. |
 | 1 | `red` | Something failed; `reason` names every failed check, status, run and workflow. |
-| 2 | `timeout` | The timeout passed before an outcome; `unfinished` names what was still open. |
+| 2 | `timeout` | The timeout passed before an outcome; `unfinished` names what was still open, a required context still absent among it. |
 | 3 | `not_applicable` | Draft, closed, merged, conflicting or behind a strict base; `reason` says which. |
-| 4 | `required_missing` | A required status context never reported within the timeout; `reason` names it. |
+| 4 | `required_missing` | Every check, run and workflow of the head has finished and a required status context never reported; `reason` names it. Known at the poll that saw it, before the timeout; with anything still pending the outcome is 2, not 4. |
 | 7 | `usage` | Wrong arguments, or a tooling failure (GitHub or CircleCI answered with an error). |
 | 8 | `auth_required` | No usable token; `reason` names the `devctl auth login` to run. |
 

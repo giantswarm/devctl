@@ -233,6 +233,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `pr wait` exited 4, `required_missing`, at the timeout when a required context was absent although a run of the
+  head was still pending, a fork's workflow run awaiting a maintainer's approval among them, whose approval is what
+  reports the contexts. The timeout is now exit 2 whenever anything is still pending, with `unfinished` naming the
+  run and the absent contexts; exit 4 is a fail-fast at the poll that sees every check, status, run and workflow
+  of the head finished with a required context still absent, without waiting for the timeout. The e2e scenario
+  `fork-awaiting-approval` requires contexts and asserts 2; the new `required-never-reported` asserts 4 before the
+  timeout; `docs/pr-wait.md` states the precedence (#2313).
+
 - A one-commit pull request squash-merged under its commit's own subject rather than the title the title check had
   accepted, because GitHub's default names the squash commit `COMMIT_OR_PR_TITLE`; an unconventional subject is then
   neither released nor listed by auto-release (git-cliff's `filter_unconventional`), and the next merge's release notes

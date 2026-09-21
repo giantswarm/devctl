@@ -5,7 +5,7 @@
     "schemaVersion": 1,
     "exitCode": 2,
     "verdict": "timeout",
-    "reason": "timeout after 5m0s; unfinished: actions run CI (awaiting approval)",
+    "reason": "timeout after 5m0s; unfinished: actions run CI (awaiting approval), required context go-build (absent), required context go-test (absent)",
     "warnings": [],
     "startedAt": "*",
     "finishedAt": "*",
@@ -17,6 +17,6 @@
     "actions": [
       {"name": "CI", "runId": 7001, "status": "completed", "conclusion": "action_required", "url": "*"}
     ],
-    "unfinished": ["actions run CI (awaiting approval)"]
+    "unfinished": ["actions run CI (awaiting approval)", "required context go-build (absent)", "required context go-test (absent)"]
   }
 }

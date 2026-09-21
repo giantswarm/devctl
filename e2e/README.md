@@ -208,7 +208,7 @@ on a failing command.
 The incidents the commands encode, one scenario each, by these slugs:
 
 - `pr wait`: `stage-gap`, `fork-awaiting-approval`, `conflicting-pr`, `retitled-stale-run`,
-  `red-circleci-workflow`, `pr-wait-timeout`
+  `red-circleci-workflow`, `pr-wait-timeout`, `required-never-reported`
 - `pr merge`: `own-green-merged`, `other-human-refused`, `opt-out-refused`, `behind-strict-base`,
   `behind-update-branch`, `merge-queue`, `red-not-merged`
 - `release wait`: `renamed-image`, `hand-written-ci`, `release-assets-only`, `failed-tag-pipeline`,

@@ -127,9 +127,11 @@ type head struct {
 
 // Wait blocks until owner/repo#number is green (nil), red or otherwise
 // decided (an [*agentcli.ExitError] with the code of the table), or the
-// timeout passes (exit 2, or 4 when a required context never reported). The
-// Result is always returned, as far as it was filled; a tooling failure is
-// any other error.
+// timeout passes (exit 2). A required context absent from a head whose
+// checks, runs and workflows have all finished is exit 4 at that poll, before
+// the timeout; while anything is still pending, the timeout is 2 whatever
+// is absent. The Result is always returned, as far as it was filled; a
+// tooling failure is any other error.
 func (w *Waiter) Wait(ctx context.Context, owner, repo string, number int) (*Result, error) {
 	result := &Result{
 		Repository: owner + "/" + repo,
@@ -158,6 +160,9 @@ func (w *Waiter) Wait(ctx context.Context, owner, repo string, number int) (*Res
 		case len(e.red) > 0:
 			w.progress.Printf("poll %d: red: %s", poll, e.redReason())
 			return result, agentcli.NewExitError(agentcli.ExitRed, agentcli.VerdictRed, "%s", e.redReason())
+		case e.neverReported():
+			w.progress.Printf("poll %d: required missing: %s", poll, strings.Join(e.requiredMissing, ", "))
+			return result, w.neverReported(result, e)
 		}
 		interval := w.interval()
 		w.progress.Printf("poll %d: waiting for %s; next poll in %s", poll, strings.Join(e.unfinished, ", "), interval)
@@ -167,20 +172,26 @@ func (w *Waiter) Wait(ctx context.Context, owner, repo string, number int) (*Res
 	}
 }
 
-// timedOut is the verdict at the deadline: 4 when a required context never
-// reported, 2 otherwise; the result names what was unfinished.
+// timedOut is the verdict at the deadline, 2: the result names what was
+// unfinished, a required context still absent among it. A head settled with
+// an absent context never reaches the deadline; neverReported ends it first.
 func (w *Waiter) timedOut(result *Result, last *evaluation) error {
 	if last == nil {
 		result.Unfinished = []string{"no complete poll before the deadline"}
 		return agentcli.NewExitError(agentcli.ExitTimeout, agentcli.VerdictTimeout, "timeout after %s before the first poll completed", w.timeout)
 	}
 	result.Unfinished = last.unfinished
-	if len(last.requiredMissing) > 0 {
-		return agentcli.NewExitError(agentcli.ExitRequiredMissing, agentcli.VerdictRequiredMissing,
-			"required context(s) never reported within %s: %s", w.timeout, strings.Join(last.requiredMissing, ", "))
-	}
 	return agentcli.NewExitError(agentcli.ExitTimeout, agentcli.VerdictTimeout,
 		"timeout after %s; unfinished: %s", w.timeout, strings.Join(last.unfinished, ", "))
+}
+
+// neverReported is the verdict of a settled head with a required context
+// absent, 4, at the poll that saw it: every check, run and workflow of the
+// head has finished, so no wait would make the context report.
+func (w *Waiter) neverReported(result *Result, e *evaluation) error {
+	result.Unfinished = e.unfinished
+	return agentcli.NewExitError(agentcli.ExitRequiredMissing, agentcli.VerdictRequiredMissing,
+		"required context(s) never reported: %s; every check, run and workflow of the head has finished", strings.Join(e.requiredMissing, ", "))
 }
 
 // poll reads the pull request and everything of its head, and evaluates it.

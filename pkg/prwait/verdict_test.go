@@ -51,16 +51,19 @@ func Test_evaluate(t *testing.T) {
 	t1 := t0.Add(time.Minute)
 
 	testCases := []struct {
-		name            string
-		snapshot        snapshot
-		wantGreen       bool
-		wantRed         []string
-		wantUnfinished  []string
-		wantMissing     []string
-		wantChecks      []Check
-		wantActions     []ActionRun
-		wantCircleCI    *CircleCI
-		skipFieldChecks bool
+		name           string
+		snapshot       snapshot
+		wantGreen      bool
+		wantRed        []string
+		wantUnfinished []string
+		wantMissing    []string
+		// wantNeverReported: settled with a required context absent, exit 4
+		// at this poll.
+		wantNeverReported bool
+		wantChecks        []Check
+		wantActions       []ActionRun
+		wantCircleCI      *CircleCI
+		skipFieldChecks   bool
 	}{
 		{
 			name: "every check run and status completed green, no runs open: green",
@@ -202,13 +205,35 @@ func Test_evaluate(t *testing.T) {
 			wantActions: []ActionRun{},
 		},
 		{
-			name: "a required context nothing reported under is missing",
+			name: "every check and run finished, a required context absent: never reported, known without a timeout",
 			snapshot: snapshot{
 				checkRuns: []*github.CheckRun{checkRun(1, "go-build", "completed", "success", t0)},
+				runs:      []*github.WorkflowRun{workflowRun(10, "CI", "completed", "success")},
 				required:  []string{"ci/circleci: test", "go-build"},
 			},
-			wantUnfinished:  []string{"required context ci/circleci: test (absent)"},
-			wantMissing:     []string{"ci/circleci: test"},
+			wantUnfinished:    []string{"required context ci/circleci: test (absent)"},
+			wantMissing:       []string{"ci/circleci: test"},
+			wantNeverReported: true,
+			skipFieldChecks:   true,
+		},
+		{
+			name: "a run awaiting approval next to an absent required context: pending, the run may be what reports it",
+			snapshot: snapshot{
+				runs:     []*github.WorkflowRun{workflowRun(10, "CI", "completed", "action_required")},
+				required: []string{"go-build"},
+			},
+			wantUnfinished:  []string{"actions run CI (awaiting approval)", "required context go-build (absent)"},
+			wantMissing:     []string{"go-build"},
+			skipFieldChecks: true,
+		},
+		{
+			name: "a queued check next to an absent required context: pending, not never reported",
+			snapshot: snapshot{
+				checkRuns: []*github.CheckRun{checkRun(1, "go-build", "queued", "", t0)},
+				required:  []string{"go-build", "lint"},
+			},
+			wantUnfinished:  []string{"check go-build (queued)", "required context lint (absent)"},
+			wantMissing:     []string{"lint"},
 			skipFieldChecks: true,
 		},
 		{
@@ -244,6 +269,9 @@ func Test_evaluate(t *testing.T) {
 			}
 			if diff := cmp.Diff(tc.wantMissing, e.requiredMissing, cmp.Transformer("nilToEmpty", nilToEmpty)); diff != "" {
 				t.Errorf("requiredMissing:\n%s", diff)
+			}
+			if e.neverReported() != tc.wantNeverReported {
+				t.Errorf("neverReported: want %v, got %v (settled %v, unfinished %q)", tc.wantNeverReported, e.neverReported(), e.settled, e.unfinished)
 			}
 			if tc.skipFieldChecks {
 				return
