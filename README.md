@@ -52,6 +52,14 @@ devctl release wait giantswarm/devctl v8.9.0
 devctl release wait giantswarm/devctl --pr 2289 --progress
 ```
 
+### Merging a pull request (`devctl pr merge`)
+
+`devctl pr merge <owner/repo> <number>` runs the wait of `pr wait`, then squash-merges the pull request (`--rebase` for a rebase merge) through the merge API with the judged head as the expected head and deletes the branch through the refs API; a base with a merge queue is enqueued and waited for instead. Refused before any wait: a draft, closed or conflicting pull request and one behind a strict base (exit 3; `--update-branch` updates it and waits for the new head), another human's pull request and a repository whose team-file entry says `agentMerge: false` (exit 5). No protection setting is read to be changed or written: the devctl GitHub App is a bypass actor of the rulesets. One JSON document (`pr wait`'s fields plus `mergeCommitSha`, `method`, `branchDeleted`, `enqueued`), exit 0, 1, 2, 3, 4, 5, 7 or 8. See [docs/pr-merge.md](docs/pr-merge.md).
+
+```bash
+devctl pr merge giantswarm/devctl 2278 --timeout 45m --progress
+```
+
 ### Repository set-up (`devctl repo`)
 
 Giant Swarm repositories are declared in the team files of [giantswarm/github](https://github.com/giantswarm/github); the reconciler creates and keeps them as declared. `devctl repo create` validates a declaration through the engine, prints the dry run and opens the team-file pull request as you; `devctl repo status` prints a repository's set-up state. See [docs/repo.md](docs/repo.md).
