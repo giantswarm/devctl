@@ -9,6 +9,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `devctl auth login` and `devctl auth status`: the identities the agent-facing commands act with. GitHub
+  through the device flow of the devctl GitHub App (a user access token refreshed by the commands themselves
+  for six months, no client secret in the binary), CircleCI through the OAuth 2.0 authorization code flow with
+  PKCE after a one-time dynamic client registration per device (a 90-day API token, no refresh; a seven-day
+  expiry warning in every command's `warnings`). Both tokens live in the OS keychain (`pkg/authstore`: Secret
+  Service, Keychain, Credential Manager; `DEVCTL_KEYRING_FILE` selects a 0600 JSON file for tests) and are
+  never printed. `authstore.RequireGitHub` and `authstore.RequireCircleCI` are the gate the other commands
+  call first: the token, or `ErrAuthRequired` as exit 8 naming `devctl auth login`. `pkg/agentcli` is what the
+  agent-facing commands share: the JSON envelope, the exit-code table, the `DEVCTL_TIME_SCALE` clock, the
+  endpoint variables and the `--progress` writer (#2276).
+
 - `e2e/`: the end-to-end harness of the agent commands, run by `make test`. `TestMain` builds devctl once and
   every `e2e/scenarios/<slug>/` runs the binary against in-process mocks of the GitHub REST API (rate-limit
   headers, ETags, 304 on a conditional request), the CircleCI API v2 and an OCI registry (one public, one
