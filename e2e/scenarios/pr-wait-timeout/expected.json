@@ -1,0 +1,23 @@
+{
+  "exitCode": 2,
+  "json": {
+    "command": "pr wait",
+    "schemaVersion": 1,
+    "exitCode": 2,
+    "verdict": "timeout",
+    "reason": "timeout after 5m0s; unfinished: check go-lint (queued)",
+    "warnings": [],
+    "startedAt": "*",
+    "finishedAt": "*",
+    "repository": "giantswarm/devctl",
+    "number": 42,
+    "headSha": "abc123",
+    "baseRef": "main",
+    "checks": [
+      {"name": "go-lint", "source": "check_run", "status": "queued", "conclusion": "", "url": "*", "required": false},
+      {"name": "go-test", "source": "check_run", "status": "completed", "conclusion": "success", "url": "*", "required": false}
+    ],
+    "actions": [],
+    "unfinished": ["check go-lint (queued)"]
+  }
+}

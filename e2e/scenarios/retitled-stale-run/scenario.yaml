@@ -1,0 +1,44 @@
+# The pull request was retitled after its title check failed: the head has a
+# failed run and a passed run of the same check, and the same for the
+# workflow run behind it. GitHub keeps both; the merge box shows the newest.
+# The wait folds the runs to the latest per name (the later started_at, the
+# higher run id) and is green with one check and one run in the document.
+description: a retitled pull request with a stale failed title check next to the passed rerun is green
+args: [pr, wait, giantswarm/devctl, "42", --timeout, 30m]
+keyring:
+  github:
+    login: e2e-engineer
+    token: ghu_e2e_live
+    expiresAt: "2099-01-01T00:00:00Z"
+    refreshToken: ghr_e2e_live
+    refreshExpiresAt: "2099-01-01T00:00:00Z"
+  circleci:
+    login: e2e-engineer
+    token: CCIPAT_e2e_live
+    expiresAt: "2099-01-01T00:00:00Z"
+github:
+  routes:
+    "GET /repos/giantswarm/devctl/pulls/42":
+      - body:
+          number: 42
+          state: open
+          draft: false
+          merged: false
+          mergeable: true
+          mergeable_state: clean
+          head: {sha: abc123, ref: feature, repo: {full_name: giantswarm/devctl}}
+          base: {ref: main, repo: {full_name: giantswarm/devctl}}
+    "GET /repos/giantswarm/devctl/commits/abc123/check-runs":
+      - body:
+          total_count: 2
+          check_runs:
+            - {id: 101, name: PR title, status: completed, conclusion: failure, started_at: "2026-09-21T10:00:00Z", html_url: "https://github.com/giantswarm/devctl/runs/101"}
+            - {id: 102, name: PR title, status: completed, conclusion: success, started_at: "2026-09-21T10:05:00Z", html_url: "https://github.com/giantswarm/devctl/runs/102"}
+    "GET /repos/giantswarm/devctl/commits/abc123/status":
+      - body: {state: pending, total_count: 0, statuses: []}
+    "GET /repos/giantswarm/devctl/actions/runs?head_sha=abc123":
+      - body:
+          total_count: 2
+          workflow_runs:
+            - {id: 7002, name: PR title, status: completed, conclusion: success, html_url: "https://github.com/giantswarm/devctl/actions/runs/7002"}
+            - {id: 7001, name: PR title, status: completed, conclusion: failure, html_url: "https://github.com/giantswarm/devctl/actions/runs/7001"}
