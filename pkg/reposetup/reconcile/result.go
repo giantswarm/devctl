@@ -24,7 +24,7 @@
 // deleted → unfollowed and deleted on GitHub, the entry the record),
 // catalog and mapping (the giantswarm/github workflows), first-release
 // verification (tag → pipeline → workflows; a missed tag build is
-// triggered).
+// reported, never rebuilt).
 //
 // The reconciler workflow of giantswarm/github runs the steps under the App
 // identity, `devctl repo reconcile` runs them as the person, `devctl repo
@@ -116,6 +116,10 @@ const (
 	FindingDefaultIcon FindingKind = "default-icon"
 	// FindingRedRelease: the latest release's tag pipeline failed.
 	FindingRedRelease FindingKind = "red-release"
+	// FindingMissedTagBuild: the latest release's tag has no pipeline. The
+	// reconciler never rebuilds a tag; the fix is the next tag, or the
+	// tag's pipeline triggered by hand.
+	FindingMissedTagBuild FindingKind = "missed-tag-build"
 	// FindingRenovateNotScanned: the repository shows no sign that Renovate
 	// scans it — no configuration, or a configuration without a trace of a
 	// run (the Dependency Dashboard issue, a pull request, a commit).

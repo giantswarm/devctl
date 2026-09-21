@@ -780,12 +780,12 @@ jobs:
               fi
               # The first tag of a repository created pull-request-last lands
               # before the repository set-up reconciler follows the project on
-              # CircleCI; the reconciler triggers the missed tag build once it
-              # has. Following takes an administrator's token this workflow does
-              # not hold, so this is not the workflow's to fix.
+              # CircleCI; the reconciler reports the missed tag build and never
+              # rebuilds a tag. Following takes an administrator's token this
+              # workflow does not hold, so this is not the workflow's to fix.
               echo "::warning::${TAG} is released; CircleCI does not follow this project yet." \
-                "The repository set-up reconciler follows it and triggers this tag's build within minutes —" \
-                "check the tag's pipeline on CircleCI after that: https://app.circleci.com/pipelines/github/${GITHUB_REPOSITORY}"
+                "The repository set-up reconciler follows it and reports the missed tag build —" \
+                "cut the next tag, or trigger this tag's pipeline by hand once the project is followed: https://app.circleci.com/pipelines/github/${GITHUB_REPOSITORY}"
               exit 0
               ;;
             401|403)
