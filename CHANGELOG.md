@@ -39,6 +39,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- The repositories schema devctl ships (`pkg/reposetup/schema/repositories.schema.json`) is regenerated from
+  giantswarm/github's `.github/repositories.schema.json` at commit 3a5bbec: it gains `agentMerge`, the repository's
+  opt-out from agent merges (boolean, default `true`, with the live schema's description text), so `repo validate`
+  accepts `agentMerge: false` without a token and refuses a non-boolean value, naming the field. `requiredChecks`
+  stays in the shipped copy ahead of the live schema, which gains it with giantswarm/github#6199 (#2287).
+
 - The circleci and release steps of `repo reconcile` run only for a repository with a CircleCI pipeline:
   `.circleci/config.yml` on its default branch, or `gen.ci.generate: true` in its entry (a generated pipeline, on a
   first creation not on the branch yet). Without one both steps read `skipped: no CircleCI pipeline`: a configuration

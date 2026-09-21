@@ -156,3 +156,17 @@
     flavours:
       - app
     language: go
+- name: agent-merge-opt-out
+  componentType: service
+  agentMerge: false
+  gen:
+    flavours:
+      - app
+    language: go
+- name: agent-merge-not-bool
+  componentType: service
+  agentMerge: "no"
+  gen:
+    flavours:
+      - app
+    language: go
