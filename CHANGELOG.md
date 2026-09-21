@@ -9,6 +9,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `devctl pr wait <owner/repo> <number> [--timeout 30m] [--progress]`: one bounded, blocking wait until the
+  pull request's head is green as the merge box sees it, red, or in a state no CI can turn green, then one
+  JSON document and an exit code (0 green, 1 red, 2 timeout naming what was unfinished, 3 draft/closed/
+  conflicting/behind a strict base, 4 a required context never reported, 7 usage, 8 authentication). Green
+  is the latest check run per name (a rerun replaces a stale failed run), every CircleCI workflow of the head
+  revision read from CircleCI (a job behind `requires:` has posted nothing to GitHub between stages), no
+  GitHub Actions run open or awaiting a fork's approval, and every required status context of the base's
+  protection and rulesets reported. CircleCI is consulted only when the head carries `.circleci/config.yml`
+  and the project exists; an upstream fork is judged from GitHub alone. Polls are conditional requests
+  (ETags; `githubclient.NewConditional`) at an interval from the rate-limit headers, 15 s to 60 s. The engine
+  is `pkg/prwait`, for `pr merge` to reuse (#2277).
+
 - `devctl auth login` and `devctl auth status`: the identities the agent-facing commands act with. GitHub
   through the device flow of the devctl GitHub App (a user access token refreshed by the commands themselves
   for six months, no client secret in the binary), CircleCI through the OAuth 2.0 authorization code flow with
@@ -37,6 +49,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   (`skipped: flavour fork`), the generators (`devctl gen makefile|workflows|llm|circleci`, and the scaffold's
   command lines) produce nothing for it, every other step runs as declared. `repo status` names the declared
   branch and flavours next to the opt-in (#2271).
+
+- `e2e/scenarios/auth-missing`, `auth-expired` and `auth-refreshed`: `auth status` against the keyring states the
+  gate of the agent-facing commands distinguishes: no record (exit 8 naming `devctl auth login`), both tokens
+  and the GitHub refresh token expired (exit 8, both reported expired), a GitHub token expired under a live
+  refresh token and a valid CircleCI token (exit 0, the GitHub identity `refreshable`). Nothing is contacted and
+  no token material is asserted (#2276).
 
 - `requiredChecks` in the repositories schema devctl ships and in `reposetup.Fields`: status-check contexts an entry
   requires on its default branch whatever reported, merged with the baseline's reported-only rule by the protection

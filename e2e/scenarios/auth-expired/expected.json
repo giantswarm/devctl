@@ -1,0 +1,30 @@
+{
+  "exitCode": 8,
+  "json": {
+    "command": "auth status",
+    "schemaVersion": 1,
+    "exitCode": 8,
+    "verdict": "auth_required",
+    "reason": "GitHub authentication required (the token expired and the refresh token with it): run `devctl auth login`.",
+    "warnings": [],
+    "startedAt": "*",
+    "finishedAt": "*",
+    "github": {
+      "present": true,
+      "login": "e2e-engineer",
+      "expiresAt": "2000-01-01T00:00:00Z",
+      "expired": true,
+      "refreshable": false,
+      "refreshExpiresAt": "2000-07-01T00:00:00Z",
+      "warnings": []
+    },
+    "circleci": {
+      "present": true,
+      "login": "e2e-engineer",
+      "expiresAt": "2000-01-01T00:00:00Z",
+      "expired": true,
+      "refreshable": false,
+      "warnings": []
+    }
+  }
+}

@@ -10,6 +10,7 @@ import (
 
 	"github.com/giantswarm/devctl/v8/cmd/pr/approvealign"
 	"github.com/giantswarm/devctl/v8/cmd/pr/approvemergerenovate"
+	"github.com/giantswarm/devctl/v8/cmd/pr/wait"
 )
 
 const (
@@ -64,6 +65,19 @@ func New(config Config) (*cobra.Command, error) {
 		}
 	}
 
+	var waitCmd *cobra.Command
+	{
+		c := wait.Config{
+			Stderr: config.Stderr,
+			Stdout: config.Stdout,
+		}
+
+		waitCmd, err = wait.New(c)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+	}
+
 	f := &flag{}
 
 	r := &runner{
@@ -84,6 +98,7 @@ func New(config Config) (*cobra.Command, error) {
 
 	c.AddCommand(approveAlignCmd)
 	c.AddCommand(approveMergeRenovateCmd)
+	c.AddCommand(waitCmd)
 
 	return c, nil
 }

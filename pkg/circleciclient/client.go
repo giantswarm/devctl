@@ -142,6 +142,9 @@ type Workflow struct {
 	Name           string `json:"name"`
 	Status         string `json:"status"`
 	PipelineNumber int64  `json:"pipeline_number"`
+	// CreatedAt orders the runs of one workflow name: a rerun is a new
+	// workflow with the same name in the same pipeline, and the newest counts.
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // WorkflowSucceeded says whether a workflow status is a finished success.
