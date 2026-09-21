@@ -237,7 +237,8 @@ type Result struct {
 	Steps      []StepResult `json:"steps"`
 	// Converged says the repository is set up as declared: no step ended in
 	// drift or failure and every finding is advisory ([StepResult.Converges]
-	// for each step). A finding a person must fix clears it.
+	// for each step). A finding a person must fix clears it, and a refused
+	// entry ([Refused]) never converges: nothing was checked.
 	Converged bool `json:"converged"`
 	// Requests is what the run cost in requests to GitHub and CircleCI,
 	// when the Runner's clients count them ([Runner.GitHubRequests]);
@@ -253,6 +254,14 @@ func (r *Result) Step(step Step) *StepResult {
 		}
 	}
 	return nil
+}
+
+// Refused says the entry was refused by the validator and no step ran: the
+// result is the one [Refused] builds, [StepEntry] its only step. A refused
+// result is not converged, and not drift either — the fix is in the
+// declaration, not on GitHub.
+func (r *Result) Refused() bool {
+	return r.Step(StepEntry) != nil
 }
 
 // Findings returns every finding of the run, in step order.

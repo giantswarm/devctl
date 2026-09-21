@@ -17,7 +17,10 @@ const genCIGenerateField = "gen.ci.generate"
 // [StepEntry], [VerdictReported], with one finding per problem naming the
 // field to fix — [FindingGenCircleCIRefused] for gen.ci.generate (the
 // CircleCI generator would produce no job), [FindingEntryRefused] for the
-// rest. Nothing failed and nothing drifted, so the result is converged.
+// rest. Nothing was checked against the declaration, so the result is not
+// converged ([Result.Refused] tells it from drift): there is nothing to
+// repair, the entry is what a person fixes. No step failed, so the callers
+// exit 0 as for any other finding.
 func Refused(req Request, now time.Time) *Result {
 	owner := req.Owner
 	if owner == "" {
@@ -50,6 +53,6 @@ func Refused(req Request, now time.Time) *Result {
 		StartedAt:  now,
 		FinishedAt: now,
 		Steps:      []StepResult{sr},
-		Converged:  true,
+		Converged:  false,
 	}
 }

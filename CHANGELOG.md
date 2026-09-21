@@ -233,6 +233,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `reconcile.Refused` (the result of an entry the schema refuses: `devctl repo reconcile`, the reconciler's
+  artifact, giantswarm-repo-manager's check) reports `converged: false`: nothing was checked against the
+  declaration, so the repository is not set up as declared, and not drifted either -- the fix is in the entry.
+  `Result.Refused()` tells a refusal from drift; the table header and `devctl repo status` say "entry refused"
+  instead of "drift or failed steps". Before, a refused entry read as converged next to its refusal.
+
 - `pkg/authstore` on Linux speaks the Secret Service API over D-Bus itself instead of through go-keyring: the default
   collection is resolved through `ReadAlias` and unlocked only when its `Locked` property says so (a prompt is
   completed through `org.freedesktop.Secret.Prompt`), items are searched, created (replacing the record of the same

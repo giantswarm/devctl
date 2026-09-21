@@ -10,15 +10,18 @@ import (
 
 // WriteTable renders the result for a person: a header naming the
 // repository (and the declared name after a rename), the mode and whether
-// the run converged; one row per step with its verdict and detail; then
-// every finding with its fix.
+// the run converged (a refused entry says so: nothing was checked); one row
+// per step with its verdict and detail; then every finding with its fix.
 func (r *Result) WriteTable(w io.Writer) error {
 	head := fmt.Sprintf("%s (%s)", r.Repository, r.Mode)
 	if r.Declared != r.Repository {
 		head += " — declared as " + r.Declared
 	}
 	state := "converged"
-	if !r.Converged {
+	switch {
+	case r.Refused():
+		state = "not converged, entry refused"
+	case !r.Converged:
 		state = "not converged"
 	}
 	line := fmt.Sprintf("%s: %s in %s", head, state, r.FinishedAt.Sub(r.StartedAt).Round(time.Millisecond))

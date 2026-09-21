@@ -255,9 +255,12 @@ func (r *runner) print(out *output) error {
 			fmt.Fprintf(r.stdout, "  %-12s %-9s %s: %s -- fix: %s\n", "", "", kind, f.Message, f.Fix)
 		}
 	}
-	if res.Converged {
+	switch {
+	case res.Refused():
+		fmt.Fprintln(r.stdout, "not converged: the entry is refused and nothing was checked; fix the declaration as the findings above say")
+	case res.Converged:
 		fmt.Fprintln(r.stdout, "converged: set up as declared")
-	} else {
+	default:
 		fmt.Fprintln(r.stdout, "not converged: drift, failed steps or findings to fix above")
 	}
 	return nil
