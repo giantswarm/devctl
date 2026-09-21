@@ -316,7 +316,8 @@ func TestSteps(t *testing.T) {
 				require.NotNil(t, p)
 				require.Equal(t, []string{ctxSemantic, ctxGoBuild}, p.checks)
 				require.Equal(t, 1, p.reviews)
-				require.True(t, p.enforceAdmins && p.strict)
+				require.True(t, p.enforceAdmins)
+				require.False(t, p.strict, "strict checks are off in the baseline")
 				require.False(t, p.allowForce || p.allowDel)
 			},
 		},
@@ -339,7 +340,7 @@ func TestSteps(t *testing.T) {
 			seed: func(h *harness) {
 				r := h.gh.addRepo(owner, name)
 				r.checksStatus = 403
-				r.protection = &fakeProtection{reviews: 1, enforceAdmins: true, strict: true, checks: []string{ctxGoBuild, "execute-smoke-test"}}
+				r.protection = &fakeProtection{reviews: 1, enforceAdmins: true, strict: false, checks: []string{ctxGoBuild, "execute-smoke-test"}}
 			},
 			wantCheck: VerdictReported, wantFinding: FindingUnchecked, wantAfter: VerdictReported,
 			verify: func(t *testing.T, h *harness, res *Result) {
@@ -352,7 +353,7 @@ func TestSteps(t *testing.T) {
 			seed: func(h *harness) {
 				r := h.gh.addRepo(owner, name)
 				r.statuses = []string{ctxGoBuild, ctxSetup, ctxDepGraph}
-				r.protection = &fakeProtection{reviews: 1, enforceAdmins: true, strict: true, checks: []string{ctxGoBuild, ctxSetup, ctxDepGraph, ctxRelease, ctxGhost}}
+				r.protection = &fakeProtection{reviews: 1, enforceAdmins: true, strict: false, checks: []string{ctxGoBuild, ctxSetup, ctxDepGraph, ctxRelease, ctxGhost}}
 			},
 			wantCheck: VerdictDrift, wantChange: "stop requiring " + strings.Join([]string{ctxSetup, ctxDepGraph, ctxRelease, ctxGhost}, ", "),
 			verify: func(t *testing.T, h *harness, _ *Result) {
@@ -364,9 +365,37 @@ func TestSteps(t *testing.T) {
 			seed: func(h *harness) {
 				h.runner.Checks = nil
 				r := h.gh.addRepo(owner, name)
-				r.protection = &fakeProtection{reviews: 1, enforceAdmins: true, strict: true, checks: []string{ctxGoBuild, "execute-smoke-test"}}
+				r.protection = &fakeProtection{reviews: 1, enforceAdmins: true, strict: false, checks: []string{ctxGoBuild, "execute-smoke-test"}}
 			},
 			wantCheck: VerdictOK,
+		},
+		{
+			name: "protection: strict checks are switched off", step: StepProtection,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.protection = &fakeProtection{reviews: 1, enforceAdmins: true, strict: true, checks: []string{ctxGoBuild}}
+			},
+			wantCheck: VerdictDrift, wantChange: "strict checks true → false",
+			verify: func(t *testing.T, h *harness, res *Result) {
+				p := h.repo().protection
+				require.False(t, p.strict)
+				require.Equal(t, []string{ctxGoBuild}, p.checks, "the required checks stay")
+				require.Equal(t, []string{"strict checks true → false"}, res.Step(StepProtection).Changes)
+			},
+		},
+		{
+			name: "protection: administrators are bound too", step: StepProtection,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.protection = &fakeProtection{reviews: 1, enforceAdmins: false, strict: false, checks: []string{ctxGoBuild}}
+			},
+			wantCheck: VerdictDrift, wantChange: "enforce admins false → true",
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.True(t, h.repo().protection.enforceAdmins)
+				require.Equal(t, []string{"enforce admins false → true"}, res.Step(StepProtection).Changes)
+			},
 		},
 		{
 			name: "circleci: follow, setup workflows, checkout key", step: StepCircleCI,

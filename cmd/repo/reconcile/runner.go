@@ -93,7 +93,6 @@ func (r *runner) run(ctx context.Context, arg string) error {
 	}
 
 	baseline := reconcile.DefaultBaseline()
-	baseline.EnforceAdmins = r.flag.EnforceAdmins
 	runner := reconcile.Runner{
 		GitHub:   gh.GetUnderlyingClient(ctx),
 		Dispatch: dispatch,

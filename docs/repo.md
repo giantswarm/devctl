@@ -174,8 +174,8 @@ Runs the set-up steps as the person (`--dry-run` checks only; `--output json` pr
 reconciler stores). An entry the validator refuses is a result too: one step, `entry`, verdict
 `reported`, one finding per problem (`gen-circleci-refused` for `gen.ci.generate`, `entry-refused`
 otherwise) with the field to fix, exit 0 -- the declaration is at fault, not the run. A flag or token
-error exits 2. `--enforce-admins` (default true) is the one baseline knob: whether the branch protection
-binds administrators too; the default stands until giantswarm/giantswarm#36733 decides the baseline.
+error exits 2. The branch protection is the company baseline's: administrators are bound too
+(`enforce_admins`), a branch need not be up to date to merge (strict status checks off).
 
 The `catalog` step dispatches the catalog and mapping workflows of the catalog repository, which needs an
 Actions permission there. `--dispatch-token-envvar` names a second token for those two calls (listing the
