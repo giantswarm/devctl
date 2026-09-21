@@ -41,8 +41,9 @@ dispatches the catalog and mapping workflows of the catalog repository, which
 needs an Actions permission there: --dispatch-token-envvar names a second
 token for those two calls when the GitHub token's identity has none (a
 workflow run's own token); every read, the repository lookup included, stays
-with the GitHub token. --enforce-admins (default true) is the one baseline
-knob: whether the branch protection binds administrators too.
+with the GitHub token. The branch protection is the company baseline's:
+administrators are bound too (enforce_admins), a branch need not be up to
+date to merge (strict status checks off).
 
 An entry the validator refuses is a result too: one step, entry, reported,
 with a finding per problem naming the field to fix, and exit 0 — the

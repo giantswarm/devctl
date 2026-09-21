@@ -25,6 +25,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- `reconcile.DefaultBaseline` has strict status checks off (`StrictChecks: false`): a branch need not be up to date
+  to merge, so on a repository with Renovate and sweep traffic a merge no longer invalidates every other open pull
+  request and re-runs its CI. The protection step plans `strict checks true → false` where a repository has them on
+  and reports both values of every protection change (`enforce admins false → true`). `EnforceAdmins: true` is the
+  company baseline, final (#2267).
 - The generated `renovate.json5` lists the marge sweep's App
   (`giantswarm-marge[bot]`) in `gitIgnoredAuthors` beside taylorbot. The sweep
   commits a bot PR's changelog entry onto the bot's own branch, and Renovate
@@ -46,6 +51,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   steps standalone for one accepted entry with any authenticated client — the same steps `Run` executes for the
   reconciler — and returns the repository URL, the scaffold commit and the step results; giantswarm-repo-manager
   imports it to create as the person (giantswarm/giantswarm#37726, #2238).
+
+### Removed
+
+- `repo reconcile --enforce-admins`: the branch protection binds administrators too, the baseline's value with no
+  knob; the flag and its "until the baseline decides" note are gone (#2267).
 
 ### Fixed
 

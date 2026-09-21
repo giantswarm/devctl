@@ -35,12 +35,13 @@ type Baseline struct {
 	// Branch protection.
 	RequiredReviews int `json:"requiredReviews"`
 	// EnforceAdmins binds administrators to the protection too. True in
-	// [DefaultBaseline] — what `devctl repo setup` applies and gs-pr-merge
-	// lifts and restores for a merge; giantswarm/giantswarm#36733 lists it
-	// as downgraded, one field to flip once the baseline decides. `repo
-	// reconcile --enforce-admins` passes it.
+	// [DefaultBaseline], the company baseline: what `devctl repo setup`
+	// applies and what the merge tool lifts and restores around a merge.
 	EnforceAdmins bool `json:"enforceAdmins"`
-	// StrictChecks requires branches to be up to date before merging.
+	// StrictChecks requires a branch to be up to date before it merges.
+	// False in [DefaultBaseline]: on a repository with Renovate and sweep
+	// traffic every merge would invalidate every other open pull request
+	// and re-run its CI.
 	StrictChecks bool `json:"strictChecks"`
 	// RequiredChecks are required whatever reported.
 	RequiredChecks []string `json:"requiredChecks,omitempty"`
@@ -113,7 +114,7 @@ func DefaultBaseline() Baseline {
 		TeamPermissions:     map[string]string{"employees": "admin", "bots": "push"},
 		RequiredReviews:     1,
 		EnforceAdmins:       true,
-		StrictChecks:        true,
+		StrictChecks:        false,
 		RequiredChecksIfReported: []string{
 			"semantic-pull-request / Validate PR title",
 			"pre-commit",

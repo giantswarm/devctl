@@ -87,7 +87,7 @@ func (r *Runner) stepProtection(ctx context.Context, s *run, sr *StepResult) err
 			changes = append(changes, "forbid deletions")
 		}
 		if protection.RequiredStatusChecks != nil && protection.RequiredStatusChecks.Strict != b.StrictChecks && len(want) > 0 {
-			changes = append(changes, fmt.Sprintf("strict checks → %t", b.StrictChecks))
+			changes = append(changes, fmt.Sprintf("strict checks %t → %t", protection.RequiredStatusChecks.Strict, b.StrictChecks))
 		}
 	}
 	if !sameSet(current, want) {
