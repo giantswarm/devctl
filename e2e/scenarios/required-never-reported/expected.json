@@ -1,0 +1,24 @@
+{
+  "exitCode": 4,
+  "json": {
+    "command": "pr wait",
+    "schemaVersion": 1,
+    "exitCode": 4,
+    "verdict": "required_missing",
+    "reason": "required context(s) never reported: go-lint; every check, run and workflow of the head has finished",
+    "warnings": [],
+    "startedAt": "*",
+    "finishedAt": "*",
+    "repository": "giantswarm/devctl",
+    "number": 42,
+    "headSha": "abc123",
+    "baseRef": "main",
+    "checks": [
+      {"name": "go-build", "source": "check_run", "status": "completed", "conclusion": "success", "url": "*", "required": true}
+    ],
+    "actions": [
+      {"name": "CI", "runId": 7001, "status": "completed", "conclusion": "success", "url": "*"}
+    ],
+    "unfinished": ["required context go-lint (absent)"]
+  }
+}

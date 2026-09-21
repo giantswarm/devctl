@@ -95,9 +95,17 @@ type evaluation struct {
 	unfinished []string
 	// requiredMissing are the required contexts nothing has reported under.
 	requiredMissing []string
+	// settled: every check, status, Actions run and CircleCI workflow of the
+	// head has finished, so nothing left is going to report under a context
+	// that is still absent.
+	settled bool
 }
 
 func (e *evaluation) green() bool { return len(e.red) == 0 && len(e.unfinished) == 0 }
+
+// neverReported: the head is settled and a required context is still absent.
+// That verdict needs no timeout: nothing is running that could report it.
+func (e *evaluation) neverReported() bool { return e.settled && len(e.requiredMissing) > 0 }
 
 func (e *evaluation) redReason() string { return strings.Join(e.red, "; ") }
 
@@ -114,7 +122,11 @@ func (e *evaluation) redReason() string { return strings.Join(e.red, "; ") }
 //  4. every required status context has reported.
 //
 // A failure anywhere is red at once; anything else still open keeps the wait
-// going.
+// going. A required context nothing has reported under is unfinished like the
+// rest while a check, status, run or workflow is still pending (rules 1 to 3):
+// the one awaiting approval or still running may be what reports it. Once all
+// of them have finished, the head is settled and an absent context is one
+// that will never report.
 func evaluate(s snapshot) *evaluation {
 	e := &evaluation{checks: []Check{}, actions: []ActionRun{}}
 	required := map[string]bool{}
@@ -190,6 +202,9 @@ func evaluate(s snapshot) *evaluation {
 		e.evaluateCircleCI(s.headSHA, s.circleci)
 	}
 
+	// Settled is judged before the required contexts: with nothing pending,
+	// an absent context has nothing left that could report it.
+	e.settled = len(e.unfinished) == 0
 	for _, name := range s.required {
 		if !reported[name] {
 			e.requiredMissing = append(e.requiredMissing, name)

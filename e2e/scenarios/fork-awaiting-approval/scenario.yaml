@@ -1,9 +1,12 @@
-# A pull request from a fork to a repository without CircleCI. Its workflow
-# run awaits a maintainer's approval: GitHub completes the run at once with
-# the conclusion action_required and it produces no check runs, so the check
-# list is empty and reads green. The wait treats the run as open, keeps
-# polling, and at the timeout exits 2 naming the run.
-description: a fork's workflow run awaiting approval keeps the wait open; the timeout names the run
+# A pull request from a fork to a repository without CircleCI whose base
+# requires two contexts. The fork's workflow run awaits a maintainer's
+# approval: GitHub completes the run at once with the conclusion
+# action_required and it produces no check runs, so the check list is empty
+# and the required contexts are absent. The approved run is what will report
+# them, so the outcome is not known yet: the wait treats the run as open,
+# keeps polling, and at the timeout exits 2 (not 4) naming the run and the
+# absent contexts.
+description: a fork's workflow run awaiting approval keeps the wait open; the timeout is 2 although required contexts are absent
 args: [pr, wait, giantswarm/devctl, "42", --timeout, 5m]
 keyring:
   github:
@@ -28,6 +31,9 @@ github:
           mergeable_state: clean
           head: {sha: abc123, ref: fix-typo, repo: {full_name: e2e-contributor/devctl}}
           base: {ref: main, repo: {full_name: giantswarm/devctl}}
+    "GET /repos/giantswarm/devctl/branches/main/protection":
+      - body:
+          required_status_checks: {strict: true, contexts: [go-build, go-test]}
     "GET /repos/giantswarm/devctl/commits/abc123/check-runs":
       - body: {total_count: 0, check_runs: []}
     "GET /repos/giantswarm/devctl/commits/abc123/status":

@@ -272,7 +272,32 @@ func Test_Wait_forkAwaitingApprovalTimesOut(t *testing.T) {
 	}
 }
 
+func Test_Wait_forkAwaitingApprovalOutranksRequiredMissing(t *testing.T) {
+	// The base requires contexts the approved run would report under. While
+	// the run awaits approval the outcome is not known: the timeout is 2,
+	// not 4, and unfinished names the run and the absent contexts.
+	gh := gitHubGreen()
+	gh[runsPath] = []sequence.Response{checkRuns()}
+	gh[actsPath] = []sequence.Response{body(map[string]any{"total_count": 1, "workflow_runs": []any{
+		map[string]any{"id": 7, "name": "CI", "status": "completed", "conclusion": "action_required", "html_url": "https://github.com/o/r/actions/runs/7"},
+	}})}
+	gh["GET /repos/o/r/branches/main/protection"] = []sequence.Response{body(map[string]any{
+		"required_status_checks": map[string]any{"strict": true, "contexts": []any{"go-build"}},
+	})}
+	h := start(t, gh, sequence.Routes{}, false, 2*time.Minute)
+	result, err := h.waiter.Wait(context.Background(), "o", "r", 42)
+	if exitCode(err) != agentcli.ExitTimeout || !strings.Contains(err.Error(), "timeout after") {
+		t.Fatalf("want exit 2 at the timeout, got %d %v", exitCode(err), err)
+	}
+	if want := []string{"actions run CI (awaiting approval)", "required context go-build (absent)"}; !cmp.Equal(want, result.Unfinished) {
+		t.Errorf("unfinished: want %q, got %q", want, result.Unfinished)
+	}
+}
+
 func Test_Wait_requiredContextNeverReported(t *testing.T) {
+	// Every check and run of the head has finished and two required contexts
+	// are absent: exit 4 at the first poll, not at the timeout.
+
 	gh := gitHubGreen()
 	gh["GET /repos/o/r/branches/main/protection"] = []sequence.Response{body(map[string]any{
 		"required_status_checks": map[string]any{"strict": true, "contexts": []any{"go-build", "ci/circleci: test"}},
@@ -295,6 +320,9 @@ func Test_Wait_requiredContextNeverReported(t *testing.T) {
 	}
 	if len(result.Checks) != 1 || !result.Checks[0].Required {
 		t.Errorf("go-build is flagged required: %+v", result.Checks)
+	}
+	if polls := strings.Count(h.progress.String(), "poll "); polls != 1 {
+		t.Errorf("want one poll, got %d:\n%s", polls, h.progress.String())
 	}
 }
 
