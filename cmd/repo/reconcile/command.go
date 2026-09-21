@@ -41,13 +41,14 @@ dispatches the catalog and mapping workflows of the catalog repository, which
 needs an Actions permission there: --dispatch-token-envvar names a second
 token for those two calls when the GitHub token's identity has none (a
 workflow run's own token); every read, the repository lookup included, stays
-with the GitHub token. The branch protection is a repository ruleset on the
-default branch ("devctl: default branch"): the company baseline's review
-requirement and required checks (a branch need not be up to date to merge),
-no deletion, no force push, and the devctl GitHub App as bypass actor for
-pull requests (--devctl-app-id, the App's numeric id) unless the entry
-declares agentMerge: false. Classic branch protection gives way to the
-ruleset in the same run.
+with the GitHub token. The branch protection is the company baseline's:
+administrators are bound too (enforce_admins), a branch need not be up to
+date to merge (strict status checks off). With --devctl-app-id (the devctl
+GitHub App's numeric id) the protection is a repository ruleset on the
+default branch instead, "devctl: default branch", with the App as bypass
+actor for pull requests unless the entry declares agentMerge: false, and
+classic branch protection gives way to it in the same run; without the id
+the step keeps classic protection and reports the missing id.
 
 An entry the validator refuses is a result too: one step, entry, reported,
 with a finding per problem naming the field to fix, and exit 0 — the

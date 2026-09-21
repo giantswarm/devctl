@@ -85,9 +85,11 @@ type Runner struct {
 	// [DefaultBaseline].
 	Baseline *Baseline
 	// DevctlAppID is the numeric id of the devctl GitHub App (the App's
-	// settings page; not the client id): the bypass actor of the default
-	// branch's ruleset, in pull_request mode, on an entry that lets agents
-	// merge. 0 leaves the bypass actors unmanaged and reported.
+	// settings page; not the client id) and the switch to rulesets: with it
+	// the protection step writes the default branch's ruleset with the App
+	// as bypass actor in pull_request mode (none on agentMerge: false) and
+	// removes classic protection; 0 keeps classic branch protection as
+	// before and reports the missing id.
 	DevctlAppID int64
 	// Log receives one line per step and change; nil discards.
 	Log io.Writer

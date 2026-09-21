@@ -599,33 +599,60 @@ func TestSteps(t *testing.T) {
 			},
 		},
 		{
-			name: "protection: without the App id a fresh ruleset has no bypass actor and the gap is reported", step: StepProtection,
+			name: "protection: without the App id classic protection is written as before and the switch is reported", step: StepProtection,
 			seed: func(h *harness) {
 				h.runner.DevctlAppID = 0
 				r := h.gh.addRepo(owner, name)
-				r.statuses = []string{ctxGoBuild}
+				r.statuses = []string{ctxGoBuild, ctxSetup}
+				r.checkRuns = []string{ctxSemantic}
 			},
-			wantCheck: VerdictDrift, wantChange: `create ruleset "devctl: default branch"; require ` + ctxGoBuild, wantFinding: FindingUnchecked, wantAfter: VerdictReported,
+			wantCheck: VerdictDrift, wantChange: "protect main; require " + ctxSemantic + ", " + ctxGoBuild, wantFinding: FindingRulesetsNotEnabled, wantAfter: VerdictReported,
 			verify: func(t *testing.T, h *harness, res *Result) {
-				require.Empty(t, h.repo().ruleset(RulesetName).BypassActors)
-				f := res.Step(StepProtection).Findings[0]
-				require.Contains(t, f.Message, "no bypass actor")
-				require.Contains(t, f.Fix, "--devctl-app-id")
-				require.False(t, res.Converged, "agents cannot merge as declared")
+				p := h.repo().protection
+				require.NotNil(t, p, "classic protection, as on a run before rulesets")
+				require.Equal(t, []string{ctxSemantic, ctxGoBuild}, p.checks)
+				require.Equal(t, 1, p.reviews)
+				require.True(t, p.enforceAdmins)
+				require.False(t, p.strict)
+				require.Empty(t, h.repo().rulesets, "a ruleset never appears without the App id")
+				f := res.Step(StepProtection).Findings
+				require.Len(t, f, 1)
+				require.True(t, f[0].Advisory, "the switch is for a person; the repository is protected as declared")
+				require.Contains(t, f[0].Fix, "--devctl-app-id")
+				require.True(t, res.Converged, "a run without the App id reads converged, as before rulesets")
 			},
 		},
 		{
-			name: "protection: without the App id the bypass actors stay and are reported", step: StepProtection,
+			name: "protection: without the App id administrators are bound too, as before", step: StepProtection,
 			seed: func(h *harness) {
 				h.runner.DevctlAppID = 0
 				r := h.gh.addRepo(owner, name)
 				r.statuses = []string{ctxGoBuild}
+				r.protection = &fakeProtection{reviews: 1, enforceAdmins: false, strict: true, checks: []string{ctxGoBuild}}
+			},
+			wantCheck: VerdictDrift, wantChange: "enforce admins false → true; strict checks true → false", wantFinding: FindingRulesetsNotEnabled, wantAfter: VerdictReported,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.True(t, h.repo().protection.enforceAdmins)
+				require.False(t, h.repo().protection.strict)
+				require.Equal(t, []string{"enforce admins false → true; strict checks true → false"}, res.Step(StepProtection).Changes)
+				require.Empty(t, h.repo().rulesets)
+			},
+		},
+		{
+			name: "protection: without the App id a ruleset and its bypass actors are left alone", step: StepProtection,
+			seed: func(h *harness) {
+				h.runner.DevctlAppID = 0
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.protection = &fakeProtection{reviews: 1, enforceAdmins: true, strict: false, checks: []string{ctxGoBuild}}
 				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID))
 			},
-			wantCheck: VerdictReported, wantFinding: FindingUnchecked, wantAfter: VerdictReported,
+			wantCheck: VerdictReported, wantFinding: FindingRulesetsNotEnabled, wantAfter: VerdictReported,
 			verify: func(t *testing.T, h *harness, res *Result) {
-				require.Equal(t, []*github.BypassActor{appBypass(testAppID)}, h.repo().ruleset(RulesetName).BypassActors, "a run without the App id removes no bypass actor")
-				require.Contains(t, res.Step(StepProtection).Findings[0].Message, "not checked")
+				require.Equal(t, []*github.BypassActor{appBypass(testAppID)}, h.repo().ruleset(RulesetName).BypassActors, "a run without the App id touches no ruleset")
+				require.NotNil(t, h.repo().protection, "and removes no classic protection")
+				require.Equal(t, "main protected; required: "+ctxGoBuild, res.Step(StepProtection).Summary)
+				require.True(t, res.Converged)
 			},
 		},
 		{
@@ -1236,8 +1263,11 @@ func TestSteps(t *testing.T) {
 		},
 		{
 			name: "protection: a fork line's declared default branch is protected", step: StepProtection, entry: forkEntryYAML,
-			seed:      func(h *harness) { h.gh.addRepo(owner, name).defaultBranch = "giantswarm" },
-			wantCheck: VerdictDrift, wantChange: "protect giantswarm",
+			seed: func(h *harness) {
+				h.runner.DevctlAppID = 0 // classic protection names the branch; the ruleset follows it (TestRunForkLineFollowsItsDeclaredBranch)
+				h.gh.addRepo(owner, name).defaultBranch = "giantswarm"
+			},
+			wantCheck: VerdictDrift, wantChange: "protect giantswarm", wantFinding: FindingRulesetsNotEnabled, wantAfter: VerdictReported,
 			verify: func(t *testing.T, h *harness, _ *Result) {
 				require.Equal(t, "giantswarm", h.repo().protected, "the declared branch is the protected one")
 				require.NotNil(t, h.repo().protection)
@@ -1420,33 +1450,58 @@ func TestRunDeletedDeclarationRunsLifecycleOnly(t *testing.T) {
 // the scaffold and CODEOWNERS steps; the repair protects the declared branch
 // and leaves the tree alone.
 func TestRunForkLineFollowsItsDeclaredBranch(t *testing.T) {
-	h := newHarness(t, forkEntryYAML)
-	r := h.gh.addRepo(owner, name)
-	r.defaultBranch = "giantswarm"
-	delete(r.files, "CODEOWNERS")
+	// Without the App id the protection is classic and names the branch.
+	t.Run("classic protection names the declared branch", func(t *testing.T) {
+		h := newHarness(t, forkEntryYAML)
+		h.runner.DevctlAppID = 0
+		r := h.gh.addRepo(owner, name)
+		r.defaultBranch = "giantswarm"
+		delete(r.files, "CODEOWNERS")
 
-	check := h.run(ModeCheck, false)
-	for _, sr := range check.Steps {
-		require.NotEqual(t, VerdictFailed, sr.Verdict, "%s: %s", sr.Step, sr.Summary)
-		switch sr.Step {
-		case StepScaffold, StepCodeowners:
-			require.Equal(t, VerdictSkipped, sr.Verdict, "%s: %+v", sr.Step, sr)
-			require.Equal(t, "flavour fork", sr.Summary, "%s", sr.Step)
-		case StepSettings:
-			require.Equal(t, VerdictOK, sr.Verdict, "no rename is planned: %+v", sr)
-		case StepProtection:
-			require.Equal(t, VerdictDrift, sr.Verdict, "%+v", sr)
-			require.Contains(t, sr.Changes, "protect giantswarm", "%+v", sr.Changes)
+		check := h.run(ModeCheck, false)
+		for _, sr := range check.Steps {
+			require.NotEqual(t, VerdictFailed, sr.Verdict, "%s: %s", sr.Step, sr.Summary)
+			switch sr.Step {
+			case StepScaffold, StepCodeowners:
+				require.Equal(t, VerdictSkipped, sr.Verdict, "%s: %+v", sr.Step, sr)
+				require.Equal(t, "flavour fork", sr.Summary, "%s", sr.Step)
+			case StepSettings:
+				require.Equal(t, VerdictOK, sr.Verdict, "no rename is planned: %+v", sr)
+			case StepProtection:
+				require.Equal(t, VerdictDrift, sr.Verdict, "%+v", sr)
+				require.Contains(t, sr.Changes, "protect giantswarm", "%+v", sr.Changes)
+			}
 		}
-	}
-	require.Empty(t, h.mutations(), "a check must not write")
+		require.Empty(t, h.mutations(), "a check must not write")
 
-	repair := h.run(ModeRepair, false)
-	require.Equal(t, VerdictRepaired, repair.Step(StepProtection).Verdict, "%+v", repair.Step(StepProtection))
-	require.Equal(t, "giantswarm", r.protected, "the declared branch is the protected one")
-	require.Equal(t, "giantswarm", r.defaultBranch)
-	require.Empty(t, r.prs, "no CODEOWNERS pull request")
-	require.NotContains(t, r.files, "CODEOWNERS", "the tree is upstream's")
+		repair := h.run(ModeRepair, false)
+		require.Equal(t, VerdictRepaired, repair.Step(StepProtection).Verdict, "%+v", repair.Step(StepProtection))
+		require.Equal(t, "giantswarm", r.protected, "the declared branch is the protected one")
+		require.Equal(t, "giantswarm", r.defaultBranch)
+		require.Empty(t, r.prs, "no CODEOWNERS pull request")
+		require.NotContains(t, r.files, "CODEOWNERS", "the tree is upstream's")
+	})
+
+	// With the App id the ruleset follows the default branch, which the
+	// settings step keeps on the declared one.
+	t.Run("the ruleset follows the declared branch", func(t *testing.T) {
+		h := newHarness(t, forkEntryYAML)
+		r := h.gh.addRepo(owner, name)
+		r.defaultBranch = "giantswarm"
+		delete(r.files, "CODEOWNERS")
+
+		check := h.run(ModeCheck, false)
+		sr := check.Step(StepProtection)
+		require.Equal(t, VerdictDrift, sr.Verdict, "%+v", sr)
+		require.Contains(t, strings.Join(sr.Changes, "; "), `create ruleset "devctl: default branch"`)
+		require.Empty(t, h.mutations(), "a check must not write")
+
+		repair := h.run(ModeRepair, false)
+		require.Equal(t, VerdictRepaired, repair.Step(StepProtection).Verdict, "%+v", repair.Step(StepProtection))
+		require.Equal(t, []string{"~DEFAULT_BRANCH"}, r.ruleset(RulesetName).Conditions.RefName.Include, "the ruleset follows the default branch")
+		require.Equal(t, "giantswarm", r.defaultBranch, "which stays the declared one")
+		require.Nil(t, r.protection, "no classic protection beside it")
+	})
 }
 
 // TestRunCustomerFlavourKeepsTheCustomersFlow: a customer repository has

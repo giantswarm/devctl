@@ -26,20 +26,122 @@ const defaultBranchRef = "~DEFAULT_BRANCH"
 // integration satisfies the context.
 const gitHubActionsAppID int64 = 15368
 
-// stepProtection protects the default branch with the repository ruleset
-// [RulesetName]: the baseline's review requirement; the required checks on
-// the reported-only rule (a context is required once it has reported on the
-// default branch or a recently merged pull request; a required context
+// stepProtection protects the default branch and keeps the required checks
+// on the reported-only rule: a context is required once it has reported on
+// the default branch or a recently merged pull request; a required context
 // nothing reports, a CircleCI context without a job in the pipeline and an
 // ignored context are removed; the entry's requiredChecks are required
-// whatever reported and never removed); no deletion and no force push; and
-// the devctl App as bypass actor for pull requests when the entry lets
-// agents merge (agentMerge, true unless declared false) and
-// [Runner.DevctlAppID] names the App. The ruleset targets the default branch
+// whatever reported and never removed. [Runner.DevctlAppID] is the switch
+// between the two forms of protection: with the App id the protection is
+// the repository ruleset [RulesetName] (stepRulesetProtection), without it
+// classic branch protection as before, applied and verified in full, with
+// the advisory finding [FindingRulesetsNotEnabled] naming the switch. The
+// reconciler's wiring passes the id; a devctl release alone changes no
+// repository.
+func (r *Runner) stepProtection(ctx context.Context, s *run, sr *StepResult) error {
+	if r.DevctlAppID == 0 {
+		s.report(sr, FindingRulesetsNotEnabled,
+			"classic branch protection: no devctl App id, so the ruleset with the App as bypass actor is not written",
+			fmt.Sprintf("pass the App's numeric id (its settings page; not the client id) with --devctl-app-id: the switch to the ruleset %q, which then replaces the classic protection", RulesetName))
+		return r.stepClassicProtection(ctx, s, sr)
+	}
+	return r.stepRulesetProtection(ctx, s, sr)
+}
+
+// stepClassicProtection writes classic branch protection as the baseline
+// says: the required reviews, administrators bound (EnforceAdmins), no force
+// push, no deletion, the required checks on the reported-only rule with the
+// baseline's strictness.
+func (r *Runner) stepClassicProtection(ctx context.Context, s *run, sr *StepResult) error {
+	b := s.baseline
+	branch := s.branch()
+
+	protection, err := r.classicProtection(ctx, s, branch)
+	if err != nil {
+		return err
+	}
+
+	var current []string
+	if protection != nil && protection.RequiredStatusChecks != nil && protection.RequiredStatusChecks.Checks != nil {
+		for _, c := range *protection.RequiredStatusChecks.Checks {
+			current = append(current, c.GetContext())
+		}
+	}
+
+	reported, reportedKnown := r.reportedChecks(ctx, s, sr, branch)
+	gates, pipelineKnown, err := r.pipelineGates(ctx, s)
+	if err != nil {
+		return err
+	}
+	want, err := requiredChecks(b, s.fields.RequiredChecks, current, reported, reportedKnown, gates, pipelineKnown)
+	if err != nil {
+		return err
+	}
+
+	var changes []string
+	if protection == nil {
+		changes = append(changes, "protect "+branch)
+	} else {
+		if got := protection.GetRequiredPullRequestReviews().GetRequiredApprovingReviewCount(); got != b.RequiredReviews {
+			changes = append(changes, fmt.Sprintf("required reviews %d → %d", got, b.RequiredReviews))
+		}
+		if got := protection.GetEnforceAdmins().GetEnabled(); got != b.EnforceAdmins {
+			changes = append(changes, fmt.Sprintf("enforce admins %t → %t", got, b.EnforceAdmins))
+		}
+		if protection.GetAllowForcePushes().GetEnabled() {
+			changes = append(changes, "forbid force pushes")
+		}
+		if protection.GetAllowDeletions().GetEnabled() {
+			changes = append(changes, "forbid deletions")
+		}
+		if protection.RequiredStatusChecks != nil && protection.RequiredStatusChecks.Strict != b.StrictChecks && len(want) > 0 {
+			changes = append(changes, fmt.Sprintf("strict checks %t → %t", protection.RequiredStatusChecks.Strict, b.StrictChecks))
+		}
+	}
+	if !sameSet(current, want) {
+		added, removed := diffNames(current, want)
+		if len(added) > 0 {
+			changes = append(changes, "require "+strings.Join(added, ", "))
+		}
+		if len(removed) > 0 {
+			changes = append(changes, "stop requiring "+strings.Join(removed, ", "))
+		}
+	}
+	if len(changes) == 0 {
+		sr.Summary = fmt.Sprintf("%s protected; required: %s", branch, describe(want))
+		return nil
+	}
+
+	return s.plan(sr, strings.Join(changes, "; "), func() error {
+		req := &github.ProtectionRequest{
+			RequiredPullRequestReviews: &github.PullRequestReviewsEnforcementRequest{
+				RequiredApprovingReviewCount: b.RequiredReviews,
+			},
+			EnforceAdmins:    b.EnforceAdmins,
+			AllowForcePushes: new(false),
+			AllowDeletions:   new(false),
+		}
+		if len(want) > 0 {
+			checks := make([]*github.RequiredStatusCheck, 0, len(want))
+			for _, name := range want {
+				checks = append(checks, &github.RequiredStatusCheck{Context: name})
+			}
+			req.RequiredStatusChecks = &github.RequiredStatusChecks{Strict: b.StrictChecks, Checks: &checks}
+		}
+		_, _, err := r.GitHub.Repositories.UpdateBranchProtection(ctx, s.owner, s.name, branch, req)
+		return err
+	})
+}
+
+// stepRulesetProtection protects the default branch with the repository
+// ruleset [RulesetName]: the baseline's review requirement, the required
+// checks on the reported-only rule, no deletion and no force push, and the
+// devctl App as bypass actor for pull requests unless the entry opts out of
+// agent merges (agentMerge: false). The ruleset targets the default branch
 // wherever it moves. Classic branch protection gives way to the ruleset in
 // the same run: its required checks are carried over, then it is removed.
 // Rulesets the engine did not create are left alone and reported.
-func (r *Runner) stepProtection(ctx context.Context, s *run, sr *StepResult) error {
+func (r *Runner) stepRulesetProtection(ctx context.Context, s *run, sr *StepResult) error {
 	b := s.baseline
 	branch := s.branch()
 
@@ -79,7 +181,7 @@ func (r *Runner) stepProtection(ctx context.Context, s *run, sr *StepResult) err
 		strict:      b.StrictChecks,
 		noDeletion:  true,
 		noForcePush: true,
-		bypass:      r.bypassActors(s, sr, have),
+		bypass:      r.bypassActors(s),
 	}
 
 	var changes []string
@@ -196,32 +298,17 @@ func (r *Runner) reportedChecks(ctx context.Context, s *run, sr *StepResult, bra
 }
 
 // bypassActors is the ruleset's bypass list: the devctl App for pull
-// requests when the entry lets agents merge and the App is configured; none
-// when the entry opts out (agentMerge: false). Without the App id the step
-// cannot manage the list — a fresh ruleset gets none, an existing one keeps
-// its own — and reports the missing configuration.
-func (r *Runner) bypassActors(s *run, sr *StepResult, have *github.RepositoryRuleset) []*github.BypassActor {
+// requests, none when the entry opts out of agent merges (agentMerge:
+// false).
+func (r *Runner) bypassActors(s *run) []*github.BypassActor {
 	if !s.agentMerge() {
 		return nil
 	}
-	if r.DevctlAppID != 0 {
-		return []*github.BypassActor{{
-			ActorID:    new(r.DevctlAppID),
-			ActorType:  new(github.BypassActorTypeIntegration),
-			BypassMode: new(github.BypassModePullRequest),
-		}}
-	}
-	var kept []*github.BypassActor
-	if have != nil {
-		kept = have.BypassActors
-	}
-	message := "no bypass actor: the devctl App id is not configured, so no agent merges past the required review"
-	if len(kept) > 0 {
-		message = fmt.Sprintf("%d bypass actor(s) not checked: the devctl App id is not configured", len(kept))
-	}
-	s.report(sr, FindingUnchecked, message,
-		"pass the App's numeric id (its settings page; not the client id) with --devctl-app-id; the bypass actor is written on the next run")
-	return kept
+	return []*github.BypassActor{{
+		ActorID:    new(r.DevctlAppID),
+		ActorType:  new(github.BypassActorTypeIntegration),
+		BypassMode: new(github.BypassModePullRequest),
+	}}
 }
 
 // rulesetState is the ruleset as the step compares it: its rules as data,

@@ -178,25 +178,29 @@ error exits 2.
 
 ### The protection step
 
-The default branch is protected by one repository ruleset, `devctl: default branch`, targeting
-`~DEFAULT_BRANCH` so a rename or a fork line's declared branch needs no change to it: the company
-baseline's review requirement; the required status checks on the reported-only rule (a context is
-required once it has reported on the default branch or a recently merged pull request, a required context
-nothing reports is removed, the entry's `requiredChecks` are required whatever reported and never removed),
-a branch need not be up to date to merge; no deletion and no force push. A GitHub Actions gate is pinned
-to the GitHub Actions App, so no other integration satisfies its context.
+The default branch carries the company baseline's protection: one required review; the required status
+checks on the reported-only rule (a context is required once it has reported on the default branch or a
+recently merged pull request, a required context nothing reports is removed, the entry's `requiredChecks`
+are required whatever reported and never removed), a branch need not be up to date to merge; no deletion
+and no force push. A customer repository (flavour `customer`) keeps its own protection.
 
-The devctl GitHub App is the ruleset's bypass actor in `pull_request` mode -- it merges a pull request the
-required review would hold, every bypass in the repository's audit log -- unless the entry declares
-`agentMerge: false`, which leaves the ruleset without bypass actors so nothing merges past the review.
-`--devctl-app-id` names the App by its numeric id (the App's settings page; not the client id); the
-reconciler passes it from its configuration. Without it the step cannot manage the bypass actors -- a fresh
-ruleset gets none, an existing one keeps its own -- and reports the missing configuration as a finding.
+`--devctl-app-id`, the devctl GitHub App's numeric id (the App's settings page; not the client id), is the
+switch between the two forms of that protection. Without it the step writes classic branch protection, as
+it always has (administrators bound too, `enforce_admins`), and reports the missing id as the advisory
+finding `rulesets-not-enabled`, which does not keep the repository from converging. With it the protection
+is one repository ruleset, `devctl: default branch`, active on
+`~DEFAULT_BRANCH` so a rename or a fork line's declared branch needs no change: the same rules, a GitHub
+Actions gate pinned to the GitHub Actions App so no other integration satisfies its context, and the devctl
+App as bypass actor in `pull_request` mode -- it merges a pull request the required review would hold, every
+bypass in the repository's audit log -- unless the entry declares `agentMerge: false`, which leaves the
+ruleset without bypass actors so nothing merges past the review. Classic protection gives way to the
+ruleset in the same run: its required checks are carried over, the ruleset is written, then the classic
+protection is removed; the dry run plans both. A ruleset the engine did not create is left alone and
+reported (advisory: it does not keep the repository from converging).
 
-Classic branch protection gives way to the ruleset in the same run: its required checks are carried over,
-the ruleset is written, then the classic protection is removed; the dry run plans both. A ruleset the engine
-did not create is left alone and reported (advisory: it does not keep the repository from converging). A
-customer repository (flavour `customer`) keeps its own protection, classic or not.
+The id is the switch, not the devctl release: the reconciler's wiring passes it, so the day the reconciler
+gets the id is the day its opted-in repositories move to rulesets, and a run without it -- a laptop, an
+older wiring -- changes no ruleset and removes no classic protection.
 
 The `catalog` step dispatches the catalog and mapping workflows of the catalog repository, which needs an
 Actions permission there. `--dispatch-token-envvar` names a second token for those two calls (listing the
