@@ -1,0 +1,34 @@
+{
+  "exitCode": 2,
+  "json": {
+    "team": "team-e2e",
+    "mode": "existing",
+    "schema": "embedded",
+    "entries": [
+      {
+        "name": "align-not-bool",
+        "rendered": "*",
+        "template": "giantswarm/template",
+        "chart": "giantswarm/template-app",
+        "nameCheck": {
+          "verdict": "unchecked",
+          "detail": "*"
+        },
+        "problems": [
+          {
+            "field": "align",
+            "message": "got string, want boolean"
+          }
+        ],
+        "accepted": false
+      }
+    ],
+    "notices": [
+      {
+        "kind": "names-unchecked",
+        "message": "*"
+      }
+    ],
+    "accepted": false
+  }
+}

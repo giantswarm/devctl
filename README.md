@@ -38,8 +38,12 @@ devctl repo status my-service
 ### Running Tests
 
 ```bash
-go test ./...
+make test
 ```
+
+The suite includes the end-to-end scenarios under `e2e/`: the built binary against in-process mocks of GitHub,
+CircleCI and the registry, one directory per known incident. See [e2e/README.md](e2e/README.md) for the format
+and how to add one.
 
 ### Debug Mode
 

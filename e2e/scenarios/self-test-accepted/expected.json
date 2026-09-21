@@ -1,0 +1,27 @@
+{
+  "exitCode": 0,
+  "json": {
+    "team": "team-e2e",
+    "mode": "existing",
+    "schema": "embedded",
+    "entries": [
+      {
+        "name": "good-cli",
+        "rendered": "*",
+        "template": "giantswarm/template",
+        "nameCheck": {
+          "verdict": "unchecked",
+          "detail": "*"
+        },
+        "accepted": true
+      }
+    ],
+    "notices": [
+      {
+        "kind": "names-unchecked",
+        "message": "*"
+      }
+    ],
+    "accepted": true
+  }
+}
