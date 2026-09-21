@@ -30,6 +30,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   request and re-runs its CI. The protection step plans `strict checks true → false` where a repository has them on
   and reports both values of every protection change (`enforce admins false → true`). `EnforceAdmins: true` is the
   company baseline, final (#2267).
+- A finding kind carries whether it is advisory, and the finding carries it in the artifact (`"advisory": true`), so a
+  reader knows its weight without knowing the kinds; `default-icon` is advisory. The run's `converged` is true when
+  every step ended `ok`, `skipped` or `repaired`, or `reported` with advisory findings only: the default icon alone
+  does not keep a repository from counting as set up as declared, while a finding a person must fix
+  (`abs-prerequisite`, `renovate-not-scanned`, `red-release`, ...) now clears the mark it left untouched before.
+  `repo reconcile` marks an advisory finding in its table and `repo status` in its findings lines (#2268).
+
 - The generated `renovate.json5` lists the marge sweep's App
   (`giantswarm-marge[bot]`) in `gitIgnoredAuthors` beside taylorbot. The sweep
   commits a bot PR's changelog entry onto the bot's own branch, and Renovate

@@ -53,6 +53,23 @@ func TestPrintAlign(t *testing.T) {
 	}
 }
 
+// The text output marks an advisory finding and, when a finding a person
+// must fix remains, says why the run did not converge.
+func TestPrintFindings(t *testing.T) {
+	res := result()
+	res.Converged = false
+	res.Steps = []reconcile.StepResult{{Step: reconcile.StepScaffold, Verdict: reconcile.VerdictReported, Summary: "present", Findings: []reconcile.Finding{
+		{Kind: reconcile.FindingDefaultIcon, Message: "the default icon", Fix: "replace it", Advisory: true},
+		{Kind: reconcile.FindingABSPrerequisite, Message: "no schema", Fix: "add it"},
+	}}}
+	var out bytes.Buffer
+	r := &runner{flag: &flag{Output: outputText}, stdout: &out}
+	require.NoError(t, r.print(&output{Source: sourceEngine, Result: res}))
+	require.Contains(t, out.String(), "default-icon (advisory): the default icon -- fix: replace it")
+	require.Contains(t, out.String(), "abs-prerequisite: no schema -- fix: add it")
+	require.True(t, strings.HasSuffix(out.String(), "not converged: drift, failed steps or findings to fix above\n"), out.String())
+}
+
 // The JSON output carries align only when the source read the entry.
 func TestPrintAlignJSON(t *testing.T) {
 	optedIn := true

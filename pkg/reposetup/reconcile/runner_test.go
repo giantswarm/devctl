@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"maps"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -276,6 +277,40 @@ func TestSteps(t *testing.T) {
 				require.Equal(t, []FindingKind{FindingGenCircleCIRefused}, kinds(f))
 				require.Contains(t, f[0].Fix, "set gen.language to go or node, add a root Dockerfile")
 				require.Len(t, h.repo().files, 1, "nothing pushed")
+			},
+		},
+		{
+			name: "scaffold: the default icon alone is advisory, the run converges", step: StepScaffold,
+			seed: func(h *harness) {
+				h.gh.addRepo(owner, name).files = maps.Clone(scaffoldFiles)
+			},
+			wantCheck: VerdictReported, wantFinding: FindingDefaultIcon, wantAfter: VerdictReported,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.True(t, res.Converged, "%+v", res.Steps)
+				findings := res.Step(StepScaffold).Findings
+				require.Equal(t, []FindingKind{FindingDefaultIcon}, kinds(findings))
+				require.True(t, findings[0].Advisory)
+				data, err := json.Marshal(res)
+				require.NoError(t, err)
+				require.Contains(t, string(data), `"converged":true`)
+				require.Contains(t, string(data), `"fix":"replace icon in Chart.yaml with the application's own icon","advisory":true`)
+			},
+		},
+		{
+			name: "scaffold: a chart without an icon is a finding to fix, the run does not converge", step: StepScaffold,
+			seed: func(h *harness) {
+				files := maps.Clone(scaffoldFiles)
+				files["helm/sample-service/Chart.yaml"] = strings.Replace(files["helm/sample-service/Chart.yaml"], "icon: "+defaultChartIcon+"\n", "", 1)
+				h.gh.addRepo(owner, name).files = files
+			},
+			wantCheck: VerdictReported, wantFinding: FindingABSPrerequisite, wantAfter: VerdictReported,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.False(t, res.Converged, "%+v", res.Steps)
+				require.Equal(t, []FindingKind{FindingABSPrerequisite}, kinds(res.Step(StepScaffold).Findings))
+				require.False(t, res.Step(StepScaffold).Findings[0].Advisory)
+				data, err := json.Marshal(res)
+				require.NoError(t, err)
+				require.NotContains(t, string(data), `"advisory"`, "omitted when false")
 			},
 		},
 		{
@@ -1127,4 +1162,34 @@ func TestScaffoldGoServiceWithChart(t *testing.T) {
 	require.Contains(t, files, "helm/sample-service/templates/_helpers.tpl")
 	require.Contains(t, files[".abs/main.yaml"], "chart-dir: ./helm/sample-service")
 	require.Equal(t, scaffoldSubject, h.repo().headSubject("main"))
+}
+
+// TestStepConverges: the verdict matrix of the converged mark. A step
+// converges unless it drifted, failed, or carries a finding that is not
+// advisory; the default icon alone is advisory.
+func TestStepConverges(t *testing.T) {
+	advisory := newFinding(FindingDefaultIcon, "default icon", "replace it")
+	toFix := newFinding(FindingABSPrerequisite, "no schema", "add it")
+	require.True(t, advisory.Advisory)
+	require.False(t, toFix.Advisory)
+	cases := []struct {
+		name string
+		step StepResult
+		want bool
+	}{
+		{name: "ok", step: StepResult{Verdict: VerdictOK}, want: true},
+		{name: "skipped", step: StepResult{Verdict: VerdictSkipped}, want: true},
+		{name: "repaired", step: StepResult{Verdict: VerdictRepaired}, want: true},
+		{name: "drift", step: StepResult{Verdict: VerdictDrift}, want: false},
+		{name: "failed", step: StepResult{Verdict: VerdictFailed}, want: false},
+		{name: "reported, advisory only", step: StepResult{Verdict: VerdictReported, Findings: []Finding{advisory}}, want: true},
+		{name: "reported, a finding to fix", step: StepResult{Verdict: VerdictReported, Findings: []Finding{toFix}}, want: false},
+		{name: "reported, advisory next to a finding to fix", step: StepResult{Verdict: VerdictReported, Findings: []Finding{advisory, toFix}}, want: false},
+		{name: "repaired with the default icon", step: StepResult{Verdict: VerdictRepaired, Findings: []Finding{advisory}}, want: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, tc.step.Converges())
+		})
+	}
 }

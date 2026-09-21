@@ -37,11 +37,8 @@ func Refused(req Request, now time.Time) *Result {
 		if p.Field == genCIGenerateField {
 			kind = FindingGenCircleCIRefused
 		}
-		sr.Findings = append(sr.Findings, Finding{
-			Kind:    kind,
-			Message: p.String(),
-			Fix:     fmt.Sprintf("edit %s of the entry %q in repositories/%s.yaml: %s", p.Field, req.Entry.Name, req.Team, p.Message),
-		})
+		sr.Findings = append(sr.Findings, newFinding(kind, p.String(),
+			fmt.Sprintf("edit %s of the entry %q in repositories/%s.yaml: %s", p.Field, req.Entry.Name, req.Team, p.Message)))
 	}
 	slug := owner + "/" + req.Entry.Name
 	return &Result{
