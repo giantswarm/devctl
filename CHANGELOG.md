@@ -153,6 +153,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- `repo reconcile`: the protection step's ruleset names the repository's owning team as a second bypass actor
+  beside the devctl App, both in `pull_request` mode -- the organization's team of the team file's slug, its id
+  read once per run. GitHub evaluates a request made with the App's user access token as the person, not as the
+  App, so the App's bypass alone let nobody merge through the API without a second review: a team member's own
+  green pull request now merges through their token, direct pushes stay forbidden, every bypass is audited.
+  `agentMerge: false` keeps the list empty as before; a repository already on the ruleset gains the team actor
+  and nothing else; a secret team, which GitHub refuses as bypass actor, is reported as the finding
+  `team-bypass-refused` naming the team and its privacy, and the ruleset is written with the App alone (#2315).
+
 - `repo reconcile`, `repo setup`, `repo checks`: a check of a converged repository costs at most twenty GitHub
   requests (giantswarm/backstage 18, giantswarm/klaus 19 measured; the devctl App id's ruleset reads add two).
   The reported checks are the statuses and check runs of the newest merged pull request's head, from one page

@@ -130,6 +130,14 @@ func appBypass(id int64) *github.BypassActor {
 	return &github.BypassActor{ActorID: new(id), ActorType: new(github.BypassActorTypeIntegration), BypassMode: new(github.BypassModePullRequest)}
 }
 
+// teamBypass is a team as bypass actor for pull requests.
+func teamBypass(id int64) *github.BypassActor {
+	return &github.BypassActor{ActorID: new(id), ActorType: new(github.BypassActorTypeTeam), BypassMode: new(github.BypassModePullRequest)}
+}
+
+// testTeamID is the id of the owning team in the fake organization.
+const testTeamID int64 = 7
+
 // checkContexts lists the contexts of a ruleset's required_status_checks
 // rule, nil without the rule.
 func checkContexts(rs *github.RepositoryRuleset) []string {
@@ -159,6 +167,15 @@ type fakeGitHub struct {
 	// permission is what any user holds on any repository through the
 	// organization's teams unless a direct grant says otherwise.
 	permission string
+	// orgTeams are the organization's teams by slug (GET
+	// /orgs/{org}/teams/{slug}); the owning team is seeded visible
+	// (privacy closed). A ruleset write refuses a Team bypass actor that is
+	// secret or not one of them with 422, as GitHub does.
+	orgTeams map[string]*github.Team
+	// teamBypassRefused, when set, has every ruleset write refuse a Team
+	// bypass actor with 422 whatever the team's privacy: GitHub's judgment
+	// beyond what the team read shows.
+	teamBypassRefused bool
 	// orgRole is the caller's role in any organization (GET
 	// /user/memberships/orgs/{org}); "" answers 404, not a member.
 	orgRole string
@@ -223,6 +240,7 @@ func (f *fakeGitHub) mayDispatch(r *http.Request) bool {
 
 func newFakeGitHub() *fakeGitHub {
 	f := &fakeGitHub{repos: map[string]*fakeRepo{}, redirects: map[string]string{}, runs: map[string][]string{}, permission: "admin", orgRole: "admin"}
+	f.orgTeams = map[string]*github.Team{team: {ID: new(testTeamID), Slug: new(team), Name: new("Team Bumblebee"), Privacy: new("closed")}}
 	f.installation.status = http.StatusOK
 	f.installation.selection = "selected"
 	mux := http.NewServeMux()
@@ -266,6 +284,28 @@ func (f *fakeGitHub) addRepo(owner, name string) *fakeRepo {
 	}
 	f.repos[owner+"/"+name] = r
 	return r
+}
+
+// refusesBypass answers 422 to a ruleset write naming a Team bypass actor
+// GitHub would not take — a secret team, a team not of the organization,
+// or any team with teamBypassRefused — and says whether it did.
+func (f *fakeGitHub) refusesBypass(w http.ResponseWriter, actors []*github.BypassActor) bool {
+	for _, a := range actors {
+		if a.ActorType == nil || *a.ActorType != github.BypassActorTypeTeam {
+			continue
+		}
+		var known *github.Team
+		for _, t := range f.orgTeams {
+			if t.GetID() == a.GetActorID() {
+				known = t
+			}
+		}
+		if f.teamBypassRefused || known == nil || known.GetPrivacy() == "secret" {
+			writeJSON(w, 422, map[string]any{"message": "Validation Failed", "errors": []map[string]string{{"resource": "Ruleset", "field": "bypass_actors", "code": "custom", "message": "Bypass actors must be part of the ruleset source or owner organization"}}})
+			return true
+		}
+	}
+	return false
 }
 
 // rulesetIndex is the position of the ruleset with the id in the path, -1
@@ -682,6 +722,16 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 		repo.workflowPerm = in.GetDefaultWorkflowPermissions()
 		w.WriteHeader(204)
 	}))
+	mux.HandleFunc("GET /orgs/{org}/teams/{slug}", func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		t, ok := f.orgTeams[r.PathValue("slug")]
+		if !ok {
+			notFound(w, "Not Found")
+			return
+		}
+		writeJSON(w, 200, t)
+	})
 	mux.HandleFunc("GET /repos/{owner}/{repo}/teams", f.withRepo(func(w http.ResponseWriter, _ *http.Request, repo *fakeRepo) {
 		teams := []map[string]string{}
 		for slug, perm := range repo.teams {
@@ -794,6 +844,9 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /repos/{owner}/{repo}/rulesets", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
 		var in github.RepositoryRuleset
 		decode(r, &in)
+		if f.refusesBypass(w, in.BypassActors) {
+			return
+		}
 		repo.seq++
 		in.ID = new(int64(repo.seq))
 		repo.rulesets = append(repo.rulesets, &in)
@@ -807,6 +860,9 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 		}
 		var in github.RepositoryRuleset
 		decode(r, &in)
+		if f.refusesBypass(w, in.BypassActors) {
+			return
+		}
 		in.ID = repo.rulesets[i].ID
 		repo.rulesets[i] = &in
 		writeJSON(w, 200, in)

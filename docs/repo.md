@@ -190,13 +190,20 @@ it always has (administrators bound too, `enforce_admins`), and reports the miss
 finding `rulesets-not-enabled`, which does not keep the repository from converging. With it the protection
 is one repository ruleset, `devctl: default branch`, active on
 `~DEFAULT_BRANCH` so a rename or a fork line's declared branch needs no change: the same rules, a GitHub
-Actions gate pinned to the GitHub Actions App so no other integration satisfies its context, and the devctl
-App as bypass actor in `pull_request` mode -- it merges a pull request the required review would hold, every
-bypass in the repository's audit log -- unless the entry declares `agentMerge: false`, which leaves the
-ruleset without bypass actors so nothing merges past the review. Classic protection gives way to the
-ruleset in the same run: its required checks are carried over, the ruleset is written, then the classic
-protection is removed; the dry run plans both. A ruleset the engine did not create is left alone and
-reported (advisory: it does not keep the repository from converging).
+Actions gate pinned to the GitHub Actions App so no other integration satisfies its context, and two bypass
+actors in `pull_request` mode: the devctl App and the repository's owning team -- the organization's team
+of the team file's slug (`repositories/team-<slug>.yaml` names `team-<slug>`), its id read once per run
+(the token reads it with the organization's members read permission). The team is an actor because GitHub
+evaluates a request made with the App's user access token as the person, not as the App: the App's own
+bypass covers the App acting as itself, which devctl never does, and a team member's own green pull request
+merges through their token by the team's bypass alone. A bypass merges a pull request the required review
+would hold; direct pushes stay forbidden and every bypass is in the repository's audit log. `agentMerge:
+false` leaves the ruleset without bypass actors so nothing merges past the review. A secret team cannot be
+a bypass actor (GitHub refuses it): the ruleset is written with the App alone and the finding
+`team-bypass-refused` names the team and the fix, its privacy set to closed. Classic protection gives way
+to the ruleset in the same run: its required checks are carried over, the ruleset is written, then the
+classic protection is removed; the dry run plans both. A ruleset the engine did not create is left alone
+and reported (advisory: it does not keep the repository from converging).
 
 The id is the switch, not the devctl release: the reconciler's wiring passes it, so the day the reconciler
 gets the id is the day its opted-in repositories move to rulesets, and a run without it -- a laptop, an

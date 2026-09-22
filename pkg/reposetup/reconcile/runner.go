@@ -87,9 +87,10 @@ type Runner struct {
 	// DevctlAppID is the numeric id of the devctl GitHub App (the App's
 	// settings page; not the client id) and the switch to rulesets: with it
 	// the protection step writes the default branch's ruleset with the App
-	// as bypass actor in pull_request mode (none on agentMerge: false) and
-	// removes classic protection; 0 keeps classic branch protection as
-	// before and reports the missing id.
+	// and the owning team (the team file's team) as bypass actors in
+	// pull_request mode (none on agentMerge: false) and removes classic
+	// protection; 0 keeps classic branch protection as before and reports
+	// the missing id.
 	DevctlAppID int64
 	// GitHubRequests and CircleCIRequests count the requests the clients
 	// send, when the caller built the clients' transports over them (one
@@ -179,7 +180,13 @@ type run struct {
 	reported     []string
 	reportedErr  error
 	reportedRead bool
-	log          io.Writer
+	// team is the organization's team of the team file's slug, once
+	// owningTeam has read it (teamRead); the error is kept the same way.
+	// The protection step names it as bypass actor of the ruleset.
+	team     *github.Team
+	teamErr  error
+	teamRead bool
+	log      io.Writer
 }
 
 // errReported marks a repair that ended in a finding instead of a change.
