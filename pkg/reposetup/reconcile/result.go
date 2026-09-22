@@ -160,8 +160,14 @@ const (
 	FindingForeignRuleset FindingKind = "foreign-ruleset"
 	// FindingRulesetsNotEnabled: the run has no devctl App id, so the
 	// protection step kept classic branch protection; the id is the switch
-	// to the default branch's ruleset with the App as bypass actor.
+	// to the default branch's ruleset with the App and the owning team as
+	// bypass actors.
 	FindingRulesetsNotEnabled FindingKind = "rulesets-not-enabled"
+	// FindingTeamBypassRefused: the owning team cannot be a bypass actor of
+	// the ruleset (a secret team, or one GitHub refused), so the App stands
+	// alone and a member's own pull request does not merge through the API
+	// without a second review; the fix names the team's privacy.
+	FindingTeamBypassRefused FindingKind = "team-bypass-refused" //nolint:gosec // G101: a finding kind, not a credential
 )
 
 // Advisory says whether findings of the kind are for a person only and do

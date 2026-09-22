@@ -28,6 +28,11 @@ const defaultBranchRef = "~DEFAULT_BRANCH"
 // integration satisfies the context.
 const gitHubActionsAppID int64 = 15368
 
+// teamPrivacySecret is the privacy of a team GitHub shows to its members
+// alone. Such a team cannot be a bypass actor of a ruleset: GitHub refuses
+// it with 422.
+const teamPrivacySecret = "secret"
+
 // stepProtection protects the default branch and keeps the required checks
 // on the reported-only rule: a context is required once it has reported on
 // the default branch or a recently merged pull request; a required context
@@ -43,7 +48,7 @@ const gitHubActionsAppID int64 = 15368
 func (r *Runner) stepProtection(ctx context.Context, s *run, sr *StepResult) error {
 	if r.DevctlAppID == 0 {
 		s.report(sr, FindingRulesetsNotEnabled,
-			"classic branch protection: no devctl App id, so the ruleset with the App as bypass actor is not written",
+			"classic branch protection: no devctl App id, so the ruleset with the App and the owning team as bypass actors is not written",
 			fmt.Sprintf("pass the App's numeric id (its settings page; not the client id) with --devctl-app-id: the switch to the ruleset %q, which then replaces the classic protection", RulesetName))
 		return r.stepClassicProtection(ctx, s, sr)
 	}
@@ -138,8 +143,9 @@ func (r *Runner) stepClassicProtection(ctx context.Context, s *run, sr *StepResu
 // stepRulesetProtection protects the default branch with the repository
 // ruleset [RulesetName]: the baseline's review requirement, the required
 // checks on the reported-only rule, no deletion and no force push, and the
-// devctl App as bypass actor for pull requests unless the entry opts out of
-// agent merges (agentMerge: false). The ruleset targets the default branch
+// devctl App and the owning team as bypass actors for pull requests unless
+// the entry opts out of agent merges (agentMerge: false; see
+// bypassActors). The ruleset targets the default branch
 // wherever it moves. Classic branch protection gives way to the ruleset in
 // the same run: its required checks are carried over, then it is removed.
 // Rulesets the engine did not create are left alone and reported.
@@ -174,6 +180,10 @@ func (r *Runner) stepRulesetProtection(ctx context.Context, s *run, sr *StepResu
 	if err != nil {
 		return err
 	}
+	bypass, err := r.bypassActors(ctx, s, sr, from.bypass)
+	if err != nil {
+		return err
+	}
 
 	desired := rulesetState{
 		enforcement: github.RulesetEnforcementActive,
@@ -183,7 +193,8 @@ func (r *Runner) stepRulesetProtection(ctx context.Context, s *run, sr *StepResu
 		strict:      b.StrictChecks,
 		noDeletion:  true,
 		noForcePush: true,
-		bypass:      r.bypassActors(s),
+		bypass:      bypass,
+		team:        s.team,
 	}
 
 	var changes []string
@@ -201,13 +212,20 @@ func (r *Runner) stepRulesetProtection(ctx context.Context, s *run, sr *StepResu
 	}
 	if len(changes) > 0 {
 		err := s.plan(sr, strings.Join(changes, "; "), func() error {
-			body := desired.ruleset(have)
-			if have == nil {
-				_, _, err := r.GitHub.Repositories.CreateRuleset(ctx, s.owner, s.name, body)
+			err := r.writeRuleset(ctx, s, have, desired)
+			if statusCode(err) != 422 || s.team == nil || !hasActor(desired.bypass, teamActor(s.team.GetID())) {
 				return err
 			}
-			_, _, err := r.GitHub.Repositories.UpdateRuleset(ctx, s.owner, s.name, have.GetID(), body)
-			return err
+			// GitHub's own judgment on the team, beyond what its privacy
+			// shows: the App stands alone and the team is reported.
+			s.report(sr, FindingTeamBypassRefused,
+				fmt.Sprintf("GitHub refused team %s (privacy %s) as bypass actor of the ruleset: %v; the ruleset is written with the App alone", s.team.GetSlug(), s.team.GetPrivacy(), err),
+				teamBypassFix(s.owner, s.team.GetSlug()))
+			without := desired
+			without.bypass = slices.DeleteFunc(slices.Clone(desired.bypass), func(a *github.BypassActor) bool {
+				return actorKey(a) == actorKey(teamActor(s.team.GetID()))
+			})
+			return r.writeRuleset(ctx, s, have, without)
 		})
 		if err != nil {
 			return err
@@ -307,18 +325,92 @@ func (r *Runner) reportedChecks(ctx context.Context, s *run, sr *StepResult, bra
 	return nil, false
 }
 
-// bypassActors is the ruleset's bypass list: the devctl App for pull
-// requests, none when the entry opts out of agent merges (agentMerge:
-// false).
-func (r *Runner) bypassActors(s *run) []*github.BypassActor {
-	if !s.agentMerge() {
-		return nil
+// writeRuleset creates the engine's ruleset from st, or updates have to it.
+func (r *Runner) writeRuleset(ctx context.Context, s *run, have *github.RepositoryRuleset, st rulesetState) error {
+	body := st.ruleset(have)
+	if have == nil {
+		_, _, err := r.GitHub.Repositories.CreateRuleset(ctx, s.owner, s.name, body)
+		return err
 	}
-	return []*github.BypassActor{{
-		ActorID:    new(r.DevctlAppID),
+	_, _, err := r.GitHub.Repositories.UpdateRuleset(ctx, s.owner, s.name, have.GetID(), body)
+	return err
+}
+
+// bypassActors is the ruleset's bypass list, none when the entry opts out
+// of agent merges (agentMerge: false): the devctl App for pull requests
+// and, beside it, the owning team in the same mode. GitHub evaluates a
+// request under the App's user access token as the person, not as the App,
+// so the App's bypass covers the App acting as itself — which devctl never
+// does — and the team's covers a member merging their own green pull
+// request through their token; direct pushes stay forbidden and every
+// bypass is audited. A secret team cannot be a bypass actor: it is reported
+// with the fix and the App stands alone. A run without a team (an
+// undeclared entry) keeps the team actors the ruleset has. current is the
+// bypass list of the ruleset as it is.
+func (r *Runner) bypassActors(ctx context.Context, s *run, sr *StepResult, current []*github.BypassActor) ([]*github.BypassActor, error) {
+	if !s.agentMerge() {
+		return nil, nil
+	}
+	actors := []*github.BypassActor{appActor(r.DevctlAppID)}
+	team, err := r.owningTeam(ctx, s)
+	if err != nil {
+		return nil, err
+	}
+	switch {
+	case team == nil:
+		for _, a := range current {
+			if actorType(a) == github.BypassActorTypeTeam {
+				actors = append(actors, a)
+			}
+		}
+	case team.GetPrivacy() == teamPrivacySecret:
+		s.report(sr, FindingTeamBypassRefused,
+			fmt.Sprintf("team %s is secret and cannot be a bypass actor of the ruleset: the App stands alone, so a member's own pull request does not merge through the API without a second review", team.GetSlug()),
+			teamBypassFix(s.owner, team.GetSlug()))
+	default:
+		actors = append(actors, teamActor(team.GetID()))
+	}
+	return actors, nil
+}
+
+// owningTeam reads the team whose file declares the entry — the
+// organization's team of the team file's slug — once per run; nil when the
+// run has no team (an undeclared entry).
+func (r *Runner) owningTeam(ctx context.Context, s *run) (*github.Team, error) {
+	if s.req.Team == "" {
+		return nil, nil
+	}
+	if !s.teamRead {
+		s.team, _, s.teamErr = r.GitHub.Teams.GetTeamBySlug(ctx, s.owner, s.req.Team)
+		s.teamRead = true
+	}
+	if s.teamErr != nil {
+		return nil, fmt.Errorf("team %s/%s: %w", s.owner, s.req.Team, s.teamErr)
+	}
+	return s.team, nil
+}
+
+// teamBypassFix is the fix of a team GitHub does not take as bypass actor.
+func teamBypassFix(owner, slug string) string {
+	return fmt.Sprintf("make %s/%s a visible team of the organization (privacy: closed, in the team's settings); the next run adds it beside the App", owner, slug)
+}
+
+// appActor is a GitHub App as bypass actor for pull requests.
+func appActor(id int64) *github.BypassActor {
+	return &github.BypassActor{
+		ActorID:    new(id),
 		ActorType:  new(github.BypassActorTypeIntegration),
 		BypassMode: new(github.BypassModePullRequest),
-	}}
+	}
+}
+
+// teamActor is a team as bypass actor for pull requests.
+func teamActor(id int64) *github.BypassActor {
+	return &github.BypassActor{
+		ActorID:    new(id),
+		ActorType:  new(github.BypassActorTypeTeam),
+		BypassMode: new(github.BypassModePullRequest),
+	}
 }
 
 // rulesetState is the ruleset as the step compares it: its rules as data,
@@ -335,6 +427,9 @@ type rulesetState struct {
 	noDeletion  bool
 	noForcePush bool
 	bypass      []*github.BypassActor
+	// team is the owning team, when the run read it: the name of its actor
+	// in the description of a change. The comparison is by id.
+	team *github.Team
 }
 
 func stateOfRuleset(rs *github.RepositoryRuleset) rulesetState {
@@ -468,10 +563,13 @@ func diffRulesetStates(from, to rulesetState) []string {
 		changes = append(changes, fmt.Sprintf("strict checks %t → %t", from.strict, to.strict))
 	}
 	if !sameActors(from.bypass, to.bypass) {
-		if len(to.bypass) == 0 {
+		switch len(to.bypass) {
+		case 0:
 			changes = append(changes, "remove bypass actors")
-		} else {
-			changes = append(changes, "bypass actor: "+describeActors(to.bypass))
+		case 1:
+			changes = append(changes, "bypass actor: "+describeActors(to.bypass, to.team))
+		default:
+			changes = append(changes, "bypass actors: "+describeActors(to.bypass, to.team))
 		}
 	}
 	return changes
@@ -520,37 +618,70 @@ func contexts(checks []*github.RuleStatusCheck) []string {
 }
 
 // sameActors says whether two bypass lists name the same actors in the same
-// modes, in any order.
+// modes, in any order: the lists are compared as sets.
 func sameActors(a, b []*github.BypassActor) bool {
-	return sameSet(describeEach(a), describeEach(b))
+	return sameSet(actorKeys(a), actorKeys(b))
 }
 
-func describeEach(actors []*github.BypassActor) []string {
+// actorKey identifies a bypass actor: its type, id and mode.
+func actorKey(a *github.BypassActor) string {
+	return fmt.Sprintf("%s/%d/%s", actorType(a), a.GetActorID(), bypassMode(a))
+}
+
+// actorType and bypassMode are the actor's type and mode, "" when unset.
+func actorType(a *github.BypassActor) github.BypassActorType {
+	if a.ActorType == nil {
+		return ""
+	}
+	return *a.ActorType
+}
+
+func bypassMode(a *github.BypassActor) github.BypassMode {
+	if a.BypassMode == nil {
+		return ""
+	}
+	return *a.BypassMode
+}
+
+func actorKeys(actors []*github.BypassActor) []string {
 	out := make([]string, 0, len(actors))
 	for _, a := range actors {
-		out = append(out, describeActor(a))
+		out = append(out, actorKey(a))
 	}
 	return out
 }
 
-func describeActors(actors []*github.BypassActor) string {
-	return strings.Join(describeEach(actors), ", ")
+// hasActor says whether actors holds actor: same type, id and mode.
+func hasActor(actors []*github.BypassActor, actor *github.BypassActor) bool {
+	return slices.Contains(actorKeys(actors), actorKey(actor))
 }
 
-// describeActor is "App 123 on pull requests" for the devctl App, "<type> <id>
-// (<mode>)" for any other actor.
-func describeActor(a *github.BypassActor) string {
-	actorType, mode := "", ""
-	if a.ActorType != nil {
-		actorType = string(*a.ActorType)
+func describeActors(actors []*github.BypassActor, team *github.Team) string {
+	out := make([]string, 0, len(actors))
+	for _, a := range actors {
+		out = append(out, describeActor(a, team))
 	}
-	if a.BypassMode != nil {
-		mode = string(*a.BypassMode)
+	return strings.Join(out, ", ")
+}
+
+// describeActor is "App 123 on pull requests" for the devctl App, "team
+// <slug> on pull requests" for the owning team (by id for any other team),
+// "<type> <id> (<mode>)" for any other actor.
+func describeActor(a *github.BypassActor, team *github.Team) string {
+	kind, mode := actorType(a), bypassMode(a)
+	if mode != github.BypassModePullRequest {
+		return fmt.Sprintf("%s %d (%s)", kind, a.GetActorID(), mode)
 	}
-	if actorType == string(github.BypassActorTypeIntegration) && mode == string(github.BypassModePullRequest) {
+	switch kind {
+	case github.BypassActorTypeIntegration:
 		return fmt.Sprintf("App %d on pull requests", a.GetActorID())
+	case github.BypassActorTypeTeam:
+		if team != nil && team.GetID() == a.GetActorID() {
+			return fmt.Sprintf("team %s on pull requests", team.GetSlug())
+		}
+		return fmt.Sprintf("team %d on pull requests", a.GetActorID())
 	}
-	return fmt.Sprintf("%s %d (%s)", actorType, a.GetActorID(), mode)
+	return fmt.Sprintf("%s %d (%s)", kind, a.GetActorID(), mode)
 }
 
 // pipelineGates reads the generated pipeline — the request's documents, or
