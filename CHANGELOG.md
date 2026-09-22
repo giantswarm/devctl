@@ -9,6 +9,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `devctl repo reconcile`: the settings step keeps rebase merges on a fork line (flavour `fork`) and leaves its merge
+  commits as the repository has them; the rest of the settings baseline applies as everywhere. A fork line's carried
+  patches land by rebase merge, one upstream-ready commit each, and a re-pin merges upstream's history: with the
+  squash-only baseline applied, GitHub refused the line's merges, so the fork lines could not opt in to alignment.
+
+### Fixed
+
 - The repo commands call giantswarm-repo-manager's tools through muster's `call_tool` meta-tool and unwrap its envelope,
   which is how muster exposes every server's tool to a session (the muster CLI and the platform's agents do the same):
   8.85.0 called the tools directly and muster answered `tool not found` for every one of them. The e2e muster mock now

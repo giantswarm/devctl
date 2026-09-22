@@ -1348,15 +1348,61 @@ func TestSteps(t *testing.T) {
 		},
 		{
 			name: "settings: a fork line stays on its declared default branch", step: StepSettings, entry: forkEntryYAML,
-			seed:      func(h *harness) { h.gh.addRepo(owner, name).defaultBranch = "giantswarm" },
+			seed:      func(h *harness) { h.gh.addRepo(owner, name).forkLine() },
 			wantCheck: VerdictOK,
 			verify:    func(t *testing.T, h *harness, _ *Result) { require.Equal(t, "giantswarm", h.repo().defaultBranch) },
 		},
 		{
 			name: "settings: a repository off its declared default branch is renamed to it", step: StepSettings, entry: forkEntryYAML,
-			seed:      func(h *harness) { h.gh.addRepo(owner, name) },
+			seed:      func(h *harness) { h.gh.addRepo(owner, name).allowRebase = true },
 			wantCheck: VerdictDrift, wantChange: `default branch "main" → "giantswarm"`,
 			verify: func(t *testing.T, h *harness, _ *Result) { require.Equal(t, "giantswarm", h.repo().defaultBranch) },
+		},
+		{
+			// The carried patches land by rebase merge, one upstream-ready
+			// commit each, and a re-pin merges upstream's history: the
+			// squash-only baseline would have GitHub refuse the line's merges.
+			name: "settings: a fork line keeps rebase merges and merge commits", step: StepSettings, entry: forkEntryYAML,
+			seed:      func(h *harness) { h.gh.addRepo(owner, name).forkLine().allowMerge = true },
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				require.True(t, h.repo().allowRebase && h.repo().allowMerge, "the merge methods the line merges by stay")
+			},
+		},
+		{
+			name: "settings: the rest of the baseline applies to a fork line", step: StepSettings, entry: forkEntryYAML,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name).forkLine()
+				r.allowMerge, r.hasWiki, r.allowAuto, r.squashTitle = true, true, false, "COMMIT_OR_PR_TITLE"
+			},
+			wantCheck:  VerdictDrift,
+			wantChange: "settings: has_wiki true → false, allow_auto_merge false → true, squash_merge_commit_title COMMIT_OR_PR_TITLE → PR_TITLE",
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				r := h.repo()
+				require.True(t, r.allowRebase && r.allowMerge, "the merge methods are not in the change")
+				require.True(t, r.allowAuto && !r.hasWiki)
+				require.Equal(t, "PR_TITLE", r.squashTitle)
+			},
+		},
+		{
+			name: "settings: a fork line without rebase merges gets them", step: StepSettings, entry: forkEntryYAML,
+			seed:      func(h *harness) { h.gh.addRepo(owner, name).defaultBranch = "giantswarm" },
+			wantCheck: VerdictDrift, wantChange: "settings: allow_rebase_merge false → true",
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				require.True(t, h.repo().allowRebase)
+				require.False(t, h.repo().allowMerge, "merge commits stay off when they are off")
+			},
+		},
+		{
+			name: "settings: rebase merges and merge commits are drift off a fork line", step: StepSettings,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.allowMerge, r.allowRebase = true, true
+			},
+			wantCheck: VerdictDrift, wantChange: "settings: allow_merge_commit true → false, allow_rebase_merge true → false",
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				require.False(t, h.repo().allowRebase || h.repo().allowMerge, "squash alone, as everywhere")
+			},
 		},
 		{
 			name: "protection: a fork line's declared default branch is protected", step: StepProtection, entry: forkEntryYAML,
@@ -1565,8 +1611,7 @@ func TestRunForkLineFollowsItsDeclaredBranch(t *testing.T) {
 	t.Run("classic protection names the declared branch", func(t *testing.T) {
 		h := newHarness(t, forkEntryYAML)
 		h.runner.DevctlAppID = 0
-		r := h.gh.addRepo(owner, name)
-		r.defaultBranch = "giantswarm"
+		r := h.gh.addRepo(owner, name).forkLine()
 		delete(r.files, "CODEOWNERS")
 
 		check := h.run(ModeCheck, false)
@@ -1577,7 +1622,7 @@ func TestRunForkLineFollowsItsDeclaredBranch(t *testing.T) {
 				require.Equal(t, VerdictSkipped, sr.Verdict, "%s: %+v", sr.Step, sr)
 				require.Equal(t, "flavour fork", sr.Summary, "%s", sr.Step)
 			case StepSettings:
-				require.Equal(t, VerdictOK, sr.Verdict, "no rename is planned: %+v", sr)
+				require.Equal(t, VerdictOK, sr.Verdict, "no rename, and the rebase merges stay: %+v", sr)
 			case StepProtection:
 				require.Equal(t, VerdictDrift, sr.Verdict, "%+v", sr)
 				require.Contains(t, sr.Changes, "protect giantswarm", "%+v", sr.Changes)
@@ -1597,8 +1642,7 @@ func TestRunForkLineFollowsItsDeclaredBranch(t *testing.T) {
 	// settings step keeps on the declared one.
 	t.Run("the ruleset follows the declared branch", func(t *testing.T) {
 		h := newHarness(t, forkEntryYAML)
-		r := h.gh.addRepo(owner, name)
-		r.defaultBranch = "giantswarm"
+		r := h.gh.addRepo(owner, name).forkLine()
 		delete(r.files, "CODEOWNERS")
 
 		check := h.run(ModeCheck, false)
