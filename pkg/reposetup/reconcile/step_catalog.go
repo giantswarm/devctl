@@ -18,8 +18,9 @@ import (
 // (the helmcharts annotation, matched by chart name — chartName overrides
 // and -app suffixes differ from the repository) the mapping run is
 // dispatched with the repository. A component without a public chart has
-// nothing to map. A run already queued or in progress is waited for, not
-// dispatched again.
+// nothing to map, and a chart reference that is a template's placeholder
+// ({APP-NAME}) is no chart: the mapping drops it, and so does the step. A
+// run already queued or in progress is waited for, not dispatched again.
 func (r *Runner) stepCatalog(ctx context.Context, s *run, sr *StepResult) error {
 	b := s.baseline
 	if b.CatalogRepository == "" || b.CatalogWorkflow == "" {
@@ -85,6 +86,12 @@ const helmChartsAnnotation = "giantswarm.io/helmcharts"
 // privateRegistryPrefix marks a chart reference the mapping never lists.
 const privateRegistryPrefix = "gsociprivate."
 
+// placeholderMarks are the characters of a template's chart placeholder
+// ({APP-NAME}, {MCP-NAME}) in a chart reference. The mapping's generator
+// drops such a reference, so a dispatch for it would change nothing: the
+// step neither looks it up in the mapping nor dispatches for it.
+const placeholderMarks = "{}"
+
 // component is the catalog's Backstage Component of a repository.
 type component struct {
 	Kind     string `yaml:"kind"`
@@ -94,13 +101,14 @@ type component struct {
 	} `yaml:"metadata"`
 }
 
-// publicCharts returns the names of the component's charts on a public
-// registry, from the helmcharts annotation; none without the annotation.
+// publicCharts returns the names of the component's charts the mapping
+// lists — on a public registry, not a template's placeholder — from the
+// helmcharts annotation; none without the annotation.
 func (c component) publicCharts() []string {
 	var charts []string
 	for _, ref := range strings.Split(c.Metadata.Annotations[helmChartsAnnotation], ",") {
 		ref = strings.TrimSpace(ref)
-		if ref == "" || strings.HasPrefix(ref, privateRegistryPrefix) {
+		if ref == "" || strings.HasPrefix(ref, privateRegistryPrefix) || strings.ContainsAny(ref, placeholderMarks) {
 			continue
 		}
 		charts = append(charts, ref[strings.LastIndexByte(ref, '/')+1:])

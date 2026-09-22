@@ -45,6 +45,15 @@ const flavourCustomer = "customer"
 // declared, protection on the declared branch included.
 const flavourFork = "fork"
 
+// componentTypeTemplate is the componentType of a template repository, one
+// other repositories are created from: its chart lives under a placeholder
+// directory (helm/{APP-NAME}) and carries the placeholders a created
+// repository fills in, and nothing is released from it. The scaffold step
+// does not check that chart against app-build-suite's prerequisites; the
+// template's own pipeline builds a rendered copy (gen circleci's template
+// chart job).
+const componentTypeTemplate = "template"
+
 // ReportedChecker returns the check contexts that have reported on the
 // heads of the recently merged pull requests — the reported-only rule of
 // `devctl repo checks`. *githubclient.Client satisfies it.
@@ -493,6 +502,11 @@ func (s *run) defaultBranch() string {
 // hasFlavour says whether the entry declares flavour in gen.flavours.
 func (s *run) hasFlavour(flavour string) bool {
 	return s.fields.Gen != nil && slices.Contains(s.fields.Gen.Flavours, flavour)
+}
+
+// isTemplate says whether the entry declares a template repository.
+func (s *run) isTemplate() bool {
+	return s.fields.ComponentType == componentTypeTemplate
 }
 
 // agentMerge says whether the entry lets agents merge pull requests: true
