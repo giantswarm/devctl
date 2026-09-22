@@ -133,7 +133,7 @@ func TestLoginCircleCIRegistersOncePerDevice(t *testing.T) {
 	if cci.tokenForm["grant_type"] != "authorization_code" || cci.tokenForm["client_id"] != "client-1" || cci.tokenForm["redirect_uri"] != cci.redirectURIs[0] {
 		t.Fatalf("token form = %v", cci.tokenForm)
 	}
-	if !strings.HasPrefix(cci.redirectURIs[0], "http://127.0.0.1:") || !strings.HasSuffix(cci.redirectURIs[0], circleCICallbackPath) {
+	if !strings.HasPrefix(cci.redirectURIs[0], "http://127.0.0.1:") || !strings.HasSuffix(cci.redirectURIs[0], loopbackCallbackPath) {
 		t.Fatalf("redirect URI = %q", cci.redirectURIs[0])
 	}
 

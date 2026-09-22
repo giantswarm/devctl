@@ -6,15 +6,20 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 
 	"github.com/giantswarm/devctl/v8/pkg/reposetup/reconcile"
 )
 
+// initializations counts the MCP handshakes the fakes saw.
+var initializations atomic.Int32
+
 // fakeMuster is the streamable HTTP surface of a muster endpoint with the
 // get_repository tool: a session on initialize, then the tool's answer as
 // JSON or as an SSE event.
 func fakeMuster(t *testing.T, sse bool, answer string) *httptest.Server {
+	initializations.Store(0)
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer secret" {
 			w.WriteHeader(401)
@@ -31,6 +36,7 @@ func fakeMuster(t *testing.T, sse bool, answer string) *httptest.Server {
 		_ = json.NewDecoder(r.Body).Decode(&msg)
 		switch msg.Method {
 		case "initialize":
+			initializations.Add(1)
 			w.Header().Set("Mcp-Session-Id", "session-1")
 			w.Header().Set("Content-Type", "application/json")
 			fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%d,"result":{"protocolVersion":"2025-03-26","capabilities":{},"serverInfo":{"name":"muster"}}}`, *msg.ID)
@@ -39,6 +45,11 @@ func fakeMuster(t *testing.T, sse bool, answer string) *httptest.Server {
 		case "tools/call":
 			if r.Header.Get("Mcp-Session-Id") != "session-1" {
 				t.Errorf("tools/call without the session: %q", r.Header.Get("Mcp-Session-Id"))
+			}
+			if msg.Params.Name == ToolAuthLogin {
+				w.Header().Set("Content-Type", "application/json")
+				fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%d,"result":{"content":[{"type":"text","text":"Please open https://muster.example/consent"}]}}`, *msg.ID)
+				return
 			}
 			if msg.Params.Name != ToolGetRepository || msg.Params.Arguments["repository"] != "giantswarm/my-service" {
 				t.Errorf("tools/call: %+v", msg.Params)
@@ -94,12 +105,26 @@ func TestClientGetRepository(t *testing.T) {
 		}
 	})
 
-	t.Run("unauthorised is unreachable", func(t *testing.T) {
+	t.Run("unauthorised is auth required", func(t *testing.T) {
 		srv := fakeMuster(t, false, "")
 		defer srv.Close()
 		_, err := (&Client{Endpoint: srv.URL}).GetRepository(context.Background(), "giantswarm/my-service")
-		if !IsUnreachable(err) {
-			t.Errorf("got %v, want unreachableError", err)
+		if !IsAuthRequired(err) {
+			t.Errorf("got %v, want authRequiredError", err)
+		}
+	})
+
+	t.Run("one session for two calls", func(t *testing.T) {
+		srv := fakeMuster(t, false, `{"structuredContent":`+record+`,"content":[]}`)
+		defer srv.Close()
+		c := &Client{Endpoint: srv.URL, Token: "secret"}
+		for i := 0; i < 2; i++ {
+			if _, err := c.GetRepository(context.Background(), "giantswarm/my-service"); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if got := initializations.Load(); got != 1 {
+			t.Errorf("initialize was called %d times, want 1", got)
 		}
 	})
 
@@ -109,4 +134,27 @@ func TestClientGetRepository(t *testing.T) {
 			t.Errorf("got %v, want invalidConfigError", err)
 		}
 	})
+}
+
+// A tool that answers text, not JSON, is returned as that text: what
+// muster's core_auth_login says.
+func TestClientCallText(t *testing.T) {
+	srv := fakeMuster(t, false, "")
+	defer srv.Close()
+	c := &Client{Endpoint: srv.URL, Token: "secret"}
+	got, err := c.Call(context.Background(), ToolAuthLogin, map[string]any{"server": Server})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "Please open https://muster.example/consent" {
+		t.Errorf("payload = %q", got)
+	}
+}
+
+// The tool names are muster's: the server's name after the x_ prefix, the
+// tool after another underscore.
+func TestToolNames(t *testing.T) {
+	if ToolGetRepository != "x_giantswarm-repo-manager_get_repository" || ToolSetLifecycle != "x_giantswarm-repo-manager_set_lifecycle" {
+		t.Errorf("tool names: %s, %s", ToolGetRepository, ToolSetLifecycle)
+	}
 }

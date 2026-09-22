@@ -23,6 +23,10 @@ const (
 	EnvRegistryPrivate = "DEVCTL_REGISTRY_PRIVATE"
 	// EnvRegistryInsecure set to 1 talks plain HTTP to the registries (tests only).
 	EnvRegistryInsecure = "DEVCTL_REGISTRY_INSECURE"
+	// EnvMusterURL is the muster MCP endpoint `devctl auth login --muster-only`
+	// logs in to, and the one the repo commands reach giantswarm-repo-manager
+	// through (https://muster.gazelle.awsprod.gigantic.io/mcp).
+	EnvMusterURL = "DEVCTL_MUSTER_URL"
 	// EnvKeyringFile names a 0600 JSON file that replaces the OS keychain
 	// (tests only).
 	EnvKeyringFile = "DEVCTL_KEYRING_FILE"
@@ -37,6 +41,9 @@ type Endpoints struct {
 	RegistryPublic   string
 	RegistryPrivate  string
 	RegistryInsecure bool
+	// MusterURL is the muster MCP endpoint of the installation that runs
+	// giantswarm-repo-manager.
+	MusterURL string
 	// KeyringFile is empty for the OS keychain.
 	KeyringFile string
 }
@@ -50,6 +57,7 @@ func DefaultEndpoints() Endpoints {
 		CircleCIOAuthURL: "https://app.circleci.com",
 		RegistryPublic:   "gsoci.azurecr.io",
 		RegistryPrivate:  "gsociprivate.azurecr.io",
+		MusterURL:        "https://muster.gazelle.awsprod.gigantic.io/mcp",
 	}
 }
 
@@ -68,6 +76,7 @@ func EndpointsFromEnv() Endpoints {
 	override(EnvCircleCIOAuthURL, &e.CircleCIOAuthURL)
 	override(EnvRegistryPublic, &e.RegistryPublic)
 	override(EnvRegistryPrivate, &e.RegistryPrivate)
+	override(EnvMusterURL, &e.MusterURL)
 	e.RegistryInsecure = os.Getenv(EnvRegistryInsecure) == "1"
 	e.KeyringFile = os.Getenv(EnvKeyringFile)
 	return e

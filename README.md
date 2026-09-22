@@ -28,10 +28,11 @@ https://github.com/giantswarm/devctl/releases
 
 ### Authentication for the agent-facing commands (`devctl auth`)
 
-`devctl auth login` logs in to GitHub (the device flow of the devctl GitHub App, refreshed without a human) and CircleCI (OAuth 2.0 with PKCE and dynamic client registration, a 90-day token) and keeps both tokens in the OS keychain; `devctl auth status` shows the identities, never a token. Commands that need a token exit 8 naming `devctl auth login` when none is usable. See [docs/auth.md](docs/auth.md).
+`devctl auth login` logs in to GitHub (the device flow of the devctl GitHub App, refreshed without a human) and CircleCI (OAuth 2.0 with PKCE and dynamic client registration, a 90-day token) and keeps both tokens in the OS keychain; `devctl auth login --muster-only` signs in to muster the same way, for the `repo` commands that call giantswarm-repo-manager through it, and completes the sign-in to the manager; `devctl auth status` shows the identities, never a token. Commands that need a token exit 8 naming `devctl auth login` when none is usable. See [docs/auth.md](docs/auth.md).
 
 ```bash
 devctl auth login
+devctl auth login --muster-only
 devctl auth status
 ```
 

@@ -15,6 +15,7 @@ const (
 	Service      = "devctl"
 	UserGitHub   = "github"
 	UserCircleCI = "circleci"
+	UserMuster   = "muster"
 )
 
 // ErrNotFound is returned when the identity has no record.
@@ -28,13 +29,19 @@ type Record struct {
 	// Token is the access token.
 	Token     string    `json:"token"`
 	ExpiresAt time.Time `json:"expiresAt"`
-	// RefreshToken and RefreshExpiresAt: GitHub only.
+	// RefreshToken and RefreshExpiresAt: GitHub and muster; muster's refresh
+	// token names no expiry.
 	RefreshToken     string    `json:"refreshToken,omitempty"`
 	RefreshExpiresAt time.Time `json:"refreshExpiresAt"`
-	// ClientID and RedirectURI: CircleCI only, the per-device OAuth client
-	// devctl registered and the loopback address it registered.
+	// ClientID and RedirectURI: CircleCI and muster, the per-device OAuth
+	// client devctl registered and the loopback address it registered.
 	ClientID    string `json:"clientId,omitempty"`
 	RedirectURI string `json:"redirectUri,omitempty"`
+	// Endpoint and Issuer: muster only, the MCP endpoint the token is for and
+	// the authorization server that issued it, so the commands know where the
+	// token belongs and a refresh knows whom to ask.
+	Endpoint string `json:"endpoint,omitempty"`
+	Issuer   string `json:"issuer,omitempty"`
 }
 
 // Store keeps the records. Implementations: the OS keychain and, for tests,

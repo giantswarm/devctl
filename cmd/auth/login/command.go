@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/giantswarm/devctl/v8/pkg/agentcli"
 	"github.com/giantswarm/devctl/v8/pkg/authstore"
 )
 
@@ -46,6 +47,11 @@ func New(config Config) (*cobra.Command, error) {
 		config.Stdout = os.Stdout
 	}
 
+	clock, err := agentcli.SystemClock()
+	if err != nil {
+		return nil, err
+	}
+
 	f := &flag{}
 
 	r := &runner{
@@ -53,6 +59,7 @@ func New(config Config) (*cobra.Command, error) {
 		stderr: config.Stderr,
 		stdout: config.Stdout,
 		open:   authstore.Open,
+		clock:  clock,
 	}
 
 	c := &cobra.Command{

@@ -13,9 +13,13 @@ import (
 
 // The OAuth form parameters both flows send.
 const (
-	paramClientID  = "client_id"
-	paramGrantType = "grant_type"
-	paramCode      = "code"
+	paramClientID    = "client_id"
+	paramGrantType   = "grant_type"
+	paramCode        = "code"
+	paramRedirectURI = "redirect_uri"
+	// paramResource is the RFC 8707 resource indicator binding a token to the
+	// endpoint it is for.
+	paramResource = "resource"
 )
 
 // maxBody bounds what devctl reads of a response; the documents here are a

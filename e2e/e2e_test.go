@@ -9,14 +9,20 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/giantswarm/devctl/v8/e2e/mock/circleci"
 	"github.com/giantswarm/devctl/v8/e2e/mock/github"
+	"github.com/giantswarm/devctl/v8/e2e/mock/muster"
 	"github.com/giantswarm/devctl/v8/e2e/mock/registry"
 	"github.com/giantswarm/devctl/v8/e2e/mock/sequence"
 	"github.com/giantswarm/devctl/v8/e2e/scenario"
@@ -108,6 +114,7 @@ type mocks struct {
 	circleci        *circleci.Server
 	registry        *registry.Server
 	privateRegistry *registry.Server
+	muster          *muster.Server
 }
 
 func startMocks(t *testing.T, sc *scenario.Scenario) *mocks {
@@ -130,6 +137,8 @@ func startMocks(t *testing.T, sc *scenario.Scenario) *mocks {
 		t.Fatalf("private registry mock: %v", err)
 	}
 	t.Cleanup(m.privateRegistry.Close)
+	m.muster = muster.Start(sc.Muster)
+	t.Cleanup(m.muster.Close)
 	return m
 }
 
@@ -168,6 +177,7 @@ func environment(t *testing.T, sc *scenario.Scenario, m *mocks) []string {
 		"DEVCTL_REGISTRY_PUBLIC=" + m.registry.Host(),
 		"DEVCTL_REGISTRY_PRIVATE=" + m.privateRegistry.Host(),
 		"DEVCTL_REGISTRY_INSECURE=1",
+		"DEVCTL_MUSTER_URL=" + m.muster.MCPURL(),
 		"DEVCTL_KEYRING_FILE=" + keyring,
 	}
 	for key, value := range sc.Env {
@@ -191,6 +201,11 @@ func runScenario(t *testing.T, dir string) {
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
+	if sc.Browser {
+		person := &human{}
+		cmd.Stderr = io.MultiWriter(&stderr, person)
+		defer person.wait()
+	}
 
 	err = cmd.Run()
 	exitCode := 0
@@ -242,6 +257,7 @@ func (m *mocks) requests() string {
 		{"circleci", m.circleci.Requests()},
 		{"registry", m.registry.Requests()},
 		{"privateRegistry", m.privateRegistry.Requests()},
+		{"muster", m.muster.Requests()},
 	} {
 		for _, r := range mock.requests {
 			fmt.Fprintf(&b, "  %s: %s\n", mock.name, r)
@@ -251,4 +267,59 @@ func (m *mocks) requests() string {
 		return "  none\n"
 	}
 	return b.String()
+}
+
+// openURL is how devctl asks the person to open a page: "<what>: open <url> ...".
+var openURL = regexp.MustCompile(`\bopen (https?://\S+)`)
+
+// human plays the person at the browser for a scenario with browser: true:
+// every URL devctl asks to open on stderr is fetched, following redirects, so
+// the muster mock's authorization endpoint lands its code on devctl's
+// loopback callback the way a signed-in person's browser would. Only
+// loopback URLs are fetched; a scenario's text may name any other.
+type human struct {
+	mu   sync.Mutex
+	rest string
+	wg   sync.WaitGroup
+}
+
+func (h *human) Write(p []byte) (int, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.rest += string(p)
+	for {
+		i := strings.IndexByte(h.rest, '\n')
+		if i < 0 {
+			break
+		}
+		line := h.rest[:i]
+		h.rest = h.rest[i+1:]
+		if m := openURL.FindStringSubmatch(line); m != nil {
+			h.visit(m[1])
+		}
+	}
+	return len(p), nil
+}
+
+func (h *human) visit(raw string) {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return
+	}
+	if host := u.Hostname(); host != "127.0.0.1" && host != "localhost" && host != "::1" {
+		return
+	}
+	h.wg.Add(1)
+	go func() {
+		defer h.wg.Done()
+		resp, err := http.Get(raw) //nolint:gosec // G107: the URL is one devctl printed for the person, on the loopback
+		if err == nil {
+			_ = resp.Body.Close()
+		}
+	}()
+}
+
+// wait lets every page load finish before the scenario ends.
+func (h *human) wait() {
+	h.wg.Wait()
 }

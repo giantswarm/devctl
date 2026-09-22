@@ -9,6 +9,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `devctl auth login --muster-only`: the sign-in to muster for the `repo` commands, which call giantswarm-repo-manager
+  through it. The authorization code flow with PKCE runs against muster's own authorization server, discovered from
+  the endpoint (RFC 9728, RFC 8414); devctl registers itself there once per device, binds the token to the endpoint
+  (RFC 8707) and refreshes it without a human; then it completes the sign-in to giantswarm-repo-manager (the GitHub
+  App consent, once) and reports it under `giantswarmRepoManager`. The record is the third identity of the keychain,
+  `muster`, with its endpoint; `auth status` reports it and does not require it. `--muster-endpoint` and
+  `DEVCTL_MUSTER_URL` name the muster, gazelle's by default. `pkg/reposetup/manager` calls any tool of the manager
+  through one MCP session and tells a refused bearer from an unreachable endpoint. The e2e harness gains a muster mock
+  (its OAuth server and MCP endpoint) and `browser: true`, the harness playing the person at the browser; scenarios
+  `auth-login-muster` and `auth-login-muster-no-manager`.
+
 - e2e scenarios for `devctl pr merge`, the six paths the command encodes, each asserting the exit code and the JSON
   document against the mocked GitHub and CircleCI APIs: `own-green-merged` (the caller's own green pull request is
   squash-merged through the merge API and its branch deleted through the refs API), `other-human-refused` (exit 5
