@@ -47,14 +47,23 @@ Green lands with one call of the merge API, `PUT /repos/{owner}/{repo}/pulls/{nu
 - The head branch is deleted through the refs API, `DELETE /repos/{owner}/{repo}/git/refs/heads/{branch}`;
   a branch GitHub deleted already is fine. A head that lives in a fork is left alone, with a warning.
 - **No protection setting is read to be changed and none is written**: no branch protection, no
-  ruleset, no `enforce_admins`. The devctl GitHub App is a bypass actor of the repository's rulesets
-  in `pull_request` mode; that is how the merge passes the review rule. A repository whose rulesets
-  do not list the App answers 405 to the merge, which is exit 3 with GitHub's sentence, and nothing
-  is changed to get past it.
+  ruleset, no `enforce_admins`. The merge is made as the caller, with the user token of `devctl auth
+  login`; devctl holds no installation token. GitHub evaluates that token as the person, so the
+  review rule is passed through the bypass the repository's ruleset grants the person: the alignment
+  engine writes the repository's owning team, beside the devctl App, as bypass actor in `pull_request`
+  mode (`devctl repo reconcile`). The App's bypass covers the App's installation tokens, none of which
+  devctl uses. A member of the owning team merges their own green pull request past the required
+  review; in a repository another team owns, the same pull request is declined (405) until a reviewer
+  with write access approves it, and nothing is changed to get past it.
 
 A merge GitHub declines as the pull request stands (405: a rule blocks it, the base moved under a
 strict protection; 409: the head moved) is exit 3, `not_applicable`, with GitHub's sentence as the
-reason.
+reason. Declined for the review rule, the reason goes on to say whom devctl acted as, which rulesets
+of the base carry a pull request rule and their bypass actors (read, never written; an App actor is
+marked as covering installation tokens only), and the team whose file declares the entry: one of its
+members merges it, or a reviewer with write access approves it first. A base whose review requirement
+no ruleset carries is on classic branch protection: the repository is aligned first, never merged
+past it.
 
 ### A base with a merge queue
 

@@ -72,7 +72,7 @@ type harness struct {
 	progress *bytes.Buffer
 }
 
-func allow(context.Context, string, string) (string, error) { return "", nil }
+func allow(context.Context, string, string) (Verdict, error) { return Verdict{}, nil }
 
 func newHarness(t *testing.T, r sequence.Routes, configure func(*Config)) *harness {
 	t.Helper()
@@ -152,13 +152,13 @@ func Test_Merge_refusalsBeforeTheWait(t *testing.T) {
 		{name: "behind without --update-branch", pr: pull(map[string]any{"mergeable_state": "behind"}), wantCode: 3, wantReason: "behind main", wantVerdict: agentcli.VerdictNotApplicable},
 		{name: "another human", pr: pull(map[string]any{"user": map[string]any{"login": "alice", "type": "User"}}), wantCode: 5, wantReason: "opened by alice, not by someone", wantVerdict: agentcli.VerdictRefused},
 		{name: "opted out", pr: pull(nil), configure: func(c *Config) {
-			c.Policy = func(context.Context, string, string) (string, error) {
-				return "the entry r says agentMerge: false", nil
+			c.Policy = func(context.Context, string, string) (Verdict, error) {
+				return Verdict{Refusal: "the entry r says agentMerge: false"}, nil
 			}
 		}, wantCode: 5, wantReason: "agentMerge: false", wantVerdict: agentcli.VerdictRefused},
 		{name: "state before author", pr: pull(map[string]any{"draft": true, "user": map[string]any{"login": "alice", "type": "User"}}), wantCode: 3, wantReason: "draft", wantVerdict: agentcli.VerdictNotApplicable},
 		{name: "author before policy", pr: pull(map[string]any{"user": map[string]any{"login": "alice", "type": "User"}}), configure: func(c *Config) {
-			c.Policy = func(context.Context, string, string) (string, error) { return "opted out", nil }
+			c.Policy = func(context.Context, string, string) (Verdict, error) { return Verdict{Refusal: "opted out"}, nil }
 		}, wantCode: 5, wantReason: "opened by alice", wantVerdict: agentcli.VerdictRefused},
 		{name: "own pull request, login from GET /user", pr: pull(map[string]any{"user": map[string]any{"login": "Someone", "type": "User"}}), configure: func(c *Config) { c.Login = "" }, wantCode: 0, wantRequests: []string{"GET /user"}},
 		{name: "a GitHub App", pr: pull(map[string]any{"user": map[string]any{"login": "renovate[bot]", "type": "Bot"}}), wantCode: 0},
@@ -359,6 +359,124 @@ func Test_Merge_neverTouchesProtection(t *testing.T) {
 	}
 }
 
+func Test_Merge_reviewRuleDeclineNamesTheBypass(t *testing.T) {
+	declined := sequence.Response{Status: http.StatusMethodNotAllowed, Body: map[string]any{
+		"message": "Repository rule violations found: At least 1 approving review is required by reviewers with write access.",
+	}}
+	reviewRule := func(source string, id int) map[string]any {
+		return map[string]any{"type": "pull_request", "ruleset_source_type": source, "ruleset_source": "o/r", "ruleset_id": id,
+			"parameters": map[string]any{"required_approving_review_count": 1}}
+	}
+	ruleset := map[string]any{"id": 7, "name": "devctl: default branch", "source_type": "Repository", "source": "o/r", "enforcement": "active",
+		"bypass_actors": []any{
+			map[string]any{"actor_id": 5025978, "actor_type": "Integration", "bypass_mode": "pull_request"},
+			map[string]any{"actor_id": 5176559, "actor_type": "Team", "bypass_mode": "pull_request"},
+		}}
+	owned := func(c *Config) {
+		c.Policy = func(context.Context, string, string) (Verdict, error) { return Verdict{Team: "team-honeybadger"}, nil }
+	}
+	tests := []struct {
+		name      string
+		routes    sequence.Routes
+		configure func(*Config)
+		want      []string
+		wantNot   string
+		requested map[string]int
+	}{
+		{
+			name: "a repository ruleset: the caller, its bypass actors, the owning team",
+			routes: routes(pull(nil), sequence.Routes{
+				"PUT /repos/o/r/pulls/42/merge":      {declined},
+				"GET /repos/o/r/rules/branches/main": {{Body: []any{reviewRule("Repository", 7)}}},
+				"GET /repos/o/r/rulesets/7":          {{Body: ruleset}},
+			}),
+			configure: owned,
+			want: []string{
+				"At least 1 approving review is required by reviewers with write access. devctl acts as someone, who has no bypass on the ruleset \"devctl: default branch\" of o/r",
+				"App 5025978 for pull requests, whose bypass covers its installation tokens and not the user token devctl acts with",
+				"team 5176559 for pull requests",
+				"the entry's owning team is team-honeybadger: one of its members merges it, or a reviewer with write access approves it first",
+			},
+			requested: map[string]int{"GET /repos/o/r/rulesets/7": 1, "DELETE /repos/o/r/git/refs/heads/feature": 0},
+		},
+		{
+			name: "an organization ruleset is read from the organization; no team file, no team",
+			routes: routes(pull(nil), sequence.Routes{
+				"PUT /repos/o/r/pulls/42/merge":      {declined},
+				"GET /repos/o/r/rules/branches/main": {{Body: []any{reviewRule("Organization", 9), reviewRule("Organization", 9)}}},
+				"GET /orgs/o/rulesets/9": {{Body: map[string]any{"id": 9, "name": "org: reviews", "source_type": "Organization", "source": "o",
+					"bypass_actors": []any{map[string]any{"actor_id": 1, "actor_type": "OrganizationAdmin", "bypass_mode": "always"}}}}},
+			}),
+			want: []string{
+				"the ruleset \"org: reviews\" of the organization o (bypass actors: organization admins always)",
+				"a reviewer with write access approves it first, or a bypass actor merges it",
+			},
+			requested: map[string]int{"GET /orgs/o/rulesets/9": 1},
+		},
+		{
+			name: "no ruleset carries the rule: classic protection, aligned first",
+			routes: routes(pull(nil), sequence.Routes{
+				"PUT /repos/o/r/pulls/42/merge":      {declined},
+				"GET /repos/o/r/rules/branches/main": {{Body: []any{}}},
+			}),
+			configure: owned,
+			want:      []string{"the review rule of main, which no ruleset carries: classic branch protection requires the review", "aligned first", "team-honeybadger"},
+		},
+		{
+			name: "a ruleset the token cannot read is said so",
+			routes: routes(pull(nil), sequence.Routes{
+				"PUT /repos/o/r/pulls/42/merge":      {declined},
+				"GET /repos/o/r/rules/branches/main": {{Body: []any{reviewRule("Repository", 7)}}},
+				"GET /repos/o/r/rulesets/7":          {{Status: http.StatusForbidden, Body: map[string]any{"message": "Resource not accessible by integration"}}},
+			}),
+			configure: owned,
+			want:      []string{"the ruleset 7 of o/r (its bypass actors could not be read:", "Resource not accessible by integration", "team-honeybadger"},
+		},
+		{
+			name: "a decline for another reason keeps GitHub's sentence alone",
+			routes: routes(pull(nil), sequence.Routes{
+				"PUT /repos/o/r/pulls/42/merge": {{Status: http.StatusMethodNotAllowed, Body: map[string]any{"message": "Base branch was modified. Review and try the merge again."}}},
+				"GET /repos/o/r/rulesets/7":     {{Body: ruleset}},
+			}),
+			configure: owned,
+			want:      []string{"Base branch was modified"},
+			wantNot:   "devctl acts as",
+			requested: map[string]int{"GET /repos/o/r/rulesets/7": 0},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarness(t, tc.routes, tc.configure)
+			result, err := h.merge(t)
+			var exitErr *agentcli.ExitError
+			if !errors.As(err, &exitErr) || exitErr.Code != agentcli.ExitNotApplicable {
+				t.Fatalf("want exit %d, got %v\n%s", agentcli.ExitNotApplicable, err, h.progress.String())
+			}
+			for _, w := range tc.want {
+				if !strings.Contains(exitErr.Reason, w) {
+					t.Errorf("want reason with %q, got %q", w, exitErr.Reason)
+				}
+			}
+			if tc.wantNot != "" && strings.Contains(exitErr.Reason, tc.wantNot) {
+				t.Errorf("want reason without %q, got %q", tc.wantNot, exitErr.Reason)
+			}
+			for key, n := range tc.requested {
+				if got := h.requested(key); got != n {
+					t.Errorf("want %s requested %d time(s), got %d; requests: %v", key, n, got, h.server.Requests())
+				}
+			}
+			if result.MergeCommitSHA != "" || result.BranchDeleted {
+				t.Errorf("nothing merged on a decline: %+v", result)
+			}
+			for _, r := range h.server.Requests() {
+				if r.Method != http.MethodGet && strings.Contains(r.Path, "rulesets") {
+					t.Errorf("the rulesets are read, never written: %s", r)
+				}
+			}
+		})
+	}
+}
+
 func Test_New_method(t *testing.T) {
 	logger := logrus.New()
 	logger.SetOutput(io.Discard)
@@ -394,17 +512,18 @@ func Test_TeamFilePolicy(t *testing.T) {
 		owner, repo  string
 		routes       sequence.Routes
 		wantRefusal  string
+		wantTeam     string
 		wantErr      bool
 		wantRequests int
 	}{
 		{name: "agentMerge false refuses, naming the field", owner: "giantswarm", repo: "plans", routes: sequence.Routes{
 			"GET /repos/giantswarm/github/contents/repositories":             {dir},
 			"GET /repos/giantswarm/github/contents/repositories/team-a.yaml": {teamFile("- name: plans\n  componentType: service\n  agentMerge: false\n")},
-		}, wantRefusal: "agentMerge: false", wantRequests: 2},
-		{name: "an entry without the field is not opted out", owner: "giantswarm", repo: "svc", routes: sequence.Routes{
+		}, wantRefusal: "agentMerge: false", wantTeam: "team-a", wantRequests: 2},
+		{name: "an entry without the field is not opted out; the verdict names the team", owner: "giantswarm", repo: "svc", routes: sequence.Routes{
 			"GET /repos/giantswarm/github/contents/repositories":             {dir},
 			"GET /repos/giantswarm/github/contents/repositories/team-a.yaml": {teamFile("- name: svc\n  agentMerge: true\n- name: other\n  agentMerge: false\n")},
-		}, wantRequests: 2},
+		}, wantTeam: "team-a", wantRequests: 2},
 		{name: "a repository no team file declares is not opted out", owner: "giantswarm", repo: "undeclared", routes: sequence.Routes{
 			"GET /repos/giantswarm/github/contents/repositories":             {dir},
 			"GET /repos/giantswarm/github/contents/repositories/team-a.yaml": {teamFile("- name: svc\n")},
@@ -425,12 +544,15 @@ func Test_TeamFilePolicy(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			refusal, err := TeamFilePolicy(github.GitHub())(context.Background(), tc.owner, tc.repo)
+			verdict, err := TeamFilePolicy(github.GitHub())(context.Background(), tc.owner, tc.repo)
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("want error %v, got %v", tc.wantErr, err)
 			}
-			if !strings.Contains(refusal, tc.wantRefusal) || (tc.wantRefusal == "" && refusal != "") {
-				t.Errorf("want refusal %q, got %q", tc.wantRefusal, refusal)
+			if !strings.Contains(verdict.Refusal, tc.wantRefusal) || (tc.wantRefusal == "" && verdict.Refusal != "") {
+				t.Errorf("want refusal %q, got %q", tc.wantRefusal, verdict.Refusal)
+			}
+			if verdict.Team != tc.wantTeam {
+				t.Errorf("want team %q, got %q", tc.wantTeam, verdict.Team)
 			}
 			if n := len(server.Requests()); n != tc.wantRequests {
 				t.Errorf("want %d request(s), got %d: %v", tc.wantRequests, n, server.Requests())
