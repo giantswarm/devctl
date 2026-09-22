@@ -360,8 +360,9 @@ func Test_Merge_neverTouchesProtection(t *testing.T) {
 }
 
 func Test_Merge_reviewRuleDeclineNamesTheBypass(t *testing.T) {
+	// GitHub's message, paragraphs and all.
 	declined := sequence.Response{Status: http.StatusMethodNotAllowed, Body: map[string]any{
-		"message": "Repository rule violations found: At least 1 approving review is required by reviewers with write access.",
+		"message": "Repository rule violations found\n\nAt least 1 approving review is required by reviewers with write access.\n\n",
 	}}
 	reviewRule := func(source string, id int) map[string]any {
 		return map[string]any{"type": "pull_request", "ruleset_source_type": source, "ruleset_source": "o/r", "ruleset_id": id,
@@ -392,7 +393,7 @@ func Test_Merge_reviewRuleDeclineNamesTheBypass(t *testing.T) {
 			}),
 			configure: owned,
 			want: []string{
-				"At least 1 approving review is required by reviewers with write access. devctl acts as someone, who has no bypass on the ruleset \"devctl: default branch\" of o/r",
+				"Repository rule violations found; At least 1 approving review is required by reviewers with write access. devctl acts as someone, who has no bypass on the ruleset \"devctl: default branch\" of o/r",
 				"App 5025978 for pull requests, whose bypass covers its installation tokens and not the user token devctl acts with",
 				"team 5176559 for pull requests",
 				"the entry's owning team is team-honeybadger: one of its members merges it, or a reviewer with write access approves it first",

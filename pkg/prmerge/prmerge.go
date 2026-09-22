@@ -307,7 +307,7 @@ func (m *Merger) merge(ctx context.Context, owner, repo string, number int, pr *
 	}
 	sha, err := m.github.MergePullRequest(ctx, owner, repo, number, opts)
 	if githubclient.IsMergeDeclined(err) {
-		reason := err.Error()
+		reason := oneLine(err.Error())
 		if declinedByReviewRule(err) {
 			reason = strings.TrimSuffix(reason, ".") + ". " + m.explainReviewRule(ctx, owner, repo, pr.GetBase().GetRef(), caller, team)
 		}
@@ -354,6 +354,19 @@ func (m *Merger) enqueue(ctx context.Context, owner, repo string, number int, pr
 			return m.queueTimedOut(result)
 		}
 	}
+}
+
+// oneLine is GitHub's sentence on one line: its paragraphs ("Repository
+// rule violations found\n\nAt least 1 approving review …\n\n") joined
+// with "; ", so the reason stays one line.
+func oneLine(s string) string {
+	var parts []string
+	for _, line := range strings.Split(s, "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			parts = append(parts, line)
+		}
+	}
+	return strings.Join(parts, "; ")
 }
 
 func (m *Merger) queueTimedOut(result *Result) error {
