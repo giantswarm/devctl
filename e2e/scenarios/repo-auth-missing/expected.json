@@ -1,0 +1,4 @@
+{
+  "exitCode": 2,
+  "stderrContains": ["authentication required (no token in the keychain): run `devctl auth login --muster-only`."]
+}

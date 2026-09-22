@@ -1,0 +1,8 @@
+{
+  "exitCode": 0,
+  "stdoutContains": [
+    "pull request: https://github.com/giantswarm/github/pull/6200 (chore(team-bumblebee): change my-service; opened, auto-merge armed)",
+    "ask: delivered to team-bumblebee in #team-bumblebee",
+    "pending run: expected since 2026-09-22T10:00:00Z by e2e-engineer (changed, https://github.com/giantswarm/github/pull/6200)"
+  ]
+}

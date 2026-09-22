@@ -1,0 +1,20 @@
+# A new repository followed to readiness: the manager answers as soon as a
+# phase completes (changed: true) and the command calls again; the phases are
+# printed once each, then the release.
+description: repo watch calls watch_repository until the repository is ready and prints the phases once each
+args: [repo, watch, new-service, --pull-request, "4711", --timeout, 5m]
+keyring:
+  muster:
+    login: e2e-engineer@example.com
+    token: muster_e2e
+    expiresAt: "2099-01-01T00:00:00Z"
+    refreshToken: muster_e2e_refresh
+    endpoint: "${DEVCTL_MUSTER_URL}"
+    issuer: "${MUSTER_ISSUER}"
+muster:
+  bearer: muster_e2e
+  tools:
+    x_giantswarm-repo-manager_watch_repository:
+      - args: {repository: new-service, pullRequest: 4711, timeout: 120}
+        result: {repository: https://github.com/giantswarm/new-service, phases: [{name: created, at: "2026-09-22T10:00:00Z", seconds: 0}, {name: scaffolded, at: "2026-09-22T10:00:05Z", seconds: 5}], changed: true, ready: false, pending: declared, waited: 3}
+      - result: {repository: https://github.com/giantswarm/new-service, phases: [{name: created, at: "2026-09-22T10:00:00Z", seconds: 0}, {name: scaffolded, at: "2026-09-22T10:00:05Z", seconds: 5}, {name: declared, at: "2026-09-22T10:00:09Z", seconds: 4}, {name: merged, at: "2026-09-22T10:01:00Z", seconds: 51}, {name: setUp, at: "2026-09-22T10:01:40Z", seconds: 40}, {name: released, at: "2026-09-22T10:03:30Z", seconds: 110}], changed: false, ready: true, release: {tag: v0.1.0, url: https://github.com/giantswarm/new-service/releases/tag/v0.1.0}, waited: 1}

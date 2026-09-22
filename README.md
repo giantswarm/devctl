@@ -63,11 +63,13 @@ devctl pr merge giantswarm/devctl 2278 --timeout 45m --progress
 
 ### Repository set-up (`devctl repo`)
 
-Giant Swarm repositories are declared in the team files of [giantswarm/github](https://github.com/giantswarm/github); the reconciler creates and keeps them as declared. `devctl repo create` validates a declaration through the engine, prints the dry run and opens the team-file pull request as you; `devctl repo status` prints a repository's set-up state. See [docs/repo.md](docs/repo.md).
+Giant Swarm repositories are declared in the team files of [giantswarm/github](https://github.com/giantswarm/github); the reconciler keeps them as declared. `devctl repo create` creates a repository as you, pushes its scaffold and opens the team-file pull request; the other verbs are giantswarm-repo-manager's tools called through muster as you (`devctl auth login --muster-only` first): `list`, `get`, `refresh`, `status`, `sweep`, `watch`, `adopt`, `update`, `transfer`, `set-lifecycle`, `approve`, `align`, each with `--dry-run` where it writes and `-o json` for the manager's answer. See [docs/repo.md](docs/repo.md).
 
 ```bash
 devctl repo create --team bumblebee --name my-service --component-type service --flavour app --language go --description "What it does"
-devctl repo status my-service
+devctl repo watch my-service --pull-request 4711
+devctl repo list --scope unassigned --inactive-days 365
+devctl repo set-lifecycle old-tool archived --reason "replaced by new-tool" --dry-run
 ```
 
 ### Running Tests

@@ -9,6 +9,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `devctl repo list|get|refresh|sweep|info|watch|adopt|update|transfer|set-lifecycle|approve|align`: one thin
+  subcommand per tool of giantswarm-repo-manager, called through muster as the person with the keychain's muster
+  token (`devctl auth login --muster-only`). The manager's surface on the laptop is the page's and the agent's: the
+  inventory listed, scoped and filtered; a record read or rebuilt; a new repository followed to readiness; an
+  undeclared repository adopted; an entry edited field by field (`--set gen.ci.generate=false`) or replaced
+  (`--entry-file`); a repository transferred, deprecated, archived or deleted (`--confirm`); a team-file pull request
+  approved as a member; Align now in the mode the entry decides. Every write takes `--dry-run` and otherwise lands
+  as a team-file pull request; `-o json` prints the manager's answer as it came. `pkg/reposetup/manager` carries the
+  manager's answer types. e2e scenarios `repo-*` cover each verb against the mocked muster, with the arguments each
+  call must carry pinned (`args` on a scripted tool answer) and text assertions (`stdoutContains`, `stderrContains`).
+
+### Changed
+
+- `devctl repo status` reads giantswarm-repo-manager's record only, with the keychain's muster token: the local
+  fallback to the engine's checks and the flags `--muster-endpoint`, `--muster-token-envvar`, `--github-token-envvar`,
+  `--circleci-token-envvar`, `--team` and `--owner` are gone (the local check is `devctl repo reconcile --dry-run`);
+  without a muster token the command exits naming `devctl auth login --muster-only`. The text output gains the last
+  reconciler run, the run awaited, a run that never reported and the inventory's own findings; `-o json` prints the
+  record as the manager answered.
+
 - `devctl auth login --muster-only`: the sign-in to muster for the `repo` commands, which call giantswarm-repo-manager
   through it. The authorization code flow with PKCE runs against muster's own authorization server, discovered from
   the endpoint (RFC 9728, RFC 8414); devctl registers itself there once per device, binds the token to the endpoint

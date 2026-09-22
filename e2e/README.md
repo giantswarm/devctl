@@ -97,7 +97,7 @@ privateRegistry:                       # the private registry, DEVCTL_REGISTRY_P
 | `timeout` | Bound of the run (`20s`, `2m`); the scenario fails when the binary has not exited. Default 60 s. |
 | `keyring` | Written as JSON to the file `DEVCTL_KEYRING_FILE` names, the record format of the keyring store. Left out, the file does not exist: the state before `devctl auth login`. |
 | `github`, `circleci`, `registry`, `privateRegistry` | The mocks' scripts: `routes`, and for a registry `staleLogin`. |
-| `muster` | The muster mock's script: `tools`, a tool name as muster exposes it (`x_giantswarm-repo-manager_get_info`, `core_auth_login`) to its sequence of answers (`result`: a mapping or list is the structured content, a string the text; `error`: a tool error with that text); `login`, the userinfo email; `bearer` and `refreshToken`, tokens the mock accepts besides the ones it issues (the scenario's keyring). |
+| `muster` | The muster mock's script: `tools`, a tool name as muster exposes it (`x_giantswarm-repo-manager_get_info`, `core_auth_login`) to its sequence of answers (`result`: a mapping or list is the structured content, a string the text; `error`: a tool error with that text; `args`: arguments the call must carry with these values, compared as JSON -- a call without them gets a tool error naming the difference); `login`, the userinfo email; `bearer` and `refreshToken`, tokens the mock accepts besides the ones it issues (the scenario's keyring). A keyring's muster record writes `${DEVCTL_MUSTER_URL}` for its `endpoint` and `${MUSTER_ISSUER}` for its `issuer`; the harness fills in the mock's URLs. |
 | `browser` | `true` makes the harness play the person at the browser: every URL devctl asks to open on stderr is fetched, following redirects, so the muster mock's authorization endpoint lands its code on devctl's loopback callback. Only loopback URLs are fetched. |
 
 Unknown fields are errors, so a misspelt key fails the scenario instead of being ignored.
@@ -142,7 +142,8 @@ nothing as an empty body. A request no route matches gets the mock's not-found a
 }
 ```
 
-`exitCode` is the code the binary must exit with. `json` is the document stdout must carry: stdout is parsed as
+`exitCode` is the code the binary must exit with. `stdoutContains` and `stderrContains` are substrings the
+outputs must carry, for a command that speaks text. `json` is the document stdout must carry: stdout is parsed as
 exactly one JSON document and compared with `json` as a whole. Objects need the same set of keys, arrays the
 same length, scalars equality; the string `"*"` stands for any value (a timestamp, a URL with a port, a digest),
 whatever its type. The first difference is reported by path (`at $.checks[0].status: want "completed", got
@@ -228,3 +229,7 @@ The incidents the commands encode, one scenario each, by these slugs:
 - `release wait`: `renamed-image`, `hand-written-ci`, `release-assets-only`, `failed-tag-pipeline`,
   `rerun-replaces-failed`, `stale-registry-login`, `release-wait-timeout`
 - `auth`: `auth-missing`, `auth-expired`, `auth-refreshed`, `auth-login-muster`, `auth-login-muster-no-manager`
+- `repo` (the manager's verbs over the mocked muster): `repo-auth-missing`, `repo-status`, `repo-status-json`,
+  `repo-status-refreshed`, `repo-list`, `repo-info`, `repo-get`, `repo-refresh`, `repo-sweep`, `repo-watch-ready`,
+  `repo-watch-failed`, `repo-adopt-dry-run`, `repo-update-set`, `repo-transfer-dry-run`, `repo-set-lifecycle-commit`,
+  `repo-set-lifecycle-delete-refused`, `repo-approve`, `repo-align-dry-run`

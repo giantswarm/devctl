@@ -8,12 +8,23 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
+	"github.com/giantswarm/devctl/v8/cmd/repo/adopt"
+	"github.com/giantswarm/devctl/v8/cmd/repo/align"
+	"github.com/giantswarm/devctl/v8/cmd/repo/approve"
 	"github.com/giantswarm/devctl/v8/cmd/repo/checks"
 	"github.com/giantswarm/devctl/v8/cmd/repo/create"
+	"github.com/giantswarm/devctl/v8/cmd/repo/get"
+	"github.com/giantswarm/devctl/v8/cmd/repo/info"
+	"github.com/giantswarm/devctl/v8/cmd/repo/list"
 	"github.com/giantswarm/devctl/v8/cmd/repo/reconcile"
+	"github.com/giantswarm/devctl/v8/cmd/repo/setlifecycle"
 	"github.com/giantswarm/devctl/v8/cmd/repo/setup"
 	"github.com/giantswarm/devctl/v8/cmd/repo/status"
+	"github.com/giantswarm/devctl/v8/cmd/repo/sweep"
+	"github.com/giantswarm/devctl/v8/cmd/repo/transfer"
+	"github.com/giantswarm/devctl/v8/cmd/repo/update"
 	"github.com/giantswarm/devctl/v8/cmd/repo/validate"
+	"github.com/giantswarm/devctl/v8/cmd/repo/watch"
 )
 
 const (
@@ -124,6 +135,54 @@ func New(config Config) (*cobra.Command, error) {
 		}
 	}
 
+	// The verbs that call giantswarm-repo-manager through muster as the
+	// person: one subcommand per tool of the manager.
+	var managed []*cobra.Command
+	for _, build := range []func() (*cobra.Command, error){
+		func() (*cobra.Command, error) {
+			return info.New(info.Config{Logger: config.Logger, Stderr: config.Stderr, Stdout: config.Stdout})
+		},
+		func() (*cobra.Command, error) {
+			return list.New(list.Config{Logger: config.Logger, Stderr: config.Stderr, Stdout: config.Stdout})
+		},
+		func() (*cobra.Command, error) {
+			return get.New(get.Config{Logger: config.Logger, Stderr: config.Stderr, Stdout: config.Stdout})
+		},
+		func() (*cobra.Command, error) {
+			return get.NewRefresh(get.Config{Logger: config.Logger, Stderr: config.Stderr, Stdout: config.Stdout})
+		},
+		func() (*cobra.Command, error) {
+			return sweep.New(sweep.Config{Logger: config.Logger, Stderr: config.Stderr, Stdout: config.Stdout})
+		},
+		func() (*cobra.Command, error) {
+			return watch.New(watch.Config{Logger: config.Logger, Stderr: config.Stderr, Stdout: config.Stdout})
+		},
+		func() (*cobra.Command, error) {
+			return adopt.New(adopt.Config{Logger: config.Logger, Stderr: config.Stderr, Stdout: config.Stdout})
+		},
+		func() (*cobra.Command, error) {
+			return update.New(update.Config{Logger: config.Logger, Stderr: config.Stderr, Stdout: config.Stdout})
+		},
+		func() (*cobra.Command, error) {
+			return transfer.New(transfer.Config{Logger: config.Logger, Stderr: config.Stderr, Stdout: config.Stdout})
+		},
+		func() (*cobra.Command, error) {
+			return setlifecycle.New(setlifecycle.Config{Logger: config.Logger, Stderr: config.Stderr, Stdout: config.Stdout})
+		},
+		func() (*cobra.Command, error) {
+			return approve.New(approve.Config{Logger: config.Logger, Stderr: config.Stderr, Stdout: config.Stdout})
+		},
+		func() (*cobra.Command, error) {
+			return align.New(align.Config{Logger: config.Logger, Stderr: config.Stderr, Stdout: config.Stdout})
+		},
+	} {
+		c, err := build()
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+		managed = append(managed, c)
+	}
+
 	f := &flag{}
 
 	r := &runner{
@@ -143,6 +202,7 @@ func New(config Config) (*cobra.Command, error) {
 	f.Init(c)
 
 	c.AddCommand(checksCmd)
+	c.AddCommand(managed...)
 	c.AddCommand(createCmd)
 	c.AddCommand(reconcileCmd)
 	c.AddCommand(setupCmd)

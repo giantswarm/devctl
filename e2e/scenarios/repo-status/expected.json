@@ -1,0 +1,11 @@
+{
+  "exitCode": 0,
+  "stdoutContains": [
+    "giantswarm/my-service declared in team-bumblebee (check mode, from giantswarm-repo-manager at ",
+    "opted in to alignment (align: true)",
+    "default branch main, flavours app",
+    "  settings     ok        as the baseline",
+    "converged: set up as declared",
+    "last run: https://github.com/giantswarm/github/actions/runs/1 at 2026-09-21T02:20:00Z (nightly)"
+  ]
+}

@@ -1,0 +1,1 @@
+{"exitCode": 0, "stdoutContains": ["dry run: nothing dispatched, nothing opened", "my-service: mode align (declared in team-bumblebee, opted in to alignment)", "An alignment changes the repository on GitHub and CircleCI.", "planned changes (checked 2026-09-22T02:20:00Z):", "  protection   require one review; enforce admins", "then: dispatch it without --dry-run"]}

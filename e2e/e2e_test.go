@@ -37,6 +37,12 @@ const version = "0.0.0-e2e"
 // wait takes 1.8 seconds.
 const TimeScale = "0.001"
 
+// The placeholders a scenario's keyring writes for the muster mock's URLs.
+const (
+	MusterURLPlaceholder    = "${DEVCTL_MUSTER_URL}"
+	MusterIssuerPlaceholder = "${MUSTER_ISSUER}"
+)
+
 // binary is the devctl TestMain builds.
 var binary string
 
@@ -158,7 +164,12 @@ func environment(t *testing.T, sc *scenario.Scenario, m *mocks) []string {
 		if err != nil {
 			t.Fatalf("keyring: %v", err)
 		}
-		if err := os.WriteFile(keyring, data, 0o600); err != nil {
+		// A muster record names the endpoint its token is for and the issuer
+		// that issued it; the scenario writes the placeholders, the harness
+		// the mock's URLs, known only now.
+		text := strings.ReplaceAll(string(data), MusterURLPlaceholder, m.muster.MCPURL())
+		text = strings.ReplaceAll(text, MusterIssuerPlaceholder, m.muster.URL)
+		if err := os.WriteFile(keyring, []byte(text), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -224,6 +235,16 @@ func runScenario(t *testing.T, dir string) {
 	}
 	if expected.ComparesJSON() {
 		compareJSON(t, expected.JSON, stdout.Bytes())
+	}
+	for _, want := range expected.StdoutContains {
+		if !strings.Contains(stdout.String(), want) {
+			t.Errorf("stdout lacks %q", want)
+		}
+	}
+	for _, want := range expected.StderrContains {
+		if !strings.Contains(stderr.String(), want) {
+			t.Errorf("stderr lacks %q", want)
+		}
 	}
 	if t.Failed() {
 		t.Logf("scenario: %s\nargs: %s\nstdout:\n%s\nstderr:\n%s\nrequests:\n%s",

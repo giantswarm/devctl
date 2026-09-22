@@ -1,0 +1,12 @@
+{
+  "exitCode": 0,
+  "stdoutContains": [
+    "scope all: 2 shown of 2 matched, 1790 in the inventory",
+    "last sweep: finished 2026-09-22T03:01:00Z in 41m: 1790 repositories (460 declared, 1300 undeclared, 3 gone, 27 archived), 460 engine checks",
+    "REPOSITORY",
+    "giantswarm/a",
+    "in sync",
+    "not in sync",
+    "default-icon"
+  ]
+}

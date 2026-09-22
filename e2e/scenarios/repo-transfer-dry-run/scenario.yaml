@@ -1,0 +1,16 @@
+description: repo transfer --dry-run plans the move between the two team files
+args: [repo, transfer, old-tool, --to-team, team-planeteers, --dry-run, --output, json]
+keyring:
+  muster:
+    login: e2e-engineer@example.com
+    token: muster_e2e
+    expiresAt: "2099-01-01T00:00:00Z"
+    refreshToken: muster_e2e_refresh
+    endpoint: "${DEVCTL_MUSTER_URL}"
+    issuer: "${MUSTER_ISSUER}"
+muster:
+  bearer: muster_e2e
+  tools:
+    x_giantswarm-repo-manager_transfer_repository:
+      - args: {repository: old-tool, toTeam: team-planeteers, dryRun: true}
+        result: {repository: giantswarm/old-tool, team: team-planeteers, fromTeam: team-bumblebee, accepted: true, pullRequest: {repository: giantswarm/github, branch: b, title: t, files: [repositories/team-bumblebee.yaml, repositories/team-planeteers.yaml], body: "", as: e2e-engineer}}

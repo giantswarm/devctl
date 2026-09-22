@@ -1,0 +1,15 @@
+description: repo info prints how the manager sees the call
+args: [repo, info, --output, json]
+keyring:
+  muster:
+    login: e2e-engineer@example.com
+    token: muster_e2e
+    expiresAt: "2099-01-01T00:00:00Z"
+    refreshToken: muster_e2e_refresh
+    endpoint: "${DEVCTL_MUSTER_URL}"
+    issuer: "${MUSTER_ISSUER}"
+muster:
+  bearer: muster_e2e
+  tools:
+    x_giantswarm-repo-manager_get_info:
+      - result: {version: "0.25.2", toolPrefix: giantswarm-repo-manager, caller: {login: e2e-engineer, id: 1}, auth: {mode: bearer}}
