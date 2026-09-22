@@ -1314,6 +1314,26 @@ func TestSteps(t *testing.T) {
 			},
 		},
 		{
+			// A repository tagging per component (base/v0.1.0) releases
+			// outside the flow the step verifies: auto-release cuts vX.Y.Z
+			// and the generated pipeline builds /^v.*/. Its latest release
+			// is not held against CircleCI: the step is skipped naming the
+			// tag, no pipeline list is read and nothing is reported.
+			name: "release: a release whose tag is not vX.Y.Z is not verified", step: StepRelease,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.release, r.releaseAt = "base/v0.1.0", time.Now().Add(-time.Hour)
+				h.cc.follow(owner, name)
+			},
+			wantCheck: VerdictSkipped, wantAfter: VerdictSkipped,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Equal(t, "release base/v0.1.0: not a vX.Y.Z tag, not verified", res.Step(StepRelease).Summary)
+				require.Empty(t, res.Findings())
+				require.Empty(t, h.cc.pages, "no pipeline list is read")
+				require.Empty(t, h.cc.mutations, "no pipeline is triggered")
+			},
+		},
+		{
 			name: "settings: a customer repository's default branch is never renamed", step: StepSettings, entry: customerEntryYAML,
 			seed:      func(h *harness) { h.gh.addRepo(owner, name).defaultBranch = "master" },
 			wantCheck: VerdictOK,
