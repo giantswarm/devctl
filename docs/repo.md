@@ -3,8 +3,10 @@
 Giant Swarm repositories are declared, not clicked together: one entry in the owning team's file
 `repositories/<team>.yaml` of [giantswarm/github](https://github.com/giantswarm/github) is the
 desired state, and the reconciler creates and keeps the repository as declared. The `repo` commands
-are the laptop's client of that engine -- the same validation, the same dry run, the same pull request
-the Repositories page and giantswarm-repo-manager produce.
+are the laptop's client of that engine and of giantswarm-repo-manager -- the same validation, the same
+dry run, the same pull request the Repositories page and the Repo Manager agent produce. `create`,
+`validate` and `reconcile` run the engine locally with your own tokens; the other verbs call the
+manager through muster as you.
 
 ## `devctl repo create`
 
@@ -124,21 +126,63 @@ three are written with that identity. The token creates the repository and pushe
 (`repo`, and `workflow` for the scaffold's GitHub Actions workflows), reads the organisation's teams
 and your role in it (`read:org`) and writes `giantswarm/github` for the pull request.
 
+## The manager's verbs: one subcommand per tool of giantswarm-repo-manager
+
+giantswarm-repo-manager keeps the inventory of the org's repositories and lands every team-file change
+as the person, with the team's ask in Slack and the bookkeeping of the reconciler's runs; the
+Repositories page and the Repo Manager agent are its clients, and so are these commands. Each one is one
+tool of the manager, called through your muster endpoint with the muster token of the keychain
+(`devctl auth login --muster-only`, see [auth](auth.md)) and printed as text, or with `-o json` as the
+manager answered. Every write takes `--dry-run` (the rendered change, the pull request and the ask as
+they would be; nothing written) and otherwise lands as a team-file pull request opened as you: the
+manager knows no other write mode, because a repository changed on GitHub without its declaration is the
+drift the reconciler reports. Without a usable muster token every one of them exits naming the login,
+and nothing runs locally in its place.
+
+| Command | Tool | What it does |
+|---|---|---|
+| `repo info` | `get_info` | how the manager sees the call: the caller, the identities, the inventory, the engine, the write modes |
+| `repo list [--scope mine\|team\|unassigned\|all] [filters]` | `list_repositories` | the inventory, one row per repository with team, lifecycle, Renovate, set-up state, last person commit and findings; the page's filters (`--team`, `--search`, `--renovate`, `--visibility`, `--fork`, `--archived`, `--lifecycle`, `--inactive-days`, `--finding`, `--orb`, `--arm64`, `--china-push`, `--signing`, `--limit`) |
+| `repo get <repo>` | `get_repository` | the whole record: declaration, GitHub, CircleCI, the CI configuration's facts, Renovate, catalog and mapping, the set-up steps and runs, the findings |
+| `repo refresh <repo>` | `refresh_repository` | the record rebuilt now (the engine's checks in read mode) and printed like `get`; the cache only, nothing on GitHub |
+| `repo status <repo>` | `get_repository` | the set-up state alone, as before: the steps and their verdicts, the opt-in to alignment and the declared branch and flavours from the entry, the last run and the run awaited |
+| `repo sweep` | `sweep_inventory` | the full sweep started now, for a member of the manager's owning teams |
+| `repo watch <repo> --pull-request N` | `watch_repository` | a new repository followed to readiness: created, scaffolded, declared, merged, set up, released; the phases printed as they complete, `--timeout` (15 m) for the whole |
+| `repo adopt <repo> --team T [entry flags]` | `adopt_repository` | an existing, undeclared repository declared in the team's file; `--component-type`, `--description`, `--visibility`, `--language`, `--flavour`, `--ci-generate`, `--align`, `--lifecycle deprecated\|archived` |
+| `repo update <repo> --set path=value \| --unset path \| --entry-file f` | `update_repository` | the entry changed: `--set` edits the inventory's entry field by field (`gen.ci.generate=false`, `align=true`, `gen.flavours=[app, k8sapi]`; the value is YAML), `--entry-file` passes the whole entry |
+| `repo transfer <repo> --to-team T` | `transfer_repository` | the entry moved to another team's file; the receiving team approves, the giving team is told |
+| `repo set-lifecycle <repo> deprecated\|archived\|deleted` | `set_lifecycle` | the lifecycle set; `deleted` needs `--confirm <repo>` |
+| `repo approve <pull-request>` | `approve_change` | the approving review as you after the team check, and the merge (or the auto-merge); what the Slack ask's button does |
+| `repo align <repo> [--team T]` | `align_repository` | Align now in the mode the entry decides: `align` (the reconciler dispatched), `opt-in` (the pull request that sets `align: true`), `check` (an undeclared repository checked from the team); `--dry-run` shows the plan first |
+
+`--reason` on the writes goes into the pull request body and the ask. The dry run of a write prints the
+entry before and after, the pull request (title, branch, files, who opens it) and the ask and notice with
+the channel they reach or why they cannot; a commit prints the pull request's URL, whether the ask was
+delivered, and the run the record now expects. `create`, `validate` and `reconcile` stay what they are:
+the engine run locally with your own tokens.
+
+```nohighlight
+devctl repo list --scope unassigned --inactive-days 365
+devctl repo get my-service
+devctl repo watch new-service --pull-request 4711
+devctl repo adopt old-tool --team team-bumblebee --component-type tool --language go --dry-run
+devctl repo update my-service --set gen.ci.generate=false --reason "no pipeline"
+devctl repo set-lifecycle old-tool archived --reason "replaced by new-tool"
+devctl repo approve 6179
+devctl repo align my-service --dry-run
+```
+
 ## `devctl repo status`
 
-Prints a repository's set-up state -- every set-up step with its verdict and whether the repository
-is set up as declared:
+Prints a repository's set-up state from giantswarm-repo-manager's inventory -- every set-up step with
+its verdict and whether the repository is set up as declared:
 
 ```nohighlight
 devctl repo status my-service
-devctl repo status giantswarm/my-service --team bumblebee --output json
+devctl repo status giantswarm/my-service --output json
 ```
 
-With a muster endpoint (`--muster-endpoint`, or `$MUSTER_ENDPOINT`; the bearer token in
-`$MUSTER_TOKEN`) the state comes from giantswarm-repo-manager's inventory, as you. When the manager is
-not configured or cannot be reached, the engine's checks run locally in read mode with your GitHub
-token (and your CircleCI token from `$CIRCLECI_TOKEN` for the CircleCI and release steps; without one
-those steps are skipped). Both paths print the same verdicts the Repositories page shows:
+The verdicts are the ones the Repositories page shows:
 
 | Verdict | Meaning |
 |---|---|
@@ -148,12 +192,15 @@ those steps are skipped). Both paths print the same verdicts the Repositories pa
 | `skipped` | the step does not apply (repository missing or empty, archived or deleted, no client for the system) |
 | `failed` | the step could not run to its end |
 
-The repository must be declared in a team file; an undeclared repository is reported as such with
-`devctl repo create` as the fix. `--team` names the file to read instead of searching them all.
-When the engine reads the entry it also says whether the repository is opted in to alignment
-(`align: true`; without it the reconciler checks the repository and changes nothing); the manager's
-record carries the set-up state alone, so that path does not name the opt-in. Nothing is changed by
-`repo status`.
+Under the steps: the verdict line, the last reconciler run with what it was for (created, added,
+transferred, archived, deprecated, changed, dispatched, nightly), the run the record expects after a
+pull request or an Align now, a run that never reported, and the inventory's own findings. Above them,
+from the entry as the team file carries it: whether the repository is opted in to alignment (`align:
+true`; without it the reconciler checks the repository and changes nothing) and the declared default
+branch and flavours. An undeclared repository is refused with `devctl repo adopt` as the fix; a
+repository the inventory has not checked yet names `devctl repo refresh`. `-o json` prints the record as
+the manager answered. Nothing is changed by `repo status`; the local check with your own tokens is
+`devctl repo reconcile --dry-run`.
 
 ## `devctl repo validate`
 

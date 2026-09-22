@@ -1,0 +1,17 @@
+# -o json prints the manager's record as it came.
+description: repo status --output json prints the inventory record as the manager answered it
+args: [repo, status, giantswarm/my-service, --output, json]
+keyring:
+  muster:
+    login: e2e-engineer@example.com
+    token: muster_e2e
+    expiresAt: "2099-01-01T00:00:00Z"
+    refreshToken: muster_e2e_refresh
+    endpoint: "${DEVCTL_MUSTER_URL}"
+    issuer: "${MUSTER_ISSUER}"
+muster:
+  bearer: muster_e2e
+  tools:
+    x_giantswarm-repo-manager_get_repository:
+      - args: {repository: giantswarm/my-service}
+        result: {repository: giantswarm/my-service, declaration: {team: team-bumblebee, file: f, entry: "- name: my-service\n"}, reality: {url: u}, setup: {checks: {repository: giantswarm/my-service, declared: giantswarm/my-service, team: team-bumblebee, mode: check, converged: true, steps: []}}}

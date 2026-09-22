@@ -1,0 +1,4 @@
+{
+  "exitCode": 0,
+  "json": {"version": "0.25.2", "toolPrefix": "giantswarm-repo-manager", "caller": {"login": "e2e-engineer", "id": 1}, "auth": {"mode": "bearer"}}
+}

@@ -2,58 +2,53 @@ package status
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"strings"
+	"time"
 
 	"github.com/giantswarm/microerror"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 
-	"github.com/giantswarm/devctl/v8/cmd/repo/internal/auth"
-	"github.com/giantswarm/devctl/v8/pkg/circleciclient"
-	"github.com/giantswarm/devctl/v8/pkg/githubclient"
-	"github.com/giantswarm/devctl/v8/pkg/project"
+	"github.com/giantswarm/devctl/v8/cmd/repo/internal/client"
 	"github.com/giantswarm/devctl/v8/pkg/reposetup"
 	"github.com/giantswarm/devctl/v8/pkg/reposetup/manager"
 	"github.com/giantswarm/devctl/v8/pkg/reposetup/reconcile"
 )
 
-const (
-	sourceManager = "giantswarm-repo-manager"
-	sourceEngine  = "engine"
-)
+// callTimeout bounds the one call to the manager.
+const callTimeout = 60 * time.Second
 
 type runner struct {
 	flag   *flag
 	logger *logrus.Logger
 	stdout io.Writer
 	stderr io.Writer
-	// manager overrides the inventory client; nil builds one from the flags.
-	manager manager.RepositoryGetter
+	// open is client.Open; tests inject a session over a fake.
+	open client.Opener
 }
 
-// output is the set-up state with where it came from.
+// output is the set-up state as the text output prints it, read from the
+// manager's record.
 type output struct {
-	// Source is giantswarm-repo-manager or engine.
-	Source string `json:"source"`
-	// Endpoint is the muster endpoint the manager was reached through.
-	Endpoint string `json:"endpoint,omitempty"`
-	// Result is the engine's check result: the manager's stored one or the
-	// one just run.
-	Result *reconcile.Result `json:"result"`
-	// Align is the repository's opt-in to alignment as its entry declares it
-	// (align: true); nil when the source did not read the entry -- the
-	// manager's record carries the set-up state alone.
-	Align *bool `json:"align,omitempty"`
-	// DefaultBranch is the repository's default branch as its entry declares
-	// it, the baseline's when it declares none, and Flavours are the entry's
-	// gen.flavours, the profile the reconciler applies; empty when the source
-	// did not read the entry.
-	DefaultBranch string   `json:"defaultBranch,omitempty"`
-	Flavours      []string `json:"flavours,omitempty"`
+	Endpoint string
+	Result   *reconcile.Result
+	// Align is the repository's opt-in to alignment as its entry declares
+	// it; nil when the record carries no entry.
+	Align *bool
+	// DefaultBranch is the entry's default branch, the baseline's when it
+	// declares none; Flavours the entry's gen.flavours.
+	DefaultBranch string
+	Flavours      []string
+	CheckedAt     time.Time
+	LastRun       *manager.LastRun
+	PendingRun    *manager.PendingRun
+	MissingRun    *manager.MissingRun
+	// Findings are the inventory's own findings, the ones the steps do not
+	// carry.
+	Findings []manager.Finding
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
@@ -69,136 +64,93 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 func (r *runner) run(ctx context.Context, arg string) error {
 	r.logger.SetOutput(r.stderr)
 
-	owner, repo := r.flag.Owner, arg
-	if i := strings.IndexByte(arg, '/'); i >= 0 {
-		owner, repo = arg[:i], arg[i+1:]
-	}
-	if owner == "" || repo == "" {
-		return microerror.Maskf(invalidFlagError, "expected [OWNER/]REPOSITORY, got %q", arg)
+	repository, err := client.Repository(arg)
+	if err != nil {
+		return microerror.Mask(err)
 	}
 
-	if out, ok := r.fromManager(ctx, owner+"/"+repo); ok {
-		return microerror.Mask(r.print(out))
+	session, err := r.open(ctx)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+	callCtx, cancel := context.WithTimeout(ctx, callTimeout)
+	defer cancel()
+	payload, err := session.Call(callCtx, manager.ToolGetRepository, map[string]any{"repository": repository})
+	if err != nil {
+		return microerror.Mask(err)
+	}
+	if r.flag.JSON() {
+		return microerror.Mask(client.PrintJSON(r.stdout, payload))
 	}
 
-	out, err := r.fromEngine(ctx, owner, repo)
+	record, err := client.Decode[manager.Record](manager.ToolGetRepository, payload)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+	out, err := fromRecord(record, session.Endpoint)
 	if err != nil {
 		return microerror.Mask(err)
 	}
 	return microerror.Mask(r.print(out))
 }
 
-// fromManager asks giantswarm-repo-manager when an endpoint is configured.
-// Not configured, unreachable or without a usable answer: false, and the
-// engine judges.
-func (r *runner) fromManager(ctx context.Context, repository string) (*output, bool) {
-	client := r.manager
-	if client == nil {
-		if r.flag.MusterEndpoint == "" {
-			r.logger.Debug("no muster endpoint: judging with the engine's checks")
-			return nil, false
+// fromRecord reads the set-up state out of the manager's record: the
+// engine's checks, the declaration's alignment lines from the entry, the
+// runs and the inventory's own findings.
+func fromRecord(record *manager.Record, endpoint string) (*output, error) {
+	if record.Declaration == nil {
+		return nil, microerror.Maskf(notDeclaredError, "%s is not declared in any team file: a repository without its declaration is the drift the reconciler reports; declare it with `devctl repo adopt`, or create one with `devctl repo create`", record.Repository)
+	}
+	if record.Setup.Checks == nil {
+		reason := record.Setup.CheckError
+		if reason == "" {
+			reason = "the inventory has not checked it yet; `devctl repo refresh` builds the record now"
 		}
-		client = &manager.Client{
-			Endpoint: r.flag.MusterEndpoint,
-			Token:    os.Getenv(r.flag.MusterTokenEnvVar),
-			Version:  project.Version(),
-		}
+		return nil, microerror.Maskf(noSetupStateError, "%s has no set-up state in the inventory: %s", record.Repository, reason)
 	}
 
-	record, err := client.GetRepository(ctx, repository)
-	switch {
-	case err != nil:
-		r.logger.Warnf("%s at %s did not answer (%v): judging with the engine's checks", sourceManager, r.flag.MusterEndpoint, err)
-		return nil, false
-	case record.Setup == nil:
-		r.logger.Warnf("%s has no set-up state for %s: judging with the engine's checks", sourceManager, repository)
-		return nil, false
+	out := &output{
+		Endpoint:   endpoint,
+		Result:     record.Setup.Checks,
+		CheckedAt:  record.Setup.CheckedAt,
+		LastRun:    record.Setup.LastRun,
+		PendingRun: record.Setup.PendingRun,
+		MissingRun: record.Setup.MissingRun,
 	}
-
-	return &output{Source: sourceManager, Endpoint: r.flag.MusterEndpoint, Result: record.Setup}, true
-}
-
-// fromEngine runs the engine's checks in read mode with the person's
-// tokens: the declaration from the team files, validated, then every step.
-func (r *runner) fromEngine(ctx context.Context, owner, repo string) (*output, error) {
-	token, source, err := auth.GitHubToken(ctx, r.flag.GithubTokenEnvVar)
-	if err != nil {
-		return nil, microerror.Mask(err)
-	}
-	r.logger.Debugf("GitHub token from %s", source)
-
-	client, err := githubclient.New(githubclient.Config{Logger: r.logger, AccessToken: token})
-	if err != nil {
-		return nil, microerror.Mask(err)
-	}
-	gh := client.GetUnderlyingClient(ctx)
-	remote := reposetup.Remote{GitHub: gh}
-
-	var teams []string
-	if r.flag.Team != "" {
-		teams = []string{r.flag.Team}
-	}
-	teamFile, err := remote.FindEntry(ctx, repo, teams)
-	if err != nil {
-		if reposetup.IsEntryNotFound(err) {
-			return nil, microerror.Maskf(notDeclaredError, "%s/%s is not declared (%v): a repository without its declaration is the drift the reconciler reports; declare it with `devctl repo create`", owner, repo, err)
-		}
-		return nil, microerror.Mask(err)
-	}
-
-	schema, err := reposetup.FetchSchema(ctx, client)
-	if err != nil {
-		r.logger.Warnf("cannot read the repositories schema from %s (%v): validating against the embedded copy", remote.Slug(), err)
-		schema, err = reposetup.EmbeddedSchema()
-		if err != nil {
-			return nil, microerror.Mask(err)
+	for _, f := range record.Findings {
+		if f.Source != "engine" {
+			out.Findings = append(out.Findings, f)
 		}
 	}
-
-	// Existing mode, and the name is not checked: the repository exists,
-	// that is the point.
-	validator := reposetup.Validator{Schema: schema, Owner: owner}
-	result, err := validator.Validate(ctx, reposetup.Request{TeamFile: teamFile.TeamFile, Names: []string{repo}, Mode: reposetup.ModeExisting})
-	if err != nil {
-		return nil, microerror.Mask(err)
-	}
-	entry := result.Entries[0]
-	if !entry.Accepted {
-		var problems []string
-		for _, p := range entry.Problems {
-			problems = append(problems, p.String())
+	if fields, ok := entryFields(record.Declaration.Entry); ok {
+		align := fields.Align
+		out.Align = &align
+		out.DefaultBranch = fields.DefaultBranch
+		if out.DefaultBranch == "" {
+			out.DefaultBranch = reconcile.DefaultBaseline().DefaultBranch
 		}
-		return nil, microerror.Maskf(invalidDeclarationError, "the entry for %s in %s is refused by the engine, fix it before its set-up state can be judged: %s", repo, teamFile.Path, strings.Join(problems, "; "))
-	}
-	declared, _ := teamFile.Entry(repo)
-	fields, err := declared.Fields()
-	if err != nil {
-		return nil, microerror.Mask(err)
-	}
-
-	runner := reconcile.Runner{GitHub: gh, Checks: client}
-	if circleToken := os.Getenv(r.flag.CircleCITokenEnvVar); circleToken != "" {
-		runner.CircleCI, err = circleciclient.New(circleciclient.Config{Token: circleToken, Logger: r.logger})
-		if err != nil {
-			return nil, microerror.Mask(err)
+		if fields.Gen != nil {
+			out.Flavours = fields.Gen.Flavours
 		}
-	} else {
-		r.logger.Infof("no CircleCI token in $%s: the CircleCI and release steps are skipped", r.flag.CircleCITokenEnvVar)
-	}
-
-	res, err := runner.Run(ctx, reconcile.Request{Owner: owner, Team: teamFile.Team, Entry: entry, Mode: reconcile.ModeCheck})
-	if err != nil {
-		return nil, microerror.Mask(err)
-	}
-
-	out := &output{Source: sourceEngine, Result: res, Align: &fields.Align, DefaultBranch: fields.DefaultBranch}
-	if out.DefaultBranch == "" {
-		out.DefaultBranch = reconcile.DefaultBaseline().DefaultBranch
-	}
-	if fields.Gen != nil {
-		out.Flavours = fields.Gen.Flavours
 	}
 	return out, nil
+}
+
+// entryFields parses the entry as the team file carries it, one YAML list
+// item; false when the record carries none or it does not parse.
+func entryFields(entry string) (reposetup.Fields, bool) {
+	if strings.TrimSpace(entry) == "" {
+		return reposetup.Fields{}, false
+	}
+	var items []reposetup.Fields
+	if err := yaml.Unmarshal([]byte(entry), &items); err != nil || len(items) != 1 {
+		var one reposetup.Fields
+		if err := yaml.Unmarshal([]byte(entry), &one); err != nil || one.Name == "" {
+			return reposetup.Fields{}, false
+		}
+		return one, true
+	}
+	return items[0], true
 }
 
 // declarationLine names the declared default branch and flavours the
@@ -220,19 +172,19 @@ func alignLine(optedIn bool) string {
 	return "not opted in to alignment: the reconciler checks this repository and changes nothing; opt in with align: true in its entry"
 }
 
-func (r *runner) print(out *output) error {
-	if r.flag.Output == outputJSON {
-		enc := json.NewEncoder(r.stdout)
-		enc.SetIndent("", "  ")
-		return microerror.Mask(enc.Encode(out))
-	}
+const timeFormat = "2006-01-02T15:04:05Z"
 
+func (r *runner) print(out *output) error {
 	res := out.Result
-	from := out.Source
+	from := manager.Server
 	if out.Endpoint != "" {
 		from += " at " + out.Endpoint
 	}
-	fmt.Fprintf(r.stdout, "%s declared in %s (%s mode, from %s)\n", res.Repository, res.Team, res.Mode, from)
+	checked := ""
+	if !out.CheckedAt.IsZero() {
+		checked = ", checked " + out.CheckedAt.UTC().Format(timeFormat)
+	}
+	fmt.Fprintf(r.stdout, "%s declared in %s (%s mode, from %s%s)\n", res.Repository, res.Team, res.Mode, from, checked)
 	if res.Declared != res.Repository {
 		fmt.Fprintf(r.stdout, "declared as %s: renamed on GitHub\n", res.Declared)
 	}
@@ -242,26 +194,30 @@ func (r *runner) print(out *output) error {
 	if out.DefaultBranch != "" {
 		fmt.Fprintln(r.stdout, declarationLine(out.DefaultBranch, out.Flavours))
 	}
-	for _, step := range res.Steps {
-		fmt.Fprintf(r.stdout, "  %-12s %-9s %s\n", step.Step, step.Verdict, step.Summary)
-		for _, c := range step.Changes {
-			fmt.Fprintf(r.stdout, "  %-12s %-9s would: %s\n", "", "", c)
-		}
-		for _, f := range step.Findings {
-			kind := string(f.Kind)
-			if f.Advisory {
-				kind += " (advisory)"
+	client.PrintSteps(r.stdout, res)
+	fmt.Fprintln(r.stdout, client.Verdict(res))
+	if run := out.LastRun; run != nil {
+		line := fmt.Sprintf("last run: %s at %s", run.RunURL, run.Timestamp.UTC().Format(timeFormat))
+		if c := run.Change; c != nil {
+			line += " (" + c.Kind
+			if c.By != "" {
+				line += " by " + c.By
 			}
-			fmt.Fprintf(r.stdout, "  %-12s %-9s %s: %s -- fix: %s\n", "", "", kind, f.Message, f.Fix)
+			if c.PullRequest != nil {
+				line += ", " + c.PullRequest.URL
+			}
+			line += ")"
 		}
+		fmt.Fprintln(r.stdout, line)
 	}
-	switch {
-	case res.Refused():
-		fmt.Fprintln(r.stdout, "not converged: the entry is refused and nothing was checked; fix the declaration as the findings above say")
-	case res.Converged:
-		fmt.Fprintln(r.stdout, "converged: set up as declared")
-	default:
-		fmt.Fprintln(r.stdout, "not converged: drift, failed steps or findings to fix above")
+	client.PrintPendingRun(r.stdout, out.PendingRun)
+	if m := out.MissingRun; m != nil {
+		where := m.RunsURL
+		if m.RunURL != "" {
+			where = m.RunURL + " (" + m.Conclusion + ")"
+		}
+		fmt.Fprintf(r.stdout, "missing run: the run expected since %s by %s never reported: %s\n", m.DispatchedAt.UTC().Format(timeFormat), m.By, where)
 	}
+	client.PrintFindings(r.stdout, out.Findings)
 	return nil
 }

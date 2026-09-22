@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"sort"
 	"strings"
 	"sync"
 
@@ -42,6 +43,10 @@ const (
 
 // ToolResponse is one scripted answer of a tool.
 type ToolResponse struct {
+	// Args, when given, are arguments the call must carry with these values
+	// (compared as JSON); a call that does not is answered with a tool error
+	// naming the difference, so the scenario fails visibly.
+	Args map[string]any `yaml:"args"`
 	// Result is the tool's answer: a mapping or list becomes the structured
 	// content (and the JSON text content), a string the text content.
 	Result any `yaml:"result"`
@@ -327,10 +332,45 @@ func (s *Server) mcp(w http.ResponseWriter, r *http.Request) {
 			respond(nil, map[string]any{keyCode: -32602, keyMessage: fmt.Sprintf("tool %s not found", msg.Params.Name)})
 			return
 		}
+		if diff := unexpectedArgs(answer.Args, msg.Params.Arguments); diff != "" {
+			respond(toolResult(ToolResponse{Error: fmt.Sprintf("unexpected arguments for %s: %s", msg.Params.Name, diff)}), nil)
+			return
+		}
 		respond(toolResult(answer), nil)
 	default:
 		respond(nil, map[string]any{keyCode: -32601, keyMessage: fmt.Sprintf("method %s not found", msg.Method)})
 	}
+}
+
+// unexpectedArgs names the first expected argument the call does not carry
+// with the expected value, both sides normalised through JSON; empty when
+// every expected argument matches.
+func unexpectedArgs(want, got map[string]any) string {
+	keys := make([]string, 0, len(want))
+	for k := range want {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		w, _ := json.Marshal(normalise(want[k]))
+		g, _ := json.Marshal(normalise(got[k]))
+		if string(w) != string(g) {
+			return fmt.Sprintf("%s = %s, want %s", k, g, w)
+		}
+	}
+	return ""
+}
+
+// normalise round-trips a value through JSON so YAML's and the client's
+// number and map types compare equal.
+func normalise(v any) any {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return v
+	}
+	var out any
+	_ = json.Unmarshal(data, &out)
+	return out
 }
 
 // next is the tool's next scripted answer.

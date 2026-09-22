@@ -76,6 +76,10 @@ type Expected struct {
 	// JSON is the document stdout must carry, "*" standing for any value;
 	// left out, stdout is not compared.
 	JSON json.RawMessage `json:"json"`
+	// StdoutContains and StderrContains are substrings the outputs must
+	// carry, for a command that speaks text.
+	StdoutContains []string `json:"stdoutContains"`
+	StderrContains []string `json:"stderrContains"`
 }
 
 // ComparesJSON says whether stdout is compared.

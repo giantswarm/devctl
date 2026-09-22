@@ -1,0 +1,9 @@
+{
+  "exitCode": 0,
+  "json": {
+    "repository": "giantswarm/my-service",
+    "declaration": {"team": "team-bumblebee", "file": "f", "entry": "- name: my-service\n"},
+    "reality": {"url": "u"},
+    "setup": {"checks": {"repository": "giantswarm/my-service", "declared": "giantswarm/my-service", "team": "team-bumblebee", "mode": "check", "converged": true, "steps": []}}
+  }
+}

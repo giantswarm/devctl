@@ -1,0 +1,17 @@
+description: repo align --dry-run prints the mode the entry decides, the warning and the planned changes
+args: [repo, align, my-service, --dry-run]
+keyring:
+  muster:
+    login: e2e-engineer@example.com
+    token: muster_e2e
+    expiresAt: "2099-01-01T00:00:00Z"
+    refreshToken: muster_e2e_refresh
+    endpoint: "${DEVCTL_MUSTER_URL}"
+    issuer: "${MUSTER_ISSUER}"
+muster:
+  bearer: muster_e2e
+  tools:
+    x_giantswarm-repo-manager_align_repository:
+      - args: {repository: my-service, dryRun: true}
+        result: {workflow: reconcile-repositories.yaml, inputs: {repository: my-service}, as: e2e-engineer, dispatched: false, runsUrl: u, then: "dispatch it without --dry-run", team: team-bumblebee, declared: true, optedIn: true, mode: align,
+                 planned: [{step: protection, changes: [require one review, enforce admins]}], checkedAt: "2026-09-22T02:20:00Z", warning: "An alignment changes the repository on GitHub and CircleCI."}

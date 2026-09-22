@@ -70,7 +70,7 @@ func fakeMuster(t *testing.T, sse bool, answer string) *httptest.Server {
 }
 
 func TestClientGetRepository(t *testing.T) {
-	record := `{"repository":"giantswarm/my-service","team":"team-bumblebee","setup":{"repository":"giantswarm/my-service","declared":"giantswarm/my-service","team":"team-bumblebee","mode":"check","steps":[{"step":"create","verdict":"ok"}],"converged":true}}`
+	record := `{"repository":"giantswarm/my-service","declaration":{"team":"team-bumblebee","file":"repositories/team-bumblebee.yaml"},"setup":{"checks":{"repository":"giantswarm/my-service","declared":"giantswarm/my-service","team":"team-bumblebee","mode":"check","steps":[{"step":"create","verdict":"ok"}],"converged":true}}}`
 	quoted, _ := json.Marshal(record)
 
 	cases := []struct {
@@ -90,7 +90,7 @@ func TestClientGetRepository(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got.Team != "team-bumblebee" || got.Setup == nil || !got.Setup.Converged || got.Setup.Steps[0].Step != reconcile.StepCreate {
+			if got.Declaration == nil || got.Declaration.Team != "team-bumblebee" || got.Setup.Checks == nil || !got.Setup.Checks.Converged || got.Setup.Checks.Steps[0].Step != reconcile.StepCreate {
 				t.Errorf("record: %+v", got)
 			}
 		})

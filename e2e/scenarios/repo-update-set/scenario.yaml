@@ -1,0 +1,23 @@
+# --set edits the entry the inventory holds and sends the whole entry back
+# in mode commit; the outcome is the pull request as the person.
+description: repo update --set reads the inventory's entry, changes the fields and commits the whole entry
+args: [repo, update, my-service, --set, gen.ci.generate=false, --set, align=true, --reason, "no pipeline"]
+keyring:
+  muster:
+    login: e2e-engineer@example.com
+    token: muster_e2e
+    expiresAt: "2099-01-01T00:00:00Z"
+    refreshToken: muster_e2e_refresh
+    endpoint: "${DEVCTL_MUSTER_URL}"
+    issuer: "${MUSTER_ISSUER}"
+muster:
+  bearer: muster_e2e
+  tools:
+    x_giantswarm-repo-manager_get_repository:
+      - args: {repository: my-service}
+        result: {repository: giantswarm/my-service, declaration: {team: team-bumblebee, file: repositories/team-bumblebee.yaml, entry: "- name: my-service\n  componentType: service\n  gen:\n    flavours: [app]\n    language: go\n    ci:\n      generate: true\n"}}
+    x_giantswarm-repo-manager_update_repository:
+      - args: {repository: my-service, mode: commit, reason: no pipeline, entry: {name: my-service, componentType: service, align: true, gen: {flavours: [app], language: go, ci: {generate: false}}}}
+        result: {pullRequest: {number: 6200, url: https://github.com/giantswarm/github/pull/6200, branch: reposetup/update-my-service, title: "chore(team-bumblebee): change my-service", autoMerge: true},
+                 ask: {team: team-bumblebee, channel: team-bumblebee, delivered: true},
+                 pendingRun: {dispatchedAt: "2026-09-22T10:00:00Z", by: e2e-engineer, kind: changed, pullRequest: {number: 6200, url: https://github.com/giantswarm/github/pull/6200}}}

@@ -15,11 +15,8 @@ import (
 	"net/http"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/giantswarm/microerror"
-
-	"github.com/giantswarm/devctl/v8/pkg/reposetup/reconcile"
 )
 
 // Server is the manager's name in muster, and ToolPrefix what muster puts in
@@ -54,28 +51,6 @@ const (
 // protocolVersion is the MCP revision the client speaks.
 const protocolVersion = "2025-03-26"
 
-// Record is one inventory record of giantswarm-repo-manager as `devctl repo
-// status` reads it. The manager's tool schema is filled in by its own
-// change; the client reads the fields below and ignores the rest, and a
-// payload that is the set-up result itself is accepted as one too.
-type Record struct {
-	// Repository is owner/name.
-	Repository string `json:"repository"`
-	// Team is the slug of the team file that declares it; empty when no file
-	// does.
-	Team string `json:"team,omitempty"`
-	// Setup is the engine's check result the inventory stores.
-	Setup *reconcile.Result `json:"setup,omitempty"`
-	// UpdatedAt is when the record was refreshed.
-	UpdatedAt time.Time `json:"updatedAt,omitempty"`
-}
-
-// RepositoryGetter answers `devctl repo status` from the inventory. Client
-// satisfies it; a test fakes it.
-type RepositoryGetter interface {
-	GetRepository(ctx context.Context, repository string) (*Record, error)
-}
-
 // Caller calls the manager's tools. Client satisfies it; a test fakes it.
 type Caller interface {
 	Call(ctx context.Context, tool string, args map[string]any) (json.RawMessage, error)
@@ -107,28 +82,13 @@ func (c *Client) GetRepository(ctx context.Context, repository string) (*Record,
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}
-
 	var record Record
 	if err := json.Unmarshal(payload, &record); err != nil {
 		return nil, microerror.Maskf(toolError, "%s: result is not an inventory record: %v", ToolGetRepository, err)
 	}
-	if record.Setup == nil {
-		// The payload may be the set-up result itself.
-		var setup reconcile.Result
-		if err := json.Unmarshal(payload, &setup); err == nil && len(setup.Steps) > 0 {
-			record.Setup = &setup
-			if record.Repository == "" {
-				record.Repository = setup.Repository
-			}
-			if record.Team == "" {
-				record.Team = setup.Team
-			}
-		}
-	}
 	if record.Repository == "" {
 		record.Repository = repository
 	}
-
 	return &record, nil
 }
 

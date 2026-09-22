@@ -1,0 +1,29 @@
+description: repo get prints the whole inventory record
+args: [repo, get, my-service]
+keyring:
+  muster:
+    login: e2e-engineer@example.com
+    token: muster_e2e
+    expiresAt: "2099-01-01T00:00:00Z"
+    refreshToken: muster_e2e_refresh
+    endpoint: "${DEVCTL_MUSTER_URL}"
+    issuer: "${MUSTER_ISSUER}"
+muster:
+  bearer: muster_e2e
+  tools:
+    x_giantswarm-repo-manager_get_repository:
+      - args: {repository: my-service}
+        result: {repository: giantswarm/my-service, name: my-service,
+          declaration: {team: team-bumblebee, file: repositories/team-bumblebee.yaml, componentType: service, language: go, flavours: [app], accepted: true,
+                        entry: "- name: my-service\n  componentType: service\n  align: true\n  gen:\n    flavours: [app]\n    language: go\n"},
+          reality: {url: https://github.com/giantswarm/my-service, visibility: public, defaultBranch: main, isArchived: false, isFork: false, isEmpty: false,
+                    lastPersonCommit: {date: "2026-09-01T12:00:00Z", author: alice}, latestRelease: {tag: v1.0.0, publishedAt: "2026-09-02T12:00:00Z", build: {state: success}}},
+          circleci: {followed: true, setupWorkflows: true, head: {state: success}, source: statuses+artifact},
+          ci: {generated: true, orb: "10.5.0", imagePush: true, chartPush: true, arm64: true, chinaPush: split, signing: signed},
+          renovate: {configured: true, path: renovate.json5, enabled: true, dashboardIssue: {number: 3, title: Dependency Dashboard}},
+          catalog: {present: true}, mapping: {present: true, team: bumblebee},
+          setup: {checks: {repository: giantswarm/my-service, declared: giantswarm/my-service, team: team-bumblebee, mode: check, converged: true,
+                           steps: [{step: settings, verdict: ok, summary: as the baseline}, {step: protection, verdict: ok, summary: ruleset present}]},
+                  checkedAt: "2026-09-22T02:20:00Z",
+                  lastRun: {result: {repository: giantswarm/my-service}, runUrl: https://github.com/giantswarm/github/actions/runs/1, timestamp: "2026-09-21T02:20:00Z", change: {kind: nightly}}},
+          findings: [], refreshedAt: "2026-09-22T02:20:00Z", source: sweep, age: 5m}

@@ -1,0 +1,5 @@
+{
+  "exitCode": 0,
+  "json": {"repository": "giantswarm/old-tool", "team": "team-planeteers", "fromTeam": "team-bumblebee", "accepted": true,
+           "pullRequest": {"repository": "giantswarm/github", "branch": "b", "title": "t", "files": ["repositories/team-bumblebee.yaml", "repositories/team-planeteers.yaml"], "body": "", "as": "e2e-engineer"}}
+}
