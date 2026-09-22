@@ -68,7 +68,7 @@ func TestLoginMusterAndRequire(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if record.Token != "muster-access-2" || record.RefreshToken != "muster-refresh-2" || record.ClientID != muster.ClientID || record.Issuer != m.URL || record.Endpoint != m.MCPURL() {
+	if record.Token != "muster-access-2" || record.RefreshToken != "muster-refresh-2" || record.ClientID != MusterClientID || record.Issuer != m.URL || record.Endpoint != m.MCPURL() {
 		t.Fatalf("record = %+v", record)
 	}
 	if !strings.HasPrefix(record.RedirectURI, "http://127.0.0.1:") || !strings.HasSuffix(record.RedirectURI, loopbackCallbackPath) {
@@ -78,18 +78,17 @@ func TestLoginMusterAndRequire(t *testing.T) {
 		t.Fatalf("expiry = %s", got)
 	}
 
-	// The second login reuses the registered client.
+	// A second login registers nothing either: the client is the document.
 	if _, err := a.LoginMuster(ctx, m.MCPURL()); err != nil {
 		t.Fatal(err)
 	}
-	registrations := 0
 	for _, r := range m.Requests() {
 		if r.Path == "/oauth/register" {
-			registrations++
+			t.Fatalf("devctl registered a client: %s", r)
 		}
-	}
-	if registrations != 1 {
-		t.Fatalf("registered %d times, want once", registrations)
+		if r.Path == "/oauth/authorize" && r.Query.Get("client_id") != MusterClientID {
+			t.Fatalf("authorize client_id = %q, want the metadata document", r.Query.Get("client_id"))
+		}
 	}
 
 	token, err := a.RequireMuster(ctx)
@@ -107,7 +106,7 @@ func TestLoginMusterAndRequire(t *testing.T) {
 		t.Fatalf("refreshed = %+v, before = %+v", refreshed, token)
 	}
 	after, _ := store.Get(UserMuster)
-	if after.RefreshToken == record.RefreshToken || after.Issuer != m.URL || after.ClientID != muster.ClientID {
+	if after.RefreshToken == record.RefreshToken || after.Issuer != m.URL || after.ClientID != MusterClientID {
 		t.Fatalf("record after the refresh = %+v", after)
 	}
 
@@ -122,10 +121,12 @@ func TestLoginMusterAndRequire(t *testing.T) {
 	}
 }
 
-// An authorization server without S256 PKCE is refused before any browser
-// opens, and an endpoint without protected-resource metadata is an error
-// naming the discovery.
+// An authorization server without S256 PKCE or without client ID metadata
+// documents is refused before any browser opens, and an endpoint without
+// protected-resource metadata is an error naming the discovery.
 func TestDiscoverMusterRefusals(t *testing.T) {
+	var methods []string
+	cimd := true
 	mux := http.NewServeMux()
 	var srv *httptest.Server
 	mux.HandleFunc("/.well-known/oauth-protected-resource", func(w http.ResponseWriter, _ *http.Request) {
@@ -134,16 +135,22 @@ func TestDiscoverMusterRefusals(t *testing.T) {
 	mux.HandleFunc("/.well-known/oauth-authorization-server", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"issuer": srv.URL, "authorization_endpoint": srv.URL + "/a", "token_endpoint": srv.URL + "/t",
-			"code_challenge_methods_supported": []string{"plain"},
+			"code_challenge_methods_supported": methods, "client_id_metadata_document_supported": cimd,
 		})
 	})
 	srv = httptest.NewServer(mux)
 	defer srv.Close()
 	a, _ := newMusterAuth(t, nil)
 
+	methods = []string{"plain"}
 	_, err := a.LoginMuster(context.Background(), srv.URL+"/mcp")
 	if err == nil || !strings.Contains(err.Error(), "S256") {
 		t.Fatalf("err = %v, want the S256 refusal", err)
+	}
+	methods, cimd = []string{"S256"}, false
+	_, err = a.LoginMuster(context.Background(), srv.URL+"/mcp")
+	if err == nil || !strings.Contains(err.Error(), "client ID metadata documents") {
+		t.Fatalf("err = %v, want the metadata-document refusal", err)
 	}
 
 	bare := httptest.NewServer(http.NotFoundHandler())

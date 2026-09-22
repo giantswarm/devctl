@@ -9,7 +9,7 @@ keyring:
     token: muster_e2e_expired
     expiresAt: "2000-01-01T00:00:00Z"
     refreshToken: muster_e2e_refresh
-    clientId: devctl-e2e-client
+    clientId: https://giantswarm.github.io/muster/devctl.json
     endpoint: "${DEVCTL_MUSTER_URL}"
     issuer: "${MUSTER_ISSUER}"
 muster:

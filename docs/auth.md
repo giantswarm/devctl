@@ -58,11 +58,14 @@ authorization server, so the flow is discovered, not configured:
 1. devctl reads the endpoint's protected resource metadata (RFC 9728, the path-inserted well-known
    URL first) for the authorization server, then the server's metadata (RFC 8414) for its
    endpoints; a server without S256 PKCE is refused.
-2. On the first sign-in on a device, devctl registers itself as a public client (`client_name:
-   devctl`, no secret, one loopback redirect URI) with one `POST` to the registration endpoint. The
-   client id, the redirect URI, the endpoint and the issuer stay in the keychain record; later
-   sign-ins reuse the client, and a new one is registered only for another issuer, or when the
-   loopback port can no longer be bound.
+2. devctl registers no client: muster gates its registration endpoint with a token a CLI on every
+   laptop cannot carry. Its `client_id` is a Client ID Metadata Document, the way the muster agent
+   identifies itself -- `https://giantswarm.github.io/muster/devctl.json`, served by the muster
+   repository's GitHub Pages, naming the public client devctl (no secret), the loopback redirect
+   URIs (any port, RFC 8252 §7.3), the authorization code and refresh token grants and the scopes;
+   the server fetches it once. A server whose metadata does not advertise
+   `client_id_metadata_document_supported` is refused. The redirect URI, the endpoint and the issuer
+   stay in the keychain record.
 3. devctl prints the authorization URL to stderr and opens the browser on it; the scopes are the
    ones the endpoint's metadata names, else `openid profile email groups offline_access`, and the
    token is bound to the endpoint with the `resource` indicator (RFC 8707). The browser returns to

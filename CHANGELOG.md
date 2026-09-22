@@ -7,6 +7,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- `devctl auth login --muster-only` identifies devctl by its Client ID Metadata Document
+  (`https://giantswarm.github.io/muster/devctl.json`, served next to the muster agent's) instead of registering a
+  client at muster's `/oauth/register`, which gazelle's muster gates with a registration token: the sign-in was refused
+  with `invalid_token` before any browser opened. A server that does not advertise
+  `client_id_metadata_document_supported` is refused with the reason; the e2e muster mock accepts a metadata-document
+  client id.
+
 ### Added
 
 - `devctl repo list|get|refresh|sweep|info|watch|adopt|update|transfer|set-lifecycle|approve|align`: one thin
