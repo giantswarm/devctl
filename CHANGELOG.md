@@ -9,6 +9,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `devctl repo reconcile` and `repo status` read `gen.ci.generate` as the entry declares it: an existing entry with
+  `gen` but no `gen.ci` keeps the repository's own CircleCI configuration, as the schema says, and the circleci and
+  release steps run only when `.circleci/config.yml` is on the default branch. The validator writes the creation
+  default `gen.ci.generate: true` for an entry being added only (`repo create`, `repo validate --mode create`); in
+  existing mode the entry is rendered as declared. Before, the default reached the engine for every existing entry:
+  a repository released by GitHub Actions was planned a CircleCI follow with a deploy key, and its release reported
+  as a missed tag build.
 - The repo commands call giantswarm-repo-manager's tools through muster's `call_tool` meta-tool and unwrap its envelope,
   which is how muster exposes every server's tool to a session (the muster CLI and the platform's agents do the same):
   8.85.0 called the tools directly and muster answered `tool not found` for every one of them. The e2e muster mock now

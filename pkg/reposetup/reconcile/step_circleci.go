@@ -108,10 +108,13 @@ const circleCIConfig = ".circleci/config.yml"
 // hasPipeline says whether the repository has a CircleCI pipeline for the
 // circleci and release steps to act on: the entry declares a generated one
 // (gen.ci.generate: true — on a first creation the config is not on the
-// branch yet), or .circleci/config.yml is on the default branch. A
-// configuration repository, or one released by GitHub Actions, has
-// neither: CircleCI has nothing to build there. The branch is read once
-// per run, the two steps share the answer.
+// branch yet), or .circleci/config.yml is on the default branch. The field
+// is read as declared: an existing entry without gen.ci keeps the
+// repository's own CircleCI configuration, so the branch decides for it
+// (the validator writes the creation default for an entry being added
+// only). A configuration repository, or one released by GitHub Actions,
+// has neither: CircleCI has nothing to build there. The branch is read
+// once per run, the two steps share the answer.
 func (r *Runner) hasPipeline(ctx context.Context, s *run) (bool, error) {
 	if s.pipeline != nil {
 		return *s.pipeline, nil
