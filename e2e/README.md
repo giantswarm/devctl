@@ -200,9 +200,12 @@ OAuth side is built in, not scripted: `GET /.well-known/oauth-protected-resource
 `redirect_uri` with a code bound to the PKCE challenge (the browser of a person who is signed in already), `POST
 /oauth/token` exchanges the code (the verifier checked) or a refresh token for a fresh access and refresh token, and
 `GET /oauth/userinfo` answers the scenario's `login`. `POST /mcp` speaks MCP over streamable HTTP for a bearer the
-mock issued or the scenario's `bearer`, else `401` with the bearer challenge: `initialize` opens a session,
-`tools/call` answers from the scenario's `tools` by tool name, and a tool the scenario does not script is a JSON-RPC
-error.
+mock issued or the scenario's `bearer`, else `401` with the bearer challenge, and answers the way a muster aggregator
+answers a session: `initialize` opens a session, `tools/list` lists the meta-tools only, `call_tool` answers the named
+tool from the scenario's `tools` in muster's envelope (the tool's result as JSON in one text content, `isError` and the
+structured content mirrored), a tool the scenario does not script is `Tool not found: <name>` as an error result, and a
+server tool called directly is the JSON-RPC error `tool '<name>' not found` -- which is what devctl gets when it does not
+go through `call_tool`.
 
 **Registry** (`mock/registry`) is an OCI distribution registry, run twice: `registry` is the public one,
 `privateRegistry` the private one, so a scenario can give them different states. A manifest is `HEAD` or `GET

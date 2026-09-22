@@ -9,6 +9,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- The repo commands call giantswarm-repo-manager's tools through muster's `call_tool` meta-tool and unwrap its envelope,
+  which is how muster exposes every server's tool to a session (the muster CLI and the platform's agents do the same):
+  8.85.0 called the tools directly and muster answered `tool not found` for every one of them. The e2e muster mock now
+  behaves like muster -- the meta-tools listed, server tools through `call_tool` in the envelope, direct calls refused --
+  so the `repo-*` and `auth-login-muster` scenarios prove the real path. `auth login --muster-only` treats only
+  `Server 'giantswarm-repo-manager' not found` as the manager's absence.
+
+### Fixed
+
 - `devctl auth login --muster-only` identifies devctl by its Client ID Metadata Document
   (`https://giantswarm.github.io/muster/devctl.json`, served next to the muster agent's) instead of registering a
   client at muster's `/oauth/register`, which gazelle's muster gates with a registration token: the sign-in was refused

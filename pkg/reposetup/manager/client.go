@@ -3,6 +3,12 @@
 // changes as the person. The repo commands reach it through the person's
 // muster endpoint with the muster token of the keychain; every tool of the
 // manager is one call here, and the tool's answer is printed as it came.
+//
+// muster exposes a session its meta-tools only -- list_tools, filter_tools,
+// describe_tool, call_tool and their kin -- and every server's tool is
+// called through call_tool, which wraps the tool's answer in a JSON
+// envelope; the muster CLI and the platform's agents call tools the same
+// way. Call sends that one meta-tool and unwraps the envelope.
 package manager
 
 import (
@@ -46,6 +52,17 @@ const (
 	// ToolAuthLogin is muster's own: the sign-in to one of its servers,
 	// answering the URL the person opens once.
 	ToolAuthLogin = "core_auth_login"
+
+	// MetaToolCall is muster's call_tool, the meta-tool every tool of the
+	// aggregator is called through: name and arguments in, the tool's
+	// answer out as an envelope.
+	MetaToolCall = "call_tool"
+)
+
+// The keys of a tools/call request and of call_tool's arguments.
+const (
+	keyName      = "name"
+	keyArguments = "arguments"
 )
 
 // protocolVersion is the MCP revision the client speaks.
@@ -92,12 +109,13 @@ func (c *Client) GetRepository(ctx context.Context, repository string) (*Record,
 	return &record, nil
 }
 
-// Call calls tool with args and returns the result's payload: its
-// structured content when the tool has one, else its first text content
-// as raw bytes (JSON when the text is JSON, the text otherwise). A tool
-// that answers an error is [IsTool] with the text; an endpoint that refuses
-// the bearer is [IsAuthRequired]; one that does not answer is
-// [IsUnreachable].
+// Call calls tool with args through muster's call_tool and returns the
+// tool's payload: its structured content when it has one, else its first
+// text content as raw bytes (JSON when the text is JSON, the text
+// otherwise). A tool that answers an error, or a muster that refuses the
+// call (a tool it does not know, a toolset that excludes it), is [IsTool]
+// with the text; an endpoint that refuses the bearer is [IsAuthRequired];
+// one that does not answer is [IsUnreachable].
 func (c *Client) Call(ctx context.Context, tool string, args map[string]any) (json.RawMessage, error) {
 	if c.Endpoint == "" {
 		return nil, microerror.Maskf(invalidConfigError, "%T.Endpoint must not be empty", c)
@@ -112,41 +130,97 @@ func (c *Client) Call(ctx context.Context, tool string, args map[string]any) (js
 	}
 
 	result, err := c.call(ctx, session, "tools/call", map[string]any{
-		"name":      tool,
-		"arguments": args,
+		keyName:      MetaToolCall,
+		keyArguments: map[string]any{keyName: tool, keyArguments: args},
 	})
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}
 
-	var res struct {
-		IsError           bool            `json:"isError"`
-		StructuredContent json.RawMessage `json:"structuredContent"`
-		Content           []struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
-		} `json:"content"`
+	outer, err := decodeResult(result)
+	if err != nil {
+		return nil, microerror.Maskf(unreachableError, "%s: %s's result is not an MCP result: %v", tool, MetaToolCall, err)
 	}
-	if err := json.Unmarshal(result, &res); err != nil {
-		return nil, microerror.Maskf(unreachableError, "%s: tool result is not an MCP result: %v", tool, err)
-	}
-	payload := res.StructuredContent
-	if len(payload) == 0 || bytes.Equal(bytes.TrimSpace(payload), []byte("null")) {
-		payload = nil
-		for _, content := range res.Content {
-			if content.Type == "text" {
-				payload = json.RawMessage(content.Text)
-				break
-			}
+	text := outer.firstText()
+
+	// The envelope call_tool wraps the tool's answer in; a text that is not
+	// one is muster's own word on the call (a refusal, a tool it does not
+	// know), an error whatever the flag.
+	inner, isEnvelope := decodeEnvelope(text)
+	if !isEnvelope {
+		if outer.IsError || text == "" {
+			return nil, microerror.Maskf(toolError, "%s: %s", tool, strings.TrimSpace(text))
 		}
+		return nil, microerror.Maskf(toolError, "%s: %s answered no envelope: %s", tool, MetaToolCall, strings.TrimSpace(text))
 	}
-	if res.IsError {
+
+	payload := inner.StructuredContent
+	if len(payload) == 0 || bytes.Equal(bytes.TrimSpace(payload), []byte("null")) {
+		payload = json.RawMessage(inner.firstText())
+	}
+	if inner.IsError || outer.IsError {
 		return nil, microerror.Maskf(toolError, "%s: %s", tool, strings.TrimSpace(string(payload)))
 	}
 	if len(payload) == 0 {
 		return nil, microerror.Maskf(toolError, "%s: empty result", tool)
 	}
 	return payload, nil
+}
+
+// toolResult is an MCP tool result, the outer one of call_tool or the
+// wrapped tool's envelope; the envelope's content items are objects or
+// plain strings.
+type toolResult struct {
+	IsError           bool              `json:"isError"`
+	StructuredContent json.RawMessage   `json:"structuredContent"`
+	Content           []json.RawMessage `json:"content"`
+}
+
+// firstText is the first text content, an object's text or a plain string.
+func (r toolResult) firstText() string {
+	for _, item := range r.Content {
+		var obj struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		}
+		if err := json.Unmarshal(item, &obj); err == nil && (obj.Type == "text" || obj.Type == "") && obj.Text != "" {
+			return obj.Text
+		}
+		var s string
+		if err := json.Unmarshal(item, &s); err == nil && s != "" {
+			return s
+		}
+	}
+	return ""
+}
+
+func decodeResult(raw json.RawMessage) (toolResult, error) {
+	var r toolResult
+	if err := json.Unmarshal(raw, &r); err != nil {
+		return toolResult{}, err
+	}
+	return r, nil
+}
+
+// decodeEnvelope reads call_tool's envelope out of its text: a JSON object
+// with a content key.
+func decodeEnvelope(text string) (toolResult, bool) {
+	trimmed := strings.TrimSpace(text)
+	if !strings.HasPrefix(trimmed, "{") {
+		return toolResult{}, false
+	}
+	var probe map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(trimmed), &probe); err != nil {
+		return toolResult{}, false
+	}
+	if _, ok := probe["content"]; !ok {
+		return toolResult{}, false
+	}
+	var r toolResult
+	if err := json.Unmarshal([]byte(trimmed), &r); err != nil {
+		return toolResult{}, false
+	}
+	return r, true
 }
 
 // initialize performs the MCP handshake once and returns the session id,
@@ -164,7 +238,7 @@ func (c *Client) initialize(ctx context.Context) (string, error) {
 	_, session, err := c.post(ctx, "", c.request("initialize", map[string]any{
 		"protocolVersion": protocolVersion,
 		"capabilities":    map[string]any{},
-		"clientInfo":      map[string]any{"name": "devctl", "version": version},
+		"clientInfo":      map[string]any{keyName: "devctl", "version": version},
 	}))
 	if err != nil {
 		return "", microerror.Mask(err)

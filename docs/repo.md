@@ -132,7 +132,8 @@ giantswarm-repo-manager keeps the inventory of the org's repositories and lands 
 as the person, with the team's ask in Slack and the bookkeeping of the reconciler's runs; the
 Repositories page and the Repo Manager agent are its clients, and so are these commands. Each one is one
 tool of the manager, called through your muster endpoint with the muster token of the keychain
-(`devctl auth login --muster-only`, see [auth](auth.md)) and printed as text, or with `-o json` as the
+(`devctl auth login --muster-only`, see [auth](auth.md)) -- through muster's `call_tool` meta-tool, the
+way muster exposes every server's tool to a session -- and printed as text, or with `-o json` as the
 manager answered. Every write takes `--dry-run` (the rendered change, the pull request and the ask as
 they would be; nothing written) and otherwise lands as a team-file pull request opened as you: the
 manager knows no other write mode, because a repository changed on GitHub without its declaration is the

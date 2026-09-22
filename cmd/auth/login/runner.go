@@ -151,7 +151,7 @@ func (r *runner) signInManager(ctx context.Context, token authstore.Token, progr
 	answer, err := client.Call(ctx, manager.ToolAuthLogin, map[string]any{"server": manager.Server})
 	switch {
 	case err == nil:
-	case manager.IsTool(err) && strings.Contains(err.Error(), "not found"):
+	case manager.IsTool(err) && strings.Contains(err.Error(), "Server '"+manager.Server+"' not found"):
 		signIn.Note = fmt.Sprintf("%s is not registered at %s: the repo commands need a muster that runs it", manager.Server, token.Endpoint)
 		return signIn, nil
 	default:

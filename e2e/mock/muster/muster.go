@@ -4,8 +4,12 @@
 // endpoint that redirects straight back with a code the way a browser of a
 // person who is signed in already does, the token endpoint issuing access and
 // refresh tokens, userinfo -- and the MCP endpoint /mcp over streamable HTTP,
-// whose tools answer from the scenario's sequences by tool name.
-// DEVCTL_MUSTER_URL is the server's URL plus /mcp.
+// which answers the way a muster aggregator answers a session: the meta-tools
+// listed (list_tools, filter_tools, describe_tool, call_tool, ...), every
+// server tool called through call_tool and answered in its envelope from the
+// scenario's sequences by tool name, and a direct call of a server tool
+// refused as "tool not found". DEVCTL_MUSTER_URL is the server's URL plus
+// /mcp.
 package muster
 
 import (
@@ -26,6 +30,16 @@ import (
 // MCPPath is where the aggregator speaks MCP.
 const MCPPath = "/mcp"
 
+// metaToolCall is muster's call_tool, the one tool a server tool is called through.
+const metaToolCall = "call_tool"
+
+// MetaTools are the tools muster exposes to a session; every other tool is
+// called through call_tool.
+var MetaTools = []string{
+	"call_tool", "describe_prompt", "describe_resource", "describe_tool", "filter_prompts", "filter_resources",
+	"filter_tools", "get_prompt", "get_resource", "list_core_tools", "list_prompts", "list_resources", "list_tools",
+}
+
 // ClientID is the client id the registration endpoint hands out; a client
 // id that is an HTTPS URL -- a client ID metadata document, what devctl
 // sends -- is accepted as well, without a fetch.
@@ -42,6 +56,7 @@ const (
 	keyErrorDescription = "error_description"
 	keyMessage          = "message"
 	keyContent          = "content"
+	keyIsError          = "isError"
 	keyCode             = "code"
 	paramCode           = "code"
 	grantRefreshToken   = "refresh_token"
@@ -301,6 +316,12 @@ type rpc struct {
 	} `json:"params"`
 }
 
+// innerCall is call_tool's arguments: the tool and its arguments.
+type innerCall struct {
+	Name      string         `json:"name"`
+	Arguments map[string]any `json:"arguments"`
+}
+
 func (s *Server) mcp(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "POST only", http.StatusMethodNotAllowed)
@@ -334,17 +355,30 @@ func (s *Server) mcp(w http.ResponseWriter, r *http.Request) {
 		}, nil)
 	case "notifications/initialized":
 		w.WriteHeader(http.StatusAccepted)
+	case "tools/list":
+		tools := make([]map[string]any, 0, len(MetaTools))
+		for _, name := range MetaTools {
+			tools = append(tools, map[string]any{"name": name, "description": "muster meta-tool", "inputSchema": map[string]any{"type": "object"}})
+		}
+		respond(map[string]any{"tools": tools}, nil)
 	case "tools/call":
-		answer, ok := s.next(msg.Params.Name)
+		if msg.Params.Name != metaToolCall {
+			// A server tool called directly, the way muster refuses it.
+			respond(nil, map[string]any{keyCode: -32602, keyMessage: fmt.Sprintf("tool '%s' not found: tool not found", msg.Params.Name)})
+			return
+		}
+		raw, _ := json.Marshal(msg.Params.Arguments)
+		var inner innerCall
+		_ = json.Unmarshal(raw, &inner)
+		answer, ok := s.next(inner.Name)
 		if !ok {
-			respond(nil, map[string]any{keyCode: -32602, keyMessage: fmt.Sprintf("tool %s not found", msg.Params.Name)})
+			respond(map[string]any{keyIsError: true, keyContent: textContent("Tool not found: " + inner.Name)}, nil)
 			return
 		}
-		if diff := unexpectedArgs(answer.Args, msg.Params.Arguments); diff != "" {
-			respond(toolResult(ToolResponse{Error: fmt.Sprintf("unexpected arguments for %s: %s", msg.Params.Name, diff)}), nil)
-			return
+		if diff := unexpectedArgs(answer.Args, inner.Arguments); diff != "" {
+			answer = ToolResponse{Error: fmt.Sprintf("unexpected arguments for %s: %s", inner.Name, diff)}
 		}
-		respond(toolResult(answer), nil)
+		respond(wrap(toolResult(answer)), nil)
 	default:
 		respond(nil, map[string]any{keyCode: -32601, keyMessage: fmt.Sprintf("method %s not found", msg.Method)})
 	}
@@ -400,14 +434,14 @@ func (s *Server) next(tool string) (ToolResponse, bool) {
 // toolResult renders a scripted answer as an MCP call result.
 func toolResult(answer ToolResponse) map[string]any {
 	if answer.Error != "" {
-		return map[string]any{"isError": true, keyContent: textContent(answer.Error)}
+		return map[string]any{keyIsError: true, keyContent: textContent(answer.Error)}
 	}
 	if text, ok := answer.Result.(string); ok {
 		return map[string]any{keyContent: textContent(text)}
 	}
 	data, err := json.Marshal(answer.Result)
 	if err != nil {
-		return map[string]any{"isError": true, keyContent: textContent("scripted result is not JSON: " + err.Error())}
+		return map[string]any{keyIsError: true, keyContent: textContent("scripted result is not JSON: " + err.Error())}
 	}
 	return map[string]any{
 		"structuredContent": json.RawMessage(data),
@@ -418,4 +452,19 @@ func toolResult(answer ToolResponse) map[string]any {
 // textContent is one text content block.
 func textContent(text string) []map[string]any {
 	return []map[string]any{{"type": "text", "text": text}}
+}
+
+// wrap is call_tool's envelope around a tool's result: the result as JSON in
+// one text content, its isError mirrored, its structured content mirrored
+// natively -- what muster's meta-tool returns.
+func wrap(result map[string]any) map[string]any {
+	data, _ := json.Marshal(result)
+	outer := map[string]any{keyContent: textContent(string(data))}
+	if isError, _ := result[keyIsError].(bool); isError {
+		outer[keyIsError] = true
+	}
+	if sc, ok := result["structuredContent"]; ok {
+		outer["structuredContent"] = sc
+	}
+	return outer
 }
