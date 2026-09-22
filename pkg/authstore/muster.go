@@ -11,11 +11,15 @@ import (
 )
 
 // muster is an MCP endpoint behind its own OAuth 2.1 authorization server:
-// the endpoint's protected-resource metadata (RFC 9728) names the server,
-// the server's metadata (RFC 8414) names its endpoints, and devctl registers
-// itself there once per device (RFC 7591) like it does on CircleCI. The
-// token is bound to the endpoint with the resource indicator (RFC 8707) and
-// refreshed with the refresh token the offline_access scope grants.
+// the endpoint's protected-resource metadata (RFC 9728) names the server and
+// the server's metadata (RFC 8414) names its endpoints. devctl registers no
+// client there -- muster gates its registration endpoint with a token a CLI
+// on every laptop cannot carry -- and identifies itself with a client ID
+// metadata document (CIMD), the way the muster agent does: the client_id is
+// the URL of a hosted JSON document naming the client, its loopback redirect
+// URIs and its grants, which the server fetches once. The token is bound to
+// the endpoint with the resource indicator (RFC 8707) and refreshed with the
+// refresh token the offline_access scope grants.
 const (
 	protectedResourcePath   = "/.well-known/oauth-protected-resource"
 	authorizationServerPath = "/.well-known/oauth-authorization-server"
@@ -24,6 +28,13 @@ const (
 	// musterAuthorizeTimeout is how long the human has to sign in.
 	musterAuthorizeTimeout = 10 * time.Minute
 )
+
+// MusterClientID is devctl's client ID metadata document: served by the
+// muster repository's GitHub Pages next to the muster agent's, it names the
+// public client devctl with loopback redirect URIs on any port (RFC 8252),
+// the authorization code and refresh token grants and the agent's scopes.
+// A client id that is a URL discloses nothing; the document is public.
+const MusterClientID = "https://giantswarm.github.io/muster/devctl.json"
 
 // musterScopes are requested when the endpoint's metadata names none: the
 // OIDC claims muster's own agent asks for, and offline_access for the refresh
@@ -39,12 +50,12 @@ type protectedResource struct {
 
 // authorizationServer is the server's RFC 8414 (or OpenID) document.
 type authorizationServer struct {
-	Issuer                        string   `json:"issuer"`
-	AuthorizationEndpoint         string   `json:"authorization_endpoint"`
-	TokenEndpoint                 string   `json:"token_endpoint"`
-	RegistrationEndpoint          string   `json:"registration_endpoint"`
-	UserinfoEndpoint              string   `json:"userinfo_endpoint"`
-	CodeChallengeMethodsSupported []string `json:"code_challenge_methods_supported"`
+	Issuer                            string   `json:"issuer"`
+	AuthorizationEndpoint             string   `json:"authorization_endpoint"`
+	TokenEndpoint                     string   `json:"token_endpoint"`
+	UserinfoEndpoint                  string   `json:"userinfo_endpoint"`
+	CodeChallengeMethodsSupported     []string `json:"code_challenge_methods_supported"`
+	ClientIDMetadataDocumentSupported bool     `json:"client_id_metadata_document_supported"`
 }
 
 // musterUser is the userinfo answer; the login is the first of these that is set.
@@ -75,7 +86,8 @@ type musterDiscovery struct {
 
 // discoverMuster reads the endpoint's protected-resource metadata, the
 // path-inserted well-known URL first, then its authorization server's
-// metadata, and refuses a server without S256 PKCE.
+// metadata, and refuses a server without S256 PKCE or without client ID
+// metadata documents.
 func (a *Auth) discoverMuster(ctx context.Context, endpoint string) (musterDiscovery, error) {
 	u, err := url.Parse(endpoint)
 	if err != nil || u.Scheme == "" || u.Host == "" {
@@ -118,6 +130,9 @@ func (a *Auth) discoverMuster(ctx context.Context, endpoint string) (musterDisco
 	if !slices.Contains(server.CodeChallengeMethodsSupported, "S256") {
 		return musterDiscovery{}, fmt.Errorf("the authorization server %s does not support S256 PKCE", issuer)
 	}
+	if !server.ClientIDMetadataDocumentSupported {
+		return musterDiscovery{}, fmt.Errorf("the authorization server %s does not support client ID metadata documents, which is how devctl identifies itself (%s)", issuer, MusterClientID)
+	}
 	if server.Issuer == "" {
 		server.Issuer = issuer
 	}
@@ -133,12 +148,12 @@ func (a *Auth) discoverMuster(ctx context.Context, endpoint string) (musterDisco
 }
 
 // LoginMuster runs the authorization code flow with PKCE against the
-// authorization server the endpoint names: discovers it, listens on the
-// loopback address of the device's client (registering a client first when
-// the device has none for this server, or when its address cannot be bound
-// any more), prints the authorization URL to stderr, opens the browser,
-// exchanges the code, reads the login from userinfo and stores the record
-// with the endpoint and the issuer.
+// authorization server the endpoint names: discovers it, listens on a
+// loopback address (the device's last one when it can be bound, else a
+// fresh port -- muster matches loopback redirects on any port), prints the
+// authorization URL to stderr with [MusterClientID] as the client, opens
+// the browser, exchanges the code, reads the login from userinfo and stores
+// the record with the endpoint and the issuer.
 func (a *Auth) LoginMuster(ctx context.Context, endpoint string) (Identity, error) {
 	endpoint = strings.TrimRight(endpoint, "/")
 	if endpoint == "" {
@@ -161,16 +176,7 @@ func (a *Auth) LoginMuster(ctx context.Context, endpoint string) (Identity, erro
 	}
 	defer func() { _ = listener.Close() }()
 
-	clientID := previous.ClientID
-	if clientID == "" || redirectURI != previous.RedirectURI || previous.Issuer != server.Issuer {
-		if server.RegistrationEndpoint == "" {
-			return Identity{}, fmt.Errorf("the authorization server %s offers no dynamic client registration", server.Issuer)
-		}
-		clientID, err = a.registerClient(ctx, server.RegistrationEndpoint, redirectURI, identityMuster)
-		if err != nil {
-			return Identity{}, err
-		}
-	}
+	clientID := MusterClientID
 
 	verifier, challenge, err := pkce()
 	if err != nil {
@@ -275,7 +281,7 @@ func (a *Auth) refreshMuster(ctx context.Context, record Record) (Record, error)
 	form := url.Values{
 		paramGrantType:  {grantTypeRefresh},
 		"refresh_token": {record.RefreshToken},
-		paramClientID:   {record.ClientID},
+		paramClientID:   {MusterClientID},
 		paramResource:   {discovered.Resource},
 	}
 	var token oauthToken

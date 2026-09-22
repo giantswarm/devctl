@@ -26,8 +26,15 @@ import (
 // MCPPath is where the aggregator speaks MCP.
 const MCPPath = "/mcp"
 
-// ClientID is the client id the registration endpoint hands out.
+// ClientID is the client id the registration endpoint hands out; a client
+// id that is an HTTPS URL -- a client ID metadata document, what devctl
+// sends -- is accepted as well, without a fetch.
 const ClientID = "devctl-e2e-client"
+
+// knownClient says whether the mock serves this client id.
+func knownClient(id string) bool {
+	return id == ClientID || strings.HasPrefix(id, "https://")
+}
 
 // The keys of the OAuth and JSON-RPC answers, and the flow's parameters.
 const (
@@ -157,6 +164,7 @@ func (s *Server) authorizationServer(w http.ResponseWriter, _ *http.Request) {
 		"response_types_supported":              []string{paramCode},
 		"grant_types_supported":                 []string{"authorization_code", grantRefreshToken},
 		"code_challenge_methods_supported":      []string{"S256"},
+		"client_id_metadata_document_supported": true,
 		"token_endpoint_auth_methods_supported": []string{"none"},
 	})
 }
@@ -185,7 +193,7 @@ func (s *Server) authorize(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "redirect_uri missing or not a loopback address", http.StatusBadRequest)
 		return
 	}
-	if q.Get("response_type") != paramCode || q.Get("client_id") != ClientID || q.Get("code_challenge_method") != "S256" || q.Get("code_challenge") == "" || q.Get("state") == "" {
+	if q.Get("response_type") != paramCode || !knownClient(q.Get("client_id")) || q.Get("code_challenge_method") != "S256" || q.Get("code_challenge") == "" || q.Get("state") == "" {
 		back := redirect.Query()
 		back.Set(keyError, "invalid_request")
 		back.Set("state", q.Get("state"))
@@ -216,7 +224,7 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{keyError: "invalid_request"})
 		return
 	}
-	if r.Form.Get("client_id") != ClientID {
+	if !knownClient(r.Form.Get("client_id")) {
 		writeJSON(w, http.StatusUnauthorized, map[string]any{keyError: "invalid_client"})
 		return
 	}
