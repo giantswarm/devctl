@@ -22,12 +22,17 @@ const (
 	circleCIExchangePath  = "/oauth/token"
 	circleCIMePath        = "/me"
 
-	circleCIClientName         = "devctl"
 	grantTypeAuthorizationCode = "authorization_code"
-	circleCICallbackPath       = "/callback"
 
 	// circleCIAuthorizeTimeout is how long the human has to grant access.
 	circleCIAuthorizeTimeout = 10 * time.Minute
+)
+
+// The loopback callback of the authorization code flows, and the name devctl
+// registers itself under.
+const (
+	loopbackCallbackPath = "/callback"
+	oauthClientName      = "devctl"
 )
 
 // clientRegistration is the dynamic client registration request: a public
@@ -89,13 +94,13 @@ func (a *Auth) LoginCircleCI(ctx context.Context) (Identity, error) {
 	authorize := a.endpoints.CircleCIOAuthURL + circleCIAuthorizePath + "?" + url.Values{
 		"response_type":         {paramCode},
 		paramClientID:           {clientID},
-		"redirect_uri":          {redirectURI},
+		paramRedirectURI:        {redirectURI},
 		"code_challenge":        {challenge},
 		"code_challenge_method": {"S256"},
 		"state":                 {state},
 	}.Encode()
 
-	codes, stop := serveCallback(listener, state)
+	codes, stop := serveCallback(listener, state, "devctl is authorized on CircleCI. You can close this tab.")
 	defer stop()
 
 	fmt.Fprintf(a.stderr, "CircleCI: open %s and grant Read access\n", authorize)
@@ -115,11 +120,11 @@ func (a *Auth) LoginCircleCI(ctx context.Context) (Identity, error) {
 	}
 
 	form := url.Values{
-		paramGrantType:  {grantTypeAuthorizationCode},
-		paramCode:       {code},
-		paramClientID:   {clientID},
-		"redirect_uri":  {redirectURI},
-		"code_verifier": {verifier},
+		paramGrantType:   {grantTypeAuthorizationCode},
+		paramCode:        {code},
+		paramClientID:    {clientID},
+		paramRedirectURI: {redirectURI},
+		"code_verifier":  {verifier},
 	}
 	var token oauthToken
 	if err := a.postForm(ctx, a.endpoints.CircleCIOAuthURL+circleCIExchangePath, form, &token); err != nil {
@@ -151,23 +156,30 @@ func (a *Auth) LoginCircleCI(ctx context.Context) (Identity, error) {
 // registerCircleCIClient registers devctl on this device as a public client
 // for redirectURI and returns the client id.
 func (a *Auth) registerCircleCIClient(ctx context.Context, redirectURI string) (string, error) {
+	return a.registerClient(ctx, a.endpoints.CircleCIOAuthURL+circleCIRegisterPath, redirectURI, identityCircleCI)
+}
+
+// registerClient registers devctl on this device as a public client for
+// redirectURI at the authorization server's registration endpoint and
+// returns the client id; what names the server in the errors.
+func (a *Auth) registerClient(ctx context.Context, endpoint, redirectURI, what string) (string, error) {
 	registration := clientRegistration{
-		ClientName:              circleCIClientName,
+		ClientName:              oauthClientName,
 		RedirectURIs:            []string{redirectURI},
-		GrantTypes:              []string{grantTypeAuthorizationCode},
+		GrantTypes:              []string{grantTypeAuthorizationCode, grantTypeRefresh},
 		ResponseTypes:           []string{paramCode},
 		TokenEndpointAuthMethod: "none",
 	}
 	var registered clientRegistered
-	err := a.postJSON(ctx, a.endpoints.CircleCIOAuthURL+circleCIRegisterPath, registration, &registered, http.StatusCreated, http.StatusOK)
+	err := a.postJSON(ctx, endpoint, registration, &registered, http.StatusCreated, http.StatusOK)
 	if err != nil {
-		return "", fmt.Errorf("registering devctl as a CircleCI OAuth client: %w", err)
+		return "", fmt.Errorf("registering devctl as a %s OAuth client: %w", what, err)
 	}
 	if registered.Error != "" {
-		return "", fmt.Errorf("registering devctl as a CircleCI OAuth client: %s", registered.Error)
+		return "", fmt.Errorf("registering devctl as a %s OAuth client: %s", what, registered.Error)
 	}
 	if registered.ClientID == "" {
-		return "", errors.New("registering devctl as a CircleCI OAuth client: no client_id in the response")
+		return "", fmt.Errorf("registering devctl as a %s OAuth client: no client_id in the response", what)
 	}
 	return registered.ClientID, nil
 }
@@ -220,9 +232,9 @@ func listenLoopback(previous string) (net.Listener, string, error) {
 	}
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		return nil, "", fmt.Errorf("listening for the CircleCI callback: %w", err)
+		return nil, "", fmt.Errorf("listening for the OAuth callback: %w", err)
 	}
-	return l, "http://" + l.Addr().String() + circleCICallbackPath, nil
+	return l, "http://" + l.Addr().String() + loopbackCallbackPath, nil
 }
 
 type callbackResult struct {
@@ -231,11 +243,12 @@ type callbackResult struct {
 }
 
 // serveCallback answers the browser's redirect once: the code when the
-// state matches, the error CircleCI sent otherwise.
-func serveCallback(l net.Listener, state string) (<-chan callbackResult, func()) {
+// state matches, the error the authorization server sent otherwise; done is
+// the sentence the browser shows on success.
+func serveCallback(l net.Listener, state, done string) (<-chan callbackResult, func()) {
 	results := make(chan callbackResult, 1)
 	mux := http.NewServeMux()
-	mux.HandleFunc(circleCICallbackPath, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc(loopbackCallbackPath, func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		var result callbackResult
 		switch {
@@ -252,7 +265,7 @@ func serveCallback(l net.Listener, state string) (<-chan callbackResult, func())
 			http.Error(w, "devctl: "+result.err.Error(), http.StatusBadRequest)
 		} else {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			fmt.Fprint(w, "<!doctype html><title>devctl</title><p>devctl is authorized on CircleCI. You can close this tab.</p>")
+			fmt.Fprintf(w, "<!doctype html><title>devctl</title><p>%s</p>", done)
 		}
 		select {
 		case results <- result:

@@ -4,14 +4,17 @@ The agent-facing commands (`pr wait`, `pr merge`, `release wait`) act as the eng
 read pipelines on CircleCI. They take their tokens from the OS keychain and from nowhere else: no
 environment variable, no `gh auth token`, no file. `devctl auth login` puts the tokens there;
 `devctl auth status` shows what is there. A command that finds no usable token exits 8 with one
-sentence naming `devctl auth login`, before it waits for anything.
+sentence naming `devctl auth login`, before it waits for anything. The `repo` commands that call
+giantswarm-repo-manager take their muster token from the same keychain; `devctl auth login
+--muster-only` puts it there.
 
 ## `devctl auth login`
 
 ```nohighlight
-devctl auth login                  # both flows
+devctl auth login                  # GitHub and CircleCI
 devctl auth login --github-only
 devctl auth login --circleci-only
+devctl auth login --muster-only    # muster, for the repo commands
 ```
 
 **GitHub** is the device flow of the `giantswarm-devctl` GitHub App, owned by the `giantswarm`
@@ -47,11 +50,40 @@ The endpoints are the ones CircleCI publishes in its authorization server metada
 [OAuth 2.0 API access with Dynamic Client Registration](https://circleci.com/docs/guides/toolkit/oauth-dynamic-client-registration/)
 and the [changelog entry](https://circleci.com/changelog/oauth-2-0-api-access-with-dynamic-client-registration/).
 
-Both tokens go into the OS keychain, service `devctl`, users `github` and `circleci`: Secret Service
-on Linux, Keychain on macOS, Credential Manager on Windows. A record carries the login, the token
-and its expiry, for GitHub the refresh token and its expiry, for CircleCI the client id and the
-redirect URI. No command prints a token, ever; `--progress` lines and the human instructions on
-stderr name logins and URLs only.
+**muster** (`--muster-only`) is the sign-in to the muster MCP endpoint that runs
+giantswarm-repo-manager, for the `repo` commands: `--muster-endpoint`, `$DEVCTL_MUSTER_URL` or the
+default, gazelle's `https://muster.gazelle.awsprod.gigantic.io/mcp`. muster is its own OAuth 2.1
+authorization server, so the flow is discovered, not configured:
+
+1. devctl reads the endpoint's protected resource metadata (RFC 9728, the path-inserted well-known
+   URL first) for the authorization server, then the server's metadata (RFC 8414) for its
+   endpoints; a server without S256 PKCE is refused.
+2. On the first sign-in on a device, devctl registers itself as a public client (`client_name:
+   devctl`, no secret, one loopback redirect URI) with one `POST` to the registration endpoint. The
+   client id, the redirect URI, the endpoint and the issuer stay in the keychain record; later
+   sign-ins reuse the client, and a new one is registered only for another issuer, or when the
+   loopback port can no longer be bound.
+3. devctl prints the authorization URL to stderr and opens the browser on it; the scopes are the
+   ones the endpoint's metadata names, else `openid profile email groups offline_access`, and the
+   token is bound to the endpoint with the `resource` indicator (RFC 8707). The browser returns to
+   the loopback address with the code; the state is checked; devctl exchanges the code with the
+   PKCE verifier and reads the login from the userinfo endpoint.
+4. The access token comes with a refresh token (the `offline_access` scope): a `repo` command that
+   finds the access token expired refreshes it itself, no human involved, and stores the new pair.
+
+Then the sign-in to giantswarm-repo-manager, once: the manager is pinned to its own GitHub App, so
+devctl asks muster (`core_auth_login`) for the sign-in, prints and opens the App's consent URL when
+one is needed, and asks the manager who is calling (`get_info`) until it answers -- that is when the
+consent is filed under you in muster (ten minutes at most). The document names the outcome under
+`giantswarmRepoManager` (`signedIn`, `caller`). A muster that does not run the manager (a lab's,
+an installation's own) is a note there and a warning, not a failure: the muster sign-in stands.
+
+The tokens go into the OS keychain, service `devctl`, users `github`, `circleci` and `muster`:
+Secret Service on Linux, Keychain on macOS, Credential Manager on Windows. A record carries the
+login, the token and its expiry, for GitHub and muster the refresh token (and its expiry, when the
+server names one), for CircleCI and muster the client id and the redirect URI, for muster the
+endpoint and the issuer. No command prints a token, ever; `--progress` lines and the human
+instructions on stderr name logins and URLs only.
 
 The command prints the same document as `auth status` and exits 0 when the requested flows
 completed. A refused or timed-out authorization is exit 7 with the reason in the document.
@@ -62,7 +94,7 @@ completed. A refused or timed-out authorization is exit 7 with the reason in the
 devctl auth status
 ```
 
-Reads both records, contacts nothing and prints:
+Reads the records, contacts nothing and prints:
 
 ```json
 {
@@ -94,17 +126,21 @@ Reads both records, contacts nothing and prints:
 }
 ```
 
-Exit 0 when both identities are usable without a human (valid, or expired with a valid refresh
-token); exit 8 with the `devctl auth login` invocation that fixes it when one is missing or expired
-for good. An agent runs `devctl auth status || devctl auth login`.
+Exit 0 when the GitHub and CircleCI identities are usable without a human (valid, or expired with
+a valid refresh token); exit 8 with the `devctl auth login` invocation that fixes it when one is
+missing or expired for good. An agent runs `devctl auth status || devctl auth login`. The `muster`
+identity is the third block of the document, with its `endpoint`, and is reported, not required:
+only the `repo` commands need it, and they exit 8 naming `devctl auth login --muster-only`
+themselves.
 
 ## The gate the other commands use
 
 `authstore.RequireGitHub(ctx)` returns the token, refreshed when needed, or `ErrAuthRequired`;
 `authstore.RequireCircleCI(ctx)` returns the token or `ErrAuthRequired`, with the seven-day warning
 on the token for the envelope. A CircleCI token is required only when the repository has a CircleCI
-project. Both errors carry exit code 8 and the verdict `auth_required` through
-`agentcli.ExitCoder`, so a command returns them unchanged.
+project. `authstore.RequireMuster(ctx)` returns the muster token, refreshed when needed, with the
+endpoint it is for, or `ErrAuthRequired` naming `--muster-only`. The errors carry exit code 8 and
+the verdict `auth_required` through `agentcli.ExitCoder`, so a command returns them unchanged.
 
 ## Exit codes and the JSON envelope
 
@@ -136,5 +172,6 @@ The defaults are production; the variables exist for other sites and for tests a
 | `DEVCTL_REGISTRY_PUBLIC` | `gsoci.azurecr.io` | public registry, probed anonymously |
 | `DEVCTL_REGISTRY_PRIVATE` | `gsociprivate.azurecr.io` | private registry, docker keychain |
 | `DEVCTL_REGISTRY_INSECURE` | unset | `1` talks plain HTTP to the registries (tests) |
+| `DEVCTL_MUSTER_URL` | `https://muster.gazelle.awsprod.gigantic.io/mcp` | the muster MCP endpoint `--muster-only` signs in to and the `repo` commands reach giantswarm-repo-manager through |
 | `DEVCTL_KEYRING_FILE` | unset | a 0600 JSON file in place of the OS keychain (tests) |
 | `DEVCTL_TIME_SCALE` | `1` | multiplies every sleep and timeout; the e2e suite runs at `0.001` |

@@ -25,6 +25,12 @@
       "expired": true,
       "refreshable": false,
       "warnings": []
+    },
+    "muster": {
+      "present": false,
+      "expired": false,
+      "refreshable": false,
+      "warnings": []
     }
   }
 }

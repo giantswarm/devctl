@@ -1,13 +1,17 @@
 // Package authstore holds the identities devctl's agent-facing commands act
 // with: a GitHub user access token of the devctl GitHub App, obtained with the
-// device flow and refreshed without a human, and a CircleCI API token obtained
+// device flow and refreshed without a human; a CircleCI API token obtained
 // with the OAuth 2.0 authorization code flow with PKCE after a one-time
-// dynamic client registration per device. Both live in the OS keychain with
-// their expiry and nowhere else: no environment variable, no file, no output.
+// dynamic client registration per device; and a muster access token for the
+// installation that runs giantswarm-repo-manager, obtained the same way from
+// muster's own authorization server and refreshed without a human. All live
+// in the OS keychain with their expiry and nowhere else: no environment
+// variable, no file, no output.
 //
-// A command that needs a token calls [RequireGitHub] or [RequireCircleCI]
-// before it does anything else and returns the [ErrAuthRequired] it gets
-// unchanged: it is exit 8 with one sentence naming `devctl auth login`.
+// A command that needs a token calls [RequireGitHub], [RequireCircleCI] or
+// [RequireMuster] before it does anything else and returns the
+// [ErrAuthRequired] it gets unchanged: it is exit 8 with one sentence naming
+// `devctl auth login`.
 package authstore
 
 import (
@@ -38,18 +42,20 @@ var ErrAuthRequired = errors.New("authentication required")
 const (
 	identityGitHub   = "GitHub"
 	identityCircleCI = "CircleCI"
+	identityMuster   = "muster"
 
 	causeNoToken = "no token in the keychain"
 
 	hintLogin         = "devctl auth login"
 	hintLoginGitHub   = "devctl auth login --github-only"
 	hintLoginCircleCI = "devctl auth login --circleci-only"
+	hintLoginMuster   = "devctl auth login --muster-only"
 )
 
 // AuthRequiredError is exit 8: no usable token for Identity. Its message is
 // the one sentence the envelope's reason carries.
 type AuthRequiredError struct {
-	// Identity is "GitHub" or "CircleCI".
+	// Identity is "GitHub", "CircleCI" or "muster".
 	Identity string
 	// Cause says what is wrong with the record, without token material.
 	Cause string
@@ -81,6 +87,9 @@ type Token struct {
 	// Warning is the expiry notice of a CircleCI token within
 	// [CircleCIExpiryWarning] of its end, for the envelope; empty otherwise.
 	Warning string
+	// Endpoint is the muster MCP endpoint a muster token is for; empty for
+	// the other identities.
+	Endpoint string
 }
 
 // Config configures an [Auth].
@@ -175,6 +184,17 @@ func RequireCircleCI(ctx context.Context) (Token, error) {
 	return a.RequireCircleCI(ctx)
 }
 
+// RequireMuster is the muster token of the environment's store, refreshed
+// when expired and refreshable; [ErrAuthRequired] otherwise. Token.Endpoint
+// is the MCP endpoint the token is for.
+func RequireMuster(ctx context.Context) (Token, error) {
+	a, err := Open(nil)
+	if err != nil {
+		return Token{}, err
+	}
+	return a.RequireMuster(ctx)
+}
+
 // Identity is what `auth status` says about one identity: never the token.
 type Identity struct {
 	// Present is false when the keychain has no record.
@@ -184,10 +204,12 @@ type Identity struct {
 	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
 	Expired   bool       `json:"expired"`
 	// Refreshable: the record has a refresh token that has not expired, so a
-	// command refreshes the access token itself (GitHub only).
+	// command refreshes the access token itself (GitHub and muster).
 	Refreshable      bool       `json:"refreshable"`
 	RefreshExpiresAt *time.Time `json:"refreshExpiresAt,omitempty"`
-	Warnings         []string   `json:"warnings"`
+	// Endpoint is the muster MCP endpoint the token is for (muster only).
+	Endpoint string   `json:"endpoint,omitempty"`
+	Warnings []string `json:"warnings"`
 }
 
 // Usable: a command can act with this identity without a human.
@@ -195,13 +217,16 @@ func (i Identity) Usable() bool {
 	return i.Present && (!i.Expired || i.Refreshable)
 }
 
-// Status is both identities.
+// Status is the three identities. GitHub and CircleCI are what the pr and
+// release commands need; muster is what the repo commands need, and the
+// other commands never ask for it.
 type Status struct {
 	GitHub   Identity `json:"github"`
 	CircleCI Identity `json:"circleci"`
+	Muster   Identity `json:"muster"`
 }
 
-// Status reads both records without touching the network.
+// Status reads the records without touching the network.
 func (a *Auth) Status() (Status, error) {
 	now := a.clock.Now()
 	github, err := a.identity(UserGitHub, now)
@@ -212,17 +237,23 @@ func (a *Auth) Status() (Status, error) {
 	if err != nil {
 		return Status{}, err
 	}
-	return Status{GitHub: github, CircleCI: circleci}, nil
+	muster, err := a.identity(UserMuster, now)
+	if err != nil {
+		return Status{}, err
+	}
+	return Status{GitHub: github, CircleCI: circleci, Muster: muster}, nil
 }
 
-// NewStatus is the status before anything is known: both identities absent,
+// NewStatus is the status before anything is known: every identity absent,
 // their warnings empty arrays.
 func NewStatus() Status {
-	return Status{GitHub: Identity{Warnings: []string{}}, CircleCI: Identity{Warnings: []string{}}}
+	return Status{GitHub: Identity{Warnings: []string{}}, CircleCI: Identity{Warnings: []string{}}, Muster: Identity{Warnings: []string{}}}
 }
 
-// Check is nil when both identities are usable, else the [*AuthRequiredError]
-// of the first one that is not, hinting at the login that fixes it.
+// Check is nil when the GitHub and CircleCI identities are usable, else the
+// [*AuthRequiredError] of the first one that is not, hinting at the login
+// that fixes it. The muster identity is not checked: only the repo commands
+// need it, and they ask [RequireMuster] themselves.
 func (s Status) Check() error {
 	switch {
 	case !s.GitHub.Usable() && !s.CircleCI.Usable():
@@ -264,12 +295,15 @@ func describe(user string, record Record, now time.Time) Identity {
 		id.ExpiresAt = &t
 		id.Expired = expired(record.ExpiresAt, now)
 	}
-	if user == UserGitHub && record.RefreshToken != "" {
+	if (user == UserGitHub || user == UserMuster) && record.RefreshToken != "" {
 		id.Refreshable = !expired(record.RefreshExpiresAt, now)
 		if !record.RefreshExpiresAt.IsZero() {
 			t := record.RefreshExpiresAt.UTC()
 			id.RefreshExpiresAt = &t
 		}
+	}
+	if user == UserMuster {
+		id.Endpoint = record.Endpoint
 	}
 	if user == UserCircleCI && !id.Expired {
 		if w := circleCIWarning(record.ExpiresAt, now); w != "" {

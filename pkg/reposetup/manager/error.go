@@ -16,9 +16,19 @@ var unreachableError = &microerror.Error{
 }
 
 // IsUnreachable asserts unreachableError: the endpoint did not answer, or
-// not with MCP. The caller falls back to the engine.
+// not with MCP.
 func IsUnreachable(err error) bool {
 	return microerror.Cause(err) == unreachableError
+}
+
+var authRequiredError = &microerror.Error{
+	Kind: "authRequiredError",
+}
+
+// IsAuthRequired asserts authRequiredError: the endpoint refused the bearer
+// (401 or 403); the person logs in to muster again.
+func IsAuthRequired(err error) bool {
+	return microerror.Cause(err) == authRequiredError
 }
 
 var toolError = &microerror.Error{

@@ -1,0 +1,20 @@
+# The muster sign-in from a laptop: devctl discovers muster's authorization
+# server from the endpoint's RFC 9728 document, registers itself once as a
+# public client (RFC 7591) and prints the authorization URL; the harness plays
+# the person (browser: true) and fetches it, the mock's authorization endpoint
+# redirects straight back to devctl's loopback callback with a code, devctl
+# exchanges it with the PKCE verifier and stores the tokens. Then the sign-in
+# to giantswarm-repo-manager: muster's core_auth_login answers the GitHub
+# App's consent URL, and the manager's get_info answers the caller once the
+# consent is filed -- here on the second ask.
+description: auth login --muster-only signs in to muster, stores the token and completes the manager sign-in
+args: [auth, login, --muster-only, --progress]
+browser: true
+muster:
+  login: e2e-engineer@example.com
+  tools:
+    core_auth_login:
+      - result: "Please open the following URL to authenticate to 'giantswarm-repo-manager': http://127.0.0.1:1/consent?state=e2e"
+    x_giantswarm-repo-manager_get_info:
+      - error: "tool x_giantswarm-repo-manager_get_info requires authentication: sign in with core_auth_login"
+      - result: {version: "0.25.2", toolPrefix: giantswarm-repo-manager, caller: {login: e2e-engineer, id: 1}, auth: {mode: bearer}}

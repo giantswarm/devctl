@@ -1,11 +1,11 @@
 {
-  "exitCode": 8,
+  "exitCode": 0,
   "json": {
-    "command": "auth status",
+    "command": "auth login",
     "schemaVersion": 1,
-    "exitCode": 8,
-    "verdict": "auth_required",
-    "reason": "GitHub authentication required (no token in the keychain): run `devctl auth login`.",
+    "exitCode": 0,
+    "verdict": "green",
+    "reason": "",
     "warnings": [],
     "startedAt": "*",
     "finishedAt": "*",
@@ -22,10 +22,18 @@
       "warnings": []
     },
     "muster": {
-      "present": false,
+      "present": true,
+      "login": "e2e-engineer@example.com",
+      "expiresAt": "*",
       "expired": false,
-      "refreshable": false,
+      "refreshable": true,
+      "endpoint": "*",
       "warnings": []
+    },
+    "giantswarmRepoManager": {
+      "server": "giantswarm-repo-manager",
+      "signedIn": true,
+      "caller": "e2e-engineer"
     }
   }
 }

@@ -17,6 +17,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/giantswarm/devctl/v8/e2e/mock/muster"
 	"github.com/giantswarm/devctl/v8/e2e/mock/sequence"
 )
 
@@ -43,11 +44,16 @@ type Scenario struct {
 	// Keyring is written as JSON to the file DEVCTL_KEYRING_FILE names; left
 	// out, the file does not exist.
 	Keyring any `yaml:"keyring"`
-	// GitHub, CircleCI, Registry and PrivateRegistry script the mocks.
-	GitHub          Mock         `yaml:"github"`
-	CircleCI        Mock         `yaml:"circleci"`
-	Registry        RegistryMock `yaml:"registry"`
-	PrivateRegistry RegistryMock `yaml:"privateRegistry"`
+	// GitHub, CircleCI, Registry, PrivateRegistry and Muster script the mocks.
+	GitHub          Mock          `yaml:"github"`
+	CircleCI        Mock          `yaml:"circleci"`
+	Registry        RegistryMock  `yaml:"registry"`
+	PrivateRegistry RegistryMock  `yaml:"privateRegistry"`
+	Muster          muster.Config `yaml:"muster"`
+	// Browser makes the harness play the person at the browser: every URL
+	// devctl asks to open on stderr is fetched, following redirects, so an
+	// authorization that redirects straight back completes.
+	Browser bool `yaml:"browser"`
 }
 
 // Mock is one mock's script.

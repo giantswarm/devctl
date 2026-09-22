@@ -97,6 +97,8 @@ privateRegistry:                       # the private registry, DEVCTL_REGISTRY_P
 | `timeout` | Bound of the run (`20s`, `2m`); the scenario fails when the binary has not exited. Default 60 s. |
 | `keyring` | Written as JSON to the file `DEVCTL_KEYRING_FILE` names, the record format of the keyring store. Left out, the file does not exist: the state before `devctl auth login`. |
 | `github`, `circleci`, `registry`, `privateRegistry` | The mocks' scripts: `routes`, and for a registry `staleLogin`. |
+| `muster` | The muster mock's script: `tools`, a tool name as muster exposes it (`x_giantswarm-repo-manager_get_info`, `core_auth_login`) to its sequence of answers (`result`: a mapping or list is the structured content, a string the text; `error`: a tool error with that text); `login`, the userinfo email; `bearer` and `refreshToken`, tokens the mock accepts besides the ones it issues (the scenario's keyring). |
+| `browser` | `true` makes the harness play the person at the browser: every URL devctl asks to open on stderr is fetched, following redirects, so the muster mock's authorization endpoint lands its code on devctl's loopback callback. Only loopback URLs are fetched. |
 
 Unknown fields are errors, so a misspelt key fails the scenario instead of being ignored.
 
@@ -159,6 +161,7 @@ The binary's environment is built from scratch; nothing of the developer's shell
 | `DEVCTL_REGISTRY_PUBLIC` | `host:port` of the public registry mock |
 | `DEVCTL_REGISTRY_PRIVATE` | `host:port` of the private registry mock |
 | `DEVCTL_REGISTRY_INSECURE` | `1`: the mocks speak plain HTTP |
+| `DEVCTL_MUSTER_URL` | the muster mock plus `/mcp` |
 | `DEVCTL_KEYRING_FILE` | `keyring.json` in the scenario's home, the scenario's `keyring` when given |
 | `DEVCTL_TIME_SCALE` | `0.001` |
 | `DEVCTL_UNSAFE_FORCE_VERSION` | the built binary's version, which skips the update check |
@@ -189,6 +192,17 @@ route keys: `GET /api/v2/project/{slug}`, `GET /api/v2/project/{slug}/pipeline?b
 /api/v2/pipeline/{id}`, `GET /api/v2/pipeline/{id}/workflow`, `GET /api/v2/workflow/{id}/job`, and for the
 login the issuer's registration and token endpoints the command asks for.
 
+**muster** (`mock/muster`) is a muster aggregator with its own OAuth 2.1 authorization server on one server. The
+OAuth side is built in, not scripted: `GET /.well-known/oauth-protected-resource[/mcp]` names the server itself,
+`GET /.well-known/oauth-authorization-server` its endpoints (S256 PKCE, `authorization_code` and `refresh_token`),
+`POST /oauth/register` hands out one client id, `GET /oauth/authorize` redirects straight back to the client's
+`redirect_uri` with a code bound to the PKCE challenge (the browser of a person who is signed in already), `POST
+/oauth/token` exchanges the code (the verifier checked) or a refresh token for a fresh access and refresh token, and
+`GET /oauth/userinfo` answers the scenario's `login`. `POST /mcp` speaks MCP over streamable HTTP for a bearer the
+mock issued or the scenario's `bearer`, else `401` with the bearer challenge: `initialize` opens a session,
+`tools/call` answers from the scenario's `tools` by tool name, and a tool the scenario does not script is a JSON-RPC
+error.
+
 **Registry** (`mock/registry`) is an OCI distribution registry, run twice: `registry` is the public one,
 `privateRegistry` the private one, so a scenario can give them different states. A manifest is `HEAD` or `GET
 /v2/{name}/manifests/{reference}`; a chart is a name under `charts/` (`/v2/giantswarm/charts/devctl/manifests/1.2.3`).
@@ -213,4 +227,4 @@ The incidents the commands encode, one scenario each, by these slugs:
   `behind-update-branch`, `merge-queue`, `red-not-merged`
 - `release wait`: `renamed-image`, `hand-written-ci`, `release-assets-only`, `failed-tag-pipeline`,
   `rerun-replaces-failed`, `stale-registry-login`, `release-wait-timeout`
-- `auth`: `auth-missing`, `auth-expired`, `auth-refreshed`
+- `auth`: `auth-missing`, `auth-expired`, `auth-refreshed`, `auth-login-muster`, `auth-login-muster-no-manager`
