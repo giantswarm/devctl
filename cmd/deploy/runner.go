@@ -13,8 +13,8 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
-	"github.com/giantswarm/devctl/v8/internal/env"
 	"github.com/giantswarm/devctl/v8/pkg/appstatus"
+	"github.com/giantswarm/devctl/v8/pkg/authstore"
 	"github.com/giantswarm/devctl/v8/pkg/githubclient"
 )
 
@@ -34,16 +34,18 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 		return microerror.Mask(err)
 	}
 
-	// Get GitHub token from environment variables
-	token := env.GitHubToken.Val()
-	if token == "" {
-		return microerror.Maskf(envVarNotFoundError, "GitHub token not found in environment variables. Please set GITHUB_TOKEN or OPSCTL_GITHUB_TOKEN")
+	token, err := authstore.ResolveGitHub(ctx)
+	if err != nil {
+		return err
 	}
+	if token.Warning != "" {
+		r.Logger.Warn(token.Warning)
+	}
+	notFoundHint := authstore.GitHubNotFoundHint(token)
 
-	// Create GitHub client
 	githubClient, err := githubclient.New(githubclient.Config{
 		Logger:      logrus.StandardLogger(),
-		AccessToken: token,
+		AccessToken: token.Value,
 	})
 	if err != nil {
 		return microerror.Mask(err)
@@ -66,7 +68,7 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 	// Clone repository
 	err = githubClient.CloneRepository(ctx, owner, repo, tempDir)
 	if err != nil {
-		return microerror.Mask(err)
+		return githubclient.ExplainNotFound(microerror.Mask(err), notFoundHint)
 	}
 
 	// Create new branch
@@ -107,7 +109,7 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 	// Create pull request
 	pr, err := githubClient.CreatePullRequest(ctx, owner, repo, newBranch, commitMsg)
 	if err != nil {
-		return microerror.Mask(err)
+		return githubclient.ExplainNotFound(microerror.Mask(err), notFoundHint)
 	}
 
 	r.Logger.Infof("PR created: %s. Please approve to continue.", pr.GetHTMLURL())

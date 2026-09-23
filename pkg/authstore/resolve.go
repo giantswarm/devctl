@@ -46,6 +46,20 @@ func GitHubOverrideWarning(envVars ...string) string {
 	return token.Warning
 }
 
+// GitHubNotFoundHint is the sentence a command adds to GitHub's 404 when token
+// is the App login: the giantswarm-devctl App reaches only the repositories it
+// is installed on, the giantswarm organization, and public ones, and GitHub
+// answers 404 rather than 403 for a private repository a token cannot read.
+// It names the variables of envVars (none means [GitHubEnvVars]) as the
+// override. Empty for a token from the environment.
+func GitHubNotFoundHint(token Token, envVars ...string) string {
+	if token.Source != SourceKeychain {
+		return ""
+	}
+	return fmt.Sprintf("the devctl GitHub App login reaches the giantswarm organization and public repositories only: "+
+		"for a repository elsewhere, set %s to a token that can read it.", variables(githubVars(envVars)))
+}
+
 func resolveGitHub(ctx context.Context, open func() (*Auth, error), envVars []string) (Token, error) {
 	if token, ok := githubEnvToken(envVars); ok {
 		return token, nil

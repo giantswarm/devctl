@@ -17,8 +17,8 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
-	"github.com/giantswarm/devctl/v8/internal/env"
 	"github.com/giantswarm/devctl/v8/internal/pr"
+	"github.com/giantswarm/devctl/v8/pkg/authstore"
 	"github.com/giantswarm/devctl/v8/pkg/githubclient"
 )
 
@@ -38,17 +38,20 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 }
 
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
+	token, err := authstore.ResolveGitHub(ctx)
+	if err != nil {
+		return err
+	}
+	if token.Warning != "" {
+		r.logger.Warn(token.Warning)
+	}
+
 	// Set logger to only show errors to avoid cluttering the table UI
 	r.logger.SetLevel(logrus.ErrorLevel)
 
-	githubToken := env.GitHubToken.Val()
-	if githubToken == "" {
-		return microerror.Maskf(executionFailedError, "environment variable GITHUB_TOKEN not found, please set it to your GitHub personal access token")
-	}
-
 	ghClientService, err := githubclient.New(githubclient.Config{
 		Logger:      r.logger,
-		AccessToken: githubToken,
+		AccessToken: token.Value,
 		DryRun:      r.flag.DryRun,
 	})
 	if err != nil {

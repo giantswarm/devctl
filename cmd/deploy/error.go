@@ -13,7 +13,3 @@ var invalidFlagError = &microerror.Error{
 var invalidArgError = &microerror.Error{
 	Kind: "invalidArgError",
 }
-
-var envVarNotFoundError = &microerror.Error{
-	Kind: "envVarNotFoundError",
-}

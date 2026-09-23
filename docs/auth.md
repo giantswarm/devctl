@@ -22,6 +22,11 @@ itself for six months. A command that needs a token and finds no usable login ex
 naming `devctl auth login --github-only`: the document's reason for an agent-facing command, stderr for
 the others.
 
+**The App login reaches the giantswarm organization and public repositories.** The App is installed on
+the giantswarm organization only. GitHub answers 404 for a private repository elsewhere, and a search
+leaves it out; `deploy` and `release create` add to that 404 the cause and the variables that override
+the login.
+
 **A token in the environment is an explicit override, never a fallback.** When `DEVCTL_GITHUB_TOKEN`,
 `GITHUB_TOKEN` or `OPSCTL_GITHUB_TOKEN` is set (the first set one, in that order; a command with
 `--github-token-envvar` reads only the variable it names), the command acts with that token and prints

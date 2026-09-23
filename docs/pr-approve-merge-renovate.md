@@ -207,9 +207,10 @@ This is useful when you expect multiple Renovate PRs to be created over time.
 
 ## Requirements
 
-- `GITHUB_TOKEN` environment variable must be set with appropriate permissions:
-  - Read access to repositories
-  - Write access to pull requests (approve, merge)
+- A GitHub login: `devctl auth login --github-only` once (the devctl GitHub App, which approves and merges
+  as you in the giantswarm organization; the search finds pull requests there and in public repositories). A
+  token in `DEVCTL_GITHUB_TOKEN`, `GITHUB_TOKEN` or `OPSCTL_GITHUB_TOKEN` overrides it, with a warning. See
+  [auth.md](auth.md).
 - Terminal with ANSI escape code support for live table updates
 - Terminal with OSC 8 support for clickable hyperlinks (optional, but recommended)
 
