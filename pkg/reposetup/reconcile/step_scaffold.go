@@ -27,6 +27,8 @@ const (
 	// when the declaration yields no job.
 	genCircleCIRefusal = "no jobs would be generated"
 	readmeFile         = "README.md"
+	// helmDir is the directory the charts of a repository live under.
+	helmDir = "helm"
 )
 
 // stepScaffold pushes the rendered scaffold as the first commit on the
@@ -200,7 +202,9 @@ func (r *Runner) treeEntries(ctx context.Context, s *run, dir string, files []st
 // chartFindings reads the chart of a chart repository and reports what the
 // first app-build-suite run would fail on, and the default icon. The chart
 // of a template is not read: it is not at helm/<name>, carries placeholders
-// and is built from a rendered copy by the template's own pipeline.
+// and is built from a rendered copy by the template's own pipeline. Any
+// other chart is the one the entry declares the pipeline builds:
+// helm/<gen.ci.chartName> when set, helm/<repository> otherwise.
 func (r *Runner) chartFindings(ctx context.Context, s *run, sr *StepResult) error {
 	if s.fields.Gen == nil || !reposetup.HasChart(s.fields.Gen.Flavours) {
 		return nil
@@ -209,16 +213,15 @@ func (r *Runner) chartFindings(ctx context.Context, s *run, sr *StepResult) erro
 		sr.Summary = "present; the chart of a template carries placeholders and is built from a rendered copy by its own pipeline"
 		return nil
 	}
-	chartDir := "helm/" + s.name
+	// The chart the pipeline builds: helm/<gen.ci.chartName> when set,
+	// helm/<repository> otherwise.
+	chartDir := helmDir + "/" + s.chartName()
 	data, found, err := r.fileContent(ctx, s.owner, s.name, chartDir+"/Chart.yaml", s.branch())
 	if err != nil {
 		return err
 	}
 	if !found {
-		s.report(sr, FindingABSPrerequisite,
-			fmt.Sprintf("%s has no chart at %s/Chart.yaml", s.slug(), chartDir),
-			fmt.Sprintf("add the chart under %s (the app flavour builds it) or drop the app flavour from the entry", chartDir))
-		return nil
+		return r.reportMissingChart(ctx, s, sr, chartDir)
 	}
 	var chart struct {
 		Icon        string            `yaml:"icon"`
@@ -253,6 +256,71 @@ func (r *Runner) chartFindings(ctx context.Context, s *run, sr *StepResult) erro
 			fmt.Sprintf("add %s/values.schema.json describing values.yaml (helm schema-gen, or copy the template-app's)", chartDir))
 	}
 	return nil
+}
+
+// chartName is the name of the chart the entry declares the repository
+// builds: gen.ci.chartName when set (the generated CircleCI builds
+// helm/<chartName>; docs-proxy ships helm/docs-proxy-app), the repository's
+// name otherwise.
+func (s *run) chartName() string {
+	if s.fields.Gen != nil && s.fields.Gen.CI != nil && s.fields.Gen.CI.ChartName != "" {
+		return s.fields.Gen.CI.ChartName
+	}
+	return s.name
+}
+
+// reportMissingChart reports a chart repository without a chart at the
+// declared directory. The charts the repository does have under helm/ are
+// named in the fix: a chart under another name — a repository renamed on
+// GitHub that kept its chart, one shipping helm/<name>-app — is declared
+// with gen.ci.chartName, the remedy the generic fix text does not name.
+func (r *Runner) reportMissingChart(ctx context.Context, s *run, sr *StepResult, chartDir string) error {
+	charts, err := r.chartsUnderHelm(ctx, s)
+	if err != nil {
+		return err
+	}
+	var fix string
+	switch {
+	case len(charts) == 1:
+		fix = fmt.Sprintf("the chart is %s/%s: set gen.ci.chartName: %s on the entry in repositories/%s.yaml, or rename the chart directory and its name to %s",
+			helmDir, charts[0], charts[0], s.req.Team, s.chartName())
+	case len(charts) > 1:
+		fix = fmt.Sprintf("the charts under %s/ are %s: set gen.ci.chartName on the entry in repositories/%s.yaml to the one the pipeline builds",
+			helmDir, describe(charts), s.req.Team)
+	case s.chartName() != s.name:
+		fix = fmt.Sprintf("add the chart under %s (gen.ci.chartName names it) or drop gen.ci.chartName and the app flavour from the entry", chartDir)
+	default:
+		fix = fmt.Sprintf("add the chart under %s (the app flavour builds it), set gen.ci.chartName when the chart is under another %s/ directory, or drop the app flavour from the entry", chartDir, helmDir)
+	}
+	s.report(sr, FindingABSPrerequisite, fmt.Sprintf("%s has no chart at %s/Chart.yaml", s.slug(), chartDir), fix)
+	return nil
+}
+
+// chartsUnderHelm lists the charts the repository has under helm/: the
+// directories with a Chart.yaml, in listing order; none without the
+// directory.
+func (r *Runner) chartsUnderHelm(ctx context.Context, s *run) ([]string, error) {
+	_, dir, resp, err := r.GitHub.Repositories.GetContents(ctx, s.owner, s.name, helmDir, &github.RepositoryContentGetOptions{Ref: s.branch()})
+	switch {
+	case isNotFound(resp, err):
+		return nil, nil
+	case err != nil:
+		return nil, err
+	}
+	var charts []string
+	for _, entry := range dir {
+		if entry.GetType() != "dir" {
+			continue
+		}
+		_, found, err := r.fileContent(ctx, s.owner, s.name, entry.GetPath()+"/Chart.yaml", s.branch())
+		if err != nil {
+			return nil, err
+		}
+		if found {
+			charts = append(charts, entry.GetName())
+		}
+	}
+	return charts, nil
 }
 
 // fileContent reads one file of a repository at ref; found is false on 404.

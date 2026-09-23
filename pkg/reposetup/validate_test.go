@@ -75,6 +75,7 @@ func TestValidateEntries(t *testing.T) {
 		{name: "align-not-bool", template: TemplateGo, verdict: VerdictFree, fields: []string{"align"}},
 		{name: "agent-merge-opt-out", template: TemplateGo, verdict: VerdictFree},
 		{name: "agent-merge-not-bool", template: TemplateGo, verdict: VerdictFree, fields: []string{"agentMerge"}},
+		{name: "ci-without-generate", template: TemplateChart, verdict: VerdictFree},
 	}
 
 	for _, tc := range tests {
@@ -173,6 +174,21 @@ func TestRenderedEntryCarriesTheDefaults(t *testing.T) {
       generate: true
       releaseWorkflow: auto-release
 `, result.Entries[1].Rendered)
+
+	// Validated for a repository that exists, the entry is rendered as
+	// declared: the creation default is not written, and gen.ci left out
+	// says the repository keeps its own CircleCI configuration.
+	existing, err := v.Validate(context.Background(), Request{TeamFile: tf, Names: []string{"good-chart"}, Mode: ModeExisting})
+	require.NoError(t, err)
+	require.True(t, existing.Accepted)
+	require.Equal(t, `- name: good-chart
+  # A chart-only repository: the ci block is left out, generate defaults to true.
+  componentType: service
+  gen:
+    flavours:
+      - app
+    language: generic
+`, existing.Entries[0].Rendered)
 
 	// The team file itself is untouched: a second rendering of the source is unchanged.
 	d, ok := tf.Entry("good-chart")
@@ -310,6 +326,9 @@ func TestValidateExistingMode(t *testing.T) {
 		{name: "internal-visibility", template: TemplateGo, verdict: VerdictFree, fields: []string{"lifecycle", "visibility"}},
 		{name: "unknown-field", template: TemplateGo, verdict: VerdictFree, fields: []string{"template"}},
 		{name: "twice", template: TemplateGo, verdict: VerdictFree, fields: []string{"name"}},
+		// The entry is rendered as declared: no creation default fills a ci
+		// block the schema finds incomplete.
+		{name: "ci-without-generate", template: TemplateChart, verdict: VerdictFree, fields: []string{"gen.ci.generate"}},
 	}
 
 	for _, tc := range tests {
@@ -338,7 +357,7 @@ func TestValidateExistingMode(t *testing.T) {
 				refused = append(refused, entry.Name)
 			}
 		}
-		require.Equal(t, []string{"empty-gen", "internal-visibility", "unknown-field", "unknown-flavour", "twice", "twice", "align-not-bool", "agent-merge-not-bool"}, refused)
+		require.Equal(t, []string{"empty-gen", "internal-visibility", "unknown-field", "unknown-flavour", "twice", "twice", "align-not-bool", "agent-merge-not-bool", "ci-without-generate"}, refused)
 		require.False(t, result.Accepted)
 	})
 
