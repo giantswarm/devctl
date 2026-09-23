@@ -51,6 +51,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- `gen circleci`: the generated pipelines pin architect orb 10.6.3, whose `image-prepare-tag` fails a branch pipeline at a
+  tagged commit instead of resolving the release version and publishing it again
+  ([architect-orb#942](https://github.com/giantswarm/architect-orb/issues/942)).
 - `devctl repo reconcile` writes the repository admins (GitHub's repository role Admin) as a third bypass actor of the
   ruleset `devctl: default branch`, in `pull_request` mode beside the devctl App and the owning team: `devctl pr merge`
   run by an admin of the repository merges their own green pull request through the ruleset in every aligned
