@@ -32,10 +32,13 @@ const (
 	// their repositories — the schema, the creation rules and a free name.
 	ModeCreate Mode = "create"
 	// ModeExisting: the entries declare repositories that exist — the schema
-	// alone; the creation rules are for a repository the reconciler creates.
-	// The name is checked when a [NameChecker] is configured and the verdict
-	// reported, but it never refuses: a missing repository is a finding of
-	// the reconciler's, not a validation error.
+	// alone; the creation rules are for a repository the reconciler creates,
+	// and so is the creation default: the entry is rendered as declared, and
+	// gen.ci.generate left unset says the repository keeps its own CircleCI
+	// configuration (the reconciler reads the branch for one). The name is
+	// checked when a [NameChecker] is configured and the verdict reported,
+	// but it never refuses: a missing repository is a finding of the
+	// reconciler's, not a validation error.
 	ModeExisting Mode = "existing"
 )
 
@@ -246,9 +249,14 @@ func (v Validator) validateEntry(ctx context.Context, owner string, mode Mode, t
 		NameCheck: NameCheck{Verdict: VerdictUnchecked, Detail: "not checked"},
 	}
 
-	// The entry as the team file would carry it, defaults written out: that
-	// is what the schema and the rules see, and what is rendered.
-	d = withDefaults(d)
+	// The entry as the team file would carry it: that is what the schema and
+	// the rules see, and what is rendered. A creation writes its defaults
+	// out; an existing repository's entry is read as declared — its defaults
+	// were written when it was created, or it predates them and keeps what
+	// it has.
+	if mode == ModeCreate {
+		d = withDefaults(d)
+	}
 
 	// The schema first: it names type and enum violations and unknown
 	// fields, so the rules below can read the fields they need.

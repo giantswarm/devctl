@@ -9,6 +9,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `devctl repo reconcile` and `repo status` read `gen.ci.generate` as the entry declares it: an existing entry with
+  `gen` but no `gen.ci` keeps the repository's own CircleCI configuration, as the schema says, and the circleci and
+  release steps run only when `.circleci/config.yml` is on the default branch. The validator writes the creation
+  default `gen.ci.generate: true` for an entry being added only (`repo create`, `repo validate --mode create`); in
+  existing mode the entry is rendered as declared. Before, the default reached the engine for every existing entry:
+  a repository released by GitHub Actions was planned a CircleCI follow with a deploy key, and its release reported
+  as a missed tag build.
+
 - `devctl repo reconcile`: the settings step keeps rebase merges on a fork line (flavour `fork`) and leaves its merge
   commits as the repository has them; the rest of the settings baseline applies as everywhere. A fork line's carried
   patches land by rebase merge, one upstream-ready commit each, and a re-pin merges upstream's history: with the

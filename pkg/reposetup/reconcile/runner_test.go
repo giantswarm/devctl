@@ -96,6 +96,7 @@ const (
 	// repository's declaration: the creation rules name a new repository
 	// after its chart.
 	chartNameEntryYAML = entryYAML + `    ci:
+      generate: true
       chartName: sample-service-app
 `
 
@@ -125,6 +126,8 @@ type harness struct {
 	entry    reposetup.Entry
 }
 
+// newHarness wires the fakes to an entry validated for its creation, the
+// default the creation's rendering writes out included.
 func newHarness(t *testing.T, yaml string) *harness {
 	t.Helper()
 	return newHarnessMode(t, yaml, reposetup.ModeCreate)
@@ -958,6 +961,45 @@ func TestSteps(t *testing.T) {
 			verify: func(t *testing.T, h *harness, _ *Result) {
 				require.Contains(t, h.cc.projects, owner+"/"+name)
 				require.Zero(t, h.gh.reads("/repos/"+owner+"/"+name+"/contents/"+circleCIConfig), "a declared pipeline is not looked up")
+			},
+		},
+		{
+			// The reconciler validates a declared repository's entry as an
+			// existing one, rendered as declared: an entry with gen and no
+			// gen.ci does not get the creation default gen.ci.generate: true
+			// — the schema's word is that it keeps the repository's own
+			// CircleCI configuration — so the branch decides. A repository
+			// released by GitHub Actions has no .circleci/config.yml there:
+			// it is neither followed nor given a key, and its release is not
+			// held against a tag build CircleCI never ran.
+			name: "circleci: an existing entry without gen.ci and without a config on the branch has no pipeline", step: StepCircleCI, existing: true,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				delete(r.files, ".circleci/config.yml")
+				delete(r.files, ".circleci/workflows.yml")
+				r.release, r.releaseAt = "v0.6.0", time.Now().Add(-time.Hour)
+			},
+			wantCheck: VerdictSkipped, wantAfter: VerdictSkipped,
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				require.NotContains(t, h.entry.Rendered, "generate:", "an existing entry is rendered as declared")
+				require.NotContains(t, h.cc.projects, owner+"/"+name)
+				res := h.run(ModeCheck, false, StepCircleCI, StepRelease)
+				for _, step := range []Step{StepCircleCI, StepRelease} {
+					require.Equal(t, VerdictSkipped, res.Step(step).Verdict, "%s: %+v", step, res.Step(step))
+					require.Equal(t, "no CircleCI pipeline", res.Step(step).Summary)
+				}
+				require.Empty(t, res.Step(StepRelease).Findings, "a release CircleCI never built is no missed tag build")
+			},
+		},
+		{
+			// The same entry over a hand-maintained .circleci/config.yml: the
+			// branch says there is a pipeline, and the step keeps it followed.
+			name: "circleci: an existing entry without gen.ci follows the pipeline the branch carries", step: StepCircleCI, existing: true,
+			seed:      func(h *harness) { h.gh.addRepo(owner, name) },
+			wantCheck: VerdictDrift, wantChange: "follow giantswarm/sample-service; enable setup workflows; create a deploy key",
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				require.Contains(t, h.cc.projects, owner+"/"+name)
+				require.Equal(t, 2, h.gh.reads("/repos/"+owner+"/"+name+"/contents/"+circleCIConfig), "the branch is read once per run: the check and the repair")
 			},
 		},
 		{
