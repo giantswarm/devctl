@@ -109,7 +109,7 @@
         "properties": {
           "flavours": {
             "type": "array",
-            "description": "devctl flavours of the repository (see devctl docs/flavours.md), passed to every 'devctl gen' the sync runs. 'customer' repositories get the generated GitHub workflows plus a generated renovate.json5 extending the giantswarm base preset, and no CircleCI. 'fork' is a fork line, a repository that carries an upstream release plus the carried patches on the branch its defaultBranch declares: nothing is generated for it, the scaffold and CODEOWNERS steps are skipped on it, every other step runs as declared. Requires devctl v8.78.0+.",
+            "description": "devctl flavours of the repository (see devctl docs/flavours.md), passed to every 'devctl gen' the sync runs. 'customer' repositories get the generated GitHub workflows plus a generated renovate.json5 extending the giantswarm base preset, and no CircleCI. 'fork' is a fork line, a repository that carries an upstream release plus the carried patches on the branch its defaultBranch declares: nothing is generated for it, the scaffold and CODEOWNERS steps are skipped on it, every other step runs as declared, and the settings step keeps rebase merges on (merge commits as the repository has them): the carried patches land by rebase merge, one upstream-ready commit each. Requires devctl v8.78.0+.",
             "items": {
               "type": "string",
               "enum": [

@@ -13,9 +13,10 @@ import (
 	"github.com/google/go-github/v92/github"
 )
 
-// stepSettings applies the settings baseline: features, merge settings,
-// pull-request settings, the declared default branch and the workflows'
-// default token permission. Only the fields that differ are sent.
+// stepSettings applies the settings baseline: features, merge settings (a
+// fork line keeps its rebase merges, [run.mergeMethods]), pull-request
+// settings, the declared default branch and the workflows' default token
+// permission. Only the fields that differ are sent.
 func (r *Runner) stepSettings(ctx context.Context, s *run, sr *StepResult) error {
 	b := s.baseline
 	edit := &github.Repository{}
@@ -37,9 +38,10 @@ func (r *Runner) stepSettings(ctx context.Context, s *run, sr *StepResult) error
 			fmt.Sprintf("the merge settings of %s (%s) are not readable by this identity: GET /repos/{owner}/{repo} carries them for admins only, and the GraphQL read failed: %v", s.slug(), strings.Join(mergeSettingFields, ", "), err),
 			"run the check as an identity with admin rights on the repository (the reconciler's Align now), or let this identity reach GraphQL; the merge settings are compared on a later run")
 	} else {
-		want("allow_merge_commit", merge.mergeCommit, b.AllowMergeCommit, func(v *bool) { edit.AllowMergeCommit = v })
+		mergeCommit, rebaseMerge := s.mergeMethods(merge)
+		want("allow_merge_commit", merge.mergeCommit, mergeCommit, func(v *bool) { edit.AllowMergeCommit = v })
 		want("allow_squash_merge", merge.squashMerge, b.AllowSquashMerge, func(v *bool) { edit.AllowSquashMerge = v })
-		want("allow_rebase_merge", merge.rebaseMerge, b.AllowRebaseMerge, func(v *bool) { edit.AllowRebaseMerge = v })
+		want("allow_rebase_merge", merge.rebaseMerge, rebaseMerge, func(v *bool) { edit.AllowRebaseMerge = v })
 		want("allow_update_branch", merge.updateBranch, b.AllowUpdateBranch, func(v *bool) { edit.AllowUpdateBranch = v })
 		want("allow_auto_merge", merge.autoMerge, b.AllowAutoMerge, func(v *bool) { edit.AllowAutoMerge = v })
 		want("delete_branch_on_merge", merge.deleteBranchOnMerge, b.DeleteBranchOnMerge, func(v *bool) { edit.DeleteBranchOnMerge = v })
@@ -118,6 +120,20 @@ type mergeSettings struct {
 	mergeCommit, squashMerge, rebaseMerge, updateBranch, autoMerge, deleteBranchOnMerge bool
 	// squashTitle is PR_TITLE or COMMIT_OR_PR_TITLE.
 	squashTitle string
+}
+
+// mergeMethods are the merge commit and rebase merge methods the step wants
+// beside the baseline's squash merge: off, as the baseline has them, except
+// on a fork line. A fork line's pull requests land by rebase merge so that
+// each carried patch stays one upstream-ready commit (a squash would fold a
+// patch of several commits into one that cannot be sent upstream as it is),
+// and a re-pin merges upstream's history: rebase merges stay on, and merge
+// commits stay as the repository has them.
+func (s *run) mergeMethods(got mergeSettings) (mergeCommit, rebaseMerge bool) {
+	if s.hasFlavour(flavourFork) {
+		return got.mergeCommit, true
+	}
+	return s.baseline.AllowMergeCommit, s.baseline.AllowRebaseMerge
 }
 
 // mergeSettings reads the seven merge settings: from the repository the run

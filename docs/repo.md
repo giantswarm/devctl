@@ -224,6 +224,19 @@ reconciler stores). An entry the validator refuses is a result too: one step, `e
 otherwise) with the field to fix, `converged: false` (nothing was checked; not drift either, the fix is
 in the declaration), exit 0 -- the declaration is at fault, not the run. A flag or token error exits 2.
 
+### The settings step
+
+The repository carries the company baseline's settings: issues on, wiki and projects off; squash merges
+alone, the squash commit named after the pull request's title (`PR_TITLE`, what the title check validated
+and auto-release reads); the head branch updatable and deleted on merge, auto-merge on; the declared
+default branch (the baseline's `main` when the entry declares none); `write` as the workflows' default
+`GITHUB_TOKEN` permission. Only the fields that differ are sent. A fork line (flavour `fork`) keeps rebase
+merges on and its merge commits as they are: its carried patches land one upstream-ready commit each and a
+re-pin merges upstream's history; the rest of the baseline applies to it as everywhere. A customer
+repository (flavour `customer`) keeps its own default branch. The six merge settings and the squash title
+reach `GET /repos/{owner}/{repo}` for an admin identity only; a read identity reads them through GraphQL
+and, when that fails too, reports them as the finding `unchecked` rather than as drift.
+
 ### The protection step
 
 The default branch carries the company baseline's protection: one required review; the required status
