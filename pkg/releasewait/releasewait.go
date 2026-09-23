@@ -10,14 +10,17 @@
 // Dockerfile exists at the tag, the wait ends with the disagreement instead
 // of a guess.
 //
-// Availability is a digest: every image and chart resolves to one in the
-// registry, the public registry probed anonymously (a stale docker login
-// cannot produce a false UNAUTHORIZED), the private one with the docker
-// keychain. A failed or cancelled workflow of the tag pipeline, the newest
-// run per workflow name, ends the wait as the tag's CI failure with the
-// failed jobs; a repository without CircleCI is judged by the Actions runs
-// the tag triggered. A repository without image and chart is waited for
-// through its published release and the tag's workflows.
+// Availability is a digest and a green tag pipeline: every image and chart
+// resolves to one in the registry, the public registry probed anonymously (a
+// stale docker login cannot produce a false UNAUTHORIZED), the private one
+// with the docker keychain, and every workflow of the tag pipeline, the
+// newest run per workflow name, finished green. The names cover what devctl
+// renders or the orb pushes, not a repository's own tag jobs, so the
+// pipeline is what says the release is complete. A failed or cancelled
+// workflow ends the wait as the tag's CI failure with the failed jobs; a
+// repository without CircleCI is judged by the Actions runs the tag
+// triggered. A repository without image and chart is waited for through its
+// published release and the tag's workflows.
 package releasewait
 
 import (
@@ -293,8 +296,8 @@ func (p *plan) setArtifacts(result *Result, artifacts []Artifact) {
 
 type chartArtifact struct{ name, catalog string }
 
-// loop polls until every artifact is available, the tag's CI failed or the
-// deadline passed.
+// loop polls until every artifact is available and the tag's CI is green,
+// the tag's CI failed or the deadline passed.
 func (w *Waiter) loop(ctx context.Context, result *Result, p *plan) error {
 	owner, repo := w.config.Owner, w.config.Repo
 	for {
@@ -332,7 +335,15 @@ func (w *Waiter) loop(ctx context.Context, result *Result, p *plan) error {
 				return err
 			}
 		default:
+			// The artifacts the sources name are not the whole release: a
+			// repository's own tag jobs (custom.yml) push more, and a job
+			// signs what it pushed after the digest resolves. The release is
+			// out when the tag pipeline is green as well.
 			done = allAvailable(result.Artifacts)
+			if done && !state.green {
+				w.progress.Printf("every artifact is available; %s", stillRunning(result.Pipeline))
+				done = false
+			}
 			if done && w.config.Catalog {
 				done, err = w.catalogLists(ctx, p)
 				if err != nil {
@@ -546,8 +557,22 @@ func (w *Waiter) timeout(result *Result) error {
 		return timeoutErr("not available within %s: %s%s", w.config.Timeout, strings.Join(missing, ", "), unfinished)
 	case result.Pipeline == nil && result.CIModel != CIModelNone:
 		return timeoutErr("no CircleCI pipeline for %s within %s: the tag's webhook may not have reached CircleCI", result.Tag, w.config.Timeout)
+	case len(result.Artifacts) > 0 && unfinished != "":
+		return timeoutErr("every artifact of %s is available, the tag pipeline did not finish within %s%s", result.Tag, w.config.Timeout, unfinished)
 	}
 	return timeoutErr("%s was not released within %s%s", result.Tag, w.config.Timeout, unfinished)
+}
+
+// stillRunning names what keeps the tag pipeline from being green, for the
+// progress line of a wait that outlasts its artifacts.
+func stillRunning(p *Pipeline) string {
+	switch {
+	case p == nil:
+		return "no CircleCI pipeline for the tag yet"
+	case len(p.Unfinished) == 0:
+		return fmt.Sprintf("pipeline %d has no successful workflow", p.Number)
+	}
+	return fmt.Sprintf("pipeline %d unfinished: %s", p.Number, strings.Join(p.Unfinished, ", "))
 }
 
 func short(sha string) string {

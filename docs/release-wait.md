@@ -4,12 +4,12 @@
 devctl release wait <owner/repo> (<vX.Y.Z | X.Y.Z> | --pr <number>) [--timeout 30m] [--catalog] [--progress]
 ```
 
-Blocks until every image and chart of a release is pullable, then prints one JSON document and exits
-with a code that says what happened. It is the command an agent runs after a merge instead of
-guessing: the tag and the GitHub Release exist about a minute after the merge, the artifacts come
-from the CircleCI pipeline the **tag** triggers, minutes later, under names the repository's CI
-decides. Nothing here is guessed from the repository name, `helm search` or the merge commit's
-Actions run.
+Blocks until every image and chart of a release is pullable and the tag's pipeline is green, then prints
+one JSON document and exits with a code that says what happened. It is the command an agent runs after a
+merge instead of guessing: the tag and the GitHub Release exist about a minute after the merge, the
+artifacts come from the CircleCI pipeline the **tag** triggers, minutes later, under names the
+repository's CI decides. Nothing here is guessed from the repository name, `helm search` or the merge
+commit's Actions run.
 
 ```nohighlight
 devctl release wait giantswarm/devctl v8.9.0
@@ -74,6 +74,11 @@ defaults name them; a repository no team file declares is exit 7, there being no
 
 The chart's catalog is `gen.ci.appCatalog`, default `giantswarm-catalog`.
 
+The table names what the generator renders, not what a repository adds: jobs in `.circleci/custom.yml`,
+which the setup workflow merges into the build workflow, push and sign artifacts of their own (vm-manager's
+guest image, muster's CRD chart, backstage's control-plane catalog entry). They are not probed by name;
+the release waits for them through the tag pipeline being green (below).
+
 **Hand-written CI**: the artifacts are the push jobs the tag pipeline runs. The command reads the
 `.circleci/config.yml` (and `workflows.yml`, `custom.yml` when present) at the tag, collects every
 `<orb>/push-to-registries`, `push-to-registries-multiarch`, `push-to-docker` and
@@ -94,6 +99,10 @@ every workflow of the tag finished green. `artifacts` then lists the release ass
 GitHub reports.
 
 ### Availability
+
+A release is available when every artifact resolves to a digest **and** the tag's CI is green (the next
+section). The artifacts alone are not the release: a repository's own tag jobs push more than the sources
+name, and a job signs what it pushed after the digest resolves.
 
 An artifact is available when its manifest resolves to a digest:
 
@@ -126,8 +135,14 @@ yet)`; the same 404 on a finished workflow is a tooling failure (exit 7). A repo
 by the GitHub Actions runs on the tag's commit whose branch is the tag: a `failure`, `cancelled`,
 `timed_out` or `startup_failure` conclusion is exit 1.
 
-The wait does not require the pipeline to be green: the artifacts are available when their digests
-resolve, whatever else the pipeline still does (the Aliyun mirror, for one).
+The wait requires the tag pipeline to be green: every workflow (newest run per name) finished and at
+least one succeeded, `not_run` counting as neither. Artifacts that resolve while a workflow still runs, a
+repository-owned job or the Aliyun mirror (`sync-china-registry`, which typically ends within a minute of
+the chart push), leave the wait polling, with `every artifact is available; pipeline N unfinished: build
+(running)` on `--progress`. The pipeline decides the verdict whatever the order: a job that fails after
+the artifacts resolved is exit 1 with that job in `failedJobs`, and a pipeline that does not finish in
+time is exit 2 with `every artifact of <tag> is available, the tag pipeline did not finish within <timeout>;
+pipeline N unfinished: …`. A document with exit 0 never lists an unfinished workflow.
 
 ### Polling
 
@@ -180,16 +195,16 @@ stderr.
 | `releaseModel` | `auto-release` or `legacy`. |
 | `ciModel` | `generated`, `hand-written` or `none`. |
 | `artifacts[]` | `kind` (`image`, `chart`, `release-asset`), `reference` (the pullable reference, or the asset's download URL), `digest` (empty while missing), `state` (`available`, `missing`). Empty until the artifacts are known (hand-written CI before its pipeline exists). |
-| `pipeline` | The tag pipeline on CircleCI: `id`, `number`, `url`, `workflows[{name, status}]` (newest run per name), `failedJobs[]`, `unfinished[]` (the workflows not finished, `name (status)`, with `jobs not visible yet` when CircleCI does not list them yet; what a timeout was waiting for). `null` for a repository without CircleCI, or while the pipeline does not exist. |
+| `pipeline` | The tag pipeline on CircleCI: `id`, `number`, `url`, `workflows[{name, status}]` (newest run per name), `failedJobs[]`, `unfinished[]` (the workflows not finished, `name (status)`, with `jobs not visible yet` when CircleCI does not list them yet; what a timeout was waiting for, empty at exit 0). `null` for a repository without CircleCI, or while the pipeline does not exist. |
 | `actions[]` | The Actions runs the tag triggered, for a repository without CircleCI: `name`, `runId`, `status`, `conclusion`, `url`. |
 
 ## Exit codes
 
 | Code | Verdict | Meaning |
 |---|---|---|
-| 0 | `available` | Every artifact resolves to a digest (and, with `--catalog`, the index lists every chart); or the release of a repository without image and chart is published with its workflows green. |
-| 1 | `ci_failed` | A workflow of the tag pipeline, or an Actions run of the tag, failed or was cancelled. `reason` and `pipeline.failedJobs` name the jobs. The artifacts will not appear until a fix lands as the next tag. |
-| 2 | `timeout` | The deadline passed. `reason` names what is missing: the tag, the pipeline, the artifacts by reference, and the pipeline's unfinished workflows. |
+| 0 | `available` | Every artifact resolves to a digest and every workflow of the tag pipeline finished green (and, with `--catalog`, the index lists every chart); or the release of a repository without image and chart is published with its workflows green. |
+| 1 | `ci_failed` | A workflow of the tag pipeline, or an Actions run of the tag, failed or was cancelled. `reason` and `pipeline.failedJobs` name the jobs. The release is incomplete until a rerun of the failed workflow succeeds or a fix lands as the next tag; artifacts that did resolve are listed `available`. |
+| 2 | `timeout` | The deadline passed. `reason` names what is missing: the tag, the pipeline, the artifacts by reference, and the pipeline's unfinished workflows (also when every artifact is already available). |
 | 3 | `not_applicable` | The pull request is not merged, or the repository is on the legacy release model so `--pr` cannot resolve a version. |
 | 7 | `usage` | A bad argument; no source says how the repository releases; the sources disagree about the CI model or the artifacts; a registry answer that is neither a digest nor "manifest unknown"; a tooling error. |
 | 8 | `auth_required` | No usable token in the keychain; `reason` names the `devctl auth login` invocation. |
