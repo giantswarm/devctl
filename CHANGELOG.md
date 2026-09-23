@@ -7,8 +7,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- `devctl repo reconcile` writes the repository admins (GitHub's repository role Admin) as a third bypass actor of the
+  ruleset `devctl: default branch`, in `pull_request` mode beside the devctl App and the owning team: `devctl pr merge`
+  run by an admin of the repository merges their own green pull request through the ruleset in every aligned
+  repository, as classic protection without `enforce_admins` let them, every bypass in the audit log. A ruleset written
+  before gains the actor on the next run; `agentMerge: false` still leaves the list empty. The decline's reason, the
+  help and the docs name the role.
+
 ### Fixed
 
+- A merge `devctl pr merge` has declined for the review rule says whom devctl acted as (the user token of `devctl auth
+  login`; the App's bypass covers installation tokens devctl never holds), which rulesets of the base carry a pull
+  request rule and their bypass actors, and the team whose file declares the entry: one of its members or a repository
+  admin merges it, or a reviewer with write access approves it first. The help and `docs/pr-merge.md` said the App's
+  bypass passed the review rule.
 - `repo reconcile`'s release step verifies the latest release only when its tag is a `vX.Y.Z` tag (a pre-release
   suffix allowed): the shape auto-release cuts and the generated pipeline's `/^v.*/` filter builds. A latest release
   tagged otherwise -- per component, `base/v0.1.0` -- ends the step `skipped` naming the tag, with no CircleCI request and

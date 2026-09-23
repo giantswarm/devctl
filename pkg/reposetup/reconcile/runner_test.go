@@ -513,7 +513,7 @@ func TestSteps(t *testing.T) {
 				r.statuses = []string{ctxGoBuild, ctxSetup, ctxDepGraph}
 				r.checkRuns = []string{ctxSemantic, ctxRelease}
 			},
-			wantCheck: VerdictDrift, wantChange: `create ruleset "devctl: default branch"; require ` + ctxSemantic + ", " + ctxGoBuild + "; bypass actors: App 424242 on pull requests, team team-bumblebee on pull requests",
+			wantCheck: VerdictDrift, wantChange: `create ruleset "devctl: default branch"; require ` + ctxSemantic + ", " + ctxGoBuild + "; bypass actors: App 424242 on pull requests, repository admins on pull requests, team team-bumblebee on pull requests",
 			verify: func(t *testing.T, h *harness, res *Result) {
 				rs := h.repo().ruleset("devctl: default branch")
 				require.NotNil(t, rs)
@@ -529,7 +529,7 @@ func TestSteps(t *testing.T) {
 				require.False(t, rs.Rules.PullRequest.DismissStaleReviewsOnPush)
 				require.NotNil(t, rs.Rules.Deletion)
 				require.NotNil(t, rs.Rules.NonFastForward)
-				require.Equal(t, []*github.BypassActor{appBypass(testAppID), teamBypass(testTeamID)}, rs.BypassActors, "the App and the owning team, both on pull requests")
+				require.Equal(t, []*github.BypassActor{appBypass(testAppID), adminBypass(), teamBypass(testTeamID)}, rs.BypassActors, "the App, the repository admins and the owning team, all on pull requests")
 				require.Nil(t, h.repo().protection, "no classic protection is written")
 				require.Len(t, res.Step(StepProtection).Changes, 1, "one write: the ruleset")
 			},
@@ -572,7 +572,7 @@ func TestSteps(t *testing.T) {
 			},
 			wantCheck: VerdictDrift, wantChange: "remove classic protection of main",
 			verify: func(t *testing.T, h *harness, res *Result) {
-				require.Equal(t, []string{`create ruleset "devctl: default branch"; bypass actors: App 424242 on pull requests, team team-bumblebee on pull requests`, "remove classic protection of main"}, res.Step(StepProtection).Changes, "the checks carry over, so the ruleset differs from the classic protection in the bypass actors alone")
+				require.Equal(t, []string{`create ruleset "devctl: default branch"; bypass actors: App 424242 on pull requests, repository admins on pull requests, team team-bumblebee on pull requests`, "remove classic protection of main"}, res.Step(StepProtection).Changes, "the checks carry over, so the ruleset differs from the classic protection in the bypass actors alone")
 				require.Nil(t, h.repo().protection)
 				require.Equal(t, []string{ctxGoBuild}, checkContexts(h.repo().ruleset(RulesetName)))
 			},
@@ -664,7 +664,7 @@ func TestSteps(t *testing.T) {
 			seed: func(h *harness) {
 				r := h.gh.addRepo(owner, name)
 				r.statuses = []string{ctxGoBuild}
-				r.addRuleset(RulesetName, []*github.RuleStatusCheck{actionsCheck(ctxValidate), statusCheck(ctxGoBuild), statusCheck(ctxGhost)}, appBypass(testAppID), teamBypass(testTeamID))
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{actionsCheck(ctxValidate), statusCheck(ctxGoBuild), statusCheck(ctxGhost)}, appBypass(testAppID), adminBypass(), teamBypass(testTeamID))
 			},
 			wantCheck: VerdictDrift, wantChange: "stop requiring " + ctxGhost,
 			verify: func(t *testing.T, h *harness, res *Result) {
@@ -677,7 +677,7 @@ func TestSteps(t *testing.T) {
 			seed: func(h *harness) {
 				r := h.gh.addRepo(owner, name)
 				r.statuses = []string{ctxGoBuild}
-				rs := r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID), teamBypass(testTeamID))
+				rs := r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID), adminBypass(), teamBypass(testTeamID))
 				rs.Rules.RequiredStatusChecks.StrictRequiredStatusChecksPolicy = true
 			},
 			wantCheck: VerdictDrift, wantChange: "strict checks true → false",
@@ -694,7 +694,7 @@ func TestSteps(t *testing.T) {
 				r := h.gh.addRepo(owner, name)
 				r.statuses = []string{ctxGoBuild}
 				r.checkRuns = []string{ctxSemantic}
-				r.addRuleset(RulesetName, []*github.RuleStatusCheck{actionsCheck(ctxSemantic), statusCheck(ctxGoBuild)}, appBypass(testAppID), teamBypass(testTeamID))
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{actionsCheck(ctxSemantic), statusCheck(ctxGoBuild)}, appBypass(testAppID), adminBypass(), teamBypass(testTeamID))
 			},
 			wantCheck: VerdictOK,
 			verify: func(t *testing.T, h *harness, res *Result) {
@@ -702,11 +702,23 @@ func TestSteps(t *testing.T) {
 			},
 		},
 		{
+			name: "protection: the admins added by hand, in another order, are converged", step: StepProtection,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, adminBypass(), appBypass(testAppID), teamBypass(testTeamID))
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Len(t, h.repo().ruleset(RulesetName).BypassActors, 3, "the bypass list is compared as a set")
+			},
+		},
+		{
 			name: "protection: the rules are repaired as data", step: StepProtection,
 			seed: func(h *harness) {
 				r := h.gh.addRepo(owner, name)
 				r.statuses = []string{ctxGoBuild}
-				rs := r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID), teamBypass(testTeamID))
+				rs := r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID), adminBypass(), teamBypass(testTeamID))
 				rs.Enforcement = github.RulesetEnforcementEvaluate
 				rs.Conditions.RefName.Include = []string{"refs/heads/main"}
 				rs.Rules.PullRequest.RequiredApprovingReviewCount = 2
@@ -731,10 +743,10 @@ func TestSteps(t *testing.T) {
 				r.statuses = []string{ctxGoBuild}
 				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)})
 			},
-			wantCheck: VerdictDrift, wantChange: "bypass actors: App 424242 on pull requests, team team-bumblebee on pull requests",
+			wantCheck: VerdictDrift, wantChange: "bypass actors: App 424242 on pull requests, repository admins on pull requests, team team-bumblebee on pull requests",
 			verify: func(t *testing.T, h *harness, res *Result) {
-				require.Equal(t, []*github.BypassActor{appBypass(testAppID), teamBypass(testTeamID)}, h.repo().ruleset(RulesetName).BypassActors)
-				require.Equal(t, []string{"bypass actors: App 424242 on pull requests, team team-bumblebee on pull requests"}, res.Step(StepProtection).Changes)
+				require.Equal(t, []*github.BypassActor{appBypass(testAppID), adminBypass(), teamBypass(testTeamID)}, h.repo().ruleset(RulesetName).BypassActors)
+				require.Equal(t, []string{"bypass actors: App 424242 on pull requests, repository admins on pull requests, team team-bumblebee on pull requests"}, res.Step(StepProtection).Changes)
 			},
 		},
 		{
@@ -745,28 +757,43 @@ func TestSteps(t *testing.T) {
 				r.checkRuns = []string{ctxSemantic}
 				r.addRuleset(RulesetName, []*github.RuleStatusCheck{actionsCheck(ctxSemantic), statusCheck(ctxGoBuild)}, appBypass(testAppID))
 			},
-			wantCheck: VerdictDrift, wantChange: "bypass actors: App 424242 on pull requests, team team-bumblebee on pull requests",
+			wantCheck: VerdictDrift, wantChange: "bypass actors: App 424242 on pull requests, repository admins on pull requests, team team-bumblebee on pull requests",
 			verify: func(t *testing.T, h *harness, res *Result) {
 				rs := h.repo().ruleset(RulesetName)
-				require.Equal(t, []*github.BypassActor{appBypass(testAppID), teamBypass(testTeamID)}, rs.BypassActors, "the team joins the App, in pull_request mode")
+				require.Equal(t, []*github.BypassActor{appBypass(testAppID), adminBypass(), teamBypass(testTeamID)}, rs.BypassActors, "the admins and the team join the App, in pull_request mode")
 				require.Equal(t, []string{ctxSemantic, ctxGoBuild}, checkContexts(rs), "the required checks stay")
 				require.Equal(t, 1, rs.Rules.PullRequest.RequiredApprovingReviewCount)
-				require.Equal(t, []string{"bypass actors: App 424242 on pull requests, team team-bumblebee on pull requests"}, res.Step(StepProtection).Changes, "one change: the team actor")
+				require.Equal(t, []string{"bypass actors: App 424242 on pull requests, repository admins on pull requests, team team-bumblebee on pull requests"}, res.Step(StepProtection).Changes, "one change: the bypass list")
 				require.Len(t, h.repo().rulesets, 1, "the ruleset is updated, not recreated")
 				require.Equal(t, 2, h.gh.reads("/orgs/"+owner+"/teams/"+team), "the team is read once per run: the check and the repair")
 			},
 		},
 		{
-			name: "protection: a secret team cannot bypass, so the App stands alone and the team is reported", step: StepProtection,
+			name: "protection: the repository admins join a ruleset written with the App and the team", step: StepProtection,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID), teamBypass(testTeamID))
+			},
+			wantCheck: VerdictDrift, wantChange: "bypass actors: App 424242 on pull requests, repository admins on pull requests, team team-bumblebee on pull requests",
+			verify: func(t *testing.T, h *harness, res *Result) {
+				rs := h.repo().ruleset(RulesetName)
+				require.Equal(t, []*github.BypassActor{appBypass(testAppID), adminBypass(), teamBypass(testTeamID)}, rs.BypassActors, "the admins join, the rest stays")
+				require.Equal(t, []string{ctxGoBuild}, checkContexts(rs))
+				require.Len(t, h.repo().rulesets, 1, "the ruleset is updated, not recreated")
+			},
+		},
+		{
+			name: "protection: a secret team cannot bypass, so the App and the admins stand and the team is reported", step: StepProtection,
 			seed: func(h *harness) {
 				h.gh.orgTeams[team].Privacy = new("secret")
 				r := h.gh.addRepo(owner, name)
 				r.statuses = []string{ctxGoBuild}
 			},
-			wantCheck: VerdictDrift, wantChange: `create ruleset "devctl: default branch"; require ` + ctxGoBuild + "; bypass actor: App 424242 on pull requests",
+			wantCheck: VerdictDrift, wantChange: `create ruleset "devctl: default branch"; require ` + ctxGoBuild + "; bypass actors: App 424242 on pull requests, repository admins on pull requests",
 			wantFinding: FindingTeamBypassRefused, wantAfter: VerdictReported,
 			verify: func(t *testing.T, h *harness, res *Result) {
-				require.Equal(t, []*github.BypassActor{appBypass(testAppID)}, h.repo().ruleset(RulesetName).BypassActors, "the App alone")
+				require.Equal(t, []*github.BypassActor{appBypass(testAppID), adminBypass()}, h.repo().ruleset(RulesetName).BypassActors, "the App and the admins")
 				sr := res.Step(StepProtection)
 				require.Equal(t, []FindingKind{FindingTeamBypassRefused}, kinds(sr.Findings))
 				require.Contains(t, sr.Findings[0].Message, "team "+team+" is secret")
@@ -793,7 +820,7 @@ func TestSteps(t *testing.T) {
 			seed: func(h *harness) {
 				r := h.gh.addRepo(owner, name)
 				r.statuses = []string{ctxGoBuild}
-				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID), teamBypass(testTeamID))
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID), adminBypass(), teamBypass(testTeamID))
 			},
 			wantCheck: VerdictDrift, wantChange: "remove bypass actors",
 			verify: func(t *testing.T, h *harness, res *Result) {
@@ -864,7 +891,7 @@ func TestSteps(t *testing.T) {
 				r := h.gh.addRepo(owner, name)
 				r.statuses = []string{ctxGoBuild}
 				r.addRuleset("renovate-automerge", nil, &github.BypassActor{ActorID: new(int64(2740)), ActorType: new(github.BypassActorTypeIntegration), BypassMode: new(github.BypassModeAlways)})
-				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID), teamBypass(testTeamID))
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID), adminBypass(), teamBypass(testTeamID))
 			},
 			wantCheck: VerdictReported, wantFinding: FindingForeignRuleset, wantAfter: VerdictReported,
 			verify: func(t *testing.T, h *harness, res *Result) {
@@ -882,7 +909,7 @@ func TestSteps(t *testing.T) {
 			seed: func(h *harness) {
 				r := h.gh.addRepo(owner, name)
 				r.statuses = []string{ctxGoBuild}
-				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID), teamBypass(testTeamID))
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID), adminBypass(), teamBypass(testTeamID))
 				r.protection = &fakeProtection{reviews: 1, enforceAdmins: true, strict: false, checks: []string{ctxGoBuild}}
 			},
 			wantCheck: VerdictDrift, wantChange: "remove classic protection of main",
@@ -2063,12 +2090,12 @@ func TestRunProtectionTeamRefusedByGitHub(t *testing.T) {
 	res := h.run(ModeRepair, false, StepProtection)
 	sr := res.Step(StepProtection)
 	require.Equal(t, VerdictRepaired, sr.Verdict, "%+v", sr)
-	require.Equal(t, []string{"bypass actors: App 424242 on pull requests, team team-bumblebee on pull requests"}, sr.Changes)
+	require.Equal(t, []string{"bypass actors: App 424242 on pull requests, repository admins on pull requests, team team-bumblebee on pull requests"}, sr.Changes)
 	require.Equal(t, []FindingKind{FindingTeamBypassRefused}, kinds(sr.Findings))
 	require.Contains(t, sr.Findings[0].Message, "refused team "+team+" (privacy closed)")
-	require.Contains(t, sr.Findings[0].Message, "written with the App alone")
+	require.Contains(t, sr.Findings[0].Message, "written with the App and the repository admins")
 	rs := h.repo().ruleset(RulesetName)
-	require.Equal(t, []*github.BypassActor{appBypass(testAppID)}, rs.BypassActors, "the App alone")
+	require.Equal(t, []*github.BypassActor{appBypass(testAppID), adminBypass()}, rs.BypassActors, "the App and the admins")
 	require.Equal(t, []string{ctxGoBuild}, checkContexts(rs), "nothing else changes")
-	require.Len(t, h.mutations(), 2, "the refused write and the one with the App alone")
+	require.Len(t, h.mutations(), 2, "the refused write and the one without the team")
 }
