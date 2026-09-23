@@ -16,10 +16,11 @@ import (
 // Renderer renders the scaffold of an accepted declaration: the template
 // checkout with its placeholders replaced, the chart of the chart template
 // when the flavours produce one the template lacks, the files devctl
-// generates for the declared flavours and language, CODEOWNERS for the team
-// and the chart's team annotation. The generated files are the ones align-files writes for
-// the same declaration with the same devctl, so the first align run after
-// the scaffold is pushed changes nothing.
+// generates for the declared flavours and language, the chart tests the
+// generated pipeline runs where the template carries none, CODEOWNERS for
+// the team and the chart's team annotation. The generated files are the ones
+// align-files writes for the same declaration with the same devctl, so the
+// first align run after the scaffold is pushed changes nothing.
 type Renderer struct {
 	// Templates fetches the template repositories; nil fetches the tarball
 	// of each template's main branch from GitHub ([GitHubTemplates]).
@@ -150,6 +151,11 @@ func (r Renderer) Render(ctx context.Context, req RenderRequest) (*Scaffold, err
 	_, helmErr := os.Stat(filepath.Join(dir, "helm"))
 	commands := genCommands(fields, genContext{HasHelm: helmErr == nil, Knows: knows})
 	if err := runGen(ctx, dir, r.Log, commands); err != nil {
+		return nil, microerror.Mask(err)
+	}
+	// After the generators: the chart tests follow the ATS dependency file
+	// `devctl gen circleci` emits, and are the repository's own from then on.
+	if err := writeChartTests(dir, fields.Name); err != nil {
 		return nil, microerror.Mask(err)
 	}
 

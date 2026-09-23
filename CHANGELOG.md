@@ -38,6 +38,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- A repository created with `devctl repo create` with the `app` flavour merges its first pull request on green CI. The
+  scaffold carries the chart tests its generated pipeline's `execute-chart-tests` job runs, beside the generated
+  `tests/ats/pyproject.toml`: `.ats/main.yaml`, which skips the functional scenario and the upgrade scenario (a new
+  repository has no released chart to upgrade from), and `tests/ats/test_smoke.py`, one `smoke` test that the job's
+  kind cluster is reachable. Before, app-test-suite picked the pytest executor from the generated dependency file and
+  the job failed in the smoke scenario's pre-run -- "Pytest tests were requested, but no python source code file was
+  found" -- on the first pull request of every new chart repository; with a test in place the upgrade scenario refused
+  next, having no released chart to upgrade from. Both files are the repository's own: a template that carries a test
+  or the configuration keeps it, and an align run never writes them
+  ([#2354](https://github.com/giantswarm/devctl/issues/2354)).
 - `repo reconcile`'s release step counts only the newest run of every workflow of the tag's pipeline, as `release
   wait` does: a rerun from failed is a second workflow of the same name, and the run it replaced keeps its failed
   status for ever, so a tag revived by a rerun read `red-release` until the next tag. The finding's fix no longer

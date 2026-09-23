@@ -118,6 +118,14 @@ with the `app` flavour -- gets the chart of `giantswarm/template-app` at `helm/<
 template, with `.abs/main.yaml` pointing at it, the name substituted and the team annotation set, so
 the first release's chart job builds; the dry run names it on the `chart:` line.
 
+A chart repository whose generated pipeline runs app-test-suite (the `app` flavour without
+`gen.ci.skipATS`) also gets the chart tests its `execute-chart-tests` job runs, beside the generated
+`tests/ats/pyproject.toml`: `.ats/main.yaml`, which skips the functional scenario and the upgrade
+scenario (a new repository has no released chart to upgrade from), and `tests/ats/test_smoke.py`, one
+smoke test that the job's kind cluster is reachable, so the first pull request is green. Both are
+written only where the template carries none and are the repository's own from then on: the team
+extends the test with the chart's checks, and the align run never touches either.
+
 ### Token
 
 `$GITHUB_TOKEN` (`--github-token-envvar` names another variable) or, when unset, the login of your
