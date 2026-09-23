@@ -154,6 +154,7 @@ func newHarnessMode(t *testing.T, yaml string, mode reposetup.Mode) *harness {
 	t.Helper()
 	ctx := context.Background()
 	gh, cc := newFakeGitHub(), newFakeCircleCI()
+	cc.onFollow = gh.installHook // a follow by an admin with the hook scope
 	t.Cleanup(gh.srv.Close)
 	t.Cleanup(cc.srv.Close)
 
@@ -1087,9 +1088,75 @@ func TestSteps(t *testing.T) {
 			},
 		},
 		{
-			name: "circleci: a followed project without setup workflows and key (template-app's defects)", step: StepCircleCI,
+			name: "circleci: a followed project with its webhook reads ok", step: StepCircleCI,
 			seed: func(h *harness) {
 				h.gh.addRepo(owner, name)
+				h.cc.follow(owner, name)
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, _ *harness, res *Result) {
+				require.Equal(t, "followed, setup workflows on, checkout key present, webhook present", res.Step(StepCircleCI).Summary)
+			},
+		},
+		{
+			// giantswarm/mcp-toolkit: followed, with setup workflows and a
+			// deploy key, and GET /repos/{owner}/{repo}/hooks answered []:
+			// no push and no tag reached CircleCI, and the step read ok. An
+			// inactive CircleCI hook or another system's hook is no webhook
+			// either.
+			name: "circleci: a followed project without CircleCI's webhook is reported", step: StepCircleCI,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				h.cc.onFollow = nil
+				h.cc.follow(owner, name)
+				inactive := circleCIHook()
+				inactive.Active = new(false)
+				r.hooks = []*github.Hook{inactive, {ID: new(int64(7)), Name: new("web"), Active: new(true), Events: []string{"push"}, Config: &github.HookConfig{URL: new("https://github-pr-webhook.ci.giantswarm.io")}}}
+			},
+			wantCheck: VerdictReported, wantFinding: FindingCircleCIWebhookMissing, wantAfter: VerdictReported,
+			verify: func(t *testing.T, _ *harness, res *Result) {
+				sr := res.Step(StepCircleCI)
+				require.Equal(t, "followed, setup workflows on, checkout key present, webhook missing", sr.Summary)
+				require.Len(t, sr.Findings, 1)
+				require.False(t, sr.Findings[0].Advisory, "a deaf project is not set up")
+				require.Contains(t, sr.Findings[0].Fix, "POST /api/v1.1/project/github/giantswarm/sample-service/follow")
+				require.False(t, sr.Converges())
+			},
+		},
+		{
+			// The reconciler's follow as architectbot under a temporary admin
+			// grant: CircleCI followed the project and installed no hook,
+			// because that account's CircleCI grant lacks the hook scope. The
+			// follow is repaired, the missing hook reported in the same run.
+			name: "circleci: a follow whose grant lacks the hook scope leaves the webhook missing", step: StepCircleCI,
+			seed: func(h *harness) {
+				h.gh.addRepo(owner, name)
+				h.cc.onFollow = nil
+			},
+			wantCheck: VerdictDrift, wantChange: "follow giantswarm/sample-service; enable setup workflows; create a deploy key",
+			wantAfter: VerdictReported,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Contains(t, h.cc.projects, owner+"/"+name)
+				require.Equal(t, []FindingKind{FindingCircleCIWebhookMissing}, kinds(res.Step(StepCircleCI).Findings))
+			},
+		},
+		{
+			name: "circleci: webhooks the identity cannot read are unchecked", step: StepCircleCI,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				h.cc.follow(owner, name)
+				r.hooksStatus = 404
+			},
+			wantCheck: VerdictReported, wantFinding: FindingUnchecked, wantAfter: VerdictReported,
+			verify: func(t *testing.T, _ *harness, res *Result) {
+				require.Equal(t, "followed, setup workflows on, checkout key present, webhook not readable by this identity", res.Step(StepCircleCI).Summary)
+			},
+		},
+		{
+			name: "circleci: a followed project without setup workflows and key (template-app's defects)", step: StepCircleCI,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.hooks = []*github.Hook{circleCIHook()}
 				h.cc.projects[owner+"/"+name] = &fakeProject{}
 			},
 			wantCheck: VerdictDrift, wantChange: "enable setup workflows; create a deploy key",
@@ -1941,13 +2008,14 @@ func TestRunFullRepositorySetUp(t *testing.T) {
 	require.Contains(t, string(data), `"repository":"giantswarm/sample-service"`)
 
 	// The budget: a check of the converged repository, every step, costs at
-	// most twenty GitHub requests, and the count is the fake's own.
+	// most twenty-one GitHub requests (the webhooks read the circleci step
+	// added is the twenty-first), and the count is the fake's own.
 	before := len(h.gets())
 	check := h.run(ModeCheck, false)
 	require.True(t, check.Converged, "%+v", check.Steps)
 	gets := h.gets()[before:]
 	require.Equal(t, len(gets), check.Requests.GitHub, "the counter and the fake agree")
-	require.LessOrEqual(t, check.Requests.GitHub, 20, "a converged check within the budget of twenty; the reads:\n%s", strings.Join(gets, "\n"))
+	require.LessOrEqual(t, check.Requests.GitHub, 21, "a converged check within the budget of twenty-one; the reads:\n%s", strings.Join(gets, "\n"))
 	require.Positive(t, check.Requests.CircleCI, "the circleci and release steps read CircleCI")
 	data, err = json.Marshal(check)
 	require.NoError(t, err)
