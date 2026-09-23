@@ -158,11 +158,18 @@ const (
 	// FindingForeignRuleset: the repository carries a ruleset the engine did
 	// not create. It is left alone; a person decides whether it stays.
 	FindingForeignRuleset FindingKind = "foreign-ruleset"
-	// FindingRulesetsNotEnabled: the run has no devctl App id, so the
-	// protection step kept classic branch protection; the id is the switch
-	// to the default branch's ruleset with the App and the owning team as
-	// bypass actors.
+	// FindingRulesetsNotEnabled: the repository has no ruleset yet and the
+	// run has no devctl App id to write one, so the protection step kept
+	// classic branch protection as declared; the fix names the run that
+	// writes the ruleset (the reconciler's, with the id) and its bypass
+	// actors: the owning team and the repository admins for people, the
+	// devctl App for the reconciler.
 	FindingRulesetsNotEnabled FindingKind = "rulesets-not-enabled"
+	// FindingRulesetPending: the ruleset needs a write this run cannot make
+	// without the devctl App id, which its bypass list takes: its rules
+	// differ from the declared protection, or classic protection still
+	// stands beside it. The run that has the id, the reconciler's, makes it.
+	FindingRulesetPending FindingKind = "ruleset-pending"
 	// FindingTeamBypassRefused: the owning team cannot be a bypass actor of
 	// the ruleset (a secret team, or one GitHub refused), so the App stands
 	// alone and a member's own pull request does not merge through the API

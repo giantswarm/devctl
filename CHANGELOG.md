@@ -9,6 +9,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `devctl repo reconcile --mode check` without `--devctl-app-id`, and with it giantswarm-repo-manager's read-mode
+  engine behind `repo status`, reads a repository on the ruleset `devctl: default branch` as converged. The protection
+  step reads the repository's rulesets first and compares the ruleset's rules with the write path's comparison, the
+  bypass list excepted: the App id names one of its actors, so without it the list is neither compared nor written and
+  the summary says `bypass actors not compared`. A difference, or a classic protection still standing beside the
+  ruleset, is the finding `ruleset-pending` for the run that has the id, the reconciler's; nothing is written without
+  it. A repository without the ruleset keeps its classic protection as before, with the advisory `rulesets-not-enabled`
+  worded for today's model: the bypass actors are the owning team and the repository admins for people and the devctl
+  App for the reconciler, `--devctl-app-id` the write path's remedy. Before, a run without the id went to the classic
+  protection without reading the rulesets, found none on an aligned repository and planned to write one: every aligned
+  repository read "not converged", the advisory naming a switch made long since (#2341).
+
 - `devctl repo reconcile` and `repo status` read `gen.ci.generate` as the entry declares it: an existing entry with
   `gen` but no `gen.ci` keeps the repository's own CircleCI configuration, as the schema says, and the circleci and
   release steps run only when `.circleci/config.yml` is on the default branch. The validator writes the creation

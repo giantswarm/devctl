@@ -87,12 +87,14 @@ type Runner struct {
 	// [DefaultBaseline].
 	Baseline *Baseline
 	// DevctlAppID is the numeric id of the devctl GitHub App (the App's
-	// settings page; not the client id) and the switch to rulesets: with it
-	// the protection step writes the default branch's ruleset with the App
-	// and the owning team (the team file's team) as bypass actors in
-	// pull_request mode (none on agentMerge: false) and removes classic
-	// protection; 0 keeps classic branch protection as before and reports
-	// the missing id.
+	// settings page; not the client id): what the protection step's bypass
+	// list takes to be compared and written. With it the step writes the
+	// default branch's ruleset with the App and, for people, the owning
+	// team (the team file's team) and the repository admins as bypass
+	// actors in pull_request mode (none on agentMerge: false) and removes
+	// classic protection; 0 reads a ruleset the repository has and compares
+	// its rules alone, and writes classic branch protection as before where
+	// there is none yet. The reconciler's wiring passes the id.
 	DevctlAppID int64
 	// GitHubRequests and CircleCIRequests count the requests the clients
 	// send, when the caller built the clients' transports over them (one

@@ -815,7 +815,61 @@ func TestSteps(t *testing.T) {
 			},
 		},
 		{
-			name: "protection: without the App id a ruleset and its bypass actors are left alone", step: StepProtection,
+			name: "protection: without the App id an aligned ruleset reads converged, the bypass list not compared", step: StepProtection,
+			seed: func(h *harness) {
+				h.runner.DevctlAppID = 0
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.checkRuns = []string{ctxSemantic}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{actionsCheck(ctxSemantic), statusCheck(ctxGoBuild)}, appBypass(testAppID), teamBypass(testTeamID))
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				sr := res.Step(StepProtection)
+				require.Equal(t, `main: ruleset "devctl: default branch"; required: `+ctxSemantic+", "+ctxGoBuild+"; bypass actors not compared (no devctl App id)", sr.Summary)
+				require.Empty(t, sr.Findings, "no switch to report: the repository is on the ruleset")
+				require.True(t, res.Converged)
+				require.Nil(t, h.repo().protection, "no classic protection is written")
+				require.Equal(t, 0, h.gh.reads("/orgs/"+owner+"/teams/"+team), "the team is not read: the bypass list is not compared")
+			},
+		},
+		{
+			name: "protection: without the App id a ruleset without bypass actors is not drift", step: StepProtection,
+			seed: func(h *harness) {
+				h.runner.DevctlAppID = 0
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)})
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Empty(t, h.repo().ruleset(RulesetName).BypassActors, "a run without the App id writes no bypass actor")
+				require.True(t, res.Converged)
+			},
+		},
+		{
+			name: "protection: without the App id a ruleset that differs is reported for the run with the id, not written", step: StepProtection,
+			seed: func(h *harness) {
+				h.runner.DevctlAppID = 0
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				rs := r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID), teamBypass(testTeamID))
+				rs.Rules.PullRequest.RequiredApprovingReviewCount = 2
+				rs.Rules.RequiredStatusChecks.StrictRequiredStatusChecksPolicy = true
+			},
+			wantCheck: VerdictReported, wantFinding: FindingRulesetPending, wantAfter: VerdictReported,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				sr := res.Step(StepProtection)
+				require.Equal(t, []FindingKind{FindingRulesetPending}, kinds(sr.Findings))
+				require.Equal(t, "the ruleset differs from the declared protection: required reviews 2 → 1; strict checks true → false", sr.Findings[0].Message)
+				require.Contains(t, sr.Findings[0].Fix, "--devctl-app-id")
+				require.False(t, sr.Findings[0].Advisory, "the repository is not as declared")
+				require.Equal(t, 2, h.repo().ruleset(RulesetName).Rules.PullRequest.RequiredApprovingReviewCount, "nothing is written without the App id")
+				require.False(t, res.Converged)
+			},
+		},
+		{
+			name: "protection: without the App id a ruleset beside classic protection is the switch pending, nothing written", step: StepProtection,
 			seed: func(h *harness) {
 				h.runner.DevctlAppID = 0
 				r := h.gh.addRepo(owner, name)
@@ -823,12 +877,15 @@ func TestSteps(t *testing.T) {
 				r.protection = &fakeProtection{reviews: 1, enforceAdmins: true, strict: false, checks: []string{ctxGoBuild}}
 				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID))
 			},
-			wantCheck: VerdictReported, wantFinding: FindingRulesetsNotEnabled, wantAfter: VerdictReported,
+			wantCheck: VerdictReported, wantFinding: FindingRulesetPending, wantAfter: VerdictReported,
 			verify: func(t *testing.T, h *harness, res *Result) {
+				sr := res.Step(StepProtection)
+				require.Equal(t, []FindingKind{FindingRulesetPending}, kinds(sr.Findings), "no rulesets-not-enabled: the ruleset exists")
+				require.Equal(t, "the switch to the ruleset is pending: classic protection of main still stands beside it", sr.Findings[0].Message)
 				require.Equal(t, []*github.BypassActor{appBypass(testAppID)}, h.repo().ruleset(RulesetName).BypassActors, "a run without the App id touches no ruleset")
 				require.NotNil(t, h.repo().protection, "and removes no classic protection")
-				require.Equal(t, "main protected; required: "+ctxGoBuild, res.Step(StepProtection).Summary)
-				require.True(t, res.Converged)
+				require.Equal(t, `main: ruleset "devctl: default branch"; required: `+ctxGoBuild+"; bypass actors not compared (no devctl App id)", sr.Summary)
+				require.False(t, res.Converged, "the switch is the reconciler's to make")
 			},
 		},
 		{

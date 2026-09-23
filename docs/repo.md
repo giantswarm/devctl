@@ -245,11 +245,7 @@ recently merged pull request, a required context nothing reports is removed, the
 are required whatever reported and never removed), a branch need not be up to date to merge; no deletion
 and no force push. A customer repository (flavour `customer`) keeps its own protection.
 
-`--devctl-app-id`, the devctl GitHub App's numeric id (the App's settings page; not the client id), is the
-switch between the two forms of that protection. Without it the step writes classic branch protection, as
-it always has (administrators bound too, `enforce_admins`), and reports the missing id as the advisory
-finding `rulesets-not-enabled`, which does not keep the repository from converging. With it the protection
-is one repository ruleset, `devctl: default branch`, active on
+The protection is one repository ruleset, `devctl: default branch`, active on
 `~DEFAULT_BRANCH` so a rename or a fork line's declared branch needs no change: the same rules, a GitHub
 Actions gate pinned to the GitHub Actions App so no other integration satisfies its context, and two bypass
 actors in `pull_request` mode: the devctl App and the repository's owning team -- the organization's team
@@ -266,9 +262,15 @@ to the ruleset in the same run: its required checks are carried over, the rulese
 classic protection is removed; the dry run plans both. A ruleset the engine did not create is left alone
 and reported (advisory: it does not keep the repository from converging).
 
-The id is the switch, not the devctl release: the reconciler's wiring passes it, so the day the reconciler
-gets the id is the day its opted-in repositories move to rulesets, and a run without it -- a laptop, an
-older wiring -- changes no ruleset and removes no classic protection.
+`--devctl-app-id`, the devctl GitHub App's numeric id (the App's settings page; not the client id), is what
+the bypass list takes to be compared and written; the reconciler's wiring passes it. A run without the id
+-- a laptop, giantswarm-repo-manager's read-mode engine behind `repo status` -- reads the repository's
+ruleset and compares its rules alone: the bypass list is neither compared nor written and the summary says
+so (`bypass actors not compared`); matching rules converge; a difference, or a classic protection still
+standing beside the ruleset, is the finding `ruleset-pending` for the run that has the id, and nothing is
+written. A repository without the ruleset yet keeps its classic branch protection, written and verified as
+it always was (administrators bound too, `enforce_admins`), with the advisory finding `rulesets-not-enabled`
+naming the run that writes the ruleset; it does not keep the repository from converging.
 
 The `catalog` step dispatches the catalog and mapping workflows of the catalog repository, which needs an
 Actions permission there. `--dispatch-token-envvar` names a second token for those two calls (listing the
