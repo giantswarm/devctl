@@ -42,7 +42,9 @@ const flavourCustomer = "customer"
 // carries an upstream release plus the carried patches on the branch its
 // entry declares as defaultBranch. The scaffold and codeowners steps are
 // skipped on it and nothing is generated for it; every other step runs as
-// declared, protection on the declared branch included.
+// declared, protection on the declared branch included. Its pull requests
+// land by rebase merge, one upstream-ready commit per carried patch, so the
+// settings step keeps rebase merges on it ([run.mergeMethods]).
 const flavourFork = "fork"
 
 // ReportedChecker returns the check contexts that have reported on the

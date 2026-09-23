@@ -261,6 +261,14 @@ func newFakeGitHub() *fakeGitHub {
 
 // addRepo seeds a repository at the baseline with a scaffold, active and
 // unprotected; the test adjusts it.
+// forkLine shapes the repository as a fork line has it on GitHub: on the
+// branch named after the organisation, its pull requests landing by rebase
+// merge beside squash.
+func (r *fakeRepo) forkLine() *fakeRepo {
+	r.defaultBranch, r.allowRebase = "giantswarm", true
+	return r
+}
+
 func (f *fakeGitHub) addRepo(owner, name string) *fakeRepo {
 	r := &fakeRepo{
 		owner: owner, name: name,

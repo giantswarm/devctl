@@ -9,6 +9,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `devctl repo reconcile`: the settings step keeps rebase merges on a fork line (flavour `fork`) and leaves its merge
+  commits as the repository has them; the rest of the settings baseline applies as everywhere. A fork line's carried
+  patches land by rebase merge, one upstream-ready commit each, and a re-pin merges upstream's history: with the
+  squash-only baseline applied, GitHub refused the line's merges, so the fork lines could not opt in to alignment.
+
 - The scaffold step's `abs-prerequisite` check reads the chart at `helm/<gen.ci.chartName>` when the entry sets the
   field, `helm/<repository>` otherwise: a repository whose chart is named otherwise (docs-proxy ships
   `helm/docs-proxy-app`, declared with `chartName: docs-proxy-app`) was reported without a chart on every check and
