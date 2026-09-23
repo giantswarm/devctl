@@ -548,7 +548,7 @@ func (w *Waiter) timeout(result *Result) error {
 	// build stood: a workflow running, or one whose jobs never appeared.
 	unfinished := ""
 	if p := result.Pipeline; p != nil && len(p.Unfinished) > 0 {
-		unfinished = fmt.Sprintf("; pipeline %d unfinished: %s", p.Number, strings.Join(p.Unfinished, ", "))
+		unfinished = "; " + stillRunning(p)
 	}
 	switch {
 	case result.Tag == "":
@@ -564,7 +564,8 @@ func (w *Waiter) timeout(result *Result) error {
 }
 
 // stillRunning names what keeps the tag pipeline from being green, for the
-// progress line of a wait that outlasts its artifacts.
+// progress line of a wait that outlasts its artifacts and the timeout's
+// reason.
 func stillRunning(p *Pipeline) string {
 	switch {
 	case p == nil:
