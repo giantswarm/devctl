@@ -9,6 +9,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- `gen circleci`: the generated pipelines pin architect orb 10.10.0, whose `architect` executor bundles gitsemver 3
+  like its `app-build-suite` executor. From 10.8.0 to 10.9.0 a branch pipeline tagged its image with gitsemver 2's
+  `X.Y.Z-dev.<branch>.<date>.<time>.h<sha>` and stamped its chart with gitsemver 3's `X.Y.Z-r<branch-hash>t<timestamp>h<sha>`,
+  so the branch chart named an image that was never pushed and `execute-chart-tests` hung in `helm --wait`
+  ([architect-orb#956](https://github.com/giantswarm/architect-orb/issues/956)). Dev image tags now follow the
+  gitsemver 3 schema: a Flux filter that matches `-dev.<branch>.` stops matching new builds and selects a branch
+  with `^.*-r<branch-hash>t[0-9]{14}h[0-9a-f]{7}$` (`gitsemver branch-hash <branch>`).
 - `gen circleci`: the generated pipelines pin architect orb 10.9.0. Its `go-build` takes the compile parallelism from
   the executor's cgroup CPU quota instead of the host's `nproc`, which since 10.6.1 ran `-p 36` on a 2-vCPU `medium`
   executor and killed heavy builds in `Build binaries`
