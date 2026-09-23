@@ -9,6 +9,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `circleciclient.Config.Anonymous`: a client without a token, for a reader that holds none -- it reads what CircleCI
+  answers without one, the pipelines, workflows and jobs of a public project (a private one is 404), and sends no
+  `Circle-Token` header; `New` still refuses an empty token without the flag, and a token with it, so a reader meant
+  to hold a token never reads anonymously by accident. `circleciclient.WorkflowURL` names a workflow's page beside
+  `PipelineURL` ([#2352](https://github.com/giantswarm/devctl/issues/2352)).
 - The team-file entry declares the repository's own rulesets, the ones a team keeps beside the engine's: `rulesets`
   names them, and `repo reconcile`'s protection step leaves a ruleset named there alone and silent. A ruleset the
   repository carries and the entry does not name is the advisory `foreign-ruleset` as before, its fix naming the
@@ -33,6 +38,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `repo reconcile`'s release step counts only the newest run of every workflow of the tag's pipeline, as `release
+  wait` does: a rerun from failed is a second workflow of the same name, and the run it replaced keeps its failed
+  status for ever, so a tag revived by a rerun read `red-release` until the next tag. The finding's fix no longer
+  calls the tag dead: it names the rerun from failed (the rerun checks out the same commit and runs the publish
+  jobs) and `devctl release wait` to confirm, the next tag only when the cause is in the code
+  ([#2352](https://github.com/giantswarm/devctl/issues/2352)).
 - `devctl pr merge` merges the release pull requests Giant Swarm's automation opens. `taylorbot` and `architectbot`
   are plain GitHub user accounts -- no `[bot]` login, no `Bot` user type -- so the author check could not tell them
   from a teammate and refused every one with exit 5, "opened by taylorbot, not by you". taylorbot opens the

@@ -5,7 +5,10 @@
 // nothing else. The token is a personal
 // API token (architectbot's `CIRCLECI_API_TOKEN` for the reconciler, the
 // person's for `devctl repo reconcile`); the org and repository name a
-// project by their GitHub slug.
+// project by their GitHub slug. A reader without a token of its own reads a
+// public project's pipelines, workflows and jobs anonymously
+// ([Config.Anonymous]): CircleCI answers those reads for a public project
+// without one, and a private project with 404.
 package circleciclient
 
 import (
@@ -34,6 +37,13 @@ const KeyTypeDeployKey = "deploy-key"
 type Config struct {
 	// Token is the CircleCI API token, sent as the Circle-Token header.
 	Token string
+	// Anonymous is a client without a token: it reads what CircleCI answers
+	// without one, the pipelines, workflows and jobs of a public project (a
+	// private one answers 404, IsNotFound), and no header is sent. Set with
+	// an empty Token; a token and Anonymous together are a config error, as
+	// is neither, so a reader meant to hold a token does not read anonymously
+	// by accident.
+	Anonymous bool
 	// BaseURL overrides the API host; empty means [DefaultBaseURL].
 	BaseURL string
 	// HTTPClient overrides the HTTP client; nil means one with a timeout,
@@ -57,8 +67,11 @@ type Client struct {
 
 // New returns a Client for config.
 func New(config Config) (*Client, error) {
-	if config.Token == "" {
+	switch {
+	case config.Token == "" && !config.Anonymous:
 		return nil, microerror.Maskf(invalidConfigError, "%T.Token must not be empty", config)
+	case config.Token != "" && config.Anonymous:
+		return nil, microerror.Maskf(invalidConfigError, "%T.Anonymous takes no Token", config)
 	}
 	baseURL := config.BaseURL
 	if baseURL == "" {
@@ -366,7 +379,9 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) err
 	if err != nil {
 		return microerror.Mask(err)
 	}
-	req.Header.Set("Circle-Token", c.token)
+	if c.token != "" {
+		req.Header.Set("Circle-Token", c.token)
+	}
 	req.Header.Set("Accept", "application/json")
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")

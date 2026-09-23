@@ -1046,6 +1046,15 @@ func (f *fakeCircleCI) seedPipeline(p *fakeProject, vcs circleciclient.PipelineV
 	}
 }
 
+// rerun seeds a rerun of the newest pipeline's workflow: a second workflow
+// of the same name, newer, of status, with every job of that status.
+func (f *fakeCircleCI) rerun(p *fakeProject, status string) {
+	id := p.pipelines[0].ID
+	wfID := fmt.Sprintf("%s-wf%d", id, len(f.workflows[id])+1)
+	f.workflows[id] = append(f.workflows[id], circleciclient.Workflow{ID: wfID, Name: "build", Status: status, PipelineNumber: p.pipelines[0].Number, CreatedAt: time.Now()})
+	f.jobs[wfID] = []circleciclient.Job{{Name: "go-build", Status: status}, {Name: "push-to-registries-release", Status: status}}
+}
+
 func (f *fakeCircleCI) withProject(h func(w http.ResponseWriter, r *http.Request, p *fakeProject)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
