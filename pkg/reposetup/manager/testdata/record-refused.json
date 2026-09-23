@@ -1,0 +1,259 @@
+{
+  "age": "1h18m28s",
+  "catalog": {
+    "present": true
+  },
+  "ci": {
+    "chartPush": true,
+    "chinaPush": "none",
+    "files": [
+      "config.yml",
+      "workflows.yml",
+      "custom.yml"
+    ],
+    "generated": true,
+    "imagePush": false,
+    "jobs": [
+      {
+        "name": "setup",
+        "tagsOnly": [
+          "/^v.*/"
+        ]
+      },
+      {
+        "branchesIgnore": [
+          "main"
+        ],
+        "name": "build-chart",
+        "tagsOnly": [
+          "/^v.*/"
+        ]
+      },
+      {
+        "branchesIgnore": [
+          "main"
+        ],
+        "name": "execute-chart-tests"
+      },
+      {
+        "branchesIgnore": [
+          "main"
+        ],
+        "name": "push-chart"
+      },
+      {
+        "branchesIgnore": [
+          "/.*/"
+        ],
+        "name": "push-chart-release",
+        "tagsOnly": [
+          "/^v.*/"
+        ]
+      },
+      {
+        "branchesIgnore": [
+          "/.*/"
+        ],
+        "name": "verify-release-floors",
+        "tagsOnly": [
+          "/^v.*/"
+        ]
+      },
+      {
+        "name": "test-ingress-modes",
+        "tagsIgnore": [
+          "/.*/"
+        ]
+      },
+      {
+        "branchesIgnore": [
+          "main"
+        ],
+        "name": "build-connectivity-chart",
+        "tagsOnly": [
+          "/^v.*/"
+        ]
+      },
+      {
+        "branchesIgnore": [
+          "main"
+        ],
+        "name": "push-connectivity-chart"
+      },
+      {
+        "branchesIgnore": [
+          "/.*/"
+        ],
+        "name": "push-connectivity-chart-release",
+        "tagsOnly": [
+          "/^v.*/"
+        ]
+      }
+    ],
+    "orb": "10.5.0",
+    "signing": "signed"
+  },
+  "circleci": {
+    "followed": true,
+    "head": {
+      "at": "2026-09-23T14:18:51Z",
+      "contexts": [
+        "ci/circleci: setup",
+        "ci/circleci: test-ingress-modes"
+      ],
+      "state": "success"
+    },
+    "setupWorkflows": true,
+    "source": "statuses+artifact"
+  },
+  "declaration": {
+    "accepted": false,
+    "componentType": "service",
+    "entry": "- name: agent-platform\n  align: true\n  choreReviewers:\n    - teemow\n  system: agent-platform\n  componentType: service\n  gen:\n    flavours:\n      - app\n    language: generic\n    # Renovate image-tag bumps in helm/*/values.yaml regenerate the chart README\n    # and values.schema.json on the PR branch instead of failing pre-commit\n    # (agent-platform#295, #301, #302, #320; devctl#2185).\n    helmDocsRegen: true\n    ci:\n      generate: true\n      overrideChartAppVersion: true\n      # Publish the dev chart on branch builds (RFC semver-based-automatic-upgrades\n      # dev channel); custom.yml mirrors it for agent-platform-connectivity.\n      branchPublish: true\n      # The kagent API v2 chart smoke runs the platform Harness (kagent's\n      # controller, Agent Substrate, a gVisor worker) on the job's kind cluster\n      # (giantswarm/agent-platform#343); the repo's .ats/kind-config.yaml shapes\n      # the cluster. Initial size, to be confirmed by the smoke's measured runs.\n      atsResourceClass: large\n      # The meta chart's release push waits on the repo's verify-release-floors\n      # job (custom.yml): every component floor and BOM pin must resolve to a\n      # published chart, or the release is refused before the chart is pushed\n      # (giantswarm/agent-platform#624).\n      chartReleaseGateJob: verify-release-floors\n",
+    "file": "repositories/team-bumblebee.yaml",
+    "flavours": [
+      "app"
+    ],
+    "language": "generic",
+    "problems": [
+      "gen.ci.chartReleaseGateJob: not a field of the repositories schema"
+    ],
+    "team": "team-bumblebee"
+  },
+  "findings": [
+    {
+      "fix": "edit gen.ci.chartReleaseGateJob of the entry \"agent-platform\" in repositories/team-bumblebee.yaml: not a field of the repositories schema",
+      "kind": "entry-refused",
+      "message": "gen.ci.chartReleaseGateJob: not a field of the repositories schema",
+      "source": "engine"
+    }
+  ],
+  "mapping": {
+    "present": true,
+    "team": "bumblebee"
+  },
+  "name": "agent-platform",
+  "reality": {
+    "botCommits": 0,
+    "codeownersTeams": [
+      "team-bumblebee"
+    ],
+    "createdAt": "2026-05-19T21:10:44Z",
+    "defaultBranch": "main",
+    "description": "Giant Swarm Agent Platform - MCP gateway deploy unit (app-of-apps meta-package)",
+    "has": {
+      "circleci": true,
+      "codeowners": true,
+      "dependabot": false,
+      "dockerfile": false,
+      "helm": true,
+      "readme": true,
+      "renovate": true,
+      "workflows": true
+    },
+    "historySampled": 30,
+    "isArchived": false,
+    "isEmpty": false,
+    "isFork": false,
+    "isTemplate": false,
+    "language": "Python",
+    "lastCommit": {
+      "author": "teemow",
+      "date": "2026-09-23T14:14:19Z",
+      "message": "docs(valkey): document usersExistingSecretChecksum for the bundled Va…"
+    },
+    "lastPersonCommit": {
+      "author": "teemow",
+      "date": "2026-09-23T14:14:19Z",
+      "message": "docs(valkey): document usersExistingSecretChecksum for the bundled Va…"
+    },
+    "latestRelease": {
+      "build": {
+        "at": "2026-09-23T14:07:35Z",
+        "contexts": [
+          "ci/circleci: build-chart",
+          "ci/circleci: build-connectivity-chart",
+          "ci/circleci: push-chart-release",
+          "ci/circleci: push-connectivity-chart-release",
+          "ci/circleci: setup",
+          "ci/circleci: verify-release-floors"
+        ],
+        "state": "success"
+      },
+      "publishedAt": "2026-09-23T14:03:22Z",
+      "tag": "v4.61.1"
+    },
+    "openIssues": 46,
+    "openPullRequests": {
+      "bots": 2,
+      "oldestBotAt": "2026-09-16T09:30:19Z",
+      "people": 4,
+      "renovate": 2,
+      "total": 6
+    },
+    "pushedAt": "2026-09-23T14:21:03Z",
+    "url": "https://github.com/giantswarm/agent-platform",
+    "visibility": "public"
+  },
+  "refreshedAt": "2026-09-23T14:31:52.649788539Z",
+  "renovate": {
+    "configured": true,
+    "dashboardIssue": {
+      "number": 42,
+      "title": "Dependency Dashboard"
+    },
+    "enabled": true,
+    "lastPullRequest": {
+      "author": "renovate",
+      "createdAt": "2026-09-18T04:53:54Z",
+      "number": 548,
+      "title": "chore(deps): update gsoci.azurecr.io/giantswarm/pause docker tag to v3.10.2"
+    },
+    "path": "renovate.json5",
+    "preset": true
+  },
+  "repository": "giantswarm/agent-platform",
+  "setup": {
+    "checkedAt": "2026-09-23T14:31:52.649770524Z",
+    "checks": {
+      "added": false,
+      "converged": false,
+      "declared": "giantswarm/agent-platform",
+      "finishedAt": "2026-09-23T14:31:52.649770524Z",
+      "mode": "check",
+      "repository": "giantswarm/agent-platform",
+      "startedAt": "2026-09-23T14:31:52.649770524Z",
+      "steps": [
+        {
+          "findings": [
+            {
+              "fix": "edit gen.ci.chartReleaseGateJob of the entry \"agent-platform\" in repositories/team-bumblebee.yaml: not a field of the repositories schema",
+              "kind": "entry-refused",
+              "message": "gen.ci.chartReleaseGateJob: not a field of the repositories schema"
+            }
+          ],
+          "step": "entry",
+          "summary": "refused: 1 problem(s) with the entry in repositories/team-bumblebee.yaml",
+          "verdict": "reported"
+        }
+      ],
+      "team": "team-bumblebee"
+    },
+    "release": {
+      "checkedAt": "2026-09-23T15:45:42.834279652Z",
+      "createdAt": "2026-09-23T15:40:47Z",
+      "pipeline": {
+        "number": 2513,
+        "url": "https://app.circleci.com/pipelines/github/giantswarm/agent-platform/2513"
+      },
+      "pullRequest": {
+        "number": 643,
+        "url": "https://github.com/giantswarm/agent-platform/pull/643"
+      },
+      "settledAt": "2026-09-23T15:45:42.834279652Z",
+      "state": "built",
+      "tag": "v4.63.0"
+    }
+  },
+  "source": "reconciler"
+}

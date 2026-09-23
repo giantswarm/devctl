@@ -91,6 +91,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `devctl repo status` and `devctl repo get` read a record whose declaration the schema refuses: the manager keeps the
+  declaration's `problems` as `field: message` strings (its inventory record, the Dev Portal's `InventoryRecord`),
+  where devctl expected `{field, message}` objects and failed every such record with `cannot unmarshal string into Go
+  struct field Declaration.declaration.problems`. A write's dry run keeps its problems as objects, as the manager
+  answers them.
 - `devctl pr merge`'s refusal of another human's pull request (exit 5) names every author it accepts -- the caller,
   bots and GitHub Apps (the `Bot` user type or a `[bot]` login) and the automation accounts `architectbot` and
   `taylorbot` -- where it said "the caller's own pull requests and bots' only", which left a reader guessing whether

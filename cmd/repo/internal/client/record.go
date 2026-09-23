@@ -44,7 +44,7 @@ func PrintRecord(w io.Writer, r *manager.Record) {
 		parts = append(parts, "lifecycle "+lifecycle, verdict)
 		fmt.Fprintf(w, "declaration: %s (%s): %s\n", d.Team, d.File, strings.Join(parts, ", "))
 		for _, p := range d.Problems {
-			fmt.Fprintf(w, "  %s\n", p.String())
+			fmt.Fprintf(w, "  %s\n", p)
 		}
 		if d.Entry != "" {
 			fmt.Fprintln(w, Indent(d.Entry, "  "))
