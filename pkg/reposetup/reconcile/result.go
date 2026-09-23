@@ -32,8 +32,8 @@
 // requests, the budget of the nightly reconciler: the repository (one read,
 // shared by the create, metadata and lifecycle steps); the root listing and
 // the chart's Chart.yaml and values.schema.json; the workflow permission;
-// the teams; the branch protection and, with the devctl App id, the
-// rulesets and the engine's own; the reported checks — one page of the
+// the teams; the branch protection, the rulesets and the engine's own (two
+// reads, App id or not); the reported checks — one page of the
 // recently merged pull requests and the statuses and check runs of the
 // newest head, three requests once per run, shared by every step that asks
 // — the pipeline files workflows.yml and custom.yml (and .circleci/
@@ -42,7 +42,7 @@
 // catalog and the mapping; the latest release. Measured in check mode with
 // a person's token: giantswarm/backstage 18, giantswarm/klaus 19 (one of
 // them a CODEOWNERS drift, which also lists the open pull requests); the
-// App id's ruleset reads add two. A planned change costs the same reads; a
+// ruleset reads add two to each. A planned change costs the same reads; a
 // repair adds one write per change.
 //
 // The reconciler workflow of giantswarm/github runs the steps under the App
@@ -158,11 +158,18 @@ const (
 	// FindingForeignRuleset: the repository carries a ruleset the engine did
 	// not create. It is left alone; a person decides whether it stays.
 	FindingForeignRuleset FindingKind = "foreign-ruleset"
-	// FindingRulesetsNotEnabled: the run has no devctl App id, so the
-	// protection step kept classic branch protection; the id is the switch
-	// to the default branch's ruleset with the App and the owning team as
-	// bypass actors.
+	// FindingRulesetsNotEnabled: the repository has no ruleset yet and the
+	// run has no devctl App id to write one, so the protection step kept
+	// classic branch protection as declared; the fix names the run that
+	// writes the ruleset (the reconciler's, with the id) and its bypass
+	// actors: the owning team and the repository admins for people, the
+	// devctl App for the reconciler.
 	FindingRulesetsNotEnabled FindingKind = "rulesets-not-enabled"
+	// FindingRulesetPending: the ruleset needs a write this run cannot make
+	// without the devctl App id, which its bypass list takes: its rules
+	// differ from the declared protection, or classic protection still
+	// stands beside it. The run that has the id, the reconciler's, makes it.
+	FindingRulesetPending FindingKind = "ruleset-pending"
 	// FindingTeamBypassRefused: the owning team cannot be a bypass actor of
 	// the ruleset (a secret team, or one GitHub refused), so the App stands
 	// alone and a member's own pull request does not merge through the API

@@ -42,21 +42,27 @@ const repositoryAdminRoleID int64 = 5
 // the default branch or a recently merged pull request; a required context
 // nothing reports, a CircleCI context without a job in the pipeline and an
 // ignored context are removed; the entry's requiredChecks are required
-// whatever reported and never removed. [Runner.DevctlAppID] is the switch
-// between the two forms of protection: with the App id the protection is
-// the repository ruleset [RulesetName] (stepRulesetProtection), without it
-// classic branch protection as before, applied and verified in full, with
-// the advisory finding [FindingRulesetsNotEnabled] naming the switch. The
-// reconciler's wiring passes the id; a devctl release alone changes no
-// repository.
+// whatever reported and never removed. The protection is the repository
+// ruleset [RulesetName] (stepRulesetProtection). [Runner.DevctlAppID] is
+// what the ruleset's bypass list takes to be compared and written: a run
+// without the id reads the repository's ruleset and compares its rules
+// alone, reporting what only a run with the id writes; a repository without
+// the ruleset yet keeps its classic branch protection, applied and verified
+// in full, with the advisory finding [FindingRulesetsNotEnabled] naming the
+// run that writes the ruleset. The reconciler's wiring passes the id; a
+// devctl release alone changes no repository.
 func (r *Runner) stepProtection(ctx context.Context, s *run, sr *StepResult) error {
-	if r.DevctlAppID == 0 {
+	have, err := r.ownRuleset(ctx, s, sr)
+	if err != nil {
+		return err
+	}
+	if have == nil && r.DevctlAppID == 0 {
 		s.report(sr, FindingRulesetsNotEnabled,
-			"classic branch protection: no devctl App id, so the ruleset with the App, the repository admins and the owning team as bypass actors is not written",
-			fmt.Sprintf("pass the App's numeric id (its settings page; not the client id) with --devctl-app-id: the switch to the ruleset %q, which then replaces the classic protection", RulesetName))
+			fmt.Sprintf("classic branch protection: the ruleset %q is not written yet, and this run has no devctl App id to write it with its bypass actors (the owning team and the repository admins for pull requests, the devctl App for the reconciler)", RulesetName),
+			"the reconciler's run passes --devctl-app-id and writes the ruleset, then removes the classic protection; a laptop run passes the App's numeric id (its settings page; not the client id) with --devctl-app-id")
 		return r.stepClassicProtection(ctx, s, sr)
 	}
-	return r.stepRulesetProtection(ctx, s, sr)
+	return r.stepRulesetProtection(ctx, s, sr, have)
 }
 
 // stepClassicProtection writes classic branch protection as the baseline
@@ -152,16 +158,19 @@ func (r *Runner) stepClassicProtection(ctx context.Context, s *run, sr *StepResu
 // false; see bypassActors). The ruleset targets the default branch
 // wherever it moves. Classic branch protection gives way to the ruleset in
 // the same run: its required checks are carried over, then it is removed.
-// Rulesets the engine did not create are left alone and reported.
-func (r *Runner) stepRulesetProtection(ctx context.Context, s *run, sr *StepResult) error {
+// Rulesets the engine did not create are left alone and reported. have is
+// the repository's ruleset as ownRuleset read it, nil when there is none.
+//
+// Without [Runner.DevctlAppID] the step reads and compares alone: the
+// bypass list, whose App actor the id names, is neither compared nor
+// written, and a difference in the rules or a classic protection still
+// standing beside the ruleset is the finding [FindingRulesetPending] for
+// the run that has the id; nothing is written.
+func (r *Runner) stepRulesetProtection(ctx context.Context, s *run, sr *StepResult, have *github.RepositoryRuleset) error {
 	b := s.baseline
 	branch := s.branch()
 
 	classic, err := r.classicProtection(ctx, s, branch)
-	if err != nil {
-		return err
-	}
-	have, err := r.ownRuleset(ctx, s, sr)
 	if err != nil {
 		return err
 	}
@@ -184,9 +193,13 @@ func (r *Runner) stepRulesetProtection(ctx context.Context, s *run, sr *StepResu
 	if err != nil {
 		return err
 	}
-	bypass, err := r.bypassActors(ctx, s, sr, from.bypass)
-	if err != nil {
-		return err
+	// The bypass list takes the App id: without it the list stays as it is.
+	bypass := from.bypass
+	if r.DevctlAppID != 0 {
+		bypass, err = r.bypassActors(ctx, s, sr, from.bypass)
+		if err != nil {
+			return err
+		}
 	}
 
 	desired := rulesetState{
@@ -213,6 +226,23 @@ func (r *Runner) stepRulesetProtection(ctx context.Context, s *run, sr *StepResu
 		changes = append([]string{fmt.Sprintf("create ruleset %q", RulesetName)}, diffRulesetStates(from, desired)...)
 	default:
 		changes = diffRulesetStates(from, desired)
+	}
+	if r.DevctlAppID == 0 {
+		// Read and compared; the write is the run's that has the id.
+		var pending []string
+		if classic != nil {
+			pending = append(pending, fmt.Sprintf("the switch to the ruleset is pending: classic protection of %s still stands beside it", branch))
+		}
+		if len(changes) > 0 {
+			pending = append(pending, "the ruleset differs from the declared protection: "+strings.Join(changes, "; "))
+		}
+		if len(pending) > 0 {
+			s.report(sr, FindingRulesetPending,
+				strings.Join(pending, "; "),
+				"a run with --devctl-app-id, the reconciler's, writes the ruleset with its bypass actors and removes the classic protection; this run has no App id and writes neither")
+		}
+		sr.Summary = fmt.Sprintf("%s: ruleset %q; required: %s; bypass actors not compared (no devctl App id)", branch, RulesetName, describe(want))
+		return nil
 	}
 	if len(changes) > 0 {
 		err := s.plan(sr, strings.Join(changes, "; "), func() error {
