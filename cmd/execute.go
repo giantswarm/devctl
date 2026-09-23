@@ -19,7 +19,9 @@ const exitError = 2
 // An agent-facing command has written its JSON document already: its
 // outcome is the exit code and nothing more is printed. Any other error is
 // printed on stderr for a person: a wrong call with the command's usage line
-// and a pointer to its help, the stack trace only at --log-level debug.
+// and a pointer to its help, the stack trace only at --log-level debug. An
+// error that knows its exit code ([agentcli.ExitCoder], such as
+// [authstore.ErrAuthRequired], exit 8) exits with it; any other exits 2.
 func Execute(root *cobra.Command, stderr io.Writer) int {
 	executed, err := root.ExecuteC()
 	if err == nil {
@@ -33,8 +35,11 @@ func Execute(root *cobra.Command, stderr io.Writer) int {
 
 	fmt.Fprintf(stderr, "Error: %s\n", microerror.Pretty(err, debug(root)))
 
+	var coder agentcli.ExitCoder
 	var usage *UsageError
 	switch {
+	case errors.As(err, &coder):
+		return coder.ExitCode()
 	case errors.As(err, &usage):
 		executed = usage.Command
 		if usage.Usage {

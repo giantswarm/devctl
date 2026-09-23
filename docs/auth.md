@@ -1,12 +1,47 @@
-# Authentication for the agent-facing commands: `devctl auth`
+# Authentication: `devctl auth`
 
-The agent-facing commands (`pr wait`, `pr merge`, `release wait`) act as the engineer on GitHub and
-read pipelines on CircleCI. They take their tokens from the OS keychain and from nowhere else: no
-environment variable, no `gh auth token`, no file. `devctl auth login` puts the tokens there;
-`devctl auth status` shows what is there. A command that finds no usable token exits 8 with one
-sentence naming `devctl auth login`, before it waits for anything. The `repo` commands that call
-giantswarm-repo-manager take their muster token from the same keychain; `devctl auth login
---muster-only` puts it there.
+devctl acts on GitHub as you, with the login of the `giantswarm-devctl` GitHub App; it reads pipelines on
+CircleCI with your CircleCI token and reaches giantswarm-repo-manager with your muster token. All three live
+in the OS keychain: `devctl auth login` puts them there, `devctl auth status` shows what is there, and no
+command prints a token.
+
+## The GitHub token of every command
+
+| Command | GitHub token |
+|---|---|
+| `deploy`, `pr approve-align`, `pr approve-merge-renovate`, `release create` | the App login; a token in the environment overrides it |
+| the version check that precedes every command, `version check`, `version update`, `repo validate` | the same, optional: without one a public read is anonymous (`repo validate`: the embedded schema, repository names unchecked) |
+| `pr wait`, `pr merge`, `release wait` | the App login only |
+| `repo create` | your own: `$GITHUB_TOKEN` (`--github-token-envvar`), else `gh auth token` |
+| `repo setup` (and `repo setup ciwebhooks`, `repo setup renovate`), `repo checks` | your own: `$GITHUB_TOKEN` (`--github-token-envvar`) |
+| `repo reconcile` | the engine's installation token in CI: `$GITHUB_TOKEN` (`--github-token-envvar`) |
+| the other `repo` commands | none: giantswarm-repo-manager acts, reached with the muster token |
+
+**The default is the App login.** Log in once with `devctl auth login --github-only`; the token refreshes
+itself for six months. A command that needs a token and finds no usable login exits 8 with one sentence
+naming `devctl auth login --github-only`: the document's reason for an agent-facing command, stderr for
+the others.
+
+**A token in the environment is an explicit override, never a fallback.** When `DEVCTL_GITHUB_TOKEN`,
+`GITHUB_TOKEN` or `OPSCTL_GITHUB_TOKEN` is set (the first set one, in that order; a command with
+`--github-token-envvar` reads only the variable it names), the command acts with that token and prints
+one warning naming the variable, recommending `devctl auth login --github-only` and unsetting it. A token
+that GitHub refuses fails the command; devctl never retries with the keychain, and never asks `gh auth
+token`. `devctl auth status` shows the same warning.
+
+**In CI** (`CI` set to any value) the keychain is never read and nothing warns: the variable is the only
+source. A command that needs a token and finds none exits 8 naming the variables to set.
+
+**The exceptions.** The App can write contents and pull requests and read actions, checks, statuses and
+metadata, nothing else, and it does not gain more:
+
+- `pr wait`, `pr merge` and `release wait` take their GitHub token from the keychain and from nowhere
+  else: no environment variable, no `gh auth token`, no file. They exit 8 naming `devctl auth login`
+  before they wait for anything, since they need the CircleCI token too.
+- `repo create`, `repo setup` and its subcommands `ciwebhooks` and `renovate`, and `repo checks` need
+  Administration or Webhooks write, which the App does not carry: they act with your own token, as the
+  table says, and print no override warning.
+- `repo reconcile` is the engine's CI path and acts with its installation token.
 
 ## `devctl auth login`
 
@@ -129,6 +164,9 @@ Reads the records, contacts nothing and prints:
 }
 ```
 
+A GitHub token in `DEVCTL_GITHUB_TOKEN`, `GITHUB_TOKEN` or `OPSCTL_GITHUB_TOKEN` adds the override warning to
+`warnings` and `github.warnings`, never the token and never with `CI` set; the exit code stays the keychain's.
+
 Exit 0 when the GitHub and CircleCI identities are usable without a human (valid, or expired with
 a valid refresh token); exit 8 with the `devctl auth login` invocation that fixes it when one is
 missing or expired for good. An agent runs `devctl auth status || devctl auth login`. The `muster`
@@ -136,9 +174,16 @@ identity is the third block of the document, with its `endpoint`, and is reporte
 only the `repo` commands need it, and they exit 8 naming `devctl auth login --muster-only`
 themselves.
 
-## The gate the other commands use
+## The gate the commands use
 
-`authstore.RequireGitHub(ctx)` returns the token, refreshed when needed, or `ErrAuthRequired`;
+`authstore.ResolveGitHub(ctx, envVars...)` is the GitHub token of the commands for people, by the rules
+above: `envVars` are the variables to read, none meaning `authstore.GitHubEnvVars` (`DEVCTL_GITHUB_TOKEN`,
+`GITHUB_TOKEN`, `OPSCTL_GITHUB_TOKEN`), a command with `--github-token-envvar` passing its one name. The
+token's `Source` says where it came from (`keychain` or `$NAME`) and its `Warning` is the override notice
+to print once, empty for the App login and in CI; the error is `ErrAuthRequired`, returned unchanged, and
+`devctl` exits 8 with it. `authstore.GitHubOverrideWarning(envVars...)` is that warning alone.
+
+`authstore.RequireGitHub(ctx)` returns the App login, refreshed when needed, or `ErrAuthRequired`;
 `authstore.RequireCircleCI(ctx)` returns the token or `ErrAuthRequired`, with the seven-day warning
 on the token for the envelope. A CircleCI token is required only when the repository has a CircleCI
 project. `authstore.RequireMuster(ctx)` returns the muster token, refreshed when needed, with the

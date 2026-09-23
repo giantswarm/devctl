@@ -17,6 +17,10 @@ import (
 var now = time.Date(2026, 9, 21, 10, 0, 0, 0, time.UTC)
 
 func newRunner(t *testing.T, records map[string]authstore.Record) (*runner, *bytes.Buffer, *bytes.Buffer) {
+	// The CI running the tests sets some of these.
+	for _, name := range append([]string{authstore.EnvCI}, authstore.GitHubEnvVars...) {
+		t.Setenv(name, "")
+	}
 	store := &authstore.FileStore{Path: filepath.Join(t.TempDir(), "keyring.json")}
 	for user, record := range records {
 		if err := store.Set(user, record); err != nil {
@@ -36,6 +40,7 @@ func newRunner(t *testing.T, records map[string]authstore.Record) (*runner, *byt
 				Stderr: w,
 			})
 		},
+		githubOverride: authstore.GitHubOverrideWarning,
 	}
 	return r, &stdout, &stderr
 }
@@ -105,5 +110,63 @@ func TestStatusWithTokensIsGreenAndSilent(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "reading the keychain") {
 		t.Fatalf("--progress wrote nothing: %q", stderr.String())
+	}
+}
+
+// TestStatusWarnsAboutAGitHubTokenInTheEnvironment: a GitHub token variable
+// is a warning in the document and under github, never the token; the exit
+// code stays the keychain's; with CI set there is no warning.
+func TestStatusWarnsAboutAGitHubTokenInTheEnvironment(t *testing.T) {
+	usable := map[string]authstore.Record{
+		authstore.UserGitHub:   {Login: "octocat", Token: "ghu_secret", ExpiresAt: now.Add(time.Hour)},
+		authstore.UserCircleCI: {Login: "octocat", Token: "ccipat_secret", ExpiresAt: now.Add(60 * 24 * time.Hour), ClientID: "client-1"},
+	}
+	cases := []struct {
+		name     string
+		records  map[string]authstore.Record
+		ci       bool
+		wantExit int
+		wantWarn bool
+	}{
+		{name: "usable login", records: usable, wantExit: agentcli.ExitOK, wantWarn: true},
+		{name: "no login", wantExit: agentcli.ExitAuthRequired, wantWarn: true},
+		{name: "CI", records: usable, ci: true, wantExit: agentcli.ExitOK},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r, stdout, _ := newRunner(t, tc.records)
+			t.Setenv("GITHUB_TOKEN", "ghp_env_secret")
+			if tc.ci {
+				t.Setenv(authstore.EnvCI, "true")
+			}
+			err := r.run(nil)
+			if got := agentcli.Exit(err); got != tc.wantExit {
+				t.Fatalf("exit %d, want %d: %v", got, tc.wantExit, err)
+			}
+			if strings.Contains(stdout.String(), "ghp_env_secret") {
+				t.Fatalf("stdout carries the token:\n%s", stdout.String())
+			}
+			var doc struct {
+				agentcli.Envelope
+				authstore.Status
+			}
+			if err := json.Unmarshal(stdout.Bytes(), &doc); err != nil {
+				t.Fatal(err)
+			}
+			if !tc.wantWarn {
+				if len(doc.Warnings) != 0 || len(doc.GitHub.Warnings) != 0 {
+					t.Fatalf("warnings = %v / %v, want none", doc.Warnings, doc.GitHub.Warnings)
+				}
+				return
+			}
+			if len(doc.Warnings) != 1 || len(doc.GitHub.Warnings) != 1 || doc.Warnings[0] != doc.GitHub.Warnings[0] {
+				t.Fatalf("warnings = %v / %v", doc.Warnings, doc.GitHub.Warnings)
+			}
+			for _, want := range []string{"$GITHUB_TOKEN", "`devctl auth login --github-only`"} {
+				if !strings.Contains(doc.Warnings[0], want) {
+					t.Errorf("warning %q lacks %q", doc.Warnings[0], want)
+				}
+			}
+		})
 	}
 }
