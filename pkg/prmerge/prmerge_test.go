@@ -396,7 +396,7 @@ func Test_Merge_reviewRuleDeclineNamesTheBypass(t *testing.T) {
 				"Repository rule violations found; At least 1 approving review is required by reviewers with write access. devctl acts as someone, who has no bypass on the ruleset \"devctl: default branch\" of o/r",
 				"App 5025978 for pull requests, whose bypass covers its installation tokens and not the user token devctl acts with",
 				"team 5176559 for pull requests",
-				"the entry's owning team is team-honeybadger: one of its members merges it, or a reviewer with write access approves it first",
+				"the entry's owning team is team-honeybadger: one of its members or a repository admin merges it, or a reviewer with write access approves it first",
 			},
 			requested: map[string]int{"GET /repos/o/r/rulesets/7": 1, "DELETE /repos/o/r/git/refs/heads/feature": 0},
 		},
@@ -410,7 +410,7 @@ func Test_Merge_reviewRuleDeclineNamesTheBypass(t *testing.T) {
 			}),
 			want: []string{
 				"the ruleset \"org: reviews\" of the organization o (bypass actors: organization admins always)",
-				"a reviewer with write access approves it first, or a bypass actor merges it",
+				"a repository admin or another bypass actor merges it, or a reviewer with write access approves it first",
 			},
 			requested: map[string]int{"GET /orgs/o/rulesets/9": 1},
 		},

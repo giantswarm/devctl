@@ -24,7 +24,8 @@ func declinedByReviewRule(err error) bool {
 // know: devctl acts as them, and their token bypasses none of the rulesets
 // of the base. It names each ruleset with a pull request rule and its
 // bypass actors, the team whose file declares the entry, and what merges
-// the pull request: a member of that team, or an approving review. Rules
+// the pull request: a member of that team, a repository admin, or an
+// approving review. Rules
 // the token cannot read are said so; nothing is written.
 func (m *Merger) explainReviewRule(ctx context.Context, owner, repo, base, caller, team string) string {
 	var b strings.Builder
@@ -49,9 +50,9 @@ func (m *Merger) explainReviewRule(ctx context.Context, owner, repo, base, calle
 		b.WriteString(strings.Join(named, " nor on "))
 	}
 	if team == "" {
-		b.WriteString("; a reviewer with write access approves it first, or a bypass actor merges it")
+		b.WriteString("; a repository admin or another bypass actor merges it, or a reviewer with write access approves it first")
 	} else {
-		fmt.Fprintf(&b, "; the entry's owning team is %s: one of its members merges it, or a reviewer with write access approves it first", team)
+		fmt.Fprintf(&b, "; the entry's owning team is %s: one of its members or a repository admin merges it, or a reviewer with write access approves it first", team)
 	}
 	return b.String()
 }
