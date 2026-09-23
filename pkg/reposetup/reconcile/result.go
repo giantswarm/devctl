@@ -23,8 +23,8 @@
 // and visibility, lifecycle (archived → archived on GitHub and unfollowed;
 // deleted → unfollowed and deleted on GitHub, the entry the record),
 // catalog and mapping (the giantswarm/github workflows), first-release
-// verification (tag → pipeline → workflows; a missed tag build is
-// reported, never rebuilt).
+// verification (a vX.Y.Z tag → pipeline → workflows; a missed tag build is
+// reported, never rebuilt; a release tagged otherwise is not verified).
 //
 // What a run costs in requests is counted at the clients' transports
 // ([Counter]) into [Result.Requests], and per step in the log. A check of a
