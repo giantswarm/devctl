@@ -116,6 +116,11 @@ jobs:
   build-chart:
     executor: architect/app-build-suite
     resource_class: small
+    environment:
+      # The rendered chart pulls the images of a repository created from this
+      # template, which no registry carries, so app-build-suite's check that
+      # every gsoci image reference resolves cannot pass here.
+      ABS_DISABLE_HELM_IMAGE_REFERENCE_VALIDATOR: "true"
     steps:
     - checkout
     - run:
@@ -590,6 +595,17 @@ workflows:
         push_to_appcatalog: false
         push_to_oci_registry: false
         persist_chart_archive: true
+{{- if .HasDockerfile }}
+        # app-build-suite fails a chart whose gsoci image references the registry
+        # does not carry. build-chart runs before this pipeline pushes its own
+        # image (a branch without branchPublish never pushes it), so the check is
+        # left to push-chart and push-chart-release: they publish the chart,
+        # require the image job and run app-build-suite again.
+        pre-steps:
+        - run:
+            name: Leave the image reference check to the chart push
+            command: echo 'export ABS_DISABLE_HELM_IMAGE_REFERENCE_VALIDATOR=true' >> "$BASH_ENV"
+{{- end }}
 {{- if .BuildJobName }}
         requires:
         - {{ .BuildJobName }}

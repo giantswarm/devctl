@@ -9,6 +9,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- `gen circleci`: the generated pipelines pin architect orb 10.9.0. Its `go-build` takes the compile parallelism from
+  the executor's cgroup CPU quota instead of the host's `nproc`, which since 10.6.1 ran `-p 36` on a 2-vCPU `medium`
+  executor and killed heavy builds in `Build binaries`
+  ([architect-orb#952](https://github.com/giantswarm/architect-orb/issues/952), 10.8.1). On tag builds `go-test`
+  stamps `pkg/project.version` with the tag, and the files the build writes no longer mark the build info `+dirty`
+  (10.9.0). Its chart jobs run app-build-suite 2.4.1, which fails a chart whose rendered `gsoci.azurecr.io` image
+  references the registry does not carry (10.8.0).
+  `build-chart` packages the chart before the pipeline pushes its own image, and a branch without `branchPublish`
+  never pushes it. So in a repository that builds an image, `build-chart` sets
+  `ABS_DISABLE_HELM_IMAGE_REFERENCE_VALIDATOR=true` in a `pre-steps` step, and the check runs in `push-chart` and
+  `push-chart-release`: they require the image job and run app-build-suite again before they publish. A chart of
+  images built elsewhere keeps the check in `build-chart`. A template repository's `build-chart` sets the variable
+  on the job, because the chart it renders pulls fixture images no registry carries. No job, parameter or required
+  check changes name.
 - `deploy`, `pr approve-align`, `pr approve-merge-renovate` and `release create` act with the `giantswarm-devctl`
   App login by default, through `authstore.ResolveGitHub`: no personal token is needed after `devctl auth login
   --github-only`. A token in `DEVCTL_GITHUB_TOKEN`, `GITHUB_TOKEN` or `OPSCTL_GITHUB_TOKEN` overrides the login and
