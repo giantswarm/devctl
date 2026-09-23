@@ -23,6 +23,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   request rule and their bypass actors, and the team whose file declares the entry: one of its members or a repository
   admin merges it, or a reviewer with write access approves it first. The help and `docs/pr-merge.md` said the App's
   bypass passed the review rule.
+- The scaffold step's `abs-prerequisite` check reads the chart at `helm/<gen.ci.chartName>` when the entry sets the
+  field, `helm/<repository>` otherwise: a repository whose chart is named otherwise (docs-proxy ships
+  `helm/docs-proxy-app`, declared with `chartName: docs-proxy-app`) was reported without a chart on every check and
+  could not converge. When the declared directory has no chart, the fix names the charts the repository has under
+  `helm/` and the `gen.ci.chartName` remedy: a repository renamed on GitHub keeps its chart under the old name.
 - The repo commands call giantswarm-repo-manager's tools through muster's `call_tool` meta-tool and unwrap its envelope,
   which is how muster exposes every server's tool to a session (the muster CLI and the platform's agents do the same):
   8.85.0 called the tools directly and muster answered `tool not found` for every one of them. The e2e muster mock now
