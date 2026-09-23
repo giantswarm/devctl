@@ -143,7 +143,8 @@ func TestExecuteGroupWithoutArguments(t *testing.T) {
 }
 
 // TestExecuteAgentCommandWrongCalls keeps the agent contract: a wrong call is
-// the command's document on stdout with exit 7, nothing on stderr.
+// the command's document on stdout with exit 7, nothing on stderr. The
+// version gate is on and never answers for them: they run it themselves.
 func TestExecuteAgentCommandWrongCalls(t *testing.T) {
 	for _, args := range [][]string{
 		{"pr", "wait", "--bogus"},
@@ -156,6 +157,7 @@ func TestExecuteAgentCommandWrongCalls(t *testing.T) {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
 			root := newTestRoot(t, &stdout)
+			t.Setenv(env.DevctlUnsafeForceVersion.Key(), "")
 			root.SetArgs(args)
 			if code := Execute(root, &stderr); code != agentcli.ExitUsage {
 				t.Errorf("exit %d, want %d", code, agentcli.ExitUsage)

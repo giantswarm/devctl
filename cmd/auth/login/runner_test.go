@@ -65,6 +65,7 @@ func newRunnerWithBrowser(t *testing.T, github *httptest.Server, openBrowser fun
 	}
 	var stdout, stderr bytes.Buffer
 	r := &runner{
+		gate:   func(bool) error { return nil },
 		flag:   &flag{},
 		stdout: &stdout,
 		stderr: &stderr,

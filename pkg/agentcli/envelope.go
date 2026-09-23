@@ -127,6 +127,21 @@ func (e Envelope) Err() error {
 	return &ExitError{Code: e.ExitCode, Verdict: e.Verdict, Reason: e.Reason}
 }
 
+// annotation marks an agent-facing command on its cobra command.
+const annotation = "devctl.giantswarm.io/agent-facing"
+
+// AgentFacing is the annotation of an agent-facing command: the checks that
+// precede other commands (the version gate) run inside it and end in its
+// document, never as an error printed for a person.
+func AgentFacing() map[string]string {
+	return map[string]string{annotation: "true"}
+}
+
+// IsAgentFacing reports whether a command's annotations carry [AgentFacing].
+func IsAgentFacing(annotations map[string]string) bool {
+	return annotations[annotation] == "true"
+}
+
 // Document is a command's JSON document: a pointer to a struct that embeds
 // [Envelope] and adds the command's own fields.
 type Document interface {

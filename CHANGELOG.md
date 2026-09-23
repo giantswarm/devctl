@@ -100,6 +100,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- A newer devctl release no longer breaks the agent-facing commands' contract: `pr wait`, `pr merge`, `release
+  wait`, `auth login` and `auth status` run the version check after their argument checks and report an outdated
+  devctl in their document, exit 7 with the reason naming `devctl version update` and `DEVCTL_UNSAFE_FORCE_VERSION`.
+  Before, the check that precedes every command printed its error for a person and devctl exited 2, the code of a
+  `timeout`, with no document, from the moment a release was published until the binary was updated.
 - The agent-facing commands (`pr wait`, `pr merge`, `release wait`, `auth login`, `auth status`) answer a flag that
   does not parse (`--timeout 30`, an unknown flag) and wrong arguments with their JSON document and exit 7 (`usage`),
   the flag error naming `--help`. Before, cobra printed the error and devctl exited 2, the code of a `timeout`, with

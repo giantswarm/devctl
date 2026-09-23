@@ -146,7 +146,7 @@ client refuses or a host that does not exist; only reads (GET, HEAD) are retried
 | 2 | `timeout` | The timeout passed before an outcome; `unfinished` names what was still open, a required context still absent among it. |
 | 3 | `not_applicable` | Draft, closed, merged, conflicting or behind a strict base; `reason` says which. |
 | 4 | `required_missing` | Every check, run and workflow of the head has finished and a required status context never reported; `reason` names it. Known at the poll that saw it, before the timeout; with anything still pending the outcome is 2, not 4. |
-| 7 | `usage` | Wrong arguments, or a tooling failure: GitHub or CircleCI answered with an error other than a 5xx, or a read failed eight tries in a row (Polling). |
+| 7 | `usage` | Wrong arguments or flags, a newer devctl released (the reason names `devctl version update`), or a tooling failure: GitHub or CircleCI answered with an error other than a 5xx, or a read failed eight tries in a row (Polling). |
 | 8 | `auth_required` | No usable token; `reason` names the `devctl auth login` to run. |
 
 ## Environment

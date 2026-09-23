@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"os"
 
@@ -11,9 +10,8 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
-	"github.com/giantswarm/devctl/v8/internal/env"
-	"github.com/giantswarm/devctl/v8/pkg/project"
-	"github.com/giantswarm/devctl/v8/pkg/updater"
+	"github.com/giantswarm/devctl/v8/internal/versiongate"
+	"github.com/giantswarm/devctl/v8/pkg/agentcli"
 )
 
 type runner struct {
@@ -65,44 +63,13 @@ func (r *runner) persistentPreRun(ctx context.Context, cmd *cobra.Command, args 
 	if (parentCmd != nil && parentCmd.Name() == "version") || cmd.Name() == "version" {
 		return nil
 	}
-
-	var err error
-
-	if project.Version() == env.DevctlUnsafeForceVersion.Val() {
-		// User wants to risk his life and use an older version.
-		// Not my problem anymore.
+	// An agent-facing command runs the gate itself and reports it in its
+	// document.
+	if agentcli.IsAgentFacing(cmd.Annotations) {
 		return nil
 	}
 
-	var updaterService *updater.Updater
-	{
-		var cacheDir string
-		if !r.flag.NoCache {
-			cacheDir = env.ConfigDir.Val()
-		}
-
-		config := updater.Config{
-			GithubToken:    env.GitHubToken.Val(),
-			CurrentVersion: project.Version(),
-			RepositoryURL:  project.Source(),
-			CacheDir:       cacheDir,
-		}
-
-		updaterService, err = updater.New(config)
-		if err != nil {
-			return microerror.Mask(err)
-		}
-	}
-
-	latestVersion, err := updaterService.GetLatest()
-	if updater.IsHasNewVersion(err) {
-		return fmt.Errorf("version %[2]s of %[1]s is released; this is %[3]s: update with `%[1]s version update`, or run this version anyway with %[4]s=%[3]s",
-			project.Name(), latestVersion, project.Version(), env.DevctlUnsafeForceVersion.Key())
-	} else if err != nil {
-		return microerror.Mask(err)
-	}
-
-	return nil
+	return microerror.Mask(versiongate.Check(r.flag.NoCache))
 }
 
 func (r *runner) configureLogger(ctx context.Context, cmd *cobra.Command, args []string) error {

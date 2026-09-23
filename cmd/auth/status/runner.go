@@ -17,6 +17,9 @@ type runner struct {
 	flag   *flag
 	stdout io.Writer
 	stderr io.Writer
+	// gate is versiongate.Check: an outdated devctl ends the run in the
+	// document.
+	gate func(noCache bool) error
 	// open is authstore.Open; tests inject an Auth over a file store.
 	open func(stderr io.Writer) (*authstore.Auth, error)
 }
@@ -51,6 +54,9 @@ func newDocument() document {
 func (r *runner) status(args []string, doc *document) error {
 	if len(args) > 0 {
 		return fmt.Errorf("usage: devctl %s [flags], got %d argument(s)", command, len(args))
+	}
+	if err := r.gate(false); err != nil {
+		return err
 	}
 	auth, err := r.open(r.stderr)
 	if err != nil {

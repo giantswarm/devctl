@@ -159,7 +159,7 @@ Every agent-facing command prints one JSON document on stdout when it finishes a
 | 3 | `not_applicable` | draft, closed, conflicting, behind a strict base, version not resolvable |
 | 4 | `required_missing` | a required context never reported |
 | 5 | `refused` | another author, an opt-out |
-| 7 | `usage` | wrong usage or a tooling failure |
+| 7 | `usage` | wrong usage, a newer devctl released (the reason names `devctl version update`), or a tooling failure |
 | 8 | `auth_required` | no usable token; the reason names `devctl auth login` |
 
 ## Environment
