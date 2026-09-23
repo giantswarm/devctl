@@ -174,7 +174,8 @@ func (r *runner) run(ctx context.Context) error {
 	}
 	runner := reconcile.Runner{
 		GitHub: gh,
-		// The token downloads the templates: giantswarm/template is private.
+		// The token downloads the templates: giantswarm/template and
+		// giantswarm/template-plans are private.
 		Renderer: reposetup.Renderer{
 			Templates: reposetup.GitHubTemplates{Token: token},
 			Log:       engine.LogWriter(r.logger),

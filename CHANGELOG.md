@@ -9,6 +9,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `repo reconcile`'s circleci step verifies the webhook CircleCI installs on the follow: after `followed, setup
+  workflows on, checkout key present` it reads the repository's webhooks and requires one active hook for
+  `https://circleci.com/hooks/github` with the `push` event, `webhook present` in the summary. A followed project
+  without it is the finding `circleci-webhook-missing` (not advisory: no push and no tag reaches CircleCI, so no branch
+  builds and the first release tag goes unbuilt), its fix naming what installs the hook -- a follow by a GitHub admin of
+  the repository whose CircleCI grant carries the hook scope, `POST /api/v1.1/project/github/{owner}/{repo}/follow`
+  or Project Settings; devctl cannot create it, CircleCI signs it with its own secret. Webhooks the identity cannot
+  read (a read identity without the `repository_hooks` permission) are `unchecked`, never guessed. Before, the
+  reconciler's follow as architectbot under its temporary admin grant left a project followed with a deploy key and
+  setup workflows but no hook, every branch build silently absent and the step reading `ok`. The inventory record's
+  `circleci` facts carry `webhook` for the manager to fill from the step, and `devctl repo status` prints
+  `webhook present` / `webhook missing` in the `circleci` line when it is set
+  ([#2332](https://github.com/giantswarm/devctl/issues/2332)).
+- The `plans` flavour: a team plans repository (versioned PRDs, their companion websites and the
+  plan-workflow agent skills -- cabbage-plans, bumblebee-plans, atlas-plans and the like). An add-on
+  flavour declared beside `generic` (`flavours: [generic, plans]`) with `language: generic` and
+  `gen.ci.generate: false`; the generators produce nothing extra for it, and `DeriveTemplate` derives
+  it the new template `giantswarm/template-plans` (its `{APP-NAME}` and `{TEAM-NAME}` placeholders
+  replaced the same way `giantswarm/template-app`'s are), refusing any other language the same way
+  language `node` is refused until its template ships. The embedded schema copy
+  (`pkg/reposetup/schema/repositories.schema.json`) carries the flavour; the live schema in
+  giantswarm/github and the Backstage "Plans" scaffolder preset land in companion pull requests.
 - `devctl gen circleci --chart-release-gate-job <job>` (`gen.ci.chartReleaseGateJob` in the giantswarm/github team
   file): the generated `push-chart-release` job requires the named repo-owned `custom.yml` job, the chart counterpart of
   `--image-pre-build-job`, for a check that has to refuse a release before its chart is pushed -- a meta chart whose
@@ -34,6 +56,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- `gen circleci`: the generated pipelines pin architect orb 10.6.3, whose `image-prepare-tag` fails a branch pipeline at a
+  tagged commit instead of resolving the release version and publishing it again
+  ([architect-orb#942](https://github.com/giantswarm/architect-orb/issues/942)).
 - `devctl repo reconcile` writes the repository admins (GitHub's repository role Admin) as a third bypass actor of the
   ruleset `devctl: default branch`, in `pull_request` mode beside the devctl App and the owning team: `devctl pr merge`
   run by an admin of the repository merges their own green pull request through the ruleset in every aligned
@@ -43,6 +68,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `devctl pr merge`'s refusal of another human's pull request (exit 5) names every author it accepts -- the caller,
+  bots and GitHub Apps (the `Bot` user type or a `[bot]` login) and the automation accounts `architectbot` and
+  `taylorbot` -- where it said "the caller's own pull requests and bots' only", which left a reader guessing whether
+  a release pull request counted; an automation login whose account id is not the pinned one is named with both ids,
+  so the login alone opening nothing is visible in the reason ([#2340](https://github.com/giantswarm/devctl/issues/2340)).
 - A repository created with `devctl repo create` with the `app` flavour merges its first pull request on green CI. The
   scaffold carries the chart tests its generated pipeline's `execute-chart-tests` job runs, beside the generated
   `tests/ats/pyproject.toml`: `.ats/main.yaml`, which skips the functional scenario and the upgrade scenario (a new

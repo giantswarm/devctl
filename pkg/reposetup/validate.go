@@ -363,7 +363,7 @@ func (v Validator) creationRules(ctx context.Context, owner string, entry *Entry
 	if derivesTemplate(fields) {
 		switch err := derive(entry, fields); {
 		case IsTemplateUnavailable(err):
-			entry.refuse("gen.language", "%s", nodeTemplateUnavailable)
+			entry.refuse("gen.language", "%s", unavailableTemplateReason(flavours, language))
 		case err != nil:
 			return microerror.Mask(err)
 		}

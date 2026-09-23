@@ -196,6 +196,14 @@ type run struct {
 	reported     []string
 	reportedErr  error
 	reportedRead bool
+	// hooks are the repository's webhooks, once readHooks has read them
+	// (hooksRead); the response and the error are kept the same way. The
+	// circleci step (CircleCI's hook) and the webhooks step (the baseline's)
+	// share the one read.
+	hooks     []*github.Hook
+	hooksResp *github.Response
+	hooksErr  error
+	hooksRead bool
 	// team is the organization's team of the team file's slug, once
 	// owningTeam has read it (teamRead); the error is kept the same way.
 	// The protection step names it as bypass actor of the ruleset.

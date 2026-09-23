@@ -8,13 +8,14 @@ import (
 
 func TestDeriveTemplate(t *testing.T) {
 	tests := []struct {
-		name          string
-		componentType string
-		flavours      []string
-		language      string
-		want          Template
-		unavailable   bool
-		wantErr       bool
+		name            string
+		componentType   string
+		flavours        []string
+		language        string
+		want            Template
+		unavailable     bool
+		unavailableWant string
+		wantErr         bool
 	}{
 		{name: "go service with chart", componentType: "service", flavours: []string{"app"}, language: "go", want: TemplateGo},
 		{name: "go cli", componentType: "cli", flavours: []string{"cli"}, language: "go", want: TemplateGo},
@@ -30,7 +31,10 @@ func TestDeriveTemplate(t *testing.T) {
 		{name: "fork line", componentType: "service", flavours: []string{"fork"}, language: "go", want: TemplateMinimal},
 		{name: "python", componentType: "cli", flavours: []string{"generic"}, language: "python", want: TemplateMinimal},
 		{name: "kyverno policy", componentType: "configuration", flavours: []string{"generic"}, language: "kyverno-policy", want: TemplateMinimal},
-		{name: "node is deferred", componentType: "service", flavours: []string{"generic"}, language: "node", unavailable: true},
+		{name: "node is deferred", componentType: "service", flavours: []string{"generic"}, language: "node", unavailable: true, unavailableWant: "the Node template is not available yet"},
+		{name: "plans", componentType: "configuration", flavours: []string{"generic", "plans"}, language: "generic", want: TemplatePlans},
+		{name: "plans needs generic language", componentType: "configuration", flavours: []string{"generic", "plans"}, language: "go", unavailable: true, unavailableWant: "the plans flavour derives giantswarm/template-plans, which is generic only: set gen.language to generic"},
+		{name: "customer still wins over plans", componentType: "customer", flavours: []string{"generic", "plans"}, language: "go", want: TemplateMinimal},
 		{name: "unknown language", componentType: "service", flavours: []string{"generic"}, language: "rust", wantErr: true},
 		{name: "unknown flavour", componentType: "service", flavours: []string{"helmchart"}, language: "generic", wantErr: true},
 	}
@@ -41,7 +45,7 @@ func TestDeriveTemplate(t *testing.T) {
 			switch {
 			case tc.unavailable:
 				require.True(t, IsTemplateUnavailable(err), "%v", err)
-				require.Contains(t, err.Error(), "the Node template is not available yet")
+				require.Contains(t, err.Error(), tc.unavailableWant)
 			case tc.wantErr:
 				require.Error(t, err)
 				require.False(t, IsTemplateUnavailable(err))
@@ -56,6 +60,7 @@ func TestDeriveTemplate(t *testing.T) {
 func TestTemplateRepository(t *testing.T) {
 	require.Equal(t, "giantswarm/template", TemplateGo.Repository())
 	require.Equal(t, "giantswarm/template-app", TemplateChart.Repository())
+	require.Equal(t, "giantswarm/template-plans", TemplatePlans.Repository())
 	require.Equal(t, "", TemplateMinimal.Repository())
 	require.Equal(t, "minimal", TemplateMinimal.String())
 }

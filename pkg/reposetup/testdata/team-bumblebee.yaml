@@ -84,6 +84,22 @@
     flavours:
       - generic
     language: node
+- name: plans-repo
+  componentType: configuration
+  gen:
+    flavours:
+      - generic
+      - plans
+    language: generic
+    ci:
+      generate: false
+- name: plans-wrong-language
+  componentType: configuration
+  gen:
+    flavours:
+      - generic
+      - plans
+    language: go
 - name: Bad_Name
   componentType: library
   gen:

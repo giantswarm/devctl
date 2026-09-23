@@ -100,7 +100,8 @@ func (r *runner) run(ctx context.Context, arg string) error {
 		Dispatch: dispatch,
 		Checks:   gh,
 		CircleCI: ci,
-		// The token downloads the templates: giantswarm/template is private.
+		// The token downloads the templates: giantswarm/template and
+		// giantswarm/template-plans are private.
 		Renderer: reposetup.Renderer{
 			Templates: reposetup.GitHubTemplates{Token: token},
 			Log:       engine.LogWriter(r.logger),

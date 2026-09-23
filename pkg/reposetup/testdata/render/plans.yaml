@@ -1,0 +1,11 @@
+# yaml-language-server: $schema=../.github/repositories.schema.json
+- name: example-plans
+  componentType: configuration
+  description: Team plans, their PRDs and companion websites.
+  gen:
+    flavours:
+      - generic
+      - plans
+    language: generic
+    ci:
+      generate: false
