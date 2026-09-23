@@ -38,9 +38,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	if err != nil {
 		return err
 	}
-	if token.Warning != "" {
-		r.logger.Warn(token.Warning)
-	}
+	token.WarnOnce(r.stderr)
 
 	// Set logger to only show errors to avoid cluttering the table UI
 	r.logger.SetLevel(logrus.ErrorLevel)
