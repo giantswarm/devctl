@@ -84,7 +84,7 @@ and how to add one.
 
 ### Debug Mode
 
-Set `LOG_LEVEL=debug` to see detailed output:
+Pass `--log-level debug` to see detailed output and the stack trace of an error:
 
 ```bash
 devctl --log-level debug repo status my-service

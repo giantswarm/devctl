@@ -46,17 +46,24 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 	return r.run(ctx, args)
 }
 
+// FlagError reports a flag cobra could not parse like any other wrong call:
+// the document, exit 7.
+func (r *runner) FlagError(_ *cobra.Command, err error) error {
+	doc := newDocument()
+	return agentcli.Report(r.stdout, &doc, agentcli.VerdictGreen, agentcli.FlagError(command, err))
+}
+
 func (r *runner) run(ctx context.Context, args []string) error {
-	doc := document{
+	doc := newDocument()
+	err := r.wait(ctx, args, &doc)
+	return agentcli.Report(r.stdout, &doc, agentcli.VerdictGreen, err)
+}
+
+func newDocument() document {
+	return document{
 		Envelope: agentcli.NewEnvelope(command, time.Now()),
 		Result:   &prwait.Result{Checks: []prwait.Check{}, Actions: []prwait.ActionRun{}},
 	}
-	err := r.wait(ctx, args, &doc)
-	doc.Finish(time.Now(), agentcli.VerdictGreen, err)
-	if err := agentcli.Emit(r.stdout, doc); err != nil {
-		return err
-	}
-	return doc.Err()
 }
 
 func (r *runner) wait(ctx context.Context, args []string, doc *document) error {

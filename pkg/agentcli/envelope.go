@@ -127,6 +127,31 @@ func (e Envelope) Err() error {
 	return &ExitError{Code: e.ExitCode, Verdict: e.Verdict, Reason: e.Reason}
 }
 
+// Document is a command's JSON document: a pointer to a struct that embeds
+// [Envelope] and adds the command's own fields.
+type Document interface {
+	Finish(now time.Time, ok Verdict, err error)
+	Err() error
+}
+
+// Report finishes doc from the command's error, the ok verdict when there is
+// none, writes it on w and returns what the command returns to cobra: nil on
+// exit 0, otherwise the [*ExitError] the process exit code follows.
+func Report(w io.Writer, doc Document, ok Verdict, err error) error {
+	doc.Finish(time.Now(), ok, err)
+	if err := Emit(w, doc); err != nil {
+		return err
+	}
+	return doc.Err()
+}
+
+// FlagError is the error of a flag cobra could not parse, as a command's
+// reason: the parser's message and where the flags are listed. The command
+// reports it with its document, exit 7, like any other wrong call.
+func FlagError(command string, err error) error {
+	return fmt.Errorf("%w; devctl %s --help lists the flags", err, command)
+}
+
 // Emit writes document as one indented JSON document followed by a newline.
 func Emit(w io.Writer, document any) error {
 	b, err := json.MarshalIndent(document, "", "  ")

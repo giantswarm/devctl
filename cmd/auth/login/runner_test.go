@@ -114,7 +114,7 @@ func TestLoginMusterOnly(t *testing.T) {
 	r, store, stdout, stderr := newRunnerWithBrowser(t, nil, fetch)
 	r.flag.MusterOnly = true
 	r.flag.MusterEndpoint = m.MCPURL()
-	if err := r.run(context.Background()); err != nil {
+	if err := r.run(context.Background(), nil); err != nil {
 		t.Fatalf("err = %v\nstdout: %s\nstderr: %s", err, stdout.String(), stderr.String())
 	}
 
@@ -150,7 +150,7 @@ func TestLoginMusterOnlyWithoutManager(t *testing.T) {
 	r, _, stdout, stderr := newRunnerWithBrowser(t, nil, fetch)
 	r.flag.MusterOnly = true
 	r.flag.MusterEndpoint = m.MCPURL()
-	if err := r.run(context.Background()); err != nil {
+	if err := r.run(context.Background(), nil); err != nil {
 		t.Fatalf("err = %v\nstdout: %s\nstderr: %s", err, stdout.String(), stderr.String())
 	}
 	var doc document
@@ -177,7 +177,7 @@ func TestValidateOnlyFlags(t *testing.T) {
 func TestLoginGitHubOnly(t *testing.T) {
 	r, store, stdout, stderr := newRunner(t, fakeGitHub(t))
 	r.flag.GitHubOnly = true
-	if err := r.run(context.Background()); err != nil {
+	if err := r.run(context.Background(), nil); err != nil {
 		t.Fatalf("err = %v\nstdout: %s\nstderr: %s", err, stdout.String(), stderr.String())
 	}
 
@@ -220,7 +220,7 @@ func TestLoginFlagsExcludeEachOther(t *testing.T) {
 	r, _, stdout, _ := newRunner(t, nil)
 	r.flag.GitHubOnly = true
 	r.flag.CircleCIOnly = true
-	err := r.run(context.Background())
+	err := r.run(context.Background(), nil)
 	var exitErr *agentcli.ExitError
 	if !errors.As(err, &exitErr) || exitErr.Code != agentcli.ExitUsage || exitErr.Verdict != agentcli.VerdictUsage {
 		t.Fatalf("err = %#v", err)

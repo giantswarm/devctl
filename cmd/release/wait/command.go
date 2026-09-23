@@ -105,9 +105,12 @@ func New(config Config) (*cobra.Command, error) {
 		Use:   name,
 		Short: description,
 		Long:  long,
-		Args:  cobra.RangeArgs(1, 2),
-		RunE:  r.Run,
+		// The arguments are checked by the runner: a usage error is exit 7
+		// with a document, like every other outcome.
+		Args: cobra.ArbitraryArgs,
+		RunE: r.Run,
 	}
+	c.SetFlagErrorFunc(r.FlagError)
 
 	f.Init(c)
 

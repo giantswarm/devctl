@@ -198,5 +198,7 @@ func New(config Config) (*cobra.Command, error) {
 	c.AddCommand(repoCmd)
 	c.AddCommand(versionCmd)
 
+	guardUsage(c)
+
 	return c, nil
 }

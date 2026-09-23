@@ -93,6 +93,7 @@ func New(config Config) (*cobra.Command, error) {
 
 	c := &cobra.Command{
 		Use:     name,
+		Args:    cobra.NoArgs,
 		Short:   shortDescription,
 		Long:    longDescription,
 		Example: example,

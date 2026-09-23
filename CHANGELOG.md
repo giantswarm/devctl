@@ -56,6 +56,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- A command called the wrong way says what is wrong and how to call it, without a stack trace: a missing
+  argument is named from the usage line (`Missing [OWNER/]REPOSITORY`), an extra one is `Unexpected argument "b"`,
+  an unknown command or flag, or a flag the command's validation refuses, is followed by the command's usage line
+  and `Run 'devctl repo status --help' for more information.` An unknown subcommand of a group (`devctl repo
+  statsu`) is an error with the subcommands it resembles (`did you mean "status"?`) and exit 2, where it printed
+  the group's help and exited 0. Every command declares the arguments it takes, so a stray argument to a command
+  that takes none (`devctl gen circleci x`) is refused instead of ignored. The stack trace of an error is printed
+  only at `--log-level debug`. The notice that a newer devctl is released is one line naming the version, the
+  update command and `DEVCTL_UNSAFE_FORCE_VERSION`.
 - `devctl pr merge` waits for the release its merge triggers: after the merge it runs the wait of `release wait --pr`
   on the merge commit it produced, so one blocking call returns when CI was green, the pull request is merged and the
   release is pullable (its images and charts resolve to a digest, its tag pipeline is green). The document gains
@@ -91,6 +100,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- The agent-facing commands (`pr wait`, `pr merge`, `release wait`, `auth login`, `auth status`) answer a flag that
+  does not parse (`--timeout 30`, an unknown flag) and wrong arguments with their JSON document and exit 7 (`usage`),
+  the flag error naming `--help`. Before, cobra printed the error and devctl exited 2, the code of a `timeout`, with
+  no document; `release wait` did the same for a missing or extra argument, and `auth login` and `auth status`
+  for any argument.
 - `devctl repo status` and `devctl repo get` read a record whose declaration the schema refuses: the manager keeps the
   declaration's `problems` as `field: message` strings (its inventory record, the Dev Portal's `InventoryRecord`),
   where devctl expected `{field, message}` objects and failed every such record with `cannot unmarshal string into Go

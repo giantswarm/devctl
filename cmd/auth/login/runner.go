@@ -62,20 +62,30 @@ type managerSignIn struct {
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
-	return r.run(context.Background())
+	return r.run(context.Background(), args)
 }
 
-func (r *runner) run(ctx context.Context) error {
-	doc := document{Envelope: agentcli.NewEnvelope(command, time.Now()), Status: authstore.NewStatus()}
-	err := r.login(ctx, &doc)
-	doc.Finish(time.Now(), agentcli.VerdictGreen, err)
-	if err := agentcli.Emit(r.stdout, doc); err != nil {
-		return err
+// FlagError reports a flag cobra could not parse like any other wrong call:
+// the document, exit 7.
+func (r *runner) FlagError(_ *cobra.Command, err error) error {
+	doc := newDocument()
+	return agentcli.Report(r.stdout, &doc, agentcli.VerdictGreen, agentcli.FlagError(command, err))
+}
+
+func (r *runner) run(ctx context.Context, args []string) error {
+	doc := newDocument()
+	err := r.login(ctx, args, &doc)
+	return agentcli.Report(r.stdout, &doc, agentcli.VerdictGreen, err)
+}
+
+func newDocument() document {
+	return document{Envelope: agentcli.NewEnvelope(command, time.Now()), Status: authstore.NewStatus()}
+}
+
+func (r *runner) login(ctx context.Context, args []string, doc *document) error {
+	if len(args) > 0 {
+		return fmt.Errorf("usage: devctl %s [flags], got %d argument(s)", command, len(args))
 	}
-	return doc.Err()
-}
-
-func (r *runner) login(ctx context.Context, doc *document) error {
 	if err := r.flag.Validate(); err != nil {
 		return err
 	}
