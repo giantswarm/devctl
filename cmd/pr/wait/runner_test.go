@@ -26,6 +26,7 @@ func newRunner(t *testing.T, routes sequence.Routes, github func(context.Context
 	endpoints := agentcli.DefaultEndpoints()
 	endpoints.GitHubAPIURL = server.URL
 	r := &runner{
+		gate:          func(bool) error { return nil },
 		flag:          &flag{Timeout: 2 * time.Minute, Progress: true},
 		stdout:        stdout,
 		stderr:        stderr,
@@ -130,5 +131,24 @@ func Test_run_usage(t *testing.T) {
 		if n := len(server.Requests()); n != 0 {
 			t.Errorf("%q: want no request, got %d", args, n)
 		}
+	}
+}
+
+// Test_run_outdated: an outdated devctl ends the wait in the document, exit
+// 7 with the gate's reason, before the keychain or GitHub is read.
+func Test_run_outdated(t *testing.T) {
+	r, stdout, _, _ := newRunner(t, sequence.Routes{}, func(context.Context) (authstore.Token, error) {
+		t.Fatal("the keychain is read past the version gate")
+		return authstore.Token{}, nil
+	})
+	r.gate = func(bool) error { return errors.New("version 9.0.0 of devctl is released; this is 8.0.0") }
+
+	err := r.run(context.Background(), []string{"o/r", "42"})
+	if agentcli.Exit(err) != agentcli.ExitUsage {
+		t.Fatalf("exit %d (%v), want %d", agentcli.Exit(err), err, agentcli.ExitUsage)
+	}
+	doc := decode(t, stdout)
+	if doc["verdict"] != string(agentcli.VerdictUsage) || !strings.Contains(doc["reason"].(string), "version 9.0.0 of devctl is released") {
+		t.Errorf("envelope: %v", doc)
 	}
 }

@@ -25,6 +25,7 @@ func newRunner(t *testing.T, records map[string]authstore.Record) (*runner, *byt
 	}
 	var stdout, stderr bytes.Buffer
 	r := &runner{
+		gate:   func(bool) error { return nil },
 		flag:   &flag{},
 		stdout: &stdout,
 		stderr: &stderr,

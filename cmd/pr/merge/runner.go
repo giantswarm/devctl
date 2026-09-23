@@ -27,6 +27,9 @@ type runner struct {
 	flag   *flag
 	stdout io.Writer
 	stderr io.Writer
+	// gate is versiongate.Check: an outdated devctl ends the run in the
+	// document.
+	gate func(noCache bool) error
 	// The seams tests replace: the token gates, the endpoints and the clock.
 	requireGitHub   func(ctx context.Context) (authstore.Token, error)
 	requireCircleCI func(ctx context.Context) (authstore.Token, error)
@@ -89,6 +92,9 @@ func (r *runner) merge(ctx context.Context, args []string, doc *document) error 
 	}
 	if !r.flag.NoReleaseWait && r.flag.ReleaseTimeout <= 0 {
 		return fmt.Errorf("--%s must be positive, got %s", flagReleaseTimeout, r.flag.ReleaseTimeout)
+	}
+	if err := r.gate(false); err != nil {
+		return err
 	}
 	clock, err := r.clock()
 	if err != nil {

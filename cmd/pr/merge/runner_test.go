@@ -30,6 +30,7 @@ func newRunner(t *testing.T, routes sequence.Routes, github func(context.Context
 		f = &flag{Timeout: 2 * time.Minute, ReleaseTimeout: 2 * time.Minute, Progress: true}
 	}
 	r := &runner{
+		gate:          func(bool) error { return nil },
 		flag:          f,
 		stdout:        stdout,
 		stderr:        stderr,

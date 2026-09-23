@@ -197,7 +197,7 @@ The envelope and the fields from `repository` to `unfinished[]` are [`pr wait`'s
 | 4 | `required_missing` | A required status context never reported within the timeout; `reason` names it. |
 | 5 | `refused` | Another human's pull request, or a repository whose entry says `agentMerge: false`; `reason` names the author or the field. |
 | 6 | `release_failed` | **Merged**, and the release failed: the merge commit's auto-release run failed before it tagged, or the tag pipeline failed; `release.pipeline.failedJobs` names the jobs. |
-| 7 | `usage` | Wrong arguments, or a tooling failure (GitHub or CircleCI answered with an error other than a 5xx, or a read failed eight tries in a row; the team files could not be read). |
+| 7 | `usage` | Wrong arguments or flags, a newer devctl released (the reason names `devctl version update`), or a tooling failure (GitHub or CircleCI answered with an error other than a 5xx, or a read failed eight tries in a row; the team files could not be read). |
 | 8 | `auth_required` | No usable token; `reason` names the `devctl auth login` to run. |
 | 9 | `release_unconfirmed` | **Merged**, and the release was not confirmed pullable: `--release-timeout` passed, the release wait could not judge it, or the auto-release run was superseded; `release.verdict` and `reason` say which. |
 

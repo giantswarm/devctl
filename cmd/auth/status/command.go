@@ -6,6 +6,9 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/giantswarm/devctl/v8/internal/versiongate"
+	"github.com/giantswarm/devctl/v8/pkg/agentcli"
+
 	"github.com/giantswarm/devctl/v8/pkg/authstore"
 )
 
@@ -39,6 +42,7 @@ func New(config Config) (*cobra.Command, error) {
 	f := &flag{}
 
 	r := &runner{
+		gate:   versiongate.Check,
 		flag:   f,
 		stderr: config.Stderr,
 		stdout: config.Stdout,
@@ -51,8 +55,9 @@ func New(config Config) (*cobra.Command, error) {
 		Long:  long,
 		// The arguments are checked by the runner: a usage error is exit 7
 		// with a document, like every other outcome.
-		Args: cobra.ArbitraryArgs,
-		RunE: r.Run,
+		Args:        cobra.ArbitraryArgs,
+		RunE:        r.Run,
+		Annotations: agentcli.AgentFacing(),
 	}
 	c.SetFlagErrorFunc(r.FlagError)
 

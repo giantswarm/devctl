@@ -19,6 +19,7 @@ func runCommand(t *testing.T, args []string, f *flag, openErr error) (map[string
 	t.Helper()
 	var stdout, stderr bytes.Buffer
 	r := &runner{
+		gate:   func(bool) error { return nil },
 		flag:   f,
 		stdout: &stdout,
 		stderr: &stderr,

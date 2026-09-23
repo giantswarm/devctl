@@ -31,6 +31,9 @@ type runner struct {
 	flag   *flag
 	stdout io.Writer
 	stderr io.Writer
+	// gate is versiongate.Check: an outdated devctl ends the run in the
+	// document.
+	gate func(noCache bool) error
 	// open is openClients; tests inject clients over mocks.
 	open func(ctx context.Context, endpoints agentcli.Endpoints, transport http.RoundTripper, warn func(string)) (*clients, error)
 }
@@ -82,6 +85,9 @@ func (r *runner) wait(ctx context.Context, args []string, doc *releasewait.Docum
 		if _, err := releasewait.ParseVersion(version); err != nil {
 			return err
 		}
+	}
+	if err := r.gate(false); err != nil {
+		return err
 	}
 
 	clock, err := agentcli.SystemClock()
