@@ -284,6 +284,35 @@ func TestGetLatestIgnoresAnExpiredCache(t *testing.T) {
 	}
 }
 
+// An explicit update or check right after a release: the cache written
+// before it still names the older version and is younger than an hour. The
+// source is asked anyway, and its answer replaces the cache, so the check
+// before the next command knows the release too.
+func TestGetLatestFromSourceIgnoresAFreshCacheAndRefreshesIt(t *testing.T) {
+	dir := t.TempDir()
+	writeCache(t, dir, cache{LastUpdate: time.Now().UTC(), LatestVersion: currentVersion})
+	src := &fakeSource{releases: []selfupdate.SourceRelease{signedRelease("v" + newerVersion)}}
+
+	version, err := newUpdater(t, src, dir).GetLatestFromSource()
+	if !IsHasNewVersion(err) {
+		t.Fatalf("the release newer than the cache should be reported, got: %v", err)
+	}
+	if version != newerVersion {
+		t.Errorf("version = %q, want %s from the source, not the cached %s", version, newerVersion, currentVersion)
+	}
+	if src.listReleases != 1 {
+		t.Errorf("the source was asked %d time(s), want 1", src.listReleases)
+	}
+
+	version, err = newUpdater(t, src, dir).GetLatest()
+	if !IsHasNewVersion(err) || version != newerVersion {
+		t.Errorf("the refreshed cache should name %s, got %q (%v)", newerVersion, version, err)
+	}
+	if src.listReleases != 1 {
+		t.Errorf("the check after the refresh asked the source; %d asks in total, want 1", src.listReleases)
+	}
+}
+
 func TestGetLatestPersistsTheCacheForTheNextUpdater(t *testing.T) {
 	dir := t.TempDir()
 	src := &fakeSource{releases: []selfupdate.SourceRelease{signedRelease("v" + newerVersion)}}
