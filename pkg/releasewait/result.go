@@ -146,6 +146,34 @@ func notApplicableErr(format string, args ...any) error {
 	return agentcli.NewExitError(agentcli.ExitNotApplicable, agentcli.VerdictNotApplicable, format, args...)
 }
 
+// NoReleaseError says that no release follows a pull request's merge: the
+// repository does not tag merge commits (the legacy release workflow, or no
+// release workflow at all), or its auto-release run finished without a tag
+// because the commits since the last release warrant none. Exit 3 with the
+// no_release verdict; devctl pr merge reports the merge as done with no
+// release to wait for.
+type NoReleaseError struct {
+	Reason string
+}
+
+func (e *NoReleaseError) Error() string { return e.Reason }
+
+// ExitCode implements [agentcli.ExitCoder].
+func (e *NoReleaseError) ExitCode() int { return agentcli.ExitNotApplicable }
+
+// ExitVerdict implements [agentcli.ExitCoder].
+func (e *NoReleaseError) ExitVerdict() agentcli.Verdict { return agentcli.VerdictNoRelease }
+
+// IsNoRelease asserts [*NoReleaseError] anywhere in err's chain.
+func IsNoRelease(err error) bool {
+	var noRelease *NoReleaseError
+	return errors.As(err, &noRelease)
+}
+
+func noReleaseErr(format string, args ...any) error {
+	return &NoReleaseError{Reason: fmt.Sprintf(format, args...)}
+}
+
 func usageErr(format string, args ...any) error {
 	return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, format, args...)
 }

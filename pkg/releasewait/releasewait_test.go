@@ -36,6 +36,7 @@ type fixture struct {
 	entry           *reposetup.Fields
 	version         string
 	pr              int
+	mergeCommit     string
 	timeout         time.Duration
 	catalog         bool
 	catalogLists    bool
@@ -160,7 +161,7 @@ func run(t *testing.T, fx fixture) (Result, error) {
 	}
 	circleCalls := 0
 	config := Config{
-		Owner: testOwner, Repo: testRepo, Version: fx.version, PR: fx.pr, Timeout: fx.timeout, Catalog: fx.catalog,
+		Owner: testOwner, Repo: testRepo, Version: fx.version, PR: fx.pr, MergeCommitSHA: fx.mergeCommit, Timeout: fx.timeout, Catalog: fx.catalog,
 		GitHub:  ghClient,
 		Entries: entries{fx.entry},
 		CircleCI: func(context.Context) (CircleCI, error) {
@@ -510,11 +511,12 @@ func TestWaitActionsRunFailedIsCIFailure(t *testing.T) {
 	assertExit(t, err, agentcli.ExitRed, "Release binaries")
 }
 
-func TestWaitPullRequestOnLegacyRepositoryIsNotApplicable(t *testing.T) {
+func TestWaitPullRequestOnLegacyRepositoryIsNoRelease(t *testing.T) {
 	github := baseGitHub([]string{"Dockerfile"}, []string{"zz_generated.create_release.yaml"}, []string{"config.yml"})
 	github[repoRoute("/pulls/7")] = []sequence.Response{{Body: map[string]any{"number": 7, "state": "closed", "merged": true, "merge_commit_sha": testSHA}}}
 	_, err := run(t, fixture{github: github, pr: 7})
 	assertExit(t, err, agentcli.ExitNotApplicable, "legacy")
+	assertNoRelease(t, err)
 }
 
 func TestWaitPullRequestNotMergedIsNotApplicable(t *testing.T) {
@@ -531,6 +533,7 @@ func TestWaitPullRequestResolvesTheTagFromTheMergeCommit(t *testing.T) {
 		{Body: []map[string]any{{"name": "v1.2.2", "commit": map[string]any{"sha": "older"}}}},
 		{Body: []map[string]any{{"name": testTag, "commit": map[string]any{"sha": testSHA}}, {"name": "v1.2.2", "commit": map[string]any{"sha": "older"}}}},
 	}
+	github[repoRoute("/actions/runs")] = autoReleaseRuns(autoReleaseRun("in_progress", ""))
 	fx := fixture{
 		entry: generatedEntry(t), github: github, pr: 7,
 		circleci: pipelineRoutes([][]map[string]any{{wf("w1", "build", "success", "2026-09-21T10:00:00Z")}}, map[string][]map[string]any{"w1": {job("push-to-registries-release", "success")}}),
@@ -754,4 +757,151 @@ func TestTeamFileEntries(t *testing.T) {
 	if _, found, err := finder.FindEntry(context.Background(), "someone-else", "kserve"); err != nil || found || len(gh.Requests()) != requests {
 		t.Errorf("another owner: found=%v err=%v requests=%d", found, err, len(gh.Requests())-requests)
 	}
+}
+
+// autoReleaseRun is the run the push of the merge commit started of the
+// generated auto-release workflow.
+func autoReleaseRun(status, conclusion string) map[string]any {
+	run := map[string]any{
+		"id": 901, "name": "Auto-release", "path": ".github/workflows/zz_generated.auto_release.yaml",
+		"event": "push", "head_branch": "main", "head_sha": testSHA, "status": status,
+		"html_url": "https://github.com/giantswarm/kserve/actions/runs/901",
+	}
+	if conclusion != "" {
+		run["conclusion"] = conclusion
+	}
+	return run
+}
+
+// autoReleaseRuns answers the listing of the merge commit's runs, one
+// answer per poll: a CI run of the same push beside the auto-release run.
+func autoReleaseRuns(polls ...map[string]any) []sequence.Response {
+	responses := make([]sequence.Response, 0, len(polls))
+	for _, auto := range polls {
+		responses = append(responses, sequence.Response{Body: map[string]any{"total_count": 2, "workflow_runs": []map[string]any{
+			{"id": 902, "name": "CI", "path": ".github/workflows/ci.yaml", "event": "push", "head_branch": "main", "head_sha": testSHA, "status": "completed", "conclusion": "success"},
+			auto,
+		}}})
+	}
+	return responses
+}
+
+func assertNoRelease(t *testing.T, err error) {
+	t.Helper()
+	if !IsNoRelease(err) {
+		t.Fatalf("want no release following the merge, got %v", err)
+	}
+	if _, verdict := agentcli.Outcome(err); verdict != agentcli.VerdictNoRelease {
+		t.Errorf("want verdict %s, got %s", agentcli.VerdictNoRelease, verdict)
+	}
+}
+
+// mergedWithoutTag is a merge in an auto-release repository with generated
+// CI whose tags never include the merge commit.
+func mergedWithoutTag(runs []sequence.Response) sequence.Routes {
+	github := baseGitHub([]string{"Dockerfile", "helm"}, []string{"zz_generated.auto_release.yaml"}, []string{"config.yml", "workflows.yml"})
+	github[repoRoute("/tags")] = []sequence.Response{{Body: []map[string]any{{"name": "v1.2.2", "commit": map[string]any{"sha": "older"}}}}}
+	github[repoRoute("/actions/runs")] = runs
+	return github
+}
+
+// The auto-release run of the merge commit finished and tagged nothing: the
+// commits warrant no release, and the wait says so at once instead of
+// waiting for a tag until the timeout.
+func TestWaitPullRequestAutoReleaseFinishedWithoutTagIsNoRelease(t *testing.T) {
+	fx := fixture{
+		entry: generatedEntry(t), pr: 7, mergeCommit: testSHA, timeout: time.Hour,
+		github: mergedWithoutTag(autoReleaseRuns(autoReleaseRun("queued", ""), autoReleaseRun("in_progress", ""), autoReleaseRun("completed", "success"))),
+	}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitNotApplicable, "finished without a tag: the commits since the last release warrant none")
+	assertNoRelease(t, err)
+	if result.SHA != testSHA || result.Tag != "" || result.ReleaseModel != ReleaseModelAutoRelease {
+		t.Errorf("result: %+v", result)
+	}
+}
+
+// The known merge commit is used as is: no pull request is read (the mock
+// scripts none, so a read would fail the wait).
+func TestWaitPullRequestWithTheMergeCommitReadsNoPullRequest(t *testing.T) {
+	fx := fixture{
+		entry: generatedEntry(t), pr: 7, mergeCommit: testSHA,
+		github: mergedWithoutTag(autoReleaseRuns(autoReleaseRun("completed", "skipped"))),
+	}
+	_, err := run(t, fx)
+	assertNoRelease(t, err)
+}
+
+func TestWaitPullRequestAutoReleaseFailedBeforeTaggingIsCIFailure(t *testing.T) {
+	fx := fixture{
+		entry: generatedEntry(t), pr: 7, mergeCommit: testSHA,
+		github: mergedWithoutTag(autoReleaseRuns(autoReleaseRun("completed", "failure"))),
+	}
+	_, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitRed, "concluded failure before it tagged")
+}
+
+// A pending run is cancelled by the next push to the branch: that push's
+// tag carries the merge, and --pr cannot name it.
+func TestWaitPullRequestAutoReleaseCancelledIsSuperseded(t *testing.T) {
+	fx := fixture{
+		entry: generatedEntry(t), pr: 7, mergeCommit: testSHA,
+		github: mergedWithoutTag(autoReleaseRuns(autoReleaseRun("completed", "cancelled"))),
+	}
+	_, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitNotApplicable, "a newer push to main supersedes a pending run")
+	if IsNoRelease(err) {
+		t.Errorf("a superseded run is not a merge without a release: %v", err)
+	}
+}
+
+// The run tags before its last step (the CircleCI check) and fails there:
+// the tag is read after the run finished, and the wait goes on with it.
+func TestWaitPullRequestAutoReleaseFailedAfterTaggingGoesOn(t *testing.T) {
+	github := mergedWithoutTag(autoReleaseRuns(autoReleaseRun("completed", "failure")))
+	github[repoRoute("/tags")] = []sequence.Response{
+		{Body: []map[string]any{{"name": "v1.2.2", "commit": map[string]any{"sha": "older"}}}},
+		{Body: []map[string]any{{"name": testTag, "commit": map[string]any{"sha": testSHA}}}},
+	}
+	fx := fixture{
+		entry: generatedEntry(t), pr: 7, mergeCommit: testSHA, github: github,
+		circleci: pipelineRoutes([][]map[string]any{{wf("w1", "build", "success", "2026-09-21T10:00:00Z")}}, map[string][]map[string]any{"w1": {job("push-to-registries-release", "success")}}),
+		registry: sequence.Routes{
+			"HEAD /v2/giantswarm/kserve-controller/manifests/1.2.3": {{Status: 200}},
+			"HEAD /v2/charts/giantswarm/kserve/manifests/1.2.3":     {{Status: 200}},
+		},
+	}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+	if result.Tag != testTag {
+		t.Errorf("tag: %+v", result)
+	}
+}
+
+func TestWaitPullRequestTimeoutNamesTheAutoReleaseRun(t *testing.T) {
+	fx := fixture{
+		entry: generatedEntry(t), pr: 7, mergeCommit: testSHA, timeout: 45 * time.Second,
+		github: mergedWithoutTag(autoReleaseRuns(autoReleaseRun("in_progress", ""))),
+	}
+	_, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitTimeout, "the Auto-release run https://github.com/giantswarm/kserve/actions/runs/901 is in_progress")
+}
+
+// A repository no team file declares and whose workflows hold no release
+// workflow tags nothing: no release follows its merges.
+func TestWaitPullRequestWithoutAnyReleaseWorkflowIsNoRelease(t *testing.T) {
+	github := baseGitHub([]string{"main.go"}, []string{"ci.yaml"}, nil)
+	_, err := run(t, fixture{github: github, pr: 7, mergeCommit: testSHA})
+	assertExit(t, err, agentcli.ExitNotApplicable, "nothing tags the merge commit")
+	assertNoRelease(t, err)
+}
+
+// An entry that declares auto-release ahead of the repository: no workflow
+// at the merge commit tags it, so no release follows the merge.
+func TestWaitPullRequestEntryAheadOfTheWorkflowsIsNoRelease(t *testing.T) {
+	github := baseGitHub([]string{"main.go"}, []string{"ci.yaml"}, nil)
+	entry := fieldsFromYAML(t, "- name: kserve\n  gen:\n    flavours: [cli]\n    language: go\n    ci:\n      releaseWorkflow: auto-release\n")
+	_, err := run(t, fixture{github: github, pr: 7, mergeCommit: testSHA, entry: &entry})
+	assertExit(t, err, agentcli.ExitNotApplicable, "declares auto-release, but .github/workflows at 01234567 holds no auto-release workflow")
+	assertNoRelease(t, err)
 }

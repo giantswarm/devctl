@@ -28,11 +28,16 @@ the login command in `reason`, before anything is waited for.
 - `vX.Y.Z` or `X.Y.Z`: the tag is looked up under both spellings, the given one first, and the wait
   starts when it exists. A tag that never appears is a timeout (exit 2).
 - `--pr <number>`: the pull request must be merged (otherwise exit 3). In a repository on the
-  **auto-release** model the tag is the one on the merge commit; the command waits for it to appear
-  (auto-release tags within minutes when the commits warrant a bump, and never when they do not). A
-  repository on the **legacy** model (`create_release` workflows, a release pull request) does not
-  tag the merge commit of a feature pull request, so `--pr` is exit 3 with one sentence: pass the
-  version.
+  **auto-release** model the tag is the one on the merge commit; the command waits for it to appear,
+  and the merge commit's auto-release run (the push run of the `auto_release` workflow) says when it
+  will not: a run that finished without a tag decided that the commits since the last release warrant
+  no bump, which is exit 3 with the verdict `no_release` at once instead of a timeout; a run that
+  failed before it tagged is exit 1; a run cancelled before it tagged was superseded by a newer push
+  to the branch, whose tag carries the merge, exit 3 naming it. A repository on the **legacy** model
+  (`create_release` workflows, a release pull request) does not tag the merge commit of a feature
+  pull request, nor does one without a release workflow that no entry declares a model for: `--pr` is
+  exit 3, `no_release`, with one sentence. [`devctl pr merge`](pr-merge.md) runs this wait after its
+  merge, and reads `no_release` as a merge that is done.
 
 ### The release model
 
@@ -203,9 +208,10 @@ stderr.
 | Code | Verdict | Meaning |
 |---|---|---|
 | 0 | `available` | Every artifact resolves to a digest and every workflow of the tag pipeline finished green (and, with `--catalog`, the index lists every chart); or the release of a repository without image and chart is published with its workflows green. |
-| 1 | `ci_failed` | A workflow of the tag pipeline, or an Actions run of the tag, failed or was cancelled. `reason` and `pipeline.failedJobs` name the jobs. The release is incomplete until a rerun of the failed workflow succeeds or a fix lands as the next tag; artifacts that did resolve are listed `available`. |
+| 1 | `ci_failed` | A workflow of the tag pipeline, or an Actions run of the tag, failed or was cancelled; with `--pr`, the merge commit's auto-release run failed before it tagged. `reason` and `pipeline.failedJobs` name the jobs. The release is incomplete until a rerun of the failed workflow succeeds or a fix lands as the next tag; artifacts that did resolve are listed `available`. |
 | 2 | `timeout` | The deadline passed. `reason` names what is missing: the tag, the pipeline, the artifacts by reference, and the pipeline's unfinished workflows (also when every artifact is already available). |
-| 3 | `not_applicable` | The pull request is not merged, or the repository is on the legacy release model so `--pr` cannot resolve a version. |
+| 3 | `not_applicable` | The pull request is not merged, or its auto-release run was cancelled before it tagged (superseded by a newer push), so `--pr` cannot resolve a version. |
+| 3 | `no_release` | No release follows the pull request's merge: the repository does not tag merge commits (the legacy release model, or no release workflow at all), or the merge commit's auto-release run finished without a tag. |
 | 7 | `usage` | A bad argument; no source says how the repository releases; the sources disagree about the CI model or the artifacts; a registry answer that is neither a digest nor "manifest unknown"; a tooling error. |
 | 8 | `auth_required` | No usable token in the keychain; `reason` names the `devctl auth login` invocation. |
 
@@ -239,7 +245,8 @@ tag on the merge commit), `GET /repos/{o}/{r}/git/ref/tags/{tag}` (and `GET
 listed), `GET /repos/giantswarm/github/contents/repositories` and `GET
 /repos/giantswarm/github/contents/repositories/{team}.yaml` (the team-file entry, until the one that
 declares the repository), `GET /repos/{o}/{r}/releases/tags/{tag}` and `GET
-/repos/{o}/{r}/actions/runs?head_sha={sha}` (release assets, no CircleCI).
+/repos/{o}/{r}/actions/runs?head_sha={sha}` (release assets, no CircleCI; with `--pr`, the merge
+commit's auto-release run while no tag is on it).
 
 CircleCI: `GET /api/v2/project/gh/{o}/{r}/pipeline` (the tag pipeline by `vcs.tag`, newest pages),
 `GET /api/v2/pipeline/{id}/workflow`, `GET /api/v2/workflow/{id}/job`.
