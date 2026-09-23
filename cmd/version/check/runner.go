@@ -61,7 +61,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		}
 	}
 
-	_, err = updaterService.GetLatest()
+	_, err = updaterService.GetLatestFromSource()
 	if updater.IsHasNewVersion(err) {
 		_, _ = color.New(color.Bold, color.FgYellow).Fprintf(r.stderr, "There's a new version available!\n")
 		fmt.Fprintf(r.stderr, "Run \"%s version update\" to update to the latest version.\n", project.Name())

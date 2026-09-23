@@ -91,6 +91,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `devctl version update` and `devctl version check` ask GitHub for the latest release every time and refresh the
+  version cache with the answer. Right after a release the one-hour cache still named the older version, so an explicit
+  update answered "You are already using the latest version." until `--no-cache` or the hour passed
+  ([#2370](https://github.com/giantswarm/devctl/issues/2370)). The check before every other command keeps using the
+  cache within its hour; `--no-cache` now only leaves the cache as it is.
 - `devctl pr wait`, `devctl pr merge` and `devctl release wait` retry a read that GitHub or CircleCI did not answer
   instead of ending on it: a reset connection, an EOF, a try over 60 s or a 5xx is sent again after 2 s, the pause
   doubling up to 60 s, for up to eight tries in a row (about three minutes), never past the wait's timeout, each

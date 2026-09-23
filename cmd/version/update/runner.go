@@ -61,7 +61,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	}
 
 	// Get the latest version number.
-	latestVersion, err := updaterService.GetLatest()
+	latestVersion, err := updaterService.GetLatestFromSource()
 	if updater.IsHasNewVersion(err) {
 		fmt.Fprintf(r.stdout, "Update to %s has been started.\n", latestVersion)
 		fmt.Fprintf(r.stdout, "Fetching latest built binary...\n")
