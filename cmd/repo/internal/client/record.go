@@ -88,6 +88,9 @@ func PrintRecord(w io.Writer, r *manager.Record) {
 	if c := r.CircleCI; c != nil {
 		parts := []string{}
 		parts = append(parts, "followed "+yesNoUnknown(c.Followed), "setup workflows "+yesNoUnknown(c.SetupWorkflows))
+		if c.Webhook != nil {
+			parts = append(parts, "webhook "+presence(*c.Webhook))
+		}
 		if c.Head != nil {
 			parts = append(parts, "head "+c.Head.State)
 		}

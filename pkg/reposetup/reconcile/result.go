@@ -18,8 +18,9 @@
 // as added — never from a missing repository), scaffold (rendered by the
 // front half and pushed as the first commit before protection), settings
 // baseline, team permissions, branch protection with the required checks on
-// the reported-only rule, CircleCI (follow, setup workflows, checkout key),
-// webhooks, Renovate (check only), CODEOWNERS (a pull request), description
+// the reported-only rule, CircleCI (follow, setup workflows, checkout key,
+// and the webhook CircleCI installs on the follow, verified), webhooks,
+// Renovate (check only), CODEOWNERS (a pull request), description
 // and visibility, lifecycle (archived → archived on GitHub and unfollowed;
 // deleted → unfollowed and deleted on GitHub, the entry the record),
 // catalog and mapping (the giantswarm/github workflows), first-release
@@ -28,7 +29,7 @@
 //
 // What a run costs in requests is counted at the clients' transports
 // ([Counter]) into [Result.Requests], and per step in the log. A check of a
-// converged repository with every step costs at most twenty GitHub
+// converged repository with every step costs at most twenty-one GitHub
 // requests, the budget of the nightly reconciler: the repository (one read,
 // shared by the create, metadata and lifecycle steps); the root listing and
 // the chart's Chart.yaml and values.schema.json; the workflow permission;
@@ -37,7 +38,8 @@
 // recently merged pull requests and the statuses and check runs of the
 // newest head, three requests once per run, shared by every step that asks
 // — the pipeline files workflows.yml and custom.yml (and .circleci/
-// config.yml once when the entry does not declare the pipeline);
+// config.yml once when the entry does not declare the pipeline); the
+// webhooks (one read, shared by the circleci and webhooks steps);
 // renovate.json5 and the Dependency Dashboard issue; CODEOWNERS; the
 // catalog and the mapping; the latest release. Measured in check mode with
 // a person's token: giantswarm/backstage 18, giantswarm/klaus 19 (one of
@@ -140,6 +142,14 @@ const (
 	// reconciler never rebuilds a tag; the fix is the next tag, or the
 	// tag's pipeline triggered by hand.
 	FindingMissedTagBuild FindingKind = "missed-tag-build"
+	// FindingCircleCIWebhookMissing: the project is followed on CircleCI
+	// but the repository carries no active CircleCI webhook for push
+	// events, so no push and no tag reaches CircleCI: no branch builds,
+	// and the first release tag goes unbuilt. CircleCI installs the hook on
+	// a follow by a GitHub admin of the repository whose CircleCI grant
+	// carries the hook scope; devctl cannot create it, CircleCI signs it
+	// with its own secret.
+	FindingCircleCIWebhookMissing FindingKind = "circleci-webhook-missing"
 	// FindingRenovateNotScanned: the repository shows no sign that Renovate
 	// scans it — no configuration, or a configuration without a trace of a
 	// run (the Dependency Dashboard issue, a pull request, a commit).

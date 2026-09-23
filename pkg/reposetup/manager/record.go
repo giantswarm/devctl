@@ -92,12 +92,16 @@ type Statuses struct {
 // CircleCIFacts is what the statuses and the reconciler's run say about
 // CircleCI; no CircleCI token is involved.
 type CircleCIFacts struct {
-	Followed       *bool     `json:"followed,omitempty"`
-	SetupWorkflows *bool     `json:"setupWorkflows,omitempty"`
-	Head           *Statuses `json:"head,omitempty"`
-	Source         string    `json:"source,omitempty"`
-	Unknown        []string  `json:"unknown,omitempty"`
-	Error          string    `json:"error,omitempty"`
+	Followed       *bool `json:"followed,omitempty"`
+	SetupWorkflows *bool `json:"setupWorkflows,omitempty"`
+	// Webhook says whether the repository carries the webhook CircleCI
+	// installs on the follow, as the reconciler's circleci step read it;
+	// nil when no run has read it.
+	Webhook *bool     `json:"webhook,omitempty"`
+	Head    *Statuses `json:"head,omitempty"`
+	Source  string    `json:"source,omitempty"`
+	Unknown []string  `json:"unknown,omitempty"`
+	Error   string    `json:"error,omitempty"`
 }
 
 // CIFacts is what the CircleCI configuration on the default branch says.
