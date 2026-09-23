@@ -26,7 +26,7 @@ Its generated setup is the GitHub workflows (`gen workflows`, including the cust
 
 ## `fork`
 
-A fork line: a repository that carries an upstream release plus the carried patches on a branch named after the organisation, which its entry declares as `defaultBranch`. The tree is upstream's, so nothing is generated for it: every `devctl gen` leaves it as it is, and the repository set-up reconciler skips the scaffold and CODEOWNERS steps on it and runs every other step as declared, branch protection on the declared branch included. Declared alone, with the repository's language.
+A fork line: a repository that carries an upstream release plus the carried patches on a branch named after the organisation, which its entry declares as `defaultBranch`. The tree is upstream's, so nothing is generated for it: every `devctl gen` leaves it as it is, and the repository set-up reconciler skips the scaffold and CODEOWNERS steps on it and runs every other step as declared, branch protection on the declared branch included. Its pull requests land by rebase merge, so that each carried patch stays one upstream-ready commit, and a re-pin merges upstream's history: the reconciler's settings step keeps rebase merges on and leaves merge commits as the repository has them, while the rest of the settings baseline (squash merges named after the pull request's title, branch updates and auto-merge on, the head branch deleted on merge, issues on, wiki and projects off) applies as everywhere. Declared alone, with the repository's language.
 
 ## `k8sapi`
 
