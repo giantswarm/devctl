@@ -1,10 +1,11 @@
-# The developer's docker login to the public registry has expired: the
-# registry answers 401 UNAUTHORIZED to every request that carries
-# credentials and serves anonymous reads, the artifacts being public. A
-# probe that sent the stored login would read UNAUTHORIZED for as long as
-# the timeout; the wait probes the public registry anonymously and finds
-# the digests at once.
-description: a stale docker login to the public registry does not reach the anonymous probe
+# Generated CI whose chart directory predates the repository's rename: the
+# team-file entry sets gen.ci.chartName: e2e, the pipeline packages helm/e2e,
+# and its Chart.yaml names the chart e2e-app, which is what helm push
+# publishes. The wait reads the name from the Chart.yaml at the tag; the
+# manifest under the directory name is unscripted (MANIFEST_UNKNOWN for
+# ever), so a probe under it would never finish, and the pinned digest proves
+# which manifest answered.
+description: generated CI with a chart directory named apart from its chart probes the Chart.yaml name, never the directory
 args: [release, wait, giantswarm/e2e-app, v1.2.3, --timeout, 30m]
 keyring:
   github:
@@ -23,9 +24,8 @@ github:
       - body: {name: e2e-app, full_name: giantswarm/e2e-app, private: false}
     "GET /repos/giantswarm/e2e-app/contents/?ref=aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44":
       - body:
-          - {name: Dockerfile, path: Dockerfile, type: file}
           - {name: helm, path: helm, type: dir}
-          - {name: main.go, path: main.go, type: file}
+          - {name: README.md, path: README.md, type: file}
     "GET /repos/giantswarm/e2e-app/contents/.github/workflows?ref=aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44":
       - body:
           - {name: zz_generated.auto_release.yaml, path: .github/workflows/zz_generated.auto_release.yaml, type: file}
@@ -33,15 +33,15 @@ github:
       - body:
           - {name: config.yml, path: .circleci/config.yml, type: file}
           - {name: workflows.yml, path: .circleci/workflows.yml, type: file}
-    "GET /repos/giantswarm/e2e-app/contents/helm/e2e-app/Chart.yaml?ref=aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44":
+    "GET /repos/giantswarm/e2e-app/contents/helm/e2e/Chart.yaml?ref=aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44":
       - body:
           name: Chart.yaml
-          path: helm/e2e-app/Chart.yaml
+          path: helm/e2e/Chart.yaml
           type: file
           content: |
             apiVersion: v2
             name: e2e-app
-            version: 1.2.3
+            version: "[[ .Version ]]"
     "GET /repos/giantswarm/github/contents/repositories":
       - body:
           - {name: team-e2e.yaml, path: repositories/team-e2e.yaml, type: file}
@@ -56,21 +56,20 @@ github:
               gen:
                 flavours:
                   - app
-                language: go
+                language: generic
                 ci:
                   generate: true
+                  chartName: e2e
 circleci:
   routes:
     "GET /api/v2/project/gh/giantswarm/e2e-app/pipeline":
-      - body: {items: [{id: p1, number: 7, state: created, created_at: "2026-09-21T10:00:00Z", vcs: {tag: v1.2.3, revision: aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44}}], next_page_token: null}
+      - body: {items: [{id: p1, number: 7, state: created, vcs: {tag: v1.2.3, revision: aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44}}], next_page_token: null}
     "GET /api/v2/pipeline/p1/workflow":
-      - body: {items: [{id: w1, name: build, status: success, created_at: "2026-09-21T10:00:05Z"}], next_page_token: null}
+      - body: {items: [{id: w1, name: build, status: success}], next_page_token: null}
     "GET /api/v2/workflow/w1/job":
-      - body: {items: [{id: j1, name: go-build, status: success}, {id: j2, name: push-e2e-app-to-registries, status: success}, {id: j3, name: push-e2e-app-to-app-catalog, status: success}], next_page_token: null}
+      - body: {items: [{id: j1, name: push-chart-release, status: success}], next_page_token: null}
 registry:
-  staleLogin: true
   routes:
-    "HEAD /v2/giantswarm/e2e-app/manifests/1.2.3":
-      - status: 200
     "HEAD /v2/charts/giantswarm/e2e-app/manifests/1.2.3":
       - status: 200
+        headers: {Docker-Content-Digest: "sha256:c4a7000000000000000000000000000000000000000000000000000000000c4a"}

@@ -235,7 +235,7 @@ The incidents the commands encode, one scenario each, by these slugs:
 - `pr merge`: `own-green-merged`, `other-human-refused`, `opt-out-refused`, `behind-strict-base`,
   `behind-update-branch`, `merge-queue`, `red-not-merged`, `merge-released`, `merge-no-release`,
   `merge-release-failed`, `merge-github-5xx-retried`
-- `release wait`: `renamed-image`, `hand-written-ci`, `release-assets-only`, `failed-tag-pipeline`,
+- `release wait`: `renamed-image`, `renamed-chart`, `hand-written-ci`, `release-assets-only`, `failed-tag-pipeline`,
   `rerun-replaces-failed`, `stale-registry-login`, `release-wait-timeout`, `jobs-not-visible-yet`,
   `declaration-behind-repository`, `repo-owned-tag-job`, `release-wait-no-release`,
   `release-wait-github-5xx-retried`
