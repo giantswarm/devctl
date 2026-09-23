@@ -75,9 +75,16 @@ defaults name them; a repository no team file declares is exit 7, there being no
 | Artifact | When | Name | Registry |
 |---|---|---|---|
 | image | a `Dockerfile` at the repository root of the tag, or `gen.ci.image.dockerfile` set | `gen.ci.image.name`, else `giantswarm/<repo>` | private with `gen.ci.image.privateOnly`, or for a private repository without `gen.ci.forcePublic`; public otherwise |
-| chart | `gen.flavours` contains `app` and the repository is not a template | `gen.ci.chartName`, else `<repo>` | private for a private repository without `gen.ci.forcePublic`; public otherwise |
+| chart | `gen.flavours` contains `app` and the repository is not a template | the `name` in `helm/<gen.ci.chartName>/Chart.yaml`, else in `helm/<repo>/Chart.yaml` | private for a private repository without `gen.ci.forcePublic`; public otherwise |
 
 The chart's catalog is `gen.ci.appCatalog`, default `giantswarm-catalog`.
+
+`gen.ci.chartName` and a push job's `chart` parameter name the directory under `helm/` the pipeline
+packages, not the chart: the architect orb packages that directory and `helm push` names the OCI
+repository after the packaged chart. The chart is therefore probed, and looked for in the catalog index,
+under the `name` its `Chart.yaml` declares at the tag; a repository renamed after its chart was created
+keeps `helm/<old-name>` with `name: <repo>`. A `Chart.yaml` that is missing at the tag, does not parse or
+declares no name is exit 7 naming the file; the directory is never probed in its place.
 
 The table names what the generator renders, not what a repository adds: jobs in `.circleci/custom.yml`,
 which the setup workflow merges into the build workflow, push and sign artifacts of their own (vm-manager's
@@ -90,7 +97,8 @@ the release waits for them through the tag pipeline being green (below).
 `push-to-app-catalog` job of every workflow with its parameters (`name`, `image`, `chart`,
 `app_catalog`, `push`, `push_to_oci_registry`, `registries-data`, `force-public`), and keeps the
 ones whose name CircleCI lists among the jobs of the tag pipeline's workflows. An image job without
-`image` is the orb's default, `<owner>/<repo>`; `push: false` and a chart job that pushes to
+`image` is the orb's default, `<owner>/<repo>`; a chart job's chart is the `name` in
+`helm/<chart>/Chart.yaml` at the tag, as for generated CI; `push: false` and a chart job that pushes to
 neither the catalog nor the registry are build-only and skipped; `registries-data` that names only
 the private registry makes the image private. Because the pipeline's jobs are the source, the
 command waits for the pipeline to exist before it knows the artifacts.
@@ -247,7 +255,7 @@ tag on the merge commit), `GET /repos/{o}/{r}/git/ref/tags/{tag}` (and `GET
 /repos/{o}/{r}/contents/` with `?ref=` (the root listing: the Dockerfile), `GET
 /repos/{o}/{r}/contents/.github/workflows`, `GET /repos/{o}/{r}/contents/.circleci`, `GET
 /repos/{o}/{r}/contents/.circleci/config.yml` (hand-written CI; `workflows.yml`, `custom.yml` when
-listed), `GET /repos/giantswarm/github/contents/repositories` and `GET
+listed), `GET /repos/{o}/{r}/contents/helm/{dir}/Chart.yaml` (the name of every chart), `GET /repos/giantswarm/github/contents/repositories` and `GET
 /repos/giantswarm/github/contents/repositories/{team}.yaml` (the team-file entry, until the one that
 declares the repository), `GET /repos/{o}/{r}/releases/tags/{tag}` and `GET
 /repos/{o}/{r}/actions/runs?head_sha={sha}` (release assets, no CircleCI; with `--pr`, the merge

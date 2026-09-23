@@ -136,6 +136,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   generated config names the repository. `gen workflows` reads cliff.toml's `[remote.github].repo` with the same
   parser, so an origin that names no `<owner>/<name>` (a local path) renders `repo = ""` like a missing one
   ([#2389](https://github.com/giantswarm/devctl/pull/2389)).
+- `devctl release wait` (and the release wait of `devctl pr merge`) probes a chart under the `name` its
+  `helm/<dir>/Chart.yaml` declares at the tag, where `<dir>` is `gen.ci.chartName` or the repository (generated CI)
+  or the push job's `chart` parameter (hand-written CI); `--catalog` looks the same name up in the index. Both only
+  choose the directory the architect orb packages, and `helm push` names the OCI repository after the packaged chart.
+  Before, a repository renamed after its chart was created (`helm/<old-name>`, `name: <repo>`) was probed under the
+  directory name and never confirmed: exit 2, exit 9 after a merge. A `Chart.yaml` that is missing, does not parse or
+  declares no name is exit 7 naming the file ([#2388](https://github.com/giantswarm/devctl/issues/2388)).
 - `devctl pr wait`, `devctl pr merge` and `devctl release wait` wait for a spent rate limit instead of ending on it
   with exit 7: a GitHub or CircleCI read refused with `403` or `429` and `X-RateLimit-Remaining: 0` is sent again a
   second after `X-RateLimit-Reset`, one with `Retry-After` (a secondary limit, CircleCI's `429`) that much later,
