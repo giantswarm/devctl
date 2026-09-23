@@ -20,6 +20,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   App for the reconciler, `--devctl-app-id` the write path's remedy. Before, a run without the id went to the classic
   protection without reading the rulesets, found none on an aligned repository and planned to write one: every aligned
   repository read "not converged", the advisory naming a switch made long since (#2341).
+- `repo reconcile`'s release step verifies the latest release only when its tag is a `vX.Y.Z` tag (a pre-release
+  suffix allowed): the shape auto-release cuts and the generated pipeline's `/^v.*/` filter builds. A latest release
+  tagged otherwise -- per component, `base/v0.1.0` -- ends the step `skipped` naming the tag, with no CircleCI request and
+  no finding, where it was reported as `missed-tag-build` the repository could never clear
+  ([#2330](https://github.com/giantswarm/devctl/issues/2330)).
 
 - `devctl repo reconcile` and `repo status` read `gen.ci.generate` as the entry declares it: an existing entry with
   `gen` but no `gen.ci` keeps the repository's own CircleCI configuration, as the schema says, and the circleci and
@@ -39,15 +44,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   `helm/docs-proxy-app`, declared with `chartName: docs-proxy-app`) was reported without a chart on every check and
   could not converge. When the declared directory has no chart, the fix names the charts the repository has under
   `helm/` and the `gen.ci.chartName` remedy: a repository renamed on GitHub keeps its chart under the old name.
+
+- `repo reconcile`: the catalog step no longer dispatches the apps-to-teams mapping for a chart whose reference is a
+  template's placeholder (`{APP-NAME}`, `{MCP-NAME}`): the mapping's generator drops such a reference, so the dispatch
+  changed nothing and the repository never converged. The scaffold step's chart check does not read the chart of a
+  `componentType: template` entry, which lives under a placeholder directory and is built from a rendered copy by the
+  template's own pipeline; it reported `abs-prerequisite: no chart at helm/<name>/Chart.yaml` before (#2326).
 - The repo commands call giantswarm-repo-manager's tools through muster's `call_tool` meta-tool and unwrap its envelope,
   which is how muster exposes every server's tool to a session (the muster CLI and the platform's agents do the same):
   8.85.0 called the tools directly and muster answered `tool not found` for every one of them. The e2e muster mock now
   behaves like muster -- the meta-tools listed, server tools through `call_tool` in the envelope, direct calls refused --
   so the `repo-*` and `auth-login-muster` scenarios prove the real path. `auth login --muster-only` treats only
   `Server 'giantswarm-repo-manager' not found` as the manager's absence.
-
-### Fixed
-
 - `devctl auth login --muster-only` identifies devctl by its Client ID Metadata Document
   (`https://giantswarm.github.io/muster/devctl.json`, served next to the muster agent's) instead of registering a
   client at muster's `/oauth/register`, which gazelle's muster gates with a registration token: the sign-in was refused

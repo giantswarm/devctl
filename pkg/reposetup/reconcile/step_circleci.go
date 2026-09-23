@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Masterminds/semver/v3"
 	"github.com/google/go-github/v92/github"
 
 	"github.com/giantswarm/devctl/v8/pkg/circleciclient"
@@ -164,6 +165,11 @@ func (r *Runner) followGrantee(ctx context.Context, s *run) (string, error) {
 // pipeline is a dead tag; the fix is the next tag. The decision is made
 // from the tag alone: a newer pipeline of another ref (the follow itself
 // builds the default branch) is no evidence that the tag was built.
+//
+// The release verified is one of the platform's flow, a vX.Y.Z tag
+// (isReleaseTag). A latest release tagged otherwise — per component,
+// base/v0.1.0 — is outside that flow: the step is skipped naming the tag,
+// no pipeline is looked up and nothing is reported.
 func (r *Runner) stepRelease(ctx context.Context, s *run, sr *StepResult) error {
 	release, resp, err := r.GitHub.Repositories.GetLatestRelease(ctx, s.owner, s.name)
 	switch {
@@ -174,6 +180,11 @@ func (r *Runner) stepRelease(ctx context.Context, s *run, sr *StepResult) error 
 		return err
 	}
 	tag := release.GetTagName()
+	if !isReleaseTag(tag) {
+		sr.Verdict = VerdictSkipped
+		sr.Summary = fmt.Sprintf("release %s: not a vX.Y.Z tag, not verified", tag)
+		return nil
+	}
 	if r.CircleCI == nil {
 		sr.Verdict = VerdictSkipped
 		sr.Summary = fmt.Sprintf("release %s: no CircleCI client to verify the pipeline", tag)
@@ -234,6 +245,20 @@ func (r *Runner) stepRelease(ctx context.Context, s *run, sr *StepResult) error 
 		sr.Summary = fmt.Sprintf("release %s built: pipeline %d, workflows %s succeeded", tag, pipeline.Number, strings.Join(succeeded, ", "))
 	}
 	return nil
+}
+
+// isReleaseTag says whether tag is a release of the flow the release step
+// verifies: vMAJOR.MINOR.PATCH with an optional pre-release suffix
+// (v1.2.3-rc.1) — what auto-release cuts and the generated pipeline's tag
+// filter (/^v.*/) builds. A repository tagging otherwise, per component
+// (base/v0.1.0) or without the v, releases outside that flow, and its
+// latest release is not held against CircleCI.
+func isReleaseTag(tag string) bool {
+	if !strings.HasPrefix(tag, "v") {
+		return false
+	}
+	_, err := semver.StrictNewVersion(strings.TrimPrefix(tag, "v"))
+	return err == nil
 }
 
 // tagPipeline finds the pipeline that built tag among the project's

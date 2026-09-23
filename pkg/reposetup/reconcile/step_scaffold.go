@@ -201,12 +201,20 @@ func (r *Runner) treeEntries(ctx context.Context, s *run, dir string, files []st
 
 // chartFindings reads the chart of a chart repository and reports what the
 // first app-build-suite run would fail on, and the default icon. The chart
-// is the one the entry declares the pipeline builds: helm/<gen.ci.chartName>
-// when set, helm/<repository> otherwise.
+// of a template is not read: it is not at helm/<name>, carries placeholders
+// and is built from a rendered copy by the template's own pipeline. Any
+// other chart is the one the entry declares the pipeline builds:
+// helm/<gen.ci.chartName> when set, helm/<repository> otherwise.
 func (r *Runner) chartFindings(ctx context.Context, s *run, sr *StepResult) error {
 	if s.fields.Gen == nil || !reposetup.HasChart(s.fields.Gen.Flavours) {
 		return nil
 	}
+	if s.isTemplate() {
+		sr.Summary = "present; the chart of a template carries placeholders and is built from a rendered copy by its own pipeline"
+		return nil
+	}
+	// The chart the pipeline builds: helm/<gen.ci.chartName> when set,
+	// helm/<repository> otherwise.
 	chartDir := helmDir + "/" + s.chartName()
 	data, found, err := r.fileContent(ctx, s.owner, s.name, chartDir+"/Chart.yaml", s.branch())
 	if err != nil {

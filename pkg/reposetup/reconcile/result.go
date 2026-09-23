@@ -23,8 +23,8 @@
 // and visibility, lifecycle (archived → archived on GitHub and unfollowed;
 // deleted → unfollowed and deleted on GitHub, the entry the record),
 // catalog and mapping (the giantswarm/github workflows), first-release
-// verification (tag → pipeline → workflows; a missed tag build is
-// reported, never rebuilt).
+// verification (a vX.Y.Z tag → pipeline → workflows; a missed tag build is
+// reported, never rebuilt; a release tagged otherwise is not verified).
 //
 // What a run costs in requests is counted at the clients' transports
 // ([Counter]) into [Result.Requests], and per step in the log. A check of a
@@ -32,8 +32,8 @@
 // requests, the budget of the nightly reconciler: the repository (one read,
 // shared by the create, metadata and lifecycle steps); the root listing and
 // the chart's Chart.yaml and values.schema.json; the workflow permission;
-// the teams; the branch protection and, with the devctl App id, the
-// rulesets and the engine's own; the reported checks — one page of the
+// the teams; the branch protection, the rulesets and the engine's own (two
+// reads, App id or not); the reported checks — one page of the
 // recently merged pull requests and the statuses and check runs of the
 // newest head, three requests once per run, shared by every step that asks
 // — the pipeline files workflows.yml and custom.yml (and .circleci/
@@ -42,7 +42,7 @@
 // catalog and the mapping; the latest release. Measured in check mode with
 // a person's token: giantswarm/backstage 18, giantswarm/klaus 19 (one of
 // them a CODEOWNERS drift, which also lists the open pull requests); the
-// App id's ruleset reads add two. A planned change costs the same reads; a
+// ruleset reads add two to each. A planned change costs the same reads; a
 // repair adds one write per change.
 //
 // The reconciler workflow of giantswarm/github runs the steps under the App
