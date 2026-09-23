@@ -90,6 +90,15 @@ const (
       generate: false
 `
 
+	// chartNameEntryYAML declares a chart repository whose chart is named
+	// otherwise than the repository: gen.ci.chartName names it, as
+	// docs-proxy's entry does for helm/docs-proxy-app. An existing
+	// repository's declaration: the creation rules name a new repository
+	// after its chart.
+	chartNameEntryYAML = entryYAML + `    ci:
+      chartName: sample-service-app
+`
+
 	// scaffoldSubject is the first commit's subject: conventional, so the
 	// generated auto-release workflow tags v0.1.0 from it.
 	scaffoldSubject = "feat: initial scaffold of sample-service from giantswarm/template"
@@ -118,6 +127,14 @@ type harness struct {
 
 func newHarness(t *testing.T, yaml string) *harness {
 	t.Helper()
+	return newHarnessMode(t, yaml, reposetup.ModeCreate)
+}
+
+// newHarnessMode is newHarness with the entry validated in mode: an existing
+// repository's entry (reposetup.ModeExisting) is free of the creation rules,
+// gen.ci.chartName equal to the repository's name among them.
+func newHarnessMode(t *testing.T, yaml string, mode reposetup.Mode) *harness {
+	t.Helper()
 	ctx := context.Background()
 	gh, cc := newFakeGitHub(), newFakeCircleCI()
 	t.Cleanup(gh.srv.Close)
@@ -141,7 +158,7 @@ func newHarness(t *testing.T, yaml string) *harness {
 	require.NoError(t, err)
 	tf, err := reposetup.ParseTeamFile(team, strings.NewReader(yaml))
 	require.NoError(t, err)
-	validated, err := reposetup.Validator{Schema: schema}.Validate(ctx, reposetup.Request{TeamFile: tf})
+	validated, err := reposetup.Validator{Schema: schema}.Validate(ctx, reposetup.Request{TeamFile: tf, Mode: mode})
 	require.NoError(t, err)
 	require.True(t, validated.Entries[0].Accepted, "%v", validated.Entries[0].Problems)
 
@@ -248,8 +265,11 @@ type stepCase struct {
 	name  string
 	entry string
 	added bool
-	step  Step
-	seed  func(h *harness)
+	// existing validates the entry as an existing repository's
+	// (reposetup.ModeExisting), free of the creation rules.
+	existing bool
+	step     Step
+	seed     func(h *harness)
 	// wantCheck is the verdict of the check run; wantChange a substring of
 	// its changes, wantFinding a finding kind it carries.
 	wantCheck   Verdict
@@ -371,6 +391,62 @@ func TestSteps(t *testing.T) {
 				data, err := json.Marshal(res)
 				require.NoError(t, err)
 				require.NotContains(t, string(data), `"advisory"`, "omitted when false")
+			},
+		},
+		{
+			name: "scaffold: the chart is read at gen.ci.chartName", step: StepScaffold, entry: chartNameEntryYAML, existing: true,
+			seed: func(h *harness) {
+				h.gh.addRepo(owner, name).files = chartFilesAt("sample-service-app")
+			},
+			wantCheck: VerdictReported, wantFinding: FindingDefaultIcon, wantAfter: VerdictReported,
+			verify: func(t *testing.T, _ *harness, res *Result) {
+				require.True(t, res.Converged, "%+v", res.Steps)
+				findings := res.Step(StepScaffold).Findings
+				require.Equal(t, []FindingKind{FindingDefaultIcon}, kinds(findings), "the chart at helm/sample-service-app is the one checked")
+				require.Contains(t, findings[0].Message, "helm/sample-service-app/Chart.yaml")
+			},
+		},
+		{
+			name: "scaffold: a chart missing at gen.ci.chartName names the chart the repository has", step: StepScaffold, entry: chartNameEntryYAML, existing: true,
+			seed: func(h *harness) {
+				h.gh.addRepo(owner, name).files = maps.Clone(scaffoldFiles)
+			},
+			wantCheck: VerdictReported, wantFinding: FindingABSPrerequisite, wantAfter: VerdictReported,
+			verify: func(t *testing.T, _ *harness, res *Result) {
+				f := res.Step(StepScaffold).Findings
+				require.Equal(t, []FindingKind{FindingABSPrerequisite}, kinds(f))
+				require.Equal(t, "giantswarm/sample-service has no chart at helm/sample-service-app/Chart.yaml", f[0].Message)
+				require.Equal(t, "the chart is helm/sample-service: set gen.ci.chartName: sample-service on the entry in repositories/team-bumblebee.yaml, or rename the chart directory and its name to sample-service-app", f[0].Fix)
+			},
+		},
+		{
+			name: "scaffold: a renamed repository that kept its chart is told the chartName remedy", step: StepScaffold,
+			seed: func(h *harness) {
+				h.gh.addRepo(owner, name+"-v2").files = maps.Clone(scaffoldFiles)
+				h.gh.redirects[owner+"/"+name] = owner + "/" + name + "-v2"
+			},
+			wantCheck: VerdictReported, wantFinding: FindingABSPrerequisite, wantAfter: VerdictReported,
+			verify: func(t *testing.T, _ *harness, res *Result) {
+				require.Equal(t, owner+"/"+name+"-v2", res.Repository)
+				f := res.Step(StepScaffold).Findings
+				require.Equal(t, []FindingKind{FindingABSPrerequisite}, kinds(f))
+				require.Equal(t, "giantswarm/sample-service-v2 has no chart at helm/sample-service-v2/Chart.yaml", f[0].Message)
+				require.Equal(t, "the chart is helm/sample-service: set gen.ci.chartName: sample-service on the entry in repositories/team-bumblebee.yaml, or rename the chart directory and its name to sample-service-v2", f[0].Fix)
+			},
+		},
+		{
+			name: "scaffold: a chart repository without any chart is told where the app flavour builds it", step: StepScaffold,
+			seed: func(h *harness) {
+				files := maps.Clone(scaffoldFiles)
+				delete(files, "helm/sample-service/Chart.yaml")
+				delete(files, "helm/sample-service/values.schema.json")
+				h.gh.addRepo(owner, name).files = files
+			},
+			wantCheck: VerdictReported, wantFinding: FindingABSPrerequisite, wantAfter: VerdictReported,
+			verify: func(t *testing.T, _ *harness, res *Result) {
+				f := res.Step(StepScaffold).Findings
+				require.Equal(t, []FindingKind{FindingABSPrerequisite}, kinds(f))
+				require.Equal(t, "add the chart under helm/sample-service (the app flavour builds it), set gen.ci.chartName when the chart is under another helm/ directory, or drop the app flavour from the entry", f[0].Fix)
 			},
 		},
 		{
@@ -1393,7 +1469,11 @@ func TestSteps(t *testing.T) {
 			if yaml == "" {
 				yaml = entryYAML
 			}
-			h := newHarness(t, yaml)
+			mode := reposetup.ModeCreate
+			if tc.existing {
+				mode = reposetup.ModeExisting
+			}
+			h := newHarnessMode(t, yaml, mode)
 			if tc.seed != nil {
 				tc.seed(h)
 			}
@@ -1443,6 +1523,16 @@ func TestSteps(t *testing.T) {
 			require.Empty(t, h.mutations(), "the second run must change nothing")
 		})
 	}
+}
+
+// chartFilesAt is scaffoldFiles with the chart under helm/<chart> instead
+// of helm/sample-service.
+func chartFilesAt(chart string) map[string]string {
+	files := map[string]string{}
+	for p, c := range scaffoldFiles {
+		files[strings.Replace(p, "helm/sample-service/", "helm/"+chart+"/", 1)] = c
+	}
+	return files
 }
 
 func kinds(findings []Finding) []FindingKind {
