@@ -236,7 +236,7 @@ func genCommands(f Fields, gc genContext) [][]string {
 
 	// Renovate follows generated CI: the architect orb is pinned by the
 	// generated config, so Renovate leaves it alone. --repo-name is what
-	// align-files gets from the checkout directory's name.
+	// align-files' devctl reads from the checkout's origin remote.
 	renovate := []string{flagLanguage, g.Language, "--circleci-generated", flagRepoName, f.Name}
 	if f.Lifecycle == lifecycleDeprecated {
 		renovate = append(renovate, "--deprecated")
