@@ -79,6 +79,15 @@ github:
       - body:
           - {name: config.yml, path: .circleci/config.yml, type: file}
           - {name: workflows.yml, path: .circleci/workflows.yml, type: file}
+    "GET /repos/giantswarm/e2e-app/contents/helm/e2e-app/Chart.yaml?ref=aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44":
+      - body:
+          name: Chart.yaml
+          path: helm/e2e-app/Chart.yaml
+          type: file
+          content: |
+            apiVersion: v2
+            name: e2e-app
+            version: 1.2.3
     "GET /repos/giantswarm/e2e-app/tags":
       - body:
           - {name: v1.2.3, commit: {sha: aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44}}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"io"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -40,6 +41,8 @@ type fixture struct {
 	timeout         time.Duration
 	catalog         bool
 	catalogLists    bool
+	// catalogChart, when set, is the only chart the catalog index lists.
+	catalogChart string
 	// warn collects the document's warnings; nil drops them.
 	warn func(string)
 }
@@ -50,9 +53,14 @@ func (e entries) FindEntry(context.Context, string, string) (*reposetup.Fields, 
 	return e.fields, e.fields != nil, nil
 }
 
-type catalog struct{ lists bool }
+type catalog struct {
+	lists bool
+	chart string
+}
 
-func (c catalog) Lists(context.Context, string, string, string) (bool, error) { return c.lists, nil }
+func (c catalog) Lists(_ context.Context, _, chart, _ string) (bool, error) {
+	return c.lists && (c.chart == "" || c.chart == chart), nil
+}
 
 func dirListing(names ...string) []map[string]any {
 	out := make([]map[string]any, 0, len(names))
@@ -78,7 +86,8 @@ func discardLogger() *logrus.Logger {
 }
 
 // baseGitHub scripts what every wait reads: the tag, the repository, the
-// tree at the tag with an auto-release workflow.
+// tree at the tag with an auto-release workflow, and with a helm directory
+// the repository's chart in helm/<repo>.
 func baseGitHub(root, workflows, circleci []string) sequence.Routes {
 	routes := sequence.Routes{
 		repoRoute("/git/ref/tags/" + testTag):    {{Body: map[string]any{"ref": "refs/tags/" + testTag, "object": map[string]any{"type": "commit", "sha": testSHA}}}},
@@ -89,6 +98,16 @@ func baseGitHub(root, workflows, circleci []string) sequence.Routes {
 	if circleci != nil {
 		routes[repoRoute("/contents/.circleci")] = []sequence.Response{{Body: dirListing(circleci...)}}
 	}
+	if slices.Contains(root, "helm") {
+		routes = withChart(routes, testRepo, testRepo)
+	}
+	return routes
+}
+
+// withChart scripts helm/<dir>/Chart.yaml at the tag, declaring name.
+func withChart(routes sequence.Routes, dir, name string) sequence.Routes {
+	path := "helm/" + dir + "/Chart.yaml"
+	routes[repoRoute("/contents/"+path)] = []sequence.Response{{Body: fileContent(path, "apiVersion: v2\nname: "+name+"\nversion: [[ .Version ]]\n")}}
 	return routes
 }
 
@@ -169,7 +188,7 @@ func run(t *testing.T, fx fixture) (Result, error) {
 			return circleciclient.New(circleciclient.Config{Token: "cci_test", BaseURL: circleciclient.BaseURLFromAPIURL(endpoints.CircleCIAPIURL)})
 		},
 		Registry:     RegistryProber{Endpoints: endpoints},
-		CatalogIndex: catalog{fx.catalogLists},
+		CatalogIndex: catalog{fx.catalogLists, fx.catalogChart},
 		Endpoints:    endpoints,
 		Clock:        agentcli.NewClock(0.001, nil),
 		Rate:         conditional.Rate,
@@ -449,6 +468,97 @@ func TestWaitHandWrittenDerivesFromThePipelineJobs(t *testing.T) {
 	}
 	if !result.Artifacts[1].Private() {
 		t.Errorf("the private-only image should be probed in the private registry")
+	}
+}
+
+// A chart directory that predates the repository's rename: the pipeline
+// packages helm/kserve-legacy, whose Chart.yaml names the chart kserve, and
+// the wait probes and asks the catalog for kserve.
+func TestWaitGeneratedChartDirectoryAndNameDiffer(t *testing.T) {
+	entry := fieldsFromYAML(t, `- name: kserve
+  gen:
+    flavours: [app]
+    language: generic
+    ci:
+      generate: true
+      chartName: kserve-legacy
+`)
+	github := baseGitHub([]string{"README.md"}, []string{"zz_generated.auto_release.yaml"}, []string{"config.yml", "workflows.yml"})
+	fx := fixture{
+		entry:        &entry,
+		github:       withChart(github, "kserve-legacy", "kserve"),
+		catalog:      true,
+		catalogLists: true,
+		catalogChart: "kserve",
+		circleci: pipelineRoutes([][]map[string]any{{wf("w1", "build", "success", "2026-09-21T10:00:00Z")}},
+			map[string][]map[string]any{"w1": {job("push-chart-release", "success")}}),
+		registry: sequence.Routes{"HEAD /v2/charts/giantswarm/kserve/manifests/1.2.3": {{Status: 200}}},
+	}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+	if len(result.Artifacts) != 1 || !strings.HasSuffix(result.Artifacts[0].Reference, "/charts/giantswarm/kserve:1.2.3") {
+		t.Errorf("artifacts: %+v", result.Artifacts)
+	}
+}
+
+func TestWaitHandWrittenChartDirectoryAndNameDiffer(t *testing.T) {
+	config := strings.ReplaceAll(handWrittenConfig, "chart: kserve", "chart: kserve-legacy")
+	github := baseGitHub([]string{"Dockerfile"}, []string{"zz_generated.create_release.yaml"}, []string{"config.yml"})
+	github[repoRoute("/contents/.circleci/config.yml")] = []sequence.Response{{Body: fileContent(".circleci/config.yml", config)}}
+	fx := fixture{
+		github: withChart(github, "kserve-legacy", "kserve"),
+		circleci: pipelineRoutes([][]map[string]any{{wf("w1", "build", "success", "2026-09-21T10:00:00Z")}},
+			map[string][]map[string]any{"w1": {job("push-to-registries-release", "success"), job("push-chart", "success")}}),
+		registry: sequence.Routes{
+			"HEAD /v2/giantswarm/kserve-controller/manifests/1.2.3": {{Status: 200}},
+			"HEAD /v2/charts/giantswarm/kserve/manifests/1.2.3":     {{Status: 200}},
+		},
+	}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+	if len(result.Artifacts) != 2 || !strings.HasSuffix(result.Artifacts[1].Reference, "/charts/giantswarm/kserve:1.2.3") {
+		t.Errorf("artifacts: %+v", result.Artifacts)
+	}
+}
+
+func TestWaitChartDirectoryWithoutChartYAMLIsUsage(t *testing.T) {
+	fx := fixture{
+		entry:  generatedEntry(t),
+		github: baseGitHub([]string{"Dockerfile"}, []string{"zz_generated.auto_release.yaml"}, []string{"config.yml", "workflows.yml"}),
+		circleci: pipelineRoutes([][]map[string]any{{wf("w1", "build", "success", "2026-09-21T10:00:00Z")}},
+			map[string][]map[string]any{"w1": {job("push-chart-release", "success")}}),
+	}
+	_, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitUsage, "helm/kserve/Chart.yaml does not exist at 01234567")
+}
+
+func TestTagChartNames(t *testing.T) {
+	gh, err := githubmock.Start(sequence.Routes{
+		repoRoute("/contents/helm/widget/Chart.yaml"):   {{Body: fileContent("helm/widget/Chart.yaml", "apiVersion: v2\nname: widget-app\nversion: [[ .Version ]]\nappVersion: [[ .AppVersion ]]\n")}},
+		repoRoute("/contents/helm/nameless/Chart.yaml"): {{Body: fileContent("helm/nameless/Chart.yaml", "apiVersion: v2\nversion: 1.0.0\n")}},
+		repoRoute("/contents/helm/broken/Chart.yaml"):   {{Body: fileContent("helm/broken/Chart.yaml", "name: [unclosed\n")}},
+	})
+	if err != nil {
+		t.Fatalf("github mock: %v", err)
+	}
+	t.Cleanup(gh.Close)
+	client, _, err := githubclient.NewConditional(githubclient.Config{Logger: discardLogger(), AccessToken: "ghu_test", BaseURL: gh.URL})
+	if err != nil {
+		t.Fatalf("github client: %v", err)
+	}
+	charts := TagChartNames(context.Background(), client, testOwner, testRepo, testSHA)
+
+	name, err := charts("widget")
+	if err != nil || name != "widget-app" {
+		t.Errorf("helm/widget: want widget-app, got %q (%v)", name, err)
+	}
+	for dir, reason := range map[string]string{
+		"missing":  "helm/missing/Chart.yaml does not exist at 01234567",
+		"nameless": "helm/nameless/Chart.yaml at 01234567 declares no name",
+		"broken":   "parsing helm/broken/Chart.yaml at 01234567",
+	} {
+		_, err := charts(dir)
+		assertExit(t, err, agentcli.ExitUsage, reason)
 	}
 }
 

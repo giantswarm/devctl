@@ -29,10 +29,13 @@ var testEndpoints = agentcli.Endpoints{RegistryPublic: "public.example", Registr
 
 func TestGeneratedArtifacts(t *testing.T) {
 	cases := []struct {
-		name       string
-		entry      string
-		root       []string
-		private    bool
+		name    string
+		entry   string
+		root    []string
+		private bool
+		// charts are the Chart.yaml names of the helm/ directories at the
+		// tag; a directory not listed has none.
+		charts     map[string]string
 		want       []string
 		wantErr    string
 		privateRef []string
@@ -48,8 +51,9 @@ func TestGeneratedArtifacts(t *testing.T) {
       image:
         name: giantswarm/kserve-controller
 `,
-			root: []string{"Dockerfile", "helm"},
-			want: []string{"image public.example/giantswarm/kserve-controller:1.2.3", "chart public.example/charts/giantswarm/kserve:1.2.3"},
+			root:   []string{"Dockerfile", "helm"},
+			charts: map[string]string{"kserve": "kserve"},
+			want:   []string{"image public.example/giantswarm/kserve-controller:1.2.3", "chart public.example/charts/giantswarm/kserve:1.2.3"},
 		},
 		{
 			name: "cli repository with a Dockerfile: image only, named after the repository",
@@ -74,8 +78,9 @@ func TestGeneratedArtifacts(t *testing.T) {
       chartName: docs-proxy-app
       appCatalog: giantswarm-operations-platform
 `,
-			root: []string{"helm", "README.md"},
-			want: []string{"chart public.example/charts/giantswarm/docs-proxy-app:1.2.3"},
+			root:   []string{"helm", "README.md"},
+			charts: map[string]string{"docs-proxy-app": "docs-proxy-app"},
+			want:   []string{"chart public.example/charts/giantswarm/docs-proxy-app:1.2.3"},
 		},
 		{
 			name: "a Dockerfile elsewhere turns the image on",
@@ -88,8 +93,9 @@ func TestGeneratedArtifacts(t *testing.T) {
       image:
         dockerfile: packages/backend/Dockerfile
 `,
-			root: []string{"helm", "packages"},
-			want: []string{"image public.example/giantswarm/backstage:1.2.3", "chart public.example/charts/giantswarm/backstage:1.2.3"},
+			root:   []string{"helm", "packages"},
+			charts: map[string]string{"backstage": "backstage"},
+			want:   []string{"image public.example/giantswarm/backstage:1.2.3", "chart public.example/charts/giantswarm/backstage:1.2.3"},
 		},
 		{
 			name: "private-only image of a public repository",
@@ -103,6 +109,7 @@ func TestGeneratedArtifacts(t *testing.T) {
         privateOnly: true
 `,
 			root:       []string{"Dockerfile", "helm"},
+			charts:     map[string]string{"secret-operator": "secret-operator"},
 			want:       []string{"image private.example/giantswarm/secret-operator:1.2.3", "chart public.example/charts/giantswarm/secret-operator:1.2.3"},
 			privateRef: []string{"private.example/giantswarm/secret-operator:1.2.3"},
 		},
@@ -117,6 +124,7 @@ func TestGeneratedArtifacts(t *testing.T) {
 `,
 			root:       []string{"Dockerfile", "helm"},
 			private:    true,
+			charts:     map[string]string{"internal-thing": "internal-thing"},
 			want:       []string{"image private.example/giantswarm/internal-thing:1.2.3", "chart private.example/charts/giantswarm/internal-thing:1.2.3"},
 			privateRef: []string{"private.example/giantswarm/internal-thing:1.2.3", "private.example/charts/giantswarm/internal-thing:1.2.3"},
 		},
@@ -132,6 +140,7 @@ func TestGeneratedArtifacts(t *testing.T) {
 `,
 			root:    []string{"Dockerfile", "helm"},
 			private: true,
+			charts:  map[string]string{"web-assets": "web-assets"},
 			want:    []string{"image public.example/giantswarm/web-assets:1.2.3", "chart public.example/charts/giantswarm/web-assets:1.2.3"},
 		},
 		{
@@ -169,8 +178,43 @@ func TestGeneratedArtifacts(t *testing.T) {
     flavours: [app]
     language: go
 `,
-			root: []string{"Dockerfile", "helm"},
-			want: []string{"image public.example/giantswarm/plain:1.2.3", "chart public.example/charts/giantswarm/plain:1.2.3"},
+			root:   []string{"Dockerfile", "helm"},
+			charts: map[string]string{"plain": "plain"},
+			want:   []string{"image public.example/giantswarm/plain:1.2.3", "chart public.example/charts/giantswarm/plain:1.2.3"},
+		},
+		{
+			// The chart directory predates the repository's rename: the
+			// pipeline packages helm/widget and publishes the chart under the
+			// name its Chart.yaml declares.
+			name: "chart directory and published name differ",
+			entry: `- name: widget-app
+  gen:
+    flavours: [app]
+    language: go
+    ci:
+      generate: true
+      chartName: widget
+      image:
+        name: giantswarm/widget
+`,
+			root:       []string{"Dockerfile", "helm"},
+			private:    true,
+			charts:     map[string]string{"widget": "widget-app"},
+			want:       []string{"image private.example/giantswarm/widget:1.2.3", "chart private.example/charts/giantswarm/widget-app:1.2.3"},
+			privateRef: []string{"private.example/giantswarm/widget:1.2.3", "private.example/charts/giantswarm/widget-app:1.2.3"},
+		},
+		{
+			name: "the packaged directory has no Chart.yaml",
+			entry: `- name: widget-app
+  gen:
+    flavours: [app]
+    language: go
+    ci:
+      generate: true
+`,
+			root:    []string{"helm"},
+			charts:  map[string]string{"widget": "widget-app"},
+			wantErr: "helm/widget-app has no Chart.yaml",
 		},
 		{
 			name: "no gen block",
@@ -184,7 +228,7 @@ func TestGeneratedArtifacts(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			fields := fieldsFromYAML(t, tc.entry)
 			content := TagContent{SHA: "abc", Root: tc.root}
-			got, err := GeneratedArtifacts(fields, fields.Name, "1.2.3", content, tc.private, testEndpoints)
+			got, err := GeneratedArtifacts(fields, fields.Name, "1.2.3", content, tc.private, testEndpoints, fakeChartNames(tc.charts))
 			if tc.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
 					t.Fatalf("want error containing %q, got %v", tc.wantErr, err)
@@ -196,6 +240,18 @@ func TestGeneratedArtifacts(t *testing.T) {
 			}
 			assertArtifacts(t, got, tc.want, tc.privateRef)
 		})
+	}
+}
+
+// fakeChartNames names the charts of the helm/ directories in names; any
+// other directory has no Chart.yaml.
+func fakeChartNames(names map[string]string) ChartNames {
+	return func(dir string) (string, error) {
+		name, ok := names[dir]
+		if !ok {
+			return "", usageErr("helm/%s has no Chart.yaml", dir)
+		}
+		return name, nil
 	}
 }
 

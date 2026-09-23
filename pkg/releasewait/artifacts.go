@@ -12,12 +12,54 @@ import (
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
 	"github.com/giantswarm/devctl/v8/pkg/gen"
 	"github.com/giantswarm/devctl/v8/pkg/gen/input/circleci"
+	"github.com/giantswarm/devctl/v8/pkg/githubclient"
 	"github.com/giantswarm/devctl/v8/pkg/reposetup"
 )
 
 // The registry layout: images under the organisation, charts under charts/
 // and the organisation. Both are tagged with the bare version.
 const chartsPrefix = "charts"
+
+// A chart's sources: the directory under helm/ the pipeline packages and the
+// Chart.yaml in it that names what is published.
+const (
+	helmDir   = "helm"
+	chartFile = "Chart.yaml"
+)
+
+// ChartNames names the chart in a directory under helm/: the name it is
+// published under.
+type ChartNames func(dir string) (string, error)
+
+// TagChartNames reads the names from helm/<dir>/Chart.yaml at sha. The
+// architect orb packages the directory its chart parameter names and helm
+// push names the OCI repository after the packaged chart, so the published
+// name is the Chart.yaml's; the directory of a repository renamed after its
+// chart was created still carries the old name. A Chart.yaml that is missing,
+// unreadable as YAML or without a name is an error naming the file, never
+// the directory in its place.
+func TagChartNames(ctx context.Context, gh GitHub, owner, repo, sha string) ChartNames {
+	return func(dir string) (string, error) {
+		path := helmDir + "/" + dir + "/" + chartFile
+		file, err := gh.GetFile(ctx, owner, repo, path, sha)
+		if githubclient.IsNotFound(err) {
+			return "", usageErr("%s does not exist at %s: the pipeline packages %s/%s and publishes the chart under the name that file declares", path, short(sha), helmDir, dir)
+		}
+		if err != nil {
+			return "", fmt.Errorf("reading %s at %s: %w", path, short(sha), err)
+		}
+		var chart struct {
+			Name string `yaml:"name"`
+		}
+		if err := yaml.Unmarshal(file.Data, &chart); err != nil {
+			return "", usageErr("parsing %s at %s: %v", path, short(sha), err)
+		}
+		if chart.Name == "" {
+			return "", usageErr("%s at %s declares no name, the name the chart is published under", path, short(sha))
+		}
+		return chart.Name, nil
+	}
+}
 
 // imageArtifact is the reference of an image in its registry.
 func imageArtifact(image, version string, private bool, endpoints agentcli.Endpoints) Artifact {
@@ -52,11 +94,12 @@ func registryHost(private bool, endpoints agentcli.Endpoints) string {
 // for a team-file entry, the way the generator derives them: an image when
 // the tag has a root Dockerfile or the entry names one elsewhere, called
 // gen.ci.image.name or <owner>/<repo>; a chart for the app flavour of a
-// non-template repository, called gen.ci.chartName or the repository, in
+// non-template repository, packaged from helm/<gen.ci.chartName> or
+// helm/<repo> and called what charts names that directory, in
 // gen.ci.appCatalog or the default catalog. The private registry holds a
 // private-only image and the artifacts of a private repository that does
 // not force them public.
-func GeneratedArtifacts(entry reposetup.Fields, repo, version string, content TagContent, privateRepo bool, endpoints agentcli.Endpoints) ([]Artifact, error) {
+func GeneratedArtifacts(entry reposetup.Fields, repo, version string, content TagContent, privateRepo bool, endpoints agentcli.Endpoints, charts ChartNames) ([]Artifact, error) {
 	if entry.Gen == nil {
 		return nil, usageErr("the team-file entry of %s has no gen block to derive the artifacts from", repo)
 	}
@@ -85,9 +128,13 @@ func GeneratedArtifacts(entry reposetup.Fields, repo, version string, content Ta
 
 	hasApp := slices.Contains(entry.Gen.Flavours, string(gen.FlavourApp)) && entry.ComponentType != circleci.ComponentTypeTemplate
 	if hasApp {
-		chart := ci.ChartName
-		if chart == "" {
-			chart = repo
+		dir := ci.ChartName
+		if dir == "" {
+			dir = repo
+		}
+		chart, err := charts(dir)
+		if err != nil {
+			return nil, err
 		}
 		catalog := ci.AppCatalog
 		if catalog == "" {
@@ -110,7 +157,8 @@ type PushJob struct {
 	// Image is the image parameter; empty means the orb's default,
 	// <owner>/<repo>.
 	Image string
-	// Chart and Catalog are the chart and app_catalog parameters.
+	// Chart and Catalog are the chart and app_catalog parameters; Chart is
+	// the directory under helm/ the job packages.
 	Chart, Catalog string
 	// Push is false for a build-only job (push: false, or a chart job that
 	// pushes to neither the catalog nor the registry).
@@ -211,8 +259,9 @@ func ParsePushJobs(config []byte) ([]PushJob, error) {
 // HandWrittenArtifacts are the artifacts the tag pipeline of a hand-written
 // configuration publishes: the push jobs of the configuration files at the
 // tag that the pipeline runs (pipelineJobs are the job names CircleCI lists
-// for it), each naming its image or chart. A Dockerfile at the tag with no
-// image among them is a disagreement between the sources, reported as such.
+// for it), each naming its image or the chart directory whose Chart.yaml
+// names the chart. A Dockerfile at the tag with no image among them is a
+// disagreement between the sources, reported as such.
 func HandWrittenArtifacts(ctx context.Context, gh GitHub, owner, repo, sha, version string, content TagContent, pipelineJobs map[string]bool, privateRepo bool, endpoints agentcli.Endpoints) ([]Artifact, error) {
 	var jobs []PushJob
 	for _, name := range []string{circleCIConfig, circleCIWorkflows, circleCICustom} {
@@ -230,6 +279,7 @@ func HandWrittenArtifacts(ctx context.Context, gh GitHub, owner, repo, sha, vers
 		jobs = append(jobs, parsed...)
 	}
 
+	charts := TagChartNames(ctx, gh, owner, repo, sha)
 	var artifacts []Artifact
 	for _, job := range jobs {
 		if !job.Push || !pipelineJobs[job.Name] {
@@ -247,7 +297,11 @@ func HandWrittenArtifacts(ctx context.Context, gh GitHub, owner, repo, sha, vers
 			if job.Chart == "" {
 				return nil, usageErr("the push job %s of the tag pipeline names no chart", job.Name)
 			}
-			artifacts = append(artifacts, chartArtifactFor(owner, job.Chart, job.Catalog, version, private, endpoints))
+			chart, err := charts(job.Chart)
+			if err != nil {
+				return nil, err
+			}
+			artifacts = append(artifacts, chartArtifactFor(owner, chart, job.Catalog, version, private, endpoints))
 		}
 	}
 
