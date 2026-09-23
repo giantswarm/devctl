@@ -1075,6 +1075,49 @@ func Test_BranchPublishOnAddsCoupledBranchPushes(t *testing.T) {
 	}
 }
 
+// Test_ImageReferenceCheckLeftToChartPush verifies where app-build-suite's
+// image reference check runs. build-chart packages the chart before the
+// pipeline's own image is pushed, so in a repo that builds one it switches the
+// check off; the chart push jobs, which require the image job, keep it. A chart
+// of images built elsewhere keeps the check in build-chart too.
+func Test_ImageReferenceCheckLeftToChartPush(t *testing.T) {
+	const disable = `echo 'export ABS_DISABLE_HELM_IMAGE_REFERENCE_VALIDATOR=true' >> "$BASH_ENV"`
+	preSteps := func(doc, job string) string {
+		return yqQuery(t, doc, `.workflows.build.jobs[] | select(has("architect/push-to-app-catalog")) | .["architect/push-to-app-catalog"] | select(.name == "`+job+`") | .pre-steps[].run.command`)
+	}
+
+	for _, branchPublish := range []bool{false, true} {
+		got := render(t, Config{
+			RepoName:      repoMCPKubernetes,
+			Language:      gen.LanguageGo,
+			Flavours:      gen.FlavourSlice{gen.FlavourApp},
+			HasDockerfile: true,
+			BranchPublish: branchPublish,
+		})
+		if cmd := preSteps(got, "build-chart"); cmd != disable {
+			t.Errorf("branchPublish=%t: build-chart pre-steps = %q, want %q", branchPublish, cmd, disable)
+		}
+		jobs := []string{"push-chart-release"}
+		if branchPublish {
+			jobs = append(jobs, "push-chart")
+		}
+		for _, job := range jobs {
+			if cmd := preSteps(got, job); cmd != "" {
+				t.Errorf("branchPublish=%t: %s must keep the image reference check, got pre-steps %q", branchPublish, job, cmd)
+			}
+		}
+	}
+
+	got := render(t, Config{
+		RepoName:      repoSitesearch,
+		Flavours:      gen.FlavourSlice{gen.FlavourApp},
+		HasDockerfile: false,
+	})
+	if contains(got, "ABS_DISABLE_HELM_IMAGE_REFERENCE_VALIDATOR") {
+		t.Errorf("a chart of images built elsewhere must keep the image reference check:\n%s", got)
+	}
+}
+
 // Test_NoCLIOmitsReleaseBinaries verifies the default: a Go service/chart repo
 // without the cli flavour carries no architectures matrix, no
 // upload-release-assets job, and no platforms cap on the release image push.
