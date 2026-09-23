@@ -748,6 +748,12 @@ workflows:
 {{- if .HasDockerfile }}
         - push-to-registries-release
 {{- end }}
+{{- if .ChartReleaseGateJob }}
+        # The repo-owned release gate (custom.yml): a check that refuses the
+        # release before the chart is pushed. Red there = no chart published;
+        # rerun the tag's workflow from failed once it passes, no new tag.
+        - {{ .ChartReleaseGateJob }}
+{{- end }}
         filters:
           tags:
             only: /^v.*/

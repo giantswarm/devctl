@@ -98,6 +98,15 @@ type Params struct {
 	// `requires` entry, so the branch image validation also gets the workspace.
 	// Empty for the common case.
 	ImagePreBuildJob string
+	// ChartReleaseGateJob names a repo-owned job (defined in .circleci/custom.yml)
+	// that the release chart push must wait on: the generated push-chart-release
+	// job gains a `requires` entry for it, which the append-only custom.yml merge
+	// cannot inject into a generated job. The chart counterpart of
+	// ImagePreBuildJob, for a check that must refuse the release before the chart
+	// is pushed (a meta chart whose component floor resolves to no published chart).
+	// Branch pushes are not gated: a branch build is a dev artifact. Empty for the
+	// common case.
+	ChartReleaseGateJob string
 	// ImagePrivateOnly is true when the repo's image must ship only to the
 	// private registry (gsociprivate). It replaces the default split-china-push
 	// (which also publishes the public gsoci copy and mirrors to Aliyun) with an

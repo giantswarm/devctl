@@ -31,6 +31,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   language `node` is refused until its template ships. The embedded schema copy
   (`pkg/reposetup/schema/repositories.schema.json`) carries the flavour; the live schema in
   giantswarm/github and the Backstage "Plans" scaffolder preset land in companion pull requests.
+- `devctl gen circleci --chart-release-gate-job <job>` (`gen.ci.chartReleaseGateJob` in the giantswarm/github team
+  file): the generated `push-chart-release` job requires the named repo-owned `custom.yml` job, the chart counterpart of
+  `--image-pre-build-job`, for a check that has to refuse a release before its chart is pushed -- a meta chart whose
+  component floor resolves to no published chart (giantswarm/agent-platform#624). The branch dev push is not gated; a
+  repository without a chart release push refuses the flag.
 - `circleciclient.Config.Anonymous`: a client without a token, for a reader that holds none -- it reads what CircleCI
   answers without one, the pipelines, workflows and jobs of a public project (a private one is 404), and sends no
   `Circle-Token` header; `New` still refuses an empty token without the flag, and a token with it, so a reader meant

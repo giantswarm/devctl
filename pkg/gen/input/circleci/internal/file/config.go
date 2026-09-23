@@ -55,6 +55,7 @@ func NewWorkflowsInput(p params.Params) input.Input {
 			"AppCatalogTest":      p.AppCatalogTest,
 			"BranchPublish":       p.BranchPublish,
 			"ImagePreBuildJob":    p.ImagePreBuildJob,
+			"ChartReleaseGateJob": p.ChartReleaseGateJob,
 			"ImagePrivateOnly":    p.ImagePrivateOnly,
 			"ImageName":           p.ImageName,
 			"ImagePlatforms":      p.ImagePlatforms,

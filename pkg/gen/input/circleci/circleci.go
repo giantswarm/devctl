@@ -369,6 +369,14 @@ type Config struct {
 	// pre-steps the append-only custom.yml merge cannot inject into a generated
 	// job. Empty for the common case.
 	ImagePreBuildJob string
+	// ChartReleaseGateJob names a repo-owned custom.yml job the release chart
+	// push must wait on (adds a `requires` entry to push-chart-release, which
+	// the append-only custom.yml merge cannot inject into a generated job). The
+	// chart counterpart of ImagePreBuildJob: for a check that has to refuse a
+	// release before its chart is pushed, such as a meta chart whose component
+	// floor resolves to no published chart. The branch dev push (BranchPublish)
+	// is not gated. Requires the chart pipeline (app flavour, not a template).
+	ChartReleaseGateJob string
 	// ImageDockerfile overrides the Dockerfile path on the image jobs (the
 	// architect push-to-registries `dockerfile` param). A non-empty value also
 	// forces the image pipeline on, so a repo whose Dockerfile is not at the
@@ -661,6 +669,9 @@ func New(config Config) (*CircleCI, error) {
 	if templateChart && config.ATSOnRelease {
 		return nil, microerror.Maskf(invalidConfigError, "ATSOnRelease does not apply to a template repository: its chart is built from the rendered template only, with no chart-test or release jobs")
 	}
+	if config.ChartReleaseGateJob != "" && (!hasApp || templateChart) {
+		return nil, microerror.Maskf(invalidConfigError, "ChartReleaseGateJob requires the chart release push (app flavour, not a template repository)")
+	}
 	if config.ATSResourceClass != "" {
 		if !hasApp || config.SkipATS || templateChart {
 			return nil, microerror.Maskf(invalidConfigError, "ATSResourceClass requires the chart-test jobs (app flavour without SkipATS, not a template repository)")
@@ -851,6 +862,7 @@ func New(config Config) (*CircleCI, error) {
 			AppCatalogTest:           appCatalogTest,
 			BranchPublish:            config.BranchPublish,
 			ImagePreBuildJob:         config.ImagePreBuildJob,
+			ChartReleaseGateJob:      config.ChartReleaseGateJob,
 			ImagePrivateOnly:         config.ImagePrivateOnly,
 			ImageName:                config.ImageName,
 			ImagePlatforms:           imagePlatforms,

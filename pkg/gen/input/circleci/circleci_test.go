@@ -536,6 +536,47 @@ func Test_ImagePreBuildJob(t *testing.T) {
 	}
 }
 
+// Test_ChartReleaseGateJob verifies the release chart push gains a requires
+// entry for the named repo-owned release gate (a check that refuses the release
+// before the chart is pushed; the append-only custom.yml merge cannot inject it
+// into a generated job), that the branch dev push is not gated, that omitting
+// it leaves push-chart-release's requires untouched, and that a repo without a
+// chart release push refuses it.
+func Test_ChartReleaseGateJob(t *testing.T) {
+	got := render(t, Config{
+		RepoName:            "agent-platform",
+		Flavours:            gen.FlavourSlice{gen.FlavourApp},
+		BranchPublish:       true,
+		ChartReleaseGateJob: "verify-release-floors",
+	})
+	if n := strings.Count(got, "- verify-release-floors"); n != 1 {
+		t.Errorf("expected the release gate required by push-chart-release alone, found %d:\n%s", n, got)
+	}
+	release := got[strings.Index(got, "name: push-chart-release"):]
+	if !contains(release, "- verify-release-floors") {
+		t.Errorf("push-chart-release does not require the release gate:\n%s", release)
+	}
+
+	def := render(t, Config{
+		RepoName:      "agent-platform",
+		Flavours:      gen.FlavourSlice{gen.FlavourApp},
+		BranchPublish: true,
+	})
+	if contains(def, "- verify-release-floors") {
+		t.Errorf("release gate requires leaked without ChartReleaseGateJob:\n%s", def)
+	}
+
+	_, err := New(Config{
+		RepoName:            "devctl",
+		Language:            gen.LanguageGo,
+		Flavours:            gen.FlavourSlice{gen.FlavourCLI},
+		ChartReleaseGateJob: "verify-release-floors",
+	})
+	if !IsInvalidConfig(err) {
+		t.Errorf("expected invalidConfigError for a release gate without a chart release push, got %v", err)
+	}
+}
+
 // Test_ImagePrivateOnly verifies a private-only image build pushes to the
 // private registry via registries-data and omits split-china-push and the
 // sync-china-registry job, while the default keeps the public split-china shape.
