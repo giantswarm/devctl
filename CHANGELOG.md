@@ -113,6 +113,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `devctl pr wait`, `devctl pr merge` and `devctl release wait` wait for a spent rate limit instead of ending on it
+  with exit 7: a GitHub or CircleCI read refused with `403` or `429` and `X-RateLimit-Remaining: 0` is sent again a
+  second after `X-RateLimit-Reset`, one with `Retry-After` (a secondary limit, CircleCI's `429`) that much later,
+  each a warning naming the limit and the time it resets. A reset after the wait's deadline ends the wait at once
+  with exit 2 (9 after a merge), the reason naming the reset and the deadline. go-github's own bookkeeping no longer
+  refuses the reads after an answer that spent the budget ("not making remote request"). A `403` with budget left is
+  an answer, as before ([#2373](https://github.com/giantswarm/devctl/issues/2373)).
 - The embedded schema copy (`pkg/reposetup/schema/repositories.schema.json`) carries `gen.ci.chartReleaseGateJob`,
   the team-file key for `gen circleci --chart-release-gate-job`. Validation against the embedded copy, which
   giantswarm-repo-manager runs on every declared entry, refused an entry setting it as `not a field of the

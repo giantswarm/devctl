@@ -177,8 +177,9 @@ The scenario's `env` comes last and wins.
 
 **GitHub** (`mock/github`) serves the REST API and the device flow from one server. Every route is the
 scenario's; the mock adds what a client relies on: the rate-limit headers (`X-RateLimit-Limit: 5000`,
-`X-RateLimit-Remaining: 4999`, `X-RateLimit-Reset` an hour ahead, unless the fixture sets them) and an `ETag` on
-every successful response, computed from the body. A request whose `If-None-Match` equals that ETag gets
+`X-RateLimit-Remaining: 4999`, `X-RateLimit-Reset` an hour ahead, unless the fixture sets them; a fixture's
+`X-RateLimit-Reset: "+3s"` is the Unix time that far from the answer) and an `ETag` on every successful response,
+computed from the body. A request whose `If-None-Match` equals that ETag gets
 `304 Not Modified` with the rate-limit headers and no body; the sequence advances all the same, so a changed
 body is sent on the next poll. An unscripted route is `404 {"message":"Not Found", ...}` as on api.github.com.
 Endpoints the commands use, as route keys: `GET /repos/{o}/{r}/pulls/{n}`, `GET
@@ -229,7 +230,8 @@ The incidents the commands encode, one scenario each, by these slugs:
 
 - `pr wait`: `stage-gap`, `fork-awaiting-approval`, `conflicting-pr`, `retitled-stale-run`,
   `red-circleci-workflow`, `pr-wait-timeout`, `required-never-reported`, `github-5xx-retried`,
-  `github-5xx-persistent`, `circleci-connection-reset`
+  `github-5xx-persistent`, `circleci-connection-reset`, `github-rate-limit-reset`,
+  `github-rate-limit-spent-answer`, `github-rate-limit-after-deadline`, `circleci-rate-limit-retry-after`
 - `pr merge`: `own-green-merged`, `other-human-refused`, `opt-out-refused`, `behind-strict-base`,
   `behind-update-branch`, `merge-queue`, `red-not-merged`, `merge-released`, `merge-no-release`,
   `merge-release-failed`, `merge-github-5xx-retried`

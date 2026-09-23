@@ -1,0 +1,46 @@
+# The pull request read spends the last request of the budget: a 200 with
+# X-RateLimit-Remaining 0, on every poll. go-github remembers such an answer
+# and refuses the next request itself ("not making remote request") until
+# the reset; the wait's client does not, so the check-run, status and run
+# reads of every poll are sent, and GitHub's answer to them decides. Here
+# they answer: the check finishes on the second poll and the wait ends green.
+description: an answer with the budget spent does not stop the reads after it; the wait ends green
+args: [pr, wait, giantswarm/devctl, "42", --timeout, 30m]
+keyring:
+  github:
+    login: e2e-engineer
+    token: ghu_e2e_live
+    expiresAt: "2099-01-01T00:00:00Z"
+    refreshToken: ghr_e2e_live
+    refreshExpiresAt: "2099-01-01T00:00:00Z"
+github:
+  routes:
+    "GET /repos/giantswarm/devctl/pulls/42":
+      - headers:
+          X-RateLimit-Limit: "5000"
+          X-RateLimit-Remaining: "0"
+          X-RateLimit-Used: "5000"
+          X-RateLimit-Resource: core
+          X-RateLimit-Reset: "+1h"
+        body:
+          number: 42
+          state: open
+          draft: false
+          merged: false
+          mergeable: true
+          mergeable_state: clean
+          head: {sha: abc123, ref: feature, repo: {full_name: giantswarm/devctl}}
+          base: {ref: main, repo: {full_name: giantswarm/devctl}}
+    "GET /repos/giantswarm/devctl/commits/abc123/check-runs":
+      - body:
+          total_count: 1
+          check_runs:
+            - {id: 101, name: go-test, status: in_progress, started_at: "2026-09-21T10:00:00Z", html_url: "https://github.com/giantswarm/devctl/runs/101"}
+      - body:
+          total_count: 1
+          check_runs:
+            - {id: 101, name: go-test, status: completed, conclusion: success, started_at: "2026-09-21T10:00:00Z", html_url: "https://github.com/giantswarm/devctl/runs/101"}
+    "GET /repos/giantswarm/devctl/commits/abc123/status":
+      - body: {state: pending, total_count: 0, statuses: []}
+    "GET /repos/giantswarm/devctl/actions/runs?head_sha=abc123":
+      - body: {total_count: 0, workflow_runs: []}

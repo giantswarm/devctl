@@ -1,0 +1,27 @@
+# The budget is spent and resets in two hours; the wait has thirty minutes.
+# Sleeping to the deadline would not reach the reset, so the wait ends at
+# once with a timeout (exit 2) whose reason names the reset time and the
+# deadline: run it again after the reset. One request, no retry.
+description: a spent budget that resets after the deadline ends the wait at once with exit 2 naming the reset
+args: [pr, wait, giantswarm/devctl, "42", --timeout, 30m]
+keyring:
+  github:
+    login: e2e-engineer
+    token: ghu_e2e_live
+    expiresAt: "2099-01-01T00:00:00Z"
+    refreshToken: ghr_e2e_live
+    refreshExpiresAt: "2099-01-01T00:00:00Z"
+github:
+  routes:
+    "GET /repos/giantswarm/devctl/pulls/42":
+      - status: 403
+        headers:
+          X-RateLimit-Limit: "5000"
+          X-RateLimit-Remaining: "0"
+          X-RateLimit-Used: "5000"
+          X-RateLimit-Resource: core
+          X-RateLimit-Reset: "+2h"
+        body:
+          message: API rate limit exceeded for user ID 1.
+          documentation_url: https://docs.github.com/rest/overview/rate-limits-for-the-rest-api
+          status: "403"

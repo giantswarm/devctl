@@ -1,12 +1,15 @@
 package githubclient
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
 	"testing"
 	"time"
+
+	"github.com/sirupsen/logrus"
 )
 
 func Test_Conditional(t *testing.T) {
@@ -58,5 +61,41 @@ func Test_Conditional(t *testing.T) {
 	rate := c.Rate()
 	if !rate.Known || rate.Remaining != 99 || rate.Reset.Unix() != reset {
 		t.Errorf("rate: want known, 99 remaining, reset %d; got %+v", reset, rate)
+	}
+}
+
+func Test_NewConditional_SendsPastASpentBudget(t *testing.T) {
+	// The first answer spends the budget. go-github would refuse the second
+	// request itself until the reset; the poll client sends it, so the
+	// transport under it decides.
+	var requests int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		remaining := "0"
+		if requests > 1 {
+			remaining = "4999"
+		}
+		w.Header().Set("X-RateLimit-Limit", "5000")
+		w.Header().Set("X-RateLimit-Remaining", remaining)
+		w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(time.Now().Add(time.Hour).Unix(), 10))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"number":1,"state":"open"}`))
+	}))
+	defer server.Close()
+
+	client, conditional, err := NewConditional(Config{Logger: logrus.New(), AccessToken: "ghu_test", BaseURL: server.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 1; i <= 2; i++ {
+		if _, err := client.PullRequest(context.Background(), "o", "r", 1); err != nil {
+			t.Fatalf("read %d: %v", i, err)
+		}
+	}
+	if requests != 2 {
+		t.Errorf("requests: want 2, got %d", requests)
+	}
+	if rate := conditional.Rate(); rate.Remaining != 4999 {
+		t.Errorf("rate: want the second answer's 4999 remaining, got %+v", rate)
 	}
 }

@@ -159,6 +159,8 @@ the rate_limit endpoint is never asked. `DEVCTL_TIME_SCALE` multiplies every sle
 connection, an EOF, a try over 60 s) or with a 5xx is sent again, up to eight tries in a row with a
 pause from 2 s doubling to 60 s, each retried failure a warning with its time, as in
 [`pr wait`](pr-wait.md#polling); a read that fails all eight is exit 7 naming the request and the count.
+A read refused for a spent rate limit is sent again after the reset (or `Retry-After`), a warning
+naming the limit and the reset time; a reset after the deadline is exit 2 at once, naming it.
 
 ## The document
 
