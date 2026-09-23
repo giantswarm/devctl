@@ -123,6 +123,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, _ []string) error 
 			BranchPublish:           r.flag.BranchPublish,
 			BuildConcurrency:        r.flag.BuildConcurrency,
 			ImagePreBuildJob:        r.flag.ImagePreBuildJob,
+			ChartReleaseGateJob:     r.flag.ChartReleaseGateJob,
 			ImagePrivateOnly:        r.flag.ImagePrivateOnly,
 			ImageName:               r.flag.ImageName,
 			ImagePlatforms:          r.flag.ImagePlatforms,
