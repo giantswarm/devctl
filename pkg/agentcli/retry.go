@@ -29,10 +29,13 @@ const (
 // Retrying is the http.RoundTripper under the API clients of a wait: a read
 // that GitHub or CircleCI did not answer -- a reset connection, an EOF, a
 // timeout, a 5xx -- is sent again after a backoff instead of ending the
-// wait. Every poll reads the same state again, so one such failure is not an
-// outcome; one that persists through RetryAttempts tries in a row is, and
-// the error then names the request, the count and the last failure. The
-// caller's context bounds the retries: the wait's own deadline ends them.
+// wait, and a read refused for a rate limit is sent again once the limit
+// resets (see [rateLimited]). Every poll reads the same state again, so one
+// such failure is not an outcome; one that persists through RetryAttempts
+// tries in a row is, and the error then names the request, the count and the
+// last failure. The caller's context bounds the retries: the wait's own
+// deadline ends them, and a rate limit that resets only after it ends the
+// wait at once with a [*RateLimitedError].
 //
 // Only GET and HEAD are retried, and a GET's body is read within its try, so
 // a connection that breaks in the middle of an answer is retried too. Other
@@ -71,51 +74,78 @@ func (r *Retrying) RoundTrip(req *http.Request) (*http.Response, error) {
 	ceiling := positive(r.BackoffCeiling, RetryBackoffCeiling)
 	ctx := req.Context()
 	for attempt := 1; ; attempt++ {
-		resp, failure, err := r.try(base, req)
-		if failure == "" {
+		resp, failed, err := r.try(base, req)
+		if failed == nil {
 			return resp, err
 		}
 		if ctx.Err() != nil {
-			return nil, fmt.Errorf("%w; the last try failed: %s", ctx.Err(), failure)
+			return nil, fmt.Errorf("%w; the last try failed: %s", ctx.Err(), failed.reason)
+		}
+		if deadline, ok := r.deadline(ctx); ok && failed.until.After(deadline) {
+			return nil, &RateLimitedError{Limit: failed.reason, Deadline: deadline}
 		}
 		if attempt == attempts {
-			return nil, &RetriesExhaustedError{Attempts: attempts, Last: failure}
+			return nil, &RetriesExhaustedError{Attempts: attempts, Last: failed.reason}
 		}
-		r.retrying(req, failure, pause, attempt+1, attempts)
-		if err := r.Clock.Sleep(ctx, pause); err != nil {
-			return nil, fmt.Errorf("%w; the last try failed: %s", err, failure)
+		wait := pause
+		if !failed.until.IsZero() {
+			wait = max(pause, failed.until.Sub(r.Clock.Now()).Round(time.Second))
+		}
+		r.retrying(req, failed.reason, wait, attempt+1, attempts)
+		if err := r.Clock.Sleep(ctx, wait); err != nil {
+			return nil, fmt.Errorf("%w; the last try failed: %s", err, failed.reason)
 		}
 		pause = min(2*pause, ceiling)
 	}
 }
 
-// try sends req once. A failure worth another try is returned as its
-// description, with no response; otherwise the answer or the error is the
-// outcome.
-func (r *Retrying) try(base http.RoundTripper, req *http.Request) (resp *http.Response, failure string, err error) {
+// failure is a try worth another: what went wrong and, for a rate limit,
+// when the answer said the read may be sent again.
+type failure struct {
+	reason string
+	// until is zero when the backoff alone decides the pause.
+	until time.Time
+}
+
+// deadline is the caller's deadline on the unscaled clock, where the
+// answers' reset times are.
+func (r *Retrying) deadline(ctx context.Context) (time.Time, bool) {
+	d, ok := ctx.Deadline()
+	if !ok {
+		return time.Time{}, false
+	}
+	return r.Clock.Now().Add(time.Duration(float64(time.Until(d)) / r.Clock.Scale())), true
+}
+
+// try sends req once. A failure worth another try is returned with no
+// response; otherwise the answer or the error is the outcome.
+func (r *Retrying) try(base http.RoundTripper, req *http.Request) (*http.Response, *failure, error) {
 	ctx, cancel := context.WithTimeout(req.Context(), positive(r.AttemptTimeout, RetryAttemptTimeout))
 	defer cancel()
-	resp, err = base.RoundTrip(req.Clone(ctx))
+	resp, err := base.RoundTrip(req.Clone(ctx))
 	if err != nil {
 		if req.Context().Err() != nil || !transient(err) {
-			return nil, "", err
+			return nil, nil, err
 		}
-		return nil, err.Error(), nil
+		return nil, &failure{reason: err.Error()}, nil
 	}
 	body, err := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
 	if err != nil {
 		if req.Context().Err() != nil || !transient(err) {
-			return nil, "", err
+			return nil, nil, err
 		}
-		return nil, fmt.Sprintf("reading the %s answer: %v", resp.Status, err), nil
+		return nil, &failure{reason: fmt.Sprintf("reading the %s answer: %v", resp.Status, err)}, nil
 	}
 	if resp.StatusCode >= http.StatusInternalServerError {
-		return nil, resp.Status, nil
+		return nil, &failure{reason: resp.Status}, nil
+	}
+	if limit := rateLimited(resp, body, r.Clock.Now()); limit != nil {
+		return nil, limit, nil
 	}
 	resp.Body = io.NopCloser(bytes.NewReader(body))
 	resp.ContentLength = int64(len(body))
-	return resp, "", nil
+	return resp, nil, nil
 }
 
 func (r *Retrying) retrying(req *http.Request, failure string, pause time.Duration, next, attempts int) {
@@ -134,7 +164,8 @@ func (r *Retrying) retrying(req *http.Request, failure string, pause time.Durati
 // wraps it with the method and URL.
 type RetriesExhaustedError struct {
 	Attempts int
-	// Last is the last failure: the transport error or the 5xx status.
+	// Last is the last failure: the transport error, the 5xx status or the
+	// rate limit.
 	Last string
 }
 

@@ -11,6 +11,7 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
+	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/google/go-github/v92/github"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/oauth2"
@@ -80,11 +81,19 @@ func New(config Config) (*Client, error) {
 func (c *Client) CloneRepository(ctx context.Context, owner, repo, workDir string) error {
 	c.workDir = workDir
 	_, err := git.PlainClone(workDir, false, &git.CloneOptions{
-		URL:      fmt.Sprintf("https://%s@github.com/%s/%s", c.accessToken, owner, repo),
+		URL:      fmt.Sprintf("https://github.com/%s/%s", owner, repo),
+		Auth:     c.gitAuth(),
 		Progress: os.Stdout,
 	})
 
 	return microerror.Mask(err)
+}
+
+// gitAuth is the token as git's HTTP basic auth, sent the way a token in the
+// remote URL would be. It stays out of the URL so that no git error, which
+// quotes the URL, and no .git/config carries it.
+func (c *Client) gitAuth() *githttp.BasicAuth {
+	return &githttp.BasicAuth{Username: c.accessToken}
 }
 
 func (c *Client) CreateBranch(ctx context.Context, newBranch string) error {
@@ -146,6 +155,7 @@ func (c *Client) CommitAndPush(ctx context.Context, owner, repo, branch, message
 	// Push changes
 	err = gitRepo.Push(&git.PushOptions{
 		RemoteName: "origin",
+		Auth:       c.gitAuth(),
 		RefSpecs:   []config.RefSpec{config.RefSpec(fmt.Sprintf("refs/heads/%s:refs/heads/%s", branch, branch))},
 	})
 	if err != nil {

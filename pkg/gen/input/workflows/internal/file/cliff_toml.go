@@ -1,11 +1,11 @@
 package file
 
 import (
+	"context"
 	"embed"
-	"os/exec"
 	"path/filepath"
-	"strings"
 
+	"github.com/giantswarm/devctl/v8/internal/gitremote"
 	"github.com/giantswarm/devctl/v8/pkg/gen/input"
 	"github.com/giantswarm/devctl/v8/pkg/gen/input/workflows/internal/params"
 )
@@ -19,31 +19,25 @@ var cliffTomlTemplateFiles embed.FS
 
 var cliffTomlTemplateSha = input.TemplateSHA(cliffTomlTemplateFiles, "cliff.toml.template")
 
-// detectRepoName runs `git config --get remote.origin.url` in the cwd
-// (which is the consuming repo at gen time) and extracts the bare repo name
-// from the URL. Used to populate cliff.toml's `[remote.github].repo` field.
+// detectRepoName reads the repository name from the origin remote of the cwd
+// (the consuming repo at gen time) for cliff.toml's `[remote.github].repo`
+// field.
 //
-// Supports the three URL forms git remote produces:
-//
-//	git@github.com:giantswarm/foo.git
-//	https://github.com/giantswarm/foo.git
-//	https://github.com/giantswarm/foo
-//
-// Returns "" on any error (no .git directory, no origin remote, git not
-// installed). cliff.toml then renders with `repo = ""`, which makes
-// git-cliff's GitHub API lookups fail loudly at workflow runtime -- a
-// clearer signal than silently picking a wrong default.
+// Returns "" when it cannot (no .git directory, no origin remote, git not
+// installed, a remote naming no <owner>/<name> repository). cliff.toml then
+// renders with `repo = ""`, which makes git-cliff's GitHub API lookups fail
+// loudly at workflow runtime -- a clearer signal than silently picking a
+// wrong default.
 func detectRepoName() string {
-	cmd := exec.Command("git", "config", "--get", "remote.origin.url")
-	out, err := cmd.Output()
+	remote, err := gitremote.OriginURL(context.Background(), ".")
 	if err != nil {
 		return ""
 	}
-	url := strings.TrimSpace(string(out))
-	if i := strings.LastIndex(url, "/"); i >= 0 {
-		url = url[i+1:]
+	repo, err := gitremote.Parse(remote)
+	if err != nil {
+		return ""
 	}
-	return strings.TrimSuffix(url, ".git")
+	return repo.Name
 }
 
 // NewCliffTomlInput emits cliff.toml at the repo root with

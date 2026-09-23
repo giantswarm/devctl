@@ -7,6 +7,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- `deploy`, `pr approve-align`, `pr approve-merge-renovate` and `release create` act with the `giantswarm-devctl`
+  App login by default, through `authstore.ResolveGitHub`: no personal token is needed after `devctl auth login
+  --github-only`. A token in `DEVCTL_GITHUB_TOKEN`, `GITHUB_TOKEN` or `OPSCTL_GITHUB_TOKEN` overrides the login and
+  prints the resolver's warning once; with neither they exit 8 naming `devctl auth login --github-only` instead of
+  failing with an error about `GITHUB_TOKEN`. `release create` resolves one token and builds every GitHub client of
+  the release from it. A 404 from GitHub in `deploy` or `release create` under the App login names its likely cause:
+  the App reaches the giantswarm organization and public repositories only, a token in the environment reaches the
+  rest (`authstore.GitHubNotFoundHint`, `githubclient.ExplainNotFound`). `deploy` passes the token to git as basic
+  auth instead of in the remote URL, so a git error quoting the URL no longer prints it
+  ([#2380](https://github.com/giantswarm/devctl/issues/2380)).
+
 ### Added
 
 - `authstore.ResolveGitHub(ctx, envVars...)`, the one resolver of the GitHub token a command for people acts
@@ -122,6 +135,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `gen renovate` reads the repository of the `github>giantswarm/<name>:renovate-custom.json5` extends entry from
+  the git origin remote when `--repo-name` is not given (`git remote get-url origin`, the `giantswarm/<name>` path
+  of an https or ssh URL, `.git` stripped), no longer from the working directory's name. A worktree or a clone in
+  a directory not named after its repository (`valkey-app-79`) wrote `github>giantswarm/valkey-app-79:…`, a preset
+  Renovate cannot resolve, and the repository's Renovate stopped on a config-validation error. Without an origin
+  remote, or with one outside the giantswarm organization, the command fails and asks for `--repo-name`; it never
+  falls back to the directory name. The name is read only when `renovate-custom.json5` exists, the one case the
+  generated config names the repository. `gen workflows` reads cliff.toml's `[remote.github].repo` with the same
+  parser, so an origin that names no `<owner>/<name>` (a local path) renders `repo = ""` like a missing one
+  ([#2389](https://github.com/giantswarm/devctl/pull/2389)).
+- `devctl pr wait`, `devctl pr merge` and `devctl release wait` wait for a spent rate limit instead of ending on it
+  with exit 7: a GitHub or CircleCI read refused with `403` or `429` and `X-RateLimit-Remaining: 0` is sent again a
+  second after `X-RateLimit-Reset`, one with `Retry-After` (a secondary limit, CircleCI's `429`) that much later,
+  each a warning naming the limit and the time it resets. A reset after the wait's deadline ends the wait at once
+  with exit 2 (9 after a merge), the reason naming the reset and the deadline. go-github's own bookkeeping no longer
+  refuses the reads after an answer that spent the budget ("not making remote request"). A `403` with budget left is
+  an answer, as before ([#2373](https://github.com/giantswarm/devctl/issues/2373)).
 - The embedded schema copy (`pkg/reposetup/schema/repositories.schema.json`) carries `gen.ci.chartReleaseGateJob`,
   the team-file key for `gen circleci --chart-release-gate-job`. Validation against the embedded copy, which
   giantswarm-repo-manager runs on every declared entry, refused an entry setting it as `not a field of the

@@ -40,7 +40,8 @@ The wait is `pr wait`'s, with its verdicts and exit codes: 1 red, 2 timeout, 3 n
 required context never reported. Nothing is merged on any of them. A head that changes under the
 wait resets it to the new head with a warning. Its reads, and the release wait's, are retried the way
 `pr wait`'s are ([Polling](pr-wait.md#polling)): a reset connection or a 5xx is a warning and another
-try, exit 7 only after eight in a row. The merge, the branch update and the branch deletion are writes
+try, exit 7 only after eight in a row; a spent rate limit is a warning and a wait for its reset, exit 2
+before the merge (9 after it) when the reset falls after the deadline. The merge, the branch update and the branch deletion are writes
 and are sent once.
 
 ## The merge

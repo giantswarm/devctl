@@ -10,6 +10,7 @@ import (
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
 
+	"github.com/giantswarm/devctl/v8/internal/gitremote"
 	"github.com/giantswarm/devctl/v8/pkg/gen"
 	"github.com/giantswarm/devctl/v8/pkg/gen/input"
 	"github.com/giantswarm/devctl/v8/pkg/gen/input/renovate"
@@ -47,13 +48,16 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	_, statErr := os.Stat("renovate-custom.json5")
 	hasCustomConfig := statErr == nil
 
+	// The repository name only goes into the renovate-custom.json5 extends
+	// entry. Without --repo-name it is read from the origin remote, never
+	// from the directory name: a worktree or a second clone named anything
+	// else would extend a preset Renovate cannot resolve.
 	repoName := r.flag.RepoName
-	if repoName == "" {
-		wd, err := os.Getwd()
+	if repoName == "" && hasCustomConfig {
+		repoName, err = gitremote.RepoName(ctx, ".")
 		if err != nil {
-			return microerror.Mask(err)
+			return microerror.Maskf(invalidFlagError, "renovate-custom.json5 is extended as github>%s/<name>:renovate-custom.json5, and the repository name cannot be read from the origin remote: %s; pass --%s <name>", gitremote.Owner, err, flagRepoName)
 		}
-		repoName = filepath.Base(wd)
 	}
 
 	var renovateInput *renovate.Renovate
