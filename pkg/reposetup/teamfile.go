@@ -201,6 +201,7 @@ type CIFields struct {
 	AppCatalog              string `yaml:"appCatalog"`
 	AppCatalogTest          string `yaml:"appCatalogTest"`
 	ChartName               string `yaml:"chartName"`
+	ChartReleaseGateJob     string `yaml:"chartReleaseGateJob"`
 	OverrideChartAppVersion *bool  `yaml:"overrideChartAppVersion"`
 	ForcePublic             bool   `yaml:"forcePublic"`
 	Image                   *struct {

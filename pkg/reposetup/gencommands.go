@@ -157,6 +157,9 @@ func genCommands(f Fields, gc genContext) [][]string {
 	if ci.ChartName != "" {
 		add("--chart-name", ci.ChartName)
 	}
+	if ci.ChartReleaseGateJob != "" {
+		add("--chart-release-gate-job", ci.ChartReleaseGateJob)
+	}
 	if ci.ForcePublic {
 		add("--force-public")
 	}
