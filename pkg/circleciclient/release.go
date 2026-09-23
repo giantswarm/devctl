@@ -81,3 +81,9 @@ func (c *Client) FindPipelineByTag(ctx context.Context, org, repo, tag string) (
 func PipelineURL(org, repo string, number int64) string {
 	return fmt.Sprintf("https://app.circleci.com/pipelines/github/%s/%s/%d", org, repo, number)
 }
+
+// WorkflowURL is a workflow's page in the CircleCI UI: the pipeline's page
+// with the workflow's id, where its jobs and the rerun from failed are.
+func WorkflowURL(org, repo string, number int64, workflowID string) string {
+	return PipelineURL(org, repo, number) + "/workflows/" + workflowID
+}

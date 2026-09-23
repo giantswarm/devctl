@@ -1568,7 +1568,7 @@ func TestSteps(t *testing.T) {
 			},
 		},
 		{
-			name: "release: a red tag pipeline is reported as a dead tag", step: StepRelease,
+			name: "release: a red tag pipeline is reported, the fix a rerun from failed", step: StepRelease,
 			seed: func(h *harness) {
 				r := h.gh.addRepo(owner, name)
 				r.release, r.releaseAt = "v0.1.0", time.Now().Add(-time.Hour)
@@ -1578,7 +1578,26 @@ func TestSteps(t *testing.T) {
 			verify: func(t *testing.T, _ *harness, res *Result) {
 				f := res.Findings()[0]
 				require.Contains(t, f.Message, "push-to-registries-release")
-				require.Contains(t, f.Fix, "v0.1.0 is a dead tag")
+				require.Contains(t, f.Fix, "rerun the failed workflow from failed")
+				require.Contains(t, f.Fix, "devctl release wait "+owner+"/"+name+" v0.1.0")
+			},
+		},
+		{
+			// A rerun from failed is a second workflow of the same name in
+			// the same pipeline; the run it replaced keeps its failed status.
+			// The newest run decides, so the revived tag reads built.
+			name: "release: a red tag pipeline rerun green reads built", step: StepRelease,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.release, r.releaseAt = "v0.1.0", time.Now().Add(-time.Hour)
+				p := h.cc.follow(owner, name)
+				h.cc.addPipeline(p, "v0.1.0", "failed")
+				h.cc.rerun(p, "success")
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, _ *harness, res *Result) {
+				require.Contains(t, res.Step(StepRelease).Summary, "release v0.1.0 built")
+				require.Empty(t, res.Findings())
 			},
 		},
 		{

@@ -162,9 +162,14 @@ func (r *Runner) followGrantee(ctx context.Context, s *run) (string, error) {
 // rebuild: the reconciler publishes nothing. A tag without a pipeline —
 // the project was followed or renamed after the tag — is a missed build;
 // the fix is the next tag, or the tag's pipeline triggered by hand. A red
-// pipeline is a dead tag; the fix is the next tag. The decision is made
-// from the tag alone: a newer pipeline of another ref (the follow itself
-// builds the default branch) is no evidence that the tag was built.
+// pipeline is a release nothing was published for; the fix is a rerun of
+// its failed workflow from failed — the rerun checks out the same commit
+// and runs the publish jobs — or, when the cause is in the code, the next
+// tag. The decision is made from the tag alone: a newer pipeline of another
+// ref (the follow itself builds the default branch) is no evidence that the
+// tag was built. Of every workflow name only the newest run counts: a rerun
+// is a second workflow of the same name in the same pipeline, and the run
+// it replaced keeps its failed status for ever.
 //
 // The release verified is one of the platform's flow, a vX.Y.Z tag
 // (isReleaseTag). A latest release tagged otherwise — per component,
@@ -211,6 +216,7 @@ func (r *Runner) stepRelease(ctx context.Context, s *run, sr *StepResult) error 
 	if err != nil {
 		return err
 	}
+	workflows = circleciclient.NewestWorkflows(workflows)
 	var failed, pending, succeeded []string
 	for _, wf := range workflows {
 		switch {
@@ -236,7 +242,7 @@ func (r *Runner) stepRelease(ctx context.Context, s *run, sr *StepResult) error 
 	case len(failed) > 0:
 		s.report(sr, FindingRedRelease,
 			fmt.Sprintf("release %s of %s is red: pipeline %d, %s", tag, s.slug(), pipeline.Number, strings.Join(failed, "; ")),
-			fmt.Sprintf("%s is a dead tag: nothing was published for it and a rerun cannot revive it — fix the failing job's cause, merge, and let the next tag be the release; the reconciler verifies it", tag))
+			fmt.Sprintf("nothing was published for %s: rerun the failed workflow from failed on CircleCI (the rerun checks out the same commit and runs the publish jobs), then `devctl release wait %s %s` confirms the images and chart; when the cause is in the code, fix it and let the next tag be the release", tag, s.slug(), tag))
 	case len(pending) > 0:
 		sr.Summary = fmt.Sprintf("release %s: pipeline %d running: %s", tag, pipeline.Number, strings.Join(pending, ", "))
 	case len(workflows) == 0:
