@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -15,7 +16,9 @@ import (
 
 // stepCircleCI follows the project (under the new slug after a rename),
 // enables setup workflows — the generated pipeline is dynamic and fails
-// without them — and gives the project a deploy key to check out with.
+// without them — gives the project a deploy key to check out with, and
+// verifies the webhook CircleCI installs on the follow: without it no push
+// and no tag reaches CircleCI, and the project is followed in name only.
 func (r *Runner) stepCircleCI(ctx context.Context, s *run, sr *StepResult) error {
 	if r.CircleCI == nil {
 		sr.Verdict = VerdictSkipped
@@ -94,10 +97,49 @@ func (r *Runner) stepCircleCI(ctx context.Context, s *run, sr *StepResult) error
 			return err
 		}
 	}
+	webhook, err := r.circleCIWebhook(ctx, s, sr)
+	if err != nil {
+		return err
+	}
 	if len(sr.Changes) == 0 {
-		sr.Summary = "followed, setup workflows on, checkout key present"
+		sr.Summary = "followed, setup workflows on, checkout key present, " + webhook
 	}
 	return nil
+}
+
+// circleCIWebhookURL is the URL of the webhook CircleCI installs on a
+// repository it follows: every push and tag reaches CircleCI through it.
+const circleCIWebhookURL = "https://circleci.com/hooks/github"
+
+// circleCIWebhook verifies the repository carries CircleCI's webhook, active
+// and subscribed to push events, and returns the summary's word on it. A
+// missing hook is the finding FindingCircleCIWebhookMissing: the follow
+// went through, but CircleCI installs the hook only for a follow by a GitHub
+// admin of the repository whose CircleCI grant carries the hook scope, so a
+// follow by the reconciler's identity under a temporary admin grant leaves
+// the project followed and deaf. Hooks the identity cannot read (GitHub
+// answers 404 or 403 without the repository_hooks permission) are the
+// finding FindingUnchecked; nothing is guessed.
+func (r *Runner) circleCIWebhook(ctx context.Context, s *run, sr *StepResult) (string, error) {
+	hooks, resp, err := r.readHooks(ctx, s)
+	switch {
+	case isNotFound(resp, err) || isForbidden(err):
+		s.report(sr, FindingUnchecked,
+			fmt.Sprintf("the webhooks of %s are not readable by this identity (GET /repos/{owner}/{repo}/hooks needs the repository_hooks permission or admin rights): whether CircleCI's webhook is installed is unknown", s.slug()),
+			"run the check as an identity that reads the repository's webhooks (the reconciler's Align now); the webhook is verified on a later run")
+		return "webhook not readable by this identity", nil
+	case err != nil:
+		return "", err
+	}
+	for _, h := range hooks {
+		if h.GetConfig().GetURL() == circleCIWebhookURL && h.GetActive() && slices.Contains(h.Events, "push") {
+			return "webhook present", nil
+		}
+	}
+	s.report(sr, FindingCircleCIWebhookMissing,
+		fmt.Sprintf("%s is followed on CircleCI but carries no active CircleCI webhook (%s, push events): no push and no tag reaches CircleCI, so no branch builds and the first release tag goes unbuilt", s.slug(), circleCIWebhookURL),
+		fmt.Sprintf("CircleCI installs its webhook only for a follow by a GitHub admin of the repository whose CircleCI grant carries the hook scope: follow the project as such a user (POST /api/v1.1/project/github/%s/follow) or through Project Settings on CircleCI; devctl cannot create the hook, CircleCI signs it with its own secret", s.slug()))
+	return "webhook missing", nil
 }
 
 // permissionAdmin is GitHub's name for the administrator permission.

@@ -9,6 +9,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `repo reconcile`'s circleci step verifies the webhook CircleCI installs on the follow: after `followed, setup
+  workflows on, checkout key present` it reads the repository's webhooks and requires one active hook for
+  `https://circleci.com/hooks/github` with the `push` event, `webhook present` in the summary. A followed project
+  without it is the finding `circleci-webhook-missing` (not advisory: no push and no tag reaches CircleCI, so no branch
+  builds and the first release tag goes unbuilt), its fix naming what installs the hook -- a follow by a GitHub admin of
+  the repository whose CircleCI grant carries the hook scope, `POST /api/v1.1/project/github/{owner}/{repo}/follow`
+  or Project Settings; devctl cannot create it, CircleCI signs it with its own secret. Webhooks the identity cannot
+  read (a read identity without the `repository_hooks` permission) are `unchecked`, never guessed. Before, the
+  reconciler's follow as architectbot under its temporary admin grant left a project followed with a deploy key and
+  setup workflows but no hook, every branch build silently absent and the step reading `ok`. The inventory record's
+  `circleci` facts carry `webhook` for the manager to fill from the step, and `devctl repo status` prints
+  `webhook present` / `webhook missing` in the `circleci` line when it is set
+  ([#2332](https://github.com/giantswarm/devctl/issues/2332)).
 - `circleciclient.Config.Anonymous`: a client without a token, for a reader that holds none -- it reads what CircleCI
   answers without one, the pipelines, workflows and jobs of a public project (a private one is 404), and sends no
   `Circle-Token` header; `New` still refuses an empty token without the flag, and a token with it, so a reader meant

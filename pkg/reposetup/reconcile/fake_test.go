@@ -44,6 +44,7 @@ type fakeRepo struct {
 	protected     string // the branch the last protection PUT named
 	rulesets      []*github.RepositoryRuleset
 	hooks         []*github.Hook
+	hooksStatus   int // HTTP status of the hooks list when not 200
 	release       string
 	releaseAt     time.Time
 	createdAt     time.Time // when the repository was created; a month ago for a seeded one
@@ -904,6 +905,10 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 		writeJSON(w, 200, in)
 	}))
 	mux.HandleFunc("GET /repos/{owner}/{repo}/hooks", f.withRepo(func(w http.ResponseWriter, _ *http.Request, repo *fakeRepo) {
+		if repo.hooksStatus != 0 {
+			writeJSON(w, repo.hooksStatus, map[string]any{"message": "Not Found"})
+			return
+		}
 		hooks := repo.hooks
 		if hooks == nil {
 			hooks = []*github.Hook{}
@@ -980,8 +985,12 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 
 // fakeCircleCI is the CircleCI fake.
 type fakeCircleCI struct {
-	mu        sync.Mutex
-	login     string                  // the token's user
+	mu    sync.Mutex
+	login string // the token's user
+	// onFollow runs when a project is followed through the API: CircleCI
+	// installs its GitHub webhook then, for a follow by an admin whose grant
+	// carries the hook scope. Nil models a follow that leaves no hook.
+	onFollow  func(org, repo string)
 	projects  map[string]*fakeProject // org/repo
 	workflows map[string][]circleciclient.Workflow
 	jobs      map[string][]circleciclient.Job
@@ -1018,8 +1027,27 @@ func newFakeCircleCI() *fakeCircleCI {
 	return f
 }
 
-// follow seeds a followed project set up as the baseline wants.
+// circleCIHook is the webhook CircleCI installs on a repository it follows.
+func circleCIHook() *github.Hook {
+	return &github.Hook{ID: new(int64(683979223)), Name: new("web"), Active: new(true), Events: []string{"push", "pull_request"}, Config: &github.HookConfig{URL: new(circleCIWebhookURL), ContentType: new("json")}}
+}
+
+// installHook is the onFollow of a CircleCI whose follow installs the
+// webhook on the GitHub fake's repository.
+func (f *fakeGitHub) installHook(org, repo string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if r, ok := f.repos[org+"/"+repo]; ok {
+		r.hooks = append(r.hooks, circleCIHook())
+	}
+}
+
+// follow seeds a followed project set up as the baseline wants, its webhook
+// on the repository when the GitHub fake knows it.
 func (f *fakeCircleCI) follow(org, repo string) *fakeProject {
+	if f.onFollow != nil {
+		f.onFollow(org, repo)
+	}
 	p := &fakeProject{following: true, building: true, setupWorkflows: true, keys: []circleciclient.CheckoutKey{{Type: "deploy-key", Preferred: true}}}
 	f.projects[org+"/"+repo] = p
 	return p
@@ -1082,6 +1110,9 @@ func (f *fakeCircleCI) routes(mux *http.ServeMux) {
 			f.projects[slug] = &fakeProject{} // CircleCI's defaults: no setup workflows, no key yet
 		}
 		f.projects[slug].following, f.projects[slug].building = true, true
+		if f.onFollow != nil {
+			f.onFollow(r.PathValue("org"), r.PathValue("repo"))
+		}
 		writeJSON(w, 200, map[string]any{"followed": true})
 	})
 	// The v1.1 routes of the user's follow and of "stop building": neither
