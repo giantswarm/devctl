@@ -7,6 +7,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- `deploy`, `pr approve-align`, `pr approve-merge-renovate` and `release create` act with the `giantswarm-devctl`
+  App login by default, through `authstore.ResolveGitHub`: no personal token is needed after `devctl auth login
+  --github-only`. A token in `DEVCTL_GITHUB_TOKEN`, `GITHUB_TOKEN` or `OPSCTL_GITHUB_TOKEN` overrides the login and
+  prints the resolver's warning once; with neither they exit 8 naming `devctl auth login --github-only` instead of
+  failing with an error about `GITHUB_TOKEN`. `release create` resolves one token and builds every GitHub client of
+  the release from it. A 404 from GitHub in `deploy` or `release create` under the App login names its likely cause:
+  the App reaches the giantswarm organization and public repositories only, a token in the environment reaches the
+  rest (`authstore.GitHubNotFoundHint`, `githubclient.ExplainNotFound`). `deploy` passes the token to git as basic
+  auth instead of in the remote URL, so a git error quoting the URL no longer prints it
+  ([#2380](https://github.com/giantswarm/devctl/issues/2380)).
+
 ### Added
 
 - `authstore.ResolveGitHub(ctx, envVars...)`, the one resolver of the GitHub token a command for people acts

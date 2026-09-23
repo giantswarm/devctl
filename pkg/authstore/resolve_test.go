@@ -166,3 +166,18 @@ func TestResolveGitHubFromTheEnvironmentStore(t *testing.T) {
 		t.Fatalf("token = %+v, err = %v", token, err)
 	}
 }
+
+func TestGitHubNotFoundHint(t *testing.T) {
+	if hint := GitHubNotFoundHint(Token{Value: "ghp_env", Source: "$GITHUB_TOKEN"}); hint != "" {
+		t.Errorf("hint for a token from the environment = %q, want none", hint)
+	}
+	keychain := Token{Value: "ghu_keychain", Source: SourceKeychain}
+	want := "the devctl GitHub App login reaches the giantswarm organization and public repositories only: " +
+		"for a repository elsewhere, set $DEVCTL_GITHUB_TOKEN, $GITHUB_TOKEN or $OPSCTL_GITHUB_TOKEN to a token that can read it."
+	if hint := GitHubNotFoundHint(keychain); hint != want {
+		t.Errorf("hint = %q, want %q", hint, want)
+	}
+	if hint := GitHubNotFoundHint(keychain, "MY_TOKEN"); !strings.Contains(hint, "set $MY_TOKEN to") {
+		t.Errorf("hint with --github-token-envvar = %q, want it to name $MY_TOKEN", hint)
+	}
+}
