@@ -122,6 +122,13 @@ func TestPrintRecord(t *testing.T) {
 	require.Contains(t, out.String(), "declaration: none -- no team file declares this repository")
 	require.Contains(t, out.String(), "github: gone")
 	require.Contains(t, out.String(), "set-up: not checked\n")
+
+	out.Reset()
+	PrintRecord(&out, &manager.Record{
+		Repository:  "giantswarm/legacy",
+		Declaration: &manager.Declaration{Team: "team-bumblebee", File: "repositories/team-bumblebee.yaml", Problems: []string{"name: must not end in -app"}},
+	})
+	require.Contains(t, out.String(), "declaration: team-bumblebee (repositories/team-bumblebee.yaml): lifecycle production, refused\n  name: must not end in -app\n")
 }
 
 // A repository argument is the name with or without the org; an empty or

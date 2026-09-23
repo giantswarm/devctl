@@ -91,6 +91,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `devctl repo status` and `devctl repo get` read a record whose declaration the schema refuses: the manager keeps the
+  declaration's `problems` as `field: message` strings (its inventory record, the Dev Portal's `InventoryRecord`),
+  where devctl expected `{field, message}` objects and failed every such record with `cannot unmarshal string into Go
+  struct field Declaration.declaration.problems`. A write's dry run keeps its problems as objects, as the manager
+  answers them.
 - `devctl version update` and `devctl version check` ask GitHub for the latest release every time and refresh the
   version cache with the answer. Right after a release the one-hour cache still named the older version, so an explicit
   update answered "You are already using the latest version." until `--no-cache` or the hour passed

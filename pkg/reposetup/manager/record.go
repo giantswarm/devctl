@@ -47,9 +47,11 @@ type Declaration struct {
 	Language      string   `json:"language,omitempty"`
 	Flavours      []string `json:"flavours,omitempty"`
 	// Entry is the entry as the team file carries it, one YAML list item.
-	Entry    string              `json:"entry,omitempty"`
-	Accepted bool                `json:"accepted"`
-	Problems []reposetup.Problem `json:"problems,omitempty"`
+	Entry    string `json:"entry,omitempty"`
+	Accepted bool   `json:"accepted"`
+	// Problems are the schema's refusals of the entry, each `field: message`
+	// as the inventory keeps them; a write's Plan carries them as fields.
+	Problems []string `json:"problems,omitempty"`
 }
 
 // Reality is what GitHub says.
