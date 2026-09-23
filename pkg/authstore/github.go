@@ -180,9 +180,16 @@ func (a *Auth) githubLogin(ctx context.Context, token string) (string, error) {
 // refreshed one when it expired and the refresh token has not, and
 // [ErrAuthRequired] otherwise.
 func (a *Auth) RequireGitHub(ctx context.Context) (Token, error) {
+	return a.requireGitHub(ctx, hintLogin)
+}
+
+// requireGitHub is [Auth.RequireGitHub] with the login a missing record
+// hints at: the agent-facing commands need CircleCI too, the others only
+// GitHub.
+func (a *Auth) requireGitHub(ctx context.Context, hintMissing string) (Token, error) {
 	record, err := a.store.Get(UserGitHub)
 	if errors.Is(err, ErrNotFound) {
-		return Token{}, &AuthRequiredError{Identity: identityGitHub, Cause: causeNoToken, Hint: hintLogin}
+		return Token{}, &AuthRequiredError{Identity: identityGitHub, Cause: causeNoToken, Hint: hintMissing}
 	}
 	if err != nil {
 		return Token{}, err
@@ -197,5 +204,5 @@ func (a *Auth) RequireGitHub(ctx context.Context) (Token, error) {
 			return Token{}, err
 		}
 	}
-	return Token{Value: record.Token, Login: record.Login, ExpiresAt: record.ExpiresAt}, nil
+	return Token{Value: record.Token, Login: record.Login, ExpiresAt: record.ExpiresAt, Source: SourceKeychain}, nil
 }

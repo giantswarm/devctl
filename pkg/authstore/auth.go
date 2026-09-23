@@ -11,7 +11,9 @@
 // A command that needs a token calls [RequireGitHub], [RequireCircleCI] or
 // [RequireMuster] before it does anything else and returns the
 // [ErrAuthRequired] it gets unchanged: it is exit 8 with one sentence naming
-// `devctl auth login`.
+// `devctl auth login`. The commands for people take their GitHub token from
+// [ResolveGitHub]: an environment variable when one is set, as an explicit
+// override, the App login otherwise.
 package authstore
 
 import (
@@ -59,11 +61,15 @@ type AuthRequiredError struct {
 	Identity string
 	// Cause says what is wrong with the record, without token material.
 	Cause string
-	// Hint is the command that fixes it.
+	// Hint is the command that fixes it; empty when no command does (in CI,
+	// where the cause names the variables to set).
 	Hint string
 }
 
 func (e *AuthRequiredError) Error() string {
+	if e.Hint == "" {
+		return fmt.Sprintf("%s authentication required (%s).", e.Identity, e.Cause)
+	}
 	return fmt.Sprintf("%s authentication required (%s): run `%s`.", e.Identity, e.Cause, e.Hint)
 }
 
@@ -84,9 +90,14 @@ type Token struct {
 	Login string
 	// ExpiresAt is zero for a token that does not expire.
 	ExpiresAt time.Time
-	// Warning is the expiry notice of a CircleCI token within
-	// [CircleCIExpiryWarning] of its end, for the envelope; empty otherwise.
+	// Warning is for the command's warnings: the expiry notice of a CircleCI
+	// token within [CircleCIExpiryWarning] of its end, the override notice of
+	// a GitHub token from an environment variable outside CI ([ResolveGitHub]);
+	// empty otherwise. It never carries token material.
 	Warning string
+	// Source is where a GitHub token came from: [SourceKeychain] or "$NAME",
+	// the environment variable; empty for the other identities.
+	Source string
 	// Endpoint is the muster MCP endpoint a muster token is for; empty for
 	// the other identities.
 	Endpoint string

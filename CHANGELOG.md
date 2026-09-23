@@ -9,6 +9,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `authstore.ResolveGitHub(ctx, envVars...)`, the one resolver of the GitHub token a command for people acts
+  with: a token in `DEVCTL_GITHUB_TOKEN`, `GITHUB_TOKEN` or `OPSCTL_GITHUB_TOKEN` (or the one variable a
+  `--github-token-envvar` names) is an explicit override that carries one warning naming the variable and
+  `devctl auth login --github-only`; without one, the `giantswarm-devctl` App login from the keychain, refreshed when
+  expired; neither is `ErrAuthRequired`, exit 8. With `CI` set the keychain is never read and nothing warns. It never
+  falls back from one source to another and never asks `gh auth token`. The token names its `Source` (`keychain` or
+  `$NAME`). `devctl auth status` warns when such a variable overrides the App login, its exit code unchanged, and
+  `docs/auth.md` describes the GitHub token of every command
+  ([#2379](https://github.com/giantswarm/devctl/issues/2379)).
 - `repo reconcile`'s circleci step verifies the webhook CircleCI installs on the follow: after `followed, setup
   workflows on, checkout key present` it reads the repository's webhooks and requires one active hook for
   `https://circleci.com/hooks/github` with the `push` event, `webhook present` in the summary. A followed project
@@ -56,6 +65,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- A command for people that fails with an error carrying its exit code (`agentcli.ExitCoder`) exits with that
+  code: `ErrAuthRequired` is exit 8 for every command, its one sentence on stderr. Before, every such error was
+  exit 2 ([#2379](https://github.com/giantswarm/devctl/issues/2379)).
 - A command called the wrong way says what is wrong and how to call it, without a stack trace: a missing
   argument is named from the usage line (`Missing [OWNER/]REPOSITORY`), an extra one is `Unexpected argument "b"`,
   an unknown command or flag, or a flag the command's validation refuses, is followed by the command's usage line

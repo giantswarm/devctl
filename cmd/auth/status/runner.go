@@ -22,6 +22,9 @@ type runner struct {
 	gate func(noCache bool) error
 	// open is authstore.Open; tests inject an Auth over a file store.
 	open func(stderr io.Writer) (*authstore.Auth, error)
+	// githubOverride is authstore.GitHubOverrideWarning: a GitHub token in
+	// the environment overrides the App login for the commands for people.
+	githubOverride func(envVars ...string) string
 }
 
 // document is the command's JSON: the envelope and both identities.
@@ -68,9 +71,14 @@ func (r *runner) status(args []string, doc *document) error {
 	if err != nil {
 		return err
 	}
+	if w := r.githubOverride(); w != "" {
+		status.GitHub.Warnings = append(status.GitHub.Warnings, w)
+	}
 	doc.Status = status
-	for _, w := range status.CircleCI.Warnings {
-		doc.Warn(w)
+	for _, warnings := range [][]string{status.GitHub.Warnings, status.CircleCI.Warnings} {
+		for _, w := range warnings {
+			doc.Warn(w)
+		}
 	}
 	return status.Check()
 }
