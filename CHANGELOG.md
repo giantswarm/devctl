@@ -106,6 +106,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   repositories schema` (`entry-refused`, no set-up checks), while giantswarm/github's schema carries the key and the
   reconciler aligns the repository with it. A test holds every `gen circleci` flag a team file sets to a `gen.ci` key
   of the embedded copy.
+- A created repository's scaffold passes `gen.ci.chartReleaseGateJob` to `gen circleci` as
+  `--chart-release-gate-job`, as align-files does, so its first CircleCI configuration gates the release chart push
+  on the declared job. Before, the scaffold left the key out and the gate appeared only with the first align. A test
+  holds every `gen.ci` key of the embedded schema to the flag the scaffold's `gen circleci` line passes.
 - A newer devctl release no longer breaks the agent-facing commands' contract: `pr wait`, `pr merge`, `release
   wait`, `auth login` and `auth status` run the version check after their argument checks and report an outdated
   devctl in their document, exit 7 with the reason naming `devctl version update` and `DEVCTL_UNSAFE_FORCE_VERSION`.
