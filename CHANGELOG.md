@@ -91,6 +91,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `devctl version update` and `devctl version check` ask GitHub for the latest release every time and refresh the
+  version cache with the answer. Right after a release the one-hour cache still named the older version, so an explicit
+  update answered "You are already using the latest version." until `--no-cache` or the hour passed
+  ([#2370](https://github.com/giantswarm/devctl/issues/2370)). The check before every other command keeps using the
+  cache within its hour; `--no-cache` now only leaves the cache as it is.
 - `devctl pr merge`'s refusal of another human's pull request (exit 5) names every author it accepts -- the caller,
   bots and GitHub Apps (the `Bot` user type or a `[bot]` login) and the automation accounts `architectbot` and
   `taylorbot` -- where it said "the caller's own pull requests and bots' only", which left a reader guessing whether
