@@ -121,7 +121,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   remote, or with one outside the giantswarm organization, the command fails and asks for `--repo-name`; it never
   falls back to the directory name. The name is read only when `renovate-custom.json5` exists, the one case the
   generated config names the repository. `gen workflows` reads cliff.toml's `[remote.github].repo` with the same
-  parser, so an origin that names no `<owner>/<name>` (a local path) renders `repo = ""` like a missing one.
+  parser, so an origin that names no `<owner>/<name>` (a local path) renders `repo = ""` like a missing one
+  ([#2389](https://github.com/giantswarm/devctl/pull/2389)).
 - `devctl pr wait`, `devctl pr merge` and `devctl release wait` wait for a spent rate limit instead of ending on it
   with exit 7: a GitHub or CircleCI read refused with `403` or `429` and `X-RateLimit-Remaining: 0` is sent again a
   second after `X-RateLimit-Reset`, one with `Retry-After` (a secondary limit, CircleCI's `429`) that much later,
