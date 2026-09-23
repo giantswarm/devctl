@@ -78,6 +78,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- The version check that precedes every command, `version check`, `version update` and `repo validate` read GitHub
+  with the `giantswarm-devctl` App login when there is no token in the environment, through
+  `authstore.ResolveGitHub`: a token in `DEVCTL_GITHUB_TOKEN`, `GITHUB_TOKEN` or `OPSCTL_GITHUB_TOKEN` (`repo validate
+  --github-token-envvar` names one variable instead; its default is now those three) overrides it with the resolver's
+  warning, printed once per invocation. The token stays optional: with neither the reads stay anonymous (`repo
+  validate`: the embedded schema, names unchecked), and with `CI` set the keychain is never read. The version check
+  resolves the token only when it asks GitHub, never while its one-hour cache is fresh. `pkg/updater` reads releases
+  through its own GitHub source, so the selfupdate library no longer picks up `GITHUB_TOKEN` by itself, and follows
+  `DEVCTL_GITHUB_API_URL` ([#2381](https://github.com/giantswarm/devctl/issues/2381)).
 - A command for people that fails with an error carrying its exit code (`agentcli.ExitCoder`) exits with that
   code: `ErrAuthRequired` is exit 8 for every command, its one sentence on stderr, so a `repo` command without a
   muster login exits 8 as `docs/auth.md` says. Before, every such error was exit 2

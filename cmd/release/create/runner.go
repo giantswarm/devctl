@@ -9,7 +9,6 @@ import (
 
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/v8/pkg/authstore"
@@ -47,9 +46,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, _ []string) error 
 	if err != nil {
 		return err
 	}
-	if token.Warning != "" {
-		logrus.Warn(token.Warning)
-	}
+	token.WarnOnce(r.stderr)
 
 	creationCommand := fmt.Sprintf("%v", strings.Join(os.Args, " "))
 

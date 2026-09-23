@@ -15,9 +15,13 @@ import (
 )
 
 type Config struct {
-	// GithubToken will be used when fetching versions
-	// from private GitHub repositories.
-	GithubToken string
+	// GithubToken returns the GitHub token the releases are read with. It is
+	// called once, when the first request goes to GitHub, and never when the
+	// version cache answers. nil or "" reads anonymously; the environment is
+	// not a source of its own.
+	GithubToken func(context.Context) (string, error)
+	// GitHubAPIURL is the GitHub REST API; empty is https://api.github.com.
+	GitHubAPIURL string
 	// CurrentVersion is the currently installed version
 	// of the application.
 	CurrentVersion string
@@ -29,15 +33,14 @@ type Config struct {
 }
 
 // Seams for the tests: where releases come from (nil is GitHub, reached with
-// Config.GithubToken) and which file InstallLatest replaces (the running
-// executable).
+// Config.GithubToken at Config.GitHubAPIURL) and which file InstallLatest
+// replaces (the running executable).
 var (
 	releaseSource  selfupdate.Source
 	executablePath = selfupdate.ExecutablePath
 )
 
 type Updater struct {
-	githubToken    string
 	currentVersion semver.Version
 	repository     string
 	cacheDir       string
@@ -64,8 +67,7 @@ func New(c Config) (*Updater, error) {
 	var err error
 
 	u := &Updater{
-		githubToken: c.GithubToken,
-		cacheDir:    c.CacheDir,
+		cacheDir: c.CacheDir,
 	}
 
 	{
@@ -85,10 +87,7 @@ func New(c Config) (*Updater, error) {
 	{
 		source := releaseSource
 		if source == nil {
-			// With an empty token the library falls back to GITHUB_TOKEN.
-			source, err = selfupdate.NewGitHubSource(selfupdate.GitHubConfig{
-				APIToken: u.githubToken,
-			})
+			source, err = newGitHubSource(selfupdate.ParseSlug(u.repository), c.GitHubAPIURL, c.GithubToken)
 			if err != nil {
 				return nil, microerror.Mask(err)
 			}

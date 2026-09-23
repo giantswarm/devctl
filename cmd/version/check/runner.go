@@ -11,7 +11,7 @@ import (
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
 
-	"github.com/giantswarm/devctl/v8/internal/env"
+	"github.com/giantswarm/devctl/v8/internal/versiongate"
 	"github.com/giantswarm/devctl/v8/pkg/project"
 	"github.com/giantswarm/devctl/v8/pkg/updater"
 )
@@ -40,25 +40,9 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 }
 
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
-	var err error
-
-	var updaterService *updater.Updater
-	{
-		var cacheDir string
-		if !r.flag.NoCache {
-			cacheDir = env.ConfigDir.Val()
-		}
-
-		config := updater.Config{
-			CurrentVersion: project.Version(),
-			RepositoryURL:  project.Source(),
-			CacheDir:       cacheDir,
-		}
-
-		updaterService, err = updater.New(config)
-		if err != nil {
-			return microerror.Mask(err)
-		}
+	updaterService, err := versiongate.NewUpdater(r.flag.NoCache, r.stderr)
+	if err != nil {
+		return microerror.Mask(err)
 	}
 
 	_, err = updaterService.GetLatestFromSource()

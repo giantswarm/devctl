@@ -38,9 +38,7 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	if token.Warning != "" {
-		r.Logger.Warn(token.Warning)
-	}
+	token.WarnOnce(r.Stderr)
 	notFoundHint := authstore.GitHubNotFoundHint(token)
 
 	githubClient, err := githubclient.New(githubclient.Config{
