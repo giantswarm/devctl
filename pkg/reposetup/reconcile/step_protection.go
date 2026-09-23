@@ -33,6 +33,10 @@ const gitHubActionsAppID int64 = 15368
 // it with 422.
 const teamPrivacySecret = "secret"
 
+// repositoryAdminRoleID is the id GitHub gives the repository role Admin in
+// a bypass actor (Maintain is 2, Write 4).
+const repositoryAdminRoleID int64 = 5
+
 // stepProtection protects the default branch and keeps the required checks
 // on the reported-only rule: a context is required once it has reported on
 // the default branch or a recently merged pull request; a required context
@@ -48,7 +52,7 @@ const teamPrivacySecret = "secret"
 func (r *Runner) stepProtection(ctx context.Context, s *run, sr *StepResult) error {
 	if r.DevctlAppID == 0 {
 		s.report(sr, FindingRulesetsNotEnabled,
-			"classic branch protection: no devctl App id, so the ruleset with the App and the owning team as bypass actors is not written",
+			"classic branch protection: no devctl App id, so the ruleset with the App, the repository admins and the owning team as bypass actors is not written",
 			fmt.Sprintf("pass the App's numeric id (its settings page; not the client id) with --devctl-app-id: the switch to the ruleset %q, which then replaces the classic protection", RulesetName))
 		return r.stepClassicProtection(ctx, s, sr)
 	}
@@ -143,9 +147,9 @@ func (r *Runner) stepClassicProtection(ctx context.Context, s *run, sr *StepResu
 // stepRulesetProtection protects the default branch with the repository
 // ruleset [RulesetName]: the baseline's review requirement, the required
 // checks on the reported-only rule, no deletion and no force push, and the
-// devctl App and the owning team as bypass actors for pull requests unless
-// the entry opts out of agent merges (agentMerge: false; see
-// bypassActors). The ruleset targets the default branch
+// devctl App, the repository admins and the owning team as bypass actors
+// for pull requests unless the entry opts out of agent merges (agentMerge:
+// false; see bypassActors). The ruleset targets the default branch
 // wherever it moves. Classic branch protection gives way to the ruleset in
 // the same run: its required checks are carried over, then it is removed.
 // Rulesets the engine did not create are left alone and reported.
@@ -219,7 +223,7 @@ func (r *Runner) stepRulesetProtection(ctx context.Context, s *run, sr *StepResu
 			// GitHub's own judgment on the team, beyond what its privacy
 			// shows: the App stands alone and the team is reported.
 			s.report(sr, FindingTeamBypassRefused,
-				fmt.Sprintf("GitHub refused team %s (privacy %s) as bypass actor of the ruleset: %v; the ruleset is written with the App alone", s.team.GetSlug(), s.team.GetPrivacy(), err),
+				fmt.Sprintf("GitHub refused team %s (privacy %s) as bypass actor of the ruleset: %v; the ruleset is written with the App and the repository admins", s.team.GetSlug(), s.team.GetPrivacy(), err),
 				teamBypassFix(s.owner, s.team.GetSlug()))
 			without := desired
 			without.bypass = slices.DeleteFunc(slices.Clone(desired.bypass), func(a *github.BypassActor) bool {
@@ -338,20 +342,22 @@ func (r *Runner) writeRuleset(ctx context.Context, s *run, have *github.Reposito
 
 // bypassActors is the ruleset's bypass list, none when the entry opts out
 // of agent merges (agentMerge: false): the devctl App for pull requests
-// and, beside it, the owning team in the same mode. GitHub evaluates a
-// request under the App's user access token as the person, not as the App,
-// so the App's bypass covers the App acting as itself — which devctl never
-// does — and the team's covers a member merging their own green pull
-// request through their token; direct pushes stay forbidden and every
-// bypass is audited. A secret team cannot be a bypass actor: it is reported
-// with the fix and the App stands alone. A run without a team (an
-// undeclared entry) keeps the team actors the ruleset has. current is the
-// bypass list of the ruleset as it is.
+// and, beside it, the repository admins and the owning team in the same
+// mode. GitHub evaluates a request under the App's user access token as the
+// person, not as the App, so the App's bypass covers the App acting as
+// itself — which devctl never does — while the admins' and the team's cover
+// a person merging their own green pull request through their token: a
+// member of the owning team in its repositories, an admin in every aligned
+// repository, as classic protection without enforce_admins let them; direct
+// pushes stay forbidden and every bypass is audited. A secret team cannot
+// be a bypass actor: it is reported with the fix and the App and the admins
+// stand. A run without a team (an undeclared entry) keeps the team actors
+// the ruleset has. current is the bypass list of the ruleset as it is.
 func (r *Runner) bypassActors(ctx context.Context, s *run, sr *StepResult, current []*github.BypassActor) ([]*github.BypassActor, error) {
 	if !s.agentMerge() {
 		return nil, nil
 	}
-	actors := []*github.BypassActor{appActor(r.DevctlAppID)}
+	actors := []*github.BypassActor{appActor(r.DevctlAppID), adminActor()}
 	team, err := r.owningTeam(ctx, s)
 	if err != nil {
 		return nil, err
@@ -365,7 +371,7 @@ func (r *Runner) bypassActors(ctx context.Context, s *run, sr *StepResult, curre
 		}
 	case team.GetPrivacy() == teamPrivacySecret:
 		s.report(sr, FindingTeamBypassRefused,
-			fmt.Sprintf("team %s is secret and cannot be a bypass actor of the ruleset: the App stands alone, so a member's own pull request does not merge through the API without a second review", team.GetSlug()),
+			fmt.Sprintf("team %s is secret and cannot be a bypass actor of the ruleset: the App and the repository admins stand, so a member's own pull request does not merge through the API without a second review unless they are an admin", team.GetSlug()),
 			teamBypassFix(s.owner, team.GetSlug()))
 	default:
 		actors = append(actors, teamActor(team.GetID()))
@@ -392,7 +398,7 @@ func (r *Runner) owningTeam(ctx context.Context, s *run) (*github.Team, error) {
 
 // teamBypassFix is the fix of a team GitHub does not take as bypass actor.
 func teamBypassFix(owner, slug string) string {
-	return fmt.Sprintf("make %s/%s a visible team of the organization (privacy: closed, in the team's settings); the next run adds it beside the App", owner, slug)
+	return fmt.Sprintf("make %s/%s a visible team of the organization (privacy: closed, in the team's settings); the next run adds it beside the App and the repository admins", owner, slug)
 }
 
 // appActor is a GitHub App as bypass actor for pull requests.
@@ -400,6 +406,17 @@ func appActor(id int64) *github.BypassActor {
 	return &github.BypassActor{
 		ActorID:    new(id),
 		ActorType:  new(github.BypassActorTypeIntegration),
+		BypassMode: new(github.BypassModePullRequest),
+	}
+}
+
+// adminActor is the repository role Admin as bypass actor for pull
+// requests: what classic protection without enforce_admins granted the
+// administrators, on the record this time.
+func adminActor() *github.BypassActor {
+	return &github.BypassActor{
+		ActorID:    new(repositoryAdminRoleID),
+		ActorType:  new(github.BypassActorTypeRepositoryRole),
 		BypassMode: new(github.BypassModePullRequest),
 	}
 }
@@ -664,9 +681,10 @@ func describeActors(actors []*github.BypassActor, team *github.Team) string {
 	return strings.Join(out, ", ")
 }
 
-// describeActor is "App 123 on pull requests" for the devctl App, "team
-// <slug> on pull requests" for the owning team (by id for any other team),
-// "<type> <id> (<mode>)" for any other actor.
+// describeActor is "App 123 on pull requests" for the devctl App,
+// "repository admins on pull requests" for the admin role, "team <slug> on
+// pull requests" for the owning team (by id for any other team), "<type>
+// <id> (<mode>)" for any other actor.
 func describeActor(a *github.BypassActor, team *github.Team) string {
 	kind, mode := actorType(a), bypassMode(a)
 	if mode != github.BypassModePullRequest {
@@ -675,6 +693,11 @@ func describeActor(a *github.BypassActor, team *github.Team) string {
 	switch kind {
 	case github.BypassActorTypeIntegration:
 		return fmt.Sprintf("App %d on pull requests", a.GetActorID())
+	case github.BypassActorTypeRepositoryRole:
+		if a.GetActorID() == repositoryAdminRoleID {
+			return "repository admins on pull requests"
+		}
+		return fmt.Sprintf("repository role %d on pull requests", a.GetActorID())
 	case github.BypassActorTypeTeam:
 		if team != nil && team.GetID() == a.GetActorID() {
 			return fmt.Sprintf("team %s on pull requests", team.GetSlug())

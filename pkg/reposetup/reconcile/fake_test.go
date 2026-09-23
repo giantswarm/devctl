@@ -130,6 +130,11 @@ func appBypass(id int64) *github.BypassActor {
 	return &github.BypassActor{ActorID: new(id), ActorType: new(github.BypassActorTypeIntegration), BypassMode: new(github.BypassModePullRequest)}
 }
 
+// adminBypass is the repository role Admin as bypass actor for pull requests.
+func adminBypass() *github.BypassActor {
+	return &github.BypassActor{ActorID: new(int64(5)), ActorType: new(github.BypassActorTypeRepositoryRole), BypassMode: new(github.BypassModePullRequest)}
+}
+
 // teamBypass is a team as bypass actor for pull requests.
 func teamBypass(id int64) *github.BypassActor {
 	return &github.BypassActor{ActorID: new(id), ActorType: new(github.BypassActorTypeTeam), BypassMode: new(github.BypassModePullRequest)}

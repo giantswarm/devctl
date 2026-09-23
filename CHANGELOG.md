@@ -7,8 +7,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- `devctl repo reconcile` writes the repository admins (GitHub's repository role Admin) as a third bypass actor of the
+  ruleset `devctl: default branch`, in `pull_request` mode beside the devctl App and the owning team: `devctl pr merge`
+  run by an admin of the repository merges their own green pull request through the ruleset in every aligned
+  repository, as classic protection without `enforce_admins` let them, every bypass in the audit log. A ruleset written
+  before gains the actor on the next run; `agentMerge: false` still leaves the list empty. The decline's reason, the
+  help and the docs name the role.
+
 ### Fixed
 
+- A merge `devctl pr merge` has declined for the review rule says whom devctl acted as (the user token of `devctl auth
+  login`; the App's bypass covers installation tokens devctl never holds), which rulesets of the base carry a pull
+  request rule and their bypass actors, and the team whose file declares the entry: one of its members or a repository
+  admin merges it, or a reviewer with write access approves it first. The help and `docs/pr-merge.md` said the App's
+  bypass passed the review rule.
 - The repo commands call giantswarm-repo-manager's tools through muster's `call_tool` meta-tool and unwrap its envelope,
   which is how muster exposes every server's tool to a session (the muster CLI and the platform's agents do the same):
   8.85.0 called the tools directly and muster answered `tool not found` for every one of them. The e2e muster mock now

@@ -33,12 +33,13 @@ with a merge queue is enqueued instead, the pull request waited for until the
 queue merged it, then the branch deleted. Nothing reads a protection setting
 to change it and nothing writes one. The merge is made as you, with the user
 token of devctl auth login: the review rule is passed through the bypass the
-repository's ruleset grants your team (the alignment engine writes the owning
-team, beside the devctl App, as bypass actor for pull requests; an App's
-bypass covers its installation tokens, which devctl does not hold). In a
-repository another team owns, your own green pull request is declined until
-a reviewer with write access approves it: exit 3, the reason naming the
-ruleset, its bypass actors and the owning team.
+repository's ruleset grants your team or the repository's admins (the
+alignment engine writes the owning team and the repository admins, beside
+the devctl App, as bypass actors for pull requests; an App's bypass covers
+its installation tokens, which devctl does not hold). In a repository
+another team owns, unless you are one of its admins, your own green pull
+request is declined until a reviewer with write access approves it: exit 3,
+the reason naming the ruleset, its bypass actors and the owning team.
 
 --update-branch: a head behind a strict base is updated from the base
 (GitHub's Update branch) and the new head is what the wait judges and the
