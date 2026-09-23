@@ -1,0 +1,63 @@
+{
+  "exitCode": 0,
+  "json": {
+    "command": "pr merge",
+    "schemaVersion": 1,
+    "startedAt": "*",
+    "finishedAt": "*",
+    "warnings": [],
+    "repository": "giantswarm/e2e-app",
+    "number": 42,
+    "headSha": "abc123",
+    "baseRef": "main",
+    "checks": [
+      {
+        "name": "go-test",
+        "source": "check_run",
+        "status": "completed",
+        "conclusion": "success",
+        "url": "*",
+        "required": false
+      }
+    ],
+    "circleci": {
+      "pipelineId": "p1",
+      "pipelineNumber": 12,
+      "workflows": [
+        {
+          "name": "build",
+          "status": "success",
+          "url": "*"
+        }
+      ]
+    },
+    "actions": [
+      {
+        "name": "CI",
+        "runId": 7001,
+        "status": "completed",
+        "conclusion": "success",
+        "url": "*"
+      }
+    ],
+    "mergeCommitSha": "aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44",
+    "method": "squash",
+    "branchDeleted": true,
+    "enqueued": false,
+    "exitCode": 0,
+    "verdict": "green",
+    "reason": "",
+    "release": {
+      "verdict": "no_release",
+      "reason": "the Auto-release run https://github.com/giantswarm/e2e-app/actions/runs/9001 of the merge commit aa11bb22 of giantswarm/e2e-app#42 finished without a tag: the commits since the last release warrant none",
+      "repository": "giantswarm/e2e-app",
+      "tag": "",
+      "sha": "aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44",
+      "releaseModel": "auto-release",
+      "ciModel": "generated",
+      "artifacts": [],
+      "pipeline": null,
+      "actions": []
+    }
+  }
+}

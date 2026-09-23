@@ -30,6 +30,18 @@
     "mergeCommitSha": "0f3a9c1d",
     "method": "squash",
     "branchDeleted": true,
-    "enqueued": false
+    "enqueued": false,
+    "release": {
+      "verdict": "no_release",
+      "reason": "giantswarm/devctl releases through the legacy workflow, which does not tag the merge commit of #42: a release of it is waited for by its version",
+      "repository": "giantswarm/devctl",
+      "tag": "",
+      "sha": "0f3a9c1d",
+      "releaseModel": "legacy",
+      "ciModel": "none",
+      "artifacts": [],
+      "pipeline": null,
+      "actions": []
+    }
   }
 }

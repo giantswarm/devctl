@@ -1,0 +1,106 @@
+# The merge landed and auto-release tagged it, but the tag pipeline's push
+# job failed: the release will never be pullable. Exit 6, distinct from the
+# CI outcomes before the merge (1 red, 2 timeout): the pull request is
+# merged and must not be merged again; the document names the failed job.
+description: a merged pull request whose tag pipeline fails is exit 6 with the failed jobs
+args: [pr, merge, giantswarm/e2e-app, "42", --timeout, 30m, --release-timeout, 30m]
+timeout: 20s
+keyring:
+  github:
+    login: e2e-engineer
+    token: ghu_e2e_live
+    expiresAt: "2099-01-01T00:00:00Z"
+    refreshToken: ghr_e2e_live
+    refreshExpiresAt: "2099-01-01T00:00:00Z"
+  circleci:
+    login: e2e-engineer
+    token: CCIPAT_e2e_live
+    expiresAt: "2099-01-01T00:00:00Z"
+github:
+  routes:
+    "GET /repos/giantswarm/e2e-app/pulls/42":
+      - body:
+          number: 42
+          node_id: PR_e2e_42
+          title: "feat: the change"
+          state: open
+          draft: false
+          merged: false
+          mergeable: true
+          mergeable_state: clean
+          user: {login: e2e-engineer, type: User}
+          head: {sha: abc123, ref: feature, repo: {full_name: giantswarm/e2e-app}}
+          base: {ref: main, repo: {full_name: giantswarm/e2e-app}}
+    "GET /repos/giantswarm/e2e-app/commits/abc123/check-runs":
+      - body:
+          total_count: 1
+          check_runs:
+            - {id: 101, name: go-test, status: completed, conclusion: success, started_at: "2026-09-23T10:00:00Z", html_url: "https://github.com/giantswarm/e2e-app/runs/101"}
+    "GET /repos/giantswarm/e2e-app/commits/abc123/status":
+      - body: {state: success, total_count: 0, statuses: []}
+    "GET /repos/giantswarm/e2e-app/actions/runs?head_sha=abc123":
+      - body:
+          total_count: 1
+          workflow_runs:
+            - {id: 7001, name: CI, status: completed, conclusion: success, html_url: "https://github.com/giantswarm/e2e-app/actions/runs/7001"}
+    "GET /repos/giantswarm/e2e-app/contents/.circleci/config.yml":
+      - body: {type: file, name: config.yml, path: .circleci/config.yml, sha: c0ffee, encoding: base64, content: ""}
+    "PUT /repos/giantswarm/e2e-app/pulls/42/merge":
+      - body: {sha: aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44, merged: true, message: "Pull Request successfully merged"}
+    "DELETE /repos/giantswarm/e2e-app/git/refs/heads/feature":
+      - status: 204
+    "GET /repos/giantswarm/github/contents/repositories":
+      - body:
+          - {name: team-e2e.yaml, path: repositories/team-e2e.yaml, type: file}
+    "GET /repos/giantswarm/github/contents/repositories/team-e2e.yaml":
+      - body:
+          name: team-e2e.yaml
+          path: repositories/team-e2e.yaml
+          type: file
+          content: |
+            - name: e2e-app
+              componentType: service
+              gen:
+                flavours:
+                  - app
+                language: go
+                ci:
+                  generate: true
+    "GET /repos/giantswarm/e2e-app":
+      - body: {name: e2e-app, full_name: giantswarm/e2e-app, private: false}
+    "GET /repos/giantswarm/e2e-app/contents/?ref=aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44":
+      - body:
+          - {name: Dockerfile, path: Dockerfile, type: file}
+          - {name: helm, path: helm, type: dir}
+    "GET /repos/giantswarm/e2e-app/contents/.github/workflows?ref=aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44":
+      - body:
+          - {name: zz_generated.auto_release.yaml, path: .github/workflows/zz_generated.auto_release.yaml, type: file}
+    "GET /repos/giantswarm/e2e-app/contents/.circleci?ref=aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44":
+      - body:
+          - {name: config.yml, path: .circleci/config.yml, type: file}
+          - {name: workflows.yml, path: .circleci/workflows.yml, type: file}
+    "GET /repos/giantswarm/e2e-app/tags":
+      - body:
+          - {name: v1.2.3, commit: {sha: aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44}}
+circleci:
+  routes:
+    "GET /api/v2/project/gh/giantswarm/e2e-app":
+      - body: {slug: gh/giantswarm/e2e-app, name: e2e-app, organization_name: giantswarm}
+    "GET /api/v2/project/gh/giantswarm/e2e-app/pipeline?branch=feature":
+      - body:
+          items:
+            - {id: p1, number: 12, state: created, created_at: "2026-09-23T10:00:00Z", vcs: {revision: abc123, branch: feature}}
+          next_page_token: ""
+    "GET /api/v2/pipeline/p1/workflow":
+      - body:
+          items:
+            - {id: w1, name: build, status: success, pipeline_number: 12, created_at: "2026-09-23T10:00:00Z"}
+    "GET /api/v2/project/gh/giantswarm/e2e-app/pipeline":
+      - body: {items: [{id: p2, number: 13, state: created, created_at: "2026-09-23T10:05:00Z", vcs: {tag: v1.2.3, revision: aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44}}, {id: p1, number: 12, state: created, created_at: "2026-09-23T10:00:00Z", vcs: {revision: abc123, branch: feature}}], next_page_token: null}
+    "GET /api/v2/pipeline/p2/workflow":
+      - body:
+          items:
+            - {id: w2, name: build, status: failed, created_at: "2026-09-23T10:05:05Z"}
+          next_page_token: null
+    "GET /api/v2/workflow/w2/job":
+      - body: {items: [{id: j1, name: go-build, status: success}, {id: j2, name: push-to-registries-release, status: failed}], next_page_token: null}

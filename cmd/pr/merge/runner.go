@@ -17,6 +17,7 @@ import (
 	"github.com/giantswarm/devctl/v8/pkg/githubclient"
 	"github.com/giantswarm/devctl/v8/pkg/prmerge"
 	"github.com/giantswarm/devctl/v8/pkg/prwait"
+	"github.com/giantswarm/devctl/v8/pkg/releasewait"
 )
 
 const command = "pr merge"
@@ -78,6 +79,9 @@ func (r *runner) merge(ctx context.Context, args []string, doc *document) error 
 	if r.flag.Timeout <= 0 {
 		return fmt.Errorf("--%s must be positive, got %s", flagTimeout, r.flag.Timeout)
 	}
+	if !r.flag.NoReleaseWait && r.flag.ReleaseTimeout <= 0 {
+		return fmt.Errorf("--%s must be positive, got %s", flagReleaseTimeout, r.flag.ReleaseTimeout)
+	}
 	clock, err := r.clock()
 	if err != nil {
 		return err
@@ -100,29 +104,72 @@ func (r *runner) merge(ctx context.Context, args []string, doc *document) error 
 		return err
 	}
 
+	// One CircleCI client for the CI wait and the release wait, opened
+	// through the gate when either first needs it.
+	var circleci *circleciclient.Client
+	openCircleCI := func(ctx context.Context) (*circleciclient.Client, error) {
+		if circleci != nil {
+			return circleci, nil
+		}
+		token, err := r.requireCircleCI(ctx)
+		if err != nil {
+			return nil, err
+		}
+		doc.Warn(token.Warning)
+		circleci, err = circleciclient.New(circleciclient.Config{
+			Token:   token.Value,
+			BaseURL: circleciclient.BaseURLFromAPIURL(endpoints.CircleCIAPIURL),
+			Logger:  logger,
+		})
+		return circleci, err
+	}
+	progress := agentcli.NewProgress(r.stderr, r.flag.Progress)
+
+	var release prmerge.ReleaseWait
+	if !r.flag.NoReleaseWait {
+		release = func(ctx context.Context, owner, repo string, number int, mergeCommitSHA string, result *releasewait.Result) error {
+			waiter, err := releasewait.New(releasewait.Config{
+				Owner:          owner,
+				Repo:           repo,
+				PR:             number,
+				MergeCommitSHA: mergeCommitSHA,
+				Timeout:        r.flag.ReleaseTimeout,
+				GitHub:         github,
+				Entries:        releasewait.TeamFileEntries{GitHub: github.GitHub()},
+				CircleCI: func(ctx context.Context) (releasewait.CircleCI, error) {
+					client, err := openCircleCI(ctx)
+					if err != nil {
+						return nil, err
+					}
+					return client, nil
+				},
+				Registry:  releasewait.RegistryProber{Endpoints: endpoints},
+				Endpoints: endpoints,
+				Clock:     clock,
+				Rate:      conditional.Rate,
+				Progress:  progress,
+				Warn:      doc.Warn,
+			})
+			if err != nil {
+				return err
+			}
+			return waiter.Wait(ctx, result)
+		}
+	}
+
 	merger, err := prmerge.New(prmerge.Config{
 		Wait: prwait.Config{
-			GitHub: github,
-			Rate:   conditional,
-			CircleCI: func(ctx context.Context) (*circleciclient.Client, error) {
-				token, err := r.requireCircleCI(ctx)
-				if err != nil {
-					return nil, err
-				}
-				doc.Warn(token.Warning)
-				return circleciclient.New(circleciclient.Config{
-					Token:   token.Value,
-					BaseURL: strings.TrimSuffix(endpoints.CircleCIAPIURL, "/api/v2"),
-					Logger:  logger,
-				})
-			},
+			GitHub:   github,
+			Rate:     conditional,
+			CircleCI: openCircleCI,
 			Clock:    clock,
-			Progress: agentcli.NewProgress(r.stderr, r.flag.Progress),
+			Progress: progress,
 			Timeout:  r.flag.Timeout,
 		},
 		Method:       r.method(),
 		UpdateBranch: r.flag.UpdateBranch,
 		Login:        token.Login,
+		Release:      release,
 	})
 	if err != nil {
 		return err

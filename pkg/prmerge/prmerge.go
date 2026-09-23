@@ -1,5 +1,6 @@
 // Package prmerge is the engine behind `devctl pr merge`: the refusals that
-// come before any wait, the wait of pkg/prwait, then the merge.
+// come before any wait, the wait of pkg/prwait, the merge, then the wait of
+// pkg/releasewait for the release the merge triggered.
 //
 // A merge is refused before the first poll for a pull request no wait can
 // turn green (draft, closed, conflicting, behind a strict base; exit 3), for
@@ -19,6 +20,13 @@
 // the review rule declines is exit 3 with GitHub's sentence and the
 // ruleset's bypass actors, so the caller knows whose review or merge it
 // takes.
+//
+// After the merge the release follows in the same call: the tag
+// auto-release puts on the merge commit, its images and charts resolved to
+// a digest. A merge that no release follows (a repository that does not
+// tag merge commits, commits that warrant no bump) is done at the merge.
+// A release that fails is exit 6 and one not confirmed in time exit 9:
+// both say the merge happened.
 package prmerge
 
 import (
@@ -65,6 +73,9 @@ type Config struct {
 	// Policy is the repository's opt-out; nil is [TeamFilePolicy] on the
 	// GitHub client.
 	Policy Policy
+	// Release waits for the release the merge triggered; nil ends the
+	// command at the merge (--no-release-wait).
+	Release ReleaseWait
 }
 
 // Result is the command's part of the document: the wait's fields and the
@@ -82,6 +93,9 @@ type Result struct {
 	// Enqueued: the base has a merge queue and the pull request went
 	// through it.
 	Enqueued bool `json:"enqueued"`
+	// Release is the release the merge triggered; null when no release
+	// wait ran (--no-release-wait, or nothing merged).
+	Release *Release `json:"release"`
 }
 
 // Merger runs merges.
@@ -95,6 +109,7 @@ type Merger struct {
 	updateBranch bool
 	login        string
 	policy       Policy
+	release      ReleaseWait
 }
 
 // New returns a Merger for config.
@@ -116,6 +131,7 @@ func New(config Config) (*Merger, error) {
 		updateBranch: config.UpdateBranch,
 		login:        config.Login,
 		policy:       config.Policy,
+		release:      config.Release,
 	}
 	if m.clock.Scale() == 0 {
 		m.clock = agentcli.NewClock(1, nil)
@@ -139,10 +155,11 @@ func New(config Config) (*Merger, error) {
 	return m, nil
 }
 
-// Merge refuses, waits and merges owner/repo#number. The Result is always
-// returned, as far as it was filled; the error is nil on a merge, an
-// *agentcli.ExitError with the code of the table otherwise, or a tooling
-// failure.
+// Merge refuses, waits, merges owner/repo#number and waits for the release
+// the merge triggered. The Result is always returned, as far as it was
+// filled; the error is nil on a merge whose release is available or that no
+// release follows, an *agentcli.ExitError with the code of the table
+// otherwise, or a tooling failure.
 func (m *Merger) Merge(ctx context.Context, owner, repo string, number int) (*Result, error) {
 	result := &Result{
 		Result: prwait.Result{
@@ -204,16 +221,28 @@ func (m *Merger) Merge(ctx context.Context, owner, repo string, number int) (*Re
 		return result, err
 	}
 
-	if prwait.IsFork(pr) {
-		result.Warnings = append(result.Warnings, fmt.Sprintf("the head %s lives in the fork %s; the branch is left alone", pr.GetHead().GetRef(), pr.GetHead().GetRepo().GetFullName()))
+	if err := m.deleteBranch(ctx, owner, repo, pr, result); err != nil {
+		return result, err
+	}
+	if m.release == nil {
 		return result, nil
 	}
+	return result, m.awaitRelease(ctx, owner, repo, number, result)
+}
+
+// deleteBranch deletes the merged head branch; a head in a fork is left
+// alone with a warning.
+func (m *Merger) deleteBranch(ctx context.Context, owner, repo string, pr *github.PullRequest, result *Result) error {
+	if prwait.IsFork(pr) {
+		result.Warnings = append(result.Warnings, fmt.Sprintf("the head %s lives in the fork %s; the branch is left alone", pr.GetHead().GetRef(), pr.GetHead().GetRepo().GetFullName()))
+		return nil
+	}
 	if err := m.github.DeleteBranch(ctx, owner, repo, pr.GetHead().GetRef()); err != nil {
-		return result, microerror.Mask(err)
+		return microerror.Mask(err)
 	}
 	result.BranchDeleted = true
 	m.progress.Printf("branch %s deleted", pr.GetHead().GetRef())
-	return result, nil
+	return nil
 }
 
 // readMergeable reads the pull request, re-reading a mergeable state GitHub

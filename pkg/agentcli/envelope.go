@@ -25,21 +25,26 @@ type Verdict string
 
 // The verdicts a command reports.
 const (
-	VerdictGreen           Verdict = "green"
-	VerdictRed             Verdict = "red"
-	VerdictTimeout         Verdict = "timeout"
-	VerdictNotApplicable   Verdict = "not_applicable"
-	VerdictRequiredMissing Verdict = "required_missing"
-	VerdictRefused         Verdict = "refused"
-	VerdictAvailable       Verdict = "available"
-	VerdictCIFailed        Verdict = "ci_failed"
-	VerdictAuthRequired    Verdict = "auth_required"
-	VerdictUsage           Verdict = "usage"
+	VerdictGreen              Verdict = "green"
+	VerdictRed                Verdict = "red"
+	VerdictTimeout            Verdict = "timeout"
+	VerdictNotApplicable      Verdict = "not_applicable"
+	VerdictRequiredMissing    Verdict = "required_missing"
+	VerdictRefused            Verdict = "refused"
+	VerdictAvailable          Verdict = "available"
+	VerdictCIFailed           Verdict = "ci_failed"
+	VerdictNoRelease          Verdict = "no_release"
+	VerdictReleaseFailed      Verdict = "release_failed"
+	VerdictReleaseUnconfirmed Verdict = "release_unconfirmed"
+	VerdictAuthRequired       Verdict = "auth_required"
+	VerdictUsage              Verdict = "usage"
 )
 
-// The exit codes of every agent-facing command. 6 is unused.
+// The exit codes of every agent-facing command. 6 and 9 say that devctl pr
+// merge merged: they are never a reason to merge again.
 const (
-	// ExitOK: the wait ended green, the merge happened, the release is available.
+	// ExitOK: the wait ended green, the merge happened, the release is
+	// available or none follows the merge.
 	ExitOK = 0
 	// ExitRed: a check is red or the tag's CI failed.
 	ExitRed = 1
@@ -52,10 +57,17 @@ const (
 	ExitRequiredMissing = 4
 	// ExitRefused: the command declines (another author, an opt-out).
 	ExitRefused = 5
+	// ExitReleaseFailed: merged, and the release the merge triggered failed:
+	// its auto-release run or its tag's CI.
+	ExitReleaseFailed = 6
 	// ExitUsage: wrong usage or a tooling failure.
 	ExitUsage = 7
 	// ExitAuthRequired: no usable token; the reason names `devctl auth login`.
 	ExitAuthRequired = 8
+	// ExitReleaseUnconfirmed: merged, and the release was not confirmed
+	// pullable: the release timeout passed first, or the release wait could
+	// not judge it.
+	ExitReleaseUnconfirmed = 9
 )
 
 // Envelope is the head of every command's JSON document. A command's document
@@ -100,7 +112,7 @@ func (e *Envelope) Finish(now time.Time, ok Verdict, err error) {
 		e.Reason = ""
 		return
 	}
-	e.ExitCode, e.Verdict = outcome(err)
+	e.ExitCode, e.Verdict = Outcome(err)
 	e.Reason = err.Error()
 }
 
@@ -159,11 +171,14 @@ func Exit(err error) int {
 	if err == nil {
 		return ExitOK
 	}
-	code, _ := outcome(err)
+	code, _ := Outcome(err)
 	return code
 }
 
-func outcome(err error) (int, Verdict) {
+// Outcome is err's place in the exit-code table: the code and verdict of an
+// [ExitCoder] anywhere in the chain, [ExitUsage] for any other error. err
+// must not be nil.
+func Outcome(err error) (int, Verdict) {
 	var coder ExitCoder
 	if errors.As(err, &coder) {
 		return coder.ExitCode(), coder.ExitVerdict()

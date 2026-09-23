@@ -1,0 +1,90 @@
+{
+  "exitCode": 6,
+  "json": {
+    "command": "pr merge",
+    "schemaVersion": 1,
+    "startedAt": "*",
+    "finishedAt": "*",
+    "warnings": [],
+    "repository": "giantswarm/e2e-app",
+    "number": 42,
+    "headSha": "abc123",
+    "baseRef": "main",
+    "checks": [
+      {
+        "name": "go-test",
+        "source": "check_run",
+        "status": "completed",
+        "conclusion": "success",
+        "url": "*",
+        "required": false
+      }
+    ],
+    "circleci": {
+      "pipelineId": "p1",
+      "pipelineNumber": 12,
+      "workflows": [
+        {
+          "name": "build",
+          "status": "success",
+          "url": "*"
+        }
+      ]
+    },
+    "actions": [
+      {
+        "name": "CI",
+        "runId": 7001,
+        "status": "completed",
+        "conclusion": "success",
+        "url": "*"
+      }
+    ],
+    "mergeCommitSha": "aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44",
+    "method": "squash",
+    "branchDeleted": true,
+    "enqueued": false,
+    "exitCode": 6,
+    "verdict": "release_failed",
+    "reason": "merged as aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44, and the release failed: the tag pipeline of v1.2.3 failed: build/push-to-registries-release",
+    "release": {
+      "verdict": "ci_failed",
+      "reason": "the tag pipeline of v1.2.3 failed: build/push-to-registries-release",
+      "repository": "giantswarm/e2e-app",
+      "tag": "v1.2.3",
+      "sha": "aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44",
+      "releaseModel": "auto-release",
+      "ciModel": "generated",
+      "artifacts": [
+        {
+          "kind": "image",
+          "reference": "*",
+          "digest": "",
+          "state": "missing"
+        },
+        {
+          "kind": "chart",
+          "reference": "*",
+          "digest": "",
+          "state": "missing"
+        }
+      ],
+      "pipeline": {
+        "id": "p2",
+        "number": 13,
+        "url": "https://app.circleci.com/pipelines/github/giantswarm/e2e-app/13",
+        "workflows": [
+          {
+            "name": "build",
+            "status": "failed"
+          }
+        ],
+        "failedJobs": [
+          "build/push-to-registries-release"
+        ],
+        "unfinished": []
+      },
+      "actions": []
+    }
+  }
+}

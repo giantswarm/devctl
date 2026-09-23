@@ -56,6 +56,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- `devctl pr merge` waits for the release its merge triggers: after the merge it runs the wait of `release wait --pr`
+  on the merge commit it produced, so one blocking call returns when CI was green, the pull request is merged and the
+  release is pullable (its images and charts resolve to a digest, its tag pipeline is green). The document gains
+  `release` (the release wait's `verdict` and `reason` with its result: tag, sha, models, artifacts with digests,
+  pipeline); `--release-timeout` bounds that wait (30 minutes) apart from `--timeout`; `--no-release-wait` ends the
+  command at the merge. A merge that no release follows is exit 0: a repository that does not tag merge commits, or one
+  whose auto-release run finished without a tag. After a merge, exit 6 (`release_failed`) says the release failed and
+  exit 9 (`release_unconfirmed`) that it was not confirmed in time or could not be judged; both mean merged, never
+  merge again. The agent no longer needs a second `devctl release wait --pr` call after its merge.
+- `devctl release wait --pr` reads the merge commit's auto-release run while no tag is on the merge commit: a run that
+  finished without a tag ends the wait at once as exit 3 with the new verdict `no_release` instead of a timeout, a run
+  that failed before it tagged is exit 1, a run cancelled by a newer push is exit 3 naming the superseding push. A
+  legacy repository's `--pr`, and one without any release workflow or declared release model, is `no_release` too.
 - `release wait` declares a CircleCI release `available` only when every artifact resolves **and** the tag
   pipeline is green: every workflow (newest run per name) finished, none failed. The artifacts the team-file entry or
   the push jobs name are not the whole release: a repository's own tag jobs in `.circleci/custom.yml` push and sign

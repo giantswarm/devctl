@@ -1,0 +1,54 @@
+# release wait --pr on a merge that auto-release tags nothing (a chore
+# subject): the wait used to poll for a tag until the timeout. The merge
+# commit's Auto-release run finished without a tag, which is the answer:
+# exit 3 with the no_release verdict, at once.
+description: release wait --pr ends at once with no_release when the merge commit's auto-release run finished without a tag
+args: [release, wait, giantswarm/e2e-app, --pr, "96", --timeout, 30m]
+timeout: 20s
+keyring:
+  github:
+    login: e2e-engineer
+    token: ghu_e2e_live
+    expiresAt: "2099-01-01T00:00:00Z"
+github:
+  routes:
+    "GET /repos/giantswarm/e2e-app/pulls/96":
+      - body: {number: 96, state: closed, merged: true, merge_commit_sha: aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44}
+    "GET /repos/giantswarm/e2e-app/tags":
+      - body:
+          - {name: v1.2.2, commit: {sha: "0011223344556677889900112233445566778899"}}
+    "GET /repos/giantswarm/e2e-app/actions/runs?head_sha=aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44":
+      - body:
+          total_count: 1
+          workflow_runs:
+            - {id: 9001, name: Auto-release, path: .github/workflows/zz_generated.auto_release.yaml, event: push, head_branch: main, head_sha: aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44, status: completed, conclusion: success, html_url: "https://github.com/giantswarm/e2e-app/actions/runs/9001"}
+    "GET /repos/giantswarm/github/contents/repositories":
+      - body:
+          - {name: team-e2e.yaml, path: repositories/team-e2e.yaml, type: file}
+    "GET /repos/giantswarm/github/contents/repositories/team-e2e.yaml":
+      - body:
+          name: team-e2e.yaml
+          path: repositories/team-e2e.yaml
+          type: file
+          content: |
+            - name: e2e-app
+              componentType: service
+              gen:
+                flavours:
+                  - app
+                language: go
+                ci:
+                  generate: true
+    "GET /repos/giantswarm/e2e-app":
+      - body: {name: e2e-app, full_name: giantswarm/e2e-app, private: false}
+    "GET /repos/giantswarm/e2e-app/contents/?ref=aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44":
+      - body:
+          - {name: Dockerfile, path: Dockerfile, type: file}
+          - {name: helm, path: helm, type: dir}
+    "GET /repos/giantswarm/e2e-app/contents/.github/workflows?ref=aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44":
+      - body:
+          - {name: zz_generated.auto_release.yaml, path: .github/workflows/zz_generated.auto_release.yaml, type: file}
+    "GET /repos/giantswarm/e2e-app/contents/.circleci?ref=aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44":
+      - body:
+          - {name: config.yml, path: .circleci/config.yml, type: file}
+          - {name: workflows.yml, path: .circleci/workflows.yml, type: file}

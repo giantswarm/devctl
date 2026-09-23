@@ -27,7 +27,7 @@ func newRunner(t *testing.T, routes sequence.Routes, github func(context.Context
 	endpoints := agentcli.DefaultEndpoints()
 	endpoints.GitHubAPIURL = server.URL
 	if f == nil {
-		f = &flag{Timeout: 2 * time.Minute, Progress: true}
+		f = &flag{Timeout: 2 * time.Minute, ReleaseTimeout: 2 * time.Minute, Progress: true}
 	}
 	r := &runner{
 		flag:          f,
@@ -96,6 +96,12 @@ func Test_run_merged(t *testing.T) {
 			t.Errorf("%s: want %v, got %v", key, want, doc[key])
 		}
 	}
+	// o/r has no team-file entry and no release workflow at m1: no release
+	// follows the merge, which is exit 0.
+	release, _ := doc["release"].(map[string]any)
+	if release["verdict"] != "no_release" || release["sha"] != "m1" || !strings.Contains(release["reason"].(string), "nothing tags the merge commit of o/r#42") {
+		t.Errorf("release: %v", doc["release"])
+	}
 	for _, key := range []string{"warnings", "startedAt", "finishedAt", "checks", "actions"} {
 		if _, ok := doc[key]; !ok {
 			t.Errorf("missing %s in %v", key, doc)
@@ -107,12 +113,43 @@ func Test_run_merged(t *testing.T) {
 }
 
 func Test_run_rebaseFlag(t *testing.T) {
-	r, stdout, _, _ := newRunner(t, green(), loggedIn, &flag{Timeout: time.Minute, Rebase: true})
+	r, stdout, _, _ := newRunner(t, green(), loggedIn, &flag{Timeout: time.Minute, Rebase: true, NoReleaseWait: true})
 	if err := r.run(context.Background(), []string{"o/r", "42"}); err != nil {
 		t.Fatal(err)
 	}
 	if doc := decode(t, stdout); doc["method"] != "rebase" {
 		t.Errorf("--rebase: want method rebase, got %v", doc["method"])
+	}
+}
+
+// --no-release-wait ends at the merge: the document's release is null and
+// nothing is read after the branch is deleted.
+func Test_run_noReleaseWait(t *testing.T) {
+	r, stdout, _, server := newRunner(t, green(), loggedIn, &flag{Timeout: time.Minute, NoReleaseWait: true})
+	if err := r.run(context.Background(), []string{"o/r", "42"}); err != nil {
+		t.Fatal(err)
+	}
+	doc := decode(t, stdout)
+	if release, ok := doc["release"]; !ok || release != nil {
+		t.Errorf("want release null, got %v (present %v)", release, ok)
+	}
+	requests := server.Requests()
+	if last := requests[len(requests)-1]; last.Method != http.MethodDelete {
+		t.Errorf("want the branch deletion last, got %s", last)
+	}
+}
+
+func Test_run_releaseTimeoutMustBePositive(t *testing.T) {
+	r, stdout, _, server := newRunner(t, green(), loggedIn, &flag{Timeout: time.Minute})
+	err := r.run(context.Background(), []string{"o/r", "42"})
+	if agentcli.Exit(err) != agentcli.ExitUsage || !strings.Contains(err.Error(), "--release-timeout must be positive") {
+		t.Fatalf("want exit 7 naming --release-timeout, got %v", err)
+	}
+	if doc := decode(t, stdout); doc["verdict"] != "usage" {
+		t.Errorf("document: %v", doc)
+	}
+	if n := len(server.Requests()); n != 0 {
+		t.Errorf("want no request, got %d", n)
 	}
 }
 

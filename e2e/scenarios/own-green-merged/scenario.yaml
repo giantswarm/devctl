@@ -3,7 +3,9 @@
 # run of the head, and the CircleCI workflow itself. The team file that
 # declares devctl carries no agentMerge field. One call of the merge API
 # lands the squash commit, the refs API deletes the branch: exit 0, the
-# document carries the merge commit and branchDeleted.
+# document carries the merge commit and branchDeleted. The entry declares
+# no generated CI, so the repository releases through the legacy workflow
+# and no release follows the merge: the document's release says so.
 description: the caller's own green pull request is squash-merged and its branch deleted
 args: [pr, merge, giantswarm/devctl, "42", --timeout, 30m]
 keyring:

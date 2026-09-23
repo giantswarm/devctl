@@ -113,6 +113,7 @@ func (c *Client) GetReleaseByTag(ctx context.Context, owner, repo, tag string) (
 // WorkflowRun is one GitHub Actions run.
 type WorkflowRun struct {
 	Name       string
+	Path       string // the workflow file, .github/workflows/<file>
 	ID         int64
 	Event      string
 	HeadBranch string
@@ -133,6 +134,7 @@ func (c *Client) ListWorkflowRunsForSHA(ctx context.Context, owner, repo, sha st
 	for _, r := range runs {
 		out = append(out, WorkflowRun{
 			Name:       r.GetName(),
+			Path:       r.GetPath(),
 			ID:         r.GetID(),
 			Event:      r.GetEvent(),
 			HeadBranch: r.GetHeadBranch(),

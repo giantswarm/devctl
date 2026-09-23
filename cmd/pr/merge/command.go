@@ -12,10 +12,11 @@ import (
 
 const (
 	name        = "merge <owner/repo> <number>"
-	description = "Wait until the pull request's head is green, then squash-merge it and delete the branch; one JSON document, an exit code."
+	description = "Wait until the pull request's head is green, squash-merge it, delete the branch and wait until the release it triggers is pullable; one JSON document, an exit code."
 	long        = `Wait until the outcome of a pull request's CI is known (the wait of devctl pr
-wait), then merge it and delete its branch, print one JSON document on stdout
-and exit with a code that says what happened.
+wait), merge it and delete its branch, then wait until the release the merge
+triggers is pullable (the wait of devctl release wait --pr), print one JSON
+document on stdout and exit with a code that says what happened.
 
 Refused before any wait: a draft, a closed or merged pull request, one
 conflicting with its base or behind a base that requires branches to be up to
@@ -47,27 +48,52 @@ the reason naming the ruleset, its bypass actors and the owning team.
 merge lands. A merge GitHub declines as the pull request stands (a rule blocks
 it, the base or the head moved) is exit 3 with GitHub's sentence.
 
+The release: in a repository whose release model is auto-release, the tag
+auto-release puts on the merge commit is waited for and then every image and
+chart of it until each resolves to a digest in its registry, with the rules of
+devctl release wait, within --release-timeout (the CI wait and a merge queue
+have --timeout). No release follows a merge in a repository that does not tag
+merge commits (the legacy release workflow, no release workflow at all) or
+whose auto-release run finished without a tag because the commits warrant no
+bump: that is exit 0, and the document says so. --no-release-wait ends the
+command at the merge; devctl release wait remains the command for
+a release on its own (a version, --catalog).
+
 Tokens come from the keychain (` + "`devctl auth login`" + `); the CircleCI token is
-required only when CircleCI is consulted, as in devctl pr wait.
+required only when CircleCI is consulted, as in devctl pr wait and devctl
+release wait.
 
 The document (schemaVersion 1) is devctl pr wait's (command, exitCode,
 verdict, reason, warnings, startedAt, finishedAt, repository, number, headSha,
 baseRef, checks[], circleci{}, actions[], unfinished[]) plus mergeCommitSha
 (the merge commit, empty when nothing merged), method (squash|rebase),
-branchDeleted and enqueued. See docs/pr-merge.md.
+branchDeleted, enqueued and release: null with --no-release-wait or when
+nothing merged, otherwise the release wait's verdict (available, no_release,
+ci_failed, timeout, ...) and reason with its result (tag, sha, releaseModel,
+ciModel, artifacts[{kind, reference, digest, state}], pipeline, actions). See
+docs/pr-merge.md.
+
+Exit codes 6 and 9 mean the pull request was merged; never merge it again.
 
 Exit codes:
-  0  merged (or enqueued and merged by the queue), branch deleted
+  0  merged (or enqueued and merged by the queue), branch deleted, and the
+     release is pullable or no release follows the merge
   1  red: a check, status, run or workflow failed, or the queue dropped it
   2  timeout before an outcome; unfinished names what was still open
   3  not applicable: draft, closed, merged, conflicting, behind a strict base
      (without --update-branch), or GitHub declined the merge as it stands
   4  a required status context never reported within the timeout
   5  refused: another human's pull request, or agentMerge: false
+  6  merged, and the release failed: the merge commit's auto-release run or
+     the tag's pipeline failed (release.pipeline.failedJobs)
   7  usage or a tooling failure
-  8  authentication required; reason names the devctl auth login to run`
+  8  authentication required; reason names the devctl auth login to run
+  9  merged, and the release was not confirmed: --release-timeout passed
+     first, or the release wait could not judge it (release.verdict and the
+     reason say which; devctl release wait <owner/repo> --pr <n> resumes it)`
 	example = `  devctl pr merge giantswarm/devctl 2278
-  devctl pr merge giantswarm/devctl 2278 --timeout 45m --progress
+  devctl pr merge giantswarm/devctl 2278 --timeout 45m --release-timeout 30m --progress
+  devctl pr merge giantswarm/devctl 2278 --no-release-wait
   devctl pr merge giantswarm/kagent-upstream 12 --rebase
   devctl pr merge giantswarm/devctl 2278 --update-branch`
 )

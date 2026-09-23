@@ -30,6 +30,7 @@
     "mergeCommitSha": "",
     "method": "squash",
     "branchDeleted": false,
-    "enqueued": false
+    "enqueued": false,
+    "release": null
   }
 }

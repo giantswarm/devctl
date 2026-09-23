@@ -21,12 +21,21 @@
 // repository without CircleCI is judged by the Actions runs the tag
 // triggered. A repository without image and chart is waited for through its
 // published release and the tag's workflows.
+//
+// For a pull request the tag is the one auto-release puts on the merge
+// commit, and the merge commit's auto-release run says when none will
+// come: a run that finished without a tag decided that the commits warrant
+// no release, which ends the wait at once as no release following the
+// merge ([NoReleaseError]), as does a repository that does not tag merge
+// commits.
 package releasewait
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"path"
+	"slices"
 	"strings"
 	"time"
 
@@ -95,6 +104,10 @@ type Config struct {
 	Version string
 	// PR is the merged pull request whose tag is waited for; 0 with Version.
 	PR int
+	// MergeCommitSHA is, with PR, the merge commit the caller knows already
+	// (devctl pr merge, right after its merge); empty reads it from the pull
+	// request.
+	MergeCommitSHA string
 	// Timeout bounds the wait; zero means DefaultTimeout.
 	Timeout time.Duration
 	// Catalog also waits for the catalog index to list every chart.
@@ -131,6 +144,10 @@ type Waiter struct {
 	clock    agentcli.Clock
 	progress *agentcli.Progress
 	circleci CircleCI
+	// untagged is, while a pull request's tag is awaited, what the merge
+	// commit's auto-release run was doing at the last poll, for the
+	// timeout's reason.
+	untagged string
 }
 
 // New validates config and returns a Waiter.
@@ -189,24 +206,21 @@ func (w *Waiter) wait(ctx context.Context, result *Result) error {
 	var content *TagContent
 	var entry *reposetup.Fields
 	if w.config.PR != 0 {
-		merge, err := w.config.GitHub.GetPullRequestMerge(ctx, owner, repo, w.config.PR)
+		sha, err := w.mergeCommit(ctx)
 		if err != nil {
-			return fmt.Errorf("reading pull request #%d: %w", w.config.PR, err)
+			return err
 		}
-		if !merge.Merged {
-			return notApplicableErr("pull request %s/%s#%d is %s and not merged: there is no release to wait for", owner, repo, w.config.PR, merge.State)
-		}
-		result.SHA = merge.MergeCommitSHA
-		w.progress.Printf("pull request #%d merged as %s", w.config.PR, short(merge.MergeCommitSHA))
+		result.SHA = sha
+		w.progress.Printf("pull request #%d merged as %s", w.config.PR, short(sha))
 
-		content, entry, err = w.readModels(ctx, merge.MergeCommitSHA, result)
+		content, entry, err = w.readModels(ctx, sha, result)
 		if err != nil {
 			return err
 		}
 		if result.ReleaseModel != ReleaseModelAutoRelease {
-			return notApplicableErr("%s/%s releases through the %s workflow, which does not tag the merge commit of #%d: pass the version instead", owner, repo, result.ReleaseModel, w.config.PR)
+			return noReleaseErr("%s/%s releases through the %s workflow, which does not tag the merge commit of #%d: a release of it is waited for by its version", owner, repo, result.ReleaseModel, w.config.PR)
 		}
-		tag, err := w.awaitTagForCommit(ctx, merge.MergeCommitSHA)
+		tag, err := w.awaitTagForCommit(ctx, sha, content)
 		if err != nil {
 			return err
 		}
@@ -257,6 +271,23 @@ func (w *Waiter) wait(ctx context.Context, result *Result) error {
 		w.progress.Printf("expecting %s %s", a.Kind, a.Reference)
 	}
 	return w.loop(ctx, result, plan)
+}
+
+// mergeCommit is the merge commit of the pull request: the one the caller
+// knows, or the one GitHub reports for a merged pull request.
+func (w *Waiter) mergeCommit(ctx context.Context) (string, error) {
+	if w.config.MergeCommitSHA != "" {
+		return w.config.MergeCommitSHA, nil
+	}
+	owner, repo := w.config.Owner, w.config.Repo
+	merge, err := w.config.GitHub.GetPullRequestMerge(ctx, owner, repo, w.config.PR)
+	if err != nil {
+		return "", fmt.Errorf("reading pull request #%d: %w", w.config.PR, err)
+	}
+	if !merge.Merged {
+		return "", notApplicableErr("pull request %s/%s#%d is %s and not merged: there is no release to wait for", owner, repo, w.config.PR, merge.State)
+	}
+	return merge.MergeCommitSHA, nil
 }
 
 // plan is what the loop knows beyond the document.
@@ -464,21 +495,74 @@ func (w *Waiter) awaitTag(ctx context.Context, version Version) (tag, sha string
 	}
 }
 
-// awaitTagForCommit polls until a tag points at the merge commit.
-func (w *Waiter) awaitTagForCommit(ctx context.Context, sha string) (string, error) {
+// awaitTagForCommit polls until a tag points at the merge commit, or the
+// merge commit's auto-release run shows that none will: a run that finished
+// without a tag decided the commits since the last release warrant none (no
+// release follows the merge), a run that failed before it tagged is the
+// release's CI failure, and a run cancelled before it tagged was superseded
+// by a newer push, whose tag carries the merge.
+func (w *Waiter) awaitTagForCommit(ctx context.Context, sha string, content *TagContent) (string, error) {
+	owner, repo, number := w.config.Owner, w.config.Repo, w.config.PR
+	auto, _ := content.releaseWorkflows()
+	if len(auto) == 0 {
+		// The entry declares auto-release ahead of the repository: no
+		// workflow at the merge commit tags it.
+		return "", noReleaseErr("the team-file entry of %s/%s declares auto-release, but %s at %s holds no auto-release workflow: nothing tags the merge commit of #%d", owner, repo, workflowsDir, short(sha), number)
+	}
 	for {
-		tag, err := w.config.GitHub.FindTagForCommit(ctx, w.config.Owner, w.config.Repo, sha)
+		tag, err := w.config.GitHub.FindTagForCommit(ctx, owner, repo, sha)
 		if err != nil {
 			return "", fmt.Errorf("listing tags: %w", err)
 		}
 		if tag != "" {
 			return tag, nil
 		}
-		w.progress.Printf("no tag on %s yet", short(sha))
+		run, err := w.autoReleaseRun(ctx, sha, auto)
+		if err != nil {
+			return "", err
+		}
+		if run != nil && run.Status == "completed" {
+			// The run tags before it finishes, so a tag it made is in a
+			// listing read after it finished.
+			tag, err := w.config.GitHub.FindTagForCommit(ctx, owner, repo, sha)
+			if err != nil {
+				return "", fmt.Errorf("listing tags: %w", err)
+			}
+			if tag != "" {
+				return tag, nil
+			}
+			switch run.Conclusion {
+			case "success", "neutral", "skipped":
+				return "", noReleaseErr("the %s run %s of the merge commit %s of %s/%s#%d finished without a tag: the commits since the last release warrant none", run.Name, run.URL, short(sha), owner, repo, number)
+			case "cancelled":
+				return "", notApplicableErr("the %s run %s of the merge commit %s of %s/%s#%d was cancelled before it tagged: a newer push to %s supersedes a pending run, and the next tag on %s carries #%d; wait for that version", run.Name, run.URL, short(sha), owner, repo, number, run.HeadBranch, run.HeadBranch, number)
+			}
+			return "", ciFailedErr("the %s run %s of the merge commit %s of %s/%s#%d concluded %s before it tagged", run.Name, run.URL, short(sha), owner, repo, number, run.Conclusion)
+		}
+		w.untagged = "no auto-release run of it has started"
+		if run != nil {
+			w.untagged = fmt.Sprintf("the %s run %s is %s", run.Name, run.URL, run.Status)
+		}
+		w.progress.Printf("no tag on %s yet; %s", short(sha), w.untagged)
 		if err := w.clock.Sleep(ctx, w.interval()); err != nil {
-			return "", timeoutErr("no tag on the merge commit %s of %s/%s#%d within %s: auto-release tags within minutes when the commits warrant a bump, and never when they do not", short(sha), w.config.Owner, w.config.Repo, w.config.PR, w.config.Timeout)
+			return "", w.timeout(&Result{SHA: sha})
 		}
 	}
+}
+
+// autoReleaseRun is the newest run of an auto-release workflow (one of
+// files) that the push of the merge commit started; nil before it exists.
+func (w *Waiter) autoReleaseRun(ctx context.Context, sha string, files []string) (*githubclient.WorkflowRun, error) {
+	runs, err := w.config.GitHub.ListWorkflowRunsForSHA(ctx, w.config.Owner, w.config.Repo, sha)
+	if err != nil {
+		return nil, fmt.Errorf("listing the Actions runs of %s: %w", short(sha), err)
+	}
+	for _, run := range runs {
+		if run.Event == "push" && slices.Contains(files, path.Base(run.Path)) {
+			return &run, nil
+		}
+	}
+	return nil, nil
 }
 
 // readModels reads the tag's content at sha and settles the release and CI
@@ -495,6 +579,12 @@ func (w *Waiter) readModels(ctx context.Context, sha string, result *Result) (*T
 	if !found {
 		entry = nil
 		w.progress.Printf("no team-file entry declares %s/%s: the models come from the tag's files", w.config.Owner, w.config.Repo)
+	}
+	if w.config.PR != 0 && EntryReleaseModel(entry) == "" {
+		if files, err := content.ReleaseModel(); err == nil && files == "" {
+			result.CIModel = content.CIModel()
+			return nil, nil, noReleaseErr("nothing tags the merge commit of %s/%s#%d: no team-file entry declares a release model and %s at %s holds no release workflow", w.config.Owner, w.config.Repo, w.config.PR, workflowsDir, short(sha))
+		}
 	}
 	models, err := ResolveModels(entry, *content)
 	if err != nil {
@@ -551,6 +641,8 @@ func (w *Waiter) timeout(result *Result) error {
 		unfinished = "; " + stillRunning(p)
 	}
 	switch {
+	case result.Tag == "" && w.untagged != "":
+		return timeoutErr("no tag on the merge commit %s of %s/%s#%d within %s; %s", short(result.SHA), w.config.Owner, w.config.Repo, w.config.PR, w.config.Timeout, w.untagged)
 	case result.Tag == "":
 		return timeoutErr("no tag within %s", w.config.Timeout)
 	case len(missing) > 0:
