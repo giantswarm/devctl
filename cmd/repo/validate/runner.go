@@ -3,6 +3,7 @@ package validate
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
+	"github.com/giantswarm/devctl/v8/pkg/authstore"
 	"github.com/giantswarm/devctl/v8/pkg/githubclient"
 	"github.com/giantswarm/devctl/v8/pkg/reposetup"
 )
@@ -42,7 +44,7 @@ func (r *runner) run(ctx context.Context) error {
 		return microerror.Mask(err)
 	}
 
-	client, err := r.githubClient()
+	client, err := r.githubClient(ctx)
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -90,18 +92,29 @@ func (r *runner) run(ctx context.Context) error {
 	return nil
 }
 
-// githubClient is the client for the schema fetch and the name checks, or
-// nil without a token.
-func (r *runner) githubClient() (*githubclient.Client, error) {
-	token := os.Getenv(r.flag.GithubTokenEnvVar)
-	if token == "" {
-		r.logger.Warnf("no GitHub token in $%s: validating against the embedded schema, repository names are not checked", r.flag.GithubTokenEnvVar)
-		return nil, nil
+// githubClient is the client for the schema fetch and the name checks: the
+// App login, or the token in --github-token-envvar (by default
+// $DEVCTL_GITHUB_TOKEN, $GITHUB_TOKEN or $OPSCTL_GITHUB_TOKEN) overriding it.
+// nil when neither is there: the data read is public, so no token is not an
+// error.
+func (r *runner) githubClient(ctx context.Context) (*githubclient.Client, error) {
+	var envVars []string
+	if r.flag.GithubTokenEnvVar != "" {
+		envVars = []string{r.flag.GithubTokenEnvVar}
 	}
+	token, err := authstore.ResolveGitHub(ctx, envVars...)
+	var required *authstore.AuthRequiredError
+	if errors.As(err, &required) {
+		r.logger.Warnf("no GitHub token (%s): validating against the embedded schema, repository names are not checked", required.Cause)
+		return nil, nil
+	} else if err != nil {
+		return nil, microerror.Mask(err)
+	}
+	token.WarnOnce(r.stderr)
 
 	client, err := githubclient.New(githubclient.Config{
 		Logger:      r.logger,
-		AccessToken: token,
+		AccessToken: token.Value,
 	})
 	if err != nil {
 		return nil, microerror.Mask(err)

@@ -10,7 +10,7 @@ command prints a token.
 | Command | GitHub token |
 |---|---|
 | `deploy`, `pr approve-align`, `pr approve-merge-renovate`, `release create` | the App login; a token in the environment overrides it |
-| the version check that precedes every command, `version check`, `version update`, `repo validate` | the same, optional: without one a public read is anonymous (`repo validate`: the embedded schema, repository names unchecked) |
+| the version check that precedes every command, `version check`, `version update`, `repo validate` | the same, optional and looked up only when GitHub is asked (never while the one-hour version cache is fresh): without one a public read is anonymous (`repo validate`: the embedded schema, repository names unchecked) |
 | `pr wait`, `pr merge`, `release wait` | the App login only |
 | `repo create` | your own: `$GITHUB_TOKEN` (`--github-token-envvar`), else `gh auth token` |
 | `repo setup` (and `repo setup ciwebhooks`, `repo setup renovate`), `repo checks` | your own: `$GITHUB_TOKEN` (`--github-token-envvar`) |

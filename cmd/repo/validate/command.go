@@ -33,10 +33,12 @@ validated: it is on main already.
 
 The JSON is written to stdout and nothing else is; log lines go to stderr.
 The exit status is non-zero when an entry is refused. With a GitHub token
-the schema is read from giantswarm/github main and the names are checked
-on GitHub (an existing repository or a redirect from a renamed one is
-taken); without one the embedded schema is used and the names are reported
-unchecked.
+-- the devctl GitHub App login (devctl auth login --github-only), or a
+token in the environment that overrides it (--github-token-envvar) -- the
+schema is read from giantswarm/github main and the names are checked on
+GitHub (an existing repository or a redirect from a renamed one is taken);
+without one the embedded schema is used and the names are reported
+unchecked. With CI set the keychain is not read.
 
 Examples:
   devctl repo validate --team-file repositories/team-bumblebee.yaml --entry my-service
