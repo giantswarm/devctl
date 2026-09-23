@@ -294,8 +294,12 @@ func (r *Runner) classicProtection(ctx context.Context, s *run, branch string) (
 }
 
 // ownRuleset reads the repository's own rulesets and returns the engine's
-// with its rules, nil when there is none. Every other one is reported and
-// left alone; the organization's are not read.
+// with its rules, nil when there is none. Every other enforcing one is
+// reported and left alone; the organization's are not read. A ruleset with
+// enforcement disabled enforces nothing, so it neither conflicts with the
+// engine's nor leaves a person anything to weigh: it is passed over in
+// silence. One on evaluate is reported, its rules being live in the audit
+// log.
 func (r *Runner) ownRuleset(ctx context.Context, s *run, sr *StepResult) (*github.RepositoryRuleset, error) {
 	list, _, err := r.GitHub.Repositories.GetAllRulesets(ctx, s.owner, s.name, &github.RepositoryListRulesetsOptions{IncludesParents: new(false)})
 	if err != nil {
@@ -304,6 +308,9 @@ func (r *Runner) ownRuleset(ctx context.Context, s *run, sr *StepResult) (*githu
 	var own *github.RepositoryRuleset
 	for _, rs := range list {
 		if rs.Name != RulesetName {
+			if rs.Enforcement == github.RulesetEnforcementDisabled {
+				continue
+			}
 			s.report(sr, FindingForeignRuleset,
 				fmt.Sprintf("ruleset %q is not the engine's and is left alone", rs.Name),
 				fmt.Sprintf("declare what it enforces in the entry and delete it, or keep it knowingly; the engine manages %q alone", RulesetName))

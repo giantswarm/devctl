@@ -262,7 +262,9 @@ a bypass actor (GitHub refuses it): the ruleset is written with the App and the 
 `team-bypass-refused` names the team and the fix, its privacy set to closed. Classic protection gives way
 to the ruleset in the same run: its required checks are carried over, the ruleset is written, then the
 classic protection is removed; the dry run plans both. A ruleset the engine did not create is left alone
-and reported (advisory: it does not keep the repository from converging).
+and reported (advisory: it does not keep the repository from converging); one whose enforcement is
+`disabled` enforces nothing, conflicts with nothing and is passed over in silence, a ruleset on
+`evaluate` reported like an active one.
 
 `--devctl-app-id`, the devctl GitHub App's numeric id (the App's settings page; not the client id), is what
 the bypass list takes to be compared and written; the reconciler's wiring passes it. A run without the id

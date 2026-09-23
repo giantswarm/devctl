@@ -18,6 +18,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `devctl repo reconcile`'s protection step passes over a repository ruleset whose enforcement is `disabled`: it
+  enforces nothing, so it neither conflicts with `devctl: default branch` nor leaves a person anything to weigh, and
+  the advisory `foreign-ruleset` no longer names it on every run. A ruleset on `evaluate` is reported like an active
+  one, its rules being live in the audit log. Before, every ruleset the engine did not create was reported whatever
+  it enforced -- a disabled Copilot review ruleset as loudly as an active branch protection
+  ([#2344](https://github.com/giantswarm/devctl/issues/2344)).
 - `devctl repo reconcile --mode check` without `--devctl-app-id`, and with it giantswarm-repo-manager's read-mode
   engine behind `repo status`, reads a repository on the ruleset `devctl: default branch` as converged. The protection
   step reads the repository's rulesets first and compares the ruleset's rules with the write path's comparison, the
