@@ -54,6 +54,10 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		resp = NotFound
 	}
+	if resp.Reset {
+		_ = sequence.Write(w, r, resp)
+		return
+	}
 	fixture := resp.Header()
 	h := w.Header()
 	for key, value := range rateLimitDefaults() {

@@ -1,7 +1,8 @@
 // Package agentcli is what devctl's agent-facing commands share: the JSON
 // envelope every one of them prints as its only stdout output, the exit-code
 // table, the clock that DEVCTL_TIME_SCALE speeds up for tests, the endpoint
-// configuration read from the environment and the --progress writer.
+// configuration read from the environment, the --progress writer and the
+// retrying transport under the API clients.
 //
 // An agent-facing command blocks, prints one JSON document on stdout when it
 // finishes and nothing else, and exits with a code from the table below.

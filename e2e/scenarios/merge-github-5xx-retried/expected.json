@@ -1,0 +1,47 @@
+{
+  "exitCode": 0,
+  "json": {
+    "command": "pr merge",
+    "schemaVersion": 1,
+    "exitCode": 0,
+    "verdict": "green",
+    "reason": "",
+    "warnings": ["*"],
+    "startedAt": "*",
+    "finishedAt": "*",
+    "repository": "giantswarm/devctl",
+    "number": 42,
+    "headSha": "abc123",
+    "baseRef": "main",
+    "checks": [
+      {"name": "ci/circleci: build", "source": "status", "status": "completed", "conclusion": "success", "url": "*", "required": false},
+      {"name": "go-test", "source": "check_run", "status": "completed", "conclusion": "success", "url": "*", "required": false}
+    ],
+    "circleci": {
+      "pipelineId": "p1",
+      "pipelineNumber": 12,
+      "workflows": [
+        {"name": "build", "status": "success", "url": "*"}
+      ]
+    },
+    "actions": [
+      {"name": "CI", "runId": 7001, "status": "completed", "conclusion": "success", "url": "*"}
+    ],
+    "mergeCommitSha": "0f3a9c1d",
+    "method": "squash",
+    "branchDeleted": true,
+    "enqueued": false,
+    "release": {
+      "verdict": "no_release",
+      "reason": "giantswarm/devctl releases through the legacy workflow, which does not tag the merge commit of #42: a release of it is waited for by its version",
+      "repository": "giantswarm/devctl",
+      "tag": "",
+      "sha": "0f3a9c1d",
+      "releaseModel": "legacy",
+      "ciModel": "none",
+      "artifacts": [],
+      "pipeline": null,
+      "actions": []
+    }
+  }
+}

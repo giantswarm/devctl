@@ -155,7 +155,10 @@ Requests to GitHub are conditional (`If-None-Match` with the last `ETag`), so an
 costs a 304 that does not count against the rate limit. The interval between polls follows the
 `X-RateLimit-Remaining` / `X-RateLimit-Reset` headers of the responses, between 15 and 60 seconds;
 the rate_limit endpoint is never asked. `DEVCTL_TIME_SCALE` multiplies every sleep and the timeout
-(the end-to-end tests run at 0.001).
+(the end-to-end tests run at 0.001). A GitHub or CircleCI read that fails in transit (a reset
+connection, an EOF, a try over 60 s) or with a 5xx is sent again, up to eight tries in a row with a
+pause from 2 s doubling to 60 s, each retried failure a warning with its time, as in
+[`pr wait`](pr-wait.md#polling); a read that fails all eight is exit 7 naming the request and the count.
 
 ## The document
 
@@ -212,7 +215,7 @@ stderr.
 | 2 | `timeout` | The deadline passed. `reason` names what is missing: the tag, the pipeline, the artifacts by reference, and the pipeline's unfinished workflows (also when every artifact is already available). |
 | 3 | `not_applicable` | The pull request is not merged, or its auto-release run was cancelled before it tagged (superseded by a newer push), so `--pr` cannot resolve a version. |
 | 3 | `no_release` | No release follows the pull request's merge: the repository does not tag merge commits (the legacy release model, or no release workflow at all), or the merge commit's auto-release run finished without a tag. |
-| 7 | `usage` | A bad argument; no source says how the repository releases; the sources disagree about the CI model or the artifacts; a registry answer that is neither a digest nor "manifest unknown"; a tooling error. |
+| 7 | `usage` | A bad argument; no source says how the repository releases; the sources disagree about the CI model or the artifacts; a registry answer that is neither a digest nor "manifest unknown"; a tooling error, a GitHub or CircleCI read that failed eight tries in a row among them. |
 | 8 | `auth_required` | No usable token in the keychain; `reason` names the `devctl auth login` invocation. |
 
 ## Environment

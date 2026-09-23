@@ -91,6 +91,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `devctl pr wait`, `devctl pr merge` and `devctl release wait` retry a read that GitHub or CircleCI did not answer
+  instead of ending on it: a reset connection, an EOF, a try over 60 s or a 5xx is sent again after 2 s, the pause
+  doubling up to 60 s, for up to eight tries in a row (about three minutes), never past the wait's timeout, each
+  retried failure a warning with its time. A read that fails all eight tries is exit 7, the reason naming the request,
+  the count and the last failure (`Get ".../pulls/42": failed 8 times in a row: 500 Internal Server Error`). Before, a
+  single `connection reset by peer` from CircleCI or a single 500 from GitHub on any poll ended a thirty-minute wait
+  with exit 7 while the head was on its way to green, and `pr merge` refused a merge it could have made. Only GET and
+  HEAD are retried; the merge, the branch update and the branch deletion are sent once. The e2e mocks answer
+  `reset: true` with a TCP reset ([#2359](https://github.com/giantswarm/devctl/issues/2359),
+  [#2361](https://github.com/giantswarm/devctl/issues/2361)).
 - `devctl pr merge`'s refusal of another human's pull request (exit 5) names every author it accepts -- the caller,
   bots and GitHub Apps (the `Bot` user type or a `[bot]` login) and the automation accounts `architectbot` and
   `taylorbot` -- where it said "the caller's own pull requests and bots' only", which left a reader guessing whether

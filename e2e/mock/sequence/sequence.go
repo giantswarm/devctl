@@ -9,6 +9,7 @@ package sequence
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"slices"
@@ -28,6 +29,10 @@ type Response struct {
 	// Body is sent as JSON when it is a mapping or a list, verbatim when it is
 	// a string, and as an empty body when it is absent.
 	Body any `yaml:"body"`
+	// Reset closes the connection with a TCP reset instead of answering: the
+	// client reads "connection reset by peer". Status, Headers and Body are
+	// ignored.
+	Reset bool `yaml:"reset"`
 }
 
 // StatusCode is the status the response is sent with.
@@ -194,8 +199,12 @@ func (s *Script) Requests() []Request {
 
 // Write sends the response: the fixture's headers, Content-Type
 // application/json for a JSON body unless the fixture named one, the status,
-// then the body (no body on a HEAD request, as the protocol demands).
+// then the body (no body on a HEAD request, as the protocol demands). A Reset
+// response resets the connection instead.
 func Write(w http.ResponseWriter, r *http.Request, resp Response) error {
+	if resp.Reset {
+		return reset(w)
+	}
 	body, err := resp.Bytes()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -215,4 +224,21 @@ func Write(w http.ResponseWriter, r *http.Request, resp Response) error {
 	}
 	_, err = w.Write(body)
 	return err
+}
+
+// reset takes the connection from the server and closes it with SO_LINGER 0,
+// which sends a TCP RST instead of a FIN.
+func reset(w http.ResponseWriter) error {
+	hijacker, ok := w.(http.Hijacker)
+	if !ok {
+		return fmt.Errorf("%T cannot reset its connection", w)
+	}
+	conn, _, err := hijacker.Hijack()
+	if err != nil {
+		return err
+	}
+	if tcp, ok := conn.(*net.TCPConn); ok {
+		_ = tcp.SetLinger(0)
+	}
+	return conn.Close()
 }

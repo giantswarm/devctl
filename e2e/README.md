@@ -116,7 +116,9 @@ reports keeps answering the same. Counting is per route, not per request, and st
 
 A response has `status` (default 200), `headers` (a mock adds its own defaults for the headers a fixture leaves
 out and never overrides one the fixture sets) and `body`: a mapping or list is sent as JSON, a string verbatim,
-nothing as an empty body. A request no route matches gets the mock's not-found answer (below).
+nothing as an empty body. `reset: true` answers nothing and closes the connection with a TCP reset, which the
+client reads as `connection reset by peer`; net/http replays a GET whose reused connection was reset, so a
+reset meant to reach devctl is scripted on a mock's first request. A request no route matches gets the mock's not-found answer (below).
 
 ## expected.json
 
@@ -226,13 +228,15 @@ on a failing command.
 The incidents the commands encode, one scenario each, by these slugs:
 
 - `pr wait`: `stage-gap`, `fork-awaiting-approval`, `conflicting-pr`, `retitled-stale-run`,
-  `red-circleci-workflow`, `pr-wait-timeout`, `required-never-reported`
+  `red-circleci-workflow`, `pr-wait-timeout`, `required-never-reported`, `github-5xx-retried`,
+  `github-5xx-persistent`, `circleci-connection-reset`
 - `pr merge`: `own-green-merged`, `other-human-refused`, `opt-out-refused`, `behind-strict-base`,
   `behind-update-branch`, `merge-queue`, `red-not-merged`, `merge-released`, `merge-no-release`,
-  `merge-release-failed`
+  `merge-release-failed`, `merge-github-5xx-retried`
 - `release wait`: `renamed-image`, `hand-written-ci`, `release-assets-only`, `failed-tag-pipeline`,
   `rerun-replaces-failed`, `stale-registry-login`, `release-wait-timeout`, `jobs-not-visible-yet`,
-  `declaration-behind-repository`, `repo-owned-tag-job`, `release-wait-no-release`
+  `declaration-behind-repository`, `repo-owned-tag-job`, `release-wait-no-release`,
+  `release-wait-github-5xx-retried`
 - `auth`: `auth-missing`, `auth-expired`, `auth-refreshed`, `auth-login-muster`, `auth-login-muster-no-manager`
 - `repo` (the manager's verbs over the mocked muster): `repo-auth-missing`, `repo-status`, `repo-status-json`,
   `repo-status-refreshed`, `repo-list`, `repo-info`, `repo-get`, `repo-refresh`, `repo-sweep`, `repo-watch-ready`,
