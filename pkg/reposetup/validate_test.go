@@ -78,6 +78,7 @@ func TestValidateEntries(t *testing.T) {
 		{name: "agent-merge-opt-out", template: TemplateGo, verdict: VerdictFree},
 		{name: "agent-merge-not-bool", template: TemplateGo, verdict: VerdictFree, fields: []string{"agentMerge"}},
 		{name: "ci-without-generate", template: TemplateChart, verdict: VerdictFree},
+		{name: "chart-release-gate", template: TemplateChart, verdict: VerdictFree},
 	}
 
 	for _, tc := range tests {

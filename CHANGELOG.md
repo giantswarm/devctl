@@ -100,6 +100,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- The embedded schema copy (`pkg/reposetup/schema/repositories.schema.json`) carries `gen.ci.chartReleaseGateJob`,
+  the team-file key for `gen circleci --chart-release-gate-job`. Validation against the embedded copy, which
+  giantswarm-repo-manager runs on every declared entry, refused an entry setting it as `not a field of the
+  repositories schema` (`entry-refused`, no set-up checks), while giantswarm/github's schema carries the key and the
+  reconciler aligns the repository with it. A test holds every `gen circleci` flag a team file sets to a `gen.ci` key
+  of the embedded copy.
 - A newer devctl release no longer breaks the agent-facing commands' contract: `pr wait`, `pr merge`, `release
   wait`, `auth login` and `auth status` run the version check after their argument checks and report an outdated
   devctl in their document, exit 7 with the reason naming `devctl version update` and `DEVCTL_UNSAFE_FORCE_VERSION`.
