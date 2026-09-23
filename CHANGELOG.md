@@ -7,6 +7,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- The team-file entry declares the repository's own rulesets, the ones a team keeps beside the engine's: `rulesets`
+  names them, and `repo reconcile`'s protection step leaves a ruleset named there alone and silent. A ruleset the
+  repository carries and the entry does not name is the advisory `foreign-ruleset` as before, its fix naming the
+  field; a name the repository carries no ruleset for is the new advisory `declared-ruleset-missing` -- a ruleset
+  deleted on GitHub, or a name that never matched one -- so a stale declaration does not stand unread. Both leave
+  `converged` true, and the engine still writes `devctl: default branch` and no other ruleset: creating, changing and
+  deleting a declared ruleset stays with the team. Before, the fix text asked for a declaration the entry could not
+  carry, so a repository that keeps a ruleset knowingly -- the fork lines' `protect-giantswarm`, `protect-main`,
+  `protect-mirror-main` and `protect-consumed-branch`, which guard the upstream mirror and the consumed branch --
+  carried the finding on every run for ever ([#2344](https://github.com/giantswarm/devctl/issues/2344)). The embedded
+  schema copy (`pkg/reposetup/schema/repositories.schema.json`) carries the field; the live schema in
+  giantswarm/github accepts it once its own change merges.
+
 ### Changed
 
 - `devctl repo reconcile` writes the repository admins (GitHub's repository role Admin) as a third bypass actor of the

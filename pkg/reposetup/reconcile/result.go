@@ -156,8 +156,13 @@ const (
 	// other than the CircleCI generator; the fix names the field.
 	FindingEntryRefused FindingKind = "entry-refused"
 	// FindingForeignRuleset: the repository carries a ruleset the engine did
-	// not create. It is left alone; a person decides whether it stays.
+	// not create and the entry does not declare. It is left alone; a person
+	// decides whether it stays, and declares it to keep it.
 	FindingForeignRuleset FindingKind = "foreign-ruleset"
+	// FindingDeclaredRulesetMissing: the entry declares a ruleset the
+	// repository does not carry — one deleted on GitHub, or a name that
+	// never matched one. The engine creates no ruleset but its own.
+	FindingDeclaredRulesetMissing FindingKind = "declared-ruleset-missing"
 	// FindingRulesetsNotEnabled: the repository has no ruleset yet and the
 	// run has no devctl App id to write one, so the protection step kept
 	// classic branch protection as declared; the fix names the run that
@@ -183,7 +188,7 @@ const (
 // something a person must fix before the repository counts as in sync.
 func (k FindingKind) Advisory() bool {
 	switch k {
-	case FindingDefaultIcon, FindingForeignRuleset, FindingRulesetsNotEnabled:
+	case FindingDefaultIcon, FindingForeignRuleset, FindingDeclaredRulesetMissing, FindingRulesetsNotEnabled:
 		return true
 	}
 	return false

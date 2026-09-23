@@ -375,6 +375,16 @@
           "minLength": 1
         }
       },
+      "rulesets": {
+        "type": "array",
+        "uniqueItems": true,
+        "minItems": 1,
+        "description": "Repository rulesets the team keeps beside the engine's 'devctl: default branch', by name: the decision to keep them, recorded where the reconciler reads it. The protection step leaves a ruleset named here alone and silent; one the repository carries and the entry does not name is the advisory finding 'foreign-ruleset', and a name the repository carries no ruleset for the advisory 'declared-ruleset-missing' -- a ruleset deleted on GitHub, or a name that never matched one. Declaring a ruleset hands nothing to the engine: it writes 'devctl: default branch' and no other, so creating, changing and deleting a declared ruleset stays with the team. A ruleset whose enforcement is 'disabled' enforces nothing and is passed over whether declared or not. For the fork lines' 'protect-giantswarm', 'protect-main', 'protect-mirror-main' and 'protect-consumed-branch', which guard the upstream mirror and the consumed branch.",
+        "items": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
       "system": {
         "type": "string",
         "title": "System",
