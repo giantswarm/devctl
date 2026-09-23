@@ -7,6 +7,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- The team-file entry declares the repository's own rulesets, the ones a team keeps beside the engine's: `rulesets`
+  names them, and `repo reconcile`'s protection step leaves a ruleset named there alone and silent. A ruleset the
+  repository carries and the entry does not name is the advisory `foreign-ruleset` as before, its fix naming the
+  field; a name the repository carries no ruleset for is the new advisory `declared-ruleset-missing` -- a ruleset
+  deleted on GitHub, or a name that never matched one -- so a stale declaration does not stand unread. Both leave
+  `converged` true, and the engine still writes `devctl: default branch` and no other ruleset: creating, changing and
+  deleting a declared ruleset stays with the team. Before, the fix text asked for a declaration the entry could not
+  carry, so a repository that keeps a ruleset knowingly -- the fork lines' `protect-giantswarm`, `protect-main`,
+  `protect-mirror-main` and `protect-consumed-branch`, which guard the upstream mirror and the consumed branch --
+  carried the finding on every run for ever ([#2344](https://github.com/giantswarm/devctl/issues/2344)). The embedded
+  schema copy (`pkg/reposetup/schema/repositories.schema.json`) carries the field; the live schema in
+  giantswarm/github accepts it once its own change merges.
+
 ### Changed
 
 - `devctl repo reconcile` writes the repository admins (GitHub's repository role Admin) as a third bypass actor of the
@@ -26,6 +41,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   rules are compared, the bypass list is not, and the summary says `bypass actors not readable by this identity, not
   compared`; an identity that reads the list compares and writes it as before (#2346).
 
+- `devctl repo reconcile`'s protection step passes over a repository ruleset whose enforcement is `disabled`: it
+  enforces nothing, so it neither conflicts with `devctl: default branch` nor leaves a person anything to weigh, and
+  the advisory `foreign-ruleset` no longer names it on every run. A ruleset on `evaluate` is reported like an active
+  one, its rules being live in the audit log. Before, every ruleset the engine did not create was reported whatever
+  it enforced -- a disabled Copilot review ruleset as loudly as an active branch protection
+  ([#2344](https://github.com/giantswarm/devctl/issues/2344)).
 - `devctl repo reconcile --mode check` without `--devctl-app-id`, and with it giantswarm-repo-manager's read-mode
   engine behind `repo status`, reads a repository on the ruleset `devctl: default branch` as converged. The protection
   step reads the repository's rulesets first and compares the ruleset's rules with the write path's comparison, the

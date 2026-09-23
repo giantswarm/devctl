@@ -43,6 +43,9 @@ const (
 	// agentMergeFalseEntryYAML opts the repository out of agent merges: the
 	// ruleset has no bypass actor.
 	agentMergeFalseEntryYAML = entryYAML + "  agentMerge: false\n"
+	// declaredRulesetEntryYAML declares a ruleset of the repository's own the
+	// team keeps beside the engine's.
+	declaredRulesetEntryYAML = entryYAML + "  rulesets: [\"protect-giantswarm\"]\n"
 	// configurationEntryYAML is a configuration repository: no template, no
 	// generated pipeline.
 	configurationEntryYAML = `- name: sample-service
@@ -974,7 +977,7 @@ func TestSteps(t *testing.T) {
 			},
 		},
 		{
-			name: "protection: a ruleset the engine did not create is left alone and reported", step: StepProtection,
+			name: "protection: an enforcing ruleset the engine did not create is left alone and reported", step: StepProtection,
 			seed: func(h *harness) {
 				r := h.gh.addRepo(owner, name)
 				r.statuses = []string{ctxGoBuild}
@@ -989,6 +992,55 @@ func TestSteps(t *testing.T) {
 				f := res.Step(StepProtection).Findings[0]
 				require.True(t, f.Advisory, "a foreign ruleset does not keep the repository from converging")
 				require.Contains(t, f.Message, `"renovate-automerge"`)
+				require.True(t, res.Converged)
+			},
+		},
+		{
+			name: "protection: a disabled ruleset the engine did not create is not reported", step: StepProtection,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				copilot := r.addRuleset("Code Quality Copilot review for default branch", nil)
+				copilot.Enforcement = github.RulesetEnforcementDisabled
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID), adminBypass(), teamBypass(testTeamID))
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Empty(t, res.Step(StepProtection).Findings, "a ruleset enforcing nothing leaves a person nothing to weigh")
+				require.NotNil(t, h.repo().ruleset("Code Quality Copilot review for default branch"), "untouched")
+				require.True(t, res.Converged)
+			},
+		},
+		{
+			name: "protection: a ruleset the entry declares is kept without a finding", step: StepProtection, entry: declaredRulesetEntryYAML,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset("protect-giantswarm", nil, adminBypass())
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID), adminBypass(), teamBypass(testTeamID))
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Empty(t, res.Step(StepProtection).Findings, "the entry records the decision to keep it")
+				kept := h.repo().ruleset("protect-giantswarm")
+				require.NotNil(t, kept)
+				require.Equal(t, []*github.BypassActor{adminBypass()}, kept.BypassActors, "untouched")
+				require.True(t, res.Converged)
+			},
+		},
+		{
+			name: "protection: a declared ruleset the repository does not carry is reported", step: StepProtection, entry: declaredRulesetEntryYAML,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID), adminBypass(), teamBypass(testTeamID))
+			},
+			wantCheck: VerdictReported, wantFinding: FindingDeclaredRulesetMissing, wantAfter: VerdictReported,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Len(t, h.repo().rulesets, 1, "the engine creates no ruleset but its own")
+				f := res.Step(StepProtection).Findings[0]
+				require.True(t, f.Advisory, "a declaration without its ruleset does not keep the repository from converging")
+				require.Contains(t, f.Message, `"protect-giantswarm"`)
 				require.True(t, res.Converged)
 			},
 		},

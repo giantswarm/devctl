@@ -301,22 +301,41 @@ func (r *Runner) classicProtection(ctx context.Context, s *run, branch string) (
 }
 
 // ownRuleset reads the repository's own rulesets and returns the engine's
-// with its rules, nil when there is none. Every other one is reported and
-// left alone; the organization's are not read.
+// with its rules, nil when there is none. Every other one is left alone —
+// the engine writes [RulesetName] and nothing else — and reported unless
+// the entry declares it in rulesets, the team's decision to keep it. A
+// ruleset with enforcement disabled enforces nothing, so it neither
+// conflicts with the engine's nor leaves a person anything to weigh: it is
+// passed over declared or not. One on evaluate is reported, its rules being
+// live in the audit log. A declared name the repository carries no ruleset
+// for is reported in turn, so that a deleted ruleset does not leave the
+// declaration standing. The organization's rulesets are not read.
 func (r *Runner) ownRuleset(ctx context.Context, s *run, sr *StepResult) (*github.RepositoryRuleset, error) {
 	list, _, err := r.GitHub.Repositories.GetAllRulesets(ctx, s.owner, s.name, &github.RepositoryListRulesetsOptions{IncludesParents: new(false)})
 	if err != nil {
 		return nil, err
 	}
+	declared := toSet(s.fields.Rulesets)
+	carried := make(map[string]bool, len(list))
 	var own *github.RepositoryRuleset
 	for _, rs := range list {
-		if rs.Name != RulesetName {
+		carried[rs.Name] = true
+		switch {
+		case rs.Name == RulesetName:
+			own = rs
+		case rs.Enforcement == github.RulesetEnforcementDisabled, declared[rs.Name]:
+		default:
 			s.report(sr, FindingForeignRuleset,
 				fmt.Sprintf("ruleset %q is not the engine's and is left alone", rs.Name),
-				fmt.Sprintf("declare what it enforces in the entry and delete it, or keep it knowingly; the engine manages %q alone", RulesetName))
-			continue
+				fmt.Sprintf("name it in the entry's rulesets to keep it knowingly, or delete it; the engine manages %q alone", RulesetName))
 		}
-		own = rs
+	}
+	for _, name := range s.fields.Rulesets {
+		if !carried[name] {
+			s.report(sr, FindingDeclaredRulesetMissing,
+				fmt.Sprintf("the entry declares the ruleset %q, which the repository does not carry", name),
+				"create the ruleset on GitHub, or drop the name from the entry's rulesets; the engine creates no ruleset but its own")
+		}
 	}
 	if own == nil {
 		return nil, nil

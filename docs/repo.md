@@ -261,8 +261,17 @@ false` leaves the ruleset without bypass actors so nothing merges past the revie
 a bypass actor (GitHub refuses it): the ruleset is written with the App and the admins, and the finding
 `team-bypass-refused` names the team and the fix, its privacy set to closed. Classic protection gives way
 to the ruleset in the same run: its required checks are carried over, the ruleset is written, then the
-classic protection is removed; the dry run plans both. A ruleset the engine did not create is left alone
-and reported (advisory: it does not keep the repository from converging).
+classic protection is removed; the dry run plans both.
+
+A ruleset the engine did not create is left alone -- the engine writes `devctl: default branch` and no
+other -- and reported as `foreign-ruleset` unless the entry names it in `rulesets`, the team's record of
+the decision to keep it: the fork lines declare `protect-giantswarm`, `protect-main`,
+`protect-mirror-main` and `protect-consumed-branch` there. A ruleset whose enforcement is `disabled`
+enforces nothing, conflicts with nothing and is passed over in silence, declared or not; one on
+`evaluate` is reported like an active one. A declared name the repository carries no ruleset for is the
+finding `declared-ruleset-missing`, so a deleted ruleset does not leave its declaration standing. Both
+kinds are advisory: they do not keep the repository from converging, and nothing about a declared ruleset
+is created, changed or deleted by the engine.
 
 `--devctl-app-id`, the devctl GitHub App's numeric id (the App's settings page; not the client id), is what
 the bypass list takes to be compared and written; the reconciler's wiring passes it. A run without the id
