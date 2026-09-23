@@ -46,7 +46,7 @@ devctl pr wait giantswarm/devctl 2277 --timeout 45m --progress
 
 ### Waiting for a release (`devctl release wait`)
 
-`devctl release wait <owner/repo> (<vX.Y.Z> | --pr <n>)` blocks until every image and chart of the tag is pullable and prints one JSON document with the digests. The artifact names come from the sources that define them (the team-file entry for generated CI, the tag pipeline's push jobs for hand-written CI), never from the repository name; the public registry is probed anonymously, the private one with the docker keychain; a failed tag pipeline ends the wait as exit 1 with the failed jobs, a timeout as exit 2 naming what is missing. See [docs/release-wait.md](docs/release-wait.md) for the model, the JSON and the exit codes.
+`devctl release wait <owner/repo> (<vX.Y.Z> | --pr <n>)` blocks until every image and chart of the tag is pullable and the tag pipeline is green (a repository's own tag jobs included), and prints one JSON document with the digests. The artifact names come from the sources that define them (the team-file entry for generated CI, the tag pipeline's push jobs for hand-written CI), never from the repository name; the public registry is probed anonymously, the private one with the docker keychain; a failed tag pipeline ends the wait as exit 1 with the failed jobs, a timeout as exit 2 naming what is missing. See [docs/release-wait.md](docs/release-wait.md) for the model, the JSON and the exit codes.
 
 ```bash
 devctl release wait giantswarm/devctl v8.9.0

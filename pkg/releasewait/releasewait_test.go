@@ -302,6 +302,97 @@ func TestWaitTimeoutNamesTheMissing(t *testing.T) {
 	}
 }
 
+// giantswarm/vm-manager v0.22.3: the image and the chart the entry names
+// resolved while the repository's own guest-image job (custom.yml), which
+// pushes the release's third artifact, was still running. The release is
+// out when the tag pipeline is green, not when the named artifacts resolve.
+func TestWaitRepoOwnedTagJobStillRunningIsNotYet(t *testing.T) {
+	circleci := pipelineRoutes(
+		[][]map[string]any{
+			{wf("w1", "build", "running", "2026-09-23T14:19:18Z")},
+			{wf("w1", "build", "running", "2026-09-23T14:19:18Z")},
+			{wf("w1", "build", "success", "2026-09-23T14:19:18Z")},
+		},
+		nil,
+	)
+	circleci["GET /api/v2/workflow/w1/job"] = []sequence.Response{
+		{Body: map[string]any{"items": []map[string]any{job("push-to-registries-release", "success"), job("push-chart-release", "success"), job("guest-image", "running")}}},
+		{Body: map[string]any{"items": []map[string]any{job("push-to-registries-release", "success"), job("push-chart-release", "success"), job("guest-image", "running")}}},
+		{Body: map[string]any{"items": []map[string]any{job("push-to-registries-release", "success"), job("push-chart-release", "success"), job("guest-image", "success")}}},
+	}
+	fx := fixture{
+		entry:    generatedEntry(t),
+		github:   baseGitHub([]string{"Dockerfile", "helm"}, []string{"zz_generated.auto_release.yaml"}, []string{"config.yml", "workflows.yml", "custom.yml"}),
+		circleci: circleci,
+		registry: sequence.Routes{
+			"HEAD /v2/giantswarm/kserve-controller/manifests/1.2.3": {{Status: 200}},
+			"HEAD /v2/charts/giantswarm/kserve/manifests/1.2.3":     {{Status: 200}},
+		},
+	}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+	if result.Pipeline == nil || len(result.Pipeline.Workflows) != 1 || result.Pipeline.Workflows[0].Status != "success" || len(result.Pipeline.Unfinished) != 0 {
+		t.Errorf("the wait ended before the tag pipeline finished: %+v", result.Pipeline)
+	}
+}
+
+// Artifacts that resolve under a pipeline that never finishes are a timeout
+// whose reason says the artifacts are there and what still runs.
+func TestWaitArtifactsAvailablePipelineUnfinishedIsTimeout(t *testing.T) {
+	fx := fixture{
+		entry:   generatedEntry(t),
+		timeout: 45 * time.Second,
+		github:  baseGitHub([]string{"Dockerfile", "helm"}, []string{"zz_generated.auto_release.yaml"}, []string{"config.yml", "workflows.yml", "custom.yml"}),
+		circleci: pipelineRoutes(
+			[][]map[string]any{{wf("w1", "build", "running", "2026-09-23T14:19:18Z")}},
+			map[string][]map[string]any{"w1": {job("push-to-registries-release", "success"), job("push-chart-release", "success"), job("guest-image", "running")}},
+		),
+		registry: sequence.Routes{
+			"HEAD /v2/giantswarm/kserve-controller/manifests/1.2.3": {{Status: 200}},
+			"HEAD /v2/charts/giantswarm/kserve/manifests/1.2.3":     {{Status: 200}},
+		},
+	}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitTimeout, "every artifact of v1.2.3 is available, the tag pipeline did not finish within 45s; pipeline 12 unfinished: build (running)")
+	for _, a := range result.Artifacts {
+		if a.State != StateAvailable {
+			t.Errorf("artifact %s should be available", a.Reference)
+		}
+	}
+}
+
+// A repository's own tag job that fails after the named artifacts resolved
+// fails the release: the verdict no longer depends on which came first.
+func TestWaitRepoOwnedTagJobFailingAfterTheArtifactsIsCIFailure(t *testing.T) {
+	circleci := pipelineRoutes(
+		[][]map[string]any{
+			{wf("w1", "build", "running", "2026-09-23T14:19:18Z")},
+			{wf("w1", "build", "failed", "2026-09-23T14:19:18Z")},
+		},
+		nil,
+	)
+	circleci["GET /api/v2/workflow/w1/job"] = []sequence.Response{
+		{Body: map[string]any{"items": []map[string]any{job("push-to-registries-release", "success"), job("push-chart-release", "success"), job("guest-image", "running")}}},
+		{Body: map[string]any{"items": []map[string]any{job("push-to-registries-release", "success"), job("push-chart-release", "success"), job("guest-image", "failed")}}},
+	}
+	fx := fixture{
+		entry:    generatedEntry(t),
+		github:   baseGitHub([]string{"Dockerfile", "helm"}, []string{"zz_generated.auto_release.yaml"}, []string{"config.yml", "workflows.yml", "custom.yml"}),
+		circleci: circleci,
+		registry: sequence.Routes{
+			"HEAD /v2/giantswarm/kserve-controller/manifests/1.2.3": {{Status: 200}},
+			"HEAD /v2/charts/giantswarm/kserve/manifests/1.2.3":     {{Status: 200}},
+		},
+	}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitRed, "build/guest-image")
+	for _, a := range result.Artifacts {
+		if a.State != StateAvailable {
+			t.Errorf("artifact %s should be available", a.Reference)
+		}
+	}
+}
+
 // A 401 to the anonymous read of the public registry is the artifact not
 // being public, a tooling failure the wait ends with at once, not a slow
 // pipeline it waits out.
@@ -328,7 +419,10 @@ func TestWaitHandWrittenDerivesFromThePipelineJobs(t *testing.T) {
 		entry:  nil,
 		github: github,
 		circleci: pipelineRoutes(
-			[][]map[string]any{{wf("w1", "build", "running", "2026-09-21T10:00:00Z")}},
+			[][]map[string]any{
+				{wf("w1", "build", "running", "2026-09-21T10:00:00Z")},
+				{wf("w1", "build", "success", "2026-09-21T10:00:00Z")},
+			},
 			map[string][]map[string]any{"w1": {job("go-build", "success"), job("push-to-registries-release", "success"), job("push-llmisvc", "success"), job("push-chart", "running")}},
 		),
 		registry: sequence.Routes{

@@ -9,8 +9,8 @@ import (
 
 const (
 	name        = "wait <owner/repo> [<vX.Y.Z|X.Y.Z>]"
-	description = "Block until a tag's images and charts are pullable; one JSON document, exit codes for the outcome."
-	long        = `Wait until the artifacts of a release are pullable.
+	description = "Block until a tag's images and charts are pullable and its pipeline is green; one JSON document, exit codes for the outcome."
+	long        = `Wait until the artifacts of a release are pullable and its tag pipeline is green.
 
 The tag and the GitHub Release exist about a minute after a merge; the images
 and charts come from the CircleCI pipeline the tag triggers, minutes later,
@@ -31,26 +31,30 @@ workflow files at the tag; a disagreement is an error, never a guess. With
 --pr the tag is the one auto-release put on the merge commit; a legacy
 repository needs the version.
 
-Availability is a digest: every image and chart resolves to one in its
-registry. The public registry is probed anonymously, so a stale docker login
-cannot produce a false UNAUTHORIZED; the private registry is read with the
-docker keychain. An answer other than a digest or "manifest unknown" ends the
-wait as a tooling failure. A failed or cancelled workflow of the tag pipeline
-(the newest run per workflow name) ends it as the tag's CI failure with the
-failed jobs; a repository without CircleCI is judged by the Actions runs the
-tag triggered. --catalog also waits for the catalog index to list the chart.
+Availability is a digest and a green tag pipeline: every image and chart
+resolves to one in its registry, and every workflow of the tag pipeline (the
+newest run per workflow name) finished green. The names cover what devctl
+renders and the orb pushes; a repository's own tag jobs (.circleci/custom.yml)
+push and sign more, which only the finished pipeline vouches for. The public
+registry is probed anonymously, so a stale docker login cannot produce a false
+UNAUTHORIZED; the private registry is read with the docker keychain. An answer
+other than a digest or "manifest unknown" ends the wait as a tooling failure.
+A failed or cancelled workflow ends it as the tag's CI failure with the failed
+jobs; a repository without CircleCI is judged by the Actions runs the tag
+triggered. --catalog also waits for the catalog index to list the chart.
 
 Output: one JSON document on stdout at the end and nothing else (--progress
 writes one line per step to stderr): the envelope (command, schemaVersion,
 exitCode, verdict, reason, warnings, startedAt, finishedAt), repository, tag,
 sha, releaseModel, ciModel, artifacts[{kind, reference, digest, state}],
-pipeline{id, number, url, workflows[{name, status}], failedJobs[]} (null
+pipeline{id, number, url, workflows[{name, status}], failedJobs[], unfinished[]} (null
 without CircleCI) and actions[{name, runId, status, conclusion, url}].
 
 Exit codes:
-  0  available: every artifact resolves to a digest
+  0  available: every artifact resolves to a digest and the tag pipeline
+     is green
   1  the tag's CI failed; the document names the failed jobs
-  2  timeout; the document shows what is still missing
+  2  timeout; the document shows what is still missing or still running
   3  not applicable: the pull request is not merged, or the repository does
      not tag merge commits (legacy release workflow) so --pr cannot resolve
      a version

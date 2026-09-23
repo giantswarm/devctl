@@ -56,6 +56,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- `release wait` declares a CircleCI release `available` only when every artifact resolves **and** the tag
+  pipeline is green: every workflow (newest run per name) finished, none failed. The artifacts the team-file entry or
+  the push jobs name are not the whole release: a repository's own tag jobs in `.circleci/custom.yml` push and sign
+  more (vm-manager's guest image, muster's CRD chart, backstage's control-plane catalog entry), and `release wait
+  giantswarm/vm-manager --pr 78` answered `available` for v0.22.3 while its `guest-image` job was still running.
+  Artifacts that resolve under a running pipeline now keep the wait polling (`every artifact is available; pipeline
+  N unfinished: …` on `--progress`); a tag job that fails after them is exit 1 with the job in `failedJobs`, a
+  pipeline that does not finish in time exit 2 saying the artifacts are there. The Aliyun mirror is part of the
+  wait; it typically ends within a minute of the chart push. An exit 0 document never lists an unfinished workflow
+  ([#2364](https://github.com/giantswarm/devctl/issues/2364)).
 - `gen circleci`: the generated pipelines pin architect orb 10.6.3, whose `image-prepare-tag` fails a branch pipeline at a
   tagged commit instead of resolving the release version and publishing it again
   ([architect-orb#942](https://github.com/giantswarm/architect-orb/issues/942)).

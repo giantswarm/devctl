@@ -1,0 +1,74 @@
+# giantswarm/vm-manager v0.22.3: the image and the chart the team-file entry
+# names resolve from the first poll, while the repository's own guest-image
+# job (merged in from .circleci/custom.yml), which pushes the release's third
+# artifact, is still running. The wait goes on until the tag pipeline is
+# green; the document of an available release lists nothing unfinished.
+description: named artifacts that resolve while a repo-owned tag job runs wait for the pipeline to be green
+args: [release, wait, giantswarm/e2e-app, v1.2.3, --timeout, 30m]
+keyring:
+  github:
+    login: e2e-engineer
+    token: ghu_e2e_live
+    expiresAt: "2099-01-01T00:00:00Z"
+  circleci:
+    login: e2e-engineer
+    token: CCIPAT_e2e_live
+    expiresAt: "2099-01-01T00:00:00Z"
+github:
+  routes:
+    "GET /repos/giantswarm/e2e-app/git/ref/tags/v1.2.3":
+      - body: {ref: refs/tags/v1.2.3, object: {type: commit, sha: aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44}}
+    "GET /repos/giantswarm/e2e-app":
+      - body: {name: e2e-app, full_name: giantswarm/e2e-app, private: false}
+    "GET /repos/giantswarm/e2e-app/contents/?ref=aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44":
+      - body:
+          - {name: Dockerfile, path: Dockerfile, type: file}
+          - {name: helm, path: helm, type: dir}
+          - {name: main.go, path: main.go, type: file}
+    "GET /repos/giantswarm/e2e-app/contents/.github/workflows?ref=aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44":
+      - body:
+          - {name: zz_generated.auto_release.yaml, path: .github/workflows/zz_generated.auto_release.yaml, type: file}
+    "GET /repos/giantswarm/e2e-app/contents/.circleci?ref=aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44":
+      - body:
+          - {name: config.yml, path: .circleci/config.yml, type: file}
+          - {name: custom.yml, path: .circleci/custom.yml, type: file}
+          - {name: workflows.yml, path: .circleci/workflows.yml, type: file}
+    "GET /repos/giantswarm/github/contents/repositories":
+      - body:
+          - {name: team-e2e.yaml, path: repositories/team-e2e.yaml, type: file}
+    "GET /repos/giantswarm/github/contents/repositories/team-e2e.yaml":
+      - body:
+          name: team-e2e.yaml
+          path: repositories/team-e2e.yaml
+          type: file
+          content: |
+            - name: e2e-app
+              componentType: service
+              gen:
+                flavours:
+                  - app
+                language: go
+                ci:
+                  generate: true
+circleci:
+  routes:
+    "GET /api/v2/project/gh/giantswarm/e2e-app/pipeline":
+      - body: {items: [{id: p1, number: 93, state: created, vcs: {tag: v1.2.3, revision: aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44}}], next_page_token: null}
+    "GET /api/v2/pipeline/p1/workflow":
+      - body: {items: [{id: w0, name: setup, status: success}, {id: w1, name: build, status: running}], next_page_token: null}
+      - body: {items: [{id: w0, name: setup, status: success}, {id: w1, name: build, status: running}], next_page_token: null}
+      - body: {items: [{id: w0, name: setup, status: success}, {id: w1, name: build, status: success}], next_page_token: null}
+    "GET /api/v2/workflow/w0/job":
+      - body: {items: [{id: j0, name: setup, status: success}], next_page_token: null}
+    "GET /api/v2/workflow/w1/job":
+      - body: {items: [{id: j1, name: go-build, status: success}, {id: j2, name: push-to-registries-release, status: success}, {id: j3, name: push-chart-release, status: success}, {id: j4, name: guest-image, status: running}], next_page_token: null}
+      - body: {items: [{id: j1, name: go-build, status: success}, {id: j2, name: push-to-registries-release, status: success}, {id: j3, name: push-chart-release, status: success}, {id: j4, name: guest-image, status: running}], next_page_token: null}
+      - body: {items: [{id: j1, name: go-build, status: success}, {id: j2, name: push-to-registries-release, status: success}, {id: j3, name: push-chart-release, status: success}, {id: j4, name: guest-image, status: success}], next_page_token: null}
+registry:
+  routes:
+    "HEAD /v2/giantswarm/e2e-app/manifests/1.2.3":
+      - status: 200
+        headers: {Docker-Content-Digest: "sha256:e2ea000000000000000000000000000000000000000000000000000000000e2a"}
+    "HEAD /v2/charts/giantswarm/e2e-app/manifests/1.2.3":
+      - status: 200
+        headers: {Docker-Content-Digest: "sha256:c4a7000000000000000000000000000000000000000000000000000000000c4a"}
