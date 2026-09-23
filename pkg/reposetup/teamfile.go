@@ -168,7 +168,12 @@ type Fields struct {
 	// the default branch's ruleset has no bypass actor, so nothing merges
 	// past the required review. Nil is the default, true.
 	AgentMerge *bool `yaml:"agentMerge"`
-	Replace    *struct {
+	// Rulesets names the repository's own rulesets the team keeps beside
+	// the engine's, the decision to keep them: the protection step leaves a
+	// declared one alone in silence, reports every other one and reports a
+	// declared name the repository carries no ruleset for.
+	Rulesets []string `yaml:"rulesets"`
+	Replace  *struct {
 		Precommit bool `yaml:"precommit"`
 	} `yaml:"replace"`
 	Gen *GenFields `yaml:"gen"`
