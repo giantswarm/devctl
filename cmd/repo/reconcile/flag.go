@@ -39,7 +39,7 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().StringSliceVar(&f.Steps, "steps", nil, "Run only these steps (create,scaffold,settings,permissions,protection,circleci,webhooks,renovate,codeowners,metadata,lifecycle,catalog,release); every step when not given.")
 	cmd.Flags().StringToStringVar(&f.Options, "option", nil, "Scaffold option as name=value, the template's options; repeatable.")
 	cmd.Flags().StringVar(&f.Output, "output", engine.OutputTable, "Output format: table or json.")
-	cmd.Flags().Int64Var(&f.DevctlAppID, "devctl-app-id", 0, "Numeric id of the devctl GitHub App (the App's settings page; not the client id), the switch to rulesets: with it the protection step writes the default branch's ruleset with the App as bypass actor in pull_request mode (none when the entry declares agentMerge: false) and removes classic branch protection. Unset, the step writes classic branch protection as before and reports the missing id; the reconciler's wiring passes it.")
+	cmd.Flags().Int64Var(&f.DevctlAppID, "devctl-app-id", 0, "Numeric id of the devctl GitHub App (the App's settings page; not the client id), the switch to rulesets: with it the protection step writes the default branch's ruleset with the App and the owning team as bypass actors in pull_request mode (none when the entry declares agentMerge: false) and removes classic branch protection. Unset, the step writes classic branch protection as before and reports the missing id; the reconciler's wiring passes it.")
 }
 
 func (f *flag) Validate() error {

@@ -10,6 +10,13 @@
 // then the branch goes through the refs API. A base with a merge queue is
 // enqueued instead and the pull request waited for. No protection setting,
 // ruleset or enforce_admins is read to be changed, or written.
+//
+// The merge is made as the caller: the token is the person's (devctl holds
+// no installation token), so the bypass GitHub honours is the person's, the
+// owning team's as the alignment engine writes it, never the App's. A merge
+// the review rule declines is exit 3 with GitHub's sentence and the
+// ruleset's bypass actors, so the caller knows whose review or merge it
+// takes.
 package prmerge
 
 import (
@@ -149,7 +156,8 @@ func (m *Merger) Merge(ctx context.Context, owner, repo string, number int) (*Re
 	}
 	result.HeadSHA, result.BaseRef = pr.GetHead().GetSHA(), pr.GetBase().GetRef()
 
-	if err := m.refuse(ctx, owner, repo, pr); err != nil {
+	caller, team, err := m.refuse(ctx, owner, repo, pr)
+	if err != nil {
 		return result, err
 	}
 	m.progress.Printf("refusals: none; %s by %s", pr.GetHead().GetSHA(), pr.GetUser().GetLogin())
@@ -186,7 +194,7 @@ func (m *Merger) Merge(ctx context.Context, owner, repo string, number int) (*Re
 	if queued {
 		err = m.enqueue(ctx, owner, repo, number, pr, result)
 	} else {
-		err = m.merge(ctx, owner, repo, number, pr, result)
+		err = m.merge(ctx, owner, repo, number, pr, result, caller, team)
 	}
 	if err != nil {
 		return result, err
@@ -223,35 +231,36 @@ func (m *Merger) readMergeable(ctx context.Context, owner, repo string, number i
 }
 
 // refuse is every refusal that comes before the wait, in order: the pull
-// request's state (3), its author (5), the repository's opt-out (5).
-func (m *Merger) refuse(ctx context.Context, owner, repo string, pr *github.PullRequest) error {
+// request's state (3), its author (5), the repository's opt-out (5). It
+// returns the caller the token acts as and the team whose file declares
+// the repository (empty when none does), for the merge's reasons.
+func (m *Merger) refuse(ctx context.Context, owner, repo string, pr *github.PullRequest) (caller, team string, err error) {
 	if !m.updateBranch || pr.GetMergeableState() != "behind" {
 		if err := prwait.NotApplicable(pr); err != nil {
-			return err
+			return "", "", err
 		}
 	}
 
-	caller := m.login
+	caller = m.login
 	if caller == "" {
-		var err error
 		caller, err = m.github.CurrentLogin(ctx)
 		if err != nil {
-			return microerror.Mask(err)
+			return "", "", microerror.Mask(err)
 		}
 	}
 	if !authorAllowed(pr, caller) {
-		return agentcli.NewExitError(agentcli.ExitRefused, agentcli.VerdictRefused,
+		return "", "", agentcli.NewExitError(agentcli.ExitRefused, agentcli.VerdictRefused,
 			"the pull request was opened by %s, not by %s: devctl pr merge merges the caller's own pull requests and bots' only", pr.GetUser().GetLogin(), caller)
 	}
 
-	refusal, err := m.policy(ctx, owner, repo)
+	verdict, err := m.policy(ctx, owner, repo)
 	if err != nil {
-		return microerror.Mask(err)
+		return "", "", microerror.Mask(err)
 	}
-	if refusal != "" {
-		return agentcli.NewExitError(agentcli.ExitRefused, agentcli.VerdictRefused, "%s", refusal)
+	if verdict.Refusal != "" {
+		return "", "", agentcli.NewExitError(agentcli.ExitRefused, agentcli.VerdictRefused, "%s", verdict.Refusal)
 	}
-	return nil
+	return caller, verdict.Team, nil
 }
 
 // authorAllowed: the author is a bot or a GitHub App (type Bot or a [bot]
@@ -288,15 +297,21 @@ func (m *Merger) update(ctx context.Context, owner, repo string, number int, hea
 
 // merge lands the head through the merge API with the judged head as the
 // expected head. A merge GitHub declines as the pull request stands is
-// exit 3 with GitHub's sentence.
-func (m *Merger) merge(ctx context.Context, owner, repo string, number int, pr *github.PullRequest, result *Result) error {
+// exit 3 with GitHub's sentence; declined for the review rule, the reason
+// goes on to name the caller, the rulesets' bypass actors and the owning
+// team (explainReviewRule).
+func (m *Merger) merge(ctx context.Context, owner, repo string, number int, pr *github.PullRequest, result *Result, caller, team string) error {
 	opts := githubclient.MergeOptions{Method: m.method, HeadSHA: result.HeadSHA}
 	if m.method == githubclient.MergeSquash {
 		opts.CommitTitle = fmt.Sprintf("%s (#%d)", strings.TrimSpace(pr.GetTitle()), number)
 	}
 	sha, err := m.github.MergePullRequest(ctx, owner, repo, number, opts)
 	if githubclient.IsMergeDeclined(err) {
-		return agentcli.NewExitError(agentcli.ExitNotApplicable, agentcli.VerdictNotApplicable, "%s", err.Error())
+		reason := oneLine(err.Error())
+		if declinedByReviewRule(err) {
+			reason = strings.TrimSuffix(reason, ".") + ". " + m.explainReviewRule(ctx, owner, repo, pr.GetBase().GetRef(), caller, team)
+		}
+		return agentcli.NewExitError(agentcli.ExitNotApplicable, agentcli.VerdictNotApplicable, "%s", reason)
 	}
 	if err != nil {
 		return microerror.Mask(err)
@@ -339,6 +354,19 @@ func (m *Merger) enqueue(ctx context.Context, owner, repo string, number int, pr
 			return m.queueTimedOut(result)
 		}
 	}
+}
+
+// oneLine is GitHub's sentence on one line: its paragraphs ("Repository
+// rule violations found\n\nAt least 1 approving review …\n\n") joined
+// with "; ", so the reason stays one line.
+func oneLine(s string) string {
+	var parts []string
+	for _, line := range strings.Split(s, "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			parts = append(parts, line)
+		}
+	}
+	return strings.Join(parts, "; ")
 }
 
 func (m *Merger) queueTimedOut(result *Result) error {

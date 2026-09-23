@@ -45,8 +45,9 @@ with the GitHub token. The branch protection is the company baseline's:
 administrators are bound too (enforce_admins), a branch need not be up to
 date to merge (strict status checks off). With --devctl-app-id (the devctl
 GitHub App's numeric id) the protection is a repository ruleset on the
-default branch instead, "devctl: default branch", with the App as bypass
-actor for pull requests unless the entry declares agentMerge: false, and
+default branch instead, "devctl: default branch", with the App and the
+owning team as bypass actors for pull requests unless the entry declares
+agentMerge: false, and
 classic branch protection gives way to it in the same run; without the id
 the step keeps classic protection and reports the missing id.
 
