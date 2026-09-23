@@ -53,7 +53,7 @@ For detailed guidelines and examples, always refer to: @https://github.com/giant
 <!--
 DO NOT EDIT. Generated with devctl.
 This file is maintained at:
-https://github.com/giantswarm/devctl/tree/main
+https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/llm/internal/file/base_llm_rules.mdc.template
 Manual changes will be overwritten.
 -->
 
@@ -62,7 +62,7 @@ Manual changes will be overwritten.
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/tree/main
+#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/create_release.yaml.template
 #
 name: Create Release
 
@@ -93,7 +93,7 @@ jobs:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/tree/main
+#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/create_release_pr.yaml.template
 #
 name: Create Release PR
 on:
@@ -153,7 +153,7 @@ jobs:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/tree/main
+#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/gitleaks.yaml.template
 #
 name: gitleaks
 
@@ -174,7 +174,7 @@ jobs:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/tree/main
+#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/run_ossf_scorecard.yaml.template
 #
 
 # This workflow uses actions that are not certified by GitHub. They are provided
@@ -217,7 +217,7 @@ jobs:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/tree/main
+#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/semantic_pull_request.yaml.template
 #
 name: semantic-pull-request
 
@@ -274,7 +274,7 @@ jobs:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/tree/main
+#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/validate_changelog.yaml.template
 #
 name: Validate changelog
 
@@ -338,7 +338,7 @@ limitations under the License.
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/tree/main
+#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/makefile/internal/file/Makefile.template
 #
 
 include Makefile.*.mk
