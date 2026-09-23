@@ -151,7 +151,7 @@ func Test_Merge_refusalsBeforeTheWait(t *testing.T) {
 		{name: "draft", pr: pull(map[string]any{"draft": true}), wantCode: 3, wantReason: "draft", wantVerdict: agentcli.VerdictNotApplicable},
 		{name: "conflicting", pr: pull(map[string]any{"mergeable_state": "dirty"}), wantCode: 3, wantReason: "conflicts with main", wantVerdict: agentcli.VerdictNotApplicable},
 		{name: "behind without --update-branch", pr: pull(map[string]any{"mergeable_state": "behind"}), wantCode: 3, wantReason: "behind main", wantVerdict: agentcli.VerdictNotApplicable},
-		{name: "another human", pr: pull(map[string]any{"user": map[string]any{"login": "alice", "type": "User"}}), wantCode: 5, wantReason: "opened by alice, not by someone", wantVerdict: agentcli.VerdictRefused},
+		{name: "another human", pr: pull(map[string]any{"user": map[string]any{"login": "alice", "type": "User"}}), wantCode: 5, wantReason: "the pull request was opened by alice, not by someone: devctl pr merge merges the caller's own pull requests and those of bots and GitHub Apps (the Bot user type or a [bot] login) and of the automation accounts architectbot, taylorbot", wantVerdict: agentcli.VerdictRefused},
 		{name: "opted out", pr: pull(nil), configure: func(c *Config) {
 			c.Policy = func(context.Context, string, string) (Verdict, error) {
 				return Verdict{Refusal: "the entry r says agentMerge: false"}, nil
@@ -166,7 +166,7 @@ func Test_Merge_refusalsBeforeTheWait(t *testing.T) {
 		{name: "a [bot] login", pr: pull(map[string]any{"user": map[string]any{"login": "dependabot[bot]", "type": "User"}}), wantCode: 0},
 		{name: "taylorbot, the release pull request", pr: pull(map[string]any{"user": map[string]any{"login": "taylorbot", "type": "User", "id": 25685558}}), wantCode: 0},
 		{name: "architectbot", pr: pull(map[string]any{"user": map[string]any{"login": "architectbot", "type": "User", "id": 61872893}}), wantCode: 0},
-		{name: "an automation login with another account's id", pr: pull(map[string]any{"user": map[string]any{"login": "taylorbot", "type": "User", "id": 999}}), wantCode: 5, wantReason: "opened by taylorbot, not by someone", wantVerdict: agentcli.VerdictRefused},
+		{name: "an automation login with another account's id", pr: pull(map[string]any{"user": map[string]any{"login": "taylorbot", "type": "User", "id": 999}}), wantCode: 5, wantReason: "opened by taylorbot, not by someone: devctl pr merge merges the caller's own pull requests and those of bots and GitHub Apps (the Bot user type or a [bot] login) and of the automation accounts architectbot, taylorbot; taylorbot is accepted as account 25685558 and this pull request's author is account 999", wantVerdict: agentcli.VerdictRefused},
 		{name: "heraldbot, the plain login no giantswarm account holds", pr: pull(map[string]any{"user": map[string]any{"login": "heraldbot", "type": "User", "id": 269214663}}), wantCode: 5, wantReason: "opened by heraldbot, not by someone", wantVerdict: agentcli.VerdictRefused},
 	}
 	for _, tc := range tests {
