@@ -66,8 +66,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Changed
 
 - A command for people that fails with an error carrying its exit code (`agentcli.ExitCoder`) exits with that
-  code: `ErrAuthRequired` is exit 8 for every command, its one sentence on stderr. Before, every such error was
-  exit 2 ([#2379](https://github.com/giantswarm/devctl/issues/2379)).
+  code: `ErrAuthRequired` is exit 8 for every command, its one sentence on stderr, so a `repo` command without a
+  muster login exits 8 as `docs/auth.md` says. Before, every such error was exit 2
+  ([#2379](https://github.com/giantswarm/devctl/issues/2379)).
 - A command called the wrong way says what is wrong and how to call it, without a stack trace: a missing
   argument is named from the usage line (`Missing [OWNER/]REPOSITORY`), an extra one is `Unexpected argument "b"`,
   an unknown command or flag, or a flag the command's validation refuses, is followed by the command's usage line
