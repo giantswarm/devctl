@@ -15,6 +15,10 @@ const (
 	TemplateGo Template = "giantswarm/template"
 	// TemplateChart is giantswarm/template-app, the chart-only template.
 	TemplateChart Template = "giantswarm/template-app"
+	// TemplatePlans is giantswarm/template-plans, the team plans template:
+	// versioned PRDs, their companion websites and the plan-workflow agent
+	// skills.
+	TemplatePlans Template = "giantswarm/template-plans"
 	// TemplateMinimal is the minimal scaffold: README, LICENSE, DCO,
 	// SECURITY.md, CODEOWNERS and .gitignore plus the generated files.
 	TemplateMinimal Template = "minimal"
@@ -40,10 +44,17 @@ const componentTypeCustomer = "customer"
 // template is not part of this release.
 const nodeTemplateUnavailable = "the Node template is not available yet"
 
+// plansTemplateLanguageUnavailable is why the plans flavour is refused with
+// a language other than generic: giantswarm/template-plans has one shape, a
+// generic repository, and no per-language variant.
+const plansTemplateLanguageUnavailable = "the plans flavour derives giantswarm/template-plans, which is generic only: set gen.language to generic"
+
 // DeriveTemplate returns the template a declaration is scaffolded from.
 // There is no template field: the component type, flavours and language
-// decide. Language go → [TemplateGo]; language generic with the app flavour
-// → [TemplateChart]; the customer flavour or component type, the fork
+// decide. Language go → [TemplateGo]; the plans flavour with language
+// generic → [TemplatePlans], refused for any other language with an error
+// [IsTemplateUnavailable] asserts; language generic with the app flavour →
+// [TemplateChart]; the customer flavour or component type, the fork
 // flavour, the languages python and kyverno-policy, and a generic repository
 // without a chart → [TemplateMinimal]. Language node has no template yet and is refused with
 // an error [IsTemplateUnavailable] asserts. An unknown flavour or language
@@ -67,6 +78,16 @@ func DeriveTemplate(componentType string, flavours []string, language string) (T
 		return TemplateMinimal, nil
 	}
 
+	// The plans flavour wins over the language switch below (and so over
+	// its generic → minimal fallthrough), the same way customer and fork
+	// already won above: it names its own template, not a language's.
+	if fl.Contains(gen.FlavourPlans) {
+		if lang != gen.LanguageGeneric {
+			return "", microerror.Maskf(templateUnavailableError, "%s", plansTemplateLanguageUnavailable)
+		}
+		return TemplatePlans, nil
+	}
+
 	switch lang {
 	case gen.LanguageGo:
 		return TemplateGo, nil
@@ -80,6 +101,20 @@ func DeriveTemplate(componentType string, flavours []string, language string) (T
 	default:
 		return TemplateMinimal, nil
 	}
+}
+
+// unavailableTemplateReason says which [templateUnavailableError] message
+// [DeriveTemplate] would have refused flavours and language with -- the same
+// precedence, the plans flavour first: a declaration's own message, not the
+// other's, when a caller already knows [IsTemplateUnavailable] holds and
+// wants the reason without re-deriving.
+func unavailableTemplateReason(flavours []string, language string) string {
+	for _, f := range flavours {
+		if f == gen.FlavourPlans.String() && language != gen.LanguageGeneric.String() {
+			return plansTemplateLanguageUnavailable
+		}
+	}
+	return nodeTemplateUnavailable
 }
 
 // HasChart says whether the declared flavours produce a Helm chart, which

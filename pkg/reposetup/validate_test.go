@@ -62,6 +62,8 @@ func TestValidateEntries(t *testing.T) {
 		{name: "no-gen", verdict: VerdictFree, fields: []string{"gen.flavours", "gen.language"}},
 		{name: "empty-gen", verdict: VerdictFree, fields: []string{"gen.flavours", "gen.language"}},
 		{name: "node-ui", verdict: VerdictFree, fields: []string{"gen.language"}},
+		{name: "plans-repo", template: TemplatePlans, verdict: VerdictFree},
+		{name: "plans-wrong-language", verdict: VerdictFree, fields: []string{"gen.language"}},
 		{name: "Bad_Name", template: TemplateMinimal, verdict: VerdictUnchecked, fields: []string{"name"}},
 		{name: "chart-name-mismatch", template: TemplateChart, verdict: VerdictFree, fields: []string{"gen.ci.chartName"}},
 		{name: "internal-visibility", template: TemplateGo, verdict: VerdictFree, fields: []string{"lifecycle", "visibility"}},
@@ -117,7 +119,7 @@ func problemFields(problems []Problem) []string {
 func TestValidateMessagesNameTheReason(t *testing.T) {
 	v, tf := fixtureValidator(t)
 	result, err := v.Validate(context.Background(), Request{TeamFile: tf, Names: []string{
-		"node-ui", "hello-world-app", "chart-name-mismatch", "internal-visibility", "unknown-field", "unknown-flavour", "taken-name", "renamed-name", "twice", "no-gen",
+		"node-ui", "plans-wrong-language", "hello-world-app", "chart-name-mismatch", "internal-visibility", "unknown-field", "unknown-flavour", "taken-name", "renamed-name", "twice", "no-gen",
 	}})
 	require.NoError(t, err)
 
@@ -129,12 +131,13 @@ func TestValidateMessagesNameTheReason(t *testing.T) {
 	}
 
 	require.Equal(t, "the Node template is not available yet", messages["node-ui/gen.language"])
+	require.Equal(t, "the plans flavour derives giantswarm/template-plans, which is generic only: set gen.language to generic", messages["plans-wrong-language/gen.language"])
 	require.Contains(t, messages["hello-world-app/name"], "without the -app suffix")
 	require.Contains(t, messages["chart-name-mismatch/gen.ci.chartName"], `must equal the repository name "chart-name-mismatch"`)
 	require.Contains(t, messages["internal-visibility/visibility"], "public")
 	require.Contains(t, messages["internal-visibility/lifecycle"], "archived")
 	require.Equal(t, "not a field of the repositories schema", messages["unknown-field/template"])
-	require.Equal(t, "value must be one of 'app', 'cli', 'cluster-app', 'customer', 'fleet', 'fork', 'generic', 'k8sapi'", messages["unknown-flavour/gen.flavours[0]"])
+	require.Equal(t, "value must be one of 'app', 'cli', 'cluster-app', 'customer', 'fleet', 'fork', 'generic', 'k8sapi', 'plans'", messages["unknown-flavour/gen.flavours[0]"])
 	require.Equal(t, "taken: repository giantswarm/taken-name exists", messages["taken-name/name"])
 	require.Contains(t, messages["renamed-name/name"], "redirects to giantswarm/new-name")
 	require.Contains(t, messages["twice/name"], "declared more than once")

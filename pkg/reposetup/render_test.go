@@ -37,6 +37,7 @@ var renderCases = []struct {
 		OptionUpstreamChart: "charts/example",
 	}},
 	{name: "configuration", team: "team-honeybadger", template: TemplateMinimal},
+	{name: "plans", team: "team-cabbage", template: TemplatePlans},
 	{name: "customer", team: "team-planeteers", template: TemplateMinimal},
 	{name: "python", team: "team-bumblebee", template: TemplateMinimal},
 	{name: "kyverno-policy", team: "team-shield", template: TemplateMinimal},

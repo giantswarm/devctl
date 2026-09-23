@@ -16,6 +16,12 @@ const (
 	FlavourKubernetesAPI           Flavour = "k8sapi"
 	FlavourClusterApp              Flavour = "cluster-app"
 	FlavourManagementClustersFleet Flavour = "fleet"
+	// FlavourPlans is a team plans repository: versioned PRDs, their
+	// companion websites and the plan-workflow agent skills. An add-on
+	// flavour declared beside generic (flavours: [generic, plans]) with
+	// language generic; the generators produce nothing extra for it, and the
+	// repository set-up engine derives it the template giantswarm/template-plans.
+	FlavourPlans Flavour = "plans"
 )
 
 func AllFlavours() []string {
@@ -28,6 +34,7 @@ func AllFlavours() []string {
 		FlavourKubernetesAPI.String(),
 		FlavourClusterApp.String(),
 		FlavourManagementClustersFleet.String(),
+		FlavourPlans.String(),
 	}
 }
 
@@ -51,6 +58,8 @@ func NewFlavour(s string) (Flavour, error) {
 		return FlavourClusterApp, nil
 	case FlavourManagementClustersFleet.String():
 		return FlavourManagementClustersFleet, nil
+	case FlavourPlans.String():
+		return FlavourPlans, nil
 	}
 
 	return Flavour("unknown"), microerror.Maskf(invalidConfigError, "flavour must be one of %s", strings.Join(AllFlavours(), "|"))

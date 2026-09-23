@@ -22,6 +22,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   `circleci` facts carry `webhook` for the manager to fill from the step, and `devctl repo status` prints
   `webhook present` / `webhook missing` in the `circleci` line when it is set
   ([#2332](https://github.com/giantswarm/devctl/issues/2332)).
+- The `plans` flavour: a team plans repository (versioned PRDs, their companion websites and the
+  plan-workflow agent skills -- cabbage-plans, bumblebee-plans, atlas-plans and the like). An add-on
+  flavour declared beside `generic` (`flavours: [generic, plans]`) with `language: generic` and
+  `gen.ci.generate: false`; the generators produce nothing extra for it, and `DeriveTemplate` derives
+  it the new template `giantswarm/template-plans` (its `{APP-NAME}` and `{TEAM-NAME}` placeholders
+  replaced the same way `giantswarm/template-app`'s are), refusing any other language the same way
+  language `node` is refused until its template ships. The embedded schema copy
+  (`pkg/reposetup/schema/repositories.schema.json`) carries the flavour; the live schema in
+  giantswarm/github and the Backstage "Plans" scaffolder preset land in companion pull requests.
 - `circleciclient.Config.Anonymous`: a client without a token, for a reader that holds none -- it reads what CircleCI
   answers without one, the pipelines, workflows and jobs of a public project (a private one is 404), and sends no
   `Circle-Token` header; `New` still refuses an empty token without the flag, and a token with it, so a reader meant

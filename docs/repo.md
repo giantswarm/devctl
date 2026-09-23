@@ -110,8 +110,10 @@ lists, so it never lags a copy in this document; the live schema is
 [`.github/repositories.schema.json`](https://github.com/giantswarm/github/blob/main/.github/repositories.schema.json)
 in giantswarm/github.
 
-The template is derived, not chosen: `language: go` gives `giantswarm/template`; `language: generic`
-with the `app` flavour gives `giantswarm/template-app`; a customer repository, `python`,
+The template is derived, not chosen: `language: go` gives `giantswarm/template`; the `plans` flavour
+with `language: generic` gives `giantswarm/template-plans` and refuses any other language, the same
+way `language: node` is refused until its template ships; `language: generic` with the `app` flavour
+gives `giantswarm/template-app`; a customer repository, `python`,
 `kyverno-policy` and every other combination give the minimal scaffold. A declaration whose flavours
 produce a chart (`app`, `cluster-app`) and whose template has no chart of its own -- the Go service
 with the `app` flavour -- gets the chart of `giantswarm/template-app` at `helm/<name>` beside the
