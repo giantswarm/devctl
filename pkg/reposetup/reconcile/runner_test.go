@@ -943,7 +943,7 @@ func TestSteps(t *testing.T) {
 			},
 		},
 		{
-			name: "protection: a ruleset the engine did not create is left alone and reported", step: StepProtection,
+			name: "protection: an enforcing ruleset the engine did not create is left alone and reported", step: StepProtection,
 			seed: func(h *harness) {
 				r := h.gh.addRepo(owner, name)
 				r.statuses = []string{ctxGoBuild}
@@ -958,6 +958,22 @@ func TestSteps(t *testing.T) {
 				f := res.Step(StepProtection).Findings[0]
 				require.True(t, f.Advisory, "a foreign ruleset does not keep the repository from converging")
 				require.Contains(t, f.Message, `"renovate-automerge"`)
+				require.True(t, res.Converged)
+			},
+		},
+		{
+			name: "protection: a disabled ruleset the engine did not create is not reported", step: StepProtection,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				copilot := r.addRuleset("Code Quality Copilot review for default branch", nil)
+				copilot.Enforcement = github.RulesetEnforcementDisabled
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID), adminBypass(), teamBypass(testTeamID))
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Empty(t, res.Step(StepProtection).Findings, "a ruleset enforcing nothing leaves a person nothing to weigh")
+				require.NotNil(t, h.repo().ruleset("Code Quality Copilot review for default branch"), "untouched")
 				require.True(t, res.Converged)
 			},
 		},
