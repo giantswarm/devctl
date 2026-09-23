@@ -68,7 +68,13 @@
 // commands align-files runs, in align-files' order and with its flags, so
 // the generated files are byte-identical to what the first align run would
 // write and that run changes nothing. [Scaffold.Commands] lists the command
-// lines. The chart-only template offers [Option]s -- the vendir sync and
+// lines. A chart repository whose pipeline runs app-test-suite also gets
+// the chart tests that job runs, beside the generated tests/ats/pyproject.toml
+// and where the template carries none: .ats/main.yaml, skipping the
+// functional and the upgrade scenario a new repository cannot run, and
+// tests/ats/test_smoke.py, one smoke test that the job's kind cluster is
+// reachable; both are the repository's own from then on, never written by
+// an align run. The chart-only template offers [Option]s -- the vendir sync and
 // patch-script scaffolding `devctl app bootstrap` used to write by flag --
 // listed on [Entry.Options] by the dry run and chosen through
 // [RenderRequest.Options].
