@@ -90,12 +90,24 @@ const (
       generate: false
 `
 
+	// templateEntryYAML declares a template repository: other repositories
+	// are created from it, its chart lives under a placeholder directory.
+	templateEntryYAML = `- name: sample-service
+  componentType: template
+  description: A template repository
+  visibility: public
+  gen:
+    flavours: [generic, app]
+    language: go
+`
+
 	// chartNameEntryYAML declares a chart repository whose chart is named
 	// otherwise than the repository: gen.ci.chartName names it, as
 	// docs-proxy's entry does for helm/docs-proxy-app. An existing
 	// repository's declaration: the creation rules name a new repository
 	// after its chart.
 	chartNameEntryYAML = entryYAML + `    ci:
+      generate: true
       chartName: sample-service-app
 `
 
@@ -125,6 +137,8 @@ type harness struct {
 	entry    reposetup.Entry
 }
 
+// newHarness wires the fakes to an entry validated for its creation, the
+// default the creation's rendering writes out included.
 func newHarness(t *testing.T, yaml string) *harness {
 	t.Helper()
 	return newHarnessMode(t, yaml, reposetup.ModeCreate)
@@ -391,6 +405,22 @@ func TestSteps(t *testing.T) {
 				data, err := json.Marshal(res)
 				require.NoError(t, err)
 				require.NotContains(t, string(data), `"advisory"`, "omitted when false")
+			},
+		},
+		{
+			name: "scaffold: the chart of a template carries placeholders and is not checked", step: StepScaffold,
+			entry: templateEntryYAML,
+			seed: func(h *harness) {
+				h.gh.addRepo(owner, name).files = map[string]string{
+					"README.md":                  "# sample-service\n",
+					"helm/{APP-NAME}/Chart.yaml": "apiVersion: v2\nname: \"{APP-NAME}\"\nversion: 0.0.0\nannotations:\n  io.giantswarm.application.team: \"{TEAM-NAME}\"\n",
+				}
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.True(t, res.Converged, "%+v", res.Steps)
+				require.Empty(t, res.Step(StepScaffold).Findings, "no chart is expected at helm/sample-service")
+				require.Contains(t, res.Step(StepScaffold).Summary, "the chart of a template carries placeholders")
 			},
 		},
 		{
@@ -988,6 +1018,45 @@ func TestSteps(t *testing.T) {
 			},
 		},
 		{
+			// The reconciler validates a declared repository's entry as an
+			// existing one, rendered as declared: an entry with gen and no
+			// gen.ci does not get the creation default gen.ci.generate: true
+			// — the schema's word is that it keeps the repository's own
+			// CircleCI configuration — so the branch decides. A repository
+			// released by GitHub Actions has no .circleci/config.yml there:
+			// it is neither followed nor given a key, and its release is not
+			// held against a tag build CircleCI never ran.
+			name: "circleci: an existing entry without gen.ci and without a config on the branch has no pipeline", step: StepCircleCI, existing: true,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				delete(r.files, ".circleci/config.yml")
+				delete(r.files, ".circleci/workflows.yml")
+				r.release, r.releaseAt = "v0.6.0", time.Now().Add(-time.Hour)
+			},
+			wantCheck: VerdictSkipped, wantAfter: VerdictSkipped,
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				require.NotContains(t, h.entry.Rendered, "generate:", "an existing entry is rendered as declared")
+				require.NotContains(t, h.cc.projects, owner+"/"+name)
+				res := h.run(ModeCheck, false, StepCircleCI, StepRelease)
+				for _, step := range []Step{StepCircleCI, StepRelease} {
+					require.Equal(t, VerdictSkipped, res.Step(step).Verdict, "%s: %+v", step, res.Step(step))
+					require.Equal(t, "no CircleCI pipeline", res.Step(step).Summary)
+				}
+				require.Empty(t, res.Step(StepRelease).Findings, "a release CircleCI never built is no missed tag build")
+			},
+		},
+		{
+			// The same entry over a hand-maintained .circleci/config.yml: the
+			// branch says there is a pipeline, and the step keeps it followed.
+			name: "circleci: an existing entry without gen.ci follows the pipeline the branch carries", step: StepCircleCI, existing: true,
+			seed:      func(h *harness) { h.gh.addRepo(owner, name) },
+			wantCheck: VerdictDrift, wantChange: "follow giantswarm/sample-service; enable setup workflows; create a deploy key",
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				require.Contains(t, h.cc.projects, owner+"/"+name)
+				require.Equal(t, 2, h.gh.reads("/repos/"+owner+"/"+name+"/contents/"+circleCIConfig), "the branch is read once per run: the check and the repair")
+			},
+		},
+		{
 			name: "webhooks: the baseline's webhook is created", step: StepWebhooks,
 			seed: func(h *harness) {
 				h.gh.addRepo(owner, name)
@@ -1249,6 +1318,31 @@ func TestSteps(t *testing.T) {
 			verify:    func(t *testing.T, h *harness, _ *Result) { require.Empty(t, h.gh.dispatches) },
 		},
 		{
+			name: "catalog: a template's placeholder chart is no chart to map", step: StepCatalog,
+			seed: func(h *harness) {
+				h.gh.addRepo(owner, name)
+				h.seedCatalogCharts(true, false, []string{"{MCP-NAME}"})
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Empty(t, h.gh.dispatches, "the mapping drops a placeholder; a dispatch for it changes nothing")
+				require.Equal(t, "in the catalog; no public chart to map", res.Step(StepCatalog).Summary)
+			},
+		},
+		{
+			name: "catalog: a placeholder beside a chart is left out of the mapping check", step: StepCatalog,
+			seed: func(h *harness) {
+				h.gh.addRepo(owner, name)
+				h.seedCatalogCharts(true, false, []string{"sample-chart", "{APP-NAME}"})
+				h.gh.repos[owner+"/management-cluster-bases"].files["bases/apps-to-teams-mapping/configmap.yaml"] += "  sample-chart: bumblebee\n"
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Empty(t, h.gh.dispatches)
+				require.Equal(t, "in the catalog and the mapping (sample-chart)", res.Step(StepCatalog).Summary)
+			},
+		},
+		{
 			name: "catalog: the mapping is matched by chart name, not repository name", step: StepCatalog,
 			seed: func(h *harness) {
 				h.gh.addRepo(owner, name)
@@ -1417,6 +1511,26 @@ func TestSteps(t *testing.T) {
 			},
 		},
 		{
+			// A repository tagging per component (base/v0.1.0) releases
+			// outside the flow the step verifies: auto-release cuts vX.Y.Z
+			// and the generated pipeline builds /^v.*/. Its latest release
+			// is not held against CircleCI: the step is skipped naming the
+			// tag, no pipeline list is read and nothing is reported.
+			name: "release: a release whose tag is not vX.Y.Z is not verified", step: StepRelease,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.release, r.releaseAt = "base/v0.1.0", time.Now().Add(-time.Hour)
+				h.cc.follow(owner, name)
+			},
+			wantCheck: VerdictSkipped, wantAfter: VerdictSkipped,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Equal(t, "release base/v0.1.0: not a vX.Y.Z tag, not verified", res.Step(StepRelease).Summary)
+				require.Empty(t, res.Findings())
+				require.Empty(t, h.cc.pages, "no pipeline list is read")
+				require.Empty(t, h.cc.mutations, "no pipeline is triggered")
+			},
+		},
+		{
 			name: "settings: a customer repository's default branch is never renamed", step: StepSettings, entry: customerEntryYAML,
 			seed:      func(h *harness) { h.gh.addRepo(owner, name).defaultBranch = "master" },
 			wantCheck: VerdictOK,
@@ -1451,15 +1565,61 @@ func TestSteps(t *testing.T) {
 		},
 		{
 			name: "settings: a fork line stays on its declared default branch", step: StepSettings, entry: forkEntryYAML,
-			seed:      func(h *harness) { h.gh.addRepo(owner, name).defaultBranch = "giantswarm" },
+			seed:      func(h *harness) { h.gh.addRepo(owner, name).forkLine() },
 			wantCheck: VerdictOK,
 			verify:    func(t *testing.T, h *harness, _ *Result) { require.Equal(t, "giantswarm", h.repo().defaultBranch) },
 		},
 		{
 			name: "settings: a repository off its declared default branch is renamed to it", step: StepSettings, entry: forkEntryYAML,
-			seed:      func(h *harness) { h.gh.addRepo(owner, name) },
+			seed:      func(h *harness) { h.gh.addRepo(owner, name).allowRebase = true },
 			wantCheck: VerdictDrift, wantChange: `default branch "main" → "giantswarm"`,
 			verify: func(t *testing.T, h *harness, _ *Result) { require.Equal(t, "giantswarm", h.repo().defaultBranch) },
+		},
+		{
+			// The carried patches land by rebase merge, one upstream-ready
+			// commit each, and a re-pin merges upstream's history: the
+			// squash-only baseline would have GitHub refuse the line's merges.
+			name: "settings: a fork line keeps rebase merges and merge commits", step: StepSettings, entry: forkEntryYAML,
+			seed:      func(h *harness) { h.gh.addRepo(owner, name).forkLine().allowMerge = true },
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				require.True(t, h.repo().allowRebase && h.repo().allowMerge, "the merge methods the line merges by stay")
+			},
+		},
+		{
+			name: "settings: the rest of the baseline applies to a fork line", step: StepSettings, entry: forkEntryYAML,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name).forkLine()
+				r.allowMerge, r.hasWiki, r.allowAuto, r.squashTitle = true, true, false, "COMMIT_OR_PR_TITLE"
+			},
+			wantCheck:  VerdictDrift,
+			wantChange: "settings: has_wiki true → false, allow_auto_merge false → true, squash_merge_commit_title COMMIT_OR_PR_TITLE → PR_TITLE",
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				r := h.repo()
+				require.True(t, r.allowRebase && r.allowMerge, "the merge methods are not in the change")
+				require.True(t, r.allowAuto && !r.hasWiki)
+				require.Equal(t, "PR_TITLE", r.squashTitle)
+			},
+		},
+		{
+			name: "settings: a fork line without rebase merges gets them", step: StepSettings, entry: forkEntryYAML,
+			seed:      func(h *harness) { h.gh.addRepo(owner, name).defaultBranch = "giantswarm" },
+			wantCheck: VerdictDrift, wantChange: "settings: allow_rebase_merge false → true",
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				require.True(t, h.repo().allowRebase)
+				require.False(t, h.repo().allowMerge, "merge commits stay off when they are off")
+			},
+		},
+		{
+			name: "settings: rebase merges and merge commits are drift off a fork line", step: StepSettings,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.allowMerge, r.allowRebase = true, true
+			},
+			wantCheck: VerdictDrift, wantChange: "settings: allow_merge_commit true → false, allow_rebase_merge true → false",
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				require.False(t, h.repo().allowRebase || h.repo().allowMerge, "squash alone, as everywhere")
+			},
 		},
 		{
 			name: "protection: a fork line's declared default branch is protected", step: StepProtection, entry: forkEntryYAML,
@@ -1682,8 +1842,7 @@ func TestRunForkLineFollowsItsDeclaredBranch(t *testing.T) {
 	t.Run("classic protection names the declared branch", func(t *testing.T) {
 		h := newHarness(t, forkEntryYAML)
 		h.runner.DevctlAppID = 0
-		r := h.gh.addRepo(owner, name)
-		r.defaultBranch = "giantswarm"
+		r := h.gh.addRepo(owner, name).forkLine()
 		delete(r.files, "CODEOWNERS")
 
 		check := h.run(ModeCheck, false)
@@ -1694,7 +1853,7 @@ func TestRunForkLineFollowsItsDeclaredBranch(t *testing.T) {
 				require.Equal(t, VerdictSkipped, sr.Verdict, "%s: %+v", sr.Step, sr)
 				require.Equal(t, "flavour fork", sr.Summary, "%s", sr.Step)
 			case StepSettings:
-				require.Equal(t, VerdictOK, sr.Verdict, "no rename is planned: %+v", sr)
+				require.Equal(t, VerdictOK, sr.Verdict, "no rename, and the rebase merges stay: %+v", sr)
 			case StepProtection:
 				require.Equal(t, VerdictDrift, sr.Verdict, "%+v", sr)
 				require.Contains(t, sr.Changes, "protect giantswarm", "%+v", sr.Changes)
@@ -1714,8 +1873,7 @@ func TestRunForkLineFollowsItsDeclaredBranch(t *testing.T) {
 	// settings step keeps on the declared one.
 	t.Run("the ruleset follows the declared branch", func(t *testing.T) {
 		h := newHarness(t, forkEntryYAML)
-		r := h.gh.addRepo(owner, name)
-		r.defaultBranch = "giantswarm"
+		r := h.gh.addRepo(owner, name).forkLine()
 		delete(r.files, "CODEOWNERS")
 
 		check := h.run(ModeCheck, false)

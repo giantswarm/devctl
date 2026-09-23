@@ -26,10 +26,12 @@
 // [Request.Mode] says what the entries named in [Request.Names] (all entries
 // when nil) are validated for. In [ModeExisting] they declare repositories
 // that exist and the schema alone decides: an entry the schema accepts is
-// valid, however it predates the creation rules; the name check's verdict
-// is reported and never refuses, a missing repository being the
-// reconciler's finding. In [ModeCreate] (the default) they are repositories
-// the reconciler creates and must satisfy, on top of the schema:
+// valid, however it predates the creation rules, and it is rendered as
+// declared — no default is written, an entry without gen.ci keeps the
+// repository's own CircleCI configuration; the name check's verdict is
+// reported and never refuses, a missing repository being the reconciler's
+// finding. In [ModeCreate] (the default) they are repositories the
+// reconciler creates and must satisfy, on top of the schema:
 //
 //   - gen.flavours and gen.language are set; gen.ci.generate defaults to
 //     true and is written into the rendered entry;

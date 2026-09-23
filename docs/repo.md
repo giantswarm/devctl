@@ -211,7 +211,7 @@ Validates entries of a local team file and prints the dry run as JSON -- what th
 | Mode | Applies | Default when |
 |---|---|---|
 | `create` | the schema, the creation rules (`gen.flavours` and `gen.language` set, a template for them, a job for generated CI, the chart-name convention) and a free name on GitHub; the guard notices say what review the change gets | `--entry` names the entries being added |
-| `existing` | the schema alone -- an entry the schema accepts is valid however it predates the creation rules; the name check's verdict is reported and never refuses, a missing repository being the reconciler's finding | no `--entry`: the whole file is on main already |
+| `existing` | the schema alone -- an entry the schema accepts is valid however it predates the creation rules, and it is rendered as declared: no default is written, `gen.ci` left out keeps the repository's own CircleCI configuration; the name check's verdict is reported and never refuses, a missing repository being the reconciler's finding | no `--entry`: the whole file is on main already |
 
 `repo status` and `repo reconcile` validate a declared repository's entry in existing mode (`repo
 reconcile --added` in create mode: the repository is created). See `devctl repo validate --help`.
@@ -223,6 +223,19 @@ reconciler stores). An entry the validator refuses is a result too: one step, `e
 `reported`, one finding per problem (`gen-circleci-refused` for `gen.ci.generate`, `entry-refused`
 otherwise) with the field to fix, `converged: false` (nothing was checked; not drift either, the fix is
 in the declaration), exit 0 -- the declaration is at fault, not the run. A flag or token error exits 2.
+
+### The settings step
+
+The repository carries the company baseline's settings: issues on, wiki and projects off; squash merges
+alone, the squash commit named after the pull request's title (`PR_TITLE`, what the title check validated
+and auto-release reads); the head branch updatable and deleted on merge, auto-merge on; the declared
+default branch (the baseline's `main` when the entry declares none); `write` as the workflows' default
+`GITHUB_TOKEN` permission. Only the fields that differ are sent. A fork line (flavour `fork`) keeps rebase
+merges on and its merge commits as they are: its carried patches land one upstream-ready commit each and a
+re-pin merges upstream's history; the rest of the baseline applies to it as everywhere. A customer
+repository (flavour `customer`) keeps its own default branch. The six merge settings and the squash title
+reach `GET /repos/{owner}/{repo}` for an admin identity only; a read identity reads them through GraphQL
+and, when that fails too, reports them as the finding `unchecked` rather than as drift.
 
 ### The protection step
 
@@ -264,4 +277,8 @@ Actions permission there. `--dispatch-token-envvar` names a second token for tho
 workflow's runs, dispatching it) when the GitHub token's identity has none -- the reconciler passes its
 workflow run's own token, the App holding no Actions permission. Every read stays with the GitHub token,
 the repository lookup included: a private repository the dispatch token cannot see is looked up, checked
-against the catalog and dispatched all the same. Without the flag the GitHub token dispatches.
+against the catalog and dispatched all the same. Without the flag the GitHub token dispatches. A chart
+reference that is a template's placeholder (`{APP-NAME}`) is no chart to map: the mapping's generator drops it,
+and so does the step. The scaffold step's chart check does not read the chart of a `componentType: template`
+entry either -- it lives under a placeholder directory and the template's own pipeline builds a rendered copy
+(`docs/gen.md`).

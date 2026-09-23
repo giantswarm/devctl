@@ -99,6 +99,7 @@
       - app
     language: generic
     ci:
+      generate: true
       chartName: other-chart
 - name: internal-visibility
   componentType: service
@@ -179,3 +180,13 @@
     flavours:
       - app
     language: go
+- name: ci-without-generate
+  # A ci block without generate: the creation writes the default, an existing
+  # entry is read as declared and the schema requires the field.
+  componentType: service
+  gen:
+    flavours:
+      - app
+    language: generic
+    ci:
+      chartName: ci-without-generate
