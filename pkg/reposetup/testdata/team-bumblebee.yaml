@@ -206,3 +206,14 @@
     language: generic
     ci:
       chartName: ci-without-generate
+- name: chart-release-gate
+  # A meta chart whose release push waits on a repo-owned job, as
+  # giantswarm/agent-platform declares it.
+  componentType: configuration
+  gen:
+    flavours:
+      - app
+    language: generic
+    ci:
+      generate: true
+      chartReleaseGateJob: verify-release-floors

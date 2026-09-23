@@ -198,6 +198,10 @@
                 "type": "string",
                 "description": "Override the chart name on the generated chart jobs (the push-to-app-catalog 'chart' param and the helm/<chart> directory; passed to '--chart-name'). Defaults to the repo name when omitted. Set it for repos whose chart directory does not match the repo name (e.g. docs-proxy ships helm/docs-proxy-app). The append-only custom.yml merge cannot rename a generated job's chart. Requires devctl v8.19.0+."
               },
+              "chartReleaseGateJob": {
+                "type": "string",
+                "description": "Name of a repo-owned job (defined in .circleci/custom.yml) the release chart push must wait on (passed to '--chart-release-gate-job'). Adds a 'requires' entry to the generated push-chart-release job, which the append-only custom.yml merge cannot inject into a generated job -- the chart counterpart of image.preBuildJob, for a check that has to refuse a release before its chart is pushed (agent-platform: the meta chart's component floors and BOM pins must resolve to published charts, giantswarm/agent-platform#624). The branch dev push is not gated. Only applies to the app flavour of a non-template repository; devctl rejects the key otherwise. Requires devctl v8.90.0+."
+              },
               "overrideChartAppVersion": {
                 "type": "boolean",
                 "description": "Overrule devctl's derivation of whether app-build-suite stamps the computed build version into the chart's appVersion (passed to 'devctl gen circleci --override-chart-app-version'). Omit it in almost every case: devctl derives it from the repo's shape, because a repo that builds its own image ships the app it packages (appVersion is its own version, stamped) while a chart-only repo packages an app built elsewhere (the appVersion declared in Chart.yaml is kept). Set false for a repo that builds an image and still declares a foreign appVersion, or true for a chart-only repo that wants its appVersion stamped anyway. The chart version is always stamped either way. Requires devctl with --override-chart-app-version."
