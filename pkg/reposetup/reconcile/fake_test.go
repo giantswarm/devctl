@@ -181,6 +181,9 @@ type fakeGitHub struct {
 	// bypass actor with 422 whatever the team's privacy: GitHub's judgment
 	// beyond what the team read shows.
 	teamBypassRefused bool
+	// readIdentity, when set, serves a ruleset without its bypass_actors,
+	// as GitHub does to an identity without write access to the ruleset.
+	readIdentity bool
 	// orgRole is the caller's role in any organization (GET
 	// /user/memberships/orgs/{org}); "" answers 404, not a member.
 	orgRole string
@@ -387,6 +390,26 @@ func (r *fakeRepo) toGitHub() *github.Repository {
 		SquashMergeCommitTitle: new(r.squashTitle),
 		DefaultBranch:          new(r.defaultBranch),
 	}
+}
+
+// rulesetJSON is the ruleset as GitHub serves it: bypass_actors always
+// present for an identity with write access to the ruleset, an empty array
+// when there are none, and left out for a read identity.
+func rulesetJSON(rs *github.RepositoryRuleset, readIdentity bool) map[string]any {
+	b, err := json.Marshal(rs)
+	if err != nil {
+		panic(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		panic(err)
+	}
+	if readIdentity {
+		delete(m, "bypass_actors")
+	} else if len(rs.BypassActors) == 0 {
+		m["bypass_actors"] = []any{}
+	}
+	return m
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -852,7 +875,7 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 			notFound(w, "Not Found")
 			return
 		}
-		writeJSON(w, 200, repo.rulesets[i])
+		writeJSON(w, 200, rulesetJSON(repo.rulesets[i], f.readIdentity))
 	}))
 	mux.HandleFunc("POST /repos/{owner}/{repo}/rulesets", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
 		var in github.RepositoryRuleset

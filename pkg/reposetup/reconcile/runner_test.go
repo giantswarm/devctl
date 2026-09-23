@@ -714,6 +714,37 @@ func TestSteps(t *testing.T) {
 			},
 		},
 		{
+			name: "protection: a read identity gets no bypass actors, so the list is not compared", step: StepProtection,
+			seed: func(h *harness) {
+				h.gh.readIdentity = true
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID), adminBypass(), teamBypass(testTeamID))
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				sr := res.Step(StepProtection)
+				require.Equal(t, `main: ruleset "devctl: default branch"; required: `+ctxGoBuild+"; bypass actors not readable by this identity, not compared", sr.Summary)
+				require.True(t, res.Converged)
+				require.Equal(t, 0, h.gh.reads("/orgs/"+owner+"/teams/"+team), "the team is not read: nothing to compare it with")
+				require.Equal(t, []*github.BypassActor{appBypass(testAppID), adminBypass(), teamBypass(testTeamID)}, h.repo().ruleset(RulesetName).BypassActors, "the ruleset is left as it is")
+			},
+		},
+		{
+			name: "protection: a read identity's ruleset without actors is not drift either", step: StepProtection,
+			seed: func(h *harness) {
+				h.gh.readIdentity = true
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)})
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Contains(t, res.Step(StepProtection).Summary, "bypass actors not readable by this identity, not compared")
+				require.Empty(t, h.repo().ruleset(RulesetName).BypassActors, "a list the identity cannot read is not written")
+			},
+		},
+		{
 			name: "protection: the rules are repaired as data", step: StepProtection,
 			seed: func(h *harness) {
 				r := h.gh.addRepo(owner, name)

@@ -103,7 +103,10 @@ type Runner struct {
 	// actors in pull_request mode (none on agentMerge: false) and removes
 	// classic protection; 0 reads a ruleset the repository has and compares
 	// its rules alone, and writes classic branch protection as before where
-	// there is none yet. The reconciler's wiring passes the id.
+	// there is none yet. An identity without write access to the ruleset
+	// gets it without its bypass actors (GitHub returns the field to write
+	// access alone): the list is then not compared either, and the summary
+	// says so. The reconciler's wiring passes the id.
 	DevctlAppID int64
 	// GitHubRequests and CircleCIRequests count the requests the clients
 	// send, when the caller built the clients' transports over them (one

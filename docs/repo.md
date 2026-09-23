@@ -268,7 +268,9 @@ and reported (advisory: it does not keep the repository from converging).
 the bypass list takes to be compared and written; the reconciler's wiring passes it. A run without the id
 -- a laptop, giantswarm-repo-manager's read-mode engine behind `repo status` -- reads the repository's
 ruleset and compares its rules alone: the bypass list is neither compared nor written and the summary says
-so (`bypass actors not compared`); matching rules converge; a difference, or a classic protection still
+so (`bypass actors not compared`); an identity without write access to the ruleset gets it without its
+bypass actors (GitHub returns the field to write access alone), so with the id the list is not compared either,
+the summary saying `bypass actors not readable by this identity, not compared`; matching rules converge; a difference, or a classic protection still
 standing beside the ruleset, is the finding `ruleset-pending` for the run that has the id, and nothing is
 written. A repository without the ruleset yet keeps its classic branch protection, written and verified as
 it always was (administrators bound too, `enforce_admins`), with the advisory finding `rulesets-not-enabled`

@@ -193,9 +193,13 @@ func (r *Runner) stepRulesetProtection(ctx context.Context, s *run, sr *StepResu
 	if err != nil {
 		return err
 	}
-	// The bypass list takes the App id: without it the list stays as it is.
+	// The bypass list takes the App id, and GitHub returns it to an identity
+	// with write access to the ruleset alone: a read identity gets the
+	// ruleset without the field, and an empty list it can read is an array.
+	// Without either the list stays as it is, neither compared nor written.
+	bypassReadable := have == nil || have.BypassActors != nil
 	bypass := from.bypass
-	if r.DevctlAppID != 0 {
+	if r.DevctlAppID != 0 && bypassReadable {
 		bypass, err = r.bypassActors(ctx, s, sr, from.bypass)
 		if err != nil {
 			return err
@@ -276,6 +280,9 @@ func (r *Runner) stepRulesetProtection(ctx context.Context, s *run, sr *StepResu
 	}
 	if len(sr.Changes) == 0 {
 		sr.Summary = fmt.Sprintf("%s: ruleset %q; required: %s", branch, RulesetName, describe(want))
+		if !bypassReadable {
+			sr.Summary += "; bypass actors not readable by this identity, not compared"
+		}
 	}
 	return nil
 }

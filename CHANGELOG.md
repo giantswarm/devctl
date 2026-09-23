@@ -18,6 +18,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `repo reconcile`'s protection step compares a ruleset's bypass list only when the identity can read it: GitHub
+  returns `bypass_actors` to an identity with write access to the ruleset alone, so a read identity (giantswarm-repo-manager's
+  inventory App behind `repo status`) got the ruleset without the field, the step compared an empty list against the App,
+  the repository admins and the owning team and reported every aligned repository as `drift: bypass actors: …`,
+  giantswarm/devctl included, whose ruleset carries exactly those. An absent list is now told from an empty one: the
+  rules are compared, the bypass list is not, and the summary says `bypass actors not readable by this identity, not
+  compared`; an identity that reads the list compares and writes it as before (#2346).
+
 - `devctl repo reconcile --mode check` without `--devctl-app-id`, and with it giantswarm-repo-manager's read-mode
   engine behind `repo status`, reads a repository on the ruleset `devctl: default branch` as converged. The protection
   step reads the repository's rulesets first and compares the ruleset's rules with the write path's comparison, the
