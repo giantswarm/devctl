@@ -25,6 +25,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 	"time"
 
@@ -251,8 +253,7 @@ func (m *Merger) refuse(ctx context.Context, owner, repo string, pr *github.Pull
 		}
 	}
 	if !authorAllowed(pr, caller) {
-		return "", "", agentcli.NewExitError(agentcli.ExitRefused, agentcli.VerdictRefused,
-			"the pull request was opened by %s, not by %s: devctl pr merge merges the caller's own pull requests and bots' only", pr.GetUser().GetLogin(), caller)
+		return "", "", agentcli.NewExitError(agentcli.ExitRefused, agentcli.VerdictRefused, "%s", authorRefusal(pr, caller))
 	}
 
 	verdict, err := m.policy(ctx, owner, repo)
@@ -292,6 +293,23 @@ func authorAllowed(pr *github.PullRequest, caller string) bool {
 	}
 	id, known := automationAccounts[strings.ToLower(login)]
 	return known && id == user.GetID()
+}
+
+// authorRefusal is the reason of the author refusal (exit 5): who opened
+// the pull request, whom devctl acts as, and every author the merge
+// accepts -- the caller, bots and GitHub Apps, the automation accounts by
+// login -- so the reader knows the rule and not only its verdict. An
+// automation login whose account id is not the pinned one is named as
+// such: the login alone opens nothing.
+func authorRefusal(pr *github.PullRequest, caller string) string {
+	user := pr.GetUser()
+	login := user.GetLogin()
+	reason := fmt.Sprintf("the pull request was opened by %s, not by %s: devctl pr merge merges the caller's own pull requests and those of bots and GitHub Apps (the Bot user type or a [bot] login) and of the automation accounts %s",
+		login, caller, strings.Join(slices.Sorted(maps.Keys(automationAccounts)), ", "))
+	if id, known := automationAccounts[strings.ToLower(login)]; known {
+		reason += fmt.Sprintf("; %s is accepted as account %d and this pull request's author is account %d", login, id, user.GetID())
+	}
+	return reason
 }
 
 // update asks GitHub to merge the base into the head and reads the pull

@@ -51,6 +51,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `devctl pr merge`'s refusal of another human's pull request (exit 5) names every author it accepts -- the caller,
+  bots and GitHub Apps (the `Bot` user type or a `[bot]` login) and the automation accounts `architectbot` and
+  `taylorbot` -- where it said "the caller's own pull requests and bots' only", which left a reader guessing whether
+  a release pull request counted; an automation login whose account id is not the pinned one is named with both ids,
+  so the login alone opening nothing is visible in the reason ([#2340](https://github.com/giantswarm/devctl/issues/2340)).
 - A repository created with `devctl repo create` with the `app` flavour merges its first pull request on green CI. The
   scaffold carries the chart tests its generated pipeline's `execute-chart-tests` job runs, beside the generated
   `tests/ats/pyproject.toml`: `.ats/main.yaml`, which skips the functional scenario and the upgrade scenario (a new
