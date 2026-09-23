@@ -20,10 +20,11 @@ and exit with a code that says what happened.
 Refused before any wait: a draft, a closed or merged pull request, one
 conflicting with its base or behind a base that requires branches to be up to
 date (exit 3, unless --update-branch); a pull request opened by another human
-(exit 5: bots, GitHub Apps and the caller's own pull requests are fine); a
-repository whose team-file entry in giantswarm/github says agentMerge: false
-(exit 5, naming the field). A repository no team file declares is not opted
-out.
+(exit 5: bots, GitHub Apps, Giant Swarm's automation accounts -- taylorbot,
+which opens every generated release pull request, and architectbot -- and the
+caller's own pull requests are fine); a repository whose team-file entry in
+giantswarm/github says agentMerge: false (exit 5, naming the field). A
+repository no team file declares is not opted out.
 
 Green lands through the merge API as a squash (--rebase: a rebase merge) with
 the judged head as the expected head, so a head that moved is not merged; the
