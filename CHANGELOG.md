@@ -44,6 +44,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   calls the tag dead: it names the rerun from failed (the rerun checks out the same commit and runs the publish
   jobs) and `devctl release wait` to confirm, the next tag only when the cause is in the code
   ([#2352](https://github.com/giantswarm/devctl/issues/2352)).
+- `devctl pr merge` merges the release pull requests Giant Swarm's automation opens. `taylorbot` and `architectbot`
+  are plain GitHub user accounts -- no `[bot]` login, no `Bot` user type -- so the author check could not tell them
+  from a teammate and refused every one with exit 5, "opened by taylorbot, not by you". taylorbot opens the
+  `chore(release): vX.Y.Z` pull request of every repository on devctl-generated CI (the
+  `zz_generated.create_release_pr.yaml` workflow), so the refusal blocked an agent from finishing a release in any
+  repository. Both accounts are now matched on their numeric account id as well as their login, so the login alone
+  opens nothing: an account that ever takes a released login is refused like any other person's. The rest of the check is unchanged -- a teammate's pull
+  request is still exit 5 -- and the automation that already held a `[bot]` login (`renovate[bot]`,
+  `giantswarm-align-files[bot]`, `giantswarm-marge[bot]`, `heraldbot[bot]`, `giantswarm-mctlbot[bot]`) merged before
+  and merges now.
+
 - `repo reconcile`'s protection step compares a ruleset's bypass list only when the identity can read it: GitHub
   returns `bypass_actors` to an identity with write access to the ruleset alone, so a read identity (giantswarm-repo-manager's
   inventory App behind `repo status`) got the ruleset without the field, the step compared an empty list against the App,

@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-github/v92/github"
 	"github.com/sirupsen/logrus"
 
 	githubmock "github.com/giantswarm/devctl/v8/e2e/mock/github"
@@ -163,6 +164,10 @@ func Test_Merge_refusalsBeforeTheWait(t *testing.T) {
 		{name: "own pull request, login from GET /user", pr: pull(map[string]any{"user": map[string]any{"login": "Someone", "type": "User"}}), configure: func(c *Config) { c.Login = "" }, wantCode: 0, wantRequests: []string{"GET /user"}},
 		{name: "a GitHub App", pr: pull(map[string]any{"user": map[string]any{"login": "renovate[bot]", "type": "Bot"}}), wantCode: 0},
 		{name: "a [bot] login", pr: pull(map[string]any{"user": map[string]any{"login": "dependabot[bot]", "type": "User"}}), wantCode: 0},
+		{name: "taylorbot, the release pull request", pr: pull(map[string]any{"user": map[string]any{"login": "taylorbot", "type": "User", "id": 25685558}}), wantCode: 0},
+		{name: "architectbot", pr: pull(map[string]any{"user": map[string]any{"login": "architectbot", "type": "User", "id": 61872893}}), wantCode: 0},
+		{name: "an automation login with another account's id", pr: pull(map[string]any{"user": map[string]any{"login": "taylorbot", "type": "User", "id": 999}}), wantCode: 5, wantReason: "opened by taylorbot, not by someone", wantVerdict: agentcli.VerdictRefused},
+		{name: "heraldbot, the plain login no giantswarm account holds", pr: pull(map[string]any{"user": map[string]any{"login": "heraldbot", "type": "User", "id": 269214663}}), wantCode: 5, wantReason: "opened by heraldbot, not by someone", wantVerdict: agentcli.VerdictRefused},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -557,6 +562,47 @@ func Test_TeamFilePolicy(t *testing.T) {
 			}
 			if n := len(server.Requests()); n != tc.wantRequests {
 				t.Errorf("want %d request(s), got %d: %v", tc.wantRequests, n, server.Requests())
+			}
+		})
+	}
+}
+
+// Test_authorAllowed pins the author classification the exit-5 refusal rests
+// on: a bot, a GitHub App, a Giant Swarm automation account and the caller
+// merge; every other person is refused.
+func Test_authorAllowed(t *testing.T) {
+	tests := []struct {
+		name  string
+		login string
+		typ   string
+		id    int64
+		want  bool
+	}{
+		{name: "the caller", login: "someone", typ: "User", id: 1, want: true},
+		{name: "the caller, in another case", login: "SomeOne", typ: "User", id: 1, want: true},
+		{name: "a GitHub App", login: "renovate[bot]", typ: "Bot", id: 29139614, want: true},
+		{name: "a [bot] login GitHub types as a user", login: "dependabot[bot]", typ: "User", id: 49699333, want: true},
+		{name: "the align-files App", login: "giantswarm-align-files[bot]", typ: "Bot", id: 2, want: true},
+		{name: "the heraldbot App", login: "heraldbot[bot]", typ: "Bot", id: 3, want: true},
+
+		{name: "taylorbot, a plain user account", login: "taylorbot", typ: "User", id: 25685558, want: true},
+		{name: "architectbot, a plain user account", login: "architectbot", typ: "User", id: 61872893, want: true},
+
+		{name: "a teammate", login: "alice", typ: "User", id: 4, want: false},
+		{name: "a teammate whose name ends in bot", login: "robot", typ: "User", id: 5, want: false},
+		{name: "an automation login carrying another account's id", login: "taylorbot", typ: "User", id: 4, want: false},
+		{name: "architectbot's login on another account", login: "architectbot", typ: "User", id: 4, want: false},
+		{name: "heraldbot, the plain login no giantswarm account holds", login: "heraldbot", typ: "User", id: 269214663, want: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			pr := &github.PullRequest{User: &github.User{
+				Login: new(tc.login),
+				Type:  new(tc.typ),
+				ID:    new(tc.id),
+			}}
+			if got := authorAllowed(pr, "someone"); got != tc.want {
+				t.Errorf("authorAllowed(%s, type %s, id %d) = %v, want %v", tc.login, tc.typ, tc.id, got, tc.want)
 			}
 		})
 	}
