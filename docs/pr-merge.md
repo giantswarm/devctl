@@ -122,6 +122,8 @@ remains the command for a release on its own: by version, or with `--catalog`.
 
 ## The document
 
+The document of the merge of [#2368](https://github.com/giantswarm/devctl/pull/2368), shortened where `…` stands:
+
 ```json
 {
   "command": "pr merge",
@@ -130,22 +132,23 @@ remains the command for a release on its own: by version, or with `--catalog`.
   "verdict": "green",
   "reason": "",
   "warnings": [],
-  "startedAt": "2026-09-21T10:00:00Z",
-  "finishedAt": "2026-09-21T10:04:40Z",
+  "startedAt": "2026-09-23T15:04:35.605549435Z",
+  "finishedAt": "2026-09-23T15:10:55.718102175Z",
   "repository": "giantswarm/devctl",
-  "number": 2278,
-  "headSha": "6a2df08b…",
+  "number": 2368,
+  "headSha": "aa51d062e5ba36e883ed04f7a8e8a409dcb77ebf",
   "baseRef": "main",
   "checks": [
-    {"name": "go-build", "source": "check_run", "status": "completed", "conclusion": "success",
-     "url": "https://github.com/giantswarm/devctl/runs/…", "required": true}
+    {"name": "ci/circleci: go-build", "source": "status", "status": "completed", "conclusion": "success",
+     "url": "https://circleci.com/gh/giantswarm/devctl/17836", "required": true},
+    …
   ],
   "circleci": {
-    "pipelineId": "…", "pipelineNumber": 4123,
-    "workflows": [{"name": "build", "status": "success", "url": "https://app.circleci.com/pipelines/github/giantswarm/devctl/4123/workflows/…"}]
+    "pipelineId": "…", "pipelineNumber": 8913,
+    "workflows": [{"name": "build", "status": "success", "url": "https://app.circleci.com/pipelines/github/giantswarm/devctl/8913/workflows/…"}, …]
   },
   "actions": [],
-  "mergeCommitSha": "0f3a9c1d…",
+  "mergeCommitSha": "c0621f88454b753c64ab264b2e39a9bcf15873c7",
   "method": "squash",
   "branchDeleted": true,
   "enqueued": false,
@@ -154,15 +157,16 @@ remains the command for a release on its own: by version, or with `--catalog`.
     "reason": "",
     "repository": "giantswarm/devctl",
     "tag": "v8.91.0",
-    "sha": "0f3a9c1d…",
+    "sha": "c0621f88454b753c64ab264b2e39a9bcf15873c7",
     "releaseModel": "auto-release",
     "ciModel": "generated",
     "artifacts": [
-      {"kind": "release-asset", "reference": "https://github.com/giantswarm/devctl/releases/download/v8.91.0/devctl-v8.91.0-linux-amd64.tar.gz",
-       "digest": "sha256:…", "state": "available"}
+      {"kind": "image", "reference": "gsoci.azurecr.io/giantswarm/devctl:8.91.0",
+       "digest": "sha256:3acb07a67e1a1f017ddeb8ad33d58c13f14bfc19aec25d2459704ad441331916", "state": "available"}
     ],
-    "pipeline": {"id": "…", "number": 4130, "url": "https://app.circleci.com/pipelines/github/giantswarm/devctl/4130",
-                 "workflows": [{"name": "build", "status": "success"}], "failedJobs": [], "unfinished": []},
+    "pipeline": {"id": "…", "number": 8918, "url": "https://app.circleci.com/pipelines/github/giantswarm/devctl/8918",
+                 "workflows": [{"name": "build", "status": "success"}, {"name": "setup", "status": "success"}],
+                 "failedJobs": [], "unfinished": []},
     "actions": []
   }
 }
