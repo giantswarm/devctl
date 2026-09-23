@@ -34,7 +34,7 @@ import (
 // custom manager that reads this annotation lives in renovate-custom.json5.
 //
 // renovate: datasource=github-tags depName=giantswarm/architect-orb
-const OrbVersion = "10.9.0"
+const OrbVersion = "10.10.0"
 
 // DefaultATSVersion is the app-test-suite container tag the generated chart-test
 // jobs run when a repo pins none (`gen circleci --ats-version`). app-test-suite
