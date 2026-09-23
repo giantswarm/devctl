@@ -23,7 +23,8 @@
       "number": 7,
       "url": "https://app.circleci.com/pipelines/github/giantswarm/e2e-app/7",
       "workflows": [{"name": "build", "status": "success"}],
-      "failedJobs": []
+      "failedJobs": [],
+      "unfinished": []
     },
     "actions": []
   }

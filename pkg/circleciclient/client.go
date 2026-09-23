@@ -178,6 +178,12 @@ func WorkflowFailed(status string) bool {
 	return false
 }
 
+// WorkflowFinished says whether a workflow status is final: a success or a
+// terminal failure. A workflow that is not finished can still change, and so
+// can what CircleCI answers about it -- its jobs are listed only once it has
+// set them up.
+func WorkflowFinished(status string) bool { return WorkflowSucceeded(status) || WorkflowFailed(status) }
+
 // Job is one job of a workflow.
 type Job struct {
 	Name   string `json:"name"`

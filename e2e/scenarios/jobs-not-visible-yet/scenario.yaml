@@ -1,0 +1,83 @@
+# Right after the auto-release has tagged a merge, CircleCI knows the tag
+# pipeline's setup workflow by id but answers 404 on its jobs for a short
+# while (giantswarm/devctl v8.85.8 and v8.86.0, 2026-09-23). That is the tag
+# not built yet: the wait goes on and reads the jobs on the next poll, where
+# it used to end with exit 7 and the bounded wait unused.
+description: a workflow whose jobs CircleCI does not list yet is waited for, not refused
+args: [release, wait, giantswarm/e2e-app, --pr, "96", --timeout, 30m]
+timeout: 20s
+keyring:
+  github:
+    login: e2e-engineer
+    token: ghu_e2e_live
+    expiresAt: "2099-01-01T00:00:00Z"
+  circleci:
+    login: e2e-engineer
+    token: CCIPAT_e2e_live
+    expiresAt: "2099-01-01T00:00:00Z"
+github:
+  routes:
+    "GET /repos/giantswarm/e2e-app/pulls/96":
+      - body: {number: 96, state: closed, merged: true, merge_commit_sha: aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44}
+    "GET /repos/giantswarm/e2e-app/tags":
+      - body:
+          - {name: v1.2.3, commit: {sha: aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44}}
+          - {name: v1.2.2, commit: {sha: "0011223344556677889900112233445566778899"}}
+    "GET /repos/giantswarm/e2e-app":
+      - body: {name: e2e-app, full_name: giantswarm/e2e-app, private: false}
+    "GET /repos/giantswarm/e2e-app/contents/?ref=aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44":
+      - body:
+          - {name: Dockerfile, path: Dockerfile, type: file}
+          - {name: helm, path: helm, type: dir}
+          - {name: main.go, path: main.go, type: file}
+    "GET /repos/giantswarm/e2e-app/contents/.github/workflows?ref=aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44":
+      - body:
+          - {name: zz_generated.auto_release.yaml, path: .github/workflows/zz_generated.auto_release.yaml, type: file}
+    "GET /repos/giantswarm/e2e-app/contents/.circleci?ref=aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44":
+      - body:
+          - {name: config.yml, path: .circleci/config.yml, type: file}
+          - {name: workflows.yml, path: .circleci/workflows.yml, type: file}
+    "GET /repos/giantswarm/github/contents/repositories":
+      - body:
+          - {name: team-e2e.yaml, path: repositories/team-e2e.yaml, type: file}
+    "GET /repos/giantswarm/github/contents/repositories/team-e2e.yaml":
+      - body:
+          name: team-e2e.yaml
+          path: repositories/team-e2e.yaml
+          type: file
+          content: |
+            - name: e2e-app
+              componentType: service
+              gen:
+                flavours:
+                  - app
+                language: go
+                ci:
+                  generate: true
+circleci:
+  routes:
+    "GET /api/v2/project/gh/giantswarm/e2e-app/pipeline":
+      - body: {items: [{id: p1, number: 7, state: created, created_at: "2026-09-23T05:55:00Z", vcs: {tag: v1.2.3, revision: aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44}}], next_page_token: null}
+    # First poll: the setup workflow exists, its jobs do not yet. Second poll:
+    # setup finished and the build workflow it continued with is green.
+    "GET /api/v2/pipeline/p1/workflow":
+      - body: {items: [{id: w-setup, name: setup, status: running, created_at: "2026-09-23T05:55:05Z"}], next_page_token: null}
+      - body:
+          items:
+            - {id: w-setup, name: setup, status: success, created_at: "2026-09-23T05:55:05Z"}
+            - {id: w-build, name: build, status: success, created_at: "2026-09-23T05:55:40Z"}
+          next_page_token: null
+    "GET /api/v2/workflow/w-setup/job":
+      - status: 404
+        body: {message: Workflow not found}
+      - body: {items: [{id: j0, name: setup, status: success}], next_page_token: null}
+    "GET /api/v2/workflow/w-build/job":
+      - body: {items: [{id: j1, name: go-build, status: success}, {id: j2, name: push-e2e-app-to-registries, status: success}, {id: j3, name: push-e2e-app-to-app-catalog, status: success}], next_page_token: null}
+registry:
+  routes:
+    "HEAD /v2/giantswarm/e2e-app/manifests/1.2.3":
+      - status: 404
+      - status: 200
+    "HEAD /v2/charts/giantswarm/e2e-app/manifests/1.2.3":
+      - status: 404
+      - status: 200

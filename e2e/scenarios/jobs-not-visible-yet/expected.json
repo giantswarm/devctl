@@ -1,11 +1,11 @@
 {
-  "exitCode": 1,
+  "exitCode": 0,
   "json": {
     "command": "release wait",
     "schemaVersion": 1,
-    "exitCode": 1,
-    "verdict": "ci_failed",
-    "reason": "*",
+    "exitCode": 0,
+    "verdict": "available",
+    "reason": "",
     "warnings": [],
     "startedAt": "*",
     "finishedAt": "*",
@@ -15,15 +15,15 @@
     "releaseModel": "auto-release",
     "ciModel": "generated",
     "artifacts": [
-      {"kind": "image", "reference": "*", "digest": "", "state": "missing"},
-      {"kind": "chart", "reference": "*", "digest": "", "state": "missing"}
+      {"kind": "image", "reference": "*", "digest": "*", "state": "available"},
+      {"kind": "chart", "reference": "*", "digest": "*", "state": "available"}
     ],
     "pipeline": {
       "id": "p1",
       "number": 7,
       "url": "https://app.circleci.com/pipelines/github/giantswarm/e2e-app/7",
-      "workflows": [{"name": "build", "status": "failed"}],
-      "failedJobs": ["build/push-e2e-app-to-registries"],
+      "workflows": [{"name": "build", "status": "success"}, {"name": "setup", "status": "success"}],
+      "failedJobs": [],
       "unfinished": []
     },
     "actions": []
