@@ -1,11 +1,16 @@
 package file
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"testing"
+	"text/template"
+
+	"gopkg.in/yaml.v3"
 
 	"github.com/giantswarm/devctl/v8/pkg/gen/input/precommit/internal/params"
 )
@@ -184,5 +189,63 @@ func Test_NewCreatePreCommitConfigInput(t *testing.T) {
 
 			tc.checkData(t, data)
 		})
+	}
+}
+
+// Test_PreCommitConfigExcludesGeneratedCode checks the config's top-level `exclude`, which
+// pre-commit applies to every hook with Python's re.search: protobuf output is skipped
+// (end-of-file-fixer rewrote buf's *_pb.ts on every run, and the next generation undid
+// it), while hand-written sources -- next to that output, or under a directory named
+// gen/ -- and the zz_generated values file that triggers the helm-schema hook are still
+// checked. The pattern uses only syntax Go's regexp and Python's re read alike.
+func Test_PreCommitConfigExcludesGeneratedCode(t *testing.T) {
+	in := NewCreatePreCommitConfigInput(params.Params{Language: "go", RepoName: "my-repo", Flavors: []string{"helmchart"}, HelmCharts: []string{"my-app"}})
+	tpl, err := template.New(in.Path).Parse(in.TemplateBody)
+	if err != nil {
+		t.Fatalf("parse template: %v", err)
+	}
+	var rendered bytes.Buffer
+	if err := tpl.Execute(&rendered, in.TemplateData); err != nil {
+		t.Fatalf("execute template: %v", err)
+	}
+	var config struct {
+		Exclude string `yaml:"exclude"`
+	}
+	if err := yaml.Unmarshal(rendered.Bytes(), &config); err != nil {
+		t.Fatalf("unmarshal .pre-commit-config.yaml: %v\n%s", err, rendered.String())
+	}
+	exclude, err := regexp.Compile(config.Exclude)
+	if err != nil {
+		t.Fatalf("compile exclude %q: %v", config.Exclude, err)
+	}
+
+	for path, excluded := range map[string]bool{
+		"plugins/agent-platform-backend/src/kagent/gen/a2a_pb.ts":                   true,
+		"plugins/agent-platform-backend/src/kagent/gen/buf/validate/validate_pb.ts": true,
+		"web/src/gen/service_pb.js":                                                 true,
+		"web/src/gen/service_pb.d.ts":                                               true,
+		"web/src/gen/service_grpc_pb.js":                                            true,
+		"python/api/service_pb2.py":                                                 true,
+		"python/api/service_pb2.pyi":                                                true,
+		"python/api/service_pb2_grpc.py":                                            true,
+		"pkg/proto/apipb/api.pb.go":                                                 true,
+		"pkg/proto/apipb/api_grpc.pb.go":                                            true,
+		"pkg/proto/apipb/api.pb.gw.go":                                              true,
+		"pkg/proto/apipb/api.pb.validate.go":                                        true,
+		"pkg/proto/apipb/api_vtproto.pb.go":                                         true,
+		"plugins/agent-platform-backend/src/kagent/gen/README.md":                   false,
+		"plugins/agent-platform-backend/src/kagent/gen/buf.gen.yaml":                false,
+		"plugins/agent-platform-backend/src/kagent/client.ts":                       false,
+		"pkg/gen/input/precommit/internal/file/pre-commit-config.yaml.template":     false,
+		"pkg/proto/apipb/doc.go":                                                    false,
+		"api/service.proto":                                                         false,
+		"pb.go":                                                                     false,
+		"my_pb/main.go":                                                             false,
+		"helm/my-app/zz_generated.app-platform.values.yaml":                         false,
+		"helm/my-app/values.yaml":                                                   false,
+	} {
+		if got := exclude.MatchString(path); got != excluded {
+			t.Errorf("exclude %q matches %s: got %v, want %v", config.Exclude, path, got, excluded)
+		}
 	}
 }

@@ -1,6 +1,11 @@
 {{ .Header }}
 minimum_pre_commit_version: '2.17'
 default_install_hook_types: [pre-commit, commit-msg{{ if .NodeDevLintHook }}, pre-push{{ end }}]
+# Protobuf-generated code (protoc, buf: *_pb.ts, *_pb.js, *_pb2.py,
+# *_pb2_grpc.py, *.pb.go, *_grpc.pb.go) belongs to its generator: a hook that
+# rewrote it (end-of-file-fixer, go-imports, ruff --fix) would be undone by
+# the next generation, so no hook reads it.
+exclude: "(_pb2?|\\.pb)(_grpc)?\\.[^/]+$"
 repos:
   # base hooks
   #
