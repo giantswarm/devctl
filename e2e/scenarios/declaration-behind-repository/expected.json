@@ -6,7 +6,9 @@
     "exitCode": 0,
     "verdict": "available",
     "reason": "",
-    "warnings": [],
+    "warnings": [
+      "declaration says legacy, repository runs auto-release: the team-file entry resolves gen.ci.releaseWorkflow to legacy while the workflows at aa11bb22 are the auto-release ones (zz_generated.auto_release.yaml); the repository's workflows decide, align the team-file entry in giantswarm/github (gen.ci.generate: true, or gen.ci.releaseWorkflow: auto-release)"
+    ],
     "startedAt": "*",
     "finishedAt": "*",
     "repository": "giantswarm/e2e-app",
@@ -15,14 +17,13 @@
     "releaseModel": "auto-release",
     "ciModel": "generated",
     "artifacts": [
-      {"kind": "image", "reference": "*", "digest": "sha256:e2ec0000000000000000000000000000000000000000000000000000000000e2", "state": "available"},
-      {"kind": "chart", "reference": "*", "digest": "sha256:c4a7000000000000000000000000000000000000000000000000000000000c4a", "state": "available"}
+      {"kind": "image", "reference": "*", "digest": "*", "state": "available"}
     ],
     "pipeline": {
       "id": "p1",
       "number": 7,
       "url": "https://app.circleci.com/pipelines/github/giantswarm/e2e-app/7",
-      "workflows": [{"name": "build", "status": "success"}],
+      "workflows": [{"name": "build", "status": "success"}, {"name": "setup", "status": "success"}],
       "failedJobs": [],
       "unfinished": []
     },

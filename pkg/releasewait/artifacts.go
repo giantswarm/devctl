@@ -57,10 +57,16 @@ func registryHost(private bool, endpoints agentcli.Endpoints) string {
 // private-only image and the artifacts of a private repository that does
 // not force them public.
 func GeneratedArtifacts(entry reposetup.Fields, repo, version string, content TagContent, privateRepo bool, endpoints agentcli.Endpoints) ([]Artifact, error) {
-	if entry.Gen == nil || entry.Gen.CI == nil {
-		return nil, usageErr("the team-file entry of %s has no gen.ci block to derive the artifacts from", repo)
+	if entry.Gen == nil {
+		return nil, usageErr("the team-file entry of %s has no gen block to derive the artifacts from", repo)
 	}
+	// An entry without gen.ci declares no override: the generator's defaults
+	// name the artifacts, as they do for a pipeline rendered from the entry
+	// before its gen.ci block was declared.
 	ci := entry.Gen.CI
+	if ci == nil {
+		ci = &reposetup.CIFields{}
+	}
 	owner := reposetup.DefaultOwner
 	var artifacts []Artifact
 

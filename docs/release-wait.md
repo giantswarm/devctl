@@ -44,8 +44,16 @@ the login command in `reason`, before anything is waited for.
 2. The workflow files at the tag under `.github/workflows`: an `auto_release` / `auto-release`
    workflow means auto-release, `create_release` / `create-release` workflows mean legacy.
 
-A source that says nothing leaves the decision to the other. Two sources that disagree are exit 7
-naming both; neither saying anything is exit 7 too. The command never picks one.
+A source that says nothing leaves the decision to the other; neither saying anything is exit 7. When
+the two disagree, the workflows at the tag decide -- they made the tag -- and `warnings` names the
+mismatch with its remedy: `declaration says legacy, repository runs auto-release: the team-file entry
+resolves gen.ci.releaseWorkflow to legacy while the workflows at <sha> are the auto-release ones
+(zz_generated.auto_release.yaml); the repository's workflows decide, align the team-file entry …`.
+That is a repository whose generated pipeline and auto-release workflow merged while its entry still
+resolves `legacy` (the declaration lands in giantswarm/github later, by a person), or the reverse,
+an entry switched before align-files rendered the workflow. The CI model below is stricter: an entry
+that declares the generated pipeline explicitly has to match the files, because it names the
+artifacts.
 
 ### The CI model and the artifact names
 
@@ -56,7 +64,8 @@ naming both; neither saying anything is exit 7 too. The command never picks one.
 `false` with them, is exit 7).
 
 **Generated CI**: the artifacts are what devctl's generator emits for the entry, derived the way the
-generator derives them:
+generator derives them (an entry without a `gen.ci` block declares no override, so the generator's
+defaults name them; a repository no team file declares is exit 7, there being no entry to name them):
 
 | Artifact | When | Name | Registry |
 |---|---|---|---|
@@ -110,7 +119,10 @@ Every poll reads the tag pipeline: the newest CircleCI pipeline whose `vcs.tag` 
 workflows reduced to the **newest run per workflow name** (a rerun, from failed or in full, is a
 second workflow of the same name in the same pipeline, and the one it replaces keeps its failed
 status for ever). A workflow in `failed`, `error`, `failing`, `canceled` or `unauthorized` ends the
-wait with exit 1 and `pipeline.failedJobs` (`workflow/job`). A repository without CircleCI is judged
+wait with exit 1 and `pipeline.failedJobs` (`workflow/job`). A workflow CircleCI knows by id but
+answers 404 on the jobs of -- the setup workflow for a short while after the pipeline is created --
+is not finished: the poll goes on and `pipeline.unfinished` says `setup (running, jobs not visible
+yet)`; the same 404 on a finished workflow is a tooling failure (exit 7). A repository without CircleCI is judged
 by the GitHub Actions runs on the tag's commit whose branch is the tag: a `failure`, `cancelled`,
 `timed_out` or `startup_failure` conclusion is exit 1.
 
@@ -154,7 +166,8 @@ stderr.
     "number": 1234,
     "url": "https://app.circleci.com/pipelines/github/giantswarm/kserve/1234",
     "workflows": [{"name": "build", "status": "success"}, {"name": "setup", "status": "success"}],
-    "failedJobs": []
+    "failedJobs": [],
+    "unfinished": []
   },
   "actions": []
 }
@@ -162,12 +175,12 @@ stderr.
 
 | Field | Meaning |
 |---|---|
-| `command`, `schemaVersion`, `exitCode`, `verdict`, `reason`, `warnings`, `startedAt`, `finishedAt` | The envelope every agent-facing command prints. `verdict` is `available`, `ci_failed`, `timeout`, `not_applicable`, `usage` or `auth_required`. `warnings` carries the CircleCI token's seven-day expiry notice. |
+| `command`, `schemaVersion`, `exitCode`, `verdict`, `reason`, `warnings`, `startedAt`, `finishedAt` | The envelope every agent-facing command prints. `verdict` is `available`, `ci_failed`, `timeout`, `not_applicable`, `usage` or `auth_required`. `warnings` carries the CircleCI token's seven-day expiry notice and a team-file declaration that disagrees with the tag's workflows about the release model. |
 | `repository`, `tag`, `sha` | What was waited for. `tag` is empty when it never appeared; `sha` is the tag's commit (with `--pr` the merge commit). |
 | `releaseModel` | `auto-release` or `legacy`. |
 | `ciModel` | `generated`, `hand-written` or `none`. |
 | `artifacts[]` | `kind` (`image`, `chart`, `release-asset`), `reference` (the pullable reference, or the asset's download URL), `digest` (empty while missing), `state` (`available`, `missing`). Empty until the artifacts are known (hand-written CI before its pipeline exists). |
-| `pipeline` | The tag pipeline on CircleCI: `id`, `number`, `url`, `workflows[{name, status}]` (newest run per name), `failedJobs[]`. `null` for a repository without CircleCI, or while the pipeline does not exist. |
+| `pipeline` | The tag pipeline on CircleCI: `id`, `number`, `url`, `workflows[{name, status}]` (newest run per name), `failedJobs[]`, `unfinished[]` (the workflows not finished, `name (status)`, with `jobs not visible yet` when CircleCI does not list them yet; what a timeout was waiting for). `null` for a repository without CircleCI, or while the pipeline does not exist. |
 | `actions[]` | The Actions runs the tag triggered, for a repository without CircleCI: `name`, `runId`, `status`, `conclusion`, `url`. |
 
 ## Exit codes
@@ -176,9 +189,9 @@ stderr.
 |---|---|---|
 | 0 | `available` | Every artifact resolves to a digest (and, with `--catalog`, the index lists every chart); or the release of a repository without image and chart is published with its workflows green. |
 | 1 | `ci_failed` | A workflow of the tag pipeline, or an Actions run of the tag, failed or was cancelled. `reason` and `pipeline.failedJobs` name the jobs. The artifacts will not appear until a fix lands as the next tag. |
-| 2 | `timeout` | The deadline passed. `reason` names what is missing: the tag, the pipeline, the artifacts by reference. |
+| 2 | `timeout` | The deadline passed. `reason` names what is missing: the tag, the pipeline, the artifacts by reference, and the pipeline's unfinished workflows. |
 | 3 | `not_applicable` | The pull request is not merged, or the repository is on the legacy release model so `--pr` cannot resolve a version. |
-| 7 | `usage` | A bad argument; the sources disagree about the release model, the CI model or the artifacts; a registry answer that is neither a digest nor "manifest unknown"; a tooling error. |
+| 7 | `usage` | A bad argument; no source says how the repository releases; the sources disagree about the CI model or the artifacts; a registry answer that is neither a digest nor "manifest unknown"; a tooling error. |
 | 8 | `auth_required` | No usable token in the keychain; `reason` names the `devctl auth login` invocation. |
 
 ## Environment
