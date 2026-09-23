@@ -1,0 +1,373 @@
+template: giantswarm/template-plans
+command: devctl gen makefile --flavour generic,plans --language generic
+command: devctl gen workflows --flavour generic,plans --language generic --release-workflow legacy
+command: devctl gen llm --flavour generic,plans --language generic
+
+--- .cursor/rules/zz_generated.base-llm-rules.mdc
+---
+description: Instructions for AI/LLM assistants
+alwaysApply: true
+---
+
+# Instructions for AI/LLM assistants
+
+You are an AI assistant acting as an expert software developer and platform engineer working on Giant Swarm platform components. Your task is to act as a pair programmer and help others working in this codebase to keep the code delightful to work with. This includes ensuring that the code adheres to Giant Swarm's quality standards, keeping the project well-architected and organized, and maintaining supporting documentation, diagrams, and rules for other AI assistants.
+
+# Persona: Senior Giant Swarm Platform Engineer
+
+- **Technical Depth**: You are a domain expert in Go (formerly, golang), Helm, Kubernetes APIs and development, software design patterns, software architecture, Go application security, software testing, and software performance optimization,
+- **Problem-Solver**: You approach issues methodically, prioritizing safety and stability. You first investigate deeply with the tools provided to you, before suggesting changes. You find and fix the root cause, not the symptoms.
+- **Clear Communicator**: You explain complex topics clearly and provide actionable steps.
+- **Collaborative**: You guide users, suggest diagnostic paths, and help them think through problems.
+- **Best Practices**: You adhere to Giant Swarm operational and technical standards.
+
+# Reviewer Guidelines
+
+## Core Behaviors
+
+- Unless directed by the user, never use or recommend external linters, code analysis, or other tooling which isn't already recommended in Giant Swarm agent rules or style guides.
+- Always adhere to the central coding guidelines and best practices maintained at: @https://github.com/giantswarm/fmt/
+- Prioritize readability, maintainability, and security.
+- Write comprehensive tests and documentation.
+- If documentation is available in the `docs` folder, keep this up-to-date when changing code.
+- Maintain the main README.md file for correctness.
+- If a changelog is available as CHANGELOG.md, add your changes to it.
+
+## Release Management
+
+- Follow the changelog and release guidelines from @https://github.com/giantswarm/fmt/tree/main/releases
+- Use semantic versioning and conventional commits
+
+
+## Language-Specific Guidelines
+
+Additional language-specific rules can be found in the general style guide and in the other rules files in this repository.
+
+
+
+---
+
+For detailed guidelines and examples, always refer to: @https://github.com/giantswarm/fmt/
+
+
+<!--
+DO NOT EDIT. Generated with devctl.
+This file is maintained at:
+https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/llm/internal/file/base_llm_rules.mdc.template
+Manual changes will be overwritten.
+-->
+
+--- .github/workflows/zz_generated.create_release.yaml
+# DO NOT EDIT. Generated with:
+#
+#    devctl
+#
+#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/create_release.yaml.template
+#
+name: Create Release
+
+on:
+  push:
+    branches:
+      - 'legacy'
+      - 'main'
+      - 'master'
+      - 'release-v*.*.x'
+      # "!" negates previous positive patterns so it has to be at the end.
+      - '!release-v*.x.x'
+
+permissions: {}
+
+jobs:
+  create-release:
+    uses: giantswarm/github-workflows/.github/workflows/create-release.yaml@main
+    with:
+      fetch-deep-gitlog-for-build: true
+    secrets:
+      TAYLORBOT_GITHUB_ACTION: ${{ secrets.TAYLORBOT_GITHUB_ACTION }}
+    permissions:
+      contents: write
+
+--- .github/workflows/zz_generated.create_release_pr.yaml
+# DO NOT EDIT. Generated with:
+#
+#    devctl
+#
+#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/create_release_pr.yaml.template
+#
+name: Create Release PR
+on:
+  push:
+    branches:
+      - 'legacy#release#v*.*.*'
+      - 'main#release#v*.*.*'
+      - 'main#release#major'
+      - 'main#release#minor'
+      - 'main#release#patch'
+      - 'main#release#major-rc'
+      - 'main#release#minor-rc'
+      - 'main#release#patch-rc'
+      - 'main#release#rc'
+      - 'main#release#rc-release'
+      - 'master#release#v*.*.*'
+      - 'master#release#major'
+      - 'master#release#minor'
+      - 'master#release#patch'
+      - 'master#release#major-rc'
+      - 'master#release#minor-rc'
+      - 'master#release#patch-rc'
+      - 'master#release#rc'
+      - 'master#release#rc-release'
+      - 'release#v*.*.*'
+      - 'release#major'
+      - 'release#minor'
+      - 'release#patch'
+      - 'release#major-rc'
+      - 'release#minor-rc'
+      - 'release#patch-rc'
+      - 'release#rc'
+      - 'release#rc-release'
+      - 'release-v*.*.x#release#v*.*.*'
+      # "!" negates previous positive patterns so it has to be at the end.
+      - '!release-v*.x.x#release#v*.*.*'
+  workflow_call:
+    inputs:
+      branch:
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  publish:
+    uses: giantswarm/github-workflows/.github/workflows/create-release-pr.yaml@main
+    permissions:
+      contents: read
+    with:
+      branch: ${{ inputs.branch }}
+    secrets:
+      TAYLORBOT_GITHUB_ACTION: ${{ secrets.TAYLORBOT_GITHUB_ACTION }}
+
+--- .github/workflows/zz_generated.gitleaks.yaml
+# DO NOT EDIT. Generated with:
+#
+#    devctl
+#
+#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/gitleaks.yaml.template
+#
+name: gitleaks
+
+on:
+  - pull_request
+  - merge_group
+
+permissions: {}
+
+jobs:
+  publish:
+    uses: giantswarm/github-workflows/.github/workflows/gitleaks.yaml@main
+    permissions:
+      contents: read
+
+--- .github/workflows/zz_generated.run_ossf_scorecard.yaml
+# DO NOT EDIT. Generated with:
+#
+#    devctl
+#
+#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/run_ossf_scorecard.yaml.template
+#
+
+# This workflow uses actions that are not certified by GitHub. They are provided
+# by a third-party and are governed by separate terms of service, privacy
+# policy, and support documentation.
+
+name: Scorecard supply-chain security
+on:
+  # For Branch-Protection check. Only the default branch is supported. See
+  # https://github.com/ossf/scorecard/blob/main/docs/checks.md#branch-protection
+  branch_protection_rule: {}
+  # To guarantee Maintained check is occasionally updated. See
+  # https://github.com/ossf/scorecard/blob/main/docs/checks.md#maintained
+  schedule:
+    - cron: '15 15 15 * *'
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch: {}
+
+permissions: {}
+
+jobs:
+  analysis:
+    uses: giantswarm/github-workflows/.github/workflows/ossf-scorecard.yaml@main
+    permissions:
+      contents: read
+      actions: read
+      issues: read
+      pull-requests: read
+      checks: read
+      security-events: write
+      id-token: write
+    secrets:
+      scorecard_token: ${{ secrets.SCORECARD_TOKEN }}
+
+--- .github/workflows/zz_generated.semantic_pull_request.yaml
+# DO NOT EDIT. Generated with:
+#
+#    devctl
+#
+#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/semantic_pull_request.yaml.template
+#
+name: semantic-pull-request
+
+on:
+  pull_request:
+    types:
+      - opened
+      - edited
+      - synchronize
+  merge_group: {}
+
+permissions: {}
+
+jobs:
+  semantic-pull-request:
+    uses: giantswarm/github-workflows/.github/workflows/semantic-pull-request.yaml@main
+    permissions:
+      pull-requests: read
+    with:
+      # The action's stock parser reads the type with `\w*`, which cannot match
+      # a hyphen, so feat-rc/fix-rc fail to parse whatever `types` allows.
+      # Widen the type group by exactly the -rc suffix and nothing else; the
+      # three capturing groups stay type, scope, subject, which is the
+      # correspondence the action already defaults to.
+      header_pattern: '^(\w*(?:-rc)?)(?:\((.*)\))?!?: (.*)$'
+      # `types` REPLACES the action's default list rather than extending it, so
+      # all eleven defaults from commitizen/conventional-commit-types are
+      # repeated here, plus the additions below. Entries are regexes the action
+      # wraps in `^ $`.
+      #
+      # feat-rc/fix-rc mark a release candidate for the auto-release flow. They
+      # are accepted everywhere but only act in repositories generated with
+      # --release-workflow=auto-release; in a legacy repository they are inert.
+      #
+      # `security` is not one of the action's defaults and has to be listed to
+      # be accepted at all. cliff.toml maps it to the Security changelog group,
+      # which no title can reach while the type is rejected.
+      types: |
+        feat(-rc)?
+        fix(-rc)?
+        docs
+        style
+        refactor
+        perf
+        test
+        build
+        ci
+        chore
+        revert
+        security
+
+--- .github/workflows/zz_generated.validate_changelog.yaml
+# DO NOT EDIT. Generated with:
+#
+#    devctl
+#
+#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/validate_changelog.yaml.template
+#
+name: Validate changelog
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'CHANGELOG.md'
+
+permissions: {}
+
+jobs:
+  validate-changelog:
+    uses: giantswarm/github-workflows/.github/workflows/validate-changelog.yaml@main
+    permissions:
+      contents: read
+      pull-requests: write
+
+--- AGENTS.md
+# AGENTS.md
+
+Agent-facing notes for working in example-plans, the plans repository of
+@giantswarm/team-cabbage. Human-facing docs live in README.md.
+
+Each plan is its own top-level directory holding a PRD.md and a companion
+index.html website.
+
+--- CODEOWNERS
+# generated by giantswarm/github actions - changes will be overwritten
+* @giantswarm/team-cabbage
+
+--- DCO
+Developer Certificate of Origin
+Version 1.1
+
+Copyright (C) 2004, 2006 The Linux Foundation and its contributors.
+660 York Street, Suite 102,
+San Francisco, CA 94110 USA
+
+--- LICENSE
+                                 Apache License
+                           Version 2.0, January 2004
+                        http://www.apache.org/licenses/
+
+Copyright 2016 - 2026 Giant Swarm GmbH
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+--- Makefile
+# DO NOT EDIT. Generated with:
+#
+#    devctl
+#
+#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/makefile/internal/file/Makefile.template
+#
+
+include Makefile.*.mk
+
+##@ General
+
+# The help target prints out all targets with their descriptions organized
+# beneath their categories. The categories are represented by '##@' and the
+# target descriptions by '##'. The awk commands is responsible for reading the
+# entire set of makefiles included in this invocation, looking for lines of the
+# file as xyz: ## something, and then pretty-format the target and help. Then,
+# if there's a line with ##@ something, that gets pretty-printed as a category.
+# More info on the usage of ANSI control characters for terminal formatting:
+# https://en.wikipedia.org/wiki/ANSI_escape_code#SGR_parameters
+# More info on the awk command:
+# http://linuxcommand.org/lc3_adv_awk.php
+
+.PHONY: help
+help: ## Display this help.
+	@awk 'BEGIN {FS = ":.*##"; n = 0; w = 0} /^[a-zA-Z%\\\/_0-9-]+:.*?##/ { order[n] = "t"; targets[n] = $$1; descs[n] = $$2; if (length($$1) > w) w = length($$1); n++ } /^##@/ { order[n] = "c"; cats[n] = substr($$0, 5); n++ } END { printf "\nUsage:\n  make \033[36m<target>\033[0m\n"; for (i = 0; i < n; i++) { if (order[i] == "c") printf "\n\033[1m%s\033[0m\n", cats[i]; else printf "  \033[36m%-*s\033[0m  %s\n", w, targets[i], descs[i] } }' $(MAKEFILE_LIST)
+
+--- README.md
+# example-plans
+
+Team plans, their PRDs and companion websites.
+
+--- SECURITY.md
+# Security Policy
+
+## Reporting a Vulnerability
+
+Please visit <https://www.giantswarm.io/responsible-disclosure> for information on reporting security issues.

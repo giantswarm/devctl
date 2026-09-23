@@ -41,7 +41,8 @@
 //     cluster-app flavour): the repository is named after its chart, without
 //     an -app suffix, and gen.ci.chartName, when set, equals the name;
 //   - a template exists for the language: language node is refused until
-//     giantswarm/template-node ships.
+//     giantswarm/template-node ships, and the plans flavour is refused with
+//     any language but generic — it has one template, generic-only.
 //
 // Every refusal is a [Problem] naming the field in dotted form
 // (gen.ci.chartName, gen.flavours[1]).
@@ -49,10 +50,12 @@
 // # Templates
 //
 // [DeriveTemplate] maps a declaration to its template without a template
-// field: language go → giantswarm/template; language generic with the app
-// flavour → giantswarm/template-app; the customer flavour or component type,
-// the languages python and kyverno-policy, and generic repositories without
-// a chart → the minimal scaffold (README, LICENSE, DCO, SECURITY.md,
+// field: language go → giantswarm/template; the plans flavour with language
+// generic → giantswarm/template-plans, refused for any other language the
+// same way language node is; language generic with the app flavour →
+// giantswarm/template-app; the customer flavour or component type, the
+// languages python and kyverno-policy, and generic repositories without a
+// chart → the minimal scaffold (README, LICENSE, DCO, SECURITY.md,
 // CODEOWNERS, .gitignore plus the generated files).
 //
 // # Rendering

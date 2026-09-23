@@ -70,6 +70,11 @@ func replacements(t Template, s substitutions) []replacement {
 			{regexp.MustCompile(regexp.QuoteMeta("{TEAM-NAME}")), s.teamShortName()},
 			{regexp.MustCompile(regexp.QuoteMeta("{APP HELM REPOSITORY}")), s.UpstreamRepo},
 		}
+	case TemplatePlans:
+		return []replacement{
+			appName,
+			{regexp.MustCompile(regexp.QuoteMeta("{TEAM-NAME}")), s.teamShortName()},
+		}
 	default:
 		return nil
 	}
