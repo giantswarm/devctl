@@ -135,6 +135,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `gen precommit` skips protobuf-generated code in every hook: a top-level `exclude` matches `*_pb.*`, `*_pb2*.py`
+  and `*.pb.go` with its variants. `end-of-file-fixer` rewrote the buf-generated `*_pb.ts` files of a repository on
+  every run, their next generation undid it, and the generated `pre-commit` check stayed red, so align-files could
+  not land there. Hand-written files next to the output, a `gen/` directory's `README.md` and `buf.gen.yaml`
+  included, are still checked, and so is `zz_generated.app-platform.values.yaml`, which triggers the helm-schema hook
+  ([#2392](https://github.com/giantswarm/devctl/issues/2392)).
 - `gen renovate` reads the repository of the `github>giantswarm/<name>:renovate-custom.json5` extends entry from
   the git origin remote when `--repo-name` is not given (`git remote get-url origin`, the `giantswarm/<name>` path
   of an https or ssh URL, `.git` stripped), no longer from the working directory's name. A worktree or a clone in
