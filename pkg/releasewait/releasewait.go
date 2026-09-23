@@ -116,6 +116,10 @@ type Config struct {
 	Rate func() githubclient.RateLimit
 	// Progress receives one line per step; nil is silent.
 	Progress *agentcli.Progress
+	// Warn receives the warnings the document carries beside the result: a
+	// team-file entry whose release model lags the repository's workflows.
+	// Nil drops them.
+	Warn func(message string)
 }
 
 // Waiter runs one wait.
@@ -234,6 +238,9 @@ func (w *Waiter) wait(ctx context.Context, result *Result) error {
 	plan := &plan{version: version, private: private, content: content, entry: entry}
 	switch result.CIModel {
 	case CIModelGenerated:
+		if entry == nil {
+			return usageErr("no team-file entry declares %s/%s, and the artifacts of its generated pipeline (%s at %s) are named by the entry", owner, repo, circleCIWorkflows, short(result.SHA))
+		}
 		artifacts, err := GeneratedArtifacts(*entry, repo, version, *content, private, w.config.Endpoints)
 		if err != nil {
 			return err
@@ -482,6 +489,12 @@ func (w *Waiter) readModels(ctx context.Context, sha string, result *Result) (*T
 	if err != nil {
 		return nil, nil, err
 	}
+	if models.Warning != "" {
+		w.progress.Printf("%s", models.Warning)
+		if w.config.Warn != nil {
+			w.config.Warn(models.Warning)
+		}
+	}
 	result.ReleaseModel, result.CIModel = models.Release, models.CI
 	return content, entry, nil
 }
@@ -520,15 +533,21 @@ func (w *Waiter) timeout(result *Result) error {
 			missing = append(missing, a.Kind+" "+a.Reference)
 		}
 	}
+	// What the tag pipeline was still doing, so the reason says where the
+	// build stood: a workflow running, or one whose jobs never appeared.
+	unfinished := ""
+	if p := result.Pipeline; p != nil && len(p.Unfinished) > 0 {
+		unfinished = fmt.Sprintf("; pipeline %d unfinished: %s", p.Number, strings.Join(p.Unfinished, ", "))
+	}
 	switch {
 	case result.Tag == "":
 		return timeoutErr("no tag within %s", w.config.Timeout)
 	case len(missing) > 0:
-		return timeoutErr("not available within %s: %s", w.config.Timeout, strings.Join(missing, ", "))
+		return timeoutErr("not available within %s: %s%s", w.config.Timeout, strings.Join(missing, ", "), unfinished)
 	case result.Pipeline == nil && result.CIModel != CIModelNone:
 		return timeoutErr("no CircleCI pipeline for %s within %s: the tag's webhook may not have reached CircleCI", result.Tag, w.config.Timeout)
 	}
-	return timeoutErr("%s was not released within %s", result.Tag, w.config.Timeout)
+	return timeoutErr("%s was not released within %s%s", result.Tag, w.config.Timeout, unfinished)
 }
 
 func short(sha string) string {

@@ -51,13 +51,26 @@ func (w *Waiter) pipelineState(ctx context.Context, result *Result) (*pipelineSt
 	}
 	newest := circleciclient.NewestWorkflows(runs)
 
-	doc := &Pipeline{ID: pipeline.ID, Number: pipeline.Number, URL: circleciclient.PipelineURL(owner, repo, pipeline.Number), Workflows: []PipelineWorkflow{}, FailedJobs: []string{}}
+	doc := &Pipeline{ID: pipeline.ID, Number: pipeline.Number, URL: circleciclient.PipelineURL(owner, repo, pipeline.Number), Workflows: []PipelineWorkflow{}, FailedJobs: []string{}, Unfinished: []string{}}
 	state := &pipelineState{green: len(newest) > 0, jobs: map[string]bool{}}
 	successes := 0
+	jobsHidden := false
 	for _, run := range newest {
 		doc.Workflows = append(doc.Workflows, PipelineWorkflow{Name: run.Name, Status: run.Status})
 		jobs, err := w.circleci.ListWorkflowJobs(ctx, run.ID)
-		if err != nil {
+		switch {
+		case err == nil:
+		case circleciclient.IsNotFound(err) && !circleciclient.WorkflowFinished(run.Status):
+			// CircleCI knows a workflow by id before it lists its jobs: for
+			// a short while after the pipeline is created, the jobs of a
+			// running workflow are 404. That is the tag not built yet, not a
+			// tooling failure: the next poll reads them.
+			jobsHidden = true
+			state.green = false
+			doc.Unfinished = append(doc.Unfinished, fmt.Sprintf("%s (%s, jobs not visible yet)", run.Name, run.Status))
+			w.progress.Printf("pipeline %d: workflow %s %s, jobs not visible yet", pipeline.Number, run.Name, run.Status)
+			continue
+		default:
 			return nil, fmt.Errorf("reading the jobs of workflow %s: %w", run.Name, err)
 		}
 		for _, job := range jobs {
@@ -78,11 +91,17 @@ func (w *Waiter) pipelineState(ctx context.Context, result *Result) (*pipelineSt
 		case run.Status == "not_run":
 		default:
 			state.green = false
+			doc.Unfinished = append(doc.Unfinished, fmt.Sprintf("%s (%s)", run.Name, run.Status))
 		}
 		w.progress.Printf("pipeline %d: workflow %s %s", pipeline.Number, run.Name, run.Status)
 	}
 	if successes == 0 {
 		state.green = false
+	}
+	if jobsHidden {
+		// The pipeline's jobs are not all known: hand-written CI derives
+		// its artifacts from them on a later poll.
+		state.jobs = nil
 	}
 	sort.Strings(doc.FailedJobs)
 	state.failedJobs = doc.FailedJobs

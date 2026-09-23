@@ -160,14 +160,24 @@ func TestGeneratedArtifacts(t *testing.T) {
 			want: nil,
 		},
 		{
-			name: "no gen.ci block",
+			// An entry without gen.ci declares no override: the generator's
+			// defaults name the artifacts (a pipeline rendered from the entry
+			// before its gen.ci block was declared has exactly those).
+			name: "no gen.ci block: the generator's defaults",
 			entry: `- name: plain
   gen:
-    flavours: [cli]
+    flavours: [app]
     language: go
 `,
+			root: []string{"Dockerfile", "helm"},
+			want: []string{"image public.example/giantswarm/plain:1.2.3", "chart public.example/charts/giantswarm/plain:1.2.3"},
+		},
+		{
+			name: "no gen block",
+			entry: `- name: plain
+`,
 			root:    []string{"Dockerfile"},
-			wantErr: "no gen.ci block",
+			wantErr: "no gen block",
 		},
 	}
 	for _, tc := range cases {

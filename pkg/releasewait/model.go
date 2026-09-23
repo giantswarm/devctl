@@ -91,12 +91,9 @@ func (c TagContent) CIModel() string {
 	return CIModelHandWritten
 }
 
-// ReleaseModel is the release model the workflow files show: auto-release
-// for an auto-release workflow, legacy for the create-release workflows,
-// "" when neither is there. Both at once is an error: the files contradict
-// each other.
-func (c TagContent) ReleaseModel() (string, error) {
-	var auto, legacy []string
+// releaseWorkflows are the workflow files that show a release model: the
+// auto-release workflow and the create-release (legacy) workflows.
+func (c TagContent) releaseWorkflows() (auto, legacy []string) {
 	for _, name := range c.Workflows {
 		n := strings.ToLower(name)
 		switch {
@@ -106,6 +103,15 @@ func (c TagContent) ReleaseModel() (string, error) {
 			legacy = append(legacy, name)
 		}
 	}
+	return auto, legacy
+}
+
+// ReleaseModel is the release model the workflow files show: auto-release
+// for an auto-release workflow, legacy for the create-release workflows,
+// "" when neither is there. Both at once is an error: the files contradict
+// each other.
+func (c TagContent) ReleaseModel() (string, error) {
+	auto, legacy := c.releaseWorkflows()
 	switch {
 	case len(auto) > 0 && len(legacy) > 0:
 		return "", usageErr("the workflows at %s carry both the auto-release workflow (%s) and the legacy release workflows (%s)", short(c.SHA), strings.Join(auto, ", "), strings.Join(legacy, ", "))
@@ -121,6 +127,11 @@ func (c TagContent) ReleaseModel() (string, error) {
 type Models struct {
 	Release string
 	CI      string
+	// Warning is set when the team-file entry and the tag's workflows
+	// disagree about the release model: the workflows decided, and the
+	// warning names the lagging declaration and its remedy. Empty when the
+	// sources agree.
+	Warning string
 }
 
 // EntryReleaseModel is the release model a team-file entry declares:
@@ -148,9 +159,19 @@ func EntryGeneratesCI(entry *reposetup.Fields) bool {
 
 // ResolveModels settles the models from the team-file entry (nil when no
 // team file declares the repository) cross-checked against the tag's files.
-// A disagreement between the two is an error, never a guess; a source that
-// says nothing leaves the decision to the other; neither saying anything
-// about the release model is an error too.
+//
+// The release model is what the workflows at the tag run: they made the
+// tag. An entry that says otherwise is a declaration behind or ahead of the
+// repository -- the auto-release workflow merged while the entry still
+// resolves legacy, or the entry switched before align-files rendered the
+// workflow -- and the wait goes on with the workflows' model and a warning
+// naming the mismatch and its remedy. A source that says nothing leaves the
+// decision to the other; neither saying anything is an error, never a guess.
+//
+// The CI model is what the .circleci files show, and an entry that declares
+// the generated pipeline explicitly (gen.ci.generate set) has to match them:
+// the artifact names of generated CI come from the entry, so a disagreement
+// there is an error.
 func ResolveModels(entry *reposetup.Fields, content TagContent) (Models, error) {
 	fromFiles, err := content.ReleaseModel()
 	if err != nil {
@@ -160,7 +181,8 @@ func ResolveModels(entry *reposetup.Fields, content TagContent) (Models, error) 
 	var m Models
 	switch {
 	case fromEntry != "" && fromFiles != "" && fromEntry != fromFiles:
-		return Models{}, usageErr("the team-file entry says the release workflow is %s but the workflows at %s are the %s ones (%s)", fromEntry, short(content.SHA), fromFiles, strings.Join(content.Workflows, ", "))
+		m.Release = fromFiles
+		m.Warning = declarationMismatch(fromEntry, fromFiles, content)
 	case fromEntry != "":
 		m.Release = fromEntry
 	case fromFiles != "":
@@ -178,6 +200,20 @@ func ResolveModels(entry *reposetup.Fields, content TagContent) (Models, error) 
 		return Models{}, usageErr("the team-file entry has gen.ci.generate false but %s at %s carries the generated %s", circleCIDir, short(content.SHA), circleCIWorkflows)
 	}
 	return m, nil
+}
+
+// declarationMismatch is the warning of a team-file entry whose release
+// model is not the one the workflows at the tag run: what the entry
+// resolves gen.ci.releaseWorkflow to, the workflow files found, and the
+// remedy for the side that lags.
+func declarationMismatch(fromEntry, fromFiles string, content TagContent) string {
+	auto, legacy := content.releaseWorkflows()
+	files, remedy := auto, "align the team-file entry in giantswarm/github (gen.ci.generate: true, or gen.ci.releaseWorkflow: auto-release)"
+	if fromFiles == ReleaseModelLegacy {
+		files, remedy = legacy, "let align-files render the auto-release workflow the entry declares, or declare gen.ci.releaseWorkflow: legacy"
+	}
+	return fmt.Sprintf("declaration says %s, repository runs %s: the team-file entry resolves gen.ci.releaseWorkflow to %s while the workflows at %s are the %s ones (%s); the repository's workflows decide, %s",
+		fromEntry, fromFiles, fromEntry, short(content.SHA), fromFiles, strings.Join(files, ", "), remedy)
 }
 
 func listOrNone(names []string) string {

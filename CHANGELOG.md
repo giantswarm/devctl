@@ -48,6 +48,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   next, having no released chart to upgrade from. Both files are the repository's own: a template that carries a test
   or the configuration keeps it, and an align run never writes them
   ([#2354](https://github.com/giantswarm/devctl/issues/2354)).
+- `devctl release wait` waits out a tag pipeline whose jobs CircleCI does not list yet. Right after the auto-release
+  tags a merge, CircleCI knows the pipeline's setup workflow by id but answers 404 on `GET /workflow/{id}/job` for a
+  short while; the wait read that as a tooling failure and ended with exit 7 (`reading the jobs of workflow setup:
+  not found`), the bounded wait it was given unused, while the same call minutes later answered `available`. A 404 on
+  the jobs of a workflow that has not finished is now the tag not built yet: the poll goes on within the timeout,
+  the document's new `pipeline.unfinished` names the workflow (`setup (running, jobs not visible yet)`) beside every
+  other workflow still running, and a timeout's reason names them too. The same 404 on a finished workflow stays
+  exit 7 ([#2345](https://github.com/giantswarm/devctl/issues/2345)).
+- `devctl release wait` judges a repository by the workflows at its tag when the team-file entry says otherwise:
+  they made the tag. A repository whose generated pipeline and auto-release workflow merged while its entry still
+  resolved `legacy` -- the declaration lands in giantswarm/github later, by a person -- was refused with exit 7 in both
+  the `--pr` and the version form for the hours between the two merges, although the tag, the release and its green
+  pipeline existed. The workflows now decide (the reverse, an entry switched before align-files rendered the
+  workflow, the same way), and the document's `warnings` names the mismatch and the remedy for the lagging side:
+  `declaration says legacy, repository runs auto-release: the team-file entry resolves gen.ci.releaseWorkflow to
+  legacy while the workflows at <sha> are the auto-release ones (…); the repository's workflows decide, align the
+  team-file entry …`. An entry without a `gen.ci` block names the artifacts of its generated pipeline through the
+  generator's defaults, where it was refused for the missing block; a repository no team file declares whose tag
+  carries the generated pipeline is exit 7 naming that, where it crashed. The CI model is still cross-checked: an
+  entry with `gen.ci.generate` set has to match the files
+  ([#2333](https://github.com/giantswarm/devctl/issues/2333)).
 - `repo reconcile`'s release step counts only the newest run of every workflow of the tag's pipeline, as `release
   wait` does: a rerun from failed is a second workflow of the same name, and the run it replaced keeps its failed
   status for ever, so a tag revived by a rerun read `red-release` until the next tag. The finding's fix no longer

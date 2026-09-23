@@ -102,6 +102,7 @@ func (r *runner) wait(ctx context.Context, args []string, doc *releasewait.Docum
 		Clock:        clock,
 		Rate:         c.rate,
 		Progress:     progress,
+		Warn:         doc.Warn,
 	})
 	if err != nil {
 		return err

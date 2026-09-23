@@ -39,6 +39,8 @@ type fixture struct {
 	timeout         time.Duration
 	catalog         bool
 	catalogLists    bool
+	// warn collects the document's warnings; nil drops them.
+	warn func(string)
 }
 
 type entries struct{ fields *reposetup.Fields }
@@ -170,6 +172,7 @@ func run(t *testing.T, fx fixture) (Result, error) {
 		Endpoints:    endpoints,
 		Clock:        agentcli.NewClock(0.001, nil),
 		Rate:         conditional.Rate,
+		Warn:         fx.warn,
 	}
 	if config.Timeout == 0 {
 		config.Timeout = 2 * time.Minute
@@ -449,13 +452,142 @@ func TestWaitPullRequestResolvesTheTagFromTheMergeCommit(t *testing.T) {
 	}
 }
 
-func TestWaitModelMismatchIsAnError(t *testing.T) {
+// CircleCI knows the tag pipeline's setup workflow by id before it lists its
+// jobs: GET /workflow/{id}/job is 404 for a short while after the pipeline
+// is created. That is the tag not built yet, not a tooling failure: the
+// next poll reads the jobs and the wait ends available.
+func TestWaitJobsNotVisibleYetIsNotYet(t *testing.T) {
+	circleci := pipelineRoutes(
+		[][]map[string]any{
+			{wf("w1", "setup", "running", "2026-09-21T10:00:00Z")},
+			{wf("w1", "setup", "success", "2026-09-21T10:00:00Z"), wf("w2", "build", "success", "2026-09-21T10:01:00Z")},
+		},
+		map[string][]map[string]any{"w2": {job("push-to-registries-release", "success"), job("push-chart-release", "success")}},
+	)
+	circleci["GET /api/v2/workflow/w1/job"] = []sequence.Response{
+		{Status: 404, Body: map[string]any{"message": "Workflow not found"}},
+		{Body: map[string]any{"items": []map[string]any{job("setup", "success")}}},
+	}
 	fx := fixture{
-		entry:  generatedEntry(t),
-		github: baseGitHub([]string{"Dockerfile", "helm"}, []string{"zz_generated.create_release.yaml"}, []string{"config.yml", "workflows.yml"}),
+		entry:    generatedEntry(t),
+		github:   baseGitHub([]string{"Dockerfile", "helm"}, []string{"zz_generated.auto_release.yaml"}, []string{"config.yml", "workflows.yml"}),
+		circleci: circleci,
+		registry: sequence.Routes{
+			"HEAD /v2/giantswarm/kserve-controller/manifests/1.2.3": {{Status: 404}, {Status: 200}},
+			"HEAD /v2/charts/giantswarm/kserve/manifests/1.2.3":     {{Status: 404}, {Status: 200}},
+		},
+	}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+	if result.Pipeline == nil || len(result.Pipeline.Workflows) != 2 || len(result.Pipeline.Unfinished) != 0 {
+		t.Errorf("pipeline: %+v", result.Pipeline)
+	}
+}
+
+// Jobs that never become visible end the wait at the deadline, exit 2, with
+// the workflow in the pipeline's unfinished list and in the reason.
+func TestWaitJobsNeverVisibleIsTimeout(t *testing.T) {
+	circleci := pipelineRoutes([][]map[string]any{{wf("w1", "setup", "running", "2026-09-21T10:00:00Z")}}, nil)
+	circleci["GET /api/v2/workflow/w1/job"] = []sequence.Response{{Status: 404, Body: map[string]any{"message": "Workflow not found"}}}
+	fx := fixture{
+		entry:    generatedEntry(t),
+		timeout:  45 * time.Second,
+		github:   baseGitHub([]string{"Dockerfile", "helm"}, []string{"zz_generated.auto_release.yaml"}, []string{"config.yml", "workflows.yml"}),
+		circleci: circleci,
+	}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitTimeout, "pipeline 12 unfinished: setup (running, jobs not visible yet)")
+	if result.Pipeline == nil || strings.Join(result.Pipeline.Unfinished, ",") != "setup (running, jobs not visible yet)" {
+		t.Errorf("pipeline: %+v", result.Pipeline)
+	}
+}
+
+// A 404 on the jobs of a finished workflow is not a young pipeline: it stays
+// the tooling failure it is.
+func TestWaitJobsNotFoundOnAFinishedWorkflowIsTooling(t *testing.T) {
+	circleci := pipelineRoutes([][]map[string]any{{wf("w1", "build", "success", "2026-09-21T10:00:00Z")}}, nil)
+	circleci["GET /api/v2/workflow/w1/job"] = []sequence.Response{{Status: 404, Body: map[string]any{"message": "Workflow not found"}}}
+	fx := fixture{
+		entry:    generatedEntry(t),
+		github:   baseGitHub([]string{"Dockerfile", "helm"}, []string{"zz_generated.auto_release.yaml"}, []string{"config.yml", "workflows.yml"}),
+		circleci: circleci,
 	}
 	_, err := run(t, fx)
-	assertExit(t, err, agentcli.ExitUsage, "auto-release but the workflows")
+	assertExit(t, err, agentcli.ExitUsage, "reading the jobs of workflow build")
+}
+
+// giantswarm/mcp-toolkit merged its generated pipeline and auto-release
+// workflow while its team-file entry (gen without gen.ci) still resolved
+// legacy; the declaration followed hours later. The workflows at the merge
+// commit decide, --pr resolves the tag, the artifacts are the generator's
+// defaults for the entry, and the document warns about the declaration.
+func TestWaitDeclarationBehindTheRepositoryWarns(t *testing.T) {
+	github := baseGitHub([]string{"Dockerfile", "main.go"}, []string{"zz_generated.auto_release.yaml"}, []string{"config.yml", "workflows.yml"})
+	github[repoRoute("/pulls/96")] = []sequence.Response{{Body: map[string]any{"number": 96, "state": "closed", "merged": true, "merge_commit_sha": testSHA}}}
+	github[repoRoute("/tags")] = []sequence.Response{{Body: []map[string]any{{"name": testTag, "commit": map[string]any{"sha": testSHA}}}}}
+	var warnings []string
+	fx := fixture{
+		entry: func() *reposetup.Fields {
+			f := fieldsFromYAML(t, "- name: kserve\n  gen:\n    flavours: [generic]\n    language: go\n")
+			return &f
+		}(),
+		github: github, pr: 96,
+		circleci: pipelineRoutes([][]map[string]any{{wf("w1", "build", "success", "2026-09-21T10:00:00Z")}},
+			map[string][]map[string]any{"w1": {job("push-to-registries-release", "success")}}),
+		registry: sequence.Routes{"HEAD /v2/giantswarm/kserve/manifests/1.2.3": {{Status: 200}}},
+		warn:     func(m string) { warnings = append(warnings, m) },
+	}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+	if result.Tag != testTag || result.ReleaseModel != ReleaseModelAutoRelease || result.CIModel != CIModelGenerated {
+		t.Errorf("head: %+v", result)
+	}
+	if len(result.Artifacts) != 1 || !strings.HasSuffix(result.Artifacts[0].Reference, "/giantswarm/kserve:1.2.3") || result.Artifacts[0].State != StateAvailable {
+		t.Errorf("artifacts: %+v", result.Artifacts)
+	}
+	want := "declaration says legacy, repository runs auto-release: the team-file entry resolves gen.ci.releaseWorkflow to legacy while the workflows at 01234567 are the auto-release ones (zz_generated.auto_release.yaml); the repository's workflows decide, align the team-file entry in giantswarm/github (gen.ci.generate: true, or gen.ci.releaseWorkflow: auto-release)"
+	if len(warnings) != 1 || warnings[0] != want {
+		t.Errorf("warnings:\n want %q\n got  %q", want, warnings)
+	}
+}
+
+// The other direction: the entry declares the generated pipeline, and with
+// it auto-release, while the tag still carries the create-release
+// workflows. The tag is the legacy flow's; the document warns.
+func TestWaitDeclarationAheadOfTheRepositoryWarns(t *testing.T) {
+	var warnings []string
+	fx := fixture{
+		entry:  generatedEntry(t),
+		github: baseGitHub([]string{"Dockerfile", "helm"}, []string{"zz_generated.create_release.yaml", "zz_generated.create_release_pr.yaml"}, []string{"config.yml", "workflows.yml"}),
+		circleci: pipelineRoutes([][]map[string]any{{wf("w1", "build", "success", "2026-09-21T10:00:00Z")}},
+			map[string][]map[string]any{"w1": {job("push-to-registries-release", "success"), job("push-chart-release", "success")}}),
+		registry: sequence.Routes{
+			"HEAD /v2/giantswarm/kserve-controller/manifests/1.2.3": {{Status: 200}},
+			"HEAD /v2/charts/giantswarm/kserve/manifests/1.2.3":     {{Status: 200}},
+		},
+		warn: func(m string) { warnings = append(warnings, m) },
+	}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+	if result.ReleaseModel != ReleaseModelLegacy {
+		t.Errorf("release model: %s", result.ReleaseModel)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "declaration says auto-release, repository runs legacy") || !strings.Contains(warnings[0], "(zz_generated.create_release.yaml, zz_generated.create_release_pr.yaml)") {
+		t.Errorf("warnings: %q", warnings)
+	}
+}
+
+// A repository no team file declares whose tag carries the generated
+// pipeline: the entry names the artifacts of generated CI, so there is
+// nothing to wait for by name and the wait says so instead of guessing.
+func TestWaitUndeclaredGeneratedCIIsUsage(t *testing.T) {
+	fx := fixture{
+		github: baseGitHub([]string{"Dockerfile"}, []string{"zz_generated.auto_release.yaml"}, []string{"config.yml", "workflows.yml"}),
+		circleci: pipelineRoutes([][]map[string]any{{wf("w1", "build", "success", "2026-09-21T10:00:00Z")}},
+			map[string][]map[string]any{"w1": {job("push-to-registries-release", "success")}}),
+	}
+	_, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitUsage, "no team-file entry declares giantswarm/kserve")
 }
 
 func TestWaitCatalogIndexGatesTheVerdict(t *testing.T) {
