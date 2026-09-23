@@ -275,4 +275,8 @@ Actions permission there. `--dispatch-token-envvar` names a second token for tho
 workflow's runs, dispatching it) when the GitHub token's identity has none -- the reconciler passes its
 workflow run's own token, the App holding no Actions permission. Every read stays with the GitHub token,
 the repository lookup included: a private repository the dispatch token cannot see is looked up, checked
-against the catalog and dispatched all the same. Without the flag the GitHub token dispatches.
+against the catalog and dispatched all the same. Without the flag the GitHub token dispatches. A chart
+reference that is a template's placeholder (`{APP-NAME}`) is no chart to map: the mapping's generator drops it,
+and so does the step. The scaffold step's chart check does not read the chart of a `componentType: template`
+entry either -- it lives under a placeholder directory and the template's own pipeline builds a rendered copy
+(`docs/gen.md`).

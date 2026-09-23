@@ -27,6 +27,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   `helm/docs-proxy-app`, declared with `chartName: docs-proxy-app`) was reported without a chart on every check and
   could not converge. When the declared directory has no chart, the fix names the charts the repository has under
   `helm/` and the `gen.ci.chartName` remedy: a repository renamed on GitHub keeps its chart under the old name.
+
+- `repo reconcile`: the catalog step no longer dispatches the apps-to-teams mapping for a chart whose reference is a
+  template's placeholder (`{APP-NAME}`, `{MCP-NAME}`): the mapping's generator drops such a reference, so the dispatch
+  changed nothing and the repository never converged. The scaffold step's chart check does not read the chart of a
+  `componentType: template` entry, which lives under a placeholder directory and is built from a rendered copy by the
+  template's own pipeline; it reported `abs-prerequisite: no chart at helm/<name>/Chart.yaml` before (#2326).
 - The repo commands call giantswarm-repo-manager's tools through muster's `call_tool` meta-tool and unwrap its envelope,
   which is how muster exposes every server's tool to a session (the muster CLI and the platform's agents do the same):
   8.85.0 called the tools directly and muster answered `tool not found` for every one of them. The e2e muster mock now
