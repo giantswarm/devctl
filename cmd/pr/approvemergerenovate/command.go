@@ -44,6 +44,7 @@ func New(config Config) (*cobra.Command, error) {
 
 	c := &cobra.Command{
 		Use:     usage,
+		Args:    cobra.MaximumNArgs(1),
 		Short:   description,
 		Long:    description,
 		Aliases: []string{name, "amr"},

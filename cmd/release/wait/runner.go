@@ -39,6 +39,13 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 	return r.run(cmd.Context(), args)
 }
 
+// FlagError reports a flag cobra could not parse like any other wrong call:
+// the document, exit 7.
+func (r *runner) FlagError(_ *cobra.Command, err error) error {
+	doc := newDocument("")
+	return agentcli.Report(r.stdout, &doc, agentcli.VerdictAvailable, agentcli.FlagError(releasewait.Command, err))
+}
+
 func (r *runner) run(ctx context.Context, args []string) error {
 	if ctx == nil {
 		ctx = context.Background()
@@ -47,16 +54,19 @@ func (r *runner) run(ctx context.Context, args []string) error {
 	if len(args) > 0 {
 		repository = args[0]
 	}
-	doc := releasewait.Document{Envelope: agentcli.NewEnvelope(releasewait.Command, time.Now()), Result: releasewait.NewResult(repository)}
+	doc := newDocument(repository)
 	err := r.wait(ctx, args, &doc)
-	doc.Finish(time.Now(), agentcli.VerdictAvailable, err)
-	if err := agentcli.Emit(r.stdout, doc); err != nil {
-		return err
-	}
-	return doc.Err()
+	return agentcli.Report(r.stdout, &doc, agentcli.VerdictAvailable, err)
+}
+
+func newDocument(repository string) releasewait.Document {
+	return releasewait.Document{Envelope: agentcli.NewEnvelope(releasewait.Command, time.Now()), Result: releasewait.NewResult(repository)}
 }
 
 func (r *runner) wait(ctx context.Context, args []string, doc *releasewait.Document) error {
+	if len(args) == 0 || len(args) > 2 {
+		return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "usage: devctl %s <owner/repo> [<vX.Y.Z|X.Y.Z>] [--pr <number>], got %d argument(s)", releasewait.Command, len(args))
+	}
 	owner, repo, ok := strings.Cut(args[0], "/")
 	if !ok || owner == "" || repo == "" || strings.Contains(repo, "/") {
 		return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "%q is not a repository: expected owner/repo", args[0])

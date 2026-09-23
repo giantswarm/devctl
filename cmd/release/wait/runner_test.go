@@ -44,6 +44,8 @@ func TestRunUsageErrorsAreDocuments(t *testing.T) {
 		flag   flag
 		reason string
 	}{
+		{name: "no arguments", args: nil, reason: "usage: devctl release wait <owner/repo>"},
+		{name: "too many arguments", args: []string{"giantswarm/devctl", "v1.2.3", "v1.2.4"}, reason: "got 3 argument(s)"},
 		{name: "no slash", args: []string{"devctl", "v1.2.3"}, reason: "expected owner/repo"},
 		{name: "neither version nor pr", args: []string{"giantswarm/devctl"}, reason: "exactly one of a version"},
 		{name: "both version and pr", args: []string{"giantswarm/devctl", "v1.2.3"}, flag: flag{PR: 7}, reason: "exactly one of a version"},

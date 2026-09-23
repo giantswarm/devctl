@@ -41,7 +41,7 @@ func newRunner(t *testing.T, records map[string]authstore.Record) (*runner, *byt
 
 func TestStatusWithoutTokensIsExit8(t *testing.T) {
 	r, stdout, _ := newRunner(t, nil)
-	err := r.run()
+	err := r.run(nil)
 	var exitErr *agentcli.ExitError
 	if !errors.As(err, &exitErr) || exitErr.Code != agentcli.ExitAuthRequired {
 		t.Fatalf("err = %#v", err)
@@ -68,7 +68,7 @@ func TestStatusWithTokensIsGreenAndSilent(t *testing.T) {
 			RefreshToken: "ghr_secret", RefreshExpiresAt: now.Add(100 * 24 * time.Hour)},
 		authstore.UserCircleCI: {Login: "octocat", Token: "ccipat_secret", ExpiresAt: now.Add(5 * 24 * time.Hour), ClientID: "client-1"},
 	})
-	if err := r.run(); err != nil {
+	if err := r.run(nil); err != nil {
 		t.Fatalf("err = %v", err)
 	}
 	out := stdout.String()
@@ -99,7 +99,7 @@ func TestStatusWithTokensIsGreenAndSilent(t *testing.T) {
 
 	r.flag.Progress = true
 	stdout.Reset()
-	if err := r.run(); err != nil {
+	if err := r.run(nil); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(stderr.String(), "reading the keychain") {

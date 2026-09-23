@@ -133,6 +133,7 @@ func New(config Config) (*cobra.Command, error) {
 		Args: cobra.ArbitraryArgs,
 		RunE: r.Run,
 	}
+	c.SetFlagErrorFunc(r.FlagError)
 
 	f.Init(c)
 

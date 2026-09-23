@@ -1,8 +1,6 @@
 package main
 
 import (
-	"context"
-	"errors"
 	"fmt"
 	"os"
 
@@ -11,52 +9,28 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/v8/cmd"
-	"github.com/giantswarm/devctl/v8/pkg/agentcli"
 )
 
 func main() {
-	err := mainE(context.Background())
+	rootCommand, err := newRootCommand()
 	if err != nil {
-		// An agent-facing command has written its JSON document already; its
-		// outcome is the exit code and nothing more is printed.
-		var exitErr *agentcli.ExitError
-		if errors.As(err, &exitErr) {
-			os.Exit(exitErr.Code)
-		}
 		fmt.Fprintf(os.Stderr, "Error: %s\n", microerror.Pretty(err, true))
 		os.Exit(2)
 	}
+
+	os.Exit(cmd.Execute(rootCommand, os.Stderr))
 }
 
-func mainE(ctx context.Context) error {
-	var err error
-
-	var logger micrologger.Logger
-	{
-		c := micrologger.Config{}
-
-		logger, err = micrologger.New(c)
-		if err != nil {
-			return microerror.Mask(err)
-		}
-	}
-
-	var rootCommand *cobra.Command
-	{
-		c := cmd.Config{
-			Logger: logger,
-		}
-
-		rootCommand, err = cmd.New(c)
-		if err != nil {
-			return microerror.Mask(err)
-		}
-	}
-
-	err = rootCommand.Execute()
+func newRootCommand() (*cobra.Command, error) {
+	logger, err := micrologger.New(micrologger.Config{})
 	if err != nil {
-		return microerror.Mask(err)
+		return nil, microerror.Mask(err)
 	}
 
-	return nil
+	rootCommand, err := cmd.New(cmd.Config{Logger: logger})
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
+
+	return rootCommand, nil
 }

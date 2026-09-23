@@ -62,11 +62,11 @@ func (f *flag) Validate() error {
 	}
 	for _, kind := range slices.Sorted(maps.Keys(names)) {
 		if err := validate.Name(kind, names[kind]); err != nil {
-			return microerror.Maskf(invalidConfigError, "%s", err)
+			return microerror.Maskf(invalidFlagError, "%s", err)
 		}
 	}
 	if err := validate.Version("--app-version", f.AppVersion); err != nil {
-		return microerror.Maskf(invalidConfigError, "%s", err)
+		return microerror.Maskf(invalidFlagError, "%s", err)
 	}
 
 	return nil

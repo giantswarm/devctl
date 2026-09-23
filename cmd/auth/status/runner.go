@@ -1,6 +1,7 @@
 package status
 
 import (
+	"fmt"
 	"io"
 	"time"
 
@@ -27,20 +28,30 @@ type document struct {
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
-	return r.run()
+	return r.run(args)
 }
 
-func (r *runner) run() error {
-	doc := document{Envelope: agentcli.NewEnvelope(command, time.Now()), Status: authstore.NewStatus()}
-	err := r.status(&doc)
-	doc.Finish(time.Now(), agentcli.VerdictGreen, err)
-	if err := agentcli.Emit(r.stdout, doc); err != nil {
-		return err
+// FlagError reports a flag cobra could not parse like any other wrong call:
+// the document, exit 7.
+func (r *runner) FlagError(_ *cobra.Command, err error) error {
+	doc := newDocument()
+	return agentcli.Report(r.stdout, &doc, agentcli.VerdictGreen, agentcli.FlagError(command, err))
+}
+
+func (r *runner) run(args []string) error {
+	doc := newDocument()
+	err := r.status(args, &doc)
+	return agentcli.Report(r.stdout, &doc, agentcli.VerdictGreen, err)
+}
+
+func newDocument() document {
+	return document{Envelope: agentcli.NewEnvelope(command, time.Now()), Status: authstore.NewStatus()}
+}
+
+func (r *runner) status(args []string, doc *document) error {
+	if len(args) > 0 {
+		return fmt.Errorf("usage: devctl %s [flags], got %d argument(s)", command, len(args))
 	}
-	return doc.Err()
-}
-
-func (r *runner) status(doc *document) error {
 	auth, err := r.open(r.stderr)
 	if err != nil {
 		return err
