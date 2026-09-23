@@ -3,9 +3,10 @@
 //
 // A merge is refused before the first poll for a pull request no wait can
 // turn green (draft, closed, conflicting, behind a strict base; exit 3), for
-// a pull request another human opened (exit 5: bots, GitHub Apps and the
-// caller are fine) and in a repository whose team-file entry opts out of
-// agent merges (exit 5, naming the field). Green lands through the merge
+// a pull request another human opened (exit 5: bots, GitHub Apps, Giant
+// Swarm's automation accounts and the caller are fine) and in a repository
+// whose team-file entry opts out of agent merges (exit 5, naming the
+// field). Green lands through the merge
 // API as a squash or a rebase with the judged head as the expected head,
 // then the branch goes through the refs API. A base with a merge queue is
 // enqueued instead and the pull request waited for. No protection setting,
@@ -264,12 +265,33 @@ func (m *Merger) refuse(ctx context.Context, owner, repo string, pr *github.Pull
 	return caller, verdict.Team, nil
 }
 
+// automationAccounts are Giant Swarm's automation accounts that GitHub
+// carries as plain users: they hold no [bot] login and no Bot user type, so
+// nothing in the author tells them from a teammate. taylorbot opens the
+// release pull request of every repository on devctl-generated CI (the
+// zz_generated.create_release_pr.yaml workflow) and architectbot the
+// architect line's, so without them no agent could finish a release.
+//
+// Each is pinned by its numeric account id as well as its login, because an
+// id is GitHub's stable identity and a login is not: a login that is ever
+// renamed or released and taken by someone else no longer matches, and that
+// account's pull request is refused like any other person's.
+var automationAccounts = map[string]int64{
+	"taylorbot":    25685558,
+	"architectbot": 61872893,
+}
+
 // authorAllowed: the author is a bot or a GitHub App (type Bot or a [bot]
-// login) or the caller. Another human's pull request is refused.
+// login), one of Giant Swarm's automation accounts, or the caller. Another
+// human's pull request is refused.
 func authorAllowed(pr *github.PullRequest, caller string) bool {
 	user := pr.GetUser()
 	login := user.GetLogin()
-	return user.GetType() == "Bot" || strings.HasSuffix(login, "[bot]") || strings.EqualFold(login, caller)
+	if user.GetType() == "Bot" || strings.HasSuffix(login, "[bot]") || strings.EqualFold(login, caller) {
+		return true
+	}
+	id, known := automationAccounts[strings.ToLower(login)]
+	return known && id == user.GetID()
 }
 
 // update asks GitHub to merge the base into the head and reads the pull
