@@ -150,6 +150,12 @@ func (w *Waiter) Wait(ctx context.Context, owner, repo string, number int) (*Res
 			if ctx.Err() != nil && errors.Is(err, ctx.Err()) {
 				return result, w.timedOut(result, last)
 			}
+			// A rate limit resetting after the deadline is a timeout ahead
+			// of it: the document names what was unfinished all the same.
+			var limited *agentcli.RateLimitedError
+			if errors.As(err, &limited) {
+				result.Unfinished = unfinished(last)
+			}
 			return result, err
 		}
 		last = e
@@ -176,13 +182,21 @@ func (w *Waiter) Wait(ctx context.Context, owner, repo string, number int) (*Res
 // unfinished, a required context still absent among it. A head settled with
 // an absent context never reaches the deadline; neverReported ends it first.
 func (w *Waiter) timedOut(result *Result, last *evaluation) error {
+	result.Unfinished = unfinished(last)
 	if last == nil {
-		result.Unfinished = []string{"no complete poll before the deadline"}
 		return agentcli.NewExitError(agentcli.ExitTimeout, agentcli.VerdictTimeout, "timeout after %s before the first poll completed", w.timeout)
 	}
-	result.Unfinished = last.unfinished
 	return agentcli.NewExitError(agentcli.ExitTimeout, agentcli.VerdictTimeout,
 		"timeout after %s; unfinished: %s", w.timeout, strings.Join(last.unfinished, ", "))
+}
+
+// unfinished is what the last complete poll was waiting for, or that none
+// completed.
+func unfinished(last *evaluation) []string {
+	if last == nil {
+		return []string{"no complete poll before the deadline"}
+	}
+	return last.unfinished
 }
 
 // neverReported is the verdict of a settled head with a required context

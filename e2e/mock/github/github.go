@@ -9,9 +9,12 @@ package github
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/giantswarm/devctl/v8/e2e/mock/sequence"
@@ -58,6 +61,11 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		_ = sequence.Write(w, r, resp)
 		return
 	}
+	resp, err := relativeReset(resp)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	fixture := resp.Header()
 	h := w.Header()
 	for key, value := range rateLimitDefaults() {
@@ -89,6 +97,25 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 func ETag(body []byte) string {
 	sum := sha256.Sum256(body)
 	return `"` + hex.EncodeToString(sum[:16]) + `"`
+}
+
+// relativeReset turns an X-RateLimit-Reset of the form "+3s" into the Unix
+// time that far from now, so a fixture scripts a budget that resets a few
+// seconds into the run.
+func relativeReset(resp sequence.Response) (sequence.Response, error) {
+	for key, value := range resp.Headers {
+		if !strings.EqualFold(key, "X-RateLimit-Reset") || !strings.HasPrefix(value, "+") {
+			continue
+		}
+		d, err := time.ParseDuration(value[1:])
+		if err != nil {
+			return resp, fmt.Errorf("%s %q: %w", key, value, err)
+		}
+		headers := maps.Clone(resp.Headers)
+		headers[key] = strconv.FormatInt(time.Now().Add(d).Unix(), 10)
+		resp.Headers = headers
+	}
+	return resp, nil
 }
 
 // rateLimitDefaults are the headers of a request well inside the budget; a

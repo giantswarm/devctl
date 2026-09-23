@@ -1,0 +1,21 @@
+{
+  "exitCode": 2,
+  "stdoutContains": ["/repos/giantswarm/devctl/pulls/42\\\": 403 Forbidden: the core rate limit (5000) is spent until 20", ", after the wait's deadline at 20", "; run the wait again after the reset"],
+  "json": {
+    "command": "pr wait",
+    "schemaVersion": 1,
+    "exitCode": 2,
+    "verdict": "timeout",
+    "reason": "*",
+    "warnings": [],
+    "startedAt": "*",
+    "finishedAt": "*",
+    "repository": "giantswarm/devctl",
+    "number": 42,
+    "headSha": "",
+    "baseRef": "",
+    "checks": [],
+    "actions": [],
+    "unfinished": ["no complete poll before the deadline"]
+  }
+}

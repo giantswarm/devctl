@@ -95,6 +95,23 @@ and the last failure (`Get "https://api.github.com/repos/giantswarm/devctl/pulls
 a row: 500 Internal Server Error`). A 4xx is an answer and is never retried, nor is a certificate the
 client refuses or a host that does not exist; only reads (GET, HEAD) are retried.
 
+A spent budget is not an outcome either. The GitHub budget belongs to the person, so other tools and
+waits of the same person can spend it while a wait runs; a read GitHub refuses with `403` or `429` and
+`X-RateLimit-Remaining: 0` is sent again a second after its `X-RateLimit-Reset`, one answered with
+`Retry-After` (GitHub's secondary limit, CircleCI's `429`) that much later, a secondary limit that names
+no time after a minute, and a `429` without either on the backoff. The warning names the limit and the
+time it resets:
+
+```
+2026-09-23T16:48:03Z GET https://api.github.com/repos/giantswarm/devctl/pulls/2360: 403 Forbidden: the core rate limit (5000) is spent until 2026-09-23T17:50:00Z; retried in 1h1m58s (try 2 of 8)
+```
+
+An answer that spends the last request does not stop the reads after it: the client sends them and
+GitHub's answer decides. A reset after the wait's deadline ends the wait at once with exit 2, the reason
+naming the reset and the deadline (`… 403 Forbidden: the core rate limit (5000) is spent until
+2026-09-23T17:50:00Z, after the wait's deadline at 2026-09-23T17:20:00Z; run the wait again after the
+reset`). Any other `403` is an answer: a permission the token lacks.
+
 ## The document
 
 ```json
@@ -143,7 +160,7 @@ client refuses or a host that does not exist; only reads (GET, HEAD) are retried
 |---|---|---|
 | 0 | `green` | Every rule above holds. |
 | 1 | `red` | Something failed; `reason` names every failed check, status, run and workflow. |
-| 2 | `timeout` | The timeout passed before an outcome; `unfinished` names what was still open, a required context still absent among it. |
+| 2 | `timeout` | The timeout passed before an outcome, or a spent rate limit resets only after it; `unfinished` names what was still open, a required context still absent among it. |
 | 3 | `not_applicable` | Draft, closed, merged, conflicting or behind a strict base; `reason` says which. |
 | 4 | `required_missing` | Every check, run and workflow of the head has finished and a required status context never reported; `reason` names it. Known at the poll that saw it, before the timeout; with anything still pending the outcome is 2, not 4. |
 | 7 | `usage` | Wrong arguments or flags, a newer devctl released (the reason names `devctl version update`), or a tooling failure: GitHub or CircleCI answered with an error other than a 5xx, or a read failed eight tries in a row (Polling). |
