@@ -169,9 +169,23 @@ func (u *Updater) InstallLatest() error {
 
 // GetLatest returns the latest version available in the
 // source repository, and if we can upgrade to that version
-// or not (it can be equal to the current version).
+// or not (it can be equal to the current version). A cache younger than an
+// hour answers instead of the source: the check that runs before every
+// command.
 func (u *Updater) GetLatest() (version string, err error) {
-	latestVersion, err := u.getLatestVersion()
+	return u.latest(true)
+}
+
+// GetLatestFromSource is GetLatest asking the source whatever the cache
+// says, and refreshing the cache with the answer: an explicit `version
+// update` or `version check` right after a release finds it, where the
+// cache written before the release would deny it for up to an hour.
+func (u *Updater) GetLatestFromSource() (version string, err error) {
+	return u.latest(false)
+}
+
+func (u *Updater) latest(readCache bool) (version string, err error) {
+	latestVersion, err := u.getLatestVersion(readCache)
 	if err != nil {
 		return "", microerror.Mask(err)
 	}
@@ -185,10 +199,10 @@ func (u *Updater) GetLatest() (version string, err error) {
 	return latestVersion.String(), err
 }
 
-func (u *Updater) getLatestVersion() (semver.Version, error) {
+func (u *Updater) getLatestVersion(readCache bool) (semver.Version, error) {
 	allowCache := len(u.cacheDir) > 0
 
-	if allowCache && !u.cache.IsExpired() {
+	if allowCache && readCache && !u.cache.IsExpired() {
 		version, err := semver.Parse(u.cache.LatestVersion)
 		// If this not a valid semver version, then it means
 		// that the someone fiddled with the cache file. We'll

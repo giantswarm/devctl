@@ -13,7 +13,7 @@ type flag struct {
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
-	cmd.Flags().BoolVar(&f.NoCache, flagNoCache, false, "Disable version cache.")
+	cmd.Flags().BoolVar(&f.NoCache, flagNoCache, false, "Do not refresh the version cache with the answer; the latest version is asked for either way")
 }
 
 func (f *flag) Validate() error {
