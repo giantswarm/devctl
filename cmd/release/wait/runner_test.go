@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -21,7 +22,7 @@ func runCommand(t *testing.T, args []string, f *flag, openErr error) (map[string
 		flag:   f,
 		stdout: &stdout,
 		stderr: &stderr,
-		open: func(context.Context, agentcli.Endpoints, func(string)) (*clients, error) {
+		open: func(context.Context, agentcli.Endpoints, http.RoundTripper, func(string)) (*clients, error) {
 			return nil, openErr
 		},
 	}

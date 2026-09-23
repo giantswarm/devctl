@@ -3,6 +3,7 @@ package wait
 import (
 	"context"
 	"io"
+	"net/http"
 	"strings"
 	"time"
 
@@ -31,7 +32,7 @@ type runner struct {
 	stdout io.Writer
 	stderr io.Writer
 	// open is openClients; tests inject clients over mocks.
-	open func(ctx context.Context, endpoints agentcli.Endpoints, warn func(string)) (*clients, error)
+	open func(ctx context.Context, endpoints agentcli.Endpoints, transport http.RoundTripper, warn func(string)) (*clients, error)
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
@@ -80,8 +81,11 @@ func (r *runner) wait(ctx context.Context, args []string, doc *releasewait.Docum
 	endpoints := agentcli.EndpointsFromEnv()
 	progress := agentcli.NewProgress(r.stderr, r.flag.Progress)
 
+	// A read that fails in transit or with a 5xx is sent again, not taken
+	// as the wait's outcome.
+	retrying := &agentcli.Retrying{Clock: clock, Progress: progress, Warn: doc.Warn}
 	progress.Printf("reading the GitHub token from the keychain")
-	c, err := r.open(ctx, endpoints, doc.Warn)
+	c, err := r.open(ctx, endpoints, retrying, doc.Warn)
 	if err != nil {
 		return err
 	}
@@ -113,15 +117,16 @@ func (r *runner) wait(ctx context.Context, args []string, doc *releasewait.Docum
 // openClients is the production wiring: the GitHub token through the gate,
 // conditional requests below it, the team files of the organisation, the
 // CircleCI token through its gate when the tag turns out to carry a
-// CircleCI configuration, the registries and the catalog index.
-func openClients(ctx context.Context, endpoints agentcli.Endpoints, warn func(string)) (*clients, error) {
+// CircleCI configuration, the registries and the catalog index. The GitHub
+// and CircleCI requests go through transport.
+func openClients(ctx context.Context, endpoints agentcli.Endpoints, transport http.RoundTripper, warn func(string)) (*clients, error) {
 	token, err := authstore.RequireGitHub(ctx)
 	if err != nil {
 		return nil, err
 	}
 	logger := logrus.New()
 	logger.SetOutput(io.Discard)
-	gh, conditional, err := githubclient.NewConditional(githubclient.Config{Logger: logger, AccessToken: token.Value, BaseURL: endpoints.GitHubAPIURL})
+	gh, conditional, err := githubclient.NewConditional(githubclient.Config{Logger: logger, AccessToken: token.Value, BaseURL: endpoints.GitHubAPIURL, Transport: transport})
 	if err != nil {
 		return nil, err
 	}
@@ -134,7 +139,7 @@ func openClients(ctx context.Context, endpoints agentcli.Endpoints, warn func(st
 				return nil, err
 			}
 			warn(token.Warning)
-			client, err := circleciclient.New(circleciclient.Config{Token: token.Value, BaseURL: circleciclient.BaseURLFromAPIURL(endpoints.CircleCIAPIURL)})
+			client, err := circleciclient.New(circleciclient.Config{Token: token.Value, BaseURL: circleciclient.BaseURLFromAPIURL(endpoints.CircleCIAPIURL), HTTPClient: &http.Client{Transport: transport}})
 			if err != nil {
 				return nil, err
 			}

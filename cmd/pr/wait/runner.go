@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -80,10 +81,15 @@ func (r *runner) wait(ctx context.Context, args []string, doc *document) error {
 	endpoints := r.endpoints()
 	logger := logrus.New()
 	logger.SetOutput(io.Discard)
+	progress := agentcli.NewProgress(r.stderr, r.flag.Progress)
+	// A read that fails in transit or with a 5xx is sent again, not taken
+	// as the wait's outcome.
+	retrying := &agentcli.Retrying{Clock: clock, Progress: progress, Warn: doc.Warn}
 	github, conditional, err := githubclient.NewConditional(githubclient.Config{
 		Logger:      logger,
 		AccessToken: token.Value,
 		BaseURL:     endpoints.GitHubAPIURL,
+		Transport:   retrying,
 	})
 	if err != nil {
 		return err
@@ -99,13 +105,14 @@ func (r *runner) wait(ctx context.Context, args []string, doc *document) error {
 			}
 			doc.Warn(token.Warning)
 			return circleciclient.New(circleciclient.Config{
-				Token:   token.Value,
-				BaseURL: strings.TrimSuffix(endpoints.CircleCIAPIURL, "/api/v2"),
-				Logger:  logger,
+				Token:      token.Value,
+				BaseURL:    strings.TrimSuffix(endpoints.CircleCIAPIURL, "/api/v2"),
+				HTTPClient: &http.Client{Transport: retrying},
+				Logger:     logger,
 			})
 		},
 		Clock:    clock,
-		Progress: agentcli.NewProgress(r.stderr, r.flag.Progress),
+		Progress: progress,
 		Timeout:  r.flag.Timeout,
 	})
 	if err != nil {

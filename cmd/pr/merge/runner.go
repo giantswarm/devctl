@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -95,10 +96,15 @@ func (r *runner) merge(ctx context.Context, args []string, doc *document) error 
 	endpoints := r.endpoints()
 	logger := logrus.New()
 	logger.SetOutput(io.Discard)
+	progress := agentcli.NewProgress(r.stderr, r.flag.Progress)
+	// A read that fails in transit or with a 5xx is sent again, not taken
+	// as the outcome of either wait; the merge itself is never repeated.
+	retrying := &agentcli.Retrying{Clock: clock, Progress: progress, Warn: doc.Warn}
 	github, conditional, err := githubclient.NewConditional(githubclient.Config{
 		Logger:      logger,
 		AccessToken: token.Value,
 		BaseURL:     endpoints.GitHubAPIURL,
+		Transport:   retrying,
 	})
 	if err != nil {
 		return err
@@ -117,13 +123,13 @@ func (r *runner) merge(ctx context.Context, args []string, doc *document) error 
 		}
 		doc.Warn(token.Warning)
 		circleci, err = circleciclient.New(circleciclient.Config{
-			Token:   token.Value,
-			BaseURL: circleciclient.BaseURLFromAPIURL(endpoints.CircleCIAPIURL),
-			Logger:  logger,
+			Token:      token.Value,
+			BaseURL:    circleciclient.BaseURLFromAPIURL(endpoints.CircleCIAPIURL),
+			HTTPClient: &http.Client{Transport: retrying},
+			Logger:     logger,
 		})
 		return circleci, err
 	}
-	progress := agentcli.NewProgress(r.stderr, r.flag.Progress)
 
 	var release prmerge.ReleaseWait
 	if !r.flag.NoReleaseWait {

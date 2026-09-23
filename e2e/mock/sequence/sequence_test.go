@@ -139,3 +139,17 @@ func TestRequestString(t *testing.T) {
 	assert.Equal(t, "GET /a?a=2&b=1", requests[0].String())
 	assert.Equal(t, "POST /c", requests[1].String())
 }
+
+func TestWriteResetsTheConnection(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = Write(w, r, Response{Reset: true, Body: "never sent"})
+	}))
+	defer server.Close()
+
+	// A fresh transport: net/http replays a GET whose reused connection
+	// was reset, a fresh connection it does not.
+	client := &http.Client{Transport: &http.Transport{}}
+	_, err := client.Get(server.URL + "/a")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "connection reset by peer")
+}

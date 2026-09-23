@@ -1,0 +1,73 @@
+# The merge's wait inherits the retries: GitHub answers 502 on the first
+# read of the pull request, the read is sent again, the head is green and the
+# pull request is squash-merged. The merge itself is a write and never
+# repeated.
+description: a 502 on the pull request read inside pr merge's wait is retried; the pull request is merged
+args: [pr, merge, giantswarm/devctl, "42", --timeout, 30m]
+keyring:
+  github:
+    login: e2e-engineer
+    token: ghu_e2e_live
+    expiresAt: "2099-01-01T00:00:00Z"
+    refreshToken: ghr_e2e_live
+    refreshExpiresAt: "2099-01-01T00:00:00Z"
+  circleci:
+    login: e2e-engineer
+    token: CCIPAT_e2e_live
+    expiresAt: "2099-01-01T00:00:00Z"
+github:
+  routes:
+    "GET /repos/giantswarm/devctl/pulls/42":
+      - status: 502
+      - body:
+          number: 42
+          node_id: PR_e2e_42
+          title: "feat: the change"
+          state: open
+          draft: false
+          merged: false
+          mergeable: true
+          mergeable_state: clean
+          user: {login: e2e-engineer, type: User}
+          head: {sha: abc123, ref: feature, repo: {full_name: giantswarm/devctl}}
+          base: {ref: main, repo: {full_name: giantswarm/devctl}}
+    "GET /repos/giantswarm/github/contents/repositories":
+      - body:
+          - {type: file, name: team-e2e.yaml, path: repositories/team-e2e.yaml, sha: t1}
+    "GET /repos/giantswarm/github/contents/repositories/team-e2e.yaml":
+      - body: {type: file, name: team-e2e.yaml, path: repositories/team-e2e.yaml, sha: t2, encoding: base64, content: "LSBuYW1lOiBkZXZjdGwKICBjb21wb25lbnRUeXBlOiBjbGkKICBnZW46CiAgICBmbGF2b3VyczoKICAgICAgLSBjbGkKICAgIGxhbmd1YWdlOiBnbwo="}
+    "GET /repos/giantswarm/devctl/contents/.circleci/config.yml":
+      - body: {type: file, name: config.yml, path: .circleci/config.yml, sha: c0ffee, encoding: base64, content: ""}
+    "GET /repos/giantswarm/devctl/commits/abc123/check-runs":
+      - body:
+          total_count: 1
+          check_runs:
+            - {id: 101, name: go-test, status: completed, conclusion: success, started_at: "2026-09-21T10:00:00Z", html_url: "https://github.com/giantswarm/devctl/runs/101"}
+    "GET /repos/giantswarm/devctl/commits/abc123/status":
+      - body:
+          state: success
+          total_count: 1
+          statuses:
+            - {context: "ci/circleci: build", state: success, target_url: "https://circleci.com/gh/giantswarm/devctl/9001", updated_at: "2026-09-21T10:01:00Z"}
+    "GET /repos/giantswarm/devctl/actions/runs?head_sha=abc123":
+      - body:
+          total_count: 1
+          workflow_runs:
+            - {id: 7001, name: CI, status: completed, conclusion: success, html_url: "https://github.com/giantswarm/devctl/actions/runs/7001"}
+    "PUT /repos/giantswarm/devctl/pulls/42/merge":
+      - body: {sha: 0f3a9c1d, merged: true, message: "Pull Request successfully merged"}
+    "DELETE /repos/giantswarm/devctl/git/refs/heads/feature":
+      - status: 204
+circleci:
+  routes:
+    "GET /api/v2/project/gh/giantswarm/devctl":
+      - body: {slug: gh/giantswarm/devctl, name: devctl, organization_name: giantswarm}
+    "GET /api/v2/project/gh/giantswarm/devctl/pipeline?branch=feature":
+      - body:
+          items:
+            - {id: p1, number: 12, state: created, created_at: "2026-09-21T10:00:00Z", vcs: {revision: abc123, branch: feature}}
+          next_page_token: ""
+    "GET /api/v2/pipeline/p1/workflow":
+      - body:
+          items:
+            - {id: w1, name: build, status: success, pipeline_number: 12, created_at: "2026-09-21T10:00:00Z"}

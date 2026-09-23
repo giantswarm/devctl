@@ -81,6 +81,20 @@ the rate-limit endpoint): the remaining budget spread over the time to its reset
 at the shortest and 60 s at the longest. `DEVCTL_TIME_SCALE` multiplies every interval and the
 timeout (the e2e suite runs at 0.001).
 
+A read GitHub or CircleCI does not answer is not an outcome: every poll reads the same state again, so
+a reset connection, an EOF, a try that takes longer than 60 s or a 5xx is sent again after 2 s, the
+pause doubling up to 60 s, for up to eight tries in a row (about three minutes of pauses), never past
+the timeout. Each retried failure is a warning with its time:
+
+```
+2026-09-23T10:11:12Z GET https://api.github.com/repos/giantswarm/devctl/pulls/2360: 500 Internal Server Error; retried in 2s (try 2 of 8)
+```
+
+A read that fails all eight tries ends the wait with exit 7, the reason naming the request, the count
+and the last failure (`Get "https://api.github.com/repos/giantswarm/devctl/pulls/2360": failed 8 times in
+a row: 500 Internal Server Error`). A 4xx is an answer and is never retried, nor is a certificate the
+client refuses or a host that does not exist; only reads (GET, HEAD) are retried.
+
 ## The document
 
 ```json
@@ -115,7 +129,7 @@ timeout (the e2e suite runs at 0.001).
 
 | Field | Meaning |
 |---|---|
-| `command`, `schemaVersion`, `exitCode`, `verdict`, `reason`, `warnings`, `startedAt`, `finishedAt` | The envelope every agent-facing command prints. `verdict` is `green`, `red`, `timeout`, `not_applicable`, `required_missing`, `auth_required` or `usage`; `reason` is one sentence for anything but green; `warnings` carries the CircleCI token's expiry notice, a head change, a missing CircleCI project. |
+| `command`, `schemaVersion`, `exitCode`, `verdict`, `reason`, `warnings`, `startedAt`, `finishedAt` | The envelope every agent-facing command prints. `verdict` is `green`, `red`, `timeout`, `not_applicable`, `required_missing`, `auth_required` or `usage`; `reason` is one sentence for anything but green; `warnings` carries the CircleCI token's expiry notice, a head change, a missing CircleCI project, each retried read (Polling). |
 | `repository`, `number` | The pull request as given. |
 | `headSha`, `baseRef` | The head commit judged and the base branch whose protection was read. |
 | `checks[]` | The head's check runs and statuses, the latest per name, sorted by name. `source` is `check_run` or `status`; `status` is `queued`, `in_progress` or `completed` for a check run and `pending` or `completed` for a status; `conclusion` is the check run's conclusion or the status's state, empty while unfinished; `required` says whether the base requires this context. |
@@ -132,7 +146,7 @@ timeout (the e2e suite runs at 0.001).
 | 2 | `timeout` | The timeout passed before an outcome; `unfinished` names what was still open, a required context still absent among it. |
 | 3 | `not_applicable` | Draft, closed, merged, conflicting or behind a strict base; `reason` says which. |
 | 4 | `required_missing` | Every check, run and workflow of the head has finished and a required status context never reported; `reason` names it. Known at the poll that saw it, before the timeout; with anything still pending the outcome is 2, not 4. |
-| 7 | `usage` | Wrong arguments, or a tooling failure (GitHub or CircleCI answered with an error). |
+| 7 | `usage` | Wrong arguments, or a tooling failure: GitHub or CircleCI answered with an error other than a 5xx, or a read failed eight tries in a row (Polling). |
 | 8 | `auth_required` | No usable token; `reason` names the `devctl auth login` to run. |
 
 ## Environment
