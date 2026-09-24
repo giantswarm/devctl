@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `gen workflows`: `--release-candidate-by-default` (`gen.ci.releaseCandidateByDefault`) makes the auto-release
+  workflow cut a release candidate on every push; a stable release is cut only by a manual run with
+  `release-type: stable`.
+
 ### Changed
 
 - `gen circleci`: the generated pipelines pin architect orb 10.11.0, whose chart jobs run app-build-suite 2.5.0. In a

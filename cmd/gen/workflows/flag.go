@@ -22,6 +22,7 @@ const (
 	flagUpstreamSyncAutomation        = "upstream-sync-automation"
 	flagDispatchUpdateChartEventsRepo = "dispatch-update-chart-events-repo"
 	flagReleaseWorkflow               = "release-workflow"
+	flagReleaseCandidateByDefault     = "release-candidate-by-default"
 
 	releaseWorkflowLegacy      = "legacy"
 	releaseWorkflowAutoRelease = "auto-release"
@@ -39,6 +40,7 @@ type flag struct {
 	UpstreamSyncAutomation        bool
 	DispatchUpdateChartEventsRepo string
 	ReleaseWorkflow               string
+	ReleaseCandidateByDefault     bool
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
@@ -53,6 +55,7 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&f.UpstreamSyncAutomation, flagUpstreamSyncAutomation, false, "If true, also generate a workflow to dispatch update events for charts. Only valid for app flavor.")
 	cmd.Flags().StringVar(&f.DispatchUpdateChartEventsRepo, flagDispatchUpdateChartEventsRepo, "", "The repository to dispatch update chart events to. Only valid if --upstream-sync-automation is true.")
 	cmd.Flags().StringVar(&f.ReleaseWorkflow, flagReleaseWorkflow, releaseWorkflowLegacy, fmt.Sprintf("Release workflow to generate. Possible values: %s (default), %s. %s generates the create-release-pr / create-release / validate-changelog trio; %s generates a single push-based zz_generated.auto_release.yaml + cliff.toml that tags + publishes a GitHub Release from conventional commits.", releaseWorkflowLegacy, releaseWorkflowAutoRelease, releaseWorkflowLegacy, releaseWorkflowAutoRelease))
+	cmd.Flags().BoolVar(&f.ReleaseCandidateByDefault, flagReleaseCandidateByDefault, false, fmt.Sprintf("If true, the auto-release workflow cuts a release candidate (vX.Y.Z-rc.N) on every push instead of a stable release, and a stable release is only cut by running the workflow manually with release-type: stable. Only valid with --%s=%s.", flagReleaseWorkflow, releaseWorkflowAutoRelease))
 }
 
 func (f *flag) Validate() error {
@@ -65,6 +68,10 @@ func (f *flag) Validate() error {
 		// valid
 	default:
 		return microerror.Maskf(invalidFlagError, "--%s must be one of: %s, %s", flagReleaseWorkflow, releaseWorkflowLegacy, releaseWorkflowAutoRelease)
+	}
+
+	if f.ReleaseCandidateByDefault && f.ReleaseWorkflow != releaseWorkflowAutoRelease {
+		return microerror.Maskf(invalidFlagError, "--%s requires --%s=%s", flagReleaseCandidateByDefault, flagReleaseWorkflow, releaseWorkflowAutoRelease)
 	}
 
 	return nil

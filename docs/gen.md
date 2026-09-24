@@ -58,6 +58,8 @@ To close a cycle when the last candidate is good and no pull request is left to 
 
 `feat-rc` and `fix-rc` are accepted as PR titles in every repo, because `semantic_pull_request` is generated for both release flows, but they only act under `auto-release`. In a `legacy` repo they are inert.
 
+A repository can make release candidates the default with `--release-candidate-by-default` (`gen.ci.releaseCandidateByDefault` in giantswarm/github). Every releasable push then cuts the next `vX.Y.Z-rc.N` whatever the markers say, the version still following the conventional commits, and a stable release is cut only by running the workflow with `release-type: stable`.
+
 `cliff.toml`'s `[remote.github].repo` is auto-detected from the consuming repo's `origin` git remote URL. Run from a directory whose `git config remote.origin.url` points at `github.com/giantswarm/<repo>`; outside a git repo the value renders as `""` and git-cliff's GitHub API lookups fail at workflow runtime.
 
 ### helm-docs regen workflow

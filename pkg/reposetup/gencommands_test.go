@@ -44,11 +44,12 @@ func TestGenCommandsPassEveryGenCIKey(t *testing.T) {
 
 	// The keys that are no flag of the CircleCI generator.
 	notCircleCIFlags := map[string]bool{
-		"generate":              true, // turns the line on
-		"releaseWorkflow":       true, // a flag of gen workflows
-		"requireCircleCIChecks": true, // the protection step's
-		"atsBranchOnly":         true, // deprecated, the generator ignores it
-		"templateContent":       true, // the reconciler's: no pipeline to generate
+		"generate":                  true, // turns the line on
+		"releaseWorkflow":           true, // a flag of gen workflows
+		"releaseCandidateByDefault": true, // a flag of gen workflows
+		"requireCircleCIChecks":     true, // the protection step's
+		"atsBranchOnly":             true, // deprecated, the generator ignores it
+		"templateContent":           true, // the reconciler's: no pipeline to generate
 	}
 	flagName := regexp.MustCompile(`(?:^|[^a-z0-9-])(--[a-z0-9]+(?:-[a-z0-9]+)*)`)
 

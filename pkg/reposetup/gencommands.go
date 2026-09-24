@@ -106,6 +106,9 @@ func genCommands(f Fields, gc genContext) [][]string {
 		releaseWorkflow = ci.ReleaseWorkflow
 	}
 	workflows = append(workflows, "--release-workflow", releaseWorkflow)
+	if ci != nil && ci.ReleaseCandidateByDefault && releaseWorkflow == releaseWorkflowAutoRelease && knows(genWorkflows, "--release-candidate-by-default") {
+		workflows = append(workflows, "--release-candidate-by-default")
+	}
 	commands = append(commands, line(genWorkflows, workflows...))
 
 	if g.GenerateLlmRules == nil || *g.GenerateLlmRules {

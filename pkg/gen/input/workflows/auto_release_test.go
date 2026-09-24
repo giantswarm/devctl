@@ -32,7 +32,14 @@ type autoReleaseStep struct {
 func tagJobSteps(t *testing.T) ([]autoReleaseStep, string) {
 	t.Helper()
 
-	rendered := renderInput(t, newWorkflows(t, gen.FlavourApp).AutoRelease())
+	return tagJobStepsOf(t, newWorkflows(t, gen.FlavourApp))
+}
+
+// tagJobStepsOf is tagJobSteps for the workflow w renders.
+func tagJobStepsOf(t *testing.T, w *Workflows) ([]autoReleaseStep, string) {
+	t.Helper()
+
+	rendered := renderInput(t, w.AutoRelease())
 
 	var wf struct {
 		Jobs map[string]struct {
@@ -448,6 +455,141 @@ func Test_AutoReleaseDecide(t *testing.T) {
 				t.Errorf("prerelease = %q, want %q", got["prerelease"], tc.expectPrerelse)
 			}
 		})
+	}
+}
+
+// Test_AutoReleaseDecideCandidateByDefault pins the release-candidate-by-default
+// rule: every releasable push cuts the next rc.N whatever the markers say, and
+// only release-type: stable cuts a stable release.
+func Test_AutoReleaseDecideCandidateByDefault(t *testing.T) {
+	w, err := New(Config{Flavours: gen.FlavourSlice{gen.FlavourApp}, ReleaseCandidateByDefault: true})
+	if err != nil {
+		t.Fatalf("New() returned unexpected error: %v", err)
+	}
+	steps, rendered := tagJobStepsOf(t, w)
+	var script string
+	for _, s := range steps {
+		if s.ID == "decide" {
+			script = s.Run
+		}
+	}
+	if script == "" {
+		t.Fatalf("no decide step in the tag job:\n%s", rendered)
+	}
+
+	testCases := []struct {
+		name           string
+		history        []string
+		next           string
+		want           string
+		expectTag      string
+		expectPrerelse string
+	}{
+		{
+			name:           "an unmarked feat opens a cycle",
+			history:        []string{"v1.2.9", "feat: add x"},
+			next:           "v1.3.0",
+			expectTag:      "v1.3.0-rc.1",
+			expectPrerelse: "true",
+		},
+		{
+			name:           "an unmarked fix during a cycle cuts the next candidate",
+			history:        []string{"v1.2.9", "feat: add x", "v1.3.0-rc.1", "fix: last thing"},
+			next:           "v1.3.0",
+			expectTag:      "v1.3.0-rc.2",
+			expectPrerelse: "true",
+		},
+		{
+			name:           "an unmarked breaking change moves the target and restarts at rc.1",
+			history:        []string{"v1.2.9", "feat: add x", "v1.3.0-rc.1", "refactor!: drop y"},
+			next:           "v2.0.0",
+			expectTag:      "v2.0.0-rc.1",
+			expectPrerelse: "true",
+		},
+		{
+			name:      "a docs-only push during a cycle releases nothing",
+			history:   []string{"v1.2.9", "fix: x", "v1.2.10-rc.1", "docs: fix typo"},
+			next:      "v1.2.10",
+			expectTag: "",
+		},
+		{
+			name:      "nothing releasable since the last stable release",
+			history:   []string{"v1.3.0", "docs: fix typo"},
+			next:      "v1.3.0",
+			expectTag: "",
+		},
+		{
+			name:           "workflow_dispatch stable promotes the cycle",
+			history:        []string{"v1.2.9", "feat: add x", "v1.3.0-rc.2"},
+			next:           "v1.3.0",
+			want:           "stable",
+			expectTag:      "v1.3.0",
+			expectPrerelse: "false",
+		},
+		{
+			name:           "workflow_dispatch stable without a candidate still releases",
+			history:        []string{"v1.2.9", "fix: x"},
+			next:           "v1.2.10",
+			want:           "stable",
+			expectTag:      "v1.2.10",
+			expectPrerelse: "false",
+		},
+		{
+			name:           "after a stable release the next fix opens a new cycle",
+			history:        []string{"v1.2.9", "feat: add x", "v1.3.0-rc.1", "v1.3.0", "fix: y"},
+			next:           "v1.3.1",
+			expectTag:      "v1.3.1-rc.1",
+			expectPrerelse: "true",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			want := tc.want
+			if want == "" {
+				want = "auto"
+			}
+
+			got := decide(t, script, repo(t, tc.history...), tc.next, want)
+
+			if got["tag"] != tc.expectTag {
+				t.Errorf("tag = %q, want %q", got["tag"], tc.expectTag)
+			}
+			if got["prerelease"] != tc.expectPrerelse {
+				t.Errorf("prerelease = %q, want %q", got["prerelease"], tc.expectPrerelse)
+			}
+		})
+	}
+}
+
+// Test_AutoReleaseCandidateByDefaultOffIsUnchanged pins that the option adds
+// nothing to the workflow of a repository that does not set it.
+func Test_AutoReleaseCandidateByDefaultOffIsUnchanged(t *testing.T) {
+	rendered := renderInput(t, newWorkflows(t, gen.FlavourApp).AutoRelease())
+
+	for _, marker := range []string{"releaseCandidateByDefault", "releases candidates by default"} {
+		if strings.Contains(rendered, marker) {
+			t.Errorf("workflow without the option contains %q:\n%s", marker, rendered)
+		}
+	}
+}
+
+// Test_AutoReleaseCandidateByDefaultRendersValidYAML pins that the option's
+// template branches keep the workflow parseable and put the override in the
+// decide step.
+func Test_AutoReleaseCandidateByDefaultRendersValidYAML(t *testing.T) {
+	w, err := New(Config{Flavours: gen.FlavourSlice{gen.FlavourApp}, ReleaseCandidateByDefault: true})
+	if err != nil {
+		t.Fatalf("New() returned unexpected error: %v", err)
+	}
+	rendered := renderInput(t, w.AutoRelease())
+
+	var wf map[string]any
+	if err := yaml.Unmarshal([]byte(rendered), &wf); err != nil {
+		t.Fatalf("rendered workflow is not valid YAML: %v\n%s", err, rendered)
+	}
+	if !strings.Contains(rendered, "releases candidates by default") {
+		t.Errorf("workflow_dispatch comment missing:\n%s", rendered)
 	}
 }
 

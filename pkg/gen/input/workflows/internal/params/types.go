@@ -8,4 +8,9 @@ type Params struct {
 	Dir string
 
 	Flavours gen.FlavourSlice
+
+	// ReleaseCandidateByDefault makes the auto-release workflow cut a release
+	// candidate on every push; a stable release is cut by running it with
+	// release-type: stable.
+	ReleaseCandidateByDefault bool
 }

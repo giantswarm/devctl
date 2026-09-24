@@ -202,15 +202,19 @@ type CIFields struct {
 	// pipeline: CircleCI has nothing to build here. The reconciler's circleci
 	// and release steps skip the repository. It sits beside Generate false;
 	// Generate true beside it is refused.
-	TemplateContent         bool   `yaml:"templateContent"`
-	ReleaseWorkflow         string `yaml:"releaseWorkflow"`
-	AppCatalog              string `yaml:"appCatalog"`
-	AppCatalogTest          string `yaml:"appCatalogTest"`
-	ChartName               string `yaml:"chartName"`
-	ChartReleaseGateJob     string `yaml:"chartReleaseGateJob"`
-	OverrideChartAppVersion *bool  `yaml:"overrideChartAppVersion"`
-	ForcePublic             bool   `yaml:"forcePublic"`
-	Image                   *struct {
+	TemplateContent bool   `yaml:"templateContent"`
+	ReleaseWorkflow string `yaml:"releaseWorkflow"`
+	// ReleaseCandidateByDefault makes the auto-release workflow cut a
+	// release candidate on every push, leaving the stable release to a
+	// manual run.
+	ReleaseCandidateByDefault bool   `yaml:"releaseCandidateByDefault"`
+	AppCatalog                string `yaml:"appCatalog"`
+	AppCatalogTest            string `yaml:"appCatalogTest"`
+	ChartName                 string `yaml:"chartName"`
+	ChartReleaseGateJob       string `yaml:"chartReleaseGateJob"`
+	OverrideChartAppVersion   *bool  `yaml:"overrideChartAppVersion"`
+	ForcePublic               bool   `yaml:"forcePublic"`
+	Image                     *struct {
 		PreBuildJob     string            `yaml:"preBuildJob"`
 		PrivateOnly     bool              `yaml:"privateOnly"`
 		Name            string            `yaml:"name"`

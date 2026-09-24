@@ -9,6 +9,10 @@ import (
 
 type Config struct {
 	Flavours gen.FlavourSlice
+
+	// ReleaseCandidateByDefault makes the auto-release workflow cut a release
+	// candidate on every push; see params.Params.
+	ReleaseCandidateByDefault bool
 }
 
 type Workflows struct {
@@ -18,8 +22,9 @@ type Workflows struct {
 func New(config Config) (*Workflows, error) {
 	w := &Workflows{
 		params: params.Params{
-			Dir:      ".github/workflows",
-			Flavours: config.Flavours,
+			Dir:                       ".github/workflows",
+			Flavours:                  config.Flavours,
+			ReleaseCandidateByDefault: config.ReleaseCandidateByDefault,
 		},
 	}
 
