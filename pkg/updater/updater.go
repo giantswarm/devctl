@@ -33,11 +33,13 @@ type Config struct {
 }
 
 // Seams for the tests: where releases come from (nil is GitHub, reached with
-// Config.GithubToken at Config.GitHubAPIURL) and which file InstallLatest
-// replaces (the running executable).
+// Config.GithubToken at Config.GitHubAPIURL), which file InstallLatest
+// replaces (the running executable) and what a download must verify against
+// before it is installed (its cosign Sigstore bundle).
 var (
-	releaseSource  selfupdate.Source
-	executablePath = selfupdate.ExecutablePath
+	releaseSource      selfupdate.Source
+	executablePath     = selfupdate.ExecutablePath
+	signatureValidator = func(repository string) selfupdate.Validator { return selfupdatecosign.New(repository) }
 )
 
 type Updater struct {
@@ -102,7 +104,7 @@ func New(c Config) (*Updater, error) {
 
 		u.installer, err = selfupdate.NewUpdater(selfupdate.Config{
 			Source:    source,
-			Validator: selfupdatecosign.New(u.repository),
+			Validator: signatureValidator(u.repository),
 		})
 		if err != nil {
 			return nil, microerror.Mask(err)
@@ -126,7 +128,10 @@ func New(c Config) (*Updater, error) {
 // cosign Sigstore bundle published next to it. A release without a bundle is
 // refused before anything is downloaded, a download that does not match its
 // signature before anything is written; the installed binary stays as it is
-// either way.
+// either way. The new binary replaces the running executable, symbolic links
+// resolved, with a single rename: a devctl started meanwhile runs the old
+// binary or the new one, several updates may run at once, and no other file
+// is touched.
 func (u *Updater) InstallLatest() error {
 	ctx := context.Background()
 
@@ -158,7 +163,7 @@ func (u *Updater) InstallLatest() error {
 		return microerror.Mask(err)
 	}
 
-	err = u.installer.UpdateTo(ctx, latest, exe)
+	err = selfupdatecosign.Install(ctx, u.installer, latest, exe)
 	if err != nil {
 		return microerror.Mask(fmt.Errorf("update failed, %s is unchanged: %w", exe, err))
 	}
