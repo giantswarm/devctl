@@ -37,3 +37,17 @@ func TestEmbeddedSchemaFlavoursAreTheGenerators(t *testing.T) {
 	sort.Strings(want)
 	require.Equal(t, want, got, "gen.flavours in schema/repositories.schema.json and gen.AllFlavours() drifted apart")
 }
+
+// The embedded schema admits as gen.language exactly the languages devctl's
+// generators accept.
+func TestEmbeddedSchemaLanguagesAreTheGenerators(t *testing.T) {
+	schema, err := EmbeddedSchema()
+	require.NoError(t, err)
+
+	got, err := schema.FieldValues("gen.language")
+	require.NoError(t, err)
+	want := gen.AllLanguages()
+	sort.Strings(got)
+	sort.Strings(want)
+	require.Equal(t, want, got, "gen.language in schema/repositories.schema.json and gen.AllLanguages() drifted apart")
+}
