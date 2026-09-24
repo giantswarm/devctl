@@ -21,9 +21,9 @@
 // the reported-only rule, CircleCI (follow, setup workflows, checkout key,
 // and the webhook CircleCI installs on the follow, verified), webhooks,
 // Renovate (check only), CODEOWNERS (a pull request), description
-// and visibility, lifecycle (archived → unfollowed on CircleCI, then
-// archived on GitHub; deleted → unfollowed, then deleted on GitHub, the
-// entry the record),
+// and visibility, lifecycle (archived → unfollowed on CircleCI and
+// CircleCI's deploy key deleted, then archived on GitHub; deleted →
+// unfollowed, then deleted on GitHub, the entry the record),
 // catalog and mapping (the giantswarm/github workflows), first-release
 // verification (a vX.Y.Z tag → pipeline → workflows; a missed tag build is
 // reported, never rebuilt, except a creation's first release, which is

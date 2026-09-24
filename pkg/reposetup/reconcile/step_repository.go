@@ -2,7 +2,6 @@ package reconcile
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -108,24 +107,16 @@ func (r *Runner) stepMetadata(ctx context.Context, s *run, sr *StepResult) error
 }
 
 // stepLifecycle applies the lifecycle that ends a repository's life.
-// lifecycle: archived — on CircleCI unfollowed by the token's user and
-// stopped from building, then archived on GitHub. lifecycle: deleted — the
-// CircleCI project unfollowed and stopped first (a deleted repository's
-// project answers nothing afterwards), then the repository deleted on GitHub
-// with its code, issues, pull requests, releases and packages; an
-// organization owner can restore it on GitHub for 90 days. Either entry
-// stays in the team file as the record: a later run finds a deleted
-// repository gone and reports nothing. CircleCI comes first because it
-// takes "stop building" from a GitHub administrator of the repository only,
-// and an archived repository takes no admin grant (leaveCircleCI). The
-// CircleCI state read is the one the unfollow changes, the user's follow in
-// the v1.1 project settings: the v2 project answers 200 for ever, unfollowed
-// or stopped alike (checked live 2026-09-17), and reading it planned the
-// unfollow again on every run. A project the token's user does not follow
-// is left alone — an archived repository receives no push to build anyway.
-// A repository archived on GitHub without the lifecycle is reported: the
-// declaration is the desired state, and a person decides which side is
-// right.
+// lifecycle: archived — CircleCI left (leaveCircleCI), then archived on
+// GitHub. lifecycle: deleted — the CircleCI project unfollowed first (a
+// deleted repository's project answers nothing afterwards), then the
+// repository deleted on GitHub with its code, issues, pull requests,
+// releases, packages and CircleCI's deploy key; an organization owner can
+// restore it on GitHub for 90 days. Either entry stays in the team file as
+// the record: a later run finds a deleted repository gone and reports
+// nothing. A repository archived on GitHub without the lifecycle is
+// reported: the declaration is the desired state, and a person decides
+// which side is right.
 func (r *Runner) stepLifecycle(ctx context.Context, s *run, sr *StepResult) error {
 	switch s.fields.Lifecycle {
 	case LifecycleDeleted:
@@ -144,15 +135,23 @@ func (r *Runner) stepLifecycle(ctx context.Context, s *run, sr *StepResult) erro
 }
 
 // archiveRepository applies lifecycle: archived: CircleCI first, then
-// GitHub. The archive follows a failed CircleCI step too, so a repository
-// leaveCircleCI unarchived is never left that way.
+// GitHub.
 func (r *Runner) archiveRepository(ctx context.Context, s *run, sr *StepResult) error {
-	unarchived, err := r.leaveCircleCI(ctx, s, sr)
-	if unarchived || !s.repo.GetArchived() {
-		err = errors.Join(err, r.setArchived(ctx, s, sr, true, "archive on GitHub"))
-	}
-	if err != nil {
+	if err := r.leaveCircleCI(ctx, s, sr); err != nil {
 		return err
+	}
+	if !s.repo.GetArchived() {
+		err := s.plan(sr, "archive on GitHub", func() error {
+			updated, _, err := r.GitHub.Repositories.Edit(ctx, s.owner, s.name, &github.Repository{Archived: new(true)})
+			if err != nil {
+				return err
+			}
+			s.repo = updated
+			return nil
+		})
+		if err != nil {
+			return err
+		}
 	}
 	sr.Summary = "archived"
 	if r.CircleCI == nil {
@@ -162,17 +161,13 @@ func (r *Runner) archiveRepository(ctx context.Context, s *run, sr *StepResult) 
 }
 
 // deleteRepository applies lifecycle: deleted: CircleCI first, then GitHub.
-// When the CircleCI step fails the repository is not deleted, and one that
-// leaveCircleCI unarchived is archived again.
 func (r *Runner) deleteRepository(ctx context.Context, s *run, sr *StepResult) error {
-	unarchived, err := r.leaveCircleCI(ctx, s, sr)
-	if err != nil {
-		if unarchived {
-			err = errors.Join(err, r.setArchived(ctx, s, sr, true, "archive on GitHub again"))
+	if r.CircleCI != nil {
+		if err := r.unfollowCircleCI(ctx, s, sr); err != nil {
+			return err
 		}
-		return err
 	}
-	err = s.plan(sr, "delete on GitHub", func() error {
+	err := s.plan(sr, "delete on GitHub", func() error {
 		_, err := r.GitHub.Repositories.Delete(ctx, s.owner, s.name)
 		return err
 	})
@@ -186,45 +181,67 @@ func (r *Runner) deleteRepository(ctx context.Context, s *run, sr *StepResult) e
 	return nil
 }
 
-// leaveCircleCI unfollows the project as the token's user and stops it from
-// building, when the user follows it; a project CircleCI does not know is
-// left alone. CircleCI takes "stop building" from a GitHub administrator of
-// the repository only (403 Permission denied otherwise), so both writes run
-// under the circleci step's admin grant (adminGrant), revoked before
-// leaveCircleCI returns: before the archive, which freezes the repository's
-// collaborators ("Repository was archived so is read-only"). A repository
-// archived on GitHub already — by hand before its lifecycle was declared,
-// or by a run that archived first — is unarchived for the grant; unarchived
-// says so, and the caller archives it again.
-func (r *Runner) leaveCircleCI(ctx context.Context, s *run, sr *StepResult) (unarchived bool, err error) {
+// leaveCircleCI ends CircleCI's hold on an archived repository: the token's
+// user unfollows the project, and CircleCI's deploy key is deleted on
+// GitHub, so no pipeline can check the repository out any more. That is
+// CircleCI's own way to stop building a project whose "Stop Building"
+// fails: CircleCI refuses it for a renamed repository (DELETE …/enable
+// answered 403 Permission denied, with the user a GitHub admin of the
+// repository at that moment, seen live 2026-09-24), and its support
+// documents removing the webhook and the deploy key on GitHub instead. The
+// webhook stays: the reconciler's identity reads webhooks and writes none,
+// and an archived repository sends no push through it. Both states are
+// read, so a repository left half done — unfollowed, its key still there —
+// is finished by the next run; either write works on an archived
+// repository. Nothing is checked without a CircleCI client.
+func (r *Runner) leaveCircleCI(ctx context.Context, s *run, sr *StepResult) error {
 	if r.CircleCI == nil {
-		return false, nil
+		return nil
 	}
+	if err := r.unfollowCircleCI(ctx, s, sr); err != nil {
+		return err
+	}
+	keys, _, err := r.GitHub.Repositories.ListKeys(ctx, s.owner, s.name, &github.ListOptions{PerPage: 100})
+	if err != nil {
+		return err
+	}
+	for _, k := range keys {
+		if k.GetTitle() != circleCIDeployKeyTitle {
+			continue
+		}
+		err := s.plan(sr, fmt.Sprintf("delete CircleCI's deploy key %d", k.GetID()), func() error {
+			_, err := r.GitHub.Repositories.DeleteKey(ctx, s.owner, s.name, k.GetID())
+			return err
+		})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// circleCIDeployKeyTitle is the title of the deploy key CircleCI adds to a
+// repository it builds.
+const circleCIDeployKeyTitle = "CircleCI"
+
+// unfollowCircleCI unfollows the project as the token's user, when the user
+// follows it; a project CircleCI does not know is left alone. The state read
+// is the one the unfollow changes, the user's follow in the v1.1 project
+// settings: the v2 project answers 200 for ever, unfollowed or not (checked
+// live 2026-09-17). The unfollow needs no admin: CircleCI takes it from any
+// follower.
+func (r *Runner) unfollowCircleCI(ctx context.Context, s *run, sr *StepResult) error {
 	following, err := r.CircleCI.Following(ctx, s.owner, s.name)
 	switch {
 	case circleciclient.IsNotFound(err):
-		return false, nil // never set up on CircleCI
+		return nil // never set up on CircleCI
 	case err != nil:
-		return false, err
+		return err
 	case !following:
-		return false, nil
+		return nil
 	}
-	if s.repo.GetArchived() {
-		if err := r.setArchived(ctx, s, sr, false, "unarchive on GitHub for the CircleCI admin grant, archived again after it"); err != nil {
-			return false, err
-		}
-		unarchived = true
-	}
-	grant := &adminGrant{r: r, s: s, sr: sr, purpose: "leaving CircleCI"}
-	defer func() { err = errors.Join(err, grant.revoke(ctx)) }()
-	if err := grant.ensure(ctx); err != nil {
-		return unarchived, err
-	}
-	return unarchived, s.plan(sr, "unfollow on CircleCI and stop building", func() error {
+	return s.plan(sr, "unfollow on CircleCI", func() error {
 		if err := r.CircleCI.Unfollow(ctx, s.owner, s.name); err != nil {
-			return err
-		}
-		if err := r.CircleCI.StopBuilding(ctx, s.owner, s.name); err != nil {
 			return err
 		}
 		// The unfollow is done when CircleCI says so; a follow that
@@ -236,18 +253,6 @@ func (r *Runner) leaveCircleCI(ctx context.Context, s *run, sr *StepResult) (una
 		if still {
 			return fmt.Errorf("CircleCI still reports the token's user following %s after the unfollow", s.slug())
 		}
-		return nil
-	})
-}
-
-// setArchived archives or unarchives the repository on GitHub.
-func (r *Runner) setArchived(ctx context.Context, s *run, sr *StepResult, archived bool, change string) error {
-	return s.plan(sr, change, func() error {
-		updated, _, err := r.GitHub.Repositories.Edit(ctx, s.owner, s.name, &github.Repository{Archived: new(archived)})
-		if err != nil {
-			return err
-		}
-		s.repo = updated
 		return nil
 	})
 }

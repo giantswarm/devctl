@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -45,6 +46,7 @@ type fakeRepo struct {
 	rulesets      []*github.RepositoryRuleset
 	hooks         []*github.Hook
 	hooksStatus   int // HTTP status of the hooks list when not 200
+	deployKeys    []*github.Key
 	release       string
 	releaseAt     time.Time
 	createdAt     time.Time // when the repository was created; a month ago for a seeded one
@@ -931,6 +933,25 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 		repo.rulesets[i] = &in
 		writeJSON(w, 200, in)
 	}))
+	// Deploy keys: an archived repository still lets one go (checked live
+	// 2026-09-24).
+	mux.HandleFunc("GET /repos/{owner}/{repo}/keys", f.withRepo(func(w http.ResponseWriter, _ *http.Request, repo *fakeRepo) {
+		keys := repo.deployKeys
+		if keys == nil {
+			keys = []*github.Key{}
+		}
+		writeJSON(w, 200, keys)
+	}))
+	mux.HandleFunc("DELETE /repos/{owner}/{repo}/keys/{id}", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		for i, k := range repo.deployKeys {
+			if strconv.FormatInt(k.GetID(), 10) == r.PathValue("id") {
+				repo.deployKeys = slices.Delete(repo.deployKeys, i, i+1)
+				w.WriteHeader(204)
+				return
+			}
+		}
+		notFound(w, "Not Found")
+	}))
 	mux.HandleFunc("GET /repos/{owner}/{repo}/hooks", f.withRepo(func(w http.ResponseWriter, _ *http.Request, repo *fakeRepo) {
 		if repo.hooksStatus != 0 {
 			writeJSON(w, repo.hooksStatus, map[string]any{"message": "Not Found"})
@@ -1019,9 +1040,8 @@ type fakeCircleCI struct {
 	// carries the hook scope. Nil models a follow that leaves no hook.
 	onFollow func(org, repo string)
 	// isAdmin says whether the token's user is a GitHub administrator of
-	// the repository: CircleCI takes the follow, the settings, a deploy key
-	// and "stop building" from one only, and answers 403 otherwise. Nil
-	// admits every write.
+	// the repository: CircleCI takes the follow, the settings and a deploy
+	// key from one only, and answers 403 otherwise. Nil admits every write.
 	isAdmin func(org, repo, login string) bool
 	// keyStatus, when set, is the answer to a deploy key's creation.
 	keyStatus int
@@ -1038,12 +1058,12 @@ type fakeCircleCI struct {
 }
 
 type fakeProject struct {
-	// following is the token user's follow; building whether the project
-	// builds for the organization. Neither removes the project.
-	following, building bool
-	setupWorkflows      bool
-	keys                []circleciclient.CheckoutKey
-	pipelines           []circleciclient.Pipeline
+	// following is the token user's follow; unfollowing does not remove
+	// the project.
+	following      bool
+	setupWorkflows bool
+	keys           []circleciclient.CheckoutKey
+	pipelines      []circleciclient.Pipeline
 }
 
 func newFakeCircleCI() *fakeCircleCI {
@@ -1064,6 +1084,14 @@ func newFakeCircleCI() *fakeCircleCI {
 // circleCIHook is the webhook CircleCI installs on a repository it follows.
 func circleCIHook() *github.Hook {
 	return &github.Hook{ID: new(int64(683979223)), Name: new("web"), Active: new(true), Events: []string{"push", "pull_request"}, Config: &github.HookConfig{URL: new(circleCIWebhookURL), ContentType: new("json")}}
+}
+
+// circleCIDeployKeyID is the id of the deploy key CircleCI adds on the follow.
+const circleCIDeployKeyID = 164277013
+
+// circleCIDeployKey is the deploy key CircleCI adds to a repository it follows.
+func circleCIDeployKey() *github.Key {
+	return &github.Key{ID: new(int64(circleCIDeployKeyID)), Title: new(circleCIDeployKeyTitle), ReadOnly: new(true), Key: new("ssh-rsa AAAAB3NzaC1yc2E circleci")}
 }
 
 // isAdmin is the fake CircleCI's view of the GitHub fake: whether login
@@ -1091,12 +1119,13 @@ func (f *fakeCircleCI) admits(w http.ResponseWriter, r *http.Request) bool {
 }
 
 // installHook is the onFollow of a CircleCI whose follow installs the
-// webhook on the GitHub fake's repository.
+// webhook and CircleCI's deploy key on the GitHub fake's repository.
 func (f *fakeGitHub) installHook(org, repo string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if r, ok := f.repos[org+"/"+repo]; ok {
 		r.hooks = append(r.hooks, circleCIHook())
+		r.deployKeys = append(r.deployKeys, circleCIDeployKey())
 	}
 }
 
@@ -1106,7 +1135,7 @@ func (f *fakeCircleCI) follow(org, repo string) *fakeProject {
 	if f.onFollow != nil {
 		f.onFollow(org, repo)
 	}
-	p := &fakeProject{following: true, building: true, setupWorkflows: true, keys: []circleciclient.CheckoutKey{{Type: "deploy-key", Preferred: true}}}
+	p := &fakeProject{following: true, setupWorkflows: true, keys: []circleciclient.CheckoutKey{{Type: "deploy-key", Preferred: true}}}
 	f.projects[org+"/"+repo] = p
 	return p
 }
@@ -1170,26 +1199,17 @@ func (f *fakeCircleCI) routes(mux *http.ServeMux) {
 		if _, ok := f.projects[slug]; !ok {
 			f.projects[slug] = &fakeProject{} // CircleCI's defaults: no setup workflows, no key yet
 		}
-		f.projects[slug].following, f.projects[slug].building = true, true
+		f.projects[slug].following = true
 		if f.onFollow != nil {
 			f.onFollow(r.PathValue("org"), r.PathValue("repo"))
 		}
 		writeJSON(w, 200, map[string]any{"followed": true})
 	})
-	// The v1.1 routes of the user's follow and of "stop building": neither
-	// removes the project, as on CircleCI.
+	// The v1.1 route of the user's unfollow: it does not remove the
+	// project, as on CircleCI.
 	mux.HandleFunc("POST /api/v1.1/project/github/{org}/{repo}/unfollow", f.withProject(func(w http.ResponseWriter, _ *http.Request, p *fakeProject) {
 		p.following = false
 		writeJSON(w, 200, map[string]any{"followed": false})
-	}))
-	// "Stop building" is an administrator's, as the follow is: CircleCI
-	// answered a push-only user 403 Permission denied (seen live 2026-09-24).
-	mux.HandleFunc("DELETE /api/v1.1/project/github/{org}/{repo}/enable", f.withProject(func(w http.ResponseWriter, r *http.Request, p *fakeProject) {
-		if !f.admits(w, r) {
-			return
-		}
-		p.building = false
-		writeJSON(w, 200, map[string]any{"following": p.following})
 	}))
 	mux.HandleFunc("GET /api/v1.1/project/github/{org}/{repo}/settings", f.withProject(func(w http.ResponseWriter, _ *http.Request, p *fakeProject) {
 		writeJSON(w, 200, map[string]any{"following": p.following, "has_usable_key": len(p.keys) > 0})
