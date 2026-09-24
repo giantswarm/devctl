@@ -48,14 +48,22 @@ func Test_closingReferences(t *testing.T) {
 // proceeds either way.
 func Test_Merge_warnsOnClosingKeywords(t *testing.T) {
 	body := strings.Join([]string{
-		"Fixes #7's flake.",    // #7 is a pull request
-		"Closes #8.",           // an issue of o/r
-		"Fixes O/R#8 too.",     // the same issue, the repository spelled in capitals
-		"Resolves: #9.",        // does not exist
-		"closes other/repo#4.", // another repository
-		"Resolves https://github.com/o/r/pull/5.", // a pull request by its URL
-		"Refs #7, prefix #7.",                     // no closing keyword
-		"fixed #10.",                              // cannot be read
+		// #7 is a pull request.
+		"Fixes #7's flake.",
+		// An issue of o/r.
+		"Closes #8.",
+		// The same issue, the repository spelled in capitals.
+		"Fixes O/R#8 too.",
+		// Does not exist.
+		"Resolves: #9.",
+		// Another repository.
+		"closes other/repo#4.",
+		// A pull request by its URL.
+		"Resolves https://github.com/o/r/pull/5.",
+		// No closing keyword.
+		"Refs #7, prefix #7.",
+		// Cannot be read.
+		"fixed #10.",
 	}, "\n")
 	h := newHarness(t, routes(pull(map[string]any{"body": body}), sequence.Routes{
 		"GET /repos/o/r/issues/7":  {{Body: map[string]any{"number": 7, "pull_request": map[string]any{"url": "https://api.github.com/repos/o/r/pulls/7"}}}},
