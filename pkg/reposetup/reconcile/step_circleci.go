@@ -48,6 +48,7 @@ func (r *Runner) stepCircleCI(ctx context.Context, s *run, sr *StepResult) (err 
 		if err != nil {
 			return err
 		}
+		s.followedNow = true
 		if s.req.Mode == ModeCheck {
 			// The project's settings and keys exist once it is followed.
 			sr.Changes = append(sr.Changes, "enable setup workflows", "create a deploy key")
@@ -261,9 +262,9 @@ func (r *Runner) circleCIGrantee(ctx context.Context, s *run) (string, error) {
 // without a pipeline — the project was followed or renamed after the tag —
 // is a missed build; the fix is the next tag, or the tag's pipeline
 // triggered by hand. The one tag the reconciler builds is a creation's
-// first release (firstRelease): the run of the change that added the entry,
-// on the tag of the scaffold commit, which auto-release cuts before this
-// run follows the project — the release the person asked for, built once,
+// first release (firstRelease): the tag of the scaffold commit, which
+// auto-release cuts before the project is followed, in the run whose
+// circleci step follows it — the release the person asked for, built once,
 // since the next run finds the pipeline the trigger started. A red
 // pipeline is a release nothing was published for; the fix is a rerun of
 // its failed workflow from failed — the rerun checks out the same commit
@@ -300,12 +301,16 @@ func (r *Runner) stepRelease(ctx context.Context, s *run, sr *StepResult) error 
 	}
 
 	pipeline, err := r.tagPipeline(ctx, s, tag, release.GetCreatedAt().Time)
-	if err != nil {
-		if circleciclient.IsNotFound(err) {
-			sr.Verdict = VerdictSkipped
-			sr.Summary = fmt.Sprintf("release %s: project not followed on CircleCI", tag)
-			return nil
-		}
+	switch {
+	case circleciclient.IsNotFound(err) && s.followedNow:
+		// The follow is planned, not made (check mode): the project has no
+		// pipeline yet, the tag's included.
+		pipeline = nil
+	case circleciclient.IsNotFound(err):
+		sr.Verdict = VerdictSkipped
+		sr.Summary = fmt.Sprintf("release %s: project not followed on CircleCI", tag)
+		return nil
+	case err != nil:
 		return err
 	}
 	if pipeline == nil {
@@ -367,12 +372,15 @@ func (r *Runner) stepRelease(ctx context.Context, s *run, sr *StepResult) error 
 }
 
 // firstRelease says whether tag is the first release of a repository the
-// triggering change created: the change added the entry, and the tag names
-// the commit the scaffold step pushed (scaffoldSubjectPrefix). An added entry for
-// a repository that existed before — an adoption — releases from its own
-// commits, and its missed builds stay findings.
+// platform created, missed only because the project was not followed yet:
+// this run's circleci step followed the project, and the tag names the
+// commit the scaffold step pushed (scaffoldSubjectPrefix). The reconciler
+// never passes the change's `--added` (it validates every entry in existing
+// mode), so the follow, not the request, marks the creation's run. A tag on
+// a team's own commit — an adoption's first follow — and a scaffold tag of a
+// project followed before stay findings.
 func (r *Runner) firstRelease(ctx context.Context, s *run, tag string) (bool, error) {
-	if !s.req.Added {
+	if !s.followedNow {
 		return false, nil
 	}
 	commit, _, err := r.GitHub.Repositories.GetCommit(ctx, s.owner, s.name, tag, nil)
