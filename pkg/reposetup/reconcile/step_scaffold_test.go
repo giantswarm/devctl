@@ -13,16 +13,16 @@ import (
 // Git Data API builds carries the symlink itself.
 func TestTreeEntries_Symlink(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte("agents"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte("agents"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Symlink("AGENTS.md", filepath.Join(dir, "CLAUDE.md")); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(dir, ".agents", "skills", "x"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, ".agents", "skills", "x"), 0o750); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(dir, ".claude", "skills"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, ".claude", "skills"), 0o750); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Symlink(filepath.Join("..", "..", ".agents", "skills", "x"), filepath.Join(dir, ".claude", "skills", "x")); err != nil {
