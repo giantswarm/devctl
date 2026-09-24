@@ -624,6 +624,7 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 			Number:  new(n),
 			State:   new("open"),
 			Title:   in.Title,
+			Body:    in.Body,
 			HTMLURL: new(fmt.Sprintf("https://github.com/%s/%s/pull/%d", repo.owner, repo.name, n)),
 			Head:    &github.PullRequestBranch{Ref: new(in.Head)},
 			Base:    &github.PullRequestBranch{Ref: new(in.Base)},

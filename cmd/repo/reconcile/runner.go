@@ -66,6 +66,10 @@ func (r *runner) run(ctx context.Context, arg string) error {
 	if err != nil {
 		return microerror.Mask(err)
 	}
+	override, err := r.codeownersOverride(name)
+	if err != nil {
+		return microerror.Mask(err)
+	}
 
 	mode := reconcile.ModeRepair
 	if r.flag.DryRun {
@@ -84,7 +88,8 @@ func (r *runner) run(ctx context.Context, arg string) error {
 		Steps:         steps,
 		RenderOptions: r.flag.Options,
 		// nil: the protection step reads the pipeline from the repository.
-		Pipeline: nil,
+		Pipeline:           nil,
+		CodeownersOverride: override,
 	}
 
 	if !entry.Accepted {
@@ -132,6 +137,22 @@ func (r *runner) dispatchClient(ctx context.Context, requests *reconcile.Counter
 		return nil, microerror.Mask(err)
 	}
 	return client.GetUnderlyingClient(ctx), nil
+}
+
+// codeownersOverride is the repository's CODEOWNERS override in the
+// checkout --team-file lives in, override/<name>/CODEOWNERS beside the team
+// file: the file align-files writes in place of the generated one, read
+// from disk so that the check costs no request. Nil without --team-file (an
+// undeclared repository) or without an override.
+func (r *runner) codeownersOverride(name string) ([]byte, error) {
+	if r.flag.TeamFile == "" {
+		return nil, nil
+	}
+	override, err := reposetup.ReadCodeownersOverride(r.flag.TeamFile, name)
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
+	return override, nil
 }
 
 // entry is the desired state: the repository's entry of --team-file,

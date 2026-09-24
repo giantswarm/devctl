@@ -329,3 +329,16 @@ reference that is a template's placeholder (`{APP-NAME}`) is no chart to map: th
 and so does the step. The scaffold step's chart check does not read the chart of a `componentType: template`
 entry either -- it lives under a placeholder directory and the template's own pipeline builds a rendered copy
 (`docs/gen.md`).
+
+### The codeowners step
+
+`CODEOWNERS` on the default branch is the file align-files writes: the repository's override,
+`repositories/override/<repository>/CODEOWNERS` in giantswarm/github, verbatim when it has one, and the generated
+file naming the owning team otherwise. The caller resolves the override together with the entry, so the step compares
+against one source and its summary names it (`names @giantswarm/team-x`, or `matches the override
+repositories/override/<repository>/CODEOWNERS of giantswarm/github`). `devctl repo reconcile --team-file
+<dir>/<team>.yaml` reads `<dir>/override/<repository>/CODEOWNERS` from the checkout, so the check costs no request;
+the remote team-file source (`reposetup.Remote.Overrides`) lists the override directory once at the team files' ref
+and reads only the overrides it names. A differing file gets one pull request from `reposetup/codeowners` with the
+desired file; while it is open the step reports it and changes nothing. A fork line and a customer repository have no
+codeowners step.

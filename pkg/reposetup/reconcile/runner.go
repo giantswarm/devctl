@@ -144,6 +144,14 @@ type Request struct {
 	// jobs from instead of the repository's .circleci — the files a caller
 	// has just generated and not pushed yet. Nil reads the repository.
 	Pipeline [][]byte
+	// CodeownersOverride is the repository's CODEOWNERS override, the file
+	// align-files writes in place of the generated one
+	// ([reposetup.CodeownersOverridePath] in giantswarm/github), resolved by
+	// the caller with the entry: [reposetup.ReadCodeownersOverride] from a
+	// checkout, [reposetup.Overrides] from the remote. The codeowners step
+	// wants it verbatim; nil means the repository has none and the step
+	// wants the generated file naming Team.
+	CodeownersOverride []byte
 }
 
 // teamSteps are the steps that read the team: the scaffold names it in
