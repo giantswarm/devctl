@@ -126,6 +126,23 @@ with the `app` flavour -- gets the chart of `giantswarm/template-app` at `helm/<
 template, with `.abs/main.yaml` pointing at it, the name substituted and the team annotation set, so
 the first release's chart job builds; the dry run names it on the `chart:` line.
 
+The scaffold is the template's tree with its placeholders replaced, in one pass that handles both
+token forms the templates carry. `giantswarm/template`, the Go service template, carries the
+brace-less `REPOSITORY_NAME` (`go.mod`, `CHANGELOG.md`, `docs/development.md`): a Go module path may
+not contain braces, and the template's own build runs on its `go.mod`. `giantswarm/template-app`
+carries the braced `{APP-NAME}` (also the chart directory `helm/{APP-NAME}`, which is renamed),
+`{TEAM-NAME}` (the chart's team annotation, the team's short name: `shield` for team-shield) and
+`{APP HELM REPOSITORY}`; `giantswarm/template-plans` carries `{APP-NAME}` and `{TEAM-NAME}`. The same
+pass sets the `binary` of the `go-build` job in the Go template's own `.circleci/config.yml`
+(`binary: template`) to the repository name; where CI is generated, `devctl gen circleci` replaces
+the whole file. So a repository is created from either template the same way; only when copying by
+hand does the pattern differ, one `devctl replace` per token:
+
+```nohighlight
+devctl replace -i 'REPOSITORY_NAME' <name> --ignore '.git/**' '**'   # giantswarm/template
+devctl replace -i '{APP-NAME}' <name> --ignore '.git/**' '**'        # giantswarm/template-app, likewise its other two tokens
+```
+
 A chart repository whose generated pipeline runs app-test-suite (the `app` flavour without
 `gen.ci.skipATS`) also gets the chart tests its `execute-chart-tests` job runs, beside the generated
 `tests/ats/pyproject.toml`: `.ats/main.yaml`, which skips the functional scenario and the upgrade
