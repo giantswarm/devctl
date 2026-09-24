@@ -9,6 +9,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `repo create`: a scaffold without generated CI (`gen.ci.generate: false`: configuration, customer, Python and
+  Kyverno policy repositories, any repository whose pipeline would be empty) carries `renovate.json5`
+  ([#2419](https://github.com/giantswarm/devctl/issues/2419)). The Renovate line of the scaffold's generators ran only
+  after the CircleCI generator, so such a repository started without a Renovate configuration and the reconciler's
+  first run reported it (`renovate-not-scanned`) next to the creation notice. Every scaffold that generates at all now
+  runs `devctl gen renovate`, with `--circleci-generated` only on generated CI; a fork line still gets nothing.
 - `repo reconcile`: a created repository's first release is built by the run that follows its project on CircleCI
   ([#2408](https://github.com/giantswarm/devctl/issues/2408)). v8.97.2 keyed the trigger on `--added`, which the
   reconciler workflow never passes (it validates every entry in existing mode), so no reconciler run triggered it and

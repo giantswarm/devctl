@@ -53,7 +53,7 @@ type genContext struct {
 
 // genCommands returns the `devctl gen …` command lines align-files runs for
 // a declaration, in align-files' order: makefile, workflows, llm,
-// pre-commit, then CircleCI and Renovate when gen.ci.generate is on. Each
+// pre-commit, CircleCI when gen.ci.generate is on, then Renovate. Each
 // line is an argv starting with devctl gen. The declaration has to have
 // gen.flavours and gen.language; the validator refuses one that has not. A
 // fork line gets nothing generated ([generates]): no line.
@@ -135,17 +135,41 @@ func genCommands(f Fields, gc genContext) [][]string {
 		commands = append(commands, line(genPrecommit, precommit...))
 	}
 
-	if !generateCI {
-		return commands
+	if generateCI {
+		commands = append(commands, line(genCircleCI, circleCIArgs(f, flavour, knows)...))
 	}
 
-	// CircleCI: every gen.ci knob is a flag; a flag this devctl does not
-	// know is left out, as align-files leaves it out after its probe.
-	circleci := []string{flagRepoName, f.Name, flagLanguage, g.Language, flagFlavour, flavour}
-	var extra []string
+	// Renovate: every repository that generates at all gets its
+	// configuration. On generated CI the architect orb is pinned by the
+	// generated config, so --circleci-generated keeps Renovate off it; without
+	// generated CI there is no orb to leave alone. --repo-name is what
+	// align-files' devctl reads from the checkout's origin remote.
+	renovate := []string{flagLanguage, g.Language}
+	if generateCI {
+		renovate = append(renovate, "--circleci-generated")
+	}
+	renovate = append(renovate, flagRepoName, f.Name)
+	if f.Lifecycle == lifecycleDeprecated {
+		renovate = append(renovate, "--deprecated")
+	}
+	for _, reviewer := range f.ChoreReviewers {
+		renovate = append(renovate, "-r", reviewer)
+	}
+	commands = append(commands, line(genRenovate, renovate...))
+
+	return commands
+}
+
+// circleCIArgs are the arguments of the `devctl gen circleci` line of a
+// declaration on generated CI: every gen.ci knob is a flag; a flag this
+// devctl does not know is left out, as align-files leaves it out after its
+// probe.
+func circleCIArgs(f Fields, flavour string, knows func(generator, flag string) bool) []string {
+	g, ci := f.Gen, f.Gen.CI
+	args := []string{flagRepoName, f.Name, flagLanguage, g.Language, flagFlavour, flavour}
 	add := func(flag string, values ...string) {
 		if knows(genCircleCI, flag) {
-			extra = append(append(extra, flag), values...)
+			args = append(append(args, flag), values...)
 		}
 	}
 	if ci.AppCatalog != "" {
@@ -232,21 +256,7 @@ func genCommands(f Fields, gc genContext) [][]string {
 			add("--node-build-output", n.BuildOutput)
 		}
 	}
-	commands = append(commands, line(genCircleCI, append(circleci, extra...)...))
-
-	// Renovate follows generated CI: the architect orb is pinned by the
-	// generated config, so Renovate leaves it alone. --repo-name is what
-	// align-files' devctl reads from the checkout's origin remote.
-	renovate := []string{flagLanguage, g.Language, "--circleci-generated", flagRepoName, f.Name}
-	if f.Lifecycle == lifecycleDeprecated {
-		renovate = append(renovate, "--deprecated")
-	}
-	for _, reviewer := range f.ChoreReviewers {
-		renovate = append(renovate, "-r", reviewer)
-	}
-	commands = append(commands, line(genRenovate, renovate...))
-
-	return commands
+	return args
 }
 
 // generates says whether the generators produce anything for the declared

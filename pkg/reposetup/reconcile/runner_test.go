@@ -2512,6 +2512,33 @@ func TestScaffoldGoServiceWithChart(t *testing.T) {
 	require.Equal(t, scaffoldSubject, h.repo().headSubject("main"))
 }
 
+// TestScaffoldWithoutGeneratedCIConfiguresRenovate: a repository created
+// without generated CI -- the minimal scaffold of a generic/generic entry
+// with gen.ci.generate off -- carries renovate.json5 from its scaffold, so
+// the reconciler's first run over it has no Renovate finding: the renovate
+// step is ok, Renovate's first run not due yet on a repository created
+// minutes ago.
+func TestScaffoldWithoutGeneratedCIConfiguresRenovate(t *testing.T) {
+	h := newHarness(t, configurationEntryYAML)
+	h.runner.Renderer = reposetup.Renderer{Templates: reposetup.DirTemplates{Root: filepath.Join("..", "testdata", "templates")}}
+	r := h.gh.addRepo(owner, name)
+	r.empty, r.files, r.createdAt = true, map[string]string{}, time.Now().Add(-time.Minute)
+	h.gh.installation.status = 403
+
+	scaffold := h.run(ModeRepair, false, StepScaffold)
+	require.Equal(t, VerdictRepaired, scaffold.Step(StepScaffold).Verdict, "%+v", scaffold.Step(StepScaffold))
+	config := h.repo().files["renovate.json5"]
+	require.Contains(t, config, "github>giantswarm/renovate-presets:default.json5", "the scaffold's Renovate configuration")
+	require.NotContains(t, config, "giantswarm/architect", "no generated CI: no architect orb for Renovate to leave alone")
+	require.NotContains(t, h.repo().files, ".circleci/config.yml")
+
+	first := h.run(ModeCheck, false, StepRenovate)
+	sr := first.Step(StepRenovate)
+	require.Equal(t, VerdictOK, sr.Verdict, "%+v", sr)
+	require.Empty(t, sr.Findings)
+	require.Equal(t, "renovate.json5; no Renovate run yet and none due: the repository is younger than a day, Renovate's first run follows", sr.Summary)
+}
+
 // TestStepConverges: the verdict matrix of the converged mark. A step
 // converges unless it drifted, failed, or carries a finding that is not
 // advisory; the default icon alone is advisory.

@@ -105,7 +105,9 @@ it the notice is not given and the command says so.
 
 `gen.flavours` and `gen.language` are mandatory for a repository the command creates;
 `gen.ci.generate` is written as the CircleCI generator decides: `true` when it has a job for the
-declaration (a Go or Node build, a chart from the `app` flavour), `false` when the pipeline would be empty. The help text takes the enums from the schema devctl ships
+declaration (a Go or Node build, a chart from the `app` flavour), `false` when the pipeline would be empty. Either way
+the scaffold carries `renovate.json5` (`devctl gen renovate`, with `--circleci-generated` on generated CI), so the
+repository starts with its Renovate configuration; a fork line gets nothing generated. The help text takes the enums from the schema devctl ships
 (`pkg/reposetup/schema/repositories.schema.json`) and the flavours and languages from devctl's own
 lists, so it never lags a copy in this document; the live schema is
 [`.github/repositories.schema.json`](https://github.com/giantswarm/github/blob/main/.github/repositories.schema.json)
