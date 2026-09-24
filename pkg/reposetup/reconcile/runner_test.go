@@ -455,6 +455,37 @@ func TestSteps(t *testing.T) {
 			},
 		},
 		{
+			name: "scaffold: the older team annotation satisfies C0001 as app-build-suite reads it", step: StepScaffold, existing: true,
+			seed: func(h *harness) {
+				files := maps.Clone(scaffoldFiles)
+				files["helm/sample-service/Chart.yaml"] = strings.Replace(files["helm/sample-service/Chart.yaml"],
+					"io.giantswarm.application.team: bumblebee", "application.giantswarm.io/team: bumblebee", 1)
+				h.gh.addRepo(owner, name).files = files
+			},
+			wantCheck: VerdictReported, wantFinding: FindingDefaultIcon, wantAfter: VerdictReported,
+			verify: func(t *testing.T, _ *harness, res *Result) {
+				require.True(t, res.Converged, "%+v", res.Steps)
+				require.Equal(t, []FindingKind{FindingDefaultIcon}, kinds(res.Step(StepScaffold).Findings), "application.giantswarm.io/team is a team label")
+			},
+		},
+		{
+			name: "scaffold: a chart without either team annotation is an app-build-suite prerequisite", step: StepScaffold, existing: true,
+			seed: func(h *harness) {
+				files := maps.Clone(scaffoldFiles)
+				files["helm/sample-service/Chart.yaml"] = strings.Replace(files["helm/sample-service/Chart.yaml"],
+					"annotations:\n  io.giantswarm.application.team: bumblebee\n", "", 1)
+				h.gh.addRepo(owner, name).files = files
+			},
+			wantCheck: VerdictReported, wantFinding: FindingABSPrerequisite, wantAfter: VerdictReported,
+			verify: func(t *testing.T, _ *harness, res *Result) {
+				require.False(t, res.Converged)
+				f := res.Step(StepScaffold).Findings
+				require.Equal(t, []FindingKind{FindingABSPrerequisite, FindingDefaultIcon}, kinds(f))
+				require.Equal(t, "helm/sample-service/Chart.yaml lacks the io.giantswarm.application.team annotation (app-build-suite C0001 HasTeamLabel)", f[0].Message)
+				require.Equal(t, "add annotations.io.giantswarm.application.team: bumblebee to Chart.yaml", f[0].Fix)
+			},
+		},
+		{
 			name: "scaffold: a chart missing at gen.ci.chartName names the chart the repository has", step: StepScaffold, entry: chartNameEntryYAML, existing: true,
 			seed: func(h *harness) {
 				h.gh.addRepo(owner, name).files = maps.Clone(scaffoldFiles)
