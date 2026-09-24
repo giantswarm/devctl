@@ -27,6 +27,20 @@ func (c *Client) PullRequest(ctx context.Context, owner, repo string, number int
 	return pr, nil
 }
 
+// IsPullRequest reports whether number in owner/repo is a pull request
+// rather than an issue: the issues endpoint answers for both and marks a pull
+// request. A number that does not exist is notFoundError.
+func (c *Client) IsPullRequest(ctx context.Context, owner, repo string, number int) (bool, error) {
+	issue, _, err := c.ghClient.Issues.Get(ctx, owner, repo, number)
+	if isGithub404(err) {
+		return false, microerror.Maskf(notFoundError, "issue or pull request %s/%s#%d", owner, repo, number)
+	}
+	if err != nil {
+		return false, microerror.Mask(err)
+	}
+	return issue.IsPullRequest(), nil
+}
+
 // CheckRunsForRef returns the check runs of ref as the merge box lists them:
 // the latest run per check name and app (GitHub's filter=latest), every page.
 func (c *Client) CheckRunsForRef(ctx context.Context, owner, repo, ref string) ([]*github.CheckRun, error) {

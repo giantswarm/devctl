@@ -7,6 +7,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `pr merge` warns before the merge when the pull request's body closes something other than an issue of its own
+  repository ([#2421](https://github.com/giantswarm/devctl/issues/2421)): a closing keyword (`close`, `fix` or
+  `resolve` in any tense and case, an optional colon) directly before a pull request (a `#N`, `GH-N` or `owner/repo#N`
+  whose number GitHub reports as one, a `/pull/N` URL) or before an item of another repository (`owner/repo#N`, a full
+  issue or pull URL). GitHub closes those on the merge without a prompt, a pull request unmerged; `fixes #123's` counts
+  as `fixes #123`. The warning goes to the progress stream and the document's `warnings`, names the phrase and the
+  item, and suggests a wording without the keyword; the merge proceeds and the exit code is unchanged. An issue of the
+  same repository, a number that does not exist and a reference without a closing keyword stay silent.
+
 ### Fixed
 
 - `repo reconcile`: a created repository's first release is built by the run that follows its project on CircleCI
