@@ -990,7 +990,13 @@ type fakeCircleCI struct {
 	// onFollow runs when a project is followed through the API: CircleCI
 	// installs its GitHub webhook then, for a follow by an admin whose grant
 	// carries the hook scope. Nil models a follow that leaves no hook.
-	onFollow  func(org, repo string)
+	onFollow func(org, repo string)
+	// isAdmin says whether the token's user is a GitHub administrator of
+	// the repository: CircleCI takes the follow, the settings and a deploy
+	// key from one only, and answers 403 otherwise. Nil admits every write.
+	isAdmin func(org, repo, login string) bool
+	// keyStatus, when set, is the answer to a deploy key's creation.
+	keyStatus int
 	projects  map[string]*fakeProject // org/repo
 	workflows map[string][]circleciclient.Workflow
 	jobs      map[string][]circleciclient.Job
@@ -1030,6 +1036,30 @@ func newFakeCircleCI() *fakeCircleCI {
 // circleCIHook is the webhook CircleCI installs on a repository it follows.
 func circleCIHook() *github.Hook {
 	return &github.Hook{ID: new(int64(683979223)), Name: new("web"), Active: new(true), Events: []string{"push", "pull_request"}, Config: &github.HookConfig{URL: new(circleCIWebhookURL), ContentType: new("json")}}
+}
+
+// isAdmin is the fake CircleCI's view of the GitHub fake: whether login
+// holds admin on org/repo, directly or through the organization's teams.
+func (f *fakeGitHub) isAdmin(org, repo, login string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	permission := f.permission
+	if r, ok := f.repos[org+"/"+repo]; ok {
+		if p, ok := r.collaborators[login]; ok {
+			permission = p
+		}
+	}
+	return permission == "admin"
+}
+
+// admits answers CircleCI's 403 to a write by a user who is no GitHub
+// administrator of the repository and says whether the write may proceed.
+func (f *fakeCircleCI) admits(w http.ResponseWriter, r *http.Request) bool {
+	if f.isAdmin == nil || f.isAdmin(r.PathValue("org"), r.PathValue("repo"), f.login) {
+		return true
+	}
+	writeJSON(w, 403, map[string]string{"message": "For security purposes only a project's Github administrator may setup Circle."})
+	return false
 }
 
 // installHook is the onFollow of a CircleCI whose follow installs the
@@ -1105,6 +1135,9 @@ func (f *fakeCircleCI) routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1.1/project/github/{org}/{repo}/follow", func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		defer f.mu.Unlock()
+		if !f.admits(w, r) {
+			return
+		}
 		slug := r.PathValue("org") + "/" + r.PathValue("repo")
 		if _, ok := f.projects[slug]; !ok {
 			f.projects[slug] = &fakeProject{} // CircleCI's defaults: no setup workflows, no key yet
@@ -1135,6 +1168,9 @@ func (f *fakeCircleCI) routes(mux *http.ServeMux) {
 		writeJSON(w, 200, map[string]any{"advanced": map[string]any{"setup_workflows": p.setupWorkflows, "autocancel_builds": true}})
 	}))
 	mux.HandleFunc("PATCH /api/v2/project/gh/{org}/{repo}/settings", f.withProject(func(w http.ResponseWriter, r *http.Request, p *fakeProject) {
+		if !f.admits(w, r) {
+			return
+		}
 		var in circleciclient.ProjectSettings
 		decode(r, &in)
 		if in.Advanced.SetupWorkflows != nil {
@@ -1150,6 +1186,13 @@ func (f *fakeCircleCI) routes(mux *http.ServeMux) {
 		writeJSON(w, 200, map[string]any{"items": keys, "next_page_token": nil})
 	}))
 	mux.HandleFunc("POST /api/v2/project/gh/{org}/{repo}/checkout-key", f.withProject(func(w http.ResponseWriter, r *http.Request, p *fakeProject) {
+		if !f.admits(w, r) {
+			return
+		}
+		if f.keyStatus != 0 {
+			writeJSON(w, f.keyStatus, map[string]string{"message": "Error creating deploy key"})
+			return
+		}
 		var in map[string]string
 		decode(r, &in)
 		k := circleciclient.CheckoutKey{Type: in["type"], Preferred: true, Fingerprint: "aa:bb", CreatedAt: time.Now()}
