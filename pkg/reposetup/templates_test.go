@@ -69,7 +69,7 @@ func TestExtractTarball_Symlinks(t *testing.T) {
 	target, err := os.Readlink(filepath.Join(dir, "CLAUDE.md"))
 	require.NoError(t, err)
 	require.Equal(t, "AGENTS.md", target)
-	got, err := os.ReadFile(filepath.Join(dir, "AGENTS.md"))
+	got, err := os.ReadFile(filepath.Join(dir, "AGENTS.md")) // #nosec G304 -- a fixed path under t.TempDir()
 	require.NoError(t, err)
 	require.Equal(t, "agents", string(got))
 
@@ -88,12 +88,12 @@ func TestExtractTarball_Symlinks(t *testing.T) {
 // checkout path DirTemplates/copyTree serves (tests, offline use).
 func TestCopyTree_Symlinks(t *testing.T) {
 	src := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(src, "AGENTS.md"), []byte("agents"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(src, "AGENTS.md"), []byte("agents"), 0o600))
 	require.NoError(t, os.Symlink("AGENTS.md", filepath.Join(src, "CLAUDE.md")))
 	require.NoError(t, os.Symlink("../../../../etc/passwd", filepath.Join(src, "escapes.md")))
 	require.NoError(t, os.Symlink("/etc/passwd", filepath.Join(src, "absolute.md")))
-	require.NoError(t, os.MkdirAll(filepath.Join(src, ".agents", "skills", "x"), 0o755))
-	require.NoError(t, os.MkdirAll(filepath.Join(src, ".claude", "skills"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(src, ".agents", "skills", "x"), 0o750))
+	require.NoError(t, os.MkdirAll(filepath.Join(src, ".claude", "skills"), 0o750))
 	require.NoError(t, os.Symlink(filepath.Join("..", "..", ".agents", "skills", "x"), filepath.Join(src, ".claude", "skills", "x")))
 
 	dst := t.TempDir()

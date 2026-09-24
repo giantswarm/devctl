@@ -211,7 +211,7 @@ func copyTree(src, dst string) error {
 				// a link that would point outside dst once recreated there.
 				return nil
 			}
-			return os.Symlink(linkname, target)
+			return os.Symlink(linkname, target) // #nosec G122 -- target is under dst, the scaffold directory this package creates; linkname passed safeSymlinkTarget
 		}
 		if !d.Type().IsRegular() {
 			return nil
