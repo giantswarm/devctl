@@ -18,6 +18,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   `<dir>/override/<repository>/CODEOWNERS` in the checkout (no request); `reconcile.Request.CodeownersOverride`
   carries it, and `reposetup.Remote.Overrides` lists the remote's override directory once for callers that read the
   team files through GitHub.
+- `repo reconcile`: the scaffold step's chart check accepts `application.giantswarm.io/team` beside
+  `io.giantswarm.application.team`, as app-build-suite's C0001 HasTeamLabel does
+  ([#2422](https://github.com/giantswarm/devctl/issues/2422)). A chart carrying only the older key was reported as the
+  non-advisory `abs-prerequisite` and never read in sync, although it builds.
 - `repo reconcile`: a created repository's first release is built by the run that follows its project on CircleCI
   ([#2408](https://github.com/giantswarm/devctl/issues/2408)). v8.97.2 keyed the trigger on `--added`, which the
   reconciler workflow never passes (it validates every entry in existing mode), so no reconciler run triggered it and
