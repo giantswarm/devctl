@@ -32,7 +32,8 @@ func NewAutoReleaseInput(p params.Params) input.Input {
 			Right: templateDelimRight,
 		},
 		TemplateData: map[string]interface{}{
-			templateKeyHeader: params.Header("#", autoReleaseTemplateSha),
+			templateKeyHeader:                    params.Header("#", autoReleaseTemplateSha),
+			templateKeyReleaseCandidateByDefault: p.ReleaseCandidateByDefault,
 		},
 	}
 }

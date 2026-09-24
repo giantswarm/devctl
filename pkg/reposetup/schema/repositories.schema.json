@@ -190,6 +190,10 @@
                 ],
                 "description": "Release workflow to generate. 'auto-release' produces a single push-based auto-release.yaml + cliff.toml that tags + publishes a GitHub Release from conventional commits on every push to main (no release PR, no manual approval). 'legacy' produces the create-release-pr / create-release / validate-changelog trio (releases driven by manually-pushed `main#release#patch`-style branches). When omitted, the effective default depends on `gen.ci.generate`: `true` defaults to 'auto-release' (a devctl-managed CI surface implies a devctl-managed release surface), `false`/unset defaults to 'legacy'. Set `releaseWorkflow: legacy` explicitly to opt a `gen.ci.generate: true` repo back to the legacy trio. Requires devctl v8.8.0+."
               },
+              "releaseCandidateByDefault": {
+                "type": "boolean",
+                "description": "Make the auto-release workflow cut a release candidate (vX.Y.Z-rc.N, a GitHub pre-release) on every releasable push instead of a stable release (passed to 'devctl gen workflows --release-candidate-by-default'). The version is still computed from the conventional commits, and the feat-rc/fix-rc markers have no further effect. A stable release is cut only by running the Auto-release workflow manually with release-type: stable, which promotes the open cycle to vX.Y.Z. Only applies with releaseWorkflow auto-release. Requires devctl v8.98.0+; align-files skips the flag with a notice until its devctl pin supports it."
+              },
               "appCatalog": {
                 "type": "string",
                 "description": "Catalog the generated chart pipeline publishes to (passed to 'devctl gen circleci --app-catalog'). Defaults to 'giantswarm-catalog' when omitted. Set it for repos that ship to a different catalog (e.g. the internal 'giantswarm-operations-platform-catalog') so generation does not migrate their chart to the public catalog. Requires devctl v8.16.0+."

@@ -12,4 +12,8 @@ type Params struct {
 	// RepoName is the repository's name under the giantswarm organization,
 	// for cliff.toml's `[remote.github].repo` field.
 	RepoName string
+	// ReleaseCandidateByDefault makes the auto-release workflow cut a release
+	// candidate on every push; a stable release is cut by running it with
+	// release-type: stable.
+	ReleaseCandidateByDefault bool
 }

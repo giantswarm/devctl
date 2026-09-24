@@ -43,6 +43,10 @@ on:
   # is good and there is no pull request left to merge; `rc` forces one more.
   # Neither tags anything once the cycle has closed: both need something
   # unreleased on the branch.
+{{{{- if .ReleaseCandidateByDefault }}}}
+  # This repository releases candidates by default, so every push cuts an RC
+  # and `stable` is the only way to promote the cycle to a stable release.
+{{{{- end }}}}
   workflow_dispatch:
     inputs:
       release-type:
@@ -202,6 +206,12 @@ jobs:
           else
             is_rc=false
           fi
+{{{{- if .ReleaseCandidateByDefault }}}}
+          # Release candidates by default (gen.ci.releaseCandidateByDefault):
+          # every push cuts the next rc.N whatever the markers say, and only
+          # release-type: stable below cuts a stable release.
+          is_rc=true
+{{{{- end }}}}
           case "$WANT" in
             rc)     is_rc=true ;;
             stable) is_rc=false ;;

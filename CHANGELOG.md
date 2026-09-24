@@ -9,6 +9,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `gen workflows`: `--release-candidate-by-default` (`gen.ci.releaseCandidateByDefault`) makes the auto-release
+  workflow cut a release candidate on every push; a stable release is cut only by a manual run with
+  `release-type: stable`.
+
 - `rollout wait <installation> <owner/repo> (<version> | --pr <n>)` blocks until a release runs on an installation
   ([#2439](https://github.com/giantswarm/devctl/issues/2439)): the release wait first, which names the charts, then
   every Flux HelmRelease (from an OCIRepository or a HelmChart) and App CR on the management cluster that deploys one
