@@ -168,6 +168,7 @@ func newHarnessMode(t *testing.T, yaml string, mode reposetup.Mode) *harness {
 	ctx := context.Background()
 	gh, cc := newFakeGitHub(), newFakeCircleCI()
 	cc.onFollow = gh.installHook // a follow by an admin with the hook scope
+	cc.isAdmin = gh.isAdmin
 	t.Cleanup(gh.srv.Close)
 	t.Cleanup(cc.srv.Close)
 
@@ -1085,19 +1086,60 @@ func TestSteps(t *testing.T) {
 			},
 		},
 		{
-			name: "circleci: the follow identity without admin is granted it for the follow and revoked after", step: StepCircleCI,
+			// CircleCI refuses the follow, the settings and the key to a user
+			// who is no GitHub admin of the repository (the fake's isAdmin).
+			name: "circleci: the follow identity without admin is granted it for the set-up and revoked after", step: StepCircleCI,
 			seed: func(h *harness) {
 				h.gh.addRepo(owner, name)
 				h.gh.permission = "write" // architectbot holds push through the bots team
 			},
 			wantCheck:  VerdictDrift,
-			wantChange: "grant architectbot admin for the CircleCI follow, revoked after it; follow giantswarm/sample-service; enable setup workflows; create a deploy key",
+			wantChange: "grant architectbot admin for the CircleCI set-up, revoked after it; follow giantswarm/sample-service; enable setup workflows; create a deploy key",
 			verify: func(t *testing.T, h *harness, _ *Result) {
-				require.Contains(t, h.cc.projects, owner+"/"+name)
-				require.Empty(t, h.repo().collaborators, "the grant is revoked once the project is followed")
-				mutations := strings.Join(h.gh.mutations, "\n")
-				require.Contains(t, mutations, "PUT /repos/giantswarm/sample-service/collaborators/architectbot")
-				require.Contains(t, mutations, "DELETE /repos/giantswarm/sample-service/collaborators/architectbot")
+				p := h.cc.projects[owner+"/"+name]
+				require.NotNil(t, p)
+				require.True(t, p.setupWorkflows)
+				require.Len(t, p.keys, 1)
+				require.Empty(t, h.repo().collaborators, "the grant is revoked once the project is set up")
+				require.Equal(t, []string{
+					"PUT /repos/giantswarm/sample-service/collaborators/architectbot",
+					"DELETE /repos/giantswarm/sample-service/collaborators/architectbot",
+				}, collaboratorMutations(h.gh.mutations), "one grant for the step's three writes")
+			},
+		},
+		{
+			// A followed project without setup workflows and key repaired by
+			// an identity without admin: the grant spans the step's writes,
+			// not the follow alone.
+			name: "circleci: the repair of a followed project is made under the grant", step: StepCircleCI,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.hooks = []*github.Hook{circleCIHook()}
+				h.cc.projects[owner+"/"+name] = &fakeProject{following: true, building: true}
+				h.gh.permission = "write"
+			},
+			wantCheck:  VerdictDrift,
+			wantChange: "grant architectbot admin for the CircleCI set-up, revoked after it; enable setup workflows; create a deploy key",
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				p := h.cc.projects[owner+"/"+name]
+				require.True(t, p.setupWorkflows)
+				require.Len(t, p.keys, 1)
+				require.Empty(t, h.repo().collaborators)
+			},
+		},
+		{
+			// An identity that is an admin already needs no grant, and none is
+			// taken back: the step never lowers a permission it did not raise.
+			name: "circleci: an admin identity is neither granted nor revoked", step: StepCircleCI,
+			seed: func(h *harness) {
+				h.gh.addRepo(owner, name).collaborators["architectbot"] = "admin"
+				h.gh.permission = "write"
+			},
+			wantCheck: VerdictDrift, wantChange: "follow giantswarm/sample-service; enable setup workflows; create a deploy key",
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.NotContains(t, strings.Join(res.Step(StepCircleCI).Changes, "; "), "grant")
+				require.Empty(t, collaboratorMutations(h.gh.mutations))
+				require.Equal(t, "admin", h.repo().collaborators["architectbot"])
 			},
 		},
 		{
@@ -1991,6 +2033,37 @@ func kinds(findings []Finding) []FindingKind {
 		out = append(out, f.Kind)
 	}
 	return out
+}
+
+// collaboratorMutations is the collaborator grants and revocations among
+// mutations, in order.
+func collaboratorMutations(mutations []string) []string {
+	var out []string
+	for _, m := range mutations {
+		if strings.Contains(m, "/collaborators/") {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// TestRunCircleCIGrantRevokedOnFailure: a write CircleCI refuses fails the
+// step, and the admin grant made for it is revoked all the same.
+func TestRunCircleCIGrantRevokedOnFailure(t *testing.T) {
+	h := newHarness(t, entryYAML)
+	h.gh.addRepo(owner, name)
+	h.gh.permission = "write"
+	h.cc.keyStatus = 422
+
+	res := h.run(ModeRepair, false, StepCircleCI)
+	sr := res.Step(StepCircleCI)
+	require.Equal(t, VerdictFailed, sr.Verdict, "%+v", sr)
+	require.Contains(t, sr.Summary, "Error creating deploy key")
+	require.Empty(t, h.repo().collaborators, "the grant is revoked when a write fails")
+	require.Equal(t, []string{
+		"PUT /repos/giantswarm/sample-service/collaborators/architectbot",
+		"DELETE /repos/giantswarm/sample-service/collaborators/architectbot",
+	}, collaboratorMutations(h.gh.mutations))
 }
 
 // TestRenovateWaitsForScaffold: on an empty repository the renovate step

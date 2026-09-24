@@ -173,6 +173,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `repo reconcile`: the `circleci` step's admin grant for the CircleCI token's GitHub user covers every CircleCI write
+  the step makes, not the follow alone. CircleCI takes the follow, the setup-workflows setting and a deploy key only
+  from a GitHub admin of the repository. The step grants admin once, before its first write, when the user is not an
+  admin already ("grant architectbot admin for the CircleCI set-up, revoked after it"), and revokes the grant when the
+  step ends, also after a failed write. Before, the grant was revoked right after the follow, and a followed project
+  missing its setup workflows or its deploy key was repaired without it.
 - `version update` replaces the running devctl, symbolic links resolved, with a single rename
   (`selfupdatecosign.Install`). go-selfupdate's swap renamed the binary to `.devctl.old` before it moved
   `.devctl.new` in, so a `devctl` started in between found no binary, and two updates at once shared those names:

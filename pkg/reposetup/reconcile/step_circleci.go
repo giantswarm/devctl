@@ -20,7 +20,9 @@ import (
 // without them — gives the project a deploy key to check out with, and
 // verifies the webhook CircleCI installs on the follow: without it no push
 // and no tag reaches CircleCI, and the project is followed in name only.
-func (r *Runner) stepCircleCI(ctx context.Context, s *run, sr *StepResult) error {
+// The writes run under the admin grant CircleCI asks for (adminGrant),
+// revoked when the step ends.
+func (r *Runner) stepCircleCI(ctx context.Context, s *run, sr *StepResult) (err error) {
 	if r.CircleCI == nil {
 		sr.Verdict = VerdictSkipped
 		sr.Summary = "no CircleCI client"
@@ -30,34 +32,18 @@ func (r *Runner) stepCircleCI(ctx context.Context, s *run, sr *StepResult) error
 	if err != nil {
 		return err
 	}
+	grant := &adminGrant{r: r, s: s, sr: sr}
+	defer func() { err = errors.Join(err, grant.revoke(ctx)) }()
 	if !followed {
 		change := "follow " + s.slug()
 		if s.renamed {
 			change = fmt.Sprintf("follow %s under its new slug (declared as %s)", s.slug(), s.declared)
 		}
-		grantee, err := r.followGrantee(ctx, s)
-		if err != nil {
+		if err := grant.ensure(ctx); err != nil {
 			return err
 		}
-		if grantee != "" {
-			grant := fmt.Sprintf("grant %s admin for the CircleCI follow, revoked after it", grantee)
-			err := s.plan(sr, grant, func() error {
-				_, _, err := r.GitHub.Repositories.AddCollaborator(ctx, s.owner, s.name, grantee, &github.RepositoryAddCollaboratorOptions{Permission: permissionAdmin})
-				return err
-			})
-			if err != nil {
-				return err
-			}
-		}
-		err = s.plan(sr, change, func() error {
-			err := r.CircleCI.Follow(ctx, s.owner, s.name)
-			if grantee != "" {
-				// The grant is for the follow alone, kept or not.
-				if _, rerr := r.GitHub.Repositories.RemoveCollaborator(ctx, s.owner, s.name, grantee); rerr != nil {
-					err = errors.Join(err, fmt.Errorf("revoke the admin grant of %s: %w", grantee, rerr))
-				}
-			}
-			return err
+		err := s.plan(sr, change, func() error {
+			return r.CircleCI.Follow(ctx, s.owner, s.name)
 		})
 		if err != nil {
 			return err
@@ -74,6 +60,9 @@ func (r *Runner) stepCircleCI(ctx context.Context, s *run, sr *StepResult) error
 		return err
 	}
 	if sw := settings.Advanced.SetupWorkflows; sw == nil || !*sw {
+		if err := grant.ensure(ctx); err != nil {
+			return err
+		}
 		err := s.plan(sr, "enable setup workflows", func() error {
 			_, err := r.CircleCI.UpdateProjectSettings(ctx, s.owner, s.name, circleciclient.ProjectSettings{
 				Advanced: circleciclient.AdvancedSettings{SetupWorkflows: new(true)},
@@ -90,6 +79,9 @@ func (r *Runner) stepCircleCI(ctx context.Context, s *run, sr *StepResult) error
 		return err
 	}
 	if len(keys) == 0 {
+		if err := grant.ensure(ctx); err != nil {
+			return err
+		}
 		err := s.plan(sr, "create a deploy key", func() error {
 			_, err := r.CircleCI.CreateCheckoutKey(ctx, s.owner, s.name, circleciclient.KeyTypeDeployKey)
 			return err
@@ -190,12 +182,57 @@ func templateContent(fields reposetup.Fields) bool {
 	return g != nil && g.CI != nil && g.CI.TemplateContent
 }
 
-// followGrantee returns the login of the CircleCI token's GitHub user when
-// that user is not an administrator of the repository: CircleCI follows a
-// project for a repository administrator only ("only a project's Github
-// administrator may setup Circle"), and the reconciler's identity holds push
-// through the bots team. Empty when no grant is needed.
-func (r *Runner) followGrantee(ctx context.Context, s *run) (string, error) {
+// adminGrant is the circleci step's admin grant for the CircleCI token's
+// GitHub user. CircleCI takes the follow, the setup-workflows setting and a
+// deploy key from a GitHub administrator of the repository only ("only a
+// project's Github administrator may setup Circle"), and the reconciler's
+// identity holds push through the bots team. The grant is made once, before
+// the step's first write and only when the user is no administrator
+// already; the step revokes it when it ends, whatever failed, so the
+// identity keeps what its teams give it and no run leaves it behind.
+type adminGrant struct {
+	r     *Runner
+	s     *run
+	sr    *StepResult
+	asked bool
+	// grantee is the login granted admin; empty until the grant is made.
+	grantee string
+}
+
+// ensure makes the grant before a write, unless it is made or needless.
+func (g *adminGrant) ensure(ctx context.Context) error {
+	if g.asked {
+		return nil
+	}
+	g.asked = true
+	login, err := g.r.circleCIGrantee(ctx, g.s)
+	if err != nil || login == "" {
+		return err
+	}
+	return g.s.plan(g.sr, fmt.Sprintf("grant %s admin for the CircleCI set-up, revoked after it", login), func() error {
+		_, _, err := g.r.GitHub.Repositories.AddCollaborator(ctx, g.s.owner, g.s.name, login, &github.RepositoryAddCollaboratorOptions{Permission: permissionAdmin})
+		if err == nil {
+			g.grantee = login
+		}
+		return err
+	})
+}
+
+// revoke takes a grant made back; nothing when none was.
+func (g *adminGrant) revoke(ctx context.Context) error {
+	if g.grantee == "" {
+		return nil
+	}
+	if _, err := g.r.GitHub.Repositories.RemoveCollaborator(ctx, g.s.owner, g.s.name, g.grantee); err != nil {
+		return fmt.Errorf("revoke the admin grant of %s: %w", g.grantee, err)
+	}
+	return nil
+}
+
+// circleCIGrantee returns the login of the CircleCI token's GitHub user when
+// that user is not an administrator of the repository; empty when no grant
+// is needed.
+func (r *Runner) circleCIGrantee(ctx context.Context, s *run) (string, error) {
 	me, err := r.CircleCI.Me(ctx)
 	if err != nil {
 		return "", fmt.Errorf("the CircleCI token's user: %w", err)
