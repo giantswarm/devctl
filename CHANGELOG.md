@@ -9,6 +9,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- `gen circleci`: `build-chart` also exempts the images the repository's `.circleci/custom.yml` pushes with
+  `architect/push-to-registries` jobs, derived from the checkout like the Dockerfile probe. A chart that deploys such an
+  image at the stamped `appVersion` (a backend beside the app) failed `build-chart` on app-build-suite 2.5.0: the chart
+  is packaged before that image is pushed, and the generated `ABS_HELM_IMAGE_REFERENCE_VALIDATOR_OWN_IMAGE` overrode
+  any `.abs/main.yaml` entry. With more than one own image the variable carries a list (`"[<generated>, <custom>...]"`);
+  a repository with one own image renders as before.
 - `repo reconcile`: the run of the change that adds an entry builds the repository's first release. A repository
   created pull-request-last (`devctl repo create`, the repository manager) has its scaffold tagged `v0.1.0` before the
   entry merges, and the run of the merge is the first to follow the project on CircleCI, which therefore never saw
