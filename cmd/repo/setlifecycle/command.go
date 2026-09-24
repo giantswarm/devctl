@@ -25,8 +25,8 @@ owning team's channel and a member's Approve (or an approving review on
 GitHub) lands it.
 
   deprecated  security-only Renovate and a catalog flag
-  archived    the reconciler archives the repository on GitHub and unfollows
-              it on CircleCI; the entry stays as the record
+  archived    the reconciler unfollows the repository on CircleCI and
+              archives it on GitHub; the entry stays as the record
   deleted     the reconciler unfollows the repository on CircleCI and deletes
               it on GitHub -- code, issues, pull requests, releases and
               packages with it (an organization owner can restore it for 90
