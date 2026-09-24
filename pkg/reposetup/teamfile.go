@@ -196,7 +196,13 @@ type GenFields struct {
 
 // CIFields is the gen.ci block: the CircleCI generator's knobs.
 type CIFields struct {
-	Generate                *bool  `yaml:"generate"`
+	Generate *bool `yaml:"generate"`
+	// TemplateContent says the .circleci/config.yml this template repository
+	// carries is content for the repositories created from it, not its own
+	// pipeline: CircleCI has nothing to build here. The reconciler's circleci
+	// and release steps skip the repository. It sits beside Generate false;
+	// Generate true beside it is refused.
+	TemplateContent         bool   `yaml:"templateContent"`
 	ReleaseWorkflow         string `yaml:"releaseWorkflow"`
 	AppCatalog              string `yaml:"appCatalog"`
 	AppCatalogTest          string `yaml:"appCatalogTest"`

@@ -375,6 +375,12 @@ func (v Validator) creationRules(ctx context.Context, owner string, entry *Entry
 		entry.refuse("gen.ci.generate", "no CircleCI job for language %s without the app flavour or gen.ci.image.dockerfile; set it to false", language)
 	}
 
+	// Template content is no pipeline of the repository's own, a generated
+	// pipeline is.
+	if fields.Gen != nil && fields.Gen.CI != nil && fields.Gen.CI.TemplateContent && fields.Gen.CI.Generate != nil && *fields.Gen.CI.Generate {
+		entry.refuse("gen.ci.templateContent", "contradicts gen.ci.generate: true: a generated pipeline is the repository's own, template content is not built here")
+	}
+
 	// The name: lowercase, the chart's name where a chart exists, free on
 	// GitHub. A name the schema already refused is not checked on GitHub.
 	name := entry.Name

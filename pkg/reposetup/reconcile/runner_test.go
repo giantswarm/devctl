@@ -58,6 +58,19 @@ const (
     ci:
       generate: false
 `
+	// templateContentEntryYAML is a template repository whose
+	// .circleci/config.yml is content for the repositories created from it.
+	templateContentEntryYAML = `- name: sample-service
+  componentType: template
+  description: A template for MCP servers
+  visibility: public
+  gen:
+    flavours: [generic, app]
+    language: go
+    ci:
+      generate: false
+      templateContent: true
+`
 	privateEntryYAML = `- name: sample-service
   componentType: service
   description: A sample service
@@ -1204,6 +1217,30 @@ func TestSteps(t *testing.T) {
 				require.Equal(t, VerdictSkipped, res.Step(StepCircleCI).Verdict, "%+v", res.Step(StepCircleCI))
 				require.Equal(t, VerdictSkipped, res.Step(StepRelease).Verdict, "%+v", res.Step(StepRelease))
 				require.Empty(t, h.mutations(), "a followed project of a repository without a pipeline is left as it is")
+			},
+		},
+		{
+			// A template repository's .circleci/config.yml is content for the
+			// repositories created from it (gen.ci.templateContent): the branch
+			// carries the file, yet CircleCI has nothing to build, so the
+			// repository is neither followed nor given a key, its release is
+			// not held against a pipeline, and the branch is not read.
+			name: "circleci: template content is no pipeline, whatever the branch carries", step: StepCircleCI, existing: true,
+			entry: templateContentEntryYAML,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.release, r.releaseAt = "v0.1.0", time.Now().Add(-time.Hour)
+			},
+			wantCheck: VerdictSkipped, wantAfter: VerdictSkipped,
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				require.NotContains(t, h.cc.projects, owner+"/"+name)
+				res := h.run(ModeCheck, false, StepCircleCI, StepRelease)
+				for _, step := range []Step{StepCircleCI, StepRelease} {
+					require.Equal(t, VerdictSkipped, res.Step(step).Verdict, "%s: %+v", step, res.Step(step))
+					require.Equal(t, "no CircleCI pipeline: .circleci/config.yml is template content (gen.ci.templateContent)", res.Step(step).Summary)
+				}
+				require.Zero(t, h.gh.reads("/repos/"+owner+"/"+name+"/contents/"+circleCIConfig), "the declaration decides, the branch is not read")
+				require.Empty(t, res.Step(StepRelease).Findings, "a release CircleCI never built is no missed tag build")
 			},
 		},
 		{

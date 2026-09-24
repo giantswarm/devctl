@@ -433,6 +433,9 @@ func (r *Runner) skipReason(ctx context.Context, s *run, step Step) (string, err
 			return "", err
 		}
 		if !pipeline {
+			if templateContent(s.fields) {
+				return "no CircleCI pipeline: .circleci/config.yml is template content (gen.ci.templateContent)", nil
+			}
 			return "no CircleCI pipeline", nil
 		}
 	}

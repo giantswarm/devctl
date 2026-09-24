@@ -48,6 +48,7 @@ func TestGenCommandsPassEveryGenCIKey(t *testing.T) {
 		"releaseWorkflow":       true, // a flag of gen workflows
 		"requireCircleCIChecks": true, // the protection step's
 		"atsBranchOnly":         true, // deprecated, the generator ignores it
+		"templateContent":       true, // the reconciler's: no pipeline to generate
 	}
 	flagName := regexp.MustCompile(`(?:^|[^a-z0-9-])(--[a-z0-9]+(?:-[a-z0-9]+)*)`)
 

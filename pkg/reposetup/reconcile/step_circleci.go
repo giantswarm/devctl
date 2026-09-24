@@ -12,6 +12,7 @@ import (
 	"github.com/google/go-github/v92/github"
 
 	"github.com/giantswarm/devctl/v8/pkg/circleciclient"
+	"github.com/giantswarm/devctl/v8/pkg/reposetup"
 )
 
 // stepCircleCI follows the project (under the new slug after a rename),
@@ -156,11 +157,17 @@ const circleCIConfig = ".circleci/config.yml"
 // repository's own CircleCI configuration, so the branch decides for it
 // (the validator writes the creation default for an entry being added
 // only). A configuration repository, or one released by GitHub Actions,
-// has neither: CircleCI has nothing to build there. The branch is read
-// once per run, the two steps share the answer.
+// has neither: CircleCI has nothing to build there. A template repository
+// whose configuration is content for the repositories created from it
+// says so (gen.ci.templateContent), and the branch is not asked. The
+// branch is read once per run, the two steps share the answer.
 func (r *Runner) hasPipeline(ctx context.Context, s *run) (bool, error) {
 	if s.pipeline != nil {
 		return *s.pipeline, nil
+	}
+	if templateContent(s.fields) {
+		s.pipeline = new(false)
+		return false, nil
 	}
 	if g := s.fields.Gen; g != nil && g.CI != nil && g.CI.Generate != nil && *g.CI.Generate {
 		s.pipeline = new(true)
@@ -172,6 +179,15 @@ func (r *Runner) hasPipeline(ctx context.Context, s *run) (bool, error) {
 	}
 	s.pipeline = &found
 	return found, nil
+}
+
+// templateContent says the entry declares its .circleci/config.yml as
+// content for the repositories created from this template
+// (gen.ci.templateContent): CircleCI has nothing to build here, whatever
+// the branch carries.
+func templateContent(fields reposetup.Fields) bool {
+	g := fields.Gen
+	return g != nil && g.CI != nil && g.CI.TemplateContent
 }
 
 // followGrantee returns the login of the CircleCI token's GitHub user when

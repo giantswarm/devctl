@@ -178,6 +178,10 @@
                 "type": "boolean",
                 "description": "Opt this repo into devctl-generated .circleci/config.yml. The pipeline is derived from gen.flavours / gen.language / Dockerfile presence -- there is no per-repo parameter block. The architect-orb version is baked into devctl, not configured here. For a repository the automation creates, a missing gen.ci means generate: true; an existing entry without gen.ci keeps its hand-maintained CircleCI config."
               },
+              "templateContent": {
+                "type": "boolean",
+                "description": "The .circleci/config.yml this template repository carries is content for the repositories created from it, not its own pipeline: CircleCI has nothing to build here. The reconciler's circleci and release steps skip the repository (no follow, no deploy key, no tag build to verify) and its pull requests are judged from GitHub alone, as for any repository CircleCI does not build. Set it beside generate: false on a template whose configuration carries placeholders for the repositories created from it; generate: true contradicts it, and a template that builds itself leaves it out."
+              },
               "releaseWorkflow": {
                 "type": "string",
                 "enum": [
