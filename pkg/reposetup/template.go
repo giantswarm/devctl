@@ -37,6 +37,17 @@ func (t Template) String() string {
 	return string(t)
 }
 
+// shipsReadme says whether t carries its own repository-specific README,
+// which the scaffold must keep rather than overwrite with the generic stub:
+// giantswarm/template-app and giantswarm/template-plans both ship the real
+// README of the repository they scaffold (placeholders included, so
+// replacePlaceholders leaves it correct), unlike giantswarm/template, whose
+// README describes the Go template itself and so is replaced like the
+// minimal scaffold's.
+func (t Template) shipsReadme() bool {
+	return t == TemplateChart || t == TemplatePlans
+}
+
 // componentTypeCustomer is the component type of a customer repository.
 const componentTypeCustomer = "customer"
 

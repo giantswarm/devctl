@@ -97,7 +97,10 @@ func replacements(t Template, s substitutions) []replacement {
 }
 
 // replacePlaceholders renames the paths and rewrites the files carrying the
-// template's placeholders.
+// template's placeholders. A symlink is never read for content replacement
+// (d.Type().IsRegular() is false for it) and is left exactly as the template
+// extracted it, target included — a link whose target string itself carries
+// a placeholder (none of the current templates' do) would stay unreplaced.
 func replacePlaceholders(dir string, t Template, s substitutions) error {
 	if err := renamePlaceholderPaths(dir, s.Name); err != nil {
 		return microerror.Mask(err)
@@ -119,6 +122,10 @@ func replacePlaceholders(dir string, t Template, s substitutions) error {
 			return nil
 		}
 		if !d.Type().IsRegular() {
+			// A symlink (or anything else that isn't a plain file): its
+			// content is the target it was extracted with, not this
+			// template's text, and os.ReadFile below would follow it and
+			// rewrite whatever it points at instead.
 			return nil
 		}
 		content, err := os.ReadFile(p) // #nosec G304 G122 -- walking the scaffold directory this package just created from the template; nothing else writes there
@@ -174,15 +181,15 @@ func Codeowners(team string) string {
 
 // writeCommonFiles writes what every scaffold carries whatever its
 // template: CODEOWNERS as align-files writes it, and for a template without
-// a repository-specific README (the Go template's README describes the
-// template) the README. The minimal scaffold gets LICENSE, DCO, SECURITY.md
-// and .gitignore as well.
+// a repository-specific README ([Template.shipsReadme] false — the Go
+// template's README describes the template itself) the generic README. The
+// minimal scaffold gets LICENSE, DCO, SECURITY.md and .gitignore as well.
 func writeCommonFiles(dir string, t Template, s substitutions) error {
 	if err := writeFile(filepath.Join(dir, "CODEOWNERS"), []byte(Codeowners(s.Team)), fileMode); err != nil {
 		return microerror.Mask(err)
 	}
 
-	if t != TemplateChart {
+	if !t.shipsReadme() {
 		if err := writeFile(filepath.Join(dir, "README.md"), []byte(readme(s)), fileMode); err != nil {
 			return microerror.Mask(err)
 		}

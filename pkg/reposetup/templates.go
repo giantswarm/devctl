@@ -94,7 +94,9 @@ func (d DirTemplates) Fetch(_ context.Context, repository, dir string) error {
 
 // extractTarball extracts a GitHub tarball into dir: the archive's single
 // top-level directory is stripped, regular files keep their executable bit,
-// everything else (symlinks, the pax headers) is skipped.
+// a symlink is recreated when its target is safe (see safeSymlinkTarget),
+// and everything else (an unsafe symlink, the pax headers, other entry
+// types) is skipped.
 func extractTarball(r io.Reader, dir string) error {
 	gz, err := gzip.NewReader(r)
 	if err != nil {
@@ -145,11 +147,41 @@ func extractTarball(r io.Reader, dir string) error {
 			if err != nil {
 				return microerror.Mask(err)
 			}
+		case tar.TypeSymlink:
+			if err := os.MkdirAll(filepath.Dir(target), dirMode); err != nil {
+				return microerror.Mask(err)
+			}
+			if !safeSymlinkTarget(dir, target, hdr.Linkname) {
+				// An absolute target, or one that escapes dir once resolved
+				// from the link's own directory: skipped like any other
+				// entry this function does not support, rather than
+				// failing the whole extraction over one untrusted link.
+				continue
+			}
+			if err := os.Symlink(hdr.Linkname, target); err != nil {
+				return microerror.Mask(err)
+			}
 		}
 	}
 }
 
-// copyTree copies src into dst, skipping .git, keeping the executable bit.
+// safeSymlinkTarget says whether linkname is safe to create a symlink at
+// target with: not an absolute path, and its resolution from target's own
+// directory does not escape dir. target is already confined to dir (by
+// safeJoin, or by dst being copyTree's own root) -- this is that same
+// confinement extended to what a symlink may point at, since safeJoin only
+// confines the link itself, never where it leads.
+func safeSymlinkTarget(dir, target, linkname string) bool {
+	if linkname == "" || filepath.IsAbs(filepath.FromSlash(linkname)) {
+		return false
+	}
+	resolved := filepath.Clean(filepath.Join(filepath.Dir(target), filepath.FromSlash(linkname)))
+	return resolved == dir || strings.HasPrefix(resolved, dir+string(filepath.Separator))
+}
+
+// copyTree copies src into dst, skipping .git, keeping the executable bit
+// and recreating a symlink (with the same confinement extractTarball uses,
+// see safeSymlinkTarget) rather than following it.
 func copyTree(src, dst string) error {
 	return filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -164,6 +196,22 @@ func copyTree(src, dst string) error {
 				return filepath.SkipDir
 			}
 			return os.MkdirAll(filepath.Join(dst, rel), dirMode)
+		}
+		target := filepath.Join(dst, rel)
+		if d.Type()&fs.ModeSymlink != 0 {
+			linkname, err := os.Readlink(p) // #nosec G304 -- p is the caller's own template checkout, walked by WalkDir
+			if err != nil {
+				return microerror.Mask(err)
+			}
+			if err := os.MkdirAll(filepath.Dir(target), dirMode); err != nil {
+				return microerror.Mask(err)
+			}
+			if !safeSymlinkTarget(dst, target, linkname) {
+				// Same refusal as extractTarball's: skip rather than copy
+				// a link that would point outside dst once recreated there.
+				return nil
+			}
+			return os.Symlink(linkname, target)
 		}
 		if !d.Type().IsRegular() {
 			return nil
@@ -180,7 +228,7 @@ func copyTree(src, dst string) error {
 		if info.Mode()&0o111 != 0 {
 			mode = executableMode
 		}
-		return writeFile(filepath.Join(dst, rel), data, mode)
+		return writeFile(target, data, mode)
 	})
 }
 

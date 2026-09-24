@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -212,9 +213,21 @@ func manifest(t *testing.T, s *Scaffold) string {
 	}
 	for _, f := range files {
 		p := filepath.Join(s.Dir, filepath.FromSlash(f))
-		info, err := os.Stat(p)
+		// Lstat, never Stat: a symlink's own mode and target are what the
+		// scaffold carries and what the commit step reads (os.Lstat,
+		// os.Readlink); following it here would pin the file it happens to
+		// point at instead of the link.
+		info, err := os.Lstat(p)
 		if err != nil {
 			t.Fatal(err)
+		}
+		if info.Mode()&fs.ModeSymlink != 0 {
+			target, err := os.Readlink(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			fmt.Fprintf(&b, "\n--- %s -> %s\n", f, filepath.ToSlash(target))
+			continue
 		}
 		data, err := os.ReadFile(p) // #nosec G304 -- the scaffold rendered into t.TempDir()
 		if err != nil {
