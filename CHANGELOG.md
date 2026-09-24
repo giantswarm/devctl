@@ -19,6 +19,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- `gen circleci`: the generated pipelines pin architect orb 10.11.1, whose chart jobs run app-build-suite 2.5.1. Its
+  image reference check leaves a Helm test out, a manifest whose `helm.sh/hook` names only `test` events: only
+  `helm test` creates it, no install or upgrade pulls its images. A chart whose subchart ships a test pod with an
+  image the mirror does not carry builds with the check on
+  ([app-build-suite#627](https://github.com/giantswarm/app-build-suite/pull/627)).
 - `gen circleci`: `build-chart` also exempts the images the repository's `.circleci/custom.yml` pushes with
   `architect/push-to-registries` jobs, derived from the checkout like the Dockerfile probe. A chart that deploys such an
   image at the stamped `appVersion` (a backend beside the app) failed `build-chart` on app-build-suite 2.5.0: the chart
