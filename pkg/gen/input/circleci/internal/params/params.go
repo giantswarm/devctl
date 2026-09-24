@@ -59,6 +59,11 @@ type Params struct {
 	// docs-proxy ships helm/docs-proxy-app). The append-only custom.yml merge
 	// cannot rename a generated job's chart, so the generator carries it.
 	ChartName string
+	// ChartNameMismatch emits the push-to-app-catalog
+	// `explicit_allow_chart_name_mismatch: true` param. The orb's job fails
+	// unless ChartName and RepoName match with any -app suffix stripped, so the
+	// generator sets it when they do not.
+	ChartNameMismatch bool
 	// KeepChartAppVersion emits the push-to-app-catalog
 	// `override_app_version: false` param, so app-build-suite keeps the
 	// appVersion declared in Chart.yaml. Already resolved by the generator: it

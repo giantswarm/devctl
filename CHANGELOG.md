@@ -192,6 +192,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `gen circleci`: a `--chart-name` that differs from the repository name beyond an `-app` suffix also sets
+  `explicit_allow_chart_name_mismatch: true` on every chart job, so the orb's chart name check no longer fails it.
 - `repo reconcile`: the `circleci` step's admin grant for the CircleCI token's GitHub user covers every CircleCI write
   the step makes, not the follow alone. CircleCI takes the follow, the setup-workflows setting and a deploy key only
   from a GitHub admin of the repository. The step grants admin once, before its first write, when the user is not an
