@@ -1508,18 +1508,71 @@ func TestSteps(t *testing.T) {
 			},
 		},
 		{
-			name: "lifecycle: archived archives on GitHub and unfollows on CircleCI", step: StepLifecycle, entry: archivedEntryYAML,
+			name: "lifecycle: archived unfollows on CircleCI, then archives on GitHub", step: StepLifecycle, entry: archivedEntryYAML,
 			seed: func(h *harness) {
 				h.gh.addRepo(owner, name)
 				h.cc.follow(owner, name)
 			},
-			wantCheck: VerdictDrift, wantChange: "archive on GitHub; unfollow on CircleCI and stop building",
+			wantCheck: VerdictDrift, wantChange: "unfollow on CircleCI and stop building; archive on GitHub",
 			verify: func(t *testing.T, h *harness, _ *Result) {
 				require.True(t, h.repo().archived)
 				p := h.cc.projects[owner+"/"+name]
 				require.NotNil(t, p, "the project stays on CircleCI, as it does live")
 				require.False(t, p.following, "the token's user unfollowed")
 				require.False(t, p.building, "stopped building")
+			},
+		},
+		{
+			// CircleCI takes "stop building" from a GitHub admin only, and an
+			// archived repository takes no grant: the push-only identity leaves
+			// CircleCI under the grant, which is revoked before the archive.
+			// The renamed repository's project is the one under the new slug,
+			// where CircleCI keeps it after a rename.
+			name: "lifecycle: a renamed repository archived by a push-only identity leaves CircleCI under an admin grant, revoked before the archive", step: StepLifecycle, entry: archivedEntryYAML,
+			seed: func(h *harness) {
+				h.gh.addRepo(owner, name+"-v2")
+				h.gh.redirects[owner+"/"+name] = owner + "/" + name + "-v2"
+				h.gh.permission = "write"
+				h.cc.follow(owner, name+"-v2")
+			},
+			wantCheck: VerdictDrift, wantChange: "grant architectbot admin for leaving CircleCI, revoked after it; unfollow on CircleCI and stop building; archive on GitHub",
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				r := h.gh.repos[owner+"/"+name+"-v2"]
+				require.True(t, r.archived)
+				require.Empty(t, r.collaborators, "the grant is revoked")
+				p := h.cc.projects[owner+"/"+name+"-v2"]
+				require.False(t, p.following, "the token's user unfollowed the project CircleCI knows")
+				require.False(t, p.building, "stopped building")
+				require.Equal(t, []string{
+					"PUT /repos/giantswarm/sample-service-v2/collaborators/architectbot",
+					"DELETE /repos/giantswarm/sample-service-v2/collaborators/architectbot",
+					"PATCH /repos/giantswarm/sample-service-v2",
+				}, h.gh.mutations, "granted, revoked, then archived")
+			},
+		},
+		{
+			// Archived on GitHub first — by hand before the lifecycle was
+			// declared — and still followed: the grant needs the repository
+			// unarchived, and the run archives it again.
+			name: "lifecycle: a repository archived on GitHub and still followed is unarchived for the grant and archived again", step: StepLifecycle, entry: archivedEntryYAML,
+			seed: func(h *harness) {
+				h.gh.addRepo(owner, name).archived = true
+				h.gh.permission = "write"
+				h.cc.follow(owner, name)
+			},
+			wantCheck: VerdictDrift, wantChange: "unarchive on GitHub for the CircleCI admin grant, archived again after it; grant architectbot admin for leaving CircleCI, revoked after it; unfollow on CircleCI and stop building; archive on GitHub",
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				require.True(t, h.repo().archived)
+				require.Empty(t, h.repo().collaborators, "the grant is revoked")
+				p := h.cc.projects[owner+"/"+name]
+				require.False(t, p.following)
+				require.False(t, p.building)
+				require.Equal(t, []string{
+					"PATCH /repos/giantswarm/sample-service",
+					"PUT /repos/giantswarm/sample-service/collaborators/architectbot",
+					"DELETE /repos/giantswarm/sample-service/collaborators/architectbot",
+					"PATCH /repos/giantswarm/sample-service",
+				}, h.gh.mutations, "unarchived, granted, revoked, archived")
 			},
 		},
 		{
@@ -1548,6 +1601,26 @@ func TestSteps(t *testing.T) {
 				require.False(t, p.following, "the token's user unfollowed")
 				require.False(t, p.building, "stopped building")
 				require.Equal(t, "deleted", repair.Step(StepLifecycle).Summary)
+			},
+		},
+		{
+			name: "lifecycle: deleted by a push-only identity leaves CircleCI under an admin grant, then deletes on GitHub", step: StepLifecycle, entry: deletedEntryYAML,
+			seed: func(h *harness) {
+				h.gh.addRepo(owner, name)
+				h.gh.permission = "write"
+				h.cc.follow(owner, name)
+			},
+			wantCheck: VerdictDrift, wantChange: "grant architectbot admin for leaving CircleCI, revoked after it; unfollow on CircleCI and stop building; delete on GitHub",
+			wantAfter: VerdictSkipped,
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				_, exists := h.gh.repos[owner+"/"+name]
+				require.False(t, exists, "deleted on GitHub")
+				require.False(t, h.cc.projects[owner+"/"+name].building, "stopped building")
+				require.Equal(t, []string{
+					"PUT /repos/giantswarm/sample-service/collaborators/architectbot",
+					"DELETE /repos/giantswarm/sample-service/collaborators/architectbot",
+					"DELETE /repos/giantswarm/sample-service",
+				}, h.gh.mutations, "granted, revoked, then deleted")
 			},
 		},
 		{
@@ -2082,6 +2155,34 @@ func TestRunCircleCIGrantRevokedOnFailure(t *testing.T) {
 		"PUT /repos/giantswarm/sample-service/collaborators/architectbot",
 		"DELETE /repos/giantswarm/sample-service/collaborators/architectbot",
 	}, collaboratorMutations(h.gh.mutations))
+}
+
+// TestRunLifecycleArchivesAgainWhenCircleCIRefuses: a "stop building"
+// CircleCI refuses fails the lifecycle step, and the repository unarchived
+// for the grant is archived again, the grant revoked before.
+func TestRunLifecycleArchivesAgainWhenCircleCIRefuses(t *testing.T) {
+	for _, entry := range []string{archivedEntryYAML, deletedEntryYAML} {
+		h := newHarness(t, entry)
+		h.gh.addRepo(owner, name).archived = true
+		h.gh.permission = "write"
+		h.cc.follow(owner, name)
+		h.cc.isAdmin = func(string, string, string) bool { return false }
+
+		res := h.run(ModeRepair, false, StepLifecycle)
+		sr := res.Step(StepLifecycle)
+		require.Equal(t, VerdictFailed, sr.Verdict, "%+v", sr)
+		require.Contains(t, sr.Summary, "unfollow on CircleCI and stop building")
+		require.Contains(t, sr.Summary, "HTTP 403")
+		r := h.repo()
+		require.True(t, r.archived, "archived again")
+		require.Empty(t, r.collaborators, "the grant is revoked")
+		require.Equal(t, []string{
+			"PATCH /repos/giantswarm/sample-service",
+			"PUT /repos/giantswarm/sample-service/collaborators/architectbot",
+			"DELETE /repos/giantswarm/sample-service/collaborators/architectbot",
+			"PATCH /repos/giantswarm/sample-service",
+		}, h.gh.mutations, "unarchived, granted, revoked, archived; never deleted")
+	}
 }
 
 // TestRunBuildsTheFirstReleaseRightAfterTheFollow: a chart repository (Go +

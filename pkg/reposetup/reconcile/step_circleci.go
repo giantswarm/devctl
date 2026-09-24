@@ -32,7 +32,7 @@ func (r *Runner) stepCircleCI(ctx context.Context, s *run, sr *StepResult) (err 
 	if err != nil {
 		return err
 	}
-	grant := &adminGrant{r: r, s: s, sr: sr}
+	grant := &adminGrant{r: r, s: s, sr: sr, purpose: "the CircleCI set-up"}
 	defer func() { err = errors.Join(err, grant.revoke(ctx)) }()
 	if !followed {
 		change := "follow " + s.slug()
@@ -183,19 +183,22 @@ func templateContent(fields reposetup.Fields) bool {
 	return g != nil && g.CI != nil && g.CI.TemplateContent
 }
 
-// adminGrant is the circleci step's admin grant for the CircleCI token's
-// GitHub user. CircleCI takes the follow, the setup-workflows setting and a
-// deploy key from a GitHub administrator of the repository only ("only a
-// project's Github administrator may setup Circle"), and the reconciler's
-// identity holds push through the bots team. The grant is made once, before
-// the step's first write and only when the user is no administrator
-// already; the step revokes it when it ends, whatever failed, so the
-// identity keeps what its teams give it and no run leaves it behind.
+// adminGrant is the admin grant for the CircleCI token's GitHub user.
+// CircleCI takes the follow, the setup-workflows setting and a deploy key
+// from a GitHub administrator of the repository only ("only a project's
+// Github administrator may setup Circle"), and "stop building" too (the
+// lifecycle step's leaveCircleCI); the reconciler's identity holds push
+// through the bots team. The grant is made once, before the first write and
+// only when the user is no administrator already; the caller revokes it
+// when its writes end, whatever failed, so the identity keeps what its
+// teams give it and no run leaves it behind.
 type adminGrant struct {
-	r     *Runner
-	s     *run
-	sr    *StepResult
-	asked bool
+	r  *Runner
+	s  *run
+	sr *StepResult
+	// purpose names the writes in the grant's change: "the CircleCI set-up".
+	purpose string
+	asked   bool
 	// grantee is the login granted admin; empty until the grant is made.
 	grantee string
 }
@@ -210,7 +213,7 @@ func (g *adminGrant) ensure(ctx context.Context) error {
 	if err != nil || login == "" {
 		return err
 	}
-	return g.s.plan(g.sr, fmt.Sprintf("grant %s admin for the CircleCI set-up, revoked after it", login), func() error {
+	return g.s.plan(g.sr, fmt.Sprintf("grant %s admin for %s, revoked after it", login, g.purpose), func() error {
 		_, _, err := g.r.GitHub.Repositories.AddCollaborator(ctx, g.s.owner, g.s.name, login, &github.RepositoryAddCollaboratorOptions{Permission: permissionAdmin})
 		if err == nil {
 			g.grantee = login

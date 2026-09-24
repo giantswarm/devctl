@@ -428,6 +428,12 @@ func notFound(w http.ResponseWriter, msg string) {
 }
 
 // forbidden is GitHub's answer to an identity without the permission.
+// archivedReadOnly is GitHub's answer to a write an archived repository
+// does not take.
+func archivedReadOnly(w http.ResponseWriter) {
+	writeJSON(w, http.StatusForbidden, map[string]string{"message": "Repository was archived so is read-only."})
+}
+
 func forbidden(w http.ResponseWriter) {
 	writeJSON(w, http.StatusForbidden, map[string]string{"message": "Resource not accessible by integration"})
 }
@@ -801,13 +807,23 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 		}
 		writeJSON(w, 200, map[string]any{"permission": permission, "user": map[string]string{"login": login}})
 	}))
+	// An archived repository's collaborators are read-only: GitHub answers
+	// a grant or a revocation with 403 (checked live 2026-09-24).
 	mux.HandleFunc("PUT /repos/{owner}/{repo}/collaborators/{login}", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		if repo.archived {
+			archivedReadOnly(w)
+			return
+		}
 		var in github.RepositoryAddCollaboratorOptions
 		decode(r, &in)
 		repo.collaborators[r.PathValue("login")] = in.Permission
 		writeJSON(w, 201, map[string]any{})
 	}))
 	mux.HandleFunc("DELETE /repos/{owner}/{repo}/collaborators/{login}", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		if repo.archived {
+			archivedReadOnly(w)
+			return
+		}
 		delete(repo.collaborators, r.PathValue("login"))
 		w.WriteHeader(204)
 	}))
@@ -1003,8 +1019,9 @@ type fakeCircleCI struct {
 	// carries the hook scope. Nil models a follow that leaves no hook.
 	onFollow func(org, repo string)
 	// isAdmin says whether the token's user is a GitHub administrator of
-	// the repository: CircleCI takes the follow, the settings and a deploy
-	// key from one only, and answers 403 otherwise. Nil admits every write.
+	// the repository: CircleCI takes the follow, the settings, a deploy key
+	// and "stop building" from one only, and answers 403 otherwise. Nil
+	// admits every write.
 	isAdmin func(org, repo, login string) bool
 	// keyStatus, when set, is the answer to a deploy key's creation.
 	keyStatus int
@@ -1165,7 +1182,12 @@ func (f *fakeCircleCI) routes(mux *http.ServeMux) {
 		p.following = false
 		writeJSON(w, 200, map[string]any{"followed": false})
 	}))
-	mux.HandleFunc("DELETE /api/v1.1/project/github/{org}/{repo}/enable", f.withProject(func(w http.ResponseWriter, _ *http.Request, p *fakeProject) {
+	// "Stop building" is an administrator's, as the follow is: CircleCI
+	// answered a push-only user 403 Permission denied (seen live 2026-09-24).
+	mux.HandleFunc("DELETE /api/v1.1/project/github/{org}/{repo}/enable", f.withProject(func(w http.ResponseWriter, r *http.Request, p *fakeProject) {
+		if !f.admits(w, r) {
+			return
+		}
 		p.building = false
 		writeJSON(w, 200, map[string]any{"following": p.following})
 	}))
