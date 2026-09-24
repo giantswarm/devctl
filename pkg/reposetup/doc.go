@@ -62,12 +62,15 @@
 //
 // [Renderer.Render] renders the scaffold of an accepted [Entry] into a
 // directory: the template's tree (the tarball of its main branch, or a
-// [TemplateSource] of the caller's) with its placeholders replaced -- what
-// `devctl replace` does by hand -- CODEOWNERS for the team, the chart's team
-// annotation and default icon, and the files the generators write for the
-// declared flavours and language: Makefile, workflows including
-// auto-release, LLM rules, pre-commit, and CircleCI and Renovate when
-// gen.ci.generate is on. The generators run through the same `devctl gen`
+// [TemplateSource] of the caller's) with its placeholders replaced in one
+// pass whichever form they take, the brace-less REPOSITORY_NAME of the Go
+// template (a Go module path may not contain braces) or the braced
+// {APP-NAME}, {TEAM-NAME} and {APP HELM REPOSITORY} of template-app -- what
+// `devctl replace` does by hand, token by token -- CODEOWNERS for the team,
+// the chart's team annotation and default icon, and the files the
+// generators write for the declared flavours and language: Makefile,
+// workflows including auto-release, LLM rules, pre-commit, and CircleCI and
+// Renovate when gen.ci.generate is on. The generators run through the same `devctl gen`
 // commands align-files runs, in align-files' order and with its flags, so
 // the generated files are byte-identical to what the first align run would
 // write and that run changes nothing. [Scaffold.Commands] lists the command

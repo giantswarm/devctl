@@ -46,13 +46,29 @@ type replacement struct {
 	value   string
 }
 
-// appNamePlaceholder is the placeholder of the chart-only template, also in
-// path names (helm/{APP-NAME}).
+// appNamePlaceholder is the braced name token of template-app and
+// template-plans, also in path names (helm/{APP-NAME}).
 const appNamePlaceholder = "{APP-NAME}"
 
-// replacements returns the template's placeholders. {TEAMS} and {BOARD} in
-// the issue-automation workflows are not placeholders: those files are
-// align-files' verbatim copies and the workflows read them at run time.
+// replacements returns the template's placeholders: one replacement pass
+// serves every template, whichever token form it carries.
+//
+// giantswarm/template, the Go service template, carries the brace-less
+// REPOSITORY_NAME: a Go module path may not contain braces, and the
+// template's own build runs on its go.mod (module
+// github.com/giantswarm/REPOSITORY_NAME). template-app carries the braced
+// {APP-NAME}, {TEAM-NAME} and {APP HELM REPOSITORY}, template-plans the
+// first two. Each token is matched literally, so both forms are replaced
+// the same way and a repository is created from either template the same
+// way; only when copying by hand does the pattern differ, one
+// `devctl replace` per token (REPOSITORY_NAME for the Go template,
+// {APP-NAME} for template-app). The Go table takes {APP-NAME} as well, and
+// sets the binary of the go-build job in the template's own
+// .circleci/config.yml (binary: template), which is no token.
+//
+// {TEAMS} and {BOARD} in the issue-automation workflows are not
+// placeholders: those files are align-files' verbatim copies and the
+// workflows read them at run time.
 func replacements(t Template, s substitutions) []replacement {
 	appName := replacement{regexp.MustCompile(regexp.QuoteMeta(appNamePlaceholder)), s.Name}
 	switch t {
