@@ -58,6 +58,15 @@ const DefaultATSVersion = "1.0.3"
 // decide. Absent, the jobs render exactly as before.
 const ATSKindConfigPath = ".ats/kind-config.yaml"
 
+// CustomConfigPath is the repo-owned CircleCI file the setup workflow merges
+// into the generated workflows at pipeline runtime.
+const CustomConfigPath = ".circleci/custom.yml"
+
+// PushToRegistriesJob is the orb job that builds and pushes an image. A
+// custom.yml job of this kind builds an image of this pipeline beside the
+// generated one.
+const PushToRegistriesJob = "architect/push-to-registries"
+
 // atsResourceClasses are the classes the orb's run-tests-with-ats job accepts
 // (its resource_class enum). The orb default is medium (2 vCPU / 7.5 GB).
 var atsResourceClasses = []string{"medium", "large", "xlarge", "2xlarge"}
@@ -369,6 +378,12 @@ type Config struct {
 	// pre-steps the append-only custom.yml merge cannot inject into a generated
 	// job. Empty for the common case.
 	ImagePreBuildJob string
+	// CustomImages are the images (`giantswarm/<name>`, without registry and
+	// tag) the repo's custom.yml pushes with architect/push-to-registries jobs,
+	// derived from the checkout. A chart that references one at the stamped
+	// appVersion names an image build-chart runs before, like the generated
+	// image, so build-chart exempts them alike.
+	CustomImages []string
 	// ChartReleaseGateJob names a repo-owned custom.yml job the release chart
 	// push must wait on (adds a `requires` entry to push-chart-release, which
 	// the append-only custom.yml merge cannot inject into a generated job). The
@@ -632,16 +647,24 @@ func New(config Config) (*CircleCI, error) {
 	if config.OverrideChartAppVersion != nil {
 		keepChartAppVersion = !*config.OverrideChartAppVersion
 	}
-	// The image the chart references at the stamped appVersion, which
-	// build-chart packages before the pipeline pushes it. A chart that keeps its
-	// declared appVersion references no such unpushed tag.
-	var ownImage string
-	if hasDockerfile && !keepChartAppVersion {
-		imageName := config.ImageName
-		if imageName == "" {
-			imageName = "giantswarm/" + config.RepoName
+	// The images the chart references at the stamped appVersion, which
+	// build-chart packages before the pipeline pushes them: the generated
+	// image and every image the repo's custom.yml pushes. A chart that keeps
+	// its declared appVersion references no such unpushed tag.
+	var ownImages []string
+	if !keepChartAppVersion {
+		if hasDockerfile {
+			imageName := config.ImageName
+			if imageName == "" {
+				imageName = "giantswarm/" + config.RepoName
+			}
+			ownImages = append(ownImages, "gsoci.azurecr.io/"+imageName)
 		}
-		ownImage = "gsoci.azurecr.io/" + imageName
+		for _, image := range config.CustomImages {
+			if reference := "gsoci.azurecr.io/" + image; !slices.Contains(ownImages, reference) {
+				ownImages = append(ownImages, reference)
+			}
+		}
 	}
 	isNode := config.Language == gen.LanguageNode
 	if config.Language != gen.LanguageGo && !isNode && !hasDockerfile && !hasApp {
@@ -876,7 +899,7 @@ func New(config Config) (*CircleCI, error) {
 			ChartReleaseGateJob:      config.ChartReleaseGateJob,
 			ImagePrivateOnly:         config.ImagePrivateOnly,
 			ImageName:                config.ImageName,
-			OwnImage:                 ownImage,
+			OwnImages:                ownImages,
 			ImagePlatforms:           imagePlatforms,
 			ImageNativeBuilds:        config.ImageNativeBuilds,
 			BranchImageBuilds:        branchImageBuilds,

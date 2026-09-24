@@ -3,6 +3,7 @@ package circleci
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/giantswarm/devctl/v8/pkg/gen/input/circleci"
@@ -144,5 +145,63 @@ func Test_detectATSKindConfig(t *testing.T) {
 	}
 	if !detectATSKindConfig() {
 		t.Fatal(".ats/kind-config.yaml present must probe true")
+	}
+}
+
+// Test_detectCustomImages covers the custom.yml probe: the image parameters of
+// its architect/push-to-registries jobs, sorted, once each; a job without one
+// pushes the repo's own image and adds nothing.
+func Test_detectCustomImages(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	images, err := detectCustomImages()
+	if err != nil || images != nil {
+		t.Fatalf("no custom.yml: got %v, %v; want no images", images, err)
+	}
+
+	if err := os.MkdirAll(filepath.Join(dir, ".circleci"), 0o750); err != nil {
+		t.Fatalf("mkdir .circleci: %v", err)
+	}
+	write := func(content string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, circleci.CustomConfigPath), []byte(content), 0o600); err != nil {
+			t.Fatalf("write custom.yml: %v", err)
+		}
+	}
+
+	write(`version: 2.1
+workflows:
+  build:
+    jobs:
+      - fetch-release-notes
+      - architect/push-to-registries:
+          name: push-second-image
+          image: "giantswarm/second-image"
+      - architect/push-to-registries:
+          name: push-to-registries-latest
+      - architect/push-to-app-catalog:
+          name: push-chart
+          image: giantswarm/not-an-image-job
+  release:
+    jobs:
+      - architect/push-to-registries:
+          name: push-debian
+          image: giantswarm/debian-variant
+      - architect/push-to-registries:
+          name: push-second-image-release
+          image: giantswarm/second-image
+`)
+	images, err = detectCustomImages()
+	if err != nil {
+		t.Fatalf("detectCustomImages: %v", err)
+	}
+	if want := []string{"giantswarm/debian-variant", "giantswarm/second-image"}; !slices.Equal(images, want) {
+		t.Errorf("images = %v, want %v", images, want)
+	}
+
+	write("workflows: [\n")
+	if _, err := detectCustomImages(); err == nil {
+		t.Error("a custom.yml that is no YAML must fail")
 	}
 }

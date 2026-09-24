@@ -1127,8 +1127,48 @@ func Test_ImageReferenceCheckExemptsOwnImageInBuildChart(t *testing.T) {
 		t.Errorf("imageName: build-chart pre-steps = %q, want %q", cmd, want)
 	}
 
+	// The images custom.yml pushes join the generated one, the generated image
+	// first and none twice; a custom image alone is exempt as well.
+	for name, tc := range map[string]struct {
+		config Config
+		want   string
+	}{
+		"a second image": {
+			config: Config{
+				RepoName:      repoMCPKubernetes,
+				Language:      gen.LanguageGo,
+				Flavours:      gen.FlavourSlice{gen.FlavourApp},
+				HasDockerfile: true,
+				CustomImages:  []string{"giantswarm/second-image"},
+			},
+			want: exempt(`"[gsoci.azurecr.io/giantswarm/mcp-kubernetes, gsoci.azurecr.io/giantswarm/second-image]"`),
+		},
+		"the generated image pushed again": {
+			config: Config{
+				RepoName:      repoMCPKubernetes,
+				Language:      gen.LanguageGo,
+				Flavours:      gen.FlavourSlice{gen.FlavourApp},
+				HasDockerfile: true,
+				CustomImages:  []string{"giantswarm/mcp-kubernetes"},
+			},
+			want: exempt("gsoci.azurecr.io/giantswarm/mcp-kubernetes"),
+		},
+	} {
+		if cmd := preSteps(render(t, tc.config), "build-chart"); cmd != tc.want {
+			t.Errorf("%s: build-chart pre-steps = %q, want %q", name, cmd, tc.want)
+		}
+	}
+
 	keep := false
 	for name, c := range map[string]Config{
+		"a chart that keeps its declared appVersion beside a custom image": {
+			RepoName:                repoMCPKubernetes,
+			Language:                gen.LanguageGo,
+			Flavours:                gen.FlavourSlice{gen.FlavourApp},
+			HasDockerfile:           true,
+			CustomImages:            []string{"giantswarm/second-image"},
+			OverrideChartAppVersion: &keep,
+		},
 		"a chart of images built elsewhere": {
 			RepoName:      repoSitesearch,
 			Flavours:      gen.FlavourSlice{gen.FlavourApp},
