@@ -1695,9 +1695,10 @@ func TestSteps(t *testing.T) {
 			},
 		},
 		{
-			// The reconciler never rebuilds a tag: a trigger would publish a
-			// chart or an image nobody asked for. The missed build is a
-			// finding in every mode and no request is written.
+			// Outside a creation the reconciler never rebuilds a tag: a
+			// trigger would publish a chart or an image nobody asked for.
+			// The missed build is a finding in every mode and no request is
+			// written.
 			name: "release: a tag without a pipeline is a missed build, reported and never triggered", step: StepRelease,
 			seed: func(h *harness) {
 				r := h.gh.addRepo(owner, name)
@@ -1772,6 +1773,41 @@ func TestSteps(t *testing.T) {
 			verify: func(t *testing.T, h *harness, _ *Result) {
 				require.Empty(t, h.cc.mutations, "no pipeline is triggered")
 				require.Len(t, h.cc.projects[owner+"/"+name].pipelines, 1, "the default branch's pipeline alone")
+			},
+		},
+		{
+			// A repository created pull-request-last (devctl repo create,
+			// the repository manager): auto-release tags the scaffold before
+			// the change that adds the entry merges, and CircleCI, following
+			// the project only in this run, never saw the tag. That first
+			// release is the one tag the reconciler builds, once: the next
+			// run finds the pipeline the trigger started.
+			name: "release: the first release of a created repository is built once", step: StepRelease, added: true,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.release, r.releaseAt, r.releaseSubject = "v0.1.0", time.Now().Add(-time.Minute), scaffoldSubject
+				h.cc.seedPipeline(h.cc.follow(owner, name), circleciclient.PipelineVCS{Branch: "main"}, time.Now(), "success")
+			},
+			wantCheck: VerdictDrift, wantChange: "trigger the pipeline of v0.1.0, the first release of the created repository",
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Empty(t, res.Findings())
+				require.Equal(t, []string{"POST /api/v2/project/gh/" + owner + "/" + name + "/pipeline"}, h.cc.mutations)
+				require.Equal(t, "v0.1.0", h.cc.projects[owner+"/"+name].pipelines[0].VCS.Tag)
+			},
+		},
+		{
+			// An added entry for a repository that existed before — an
+			// adoption — releases from the team's own commits: its missed
+			// build stays a finding, as on any other repository.
+			name: "release: an adopted repository's missed tag build is reported, never triggered", step: StepRelease, added: true, existing: true,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.release, r.releaseAt, r.releaseSubject = "v0.1.0", time.Now().Add(-time.Hour), "fix: the team's own change"
+				h.cc.follow(owner, name)
+			},
+			wantCheck: VerdictReported, wantFinding: FindingMissedTagBuild, wantAfter: VerdictReported,
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				require.Empty(t, h.cc.mutations, "no pipeline is triggered")
 			},
 		},
 		{

@@ -339,6 +339,20 @@ func (c *Client) ListPipelines(ctx context.Context, org, repo, pageToken string)
 	return &page, nil
 }
 
+// TriggerTagPipeline runs the project's pipeline for tag: the build of a tag
+// pushed before CircleCI followed the project, which CircleCI never saw.
+func (c *Client) TriggerTagPipeline(ctx context.Context, org, repo, tag string) (*Pipeline, error) {
+	if tag == "" {
+		return nil, microerror.Maskf(invalidConfigError, "tag must not be empty")
+	}
+	var p Pipeline
+	if err := c.do(ctx, http.MethodPost, c.v2Project(org, repo)+"/pipeline", map[string]string{"tag": tag}, &p); err != nil {
+		return nil, microerror.Mask(err)
+	}
+	p.VCS.Tag = tag
+	return &p, nil
+}
+
 // ListPipelineWorkflows returns the workflows of a pipeline.
 func (c *Client) ListPipelineWorkflows(ctx context.Context, pipelineID string) ([]Workflow, error) {
 	var out struct {

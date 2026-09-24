@@ -25,7 +25,8 @@
 // deleted → unfollowed and deleted on GitHub, the entry the record),
 // catalog and mapping (the giantswarm/github workflows), first-release
 // verification (a vX.Y.Z tag → pipeline → workflows; a missed tag build is
-// reported, never rebuilt; a release tagged otherwise is not verified).
+// reported, never rebuilt, except a creation's first release, which is
+// built once; a release tagged otherwise is not verified).
 //
 // What a run costs in requests is counted at the clients' transports
 // ([Counter]) into [Result.Requests], and per step in the log. A check of a
@@ -139,8 +140,8 @@ const (
 	// FindingRedRelease: the latest release's tag pipeline failed.
 	FindingRedRelease FindingKind = "red-release"
 	// FindingMissedTagBuild: the latest release's tag has no pipeline. The
-	// reconciler never rebuilds a tag; the fix is the next tag, or the
-	// tag's pipeline triggered by hand.
+	// reconciler rebuilds no tag but a creation's first release; the fix is
+	// the next tag, or the tag's pipeline triggered by hand.
 	FindingMissedTagBuild FindingKind = "missed-tag-build"
 	// FindingCircleCIWebhookMissing: the project is followed on CircleCI
 	// but the repository carries no active CircleCI webhook for push

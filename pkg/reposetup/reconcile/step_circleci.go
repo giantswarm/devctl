@@ -254,9 +254,14 @@ func (r *Runner) circleCIGrantee(ctx context.Context, s *run) (string, error) {
 
 // stepRelease verifies the latest release: its tag has a pipeline and the
 // pipeline's workflows succeeded. Either failure is a finding, never a
-// rebuild: the reconciler publishes nothing. A tag without a pipeline —
-// the project was followed or renamed after the tag — is a missed build;
-// the fix is the next tag, or the tag's pipeline triggered by hand. A red
+// rebuild: the reconciler publishes nothing a person did not ask for. A tag
+// without a pipeline — the project was followed or renamed after the tag —
+// is a missed build; the fix is the next tag, or the tag's pipeline
+// triggered by hand. The one tag the reconciler builds is a creation's
+// first release (firstRelease): the run of the change that added the entry,
+// on the tag of the scaffold commit, which auto-release cuts before this
+// run follows the project — the release the person asked for, built once,
+// since the next run finds the pipeline the trigger started. A red
 // pipeline is a release nothing was published for; the fix is a rerun of
 // its failed workflow from failed — the rerun checks out the same commit
 // and runs the publish jobs — or, when the cause is in the code, the next
@@ -301,6 +306,16 @@ func (r *Runner) stepRelease(ctx context.Context, s *run, sr *StepResult) error 
 		return err
 	}
 	if pipeline == nil {
+		first, err := r.firstRelease(ctx, s, tag)
+		if err != nil {
+			return err
+		}
+		if first {
+			return s.plan(sr, fmt.Sprintf("trigger the pipeline of %s, the first release of the created repository", tag), func() error {
+				_, err := r.CircleCI.TriggerTagPipeline(ctx, s.owner, s.name, tag)
+				return err
+			})
+		}
 		s.report(sr, FindingMissedTagBuild,
 			fmt.Sprintf("release %s of %s has no pipeline: nothing was built or published for the tag", tag, s.slug()),
 			"cut the next tag, or trigger the tag's pipeline by hand")
@@ -346,6 +361,22 @@ func (r *Runner) stepRelease(ctx context.Context, s *run, sr *StepResult) error 
 		sr.Summary = fmt.Sprintf("release %s built: pipeline %d, workflows %s succeeded", tag, pipeline.Number, strings.Join(succeeded, ", "))
 	}
 	return nil
+}
+
+// firstRelease says whether tag is the first release of a repository the
+// triggering change created: the change added the entry, and the tag names
+// the commit the scaffold step pushed (scaffoldSubjectPrefix). An added entry for
+// a repository that existed before — an adoption — releases from its own
+// commits, and its missed builds stay findings.
+func (r *Runner) firstRelease(ctx context.Context, s *run, tag string) (bool, error) {
+	if !s.req.Added {
+		return false, nil
+	}
+	commit, _, err := r.GitHub.Repositories.GetCommit(ctx, s.owner, s.name, tag, nil)
+	if err != nil {
+		return false, err
+	}
+	return strings.HasPrefix(commit.GetCommit().GetMessage(), scaffoldSubjectPrefix(s.name)), nil
 }
 
 // isReleaseTag says whether tag is a release of the flow the release step
