@@ -163,6 +163,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `version update` replaces the running devctl, symbolic links resolved, with a single rename
+  (`selfupdatecosign.Install`). go-selfupdate's swap renamed the binary to `.devctl.old` before it moved
+  `.devctl.new` in, so a `devctl` started in between found no binary, and two updates at once shared those names:
+  three updates of one binary lost it in most runs. Now a `devctl` started meanwhile runs the old binary or the new
+  one, any number of updates can run at once, no other file is touched, and the binary keeps its mode.
 - `gen precommit` skips protobuf-generated code in every hook: a top-level `exclude` matches `*_pb.*`, `*_pb2*.py`
   and `*.pb.go` with its variants. `end-of-file-fixer` rewrote the buf-generated `*_pb.ts` files of a repository on
   every run, their next generation undid it, and the generated `pre-commit` check stayed red, so align-files could
