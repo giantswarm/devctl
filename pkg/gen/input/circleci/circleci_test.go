@@ -1075,13 +1075,18 @@ func Test_BranchPublishOnAddsCoupledBranchPushes(t *testing.T) {
 	}
 }
 
-// Test_ImageReferenceCheckLeftToChartPush verifies where app-build-suite's
-// image reference check runs. build-chart packages the chart before the
-// pipeline's own image is pushed, so in a repo that builds one it switches the
-// check off; the chart push jobs, which require the image job, keep it. A chart
-// of images built elsewhere keeps the check in build-chart too.
-func Test_ImageReferenceCheckLeftToChartPush(t *testing.T) {
-	const disable = `echo 'export ABS_DISABLE_HELM_IMAGE_REFERENCE_VALIDATOR=true' >> "$BASH_ENV"`
+// Test_ImageReferenceCheckExemptsOwnImageInBuildChart verifies how
+// app-build-suite's image reference check runs. build-chart packages the chart
+// before the pipeline's own image is pushed, so in a repo that builds one and
+// stamps appVersion it names that image, which the check then skips at the
+// stamped version while it resolves every other reference; the chart push
+// jobs, which require the image job, resolve all of them. A chart of images
+// built elsewhere, or one that keeps its declared appVersion, is checked in
+// full in build-chart too.
+func Test_ImageReferenceCheckExemptsOwnImageInBuildChart(t *testing.T) {
+	exempt := func(image string) string {
+		return `echo 'export ABS_HELM_IMAGE_REFERENCE_VALIDATOR_OWN_IMAGE=` + image + `' >> "$BASH_ENV"`
+	}
 	preSteps := func(doc, job string) string {
 		return yqQuery(t, doc, `.workflows.build.jobs[] | select(has("architect/push-to-app-catalog")) | .["architect/push-to-app-catalog"] | select(.name == "`+job+`") | .pre-steps[].run.command`)
 	}
@@ -1094,8 +1099,8 @@ func Test_ImageReferenceCheckLeftToChartPush(t *testing.T) {
 			HasDockerfile: true,
 			BranchPublish: branchPublish,
 		})
-		if cmd := preSteps(got, "build-chart"); cmd != disable {
-			t.Errorf("branchPublish=%t: build-chart pre-steps = %q, want %q", branchPublish, cmd, disable)
+		if cmd, want := preSteps(got, "build-chart"), exempt("gsoci.azurecr.io/giantswarm/mcp-kubernetes"); cmd != want {
+			t.Errorf("branchPublish=%t: build-chart pre-steps = %q, want %q", branchPublish, cmd, want)
 		}
 		jobs := []string{"push-chart-release"}
 		if branchPublish {
@@ -1103,18 +1108,44 @@ func Test_ImageReferenceCheckLeftToChartPush(t *testing.T) {
 		}
 		for _, job := range jobs {
 			if cmd := preSteps(got, job); cmd != "" {
-				t.Errorf("branchPublish=%t: %s must keep the image reference check, got pre-steps %q", branchPublish, job, cmd)
+				t.Errorf("branchPublish=%t: %s must resolve every image reference, got pre-steps %q", branchPublish, job, cmd)
 			}
+		}
+		if contains(got, "ABS_DISABLE_HELM_IMAGE_REFERENCE_VALIDATOR") {
+			t.Errorf("branchPublish=%t: no job may switch the image reference check off:\n%s", branchPublish, got)
 		}
 	}
 
 	got := render(t, Config{
-		RepoName:      repoSitesearch,
+		RepoName:      repoMCPKubernetes,
+		Language:      gen.LanguageGo,
 		Flavours:      gen.FlavourSlice{gen.FlavourApp},
-		HasDockerfile: false,
+		HasDockerfile: true,
+		ImageName:     "giantswarm/mcp-kubernetes-server",
 	})
-	if contains(got, "ABS_DISABLE_HELM_IMAGE_REFERENCE_VALIDATOR") {
-		t.Errorf("a chart of images built elsewhere must keep the image reference check:\n%s", got)
+	if cmd, want := preSteps(got, "build-chart"), exempt("gsoci.azurecr.io/giantswarm/mcp-kubernetes-server"); cmd != want {
+		t.Errorf("imageName: build-chart pre-steps = %q, want %q", cmd, want)
+	}
+
+	keep := false
+	for name, c := range map[string]Config{
+		"a chart of images built elsewhere": {
+			RepoName:      repoSitesearch,
+			Flavours:      gen.FlavourSlice{gen.FlavourApp},
+			HasDockerfile: false,
+		},
+		"a chart that keeps its declared appVersion": {
+			RepoName:                repoMCPKubernetes,
+			Language:                gen.LanguageGo,
+			Flavours:                gen.FlavourSlice{gen.FlavourApp},
+			HasDockerfile:           true,
+			OverrideChartAppVersion: &keep,
+		},
+	} {
+		got := render(t, c)
+		if contains(got, "ABS_HELM_IMAGE_REFERENCE_VALIDATOR_OWN_IMAGE") || contains(got, "ABS_DISABLE_HELM_IMAGE_REFERENCE_VALIDATOR") {
+			t.Errorf("%s must resolve every image reference in build-chart:\n%s", name, got)
+		}
 	}
 }
 

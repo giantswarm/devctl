@@ -58,6 +58,7 @@ func NewWorkflowsInput(p params.Params) input.Input {
 			"ChartReleaseGateJob": p.ChartReleaseGateJob,
 			"ImagePrivateOnly":    p.ImagePrivateOnly,
 			"ImageName":           p.ImageName,
+			"OwnImage":            p.OwnImage,
 			"ImagePlatforms":      p.ImagePlatforms,
 			"ImageNativeBuilds":   p.ImageNativeBuilds,
 			"BranchImageBuilds":   p.BranchImageBuilds,

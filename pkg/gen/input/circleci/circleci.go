@@ -34,7 +34,7 @@ import (
 // custom manager that reads this annotation lives in renovate-custom.json5.
 //
 // renovate: datasource=github-tags depName=giantswarm/architect-orb
-const OrbVersion = "10.10.0"
+const OrbVersion = "10.11.0"
 
 // DefaultATSVersion is the app-test-suite container tag the generated chart-test
 // jobs run when a repo pins none (`gen circleci --ats-version`). app-test-suite
@@ -632,6 +632,17 @@ func New(config Config) (*CircleCI, error) {
 	if config.OverrideChartAppVersion != nil {
 		keepChartAppVersion = !*config.OverrideChartAppVersion
 	}
+	// The image the chart references at the stamped appVersion, which
+	// build-chart packages before the pipeline pushes it. A chart that keeps its
+	// declared appVersion references no such unpushed tag.
+	var ownImage string
+	if hasDockerfile && !keepChartAppVersion {
+		imageName := config.ImageName
+		if imageName == "" {
+			imageName = "giantswarm/" + config.RepoName
+		}
+		ownImage = "gsoci.azurecr.io/" + imageName
+	}
 	isNode := config.Language == gen.LanguageNode
 	if config.Language != gen.LanguageGo && !isNode && !hasDockerfile && !hasApp {
 		return nil, microerror.Maskf(invalidConfigError, "no jobs would be generated: set --language=go or --language=node, add a Dockerfile, or use the app flavour")
@@ -865,6 +876,7 @@ func New(config Config) (*CircleCI, error) {
 			ChartReleaseGateJob:      config.ChartReleaseGateJob,
 			ImagePrivateOnly:         config.ImagePrivateOnly,
 			ImageName:                config.ImageName,
+			OwnImage:                 ownImage,
 			ImagePlatforms:           imagePlatforms,
 			ImageNativeBuilds:        config.ImageNativeBuilds,
 			BranchImageBuilds:        branchImageBuilds,

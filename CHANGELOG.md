@@ -9,6 +9,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- `gen circleci`: the generated pipelines pin architect orb 10.11.0, whose chart jobs run app-build-suite 2.5.0. In a
+  repository that builds an image and stamps the chart's `appVersion`, `build-chart` no longer switches the image
+  reference check off: its `pre-steps` step exports `ABS_HELM_IMAGE_REFERENCE_VALIDATOR_OWN_IMAGE` with the
+  repository's own image (`gsoci.azurecr.io/giantswarm/<repo>`, or `gsoci.azurecr.io/<imageName>`). app-build-suite
+  skips that image at the stamped version, which `build-chart` packages before the image is pushed, and resolves
+  every other `gsoci.azurecr.io` reference. A missing third-party mirror tag goes red on the pull request again
+  instead of at `push-chart-release`
+  ([app-build-suite#624](https://github.com/giantswarm/app-build-suite/issues/624)). A chart that keeps the
+  `appVersion` Chart.yaml declares is checked in full in `build-chart`; `push-chart` and `push-chart-release` check
+  every reference as before.
 - `gen circleci`: the generated pipelines pin architect orb 10.10.0, whose `architect` executor bundles gitsemver 3
   like its `app-build-suite` executor. From 10.8.0 to 10.9.0 a branch pipeline tagged its image with gitsemver 2's
   `X.Y.Z-dev.<branch>.<date>.<time>.h<sha>` and stamped its chart with gitsemver 3's `X.Y.Z-r<branch-hash>t<timestamp>h<sha>`,

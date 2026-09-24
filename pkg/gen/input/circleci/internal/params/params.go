@@ -121,6 +121,14 @@ type Params struct {
 	// append-only custom.yml merge cannot rename a generated job's image, so the
 	// generator carries it. Empty keeps the orb default.
 	ImageName string
+	// OwnImage is the gsoci image this pipeline builds
+	// (`gsoci.azurecr.io/<ImageName or giantswarm/<repo>>`), set when the chart
+	// build stamps appVersion with the build version. build-chart runs before
+	// that image is pushed, so it names the image to app-build-suite's image
+	// reference check, which skips that image at the stamped version and
+	// resolves every other reference. Empty when the repo builds no image or
+	// the chart keeps the appVersion Chart.yaml declares.
+	OwnImage string
 	// ImagePlatforms overrides the buildx platform list for the image build
 	// (the push-to-registries `platforms` param on the build-image and
 	// push-to-registries-release jobs). Empty lets the orb fall back to its
