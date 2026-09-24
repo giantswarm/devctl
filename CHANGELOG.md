@@ -7,6 +7,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- `repo reconcile`: a created repository's first release is built by the run that follows its project on CircleCI
+  ([#2408](https://github.com/giantswarm/devctl/issues/2408)). v8.97.2 keyed the trigger on `--added`, which the
+  reconciler workflow never passes (it validates every entry in existing mode), so no reconciler run triggered it and
+  a created chart repository still published no chart for `v0.1.0`. The release step now triggers the tag's pipeline
+  when this run's circleci step followed the project and the tag names the scaffold commit — in check mode it plans
+  the trigger beside the planned follow. A scaffold tag of a project followed before the run, and an adoption's own
+  tag, stay `missed-tag-build`.
+
 ### Changed
 
 - `gen circleci`: `build-chart` also exempts the images the repository's `.circleci/custom.yml` pushes with

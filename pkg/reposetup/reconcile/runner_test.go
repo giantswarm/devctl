@@ -1776,33 +1776,15 @@ func TestSteps(t *testing.T) {
 			},
 		},
 		{
-			// A repository created pull-request-last (devctl repo create,
-			// the repository manager): auto-release tags the scaffold before
-			// the change that adds the entry merges, and CircleCI, following
-			// the project only in this run, never saw the tag. That first
-			// release is the one tag the reconciler builds, once: the next
-			// run finds the pipeline the trigger started.
-			name: "release: the first release of a created repository is built once", step: StepRelease, added: true,
+			// The creation's first release on a project followed before
+			// this run — a creation whose run could not build it (v8.71.0
+			// to v8.97.x) — is no longer the follow's to build: the missed
+			// build is reported, whatever the change, and nothing is
+			// triggered (TestRunBuildsTheFirstReleaseRightAfterTheFollow).
+			name: "release: a scaffold tag of a project followed before the run is reported, never triggered", step: StepRelease, added: true,
 			seed: func(h *harness) {
 				r := h.gh.addRepo(owner, name)
-				r.release, r.releaseAt, r.releaseSubject = "v0.1.0", time.Now().Add(-time.Minute), scaffoldSubject
-				h.cc.seedPipeline(h.cc.follow(owner, name), circleciclient.PipelineVCS{Branch: "main"}, time.Now(), "success")
-			},
-			wantCheck: VerdictDrift, wantChange: "trigger the pipeline of v0.1.0, the first release of the created repository",
-			verify: func(t *testing.T, h *harness, res *Result) {
-				require.Empty(t, res.Findings())
-				require.Equal(t, []string{"POST /api/v2/project/gh/" + owner + "/" + name + "/pipeline"}, h.cc.mutations)
-				require.Equal(t, "v0.1.0", h.cc.projects[owner+"/"+name].pipelines[0].VCS.Tag)
-			},
-		},
-		{
-			// An added entry for a repository that existed before — an
-			// adoption — releases from the team's own commits: its missed
-			// build stays a finding, as on any other repository.
-			name: "release: an adopted repository's missed tag build is reported, never triggered", step: StepRelease, added: true, existing: true,
-			seed: func(h *harness) {
-				r := h.gh.addRepo(owner, name)
-				r.release, r.releaseAt, r.releaseSubject = "v0.1.0", time.Now().Add(-time.Hour), "fix: the team's own change"
+				r.release, r.releaseAt, r.releaseSubject = "v0.1.0", time.Now().Add(-time.Hour), scaffoldSubject
 				h.cc.follow(owner, name)
 			},
 			wantCheck: VerdictReported, wantFinding: FindingMissedTagBuild, wantAfter: VerdictReported,
@@ -2100,6 +2082,67 @@ func TestRunCircleCIGrantRevokedOnFailure(t *testing.T) {
 		"PUT /repos/giantswarm/sample-service/collaborators/architectbot",
 		"DELETE /repos/giantswarm/sample-service/collaborators/architectbot",
 	}, collaboratorMutations(h.gh.mutations))
+}
+
+// TestRunBuildsTheFirstReleaseRightAfterTheFollow: a chart repository (Go +
+// app) created pull-request-last has its scaffold tagged before the
+// reconciler follows the project, and CircleCI never saw the tag, so its
+// chart was never published (devctl#2408). The run whose circleci step
+// follows the project builds that first release once — the check plans the
+// follow and the trigger, the repair triggers one pipeline for the tag, the
+// next run finds it and writes nothing. The reconciler passes no --added,
+// so the follow alone marks the run. The first follow of a repository whose
+// latest tag names the team's own commit — an adoption — reports the missed
+// build and triggers nothing.
+func TestRunBuildsTheFirstReleaseRightAfterTheFollow(t *testing.T) {
+	steps := []Step{StepCircleCI, StepRelease}
+	trigger := "POST /api/v2/project/gh/" + owner + "/" + name + "/pipeline"
+
+	t.Run("the scaffold's tag", func(t *testing.T) {
+		h := newHarnessMode(t, entryYAML, reposetup.ModeExisting)
+		r := h.gh.addRepo(owner, name)
+		r.release, r.releaseAt, r.releaseSubject = "v0.1.0", time.Now().Add(-time.Minute), scaffoldSubject
+
+		check := h.run(ModeCheck, false, steps...)
+		sr := check.Step(StepRelease)
+		require.Equal(t, VerdictDrift, sr.Verdict, "%+v", sr)
+		require.Equal(t, []string{"trigger the pipeline of v0.1.0, the first release of the created repository"}, sr.Changes)
+		require.NotContains(t, h.cc.mutations, trigger, "a check triggers nothing")
+
+		repair := h.run(ModeRepair, false, steps...)
+		require.Equal(t, VerdictRepaired, repair.Step(StepRelease).Verdict, "%+v", repair.Step(StepRelease))
+		require.Empty(t, repair.Findings())
+		require.Equal(t, 1, countOf(h.cc.mutations, trigger), "one trigger: %v", h.cc.mutations)
+		require.Equal(t, "v0.1.0", h.cc.projects[owner+"/"+name].pipelines[0].VCS.Tag)
+
+		h.cc.mutations = nil
+		again := h.run(ModeRepair, false, steps...)
+		require.Equal(t, VerdictOK, again.Step(StepRelease).Verdict, "%+v", again.Step(StepRelease))
+		require.Contains(t, again.Step(StepRelease).Summary, "release v0.1.0 built")
+		require.Empty(t, h.cc.mutations, "the next run finds the pipeline and writes nothing")
+	})
+
+	t.Run("an adoption's own tag", func(t *testing.T) {
+		h := newHarnessMode(t, entryYAML, reposetup.ModeExisting)
+		r := h.gh.addRepo(owner, name)
+		r.release, r.releaseAt, r.releaseSubject = "v1.4.0", time.Now().Add(-time.Hour), "fix: the team's own change"
+
+		repair := h.run(ModeRepair, true, steps...)
+		require.Equal(t, VerdictReported, repair.Step(StepRelease).Verdict, "%+v", repair.Step(StepRelease))
+		require.Equal(t, []FindingKind{FindingMissedTagBuild}, kinds(repair.Step(StepRelease).Findings))
+		require.NotContains(t, h.cc.mutations, trigger, "no pipeline is triggered")
+	})
+}
+
+// countOf is how often item occurs in list.
+func countOf(list []string, item string) int {
+	n := 0
+	for _, s := range list {
+		if s == item {
+			n++
+		}
+	}
+	return n
 }
 
 // TestRenovateWaitsForScaffold: on an empty repository the renovate step
