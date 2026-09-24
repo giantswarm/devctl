@@ -176,8 +176,12 @@ type run struct {
 	repo           *github.Repository // nil when the repository does not exist
 	// created says the create step created the repository in this run.
 	created bool
-	renamed bool
-	empty   bool // no commits on the default branch
+	// followedNow says the circleci step followed the project in this run
+	// (planned the follow, in check mode): CircleCI never saw a tag pushed
+	// before it.
+	followedNow bool
+	renamed     bool
+	empty       bool // no commits on the default branch
 	// scaffoldSHA is the scaffold commit the scaffold step pushed.
 	scaffoldSHA string
 	// scaffoldFailed says the scaffold step could not push the scaffold:
