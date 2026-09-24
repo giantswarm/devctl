@@ -764,6 +764,9 @@ func New(config Config) (*CircleCI, error) {
 	if chartName == "" {
 		chartName = config.RepoName
 	}
+	// The orb's push-to-app-catalog job rejects a chart not named after the
+	// repo, with or without an -app suffix, unless the job allows the mismatch.
+	chartNameMismatch := strings.TrimSuffix(chartName, "-app") != strings.TrimSuffix(config.RepoName, "-app")
 
 	// Node toolchain. The build/test job is self-contained on a cimg/node
 	// executor (not an architect orb job -- the orb ships none), defined inline
@@ -890,6 +893,7 @@ func New(config Config) (*CircleCI, error) {
 			ATSResourceClass:         config.ATSResourceClass,
 			ATSOnRelease:             config.ATSOnRelease,
 			ChartName:                chartName,
+			ChartNameMismatch:        chartNameMismatch,
 			KeepChartAppVersion:      keepChartAppVersion,
 			ForcePublic:              config.ForcePublic,
 			AppCatalog:               appCatalog,

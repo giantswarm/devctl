@@ -49,6 +49,7 @@ func NewWorkflowsInput(p params.Params) input.Input {
 			"ATSResourceClass":    p.ATSResourceClass,
 			"ATSOnRelease":        p.ATSOnRelease,
 			"ChartName":           p.ChartName,
+			"ChartNameMismatch":   p.ChartNameMismatch,
 			"KeepChartAppVersion": p.KeepChartAppVersion,
 			"ForcePublic":         p.ForcePublic,
 			"AppCatalog":          p.AppCatalog,

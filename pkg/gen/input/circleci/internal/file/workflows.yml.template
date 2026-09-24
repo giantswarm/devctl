@@ -586,6 +586,11 @@ workflows:
         app_catalog: {{ .AppCatalog }}
         app_catalog_test: {{ .AppCatalogTest }}
         chart: {{ .ChartName }}
+{{- if .ChartNameMismatch }}
+        # The chart is not named after the repo (with or without -app), which
+        # the orb's chart name check otherwise rejects.
+        explicit_allow_chart_name_mismatch: true
+{{- end }}
 {{- if .KeepChartAppVersion }}
         # `appVersion` is the version of the packaged application, and this chart
         # packages an app built elsewhere, so that app's version is what
@@ -711,6 +716,11 @@ workflows:
         app_catalog: {{ .AppCatalog }}
         app_catalog_test: {{ .AppCatalogTest }}
         chart: {{ .ChartName }}
+{{- if .ChartNameMismatch }}
+        # The chart is not named after the repo (with or without -app), which
+        # the orb's chart name check otherwise rejects.
+        explicit_allow_chart_name_mismatch: true
+{{- end }}
 {{- if .KeepChartAppVersion }}
         # `appVersion` is the version of the packaged application, and this chart
         # packages an app built elsewhere, so that app's version is what
@@ -758,6 +768,11 @@ workflows:
         app_catalog: {{ .AppCatalog }}
         app_catalog_test: {{ .AppCatalogTest }}
         chart: {{ .ChartName }}
+{{- if .ChartNameMismatch }}
+        # The chart is not named after the repo (with or without -app), which
+        # the orb's chart name check otherwise rejects.
+        explicit_allow_chart_name_mismatch: true
+{{- end }}
 {{- if .KeepChartAppVersion }}
         # `appVersion` is the version of the packaged application, and this chart
         # packages an app built elsewhere, so that app's version is what

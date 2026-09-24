@@ -745,6 +745,56 @@ func Test_ChartName(t *testing.T) {
 	}
 }
 
+// Test_ChartNameMismatch verifies every chart job allows the chart name
+// mismatch the orb's push-to-app-catalog job otherwise rejects, exactly when
+// the chart name differs from the repo name with any -app suffix stripped
+// (e.g. policy-api ships helm/policy-api-crds).
+func Test_ChartNameMismatch(t *testing.T) {
+	testCases := []struct {
+		name      string
+		repoName  string
+		chartName string
+		expected  int // occurrences of `explicit_allow_chart_name_mismatch: true`
+	}{
+		{
+			name:      "a chart not named after the repo allows the mismatch on every chart job",
+			repoName:  "policy-api",
+			chartName: "policy-api-crds",
+			// build-chart, push-chart and push-chart-release.
+			expected: 3,
+		},
+		{
+			name:      "the repo name with an -app suffix matches",
+			repoName:  "foo",
+			chartName: "foo-app",
+			expected:  0,
+		},
+		{
+			name:     "the default chart name matches",
+			repoName: "foo",
+			expected: 0,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := render(t, Config{
+				RepoName:      tc.repoName,
+				Language:      gen.Language(""),
+				Flavours:      gen.FlavourSlice{gen.FlavourApp},
+				BranchPublish: true,
+				ChartName:     tc.chartName,
+			})
+			if n := strings.Count(got, "- "+jobPushCatalog+":"); n != 3 {
+				t.Fatalf("expected 3 chart jobs, found %d:\n%s", n, got)
+			}
+			if n := strings.Count(got, "explicit_allow_chart_name_mismatch: true"); n != tc.expected {
+				t.Errorf("expected explicit_allow_chart_name_mismatch on %d chart jobs, found %d:\n%s", tc.expected, n, got)
+			}
+		})
+	}
+}
+
 // Test_AppVersionFollowsRepoShape verifies which chart jobs keep the appVersion
 // declared in Chart.yaml, and that an explicit OverrideChartAppVersion
 // overrules the derivation in either direction.
