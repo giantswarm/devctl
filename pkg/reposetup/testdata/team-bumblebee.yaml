@@ -217,3 +217,23 @@
     ci:
       generate: true
       chartReleaseGateJob: verify-release-floors
+- name: template-content
+  # A template whose .circleci/config.yml is content for the repositories
+  # created from it, as giantswarm/mcp-template declares it.
+  componentType: template
+  gen:
+    flavours:
+      - cli
+    language: go
+    ci:
+      generate: false
+      templateContent: true
+- name: template-content-generated
+  componentType: template
+  gen:
+    flavours:
+      - cli
+    language: go
+    ci:
+      generate: true
+      templateContent: true

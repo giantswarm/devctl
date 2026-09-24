@@ -79,6 +79,8 @@ func TestValidateEntries(t *testing.T) {
 		{name: "agent-merge-not-bool", template: TemplateGo, verdict: VerdictFree, fields: []string{"agentMerge"}},
 		{name: "ci-without-generate", template: TemplateChart, verdict: VerdictFree},
 		{name: "chart-release-gate", template: TemplateChart, verdict: VerdictFree},
+		{name: "template-content", template: TemplateGo, verdict: VerdictFree},
+		{name: "template-content-generated", template: TemplateGo, verdict: VerdictFree, fields: []string{"gen.ci.templateContent"}},
 	}
 
 	for _, tc := range tests {
@@ -120,7 +122,7 @@ func problemFields(problems []Problem) []string {
 func TestValidateMessagesNameTheReason(t *testing.T) {
 	v, tf := fixtureValidator(t)
 	result, err := v.Validate(context.Background(), Request{TeamFile: tf, Names: []string{
-		"node-ui", "plans-wrong-language", "hello-world-app", "chart-name-mismatch", "internal-visibility", "unknown-field", "unknown-flavour", "taken-name", "renamed-name", "twice", "no-gen",
+		"node-ui", "plans-wrong-language", "hello-world-app", "chart-name-mismatch", "internal-visibility", "unknown-field", "unknown-flavour", "taken-name", "renamed-name", "twice", "no-gen", "template-content-generated",
 	}})
 	require.NoError(t, err)
 
@@ -135,6 +137,7 @@ func TestValidateMessagesNameTheReason(t *testing.T) {
 	require.Equal(t, "the plans flavour derives giantswarm/template-plans, which is generic only: set gen.language to generic", messages["plans-wrong-language/gen.language"])
 	require.Contains(t, messages["hello-world-app/name"], "without the -app suffix")
 	require.Contains(t, messages["chart-name-mismatch/gen.ci.chartName"], `must equal the repository name "chart-name-mismatch"`)
+	require.Contains(t, messages["template-content-generated/gen.ci.templateContent"], "contradicts gen.ci.generate: true")
 	require.Contains(t, messages["internal-visibility/visibility"], "public")
 	require.Contains(t, messages["internal-visibility/lifecycle"], "archived")
 	require.Equal(t, "not a field of the repositories schema", messages["unknown-field/template"])

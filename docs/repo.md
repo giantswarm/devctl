@@ -110,6 +110,12 @@ lists, so it never lags a copy in this document; the live schema is
 [`.github/repositories.schema.json`](https://github.com/giantswarm/github/blob/main/.github/repositories.schema.json)
 in giantswarm/github.
 
+`gen.ci.templateContent: true` says the `.circleci/config.yml` a template repository carries is content for the
+repositories created from it, not its own pipeline: the reconciler's circleci and release steps skip the repository
+(`no CircleCI pipeline: .circleci/config.yml is template content`), no follow, no deploy key, no tag build to verify,
+and the branch is not read for it. It sits beside `generate: false` (the `ci` block requires `generate`); `generate:
+true` beside it is refused. A template that builds itself, like template-app, leaves the field out.
+
 The template is derived, not chosen: `language: go` gives `giantswarm/template`; the `plans` flavour
 with `language: generic` gives `giantswarm/template-plans` and refuses any other language, the same
 way `language: node` is refused until its template ships; `language: generic` with the `app` flavour

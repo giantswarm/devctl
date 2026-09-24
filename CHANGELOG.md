@@ -43,6 +43,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `gen.ci.templateContent: true` in a team-file entry says the `.circleci/config.yml` a template repository carries is
+  content for the repositories created from it, not its own pipeline. The reconciler's circleci and release steps skip
+  such a repository (`no CircleCI pipeline: .circleci/config.yml is template content`): no follow, no deploy key, no
+  tag build to verify, and the branch is not read for it. It sits beside `generate: false`; `generate: true` beside it
+  is refused by the validator, and the schema carries the field. Before, a template repository whose configuration carries placeholders (mcp-template's
+  `{MCP-NAME}`) was treated like any repository with a configuration on its default branch, and aligning it would have
+  made CircleCI follow it and run the placeholder pipeline on every push.
 - `authstore.ResolveGitHub(ctx, envVars...)`, the one resolver of the GitHub token a command for people acts
   with: a token in `DEVCTL_GITHUB_TOKEN`, `GITHUB_TOKEN` or `OPSCTL_GITHUB_TOKEN` (or the one variable a
   `--github-token-envvar` names) is an explicit override that carries one warning naming the variable and
