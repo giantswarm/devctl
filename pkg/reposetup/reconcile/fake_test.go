@@ -64,6 +64,10 @@ type fakeRepo struct {
 	commits      map[string]fakeCommit // commit sha → tree sha and message
 	heads        map[string]string     // branch → sha of its head commit
 	seq          int
+
+	// releaseSubject is the subject of the commit the release's tag names;
+	// empty leaves the tag's commit unknown (404).
+	releaseSubject string
 }
 
 type fakeCommit struct{ tree, message string }
@@ -545,6 +549,13 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 			return
 		}
 		writeJSON(w, 200, append([]*github.RepositoryCommit{{SHA: new("head")}}, repo.history...))
+	}))
+	mux.HandleFunc("GET /repos/{owner}/{repo}/commits/{ref}", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		if ref := r.PathValue("ref"); ref != repo.release || repo.releaseSubject == "" {
+			writeJSON(w, http.StatusNotFound, map[string]string{"message": "No commit found for SHA: " + ref})
+			return
+		}
+		writeJSON(w, 200, &github.RepositoryCommit{SHA: new("release-commit"), Commit: &github.Commit{Message: new(repo.releaseSubject + "\n\nbody")}})
 	}))
 	mux.HandleFunc("GET /repos/{owner}/{repo}/commits/{sha}/status", f.withRepo(func(w http.ResponseWriter, _ *http.Request, repo *fakeRepo) {
 		if repo.checksStatus != 0 {
@@ -1214,6 +1225,14 @@ func (f *fakeCircleCI) routes(mux *http.ServeMux) {
 			items = []circleciclient.Pipeline{}
 		}
 		writeJSON(w, 200, map[string]any{"items": items, "next_page_token": next})
+	}))
+	mux.HandleFunc("POST /api/v2/project/gh/{org}/{repo}/pipeline", f.withProject(func(w http.ResponseWriter, r *http.Request, p *fakeProject) {
+		var in struct {
+			Tag string `json:"tag"`
+		}
+		decode(r, &in)
+		f.addPipeline(p, in.Tag, "success")
+		writeJSON(w, 201, p.pipelines[0])
 	}))
 	mux.HandleFunc("GET /api/v2/pipeline/{id}/workflow", func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()

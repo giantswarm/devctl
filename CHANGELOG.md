@@ -9,6 +9,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- `repo reconcile`: the run of the change that adds an entry builds the repository's first release. A repository
+  created pull-request-last (`devctl repo create`, the repository manager) has its scaffold tagged `v0.1.0` before the
+  entry merges, and the run of the merge is the first to follow the project on CircleCI, which therefore never saw
+  the tag: since v8.71.0 that release was a `missed-tag-build` finding, and every created repository stayed without a
+  built first release until a person triggered its pipeline. The release step now triggers the pipeline of a tag
+  that names the scaffold commit (`feat: initial scaffold of <name> from `) in a run whose change added the entry,
+  once: the next run finds the pipeline. Every other missed tag build, an adopted repository's included, stays a
+  finding and is never rebuilt. `circleciclient.TriggerTagPipeline` is back for it.
 - `gen circleci`: the generated pipelines pin architect orb 10.11.0, whose chart jobs run app-build-suite 2.5.0. In a
   repository that builds an image and stamps the chart's `appVersion`, `build-chart` no longer switches the image
   reference check off: its `pre-steps` step exports `ABS_HELM_IMAGE_REFERENCE_VALIDATOR_OWN_IMAGE` with the

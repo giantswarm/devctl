@@ -34,8 +34,9 @@ The command
 6. creates the repository with your GitHub login -- description and visibility from the declaration;
    you are its admin, as the creator of an organisation repository is,
 7. pushes the rendered scaffold as the one commit on `main` (`feat: initial scaffold of <name> from
-   <template>`); the scaffold's auto-release workflow tags `v0.1.0` from it and CircleCI builds the
-   tag once the reconciler has followed the project, and
+   <template>`); the scaffold's auto-release workflow tags `v0.1.0` from it before CircleCI follows
+   the project, so CircleCI never sees that tag, and the reconciler's run of the merged entry follows
+   the project and triggers the tag's pipeline -- the one tag the reconciler builds, and only once, and
 8. opens the pull request on a `repo-create/<name>` branch with the conventional-commit title
    `feat(<team>): declare <name>` and a body naming the repository, its scaffold commit and the
    declaration -- validated in existing mode now, since the repository exists.
@@ -48,7 +49,7 @@ steps as `drift`, what each would do) and writes nothing.
 The create and scaffold steps are the engine's own (`reconcile.Runner.Create`, the same steps the
 reconciler runs), so the repository the command creates and the one the reconciler would have created
 are the same. Everything after the scaffold -- settings, team permissions, branch protection and the
-required checks, CircleCI, webhooks, CODEOWNERS, the catalog, the first-release check -- the
+required checks, CircleCI, webhooks, CODEOWNERS, the catalog, the first release's build -- the
 reconciler applies from the merged entry; it repairs, and never creates.
 
 ### Only an organisation owner creates

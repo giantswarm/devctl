@@ -146,7 +146,7 @@ func (r *Runner) pushScaffold(ctx context.Context, s *run, sr *StepResult, empty
 	// filter_unconventional), so a first commit without the prefix leaves the
 	// repository without its v0.1.0 for good.
 	commit, _, err := r.GitHub.Git.CreateCommit(ctx, s.owner, s.name, github.Commit{
-		Message: new(fmt.Sprintf("feat: initial scaffold of %s from %s\n\nRendered by devctl for the entry in repositories/%s.yaml%s.", s.name, scaffoldOrigin(scaffold.Template), s.req.Team, chartClause(scaffold.Chart, s.name))),
+		Message: new(fmt.Sprintf("%s%s\n\nRendered by devctl for the entry in repositories/%s.yaml%s.", scaffoldSubjectPrefix(s.name), scaffoldOrigin(scaffold.Template), s.req.Team, chartClause(scaffold.Chart, s.name))),
 		Tree:    &github.Tree{SHA: tree.SHA},
 	}, nil)
 	if err != nil {
@@ -369,6 +369,13 @@ func chartClause(chart reposetup.Template, name string) string {
 		return ""
 	}
 	return fmt.Sprintf(" with the chart of %s at helm/%s", chart, name)
+}
+
+// scaffoldSubjectPrefix is the start of the scaffold commit's subject, up to the
+// template it was rendered from: what marks a tag on that commit as the
+// first release of a repository the platform created.
+func scaffoldSubjectPrefix(name string) string {
+	return "feat: initial scaffold of " + name + " from "
 }
 
 func scaffoldOrigin(t reposetup.Template) string {
