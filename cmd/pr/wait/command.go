@@ -28,10 +28,12 @@ The wait ends before it starts for a pull request no CI can turn green: a draft,
 a closed or merged one, one conflicting with its base, one behind a base that
 requires branches to be up to date. A failure anywhere ends the wait at once.
 
-CircleCI is consulted when the head carries .circleci/config.yml and the
-repository has a CircleCI project; a repository without either (an upstream
-fork) is judged from GitHub alone. Tokens come from the keychain (` + "`devctl auth login`" + `);
-the CircleCI token is required only when CircleCI is consulted.
+CircleCI is consulted when the head carries .circleci/config.yml and CircleCI
+builds the repository: it has a project there with at least one pipeline. A
+repository without either (an upstream fork; a template repository whose
+configuration is for the repositories created from it) is judged from GitHub
+alone. Tokens come from the keychain (` + "`devctl auth login`" + `); the CircleCI token is
+required only when CircleCI is consulted.
 
 Polling is conditional (ETags, a 304 costs no budget) at an interval derived
 from the rate-limit headers of the answers, 15 s to 60 s.

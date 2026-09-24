@@ -27,6 +27,7 @@ const (
 	actsPath = "GET /repos/o/r/actions/runs?head_sha=abc123"
 	confPath = "GET /repos/o/r/contents/.circleci/config.yml"
 	projPath = "GET /api/v2/project/gh/o/r"
+	listPath = "GET /api/v2/project/gh/o/r/pipeline"
 	pipePath = "GET /api/v2/project/gh/o/r/pipeline?branch=feature"
 	wfPath   = "GET /api/v2/pipeline/p1/workflow"
 )
@@ -136,6 +137,7 @@ func Test_Wait_stageGap(t *testing.T) {
 	gh[confPath] = []sequence.Response{config}
 	cc := sequence.Routes{
 		projPath: {project},
+		listPath: {pipelines},
 		pipePath: {pipelines},
 		wfPath: {
 			body(map[string]any{"items": []any{map[string]any{"id": "w1", "name": "build", "status": "running"}}}),
@@ -206,6 +208,40 @@ func Test_Wait_noCircleCIProjectIsGitHubAlone(t *testing.T) {
 	}
 	if len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0], "no CircleCI project") {
 		t.Errorf("want one warning naming the missing project, got %q", result.Warnings)
+	}
+}
+
+func Test_Wait_projectWithoutPipelinesIsGitHubAlone(t *testing.T) {
+	// CircleCI answers a project for every repository the token's user sees
+	// on GitHub, set up on CircleCI or not; one that has never run a
+	// pipeline (a template repository whose configuration is for the
+	// repositories created from it) is not waited for: green from GitHub
+	// alone, the warning in the document, and no pipeline of the branch
+	// looked up.
+	gh := gitHubGreen()
+	gh[confPath] = []sequence.Response{config}
+	cc := sequence.Routes{
+		projPath: {project},
+		listPath: {body(map[string]any{"items": []any{}, "next_page_token": nil})},
+	}
+	h := start(t, gh, cc, true, 2*time.Minute)
+	result, err := h.waiter.Wait(context.Background(), "o", "r", 42)
+	if err != nil {
+		t.Fatalf("want green, got %v", err)
+	}
+	if result.CircleCI != nil {
+		t.Errorf("want no circleci in the document, got %+v", result.CircleCI)
+	}
+	if len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0], "never run a pipeline") {
+		t.Errorf("want one warning naming the project without a pipeline, got %q", result.Warnings)
+	}
+	for _, r := range h.circleci.Requests() {
+		if r.Query.Get("branch") != "" {
+			t.Errorf("want no pipeline of the branch looked up, got %s", r)
+		}
+	}
+	if n := len(h.circleci.Requests()); n != 2 {
+		t.Errorf("want the project and its pipelines read once, got %d requests", n)
 	}
 }
 

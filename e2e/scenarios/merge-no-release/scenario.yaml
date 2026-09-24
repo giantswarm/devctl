@@ -95,6 +95,8 @@ github:
             - {id: 9001, name: Auto-release, path: .github/workflows/zz_generated.auto_release.yaml, event: push, head_branch: main, head_sha: aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44, status: completed, conclusion: success, html_url: "https://github.com/giantswarm/e2e-app/actions/runs/9001"}
 circleci:
   routes:
+    "GET /api/v2/project/gh/giantswarm/e2e-app/pipeline":
+      - body: {items: [{id: p1, number: 12, state: created, created_at: "2026-09-21T10:00:00Z", vcs: {revision: abc123, branch: feature}}], next_page_token: null}
     "GET /api/v2/project/gh/giantswarm/e2e-app":
       - body: {slug: gh/giantswarm/e2e-app, name: e2e-app, organization_name: giantswarm}
     "GET /api/v2/project/gh/giantswarm/e2e-app/pipeline?branch=feature":

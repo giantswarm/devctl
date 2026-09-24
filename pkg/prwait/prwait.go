@@ -100,7 +100,8 @@ type Result struct {
 	// Checks are the head's check runs and statuses, the latest per name.
 	Checks []Check `json:"checks"`
 	// CircleCI is absent when the head carries no CircleCI configuration or
-	// the repository has no CircleCI project.
+	// CircleCI does not build the repository: no project, or a project that
+	// has never run a pipeline.
 	CircleCI *CircleCI `json:"circleci,omitempty"`
 	// Actions are the head's GitHub Actions runs, the latest per workflow.
 	Actions []ActionRun `json:"actions"`
@@ -108,7 +109,7 @@ type Result struct {
 	// ended without a verdict.
 	Unfinished []string `json:"unfinished,omitempty"`
 	// Warnings are for the envelope: a head that changed under the wait, a
-	// CircleCI project that does not exist.
+	// CircleCI project that does not exist or has never run a pipeline.
 	Warnings []string `json:"-"`
 }
 
@@ -266,9 +267,13 @@ func (w *Waiter) poll(ctx context.Context, owner, repo string, number int, h *he
 }
 
 // decideCircleCI settles whether CircleCI is part of this head's verdict: it
-// is when the head carries CircleCIConfigPath and CircleCI has a project for
-// the repository. The token is required only past the first condition, so a
-// repository without CircleCI needs GitHub alone.
+// is when the head carries CircleCIConfigPath and CircleCI builds the
+// repository, a project there with at least one pipeline. The project lookup
+// alone does not decide it: CircleCI answers a project for every repository
+// the token's user sees on GitHub, set up on CircleCI or not, and a template
+// repository carries the configuration for the repositories created from it
+// without ever being built itself. The token is required only past the first
+// condition, so a repository without CircleCI needs GitHub alone.
 func (w *Waiter) decideCircleCI(ctx context.Context, owner, repo string, number int, headRef string, fork bool, h *head, result *Result) error {
 	h.decided = true
 	if w.circleci == nil {
@@ -289,9 +294,19 @@ func (w *Waiter) decideCircleCI(ctx context.Context, owner, repo string, number 
 	if _, err := client.GetProject(ctx, owner, repo); err != nil {
 		if circleciclient.IsNotFound(err) {
 			result.Warnings = append(result.Warnings, fmt.Sprintf("%s/%s has %s but no CircleCI project: GitHub alone", owner, repo, CircleCIConfigPath))
+			w.progress.Printf("no CircleCI project for %s/%s: GitHub alone", owner, repo)
 			return nil
 		}
 		return err
+	}
+	page, err := client.ListPipelines(ctx, owner, repo, "")
+	if err != nil {
+		return err
+	}
+	if len(page.Items) == 0 {
+		result.Warnings = append(result.Warnings, fmt.Sprintf("%s/%s has %s but CircleCI has never run a pipeline for it (not set up there): GitHub alone", owner, repo, CircleCIConfigPath))
+		w.progress.Printf("CircleCI project for %s/%s without a pipeline: GitHub alone", owner, repo)
+		return nil
 	}
 	h.circleci = client
 	h.project = fmt.Sprintf("github/%s/%s", owner, repo)
