@@ -202,13 +202,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
-- `repo reconcile`: the `lifecycle` step leaves CircleCI before it archives or deletes the repository on GitHub, and
-  unfollows and stops the project under the same admin grant as the `circleci` step ("grant architectbot admin for
-  leaving CircleCI, revoked after it"). CircleCI takes "stop building" only from a GitHub admin of the repository,
-  and an archived repository's collaborators are read-only. Before, the step archived first and stopped the project
-  without the grant, so a push-only identity got `403 Permission denied` and the archive stayed half done
-  ([#2409](https://github.com/giantswarm/devctl/issues/2409)). A repository that is already archived on GitHub and
-  still followed on CircleCI is unarchived for the grant and archived again after it, also when CircleCI refuses.
+- `repo reconcile`: the `lifecycle` step leaves CircleCI in a way that works for a renamed repository. `lifecycle:
+  archived` unfollows the project as the CircleCI token's user and deletes CircleCI's deploy key on GitHub, then
+  archives the repository. It no longer calls CircleCI's "stop building" (`DELETE /api/v1.1/project/…/enable`), which
+  CircleCI refuses for a renamed repository with `403 Permission denied`, even from a GitHub admin of the repository,
+  so the archive run failed and left the project unfollowed with its deploy key in place
+  ([#2409](https://github.com/giantswarm/devctl/issues/2409)). Removing the deploy key is the way CircleCI documents to
+  stop building when "Stop Building" fails. The webhook stays, because the reconciler's identity cannot write webhooks,
+  and an archived repository sends nothing through it. The deploy key is read on every run, so an archive left half
+  done is finished by the next one; deleting a deploy key works on an archived repository. `lifecycle: deleted`
+  unfollows, then deletes the repository. Neither asks for an admin grant any more, and v8.98.4's grant, its unarchive
+  and `circleciclient.StopBuilding` are gone.
 - `gen circleci`: a `--chart-name` that differs from the repository name beyond an `-app` suffix also sets
   `explicit_allow_chart_name_mismatch: true` on every chart job, so the orb's chart name check no longer fails it.
 - `repo reconcile`: the `circleci` step's admin grant for the CircleCI token's GitHub user covers every CircleCI write

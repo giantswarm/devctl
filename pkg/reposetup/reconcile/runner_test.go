@@ -1115,7 +1115,7 @@ func TestSteps(t *testing.T) {
 			seed: func(h *harness) {
 				r := h.gh.addRepo(owner, name)
 				r.hooks = []*github.Hook{circleCIHook()}
-				h.cc.projects[owner+"/"+name] = &fakeProject{following: true, building: true}
+				h.cc.projects[owner+"/"+name] = &fakeProject{following: true}
 				h.gh.permission = "write"
 			},
 			wantCheck:  VerdictDrift,
@@ -1508,88 +1508,84 @@ func TestSteps(t *testing.T) {
 			},
 		},
 		{
-			name: "lifecycle: archived unfollows on CircleCI, then archives on GitHub", step: StepLifecycle, entry: archivedEntryYAML,
+			// CircleCI's deploy key goes on GitHub — CircleCI's own way to
+			// stop a project it refuses to stop for a renamed repository — and
+			// its webhook stays, a hook the reconciler cannot delete and an
+			// archived repository sends nothing through.
+			name: "lifecycle: archived unfollows on CircleCI and deletes CircleCI's deploy key, then archives on GitHub", step: StepLifecycle, entry: archivedEntryYAML,
 			seed: func(h *harness) {
 				h.gh.addRepo(owner, name)
 				h.cc.follow(owner, name)
 			},
-			wantCheck: VerdictDrift, wantChange: "unfollow on CircleCI and stop building; archive on GitHub",
+			wantCheck: VerdictDrift, wantChange: "unfollow on CircleCI; delete CircleCI's deploy key 164277013; archive on GitHub",
 			verify: func(t *testing.T, h *harness, _ *Result) {
 				require.True(t, h.repo().archived)
+				require.Empty(t, h.repo().deployKeys, "CircleCI can no longer check the repository out")
+				require.Len(t, h.repo().hooks, 1, "the webhook stays")
 				p := h.cc.projects[owner+"/"+name]
 				require.NotNil(t, p, "the project stays on CircleCI, as it does live")
 				require.False(t, p.following, "the token's user unfollowed")
-				require.False(t, p.building, "stopped building")
 			},
 		},
 		{
-			// CircleCI takes "stop building" from a GitHub admin only, and an
-			// archived repository takes no grant: the push-only identity leaves
-			// CircleCI under the grant, which is revoked before the archive.
-			// The renamed repository's project is the one under the new slug,
-			// where CircleCI keeps it after a rename.
-			name: "lifecycle: a renamed repository archived by a push-only identity leaves CircleCI under an admin grant, revoked before the archive", step: StepLifecycle, entry: archivedEntryYAML,
+			// The case of devctl#2409: CircleCI refused "stop building" for a
+			// renamed repository even from an admin. The step asks CircleCI
+			// for the unfollow alone, which any follower may make, under the
+			// new slug, where CircleCI keeps the project after a rename; the
+			// push-only identity needs no admin grant.
+			name: "lifecycle: a renamed repository archived by a push-only identity is left by CircleCI without an admin grant", step: StepLifecycle, entry: archivedEntryYAML,
 			seed: func(h *harness) {
 				h.gh.addRepo(owner, name+"-v2")
 				h.gh.redirects[owner+"/"+name] = owner + "/" + name + "-v2"
 				h.gh.permission = "write"
 				h.cc.follow(owner, name+"-v2")
 			},
-			wantCheck: VerdictDrift, wantChange: "grant architectbot admin for leaving CircleCI, revoked after it; unfollow on CircleCI and stop building; archive on GitHub",
+			wantCheck: VerdictDrift, wantChange: "unfollow on CircleCI; delete CircleCI's deploy key 164277013; archive on GitHub",
 			verify: func(t *testing.T, h *harness, _ *Result) {
 				r := h.gh.repos[owner+"/"+name+"-v2"]
 				require.True(t, r.archived)
-				require.Empty(t, r.collaborators, "the grant is revoked")
-				p := h.cc.projects[owner+"/"+name+"-v2"]
-				require.False(t, p.following, "the token's user unfollowed the project CircleCI knows")
-				require.False(t, p.building, "stopped building")
+				require.Empty(t, r.deployKeys)
+				require.False(t, h.cc.projects[owner+"/"+name+"-v2"].following, "the token's user unfollowed the project CircleCI knows")
+				require.Equal(t, []string{"POST /api/v1.1/project/github/giantswarm/sample-service-v2/unfollow"}, h.cc.mutations, "CircleCI is asked for the unfollow alone")
 				require.Equal(t, []string{
-					"PUT /repos/giantswarm/sample-service-v2/collaborators/architectbot",
-					"DELETE /repos/giantswarm/sample-service-v2/collaborators/architectbot",
+					"DELETE /repos/giantswarm/sample-service-v2/keys/164277013",
 					"PATCH /repos/giantswarm/sample-service-v2",
-				}, h.gh.mutations, "granted, revoked, then archived")
+				}, h.gh.mutations, "no admin grant; the key goes, then the archive")
 			},
 		},
 		{
-			// Archived on GitHub first — by hand before the lifecycle was
-			// declared — and still followed: the grant needs the repository
-			// unarchived, and the run archives it again.
-			name: "lifecycle: a repository archived on GitHub and still followed is unarchived for the grant and archived again", step: StepLifecycle, entry: archivedEntryYAML,
+			// An archive left half done — archived, unfollowed, CircleCI's key
+			// still on the repository — is finished on the next run.
+			name: "lifecycle: an archived repository still carrying CircleCI's deploy key loses it", step: StepLifecycle, entry: archivedEntryYAML,
 			seed: func(h *harness) {
 				h.gh.addRepo(owner, name).archived = true
-				h.gh.permission = "write"
-				h.cc.follow(owner, name)
+				h.cc.follow(owner, name).following = false
 			},
-			wantCheck: VerdictDrift, wantChange: "unarchive on GitHub for the CircleCI admin grant, archived again after it; grant architectbot admin for leaving CircleCI, revoked after it; unfollow on CircleCI and stop building; archive on GitHub",
+			wantCheck: VerdictDrift, wantChange: "delete CircleCI's deploy key 164277013",
 			verify: func(t *testing.T, h *harness, _ *Result) {
 				require.True(t, h.repo().archived)
-				require.Empty(t, h.repo().collaborators, "the grant is revoked")
-				p := h.cc.projects[owner+"/"+name]
-				require.False(t, p.following)
-				require.False(t, p.building)
-				require.Equal(t, []string{
-					"PATCH /repos/giantswarm/sample-service",
-					"PUT /repos/giantswarm/sample-service/collaborators/architectbot",
-					"DELETE /repos/giantswarm/sample-service/collaborators/architectbot",
-					"PATCH /repos/giantswarm/sample-service",
-				}, h.gh.mutations, "unarchived, granted, revoked, archived")
+				require.Empty(t, h.repo().deployKeys)
+				require.Equal(t, []string{"DELETE /repos/giantswarm/sample-service/keys/164277013"}, h.gh.mutations)
 			},
 		},
 		{
-			name: "lifecycle: an archived repository the token's user does not follow is left alone", step: StepLifecycle, entry: archivedEntryYAML,
+			name: "lifecycle: an archived repository CircleCI has left is left alone, another deploy key too", step: StepLifecycle, entry: archivedEntryYAML,
 			seed: func(h *harness) {
-				h.gh.addRepo(owner, name).archived = true
-				h.cc.follow(owner, name).following = false // set up by someone else, or unfollowed by an earlier run
+				r := h.gh.addRepo(owner, name)
+				r.archived = true
+				r.deployKeys = []*github.Key{{ID: new(int64(7)), Title: new("argocd"), ReadOnly: new(true)}}
+				h.cc.projects[owner+"/"+name] = &fakeProject{} // set up by someone else, or unfollowed by an earlier run
 			},
 			wantCheck: VerdictOK,
 		},
 		{
-			name: "lifecycle: deleted unfollows on CircleCI and deletes on GitHub; the next run finds the record", step: StepLifecycle, entry: deletedEntryYAML,
+			name: "lifecycle: deleted unfollows on CircleCI and deletes on GitHub, without an admin grant; the next run finds the record", step: StepLifecycle, entry: deletedEntryYAML,
 			seed: func(h *harness) {
 				h.gh.addRepo(owner, name)
+				h.gh.permission = "write"
 				h.cc.follow(owner, name)
 			},
-			wantCheck: VerdictDrift, wantChange: "unfollow on CircleCI and stop building; delete on GitHub",
+			wantCheck: VerdictDrift, wantChange: "unfollow on CircleCI; delete on GitHub",
 			// The second repair finds no repository: the create step reads the
 			// declaration as the record and the lifecycle step is skipped on it.
 			wantAfter: VerdictSkipped,
@@ -1599,28 +1595,8 @@ func TestSteps(t *testing.T) {
 				p := h.cc.projects[owner+"/"+name]
 				require.NotNil(t, p, "the project stays on CircleCI, as it does live")
 				require.False(t, p.following, "the token's user unfollowed")
-				require.False(t, p.building, "stopped building")
+				require.Equal(t, []string{"DELETE /repos/giantswarm/sample-service"}, h.gh.mutations, "no admin grant, no key deleted before the repository")
 				require.Equal(t, "deleted", repair.Step(StepLifecycle).Summary)
-			},
-		},
-		{
-			name: "lifecycle: deleted by a push-only identity leaves CircleCI under an admin grant, then deletes on GitHub", step: StepLifecycle, entry: deletedEntryYAML,
-			seed: func(h *harness) {
-				h.gh.addRepo(owner, name)
-				h.gh.permission = "write"
-				h.cc.follow(owner, name)
-			},
-			wantCheck: VerdictDrift, wantChange: "grant architectbot admin for leaving CircleCI, revoked after it; unfollow on CircleCI and stop building; delete on GitHub",
-			wantAfter: VerdictSkipped,
-			verify: func(t *testing.T, h *harness, _ *Result) {
-				_, exists := h.gh.repos[owner+"/"+name]
-				require.False(t, exists, "deleted on GitHub")
-				require.False(t, h.cc.projects[owner+"/"+name].building, "stopped building")
-				require.Equal(t, []string{
-					"PUT /repos/giantswarm/sample-service/collaborators/architectbot",
-					"DELETE /repos/giantswarm/sample-service/collaborators/architectbot",
-					"DELETE /repos/giantswarm/sample-service",
-				}, h.gh.mutations, "granted, revoked, then deleted")
 			},
 		},
 		{
@@ -2155,34 +2131,6 @@ func TestRunCircleCIGrantRevokedOnFailure(t *testing.T) {
 		"PUT /repos/giantswarm/sample-service/collaborators/architectbot",
 		"DELETE /repos/giantswarm/sample-service/collaborators/architectbot",
 	}, collaboratorMutations(h.gh.mutations))
-}
-
-// TestRunLifecycleArchivesAgainWhenCircleCIRefuses: a "stop building"
-// CircleCI refuses fails the lifecycle step, and the repository unarchived
-// for the grant is archived again, the grant revoked before.
-func TestRunLifecycleArchivesAgainWhenCircleCIRefuses(t *testing.T) {
-	for _, entry := range []string{archivedEntryYAML, deletedEntryYAML} {
-		h := newHarness(t, entry)
-		h.gh.addRepo(owner, name).archived = true
-		h.gh.permission = "write"
-		h.cc.follow(owner, name)
-		h.cc.isAdmin = func(string, string, string) bool { return false }
-
-		res := h.run(ModeRepair, false, StepLifecycle)
-		sr := res.Step(StepLifecycle)
-		require.Equal(t, VerdictFailed, sr.Verdict, "%+v", sr)
-		require.Contains(t, sr.Summary, "unfollow on CircleCI and stop building")
-		require.Contains(t, sr.Summary, "HTTP 403")
-		r := h.repo()
-		require.True(t, r.archived, "archived again")
-		require.Empty(t, r.collaborators, "the grant is revoked")
-		require.Equal(t, []string{
-			"PATCH /repos/giantswarm/sample-service",
-			"PUT /repos/giantswarm/sample-service/collaborators/architectbot",
-			"DELETE /repos/giantswarm/sample-service/collaborators/architectbot",
-			"PATCH /repos/giantswarm/sample-service",
-		}, h.gh.mutations, "unarchived, granted, revoked, archived; never deleted")
-	}
 }
 
 // TestRunBuildsTheFirstReleaseRightAfterTheFollow: a chart repository (Go +
