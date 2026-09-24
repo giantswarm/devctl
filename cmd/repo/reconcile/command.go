@@ -35,7 +35,9 @@ protection (required checks on the reported-only rule: a context is
 required once it has reported on the default branch or a recently merged
 pull request, ghosts are removed), circleci (follow, setup workflows,
 checkout key), webhooks, renovate (check only), codeowners (a pull
-request), metadata, lifecycle, catalog, release. The CircleCI steps need a
+request; the file align-files writes: the repository's override,
+override/<repository>/CODEOWNERS beside --team-file, when it has one, the
+file naming the team otherwise), metadata, lifecycle, catalog, release. The CircleCI steps need a
 token in $CIRCLECI_TOKEN and are skipped without one. The catalog step
 dispatches the catalog and mapping workflows of the catalog repository, which
 needs an Actions permission there: --dispatch-token-envvar names a second
