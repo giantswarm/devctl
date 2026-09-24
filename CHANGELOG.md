@@ -61,6 +61,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `reposetup.(*Schema).FieldValues(path)` returns the values the repositories schema allows for a declaration field
+  (`componentType`, `gen.flavours`, `gen.language`, `visibility`, `lifecycle`), in the schema's order, read from the
+  document the `Schema` was compiled from with its `$ref`s followed, so the embedded schema and one fetched from
+  giantswarm/github each answer from themselves. An unknown path or a field without an enum is an error.
+  `EmbeddedFieldValues` is built on it, and a test pins the schema's `gen.language` to `gen.AllLanguages()`.
 - `gen.ci.templateContent: true` in a team-file entry says the `.circleci/config.yml` a template repository carries is
   content for the repositories created from it, not its own pipeline. The reconciler's circleci and release steps skip
   such a repository (`no CircleCI pipeline: .circleci/config.yml is template content`): no follow, no deploy key, no
