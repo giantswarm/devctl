@@ -222,8 +222,11 @@ func prepareDir(dir string) error {
 	return nil
 }
 
-// listFiles returns the regular files under dir, relative, slash-separated,
-// sorted.
+// listFiles returns the regular files and symlinks under dir, relative,
+// slash-separated, sorted: a symlink is listed by its own path (its target
+// is not read, let alone followed), and WalkDir does not descend into a
+// directory a symlink points at -- it is a leaf like any other non-directory
+// entry.
 func listFiles(dir string) ([]string, error) {
 	var files []string
 	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
@@ -234,6 +237,9 @@ func listFiles(dir string) ([]string, error) {
 			if d.Name() == gitDir {
 				return filepath.SkipDir
 			}
+			return nil
+		}
+		if !d.Type().IsRegular() && d.Type()&fs.ModeSymlink == 0 {
 			return nil
 		}
 		rel, err := filepath.Rel(dir, p)

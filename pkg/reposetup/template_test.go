@@ -76,3 +76,14 @@ func TestDeriveChart(t *testing.T) {
 	require.Equal(t, Template(""), DeriveChart(TemplateGo, []string{"generic"}), "no chart declared")
 	require.Equal(t, Template(""), DeriveChart(TemplateGo, nil))
 }
+
+// TestTemplate_shipsReadme: the chart and plans templates ship their own
+// repository-specific README and must not have it overwritten; the Go
+// template's README describes the template itself, and the minimal scaffold
+// has none, so both take the generic stub.
+func TestTemplate_shipsReadme(t *testing.T) {
+	require.True(t, TemplateChart.shipsReadme())
+	require.True(t, TemplatePlans.shipsReadme())
+	require.False(t, TemplateGo.shipsReadme())
+	require.False(t, TemplateMinimal.shipsReadme())
+}

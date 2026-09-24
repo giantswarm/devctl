@@ -167,14 +167,27 @@ func (r *Runner) pushScaffold(ctx context.Context, s *run, sr *StepResult, empty
 }
 
 // treeEntries turns the rendered files into tree entries: text inline,
-// binary content as blobs, executables with their mode.
+// binary content as blobs, executables with their mode, and a symlink as
+// mode 120000 whose content is its target (os.Readlink) -- the Git Data
+// API's own encoding for a link, never followed to the file it points at.
 func (r *Runner) treeEntries(ctx context.Context, s *run, dir string, files []string) ([]*github.TreeEntry, error) {
 	entries := make([]*github.TreeEntry, 0, len(files))
 	for _, rel := range files {
 		p := filepath.Join(dir, filepath.FromSlash(rel))
-		info, err := os.Stat(p)
+		info, err := os.Lstat(p)
 		if err != nil {
 			return nil, err
+		}
+		entry := &github.TreeEntry{Path: new(rel), Type: new("blob")}
+		if info.Mode()&fs.ModeSymlink != 0 {
+			target, err := os.Readlink(p)
+			if err != nil {
+				return nil, err
+			}
+			entry.Mode = new("120000")
+			entry.Content = new(target)
+			entries = append(entries, entry)
+			continue
 		}
 		data, err := os.ReadFile(p) //nolint:gosec // p is a rendered file inside the scaffold's temp directory
 		if err != nil {
@@ -184,7 +197,7 @@ func (r *Runner) treeEntries(ctx context.Context, s *run, dir string, files []st
 		if info.Mode()&fs.ModePerm&0o111 != 0 {
 			mode = "100755"
 		}
-		entry := &github.TreeEntry{Path: new(rel), Mode: new(mode), Type: new("blob")}
+		entry.Mode = new(mode)
 		if utf8.Valid(data) {
 			entry.Content = new(string(data))
 		} else {
