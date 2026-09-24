@@ -66,10 +66,14 @@ the wait to the new head and adds a warning to the document.
 
 ## GitHub alone or GitHub and CircleCI
 
-CircleCI is part of the verdict when the head carries `.circleci/config.yml` and CircleCI has a
-project for the repository. A repository with neither, an upstream fork being contributed to, is
-judged from GitHub alone and needs only the GitHub token. A head with the configuration file but no
-CircleCI project is judged from GitHub alone with a warning in the document. A pull request from a
+CircleCI is part of the verdict when the head carries `.circleci/config.yml` and CircleCI builds the
+repository: it has a project there with at least one pipeline. A repository with neither, an upstream
+fork being contributed to, is judged from GitHub alone and needs only the GitHub token. A head with
+the configuration file in a repository CircleCI does not build is judged from GitHub alone with a
+warning in the document: CircleCI knows no project for it, or knows one that has never run a pipeline.
+The project lookup alone does not decide it, because CircleCI answers a project for every repository
+the token's user sees on GitHub, set up on CircleCI or not; a template repository carries the
+configuration for the repositories created from it and is never built itself. A pull request from a
 fork of a CircleCI-built repository is looked up under the branch CircleCI gives it, `pull/<number>`.
 
 ## Polling
@@ -146,7 +150,7 @@ reset`). Any other `403` is an answer: a permission the token lacks.
 
 | Field | Meaning |
 |---|---|
-| `command`, `schemaVersion`, `exitCode`, `verdict`, `reason`, `warnings`, `startedAt`, `finishedAt` | The envelope every agent-facing command prints. `verdict` is `green`, `red`, `timeout`, `not_applicable`, `required_missing`, `auth_required` or `usage`; `reason` is one sentence for anything but green; `warnings` carries the CircleCI token's expiry notice, a head change, a missing CircleCI project, each retried read (Polling). |
+| `command`, `schemaVersion`, `exitCode`, `verdict`, `reason`, `warnings`, `startedAt`, `finishedAt` | The envelope every agent-facing command prints. `verdict` is `green`, `red`, `timeout`, `not_applicable`, `required_missing`, `auth_required` or `usage`; `reason` is one sentence for anything but green; `warnings` carries the CircleCI token's expiry notice, a head change, a CircleCI project missing or never built, each retried read (Polling). |
 | `repository`, `number` | The pull request as given. |
 | `headSha`, `baseRef` | The head commit judged and the base branch whose protection was read. |
 | `checks[]` | The head's check runs and statuses, the latest per name, sorted by name. `source` is `check_run` or `status`; `status` is `queued`, `in_progress` or `completed` for a check run and `pending` or `completed` for a status; `conclusion` is the check run's conclusion or the status's state, empty while unfinished; `required` says whether the base requires this context. |

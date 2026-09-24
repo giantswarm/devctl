@@ -47,6 +47,8 @@ github:
             - {id: 7001, name: CI, status: completed, conclusion: success, html_url: "https://github.com/giantswarm/devctl/actions/runs/7001"}
 circleci:
   routes:
+    "GET /api/v2/project/gh/giantswarm/devctl/pipeline":
+      - body: {items: [{id: p1, number: 12, state: created, created_at: "2026-09-21T10:00:00Z", vcs: {revision: abc123, branch: feature}}], next_page_token: null}
     "GET /api/v2/project/gh/giantswarm/devctl":
       - body: {slug: gh/giantswarm/devctl, name: devctl, organization_name: giantswarm}
     "GET /api/v2/project/gh/giantswarm/devctl/pipeline?branch=feature":

@@ -1288,6 +1288,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   kustomize sync and the patch-script scaffolding live on as options of the chart-only template's dry run
   (`pkg/reposetup` options). The `app` command group is gone with its only subcommand.
 
+### Fixed
+
+- `pr wait` and `pr merge` no longer wait for a CircleCI pipeline of a repository CircleCI does not build. CircleCI's
+  project lookup answers a project for every repository the token's user sees on GitHub, set up on CircleCI or not,
+  so a head carrying `.circleci/config.yml` in a repository never set up there -- a template repository whose
+  configuration is for the repositories created from it -- was waited for until the timeout
+  (`unfinished: circleci pipeline for <sha> (absent)`). CircleCI is now part of the verdict only when the project has
+  run at least one pipeline; a project without one is judged from GitHub alone with a warning in the document, like a
+  repository without a project.
+
 ## [8.23.0] - 2026-06-24
 
 ### Changed
