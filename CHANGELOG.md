@@ -20,6 +20,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `repo set-lifecycle`, `transfer` and `update` name an ask's or notice's Slack channel by the name the manager's
+  answer carries, with its ID: `ask: delivered to team-bumblebee in #team-bumblebee (C0ALXPMB1PW)`; the ID alone when
+  the answer has no `channelName`, and the team's channel with the debug channel under a debug redirect
+  ([#2432](https://github.com/giantswarm/devctl/issues/2432)). The embedded `repositories.schema.json` is the live
+  schema again: the `align` description names the channel file `teams/team-<name>.yaml`.
 - `pr wait`, `pr merge`, `release wait`: a run that outlives the eight-hour GitHub App user token renews it and waits
   on ([#2427](https://github.com/giantswarm/devctl/issues/2427)). The commands read the token once at the start, so a
   run spanning the expiry ended with `401 Bad credentials` (exit 7), a `pr merge` before it merged. When GitHub now

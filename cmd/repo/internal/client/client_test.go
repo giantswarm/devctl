@@ -49,7 +49,7 @@ func TestPrintPlanAndCommitted(t *testing.T) {
 		Repository: "giantswarm/old-tool", Team: "team-planeteers", FromTeam: "team-bumblebee", Accepted: true,
 		Before: "- name: old-tool\n  componentType: tool\n", Entry: "- name: old-tool\n  componentType: tool\n  align: true\n",
 		PullRequest: manager.PlannedPullRequest{Title: "chore(team-planeteers): take over old-tool", Branch: "reposetup/transfer-old-tool", Files: []string{"repositories/team-bumblebee.yaml", "repositories/team-planeteers.yaml"}, As: "alice"},
-		Ask:         &manager.PlannedMessage{Team: "team-planeteers", Channel: "team-planeteers", Deliverable: true},
+		Ask:         &manager.PlannedMessage{Team: "team-planeteers", Channel: "C07N9PVV97S", ChannelName: "team-planeteers", Deliverable: true},
 		Notice:      &manager.PlannedMessage{Team: "team-bumblebee", Deliverable: false, Reason: "no standup channel in the policy file"},
 	})
 	text := out.String()
@@ -59,7 +59,7 @@ func TestPrintPlanAndCommitted(t *testing.T) {
 		"entry before:\n  - name: old-tool\n    componentType: tool",
 		"entry after:\n  - name: old-tool\n    componentType: tool\n    align: true",
 		"pull request: chore(team-planeteers): take over old-tool (branch reposetup/transfer-old-tool, repositories/team-bumblebee.yaml, repositories/team-planeteers.yaml) as alice",
-		"ask: to team-planeteers in #team-planeteers",
+		"ask: to team-planeteers in #team-planeteers (C07N9PVV97S)\n",
 		"notice: to team-bumblebee, not deliverable: no standup channel in the policy file",
 	} {
 		require.Contains(t, text, want)
@@ -69,19 +69,45 @@ func TestPrintPlanAndCommitted(t *testing.T) {
 	at := time.Date(2026, 9, 22, 10, 0, 0, 0, time.UTC)
 	PrintCommitted(&out, &manager.Committed{
 		PullRequest: &manager.PullRequest{URL: "https://github.com/giantswarm/github/pull/6179", Title: "chore: archive old-tool", AutoMerge: true},
-		Ask:         &manager.Delivery{Team: "team-bumblebee", Channel: "team-bumblebee", Delivered: true},
+		Ask:         &manager.Delivery{Team: "team-bumblebee", Channel: "C0ALXPMB1PW", ChannelName: "team-bumblebee", Delivered: true},
 		Notice:      &manager.Delivery{Team: "team-planeteers", Delivered: false, Error: "gateway unreachable"},
 		PendingRun:  &manager.PendingRun{DispatchedAt: at, By: "alice", Kind: "archived", PullRequest: &manager.ChangePullRequest{Number: 6179, URL: "https://github.com/giantswarm/github/pull/6179"}},
 	})
 	text = out.String()
 	for _, want := range []string{
 		"pull request: https://github.com/giantswarm/github/pull/6179 (chore: archive old-tool; opened, auto-merge armed)",
-		"ask: delivered to team-bumblebee in #team-bumblebee",
+		"ask: delivered to team-bumblebee in #team-bumblebee (C0ALXPMB1PW)\n",
 		"notice: not delivered to team-planeteers: gateway unreachable",
 		"pending run: expected since 2026-09-22T10:00:00Z by alice (archived, https://github.com/giantswarm/github/pull/6179)",
 	} {
 		require.Contains(t, text, want)
 	}
+}
+
+// A channel prints by its name and ID, by its ID alone when the manager
+// sent no name, and under a debug redirect as the team's channel with the
+// debug channel it went to.
+func TestPrintChannel(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		ask  *manager.Delivery
+		want string
+	}{
+		{"name and ID", &manager.Delivery{Team: "team-bumblebee", Channel: "C0ALXPMB1PW", ChannelName: "team-bumblebee", Delivered: true}, "ask: delivered to team-bumblebee in #team-bumblebee (C0ALXPMB1PW)\n"},
+		{"ID alone", &manager.Delivery{Team: "team-bumblebee", Channel: "C0ALXPMB1PW", Delivered: true}, "ask: delivered to team-bumblebee in #C0ALXPMB1PW\n"},
+		{"no channel", &manager.Delivery{Team: "team-bumblebee", Error: "no asks channel"}, "ask: not delivered to team-bumblebee: no asks channel\n"},
+		{"debug redirect", &manager.Delivery{Team: "team-bumblebee", Channel: "CDEBUG", ChannelName: "team-bumblebee", IntendedChannel: "C0ALXPMB1PW", Delivered: true}, "ask: delivered to team-bumblebee in #team-bumblebee (C0ALXPMB1PW), redirected to CDEBUG\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var out bytes.Buffer
+			PrintCommitted(&out, &manager.Committed{Ask: tc.ask})
+			require.Equal(t, tc.want, out.String())
+		})
+	}
+
+	var out bytes.Buffer
+	PrintPlan(&out, &manager.Plan{Ask: &manager.PlannedMessage{Team: "team-bumblebee", Channel: "C0ALXPMB1PW", Deliverable: true}})
+	require.Contains(t, out.String(), "ask: to team-bumblebee in #C0ALXPMB1PW\n")
 }
 
 // The record renderer names every block, and says so when the declaration

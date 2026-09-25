@@ -18,7 +18,7 @@
       "align": {
         "type": "boolean",
         "default": false,
-        "description": "The repository's opt-in to alignment. With true the reconciler changes the repository to its declared set-up and the company baseline on every trigger: a merged change of this entry, Align now, the nightly. Without it every run is a check -- the drift in the run's summary, the artifact and the inventory, nothing changed on GitHub or CircleCI. A repository created by the automation (devctl repo create, the Repositories page, the Repo Manager) is declared with align: true: its creation is the opt-in. An existing repository opts in when its team adds the field to its entry in a pull request the team reviews; a lifecycle change carries it. The team's policy file repository-setup/team-<name>.yaml names the team's channels and holds no opt-in."
+        "description": "The repository's opt-in to alignment. With true the reconciler changes the repository to its declared set-up and the company baseline on every trigger: a merged change of this entry, Align now, the nightly. Without it every run is a check -- the drift in the run's summary, the artifact and the inventory, nothing changed on GitHub or CircleCI. A repository created by the automation (devctl repo create, the Repositories page, the Repo Manager) is declared with align: true: its creation is the opt-in. An existing repository opts in when its team adds the field to its entry in a pull request the team reviews; a lifecycle change carries it. The team's channel file teams/team-<name>.yaml names the team's channels and holds no opt-in."
       },
       "agentMerge": {
         "type": "boolean",
