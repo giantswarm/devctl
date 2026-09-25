@@ -9,6 +9,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `pr wait`, `pr merge`, `release wait`: a run that outlives the eight-hour GitHub App user token renews it and waits
+  on ([#2427](https://github.com/giantswarm/devctl/issues/2427)). The commands read the token once at the start, so a
+  run spanning the expiry ended with `401 Bad credentials` (exit 7), a `pr merge` before it merged. When GitHub now
+  answers 401, the GitHub client asks for another token and sends the refused request once more with it, its body
+  included: the keychain's token when another devctl refreshed it meanwhile, else a refresh through the stored refresh
+  token (`authstore.RenewGitHubToken`, `githubclient.Config.Renew`). A refresh reads and writes the keychain record
+  under a lock every devctl on the machine shares (`authstore.Store.Lock`), so two runs never spend the same refresh
+  token, which GitHub accepts once. A refused refresh is exit 8; a 401 to the renewed token is exit 7 with GitHub's
+  answer.
 - `repo reconcile`: the codeowners step keeps a repository's align-files `CODEOWNERS` override
   ([#2416](https://github.com/giantswarm/devctl/issues/2416)). It always wanted the generated file naming the team, so
   on a repository with an override in `repositories/override/<repository>/CODEOWNERS` of giantswarm/github it opened

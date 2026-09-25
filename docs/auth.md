@@ -62,7 +62,13 @@ organization: devctl prints the verification URL and a code to stderr, opens the
 have entered the code. The result is a user access token: actions are attributed to you and capped
 by the App's permissions. The token expires after eight hours and comes with a refresh token valid
 for six months; a command that finds the access token expired refreshes it itself and stores the new
-pair, no human involved. A GitHub App used through the device flow refreshes without a client
+pair, no human involved. A long run (`pr wait`, `pr merge`, `release wait`) outlives the eight hours:
+when GitHub answers 401 to its token, it renews the token and sends the refused request once more,
+and the wait goes on from where it was. The renewal reads the keychain again first, because another
+devctl may have refreshed the pair meanwhile and GitHub accepts only the newest one; a lock beside
+the keychain (a file in the user's cache directory) makes every devctl on the machine spend a refresh
+token once. The run exits 8 only when the refresh itself is refused, and a 401 to the renewed token
+is exit 7 with GitHub's answer. A GitHub App used through the device flow refreshes without a client
 secret, so the binary carries only the App's client id (`authstore.GitHubAppClientID`,
 `Iv23liWio5REm4MfY2Mw`); a client id is public, embedding it discloses nothing.
 

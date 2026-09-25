@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -289,5 +290,104 @@ func TestStatusAndErr(t *testing.T) {
 	}
 	if strings.Contains(string(b), `"token"`) || strings.Contains(string(b), `"refreshToken"`) {
 		t.Fatalf("status carries token material: %s", b)
+	}
+}
+
+// TestRenewGitHub: GitHub answered 401 to a token mid-run. The store is read
+// again under the lock: a token another run renewed is used as it is, the
+// refused one is refreshed, and without a usable refresh token the run needs
+// a login.
+func TestRenewGitHub(t *testing.T) {
+	live := Record{Login: "octocat", Token: "refused-token", ExpiresAt: testNow.Add(time.Hour), RefreshToken: "ghr_old", RefreshExpiresAt: testNow.Add(30 * 24 * time.Hour)}
+	renewedElsewhere := live
+	renewedElsewhere.Token = "other-run-token"
+	expiredRenewedElsewhere := renewedElsewhere
+	expiredRenewedElsewhere.ExpiresAt = testNow.Add(-time.Minute)
+	noRefresh := Record{Login: "octocat", Token: "refused-token", ExpiresAt: testNow.Add(time.Hour)}
+	refreshExpired := live
+	refreshExpired.RefreshExpiresAt = testNow.Add(-time.Minute)
+	fresh := map[string]any{"access_token": "fresh-token", "expires_in": 28800, "refresh_token": "ghr_new", "refresh_token_expires_in": 15897600}
+
+	cases := []struct {
+		name         string
+		record       *Record
+		refresh      map[string]any
+		wantToken    string
+		wantCause    string
+		wantRefreshN int32
+	}{
+		{name: "refused before its expiry, refreshed", record: &live, refresh: fresh, wantToken: "fresh-token", wantRefreshN: 1},
+		{name: "renewed by another run", record: &renewedElsewhere, wantToken: "other-run-token"},
+		{name: "renewed by another run, since expired", record: &expiredRenewedElsewhere, refresh: fresh, wantToken: "fresh-token", wantRefreshN: 1},
+		{name: "refresh refused", record: &live, refresh: map[string]any{"error": "bad_refresh_token"}, wantCause: "GitHub refused the refresh", wantRefreshN: 1},
+		{name: "no refresh token", record: &noRefresh, wantCause: "GitHub refused the token and it cannot be refreshed"},
+		{name: "refresh token expired", record: &refreshExpired, wantCause: "GitHub refused the token and it cannot be refreshed"},
+		{name: "logged out meanwhile", wantCause: causeNoToken},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			gh := newFakeGitHub(t, "octocat", tc.refresh)
+			a, store, _ := newTestAuth(t, gh.server, nil, nil)
+			if tc.record != nil {
+				if err := store.Set(UserGitHub, *tc.record); err != nil {
+					t.Fatal(err)
+				}
+			}
+			tok, err := a.RenewGitHub(context.Background(), "refused-token")
+			if tc.wantCause != "" {
+				var authErr *AuthRequiredError
+				if !errors.As(err, &authErr) || authErr.ExitCode() != agentcli.ExitAuthRequired || !strings.Contains(err.Error(), tc.wantCause) || !strings.Contains(err.Error(), "devctl auth login") {
+					t.Fatalf("err = %v, want exit 8 naming %q", err, tc.wantCause)
+				}
+			} else if err != nil || tok.Value != tc.wantToken || tok.Login != "octocat" || tok.Source != SourceKeychain {
+				t.Fatalf("token = %+v, err = %v, want %s", tok, err, tc.wantToken)
+			}
+			if gh.tokenCalls.Load() != tc.wantRefreshN {
+				t.Fatalf("refresh called %d times, want %d", gh.tokenCalls.Load(), tc.wantRefreshN)
+			}
+			if tc.wantToken == "fresh-token" {
+				if rec, err := store.Get(UserGitHub); err != nil || rec.Token != "fresh-token" || rec.RefreshToken != "ghr_new" {
+					t.Fatalf("stored after the renewal: %+v %v", rec, err)
+				}
+			}
+		})
+	}
+}
+
+// Two runs refused for the same token at the same time spend the refresh
+// token once: the second reads the first one's renewal under the lock. GitHub
+// accepts a refresh token once, so a second refresh would fail.
+func TestRenewGitHubConcurrentRunsRefreshOnce(t *testing.T) {
+	gh := newFakeGitHub(t, "octocat",
+		map[string]any{"access_token": "fresh-token", "expires_in": 28800, "refresh_token": "ghr_new", "refresh_token_expires_in": 15897600},
+		map[string]any{"error": "bad_refresh_token"},
+	)
+	a, store, _ := newTestAuth(t, gh.server, nil, nil)
+	if err := store.Set(UserGitHub, Record{Login: "octocat", Token: "refused-token", ExpiresAt: testNow.Add(-time.Second), RefreshToken: "ghr_old", RefreshExpiresAt: testNow.Add(time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	// A second Auth over the same file is another devctl process.
+	other, err := New(Config{Store: &FileStore{Path: store.Path}, Endpoints: a.endpoints, Clock: a.clock, Stderr: &bytes.Buffer{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var wg sync.WaitGroup
+	tokens := make([]string, 2)
+	errs := make([]error, 2)
+	for i, auth := range []*Auth{a, other} {
+		wg.Go(func() {
+			tok, err := auth.RenewGitHub(context.Background(), "refused-token")
+			tokens[i], errs[i] = tok.Value, err
+		})
+	}
+	wg.Wait()
+	for i := range tokens {
+		if errs[i] != nil || tokens[i] != "fresh-token" {
+			t.Errorf("run %d: token %q, err %v", i, tokens[i], errs[i])
+		}
+	}
+	if gh.tokenCalls.Load() != 1 {
+		t.Fatalf("refresh called %d times, want 1", gh.tokenCalls.Load())
 	}
 }

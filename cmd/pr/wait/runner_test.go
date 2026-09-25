@@ -152,3 +152,96 @@ func Test_run_outdated(t *testing.T) {
 		t.Errorf("envelope: %v", doc)
 	}
 }
+
+// expiringRoutes is a pull request whose check runs are pending at the first
+// poll and green at the next; GitHub answers the second poll's first read
+// with 401, the App user token having expired in between.
+func expiringRoutes(afterExpiry ...sequence.Response) sequence.Routes {
+	pr := sequence.Response{Body: map[string]any{
+		"number": 42, "state": "open", "draft": false, "mergeable_state": "clean",
+		"head": map[string]any{"sha": "abc123", "ref": "feature"}, "base": map[string]any{"ref": "main"},
+	}}
+	expired := sequence.Response{Status: 401, Body: map[string]any{"message": "Bad credentials", "status": "401"}}
+	checks := func(status, conclusion string) sequence.Response {
+		return sequence.Response{Body: map[string]any{"total_count": 1, "check_runs": []any{
+			map[string]any{"id": 1, "name": "go-build", "status": status, "conclusion": conclusion, "html_url": "https://github.com/o/r/runs/1"},
+		}}}
+	}
+	return sequence.Routes{
+		"GET /repos/o/r/pulls/42":                     append([]sequence.Response{pr, expired}, afterExpiry...),
+		"GET /repos/o/r/commits/abc123/check-runs":    {checks("in_progress", ""), checks("completed", "success")},
+		"GET /repos/o/r/commits/abc123/status":        {{Body: map[string]any{"state": "success", "total_count": 0, "statuses": []any{}}}},
+		"GET /repos/o/r/actions/runs?head_sha=abc123": {{Body: map[string]any{"total_count": 0, "workflow_runs": []any{}}}},
+	}
+}
+
+// The token expires between two polls: the refused read is sent again with
+// the renewed token and the wait goes on from where it was, green at poll 2.
+func Test_run_tokenExpiresMidWait(t *testing.T) {
+	pr := sequence.Response{Body: map[string]any{
+		"number": 42, "state": "open", "draft": false, "mergeable_state": "clean",
+		"head": map[string]any{"sha": "abc123", "ref": "feature"}, "base": map[string]any{"ref": "main"},
+	}}
+	r, stdout, stderr, server := newRunner(t, expiringRoutes(pr), loggedIn)
+	var rejected []string
+	r.renewGitHub = func(_ context.Context, token string) (string, error) {
+		rejected = append(rejected, token)
+		return "ghu_renewed", nil
+	}
+
+	if err := r.run(context.Background(), []string{"o/r", "42"}); err != nil {
+		t.Fatalf("want exit 0, got %v\n%s", err, stderr.String())
+	}
+	if doc := decode(t, stdout); doc["verdict"] != "green" {
+		t.Fatalf("document: %v", doc)
+	}
+	if strings.Join(rejected, ",") != "ghu_test" {
+		t.Fatalf("renewal asked for %v, want once for the expired token", rejected)
+	}
+	if !strings.Contains(stderr.String(), "poll 2: green") {
+		t.Errorf("the wait keeps its place across the renewal:\n%s", stderr.String())
+	}
+	var sent []string
+	for _, req := range server.Requests() {
+		if req.Path == "/repos/o/r/pulls/42" {
+			sent = append(sent, req.Header.Get("Authorization"))
+		}
+	}
+	if want := "Bearer ghu_test,Bearer ghu_test,Bearer ghu_renewed"; strings.Join(sent, ",") != want {
+		t.Fatalf("pull request reads sent %v, want %s", sent, want)
+	}
+}
+
+// A renewal that fails ends the wait with exit 8, naming the login.
+func Test_run_tokenExpiresMidWaitRefreshRefused(t *testing.T) {
+	r, stdout, _, _ := newRunner(t, expiringRoutes(), loggedIn)
+	r.renewGitHub = func(context.Context, string) (string, error) {
+		return "", &authstore.AuthRequiredError{Identity: "GitHub", Cause: "the token expired and GitHub refused the refresh", Hint: "devctl auth login --github-only"}
+	}
+
+	err := r.run(context.Background(), []string{"o/r", "42"})
+	var exitErr *agentcli.ExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != agentcli.ExitAuthRequired {
+		t.Fatalf("want exit 8, got %v", err)
+	}
+	if doc := decode(t, stdout); doc["verdict"] != "auth_required" || !strings.Contains(doc["reason"].(string), "devctl auth login --github-only") {
+		t.Fatalf("document: %v", doc)
+	}
+}
+
+// GitHub refusing the renewed token too ends the wait with exit 7 and
+// GitHub's answer.
+func Test_run_renewedTokenRefused(t *testing.T) {
+	expired := sequence.Response{Status: 401, Body: map[string]any{"message": "Bad credentials", "status": "401"}}
+	r, stdout, _, _ := newRunner(t, expiringRoutes(expired), loggedIn)
+	r.renewGitHub = func(context.Context, string) (string, error) { return "ghu_renewed", nil }
+
+	err := r.run(context.Background(), []string{"o/r", "42"})
+	var exitErr *agentcli.ExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != agentcli.ExitUsage {
+		t.Fatalf("want exit 7, got %v", err)
+	}
+	if doc := decode(t, stdout); !strings.Contains(doc["reason"].(string), "401 Bad credentials") {
+		t.Fatalf("document: %v", doc)
+	}
+}

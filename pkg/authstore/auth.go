@@ -184,6 +184,21 @@ func RequireGitHub(ctx context.Context) (Token, error) {
 	return a.RequireGitHub(ctx)
 }
 
+// RenewGitHubToken is the value of [Auth.RenewGitHub] against the
+// environment's store: what a GitHub client that got 401 for rejected sends
+// its request with again (githubclient.Config.Renew).
+func RenewGitHubToken(ctx context.Context, rejected string) (string, error) {
+	a, err := Open(nil)
+	if err != nil {
+		return "", err
+	}
+	token, err := a.RenewGitHub(ctx, rejected)
+	if err != nil {
+		return "", err
+	}
+	return token.Value, nil
+}
+
 // RequireCircleCI is the CircleCI token of the environment's store;
 // [ErrAuthRequired] when missing or expired. Token.Warning carries the
 // seven-day expiry notice.

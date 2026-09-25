@@ -142,7 +142,7 @@ func openClients(ctx context.Context, endpoints agentcli.Endpoints, transport ht
 	}
 	logger := logrus.New()
 	logger.SetOutput(io.Discard)
-	gh, conditional, err := githubclient.NewConditional(githubclient.Config{Logger: logger, AccessToken: token.Value, BaseURL: endpoints.GitHubAPIURL, Transport: transport})
+	gh, conditional, err := githubclient.NewConditional(githubclient.Config{Logger: logger, AccessToken: token.Value, BaseURL: endpoints.GitHubAPIURL, Transport: transport, Renew: authstore.RenewGitHubToken})
 	if err != nil {
 		return nil, err
 	}

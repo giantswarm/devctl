@@ -5,7 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
+
+	"github.com/rogpeppe/go-internal/lockedfile"
 
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
 )
@@ -52,6 +55,10 @@ type Store interface {
 	Set(user string, record Record) error
 	// Delete removes the record; a missing record is not an error.
 	Delete(user string) error
+	// Lock holds user's record for this process and every other devctl on
+	// the machine until unlock is called: a refresh reads, trades and writes
+	// the record under it, so two runs never spend the same refresh token.
+	Lock(user string) (unlock func(), err error)
 }
 
 // OpenStore is the store the environment selects: the file of
@@ -113,10 +120,36 @@ func (s KeyringStore) Delete(user string) error {
 	return nil
 }
 
+// Lock implements [Store] with a file in the user's cache directory.
+func (s KeyringStore) Lock(user string) (func(), error) {
+	dir, err := os.UserCacheDir()
+	if err != nil {
+		return nil, fmt.Errorf("locking %s/%s: %w", Service, user, err)
+	}
+	return lockFile(filepath.Join(dir, Service, user+".lock"))
+}
+
 // FileStore keeps the records in one JSON file with mode 0600, for tests and
 // machines without a keychain daemon.
 type FileStore struct {
 	Path string
+}
+
+// Lock implements [Store] with a file beside the store's.
+func (s *FileStore) Lock(user string) (func(), error) {
+	return lockFile(s.Path + "." + user + ".lock")
+}
+
+// lockFile holds the file lock at path, creating the file and its directory.
+func lockFile(path string) (func(), error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return nil, fmt.Errorf("creating the directory of the lock %s: %w", path, err)
+	}
+	unlock, err := lockedfile.MutexAt(path).Lock()
+	if err != nil {
+		return nil, fmt.Errorf("locking %s: %w", path, err)
+	}
+	return unlock, nil
 }
 
 // Get implements [Store].
