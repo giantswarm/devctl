@@ -199,13 +199,18 @@ func (m *Merger) Merge(ctx context.Context, owner, repo string, number int) (*Re
 	}
 
 	// The pull request as it stands after the wait: the title a retitle
-	// gave it, the branch to delete, the node the queue takes.
+	// gave it, the body whose closing keywords the merge acts on, the branch
+	// to delete, the node the queue takes.
 	pr, err = m.github.PullRequest(ctx, owner, repo, number)
 	if err != nil {
 		return result, microerror.Mask(err)
 	}
 	if err := prwait.NotApplicable(pr); err != nil {
 		return result, err
+	}
+	for _, w := range m.closingWarnings(ctx, owner, repo, pr.GetBody()) {
+		m.progress.Printf("warning: %s", w)
+		result.Warnings = append(result.Warnings, w)
 	}
 
 	queued, err := m.github.MergeQueueRequired(ctx, owner, repo, pr.GetBase().GetRef())
