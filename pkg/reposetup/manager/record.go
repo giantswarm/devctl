@@ -398,8 +398,11 @@ type PlannedPullRequest struct {
 
 // PlannedMessage is an ask or notice before it is posted.
 type PlannedMessage struct {
-	Team        string `json:"team"`
+	Team string `json:"team"`
+	// Channel is the Slack channel ID the message goes to; ChannelName is
+	// that channel's name, for display.
 	Channel     string `json:"channel,omitempty"`
+	ChannelName string `json:"channelName,omitempty"`
 	Text        string `json:"text"`
 	Deliverable bool   `json:"deliverable"`
 	Reason      string `json:"reason,omitempty"`
@@ -426,8 +429,14 @@ type PullRequest struct {
 
 // Delivery is what became of an ask or notice.
 type Delivery struct {
-	Team            string `json:"team"`
-	Channel         string `json:"channel,omitempty"`
+	Team string `json:"team"`
+	// Channel is the ID the gateway posted to: the debug channel under a
+	// debug redirect, else the team's channel.
+	Channel string `json:"channel,omitempty"`
+	// ChannelName is the team's channel's name, also under a debug redirect.
+	ChannelName string `json:"channelName,omitempty"`
+	// IntendedChannel is the team's channel ID, set only under a debug
+	// redirect.
 	IntendedChannel string `json:"intendedChannel,omitempty"`
 	Delivered       bool   `json:"delivered"`
 	ReviewID        string `json:"reviewId,omitempty"`

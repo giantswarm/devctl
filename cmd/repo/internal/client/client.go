@@ -212,15 +212,25 @@ func printPlannedMessage(w io.Writer, what string, m *manager.PlannedMessage) {
 	if m == nil {
 		return
 	}
-	where := m.Team
-	if m.Channel != "" {
-		where += " in #" + m.Channel
-	}
+	where := m.Team + channelText(m.ChannelName, m.Channel)
 	if m.Deliverable {
 		fmt.Fprintf(w, "%s: to %s\n", what, where)
 		return
 	}
 	fmt.Fprintf(w, "%s: to %s, not deliverable: %s\n", what, where, m.Reason)
+}
+
+// channelText names a Slack channel as " in #<name> (<ID>)", or
+// " in #<ID>" when the manager's answer carries no name.
+func channelText(name, id string) string {
+	switch {
+	case id == "":
+		return ""
+	case name == "":
+		return " in #" + id
+	default:
+		return " in #" + name + " (" + id + ")"
+	}
 }
 
 // PrintCommitted writes a write's outcome in mode commit.
@@ -245,8 +255,10 @@ func printDelivery(w io.Writer, what string, d *manager.Delivery) {
 		return
 	}
 	where := d.Team
-	if d.Channel != "" {
-		where += " in #" + d.Channel
+	if d.IntendedChannel != "" {
+		where += channelText(d.ChannelName, d.IntendedChannel) + ", redirected to " + d.Channel
+	} else {
+		where += channelText(d.ChannelName, d.Channel)
 	}
 	if d.Delivered {
 		fmt.Fprintf(w, "%s: delivered to %s\n", what, where)
