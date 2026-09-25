@@ -9,6 +9,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `repo reconcile`: the codeowners step keeps a repository's align-files `CODEOWNERS` override
+  ([#2416](https://github.com/giantswarm/devctl/issues/2416)). It always wanted the generated file naming the team, so
+  on a repository with an override in `repositories/override/<repository>/CODEOWNERS` of giantswarm/github it opened
+  `reposetup/codeowners` with the generic file every night and align-files wrote the override back after its merge.
+  The desired file is now the override verbatim when the repository has one, the generated file otherwise, and the
+  summary names the source it compared against. `--team-file <dir>/<team>.yaml` reads the override from
+  `<dir>/override/<repository>/CODEOWNERS` in the checkout (no request); `reconcile.Request.CodeownersOverride`
+  carries it, and `reposetup.Remote.Overrides` lists the remote's override directory once for callers that read the
+  team files through GitHub.
+- `repo reconcile`: the scaffold step's chart check accepts `application.giantswarm.io/team` beside
+  `io.giantswarm.application.team`, as app-build-suite's C0001 HasTeamLabel does
+  ([#2422](https://github.com/giantswarm/devctl/issues/2422)). A chart carrying only the older key was reported as the
+  non-advisory `abs-prerequisite` and never read in sync, although it builds.
 - `repo create`: a scaffold without generated CI (`gen.ci.generate: false`: configuration, customer, Python and
   Kyverno policy repositories, any repository whose pipeline would be empty) carries `renovate.json5`
   ([#2419](https://github.com/giantswarm/devctl/issues/2419)). The Renovate line of the scaffold's generators ran only

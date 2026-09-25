@@ -21,8 +21,11 @@ const (
 	// flags it until the team replaces it.
 	defaultChartIcon = "https://s.giantswarm.io/app-icons/giantswarm/1/light.svg"
 	// chartTeamAnnotation is the Chart.yaml annotation app-build-suite's
-	// validator C0001 requires.
+	// validator C0001 requires, the one the scaffold writes and a fix names.
 	chartTeamAnnotation = "io.giantswarm.application.team"
+	// chartTeamAnnotationLegacy is the older key C0001 accepts as well
+	// (GS_TEAM_LABEL_KEY beside GS_TEAM_LABEL_KEY_OCI in app-build-suite).
+	chartTeamAnnotationLegacy = "application.giantswarm.io/team"
 	// genCircleCIRefusal is the message `devctl gen circleci` refuses with
 	// when the declaration yields no job.
 	genCircleCIRefusal = "no jobs would be generated"
@@ -231,7 +234,7 @@ func (r *Runner) chartFindings(ctx context.Context, s *run, sr *StepResult) erro
 		s.report(sr, FindingABSPrerequisite, fmt.Sprintf("%s/Chart.yaml is not valid YAML: %v", chartDir, err), "fix the chart's Chart.yaml")
 		return nil
 	}
-	if chart.Annotations[chartTeamAnnotation] == "" {
+	if chart.Annotations[chartTeamAnnotation] == "" && chart.Annotations[chartTeamAnnotationLegacy] == "" {
 		s.report(sr, FindingABSPrerequisite,
 			fmt.Sprintf("%s/Chart.yaml lacks the %s annotation (app-build-suite C0001 HasTeamLabel)", chartDir, chartTeamAnnotation),
 			fmt.Sprintf("add annotations.%s: %s to Chart.yaml", chartTeamAnnotation, strings.TrimPrefix(s.req.Team, "team-")))
