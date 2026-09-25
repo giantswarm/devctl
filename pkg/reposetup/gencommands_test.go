@@ -23,6 +23,63 @@ func TestGenCommandsNothingForAForkLine(t *testing.T) {
 	require.True(t, hasCIJob(service))
 }
 
+// Every declaration that generates at all gets the Renovate line, last;
+// --circleci-generated follows gen.ci.generate. A fork line and an entry
+// without gen get none.
+func TestGenCommandsRenovate(t *testing.T) {
+	on, off := true, false
+	cases := []struct {
+		name   string
+		fields Fields
+		want   []string // nil: no Renovate line
+	}{
+		{
+			name:   "generated CI",
+			fields: Fields{Name: "service", Gen: &GenFields{Flavours: []string{"app"}, Language: "go", CI: &CIFields{Generate: &on}}},
+			want:   []string{"devctl", "gen", "renovate", "--language", "go", "--circleci-generated", "--repo-name", "service"},
+		},
+		{
+			name:   "no generated CI",
+			fields: Fields{Name: "configs", Gen: &GenFields{Flavours: []string{"generic"}, Language: "generic", CI: &CIFields{Generate: &off}}},
+			want:   []string{"devctl", "gen", "renovate", "--language", "generic", "--repo-name", "configs"},
+		},
+		{
+			name:   "no gen.ci",
+			fields: Fields{Name: "tool", Gen: &GenFields{Flavours: []string{"generic"}, Language: "python"}},
+			want:   []string{"devctl", "gen", "renovate", "--language", "python", "--repo-name", "tool"},
+		},
+		{
+			name: "no generated CI, deprecated, with chore reviewers",
+			fields: Fields{Name: "configs", Lifecycle: lifecycleDeprecated, ChoreReviewers: []string{"team:team-honeybadger"},
+				Gen: &GenFields{Flavours: []string{"customer"}, Language: "generic", CI: &CIFields{Generate: &off}}},
+			want: []string{"devctl", "gen", "renovate", "--language", "generic", "--repo-name", "configs", "--deprecated", "-r", "team:team-honeybadger"},
+		},
+		{
+			name:   "fork line",
+			fields: Fields{Name: "upstream-fork", Gen: &GenFields{Flavours: []string{"fork"}, Language: "go"}},
+		},
+		{
+			name:   "no gen",
+			fields: Fields{Name: "plain"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			commands := genCommands(tc.fields, genContext{})
+			var got []string
+			for _, c := range commands {
+				if c[2] == genRenovate {
+					got = c
+				}
+			}
+			require.Equal(t, tc.want, got)
+			if tc.want != nil {
+				require.Equal(t, tc.want, commands[len(commands)-1], "Renovate is the last line, as align-files runs it")
+			}
+		})
+	}
+}
+
 // Every gen.ci key of the embedded schema reaches the `devctl gen circleci`
 // line the scaffold runs as the flag its description names, as align-files
 // passes it: a key the schema admits and the scaffold drops leaves a created

@@ -7,6 +7,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `pr merge` warns before the merge when the pull request's body closes something other than an issue of its own
+  repository ([#2421](https://github.com/giantswarm/devctl/issues/2421)): a closing keyword (`close`, `fix` or
+  `resolve` in any tense and case, an optional colon) directly before a pull request (a `#N`, `GH-N` or `owner/repo#N`
+  whose number GitHub reports as one, a `/pull/N` URL) or before an item of another repository (`owner/repo#N`, a full
+  issue or pull URL). GitHub closes those on the merge without a prompt, a pull request unmerged; `fixes #123's` counts
+  as `fixes #123`. The warning goes to the progress stream and the document's `warnings`, names the phrase and the
+  item, and suggests a wording without the keyword; the merge proceeds and the exit code is unchanged. An issue of the
+  same repository, a number that does not exist and a reference without a closing keyword stay silent.
+
 ### Fixed
 
 - `pr wait`, `pr merge`, `release wait`: a run that outlives the eight-hour GitHub App user token renews it and waits
@@ -18,6 +29,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   under a lock every devctl on the machine shares (`authstore.Store.Lock`), so two runs never spend the same refresh
   token, which GitHub accepts once. A refused refresh is exit 8; a 401 to the renewed token is exit 7 with GitHub's
   answer.
+- `repo reconcile`: the catalog step compares only the charts the apps-to-teams mapping's generator maps — a component
+  tagged `helmchart` and `helmchart-deployable` and not `private` ([#2428](https://github.com/giantswarm/devctl/issues/2428)).
+  A private repository whose chart is on the public registry (giantswarm/blog, giantswarm/giantswarmio-nginx) was
+  expected in a mapping that never lists it, so every run dispatched the mapping workflow, which changed nothing, and
+  the repository never converged.
 - `repo reconcile`: the codeowners step keeps a repository's align-files `CODEOWNERS` override
   ([#2416](https://github.com/giantswarm/devctl/issues/2416)). It always wanted the generated file naming the team, so
   on a repository with an override in `repositories/override/<repository>/CODEOWNERS` of giantswarm/github it opened
@@ -31,6 +47,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   `io.giantswarm.application.team`, as app-build-suite's C0001 HasTeamLabel does
   ([#2422](https://github.com/giantswarm/devctl/issues/2422)). A chart carrying only the older key was reported as the
   non-advisory `abs-prerequisite` and never read in sync, although it builds.
+- `repo create`: a scaffold without generated CI (`gen.ci.generate: false`: configuration, customer, Python and
+  Kyverno policy repositories, any repository whose pipeline would be empty) carries `renovate.json5`
+  ([#2419](https://github.com/giantswarm/devctl/issues/2419)). The Renovate line of the scaffold's generators ran only
+  after the CircleCI generator, so such a repository started without a Renovate configuration and the reconciler's
+  first run reported it (`renovate-not-scanned`) next to the creation notice. Every scaffold that generates at all now
+  runs `devctl gen renovate`, with `--circleci-generated` only on generated CI; a fork line still gets nothing.
 - `repo reconcile`: a created repository's first release is built by the run that follows its project on CircleCI
   ([#2408](https://github.com/giantswarm/devctl/issues/2408)). v8.97.2 keyed the trigger on `--added`, which the
   reconciler workflow never passes (it validates every entry in existing mode), so no reconciler run triggered it and

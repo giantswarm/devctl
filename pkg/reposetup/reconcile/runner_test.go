@@ -284,9 +284,19 @@ func (h *harness) seedCatalogCharts(inCatalog, inMapping bool, charts []string) 
 // componentYAML is a catalog Component; charts are chart names or full
 // registry references (a private one: gsociprivate.azurecr.io/…).
 func componentYAML(n string, charts ...string) string {
+	return taggedComponentYAML(n, []string{"helmchart", "helmchart-deployable"}, charts...)
+}
+
+// taggedComponentYAML is componentYAML with the component's tags, as the
+// catalog generator writes them for a chart (private for a private repository).
+func taggedComponentYAML(n string, tags []string, charts ...string) string {
 	doc := "---\napiVersion: backstage.io/v1alpha1\nkind: Component\nmetadata:\n    name: " + n + "\n"
 	if len(charts) == 0 {
 		return doc
+	}
+	doc += "    tags:\n"
+	for _, tag := range tags {
+		doc += "        - " + tag + "\n"
 	}
 	refs := make([]string, 0, len(charts))
 	for _, c := range charts {
@@ -1731,6 +1741,32 @@ func TestSteps(t *testing.T) {
 			verify:    func(t *testing.T, h *harness, _ *Result) { require.Empty(t, h.gh.dispatches) },
 		},
 		{
+			name: "catalog: a private repository's chart is no chart to map, whatever its registry", step: StepCatalog,
+			seed: func(h *harness) {
+				h.gh.addRepo(owner, name)
+				h.seedCatalogCharts(false, false, nil)
+				h.gh.repos[owner+"/github"].files["catalog/components.yaml"] += taggedComponentYAML(name, []string{"helmchart", "helmchart-deployable", "private"}, name)
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Empty(t, h.gh.dispatches, "the mapping's generator skips a private component; a dispatch for it changes nothing")
+				require.Equal(t, "in the catalog; no public chart to map", res.Step(StepCatalog).Summary)
+			},
+		},
+		{
+			name: "catalog: a chart that is not deployable is no chart to map", step: StepCatalog,
+			seed: func(h *harness) {
+				h.gh.addRepo(owner, name)
+				h.seedCatalogCharts(false, false, nil)
+				h.gh.repos[owner+"/github"].files["catalog/components.yaml"] += taggedComponentYAML(name, []string{"helmchart"}, name)
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Empty(t, h.gh.dispatches)
+				require.Equal(t, "in the catalog; no public chart to map", res.Step(StepCatalog).Summary)
+			},
+		},
+		{
 			name: "catalog: a template's placeholder chart is no chart to map", step: StepCatalog,
 			seed: func(h *harness) {
 				h.gh.addRepo(owner, name)
@@ -2598,6 +2634,33 @@ func TestScaffoldGoServiceWithChart(t *testing.T) {
 	require.Contains(t, files, "helm/sample-service/templates/_helpers.tpl")
 	require.Contains(t, files[".abs/main.yaml"], "chart-dir: ./helm/sample-service")
 	require.Equal(t, scaffoldSubject, h.repo().headSubject("main"))
+}
+
+// TestScaffoldWithoutGeneratedCIConfiguresRenovate: a repository created
+// without generated CI -- the minimal scaffold of a generic/generic entry
+// with gen.ci.generate off -- carries renovate.json5 from its scaffold, so
+// the reconciler's first run over it has no Renovate finding: the renovate
+// step is ok, Renovate's first run not due yet on a repository created
+// minutes ago.
+func TestScaffoldWithoutGeneratedCIConfiguresRenovate(t *testing.T) {
+	h := newHarness(t, configurationEntryYAML)
+	h.runner.Renderer = reposetup.Renderer{Templates: reposetup.DirTemplates{Root: filepath.Join("..", "testdata", "templates")}}
+	r := h.gh.addRepo(owner, name)
+	r.empty, r.files, r.createdAt = true, map[string]string{}, time.Now().Add(-time.Minute)
+	h.gh.installation.status = 403
+
+	scaffold := h.run(ModeRepair, false, StepScaffold)
+	require.Equal(t, VerdictRepaired, scaffold.Step(StepScaffold).Verdict, "%+v", scaffold.Step(StepScaffold))
+	config := h.repo().files["renovate.json5"]
+	require.Contains(t, config, "github>giantswarm/renovate-presets:default.json5", "the scaffold's Renovate configuration")
+	require.NotContains(t, config, "giantswarm/architect", "no generated CI: no architect orb for Renovate to leave alone")
+	require.NotContains(t, h.repo().files, ".circleci/config.yml")
+
+	first := h.run(ModeCheck, false, StepRenovate)
+	sr := first.Step(StepRenovate)
+	require.Equal(t, VerdictOK, sr.Verdict, "%+v", sr)
+	require.Empty(t, sr.Findings)
+	require.Equal(t, "renovate.json5; no Renovate run yet and none due: the repository is younger than a day, Renovate's first run follows", sr.Summary)
 }
 
 // TestStepConverges: the verdict matrix of the converged mark. A step

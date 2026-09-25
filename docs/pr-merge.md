@@ -55,6 +55,13 @@ Green lands with one call of the merge API, `PUT /repos/{owner}/{repo}/pulls/{nu
   the same reason (a retitle during the wait names the squash commit).
 - The squash commit's subject is the pull request's title with its number, `<title> (#<number>)`:
   the title the title check accepted is what the auto-release reads.
+- Before the merge call, the body as it stands after the wait is read for GitHub's closing keywords (`close`,
+  `fix`, `resolve` in any tense and case, an optional colon) directly before a reference. One that names a pull
+  request (a `/pull/N` URL, or a `#N`, `GH-N` or `owner/repo#N` GitHub reports as a pull request) or an item of
+  another repository is a warning, on the progress stream and in `warnings`: GitHub closes it when the pull request
+  merges, without a prompt, a pull request unmerged. The warning names the phrase and the item; nothing is refused and
+  the exit code does not change. A closing keyword before an issue of the same repository is the intended use and
+  stays silent, as does a number that does not exist.
 - The head branch is deleted through the refs API, `DELETE /repos/{owner}/{repo}/git/refs/heads/{branch}`;
   a branch GitHub deleted already is fine. A head that lives in a fork is left alone, with a warning.
 - **No protection setting is read to be changed and none is written**: no branch protection, no
