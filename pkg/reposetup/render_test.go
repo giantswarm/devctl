@@ -108,6 +108,11 @@ func Test_Render(t *testing.T) {
 			}
 
 			got := manifest(t, scaffold)
+			// Every kind generates, with or without generated CI, so every
+			// created repository starts with its Renovate configuration.
+			if !strings.Contains(got, "\n--- renovate.json5\n") {
+				t.Errorf("the scaffold has no renovate.json5")
+			}
 			assertGolden(t, filepath.Join("testdata", "golden", tc.name+".golden"), got)
 		})
 	}

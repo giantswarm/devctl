@@ -69,8 +69,10 @@
 // `devctl replace` does by hand, token by token -- CODEOWNERS for the team,
 // the chart's team annotation and default icon, and the files the
 // generators write for the declared flavours and language: Makefile,
-// workflows including auto-release, LLM rules, pre-commit, and CircleCI and
-// Renovate when gen.ci.generate is on. The generators run through the same `devctl gen`
+// workflows including auto-release, LLM rules, pre-commit, CircleCI when
+// gen.ci.generate is on, and renovate.json5 (with --circleci-generated on
+// generated CI), so no created repository starts without a Renovate
+// configuration. The generators run through the same `devctl gen`
 // commands align-files runs, in align-files' order and with its flags, so
 // the generated files are byte-identical to what the first align run would
 // write and that run changes nothing. [Scaffold.Commands] lists the command
