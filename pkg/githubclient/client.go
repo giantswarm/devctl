@@ -28,6 +28,11 @@ type Config struct {
 	// means http.DefaultTransport. A caller counting the requests builds
 	// its counter here.
 	Transport http.RoundTripper
+	// Renew is asked for another token when GitHub answers 401 to the one an
+	// API request carried (an expired or superseded App user token): the
+	// request is sent once more with the token it returns, and an error it
+	// returns is the request's. Nil sends every request with AccessToken.
+	Renew func(ctx context.Context, rejected string) (string, error)
 }
 
 type Client struct {
@@ -53,6 +58,9 @@ func New(config Config) (*Client, error) {
 	var transport http.RoundTripper = &oauth2.Transport{
 		Source: oauth2.StaticTokenSource(&oauth2.Token{AccessToken: config.AccessToken}),
 		Base:   base,
+	}
+	if config.Renew != nil {
+		transport = &reauthorizing{base: base, renew: config.Renew, token: config.AccessToken}
 	}
 	if config.DryRun {
 		transport = &dryRunTransport{inner: transport, logger: config.Logger}

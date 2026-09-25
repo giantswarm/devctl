@@ -28,9 +28,11 @@ type runner struct {
 	// gate is versiongate.Check: an outdated devctl ends the run in the
 	// document.
 	gate func(noCache bool) error
-	// The seams tests replace: the token gates, the endpoints and the clock.
+	// The seams tests replace: the token gates, the renewal of a GitHub token
+	// refused mid-run, the endpoints and the clock.
 	requireGitHub   func(ctx context.Context) (authstore.Token, error)
 	requireCircleCI func(ctx context.Context) (authstore.Token, error)
+	renewGitHub     func(ctx context.Context, rejected string) (string, error)
 	endpoints       func() agentcli.Endpoints
 	clock           func() (agentcli.Clock, error)
 }
@@ -103,6 +105,7 @@ func (r *runner) wait(ctx context.Context, args []string, doc *document) error {
 		AccessToken: token.Value,
 		BaseURL:     endpoints.GitHubAPIURL,
 		Transport:   retrying,
+		Renew:       r.renewGitHub,
 	})
 	if err != nil {
 		return err

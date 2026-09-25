@@ -194,15 +194,59 @@ func (a *Auth) requireGitHub(ctx context.Context, hintMissing string) (Token, er
 	if err != nil {
 		return Token{}, err
 	}
-	now := a.clock.Now()
-	if expired(record.ExpiresAt, now) {
-		if record.RefreshToken == "" || expired(record.RefreshExpiresAt, now) {
-			return Token{}, &AuthRequiredError{Identity: identityGitHub, Cause: "the token expired and the refresh token with it", Hint: hintLoginGitHub}
-		}
-		record, err = a.refreshGitHub(ctx, record)
+	if expired(record.ExpiresAt, a.clock.Now()) {
+		record, err = a.renewGitHub(ctx, record.Token)
 		if err != nil {
 			return Token{}, err
 		}
 	}
-	return Token{Value: record.Token, Login: record.Login, ExpiresAt: record.ExpiresAt, Source: SourceKeychain}, nil
+	return githubToken(record), nil
+}
+
+// RenewGitHub is the GitHub token to send instead of rejected, a token GitHub
+// answered 401 to during a run: the stored one when another run has already
+// renewed it, otherwise one refreshed through the stored refresh token, as
+// [Auth.RequireGitHub] does at the start. [ErrAuthRequired] when there is no
+// refresh token to use or GitHub refuses the refresh.
+func (a *Auth) RenewGitHub(ctx context.Context, rejected string) (Token, error) {
+	record, err := a.renewGitHub(ctx, rejected)
+	if err != nil {
+		return Token{}, err
+	}
+	return githubToken(record), nil
+}
+
+// renewGitHub is the record to use instead of the one holding stale. Under
+// the record's lock it reads the store again: another run may have renewed
+// the token while this one waited, and its refresh token is then the only
+// one GitHub still accepts.
+func (a *Auth) renewGitHub(ctx context.Context, stale string) (Record, error) {
+	unlock, err := a.store.Lock(UserGitHub)
+	if err != nil {
+		return Record{}, err
+	}
+	defer unlock()
+	record, err := a.store.Get(UserGitHub)
+	if errors.Is(err, ErrNotFound) {
+		return Record{}, &AuthRequiredError{Identity: identityGitHub, Cause: causeNoToken, Hint: hintLoginGitHub}
+	}
+	if err != nil {
+		return Record{}, err
+	}
+	now := a.clock.Now()
+	if record.Token != stale && !expired(record.ExpiresAt, now) {
+		return record, nil
+	}
+	if record.RefreshToken == "" || expired(record.RefreshExpiresAt, now) {
+		cause := "the token expired and the refresh token with it"
+		if !expired(record.ExpiresAt, now) {
+			cause = "GitHub refused the token and it cannot be refreshed"
+		}
+		return Record{}, &AuthRequiredError{Identity: identityGitHub, Cause: cause, Hint: hintLoginGitHub}
+	}
+	return a.refreshGitHub(ctx, record)
+}
+
+func githubToken(record Record) Token {
+	return Token{Value: record.Token, Login: record.Login, ExpiresAt: record.ExpiresAt, Source: SourceKeychain}
 }

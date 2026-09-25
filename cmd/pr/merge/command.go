@@ -121,6 +121,7 @@ func New(config Config) (*cobra.Command, error) {
 		stdout:          config.Stdout,
 		requireGitHub:   authstore.RequireGitHub,
 		requireCircleCI: authstore.RequireCircleCI,
+		renewGitHub:     authstore.RenewGitHubToken,
 		endpoints:       agentcli.EndpointsFromEnv,
 		clock:           agentcli.SystemClock,
 	}

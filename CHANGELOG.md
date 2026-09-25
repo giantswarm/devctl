@@ -20,6 +20,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `pr wait`, `pr merge`, `release wait`: a run that outlives the eight-hour GitHub App user token renews it and waits
+  on ([#2427](https://github.com/giantswarm/devctl/issues/2427)). The commands read the token once at the start, so a
+  run spanning the expiry ended with `401 Bad credentials` (exit 7), a `pr merge` before it merged. When GitHub now
+  answers 401, the GitHub client asks for another token and sends the refused request once more with it, its body
+  included: the keychain's token when another devctl refreshed it meanwhile, else a refresh through the stored refresh
+  token (`authstore.RenewGitHubToken`, `githubclient.Config.Renew`). A refresh reads and writes the keychain record
+  under a lock every devctl on the machine shares (`authstore.Store.Lock`), so two runs never spend the same refresh
+  token, which GitHub accepts once. A refused refresh is exit 8; a 401 to the renewed token is exit 7 with GitHub's
+  answer.
 - `repo reconcile`: the catalog step compares only the charts the apps-to-teams mapping's generator maps — a component
   tagged `helmchart` and `helmchart-deployable` and not `private` ([#2428](https://github.com/giantswarm/devctl/issues/2428)).
   A private repository whose chart is on the public registry (giantswarm/blog, giantswarm/giantswarmio-nginx) was
