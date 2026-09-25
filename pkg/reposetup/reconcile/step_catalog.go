@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/google/go-github/v92/github"
@@ -92,19 +93,46 @@ const privateRegistryPrefix = "gsociprivate."
 // step neither looks it up in the mapping nor dispatches for it.
 const placeholderMarks = "{}"
 
+// mappedTags are the tags a component carries when the mapping's generator
+// (tools/mapping.sh in giantswarm/github) lists its charts: both of them, and
+// not privateTag.
+var mappedTags = []string{"helmchart", "helmchart-deployable"}
+
+// privateTag marks a component of a private repository, whose charts the
+// mapping's generator never lists, whatever registry they are on.
+const privateTag = "private"
+
 // component is the catalog's Backstage Component of a repository.
 type component struct {
 	Kind     string `yaml:"kind"`
 	Metadata struct {
 		Name        string            `yaml:"name"`
+		Tags        []string          `yaml:"tags"`
 		Annotations map[string]string `yaml:"annotations"`
 	} `yaml:"metadata"`
 }
 
+// mapped says whether the mapping's generator lists the component's charts at
+// all: a deployable Helm chart of a repository that is not private. A dispatch
+// for any other component changes nothing, so the step neither looks it up in
+// the mapping nor dispatches for it.
+func (c component) mapped() bool {
+	for _, tag := range mappedTags {
+		if !slices.Contains(c.Metadata.Tags, tag) {
+			return false
+		}
+	}
+	return !slices.Contains(c.Metadata.Tags, privateTag)
+}
+
 // publicCharts returns the names of the component's charts the mapping
-// lists — on a public registry, not a template's placeholder — from the
-// helmcharts annotation; none without the annotation.
+// lists — of a component the generator maps ([component.mapped]), on a public
+// registry, not a template's placeholder — from the helmcharts annotation;
+// none without the annotation.
 func (c component) publicCharts() []string {
+	if !c.mapped() {
+		return nil
+	}
 	var charts []string
 	for _, ref := range strings.Split(c.Metadata.Annotations[helmChartsAnnotation], ",") {
 		ref = strings.TrimSpace(ref)

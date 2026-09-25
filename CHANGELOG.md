@@ -9,6 +9,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `repo reconcile`: the catalog step compares only the charts the apps-to-teams mapping's generator maps — a component
+  tagged `helmchart` and `helmchart-deployable` and not `private` ([#2428](https://github.com/giantswarm/devctl/issues/2428)).
+  A private repository whose chart is on the public registry (giantswarm/blog, giantswarm/giantswarmio-nginx) was
+  expected in a mapping that never lists it, so every run dispatched the mapping workflow, which changed nothing, and
+  the repository never converged.
 - `repo reconcile`: the codeowners step keeps a repository's align-files `CODEOWNERS` override
   ([#2416](https://github.com/giantswarm/devctl/issues/2416)). It always wanted the generated file naming the team, so
   on a repository with an override in `repositories/override/<repository>/CODEOWNERS` of giantswarm/github it opened

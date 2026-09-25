@@ -284,9 +284,19 @@ func (h *harness) seedCatalogCharts(inCatalog, inMapping bool, charts []string) 
 // componentYAML is a catalog Component; charts are chart names or full
 // registry references (a private one: gsociprivate.azurecr.io/…).
 func componentYAML(n string, charts ...string) string {
+	return taggedComponentYAML(n, []string{"helmchart", "helmchart-deployable"}, charts...)
+}
+
+// taggedComponentYAML is componentYAML with the component's tags, as the
+// catalog generator writes them for a chart (private for a private repository).
+func taggedComponentYAML(n string, tags []string, charts ...string) string {
 	doc := "---\napiVersion: backstage.io/v1alpha1\nkind: Component\nmetadata:\n    name: " + n + "\n"
 	if len(charts) == 0 {
 		return doc
+	}
+	doc += "    tags:\n"
+	for _, tag := range tags {
+		doc += "        - " + tag + "\n"
 	}
 	refs := make([]string, 0, len(charts))
 	for _, c := range charts {
@@ -1729,6 +1739,32 @@ func TestSteps(t *testing.T) {
 			},
 			wantCheck: VerdictOK,
 			verify:    func(t *testing.T, h *harness, _ *Result) { require.Empty(t, h.gh.dispatches) },
+		},
+		{
+			name: "catalog: a private repository's chart is no chart to map, whatever its registry", step: StepCatalog,
+			seed: func(h *harness) {
+				h.gh.addRepo(owner, name)
+				h.seedCatalogCharts(false, false, nil)
+				h.gh.repos[owner+"/github"].files["catalog/components.yaml"] += taggedComponentYAML(name, []string{"helmchart", "helmchart-deployable", "private"}, name)
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Empty(t, h.gh.dispatches, "the mapping's generator skips a private component; a dispatch for it changes nothing")
+				require.Equal(t, "in the catalog; no public chart to map", res.Step(StepCatalog).Summary)
+			},
+		},
+		{
+			name: "catalog: a chart that is not deployable is no chart to map", step: StepCatalog,
+			seed: func(h *harness) {
+				h.gh.addRepo(owner, name)
+				h.seedCatalogCharts(false, false, nil)
+				h.gh.repos[owner+"/github"].files["catalog/components.yaml"] += taggedComponentYAML(name, []string{"helmchart"}, name)
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Empty(t, h.gh.dispatches)
+				require.Equal(t, "in the catalog; no public chart to map", res.Step(StepCatalog).Summary)
+			},
 		},
 		{
 			name: "catalog: a template's placeholder chart is no chart to map", step: StepCatalog,
