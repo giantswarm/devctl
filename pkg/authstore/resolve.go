@@ -60,6 +60,18 @@ func GitHubNotFoundHint(token Token, envVars ...string) string {
 		"for a repository elsewhere, set %s to a token that can read it.", variables(githubVars(envVars)))
 }
 
+// GitHubAppOnlyNotFoundHint is [GitHubNotFoundHint] for a command that only
+// ever acts with the App login and reads no environment override ([pr wait],
+// [pr merge]: [RequireGitHub], never [ResolveGitHub]): it names what the App
+// reaches, with no variable to suggest, since setting one would have no
+// effect on these commands.
+func GitHubAppOnlyNotFoundHint(token Token) string {
+	if token.Source != SourceKeychain {
+		return ""
+	}
+	return "the devctl GitHub App login reaches the giantswarm organization and public repositories only."
+}
+
 func resolveGitHub(ctx context.Context, open func() (*Auth, error), envVars []string) (Token, error) {
 	if token, ok := githubEnvToken(envVars); ok {
 		return token, nil

@@ -181,3 +181,17 @@ func TestGitHubNotFoundHint(t *testing.T) {
 		t.Errorf("hint with --github-token-envvar = %q, want it to name $MY_TOKEN", hint)
 	}
 }
+
+func TestGitHubAppOnlyNotFoundHint(t *testing.T) {
+	if hint := GitHubAppOnlyNotFoundHint(Token{Value: "ghp_env", Source: "$GITHUB_TOKEN"}); hint != "" {
+		t.Errorf("hint for a token from the environment = %q, want none", hint)
+	}
+	keychain := Token{Value: "ghu_keychain", Source: SourceKeychain}
+	want := "the devctl GitHub App login reaches the giantswarm organization and public repositories only."
+	if hint := GitHubAppOnlyNotFoundHint(keychain); hint != want {
+		t.Errorf("hint = %q, want %q", hint, want)
+	}
+	if strings.Contains(GitHubAppOnlyNotFoundHint(keychain), "set $") {
+		t.Error("a command with no environment override must not suggest setting one")
+	}
+}

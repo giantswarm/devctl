@@ -44,6 +44,10 @@ func loggedIn(context.Context) (authstore.Token, error) {
 	return authstore.Token{Value: "ghu_test", Login: "someone"}, nil
 }
 
+func loggedInFromKeychain(context.Context) (authstore.Token, error) {
+	return authstore.Token{Value: "ghu_test", Login: "someone", Source: authstore.SourceKeychain}, nil
+}
+
 func decode(t *testing.T, stdout *bytes.Buffer) map[string]any {
 	t.Helper()
 	var doc map[string]any
@@ -115,6 +119,52 @@ func Test_run_authRequiredBeforeAnyRequest(t *testing.T) {
 	}
 	if n := len(server.Requests()); n != 0 {
 		t.Errorf("want no request before the gate, got %d", n)
+	}
+}
+
+// A pull request the App's token cannot see (e.g. a private repository
+// outside its installation) answers 404 like one that does not exist; the
+// keychain token's App login gets a hint naming what it reaches, so this
+// stays distinguishable from a genuinely missing pull request.
+func Test_run_notFoundHint(t *testing.T) {
+	routes := sequence.Routes{
+		"GET /repos/o/r/pulls/42": {{Status: 404, Body: map[string]any{"message": "Not Found"}}},
+	}
+	r, stdout, _, _ := newRunner(t, routes, loggedInFromKeychain)
+
+	err := r.run(context.Background(), []string{"o/r", "42"})
+	if agentcli.Exit(err) != agentcli.ExitUsage {
+		t.Fatalf("want exit 7, got %v", err)
+	}
+	doc := decode(t, stdout)
+	reason, _ := doc["reason"].(string)
+	if !strings.Contains(reason, "not found error: pull request o/r#42") {
+		t.Errorf("reason lost the original not-found error: %v", doc)
+	}
+	if !strings.Contains(reason, "reaches the giantswarm organization and public repositories only") {
+		t.Errorf("reason has no hint for the App-token 404: %v", doc)
+	}
+	if strings.Contains(reason, "set $") {
+		t.Errorf("pr wait reads no environment override, so the hint should not suggest setting one: %v", doc)
+	}
+}
+
+// The same 404 with a token from the environment (not the App login) gets no
+// hint: [authstore.GitHubNotFoundHint] only explains the App's own reach.
+func Test_run_notFoundNoHintForEnvToken(t *testing.T) {
+	routes := sequence.Routes{
+		"GET /repos/o/r/pulls/42": {{Status: 404, Body: map[string]any{"message": "Not Found"}}},
+	}
+	r, stdout, _, _ := newRunner(t, routes, loggedIn)
+
+	err := r.run(context.Background(), []string{"o/r", "42"})
+	if agentcli.Exit(err) != agentcli.ExitUsage {
+		t.Fatalf("want exit 7, got %v", err)
+	}
+	doc := decode(t, stdout)
+	reason, _ := doc["reason"].(string)
+	if strings.Contains(reason, "reaches the giantswarm organization") {
+		t.Errorf("an env token got the App-installation hint: %v", doc)
 	}
 }
 

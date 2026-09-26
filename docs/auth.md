@@ -25,7 +25,9 @@ the others.
 **The App login reaches the giantswarm organization and public repositories.** The App is installed on
 the giantswarm organization only. GitHub answers 404 for a private repository elsewhere, and a search
 leaves it out; `deploy` and `release create` add to that 404 the cause and the variables that override
-the login.
+the login. `pr wait` and `pr merge` add the same cause without naming a variable: neither reads one, so a
+personal repository's pull request (a private one outside the App's installation) fails with a reason
+that names the missing reach, not a plain "not found".
 
 **A token in the environment is an explicit override, never a fallback.** When `DEVCTL_GITHUB_TOKEN`,
 `GITHUB_TOKEN` or `OPSCTL_GITHUB_TOKEN` is set (the first set one, in that order; a command with

@@ -20,6 +20,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `pr wait` and `pr merge` add a hint to a pull request's "not found" naming the devctl GitHub App login's reach
+  ([#2436](https://github.com/giantswarm/devctl/issues/2436)): the App is installed on the giantswarm organization
+  only, and GitHub answers 404 rather than 403 for a private repository the token cannot read, so a personal
+  repository's pull request (`teemow/dotfiles#20`) looked exactly like one that does not exist. Both commands read no
+  environment override (`pkg/authstore.RequireGitHub`, never `ResolveGitHub`), so the hint names the cause without
+  suggesting a variable that would have no effect on them (`authstore.GitHubAppOnlyNotFoundHint`, unlike `deploy`'s
+  and `release create`'s `GitHubNotFoundHint`).
 - `gen workflows --release-workflow=auto-release` refuses to render cliff.toml with an empty `[remote.github].repo`
   instead of writing one silently ([#2435](https://github.com/giantswarm/devctl/issues/2435)). Detection (the origin
   remote's `giantswarm/<repo>` path) never succeeds when there is no real checkout to read it from — a scaffold
