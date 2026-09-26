@@ -53,6 +53,14 @@ devctl release wait giantswarm/devctl v8.9.0
 devctl release wait giantswarm/devctl --pr 2289 --progress
 ```
 
+### Waiting for a rollout (`devctl rollout wait`)
+
+`devctl rollout wait <installation> <owner/repo> (<vX.Y.Z> | --pr <n>)` runs the release wait, then blocks until every Flux HelmRelease and App CR on the installation's management cluster that deploys one of the release's charts runs the version, is ready and has its Deployments, StatefulSets and DaemonSets rolled out. It reads the cluster through the kube context `tsh kube login` writes, as you; `--reconcile` asks Flux to look now. A deployment pinned elsewhere is reported and warned about; a failed install or upgrade of the version is exit 1, a timeout exit 2 naming what is missing. See [docs/rollout-wait.md](docs/rollout-wait.md).
+
+```nohighlight
+devctl rollout wait myinstallation giantswarm/app-operator v7.5.4 --progress
+```
+
 ### Merging a pull request (`devctl pr merge`)
 
 `devctl pr merge <owner/repo> <number>` is the one call an agent makes to land its own pull request: it runs the wait of `pr wait`, squash-merges the pull request (`--rebase` for a rebase merge) through the merge API with the judged head as the expected head, deletes the branch through the refs API, and then runs the wait of `release wait --pr` on the merge commit until the release is pullable (`--release-timeout`, 30 minutes by default; `--no-release-wait` ends at the merge). A base with a merge queue is enqueued and waited for instead of merged. A merge that no release follows (a repository that does not tag merge commits, an auto-release run that tagged nothing) is exit 0. Refused before any wait: a draft, closed or conflicting pull request and one behind a strict base (exit 3; `--update-branch` updates it and waits for the new head), another human's pull request and a repository whose team-file entry says `agentMerge: false` (exit 5). No protection setting is read to be changed or written: the merge is made as you, through the bypass the repository's ruleset grants its owning team and its admins. One JSON document (`pr wait`'s fields plus `mergeCommitSha`, `method`, `branchDeleted`, `enqueued` and `release`), exit 0, 1, 2, 3, 4, 5, 7 or 8, and after a merge 6 (the release failed) or 9 (the release not confirmed). See [docs/pr-merge.md](docs/pr-merge.md).

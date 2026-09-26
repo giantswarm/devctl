@@ -8,6 +8,7 @@ import (
 
 	"github.com/giantswarm/devctl/v8/internal/versiongate"
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
+	"github.com/giantswarm/devctl/v8/pkg/releasewait"
 )
 
 const (
@@ -102,7 +103,7 @@ func New(config Config) (*cobra.Command, error) {
 		flag:   f,
 		stderr: config.Stderr,
 		stdout: config.Stdout,
-		open:   openClients,
+		open:   releasewait.OpenSources,
 	}
 
 	c := &cobra.Command{
