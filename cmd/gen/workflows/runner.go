@@ -8,6 +8,7 @@ import (
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
 
+	"github.com/giantswarm/devctl/v8/internal/gitremote"
 	"github.com/giantswarm/devctl/v8/pkg/gen"
 	"github.com/giantswarm/devctl/v8/pkg/gen/input"
 	"github.com/giantswarm/devctl/v8/pkg/gen/input/workflows"
@@ -44,10 +45,24 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 		return nil
 	}
 
+	// cliff.toml (auto-release only) carries its own repository's name in
+	// [remote.github].repo. Unlike the rest of what's generated, that name
+	// isn't in the declaration this command reads, so it's read from the
+	// origin remote, with --repo-name as the override a render with no real
+	// checkout (e.g. devctl repo create's scaffold) has to pass explicitly.
+	repoName := r.flag.RepoName
+	if repoName == "" && r.flag.ReleaseWorkflow == releaseWorkflowAutoRelease {
+		repoName, err = gitremote.RepoName(ctx, ".")
+		if err != nil {
+			return microerror.Maskf(invalidFlagError, "cliff.toml's [remote.github].repo cannot be read from the origin remote: %s; pass --%s <name>", err, flagRepoName)
+		}
+	}
+
 	var workflowsInput *workflows.Workflows
 	{
 		c := workflows.Config{
 			Flavours: r.flag.Flavours,
+			RepoName: repoName,
 		}
 
 		workflowsInput, err = workflows.New(c)

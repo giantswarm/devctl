@@ -1,6 +1,6 @@
 template: giantswarm/template-app
 command: devctl gen makefile --flavour app --language generic
-command: devctl gen workflows --flavour app --language generic --install-update-chart --release-workflow auto-release
+command: devctl gen workflows --flavour app --language generic --repo-name example --install-update-chart --release-workflow auto-release
 command: devctl gen llm --flavour app --language generic
 command: devctl gen precommit --language generic --repo-name example --flavors helmchart
 command: devctl gen circleci --repo-name example --language generic --flavour app
@@ -1747,7 +1747,7 @@ commit_parsers = [
 # below. The token is passed automatically via the workflow's GITHUB_TOKEN.
 [remote.github]
 owner = "giantswarm"
-repo = ""
+repo = "example"
 
 # Template for the rendered release notes. Body is what gets posted to the
 # GitHub Release; header and footer are empty so the release page shows only

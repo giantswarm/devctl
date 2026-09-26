@@ -81,7 +81,9 @@ func genCommands(f Fields, gc genContext) [][]string {
 	// Workflows. The release workflow follows the CI surface: generated CI
 	// implies auto-release, a repository without it stays on legacy. The
 	// OpenSSF scorecard runs on public repositories unless switched off.
-	workflows := []string{flagFlavour, flavour, flagLanguage, g.Language}
+	// --repo-name is what a scaffold render always needs for cliff.toml: its
+	// temporary directory has no origin remote to read the name from.
+	workflows := []string{flagFlavour, flavour, flagLanguage, g.Language, flagRepoName, f.Name}
 	if g.InstallUpdateChart {
 		workflows = append(workflows, "--install-update-chart")
 	}
