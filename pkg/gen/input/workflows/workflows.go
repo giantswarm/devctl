@@ -9,6 +9,10 @@ import (
 
 type Config struct {
 	Flavours gen.FlavourSlice
+
+	// RepoName is the repository's name under the giantswarm organization,
+	// for cliff.toml's `[remote.github].repo` field.
+	RepoName string
 }
 
 type Workflows struct {
@@ -20,6 +24,7 @@ func New(config Config) (*Workflows, error) {
 		params: params.Params{
 			Dir:      ".github/workflows",
 			Flavours: config.Flavours,
+			RepoName: config.RepoName,
 		},
 	}
 
@@ -58,7 +63,7 @@ func (w *Workflows) AutoReleaseLegacyDeletion() input.Input {
 }
 
 func (w *Workflows) CliffToml() input.Input {
-	return file.NewCliffTomlInput()
+	return file.NewCliffTomlInput(w.params)
 }
 
 func (w *Workflows) CliffTomlDeletion() input.Input {

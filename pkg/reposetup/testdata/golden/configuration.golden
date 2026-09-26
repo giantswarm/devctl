@@ -1,6 +1,6 @@
 template: minimal
 command: devctl gen makefile --flavour generic --language generic
-command: devctl gen workflows --flavour generic --language generic --release-workflow legacy
+command: devctl gen workflows --flavour generic --language generic --repo-name example-configs --release-workflow legacy
 command: devctl gen llm --flavour generic --language generic
 command: devctl gen renovate --language generic --repo-name example-configs
 

@@ -1,6 +1,6 @@
 template: giantswarm/template-plans
 command: devctl gen makefile --flavour generic,plans --language generic
-command: devctl gen workflows --flavour generic,plans --language generic --release-workflow legacy
+command: devctl gen workflows --flavour generic,plans --language generic --repo-name example-plans --release-workflow legacy
 command: devctl gen llm --flavour generic,plans --language generic
 command: devctl gen renovate --language generic --repo-name example-plans
 

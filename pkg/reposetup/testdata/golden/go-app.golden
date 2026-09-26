@@ -1,7 +1,7 @@
 template: giantswarm/template
 chart: giantswarm/template-app
 command: devctl gen makefile --flavour app --language go
-command: devctl gen workflows --flavour app --language go --release-workflow auto-release
+command: devctl gen workflows --flavour app --language go --repo-name example-go-service --release-workflow auto-release
 command: devctl gen llm --flavour app --language go
 command: devctl gen precommit --language go --flavors helmchart
 command: devctl gen circleci --repo-name example-go-service --language go --flavour app
@@ -1924,7 +1924,7 @@ commit_parsers = [
 # below. The token is passed automatically via the workflow's GITHUB_TOKEN.
 [remote.github]
 owner = "giantswarm"
-repo = ""
+repo = "example-go-service"
 
 # Template for the rendered release notes. Body is what gets posted to the
 # GitHub Release; header and footer are empty so the release page shows only

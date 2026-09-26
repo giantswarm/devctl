@@ -1,6 +1,6 @@
 template: minimal
 command: devctl gen makefile --flavour generic --language kyverno-policy
-command: devctl gen workflows --flavour generic --language kyverno-policy --release-workflow legacy
+command: devctl gen workflows --flavour generic --language kyverno-policy --repo-name example-policies --release-workflow legacy
 command: devctl gen llm --flavour generic --language kyverno-policy
 command: devctl gen renovate --language kyverno-policy --repo-name example-policies -r team:team-shield
 

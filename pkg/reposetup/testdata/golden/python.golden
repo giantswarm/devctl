@@ -1,6 +1,6 @@
 template: minimal
 command: devctl gen makefile --flavour generic --language python
-command: devctl gen workflows --flavour generic --language python --release-workflow legacy
+command: devctl gen workflows --flavour generic --language python --repo-name example-tool --release-workflow legacy
 command: devctl gen llm --flavour generic --language python
 command: devctl gen renovate --language python --repo-name example-tool
 

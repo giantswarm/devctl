@@ -27,6 +27,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   environment override (`pkg/authstore.RequireGitHub`, never `ResolveGitHub`), so the hint names the cause without
   suggesting a variable that would have no effect on them (`authstore.GitHubAppOnlyNotFoundHint`, unlike `deploy`'s
   and `release create`'s `GitHubNotFoundHint`).
+- `gen workflows --release-workflow=auto-release` refuses to render cliff.toml with an empty `[remote.github].repo`
+  instead of writing one silently ([#2435](https://github.com/giantswarm/devctl/issues/2435)). Detection (the origin
+  remote's `giantswarm/<repo>` path) never succeeds when there is no real checkout to read it from — a scaffold
+  rendered into a bare directory, as `devctl repo create` and the reconciler do — so `--repo-name` is now accepted as
+  an explicit override, same as `gen renovate` and `gen precommit` already take, and the reconciler passes it from the
+  declaration it already has. Without either, the command fails asking for `--repo-name` rather than rendering
+  `repo = ""`, which made git-cliff's GitHub API lookups (and every release note's PR and compare links) fail at
+  workflow runtime; giantswarm/beekeeper, scaffolded before this fix, carried the empty value until an alignment run
+  regenerates its `cliff.toml`.
 - `repo set-lifecycle`, `transfer` and `update` name an ask's or notice's Slack channel by the name the manager's
   answer carries, with its ID: `ask: delivered to team-bumblebee in #team-bumblebee (C0ALXPMB1PW)`; the ID alone when
   the answer has no `channelName`, and the team's channel with the debug channel under a debug redirect
