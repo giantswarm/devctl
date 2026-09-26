@@ -190,7 +190,7 @@ require (
 // requires the fixed version itself.
 replace (
 	github.com/jackc/pgx/v5 => github.com/jackc/pgx/v5 v5.11.0 // CVE-2026-33815 CVE-2026-33816 CVE-2026-41889
-	github.com/klauspost/compress => github.com/klauspost/compress v1.20.0 // CVE-2026-63209
+	github.com/klauspost/compress => github.com/klauspost/compress v1.20.1 // CVE-2026-63209
 	github.com/prometheus/prometheus => github.com/prometheus/prometheus v0.314.0 // CVE-2026-42154 CVE-2026-40179
 	go.etcd.io/etcd/client/pkg/v3 => go.etcd.io/etcd/client/pkg/v3 v3.7.1 // CVE-2026-73500
 	go.etcd.io/etcd/server/v3 => go.etcd.io/etcd/server/v3 v3.7.1 // CVE-2026-44283 CVE-2026-73499
