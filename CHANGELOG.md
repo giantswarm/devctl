@@ -20,6 +20,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `pr wait` and `pr merge` add a hint to a pull request's "not found" naming the devctl GitHub App login's reach
+  ([#2436](https://github.com/giantswarm/devctl/issues/2436)): the App is installed on the giantswarm organization
+  only, and GitHub answers 404 rather than 403 for a private repository the token cannot read, so a personal
+  repository's pull request (`teemow/dotfiles#20`) looked exactly like one that does not exist. Both commands read no
+  environment override (`pkg/authstore.RequireGitHub`, never `ResolveGitHub`), so the hint names the cause without
+  suggesting a variable that would have no effect on them (`authstore.GitHubAppOnlyNotFoundHint`, unlike `deploy`'s
+  and `release create`'s `GitHubNotFoundHint`).
 - `repo set-lifecycle`, `transfer` and `update` name an ask's or notice's Slack channel by the name the manager's
   answer carries, with its ID: `ask: delivered to team-bumblebee in #team-bumblebee (C0ALXPMB1PW)`; the ID alone when
   the answer has no `channelName`, and the team's channel with the debug channel under a debug redirect

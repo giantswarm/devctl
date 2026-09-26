@@ -140,7 +140,7 @@ func (r *runner) wait(ctx context.Context, args []string, doc *document) error {
 	for _, w := range result.Warnings {
 		doc.Warn(w)
 	}
-	return err
+	return githubclient.ExplainNotFound(err, authstore.GitHubAppOnlyNotFoundHint(token))
 }
 
 // parseArgs reads "<owner/repo> <number>".
