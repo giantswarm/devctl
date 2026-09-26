@@ -17,6 +17,7 @@ import (
 	"github.com/giantswarm/devctl/v8/cmd/release"
 	"github.com/giantswarm/devctl/v8/cmd/replace"
 	"github.com/giantswarm/devctl/v8/cmd/repo"
+	"github.com/giantswarm/devctl/v8/cmd/rollout"
 	"github.com/giantswarm/devctl/v8/cmd/version"
 	"github.com/giantswarm/devctl/v8/pkg/project"
 )
@@ -111,6 +112,19 @@ func New(config Config) (*cobra.Command, error) {
 		}
 	}
 
+	var rolloutCmd *cobra.Command
+	{
+		c := rollout.Config{
+			Stderr: config.Stderr,
+			Stdout: config.Stdout,
+		}
+
+		rolloutCmd, err = rollout.New(c)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+	}
+
 	var replaceCmd *cobra.Command
 	{
 		c := replace.Config{
@@ -195,6 +209,7 @@ func New(config Config) (*cobra.Command, error) {
 	c.AddCommand(prCmd)
 	c.AddCommand(releaseCmd)
 	c.AddCommand(replaceCmd)
+	c.AddCommand(rolloutCmd)
 	c.AddCommand(repoCmd)
 	c.AddCommand(versionCmd)
 

@@ -9,6 +9,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `rollout wait <installation> <owner/repo> (<version> | --pr <n>)` blocks until a release runs on an installation
+  ([#2439](https://github.com/giantswarm/devctl/issues/2439)): the release wait first, which names the charts, then
+  every Flux HelmRelease (from an OCIRepository or a HelmChart) and App CR on the management cluster that deploys one
+  of them, read through the Teleport kube context as you, until it runs the version, is ready and its workloads are
+  rolled out. One JSON document; exit 0 rolled out, 1 the version failed, 2 timeout, 3 nothing follows the version,
+  7 usage, 8 not signed in. `--reconcile` asks Flux to reconcile what is behind once. See `docs/rollout-wait.md`.
+
 - `pr merge` warns before the merge when the pull request's body closes something other than an issue of its own
   repository ([#2421](https://github.com/giantswarm/devctl/issues/2421)): a closing keyword (`close`, `fix` or
   `resolve` in any tense and case, an optional colon) directly before a pull request (a `#N`, `GH-N` or `owner/repo#N`
