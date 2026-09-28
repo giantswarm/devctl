@@ -192,7 +192,7 @@
               },
               "releaseCandidateByDefault": {
                 "type": "boolean",
-                "description": "Make the auto-release workflow cut a release candidate (vX.Y.Z-rc.N, a GitHub pre-release) on every releasable push instead of a stable release (passed to 'devctl gen workflows --release-candidate-by-default'). The version is still computed from the conventional commits, and the feat-rc/fix-rc markers have no further effect. A stable release is cut only by running the Auto-release workflow manually with release-type: stable, which promotes the open cycle to vX.Y.Z. Only applies with releaseWorkflow auto-release. Requires devctl v8.98.0+; align-files skips the flag with a notice until its devctl pin supports it."
+                "description": "Make the auto-release workflow cut a release candidate (vX.Y.Z-rc.N, a GitHub pre-release) on every releasable push instead of a stable release (passed to 'devctl gen workflows --release-candidate-by-default'). The version is still computed from the conventional commits, and the feat-rc/fix-rc markers have no further effect. A stable release is cut only by running the Auto-release workflow manually with release-type: stable, which promotes the open cycle to vX.Y.Z. Only applies with releaseWorkflow auto-release. Requires devctl v8.101.0+; align-files skips the flag with a notice until its devctl pin supports it."
               },
               "appCatalog": {
                 "type": "string",
