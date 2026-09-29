@@ -1706,12 +1706,17 @@ func Test_GoldenATSOnReleaseWorkflows(t *testing.T) {
 // node image version, and is absent for npm (npm ci wipes node_modules) and
 // pnpm (its store already caches build side-effects).
 func Test_NodeBuildOutputCache(t *testing.T) {
-	berryKey := "node-build-yarn-v1-" + DefaultNodeImageVersion + `-{{ checksum "yarn.lock" }}`
-	classicKey := "node-build-yarn-classic-v1-" + DefaultNodeImageVersion + `-{{ checksum "yarn.lock" }}`
+	berryKey := "node-build-yarn-v2-" + DefaultNodeImageVersion + `-{{ checksum "yarn.lock" }}`
+	classicKey := "node-build-yarn-classic-v2-" + DefaultNodeImageVersion + `-{{ checksum "yarn.lock" }}`
 
 	berry := render(t, Config{RepoName: repoK8sTypes, Language: gen.LanguageNode, PackageManager: PackageManagerYarn})
 	if !contains(berry, berryKey) {
 		t.Errorf("yarn-berry should emit the build cache key %q:\n%s", berryKey, berry)
+	}
+	// devctl#2183: a lockfile-agnostic prefix fallback restores another
+	// lockfile's tree, so the install reconciles partially and skips postinstall.
+	if prefix := "- node-build-yarn-v2-" + DefaultNodeImageVersion + "-\n"; contains(berry, prefix) {
+		t.Errorf("yarn-berry build cache must restore on the exact key only, found fallback %q:\n%s", prefix, berry)
 	}
 	if !contains(berry, "- node_modules") || !contains(berry, "- .yarn/install-state.gz") {
 		t.Errorf("yarn-berry build cache should save node_modules + install-state:\n%s", berry)
@@ -1792,7 +1797,7 @@ func Test_NodeImageVersion(t *testing.T) {
 	})
 	for _, want := range []string{
 		"image: cimg/node:" + pinned,
-		"node-build-yarn-v1-" + pinned + "-",
+		"node-build-yarn-v2-" + pinned + "-",
 	} {
 		if !contains(override, want) {
 			t.Errorf("Node image version override should render %q:\n%s", want, override)
@@ -1818,7 +1823,7 @@ func Test_NodeBuildCacheSavedAfterBuild(t *testing.T) {
 		ImageDockerfile: backstageDockerfile,
 	})
 
-	buildSave := strings.Index(got, "key: node-build-yarn-v1-")
+	buildSave := strings.Index(got, "key: node-build-yarn-v2-")
 	verify := strings.Index(got, "name: Verify")
 	build := strings.Index(got, "name: Build")
 	if buildSave < 0 || verify < 0 || build < 0 {

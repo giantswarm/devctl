@@ -29,6 +29,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Fixed
 
 - `release wait --image` probes the named image under the git tag as written (`giantswarm/dex:v2.43.3`, the `$CIRCLE_TAG` a plain `docker push` job pushes), not the version without its `v`, which such a job never pushes.
+- `gen circleci`: the Node job restores its build-output cache (`node_modules`, `.yarn/install-state.gz`) on the exact
+  lockfile key only ([#2183](https://github.com/giantswarm/devctl/issues/2183)). The prefix fallback restored another
+  lockfile's tree, so `yarn install --immutable` reconciled only part of it and skipped the root workspace's build step:
+  a `patch-package` postinstall silently never ran, and a dependency PR failed in the build on a file its diff never
+  touched. The key salt moves to `v2`, so entries a prefix restore may have poisoned are not restored again.
 - `pr wait` and `pr merge` add a hint to a pull request's "not found" naming the devctl GitHub App login's reach
   ([#2436](https://github.com/giantswarm/devctl/issues/2436)): the App is installed on the giantswarm organization
   only, and GitHub answers 404 rather than 403 for a private repository the token cannot read, so a personal

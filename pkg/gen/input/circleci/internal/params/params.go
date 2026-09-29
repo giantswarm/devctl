@@ -241,12 +241,9 @@ type Params struct {
 	NodeBuildCachePaths []string
 	// NodeBuildCacheKey is the full save_cache key for the build-output cache,
 	// salted with the node image version (native ABI is node-version-specific)
-	// and the lockfile checksum. Empty when NodeBuildCachePaths is empty.
+	// and the lockfile checksum. Restored on this exact key only (devctl#2183).
+	// Empty when NodeBuildCachePaths is empty.
 	NodeBuildCacheKey string
-	// NodeBuildCacheRestoreKey is the restore_cache prefix for the build-output
-	// cache (node-image-versioned, lockfile-agnostic), so a changed lockfile
-	// warm-starts from the previous node_modules and only reconciles the diff.
-	NodeBuildCacheRestoreKey string
 	// NodeCorepack is true when the package manager needs `corepack enable`
 	// (pnpm, which cimg/node does not bundle).
 	NodeCorepack bool
