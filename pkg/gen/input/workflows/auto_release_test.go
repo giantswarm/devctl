@@ -32,14 +32,7 @@ type autoReleaseStep struct {
 func tagJobSteps(t *testing.T) ([]autoReleaseStep, string) {
 	t.Helper()
 
-	return tagJobStepsOf(t, newWorkflows(t, gen.FlavourApp))
-}
-
-// tagJobStepsOf is tagJobSteps for the workflow w renders.
-func tagJobStepsOf(t *testing.T, w *Workflows) ([]autoReleaseStep, string) {
-	t.Helper()
-
-	rendered := renderInput(t, w.AutoRelease())
+	rendered := renderInput(t, newWorkflows(t, gen.FlavourApp).AutoRelease())
 
 	var wf struct {
 		Jobs map[string]struct {
@@ -195,30 +188,41 @@ func decide(t *testing.T, script, dir, next, want string) map[string]string {
 func decideWithLog(t *testing.T, script, dir, next, want string) (map[string]string, string) {
 	t.Helper()
 
+	cliffContext(t, dir)
+
+	got, out, err := runStep(t, script, dir, "NEXT="+next, "WANT="+want, "CLIFF_CONTEXT=cliff-context.json")
+	if err != nil {
+		t.Fatalf("decide step failed: %v\n%s", err, out)
+	}
+
+	return got, out
+}
+
+// runStep runs a tag-job step's shell in dir with env on top of the runner's
+// GITHUB_* variables, and returns its GITHUB_OUTPUT as a map, what it printed
+// and its exit error.
+func runStep(t *testing.T, script, dir string, env ...string) (map[string]string, string, error) {
+	t.Helper()
+
 	outPath := filepath.Join(t.TempDir(), "github-output")
 	if err := os.WriteFile(outPath, nil, 0o600); err != nil {
 		t.Fatalf("seed GITHUB_OUTPUT: %v", err)
 	}
 
-	cliffContext(t, dir)
-
 	cmd := exec.CommandContext(t.Context(), "bash", "-c", script) // #nosec G204 -- the script is a literal in this test, test-only
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(),
-		"NEXT="+next,
-		"WANT="+want,
-		"CLIFF_CONTEXT=cliff-context.json",
+		"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1",
 		"GITHUB_REF_NAME=main",
 		"GITHUB_OUTPUT="+outPath,
+		"GITHUB_STEP_SUMMARY="+filepath.Join(t.TempDir(), "step-summary"),
 	)
+	cmd.Env = append(cmd.Env, env...)
 	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("decide step failed: %v\n%s", err, out)
-	}
 
-	raw, err := os.ReadFile(outPath) // #nosec G304 -- path built from t.TempDir
-	if err != nil {
-		t.Fatalf("read GITHUB_OUTPUT: %v", err)
+	raw, readErr := os.ReadFile(outPath) // #nosec G304 -- path built from t.TempDir
+	if readErr != nil {
+		t.Fatalf("read GITHUB_OUTPUT: %v", readErr)
 	}
 
 	got := map[string]string{}
@@ -228,7 +232,7 @@ func decideWithLog(t *testing.T, script, dir, next, want string) (map[string]str
 		}
 	}
 
-	return got, string(out)
+	return got, string(out), err
 }
 
 // Test_AutoReleaseDecideWarnsOnUnconventionalSubjects pins that a commit
@@ -269,130 +273,74 @@ func Test_AutoReleaseDecideWarnsOnUnconventionalSubjects(t *testing.T) {
 	})
 }
 
-// Test_AutoReleaseDecide pins the release-candidate rule: tag an RC when at
-// least one unreleased commit is feat-rc/fix-rc and no unreleased feat, fix or
-// breaking commit lacks the -rc. `next` is what git-cliff computes, which is
-// always the stable target because cliff.toml normalises the -rc away.
+// Test_AutoReleaseDecide pins the release rule: every releasable push cuts
+// the next rc.N for the version git-cliff computed (`next`), and a push with
+// nothing releasable since the last stable release or the last candidate
+// cuts nothing.
 func Test_AutoReleaseDecide(t *testing.T) {
 	script := decideScript(t)
 
 	testCases := []struct {
-		name           string
-		history        []string
-		next           string
-		want           string
-		expectTag      string
-		expectPrerelse string
+		name      string
+		history   []string
+		next      string
+		expectTag string
 	}{
 		{
-			name:           "case 0: no marker anywhere is a stable release",
-			history:        []string{"v1.2.9", "feat: add x"},
-			next:           "v1.3.0",
-			expectTag:      "v1.3.0",
-			expectPrerelse: "false",
+			name:      "a feat opens a cycle",
+			history:   []string{"v1.2.9", "feat: add x"},
+			next:      "v1.3.0",
+			expectTag: "v1.3.0-rc.1",
 		},
 		{
-			name:           "case 1: a single feat-rc opens the cycle",
-			history:        []string{"v1.2.9", "feat-rc: add x"},
-			next:           "v1.3.0",
-			expectTag:      "v1.3.0-rc.1",
-			expectPrerelse: "true",
+			name:      "a fix opens a cycle",
+			history:   []string{"v1.2.9", "fix: x"},
+			next:      "v1.2.10",
+			expectTag: "v1.2.10-rc.1",
 		},
 		{
-			name:           "case 2: chore(deps) does not decide, so the cycle holds",
-			history:        []string{"v1.2.9", "feat-rc: add x", "v1.3.0-rc.1", "chore(deps): bump y"},
-			next:           "v1.3.0",
-			expectTag:      "v1.3.0-rc.2",
-			expectPrerelse: "true",
+			name:      "chore(deps) during a cycle cuts the next candidate",
+			history:   []string{"v1.2.9", "feat: add x", "v1.3.0-rc.1", "chore(deps): bump y"},
+			next:      "v1.3.0",
+			expectTag: "v1.3.0-rc.2",
 		},
 		{
-			// `docs` neither decides nor releases: cliff.toml skips it, so
-			// there is nothing new to put in a candidate and the cycle waits.
-			name:      "case 3: a docs-only push during a cycle releases nothing",
-			history:   []string{"v1.2.9", "feat-rc: add x", "v1.3.0-rc.1", "docs: fix typo"},
+			// `docs` is skipped by cliff.toml, so there is nothing new to put
+			// in a candidate.
+			name:      "a docs-only push during a cycle releases nothing",
+			history:   []string{"v1.2.9", "feat: add x", "v1.3.0-rc.1", "docs: fix typo"},
 			next:      "v1.3.0",
 			expectTag: "",
 		},
 		{
 			name:      "a non-conventional push during a cycle releases nothing",
-			history:   []string{"v1.2.9", "feat-rc: add x", "v1.3.0-rc.1", "Merge pull request #12 from foo/bar"},
+			history:   []string{"v1.2.9", "feat: add x", "v1.3.0-rc.1", "Merge pull request #12 from foo/bar"},
 			next:      "v1.3.0",
 			expectTag: "",
 		},
 		{
-			name:           "case 4: an unmarked fix closes the cycle at the stable target",
-			history:        []string{"v1.2.9", "feat-rc: add x", "v1.3.0-rc.1", "fix: last thing"},
-			next:           "v1.3.0",
-			expectTag:      "v1.3.0",
-			expectPrerelse: "false",
+			name:      "a breaking change moves the target and restarts at rc.1",
+			history:   []string{"v1.2.9", "feat: add x", "v1.3.0-rc.1", "refactor!: drop y"},
+			next:      "v2.0.0",
+			expectTag: "v2.0.0-rc.1",
 		},
 		{
-			name:           "case 5: an unmarked breaking change of any type closes the cycle",
-			history:        []string{"v1.2.9", "feat-rc: add x", "v1.3.0-rc.1", "refactor!: drop y"},
-			next:           "v2.0.0",
-			expectTag:      "v2.0.0",
-			expectPrerelse: "false",
+			name:      "rc.9 is followed by rc.10, not rc.2",
+			history:   []string{"v1.2.9", "feat: add x", "v1.3.0-rc.9", "fix: tweak"},
+			next:      "v1.3.0",
+			expectTag: "v1.3.0-rc.10",
 		},
 		{
-			// git-cliff bumps the major on a `BREAKING CHANGE:` footer as
-			// readily as on `!`, so the footer has to close the cycle too.
-			// Otherwise the cycle ships rc.N of a major nobody marked.
-			name:           "case 5b: an unmarked breaking footer closes the cycle",
-			history:        []string{"v1.2.9", "feat-rc: add x", "v1.3.0-rc.1", "refactor: drop the v1 API\n\nBREAKING CHANGE: v1 is gone"},
-			next:           "v2.0.0",
-			expectTag:      "v2.0.0",
-			expectPrerelse: "false",
+			name:      "a leftover -rc type still cuts a candidate",
+			history:   []string{"v1.2.9", "feat-rc: add x"},
+			next:      "v1.3.0",
+			expectTag: "v1.3.0-rc.1",
 		},
 		{
-			name:           "the BREAKING-CHANGE spelling closes it as well",
-			history:        []string{"v1.2.9", "feat-rc: add x", "v1.3.0-rc.1", "chore: tidy\n\nBREAKING-CHANGE: gone"},
-			next:           "v2.0.0",
-			expectTag:      "v2.0.0",
-			expectPrerelse: "false",
-		},
-		{
-			// The marked commit stays marked: it carries the -rc, so its own
-			// footer must not count against it.
-			name:           "a marked breaking footer keeps the cycle open",
-			history:        []string{"v1.2.9", "feat-rc: rework\n\nBREAKING CHANGE: v1 is gone"},
-			next:           "v2.0.0",
-			expectTag:      "v2.0.0-rc.1",
-			expectPrerelse: "true",
-		},
-		{
-			name:           "a marked breaking change gives a major RC",
-			history:        []string{"v1.2.9", "feat-rc!: drop v1"},
-			next:           "v2.0.0",
-			expectTag:      "v2.0.0-rc.1",
-			expectPrerelse: "true",
-		},
-		{
-			name:           "scopes are accepted on both sides of the rule",
-			history:        []string{"v1.2.9", "feat-rc(auth): add x", "v1.3.0-rc.1", "chore(deps): bump y"},
-			next:           "v1.3.0",
-			expectTag:      "v1.3.0-rc.2",
-			expectPrerelse: "true",
-		},
-		{
-			name:           "rc.9 is followed by rc.10, not rc.2",
-			history:        []string{"v1.2.9", "feat-rc: add x", "v1.3.0-rc.9", "fix-rc: tweak"},
-			next:           "v1.3.0",
-			expectTag:      "v1.3.0-rc.10",
-			expectPrerelse: "true",
-		},
-		{
-			name:           "a moved target restarts the RC series at rc.1",
-			history:        []string{"v1.2.9", "feat-rc: add x", "v1.3.0-rc.1", "feat-rc!: drop v1"},
-			next:           "v2.0.0",
-			expectTag:      "v2.0.0-rc.1",
-			expectPrerelse: "true",
-		},
-		{
-			name:           "inception, with no tag at all",
-			history:        []string{"feat-rc: add x"},
-			next:           "v0.1.0",
-			expectTag:      "v0.1.0-rc.1",
-			expectPrerelse: "true",
+			name:      "inception, with no tag at all",
+			history:   []string{"feat: add x"},
+			next:      "v0.1.0",
+			expectTag: "v0.1.0-rc.1",
 		},
 		{
 			name:      "no releasable commits, so no tag",
@@ -401,196 +349,168 @@ func Test_AutoReleaseDecide(t *testing.T) {
 			expectTag: "",
 		},
 		{
-			// The stable target equals the last stable tag, but the RC series
-			// is not finished, so an explicit `rc` must still produce one.
-			name:           "workflow_dispatch rc forces one more candidate",
-			history:        []string{"v1.2.9", "feat-rc: add x", "v1.3.0-rc.1"},
-			next:           "v1.3.0",
-			want:           "rc",
-			expectTag:      "v1.3.0-rc.2",
-			expectPrerelse: "true",
-		},
-		{
-			// The cycle closed at v1.3.0 and nothing landed after it, so
-			// there is no cycle left for a candidate to extend.
-			name:      "workflow_dispatch rc after the cycle closed tags nothing",
-			history:   []string{"v1.2.9", "feat-rc: add x", "v1.3.0-rc.1", "v1.3.0"},
-			next:      "v1.3.0",
-			want:      "rc",
-			expectTag: "",
-		},
-		{
-			name:           "workflow_dispatch stable closes a cycle with nothing left to merge",
-			history:        []string{"v1.2.9", "feat-rc: add x", "v1.3.0-rc.1"},
-			next:           "v1.3.0",
-			want:           "stable",
-			expectTag:      "v1.3.0",
-			expectPrerelse: "false",
+			name:      "after a stable release the next fix opens a new cycle",
+			history:   []string{"v1.2.9", "feat: add x", "v1.3.0-rc.1", "v1.3.0", "fix: y"},
+			next:      "v1.3.1",
+			expectTag: "v1.3.1-rc.1",
 		},
 		{
 			// On release-2.x the reachable baseline is v2.3.5, not the higher
 			// v3.x tags on main, which git-cliff has already accounted for in
 			// `next`. The step must agree, or it reports "nothing to release".
-			name:           "a backport branch bumps from its own reachable baseline",
-			history:        []string{"v2.3.5", "fix: backport"},
-			next:           "v2.3.6",
-			expectTag:      "v2.3.6",
-			expectPrerelse: "false",
+			name:      "a backport branch bumps from its own reachable baseline",
+			history:   []string{"v2.3.5", "fix: backport"},
+			next:      "v2.3.6",
+			expectTag: "v2.3.6-rc.1",
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			want := tc.want
-			if want == "" {
-				want = "auto"
-			}
-
-			got := decide(t, script, repo(t, tc.history...), tc.next, want)
+			dir := repo(t, tc.history...)
+			got := decide(t, script, dir, tc.next, "auto")
 
 			if got["tag"] != tc.expectTag {
 				t.Errorf("tag = %q, want %q", got["tag"], tc.expectTag)
 			}
-			if got["prerelease"] != tc.expectPrerelse {
-				t.Errorf("prerelease = %q, want %q", got["prerelease"], tc.expectPrerelse)
+			if tc.expectTag == "" {
+				return
+			}
+			if got["prerelease"] != "true" {
+				t.Errorf("prerelease = %q, want true", got["prerelease"])
+			}
+			if head := strings.TrimSpace(mustGit(t, dir, "rev-parse", "HEAD")); got["target"] != head {
+				t.Errorf("target = %q, want HEAD %q", got["target"], head)
 			}
 		})
 	}
 }
 
-// Test_AutoReleaseDecideCandidateByDefault pins the release-candidate-by-default
-// rule: every releasable push cuts the next rc.N whatever the markers say, and
-// only release-type: stable cuts a stable release.
-func Test_AutoReleaseDecideCandidateByDefault(t *testing.T) {
-	w, err := New(Config{Flavours: gen.FlavourSlice{gen.FlavourApp}, ReleaseCandidateByDefault: true})
-	if err != nil {
-		t.Fatalf("New() returned unexpected error: %v", err)
-	}
-	steps, rendered := tagJobStepsOf(t, w)
-	var script string
-	for _, s := range steps {
-		if s.ID == "decide" {
-			script = s.Run
-		}
-	}
-	if script == "" {
-		t.Fatalf("no decide step in the tag job:\n%s", rendered)
-	}
+// promoteScript extracts the shell of the step that checks out the candidate
+// a stable release promotes.
+func promoteScript(t *testing.T) string {
+	t.Helper()
+
+	return tagJobStep(t, "promote").Run
+}
+
+// Test_AutoReleasePromote pins what `release-type: stable` releases: the
+// latest candidate since the last stable release, on that candidate's commit,
+// whatever merged after it. The promote step checks the candidate out and the
+// decide step, run where it left HEAD, tags the version on that commit.
+func Test_AutoReleasePromote(t *testing.T) {
+	promote := promoteScript(t)
+	decideStep := decideScript(t)
 
 	testCases := []struct {
-		name           string
-		history        []string
-		next           string
-		want           string
-		expectTag      string
-		expectPrerelse string
+		name      string
+		history   []string
+		next      string
+		expectRC  string
+		expectTag string
 	}{
 		{
-			name:           "an unmarked feat opens a cycle",
-			history:        []string{"v1.2.9", "feat: add x"},
-			next:           "v1.3.0",
-			expectTag:      "v1.3.0-rc.1",
-			expectPrerelse: "true",
-		},
-		{
-			name:           "an unmarked fix during a cycle cuts the next candidate",
-			history:        []string{"v1.2.9", "feat: add x", "v1.3.0-rc.1", "fix: last thing"},
-			next:           "v1.3.0",
-			expectTag:      "v1.3.0-rc.2",
-			expectPrerelse: "true",
-		},
-		{
-			name:           "an unmarked breaking change moves the target and restarts at rc.1",
-			history:        []string{"v1.2.9", "feat: add x", "v1.3.0-rc.1", "refactor!: drop y"},
-			next:           "v2.0.0",
-			expectTag:      "v2.0.0-rc.1",
-			expectPrerelse: "true",
-		},
-		{
-			name:      "a docs-only push during a cycle releases nothing",
-			history:   []string{"v1.2.9", "fix: x", "v1.2.10-rc.1", "docs: fix typo"},
-			next:      "v1.2.10",
-			expectTag: "",
-		},
-		{
-			name:      "nothing releasable since the last stable release",
-			history:   []string{"v1.3.0", "docs: fix typo"},
+			name:      "the latest candidate is promoted",
+			history:   []string{"v1.2.9", "feat: add x", "v1.3.0-rc.1", "fix: y", "v1.3.0-rc.2"},
 			next:      "v1.3.0",
-			expectTag: "",
+			expectRC:  "v1.3.0-rc.2",
+			expectTag: "v1.3.0",
 		},
 		{
-			name:           "workflow_dispatch stable promotes the cycle",
-			history:        []string{"v1.2.9", "feat: add x", "v1.3.0-rc.2"},
-			next:           "v1.3.0",
-			want:           "stable",
-			expectTag:      "v1.3.0",
-			expectPrerelse: "false",
+			name:      "commits after the candidate stay out of the release",
+			history:   []string{"v1.2.9", "feat: add x", "v1.3.0-rc.1", "docs: tidy", "fix: late"},
+			next:      "v1.3.0",
+			expectRC:  "v1.3.0-rc.1",
+			expectTag: "v1.3.0",
 		},
 		{
-			name:           "workflow_dispatch stable without a candidate still releases",
-			history:        []string{"v1.2.9", "fix: x"},
-			next:           "v1.2.10",
-			want:           "stable",
-			expectTag:      "v1.2.10",
-			expectPrerelse: "false",
+			name:      "rc.10 is later than rc.9",
+			history:   []string{"v1.2.9", "feat: add x", "v1.3.0-rc.9", "fix: y", "v1.3.0-rc.10"},
+			next:      "v1.3.0",
+			expectRC:  "v1.3.0-rc.10",
+			expectTag: "v1.3.0",
 		},
 		{
-			name:           "after a stable release the next fix opens a new cycle",
-			history:        []string{"v1.2.9", "feat: add x", "v1.3.0-rc.1", "v1.3.0", "fix: y"},
-			next:           "v1.3.1",
-			expectTag:      "v1.3.1-rc.1",
-			expectPrerelse: "true",
+			name:      "a moved target is promoted at its own version",
+			history:   []string{"v1.2.9", "feat: add x", "v1.3.0-rc.1", "refactor!: drop y", "v2.0.0-rc.1"},
+			next:      "v2.0.0",
+			expectRC:  "v2.0.0-rc.1",
+			expectTag: "v2.0.0",
+		},
+		{
+			name:      "candidates of an earlier stable release do not count",
+			history:   []string{"v1.2.9", "feat: add x", "v1.3.0-rc.1", "v1.3.0", "fix: y", "v1.3.1-rc.1"},
+			next:      "v1.3.1",
+			expectRC:  "v1.3.1-rc.1",
+			expectTag: "v1.3.1",
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			want := tc.want
-			if want == "" {
-				want = "auto"
+			dir := repo(t, tc.history...)
+
+			promoted, log, err := runStep(t, promote, dir)
+			if err != nil {
+				t.Fatalf("promote step failed: %v\n%s", err, log)
+			}
+			if promoted["rc"] != tc.expectRC {
+				t.Fatalf("rc = %q, want %q", promoted["rc"], tc.expectRC)
 			}
 
-			got := decide(t, script, repo(t, tc.history...), tc.next, want)
+			cliffContext(t, dir)
+			got, log, err := runStep(t, decideStep, dir,
+				"NEXT="+tc.next, "WANT=stable", "PROMOTE="+promoted["rc"], "CLIFF_CONTEXT=cliff-context.json")
+			if err != nil {
+				t.Fatalf("decide step failed: %v\n%s", err, log)
+			}
 
 			if got["tag"] != tc.expectTag {
 				t.Errorf("tag = %q, want %q", got["tag"], tc.expectTag)
 			}
-			if got["prerelease"] != tc.expectPrerelse {
-				t.Errorf("prerelease = %q, want %q", got["prerelease"], tc.expectPrerelse)
+			if got["prerelease"] != "false" {
+				t.Errorf("prerelease = %q, want false", got["prerelease"])
+			}
+			rcCommit := strings.TrimSpace(mustGit(t, dir, "rev-parse", tc.expectRC+"^{commit}"))
+			if got["target"] != rcCommit {
+				t.Errorf("target = %q, want the commit of %s %q", got["target"], tc.expectRC, rcCommit)
 			}
 		})
 	}
 }
 
-// Test_AutoReleaseCandidateByDefaultOffIsUnchanged pins that the option adds
-// nothing to the workflow of a repository that does not set it.
-func Test_AutoReleaseCandidateByDefaultOffIsUnchanged(t *testing.T) {
-	rendered := renderInput(t, newWorkflows(t, gen.FlavourApp).AutoRelease())
-
-	for _, marker := range []string{"releaseCandidateByDefault", "releases candidates by default"} {
-		if strings.Contains(rendered, marker) {
-			t.Errorf("workflow without the option contains %q:\n%s", marker, rendered)
+// Test_AutoReleasePromoteRefuses pins the two refusals of a stable release:
+// no candidate to promote, and a candidate whose commits release a different
+// version than its tag names.
+func Test_AutoReleasePromoteRefuses(t *testing.T) {
+	t.Run("no candidate since the last stable release", func(t *testing.T) {
+		for _, history := range [][]string{
+			{"v1.2.9", "fix: x"},
+			{"v1.2.9", "fix: x", "v1.2.10-rc.1", "v1.2.10", "fix: y"},
+		} {
+			_, log, err := runStep(t, promoteScript(t), repo(t, history...))
+			if err == nil {
+				t.Errorf("history %q: promote step succeeded, want a refusal:\n%s", history, log)
+			}
+			if !strings.Contains(log, "::error title=No release candidate to promote::") {
+				t.Errorf("history %q: no error annotation:\n%s", history, log)
+			}
 		}
-	}
-}
+	})
 
-// Test_AutoReleaseCandidateByDefaultRendersValidYAML pins that the option's
-// template branches keep the workflow parseable and put the override in the
-// decide step.
-func Test_AutoReleaseCandidateByDefaultRendersValidYAML(t *testing.T) {
-	w, err := New(Config{Flavours: gen.FlavourSlice{gen.FlavourApp}, ReleaseCandidateByDefault: true})
-	if err != nil {
-		t.Fatalf("New() returned unexpected error: %v", err)
-	}
-	rendered := renderInput(t, w.AutoRelease())
+	t.Run("the candidate's commits release another version", func(t *testing.T) {
+		dir := repo(t, "v1.2.9", "fix: x", "v1.2.10-rc.1")
+		cliffContext(t, dir)
 
-	var wf map[string]any
-	if err := yaml.Unmarshal([]byte(rendered), &wf); err != nil {
-		t.Fatalf("rendered workflow is not valid YAML: %v\n%s", err, rendered)
-	}
-	if !strings.Contains(rendered, "releases candidates by default") {
-		t.Errorf("workflow_dispatch comment missing:\n%s", rendered)
-	}
+		_, log, err := runStep(t, decideScript(t), dir,
+			"NEXT=v1.3.0", "WANT=stable", "PROMOTE=v1.2.10-rc.1", "CLIFF_CONTEXT=cliff-context.json")
+		if err == nil {
+			t.Errorf("decide step succeeded, want a refusal:\n%s", log)
+		}
+		if !strings.Contains(log, "::error title=Candidate does not match::") {
+			t.Errorf("no error annotation:\n%s", log)
+		}
+	})
 }
 
 // Test_AutoReleaseDecideIgnoresUnmergedCandidates pins that the rc counter is
@@ -600,13 +520,13 @@ func Test_AutoReleaseCandidateByDefaultRendersValidYAML(t *testing.T) {
 func Test_AutoReleaseDecideIgnoresUnmergedCandidates(t *testing.T) {
 	script := decideScript(t)
 
-	dir := repo(t, "v1.2.9", "feat-rc: add x")
+	dir := repo(t, "v1.2.9", "feat: add x")
 
 	// A candidate cut on a side branch that never merged. cliff.toml keeps it
 	// out of git-cliff's baseline through use_branch_tags, so `NEXT` below is
 	// still v1.3.0; the step has to agree.
 	mustGit(t, dir, "checkout", "-q", "-b", "side", "v1.2.9")
-	mustGit(t, dir, "commit", "--allow-empty", "-m", "feat-rc: something else")
+	mustGit(t, dir, "commit", "--allow-empty", "-m", "feat: something else")
 	mustGit(t, dir, "tag", "v1.3.0-rc.7")
 	mustGit(t, dir, "checkout", "-q", "main")
 
@@ -663,11 +583,10 @@ func Test_AutoReleaseCliffNormalisesRcTypes(t *testing.T) {
 	}
 }
 
-// Test_SemanticPullRequestAcceptsRcTypes pins the other half of that contract.
-// The action's stock parser reads the type with `\w*`, so the widened
-// header_pattern is what lets a hyphenated type through at all; `types` alone
-// would not.
-func Test_SemanticPullRequestAcceptsRcTypes(t *testing.T) {
+// Test_SemanticPullRequestTypes pins the accepted PR title types. The -rc
+// types are gone: every releasable push cuts a release candidate, so a title
+// has nothing to mark.
+func Test_SemanticPullRequestTypes(t *testing.T) {
 	got := renderInput(t, newWorkflows(t, gen.FlavourApp).SemanticPullRequest())
 
 	var wf struct {
@@ -681,21 +600,18 @@ func Test_SemanticPullRequestAcceptsRcTypes(t *testing.T) {
 
 	with := wf.Jobs["semantic-pull-request"].With
 
-	if with["header_pattern"] != `^(\w*(?:-rc)?)(?:\((.*)\))?!?: (.*)$` {
-		t.Errorf("header_pattern = %q, want the type group widened by exactly the -rc suffix", with["header_pattern"])
+	if pattern, ok := with["header_pattern"]; ok {
+		t.Errorf("header_pattern = %q, want the action's default parser", pattern)
 	}
 
 	// `types` replaces the action's default list rather than extending it, so
 	// dropping one of these silently blocks that type on every repository.
 	// `security` is not one of the action's defaults, so it needs the explicit
 	// list to be accepted at all; cliff.toml maps it to the Security group.
-	for _, want := range []string{
-		"feat(-rc)?", "fix(-rc)?", "docs", "style", "refactor",
-		"perf", "test", "build", "ci", "chore", "revert", "security",
-	} {
-		if !strings.Contains(with["types"], want+"\n") {
-			t.Errorf("types is missing %q:\n%s", want, with["types"])
-		}
+	types := strings.Fields(with["types"])
+	wantTypes := []string{"feat", "fix", "docs", "style", "refactor", "perf", "test", "build", "ci", "chore", "revert", "security"}
+	if !slices.Equal(types, wantTypes) {
+		t.Errorf("types = %q, want %q", types, wantTypes)
 	}
 }
 
@@ -926,10 +842,10 @@ func Test_AutoReleaseCliffSpansTheWholeCandidateCycle(t *testing.T) {
 		expectSubjects []string
 	}{
 		{
-			// The stable release that closes a cycle carries what the
-			// candidates carried, and the minor the feat-rc earned.
-			name:           "the closing stable release covers the whole cycle",
-			history:        []string{"v1.2.9", "feat-rc: add x", "v1.3.0-rc.1", "fix: last thing"},
+			// The stable release promoted from a cycle carries what every
+			// candidate carried, and the minor the feat earned.
+			name:           "a promoted candidate covers the whole cycle",
+			history:        []string{"v1.2.9", "feat: add x", "v1.3.0-rc.1", "fix: last thing", "v1.3.0-rc.2"},
 			expectVersion:  "v1.3.0",
 			expectSubjects: []string{"add x", "last thing"},
 		},
@@ -937,15 +853,15 @@ func Test_AutoReleaseCliffSpansTheWholeCandidateCycle(t *testing.T) {
 			// The second candidate of a cycle keeps the target the first one
 			// established, instead of bumping a patch off the last stable.
 			name:           "a later candidate keeps the target of the cycle",
-			history:        []string{"v1.2.9", "feat-rc: add x", "v1.3.0-rc.1", "fix-rc: tweak"},
+			history:        []string{"v1.2.9", "feat: add x", "v1.3.0-rc.1", "fix: tweak"},
 			expectVersion:  "v1.3.0",
 			expectSubjects: []string{"add x", "tweak"},
 		},
 		{
-			// workflow_dispatch runs with the candidate tag on HEAD and
-			// nothing pushed since, which is how a cycle is closed by hand.
+			// A stable run checks the candidate out, so git-cliff runs with
+			// the candidate tag on HEAD.
 			name:           "a candidate tag on HEAD still names the target",
-			history:        []string{"v1.2.9", "feat-rc: add x", "v1.3.0-rc.1"},
+			history:        []string{"v1.2.9", "feat: add x", "v1.3.0-rc.1"},
 			expectVersion:  "v1.3.0",
 			expectSubjects: []string{"add x"},
 		},
@@ -953,7 +869,7 @@ func Test_AutoReleaseCliffSpansTheWholeCandidateCycle(t *testing.T) {
 			// use_branch_tags is what scopes the baseline to the branch, and
 			// tag_pattern must not cost the 2.x line its own candidates.
 			name:           "a maintenance branch cuts its own cycle",
-			history:        []string{"v2.3.5", "feat-rc: backport", "v2.4.0-rc.1", "fix: last thing"},
+			history:        []string{"v2.3.5", "feat: backport", "v2.4.0-rc.1", "fix: last thing"},
 			expectVersion:  "v2.4.0",
 			expectSubjects: []string{"backport", "last thing"},
 		},
@@ -970,6 +886,25 @@ func Test_AutoReleaseCliffSpansTheWholeCandidateCycle(t *testing.T) {
 				t.Errorf("commits = %q, want %q", got, tc.expectSubjects)
 			}
 		})
+	}
+}
+
+// Test_AutoReleaseCliffOnAPromotedCandidate pins that git-cliff, run on the
+// detached candidate the promote step checks out, releases that candidate's
+// version and commits and nothing merged after it.
+func Test_AutoReleaseCliffOnAPromotedCandidate(t *testing.T) {
+	requireGitCliff(t)
+
+	dir := repo(t, "v1.2.9", "fix: x", "v1.2.10-rc.1", "feat: late")
+	mustGit(t, dir, "checkout", "-q", "--detach", "v1.2.10-rc.1")
+
+	release := cliffBump(t, dir)
+
+	if release.Version != "v1.2.10" {
+		t.Errorf("version = %q, want v1.2.10", release.Version)
+	}
+	if got := release.subjects(); !slices.Equal(got, []string{"x"}) {
+		t.Errorf("commits = %q, want [x]", got)
 	}
 }
 

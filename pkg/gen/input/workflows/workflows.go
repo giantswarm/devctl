@@ -13,9 +13,6 @@ type Config struct {
 	// RepoName is the repository's name under the giantswarm organization,
 	// for cliff.toml's `[remote.github].repo` field.
 	RepoName string
-	// ReleaseCandidateByDefault makes the auto-release workflow cut a release
-	// candidate on every push; see params.Params.
-	ReleaseCandidateByDefault bool
 }
 
 type Workflows struct {
@@ -25,10 +22,9 @@ type Workflows struct {
 func New(config Config) (*Workflows, error) {
 	w := &Workflows{
 		params: params.Params{
-			Dir:                       ".github/workflows",
-			Flavours:                  config.Flavours,
-			RepoName:                  config.RepoName,
-			ReleaseCandidateByDefault: config.ReleaseCandidateByDefault,
+			Dir:      ".github/workflows",
+			Flavours: config.Flavours,
+			RepoName: config.RepoName,
 		},
 	}
 

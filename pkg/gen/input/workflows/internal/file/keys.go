@@ -8,11 +8,6 @@ const templateKeyStepSetUpGitIdentity = "StepSetUpGitIdentity"
 // header every workflow renders first.
 const templateKeyHeader = "Header"
 
-// templateKeyReleaseCandidateByDefault is the template data key saying the
-// auto-release workflow cuts a release candidate on every push, leaving the
-// stable release to a manual run.
-const templateKeyReleaseCandidateByDefault = "ReleaseCandidateByDefault"
-
 // The workflow templates render GitHub Actions ${{ }} expressions verbatim, so
 // they use four braces as their own action delimiters.
 const (

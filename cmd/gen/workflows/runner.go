@@ -61,9 +61,8 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 	var workflowsInput *workflows.Workflows
 	{
 		c := workflows.Config{
-			Flavours:                  r.flag.Flavours,
-			RepoName:                  repoName,
-			ReleaseCandidateByDefault: r.flag.ReleaseCandidateByDefault,
+			Flavours: r.flag.Flavours,
+			RepoName: repoName,
 		}
 
 		workflowsInput, err = workflows.New(c)

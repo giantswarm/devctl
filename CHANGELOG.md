@@ -9,10 +9,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
-- `gen workflows`: `--release-candidate-by-default` (`gen.ci.releaseCandidateByDefault`) makes the auto-release
-  workflow cut a release candidate on every push; a stable release is cut only by a manual run with
-  `release-type: stable`.
-
 - `release wait` and `rollout wait` take `--image <owner/name>` (repeatable): the image of a hand-written tag job that pushes outside the architect orb (a plain `docker push`), expected as `<image>:<git tag>` beside what the push jobs name. Without it, a `Dockerfile` with no image-naming push job is still exit 7, and the reason now names `--image` instead of "the sources disagree" ([#2418](https://github.com/giantswarm/devctl/issues/2418)).
 - `rollout wait <installation> <owner/repo> (<version> | --pr <n>)` blocks until a release runs on an installation
   ([#2439](https://github.com/giantswarm/devctl/issues/2439)): the release wait first, which names the charts, then
@@ -113,6 +109,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- `gen workflows --release-workflow=auto-release`: every releasable push cuts the next release candidate
+  `vX.Y.Z-rc.N`, a GitHub pre-release. A stable release is cut only by running the workflow by hand with
+  `release-type: stable`, which promotes the latest candidate since the last stable release: the tag, the version and
+  the release notes are the candidate's, and the run fails when there is no candidate.
 - `gen circleci`: the generated pipelines pin architect orb 10.11.1, whose chart jobs run app-build-suite 2.5.1. Its
   image reference check leaves a Helm test out, a manifest whose `helm.sh/hook` names only `test` events: only
   `helm test` creates it, no install or upgrade pulls its images. A chart whose subchart ships a test pod with an
@@ -173,6 +173,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   rest (`authstore.GitHubNotFoundHint`, `githubclient.ExplainNotFound`). `deploy` passes the token to git as basic
   auth instead of in the remote URL, so a git error quoting the URL no longer prints it
   ([#2380](https://github.com/giantswarm/devctl/issues/2380)).
+
+### Removed
+
+- `gen workflows`: the `feat-rc` and `fix-rc` pull request title types, and the auto-release workflow's
+  `release-type: rc` input. A `feat-rc`/`fix-rc` commit still releases as its plain type.
 
 ### Added
 
