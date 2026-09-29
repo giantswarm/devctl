@@ -88,6 +88,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   after the CircleCI generator, so such a repository started without a Renovate configuration and the reconciler's
   first run reported it (`renovate-not-scanned`) next to the creation notice. Every scaffold that generates at all now
   runs `devctl gen renovate`, with `--circleci-generated` only on generated CI; a fork line still gets nothing.
+- `reposetup`: a repository scaffolded from giantswarm/template-plans (the `plans` flavour) kept neither its README
+  nor any of its symlinks — giantswarm/honeybadger-plan came out with its README replaced by the generic stub and no
+  `.claude/` directory or `CLAUDE.md` at all. `writeCommonFiles` overwrote every template's README with the stub
+  except giantswarm/template-app's; template-plans ships its own repository-specific README the same way and now
+  keeps it too. Separately, `extractTarball` and `copyTree` skipped every symlink a template carried
+  (`.claude/skills/<name> -> ../../.agents/skills/<name>`, `CLAUDE.md -> AGENTS.md`) instead of recreating it, and the
+  scaffold commit's tree, built with `os.Stat`/`os.ReadFile`, would have followed one into its target's content had it
+  survived that far. Both now recreate a symlink after confining its target to the scaffold directory (refusing an
+  absolute target or one escaping via `..`), and every path that reads scaffold files (`replacePlaceholders`,
+  `listFiles`, `treeEntries`) uses `Lstat`/`Readlink` so a symlink is carried through as itself, mode `120000` in the
+  pushed commit.
 - `repo reconcile`: a created repository's first release is built by the run that follows its project on CircleCI
   ([#2408](https://github.com/giantswarm/devctl/issues/2408)). v8.97.2 keyed the trigger on `--added`, which the
   reconciler workflow never passes (it validates every entry in existing mode), so no reconciler run triggered it and
