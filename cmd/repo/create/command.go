@@ -20,7 +20,8 @@ through the engine -- the schema on giantswarm/github main, the creation
 rules, the name free on GitHub -- and prints the dry run (the rendered
 entry, the template it derives, the name check, the guard notices). Then,
 with your own GitHub login, it creates the repository (description and
-visibility from the declaration), pushes the rendered scaffold as the one
+visibility from the declaration; without --visibility it is private, the
+org's default, and the entry says so), pushes the rendered scaffold as the one
 commit on main -- the scaffold's auto-release workflow tags v0.1.0 from it
 -- and opens the declaration's pull request last, so the change under
 review declares a repository that exists and is yours. Everything else --

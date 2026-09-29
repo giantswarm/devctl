@@ -38,7 +38,7 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().StringArrayVar(&f.Flavours, "flavour", nil, fmt.Sprintf("gen.flavours entry, repeatable: %s.", oneOf(gen.AllFlavours())))
 	cmd.Flags().StringVar(&f.Language, "language", "", fmt.Sprintf("gen.language: %s.", oneOf(gen.AllLanguages())))
 	cmd.Flags().StringVar(&f.Description, "description", "", "Description of the repository, set at its creation.")
-	cmd.Flags().StringVar(&f.Visibility, "visibility", "", fmt.Sprintf("Visibility of the repository: %s.", oneOf(reposetup.EmbeddedFieldValues("visibility"))))
+	cmd.Flags().StringVar(&f.Visibility, "visibility", "", fmt.Sprintf("Visibility of the repository: %s. Without it the repository is private, the org's default, and the entry says visibility: private.", oneOf(reposetup.EmbeddedFieldValues("visibility"))))
 	cmd.Flags().StringVar(&f.Owner, "owner", reposetup.DefaultOwner, "GitHub organisation the repository is created in and whose teams the guard reads.")
 	cmd.Flags().BoolVar(&f.DryRun, "dry-run", false, "Print the dry run and the plan of the creation (create, scaffold); create nothing and open no pull request.")
 	cmd.Flags().StringVarP(&f.Output, "output", "o", outputText, "Output format: text or json (the dry run, the creation and the pull request URL).")
