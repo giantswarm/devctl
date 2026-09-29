@@ -1,7 +1,6 @@
 # yaml-language-server: $schema=../.github/repositories.schema.json
 - name: example
   componentType: service
-  visibility: public
   description: An example chart-only app.
   gen:
     flavours:

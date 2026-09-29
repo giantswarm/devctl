@@ -17,3 +17,10 @@ func CreationVisibility(declared string) string {
 	}
 	return declared
 }
+
+// IsPrivate says whether a declared visibility makes the repository
+// private: every value but public does, so a value outside the schema's
+// enum fails closed rather than exposing the repository.
+func IsPrivate(declared string) bool {
+	return declared != VisibilityPublic
+}

@@ -16,7 +16,7 @@ import (
 var (
 	scopes     = []string{"mine", "team", "unassigned", "all"}
 	renovates  = []string{"configured", "missing", "active", "inactive"}
-	visibility = []string{reposetup.VisibilityPublic, reposetup.VisibilityPrivate}
+	visibility = reposetup.EmbeddedFieldValues("visibility")
 	chinaPush  = []string{"split", "inline", "custom", "none"}
 	signing    = []string{"signed", "unsigned", "unknown", "none"}
 	boolWords  = []string{"true", "false"}

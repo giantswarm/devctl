@@ -1,7 +1,6 @@
 # yaml-language-server: $schema=../.github/repositories.schema.json
 - name: example-tool
   componentType: cli
-  visibility: public
   description: An example Python tool.
   gen:
     flavours:

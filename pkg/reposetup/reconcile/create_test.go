@@ -164,14 +164,18 @@ func TestCreateRefusesWhatCannotRun(t *testing.T) {
 }
 
 // TestCreateWithoutVisibilityIsPrivate: an entry that declares no visibility
-// is created private, the org's default. The validation leaves the
-// visibility out of the entry, so this is the create step's own reading --
-// GitHub's default for a created repository is public.
+// -- a hand-written one; devctl repo create and the manager write it out --
+// is planned and created private, the org's default: the create step's own
+// reading, since GitHub's default for a created repository is public.
 func TestCreateWithoutVisibilityIsPrivate(t *testing.T) {
 	h := newHarness(t, strings.Replace(entryYAML, "  visibility: public\n", "", 1))
 	require.NotContains(t, h.entry.Rendered, "visibility")
 
-	_, err := h.create(ModeRepair)
+	plan, err := h.create(ModeCheck)
+	require.NoError(t, err)
+	require.Equal(t, []string{"create giantswarm/sample-service from the added entry, private"}, plan.Step(StepCreate).Changes)
+
+	_, err = h.create(ModeRepair)
 	require.NoError(t, err)
 	require.True(t, h.repo().private)
 }
