@@ -26,7 +26,11 @@ type Creation struct {
 
 // Declaration renders the creation as a team-file entry in the key order the
 // team files use: name, description, visibility, componentType, align, gen.
-// Empty fields are left out, so the validation names what is missing.
+// Empty fields are left out, so the validation names what is missing, but
+// for the visibility: it is written out as [CreationVisibility] has it,
+// private unless the creation says public -- an entry without one leaves
+// GitHub's as it is, so the file must say what the creation made, and
+// align-files reads the file, not the dry run.
 // align is always true: the creation is the repository's opt-in to
 // alignment, and the reconciler reads it from the file on every trigger.
 // gen.ci.generate is written out -- align-files reads the file, not the dry
@@ -43,9 +47,7 @@ func (c Creation) Declaration() (Declaration, error) {
 	if c.Description != "" {
 		setMappingValue(node, "description", scalarNode(c.Description))
 	}
-	if c.Visibility != "" {
-		setMappingValue(node, "visibility", scalarNode(c.Visibility))
-	}
+	setMappingValue(node, "visibility", scalarNode(CreationVisibility(c.Visibility)))
 	if c.ComponentType != "" {
 		setMappingValue(node, "componentType", scalarNode(c.ComponentType))
 	}

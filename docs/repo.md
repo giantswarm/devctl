@@ -31,7 +31,7 @@ The command
    the notices,
 5. reads your role in the organisation and refuses anyone who is not an owner (below), before
    anything is written,
-6. creates the repository with your GitHub login -- description and visibility from the declaration;
+6. creates the repository with your GitHub login -- description and visibility from the declaration (private when it declares none);
    you are its admin, as the creator of an organisation repository is,
 7. pushes the rendered scaffold as the one commit on `main` (`feat: initial scaffold of <name> from
    <template>`); the scaffold's auto-release workflow tags `v0.1.0` from it before CircleCI follows
@@ -100,7 +100,7 @@ it the notice is not given and the command says so.
 | `--flavour` (repeatable) | `gen.flavours` | devctl's flavours -- `devctl repo create --help` lists them; see [flavours](flavours.md) |
 | `--language` | `gen.language` | devctl's languages -- `devctl repo create --help` lists them; `node` is refused until its template exists |
 | `--description` | `description` | free text, set on the repository at its creation |
-| `--visibility` | `visibility` | the schema's enum -- `devctl repo create --help` lists it |
+| `--visibility` | `visibility` | the schema's enum -- `devctl repo create --help` lists it; left out, `private` is written and the repository created private |
 | -- | `align` | always `true`: the repository is opted in to alignment by its creation, so the reconciler changes it to its declared set-up on every trigger. An existing repository opts in when its team adds the field to its entry; without it every run is a check that changes nothing |
 
 `gen.flavours` and `gen.language` are mandatory for a repository the command creates;

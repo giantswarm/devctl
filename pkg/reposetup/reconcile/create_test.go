@@ -2,6 +2,7 @@ package reconcile
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -31,7 +32,7 @@ func TestCreateDryRunWritesNothing(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []Step{StepCreate, StepScaffold}, stepNames(res.Steps))
 	require.Equal(t, VerdictDrift, res.Step(StepCreate).Verdict)
-	require.Equal(t, []string{"create giantswarm/sample-service from the added entry"}, res.Step(StepCreate).Changes)
+	require.Equal(t, []string{"create giantswarm/sample-service from the added entry, public"}, res.Step(StepCreate).Changes)
 	require.Equal(t, VerdictDrift, res.Step(StepScaffold).Verdict)
 	require.Equal(t, []string{"render the scaffold with the chart of giantswarm/template-app at helm/sample-service and push it as the first commit on main"}, res.Step(StepScaffold).Changes)
 	require.False(t, res.Created)
@@ -160,4 +161,21 @@ func TestCreateRefusesWhatCannotRun(t *testing.T) {
 	_, err = h.create(ModeCheck)
 	require.NoError(t, err, "a dry run renders nothing")
 	require.Empty(t, h.mutations())
+}
+
+// TestCreateWithoutVisibilityIsPrivate: an entry that declares no visibility
+// -- a hand-written one; devctl repo create and the manager write it out --
+// is planned and created private, the org's default: the create step's own
+// reading, since GitHub's default for a created repository is public.
+func TestCreateWithoutVisibilityIsPrivate(t *testing.T) {
+	h := newHarness(t, strings.Replace(entryYAML, "  visibility: public\n", "", 1))
+	require.NotContains(t, h.entry.Rendered, "visibility")
+
+	plan, err := h.create(ModeCheck)
+	require.NoError(t, err)
+	require.Equal(t, []string{"create giantswarm/sample-service from the added entry, private"}, plan.Step(StepCreate).Changes)
+
+	_, err = h.create(ModeRepair)
+	require.NoError(t, err)
+	require.True(t, h.repo().private)
 }
