@@ -12,6 +12,20 @@ import (
 	"github.com/google/go-github/v92/github"
 )
 
+func TestIsForbidden(t *testing.T) {
+	answer := func(status int) error {
+		return &github.ErrorResponse{Response: &http.Response{StatusCode: status, Request: &http.Request{}}, Message: http.StatusText(status)}
+	}
+	if !IsForbidden(microerror.Mask(answer(http.StatusForbidden))) {
+		t.Error("a masked 403 is not forbidden")
+	}
+	for _, err := range []error{answer(http.StatusNotFound), errors.New("403 boom"), nil} {
+		if IsForbidden(err) {
+			t.Errorf("IsForbidden(%v) = true", err)
+		}
+	}
+}
+
 func TestExplainNotFound(t *testing.T) {
 	const hint = "the App reaches giantswarm only"
 	answer := func(status int) error {

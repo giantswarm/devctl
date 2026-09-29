@@ -190,7 +190,7 @@ func TestRunTeam(t *testing.T) {
 }
 
 func TestRunStopsWhenTheLoginCannotDispatch(t *testing.T) {
-	blocked := releasepromote.ForbiddenHint(authstore.Token{Source: authstore.SourceKeychain})
+	blocked := releasepromote.DispatchBlockedReason(authstore.Token{Source: authstore.SourceKeychain})
 	server, open := mockSourcesBlocked(t, promoteRoutes("giantswarm/kserve"), blocked)
 	doc, err := runCommand(t, []string{"giantswarm/kserve"}, &flag{}, open)
 	require.Equal(t, agentcli.ExitUsage, agentcli.Exit(err))
@@ -202,7 +202,7 @@ func TestRunStopsWhenTheLoginCannotDispatch(t *testing.T) {
 }
 
 func TestRunDryRunWithALoginThatCannotDispatch(t *testing.T) {
-	blocked := releasepromote.ForbiddenHint(authstore.Token{Source: authstore.SourceKeychain})
+	blocked := releasepromote.DispatchBlockedReason(authstore.Token{Source: authstore.SourceKeychain})
 	server, open := mockSourcesBlocked(t, promoteRoutes("giantswarm/kserve"), blocked)
 	doc, err := runCommand(t, []string{"giantswarm/kserve"}, &flag{DryRun: true}, open)
 	require.NoError(t, err)

@@ -56,14 +56,14 @@ func OpenSources(ctx context.Context, endpoints agentcli.Endpoints, transport ht
 			return TeamRepositories(ctx, gh.GitHub(), team)
 		},
 		NotFoundHint:    authstore.GitHubNotFoundHint(token),
-		DispatchBlocked: ForbiddenHint(token),
+		DispatchBlocked: DispatchBlockedReason(token),
 	}, nil
 }
 
-// ForbiddenHint is why the App login cannot dispatch a workflow: it needs
-// Actions write, which the App does not carry, and the variables that
+// DispatchBlockedReason is why the App login cannot dispatch a workflow: it
+// needs Actions write, which the App does not carry, and the variables that
 // override the login. Empty for a token from the environment.
-func ForbiddenHint(token authstore.Token) string {
+func DispatchBlockedReason(token authstore.Token) string {
 	if token.Source != authstore.SourceKeychain {
 		return ""
 	}

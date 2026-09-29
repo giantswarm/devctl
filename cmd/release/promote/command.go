@@ -31,11 +31,15 @@ For each repository, on its default branch:
      step "Resolve the candidate to promote" of devctl v8.102.0 or later
      (else outdated_workflow: an older workflow's release-type stable tags
      the branch head instead of promoting a candidate).
-  2. The candidate is the highest vX.Y.Z-rc.N GitHub pre-release newer than
+  2. The candidate is the highest vX.Y.Z-rc.N GitHub release newer than
      the highest stable vX.Y.Z release, counting only tags reachable from
      the default branch, as the workflow does (semver order: rc.10 after
      rc.9). A candidate or stable release of another branch is skipped.
-     None: nothing_to_promote.
+     None: nothing_to_promote. A candidate that is a full release, not a
+     pre-release, is failed, as the workflow refuses it; no lower candidate
+     is taken. The command reads releases, not tags: a candidate tag whose
+     GitHub release was deleted, or is a draft, is not seen, while the
+     workflow stops on it.
   3. The combined commit status of the candidate's commit: with at least one
      status and a state other than success, not_built. No status at all
      counts as built, as in the workflow.
@@ -71,8 +75,9 @@ Exit codes:
 The GitHub token is the App login, or a token in DEVCTL_GITHUB_TOKEN,
 GITHUB_TOKEN or OPSCTL_GITHUB_TOKEN that overrides it. Dispatching a
 workflow needs Actions write, which the App login does not carry: without
---dry-run, set one of the variables to a token that has it. Another
-refusal from GitHub is reported per repository.
+--dry-run, set one of the variables to a token that has it. A 403 on the
+dispatch, a token without Actions write on that repository, is failed with
+that hint; another refusal from GitHub is reported per repository.
 
 Examples:
   devctl release promote giantswarm/devctl --dry-run

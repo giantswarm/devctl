@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"net/http"
+	"net/url"
 	"slices"
 	"testing"
 
@@ -144,10 +146,10 @@ func TestSelectCandidate(t *testing.T) {
 			promote:  "v0.1.0-rc.2",
 		},
 		{
-			name: "drafts, non-pre-release candidates and other tags do not count",
+			name: "drafts, a full release below the candidate and other tags do not count",
 			releases: []githubclient.Release{
 				{Tag: "v1.4.0-rc.1", Prerelease: true},
-				{Tag: "v1.3.0-rc.1", Published: true},
+				{Tag: "v1.2.1-rc.0", Published: true},
 				{Tag: "v9.0.0"},
 				candidate("v1.2.1-beta.1"),
 				stable("1.9.0"),
@@ -165,6 +167,16 @@ func TestSelectCandidate(t *testing.T) {
 			require.Equal(t, tc.promote, gotCandidate)
 		})
 	}
+}
+
+// The highest candidate being a full release stops the selection there, as
+// in the workflow: a lower pre-release is not promoted instead.
+func TestSelectCandidateRefusesAHighestCandidateThatIsNoPrerelease(t *testing.T) {
+	releases := []githubclient.Release{{Tag: "v1.3.0-rc.2", Published: true}, candidate("v1.3.0-rc.1"), stable("v1.2.0")}
+	stable, candidate, err := SelectCandidate(releases, func(string) (bool, error) { return true, nil })
+	require.ErrorIs(t, err, ErrNotPrerelease)
+	require.Equal(t, "v1.2.0", stable)
+	require.Equal(t, "v1.3.0-rc.2", candidate)
 }
 
 func TestPromote(t *testing.T) {
@@ -237,6 +249,21 @@ func TestPromote(t *testing.T) {
 			state:       StateFailed,
 			statusState: "success",
 			message:     "dispatching zz_generated.auto_release.yaml on main: 403 Resource not accessible by integration",
+		},
+		{
+			name: "dispatch forbidden names Actions write",
+			repository: fakeRepository{branch: "main", releases: releases, status: githubclient.CombinedStatus{State: "success", TotalCount: 1}, dispatchErr: &github.ErrorResponse{
+				Response: &http.Response{StatusCode: http.StatusForbidden, Request: &http.Request{Method: http.MethodPost, URL: &url.URL{Path: "/dispatches"}}}, Message: "Resource not accessible by personal access token",
+			}},
+			state:       StateFailed,
+			statusState: "success",
+			message:     "dispatching zz_generated.auto_release.yaml on main: POST /dispatches: 403 Resource not accessible by personal access token []; the token needs Actions write on giantswarm/kserve",
+		},
+		{
+			name:       "highest candidate is a full release",
+			repository: fakeRepository{branch: "main", releases: []githubclient.Release{{Tag: "v1.3.0-rc.2", Published: true}, candidate("v1.3.0-rc.1"), stable("v1.2.0")}},
+			state:      StateFailed,
+			message:    "the highest release candidate on main, v1.3.0-rc.2, is a full GitHub release, not a pre-release: the workflow refuses to promote it",
 		},
 	}
 	for _, tc := range cases {

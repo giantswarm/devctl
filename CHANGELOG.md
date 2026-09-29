@@ -13,8 +13,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   auto-release repositories to a stable release. Per repository (named, repeats once, or every auto-release entry of
   the team's file in giantswarm/github) it requires the auto-release workflow of devctl v8.102.0 or later on the
   default branch (`outdated_workflow` without its promotion step, `not_auto_release` without the file), picks the
-  highest `vX.Y.Z-rc.N` GitHub pre-release newer than the latest stable release, both reachable from the default
-  branch, checks the combined commit status of its commit (not `success` with any status reported is `not_built`)
+  highest `vX.Y.Z-rc.N` GitHub release newer than the latest stable release, both reachable from the default
+  branch (`failed` when it is a full release, not a pre-release, as the workflow refuses it), checks the combined commit status of its commit (not `success` with any status reported is `not_built`)
   and dispatches `zz_generated.auto_release.yaml` on the default branch with `release-type: stable`; it does not
   wait for the run. One JSON document with `repositories[{repository, stable, candidate, statusState, state,
   message}]`; exit 0 when each is `dispatched`, `would_dispatch` or `nothing_to_promote` (a team without

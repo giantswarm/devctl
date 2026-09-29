@@ -13,6 +13,7 @@ package releasepromote
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"slices"
@@ -127,6 +128,9 @@ func promoteOne(ctx context.Context, config Config, repository string) Repositor
 	}
 	stable, candidate, err := SelectCandidate(releases, reachable)
 	entry.Stable, entry.Candidate = stable, candidate
+	if errors.Is(err, ErrNotPrerelease) {
+		return entry.set(StateFailed, "the highest release candidate on %s, %s, is a full GitHub release, not a pre-release: the workflow refuses to promote it", branch, candidate)
+	}
 	if err != nil {
 		return entry.set(StateFailed, "comparing the release tags with %s: %v", branch, err)
 	}
@@ -151,6 +155,9 @@ func promoteOne(ctx context.Context, config Config, repository string) Repositor
 		return entry.set(StateWouldDispatch, "would dispatch %s on %s to promote %s", Workflow, branch, candidate)
 	}
 	err = gh.DispatchWorkflow(ctx, owner, repo, Workflow, branch, map[string]any{inputReleaseType: releaseTypeStable})
+	if githubclient.IsForbidden(err) {
+		return entry.set(StateFailed, "dispatching %s on %s: %v; the token needs Actions write on %s", Workflow, branch, err, repository)
+	}
 	if err != nil {
 		return entry.set(StateFailed, "dispatching %s on %s: %v", Workflow, branch, err)
 	}
@@ -163,10 +170,15 @@ var (
 	candidatePattern = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$`)
 )
 
+// ErrNotPrerelease is the highest candidate being a full GitHub release, not
+// a pre-release: the workflow stops on it rather than promote a lower one.
+var ErrNotPrerelease = errors.New("not a GitHub pre-release")
+
 // tagVersion is a release tag with its parsed version.
 type tagVersion struct {
-	tag     string
-	version *semver.Version
+	tag        string
+	version    *semver.Version
+	prerelease bool
 }
 
 // SelectCandidate returns the tag of the highest stable release reachable
@@ -176,9 +188,11 @@ type tagVersion struct {
 // it is asked from the highest tag down and only until the first reachable
 // one, so a higher stable release or candidate of another branch (a
 // backport line) is skipped without hiding the default branch's. Drafts are
-// no releases; a candidate counts only as a GitHub pre-release, the form
-// the workflow promotes. Versions are compared as semver, so rc.10 follows
-// rc.9 and a candidate for a higher version follows one it replaced.
+// no releases. The highest candidate must be a GitHub pre-release, the form
+// the workflow promotes: a full release there is [ErrNotPrerelease] with its
+// tag, never a lower candidate, as the workflow refuses it too. Versions are
+// compared as semver, so rc.10 follows rc.9 and a candidate for a higher
+// version follows one it replaced.
 func SelectCandidate(releases []githubclient.Release, reachable func(tag string) (bool, error)) (stable, candidate string, err error) {
 	var stables, candidates []tagVersion
 	for _, rel := range releases {
@@ -192,8 +206,8 @@ func SelectCandidate(releases []githubclient.Release, reachable func(tag string)
 		switch {
 		case stablePattern.MatchString(rel.Tag):
 			stables = append(stables, tagVersion{tag: rel.Tag, version: v})
-		case candidatePattern.MatchString(rel.Tag) && rel.Prerelease:
-			candidates = append(candidates, tagVersion{tag: rel.Tag, version: v})
+		case candidatePattern.MatchString(rel.Tag):
+			candidates = append(candidates, tagVersion{tag: rel.Tag, version: v, prerelease: rel.Prerelease})
 		}
 	}
 
@@ -205,6 +219,9 @@ func SelectCandidate(releases []githubclient.Release, reachable func(tag string)
 	candidateTag, err := highestReachable(candidates, stableTag.version, reachable)
 	if err != nil {
 		return stable, "", err
+	}
+	if candidateTag.tag != "" && !candidateTag.prerelease {
+		return stable, candidateTag.tag, fmt.Errorf("%s: %w", candidateTag.tag, ErrNotPrerelease)
 	}
 	return stable, candidateTag.tag, nil
 }
