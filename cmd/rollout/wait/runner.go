@@ -123,6 +123,7 @@ func (r *runner) wait(ctx context.Context, args []string, doc *rolloutwait.Docum
 		Version:      version,
 		PR:           r.flag.PR,
 		Timeout:      r.flag.ReleaseTimeout,
+		Images:       r.flag.Images,
 		GitHub:       sources.GitHub,
 		Entries:      sources.Entries,
 		CircleCI:     sources.CircleCI,

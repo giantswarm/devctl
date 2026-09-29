@@ -260,9 +260,12 @@ func ParsePushJobs(config []byte) ([]PushJob, error) {
 // configuration publishes: the push jobs of the configuration files at the
 // tag that the pipeline runs (pipelineJobs are the job names CircleCI lists
 // for it), each naming its image or the chart directory whose Chart.yaml
-// names the chart. A Dockerfile at the tag with no image among them is a
-// disagreement between the sources, reported as such.
-func HandWrittenArtifacts(ctx context.Context, gh GitHub, owner, repo, sha, version string, content TagContent, pipelineJobs map[string]bool, privateRepo bool, endpoints agentcli.Endpoints) ([]Artifact, error) {
+// names the chart, and the images the caller names (--image) for a job that
+// pushes outside the architect orb, tagged with the git tag as written: such
+// a job pushes $CIRCLE_TAG, where the orb strips the v. A Dockerfile at the tag with no image
+// among them is a usage error naming --image; the repository name is never
+// taken for the image.
+func HandWrittenArtifacts(ctx context.Context, gh GitHub, owner, repo, sha, version, tag string, content TagContent, pipelineJobs map[string]bool, privateRepo bool, images []string, endpoints agentcli.Endpoints) ([]Artifact, error) {
 	var jobs []PushJob
 	for _, name := range []string{circleCIConfig, circleCIWorkflows, circleCICustom} {
 		if !slices.Contains(content.CircleCI, name) {
@@ -305,11 +308,43 @@ func HandWrittenArtifacts(ctx context.Context, gh GitHub, owner, repo, sha, vers
 		}
 	}
 
+	for _, name := range images {
+		path, private, err := namedImage(name, endpoints)
+		if err != nil {
+			return nil, err
+		}
+		if private == nil {
+			private = &privateRepo
+		}
+		artifacts = append(artifacts, imageArtifact(path, tag, *private, endpoints))
+	}
+
 	hasImage := slices.ContainsFunc(artifacts, func(a Artifact) bool { return a.Kind == KindImage })
 	if content.HasDockerfile() && !hasImage {
-		return nil, usageErr("a Dockerfile exists at %s but no push job of the tag pipeline names an image (pipeline jobs: %s; push jobs in the configuration: %s): the sources disagree", short(sha), listOrNone(sortedKeys(pipelineJobs)), listOrNone(jobNames(jobs)))
+		return nil, usageErr("a Dockerfile exists at %s but no push job of the tag pipeline names an image (pipeline jobs: %s; architect push jobs in the configuration: %s): a job that pushes outside the architect orb (a plain docker push) cannot be read from the configuration, and the repository name is never taken for the image; name it with devctl release wait --image, e.g. --image %s/%s", short(sha), listOrNone(sortedKeys(pipelineJobs)), listOrNone(jobNames(jobs)), owner, repo)
 	}
 	return dedupe(artifacts), nil
+}
+
+// namedImage reads an image the caller names: a repository path such as
+// giantswarm/dex, or one with the public or private registry host in front,
+// which then decides the registry (private nil: the repository's
+// visibility does). A tag, a digest or another registry is a usage error.
+func namedImage(name string, endpoints agentcli.Endpoints) (path string, private *bool, err error) {
+	path = name
+	for host, isPrivate := range map[string]bool{endpoints.RegistryPublic: false, endpoints.RegistryPrivate: true} {
+		if rest, ok := strings.CutPrefix(name, host+"/"); ok {
+			path, private = rest, &isPrivate
+		}
+	}
+	first, _, _ := strings.Cut(path, "/")
+	switch {
+	case !strings.Contains(path, "/") || strings.ContainsAny(first, ".:"):
+		return "", nil, usageErr("--image %q: name the image as <owner>/<name> (e.g. giantswarm/dex), optionally after %s or %s", name, endpoints.RegistryPublic, endpoints.RegistryPrivate)
+	case strings.ContainsAny(path, ":@"):
+		return "", nil, usageErr("--image %q: name the image without a tag or digest; the release's version is the tag", name)
+	}
+	return path, private, nil
 }
 
 func jobNames(jobs []PushJob) []string {

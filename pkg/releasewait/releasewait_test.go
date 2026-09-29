@@ -45,6 +45,8 @@ type fixture struct {
 	catalogChart string
 	// warn collects the document's warnings; nil drops them.
 	warn func(string)
+	// images are the images named with --image.
+	images []string
 }
 
 type entries struct{ fields *reposetup.Fields }
@@ -180,7 +182,7 @@ func run(t *testing.T, fx fixture) (Result, error) {
 	}
 	circleCalls := 0
 	config := Config{
-		Owner: testOwner, Repo: testRepo, Version: fx.version, PR: fx.pr, MergeCommitSHA: fx.mergeCommit, Timeout: fx.timeout, Catalog: fx.catalog,
+		Owner: testOwner, Repo: testRepo, Version: fx.version, PR: fx.pr, MergeCommitSHA: fx.mergeCommit, Timeout: fx.timeout, Catalog: fx.catalog, Images: fx.images,
 		GitHub:  ghClient,
 		Entries: entries{fx.entry},
 		CircleCI: func(context.Context) (CircleCI, error) {
@@ -573,7 +575,93 @@ func TestWaitHandWrittenDockerfileWithoutPushJobDisagrees(t *testing.T) {
 		),
 	}
 	_, err := run(t, fx)
-	assertExit(t, err, agentcli.ExitUsage, "sources disagree")
+	assertExit(t, err, agentcli.ExitUsage, "name it with devctl release wait --image, e.g. --image giantswarm/kserve")
+}
+
+// A hand-written tag job that pushes with plain docker (giantswarm/dex's
+// build job, giantswarm/devctl#2418): the image named with --image is
+// probed as <image>:<git tag> ($CIRCLE_TAG, v1.2.3) in the public registry of a public
+// repository, and the release is out once it is pullable and the tag
+// pipeline is green.
+func TestWaitHandWrittenImageNamedByFlag(t *testing.T) {
+	github := baseGitHub([]string{"Dockerfile"}, []string{"zz_generated.create_release.yaml"}, []string{"config.yml"})
+	github[repoRoute("/contents/.circleci/config.yml")] = []sequence.Response{{Body: fileContent(".circleci/config.yml", handWrittenConfig)}}
+	fx := fixture{
+		github: github,
+		circleci: pipelineRoutes(
+			[][]map[string]any{
+				{wf("w1", "build", "running", "2026-09-21T10:00:00Z")},
+				{wf("w1", "build", "success", "2026-09-21T10:00:00Z")},
+			},
+			map[string][]map[string]any{"w1": {job("build", "success")}},
+		),
+		registry: sequence.Routes{
+			"HEAD /v2/giantswarm/dex/manifests/v1.2.3": {{Status: 404}, {Status: 200}},
+		},
+		images: []string{"giantswarm/dex"},
+	}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+	if len(result.Artifacts) != 1 || !strings.HasSuffix(result.Artifacts[0].Reference, "/giantswarm/dex:v1.2.3") || result.Artifacts[0].Private() {
+		t.Errorf("artifacts: want the public image giantswarm/dex:v1.2.3, the git tag as written, got %+v", result.Artifacts)
+	}
+}
+
+// --image on a generated pipeline: the artifacts are derived from the
+// entry as before, and a warning says the named image is not probed.
+func TestWaitImageOnGeneratedCIWarns(t *testing.T) {
+	var warnings []string
+	fx := fixture{
+		entry:  generatedEntry(t),
+		github: baseGitHub([]string{"Dockerfile", "helm"}, []string{"zz_generated.auto_release.yaml"}, []string{"config.yml", "workflows.yml"}),
+		circleci: pipelineRoutes(
+			[][]map[string]any{{wf("w1", "build", "success", "2026-09-21T10:00:00Z")}},
+			map[string][]map[string]any{"w1": {job("push-to-registries-release", "success"), job("push-chart-release", "success")}},
+		),
+		registry: sequence.Routes{
+			"HEAD /v2/giantswarm/kserve-controller/manifests/1.2.3": {{Status: 200}},
+			"HEAD /v2/charts/giantswarm/kserve/manifests/1.2.3":     {{Status: 200}},
+		},
+		images: []string{"giantswarm/other"},
+		warn:   func(w string) { warnings = append(warnings, w) },
+	}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+	if len(result.Artifacts) != 2 {
+		t.Errorf("artifacts: want the entry's two, got %+v", result.Artifacts)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "giantswarm/other is not probed") {
+		t.Errorf("warnings: %q", warnings)
+	}
+}
+
+func TestNamedImage(t *testing.T) {
+	endpoints := agentcli.DefaultEndpoints()
+	yes, no := true, false
+	cases := []struct {
+		name    string
+		path    string
+		private *bool
+		reason  string
+	}{
+		{name: "giantswarm/dex", path: "giantswarm/dex"},
+		{name: "gsoci.azurecr.io/giantswarm/dex", path: "giantswarm/dex", private: &no},
+		{name: "gsociprivate.azurecr.io/giantswarm/dex", path: "giantswarm/dex", private: &yes},
+		{name: "dex", reason: "name the image as <owner>/<name>"},
+		{name: "quay.io/dexidp/dex", reason: "name the image as <owner>/<name>"},
+		{name: "giantswarm/dex:v2.43.3", reason: "without a tag or digest"},
+		{name: "giantswarm/dex@sha256:abc", reason: "without a tag or digest"},
+	}
+	for _, tc := range cases {
+		path, private, err := namedImage(tc.name, endpoints)
+		if tc.reason != "" {
+			assertExit(t, err, agentcli.ExitUsage, tc.reason)
+			continue
+		}
+		if err != nil || path != tc.path || (private == nil) != (tc.private == nil) || (private != nil && *private != *tc.private) {
+			t.Errorf("namedImage(%q) = %q, %v, %v; want %q, %v", tc.name, path, private, err, tc.path, tc.private)
+		}
+	}
 }
 
 func TestWaitReleaseAssetsOnlyWithoutCircleCI(t *testing.T) {

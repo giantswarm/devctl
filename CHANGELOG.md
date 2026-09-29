@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   workflow cut a release candidate on every push; a stable release is cut only by a manual run with
   `release-type: stable`.
 
+- `release wait` and `rollout wait` take `--image <owner/name>` (repeatable): the image of a hand-written tag job that pushes outside the architect orb (a plain `docker push`), expected as `<image>:<git tag>` beside what the push jobs name. Without it, a `Dockerfile` with no image-naming push job is still exit 7, and the reason now names `--image` instead of "the sources disagree" ([#2418](https://github.com/giantswarm/devctl/issues/2418)).
 - `rollout wait <installation> <owner/repo> (<version> | --pr <n>)` blocks until a release runs on an installation
   ([#2439](https://github.com/giantswarm/devctl/issues/2439)): the release wait first, which names the charts, then
   every Flux HelmRelease (from an OCIRepository or a HelmChart) and App CR on the management cluster that deploys one
@@ -31,6 +32,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `release wait --image` probes the named image under the git tag as written (`giantswarm/dex:v2.43.3`, the `$CIRCLE_TAG` a plain `docker push` job pushes), not the version without its `v`, which such a job never pushes.
+- `gen circleci`: the Node job restores its build-output cache (`node_modules`, `.yarn/install-state.gz`) on the exact
+  lockfile key only ([#2183](https://github.com/giantswarm/devctl/issues/2183)). The prefix fallback restored another
+  lockfile's tree, so `yarn install --immutable` reconciled only part of it and skipped the root workspace's build step:
+  a `patch-package` postinstall silently never ran, and a dependency PR failed in the build on a file its diff never
+  touched. The key salt moves to `v2`, so entries a prefix restore may have poisoned are not restored again.
 - `pr wait` and `pr merge` add a hint to a pull request's "not found" naming the devctl GitHub App login's reach
   ([#2436](https://github.com/giantswarm/devctl/issues/2436)): the App is installed on the giantswarm organization
   only, and GitHub answers 404 rather than 403 for a private repository the token cannot read, so a personal
@@ -85,6 +92,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   after the CircleCI generator, so such a repository started without a Renovate configuration and the reconciler's
   first run reported it (`renovate-not-scanned`) next to the creation notice. Every scaffold that generates at all now
   runs `devctl gen renovate`, with `--circleci-generated` only on generated CI; a fork line still gets nothing.
+- `reposetup`: a repository scaffolded from giantswarm/template-plans (the `plans` flavour) kept neither its README
+  nor any of its symlinks — giantswarm/honeybadger-plan came out with its README replaced by the generic stub and no
+  `.claude/` directory or `CLAUDE.md` at all. `writeCommonFiles` overwrote every template's README with the stub
+  except giantswarm/template-app's; template-plans ships its own repository-specific README the same way and now
+  keeps it too. Separately, `extractTarball` and `copyTree` skipped every symlink a template carried
+  (`.claude/skills/<name> -> ../../.agents/skills/<name>`, `CLAUDE.md -> AGENTS.md`) instead of recreating it, and the
+  scaffold commit's tree, built with `os.Stat`/`os.ReadFile`, would have followed one into its target's content had it
+  survived that far. Both now recreate a symlink after confining its target to the scaffold directory (refusing an
+  absolute target or one escaping via `..`), and every path that reads scaffold files (`replacePlaceholders`,
+  `listFiles`, `treeEntries`) uses `Lstat`/`Readlink` so a symlink is carried through as itself, mode `120000` in the
+  pushed commit.
 - `repo reconcile`: a created repository's first release is built by the run that follows its project on CircleCI
   ([#2408](https://github.com/giantswarm/devctl/issues/2408)). v8.97.2 keyed the trigger on `--added`, which the
   reconciler workflow never passes (it validates every entry in existing mode), so no reconciler run triggered it and

@@ -112,6 +112,13 @@ type Config struct {
 	Timeout time.Duration
 	// Catalog also waits for the catalog index to list every chart.
 	Catalog bool
+	// Images name the images a hand-written tag pipeline pushes outside the
+	// architect orb (a plain docker push), which its configuration cannot
+	// tell: repository paths such as giantswarm/dex, or with the public or
+	// private registry host in front. Each is expected as <image>:<tag>, the
+	// git tag as written ($CIRCLE_TAG, v2.43.3), beside what the push jobs
+	// name (giantswarm/devctl#2418).
+	Images []string
 
 	// GitHub is required. Entries and Registry are required; CircleCI is
 	// called once when the tag carries a .circleci/config.yml, so a
@@ -137,6 +144,10 @@ type Config struct {
 	// Nil drops them.
 	Warn func(message string)
 }
+
+// ImageFlagUsage is the help of --image on the commands that wait for a
+// release.
+const ImageFlagUsage = "An image the hand-written tag pipeline pushes outside the architect orb (a plain docker push), as <owner>/<name> or with the registry host in front; expected as <image>:<git tag>, the tag as written (v1.2.3). Repeatable"
 
 // Waiter runs one wait.
 type Waiter struct {
@@ -174,6 +185,11 @@ func New(config Config) (*Waiter, error) {
 	}
 	if config.Endpoints == (agentcli.Endpoints{}) {
 		config.Endpoints = agentcli.DefaultEndpoints()
+	}
+	for _, image := range config.Images {
+		if _, _, err := namedImage(image, config.Endpoints); err != nil {
+			return nil, err
+		}
 	}
 	if config.Progress == nil {
 		config.Progress = agentcli.NewProgress(nil, false)
@@ -267,6 +283,9 @@ func (w *Waiter) wait(ctx context.Context, result *Result) error {
 		// Nothing to derive: no CircleCI means no image and no chart.
 		plan.setArtifacts(result, nil)
 	}
+	if len(w.config.Images) > 0 && result.CIModel != CIModelHandWritten {
+		w.warn(fmt.Sprintf("--image names the images of a hand-written tag pipeline; the CI of %s is %s, whose artifacts are derived as before, so %s is not probed", result.Tag, result.CIModel, strings.Join(w.config.Images, ", ")))
+	}
 	for _, a := range result.Artifacts {
 		w.progress.Printf("expecting %s %s", a.Kind, a.Reference)
 	}
@@ -341,7 +360,7 @@ func (w *Waiter) loop(ctx context.Context, result *Result, p *plan) error {
 		}
 
 		if !p.derived && result.CIModel == CIModelHandWritten && state.jobs != nil {
-			artifacts, err := HandWrittenArtifacts(ctx, w.config.GitHub, owner, repo, result.SHA, p.version, *p.content, state.jobs, p.private, w.config.Endpoints)
+			artifacts, err := HandWrittenArtifacts(ctx, w.config.GitHub, owner, repo, result.SHA, p.version, result.Tag, *p.content, state.jobs, p.private, w.config.Images, w.config.Endpoints)
 			if err != nil {
 				return err
 			}
@@ -591,10 +610,7 @@ func (w *Waiter) readModels(ctx context.Context, sha string, result *Result) (*T
 		return nil, nil, err
 	}
 	if models.Warning != "" {
-		w.progress.Printf("%s", models.Warning)
-		if w.config.Warn != nil {
-			w.config.Warn(models.Warning)
-		}
+		w.warn(models.Warning)
 	}
 	result.ReleaseModel, result.CIModel = models.Release, models.CI
 	return content, entry, nil
@@ -673,4 +689,12 @@ func short(sha string) string {
 		return sha[:8]
 	}
 	return sha
+}
+
+// warn puts a warning in the progress stream and the document.
+func (w *Waiter) warn(message string) {
+	w.progress.Printf("%s", message)
+	if w.config.Warn != nil {
+		w.config.Warn(message)
+	}
 }
