@@ -2,6 +2,7 @@ package reconcile
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -160,4 +161,17 @@ func TestCreateRefusesWhatCannotRun(t *testing.T) {
 	_, err = h.create(ModeCheck)
 	require.NoError(t, err, "a dry run renders nothing")
 	require.Empty(t, h.mutations())
+}
+
+// TestCreateWithoutVisibilityIsPrivate: an entry that declares no visibility
+// is created private, the org's default. The validation leaves the
+// visibility out of the entry, so this is the create step's own reading --
+// GitHub's default for a created repository is public.
+func TestCreateWithoutVisibilityIsPrivate(t *testing.T) {
+	h := newHarness(t, strings.Replace(entryYAML, "  visibility: public\n", "", 1))
+	require.NotContains(t, h.entry.Rendered, "visibility")
+
+	_, err := h.create(ModeRepair)
+	require.NoError(t, err)
+	require.True(t, h.repo().private)
 }

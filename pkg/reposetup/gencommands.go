@@ -29,7 +29,6 @@ const (
 	releaseWorkflowLegacy      = "legacy"
 	releaseWorkflowAutoRelease = "auto-release"
 
-	visibilityPrivate   = "private"
 	lifecycleDeprecated = "deprecated"
 	precommitHelmchart  = "helmchart"
 
@@ -90,7 +89,7 @@ func genCommands(f Fields, gc genContext) [][]string {
 	if g.HelmDocsRegen {
 		workflows = append(workflows, "--helm-docs-regen")
 	}
-	scorecard := (g.RunSecurityScorecard == nil || *g.RunSecurityScorecard) && f.Visibility != visibilityPrivate
+	scorecard := (g.RunSecurityScorecard == nil || *g.RunSecurityScorecard) && f.Visibility != VisibilityPrivate
 	if !scorecard {
 		workflows = append(workflows, "--run-security-scorecard=false")
 	}

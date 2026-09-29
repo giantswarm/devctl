@@ -9,10 +9,8 @@ import (
 	"github.com/google/go-github/v92/github"
 
 	"github.com/giantswarm/devctl/v8/pkg/circleciclient"
+	"github.com/giantswarm/devctl/v8/pkg/reposetup"
 )
-
-// visibilityPrivate is the declaration's value for a private repository.
-const visibilityPrivate = "private"
 
 // stepCreate looks the declared repository up and creates it when it is
 // missing and the entry was added by the triggering change. A redirect on
@@ -34,7 +32,10 @@ func (r *Runner) stepCreate(ctx context.Context, s *run, sr *StepResult) error {
 				created, _, err := r.GitHub.Repositories.Create(ctx, s.owner, &github.Repository{
 					Name:        new(s.name),
 					Description: new(s.fields.Description),
-					Private:     new(s.fields.Visibility == visibilityPrivate),
+					// An entry without a visibility is created private, the
+					// org's default (reposetup.CreationVisibility); for a
+					// repository that exists, stepMetadata leaves it alone.
+					Private: new(reposetup.CreationVisibility(s.fields.Visibility) == reposetup.VisibilityPrivate),
 					// The initial commit lets CircleCI follow and the Git Data
 					// API write; the scaffold step replaces it.
 					AutoInit: new(true),
@@ -86,7 +87,7 @@ func (r *Runner) stepMetadata(ctx context.Context, s *run, sr *StepResult) error
 		changes = append(changes, fmt.Sprintf("description %q → %q", s.repo.GetDescription(), want))
 	}
 	if want := s.fields.Visibility; want != "" {
-		private := want == visibilityPrivate
+		private := want == reposetup.VisibilityPrivate
 		if s.repo.GetPrivate() != private {
 			edit.Private = new(private)
 			changes = append(changes, "visibility → "+want)

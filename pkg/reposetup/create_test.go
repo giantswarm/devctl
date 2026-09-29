@@ -40,15 +40,16 @@ func TestCreationDeclaration(t *testing.T) {
 		t.Errorf("rendered entry:\n%s\nwant:\n%s", got, want)
 	}
 
-	// Empty fields are left out, so the validation names them; the opt-in to
-	// alignment is never left out; without a CircleCI job the pipeline is
-	// not generated.
+	// Empty fields are left out, so the validation names them, but for the
+	// visibility: a creation without one is private and the file says so.
+	// The opt-in to alignment is never left out; without a CircleCI job the
+	// pipeline is not generated.
 	d, err = Creation{Name: "bare"}.Declaration()
 	if err != nil {
 		t.Fatal(err)
 	}
 	got, _ = d.YAML()
-	if want := "- name: bare\n  align: true\n  gen:\n    ci:\n      generate: false\n"; got != want {
+	if want := "- name: bare\n  visibility: private\n  align: true\n  gen:\n    ci:\n      generate: false\n"; got != want {
 		t.Errorf("bare entry:\n%s\nwant:\n%s", got, want)
 	}
 
@@ -58,7 +59,7 @@ func TestCreationDeclaration(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, _ = d.YAML()
-	if want := "- name: configs\n  componentType: configuration\n  align: true\n  gen:\n    flavours:\n      - generic\n    language: generic\n    ci:\n      generate: false\n"; got != want {
+	if want := "- name: configs\n  visibility: private\n  componentType: configuration\n  align: true\n  gen:\n    flavours:\n      - generic\n    language: generic\n    ci:\n      generate: false\n"; got != want {
 		t.Errorf("configuration entry:\n%s\nwant:\n%s", got, want)
 	}
 
@@ -70,7 +71,7 @@ func TestCreationDeclaration(t *testing.T) {
 func TestInsertEntry(t *testing.T) {
 	const header = "# yaml-language-server: $schema=../.github/repositories.schema.json\n"
 	entry := func(name string) string { return "- name: " + name + "\n  componentType: service\n" }
-	newEntry := "- name: NEW\n  align: true\n  gen:\n    ci:\n      generate: false\n"
+	newEntry := "- name: NEW\n  visibility: private\n  align: true\n  gen:\n    ci:\n      generate: false\n"
 	d, err := Creation{Name: "NEW"}.Declaration()
 	if err != nil {
 		t.Fatal(err)

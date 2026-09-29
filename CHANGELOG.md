@@ -28,6 +28,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- A repository whose entry declares no `visibility` is created private, the org's default, not public: the create
+  step passed `Private: visibility == private` to GitHub, whose default for a created repository is public. The
+  developer portal writes no visibility for its "Private" choice, so giantswarm/honeybadger-plans was chosen private
+  and created public, and the metadata step left it that way. `Creation.Declaration` (`devctl repo create`) now
+  writes `visibility: private` into the entry it adds unless the creation says public, so the team file says what
+  was created and align-files, which reads the file, leaves the OSSF Scorecard workflow out as for any declared
+  private repository. For a repository that exists, an entry without a visibility still leaves GitHub's as it is.
+  `reposetup.VisibilityPrivate`, `reposetup.VisibilityPublic` and `reposetup.CreationVisibility` are exported for
+  the other writers of entries.
 - `release wait --image` probes the named image under the git tag as written (`giantswarm/dex:v2.43.3`, the `$CIRCLE_TAG` a plain `docker push` job pushes), not the version without its `v`, which such a job never pushes.
 - `gen circleci`: the Node job restores its build-output cache (`node_modules`, `.yarn/install-state.gz`) on the exact
   lockfile key only ([#2183](https://github.com/giantswarm/devctl/issues/2183)). The prefix fallback restored another
