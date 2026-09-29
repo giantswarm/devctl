@@ -79,12 +79,16 @@ func (c *Client) FindTagForCommit(ctx context.Context, owner, repo, sha string) 
 	return "", nil
 }
 
-// Release is a GitHub release as release wait reads it.
+// Release is a GitHub release as release wait and release promote read it.
 type Release struct {
+	// Tag is the release's tag name.
+	Tag string
 	URL string
 	// Published: not a draft.
 	Published bool
-	Assets    []ReleaseAsset
+	// Prerelease: marked as a pre-release.
+	Prerelease bool
+	Assets     []ReleaseAsset
 }
 
 // ReleaseAsset is one uploaded asset with the digest GitHub reports for it.
@@ -103,7 +107,7 @@ func (c *Client) GetReleaseByTag(ctx context.Context, owner, repo, tag string) (
 	if err != nil {
 		return Release{}, microerror.Mask(err)
 	}
-	r := Release{URL: rel.GetHTMLURL(), Published: !rel.GetDraft(), Assets: []ReleaseAsset{}}
+	r := Release{Tag: rel.GetTagName(), URL: rel.GetHTMLURL(), Published: !rel.GetDraft(), Prerelease: rel.GetPrerelease(), Assets: []ReleaseAsset{}}
 	for _, a := range rel.Assets {
 		r.Assets = append(r.Assets, ReleaseAsset{Name: a.GetName(), URL: a.GetBrowserDownloadURL(), Digest: a.GetDigest()})
 	}

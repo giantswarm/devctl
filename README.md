@@ -53,6 +53,15 @@ devctl release wait giantswarm/devctl v8.9.0
 devctl release wait giantswarm/devctl --pr 2289 --progress
 ```
 
+### Promoting release candidates (`devctl release promote`)
+
+`devctl release promote (<owner/repo>... | --team <team>) [--dry-run]` promotes the latest release candidate of auto-release repositories to a stable release: for each repository (named, or every entry of `repositories/<team>.yaml` in giantswarm/github whose release model is auto-release) it picks the highest `vX.Y.Z-rc.N` GitHub pre-release newer than the latest stable release, checks that the combined commit status of the candidate's commit is success (or that no status reported), and dispatches `zz_generated.auto_release.yaml` on the default branch with `release-type: stable`; the workflow does the promotion. It does not wait for the run; `devctl release wait <owner/repo> vX.Y.Z` does. One JSON document with a `repositories[]` entry per repository (`repository`, `stable`, `candidate`, `statusState`, `state`, `message`), exit 0 when each was dispatched (`would_dispatch` with `--dry-run`) or has nothing to promote, 1 when any is `not_built`, `not_auto_release` or `failed`, 7 usage, 8 not signed in. Dispatching needs Actions write, which the devctl GitHub App login does not carry: set `DEVCTL_GITHUB_TOKEN` to a token that has it.
+
+```bash
+devctl release promote --team team-bumblebee --dry-run
+devctl release promote giantswarm/devctl giantswarm/klaus --progress
+```
+
 ### Waiting for a rollout (`devctl rollout wait`)
 
 `devctl rollout wait <installation> <owner/repo> (<vX.Y.Z> | --pr <n>)` runs the release wait, then blocks until every Flux HelmRelease and App CR on the installation's management cluster that deploys one of the release's charts runs the version, is ready and has its Deployments, StatefulSets and DaemonSets rolled out. It reads the cluster through the kube context `tsh kube login` writes, as you; `--reconcile` asks Flux to look now. A deployment pinned elsewhere is reported and warned about; a failed install or upgrade of the version is exit 1, a timeout exit 2 naming what is missing. See [docs/rollout-wait.md](docs/rollout-wait.md).
