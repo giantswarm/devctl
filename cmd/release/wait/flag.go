@@ -13,6 +13,7 @@ type flag struct {
 	PR       int
 	Timeout  time.Duration
 	Catalog  bool
+	Images   []string
 	Progress bool
 }
 
@@ -20,5 +21,6 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().IntVar(&f.PR, "pr", 0, "Wait for the release auto-release tagged from this merged pull request instead of a version")
 	cmd.Flags().DurationVar(&f.Timeout, "timeout", releasewait.DefaultTimeout, "Give up after this long (exit 2)")
 	cmd.Flags().BoolVar(&f.Catalog, "catalog", false, "Also wait for the catalog index to list every chart")
+	cmd.Flags().StringSliceVar(&f.Images, "image", nil, releasewait.ImageFlagUsage)
 	agentcli.ProgressFlag(cmd, &f.Progress)
 }

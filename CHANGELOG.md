@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `release wait` and `rollout wait` take `--image <owner/name>` (repeatable): the image of a hand-written tag job that pushes outside the architect orb (a plain `docker push`), expected as `<image>:<version>` beside what the push jobs name. Without it, a `Dockerfile` with no image-naming push job is still exit 7, and the reason now names `--image` instead of "the sources disagree" ([#2418](https://github.com/giantswarm/devctl/issues/2418)).
 - `rollout wait <installation> <owner/repo> (<version> | --pr <n>)` blocks until a release runs on an installation
   ([#2439](https://github.com/giantswarm/devctl/issues/2439)): the release wait first, which names the charts, then
   every Flux HelmRelease (from an OCIRepository or a HelmChart) and App CR on the management cluster that deploys one
