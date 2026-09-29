@@ -2,7 +2,7 @@
 
 ```nohighlight
 devctl rollout wait <installation> <owner/repo> (<vX.Y.Z | X.Y.Z> | --pr <number>) [--context <kube-context>]
-    [--timeout 30m] [--release-timeout 30m] [--reconcile] [--progress]
+    [--timeout 30m] [--release-timeout 30m] [--image <owner/name>]... [--reconcile] [--progress]
 ```
 
 Blocks until a release runs on an installation, then prints one JSON document and exits with a code
@@ -21,7 +21,7 @@ devctl rollout wait myinstallation giantswarm/app-operator --pr 1234 --reconcile
 ### The release first
 
 The command starts with the wait of `devctl release wait` for the same version or `--pr`, with the
-same rules, tokens and exit codes (`--release-timeout`, 30 minutes by default). That wait names the
+same rules, tokens and exit codes (`--release-timeout`, 30 minutes by default; `--image` names the image of a hand-written tag job that pushes outside the architect orb, as there). That wait names the
 release's charts from the sources that define them (the team-file entry, the tag pipeline's push
 jobs, `helm/<dir>/Chart.yaml` at the tag), so a repository that publishes several charts is waited for
 on all of them, and a chart named differently from its repository is found. A release that ships no
