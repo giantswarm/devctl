@@ -9,7 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
-- `release wait` and `rollout wait` take `--image <owner/name>` (repeatable): the image of a hand-written tag job that pushes outside the architect orb (a plain `docker push`), expected as `<image>:<version>` beside what the push jobs name. Without it, a `Dockerfile` with no image-naming push job is still exit 7, and the reason now names `--image` instead of "the sources disagree" ([#2418](https://github.com/giantswarm/devctl/issues/2418)).
+- `release wait` and `rollout wait` take `--image <owner/name>` (repeatable): the image of a hand-written tag job that pushes outside the architect orb (a plain `docker push`), expected as `<image>:<git tag>` beside what the push jobs name. Without it, a `Dockerfile` with no image-naming push job is still exit 7, and the reason now names `--image` instead of "the sources disagree" ([#2418](https://github.com/giantswarm/devctl/issues/2418)).
 - `rollout wait <installation> <owner/repo> (<version> | --pr <n>)` blocks until a release runs on an installation
   ([#2439](https://github.com/giantswarm/devctl/issues/2439)): the release wait first, which names the charts, then
   every Flux HelmRelease (from an OCIRepository or a HelmChart) and App CR on the management cluster that deploys one
@@ -28,6 +28,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `release wait --image` probes the named image under the git tag as written (`giantswarm/dex:v2.43.3`, the `$CIRCLE_TAG` a plain `docker push` job pushes), not the version without its `v`, which such a job never pushes.
 - `pr wait` and `pr merge` add a hint to a pull request's "not found" naming the devctl GitHub App login's reach
   ([#2436](https://github.com/giantswarm/devctl/issues/2436)): the App is installed on the giantswarm organization
   only, and GitHub answers 404 rather than 403 for a private repository the token cannot read, so a personal

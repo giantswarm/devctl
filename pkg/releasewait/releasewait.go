@@ -115,8 +115,9 @@ type Config struct {
 	// Images name the images a hand-written tag pipeline pushes outside the
 	// architect orb (a plain docker push), which its configuration cannot
 	// tell: repository paths such as giantswarm/dex, or with the public or
-	// private registry host in front. Each is expected as <image>:<version>
-	// beside what the push jobs name (giantswarm/devctl#2418).
+	// private registry host in front. Each is expected as <image>:<tag>, the
+	// git tag as written ($CIRCLE_TAG, v2.43.3), beside what the push jobs
+	// name (giantswarm/devctl#2418).
 	Images []string
 
 	// GitHub is required. Entries and Registry are required; CircleCI is
@@ -146,7 +147,7 @@ type Config struct {
 
 // ImageFlagUsage is the help of --image on the commands that wait for a
 // release.
-const ImageFlagUsage = "An image the hand-written tag pipeline pushes outside the architect orb (a plain docker push), as <owner>/<name> or with the registry host in front; expected as <image>:<version>. Repeatable"
+const ImageFlagUsage = "An image the hand-written tag pipeline pushes outside the architect orb (a plain docker push), as <owner>/<name> or with the registry host in front; expected as <image>:<git tag>, the tag as written (v1.2.3). Repeatable"
 
 // Waiter runs one wait.
 type Waiter struct {
@@ -359,7 +360,7 @@ func (w *Waiter) loop(ctx context.Context, result *Result, p *plan) error {
 		}
 
 		if !p.derived && result.CIModel == CIModelHandWritten && state.jobs != nil {
-			artifacts, err := HandWrittenArtifacts(ctx, w.config.GitHub, owner, repo, result.SHA, p.version, *p.content, state.jobs, p.private, w.config.Images, w.config.Endpoints)
+			artifacts, err := HandWrittenArtifacts(ctx, w.config.GitHub, owner, repo, result.SHA, p.version, result.Tag, *p.content, state.jobs, p.private, w.config.Images, w.config.Endpoints)
 			if err != nil {
 				return err
 			}
