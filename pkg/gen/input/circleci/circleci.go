@@ -773,21 +773,20 @@ func New(config Config) (*CircleCI, error) {
 	// in workflows.yml. Its name signals what it produces: node-build when the
 	// build output is persisted for an image handoff, node-test otherwise.
 	var (
-		nodeJobName              string
-		nodeInstallCommand       string
-		nodeRunPrefix            string
-		nodeCachePath            string
-		nodeCacheKey             string
-		nodeCacheRestoreKey      string
-		nodeBuildCachePaths      []string
-		nodeBuildCacheKey        string
-		nodeBuildCacheRestoreKey string
-		nodeCorepack             bool
-		nodeImageVersion         string
-		nodeResourceClass        string
-		nodeTestTarget           string
-		nodeBuildTarget          string
-		nodeBuildOutput          string
+		nodeJobName         string
+		nodeInstallCommand  string
+		nodeRunPrefix       string
+		nodeCachePath       string
+		nodeCacheKey        string
+		nodeCacheRestoreKey string
+		nodeBuildCachePaths []string
+		nodeBuildCacheKey   string
+		nodeCorepack        bool
+		nodeImageVersion    string
+		nodeResourceClass   string
+		nodeTestTarget      string
+		nodeBuildTarget     string
+		nodeBuildOutput     string
 	)
 	if isNode {
 		tc := nodeToolchainFor(config.PackageManager)
@@ -830,16 +829,18 @@ func New(config Config) (*CircleCI, error) {
 		// Build-output cache (yarn only -- see nodeToolchain.buildCachePaths).
 		// Keyed on the node image version as well as the lockfile because the
 		// cached node_modules holds compiled native addons whose ABI is tied to
-		// the node version, so a node bump must not restore stale binaries. The
-		// restore prefix omits the lockfile checksum, so a changed lockfile
-		// still warm-starts from the previous node_modules and the install only
-		// reconciles (and rebuilds) the diff. The template saves this cache
+		// the node version, so a node bump must not restore stale binaries. It
+		// restores on the exact key only: a prefix fallback would restore
+		// another lockfile's node_modules and install-state, and the install
+		// then reconciles only the packages whose resolution differs and skips
+		// the root workspace's build step, so a `patch-package` postinstall
+		// silently never runs (devctl#2183). The template saves this cache
 		// *after* the verify/build steps, so it captures the tsc/eslint/jest
 		// incremental caches those tools write under node_modules/.cache too --
-		// the compute-side analogue of go-build persisting $GOCACHE.
+		// the compute-side analogue of go-build persisting $GOCACHE. The `v2`
+		// salt drops the v1 entries a prefix restore may have poisoned.
 		if len(nodeBuildCachePaths) > 0 {
-			nodeBuildCacheRestoreKey = "node-build-" + pm + "-v1-" + nodeImageVersion + "-"
-			nodeBuildCacheKey = nodeBuildCacheRestoreKey + `{{ checksum "` + tc.lockfile + `" }}`
+			nodeBuildCacheKey = "node-build-" + pm + "-v2-" + nodeImageVersion + `-{{ checksum "` + tc.lockfile + `" }}`
 		}
 
 		nodeTestTarget = config.NodeTestTarget
@@ -882,58 +883,57 @@ func New(config Config) (*CircleCI, error) {
 
 	c := &CircleCI{
 		params: params.Params{
-			RepoName:                 config.RepoName,
-			Language:                 config.Language.String(),
-			HasDockerfile:            hasDockerfile,
-			HasApp:                   hasApp,
-			SkipATS:                  config.SkipATS,
-			ATSVersion:               config.ATSVersion,
-			ATSKindCluster:           atsKindCluster,
-			ATSKindConfig:            atsKindConfig,
-			ATSResourceClass:         config.ATSResourceClass,
-			ATSOnRelease:             config.ATSOnRelease,
-			ChartName:                chartName,
-			ChartNameMismatch:        chartNameMismatch,
-			KeepChartAppVersion:      keepChartAppVersion,
-			ForcePublic:              config.ForcePublic,
-			AppCatalog:               appCatalog,
-			AppCatalogTest:           appCatalogTest,
-			BranchPublish:            config.BranchPublish,
-			ImagePreBuildJob:         config.ImagePreBuildJob,
-			ChartReleaseGateJob:      config.ChartReleaseGateJob,
-			ImagePrivateOnly:         config.ImagePrivateOnly,
-			ImageName:                config.ImageName,
-			OwnImages:                ownImages,
-			ImagePlatforms:           imagePlatforms,
-			ImageNativeBuilds:        config.ImageNativeBuilds,
-			BranchImageBuilds:        branchImageBuilds,
-			ReleaseImageBuilds:       releaseImageBuilds,
-			ImageDockerfile:          config.ImageDockerfile,
-			ReleaseBinaries:          config.shipsBinaries(),
-			BuildConcurrency:         buildConcurrency,
-			ResourceClass:            resourceClass,
-			GoBuildPath:              config.GoBuildPath,
-			GoTestArtifacts:          goTestArtifacts,
-			OrbVersion:               OrbVersion,
-			ContinuationOrbVersion:   ContinuationOrbVersion,
-			BuildJobName:             buildJobName,
-			NodeJobName:              nodeJobName,
-			NodeImageVersion:         nodeImageVersion,
-			NodeInstallCommand:       nodeInstallCommand,
-			NodeRunPrefix:            nodeRunPrefix,
-			NodeCachePath:            nodeCachePath,
-			NodeCacheKey:             nodeCacheKey,
-			NodeCacheRestoreKey:      nodeCacheRestoreKey,
-			NodeBuildCachePaths:      nodeBuildCachePaths,
-			NodeBuildCacheKey:        nodeBuildCacheKey,
-			NodeBuildCacheRestoreKey: nodeBuildCacheRestoreKey,
-			NodeCorepack:             nodeCorepack,
-			NodeResourceClass:        nodeResourceClass,
-			NodeTestTarget:           nodeTestTarget,
-			NodeBuildTarget:          nodeBuildTarget,
-			NodeBuildOutput:          nodeBuildOutput,
-			TemplateChart:            templateChart,
-			Team:                     team,
+			RepoName:               config.RepoName,
+			Language:               config.Language.String(),
+			HasDockerfile:          hasDockerfile,
+			HasApp:                 hasApp,
+			SkipATS:                config.SkipATS,
+			ATSVersion:             config.ATSVersion,
+			ATSKindCluster:         atsKindCluster,
+			ATSKindConfig:          atsKindConfig,
+			ATSResourceClass:       config.ATSResourceClass,
+			ATSOnRelease:           config.ATSOnRelease,
+			ChartName:              chartName,
+			ChartNameMismatch:      chartNameMismatch,
+			KeepChartAppVersion:    keepChartAppVersion,
+			ForcePublic:            config.ForcePublic,
+			AppCatalog:             appCatalog,
+			AppCatalogTest:         appCatalogTest,
+			BranchPublish:          config.BranchPublish,
+			ImagePreBuildJob:       config.ImagePreBuildJob,
+			ChartReleaseGateJob:    config.ChartReleaseGateJob,
+			ImagePrivateOnly:       config.ImagePrivateOnly,
+			ImageName:              config.ImageName,
+			OwnImages:              ownImages,
+			ImagePlatforms:         imagePlatforms,
+			ImageNativeBuilds:      config.ImageNativeBuilds,
+			BranchImageBuilds:      branchImageBuilds,
+			ReleaseImageBuilds:     releaseImageBuilds,
+			ImageDockerfile:        config.ImageDockerfile,
+			ReleaseBinaries:        config.shipsBinaries(),
+			BuildConcurrency:       buildConcurrency,
+			ResourceClass:          resourceClass,
+			GoBuildPath:            config.GoBuildPath,
+			GoTestArtifacts:        goTestArtifacts,
+			OrbVersion:             OrbVersion,
+			ContinuationOrbVersion: ContinuationOrbVersion,
+			BuildJobName:           buildJobName,
+			NodeJobName:            nodeJobName,
+			NodeImageVersion:       nodeImageVersion,
+			NodeInstallCommand:     nodeInstallCommand,
+			NodeRunPrefix:          nodeRunPrefix,
+			NodeCachePath:          nodeCachePath,
+			NodeCacheKey:           nodeCacheKey,
+			NodeCacheRestoreKey:    nodeCacheRestoreKey,
+			NodeBuildCachePaths:    nodeBuildCachePaths,
+			NodeBuildCacheKey:      nodeBuildCacheKey,
+			NodeCorepack:           nodeCorepack,
+			NodeResourceClass:      nodeResourceClass,
+			NodeTestTarget:         nodeTestTarget,
+			NodeBuildTarget:        nodeBuildTarget,
+			NodeBuildOutput:        nodeBuildOutput,
+			TemplateChart:          templateChart,
+			Team:                   team,
 
 			TemplateAppNamePlaceholder:        TemplateAppNamePlaceholder,
 			TemplateTeamPlaceholder:           TemplateTeamPlaceholder,
