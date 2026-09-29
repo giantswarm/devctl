@@ -580,7 +580,7 @@ func TestWaitHandWrittenDockerfileWithoutPushJobDisagrees(t *testing.T) {
 
 // A hand-written tag job that pushes with plain docker (giantswarm/dex's
 // build job, giantswarm/devctl#2418): the image named with --image is
-// probed as <image>:<version> in the public registry of a public
+// probed as <image>:<git tag> ($CIRCLE_TAG, v1.2.3) in the public registry of a public
 // repository, and the release is out once it is pullable and the tag
 // pipeline is green.
 func TestWaitHandWrittenImageNamedByFlag(t *testing.T) {
@@ -596,14 +596,14 @@ func TestWaitHandWrittenImageNamedByFlag(t *testing.T) {
 			map[string][]map[string]any{"w1": {job("build", "success")}},
 		),
 		registry: sequence.Routes{
-			"HEAD /v2/giantswarm/dex/manifests/1.2.3": {{Status: 404}, {Status: 200}},
+			"HEAD /v2/giantswarm/dex/manifests/v1.2.3": {{Status: 404}, {Status: 200}},
 		},
 		images: []string{"giantswarm/dex"},
 	}
 	result, err := run(t, fx)
 	assertExit(t, err, agentcli.ExitOK, "")
-	if len(result.Artifacts) != 1 || !strings.HasSuffix(result.Artifacts[0].Reference, "/giantswarm/dex:1.2.3") || result.Artifacts[0].Private() {
-		t.Errorf("artifacts: want the public image giantswarm/dex:1.2.3, got %+v", result.Artifacts)
+	if len(result.Artifacts) != 1 || !strings.HasSuffix(result.Artifacts[0].Reference, "/giantswarm/dex:v1.2.3") || result.Artifacts[0].Private() {
+		t.Errorf("artifacts: want the public image giantswarm/dex:v1.2.3, the git tag as written, got %+v", result.Artifacts)
 	}
 }
 

@@ -261,10 +261,11 @@ func ParsePushJobs(config []byte) ([]PushJob, error) {
 // tag that the pipeline runs (pipelineJobs are the job names CircleCI lists
 // for it), each naming its image or the chart directory whose Chart.yaml
 // names the chart, and the images the caller names (--image) for a job that
-// pushes outside the architect orb. A Dockerfile at the tag with no image
+// pushes outside the architect orb, tagged with the git tag as written: such
+// a job pushes $CIRCLE_TAG, where the orb strips the v. A Dockerfile at the tag with no image
 // among them is a usage error naming --image; the repository name is never
 // taken for the image.
-func HandWrittenArtifacts(ctx context.Context, gh GitHub, owner, repo, sha, version string, content TagContent, pipelineJobs map[string]bool, privateRepo bool, images []string, endpoints agentcli.Endpoints) ([]Artifact, error) {
+func HandWrittenArtifacts(ctx context.Context, gh GitHub, owner, repo, sha, version, tag string, content TagContent, pipelineJobs map[string]bool, privateRepo bool, images []string, endpoints agentcli.Endpoints) ([]Artifact, error) {
 	var jobs []PushJob
 	for _, name := range []string{circleCIConfig, circleCIWorkflows, circleCICustom} {
 		if !slices.Contains(content.CircleCI, name) {
@@ -315,7 +316,7 @@ func HandWrittenArtifacts(ctx context.Context, gh GitHub, owner, repo, sha, vers
 		if private == nil {
 			private = &privateRepo
 		}
-		artifacts = append(artifacts, imageArtifact(path, version, *private, endpoints))
+		artifacts = append(artifacts, imageArtifact(path, tag, *private, endpoints))
 	}
 
 	hasImage := slices.ContainsFunc(artifacts, func(a Artifact) bool { return a.Kind == KindImage })
