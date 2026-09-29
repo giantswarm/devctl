@@ -9,13 +9,14 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/v8/cmd/repo/internal/client"
+	"github.com/giantswarm/devctl/v8/pkg/reposetup"
 )
 
 // The scopes and the filter enums, the manager's.
 var (
 	scopes     = []string{"mine", "team", "unassigned", "all"}
 	renovates  = []string{"configured", "missing", "active", "inactive"}
-	visibility = []string{"public", "private"}
+	visibility = []string{reposetup.VisibilityPublic, reposetup.VisibilityPrivate}
 	chinaPush  = []string{"split", "inline", "custom", "none"}
 	signing    = []string{"signed", "unsigned", "unknown", "none"}
 	boolWords  = []string{"true", "false"}

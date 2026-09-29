@@ -429,7 +429,7 @@
           "private",
           "public"
         ],
-        "description": "The repository's visibility on GitHub. Part of the desired state: the automation creates the repository with it and keeps it in sync afterwards, so it can be declared for an existing repository as well. Only 'public' and 'private' exist for us; 'internal' is refused. Absent means the visibility on GitHub is left as it is; a repository the automation creates from an entry without one is created private, the org's default, and devctl repo create and giantswarm-repo-manager write visibility: private into the entry they add."
+        "description": "The repository's visibility on GitHub. Part of the desired state: the automation creates the repository with it and keeps it in sync afterwards, so it can be declared for an existing repository as well. Only 'public' and 'private' exist for us; 'internal' is refused. Absent means the visibility on GitHub is left as it is; a repository created from an entry without one is created private, the org's default, and devctl repo create writes visibility: private into the entry it adds."
       }
     }
   }

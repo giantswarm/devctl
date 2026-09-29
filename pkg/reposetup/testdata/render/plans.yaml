@@ -1,6 +1,7 @@
 # yaml-language-server: $schema=../.github/repositories.schema.json
 - name: example-plans
   componentType: configuration
+  visibility: private
   description: Team plans, their PRDs and companion websites.
   gen:
     flavours:

@@ -1,6 +1,7 @@
 # yaml-language-server: $schema=../.github/repositories.schema.json
 - name: example-configs
   componentType: configuration
+  visibility: public
   description: Configuration of the example installations.
   gen:
     flavours:

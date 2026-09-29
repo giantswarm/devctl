@@ -28,14 +28,16 @@ func (r *Runner) stepCreate(ctx context.Context, s *run, sr *StepResult) error {
 			return nil
 		}
 		if s.req.Added && !lifecycleOver(s.fields.Lifecycle) {
-			return s.plan(sr, fmt.Sprintf("create %s from the added entry", s.slug()), func() error {
+			return s.plan(sr, fmt.Sprintf("create %s from the added entry, %s", s.slug(), reposetup.CreationVisibility(s.fields.Visibility)), func() error {
 				created, _, err := r.GitHub.Repositories.Create(ctx, s.owner, &github.Repository{
 					Name:        new(s.name),
 					Description: new(s.fields.Description),
-					// An entry without a visibility is created private, the
-					// org's default (reposetup.CreationVisibility); for a
-					// repository that exists, stepMetadata leaves it alone.
-					Private: new(reposetup.CreationVisibility(s.fields.Visibility) == reposetup.VisibilityPrivate),
+					// Public only when the entry says public: an entry
+					// without a visibility is created private, the org's
+					// default (reposetup.CreationVisibility). For a
+					// repository that exists, stepMetadata leaves an
+					// undeclared visibility alone.
+					Private: new(reposetup.CreationVisibility(s.fields.Visibility) != reposetup.VisibilityPublic),
 					// The initial commit lets CircleCI follow and the Git Data
 					// API write; the scaffold step replaces it.
 					AutoInit: new(true),

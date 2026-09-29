@@ -1,6 +1,7 @@
 # yaml-language-server: $schema=../.github/repositories.schema.json
 - name: example-policies
   componentType: library
+  visibility: public
   description: Example Kyverno policies.
   lifecycle: production
   choreReviewers:
