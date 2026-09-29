@@ -498,14 +498,16 @@ on:
   push:
     branches:
       - main
-      # Maintenance / backport branches. The character class anchors the
-      # next char after "release-" to a digit or "v" so unrelated branches
-      # that happen to start with "release-" don't trigger a release run.
+      # Maintenance / backport branches, matched whole: a branch that only
+      # starts like one (a pull-request branch off release-v3.x) must not
+      # cut a release from unreviewed commits.
       #
       # MATCHES:    release-2.x, release-2.3.x, release-v2.x, release-v3.7.x
-      # NO MATCH:   release-notes, release-engineering, release-prep
-      - 'release-[0-9]*'
-      - 'release-v[0-9]*'
+      # NO MATCH:   release-notes, release-v3.x-fix, release-v3.7.x-backport
+      - 'release-[0-9]+.x'
+      - 'release-[0-9]+.[0-9]+.x'
+      - 'release-v[0-9]+.x'
+      - 'release-v[0-9]+.[0-9]+.x'
   # Manual escape hatch. `auto` applies the same rule as a push, which is what
   # a re-run wants. `stable` closes a release-candidate cycle when the last RC
   # is good and there is no pull request left to merge; `rc` forces one more.
