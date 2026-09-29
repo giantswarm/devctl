@@ -112,7 +112,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - `gen workflows --release-workflow=auto-release`: every releasable push cuts the next release candidate
   `vX.Y.Z-rc.N`, a GitHub pre-release. A stable release is cut only by running the workflow by hand with
   `release-type: stable`, which promotes the latest candidate since the last stable release: the tag, the version and
-  the release notes are the candidate's, and the run fails when there is no candidate.
+  the release notes are the candidate's. The run fails when there is no candidate, when the candidate has no GitHub
+  pre-release, or when a commit status of its commit failed or is pending. After a repository regenerates its
+  workflows, consumers that skip pre-releases (Renovate, `devctl release bumpall`, Flux ranges without a pre-release)
+  get a new version only when a candidate is promoted.
 - `gen circleci`: the generated pipelines pin architect orb 10.11.1, whose chart jobs run app-build-suite 2.5.1. Its
   image reference check leaves a Helm test out, a manifest whose `helm.sh/hook` names only `test` events: only
   `helm test` creates it, no install or upgrade pulls its images. A chart whose subchart ships a test pod with an

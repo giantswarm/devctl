@@ -386,6 +386,35 @@ func Test_AutoReleaseDecide(t *testing.T) {
 	}
 }
 
+// ghStub puts a gh on PATH that answers the promote step's two questions:
+// `gh release view` prints release ("true" or "false" for isPrerelease; empty
+// fails as for a missing release), `gh api .../status` prints status ("<state>
+// <total_count>"). It returns the PATH entry for runStep.
+func ghStub(t *testing.T, release, status string) string {
+	t.Helper()
+
+	dir := t.TempDir()
+	script := "#!/usr/bin/env bash\n" +
+		"case \"$1 $2\" in\n" +
+		"  'release view') [ -n '" + release + "' ] || exit 1; echo '" + release + "' ;;\n" +
+		"  api*) echo '" + status + "' ;;\n" +
+		"  *) echo \"unexpected gh $*\" >&2; exit 2 ;;\n" +
+		"esac\n"
+	if err := os.WriteFile(filepath.Join(dir, "gh"), []byte(script), 0o700); err != nil { // #nosec G306 -- test-only executable stub
+		t.Fatalf("write gh stub: %v", err)
+	}
+
+	return "PATH=" + dir + string(os.PathListSeparator) + os.Getenv("PATH")
+}
+
+// builtCandidate is the gh stub of a candidate whose pre-release exists and
+// whose pipelines passed.
+func builtCandidate(t *testing.T) string {
+	t.Helper()
+
+	return ghStub(t, "true", "success 2")
+}
+
 // promoteScript extracts the shell of the step that checks out the candidate
 // a stable release promotes.
 func promoteScript(t *testing.T) string {
@@ -450,7 +479,7 @@ func Test_AutoReleasePromote(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := repo(t, tc.history...)
 
-			promoted, log, err := runStep(t, promote, dir)
+			promoted, log, err := runStep(t, promote, dir, builtCandidate(t), "GH_REPO=giantswarm/example")
 			if err != nil {
 				t.Fatalf("promote step failed: %v\n%s", err, log)
 			}
@@ -479,22 +508,51 @@ func Test_AutoReleasePromote(t *testing.T) {
 	}
 }
 
-// Test_AutoReleasePromoteRefuses pins the two refusals of a stable release:
-// no candidate to promote, and a candidate whose commits release a different
-// version than its tag names.
+// Test_AutoReleasePromoteRefuses pins the refusals of a stable release: no
+// candidate to promote, a candidate without its GitHub pre-release or with a
+// failed or running pipeline, and a candidate whose commits release a
+// different version than its tag names.
 func Test_AutoReleasePromoteRefuses(t *testing.T) {
 	t.Run("no candidate since the last stable release", func(t *testing.T) {
 		for _, history := range [][]string{
 			{"v1.2.9", "fix: x"},
 			{"v1.2.9", "fix: x", "v1.2.10-rc.1", "v1.2.10", "fix: y"},
 		} {
-			_, log, err := runStep(t, promoteScript(t), repo(t, history...))
+			_, log, err := runStep(t, promoteScript(t), repo(t, history...), builtCandidate(t), "GH_REPO=giantswarm/example")
 			if err == nil {
 				t.Errorf("history %q: promote step succeeded, want a refusal:\n%s", history, log)
 			}
 			if !strings.Contains(log, "::error title=No release candidate to promote::") {
 				t.Errorf("history %q: no error annotation:\n%s", history, log)
 			}
+		}
+	})
+
+	for _, tc := range []struct {
+		name, release, status, annotation string
+	}{
+		{"the candidate has no GitHub release", "", "success 2", "Candidate not released"},
+		{"the candidate's release is not a pre-release", "false", "success 2", "Candidate not a pre-release"},
+		{"a pipeline of the candidate failed", "true", "failure 2", "Candidate not built"},
+		{"a pipeline of the candidate is still running", "true", "pending 1", "Candidate not built"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := repo(t, "v1.2.9", "fix: x", "v1.2.10-rc.1")
+			_, log, err := runStep(t, promoteScript(t), dir, ghStub(t, tc.release, tc.status), "GH_REPO=giantswarm/example")
+			if err == nil {
+				t.Errorf("promote step succeeded, want a refusal:\n%s", log)
+			}
+			if !strings.Contains(log, "::error title="+tc.annotation+"::") {
+				t.Errorf("no %q error annotation:\n%s", tc.annotation, log)
+			}
+		})
+	}
+
+	t.Run("a candidate no pipeline reports on is promoted", func(t *testing.T) {
+		dir := repo(t, "v1.2.9", "fix: x", "v1.2.10-rc.1")
+		got, log, err := runStep(t, promoteScript(t), dir, ghStub(t, "true", "pending 0"), "GH_REPO=giantswarm/example")
+		if err != nil || got["rc"] != "v1.2.10-rc.1" {
+			t.Errorf("rc = %q, err = %v, want v1.2.10-rc.1:\n%s", got["rc"], err, log)
 		}
 	})
 
