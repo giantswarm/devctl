@@ -9,7 +9,7 @@ command prints a token.
 
 | Command | GitHub token |
 |---|---|
-| `deploy`, `pr approve-align`, `pr approve-merge-renovate`, `release create` | the App login; a token in the environment overrides it |
+| `deploy`, `pr approve-align`, `pr approve-merge-renovate`, `release create`, `release promote` | the App login; a token in the environment overrides it |
 | the version check that precedes every command, `version check`, `version update`, `repo validate` | the same, optional and looked up only when GitHub is asked (never while the one-hour version cache is fresh): without one a public read is anonymous (`repo validate`: the embedded schema, repository names unchecked) |
 | `pr wait`, `pr merge`, `release wait`, `rollout wait` | the App login only (`rollout wait` reads the installation with your kube context) |
 | `repo create` | your own: `$GITHUB_TOKEN` (`--github-token-envvar`), else `gh auth token` |
@@ -49,6 +49,9 @@ metadata, nothing else, and it does not gain more:
   Administration or Webhooks write, which the App does not carry: they act with your own token, as the
   table says, and print no override warning.
 - `repo reconcile` is the engine's CI path and acts with its installation token.
+- `release promote` dispatches the auto-release workflow, which needs Actions write: with the App login and
+  without `--dry-run` it exits 7 before reading any repository, naming the variables that override the login. Set
+  one of them to a token that carries Actions write.
 
 ## `devctl auth login`
 

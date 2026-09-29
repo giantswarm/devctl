@@ -24,6 +24,12 @@ func ExplainNotFound(err error, hint string) error {
 	return fmt.Errorf("%w; %s", err, hint)
 }
 
+// IsForbidden reports whether err, or an error it wraps, is GitHub's 403.
+func IsForbidden(err error) bool {
+	var response *github.ErrorResponse
+	return errors.As(err, &response) && response.Response != nil && response.Response.StatusCode == http.StatusForbidden
+}
+
 // isNotFoundAnswer reports whether err, or an error it wraps, is GitHub's 404,
 // git's repository not found, or [IsNotFound].
 func isNotFoundAnswer(err error) bool {

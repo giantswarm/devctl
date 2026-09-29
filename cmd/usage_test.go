@@ -151,6 +151,8 @@ func TestExecuteAgentCommandWrongCalls(t *testing.T) {
 		{"pr", "merge", "giantswarm/devctl", "1", "--timeout", "30"},
 		{"release", "wait"},
 		{"release", "wait", "giantswarm/devctl", "--pr", "x"},
+		{"release", "promote"},
+		{"release", "promote", "giantswarm/devctl", "--team", "team-bumblebee"},
 		{"auth", "status", "extra"},
 		{"auth", "login", "--bogus"},
 	} {

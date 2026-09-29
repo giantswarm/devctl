@@ -9,6 +9,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `release promote (<owner/repo>... | --team <team>) [--dry-run]` promotes the latest release candidate of
+  auto-release repositories to a stable release. Per repository (named, repeats once, or every auto-release entry of
+  the team's file in giantswarm/github) it requires the auto-release workflow of devctl v8.102.0 or later on the
+  default branch (`outdated_workflow` without its promotion step, `not_auto_release` without the file), picks the
+  highest `vX.Y.Z-rc.N` GitHub release newer than the latest stable release, both reachable from the default
+  branch (`failed` when it is a full release, not a pre-release, as the workflow refuses it), checks the combined commit status of its commit (not `success` with any status reported is `not_built`)
+  and dispatches `zz_generated.auto_release.yaml` on the default branch with `release-type: stable`; it does not
+  wait for the run. One JSON document with `repositories[{repository, stable, candidate, statusState, state,
+  message}]`; exit 0 when each is `dispatched`, `would_dispatch` or `nothing_to_promote` (a team without
+  auto-release repositories warns), 1 when any is `not_built`, `not_auto_release`, `outdated_workflow` or `failed`,
+  7 usage, 8 not signed in. The GitHub token is the App login, overridable from the environment; the dispatch needs
+  Actions write, so with the App login and without `--dry-run` the command exits 7 before reading any repository.
 - `release wait` and `rollout wait` take `--image <owner/name>` (repeatable): the image of a hand-written tag job that pushes outside the architect orb (a plain `docker push`), expected as `<image>:<git tag>` beside what the push jobs name. Without it, a `Dockerfile` with no image-naming push job is still exit 7, and the reason now names `--image` instead of "the sources disagree" ([#2418](https://github.com/giantswarm/devctl/issues/2418)).
 - `rollout wait <installation> <owner/repo> (<version> | --pr <n>)` blocks until a release runs on an installation
   ([#2439](https://github.com/giantswarm/devctl/issues/2439)): the release wait first, which names the charts, then
