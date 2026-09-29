@@ -389,7 +389,8 @@ func Test_AutoReleaseDecide(t *testing.T) {
 // ghStub puts a gh on PATH that answers the promote step's two questions:
 // `gh release view` prints release ("true" or "false" for isPrerelease; empty
 // fails as for a missing release), `gh api .../status` prints status ("<state>
-// <total_count>"). It returns the PATH entry for runStep.
+// <total_count>"; empty fails as for a token without statuses: read). It
+// returns the PATH entry for runStep.
 func ghStub(t *testing.T, release, status string) string {
 	t.Helper()
 
@@ -397,7 +398,7 @@ func ghStub(t *testing.T, release, status string) string {
 	script := "#!/usr/bin/env bash\n" +
 		"case \"$1 $2\" in\n" +
 		"  'release view') [ -n '" + release + "' ] || exit 1; echo '" + release + "' ;;\n" +
-		"  api*) echo '" + status + "' ;;\n" +
+		"  api*) [ -n '" + status + "' ] || exit 1; echo '" + status + "' ;;\n" +
 		"  *) echo \"unexpected gh $*\" >&2; exit 2 ;;\n" +
 		"esac\n"
 	if err := os.WriteFile(filepath.Join(dir, "gh"), []byte(script), 0o700); err != nil { // #nosec G306 -- test-only executable stub
@@ -535,6 +536,7 @@ func Test_AutoReleasePromoteRefuses(t *testing.T) {
 		{"the candidate's release is not a pre-release", "false", "success 2", "Candidate not a pre-release"},
 		{"a pipeline of the candidate failed", "true", "failure 2", "Candidate not built"},
 		{"a pipeline of the candidate is still running", "true", "pending 1", "Candidate not built"},
+		{"the candidate's statuses cannot be read", "true", "", "Candidate status unreadable"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := repo(t, "v1.2.9", "fix: x", "v1.2.10-rc.1")

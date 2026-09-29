@@ -190,11 +190,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   auth instead of in the remote URL, so a git error quoting the URL no longer prints it
   ([#2380](https://github.com/giantswarm/devctl/issues/2380)).
 
-### Removed
-
-- `gen workflows`: the `feat-rc` and `fix-rc` pull request title types, and the auto-release workflow's
-  `release-type: rc` input. A `feat-rc`/`fix-rc` commit still releases as its plain type.
-
 ### Added
 
 - `reposetup.(*Schema).FieldValues(path)` returns the values the repositories schema allows for a declaration field
@@ -801,6 +796,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Removed
 
+- `gen workflows`: the `feat-rc` and `fix-rc` pull request title types, and the auto-release workflow's
+  `release-type: rc` input. A `feat-rc`/`fix-rc` commit still releases as its plain type.
 - `repo reconcile --enforce-admins`: the branch protection binds administrators too, the baseline's value with no
   knob; the flag and its "until the baseline decides" note are gone (#2267).
 - `circleciclient.Client.TriggerPipeline` and `TriggerRequest`: the reconciler's tag rebuild was their only caller

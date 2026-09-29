@@ -518,7 +518,11 @@ jobs:
             echo "::error title=Candidate not a pre-release::the GitHub release of ${rc} is not a pre-release."
             exit 1
           fi
-          read -r state count < <(gh api "repos/${GH_REPO}/commits/${rc}/status" --jq '"\(.state) \(.total_count)"')
+          if ! status=$(gh api "repos/${GH_REPO}/commits/${rc}/status" --jq '"\(.state) \(.total_count)"'); then
+            echo "::error title=Candidate status unreadable::the commit statuses of ${rc} could not be read (the job needs statuses: read); nothing is promoted."
+            exit 1
+          fi
+          read -r state count <<<"$status"
           if [ "$count" != 0 ] && [ "$state" != success ]; then
             echo "::error title=Candidate not built::the commit statuses of ${rc} are ${state}: https://github.com/${GH_REPO}/commit/$(git rev-parse "${rc}^{commit}"). Promote it once its pipelines passed."
             exit 1
