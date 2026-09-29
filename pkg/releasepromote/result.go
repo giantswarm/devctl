@@ -20,6 +20,9 @@ const (
 	StateNotBuilt = "not_built"
 	// StateNotAutoRelease: the repository has no auto-release workflow.
 	StateNotAutoRelease = "not_auto_release"
+	// StateOutdatedWorkflow: the auto-release workflow on the default branch
+	// has no promotion step: its release-type stable tags the branch head.
+	StateOutdatedWorkflow = "outdated_workflow"
 	// StateFailed: a read or the dispatch failed; the message has GitHub's
 	// answer.
 	StateFailed = "failed"

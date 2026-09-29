@@ -1,6 +1,7 @@
 package githubclient
 
 import (
+	"encoding/base64"
 	"net/http"
 	"testing"
 
@@ -16,24 +17,36 @@ func TestDispatchWorkflowWire(t *testing.T) {
 	require.Equal(t, map[string]any{"ref": "main", "inputs": map[string]any{"release-type": "stable"}}, got.body)
 }
 
-func TestDispatchWorkflowForbidden(t *testing.T) {
-	c, _ := newWireClient(t, http.StatusForbidden, `{"message":"Resource not accessible by integration"}`)
-	err := c.DispatchWorkflow(t.Context(), "o", "r", "zz_generated.auto_release.yaml", "main", nil)
-	require.Error(t, err)
-	require.True(t, IsForbidden(err), "a masked 403 is forbidden: %v", err)
-}
-
-func TestHasWorkflow(t *testing.T) {
-	c, got := newWireClient(t, http.StatusOK, `{"id":1,"path":".github/workflows/zz_generated.auto_release.yaml","state":"active"}`)
-	found, err := c.HasWorkflow(t.Context(), "o", "r", "zz_generated.auto_release.yaml")
+func TestReadFile(t *testing.T) {
+	content := base64.StdEncoding.EncodeToString([]byte("name: Auto release\n"))
+	c, got := newWireClient(t, http.StatusOK, `{"type":"file","encoding":"base64","path":".github/workflows/zz_generated.auto_release.yaml","content":"`+content+`"}`)
+	data, found, err := c.ReadFile(t.Context(), "o", "r", ".github/workflows/zz_generated.auto_release.yaml", "main")
 	require.NoError(t, err)
 	require.True(t, found)
-	require.Equal(t, "/repos/o/r/actions/workflows/zz_generated.auto_release.yaml", got.path)
+	require.Equal(t, "name: Auto release\n", string(data))
+	require.Equal(t, "/repos/o/r/contents/.github/workflows/zz_generated.auto_release.yaml", got.path)
+	require.Equal(t, "ref=main", got.query)
 
 	c, _ = newWireClient(t, http.StatusNotFound, `{"message":"Not Found"}`)
-	found, err = c.HasWorkflow(t.Context(), "o", "r", "zz_generated.auto_release.yaml")
+	_, found, err = c.ReadFile(t.Context(), "o", "r", ".github/workflows/zz_generated.auto_release.yaml", "main")
 	require.NoError(t, err)
 	require.False(t, found)
+}
+
+// TestReachable pins the comparison: the tag is the base and the branch the
+// head, so a tag in the branch's history leaves the branch ahead of it or
+// identical to it.
+func TestReachable(t *testing.T) {
+	for status, want := range map[string]bool{"ahead": true, "identical": true, "behind": false, "diverged": false} {
+		t.Run(status, func(t *testing.T) {
+			c, got := newWireClient(t, http.StatusOK, `{"status":"`+status+`","ahead_by":0,"behind_by":0}`)
+			reachable, err := c.Reachable(t.Context(), "o", "r", "v1.3.0-rc.1", "main")
+			require.NoError(t, err)
+			require.Equal(t, want, reachable)
+			require.Equal(t, http.MethodGet, got.method)
+			require.Equal(t, "/repos/o/r/compare/v1.3.0-rc.1...main", got.path)
+		})
+	}
 }
 
 func TestGetCombinedStatus(t *testing.T) {

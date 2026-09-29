@@ -49,9 +49,9 @@ metadata, nothing else, and it does not gain more:
   Administration or Webhooks write, which the App does not carry: they act with your own token, as the
   table says, and print no override warning.
 - `repo reconcile` is the engine's CI path and acts with its installation token.
-- `release promote` dispatches the auto-release workflow, which needs Actions write: with the App login GitHub
-  refuses every dispatch with 403, reported per repository with the variables that override the login. Set one of
-  them to a token that carries Actions write.
+- `release promote` dispatches the auto-release workflow, which needs Actions write: with the App login and
+  without `--dry-run` it exits 7 before reading any repository, naming the variables that override the login. Set
+  one of them to a token that carries Actions write.
 
 ## `devctl auth login`
 

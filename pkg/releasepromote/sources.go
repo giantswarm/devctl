@@ -20,8 +20,13 @@ type Sources struct {
 	GitHub GitHub
 	// Team lists the auto-release repositories of a team.
 	Team func(ctx context.Context, team string) ([]string, error)
-	// NotFoundHint and ForbiddenHint are [Config]'s.
-	NotFoundHint, ForbiddenHint string
+	// NotFoundHint is [Config]'s.
+	NotFoundHint string
+	// DispatchBlocked is set when the token cannot dispatch a workflow (the
+	// App login, which carries no Actions write): the reason a run that
+	// dispatches stops with before any repository is read. Empty when the
+	// token may.
+	DispatchBlocked string
 }
 
 // OpenSources is the production wiring: the GitHub token of
@@ -50,15 +55,14 @@ func OpenSources(ctx context.Context, endpoints agentcli.Endpoints, transport ht
 		Team: func(ctx context.Context, team string) ([]string, error) {
 			return TeamRepositories(ctx, gh.GitHub(), team)
 		},
-		NotFoundHint:  authstore.GitHubNotFoundHint(token),
-		ForbiddenHint: ForbiddenHint(token),
+		NotFoundHint:    authstore.GitHubNotFoundHint(token),
+		DispatchBlocked: ForbiddenHint(token),
 	}, nil
 }
 
-// ForbiddenHint is the sentence added to GitHub's 403 for a dispatch made
-// with the App login: dispatching a workflow needs Actions write, which the
-// App does not carry, and the variables that override the login. Empty for
-// a token from the environment.
+// ForbiddenHint is why the App login cannot dispatch a workflow: it needs
+// Actions write, which the App does not carry, and the variables that
+// override the login. Empty for a token from the environment.
 func ForbiddenHint(token authstore.Token) string {
 	if token.Source != authstore.SourceKeychain {
 		return ""

@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
-	"net/http"
+	"slices"
 	"testing"
 
 	"github.com/google/go-github/v92/github"
@@ -24,8 +24,12 @@ type dispatch struct {
 
 // fakeRepository is what the fake answers for one repository.
 type fakeRepository struct {
-	branch      string
-	noWorkflow  bool
+	branch     string
+	noWorkflow bool
+	// outdated serves the workflow without the promotion step.
+	outdated bool
+	// unreachable are the tags not on the default branch.
+	unreachable []string
 	releases    []githubclient.Release
 	status      githubclient.CombinedStatus
 	dispatchErr error
@@ -37,6 +41,7 @@ type fakeGitHub struct {
 	repositories map[string]fakeRepository
 	dispatches   []dispatch
 	statusRefs   []string
+	compared     []string
 }
 
 var errNotFound = errors.New("404 Not Found")
@@ -54,9 +59,26 @@ func (f *fakeGitHub) DefaultBranch(_ context.Context, owner, repo string) (strin
 	return r.branch, err
 }
 
-func (f *fakeGitHub) HasWorkflow(_ context.Context, owner, repo, file string) (bool, error) {
+const (
+	newWorkflow = "jobs:\n  release:\n    steps:\n      - name: Resolve the candidate to promote\n        if: inputs.release-type == 'stable'\n"
+	oldWorkflow = "jobs:\n  release:\n    steps:\n      - name: Create release\n"
+)
+
+func (f *fakeGitHub) ReadFile(_ context.Context, owner, repo, path, ref string) ([]byte, bool, error) {
 	r, err := f.repository(owner, repo)
-	return err == nil && file == Workflow && !r.noWorkflow, err
+	if err != nil || r.noWorkflow || path != workflowPath || ref != r.branch {
+		return nil, false, err
+	}
+	if r.outdated {
+		return []byte(oldWorkflow), true, nil
+	}
+	return []byte(newWorkflow), true, nil
+}
+
+func (f *fakeGitHub) Reachable(_ context.Context, owner, repo, ref, branch string) (bool, error) {
+	f.compared = append(f.compared, ref)
+	r, err := f.repository(owner, repo)
+	return err == nil && branch == r.branch && !slices.Contains(r.unreachable, ref), err
 }
 
 func (f *fakeGitHub) ListReleases(_ context.Context, owner, repo string) ([]githubclient.Release, error) {
@@ -137,7 +159,8 @@ func TestSelectCandidate(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			gotStable, gotCandidate := SelectCandidate(tc.releases)
+			gotStable, gotCandidate, err := SelectCandidate(tc.releases, func(string) (bool, error) { return true, nil })
+			require.NoError(t, err)
 			require.Equal(t, tc.stable, gotStable)
 			require.Equal(t, tc.promote, gotCandidate)
 		})
@@ -195,7 +218,13 @@ func TestPromote(t *testing.T) {
 			name:       "nothing to promote",
 			repository: fakeRepository{branch: "main", releases: []githubclient.Release{stable("v1.2.0"), candidate("v1.2.0-rc.3")}},
 			state:      StateNothingToPromote,
-			message:    "no release candidate since v1.2.0",
+			message:    "no release candidate on main since v1.2.0",
+		},
+		{
+			name:       "workflow without the promotion step",
+			repository: fakeRepository{branch: "main", outdated: true, releases: releases},
+			state:      StateOutdatedWorkflow,
+			message:    ".github/workflows/zz_generated.auto_release.yaml on main does not promote release candidates: its release-type stable tags the branch head; align the repository to devctl v8.102.0 or later (giantswarm/devctl#2413)",
 		},
 		{
 			name:       "no auto-release workflow",
@@ -265,17 +294,72 @@ func TestPromoteGoesOnAfterARepositoryFails(t *testing.T) {
 	require.Len(t, gh.dispatches, 2)
 }
 
-func TestPromoteAddsTheForbiddenHintToA403(t *testing.T) {
-	forbidden := &github.ErrorResponse{Response: &http.Response{StatusCode: http.StatusForbidden}, Message: "Resource not accessible by integration"}
+func TestSelectCandidateOnTheDefaultBranch(t *testing.T) {
+	cases := []struct {
+		name            string
+		releases        []githubclient.Release
+		unreachable     []string
+		stable, promote string
+		compared        []string
+	}{
+		{
+			name:        "a backport-branch candidate is skipped for the next reachable one",
+			releases:    []githubclient.Release{candidate("v1.2.1-rc.1"), candidate("v1.3.0-rc.2"), candidate("v1.3.0-rc.1"), stable("v1.2.0")},
+			unreachable: []string{"v1.3.0-rc.2"},
+			stable:      "v1.2.0", promote: "v1.3.0-rc.1",
+			compared: []string{"v1.2.0", "v1.3.0-rc.2", "v1.3.0-rc.1"},
+		},
+		{
+			name:        "no reachable candidate",
+			releases:    []githubclient.Release{candidate("v1.2.1-rc.1"), stable("v1.2.0")},
+			unreachable: []string{"v1.2.1-rc.1"},
+			stable:      "v1.2.0",
+			compared:    []string{"v1.2.0", "v1.2.1-rc.1"},
+		},
+		{
+			name:        "a higher stable release of another branch does not hide the candidate",
+			releases:    []githubclient.Release{stable("v2.1.0"), candidate("v2.0.0-rc.3"), stable("v1.9.0")},
+			unreachable: []string{"v2.1.0"},
+			stable:      "v1.9.0", promote: "v2.0.0-rc.3",
+			compared: []string{"v2.1.0", "v1.9.0", "v2.0.0-rc.3"},
+		},
+		{
+			name:     "candidates not above the reachable stable release are not compared",
+			releases: []githubclient.Release{stable("v1.3.0"), candidate("v1.3.0-rc.1")},
+			stable:   "v1.3.0",
+			compared: []string{"v1.3.0"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var compared []string
+			reachable := func(tag string) (bool, error) {
+				compared = append(compared, tag)
+				return !slices.Contains(tc.unreachable, tag), nil
+			}
+			gotStable, gotCandidate, err := SelectCandidate(tc.releases, reachable)
+			require.NoError(t, err)
+			require.Equal(t, tc.stable, gotStable)
+			require.Equal(t, tc.promote, gotCandidate)
+			require.Equal(t, tc.compared, compared)
+		})
+	}
+}
+
+func TestSelectCandidateComparisonError(t *testing.T) {
+	_, _, err := SelectCandidate([]githubclient.Release{candidate("v1.0.0-rc.1")}, func(string) (bool, error) { return false, errors.New("boom") })
+	require.EqualError(t, err, "v1.0.0-rc.1: boom")
+}
+
+func TestPromoteComparesAgainstTheDefaultBranch(t *testing.T) {
 	gh := &fakeGitHub{repositories: map[string]fakeRepository{
-		"giantswarm/a": {branch: "main", releases: []githubclient.Release{candidate("v1.0.0-rc.1")}, dispatchErr: forbidden},
+		"giantswarm/a": {branch: "main", releases: []githubclient.Release{candidate("v1.3.0-rc.1"), stable("v1.2.0")}, unreachable: []string{"v1.3.0-rc.1"}},
 	}}
 	result := NewResult("")
-	err := Promote(t.Context(), Config{GitHub: gh, ForbiddenHint: "set $GITHUB_TOKEN"}, []string{"giantswarm/a"}, &result)
-	require.Equal(t, agentcli.ExitRed, agentcli.Exit(err))
-	require.Equal(t, StateFailed, result.Repositories[0].State)
-	require.Contains(t, result.Repositories[0].Message, "Resource not accessible by integration")
-	require.Contains(t, result.Repositories[0].Message, "; set $GITHUB_TOKEN")
+	require.NoError(t, Promote(t.Context(), Config{GitHub: gh}, []string{"giantswarm/a"}, &result))
+	require.Equal(t, StateNothingToPromote, result.Repositories[0].State)
+	require.Equal(t, []string{"v1.2.0", "v1.3.0-rc.1"}, gh.compared)
+	require.Empty(t, gh.dispatches)
 }
 
 func TestTeamRepositoriesKeepsAutoReleaseEntries(t *testing.T) {

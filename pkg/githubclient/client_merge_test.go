@@ -14,15 +14,15 @@ import (
 
 // wire records what one request carried.
 type wire struct {
-	method, path string
-	body         map[string]any
+	method, path, query string
+	body                map[string]any
 }
 
 func newWireClient(t *testing.T, status int, response string) (*Client, *wire) {
 	t.Helper()
 	got := &wire{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		got.method, got.path = r.Method, r.URL.Path
+		got.method, got.path, got.query = r.Method, r.URL.Path, r.URL.RawQuery
 		raw, _ := io.ReadAll(r.Body)
 		if len(raw) > 0 {
 			_ = json.Unmarshal(raw, &got.body)

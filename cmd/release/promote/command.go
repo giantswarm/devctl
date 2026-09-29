@@ -26,16 +26,23 @@ giantswarm/github whose release model is auto-release (releaseWorkflow,
 defaulting from gen.ci.generate), in the giantswarm organization. Pass
 exactly one of the two.
 
-For each repository:
-  1. The candidate is the highest vX.Y.Z-rc.N GitHub pre-release newer than
-     the highest stable vX.Y.Z release (semver order: rc.10 after rc.9).
+For each repository, on its default branch:
+  1. The workflow file must be there (else not_auto_release) and carry the
+     step "Resolve the candidate to promote" of devctl v8.102.0 or later
+     (else outdated_workflow: an older workflow's release-type stable tags
+     the branch head instead of promoting a candidate).
+  2. The candidate is the highest vX.Y.Z-rc.N GitHub pre-release newer than
+     the highest stable vX.Y.Z release, counting only tags reachable from
+     the default branch, as the workflow does (semver order: rc.10 after
+     rc.9). A candidate or stable release of another branch is skipped.
      None: nothing_to_promote.
-  2. The combined commit status of the candidate's commit: with at least one
+  3. The combined commit status of the candidate's commit: with at least one
      status and a state other than success, not_built. No status at all
      counts as built, as in the workflow.
-  3. The workflow is dispatched on the default branch with
-     release-type: stable (dispatched; would_dispatch with --dry-run). A
-     repository without the workflow is not_auto_release.
+  4. The workflow is dispatched on the default branch with
+     release-type: stable (dispatched; would_dispatch with --dry-run).
+
+Repeated repositories are promoted once.
 
 The workflow resolves the candidate again, checks it and promotes it; this
 command does not wait for the run. Follow each one with
@@ -47,20 +54,25 @@ writes one line per repository to stderr): the envelope (command,
 schemaVersion, exitCode, verdict, reason, warnings, startedAt, finishedAt),
 team, dryRun and repositories[{repository, stable, candidate, statusState,
 state, message}], state one of dispatched, would_dispatch,
-nothing_to_promote, not_built, not_auto_release, failed.
+nothing_to_promote, not_built, not_auto_release, outdated_workflow, failed.
+A team without auto-release repositories is exit 0 with a warning.
 
 Exit codes:
   0  every repository was dispatched (would be, with --dry-run) or has
      nothing to promote
   1  at least one repository was not dispatched: not_built,
-     not_auto_release or failed; the reason names them
+     not_auto_release, outdated_workflow or failed; the reason names them
   7  usage or tooling: neither or both of repositories and --team, a
-     malformed owner/repo, a team without a team file
+     malformed owner/repo, a team without a team file, or a token that
+     cannot dispatch (the App login without --dry-run), before any
+     repository is read
   8  authentication required: run ` + "`devctl auth login --github-only`" + `
 
 The GitHub token is the App login, or a token in DEVCTL_GITHUB_TOKEN,
 GITHUB_TOKEN or OPSCTL_GITHUB_TOKEN that overrides it. Dispatching a
-workflow needs Actions write; GitHub's refusal is reported per repository.
+workflow needs Actions write, which the App login does not carry: without
+--dry-run, set one of the variables to a token that has it. Another
+refusal from GitHub is reported per repository.
 
 Examples:
   devctl release promote giantswarm/devctl --dry-run

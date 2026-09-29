@@ -2,7 +2,6 @@ package githubclient
 
 import (
 	"context"
-	"net/http"
 
 	"github.com/giantswarm/microerror"
 	"github.com/google/go-github/v92/github"
@@ -74,17 +73,43 @@ func (c *Client) DefaultBranch(ctx context.Context, owner, repo string) (string,
 	return r.GetDefaultBranch(), nil
 }
 
-// HasWorkflow says whether the repository has the GitHub Actions workflow of
-// the file name (the base name under .github/workflows).
-func (c *Client) HasWorkflow(ctx context.Context, owner, repo, file string) (bool, error) {
-	_, _, err := c.ghClient.Actions.GetWorkflowByFileName(ctx, owner, repo, file)
+// ReadFile returns the content of the file at path at ref, and false when
+// there is no such file.
+func (c *Client) ReadFile(ctx context.Context, owner, repo, path, ref string) ([]byte, bool, error) {
+	file, dir, _, err := c.ghClient.Repositories.GetContents(ctx, owner, repo, path, &github.RepositoryContentGetOptions{Ref: ref})
 	if isGithub404(err) {
-		return false, nil
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, microerror.Mask(err)
+	}
+	if file == nil {
+		return nil, false, microerror.Maskf(executionError, "expected a file but content under path %#q is a directory (%d entries)", path, len(dir))
+	}
+	content, err := file.GetContent()
+	if err != nil {
+		return nil, false, microerror.Mask(err)
+	}
+	return []byte(content), true, nil
+}
+
+// Reachable says whether ref, a tag or SHA, is reachable from branch: the
+// comparison of ref (base) with branch (head) finds branch ahead of ref or
+// identical to it. behind or diverged means ref is not in branch's history.
+// IsNotFound when either does not exist.
+func (c *Client) Reachable(ctx context.Context, owner, repo, ref, branch string) (bool, error) {
+	comparison, _, err := c.ghClient.Repositories.CompareCommits(ctx, owner, repo, ref, branch, &github.ListOptions{PerPage: 1})
+	if isGithub404(err) {
+		return false, microerror.Maskf(notFoundError, "comparison of %s with %s in %s/%s", ref, branch, owner, repo)
 	}
 	if err != nil {
 		return false, microerror.Mask(err)
 	}
-	return true, nil
+	switch comparison.GetStatus() {
+	case "ahead", "identical":
+		return true, nil
+	}
+	return false, nil
 }
 
 // DispatchWorkflow runs the workflow of the file name on ref through its
@@ -95,9 +120,4 @@ func (c *Client) DispatchWorkflow(ctx context.Context, owner, repo, file, ref st
 		return microerror.Mask(err)
 	}
 	return nil
-}
-
-// IsForbidden says whether err, or an error it wraps, is GitHub's 403.
-func IsForbidden(err error) bool {
-	return githubStatus(err) == http.StatusForbidden
 }

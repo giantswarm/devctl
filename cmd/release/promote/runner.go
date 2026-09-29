@@ -2,6 +2,7 @@ package promote
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"time"
@@ -75,20 +76,40 @@ func (r *runner) promote(ctx context.Context, args []string, doc *releasepromote
 		return err
 	}
 
-	repositories := args
+	if sources.DispatchBlocked != "" && !r.flag.DryRun {
+		return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "%s; --dry-run checks the candidates without dispatching", sources.DispatchBlocked)
+	}
+
+	repositories := unique(args)
 	if r.flag.Team != "" {
 		progress.Printf("listing the auto-release repositories of %s", r.flag.Team)
 		repositories, err = sources.Team(ctx, r.flag.Team)
 		if err != nil {
 			return err
 		}
+		if len(repositories) == 0 {
+			doc.Warn(fmt.Sprintf("the team file of %s declares no auto-release repository: nothing to promote", r.flag.Team))
+		}
 	}
 
 	return releasepromote.Promote(ctx, releasepromote.Config{
-		GitHub:        sources.GitHub,
-		DryRun:        r.flag.DryRun,
-		NotFoundHint:  sources.NotFoundHint,
-		ForbiddenHint: sources.ForbiddenHint,
-		Progress:      progress,
+		GitHub:       sources.GitHub,
+		DryRun:       r.flag.DryRun,
+		NotFoundHint: sources.NotFoundHint,
+		Progress:     progress,
 	}, repositories, &doc.Result)
+}
+
+// unique is repositories without repeats, in first-seen order.
+func unique(repositories []string) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(repositories))
+	for _, repository := range repositories {
+		if seen[repository] {
+			continue
+		}
+		seen[repository] = true
+		out = append(out, repository)
+	}
+	return out
 }
