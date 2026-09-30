@@ -1134,3 +1134,51 @@ func Test_AutoReleaseVerifyCircleCI(t *testing.T) {
 		})
 	}
 }
+
+// Test_AutoReleaseLatestOnlyFromTheReleaseBranch pins which release takes the
+// repository's "Latest" marker: a stable release of the release branch keeps
+// GitHub's default and does, a release of a maintenance branch passes
+// --latest=false, so the marker stays on the newest line.
+func Test_AutoReleaseLatestOnlyFromTheReleaseBranch(t *testing.T) {
+	script := tagJobStep(t, "release").Run
+
+	for _, tc := range []struct {
+		branch, prerelease string
+		want               []string
+		unwanted           []string
+	}{
+		{branch: "main", prerelease: "", unwanted: []string{"--latest=false", "--prerelease"}},
+		{branch: "main", prerelease: "true", want: []string{"--prerelease"}, unwanted: []string{"--latest=false"}},
+		{branch: "release-v3.x", prerelease: "", want: []string{"--latest=false"}, unwanted: []string{"--prerelease"}},
+		{branch: "release-2.3.x", prerelease: "true", want: []string{"--prerelease", "--latest=false"}},
+	} {
+		bin := t.TempDir()
+		argsFile := filepath.Join(t.TempDir(), "gh-args")
+		stub := "#!/usr/bin/env bash\nprintf '%s\\n' \"$@\" > '" + argsFile + "'\n"
+		if err := os.WriteFile(filepath.Join(bin, "gh"), []byte(stub), 0o700); err != nil { // #nosec G306 -- test-only executable stub
+			t.Fatalf("write gh stub: %v", err)
+		}
+
+		_, out, err := runStep(t, script, t.TempDir(),
+			"PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"),
+			"GITHUB_REF_NAME="+tc.branch, "TAG=v1.2.3", "TARGET=abc123", "PRERELEASE="+tc.prerelease)
+		if err != nil {
+			t.Fatalf("%s: release step failed: %v\n%s", tc.branch, err, out)
+		}
+		raw, err := os.ReadFile(argsFile) // #nosec G304 -- path built from t.TempDir
+		if err != nil {
+			t.Fatalf("%s: gh was not called: %v", tc.branch, err)
+		}
+		args := strings.Split(strings.TrimSpace(string(raw)), "\n")
+		for _, w := range tc.want {
+			if !slices.Contains(args, w) {
+				t.Errorf("%s (prerelease=%q): gh %v lacks %s", tc.branch, tc.prerelease, args, w)
+			}
+		}
+		for _, u := range tc.unwanted {
+			if slices.Contains(args, u) {
+				t.Errorf("%s (prerelease=%q): gh %v carries %s", tc.branch, tc.prerelease, args, u)
+			}
+		}
+	}
+}

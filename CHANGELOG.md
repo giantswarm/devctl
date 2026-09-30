@@ -9,6 +9,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `gen workflows`: the auto-release workflow creates a release of a maintenance branch (`release-v3.x`, ...) with
+  `--latest=false`, so the repository's Latest release stays on the release branch's newest stable instead of
+  flipping to the older line whenever it releases.
 - `gen circleci`: every branch-only job (the branch image builds, `build-chart`, `execute-chart-tests`, the branch
   publish jobs) ignores the auto-release maintenance branches like `main`, not only the publish jobs. A merge there
   is tagged within seconds, so the branch pipeline resolved the release version and architect refused to build it,
