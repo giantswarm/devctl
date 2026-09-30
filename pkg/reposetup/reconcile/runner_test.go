@@ -614,6 +614,20 @@ func TestSteps(t *testing.T) {
 			},
 		},
 		{
+			// The generated values-schema gate of a chart repository runs on
+			// every pull request: required once it has reported, as the
+			// other generated gates.
+			name: "protection: the reported values-schema gate is required", step: StepProtection,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.checkRuns = []string{"check-values-schema / validate"}
+			},
+			wantCheck: VerdictDrift, wantChange: "require check-values-schema / validate",
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Equal(t, []string{"check-values-schema / validate"}, checkContexts(h.repo().ruleset(RulesetName)))
+			},
+		},
+		{
 			// Nothing has been merged: nothing has reported, and nothing is
 			// required or removed on a guess.
 			name: "protection: a repository without a merged pull request keeps its checks", step: StepProtection,

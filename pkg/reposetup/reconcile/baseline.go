@@ -132,6 +132,7 @@ func DefaultBaseline() Baseline {
 		RequiredChecksIfReported: []string{
 			"semantic-pull-request / Validate PR title",
 			"pre-commit",
+			"check-values-schema / validate",
 		},
 		IgnoredChecks: []string{
 			`^create-release`,
