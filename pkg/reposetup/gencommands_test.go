@@ -12,11 +12,18 @@ import (
 
 // A fork line carries its upstream's files plus the carried patches: no
 // generator runs for it and generated CI has no job for it, whatever its
-// language.
+// language. On auto-release its release flow alone is generated, cut from
+// the branch it declares as default.
 func TestGenCommandsNothingForAForkLine(t *testing.T) {
 	fork := Fields{Name: "upstream-fork", Gen: &GenFields{Flavours: []string{"fork"}, Language: "go"}}
 	require.Empty(t, genCommands(fork, genContext{}))
 	require.False(t, hasCIJob(fork))
+
+	released := Fields{Name: "upstream-fork", DefaultBranch: "giantswarm",
+		Gen: &GenFields{Flavours: []string{"fork"}, Language: "go", CI: &CIFields{ReleaseWorkflow: releaseWorkflowAutoRelease}}}
+	require.Equal(t, [][]string{{"devctl", "gen", "workflows", "--flavour", "fork", "--language", "go", "--repo-name", "upstream-fork",
+		"--release-workflow", "auto-release", "--release-branch", "giantswarm"}}, genCommands(released, genContext{}))
+	require.False(t, hasCIJob(released))
 
 	service := Fields{Name: "service", Gen: &GenFields{Flavours: []string{"app"}, Language: "go"}}
 	require.NotEmpty(t, genCommands(service, genContext{}))

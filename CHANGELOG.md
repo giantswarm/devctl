@@ -9,6 +9,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `gen workflows` generates the release flow of a fork line (`--flavour fork`) on `--release-workflow auto-release`:
+  the auto-release workflow, `cliff.toml` and the PR title check, nothing else. The new `--release-branch` (default
+  `main`) names the branch whose pushes cut releases; a fork line's workflow triggers on that branch alone. Its
+  baseline is the line's highest stable tag, even when a re-pin rebased the branch away from it, and git-cliff counts
+  only the tags of that major, never the upstream tags the mirror copies. The repository set-up engine passes
+  `--release-branch` from `defaultBranch` for every auto-release declaration off `main`, and emits that single line
+  for a fork declaration on `releaseWorkflow: auto-release`.
 - `release promote (<owner/repo>... | --team <team>) [--dry-run]` promotes the latest release candidate of
   auto-release repositories to a stable release. Per repository (named, repeats once, or every auto-release entry of
   the team's file in giantswarm/github) it requires the auto-release workflow of devctl v8.102.0 or later on the

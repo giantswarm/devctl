@@ -98,6 +98,55 @@ func Test_Run_RepoName(t *testing.T) {
 	}
 }
 
+// Test_Run_ForkLine pins what a fork line gets: nothing on the legacy release
+// workflow, and the release flow alone on auto-release, cut from the branch
+// the line is consumed from.
+func Test_Run_ForkLine(t *testing.T) {
+	for _, tc := range []struct {
+		releaseWorkflow string
+		want            []string
+	}{
+		{releaseWorkflow: releaseWorkflowLegacy},
+		{
+			releaseWorkflow: releaseWorkflowAutoRelease,
+			want: []string{
+				".github/workflows/zz_generated.auto_release.yaml",
+				".github/workflows/zz_generated.semantic_pull_request.yaml",
+				"cliff.toml",
+			},
+		},
+	} {
+		t.Run(tc.releaseWorkflow, func(t *testing.T) {
+			t.Chdir(t.TempDir())
+
+			r := &runner{flag: &flag{
+				Flavours:        gen.FlavourSlice{gen.FlavourFork},
+				Language:        "go",
+				ReleaseBranch:   "giantswarm",
+				ReleaseWorkflow: tc.releaseWorkflow,
+				RepoName:        "upstream-fork",
+			}}
+			require.NoError(t, r.Run(&cobra.Command{}, nil))
+
+			var got []string
+			err := filepath.WalkDir(".", func(path string, d os.DirEntry, err error) error {
+				if err == nil && !d.IsDir() {
+					got = append(got, path)
+				}
+				return err
+			})
+			require.NoError(t, err)
+			require.Equal(t, tc.want, got)
+
+			if tc.want != nil {
+				workflow, err := os.ReadFile(".github/workflows/zz_generated.auto_release.yaml")
+				require.NoError(t, err)
+				require.Contains(t, string(workflow), "      - giantswarm\n")
+			}
+		})
+	}
+}
+
 func git(t *testing.T, args ...string) {
 	t.Helper()
 

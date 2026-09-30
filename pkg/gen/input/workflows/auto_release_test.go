@@ -32,7 +32,14 @@ type autoReleaseStep struct {
 func tagJobSteps(t *testing.T) ([]autoReleaseStep, string) {
 	t.Helper()
 
-	rendered := renderInput(t, newWorkflows(t, gen.FlavourApp).AutoRelease())
+	return tagJobStepsFor(t, gen.FlavourApp)
+}
+
+// tagJobStepsFor is tagJobSteps for a repository of the given flavours.
+func tagJobStepsFor(t *testing.T, flavours ...gen.Flavour) ([]autoReleaseStep, string) {
+	t.Helper()
+
+	rendered := renderInput(t, newWorkflows(t, flavours...).AutoRelease())
 
 	var wf struct {
 		Jobs map[string]struct {

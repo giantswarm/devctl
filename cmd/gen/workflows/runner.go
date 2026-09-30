@@ -40,8 +40,10 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 	var err error
 
-	// A fork line carries its upstream's files: nothing is generated for it.
-	if !r.flag.Flavours.Generates() {
+	// A fork line carries its upstream's files: nothing is generated for it
+	// but its release flow when it is on auto-release.
+	fork := !r.flag.Flavours.Generates()
+	if fork && r.flag.ReleaseWorkflow != releaseWorkflowAutoRelease {
 		return nil
 	}
 
@@ -61,8 +63,9 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 	var workflowsInput *workflows.Workflows
 	{
 		c := workflows.Config{
-			Flavours: r.flag.Flavours,
-			RepoName: repoName,
+			Flavours:      r.flag.Flavours,
+			ReleaseBranch: r.flag.ReleaseBranch,
+			RepoName:      repoName,
 		}
 
 		workflowsInput, err = workflows.New(c)
@@ -73,6 +76,17 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 
 	inputs := []input.Input{
 		workflowsInput.SemanticPullRequest(),
+	}
+
+	// A fork line on auto-release gets the release flow alone: the title
+	// check auto-release relies on, the workflow and its cliff.toml. The
+	// legacy trio is not deleted there; a fork line never had it generated.
+	if fork {
+		inputs = append(inputs,
+			workflowsInput.AutoRelease(),
+			workflowsInput.CliffToml(),
+		)
+		return microerror.Mask(gen.Execute(ctx, inputs...))
 	}
 
 	// Two mutually-exclusive release flows. Each branch emits the workflow

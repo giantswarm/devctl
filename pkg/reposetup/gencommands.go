@@ -55,10 +55,11 @@ type genContext struct {
 // pre-commit, CircleCI when gen.ci.generate is on, then Renovate. Each
 // line is an argv starting with devctl gen. The declaration has to have
 // gen.flavours and gen.language; the validator refuses one that has not. A
-// fork line gets nothing generated ([generates]): no line.
+// fork line gets nothing generated ([generates]) but its release flow: the
+// workflows line alone when it is on auto-release, else no line.
 func genCommands(f Fields, gc genContext) [][]string {
 	g := f.Gen
-	if g == nil || len(g.Flavours) == 0 || g.Language == "" || !generates(g.Flavours) {
+	if g == nil || len(g.Flavours) == 0 || g.Language == "" {
 		return nil
 	}
 	knows := gc.Knows
@@ -70,19 +71,41 @@ func genCommands(f Fields, gc genContext) [][]string {
 	ci := g.CI
 	generateCI := ci != nil && ci.Generate != nil && *ci.Generate
 
+	// The release workflow follows the CI surface: generated CI implies
+	// auto-release, a repository without it stays on legacy.
+	releaseWorkflow := releaseWorkflowLegacy
+	if generateCI {
+		releaseWorkflow = releaseWorkflowAutoRelease
+	}
+	if ci != nil && ci.ReleaseWorkflow != "" {
+		releaseWorkflow = ci.ReleaseWorkflow
+	}
+
 	line := func(generator string, args ...string) []string {
 		return append([]string{"devctl", "gen", generator}, args...)
 	}
+
+	// Workflows. --repo-name is what a scaffold render always needs for
+	// cliff.toml: its temporary directory has no origin remote to read the
+	// name from. Auto-release cuts releases from the default branch.
+	workflows := []string{flagFlavour, flavour, flagLanguage, g.Language, flagRepoName, f.Name}
+	releaseArgs := []string{"--release-workflow", releaseWorkflow}
+	if releaseWorkflow == releaseWorkflowAutoRelease && f.DefaultBranch != "" && f.DefaultBranch != "main" && knows(genWorkflows, "--release-branch") {
+		releaseArgs = append(releaseArgs, "--release-branch", f.DefaultBranch)
+	}
+
+	if !generates(g.Flavours) {
+		if releaseWorkflow != releaseWorkflowAutoRelease {
+			return nil
+		}
+		return [][]string{line(genWorkflows, append(workflows, releaseArgs...)...)}
+	}
+
 	var commands [][]string
 
 	commands = append(commands, line(genMakefile, flagFlavour, flavour, flagLanguage, g.Language))
 
-	// Workflows. The release workflow follows the CI surface: generated CI
-	// implies auto-release, a repository without it stays on legacy. The
-	// OpenSSF scorecard runs on public repositories unless switched off.
-	// --repo-name is what a scaffold render always needs for cliff.toml: its
-	// temporary directory has no origin remote to read the name from.
-	workflows := []string{flagFlavour, flavour, flagLanguage, g.Language, flagRepoName, f.Name}
+	// The OpenSSF scorecard runs on public repositories unless switched off.
 	if g.InstallUpdateChart {
 		workflows = append(workflows, "--install-update-chart")
 	}
@@ -99,14 +122,7 @@ func genCommands(f Fields, gc genContext) [][]string {
 	if g.DispatchUpdateChartEventsRepo != "" {
 		workflows = append(workflows, "--dispatch-update-chart-events-repo", g.DispatchUpdateChartEventsRepo)
 	}
-	releaseWorkflow := releaseWorkflowLegacy
-	if generateCI {
-		releaseWorkflow = releaseWorkflowAutoRelease
-	}
-	if ci != nil && ci.ReleaseWorkflow != "" {
-		releaseWorkflow = ci.ReleaseWorkflow
-	}
-	workflows = append(workflows, "--release-workflow", releaseWorkflow)
+	workflows = append(workflows, releaseArgs...)
 	commands = append(commands, line(genWorkflows, workflows...))
 
 	if g.GenerateLlmRules == nil || *g.GenerateLlmRules {
