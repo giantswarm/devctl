@@ -294,6 +294,9 @@ workflows:
           branches:
             ignore:
             - main
+{{- if $.BranchPublish }}
+            - {{ $.ReleaseBranches }}
+{{- end }}
 {{- end }}
 {{- if .BranchPublish }}
 
@@ -319,6 +322,7 @@ workflows:
           branches:
             ignore:
             - main
+            - {{ .ReleaseBranches }}
 {{- end }}
 
     # Tag builds: one native build per architecture, then
@@ -444,6 +448,7 @@ workflows:
           branches:
             ignore:
             - main
+            - {{ .ReleaseBranches }}
 {{- else }}
 
     # Branches: validate the image build without pushing anything (push: false
@@ -739,6 +744,7 @@ workflows:
           branches:
             ignore:
             - main
+            - {{ .ReleaseBranches }}
 {{- end }}
 {{- if or .ATSOnRelease .SkipATS }}
 

@@ -53,6 +53,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `gen circleci`: the branch publish jobs (`branchPublish`: the branch image builds and pushes, `push-chart`) ignore
+  the maintenance branches the auto-release workflow tags (`release-v3.x`, `release-2.3.x`, ...), like `main`. A merge
+  there is tagged within seconds, so the branch pipeline pushed the stable version's chart and image a second time
+  under a new digest; the tag pipeline alone publishes them now.
 - The reconcile's protection step requires `check-values-schema / validate` once it has reported, beside
   `semantic-pull-request / Validate PR title` and `pre-commit`: the generated values-schema gate of a chart
   repository runs on every pull request, and it was required only where the classic protection had carried it over,
