@@ -8,6 +8,15 @@ const templateKeyStepSetUpGitIdentity = "StepSetUpGitIdentity"
 // header every workflow renders first.
 const templateKeyHeader = "Header"
 
+// templateKeyFork is the template data key saying the repository is a fork
+// line (flavour fork), whose auto-release counts from the line's highest
+// stable tag.
+const templateKeyFork = "Fork"
+
+// templateKeyReleaseBranch is the template data key carrying the branch whose
+// pushes cut releases.
+const templateKeyReleaseBranch = "ReleaseBranch"
+
 // The workflow templates render GitHub Actions ${{ }} expressions verbatim, so
 // they use four braces as their own action delimiters.
 const (

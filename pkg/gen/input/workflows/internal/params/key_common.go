@@ -17,6 +17,10 @@ func IsFlavourCLI(p Params) bool {
 	return p.Flavours.Contains(gen.FlavourCLI)
 }
 
+func IsFlavourFork(p Params) bool {
+	return p.Flavours.Contains(gen.FlavourFork)
+}
+
 func Package(p Params) string {
 	return internal.Package(p.Dir)
 }

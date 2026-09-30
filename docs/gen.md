@@ -29,6 +29,8 @@ devctl gen workflows --flavour cli
 
 Switching between values is bidirectional and self-cleaning: the chosen branch generates its own files and emits deletion inputs for the files of the other branch, so a flipped `--release-workflow` value over two consecutive gen runs leaves the repo with exactly one set of release files.
 
+A fork line (`--flavour fork`) gets nothing generated on `legacy`. On `auto-release` it gets the release flow alone: the workflow, `cliff.toml` and the PR title check. `--release-branch` names the branch the line is consumed from (the declaration's `defaultBranch`, e.g. `giantswarm`), and pushes to that branch alone cut releases. A re-pin rebases that branch onto a new upstream commit, which leaves the line's earlier tags unreachable, while the upstream tags the mirror copies stay reachable. So the line counts from its highest stable tag rather than the nearest reachable one, and git-cliff counts only the tags of that tag's major. After a re-pin, the workflow moves that tag onto the commit the branch still shares with it, in its own checkout only, and the next candidate carries what changed since.
+
 ```nohighlight
 devctl gen workflows --flavour app --language go --release-workflow=auto-release
 ```

@@ -10,6 +10,10 @@ import (
 type Config struct {
 	Flavours gen.FlavourSlice
 
+	// ReleaseBranch is the branch whose pushes cut releases in the
+	// auto-release workflow; main when empty.
+	ReleaseBranch string
+
 	// RepoName is the repository's name under the giantswarm organization,
 	// for cliff.toml's `[remote.github].repo` field.
 	RepoName string
@@ -20,11 +24,17 @@ type Workflows struct {
 }
 
 func New(config Config) (*Workflows, error) {
+	releaseBranch := config.ReleaseBranch
+	if releaseBranch == "" {
+		releaseBranch = "main"
+	}
+
 	w := &Workflows{
 		params: params.Params{
-			Dir:      ".github/workflows",
-			Flavours: config.Flavours,
-			RepoName: config.RepoName,
+			Dir:           ".github/workflows",
+			Flavours:      config.Flavours,
+			ReleaseBranch: releaseBranch,
+			RepoName:      config.RepoName,
 		},
 	}
 

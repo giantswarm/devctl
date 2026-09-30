@@ -29,7 +29,12 @@ name: Auto-release
 on:
   push:
     branches:
-      - main
+      - {{{{ .ReleaseBranch }}}}
+{{{{- if .Fork }}}}
+      # A fork line releases from its consumed branch alone: the line's
+      # baseline below is its highest stable tag, which a backport branch of
+      # an older line must not take.
+{{{{- else }}}}
       # Maintenance / backport branches, matched whole: a branch that only
       # starts like one (a pull-request branch off release-v3.x) must not
       # cut a release from unreviewed commits.
@@ -40,6 +45,7 @@ on:
       - 'release-[0-9]+.[0-9]+.x'
       - 'release-v[0-9]+.x'
       - 'release-v[0-9]+.[0-9]+.x'
+{{{{- end }}}}
   # `auto` applies the same rule as a push, which is what a re-run wants.
   # `stable` promotes the latest release candidate since the last stable
   # release, and fails when there is none.
@@ -89,6 +95,40 @@ jobs:
           download_url: 'https://github.com/orhun/git-cliff/releases/download/v${version}/git-cliff-${version}-x86_64-unknown-linux-gnu.tar.gz'
           tarball_binary_path: 'git-cliff-${version}/git-cliff'
           smoke_test: '${binary} --version'
+{{{{- if .Fork }}}}
+
+      # A fork line re-pins by rebasing its branch onto a new upstream
+      # commit, and the line's earlier tags stop being reachable; the
+      # upstream tags the mirror copies are reachable but belong to
+      # upstream's series, a major below the line's. The line's baseline is
+      # therefore its highest stable tag. One a re-pin left behind is moved,
+      # in this checkout only (the release is created through the API, no tag
+      # is pushed from here), onto the commit the branch still shares with
+      # it, so the re-pin releases what changed since: at least a minor for
+      # upstream's features. git-cliff counts the tags of the line's major
+      # alone, and the steps below read the baseline from LINE_TAG instead
+      # of `git describe`.
+      - name: Resolve the fork line's baseline
+        id: line
+        run: |
+          set -euo pipefail
+          line=$(git tag --list 'v*.*.*' --sort=-v:refname | { grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' || true; } | head -1)
+          if [ -z "$line" ]; then
+            echo "no stable tag yet: the line starts from inception"
+            exit 0
+          fi
+          if ! git merge-base --is-ancestor "$line" HEAD; then
+            base=$(git merge-base "$line" HEAD)
+            git tag --force "$line" "$base" >/dev/null
+            echo "::notice title=Re-pinned line::${line} is not on ${GITHUB_REF_NAME} since a re-pin; the release counts from $(git log -1 --format='%h %s' "$base"), the commit the branch shares with it."
+          fi
+          major=${line%%.*}
+          echo "line baseline: ${line}, tags ${major}.x"
+          {
+            echo "LINE_TAG=${line}"
+            echo "GIT_CLIFF__GIT__TAG_PATTERN=^${major}\.[0-9]+\.[0-9]+$"
+          } >> "$GITHUB_ENV"
+{{{{- end }}}}
 
       # A stable release promotes the latest release candidate since the last
       # stable release rather than tagging the branch head: whatever merged
@@ -104,7 +144,7 @@ jobs:
         run: |
           set -euo pipefail
           # The same baseline as the decide step below.
-          last=$(git describe --tags --abbrev=0 --match='v*.*.*' --exclude='*-*' --exclude='*+*' 2>/dev/null || echo "")
+          last=${LINE_TAG:-$(git describe --tags --abbrev=0 --match='v*.*.*' --exclude='*-*' --exclude='*+*' 2>/dev/null || echo "")}
           # `--merged HEAD` keeps a candidate cut on another branch out;
           # `--no-merged` drops the candidates the last stable release already
           # contains. `sort -V` orders rc.10 after rc.9 and a moved target
@@ -209,7 +249,7 @@ jobs:
           # splits `last` from `NEXT`, the `NEXT = last` comparison below can
           # never be true again, and the job tags on every push even when
           # there is nothing to release.
-          last=$(git describe --tags --abbrev=0 --match='v*.*.*' --exclude='*-*' --exclude='*+*' 2>/dev/null || echo "")
+          last=${LINE_TAG:-$(git describe --tags --abbrev=0 --match='v*.*.*' --exclude='*-*' --exclude='*+*' 2>/dev/null || echo "")}
           echo "branch: ${GITHUB_REF_NAME}"
           echo "last reachable stable tag: ${last:-<none>}"
 
