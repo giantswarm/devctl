@@ -63,6 +63,17 @@ func (r Repository) set(state, format string, args ...any) Repository {
 	return r
 }
 
+// Identity is the GitHub token a promotion acts with.
+type Identity struct {
+	// Source is "keychain", the devctl GitHub App login, or "$NAME", the
+	// environment variable that overrides it; empty until the token is
+	// resolved.
+	Source string `json:"source"`
+	// Login is the account of the App login; empty for a token from the
+	// environment, whose account devctl does not look up.
+	Login string `json:"login"`
+}
+
 // Result is the command's document below the envelope.
 type Result struct {
 	// Team is the team whose repositories were promoted; empty for named
@@ -70,6 +81,8 @@ type Result struct {
 	Team string `json:"team"`
 	// DryRun is set with --dry-run: nothing was dispatched.
 	DryRun bool `json:"dryRun"`
+	// Identity is who dispatched the workflows, or would with --dry-run.
+	Identity Identity `json:"identity"`
 	// Repositories are the repositories in the order they were given or
 	// the team file lists them.
 	Repositories []Repository `json:"repositories"`

@@ -2,10 +2,8 @@ package releasepromote
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"net/http"
-	"strings"
 
 	"github.com/sirupsen/logrus"
 
@@ -22,11 +20,8 @@ type Sources struct {
 	Team func(ctx context.Context, team string) ([]string, error)
 	// NotFoundHint is [Config]'s.
 	NotFoundHint string
-	// DispatchBlocked is set when the token cannot dispatch a workflow (the
-	// App login, which carries no Actions write): the reason a run that
-	// dispatches stops with before any repository is read. Empty when the
-	// token may.
-	DispatchBlocked string
+	// Identity is who the token acts as, for the document.
+	Identity Identity
 }
 
 // OpenSources is the production wiring: the GitHub token of
@@ -55,21 +50,7 @@ func OpenSources(ctx context.Context, endpoints agentcli.Endpoints, transport ht
 		Team: func(ctx context.Context, team string) ([]string, error) {
 			return TeamRepositories(ctx, gh.GitHub(), team)
 		},
-		NotFoundHint:    authstore.GitHubNotFoundHint(token),
-		DispatchBlocked: DispatchBlockedReason(token),
+		NotFoundHint: authstore.GitHubNotFoundHint(token),
+		Identity:     Identity{Source: token.Source, Login: token.Login},
 	}, nil
-}
-
-// DispatchBlockedReason is why the App login cannot dispatch a workflow: it
-// needs Actions write, which the App does not carry, and the variables that
-// override the login. Empty for a token from the environment.
-func DispatchBlockedReason(token authstore.Token) string {
-	if token.Source != authstore.SourceKeychain {
-		return ""
-	}
-	names := make([]string, len(authstore.GitHubEnvVars))
-	for i, name := range authstore.GitHubEnvVars {
-		names[i] = "$" + name
-	}
-	return fmt.Sprintf("dispatching a workflow needs Actions write, which the devctl GitHub App login does not carry: set %s to a token that has it", strings.Join(names, ", "))
 }

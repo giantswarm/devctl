@@ -56,7 +56,7 @@ for the stable version of its candidate.
 Output: one JSON document on stdout at the end and nothing else (--progress
 writes one line per repository to stderr): the envelope (command,
 schemaVersion, exitCode, verdict, reason, warnings, startedAt, finishedAt),
-team, dryRun and repositories[{repository, stable, candidate, statusState,
+team, dryRun, identity{source, login} and repositories[{repository, stable, candidate, statusState,
 state, message}], state one of dispatched, would_dispatch,
 nothing_to_promote, not_built, not_auto_release, outdated_workflow, failed.
 A team without auto-release repositories is exit 0 with a warning.
@@ -67,17 +67,17 @@ Exit codes:
   1  at least one repository was not dispatched: not_built,
      not_auto_release, outdated_workflow or failed; the reason names them
   7  usage or tooling: neither or both of repositories and --team, a
-     malformed owner/repo, a team without a team file, or a token that
-     cannot dispatch (the App login without --dry-run), before any
+     malformed owner/repo or a team without a team file, before any
      repository is read
   8  authentication required: run ` + "`devctl auth login --github-only`" + `
 
 The GitHub token is the App login, or a token in DEVCTL_GITHUB_TOKEN,
-GITHUB_TOKEN or OPSCTL_GITHUB_TOKEN that overrides it. Dispatching a
-workflow needs Actions write, which the App login does not carry: without
---dry-run, set one of the variables to a token that has it. A 403 on the
-dispatch, a token without Actions write on that repository, is failed with
-that hint; another refusal from GitHub is reported per repository.
+GITHUB_TOKEN or OPSCTL_GITHUB_TOKEN that overrides it; identity in the
+document names its source and, for the App login, its account. Dispatching
+a workflow needs Actions write: the App carries it, and its login is capped
+by your own rights on the repository. A 403 on the dispatch, no Actions
+write on that repository, is failed with that hint; another refusal from
+GitHub is reported per repository.
 
 Examples:
   devctl release promote giantswarm/devctl --dry-run
