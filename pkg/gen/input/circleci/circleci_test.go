@@ -6,13 +6,20 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"text/template"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/giantswarm/devctl/v8/pkg/gen"
 	"github.com/giantswarm/devctl/v8/pkg/gen/input"
 )
+
+// releaseBranchesFilter is the CircleCI branch filter the branch publish jobs
+// render for the auto-release maintenance branches.
+const releaseBranchesFilter = `/^release-v?[0-9]+(\.[0-9]+)?\.x$/`
 
 const (
 	jobGoBuild        = "architect/go-build"
@@ -1121,6 +1128,98 @@ func Test_BranchPublishOnAddsCoupledBranchPushes(t *testing.T) {
 	} {
 		if contains(got, unwanted) {
 			t.Errorf("branch-publish config should not contain build-only validation %q:\n%s", unwanted, got)
+		}
+	}
+}
+
+// Test_BranchPublishSkipsReleaseBranches verifies that the branch publish
+// jobs ignore the maintenance branches the auto-release workflow tags, like
+// main: a merge there is tagged within seconds, so a branch push of that
+// commit would publish the stable version a second time under a new digest
+// (chart and image). The tag pipeline publishes them. Without BranchPublish nothing publishes on a branch and no filter
+// names them.
+func Test_BranchPublishSkipsReleaseBranches(t *testing.T) {
+	ignored := func(doc, job string) string {
+		var wf struct {
+			Workflows struct {
+				Build struct {
+					Jobs []map[string]struct {
+						Name    string `yaml:"name"`
+						Filters struct {
+							Branches struct {
+								// A list of branches, or one pattern string.
+								Ignore yaml.Node `yaml:"ignore"`
+							} `yaml:"branches"`
+						} `yaml:"filters"`
+					} `yaml:"jobs"`
+				} `yaml:"build"`
+			} `yaml:"workflows"`
+		}
+		if err := yaml.Unmarshal([]byte(doc), &wf); err != nil {
+			t.Fatalf("parse workflows.yml: %v", err)
+		}
+		for _, entry := range wf.Workflows.Build.Jobs {
+			for _, j := range entry {
+				if j.Name != job {
+					continue
+				}
+				var branches []string
+				if err := j.Filters.Branches.Ignore.Decode(&branches); err != nil {
+					t.Fatalf("%s: branches.ignore is not a list: %v", job, err)
+				}
+				return strings.Join(branches, ",")
+			}
+		}
+		t.Fatalf("no job named %q", job)
+		return ""
+	}
+	want := "main," + releaseBranchesFilter
+
+	single := render(t, Config{
+		RepoName:      repoMCPKubernetes,
+		Language:      gen.LanguageGo,
+		Flavours:      gen.FlavourSlice{gen.FlavourApp},
+		HasDockerfile: true,
+		BranchPublish: true,
+	})
+	for _, job := range []string{"push-to-registries", "push-chart"} {
+		if got := ignored(single, job); got != want {
+			t.Errorf("single-job shape: %s ignores %q, want %q", job, got, want)
+		}
+	}
+
+	native := render(t, nativeNodeConfig())
+	for _, job := range []string{"build-image-amd64", "build-image-arm64", "push-to-registries", "push-chart"} {
+		if got := ignored(native, job); got != want {
+			t.Errorf("native shape: %s ignores %q, want %q", job, got, want)
+		}
+	}
+
+	validateOnly := nativeNodeConfig()
+	validateOnly.BranchPublish = false
+	for _, doc := range []string{
+		render(t, validateOnly),
+		render(t, Config{RepoName: repoMCPKubernetes, Language: gen.LanguageGo, Flavours: gen.FlavourSlice{gen.FlavourApp}, HasDockerfile: true}),
+	} {
+		if contains(doc, releaseBranchesFilter) {
+			t.Errorf("config without BranchPublish names the release branches:\n%s", doc)
+		}
+	}
+}
+
+// Test_ReleaseBranchesFilterMatchesAutoRelease verifies the filter matches
+// exactly the branches the generated auto-release workflow cuts releases from,
+// whole: a pull-request branch that only starts like one keeps its dev push.
+func Test_ReleaseBranchesFilterMatchesAutoRelease(t *testing.T) {
+	re := regexp.MustCompile(strings.Trim(releaseBranchesFilter, "/"))
+	for _, branch := range []string{"release-2.x", "release-2.3.x", "release-v2.x", "release-v3.7.x"} {
+		if !re.MatchString(branch) {
+			t.Errorf("filter %s does not match release branch %q", releaseBranchesFilter, branch)
+		}
+	}
+	for _, branch := range []string{"main", "release-notes", "release-v3.x-fix", "release-v3.7.x-backport", "fix/release-v3.x"} {
+		if re.MatchString(branch) {
+			t.Errorf("filter %s matches non-release branch %q", releaseBranchesFilter, branch)
 		}
 	}
 }

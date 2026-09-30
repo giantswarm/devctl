@@ -13,6 +13,13 @@ var setupConfigTemplate string
 //go:embed workflows.yml.template
 var workflowsTemplate string
 
+// releaseBranches matches the maintenance branches the generated auto-release
+// workflow tags (release-2.x, release-v3.7.x, ...), as a CircleCI branch
+// filter. The tag pipeline publishes their releases; the branch publish jobs
+// ignore them, since a merge there is tagged within seconds and a branch push
+// of the same commit would push the stable version a second time.
+const releaseBranches = `/^release-v?[0-9]+(\.[0-9]+)?\.x$/`
+
 // NewSetupConfigInput emits .circleci/config.yml: a static dynamic-config
 // setup workflow that merges the optional repo-owned .circleci/custom.yml
 // into the generated .circleci/workflows.yml at pipeline runtime and
@@ -55,6 +62,7 @@ func NewWorkflowsInput(p params.Params) input.Input {
 			"AppCatalog":          p.AppCatalog,
 			"AppCatalogTest":      p.AppCatalogTest,
 			"BranchPublish":       p.BranchPublish,
+			"ReleaseBranches":     releaseBranches,
 			"ImagePreBuildJob":    p.ImagePreBuildJob,
 			"ChartReleaseGateJob": p.ChartReleaseGateJob,
 			"ImagePrivateOnly":    p.ImagePrivateOnly,
