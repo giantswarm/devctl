@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"regexp"
+	"slices"
 
 	"github.com/giantswarm/microerror"
 	"github.com/google/go-github/v92/github"
@@ -245,11 +246,16 @@ func (c *Client) RemoveRepositoryBranchProtection(ctx context.Context, repositor
 // recently merged pull requests of branch: the checks that demonstrably gate
 // a pull request in this repository. Callers use it to require a check only
 // once it exists (devctl repo checks --checks-if-reported). notFoundError
-// when no pull request has been merged yet: nothing has reported.
+// when no pull request has been merged yet, or when the newest merge's head
+// carries no check at all: nothing has reported, and an empty answer is no
+// evidence that a required check is gone.
 func (c *Client) ReportedChecks(ctx context.Context, repository *github.Repository, branch string) ([]string, error) {
 	checks, err := c.getGithubChecks(ctx, repository, branch, nil)
 	if err != nil {
 		return nil, microerror.Mask(err)
+	}
+	if len(checks) == 0 {
+		return nil, microerror.Maskf(notFoundError, "%s/%s: no check reported on the head of the newest pull request merged into %s", repository.GetOwner().GetLogin(), repository.GetName(), branch)
 	}
 	return checks, nil
 }
@@ -371,14 +377,17 @@ func (c *Client) collectChecksForRef(ctx context.Context, repository *github.Rep
 	return nil
 }
 
-// getRecentMergedPRHeads returns the head SHAs of up to n most recently merged
-// pull requests, newest first. Closed-without-merge PRs are skipped: their
-// check_runs typically reflect a failed gate and we don't want failed checks
-// leaking into the required-checks list.
+// mergedPRsPage is how many recently updated closed pull requests one
+// request lists to find the newest merges among.
+const mergedPRsPage = 100
+
 // getRecentMergedPRHeads returns the head SHAs of up to n pull requests
-// merged into branch, newest first, from one page of the thirty most
+// merged into branch, the newest merge first, from one page of the most
 // recently updated closed pull requests: one request, whatever the
-// repository's history.
+// repository's history. The page is ordered by update, which a comment, a
+// label or an unassignment on a long-merged pull request moves to the top,
+// so the heads are ordered by their merge time. A pull request closed
+// without a merge is skipped: its checks reflect a failed gate.
 func (c *Client) getRecentMergedPRHeads(ctx context.Context, repository *github.Repository, branch string, n int) ([]string, error) {
 	owner := repository.GetOwner().GetLogin()
 	repo := repository.GetName()
@@ -388,20 +397,18 @@ func (c *Client) getRecentMergedPRHeads(ctx context.Context, repository *github.
 		Base:        branch,
 		Sort:        "updated",
 		Direction:   "desc",
-		ListOptions: github.ListOptions{PerPage: 30},
+		ListOptions: github.ListOptions{PerPage: mergedPRsPage},
 	})
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}
+	merged := slices.DeleteFunc(prs, func(pr *github.PullRequest) bool { return pr.MergedAt == nil })
+	slices.SortStableFunc(merged, func(a, b *github.PullRequest) int {
+		return b.GetMergedAt().Compare(a.GetMergedAt().Time)
+	})
 	var heads []string
-	for _, pr := range prs {
-		if pr.MergedAt == nil {
-			continue
-		}
+	for _, pr := range merged[:min(n, len(merged))] {
 		heads = append(heads, pr.GetHead().GetSHA())
-		if len(heads) >= n {
-			break
-		}
 	}
 	return heads, nil
 }

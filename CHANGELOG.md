@@ -40,6 +40,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- The reconcile's protection step reads the reported checks from the head of the newest merge, not of the most
+  recently updated merged pull request: the closed pull requests are listed by update, so an unassignment on a
+  pull request merged two years ago put its head, which predates every check, first, and the step removed all six
+  required checks of a repository whose workflows had not changed. The heads of one page of a hundred are ordered
+  by their merge time. A head that carries no check at all is nothing reported, not an empty report, so a
+  required check is never removed on it.
+
 - A repository whose entry declares no `visibility` is created private, the org's default, not public: the create
   step passed `Private: visibility == private` to GitHub, whose default for a created repository is public. The
   developer portal writes no visibility for its "Private" choice, so giantswarm/honeybadger-plans was chosen private
