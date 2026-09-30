@@ -40,6 +40,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- The reconcile's protection step requires `check-values-schema / validate` once it has reported, beside
+  `semantic-pull-request / Validate PR title` and `pre-commit`: the generated values-schema gate of a chart
+  repository runs on every pull request, and it was required only where the classic protection had carried it over,
+  so a repository whose checks were removed could not get it back.
+
 - The reconcile's protection step reads the reported checks from the head of the newest merge, not of the most
   recently updated merged pull request: the closed pull requests are listed by update, so an unassignment on a
   pull request merged two years ago put its head, which predates every check, first, and the step removed all six
