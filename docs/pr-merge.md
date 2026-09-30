@@ -77,9 +77,13 @@ Green lands with one call of the merge API, `PUT /repos/{owner}/{repo}/pulls/{nu
 A merge GitHub declines as the pull request stands (405: a rule blocks it, the base moved under a
 strict protection; 409: the head moved) is exit 3, `not_applicable`, with GitHub's sentence as the
 reason. Declined for the review rule, the reason goes on to say whom devctl acted as, which rulesets
-of the base carry a pull request rule and their bypass actors (read, never written; an App actor is
-marked as covering installation tokens only), and the team whose file declares the entry: one of its
-members or a repository admin merges it, or a reviewer with write access approves it first. A base whose review requirement
+of the base carry a pull request rule, and of those the ones GitHub says the caller cannot bypass
+(`current_user_can_bypass`) as the blockers with their bypass actors, the ones the caller bypasses
+apart (read, never written; an App actor is marked as covering installation tokens only), and the
+team whose file declares the entry: one of its members or a repository admin merges it, or a reviewer
+with write access approves it first. Past a blocking ruleset without bypass actors no member or admin
+merges: only an approving review or a change to that ruleset does, and a ruleset devctl did not create
+is named a `foreign-ruleset` the reconciler leaves to the owning team. A base whose review requirement
 no ruleset carries is on classic branch protection: the repository is aligned first, never merged
 past it.
 

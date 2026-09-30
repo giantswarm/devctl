@@ -17,9 +17,9 @@
 // no installation token), so the bypass GitHub honours is the person's: the
 // owning team's or the repository admins', as the alignment engine writes
 // them, never the App's. A merge
-// the review rule declines is exit 3 with GitHub's sentence and the
-// ruleset's bypass actors, so the caller knows whose review or merge it
-// takes.
+// the review rule declines is exit 3 with GitHub's sentence, the rulesets
+// the caller cannot bypass with their bypass actors and the ones they do,
+// so the caller knows whose review or merge it takes.
 //
 // After the merge the release follows in the same call: the tag
 // auto-release puts on the merge commit, its images and charts resolved to
