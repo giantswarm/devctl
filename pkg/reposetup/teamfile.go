@@ -173,7 +173,11 @@ type Fields struct {
 	// declared one alone in silence, reports every other one and reports a
 	// declared name the repository carries no ruleset for.
 	Rulesets []string `yaml:"rulesets"`
-	Replace  *struct {
+	// PruneRulesets makes the declaration the repository's whole ruleset
+	// set: the protection step deletes every active ruleset that is neither
+	// the engine's nor named in Rulesets, instead of reporting it.
+	PruneRulesets bool `yaml:"pruneRulesets"`
+	Replace       *struct {
 		Precommit bool `yaml:"precommit"`
 	} `yaml:"replace"`
 	Gen *GenFields `yaml:"gen"`

@@ -309,6 +309,14 @@ finding `declared-ruleset-missing`, so a deleted ruleset does not leave its decl
 kinds are advisory: they do not keep the repository from converging, and nothing about a declared ruleset
 is created, changed or deleted by the engine.
 
+An entry with `pruneRulesets: true` makes its declaration the repository's whole ruleset set: the protection
+step deletes every active ruleset that is neither `devctl: default branch` nor named in `rulesets`, a repair
+the dry run plans as `delete ruleset "<name>"`, so a hand-made ruleset without the owning team's bypass does
+not block `devctl pr merge` past the next run. Declared, `disabled` and `evaluate` rulesets are left as
+above. Only a run with `--devctl-app-id` deletes; one without reports each such ruleset as
+`ruleset-pending`. Without the field, nothing changes: an undeclared ruleset is the advisory
+`foreign-ruleset`, and deleting it is up to the team.
+
 `--devctl-app-id`, the devctl GitHub App's numeric id (the App's settings page; not the client id), is what
 the bypass list takes to be compared and written; the reconciler's wiring passes it. A run without the id
 -- a laptop, giantswarm-repo-manager's read-mode engine behind `repo status` -- reads the repository's

@@ -384,6 +384,11 @@
           "minLength": 1
         }
       },
+      "pruneRulesets": {
+        "type": "boolean",
+        "default": false,
+        "description": "The repository's opt-in to ruleset pruning. With true the entry's declaration is the repository's whole ruleset set: the protection step deletes every active repository ruleset that is neither the engine's 'devctl: default branch' nor named in 'rulesets', and reports each deletion as a repair, so a hand-made ruleset without the team's bypass never blocks devctl pr merge past the nightly. A declared ruleset and a disabled one are left alone, and one on evaluate stays the advisory 'foreign-ruleset'. With false (the default) an undeclared ruleset is the advisory 'foreign-ruleset' and deleting it stays with the team."
+      },
       "rulesets": {
         "type": "array",
         "uniqueItems": true,

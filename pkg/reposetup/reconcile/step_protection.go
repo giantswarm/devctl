@@ -15,7 +15,8 @@ import (
 
 // RulesetName is the name of the repository ruleset the protection step
 // writes: one per repository, the engine's own. Every other ruleset of the
-// repository is left alone.
+// repository is left alone, unless the entry's pruneRulesets deletes the
+// undeclared active ones.
 const RulesetName = "devctl: default branch"
 
 // defaultBranchRef is the ruleset condition that follows the repository's
@@ -50,11 +51,28 @@ const repositoryAdminRoleID int64 = 5
 // the ruleset yet keeps its classic branch protection, applied and verified
 // in full, with the advisory finding [FindingRulesetsNotEnabled] naming the
 // run that writes the ruleset. The reconciler's wiring passes the id; a
-// devctl release alone changes no repository.
+// devctl release alone changes no repository. Under the entry's
+// pruneRulesets the undeclared active rulesets are deleted first by a run
+// with the id; a run without it reports each as [FindingRulesetPending].
 func (r *Runner) stepProtection(ctx context.Context, s *run, sr *StepResult) error {
-	have, err := r.ownRuleset(ctx, s, sr)
+	have, prune, err := r.ownRuleset(ctx, s, sr)
 	if err != nil {
 		return err
+	}
+	for _, rs := range prune {
+		if r.DevctlAppID == 0 {
+			s.report(sr, FindingRulesetPending,
+				fmt.Sprintf("ruleset %q is neither declared nor the engine's, and the entry prunes such rulesets", rs.Name),
+				"a run with --devctl-app-id, the reconciler's, deletes it; this run has no App id and deletes no ruleset")
+			continue
+		}
+		err := s.plan(sr, fmt.Sprintf("delete ruleset %q (not declared, pruneRulesets)", rs.Name), func() error {
+			_, err := r.GitHub.Repositories.DeleteRuleset(ctx, s.owner, s.name, rs.GetID())
+			return err
+		})
+		if err != nil {
+			return err
+		}
 	}
 	if have == nil && r.DevctlAppID == 0 {
 		s.report(sr, FindingRulesetsNotEnabled,
@@ -158,7 +176,8 @@ func (r *Runner) stepClassicProtection(ctx context.Context, s *run, sr *StepResu
 // false; see bypassActors). The ruleset targets the default branch
 // wherever it moves. Classic branch protection gives way to the ruleset in
 // the same run: its required checks are carried over, then it is removed.
-// Rulesets the engine did not create are left alone and reported. have is
+// Rulesets the engine did not create are left alone and reported (see
+// ownRuleset for the entry's pruneRulesets). have is
 // the repository's ruleset as ownRuleset read it, nil when there is none.
 //
 // Without [Runner.DevctlAppID] the step reads and compares alone: the
@@ -303,31 +322,35 @@ func (r *Runner) classicProtection(ctx context.Context, s *run, branch string) (
 // ownRuleset reads the repository's own rulesets and returns the engine's
 // with its rules, nil when there is none. Every other one is left alone —
 // the engine writes [RulesetName] and nothing else — and reported unless
-// the entry declares it in rulesets, the team's decision to keep it. A
+// the entry declares it in rulesets, the team's decision to keep it. Under
+// the entry's pruneRulesets an undeclared active one is returned in prune
+// instead, for the step to delete: the declaration is then the whole set. A
 // ruleset with enforcement disabled enforces nothing, so it neither
 // conflicts with the engine's nor leaves a person anything to weigh: it is
 // passed over declared or not. One on evaluate is reported, its rules being
 // live in the audit log. A declared name the repository carries no ruleset
 // for is reported in turn, so that a deleted ruleset does not leave the
 // declaration standing. The organization's rulesets are not read.
-func (r *Runner) ownRuleset(ctx context.Context, s *run, sr *StepResult) (*github.RepositoryRuleset, error) {
+func (r *Runner) ownRuleset(ctx context.Context, s *run, sr *StepResult) (own *github.RepositoryRuleset, prune []*github.RepositoryRuleset, err error) {
 	list, _, err := r.GitHub.Repositories.GetAllRulesets(ctx, s.owner, s.name, &github.RepositoryListRulesetsOptions{IncludesParents: new(false)})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	declared := toSet(s.fields.Rulesets)
 	carried := make(map[string]bool, len(list))
-	var own *github.RepositoryRuleset
+	var summary *github.RepositoryRuleset
 	for _, rs := range list {
 		carried[rs.Name] = true
 		switch {
 		case rs.Name == RulesetName:
-			own = rs
+			summary = rs
 		case rs.Enforcement == github.RulesetEnforcementDisabled, declared[rs.Name]:
+		case s.fields.PruneRulesets && rs.Enforcement == github.RulesetEnforcementActive:
+			prune = append(prune, rs)
 		default:
 			s.report(sr, FindingForeignRuleset,
 				fmt.Sprintf("ruleset %q is not the engine's and is left alone", rs.Name),
-				fmt.Sprintf("name it in the entry's rulesets to keep it knowingly, or delete it; the engine manages %q alone", RulesetName))
+				fmt.Sprintf("name it in the entry's rulesets to keep it knowingly, delete it, or set the entry's pruneRulesets to have the reconciler delete every undeclared active ruleset; the engine manages %q alone", RulesetName))
 		}
 	}
 	for _, name := range s.fields.Rulesets {
@@ -337,16 +360,16 @@ func (r *Runner) ownRuleset(ctx context.Context, s *run, sr *StepResult) (*githu
 				"create the ruleset on GitHub, or drop the name from the entry's rulesets; the engine creates no ruleset but its own")
 		}
 	}
-	if own == nil {
-		return nil, nil
+	if summary == nil {
+		return nil, prune, nil
 	}
 	// The list carries the summary; the rules, conditions and bypass actors
 	// come with the ruleset itself.
-	full, _, err := r.GitHub.Repositories.GetRuleset(ctx, s.owner, s.name, own.GetID(), false)
+	own, _, err = r.GitHub.Repositories.GetRuleset(ctx, s.owner, s.name, summary.GetID(), false)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return full, nil
+	return own, prune, nil
 }
 
 // reportedChecks asks Checks which contexts have reported on branch; known

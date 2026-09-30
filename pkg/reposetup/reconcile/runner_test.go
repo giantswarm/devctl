@@ -46,6 +46,9 @@ const (
 	// declaredRulesetEntryYAML declares a ruleset of the repository's own the
 	// team keeps beside the engine's.
 	declaredRulesetEntryYAML = entryYAML + "  rulesets: [\"protect-giantswarm\"]\n"
+	// pruneRulesetsEntryYAML makes the declaration the whole ruleset set:
+	// every undeclared active ruleset is deleted.
+	pruneRulesetsEntryYAML = declaredRulesetEntryYAML + "  pruneRulesets: true\n"
 	// configurationEntryYAML is a configuration repository: no template, no
 	// generated pipeline.
 	configurationEntryYAML = `- name: sample-service
@@ -1069,7 +1072,51 @@ func TestSteps(t *testing.T) {
 				f := res.Step(StepProtection).Findings[0]
 				require.True(t, f.Advisory, "a foreign ruleset does not keep the repository from converging")
 				require.Contains(t, f.Message, `"renovate-automerge"`)
+				require.Contains(t, f.Fix, "pruneRulesets", "the fix names the opt-in")
 				require.True(t, res.Converged)
+			},
+		},
+		{
+			name: "protection: under pruneRulesets an undeclared active ruleset is deleted, declared, disabled and evaluate ones are not", step: StepProtection, entry: pruneRulesetsEntryYAML,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset("renovate-automerge", nil)
+				r.addRuleset("protect-giantswarm", nil, adminBypass())
+				r.addRuleset("Code Quality Copilot review for default branch", nil).Enforcement = github.RulesetEnforcementDisabled
+				r.addRuleset("trial", nil).Enforcement = github.RulesetEnforcementEvaluate
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID), adminBypass(), teamBypass(testTeamID))
+			},
+			wantCheck: VerdictDrift, wantChange: `delete ruleset "renovate-automerge" (not declared, pruneRulesets)`, wantAfter: VerdictReported,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Nil(t, h.repo().ruleset("renovate-automerge"), "deleted")
+				require.NotNil(t, h.repo().ruleset("protect-giantswarm"), "declared: kept")
+				require.NotNil(t, h.repo().ruleset("Code Quality Copilot review for default branch"), "disabled: kept")
+				require.NotNil(t, h.repo().ruleset("trial"), "evaluate: kept")
+				require.NotNil(t, h.repo().ruleset(RulesetName))
+				sr := res.Step(StepProtection)
+				require.Equal(t, []string{`delete ruleset "renovate-automerge" (not declared, pruneRulesets)`}, sr.Changes)
+				require.Equal(t, []FindingKind{FindingForeignRuleset}, kinds(sr.Findings), "the evaluate ruleset stays the advisory")
+				require.Contains(t, sr.Findings[0].Message, `"trial"`)
+			},
+		},
+		{
+			name: "protection: under pruneRulesets a run without the App id reports the undeclared ruleset for the run with the id, deletes nothing", step: StepProtection, entry: pruneRulesetsEntryYAML,
+			seed: func(h *harness) {
+				h.runner.DevctlAppID = 0
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset("renovate-automerge", nil)
+				r.addRuleset("protect-giantswarm", nil, adminBypass())
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)})
+			},
+			wantCheck: VerdictReported, wantFinding: FindingRulesetPending, wantAfter: VerdictReported,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.NotNil(t, h.repo().ruleset("renovate-automerge"), "a run without the App id deletes no ruleset")
+				sr := res.Step(StepProtection)
+				require.Equal(t, []FindingKind{FindingRulesetPending}, kinds(sr.Findings))
+				require.Contains(t, sr.Findings[0].Message, `"renovate-automerge"`)
+				require.False(t, res.Converged, "the deletion is the reconciler's to make")
 			},
 		},
 		{
