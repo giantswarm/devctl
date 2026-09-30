@@ -139,7 +139,7 @@ func repo(t *testing.T, history ...string) string {
 // cliffSkippedTypes are the commit_parsers in cliff.toml that carry
 // `skip = true`. git-cliff leaves them out of both the release notes and the
 // bump, so they are not releasable on their own.
-var cliffSkippedTypes = []string{"docs", "style"}
+var cliffSkippedTypes = []string{"docs", "style", "test"}
 
 // countedSubject matches a conventional subject and captures its type. The
 // optional -rc mirrors cliff.toml's commit_preprocessor, which normalises
@@ -316,6 +316,13 @@ func Test_AutoReleaseDecide(t *testing.T) {
 			// in a candidate.
 			name:      "a docs-only push during a cycle releases nothing",
 			history:   []string{"v1.2.9", "feat: add x", "v1.3.0-rc.1", "docs: fix typo"},
+			next:      "v1.3.0",
+			expectTag: "",
+		},
+		{
+			// `test` is skipped too: a test fixture bump ships nothing.
+			name:      "a test-only push during a cycle releases nothing",
+			history:   []string{"v1.2.9", "feat: add x", "v1.3.0-rc.1", "test(deps): bump a fixture"},
 			next:      "v1.3.0",
 			expectTag: "",
 		},
@@ -939,6 +946,14 @@ func Test_AutoReleaseCliffSpansTheWholeCandidateCycle(t *testing.T) {
 			history:        []string{"v2.3.5", "feat: backport", "v2.4.0-rc.1", "fix: last thing"},
 			expectVersion:  "v2.4.0",
 			expectSubjects: []string{"backport", "last thing"},
+		},
+		{
+			// cliff.toml skips test commits: they neither bump nor appear in
+			// the release notes.
+			name:           "a test commit is left out of the release",
+			history:        []string{"v1.2.9", "fix: tweak", "test(deps): bump a fixture"},
+			expectVersion:  "v1.2.10",
+			expectSubjects: []string{"tweak"},
 		},
 	}
 
