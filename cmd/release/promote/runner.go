@@ -76,9 +76,7 @@ func (r *runner) promote(ctx context.Context, args []string, doc *releasepromote
 		return err
 	}
 
-	if sources.DispatchBlocked != "" && !r.flag.DryRun {
-		return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "%s; --dry-run checks the candidates without dispatching", sources.DispatchBlocked)
-	}
+	doc.Identity = sources.Identity
 
 	repositories := unique(args)
 	if r.flag.Team != "" {

@@ -99,13 +99,6 @@ func promoteRoutes(repository string) sequence.Routes {
 
 func mockSources(t *testing.T, routes sequence.Routes) (*githubmock.Server, func() (*releasepromote.Sources, error)) {
 	t.Helper()
-	return mockSourcesBlocked(t, routes, "")
-}
-
-// mockSourcesBlocked is mockSources with Sources.DispatchBlocked set to
-// blocked.
-func mockSourcesBlocked(t *testing.T, routes sequence.Routes, blocked string) (*githubmock.Server, func() (*releasepromote.Sources, error)) {
-	t.Helper()
 	server, err := githubmock.Start(routes)
 	require.NoError(t, err)
 	t.Cleanup(server.Close)
@@ -119,7 +112,7 @@ func mockSourcesBlocked(t *testing.T, routes sequence.Routes, blocked string) (*
 			Team: func(ctx context.Context, team string) ([]string, error) {
 				return releasepromote.TeamRepositories(ctx, gh.GitHub(), team)
 			},
-			DispatchBlocked: blocked,
+			Identity: releasepromote.Identity{Source: authstore.SourceKeychain, Login: "octocat"},
 		}, nil
 	}
 }
@@ -189,25 +182,13 @@ func TestRunTeam(t *testing.T) {
 	require.Equal(t, 1, dispatches(server))
 }
 
-func TestRunStopsWhenTheLoginCannotDispatch(t *testing.T) {
-	blocked := releasepromote.DispatchBlockedReason(authstore.Token{Source: authstore.SourceKeychain})
-	server, open := mockSourcesBlocked(t, promoteRoutes("giantswarm/kserve"), blocked)
+func TestRunDispatchesWithTheLogin(t *testing.T) {
+	server, open := mockSources(t, promoteRoutes("giantswarm/kserve"))
 	doc, err := runCommand(t, []string{"giantswarm/kserve"}, &flag{}, open)
-	require.Equal(t, agentcli.ExitUsage, agentcli.Exit(err))
-	require.Equal(t, string(agentcli.VerdictUsage), doc["verdict"])
-	require.Contains(t, doc["reason"], "needs Actions write")
-	require.Contains(t, doc["reason"], "$DEVCTL_GITHUB_TOKEN")
-	require.Equal(t, []any{}, doc["repositories"])
-	require.Empty(t, server.Requests(), "nothing is read before the stop")
-}
-
-func TestRunDryRunWithALoginThatCannotDispatch(t *testing.T) {
-	blocked := releasepromote.DispatchBlockedReason(authstore.Token{Source: authstore.SourceKeychain})
-	server, open := mockSourcesBlocked(t, promoteRoutes("giantswarm/kserve"), blocked)
-	doc, err := runCommand(t, []string{"giantswarm/kserve"}, &flag{DryRun: true}, open)
 	require.NoError(t, err)
-	require.Equal(t, "would_dispatch", doc["repositories"].([]any)[0].(map[string]any)["state"])
-	require.Zero(t, dispatches(server))
+	require.Equal(t, map[string]any{"source": authstore.SourceKeychain, "login": "octocat"}, doc["identity"])
+	require.Equal(t, "dispatched", doc["repositories"].([]any)[0].(map[string]any)["state"])
+	require.Equal(t, 1, dispatches(server))
 }
 
 func TestRunRemovesDuplicateRepositories(t *testing.T) {
