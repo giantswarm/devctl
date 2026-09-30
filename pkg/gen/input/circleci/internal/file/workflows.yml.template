@@ -294,9 +294,7 @@ workflows:
           branches:
             ignore:
             - main
-{{- if $.BranchPublish }}
             - {{ $.ReleaseBranches }}
-{{- end }}
 {{- end }}
 {{- if .BranchPublish }}
 
@@ -322,7 +320,7 @@ workflows:
           branches:
             ignore:
             - main
-            - {{ .ReleaseBranches }}
+            - {{ $.ReleaseBranches }}
 {{- end }}
 
     # Tag builds: one native build per architecture, then
@@ -448,7 +446,7 @@ workflows:
           branches:
             ignore:
             - main
-            - {{ .ReleaseBranches }}
+            - {{ $.ReleaseBranches }}
 {{- else }}
 
     # Branches: validate the image build without pushing anything (push: false
@@ -490,6 +488,7 @@ workflows:
           branches:
             ignore:
             - main
+            - {{ $.ReleaseBranches }}
 {{- end }}
 
     # Tag builds: push multi-arch image to gsoci + gsociprivate. Aliyun is
@@ -634,6 +633,7 @@ workflows:
           branches:
             ignore:
             - main
+            - {{ $.ReleaseBranches }}
 {{- if not .SkipATS }}
 
     # Branch: run chart tests after build-chart. When branchPublish pushes a dev
@@ -672,6 +672,7 @@ workflows:
           branches:
             ignore:
             - main
+            - {{ $.ReleaseBranches }}
 {{- if .ATSOnRelease }}
 
     # Tag: run chart tests after the release image is pushed, for the same
@@ -744,7 +745,7 @@ workflows:
           branches:
             ignore:
             - main
-            - {{ .ReleaseBranches }}
+            - {{ $.ReleaseBranches }}
 {{- end }}
 {{- if or .ATSOnRelease .SkipATS }}
 

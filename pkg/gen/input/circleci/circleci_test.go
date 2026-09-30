@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"text/template"
@@ -1132,14 +1133,15 @@ func Test_BranchPublishOnAddsCoupledBranchPushes(t *testing.T) {
 	}
 }
 
-// Test_BranchPublishSkipsReleaseBranches verifies that the branch publish
-// jobs ignore the maintenance branches the auto-release workflow tags, like
-// main: a merge there is tagged within seconds, so a branch push of that
-// commit would publish the stable version a second time under a new digest
-// (chart and image). The tag pipeline publishes them. Without BranchPublish nothing publishes on a branch and no filter
-// names them.
-func Test_BranchPublishSkipsReleaseBranches(t *testing.T) {
-	ignored := func(doc, job string) string {
+// Test_ReleaseBranchesSkipBranchJobs verifies that every branch-only job
+// ignores the maintenance branches the auto-release workflow tags, like main:
+// a merge there is tagged within seconds, so the commit's version is the
+// release, which only the tag pipeline builds and publishes. A branch push
+// published it a second time under a new digest; a branch build-chart fails
+// on architect's refusal to build a release version on a branch.
+func Test_ReleaseBranchesSkipBranchJobs(t *testing.T) {
+	// branchIgnores maps each job that ignores main to its ignore list.
+	branchIgnores := func(doc string) map[string]string {
 		var wf struct {
 			Workflows struct {
 				Build struct {
@@ -1158,51 +1160,53 @@ func Test_BranchPublishSkipsReleaseBranches(t *testing.T) {
 		if err := yaml.Unmarshal([]byte(doc), &wf); err != nil {
 			t.Fatalf("parse workflows.yml: %v", err)
 		}
+		got := map[string]string{}
 		for _, entry := range wf.Workflows.Build.Jobs {
 			for _, j := range entry {
-				if j.Name != job {
+				var branches []string
+				if j.Filters.Branches.Ignore.Decode(&branches) != nil || !slices.Contains(branches, "main") {
 					continue
 				}
-				var branches []string
-				if err := j.Filters.Branches.Ignore.Decode(&branches); err != nil {
-					t.Fatalf("%s: branches.ignore is not a list: %v", job, err)
-				}
-				return strings.Join(branches, ",")
+				got[j.Name] = strings.Join(branches, ",")
 			}
 		}
-		t.Fatalf("no job named %q", job)
-		return ""
+		return got
 	}
 	want := "main," + releaseBranchesFilter
 
-	single := render(t, Config{
-		RepoName:      repoMCPKubernetes,
-		Language:      gen.LanguageGo,
-		Flavours:      gen.FlavourSlice{gen.FlavourApp},
-		HasDockerfile: true,
-		BranchPublish: true,
-	})
-	for _, job := range []string{"push-to-registries", "push-chart"} {
-		if got := ignored(single, job); got != want {
-			t.Errorf("single-job shape: %s ignores %q, want %q", job, got, want)
-		}
-	}
-
-	native := render(t, nativeNodeConfig())
-	for _, job := range []string{"build-image-amd64", "build-image-arm64", "push-to-registries", "push-chart"} {
-		if got := ignored(native, job); got != want {
-			t.Errorf("native shape: %s ignores %q, want %q", job, got, want)
-		}
-	}
-
 	validateOnly := nativeNodeConfig()
 	validateOnly.BranchPublish = false
-	for _, doc := range []string{
-		render(t, validateOnly),
-		render(t, Config{RepoName: repoMCPKubernetes, Language: gen.LanguageGo, Flavours: gen.FlavourSlice{gen.FlavourApp}, HasDockerfile: true}),
+	for name, tc := range map[string]struct {
+		config Config
+		jobs   []string
+	}{
+		"single-job publish": {
+			config: Config{RepoName: repoMCPKubernetes, Language: gen.LanguageGo, Flavours: gen.FlavourSlice{gen.FlavourApp}, HasDockerfile: true, BranchPublish: true},
+			jobs:   []string{"push-to-registries", "build-chart", "execute-chart-tests", "push-chart"},
+		},
+		"single-job validate": {
+			config: Config{RepoName: repoMCPKubernetes, Language: gen.LanguageGo, Flavours: gen.FlavourSlice{gen.FlavourApp}, HasDockerfile: true},
+			jobs:   []string{"build-image", "build-chart", "execute-chart-tests"},
+		},
+		"native publish": {
+			config: nativeNodeConfig(),
+			jobs:   []string{"build-image-amd64", "build-image-arm64", "push-to-registries", "build-chart", "execute-chart-tests", "push-chart"},
+		},
+		"native validate": {
+			config: validateOnly,
+			jobs:   []string{"build-image-amd64", "build-image-arm64", "build-chart", "execute-chart-tests"},
+		},
 	} {
-		if contains(doc, releaseBranchesFilter) {
-			t.Errorf("config without BranchPublish names the release branches:\n%s", doc)
+		got := branchIgnores(render(t, tc.config))
+		for _, job := range tc.jobs {
+			if _, ok := got[job]; !ok {
+				t.Errorf("%s: %s is not a branch-only job (jobs ignoring main: %v)", name, job, got)
+			}
+		}
+		for job, ignore := range got {
+			if ignore != want {
+				t.Errorf("%s: %s ignores %q, want %q", name, job, ignore, want)
+			}
 		}
 	}
 }
