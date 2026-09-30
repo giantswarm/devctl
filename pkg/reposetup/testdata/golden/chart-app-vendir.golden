@@ -109,6 +109,7 @@ workflows:
           branches:
             ignore:
             - main
+            - /^release-v?[0-9]+(\.[0-9]+)?\.x$/
 
     # Branch: run chart tests after build-chart. When branchPublish pushes a dev
     # image, the test also waits on push-to-registries -- run-tests-with-ats
@@ -133,6 +134,7 @@ workflows:
           branches:
             ignore:
             - main
+            - /^release-v?[0-9]+(\.[0-9]+)?\.x$/
 
     # Tag: push the chart after build-chart (+ the gsoci image). The chart
     # tests ran on the branch (execute-chart-tests) and the tag is cut from the

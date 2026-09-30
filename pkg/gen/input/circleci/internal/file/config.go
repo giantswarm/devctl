@@ -15,9 +15,10 @@ var workflowsTemplate string
 
 // releaseBranches matches the maintenance branches the generated auto-release
 // workflow tags (release-2.x, release-v3.7.x, ...), as a CircleCI branch
-// filter. The tag pipeline publishes their releases; the branch publish jobs
-// ignore them, since a merge there is tagged within seconds and a branch push
-// of the same commit would push the stable version a second time.
+// filter. Every branch-only job ignores them like main: a merge there is tagged
+// within seconds, so the commit's version is the release, which the tag
+// pipeline alone builds and publishes (architect refuses a branch build that
+// resolves a release version).
 const releaseBranches = `/^release-v?[0-9]+(\.[0-9]+)?\.x$/`
 
 // NewSetupConfigInput emits .circleci/config.yml: a static dynamic-config

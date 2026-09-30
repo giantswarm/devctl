@@ -7,6 +7,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- `gen circleci`: every branch-only job (the branch image builds, `build-chart`, `execute-chart-tests`, the branch
+  publish jobs) ignores the auto-release maintenance branches like `main`, not only the publish jobs. A merge there
+  is tagged within seconds, so the branch pipeline resolved the release version and architect refused to build it,
+  which left the release branch red after every release.
+
 ### Changed
 
 - `gen workflows`: the auto-release `cliff.toml` skips `test` commits like `docs` and `style`, so a test-only push
