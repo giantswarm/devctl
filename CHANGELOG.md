@@ -9,6 +9,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `pr merge`: a merge the review rule declines names as blockers only the rulesets the caller cannot bypass
+  (GitHub's `current_user_can_bypass`) and lists the bypassed ones apart. Past a blocker without bypass actors the
+  reason no longer sends the caller to a team member or an admin, and a ruleset devctl did not create is named a
+  `foreign-ruleset` left to the owning team.
+
 - `gen workflows`: the auto-release workflow creates a release of a maintenance branch (`release-v3.x`, ...) with
   `--latest=false`, so the repository's Latest release stays on the release branch's newest stable instead of
   flipping to the older line whenever it releases.

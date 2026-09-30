@@ -386,7 +386,7 @@ func Test_Merge_reviewRuleDeclineNamesTheBypass(t *testing.T) {
 		routes    sequence.Routes
 		configure func(*Config)
 		want      []string
-		wantNot   string
+		wantNot   []string
 		requested map[string]int
 	}{
 		{
@@ -404,6 +404,57 @@ func Test_Merge_reviewRuleDeclineNamesTheBypass(t *testing.T) {
 				"the entry's owning team is team-honeybadger: one of its members or a repository admin merges it, or a reviewer with write access approves it first",
 			},
 			requested: map[string]int{"GET /repos/o/r/rulesets/7": 1, "DELETE /repos/o/r/git/refs/heads/feature": 0},
+		},
+		{
+			name: "the caller bypasses devctl's ruleset: only the foreign one without bypass actors blocks",
+			routes: routes(pull(nil), sequence.Routes{
+				"PUT /repos/o/r/pulls/42/merge":      {declined},
+				"GET /repos/o/r/rules/branches/main": {{Body: []any{reviewRule("Repository", 7), reviewRule("Repository", 8)}}},
+				"GET /repos/o/r/rulesets/7":          {{Body: withBypass(ruleset, "pull_requests_only")}},
+				"GET /repos/o/r/rulesets/8": {{Body: map[string]any{"id": 8, "name": "protect-main", "source_type": "Repository", "source": "o/r",
+					"enforcement": "active", "current_user_can_bypass": "never"}}},
+			}),
+			configure: owned,
+			want: []string{
+				"devctl acts as someone, who has no bypass on the ruleset \"protect-main\" of o/r (no bypass actors); someone bypasses the ruleset \"devctl: default branch\" of o/r (pull requests only)",
+				"no team member or repository admin merges past the ruleset \"protect-main\" of o/r: only an approving review by a reviewer with write access or a change to that ruleset does",
+				"a ruleset devctl did not create is a foreign-ruleset the reconciler leaves to the owning team (team-honeybadger) to keep or remove",
+			},
+			wantNot: []string{
+				"no bypass on the ruleset \"devctl: default branch\"",
+				"App 5025978",
+				"one of its members or a repository admin merges it",
+			},
+			requested: map[string]int{"GET /repos/o/r/rulesets/7": 1, "GET /repos/o/r/rulesets/8": 1},
+		},
+		{
+			name: "devctl's own ruleset without bypass actors blocks: an approving review, no foreign-ruleset",
+			routes: routes(pull(nil), sequence.Routes{
+				"PUT /repos/o/r/pulls/42/merge":      {declined},
+				"GET /repos/o/r/rules/branches/main": {{Body: []any{reviewRule("Repository", 7)}}},
+				"GET /repos/o/r/rulesets/7": {{Body: map[string]any{"id": 7, "name": "devctl: default branch", "source_type": "Repository", "source": "o/r",
+					"enforcement": "active", "current_user_can_bypass": "never"}}},
+			}),
+			configure: owned,
+			want: []string{
+				"who has no bypass on the ruleset \"devctl: default branch\" of o/r (no bypass actors)",
+				"no team member or repository admin merges past the ruleset \"devctl: default branch\" of o/r",
+			},
+			wantNot: []string{"foreign-ruleset", "one of its members or a repository admin merges it", "bypasses"},
+		},
+		{
+			name: "the caller bypasses every ruleset and GitHub still declines",
+			routes: routes(pull(nil), sequence.Routes{
+				"PUT /repos/o/r/pulls/42/merge":      {declined},
+				"GET /repos/o/r/rules/branches/main": {{Body: []any{reviewRule("Repository", 7)}}},
+				"GET /repos/o/r/rulesets/7":          {{Body: withBypass(ruleset, "always")}},
+			}),
+			configure: owned,
+			want: []string{
+				"devctl acts as someone, who bypasses every ruleset with a review rule on main, yet GitHub declined the merge for it; someone bypasses the ruleset \"devctl: default branch\" of o/r (always)",
+				"the entry's owning team is team-honeybadger",
+			},
+			wantNot: []string{"has no bypass"},
 		},
 		{
 			name: "an organization ruleset is read from the organization; no team file, no team",
@@ -446,7 +497,7 @@ func Test_Merge_reviewRuleDeclineNamesTheBypass(t *testing.T) {
 			}),
 			configure: owned,
 			want:      []string{"Base branch was modified"},
-			wantNot:   "devctl acts as",
+			wantNot:   []string{"devctl acts as"},
 			requested: map[string]int{"GET /repos/o/r/rulesets/7": 0},
 		},
 	}
@@ -463,8 +514,10 @@ func Test_Merge_reviewRuleDeclineNamesTheBypass(t *testing.T) {
 					t.Errorf("want reason with %q, got %q", w, exitErr.Reason)
 				}
 			}
-			if tc.wantNot != "" && strings.Contains(exitErr.Reason, tc.wantNot) {
-				t.Errorf("want reason without %q, got %q", tc.wantNot, exitErr.Reason)
+			for _, w := range tc.wantNot {
+				if strings.Contains(exitErr.Reason, w) {
+					t.Errorf("want reason without %q, got %q", w, exitErr.Reason)
+				}
 			}
 			for key, n := range tc.requested {
 				if got := h.requested(key); got != n {
@@ -606,4 +659,12 @@ func Test_authorAllowed(t *testing.T) {
 			}
 		})
 	}
+}
+
+// withBypass is a ruleset as GitHub answers it for a caller who bypasses it
+// in the given mode (current_user_can_bypass).
+func withBypass(ruleset map[string]any, mode string) map[string]any {
+	out := maps.Clone(ruleset)
+	out["current_user_can_bypass"] = mode
+	return out
 }

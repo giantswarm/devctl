@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/google/go-github/v92/github"
+
+	"github.com/giantswarm/devctl/v8/pkg/reposetup/reconcile"
 )
 
 // reviewRulePhrase is in GitHub's sentence when a merge is declined for
@@ -21,45 +23,114 @@ func declinedByReviewRule(err error) bool {
 }
 
 // explainReviewRule is what a caller declined by the review rule needs to
-// know: devctl acts as them, and their token bypasses none of the rulesets
-// of the base. It names each ruleset with a pull request rule and its
-// bypass actors, the team whose file declares the entry, and what merges
-// the pull request: a member of that team, a repository admin, or an
-// approving review. Rules
-// the token cannot read are said so; nothing is written.
+// know: devctl acts as them, and which rulesets of the base their token
+// cannot bypass. It reads each ruleset with a pull request rule, names the
+// ones GitHub says the caller cannot bypass (current_user_can_bypass) as
+// the blockers with their bypass actors, the ones the caller bypasses
+// apart, the team whose file declares the entry, and what merges the pull
+// request: past a blocker without bypass actors only an approving review
+// or a change to that ruleset, otherwise a member of that team, a
+// repository admin, or an approving review. Rules the token cannot read
+// are said so; nothing is written.
 func (m *Merger) explainReviewRule(ctx context.Context, owner, repo, base, caller, team string) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "devctl acts as %s, who has no bypass on ", caller)
 	rules, _, err := m.github.GitHub().Repositories.ListRulesForBranch(ctx, owner, repo, base, &github.ListOptions{PerPage: 100})
 	switch {
 	case err != nil:
-		fmt.Fprintf(&b, "the rules of %s (they could not be read: %v)", base, err)
+		return fmt.Sprintf("devctl acts as %s, who has no bypass on the rules of %s (they could not be read: %v)%s", caller, base, err, mergeAdvice(team))
 	case len(rules.PullRequest) == 0:
-		fmt.Fprintf(&b, "the review rule of %s, which no ruleset carries: classic branch protection requires the review, and such a repository is aligned first (align: true on its entry), never merged past it", base)
-	default:
-		var named []string
-		seen := map[string]bool{}
-		for _, rule := range rules.PullRequest {
-			key := fmt.Sprintf("%s/%d", rule.RulesetSourceType, rule.RulesetID)
-			if seen[key] {
-				continue
-			}
-			seen[key] = true
-			named = append(named, m.describeRuleset(ctx, owner, repo, rule.BranchRuleMetadata))
-		}
-		b.WriteString(strings.Join(named, " nor on "))
+		return fmt.Sprintf("devctl acts as %s, who has no bypass on the review rule of %s, which no ruleset carries: classic branch protection requires the review, and such a repository is aligned first (align: true on its entry), never merged past it%s", caller, base, mergeAdvice(team))
 	}
-	if team == "" {
-		b.WriteString("; a repository admin or another bypass actor merges it, or a reviewer with write access approves it first")
+	var blocking, bypassed []rulesetView
+	seen := map[string]bool{}
+	for _, rule := range rules.PullRequest {
+		key := fmt.Sprintf("%s/%d", rule.RulesetSourceType, rule.RulesetID)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		v := m.describeRuleset(ctx, owner, repo, rule.BranchRuleMetadata)
+		if v.bypass != "" {
+			bypassed = append(bypassed, v)
+		} else {
+			blocking = append(blocking, v)
+		}
+	}
+	var b strings.Builder
+	if len(blocking) == 0 {
+		fmt.Fprintf(&b, "devctl acts as %s, who bypasses every ruleset with a review rule on %s, yet GitHub declined the merge for it", caller, base)
 	} else {
-		fmt.Fprintf(&b, "; the entry's owning team is %s: one of its members or a repository admin merges it, or a reviewer with write access approves it first", team)
+		fmt.Fprintf(&b, "devctl acts as %s, who has no bypass on %s", caller, joinViews(blocking, " nor on "))
+	}
+	if len(bypassed) > 0 {
+		parts := make([]string, 0, len(bypassed))
+		for _, v := range bypassed {
+			parts = append(parts, fmt.Sprintf("%s (%s)", v.ref, v.bypass))
+		}
+		fmt.Fprintf(&b, "; %s bypasses %s", caller, strings.Join(parts, " and "))
+	}
+	var closed []rulesetView
+	for _, v := range blocking {
+		if v.noActors {
+			closed = append(closed, v)
+		}
+	}
+	if len(closed) == 0 {
+		b.WriteString(mergeAdvice(team))
+		return b.String()
+	}
+	names := make([]string, 0, len(closed))
+	foreign := false
+	for _, v := range closed {
+		names = append(names, v.ref)
+		foreign = foreign || !v.engine
+	}
+	fmt.Fprintf(&b, "; no team member or repository admin merges past %s: only an approving review by a reviewer with write access or a change to that ruleset does", strings.Join(names, " and "))
+	if foreign {
+		owner := "the owning team"
+		if team != "" {
+			owner += " (" + team + ")"
+		}
+		fmt.Fprintf(&b, "; a ruleset devctl did not create is a foreign-ruleset the reconciler leaves to %s to keep or remove", owner)
 	}
 	return b.String()
 }
 
-// describeRuleset names the ruleset a rule came from and its bypass actors,
-// read from the repository or the organization that holds it.
-func (m *Merger) describeRuleset(ctx context.Context, owner, repo string, rule github.BranchRuleMetadata) string {
+// mergeAdvice is who merges a pull request the review rule declines when
+// the blocking rulesets have bypass actors.
+func mergeAdvice(team string) string {
+	if team == "" {
+		return "; a repository admin or another bypass actor merges it, or a reviewer with write access approves it first"
+	}
+	return fmt.Sprintf("; the entry's owning team is %s: one of its members or a repository admin merges it, or a reviewer with write access approves it first", team)
+}
+
+// rulesetView is a ruleset as the reason names it.
+type rulesetView struct {
+	// ref names the ruleset and where it is held: the ruleset "x" of o/r.
+	ref string
+	// text is ref with the bypass actors, or why they could not be read.
+	text string
+	// bypass is how the caller bypasses the ruleset, from GitHub's
+	// current_user_can_bypass; empty when they cannot or it is unknown.
+	bypass string
+	// noActors: the ruleset was read and has no bypass actors.
+	noActors bool
+	// engine: the ruleset is the one devctl's reconciler writes.
+	engine bool
+}
+
+func joinViews(views []rulesetView, sep string) string {
+	texts := make([]string, 0, len(views))
+	for _, v := range views {
+		texts = append(texts, v.text)
+	}
+	return strings.Join(texts, sep)
+}
+
+// describeRuleset reads the ruleset a rule came from, from the repository
+// or the organization that holds it: its name, its bypass actors and
+// whether the caller bypasses it.
+func (m *Merger) describeRuleset(ctx context.Context, owner, repo string, rule github.BranchRuleMetadata) rulesetView {
 	gh := m.github.GitHub()
 	var (
 		rs    *github.RepositoryRuleset
@@ -74,16 +145,44 @@ func (m *Merger) describeRuleset(ctx context.Context, owner, repo string, rule g
 		rs, _, err = gh.Repositories.GetRuleset(ctx, owner, repo, rule.RulesetID, false)
 	}
 	if err != nil {
-		return fmt.Sprintf("the ruleset %d of %s (its bypass actors could not be read: %v)", rule.RulesetID, where, err)
+		ref := fmt.Sprintf("the ruleset %d of %s", rule.RulesetID, where)
+		return rulesetView{ref: ref, text: fmt.Sprintf("%s (its bypass actors could not be read: %v)", ref, err)}
+	}
+	v := rulesetView{
+		ref:    fmt.Sprintf("the ruleset %q of %s", rs.Name, where),
+		bypass: callerBypass(rs.CurrentUserCanBypass),
+		engine: rule.RulesetSourceType != github.RulesetSourceTypeOrganization && rs.Name == reconcile.RulesetName,
 	}
 	if len(rs.BypassActors) == 0 {
-		return fmt.Sprintf("the ruleset %q of %s (no bypass actors)", rs.Name, where)
+		v.noActors = true
+		v.text = v.ref + " (no bypass actors)"
+		return v
 	}
 	actors := make([]string, 0, len(rs.BypassActors))
 	for _, a := range rs.BypassActors {
 		actors = append(actors, describeActor(a))
 	}
-	return fmt.Sprintf("the ruleset %q of %s (bypass actors: %s)", rs.Name, where, strings.Join(actors, "; "))
+	v.text = fmt.Sprintf("%s (bypass actors: %s)", v.ref, strings.Join(actors, "; "))
+	return v
+}
+
+// callerBypass is GitHub's current_user_can_bypass as the reason names it,
+// empty for never or when GitHub does not say.
+func callerBypass(mode *github.BypassMode) string {
+	if mode == nil {
+		return ""
+	}
+	switch *mode {
+	case github.BypassModeNever, "":
+		return ""
+	case github.BypassModeAlways:
+		return "always"
+	case github.BypassModeExempt:
+		return "exempt"
+	case github.BypassModePullRequest, "pull_requests_only":
+		return "pull requests only"
+	}
+	return string(*mode)
 }
 
 // Repository roles as GitHub numbers them in a bypass actor.
