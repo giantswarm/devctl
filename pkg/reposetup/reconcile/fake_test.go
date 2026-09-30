@@ -934,6 +934,15 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 		repo.rulesets[i] = &in
 		writeJSON(w, 200, in)
 	}))
+	mux.HandleFunc("DELETE /repos/{owner}/{repo}/rulesets/{id}", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		i := repo.rulesetIndex(r.PathValue("id"))
+		if i < 0 {
+			notFound(w, "Not Found")
+			return
+		}
+		repo.rulesets = slices.Delete(repo.rulesets, i, i+1)
+		w.WriteHeader(204)
+	}))
 	// Deploy keys: an archived repository still lets one go (checked live
 	// 2026-09-24).
 	mux.HandleFunc("GET /repos/{owner}/{repo}/keys", f.withRepo(func(w http.ResponseWriter, _ *http.Request, repo *fakeRepo) {

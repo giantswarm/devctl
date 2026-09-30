@@ -7,6 +7,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `repo reconcile`: the entry field `pruneRulesets: true` makes the declaration the repository's whole ruleset
+  set. The protection step deletes every active ruleset that is neither `devctl: default branch` nor named in
+  `rulesets` and reports each deletion as a repair. Declared, disabled and evaluate rulesets are left alone.
+  Without the field an undeclared ruleset stays the advisory `foreign-ruleset`, whose fix now names the opt-in.
+
 ### Fixed
 
 - `pr merge`: a merge the review rule declines names as blockers only the rulesets the caller cannot bypass
