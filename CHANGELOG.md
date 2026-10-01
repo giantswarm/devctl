@@ -16,16 +16,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
-- `repo reconcile`'s codeowners step updates an open CODEOWNERS pull request that carries another file than the one
-  wanted, instead of waiting for it: a repository transferred while the pull request for its former team was open
-  (giantswarm/template-plans#2, opened for team-honeybadger, after the move to team-planeteers) kept that pull request
-  and the step reported it as the repair, its finding naming the new team. The step owns `reposetup/codeowners`: it
-  waits only for a pull request whose file, title and description are the desired ones (the squash merge commits the
-  title), and otherwise resets the branch to the default branch's head, commits the desired file and rewrites the
-  title and description, so a rebuilt pull request never conflicts. A branch left behind by a closed pull request is
-  reset the same way, where creating it failed with `Reference already exists`. A default branch that already carries
-  the desired file is still one read with no pull request listing, the run's request budget, so a correction pull
-  request left open beside it is not closed.
+- `repo reconcile`'s codeowners step updates an open CODEOWNERS pull request that carries another file or title than
+  the one wanted, instead of waiting for it: a repository transferred while the pull request for its former team was
+  open (giantswarm/template-plans#2, opened for team-honeybadger, after the move to team-planeteers) kept that pull
+  request and the step reported it as the repair, its finding naming the new team. The step owns
+  `reposetup/codeowners`: it waits for a pull request with the desired file and title (the squash merge commits the
+  title); a stale title alone gets the title and description rewritten, with no push; another file gets one commit
+  with the desired file on the default branch's head and the branch moved to it in one write, so the pull request
+  never shows an empty diff. A branch left behind by a closed pull request is moved the same way, where creating it
+  failed with `Reference already exists`. A default branch that already carries the desired file is still one read
+  with no pull request listing, the run's request budget, so a correction pull request left open beside it is not
+  closed.
 - `pr merge`: a merge the review rule declines names as blockers only the rulesets the caller cannot bypass
   (GitHub's `current_user_can_bypass`) and lists the bypassed ones apart. Past a blocker without bypass actors the
   reason no longer sends the caller to a team member or an admin, and a ruleset devctl did not create is named a

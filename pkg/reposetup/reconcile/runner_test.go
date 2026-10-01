@@ -1661,6 +1661,7 @@ func TestSteps(t *testing.T) {
 				require.Equal(t, "chore: set CODEOWNERS to @giantswarm/team-bumblebee", r.prs[0].GetTitle())
 				require.Contains(t, r.prs[0].GetBody(), "repositories/team-bumblebee.yaml")
 				require.Equal(t, reposetup.Codeowners(team), r.branchFiles[codeownersBranch]["CODEOWNERS"])
+				require.Empty(t, r.heads[codeownersBranch], "the branch is not moved: no force-push, the reviews stay")
 			},
 		},
 		{
