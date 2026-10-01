@@ -80,6 +80,10 @@ func (r *runner) wait(ctx context.Context, args []string, doc *document) error {
 	if r.flag.Timeout <= 0 {
 		return fmt.Errorf("--%s must be positive, got %s", flagTimeout, r.flag.Timeout)
 	}
+	failedLogLines, err := r.flag.FailedLog.TailLines()
+	if err != nil {
+		return err
+	}
 	if err := r.gate(false); err != nil {
 		return err
 	}
@@ -122,14 +126,15 @@ func (r *runner) wait(ctx context.Context, args []string, doc *document) error {
 			doc.Warn(token.Warning)
 			return circleciclient.New(circleciclient.Config{
 				Token:      token.Value,
-				BaseURL:    strings.TrimSuffix(endpoints.CircleCIAPIURL, "/api/v2"),
+				BaseURL:    circleciclient.BaseURLFromAPIURL(endpoints.CircleCIAPIURL),
 				HTTPClient: &http.Client{Transport: retrying},
 				Logger:     logger,
 			})
 		},
-		Clock:    clock,
-		Progress: progress,
-		Timeout:  r.flag.Timeout,
+		Clock:          clock,
+		Progress:       progress,
+		Timeout:        r.flag.Timeout,
+		FailedLogLines: failedLogLines,
 	})
 	if err != nil {
 		return err
@@ -140,6 +145,7 @@ func (r *runner) wait(ctx context.Context, args []string, doc *document) error {
 	for _, w := range result.Warnings {
 		doc.Warn(w)
 	}
+	prwait.PrintFailedJobs(r.stderr, result.FailedJobs)
 	return githubclient.ExplainNotFound(err, authstore.GitHubAppOnlyNotFoundHint(token))
 }
 

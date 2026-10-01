@@ -9,6 +9,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `pr wait`, `pr merge`: `--failed-log` reads, on a red verdict, the log of each failed GitHub Actions job and
+  each failed CircleCI job once and prints its last `--failed-log-lines` lines (default 50) to stderr; the
+  document carries them under `failedJobs[].logTail`. A green or pending wait makes no extra request.
 - `repo reconcile`: the entry field `pruneRulesets: true` makes the declaration the repository's whole ruleset
   set. The protection step deletes every active ruleset that is neither `devctl: default branch` nor named in
   `rulesets` and reports each deletion as a repair. Declared, disabled and evaluate rulesets are left alone.

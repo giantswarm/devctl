@@ -1,13 +1,22 @@
 # Waiting for a pull request's CI: `devctl pr wait`
 
 ```nohighlight
-devctl pr wait <owner/repo> <number> [--timeout 30m] [--progress]
+devctl pr wait <owner/repo> <number> [--timeout 30m] [--progress] [--failed-log [--failed-log-lines 50]]
 ```
 
 One blocking call that returns when the outcome of a pull request's CI is known: green, red, or a
 state no CI can turn green. It prints one JSON document on stdout at the end and nothing else; the
 exit code says what happened, so a script or an agent branches on it without parsing. `--progress`
 writes one line per poll to stderr for a person watching.
+
+`--failed-log` answers why a red wait is red without a second tool: on a red verdict it reads the
+log of each failed job once, a GitHub Actions job (`GET /repos/{owner}/{repo}/actions/jobs/{id}/logs`)
+and a CircleCI job (the output of its failed steps), and keeps the last `--failed-log-lines` lines
+(default 50), without terminal escapes. An Actions log ends at its last `##[error]` line, the failed
+step's end, so the post-job cleanup after it does not crowd out why the job failed. The tails go to stderr, one block per job headed
+`failed job <name> (<url>):`, and into the document under `failedJobs[]`. A green, pending or
+timed-out wait reads no log and costs no extra request. A log that cannot be read (expired, not
+yet uploaded) is named in its job's `logError`; the verdict stays red.
 
 The tokens come from the OS keychain (`devctl auth login`, see [auth.md](auth.md)). The GitHub
 token is required before the first request; the CircleCI token only once the head turns out to
@@ -156,6 +165,7 @@ reset`). Any other `403` is an answer: a permission the token lacks.
 | `checks[]` | The head's check runs and statuses, the latest per name, sorted by name. `source` is `check_run` or `status`; `status` is `queued`, `in_progress` or `completed` for a check run and `pending` or `completed` for a status; `conclusion` is the check run's conclusion or the status's state, empty while unfinished; `required` says whether the base requires this context. |
 | `circleci` | Present only when CircleCI was consulted: the newest pipeline of the head revision and its workflows, the newest run per name, sorted by name. |
 | `actions[]` | The head's GitHub Actions runs, the latest per workflow name, sorted by name. |
+| `failedJobs[]` | Present at exit 1 with `--failed-log`: each failed job with `name` (an Actions check run's name, `<workflow>/<job>` on CircleCI), `source` (`actions` or `circleci`), `url`, and `logTail`, the last `--failed-log-lines` lines of its log, or `logError` when the log could not be read. A check run of another app, a commit status and a CircleCI workflow without a failed job are named in `reason` only. |
 | `unfinished[]` | Present at exit 2 and 4: what the head was still waiting for, one line each (`check go-test (in_progress)`, `circleci workflow build (running)`, `actions run CI (awaiting approval)`, `required context lint (absent)`). |
 
 ## Exit codes

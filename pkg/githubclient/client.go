@@ -41,6 +41,9 @@ type Client struct {
 	workDir     string
 	dryRun      bool
 	ghClient    *github.Client
+	// download fetches what an API answer redirects to, a signed URL, with
+	// the transport underneath and without the token.
+	download *http.Client
 }
 
 func New(config Config) (*Client, error) {
@@ -81,6 +84,7 @@ func New(config Config) (*Client, error) {
 		logger:      config.Logger,
 		accessToken: config.AccessToken,
 		ghClient:    ghClient,
+		download:    &http.Client{Transport: base, Timeout: 2 * time.Minute},
 	}
 
 	return c, nil

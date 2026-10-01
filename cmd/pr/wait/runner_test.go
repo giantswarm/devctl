@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -13,6 +15,7 @@ import (
 	"github.com/giantswarm/devctl/v8/e2e/mock/sequence"
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
 	"github.com/giantswarm/devctl/v8/pkg/authstore"
+	"github.com/giantswarm/devctl/v8/pkg/prwait"
 )
 
 func newRunner(t *testing.T, routes sequence.Routes, github func(context.Context) (authstore.Token, error)) (*runner, *bytes.Buffer, *bytes.Buffer, *githubmock.Server) {
@@ -293,5 +296,40 @@ func Test_run_renewedTokenRefused(t *testing.T) {
 	}
 	if doc := decode(t, stdout); !strings.Contains(doc["reason"].(string), "401 Bad credentials") {
 		t.Fatalf("document: %v", doc)
+	}
+}
+
+// Test_run_failedLog: a red wait with --failed-log prints the failed job's
+// log tail to stderr and carries it in the document under failedJobs.
+func Test_run_failedLog(t *testing.T) {
+	blob := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("setup\nerror: lint failed\n"))
+	}))
+	t.Cleanup(blob.Close)
+	routes := sequence.Routes{
+		"GET /repos/o/r/pulls/42": {{Body: map[string]any{
+			"number": 42, "state": "open", "draft": false, "mergeable_state": "clean",
+			"head": map[string]any{"sha": "abc123", "ref": "feature"}, "base": map[string]any{"ref": "main"},
+		}}},
+		"GET /repos/o/r/commits/abc123/check-runs": {{Body: map[string]any{"total_count": 1, "check_runs": []any{
+			map[string]any{"id": 7, "name": "lint", "status": "completed", "conclusion": "failure", "html_url": "https://github.com/o/r/actions/runs/1/job/7", "app": map[string]any{"slug": "github-actions"}},
+		}}}},
+		"GET /repos/o/r/commits/abc123/status":        {{Body: map[string]any{"state": "success", "total_count": 0, "statuses": []any{}}}},
+		"GET /repos/o/r/actions/runs?head_sha=abc123": {{Body: map[string]any{"total_count": 0, "workflow_runs": []any{}}}},
+		"GET /repos/o/r/actions/jobs/7/logs":          {{Status: http.StatusFound, Headers: map[string]string{"Location": blob.URL + "/log"}}},
+	}
+	r, stdout, stderr, _ := newRunner(t, routes, loggedIn)
+	r.flag.FailedLog = prwait.FailedLog{Enabled: true, Lines: 1}
+
+	err := r.run(context.Background(), []string{"o/r", "42"})
+	if agentcli.Exit(err) != agentcli.ExitRed {
+		t.Fatalf("want exit 1, got %v", err)
+	}
+	if !strings.Contains(stderr.String(), "failed job lint (https://github.com/o/r/actions/runs/1/job/7):\nerror: lint failed\n") {
+		t.Errorf("stderr carries the tail:\n%s", stderr.String())
+	}
+	jobs, _ := decode(t, stdout)["failedJobs"].([]any)
+	if len(jobs) != 1 || jobs[0].(map[string]any)["logTail"] != "error: lint failed" {
+		t.Errorf("want failedJobs[0].logTail, got %v", jobs)
 	}
 }
