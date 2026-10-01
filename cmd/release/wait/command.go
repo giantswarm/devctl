@@ -50,7 +50,9 @@ UNAUTHORIZED; the private registry is read with the docker keychain. An answer
 other than a digest or "manifest unknown" ends the wait as a tooling failure.
 A failed or cancelled workflow ends it as the tag's CI failure with the failed
 jobs; a repository without CircleCI is judged by the Actions runs the tag
-triggered. --catalog also waits for the catalog index to list the chart.
+triggered. --catalog also waits for the catalog index to list the chart: the
+test catalog for a pre-release when the tag's architect orb (10.12.0 on) sends
+it there.
 
 Output: one JSON document on stdout at the end and nothing else (--progress
 writes one line per step to stderr): the envelope (command, schemaVersion,

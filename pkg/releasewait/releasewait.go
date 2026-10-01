@@ -323,6 +323,8 @@ type plan struct {
 	releaseAssets bool
 	// charts are the catalog names of the chart artifacts, for --catalog.
 	charts []chartArtifact
+	// catalogs are the catalogs --catalog reads, one per chart, once known.
+	catalogs []string
 	// failures counts consecutive registry failures that were not answers.
 	failures map[string]int
 }
@@ -339,12 +341,12 @@ func (p *plan) setArtifacts(result *Result, artifacts []Artifact) {
 	p.charts = nil
 	for _, a := range artifacts {
 		if a.Kind == KindChart {
-			p.charts = append(p.charts, chartArtifact{name: a.chart, catalog: a.catalog})
+			p.charts = append(p.charts, chartArtifact{name: a.chart, catalog: a.catalog, catalogTest: a.catalogTest})
 		}
 	}
 }
 
-type chartArtifact struct{ name, catalog string }
+type chartArtifact struct{ name, catalog, catalogTest string }
 
 // loop polls until every artifact is available and the tag's CI is green,
 // the tag's CI failed or the deadline passed.
@@ -395,7 +397,7 @@ func (w *Waiter) loop(ctx context.Context, result *Result, p *plan) error {
 				done = false
 			}
 			if done && w.config.Catalog {
-				done, err = w.catalogLists(ctx, p)
+				done, err = w.catalogLists(ctx, result, p)
 				if err != nil {
 					return err
 				}
@@ -480,18 +482,51 @@ func (w *Waiter) releasePublished(ctx context.Context, result *Result, state *pi
 	return true, nil
 }
 
-func (w *Waiter) catalogLists(ctx context.Context, p *plan) (bool, error) {
-	for _, c := range p.charts {
-		listed, err := w.config.CatalogIndex.Lists(ctx, c.catalog, c.name, p.version)
+func (w *Waiter) catalogLists(ctx context.Context, result *Result, p *plan) (bool, error) {
+	if p.catalogs == nil {
+		catalogs, err := w.chartCatalogs(ctx, result, p)
 		if err != nil {
-			return false, usageErr("reading the %s index: %v", c.catalog, err)
+			return false, err
+		}
+		p.catalogs = catalogs
+	}
+	for i, c := range p.charts {
+		catalog := p.catalogs[i]
+		listed, err := w.config.CatalogIndex.Lists(ctx, catalog, c.name, p.version)
+		if err != nil {
+			return false, usageErr("reading the %s index: %v", catalog, err)
 		}
 		if !listed {
-			w.progress.Printf("catalog %s does not list %s %s yet", c.catalog, c.name, p.version)
+			w.progress.Printf("catalog %s does not list %s %s yet", catalog, c.name, p.version)
 			return false, nil
 		}
 	}
 	return true, nil
+}
+
+// chartCatalogs are the catalogs the tag pipeline pushed each chart to: the
+// production catalog, or the test catalog for a pre-release when the tag's
+// architect orb sends pre-releases there.
+func (w *Waiter) chartCatalogs(ctx context.Context, result *Result, p *plan) ([]string, error) {
+	toTest := false
+	if isPrerelease(p.version) {
+		pin, err := ArchitectOrbPin(ctx, w.config.GitHub, w.config.Owner, w.config.Repo, result.SHA, *p.content)
+		if err != nil {
+			return nil, err
+		}
+		toTest = PrereleasesToTestCatalog(pin)
+		if toTest {
+			w.progress.Printf("%s is a pre-release and architect orb %s sends it to the test catalog", p.version, pin)
+		}
+	}
+	catalogs := make([]string, len(p.charts))
+	for i, c := range p.charts {
+		catalogs[i] = c.catalog
+		if toTest {
+			catalogs[i] = c.catalogTest
+		}
+	}
+	return catalogs, nil
 }
 
 // awaitTag polls until one spelling of the version exists as a tag.

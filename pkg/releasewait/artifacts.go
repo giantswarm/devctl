@@ -71,15 +71,17 @@ func imageArtifact(image, version string, private bool, endpoints agentcli.Endpo
 	}
 }
 
-// chartArtifactFor is the reference of a chart in its registry.
-func chartArtifactFor(owner, chart, catalog, version string, private bool, endpoints agentcli.Endpoints) Artifact {
+// chartArtifactFor is the reference of a chart in its registry, with the
+// production and the test catalog its pipeline pushes it to.
+func chartArtifactFor(owner, chart, catalog, catalogTest, version string, private bool, endpoints agentcli.Endpoints) Artifact {
 	return Artifact{
-		Kind:      KindChart,
-		Reference: fmt.Sprintf("%s/%s/%s/%s:%s", registryHost(private, endpoints), chartsPrefix, owner, chart, version),
-		State:     StateMissing,
-		private:   private,
-		chart:     chart,
-		catalog:   catalog,
+		Kind:        KindChart,
+		Reference:   fmt.Sprintf("%s/%s/%s/%s:%s", registryHost(private, endpoints), chartsPrefix, owner, chart, version),
+		State:       StateMissing,
+		private:     private,
+		chart:       chart,
+		catalog:     catalog,
+		catalogTest: catalogTest,
 	}
 }
 
@@ -96,7 +98,8 @@ func registryHost(private bool, endpoints agentcli.Endpoints) string {
 // gen.ci.image.name or <owner>/<repo>; a chart for the app flavour of a
 // non-template repository, packaged from helm/<gen.ci.chartName> or
 // helm/<repo> and called what charts names that directory, in
-// gen.ci.appCatalog or the default catalog. The private registry holds a
+// gen.ci.appCatalog or the default catalog (gen.ci.appCatalogTest or the
+// default test catalog for a pre-release). The private registry holds a
 // private-only image and the artifacts of a private repository that does
 // not force them public.
 func GeneratedArtifacts(entry reposetup.Fields, repo, version string, content TagContent, privateRepo bool, endpoints agentcli.Endpoints, charts ChartNames) ([]Artifact, error) {
@@ -140,7 +143,11 @@ func GeneratedArtifacts(entry reposetup.Fields, repo, version string, content Ta
 		if catalog == "" {
 			catalog = circleci.DefaultAppCatalog
 		}
-		artifacts = append(artifacts, chartArtifactFor(owner, chart, catalog, version, privateRepo && !ci.ForcePublic, endpoints))
+		catalogTest := ci.AppCatalogTest
+		if catalogTest == "" {
+			catalogTest = circleci.DefaultAppCatalogTest
+		}
+		artifacts = append(artifacts, chartArtifactFor(owner, chart, catalog, catalogTest, version, privateRepo && !ci.ForcePublic, endpoints))
 	}
 	return artifacts, nil
 }
@@ -157,9 +164,10 @@ type PushJob struct {
 	// Image is the image parameter; empty means the orb's default,
 	// <owner>/<repo>.
 	Image string
-	// Chart and Catalog are the chart and app_catalog parameters; Chart is
-	// the directory under helm/ the job packages.
-	Chart, Catalog string
+	// Chart, Catalog and CatalogTest are the chart, app_catalog and
+	// app_catalog_test parameters; Chart is the directory under helm/ the job
+	// packages.
+	Chart, Catalog, CatalogTest string
 	// Push is false for a build-only job (push: false, or a chart job that
 	// pushes to neither the catalog nor the registry).
 	Push bool
@@ -223,6 +231,7 @@ func ParsePushJobs(config []byte) ([]PushJob, error) {
 				Image             string `yaml:"image"`
 				Chart             string `yaml:"chart"`
 				AppCatalog        string `yaml:"app_catalog"`
+				AppCatalogTest    string `yaml:"app_catalog_test"`
 				Push              *bool  `yaml:"push"`
 				PushToAppCatalog  *bool  `yaml:"push_to_appcatalog"`
 				PushToOCIRegistry *bool  `yaml:"push_to_oci_registry"`
@@ -232,7 +241,7 @@ func ParsePushJobs(config []byte) ([]PushJob, error) {
 			if err := item.Content[1].Decode(&params); err != nil {
 				return nil, fmt.Errorf("parsing the parameters of %s: %w", ref, err)
 			}
-			job := PushJob{Name: params.Name, Kind: kind, Image: params.Image, Chart: params.Chart, Catalog: params.AppCatalog, Push: true, ForcePublic: params.ForcePublic}
+			job := PushJob{Name: params.Name, Kind: kind, Image: params.Image, Chart: params.Chart, Catalog: params.AppCatalog, CatalogTest: params.AppCatalogTest, Push: true, ForcePublic: params.ForcePublic}
 			if job.Name == "" {
 				job.Name = orbJob
 			}
@@ -244,6 +253,9 @@ func ParsePushJobs(config []byte) ([]PushJob, error) {
 				job.Push = params.PushToOCIRegistry == nil || *params.PushToOCIRegistry
 				if job.Catalog == "" {
 					job.Catalog = circleci.DefaultAppCatalog
+				}
+				if job.CatalogTest == "" {
+					job.CatalogTest = circleci.DefaultAppCatalogTest
 				}
 			}
 			if kind == KindImage {
@@ -304,7 +316,7 @@ func HandWrittenArtifacts(ctx context.Context, gh GitHub, owner, repo, sha, vers
 			if err != nil {
 				return nil, err
 			}
-			artifacts = append(artifacts, chartArtifactFor(owner, chart, job.Catalog, version, private, endpoints))
+			artifacts = append(artifacts, chartArtifactFor(owner, chart, job.Catalog, job.CatalogTest, version, private, endpoints))
 		}
 	}
 

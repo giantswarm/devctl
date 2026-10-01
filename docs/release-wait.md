@@ -78,7 +78,8 @@ defaults name them; a repository no team file declares is exit 7, there being no
 | image | a `Dockerfile` at the repository root of the tag, or `gen.ci.image.dockerfile` set | `gen.ci.image.name`, else `giantswarm/<repo>` | private with `gen.ci.image.privateOnly`, or for a private repository without `gen.ci.forcePublic`; public otherwise |
 | chart | `gen.flavours` contains `app` and the repository is not a template | the `name` in `helm/<gen.ci.chartName>/Chart.yaml`, else in `helm/<repo>/Chart.yaml` | private for a private repository without `gen.ci.forcePublic`; public otherwise |
 
-The chart's catalog is `gen.ci.appCatalog`, default `giantswarm-catalog`.
+The chart's catalog is `gen.ci.appCatalog`, default `giantswarm-catalog`; its test catalog `gen.ci.appCatalogTest`,
+default `giantswarm-test-catalog`.
 
 `gen.ci.chartName` and a push job's `chart` parameter name the directory under `helm/` the pipeline
 packages, not the chart: the architect orb packages that directory and `helm push` names the OCI
@@ -96,7 +97,7 @@ the release waits for them through the tag pipeline being green (below).
 `.circleci/config.yml` (and `workflows.yml`, `custom.yml` when present) at the tag, collects every
 `<orb>/push-to-registries`, `push-to-registries-multiarch`, `push-to-docker` and
 `push-to-app-catalog` job of every workflow with its parameters (`name`, `image`, `chart`,
-`app_catalog`, `push`, `push_to_oci_registry`, `registries-data`, `force-public`), and keeps the
+`app_catalog`, `app_catalog_test`, `push`, `push_to_oci_registry`, `registries-data`, `force-public`), and keeps the
 ones whose name CircleCI lists among the jobs of the tag pipeline's workflows. An image job without
 `image` is the orb's default, `<owner>/<repo>`; a chart job's chart is the `name` in
 `helm/<chart>/Chart.yaml` at the tag, as for generated CI; `push: false` and a chart job that pushes to
@@ -143,7 +144,10 @@ An artifact is available when its manifest resolves to a digest:
   counts as such.
 
 `--catalog` additionally waits until `https://giantswarm.github.io/<catalog>/index.yaml` lists every
-chart at the version; the index is fetched anew every time, so no cached copy answers.
+chart at the version; the index is fetched anew every time, so no cached copy answers. A pre-release
+(`1.2.3-rc.1`) is looked for in the test catalog when the tag's CircleCI configuration pins the architect
+orb at 10.12.0 or later, or at a dev version: from 10.12.0 the orb pushes a pre-release tag's chart to
+`app_catalog_test`. An older pin still pushes it to the production catalog, which is then the one read.
 
 ### The tag's CI
 

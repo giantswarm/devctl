@@ -43,6 +43,8 @@ type fixture struct {
 	catalogLists    bool
 	// catalogChart, when set, is the only chart the catalog index lists.
 	catalogChart string
+	// catalogName, when set, is the only catalog that lists it.
+	catalogName string
 	// warn collects the document's warnings; nil drops them.
 	warn func(string)
 	// images are the images named with --image.
@@ -58,10 +60,12 @@ func (e entries) FindEntry(context.Context, string, string) (*reposetup.Fields, 
 type catalog struct {
 	lists bool
 	chart string
+	// name, when set, is the only catalog whose index lists the chart.
+	name string
 }
 
-func (c catalog) Lists(_ context.Context, _, chart, _ string) (bool, error) {
-	return c.lists && (c.chart == "" || c.chart == chart), nil
+func (c catalog) Lists(_ context.Context, name, chart, _ string) (bool, error) {
+	return c.lists && (c.chart == "" || c.chart == chart) && (c.name == "" || c.name == name), nil
 }
 
 func dirListing(names ...string) []map[string]any {
@@ -190,7 +194,7 @@ func run(t *testing.T, fx fixture) (Result, error) {
 			return circleciclient.New(circleciclient.Config{Token: "cci_test", BaseURL: circleciclient.BaseURLFromAPIURL(endpoints.CircleCIAPIURL)})
 		},
 		Registry:     RegistryProber{Endpoints: endpoints},
-		CatalogIndex: catalog{fx.catalogLists, fx.catalogChart},
+		CatalogIndex: catalog{fx.catalogLists, fx.catalogChart, fx.catalogName},
 		Endpoints:    endpoints,
 		Clock:        agentcli.NewClock(0.001, nil),
 		Rate:         conditional.Rate,
@@ -901,6 +905,40 @@ func TestWaitCatalogIndexGatesTheVerdict(t *testing.T) {
 	base.catalogLists = true
 	_, err = run(t, base)
 	assertExit(t, err, agentcli.ExitOK, "")
+}
+
+// TestWaitCatalogOfAPrerelease: the chart of a pre-release tag is waited for
+// in the test catalog when the tag's architect orb sends it there (10.12.0 on),
+// in the production catalog when an older orb still does.
+func TestWaitCatalogOfAPrerelease(t *testing.T) {
+	const rcTag, rcVersion = "v1.3.0-rc.1", "1.3.0-rc.1"
+	for name, tc := range map[string]struct{ orb, catalog string }{
+		"orb 10.12.0": {"10.12.0", "giantswarm-test-catalog"},
+		"orb 10.11.1": {"10.11.1", "giantswarm-catalog"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			github := baseGitHub([]string{"helm"}, []string{"zz_generated.auto_release.yaml"}, []string{"config.yml", "workflows.yml"})
+			delete(github, repoRoute("/git/ref/tags/"+testTag))
+			github[repoRoute("/git/ref/tags/"+rcTag)] = []sequence.Response{{Body: map[string]any{"ref": "refs/tags/" + rcTag, "object": map[string]any{"type": "commit", "sha": testSHA}}}}
+			github[repoRoute("/contents/.circleci/workflows.yml")] = []sequence.Response{{Body: fileContent(".circleci/workflows.yml", "version: 2.1\norbs:\n  architect: giantswarm/architect@"+tc.orb+"\n")}}
+			circleci := pipelineRoutes([][]map[string]any{{wf("w1", "build", "success", "2026-09-21T10:00:00Z")}},
+				map[string][]map[string]any{"w1": {job("push-chart-release", "success")}})
+			circleci["GET /api/v2/project/gh/giantswarm/kserve/pipeline"] = []sequence.Response{{Body: map[string]any{"items": []map[string]any{{"id": "p1", "number": 12, "vcs": map[string]any{"tag": rcTag, "revision": testSHA}}}}}}
+			fx := fixture{
+				entry:        generatedEntry(t),
+				version:      rcVersion,
+				catalog:      true,
+				catalogLists: true,
+				catalogName:  tc.catalog,
+				timeout:      45 * time.Second,
+				github:       github,
+				circleci:     circleci,
+				registry:     sequence.Routes{"HEAD /v2/charts/giantswarm/kserve/manifests/" + rcVersion: {{Status: 200}}},
+			}
+			_, err := run(t, fx)
+			assertExit(t, err, agentcli.ExitOK, "")
+		})
+	}
 }
 
 func TestWaitVersionSpelledWithoutV(t *testing.T) {
