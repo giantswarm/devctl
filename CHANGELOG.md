@@ -19,6 +19,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `gen circleci`: the generated pipelines pin architect orb 10.12.0. A pre-release tag (`vX.Y.Z-rc.N`) pushes its
+  chart to the repository's test catalog instead of the production one; the OCI push is unchanged. A release
+  candidate no longer becomes the `latest` AppCatalogEntry on the management clusters, nor the version happa and
+  kubectl-gs offer as the newest ([architect-orb#966](https://github.com/giantswarm/architect-orb/pull/966)).
+- `release wait --catalog`: a pre-release is looked for in the test catalog
+  (`gen.ci.appCatalogTest` or a job's `app_catalog_test`, default `giantswarm-test-catalog`) when the tag pins
+  architect orb 10.12.0 or later, where that orb pushed it; with an older pin, in the production catalog as before.
 - `pr merge`: a merge the review rule declines names as blockers only the rulesets the caller cannot bypass
   (GitHub's `current_user_can_bypass`) and lists the bypassed ones apart. Past a blocker without bypass actors the
   reason no longer sends the caller to a team member or an admin, and a ruleset devctl did not create is named a

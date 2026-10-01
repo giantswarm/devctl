@@ -309,6 +309,7 @@ workflows:
           name: push-chart
           chart: kserve
           app_catalog: giantswarm-catalog
+          app_catalog_test: giantswarm-playground-test-catalog
           requires: [push-to-registries-release]
       - architect/push-to-app-catalog:
           name: build-chart
@@ -334,8 +335,8 @@ func TestParsePushJobs(t *testing.T) {
 		"build-image":                {Name: "build-image", Kind: KindImage, Image: "giantswarm/kserve-controller", Push: false},
 		"push-to-registries-release": {Name: "push-to-registries-release", Kind: KindImage, Image: "giantswarm/kserve-controller", Push: true},
 		"push-llmisvc":               {Name: "push-llmisvc", Kind: KindImage, Image: "giantswarm/llmisvc-controller", Push: true, PrivateOnly: true},
-		"push-chart":                 {Name: "push-chart", Kind: KindChart, Chart: "kserve", Catalog: "giantswarm-catalog", Push: true},
-		"build-chart":                {Name: "build-chart", Kind: KindChart, Chart: "kserve", Catalog: "giantswarm-catalog", Push: false},
+		"push-chart":                 {Name: "push-chart", Kind: KindChart, Chart: "kserve", Catalog: "giantswarm-catalog", CatalogTest: "giantswarm-playground-test-catalog", Push: true},
+		"build-chart":                {Name: "build-chart", Kind: KindChart, Chart: "kserve", Catalog: "giantswarm-catalog", CatalogTest: "giantswarm-test-catalog", Push: false},
 		"push-nightly":               {Name: "push-nightly", Kind: KindImage, Image: "giantswarm/kserve-controller", Push: true},
 	}
 	if len(jobs) != len(want) {

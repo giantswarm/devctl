@@ -56,8 +56,9 @@ type Artifact struct {
 
 	// private selects the private registry and its keychain.
 	private bool
-	// chart and catalog, for a chart: what the catalog index lists it as.
-	chart, catalog string
+	// chart, catalog and catalogTest, for a chart: what the catalog index
+	// lists it as, in the production catalog and in the test catalog.
+	chart, catalog, catalogTest string
 }
 
 // Private says whether the artifact lives in the private registry.
