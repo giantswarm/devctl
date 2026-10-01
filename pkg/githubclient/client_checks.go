@@ -3,6 +3,7 @@ package githubclient
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"sort"
 
@@ -173,4 +174,27 @@ func githubStatus(err error) int {
 		return errResponse.Response.StatusCode
 	}
 	return 0
+}
+
+// JobLog returns the log of a GitHub Actions job; the check run an Actions
+// job reports under carries the job's id. GitHub answers with a redirect to
+// a signed URL, which is read without the token. The caller closes it.
+func (c *Client) JobLog(ctx context.Context, owner, repo string, jobID int64) (io.ReadCloser, error) {
+	location, _, err := c.ghClient.Actions.GetWorkflowJobLogs(ctx, owner, repo, jobID, 1)
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, location.String(), nil)
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
+	resp, err := c.download.Do(req)
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		_ = resp.Body.Close()
+		return nil, microerror.Maskf(executionError, "job %d log: HTTP %d", jobID, resp.StatusCode)
+	}
+	return resp.Body, nil
 }

@@ -2,7 +2,7 @@
 
 ```nohighlight
 devctl pr merge <owner/repo> <number> [--timeout 30m] [--release-timeout 30m] [--no-release-wait]
-                [--rebase] [--update-branch] [--progress]
+                [--rebase] [--update-branch] [--progress] [--failed-log [--failed-log-lines 50]]
 ```
 
 One blocking call that waits until the pull request's head is green (the wait of
@@ -37,7 +37,8 @@ laziness.
 ## The wait
 
 The wait is `pr wait`'s, with its verdicts and exit codes: 1 red, 2 timeout, 3 not applicable, 4 a
-required context never reported. Nothing is merged on any of them. A head that changes under the
+required context never reported. Nothing is merged on any of them. `--failed-log` is `pr wait`'s too: a red
+wait prints the tail of each failed job's log to stderr and carries it in `failedJobs[]`. A head that changes under the
 wait resets it to the new head with a warning. Its reads, and the release wait's, are retried the way
 `pr wait`'s are ([Polling](pr-wait.md#polling)): a reset connection or a 5xx is a warning and another
 try, exit 7 only after eight in a row; a spent rate limit is a warning and a wait for its reset, exit 2

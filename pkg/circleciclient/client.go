@@ -1,8 +1,8 @@
 // Package circleciclient is devctl's client for the CircleCI API: the calls
 // the repository set-up engine makes for a project — follow and unfollow
 // (v1.1), the token's user, the project, its settings and
-// checkout keys, its pipelines (paged) and their workflows and jobs (v2) — and
-// nothing else. The token is a personal
+// checkout keys, its pipelines (paged) and their workflows and jobs (v2), a
+// failed job's step output (v1.1) — and nothing else. The token is a personal
 // API token (architectbot's `CIRCLECI_API_TOKEN` for the reconciler, the
 // person's for `devctl repo reconcile`); the org and repository name a
 // project by their GitHub slug. A reader without a token of its own reads a
@@ -184,11 +184,22 @@ func WorkflowFailed(status string) bool {
 // set them up.
 func WorkflowFinished(status string) bool { return WorkflowSucceeded(status) || WorkflowFailed(status) }
 
-// Job is one job of a workflow.
+// Job is one job of a workflow. JobNumber is absent for an approval and for
+// a job that has not started.
 type Job struct {
-	Name   string `json:"name"`
-	Status string `json:"status"`
-	Type   string `json:"type"`
+	Name      string `json:"name"`
+	Status    string `json:"status"`
+	Type      string `json:"type"`
+	JobNumber int64  `json:"job_number"`
+}
+
+// JobFailed says whether a job status is a terminal failure.
+func JobFailed(status string) bool {
+	switch status {
+	case "failed", "error", "canceled", "timedout", "infrastructure_fail", "unauthorized":
+		return true
+	}
+	return false
 }
 
 // User is the token's CircleCI user (GET /api/v2/me). For an account
@@ -365,6 +376,61 @@ func (c *Client) ListWorkflowJobs(ctx context.Context, workflowID string) ([]Job
 		return nil, microerror.Mask(err)
 	}
 	return out.Items, nil
+}
+
+// FailedStepsOutput returns the output of the failed steps of job number of
+// org/repo (v1.1: API v2 has no job output), in step order. The output
+// lives at a signed URL per step, read without the token.
+func (c *Client) FailedStepsOutput(ctx context.Context, org, repo string, number int64) (string, error) {
+	var job struct {
+		Steps []struct {
+			Actions []struct {
+				Failed    bool   `json:"failed"`
+				OutputURL string `json:"output_url"`
+			} `json:"actions"`
+		} `json:"steps"`
+	}
+	if err := c.do(ctx, http.MethodGet, fmt.Sprintf("%s/%d", c.v1Project(org, repo), number), nil, &job); err != nil {
+		return "", microerror.Mask(err)
+	}
+	var out strings.Builder
+	for _, step := range job.Steps {
+		for _, action := range step.Actions {
+			if !action.Failed || action.OutputURL == "" {
+				continue
+			}
+			if err := c.stepOutput(ctx, action.OutputURL, &out); err != nil {
+				return "", microerror.Mask(err)
+			}
+		}
+	}
+	return out.String(), nil
+}
+
+// stepOutput appends the messages of one step's output to out.
+func (c *Client) stepOutput(ctx context.Context, outputURL string, out *strings.Builder) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, outputURL, nil)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return microerror.Maskf(apiError, "step output: HTTP %d", resp.StatusCode)
+	}
+	var messages []struct {
+		Message string `json:"message"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&messages); err != nil {
+		return microerror.Maskf(apiError, "step output: invalid JSON answer: %v", err)
+	}
+	for _, m := range messages {
+		out.WriteString(m.Message)
+	}
+	return nil
 }
 
 func (c *Client) v1Project(org, repo string) string {

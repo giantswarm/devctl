@@ -42,8 +42,14 @@ The document (schemaVersion 1): command, exitCode, verdict, reason, warnings,
 startedAt, finishedAt, repository, number, headSha, baseRef,
 checks[{name, source (check_run|status), status, conclusion, url, required}],
 circleci{pipelineId, pipelineNumber, workflows[{name, status, url}]} when
-consulted, actions[{name, runId, status, conclusion, url}], and at a timeout
-unfinished[]: what the head was still waiting for. See docs/pr-wait.md.
+consulted, actions[{name, runId, status, conclusion, url}], at a timeout
+unfinished[]: what the head was still waiting for, and on red with
+--failed-log failedJobs[{name, source (actions|circleci), url, logTail,
+logError}]. See docs/pr-wait.md.
+
+--failed-log: on a red verdict, read the log of each failed GitHub Actions
+and CircleCI job once and print its last --failed-log-lines lines (default
+50) to stderr; a green or pending wait reads no log.
 
 Exit codes:
   0  green

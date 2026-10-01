@@ -25,6 +25,7 @@ type flag struct {
 	Rebase         bool
 	UpdateBranch   bool
 	Progress       bool
+	FailedLog      prwait.FailedLog
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
@@ -34,4 +35,5 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&f.Rebase, flagRebase, false, "Rebase-merge instead of squash-merging (repositories whose convention is one commit per patch)")
 	cmd.Flags().BoolVar(&f.UpdateBranch, flagUpdateBranch, false, "A head behind a strict base is updated from the base and the new head waited for, instead of exit 3")
 	agentcli.ProgressFlag(cmd, &f.Progress)
+	f.FailedLog.Init(cmd)
 }
