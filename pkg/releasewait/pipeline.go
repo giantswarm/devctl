@@ -24,9 +24,6 @@ type pipelineState struct {
 	jobs map[string]bool
 }
 
-// The CircleCI job statuses that are failures.
-var failedJobStatuses = []string{"failed", "error", "canceled", "timedout", "infrastructure_fail", "unauthorized"}
-
 // The Actions conclusions that are failures.
 var failedConclusions = []string{"failure", "cancelled", "timed_out", "startup_failure"}
 
@@ -75,7 +72,7 @@ func (w *Waiter) pipelineState(ctx context.Context, result *Result) (*pipelineSt
 		}
 		for _, job := range jobs {
 			state.jobs[job.Name] = true
-			if circleciclient.WorkflowFailed(run.Status) && slices.Contains(failedJobStatuses, job.Status) {
+			if circleciclient.WorkflowFailed(run.Status) && circleciclient.JobFailed(job.Status) {
 				doc.FailedJobs = append(doc.FailedJobs, run.Name+"/"+job.Name)
 			}
 		}
@@ -83,7 +80,7 @@ func (w *Waiter) pipelineState(ctx context.Context, result *Result) (*pipelineSt
 		case circleciclient.WorkflowFailed(run.Status):
 			state.failed = true
 			state.green = false
-			if !slices.ContainsFunc(jobs, func(j circleciclient.Job) bool { return slices.Contains(failedJobStatuses, j.Status) }) {
+			if !slices.ContainsFunc(jobs, func(j circleciclient.Job) bool { return circleciclient.JobFailed(j.Status) }) {
 				doc.FailedJobs = append(doc.FailedJobs, run.Name)
 			}
 		case circleciclient.WorkflowSucceeded(run.Status):

@@ -58,6 +58,10 @@ type Config struct {
 	Progress *agentcli.Progress
 	// Timeout defaults to DefaultTimeout.
 	Timeout time.Duration
+	// FailedLogLines, when positive, makes a red verdict read the log of
+	// each failed job once and keep that many of its last lines in
+	// Result.FailedJobs. A green or pending head reads no log.
+	FailedLogLines int
 }
 
 // Waiter runs waits.
@@ -68,6 +72,8 @@ type Waiter struct {
 	clock    agentcli.Clock
 	progress *agentcli.Progress
 	timeout  time.Duration
+	// failedLogLines is Config.FailedLogLines.
+	failedLogLines int
 }
 
 // New returns a Waiter for config.
@@ -88,6 +94,8 @@ func New(config Config) (*Waiter, error) {
 		clock:    config.Clock,
 		progress: config.Progress,
 		timeout:  config.Timeout,
+		// The tail is read only after a red verdict.
+		failedLogLines: config.FailedLogLines,
 	}, nil
 }
 
@@ -108,6 +116,9 @@ type Result struct {
 	// Unfinished names what the head was still waiting for when the wait
 	// ended without a verdict.
 	Unfinished []string `json:"unfinished,omitempty"`
+	// FailedJobs are the failed jobs of a red head with the tails of their
+	// logs, read with Config.FailedLogLines.
+	FailedJobs []FailedJob `json:"failedJobs,omitempty"`
 	// Warnings are for the envelope: a head that changed under the wait, a
 	// CircleCI project that does not exist or has never run a pipeline.
 	Warnings []string `json:"-"`
@@ -166,6 +177,9 @@ func (w *Waiter) Wait(ctx context.Context, owner, repo string, number int) (*Res
 			return result, nil
 		case len(e.red) > 0:
 			w.progress.Printf("poll %d: red: %s", poll, e.redReason())
+			if w.failedLogLines > 0 {
+				result.FailedJobs = w.failedJobs(ctx, owner, repo, h, e)
+			}
 			return result, agentcli.NewExitError(agentcli.ExitRed, agentcli.VerdictRed, "%s", e.redReason())
 		case e.neverReported():
 			w.progress.Printf("poll %d: required missing: %s", poll, strings.Join(e.requiredMissing, ", "))

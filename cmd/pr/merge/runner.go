@@ -95,6 +95,10 @@ func (r *runner) merge(ctx context.Context, args []string, doc *document) error 
 	if !r.flag.NoReleaseWait && r.flag.ReleaseTimeout <= 0 {
 		return fmt.Errorf("--%s must be positive, got %s", flagReleaseTimeout, r.flag.ReleaseTimeout)
 	}
+	failedLogLines, err := r.flag.FailedLog.TailLines()
+	if err != nil {
+		return err
+	}
 	if err := r.gate(false); err != nil {
 		return err
 	}
@@ -181,12 +185,13 @@ func (r *runner) merge(ctx context.Context, args []string, doc *document) error 
 
 	merger, err := prmerge.New(prmerge.Config{
 		Wait: prwait.Config{
-			GitHub:   github,
-			Rate:     conditional,
-			CircleCI: openCircleCI,
-			Clock:    clock,
-			Progress: progress,
-			Timeout:  r.flag.Timeout,
+			GitHub:         github,
+			Rate:           conditional,
+			CircleCI:       openCircleCI,
+			Clock:          clock,
+			Progress:       progress,
+			Timeout:        r.flag.Timeout,
+			FailedLogLines: failedLogLines,
 		},
 		Method:       r.method(),
 		UpdateBranch: r.flag.UpdateBranch,
@@ -202,6 +207,7 @@ func (r *runner) merge(ctx context.Context, args []string, doc *document) error 
 	for _, w := range result.Warnings {
 		doc.Warn(w)
 	}
+	prwait.PrintFailedJobs(r.stderr, result.FailedJobs)
 	return githubclient.ExplainNotFound(err, authstore.GitHubAppOnlyNotFoundHint(token))
 }
 

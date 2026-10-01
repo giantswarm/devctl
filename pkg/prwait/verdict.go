@@ -90,6 +90,10 @@ type evaluation struct {
 	circleci *CircleCI
 	// red names every check, status, run or workflow that failed.
 	red []string
+	// failedActionsJobs and failedWorkflows are the red ones whose logs
+	// --failed-log reads.
+	failedActionsJobs []actionsJob
+	failedWorkflows   []failedWorkflow
 	// unfinished names everything the head still waits for, in the words the
 	// document uses at a timeout.
 	unfinished []string
@@ -155,6 +159,9 @@ func evaluate(s snapshot) *evaluation {
 		case checkRunPassed(check.Conclusion):
 		default:
 			e.red = append(e.red, fmt.Sprintf("check %s concluded %s", name, check.Conclusion))
+			if run.GetApp().GetSlug() == actionsApp {
+				e.failedActionsJobs = append(e.failedActionsJobs, actionsJob{id: run.GetID(), name: name, url: check.URL})
+			}
 		}
 	}
 
@@ -241,15 +248,13 @@ func (e *evaluation) evaluateCircleCI(headSHA string, c *circleSnapshot) {
 		e.unfinished = append(e.unfinished, fmt.Sprintf("circleci pipeline %d (no workflows yet)", c.pipeline.Number))
 	}
 	for _, w := range workflows {
-		e.circleci.Workflows = append(e.circleci.Workflows, Workflow{
-			Name:   w.Name,
-			Status: w.Status,
-			URL:    fmt.Sprintf("https://app.circleci.com/pipelines/%s/%d/workflows/%s", c.project, c.pipeline.Number, w.ID),
-		})
+		url := fmt.Sprintf("https://app.circleci.com/pipelines/%s/%d/workflows/%s", c.project, c.pipeline.Number, w.ID)
+		e.circleci.Workflows = append(e.circleci.Workflows, Workflow{Name: w.Name, Status: w.Status, URL: url})
 		switch {
 		case circleciclient.WorkflowSucceeded(w.Status), w.Status == "not_run":
 		case circleciclient.WorkflowFailed(w.Status):
 			e.red = append(e.red, fmt.Sprintf("circleci workflow %s %s", w.Name, w.Status))
+			e.failedWorkflows = append(e.failedWorkflows, failedWorkflow{id: w.ID, name: w.Name, url: url})
 		default:
 			e.unfinished = append(e.unfinished, fmt.Sprintf("circleci workflow %s (%s)", w.Name, w.Status))
 		}
