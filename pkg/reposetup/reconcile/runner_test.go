@@ -1628,6 +1628,7 @@ func TestSteps(t *testing.T) {
 				r := h.repo()
 				require.Len(t, r.prs, 1, "the pull request is updated, no second one opened")
 				require.Equal(t, reposetup.Codeowners(team), r.branchFiles[codeownersBranch]["CODEOWNERS"])
+				require.Equal(t, []string{"head"}, r.commits[r.heads[codeownersBranch]].parents, "one commit on the default branch's head")
 				require.Equal(t, "chore: set CODEOWNERS to @giantswarm/team-bumblebee", r.headSubject(codeownersBranch), "a conventional commit for auto-release")
 				require.Equal(t, "chore: set CODEOWNERS to @giantswarm/team-bumblebee", r.prs[0].GetTitle())
 				require.Contains(t, r.prs[0].GetBody(), "repositories/team-bumblebee.yaml")

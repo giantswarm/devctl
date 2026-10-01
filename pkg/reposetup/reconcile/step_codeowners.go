@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/google/go-github/v92/github"
 
@@ -185,8 +186,8 @@ func (r *Runner) stageCodeowners(ctx context.Context, s *run, want codeownersSou
 		return move()
 	}
 	_, resp, err := r.GitHub.Git.CreateRef(ctx, s.owner, s.name, github.CreateRef{Ref: "refs/heads/" + codeownersBranch, SHA: commit.GetSHA()})
-	if err != nil && resp != nil && resp.StatusCode == http.StatusUnprocessableEntity {
-		// Reference already exists: a closed pull request's branch.
+	if err != nil && resp != nil && resp.StatusCode == http.StatusUnprocessableEntity && strings.Contains(err.Error(), "Reference already exists") {
+		// A closed pull request's branch: moved, as an open one's is.
 		return move()
 	}
 	return err

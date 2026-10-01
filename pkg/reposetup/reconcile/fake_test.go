@@ -72,10 +72,11 @@ type fakeRepo struct {
 	releaseSubject string
 }
 
-type fakeCommit struct{ tree, message string }
+type fakeCommit struct {
+	tree, message string
+	parents       []string
+}
 
-// headSubject is the subject of the commit at the head of branch, what the
-// auto-release workflow decides the version bump from.
 // defaultTree is the tree of the default branch's head: GET git/ref answers
 // that head as "head", and its files are the repository's files.
 const defaultTree = "tree-default"
@@ -109,6 +110,8 @@ func (r *fakeRepo) commitFiles(sha string) map[string]string {
 	return r.treeFiles(defaultTree)
 }
 
+// headSubject is the subject of the commit at the head of branch, what the
+// auto-release workflow decides the version bump from.
 func (r *fakeRepo) headSubject(branch string) string {
 	subject, _, _ := strings.Cut(r.commits[r.heads[branch]].message, "\n")
 	return subject
@@ -885,12 +888,13 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 	}))
 	mux.HandleFunc("POST /repos/{owner}/{repo}/git/commits", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
 		var in struct {
-			Message string `json:"message"`
-			Tree    string `json:"tree"` // the tree's SHA, as go-github sends it
+			Message string   `json:"message"`
+			Tree    string   `json:"tree"`    // the tree's SHA, as go-github sends it
+			Parents []string `json:"parents"` // the parents' SHAs, as go-github sends them
 		}
 		decode(r, &in)
 		sha := repo.next("c")
-		repo.commits[sha] = fakeCommit{tree: in.Tree, message: in.Message}
+		repo.commits[sha] = fakeCommit{tree: in.Tree, message: in.Message, parents: in.Parents}
 		writeJSON(w, 201, map[string]string{"sha": sha})
 	}))
 	mux.HandleFunc("GET /repos/{owner}/{repo}/actions/permissions/workflow", f.withRepo(func(w http.ResponseWriter, _ *http.Request, repo *fakeRepo) {
