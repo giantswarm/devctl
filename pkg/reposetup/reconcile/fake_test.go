@@ -72,7 +72,43 @@ type fakeRepo struct {
 	releaseSubject string
 }
 
-type fakeCommit struct{ tree, message string }
+type fakeCommit struct {
+	tree, message string
+	parents       []string
+}
+
+// defaultTree is the tree of the default branch's head: GET git/ref answers
+// that head as "head", and its files are the repository's files.
+const defaultTree = "tree-default"
+
+// treeFiles is the files of a tree: the default branch's for defaultTree.
+func (r *fakeRepo) treeFiles(tree string) map[string]string {
+	files := map[string]string{}
+	if tree == defaultTree {
+		for p, c := range r.files {
+			files[p] = c
+		}
+		return files
+	}
+	for _, e := range r.trees[tree] {
+		switch {
+		case e.Content != nil:
+			files[e.GetPath()] = e.GetContent()
+		case e.SHA != nil:
+			files[e.GetPath()] = string(r.blobs[e.GetSHA()])
+		}
+	}
+	return files
+}
+
+// commitFiles is the files of a commit: the default branch's for a SHA that
+// is no commit of the fake (its head as GET git/ref answers it).
+func (r *fakeRepo) commitFiles(sha string) map[string]string {
+	if c, ok := r.commits[sha]; ok {
+		return r.treeFiles(c.tree)
+	}
+	return r.treeFiles(defaultTree)
+}
 
 // headSubject is the subject of the commit at the head of branch, what the
 // auto-release workflow decides the version bump from.
@@ -632,6 +668,27 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 		repo.prs = append(repo.prs, pr)
 		writeJSON(w, 201, pr)
 	}))
+	mux.HandleFunc("PATCH /repos/{owner}/{repo}/pulls/{number}", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		var in github.PullRequest
+		decode(r, &in)
+		for _, pr := range repo.prs {
+			if fmt.Sprint(pr.GetNumber()) != r.PathValue("number") {
+				continue
+			}
+			if in.Title != nil {
+				pr.Title = in.Title
+			}
+			if in.Body != nil {
+				pr.Body = in.Body
+			}
+			if in.State != nil {
+				pr.State = in.State
+			}
+			writeJSON(w, 200, pr)
+			return
+		}
+		notFound(w, "Not Found")
+	}))
 	mux.HandleFunc("GET /repos/{owner}/{repo}/contents/{path...}", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
 		path := strings.TrimSuffix(r.PathValue("path"), "/")
 		files := repo.files
@@ -682,6 +739,7 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 			Message string `json:"message"`
 			Content string `json:"content"`
 			Branch  string `json:"branch"`
+			SHA     string `json:"sha"`
 		}
 		decode(r, &in)
 		data, _ := base64.StdEncoding.DecodeString(in.Content)
@@ -689,6 +747,16 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 		branch := in.Branch
 		if branch == "" {
 			branch = repo.defaultBranch
+		}
+		// GitHub's rule: updating a file names the blob it replaces on that
+		// branch (the GET handler's "blob-<path>"), creating one names none.
+		existing := repo.files
+		if branch != repo.defaultBranch {
+			existing = repo.branchFiles[branch]
+		}
+		if _, ok := existing[path]; ok != (in.SHA != "") || (ok && in.SHA != "blob-"+path) {
+			writeJSON(w, 409, map[string]string{"message": "sha does not match " + path + " on " + branch})
+			return
 		}
 		if branch == repo.defaultBranch {
 			repo.files[path] = string(data)
@@ -705,21 +773,49 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 		writeJSON(w, 201, map[string]any{"content": map[string]string{"path": path}, "commit": map[string]string{"sha": sha}})
 	}))
 	mux.HandleFunc("GET /repos/{owner}/{repo}/git/ref/{ref...}", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		// The default branch always exists; another branch exists when it
+		// carries files.
+		if branch := strings.TrimPrefix(r.PathValue("ref"), "heads/"); branch != repo.defaultBranch {
+			if _, ok := repo.branchFiles[branch]; !ok {
+				notFound(w, "Not Found")
+				return
+			}
+		}
 		writeJSON(w, 200, map[string]any{"ref": "refs/" + r.PathValue("ref"), "object": map[string]string{"sha": "head", "type": "commit"}})
 	}))
 	mux.HandleFunc("POST /repos/{owner}/{repo}/git/refs", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
 		var in github.CreateRef
 		decode(r, &in)
 		branch := strings.TrimPrefix(in.Ref, "refs/heads/")
-		repo.branchFiles[branch] = map[string]string{}
-		for p, c := range repo.files {
-			repo.branchFiles[branch][p] = c
+		if _, exists := repo.branchFiles[branch]; exists {
+			writeJSON(w, 422, map[string]string{"message": "Reference already exists"})
+			return
+		}
+		repo.branchFiles[branch] = repo.commitFiles(in.SHA)
+		if _, ok := repo.commits[in.SHA]; ok {
+			repo.heads[branch] = in.SHA
 		}
 		writeJSON(w, 201, map[string]any{"ref": in.Ref, "object": map[string]string{"sha": in.SHA}})
 	}))
 	mux.HandleFunc("PATCH /repos/{owner}/{repo}/git/refs/{ref...}", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
 		var in github.UpdateRef
 		decode(r, &in)
+		// A branch other than the default one, forced to the default
+		// branch's head: it carries the default branch's files again.
+		if branch := strings.TrimPrefix(r.PathValue("ref"), "heads/"); branch != repo.defaultBranch {
+			if _, ok := repo.branchFiles[branch]; !ok {
+				writeJSON(w, 422, map[string]string{"message": "Reference does not exist"})
+				return
+			}
+			if !in.GetForce() {
+				writeJSON(w, 422, map[string]string{"message": "Update is not a fast forward"})
+				return
+			}
+			repo.branchFiles[branch] = repo.commitFiles(in.SHA)
+			repo.heads[branch] = in.SHA
+			writeJSON(w, 200, map[string]any{"ref": "refs/" + r.PathValue("ref"), "object": map[string]string{"sha": in.SHA}})
+			return
+		}
 		commit, ok := repo.commits[in.SHA]
 		if !ok {
 			writeJSON(w, 422, map[string]string{"message": "unknown commit " + in.SHA})
@@ -753,21 +849,52 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 			return
 		}
 		var in struct {
-			Tree []*github.TreeEntry `json:"tree"`
+			BaseTree string              `json:"base_tree"`
+			Tree     []*github.TreeEntry `json:"tree"`
 		}
 		decode(r, &in)
+		entries := in.Tree
+		if in.BaseTree != "" {
+			// The base's files, those the request names replaced.
+			named := map[string]bool{}
+			for _, e := range in.Tree {
+				named[e.GetPath()] = true
+			}
+			base := repo.treeFiles(in.BaseTree)
+			paths := make([]string, 0, len(base))
+			for p := range base {
+				paths = append(paths, p)
+			}
+			sort.Strings(paths)
+			entries = nil
+			for _, p := range paths {
+				if !named[p] {
+					entries = append(entries, &github.TreeEntry{Path: new(p), Content: new(base[p])})
+				}
+			}
+			entries = append(entries, in.Tree...)
+		}
 		sha := repo.next("t")
-		repo.trees[sha] = in.Tree
+		repo.trees[sha] = entries
 		writeJSON(w, 201, map[string]any{"sha": sha, "tree": in.Tree})
+	}))
+	mux.HandleFunc("GET /repos/{owner}/{repo}/git/commits/{sha}", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		sha := r.PathValue("sha")
+		tree := defaultTree // the default branch's head, as GET git/ref answers it
+		if c, ok := repo.commits[sha]; ok && c.tree != "" {
+			tree = c.tree
+		}
+		writeJSON(w, 200, map[string]any{"sha": sha, "tree": map[string]string{"sha": tree}})
 	}))
 	mux.HandleFunc("POST /repos/{owner}/{repo}/git/commits", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
 		var in struct {
-			Message string `json:"message"`
-			Tree    string `json:"tree"` // the tree's SHA, as go-github sends it
+			Message string   `json:"message"`
+			Tree    string   `json:"tree"`    // the tree's SHA, as go-github sends it
+			Parents []string `json:"parents"` // the parents' SHAs, as go-github sends them
 		}
 		decode(r, &in)
 		sha := repo.next("c")
-		repo.commits[sha] = fakeCommit{tree: in.Tree, message: in.Message}
+		repo.commits[sha] = fakeCommit{tree: in.Tree, message: in.Message, parents: in.Parents}
 		writeJSON(w, 201, map[string]string{"sha": sha})
 	}))
 	mux.HandleFunc("GET /repos/{owner}/{repo}/actions/permissions/workflow", f.withRepo(func(w http.ResponseWriter, _ *http.Request, repo *fakeRepo) {

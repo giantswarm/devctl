@@ -1605,6 +1605,94 @@ func TestSteps(t *testing.T) {
 			},
 		},
 		{
+			// The repository was transferred while the pull request for its
+			// former team was open: the pull request is brought up to date,
+			// not waited for.
+			name: "codeowners: an open pull request for another team is updated, not waited for", step: StepCodeowners,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.files["CODEOWNERS"] = "* @giantswarm/team-other\n"
+				r.branchFiles[codeownersBranch] = map[string]string{"CODEOWNERS": "* @giantswarm/team-former\n"}
+				r.prs = append(r.prs, &github.PullRequest{
+					Number:  new(1),
+					State:   new("open"),
+					Title:   new("chore: set CODEOWNERS to @giantswarm/team-former"),
+					Body:    new("The repository is declared in repositories/team-former.yaml of giantswarm/github."),
+					HTMLURL: new("https://github.com/giantswarm/sample-service/pull/1"),
+					Head:    &github.PullRequestBranch{Ref: new(codeownersBranch)},
+				})
+			},
+			wantCheck: VerdictDrift, wantChange: "update pull request #1 to set CODEOWNERS to @giantswarm/team-bumblebee",
+			wantAfter: VerdictDrift, // the updated pull request awaits its merge
+			verify: func(t *testing.T, h *harness, res *Result) {
+				r := h.repo()
+				require.Len(t, r.prs, 1, "the pull request is updated, no second one opened")
+				require.Equal(t, reposetup.Codeowners(team), r.branchFiles[codeownersBranch]["CODEOWNERS"])
+				require.Equal(t, []string{"head"}, r.commits[r.heads[codeownersBranch]].parents, "one commit on the default branch's head")
+				require.Equal(t, "chore: set CODEOWNERS to @giantswarm/team-bumblebee", r.headSubject(codeownersBranch), "a conventional commit for auto-release")
+				require.Equal(t, "chore: set CODEOWNERS to @giantswarm/team-bumblebee", r.prs[0].GetTitle())
+				require.Contains(t, r.prs[0].GetBody(), "repositories/team-bumblebee.yaml")
+				require.Equal(t, "* @giantswarm/team-other\n", r.files["CODEOWNERS"], "main is untouched")
+				require.Equal(t, []FindingKind{FindingPendingPullRequest}, kinds(res.Step(StepCodeowners).Findings))
+			},
+		},
+		{
+			// The file on the branch is right but the title still names
+			// the former team, as after an edit that failed half-way: the
+			// squash merge would commit the title, so it is rewritten.
+			name: "codeowners: an open pull request with the right file and a stale title is updated", step: StepCodeowners,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.files["CODEOWNERS"] = "* @giantswarm/team-other\n"
+				r.branchFiles[codeownersBranch] = map[string]string{"CODEOWNERS": reposetup.Codeowners(team)}
+				r.prs = append(r.prs, &github.PullRequest{
+					Number:  new(1),
+					State:   new("open"),
+					Title:   new("chore: set CODEOWNERS to @giantswarm/team-former"),
+					Body:    new("The repository is declared in repositories/team-former.yaml of giantswarm/github."),
+					HTMLURL: new("https://github.com/giantswarm/sample-service/pull/1"),
+					Head:    &github.PullRequestBranch{Ref: new(codeownersBranch)},
+				})
+			},
+			wantCheck: VerdictDrift, wantChange: "update pull request #1 to set CODEOWNERS to @giantswarm/team-bumblebee",
+			wantAfter: VerdictDrift, // the updated pull request awaits its merge
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				r := h.repo()
+				require.Len(t, r.prs, 1)
+				require.Equal(t, "chore: set CODEOWNERS to @giantswarm/team-bumblebee", r.prs[0].GetTitle())
+				require.Contains(t, r.prs[0].GetBody(), "repositories/team-bumblebee.yaml")
+				require.Equal(t, reposetup.Codeowners(team), r.branchFiles[codeownersBranch]["CODEOWNERS"])
+				require.Empty(t, r.heads[codeownersBranch], "the branch is not moved: no force-push, the reviews stay")
+			},
+		},
+		{
+			// A person closed the correction pull request without merging
+			// it and its branch stayed: the branch is reset and a new pull
+			// request opened, instead of failing on the existing branch.
+			name: "codeowners: a branch left by a closed pull request is reset and a new one opened", step: StepCodeowners,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.files["CODEOWNERS"] = "* @giantswarm/team-other\n"
+				r.branchFiles[codeownersBranch] = map[string]string{"CODEOWNERS": "* @giantswarm/team-former\n", "STALE": "left over\n"}
+				r.prs = append(r.prs, &github.PullRequest{
+					Number: new(1),
+					State:  new("closed"),
+					Title:  new("chore: set CODEOWNERS to @giantswarm/team-former"),
+					Head:   &github.PullRequestBranch{Ref: new(codeownersBranch)},
+				})
+			},
+			wantCheck: VerdictDrift, wantChange: "open a pull request setting CODEOWNERS to @giantswarm/team-bumblebee",
+			wantAfter: VerdictDrift, // the new pull request awaits its merge
+			verify: func(t *testing.T, h *harness, res *Result) {
+				r := h.repo()
+				require.Len(t, r.prs, 2, "the closed one stays closed, a new one is opened")
+				require.Equal(t, "open", r.prs[1].GetState())
+				require.Equal(t, reposetup.Codeowners(team), r.branchFiles[codeownersBranch]["CODEOWNERS"])
+				require.NotContains(t, r.branchFiles[codeownersBranch], "STALE", "the branch was reset to the default branch")
+				require.Equal(t, []FindingKind{FindingPendingPullRequest}, kinds(res.Step(StepCodeowners).Findings))
+			},
+		},
+		{
 			name: "codeowners: without an override the file naming the team is the desired one", step: StepCodeowners,
 			seed:      func(h *harness) { h.gh.addRepo(owner, name).files["CODEOWNERS"] = reposetup.Codeowners(team) },
 			wantCheck: VerdictOK,
