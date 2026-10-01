@@ -62,24 +62,25 @@ func (s *run) codeownersSource() codeownersSource {
 
 // stepCodeowners keeps CODEOWNERS what align-files writes: the repository's
 // override when it has one, the file naming the owning team otherwise. The
-// default branch is protected, so the repair is a pull request; while it is
-// open and carries the desired file the step reports it and changes nothing,
-// and one that carries another file is updated to the desired one.
+// default branch is protected, so the repair is a pull request from
+// codeownersBranch, a branch the step owns. While that pull request is open
+// and carries the desired file, title and description the step reports it and
+// changes nothing; one that carries anything else -- opened for the team the
+// repository was transferred from, an override since added or removed, an
+// edit that failed half-way -- is rebuilt: the branch reset to the default
+// branch's head, the desired file committed on it, the title and description
+// rewritten. A branch left behind by a closed pull request is reset the same
+// way before a new pull request is opened. A default branch that carries
+// the desired file costs one read and no pull request listing (the run's
+// request budget), so a correction pull request left open beside it is not
+// looked at.
 func (r *Runner) stepCodeowners(ctx context.Context, s *run, sr *StepResult) error {
 	want := s.codeownersSource()
-	fc, _, resp, err := r.GitHub.Repositories.GetContents(ctx, s.owner, s.name, codeownersFile, &github.RepositoryContentGetOptions{Ref: s.branch()})
-	var have string
-	switch {
-	case isNotFound(resp, err):
-	case err != nil:
+	have, err := r.readCodeowners(ctx, s, s.branch())
+	if err != nil {
 		return err
-	case fc != nil:
-		have, err = fc.GetContent()
-		if err != nil {
-			return err
-		}
 	}
-	if have == want.content {
+	if have.present && have.content == want.content {
 		sr.Summary = want.summary
 		return nil
 	}
@@ -91,79 +92,44 @@ func (r *Runner) stepCodeowners(ctx context.Context, s *run, sr *StepResult) err
 	if err != nil {
 		return err
 	}
+	var pr *github.PullRequest
 	if len(open) > 0 {
-		pr := open[0]
-		// The open pull request is waited for only while it still carries
-		// the desired file: one opened for another source -- the team the
-		// repository was transferred from, an override since added or
-		// removed -- is brought up to date, file and description, instead
-		// of being reported as the repair.
-		staged, err := r.stagedCodeowners(ctx, s)
+		pr = open[0]
+	}
+
+	if pr != nil {
+		staged, err := r.readCodeowners(ctx, s, codeownersBranch)
 		if err != nil {
 			return err
 		}
-		if staged.content == want.content {
+		if staged.present && staged.content == want.content && pr.GetTitle() == want.subject && pr.GetBody() == want.body {
 			sr.Verdict = VerdictDrift
 			sr.Summary = fmt.Sprintf("CODEOWNERS differs; pull request #%d awaits its merge", pr.GetNumber())
-			s.report(sr, FindingPendingPullRequest,
-				fmt.Sprintf("pull request #%d sets CODEOWNERS to %s: %s", pr.GetNumber(), want.target, pr.GetHTMLURL()),
-				"merge the pull request")
+			s.reportPending(sr, pr, want)
 			return nil
 		}
-		return s.plan(sr, fmt.Sprintf("update pull request #%d to set CODEOWNERS to %s", pr.GetNumber(), want.target), func() error {
-			opts := &github.RepositoryContentFileOptions{
-				Message: new(want.subject),
-				Content: []byte(want.content),
-				Branch:  new(codeownersBranch),
-			}
-			if staged.file != nil {
-				opts.SHA = staged.file.SHA
-				_, _, err = r.GitHub.Repositories.UpdateFile(ctx, s.owner, s.name, codeownersFile, opts)
-			} else {
-				_, _, err = r.GitHub.Repositories.CreateFile(ctx, s.owner, s.name, codeownersFile, opts)
-			}
+	}
+
+	change := "open a pull request setting CODEOWNERS to " + want.target
+	if pr != nil {
+		change = fmt.Sprintf("update pull request #%d to set CODEOWNERS to %s", pr.GetNumber(), want.target)
+	}
+	return s.plan(sr, change, func() error {
+		if err := r.stageCodeowners(ctx, s, want, have); err != nil {
+			return err
+		}
+		if pr != nil {
+			updated, _, err := r.GitHub.PullRequests.Edit(ctx, s.owner, s.name, pr.GetNumber(), &github.PullRequest{
+				Title: new(want.subject),
+				Body:  new(want.body),
+			})
 			if err != nil {
 				return err
 			}
-			if _, _, err := r.GitHub.PullRequests.Edit(ctx, s.owner, s.name, pr.GetNumber(), &github.PullRequest{
-				Title: new(want.subject),
-				Body:  new(want.body),
-			}); err != nil {
-				return err
-			}
-			s.report(sr, FindingPendingPullRequest,
-				fmt.Sprintf("pull request #%d sets CODEOWNERS to %s: %s", pr.GetNumber(), want.target, pr.GetHTMLURL()),
-				"merge the pull request")
+			s.reportPending(sr, updated, want)
 			return nil
-		})
-	}
-
-	return s.plan(sr, "open a pull request setting CODEOWNERS to "+want.target, func() error {
-		base, _, err := r.GitHub.Git.GetRef(ctx, s.owner, s.name, "heads/"+s.branch())
-		if err != nil {
-			return err
 		}
-		if _, _, err := r.GitHub.Git.CreateRef(ctx, s.owner, s.name, github.CreateRef{
-			Ref: "refs/heads/" + codeownersBranch,
-			SHA: base.GetObject().GetSHA(),
-		}); err != nil {
-			return err
-		}
-		opts := &github.RepositoryContentFileOptions{
-			Message: new(want.subject),
-			Content: []byte(want.content),
-			Branch:  new(codeownersBranch),
-		}
-		if fc != nil {
-			opts.SHA = fc.SHA
-			_, _, err = r.GitHub.Repositories.UpdateFile(ctx, s.owner, s.name, codeownersFile, opts)
-		} else {
-			_, _, err = r.GitHub.Repositories.CreateFile(ctx, s.owner, s.name, codeownersFile, opts)
-		}
-		if err != nil {
-			return err
-		}
-		pr, _, err := r.GitHub.PullRequests.Create(ctx, s.owner, s.name, github.CreatePullRequest{
+		created, _, err := r.GitHub.PullRequests.Create(ctx, s.owner, s.name, github.CreatePullRequest{
 			Title: new(want.subject),
 			Head:  codeownersBranch,
 			Base:  s.branch(),
@@ -172,34 +138,81 @@ func (r *Runner) stepCodeowners(ctx context.Context, s *run, sr *StepResult) err
 		if err != nil {
 			return err
 		}
-		s.report(sr, FindingPendingPullRequest,
-			fmt.Sprintf("pull request #%d sets CODEOWNERS to %s: %s", pr.GetNumber(), want.target, pr.GetHTMLURL()),
-			"merge the pull request")
+		s.reportPending(sr, created, want)
 		return nil
 	})
 }
 
-// stagedFile is CODEOWNERS on the correction branch: the file, nil when the
-// branch has none, and its content.
-type stagedFile struct {
-	file    *github.RepositoryContent
-	content string
-}
-
-// stagedCodeowners reads CODEOWNERS on the correction pull request's branch.
-func (r *Runner) stagedCodeowners(ctx context.Context, s *run) (stagedFile, error) {
-	fc, _, resp, err := r.GitHub.Repositories.GetContents(ctx, s.owner, s.name, codeownersFile, &github.RepositoryContentGetOptions{Ref: codeownersBranch})
+// stageCodeowners puts the desired file on codeownersBranch as one commit on
+// top of the default branch's head: the branch is created, or reset there
+// when it exists (the step owns it), so the pull request never conflicts
+// with the default branch. have is CODEOWNERS on the default branch, which
+// the reset branch carries too: its blob is the one the commit replaces.
+func (r *Runner) stageCodeowners(ctx context.Context, s *run, want codeownersSource, have codeownersFileAt) error {
+	base, _, err := r.GitHub.Git.GetRef(ctx, s.owner, s.name, "heads/"+s.branch())
+	if err != nil {
+		return err
+	}
+	sha := base.GetObject().GetSHA()
+	_, resp, err := r.GitHub.Git.GetRef(ctx, s.owner, s.name, "heads/"+codeownersBranch)
 	switch {
 	case isNotFound(resp, err):
-		return stagedFile{}, nil
+		if _, _, err := r.GitHub.Git.CreateRef(ctx, s.owner, s.name, github.CreateRef{Ref: "refs/heads/" + codeownersBranch, SHA: sha}); err != nil {
+			return err
+		}
 	case err != nil:
-		return stagedFile{}, err
+		return err
+	default:
+		if _, _, err := r.GitHub.Git.UpdateRef(ctx, s.owner, s.name, "heads/"+codeownersBranch, github.UpdateRef{SHA: sha, Force: new(true)}); err != nil {
+			return err
+		}
+	}
+
+	opts := &github.RepositoryContentFileOptions{
+		Message: new(want.subject),
+		Content: []byte(want.content),
+		Branch:  new(codeownersBranch),
+	}
+	if have.present {
+		opts.SHA = have.sha
+		_, _, err = r.GitHub.Repositories.UpdateFile(ctx, s.owner, s.name, codeownersFile, opts)
+	} else {
+		_, _, err = r.GitHub.Repositories.CreateFile(ctx, s.owner, s.name, codeownersFile, opts)
+	}
+	return err
+}
+
+// reportPending reports the correction pull request as the repair that
+// awaits its merge.
+func (s *run) reportPending(sr *StepResult, pr *github.PullRequest, want codeownersSource) {
+	s.report(sr, FindingPendingPullRequest,
+		fmt.Sprintf("pull request #%d sets CODEOWNERS to %s: %s", pr.GetNumber(), want.target, pr.GetHTMLURL()),
+		"merge the pull request")
+}
+
+// codeownersFileAt is CODEOWNERS at one ref: whether the ref carries the
+// file, its content and its blob.
+type codeownersFileAt struct {
+	present bool
+	content string
+	sha     *string
+}
+
+// readCodeowners reads CODEOWNERS at ref. A ref without the file, and a
+// path that is not a file, read as absent.
+func (r *Runner) readCodeowners(ctx context.Context, s *run, ref string) (codeownersFileAt, error) {
+	fc, _, resp, err := r.GitHub.Repositories.GetContents(ctx, s.owner, s.name, codeownersFile, &github.RepositoryContentGetOptions{Ref: ref})
+	switch {
+	case isNotFound(resp, err):
+		return codeownersFileAt{}, nil
+	case err != nil:
+		return codeownersFileAt{}, err
 	case fc == nil:
-		return stagedFile{}, nil
+		return codeownersFileAt{}, nil
 	}
 	content, err := fc.GetContent()
 	if err != nil {
-		return stagedFile{}, err
+		return codeownersFileAt{}, err
 	}
-	return stagedFile{file: fc, content: content}, nil
+	return codeownersFileAt{present: true, content: content, sha: fc.SHA}, nil
 }
