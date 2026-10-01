@@ -25,3 +25,11 @@ var envVarNotFoundError = &microerror.Error{
 func IsEnvVarNotFound(err error) bool {
 	return microerror.Cause(err) == envVarNotFoundError
 }
+
+var invalidFlagError = &microerror.Error{
+	Kind: "invalidFlagError",
+}
+
+func IsInvalidFlag(err error) bool {
+	return microerror.Cause(err) == invalidFlagError
+}

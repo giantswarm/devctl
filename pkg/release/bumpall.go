@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -15,13 +16,11 @@ import (
 	"github.com/blang/semver"
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/releases/sdk/api/v1alpha1"
-	"github.com/google/go-github/v89/github"
+	"github.com/google/go-github/v92/github"
 	"github.com/jedib0t/go-pretty/v6/table"
 	"github.com/jedib0t/go-pretty/v6/text"
 	"github.com/sirupsen/logrus"
 	"sigs.k8s.io/yaml"
-
-	"golang.org/x/exp/slices"
 
 	"github.com/giantswarm/devctl/v8/internal/env"
 	"github.com/giantswarm/devctl/v8/pkg/githubclient"
@@ -42,7 +41,7 @@ type appVersion struct {
 
 // BumpAll takes all apps and components in the `input` release and looks up on github for the latest version of each.
 // If the version is not specified in the `manuallyRequestedComponents` or `manuallyRequestedApps` it will be bumped to the latest version.
-func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manuallyRequestedApps []string, releaseType string, appsToDrop map[string]bool, requests []Request, yes bool, output string, changesOnly bool, requestedOnly bool, k8sMajorVersion uint64) ([]string, []string, error) {
+func BumpAll(githubToken string, input v1alpha1.Release, manuallyRequestedComponents []string, manuallyRequestedApps []string, releaseType string, appsToDrop map[string]bool, requests []Request, yes bool, output string, changesOnly bool, requestedOnly bool, k8sMajorVersion uint64) ([]string, []string, error) {
 	requestedComponents := map[string]componentVersion{}
 	requestedApps := map[string]appVersion{}
 
@@ -88,31 +87,36 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 					}
 				}
 
-				if comp.Name == "kubernetes" {
-					if releaseType == "patch" {
+				switch comp.Name {
+				case kubernetesComponentName:
+					if releaseType == releaseTypePatch {
 						// For a patch release, we don't want to automatically bump anything.
 						// The user must manually request a bump for a component.
 						version.Version = comp.Version
 					} else { // major or minor
-						version.Version, err = getLatestK8sVersion(k8sMajorVersion)
+						version.Version, err = getLatestK8sVersion(githubToken, k8sMajorVersion)
 					}
-				} else if comp.Name == "flatcar" {
-					if releaseType == "patch" {
+				case "flatcar":
+					if releaseType == releaseTypePatch {
 						version.Version = comp.Version
 					} else { // minor or major
 						version.Version, err = getLatestFlatcarRelease()
 					}
-				} else {
+				case containerdComponentName:
+					// Derived from os-tooling below, never bumped to the latest upstream
+					// release: nodes run whatever image-builder baked into the image.
+					version.Version = comp.Version
+				default:
 					// For minor releases, add an implicit constraint to prevent major version jumps.
 					// Users can still force a major bump via --component flag.
-					if releaseType == "minor" && constraint == nil {
+					if releaseType == releaseTypeMinor && constraint == nil {
 						constraint = sameMajorConstraint(comp.Version)
 					}
 
 					var latestVersionString string
-					latestVersionString, err = findNewestComponentVersion(comp.Name, constraint)
+					latestVersionString, err = findNewestComponentVersion(githubToken, comp.Name, constraint)
 					if err == nil {
-						if releaseType == "patch" {
+						if releaseType == releaseTypePatch {
 							// For a patch release, we don't want to automatically bump anything.
 							// The user must manually request a bump for a component.
 							version.Version = comp.Version
@@ -152,6 +156,21 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 				}
 			}
 		}
+
+		// Derive containerd from the os-tooling version this release ends up with, so the
+		// recap table shows it alongside everything else that changes. The version itself is
+		// applied when the release is written, not returned as a bump below.
+		osToolingVersion := lookupComponentVersion(input.Spec.Components, osToolingComponentName)
+		if bumped, found := components[osToolingComponentName]; found {
+			osToolingVersion = bumped.Version
+		}
+
+		containerdVersion := deriveContainerdVersion(githubToken, osToolingVersion)
+		if containerdVersion != "" && containerdVersion != lookupComponentVersion(input.Spec.Components, containerdComponentName) {
+			components[containerdComponentName] = componentVersion{
+				Version: containerdVersion,
+			}
+		}
 	}
 
 	// apps
@@ -184,6 +203,13 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 
 		// Iterate over all apps in the input release and bump them if a version was not manually requested by user.
 		for _, app := range input.Spec.Apps {
+			// Apps being dropped from this release are removed later on, so there is no point in
+			// looking up a new version for them. The lookup would also fail for apps whose
+			// repository is already gone, which is a common reason for dropping them.
+			if appsToDrop[app.Name] {
+				continue
+			}
+
 			v := appVersion{}
 			if req, found := requestedApps[app.Name]; found {
 				if req.Version != "" {
@@ -194,7 +220,7 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 				} else {
 					// No version specified — keep current or auto-bump, same as
 					// if this app was not in the override list at all.
-					if releaseType == "patch" {
+					if releaseType == releaseTypePatch {
 						v.Version = app.Version
 						v.UpstreamVersion = app.ComponentVersion
 					} else { // major or minor: auto-bump
@@ -210,7 +236,7 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 								break
 							}
 						}
-						version, err := FindNewestApp(app.Name, app.ComponentVersion != "", constraint)
+						version, err := FindNewestApp(githubToken, app.Name, app.ComponentVersion != "", constraint)
 						if err != nil {
 							return nil, nil, microerror.Mask(err)
 						}
@@ -225,7 +251,7 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 					v.DependsOn = app.DependsOn
 				}
 			} else {
-				if releaseType == "patch" {
+				if releaseType == releaseTypePatch {
 					v.Version = app.Version
 					v.UpstreamVersion = app.ComponentVersion
 					v.UserRequested = false
@@ -245,7 +271,7 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 						}
 					}
 
-					version, err := FindNewestApp(app.Name, app.ComponentVersion != "", constraint)
+					version, err := FindNewestApp(githubToken, app.Name, app.ComponentVersion != "", constraint)
 					if err != nil {
 						return nil, nil, microerror.Mask(err)
 					}
@@ -312,6 +338,11 @@ func BumpAll(input v1alpha1.Release, manuallyRequestedComponents []string, manua
 	appsRet := make([]string, 0)
 
 	for name, comp := range components {
+		if name == containerdComponentName {
+			// Shown in the table above, but derived again from os-tooling when the release is
+			// written rather than carried through as a requested bump.
+			continue
+		}
 		componentsRet = append(componentsRet, fmt.Sprintf("%s@%s", name, comp.Version))
 	}
 	for name, app := range apps {
@@ -374,7 +405,7 @@ func printTable(input v1alpha1.Release, components map[string]componentVersion, 
 			}
 
 			if req.Version != app.Version {
-				if output == "text" {
+				if output == outputText {
 					desiredVersion = text.FgGreen.Sprint(desiredVersionStr)
 				} else {
 					desiredVersion = fmt.Sprintf("**%s**", desiredVersionStr)
@@ -400,7 +431,7 @@ func printTable(input v1alpha1.Release, components map[string]componentVersion, 
 					if _, ok := newDeps[dep]; ok {
 						unchanged = append(unchanged, dep)
 					} else {
-						if output == "text" {
+						if output == outputText {
 							removed = append(removed, text.FgRed.Sprintf("~~%s~~", dep))
 						} else {
 							removed = append(removed, fmt.Sprintf("~~%s~~", dep))
@@ -411,7 +442,7 @@ func printTable(input v1alpha1.Release, components map[string]componentVersion, 
 				// Find added
 				for _, dep := range req.DependsOn {
 					if _, ok := oldDeps[dep]; !ok {
-						if output == "text" {
+						if output == outputText {
 							added = append(added, text.FgGreen.Sprintf("**%s**", dep))
 						} else {
 							added = append(added, fmt.Sprintf("**%s**", dep))
@@ -451,7 +482,7 @@ func printTable(input v1alpha1.Release, components map[string]componentVersion, 
 				desiredVersionStr = fmt.Sprintf("%s - requested by user", desiredVersionStr)
 			}
 			var desiredVersion, dependencies string
-			if output == "text" {
+			if output == outputText {
 				desiredVersion = text.FgGreen.Sprint(desiredVersionStr)
 				dependenciesStr := strings.Join(req.DependsOn, ", ")
 				if dependenciesStr != "" {
@@ -476,7 +507,7 @@ func printTable(input v1alpha1.Release, components map[string]componentVersion, 
 		t.AppendRows(appRows)
 		t.AppendSeparator()
 		switch output {
-		case "markdown":
+		case outputMarkdown:
 			fmt.Println(t.RenderMarkdown())
 		default:
 			t.SetOutputMirror(os.Stdout)
@@ -507,7 +538,7 @@ func printTable(input v1alpha1.Release, components map[string]componentVersion, 
 			if req.UserRequested {
 				desiredVersionStr = fmt.Sprintf("%s - requested by user", desiredVersionStr)
 			}
-			if output == "text" {
+			if output == outputText {
 				desiredVersion = text.FgGreen.Sprint(desiredVersionStr)
 			} else {
 				desiredVersion = fmt.Sprintf("**%s**", desiredVersionStr)
@@ -531,7 +562,7 @@ func printTable(input v1alpha1.Release, components map[string]componentVersion, 
 				desiredVersionStr = fmt.Sprintf("%s - requested by user", desiredVersionStr)
 			}
 			var desiredVersion string
-			if output == "text" {
+			if output == outputText {
 				desiredVersion = text.FgGreen.Sprint(desiredVersionStr)
 			} else {
 				desiredVersion = fmt.Sprintf("**%s**", desiredVersionStr)
@@ -548,7 +579,7 @@ func printTable(input v1alpha1.Release, components map[string]componentVersion, 
 		t.AppendRows(componentRows)
 		t.AppendSeparator()
 		switch output {
-		case "markdown":
+		case outputMarkdown:
 			fmt.Println(t.RenderMarkdown())
 		default:
 			t.SetOutputMirror(os.Stdout)
@@ -559,34 +590,34 @@ func printTable(input v1alpha1.Release, components map[string]componentVersion, 
 	return nil
 }
 
-func FindNewestApp(name string, getUpstreamVersion bool, constraint *semver.Range) (appVersion, error) {
+func FindNewestApp(githubToken string, name string, getUpstreamVersion bool, constraint *semver.Range) (appVersion, error) {
 	var err error
 	version := ""
 
 	switch name {
 	case "cloud-provider-aws":
-		version, err = getLatestGithubRelease("giantswarm", "aws-cloud-controller-manager-app", constraint)
+		version, err = getLatestGithubRelease(githubToken, "giantswarm", "aws-cloud-controller-manager-app", constraint)
 		if err != nil {
 			return appVersion{}, microerror.Mask(err)
 		}
 	case "cluster-autoscaler":
-		version, err = getLatestGithubRelease("giantswarm", "cluster-autoscaler-app", constraint)
+		version, err = getLatestGithubRelease(githubToken, "giantswarm", "cluster-autoscaler-app", constraint)
 		if err != nil {
 			return appVersion{}, microerror.Mask(err)
 		}
 	case "etcd-k8s-res-count-exporter":
-		version, err = getLatestGithubRelease("giantswarm", "etcd-kubernetes-resources-count-exporter", constraint)
+		version, err = getLatestGithubRelease(githubToken, "giantswarm", "etcd-kubernetes-resources-count-exporter", constraint)
 		if err != nil {
 			return appVersion{}, microerror.Mask(err)
 		}
 	case "os-tooling":
-		version, err = getLatestGithubRelease("giantswarm", "capi-image-builder", constraint)
+		version, err = getLatestGithubRelease(githubToken, "giantswarm", "capi-image-builder", constraint)
 		if err != nil {
 			return appVersion{}, microerror.Mask(err)
 		}
 
 	default:
-		version, err = getLatestGithubRelease("giantswarm", name, constraint)
+		version, err = getLatestGithubRelease(githubToken, "giantswarm", name, constraint)
 		if err != nil {
 			return appVersion{}, microerror.Mask(err)
 		}
@@ -597,7 +628,7 @@ func FindNewestApp(name string, getUpstreamVersion bool, constraint *semver.Rang
 	}
 
 	if getUpstreamVersion {
-		uv, err := getAppVersionFromHelmChart(name, version)
+		uv, err := getAppVersionFromHelmChart(githubToken, name, version)
 		if err != nil {
 			return appVersion{}, microerror.Mask(err)
 		}
@@ -624,7 +655,7 @@ func sameMajorConstraint(version string) *semver.Range {
 	return &c
 }
 
-func findNewestComponentVersion(name string, constraint *semver.Range) (string, error) {
+func findNewestComponentVersion(githubToken string, name string, constraint *semver.Range) (string, error) {
 	var err error
 	version := ""
 
@@ -634,20 +665,20 @@ func findNewestComponentVersion(name string, constraint *semver.Range) (string, 
 		if err != nil {
 			return "", microerror.Mask(err)
 		}
-	case "kubernetes":
-		version, err = getLatestGithubRelease("kubernetes", "kubernetes", nil)
+	case kubernetesComponentName:
+		version, err = getLatestGithubRelease(githubToken, kubernetesGitHubOwner, kubernetesGitHubRepo, nil)
 		// strip the "Kubernetes " prefix from the version
 		version, _ = strings.CutPrefix(version, "Kubernetes ")
 		if err != nil {
 			return "", microerror.Mask(err)
 		}
 	case "os-tooling":
-		version, err = getLatestGithubRelease("giantswarm", "capi-image-builder", constraint)
+		version, err = getLatestGithubRelease(githubToken, "giantswarm", "capi-image-builder", constraint)
 		if err != nil {
 			return "", microerror.Mask(err)
 		}
 	default:
-		version, err = getLatestGithubRelease("giantswarm", name, constraint)
+		version, err = getLatestGithubRelease(githubToken, "giantswarm", name, constraint)
 		if err != nil {
 			return "", microerror.Mask(err)
 		}
@@ -658,10 +689,8 @@ func findNewestComponentVersion(name string, constraint *semver.Range) (string, 
 	return version, nil
 }
 
-func getLatestGithubRelease(owner string, name string, constraint *semver.Range) (string, error) {
-	token := env.GitHubToken.Val()
-
-	client, err := github.NewClient(github.WithAuthToken(token))
+func getLatestGithubRelease(githubToken string, owner string, name string, constraint *semver.Range) (string, error) {
+	client, err := github.NewClient(github.WithAuthToken(githubToken))
 	if err != nil {
 		return "", microerror.Mask(err)
 	}
@@ -747,9 +776,8 @@ func getLatestGithubRelease(owner string, name string, constraint *semver.Range)
 }
 
 // getLatestK8sVersion returns the latest patch version for a given k8s major.minor version.
-func getLatestK8sVersion(major uint64) (string, error) {
-	token := env.GitHubToken.Val()
-	client, err := github.NewClient(github.WithAuthToken(token))
+func getLatestK8sVersion(githubToken string, major uint64) (string, error) {
+	client, err := github.NewClient(github.WithAuthToken(githubToken))
 	if err != nil {
 		return "", microerror.Mask(err)
 	}
@@ -757,7 +785,7 @@ func getLatestK8sVersion(major uint64) (string, error) {
 	opt := &github.ListOptions{PerPage: 100}
 	var allReleases []*github.RepositoryRelease
 	for {
-		releases, resp, err := client.Repositories.ListReleases(context.Background(), "kubernetes", "kubernetes", opt)
+		releases, resp, err := client.Repositories.ListReleases(context.Background(), kubernetesGitHubOwner, kubernetesGitHubRepo, opt)
 		if err != nil {
 			return "", microerror.Mask(err)
 		}
@@ -798,11 +826,9 @@ func getLatestK8sVersion(major uint64) (string, error) {
 
 // getLatestReleaseForMinor fetches the latest patch version for a given minor version of a component.
 // e.g., for minorVersion "1.31", it might return "1.31.9"
-func getLatestReleaseForMinor(owner, repo, minorVersion string) (string, error) {
-	token := env.GitHubToken.Val()
-
+func getLatestReleaseForMinor(githubToken, owner, repo, minorVersion string) (string, error) {
 	ctx := context.Background()
-	client, err := github.NewClient(github.WithAuthToken(token))
+	client, err := github.NewClient(github.WithAuthToken(githubToken))
 	if err != nil {
 		return "", microerror.Mask(err)
 	}
@@ -941,7 +967,7 @@ func extractKubernetesMinorFromReleaseName(releaseName string) string {
 
 // autoDetectVersion attempts to automatically detect and fetch the appropriate
 // version based on the release name pattern
-func autoDetectVersion(releaseName, componentName string) (string, error) {
+func autoDetectVersion(githubToken, releaseName, componentName string) (string, error) {
 	kubernetesMinor := extractKubernetesMinorFromReleaseName(releaseName)
 	if kubernetesMinor == "" {
 		return "", microerror.Mask(fmt.Errorf("could not extract Kubernetes minor version from release name: %s", releaseName))
@@ -952,7 +978,7 @@ func autoDetectVersion(releaseName, componentName string) (string, error) {
 		return "", microerror.Mask(fmt.Errorf("could not get repository for app %s", componentName))
 	}
 
-	latestVersion, err := getLatestReleaseForMinor(owner, repoName, kubernetesMinor)
+	latestVersion, err := getLatestReleaseForMinor(githubToken, owner, repoName, kubernetesMinor)
 	if err != nil {
 		return "", microerror.Mask(err)
 	}
@@ -1005,10 +1031,10 @@ func getLatestFlatcarRelease() (string, error) {
 	return latest.String(), nil
 }
 
-func getAppVersionFromHelmChart(name string, ref string) (string, error) {
+func getAppVersionFromHelmChart(githubToken string, name string, ref string) (string, error) {
 	c := githubclient.Config{
 		Logger:      logrus.StandardLogger(),
-		AccessToken: env.GitHubToken.Val(),
+		AccessToken: githubToken,
 	}
 
 	client, err := githubclient.New(c)

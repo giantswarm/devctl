@@ -3,73 +3,34 @@ package checks
 import (
 	"testing"
 
-	"github.com/google/go-github/v89/github"
+	"github.com/google/go-github/v92/github"
 	"github.com/stretchr/testify/require"
+
+	"github.com/giantswarm/devctl/v8/pkg/reposetup/reconcile"
 )
 
-func TestApplyChecks(t *testing.T) {
-	existing := func(names ...string) []*github.RequiredStatusCheck {
-		out := make([]*github.RequiredStatusCheck, 0, len(names))
-		for _, n := range names {
-			out = append(out, &github.RequiredStatusCheck{Context: n})
-		}
-		return out
+func TestChecksBaseline(t *testing.T) {
+	checks := []*github.RequiredStatusCheck{{Context: "ci/circleci: go-build"}}
+	protection := &github.Protection{
+		RequiredStatusChecks:       &github.RequiredStatusChecks{Strict: false, Checks: &checks},
+		RequiredPullRequestReviews: &github.PullRequestReviewsEnforcement{RequiredApprovingReviewCount: 2},
+		EnforceAdmins:              &github.AdminEnforcement{Enabled: false},
 	}
 
-	tests := []struct {
-		name     string
-		existing []*github.RequiredStatusCheck
-		add      []string
-		remove   []string
-		want     []string
-	}{
-		{
-			name:     "add to empty",
-			existing: nil,
-			add:      []string{"a", "b"},
-			want:     []string{"a", "b"},
-		},
-		{
-			name:     "add deduplicates against existing",
-			existing: existing("a"),
-			add:      []string{"a", "b"},
-			want:     []string{"a", "b"},
-		},
-		{
-			name:     "remove drops named checks",
-			existing: existing("a", "b", "c"),
-			remove:   []string{"b"},
-			want:     []string{"a", "c"},
-		},
-		{
-			name:     "remove then add migrates a name",
-			existing: existing("semantic-pull-request", "other"),
-			add:      []string{"semantic-pull-request / Validate PR title"},
-			remove:   []string{"semantic-pull-request"},
-			want:     []string{"other", "semantic-pull-request / Validate PR title"},
-		},
-		{
-			name:     "remove of absent name is a no-op",
-			existing: existing("a"),
-			remove:   []string{"b"},
-			want:     []string{"a"},
-		},
-		{
-			name:     "add deduplicates within --checks itself",
-			existing: nil,
-			add:      []string{"a", "a"},
-			want:     []string{"a"},
-		},
-	}
+	b := checksBaseline(protection, []string{"pre-commit"}, []string{"ci/circleci: build-chart"}, []string{"create-release / Gather facts"})
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := applyChecks(tc.existing, tc.add, tc.remove)
-			names := make([]string, 0, len(got))
-			for _, c := range got {
-				names = append(names, c.GetContext())
-			}
-			require.Equal(t, tc.want, names)
-		})
-	}
+	// The branch's own settings are kept, so the step changes checks alone.
+	require.Equal(t, 2, b.RequiredReviews)
+	require.False(t, b.EnforceAdmins)
+	require.False(t, b.StrictChecks)
+	require.Equal(t, []string{"pre-commit"}, b.RequiredChecks)
+	require.Equal(t, []string{"ci/circleci: build-chart"}, b.RequiredChecksIfReported)
+	// --remove is an anchored pattern on top of the company's ignored ones.
+	require.Contains(t, b.IgnoredChecks, `^create-release / Gather facts$`)
+	require.Subset(t, b.IgnoredChecks, reconcile.DefaultBaseline().IgnoredChecks)
+
+	// Without required checks configured the strict default stands.
+	b = checksBaseline(&github.Protection{}, nil, nil, nil)
+	require.Equal(t, reconcile.DefaultBaseline().StrictChecks, b.StrictChecks)
+	require.Equal(t, 0, b.RequiredReviews)
 }

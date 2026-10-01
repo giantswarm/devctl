@@ -8,6 +8,8 @@ import (
 
 	"github.com/giantswarm/microerror"
 	"github.com/sirupsen/logrus"
+
+	"github.com/giantswarm/devctl/v8/internal/validate"
 )
 
 type Config struct {
@@ -37,10 +39,22 @@ func New(config Config) (*Client, error) {
 }
 
 func (c *Client) WaitForAppDeployment(ctx context.Context, appName, orgNamespace, managementCluster string, timeout time.Duration) error {
+	// The three names become arguments of tsh and kubectl, so this package
+	// constrains them itself rather than trust every caller to do it.
+	if err := validate.Name("app name", appName); err != nil {
+		return microerror.Maskf(invalidConfigError, "%s", err)
+	}
+	if err := validate.Name("organization namespace", orgNamespace); err != nil {
+		return microerror.Maskf(invalidConfigError, "%s", err)
+	}
+	if err := validate.Name("management cluster", managementCluster); err != nil {
+		return microerror.Maskf(invalidConfigError, "%s", err)
+	}
+
 	c.logger.Infof("Waiting for app %s to be deployed in namespace %s", appName, orgNamespace)
 
 	// Login to management cluster
-	loginCmd := exec.Command("tsh", "kube", "login", managementCluster)
+	loginCmd := exec.Command("tsh", "kube", "login", managementCluster) // #nosec G204 -- fixed binary; managementCluster is checked above and passed as its own argument element
 	err := loginCmd.Run()
 	if err != nil {
 		return microerror.Mask(err)
@@ -54,7 +68,7 @@ func (c *Client) WaitForAppDeployment(ctx context.Context, appName, orgNamespace
 
 	for {
 		// Get app status using kubectl
-		kubectlCmd := exec.Command("kubectl", "get", "app", appName,
+		kubectlCmd := exec.Command("kubectl", "get", "app", appName, // #nosec G204 -- fixed binary and subcommand; appName and orgNamespace are checked above and passed as their own argument elements
 			"-n", orgNamespace,
 			"-o", "jsonpath={.status.release.status}")
 		kubectlCmd.Stderr = c.stderr

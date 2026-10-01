@@ -2,13 +2,17 @@ package circleci
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
+	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
+	"sigs.k8s.io/yaml"
 
 	"github.com/giantswarm/devctl/v8/pkg/gen"
 	"github.com/giantswarm/devctl/v8/pkg/gen/input"
@@ -38,44 +42,115 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
+func (r *runner) run(ctx context.Context, cmd *cobra.Command, _ []string) error {
 	var err error
+
+	// A fork line carries its upstream's files: nothing is generated for it.
+	if !r.flag.Flavours.Generates() {
+		return nil
+	}
 
 	// The image pipeline is derived from repo content: architect already
 	// requires a Dockerfile to build an image, so its presence is the signal.
 	_, statErr := os.Stat("Dockerfile")
 	hasDockerfile := statErr == nil
 
+	// The chart-test kind cluster's configuration is derived from repo content
+	// the same way: a kind Cluster file at the conventional path is handed to
+	// the run-tests-with-ats jobs as kind_config. The cluster's shape (feature
+	// gates, runtime config) is test content, so it lives next to .ats/main.yaml
+	// and the tests rather than in a gen.ci key.
+	hasATSKindConfig := detectATSKindConfig()
+
+	// The images the repo's own jobs push are derived from its custom.yml: an
+	// architect/push-to-registries job there builds a second image the chart
+	// may reference at the stamped version, which build-chart packages before
+	// that job pushes it.
+	customImages, err := detectCustomImages()
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
 	// Node package manager is derived from the lockfile, the same content-signal
 	// style as the Dockerfile probe. An explicit --package-manager wins.
+	// appVersion is the version of the packaged application, so whether the
+	// build stamps it follows from the repo's shape (see the generator). nil
+	// means "derive"; an explicit flag overrules it in either direction.
+	var overrideChartAppVersion *bool
+	if cmd.Flags().Changed(flagOverrideChartAppVersion) {
+		value := r.flag.OverrideChartAppVersion
+		overrideChartAppVersion = &value
+	} else if r.flag.KeepChartAppVersion {
+		value := false
+		overrideChartAppVersion = &value
+	}
+
 	packageManager := r.flag.PackageManager
 	if packageManager == "" && r.flag.Language == gen.LanguageNode {
 		packageManager = detectPackageManager()
 	}
 
+	// Node version is derived from .nvmrc, the same content-signal style. An
+	// explicit --node-image-version wins; neither set falls back to devctl's
+	// baked-in default.
+	nodeImageVersion := r.flag.NodeImageVersion
+	if nodeImageVersion == "" && r.flag.Language == gen.LanguageNode {
+		var rejected string
+		nodeImageVersion, rejected = detectNodeVersion()
+		// A .nvmrc that names no cimg/node tag is the one case worth saying out
+		// loud: the repo asked for a Node version and did not get it, and the
+		// only visible symptom would be an unchanged workflows.yml.
+		if rejected != "" {
+			fmt.Fprintf(r.stderr, "warning: ignoring .nvmrc value %q -- the Node job needs an exact major.minor.patch (e.g. 24.19.0); falling back to %s\n", rejected, circleci.DefaultNodeImageVersion)
+		}
+	}
+
 	var circleciInput *circleci.CircleCI
 	{
+		// Validated in flag.Validate; parsed again here because the map is what
+		// the generator takes.
+		imageResourceClasses, err := r.flag.imageResourceClasses()
+		if err != nil {
+			return microerror.Mask(err)
+		}
+
 		c := circleci.Config{
-			RepoName:         r.flag.RepoName,
-			Language:         r.flag.Language,
-			Flavours:         r.flag.Flavours,
-			HasDockerfile:    hasDockerfile,
-			AppCatalog:       r.flag.AppCatalog,
-			AppCatalogTest:   r.flag.AppCatalogTest,
-			ChartName:        r.flag.ChartName,
-			ForcePublic:      r.flag.ForcePublic,
-			BranchPublish:    r.flag.BranchPublish,
-			BuildConcurrency: r.flag.BuildConcurrency,
-			ImagePreBuildJob: r.flag.ImagePreBuildJob,
-			ImagePrivateOnly: r.flag.ImagePrivateOnly,
-			ImageName:        r.flag.ImageName,
-			ImagePlatforms:   r.flag.ImagePlatforms,
-			ImageDockerfile:  r.flag.ImageDockerfile,
-			ResourceClass:    r.flag.ResourceClass,
-			PackageManager:   packageManager,
-			NodeTestTarget:   r.flag.NodeTestTarget,
-			NodeBuildTarget:  r.flag.NodeBuildTarget,
-			NodeBuildOutput:  r.flag.NodeBuildOutput,
+			RepoName:                r.flag.RepoName,
+			Language:                r.flag.Language,
+			Flavours:                r.flag.Flavours,
+			ComponentType:           r.flag.ComponentType,
+			Team:                    r.flag.Team,
+			SkipAppCatalog:          r.flag.SkipAppCatalog,
+			SkipATS:                 r.flag.SkipATS,
+			ATSVersion:              r.flag.ATSVersion,
+			ATSOnRelease:            r.flag.ATSOnRelease,
+			ATSResourceClass:        r.flag.ATSResourceClass,
+			HasATSKindConfig:        hasATSKindConfig,
+			HasDockerfile:           hasDockerfile,
+			CustomImages:            customImages,
+			AppCatalog:              r.flag.AppCatalog,
+			AppCatalogTest:          r.flag.AppCatalogTest,
+			ChartName:               r.flag.ChartName,
+			OverrideChartAppVersion: overrideChartAppVersion,
+			ForcePublic:             r.flag.ForcePublic,
+			BranchPublish:           r.flag.BranchPublish,
+			BuildConcurrency:        r.flag.BuildConcurrency,
+			ImagePreBuildJob:        r.flag.ImagePreBuildJob,
+			ChartReleaseGateJob:     r.flag.ChartReleaseGateJob,
+			ImagePrivateOnly:        r.flag.ImagePrivateOnly,
+			ImageName:               r.flag.ImageName,
+			ImagePlatforms:          r.flag.ImagePlatforms,
+			ImageDockerfile:         r.flag.ImageDockerfile,
+			ImageNativeBuilds:       r.flag.ImageNativeBuilds,
+			ImageResourceClasses:    imageResourceClasses,
+			ResourceClass:           r.flag.ResourceClass,
+			GoBuildPath:             r.flag.GoBuildPath,
+			GoTestArtifacts:         r.flag.GoTestArtifacts,
+			PackageManager:          packageManager,
+			NodeImageVersion:        nodeImageVersion,
+			NodeTestTarget:          r.flag.NodeTestTarget,
+			NodeBuildTarget:         r.flag.NodeBuildTarget,
+			NodeBuildOutput:         r.flag.NodeBuildOutput,
 		}
 
 		circleciInput, err = circleci.New(c)
@@ -102,6 +177,58 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 	return nil
 }
 
+// detectATSKindConfig reports whether the repo carries a kind Cluster
+// configuration for the chart-test jobs at circleci.ATSKindConfigPath. Presence
+// is the whole signal, mirroring the Dockerfile probe: the generator fixes the
+// path and the orb job validates the file when it creates the cluster.
+func detectATSKindConfig() bool {
+	_, err := os.Stat(circleci.ATSKindConfigPath)
+	return err == nil
+}
+
+// detectCustomImages returns the images the repo's .circleci/custom.yml pushes
+// with architect/push-to-registries jobs, sorted and without duplicates. A job
+// without an `image` parameter pushes the orb default, the repo's own image,
+// which the generator names already. No custom.yml, no images; a custom.yml
+// that is no YAML fails generation, as it would fail the pipeline.
+func detectCustomImages() ([]string, error) {
+	data, err := os.ReadFile(circleci.CustomConfigPath)
+	if os.IsNotExist(err) {
+		return nil, nil
+	} else if err != nil {
+		return nil, microerror.Mask(err)
+	}
+
+	var custom struct {
+		Workflows map[string]struct {
+			Jobs []any `json:"jobs"`
+		} `json:"workflows"`
+	}
+	if err := yaml.Unmarshal(data, &custom); err != nil {
+		return nil, microerror.Maskf(invalidConfigError, "parse %s: %v", circleci.CustomConfigPath, err)
+	}
+
+	var images []string
+	for _, workflow := range custom.Workflows {
+		for _, job := range workflow.Jobs {
+			entry, ok := job.(map[string]any)
+			if !ok {
+				continue
+			}
+			params, ok := entry[circleci.PushToRegistriesJob].(map[string]any)
+			if !ok {
+				continue
+			}
+			if image, ok := params["image"].(string); ok && image != "" {
+				images = append(images, image)
+			}
+		}
+	}
+	slices.Sort(images)
+
+	return slices.Compact(images), nil
+}
+
 // detectPackageManager picks the Node package manager from the lockfile present
 // in the working directory, mirroring the Dockerfile content-probe. npm and
 // pnpm are unambiguous by lockfile name; a yarn.lock is Classic only if it
@@ -122,3 +249,54 @@ func detectPackageManager() string {
 
 	return ""
 }
+
+// detectNodeVersion reads the repo's .nvmrc, mirroring the lockfile probe. It
+// is the opt-in that lets a repo own its Node version in ONE place: the same
+// file drives local dev (nvm/fnm/asdf/volta), actions/setup-node via
+// node-version-file, and -- through this probe -- the generated cimg/node tag
+// and the node-build cache-key salt, which are otherwise the copies most prone
+// to silent drift.
+//
+// Only an exact major.minor.patch is honoured, and deliberately so. .nvmrc also
+// accepts aliases ("lts/*", "node") and partial versions; of those only a bare
+// major names no cimg/node tag at all, since cimg does publish a floating
+// major.minor (cimg/node:24.19 exists). Accepting major.minor would still
+// defeat the point: the repo's Dockerfile FROM pins an exact patch, so a
+// floating .nvmrc would drift from it -- reintroducing exactly the divergence
+// this probe removes -- and it would coarsen the node-build cache-key salt,
+// which exists to be exact. A repo using an unusable form therefore keeps
+// devctl's baked-in default, and the caller says so out loud (see the second
+// return value): silently falling back is what would make CI run a different
+// Node than local dev without anyone noticing.
+//
+// Comments and surrounding whitespace are stripped, matching how nvm and
+// Renovate's nvm manager read the file.
+//
+// The second return value is the raw .nvmrc value when the file exists but
+// names no usable version -- empty both when there is no .nvmrc (the expected
+// case, no warning warranted) and when a version was parsed.
+func detectNodeVersion() (version, rejected string) {
+	data, err := os.ReadFile(".nvmrc")
+	if err != nil {
+		return "", ""
+	}
+
+	for line := range strings.Lines(string(data)) {
+		value, _, _ := strings.Cut(line, "#")
+		value = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(value), "v"))
+		if value == "" {
+			continue
+		}
+		if !exactNodeVersionRE.MatchString(value) {
+			return "", value
+		}
+		return value, ""
+	}
+
+	return "", ""
+}
+
+// exactNodeVersionRE matches a fully-qualified Node version (major.minor.patch).
+// See detectNodeVersion for why the less specific forms cimg does publish are
+// still rejected.
+var exactNodeVersionRE = regexp.MustCompile(`^\d+\.\d+\.\d+$`)

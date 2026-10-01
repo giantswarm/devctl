@@ -9,7 +9,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
-	"github.com/giantswarm/devctl/v8/cmd/app"
+	"github.com/giantswarm/devctl/v8/cmd/auth"
 	"github.com/giantswarm/devctl/v8/cmd/completion"
 	"github.com/giantswarm/devctl/v8/cmd/deploy"
 	"github.com/giantswarm/devctl/v8/cmd/gen"
@@ -17,6 +17,7 @@ import (
 	"github.com/giantswarm/devctl/v8/cmd/release"
 	"github.com/giantswarm/devctl/v8/cmd/replace"
 	"github.com/giantswarm/devctl/v8/cmd/repo"
+	"github.com/giantswarm/devctl/v8/cmd/rollout"
 	"github.com/giantswarm/devctl/v8/cmd/version"
 	"github.com/giantswarm/devctl/v8/pkg/project"
 )
@@ -42,15 +43,14 @@ func New(config Config) (*cobra.Command, error) {
 
 	var err error
 
-	var appCmd *cobra.Command
+	var authCmd *cobra.Command
 	{
-		c := app.Config{
-			Logger: config.Logger,
+		c := auth.Config{
 			Stderr: config.Stderr,
 			Stdout: config.Stdout,
 		}
 
-		appCmd, err = app.New(c)
+		authCmd, err = auth.New(c)
 		if err != nil {
 			return nil, microerror.Mask(err)
 		}
@@ -107,6 +107,19 @@ func New(config Config) (*cobra.Command, error) {
 		}
 
 		releaseCmd, err = release.New(c)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+	}
+
+	var rolloutCmd *cobra.Command
+	{
+		c := rollout.Config{
+			Stderr: config.Stderr,
+			Stdout: config.Stdout,
+		}
+
+		rolloutCmd, err = rollout.New(c)
 		if err != nil {
 			return nil, microerror.Mask(err)
 		}
@@ -189,15 +202,18 @@ func New(config Config) (*cobra.Command, error) {
 
 	f.Init(c)
 
-	c.AddCommand(appCmd)
+	c.AddCommand(authCmd)
 	c.AddCommand(completionCmd)
 	c.AddCommand(deployCmd)
 	c.AddCommand(genCmd)
 	c.AddCommand(prCmd)
 	c.AddCommand(releaseCmd)
 	c.AddCommand(replaceCmd)
+	c.AddCommand(rolloutCmd)
 	c.AddCommand(repoCmd)
 	c.AddCommand(versionCmd)
+
+	guardUsage(c)
 
 	return c, nil
 }

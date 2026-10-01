@@ -1,0 +1,1 @@
+{"exitCode": 2, "stdoutContains": ["failed at released: ci/circleci: push-to-registries failed"], "stderrContains": ["new-service failed at released"]}

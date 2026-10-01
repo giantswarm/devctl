@@ -1,7 +1,7 @@
 package file
 
 import (
-	_ "embed"
+	"embed"
 
 	"github.com/giantswarm/devctl/v8/pkg/gen/input"
 	"github.com/giantswarm/devctl/v8/pkg/gen/input/llm/internal/params"
@@ -11,8 +11,10 @@ import (
 var baseLLMRulesTemplate string
 
 //go:generate go run ../../../update-template-sha.go base_llm_rules.mdc.template
-//go:embed base_llm_rules.mdc.template.sha
-var baseLLMRulesTemplateSha string
+//go:embed base_llm_rules.mdc.template*
+var baseLLMRulesTemplateFiles embed.FS
+
+var baseLLMRulesTemplateSha = input.TemplateSHA(baseLLMRulesTemplateFiles, "base_llm_rules.mdc.template")
 
 func NewBaseLLMRulesInput(p params.Params) input.Input {
 	i := input.Input{

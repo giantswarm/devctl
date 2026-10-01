@@ -2,7 +2,7 @@ package release
 
 import (
 	"github.com/giantswarm/microerror"
-	"github.com/google/go-github/v89/github"
+	"github.com/google/go-github/v92/github"
 )
 
 // Indicates that the release was not found for the given provider and version.
@@ -50,4 +50,9 @@ func IsGithubNotFound(err error) bool {
 
 var fileNotFoundError = &microerror.Error{
 	Kind: "fileNotFoundError",
+}
+
+// Indicates that an external lookup returned something we cannot work with.
+var executionFailedError = &microerror.Error{
+	Kind: "executionFailedError",
 }

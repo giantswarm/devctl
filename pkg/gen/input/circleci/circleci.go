@@ -1,6 +1,13 @@
 package circleci
 
 import (
+	"path"
+	"regexp"
+	"slices"
+	"sort"
+	"strings"
+
+	"github.com/Masterminds/semver/v3"
 	"github.com/giantswarm/microerror"
 
 	"github.com/giantswarm/devctl/v8/pkg/gen"
@@ -27,7 +34,86 @@ import (
 // custom manager that reads this annotation lives in renovate-custom.json5.
 //
 // renovate: datasource=github-tags depName=giantswarm/architect-orb
-const OrbVersion = "9.6.0"
+const OrbVersion = "10.12.0"
+
+// DefaultATSVersion is the app-test-suite container tag the generated chart-test
+// jobs run when a repo pins none (`gen circleci --ats-version`). app-test-suite
+// 1.x is the default for every generated-CI chart repo: the job creates the kind
+// cluster, the tests live in a uv project and the chart is installed with Helm.
+// A repo that has not migrated its .ats/main.yaml and tests yet pins a 0.x tag
+// (e.g. "0.15.0") to stay on the legacy dats.sh path until it has.
+const DefaultATSVersion = "1.0.3"
+
+// ATSKindConfigPath is the repo-owned kind Cluster configuration the chart-test
+// jobs hand to `kind create cluster --config` (run-tests-with-ats `kind_config`)
+// when the repository carries it. It is a content signal like the Dockerfile
+// and .nvmrc probes, not a gen.ci key: the cluster's shape is test content that
+// changes with .ats/main.yaml and the tests, all repo-owned, so it lives next to
+// them and one repository edits one place. Feature gates and runtime config are
+// fixed at `kind create`, and app-test-suite 1.x provisions no cluster, so this
+// file is the only way a chart's tests get them (first use: Agent Substrate's
+// ClusterTrustBundle, ClusterTrustBundleProjection and PodCertificateRequest
+// gates for the kagent API v2 chart smokes). The job keeps naming the cluster
+// and choosing the node image, so the file carries only what the job does not
+// decide. Absent, the jobs render exactly as before.
+const ATSKindConfigPath = ".ats/kind-config.yaml"
+
+// CustomConfigPath is the repo-owned CircleCI file the setup workflow merges
+// into the generated workflows at pipeline runtime.
+const CustomConfigPath = ".circleci/custom.yml"
+
+// PushToRegistriesJob is the orb job that builds and pushes an image. A
+// custom.yml job of this kind builds an image of this pipeline beside the
+// generated one.
+const PushToRegistriesJob = "architect/push-to-registries"
+
+// atsResourceClasses are the classes the orb's run-tests-with-ats job accepts
+// (its resource_class enum). The orb default is medium (2 vCPU / 7.5 GB).
+var atsResourceClasses = []string{"medium", "large", "xlarge", "2xlarge"}
+
+// ComponentTypeTemplate is the giantswarm/github team-file componentType of a
+// repository other repositories are created from (giantswarm/template-app).
+// It is the one component type the generator acts on: a template's chart
+// carries the placeholders below instead of values, so its chart job renders
+// the checkout with fixture values before app-build-suite reads it, and
+// nothing is released from it (no chart-test, no push jobs). Every other
+// component type renders the pipeline as before.
+const ComponentTypeTemplate = "template"
+
+// The placeholders a template repository carries and the set-up engine fills
+// when a repository is created from it (`devctl replace`). They are the
+// contract between the templates and the engine; the generated chart job of a
+// template repository renders exactly these, so it proves what the engine
+// will produce. TemplateAppNamePlaceholder also names the chart directory
+// (helm/{APP-NAME}); TemplateTeamPlaceholder is the value of the chart's
+// io.giantswarm.application.team annotation.
+const (
+	TemplateAppNamePlaceholder        = "{APP-NAME}"
+	TemplateTeamPlaceholder           = "{TEAM-NAME}"
+	TemplateHelmRepositoryPlaceholder = "{APP HELM REPOSITORY}"
+)
+
+// TemplateAppName and TemplateHelmRepository are the fixture values the
+// template chart job renders the app-name and Helm-repository placeholders
+// with. app-build-suite validates neither beyond the chart being well-formed,
+// so fixtures do; the team is not a fixture -- it is the owning team from the
+// team file (Config.Team), because the team label is what the first
+// app-build-suite run of a created repository is validated on (C0001).
+const (
+	TemplateAppName        = "sample-app"
+	TemplateHelmRepository = "https://charts.example.com"
+)
+
+// teamPattern bounds Config.Team: the template splices it into a sed
+// expression and the rendered chart's team annotation, so it is a plain
+// lowercase team short name or nothing.
+var teamPattern = regexp.MustCompile(`^[a-z0-9-]+$`)
+
+// teamFilePrefix is what a giantswarm/github team file's name carries before
+// the team's short name (repositories/team-honeybadger.yaml → honeybadger).
+// align-files passes the file's name; the chart annotation takes the short
+// name, so both spellings are accepted and normalised to the short name.
+const teamFilePrefix = "team-"
 
 // ContinuationOrbVersion pins the circleci/continuation orb used by the
 // generated setup config (.circleci/config.yml) to merge the optional
@@ -47,13 +133,32 @@ const (
 	DefaultAppCatalogTest = "giantswarm-test-catalog"
 )
 
-// NodeImageVersion is the cimg/node Docker tag the generated Node job runs on.
-// Baked in (not a flag) and Renovate-managed, for the same reason as the orb
-// pins: a toolchain bump ships with a devctl release and reaches repos via
-// align-files rather than drifting per repo.
+// DefaultNodeImageVersion is the cimg/node Docker tag the generated Node job
+// runs on when a repo does not pin its own. Baked in and Renovate-managed, for
+// the same reason as the orb pins: a toolchain bump ships with a devctl release
+// and reaches repos via align-files rather than drifting per repo.
+//
+// A repo that needs to own its Node version -- because the version is also
+// baked into artifacts devctl does not generate (a Dockerfile FROM, a
+// setup-node step) and must not diverge from CI -- overrides this by committing
+// a .nvmrc, which the runner probes. That keeps the version in ONE place per
+// repo instead of trading a central default for N copies: Renovate's built-in
+// nvm manager owns .nvmrc natively (datasource node-version, depName "node"),
+// so it groups with the repo's other node deps and is LTS-gated, neither of
+// which a rendered cimg/node tag can express.
+//
+// That trade has one cost worth knowing. This constant is tracked against the
+// docker datasource, so "a cimg/node tag with this name exists" is a
+// precondition of any bump. A .nvmrc is tracked against node-version -- Node
+// releases, which CircleCI trails by hours to days. A repo whose .nvmrc is
+// bumped inside that window renders an image that cannot be pulled yet, and
+// every job fails at container spin-up with a manifest error until CircleCI
+// catches up. It is self-healing and confined to that one repo, but the cause
+// is not obvious from the error; a consuming repo that wants the guarantee back
+// can hold .nvmrc on the docker datasource in its own renovate config.
 //
 // renovate: datasource=docker depName=cimg/node
-const NodeImageVersion = "24.18.0"
+const DefaultNodeImageVersion = "24.21.0"
 
 // DefaultNodeTestTarget is the package.json script the Node job runs for the
 // verify phase when a repo does not override it. The repo composes
@@ -188,6 +293,58 @@ type Config struct {
 	// Flavours are the devctl gen flavours. The "app" flavour selects the
 	// chart pipeline.
 	Flavours gen.FlavourSlice
+	// SkipAppCatalog drops the GitHub app catalog push from the chart publish
+	// jobs (push-to-app-catalog push_to_appcatalog: false), keeping the OCI
+	// registry push. Every GitHub app catalog is a public repository, so a
+	// private chart published to one is world-readable regardless of the source
+	// repo's visibility. Set it for private charts that must stay private: the
+	// chart then ships only to gsociprivate.azurecr.io, which Flux consumes via
+	// an OCIRepository. Only applies to a chart/app repo (the "app" flavour).
+	SkipAppCatalog bool
+	// SkipATS opts the chart pipeline out of app-test-suite (ATS) chart tests.
+	// When set, the run-tests-with-ats jobs and the canonical tests/ats/Pipfile
+	// are not generated, and the chart push jobs gate directly on build-chart.
+	// Only applies to a chart/app repo (the "app" flavour).
+	SkipATS bool
+	// ATSOnRelease also runs the app-test-suite (ATS) chart tests on the
+	// release tag. By default the chart pipeline runs them once, as
+	// execute-chart-tests on every branch build, and the tag only builds and
+	// pushes the chart (push-chart-release gates on build-chart): the tag is
+	// cut from the merge commit of a PR whose branch run already tested that
+	// tree. When set, the pre-v8.45.0 shape is generated: an additional
+	// execute-chart-tests-release job on the tag (after the release image when
+	// there is one) that push-chart-release gates on. For repos whose custom.yml
+	// jobs require execute-chart-tests-release, or whose branch protection does
+	// not make the CircleCI statuses required checks so the tag-time run is the
+	// only enforced one. Mutually exclusive with SkipATS. Only applies to a
+	// chart/app repo.
+	ATSOnRelease bool
+	// ATSVersion pins the app-test-suite container tag the chart-test jobs run
+	// (run-tests-with-ats `app-test-suite_container_tag`). Empty selects
+	// DefaultATSVersion. A tag of major 1 or
+	// higher selects app-test-suite 1.x, which no longer provisions clusters:
+	// both jobs get `create_kind_cluster: true` (the job creates the kind
+	// cluster and hands over its kubeconfig) and the generated test dependency
+	// file switches from tests/ats/Pipfile (pipenv) to tests/ats/pyproject.toml
+	// + uv.lock (uv), with the Pipfile deleted. A 0.x tag keeps the legacy
+	// dats.sh path and the Pipfile. Must be a semantic version. Ignored with
+	// SkipATS. Only applies to a chart/app repo.
+	ATSVersion string
+	// HasATSKindConfig is true when the repo carries a kind Cluster
+	// configuration at ATSKindConfigPath. The runner derives it from the file's
+	// presence, the way HasDockerfile is derived; both run-tests-with-ats jobs
+	// then get `kind_config: <that path>`. Ignored when no chart-test job is
+	// rendered.
+	HasATSKindConfig bool
+	// ATSResourceClass overrides the CircleCI resource_class of both
+	// run-tests-with-ats jobs: one of medium, large, xlarge, 2xlarge (the orb's
+	// enum; its default is medium). Empty renders nothing. For chart tests that
+	// run a real workload on the job's kind cluster beside the chart under
+	// test. Deliberately separate from ResourceClass, which sizes the cli
+	// go-build and the Node job. Requires the chart-test jobs (app flavour
+	// without SkipATS); rejected otherwise, since the value would silently
+	// render nothing.
+	ATSResourceClass string
 	// HasDockerfile selects the image pipeline. The runner derives this from
 	// the presence of a Dockerfile in the repo.
 	HasDockerfile bool
@@ -204,6 +361,15 @@ type Config struct {
 	// for repos whose chart directory does not match the repo name (e.g.
 	// docs-proxy ships helm/docs-proxy-app).
 	ChartName string
+	// OverrideChartAppVersion decides whether app-build-suite stamps the
+	// computed build version into the chart's appVersion. nil derives it from
+	// the repo's shape: a repo that builds its own image ships the app it
+	// packages, so its appVersion is its own version and is stamped; a
+	// chart-only repo packages an app built elsewhere, so the appVersion
+	// declared in Chart.yaml is kept. A non-nil value overrules that in either
+	// direction. The append-only custom.yml merge cannot add a param to a
+	// generated job, so the generator carries it.
+	OverrideChartAppVersion *bool
 	// ForcePublic pushes the image and chart as public artifacts even though
 	// the repo is private (architect force-public: true). Set it for private
 	// repos that publish public artifacts (e.g. web-assets). Mutually exclusive
@@ -220,6 +386,20 @@ type Config struct {
 	// pre-steps the append-only custom.yml merge cannot inject into a generated
 	// job. Empty for the common case.
 	ImagePreBuildJob string
+	// CustomImages are the images (`giantswarm/<name>`, without registry and
+	// tag) the repo's custom.yml pushes with architect/push-to-registries jobs,
+	// derived from the checkout. A chart that references one at the stamped
+	// appVersion names an image build-chart runs before, like the generated
+	// image, so build-chart exempts them alike.
+	CustomImages []string
+	// ChartReleaseGateJob names a repo-owned custom.yml job the release chart
+	// push must wait on (adds a `requires` entry to push-chart-release, which
+	// the append-only custom.yml merge cannot inject into a generated job). The
+	// chart counterpart of ImagePreBuildJob: for a check that has to refuse a
+	// release before its chart is pushed, such as a meta chart whose component
+	// floor resolves to no published chart. The branch dev push (BranchPublish)
+	// is not gated. Requires the chart pipeline (app flavour, not a template).
+	ChartReleaseGateJob string
 	// ImageDockerfile overrides the Dockerfile path on the image jobs (the
 	// architect push-to-registries `dockerfile` param). A non-empty value also
 	// forces the image pipeline on, so a repo whose Dockerfile is not at the
@@ -240,6 +420,26 @@ type Config struct {
 	// Empty lets the orb default apply. Set it for single-architecture images
 	// (e.g. vllm -> linux/arm64).
 	ImagePlatforms string
+	// ImageNativeBuilds builds the image one architecture per job on a native
+	// resource class (architect build-image, one per platform) and switches
+	// the push-to-registries jobs to `merge-digests: true`, which joins the
+	// per-architecture digests into the tagged index instead of building.
+	// False (default) keeps the single multi-platform buildx job. Set it for
+	// Dockerfiles with real work in RUN steps (apt, pip, yarn, native
+	// modules), where the emulated architecture is the whole critical path; a
+	// COPY of a cross-compiled binary gains nothing. Requires architect-orb
+	// 10.2.0. Every platform in ImagePlatforms must have a native class.
+	ImageNativeBuilds bool
+	// ImageResourceClasses overrides the CircleCI resource_class of the native
+	// build-image jobs per platform (both the branch and the release leg of that
+	// platform), e.g. {"linux/arm64": "arm.large"}. Empty keeps the defaults
+	// (linux/amd64 on small, linux/arm64 on arm.medium). Raise it for images
+	// whose export, compression or SBOM scan of a very large result is what the
+	// leg spends its time on (vllm: 22 GB on the 2-vCPU arm.medium). A class
+	// must belong to the platform's architecture -- the orb has no emulated
+	// fallback, so a mismatch is rejected here rather than failing the build.
+	// Only applies with ImageNativeBuilds.
+	ImageResourceClasses map[string]string
 	// BuildConcurrency overrides how many architectures the cli-flavour
 	// go-build job compiles concurrently (the architect go-build
 	// `build_concurrency` param). Empty defaults to "auto" (nproc). Lower it
@@ -253,11 +453,29 @@ type Config struct {
 	// repos that need more RAM/CPU headroom for the cold cross-compile. Only
 	// applies to the cli flavour (ReleaseBinaries).
 	ResourceClass string
+	// GoBuildPath overrides the package the go-build job compiles (the
+	// architect go-build `path` param). Empty keeps the orb default ".", the
+	// module root.
+	GoBuildPath string
+	// GoTestArtifacts names a directory under the checkout that `make test`
+	// writes and that the go-build job keeps as a CircleCI build artifact when
+	// it fails: the job gains post-steps that stage the directory when: on_fail
+	// and upload the staging directory with store_artifacts, so a green run
+	// stores nothing. Empty renders no post-steps. Cleaned with path.Clean; must
+	// stay a relative path under the checkout made of [A-Za-z0-9._/-], because
+	// the template splices it into a shell command and into the artifact
+	// destination verbatim. Requires Language go.
+	GoTestArtifacts string
 	// PackageManager selects the Node package manager the build/test job uses
 	// (one of "npm", "yarn", "yarn-classic", "pnpm"). The runner detects it
 	// from the lockfile; empty defaults to Yarn Berry. Only applies to a Node
 	// repo (Language == "node").
 	PackageManager string
+	// NodeImageVersion pins the cimg/node tag the build/test job runs on, and
+	// with it the node-build cache-key salt. The runner detects it from the
+	// repo's .nvmrc; empty falls back to DefaultNodeImageVersion. Only applies
+	// to a Node repo (Language == "node").
+	NodeImageVersion string
 	// NodeTestTarget overrides the package.json script the Node job runs for
 	// the verify phase (ci:verify). Empty defaults to "test". The repo composes
 	// its entire correctness gate -- tsc --noEmit + lint + prettier --check +
@@ -276,6 +494,20 @@ type Config struct {
 	// "node-build" and emits persist_to_workspace; empty names it "node-test".
 	// Only applies to a Node repo.
 	NodeBuildOutput string
+	// ComponentType is the repository's componentType from the giantswarm/github
+	// team file. Only ComponentTypeTemplate changes the output, and only for a
+	// chart repo (the "app" flavour): the chart job renders the template's
+	// placeholders with fixture values before app-build-suite, and the
+	// chart-test and chart push jobs are omitted (nothing is released from a
+	// template). Every other value, and a template without a chart, renders
+	// the pipeline as before. Requires Team when set to ComponentTypeTemplate.
+	ComponentType string
+	// Team is the owning team, as the team file names it (team-honeybadger or
+	// honeybadger; a leading "team-" is dropped). The template chart job
+	// renders TemplateTeamPlaceholder with it, so the rendered chart carries
+	// the team label a created repository gets. Only applies with ComponentType
+	// template; ignored otherwise.
+	Team string
 }
 
 // shipsBinaries reports whether the repo distributes cross-platform Go binaries
@@ -290,6 +522,122 @@ type CircleCI struct {
 	params params.Params
 }
 
+// DefaultImagePlatforms is the platform list a native per-architecture image
+// build covers when the repo does not override it. It matches the orb's own
+// default for the single-job build, so opting in does not change the set.
+const DefaultImagePlatforms = "linux/amd64,linux/arm64"
+
+// imageResourceClasses maps a build platform to a CircleCI resource class of the
+// same architecture. This mapping is the whole point of building one
+// architecture per job: CircleCI gives the setup_remote_docker VM the
+// architecture of the job's resource class, so a class from this table is what
+// keeps the build native. The orb refuses a mismatch rather than falling back to
+// QEMU, so a wrong entry here is a failed build, not a slow one.
+//
+// amd64 sits on `small` rather than `medium` because a small docker executor is
+// already given a medium remote-docker VM, which is where the build runs.
+// arm.medium is the floor on the Arm side; there is no arm.small.
+var imageResourceClasses = map[string]string{
+	"linux/amd64": "small",
+	"linux/arm64": "arm.medium",
+}
+
+// imageResourceClassesByPlatform lists the classes a native build-image job may
+// run on per platform: the architect build-image job's resource_class enum,
+// split by architecture. CircleCI gives the setup_remote_docker VM the
+// architecture (and size) of the job's class, so an x86 class under a
+// linux/arm64 build would emulate, which the orb refuses; the split keeps that a
+// generation-time error.
+var imageResourceClassesByPlatform = map[string][]string{
+	"linux/amd64": {"small", "medium", "medium+", "large", "xlarge"},
+	"linux/arm64": {"arm.medium", "arm.large", "arm.xlarge", "arm.2xlarge"},
+}
+
+// resolveImageBuilds turns a comma-separated platform list into one build-image
+// job per platform, for each of the branch and tag paths, and returns the
+// normalised list to put on the push-to-registries merge jobs.
+//
+// Branch and tag jobs need distinct names because both appear in the same
+// workflow. An unmapped platform is an error rather than a default class: the
+// orb has no emulated fallback, so guessing a class here would generate a
+// pipeline that fails at build time instead of at generation time.
+//
+// resourceClasses overrides the class per platform (ImageResourceClasses). An
+// override for a platform that is not built, or a class that is not one of the
+// platform's architecture, is an error for the same reason.
+func resolveImageBuilds(platforms string, resourceClasses map[string]string) (string, []params.ImageBuild, []params.ImageBuild, error) {
+	if platforms == "" {
+		platforms = DefaultImagePlatforms
+	}
+
+	var resolved []string
+	var branch, release []params.ImageBuild
+	for _, platform := range strings.Split(platforms, ",") {
+		platform = strings.TrimSpace(platform)
+		if platform == "" {
+			continue
+		}
+
+		resourceClass, ok := imageResourceClasses[platform]
+		if !ok {
+			supported := make([]string, 0, len(imageResourceClasses))
+			for p := range imageResourceClasses {
+				supported = append(supported, p)
+			}
+			sort.Strings(supported)
+
+			return "", nil, nil, microerror.Maskf(invalidConfigError,
+				"ImageNativeBuilds: no CircleCI resource class is mapped for platform %#q; supported platforms are %s",
+				platform, strings.Join(supported, ", "))
+		}
+
+		if override, ok := resourceClasses[platform]; ok {
+			allowed := imageResourceClassesByPlatform[platform]
+			if !slices.Contains(allowed, override) {
+				return "", nil, nil, microerror.Maskf(invalidConfigError,
+					"ImageResourceClasses: %#q is not a CircleCI resource class for platform %#q; allowed: %s",
+					override, platform, strings.Join(allowed, ", "))
+			}
+			resourceClass = override
+		}
+
+		suffix := strings.ReplaceAll(strings.TrimPrefix(platform, "linux/"), "/", "")
+		resolved = append(resolved, platform)
+		branch = append(branch, params.ImageBuild{
+			Name:          "build-image-" + suffix,
+			Platform:      platform,
+			ResourceClass: resourceClass,
+		})
+		release = append(release, params.ImageBuild{
+			Name:          "build-image-release-" + suffix,
+			Platform:      platform,
+			ResourceClass: resourceClass,
+		})
+	}
+
+	if len(resolved) == 0 {
+		return "", nil, nil, microerror.Maskf(invalidConfigError, "ImageNativeBuilds: ImagePlatforms resolved to an empty platform list")
+	}
+
+	// An override for a platform the image does not build is a typo (or a
+	// stale entry after the platform list shrank), not a no-op.
+	for platform := range resourceClasses {
+		if !slices.Contains(resolved, platform) {
+			return "", nil, nil, microerror.Maskf(invalidConfigError,
+				"ImageResourceClasses: platform %#q is not in the image platform list (%s)",
+				platform, strings.Join(resolved, ","))
+		}
+	}
+
+	return strings.Join(resolved, ","), branch, release, nil
+}
+
+// goTestArtifactsPattern bounds what GoTestArtifacts may contain: the template
+// splices the value into a shell command (cp) and into the store_artifacts
+// destination without quoting, so anything beyond a plain path is rejected at
+// generation time rather than interpreted by the CI shell.
+var goTestArtifactsPattern = regexp.MustCompile(`^[A-Za-z0-9._/-]+$`)
+
 func New(config Config) (*CircleCI, error) {
 	// Every job is derived from a signal. With none of them set the template
 	// renders an empty `jobs:` list, which is an invalid CircleCI config.
@@ -298,6 +646,34 @@ func New(config Config) (*CircleCI, error) {
 	// HasDockerfile from a root os.Stat that misses it, so the explicit path
 	// also turns the image pipeline on.
 	hasDockerfile := config.HasDockerfile || config.ImageDockerfile != ""
+	// appVersion is the version of the packaged application. A repo that builds
+	// its own image ships the app it packages, so appVersion is its own version
+	// and app-build-suite stamps it. A chart-only repo packages an app built
+	// elsewhere, so the appVersion declared in Chart.yaml has to survive
+	// packaging. An explicit OverrideChartAppVersion overrules the derivation.
+	keepChartAppVersion := !hasDockerfile
+	if config.OverrideChartAppVersion != nil {
+		keepChartAppVersion = !*config.OverrideChartAppVersion
+	}
+	// The images the chart references at the stamped appVersion, which
+	// build-chart packages before the pipeline pushes them: the generated
+	// image and every image the repo's custom.yml pushes. A chart that keeps
+	// its declared appVersion references no such unpushed tag.
+	var ownImages []string
+	if !keepChartAppVersion {
+		if hasDockerfile {
+			imageName := config.ImageName
+			if imageName == "" {
+				imageName = "giantswarm/" + config.RepoName
+			}
+			ownImages = append(ownImages, "gsoci.azurecr.io/"+imageName)
+		}
+		for _, image := range config.CustomImages {
+			if reference := "gsoci.azurecr.io/" + image; !slices.Contains(ownImages, reference) {
+				ownImages = append(ownImages, reference)
+			}
+		}
+	}
 	isNode := config.Language == gen.LanguageNode
 	if config.Language != gen.LanguageGo && !isNode && !hasDockerfile && !hasApp {
 		return nil, microerror.Maskf(invalidConfigError, "no jobs would be generated: set --language=go or --language=node, add a Dockerfile, or use the app flavour")
@@ -305,6 +681,82 @@ func New(config Config) (*CircleCI, error) {
 
 	if config.ForcePublic && config.ImagePrivateOnly {
 		return nil, microerror.Maskf(invalidConfigError, "ForcePublic and ImagePrivateOnly are mutually exclusive")
+	}
+	if config.SkipATS && config.ATSOnRelease {
+		return nil, microerror.Maskf(invalidConfigError, "SkipATS and ATSOnRelease are mutually exclusive")
+	}
+	// SkipATS drops the chart-test jobs and the test dependency files, so the
+	// ATS tag is moot; it is not an error to carry the default alongside it.
+	if config.ATSVersion == "" {
+		config.ATSVersion = DefaultATSVersion
+	}
+	atsKindCluster, err := atsCreatesKindCluster(config.ATSVersion)
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
+	// A template repository's chart is rendered before it is built, and nothing
+	// is released from it. Without a chart there is nothing to render: the
+	// component type is then a no-op rather than an error, because align-files
+	// passes it for every template repository on generated CI.
+	templateChart := config.ComponentType == ComponentTypeTemplate && hasApp
+	team := strings.TrimPrefix(config.Team, teamFilePrefix)
+	if config.ComponentType == ComponentTypeTemplate {
+		if team == "" {
+			return nil, microerror.Maskf(invalidConfigError, "ComponentType %q requires Team: the rendered chart carries the owning team's name as its io.giantswarm.application.team label", ComponentTypeTemplate)
+		}
+		if !teamPattern.MatchString(team) {
+			return nil, microerror.Maskf(invalidConfigError, "Team must be a team short name made of [a-z0-9-] (e.g. honeybadger or team-honeybadger), got %q", config.Team)
+		}
+	}
+	if templateChart && config.ATSOnRelease {
+		return nil, microerror.Maskf(invalidConfigError, "ATSOnRelease does not apply to a template repository: its chart is built from the rendered template only, with no chart-test or release jobs")
+	}
+	if config.ChartReleaseGateJob != "" && (!hasApp || templateChart) {
+		return nil, microerror.Maskf(invalidConfigError, "ChartReleaseGateJob requires the chart release push (app flavour, not a template repository)")
+	}
+	if config.ATSResourceClass != "" {
+		if !hasApp || config.SkipATS || templateChart {
+			return nil, microerror.Maskf(invalidConfigError, "ATSResourceClass requires the chart-test jobs (app flavour without SkipATS, not a template repository)")
+		}
+		if !slices.Contains(atsResourceClasses, config.ATSResourceClass) {
+			return nil, microerror.Maskf(invalidConfigError, "ATSResourceClass %#q is not a resource class run-tests-with-ats accepts; allowed: %s", config.ATSResourceClass, strings.Join(atsResourceClasses, ", "))
+		}
+	}
+	// The kind configuration is a content signal: the generator fixes the path
+	// and the runner reports whether the file is there.
+	atsKindConfig := ""
+	if config.HasATSKindConfig {
+		atsKindConfig = ATSKindConfigPath
+	}
+
+	// The single-job build passes ImagePlatforms through untouched (empty lets
+	// the orb derive it). The native per-architecture build has to know the
+	// set at generation time, because it emits one job per platform.
+	imagePlatforms := config.ImagePlatforms
+	var branchImageBuilds, releaseImageBuilds []params.ImageBuild
+	if config.ImageNativeBuilds {
+		var err error
+		imagePlatforms, branchImageBuilds, releaseImageBuilds, err = resolveImageBuilds(config.ImagePlatforms, config.ImageResourceClasses)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+	} else if len(config.ImageResourceClasses) > 0 {
+		return nil, microerror.Maskf(invalidConfigError, "ImageResourceClasses requires ImageNativeBuilds: the single multi-platform job runs on the orb's default class")
+	}
+
+	if config.GoBuildPath != "" && config.Language != gen.LanguageGo {
+		return nil, microerror.Maskf(invalidConfigError, "GoBuildPath requires Language go")
+	}
+
+	goTestArtifacts := ""
+	if config.GoTestArtifacts != "" {
+		if config.Language != gen.LanguageGo {
+			return nil, microerror.Maskf(invalidConfigError, "GoTestArtifacts requires Language go")
+		}
+		goTestArtifacts = path.Clean(config.GoTestArtifacts)
+		if path.IsAbs(goTestArtifacts) || goTestArtifacts == "." || goTestArtifacts == ".." || strings.HasPrefix(goTestArtifacts, "../") || !goTestArtifactsPattern.MatchString(goTestArtifacts) {
+			return nil, microerror.Maskf(invalidConfigError, "GoTestArtifacts must be a relative directory under the checkout made of [A-Za-z0-9._/-], got %q", config.GoTestArtifacts)
+		}
 	}
 
 	appCatalog := config.AppCatalog
@@ -320,26 +772,29 @@ func New(config Config) (*CircleCI, error) {
 	if chartName == "" {
 		chartName = config.RepoName
 	}
+	// The orb's push-to-app-catalog job rejects a chart not named after the
+	// repo, with or without an -app suffix, unless the job allows the mismatch.
+	chartNameMismatch := strings.TrimSuffix(chartName, "-app") != strings.TrimSuffix(config.RepoName, "-app")
 
 	// Node toolchain. The build/test job is self-contained on a cimg/node
 	// executor (not an architect orb job -- the orb ships none), defined inline
 	// in workflows.yml. Its name signals what it produces: node-build when the
 	// build output is persisted for an image handoff, node-test otherwise.
 	var (
-		nodeJobName              string
-		nodeInstallCommand       string
-		nodeRunPrefix            string
-		nodeCachePath            string
-		nodeCacheKey             string
-		nodeCacheRestoreKey      string
-		nodeBuildCachePaths      []string
-		nodeBuildCacheKey        string
-		nodeBuildCacheRestoreKey string
-		nodeCorepack             bool
-		nodeResourceClass        string
-		nodeTestTarget           string
-		nodeBuildTarget          string
-		nodeBuildOutput          string
+		nodeJobName         string
+		nodeInstallCommand  string
+		nodeRunPrefix       string
+		nodeCachePath       string
+		nodeCacheKey        string
+		nodeCacheRestoreKey string
+		nodeBuildCachePaths []string
+		nodeBuildCacheKey   string
+		nodeCorepack        bool
+		nodeImageVersion    string
+		nodeResourceClass   string
+		nodeTestTarget      string
+		nodeBuildTarget     string
+		nodeBuildOutput     string
 	)
 	if isNode {
 		tc := nodeToolchainFor(config.PackageManager)
@@ -348,6 +803,13 @@ func New(config Config) (*CircleCI, error) {
 		nodeCachePath = tc.cachePath
 		nodeBuildCachePaths = tc.buildCachePaths
 		nodeCorepack = tc.corepack
+		// The repo's own pin (.nvmrc, detected by the runner) wins over the
+		// baked-in default, so a repo that must keep CI in step with a Node
+		// version it also bakes elsewhere has one place to change.
+		nodeImageVersion = config.NodeImageVersion
+		if nodeImageVersion == "" {
+			nodeImageVersion = DefaultNodeImageVersion
+		}
 		// The cli go-build resourceClass knob (gen.ci.resourceClass) is shared:
 		// a Node repo reuses it to size the verify/build box, defaulting to
 		// "large" when unset.
@@ -375,16 +837,18 @@ func New(config Config) (*CircleCI, error) {
 		// Build-output cache (yarn only -- see nodeToolchain.buildCachePaths).
 		// Keyed on the node image version as well as the lockfile because the
 		// cached node_modules holds compiled native addons whose ABI is tied to
-		// the node version, so a node bump must not restore stale binaries. The
-		// restore prefix omits the lockfile checksum, so a changed lockfile
-		// still warm-starts from the previous node_modules and the install only
-		// reconciles (and rebuilds) the diff. The template saves this cache
+		// the node version, so a node bump must not restore stale binaries. It
+		// restores on the exact key only: a prefix fallback would restore
+		// another lockfile's node_modules and install-state, and the install
+		// then reconciles only the packages whose resolution differs and skips
+		// the root workspace's build step, so a `patch-package` postinstall
+		// silently never runs (devctl#2183). The template saves this cache
 		// *after* the verify/build steps, so it captures the tsc/eslint/jest
 		// incremental caches those tools write under node_modules/.cache too --
-		// the compute-side analogue of go-build persisting $GOCACHE.
+		// the compute-side analogue of go-build persisting $GOCACHE. The `v2`
+		// salt drops the v1 entries a prefix restore may have poisoned.
 		if len(nodeBuildCachePaths) > 0 {
-			nodeBuildCacheRestoreKey = "node-build-" + pm + "-v1-" + NodeImageVersion + "-"
-			nodeBuildCacheKey = nodeBuildCacheRestoreKey + `{{ checksum "` + tc.lockfile + `" }}`
+			nodeBuildCacheKey = "node-build-" + pm + "-v2-" + nodeImageVersion + `-{{ checksum "` + tc.lockfile + `" }}`
 		}
 
 		nodeTestTarget = config.NodeTestTarget
@@ -427,41 +891,64 @@ func New(config Config) (*CircleCI, error) {
 
 	c := &CircleCI{
 		params: params.Params{
-			RepoName:                 config.RepoName,
-			Language:                 config.Language.String(),
-			HasDockerfile:            hasDockerfile,
-			HasApp:                   hasApp,
-			ChartName:                chartName,
-			ForcePublic:              config.ForcePublic,
-			AppCatalog:               appCatalog,
-			AppCatalogTest:           appCatalogTest,
-			BranchPublish:            config.BranchPublish,
-			ImagePreBuildJob:         config.ImagePreBuildJob,
-			ImagePrivateOnly:         config.ImagePrivateOnly,
-			ImageName:                config.ImageName,
-			ImagePlatforms:           config.ImagePlatforms,
-			ImageDockerfile:          config.ImageDockerfile,
-			ReleaseBinaries:          config.shipsBinaries(),
-			BuildConcurrency:         buildConcurrency,
-			ResourceClass:            resourceClass,
-			OrbVersion:               OrbVersion,
-			ContinuationOrbVersion:   ContinuationOrbVersion,
-			BuildJobName:             buildJobName,
-			NodeJobName:              nodeJobName,
-			NodeImageVersion:         NodeImageVersion,
-			NodeInstallCommand:       nodeInstallCommand,
-			NodeRunPrefix:            nodeRunPrefix,
-			NodeCachePath:            nodeCachePath,
-			NodeCacheKey:             nodeCacheKey,
-			NodeCacheRestoreKey:      nodeCacheRestoreKey,
-			NodeBuildCachePaths:      nodeBuildCachePaths,
-			NodeBuildCacheKey:        nodeBuildCacheKey,
-			NodeBuildCacheRestoreKey: nodeBuildCacheRestoreKey,
-			NodeCorepack:             nodeCorepack,
-			NodeResourceClass:        nodeResourceClass,
-			NodeTestTarget:           nodeTestTarget,
-			NodeBuildTarget:          nodeBuildTarget,
-			NodeBuildOutput:          nodeBuildOutput,
+			RepoName:               config.RepoName,
+			Language:               config.Language.String(),
+			HasDockerfile:          hasDockerfile,
+			HasApp:                 hasApp,
+			SkipAppCatalog:         config.SkipAppCatalog,
+			SkipATS:                config.SkipATS,
+			ATSVersion:             config.ATSVersion,
+			ATSKindCluster:         atsKindCluster,
+			ATSKindConfig:          atsKindConfig,
+			ATSResourceClass:       config.ATSResourceClass,
+			ATSOnRelease:           config.ATSOnRelease,
+			ChartName:              chartName,
+			ChartNameMismatch:      chartNameMismatch,
+			KeepChartAppVersion:    keepChartAppVersion,
+			ForcePublic:            config.ForcePublic,
+			AppCatalog:             appCatalog,
+			AppCatalogTest:         appCatalogTest,
+			BranchPublish:          config.BranchPublish,
+			ImagePreBuildJob:       config.ImagePreBuildJob,
+			ChartReleaseGateJob:    config.ChartReleaseGateJob,
+			ImagePrivateOnly:       config.ImagePrivateOnly,
+			ImageName:              config.ImageName,
+			OwnImages:              ownImages,
+			ImagePlatforms:         imagePlatforms,
+			ImageNativeBuilds:      config.ImageNativeBuilds,
+			BranchImageBuilds:      branchImageBuilds,
+			ReleaseImageBuilds:     releaseImageBuilds,
+			ImageDockerfile:        config.ImageDockerfile,
+			ReleaseBinaries:        config.shipsBinaries(),
+			BuildConcurrency:       buildConcurrency,
+			ResourceClass:          resourceClass,
+			GoBuildPath:            config.GoBuildPath,
+			GoTestArtifacts:        goTestArtifacts,
+			OrbVersion:             OrbVersion,
+			ContinuationOrbVersion: ContinuationOrbVersion,
+			BuildJobName:           buildJobName,
+			NodeJobName:            nodeJobName,
+			NodeImageVersion:       nodeImageVersion,
+			NodeInstallCommand:     nodeInstallCommand,
+			NodeRunPrefix:          nodeRunPrefix,
+			NodeCachePath:          nodeCachePath,
+			NodeCacheKey:           nodeCacheKey,
+			NodeCacheRestoreKey:    nodeCacheRestoreKey,
+			NodeBuildCachePaths:    nodeBuildCachePaths,
+			NodeBuildCacheKey:      nodeBuildCacheKey,
+			NodeCorepack:           nodeCorepack,
+			NodeResourceClass:      nodeResourceClass,
+			NodeTestTarget:         nodeTestTarget,
+			NodeBuildTarget:        nodeBuildTarget,
+			NodeBuildOutput:        nodeBuildOutput,
+			TemplateChart:          templateChart,
+			Team:                   team,
+
+			TemplateAppNamePlaceholder:        TemplateAppNamePlaceholder,
+			TemplateTeamPlaceholder:           TemplateTeamPlaceholder,
+			TemplateHelmRepositoryPlaceholder: TemplateHelmRepositoryPlaceholder,
+			TemplateAppName:                   TemplateAppName,
+			TemplateHelmRepository:            TemplateHelmRepository,
 		},
 	}
 
@@ -488,11 +975,35 @@ func (c *CircleCI) Workflows() input.Input {
 // call site (devctl gen circleci, the only generator invoked inside align's
 // `if (ci && ci.generate)` guard). That makes "ATS Pipfile only when CI is
 // generated, and only for chart/app repos" structurally guaranteed rather than
-// dependent on a separate, differently-scoped invocation.
+// dependent on a separate, differently-scoped invocation. A repo that opts out
+// of ATS (SkipATS) gets no Pipfile either, matching the suppressed jobs. The
+// default branch-only shape keeps the file (the branch job runs the tests);
+// ATSOnRelease only adds the tag-time job. A template repository gets none: it
+// has no chart-test job, and its tests/ats files are template content for the
+// repositories created from it, not this repository's own.
 func (c *CircleCI) ATSInputs() []input.Input {
-	if !c.params.HasApp {
+	if !c.params.HasApp || c.params.SkipATS || c.params.TemplateChart {
 		return nil
 	}
 
-	return ats.CreateATS()
+	return ats.CreateATS(c.params.ATSKindCluster)
+}
+
+// atsCreatesKindCluster decides from the app-test-suite container tag whether
+// the chart-test jobs must create the kind cluster themselves: app-test-suite
+// 1.0 dropped its built-in kind lifecycle, so every 1.x tag needs
+// `create_kind_cluster: true` (and the uv test layout), while 0.x tags keep the
+// legacy dats.sh path. New substitutes DefaultATSVersion for an empty tag before
+// this runs; an empty tag here still means "no opinion". The tag has to parse
+// as a semantic version (an optional leading "v" is tolerated); a dev tag such
+// as 0.15.1-dev.<branch>.<date>.<hash> counts as 0.x.
+func atsCreatesKindCluster(tag string) (bool, error) {
+	if tag == "" {
+		return false, nil
+	}
+	v, err := semver.NewVersion(strings.TrimPrefix(tag, "v"))
+	if err != nil {
+		return false, microerror.Maskf(invalidConfigError, "ATSVersion %q is not a semantic version: %v", tag, err)
+	}
+	return v.Major() >= 1, nil
 }

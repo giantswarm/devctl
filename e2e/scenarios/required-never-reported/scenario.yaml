@@ -1,0 +1,50 @@
+# The base requires two contexts. Every check and workflow run of the head
+# has finished, and one context, go-lint, nothing reported under: no run is
+# left that could report it, so the verdict is known at the first poll and
+# the wait exits 4 at once rather than at the timeout.
+#
+# The proof that it did not wait: the clock runs at scale 1 here, so the
+# 30-minute timeout is a real half hour, and the run is bounded to 20 s.
+description: a required context absent from a settled head exits 4 at the first poll, not at the timeout
+args: [pr, wait, giantswarm/devctl, "42", --timeout, 30m]
+env:
+  DEVCTL_TIME_SCALE: "1"
+timeout: 20s
+keyring:
+  github:
+    login: e2e-engineer
+    token: ghu_e2e_live
+    expiresAt: "2099-01-01T00:00:00Z"
+    refreshToken: ghr_e2e_live
+    refreshExpiresAt: "2099-01-01T00:00:00Z"
+  circleci:
+    login: e2e-engineer
+    token: CCIPAT_e2e_live
+    expiresAt: "2099-01-01T00:00:00Z"
+github:
+  routes:
+    "GET /repos/giantswarm/devctl/pulls/42":
+      - body:
+          number: 42
+          state: open
+          draft: false
+          merged: false
+          mergeable: true
+          mergeable_state: clean
+          head: {sha: abc123, ref: feature, repo: {full_name: giantswarm/devctl}}
+          base: {ref: main, repo: {full_name: giantswarm/devctl}}
+    "GET /repos/giantswarm/devctl/branches/main/protection":
+      - body:
+          required_status_checks: {strict: true, contexts: [go-build, go-lint]}
+    "GET /repos/giantswarm/devctl/commits/abc123/check-runs":
+      - body:
+          total_count: 1
+          check_runs:
+            - {id: 101, name: go-build, status: completed, conclusion: success, started_at: "2026-09-21T10:00:00Z", html_url: "https://github.com/giantswarm/devctl/runs/101"}
+    "GET /repos/giantswarm/devctl/commits/abc123/status":
+      - body: {state: pending, total_count: 0, statuses: []}
+    "GET /repos/giantswarm/devctl/actions/runs?head_sha=abc123":
+      - body:
+          total_count: 1
+          workflow_runs:
+            - {id: 7001, name: CI, status: completed, conclusion: success, html_url: "https://github.com/giantswarm/devctl/actions/runs/7001"}

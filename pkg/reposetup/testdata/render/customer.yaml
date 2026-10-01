@@ -1,0 +1,10 @@
+# yaml-language-server: $schema=../.github/repositories.schema.json
+- name: example-customer
+  componentType: customer
+  visibility: private
+  gen:
+    flavours:
+      - customer
+    language: generic
+    ci:
+      generate: false

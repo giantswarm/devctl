@@ -1,0 +1,22 @@
+{
+  "exitCode": 0,
+  "stdoutContains": ["/repos/giantswarm/devctl/pulls/42: 403 Forbidden: the core rate limit (5000) is spent until 20", "(try 2 of 8)"],
+  "json": {
+    "command": "pr wait",
+    "schemaVersion": 1,
+    "exitCode": 0,
+    "verdict": "green",
+    "reason": "",
+    "warnings": ["*"],
+    "startedAt": "*",
+    "finishedAt": "*",
+    "repository": "giantswarm/devctl",
+    "number": 42,
+    "headSha": "abc123",
+    "baseRef": "main",
+    "checks": [
+      {"name": "go-test", "source": "check_run", "status": "completed", "conclusion": "success", "url": "*", "required": false}
+    ],
+    "actions": []
+  }
+}

@@ -1,0 +1,12 @@
+# A muster that does not run giantswarm-repo-manager (a lab's, an
+# installation's own): the sign-in to muster itself succeeds and is stored,
+# and muster's "server not found" is a note in the document and a warning,
+# not a failure -- the repo commands say the same when they are pointed at
+# that endpoint.
+description: auth login --muster-only against a muster without the manager stores the token and notes the missing server
+args: [auth, login, --muster-only]
+browser: true
+muster:
+  tools:
+    core_auth_login:
+      - error: "Server 'giantswarm-repo-manager' not found. Use list_tools to see available servers."

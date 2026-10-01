@@ -1,0 +1,39 @@
+{
+  "exitCode": 0,
+  "json": {
+    "command": "auth login",
+    "schemaVersion": 1,
+    "exitCode": 0,
+    "verdict": "green",
+    "reason": "",
+    "warnings": [],
+    "startedAt": "*",
+    "finishedAt": "*",
+    "github": {
+      "present": false,
+      "expired": false,
+      "refreshable": false,
+      "warnings": []
+    },
+    "circleci": {
+      "present": false,
+      "expired": false,
+      "refreshable": false,
+      "warnings": []
+    },
+    "muster": {
+      "present": true,
+      "login": "e2e-engineer@example.com",
+      "expiresAt": "*",
+      "expired": false,
+      "refreshable": true,
+      "endpoint": "*",
+      "warnings": []
+    },
+    "giantswarmRepoManager": {
+      "server": "giantswarm-repo-manager",
+      "signedIn": true,
+      "caller": "e2e-engineer"
+    }
+  }
+}

@@ -19,12 +19,59 @@ type Params struct {
 	// Helm chart). It selects the chart pipeline (push-to-app-catalog with the
 	// app-build-suite executor and run-tests-with-ats).
 	HasApp bool
+	// SkipATS opts the chart pipeline out of app-test-suite (ATS) chart tests.
+	// When true the run-tests-with-ats jobs (execute-chart-tests /
+	// execute-chart-tests-release) and the canonical tests/ats/Pipfile are not
+	// emitted, and the chart push jobs gate directly on build-chart instead.
+	// Only meaningful for a chart/app repo (HasApp); ignored otherwise.
+	SkipATS bool
+	// ATSOnRelease adds the tag-time chart-test job (execute-chart-tests-release,
+	// gating push-chart-release) next to the branch job. False, the default,
+	// runs the chart tests on branches only and lets the tag build and push
+	// the chart straight after build-chart: the tag is cut from the merge
+	// commit of a PR whose branch run already tested that tree. Mutually
+	// exclusive with SkipATS. Only meaningful for a chart/app repo (HasApp);
+	// ignored otherwise.
+	ATSOnRelease bool
+	// ATSVersion is the app-test-suite container tag emitted as
+	// `app-test-suite_container_tag` on both run-tests-with-ats jobs. Empty
+	// emits nothing and the orb default applies.
+	ATSVersion string
+	// ATSKindCluster emits `create_kind_cluster: true` on both
+	// run-tests-with-ats jobs (app-test-suite 1.x: the job creates the kind
+	// cluster) and selects the uv layout of the generated test dependencies
+	// (tests/ats/pyproject.toml + uv.lock instead of tests/ats/Pipfile). Derived
+	// from ATSVersion (major >= 1).
+	ATSKindCluster bool
+	// ATSKindConfig is the repo-owned kind Cluster configuration emitted as
+	// `kind_config` on both run-tests-with-ats jobs (the job passes it to
+	// `kind create cluster --config`: feature gates, runtime config, patches,
+	// extra nodes). Set to the conventional path when the repo carries the
+	// file; empty emits nothing and the job creates the cluster as before.
+	ATSKindConfig string
+	// ATSResourceClass is the CircleCI resource_class emitted on both
+	// run-tests-with-ats jobs (medium, large, xlarge, 2xlarge). Empty emits
+	// nothing and the orb default (medium) applies.
+	ATSResourceClass string
 	// ChartName is the chart name used for the push-to-app-catalog `chart`
 	// param and the helm/<chart> directory. Defaults to RepoName. Set it for
 	// repos whose chart directory does not match the repo name (e.g.
 	// docs-proxy ships helm/docs-proxy-app). The append-only custom.yml merge
 	// cannot rename a generated job's chart, so the generator carries it.
 	ChartName string
+	// ChartNameMismatch emits the push-to-app-catalog
+	// `explicit_allow_chart_name_mismatch: true` param. The orb's job fails
+	// unless ChartName and RepoName match with any -app suffix stripped, so the
+	// generator sets it when they do not.
+	ChartNameMismatch bool
+	// KeepChartAppVersion emits the push-to-app-catalog
+	// `override_app_version: false` param, so app-build-suite keeps the
+	// appVersion declared in Chart.yaml. Already resolved by the generator: it
+	// is true for a chart-only repo (the chart packages an app built elsewhere)
+	// and false for a repo that builds its own image, unless
+	// Config.OverrideChartAppVersion overruled that. Only meaningful for a
+	// chart/app repo (HasApp); ignored otherwise.
+	KeepChartAppVersion bool
 	// ForcePublic pushes the image and chart as public artifacts even though
 	// the repo is private (architect `force-public: true` on push-to-registries
 	// and push-to-app-catalog). Set it for private repos that publish public
@@ -41,6 +88,12 @@ type Params struct {
 	// push-to-app-catalog `app_catalog_test` param). Defaults to
 	// "giantswarm-test-catalog". Kept paired with AppCatalog.
 	AppCatalogTest string
+	// SkipAppCatalog is true when the chart must not be published to a GitHub
+	// app catalog (push-to-app-catalog push_to_appcatalog: false), keeping the
+	// OCI registry push. Every GitHub app catalog is a public repository, so a
+	// private chart published to one is world-readable; when set, the chart
+	// ships only to gsociprivate.azurecr.io.
+	SkipAppCatalog bool
 	// BranchPublish is true when the repo opts into publishing a dev image and
 	// chart on branch builds. By default branches build + test only; when set,
 	// the branch path additionally pushes an amd64 dev image and the dev chart
@@ -56,6 +109,15 @@ type Params struct {
 	// `requires` entry, so the branch image validation also gets the workspace.
 	// Empty for the common case.
 	ImagePreBuildJob string
+	// ChartReleaseGateJob names a repo-owned job (defined in .circleci/custom.yml)
+	// that the release chart push must wait on: the generated push-chart-release
+	// job gains a `requires` entry for it, which the append-only custom.yml merge
+	// cannot inject into a generated job. The chart counterpart of
+	// ImagePreBuildJob, for a check that must refuse the release before the chart
+	// is pushed (a meta chart whose component floor resolves to no published chart).
+	// Branch pushes are not gated: a branch build is a dev artifact. Empty for the
+	// common case.
+	ChartReleaseGateJob string
 	// ImagePrivateOnly is true when the repo's image must ship only to the
 	// private registry (gsociprivate). It replaces the default split-china-push
 	// (which also publishes the public gsoci copy and mirrors to Aliyun) with an
@@ -70,6 +132,15 @@ type Params struct {
 	// append-only custom.yml merge cannot rename a generated job's image, so the
 	// generator carries it. Empty keeps the orb default.
 	ImageName string
+	// OwnImages are the gsoci images this pipeline builds
+	// (`gsoci.azurecr.io/<ImageName or giantswarm/<repo>>`, then the images the
+	// repo's custom.yml pushes), set when the chart build stamps appVersion
+	// with the build version. build-chart runs before those images are pushed,
+	// so it names them to app-build-suite's image reference check, which skips
+	// them at the stamped version and resolves every other reference. Empty
+	// when the repo builds no image or the chart keeps the appVersion
+	// Chart.yaml declares.
+	OwnImages []string
 	// ImagePlatforms overrides the buildx platform list for the image build
 	// (the push-to-registries `platforms` param on the build-image and
 	// push-to-registries-release jobs). Empty lets the orb fall back to its
@@ -79,6 +150,23 @@ type Params struct {
 	// fails). The append-only custom.yml merge cannot cap a generated job's
 	// platforms, so the generator carries it.
 	ImagePlatforms string
+	// ImageNativeBuilds selects the per-architecture image build: one
+	// architect/build-image job per platform (BranchImageBuilds /
+	// ReleaseImageBuilds), each on a resource class of that architecture, and
+	// the push-to-registries jobs with `merge-digests: true`, joining the
+	// recorded digests into the tagged index instead of building. False keeps
+	// the single multi-platform buildx job. When true, ImagePlatforms is the
+	// resolved list and must name exactly the platforms the build jobs cover --
+	// the orb fails the merge in either direction rather than publishing an
+	// index that is missing an architecture.
+	ImageNativeBuilds bool
+	// BranchImageBuilds and ReleaseImageBuilds are the per-architecture
+	// build-image jobs of the branch and tag paths when ImageNativeBuilds is
+	// set. One job per platform, each pinned to a resource class of that
+	// platform's architecture, because a CircleCI job runs on one machine and a
+	// machine is native for one architecture. Empty otherwise.
+	BranchImageBuilds  []ImageBuild
+	ReleaseImageBuilds []ImageBuild
 	// ImageDockerfile overrides the Dockerfile path on the image jobs (the
 	// architect push-to-registries `dockerfile` param). Set it for repos whose
 	// Dockerfile is not at the repo root (e.g. backstage builds from
@@ -104,6 +192,20 @@ type Params struct {
 	// renders. Defaulted to "large" by the generator for cli repos; empty for
 	// non-cli repos.
 	ResourceClass string
+	// GoBuildPath is the architect go-build `path` param: the package the job
+	// compiles. Empty omits the param so the orb default "." applies. Set for
+	// Go repos whose main package lives in a subdirectory (e.g. ./cmd/coredns).
+	GoBuildPath string
+	// GoTestArtifacts is a directory under the checkout that `make test` (the
+	// go-build test_target) writes and that the job keeps as a CircleCI build
+	// artifact when it FAILS. Non-empty renders `post-steps` on the
+	// architect/go-build job: a run step stages the directory when: on_fail
+	// and store_artifacts uploads the staging directory, so a green run stores
+	// nothing. Empty omits the post-steps. Set for repos whose test suite
+	// writes a report the console output only shows a trimmed tail of (e.g.
+	// muster's integration suite writes one JSON per scenario, with the
+	// complete instance logs, to test-reports/). Normalized by the generator.
+	GoTestArtifacts string
 	// OrbVersion is the giantswarm/architect orb version to pin.
 	OrbVersion string
 	// ContinuationOrbVersion is the circleci/continuation orb version the
@@ -117,7 +219,10 @@ type Params struct {
 	// persists a build output for an image handoff, "node-test" otherwise.
 	// Empty for non-Node repos.
 	NodeJobName string
-	// NodeImageVersion is the cimg/node Docker tag the Node job runs on.
+	// NodeImageVersion is the cimg/node Docker tag the Node job runs on, taken
+	// from the repo's .nvmrc when it pins one and from devctl's baked-in
+	// default otherwise. It also salts NodeBuildCacheKey, so the image and the
+	// cache it restores can never disagree.
 	NodeImageVersion string
 	// NodeInstallCommand installs dependencies for the detected package manager
 	// (e.g. "npm ci", "yarn install --immutable").
@@ -142,12 +247,9 @@ type Params struct {
 	NodeBuildCachePaths []string
 	// NodeBuildCacheKey is the full save_cache key for the build-output cache,
 	// salted with the node image version (native ABI is node-version-specific)
-	// and the lockfile checksum. Empty when NodeBuildCachePaths is empty.
+	// and the lockfile checksum. Restored on this exact key only (devctl#2183).
+	// Empty when NodeBuildCachePaths is empty.
 	NodeBuildCacheKey string
-	// NodeBuildCacheRestoreKey is the restore_cache prefix for the build-output
-	// cache (node-image-versioned, lockfile-agnostic), so a changed lockfile
-	// warm-starts from the previous node_modules and only reconciles the diff.
-	NodeBuildCacheRestoreKey string
 	// NodeCorepack is true when the package manager needs `corepack enable`
 	// (pnpm, which cimg/node does not bundle).
 	NodeCorepack bool
@@ -164,4 +266,38 @@ type Params struct {
 	// NodeBuildOutput is the workspace path the Node job persists for an image
 	// handoff (e.g. "packages/*/dist/*"). Empty omits persist_to_workspace.
 	NodeBuildOutput string
+	// TemplateChart is true for a chart repository whose componentType is
+	// template: the chart at helm/{APP-NAME} carries placeholders, so the
+	// chart job is an inline job that renders the checkout with fixture values
+	// (the app name and Helm repository fixtures, the team from Team) and runs
+	// app-build-suite on the rendered chart. The chart-test and chart push
+	// jobs are not emitted: nothing is released from a template. Derived by
+	// the generator from Config.ComponentType and the app flavour.
+	TemplateChart bool
+	// Team is the owning team's short name (honeybadger), rendered into the
+	// template chart's team label. Empty unless TemplateChart.
+	Team string
+	// The template contract the render step spells out: the placeholders a
+	// template carries and the fixture values two of them are rendered with
+	// (the third is Team). Constants of the circleci package, passed through
+	// like OrbVersion so the template and the generator name them in one place.
+	TemplateAppNamePlaceholder        string
+	TemplateTeamPlaceholder           string
+	TemplateHelmRepositoryPlaceholder string
+	TemplateAppName                   string
+	TemplateHelmRepository            string
+}
+
+// ImageBuild is one architect/build-image job: one platform, on a machine of
+// that platform's architecture.
+type ImageBuild struct {
+	// Name is the CircleCI job name, e.g. "build-image-arm64". Branch and tag
+	// paths need distinct names because both appear in the same workflow.
+	Name string
+	// Platform is the buildx platform, e.g. "linux/arm64".
+	Platform string
+	// ResourceClass is a CircleCI class whose architecture matches Platform.
+	// CircleCI gives the setup_remote_docker VM the architecture of the job's
+	// class, so this is what decides whether the build is native or emulated.
+	ResourceClass string
 }

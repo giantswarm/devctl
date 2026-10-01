@@ -1,0 +1,57 @@
+package reconcile
+
+import (
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+)
+
+func TestWriteTable(t *testing.T) {
+	start := time.Date(2026, 9, 16, 20, 0, 0, 0, time.UTC)
+	res := &Result{
+		Repository: "giantswarm/my-repo-v2",
+		Declared:   "giantswarm/my-repo",
+		Mode:       ModeRepair,
+		StartedAt:  start,
+		FinishedAt: start.Add(1500 * time.Millisecond),
+		Steps: []StepResult{
+			{Step: StepSettings, Verdict: VerdictRepaired, Changes: []string{"settings: has_wiki true → false"}},
+			{Step: StepProtection, Verdict: VerdictOK, Summary: "main protected; required: pre-commit"},
+			{Step: StepScaffold, Verdict: VerdictReported, Summary: "present", Findings: []Finding{newFinding(FindingDefaultIcon, "the default icon", "replace it")}},
+			{Step: StepRenovate, Verdict: VerdictReported, Findings: []Finding{{Kind: FindingRenovateNotScanned, Message: "not covered", Fix: "add it"}}},
+			{Step: StepRelease, Verdict: VerdictFailed, Summary: "boom"},
+		},
+	}
+
+	var b strings.Builder
+	require.NoError(t, res.WriteTable(&b))
+	out := b.String()
+
+	require.Contains(t, out, "giantswarm/my-repo-v2 (repair) — declared as giantswarm/my-repo: not converged in 1.5s")
+	require.Contains(t, out, "STEP")
+	require.Contains(t, out, "settings")
+	require.Contains(t, out, "repaired")
+	require.Contains(t, out, "has_wiki true → false")
+	require.Contains(t, out, "present | 1 advisory finding")
+	require.Contains(t, out, "- [default-icon, advisory] the default icon\n  fix: replace it")
+	require.Contains(t, out, "1 finding\n")
+	require.Contains(t, out, "- [renovate-not-scanned] not covered\n  fix: add it")
+	require.Equal(t, []StepResult{res.Steps[4]}, res.Failed())
+	require.Equal(t, "2 findings, 1 advisory", findingsCount(append(res.Steps[2].Findings, res.Steps[3].Findings...)))
+
+	res.Steps = res.Steps[:2]
+	res.Converged = true
+	res.Declared = res.Repository
+	b.Reset()
+	require.NoError(t, res.WriteTable(&b))
+	require.True(t, strings.HasPrefix(b.String(), "giantswarm/my-repo-v2 (repair): converged in 1.5s\n"))
+
+	res.Requests = Requests{GitHub: 18, CircleCI: 3}
+	b.Reset()
+	require.NoError(t, res.WriteTable(&b))
+	require.True(t, strings.HasPrefix(b.String(), "giantswarm/my-repo-v2 (repair): converged in 1.5s, 18 GitHub and 3 CircleCI requests\n"), b.String())
+	require.NotContains(t, b.String(), "Findings:")
+	require.Empty(t, res.Failed())
+}

@@ -1,0 +1,105 @@
+# A hand-written .circleci/config.yml (no workflows.yml beside it) whose
+# tag pipeline pushes two images, neither named after the repository:
+# giantswarm/e2e-hand publishes giantswarm/e2e-controller and
+# giantswarm/e2e-sidecar. The push jobs are read from the config at the tag
+# and kept when CircleCI lists them among the pipeline's jobs; both images
+# are probed and the manifest under the repository name is never asked for.
+description: hand-written CI names its images through the tag pipeline's push jobs, both are probed
+args: [release, wait, giantswarm/e2e-hand, v1.2.3, --timeout, 30m]
+keyring:
+  github:
+    login: e2e-engineer
+    token: ghu_e2e_live
+    expiresAt: "2099-01-01T00:00:00Z"
+  circleci:
+    login: e2e-engineer
+    token: CCIPAT_e2e_live
+    expiresAt: "2099-01-01T00:00:00Z"
+github:
+  routes:
+    "GET /repos/giantswarm/e2e-hand/git/ref/tags/v1.2.3":
+      - body: {ref: refs/tags/v1.2.3, object: {type: commit, sha: bb22cc33dd44ee55ff66aa11bb22cc33dd44ee55}}
+    "GET /repos/giantswarm/e2e-hand":
+      - body: {name: e2e-hand, full_name: giantswarm/e2e-hand, private: false}
+    "GET /repos/giantswarm/e2e-hand/contents/?ref=bb22cc33dd44ee55ff66aa11bb22cc33dd44ee55":
+      - body:
+          - {name: Dockerfile, path: Dockerfile, type: file}
+          - {name: Dockerfile.sidecar, path: Dockerfile.sidecar, type: file}
+          - {name: main.go, path: main.go, type: file}
+    "GET /repos/giantswarm/e2e-hand/contents/.github/workflows?ref=bb22cc33dd44ee55ff66aa11bb22cc33dd44ee55":
+      - body:
+          - {name: zz_generated.auto_release.yaml, path: .github/workflows/zz_generated.auto_release.yaml, type: file}
+    "GET /repos/giantswarm/e2e-hand/contents/.circleci?ref=bb22cc33dd44ee55ff66aa11bb22cc33dd44ee55":
+      - body:
+          - {name: config.yml, path: .circleci/config.yml, type: file}
+    "GET /repos/giantswarm/e2e-hand/contents/.circleci/config.yml?ref=bb22cc33dd44ee55ff66aa11bb22cc33dd44ee55":
+      - body:
+          name: config.yml
+          path: .circleci/config.yml
+          type: file
+          content: |
+            version: 2.1
+            orbs:
+              architect: giantswarm/architect@6.3.0
+            workflows:
+              build:
+                jobs:
+                  - architect/go-build:
+                      name: go-build
+                      binary: e2e-hand
+                      filters:
+                        tags:
+                          only: /^v.*/
+                  - architect/push-to-registries:
+                      context: architect
+                      name: push-e2e-controller
+                      image: giantswarm/e2e-controller
+                      requires:
+                        - go-build
+                      filters:
+                        tags:
+                          only: /^v.*/
+                  - architect/push-to-registries:
+                      context: architect
+                      name: push-e2e-sidecar
+                      image: giantswarm/e2e-sidecar
+                      dockerfile: Dockerfile.sidecar
+                      requires:
+                        - go-build
+                      filters:
+                        tags:
+                          only: /^v.*/
+    "GET /repos/giantswarm/github/contents/repositories":
+      - body:
+          - {name: team-e2e.yaml, path: repositories/team-e2e.yaml, type: file}
+    "GET /repos/giantswarm/github/contents/repositories/team-e2e.yaml":
+      - body:
+          name: team-e2e.yaml
+          path: repositories/team-e2e.yaml
+          type: file
+          content: |
+            - name: e2e-hand
+              componentType: service
+              gen:
+                flavours:
+                  - generic
+                language: go
+                ci:
+                  generate: false
+                  releaseWorkflow: auto-release
+circleci:
+  routes:
+    "GET /api/v2/project/gh/giantswarm/e2e-hand/pipeline":
+      - body: {items: [{id: p1, number: 7, state: created, created_at: "2026-09-21T10:00:00Z", vcs: {tag: v1.2.3, revision: bb22cc33dd44ee55ff66aa11bb22cc33dd44ee55}}], next_page_token: null}
+    "GET /api/v2/pipeline/p1/workflow":
+      - body: {items: [{id: w1, name: build, status: success, created_at: "2026-09-21T10:00:05Z"}], next_page_token: null}
+    "GET /api/v2/workflow/w1/job":
+      - body: {items: [{id: j1, name: go-build, status: success}, {id: j2, name: push-e2e-controller, status: success}, {id: j3, name: push-e2e-sidecar, status: success}], next_page_token: null}
+registry:
+  routes:
+    "HEAD /v2/giantswarm/e2e-controller/manifests/1.2.3":
+      - status: 200
+        headers: {Docker-Content-Digest: "sha256:e2ec0000000000000000000000000000000000000000000000000000000000e2"}
+    "HEAD /v2/giantswarm/e2e-sidecar/manifests/1.2.3":
+      - status: 200
+        headers: {Docker-Content-Digest: "sha256:51de0000000000000000000000000000000000000000000000000000000051de"}

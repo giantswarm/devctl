@@ -1,0 +1,10 @@
+# yaml-language-server: $schema=../.github/repositories.schema.json
+- name: example-tool
+  componentType: cli
+  description: An example Python tool.
+  gen:
+    flavours:
+      - generic
+    language: python
+    ci:
+      generate: false

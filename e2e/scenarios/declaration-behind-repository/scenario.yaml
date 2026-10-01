@@ -1,0 +1,74 @@
+# giantswarm/mcp-toolkit merged its generated pipeline and the auto-release
+# workflow (mcp-toolkit#96) while its team-file entry, gen without gen.ci,
+# still resolved the release workflow to legacy; the declaration merged hours
+# later (github#6241). Auto-release tagged the merge and CircleCI built it,
+# but the wait refused both --pr and the version with exit 7 naming the
+# disagreement. The workflows at the merge commit made the tag, so they
+# decide; the document warns about the lagging declaration and names the
+# remedy, and the artifacts are the generator's defaults for the entry.
+description: a repository ahead of its team-file declaration is waited for by its workflows, with a warning
+args: [release, wait, giantswarm/e2e-app, --pr, "96", --timeout, 30m]
+timeout: 20s
+keyring:
+  github:
+    login: e2e-engineer
+    token: ghu_e2e_live
+    expiresAt: "2099-01-01T00:00:00Z"
+  circleci:
+    login: e2e-engineer
+    token: CCIPAT_e2e_live
+    expiresAt: "2099-01-01T00:00:00Z"
+github:
+  routes:
+    "GET /repos/giantswarm/e2e-app/pulls/96":
+      - body: {number: 96, state: closed, merged: true, merge_commit_sha: aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44}
+    "GET /repos/giantswarm/e2e-app/tags":
+      - body:
+          - {name: v1.2.3, commit: {sha: aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44}}
+    "GET /repos/giantswarm/e2e-app":
+      - body: {name: e2e-app, full_name: giantswarm/e2e-app, private: false}
+    "GET /repos/giantswarm/e2e-app/contents/?ref=aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44":
+      - body:
+          - {name: Dockerfile, path: Dockerfile, type: file}
+          - {name: main.go, path: main.go, type: file}
+    "GET /repos/giantswarm/e2e-app/contents/.github/workflows?ref=aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44":
+      - body:
+          - {name: zz_generated.auto_release.yaml, path: .github/workflows/zz_generated.auto_release.yaml, type: file}
+          - {name: zz_generated.pre-commit.yaml, path: .github/workflows/zz_generated.pre-commit.yaml, type: file}
+    "GET /repos/giantswarm/e2e-app/contents/.circleci?ref=aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44":
+      - body:
+          - {name: config.yml, path: .circleci/config.yml, type: file}
+          - {name: workflows.yml, path: .circleci/workflows.yml, type: file}
+    "GET /repos/giantswarm/github/contents/repositories":
+      - body:
+          - {name: team-e2e.yaml, path: repositories/team-e2e.yaml, type: file}
+    "GET /repos/giantswarm/github/contents/repositories/team-e2e.yaml":
+      - body:
+          name: team-e2e.yaml
+          path: repositories/team-e2e.yaml
+          type: file
+          content: |
+            - name: e2e-app
+              componentType: service
+              gen:
+                flavours:
+                  - generic
+                language: go
+circleci:
+  routes:
+    "GET /api/v2/project/gh/giantswarm/e2e-app/pipeline":
+      - body: {items: [{id: p1, number: 7, state: created, created_at: "2026-09-22T22:05:00Z", vcs: {tag: v1.2.3, revision: aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44}}], next_page_token: null}
+    "GET /api/v2/pipeline/p1/workflow":
+      - body:
+          items:
+            - {id: w-setup, name: setup, status: success, created_at: "2026-09-22T22:05:05Z"}
+            - {id: w-build, name: build, status: success, created_at: "2026-09-22T22:05:40Z"}
+          next_page_token: null
+    "GET /api/v2/workflow/w-setup/job":
+      - body: {items: [{id: j0, name: setup, status: success}], next_page_token: null}
+    "GET /api/v2/workflow/w-build/job":
+      - body: {items: [{id: j1, name: go-build, status: success}, {id: j2, name: push-e2e-app-to-registries, status: success}], next_page_token: null}
+registry:
+  routes:
+    "HEAD /v2/giantswarm/e2e-app/manifests/1.2.3":
+      - status: 200

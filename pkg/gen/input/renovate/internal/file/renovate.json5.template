@@ -15,6 +15,10 @@
     // Python specific config - https://github.com/giantswarm/renovate-presets/blob/main/lang-python.json5
     'github>giantswarm/renovate-presets:lang-python.json5',
     {{- end }}
+    {{- if eq .Language "node" }}
+    // Node specific config - https://github.com/giantswarm/renovate-presets/blob/main/lang-node.json5
+    'github>giantswarm/renovate-presets:lang-node.json5',
+    {{- end }}
     {{- if .CircleCIGenerated }}
     // ATS (app-test-suite) test deps - https://github.com/giantswarm/renovate-presets/blob/main/tests-ats.json5
     // Disables per-repo Renovate for tests/ats/Pipfile: that file is owned
@@ -35,6 +39,20 @@
     // live on merge, no regeneration needed.
     'github>giantswarm/{{ .RepoName }}:renovate-custom.json5',
     {{- end }}
+  ],
+  // Two of our own bots commit onto Renovate branches. taylorbot
+  // <dev@giantswarm.io> pushes what the generated workflows produce
+  // (zz_generated.helm-docs-regen.yaml, the update-chart and
+  // sync-from-upstream flows). giantswarm-marge[bot] writes the bot PR's
+  // changelog entry during the sweep, in the repositories that still cut a
+  // release from CHANGELOG.md. Renovate treats a branch whose last commit is
+  // by anyone else as edited by a human: it stops rebasing it and, on
+  // autoclose, retitles the PR "- abandoned" instead of closing it. Listing
+  // the authors here makes those commits Renovate's own. Renovate compares
+  // the author email, so these are the bare addresses.
+  gitIgnoredAuthors: [
+    'dev@giantswarm.io',
+    '329428426+giantswarm-marge[bot]@users.noreply.github.com',
   ],
   {{- if .Reviewers }}
   reviewers: [
@@ -61,6 +79,18 @@
       ],
       enabled: false,
     },
+    {{- if eq .Language "node" }}
+    {
+      description: 'The cimg/node tag in .circleci/workflows.yml is generated from .nvmrc; bump that instead.',
+      matchManagers: [
+        'circleci',
+      ],
+      matchPackageNames: [
+        'cimg/node',
+      ],
+      enabled: false,
+    },
+    {{- end }}
   ],
   {{- end }}
   {{- if ne .Interval "" }}

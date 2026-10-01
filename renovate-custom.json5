@@ -34,6 +34,35 @@
         '// renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n\\s*const \\w*OrbVersion = "(?<currentValue>[^"]+)"',
       ],
     },
+    // The cimg/node tag the generated Node job runs on, pinned as a Go constant
+    // beside the orb pins and for the same reason. It carries the same
+    // `// renovate:` annotation, but the rule above is anchored on
+    // `\w*OrbVersion` and so never matched it: the constant sat at its
+    // introduction value from #2052 with no PR ever opened against it, while
+    // cimg/node moved on. It is the floor for every repo that pins no .nvmrc,
+    // so a frozen default is a frozen Node for all of them.
+    {
+      customType: 'regex',
+      managerFilePatterns: ['/pkg/gen/input/circleci/circleci\\.go$/'],
+      matchStrings: [
+        '// renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n\\s*const \\w*ImageVersion = "(?<currentValue>[^"]+)"',
+      ],
+    },
+    // The golden fixtures render the same cimg/node tag the constant above
+    // sets, so they must move in the same PR or the byte-for-byte golden tests
+    // go red on every Node bump -- the same coupling the architect-orb fixture
+    // manager below solves. Both the executor image and the cache-key salt are
+    // matched, since the generator derives them from one value.
+    {
+      customType: 'regex',
+      managerFilePatterns: ['/pkg/gen/input/circleci/testdata/.*\\.workflows\\.yml$/'],
+      matchStrings: [
+        'image: cimg/node:(?<currentValue>\\S+)',
+        'node-build-[\\w-]+-v\\d+-(?<currentValue>\\d+\\.\\d+\\.\\d+)-',
+      ],
+      depNameTemplate: 'cimg/node',
+      datasourceTemplate: 'docker',
+    },
     // The golden fixtures pin the same orb versions the generator emits. Same
     // depName/datasource as the constants above, so Renovate bumps constant and
     // goldens in one PR and the byte-for-byte golden tests stay green -- without
@@ -63,52 +92,30 @@
       ],
       datasourceTemplate: 'github-tags',
     },
-    // schemalint pinned in `additional_dependencies` of the local helm-schema pipeline
-    // hook in the pre-commit config template. The `schemalint` packageRule below groups
-    // this with the `- repo:`/`rev:` entry for the same tool, so the normalizing binary
-    // never drifts from the verifying one -- a version skew between them could reintroduce
-    // the rival-formatter conflict (giantswarm/giantswarm#37267).
-    //
-    // This is the Go module path, tracked with the `go` datasource rather than
-    // github-tags on the repo: a regex manager only rewrites the captured version, not the
-    // `/v2` in the path, so github-tags offering a v3 tag would produce
-    // `github.com/giantswarm/schemalint/v2@v3.0.0`, which `go install` rejects -- and the
-    // breakage would only surface downstream, at pre-commit env install in every generated
-    // chart repo. The `go` datasource for the `/v2` path can only ever offer v2.x, so the
-    // pin cannot go invalid; a schemalint major needs a manual edit of both the path here
-    // and the `rev:` (see the major-update rule below).
+    // `schemalint` (normalizer) and `helm-values-schema-json` (generator) used to be
+    // pinned as literals in the pre-commit config template and needed a custom manager
+    // here. devctl#2195 made it import both as Go libraries and stamp the template's
+    // `additional_dependencies` and the `schemalint-verify` `rev:` from its own go.mod, so
+    // the built-in gomod manager is now the single place either version moves. Nothing in
+    // the template carries a literal version for them any more, and a regex manager that
+    // matched one would fight go.mod.
+    // helm-docs version pinned as an env var in the pre-commit GitHub Actions workflow
+    // template, and passed to the reusable sync-from-upstream workflow, which installs the
+    // same tools to run the same hooks. Both pins have to move in one PR: sync-from-upstream
+    // commits whatever the hooks rewrite, so a skew against the consumer's own pre-commit
+    // job makes every sync PR fail its schema check.
+    // Renovate will consolidate updates with the pre-commit hook rev for the same package.
     {
       customType: 'regex',
-      managerFilePatterns: ['/pre-commit-config\\.yaml\\.template$/'],
-      matchStrings: [
-        'additional_dependencies: \\[\'(?<depName>github\\.com/giantswarm/schemalint/v2)@(?<currentValue>[^\']+)\'\\]',
+      managerFilePatterns: [
+        '/pre-commit-action\\.yaml\\.template$/',
+        '/sync_from_upstream\\.yaml\\.template$/',
       ],
-      datasourceTemplate: 'go',
-    },
-    // Helm CLI version pinned as an env var in the pre-commit GitHub Actions workflow template.
-    {
-      customType: 'regex',
-      managerFilePatterns: ['/pre-commit-action\\.yaml\\.template$/'],
-      matchStrings: ['HELM_VERSION: "(?<currentValue>[^"]+)"'],
-      depNameTemplate: 'helm/helm',
-      datasourceTemplate: 'github-releases',
-    },
-    // helm-docs version pinned as an env var in the pre-commit GitHub Actions workflow template.
-    // Renovate will consolidate updates with the pre-commit hook rev for the same package.
-    {
-      customType: 'regex',
-      managerFilePatterns: ['/pre-commit-action\\.yaml\\.template$/'],
-      matchStrings: ['HELM_DOCS_VERSION: "(?<currentValue>[^"]+)"'],
+      matchStrings: [
+        'HELM_DOCS_VERSION: "(?<currentValue>[^"]+)"',
+        'helm_docs_version: \'(?<currentValue>[^\']+)\'',
+      ],
       depNameTemplate: 'norwoodj/helm-docs',
-      datasourceTemplate: 'github-releases',
-    },
-    // helm-values-schema-json version pinned as an env var in the pre-commit GitHub Actions workflow template.
-    // Renovate will consolidate updates with the pre-commit hook rev for the same package.
-    {
-      customType: 'regex',
-      managerFilePatterns: ['/pre-commit-action\\.yaml\\.template$/'],
-      matchStrings: ['HELM_VALUES_SCHEMA_JSON_VERSION: "(?<currentValue>[^"]+)"'],
-      depNameTemplate: 'losisin/helm-values-schema-json',
       datasourceTemplate: 'github-releases',
     },
     // golangci-lint version used in install-binary-action. The two-line match avoids
@@ -128,6 +135,28 @@
       depNameTemplate: 'golang.org/x/tools',
       datasourceTemplate: 'go',
     },
+    // Kyverno version installed for chainsaw tests, pinned in both the Makefile fragment
+    // (`?=` form) and the workflow env block (`:` form) of the kyverno-policy templates.
+    // Tracked against giantswarm/kyverno-crds so the tests run the Kyverno version we ship
+    // rather than whatever upstream released last. Both pins must stay in sync: the workflow
+    // env wins in CI, the Makefile default is what a local `make install-kyverno` uses.
+    // This manager is the only thing keeping the pin current. The `# repository:` comments
+    // above the pins are inert -- they match no manager in renovate-presets, which keys off
+    // `repo:`/`registry:` -- and the generated files in consuming repos cannot be renovated
+    // because the align-files automation regenerates them from these templates.
+    {
+      customType: 'regex',
+      managerFilePatterns: [
+        '/Makefile\\.gen\\.chainsaw\\.mk\\.template$/',
+        '/test-kyverno-policies-with-chainsaw\\.yaml\\.template$/',
+      ],
+      matchStrings: [
+        'KYVERNO_VERSION \\?= (?<currentValue>v\\S+)',
+        'KYVERNO_VERSION: (?<currentValue>v\\S+)',
+      ],
+      depNameTemplate: 'giantswarm/kyverno-crds',
+      datasourceTemplate: 'github-releases',
+    },
   ],
   packageRules: [
     {
@@ -145,30 +174,33 @@
       // generated verbatim into every chart/app repo's tests/ats/Pipfile by
       // `devctl gen circleci`. It is the single source the built-in pipenv
       // manager bumps -- group the whole stack into one PR so the pins move
-      // together (and stay mutually resolvable, e.g. pytest<9 for
-      // pytest-helm-charts), then propagate to all repos via one align-files
+      // together (and stay mutually resolvable, e.g. pytest inside the range
+      // pytest-helm-charts declares), then propagate to all repos via one align-files
       // regeneration. The per-repo copies are disabled for Renovate via
       // renovate-presets:tests-ats.json5, so this is the only place the stack
       // is updated.
-      matchManagers: ['pipenv'],
-      matchFileNames: ['pkg/gen/input/ats/internal/file/Pipfile'],
+      // The uv layout of the same stack (pyproject.toml + uv.lock, emitted for
+      // app-test-suite 1.x repos) lives next to it and is bumped by the pep621
+      // manager; the group keeps both layouts on identical pins in one PR.
+      matchManagers: ['pipenv', 'pep621'],
+      matchFileNames: ['pkg/gen/input/ats/internal/file/Pipfile', 'pkg/gen/input/ats/internal/file/pyproject.toml'],
       groupName: 'ATS test dependencies',
     },
     {
-      // schemalint is pinned twice in the pre-commit config template: as the
-      // `schemalint-verify` hook `rev:` (github-tags on the repo) and as the Go module in
-      // the pipeline hook's `additional_dependencies` (the `go` datasource -- the two
-      // datasources are unavoidable, see the custom manager above). Keep them in one PR so
-      // the normalizing binary and the verifying one never land on different versions.
-      matchDepNames: ['giantswarm/schemalint', 'github.com/giantswarm/schemalint/v2'],
-      groupName: 'schemalint',
+      // The `schemalint-verify` `rev:` in the pre-commit config template is now
+      // `{{ $.SchemalintVersion }}`, stamped from devctl's own go.mod (devctl#2195), so the
+      // generic `- repo:`/`rev:` manager above captures a template expression instead of a
+      // version. Disable that entry: go.mod is the single pin, and the gomod manager moves
+      // it under the `github.com/giantswarm/schemalint/v2` name below.
+      matchDepNames: ['giantswarm/schemalint'],
+      enabled: false,
     },
     {
-      // A schemalint major moves the Go module path (`/v2` -> `/v3`), which no regex
-      // manager can rewrite -- the template needs a hand edit. Park majors on the
-      // dependency dashboard instead of opening a PR that would bump `rev:` while leaving
-      // an uninstallable module pin behind.
-      matchDepNames: ['giantswarm/schemalint', 'github.com/giantswarm/schemalint/v2'],
+      // A schemalint major moves the Go module path (`/v2` -> `/v3`), which the gomod
+      // manager cannot rewrite -- go.mod and the import in
+      // pkg/gen/input/precommit/internal/file/values_schema.go need a hand edit together.
+      // Park majors on the dependency dashboard instead of opening a PR that cannot build.
+      matchDepNames: ['github.com/giantswarm/schemalint/v2'],
       matchUpdateTypes: ['major'],
       dependencyDashboardApproval: true,
     },

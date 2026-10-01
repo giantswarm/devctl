@@ -1,7 +1,7 @@
 package file
 
 import (
-	_ "embed"
+	"embed"
 
 	"github.com/giantswarm/devctl/v8/pkg/gen/input"
 	"github.com/giantswarm/devctl/v8/pkg/gen/input/workflows/internal/params"
@@ -11,19 +11,21 @@ import (
 var helmRenderDiffTemplate string
 
 //go:generate go run ../../../update-template-sha.go helm_render_diff.yaml.template
-//go:embed helm_render_diff.yaml.template.sha
-var helmRenderDiffTemplateSha string
+//go:embed helm_render_diff.yaml.template*
+var helmRenderDiffTemplateFiles embed.FS
+
+var helmRenderDiffTemplateSha = input.TemplateSHA(helmRenderDiffTemplateFiles, "helm_render_diff.yaml.template")
 
 func NewHelmRenderDiff(p params.Params) input.Input {
 	i := input.Input{
 		Path:         params.RegenerableFileName(p, "diff_helm_render_templates.yaml"),
 		TemplateBody: helmRenderDiffTemplate,
 		TemplateDelims: input.InputTemplateDelims{
-			Left:  "{{{{",
-			Right: "}}}}",
+			Left:  templateDelimLeft,
+			Right: templateDelimRight,
 		},
 		TemplateData: map[string]interface{}{
-			"Header": params.Header("#", helmRenderDiffTemplateSha),
+			templateKeyHeader: params.Header("#", helmRenderDiffTemplateSha),
 		},
 	}
 

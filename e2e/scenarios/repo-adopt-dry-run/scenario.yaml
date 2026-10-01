@@ -1,0 +1,20 @@
+# An undeclared repository adopted: the entry from the flags, with gen only
+# for the fields set, dryRun: true, and the plan printed.
+description: repo adopt --dry-run sends the entry from the flags with dryRun and prints the plan
+args: [repo, adopt, old-tool, --team, team-bumblebee, --component-type, tool, --language, go, --flavour, cli, --align, --reason, "ours since 2024", --dry-run]
+keyring:
+  muster:
+    login: e2e-engineer@example.com
+    token: muster_e2e
+    expiresAt: "2099-01-01T00:00:00Z"
+    refreshToken: muster_e2e_refresh
+    endpoint: "${DEVCTL_MUSTER_URL}"
+    issuer: "${MUSTER_ISSUER}"
+muster:
+  bearer: muster_e2e
+  tools:
+    x_giantswarm-repo-manager_adopt_repository:
+      - args: {repository: old-tool, team: team-bumblebee, dryRun: true, reason: "ours since 2024", entry: {componentType: tool, align: true, gen: {flavours: [cli], language: go}}}
+        result: {repository: giantswarm/old-tool, team: team-bumblebee, accepted: true, entry: "- name: old-tool\n  componentType: tool\n  align: true\n  gen:\n    flavours: [cli]\n    language: go\n",
+                 pullRequest: {repository: giantswarm/github, branch: reposetup/adopt-old-tool, title: "chore(team-bumblebee): adopt old-tool", files: [repositories/team-bumblebee.yaml], body: b, as: e2e-engineer},
+                 ask: {team: team-bumblebee, channel: team-bumblebee, text: t, deliverable: true}}

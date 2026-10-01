@@ -17,6 +17,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/yaml"
 
+	"github.com/giantswarm/devctl/v8/internal/validate"
 	"github.com/giantswarm/devctl/v8/pkg/release/changelog"
 )
 
@@ -60,7 +61,7 @@ var appsToBeAdded = []addedAppConfig{
 
 // CreateRelease creates a release on the filesystem from the given parameters. This is the entry point
 // for the `devctl create release` command logic.
-func CreateRelease(name, base, releases, provider string, components, apps []string, overwrite bool, creationCommand string, bumpall bool, appsToDrop []string, yes bool, output string, verbose bool, changesOnly bool, requestedOnly bool, updateExisting bool, preserveReadme bool, regenerateReadme bool, changelogNoisePatterns []string) error {
+func CreateRelease(githubToken, name, base, releases, provider string, components, apps []string, overwrite bool, creationCommand string, bumpall bool, appsToDrop []string, yes bool, output string, verbose bool, changesOnly bool, requestedOnly bool, updateExisting bool, preserveReadme bool, regenerateReadme bool, changelogNoisePatterns []string) error {
 	if updateExisting {
 		base = name
 	}
@@ -80,13 +81,13 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 		if newV.Major > baseV.Major {
 			releaseType = "major"
 		} else if newV.Minor > baseV.Minor {
-			releaseType = "minor"
+			releaseType = releaseTypeMinor
 		} else {
-			releaseType = "patch"
+			releaseType = releaseTypePatch
 		}
 
-		if updateExisting && releaseType == "patch" {
-			releaseType = "minor"
+		if updateExisting && releaseType == releaseTypePatch {
+			releaseType = releaseTypeMinor
 		}
 	}
 
@@ -95,8 +96,14 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 	if err != nil {
 		return microerror.Mask(err)
 	}
+	// provider is joined into every path below, so it is constrained to an
+	// identifier and cannot climb out of the releases directory.
+	if err := validate.Name("provider", provider); err != nil {
+		return microerror.Mask(err)
+	}
+
 	providerDirectory := ""
-	if provider == "aws" {
+	if provider == providerAWS {
 		// TODO: Directory for AWS provider is currently 'capa' because of old vintage releases located in aws directory
 		// This will change in the future
 		providerDirectory = filepath.Join(releases, "capa")
@@ -156,6 +163,31 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 		}
 	}
 
+	// Apps requested for removal via --drop are dropped regardless of the release version.
+	for _, appToDrop := range appsToDrop {
+		appToDrop = strings.TrimSpace(appToDrop)
+		if appToDrop == "" {
+			continue
+		}
+
+		inBaseRelease := false
+		for _, existingApp := range effectiveBaseRelease.Spec.Apps {
+			if existingApp.Name == appToDrop {
+				inBaseRelease = true
+				break
+			}
+		}
+		if !inBaseRelease {
+			fmt.Printf("\n⚠️  Warning: App %q requested via --drop is not present in the base release, nothing to drop.\n\n", appToDrop)
+			continue
+		}
+
+		if verbose {
+			fmt.Printf("Dropping %s from release %s as requested via --drop.\n", appToDrop, name)
+		}
+		appsToDropForThisRelease[appToDrop] = true
+	}
+
 	// Prepare list of new apps to be added for this release version.
 	// We'll add them to the apps list later, just before bumpall, so they show as "New app" in the table.
 	var newAppsToAdd []addedAppConfig
@@ -182,14 +214,14 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 	}
 
 	// Auto-detect components that are not explicitly provided by the user.
-	if !requestedOnly && releaseType != "patch" {
+	if !requestedOnly && releaseType != releaseTypePatch {
 		for componentName, params := range changelog.KnownComponents {
 			if !params.AutoDetect {
 				continue
 			}
 
 			// This is now handled in BumpAll.
-			if componentName == "kubernetes" {
+			if componentName == kubernetesComponentName {
 				continue
 			}
 
@@ -246,7 +278,7 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 			}
 			var detectedVersion string
 			var err error
-			detectedVersion, err = autoDetectVersion(name, componentName)
+			detectedVersion, err = autoDetectVersion(githubToken, name, componentName)
 
 			if err != nil {
 				fmt.Printf("\n⚠️  Warning: Could not auto-detect version for '%s'\n", componentName)
@@ -262,12 +294,20 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 		}
 	}
 
+	// containerd always follows the os-tooling version, so setting it by hand would only
+	// record a version no node runs.
+	for _, componentVersion := range components {
+		if strings.Split(componentVersion, "@")[0] == containerdComponentName {
+			return microerror.Maskf(invalidItemTypeError, "'%s' is derived from the release's %s version and cannot be set directly.\nBump %s instead: --component %s@<version>", containerdComponentName, osToolingComponentName, osToolingComponentName, osToolingComponentName)
+		}
+	}
+
 	if bumpall {
 		if verbose {
 			fmt.Println("Requested automated bumping of all components and apps.")
 		}
 
-		if releaseType == "patch" && len(components) == 0 && len(apps) == 0 && output != "markdown" {
+		if releaseType == releaseTypePatch && len(components) == 0 && len(apps) == 0 && output != outputMarkdown {
 			fmt.Println("For patch releases, --bumpall does not automatically bump any component or app.")
 			fmt.Println("To bump a specific component or app, please use the --component or --app flags.")
 		}
@@ -276,7 +316,7 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 		// We fetch the latest version first, then add them as requested apps
 		for _, newApp := range newAppsToAdd {
 			// Fetch the latest version for the new app
-			latestVersion, err := FindNewestApp(newApp.Name, false, nil)
+			latestVersion, err := FindNewestApp(githubToken, newApp.Name, false, nil)
 			if err != nil {
 				if verbose {
 					fmt.Printf("Warning: Could not fetch latest version for new app %s: %v\n", newApp.Name, err)
@@ -300,7 +340,7 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 		}
 		major := releaseVersionForK8s.Major
 
-		components, apps, err = BumpAll(effectiveBaseRelease, components, apps, releaseType, appsToDropForThisRelease, requests, yes, output, changesOnly, requestedOnly, major)
+		components, apps, err = BumpAll(githubToken, effectiveBaseRelease, components, apps, releaseType, appsToDropForThisRelease, requests, yes, output, changesOnly, requestedOnly, major)
 		if err != nil {
 			return microerror.Mask(err)
 		}
@@ -402,6 +442,11 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 		})
 
 	}
+
+	// containerd is not bumped on its own: it comes from whichever upstream image-builder the
+	// release's os-tooling version pins, so it is derived from that rather than requested.
+	applyContainerdComponent(githubToken, &updatesRelease, effectiveBaseRelease, verbose)
+
 	newRelease := mergeReleases(effectiveBaseRelease, updatesRelease)
 
 	// Rewrite catalogs to their test variants for apps/components carrying development
@@ -460,7 +505,7 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 	var readmeBackup []byte
 	if preserveReadme && overwrite {
 		readmePath := filepath.Join(releasePath, "README.md")
-		readmeBackup, _ = os.ReadFile(readmePath)
+		readmeBackup, _ = os.ReadFile(readmePath) // #nosec G304 -- path joined from the checked provider directory and a fixed file name
 	}
 
 	// Delete existing if overwrite
@@ -596,7 +641,7 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 		return microerror.Mask(err)
 	}
 
-	if provider == "aws" {
+	if provider == providerAWS {
 		provider = "capa"
 	}
 
@@ -643,7 +688,7 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 
 func readRequests(providerDirectory, version string) ([]Request, error) {
 	requestsYAMLPath := filepath.Join(providerDirectory, "requests.yaml")
-	data, err := os.ReadFile(requestsYAMLPath)
+	data, err := os.ReadFile(requestsYAMLPath) // #nosec G304 -- path joined from the checked provider directory and a fixed file name
 	if os.IsNotExist(err) {
 		return nil, nil
 	} else if err != nil {

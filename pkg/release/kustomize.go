@@ -19,13 +19,13 @@ type kustomizationFile struct {
 // Create a release kustomization.yaml which simply defines the release.yaml as a resource.
 func createKustomization(releaseDirectory, provider string) error {
 	var index int
-	if provider == "cloud-director" {
+	if provider == providerCloudDirector {
 		index = 2
 	} else {
 		index = 1
 	}
 	var content string
-	if provider == "cloud-director" {
+	if provider == providerCloudDirector {
 		content = `resources:
 - release.yaml
 

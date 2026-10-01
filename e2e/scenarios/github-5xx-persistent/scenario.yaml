@@ -1,0 +1,18 @@
+# GitHub answers 500 on every read of the pull request. Eight tries in a
+# row, about three minutes of backoff at scale 1, and the wait ends as a
+# tooling failure (exit 7) whose reason names the request, the count and the
+# last answer; each retried try is a warning with its time. A 500 that
+# persists is an outcome, a single one is not.
+description: a 500 on every read of the pull request ends the wait with exit 7 after eight tries, naming the request and the count
+args: [pr, wait, giantswarm/devctl, "42", --timeout, 30m]
+keyring:
+  github:
+    login: e2e-engineer
+    token: ghu_e2e_live
+    expiresAt: "2099-01-01T00:00:00Z"
+    refreshToken: ghr_e2e_live
+    refreshExpiresAt: "2099-01-01T00:00:00Z"
+github:
+  routes:
+    "GET /repos/giantswarm/devctl/pulls/42":
+      - status: 500

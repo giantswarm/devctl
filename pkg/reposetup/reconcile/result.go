@@ -1,0 +1,304 @@
+// Package reconcile is the back half of the repository set-up engine: every
+// set-up step of a declared repository as a check and a repair, run in order
+// by [Runner.Run] against GitHub and CircleCI, with the outcome as one
+// structured [Result] the inventory stores.
+//
+// A step's check reads the repository's state and compares it with what the
+// declaration and the [Baseline] want. In [ModeCheck] the step reports the
+// drift as the changes it would make; in [ModeRepair] it makes them. Every
+// repair is idempotent: a second run finds no drift and changes nothing.
+// What the engine cannot repair it reports as a [Finding] with the fix
+// spelled out: a declaration whose repository is gone, a redirect on the
+// declared name (a rename the caller follows with a correction PR), a `gen
+// circleci` refusal, the ABS prerequisites of a first chart build, a red
+// first release, a default icon, a repository Renovate shows no sign of
+// scanning.
+//
+// The steps, in order ([Steps]): create (only from an entry the caller marks
+// as added — never from a missing repository), scaffold (rendered by the
+// front half and pushed as the first commit before protection), settings
+// baseline, team permissions, branch protection with the required checks on
+// the reported-only rule, CircleCI (follow, setup workflows, checkout key,
+// and the webhook CircleCI installs on the follow, verified), webhooks,
+// Renovate (check only), CODEOWNERS (a pull request), description
+// and visibility, lifecycle (archived → unfollowed on CircleCI and
+// CircleCI's deploy key deleted, then archived on GitHub; deleted →
+// unfollowed, then deleted on GitHub, the entry the record),
+// catalog and mapping (the giantswarm/github workflows), first-release
+// verification (a vX.Y.Z tag → pipeline → workflows; a missed tag build is
+// reported, never rebuilt, except a creation's first release, which is
+// built once; a release tagged otherwise is not verified).
+//
+// What a run costs in requests is counted at the clients' transports
+// ([Counter]) into [Result.Requests], and per step in the log. A check of a
+// converged repository with every step costs at most twenty-one GitHub
+// requests, the budget of the nightly reconciler: the repository (one read,
+// shared by the create, metadata and lifecycle steps); the root listing and
+// the chart's Chart.yaml and values.schema.json; the workflow permission;
+// the teams; the branch protection, the rulesets and the engine's own (two
+// reads, App id or not); the reported checks — one page of the
+// recently merged pull requests and the statuses and check runs of the
+// newest head, three requests once per run, shared by every step that asks
+// — the pipeline files workflows.yml and custom.yml (and .circleci/
+// config.yml once when the entry does not declare the pipeline); the
+// webhooks (one read, shared by the circleci and webhooks steps);
+// renovate.json5 and the Dependency Dashboard issue; CODEOWNERS; the
+// catalog and the mapping; the latest release. Measured in check mode with
+// a person's token: giantswarm/backstage 18, giantswarm/klaus 19 (one of
+// them a CODEOWNERS drift, which also lists the open pull requests); the
+// ruleset reads add two to each. A planned change costs the same reads; a
+// repair adds one write per change.
+//
+// The reconciler workflow of giantswarm/github runs the steps under the App
+// identity, `devctl repo reconcile` runs them as the person, `devctl repo
+// setup` and `repo checks` call the same steps, and giantswarm-repo-manager
+// runs the checks in [ModeCheck] to fill the inventory.
+package reconcile
+
+import "time"
+
+// Step names one set-up step.
+type Step string
+
+// The steps, in the order [Runner.Run] executes them.
+const (
+	StepCreate      Step = "create"
+	StepScaffold    Step = "scaffold"
+	StepSettings    Step = "settings"
+	StepPermissions Step = "permissions"
+	StepProtection  Step = "protection"
+	StepCircleCI    Step = "circleci"
+	StepWebhooks    Step = "webhooks"
+	StepRenovate    Step = "renovate"
+	StepCodeowners  Step = "codeowners"
+	StepMetadata    Step = "metadata"
+	StepLifecycle   Step = "lifecycle"
+	StepCatalog     Step = "catalog"
+	StepRelease     Step = "release"
+
+	// StepEntry is the declaration itself: the one step of a [Refused]
+	// result, never run by [Runner.Run].
+	StepEntry Step = "entry"
+)
+
+// Steps lists every step in execution order.
+var Steps = []Step{
+	StepCreate, StepScaffold, StepSettings, StepPermissions, StepProtection,
+	StepCircleCI, StepWebhooks, StepRenovate, StepCodeowners, StepMetadata,
+	StepLifecycle, StepCatalog, StepRelease,
+}
+
+// Mode is what a run does with the drift it finds.
+type Mode string
+
+const (
+	// ModeCheck reports the drift as the changes a repair would make.
+	ModeCheck Mode = "check"
+	// ModeRepair makes the changes.
+	ModeRepair Mode = "repair"
+)
+
+// Verdict is the outcome of one step.
+type Verdict string
+
+const (
+	// VerdictOK: no drift, nothing to report.
+	VerdictOK Verdict = "ok"
+	// VerdictDrift: drift found and not repaired — the run was a check, or
+	// the repair is a pull request that awaits its merge.
+	VerdictDrift Verdict = "drift"
+	// VerdictRepaired: drift found and repaired in this run.
+	VerdictRepaired Verdict = "repaired"
+	// VerdictReported: no drift the engine repairs, but findings with a fix
+	// for a person.
+	VerdictReported Verdict = "reported"
+	// VerdictSkipped: the step did not apply (repository missing or empty,
+	// archived or deleted, no client for the system, no CircleCI pipeline
+	// for the circleci and release steps).
+	VerdictSkipped Verdict = "skipped"
+	// VerdictFailed: the step could not run to its end; Summary says why.
+	VerdictFailed Verdict = "failed"
+)
+
+// FindingKind classifies a finding.
+type FindingKind string
+
+// The kinds of finding.
+const (
+	// FindingRepositoryMissing: the declared repository does not exist and
+	// the entry was not added by this change.
+	FindingRepositoryMissing FindingKind = "repository-missing"
+	// FindingRenamed: the declared name redirects to a renamed repository.
+	FindingRenamed FindingKind = "renamed"
+	// FindingGenCircleCIRefused: the CircleCI generator would produce no
+	// jobs for the declaration.
+	FindingGenCircleCIRefused FindingKind = "gen-circleci-refused"
+	// FindingABSPrerequisite: the chart lacks something app-build-suite
+	// validates on the first build.
+	FindingABSPrerequisite FindingKind = "abs-prerequisite"
+	// FindingDefaultIcon: the chart still carries the default icon.
+	FindingDefaultIcon FindingKind = "default-icon"
+	// FindingRedRelease: the latest release's tag pipeline failed.
+	FindingRedRelease FindingKind = "red-release"
+	// FindingMissedTagBuild: the latest release's tag has no pipeline. The
+	// reconciler rebuilds no tag but a creation's first release; the fix is
+	// the next tag, or the tag's pipeline triggered by hand.
+	FindingMissedTagBuild FindingKind = "missed-tag-build"
+	// FindingCircleCIWebhookMissing: the project is followed on CircleCI
+	// but the repository carries no active CircleCI webhook for push
+	// events, so no push and no tag reaches CircleCI: no branch builds,
+	// and the first release tag goes unbuilt. CircleCI installs the hook on
+	// a follow by a GitHub admin of the repository whose CircleCI grant
+	// carries the hook scope; devctl cannot create it, CircleCI signs it
+	// with its own secret.
+	FindingCircleCIWebhookMissing FindingKind = "circleci-webhook-missing"
+	// FindingRenovateNotScanned: the repository shows no sign that Renovate
+	// scans it — no configuration, or a configuration without a trace of a
+	// run (the Dependency Dashboard issue, a pull request, a commit).
+	FindingRenovateNotScanned FindingKind = "renovate-not-scanned"
+	// FindingArchivedUndeclared: archived on GitHub without lifecycle:
+	// archived.
+	FindingArchivedUndeclared FindingKind = "archived-undeclared"
+	// FindingPendingPullRequest: a repair landed as a pull request that
+	// awaits its merge.
+	FindingPendingPullRequest FindingKind = "pending-pull-request"
+	// FindingUnchecked: a check could not run with the caller's access.
+	FindingUnchecked FindingKind = "unchecked"
+	// FindingEntryRefused: the validator refused the entry for a reason
+	// other than the CircleCI generator; the fix names the field.
+	FindingEntryRefused FindingKind = "entry-refused"
+	// FindingForeignRuleset: the repository carries a ruleset the engine did
+	// not create and the entry does not declare. It is left alone; a person
+	// decides whether it stays, and declares it to keep it.
+	FindingForeignRuleset FindingKind = "foreign-ruleset"
+	// FindingDeclaredRulesetMissing: the entry declares a ruleset the
+	// repository does not carry — one deleted on GitHub, or a name that
+	// never matched one. The engine creates no ruleset but its own.
+	FindingDeclaredRulesetMissing FindingKind = "declared-ruleset-missing"
+	// FindingRulesetsNotEnabled: the repository has no ruleset yet and the
+	// run has no devctl App id to write one, so the protection step kept
+	// classic branch protection as declared; the fix names the run that
+	// writes the ruleset (the reconciler's, with the id) and its bypass
+	// actors: the owning team and the repository admins for people, the
+	// devctl App for the reconciler.
+	FindingRulesetsNotEnabled FindingKind = "rulesets-not-enabled"
+	// FindingRulesetPending: the ruleset needs a write this run cannot make
+	// without the devctl App id, which its bypass list takes: its rules
+	// differ from the declared protection, or classic protection still
+	// stands beside it. The run that has the id, the reconciler's, makes it.
+	FindingRulesetPending FindingKind = "ruleset-pending"
+	// FindingTeamBypassRefused: the owning team cannot be a bypass actor of
+	// the ruleset (a secret team, or one GitHub refused), so the App stands
+	// alone and a member's own pull request does not merge through the API
+	// without a second review; the fix names the team's privacy.
+	FindingTeamBypassRefused FindingKind = "team-bypass-refused" //nolint:gosec // G101: a finding kind, not a credential
+)
+
+// Advisory says whether findings of the kind are for a person only and do
+// not keep the run from converging: the repository is set up as declared,
+// the finding stays in the artifact with its fix. Every other kind names
+// something a person must fix before the repository counts as in sync.
+func (k FindingKind) Advisory() bool {
+	switch k {
+	case FindingDefaultIcon, FindingForeignRuleset, FindingDeclaredRulesetMissing, FindingRulesetsNotEnabled:
+		return true
+	}
+	return false
+}
+
+// Finding is something a step reports for a person, with the fix.
+type Finding struct {
+	Kind    FindingKind `json:"kind"`
+	Message string      `json:"message"`
+	Fix     string      `json:"fix"`
+	// Advisory mirrors [FindingKind.Advisory] in the artifact, so a reader
+	// knows the weight of the finding without knowing the kinds.
+	Advisory bool `json:"advisory,omitempty"`
+}
+
+// newFinding is a finding of kind with its message and fix, marked advisory
+// as the kind says.
+func newFinding(kind FindingKind, message, fix string) Finding {
+	return Finding{Kind: kind, Message: message, Fix: fix, Advisory: kind.Advisory()}
+}
+
+// StepResult is the outcome of one step.
+type StepResult struct {
+	Step    Step    `json:"step"`
+	Verdict Verdict `json:"verdict"`
+	// Summary is one line on the state found.
+	Summary string `json:"summary,omitempty"`
+	// Changes are the repairs made ([ModeRepair]) or the repairs a run
+	// would make ([ModeCheck]).
+	Changes []string `json:"changes,omitempty"`
+	// Findings are reported, not repaired; each carries its fix.
+	Findings []Finding `json:"findings,omitempty"`
+}
+
+// Converges says whether the step lets the run converge: it did not drift
+// or fail, and every finding it carries is advisory.
+func (s *StepResult) Converges() bool {
+	if s.Verdict == VerdictDrift || s.Verdict == VerdictFailed {
+		return false
+	}
+	for _, f := range s.Findings {
+		if !f.Advisory {
+			return false
+		}
+	}
+	return true
+}
+
+// Result is the outcome of one run over one repository: the structured
+// value the inventory stores and the callers render.
+type Result struct {
+	// Repository is owner/name as the run addressed it — the renamed name
+	// when the declared one redirected.
+	Repository string `json:"repository"`
+	// Declared is owner/name as the team file declares it.
+	Declared string `json:"declared"`
+	Team     string `json:"team"`
+	Mode     Mode   `json:"mode"`
+	// Added says whether the entry was passed as added by the triggering
+	// change, which alone allows the create step to create.
+	Added      bool         `json:"added"`
+	StartedAt  time.Time    `json:"startedAt"`
+	FinishedAt time.Time    `json:"finishedAt"`
+	Steps      []StepResult `json:"steps"`
+	// Converged says the repository is set up as declared: no step ended in
+	// drift or failure and every finding is advisory ([StepResult.Converges]
+	// for each step). A finding a person must fix clears it, and a refused
+	// entry ([Refused]) never converges: nothing was checked.
+	Converged bool `json:"converged"`
+	// Requests is what the run cost in requests to GitHub and CircleCI,
+	// when the Runner's clients count them ([Runner.GitHubRequests]);
+	// omitted when nothing was counted.
+	Requests Requests `json:"requests,omitzero"`
+}
+
+// Step returns the result of step, or nil when the run did not execute it.
+func (r *Result) Step(step Step) *StepResult {
+	for i := range r.Steps {
+		if r.Steps[i].Step == step {
+			return &r.Steps[i]
+		}
+	}
+	return nil
+}
+
+// Refused says the entry was refused by the validator and no step ran: the
+// result is the one [Refused] builds, [StepEntry] its only step. A refused
+// result is not converged, and not drift either — the fix is in the
+// declaration, not on GitHub.
+func (r *Result) Refused() bool {
+	return r.Step(StepEntry) != nil
+}
+
+// Findings returns every finding of the run, in step order.
+func (r *Result) Findings() []Finding {
+	var all []Finding
+	for _, s := range r.Steps {
+		all = append(all, s.Findings...)
+	}
+	return all
+}

@@ -1,0 +1,11 @@
+# yaml-language-server: $schema=../.github/repositories.schema.json
+- name: example
+  componentType: service
+  description: An example chart-only app.
+  gen:
+    flavours:
+      - app
+    language: generic
+    installUpdateChart: true
+    ci:
+      generate: true

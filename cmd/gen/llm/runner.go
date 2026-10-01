@@ -39,6 +39,11 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
 	var err error
 
+	// A fork line carries its upstream's files: nothing is generated for it.
+	if !r.flag.Flavours.Generates() {
+		return nil
+	}
+
 	var llmInput *llm.LLM
 	{
 		c := llm.Config{

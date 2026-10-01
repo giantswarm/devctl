@@ -1,0 +1,6 @@
+# The state before `devctl auth login`: the keyring has no record of either
+# identity (a scenario without `keyring` runs against a keyring file that does
+# not exist). The gate every agent-facing command calls first answers exit 8
+# with the one sentence that names the fix; nothing is contacted.
+description: auth status without tokens exits 8 and names devctl auth login
+args: [auth, status]

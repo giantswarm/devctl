@@ -1,0 +1,4 @@
+# The harness's own proof of a failing command: the JSON document is on
+# stdout although the exit code is not zero, and both are asserted.
+description: repo validate refuses an entry the schema rejects and exits 2
+args: [repo, validate, --team-file, team-e2e.yaml]

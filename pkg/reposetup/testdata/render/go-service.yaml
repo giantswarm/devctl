@@ -1,0 +1,10 @@
+# yaml-language-server: $schema=../.github/repositories.schema.json
+- name: example-service
+  componentType: service
+  description: An example Go service.
+  gen:
+    flavours:
+      - generic
+    language: go
+    ci:
+      generate: true

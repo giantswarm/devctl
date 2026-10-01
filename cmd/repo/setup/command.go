@@ -16,11 +16,22 @@ import (
 const (
 	name            = "setup"
 	description     = `Configure GitHub repository`
-	longDescription = `Configure GitHub repository with:
+	longDescription = `Configure a GitHub repository with the set-up steps of the repository
+set-up engine, as the person:
 
- - Settings
- - Permissions
- - Default branch protection rules`
+ - Settings (features, merge settings, pull requests)
+ - Team permissions
+ - Default branch protection with the required checks on the reported-only
+   rule: a context is required once it has reported on the default branch
+   or a recently merged pull request, and a required context nothing
+   reports is removed — no check nothing can satisfy is ever required
+ - Renovate: a check that Renovate scans the repository, from the
+   repository's own evidence (a configuration file, and the Dependency
+   Dashboard issue or a pull request or commit of Renovate's); what is
+   missing is reported with the fix
+
+Every step is a check and a repair: the run converges in one go and a
+second run changes nothing. --dry-run prints what a repair would change.`
 )
 
 type Config struct {

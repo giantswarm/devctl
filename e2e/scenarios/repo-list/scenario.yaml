@@ -1,0 +1,23 @@
+# The inventory listing, scoped and filtered as on the Repositories page: the
+# arguments carry the scope and the set filters as the manager's tool takes
+# them, and the table shows the page's marks.
+description: repo list passes the scope and filters to list_repositories and prints the table
+args: [repo, list, --scope, all, --team, team-bumblebee, --renovate, inactive, --fork, "false", --limit, "10"]
+keyring:
+  muster:
+    login: e2e-engineer@example.com
+    token: muster_e2e
+    expiresAt: "2099-01-01T00:00:00Z"
+    refreshToken: muster_e2e_refresh
+    endpoint: "${DEVCTL_MUSTER_URL}"
+    issuer: "${MUSTER_ISSUER}"
+muster:
+  bearer: muster_e2e
+  tools:
+    x_giantswarm-repo-manager_list_repositories:
+      - args: {scope: all, team: team-bumblebee, renovate: inactive, fork: false, limit: 10}
+        result: {scope: all, total: 1790, matched: 2, shown: 2,
+                 sweep: {startedAt: "2026-09-22T02:20:00Z", finishedAt: "2026-09-22T03:01:00Z", duration: 41m, repositories: 1790, declared: 460, undeclared: 1300, gone: 3, archived: 27, engineChecks: 460},
+                 repositories: [
+                   {repository: giantswarm/a, team: team-bumblebee, renovate: inactive, lastPersonCommit: "2025-01-01", setup: {converged: true}, age: 5m},
+                   {repository: giantswarm/b, team: team-bumblebee, lifecycle: deprecated, renovate: inactive, findings: [default-icon], setup: {converged: false}, age: 5m}]}

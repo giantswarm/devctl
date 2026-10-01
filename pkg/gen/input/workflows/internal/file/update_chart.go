@@ -1,7 +1,7 @@
 package file
 
 import (
-	_ "embed"
+	"embed"
 
 	"github.com/giantswarm/devctl/v8/pkg/gen/input"
 	"github.com/giantswarm/devctl/v8/pkg/gen/input/workflows/internal/params"
@@ -11,19 +11,21 @@ import (
 var updateChartTemplate string
 
 //go:generate go run ../../../update-template-sha.go update_chart.yaml.template
-//go:embed update_chart.yaml.template.sha
-var updateChartTemplateSha string
+//go:embed update_chart.yaml.template*
+var updateChartTemplateFiles embed.FS
+
+var updateChartTemplateSha = input.TemplateSHA(updateChartTemplateFiles, "update_chart.yaml.template")
 
 func NewUpdateChartInput(p params.Params) input.Input {
 	i := input.Input{
 		Path:         params.RegenerableFileName(p, "update_chart.yaml"),
 		TemplateBody: updateChartTemplate,
 		TemplateDelims: input.InputTemplateDelims{
-			Left:  "{{{{",
-			Right: "}}}}",
+			Left:  templateDelimLeft,
+			Right: templateDelimRight,
 		},
 		TemplateData: map[string]interface{}{
-			"Header": params.Header("#", updateChartTemplateSha),
+			templateKeyHeader: params.Header("#", updateChartTemplateSha),
 		},
 	}
 

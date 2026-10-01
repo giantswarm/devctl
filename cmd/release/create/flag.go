@@ -61,7 +61,7 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().BoolVarP(&f.Verbose, flagVerbose, "v", false, "Print verbose output.")
 	cmd.Flags().BoolVar(&f.ChangesOnly, flagChangesOnly, false, "Only print changed components and apps.")
 	cmd.Flags().BoolVar(&f.RequestedOnly, flagRequestedOnly, false, "Only print components and apps requested by the user.")
-	cmd.Flags().StringSliceVar(&f.Drop, flagDrop, nil, "App to drop from the release.")
+	cmd.Flags().StringSliceVar(&f.Drop, flagDrop, nil, "App to drop from the release. Can be specified multiple times.")
 	cmd.Flags().BoolVar(&f.PreserveReadme, flagPreserveReadme, false, "Preserve existing README.md instead of regenerating it.")
 	cmd.Flags().BoolVar(&f.RegenerateReadme, flagRegenerateReadme, false, "When used with --update-existing, regenerate README.md with full changelogs by finding the previous release version.")
 	cmd.Flags().StringSliceVar(&f.ChangelogNoisePatterns, flagChangelogNoisePattern, nil, "Changelog entries containing this substring are filtered out. Can be specified multiple times.")

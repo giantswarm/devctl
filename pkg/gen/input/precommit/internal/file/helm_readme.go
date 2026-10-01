@@ -17,6 +17,6 @@ func NewCreateHelmReadmeInput(p params.Params, chartName string) input.Input {
 		TemplateBody: createHelmReadmeTemplate,
 		// Use non-default delimiters so Go's template engine does not interpret
 		// the helm-docs {{ template "..." }} directives in the file content.
-		TemplateDelims: input.InputTemplateDelims{Left: "[[", Right: "]]"},
+		TemplateDelims: input.InputTemplateDelims{Left: templateDelimLeft, Right: templateDelimRight},
 	}
 }

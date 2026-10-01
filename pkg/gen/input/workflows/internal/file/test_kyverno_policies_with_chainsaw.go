@@ -1,7 +1,7 @@
 package file
 
 import (
-	_ "embed"
+	"embed"
 	"os"
 
 	"github.com/giantswarm/devctl/v8/pkg/gen/input"
@@ -13,8 +13,10 @@ import (
 var testKyvernoPoliciesWithChainsawTemplate string
 
 //go:generate go run ../../../update-template-sha.go test-kyverno-policies-with-chainsaw.yaml.template
-//go:embed test-kyverno-policies-with-chainsaw.yaml.template.sha
-var testKyvernoPoliciesWithChainsawTemplateSha string
+//go:embed test-kyverno-policies-with-chainsaw.yaml.template*
+var testKyvernoPoliciesWithChainsawTemplateFiles embed.FS
+
+var testKyvernoPoliciesWithChainsawTemplateSha = input.TemplateSHA(testKyvernoPoliciesWithChainsawTemplateFiles, "test-kyverno-policies-with-chainsaw.yaml.template")
 
 func NewTestKyvernoPoliciesWithChainsawInput(p params.Params) input.Input {
 	// Get repository name from current working directory
@@ -29,12 +31,12 @@ func NewTestKyvernoPoliciesWithChainsawInput(p params.Params) input.Input {
 		Path:         params.RegenerableFileName(p, "test-kyverno-policies-with-chainsaw.yaml"),
 		TemplateBody: testKyvernoPoliciesWithChainsawTemplate,
 		TemplateDelims: input.InputTemplateDelims{
-			Left:  "{{{{",
-			Right: "}}}}",
+			Left:  templateDelimLeft,
+			Right: templateDelimRight,
 		},
 		TemplateData: map[string]interface{}{
-			"Header":     params.Header("#", testKyvernoPoliciesWithChainsawTemplateSha),
-			"Repository": repository,
+			templateKeyHeader: params.Header("#", testKyvernoPoliciesWithChainsawTemplateSha),
+			"Repository":      repository,
 		},
 	}
 

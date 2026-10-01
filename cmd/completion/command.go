@@ -13,28 +13,28 @@ const (
 	name             = "completion [bash|zsh|fish|powershell]"
 	shortDescription = "Generate completion script."
 	longDescription  = `To load completions:
-	
+
 	# Bash:
-	
+
 	$ source <(devctl completion bash)
-	
+
 	# To load completions for each session, execute once:
 	# Linux:
 	  $ devctl completion bash > /etc/bash_completion.d/devctl
 	# MacOS:
 	  $ devctl completion bash > /usr/local/etc/bash_completion.d/devctl
-	
+
 	# Zsh:
-	
+
 	$ source <(devctl completion zsh)
-	
+
 	# To load completions for each session, execute once:
 	$ devctl completion zsh > "${fpath[1]}/_devctl"
-	
+
 	# Fish:
-	
+
 	$ devctl completion fish | source
-	
+
 	# To load completions for each session, execute once:
 	$ devctl completion fish > ~/.config/fish/completions/devctl.fish`
 )

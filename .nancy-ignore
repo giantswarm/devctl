@@ -1,5 +1,4 @@
-<<<<<<< use-main-for-workflows
-CVE-2025-4673 until=2025-07-30
-=======
 CVE-2025-4673
->>>>>>> main
+# github.com/syndtr/goleveldb (graph-only: rekor's server dependencies via sigstore-go; not compiled into devctl).
+# NULL pointer dereference in the leveldb test/benchmark path; the project has published no fixed release since v1.0.0.
+CVE-2021-43668

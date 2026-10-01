@@ -69,6 +69,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 			Flavors:          r.flag.Flavors,
 			RepoName:         r.flag.RepoName,
 			K8sSchemaVersion: r.flag.K8sSchemaVersion,
+			GoGenerate:       r.flag.GoGenerate,
 		}
 
 		precommitInput, err = precommit.New(c)
@@ -82,6 +83,9 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		inputs = append(inputs, precommitInput.CreatePreCommitConfig())
 		inputs = append(inputs, precommitInput.CreatePreCommitAction())
 		inputs = append(inputs, precommitInput.CreateSchemaYamlInputs()...)
+		// Must run after CreateSchemaYamlInputs: it reads helm/<chart>/values.yaml and
+		// the just-generated zz_generated.app-platform.values.yaml back off disk.
+		inputs = append(inputs, precommitInput.CreateValuesSchemaInputs()...)
 		inputs = append(inputs, precommitInput.CreateHelmReadmeInputs()...)
 	}
 

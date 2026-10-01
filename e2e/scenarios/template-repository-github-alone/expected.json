@@ -1,0 +1,25 @@
+{
+  "exitCode": 0,
+  "json": {
+    "command": "pr wait",
+    "schemaVersion": 1,
+    "exitCode": 0,
+    "verdict": "green",
+    "reason": "",
+    "warnings": [
+      "giantswarm/e2e-template has .circleci/config.yml but CircleCI has never run a pipeline for it (not set up there): GitHub alone"
+    ],
+    "startedAt": "*",
+    "finishedAt": "*",
+    "repository": "giantswarm/e2e-template",
+    "number": 42,
+    "headSha": "abc123",
+    "baseRef": "main",
+    "checks": [
+      {"name": "bootstrap", "source": "check_run", "status": "completed", "conclusion": "success", "url": "*", "required": false}
+    ],
+    "actions": [
+      {"name": "template-bootstrap-gate", "runId": 7001, "status": "completed", "conclusion": "success", "url": "*"}
+    ]
+  }
+}

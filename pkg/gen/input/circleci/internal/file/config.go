@@ -13,6 +13,14 @@ var setupConfigTemplate string
 //go:embed workflows.yml.template
 var workflowsTemplate string
 
+// releaseBranches matches the maintenance branches the generated auto-release
+// workflow tags (release-2.x, release-v3.7.x, ...), as a CircleCI branch
+// filter. Every branch-only job ignores them like main: a merge there is tagged
+// within seconds, so the commit's version is the release, which the tag
+// pipeline alone builds and publishes (architect refuses a branch build that
+// resolves a release version).
+const releaseBranches = `/^release-v?[0-9]+(\.[0-9]+)?\.x$/`
+
 // NewSetupConfigInput emits .circleci/config.yml: a static dynamic-config
 // setup workflow that merges the optional repo-owned .circleci/custom.yml
 // into the generated .circleci/workflows.yml at pipeline runtime and
@@ -38,41 +46,67 @@ func NewWorkflowsInput(p params.Params) input.Input {
 		Path:         ".circleci/workflows.yml",
 		TemplateBody: workflowsTemplate,
 		TemplateData: map[string]interface{}{
-			"RepoName":         p.RepoName,
-			"Language":         p.Language,
-			"HasDockerfile":    p.HasDockerfile,
-			"HasApp":           p.HasApp,
-			"ChartName":        p.ChartName,
-			"ForcePublic":      p.ForcePublic,
-			"AppCatalog":       p.AppCatalog,
-			"AppCatalogTest":   p.AppCatalogTest,
-			"BranchPublish":    p.BranchPublish,
-			"ImagePreBuildJob": p.ImagePreBuildJob,
-			"ImagePrivateOnly": p.ImagePrivateOnly,
-			"ImageName":        p.ImageName,
-			"ImagePlatforms":   p.ImagePlatforms,
-			"ImageDockerfile":  p.ImageDockerfile,
-			"ReleaseBinaries":  p.ReleaseBinaries,
-			"BuildConcurrency": p.BuildConcurrency,
-			"ResourceClass":    p.ResourceClass,
-			"OrbVersion":       p.OrbVersion,
+			"RepoName":            p.RepoName,
+			"Language":            p.Language,
+			"HasDockerfile":       p.HasDockerfile,
+			"HasApp":              p.HasApp,
+			"SkipAppCatalog":      p.SkipAppCatalog,
+			"SkipATS":             p.SkipATS,
+			"ATSVersion":          p.ATSVersion,
+			"ATSKindCluster":      p.ATSKindCluster,
+			"ATSKindConfig":       p.ATSKindConfig,
+			"ATSResourceClass":    p.ATSResourceClass,
+			"ATSOnRelease":        p.ATSOnRelease,
+			"ChartName":           p.ChartName,
+			"ChartNameMismatch":   p.ChartNameMismatch,
+			"KeepChartAppVersion": p.KeepChartAppVersion,
+			"ForcePublic":         p.ForcePublic,
+			"AppCatalog":          p.AppCatalog,
+			"AppCatalogTest":      p.AppCatalogTest,
+			"BranchPublish":       p.BranchPublish,
+			"ReleaseBranches":     releaseBranches,
+			"ImagePreBuildJob":    p.ImagePreBuildJob,
+			"ChartReleaseGateJob": p.ChartReleaseGateJob,
+			"ImagePrivateOnly":    p.ImagePrivateOnly,
+			"ImageName":           p.ImageName,
+			"OwnImages":           p.OwnImages,
+			"ImagePlatforms":      p.ImagePlatforms,
+			"ImageNativeBuilds":   p.ImageNativeBuilds,
+			"BranchImageBuilds":   p.BranchImageBuilds,
+			"ReleaseImageBuilds":  p.ReleaseImageBuilds,
+			"ImageDockerfile":     p.ImageDockerfile,
+			"ReleaseBinaries":     p.ReleaseBinaries,
+			"BuildConcurrency":    p.BuildConcurrency,
+			"ResourceClass":       p.ResourceClass,
+			"GoBuildPath":         p.GoBuildPath,
+			"GoTestArtifacts":     p.GoTestArtifacts,
+			"OrbVersion":          p.OrbVersion,
 
-			"BuildJobName":             p.BuildJobName,
-			"NodeJobName":              p.NodeJobName,
-			"NodeImageVersion":         p.NodeImageVersion,
-			"NodeInstallCommand":       p.NodeInstallCommand,
-			"NodeRunPrefix":            p.NodeRunPrefix,
-			"NodeCachePath":            p.NodeCachePath,
-			"NodeCacheKey":             p.NodeCacheKey,
-			"NodeCacheRestoreKey":      p.NodeCacheRestoreKey,
-			"NodeBuildCachePaths":      p.NodeBuildCachePaths,
-			"NodeBuildCacheKey":        p.NodeBuildCacheKey,
-			"NodeBuildCacheRestoreKey": p.NodeBuildCacheRestoreKey,
-			"NodeCorepack":             p.NodeCorepack,
-			"NodeResourceClass":        p.NodeResourceClass,
-			"NodeTestTarget":           p.NodeTestTarget,
-			"NodeBuildTarget":          p.NodeBuildTarget,
-			"NodeBuildOutput":          p.NodeBuildOutput,
+			"BuildJobName":        p.BuildJobName,
+			"NodeJobName":         p.NodeJobName,
+			"NodeImageVersion":    p.NodeImageVersion,
+			"NodeInstallCommand":  p.NodeInstallCommand,
+			"NodeRunPrefix":       p.NodeRunPrefix,
+			"NodeCachePath":       p.NodeCachePath,
+			"NodeCacheKey":        p.NodeCacheKey,
+			"NodeCacheRestoreKey": p.NodeCacheRestoreKey,
+			"NodeBuildCachePaths": p.NodeBuildCachePaths,
+			"NodeBuildCacheKey":   p.NodeBuildCacheKey,
+			"NodeCorepack":        p.NodeCorepack,
+			"NodeResourceClass":   p.NodeResourceClass,
+			"NodeTestTarget":      p.NodeTestTarget,
+			"NodeBuildTarget":     p.NodeBuildTarget,
+			"NodeBuildOutput":     p.NodeBuildOutput,
+
+			"TemplateChart": p.TemplateChart,
+			"Team":          p.Team,
+			// The template contract, handed to the template so the placeholders
+			// and fixtures are spelled in one place (the circleci package).
+			"TemplateAppNamePlaceholder":        p.TemplateAppNamePlaceholder,
+			"TemplateTeamPlaceholder":           p.TemplateTeamPlaceholder,
+			"TemplateHelmRepositoryPlaceholder": p.TemplateHelmRepositoryPlaceholder,
+			"TemplateAppName":                   p.TemplateAppName,
+			"TemplateHelmRepository":            p.TemplateHelmRepository,
 		},
 	}
 

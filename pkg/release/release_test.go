@@ -142,7 +142,7 @@ func TestMarshalReleaseYAML_GoldenFile(t *testing.T) {
 	}
 
 	goldenPath := filepath.Join("testdata", "golden-release.yaml")
-	expectedYAML, err := os.ReadFile(goldenPath)
+	expectedYAML, err := os.ReadFile(goldenPath) // #nosec G304 -- fixed in-package testdata path
 	if err != nil {
 		t.Fatalf("Failed to read golden file %s: %v", goldenPath, err)
 	}
@@ -152,7 +152,7 @@ func TestMarshalReleaseYAML_GoldenFile(t *testing.T) {
 
 		// Write the actual output for debugging if it doesn't match the golden file
 		debugPath := filepath.Join("testdata", "actual-output.yaml")
-		if writeErr := os.WriteFile(debugPath, actualYAML, 0644); writeErr == nil {
+		if writeErr := os.WriteFile(debugPath, actualYAML, 0600); writeErr == nil {
 			t.Logf("Actual output written to %s for debugging", debugPath)
 		}
 	}
@@ -198,7 +198,7 @@ func TestMarshalReleaseYAML_FieldOrdering(t *testing.T) {
 	}
 
 	// Verify ordering: name < catalog < version < dependsOn
-	if !(namePos < catalogPos && catalogPos < versionPos && versionPos < dependsOnPos) {
+	if namePos >= catalogPos || catalogPos >= versionPos || versionPos >= dependsOnPos {
 		t.Errorf("Fields are not in the correct order. Expected: name < catalog < version < dependsOn")
 		t.Logf("Positions - name: %d, catalog: %d, version: %d, dependsOn: %d", namePos, catalogPos, versionPos, dependsOnPos)
 		t.Logf("Generated YAML:\n%s", yamlStr)

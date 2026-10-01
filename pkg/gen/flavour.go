@@ -11,10 +11,17 @@ const (
 	FlavourApp                     Flavour = "app"
 	FlavourCLI                     Flavour = "cli"
 	FlavourCustomer                Flavour = "customer"
+	FlavourFork                    Flavour = "fork"
 	FlavourGeneric                 Flavour = "generic"
 	FlavourKubernetesAPI           Flavour = "k8sapi"
 	FlavourClusterApp              Flavour = "cluster-app"
 	FlavourManagementClustersFleet Flavour = "fleet"
+	// FlavourPlans is a team plans repository: versioned PRDs, their
+	// companion websites and the plan-workflow agent skills. An add-on
+	// flavour declared beside generic (flavours: [generic, plans]) with
+	// language generic; the generators produce nothing extra for it, and the
+	// repository set-up engine derives it the template giantswarm/template-plans.
+	FlavourPlans Flavour = "plans"
 )
 
 func AllFlavours() []string {
@@ -22,10 +29,12 @@ func AllFlavours() []string {
 		FlavourApp.String(),
 		FlavourCLI.String(),
 		FlavourCustomer.String(),
+		FlavourFork.String(),
 		FlavourGeneric.String(),
 		FlavourKubernetesAPI.String(),
 		FlavourClusterApp.String(),
 		FlavourManagementClustersFleet.String(),
+		FlavourPlans.String(),
 	}
 }
 
@@ -39,6 +48,8 @@ func NewFlavour(s string) (Flavour, error) {
 		return FlavourCLI, nil
 	case FlavourCustomer.String():
 		return FlavourCustomer, nil
+	case FlavourFork.String():
+		return FlavourFork, nil
 	case FlavourGeneric.String():
 		return FlavourGeneric, nil
 	case FlavourKubernetesAPI.String():
@@ -47,6 +58,8 @@ func NewFlavour(s string) (Flavour, error) {
 		return FlavourClusterApp, nil
 	case FlavourManagementClustersFleet.String():
 		return FlavourManagementClustersFleet, nil
+	case FlavourPlans.String():
+		return FlavourPlans, nil
 	}
 
 	return Flavour("unknown"), microerror.Maskf(invalidConfigError, "flavour must be one of %s", strings.Join(AllFlavours(), "|"))
@@ -65,6 +78,14 @@ func (s FlavourSlice) Contains(f Flavour) bool {
 		}
 	}
 	return false
+}
+
+// Generates says whether the generators have anything to produce for the
+// flavours. A fork line carries its upstream's files plus the carried
+// patches: nothing is generated for it, every `devctl gen` leaves it as it
+// is.
+func (s FlavourSlice) Generates() bool {
+	return !s.Contains(FlavourFork)
 }
 
 type FlavourSliceFlagValue struct {

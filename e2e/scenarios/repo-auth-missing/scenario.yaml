@@ -1,0 +1,5 @@
+# Without a muster record in the keychain a repo command does not fall back
+# to anything: it exits with the one sentence naming the login, and nothing
+# reaches muster.
+description: a repo command without a muster token exits naming devctl auth login --muster-only and calls nothing
+args: [repo, status, my-service]

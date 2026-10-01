@@ -1,0 +1,55 @@
+# CircleCI answers a project for every repository the token's user sees on
+# GitHub, set up on CircleCI or not. A template repository carries
+# .circleci/config.yml for the repositories created from it and is never
+# built itself: its project has no pipeline, and none will come for the
+# head. The wait judges the head from GitHub alone, says so in a warning and
+# ends green on the first poll instead of waiting for a pipeline until the
+# timeout.
+description: a template repository's CircleCI project has never run a pipeline; the wait is GitHub alone with a warning and ends green at once
+args: [pr, wait, giantswarm/e2e-template, "42", --timeout, 30m]
+keyring:
+  github:
+    login: e2e-engineer
+    token: ghu_e2e_live
+    expiresAt: "2099-01-01T00:00:00Z"
+    refreshToken: ghr_e2e_live
+    refreshExpiresAt: "2099-01-01T00:00:00Z"
+  circleci:
+    login: e2e-engineer
+    token: CCIPAT_e2e_live
+    expiresAt: "2099-01-01T00:00:00Z"
+github:
+  routes:
+    "GET /repos/giantswarm/e2e-template/pulls/42":
+      - body:
+          number: 42
+          state: open
+          draft: false
+          merged: false
+          mergeable: true
+          mergeable_state: clean
+          head: {sha: abc123, ref: feature, repo: {full_name: giantswarm/e2e-template}}
+          base: {ref: main, repo: {full_name: giantswarm/e2e-template}}
+    "GET /repos/giantswarm/e2e-template/contents/.circleci/config.yml":
+      - body: {type: file, name: config.yml, path: .circleci/config.yml, sha: c0ffee, encoding: base64, content: ""}
+    "GET /repos/giantswarm/e2e-template/commits/abc123/check-runs":
+      - body:
+          total_count: 1
+          check_runs:
+            - {id: 101, name: bootstrap, status: completed, conclusion: success, started_at: "2026-09-24T04:00:00Z", html_url: "https://github.com/giantswarm/e2e-template/runs/101"}
+    "GET /repos/giantswarm/e2e-template/commits/abc123/status":
+      - body:
+          state: pending
+          total_count: 0
+          statuses: []
+    "GET /repos/giantswarm/e2e-template/actions/runs?head_sha=abc123":
+      - body:
+          total_count: 1
+          workflow_runs:
+            - {id: 7001, name: template-bootstrap-gate, status: completed, conclusion: success, html_url: "https://github.com/giantswarm/e2e-template/actions/runs/7001"}
+circleci:
+  routes:
+    "GET /api/v2/project/gh/giantswarm/e2e-template":
+      - body: {slug: gh/giantswarm/e2e-template, name: e2e-template, organization_name: giantswarm, vcs_info: {vcs_url: "https://github.com/giantswarm/e2e-template", default_branch: master, provider: GitHub}}
+    "GET /api/v2/project/gh/giantswarm/e2e-template/pipeline":
+      - body: {items: [], next_page_token: null}

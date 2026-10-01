@@ -1,0 +1,10 @@
+{
+  "exitCode": 0,
+  "stdoutContains": [
+    "dry run: nothing written",
+    "giantswarm/old-tool in team-bumblebee: accepted",
+    "entry after:\n  - name: old-tool\n    componentType: tool\n    align: true",
+    "pull request: chore(team-bumblebee): adopt old-tool (branch reposetup/adopt-old-tool, repositories/team-bumblebee.yaml) as e2e-engineer",
+    "ask: to team-bumblebee in #team-bumblebee"
+  ]
+}

@@ -65,7 +65,7 @@ var KnownComponents = map[string]ParseParams{
 		Changelog:      "https://raw.githubusercontent.com/giantswarm/cluster-aws/v{{.Version}}/CHANGELOG.md",
 		Start:          commonStartPattern,
 		End:            commonEndPattern,
-		FilterPatterns: []string{"Chart: Update `cluster`"},
+		FilterPatterns: []string{clusterChartUpdateFilter},
 	},
 	"cloud-provider-aws": {
 		Tag:       "https://github.com/giantswarm/aws-cloud-controller-manager-app/releases/tag/v{{.Version}}",
@@ -86,7 +86,7 @@ var KnownComponents = map[string]ParseParams{
 		Changelog:      "https://raw.githubusercontent.com/giantswarm/cluster-eks/v{{.Version}}/CHANGELOG.md",
 		Start:          commonStartPattern,
 		End:            commonEndPattern,
-		FilterPatterns: []string{"Chart: Update `cluster`"},
+		FilterPatterns: []string{clusterChartUpdateFilter},
 	},
 	"karpenter": {
 		Tag:       "https://github.com/giantswarm/karpenter-app/releases/tag/v{{.Version}}",
@@ -125,7 +125,7 @@ var KnownComponents = map[string]ParseParams{
 		Changelog:      "https://raw.githubusercontent.com/giantswarm/cluster-azure/v{{.Version}}/CHANGELOG.md",
 		Start:          commonStartPattern,
 		End:            commonEndPattern,
-		FilterPatterns: []string{"Chart: Update `cluster`"},
+		FilterPatterns: []string{clusterChartUpdateFilter},
 	},
 	"azure-cloud-controller-manager": {
 		Tag:       "https://github.com/giantswarm/azure-cloud-controller-manager-app/releases/tag/v{{.Version}}",
@@ -152,13 +152,22 @@ var KnownComponents = map[string]ParseParams{
 		End:       commonEndPattern,
 	},
 
+	// AKS Provider Specific
+	"cluster-aks": {
+		Tag:            "https://github.com/giantswarm/cluster-aks/releases/tag/v{{.Version}}",
+		Changelog:      "https://raw.githubusercontent.com/giantswarm/cluster-azure/v{{.Version}}/CHANGELOG.md",
+		Start:          commonStartPattern,
+		End:            commonEndPattern,
+		FilterPatterns: []string{clusterChartUpdateFilter},
+	},
+
 	// CAPV Provider Specific
 	"cluster-vsphere": {
 		Tag:            "https://github.com/giantswarm/cluster-vsphere/releases/tag/v{{.Version}}",
 		Changelog:      "https://raw.githubusercontent.com/giantswarm/cluster-vsphere/v{{.Version}}/CHANGELOG.md",
 		Start:          commonStartPattern,
 		End:            commonEndPattern,
-		FilterPatterns: []string{"Chart: Update `cluster`"},
+		FilterPatterns: []string{clusterChartUpdateFilter},
 	},
 	"cloud-provider-vsphere": {
 		Tag:       "https://github.com/giantswarm/cloud-provider-vsphere-app/releases/tag/v{{.Version}}",
@@ -191,7 +200,7 @@ var KnownComponents = map[string]ParseParams{
 		Changelog:      "https://raw.githubusercontent.com/giantswarm/cluster-cloud-director/v{{.Version}}/CHANGELOG.md",
 		Start:          commonStartPattern,
 		End:            commonEndPattern,
-		FilterPatterns: []string{"Chart: Update `cluster`"},
+		FilterPatterns: []string{clusterChartUpdateFilter},
 	},
 	"cloud-provider-cloud-director": {
 		Tag:       "https://github.com/giantswarm/cloud-provider-cloud-director-app/releases/tag/v{{.Version}}",
@@ -426,6 +435,11 @@ var KnownComponents = map[string]ParseParams{
 		Start:     commonStartPattern,
 		End:       commonEndPattern,
 	},
+	"containerd": {
+		// containerd keeps its release notes on the GitHub release rather than in a
+		// CHANGELOG we could parse, so only the tag URL is used.
+		Tag: "https://github.com/containerd/containerd/releases/tag/v{{.Version}}",
+	},
 }
 
 // GetRepoName extracts the repository name for a given component from its tag URL.
@@ -473,6 +487,16 @@ func ParseChangelog(componentName, currentVersion, endVersion string, extraFilte
 		return nil, microerror.Mask(fmt.Errorf("unknown component: %s", componentName))
 	}
 
+	if componentName == "containerd" {
+		// containerd is derived from the image-builder release our os-tooling version pins,
+		// and has no CHANGELOG in the format parsed below. Link to the release and stop.
+		return &Version{
+			Name:    currentVersion,
+			Link:    strings.Replace(params.Tag, "{{.Version}}", currentVersion, 1),
+			Content: "",
+		}, nil
+	}
+
 	if componentName == "flatcar" {
 		// Flatcar's "changelog" is a large JSON manifest we don't parse. Skip
 		// fetching it entirely and just return a link to the release notes.
@@ -487,7 +511,7 @@ func ParseChangelog(componentName, currentVersion, endVersion string, extraFilte
 	templateData := &versionTemplateData{}
 	templateData.Version = currentVersion
 
-	if componentName == "kubernetes" {
+	if componentName == kubernetesComponentName {
 		semVer, err := semver.NewVersion(currentVersion)
 		if err != nil {
 			return nil, microerror.Mask(err)
@@ -518,7 +542,7 @@ func ParseChangelog(componentName, currentVersion, endVersion string, extraFilte
 		return nil, microerror.Mask(err)
 	}
 
-	if componentName == "kubernetes" {
+	if componentName == kubernetesComponentName {
 		// Skip parsing Kubernetes
 		return &Version{
 			Name:    currentVersion,
@@ -692,7 +716,7 @@ func ParseChangelog(componentName, currentVersion, endVersion string, extraFilte
 	if len(categorizedChanges.Breaking) > 0 {
 		sb.WriteString("#### :warning: Breaking Changes\n\n")
 		for _, item := range categorizedChanges.Breaking {
-			sb.WriteString(fmt.Sprintf("- %s\n", item))
+			sb.WriteString("- " + item + "\n")
 		}
 		sb.WriteString("\n")
 	}
@@ -700,7 +724,7 @@ func ParseChangelog(componentName, currentVersion, endVersion string, extraFilte
 	if len(categorizedChanges.Added) > 0 {
 		sb.WriteString("#### Added\n\n")
 		for _, item := range categorizedChanges.Added {
-			sb.WriteString(fmt.Sprintf("- %s\n", item))
+			sb.WriteString("- " + item + "\n")
 		}
 		sb.WriteString("\n")
 	}
@@ -708,7 +732,7 @@ func ParseChangelog(componentName, currentVersion, endVersion string, extraFilte
 	if len(categorizedChanges.Changed) > 0 {
 		sb.WriteString("#### Changed\n\n")
 		for _, item := range categorizedChanges.Changed {
-			sb.WriteString(fmt.Sprintf("- %s\n", item))
+			sb.WriteString("- " + item + "\n")
 		}
 		sb.WriteString("\n")
 	}
@@ -716,7 +740,7 @@ func ParseChangelog(componentName, currentVersion, endVersion string, extraFilte
 	if len(categorizedChanges.Deprecated) > 0 {
 		sb.WriteString("#### Deprecated\n\n")
 		for _, item := range categorizedChanges.Deprecated {
-			sb.WriteString(fmt.Sprintf("- %s\n", item))
+			sb.WriteString("- " + item + "\n")
 		}
 		sb.WriteString("\n")
 	}
@@ -724,7 +748,7 @@ func ParseChangelog(componentName, currentVersion, endVersion string, extraFilte
 	if len(categorizedChanges.Removed) > 0 {
 		sb.WriteString("#### Removed\n\n")
 		for _, item := range categorizedChanges.Removed {
-			sb.WriteString(fmt.Sprintf("- %s\n", item))
+			sb.WriteString("- " + item + "\n")
 		}
 		sb.WriteString("\n")
 	}
@@ -732,7 +756,7 @@ func ParseChangelog(componentName, currentVersion, endVersion string, extraFilte
 	if len(categorizedChanges.Fixed) > 0 {
 		sb.WriteString("#### Fixed\n\n")
 		for _, item := range categorizedChanges.Fixed {
-			sb.WriteString(fmt.Sprintf("- %s\n", item))
+			sb.WriteString("- " + item + "\n")
 		}
 		sb.WriteString("\n")
 	}
@@ -740,7 +764,7 @@ func ParseChangelog(componentName, currentVersion, endVersion string, extraFilte
 	if len(categorizedChanges.Security) > 0 {
 		sb.WriteString("#### Security\n\n")
 		for _, item := range categorizedChanges.Security {
-			sb.WriteString(fmt.Sprintf("- %s\n", item))
+			sb.WriteString("- " + item + "\n")
 		}
 		sb.WriteString("\n")
 	}

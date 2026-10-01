@@ -5,6 +5,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"text/template"
@@ -142,6 +143,72 @@ func Test_CircleCIGeneratedOnDisablesArchitectOrb(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("circleci-generated renovate config missing %q:\n%s", want, got)
 		}
+	}
+}
+
+// Test_LangNodeExtendedForNodeRepos verifies the language switch reaches the
+// node branch, so a Node repo gets the grouping rule that puts every Node
+// version pin (.nvmrc, a Dockerfile `FROM node:`, a setup-node step) in one PR.
+func Test_LangNodeExtendedForNodeRepos(t *testing.T) {
+	node := render(t, Config{Language: "node"})
+	if !strings.Contains(node, "github>giantswarm/renovate-presets:lang-node.json5") {
+		t.Errorf("node repo should extend the lang-node preset:\n%s", node)
+	}
+
+	// The language branches are mutually exclusive -- a Go repo must not pick
+	// up Node rules and vice versa.
+	goRepo := render(t, Config{Language: "go"})
+	if strings.Contains(goRepo, "lang-node.json5") {
+		t.Errorf("go repo should not extend the lang-node preset:\n%s", goRepo)
+	}
+	if strings.Contains(node, "lang-go.json5") {
+		t.Errorf("node repo should not extend the lang-go preset:\n%s", node)
+	}
+}
+
+// Test_CimgNodeDisableGating verifies the cimg/node disable is emitted only
+// where the tag is actually generated: a Node repo on the devctl-generated CI
+// path. The gating is the whole point -- a Node repo with a hand-written
+// .circleci/config.yml owns its own executor image and must keep receiving
+// cimg/node bumps, and a Go repo has no Node job at all.
+func Test_CimgNodeDisableGating(t *testing.T) {
+	testCases := []struct {
+		name   string
+		config Config
+		want   bool
+	}{
+		{
+			name:   "node repo with generated CI is disabled",
+			config: Config{Language: "node", CircleCIGenerated: true},
+			want:   true,
+		},
+		{
+			name:   "node repo with hand-written CI keeps bumps",
+			config: Config{Language: "node"},
+			want:   false,
+		},
+		{
+			name:   "go repo with generated CI has no node job",
+			config: Config{Language: "go", CircleCIGenerated: true},
+			want:   false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := render(t, tc.config)
+
+			// Every rendering must stay valid JSON5 -- the disable sits inside
+			// a packageRules array that another conditional also writes to.
+			var parsed map[string]interface{}
+			if err := json5.Unmarshal([]byte(got), &parsed); err != nil {
+				t.Fatalf("rendered config is not valid JSON5: %v\n%s", err, got)
+			}
+
+			if strings.Contains(got, "'cimg/node',") != tc.want {
+				t.Errorf("cimg/node disable present = %t, want %t:\n%s", !tc.want, tc.want, got)
+			}
+		})
 	}
 }
 
@@ -320,6 +387,12 @@ func Test_Golden(t *testing.T) {
 			config: Config{Language: "python"},
 		},
 		{
+			// Node branch of the language switch, on the generated-CI path so
+			// the golden also pins the cimg/node disable beside the orb one.
+			name:   "node",
+			config: Config{Language: "node", CircleCIGenerated: true},
+		},
+		{
 			// Schedule branch isolated from the other optional blocks.
 			name:   "schedule",
 			config: Config{Language: "go", Interval: "before 5am on monday"},
@@ -358,13 +431,13 @@ func Test_Golden(t *testing.T) {
 			golden := filepath.Join("testdata", tc.name+".json5.golden")
 
 			if *update {
-				if err := os.WriteFile(golden, []byte(got), 0o644); err != nil {
+				if err := os.WriteFile(golden, []byte(got), 0o600); err != nil {
 					t.Fatalf("update golden %s: %v", golden, err)
 				}
 				return
 			}
 
-			want, err := os.ReadFile(golden)
+			want, err := os.ReadFile(golden) // #nosec G304 -- fixed in-package testdata path
 			if err != nil {
 				t.Fatalf("read golden %s: %v (run with -update to create it)", golden, err)
 			}
@@ -373,5 +446,34 @@ func Test_Golden(t *testing.T) {
 				t.Errorf("rendered config does not match %s (run with -update to regenerate)\n--- got ---\n%s\n--- want ---\n%s", golden, got, want)
 			}
 		})
+	}
+}
+
+// Test_GitIgnoredAuthorsAlwaysPresent verifies every generated config lists
+// both authors of our own that commit onto a Renovate branch: taylorbot, which
+// pushes what the generated workflows (helm-docs-regen, update-chart,
+// sync-from-upstream) produce, and the marge sweep's App, which writes a bot
+// PR's changelog entry. Renovate keeps rebasing and autoclosing a branch they
+// pushed to only while it is told to ignore them. It is unconditional: a repo
+// that neither touches never sees a commit by those authors, so the entries
+// are inert there.
+func Test_GitIgnoredAuthorsAlwaysPresent(t *testing.T) {
+	for _, c := range []Config{
+		{Language: "go"},
+		{Language: "node", CircleCIGenerated: true},
+		{Language: "go", Deprecated: true, HasCustomConfig: true, RepoName: "some-repo"},
+	} {
+		got := render(t, c)
+
+		var parsed struct {
+			GitIgnoredAuthors []string `json:"gitIgnoredAuthors"`
+		}
+		if err := json5.Unmarshal([]byte(got), &parsed); err != nil {
+			t.Fatalf("generated config is not valid JSON5: %v\n%s", err, got)
+		}
+		want := []string{"dev@giantswarm.io", "329428426+giantswarm-marge[bot]@users.noreply.github.com"}
+		if !slices.Equal(parsed.GitIgnoredAuthors, want) {
+			t.Errorf("gitIgnoredAuthors = %v for %+v, want %v", parsed.GitIgnoredAuthors, c, want)
+		}
 	}
 }

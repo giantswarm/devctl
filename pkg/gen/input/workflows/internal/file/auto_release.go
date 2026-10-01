@@ -1,7 +1,7 @@
 package file
 
 import (
-	_ "embed"
+	"embed"
 	"path/filepath"
 
 	"github.com/giantswarm/devctl/v8/pkg/gen/input"
@@ -12,8 +12,10 @@ import (
 var autoReleaseTemplate string
 
 //go:generate go run ../../../update-template-sha.go auto_release.yaml.template
-//go:embed auto_release.yaml.template.sha
-var autoReleaseTemplateSha string
+//go:embed auto_release.yaml.template*
+var autoReleaseTemplateFiles embed.FS
+
+var autoReleaseTemplateSha = input.TemplateSHA(autoReleaseTemplateFiles, "auto_release.yaml.template")
 
 // NewAutoReleaseInput emits .github/workflows/zz_generated.auto_release.yaml --
 // the push-based release tagger + GitHub-Release publisher used by the
@@ -26,11 +28,13 @@ func NewAutoReleaseInput(p params.Params) input.Input {
 		Path:         params.RegenerableFileName(p, "auto_release.yaml"),
 		TemplateBody: autoReleaseTemplate,
 		TemplateDelims: input.InputTemplateDelims{
-			Left:  "{{{{",
-			Right: "}}}}",
+			Left:  templateDelimLeft,
+			Right: templateDelimRight,
 		},
 		TemplateData: map[string]interface{}{
-			"Header": params.Header("#", autoReleaseTemplateSha),
+			templateKeyHeader:        params.Header("#", autoReleaseTemplateSha),
+			templateKeyFork:          params.IsFlavourFork(p),
+			templateKeyReleaseBranch: p.ReleaseBranch,
 		},
 	}
 }

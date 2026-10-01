@@ -1,20 +1,27 @@
 package updater
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
 	"strings"
 
 	"github.com/blang/semver"
+	"github.com/creativeprojects/go-selfupdate"
 	"github.com/giantswarm/microerror"
-	"github.com/rhysd/go-github-selfupdate/selfupdate"
+	selfupdatecosign "github.com/giantswarm/selfupdate-cosign"
 )
 
 type Config struct {
-	// GithubToken will be used when fetching versions
-	// from private GitHub repositories.
-	GithubToken string
+	// GithubToken returns the GitHub token the releases are read with. It is
+	// called once, when the first request goes to GitHub, and never when the
+	// version cache answers. nil or "" reads anonymously; the environment is
+	// not a source of its own.
+	GithubToken func(context.Context) (string, error)
+	// GitHubAPIURL is the GitHub REST API; empty is https://api.github.com.
+	GitHubAPIURL string
 	// CurrentVersion is the currently installed version
 	// of the application.
 	CurrentVersion string
@@ -25,14 +32,30 @@ type Config struct {
 	CacheDir string
 }
 
+// Seams for the tests: where releases come from (nil is GitHub, reached with
+// Config.GithubToken at Config.GitHubAPIURL), which file InstallLatest
+// replaces (the running executable) and what a download must verify against
+// before it is installed (its cosign Sigstore bundle).
+var (
+	releaseSource      selfupdate.Source
+	executablePath     = selfupdate.ExecutablePath
+	signatureValidator = func(repository string) selfupdate.Validator { return selfupdatecosign.New(repository) }
+)
+
 type Updater struct {
-	githubToken    string
 	currentVersion semver.Version
 	repository     string
 	cacheDir       string
 
-	selfUpdater *selfupdate.Updater
-	cache       *cache
+	// lookup finds the latest release without looking for signature
+	// bundles, so a version lookup (`version check`, and the check that
+	// runs before every command) never depends on a release being signed.
+	lookup *selfupdate.Updater
+	// installer finds the latest release together with the cosign Sigstore
+	// bundle published next to this platform's binary and verifies the
+	// download against it before anything is written.
+	installer *selfupdate.Updater
+	cache     *cache
 }
 
 func New(c Config) (*Updater, error) {
@@ -46,8 +69,7 @@ func New(c Config) (*Updater, error) {
 	var err error
 
 	u := &Updater{
-		githubToken: c.GithubToken,
-		cacheDir:    c.CacheDir,
+		cacheDir: c.CacheDir,
 	}
 
 	{
@@ -65,8 +87,24 @@ func New(c Config) (*Updater, error) {
 	}
 
 	{
-		u.selfUpdater, err = selfupdate.NewUpdater(selfupdate.Config{
-			APIToken: u.githubToken,
+		source := releaseSource
+		if source == nil {
+			source, err = newGitHubSource(selfupdate.ParseSlug(u.repository), c.GitHubAPIURL, c.GithubToken)
+			if err != nil {
+				return nil, microerror.Mask(err)
+			}
+		}
+
+		u.lookup, err = selfupdate.NewUpdater(selfupdate.Config{
+			Source: source,
+		})
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+
+		u.installer, err = selfupdate.NewUpdater(selfupdate.Config{
+			Source:    source,
+			Validator: signatureValidator(u.repository),
 		})
 		if err != nil {
 			return nil, microerror.Mask(err)
@@ -85,12 +123,49 @@ func New(c Config) (*Updater, error) {
 	return u, nil
 }
 
-// InstallLatest installs the newest version that can
-// be installed.
+// InstallLatest installs the newest version that can be installed: the
+// latest release's binary for this platform, once it verifies against the
+// cosign Sigstore bundle published next to it. A release without a bundle is
+// refused before anything is downloaded, a download that does not match its
+// signature before anything is written; the installed binary stays as it is
+// either way. The new binary replaces the running executable, symbolic links
+// resolved, with a single rename: a devctl started meanwhile runs the old
+// binary or the new one, several updates may run at once, and no other file
+// is touched.
 func (u *Updater) InstallLatest() error {
-	_, err := u.selfUpdater.UpdateSelf(u.currentVersion, u.repository)
+	ctx := context.Background()
+
+	// The release must come from the validating updater so that the bundle
+	// asset is attached to it.
+	latest, found, err := u.installer.DetectLatest(ctx, selfupdate.ParseSlug(u.repository))
+	if errors.Is(err, selfupdate.ErrValidationAssetNotFound) {
+		return microerror.Mask(fmt.Errorf("the latest release of %s has no signature bundle for this platform's binary, so it cannot be verified; refusing to install it: %w", u.repository, err))
+	} else if err != nil {
+		return microerror.Mask(err)
+	}
+
+	if !found {
+		return microerror.Maskf(versionNotFoundError, "couldn't find the latest version and/or release assets on GitHub, probably due to token without access to the repository %s.", u.repository)
+	}
+
+	latestVersion, err := semver.Parse(latest.Version())
 	if err != nil {
 		return microerror.Mask(err)
+	}
+
+	if latestVersion.LTE(u.currentVersion) {
+		// Nothing newer to install.
+		return nil
+	}
+
+	exe, err := executablePath()
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	err = selfupdatecosign.Install(ctx, u.installer, latest, exe)
+	if err != nil {
+		return microerror.Mask(fmt.Errorf("update failed, %s is unchanged: %w", exe, err))
 	}
 
 	return nil
@@ -98,9 +173,23 @@ func (u *Updater) InstallLatest() error {
 
 // GetLatest returns the latest version available in the
 // source repository, and if we can upgrade to that version
-// or not (it can be equal to the current version).
+// or not (it can be equal to the current version). A cache younger than an
+// hour answers instead of the source: the check that runs before every
+// command.
 func (u *Updater) GetLatest() (version string, err error) {
-	latestVersion, err := u.getLatestVersion()
+	return u.latest(true)
+}
+
+// GetLatestFromSource is GetLatest asking the source whatever the cache
+// says, and refreshing the cache with the answer: an explicit `version
+// update` or `version check` right after a release finds it, where the
+// cache written before the release would deny it for up to an hour.
+func (u *Updater) GetLatestFromSource() (version string, err error) {
+	return u.latest(false)
+}
+
+func (u *Updater) latest(readCache bool) (version string, err error) {
+	latestVersion, err := u.getLatestVersion(readCache)
 	if err != nil {
 		return "", microerror.Mask(err)
 	}
@@ -114,10 +203,10 @@ func (u *Updater) GetLatest() (version string, err error) {
 	return latestVersion.String(), err
 }
 
-func (u *Updater) getLatestVersion() (semver.Version, error) {
+func (u *Updater) getLatestVersion(readCache bool) (semver.Version, error) {
 	allowCache := len(u.cacheDir) > 0
 
-	if allowCache && !u.cache.IsExpired() {
+	if allowCache && readCache && !u.cache.IsExpired() {
 		version, err := semver.Parse(u.cache.LatestVersion)
 		// If this not a valid semver version, then it means
 		// that the someone fiddled with the cache file. We'll
@@ -127,17 +216,22 @@ func (u *Updater) getLatestVersion() (semver.Version, error) {
 		}
 	}
 
-	latestVersion, _, err := u.selfUpdater.DetectLatest(u.repository)
+	latest, found, err := u.lookup.DetectLatest(context.Background(), selfupdate.ParseSlug(u.repository))
 	if err != nil {
 		return semver.Version{}, microerror.Mask(err)
 	}
 
-	if latestVersion == nil {
+	if !found {
 		return semver.Version{}, microerror.Maskf(versionNotFoundError, "couldn't find the latest version and/or release assets on GitHub, probably due to token without access to the repository %s.", u.repository)
 	}
 
+	latestVersion, err := semver.Parse(latest.Version())
+	if err != nil {
+		return semver.Version{}, microerror.Mask(err)
+	}
+
 	if allowCache {
-		u.cache.LatestVersion = latestVersion.Version.String()
+		u.cache.LatestVersion = latestVersion.String()
 
 		err = u.cache.Persist(u.cacheDir)
 		if err != nil {
@@ -145,7 +239,7 @@ func (u *Updater) getLatestVersion() (semver.Version, error) {
 		}
 	}
 
-	return latestVersion.Version, nil
+	return latestVersion, nil
 }
 
 func (u *Updater) parseRepoFromURL(sourceURL string) (string, error) {

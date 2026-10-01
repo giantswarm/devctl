@@ -3,11 +3,12 @@ package ami
 import (
 	"fmt"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/s3"
+	// aws-sdk-go v1 is out of support. Migration to v2 is giantswarm/devctl#2209.
+	"github.com/aws/aws-sdk-go/aws"             //nolint:staticcheck // SA1019
+	"github.com/aws/aws-sdk-go/aws/awserr"      //nolint:staticcheck // SA1019
+	"github.com/aws/aws-sdk-go/aws/credentials" //nolint:staticcheck // SA1019
+	"github.com/aws/aws-sdk-go/aws/session"     //nolint:staticcheck // SA1019
+	"github.com/aws/aws-sdk-go/service/s3"      //nolint:staticcheck // SA1019
 	"github.com/giantswarm/microerror"
 )
 

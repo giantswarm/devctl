@@ -3,7 +3,10 @@
 
 {{ .Header }}
 
+# The generated app-platform file goes first so keys the chart defines itself
+# in values.yaml keep their own schema on merge.
 values:
+  - helm/{{ .ChartName }}/zz_generated.app-platform.values.yaml
   - helm/{{ .ChartName }}/values.yaml
 
 draft: 2020
@@ -19,7 +22,7 @@ bundleWithoutID: true
 
 k8sSchemaURL:
   https://raw.githubusercontent.com/yannh/kubernetes-json-schema/refs/heads/master/{{ .K8sSchemaVersion }}/
-k8sSchemaVersion: "v1.33.1"
+k8sSchemaVersion: "{{ .K8sSchemaVersion }}"
 
 useHelmDocs: true
 

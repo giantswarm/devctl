@@ -20,10 +20,23 @@ type Params struct {
 	// "yarn run" / "pnpm run") the dev-only Node lint hook invokes. Set only
 	// when NodeDevLintHook is true; detected from the lockfile.
 	NodeRunPrefix string
+	// GoGenerate runs `go generate ./...` in the pre-commit job before the hooks
+	// (Go only). Opt-in, because the job installs no code generators: a repo
+	// whose directives need controller-gen or mockgen would fail the step. Set
+	// it for a repo that does not compile from a clean checkout, such as one
+	// embedding a file `go generate` writes.
+	GoGenerate bool
 	// NodeDevLintHook turns on the dev-only pre-push `ci:lint` hook (Node only).
 	// The hook runs the repo's standard `ci:lint` script -- a single convention
 	// name, like ci:verify/ci:build, that the repo defines pointing at its own
 	// eslint/prettier toolchain. No per-script knob: the repo converges its
 	// scripts to the convention, the generator does not bend to the repo.
 	NodeDevLintHook bool
+	// HelmValuesSchemaJSONVersion and SchemalintVersion pin the generated helm-schema
+	// hook's `additional_dependencies`. Read from devctl's own build info (go.mod is
+	// the single source of truth) rather than hardcoded in the template, so the hook
+	// always installs the exact versions devctl itself uses to generate
+	// values.schema.json. Set only when the helmchart flavor is active.
+	HelmValuesSchemaJSONVersion string
+	SchemalintVersion           string
 }

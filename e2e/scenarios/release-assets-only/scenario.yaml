@@ -1,0 +1,74 @@
+# A CLI that ships binaries as release assets: no Dockerfile, no chart, no
+# CircleCI. Nothing is waited for in a registry; the release is available
+# when the GitHub Release of the tag is published (not a draft) and every
+# Actions run the tag triggered finished green. The merge commit's run on
+# main is the merge's, not the tag's, and is left out.
+description: a repository with neither image nor chart is available through its published release and green tag workflows
+args: [release, wait, giantswarm/e2e-cli, v1.2.3, --timeout, 30m]
+keyring:
+  github:
+    login: e2e-engineer
+    token: ghu_e2e_live
+    expiresAt: "2099-01-01T00:00:00Z"
+  circleci:
+    login: e2e-engineer
+    token: CCIPAT_e2e_live
+    expiresAt: "2099-01-01T00:00:00Z"
+github:
+  routes:
+    "GET /repos/giantswarm/e2e-cli/git/ref/tags/v1.2.3":
+      - body: {ref: refs/tags/v1.2.3, object: {type: commit, sha: cc33dd44ee55ff66aa11bb22cc33dd44ee55ff66}}
+    "GET /repos/giantswarm/e2e-cli":
+      - body: {name: e2e-cli, full_name: giantswarm/e2e-cli, private: false}
+    "GET /repos/giantswarm/e2e-cli/contents/?ref=cc33dd44ee55ff66aa11bb22cc33dd44ee55ff66":
+      - body:
+          - {name: cmd, path: cmd, type: dir}
+          - {name: go.mod, path: go.mod, type: file}
+          - {name: main.go, path: main.go, type: file}
+    "GET /repos/giantswarm/e2e-cli/contents/.github/workflows?ref=cc33dd44ee55ff66aa11bb22cc33dd44ee55ff66":
+      - body:
+          - {name: zz_generated.auto_release.yaml, path: .github/workflows/zz_generated.auto_release.yaml, type: file}
+          - {name: zz_generated.upload-release-assets.yaml, path: .github/workflows/zz_generated.upload-release-assets.yaml, type: file}
+    "GET /repos/giantswarm/github/contents/repositories":
+      - body:
+          - {name: team-e2e.yaml, path: repositories/team-e2e.yaml, type: file}
+    "GET /repos/giantswarm/github/contents/repositories/team-e2e.yaml":
+      - body:
+          name: team-e2e.yaml
+          path: repositories/team-e2e.yaml
+          type: file
+          content: |
+            - name: e2e-cli
+              componentType: cli
+              gen:
+                flavours:
+                  - cli
+                language: go
+                ci:
+                  generate: false
+                  releaseWorkflow: auto-release
+    "GET /repos/giantswarm/e2e-cli/releases/tags/v1.2.3":
+      - body:
+          id: 31
+          tag_name: v1.2.3
+          name: v1.2.3
+          draft: false
+          prerelease: false
+          html_url: https://github.com/giantswarm/e2e-cli/releases/tag/v1.2.3
+          assets:
+            - id: 311
+              name: e2e-cli-v1.2.3-linux-amd64.tar.gz
+              state: uploaded
+              digest: "sha256:a55e0000000000000000000000000000000000000000000000000000000000a5"
+              browser_download_url: https://github.com/giantswarm/e2e-cli/releases/download/v1.2.3/e2e-cli-v1.2.3-linux-amd64.tar.gz
+            - id: 312
+              name: e2e-cli-v1.2.3-darwin-arm64.tar.gz
+              state: uploaded
+              digest: "sha256:a55e0000000000000000000000000000000000000000000000000000000000a6"
+              browser_download_url: https://github.com/giantswarm/e2e-cli/releases/download/v1.2.3/e2e-cli-v1.2.3-darwin-arm64.tar.gz
+    "GET /repos/giantswarm/e2e-cli/actions/runs?head_sha=cc33dd44ee55ff66aa11bb22cc33dd44ee55ff66":
+      - body:
+          total_count: 2
+          workflow_runs:
+            - {id: 9002, name: Upload release assets, head_branch: v1.2.3, head_sha: cc33dd44ee55ff66aa11bb22cc33dd44ee55ff66, event: push, status: completed, conclusion: success, html_url: https://github.com/giantswarm/e2e-cli/actions/runs/9002}
+            - {id: 9001, name: Auto Release, head_branch: main, head_sha: cc33dd44ee55ff66aa11bb22cc33dd44ee55ff66, event: push, status: completed, conclusion: success, html_url: https://github.com/giantswarm/e2e-cli/actions/runs/9001}

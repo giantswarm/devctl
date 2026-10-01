@@ -23,6 +23,8 @@ The flavour is one of **two independent axes**. The other one is the programming
 | [`k8sapi`](#k8sapi) | defines a Kubernetes API (CRDs) |
 | [`fleet`](#fleet) | holds GitOps definitions for management clusters |
 | [`customer`](#customer) | tracks issues on a shared customer board |
+| [`fork`](#fork) | carries an upstream release plus patches on an organisation branch |
+| [`plans`](#plans) | holds a team's PRDs and plan-workflow skills (beside `generic`) |
 | [`generic`](#generic) | is none of the above and just needs to be released |
 
 `generic` is the neutral choice, not a fallback for "I am not sure": it adds nothing beyond the base files. If a more specific flavour applies, use it -- and add `generic` only when nothing else does.
@@ -92,11 +94,21 @@ A repository used to track mostly issues and provide project boards, shared with
 
 This flavour is purely about issue tracking. It says nothing about how the repo is built or released, so it is almost always combined with another flavour.
 
+Its generated setup is the GitHub workflows (`gen workflows`, including the customer board automation) plus `renovate.json5` (`gen renovate --language generic`: the giantswarm base preset, nothing language- or CI-specific). There is no CircleCI for customer repositories, so align-files runs `gen renovate` for this flavour without `--circleci-generated`, and a newly registered customer repository has its Renovate config before Renovate's first run instead of receiving the onboarding PR.
+
+### `fork`
+
+A fork line: a repository that carries an upstream release plus the carried patches on a branch named after the organisation, which its entry declares as `defaultBranch`. The tree is upstream's, so nothing is generated for it: every `devctl gen` leaves it as it is, and the repository set-up reconciler skips the scaffold and CODEOWNERS steps on it and runs every other step as declared, branch protection on the declared branch included. Its pull requests land by rebase merge, so that each carried patch stays one upstream-ready commit, and a re-pin merges upstream's history: the reconciler's settings step keeps rebase merges on and leaves merge commits as the repository has them, while the rest of the settings baseline (squash merges named after the pull request's title, branch updates and auto-merge on, the head branch deleted on merge, issues on, wiki and projects off) applies as everywhere. Declared alone, with the repository's language.
+
 ### `generic`
 
 A repository that does not fit any of the more specific flavours above.
 
 No flavour-specific files. The repo still gets everything that is not flavour-gated: the base `Makefile`, the release workflows, and whatever the `--language` selects.
+
+### `plans`
+
+A team plans repository: versioned PRDs, their companion websites and the plan-workflow agent skills (cabbage-plans, bumblebee-plans, atlas-plans and the like). An add-on flavour, declared beside `generic` (`flavours: [generic, plans]`) with `language: generic` and `gen.ci.generate: false` -- there is no CircleCI for it, the same as `customer`. It derives the template `giantswarm/template-plans`; any other language is refused, the same way language `node` is until its template ships.
 
 ## Flavours and languages
 

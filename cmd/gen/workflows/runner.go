@@ -8,6 +8,7 @@ import (
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
 
+	"github.com/giantswarm/devctl/v8/internal/gitremote"
 	"github.com/giantswarm/devctl/v8/pkg/gen"
 	"github.com/giantswarm/devctl/v8/pkg/gen/input"
 	"github.com/giantswarm/devctl/v8/pkg/gen/input/workflows"
@@ -39,10 +40,32 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 	var err error
 
+	// A fork line carries its upstream's files: nothing is generated for it
+	// but its release flow when it is on auto-release.
+	fork := !r.flag.Flavours.Generates()
+	if fork && r.flag.ReleaseWorkflow != releaseWorkflowAutoRelease {
+		return nil
+	}
+
+	// cliff.toml (auto-release only) carries its own repository's name in
+	// [remote.github].repo. Unlike the rest of what's generated, that name
+	// isn't in the declaration this command reads, so it's read from the
+	// origin remote, with --repo-name as the override a render with no real
+	// checkout (e.g. devctl repo create's scaffold) has to pass explicitly.
+	repoName := r.flag.RepoName
+	if repoName == "" && r.flag.ReleaseWorkflow == releaseWorkflowAutoRelease {
+		repoName, err = gitremote.RepoName(ctx, ".")
+		if err != nil {
+			return microerror.Maskf(invalidFlagError, "cliff.toml's [remote.github].repo cannot be read from the origin remote: %s; pass --%s <name>", err, flagRepoName)
+		}
+	}
+
 	var workflowsInput *workflows.Workflows
 	{
 		c := workflows.Config{
-			Flavours: r.flag.Flavours,
+			Flavours:      r.flag.Flavours,
+			ReleaseBranch: r.flag.ReleaseBranch,
+			RepoName:      repoName,
 		}
 
 		workflowsInput, err = workflows.New(c)
@@ -53,6 +76,17 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 
 	inputs := []input.Input{
 		workflowsInput.SemanticPullRequest(),
+	}
+
+	// A fork line on auto-release gets the release flow alone: the title
+	// check auto-release relies on, the workflow and its cliff.toml. The
+	// legacy trio is not deleted there; a fork line never had it generated.
+	if fork {
+		inputs = append(inputs,
+			workflowsInput.AutoRelease(),
+			workflowsInput.CliffToml(),
+		)
+		return microerror.Mask(gen.Execute(ctx, inputs...))
 	}
 
 	// Two mutually-exclusive release flows. Each branch emits the workflow
@@ -92,6 +126,9 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 
 	if r.flag.Flavours.Contains(gen.FlavourApp) {
 		inputs = append(inputs, workflowsInput.CheckValuesSchema())
+		if r.flag.HelmDocsRegen {
+			inputs = append(inputs, workflowsInput.HelmDocsRegen())
+		}
 		if r.flag.InstallUpdateChart {
 			inputs = append(inputs, workflowsInput.UpdateChart())
 			if r.flag.UpstreamSyncAutomation {

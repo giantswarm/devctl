@@ -1,7 +1,7 @@
 package file
 
 import (
-	_ "embed"
+	"embed"
 	"strings"
 
 	"github.com/giantswarm/devctl/v8/pkg/gen/input"
@@ -12,21 +12,23 @@ import (
 var createReleaseTemplate string
 
 //go:generate go run ../../../update-template-sha.go create_release.yaml.template
-//go:embed create_release.yaml.template.sha
-var createReleaseTemplateSha string
+//go:embed create_release.yaml.template*
+var createReleaseTemplateFiles embed.FS
+
+var createReleaseTemplateSha = input.TemplateSHA(createReleaseTemplateFiles, "create_release.yaml.template")
 
 func NewCreateReleaseInput(p params.Params) input.Input {
 	i := input.Input{
 		Path:         params.RegenerableFileName(p, "create_release.yaml"),
 		TemplateBody: createReleaseTemplate,
 		TemplateDelims: input.InputTemplateDelims{
-			Left:  "{{{{",
-			Right: "}}}}",
+			Left:  templateDelimLeft,
+			Right: templateDelimRight,
 		},
 		TemplateData: map[string]interface{}{
-			"Header":       params.Header("#", createReleaseTemplateSha),
-			"IsFlavourCLI": params.IsFlavourCLI(p),
-			"IsDevctl":     strings.HasPrefix(createReleaseTemplateSha, "https://github.com/giantswarm/devctl"),
+			templateKeyHeader: params.Header("#", createReleaseTemplateSha),
+			"IsFlavourCLI":    params.IsFlavourCLI(p),
+			"IsDevctl":        strings.HasPrefix(createReleaseTemplateSha, "https://github.com/giantswarm/devctl"),
 		},
 	}
 

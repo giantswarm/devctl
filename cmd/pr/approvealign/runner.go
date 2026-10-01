@@ -9,12 +9,12 @@ import (
 	"time"
 
 	"github.com/giantswarm/microerror"
-	"github.com/google/go-github/v89/github"
+	"github.com/google/go-github/v92/github"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
-	"github.com/giantswarm/devctl/v8/internal/env"
 	"github.com/giantswarm/devctl/v8/internal/pr"
+	"github.com/giantswarm/devctl/v8/pkg/authstore"
 	"github.com/giantswarm/devctl/v8/pkg/githubclient"
 )
 
@@ -34,6 +34,12 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 }
 
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
+	token, err := authstore.ResolveGitHub(ctx)
+	if err != nil {
+		return err
+	}
+	token.WarnOnce(r.stderr)
+
 	// Set logger to only show errors to avoid cluttering the table UI
 	r.logger.SetLevel(logrus.ErrorLevel)
 
@@ -42,14 +48,9 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		fmt.Fprintln(r.stdout, "")
 	}
 
-	githubToken := env.GitHubToken.Val()
-	if githubToken == "" {
-		return microerror.Maskf(executionFailedError, "environment variable GITHUB_TOKEN not found, please set it to your GitHub personal access token")
-	}
-
 	ghClientService, err := githubclient.New(githubclient.Config{
 		Logger:      r.logger,
-		AccessToken: githubToken,
+		AccessToken: token.Value,
 		DryRun:      r.flag.DryRun,
 	})
 	if err != nil {
@@ -194,7 +195,7 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 				// All required checks passed
 				checksPending = false
 				hasFailedChecks = false
-			} else if state == "failure" || state == "error" {
+			} else if state == stateFailure || state == "error" {
 				hasFailedChecks = true
 			} else if state == "pending" && totalCount > 0 {
 				// Only treat as pending if there are actual status checks
@@ -206,13 +207,13 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 		// Check individual check runs (GitHub Actions checks)
 		if checkRuns != nil && len(checkRuns.CheckRuns) > 0 && !hasFailedChecks {
 			// Only check runs if combinedStatus didn't already give us a definitive answer
-			if combinedStatus == nil || (combinedStatus.GetState() != "success" && combinedStatus.GetState() != "failure") {
+			if combinedStatus == nil || (combinedStatus.GetState() != "success" && combinedStatus.GetState() != stateFailure) {
 				for _, run := range checkRuns.CheckRuns {
 					conclusion := run.GetConclusion()
 					status := run.GetStatus()
 
 					if status == "completed" {
-						if conclusion == "failure" || conclusion == "cancelled" || conclusion == "timed_out" {
+						if conclusion == stateFailure || conclusion == "cancelled" || conclusion == "timed_out" {
 							hasFailedChecks = true
 							break
 						}
@@ -309,7 +310,7 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 
 		ps.UpdateStatus("Approving...")
 		reviewRequest := &github.PullRequestReviewRequest{
-			Event: github.String("APPROVE"),
+			Event: new("APPROVE"),
 		}
 		_, _, err = githubClient.PullRequests.CreateReview(ctx, ps.Owner, ps.Repo, ps.Number, reviewRequest)
 		if err != nil {

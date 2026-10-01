@@ -1,7 +1,7 @@
 package file
 
 import (
-	_ "embed"
+	"embed"
 
 	"github.com/giantswarm/devctl/v8/pkg/gen/input"
 	"github.com/giantswarm/devctl/v8/pkg/gen/input/workflows/internal/params"
@@ -11,19 +11,21 @@ import (
 var validateChangelogTemplate string
 
 //go:generate go run ../../../update-template-sha.go validate_changelog.yaml.template
-//go:embed validate_changelog.yaml.template.sha
-var validateChangelogTemplateSha string
+//go:embed validate_changelog.yaml.template*
+var validateChangelogTemplateFiles embed.FS
+
+var validateChangelogTemplateSha = input.TemplateSHA(validateChangelogTemplateFiles, "validate_changelog.yaml.template")
 
 func NewValidateChangelogInput(p params.Params) input.Input {
 	i := input.Input{
 		Path:         params.RegenerableFileName(p, "validate_changelog.yaml"),
 		TemplateBody: validateChangelogTemplate,
 		TemplateDelims: input.InputTemplateDelims{
-			Left:  "{{{{",
-			Right: "}}}}",
+			Left:  templateDelimLeft,
+			Right: templateDelimRight,
 		},
 		TemplateData: map[string]interface{}{
-			"Header": params.Header("#", validateChangelogTemplateSha),
+			templateKeyHeader: params.Header("#", validateChangelogTemplateSha),
 		},
 	}
 

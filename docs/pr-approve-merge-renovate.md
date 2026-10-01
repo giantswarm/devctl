@@ -72,7 +72,7 @@ devctl pr approve-merge-renovate "architect v1.2.3"
    - **If auto-merge enabled**: Waits up to 1 minute for auto-merge to complete
    - **If no auto-merge**: Determines merge method from repository settings and merges directly
 
-6. **Auto-retry Logic**: 
+6. **Auto-retry Logic**:
    - PRs with pending checks are automatically polled every 5 seconds
    - Once checks pass, they're immediately approved and merged
    - No manual intervention needed
@@ -207,9 +207,10 @@ This is useful when you expect multiple Renovate PRs to be created over time.
 
 ## Requirements
 
-- `GITHUB_TOKEN` environment variable must be set with appropriate permissions:
-  - Read access to repositories
-  - Write access to pull requests (approve, merge)
+- A GitHub login: `devctl auth login --github-only` once (the devctl GitHub App, which approves and merges
+  as you in the giantswarm organization; the search finds pull requests there and in public repositories). A
+  token in `DEVCTL_GITHUB_TOKEN`, `GITHUB_TOKEN` or `OPSCTL_GITHUB_TOKEN` overrides it, with a warning. See
+  [auth.md](auth.md).
 - Terminal with ANSI escape code support for live table updates
 - Terminal with OSC 8 support for clickable hyperlinks (optional, but recommended)
 
@@ -245,7 +246,7 @@ PR numbers are clickable hyperlinks (in supported terminals) that open the PR in
 - **Parallel Processing**: All PRs are processed simultaneously
 - **No waiting**: You don't need to wait for one PR to finish before the next starts
 - **Auto-retry**: PRs with pending checks are automatically retried until ready
-- **Continuous Discovery**: 
+- **Continuous Discovery**:
   - Normal mode: New PRs detected every 10 seconds
   - Watch mode: New PRs detected every minute
 - **Example**: 13 PRs can be processed in the time it takes for the slowest one to become ready
@@ -272,7 +273,7 @@ Watch mode (`--watch`) is particularly useful for:
   - PRs without auto-merge: Approve and merge directly using repository's default merge method
   - The command trusts auto-merge/merge queue to handle the actual merging
 - **Normal mode**: New PRs are discovered every 10 seconds; command exits when all PRs are processed
-- **Watch mode (`--watch`)**: 
+- **Watch mode (`--watch`)**:
   - New PRs are discovered every minute
   - Command runs indefinitely, never exits automatically
   - Perfect for long-running Renovate batch updates

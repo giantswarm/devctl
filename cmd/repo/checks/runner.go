@@ -4,16 +4,16 @@ import (
 	"context"
 	"errors"
 	"io"
-	"net/http"
-	"os"
-	"strings"
+	"regexp"
 
 	"github.com/giantswarm/microerror"
-	"github.com/google/go-github/v89/github"
+	"github.com/google/go-github/v92/github"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
-	"github.com/giantswarm/devctl/v8/pkg/githubclient"
+	"github.com/giantswarm/devctl/v8/cmd/repo/internal/engine"
+	"github.com/giantswarm/devctl/v8/pkg/reposetup"
+	"github.com/giantswarm/devctl/v8/pkg/reposetup/reconcile"
 )
 
 type runner struct {
@@ -30,147 +30,98 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 		return microerror.Mask(err)
 	}
 
-	return microerror.Mask(r.run(ctx, cmd, args))
+	return microerror.Mask(r.run(ctx, args[0]))
 }
 
-func (r *runner) run(ctx context.Context, _ *cobra.Command, args []string) error {
-	parts := strings.SplitN(args[0], "/", 2)
-	if len(parts) != 2 {
-		return microerror.Maskf(invalidArgError, "expected owner/repo, got %s", args[0])
-	}
+// run runs the protection step of the set-up engine over the required
+// checks alone: the branch's reviews, admin enforcement and strict setting
+// are read first and handed to the step as its baseline, so the step finds
+// no drift in them and only the required contexts change.
+func (r *runner) run(ctx context.Context, arg string) error {
+	r.logger.SetOutput(r.stderr)
 
-	owner, repo := parts[0], parts[1]
-
-	if r.flag.Update {
-		return microerror.Mask(r.update(ctx, owner, repo))
-	}
-
-	return nil
-}
-
-func (r *runner) update(ctx context.Context, owner, repo string) error {
-	token, found := os.LookupEnv(r.flag.GithubTokenEnvVar)
-	if !found {
-		return microerror.Maskf(envVarNotFoundError, "environment variable %#q was not found", r.flag.GithubTokenEnvVar)
-	}
-
-	client, err := githubclient.New(githubclient.Config{
-		Logger:      r.logger,
-		AccessToken: token,
-	})
+	owner, repo, err := engine.Slug(arg, "")
 	if err != nil {
 		return microerror.Mask(err)
 	}
 
+	client, err := engine.GitHubClient(r.logger, r.flag.GithubTokenEnvVar, false, nil)
+	if err != nil {
+		return microerror.Mask(err)
+	}
 	repository, err := client.GetRepository(ctx, owner, repo)
 	if err != nil {
 		return microerror.Mask(err)
 	}
+	branch := repository.GetDefaultBranch()
+	gh := client.GetUnderlyingClient(ctx)
 
-	defaultBranch := repository.GetDefaultBranch()
-	underlying := client.GetUnderlyingClient(ctx)
-
-	current, _, err := underlying.Repositories.GetRequiredStatusChecks(ctx, owner, repo, defaultBranch)
-	if err != nil {
-		if errors.Is(err, github.ErrBranchNotProtected) {
-			r.logger.Warnf("%s/%s: branch %q has no protection, skipping", owner, repo, defaultBranch)
-			return nil
-		}
-		var ghErr *github.ErrorResponse
-		if !errors.As(err, &ghErr) || ghErr.Response.StatusCode != http.StatusNotFound {
-			return microerror.Mask(err)
-		}
-		// Branch is protected but required status checks not yet configured.
-		// PATCH won't work in this state; fall back to a full UpdateBranchProtection.
-		return microerror.Mask(r.enableViaFullProtection(ctx, underlying, owner, repo, defaultBranch))
-	}
-
-	merged := applyChecks(current.GetChecks(), r.flag.Checks, r.flag.Remove)
-
-	// UpdateRequiredStatusChecks uses omitempty, so an empty Checks slice is
-	// dropped from the request and GitHub leaves the existing checks unchanged.
-	// Use the DELETE endpoint when the result is empty.
-	if len(merged) == 0 {
-		_, err = underlying.Repositories.RemoveRequiredStatusChecks(ctx, owner, repo, defaultBranch)
-		r.logger.Infof("%s/%s: removed all required checks on %q", owner, repo, defaultBranch)
+	protection, resp, err := gh.Repositories.GetBranchProtection(ctx, owner, repo, branch)
+	switch {
+	case errors.Is(err, github.ErrBranchNotProtected) || (resp != nil && resp.StatusCode == 404):
+		r.logger.Warnf("%s/%s: branch %q has no protection, skipping", owner, repo, branch)
+		return nil
+	case err != nil:
 		return microerror.Mask(err)
 	}
 
-	strict := current.Strict
-	_, _, err = underlying.Repositories.UpdateRequiredStatusChecks(ctx, owner, repo, defaultBranch, &github.RequiredStatusChecksRequest{
-		Strict: &strict,
-		Checks: merged,
+	baseline := checksBaseline(protection, r.flag.Checks, r.flag.ChecksIfReported, r.flag.Remove)
+
+	// --circleci-dir: the pipeline as just generated, before it is pushed;
+	// without it the step reads the repository's .circleci.
+	var pipeline [][]byte
+	if r.flag.CircleCIDir != "" {
+		pipeline, err = engine.PipelineFiles(r.flag.CircleCIDir)
+		switch {
+		case err != nil:
+			r.logger.Warnf("%s/%s: cannot read the CircleCI pipeline in %q (%v); reading the repository's .circleci instead", owner, repo, r.flag.CircleCIDir, err)
+			pipeline = nil
+		case len(pipeline) == 0:
+			r.logger.Warnf("%s/%s: no workflows.yml or custom.yml in %q; reading the repository's .circleci instead", owner, repo, r.flag.CircleCIDir)
+			pipeline = nil
+		}
+	}
+
+	mode := reconcile.ModeCheck
+	if r.flag.Update {
+		mode = reconcile.ModeRepair
+	}
+	engineRunner := reconcile.Runner{
+		GitHub:   gh,
+		Checks:   client,
+		Baseline: &baseline,
+		Log:      engine.LogWriter(r.logger),
+	}
+	res, err := engineRunner.Run(ctx, reconcile.Request{
+		Owner:    owner,
+		Entry:    reposetup.UndeclaredEntry(reposetup.Undeclared{Name: repo}),
+		Mode:     mode,
+		Steps:    []reconcile.Step{reconcile.StepProtection},
+		Pipeline: pipeline,
 	})
-
-	r.logger.Infof("%s/%s: required checks on %q: added %v, removed %v", owner, repo, defaultBranch, r.flag.Checks, r.flag.Remove)
-
-	return microerror.Mask(err)
-}
-
-// enableViaFullProtection reads the current branch protection and issues a full
-// UpdateBranchProtection that enables required status checks while preserving
-// all other existing protection settings.
-func (r *runner) enableViaFullProtection(ctx context.Context, underlying *github.Client, owner, repo, branch string) error {
-	protection, _, err := underlying.Repositories.GetBranchProtection(ctx, owner, repo, branch)
 	if err != nil {
 		return microerror.Mask(err)
 	}
 
-	merged := applyChecks(nil, r.flag.Checks, nil)
-	False := false
-
-	req := &github.ProtectionRequest{
-		RequiredStatusChecks: &github.RequiredStatusChecks{
-			Strict: false,
-			Checks: &merged,
-		},
-		AllowForcePushes: &False,
-		AllowDeletions:   &False,
-	}
-
-	if ea := protection.GetEnforceAdmins(); ea != nil {
-		req.EnforceAdmins = ea.Enabled
-	}
-	if afp := protection.GetAllowForcePushes(); afp != nil {
-		req.AllowForcePushes = &afp.Enabled
-	}
-	if ad := protection.GetAllowDeletions(); ad != nil {
-		req.AllowDeletions = &ad.Enabled
-	}
-	if rpr := protection.GetRequiredPullRequestReviews(); rpr != nil {
-		req.RequiredPullRequestReviews = &github.PullRequestReviewsEnforcementRequest{
-			RequiredApprovingReviewCount: rpr.RequiredApprovingReviewCount,
-			DismissStaleReviews:          rpr.DismissStaleReviews,
-			RequireCodeOwnerReviews:      rpr.RequireCodeOwnerReviews,
-		}
-	}
-
-	r.logger.Infof("%s/%s: enabling required checks %v on %q via full branch protection update", owner, repo, r.flag.Checks, branch)
-
-	_, _, err = underlying.Repositories.UpdateBranchProtection(ctx, owner, repo, branch, req)
-	return microerror.Mask(err)
+	return microerror.Mask(engine.Report(r.stdout, res, r.flag.Output))
 }
 
-func applyChecks(existing []*github.RequiredStatusCheck, add, remove []string) []*github.RequiredStatusCheck {
-	drop := make(map[string]bool, len(remove))
+// checksBaseline is the protection step's baseline for this command: the
+// branch's current reviews, admin enforcement and strict setting (left as
+// they are), --checks required whatever reported, --checks-if-reported
+// required once reported, and --remove never required — on top of the
+// company's ignored contexts and reported-only rule.
+func checksBaseline(protection *github.Protection, checks, checksIfReported, remove []string) reconcile.Baseline {
+	b := reconcile.DefaultBaseline()
+	b.RequiredReviews = protection.GetRequiredPullRequestReviews().GetRequiredApprovingReviewCount()
+	b.EnforceAdmins = protection.GetEnforceAdmins().GetEnabled()
+	if protection.GetRequiredStatusChecks() != nil {
+		b.StrictChecks = protection.GetRequiredStatusChecks().Strict
+	}
+	b.RequiredChecks = checks
+	b.RequiredChecksIfReported = checksIfReported
 	for _, name := range remove {
-		drop[name] = true
+		b.IgnoredChecks = append(b.IgnoredChecks, "^"+regexp.QuoteMeta(name)+"$")
 	}
-
-	seen := make(map[string]bool, len(existing))
-	merged := make([]*github.RequiredStatusCheck, 0, len(existing)+len(add))
-	for _, c := range existing {
-		if drop[c.GetContext()] {
-			continue
-		}
-		merged = append(merged, c)
-		seen[c.GetContext()] = true
-	}
-	for _, name := range add {
-		if !seen[name] {
-			merged = append(merged, &github.RequiredStatusCheck{Context: name})
-			seen[name] = true
-		}
-	}
-	return merged
+	return b
 }
