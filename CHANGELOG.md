@@ -9,6 +9,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `gen circleci`: new `--skip-app-catalog` flag (`gen.ci.skipAppCatalog` in giantswarm/github). It sets
+  `push_to_appcatalog: false` on the branch (`push-chart`, with `--branch-publish`) and tag
+  (`push-chart-release`) chart publish jobs and keeps the OCI registry push. Every GitHub app catalog is a
+  public repository, so a chart built from a private repo is otherwise published world-readable; with the
+  flag it ships only to `gsociprivate.azurecr.io`, which Flux consumes through an `OCIRepository`. Off by
+  default: the generated output for every repo that does not set it is unchanged.
 - `pr wait`, `pr merge`: `--failed-log` reads, on a red verdict, the log of each failed GitHub Actions job and
   each failed CircleCI job once and prints its last `--failed-log-lines` lines (default 50) to stderr; the
   document carries them under `failedJobs[].logTail`. A green or pending wait makes no extra request.

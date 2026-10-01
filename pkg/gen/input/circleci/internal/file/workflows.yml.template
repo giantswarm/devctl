@@ -732,6 +732,11 @@ workflows:
         # Chart.yaml declares. Keep it; the chart version is still stamped.
         override_app_version: false
 {{- end }}
+{{- if .SkipAppCatalog }}
+        # Private chart: every GitHub app catalog is a public repository, so the
+        # chart ships only to gsociprivate. The catalog params above are inert.
+        push_to_appcatalog: false
+{{- end }}
         requires:
 {{- if .SkipATS }}
         - build-chart
@@ -784,6 +789,11 @@ workflows:
         # packages an app built elsewhere, so that app's version is what
         # Chart.yaml declares. Keep it; the chart version is still stamped.
         override_app_version: false
+{{- end }}
+{{- if .SkipAppCatalog }}
+        # Private chart: every GitHub app catalog is a public repository, so the
+        # chart ships only to gsociprivate. The catalog params above are inert.
+        push_to_appcatalog: false
 {{- end }}
         requires:
 {{- if .ATSOnRelease }}
