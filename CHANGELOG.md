@@ -16,6 +16,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `repo reconcile`'s codeowners step updates an open CODEOWNERS pull request that carries another file than the one
+  wanted, instead of waiting for it: a repository transferred while the pull request for its former team was open
+  (giantswarm/template-plans#2, opened for team-honeybadger, after the move to team-planeteers) kept that pull request
+  and the step reported it as the repair, its finding naming the new team. The branch's file, the pull request's title
+  and its description now follow the desired source; a pull request that already carries it is still waited for.
 - `pr merge`: a merge the review rule declines names as blockers only the rulesets the caller cannot bypass
   (GitHub's `current_user_can_bypass`) and lists the bypassed ones apart. Past a blocker without bypass actors the
   reason no longer sends the caller to a team member or an admin, and a ruleset devctl did not create is named a

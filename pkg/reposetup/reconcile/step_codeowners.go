@@ -63,7 +63,8 @@ func (s *run) codeownersSource() codeownersSource {
 // stepCodeowners keeps CODEOWNERS what align-files writes: the repository's
 // override when it has one, the file naming the owning team otherwise. The
 // default branch is protected, so the repair is a pull request; while it is
-// open the step reports it and changes nothing.
+// open and carries the desired file the step reports it and changes nothing,
+// and one that carries another file is updated to the desired one.
 func (r *Runner) stepCodeowners(ctx context.Context, s *run, sr *StepResult) error {
 	want := s.codeownersSource()
 	fc, _, resp, err := r.GitHub.Repositories.GetContents(ctx, s.owner, s.name, codeownersFile, &github.RepositoryContentGetOptions{Ref: s.branch()})
@@ -92,12 +93,49 @@ func (r *Runner) stepCodeowners(ctx context.Context, s *run, sr *StepResult) err
 	}
 	if len(open) > 0 {
 		pr := open[0]
-		sr.Verdict = VerdictDrift
-		sr.Summary = fmt.Sprintf("CODEOWNERS differs; pull request #%d awaits its merge", pr.GetNumber())
-		s.report(sr, FindingPendingPullRequest,
-			fmt.Sprintf("pull request #%d sets CODEOWNERS to %s: %s", pr.GetNumber(), want.target, pr.GetHTMLURL()),
-			"merge the pull request")
-		return nil
+		// The open pull request is waited for only while it still carries
+		// the desired file: one opened for another source -- the team the
+		// repository was transferred from, an override since added or
+		// removed -- is brought up to date, file and description, instead
+		// of being reported as the repair.
+		staged, err := r.stagedCodeowners(ctx, s)
+		if err != nil {
+			return err
+		}
+		if staged.content == want.content {
+			sr.Verdict = VerdictDrift
+			sr.Summary = fmt.Sprintf("CODEOWNERS differs; pull request #%d awaits its merge", pr.GetNumber())
+			s.report(sr, FindingPendingPullRequest,
+				fmt.Sprintf("pull request #%d sets CODEOWNERS to %s: %s", pr.GetNumber(), want.target, pr.GetHTMLURL()),
+				"merge the pull request")
+			return nil
+		}
+		return s.plan(sr, fmt.Sprintf("update pull request #%d to set CODEOWNERS to %s", pr.GetNumber(), want.target), func() error {
+			opts := &github.RepositoryContentFileOptions{
+				Message: new(want.subject),
+				Content: []byte(want.content),
+				Branch:  new(codeownersBranch),
+			}
+			if staged.file != nil {
+				opts.SHA = staged.file.SHA
+				_, _, err = r.GitHub.Repositories.UpdateFile(ctx, s.owner, s.name, codeownersFile, opts)
+			} else {
+				_, _, err = r.GitHub.Repositories.CreateFile(ctx, s.owner, s.name, codeownersFile, opts)
+			}
+			if err != nil {
+				return err
+			}
+			if _, _, err := r.GitHub.PullRequests.Edit(ctx, s.owner, s.name, pr.GetNumber(), &github.PullRequest{
+				Title: new(want.subject),
+				Body:  new(want.body),
+			}); err != nil {
+				return err
+			}
+			s.report(sr, FindingPendingPullRequest,
+				fmt.Sprintf("pull request #%d sets CODEOWNERS to %s: %s", pr.GetNumber(), want.target, pr.GetHTMLURL()),
+				"merge the pull request")
+			return nil
+		})
 	}
 
 	return s.plan(sr, "open a pull request setting CODEOWNERS to "+want.target, func() error {
@@ -139,4 +177,29 @@ func (r *Runner) stepCodeowners(ctx context.Context, s *run, sr *StepResult) err
 			"merge the pull request")
 		return nil
 	})
+}
+
+// stagedFile is CODEOWNERS on the correction branch: the file, nil when the
+// branch has none, and its content.
+type stagedFile struct {
+	file    *github.RepositoryContent
+	content string
+}
+
+// stagedCodeowners reads CODEOWNERS on the correction pull request's branch.
+func (r *Runner) stagedCodeowners(ctx context.Context, s *run) (stagedFile, error) {
+	fc, _, resp, err := r.GitHub.Repositories.GetContents(ctx, s.owner, s.name, codeownersFile, &github.RepositoryContentGetOptions{Ref: codeownersBranch})
+	switch {
+	case isNotFound(resp, err):
+		return stagedFile{}, nil
+	case err != nil:
+		return stagedFile{}, err
+	case fc == nil:
+		return stagedFile{}, nil
+	}
+	content, err := fc.GetContent()
+	if err != nil {
+		return stagedFile{}, err
+	}
+	return stagedFile{file: fc, content: content}, nil
 }

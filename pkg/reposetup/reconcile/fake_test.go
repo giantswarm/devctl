@@ -632,6 +632,24 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 		repo.prs = append(repo.prs, pr)
 		writeJSON(w, 201, pr)
 	}))
+	mux.HandleFunc("PATCH /repos/{owner}/{repo}/pulls/{number}", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		var in github.PullRequest
+		decode(r, &in)
+		for _, pr := range repo.prs {
+			if fmt.Sprint(pr.GetNumber()) != r.PathValue("number") {
+				continue
+			}
+			if in.Title != nil {
+				pr.Title = in.Title
+			}
+			if in.Body != nil {
+				pr.Body = in.Body
+			}
+			writeJSON(w, 200, pr)
+			return
+		}
+		notFound(w, "Not Found")
+	}))
 	mux.HandleFunc("GET /repos/{owner}/{repo}/contents/{path...}", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
 		path := strings.TrimSuffix(r.PathValue("path"), "/")
 		files := repo.files

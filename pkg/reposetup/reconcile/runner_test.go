@@ -1605,6 +1605,37 @@ func TestSteps(t *testing.T) {
 			},
 		},
 		{
+			// The repository was transferred while the pull request for its
+			// former team was open: the pull request is brought up to date,
+			// not waited for.
+			name: "codeowners: an open pull request for another team is updated, not waited for", step: StepCodeowners,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.files["CODEOWNERS"] = "* @giantswarm/team-other\n"
+				r.branchFiles[codeownersBranch] = map[string]string{"CODEOWNERS": "* @giantswarm/team-former\n"}
+				r.prs = append(r.prs, &github.PullRequest{
+					Number:  new(1),
+					State:   new("open"),
+					Title:   new("chore: set CODEOWNERS to @giantswarm/team-former"),
+					Body:    new("The repository is declared in repositories/team-former.yaml of giantswarm/github."),
+					HTMLURL: new("https://github.com/giantswarm/sample-service/pull/1"),
+					Head:    &github.PullRequestBranch{Ref: new(codeownersBranch)},
+				})
+			},
+			wantCheck: VerdictDrift, wantChange: "update pull request #1 to set CODEOWNERS to @giantswarm/team-bumblebee",
+			wantAfter: VerdictDrift, // the updated pull request awaits its merge
+			verify: func(t *testing.T, h *harness, res *Result) {
+				r := h.repo()
+				require.Len(t, r.prs, 1, "the pull request is updated, no second one opened")
+				require.Equal(t, reposetup.Codeowners(team), r.branchFiles[codeownersBranch]["CODEOWNERS"])
+				require.Equal(t, "chore: set CODEOWNERS to @giantswarm/team-bumblebee", r.headSubject(codeownersBranch), "a conventional commit for auto-release")
+				require.Equal(t, "chore: set CODEOWNERS to @giantswarm/team-bumblebee", r.prs[0].GetTitle())
+				require.Contains(t, r.prs[0].GetBody(), "repositories/team-bumblebee.yaml")
+				require.Equal(t, "* @giantswarm/team-other\n", r.files["CODEOWNERS"], "main is untouched")
+				require.Equal(t, []FindingKind{FindingPendingPullRequest}, kinds(res.Step(StepCodeowners).Findings))
+			},
+		},
+		{
 			name: "codeowners: without an override the file naming the team is the desired one", step: StepCodeowners,
 			seed:      func(h *harness) { h.gh.addRepo(owner, name).files["CODEOWNERS"] = reposetup.Codeowners(team) },
 			wantCheck: VerdictOK,
