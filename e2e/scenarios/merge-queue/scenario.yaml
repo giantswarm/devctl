@@ -44,6 +44,7 @@ github:
           draft: false
           merged: true
           merge_commit_sha: 9e8d7c6b
+          merged_by: {login: e2e-engineer, type: User}
           mergeable: null
           mergeable_state: unknown
           user: {login: e2e-engineer, type: User}

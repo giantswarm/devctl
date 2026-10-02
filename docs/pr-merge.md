@@ -76,8 +76,10 @@ Green lands with one call of the merge API, `PUT /repos/{owner}/{repo}/pulls/{nu
   with write access approves it, and nothing is changed to get past it.
 
 A merge GitHub declines as the pull request stands (405: a rule blocks it, the base moved under a
-strict protection; 409: the head moved) is exit 3, `not_applicable`, with GitHub's sentence as the
-reason. Declined for the review rule, the reason goes on to say whom devctl acted as, which rulesets
+strict protection; 409: the head moved) or for the token's permissions (403: the devctl App lacks a
+permission the merge needs, such as `workflows` for a pull request that changes a workflow) is exit 3,
+`not_applicable`, with GitHub's sentence and the login devctl acted as (`devctl acts as <login>`) as
+the reason. Declined for the review rule, the reason goes on to say which rulesets
 of the base carry a pull request rule, and of those the ones GitHub says the caller cannot bypass
 (`current_user_can_bypass`) as the blockers with their bypass actors, the ones the caller bypasses
 apart (read, never written; an App actor is marked as covering installation tokens only), and the
@@ -165,6 +167,7 @@ The document of the merge of [#2368](https://github.com/giantswarm/devctl/pull/2
   },
   "actions": [],
   "mergeCommitSha": "c0621f88454b753c64ab264b2e39a9bcf15873c7",
+  "mergedBy": "teemow",
   "method": "squash",
   "branchDeleted": true,
   "enqueued": false,
@@ -194,6 +197,7 @@ The envelope and the fields from `repository` to `unfinished[]` are [`pr wait`'s
 | Field | Meaning |
 |---|---|
 | `mergeCommitSha` | The commit the merge produced (the squash commit, the rebased head, or the queue's merge commit); empty when nothing merged. |
+| `mergedBy` | The login the merge was made as: the account the token acts as, or for a merge queue the account GitHub records as the merger. Empty when nothing merged. |
 | `method` | `squash` or `rebase`, as asked. |
 | `branchDeleted` | The head branch was deleted after the merge, or was gone already. `false` when nothing merged and for a head in a fork. |
 | `enqueued` | The base has a merge queue and the pull request went through it. |

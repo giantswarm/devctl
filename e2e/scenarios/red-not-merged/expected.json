@@ -28,6 +28,7 @@
       {"name": "CI", "runId": 7001, "status": "completed", "conclusion": "success", "url": "*"}
     ],
     "mergeCommitSha": "",
+    "mergedBy": "",
     "method": "squash",
     "branchDeleted": false,
     "enqueued": false,

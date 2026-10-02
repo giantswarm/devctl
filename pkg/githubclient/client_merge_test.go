@@ -58,7 +58,7 @@ func Test_MergePullRequest_wire(t *testing.T) {
 }
 
 func Test_MergePullRequest_declined(t *testing.T) {
-	for _, status := range []int{http.StatusMethodNotAllowed, http.StatusConflict} {
+	for _, status := range []int{http.StatusMethodNotAllowed, http.StatusConflict, http.StatusForbidden} {
 		c, _ := newWireClient(t, status, `{"message":"Base branch was modified. Review and try the merge again.","documentation_url":"https://docs.github.com/rest"}`)
 		_, err := c.MergePullRequest(context.Background(), "o", "r", 42, MergeOptions{Method: MergeSquash, HeadSHA: "abc123"})
 		if !IsMergeDeclined(err) || !strings.Contains(err.Error(), "Base branch was modified") {

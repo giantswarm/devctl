@@ -28,6 +28,7 @@
       {"name": "CI", "runId": 7001, "status": "completed", "conclusion": "success", "url": "*"}
     ],
     "mergeCommitSha": "0f3a9c1d",
+    "mergedBy": "e2e-engineer",
     "method": "squash",
     "branchDeleted": true,
     "enqueued": false,
