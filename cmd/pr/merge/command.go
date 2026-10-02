@@ -68,7 +68,8 @@ The document (schemaVersion 1) is devctl pr wait's (command, exitCode,
 verdict, reason, warnings, startedAt, finishedAt, repository, number, headSha,
 baseRef, checks[], circleci{}, actions[], unfinished[], failedJobs[] on red
 with --failed-log, whose tails also go to stderr) plus mergeCommitSha
-(the merge commit, empty when nothing merged), method (squash|rebase),
+(the merge commit, empty when nothing merged), mergedBy (the login the merge
+was made as, empty when nothing merged), method (squash|rebase),
 branchDeleted, enqueued and release: null with --no-release-wait or when
 nothing merged, otherwise the release wait's verdict (available, no_release,
 ci_failed, timeout, ...) and reason with its result (tag, sha, releaseModel,

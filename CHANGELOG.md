@@ -9,6 +9,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `pr merge`: the document names the merging identity in `mergedBy`, the login the token acts as (for a merge
+  queue, the merger GitHub records); empty when nothing merged. A declined merge's reason names that login too
+  (`devctl acts as <login>`), and a merge GitHub refuses for the token's permissions (403, such as a pull request
+  that changes a workflow without the App's `workflows` permission) is exit 3 with GitHub's sentence instead of a
+  tooling failure.
+
 - `gen circleci`: new `--skip-app-catalog` flag (`gen.ci.skipAppCatalog` in giantswarm/github). It sets
   `push_to_appcatalog: false` on the branch (`push-chart`, with `--branch-publish`) and tag
   (`push-chart-release`) chart publish jobs and keeps the OCI registry push. Every GitHub app catalog is a

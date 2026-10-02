@@ -85,6 +85,10 @@ type Result struct {
 	// MergeCommitSHA is the commit the merge produced; empty when nothing
 	// merged.
 	MergeCommitSHA string `json:"mergeCommitSha"`
+	// MergedBy is the login of the identity the merge was made as: the
+	// caller the token acts as, or for a merge queue the account GitHub
+	// records as the merger. Empty when nothing merged.
+	MergedBy string `json:"mergedBy"`
 	// Method is squash or rebase.
 	Method string `json:"method"`
 	// BranchDeleted: the head branch was deleted after the merge (or was
@@ -372,9 +376,9 @@ func (m *Merger) update(ctx context.Context, owner, repo string, number int, hea
 
 // merge lands the head through the merge API with the judged head as the
 // expected head. A merge GitHub declines as the pull request stands is
-// exit 3 with GitHub's sentence; declined for the review rule, the reason
-// goes on to name the caller, the rulesets' bypass actors and the owning
-// team (explainReviewRule).
+// exit 3 with GitHub's sentence and the identity it declined; declined for
+// the review rule, the reason goes on to name the rulesets' bypass actors
+// and the owning team as well (explainReviewRule).
 func (m *Merger) merge(ctx context.Context, owner, repo string, number int, pr *github.PullRequest, result *Result, caller, team string) error {
 	opts := githubclient.MergeOptions{Method: m.method, HeadSHA: result.HeadSHA}
 	if m.method == githubclient.MergeSquash {
@@ -382,17 +386,19 @@ func (m *Merger) merge(ctx context.Context, owner, repo string, number int, pr *
 	}
 	sha, err := m.github.MergePullRequest(ctx, owner, repo, number, opts)
 	if githubclient.IsMergeDeclined(err) {
-		reason := oneLine(err.Error())
+		reason := strings.TrimSuffix(oneLine(err.Error()), ".") + ". "
 		if declinedByReviewRule(err) {
-			reason = strings.TrimSuffix(reason, ".") + ". " + m.explainReviewRule(ctx, owner, repo, pr.GetBase().GetRef(), caller, team)
+			reason += m.explainReviewRule(ctx, owner, repo, pr.GetBase().GetRef(), caller, team)
+		} else {
+			reason += fmt.Sprintf("devctl acts as %s", caller)
 		}
 		return agentcli.NewExitError(agentcli.ExitNotApplicable, agentcli.VerdictNotApplicable, "%s", reason)
 	}
 	if err != nil {
 		return microerror.Mask(err)
 	}
-	result.MergeCommitSHA = sha
-	m.progress.Printf("merged: %s of %s is %s", m.method, result.HeadSHA, sha)
+	result.MergeCommitSHA, result.MergedBy = sha, caller
+	m.progress.Printf("merged: %s of %s is %s, as %s", m.method, result.HeadSHA, sha, caller)
 	return nil
 }
 
@@ -418,8 +424,8 @@ func (m *Merger) enqueue(ctx context.Context, owner, repo string, number int, pr
 		}
 		switch {
 		case current.GetMerged():
-			result.MergeCommitSHA = current.GetMergeCommitSHA()
-			m.progress.Printf("merge queue: poll %d: merged as %s", poll, result.MergeCommitSHA)
+			result.MergeCommitSHA, result.MergedBy = current.GetMergeCommitSHA(), current.GetMergedBy().GetLogin()
+			m.progress.Printf("merge queue: poll %d: merged as %s by %s", poll, result.MergeCommitSHA, result.MergedBy)
 			return nil
 		case current.GetState() != "open":
 			return agentcli.NewExitError(agentcli.ExitRed, agentcli.VerdictRed, "the merge queue removed %s/%s#%d without merging it", owner, repo, number)

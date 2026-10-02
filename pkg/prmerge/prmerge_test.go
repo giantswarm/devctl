@@ -211,6 +211,7 @@ func Test_Merge_paths(t *testing.T) {
 	type want struct {
 		code      int
 		reason    string
+		mergedBy  string
 		method    string
 		mergeSHA  string
 		deleted   bool
@@ -228,21 +229,21 @@ func Test_Merge_paths(t *testing.T) {
 		{
 			name:   "green squash: merge with the head, delete the branch",
 			routes: routes(pull(nil)),
-			want: want{method: "squash", mergeSHA: "m1", deleted: true, headSHA: "abc123",
+			want: want{method: "squash", mergedBy: "someone", mergeSHA: "m1", deleted: true, headSHA: "abc123",
 				requested: map[string]int{"PUT /repos/o/r/pulls/42/merge": 1, "DELETE /repos/o/r/git/refs/heads/feature": 1, "POST /graphql": 0}},
 		},
 		{
 			name:      "rebase",
 			routes:    routes(pull(nil)),
 			configure: func(c *Config) { c.Method = githubclient.MergeRebase },
-			want:      want{method: "rebase", mergeSHA: "m1", deleted: true, headSHA: "abc123", requested: map[string]int{"PUT /repos/o/r/pulls/42/merge": 1}},
+			want:      want{method: "rebase", mergedBy: "someone", mergeSHA: "m1", deleted: true, headSHA: "abc123", requested: map[string]int{"PUT /repos/o/r/pulls/42/merge": 1}},
 		},
 		{
 			name: "a head in a fork is merged and its branch left alone",
 			routes: routes(pull(map[string]any{
 				"head": map[string]any{"sha": "abc123", "ref": "feature", "repo": map[string]any{"full_name": "alice/r"}},
 			})),
-			want: want{method: "squash", mergeSHA: "m1", deleted: false, headSHA: "abc123", warning: "fork alice/r",
+			want: want{method: "squash", mergedBy: "someone", mergeSHA: "m1", deleted: false, headSHA: "abc123", warning: "fork alice/r",
 				requested: map[string]int{"PUT /repos/o/r/pulls/42/merge": 1, "DELETE /repos/o/r/git/refs/heads/feature": 0}},
 		},
 		{
@@ -260,14 +261,14 @@ func Test_Merge_paths(t *testing.T) {
 			routes: routes(pull(nil), sequence.Routes{
 				"GET /repos/o/r/pulls/42": {
 					{Body: pull(nil)}, {Body: pull(nil)}, {Body: pull(nil)}, {Body: pull(map[string]any{"mergeable_state": "blocked"})},
-					{Body: pull(map[string]any{"state": "closed", "merged": true, "merge_commit_sha": "q1"})},
+					{Body: pull(map[string]any{"state": "closed", "merged": true, "merge_commit_sha": "q1", "merged_by": map[string]any{"login": "queue-enqueuer"}})},
 				},
 				"GET /repos/o/r/rules/branches/main": {{Body: []any{
 					map[string]any{"type": "merge_queue", "ruleset_source_type": "Repository", "ruleset_source": "o/r", "ruleset_id": 1, "parameters": map[string]any{"merge_method": "SQUASH"}},
 				}}},
 				"POST /graphql": {{Body: map[string]any{"data": map[string]any{"enqueuePullRequest": map[string]any{"mergeQueueEntry": map[string]any{"id": "MQE_1"}}}}}},
 			}),
-			want: want{method: "squash", mergeSHA: "q1", deleted: true, enqueued: true, headSHA: "abc123",
+			want: want{method: "squash", mergedBy: "queue-enqueuer", mergeSHA: "q1", deleted: true, enqueued: true, headSHA: "abc123",
 				requested: map[string]int{"POST /graphql": 1, "PUT /repos/o/r/pulls/42/merge": 0, "DELETE /repos/o/r/git/refs/heads/feature": 1}},
 		},
 		{
@@ -291,7 +292,7 @@ func Test_Merge_paths(t *testing.T) {
 				"PUT /repos/o/r/pulls/42/update-branch": {{Status: http.StatusAccepted, Body: map[string]any{"message": "Updating pull request branch.", "url": "https://api.github.com/repos/o/r/pulls/42"}}},
 			}),
 			configure: func(c *Config) { c.UpdateBranch = true },
-			want: want{method: "squash", mergeSHA: "m1", deleted: true, headSHA: "def456",
+			want: want{method: "squash", mergedBy: "someone", mergeSHA: "m1", deleted: true, headSHA: "def456",
 				requested: map[string]int{"PUT /repos/o/r/pulls/42/update-branch": 1, "GET /repos/o/r/commits/def456/check-runs": 1, "GET /repos/o/r/commits/abc123/check-runs": 0, "PUT /repos/o/r/pulls/42/merge": 1}},
 		},
 		{
@@ -306,7 +307,14 @@ func Test_Merge_paths(t *testing.T) {
 			routes: routes(pull(nil), sequence.Routes{
 				"PUT /repos/o/r/pulls/42/merge": {{Status: http.StatusMethodNotAllowed, Body: map[string]any{"message": "Base branch was modified. Review and try the merge again.", "documentation_url": "https://docs.github.com/rest"}}},
 			}),
-			want: want{code: 3, reason: "Base branch was modified", method: "squash", headSHA: "abc123", requested: map[string]int{"DELETE /repos/o/r/git/refs/heads/feature": 0}},
+			want: want{code: 3, reason: "Base branch was modified. Review and try the merge again. devctl acts as someone", method: "squash", headSHA: "abc123", requested: map[string]int{"DELETE /repos/o/r/git/refs/heads/feature": 0}},
+		},
+		{
+			name: "the token lacks a permission the merge needs: exit 3 naming the identity",
+			routes: routes(pull(nil), sequence.Routes{
+				"PUT /repos/o/r/pulls/42/merge": {{Status: http.StatusForbidden, Body: map[string]any{"message": "Resource not accessible by integration"}}},
+			}),
+			want: want{code: 3, reason: "GitHub declined the merge of o/r#42: Resource not accessible by integration. devctl acts as someone", method: "squash", headSHA: "abc123", requested: map[string]int{"DELETE /repos/o/r/git/refs/heads/feature": 0}},
 		},
 		{
 			name: "the head moved under the merge: exit 3",
@@ -328,6 +336,9 @@ func Test_Merge_paths(t *testing.T) {
 				if !errors.As(err, &exitErr) || !strings.Contains(exitErr.Reason, tc.want.reason) {
 					t.Errorf("want reason with %q, got %v", tc.want.reason, err)
 				}
+			}
+			if result.MergedBy != tc.want.mergedBy {
+				t.Errorf("want mergedBy %q, got %q", tc.want.mergedBy, result.MergedBy)
 			}
 			if result.Method != tc.want.method || result.MergeCommitSHA != tc.want.mergeSHA || result.BranchDeleted != tc.want.deleted || result.Enqueued != tc.want.enqueued || result.HeadSHA != tc.want.headSHA {
 				t.Errorf("want method %s, mergeCommitSha %q, branchDeleted %v, enqueued %v, headSha %s; got %+v", tc.want.method, tc.want.mergeSHA, tc.want.deleted, tc.want.enqueued, tc.want.headSHA, result)
@@ -490,14 +501,14 @@ func Test_Merge_reviewRuleDeclineNamesTheBypass(t *testing.T) {
 			want:      []string{"the ruleset 7 of o/r (its bypass actors could not be read:", "Resource not accessible by integration", "team-honeybadger"},
 		},
 		{
-			name: "a decline for another reason keeps GitHub's sentence alone",
+			name: "a decline for another reason keeps GitHub's sentence and names the caller alone",
 			routes: routes(pull(nil), sequence.Routes{
 				"PUT /repos/o/r/pulls/42/merge": {{Status: http.StatusMethodNotAllowed, Body: map[string]any{"message": "Base branch was modified. Review and try the merge again."}}},
 				"GET /repos/o/r/rulesets/7":     {{Body: ruleset}},
 			}),
 			configure: owned,
-			want:      []string{"Base branch was modified"},
-			wantNot:   []string{"devctl acts as"},
+			want:      []string{"Base branch was modified. Review and try the merge again. devctl acts as someone"},
+			wantNot:   []string{"bypass", "team-honeybadger"},
 			requested: map[string]int{"GET /repos/o/r/rulesets/7": 0},
 		},
 	}
@@ -524,7 +535,7 @@ func Test_Merge_reviewRuleDeclineNamesTheBypass(t *testing.T) {
 					t.Errorf("want %s requested %d time(s), got %d; requests: %v", key, n, got, h.server.Requests())
 				}
 			}
-			if result.MergeCommitSHA != "" || result.BranchDeleted {
+			if result.MergeCommitSHA != "" || result.MergedBy != "" || result.BranchDeleted {
 				t.Errorf("nothing merged on a decline: %+v", result)
 			}
 			for _, r := range h.server.Requests() {

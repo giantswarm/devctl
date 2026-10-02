@@ -16,6 +16,7 @@
     "checks": [],
     "actions": [],
     "mergeCommitSha": "",
+    "mergedBy": "",
     "method": "squash",
     "branchDeleted": false,
     "enqueued": false,

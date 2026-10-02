@@ -67,7 +67,10 @@ func (c *Client) CurrentLogin(ctx context.Context) (string, error) {
 
 // MergePullRequest merges the pull request through the merge API and returns
 // the merge commit's SHA. GitHub's refusal of the merge as the pull request
-// stands is [IsMergeDeclined]; anything else is a tooling failure.
+// stands (405, 409) or for the token's permissions (403: a GitHub App user
+// token without the workflows permission on a pull request that changes a
+// workflow) is [IsMergeDeclined]; anything else, a spent rate limit included,
+// is a tooling failure.
 func (c *Client) MergePullRequest(ctx context.Context, owner, repo string, number int, opts MergeOptions) (string, error) {
 	result, _, err := c.ghClient.PullRequests.Merge(ctx, owner, repo, number, "", &github.PullRequestOptions{
 		SHA:         opts.HeadSHA,
@@ -76,7 +79,7 @@ func (c *Client) MergePullRequest(ctx context.Context, owner, repo string, numbe
 	})
 	switch status := githubStatus(err); {
 	case err == nil:
-	case status == http.StatusMethodNotAllowed, status == http.StatusConflict:
+	case status == http.StatusMethodNotAllowed, status == http.StatusConflict, status == http.StatusForbidden:
 		return "", microerror.Maskf(mergeDeclinedError, "GitHub declined the merge of %s/%s#%d: %s", owner, repo, number, githubMessage(err))
 	default:
 		return "", microerror.Mask(err)
