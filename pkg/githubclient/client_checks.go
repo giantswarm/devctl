@@ -28,6 +28,32 @@ func (c *Client) PullRequest(ctx context.Context, owner, repo string, number int
 	return pr, nil
 }
 
+// PullRequestFiles returns the paths a pull request changes, both sides of
+// a rename; GitHub lists at most 3000.
+func (c *Client) PullRequestFiles(ctx context.Context, owner, repo string, number int) ([]string, error) {
+	var paths []string
+	opts := &github.ListOptions{PerPage: 100}
+	for {
+		files, resp, err := c.ghClient.PullRequests.ListFiles(ctx, owner, repo, number, opts)
+		if isGithub404(err) {
+			return nil, microerror.Maskf(notFoundError, "pull request %s/%s#%d", owner, repo, number)
+		}
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+		for _, f := range files {
+			paths = append(paths, f.GetFilename())
+			if previous := f.GetPreviousFilename(); previous != "" {
+				paths = append(paths, previous)
+			}
+		}
+		if resp.NextPage == 0 {
+			return paths, nil
+		}
+		opts.Page = resp.NextPage
+	}
+}
+
 // IsPullRequest reports whether number in owner/repo is a pull request
 // rather than an issue: the issues endpoint answers for both and marks a pull
 // request. A number that does not exist is notFoundError.

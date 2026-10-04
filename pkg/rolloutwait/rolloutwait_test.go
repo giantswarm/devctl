@@ -137,6 +137,19 @@ func TestHelmReleaseRolledOut(t *testing.T) {
 	}
 }
 
+// A chart that renders its workloads into another namespace than the
+// release's (kagent's controller in kagent, the release in agent-platform):
+// the workload is found by Helm's annotations and its rollout waited for.
+func TestWorkloadInAnotherNamespaceIsJudged(t *testing.T) {
+	elsewhere := deployment(1)
+	elsewhere.SetNamespace("kagent")
+	r := wait(t, newClient(ociRepository(map[string]any{"semver": ">=0.17.0"}), helmRelease("0.48.1", nil), elsewhere), false)
+	wantExit(t, r, agentcli.ExitTimeout, "Deployment kagent/"+chart)
+	if w := r.result.Deployments[0].Workloads; len(w) != 1 || w[0].Namespace != "kagent" || w[0].Ready {
+		t.Errorf("workloads: %+v", w)
+	}
+}
+
 func TestNewerVersionCountsWithAWarning(t *testing.T) {
 	r := wait(t, newClient(ociRepository(map[string]any{"semver": ">=0.17.0"}), helmRelease("0.49.0", nil), deployment(2)), false)
 	wantExit(t, r, agentcli.ExitOK, "")

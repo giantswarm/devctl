@@ -43,7 +43,7 @@ func (w *Waiter) judgeApp(ctx context.Context, app *unstructured.Unstructured, c
 		Workloads: []Workload{},
 	}
 	status, reason := str(app, "status", "release", "status"), str(app, "status", "release", "reason")
-	if status == "deployed" {
+	if status == statusDeployed {
 		d.RunningVersion = bare(str(app, "status", "version"))
 	}
 	if atLeast(d.RunningVersion, w.version) {

@@ -27,13 +27,14 @@ const (
 	kindOCIRepository = "OCIRepository"
 	kindHelmChart     = "HelmChart"
 	groupApps         = "apps"
+	groupSource       = "source.toolkit.fluxcd.io"
 )
 
 // The resources a rollout wait reads.
 var (
 	helmReleases    = schema.GroupVersionResource{Group: "helm.toolkit.fluxcd.io", Version: "v2", Resource: "helmreleases"}
-	ociRepositories = schema.GroupVersionResource{Group: "source.toolkit.fluxcd.io", Version: "v1", Resource: "ocirepositories"}
-	helmCharts      = schema.GroupVersionResource{Group: "source.toolkit.fluxcd.io", Version: "v1", Resource: "helmcharts"}
+	ociRepositories = schema.GroupVersionResource{Group: groupSource, Version: "v1", Resource: "ocirepositories"}
+	helmCharts      = schema.GroupVersionResource{Group: groupSource, Version: "v1", Resource: "helmcharts"}
 	apps            = schema.GroupVersionResource{Group: "application.giantswarm.io", Version: "v1alpha1", Resource: "apps"}
 	deployments     = schema.GroupVersionResource{Group: groupApps, Version: "v1", Resource: "deployments"}
 	statefulSets    = schema.GroupVersionResource{Group: groupApps, Version: "v1", Resource: "statefulsets"}
@@ -51,6 +52,10 @@ func ListKinds() map[schema.GroupVersionResource]string {
 		deployments:     "DeploymentList",
 		statefulSets:    "StatefulSetList",
 		daemonSets:      "DaemonSetList",
+		gitRepositories: "GitRepositoryList",
+		kustomizations:  "KustomizationList",
+		konfigurations:  "KonfigurationList",
+		configMaps:      "ConfigMapList",
 	}
 }
 
@@ -97,11 +102,13 @@ func (w *Waiter) list(ctx context.Context, resource schema.GroupVersionResource,
 // requestReconcile sets Flux's reconcile.fluxcd.io/requestedAt on o, which
 // makes its controller reconcile it now instead of at its next interval.
 func (w *Waiter) requestReconcile(ctx context.Context, o object) error {
-	patch := fmt.Sprintf(`{"metadata":{"annotations":{"reconcile.fluxcd.io/requestedAt":%q}}}`, w.clock.Now().UTC().Format("2006-01-02T15:04:05.999999999Z07:00"))
+	requestedAt := w.clock.Now().UTC().Format("2006-01-02T15:04:05.999999999Z07:00")
+	patch := fmt.Sprintf(`{"metadata":{"annotations":{"reconcile.fluxcd.io/requestedAt":%q}}}`, requestedAt)
 	_, err := w.client.Resource(o.resource).Namespace(o.namespace).Patch(ctx, o.name, types.MergePatchType, []byte(patch), metav1.PatchOptions{})
 	if err != nil {
 		return w.clusterErr("requesting a reconcile of "+o.String(), err)
 	}
+	w.requested[o.String()] = requestedAt
 	return nil
 }
 

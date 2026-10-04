@@ -1,7 +1,7 @@
 # Waiting for a release: `devctl release wait`
 
 ```nohighlight
-devctl release wait <owner/repo> (<vX.Y.Z | X.Y.Z> | --pr <number>) [--timeout 30m] [--catalog] [--image <owner/name>]... [--progress]
+devctl release wait <owner/repo> (<vX.Y.Z | X.Y.Z> | --pr <number>) [--timeout 30m] [--catalog] [--image <owner/name>]... [--chart <path>]... [--progress]
 ```
 
 Blocks until every image and chart of a release is pullable and the tag's pipeline is green, then prints
@@ -114,6 +114,13 @@ first and then decides the registry, else the repository's visibility does). Eac
 `<image>:<git tag>`, the tag as written (`v2.43.3`, the `$CIRCLE_TAG` such a job pushes), beside what the push jobs name, and the release is out when every artifact is
 pullable and the tag pipeline is green. `--image` applies to hand-written CI only: with generated CI or
 none, the artifacts are derived as before and a warning says the named image is not probed.
+
+A chart such a job pushes with helm itself is named the same way with `--chart <path>` (repeatable), its
+repository path in the registry: `--chart giantswarm/kagent/helm/kagent` for the kagent line, whose
+`push-charts` job runs `make helm-publish` into `oci://gsoci.azurecr.io/giantswarm/kagent/helm`. It is
+expected as `<path>:<version>`, the bare version helm requires (`1.2.4`), its chart name the path's last
+element; it goes to no app catalog, so `--catalog` does not wait for it. `--chart` applies to hand-written
+CI only, like `--image`.
 
 When a `Dockerfile` exists at the tag and neither a push job of the pipeline nor `--image` names an
 image: exit 7 with the jobs seen, the reason naming `--image`. The repository name is never used as a

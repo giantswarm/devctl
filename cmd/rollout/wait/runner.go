@@ -2,6 +2,8 @@ package wait
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -124,6 +126,7 @@ func (r *runner) wait(ctx context.Context, args []string, doc *rolloutwait.Docum
 		PR:           r.flag.PR,
 		Timeout:      r.flag.ReleaseTimeout,
 		Images:       r.flag.Images,
+		Charts:       r.flag.Charts,
 		GitHub:       sources.GitHub,
 		Entries:      sources.Entries,
 		CircleCI:     sources.CircleCI,
@@ -141,6 +144,12 @@ func (r *runner) wait(ctx context.Context, args []string, doc *rolloutwait.Docum
 	if err := releaseWaiter.Wait(ctx, &doc.Release.Result); err != nil {
 		code, verdict := agentcli.Outcome(err)
 		doc.Release.Verdict, doc.Release.Reason = verdict, err.Error()
+		// A pull request that releases nothing (a configuration change)
+		// rolls out as its merge commit, through what fetches the
+		// repository on the installation.
+		if releasewait.IsNoRelease(err) && r.flag.PR != 0 && doc.Release.SHA != "" {
+			return r.waitRevision(ctx, installation, owner, repo, sources, retrying, clock, progress, doc, err)
+		}
 		return agentcli.NewExitError(code, verdict, "release: %s", err)
 	}
 	doc.Release.Verdict = agentcli.VerdictAvailable
@@ -152,7 +161,11 @@ func (r *runner) wait(ctx context.Context, args []string, doc *rolloutwait.Docum
 		}
 	}
 	if len(charts) == 0 {
-		return agentcli.NewExitError(agentcli.ExitNotApplicable, agentcli.VerdictNotApplicable, "%s %s ships no chart, nothing rolls out", args[1], doc.Release.Tag)
+		hint := ""
+		if doc.Release.CIModel == releasewait.CIModelHandWritten {
+			hint = "; a chart its hand-written pipeline pushes outside the architect orb is named with --chart"
+		}
+		return agentcli.NewExitError(agentcli.ExitNotApplicable, agentcli.VerdictNotApplicable, "%s %s ships no chart, nothing rolls out%s", args[1], doc.Release.Tag, hint)
 	}
 
 	kubeContext := r.kubeContext(installation)
@@ -177,4 +190,47 @@ func (r *runner) wait(ctx context.Context, args []string, doc *rolloutwait.Docum
 		return err
 	}
 	return waiter.Wait(ctx, &doc.Result)
+}
+
+// waitRevision follows the merge commit of a pull request that releases
+// nothing to what applies it on the installation; when nothing there
+// fetches the repository, the answer stays that no release follows.
+func (r *runner) waitRevision(ctx context.Context, installation, owner, repo string, sources *releasewait.Sources, retrying func(http.RoundTripper) http.RoundTripper, clock agentcli.Clock, progress *agentcli.Progress, doc *rolloutwait.Document, noRelease error) error {
+	if sources.Client == nil {
+		return fmt.Errorf("release: %w; following the merge commit needs the GitHub client", noRelease)
+	}
+	progress.Printf("%s; following the merge commit %s on %s", noRelease, doc.Release.SHA, installation)
+	paths, err := sources.Client.PullRequestFiles(ctx, owner, repo, r.flag.PR)
+	if err != nil {
+		return fmt.Errorf("listing the files of %s/%s#%d: %w", owner, repo, r.flag.PR, err)
+	}
+	kubeContext := r.kubeContext(installation)
+	client, err := r.openCluster(installation, kubeContext, retrying)
+	if err != nil {
+		return err
+	}
+	waiter, err := rolloutwait.New(rolloutwait.Config{
+		Installation: installation,
+		KubeContext:  kubeContext,
+		Revision:     doc.Release.SHA,
+		Repository:   owner + "/" + repo,
+		Paths:        paths,
+		GitHub:       sources.Client,
+		HelmReleases: r.flag.HelmReleases,
+		Client:       client,
+		Timeout:      r.flag.Timeout,
+		Reconcile:    r.flag.Reconcile,
+		Clock:        clock,
+		Progress:     progress,
+		Warn:         doc.Warn,
+	})
+	if err != nil {
+		return err
+	}
+	err = waiter.Wait(ctx, &doc.Result)
+	var notFetched *rolloutwait.NotFetchedError
+	if errors.As(err, &notFetched) {
+		return &rolloutwait.NotFetchedError{Reason: fmt.Sprintf("release: %s; %s", noRelease, notFetched.Reason)}
+	}
+	return err
 }

@@ -100,6 +100,7 @@ func (r *runner) wait(ctx context.Context, args []string, doc *releasewait.Docum
 		Timeout:      r.flag.Timeout,
 		Catalog:      r.flag.Catalog,
 		Images:       r.flag.Images,
+		Charts:       r.flag.Charts,
 		GitHub:       c.GitHub,
 		Entries:      c.Entries,
 		CircleCI:     c.CircleCI,

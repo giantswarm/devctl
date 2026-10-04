@@ -39,8 +39,11 @@ type Result struct {
 	Installation string `json:"installation"`
 	// Context is the kube context the installation was read through.
 	Context string `json:"context"`
-	// Version is the bare version waited for.
+	// Version is the bare version waited for; empty for a revision.
 	Version string `json:"version"`
+	// Revision is the merge commit of a configuration change waited for;
+	// empty for a version.
+	Revision string `json:"revision,omitempty"`
 	// Charts are the charts of the release, the names deployments are
 	// matched by.
 	Charts []string `json:"charts"`
@@ -57,7 +60,8 @@ func NewResult(installation, context string) Result {
 // Deployment is one HelmRelease or App CR that deploys a chart of the
 // release, and where it stands.
 type Deployment struct {
-	// Kind is HelmRelease or App.
+	// Kind is HelmRelease or App; for a revision also GitRepository,
+	// Kustomization or Konfiguration.
 	Kind      string `json:"kind"`
 	Namespace string `json:"namespace"`
 	Name      string `json:"name"`
@@ -82,6 +86,9 @@ type Deployment struct {
 	// source is the Flux source object a reconcile request goes to; nil for
 	// an App and for a HelmChart that does not exist yet.
 	source *object
+	// self is, for a revision, the object itself a reconcile request goes
+	// to; nil for what Flux does not reconcile on request (a Konfiguration).
+	self *object
 }
 
 // Workload is one Deployment, StatefulSet or DaemonSet of a release.

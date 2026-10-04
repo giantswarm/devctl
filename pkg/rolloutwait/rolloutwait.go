@@ -41,8 +41,18 @@ type Config struct {
 	KubeContext  string
 	// Version is the release's version, with or without a leading v.
 	Version string
-	// Charts are the names of the release's charts.
+	// Charts are the names of the release's charts; empty with Revision.
 	Charts []string
+	// Revision is, for a pull request that releases nothing (a
+	// configuration change), its merge commit in Repository (owner/repo):
+	// the wait follows it through the Flux GitRepositories of the
+	// repository to what applies them, and the HelmReleases of the apps
+	// Paths, the files the pull request changed, touch. GitHub answers
+	// whether a fetched commit contains it. Version is empty then.
+	Revision   string
+	Repository string
+	Paths      []string
+	GitHub     GitHub
 	// HelmReleases name HelmReleases to wait for whatever chart they
 	// deploy, as <name> (any namespace) or <namespace>/<name>.
 	HelmReleases []string
@@ -71,6 +81,16 @@ type Waiter struct {
 	progress                           *agentcli.Progress
 	warn                               func(string)
 	warned                             map[string]bool
+
+	revision, repository string
+	github               GitHub
+	// touched are the apps the configuration change touches.
+	touched map[string]bool
+	// contains keeps whether a commit contains the revision.
+	contains map[string]bool
+	// requested are the reconcile requests --reconcile made, by object:
+	// the requestedAt each carried.
+	requested map[string]string
 }
 
 // New validates config.
@@ -78,8 +98,11 @@ func New(config Config) (*Waiter, error) {
 	if config.Client == nil {
 		return nil, errors.New("rolloutwait: Client must not be nil")
 	}
-	if len(config.Charts) == 0 {
-		return nil, errors.New("rolloutwait: Charts must not be empty")
+	if config.Revision == "" && len(config.Charts) == 0 {
+		return nil, errors.New("rolloutwait: Charts must not be empty without a Revision")
+	}
+	if config.Revision != "" && (config.GitHub == nil || config.Repository == "") {
+		return nil, errors.New("rolloutwait: a Revision needs GitHub and Repository")
 	}
 	for _, name := range config.HelmReleases {
 		namespace, n, namespaced := strings.Cut(name, "/")
@@ -106,6 +129,18 @@ func New(config Config) (*Waiter, error) {
 		progress:         config.Progress,
 		warn:             config.Warn,
 		warned:           map[string]bool{},
+		revision:         config.Revision,
+		repository:       config.Repository,
+		github:           config.GitHub,
+		contains:         map[string]bool{},
+		requested:        map[string]string{},
+	}
+	if w.revision != "" {
+		apps, global := AffectedApps(config.Paths, config.Installation)
+		w.touched = apps
+		if len(global) > 0 {
+			w.warn(fmt.Sprintf("%s change values beyond one app's on %s: a HelmRelease upgrades only where its rendered values changed, which only the values tell, so the HelmReleases of every app are not followed; --helmrelease names one to follow", strings.Join(global, ", "), config.Installation))
+		}
 	}
 	for _, c := range config.Charts {
 		w.charts[c] = true
@@ -121,6 +156,7 @@ func New(config Config) (*Waiter, error) {
 // none follows the version.
 func (w *Waiter) Wait(ctx context.Context, result *Result) error {
 	result.Version = w.version
+	result.Revision = w.revision
 	result.Charts = w.chartNames()
 	deadline := w.clock.Now().Add(w.clock.Scaled(w.timeout))
 	interval := IntervalFloor
@@ -141,10 +177,17 @@ func (w *Waiter) Wait(ctx context.Context, result *Result) error {
 			return err
 		}
 		if pendingDeployments(list) == nil {
+			if w.revision != "" {
+				w.progress.Printf("%s@%s is applied on %s", w.repository, short(w.revision), w.installation)
+				return nil
+			}
 			w.progress.Printf("%s runs %s on %s", strings.Join(result.Charts, ", "), w.version, w.installation)
 			return nil
 		}
-		if w.reconcile && !reconciled {
+		// A revision's objects become worth a request one after another
+		// (a HelmRelease once its values are rendered): each is asked
+		// once, when it is.
+		if w.reconcile && (!reconciled || w.revision != "") {
 			if err := w.requestReconciles(ctx, list); err != nil {
 				return err
 			}
@@ -163,8 +206,12 @@ func (w *Waiter) Wait(ctx context.Context, result *Result) error {
 	}
 }
 
-// observe reads every HelmRelease and App that deploys one of the charts.
+// observe reads every HelmRelease and App that deploys one of the charts,
+// or what applies the revision.
 func (w *Waiter) observe(ctx context.Context) ([]Deployment, error) {
+	if w.revision != "" {
+		return w.observeRevision(ctx)
+	}
 	list, err := w.helmReleases(ctx)
 	if err != nil {
 		return nil, err
@@ -213,12 +260,12 @@ func (w *Waiter) outcome(list []Deployment) error {
 	var excluded []string
 	for _, d := range list {
 		if !follows(d) {
-			w.warnOnce(fmt.Sprintf("%s will not deploy %s: %s", d.id(), w.version, d.Message))
+			w.warnOnce(fmt.Sprintf("%s will not deploy %s: %s", d.id(), w.target(), d.Message))
 			excluded = append(excluded, d.id()+": "+d.Message)
 		}
 	}
 	if len(excluded) == len(list) {
-		return agentcli.NewExitError(agentcli.ExitNotApplicable, agentcli.VerdictNotApplicable, "nothing on %s will deploy %s: %s", w.installation, w.version, strings.Join(excluded, "; "))
+		return agentcli.NewExitError(agentcli.ExitNotApplicable, agentcli.VerdictNotApplicable, "nothing on %s will deploy %s: %s", w.installation, w.target(), strings.Join(excluded, "; "))
 	}
 	return nil
 }
@@ -230,6 +277,16 @@ func follows(d Deployment) bool {
 
 func (w *Waiter) requestReconciles(ctx context.Context, list []Deployment) error {
 	for _, d := range pendingDeployments(list) {
+		if w.revision != "" {
+			if d.self == nil || w.requested[d.self.String()] != "" {
+				continue
+			}
+			if err := w.requestReconcile(ctx, *d.self); err != nil {
+				return err
+			}
+			w.progress.Printf("requested a reconcile of %s", d.self)
+			continue
+		}
 		if d.Kind != KindHelmRelease || atLeast(d.RunningVersion, w.version) {
 			continue
 		}
@@ -252,7 +309,15 @@ func (w *Waiter) timeoutErr(list []Deployment) error {
 	for _, d := range pendingDeployments(list) {
 		waiting = append(waiting, d.id()+": "+d.Message)
 	}
-	return agentcli.NewExitError(agentcli.ExitTimeout, agentcli.VerdictTimeout, "%s not rolled out on %s after %s: %s", w.version, w.installation, w.timeout, strings.Join(waiting, "; "))
+	return agentcli.NewExitError(agentcli.ExitTimeout, agentcli.VerdictTimeout, "%s not rolled out on %s after %s: %s", w.target(), w.installation, w.timeout, strings.Join(waiting, "; "))
+}
+
+// target names what is waited for: the version, or the revision.
+func (w *Waiter) target() string {
+	if w.revision != "" {
+		return w.repository + "@" + short(w.revision)
+	}
+	return w.version
 }
 
 func pendingDeployments(list []Deployment) []Deployment {

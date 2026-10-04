@@ -120,6 +120,12 @@ type Config struct {
 	// git tag as written ($CIRCLE_TAG, v2.43.3), beside what the push jobs
 	// name (giantswarm/devctl#2418).
 	Images []string
+	// Charts name the charts a hand-written tag pipeline pushes outside the
+	// architect orb (a helm push of its own), which its configuration cannot
+	// tell either: repository paths such as giantswarm/kagent/helm/kagent,
+	// or with the registry host in front. Each is expected as
+	// <chart>:<version>, the bare version helm requires.
+	Charts []string
 
 	// GitHub is required. Entries and Registry are required; CircleCI is
 	// called once when the tag carries a .circleci/config.yml, so a
@@ -149,6 +155,10 @@ type Config struct {
 // ImageFlagUsage is the help of --image on the commands that wait for a
 // release.
 const ImageFlagUsage = "An image the hand-written tag pipeline pushes outside the architect orb (a plain docker push), as <owner>/<name> or with the registry host in front; expected as <image>:<git tag>, the tag as written (v1.2.3). Repeatable"
+
+// ChartFlagUsage is the help of --chart on the commands that wait for a
+// release.
+const ChartFlagUsage = "A chart the hand-written tag pipeline pushes outside the architect orb (a helm push of its own), as its repository path (giantswarm/kagent/helm/kagent) or with the registry host in front; expected as <chart>:<version>, the bare version (1.2.3). Repeatable"
 
 // Waiter runs one wait.
 type Waiter struct {
@@ -189,6 +199,11 @@ func New(config Config) (*Waiter, error) {
 	}
 	for _, image := range config.Images {
 		if _, _, err := namedImage(image, config.Endpoints); err != nil {
+			return nil, err
+		}
+	}
+	for _, chart := range config.Charts {
+		if _, _, err := namedChart(chart, config.Endpoints); err != nil {
 			return nil, err
 		}
 	}
@@ -288,6 +303,9 @@ func (w *Waiter) wait(ctx context.Context, result *Result) error {
 	if len(w.config.Images) > 0 && result.CIModel != CIModelHandWritten {
 		w.warn(fmt.Sprintf("--image names the images of a hand-written tag pipeline; the CI of %s is %s, whose artifacts are derived as before, so %s is not probed", result.Tag, result.CIModel, strings.Join(w.config.Images, ", ")))
 	}
+	if len(w.config.Charts) > 0 && result.CIModel != CIModelHandWritten {
+		w.warn(fmt.Sprintf("--chart names the charts of a hand-written tag pipeline; the CI of %s is %s, whose artifacts are derived as before, so %s is not probed", result.Tag, result.CIModel, strings.Join(w.config.Charts, ", ")))
+	}
 	for _, a := range result.Artifacts {
 		w.progress.Printf("expecting %s %s", a.Kind, a.Reference)
 	}
@@ -357,7 +375,8 @@ func (p *plan) index(result *Result) {
 	p.releaseAssets = len(result.Artifacts) == 0
 	p.charts = nil
 	for _, a := range result.Artifacts {
-		if a.Kind == KindChart {
+		// A chart --chart names goes to no catalog.
+		if a.Kind == KindChart && a.catalog != "" {
 			p.charts = append(p.charts, chartArtifact{name: a.chart, catalog: a.catalog, catalogTest: a.catalogTest})
 		}
 	}
@@ -379,7 +398,7 @@ func (w *Waiter) loop(ctx context.Context, result *Result, p *plan) error {
 		}
 
 		if !p.derived && result.CIModel == CIModelHandWritten && state.jobs != nil {
-			artifacts, err := HandWrittenArtifacts(ctx, w.config.GitHub, owner, repo, result.SHA, p.version, result.Tag, *p.content, state.jobs, p.private, w.config.Images, w.config.Endpoints)
+			artifacts, err := HandWrittenArtifacts(ctx, w.config.GitHub, owner, repo, result.SHA, p.version, result.Tag, *p.content, state.jobs, p.private, w.config.Images, w.config.Charts, w.config.Endpoints)
 			if err != nil {
 				return err
 			}
