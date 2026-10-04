@@ -9,6 +9,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `pr approve-align-files --team <name>`: sweeps every open bot-authored Align files PR in the repositories of
+  `repositories/team-<name>.yaml` of giantswarm/github, whether or not a review is requested from the caller,
+  so a repository that requests no reviewer is no longer skipped. A PR that is approved, green and has no
+  auto-merge is merged (squash); one blocked by a required check that nothing reports is listed with the
+  check's name. Without the flag nothing changes.
 - `rollout wait --pr` on a pull request that releases nothing (a giantswarm-configs change) follows its merge
   commit on the installation instead of answering `no_release` with an empty result: the Flux GitRepository
   of the repository, the Kustomizations and Konfigurations that read it, and the HelmReleases that take the
