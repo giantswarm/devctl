@@ -24,7 +24,15 @@ func getChinaFlatcarRelease(config Config, version string) (map[string]string, e
 		return nil, microerror.Mask(err)
 	}
 
-	result, err := s3.NewFromConfig(cfg).GetObject(ctx, &s3.GetObjectInput{
+	return getFlatcarRelease(ctx, s3.NewFromConfig(cfg), config, version)
+}
+
+type objectGetter interface {
+	GetObject(ctx context.Context, params *s3.GetObjectInput, optFns ...func(*s3.Options)) (*s3.GetObjectOutput, error)
+}
+
+func getFlatcarRelease(ctx context.Context, client objectGetter, config Config, version string) (map[string]string, error) {
+	result, err := client.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(config.ChinaBucketName),
 		Key:    aws.String(fmt.Sprintf("%s/%s/%s.json", config.Channel, config.Arch, version)),
 	})
