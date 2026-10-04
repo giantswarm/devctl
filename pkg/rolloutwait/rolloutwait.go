@@ -43,6 +43,9 @@ type Config struct {
 	Version string
 	// Charts are the names of the release's charts.
 	Charts []string
+	// HelmReleases name HelmReleases to wait for whatever chart they
+	// deploy, as <name> (any namespace) or <namespace>/<name>.
+	HelmReleases []string
 	// Client reads the management cluster.
 	Client dynamic.Interface
 	// Timeout bounds the wait; zero means DefaultTimeout.
@@ -60,6 +63,7 @@ type Config struct {
 type Waiter struct {
 	installation, kubeContext, version string
 	charts                             map[string]bool
+	helmReleaseNames                   []string
 	client                             dynamic.Interface
 	timeout                            time.Duration
 	reconcile                          bool
@@ -77,6 +81,12 @@ func New(config Config) (*Waiter, error) {
 	if len(config.Charts) == 0 {
 		return nil, errors.New("rolloutwait: Charts must not be empty")
 	}
+	for _, name := range config.HelmReleases {
+		namespace, n, namespaced := strings.Cut(name, "/")
+		if name == "" || strings.Contains(n, "/") || (namespaced && (namespace == "" || n == "")) {
+			return nil, agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "--helmrelease %q: name a HelmRelease as <name> or <namespace>/<name>", name)
+		}
+	}
 	if config.Timeout <= 0 {
 		config.Timeout = DefaultTimeout
 	}
@@ -84,17 +94,18 @@ func New(config Config) (*Waiter, error) {
 		config.Warn = func(string) {}
 	}
 	w := &Waiter{
-		installation: config.Installation,
-		kubeContext:  config.KubeContext,
-		version:      bare(config.Version),
-		charts:       map[string]bool{},
-		client:       config.Client,
-		timeout:      config.Timeout,
-		reconcile:    config.Reconcile,
-		clock:        config.Clock,
-		progress:     config.Progress,
-		warn:         config.Warn,
-		warned:       map[string]bool{},
+		installation:     config.Installation,
+		kubeContext:      config.KubeContext,
+		version:          bare(config.Version),
+		charts:           map[string]bool{},
+		helmReleaseNames: config.HelmReleases,
+		client:           config.Client,
+		timeout:          config.Timeout,
+		reconcile:        config.Reconcile,
+		clock:            config.Clock,
+		progress:         config.Progress,
+		warn:             config.Warn,
+		warned:           map[string]bool{},
 	}
 	for _, c := range config.Charts {
 		w.charts[c] = true
@@ -120,6 +131,9 @@ func (w *Waiter) Wait(ctx context.Context, result *Result) error {
 			return err
 		}
 		result.Deployments = list
+		if missing := w.missingHelmReleases(list); len(missing) > 0 {
+			return agentcli.NewExitError(agentcli.ExitNotApplicable, agentcli.VerdictNotApplicable, "no HelmRelease %s on %s", strings.Join(missing, ", "), w.installation)
+		}
 		if len(list) == 0 {
 			return agentcli.NewExitError(agentcli.ExitNotApplicable, agentcli.VerdictNotApplicable, "no HelmRelease or App on %s deploys %s", w.installation, strings.Join(result.Charts, ", "))
 		}
@@ -164,6 +178,25 @@ func (w *Waiter) observe(ctx context.Context) ([]Deployment, error) {
 		list = []Deployment{}
 	}
 	return list, nil
+}
+
+// named reports whether --helmrelease names the HelmRelease.
+func (w *Waiter) named(namespace, name string) bool {
+	return slices.Contains(w.helmReleaseNames, name) || slices.Contains(w.helmReleaseNames, namespace+"/"+name)
+}
+
+// missingHelmReleases are the names --helmrelease gives that no HelmRelease
+// on the cluster answers to.
+func (w *Waiter) missingHelmReleases(list []Deployment) []string {
+	var missing []string
+	for _, name := range w.helmReleaseNames {
+		if !slices.ContainsFunc(list, func(d Deployment) bool {
+			return d.Kind == KindHelmRelease && (d.Name == name || d.Namespace+"/"+d.Name == name)
+		}) {
+			missing = append(missing, name)
+		}
+	}
+	return missing
 }
 
 // outcome is the error of a poll that ends the wait early: a failed

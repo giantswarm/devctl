@@ -88,10 +88,12 @@ under the `name` its `Chart.yaml` declares at the tag; a repository renamed afte
 keeps `helm/<old-name>` with `name: <repo>`. A `Chart.yaml` that is missing at the tag, does not parse or
 declares no name is exit 7 naming the file; the directory is never probed in its place.
 
-The table names what the generator renders, not what a repository adds: jobs in `.circleci/custom.yml`,
-which the setup workflow merges into the build workflow, push and sign artifacts of their own (vm-manager's
-guest image, muster's CRD chart, backstage's control-plane catalog entry). They are not probed by name;
-the release waits for them through the tag pipeline being green (below).
+The table names what the generator renders; a repository adds jobs in `.circleci/custom.yml`, which the
+setup workflow merges into the build workflow. Its architect push jobs that the tag pipeline runs are read
+like those of hand-written CI (below) once the pipeline lists its jobs, and their images and charts are
+probed by name too: giantswarm/agent-platform's connectivity chart, released off the same tag as the meta
+chart, is part of the release. A custom job that pushes outside the architect orb (vm-manager's guest image)
+is not probed by name; the release waits for it through the tag pipeline being green (below).
 
 **Hand-written CI**: the artifacts are the push jobs the tag pipeline runs. The command reads the
 `.circleci/config.yml` (and `workflows.yml`, `custom.yml` when present) at the tag, collects every
@@ -269,7 +271,7 @@ tag on the merge commit), `GET /repos/{o}/{r}/git/ref/tags/{tag}` (and `GET
 /repos/{o}/{r}/contents/` with `?ref=` (the root listing: the Dockerfile), `GET
 /repos/{o}/{r}/contents/.github/workflows`, `GET /repos/{o}/{r}/contents/.circleci`, `GET
 /repos/{o}/{r}/contents/.circleci/config.yml` (hand-written CI; `workflows.yml`, `custom.yml` when
-listed), `GET /repos/{o}/{r}/contents/helm/{dir}/Chart.yaml` (the name of every chart), `GET /repos/giantswarm/github/contents/repositories` and `GET
+listed; `custom.yml` for generated CI too), `GET /repos/{o}/{r}/contents/helm/{dir}/Chart.yaml` (the name of every chart), `GET /repos/giantswarm/github/contents/repositories` and `GET
 /repos/giantswarm/github/contents/repositories/{team}.yaml` (the team-file entry, until the one that
 declares the repository), `GET /repos/{o}/{r}/releases/tags/{tag}` and `GET
 /repos/{o}/{r}/actions/runs?head_sha={sha}` (release assets, no CircleCI; with `--pr`, the merge

@@ -278,18 +278,53 @@ func ParsePushJobs(config []byte) ([]PushJob, error) {
 // among them is a usage error naming --image; the repository name is never
 // taken for the image.
 func HandWrittenArtifacts(ctx context.Context, gh GitHub, owner, repo, sha, version, tag string, content TagContent, pipelineJobs map[string]bool, privateRepo bool, images []string, endpoints agentcli.Endpoints) ([]Artifact, error) {
+	jobs, artifacts, err := pushJobArtifacts(ctx, gh, owner, repo, sha, version, content, []string{circleCIConfig, circleCIWorkflows, circleCICustom}, pipelineJobs, privateRepo, endpoints)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, name := range images {
+		path, private, err := namedImage(name, endpoints)
+		if err != nil {
+			return nil, err
+		}
+		if private == nil {
+			private = &privateRepo
+		}
+		artifacts = append(artifacts, imageArtifact(path, tag, *private, endpoints))
+	}
+
+	hasImage := slices.ContainsFunc(artifacts, func(a Artifact) bool { return a.Kind == KindImage })
+	if content.HasDockerfile() && !hasImage {
+		return nil, usageErr("a Dockerfile exists at %s but no push job of the tag pipeline names an image (pipeline jobs: %s; architect push jobs in the configuration: %s): a job that pushes outside the architect orb (a plain docker push) cannot be read from the configuration, and the repository name is never taken for the image; name it with devctl release wait --image, e.g. --image %s/%s", short(sha), listOrNone(sortedKeys(pipelineJobs)), listOrNone(jobNames(jobs)), owner, repo)
+	}
+	return dedupe(artifacts), nil
+}
+
+// CustomArtifacts are the artifacts a generated pipeline publishes beyond
+// what the team-file entry names: the push jobs of the repository's own
+// custom.yml that the tag pipeline runs (a second chart released off the
+// same tag, giantswarm/agent-platform's connectivity chart).
+func CustomArtifacts(ctx context.Context, gh GitHub, owner, repo, sha, version string, content TagContent, pipelineJobs map[string]bool, privateRepo bool, endpoints agentcli.Endpoints) ([]Artifact, error) {
+	_, artifacts, err := pushJobArtifacts(ctx, gh, owner, repo, sha, version, content, []string{circleCICustom}, pipelineJobs, privateRepo, endpoints)
+	return artifacts, err
+}
+
+// pushJobArtifacts reads the push jobs of the named configuration files at
+// the tag and returns them with the artifacts of those the tag pipeline runs.
+func pushJobArtifacts(ctx context.Context, gh GitHub, owner, repo, sha, version string, content TagContent, files []string, pipelineJobs map[string]bool, privateRepo bool, endpoints agentcli.Endpoints) ([]PushJob, []Artifact, error) {
 	var jobs []PushJob
-	for _, name := range []string{circleCIConfig, circleCIWorkflows, circleCICustom} {
+	for _, name := range files {
 		if !slices.Contains(content.CircleCI, name) {
 			continue
 		}
 		file, err := gh.GetFile(ctx, owner, repo, circleCIDir+"/"+name, sha)
 		if err != nil {
-			return nil, fmt.Errorf("reading %s/%s at %s: %w", circleCIDir, name, short(sha), err)
+			return nil, nil, fmt.Errorf("reading %s/%s at %s: %w", circleCIDir, name, short(sha), err)
 		}
 		parsed, err := ParsePushJobs(file.Data)
 		if err != nil {
-			return nil, usageErr("%s/%s at %s: %v", circleCIDir, name, short(sha), err)
+			return nil, nil, usageErr("%s/%s at %s: %v", circleCIDir, name, short(sha), err)
 		}
 		jobs = append(jobs, parsed...)
 	}
@@ -310,32 +345,16 @@ func HandWrittenArtifacts(ctx context.Context, gh GitHub, owner, repo, sha, vers
 			artifacts = append(artifacts, imageArtifact(image, version, private || job.PrivateOnly, endpoints))
 		case KindChart:
 			if job.Chart == "" {
-				return nil, usageErr("the push job %s of the tag pipeline names no chart", job.Name)
+				return nil, nil, usageErr("the push job %s of the tag pipeline names no chart", job.Name)
 			}
 			chart, err := charts(job.Chart)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			artifacts = append(artifacts, chartArtifactFor(owner, chart, job.Catalog, job.CatalogTest, version, private, endpoints))
 		}
 	}
-
-	for _, name := range images {
-		path, private, err := namedImage(name, endpoints)
-		if err != nil {
-			return nil, err
-		}
-		if private == nil {
-			private = &privateRepo
-		}
-		artifacts = append(artifacts, imageArtifact(path, tag, *private, endpoints))
-	}
-
-	hasImage := slices.ContainsFunc(artifacts, func(a Artifact) bool { return a.Kind == KindImage })
-	if content.HasDockerfile() && !hasImage {
-		return nil, usageErr("a Dockerfile exists at %s but no push job of the tag pipeline names an image (pipeline jobs: %s; architect push jobs in the configuration: %s): a job that pushes outside the architect orb (a plain docker push) cannot be read from the configuration, and the repository name is never taken for the image; name it with devctl release wait --image, e.g. --image %s/%s", short(sha), listOrNone(sortedKeys(pipelineJobs)), listOrNone(jobNames(jobs)), owner, repo)
-	}
-	return dedupe(artifacts), nil
+	return jobs, artifacts, nil
 }
 
 // namedImage reads an image the caller names: a repository path such as

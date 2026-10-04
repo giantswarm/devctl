@@ -165,6 +165,7 @@ func (r *runner) wait(ctx context.Context, args []string, doc *rolloutwait.Docum
 		KubeContext:  kubeContext,
 		Version:      doc.Release.Tag,
 		Charts:       charts,
+		HelmReleases: r.flag.HelmReleases,
 		Client:       client,
 		Timeout:      r.flag.Timeout,
 		Reconcile:    r.flag.Reconcile,

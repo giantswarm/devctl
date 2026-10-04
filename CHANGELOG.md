@@ -9,6 +9,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `rollout wait`: `--helmrelease <name>` or `<namespace>/<name>` (repeatable) also waits for a HelmRelease
+  whatever chart it deploys; a name no HelmRelease answers to is exit 3.
+
 - `pr merge`: the document names the merging identity in `mergedBy`, the login the token acts as (for a merge
   queue, the merger GitHub records); empty when nothing merged. A declined merge's reason names that login too
   (`devctl acts as <login>`), and a merge GitHub refuses for the token's permissions (403, such as a pull request
@@ -31,6 +34,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `release wait`, `rollout wait`: a generated pipeline's release includes the images and charts of the
+  architect push jobs in `.circleci/custom.yml` the tag pipeline runs. `rollout wait` for
+  giantswarm/agent-platform said `rolled_out` while the connectivity chart's HelmRelease, released off the same
+  tag, was still upgrading; it now waits for both HelmReleases.
 - `gen circleci`: the generated pipelines pin architect orb 10.12.0. A pre-release tag (`vX.Y.Z-rc.N`) pushes its
   chart to the repository's test catalog instead of the production one; the OCI push is unchanged. A release
   candidate no longer becomes the `latest` AppCatalogEntry on the management clusters, nor the version happa and
