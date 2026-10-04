@@ -9,6 +9,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `rollout wait --pr` on a pull request that releases nothing (a giantswarm-configs change) follows its merge
+  commit on the installation instead of answering `no_release` with an empty result: the Flux GitRepository
+  of the repository, the Kustomizations and Konfigurations that read it, and the HelmReleases that take the
+  values a Konfiguration renders for an app the pull request changed (or that `--helmrelease` names), rolled
+  out once each applied the merge commit; `revision` in the document carries it. Nothing on the installation
+  fetching the repository stays `no_release`, exit 3, saying so.
+- `release wait`, `rollout wait`: `--chart <path>` (repeatable) names a chart a hand-written tag pipeline
+  pushes outside the architect orb, at its own registry path with the bare version
+  (`--chart giantswarm/kagent/helm/kagent` for the kagent line); `rollout wait` then follows its
+  HelmReleases. A release of hand-written CI that ships no chart names `--chart` in its reason.
+
 - `rollout wait`: `--helmrelease <name>` or `<namespace>/<name>` (repeatable) also waits for a HelmRelease
   whatever chart it deploys; a name no HelmRelease answers to is exit 3.
 

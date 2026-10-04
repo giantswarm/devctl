@@ -174,7 +174,7 @@ func (w *Waiter) judgeHelmRelease(ctx context.Context, hr *unstructured.Unstruct
 	}
 	release, releaseNamespace := "", ""
 	if history, _, _ := unstructured.NestedSlice(hr.Object, "status", "history"); len(history) > 0 {
-		if h, ok := history[0].(map[string]any); ok && h["status"] == "deployed" {
+		if h, ok := history[0].(map[string]any); ok && h["status"] == statusDeployed {
 			v, _ := h["chartVersion"].(string)
 			d.RunningVersion = bare(v)
 			release, _ = h["name"].(string)
@@ -205,7 +205,7 @@ func (w *Waiter) judgeHelmRelease(ctx context.Context, hr *unstructured.Unstruct
 	if !admitted {
 		return d.set(StateNotFollowing, "%s follows %s, which excludes %s; runs %s", d.Source, src.follows, w.version, orNone(d.RunningVersion)), nil
 	}
-	if bare(str(hr, "status", "lastAttemptedRevision")) == w.version && (stalled.status == conditionTrue || (ready.status == "False" && helmReleaseFailures[ready.reason])) {
+	if bare(str(hr, "status", "lastAttemptedRevision")) == w.version && (stalled.status == conditionTrue || (ready.status == conditionFalse && helmReleaseFailures[ready.reason])) {
 		return d.set(StateFailed, "%s %s: %s", ready.reason, w.version, ready.message), nil
 	}
 	if src.ready.found && src.ready.status != conditionTrue {
@@ -228,7 +228,7 @@ func (w *Waiter) judgeWorkloads(ctx context.Context, d Deployment, namespace, re
 	if p := pending(list); p != "" {
 		return d.set(StateProgressing, "%s deployed, rolling out: %s", d.RunningVersion, p), nil
 	}
-	if d.RunningVersion != w.version {
+	if w.revision == "" && d.RunningVersion != w.version {
 		w.warnOnce(fmt.Sprintf("%s runs %s, newer than %s", d.id(), d.RunningVersion, w.version))
 	}
 	return d.set(StateRolledOut, ""), nil

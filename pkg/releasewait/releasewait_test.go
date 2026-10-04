@@ -49,6 +49,7 @@ type fixture struct {
 	warn func(string)
 	// images are the images named with --image.
 	images []string
+	charts []string
 }
 
 type entries struct{ fields *reposetup.Fields }
@@ -197,7 +198,7 @@ func run(t *testing.T, fx fixture) (Result, error) {
 	}
 	circleCalls := 0
 	config := Config{
-		Owner: testOwner, Repo: testRepo, Version: fx.version, PR: fx.pr, MergeCommitSHA: fx.mergeCommit, Timeout: fx.timeout, Catalog: fx.catalog, Images: fx.images,
+		Owner: testOwner, Repo: testRepo, Version: fx.version, PR: fx.pr, MergeCommitSHA: fx.mergeCommit, Timeout: fx.timeout, Catalog: fx.catalog, Images: fx.images, Charts: fx.charts,
 		GitHub:  ghClient,
 		Entries: entries{fx.entry},
 		CircleCI: func(context.Context) (CircleCI, error) {
@@ -673,6 +674,44 @@ func TestWaitHandWrittenImageNamedByFlag(t *testing.T) {
 	if len(result.Artifacts) != 1 || !strings.HasSuffix(result.Artifacts[0].Reference, "/giantswarm/dex:v1.2.3") || result.Artifacts[0].Private() {
 		t.Errorf("artifacts: want the public image giantswarm/dex:v1.2.3, the git tag as written, got %+v", result.Artifacts)
 	}
+}
+
+// A hand-written tag job that pushes a chart with helm itself
+// (giantswarm/kagent-upstream's push-charts, giantswarm/devctl#2472): the
+// chart named with --chart is probed at its own path with the bare version,
+// beside the image, and goes to no catalog.
+func TestWaitHandWrittenChartNamedByFlag(t *testing.T) {
+	github := baseGitHub([]string{"Dockerfile"}, []string{"zz_generated.create_release.yaml"}, []string{"config.yml"})
+	github[repoRoute("/contents/.circleci/config.yml")] = []sequence.Response{{Body: fileContent(".circleci/config.yml", handWrittenConfig)}}
+	fx := fixture{
+		github: github,
+		circleci: pipelineRoutes(
+			[][]map[string]any{{wf("w1", "build", "success", "2026-09-21T10:00:00Z")}},
+			map[string][]map[string]any{"w1": {job("build", "success")}},
+		),
+		registry: sequence.Routes{
+			"HEAD /v2/giantswarm/dex/manifests/v1.2.3":               {{Status: 200}},
+			"HEAD /v2/giantswarm/kagent/helm/kagent/manifests/1.2.3": {{Status: 404}, {Status: 200}},
+		},
+		images:  []string{"giantswarm/dex"},
+		charts:  []string{"giantswarm/kagent/helm/kagent"},
+		catalog: true,
+	}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+	if len(result.Artifacts) != 2 || result.Artifacts[1].Kind != KindChart || !strings.HasSuffix(result.Artifacts[1].Reference, "/giantswarm/kagent/helm/kagent:1.2.3") {
+		t.Errorf("artifacts: want the image and the chart giantswarm/kagent/helm/kagent:1.2.3, got %+v", result.Artifacts)
+	}
+}
+
+func TestNamedChart(t *testing.T) {
+	endpoints := agentcli.DefaultEndpoints()
+	path, private, err := namedChart("giantswarm/kagent/helm/kagent-crds", endpoints)
+	if err != nil || path != "giantswarm/kagent/helm/kagent-crds" || private != nil {
+		t.Errorf("namedChart = %q, %v, %v", path, private, err)
+	}
+	_, _, err = namedChart("giantswarm/kagent/helm/kagent:1.2.3", endpoints)
+	assertExit(t, err, agentcli.ExitUsage, "--chart \"giantswarm/kagent/helm/kagent:1.2.3\": name the chart without a tag or digest")
 }
 
 // --image on a generated pipeline: the artifacts are derived from the

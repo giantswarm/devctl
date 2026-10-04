@@ -3,6 +3,7 @@ package rolloutwait
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -33,13 +34,14 @@ var workloadKinds = []struct {
 }
 
 // workloads reads the Deployments, StatefulSets and DaemonSets of the Helm
-// release in namespace and judges each rollout the way kubectl rollout
-// status does. failed is the message of a Deployment past its progress
-// deadline, empty otherwise.
+// release of namespace, in every namespace (a chart may render its
+// workloads into another, as kagent's does), and judges each rollout the
+// way kubectl rollout status does. failed is the message of a Deployment
+// past its progress deadline, empty otherwise.
 func (w *Waiter) workloads(ctx context.Context, namespace, release string) (list []Workload, failed string, err error) {
 	list = []Workload{}
 	for _, k := range workloadKinds {
-		items, err := w.list(ctx, k.resource, namespace)
+		items, err := w.list(ctx, k.resource, "")
 		if err != nil {
 			return nil, "", err
 		}
@@ -155,13 +157,20 @@ func judgeDaemonSet(u *unstructured.Unstructured) judgement {
 	return judgement{ready: true}
 }
 
-// conditionTrue is the status of a condition that holds.
-const conditionTrue = "True"
+// The statuses of a condition that holds or does not, and of a deployed
+// Helm release.
+const (
+	conditionTrue  = "True"
+	conditionFalse = "False"
+	statusDeployed = "deployed"
+)
 
 // cond is one status condition.
 type cond struct {
 	found                   bool
 	status, reason, message string
+	// since is the lastTransitionTime; zero when absent or unreadable.
+	since time.Time
 }
 
 // condition reads the status condition of type t.
@@ -173,7 +182,8 @@ func condition(u *unstructured.Unstructured, t string) cond {
 			continue
 		}
 		s := func(k string) string { v, _ := m[k].(string); return v }
-		return cond{found: true, status: s("status"), reason: s("reason"), message: s("message")}
+		since, _ := time.Parse(time.RFC3339, s("lastTransitionTime"))
+		return cond{found: true, status: s("status"), reason: s("reason"), message: s("message"), since: since}
 	}
 	return cond{}
 }

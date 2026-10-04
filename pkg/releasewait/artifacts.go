@@ -274,10 +274,12 @@ func ParsePushJobs(config []byte) ([]PushJob, error) {
 // for it), each naming its image or the chart directory whose Chart.yaml
 // names the chart, and the images the caller names (--image) for a job that
 // pushes outside the architect orb, tagged with the git tag as written: such
-// a job pushes $CIRCLE_TAG, where the orb strips the v. A Dockerfile at the tag with no image
+// a job pushes $CIRCLE_TAG, where the orb strips the v, and the charts the
+// caller names (--chart) for a job that pushes them with helm itself,
+// tagged with the bare version as helm requires. A Dockerfile at the tag with no image
 // among them is a usage error naming --image; the repository name is never
 // taken for the image.
-func HandWrittenArtifacts(ctx context.Context, gh GitHub, owner, repo, sha, version, tag string, content TagContent, pipelineJobs map[string]bool, privateRepo bool, images []string, endpoints agentcli.Endpoints) ([]Artifact, error) {
+func HandWrittenArtifacts(ctx context.Context, gh GitHub, owner, repo, sha, version, tag string, content TagContent, pipelineJobs map[string]bool, privateRepo bool, images, charts []string, endpoints agentcli.Endpoints) ([]Artifact, error) {
 	jobs, artifacts, err := pushJobArtifacts(ctx, gh, owner, repo, sha, version, content, []string{circleCIConfig, circleCIWorkflows, circleCICustom}, pipelineJobs, privateRepo, endpoints)
 	if err != nil {
 		return nil, err
@@ -292,6 +294,16 @@ func HandWrittenArtifacts(ctx context.Context, gh GitHub, owner, repo, sha, vers
 			private = &privateRepo
 		}
 		artifacts = append(artifacts, imageArtifact(path, tag, *private, endpoints))
+	}
+	for _, name := range charts {
+		path, private, err := namedChart(name, endpoints)
+		if err != nil {
+			return nil, err
+		}
+		if private == nil {
+			private = &privateRepo
+		}
+		artifacts = append(artifacts, namedChartArtifact(path, version, *private, endpoints))
 	}
 
 	hasImage := slices.ContainsFunc(artifacts, func(a Artifact) bool { return a.Kind == KindImage })
@@ -362,6 +374,28 @@ func pushJobArtifacts(ctx context.Context, gh GitHub, owner, repo, sha, version 
 // which then decides the registry (private nil: the repository's
 // visibility does). A tag, a digest or another registry is a usage error.
 func namedImage(name string, endpoints agentcli.Endpoints) (path string, private *bool, err error) {
+	return namedPath("--image", "image", "giantswarm/dex", name, endpoints)
+}
+
+// namedChart reads a chart the caller names the way namedImage reads an
+// image: giantswarm/kagent/helm/kagent, optionally after a registry host.
+func namedChart(name string, endpoints agentcli.Endpoints) (path string, private *bool, err error) {
+	return namedPath("--chart", "chart", "giantswarm/kagent/helm/kagent", name, endpoints)
+}
+
+// namedChartArtifact is a chart --chart names, at its own repository path:
+// the chart is its last element, and it goes to no catalog.
+func namedChartArtifact(path, version string, private bool, endpoints agentcli.Endpoints) Artifact {
+	return Artifact{
+		Kind:      KindChart,
+		Reference: fmt.Sprintf("%s/%s:%s", registryHost(private, endpoints), path, version),
+		State:     StateMissing,
+		private:   private,
+		chart:     path[strings.LastIndex(path, "/")+1:],
+	}
+}
+
+func namedPath(flag, kind, example, name string, endpoints agentcli.Endpoints) (path string, private *bool, err error) {
 	path = name
 	for host, isPrivate := range map[string]bool{endpoints.RegistryPublic: false, endpoints.RegistryPrivate: true} {
 		if rest, ok := strings.CutPrefix(name, host+"/"); ok {
@@ -371,9 +405,9 @@ func namedImage(name string, endpoints agentcli.Endpoints) (path string, private
 	first, _, _ := strings.Cut(path, "/")
 	switch {
 	case !strings.Contains(path, "/") || strings.ContainsAny(first, ".:"):
-		return "", nil, usageErr("--image %q: name the image as <owner>/<name> (e.g. giantswarm/dex), optionally after %s or %s", name, endpoints.RegistryPublic, endpoints.RegistryPrivate)
+		return "", nil, usageErr("%s %q: name the %s as <owner>/<name> (e.g. %s), optionally after %s or %s", flag, name, kind, example, endpoints.RegistryPublic, endpoints.RegistryPrivate)
 	case strings.ContainsAny(path, ":@"):
-		return "", nil, usageErr("--image %q: name the image without a tag or digest; the release's version is the tag", name)
+		return "", nil, usageErr("%s %q: name the %s without a tag or digest; the release's version is the tag", flag, name, kind)
 	}
 	return path, private, nil
 }

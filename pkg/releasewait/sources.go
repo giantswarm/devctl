@@ -22,6 +22,9 @@ type Sources struct {
 	Registry     Prober
 	CatalogIndex CatalogReader
 	Rate         func() githubclient.RateLimit
+	// Client is the GitHub client behind GitHub, for what a rollout wait
+	// reads beyond the release (a configuration change's files).
+	Client *githubclient.Client
 }
 
 // OpenSources is the production wiring: the GitHub token through the gate,
@@ -58,5 +61,6 @@ func OpenSources(ctx context.Context, endpoints agentcli.Endpoints, transport ht
 		Registry:     RegistryProber{Endpoints: endpoints},
 		CatalogIndex: CatalogIndex{BaseURL: CatalogURLFromEnv()},
 		Rate:         conditional.Rate,
+		Client:       gh,
 	}, nil
 }
