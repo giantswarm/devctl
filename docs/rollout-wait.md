@@ -16,7 +16,7 @@ runs this one command instead of polling `kubectl get helmrelease` in a loop.
 devctl rollout wait myinstallation giantswarm/app-operator v7.5.4
 devctl rollout wait myinstallation giantswarm/app-operator --pr 1234 --reconcile --progress
 /home/teemow/.go/bin/beekeeper gate -- devctl rollout wait myinstallation giantswarm/kagent-upstream v1.2.4 --chart giantswarm/kagent/helm/kagent --chart giantswarm/kagent/helm/kagent-crds
-/home/teemow/.go/bin/beekeeper gate -- devctl rollout wait myinstallation giantswarm/giantswarm-configs --pr 946
+/home/teemow/.go/bin/beekeeper gate -- devctl rollout wait myinstallation giantswarm/giantswarm-configs --pr 1234
 ```
 
 ## What the command reads, and why
