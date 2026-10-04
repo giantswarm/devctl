@@ -45,7 +45,7 @@ func getFlatcarRelease(ctx context.Context, client objectGetter, config Config, 
 		}
 		return nil, microerror.Mask(err)
 	}
-	defer result.Body.Close()
+	defer func() { _ = result.Body.Close() }()
 
 	chinaVersionAMI, err := scrapeVersionAMI(result.Body)
 	if err != nil {
