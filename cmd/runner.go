@@ -65,7 +65,7 @@ func (r *runner) persistentPreRun(ctx context.Context, cmd *cobra.Command, args 
 	}
 	// An agent-facing command runs the gate itself and reports it in its
 	// document.
-	if agentcli.IsAgentFacing(cmd.Annotations) {
+	if agentcli.IsAgentFacing(cmd.Annotations) || versiongate.IsExempt(cmd.Annotations) {
 		return nil
 	}
 

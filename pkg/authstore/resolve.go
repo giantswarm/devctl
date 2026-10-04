@@ -86,7 +86,7 @@ func resolveGitHub(ctx context.Context, open func() (*Auth, error), envVars []st
 	if err != nil {
 		return Token{}, err
 	}
-	return a.requireGitHub(ctx, hintLoginGitHub)
+	return a.requireGitHub(ctx, hintLoginGitHub, 0)
 }
 
 // githubVars is envVars, or [GitHubEnvVars] when there are none.

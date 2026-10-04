@@ -391,3 +391,37 @@ func TestRenewGitHubConcurrentRunsRefreshOnce(t *testing.T) {
 		t.Fatalf("refresh called %d times, want 1", gh.tokenCalls.Load())
 	}
 }
+
+func TestRequireGitHubFor(t *testing.T) {
+	soon := Record{Login: "octocat", Token: "soon-token", ExpiresAt: testNow.Add(5 * time.Minute), RefreshToken: "ghr_old", RefreshExpiresAt: testNow.Add(30 * 24 * time.Hour)}
+	refresh := map[string]any{"access_token": "fresh-token", "expires_in": 28800, "refresh_token": "ghr_new", "refresh_token_expires_in": 15897600}
+
+	cases := []struct {
+		name         string
+		valid        time.Duration
+		wantToken    string
+		wantRefreshN int32
+	}{
+		{name: "valid long enough", valid: time.Minute, wantToken: "soon-token"},
+		{name: "expires within the window, refreshed", valid: 10 * time.Minute, wantToken: "fresh-token", wantRefreshN: 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			gh := newFakeGitHub(t, "octocat", refresh)
+			a, store, _ := newTestAuth(t, gh.server, nil, nil)
+			if err := store.Set(UserGitHub, soon); err != nil {
+				t.Fatal(err)
+			}
+			tok, err := a.RequireGitHubFor(context.Background(), tc.valid)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tok.Value != tc.wantToken {
+				t.Fatalf("token = %q, want %q", tok.Value, tc.wantToken)
+			}
+			if gh.tokenCalls.Load() != tc.wantRefreshN {
+				t.Fatalf("refresh called %d times, want %d", gh.tokenCalls.Load(), tc.wantRefreshN)
+			}
+		})
+	}
+}

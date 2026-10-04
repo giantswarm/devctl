@@ -5,10 +5,15 @@ CircleCI with your CircleCI token and reaches giantswarm-repo-manager with your 
 in the OS keychain: `devctl auth login` puts them there, `devctl auth status` shows what is there, and no
 command prints a token.
 
+An agent acts on GitHub with the same login and nothing else: `devctl auth exec` hands the App's
+short-lived user token to `gh` and any other program, so a person's long-lived `gh` login stays in their
+own shell and never enters an agent session.
+
 ## The GitHub token of every command
 
 | Command | GitHub token |
 |---|---|
+| `auth exec` and the `gh` link | the App login; `gh` on a repository of an owner the App is not installed on keeps your own `gh` login |
 | `deploy`, `pr approve-align`, `pr approve-merge-renovate`, `release create`, `release promote` | the App login; a token in the environment overrides it |
 | the version check that precedes every command, `version check`, `version update`, `repo validate` | the same, optional and looked up only when GitHub is asked (never while the one-hour version cache is fresh): without one a public read is anonymous (`repo validate`: the embedded schema, repository names unchecked) |
 | `pr wait`, `pr merge`, `release wait`, `rollout wait` | the App login only (`rollout wait` reads the installation with your kube context) |
@@ -39,8 +44,8 @@ token`. `devctl auth status` shows the same warning.
 **In CI** (`CI` set to any value) the keychain is never read and nothing warns: the variable is the only
 source. A command that needs a token and finds none exits 8 naming the variables to set.
 
-**The exceptions.** The App can write contents and pull requests and read actions, checks, statuses and
-metadata, nothing else, and it does not gain more:
+**The exceptions.** The App carries the agent permission set below, nothing else; the commands that need
+more act with another token:
 
 - `pr wait`, `pr merge` and `release wait` take their GitHub token from the keychain and from nowhere
   else: no environment variable, no `gh auth token`, no file. They exit 8 naming `devctl auth login`
@@ -52,6 +57,72 @@ metadata, nothing else, and it does not gain more:
 - `release promote` dispatches the auto-release workflow, which needs Actions write: the App carries it, so the
   login dispatches wherever you may run the workflow yourself. The document's `identity` names the token's source
   and, for the login, its account.
+
+## The agent permission set
+
+The `giantswarm-devctl` App's permissions are the complete set of what an agent does on GitHub. A user
+token is capped twice: by these permissions and by the person's own rights, so the App gives nobody more
+than they already have. GitHub attributes every action to the person and records the App in the audit
+log on every request, which separates an agent's actions from the person's own.
+
+| Agent action | Permission |
+|---|---|
+| Read repositories, pull requests, checks, statuses, workflow runs and logs, issues | metadata, contents, checks, statuses, actions: read |
+| Comment on issues and pull requests, open and edit issues | issues, pull requests: write |
+| Open or update a pull request | pull requests: write |
+| Push a branch, `.github/workflows` included | contents, workflows: write |
+| Merge through the ruleset bypass (`pr merge`): GitHub evaluates the merge as the person, so the owning team's or the admins' bypass applies | contents, pull requests: write |
+| Release: dispatch a workflow (`release promote`); the tag itself comes from the auto-release workflow's own token | actions, contents: write |
+| Approve and re-run workflow runs | actions: write |
+| Write the organization's project boards (Projects v2) | organization projects: write |
+
+**Not an agent action:** administration (branch protection, rulesets, settings, webhooks, deploy keys,
+repository creation). It stays with giantswarm-repo-manager, its own App reached through the `repo`
+commands, or with a person in their own shell.
+
+The App is installed on the giantswarm organization only. `gh` through devctl therefore acts with the
+App token for giantswarm's repositories and wherever no repository is named, and keeps the person's own
+`gh` login for a repository of another owner, which the App cannot reach (below).
+
+## `devctl auth exec`
+
+```nohighlight
+devctl auth exec -- gh api user
+devctl auth exec -- gh pr comment 42 --repo giantswarm/devctl --body "..."
+```
+
+Runs a command with the App login's token in `$GH_TOKEN`, which `gh` reads in preference to its own
+login. The token is the keychain's, refreshed first when it expires within ten minutes, so a command never
+starts on a token that dies under it; devctl hands it to the command's environment and never prints it.
+devctl replaces itself with the command: the exit code, signals and terminal are the command's. Without a
+usable login it exits 8 with one line on stderr naming `devctl auth login --github-only`; a command not
+found is exit 7. Environment variables do not override the keychain here, and no version check precedes
+it: an outdated devctl still hands over the token, so a devctl release never stops an agent's `gh`.
+
+**The `gh` link.** devctl started under the name `gh` (a link to it) is `devctl auth exec -- gh`: it runs
+the next `gh` on `PATH` that is not devctl itself. An agent environment puts such a link in a directory
+first on the agent's `PATH`:
+
+```nohighlight
+mkdir -p ~/.local/share/devctl/agent-bin
+ln -s "$(command -v devctl)" ~/.local/share/devctl/agent-bin/gh
+# in the agent's shell only, never the person's own:
+export PATH="$HOME/.local/share/devctl/agent-bin:$PATH"
+```
+
+**The owner rule.** `gh` acting on a repository of an owner the App is not installed on runs without the
+token, on the person's own `gh` login: the App does not reach that repository. The repository is the one
+gh acts on: `--repo`/`-R`, `$GH_REPO`, a `repos/<owner>/…` or `orgs/<owner>/…` endpoint of `gh api`, the
+URL or repository argument of `gh pr|issue|run|release|repo|workflow`, else the working directory's
+repository as gh resolves it (`gh repo set-default`, then the remotes `upstream`, `github`, `origin`).
+Everything else (a giantswarm repository, `gh api user`, `gh api graphql`, `gh search`) acts with the App
+token.
+
+Every `gh` the agent runs, also from scripts and subprocesses, then acts by that rule, and
+`devctl version update` replacing the binary keeps the link working. `gh auth status` in such a shell
+names `GH_TOKEN` as the source; `gh api user/installations` answers only for an App user token and names
+`giantswarm-devctl`. `git` over SSH keeps its SSH key; a `git` whose credential helper is `gh auth
+git-credential` resolved through `PATH` uses the App token too.
 
 ## `devctl auth login`
 
