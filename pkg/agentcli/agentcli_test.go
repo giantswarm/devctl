@@ -144,6 +144,42 @@ func TestClockSleepHonoursContext(t *testing.T) {
 	}
 }
 
+// A virtual clock's time passes only in Sleep: a Timeout ends when the sleeps
+// reach it, never while the caller works between them.
+func TestVirtualClock(t *testing.T) {
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	c := NewVirtualClock(start)
+	ctx, cancel := c.Timeout(context.Background(), 45*time.Second)
+	defer cancel()
+
+	time.Sleep(10 * time.Millisecond)
+	if ctx.Err() != nil {
+		t.Fatal("the timeout ended without a sleep")
+	}
+	for range 2 {
+		if err := c.Sleep(ctx, 15*time.Second); err != nil {
+			t.Fatalf("Sleep before the deadline = %v", err)
+		}
+	}
+	if got := c.Now(); got != start.Add(30*time.Second) {
+		t.Fatalf("Now = %s", got)
+	}
+	if err := c.Sleep(ctx, 15*time.Second); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Sleep reaching the deadline = %v", err)
+	}
+	if err := c.Sleep(ctx, time.Hour); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Sleep after the deadline = %v", err)
+	}
+	if got := c.Now(); got != start.Add(45*time.Second) {
+		t.Fatalf("a sleep after the deadline moved Now to %s", got)
+	}
+	if expired, cancel := c.Timeout(context.Background(), 0); expired.Err() == nil {
+		t.Fatal("a zero timeout did not end at once")
+	} else {
+		cancel()
+	}
+}
+
 func TestEndpointsFromEnv(t *testing.T) {
 	for _, key := range []string{EnvGitHubAPIURL, EnvGitHubOAuthURL, EnvCircleCIAPIURL, EnvCircleCIOAuthURL, EnvRegistryPublic, EnvRegistryPrivate, EnvRegistryInsecure, EnvKeyringFile} {
 		t.Setenv(key, "")
