@@ -217,18 +217,18 @@ func TestRevisionGlobalChangeWarns(t *testing.T) {
 
 func TestAffectedApps(t *testing.T) {
 	apps, global := AffectedApps([]string{
-		"installations/glean/apps/agent-platform/configmap-values.yaml.patch",
+		"installations/myinstallation/apps/agent-platform/configmap-values.yaml.patch",
 		"default/apps/muster/configmap-values.yaml.template",
-		"installations/gazelle/apps/backstage/configmap-values.yaml.patch",
-		"installations/glean/config.yaml.patch",
+		"installations/other/apps/backstage/configmap-values.yaml.patch",
+		"installations/myinstallation/config.yaml.patch",
 		"default/config.yaml",
 		".github/workflows/gitleaks.yaml",
 		"README.md",
-	}, "glean")
+	}, "myinstallation")
 	if len(apps) != 2 || !apps["agent-platform"] || !apps["muster"] {
 		t.Errorf("apps: %v", apps)
 	}
-	if !slices.Equal(global, []string{"installations/glean/config.yaml.patch", "default/config.yaml"}) {
+	if !slices.Equal(global, []string{"installations/myinstallation/config.yaml.patch", "default/config.yaml"}) {
 		t.Errorf("global: %v", global)
 	}
 }
