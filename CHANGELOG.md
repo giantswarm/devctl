@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- The generated pre-commit `golangci-lint` hook no longer passes `--timeout=300s`, which timed out on larger repositories; a repository sets `run.timeout` in its `.golangci.yml` ([#2484](https://github.com/giantswarm/devctl/issues/2484)).
+
 ### Added
 
 - `pr approve-align-files --team <name>`: sweeps every open bot-authored Align files PR in the repositories of

@@ -54,8 +54,8 @@ repos:
           - -E=gosec
           - -E=goconst
           - -E=govet
-          # timeout is needed for CI
-          - --timeout=300s
+          # No --timeout: golangci-lint v2 has none by default and a flag would
+          # override a repo's `run.timeout` in .golangci.yml, its place to set one.
           # List all issues found
           - --max-same-issues=0
           - --max-issues-per-linter=0
