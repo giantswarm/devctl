@@ -196,7 +196,7 @@ func run(t *testing.T, fx fixture) (Result, error) {
 		Registry:     RegistryProber{Endpoints: endpoints},
 		CatalogIndex: catalog{fx.catalogLists, fx.catalogChart, fx.catalogName},
 		Endpoints:    endpoints,
-		Clock:        agentcli.NewClock(0.001, nil),
+		Clock:        agentcli.NewVirtualClock(time.Now()),
 		Rate:         conditional.Rate,
 		Warn:         fx.warn,
 	}
