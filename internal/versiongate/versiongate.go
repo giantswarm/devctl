@@ -91,3 +91,18 @@ func githubToken(warnings io.Writer) func(context.Context) (string, error) {
 		return token.Value, nil
 	}
 }
+
+// annotation marks a command the gate does not precede.
+const annotation = "devctl.giantswarm.io/no-version-gate"
+
+// Exempt is the annotation of a command that runs without the gate: one that
+// hands another program what it needs (`auth exec`), where an outdated
+// devctl must not stop that program.
+func Exempt() map[string]string {
+	return map[string]string{annotation: "true"}
+}
+
+// IsExempt reports whether a command's annotations carry [Exempt].
+func IsExempt(annotations map[string]string) bool {
+	return annotations[annotation] == "true"
+}

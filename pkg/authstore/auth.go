@@ -184,6 +184,16 @@ func RequireGitHub(ctx context.Context) (Token, error) {
 	return a.RequireGitHub(ctx)
 }
 
+// RequireGitHubFor is [Auth.RequireGitHubFor] against the environment's
+// store: the GitHub token, valid for at least valid.
+func RequireGitHubFor(ctx context.Context, valid time.Duration) (Token, error) {
+	a, err := Open(nil)
+	if err != nil {
+		return Token{}, err
+	}
+	return a.RequireGitHubFor(ctx, valid)
+}
+
 // RenewGitHubToken is the value of [Auth.RenewGitHub] against the
 // environment's store: what a GitHub client that got 401 for rejected sends
 // its request with again (githubclient.Config.Renew).
