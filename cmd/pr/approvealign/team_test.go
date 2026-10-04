@@ -9,9 +9,9 @@ import (
 
 func issue(repo, title, login, userType string) *github.Issue {
 	return &github.Issue{
-		Title:   github.Ptr(title),
-		HTMLURL: github.Ptr("https://github.com/giantswarm/" + repo + "/pull/1"),
-		User:    &github.User{Login: github.Ptr(login), Type: github.Ptr(userType)},
+		Title:   new(title),
+		HTMLURL: new("https://github.com/giantswarm/" + repo + "/pull/1"),
+		User:    &github.User{Login: new(login), Type: new(userType)},
 	}
 }
 
@@ -33,8 +33,8 @@ func TestSelectTeamPRs(t *testing.T) {
 }
 
 func TestMissingContexts(t *testing.T) {
-	combined := &github.CombinedStatus{Statuses: []*github.RepoStatus{{Context: github.Ptr("ci/circleci: build")}}}
-	runs := &github.ListCheckRunsResults{CheckRuns: []*github.CheckRun{{Name: github.Ptr("pre-commit")}}}
+	combined := &github.CombinedStatus{Statuses: []*github.RepoStatus{{Context: new("ci/circleci: build")}}}
+	runs := &github.ListCheckRunsResults{CheckRuns: []*github.CheckRun{{Name: new("pre-commit")}}}
 
 	got := missingContexts([]string{"ci/circleci: build", "pre-commit", "go-test", "gitleaks"}, combined, runs)
 	want := []string{"go-test", "gitleaks"}
