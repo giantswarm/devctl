@@ -7,6 +7,7 @@ import (
 	"github.com/giantswarm/microerror"
 	"github.com/spf13/cobra"
 
+	authexec "github.com/giantswarm/devctl/v8/cmd/auth/exec"
 	"github.com/giantswarm/devctl/v8/cmd/auth/login"
 	"github.com/giantswarm/devctl/v8/cmd/auth/status"
 )
@@ -57,6 +58,14 @@ func New(config Config) (*cobra.Command, error) {
 		}
 	}
 
+	var execCmd *cobra.Command
+	{
+		execCmd, err = authexec.New(authexec.Config{Stderr: config.Stderr})
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+	}
+
 	c := &cobra.Command{
 		Use:   name,
 		Short: description,
@@ -68,6 +77,7 @@ func New(config Config) (*cobra.Command, error) {
 
 	c.AddCommand(loginCmd)
 	c.AddCommand(statusCmd)
+	c.AddCommand(execCmd)
 
 	return c, nil
 }
