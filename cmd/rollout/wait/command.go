@@ -20,7 +20,8 @@ const (
 The wait has two parts. The release first, exactly as devctl release wait
 does it (a version, or --pr for the tag auto-release put on the merge
 commit): its images and charts pullable, its tag pipeline green. The
-release names the charts. Then the installation's management cluster,
+release names the charts, a second chart its custom.yml pushes off the same
+tag included. Then the installation's management cluster,
 read through the kube context tsh kube login writes
 (teleport.giantswarm.io-<installation>, or --context), as you:
 
@@ -28,6 +29,10 @@ read through the kube context tsh kube login writes
                whose URL ends in the chart's name, a HelmChart, or
                spec.chart) serves one of the charts
   App          every App CR whose spec.name is one of the charts
+
+and every HelmRelease --helmrelease names (<name> or <namespace>/<name>,
+repeatable) whatever chart it deploys; a name no HelmRelease answers to is
+exit 3.
 
 A deployment has rolled out when it runs the version or a newer one
 (status.history of the HelmRelease, status.version and a deployed release

@@ -104,6 +104,9 @@ func baseGitHub(root, workflows, circleci []string) sequence.Routes {
 	if circleci != nil {
 		routes[repoRoute("/contents/.circleci")] = []sequence.Response{{Body: dirListing(circleci...)}}
 	}
+	if slices.Contains(circleci, "custom.yml") {
+		routes[repoRoute("/contents/.circleci/custom.yml")] = []sequence.Response{{Body: fileContent(".circleci/custom.yml", ownTagJob)}}
+	}
 	if slices.Contains(root, "helm") {
 		routes = withChart(routes, testRepo, testRepo)
 	}
@@ -111,6 +114,14 @@ func baseGitHub(root, workflows, circleci []string) sequence.Routes {
 }
 
 // withChart scripts helm/<dir>/Chart.yaml at the tag, declaring name.
+// ownTagJob is a custom.yml whose tag job is the repository's own, opaque
+// to the wait: vm-manager's guest-image job.
+const ownTagJob = `workflows:
+  build:
+    jobs:
+    - guest-image
+`
+
 func withChart(routes sequence.Routes, dir, name string) sequence.Routes {
 	path := "helm/" + dir + "/Chart.yaml"
 	routes[repoRoute("/contents/"+path)] = []sequence.Response{{Body: fileContent(path, "apiVersion: v2\nname: "+name+"\nversion: [[ .Version ]]\n")}}
@@ -504,6 +515,59 @@ func TestWaitGeneratedChartDirectoryAndNameDiffer(t *testing.T) {
 	assertExit(t, err, agentcli.ExitOK, "")
 	if len(result.Artifacts) != 1 || !strings.HasSuffix(result.Artifacts[0].Reference, "/charts/giantswarm/kserve:1.2.3") {
 		t.Errorf("artifacts: %+v", result.Artifacts)
+	}
+}
+
+// A generated pipeline whose custom.yml pushes a second chart off the same
+// tag (giantswarm/agent-platform's connectivity chart): the wait expects the
+// chart of the custom job the tag pipeline runs, not the branch-only one.
+func TestWaitGeneratedCustomPushJobAddsItsChart(t *testing.T) {
+	entry := fieldsFromYAML(t, `- name: kserve
+  gen:
+    flavours: [app]
+    language: generic
+    ci:
+      generate: true
+`)
+	custom := `workflows:
+  build:
+    jobs:
+    - architect/push-to-app-catalog:
+        name: push-connectivity-branch
+        app_catalog: giantswarm-catalog
+        chart: kserve-connectivity
+        filters:
+          branches:
+            ignore: [main]
+    - architect/push-to-app-catalog:
+        name: push-connectivity-tag
+        app_catalog: giantswarm-catalog
+        chart: kserve-connectivity
+`
+	github := baseGitHub([]string{"README.md", "helm"}, []string{"zz_generated.auto_release.yaml"}, []string{"config.yml", "workflows.yml", "custom.yml"})
+	github[repoRoute("/contents/.circleci/custom.yml")] = []sequence.Response{{Body: fileContent(".circleci/custom.yml", custom)}}
+	fx := fixture{
+		entry:  &entry,
+		github: withChart(github, "kserve-connectivity", "kserve-connectivity"),
+		circleci: pipelineRoutes([][]map[string]any{
+			{wf("w1", "build", "running", "2026-09-21T10:00:00Z")},
+			{wf("w1", "build", "success", "2026-09-21T10:00:00Z")},
+		},
+			map[string][]map[string]any{"w1": {job("push-chart-release", "success"), job("push-connectivity-tag", "success")}}),
+		registry: sequence.Routes{
+			"HEAD /v2/charts/giantswarm/kserve/manifests/1.2.3":              {{Status: 200}},
+			"HEAD /v2/charts/giantswarm/kserve-connectivity/manifests/1.2.3": {{Status: 404}, {Status: 200}},
+		},
+	}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+	var refs []string
+	for _, a := range result.Artifacts {
+		refs = append(refs, a.Kind+" "+a.Reference[strings.Index(a.Reference, "/"):]+" "+a.State)
+	}
+	want := "chart /charts/giantswarm/kserve:1.2.3 available\nchart /charts/giantswarm/kserve-connectivity:1.2.3 available"
+	if strings.Join(refs, "\n") != want {
+		t.Errorf("artifacts:\n want %s\n got  %s", want, strings.Join(refs, "\n"))
 	}
 }
 

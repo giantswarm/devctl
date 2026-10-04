@@ -4,8 +4,9 @@
 // tag triggers, minutes later, under names the repository's CI decides. The
 // package reads those names from the sources that define them and never
 // from the repository name: for generated CI from the team-file entry the
-// generator renders (the `image.name` override included), for hand-written
-// CI from the push jobs of the tag pipeline matched with the tag's CircleCI
+// generator renders (the `image.name` override included) plus the push jobs
+// of the repository's custom.yml the tag pipeline runs, for hand-written CI
+// from the push jobs of the tag pipeline matched with the tag's CircleCI
 // configuration. When the sources disagree, or yield nothing while a
 // Dockerfile exists at the tag, the wait ends with the disagreement instead
 // of a guess.
@@ -15,7 +16,7 @@
 // stale docker login cannot produce a false UNAUTHORIZED), the private one
 // with the docker keychain, and every workflow of the tag pipeline, the
 // newest run per workflow name, finished green. The names cover what devctl
-// renders or the orb pushes, not a repository's own tag jobs, so the
+// renders or the orb pushes, not a repository's own jobs outside the orb, so the
 // pipeline is what says the release is complete. A failed or cancelled
 // workflow ends the wait as the tag's CI failure with the failed jobs; a
 // repository without CircleCI is judged by the Actions runs the tag
@@ -279,6 +280,7 @@ func (w *Waiter) wait(ctx context.Context, result *Result) error {
 			return err
 		}
 		plan.setArtifacts(result, artifacts)
+		plan.custom = content.HasCustomCircleCI()
 	case CIModelNone:
 		// Nothing to derive: no CircleCI means no image and no chart.
 		plan.setArtifacts(result, nil)
@@ -318,6 +320,9 @@ type plan struct {
 	// derived says the expected artifacts are known; hand-written CI
 	// derives them from the tag pipeline's jobs once those exist.
 	derived bool
+	// custom says a generated pipeline's custom.yml push jobs are still to
+	// be matched with the tag pipeline's jobs, once those exist.
+	custom bool
 	// releaseAssets: no image and no chart; the wait is on the published
 	// release and the tag's workflows.
 	releaseAssets bool
@@ -337,9 +342,21 @@ func (p *plan) setArtifacts(result *Result, artifacts []Artifact) {
 	}
 	result.Artifacts = artifacts
 	p.derived = true
-	p.releaseAssets = len(artifacts) == 0
+	p.index(result)
+}
+
+// addArtifacts adds the artifacts of a generated pipeline's custom.yml to
+// those the entry names.
+func (p *plan) addArtifacts(result *Result, artifacts []Artifact) {
+	result.Artifacts = dedupe(append(result.Artifacts, artifacts...))
+	p.custom = false
+	p.index(result)
+}
+
+func (p *plan) index(result *Result) {
+	p.releaseAssets = len(result.Artifacts) == 0
 	p.charts = nil
-	for _, a := range artifacts {
+	for _, a := range result.Artifacts {
 		if a.Kind == KindChart {
 			p.charts = append(p.charts, chartArtifact{name: a.chart, catalog: a.catalog, catalogTest: a.catalogTest})
 		}
@@ -371,6 +388,16 @@ func (w *Waiter) loop(ctx context.Context, result *Result, p *plan) error {
 				w.progress.Printf("expecting %s %s", a.Kind, a.Reference)
 			}
 		}
+		if p.custom && state.jobs != nil {
+			artifacts, err := CustomArtifacts(ctx, w.config.GitHub, owner, repo, result.SHA, p.version, *p.content, state.jobs, p.private, w.config.Endpoints)
+			if err != nil {
+				return err
+			}
+			p.addArtifacts(result, artifacts)
+			for _, a := range artifacts {
+				w.progress.Printf("expecting %s %s (%s/%s)", a.Kind, a.Reference, circleCIDir, circleCICustom)
+			}
+		}
 
 		if p.derived {
 			if err := w.probe(ctx, result, p); err != nil {
@@ -380,7 +407,7 @@ func (w *Waiter) loop(ctx context.Context, result *Result, p *plan) error {
 
 		done := false
 		switch {
-		case !p.derived:
+		case !p.derived || p.custom:
 		case p.releaseAssets:
 			done, err = w.releasePublished(ctx, result, state)
 			if err != nil {
@@ -388,9 +415,9 @@ func (w *Waiter) loop(ctx context.Context, result *Result, p *plan) error {
 			}
 		default:
 			// The artifacts the sources name are not the whole release: a
-			// repository's own tag jobs (custom.yml) push more, and a job
-			// signs what it pushed after the digest resolves. The release is
-			// out when the tag pipeline is green as well.
+			// repository's own tag jobs outside the architect orb push more,
+			// and a job signs what it pushed after the digest resolves. The
+			// release is out when the tag pipeline is green as well.
 			done = allAvailable(result.Artifacts)
 			if done && !state.green {
 				w.progress.Printf("every artifact is available; %s", stillRunning(result.Pipeline))

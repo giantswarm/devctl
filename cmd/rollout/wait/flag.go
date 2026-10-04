@@ -17,6 +17,7 @@ type flag struct {
 	ReleaseTimeout time.Duration
 	Reconcile      bool
 	Images         []string
+	HelmReleases   []string
 	Progress       bool
 }
 
@@ -27,5 +28,6 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().DurationVar(&f.ReleaseTimeout, "release-timeout", releasewait.DefaultTimeout, "How long to wait for the release to be available first before exit 2; scaled by DEVCTL_TIME_SCALE")
 	cmd.Flags().BoolVar(&f.Reconcile, "reconcile", false, "Ask Flux to reconcile the sources and HelmReleases that are behind once (sets reconcile.fluxcd.io/requestedAt), instead of waiting for their interval")
 	cmd.Flags().StringSliceVar(&f.Images, "image", nil, releasewait.ImageFlagUsage)
+	cmd.Flags().StringSliceVar(&f.HelmReleases, "helmrelease", nil, "Also wait for this HelmRelease, <name> or <namespace>/<name>, whatever chart it deploys (repeatable); exit 3 when none answers to the name")
 	agentcli.ProgressFlag(cmd, &f.Progress)
 }

@@ -36,7 +36,7 @@ type source struct {
 }
 
 // helmReleases returns the HelmReleases on the cluster that deploy one of
-// the charts, judged against the version.
+// the charts or that --helmrelease names, judged against the version.
 func (w *Waiter) helmReleases(ctx context.Context) ([]Deployment, error) {
 	sources := map[string]*unstructured.Unstructured{}
 	for _, r := range []struct {
@@ -62,7 +62,13 @@ func (w *Waiter) helmReleases(ctx context.Context) ([]Deployment, error) {
 	for i := range items {
 		hr := &items[i]
 		src, ok := sourceOf(hr, sources)
-		if !ok || !w.charts[src.chart] {
+		named := w.named(hr.GetNamespace(), hr.GetName())
+		if !named && (!ok || !w.charts[src.chart]) {
+			continue
+		}
+		if !ok {
+			d := Deployment{Kind: KindHelmRelease, Namespace: hr.GetNamespace(), Name: hr.GetName(), Workloads: []Workload{}}
+			list = append(list, d.set(StateProgressing, "its chart source does not exist yet"))
 			continue
 		}
 		d, err := w.judgeHelmRelease(ctx, hr, src)

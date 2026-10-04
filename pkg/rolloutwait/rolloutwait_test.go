@@ -84,10 +84,10 @@ func newClient(objects ...runtime.Object) *dynamicfake.FakeDynamicClient {
 	return dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), ListKinds(), objects...)
 }
 
-func wait(t *testing.T, client *dynamicfake.FakeDynamicClient, reconcile bool) run {
+func wait(t *testing.T, client *dynamicfake.FakeDynamicClient, reconcile bool, options ...func(*Config)) run {
 	t.Helper()
 	r := run{client: client, result: NewResult("myinstallation", ContextPrefix+"myinstallation")}
-	w, err := New(Config{
+	config := Config{
 		Installation: "myinstallation",
 		KubeContext:  ContextPrefix + "myinstallation",
 		Version:      "v0.48.1",
@@ -97,7 +97,11 @@ func wait(t *testing.T, client *dynamicfake.FakeDynamicClient, reconcile bool) r
 		Reconcile:    reconcile,
 		Clock:        agentcli.NewClock(0.0001, nil),
 		Warn:         func(m string) { r.warnings = append(r.warnings, m) },
-	})
+	}
+	for _, o := range options {
+		o(&config)
+	}
+	w, err := New(config)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -335,4 +339,104 @@ func TestUnauthorizedClusterIsExit8(t *testing.T) {
 	})
 	r := wait(t, client, false)
 	wantExit(t, r, agentcli.ExitAuthRequired, "tsh kube login myinstallation")
+}
+
+// companion is a second chart released off the same tag and pinned to the
+// release's exact version (giantswarm/agent-platform's connectivity chart),
+// deployed by a HelmRelease of its own.
+const companion = chart + "-connectivity"
+
+func companionSource() *unstructured.Unstructured {
+	u := ociRepository(map[string]any{"semver": "0.48.1"})
+	u.SetName(companion)
+	_ = unstructured.SetNestedField(u.Object, "oci://gsoci.azurecr.io/charts/giantswarm/"+companion, "spec", "url")
+	return u
+}
+
+func companionRelease(running string) *unstructured.Unstructured {
+	u := helmRelease(running, nil)
+	u.SetName(companion)
+	_ = unstructured.SetNestedField(u.Object, companion, "spec", "chartRef", "name")
+	// Its Helm release is its own: the fixture's Deployment is not one of
+	// its workloads.
+	history, _, _ := unstructured.NestedSlice(u.Object, "status", "history")
+	if len(history) > 0 {
+		history[0].(map[string]any)["name"] = companion
+		_ = unstructured.SetNestedSlice(u.Object, history, "status", "history")
+	}
+	return u
+}
+
+func withCharts(charts ...string) func(*Config) {
+	return func(c *Config) { c.Charts = charts }
+}
+
+// The release's second HelmRelease upgrades minutes after the first: the
+// wait is rolled out only once both run the version.
+func TestSecondHelmReleaseLaggingKeepsTheWaitOpen(t *testing.T) {
+	client := newClient(ociRepository(map[string]any{"semver": ">=0.17.0"}), companionSource(), deployment(2))
+	polls := 0
+	client.PrependReactor("list", "helmreleases", func(k8stesting.Action) (bool, runtime.Object, error) {
+		polls++
+		lagging := "0.48.0"
+		if polls > 2 {
+			lagging = "0.48.1"
+		}
+		list := &unstructured.UnstructuredList{Object: map[string]any{"apiVersion": "helm.toolkit.fluxcd.io/v2", "kind": "HelmReleaseList"}}
+		list.Items = []unstructured.Unstructured{*helmRelease("0.48.1", nil), *companionRelease(lagging)}
+		return true, list, nil
+	})
+	r := wait(t, client, false, withCharts(chart, companion))
+	wantExit(t, r, agentcli.ExitOK, "")
+	if polls != 3 {
+		t.Errorf("want 3 polls, got %d", polls)
+	}
+	if len(r.result.Deployments) != 2 {
+		t.Fatalf("deployments: %+v", r.result.Deployments)
+	}
+	for _, d := range r.result.Deployments {
+		if d.State != StateRolledOut || d.RunningVersion != "0.48.1" {
+			t.Errorf("deployment: %+v", d)
+		}
+	}
+}
+
+func TestSecondHelmReleaseNeverUpgradingIsATimeoutNamingIt(t *testing.T) {
+	client := newClient(ociRepository(map[string]any{"semver": ">=0.17.0"}), helmRelease("0.48.1", nil), deployment(2), companionSource(), companionRelease("0.48.0"))
+	r := wait(t, client, false, withCharts(chart, companion))
+	wantExit(t, r, agentcli.ExitTimeout, "HelmRelease flux-giantswarm/"+companion+": runs 0.48.0")
+	states := map[string]string{}
+	for _, d := range r.result.Deployments {
+		states[d.Name] = d.State
+	}
+	if states[chart] != StateRolledOut || states[companion] != StateProgressing {
+		t.Errorf("states: %v", states)
+	}
+}
+
+// --helmrelease adds a HelmRelease the release's charts do not name.
+func TestNamedHelmReleaseIsWaitedFor(t *testing.T) {
+	client := newClient(ociRepository(map[string]any{"semver": ">=0.17.0"}), helmRelease("0.48.1", nil), deployment(2), companionSource(), companionRelease("0.48.0"))
+	for _, name := range []string{companion, "flux-giantswarm/" + companion} {
+		r := wait(t, client, false, func(c *Config) { c.HelmReleases = []string{name} })
+		wantExit(t, r, agentcli.ExitTimeout, "HelmRelease flux-giantswarm/"+companion)
+		if len(r.result.Deployments) != 2 {
+			t.Errorf("%s: deployments: %+v", name, r.result.Deployments)
+		}
+	}
+}
+
+func TestNamedHelmReleaseMissingIsNotApplicable(t *testing.T) {
+	client := newClient(ociRepository(map[string]any{"semver": ">=0.17.0"}), helmRelease("0.48.1", nil), deployment(2))
+	r := wait(t, client, false, func(c *Config) { c.HelmReleases = []string{"other/" + companion} })
+	wantExit(t, r, agentcli.ExitNotApplicable, "no HelmRelease other/"+companion+" on myinstallation")
+}
+
+func TestNamedHelmReleaseMalformedIsUsage(t *testing.T) {
+	for _, name := range []string{"", "/x", "x/", "a/b/c"} {
+		_, err := New(Config{Client: newClient(), Charts: []string{chart}, HelmReleases: []string{name}})
+		if agentcli.Exit(err) != agentcli.ExitUsage {
+			t.Errorf("%q: want exit %d, got %v", name, agentcli.ExitUsage, err)
+		}
+	}
 }
