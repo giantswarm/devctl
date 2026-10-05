@@ -19,6 +19,16 @@ keyring:
     expiresAt: "2099-01-01T00:00:00Z"
 github:
   routes:
+    "GET /repos/giantswarm/devctl/pulls/42/reviews":
+      - body: []
+    "GET /repos/giantswarm/devctl/pulls/42/comments":
+      - body: []
+    "GET /repos/giantswarm/devctl/issues/42/comments":
+      - body: []
+    "GET /repos/giantswarm/devctl/git/commits/abc123":
+      - body: {sha: abc123, committer: {date: "2026-09-21T09:59:00Z"}}
+    "GET /repos/giantswarm/devctl/git/commits/def456":
+      - body: {sha: def456, committer: {date: "2026-09-21T09:59:00Z"}}
     "GET /repos/giantswarm/devctl/pulls/42":
       - body:
           number: 42

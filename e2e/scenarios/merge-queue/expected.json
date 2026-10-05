@@ -32,6 +32,7 @@
     "method": "squash",
     "branchDeleted": true,
     "enqueued": true,
+    "unansweredReviews": [],
     "release": {
       "verdict": "no_release",
       "reason": "giantswarm/devctl releases through the legacy workflow, which does not tag the merge commit of #42: a release of it is waited for by its version",

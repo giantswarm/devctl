@@ -20,6 +20,7 @@
     "method": "squash",
     "branchDeleted": false,
     "enqueued": false,
+    "unansweredReviews": null,
     "release": null
   }
 }

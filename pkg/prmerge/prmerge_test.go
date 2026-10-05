@@ -47,6 +47,23 @@ func greenHead(sha string) sequence.Routes {
 	}
 }
 
+// headAt is the committer date of every head commit the fixtures serve.
+const headAt = "2026-10-01T10:00:00Z"
+
+// noFeedback is o/r#42 without reviews or comments, its heads committed at
+// headAt.
+func noFeedback(shas ...string) sequence.Routes {
+	r := sequence.Routes{
+		"GET /repos/o/r/pulls/42/reviews":   {{Body: []any{}}},
+		"GET /repos/o/r/pulls/42/comments":  {{Body: []any{}}},
+		"GET /repos/o/r/issues/42/comments": {{Body: []any{}}},
+	}
+	for _, sha := range shas {
+		r["GET /repos/o/r/git/commits/"+sha] = []sequence.Response{{Body: map[string]any{"sha": sha, "committer": map[string]any{"date": headAt}}}}
+	}
+	return r
+}
+
 var (
 	merged  = sequence.Response{Body: map[string]any{"sha": "m1", "merged": true, "message": "Pull Request successfully merged"}}
 	deleted = sequence.Response{Status: http.StatusNoContent}
@@ -61,6 +78,7 @@ func routes(pr map[string]any, more ...sequence.Routes) sequence.Routes {
 		"DELETE /repos/o/r/git/refs/heads/feature": {deleted},
 	}
 	maps.Copy(r, greenHead("abc123"))
+	maps.Copy(r, noFeedback("abc123", "def456"))
 	for _, m := range more {
 		maps.Copy(r, m)
 	}

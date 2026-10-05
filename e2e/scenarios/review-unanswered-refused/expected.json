@@ -1,0 +1,40 @@
+{
+  "exitCode": 5,
+  "json": {
+    "command": "pr merge",
+    "schemaVersion": 1,
+    "exitCode": 5,
+    "verdict": "refused",
+    "reason": "unanswered review: 2 item(s) newer than the head wait for an answer: review COMMENTED by colleague https://github.com/giantswarm/devctl/pull/42#pullrequestreview-7, review comment by colleague https://github.com/giantswarm/devctl/pull/42#discussion_r8; a reply from e2e-engineer on the pull request, a new commit or the reviewer's approval clears them",
+    "warnings": [],
+    "startedAt": "*",
+    "finishedAt": "*",
+    "repository": "giantswarm/devctl",
+    "number": 42,
+    "headSha": "abc123",
+    "baseRef": "main",
+    "checks": [],
+    "actions": [],
+    "mergeCommitSha": "",
+    "mergedBy": "",
+    "method": "squash",
+    "branchDeleted": false,
+    "enqueued": false,
+    "unansweredReviews": [
+      {
+        "kind": "review",
+        "login": "colleague",
+        "state": "COMMENTED",
+        "at": "2026-09-21T10:05:00Z",
+        "url": "https://github.com/giantswarm/devctl/pull/42#pullrequestreview-7"
+      },
+      {
+        "kind": "review_comment",
+        "login": "colleague",
+        "at": "2026-09-21T10:05:00Z",
+        "url": "https://github.com/giantswarm/devctl/pull/42#discussion_r8"
+      }
+    ],
+    "release": null
+  }
+}

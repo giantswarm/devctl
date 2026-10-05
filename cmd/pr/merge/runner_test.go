@@ -81,6 +81,10 @@ func green() sequence.Routes {
 		"GET /repos/o/r/actions/runs?head_sha=abc123": {{Body: map[string]any{"total_count": 0, "workflow_runs": []any{}}}},
 		"PUT /repos/o/r/pulls/42/merge":               {{Body: map[string]any{"sha": "m1", "merged": true, "message": "Pull Request successfully merged"}}},
 		"DELETE /repos/o/r/git/refs/heads/feature":    {{Status: http.StatusNoContent}},
+		"GET /repos/o/r/pulls/42/reviews":             {{Body: []any{}}},
+		"GET /repos/o/r/pulls/42/comments":            {{Body: []any{}}},
+		"GET /repos/o/r/issues/42/comments":           {{Body: []any{}}},
+		"GET /repos/o/r/git/commits/abc123":           {{Body: map[string]any{"sha": "abc123", "committer": map[string]any{"date": "2026-10-01T10:00:00Z"}}}},
 	}
 }
 
