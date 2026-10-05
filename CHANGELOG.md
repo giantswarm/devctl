@@ -9,6 +9,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `gen circleci`: the generated pipelines pin architect orb 10.12.1. With 10.12.0 a stable release tag pushed its
+  chart to the test catalog instead of the production one
+  ([architect-orb#968](https://github.com/giantswarm/architect-orb/issues/968)).
 - `pr merge`'s unanswered-review refusal names who answers: the caller on a bot's pull request, which cannot
   reply, and the author or the caller otherwise.
 
