@@ -13,6 +13,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   repository as its App once the pull request merges, scaffolds it and sets it up. The command no longer creates the
   repository or pushes the scaffold as the person, no longer requires the organization's owner role, and acts with the
   devctl App login (a token in the environment overrides it) instead of `gh auth token`.
+- `gen workflows`: after a re-pin, the fork line's auto-release numbers its next candidate above the candidates the
+  rebase left behind. The counter only saw candidates reachable from the branch, so a re-pin whose target already
+  had candidates tried to cut `-rc.1` again and failed on the existing tag.
 - `gen circleci`: the generated pipelines pin architect orb 10.12.1. With 10.12.0 a stable release tag pushed its
   chart to the test catalog instead of the production one
   ([architect-orb#968](https://github.com/giantswarm/architect-orb/issues/968)).
