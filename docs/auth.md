@@ -14,10 +14,9 @@ own shell and never enters an agent session.
 | Command | GitHub token |
 |---|---|
 | `auth exec` and the `gh` link | the App login; `gh` on a repository of an owner the App is not installed on keeps your own `gh` login |
-| `deploy`, `pr approve-align`, `pr approve-merge-renovate`, `release create`, `release promote` | the App login; a token in the environment overrides it |
+| `deploy`, `pr approve-align`, `pr approve-merge-renovate`, `release create`, `release promote`, `repo create` | the App login; a token in the environment overrides it |
 | the version check that precedes every command, `version check`, `version update`, `repo validate` | the same, optional and looked up only when GitHub is asked (never while the one-hour version cache is fresh): without one a public read is anonymous (`repo validate`: the embedded schema, repository names unchecked) |
 | `pr wait`, `pr merge`, `release wait`, `rollout wait` | the App login only (`rollout wait` reads the installation with your kube context) |
-| `repo create` | your own: `$GITHUB_TOKEN` (`--github-token-envvar`), else `gh auth token` |
 | `repo setup` (and `repo setup ciwebhooks`, `repo setup renovate`), `repo checks` | your own: `$GITHUB_TOKEN` (`--github-token-envvar`) |
 | `repo reconcile` | the engine's installation token in CI: `$GITHUB_TOKEN` (`--github-token-envvar`) |
 | the other `repo` commands | none: giantswarm-repo-manager acts, reached with the muster token |
@@ -50,7 +49,7 @@ more act with another token:
 - `pr wait`, `pr merge` and `release wait` take their GitHub token from the keychain and from nowhere
   else: no environment variable, no `gh auth token`, no file. They exit 8 naming `devctl auth login`
   before they wait for anything, since they need the CircleCI token too.
-- `repo create`, `repo setup` and its subcommands `ciwebhooks` and `renovate`, and `repo checks` need
+- `repo setup` and its subcommands `ciwebhooks` and `renovate`, and `repo checks` need
   Administration or Webhooks write, which the App does not carry: they act with your own token, as the
   table says, and print no override warning.
 - `repo reconcile` is the engine's CI path and acts with its installation token.

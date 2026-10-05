@@ -204,4 +204,9 @@ func TestCreationPullRequest(t *testing.T) {
 			t.Errorf("body lacks %q:\n%s", want, pr.Body)
 		}
 	}
+
+	pr = CreationPullRequest(tf, []byte("file"), result, CreatedRepository{})
+	if want := "The reconciler creates the repository as the giantswarm-align-files App once this pull request merges"; !strings.Contains(pr.Body, want) {
+		t.Errorf("body of a declaration without a repository lacks %q:\n%s", want, pr.Body)
+	}
 }

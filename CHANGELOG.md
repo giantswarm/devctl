@@ -9,6 +9,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `repo create` opens the declaration's pull request and nothing else: the reconciler of giantswarm/github creates the
+  repository as its App once the pull request merges, scaffolds it and sets it up. The command no longer creates the
+  repository or pushes the scaffold as the person, no longer requires the organization's owner role, and acts with the
+  devctl App login (a token in the environment overrides it) instead of `gh auth token`.
 - `gen circleci`: the generated pipelines pin architect orb 10.12.1. With 10.12.0 a stable release tag pushed its
   chart to the test catalog instead of the production one
   ([architect-orb#968](https://github.com/giantswarm/architect-orb/issues/968)).

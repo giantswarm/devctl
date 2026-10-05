@@ -31,17 +31,17 @@ type flag struct {
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
-	cmd.PersistentFlags().StringVar(&f.GithubTokenEnvVar, "github-token-envvar", "GITHUB_TOKEN", "Environment variable holding your GitHub token; the gh CLI's login when it is unset.")
+	cmd.PersistentFlags().StringVar(&f.GithubTokenEnvVar, "github-token-envvar", "", "Environment variable holding a GitHub token that overrides the devctl GitHub App login; empty means $DEVCTL_GITHUB_TOKEN, $GITHUB_TOKEN or $OPSCTL_GITHUB_TOKEN.")
 	cmd.Flags().StringVar(&f.Team, "team", "", "Team that owns the repository (bumblebee or team-bumblebee): the entry goes into its team file.")
 	cmd.Flags().StringVar(&f.Name, "name", "", "Repository name, the slug in https://github.com/giantswarm/<name>.")
 	cmd.Flags().StringVar(&f.ComponentType, "component-type", "", fmt.Sprintf("componentType of the entry: %s.", oneOf(reposetup.EmbeddedFieldValues("componentType"))))
 	cmd.Flags().StringArrayVar(&f.Flavours, "flavour", nil, fmt.Sprintf("gen.flavours entry, repeatable: %s.", oneOf(gen.AllFlavours())))
 	cmd.Flags().StringVar(&f.Language, "language", "", fmt.Sprintf("gen.language: %s.", oneOf(gen.AllLanguages())))
 	cmd.Flags().StringVar(&f.Description, "description", "", "Description of the repository, set at its creation.")
-	cmd.Flags().StringVar(&f.Visibility, "visibility", "", fmt.Sprintf("Visibility of the repository: %s. Without it the repository is private, the org's default, and the entry says visibility: private.", oneOf(reposetup.EmbeddedFieldValues("visibility"))))
-	cmd.Flags().StringVar(&f.Owner, "owner", reposetup.DefaultOwner, "GitHub organisation the repository is created in and whose teams the guard reads.")
-	cmd.Flags().BoolVar(&f.DryRun, "dry-run", false, "Print the dry run and the plan of the creation (create, scaffold); create nothing and open no pull request.")
-	cmd.Flags().StringVarP(&f.Output, "output", "o", outputText, "Output format: text or json (the dry run, the creation and the pull request URL).")
+	cmd.Flags().StringVar(&f.Visibility, "visibility", "", fmt.Sprintf("Visibility of the repository: %s. Without it the entry says visibility: private, the org's default.", oneOf(reposetup.EmbeddedFieldValues("visibility"))))
+	cmd.Flags().StringVar(&f.Owner, "owner", reposetup.DefaultOwner, "GitHub organisation the repository is declared in and whose teams the guard reads.")
+	cmd.Flags().BoolVar(&f.DryRun, "dry-run", false, "Print the dry run; open no pull request.")
+	cmd.Flags().StringVarP(&f.Output, "output", "o", outputText, "Output format: text or json (the dry run and the pull request URL).")
 }
 
 func (f *flag) Validate() error {
