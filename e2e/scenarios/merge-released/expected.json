@@ -48,6 +48,7 @@
     "exitCode": 0,
     "verdict": "green",
     "reason": "",
+    "unansweredReviews": [],
     "release": {
       "verdict": "available",
       "reason": "",

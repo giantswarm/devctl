@@ -48,6 +48,7 @@
     "exitCode": 6,
     "verdict": "release_failed",
     "reason": "merged as aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44, and the release failed: the tag pipeline of v1.2.3 failed: build/push-to-registries-release",
+    "unansweredReviews": [],
     "release": {
       "verdict": "ci_failed",
       "reason": "the tag pipeline of v1.2.3 failed: build/push-to-registries-release",

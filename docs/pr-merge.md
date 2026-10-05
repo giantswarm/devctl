@@ -30,9 +30,33 @@ Every refusal comes before the first poll and before anything is written.
 | 5 | `refused` | A pull request **another human opened**. The author is compared with the account the token acts as (the login of the keychain record, or `GET /user`); a bot, a GitHub App (user type `Bot`) or a `[bot]` login is fine, so a Renovate or Dependabot pull request merges. Giant Swarm's automation accounts that GitHub carries as plain users are fine too -- `taylorbot`, which opens the release pull request of every repository on devctl-generated CI, and `architectbot` -- each matched on its numeric account id as well as its login, so the login alone opens nothing. The reason names every author the merge accepts, and for an automation login whose account id is not the pinned one, both ids. |
 | 5 | `refused` | A repository whose team-file entry **opts out of agent merges**: the entry named after the repository in `repositories/<team>.yaml` of `giantswarm/github` at `main` says `agentMerge: false`. The entry is read the way `devctl repo` reads one; the reason names the field. An entry without the field, a repository no team file declares and a repository outside the organisation the team files declare are not opted out. Team files the token cannot read are a tooling failure (7), not a guess. |
 
+| 5 | `refused` | **Unanswered review**: a reviewer's feedback newer than the head that nobody answered (see [Unanswered reviews](#unanswered-reviews)). Read here and again right before the merge call. |
+
 A mergeable state GitHub has not computed yet (`unknown`) is read again a few times before the
 refusals are applied, so a pull request just pushed is judged on its state and not on GitHub's
 laziness.
+
+## Unanswered reviews
+
+A review in state `COMMENTED` does not block GitHub's protection, so a pull request would merge seconds after
+a reviewer asked for changes. `devctl pr merge` reads the pull request's reviews, review comments (on the diff,
+replies included) and conversation comments after the refusals above, and again **immediately before the merge
+call** (or the enqueue), so feedback that lands while the checks run is caught too. Each read is fresh. It
+refuses with exit 5, `refused`, while one item is unanswered:
+
+- **Whose**: a person other than the pull request's author and the caller. Bots, GitHub Apps and the
+  automation accounts (as in the author rule) never hold a merge.
+- **Which**: a review in state `COMMENTED` or `CHANGES_REQUESTED` (not `APPROVED`, `DISMISSED` or pending), a
+  review comment, a conversation comment.
+- **Newer than the head**: a review or review comment on the head commit, or any item written after the head
+  commit's committer date. Feedback on an older commit and before it was answered by the later commit.
+- **Answered** by anything the author or the caller wrote on the pull request after it (a reply in the thread,
+  a comment on the conversation, a review), by an `APPROVED` review of the same reviewer no older than it, or by
+  a new commit. Another reviewer's approval answers nothing.
+
+The reason names the count and the first five items (kind, state, reviewer, link) and what clears them;
+`unansweredReviews[]` in the document lists every one. The caller answers the feedback (or pushes the fix) and
+runs the merge again.
 
 ## The wait
 
@@ -201,6 +225,7 @@ The envelope and the fields from `repository` to `unfinished[]` are [`pr wait`'s
 | `method` | `squash` or `rebase`, as asked. |
 | `branchDeleted` | The head branch was deleted after the merge, or was gone already. `false` when nothing merged and for a head in a fork. |
 | `enqueued` | The base has a merge queue and the pull request went through it. |
+| `unansweredReviews` | The feedback the last review read found unanswered, each with `kind` (`review`, `review_comment`, `comment`), `login`, `state` (reviews only), `at` and `url`; empty when nothing held the merge, `null` when a refusal came before the read. |
 | `release` | The release the merge triggered, as `devctl release wait --pr` reports it: `verdict` (`available`, `no_release`, `ci_failed`, `timeout`, `not_applicable`, `usage`, `auth_required`), `reason`, and its result fields (`repository`, `tag`, `sha`, `releaseModel`, `ciModel`, `artifacts[]`, `pipeline`, `actions[]`, see [release-wait.md](release-wait.md#the-document)). `null` with `--no-release-wait` and when nothing merged. |
 
 ## Exit codes
@@ -212,7 +237,7 @@ The envelope and the fields from `repository` to `unfinished[]` are [`pr wait`'s
 | 2 | `timeout` | The timeout passed before an outcome, in the wait or in the queue; `unfinished` names what was still open. |
 | 3 | `not_applicable` | Draft, closed, merged, conflicting, behind a strict base without `--update-branch`, or GitHub declined the merge as the pull request stands; `reason` says which. |
 | 4 | `required_missing` | A required status context never reported within the timeout; `reason` names it. |
-| 5 | `refused` | Another human's pull request, or a repository whose entry says `agentMerge: false`; `reason` names the author or the field. |
+| 5 | `refused` | Another human's pull request, a repository whose entry says `agentMerge: false`, or an unanswered review; `reason` names the author, the field or the feedback (`unanswered review: …`, listed in `unansweredReviews`). |
 | 6 | `release_failed` | **Merged**, and the release failed: the merge commit's auto-release run failed before it tagged, or the tag pipeline failed; `release.pipeline.failedJobs` names the jobs. |
 | 7 | `usage` | Wrong arguments or flags, a newer devctl released (the reason names `devctl version update`), or a tooling failure (GitHub or CircleCI answered with an error other than a 5xx, or a read failed eight tries in a row; the team files could not be read). |
 | 8 | `auth_required` | No usable token; `reason` names the `devctl auth login` to run. |

@@ -7,7 +7,9 @@
 // a pull request another human opened (exit 5: bots, GitHub Apps, Giant
 // Swarm's automation accounts and the caller are fine) and in a repository
 // whose team-file entry opts out of agent merges (exit 5, naming the
-// field). Green lands through the merge
+// field). A reviewer's feedback newer than the head that nobody answered
+// refuses it too (exit 5), read before the wait and again right before
+// the merge. Green lands through the merge
 // API as a squash or a rebase with the judged head as the expected head,
 // then the branch goes through the refs API. A base with a merge queue is
 // enqueued instead and the pull request waited for. No protection setting,
@@ -97,6 +99,10 @@ type Result struct {
 	// Enqueued: the base has a merge queue and the pull request went
 	// through it.
 	Enqueued bool `json:"enqueued"`
+	// UnansweredReviews is the reviewers' feedback the last review guard
+	// found unanswered; empty when nothing held the merge, null when the
+	// guard did not run.
+	UnansweredReviews []UnansweredReview `json:"unansweredReviews"`
 	// Release is the release the merge triggered; null when no release
 	// wait ran (--no-release-wait, or nothing merged).
 	Release *Release `json:"release"`
@@ -185,6 +191,9 @@ func (m *Merger) Merge(ctx context.Context, owner, repo string, number int) (*Re
 	if err != nil {
 		return result, err
 	}
+	if err := m.guardReviews(ctx, owner, repo, number, pr, caller, result); err != nil {
+		return result, err
+	}
 	m.progress.Printf("refusals: none; %s by %s", pr.GetHead().GetSHA(), pr.GetUser().GetLogin())
 
 	if pr.GetMergeableState() == "behind" {
@@ -220,6 +229,11 @@ func (m *Merger) Merge(ctx context.Context, owner, repo string, number int) (*Re
 	queued, err := m.github.MergeQueueRequired(ctx, owner, repo, pr.GetBase().GetRef())
 	if err != nil {
 		return result, microerror.Mask(err)
+	}
+	// The last read before the merge: a review that landed during the wait
+	// holds it.
+	if err := m.guardReviews(ctx, owner, repo, number, pr, caller, result); err != nil {
+		return result, err
 	}
 	if queued {
 		err = m.enqueue(ctx, owner, repo, number, pr, result)
@@ -320,13 +334,19 @@ var automationAccounts = map[string]int64{
 	"architectbot": 61872893,
 }
 
-// authorAllowed: the author is a bot or a GitHub App (type Bot or a [bot]
-// login), one of Giant Swarm's automation accounts, or the caller. Another
-// human's pull request is refused.
+// authorAllowed: the author is a bot or a GitHub App, one of Giant Swarm's
+// automation accounts, or the caller. Another human's pull request is
+// refused.
 func authorAllowed(pr *github.PullRequest, caller string) bool {
-	user := pr.GetUser()
+	return isAutomation(pr.GetUser()) || strings.EqualFold(pr.GetUser().GetLogin(), caller)
+}
+
+// isAutomation: the user is a bot or a GitHub App (type Bot or a [bot]
+// login) or one of Giant Swarm's automation accounts, matched on login and
+// account id.
+func isAutomation(user *github.User) bool {
 	login := user.GetLogin()
-	if user.GetType() == "Bot" || strings.HasSuffix(login, "[bot]") || strings.EqualFold(login, caller) {
+	if user.GetType() == "Bot" || strings.HasSuffix(login, "[bot]") {
 		return true
 	}
 	id, known := automationAccounts[strings.ToLower(login)]

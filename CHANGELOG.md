@@ -13,6 +13,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `pr merge` refuses (exit 5, `refused`) while a person other than the author and the caller left a
+  `COMMENTED` or `CHANGES_REQUESTED` review, a review comment or a conversation comment newer than the head
+  that nobody answered: no reply from the author or the caller after it, no new commit, no approval by that
+  reviewer. Read before the wait and again right before the merge call; bots never hold a merge. The document
+  lists the items in `unansweredReviews` ([#2491](https://github.com/giantswarm/devctl/issues/2491)).
+
 - `pr approve-align-files --team <name>`: sweeps every open bot-authored Align files PR in the repositories of
   `repositories/team-<name>.yaml` of giantswarm/github, whether or not a review is requested from the caller,
   so a repository that requests no reviewer is no longer skipped. A PR that is approved, green and has no
