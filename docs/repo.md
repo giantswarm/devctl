@@ -4,14 +4,13 @@ Giant Swarm repositories are declared, not clicked together: one entry in the ow
 `repositories/<team>.yaml` of [giantswarm/github](https://github.com/giantswarm/github) is the
 desired state, and the reconciler creates and keeps the repository as declared. The `repo` commands
 are the laptop's client of that engine and of giantswarm-repo-manager -- the same validation, the same
-dry run, the same pull request the Repositories page and the Repo Manager agent produce. `create`,
-`validate` and `reconcile` run the engine locally with your own tokens; the other verbs call the
-manager through muster as you.
+dry run, the same pull request the Repositories page and the Repo Manager agent produce. `create` and
+`validate` run the engine locally with the devctl App login, `reconcile` with your own token; the
+other verbs call the manager through muster as you.
 
 ## `devctl repo create`
 
-Creates a repository as you and declares it: the repository, its scaffold, then the team-file pull
-request.
+Declares a new repository: the team-file pull request the reconciler creates the repository from.
 
 ```nohighlight
 devctl repo create --team bumblebee --name my-service \
@@ -28,67 +27,35 @@ The command
    `giantswarm/github` `main`, the embedded copy as the fallback), the creation rules and the name on
    GitHub (an existing repository or the redirect of a renamed one is taken),
 4. prints the dry run -- the rendered entry, the template it derives, the name check, the verdict and
-   the notices,
-5. reads your role in the organisation and refuses anyone who is not an owner (below), before
-   anything is written,
-6. creates the repository with your GitHub login -- description and visibility from the declaration (private when it declares none);
-   you are its admin, as the creator of an organisation repository is,
-7. pushes the rendered scaffold as the one commit on `main` (`feat: initial scaffold of <name> from
-   <template>`); the scaffold's auto-release workflow tags `v0.1.0` from it before CircleCI follows
-   the project, so CircleCI never sees that tag, and the reconciler's run of the merged entry follows
-   the project and triggers the tag's pipeline -- the one tag the reconciler builds, and only once, and
-8. opens the pull request on a `repo-create/<name>` branch with the conventional-commit title
-   `feat(<team>): declare <name>` and a body naming the repository, its scaffold commit and the
-   declaration -- validated in existing mode now, since the repository exists.
+   the notices, and
+5. opens the pull request on a `repo-create/<name>` branch with the conventional-commit title
+   `feat(<team>): declare <name>` and a body naming the declaration.
 
-The output names the repository, the scaffold commit and the pull request; `--output json` prints the
-dry run, the creation (`create`: the two steps, `url`, `created`, `scaffoldCommit`) and the pull
-request URL as one document. `--dry-run` prints the dry run and the plan of the creation (the two
-steps as `drift`, what each would do) and writes nothing.
+Once the pull request merges, the reconciler (`Reconcile repositories` in `giantswarm/github`) creates
+the repository as the `giantswarm-align-files` App -- description and visibility from the declaration
+(private when it declares none) --, pushes the rendered scaffold as the one commit on `main` (the
+scaffold's auto-release workflow tags `v0.1.0` from it), and sets it up from the entry: settings, team
+permissions, branch protection and the required checks, CircleCI and the first release's build,
+webhooks, CODEOWNERS, the catalog. Nobody needs the organisation's owner role; the token is the devctl
+App login (`devctl auth login`), which only opens the pull request.
 
-The create and scaffold steps are the engine's own (`reconcile.Runner.Create`, the same steps the
-reconciler runs), so the repository the command creates and the one the reconciler would have created
-are the same. Everything after the scaffold -- settings, team permissions, branch protection and the
-required checks, CircleCI, webhooks, CODEOWNERS, the catalog, the first release's build -- the
-reconciler applies from the merged entry; it repairs, and never creates.
+The output names the pull request; `--output json` prints the dry run and the pull request URL as one
+document. `--dry-run` prints the dry run and opens nothing.
 
-### Only an organisation owner creates
-
-The organisation does not let members create repositories: GitHub answers a member's creation with
-403. The command reads your role (`GET /user/memberships/orgs/giantswarm`) before the first write and
-refuses anyone but an owner with
-
-```nohighlight
-only an organization owner may create a repository in giantswarm — ask an owner, or create it from
-the Dev Portal (which also creates it as you and needs the same role)
-```
-
-The engine gives the same answer to a 403 on the creation itself. The Dev Portal creates the
-repository as the signed-in person too, so the role is needed there as well.
-
-### A refusal, an interrupted run
+### A refusal, a rerun
 
 A refusal of the declaration (a taken name, a wrong flavour, a schema violation) ends the command with
-a non-zero exit before anything exists; the problems name the fields.
-
-A run interrupted after the creation resumes on the next call: a repository of the declared name that
-you administer -- the name itself, not a redirect -- is yours to continue. The dry run then validates
-the entry in existing mode, the create step finds the repository (`exists`), the scaffold step pushes
-the scaffold when `main` has none (`present` otherwise), and the pull request is opened when none is
-open for the `repo-create/<name>` branch (the open one is reported otherwise). A repository of that
-name that someone else administers stays a refusal. A step that fails (the scaffold's template cannot
-be downloaded, the CircleCI generator refuses the declaration) ends the command with the step's
-message; the rerun resumes where it stopped.
+a non-zero exit before the pull request; the problems name the fields. A rerun reports the pull
+request already open for the `repo-create/<name>` branch.
 
 ### What review the pull request gets
 
-The validation check on `giantswarm/github` classifies every team-file pull request. A
-*creation-only* change -- entries added, every one valid -- is approved by the machine and merges on
-its own when the author is a member of the owning team or of `team-planeteers`, and when at most
-three entries are added. The notices in the dry run say beforehand when this does not hold
-(`team-review`: the team's review is required; `batch-review`: a person reviews). Membership is read
-from GitHub as you, which needs a token that can read the organisation's teams (`read:org`); without
-it the notice is not given and the command says so.
+The validation check on `giantswarm/github` classifies every team-file pull request. A declaration of
+a repository that does not exist yet keeps the owning team's review (`CODEOWNERS`); `devctl pr merge`
+merges it through the ruleset's bypass for the owning team and the admins. The notices in the dry run
+say more about the review (`team-review`: the author is outside the owning team; `batch-review`: more
+than three entries). Membership is read from GitHub as you; a token that cannot read the
+organisation's teams gets no notice, and the command says so.
 
 ### The declaration's fields
 
@@ -156,11 +123,10 @@ extends the test with the chart's checks, and the align run never touches either
 
 ### Token
 
-`$GITHUB_TOKEN` (`--github-token-envvar` names another variable) or, when unset, the login of your
-`gh` CLI (`gh auth token`). The repository, its scaffold commit and the pull request are yours: all
-three are written with that identity. The token creates the repository and pushes its scaffold
-(`repo`, and `workflow` for the scaffold's GitHub Actions workflows), reads the organisation's teams
-and your role in it (`read:org`) and writes `giantswarm/github` for the pull request.
+The devctl GitHub App login (`devctl auth login`); a token in `--github-token-envvar` (by default
+`$DEVCTL_GITHUB_TOKEN`, `$GITHUB_TOKEN` or `$OPSCTL_GITHUB_TOKEN`) overrides it. The token reads the
+organisation's teams and writes the pull request's branch to `giantswarm/github`; the pull request is
+yours. The repository is created by the reconciler's App, never with this token.
 
 ## The manager's verbs: one subcommand per tool of giantswarm-repo-manager
 

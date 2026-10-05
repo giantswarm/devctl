@@ -266,16 +266,16 @@ func (r Remote) Person(ctx context.Context, owner string) (Person, error) {
 	}
 }
 
-// CreatedRepository is the repository `devctl repo create` created as the
-// person before opening the declaration's pull request: its URL and the
-// commit holding its scaffold.
+// CreatedRepository is a repository created before its declaration's pull
+// request: its URL and the commit holding its scaffold. The zero value is a
+// repository the reconciler creates once the pull request merges.
 type CreatedRepository struct {
 	URL            string
 	ScaffoldCommit string
 }
 
 // CreationPullRequest is the pull request `devctl repo create` opens for an
-// accepted declaration of a repository the person has just created: the
+// accepted declaration of a new repository: the
 // branch, the conventional-commit title the semantic-pull-request check of
 // giantswarm/github accepts, and a body that names the repository and its
 // scaffold commit, the declaration, the template, the name check and the
@@ -290,6 +290,8 @@ func CreationPullRequest(tf *RemoteTeamFile, content []byte, result *Result, cre
 			fmt.Fprintf(&body, " (scaffold commit `%s`)", created.ScaffoldCommit)
 		}
 		body.WriteString(".\n\n")
+	} else {
+		body.WriteString("The reconciler creates the repository as the giantswarm-align-files App once this pull request merges, pushes its scaffold and sets it up.\n\n")
 	}
 	fmt.Fprintf(&body, "```yaml\n%s```\n\n", entry.Rendered)
 	if entry.Template != "" {
@@ -306,7 +308,7 @@ func CreationPullRequest(tf *RemoteTeamFile, content []byte, result *Result, cre
 			fmt.Fprintf(&body, "- %s: %s\n", n.Kind, n.Message)
 		}
 	}
-	body.WriteString("\nThe validation check classifies this change; a creation-only change is approved by the machine and the reconciler sets the repository up after the merge.\n")
+	body.WriteString("\nThe validation check classifies this change; the reconciler sets the repository up after the merge.\n")
 
 	title := fmt.Sprintf("feat(%s): declare %s", strings.TrimPrefix(tf.Team, "team-"), entry.Name)
 	return PullRequest{

@@ -30,16 +30,6 @@ func IsRefused(err error) bool {
 	return microerror.Cause(err) == refusedError
 }
 
-var stepFailedError = &microerror.Error{
-	Kind: "stepFailedError",
-}
-
-// IsStepFailed asserts stepFailedError: the create or the scaffold step
-// could not run to its end; a rerun resumes where it stopped.
-func IsStepFailed(err error) bool {
-	return microerror.Cause(err) == stepFailedError
-}
-
 var branchWithoutPullRequestError = &microerror.Error{
 	Kind: "branchWithoutPullRequestError",
 }
