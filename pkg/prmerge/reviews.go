@@ -78,7 +78,7 @@ func (m *Merger) guardReviews(ctx context.Context, owner, repo string, number in
 		m.progress.Printf("reviews: nothing unanswered on %s", f.headSHA)
 		return nil
 	}
-	return agentcli.NewExitError(agentcli.ExitRefused, agentcli.VerdictRefused, "%s", reviewRefusal(unanswered, pr.GetUser().GetLogin()))
+	return agentcli.NewExitError(agentcli.ExitRefused, agentcli.VerdictRefused, "%s", reviewRefusal(unanswered, answerers(pr.GetUser(), caller)))
 }
 
 // unanswered is the feedback that holds the merge, oldest first. It counts
@@ -151,10 +151,23 @@ func (f feedback) unanswered(author, caller string) []UnansweredReview {
 	return open
 }
 
+// answerers names who answers feedback: the author and the caller, or
+// the caller alone on a bot's pull request, which cannot reply.
+func answerers(author *github.User, caller string) string {
+	switch {
+	case isAutomation(author):
+		return caller
+	case strings.EqualFold(author.GetLogin(), caller):
+		return caller
+	default:
+		return author.GetLogin() + " or " + caller
+	}
+}
+
 // reviewRefusal is the reason of the review refusal (exit 5): how many
 // items wait, the first few by kind, reviewer and link, and what clears
 // them.
-func reviewRefusal(open []UnansweredReview, author string) string {
+func reviewRefusal(open []UnansweredReview, answerers string) string {
 	var named []string
 	for _, item := range open[:min(len(open), maxNamedFeedback)] {
 		what := strings.ReplaceAll(item.Kind, "_", " ")
@@ -168,5 +181,5 @@ func reviewRefusal(open []UnansweredReview, author string) string {
 		more = fmt.Sprintf(" and %d more", len(open)-maxNamedFeedback)
 	}
 	return fmt.Sprintf("unanswered review: %d item(s) newer than the head wait for an answer: %s%s; a reply from %s on the pull request, a new commit or the reviewer's approval clears them",
-		len(open), strings.Join(named, ", "), more, author)
+		len(open), strings.Join(named, ", "), more, answerers)
 }

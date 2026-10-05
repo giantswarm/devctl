@@ -184,3 +184,19 @@ func Test_Merge_answeredReviewMerges(t *testing.T) {
 }
 
 func ptr[T any](v T) *T { return &v }
+
+func Test_answerers(t *testing.T) {
+	tests := []struct {
+		author *github.User
+		want   string
+	}{
+		{author: person("caller"), want: "caller"},
+		{author: person("alice"), want: "alice or caller"},
+		{author: &github.User{Login: ptr("renovate[bot]"), Type: ptr("Bot")}, want: "caller"},
+	}
+	for _, tc := range tests {
+		if got := answerers(tc.author, "caller"); got != tc.want {
+			t.Errorf("%s: want %q, got %q", tc.author.GetLogin(), tc.want, got)
+		}
+	}
+}

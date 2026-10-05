@@ -7,6 +7,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- `pr merge`'s unanswered-review refusal names who answers: the caller on a bot's pull request, which cannot
+  reply, and the author or the caller otherwise.
+
 ### Changed
 
 - The generated pre-commit `golangci-lint` hook no longer passes `--timeout=300s`, which timed out on larger repositories; a repository sets `run.timeout` in its `.golangci.yml` ([#2484](https://github.com/giantswarm/devctl/issues/2484)).
