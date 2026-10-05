@@ -94,6 +94,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- `docs/flavours.md`: each flavour now documents the files it actually generates, per `gen` command, instead of only describing the repository type. Adds a "which flavour do I need" table, a section on how `--flavour` and `--language` combine (including the `cli` requires `go` rule and common pairings), and the gotchas: `--language` is only validated by `gen makefile` and `gen circleci`, `gen renovate --language` is a different list, and `gen precommit --flavors` is an unrelated flag.
 - `gen workflows`: the auto-release `cliff.toml` skips `test` commits like `docs` and `style`, so a test-only push
   (a test fixture bump included) cuts no release candidate; the change ships with the next release.
 
