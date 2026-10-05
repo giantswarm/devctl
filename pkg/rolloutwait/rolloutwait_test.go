@@ -95,7 +95,7 @@ func wait(t *testing.T, client *dynamicfake.FakeDynamicClient, reconcile bool, o
 		Client:       client,
 		Timeout:      time.Minute,
 		Reconcile:    reconcile,
-		Clock:        agentcli.NewClock(0.0001, nil),
+		Clock:        agentcli.NewVirtualClock(time.Now()),
 		Warn:         func(m string) { r.warnings = append(r.warnings, m) },
 	}
 	for _, o := range options {
