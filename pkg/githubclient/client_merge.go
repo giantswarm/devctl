@@ -105,6 +105,17 @@ func (c *Client) UpdatePullRequestBranch(ctx context.Context, owner, repo string
 	return nil
 }
 
+// BehindBy is the number of commits of the branch base that the commit
+// headSHA lacks: GitHub's mergeable state says behind only for a base that
+// requires branches to be up to date, the comparison says it for every base.
+func (c *Client) BehindBy(ctx context.Context, owner, repo, base, headSHA string) (int, error) {
+	comparison, _, err := c.ghClient.Repositories.CompareCommits(ctx, owner, repo, base, headSHA, &github.ListOptions{PerPage: 1})
+	if err != nil {
+		return 0, microerror.Mask(err)
+	}
+	return comparison.GetBehindBy(), nil
+}
+
 // DeleteBranch deletes refs/heads/branch through the refs API. A branch
 // that is gone already (GitHub deleted it on merge, or answers 404) is not
 // an error: the outcome is the same.

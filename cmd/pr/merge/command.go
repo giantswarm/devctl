@@ -45,9 +45,10 @@ another team owns, unless you are one of its admins, your own green pull
 request is declined until a reviewer with write access approves it: exit 3,
 the reason naming the ruleset, its bypass actors and the owning team.
 
---update-branch: a head behind a strict base is updated from the base
-(GitHub's Update branch) and the new head is what the wait judges and the
-merge lands. A merge GitHub declines as the pull request stands (a rule blocks
+--update-branch: a head behind its base is updated from the base (GitHub's
+Update branch) before any check is judged, and the new head is what the wait
+judges and the merge lands: behind a strict base by the mergeable state,
+behind any other base by the comparison of base and head. A merge GitHub declines as the pull request stands (a rule blocks
 it, the base or the head moved) is exit 3 with GitHub's sentence.
 
 The release: in a repository whose release model is auto-release, the tag

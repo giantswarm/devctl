@@ -33,7 +33,7 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().DurationVar(&f.ReleaseTimeout, flagReleaseTimeout, releasewait.DefaultTimeout, "How long to wait after the merge for its release to be pullable before exit 9; scaled by DEVCTL_TIME_SCALE")
 	cmd.Flags().BoolVar(&f.NoReleaseWait, flagNoReleaseWait, false, "End at the merge instead of waiting for the release it triggers (devctl release wait --pr does that wait on its own)")
 	cmd.Flags().BoolVar(&f.Rebase, flagRebase, false, "Rebase-merge instead of squash-merging (repositories whose convention is one commit per patch)")
-	cmd.Flags().BoolVar(&f.UpdateBranch, flagUpdateBranch, false, "A head behind a strict base is updated from the base and the new head waited for, instead of exit 3")
+	cmd.Flags().BoolVar(&f.UpdateBranch, flagUpdateBranch, false, "A head behind its base is updated from the base before its checks are judged, and the new head waited for; behind a strict base, instead of exit 3")
 	agentcli.ProgressFlag(cmd, &f.Progress)
 	f.FailedLog.Init(cmd)
 }
