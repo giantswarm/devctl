@@ -187,7 +187,7 @@ func (m *Merger) Merge(ctx context.Context, owner, repo string, number int) (*Re
 	}
 	result.HeadSHA, result.BaseRef = pr.GetHead().GetSHA(), pr.GetBase().GetRef()
 
-	caller, team, err := m.refuse(ctx, owner, repo, pr)
+	caller, verdict, err := m.refuse(ctx, owner, repo, pr)
 	if err != nil {
 		return result, err
 	}
@@ -238,7 +238,7 @@ func (m *Merger) Merge(ctx context.Context, owner, repo string, number int) (*Re
 	if queued {
 		err = m.enqueue(ctx, owner, repo, number, pr, result)
 	} else {
-		err = m.merge(ctx, owner, repo, number, pr, result, caller, team)
+		err = m.merge(ctx, owner, repo, number, pr, result, caller, verdict)
 	}
 	if err != nil {
 		return result, err
@@ -288,12 +288,13 @@ func (m *Merger) readMergeable(ctx context.Context, owner, repo string, number i
 
 // refuse is every refusal that comes before the wait, in order: the pull
 // request's state (3), its author (5), the repository's opt-out (5). It
-// returns the caller the token acts as and the team whose file declares
-// the repository (empty when none does), for the merge's reasons.
-func (m *Merger) refuse(ctx context.Context, owner, repo string, pr *github.PullRequest) (caller, team string, err error) {
+// returns the caller the token acts as and the repository's verdict, whose
+// team and entry are empty when no team file declares it, for the merge's
+// reasons.
+func (m *Merger) refuse(ctx context.Context, owner, repo string, pr *github.PullRequest) (caller string, verdict Verdict, err error) {
 	if !m.updateBranch || pr.GetMergeableState() != "behind" {
 		if err := prwait.NotApplicable(pr); err != nil {
-			return "", "", err
+			return "", Verdict{}, err
 		}
 	}
 
@@ -301,21 +302,21 @@ func (m *Merger) refuse(ctx context.Context, owner, repo string, pr *github.Pull
 	if caller == "" {
 		caller, err = m.github.CurrentLogin(ctx)
 		if err != nil {
-			return "", "", microerror.Mask(err)
+			return "", Verdict{}, microerror.Mask(err)
 		}
 	}
 	if !authorAllowed(pr, caller) {
-		return "", "", agentcli.NewExitError(agentcli.ExitRefused, agentcli.VerdictRefused, "%s", authorRefusal(pr, caller))
+		return "", Verdict{}, agentcli.NewExitError(agentcli.ExitRefused, agentcli.VerdictRefused, "%s", authorRefusal(pr, caller))
 	}
 
-	verdict, err := m.policy(ctx, owner, repo)
+	verdict, err = m.policy(ctx, owner, repo)
 	if err != nil {
-		return "", "", microerror.Mask(err)
+		return "", Verdict{}, microerror.Mask(err)
 	}
 	if verdict.Refusal != "" {
-		return "", "", agentcli.NewExitError(agentcli.ExitRefused, agentcli.VerdictRefused, "%s", verdict.Refusal)
+		return "", Verdict{}, agentcli.NewExitError(agentcli.ExitRefused, agentcli.VerdictRefused, "%s", verdict.Refusal)
 	}
-	return caller, verdict.Team, nil
+	return caller, verdict, nil
 }
 
 // automationAccounts are Giant Swarm's automation accounts that GitHub
@@ -399,7 +400,7 @@ func (m *Merger) update(ctx context.Context, owner, repo string, number int, hea
 // exit 3 with GitHub's sentence and the identity it declined; declined for
 // the review rule, the reason goes on to name the rulesets' bypass actors
 // and the owning team as well (explainReviewRule).
-func (m *Merger) merge(ctx context.Context, owner, repo string, number int, pr *github.PullRequest, result *Result, caller, team string) error {
+func (m *Merger) merge(ctx context.Context, owner, repo string, number int, pr *github.PullRequest, result *Result, caller string, verdict Verdict) error {
 	opts := githubclient.MergeOptions{Method: m.method, HeadSHA: result.HeadSHA}
 	if m.method == githubclient.MergeSquash {
 		opts.CommitTitle = fmt.Sprintf("%s (#%d)", strings.TrimSpace(pr.GetTitle()), number)
@@ -408,7 +409,7 @@ func (m *Merger) merge(ctx context.Context, owner, repo string, number int, pr *
 	if githubclient.IsMergeDeclined(err) {
 		reason := strings.TrimSuffix(oneLine(err.Error()), ".") + ". "
 		if declinedByReviewRule(err) {
-			reason += m.explainReviewRule(ctx, owner, repo, pr.GetBase().GetRef(), caller, team)
+			reason += m.explainReviewRule(ctx, owner, repo, pr.GetBase().GetRef(), caller, verdict)
 		} else {
 			reason += fmt.Sprintf("devctl acts as %s", caller)
 		}

@@ -112,7 +112,11 @@ with write access approves it first. Past a blocking ruleset without bypass acto
 merges: only an approving review or a change to that ruleset does, and a ruleset devctl did not create
 is named a `foreign-ruleset` the reconciler leaves to the owning team. A base whose review requirement
 no ruleset carries is on classic branch protection: the repository is aligned first, never merged
-past it.
+past it. The reason names the entry to opt in (`align: true` on `the entry <repo> in
+repositories/<team>.yaml of giantswarm/github`; a repository no team file declares is declared first
+with `devctl repo adopt`): the reconciler then writes the devctl ruleset, whose bypass lets the
+owning team and the repository admins merge their own green pull requests. devctl never lifts
+`enforce_admins`, and the devctl App's token carries no Administration permission to do so.
 
 ### A base with a merge queue
 
