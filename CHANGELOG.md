@@ -9,6 +9,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `repo reconcile`: the open-pull-requests finding pluralises by count: "1 pull request is open" instead of "1 pull
+  requests are open".
 - `pkg/reposetup` `Test_Render` passes without `go generate` having written the gitignored `.sha` provenance files: the
   golden comparison masks the template provenance link in both of its forms, so a plain `go test` agrees with CI.
 - `pr merge --update-branch`: a head behind a base that does not require branches to be up to date is updated before
