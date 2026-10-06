@@ -33,6 +33,17 @@ chart's), and a chart named differently from its repository is found. A release 
 chart is exit 3; for hand-written CI the reason names `--chart`. The document's `release` carries that
 wait's verdict, reason and result.
 
+### A pull request on a release candidate: release, then promote
+
+A repository that releases in two steps tags the merge commit with a release candidate (`v1.2.3-rc.1`, a
+GitHub pre-release) and cuts the stable release later with `devctl release promote`. An installation that
+follows stable releases (`semver: ">=0.0.0"`) never deploys the candidate, so `--pr` follows the promotion:
+the lowest published stable release above the candidate whose tag contains the merge commit (GitHub's
+comparison) is waited for, `release.tag` names it and `release.candidate` the candidate it was promoted
+from. Before the promote the candidate is waited for, with `release.promotePending` true; when nothing on
+the installation follows a pre-release the command ends with exit 3 and a reason that names the candidate
+and the pending promote. Run it again after the promote.
+
 ### A pull request that releases nothing: a configuration change
 
 When `--pr` names a pull request no release follows (a giantswarm-configs change: the release wait answers
