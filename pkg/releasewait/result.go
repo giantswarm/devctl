@@ -99,11 +99,17 @@ type ActionsRun struct {
 
 // Result is the command's document below the envelope.
 type Result struct {
-	Repository   string `json:"repository"`
-	Tag          string `json:"tag"`
-	SHA          string `json:"sha"`
-	ReleaseModel string `json:"releaseModel"`
-	CIModel      string `json:"ciModel"`
+	Repository string `json:"repository"`
+	Tag        string `json:"tag"`
+	SHA        string `json:"sha"`
+	// Candidate is, for a pull request followed to its promotion, the
+	// release candidate auto-release tagged on its merge commit; Tag is the
+	// promoted release, or the candidate itself while PromotePending.
+	Candidate string `json:"candidate,omitempty"`
+	// PromotePending says no promoted release contains the candidate yet.
+	PromotePending bool   `json:"promotePending,omitempty"`
+	ReleaseModel   string `json:"releaseModel"`
+	CIModel        string `json:"ciModel"`
 	// Artifacts are the expected images and charts, or the release assets
 	// of a repository that ships neither.
 	Artifacts []Artifact `json:"artifacts"`
