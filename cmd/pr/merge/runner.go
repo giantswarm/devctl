@@ -106,6 +106,10 @@ func (r *runner) merge(ctx context.Context, args []string, doc *document) error 
 	if err != nil {
 		return err
 	}
+	dispatch, err := r.flag.dispatch()
+	if err != nil {
+		return err
+	}
 	if err := r.gate(false); err != nil {
 		return err
 	}
@@ -210,6 +214,7 @@ func (r *runner) merge(ctx context.Context, args []string, doc *document) error 
 		UpdateBranch: r.flag.UpdateBranch,
 		Login:        token.Login,
 		Release:      release,
+		Dispatch:     dispatch,
 	})
 	if err != nil {
 		return err

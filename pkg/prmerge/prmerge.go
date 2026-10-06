@@ -79,6 +79,9 @@ type Config struct {
 	// Release waits for the release the merge triggered; nil ends the
 	// command at the merge (--no-release-wait).
 	Release ReleaseWait
+	// Dispatch is the workflow to dispatch after a merge, with the merged
+	// pull request and its release as inputs; nil dispatches nothing.
+	Dispatch *Dispatch
 }
 
 // Result is the command's part of the document: the wait's fields and the
@@ -107,6 +110,9 @@ type Result struct {
 	// Release is the release the merge triggered; null when no release
 	// wait ran (--no-release-wait, or nothing merged).
 	Release *Release `json:"release"`
+	// Dispatch is the workflow dispatched after the merge; null when none
+	// is configured or nothing merged.
+	Dispatch *DispatchResult `json:"dispatch"`
 }
 
 // Merger runs merges.
@@ -121,6 +127,7 @@ type Merger struct {
 	login        string
 	policy       Policy
 	release      ReleaseWait
+	dispatchTo   *Dispatch
 }
 
 // New returns a Merger for config.
@@ -143,6 +150,7 @@ func New(config Config) (*Merger, error) {
 		login:        config.Login,
 		policy:       config.Policy,
 		release:      config.Release,
+		dispatchTo:   config.Dispatch,
 	}
 	if m.clock.Scale() == 0 {
 		m.clock = agentcli.NewClock(1, nil)
@@ -248,13 +256,14 @@ func (m *Merger) Merge(ctx context.Context, owner, repo string, number int) (*Re
 		return result, err
 	}
 
-	if err := m.deleteBranch(ctx, owner, repo, pr, result); err != nil {
-		return result, err
+	// Merged: the branch, the release, then the dispatch, which runs
+	// whatever the release's outcome and changes none of them.
+	err = m.deleteBranch(ctx, owner, repo, pr, result)
+	if err == nil && m.release != nil {
+		err = m.awaitRelease(ctx, owner, repo, number, result)
 	}
-	if m.release == nil {
-		return result, nil
-	}
-	return result, m.awaitRelease(ctx, owner, repo, number, result)
+	m.dispatch(ctx, result)
+	return result, err
 }
 
 // deleteBranch deletes the merged head branch; a head in a fork is left
