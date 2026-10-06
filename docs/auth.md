@@ -72,7 +72,7 @@ log on every request, which separates an agent's actions from the person's own.
 | Open or update a pull request | pull requests: write |
 | Push a branch, `.github/workflows` included | contents, workflows: write |
 | Merge through the ruleset bypass (`pr merge`): GitHub evaluates the merge as the person, so the owning team's or the admins' bypass applies | contents, pull requests: write |
-| Release: dispatch a workflow (`release promote`); the tag itself comes from the auto-release workflow's own token | actions, contents: write |
+| Release: dispatch a workflow (`release promote`, `pr merge --dispatch`); the tag itself comes from the auto-release workflow's own token | actions, contents: write |
 | Approve and re-run workflow runs | actions: write |
 | Write the organization's project boards (Projects v2) | organization projects: write |
 

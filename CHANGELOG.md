@@ -43,6 +43,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `pr merge --dispatch <owner>/<repo>/<workflow file>[@<ref>]` (or `DEVCTL_MERGE_DISPATCH`, for every merge on a
+  machine; the flag wins): once the pull request is merged, after its release wait whatever that ended with, the
+  workflow is dispatched through its `workflow_dispatch` trigger on the ref or the repository's default branch, with
+  the inputs `repository` (the merged `<owner/repo>`), `pull_request` (its number) and `release` (the tag the merge
+  released, empty when none follows or none was waited for), so a site generated from merges and releases on a
+  schedule refreshes at once. The document carries it in `dispatch` (`workflow`, `ref`, `inputs`, `dispatched`,
+  `reason`). A dispatch GitHub refuses is a warning and never changes the merge's outcome; nothing is dispatched
+  when nothing merged, and without the flag and the variable nothing changes.
 - `gen workflows --maintenance-branches` (team file: `gen.ci.maintenanceBranches: true`): a fork line's maintenance
   branches `release-X.Y` cut releases too. Each counts from its series' highest stable `vX.Y.Z` tag and releases the
   next patch of that series, a feature included, as a candidate first; the stable release is a dispatch of the

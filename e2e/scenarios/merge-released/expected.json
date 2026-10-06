@@ -46,6 +46,7 @@
     "method": "squash",
     "branchDeleted": true,
     "enqueued": false,
+    "dispatch": null,
     "exitCode": 0,
     "verdict": "green",
     "reason": "",
