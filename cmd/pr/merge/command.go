@@ -10,6 +10,7 @@ import (
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
 	"github.com/giantswarm/devctl/v8/pkg/authexec"
 	"github.com/giantswarm/devctl/v8/pkg/authstore"
+	"github.com/giantswarm/devctl/v8/pkg/mergejob"
 )
 
 const (
@@ -95,6 +96,17 @@ ciModel, artifacts[{kind, reference, digest, state}], pipeline, actions),
 and dispatch: null without --dispatch or when nothing merged, otherwise
 {workflow, ref, inputs, dispatched, reason}. See docs/pr-merge.md.
 
+--detach: the call is checked as above (arguments, flags, the version check,
+the token), then the same merge runs in a process of its own, in a session of
+its own, and the call returns within seconds: exit 0, verdict detached, with
+the handle, the pid, the log and the status command. devctl pr merge status
+<handle> reads the outcome: the merge's own document and exit code once it
+ended, exit 10 while it runs. A second --detach of a pull request whose
+detached merge runs is exit 3. --on-done <command> (with --detach) runs the
+command in sh -c once the detached merge ended, with DEVCTL_MERGE_HANDLE,
+DEVCTL_MERGE_EXIT_CODE, DEVCTL_MERGE_DOCUMENT, DEVCTL_MERGE_REPOSITORY and
+DEVCTL_MERGE_NUMBER set. The blocking call stays the default.
+
 Exit codes 6 and 9 mean the pull request was merged; never merge it again.
 
 Exit codes:
@@ -150,6 +162,8 @@ func New(config Config) (*cobra.Command, error) {
 		renewGitHub:     authstore.RenewGitHubToken,
 		endpoints:       agentcli.EndpointsFromEnv,
 		clock:           agentcli.SystemClock,
+		jobRoot:         mergejob.Root,
+		executable:      os.Executable,
 	}
 
 	c := &cobra.Command{
@@ -166,6 +180,7 @@ func New(config Config) (*cobra.Command, error) {
 	c.SetFlagErrorFunc(r.FlagError)
 
 	f.Init(c)
+	c.AddCommand(newStatus(config))
 
 	return c, nil
 }

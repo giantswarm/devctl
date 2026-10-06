@@ -40,6 +40,11 @@ const (
 	VerdictReleaseUnconfirmed Verdict = "release_unconfirmed"
 	VerdictAuthRequired       Verdict = "auth_required"
 	VerdictUsage              Verdict = "usage"
+	// VerdictDetached: devctl pr merge --detach started the merge in a
+	// process of its own; the handle reads its outcome.
+	VerdictDetached Verdict = "detached"
+	// VerdictRunning: a detached merge has no outcome yet.
+	VerdictRunning Verdict = "running"
 )
 
 // The exit codes of every agent-facing command. 6 and 9 say that devctl pr
@@ -71,6 +76,9 @@ const (
 	// pullable: the release timeout passed first, or the release wait could
 	// not judge it.
 	ExitReleaseUnconfirmed = 9
+	// ExitRunning: devctl pr merge status found the detached merge still
+	// running.
+	ExitRunning = 10
 )
 
 // Envelope is the head of every command's JSON document. A command's document
