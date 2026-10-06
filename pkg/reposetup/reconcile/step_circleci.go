@@ -32,6 +32,15 @@ func (r *Runner) stepCircleCI(ctx context.Context, s *run, sr *StepResult) (err 
 	if err != nil {
 		return err
 	}
+	if followed && s.unarchive != nil {
+		// The archive unfollowed the project as the token's user and the
+		// project stays known to CircleCI: after the unarchive the follow
+		// is that user's, and the follow brings CircleCI's deploy key back.
+		followed, err = r.CircleCI.Following(ctx, s.owner, s.name)
+		if err != nil {
+			return err
+		}
+	}
 	grant := &adminGrant{r: r, s: s, sr: sr}
 	defer func() { err = errors.Join(err, grant.revoke(ctx)) }()
 	if !followed {
@@ -79,7 +88,16 @@ func (r *Runner) stepCircleCI(ctx context.Context, s *run, sr *StepResult) (err 
 	if err != nil {
 		return err
 	}
-	if len(keys) == 0 {
+	missing := len(keys) == 0
+	if !missing && s.unarchive != nil {
+		// The archive deleted CircleCI's deploy key on GitHub, and CircleCI
+		// still lists its checkout key: the key on GitHub is the one read.
+		missing, err = r.circleCIDeployKeyMissing(ctx, s)
+		if err != nil {
+			return err
+		}
+	}
+	if missing {
 		if err := grant.ensure(ctx); err != nil {
 			return err
 		}
@@ -99,6 +117,21 @@ func (r *Runner) stepCircleCI(ctx context.Context, s *run, sr *StepResult) (err 
 		sr.Summary = "followed, setup workflows on, checkout key present, " + webhook
 	}
 	return nil
+}
+
+// circleCIDeployKeyMissing says whether the repository carries no deploy key
+// of CircleCI's on GitHub.
+func (r *Runner) circleCIDeployKeyMissing(ctx context.Context, s *run) (bool, error) {
+	keys, _, err := r.GitHub.Repositories.ListKeys(ctx, s.owner, s.name, &github.ListOptions{PerPage: 100})
+	if err != nil {
+		return false, err
+	}
+	for _, k := range keys {
+		if k.GetTitle() == circleCIDeployKeyTitle {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 // circleCIWebhookURL is the URL of the webhook CircleCI installs on a

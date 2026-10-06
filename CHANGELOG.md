@@ -15,6 +15,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `repo reconcile --unarchived`: the way back from `lifecycle: archived`. When the change at hand took the lifecycle
+  from the entry, the lifecycle step unarchives the repository on GitHub ahead of the other steps, which set it up
+  again (CircleCI follow and deploy key, protection) in the same run; the result says `unarchived`. An archive no
+  declaration change undoes stays the finding `archived-undeclared`. `repo set-lifecycle --help` and the docs name
+  the way back, `repo update <repo> --unset lifecycle`.
+- The lifecycle step reports the pull requests still open in a repository it archives (the advisory finding
+  `open-pull-requests`): an archive leaves them read-only.
 - `pr wait` and `pr merge` reach repositories outside giantswarm: the App login serves the owners the devctl App is
   installed on (giantswarm), your own `gh` login (`gh auth token` of the real `gh`, never a `gh` link to devctl) every
   other owner, with the same wait, squash merge and exit codes. The document's new `identity` says which (`app` or

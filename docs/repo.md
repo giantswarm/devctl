@@ -154,7 +154,7 @@ and nothing runs locally in its place.
 | `repo adopt <repo> --team T [entry flags]` | `adopt_repository` | an existing, undeclared repository declared in the team's file; `--component-type`, `--description`, `--visibility`, `--language`, `--flavour`, `--ci-generate`, `--align`, `--lifecycle deprecated\|archived` |
 | `repo update <repo> --set path=value \| --unset path \| --entry-file f` | `update_repository` | the entry changed: `--set` edits the inventory's entry field by field (`gen.ci.generate=false`, `align=true`, `gen.flavours=[app, k8sapi]`; the value is YAML), `--entry-file` passes the whole entry |
 | `repo transfer <repo> --to-team T` | `transfer_repository` | the entry moved to another team's file; the receiving team approves, the giving team is told |
-| `repo set-lifecycle <repo> deprecated\|archived\|deleted` | `set_lifecycle` | the lifecycle set; `deleted` needs `--confirm <repo>` |
+| `repo set-lifecycle <repo> deprecated\|archived\|deleted` | `set_lifecycle` | the lifecycle set; `deleted` needs `--confirm <repo>`; the way back from `archived` is `repo update <repo> --unset lifecycle`, whose reconciler run unarchives the repository and sets it up again |
 | `repo approve <pull-request>` | `approve_change` | the approving review as you after the team check, and the merge (or the auto-merge); what the Slack ask's button does |
 | `repo align <repo> [--team T]` | `align_repository` | Align now in the mode the entry decides: `align` (the reconciler dispatched), `opt-in` (the pull request that sets `align: true`), `check` (an undeclared repository checked from the team); `--dry-run` shows the plan first |
 
@@ -171,6 +171,7 @@ devctl repo watch new-service --pull-request 4711
 devctl repo adopt old-tool --team team-bumblebee --component-type tool --language go --dry-run
 devctl repo update my-service --set gen.ci.generate=false --reason "no pipeline"
 devctl repo set-lifecycle old-tool archived --reason "replaced by new-tool"
+devctl repo update old-tool --unset lifecycle --reason "back in production"
 devctl repo approve 6179
 devctl repo align my-service --dry-run
 ```

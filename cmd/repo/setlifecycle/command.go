@@ -25,9 +25,10 @@ owning team's channel and a member's Approve (or an approving review on
 GitHub) lands it.
 
   deprecated  security-only Renovate and a catalog flag
-  archived    the reconciler unfollows the repository on CircleCI, deletes
-              CircleCI's deploy key and archives it on GitHub; the entry
-              stays as the record
+  archived    the reconciler reports the pull requests still open (they
+              stay read-only in the archive), unfollows the repository on
+              CircleCI, deletes CircleCI's deploy key and archives it on
+              GitHub; the entry stays as the record
   deleted     the reconciler unfollows the repository on CircleCI and deletes
               it on GitHub -- code, issues, pull requests, releases and
               packages with it (an organization owner can restore it for 90
@@ -38,9 +39,16 @@ An entry without align: true gets it beside the lifecycle: the change opts
 the repository in to alignment, else the reconciler would record the
 lifecycle and apply nothing.
 
+The way back from archived is the entry without the lifecycle:
+devctl repo update <repository> --unset lifecycle. The reconciler run of
+that change unarchives the repository and sets it up again (CircleCI
+followed, its deploy key, protection). A repository archived on GitHub
+without such a change is only reported.
+
 Examples:
   devctl repo set-lifecycle old-tool deprecated --dry-run
   devctl repo set-lifecycle old-tool archived --reason "replaced by new-tool"
+  devctl repo update old-tool --unset lifecycle --reason "back in production"
   devctl repo set-lifecycle scratch-repo deleted --confirm scratch-repo --reason "a throwaway"`
 )
 

@@ -192,6 +192,11 @@ const (
 	// alone and a member's own pull request does not merge through the API
 	// without a second review; the fix names the team's privacy.
 	FindingTeamBypassRefused FindingKind = "team-bypass-refused" //nolint:gosec // G101: a finding kind, not a credential
+	// FindingOpenPullRequests: pull requests were open when the lifecycle
+	// step archived the repository; they stay open and read-only in the
+	// archive. The fix is the way back: the entry without lifecycle:
+	// archived, which unarchives the repository.
+	FindingOpenPullRequests FindingKind = "open-pull-requests"
 )
 
 // Advisory says whether findings of the kind are for a person only and do
@@ -200,7 +205,7 @@ const (
 // something a person must fix before the repository counts as in sync.
 func (k FindingKind) Advisory() bool {
 	switch k {
-	case FindingDefaultIcon, FindingForeignRuleset, FindingDeclaredRulesetMissing, FindingRulesetsNotEnabled:
+	case FindingDefaultIcon, FindingForeignRuleset, FindingDeclaredRulesetMissing, FindingRulesetsNotEnabled, FindingOpenPullRequests:
 		return true
 	}
 	return false
@@ -261,7 +266,11 @@ type Result struct {
 	Mode     Mode   `json:"mode"`
 	// Added says whether the entry was passed as added by the triggering
 	// change, which alone allows the create step to create.
-	Added      bool         `json:"added"`
+	Added bool `json:"added"`
+	// Unarchived says whether the entry was passed as one the triggering
+	// change took lifecycle: archived from, which alone allows the
+	// lifecycle step to unarchive.
+	Unarchived bool         `json:"unarchived,omitempty"`
 	StartedAt  time.Time    `json:"startedAt"`
 	FinishedAt time.Time    `json:"finishedAt"`
 	Steps      []StepResult `json:"steps"`
