@@ -68,8 +68,10 @@ reconcile, once each.
 ### The installation
 
 The management cluster is read through the kube context `tsh kube login <installation>` writes,
-`teleport.giantswarm.io-<installation>` (`--context` names another), as you. A context that does not
-exist is exit 7; one that is not signed in, or whose credentials expired, is exit 8 naming
+`teleport.giantswarm.io-<installation>`, as you. An installation reached through another context
+(`kubectl gs login`'s `gs-<installation>`, a kind lab) is read through the one `--context` names. The
+context is checked before the release wait: one the kubeconfig does not have is exit 7 at once, its
+reason naming the kubeconfig's contexts that mention the installation and `--context`; one that is not signed in, or whose credentials expired, is exit 8 naming
 `tsh kube login`. Reads that fail in transit or with a 5xx are retried like every other agent-facing
 command's.
 

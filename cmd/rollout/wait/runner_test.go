@@ -14,11 +14,19 @@ import (
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
 	"github.com/giantswarm/devctl/v8/pkg/authstore"
 	"github.com/giantswarm/devctl/v8/pkg/releasewait"
+	"github.com/giantswarm/devctl/v8/pkg/rolloutwait"
 )
 
-// runCommand runs the command with sources that refuse to open, so what is
-// tested is the argument handling, the gate and the envelope.
+// runCommand runs the command with release sources that refuse to open, so
+// what is tested is the argument handling, the gate and the envelope.
 func runCommand(t *testing.T, args []string, f *flag, openErr error) (map[string]any, error) {
+	t.Helper()
+	return runCommandWithCluster(t, args, f, openErr, nil)
+}
+
+// runCommandWithCluster is runCommand with the cluster opening failing with
+// clusterErr (opening it is a no-op when nil).
+func runCommandWithCluster(t *testing.T, args []string, f *flag, openErr, clusterErr error) (map[string]any, error) {
 	t.Helper()
 	var stdout, stderr bytes.Buffer
 	r := &runner{
@@ -27,10 +35,13 @@ func runCommand(t *testing.T, args []string, f *flag, openErr error) (map[string
 		stdout: &stdout,
 		stderr: &stderr,
 		openRelease: func(context.Context, agentcli.Endpoints, http.RoundTripper, func(string)) (*releasewait.Sources, error) {
+			if clusterErr != nil {
+				t.Error("the release must not be read when the kube context fails")
+			}
 			return nil, openErr
 		},
 		openCluster: func(string, string, func(http.RoundTripper) http.RoundTripper) (dynamic.Interface, error) {
-			return nil, errors.New("must not be opened")
+			return nil, clusterErr
 		},
 	}
 	err := r.run(context.Background(), args)
@@ -99,5 +110,16 @@ func TestRunAuthRequiredIsExit8(t *testing.T) {
 	}
 	if doc["verdict"] != string(agentcli.VerdictAuthRequired) || !strings.Contains(doc["reason"].(string), "devctl auth login") {
 		t.Errorf("envelope: %v", doc)
+	}
+}
+
+func TestRunMissingContextEndsBeforeTheRelease(t *testing.T) {
+	missing := rolloutwait.MissingContextError("myinstallation", "teleport.giantswarm.io-myinstallation", []string{"gs-myinstallation"})
+	doc, err := runCommandWithCluster(t, []string{"myinstallation", "giantswarm/devctl", "v1.2.3"}, &flag{}, nil, missing)
+	if agentcli.Exit(err) != agentcli.ExitUsage {
+		t.Fatalf("want exit %d, got %d (%v)", agentcli.ExitUsage, agentcli.Exit(err), err)
+	}
+	if reason, _ := doc["reason"].(string); !strings.Contains(reason, "gs-myinstallation") || !strings.Contains(reason, "--context") {
+		t.Errorf("reason should name the candidate and --context: %q", reason)
 	}
 }

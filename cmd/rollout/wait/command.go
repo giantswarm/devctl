@@ -23,7 +23,11 @@ commit): its images and charts pullable, its tag pipeline green. The
 release names the charts, a second chart its custom.yml pushes off the same
 tag included. Then the installation's management cluster,
 read through the kube context tsh kube login writes
-(teleport.giantswarm.io-<installation>, or --context), as you:
+(teleport.giantswarm.io-<installation>), as you. An installation reached
+through another context (kubectl gs login's gs-<installation>, a kind lab)
+is read through the one --context names. The context is checked before the
+release wait: one the kubeconfig does not have is exit 7 at once, the
+contexts that mention the installation named as candidates. It reads:
 
   HelmRelease  every Flux HelmRelease whose chart source (an OCIRepository
                whose URL ends in the chart's name, a HelmChart, or
@@ -74,7 +78,8 @@ Exit codes:
   3  not applicable: no release follows the pull request, the release
      ships no chart, nothing on the installation deploys its charts, or
      no deployment follows the version
-  7  usage or tooling: a bad argument, a kube context that does not exist,
+  7  usage or tooling: a bad argument, a kube context that does not exist
+     (the candidates and --context named),
      a request the cluster refused
   8  authentication required: devctl auth login for GitHub, tsh kube login
      <installation> for the cluster

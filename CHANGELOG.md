@@ -9,6 +9,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `rollout wait`: the kube context is checked before the release wait, so an installation whose
+  `teleport.giantswarm.io-<installation>` context the kubeconfig lacks ends with exit 7 at once instead of after
+  the release. The reason names the kubeconfig's contexts that mention the installation (`gs-<installation>`
+  from `kubectl gs login`) and `--context`, which the help now documents for non-Teleport installations.
 - `pr wait` (and the wait in `pr merge`): a CircleCI setup pipeline whose continuation is not created yet (state
   `setup-pending`, `setup` or `pending`) keeps the wait going. Before, a finished `setup` workflow read as the whole
   pipeline, and the required contexts of the continued workflows ended the wait with exit 4 `required_missing`.
