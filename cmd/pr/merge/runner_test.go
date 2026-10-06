@@ -13,6 +13,7 @@ import (
 	githubmock "github.com/giantswarm/devctl/v8/e2e/mock/github"
 	"github.com/giantswarm/devctl/v8/e2e/mock/sequence"
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
+	"github.com/giantswarm/devctl/v8/pkg/authexec"
 	"github.com/giantswarm/devctl/v8/pkg/authstore"
 )
 
@@ -35,6 +36,7 @@ func newRunner(t *testing.T, routes sequence.Routes, github func(context.Context
 		stdout:        stdout,
 		stderr:        stderr,
 		requireGitHub: github,
+		personGitHub:  github,
 		requireCircleCI: func(context.Context) (authstore.Token, error) {
 			return authstore.Token{}, &authstore.AuthRequiredError{Identity: "CircleCI", Cause: "no token in the keychain", Hint: "devctl auth login --circleci-only"}
 		},
@@ -199,23 +201,23 @@ func Test_run_authRequiredBeforeAnyRequest(t *testing.T) {
 	}
 }
 
-// A pull request the App's token cannot see (e.g. a private repository
-// outside its installation) answers 404 like one that does not exist; the
-// keychain token's App login gets a hint naming what it reaches, so this
-// stays distinguishable from a genuinely missing pull request.
+// A pull request the App's token cannot see in an owner it is installed on
+// answers 404 like one that does not exist; the keychain token's App login
+// gets a hint naming what it reaches, so this stays distinguishable from a
+// genuinely missing pull request.
 func Test_run_notFoundHint(t *testing.T) {
 	routes := sequence.Routes{
-		"GET /repos/o/r/pulls/42": {{Status: 404, Body: map[string]any{"message": "Not Found"}}},
+		"GET /repos/giantswarm/r/pulls/42": {{Status: 404, Body: map[string]any{"message": "Not Found"}}},
 	}
 	r, stdout, _, _ := newRunner(t, routes, loggedInFromKeychain, nil)
 
-	err := r.run(context.Background(), []string{"o/r", "42"})
+	err := r.run(context.Background(), []string{"giantswarm/r", "42"})
 	if agentcli.Exit(err) != agentcli.ExitUsage {
 		t.Fatalf("want exit 7, got %v", err)
 	}
 	doc := decode(t, stdout)
 	reason, _ := doc["reason"].(string)
-	if !strings.Contains(reason, "not found error: pull request o/r#42") {
+	if !strings.Contains(reason, "not found error: pull request giantswarm/r#42") {
 		t.Errorf("reason lost the original not-found error: %v", doc)
 	}
 	if !strings.Contains(reason, "reaches the giantswarm organization and public repositories only") {
@@ -238,6 +240,59 @@ func Test_run_usage(t *testing.T) {
 		}
 		if n := len(server.Requests()); n != 0 {
 			t.Errorf("%q: want no request, got %d", args, n)
+		}
+	}
+}
+
+// The App is installed on giantswarm only: a pull request there is acted on
+// with the App login, one of any other owner with the person's own gh login,
+// and the document names which.
+func Test_run_identityPerOwner(t *testing.T) {
+	refused := func(context.Context) (authstore.Token, error) {
+		return authstore.Token{}, errors.New("the wrong identity was asked")
+	}
+	ghLogin := func(context.Context) (authstore.Token, error) {
+		return authstore.Token{Value: "gho_test", Source: authexec.SourceGHLogin}, nil
+	}
+	for _, tc := range []struct {
+		repository  string
+		app, person func(context.Context) (authstore.Token, error)
+		want        string
+	}{
+		{repository: "giantswarm/r", app: loggedInFromKeychain, person: refused, want: "app"},
+		{repository: "o/r", app: refused, person: ghLogin, want: "gh"},
+	} {
+		t.Run(tc.repository, func(t *testing.T) {
+			r, stdout, _, _ := newRunner(t, sequence.Routes{}, tc.app, nil)
+			r.personGitHub = tc.person
+			_ = r.run(context.Background(), []string{tc.repository, "42"})
+			doc := decode(t, stdout)
+			if doc["identity"] != tc.want {
+				t.Errorf("identity: want %q, got %v (reason %v)", tc.want, doc["identity"], doc["reason"])
+			}
+		})
+	}
+}
+
+// A repository outside the App's owners that the person's gh login cannot
+// read either is exit 7 naming the missing installation and the access the
+// gh login lacks.
+func Test_run_notFoundHintGHLogin(t *testing.T) {
+	routes := sequence.Routes{
+		"GET /repos/o/r/pulls/42": {{Status: 404, Body: map[string]any{"message": "Not Found"}}},
+	}
+	r, stdout, _, _ := newRunner(t, routes, func(context.Context) (authstore.Token, error) {
+		return authstore.Token{Value: "gho_test", Source: authexec.SourceGHLogin}, nil
+	}, nil)
+
+	err := r.run(context.Background(), []string{"o/r", "42"})
+	if agentcli.Exit(err) != agentcli.ExitUsage {
+		t.Fatalf("want exit 7, got %v", err)
+	}
+	reason, _ := decode(t, stdout)["reason"].(string)
+	for _, want := range []string{"installed on giantswarm only", "your own gh login", "needs read access"} {
+		if !strings.Contains(reason, want) {
+			t.Errorf("reason lacks %q: %s", want, reason)
 		}
 	}
 }

@@ -8,6 +8,7 @@ import (
 
 	"github.com/giantswarm/devctl/v8/internal/versiongate"
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
+	"github.com/giantswarm/devctl/v8/pkg/authexec"
 	"github.com/giantswarm/devctl/v8/pkg/authstore"
 )
 
@@ -33,7 +34,9 @@ builds the repository: it has a project there with at least one pipeline. A
 repository without either (an upstream fork; a template repository whose
 configuration is for the repositories created from it) is judged from GitHub
 alone. Tokens come from the keychain (` + "`devctl auth login`" + `); the CircleCI token is
-required only when CircleCI is consulted.
+required only when CircleCI is consulted. The GitHub identity follows the owner: the devctl App login for giantswarm,
+where the App is installed, your own gh login (gh auth token) for every other
+owner; the document's identity says which ("app" or "gh").
 
 Polling is conditional (ETags, a 304 costs no budget) at an interval derived
 from the rate-limit headers of the answers, 15 s to 60 s.
@@ -58,7 +61,8 @@ Exit codes:
   3  not applicable: draft, closed, merged, conflicting, behind a strict base
   4  a required status context never reported within the timeout
   7  usage or a tooling failure
-  8  authentication required; reason names the devctl auth login to run`
+  8  authentication required; reason names the devctl auth login (or gh auth
+     login, for an owner outside giantswarm) to run`
 	example = `  devctl pr wait giantswarm/devctl 2277
   devctl pr wait giantswarm/devctl 2277 --timeout 45m --progress`
 )
@@ -84,6 +88,7 @@ func New(config Config) (*cobra.Command, error) {
 		stderr:          config.Stderr,
 		stdout:          config.Stdout,
 		requireGitHub:   authstore.RequireGitHub,
+		personGitHub:    authexec.PersonGitHub,
 		requireCircleCI: authstore.RequireCircleCI,
 		renewGitHub:     authstore.RenewGitHubToken,
 		endpoints:       agentcli.EndpointsFromEnv,
