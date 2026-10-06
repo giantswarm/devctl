@@ -228,6 +228,27 @@
     ci:
       generate: false
       templateContent: true
+- name: maintenance-branches
+  # A fork line whose release-X.Y branches release their series' patches.
+  componentType: service
+  defaultBranch: giantswarm
+  gen:
+    flavours:
+      - fork
+    language: go
+    ci:
+      generate: false
+      releaseWorkflow: auto-release
+      maintenanceBranches: true
+- name: maintenance-branches-no-fork
+  componentType: service
+  gen:
+    flavours:
+      - app
+    language: go
+    ci:
+      generate: true
+      maintenanceBranches: true
 - name: template-content-generated
   componentType: template
   gen:

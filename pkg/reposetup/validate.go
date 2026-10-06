@@ -3,6 +3,7 @@ package reposetup
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/giantswarm/microerror"
@@ -379,6 +380,13 @@ func (v Validator) creationRules(ctx context.Context, owner string, entry *Entry
 	// pipeline is.
 	if fields.Gen != nil && fields.Gen.CI != nil && fields.Gen.CI.TemplateContent && fields.Gen.CI.Generate != nil && *fields.Gen.CI.Generate {
 		entry.refuse("gen.ci.templateContent", "contradicts gen.ci.generate: true: a generated pipeline is the repository's own, template content is not built here")
+	}
+
+	// Maintenance branches are a fork line's auto-release knob: another
+	// flavour's auto-release covers its release-X.x branches already.
+	if fields.Gen != nil && fields.Gen.CI != nil && fields.Gen.CI.MaintenanceBranches &&
+		(!slices.Contains(fields.Gen.Flavours, gen.FlavourFork.String()) || effectiveReleaseWorkflow(fields.Gen.CI) != releaseWorkflowAutoRelease) {
+		entry.refuse("gen.ci.maintenanceBranches", "needs gen.flavours fork and gen.ci.releaseWorkflow auto-release: it releases a fork line's release-X.Y branches")
 	}
 
 	// The name: lowercase, the chart's name where a chart exists, free on

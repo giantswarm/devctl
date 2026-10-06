@@ -206,8 +206,11 @@ type CIFields struct {
 	// pipeline: CircleCI has nothing to build here. The reconciler's circleci
 	// and release steps skip the repository. It sits beside Generate false;
 	// Generate true beside it is refused.
-	TemplateContent         bool   `yaml:"templateContent"`
-	ReleaseWorkflow         string `yaml:"releaseWorkflow"`
+	TemplateContent bool   `yaml:"templateContent"`
+	ReleaseWorkflow string `yaml:"releaseWorkflow"`
+	// MaintenanceBranches says a fork line's maintenance branches
+	// (release-X.Y) cut releases too, each the patches of its X.Y series.
+	MaintenanceBranches     bool   `yaml:"maintenanceBranches"`
 	AppCatalog              string `yaml:"appCatalog"`
 	AppCatalogTest          string `yaml:"appCatalogTest"`
 	ChartName               string `yaml:"chartName"`
