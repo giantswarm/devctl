@@ -9,6 +9,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `pkg/reposetup` `Test_Render` passes without `go generate` having written the gitignored `.sha` provenance files: the
+  golden comparison masks the template provenance link in both of its forms, so a plain `go test` agrees with CI.
 - `gen precommit --flavors helmchart`: the helm-docs hook passes `--chart-to-generate` with the repository's own
   charts, so it no longer rewrites the READMEs of vendored subcharts under `helm/<chart>/charts/` and fails every pull
   request that touches the chart's values; a repository-local `.helmdocsignore` is no longer needed.
