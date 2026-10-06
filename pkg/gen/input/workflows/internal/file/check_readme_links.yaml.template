@@ -1,0 +1,32 @@
+{{{{ .Header }}}}
+
+name: check-readme-links
+
+# Checks the links in README.md: dead URLs, relative paths that do not exist
+# in the repository, reversed link syntax. A pull request that breaks a link
+# goes red. The weekly run catches links whose target moved without the
+# README changing, and files its findings as one issue instead of failing.
+# The checker configuration is maintained centrally in
+# giantswarm/github-workflows under link-check/.
+
+on:
+  pull_request:
+    branches:
+      - master
+      - main
+    paths:
+      - 'README.md'
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch: {}
+
+permissions: {}
+
+jobs:
+  check-readme-links:
+    uses: giantswarm/github-workflows/.github/workflows/check-readme-links.yaml@main
+    with:
+      fail_on_error: ${{ github.event_name == 'pull_request' }}
+    permissions:
+      contents: read
+      issues: write

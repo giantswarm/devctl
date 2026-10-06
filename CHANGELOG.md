@@ -24,6 +24,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `gen workflows --flavour app`: new `zz_generated.check_readme_links.yaml`, which calls the `check-readme-links` reusable
+  workflow of giantswarm/github-workflows. On a pull request that touches `README.md` it fails on a dead URL, a relative
+  path that does not exist in the repository or a reversed link `(text)[url]`; the weekly run catches links whose target moved
+  without the README changing and files its findings as one issue. Prompted by the dead `docs.giantswarm.io` and
+  `helm/<chart>/...` links in several app READMEs that surfaced in the Backstage README cards in October 2026.
 - `repo reconcile --unarchived`: the way back from `lifecycle: archived`. When the change at hand took the lifecycle
   from the entry, the lifecycle step unarchives the repository on GitHub ahead of the other steps, which set it up
   again (CircleCI follow and deploy key, protection) in the same run; the result says `unarchived`. An archive no

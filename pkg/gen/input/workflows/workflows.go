@@ -45,6 +45,10 @@ func (w *Workflows) AddCustomerBoardAutomation() input.Input {
 	return file.NewCustomerBoardAutomationInput(w.params)
 }
 
+func (w *Workflows) CheckReadmeLinks() input.Input {
+	return file.NewCheckReadmeLinksInput(w.params)
+}
+
 func (w *Workflows) CheckValuesSchema() input.Input {
 	return file.NewCheckValuesSchemaInput(w.params)
 }
