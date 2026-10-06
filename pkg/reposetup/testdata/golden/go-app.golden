@@ -1331,12 +1331,17 @@ repos:
         pass_filenames: false
         args:
           - helm/example-go-service/values.schema.json
+  # helm-docs finds every chart below helm/, the vendored subcharts under
+  # helm/<chart>/charts/ included; --chart-to-generate limits the README it
+  # writes to the repo's own charts, so the vendored subtree stays untouched
+  # like it does for the base hooks above.
   - repo: https://github.com/norwoodj/helm-docs
     rev: "v1.14.2"
     hooks:
       - id: helm-docs
         args:
           - --chart-search-root=helm
+          - --chart-to-generate=helm/example-go-service
           - --sort-values-order=file
 
 --- .yamllint.yaml
