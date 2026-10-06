@@ -66,8 +66,9 @@ type Config struct {
 	Wait prwait.Config
 	// Method is squash or rebase; empty is squash.
 	Method githubclient.MergeMethod
-	// UpdateBranch: a head behind a strict base is updated from the base
-	// and the new head waited for, instead of exit 3.
+	// UpdateBranch: a head behind its base is updated from the base before
+	// its checks are judged and the new head waited for; behind a strict
+	// base, instead of exit 3.
 	UpdateBranch bool
 	// Login is the account the token acts as, for the author check; empty
 	// reads it from GET /user.
@@ -196,8 +197,11 @@ func (m *Merger) Merge(ctx context.Context, owner, repo string, number int) (*Re
 	}
 	m.progress.Printf("refusals: none; %s by %s", pr.GetHead().GetSHA(), pr.GetUser().GetLogin())
 
-	if pr.GetMergeableState() == "behind" {
-		// Only reached with --update-branch: refuse() said exit 3 otherwise.
+	behind, err := m.behind(ctx, owner, repo, pr)
+	if err != nil {
+		return result, err
+	}
+	if behind {
 		if err := m.update(ctx, owner, repo, number, pr.GetHead().GetSHA()); err != nil {
 			return result, err
 		}
@@ -369,6 +373,28 @@ func authorRefusal(pr *github.PullRequest, caller string) string {
 		reason += fmt.Sprintf("; %s is accepted as account %d and this pull request's author is account %d", login, id, user.GetID())
 	}
 	return reason
+}
+
+// behind says whether the head is to be updated from the base before the
+// wait, so the wait judges the updated head and not a head that is red only
+// because its old base was. Only with --update-branch: behind a strict base
+// (refuse() said exit 3 otherwise), or behind any other base by the
+// comparison, which GitHub's mergeable state does not report.
+func (m *Merger) behind(ctx context.Context, owner, repo string, pr *github.PullRequest) (bool, error) {
+	if !m.updateBranch {
+		return false, nil
+	}
+	if pr.GetMergeableState() == "behind" {
+		return true, nil
+	}
+	by, err := m.github.BehindBy(ctx, owner, repo, pr.GetBase().GetRef(), pr.GetHead().GetSHA())
+	if err != nil {
+		return false, microerror.Mask(err)
+	}
+	if by > 0 {
+		m.progress.Printf("update-branch: %s is %d commit(s) behind %s", pr.GetHead().GetSHA(), by, pr.GetBase().GetRef())
+	}
+	return by > 0, nil
 }
 
 // update asks GitHub to merge the base into the head and reads the pull

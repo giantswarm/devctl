@@ -314,6 +314,36 @@ func Test_Merge_paths(t *testing.T) {
 				requested: map[string]int{"PUT /repos/o/r/pulls/42/update-branch": 1, "GET /repos/o/r/commits/def456/check-runs": 1, "GET /repos/o/r/commits/abc123/check-runs": 0, "PUT /repos/o/r/pulls/42/merge": 1}},
 		},
 		{
+			name: "behind a base that is not strict, with --update-branch: update before judging the old head, merge",
+			routes: routes(pull(nil), greenHead("def456"), sequence.Routes{
+				"GET /repos/o/r/pulls/42": {
+					{Body: pull(map[string]any{"mergeable_state": "blocked"})},
+					{Body: pull(map[string]any{"mergeable_state": "blocked"})},
+					{Body: pull(map[string]any{"head": map[string]any{"sha": "def456", "ref": "feature", "repo": map[string]any{"full_name": "o/r"}}})},
+				},
+				"GET /repos/o/r/compare/main...abc123":  {{Body: map[string]any{"status": "diverged", "ahead_by": 1, "behind_by": 2}}},
+				"PUT /repos/o/r/pulls/42/update-branch": {{Status: http.StatusAccepted, Body: map[string]any{"message": "Updating pull request branch.", "url": "https://api.github.com/repos/o/r/pulls/42"}}},
+			}),
+			configure: func(c *Config) { c.UpdateBranch = true },
+			want: want{method: "squash", mergedBy: "someone", mergeSHA: "m1", deleted: true, headSHA: "def456",
+				requested: map[string]int{"GET /repos/o/r/compare/main...abc123": 1, "PUT /repos/o/r/pulls/42/update-branch": 1, "GET /repos/o/r/commits/def456/check-runs": 1, "GET /repos/o/r/commits/abc123/check-runs": 0, "PUT /repos/o/r/pulls/42/merge": 1}},
+		},
+		{
+			name: "up to date with --update-branch: no update, the head is judged and merged",
+			routes: routes(pull(nil), sequence.Routes{
+				"GET /repos/o/r/compare/main...abc123": {{Body: map[string]any{"status": "ahead", "ahead_by": 1, "behind_by": 0}}},
+			}),
+			configure: func(c *Config) { c.UpdateBranch = true },
+			want: want{method: "squash", mergedBy: "someone", mergeSHA: "m1", deleted: true, headSHA: "abc123",
+				requested: map[string]int{"GET /repos/o/r/compare/main...abc123": 1, "PUT /repos/o/r/pulls/42/update-branch": 0, "PUT /repos/o/r/pulls/42/merge": 1}},
+		},
+		{
+			name:   "without --update-branch the base is not compared",
+			routes: routes(pull(map[string]any{"mergeable_state": "blocked"})),
+			want: want{method: "squash", mergedBy: "someone", mergeSHA: "m1", deleted: true, headSHA: "abc123",
+				requested: map[string]int{"GET /repos/o/r/compare/main...abc123": 0, "PUT /repos/o/r/pulls/42/update-branch": 0, "PUT /repos/o/r/pulls/42/merge": 1}},
+		},
+		{
 			name: "a mergeable state not computed yet is read again",
 			routes: routes(pull(nil), sequence.Routes{
 				"GET /repos/o/r/pulls/42": {{Body: pull(map[string]any{"mergeable_state": "unknown"})}, {Body: pull(map[string]any{"mergeable_state": "behind"})}},

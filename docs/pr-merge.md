@@ -136,11 +136,15 @@ merge) is exit 1; the deadline is exit 2 with `unfinished` naming the queue.
 
 ### `--update-branch`
 
-A head behind a base that requires branches to be up to date cannot merge as it is. With
-`--update-branch` the command asks GitHub to merge the base into the head (the **Update branch**
+A head behind a base that requires branches to be up to date cannot merge as it is, and a head
+behind any other base may be red only because its old base was. With `--update-branch` the command
+asks GitHub to merge the base into the head before any check is judged (the **Update branch**
 button, `PUT .../pulls/{number}/update-branch` with the current head as the expected head), reads
 the pull request until the new head is on it, and the wait judges that head: the CI of the updated
-branch is what turns green, and the merge lands it. Without the flag, behind is exit 3.
+branch is what turns green, and the merge lands it. Behind is GitHub's mergeable state for a strict
+base, and for every other base the comparison of base and head (`GET .../compare/{base}...{head}`,
+`behind_by`); a head that is not behind is judged as it is. Without the flag, behind a strict base
+is exit 3 and a head behind any other base is judged as it is.
 
 ## The release
 
