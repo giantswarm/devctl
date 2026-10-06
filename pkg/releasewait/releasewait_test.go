@@ -904,18 +904,34 @@ func TestWaitJobsNeverVisibleIsTimeout(t *testing.T) {
 	}
 }
 
-// A 404 on the jobs of a finished workflow is not a young pipeline: it stays
-// the tooling failure it is.
-func TestWaitJobsNotFoundOnAFinishedWorkflowIsTooling(t *testing.T) {
-	circleci := pipelineRoutes([][]map[string]any{{wf("w1", "build", "success", "2026-09-21T10:00:00Z")}}, nil)
-	circleci["GET /api/v2/workflow/w1/job"] = []sequence.Response{{Status: 404, Body: map[string]any{"message": "Workflow not found"}}}
+// The jobs of a setup workflow that already reads success can still be 404
+// for a poll (giantswarm/devctl v8.114.0): not a tooling failure, the next
+// poll reads them and the wait ends available.
+func TestWaitJobsNotFoundOnAFinishedWorkflowIsNotYet(t *testing.T) {
+	circleci := pipelineRoutes(
+		[][]map[string]any{
+			{wf("w1", "setup", "success", "2026-09-21T10:00:00Z"), wf("w2", "build", "success", "2026-09-21T10:01:00Z")},
+		},
+		map[string][]map[string]any{"w2": {job("push-to-registries-release", "success"), job("push-chart-release", "success")}},
+	)
+	circleci["GET /api/v2/workflow/w1/job"] = []sequence.Response{
+		{Status: 404, Body: map[string]any{"message": "Workflow not found"}},
+		{Body: map[string]any{"items": []map[string]any{job("setup", "success")}}},
+	}
 	fx := fixture{
 		entry:    generatedEntry(t),
 		github:   baseGitHub([]string{"Dockerfile", "helm"}, []string{"zz_generated.auto_release.yaml"}, []string{"config.yml", "workflows.yml"}),
 		circleci: circleci,
+		registry: sequence.Routes{
+			"HEAD /v2/giantswarm/kserve-controller/manifests/1.2.3": {{Status: 200}},
+			"HEAD /v2/charts/giantswarm/kserve/manifests/1.2.3":     {{Status: 200}},
+		},
 	}
-	_, err := run(t, fx)
-	assertExit(t, err, agentcli.ExitUsage, "reading the jobs of workflow build")
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+	if result.Pipeline == nil || len(result.Pipeline.Unfinished) != 0 {
+		t.Errorf("pipeline: %+v", result.Pipeline)
+	}
 }
 
 // giantswarm/mcp-toolkit merged its generated pipeline and auto-release

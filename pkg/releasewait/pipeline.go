@@ -57,11 +57,13 @@ func (w *Waiter) pipelineState(ctx context.Context, result *Result) (*pipelineSt
 		jobs, err := w.circleci.ListWorkflowJobs(ctx, run.ID)
 		switch {
 		case err == nil:
-		case circleciclient.IsNotFound(err) && !circleciclient.WorkflowFinished(run.Status):
+		case circleciclient.IsNotFound(err):
 			// CircleCI knows a workflow by id before it lists its jobs: for
-			// a short while after the pipeline is created, the jobs of a
-			// running workflow are 404. That is the tag not built yet, not a
-			// tooling failure: the next poll reads them.
+			// a short while the jobs are 404, of a running workflow and of a
+			// setup workflow that has already finished alike. That is the
+			// tag not readable yet, not a tooling failure: the next poll
+			// reads them, and jobs that never appear end the wait at its
+			// timeout naming the workflow.
 			jobsHidden = true
 			state.green = false
 			doc.Unfinished = append(doc.Unfinished, fmt.Sprintf("%s (%s, jobs not visible yet)", run.Name, run.Status))

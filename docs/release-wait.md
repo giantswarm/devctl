@@ -165,9 +165,9 @@ workflows reduced to the **newest run per workflow name** (a rerun, from failed 
 second workflow of the same name in the same pipeline, and the one it replaces keeps its failed
 status for ever). A workflow in `failed`, `error`, `failing`, `canceled` or `unauthorized` ends the
 wait with exit 1 and `pipeline.failedJobs` (`workflow/job`). A workflow CircleCI knows by id but
-answers 404 on the jobs of -- the setup workflow for a short while after the pipeline is created --
-is not finished: the poll goes on and `pipeline.unfinished` says `setup (running, jobs not visible
-yet)`; the same 404 on a finished workflow is a tooling failure (exit 7). A repository without CircleCI is judged
+answers 404 on the jobs of -- the setup workflow for a short while, running or already `success` --
+is not readable yet: the poll goes on and `pipeline.unfinished` says `setup (running, jobs not visible
+yet)`; jobs that never appear end the wait at its timeout naming the workflow. A repository without CircleCI is judged
 by the GitHub Actions runs on the tag's commit whose branch is the tag: a `failure`, `cancelled`,
 `timed_out` or `startup_failure` conclusion is exit 1.
 
