@@ -9,6 +9,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `pr merge` (the merge-queue enqueue) and `repo setup` (the merge-settings read), the two GraphQL calls: a refusal
+  for a spent rate limit names the limit and its reset (`the graphql rate limit (5000) is spent until …`), since
+  GraphQL refuses a caller whose limit is spent while REST still answers. `release wait` and `pr wait` read REST only.
 - `pr merge`: a merge declined on classic branch protection names the entry whose `align: true` gives the repository
   the devctl ruleset (`the entry <repo> in repositories/<team>.yaml of giantswarm/github`), or `devctl repo adopt` for
   a repository no team file declares, and says that devctl never lifts `enforce_admins`: its token carries no

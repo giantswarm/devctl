@@ -164,7 +164,7 @@ func (c *Client) EnqueuePullRequest(ctx context.Context, nodeID string) error {
 		return microerror.Mask(err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return microerror.Maskf(executionError, "enqueue: GraphQL answered %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
+		return microerror.Maskf(executionError, "enqueue: %s", GraphQLRefusal(resp.Header, fmt.Sprintf("GraphQL answered %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))))
 	}
 	var answer struct {
 		Errors []struct {
@@ -179,7 +179,7 @@ func (c *Client) EnqueuePullRequest(ctx context.Context, nodeID string) error {
 		for _, e := range answer.Errors {
 			messages = append(messages, e.Message)
 		}
-		return microerror.Maskf(executionError, "enqueue: %s", strings.Join(messages, "; "))
+		return microerror.Maskf(executionError, "enqueue: %s", GraphQLRefusal(resp.Header, strings.Join(messages, "; ")))
 	}
 	return nil
 }
