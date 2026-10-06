@@ -181,6 +181,7 @@ func newHarnessMode(t *testing.T, yaml string, mode reposetup.Mode) *harness {
 	ctx := context.Background()
 	gh, cc := newFakeGitHub(), newFakeCircleCI()
 	cc.onFollow = gh.installHook // a follow by an admin with the hook scope
+	cc.onKey = gh.installDeployKey
 	cc.isAdmin = gh.isAdmin
 	t.Cleanup(gh.srv.Close)
 	t.Cleanup(cc.srv.Close)
@@ -1265,7 +1266,7 @@ func TestSteps(t *testing.T) {
 			},
 			wantCheck: VerdictOK,
 			verify: func(t *testing.T, _ *harness, res *Result) {
-				require.Equal(t, "followed, setup workflows on, checkout key present, webhook present", res.Step(StepCircleCI).Summary)
+				require.Equal(t, "followed, setup workflows on, checkout key present, deploy keys on GitHub: CircleCI (read-only), webhook present", res.Step(StepCircleCI).Summary)
 			},
 		},
 		{
@@ -1279,6 +1280,7 @@ func TestSteps(t *testing.T) {
 				r := h.gh.addRepo(owner, name)
 				h.cc.onFollow = nil
 				h.cc.follow(owner, name)
+				r.deployKeys = []*github.Key{circleCIDeployKey()}
 				inactive := circleCIHook()
 				inactive.Active = new(false)
 				r.hooks = []*github.Hook{inactive, {ID: new(int64(7)), Name: new("web"), Active: new(true), Events: []string{"push"}, Config: &github.HookConfig{URL: new("https://github-pr-webhook.ci.giantswarm.io")}}}
@@ -1286,7 +1288,7 @@ func TestSteps(t *testing.T) {
 			wantCheck: VerdictReported, wantFinding: FindingCircleCIWebhookMissing, wantAfter: VerdictReported,
 			verify: func(t *testing.T, _ *harness, res *Result) {
 				sr := res.Step(StepCircleCI)
-				require.Equal(t, "followed, setup workflows on, checkout key present, webhook missing", sr.Summary)
+				require.Equal(t, "followed, setup workflows on, checkout key present, deploy keys on GitHub: CircleCI (read-only), webhook missing", sr.Summary)
 				require.Len(t, sr.Findings, 1)
 				require.False(t, sr.Findings[0].Advisory, "a deaf project is not set up")
 				require.Contains(t, sr.Findings[0].Fix, "POST /api/v1.1/project/github/giantswarm/sample-service/follow")
@@ -1319,7 +1321,58 @@ func TestSteps(t *testing.T) {
 			},
 			wantCheck: VerdictReported, wantFinding: FindingUnchecked, wantAfter: VerdictReported,
 			verify: func(t *testing.T, _ *harness, res *Result) {
-				require.Equal(t, "followed, setup workflows on, checkout key present, webhook not readable by this identity", res.Step(StepCircleCI).Summary)
+				require.Equal(t, "followed, setup workflows on, checkout key present, deploy keys on GitHub: CircleCI (read-only), webhook not readable by this identity", res.Step(StepCircleCI).Summary)
+			},
+		},
+		{
+			// CircleCI lists its checkout key after the deploy key is gone
+			// from GitHub (deleted by hand, or by the archive): no pipeline
+			// can clone the repository. The key on GitHub is the one read,
+			// and the repair creates it again.
+			name: "circleci: CircleCI's deploy key gone from GitHub is created again", step: StepCircleCI,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				h.cc.follow(owner, name)
+				r.deployKeys = nil
+			},
+			wantCheck: VerdictDrift, wantChange: "create a deploy key",
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				require.Len(t, h.repo().deployKeys, 1, "CircleCI installed its deploy key on GitHub again")
+			},
+		},
+		{
+			// A deploy key of another system beside CircleCI's: the summary
+			// names every key on GitHub with its access, the record being
+			// where an identity without the administration permission reads
+			// them.
+			name: "circleci: every deploy key on GitHub is named with its access", step: StepCircleCI,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				h.cc.follow(owner, name)
+				r.deployKeys = append(r.deployKeys, &github.Key{ID: new(int64(42)), Title: new("deployer"), ReadOnly: new(false)})
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, _ *harness, res *Result) {
+				require.Equal(t, "followed, setup workflows on, checkout key present, deploy keys on GitHub: CircleCI (read-only), deployer (read-write), webhook present", res.Step(StepCircleCI).Summary)
+			},
+		},
+		{
+			// GET /repos/{owner}/{repo}/keys answers 404 to a user without
+			// admin rights and 403 to an App without the administration
+			// permission: the keys are unchecked, CircleCI's list decides
+			// alone, nothing is guessed.
+			name: "circleci: deploy keys the identity cannot read are unchecked", step: StepCircleCI,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				h.cc.follow(owner, name)
+				r.keysStatus = 403
+			},
+			wantCheck: VerdictReported, wantFinding: FindingUnchecked, wantAfter: VerdictReported,
+			verify: func(t *testing.T, _ *harness, res *Result) {
+				sr := res.Step(StepCircleCI)
+				require.Equal(t, "followed, setup workflows on, checkout key present, deploy keys not readable by this identity, webhook present", sr.Summary)
+				require.Len(t, sr.Findings, 1)
+				require.Contains(t, sr.Findings[0].Message, "GET /repos/{owner}/{repo}/keys")
 			},
 		},
 		{
@@ -2513,14 +2566,14 @@ func TestRunFullRepositorySetUp(t *testing.T) {
 	require.Contains(t, string(data), `"repository":"giantswarm/sample-service"`)
 
 	// The budget: a check of the converged repository, every step, costs at
-	// most twenty-one GitHub requests (the webhooks read the circleci step
-	// added is the twenty-first), and the count is the fake's own.
+	// most twenty-two GitHub requests (the webhooks and the deploy keys the
+	// circleci step reads are the last two), and the count is the fake's own.
 	before := len(h.gets())
 	check := h.run(ModeCheck, false)
 	require.True(t, check.Converged, "%+v", check.Steps)
 	gets := h.gets()[before:]
 	require.Equal(t, len(gets), check.Requests.GitHub, "the counter and the fake agree")
-	require.LessOrEqual(t, check.Requests.GitHub, 21, "a converged check within the budget of twenty-one; the reads:\n%s", strings.Join(gets, "\n"))
+	require.LessOrEqual(t, check.Requests.GitHub, 22, "a converged check within the budget of twenty-two; the reads:\n%s", strings.Join(gets, "\n"))
 	require.Positive(t, check.Requests.CircleCI, "the circleci and release steps read CircleCI")
 
 	// The override costs nothing: the caller hands it in with the entry

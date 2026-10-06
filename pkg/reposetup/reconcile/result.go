@@ -31,7 +31,7 @@
 //
 // What a run costs in requests is counted at the clients' transports
 // ([Counter]) into [Result.Requests], and per step in the log. A check of a
-// converged repository with every step costs at most twenty-one GitHub
+// converged repository with every step costs at most twenty-two GitHub
 // requests, the budget of the nightly reconciler: the repository (one read,
 // shared by the create, metadata and lifecycle steps); the root listing and
 // the chart's Chart.yaml and values.schema.json; the workflow permission;
@@ -41,13 +41,14 @@
 // newest head, three requests once per run, shared by every step that asks
 // — the pipeline files workflows.yml and custom.yml (and .circleci/
 // config.yml once when the entry does not declare the pipeline); the
-// webhooks (one read, shared by the circleci and webhooks steps);
-// renovate.json5 and the Dependency Dashboard issue; CODEOWNERS; the
-// catalog and the mapping; the latest release. Measured in check mode with
-// a person's token: giantswarm/backstage 18, giantswarm/klaus 19 (one of
-// them a CODEOWNERS drift, which also lists the open pull requests); the
-// ruleset reads add two to each. A planned change costs the same reads; a
-// repair adds one write per change.
+// deploy keys (one read, the circleci step); the webhooks (one read, shared
+// by the circleci and webhooks steps); renovate.json5 and the Dependency
+// Dashboard issue; CODEOWNERS; the catalog and the mapping; the latest
+// release. Measured in check mode with a person's token: giantswarm/backstage
+// 18, giantswarm/klaus 19 (one of them a CODEOWNERS drift, which also lists
+// the open pull requests); the ruleset reads add two to each and the deploy
+// keys one. A planned change costs the same reads; a repair adds one write
+// per change.
 //
 // The reconciler workflow of giantswarm/github runs the steps under the App
 // identity, `devctl repo reconcile` runs them as the person, `devctl repo
