@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- `release wait` (and the release wait of `pr merge`): a 404 on the jobs of a CircleCI workflow that already reads
+  finished, the setup workflow of a fresh tag pipeline, is read again on the next poll instead of ending the wait
+  with exit 7 (exit 9 after a merge); jobs that never appear end the wait at its timeout naming the workflow.
+
 ### Added
 
 - `pr wait` and `pr merge` reach repositories outside giantswarm: the App login serves the owners the devctl App is
