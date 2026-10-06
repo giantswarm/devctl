@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,6 +12,8 @@ import (
 	"strings"
 
 	"github.com/google/go-github/v92/github"
+
+	"github.com/giantswarm/devctl/v8/pkg/githubclient"
 )
 
 // stepSettings applies the settings baseline: features, merge settings (a
@@ -183,7 +186,7 @@ func (r *Runner) mergeSettingsGraphQL(ctx context.Context, s *run) (mergeSetting
 		return mergeSettings{}, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return mergeSettings{}, fmt.Errorf("GraphQL answered %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
+		return mergeSettings{}, errors.New(githubclient.GraphQLRefusal(resp.Header, fmt.Sprintf("GraphQL answered %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))))
 	}
 	var answer struct {
 		Data struct {
@@ -224,7 +227,7 @@ func (r *Runner) mergeSettingsGraphQL(ctx context.Context, s *run) (mergeSetting
 	if len(messages) == 0 {
 		messages = append(messages, "no repository in the answer")
 	}
-	return mergeSettings{}, fmt.Errorf("GraphQL: %s", strings.Join(messages, "; "))
+	return mergeSettings{}, errors.New(githubclient.GraphQLRefusal(resp.Header, "GraphQL: "+strings.Join(messages, "; ")))
 }
 
 // stepPermissions grants the baseline's teams their permission; teams the
