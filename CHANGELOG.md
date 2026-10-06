@@ -38,6 +38,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `gen workflows --maintenance-branches` (team file: `gen.ci.maintenanceBranches: true`): a fork line's maintenance
+  branches `release-X.Y` cut releases too. Each counts from its series' highest stable `vX.Y.Z` tag and releases the
+  next patch of that series, a feature included, as a candidate first; the stable release is a dispatch of the
+  workflow on the branch with `release-type: stable`. A series without a stable tag refuses. Opt-in: a fork line
+  without it and every other flavour render as before.
 - The circleci step reads the repository's deploy keys on GitHub on every run, the side that decides whether CircleCI
   checks the repository out: a CircleCI key gone from GitHub (deleted by hand, or by an archive) is created again
   instead of being read as present from CircleCI's list alone, and the step's summary names every deploy key with its
