@@ -11,6 +11,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - `pkg/reposetup` `Test_Render` passes without `go generate` having written the gitignored `.sha` provenance files: the
   golden comparison masks the template provenance link in both of its forms, so a plain `go test` agrees with CI.
+- `pr merge --update-branch`: a head behind a base that does not require branches to be up to date is updated before
+  its checks are judged, found by the comparison of base and head, which GitHub's mergeable state does not report.
+  A pull request red only because its old base was red, behind a base fixed since, is updated and merged in one call
+  instead of ending with exit 1 on the old head. Without the flag nothing changes.
+
 - `gen precommit --flavors helmchart`: the helm-docs hook passes `--chart-to-generate` with the repository's own
   charts, so it no longer rewrites the READMEs of vendored subcharts under `helm/<chart>/charts/` and fails every pull
   request that touches the chart's values; a repository-local `.helmdocsignore` is no longer needed.
