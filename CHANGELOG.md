@@ -9,6 +9,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `rollout wait --pr`: a repository that releases in two steps (the merge tags a release candidate, a promote
+  later cuts the stable release) is followed to the promoted release that contains the merge commit, named in
+  `release.tag` with the candidate in `release.candidate`. Before the promote the candidate is waited for with
+  `release.promotePending`, and an installation that follows only stable releases ends with exit 3 naming the
+  pending promote instead of a bare "excludes the version".
 - `repo reconcile`: the open-pull-requests finding pluralises by count: "1 pull request is open" instead of "1 pull
   requests are open".
 - `pkg/reposetup` `Test_Render` passes without `go generate` having written the gitignored `.sha` provenance files: the

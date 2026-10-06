@@ -120,23 +120,26 @@ func (r *runner) wait(ctx context.Context, args []string, doc *rolloutwait.Docum
 		return err
 	}
 	releaseWaiter, err := releasewait.New(releasewait.Config{
-		Owner:        owner,
-		Repo:         repo,
-		Version:      version,
-		PR:           r.flag.PR,
-		Timeout:      r.flag.ReleaseTimeout,
-		Images:       r.flag.Images,
-		Charts:       r.flag.Charts,
-		GitHub:       sources.GitHub,
-		Entries:      sources.Entries,
-		CircleCI:     sources.CircleCI,
-		Registry:     sources.Registry,
-		CatalogIndex: sources.CatalogIndex,
-		Endpoints:    endpoints,
-		Clock:        clock,
-		Rate:         sources.Rate,
-		Progress:     progress,
-		Warn:         doc.Warn,
+		Owner:   owner,
+		Repo:    repo,
+		Version: version,
+		PR:      r.flag.PR,
+		// An installation follows the stable release a promote cuts from
+		// the candidate on the merge commit, not the candidate.
+		PreferPromoted: true,
+		Timeout:        r.flag.ReleaseTimeout,
+		Images:         r.flag.Images,
+		Charts:         r.flag.Charts,
+		GitHub:         sources.GitHub,
+		Entries:        sources.Entries,
+		CircleCI:       sources.CircleCI,
+		Registry:       sources.Registry,
+		CatalogIndex:   sources.CatalogIndex,
+		Endpoints:      endpoints,
+		Clock:          clock,
+		Rate:           sources.Rate,
+		Progress:       progress,
+		Warn:           doc.Warn,
 	})
 	if err != nil {
 		return err
@@ -189,7 +192,12 @@ func (r *runner) wait(ctx context.Context, args []string, doc *rolloutwait.Docum
 	if err != nil {
 		return err
 	}
-	return waiter.Wait(ctx, &doc.Result)
+	err = waiter.Wait(ctx, &doc.Result)
+	if doc.Release.PromotePending && agentcli.Exit(err) == agentcli.ExitNotApplicable {
+		_, verdict := agentcli.Outcome(err)
+		return agentcli.NewExitError(agentcli.ExitNotApplicable, verdict, "%s; %s is the release candidate of #%d and no promoted release contains it yet: the promote is pending (devctl release promote %s), after which --pr follows the promoted release", err, doc.Release.Candidate, r.flag.PR, args[1])
+	}
+	return err
 }
 
 // waitRevision follows the merge commit of a pull request that releases
