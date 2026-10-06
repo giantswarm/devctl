@@ -9,6 +9,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `pr merge`: a merge declined on classic branch protection names the entry whose `align: true` gives the repository
+  the devctl ruleset (`the entry <repo> in repositories/<team>.yaml of giantswarm/github`), or `devctl repo adopt` for
+  a repository no team file declares, and says that devctl never lifts `enforce_admins`: its token carries no
+  Administration permission, so the lift-merge-restore is no way through for an agent.
 - `repo create` opens the declaration's pull request and nothing else: the reconciler of giantswarm/github creates the
   repository as its App once the pull request merges, scaffolds it and sets it up. The command no longer creates the
   repository or pushes the scaffold as the person, no longer requires the organization's owner role, and acts with the

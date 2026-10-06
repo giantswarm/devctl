@@ -408,7 +408,9 @@ func Test_Merge_reviewRuleDeclineNamesTheBypass(t *testing.T) {
 			map[string]any{"actor_id": 5176559, "actor_type": "Team", "bypass_mode": "pull_request"},
 		}}
 	owned := func(c *Config) {
-		c.Policy = func(context.Context, string, string) (Verdict, error) { return Verdict{Team: "team-honeybadger"}, nil }
+		c.Policy = func(context.Context, string, string) (Verdict, error) {
+			return Verdict{Team: "team-honeybadger", Entry: "the entry r in repositories/team-honeybadger.yaml of giantswarm/github"}, nil
+		}
 	}
 	tests := []struct {
 		name      string
@@ -506,7 +508,21 @@ func Test_Merge_reviewRuleDeclineNamesTheBypass(t *testing.T) {
 				"GET /repos/o/r/rules/branches/main": {{Body: []any{}}},
 			}),
 			configure: owned,
-			want:      []string{"the review rule of main, which no ruleset carries: classic branch protection requires the review", "aligned first", "team-honeybadger"},
+			want: []string{
+				"the review rule of main, which no ruleset carries: classic branch protection requires the review",
+				"aligned first, never merged past it: align: true on the entry r in repositories/team-honeybadger.yaml of giantswarm/github gives it the devctl ruleset",
+				"the owning team (team-honeybadger) and the repository admins merge",
+				"devctl never lifts enforce_admins",
+			},
+		},
+		{
+			name: "classic protection on a repository no team file declares: declared first",
+			routes: routes(pull(nil), sequence.Routes{
+				"PUT /repos/o/r/pulls/42/merge":      {declined},
+				"GET /repos/o/r/rules/branches/main": {{Body: []any{}}},
+			}),
+			want:    []string{"no team file declares the repository, so it is declared first (devctl repo adopt), then aligned with align: true on its entry", "devctl never lifts enforce_admins"},
+			wantNot: []string{"owning team"},
 		},
 		{
 			name: "a ruleset the token cannot read is said so",

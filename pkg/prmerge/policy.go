@@ -23,6 +23,10 @@ type Verdict struct {
 	// Team is the slug of the team whose file declares the repository, the
 	// ruleset's bypass actor for people; empty when no team file does.
 	Team string
+	// Entry names the entry that declares the repository and where it is
+	// held ("the entry r in repositories/team-x.yaml of giantswarm/github"),
+	// the place its alignment is opted in; empty when no team file does.
+	Entry string
 }
 
 // Policy is the repository's say on agent merges: an empty refusal allows
@@ -49,7 +53,7 @@ func TeamFilePolicy(gh *github.Client) Policy {
 		if err != nil {
 			return Verdict{}, microerror.Mask(err)
 		}
-		verdict := Verdict{Team: tf.Team}
+		verdict := Verdict{Team: tf.Team, Entry: fmt.Sprintf("the entry %s in %s of %s", repo, tf.Path, remote.Slug())}
 		entry, _ := tf.Entry(repo)
 		instance, err := entry.Instance()
 		if err != nil {
@@ -57,7 +61,7 @@ func TeamFilePolicy(gh *github.Client) Policy {
 		}
 		fields, _ := instance.(map[string]any)
 		if allowed, ok := fields[AgentMergeField].(bool); ok && !allowed {
-			verdict.Refusal = fmt.Sprintf("the entry %s in %s of %s says %s: false: agents do not merge in this repository", repo, tf.Path, remote.Slug(), AgentMergeField)
+			verdict.Refusal = fmt.Sprintf("%s says %s: false: agents do not merge in this repository", verdict.Entry, AgentMergeField)
 		}
 		return verdict, nil
 	}
