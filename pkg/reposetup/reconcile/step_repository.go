@@ -76,8 +76,33 @@ func (r *Runner) stepCreate(ctx context.Context, s *run, sr *StepResult) error {
 	sr.Summary = "exists"
 	if repo.GetArchived() {
 		sr.Summary = "exists, archived"
+		r.unarchiveRepository(ctx, s)
 	}
 	return nil
+}
+
+// unarchiveRepository is the way back from lifecycle: archived: the change
+// at hand took the lifecycle from the entry (Request.Unarchived), so the
+// repository is unarchived on GitHub. It is the lifecycle step's change,
+// applied by the lookup because every set-up step before the lifecycle
+// step needs a repository it can write to; the lifecycle step reports it,
+// and a run without the lifecycle step leaves the repository archived.
+func (r *Runner) unarchiveRepository(ctx context.Context, s *run) {
+	if !s.req.Unarchived || lifecycleOver(s.fields.Lifecycle) {
+		return
+	}
+	if s.req.Steps != nil && !containsStep(s.req.Steps, StepLifecycle) {
+		return
+	}
+	s.unarchive = &StepResult{Step: StepLifecycle}
+	s.unarchiveErr = s.plan(s.unarchive, "unarchive on GitHub", func() error {
+		updated, _, err := r.GitHub.Repositories.Edit(ctx, s.owner, s.name, &github.Repository{Archived: new(false)})
+		if err != nil {
+			return err
+		}
+		s.repo = updated
+		return nil
+	})
 }
 
 // stepMetadata reconciles the description and the visibility the entry
@@ -118,15 +143,22 @@ func (r *Runner) stepMetadata(ctx context.Context, s *run, sr *StepResult) error
 // releases, packages and CircleCI's deploy key; an organization owner can
 // restore it on GitHub for 90 days. Either entry stays in the team file as
 // the record: a later run finds a deleted repository gone and reports
-// nothing. A repository archived on GitHub without the lifecycle is
-// reported: the declaration is the desired state, and a person decides
-// which side is right.
+// nothing. The way back from archived is the entry without the lifecycle:
+// the change that takes it out unarchives the repository
+// (unarchiveRepository), and the set-up steps of the same run restore its
+// set-up. A repository archived on GitHub without the lifecycle and without
+// that change is reported: the declaration is the desired state, and a
+// person decides which side is right.
 func (r *Runner) stepLifecycle(ctx context.Context, s *run, sr *StepResult) error {
 	switch s.fields.Lifecycle {
 	case LifecycleDeleted:
 		return r.deleteRepository(ctx, s, sr)
 	case LifecycleArchived:
 		return r.archiveRepository(ctx, s, sr)
+	}
+	if s.unarchive != nil {
+		sr.Changes = append(sr.Changes, s.unarchive.Changes...)
+		return s.unarchiveErr
 	}
 	if !s.repo.GetArchived() {
 		sr.Summary = "active"
@@ -139,12 +171,16 @@ func (r *Runner) stepLifecycle(ctx context.Context, s *run, sr *StepResult) erro
 }
 
 // archiveRepository applies lifecycle: archived: CircleCI first, then
-// GitHub.
+// GitHub. Pull requests still open are reported first: an archive leaves
+// them read-only, neither closed nor merged.
 func (r *Runner) archiveRepository(ctx context.Context, s *run, sr *StepResult) error {
 	if err := r.leaveCircleCI(ctx, s, sr); err != nil {
 		return err
 	}
 	if !s.repo.GetArchived() {
+		if err := r.reportOpenPullRequests(ctx, s, sr); err != nil {
+			return err
+		}
 		err := s.plan(sr, "archive on GitHub", func() error {
 			updated, _, err := r.GitHub.Repositories.Edit(ctx, s.owner, s.name, &github.Repository{Archived: new(true)})
 			if err != nil {
@@ -161,6 +197,34 @@ func (r *Runner) archiveRepository(ctx context.Context, s *run, sr *StepResult) 
 	if r.CircleCI == nil {
 		sr.Summary = "archived; CircleCI not checked (no client)"
 	}
+	return nil
+}
+
+// reportOpenPullRequests reports the pull requests open in a repository the
+// lifecycle step is about to archive: the finding open-pull-requests, whose
+// fix is the way back.
+func (r *Runner) reportOpenPullRequests(ctx context.Context, s *run, sr *StepResult) error {
+	var numbers []string
+	opts := &github.PullRequestListOptions{State: "open", ListOptions: github.ListOptions{PerPage: 100}}
+	for {
+		prs, resp, err := r.GitHub.PullRequests.List(ctx, s.owner, s.name, opts)
+		if err != nil {
+			return err
+		}
+		for _, pr := range prs {
+			numbers = append(numbers, fmt.Sprintf("#%d", pr.GetNumber()))
+		}
+		if resp == nil || resp.NextPage == 0 {
+			break
+		}
+		opts.Page = resp.NextPage
+	}
+	if len(numbers) == 0 {
+		return nil
+	}
+	s.report(sr, FindingOpenPullRequests,
+		fmt.Sprintf("%d pull requests are open in %s and stay open, read-only, in the archive: %s", len(numbers), s.slug(), strings.Join(numbers, ", ")),
+		fmt.Sprintf("to close or merge one, take lifecycle: archived from the entry in repositories/%s.yaml (devctl repo update %s --unset lifecycle): that change unarchives the repository", s.req.Team, s.name))
 	return nil
 }
 

@@ -161,6 +161,9 @@ type harness struct {
 	// codeownersOverride is the repository's CODEOWNERS override the runs
 	// hand in with the entry; nil: none.
 	codeownersOverride []byte
+	// unarchived passes the entry as one the change took lifecycle:
+	// archived from (Request.Unarchived).
+	unarchived bool
 }
 
 // newHarness wires the fakes to an entry validated for its creation, the
@@ -211,7 +214,7 @@ func newHarnessMode(t *testing.T, yaml string, mode reposetup.Mode) *harness {
 
 func (h *harness) run(mode Mode, added bool, steps ...Step) *Result {
 	h.t.Helper()
-	res, err := h.runner.Run(context.Background(), Request{Team: team, Entry: h.entry, Added: added, Mode: mode, Steps: steps, CodeownersOverride: h.codeownersOverride})
+	res, err := h.runner.Run(context.Background(), Request{Team: team, Entry: h.entry, Added: added, Unarchived: h.unarchived, Mode: mode, Steps: steps, CodeownersOverride: h.codeownersOverride})
 	require.NoError(h.t, err)
 	return res
 }
@@ -317,6 +320,9 @@ type stepCase struct {
 	name  string
 	entry string
 	added bool
+	// unarchived passes the entry as one the change took lifecycle:
+	// archived from.
+	unarchived bool
 	// existing validates the entry as an existing repository's
 	// (reposetup.ModeExisting), free of the creation rules.
 	existing bool
@@ -1759,6 +1765,39 @@ func TestSteps(t *testing.T) {
 			wantCheck: VerdictReported, wantFinding: FindingArchivedUndeclared, wantAfter: VerdictReported,
 		},
 		{
+			// The way back: the change took lifecycle: archived from the entry.
+			name: "lifecycle: a change that took lifecycle: archived from the entry unarchives the repository", step: StepLifecycle, unarchived: true,
+			seed:      func(h *harness) { h.gh.addRepo(owner, name).archived = true },
+			wantCheck: VerdictDrift, wantChange: "unarchive on GitHub",
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				require.False(t, h.repo().archived)
+				require.Equal(t, []string{"PATCH /repos/giantswarm/sample-service"}, h.gh.mutations)
+			},
+		},
+		{
+			name: "lifecycle: an entry declared archived is archived, whatever the change says", step: StepLifecycle, entry: archivedEntryYAML, unarchived: true,
+			seed:      func(h *harness) { h.gh.addRepo(owner, name).archived = true },
+			wantCheck: VerdictOK,
+		},
+		{
+			name: "lifecycle: archiving reports the pull requests still open", step: StepLifecycle, entry: archivedEntryYAML,
+			seed: func(h *harness) {
+				h.gh.addRepo(owner, name).prs = []*github.PullRequest{
+					{Number: new(7), State: new("open"), Head: &github.PullRequestBranch{Ref: new("feature")}},
+					{Number: new(9), State: new("open"), Head: &github.PullRequestBranch{Ref: new("renovate/x")}},
+				}
+			},
+			wantCheck: VerdictDrift, wantChange: "archive on GitHub", wantFinding: FindingOpenPullRequests,
+			verify: func(t *testing.T, h *harness, repair *Result) {
+				require.True(t, h.repo().archived)
+				sr := repair.Step(StepLifecycle)
+				require.Len(t, sr.Findings, 1)
+				require.Contains(t, sr.Findings[0].Message, "#7, #9")
+				require.Contains(t, sr.Findings[0].Fix, "devctl repo update sample-service --unset lifecycle")
+				require.True(t, sr.Converges(), "the finding is advisory: the archive is done as declared")
+			},
+		},
+		{
 			name: "catalog: a missing component dispatches the regeneration", step: StepCatalog,
 			seed: func(h *harness) {
 				h.gh.addRepo(owner, name)
@@ -2208,6 +2247,7 @@ func TestSteps(t *testing.T) {
 				mode = reposetup.ModeExisting
 			}
 			h := newHarnessMode(t, yaml, mode)
+			h.unarchived = tc.unarchived
 			if tc.seed != nil {
 				tc.seed(h)
 			}
@@ -2380,6 +2420,58 @@ func TestRenovateWaitsForScaffold(t *testing.T) {
 	sr := res.Step(StepRenovate)
 	require.Equal(t, VerdictSkipped, sr.Verdict, "%+v", sr)
 	require.Equal(t, "repository is empty: the scaffold comes first", sr.Summary)
+}
+
+// TestRunUnarchive takes a set-up repository through lifecycle: archived and
+// back: the change that took the lifecycle from the entry unarchives the
+// repository, and the same run follows it on CircleCI again with its deploy
+// key; a run that does not carry the change, or leaves out the lifecycle
+// step, leaves an archive alone.
+func TestRunUnarchive(t *testing.T) {
+	h := newHarness(t, entryYAML)
+	h.seedCatalog(false, false)
+	h.gh.installation.selection = "all"
+	require.True(t, h.run(ModeRepair, true).Converged)
+
+	// What the lifecycle step's archive left: unfollowed as the token's
+	// user, CircleCI's deploy key gone from GitHub, its checkout key still
+	// listed by CircleCI, the repository archived.
+	h.cc.projects[owner+"/"+name].following = false
+	h.repo().deployKeys = nil
+	h.repo().archived = true
+	h.resetMutations()
+
+	reported := h.run(ModeRepair, false)
+	require.Equal(t, []FindingKind{FindingArchivedUndeclared}, kinds(reported.Step(StepLifecycle).Findings))
+	unselected := h.run(ModeRepair, false, StepSettings)
+	require.Equal(t, VerdictSkipped, unselected.Step(StepSettings).Verdict)
+	h.unarchived = true
+	unselected = h.run(ModeRepair, false, StepSettings)
+	require.Equal(t, VerdictSkipped, unselected.Step(StepSettings).Verdict, "no lifecycle step, no unarchive")
+	require.Empty(t, h.mutations())
+
+	check := h.run(ModeCheck, false)
+	require.Equal(t, VerdictDrift, check.Step(StepLifecycle).Verdict)
+	require.Equal(t, "archived on GitHub until the lifecycle step's unarchive", check.Step(StepSettings).Summary)
+	require.True(t, check.Unarchived)
+	require.Empty(t, h.mutations(), "a check must not write")
+
+	repair := h.run(ModeRepair, false)
+	for _, sr := range repair.Steps {
+		require.NotEqual(t, VerdictFailed, sr.Verdict, "%s: %s", sr.Step, sr.Summary)
+	}
+	require.Equal(t, []string{"unarchive on GitHub"}, repair.Step(StepLifecycle).Changes)
+	require.Equal(t, VerdictRepaired, repair.Step(StepCircleCI).Verdict, "%+v", repair.Step(StepCircleCI))
+	require.False(t, h.repo().archived)
+	require.True(t, h.cc.projects[owner+"/"+name].following)
+	require.NotEmpty(t, h.repo().deployKeys, "the follow brought CircleCI's deploy key back")
+	require.True(t, repair.Converged, "%+v", repair.Steps)
+
+	h.resetMutations()
+	h.unarchived = false
+	again := h.run(ModeRepair, false)
+	require.True(t, again.Converged, "%+v", again.Steps)
+	require.Empty(t, h.mutations())
 }
 
 // TestRunFullRepositorySetUp runs every step over a repository that only

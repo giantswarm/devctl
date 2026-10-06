@@ -19,6 +19,7 @@ type flag struct {
 	Owner               string
 	DryRun              bool
 	Added               bool
+	Unarchived          bool
 	Steps               []string
 	Options             map[string]string
 	Output              string
@@ -36,6 +37,7 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.Owner, "owner", reposetup.DefaultOwner, "GitHub organisation of a repository given without an owner.")
 	cmd.Flags().BoolVar(&f.DryRun, "dry-run", false, "Check only: print what a repair would change, change nothing.")
 	cmd.Flags().BoolVar(&f.Added, "added", false, "The entry was added by the change at hand: a missing repository is created. Never inferred.")
+	cmd.Flags().BoolVar(&f.Unarchived, "unarchived", false, "The change at hand took lifecycle: archived from the entry: a repository archived on GitHub is unarchived and set up again. Never inferred; without it an archived repository is reported.")
 	cmd.Flags().StringSliceVar(&f.Steps, "steps", nil, "Run only these steps (create,scaffold,settings,permissions,protection,circleci,webhooks,renovate,codeowners,metadata,lifecycle,catalog,release); every step when not given.")
 	cmd.Flags().StringToStringVar(&f.Options, "option", nil, "Scaffold option as name=value, the template's options; repeatable.")
 	cmd.Flags().StringVar(&f.Output, "output", engine.OutputTable, "Output format: table or json.")

@@ -132,6 +132,11 @@ type Request struct {
 	// Added says the triggering change added the entry: the one condition
 	// under which a missing repository is created.
 	Added bool
+	// Unarchived says the triggering change took lifecycle: archived from the
+	// entry: the one condition under which the lifecycle step unarchives a
+	// repository archived on GitHub. An archive no declaration change undoes
+	// stays the finding archived-undeclared.
+	Unarchived bool
 	// Mode is check or repair; empty means check.
 	Mode Mode
 	// Steps restricts the run to the named steps; nil runs every step. The
@@ -189,7 +194,12 @@ type run struct {
 	// before it.
 	followedNow bool
 	renamed     bool
-	empty       bool // no commits on the default branch
+	// unarchive is the lifecycle step's unarchive, applied by the lookup
+	// ahead of the steps an archived repository refuses (unarchiveRepository);
+	// unarchiveErr is its error. The lifecycle step reports both.
+	unarchive    *StepResult
+	unarchiveErr error
+	empty        bool // no commits on the default branch
 	// scaffoldSHA is the scaffold commit the scaffold step pushed.
 	scaffoldSHA string
 	// scaffoldFailed says the scaffold step could not push the scaffold:
@@ -240,11 +250,12 @@ func (r *Runner) Run(ctx context.Context, req Request) (*Result, error) {
 
 	before := r.requests()
 	res := &Result{
-		Declared:  s.owner + "/" + s.declared,
-		Team:      req.Team,
-		Mode:      req.Mode,
-		Added:     req.Added,
-		StartedAt: r.now(),
+		Declared:   s.owner + "/" + s.declared,
+		Team:       req.Team,
+		Mode:       req.Mode,
+		Added:      req.Added,
+		Unarchived: req.Unarchived,
+		StartedAt:  r.now(),
 	}
 	res.Converged = true
 	for _, step := range Steps {
@@ -414,6 +425,9 @@ func (r *Runner) skipReason(ctx context.Context, s *run, step Step) (string, err
 		switch step {
 		case StepLifecycle, StepRelease:
 		default:
+			if s.unarchive != nil {
+				return "archived on GitHub until the lifecycle step's unarchive", nil
+			}
 			return "archived on GitHub", nil
 		}
 	}

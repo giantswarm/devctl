@@ -37,7 +37,10 @@ pull request, ghosts are removed), circleci (follow, setup workflows,
 checkout key), webhooks, renovate (check only), codeowners (a pull
 request; the file align-files writes: the repository's override,
 override/<repository>/CODEOWNERS beside --team-file, when it has one, the
-file naming the team otherwise), metadata, lifecycle, catalog, release. The CircleCI steps need a
+file naming the team otherwise), metadata, lifecycle (archives or deletes
+as the entry declares; with --unarchived, the change at hand took
+lifecycle: archived from the entry, it unarchives the repository ahead of
+the other steps, which then restore its set-up), catalog, release. The CircleCI steps need a
 token in $CIRCLECI_TOKEN and are skipped without one. The catalog step
 dispatches the catalog and mapping workflows of the catalog repository, which
 needs an Actions permission there: --dispatch-token-envvar names a second

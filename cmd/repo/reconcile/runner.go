@@ -84,6 +84,7 @@ func (r *runner) run(ctx context.Context, arg string) error {
 		Team:          team,
 		Entry:         entry,
 		Added:         r.flag.Added,
+		Unarchived:    r.flag.Unarchived,
 		Mode:          mode,
 		Steps:         steps,
 		RenderOptions: r.flag.Options,
