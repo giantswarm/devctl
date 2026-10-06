@@ -165,6 +165,19 @@ type Workflow struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// PipelineContinuing says whether a pipeline state is one of a setup
+// pipeline whose configuration is not continued yet: its setup workflow
+// queued or running (setup-pending, setup), or its continuation submitted and
+// not created (pending). The workflows that carry the build do not exist yet;
+// a settled pipeline reads created (or errored).
+func PipelineContinuing(state string) bool {
+	switch state {
+	case "setup-pending", "setup", "pending":
+		return true
+	}
+	return false
+}
+
 // WorkflowSucceeded says whether a workflow status is a finished success.
 func WorkflowSucceeded(status string) bool { return status == "success" }
 

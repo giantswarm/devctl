@@ -9,6 +9,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `pr wait` (and the wait in `pr merge`): a CircleCI setup pipeline whose continuation is not created yet (state
+  `setup-pending`, `setup` or `pending`) keeps the wait going. Before, a finished `setup` workflow read as the whole
+  pipeline, and the required contexts of the continued workflows ended the wait with exit 4 `required_missing`.
 - `rollout wait --pr`: a repository that releases in two steps (the merge tags a release candidate, a promote
   later cuts the stable release) is followed to the promoted release that contains the merge commit, named in
   `release.tag` with the candidate in `release.candidate`. Before the promote the candidate is waited for with

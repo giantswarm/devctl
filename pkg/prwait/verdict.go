@@ -119,16 +119,18 @@ func (e *evaluation) redReason() string { return strings.Join(e.red, "; ") }
 //     is completed and not failed; a completed run that needs a human
 //     (action_required) still waits;
 //  2. when CircleCI is consulted, the newest pipeline of the head revision
-//     exists, and the newest run of each of its workflows is success (not_run
-//     counts as skipped);
+//     exists and is past its setup (a setup pipeline's continuation created),
+//     and the newest run of each of its workflows is success (not_run counts
+//     as skipped);
 //  3. no GitHub Actions run of the head is queued, in progress, waiting or
 //     awaiting approval;
 //  4. every required status context has reported.
 //
 // A failure anywhere is red at once; anything else still open keeps the wait
 // going. A required context nothing has reported under is unfinished like the
-// rest while a check, status, run or workflow is still pending (rules 1 to 3):
-// the one awaiting approval or still running may be what reports it. Once all
+// rest while a check, status, run, workflow or pipeline setup is still
+// pending (rules 1 to 3): the one awaiting approval, still running or not
+// continued yet may be what reports it. Once all
 // of them have finished, the head is settled and an absent context is one
 // that will never report.
 func evaluate(s snapshot) *evaluation {
@@ -244,7 +246,12 @@ func (e *evaluation) evaluateCircleCI(headSHA string, c *circleSnapshot) {
 		return
 	}
 	workflows := latestWorkflows(c.workflows)
-	if len(workflows) == 0 {
+	switch {
+	case circleciclient.PipelineContinuing(c.pipeline.State):
+		// A finished setup workflow is not the pipeline's last: the continued
+		// workflows post the build's contexts once they exist.
+		e.unfinished = append(e.unfinished, fmt.Sprintf("circleci pipeline %d (%s, continuation not created yet)", c.pipeline.Number, c.pipeline.State))
+	case len(workflows) == 0:
 		e.unfinished = append(e.unfinished, fmt.Sprintf("circleci pipeline %d (no workflows yet)", c.pipeline.Number))
 	}
 	for _, w := range workflows {
