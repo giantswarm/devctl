@@ -99,10 +99,18 @@ type evaluation struct {
 	unfinished []string
 	// requiredMissing are the required contexts nothing has reported under.
 	requiredMissing []string
+	// awaitingApproval are the Actions runs that completed with
+	// action_required: they start only once a repository member approves
+	// them.
+	awaitingApproval []ActionRun
 	// settled: every check, status, Actions run and CircleCI workflow of the
 	// head has finished, so nothing left is going to report under a context
 	// that is still absent.
 	settled bool
+	// approvalOnly: nothing is red and the Actions runs awaiting approval are
+	// all the head still waits for, besides absent required contexts they may
+	// report. No wait changes that; a member's approval does.
+	approvalOnly bool
 }
 
 func (e *evaluation) green() bool { return len(e.red) == 0 && len(e.unfinished) == 0 }
@@ -112,6 +120,15 @@ func (e *evaluation) green() bool { return len(e.red) == 0 && len(e.unfinished) 
 func (e *evaluation) neverReported() bool { return e.settled && len(e.requiredMissing) > 0 }
 
 func (e *evaluation) redReason() string { return strings.Join(e.red, "; ") }
+
+// approvalReason names the runs awaiting approval and what starts them.
+func (e *evaluation) approvalReason() string {
+	runs := make([]string, 0, len(e.awaitingApproval))
+	for _, run := range e.awaitingApproval {
+		runs = append(runs, fmt.Sprintf("%s (%s)", run.Name, run.URL))
+	}
+	return fmt.Sprintf("actions run(s) awaiting a repository member's approval: %s; nothing else is pending, and the runs start once a member approves them", strings.Join(runs, ", "))
+}
 
 // evaluate applies the green rules to a snapshot:
 //
@@ -132,7 +149,9 @@ func (e *evaluation) redReason() string { return strings.Join(e.red, "; ") }
 // pending (rules 1 to 3): the one awaiting approval, still running or not
 // continued yet may be what reports it. Once all
 // of them have finished, the head is settled and an absent context is one
-// that will never report.
+// that will never report. A head whose only pending items are Actions runs
+// awaiting approval is approvalOnly: no wait starts them, a member's approval
+// does.
 func evaluate(s snapshot) *evaluation {
 	e := &evaluation{checks: []Check{}, actions: []ActionRun{}}
 	required := map[string]bool{}
@@ -201,6 +220,7 @@ func evaluate(s snapshot) *evaluation {
 		e.actions = append(e.actions, action)
 		switch {
 		case action.Conclusion == "action_required":
+			e.awaitingApproval = append(e.awaitingApproval, action)
 			e.unfinished = append(e.unfinished, fmt.Sprintf("actions run %s (awaiting approval)", action.Name))
 		case workflowRunOpen(action.Status):
 			e.unfinished = append(e.unfinished, fmt.Sprintf("actions run %s (%s)", action.Name, action.Status))
@@ -214,6 +234,7 @@ func evaluate(s snapshot) *evaluation {
 	// Settled is judged before the required contexts: with nothing pending,
 	// an absent context has nothing left that could report it.
 	e.settled = len(e.unfinished) == 0
+	e.approvalOnly = len(e.red) == 0 && len(e.awaitingApproval) > 0 && len(e.unfinished) == len(e.awaitingApproval)
 	for _, name := range s.required {
 		if !reported[name] {
 			e.requiredMissing = append(e.requiredMissing, name)

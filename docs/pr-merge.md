@@ -251,7 +251,7 @@ The envelope and the fields from `repository` to `unfinished[]` are [`pr wait`'s
 | 1 | `red` | Something failed during the wait, or the merge queue dropped the pull request; `reason` names it. |
 | 2 | `timeout` | The timeout passed before an outcome, in the wait or in the queue; `unfinished` names what was still open. |
 | 3 | `not_applicable` | Draft, closed, merged, conflicting, behind a strict base without `--update-branch`, or GitHub declined the merge as the pull request stands; `reason` says which. |
-| 4 | `required_missing` | A required status context never reported within the timeout; `reason` names it. |
+| 4 | `required_missing`, `approval_required` | A required status context never reported, or the head waits only for Actions runs awaiting a member's approval (`approval_required`), known at the poll that saw it and before any merge; `reason` names the context or the runs. |
 | 5 | `refused` | Another human's pull request, a repository whose entry says `agentMerge: false`, or an unanswered review; `reason` names the author, the field or the feedback (`unanswered review: …`, listed in `unansweredReviews`). |
 | 6 | `release_failed` | **Merged**, and the release failed: the merge commit's auto-release run failed before it tagged, or the tag pipeline failed; `release.pipeline.failedJobs` names the jobs. |
 | 7 | `usage` | Wrong arguments or flags, a newer devctl released (the reason names `devctl version update`), or a tooling failure (GitHub or CircleCI answered with an error other than a 5xx, or a read failed eight tries in a row; the team files could not be read). |
