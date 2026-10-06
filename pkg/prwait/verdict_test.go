@@ -246,6 +246,56 @@ func Test_evaluate(t *testing.T) {
 			skipFieldChecks: true,
 		},
 		{
+			name: "a setup workflow done, its continuation pending, a required context absent: pending, not never reported",
+			snapshot: snapshot{
+				statuses: []*github.RepoStatus{status("ci/circleci: setup", "success")},
+				circleci: circle("pending", circleciclient.Workflow{ID: "w1", Name: "setup", Status: "success"}),
+				required: []string{"ci/circleci: build"},
+			},
+			wantUnfinished: []string{
+				"circleci pipeline 7 (pending, continuation not created yet)",
+				"required context ci/circleci: build (absent)",
+			},
+			wantMissing:     []string{"ci/circleci: build"},
+			skipFieldChecks: true,
+		},
+		{
+			name: "a pipeline in setup without workflows: pending on its setup",
+			snapshot: snapshot{
+				circleci: circle("setup-pending"),
+				required: []string{"ci/circleci: build"},
+			},
+			wantUnfinished: []string{
+				"circleci pipeline 7 (setup-pending, continuation not created yet)",
+				"required context ci/circleci: build (absent)",
+			},
+			wantMissing:     []string{"ci/circleci: build"},
+			skipFieldChecks: true,
+		},
+		{
+			name: "a continued pipeline settled, a required context absent: never reported",
+			snapshot: snapshot{
+				circleci: circle("created",
+					circleciclient.Workflow{ID: "w1", Name: "setup", Status: "success"},
+					circleciclient.Workflow{ID: "w2", Name: "build", Status: "success"},
+				),
+				required: []string{"ci/circleci: push-to-registries"},
+			},
+			wantUnfinished:    []string{"required context ci/circleci: push-to-registries (absent)"},
+			wantMissing:       []string{"ci/circleci: push-to-registries"},
+			wantNeverReported: true,
+			skipFieldChecks:   true,
+		},
+		{
+			name: "a failed setup workflow of a pending pipeline is red",
+			snapshot: snapshot{
+				circleci: circle("pending", circleciclient.Workflow{ID: "w1", Name: "setup", Status: "failed"}),
+			},
+			wantRed:         []string{"circleci workflow setup failed"},
+			wantUnfinished:  []string{"circleci pipeline 7 (pending, continuation not created yet)"},
+			skipFieldChecks: true,
+		},
+		{
 			name:           "nothing reported at all is not green: an empty head has no verdict yet",
 			snapshot:       snapshot{circleci: circle("created")},
 			wantUnfinished: []string{"circleci pipeline 7 (no workflows yet)"},

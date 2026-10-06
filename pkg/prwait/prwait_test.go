@@ -170,6 +170,53 @@ func Test_Wait_stageGap(t *testing.T) {
 	}
 }
 
+func Test_Wait_continuationGap(t *testing.T) {
+	// A setup pipeline: on the first poll its setup workflow has succeeded,
+	// the pipeline is pending and the required context of the continued
+	// workflow is absent; on the second the continuation exists and reported.
+	// The first poll waits instead of ending with exit 4.
+	pipeline := func(state string) sequence.Response {
+		return body(map[string]any{"items": []any{map[string]any{"id": "p1", "number": 12, "state": state, "vcs": map[string]any{"revision": sha, "branch": "feature"}}}})
+	}
+	statuses := func(contexts ...string) sequence.Response {
+		list := []any{}
+		for _, c := range contexts {
+			list = append(list, map[string]any{"context": c, "state": "success", "target_url": "https://ci/" + c, "updated_at": "2026-09-21T10:00:00Z"})
+		}
+		return body(map[string]any{"state": "success", "total_count": len(list), "statuses": list})
+	}
+	gh := gitHubGreen()
+	gh[confPath] = []sequence.Response{config}
+	gh[statPath] = []sequence.Response{statuses("ci/circleci: setup"), statuses("ci/circleci: setup", "ci/circleci: build")}
+	gh["GET /repos/o/r/branches/main/protection"] = []sequence.Response{body(map[string]any{
+		"required_status_checks": map[string]any{"strict": true, "contexts": []any{"ci/circleci: build"}},
+	})}
+	cc := sequence.Routes{
+		projPath: {project},
+		listPath: {pipelines},
+		pipePath: {pipeline("pending"), pipeline("created")},
+		wfPath: {
+			body(map[string]any{"items": []any{map[string]any{"id": "w1", "name": "setup", "status": "success"}}}),
+			body(map[string]any{"items": []any{
+				map[string]any{"id": "w1", "name": "setup", "status": "success"},
+				map[string]any{"id": "w2", "name": "build", "status": "success"},
+			}}),
+		},
+	}
+	h := start(t, gh, cc, true, 2*time.Minute)
+
+	result, err := h.waiter.Wait(context.Background(), "o", "r", 42)
+	if err != nil {
+		t.Fatalf("want green, got %d %v", exitCode(err), err)
+	}
+	if result.CircleCI == nil || len(result.CircleCI.Workflows) != 2 {
+		t.Errorf("want the continued pipeline's two workflows, got %+v", result.CircleCI)
+	}
+	if !strings.Contains(h.progress.String(), "circleci pipeline 12 (pending, continuation not created yet)") {
+		t.Errorf("progress names the pending continuation:\n%s", h.progress.String())
+	}
+}
+
 func Test_Wait_gitHubAloneWithoutCircleCIConfig(t *testing.T) {
 	// No .circleci/config.yml at the head: the CircleCI token is never asked
 	// for and no CircleCI request is made.

@@ -45,7 +45,10 @@ system that will produce it:
    green on GitHub between its stages; CircleCI knows the workflow is `running`. A rerun of a
    failed workflow is a new workflow of the same name in the same pipeline, and the newest run is
    the one that counts. `not_run` is a skipped workflow. An `errored` pipeline (a configuration
-   error, which produces no workflows) is red.
+   error, which produces no workflows) is red. A setup pipeline (`setup: true` with
+   `continuation/continue`) is unfinished while its state is `setup-pending`, `setup` or `pending`:
+   its `setup` workflow may have finished, but the continued workflows that post the build's
+   contexts do not exist yet. It settles at `created`.
 3. **No GitHub Actions run of the head is open**: `queued`, `in_progress`, `waiting`, `pending`,
    `requested`, or completed with the conclusion `action_required`. The last one is a fork's
    workflow run awaiting a maintainer's approval: it completes at once, produces no check runs,
