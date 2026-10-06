@@ -18,7 +18,14 @@ before a consumer bump or a rollout needs a second wait.
 
 The tokens come from the OS keychain (`devctl auth login`, see [auth.md](auth.md)): the GitHub token
 before the first request, the CircleCI token only once the head or the tag turns out to carry a
-CircleCI configuration for a repository CircleCI builds, as in `pr wait` and `release wait`.
+CircleCI configuration for a repository CircleCI builds, as in `pr wait` and `release wait`. The GitHub identity follows the repository's owner: the
+App login for giantswarm, where the devctl App is installed, and your own `gh` login (`gh auth token` of the
+real `gh`, never a `gh` link to devctl, and no environment variable) for every other owner, with the same
+semantics; `identity` in the document says which, `app` or `gh`. Without a `gh` login such a pull request is
+exit 8 naming `gh auth login`; a repository neither identity can read is exit 7 naming the missing
+installation and the read access your `gh` login lacks.
+The merge outside giantswarm is made as your `gh` login, through whatever that repository's protection grants
+you.
 
 ## What is refused before the wait
 

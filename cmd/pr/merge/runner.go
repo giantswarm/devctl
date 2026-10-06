@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
+	"github.com/giantswarm/devctl/v8/pkg/authexec"
 	"github.com/giantswarm/devctl/v8/pkg/authstore"
 	"github.com/giantswarm/devctl/v8/pkg/circleciclient"
 	"github.com/giantswarm/devctl/v8/pkg/githubclient"
@@ -30,9 +31,11 @@ type runner struct {
 	// gate is versiongate.Check: an outdated devctl ends the run in the
 	// document.
 	gate func(noCache bool) error
-	// The seams tests replace: the token gates, the renewal of a GitHub token
-	// refused mid-run, the endpoints and the clock.
+	// The seams tests replace: the token gates (the App login for the App's
+	// owners, the person's own gh login for every other owner), the renewal
+	// of an App token refused mid-run, the endpoints and the clock.
 	requireGitHub   func(ctx context.Context) (authstore.Token, error)
+	personGitHub    func(ctx context.Context) (authstore.Token, error)
 	requireCircleCI func(ctx context.Context) (authstore.Token, error)
 	renewGitHub     func(ctx context.Context, rejected string) (string, error)
 	endpoints       func() agentcli.Endpoints
@@ -43,6 +46,10 @@ type runner struct {
 type document struct {
 	agentcli.Envelope
 	*prmerge.Result
+	// Identity is who acted on GitHub: "app", the devctl GitHub App login,
+	// or "gh", the person\'s own gh login for an owner the App is not
+	// installed on; empty when the run ended before choosing.
+	Identity string `json:"identity"`
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
@@ -108,9 +115,15 @@ func (r *runner) merge(ctx context.Context, args []string, doc *document) error 
 	}
 
 	// The gate comes before the first request.
-	token, err := r.requireGitHub(ctx)
+	token, err := authexec.RepositoryToken(ctx, owner, r.requireGitHub, r.personGitHub)
 	if err != nil {
 		return err
+	}
+	doc.Identity = authexec.Identity(token)
+	// Only the App login renews itself; a refused gh login is the outcome.
+	renew := r.renewGitHub
+	if doc.Identity != authexec.IdentityApp {
+		renew = nil
 	}
 	endpoints := r.endpoints()
 	logger := logrus.New()
@@ -124,7 +137,7 @@ func (r *runner) merge(ctx context.Context, args []string, doc *document) error 
 		AccessToken: token.Value,
 		BaseURL:     endpoints.GitHubAPIURL,
 		Transport:   retrying,
-		Renew:       r.renewGitHub,
+		Renew:       renew,
 	})
 	if err != nil {
 		return err
@@ -208,7 +221,7 @@ func (r *runner) merge(ctx context.Context, args []string, doc *document) error 
 		doc.Warn(w)
 	}
 	prwait.PrintFailedJobs(r.stderr, result.FailedJobs)
-	return githubclient.ExplainNotFound(err, authstore.GitHubAppOnlyNotFoundHint(token))
+	return githubclient.ExplainNotFound(err, authexec.NotFoundHint(token, owner))
 }
 
 // parseArgs reads "<owner/repo> <number>".

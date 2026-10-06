@@ -8,6 +8,7 @@ import (
 
 	"github.com/giantswarm/devctl/v8/internal/versiongate"
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
+	"github.com/giantswarm/devctl/v8/pkg/authexec"
 	"github.com/giantswarm/devctl/v8/pkg/authstore"
 )
 
@@ -62,7 +63,9 @@ a release on its own (a version, --catalog).
 
 Tokens come from the keychain (` + "`devctl auth login`" + `); the CircleCI token is
 required only when CircleCI is consulted, as in devctl pr wait and devctl
-release wait.
+release wait. The GitHub identity follows the owner: the devctl App login for giantswarm,
+where the App is installed, your own gh login (gh auth token) for every other
+owner; the document's identity says which ("app" or "gh").
 
 The document (schemaVersion 1) is devctl pr wait's (command, exitCode,
 verdict, reason, warnings, startedAt, finishedAt, repository, number, headSha,
@@ -90,7 +93,8 @@ Exit codes:
   6  merged, and the release failed: the merge commit's auto-release run or
      the tag's pipeline failed (release.pipeline.failedJobs)
   7  usage or a tooling failure
-  8  authentication required; reason names the devctl auth login to run
+  8  authentication required; reason names the devctl auth login (or gh auth
+     login, for an owner outside giantswarm) to run
   9  merged, and the release was not confirmed: --release-timeout passed
      first, or the release wait could not judge it (release.verdict and the
      reason say which; devctl release wait <owner/repo> --pr <n> resumes it)`
@@ -122,6 +126,7 @@ func New(config Config) (*cobra.Command, error) {
 		stderr:          config.Stderr,
 		stdout:          config.Stdout,
 		requireGitHub:   authstore.RequireGitHub,
+		personGitHub:    authexec.PersonGitHub,
 		requireCircleCI: authstore.RequireCircleCI,
 		renewGitHub:     authstore.RenewGitHubToken,
 		endpoints:       agentcli.EndpointsFromEnv,

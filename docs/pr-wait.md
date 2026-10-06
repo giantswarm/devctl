@@ -20,7 +20,12 @@ yet uploaded) is named in its job's `logError`; the verdict stays red.
 
 The tokens come from the OS keychain (`devctl auth login`, see [auth.md](auth.md)). The GitHub
 token is required before the first request; the CircleCI token only once the head turns out to
-carry a CircleCI configuration for a repository CircleCI builds.
+carry a CircleCI configuration for a repository CircleCI builds. The GitHub identity follows the repository's owner: the
+App login for giantswarm, where the devctl App is installed, and your own `gh` login (`gh auth token` of the
+real `gh`, never a `gh` link to devctl, and no environment variable) for every other owner, with the same
+semantics; `identity` in the document says which, `app` or `gh`. Without a `gh` login such a pull request is
+exit 8 naming `gh auth login`; a repository neither identity can read is exit 7 naming the missing
+installation and the read access your `gh` login lacks.
 
 ## What green means
 
@@ -161,6 +166,7 @@ reset`). Any other `403` is an answer: a permission the token lacks.
 |---|---|
 | `command`, `schemaVersion`, `exitCode`, `verdict`, `reason`, `warnings`, `startedAt`, `finishedAt` | The envelope every agent-facing command prints. `verdict` is `green`, `red`, `timeout`, `not_applicable`, `required_missing`, `auth_required` or `usage`; `reason` is one sentence for anything but green; `warnings` carries the CircleCI token's expiry notice, a head change, a CircleCI project missing or never built, each retried read (Polling). |
 | `repository`, `number` | The pull request as given. |
+| `identity` | Who read GitHub: `app`, the devctl App login (giantswarm), or `gh`, your own `gh` login (every other owner); empty when the run ended before choosing. |
 | `headSha`, `baseRef` | The head commit judged and the base branch whose protection was read. |
 | `checks[]` | The head's check runs and statuses, the latest per name, sorted by name. `source` is `check_run` or `status`; `status` is `queued`, `in_progress` or `completed` for a check run and `pending` or `completed` for a status; `conclusion` is the check run's conclusion or the status's state, empty while unfinished; `required` says whether the base requires this context. |
 | `circleci` | Present only when CircleCI was consulted: the newest pipeline of the head revision and its workflows, the newest run per name, sorted by name. |

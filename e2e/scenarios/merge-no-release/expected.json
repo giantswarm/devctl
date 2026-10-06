@@ -7,6 +7,7 @@
     "finishedAt": "*",
     "warnings": [],
     "repository": "giantswarm/e2e-app",
+    "identity": "app",
     "number": 42,
     "headSha": "abc123",
     "baseRef": "main",

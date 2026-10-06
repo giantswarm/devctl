@@ -7,6 +7,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `pr wait` and `pr merge` reach repositories outside giantswarm: the App login serves the owners the devctl App is
+  installed on (giantswarm), your own `gh` login (`gh auth token` of the real `gh`, never a `gh` link to devctl) every
+  other owner, with the same wait, squash merge and exit codes. The document's new `identity` says which (`app` or
+  `gh`); no `gh` login is exit 8 naming `gh auth login`, and a repository neither identity can read is exit 7 naming
+  the missing installation and the read access the `gh` login lacks.
+
 ### Fixed
 
 - `pr merge` (the merge-queue enqueue) and `repo setup` (the merge-settings read), the two GraphQL calls: a refusal

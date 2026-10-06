@@ -12,6 +12,7 @@
     "startedAt": "*",
     "finishedAt": "*",
     "repository": "giantswarm/e2e-template",
+    "identity": "app",
     "number": 42,
     "headSha": "abc123",
     "baseRef": "main",

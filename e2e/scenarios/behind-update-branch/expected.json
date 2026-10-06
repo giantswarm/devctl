@@ -10,6 +10,7 @@
     "startedAt": "*",
     "finishedAt": "*",
     "repository": "giantswarm/devctl",
+    "identity": "app",
     "number": 42,
     "headSha": "def456",
     "baseRef": "main",

@@ -16,7 +16,8 @@ own shell and never enters an agent session.
 | `auth exec` and the `gh` link | the App login; `gh` on a repository of an owner the App is not installed on keeps your own `gh` login |
 | `deploy`, `pr approve-align`, `pr approve-merge-renovate`, `release create`, `release promote`, `repo create` | the App login; a token in the environment overrides it |
 | the version check that precedes every command, `version check`, `version update`, `repo validate` | the same, optional and looked up only when GitHub is asked (never while the one-hour version cache is fresh): without one a public read is anonymous (`repo validate`: the embedded schema, repository names unchecked) |
-| `pr wait`, `pr merge`, `release wait`, `rollout wait` | the App login only (`rollout wait` reads the installation with your kube context) |
+| `pr wait`, `pr merge` | the App login for giantswarm; your own `gh` login (`gh auth token`) for every other owner; never a token in the environment |
+| `release wait`, `rollout wait` | the App login only (`rollout wait` reads the installation with your kube context) |
 | `repo setup` (and `repo setup ciwebhooks`, `repo setup renovate`), `repo checks` | your own: `$GITHUB_TOKEN` (`--github-token-envvar`) |
 | `repo reconcile` | the engine's installation token in CI: `$GITHUB_TOKEN` (`--github-token-envvar`) |
 | the other `repo` commands | none: giantswarm-repo-manager acts, reached with the muster token |
@@ -29,9 +30,9 @@ the others.
 **The App login reaches the giantswarm organization and public repositories.** The App is installed on
 the giantswarm organization only. GitHub answers 404 for a private repository elsewhere, and a search
 leaves it out; `deploy` and `release create` add to that 404 the cause and the variables that override
-the login. `pr wait` and `pr merge` add the same cause without naming a variable: neither reads one, so a
-personal repository's pull request (a private one outside the App's installation) fails with a reason
-that names the missing reach, not a plain "not found".
+the login. `pr wait` and `pr merge` follow the owner instead, as the `gh` link does: a repository of an
+owner the App is not installed on is read and merged with your own `gh` login, the document's `identity`
+saying `gh`; a 404 there names the missing installation and the read access the `gh` login lacks.
 
 **A token in the environment is an explicit override, never a fallback.** When `DEVCTL_GITHUB_TOKEN`,
 `GITHUB_TOKEN` or `OPSCTL_GITHUB_TOKEN` is set (the first set one, in that order; a command with
