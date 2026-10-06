@@ -7,6 +7,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `pr merge --detach`: the call is checked as the blocking one is, then the merge runs in a process of its own and
+  the call returns within seconds with a handle (exit 0, verdict `detached`). `pr merge status <handle>` reads the
+  outcome: the merge's own document and exit code once it ended, exit 10 `running` while it runs, `lost` when its
+  process ended without a document; without a handle it lists the machine's detached merges. `--on-done <command>`
+  runs a command with the outcome in its environment when the detached merge ended. The blocking call stays the
+  default.
+
 ### Fixed
 
 - `pr wait` (and the wait in `pr merge`): a head whose only pending items are GitHub Actions runs awaiting a

@@ -3,7 +3,8 @@
 ```nohighlight
 devctl pr merge <owner/repo> <number> [--timeout 30m] [--release-timeout 30m] [--no-release-wait]
                 [--rebase] [--update-branch] [--dispatch <owner>/<repo>/<workflow file>[@<ref>]]
-                [--progress] [--failed-log [--failed-log-lines 50]]
+                [--progress] [--failed-log [--failed-log-lines 50]] [--detach [--on-done <command>]]
+/home/teemow/.go/bin/beekeeper gate -- devctl pr merge status [<handle>]
 ```
 
 One blocking call that waits until the pull request's head is green (the wait of
@@ -15,7 +16,8 @@ per step to stderr.
 
 An agent that merges its own pull request makes this one call and is done when it exits 0: CI was
 green, the pull request is merged, and the release is pullable or none follows the merge. Nothing
-before a consumer bump or a rollout needs a second wait.
+before a consumer bump or a rollout needs a second wait. A caller that cannot be held that long starts
+the same merge with `--detach` and reads its outcome later ([below](#detached-merge---detach)).
 
 The tokens come from the OS keychain (`devctl auth login`, see [auth.md](auth.md)): the GitHub token
 before the first request, the CircleCI token only once the head or the tag turns out to carry a
@@ -212,6 +214,71 @@ devctl pr merge giantswarm/devctl 2278 --dispatch giantswarm/team-magazine/refre
 DEVCTL_MERGE_DISPATCH=giantswarm/team-magazine/refresh.yaml devctl pr merge giantswarm/devctl 2278
 ```
 
+## Detached merge: `--detach`
+
+The blocking call holds its caller through the CI wait, the merge and the release wait, often for
+more than ten minutes. `--detach` hands that wait off: the call is checked exactly as the blocking one
+is (arguments, flags, the version check and the token, so a wrong call is still exit 7 or 8 at once),
+then the same merge starts in a process of its own, in a session of its own so it outlives the
+caller's terminal, and the call returns within seconds with exit 0, verdict `detached`:
+
+```json
+{
+  "command": "pr merge",
+  "exitCode": 0,
+  "verdict": "detached",
+  "reason": "giantswarm/devctl#2278 merges in pid 41711: devctl pr merge status giantswarm-devctl-2278-20261007T091500Z reads the outcome",
+  "repository": "giantswarm/devctl",
+  "number": 2278,
+  "identity": "app",
+  "handle": "giantswarm-devctl-2278-20261007T091500Z",
+  "pid": 41711,
+  "log": "/home/me/.local/state/devctl/merges/giantswarm-devctl-2278-20261007T091500Z/output.log",
+  "document": "/home/me/.local/state/devctl/merges/giantswarm-devctl-2278-20261007T091500Z/document.json",
+  "status": "devctl pr merge status giantswarm-devctl-2278-20261007T091500Z"
+}
+```
+
+The detached merge is the blocking command with every flag given (`--progress` always, so its log
+shows each step) and the environment of the call (`DEVCTL_MERGE_DISPATCH` included). It lives in
+`$XDG_STATE_HOME/devctl/merges/<handle>/` (`~/.local/state/devctl/merges/` without the variable):
+`output.log`, then `document.json`, the merge's document exactly as the blocking call prints it,
+written whole when the merge ended. A second `--detach` of a pull request whose detached merge still
+runs is exit 3 naming its handle. Ended merges are removed 30 days after they started.
+
+`devctl pr merge status <handle>` reads it: one JSON document with `handle`, `state`, `repository`,
+`number`, `pid`, `log`, `merge` (the merge's document once it ended, otherwise `null`) and `onDone`.
+Its exit code is the merge's own once the merge ended, so a caller reads it as it would the blocking
+call's (0 merged and released, 6 and 9 merged, 1 to 5 nothing merged); while the merge runs it is
+10, verdict `running`. A merge whose process is gone without a document (killed, the machine
+restarted) is `state: lost`, exit 7: whether it merged is GitHub's to say, and
+`devctl release wait <owner/repo> --pr <n>` confirms its release. Without a handle, `jobs[]` lists
+every detached merge of the machine, the newest first, with `state` and `exitCode`.
+
+`--on-done <command>` (with `--detach` only) is the callback: once the detached merge wrote its
+document, the command runs in `sh -c` (`cmd /C` on Windows), for at most ten minutes, with
+
+| Variable | Value |
+|---|---|
+| `DEVCTL_MERGE_HANDLE` | The handle. |
+| `DEVCTL_MERGE_EXIT_CODE` | The merge's exit code. |
+| `DEVCTL_MERGE_DOCUMENT` | The path of the merge's document. |
+| `DEVCTL_MERGE_REPOSITORY`, `DEVCTL_MERGE_NUMBER` | The pull request. |
+
+Its output goes to the log, its exit code into `onDone` of the status document; it never changes the
+merge's outcome. A remote callback is `--dispatch`, which works the same detached.
+
+```nohighlight
+/home/teemow/.go/bin/beekeeper gate -- devctl pr merge giantswarm/devctl 2278 --detach
+/home/teemow/.go/bin/beekeeper gate -- devctl pr merge giantswarm/devctl 2278 --detach --on-done 'notify-send "merge $DEVCTL_MERGE_NUMBER: exit $DEVCTL_MERGE_EXIT_CODE"'
+/home/teemow/.go/bin/beekeeper gate -- devctl pr merge status giantswarm-devctl-2278-20261007T091500Z
+/home/teemow/.go/bin/beekeeper gate -- devctl pr merge status
+```
+
+The blocking call stays the default. A wrapper that already runs the merge outside its caller and
+reads the blocking call's document keeps calling it without `--detach`: a detached start's document
+carries no `mergeCommitSha`, and its outcome is only in the handle.
+
 ## The document
 
 The document of the merge of [#2368](https://github.com/giantswarm/devctl/pull/2368), shortened where `…` stands:
@@ -294,6 +361,10 @@ The envelope and the fields from `repository` to `unfinished[]` are [`pr wait`'s
 | 7 | `usage` | Wrong arguments or flags, a newer devctl released (the reason names `devctl version update`), or a tooling failure (GitHub or CircleCI answered with an error other than a 5xx, or a read failed eight tries in a row; the team files could not be read). |
 | 8 | `auth_required` | No usable token; `reason` names the `devctl auth login` to run. |
 | 9 | `release_unconfirmed` | **Merged**, and the release was not confirmed pullable: `--release-timeout` passed, the release wait could not judge it, or the auto-release run was superseded; `release.verdict` and `reason` say which. |
+
+`--detach` exits 0 with verdict `detached` once the merge started, or with the code of the check
+that refused the call. `devctl pr merge status` exits with the merge's code once it ended, 10
+(`running`) while it runs, and 7 for a lost merge or an unknown handle.
 
 Codes 1 to 5 mean nothing was merged, and 6 and 9 that the pull request was merged. A 7 or 8 is read
 with `mergeCommitSha`: a failure after the merge (deleting the branch) leaves it set, while the release
