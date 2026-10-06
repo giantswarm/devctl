@@ -3,7 +3,9 @@ package rolloutwait
 import (
 	"context"
 	"fmt"
+	"maps"
 	"net/http"
+	"slices"
 	"strings"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -61,9 +63,18 @@ func ListKinds() map[schema.GroupVersionResource]string {
 
 // OpenCluster opens the kube context from the default kubeconfig loading
 // rules (KUBECONFIG, ~/.kube/config) with the requests going through wrap.
-// A context that does not exist is a usage error naming tsh kube login.
+// It reads the kubeconfig only, the cluster is not contacted. A context that
+// does not exist is a usage error naming the contexts that mention the
+// installation, --context and tsh kube login.
 func OpenCluster(installation, kubeContext string, wrap func(http.RoundTripper) http.RoundTripper) (dynamic.Interface, error) {
 	rules := clientcmd.NewDefaultClientConfigLoadingRules()
+	raw, err := rules.Load()
+	if err != nil {
+		return nil, agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "loading the kubeconfig: %v", err)
+	}
+	if _, ok := raw.Contexts[kubeContext]; !ok {
+		return nil, MissingContextError(installation, kubeContext, slices.Collect(maps.Keys(raw.Contexts)))
+	}
 	config, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(rules, &clientcmd.ConfigOverrides{CurrentContext: kubeContext}).ClientConfig()
 	if err != nil {
 		return nil, agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "kube context %s: %v; `tsh kube login %s` writes it, --context names another", kubeContext, err, installation)
@@ -74,6 +85,26 @@ func OpenCluster(installation, kubeContext string, wrap func(http.RoundTripper) 
 		return nil, fmt.Errorf("kube context %s: %w", kubeContext, err)
 	}
 	return client, nil
+}
+
+// MissingContextError is the usage error for a kube context the kubeconfig
+// does not have. An installation reached through another context than the
+// one tsh kube login writes (kubectl gs login's gs-<installation>, a lab's
+// own) is named with --context; the kubeconfig's contexts that mention the
+// installation are listed as the candidates.
+func MissingContextError(installation, kubeContext string, contexts []string) error {
+	var candidates []string
+	for _, c := range contexts {
+		if strings.Contains(c, installation) {
+			candidates = append(candidates, c)
+		}
+	}
+	slices.Sort(candidates)
+	hint := "no context in the kubeconfig mentions " + installation
+	if len(candidates) > 0 {
+		hint = "contexts in the kubeconfig that mention " + installation + ": " + strings.Join(candidates, ", ")
+	}
+	return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "kube context %s does not exist (%s); --context <name> reads the installation through another context, `tsh kube login %s` writes this one", kubeContext, hint, installation)
 }
 
 // object is a namespaced object of one resource.

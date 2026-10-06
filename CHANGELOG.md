@@ -9,6 +9,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `rollout wait`: the kube context is checked before the release wait, so an installation whose
+  `teleport.giantswarm.io-<installation>` context the kubeconfig lacks ends with exit 7 at once instead of after
+  the release. The reason names the kubeconfig's contexts that mention the installation (`gs-<installation>`
+  from `kubectl gs login`) and `--context`, which the help now documents for non-Teleport installations.
 - `rollout wait --pr`: a repository that releases in two steps (the merge tags a release candidate, a promote
   later cuts the stable release) is followed to the promoted release that contains the merge commit, named in
   `release.tag` with the candidate in `release.candidate`. Before the promote the candidate is waited for with
