@@ -31,6 +31,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- The circleci step reads the repository's deploy keys on GitHub on every run, the side that decides whether CircleCI
+  checks the repository out: a CircleCI key gone from GitHub (deleted by hand, or by an archive) is created again
+  instead of being read as present from CircleCI's list alone, and the step's summary names every deploy key with its
+  access (`deploy keys on GitHub: CircleCI (read-only)`), so `repo status` shows them to an identity that cannot list
+  them — the devctl App login answers 403 on `GET /repos/{owner}/{repo}/keys`. Keys the identity cannot read are the
+  finding `unchecked`; a converged check costs one request more (twenty-two).
 - `repo reconcile --unarchived`: the way back from `lifecycle: archived`. When the change at hand took the lifecycle
   from the entry, the lifecycle step unarchives the repository on GitHub ahead of the other steps, which set it up
   again (CircleCI follow and deploy key, protection) in the same run; the result says `unarchived`. An archive no

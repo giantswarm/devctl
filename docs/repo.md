@@ -196,6 +196,12 @@ The verdicts are the ones the Repositories page shows:
 | `skipped` | the step does not apply (repository missing or empty, archived or deleted, no client for the system) |
 | `failed` | the step could not run to its end |
 
+The `circleci` line is the reconciler's run: beside the follow, the setup workflows and the webhook it
+names the repository's deploy keys on GitHub as the run read them, every key with its title and
+access (`deploy keys on GitHub: CircleCI (read-only)`), and a CircleCI key gone from GitHub is created
+again. Listing the keys needs the administration permission (the devctl App login answers 403 on
+`GET /repos/{owner}/{repo}/keys`), so the record is where that login reads them.
+
 Under the steps: the verdict line, the last reconciler run with what it was for (created, added,
 transferred, archived, deprecated, changed, dispatched, nightly), the run the record expects after a
 pull request or an Align now, a run that never reported, and the inventory's own findings. Above them,
