@@ -51,6 +51,17 @@ var headerURL = regexp.MustCompile(`https://github\.com/giantswarm/devctl/blob/[
 
 const fixedHeaderURL = "https://github.com/giantswarm/devctl/blob/<commit>/"
 
+// anyProvenance matches the provenance link in both forms: the commit and
+// template path of a checkout where `go generate` wrote the gitignored .sha
+// files (what the goldens carry), and the bare module-ref tree link a
+// checkout without them falls back to (input.TemplateSHA). Comparing with
+// both masked keeps the test independent of whether `go generate` ran.
+var anyProvenance = regexp.MustCompile(`https://github\.com/giantswarm/devctl/(?:blob/(?:[0-9a-f]+|<commit>)/\S+|tree/[^/\s]+)`)
+
+func maskProvenance(s string) string {
+	return anyProvenance.ReplaceAllString(s, "<provenance>")
+}
+
 func testRenderer() Renderer {
 	return Renderer{Templates: DirTemplates{Root: filepath.Join("testdata", "templates")}}
 }
@@ -264,8 +275,8 @@ func assertGolden(t *testing.T, golden, got string) {
 	if err != nil {
 		t.Fatalf("read golden %s: %v (run with -update to create it)", golden, err)
 	}
-	if got != string(want) {
-		t.Errorf("scaffold does not match %s (run with -update to regenerate)\n%s", golden, firstDifference(string(want), got))
+	if maskProvenance(got) != maskProvenance(string(want)) {
+		t.Errorf("scaffold does not match %s (run with -update to regenerate)\n%s", golden, firstDifference(maskProvenance(string(want)), maskProvenance(got)))
 	}
 }
 
