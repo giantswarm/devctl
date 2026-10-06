@@ -89,7 +89,8 @@ Exit codes:
   2  timeout before an outcome; unfinished names what was still open
   3  not applicable: draft, closed, merged, conflicting, behind a strict base
      (without --update-branch), or GitHub declined the merge as it stands
-  4  a required status context never reported within the timeout
+  4  a required status context never reported, or Actions runs await a
+     member's approval and nothing else is pending
   5  refused: another human's pull request, or agentMerge: false
   6  merged, and the release failed: the merge commit's auto-release run or
      the tag's pipeline failed (release.pipeline.failedJobs)

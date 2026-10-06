@@ -141,8 +141,9 @@ type head struct {
 // decided (an [*agentcli.ExitError] with the code of the table), or the
 // timeout passes (exit 2). A required context absent from a head whose
 // checks, runs and workflows have all finished is exit 4 at that poll, before
-// the timeout; while anything is still pending, the timeout is 2 whatever
-// is absent. The Result is always returned, as far as it was filled; a
+// the timeout, and so is a head that waits only for Actions runs awaiting a
+// member's approval; while anything else is still pending, the timeout is 2
+// whatever is absent. The Result is always returned, as far as it was filled; a
 // tooling failure is any other error.
 func (w *Waiter) Wait(ctx context.Context, owner, repo string, number int) (*Result, error) {
 	result := &Result{
@@ -184,6 +185,10 @@ func (w *Waiter) Wait(ctx context.Context, owner, repo string, number int) (*Res
 		case e.neverReported():
 			w.progress.Printf("poll %d: required missing: %s", poll, strings.Join(e.requiredMissing, ", "))
 			return result, w.neverReported(result, e)
+		case e.approvalOnly:
+			w.progress.Printf("poll %d: waiting for approval: %s", poll, strings.Join(e.unfinished, ", "))
+			result.Unfinished = e.unfinished
+			return result, agentcli.NewExitError(agentcli.ExitRequiredMissing, agentcli.VerdictApprovalRequired, "%s", e.approvalReason())
 		}
 		interval := w.interval()
 		w.progress.Printf("poll %d: waiting for %s; next poll in %s", poll, strings.Join(e.unfinished, ", "), interval)

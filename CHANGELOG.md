@@ -9,6 +9,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `pr wait` (and the wait in `pr merge`): a head whose only pending items are GitHub Actions runs awaiting a
+  repository member's approval (`action_required`, as for a fork's or a bot's pull request) ends the wait at that
+  poll with exit 4, verdict `approval_required`, the reason naming each run with its URL. Before, the wait sat out
+  its timeout on runs no wait would start. Approved, the runs start again and a new wait judges them normally.
+
 - `rollout wait`: the kube context is checked before the release wait, so an installation whose
   `teleport.giantswarm.io-<installation>` context the kubeconfig lacks ends with exit 7 at once instead of after
   the release. The reason names the kubeconfig's contexts that mention the installation (`gs-<installation>`

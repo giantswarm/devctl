@@ -1,11 +1,11 @@
 {
-  "exitCode": 2,
+  "exitCode": 4,
   "json": {
     "command": "pr wait",
     "schemaVersion": 1,
-    "exitCode": 2,
-    "verdict": "timeout",
-    "reason": "timeout after 5m0s; unfinished: actions run CI (awaiting approval), required context go-build (absent), required context go-test (absent)",
+    "exitCode": 4,
+    "verdict": "approval_required",
+    "reason": "actions run(s) awaiting a repository member's approval: CI (https://github.com/giantswarm/devctl/actions/runs/7001); nothing else is pending, and the runs start once a member approves them",
     "warnings": [],
     "startedAt": "*",
     "finishedAt": "*",
