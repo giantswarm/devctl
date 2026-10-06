@@ -223,9 +223,19 @@ func (r *Runner) reportOpenPullRequests(ctx context.Context, s *run, sr *StepRes
 		return nil
 	}
 	s.report(sr, FindingOpenPullRequests,
-		fmt.Sprintf("%d pull requests are open in %s and stay open, read-only, in the archive: %s", len(numbers), s.slug(), strings.Join(numbers, ", ")),
+		openPullRequestsMessage(s.slug(), numbers),
 		fmt.Sprintf("to close or merge one, take lifecycle: archived from the entry in repositories/%s.yaml (devctl repo update %s --unset lifecycle): that change unarchives the repository", s.req.Team, s.name))
 	return nil
+}
+
+// openPullRequestsMessage words the open-pull-requests finding, singular for
+// one pull request and plural otherwise.
+func openPullRequestsMessage(slug string, numbers []string) string {
+	subject, verb := fmt.Sprintf("%d pull requests are", len(numbers)), "stay"
+	if len(numbers) == 1 {
+		subject, verb = "1 pull request is", "stays"
+	}
+	return fmt.Sprintf("%s open in %s and %s open, read-only, in the archive: %s", subject, slug, verb, strings.Join(numbers, ", "))
 }
 
 // deleteRepository applies lifecycle: deleted: CircleCI first, then GitHub.
