@@ -19,6 +19,10 @@ import (
 // undeclared active ones.
 const RulesetName = "devctl: default branch"
 
+// LineGateRulesetName is the engine's second ruleset, written for an entry
+// that declares a lineGate alone: the fork line's land gate.
+const LineGateRulesetName = "devctl: line gate"
+
 // defaultBranchRef is the ruleset condition that follows the repository's
 // default branch, so a rename or a fork line's declared branch needs no
 // change to the ruleset.
@@ -54,8 +58,9 @@ const repositoryAdminRoleID int64 = 5
 // devctl release alone changes no repository. Under the entry's
 // pruneRulesets the undeclared active rulesets are deleted first by a run
 // with the id; a run without it reports each as [FindingRulesetPending].
+// The entry's lineGate adds the ruleset [LineGateRulesetName] (stepLineGate).
 func (r *Runner) stepProtection(ctx context.Context, s *run, sr *StepResult) error {
-	have, prune, err := r.ownRuleset(ctx, s, sr)
+	have, gate, prune, err := r.ownRuleset(ctx, s, sr)
 	if err != nil {
 		return err
 	}
@@ -78,9 +83,79 @@ func (r *Runner) stepProtection(ctx context.Context, s *run, sr *StepResult) err
 		s.report(sr, FindingRulesetsNotEnabled,
 			fmt.Sprintf("classic branch protection: the ruleset %q is not written yet, and this run has no devctl App id to write it with its bypass actors (the owning team and the repository admins for pull requests, the devctl App for the reconciler)", RulesetName),
 			"the reconciler's run passes --devctl-app-id and writes the ruleset, then removes the classic protection; a laptop run passes the App's numeric id (its settings page; not the client id) with --devctl-app-id")
-		return r.stepClassicProtection(ctx, s, sr)
+		if err := r.stepClassicProtection(ctx, s, sr); err != nil {
+			return err
+		}
+	} else if err := r.stepRulesetProtection(ctx, s, sr, have); err != nil {
+		return err
 	}
-	return r.stepRulesetProtection(ctx, s, sr, have)
+	return r.stepLineGate(ctx, s, sr, gate)
+}
+
+// stepLineGate keeps the ruleset [LineGateRulesetName] of the entry's
+// lineGate: on the default branch and the declared maintenance branches, no
+// deletion and the gate's checks, pinned to GitHub Actions, required for
+// every push. It has no bypass actor, so the sync's App, the repository
+// admins and the devctl App alike land only a commit the checks passed on;
+// the App's bypass of [RulesetName] (bypassActors) lets its land past the
+// pull-request rule and replace the line. Without a lineGate the gate
+// ruleset is deleted. As the engine's other ruleset, it is written by a run
+// with [Runner.DevctlAppID] alone; a run without the id reports the
+// difference as [FindingRulesetPending]. have is the gate ruleset as
+// ownRuleset read it, nil when there is none.
+func (r *Runner) stepLineGate(ctx context.Context, s *run, sr *StepResult, have *github.RepositoryRuleset) error {
+	g := s.fields.LineGate
+	if g == nil && have == nil {
+		return nil
+	}
+	var from, desired rulesetState
+	if have != nil {
+		from = stateOfRuleset(have)
+	}
+	var changes []string
+	if g == nil {
+		changes = []string{fmt.Sprintf("delete ruleset %q (no lineGate)", LineGateRulesetName)}
+	} else {
+		include := []string{defaultBranchRef}
+		for _, b := range g.Branches {
+			include = append(include, "refs/heads/"+b)
+		}
+		desired = rulesetState{
+			enforcement: github.RulesetEnforcementActive,
+			include:     include,
+			checks:      ruleChecks(g.RequiredChecks, toSet(g.RequiredChecks), nil),
+			noDeletion:  true,
+			bypass:      []*github.BypassActor{},
+		}
+		if have == nil {
+			// The creation names the target; what it adds is the checks.
+			from = desired
+			from.checks = nil
+		}
+		changes = diffRulesetStates(from, desired)
+		if have == nil {
+			changes = append([]string{fmt.Sprintf("create ruleset %q on %s, deletion forbidden, no bypass actor", LineGateRulesetName, describe(desired.include))}, changes...)
+		}
+	}
+	if len(changes) == 0 {
+		if sr.Summary != "" {
+			sr.Summary += fmt.Sprintf("; ruleset %q on %s requires %s", LineGateRulesetName, describe(desired.include), describe(g.RequiredChecks))
+		}
+		return nil
+	}
+	if r.DevctlAppID == 0 {
+		s.report(sr, FindingRulesetPending,
+			fmt.Sprintf("the ruleset %q differs from the declared lineGate: %s", LineGateRulesetName, strings.Join(changes, "; ")),
+			"a run with --devctl-app-id, the reconciler's, writes it; this run has no App id and writes no ruleset")
+		return nil
+	}
+	return s.plan(sr, strings.Join(changes, "; "), func() error {
+		if g == nil {
+			_, err := r.GitHub.Repositories.DeleteRuleset(ctx, s.owner, s.name, have.GetID())
+			return err
+		}
+		return r.writeRuleset(ctx, s, LineGateRulesetName, have, desired)
+	})
 }
 
 // stepClassicProtection writes classic branch protection as the baseline
@@ -228,6 +303,7 @@ func (r *Runner) stepRulesetProtection(ctx context.Context, s *run, sr *StepResu
 	desired := rulesetState{
 		enforcement: github.RulesetEnforcementActive,
 		include:     []string{defaultBranchRef},
+		pullRequest: true,
 		reviews:     b.RequiredReviews,
 		checks:      ruleChecks(want, actionsGates(b, s.fields.RequiredChecks), from.checks),
 		strict:      b.StrictChecks,
@@ -269,7 +345,7 @@ func (r *Runner) stepRulesetProtection(ctx context.Context, s *run, sr *StepResu
 	}
 	if len(changes) > 0 {
 		err := s.plan(sr, strings.Join(changes, "; "), func() error {
-			err := r.writeRuleset(ctx, s, have, desired)
+			err := r.writeRuleset(ctx, s, RulesetName, have, desired)
 			if statusCode(err) != 422 || s.team == nil || !hasActor(desired.bypass, teamActor(s.team.GetID())) {
 				return err
 			}
@@ -282,7 +358,7 @@ func (r *Runner) stepRulesetProtection(ctx context.Context, s *run, sr *StepResu
 			without.bypass = slices.DeleteFunc(slices.Clone(desired.bypass), func(a *github.BypassActor) bool {
 				return actorKey(a) == actorKey(teamActor(s.team.GetID()))
 			})
-			return r.writeRuleset(ctx, s, have, without)
+			return r.writeRuleset(ctx, s, RulesetName, have, without)
 		})
 		if err != nil {
 			return err
@@ -320,8 +396,9 @@ func (r *Runner) classicProtection(ctx context.Context, s *run, branch string) (
 }
 
 // ownRuleset reads the repository's own rulesets and returns the engine's
-// with its rules, nil when there is none. Every other one is left alone —
-// the engine writes [RulesetName] and nothing else — and reported unless
+// with their rules, [RulesetName] as own and [LineGateRulesetName] as gate,
+// each nil when there is none. Every other one is left alone — the engine
+// writes its two and nothing else — and reported unless
 // the entry declares it in rulesets, the team's decision to keep it. Under
 // the entry's pruneRulesets an undeclared active one is returned in prune
 // instead, for the step to delete: the declaration is then the whole set. A
@@ -331,19 +408,21 @@ func (r *Runner) classicProtection(ctx context.Context, s *run, branch string) (
 // live in the audit log. A declared name the repository carries no ruleset
 // for is reported in turn, so that a deleted ruleset does not leave the
 // declaration standing. The organization's rulesets are not read.
-func (r *Runner) ownRuleset(ctx context.Context, s *run, sr *StepResult) (own *github.RepositoryRuleset, prune []*github.RepositoryRuleset, err error) {
+func (r *Runner) ownRuleset(ctx context.Context, s *run, sr *StepResult) (own, gate *github.RepositoryRuleset, prune []*github.RepositoryRuleset, err error) {
 	list, _, err := r.GitHub.Repositories.GetAllRulesets(ctx, s.owner, s.name, &github.RepositoryListRulesetsOptions{IncludesParents: new(false)})
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	declared := toSet(s.fields.Rulesets)
 	carried := make(map[string]bool, len(list))
-	var summary *github.RepositoryRuleset
+	var summary, gateSummary *github.RepositoryRuleset
 	for _, rs := range list {
 		carried[rs.Name] = true
 		switch {
 		case rs.Name == RulesetName:
 			summary = rs
+		case rs.Name == LineGateRulesetName:
+			gateSummary = rs
 		case rs.Enforcement == github.RulesetEnforcementDisabled, declared[rs.Name]:
 		case s.fields.PruneRulesets && rs.Enforcement == github.RulesetEnforcementActive:
 			prune = append(prune, rs)
@@ -360,16 +439,24 @@ func (r *Runner) ownRuleset(ctx context.Context, s *run, sr *StepResult) (own *g
 				"create the ruleset on GitHub, or drop the name from the entry's rulesets; the engine creates no ruleset but its own")
 		}
 	}
-	if summary == nil {
-		return nil, prune, nil
-	}
 	// The list carries the summary; the rules, conditions and bypass actors
 	// come with the ruleset itself.
-	own, _, err = r.GitHub.Repositories.GetRuleset(ctx, s.owner, s.name, summary.GetID(), false)
-	if err != nil {
-		return nil, nil, err
+	if own, err = r.ruleset(ctx, s, summary); err != nil {
+		return nil, nil, nil, err
 	}
-	return own, prune, nil
+	if gate, err = r.ruleset(ctx, s, gateSummary); err != nil {
+		return nil, nil, nil, err
+	}
+	return own, gate, prune, nil
+}
+
+// ruleset reads the ruleset of a summary in full, nil for no summary.
+func (r *Runner) ruleset(ctx context.Context, s *run, summary *github.RepositoryRuleset) (*github.RepositoryRuleset, error) {
+	if summary == nil {
+		return nil, nil
+	}
+	rs, _, err := r.GitHub.Repositories.GetRuleset(ctx, s.owner, s.name, summary.GetID(), false)
+	return rs, err
 }
 
 // reportedChecks asks Checks which contexts have reported on branch; known
@@ -408,9 +495,10 @@ func (r *Runner) reportedChecks(ctx context.Context, s *run, sr *StepResult, bra
 	return nil, false
 }
 
-// writeRuleset creates the engine's ruleset from st, or updates have to it.
-func (r *Runner) writeRuleset(ctx context.Context, s *run, have *github.RepositoryRuleset, st rulesetState) error {
-	body := st.ruleset(have)
+// writeRuleset creates the engine's ruleset name from st, or updates have to
+// it.
+func (r *Runner) writeRuleset(ctx context.Context, s *run, name string, have *github.RepositoryRuleset, st rulesetState) error {
+	body := st.ruleset(name, have)
 	if have == nil {
 		_, _, err := r.GitHub.Repositories.CreateRuleset(ctx, s.owner, s.name, body)
 		return err
@@ -431,8 +519,23 @@ func (r *Runner) writeRuleset(ctx context.Context, s *run, have *github.Reposito
 // pushes stay forbidden and every bypass is audited. A secret team cannot
 // be a bypass actor: it is reported with the fix and the App and the admins
 // stand. A run without a team (an undeclared entry) keeps the team actors
-// the ruleset has. current is the bypass list of the ruleset as it is.
+// the ruleset has. The entry's lineGate adds the sync's App in every mode,
+// whatever agentMerge says: its land replaces the line without a pull
+// request, within the gate ruleset no actor bypasses (stepLineGate). current
+// is the bypass list of the ruleset as it is.
 func (r *Runner) bypassActors(ctx context.Context, s *run, sr *StepResult, current []*github.BypassActor) ([]*github.BypassActor, error) {
+	actors, err := r.mergeActors(ctx, s, sr, current)
+	if err != nil {
+		return nil, err
+	}
+	if g := s.fields.LineGate; g != nil && g.App != 0 {
+		actors = append(actors, lineAppActor(g.App))
+	}
+	return actors, nil
+}
+
+// mergeActors are the bypass actors for pull requests (see bypassActors).
+func (r *Runner) mergeActors(ctx context.Context, s *run, sr *StepResult, current []*github.BypassActor) ([]*github.BypassActor, error) {
 	if !s.agentMerge() {
 		return nil, nil
 	}
@@ -489,6 +592,17 @@ func appActor(id int64) *github.BypassActor {
 	}
 }
 
+// lineAppActor is a fork line's sync App as bypass actor in every mode: its
+// direct push of a checked commit passes the pull-request and
+// non-fast-forward rules.
+func lineAppActor(id int64) *github.BypassActor {
+	return &github.BypassActor{
+		ActorID:    new(id),
+		ActorType:  new(github.BypassActorTypeIntegration),
+		BypassMode: new(github.BypassModeAlways),
+	}
+}
+
 // adminActor is the repository role Admin as bypass actor for pull
 // requests: what classic protection without enforce_admins granted the
 // administrators, on the record this time.
@@ -513,8 +627,11 @@ func teamActor(id int64) *github.BypassActor {
 // without ids, links and timestamps. The classic protection it replaces
 // reads into the same shape.
 type rulesetState struct {
-	enforcement  github.RulesetEnforcement
-	include      []string
+	enforcement github.RulesetEnforcement
+	include     []string
+	// pullRequest is the pull_request rule, which reviews and dismissStale
+	// configure.
+	pullRequest  bool
 	reviews      int
 	dismissStale bool
 	// checks is the required_status_checks rule; nil when there is none.
@@ -535,6 +652,7 @@ func stateOfRuleset(rs *github.RepositoryRuleset) rulesetState {
 	}
 	if rules := rs.Rules; rules != nil {
 		if pr := rules.PullRequest; pr != nil {
+			st.pullRequest = true
 			st.reviews = pr.RequiredApprovingReviewCount
 			st.dismissStale = pr.DismissStaleReviewsOnPush
 		}
@@ -554,6 +672,7 @@ func stateOfClassic(p *github.Protection) rulesetState {
 	st := rulesetState{
 		enforcement:  github.RulesetEnforcementActive,
 		include:      []string{defaultBranchRef},
+		pullRequest:  true,
 		reviews:      p.GetRequiredPullRequestReviews().GetRequiredApprovingReviewCount(),
 		dismissStale: p.GetRequiredPullRequestReviews().GetDismissStaleReviews(),
 		noDeletion:   !p.GetAllowDeletions().GetEnabled(),
@@ -570,17 +689,21 @@ func stateOfClassic(p *github.Protection) rulesetState {
 	return st
 }
 
-// ruleset is the API object of the state: the engine's rules over the rules
-// of have it does not manage, which stay. An empty bypass list is sent as
-// such, since an omitted one keeps the actors the ruleset has.
-func (st rulesetState) ruleset(have *github.RepositoryRuleset) github.RepositoryRuleset {
+// ruleset is the API object of the state, the ruleset name: the engine's
+// rules over the rules of have it does not manage, which stay. An empty
+// bypass list is sent as such, since an omitted one keeps the actors the
+// ruleset has.
+func (st rulesetState) ruleset(name string, have *github.RepositoryRuleset) github.RepositoryRuleset {
 	var rules github.RepositoryRulesetRules
 	if have != nil && have.Rules != nil {
 		rules = *have.Rules
 	}
-	rules.PullRequest = &github.PullRequestRuleParameters{
-		RequiredApprovingReviewCount: st.reviews,
-		DismissStaleReviewsOnPush:    st.dismissStale,
+	rules.PullRequest = nil
+	if st.pullRequest {
+		rules.PullRequest = &github.PullRequestRuleParameters{
+			RequiredApprovingReviewCount: st.reviews,
+			DismissStaleReviewsOnPush:    st.dismissStale,
+		}
 	}
 	rules.RequiredStatusChecks = nil
 	if len(st.checks) > 0 {
@@ -601,7 +724,7 @@ func (st rulesetState) ruleset(have *github.RepositoryRuleset) github.Repository
 		bypass = []*github.BypassActor{}
 	}
 	return github.RepositoryRuleset{
-		Name:         RulesetName,
+		Name:         name,
 		Target:       new(github.RulesetTargetBranch),
 		Enforcement:  st.enforcement,
 		BypassActors: bypass,
@@ -622,6 +745,13 @@ func diffRulesetStates(from, to rulesetState) []string {
 	if !slices.Equal(from.include, to.include) {
 		changes = append(changes, fmt.Sprintf("target %s → %s", describe(from.include), describe(to.include)))
 	}
+	if from.pullRequest != to.pullRequest {
+		if to.pullRequest {
+			changes = append(changes, "require pull requests")
+		} else {
+			changes = append(changes, "stop requiring pull requests")
+		}
+	}
 	if from.reviews != to.reviews {
 		changes = append(changes, fmt.Sprintf("required reviews %d → %d", from.reviews, to.reviews))
 	}
@@ -630,6 +760,9 @@ func diffRulesetStates(from, to rulesetState) []string {
 	}
 	if !from.noForcePush && to.noForcePush {
 		changes = append(changes, "forbid force pushes")
+	}
+	if from.noForcePush && !to.noForcePush {
+		changes = append(changes, "allow force pushes")
 	}
 	if !from.noDeletion && to.noDeletion {
 		changes = append(changes, "forbid deletions")
@@ -760,12 +893,16 @@ func describeActors(actors []*github.BypassActor, team *github.Team) string {
 	return strings.Join(out, ", ")
 }
 
-// describeActor is "App 123 on pull requests" for the devctl App,
+// describeActor is "App 123 on pull requests" for the devctl App, "App 123
+// always" for a line's sync App,
 // "repository admins on pull requests" for the admin role, "team <slug> on
 // pull requests" for the owning team (by id for any other team), "<type>
 // <id> (<mode>)" for any other actor.
 func describeActor(a *github.BypassActor, team *github.Team) string {
 	kind, mode := actorType(a), bypassMode(a)
+	if kind == github.BypassActorTypeIntegration && mode == github.BypassModeAlways {
+		return fmt.Sprintf("App %d always", a.GetActorID())
+	}
 	if mode != github.BypassModePullRequest {
 		return fmt.Sprintf("%s %d (%s)", kind, a.GetActorID(), mode)
 	}
