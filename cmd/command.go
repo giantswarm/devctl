@@ -17,6 +17,7 @@ import (
 	"github.com/giantswarm/devctl/v8/cmd/release"
 	"github.com/giantswarm/devctl/v8/cmd/replace"
 	"github.com/giantswarm/devctl/v8/cmd/repo"
+	"github.com/giantswarm/devctl/v8/cmd/reservation"
 	"github.com/giantswarm/devctl/v8/cmd/rollout"
 	"github.com/giantswarm/devctl/v8/cmd/version"
 	"github.com/giantswarm/devctl/v8/pkg/project"
@@ -153,6 +154,20 @@ func New(config Config) (*cobra.Command, error) {
 		}
 	}
 
+	var reservationCmd *cobra.Command
+	{
+		c := reservation.Config{
+			Logger: config.Logger,
+			Stderr: config.Stderr,
+			Stdout: config.Stdout,
+		}
+
+		reservationCmd, err = reservation.New(c)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+	}
+
 	var versionCmd *cobra.Command
 	{
 		c := version.Config{
@@ -211,6 +226,7 @@ func New(config Config) (*cobra.Command, error) {
 	c.AddCommand(replaceCmd)
 	c.AddCommand(rolloutCmd)
 	c.AddCommand(repoCmd)
+	c.AddCommand(reservationCmd)
 	c.AddCommand(versionCmd)
 
 	guardUsage(c)
