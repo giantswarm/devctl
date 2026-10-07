@@ -19,13 +19,3 @@ var invalidFlagError = &microerror.Error{
 func IsInvalidFlag(err error) bool {
 	return microerror.Cause(err) == invalidFlagError
 }
-
-// envVarNotFoundError indicates that no GitHub token is available.
-var envVarNotFoundError = &microerror.Error{
-	Kind: "envVarNotFoundError",
-}
-
-// IsEnvVarNotFound asserts envVarNotFoundError.
-func IsEnvVarNotFound(err error) bool {
-	return microerror.Cause(err) == envVarNotFoundError
-}

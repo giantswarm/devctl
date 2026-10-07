@@ -11,7 +11,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
-	"github.com/giantswarm/devctl/v8/internal/env"
+	"github.com/giantswarm/devctl/v8/pkg/authstore"
 	"github.com/giantswarm/devctl/v8/pkg/githubclient"
 	"github.com/giantswarm/devctl/v8/pkg/reservation"
 )
@@ -40,11 +40,11 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 }
 
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
-	token := env.GitHubToken.Val()
-	if token == "" {
-		return microerror.Maskf(envVarNotFoundError,
-			"no GitHub token found. Set DEVCTL_GITHUB_TOKEN, GITHUB_TOKEN or OPSCTL_GITHUB_TOKEN")
+	token, err := authstore.ResolveGitHub(ctx)
+	if err != nil {
+		return err
 	}
+	token.WarnOnce(r.stderr)
 
 	owner, repo, err := splitRepo(r.flag.GitOpsRepo)
 	if err != nil {
@@ -60,7 +60,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 	client, err := githubclient.New(githubclient.Config{
 		Logger:      logrus.StandardLogger(),
-		AccessToken: token,
+		AccessToken: token.Value,
 	})
 	if err != nil {
 		return microerror.Mask(err)

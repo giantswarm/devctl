@@ -26,6 +26,138 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `reservation reserve`: a new command that points one management cluster's copy of one collection
+  app at the dev builds of one branch for 10 hours. It clones the GitOps repository holding the
+  cluster, writes a Kustomize component that carries a second `OCIRepository` following the
+  branch's dev tags plus the patch that points the app's `HelmRelease` at it, records the holder in
+  the cluster's `configmap-reservations.yaml`, and pushes one commit. The new source object is a
+  copy of the resolved original with only its name, annotations, interval and version selector
+  changed, so the registry credentials, the signature verification and the layer selector come
+  along. The version filter is built from `gitsemver.BranchHash`, the fixed-width CRC32 fingerprint
+  a dev tag carries in place of the branch name, and every field of the filter is width-pinned so it
+  can never match a release candidate. Before committing, the command renders the
+  cluster's collections and refuses to push unless the rendered output really carries the
+  reservation, because a component that merges in the wrong order leaves the cluster on its release
+  version with no error anywhere. The app's own release and release-candidate selectors are never
+  touched. A cluster is opted in by adding `configmap-reservations.yaml`; the command says so when
+  it is missing, and one app holds at most one reservation per cluster.
+- `reservation reserve`: the app is now located by matching the rendered source objects of the
+  cluster on the chart their OCI URL serves, taking the chart name from the app repository's
+  `helm/*/Chart.yaml`. It never matches on the object name, because 17 of 90 collection names
+  repeat across collections and 5 clusters reference several collections at once, so a name match
+  is ambiguous by construction. `--app` stays available: it is required when the app repository
+  holds several charts, and it overrides the chart name when a chart is named differently from the
+  chart its URL serves. An app that runs several times on one cluster gets one source object and a
+  patch for every instance. Every case this version does not cover is refused with the reason: no
+  match in the render, an app served from the cluster's `extras` folder rather than its
+  collections, and a release carrying its chart inline under `spec.chart` instead of referencing it
+  with `spec.chartRef`. A wrong lookup looks exactly like an app that does not move, so none of
+  them is allowed to pass quietly.
+- `reservation reserve`: a new `--duration` flag. A duration is a whole number of minutes, hours or
+  days — `30m`, `4h`, `2d` — and anything else is refused with that list, so the fix is in the
+  message rather than in documentation. Empty stays the 10 hour default. The longest reservation is
+  7 days, or less when the cluster's reservations ConfigMap carries a lower
+  `reservations.giantswarm.io/max-duration` annotation; a cluster can only lower that limit, never
+  raise it, and a request over it is refused with the limit named. A malformed annotation is
+  refused too rather than quietly falling back, because falling back would hand out the longest
+  reservation on a cluster whose owners asked for the shortest. The window lands as RFC3339 UTC
+  timestamps in the reservation entry and in the annotations on the new source object.
+- `reservation release` and `reservation list`: `release` undoes exactly what `reserve` wrote for
+  one app on one cluster — the Kustomize component, the line in `collections/kustomization.yaml`
+  that references it, and the entry in `configmap-reservations.yaml` — in one commit, restoring the
+  working tree byte for byte to the state before the reservation. It resolves the chart the same
+  way `reserve` does, and refuses an app that holds no reservation without changing anything.
+  `list` prints every active reservation on a cluster — app, user, branch, pull request, scope and
+  expiry — reading them straight from the fields `reserve` wrote, never reconstructed from
+  anywhere else. Both commands work on an existing checkout (`--repo-dir`, default `.`): neither
+  clones, and `release`'s own push needs no GitHub token or any credential beyond what a laptop's
+  checkout already has.
+- `reservation reserve`: a new `--exclusive` flag locks the whole cluster instead of just the app,
+  refusing any other active reservation, ignoring one already expired but unswept, and promoting its
+  own sole active reservation of the same user and app in place rather than duplicating it.
+- `reservation reserve` and `reservation release`: both commands now push through one
+  `reservation.PushWithRetry`, instead of `reserve` pushing through a `githubclient` token clone and
+  `release` shelling out to `git push` on its own. A rejected push fetches, hard-resets the checkout
+  to its upstream's new tip and reruns the command's own render step — `Reserve` or `Release` — from
+  there, rather than replaying the stale commit it already made: a rebase that only replayed the old
+  commit would carry whatever it rendered against the old tip, so a reservation that collided on the
+  same `kustomization.yaml` or `configmap-reservations.yaml` entry would be corrupted instead of
+  folded in. This is what lets two reservations, or two releases, that start together both land. The
+  retry gives up and reports the failure after `reservation.MaxPushAttempts` (5) attempts. Neither
+  command needs to name its branch or remote: `git push` / `git fetch` / `git reset --hard
+  @{upstream}` follow whatever upstream the checkout already tracks, a token-embedded clone in CI or
+  the engineer's own checkout on a laptop alike.
+- `reservation reap`: a new command that sweeps every management cluster enabled for reservations in
+  a GitOps repo and releases every reservation whose expiry passed, one at a time through
+  `reservation.Release` and `reservation.PushWithRetry`, exactly as `release` does for a single one.
+  It also releases a reservation that is not yet expired when its pull request's current head
+  branch no longer matches the reservation's stored branch, because a rename means the old branch
+  builds nothing; that check needs a GitHub token (`DEVCTL_GITHUB_TOKEN`, `GITHUB_TOKEN` or
+  `OPSCTL_GITHUB_TOKEN`), and without one the command still releases everything past its expiry. A
+  cluster that never opted in is skipped, not a failure, and a cluster or a reservation that does
+  fail does not stop the sweep from reaching the next one — its error is joined into the one the
+  command reports only after printing every release that did land. The command works on an existing
+  checkout (`--repo-dir`, default `.`): it never clones, and needs no GitHub token for the sweep or
+  its own push, so it does the same work from a laptop that a scheduled job would do in CI. For each
+  release it prints one tab-separated line — cluster, app, user, branch, pull request, reason
+  (`expired` or `renamed`), until (RFC 3339) and commit — and nothing at all when it finds nothing.
+- `reservation release --pull-request`: the command now releases by pull request. Without
+  `--cluster` it scans every enabled cluster and releases every reservation that pull request
+  holds, one at a time through `reservation.PushWithRetry`, printing a tab-separated cluster, app
+  and commit per release. A merged or closed pull request knows neither the cluster nor the app it
+  reserved, so it could not call the existing form, which needs both. Unlike `reservation extend`
+  it releases an expired record too: that is cleanup the reaper would do anyway, and leaving it
+  behind keeps a dead entry in the ConfigMap after the pull request merges. A pull request that
+  holds nothing is no error, because a merged pull request that reserved nothing is the ordinary
+  case. A cluster whose ConfigMap fails to parse costs its own error and does not stop the sweep.
+- `reservation release --pull-request` with `--cluster`: releasing one app now checks the pull
+  request too, and refuses a reservation another pull request holds. `Release` keys a reservation
+  on the cluster and the chart alone, and every pull request in an app repository resolves to the
+  same chart, so without this check `/undeploy <MC>` from any pull request frees a cluster somebody
+  else is testing on. The check runs inside the retrying push's render closure, so a rebase that
+  brings in somebody else's reservation for the same app is refused as well. Passing no
+  `--pull-request` still releases regardless, which is the force-release a human runs from a laptop
+  to clear a stuck lock, and the form the reaper uses.
+- `reservation extend`: a new command that resets the expiry of every reservation a pull request
+  holds across every enabled cluster, one at a time through `reservation.PushWithRetry`. Each
+  reservation keeps its own stored cluster, app, scope and duration — only the window moves,
+  starting now and lasting as long as the existing record already did — by rewriting its
+  `configmap-reservations.yaml` entry directly rather than going through `reservation.Reserve`,
+  which would immediately refuse the app's own still-active reservation as a collision. The same
+  commit also moves the `reservation.giantswarm.io/from` and `/until` annotations on the
+  reservation's own `OCIRepository`, so `kubectl` never shows a stale window. A
+  reservation whose expiry already passed is treated as if it did not exist, because reviving it
+  could silently break a lock someone else legally took over the same cluster while the dead record
+  sat unswept; if every record a pull request holds is expired, the command refuses exactly as if it
+  found none, naming `/deploy` as the way to create one. A single reservation whose stored duration
+  now exceeds its cluster's cap (7 days, or lower per `reservations.giantswarm.io/max-duration`) is
+  refused on its own and does not stop the rest of the sweep. The command works on an existing
+  checkout (`--repo-dir`, default `.`): it never clones and needs no GitHub token, so it does the
+  same work from a laptop that a workflow run would do in CI. For each reservation reset it prints
+  one tab-separated line — cluster, app and the new expiry (RFC 3339) — and nothing at all when it
+  finds nothing.
+- `reservation list`: no longer prints a reservation whose expiry has already passed but `reap` has
+  not swept yet. `reservation.List` itself still returns every entry on record, expired or not,
+  because `reap` and the collision check both rely on seeing the ones past expiry too; only the
+  `list` command's own output is now filtered to the ones still active as of now, matching what its
+  doc comment and user story 26 always said it printed.
+- `reservation release`: releasing an app whose cluster already had `components: []` in
+  `collections/kustomization.yaml` before its first reservation no longer leaves the key deleted, and
+  no longer drops whatever followed it in the file. `reserve` turns that literal `[]` into a real
+  list to insert its entry, and `release` now puts `components: []` back in that case instead of
+  assuming the key never existed, which used to also discard any content after it.
+- `reservation release` and `reservation reap`: a failed push or a failed sweep is now reported the
+  same way `reserve` already reports one, by masking the underlying error directly instead of
+  wrapping it in a package-local `pushError` / `reapError`. Neither local kind was ever asserted
+  anywhere, and wrapping discarded the identity of the real error underneath, such as
+  `reservation.IsPush` or `reservation.IsPushRetriesExhausted`; the CLI's own output is unchanged.
+  `release.IsPush` and `reap.IsReap` are removed along with them.
+
+- `reservation reserve` and `reservation reap`: the GitHub token now comes from
+  `authstore.ResolveGitHub`, like `deploy`: `DEVCTL_GITHUB_TOKEN`, `GITHUB_TOKEN` or
+  `OPSCTL_GITHUB_TOKEN` when set, else the `devctl auth login` App login. `reap` still
+  runs without any token and skips only the branch-rename check.
+
 - `repo reconcile --unarchived`: the way back from `lifecycle: archived`. When the change at hand took the lifecycle
   from the entry, the lifecycle step unarchives the repository on GitHub ahead of the other steps, which set it up
   again (CircleCI follow and deploy key, protection) in the same run; the result says `unarchived`. An archive no
@@ -1126,135 +1258,107 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
-- `reservation reserve`: a new command that points one management cluster's copy of one collection
-  app at the dev builds of one branch for 10 hours. It clones the GitOps repository holding the
-  cluster, writes a Kustomize component that carries a second `OCIRepository` following the
-  branch's dev tags plus the patch that points the app's `HelmRelease` at it, records the holder in
-  the cluster's `configmap-reservations.yaml`, and pushes one commit. The new source object is a
-  copy of the resolved original with only its name, annotations, interval and version selector
-  changed, so the registry credentials, the signature verification and the layer selector come
-  along. The version filter is built from `gitsemver.BranchHash`, the fixed-width CRC32 fingerprint
-  a dev tag carries in place of the branch name, and every field of the filter is width-pinned so it
-  can never match a release candidate. Before committing, the command renders the
-  cluster's collections and refuses to push unless the rendered output really carries the
-  reservation, because a component that merges in the wrong order leaves the cluster on its release
-  version with no error anywhere. The app's own release and release-candidate selectors are never
-  touched. A cluster is opted in by adding `configmap-reservations.yaml`; the command says so when
-  it is missing, and one app holds at most one reservation per cluster.
-- `reservation reserve`: the app is now located by matching the rendered source objects of the
-  cluster on the chart their OCI URL serves, taking the chart name from the app repository's
-  `helm/*/Chart.yaml`. It never matches on the object name, because 17 of 90 collection names
-  repeat across collections and 5 clusters reference several collections at once, so a name match
-  is ambiguous by construction. `--app` stays available: it is required when the app repository
-  holds several charts, and it overrides the chart name when a chart is named differently from the
-  chart its URL serves. An app that runs several times on one cluster gets one source object and a
-  patch for every instance. Every case this version does not cover is refused with the reason: no
-  match in the render, an app served from the cluster's `extras` folder rather than its
-  collections, and a release carrying its chart inline under `spec.chart` instead of referencing it
-  with `spec.chartRef`. A wrong lookup looks exactly like an app that does not move, so none of
-  them is allowed to pass quietly.
-- `reservation reserve`: a new `--duration` flag. A duration is a whole number of minutes, hours or
-  days — `30m`, `4h`, `2d` — and anything else is refused with that list, so the fix is in the
-  message rather than in documentation. Empty stays the 10 hour default. The longest reservation is
-  7 days, or less when the cluster's reservations ConfigMap carries a lower
-  `reservations.giantswarm.io/max-duration` annotation; a cluster can only lower that limit, never
-  raise it, and a request over it is refused with the limit named. A malformed annotation is
-  refused too rather than quietly falling back, because falling back would hand out the longest
-  reservation on a cluster whose owners asked for the shortest. The window lands as RFC3339 UTC
-  timestamps in the reservation entry and in the annotations on the new source object.
-- `reservation release` and `reservation list`: `release` undoes exactly what `reserve` wrote for
-  one app on one cluster — the Kustomize component, the line in `collections/kustomization.yaml`
-  that references it, and the entry in `configmap-reservations.yaml` — in one commit, restoring the
-  working tree byte for byte to the state before the reservation. It resolves the chart the same
-  way `reserve` does, and refuses an app that holds no reservation without changing anything.
-  `list` prints every active reservation on a cluster — app, user, branch, pull request, scope and
-  expiry — reading them straight from the fields `reserve` wrote, never reconstructed from
-  anywhere else. Both commands work on an existing checkout (`--repo-dir`, default `.`): neither
-  clones, and `release`'s own push needs no GitHub token or any credential beyond what a laptop's
-  checkout already has.
-- `reservation reserve`: a new `--exclusive` flag locks the whole cluster instead of just the app,
-  refusing any other active reservation, ignoring one already expired but unswept, and promoting its
-  own sole active reservation of the same user and app in place rather than duplicating it.
-- `reservation reserve` and `reservation release`: both commands now push through one
-  `reservation.PushWithRetry`, instead of `reserve` pushing through a `githubclient` token clone and
-  `release` shelling out to `git push` on its own. A rejected push fetches, hard-resets the checkout
-  to its upstream's new tip and reruns the command's own render step — `Reserve` or `Release` — from
-  there, rather than replaying the stale commit it already made: a rebase that only replayed the old
-  commit would carry whatever it rendered against the old tip, so a reservation that collided on the
-  same `kustomization.yaml` or `configmap-reservations.yaml` entry would be corrupted instead of
-  folded in. This is what lets two reservations, or two releases, that start together both land. The
-  retry gives up and reports the failure after `reservation.MaxPushAttempts` (5) attempts. Neither
-  command needs to name its branch or remote: `git push` / `git fetch` / `git reset --hard
-  @{upstream}` follow whatever upstream the checkout already tracks, a token-embedded clone in CI or
-  the engineer's own checkout on a laptop alike.
-- `reservation reap`: a new command that sweeps every management cluster enabled for reservations in
-  a GitOps repo and releases every reservation whose expiry passed, one at a time through
-  `reservation.Release` and `reservation.PushWithRetry`, exactly as `release` does for a single one.
-  It also releases a reservation that is not yet expired when its pull request's current head
-  branch no longer matches the reservation's stored branch, because a rename means the old branch
-  builds nothing; that check needs a GitHub token (`DEVCTL_GITHUB_TOKEN`, `GITHUB_TOKEN` or
-  `OPSCTL_GITHUB_TOKEN`), and without one the command still releases everything past its expiry. A
-  cluster that never opted in is skipped, not a failure, and a cluster or a reservation that does
-  fail does not stop the sweep from reaching the next one — its error is joined into the one the
-  command reports only after printing every release that did land. The command works on an existing
-  checkout (`--repo-dir`, default `.`): it never clones, and needs no GitHub token for the sweep or
-  its own push, so it does the same work from a laptop that a scheduled job would do in CI. For each
-  release it prints one tab-separated line — cluster, app, user, branch, pull request, reason
-  (`expired` or `renamed`), until (RFC 3339) and commit — and nothing at all when it finds nothing.
-- `reservation release --pull-request`: the command now releases by pull request. Without
-  `--cluster` it scans every enabled cluster and releases every reservation that pull request
-  holds, one at a time through `reservation.PushWithRetry`, printing a tab-separated cluster, app
-  and commit per release. A merged or closed pull request knows neither the cluster nor the app it
-  reserved, so it could not call the existing form, which needs both. Unlike `reservation extend`
-  it releases an expired record too: that is cleanup the reaper would do anyway, and leaving it
-  behind keeps a dead entry in the ConfigMap after the pull request merges. A pull request that
-  holds nothing is no error, because a merged pull request that reserved nothing is the ordinary
-  case. A cluster whose ConfigMap fails to parse costs its own error and does not stop the sweep.
-- `reservation release --pull-request` with `--cluster`: releasing one app now checks the pull
-  request too, and refuses a reservation another pull request holds. `Release` keys a reservation
-  on the cluster and the chart alone, and every pull request in an app repository resolves to the
-  same chart, so without this check `/undeploy <MC>` from any pull request frees a cluster somebody
-  else is testing on. The check runs inside the retrying push's render closure, so a rebase that
-  brings in somebody else's reservation for the same app is refused as well. Passing no
-  `--pull-request` still releases regardless, which is the force-release a human runs from a laptop
-  to clear a stuck lock, and the form the reaper uses.
-- `reservation extend`: a new command that resets the expiry of every reservation a pull request
-  holds across every enabled cluster, one at a time through `reservation.PushWithRetry`. Each
-  reservation keeps its own stored cluster, app, scope and duration — only the window moves,
-  starting now and lasting as long as the existing record already did — by rewriting its
-  `configmap-reservations.yaml` entry directly rather than going through `reservation.Reserve`,
-  which would immediately refuse the app's own still-active reservation as a collision. The same
-  commit also moves the `reservation.giantswarm.io/from` and `/until` annotations on the
-  reservation's own `OCIRepository`, so `kubectl` never shows a stale window. A
-  reservation whose expiry already passed is treated as if it did not exist, because reviving it
-  could silently break a lock someone else legally took over the same cluster while the dead record
-  sat unswept; if every record a pull request holds is expired, the command refuses exactly as if it
-  found none, naming `/deploy` as the way to create one. A single reservation whose stored duration
-  now exceeds its cluster's cap (7 days, or lower per `reservations.giantswarm.io/max-duration`) is
-  refused on its own and does not stop the rest of the sweep. The command works on an existing
-  checkout (`--repo-dir`, default `.`): it never clones and needs no GitHub token, so it does the
-  same work from a laptop that a workflow run would do in CI. For each reservation reset it prints
-  one tab-separated line — cluster, app and the new expiry (RFC 3339) — and nothing at all when it
-  finds nothing.
+- `repo create` and `repo status`, the laptop's client of the repository set-up engine
+  (giantswarm/giantswarm#37726, #2215). `repo create --team … --name … --component-type … --flavour … --language …
+  --description … --visibility …` renders the declaration as an entry of the team's file in giantswarm/github
+  (`gen.ci.generate` as the CircleCI generator decides), placed alphabetically with the rest of the file kept byte
+  for byte, validates it through the engine (schema, creation rules, the name on GitHub), prints the dry run and
+  opens the team-file pull request as the person with their own token (`$GITHUB_TOKEN` or the gh CLI's login) --
+  a taken name or a wrong flavour is refused before a pull request exists, and the guard notices say beforehand
+  whether the machine approves the change or the team reviews it (membership read from GitHub as the person). It
+  never creates a repository or touches settings. `repo status [owner/]repo` prints the set-up state -- every step
+  with its verdict -- from giantswarm-repo-manager through a muster endpoint (`--muster-endpoint`,
+  `$MUSTER_ENDPOINT`) when reachable, else from the engine's checks in read mode with the person's tokens.
+  Documented in `docs/repo.md`.
+- `pkg/reposetup`: `Creation` renders a declaration from fields, `InsertEntry` places it in a team file's
+  text, `Remote` reads team files and memberships from giantswarm/github and opens the pull request as the
+  caller, `CreationPullRequest` shapes it; `pkg/reposetup/manager` is the client of giantswarm-repo-manager's
+  `get_repository` tool over MCP's streamable HTTP transport.
+- `repo reconcile REPOSITORY` (giantswarm/giantswarm#37726, #2214): runs the repository set-up steps of
+  `pkg/reposetup/reconcile` locally as the person — the way to repair a repository when the reconciler
+  workflow is down and to develop the engine against a real repository. The desired state is the
+  repository's entry of a giantswarm/github team file (`--team-file`, validated as the reconciler validates
+  it; the scaffold is rendered from it on an empty repository) or, for a repository without a declaration,
+  `--team` alone. `--dry-run` prints what a repair would change; `--steps` restricts the run; `--added`
+  allows the create step; the result is a table, or the structured value with `--output json`. The CircleCI
+  steps read the token from `$CIRCLECI_TOKEN` (`--circleci-token-envvar`) and are skipped without one.
+- `pkg/reposetup/reconcile`: `Result.WriteTable` renders a run for a person, `Result.Failed` lists the
+  steps that could not run; `Request.Pipeline` hands the protection step just-generated pipeline documents
+  instead of the repository's `.circleci`; a run restricted to steps that do not read the team needs no
+  team. `pkg/reposetup.UndeclaredEntry` is the accepted entry of a repository without a team-file
+  declaration.
 
 ### Fixed
 
-- `reservation list`: no longer prints a reservation whose expiry has already passed but `reap` has
-  not swept yet. `reservation.List` itself still returns every entry on record, expired or not,
-  because `reap` and the collision check both rely on seeing the ones past expiry too; only the
-  `list` command's own output is now filtered to the ones still active as of now, matching what its
-  doc comment and user story 26 always said it printed.
-- `reservation release`: releasing an app whose cluster already had `components: []` in
-  `collections/kustomization.yaml` before its first reservation no longer leaves the key deleted, and
-  no longer drops whatever followed it in the file. `reserve` turns that literal `[]` into a real
-  list to insert its entry, and `release` now puts `components: []` back in that case instead of
-  assuming the key never existed, which used to also discard any content after it.
-- `reservation release` and `reservation reap`: a failed push or a failed sweep is now reported the
-  same way `reserve` already reports one, by masking the underlying error directly instead of
-  wrapping it in a package-local `pushError` / `reapError`. Neither local kind was ever asserted
-  anywhere, and wrapping discarded the identity of the real error underneath, such as
-  `reservation.IsPush` or `reservation.IsPushRetriesExhausted`; the CLI's own output is unchanged.
-  `release.IsPush` and `reap.IsReap` are removed along with them.
+- The repository set-up engine pushes the scaffold as a conventional commit, `feat: initial scaffold of <name> from
+  <template>`, so the generated auto-release workflow tags the created repository `v0.1.0` from it: git-cliff drops a
+  non-conventional commit (`filter_unconventional`), and with the old `Scaffold <name> from <template>` subject a new
+  repository never got a release and the first-release check could not pass. The CODEOWNERS pull request's commit
+  follows the same rule (#2214).
+
+### Changed
+
+- `repo setup` and `repo checks` run the set-up engine's steps instead of their own GitHub calls
+  (giantswarm/giantswarm#37726, #2214). Required checks follow the reported-only rule: a context is required
+  once it has reported on the default branch or a recently merged pull request, and a required context
+  nothing reports any more is removed — `repo setup` no longer requires the contexts of whatever ran on the
+  default branch so far (the `create-release / …`, `update-go_modules-graph` and `ci/circleci: setup` ghosts
+  of a fresh repository cannot recur), and `repo checks` removes ghosts without being told. `repo checks`
+  without `--update` prints the drift; the CircleCI pipeline's branch-side jobs are read from the
+  repository's `.circleci` when `--circleci-dir` is not given; the release workflows, `update-go_modules-graph`,
+  `aliyun`, `validate-changelog` and `check-values-schema` are never required. `repo setup --renovate` checks
+  that the Renovate installation covers the repository and reports a missing one with the fix instead of
+  failing on the `PUT` an organization owner alone may make. Both commands print the run's result as a table
+  (`--output json` for the structured value); a step that could not run to its end is the non-zero exit.
+
+- `pkg/reposetup/reconcile`: the repository set-up steps as check and repair, idempotent — create (only from an added entry), scaffold push before protection, settings baseline, team permissions, branch protection with required checks on the reported-only rule (ghost contexts removed, contexts following the generated pipeline), CircleCI follow, setup workflows and checkout key, webhooks, Renovate installation (check only), CODEOWNERS (a pull request), description and visibility, lifecycle `archived` (archive and unfollow), catalog and mapping (the giantswarm/github workflows), first-release verification (a missed tag build is triggered). `reconcile.Runner.Run` returns a structured `reconcile.Result`; a redirect on the declared name is followed as a rename, and what is not repaired (repository gone, `gen circleci` refusal, ABS prerequisites, red release, default icon) is reported with the fix. Table-tested against in-process fakes of GitHub's and CircleCI's REST surfaces.
+- `pkg/circleciclient`: a CircleCI client for follow and unfollow (v1.1), the project, its settings, checkout keys, pipelines, workflows and jobs (v2).
+- `pkg/githubclient`: `Config.BaseURL` points the client at another GitHub API host.
+
+- `gen circleci`: `--component-type template --team TEAM` renders a template repository's chart before it builds
+  (giantswarm/giantswarm#37726, #2217). A template's chart lives at `helm/{APP-NAME}` and carries the
+  placeholders a repository created from it fills in (`{APP-NAME}`, `{TEAM-NAME}`, `{APP HELM REPOSITORY}`),
+  so the generated `build-chart` of `giantswarm/template-app` was red on every pipeline. For
+  `componentType: template` the chart job is now an inline job on the app-build-suite executor that renders
+  the checkout with fixture values (`sample-app`, the owning team from the team file, an example Helm
+  repository) and runs app-build-suite on the rendered chart, so green means a repository created from the
+  template passes its first chart build. Nothing is released from a template: no chart-test job, no push
+  jobs, no release leg, no `tests/ats` files, and the job runs on `main` too. A template without a chart
+  and every other component type render the pipeline as before.
+- `repo validate` and the `pkg/reposetup` package, the front half of the repository set-up engine
+  (giantswarm/giantswarm#37726, #2213): an entry of a giantswarm/github team file is validated against
+  the repositories schema — fetched from `giantswarm/github` main, with an embedded copy that already
+  carries the plan's `description`, `visibility` and `lifecycle: archived` fields as the fallback — and
+  against the rules for a repository the reconciler creates: `gen.flavours` and `gen.language` are
+  mandatory, `gen.ci.generate` defaults to `true` (written into the rendered entry), the name is
+  lowercase and free on GitHub (an existing repository or a redirect from a renamed one is taken), a
+  chart repository is named after its chart (no `-app` suffix, `gen.ci.chartName` equal to the name),
+  and `language: node` is refused until the Node template exists. Every refusal names the field. The
+  template is derived, never declared: Go → `giantswarm/template`, chart-only (`generic` with the `app`
+  flavour) → `giantswarm/template-app`, customer, configuration, python and kyverno-policy → the minimal
+  scaffold. The command prints the dry run as JSON on stdout (log lines go to stderr) — the rendered
+  entry, the implied template, the name verdict, the problems and the guard notices: an author outside
+  the owning team and team-planeteers keeps the team's review, more than three added entries get a
+  person — and exits non-zero on a refusal. The package is the one place validation and rendering live
+  for the reconciler workflow, `repo create` and giantswarm-repo-manager; the scaffold rendering is the
+  engine's next half.
+- `gen workflows`: the `auto-release` flow can now cut release candidates. A pull request titled
+  `feat-rc:` or `fix-rc:` marks its change as part of a candidate, and the workflow tags
+  `vX.Y.Z-rc.N` instead of `vX.Y.Z`, flagged as a GitHub pre-release. The decision is taken over
+  every unreleased commit: a candidate is tagged when at least one of them carries `-rc` and no
+  unreleased `feat`, `fix` or breaking commit does not, so an unmarked `chore(deps)` from Renovate
+  cannot end a candidate cycle and an unmarked `feat` or `fix` closes it at the stable version the
+  candidates were leading to. A commit counts as breaking through either spelling, a `!` in the
+  subject or a `BREAKING CHANGE:`/`BREAKING-CHANGE:` footer. A push that carries nothing releasable
+  tags no candidate, so a `docs`- or `style`-only push behaves inside a cycle the way it does
+  outside one. `zz_generated.auto_release.yaml` also gains a `workflow_dispatch` trigger with a
+  `release-type` input to close a cycle when no pull request is left to merge.
+- `gen workflows`: `zz_generated.semantic_pull_request.yaml` passes `types` and `header_pattern` to
+  `giantswarm/github-workflows`, so `feat-rc` and `fix-rc` pass the PR title check. The action's
+  stock parser reads the type with `\w*` and cannot match a hyphen, so the `header_pattern`
+  override is what admits the type at all. The titles are accepted in every repository but only
+  act under `--release-workflow=auto-release`. `security` joins the accepted types, which the
+  action's default list never held although `cliff.toml` maps it to a Security changelog group.
 
 - `pkg/reposetup`: scaffold rendering, the back half of the repository set-up engine
   (giantswarm/giantswarm#37726, #2213). `Renderer.Render` renders an accepted entry into a directory: the

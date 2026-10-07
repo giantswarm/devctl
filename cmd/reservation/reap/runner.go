@@ -2,6 +2,7 @@ package reap
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -13,7 +14,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
-	"github.com/giantswarm/devctl/v8/internal/env"
+	"github.com/giantswarm/devctl/v8/pkg/authstore"
 	"github.com/giantswarm/devctl/v8/pkg/githubclient"
 	"github.com/giantswarm/devctl/v8/pkg/reservation"
 )
@@ -48,10 +49,17 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		User:    r.flag.User,
 	}
 
-	if token := env.GitHubToken.Val(); token != "" {
+	token, err := authstore.ResolveGitHub(ctx)
+	switch {
+	case errors.Is(err, authstore.ErrAuthRequired):
+		// No token: skip the rename check.
+	case err != nil:
+		return err
+	default:
+		token.WarnOnce(r.stderr)
 		client, err := githubclient.New(githubclient.Config{
 			Logger:      logrus.StandardLogger(),
-			AccessToken: token,
+			AccessToken: token.Value,
 		})
 		if err != nil {
 			return microerror.Mask(err)
