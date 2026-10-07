@@ -28,7 +28,9 @@
 // come: a run that finished without a tag decided that the commits warrant
 // no release, which ends the wait at once as no release following the
 // merge ([NoReleaseError]), as does a repository that does not tag merge
-// commits.
+// commits. A repository that releases in two steps tags the merge commit with
+// a release candidate and a promote later cuts the stable release; with
+// [Config.PreferPromoted] the wait follows that promotion.
 package releasewait
 
 import (
@@ -39,6 +41,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/Masterminds/semver/v3"
 
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
 	"github.com/giantswarm/devctl/v8/pkg/circleciclient"
@@ -65,6 +69,8 @@ type GitHub interface {
 	GetTagSHA(ctx context.Context, owner, repo, tag string) (string, error)
 	FindTagForCommit(ctx context.Context, owner, repo, sha string) (string, error)
 	GetReleaseByTag(ctx context.Context, owner, repo, tag string) (githubclient.Release, error)
+	ListReleases(ctx context.Context, owner, repo string) ([]githubclient.Release, error)
+	Reachable(ctx context.Context, owner, repo, ref, branch string) (bool, error)
 	ListWorkflowRunsForSHA(ctx context.Context, owner, repo, sha string) ([]githubclient.WorkflowRun, error)
 	ListDirectory(ctx context.Context, owner, repo, path, ref string) ([]string, error)
 	GetFile(ctx context.Context, owner, repo, path, ref string) (githubclient.RepositoryFile, error)
@@ -109,6 +115,12 @@ type Config struct {
 	// (devctl pr merge, right after its merge); empty reads it from the pull
 	// request.
 	MergeCommitSHA string
+	// PreferPromoted, with PR, follows a release candidate on the merge
+	// commit to its promotion: the lowest stable release that contains the
+	// merge commit is waited for instead. Before the promote the candidate
+	// is, with Result.PromotePending set. devctl rollout wait sets it: an
+	// installation that follows stable releases never deploys the candidate.
+	PreferPromoted bool
 	// Timeout bounds the wait; zero means DefaultTimeout.
 	Timeout time.Duration
 	// Catalog also waits for the catalog index to list every chart.
@@ -257,6 +269,12 @@ func (w *Waiter) wait(ctx context.Context, result *Result) error {
 			return err
 		}
 		result.Tag = tag
+		if w.config.PreferPromoted && isPrerelease(strings.TrimPrefix(tag, "v")) {
+			content, err = w.followPromotion(ctx, sha, content, result)
+			if err != nil {
+				return err
+			}
+		}
 	} else {
 		version, _ := ParseVersion(w.config.Version)
 		tag, sha, err := w.awaitTag(ctx, version)
@@ -327,6 +345,73 @@ func (w *Waiter) mergeCommit(ctx context.Context) (string, error) {
 		return "", notApplicableErr("pull request %s/%s#%d is %s and not merged: there is no release to wait for", owner, repo, w.config.PR, merge.State)
 	}
 	return merge.MergeCommitSHA, nil
+}
+
+// followPromotion turns the release candidate result.Tag, the tag on the
+// merge commit sha, into its promotion when one exists: the tag and its
+// commit become the promoted release's, whose content is returned. Without
+// one the candidate stays and the promote is pending.
+func (w *Waiter) followPromotion(ctx context.Context, sha string, content *TagContent, result *Result) (*TagContent, error) {
+	owner, repo := w.config.Owner, w.config.Repo
+	result.Candidate = result.Tag
+	promoted, err := w.promotion(ctx, sha, result.Candidate)
+	if err != nil {
+		return nil, err
+	}
+	if promoted == "" {
+		result.PromotePending = true
+		w.progress.Printf("%s is a release candidate and no promoted release contains #%d yet: waiting for the candidate, the promote is pending", result.Candidate, w.config.PR)
+		return content, nil
+	}
+	tagSHA, err := w.config.GitHub.GetTagSHA(ctx, owner, repo, promoted)
+	if err != nil {
+		return nil, fmt.Errorf("reading tag %s: %w", promoted, err)
+	}
+	content, err = ReadTagContent(ctx, w.config.GitHub, owner, repo, tagSHA)
+	if err != nil {
+		return nil, err
+	}
+	result.Tag, result.SHA = promoted, tagSHA
+	w.progress.Printf("%s, the release candidate of #%d, is promoted as %s", result.Candidate, w.config.PR, promoted)
+	return content, nil
+}
+
+// promotion is the promoted release that carries the merge commit sha of the
+// release candidate: the lowest published stable release above the
+// candidate whose tag contains sha. Empty before the promote.
+func (w *Waiter) promotion(ctx context.Context, sha, candidate string) (string, error) {
+	owner, repo := w.config.Owner, w.config.Repo
+	floor, err := semver.NewVersion(candidate)
+	if err != nil {
+		return "", nil
+	}
+	releases, err := w.config.GitHub.ListReleases(ctx, owner, repo)
+	if err != nil {
+		return "", fmt.Errorf("listing the releases of %s/%s: %w", owner, repo, err)
+	}
+	type stable struct {
+		tag     string
+		version *semver.Version
+	}
+	var stables []stable
+	for _, r := range releases {
+		v, err := semver.NewVersion(r.Tag)
+		if err != nil || !r.Published || r.Prerelease || v.Prerelease() != "" || !v.GreaterThan(floor) {
+			continue
+		}
+		stables = append(stables, stable{r.Tag, v})
+	}
+	slices.SortFunc(stables, func(a, b stable) int { return a.version.Compare(b.version) })
+	for _, s := range stables {
+		contains, err := w.config.GitHub.Reachable(ctx, owner, repo, sha, s.tag)
+		if err != nil {
+			return "", fmt.Errorf("comparing %s with %s: %w", short(sha), s.tag, err)
+		}
+		if contains {
+			return s.tag, nil
+		}
+	}
+	return "", nil
 }
 
 // plan is what the loop knows beyond the document.

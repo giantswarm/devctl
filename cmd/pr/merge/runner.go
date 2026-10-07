@@ -40,6 +40,10 @@ type runner struct {
 	renewGitHub     func(ctx context.Context, rejected string) (string, error)
 	endpoints       func() agentcli.Endpoints
 	clock           func() (agentcli.Clock, error)
+	// jobRoot is where detached merges live, executable the devctl
+	// --detach starts; tests replace both.
+	jobRoot    func() (string, error)
+	executable func() (string, error)
 }
 
 // document is the command's JSON: the envelope and the merge's result.
@@ -68,9 +72,17 @@ func (r *runner) FlagError(_ *cobra.Command, err error) error {
 }
 
 func (r *runner) run(ctx context.Context, args []string) error {
+	if r.flag.Detach {
+		doc := r.newStartDocument()
+		err := r.detach(ctx, args, &doc)
+		return agentcli.Report(r.stdout, &doc, agentcli.VerdictDetached, err)
+	}
 	doc := r.newDocument()
 	err := r.merge(ctx, args, &doc)
-	return agentcli.Report(r.stdout, &doc, agentcli.VerdictGreen, err)
+	if r.flag.DetachedHandle == "" {
+		return agentcli.Report(r.stdout, &doc, agentcli.VerdictGreen, err)
+	}
+	return r.finishDetached(ctx, &doc, err)
 }
 
 func (r *runner) newDocument() document {
@@ -90,36 +102,62 @@ func (r *runner) method() githubclient.MergeMethod {
 	return githubclient.MergeSquash
 }
 
-func (r *runner) merge(ctx context.Context, args []string, doc *document) error {
-	owner, repo, number, err := parseArgs(args)
+// call is a merge's arguments and flags, checked, and the token it acts with.
+type call struct {
+	owner, repo    string
+	number         int
+	failedLogLines int
+	dispatch       *prmerge.Dispatch
+	token          authstore.Token
+}
+
+// check reads and checks the arguments and flags, then the version gate and
+// the token: everything that can refuse a merge before its first request, so
+// --detach refuses the same calls at once.
+func (r *runner) check(ctx context.Context, args []string, repository *string, number *int, identity *string) (call, error) {
+	var c call
+	var err error
+	c.owner, c.repo, c.number, err = parseArgs(args)
 	if err != nil {
-		return err
+		return c, err
 	}
-	doc.Repository, doc.Number = owner+"/"+repo, number
+	*repository, *number = c.owner+"/"+c.repo, c.number
 	if r.flag.Timeout <= 0 {
-		return fmt.Errorf("--%s must be positive, got %s", flagTimeout, r.flag.Timeout)
+		return c, fmt.Errorf("--%s must be positive, got %s", flagTimeout, r.flag.Timeout)
 	}
 	if !r.flag.NoReleaseWait && r.flag.ReleaseTimeout <= 0 {
-		return fmt.Errorf("--%s must be positive, got %s", flagReleaseTimeout, r.flag.ReleaseTimeout)
+		return c, fmt.Errorf("--%s must be positive, got %s", flagReleaseTimeout, r.flag.ReleaseTimeout)
 	}
-	failedLogLines, err := r.flag.FailedLog.TailLines()
+	if r.flag.OnDone != "" && !r.flag.Detach && r.flag.DetachedHandle == "" {
+		return c, fmt.Errorf("--%s needs --%s: a blocking merge reports its outcome itself", flagOnDone, flagDetach)
+	}
+	if c.failedLogLines, err = r.flag.FailedLog.TailLines(); err != nil {
+		return c, err
+	}
+	if c.dispatch, err = r.flag.dispatch(); err != nil {
+		return c, err
+	}
+	if err := r.gate(false); err != nil {
+		return c, err
+	}
+	// The gate comes before the first request.
+	if c.token, err = authexec.RepositoryToken(ctx, c.owner, r.requireGitHub, r.personGitHub); err != nil {
+		return c, err
+	}
+	*identity = authexec.Identity(c.token)
+	return c, nil
+}
+
+func (r *runner) merge(ctx context.Context, args []string, doc *document) error {
+	c, err := r.check(ctx, args, &doc.Repository, &doc.Number, &doc.Identity)
 	if err != nil {
 		return err
 	}
-	if err := r.gate(false); err != nil {
-		return err
-	}
+	owner, repo, number, failedLogLines, dispatch, token := c.owner, c.repo, c.number, c.failedLogLines, c.dispatch, c.token
 	clock, err := r.clock()
 	if err != nil {
 		return err
 	}
-
-	// The gate comes before the first request.
-	token, err := authexec.RepositoryToken(ctx, owner, r.requireGitHub, r.personGitHub)
-	if err != nil {
-		return err
-	}
-	doc.Identity = authexec.Identity(token)
 	// Only the App login renews itself; a refused gh login is the outcome.
 	renew := r.renewGitHub
 	if doc.Identity != authexec.IdentityApp {
@@ -210,6 +248,7 @@ func (r *runner) merge(ctx context.Context, args []string, doc *document) error 
 		UpdateBranch: r.flag.UpdateBranch,
 		Login:        token.Login,
 		Release:      release,
+		Dispatch:     dispatch,
 	})
 	if err != nil {
 		return err

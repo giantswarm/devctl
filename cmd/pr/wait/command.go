@@ -27,7 +27,8 @@ maintainer's approval, and every status context the base requires reported.
 
 The wait ends before it starts for a pull request no CI can turn green: a draft,
 a closed or merged one, one conflicting with its base, one behind a base that
-requires branches to be up to date. A failure anywhere ends the wait at once.
+requires branches to be up to date. A failure anywhere ends the wait at once, and
+so do Actions runs awaiting a member's approval when nothing else is pending.
 
 CircleCI is consulted when the head carries .circleci/config.yml and CircleCI
 builds the repository: it has a project there with at least one pipeline. A
@@ -59,7 +60,8 @@ Exit codes:
   1  red: a check, status, run or workflow failed; reason names it
   2  timeout before an outcome; unfinished names what was still open
   3  not applicable: draft, closed, merged, conflicting, behind a strict base
-  4  a required status context never reported within the timeout
+  4  a required status context never reported, or Actions runs await a
+     member's approval and nothing else is pending
   7  usage or a tooling failure
   8  authentication required; reason names the devctl auth login (or gh auth
      login, for an owner outside giantswarm) to run`

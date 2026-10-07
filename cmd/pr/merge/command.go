@@ -10,6 +10,7 @@ import (
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
 	"github.com/giantswarm/devctl/v8/pkg/authexec"
 	"github.com/giantswarm/devctl/v8/pkg/authstore"
+	"github.com/giantswarm/devctl/v8/pkg/mergejob"
 )
 
 const (
@@ -62,6 +63,20 @@ bump: that is exit 0, and the document says so. --no-release-wait ends the
 command at the merge; devctl release wait remains the command for
 a release on its own (a version, --catalog).
 
+--dispatch <owner>/<repo>/<workflow file>[@<ref>] (or DEVCTL_MERGE_DISPATCH,
+for every merge on a machine; the flag wins): once the pull request is
+merged, after its release wait whatever that ended with, the workflow of
+that file in .github/workflows of the repository is dispatched on the ref
+(the repository's default branch when none is given) through its
+workflow_dispatch trigger, with the inputs repository (<owner/repo> of the
+merge), pull_request (its number) and release (the tag the merge released,
+empty when none follows or none was waited for); the workflow declares those
+three inputs, GitHub refuses inputs a workflow does not declare. A dispatch
+GitHub refuses is a warning and dispatch.reason in the document; the exit
+code is the merge's. Nothing is dispatched when nothing merged. A site that
+refreshes itself from merges and releases on a schedule learns of this one at
+once.
+
 Tokens come from the keychain (` + "`devctl auth login`" + `); the CircleCI token is
 required only when CircleCI is consulted, as in devctl pr wait and devctl
 release wait. The GitHub identity follows the owner: the devctl App login for giantswarm,
@@ -74,11 +89,23 @@ baseRef, checks[], circleci{}, actions[], unfinished[], failedJobs[] on red
 with --failed-log, whose tails also go to stderr) plus mergeCommitSha
 (the merge commit, empty when nothing merged), mergedBy (the login the merge
 was made as, empty when nothing merged), method (squash|rebase),
-branchDeleted, enqueued and release: null with --no-release-wait or when
+branchDeleted, enqueued, release: null with --no-release-wait or when
 nothing merged, otherwise the release wait's verdict (available, no_release,
 ci_failed, timeout, ...) and reason with its result (tag, sha, releaseModel,
-ciModel, artifacts[{kind, reference, digest, state}], pipeline, actions). See
-docs/pr-merge.md.
+ciModel, artifacts[{kind, reference, digest, state}], pipeline, actions),
+and dispatch: null without --dispatch or when nothing merged, otherwise
+{workflow, ref, inputs, dispatched, reason}. See docs/pr-merge.md.
+
+--detach: the call is checked as above (arguments, flags, the version check,
+the token), then the same merge runs in a process of its own, in a session of
+its own, and the call returns within seconds: exit 0, verdict detached, with
+the handle, the pid, the log and the status command. devctl pr merge status
+<handle> reads the outcome: the merge's own document and exit code once it
+ended, exit 10 while it runs. A second --detach of a pull request whose
+detached merge runs is exit 3. --on-done <command> (with --detach) runs the
+command in sh -c once the detached merge ended, with DEVCTL_MERGE_HANDLE,
+DEVCTL_MERGE_EXIT_CODE, DEVCTL_MERGE_DOCUMENT, DEVCTL_MERGE_REPOSITORY and
+DEVCTL_MERGE_NUMBER set. The blocking call stays the default.
 
 Exit codes 6 and 9 mean the pull request was merged; never merge it again.
 
@@ -89,7 +116,8 @@ Exit codes:
   2  timeout before an outcome; unfinished names what was still open
   3  not applicable: draft, closed, merged, conflicting, behind a strict base
      (without --update-branch), or GitHub declined the merge as it stands
-  4  a required status context never reported within the timeout
+  4  a required status context never reported, or Actions runs await a
+     member's approval and nothing else is pending
   5  refused: another human's pull request, or agentMerge: false
   6  merged, and the release failed: the merge commit's auto-release run or
      the tag's pipeline failed (release.pipeline.failedJobs)
@@ -103,7 +131,9 @@ Exit codes:
   devctl pr merge giantswarm/devctl 2278 --timeout 45m --release-timeout 30m --progress
   devctl pr merge giantswarm/devctl 2278 --no-release-wait
   devctl pr merge giantswarm/kagent-upstream 12 --rebase
-  devctl pr merge giantswarm/devctl 2278 --update-branch`
+  devctl pr merge giantswarm/devctl 2278 --update-branch
+  devctl pr merge giantswarm/devctl 2278 --dispatch giantswarm/team-magazine/refresh.yaml
+  DEVCTL_MERGE_DISPATCH=giantswarm/team-magazine/refresh.yaml devctl pr merge giantswarm/devctl 2278`
 )
 
 type Config struct {
@@ -132,6 +162,8 @@ func New(config Config) (*cobra.Command, error) {
 		renewGitHub:     authstore.RenewGitHubToken,
 		endpoints:       agentcli.EndpointsFromEnv,
 		clock:           agentcli.SystemClock,
+		jobRoot:         mergejob.Root,
+		executable:      os.Executable,
 	}
 
 	c := &cobra.Command{
@@ -148,6 +180,7 @@ func New(config Config) (*cobra.Command, error) {
 	c.SetFlagErrorFunc(r.FlagError)
 
 	f.Init(c)
+	c.AddCommand(newStatus(config))
 
 	return c, nil
 }

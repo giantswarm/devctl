@@ -14,6 +14,10 @@ type Config struct {
 	// auto-release workflow; main when empty.
 	ReleaseBranch string
 
+	// MaintenanceBranches says a fork line's maintenance branches
+	// (release-X.Y) cut releases too, each the patches of its X.Y series.
+	MaintenanceBranches bool
+
 	// RepoName is the repository's name under the giantswarm organization,
 	// for cliff.toml's `[remote.github].repo` field.
 	RepoName string
@@ -31,10 +35,11 @@ func New(config Config) (*Workflows, error) {
 
 	w := &Workflows{
 		params: params.Params{
-			Dir:           ".github/workflows",
-			Flavours:      config.Flavours,
-			ReleaseBranch: releaseBranch,
-			RepoName:      config.RepoName,
+			Dir:                 ".github/workflows",
+			Flavours:            config.Flavours,
+			ReleaseBranch:       releaseBranch,
+			MaintenanceBranches: config.MaintenanceBranches,
+			RepoName:            config.RepoName,
 		},
 	}
 

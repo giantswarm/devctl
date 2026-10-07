@@ -72,7 +72,7 @@ log on every request, which separates an agent's actions from the person's own.
 | Open or update a pull request | pull requests: write |
 | Push a branch, `.github/workflows` included | contents, workflows: write |
 | Merge through the ruleset bypass (`pr merge`): GitHub evaluates the merge as the person, so the owning team's or the admins' bypass applies | contents, pull requests: write |
-| Release: dispatch a workflow (`release promote`); the tag itself comes from the auto-release workflow's own token | actions, contents: write |
+| Release: dispatch a workflow (`release promote`, `pr merge --dispatch`); the tag itself comes from the auto-release workflow's own token | actions, contents: write |
 | Approve and re-run workflow runs | actions: write |
 | Write the organization's project boards (Projects v2) | organization projects: write |
 
@@ -289,7 +289,7 @@ Every agent-facing command prints one JSON document on stdout when it finishes a
 | 1 | `red`, `ci_failed` | a check is red or the tag's CI failed |
 | 2 | `timeout` | the deadline passed; the document names what was unfinished |
 | 3 | `not_applicable` | draft, closed, conflicting, behind a strict base, version not resolvable |
-| 4 | `required_missing` | a required context never reported |
+| 4 | `required_missing`, `approval_required` | a required context never reported; Actions runs await a member's approval |
 | 5 | `refused` | another author, an opt-out |
 | 7 | `usage` | wrong usage, a newer devctl released (the reason names `devctl version update`), or a tooling failure |
 | 8 | `auth_required` | no usable token; the reason names `devctl auth login` |

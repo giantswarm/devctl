@@ -187,8 +187,9 @@ Endpoints the commands use, as route keys: `GET /repos/{o}/{r}/pulls/{n}`, `GET
 /repos/{o}/{r}/actions/runs?head_sha={sha}`, `GET /repos/{o}/{r}/branches/{b}/protection`, `GET
 /repos/{o}/{r}/rules/branches/{b}`, `GET /repos/{o}/{r}/rulesets`, `PUT /repos/{o}/{r}/pulls/{n}/merge`, `PUT
 /repos/{o}/{r}/pulls/{n}/update-branch`, `DELETE /repos/{o}/{r}/git/refs/heads/{b}`, `GET /repos/{o}/{r}`,
-`GET /repos/{o}/{r}/releases/tags/{tag}`, `GET /repos/{o}/{r}/contents/{path}`, `POST /login/device/code`,
-`POST /login/oauth/access_token`, `GET /user`.
+`GET /repos/{o}/{r}/releases/tags/{tag}`, `GET /repos/{o}/{r}/contents/{path}`, `POST
+/repos/{o}/{r}/actions/workflows/{file}/dispatches`, `POST /login/device/code`, `POST /login/oauth/access_token`,
+`GET /user`.
 
 **CircleCI** (`mock/circleci`) serves the API v2 under `/api/v2` and the OAuth issuer's paths at the root, from
 one server. Every route is the scenario's; an unscripted route is `404 {"message":"Not Found"}`. Endpoints, as

@@ -33,6 +33,7 @@
     "method": "squash",
     "branchDeleted": true,
     "enqueued": false,
+    "dispatch": null,
     "unansweredReviews": [],
     "release": {
       "verdict": "no_release",

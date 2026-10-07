@@ -60,6 +60,7 @@ func Test_evaluate(t *testing.T) {
 		// wantNeverReported: settled with a required context absent, exit 4
 		// at this poll.
 		wantNeverReported bool
+		wantApprovalOnly  bool
 		wantChecks        []Check
 		wantActions       []ActionRun
 		wantCircleCI      *CircleCI
@@ -98,6 +99,45 @@ func Test_evaluate(t *testing.T) {
 			snapshot: snapshot{
 				runs: []*github.WorkflowRun{workflowRun(10, "CI", "completed", "action_required")},
 			},
+			wantUnfinished:   []string{"actions run CI (awaiting approval)"},
+			wantApprovalOnly: true,
+			skipFieldChecks:  true,
+		},
+		{
+			name: "the approved run started: queued like any other, no longer awaiting approval",
+			snapshot: snapshot{
+				runs: []*github.WorkflowRun{workflowRun(10, "CI", "queued", "")},
+			},
+			wantUnfinished:  []string{"actions run CI (queued)"},
+			skipFieldChecks: true,
+		},
+		{
+			name: "a run awaiting approval next to a running one: pending, the running one may still fail",
+			snapshot: snapshot{
+				runs: []*github.WorkflowRun{
+					workflowRun(10, "CI", "completed", "action_required"),
+					workflowRun(11, "Lint", "in_progress", ""),
+				},
+			},
+			wantUnfinished:  []string{"actions run CI (awaiting approval)", "actions run Lint (in_progress)"},
+			skipFieldChecks: true,
+		},
+		{
+			name: "a run awaiting approval next to a check awaiting a reviewer: pending, not approval only",
+			snapshot: snapshot{
+				checkRuns: []*github.CheckRun{checkRun(1, "deploy", "completed", "action_required", t0)},
+				runs:      []*github.WorkflowRun{workflowRun(10, "CI", "completed", "action_required")},
+			},
+			wantUnfinished:  []string{"check deploy (action_required)", "actions run CI (awaiting approval)"},
+			skipFieldChecks: true,
+		},
+		{
+			name: "a run awaiting approval next to a failed check: red",
+			snapshot: snapshot{
+				checkRuns: []*github.CheckRun{checkRun(1, "go-build", "completed", "failure", t0)},
+				runs:      []*github.WorkflowRun{workflowRun(10, "CI", "completed", "action_required")},
+			},
+			wantRed:         []string{"check go-build concluded failure"},
 			wantUnfinished:  []string{"actions run CI (awaiting approval)"},
 			skipFieldChecks: true,
 		},
@@ -217,14 +257,15 @@ func Test_evaluate(t *testing.T) {
 			skipFieldChecks:   true,
 		},
 		{
-			name: "a run awaiting approval next to an absent required context: pending, the run may be what reports it",
+			name: "a run awaiting approval next to an absent required context: approval only, the run may be what reports it",
 			snapshot: snapshot{
 				runs:     []*github.WorkflowRun{workflowRun(10, "CI", "completed", "action_required")},
 				required: []string{"go-build"},
 			},
-			wantUnfinished:  []string{"actions run CI (awaiting approval)", "required context go-build (absent)"},
-			wantMissing:     []string{"go-build"},
-			skipFieldChecks: true,
+			wantUnfinished:   []string{"actions run CI (awaiting approval)", "required context go-build (absent)"},
+			wantMissing:      []string{"go-build"},
+			wantApprovalOnly: true,
+			skipFieldChecks:  true,
 		},
 		{
 			name: "a queued check next to an absent required context: pending, not never reported",
@@ -243,6 +284,56 @@ func Test_evaluate(t *testing.T) {
 				runs:      []*github.WorkflowRun{workflowRun(10, "CI", "in_progress", "")},
 			},
 			wantUnfinished:  []string{"actions run CI (in_progress)"},
+			skipFieldChecks: true,
+		},
+		{
+			name: "a setup workflow done, its continuation pending, a required context absent: pending, not never reported",
+			snapshot: snapshot{
+				statuses: []*github.RepoStatus{status("ci/circleci: setup", "success")},
+				circleci: circle("pending", circleciclient.Workflow{ID: "w1", Name: "setup", Status: "success"}),
+				required: []string{"ci/circleci: build"},
+			},
+			wantUnfinished: []string{
+				"circleci pipeline 7 (pending, continuation not created yet)",
+				"required context ci/circleci: build (absent)",
+			},
+			wantMissing:     []string{"ci/circleci: build"},
+			skipFieldChecks: true,
+		},
+		{
+			name: "a pipeline in setup without workflows: pending on its setup",
+			snapshot: snapshot{
+				circleci: circle("setup-pending"),
+				required: []string{"ci/circleci: build"},
+			},
+			wantUnfinished: []string{
+				"circleci pipeline 7 (setup-pending, continuation not created yet)",
+				"required context ci/circleci: build (absent)",
+			},
+			wantMissing:     []string{"ci/circleci: build"},
+			skipFieldChecks: true,
+		},
+		{
+			name: "a continued pipeline settled, a required context absent: never reported",
+			snapshot: snapshot{
+				circleci: circle("created",
+					circleciclient.Workflow{ID: "w1", Name: "setup", Status: "success"},
+					circleciclient.Workflow{ID: "w2", Name: "build", Status: "success"},
+				),
+				required: []string{"ci/circleci: push-to-registries"},
+			},
+			wantUnfinished:    []string{"required context ci/circleci: push-to-registries (absent)"},
+			wantMissing:       []string{"ci/circleci: push-to-registries"},
+			wantNeverReported: true,
+			skipFieldChecks:   true,
+		},
+		{
+			name: "a failed setup workflow of a pending pipeline is red",
+			snapshot: snapshot{
+				circleci: circle("pending", circleciclient.Workflow{ID: "w1", Name: "setup", Status: "failed"}),
+			},
+			wantRed:         []string{"circleci workflow setup failed"},
+			wantUnfinished:  []string{"circleci pipeline 7 (pending, continuation not created yet)"},
 			skipFieldChecks: true,
 		},
 		{
@@ -272,6 +363,9 @@ func Test_evaluate(t *testing.T) {
 			}
 			if e.neverReported() != tc.wantNeverReported {
 				t.Errorf("neverReported: want %v, got %v (settled %v, unfinished %q)", tc.wantNeverReported, e.neverReported(), e.settled, e.unfinished)
+			}
+			if e.approvalOnly != tc.wantApprovalOnly {
+				t.Errorf("approvalOnly: want %v, got %v (red %q, unfinished %q)", tc.wantApprovalOnly, e.approvalOnly, e.red, e.unfinished)
 			}
 			if tc.skipFieldChecks {
 				return
@@ -306,5 +400,17 @@ func Test_evaluate_emptyHeadIsGreen(t *testing.T) {
 	}
 	if e := evaluate(snapshot{required: []string{"go-build"}}); e.green() {
 		t.Error("want a wait for the required context, got green")
+	}
+}
+
+func Test_evaluation_approvalReason(t *testing.T) {
+	e := evaluate(snapshot{runs: []*github.WorkflowRun{
+		workflowRun(10, "CI", "completed", "action_required"),
+		workflowRun(11, "Lint", "completed", "action_required"),
+	}})
+	want := "actions run(s) awaiting a repository member's approval: CI (https://github.com/o/r/actions/runs/CI), " +
+		"Lint (https://github.com/o/r/actions/runs/Lint); nothing else is pending, and the runs start once a member approves them"
+	if got := e.approvalReason(); got != want {
+		t.Errorf("approvalReason:\nwant %q\ngot  %q", want, got)
 	}
 }

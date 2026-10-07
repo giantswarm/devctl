@@ -130,6 +130,11 @@ func start(t *testing.T, gh, cc sequence.Routes, circleci bool, timeout time.Dur
 
 func exitCode(err error) int { return agentcli.Exit(err) }
 
+func verdict(err error) agentcli.Verdict {
+	_, v := agentcli.Outcome(err)
+	return v
+}
+
 func Test_Wait_stageGap(t *testing.T) {
 	// GitHub reads green from the first poll; the CircleCI workflow behind
 	// requires: is running on the first poll and success on the second.
@@ -167,6 +172,53 @@ func Test_Wait_stageGap(t *testing.T) {
 	}
 	if !strings.Contains(h.progress.String(), "circleci workflow build (running)") {
 		t.Errorf("progress names the unfinished workflow:\n%s", h.progress.String())
+	}
+}
+
+func Test_Wait_continuationGap(t *testing.T) {
+	// A setup pipeline: on the first poll its setup workflow has succeeded,
+	// the pipeline is pending and the required context of the continued
+	// workflow is absent; on the second the continuation exists and reported.
+	// The first poll waits instead of ending with exit 4.
+	pipeline := func(state string) sequence.Response {
+		return body(map[string]any{"items": []any{map[string]any{"id": "p1", "number": 12, "state": state, "vcs": map[string]any{"revision": sha, "branch": "feature"}}}})
+	}
+	statuses := func(contexts ...string) sequence.Response {
+		list := []any{}
+		for _, c := range contexts {
+			list = append(list, map[string]any{"context": c, "state": "success", "target_url": "https://ci/" + c, "updated_at": "2026-09-21T10:00:00Z"})
+		}
+		return body(map[string]any{"state": "success", "total_count": len(list), "statuses": list})
+	}
+	gh := gitHubGreen()
+	gh[confPath] = []sequence.Response{config}
+	gh[statPath] = []sequence.Response{statuses("ci/circleci: setup"), statuses("ci/circleci: setup", "ci/circleci: build")}
+	gh["GET /repos/o/r/branches/main/protection"] = []sequence.Response{body(map[string]any{
+		"required_status_checks": map[string]any{"strict": true, "contexts": []any{"ci/circleci: build"}},
+	})}
+	cc := sequence.Routes{
+		projPath: {project},
+		listPath: {pipelines},
+		pipePath: {pipeline("pending"), pipeline("created")},
+		wfPath: {
+			body(map[string]any{"items": []any{map[string]any{"id": "w1", "name": "setup", "status": "success"}}}),
+			body(map[string]any{"items": []any{
+				map[string]any{"id": "w1", "name": "setup", "status": "success"},
+				map[string]any{"id": "w2", "name": "build", "status": "success"},
+			}}),
+		},
+	}
+	h := start(t, gh, cc, true, 2*time.Minute)
+
+	result, err := h.waiter.Wait(context.Background(), "o", "r", 42)
+	if err != nil {
+		t.Fatalf("want green, got %d %v", exitCode(err), err)
+	}
+	if result.CircleCI == nil || len(result.CircleCI.Workflows) != 2 {
+		t.Errorf("want the continued pipeline's two workflows, got %+v", result.CircleCI)
+	}
+	if !strings.Contains(h.progress.String(), "circleci pipeline 12 (pending, continuation not created yet)") {
+		t.Errorf("progress names the pending continuation:\n%s", h.progress.String())
 	}
 }
 
@@ -287,9 +339,10 @@ func Test_Wait_redAtOnce(t *testing.T) {
 	}
 }
 
-func Test_Wait_forkAwaitingApprovalTimesOut(t *testing.T) {
+func Test_Wait_forkAwaitingApprovalEndsAtOnce(t *testing.T) {
 	// The fork's run completed with action_required and produced no check
-	// runs: nothing is red, nothing is green, and the timeout names the run.
+	// runs: nothing is red, and no wait starts the run, a member's approval
+	// does. The first poll ends the wait with exit 4 naming the run.
 	gh := gitHubGreen()
 	gh[runsPath] = []sequence.Response{checkRuns()}
 	gh[actsPath] = []sequence.Response{body(map[string]any{"total_count": 1, "workflow_runs": []any{
@@ -297,21 +350,28 @@ func Test_Wait_forkAwaitingApprovalTimesOut(t *testing.T) {
 	}})}
 	h := start(t, gh, sequence.Routes{}, false, 2*time.Minute)
 	result, err := h.waiter.Wait(context.Background(), "o", "r", 42)
-	if exitCode(err) != agentcli.ExitTimeout {
-		t.Fatalf("want exit 2, got %d %v", exitCode(err), err)
+	if exitCode(err) != agentcli.ExitRequiredMissing || verdict(err) != agentcli.VerdictApprovalRequired {
+		t.Fatalf("want exit 4 approval_required, got %d %v", exitCode(err), err)
+	}
+	if want := "actions run(s) awaiting a repository member's approval: CI (https://github.com/o/r/actions/runs/7)"; !strings.Contains(err.Error(), want) {
+		t.Errorf("reason: want %q in %q", want, err.Error())
 	}
 	if want := []string{"actions run CI (awaiting approval)"}; !cmp.Equal(want, result.Unfinished) {
 		t.Errorf("unfinished: want %q, got %q", want, result.Unfinished)
 	}
-	if h.cond.Replayed() == 0 {
-		t.Error("want the repeated polls answered from the ETag cache")
+	if polls := strings.Count(h.progress.String(), "poll "); polls != 1 {
+		t.Errorf("want one poll, got %d:\n%s", polls, h.progress.String())
+	}
+	if !strings.Contains(h.progress.String(), "poll 1: waiting for approval: actions run CI (awaiting approval)") {
+		t.Errorf("progress does not name the run:\n%s", h.progress.String())
 	}
 }
 
 func Test_Wait_forkAwaitingApprovalOutranksRequiredMissing(t *testing.T) {
 	// The base requires contexts the approved run would report under. While
-	// the run awaits approval the outcome is not known: the timeout is 2,
-	// not 4, and unfinished names the run and the absent contexts.
+	// the run awaits approval the absent context is not the verdict: the
+	// approval is, exit 4 approval_required, and unfinished names the run and
+	// the absent contexts.
 	gh := gitHubGreen()
 	gh[runsPath] = []sequence.Response{checkRuns()}
 	gh[actsPath] = []sequence.Response{body(map[string]any{"total_count": 1, "workflow_runs": []any{
@@ -322,11 +382,31 @@ func Test_Wait_forkAwaitingApprovalOutranksRequiredMissing(t *testing.T) {
 	})}
 	h := start(t, gh, sequence.Routes{}, false, 2*time.Minute)
 	result, err := h.waiter.Wait(context.Background(), "o", "r", 42)
-	if exitCode(err) != agentcli.ExitTimeout || !strings.Contains(err.Error(), "timeout after") {
-		t.Fatalf("want exit 2 at the timeout, got %d %v", exitCode(err), err)
+	if exitCode(err) != agentcli.ExitRequiredMissing || verdict(err) != agentcli.VerdictApprovalRequired {
+		t.Fatalf("want exit 4 approval_required, got %d %v", exitCode(err), err)
 	}
 	if want := []string{"actions run CI (awaiting approval)", "required context go-build (absent)"}; !cmp.Equal(want, result.Unfinished) {
 		t.Errorf("unfinished: want %q, got %q", want, result.Unfinished)
+	}
+}
+
+func Test_Wait_approvedRunIsJudgedNormally(t *testing.T) {
+	// Approved, the run starts again: queued, then in progress, then green.
+	// The wait judges it like any other run.
+	gh := gitHubGreen()
+	gh[runsPath] = []sequence.Response{checkRuns()}
+	run := func(status, conclusion string) sequence.Response {
+		return body(map[string]any{"total_count": 1, "workflow_runs": []any{
+			map[string]any{"id": 7, "name": "CI", "status": status, "conclusion": conclusion, "html_url": "https://github.com/o/r/actions/runs/7"},
+		}})
+	}
+	gh[actsPath] = []sequence.Response{run("queued", ""), run("in_progress", ""), run("completed", "success")}
+	h := start(t, gh, sequence.Routes{}, false, 10*time.Minute)
+	if _, err := h.waiter.Wait(context.Background(), "o", "r", 42); err != nil {
+		t.Fatalf("want green, got %d %v", exitCode(err), err)
+	}
+	if !strings.Contains(h.progress.String(), "poll 1: waiting for actions run CI (queued)") || !strings.Contains(h.progress.String(), "poll 3: green") {
+		t.Errorf("want the queued run waited for and green at poll 3:\n%s", h.progress.String())
 	}
 }
 

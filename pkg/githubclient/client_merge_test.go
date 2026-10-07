@@ -128,3 +128,21 @@ func Test_EnqueuePullRequest_wire(t *testing.T) {
 		t.Errorf("GraphQL errors are errors, got %v", err)
 	}
 }
+
+func Test_BehindBy_wire(t *testing.T) {
+	c, got := newWireClient(t, http.StatusOK, `{"status":"diverged","ahead_by":1,"behind_by":2}`)
+	by, err := c.BehindBy(context.Background(), "o", "r", "main", "abc123")
+	if err != nil || by != 2 {
+		t.Fatalf("want 2, got %d, %v", by, err)
+	}
+	if got.method != http.MethodGet || got.path != "/repos/o/r/compare/main...abc123" {
+		t.Errorf("want GET /repos/o/r/compare/main...abc123, got %s %s", got.method, got.path)
+	}
+}
+
+func Test_BehindBy_failure(t *testing.T) {
+	c, _ := newWireClient(t, http.StatusNotFound, `{"message":"Not Found"}`)
+	if _, err := c.BehindBy(context.Background(), "o", "r", "main", "gone"); err == nil {
+		t.Fatal("want an error for a comparison GitHub cannot make")
+	}
+}

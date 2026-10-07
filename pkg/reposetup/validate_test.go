@@ -81,6 +81,8 @@ func TestValidateEntries(t *testing.T) {
 		{name: "chart-release-gate", template: TemplateChart, verdict: VerdictFree},
 		{name: "template-content", template: TemplateGo, verdict: VerdictFree},
 		{name: "template-content-generated", template: TemplateGo, verdict: VerdictFree, fields: []string{"gen.ci.templateContent"}},
+		{name: "maintenance-branches", template: TemplateMinimal, verdict: VerdictFree},
+		{name: "maintenance-branches-no-fork", template: TemplateGo, verdict: VerdictFree, fields: []string{"gen.ci.maintenanceBranches"}},
 	}
 
 	for _, tc := range tests {
@@ -122,7 +124,7 @@ func problemFields(problems []Problem) []string {
 func TestValidateMessagesNameTheReason(t *testing.T) {
 	v, tf := fixtureValidator(t)
 	result, err := v.Validate(context.Background(), Request{TeamFile: tf, Names: []string{
-		"node-ui", "plans-wrong-language", "hello-world-app", "chart-name-mismatch", "internal-visibility", "unknown-field", "unknown-flavour", "taken-name", "renamed-name", "twice", "no-gen", "template-content-generated",
+		"node-ui", "plans-wrong-language", "hello-world-app", "chart-name-mismatch", "internal-visibility", "unknown-field", "unknown-flavour", "taken-name", "renamed-name", "twice", "no-gen", "template-content-generated", "maintenance-branches-no-fork",
 	}})
 	require.NoError(t, err)
 
@@ -138,6 +140,7 @@ func TestValidateMessagesNameTheReason(t *testing.T) {
 	require.Contains(t, messages["hello-world-app/name"], "without the -app suffix")
 	require.Contains(t, messages["chart-name-mismatch/gen.ci.chartName"], `must equal the repository name "chart-name-mismatch"`)
 	require.Contains(t, messages["template-content-generated/gen.ci.templateContent"], "contradicts gen.ci.generate: true")
+	require.Contains(t, messages["maintenance-branches-no-fork/gen.ci.maintenanceBranches"], "needs gen.flavours fork")
 	require.Contains(t, messages["internal-visibility/visibility"], "public")
 	require.Contains(t, messages["internal-visibility/lifecycle"], "archived")
 	require.Equal(t, "not a field of the repositories schema", messages["unknown-field/template"])
