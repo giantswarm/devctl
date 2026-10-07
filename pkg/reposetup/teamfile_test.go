@@ -54,6 +54,22 @@ func TestParseTeamFile(t *testing.T) {
 	})
 }
 
+// Fields carries the repository's opt-in to alignment; an entry without the
+// field is not opted in.
+func TestDeclarationFieldsAlign(t *testing.T) {
+	tf, err := ParseTeamFile("team-rocket", strings.NewReader("- name: a\n  componentType: cli\n  align: true\n- name: b\n  componentType: cli\n"))
+	require.NoError(t, err)
+	require.Len(t, tf.Entries, 2)
+
+	fields, err := tf.Entries[0].Fields()
+	require.NoError(t, err)
+	require.True(t, fields.Align)
+
+	fields, err = tf.Entries[1].Fields()
+	require.NoError(t, err)
+	require.False(t, fields.Align)
+}
+
 func TestDeclarationInstanceAndYAML(t *testing.T) {
 	tf, err := ParseTeamFile("team-rocket", strings.NewReader("- name: a\n  gen:\n    flavours: [app]\n    ci:\n      generate: false\n"))
 	require.NoError(t, err)

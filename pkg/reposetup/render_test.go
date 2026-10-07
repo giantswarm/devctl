@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -16,15 +17,19 @@ import (
 // template or generator change.
 var update = flag.Bool("update", false, "update golden files")
 
-// renderCases are the kinds of the derivation (D2), one golden each. The
-// Node kind is deferred with its template.
+// renderCases are the kinds of the derivation (D2), one golden each, and
+// the Go service with the app flavour, whose scaffold carries the chart
+// template's chart beside the Go template. The Node kind is deferred with
+// its template.
 var renderCases = []struct {
 	name     string
 	team     string
 	template Template
+	chart    Template
 	options  map[string]string
 }{
 	{name: "go-service", team: "team-bumblebee", template: TemplateGo},
+	{name: "go-app", team: "team-bumblebee", template: TemplateGo, chart: TemplateChart},
 	{name: "chart-app", team: "team-shield", template: TemplateChart},
 	{name: "chart-app-vendir", team: "team-shield", template: TemplateChart, options: map[string]string{
 		OptionSync:          SyncVendir,
@@ -33,6 +38,7 @@ var renderCases = []struct {
 		OptionUpstreamChart: "charts/example",
 	}},
 	{name: "configuration", team: "team-honeybadger", template: TemplateMinimal},
+	{name: "plans", team: "team-cabbage", template: TemplatePlans},
 	{name: "customer", team: "team-planeteers", template: TemplateMinimal},
 	{name: "python", team: "team-bumblebee", template: TemplateMinimal},
 	{name: "kyverno-policy", team: "team-shield", template: TemplateMinimal},
@@ -44,6 +50,17 @@ var renderCases = []struct {
 var headerURL = regexp.MustCompile(`https://github\.com/giantswarm/devctl/blob/[0-9a-f]+/`)
 
 const fixedHeaderURL = "https://github.com/giantswarm/devctl/blob/<commit>/"
+
+// anyProvenance matches the provenance link in both forms: the commit and
+// template path of a checkout where `go generate` wrote the gitignored .sha
+// files (what the goldens carry), and the bare module-ref tree link a
+// checkout without them falls back to (input.TemplateSHA). Comparing with
+// both masked keeps the test independent of whether `go generate` ran.
+var anyProvenance = regexp.MustCompile(`https://github\.com/giantswarm/devctl/(?:blob/(?:[0-9a-f]+|<commit>)/\S+|tree/[^/\s]+)`)
+
+func maskProvenance(s string) string {
+	return anyProvenance.ReplaceAllString(s, "<provenance>")
+}
 
 func testRenderer() Renderer {
 	return Renderer{Templates: DirTemplates{Root: filepath.Join("testdata", "templates")}}
@@ -87,6 +104,9 @@ func Test_Render(t *testing.T) {
 			if entry.Template != tc.template {
 				t.Fatalf("template = %s, want %s", entry.Template, tc.template)
 			}
+			if entry.Chart != tc.chart {
+				t.Fatalf("chart = %q, want %q", entry.Chart, tc.chart)
+			}
 
 			dir := filepath.Join(t.TempDir(), entry.Name)
 			scaffold, err := testRenderer().Render(context.Background(), RenderRequest{
@@ -100,6 +120,11 @@ func Test_Render(t *testing.T) {
 			}
 
 			got := manifest(t, scaffold)
+			// Every kind generates, with or without generated CI, so every
+			// created repository starts with its Renovate configuration.
+			if !strings.Contains(got, "\n--- renovate.json5\n") {
+				t.Errorf("the scaffold has no renovate.json5")
+			}
 			assertGolden(t, filepath.Join("testdata", "golden", tc.name+".golden"), got)
 		})
 	}
@@ -192,6 +217,9 @@ func manifest(t *testing.T, s *Scaffold) string {
 
 	var b strings.Builder
 	fmt.Fprintf(&b, "template: %s\n", s.Template)
+	if s.Chart != "" {
+		fmt.Fprintf(&b, "chart: %s\n", s.Chart)
+	}
 	for _, c := range s.Commands {
 		fmt.Fprintf(&b, "command: %s\n", c)
 	}
@@ -201,9 +229,21 @@ func manifest(t *testing.T, s *Scaffold) string {
 	}
 	for _, f := range files {
 		p := filepath.Join(s.Dir, filepath.FromSlash(f))
-		info, err := os.Stat(p)
+		// Lstat, never Stat: a symlink's own mode and target are what the
+		// scaffold carries and what the commit step reads (os.Lstat,
+		// os.Readlink); following it here would pin the file it happens to
+		// point at instead of the link.
+		info, err := os.Lstat(p)
 		if err != nil {
 			t.Fatal(err)
+		}
+		if info.Mode()&fs.ModeSymlink != 0 {
+			target, err := os.Readlink(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			fmt.Fprintf(&b, "\n--- %s -> %s\n", f, filepath.ToSlash(target))
+			continue
 		}
 		data, err := os.ReadFile(p) // #nosec G304 -- the scaffold rendered into t.TempDir()
 		if err != nil {
@@ -235,8 +275,8 @@ func assertGolden(t *testing.T, golden, got string) {
 	if err != nil {
 		t.Fatalf("read golden %s: %v (run with -update to create it)", golden, err)
 	}
-	if got != string(want) {
-		t.Errorf("scaffold does not match %s (run with -update to regenerate)\n%s", golden, firstDifference(string(want), got))
+	if maskProvenance(got) != maskProvenance(string(want)) {
+		t.Errorf("scaffold does not match %s (run with -update to regenerate)\n%s", golden, firstDifference(maskProvenance(string(want)), maskProvenance(got)))
 	}
 }
 

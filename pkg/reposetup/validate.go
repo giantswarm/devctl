@@ -32,10 +32,13 @@ const (
 	// their repositories — the schema, the creation rules and a free name.
 	ModeCreate Mode = "create"
 	// ModeExisting: the entries declare repositories that exist — the schema
-	// alone; the creation rules are for a repository the reconciler creates.
-	// The name is checked when a [NameChecker] is configured and the verdict
-	// reported, but it never refuses: a missing repository is a finding of
-	// the reconciler's, not a validation error.
+	// alone; the creation rules are for a repository the reconciler creates,
+	// and so is the creation default: the entry is rendered as declared, and
+	// gen.ci.generate left unset says the repository keeps its own CircleCI
+	// configuration (the reconciler reads the branch for one). The name is
+	// checked when a [NameChecker] is configured and the verdict reported,
+	// but it never refuses: a missing repository is a finding of the
+	// reconciler's, not a validation error.
 	ModeExisting Mode = "existing"
 )
 
@@ -100,6 +103,10 @@ type Entry struct {
 	// Template the repository would be scaffolded from; empty when the
 	// declaration does not derive one.
 	Template Template `json:"template,omitempty"`
+	// Chart is the template whose chart is added at helm/<name> when the
+	// flavours produce one and Template has no chart of its own (the Go
+	// template); empty otherwise.
+	Chart Template `json:"chart,omitempty"`
 	// Options the template's scaffold offers, selected by name through
 	// [RenderRequest.Options]; nil when the template has none.
 	Options []Option `json:"options,omitempty"`
@@ -109,6 +116,14 @@ type Entry struct {
 	Problems []Problem `json:"problems,omitempty"`
 	// Accepted is true when the entry has no problems.
 	Accepted bool `json:"accepted"`
+}
+
+// RefusedForTakenName says whether the entry's one refusal is its taken
+// name — the repository exists. A caller resuming a creation of its own
+// (the repository is there and the caller administers it) validates the
+// entry again in [ModeExisting]; anyone else's repository stays refused.
+func (e Entry) RefusedForTakenName() bool {
+	return !e.Accepted && len(e.Problems) == 1 && e.Problems[0].Field == "name" && e.NameCheck.Verdict == VerdictTaken
 }
 
 // Problem is one refusal: the field in dotted form (gen.ci.chartName,
@@ -234,9 +249,14 @@ func (v Validator) validateEntry(ctx context.Context, owner string, mode Mode, t
 		NameCheck: NameCheck{Verdict: VerdictUnchecked, Detail: "not checked"},
 	}
 
-	// The entry as the team file would carry it, defaults written out: that
-	// is what the schema and the rules see, and what is rendered.
-	d = withDefaults(d)
+	// The entry as the team file would carry it: that is what the schema and
+	// the rules see, and what is rendered. A creation writes its defaults
+	// out; an existing repository's entry is read as declared — its defaults
+	// were written when it was created, or it predates them and keeps what
+	// it has.
+	if mode == ModeCreate {
+		d = withDefaults(d)
+	}
 
 	// The schema first: it names type and enum violations and unknown
 	// fields, so the rules below can read the fields they need.
@@ -291,11 +311,21 @@ func withDefaults(d Declaration) Declaration {
 			setMappingValue(genNode, "ci", ci)
 		}
 		if ci.Kind == yaml.MappingNode && mappingValue(ci, "generate") == nil {
-			ci.Content = append([]*yaml.Node{scalarNode("generate"), {Kind: yaml.ScalarNode, Tag: "!!bool", Value: "true"}}, ci.Content...)
+			ci.Content = append([]*yaml.Node{scalarNode("generate"), boolNode(true)}, ci.Content...)
 		}
 	}
 
 	return Declaration{Name: d.Name, node: node}
+}
+
+// hasProblem says whether a problem names the field already.
+func (e *Entry) hasProblem(field string) bool {
+	for _, p := range e.Problems {
+		if p.Field == field {
+			return true
+		}
+	}
+	return false
 }
 
 // refuse adds a problem naming the field.
@@ -322,13 +352,18 @@ func (v Validator) creationRules(ctx context.Context, owner string, entry *Entry
 			entry.refuse("gen.language", "required for a repository the reconciler creates")
 		}
 	}
-	entry.Problems = append(entry.Problems, unknownGen(flavours, language)...)
+	// A field the schema refused already is not named twice.
+	for _, p := range unknownGen(flavours, language) {
+		if !entry.hasProblem(p.Field) {
+			entry.Problems = append(entry.Problems, p)
+		}
+	}
 
 	// The template: derived, never declared.
 	if derivesTemplate(fields) {
 		switch err := derive(entry, fields); {
 		case IsTemplateUnavailable(err):
-			entry.refuse("gen.language", "%s", nodeTemplateUnavailable)
+			entry.refuse("gen.language", "%s", unavailableTemplateReason(flavours, language))
 		case err != nil:
 			return microerror.Mask(err)
 		}
@@ -338,6 +373,12 @@ func (v Validator) creationRules(ctx context.Context, owner string, entry *Entry
 	// circleci` refuses a declaration with no job, so the dry run does.
 	if derivesTemplate(fields) && fields.Gen.CI != nil && fields.Gen.CI.Generate != nil && *fields.Gen.CI.Generate && !hasCIJob(fields) {
 		entry.refuse("gen.ci.generate", "no CircleCI job for language %s without the app flavour or gen.ci.image.dockerfile; set it to false", language)
+	}
+
+	// Template content is no pipeline of the repository's own, a generated
+	// pipeline is.
+	if fields.Gen != nil && fields.Gen.CI != nil && fields.Gen.CI.TemplateContent && fields.Gen.CI.Generate != nil && *fields.Gen.CI.Generate {
+		entry.refuse("gen.ci.templateContent", "contradicts gen.ci.generate: true: a generated pipeline is the repository's own, template content is not built here")
 	}
 
 	// The name: lowercase, the chart's name where a chart exists, free on
@@ -392,8 +433,9 @@ func (v Validator) existingRules(ctx context.Context, owner string, entry *Entry
 }
 
 // unknownGen returns a problem for each flavour and the language devctl has
-// no generator for (the schema accepts helmchart; devctl has no such
-// flavour).
+// no generator for. The embedded schema's enums say the same (a test pins
+// them); a schema read from a file or from giantswarm/github may be older
+// than this devctl.
 func unknownGen(flavours []string, language string) []Problem {
 	var problems []Problem
 	for i, f := range flavours {
@@ -425,6 +467,7 @@ func derive(entry *Entry, fields Fields) error {
 		return err
 	}
 	entry.Template = template
+	entry.Chart = DeriveChart(template, fields.Gen.Flavours)
 	entry.Options = templateOptions(template)
 	return nil
 }
@@ -490,6 +533,8 @@ func memberOf(teams []string, team string) bool {
 func hasCIJob(f Fields) bool {
 	g := f.Gen
 	switch {
+	case !generates(g.Flavours):
+		return false
 	case g.Language == gen.LanguageGo.String(), g.Language == gen.LanguageNode.String():
 		return true
 	case g.CI != nil && g.CI.Image != nil && g.CI.Image.Dockerfile != "":

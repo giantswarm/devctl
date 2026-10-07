@@ -26,7 +26,7 @@ var invalidSchemaError = &microerror.Error{
 }
 
 // IsInvalidSchema asserts invalidSchemaError: the repositories schema does
-// not parse or compile.
+// not parse or compile, or a field's enum is not a list of strings.
 func IsInvalidSchema(err error) bool {
 	return microerror.Cause(err) == invalidSchemaError
 }

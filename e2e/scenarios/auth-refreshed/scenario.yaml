@@ -1,0 +1,20 @@
+# The GitHub access token is past its expiry, its refresh token is not, and
+# the CircleCI token is valid: the commands refresh the GitHub token
+# themselves, so no human is needed. The status reports the GitHub identity
+# as expired and refreshable and exits 0 without contacting anything; the
+# refresh exchange itself (`POST /login/oauth/access_token` with
+# `grant_type=refresh_token`) runs in the commands that require the token
+# and is scripted on the GitHub mock in their scenarios.
+description: auth status with an expired GitHub token under a live refresh token exits 0 and reports it refreshable
+args: [auth, status]
+keyring:
+  github:
+    login: e2e-engineer
+    token: ghu_e2e_expired
+    expiresAt: "2000-01-01T00:00:00Z"
+    refreshToken: ghr_e2e_live
+    refreshExpiresAt: "2099-01-01T00:00:00Z"
+  circleci:
+    login: e2e-engineer
+    token: CCIPAT_e2e_live
+    expiresAt: "2099-01-01T00:00:00Z"

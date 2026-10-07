@@ -11,6 +11,7 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
+	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/google/go-github/v92/github"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/oauth2"
@@ -23,6 +24,15 @@ type Config struct {
 	// BaseURL points the client at another GitHub API host (an enterprise
 	// instance, a test double); empty means api.github.com.
 	BaseURL string
+	// Transport sends the requests, under the token the client adds; nil
+	// means http.DefaultTransport. A caller counting the requests builds
+	// its counter here.
+	Transport http.RoundTripper
+	// Renew is asked for another token when GitHub answers 401 to the one an
+	// API request carried (an expired or superseded App user token): the
+	// request is sent once more with the token it returns, and an error it
+	// returns is the request's. Nil sends every request with AccessToken.
+	Renew func(ctx context.Context, rejected string) (string, error)
 }
 
 type Client struct {
@@ -31,6 +41,9 @@ type Client struct {
 	workDir     string
 	dryRun      bool
 	ghClient    *github.Client
+	// download fetches what an API answer redirects to, a signed URL, with
+	// the transport underneath and without the token.
+	download *http.Client
 }
 
 func New(config Config) (*Client, error) {
@@ -41,9 +54,16 @@ func New(config Config) (*Client, error) {
 		return nil, microerror.Maskf(invalidConfigError, "%T.AccessToken must not be empty", config)
 	}
 
+	base := config.Transport
+	if base == nil {
+		base = http.DefaultTransport
+	}
 	var transport http.RoundTripper = &oauth2.Transport{
 		Source: oauth2.StaticTokenSource(&oauth2.Token{AccessToken: config.AccessToken}),
-		Base:   http.DefaultTransport,
+		Base:   base,
+	}
+	if config.Renew != nil {
+		transport = &reauthorizing{base: base, renew: config.Renew, token: config.AccessToken}
 	}
 	if config.DryRun {
 		transport = &dryRunTransport{inner: transport, logger: config.Logger}
@@ -64,6 +84,7 @@ func New(config Config) (*Client, error) {
 		logger:      config.Logger,
 		accessToken: config.AccessToken,
 		ghClient:    ghClient,
+		download:    &http.Client{Transport: base, Timeout: 2 * time.Minute},
 	}
 
 	return c, nil
@@ -72,11 +93,19 @@ func New(config Config) (*Client, error) {
 func (c *Client) CloneRepository(ctx context.Context, owner, repo, workDir string) error {
 	c.workDir = workDir
 	_, err := git.PlainClone(workDir, false, &git.CloneOptions{
-		URL:      fmt.Sprintf("https://%s@github.com/%s/%s", c.accessToken, owner, repo),
+		URL:      fmt.Sprintf("https://github.com/%s/%s", owner, repo),
+		Auth:     c.gitAuth(),
 		Progress: os.Stdout,
 	})
 
 	return microerror.Mask(err)
+}
+
+// gitAuth is the token as git's HTTP basic auth, sent the way a token in the
+// remote URL would be. It stays out of the URL so that no git error, which
+// quotes the URL, and no .git/config carries it.
+func (c *Client) gitAuth() *githttp.BasicAuth {
+	return &githttp.BasicAuth{Username: c.accessToken}
 }
 
 func (c *Client) CreateBranch(ctx context.Context, newBranch string) error {
@@ -138,6 +167,7 @@ func (c *Client) CommitAndPush(ctx context.Context, owner, repo, branch, message
 	// Push changes
 	err = gitRepo.Push(&git.PushOptions{
 		RemoteName: "origin",
+		Auth:       c.gitAuth(),
 		RefSpecs:   []config.RefSpec{config.RefSpec(fmt.Sprintf("refs/heads/%s:refs/heads/%s", branch, branch))},
 	})
 	if err != nil {

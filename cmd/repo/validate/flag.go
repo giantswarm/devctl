@@ -19,7 +19,7 @@ type flag struct {
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
-	cmd.PersistentFlags().StringVar(&f.GithubTokenEnvVar, "github-token-envvar", "GITHUB_TOKEN", "Environment variable name for the GitHub token. Without a token the schema is the embedded copy and repository names are not checked.")
+	cmd.PersistentFlags().StringVar(&f.GithubTokenEnvVar, "github-token-envvar", "", "Environment variable holding a GitHub token that overrides the devctl GitHub App login; empty means $DEVCTL_GITHUB_TOKEN, $GITHUB_TOKEN or $OPSCTL_GITHUB_TOKEN. Without a token the schema is the embedded copy and repository names are not checked.")
 	cmd.Flags().StringVar(&f.TeamFile, "team-file", "", "Path of the team file (repositories/<team>.yaml of giantswarm/github); the team is the file's name.")
 	cmd.Flags().StringArrayVar(&f.Entries, "entry", nil, "Name of an entry to validate; repeatable. Every entry of the file when not given.")
 	cmd.Flags().StringVar(&f.Mode, "mode", "", "What the entries are validated for: create (schema, creation rules, a free name on GitHub) or existing (schema alone; the name check's verdict is reported, never refuses). Default: create with --entry, whose entries are the ones being added; existing without, the whole file being on main already.")

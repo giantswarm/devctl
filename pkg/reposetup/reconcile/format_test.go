@@ -19,7 +19,8 @@ func TestWriteTable(t *testing.T) {
 		Steps: []StepResult{
 			{Step: StepSettings, Verdict: VerdictRepaired, Changes: []string{"settings: has_wiki true → false"}},
 			{Step: StepProtection, Verdict: VerdictOK, Summary: "main protected; required: pre-commit"},
-			{Step: StepRenovate, Verdict: VerdictReported, Findings: []Finding{{Kind: FindingRenovateMissing, Message: "not covered", Fix: "add it"}}},
+			{Step: StepScaffold, Verdict: VerdictReported, Summary: "present", Findings: []Finding{newFinding(FindingDefaultIcon, "the default icon", "replace it")}},
+			{Step: StepRenovate, Verdict: VerdictReported, Findings: []Finding{{Kind: FindingRenovateNotScanned, Message: "not covered", Fix: "add it"}}},
 			{Step: StepRelease, Verdict: VerdictFailed, Summary: "boom"},
 		},
 	}
@@ -33,9 +34,12 @@ func TestWriteTable(t *testing.T) {
 	require.Contains(t, out, "settings")
 	require.Contains(t, out, "repaired")
 	require.Contains(t, out, "has_wiki true → false")
-	require.Contains(t, out, "1 finding")
-	require.Contains(t, out, "- [renovate-missing] not covered\n  fix: add it")
-	require.Equal(t, []StepResult{res.Steps[3]}, res.Failed())
+	require.Contains(t, out, "present | 1 advisory finding")
+	require.Contains(t, out, "- [default-icon, advisory] the default icon\n  fix: replace it")
+	require.Contains(t, out, "1 finding\n")
+	require.Contains(t, out, "- [renovate-not-scanned] not covered\n  fix: add it")
+	require.Equal(t, []StepResult{res.Steps[4]}, res.Failed())
+	require.Equal(t, "2 findings, 1 advisory", findingsCount(append(res.Steps[2].Findings, res.Steps[3].Findings...)))
 
 	res.Steps = res.Steps[:2]
 	res.Converged = true
@@ -43,6 +47,11 @@ func TestWriteTable(t *testing.T) {
 	b.Reset()
 	require.NoError(t, res.WriteTable(&b))
 	require.True(t, strings.HasPrefix(b.String(), "giantswarm/my-repo-v2 (repair): converged in 1.5s\n"))
+
+	res.Requests = Requests{GitHub: 18, CircleCI: 3}
+	b.Reset()
+	require.NoError(t, res.WriteTable(&b))
+	require.True(t, strings.HasPrefix(b.String(), "giantswarm/my-repo-v2 (repair): converged in 1.5s, 18 GitHub and 3 CircleCI requests\n"), b.String())
 	require.NotContains(t, b.String(), "Findings:")
 	require.Empty(t, res.Failed())
 }

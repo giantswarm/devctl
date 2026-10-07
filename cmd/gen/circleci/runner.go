@@ -6,11 +6,13 @@ import (
 	"io"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
+	"sigs.k8s.io/yaml"
 
 	"github.com/giantswarm/devctl/v8/pkg/gen"
 	"github.com/giantswarm/devctl/v8/pkg/gen/input"
@@ -43,6 +45,11 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, _ []string) error {
 	var err error
 
+	// A fork line carries its upstream's files: nothing is generated for it.
+	if !r.flag.Flavours.Generates() {
+		return nil
+	}
+
 	// The image pipeline is derived from repo content: architect already
 	// requires a Dockerfile to build an image, so its presence is the signal.
 	_, statErr := os.Stat("Dockerfile")
@@ -54,6 +61,15 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, _ []string) error 
 	// gates, runtime config) is test content, so it lives next to .ats/main.yaml
 	// and the tests rather than in a gen.ci key.
 	hasATSKindConfig := detectATSKindConfig()
+
+	// The images the repo's own jobs push are derived from its custom.yml: an
+	// architect/push-to-registries job there builds a second image the chart
+	// may reference at the stamped version, which build-chart packages before
+	// that job pushes it.
+	customImages, err := detectCustomImages()
+	if err != nil {
+		return microerror.Mask(err)
+	}
 
 	// Node package manager is derived from the lockfile, the same content-signal
 	// style as the Dockerfile probe. An explicit --package-manager wins.
@@ -104,12 +120,14 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, _ []string) error 
 			Flavours:                r.flag.Flavours,
 			ComponentType:           r.flag.ComponentType,
 			Team:                    r.flag.Team,
+			SkipAppCatalog:          r.flag.SkipAppCatalog,
 			SkipATS:                 r.flag.SkipATS,
 			ATSVersion:              r.flag.ATSVersion,
 			ATSOnRelease:            r.flag.ATSOnRelease,
 			ATSResourceClass:        r.flag.ATSResourceClass,
 			HasATSKindConfig:        hasATSKindConfig,
 			HasDockerfile:           hasDockerfile,
+			CustomImages:            customImages,
 			AppCatalog:              r.flag.AppCatalog,
 			AppCatalogTest:          r.flag.AppCatalogTest,
 			ChartName:               r.flag.ChartName,
@@ -118,6 +136,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, _ []string) error 
 			BranchPublish:           r.flag.BranchPublish,
 			BuildConcurrency:        r.flag.BuildConcurrency,
 			ImagePreBuildJob:        r.flag.ImagePreBuildJob,
+			ChartReleaseGateJob:     r.flag.ChartReleaseGateJob,
 			ImagePrivateOnly:        r.flag.ImagePrivateOnly,
 			ImageName:               r.flag.ImageName,
 			ImagePlatforms:          r.flag.ImagePlatforms,
@@ -165,6 +184,49 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, _ []string) error 
 func detectATSKindConfig() bool {
 	_, err := os.Stat(circleci.ATSKindConfigPath)
 	return err == nil
+}
+
+// detectCustomImages returns the images the repo's .circleci/custom.yml pushes
+// with architect/push-to-registries jobs, sorted and without duplicates. A job
+// without an `image` parameter pushes the orb default, the repo's own image,
+// which the generator names already. No custom.yml, no images; a custom.yml
+// that is no YAML fails generation, as it would fail the pipeline.
+func detectCustomImages() ([]string, error) {
+	data, err := os.ReadFile(circleci.CustomConfigPath)
+	if os.IsNotExist(err) {
+		return nil, nil
+	} else if err != nil {
+		return nil, microerror.Mask(err)
+	}
+
+	var custom struct {
+		Workflows map[string]struct {
+			Jobs []any `json:"jobs"`
+		} `json:"workflows"`
+	}
+	if err := yaml.Unmarshal(data, &custom); err != nil {
+		return nil, microerror.Maskf(invalidConfigError, "parse %s: %v", circleci.CustomConfigPath, err)
+	}
+
+	var images []string
+	for _, workflow := range custom.Workflows {
+		for _, job := range workflow.Jobs {
+			entry, ok := job.(map[string]any)
+			if !ok {
+				continue
+			}
+			params, ok := entry[circleci.PushToRegistriesJob].(map[string]any)
+			if !ok {
+				continue
+			}
+			if image, ok := params["image"].(string); ok && image != "" {
+				images = append(images, image)
+			}
+		}
+	}
+	slices.Sort(images)
+
+	return slices.Compact(images), nil
 }
 
 // detectPackageManager picks the Node package manager from the lockfile present

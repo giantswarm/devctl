@@ -1,17 +1,25 @@
 package reconcile
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"sort"
 	"strings"
 
 	"github.com/google/go-github/v92/github"
+
+	"github.com/giantswarm/devctl/v8/pkg/githubclient"
 )
 
-// stepSettings applies the settings baseline: features, merge settings,
-// pull-request settings, the default branch and the workflows' default
-// token permission. Only the fields that differ are sent.
+// stepSettings applies the settings baseline: features, merge settings (a
+// fork line keeps its rebase merges, [run.mergeMethods]), pull-request
+// settings, the declared default branch and the workflows' default token
+// permission. Only the fields that differ are sent.
 func (r *Runner) stepSettings(ctx context.Context, s *run, sr *StepResult) error {
 	b := s.baseline
 	edit := &github.Repository{}
@@ -26,12 +34,25 @@ func (r *Runner) stepSettings(ctx context.Context, s *run, sr *StepResult) error
 	want("has_wiki", repo.GetHasWiki(), b.HasWiki, func(v *bool) { edit.HasWiki = v })
 	want("has_issues", repo.GetHasIssues(), b.HasIssues, func(v *bool) { edit.HasIssues = v })
 	want("has_projects", repo.GetHasProjects(), b.HasProjects, func(v *bool) { edit.HasProjects = v })
-	want("allow_merge_commit", repo.GetAllowMergeCommit(), b.AllowMergeCommit, func(v *bool) { edit.AllowMergeCommit = v })
-	want("allow_squash_merge", repo.GetAllowSquashMerge(), b.AllowSquashMerge, func(v *bool) { edit.AllowSquashMerge = v })
-	want("allow_rebase_merge", repo.GetAllowRebaseMerge(), b.AllowRebaseMerge, func(v *bool) { edit.AllowRebaseMerge = v })
-	want("allow_update_branch", repo.GetAllowUpdateBranch(), b.AllowUpdateBranch, func(v *bool) { edit.AllowUpdateBranch = v })
-	want("allow_auto_merge", repo.GetAllowAutoMerge(), b.AllowAutoMerge, func(v *bool) { edit.AllowAutoMerge = v })
-	want("delete_branch_on_merge", repo.GetDeleteBranchOnMerge(), b.DeleteBranchOnMerge, func(v *bool) { edit.DeleteBranchOnMerge = v })
+	merge, err := r.mergeSettings(ctx, s)
+	unchecked := err != nil
+	if unchecked {
+		s.report(sr, FindingUnchecked,
+			fmt.Sprintf("the merge settings of %s (%s) are not readable by this identity: GET /repos/{owner}/{repo} carries them for admins only, and the GraphQL read failed: %v", s.slug(), strings.Join(mergeSettingFields, ", "), err),
+			"run the check as an identity with admin rights on the repository (the reconciler's Align now), or let this identity reach GraphQL; the merge settings are compared on a later run")
+	} else {
+		mergeCommit, rebaseMerge := s.mergeMethods(merge)
+		want("allow_merge_commit", merge.mergeCommit, mergeCommit, func(v *bool) { edit.AllowMergeCommit = v })
+		want("allow_squash_merge", merge.squashMerge, b.AllowSquashMerge, func(v *bool) { edit.AllowSquashMerge = v })
+		want("allow_rebase_merge", merge.rebaseMerge, rebaseMerge, func(v *bool) { edit.AllowRebaseMerge = v })
+		want("allow_update_branch", merge.updateBranch, b.AllowUpdateBranch, func(v *bool) { edit.AllowUpdateBranch = v })
+		want("allow_auto_merge", merge.autoMerge, b.AllowAutoMerge, func(v *bool) { edit.AllowAutoMerge = v })
+		want("delete_branch_on_merge", merge.deleteBranchOnMerge, b.DeleteBranchOnMerge, func(v *bool) { edit.DeleteBranchOnMerge = v })
+		if merge.squashTitle != b.SquashMergeCommitTitle {
+			changes = append(changes, fmt.Sprintf("squash_merge_commit_title %s → %s", merge.squashTitle, b.SquashMergeCommitTitle))
+			edit.SquashMergeCommitTitle = new(b.SquashMergeCommitTitle)
+		}
+	}
 	if len(changes) > 0 {
 		err := s.plan(sr, "settings: "+strings.Join(changes, ", "), func() error {
 			updated, _, err := r.GitHub.Repositories.Edit(ctx, s.owner, s.name, edit)
@@ -46,13 +67,13 @@ func (r *Runner) stepSettings(ctx context.Context, s *run, sr *StepResult) error
 		}
 	}
 
-	if got := repo.GetDefaultBranch(); !s.empty && got != "" && got != b.DefaultBranch {
-		err := s.plan(sr, fmt.Sprintf("default branch %q → %q", got, b.DefaultBranch), func() error {
-			_, _, err := r.GitHub.Repositories.RenameBranch(ctx, s.owner, s.name, got, b.DefaultBranch)
+	if got, want := repo.GetDefaultBranch(), s.defaultBranch(); !s.empty && !s.keepsDefaultBranch() && got != "" && got != want {
+		err := s.plan(sr, fmt.Sprintf("default branch %q → %q", got, want), func() error {
+			_, _, err := r.GitHub.Repositories.RenameBranch(ctx, s.owner, s.name, got, want)
 			if err != nil {
 				return err
 			}
-			s.repo.DefaultBranch = new(b.DefaultBranch)
+			s.repo.DefaultBranch = new(want)
 			return nil
 		})
 		if err != nil {
@@ -77,8 +98,136 @@ func (r *Runner) stepSettings(ctx context.Context, s *run, sr *StepResult) error
 	}
 	if len(sr.Changes) == 0 {
 		sr.Summary = "baseline"
+		if unchecked {
+			sr.Summary = "baseline, the merge settings unchecked"
+		}
 	}
 	return nil
+}
+
+// mergeSettingFields are the seven merge settings of GET /repos/{owner}/{repo}
+// that GitHub carries only for an identity with admin rights on the
+// repository. To every other identity — an App installation with
+// administration: read, a member with read access, an anonymous call — the
+// seven are null, which go-github's getters read as false or empty; compared
+// with the baseline, the four it wants on and the squash title would read
+// as drift on every repository. GraphQL's Repository carries them for any
+// identity that reads the repository (checked live 2026-09-21 as an
+// installation with administration: read: REST null, GraphQL the values),
+// so the step reads them there when REST left them out.
+var mergeSettingFields = []string{"allow_merge_commit", "allow_squash_merge", "allow_rebase_merge", "allow_update_branch", "allow_auto_merge", "delete_branch_on_merge", "squash_merge_commit_title"}
+
+// mergeSettings are the repository's merge settings as the step compares
+// them with the baseline.
+type mergeSettings struct {
+	mergeCommit, squashMerge, rebaseMerge, updateBranch, autoMerge, deleteBranchOnMerge bool
+	// squashTitle is PR_TITLE or COMMIT_OR_PR_TITLE.
+	squashTitle string
+}
+
+// mergeMethods are the merge commit and rebase merge methods the step wants
+// beside the baseline's squash merge: off, as the baseline has them, except
+// on a fork line. A fork line's pull requests land by rebase merge so that
+// each carried patch stays one upstream-ready commit (a squash would fold a
+// patch of several commits into one that cannot be sent upstream as it is),
+// and a re-pin merges upstream's history: rebase merges stay on, and merge
+// commits stay as the repository has them.
+func (s *run) mergeMethods(got mergeSettings) (mergeCommit, rebaseMerge bool) {
+	if s.hasFlavour(flavourFork) {
+		return got.mergeCommit, true
+	}
+	return s.baseline.AllowMergeCommit, s.baseline.AllowRebaseMerge
+}
+
+// mergeSettings reads the seven merge settings: from the repository the run
+// holds when GitHub returned them (an admin identity), else through GraphQL.
+// An error means neither route answered; the caller reports the seven as
+// unchecked, never as drift.
+func (r *Runner) mergeSettings(ctx context.Context, s *run) (mergeSettings, error) {
+	repo := s.repo
+	if repo.AllowMergeCommit != nil && repo.AllowSquashMerge != nil && repo.AllowRebaseMerge != nil &&
+		repo.AllowUpdateBranch != nil && repo.AllowAutoMerge != nil && repo.DeleteBranchOnMerge != nil &&
+		repo.SquashMergeCommitTitle != nil {
+		return mergeSettings{
+			mergeCommit: repo.GetAllowMergeCommit(), squashMerge: repo.GetAllowSquashMerge(), rebaseMerge: repo.GetAllowRebaseMerge(),
+			updateBranch: repo.GetAllowUpdateBranch(), autoMerge: repo.GetAllowAutoMerge(), deleteBranchOnMerge: repo.GetDeleteBranchOnMerge(),
+			squashTitle: repo.GetSquashMergeCommitTitle(),
+		}, nil
+	}
+	fmt.Fprintf(s.log, "%s/%s settings: the merge settings are not in the repository for this identity (admins only); reading them through GraphQL\n", s.owner, s.name)
+	return r.mergeSettingsGraphQL(ctx, s)
+}
+
+// mergeSettingsGraphQL reads the seven merge settings from GraphQL's
+// Repository, at <REST root>/graphql with the GitHub client's own transport
+// and identity.
+func (r *Runner) mergeSettingsGraphQL(ctx context.Context, s *run) (mergeSettings, error) {
+	body, err := json.Marshal(map[string]any{
+		"query":     `query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) { mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed allowUpdateBranch autoMergeAllowed deleteBranchOnMerge squashMergeCommitTitle } }`,
+		"variables": map[string]string{"owner": s.owner, "name": s.name},
+	})
+	if err != nil {
+		return mergeSettings{}, err
+	}
+	url := strings.TrimRight(r.GitHub.BaseURL(), "/") + "/graphql"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return mergeSettings{}, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	resp, err := r.GitHub.Client().Do(req)
+	if err != nil {
+		return mergeSettings{}, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return mergeSettings{}, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return mergeSettings{}, errors.New(githubclient.GraphQLRefusal(resp.Header, fmt.Sprintf("GraphQL answered %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))))
+	}
+	var answer struct {
+		Data struct {
+			Repository *struct {
+				MergeCommitAllowed     bool   `json:"mergeCommitAllowed"`
+				SquashMergeAllowed     bool   `json:"squashMergeAllowed"`
+				RebaseMergeAllowed     bool   `json:"rebaseMergeAllowed"`
+				AllowUpdateBranch      bool   `json:"allowUpdateBranch"`
+				AutoMergeAllowed       bool   `json:"autoMergeAllowed"`
+				DeleteBranchOnMerge    bool   `json:"deleteBranchOnMerge"`
+				SquashMergeCommitTitle string `json:"squashMergeCommitTitle"`
+			} `json:"repository"`
+		} `json:"data"`
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+	if err := json.Unmarshal(raw, &answer); err != nil {
+		return mergeSettings{}, fmt.Errorf("GraphQL answered with no JSON: %s", strings.TrimSpace(string(raw)))
+	}
+	if got := answer.Data.Repository; got != nil {
+		// The schema declares the enum non-null; an answer without it is
+		// an identity the field is hidden from, unchecked rather than
+		// drift from an empty value.
+		if got.SquashMergeCommitTitle == "" {
+			return mergeSettings{}, fmt.Errorf("GraphQL answered without squashMergeCommitTitle")
+		}
+		return mergeSettings{
+			mergeCommit: got.MergeCommitAllowed, squashMerge: got.SquashMergeAllowed, rebaseMerge: got.RebaseMergeAllowed,
+			updateBranch: got.AllowUpdateBranch, autoMerge: got.AutoMergeAllowed, deleteBranchOnMerge: got.DeleteBranchOnMerge,
+			squashTitle: got.SquashMergeCommitTitle,
+		}, nil
+	}
+	messages := make([]string, 0, len(answer.Errors))
+	for _, e := range answer.Errors {
+		messages = append(messages, e.Message)
+	}
+	if len(messages) == 0 {
+		messages = append(messages, "no repository in the answer")
+	}
+	return mergeSettings{}, errors.New(githubclient.GraphQLRefusal(resp.Header, "GraphQL: "+strings.Join(messages, "; ")))
 }
 
 // stepPermissions grants the baseline's teams their permission; teams the
@@ -116,13 +265,23 @@ func (r *Runner) stepPermissions(ctx context.Context, s *run, sr *StepResult) er
 	return nil
 }
 
+// readHooks lists the repository's webhooks once per run: the circleci step
+// verifies CircleCI's among them, the webhooks step ensures the baseline's.
+func (r *Runner) readHooks(ctx context.Context, s *run) ([]*github.Hook, *github.Response, error) {
+	if !s.hooksRead {
+		s.hooks, s.hooksResp, s.hooksErr = r.GitHub.Repositories.ListHooks(ctx, s.owner, s.name, &github.ListOptions{PerPage: 100})
+		s.hooksRead = true
+	}
+	return s.hooks, s.hooksResp, s.hooksErr
+}
+
 // stepWebhooks ensures the baseline's webhooks, matched by URL.
 func (r *Runner) stepWebhooks(ctx context.Context, s *run, sr *StepResult) error {
 	if len(s.baseline.Webhooks) == 0 {
 		sr.Summary = "none in the baseline"
 		return nil
 	}
-	hooks, _, err := r.GitHub.Repositories.ListHooks(ctx, s.owner, s.name, &github.ListOptions{PerPage: 100})
+	hooks, _, err := r.readHooks(ctx, s)
 	if err != nil {
 		return err
 	}
@@ -166,60 +325,5 @@ func (r *Runner) stepWebhooks(ctx context.Context, s *run, sr *StepResult) error
 	if len(sr.Changes) == 0 {
 		sr.Summary = "present"
 	}
-	return nil
-}
-
-// installationRepositories is a page of GET /user/installations/{id}/repositories.
-type installationRepositories struct {
-	TotalCount          int    `json:"total_count"`
-	RepositorySelection string `json:"repository_selection"`
-	Repositories        []struct {
-		FullName string `json:"full_name"`
-	} `json:"repositories"`
-}
-
-// stepRenovate checks that the Renovate installation covers the repository.
-// It never writes: adding a repository to the installation is an org
-// owner's click, and the installation is to cover every repository.
-func (r *Runner) stepRenovate(ctx context.Context, s *run, sr *StepResult) error {
-	id := s.baseline.RenovateInstallationID
-	if id == 0 {
-		sr.Verdict = VerdictSkipped
-		sr.Summary = "no Renovate installation in the baseline"
-		return nil
-	}
-	installationURL := fmt.Sprintf("https://github.com/organizations/%s/settings/installations/%d", s.owner, id)
-	for page := 1; ; page++ {
-		req, err := r.GitHub.NewRequest(ctx, "GET", fmt.Sprintf("user/installations/%d/repositories?per_page=100&page=%d", id, page), nil)
-		if err != nil {
-			return err
-		}
-		var repos installationRepositories
-		resp, err := r.GitHub.Do(req, &repos)
-		if err != nil {
-			if resp != nil && resp.Response != nil && (resp.StatusCode == 403 || resp.StatusCode == 404) {
-				sr.Verdict = VerdictSkipped
-				sr.Summary = fmt.Sprintf("cannot read the Renovate installation with this token (HTTP %d): listing its repositories takes an organization owner's token; a GitHub App token cannot list a user's installations at all", resp.StatusCode)
-				return nil
-			}
-			return err
-		}
-		if repos.RepositorySelection == "all" {
-			sr.Summary = "installation covers all repositories"
-			return nil
-		}
-		for _, repo := range repos.Repositories {
-			if strings.EqualFold(repo.FullName, s.slug()) {
-				sr.Summary = "installation covers the repository"
-				return nil
-			}
-		}
-		if resp.NextPage == 0 {
-			break
-		}
-	}
-	s.report(sr, FindingRenovateMissing,
-		fmt.Sprintf("the Renovate installation does not cover %s: no dependency updates arrive", s.slug()),
-		fmt.Sprintf("an organization owner adds the repository at %s, or switches the installation to all repositories", installationURL))
 	return nil
 }

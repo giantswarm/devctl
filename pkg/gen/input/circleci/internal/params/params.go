@@ -59,6 +59,11 @@ type Params struct {
 	// docs-proxy ships helm/docs-proxy-app). The append-only custom.yml merge
 	// cannot rename a generated job's chart, so the generator carries it.
 	ChartName string
+	// ChartNameMismatch emits the push-to-app-catalog
+	// `explicit_allow_chart_name_mismatch: true` param. The orb's job fails
+	// unless ChartName and RepoName match with any -app suffix stripped, so the
+	// generator sets it when they do not.
+	ChartNameMismatch bool
 	// KeepChartAppVersion emits the push-to-app-catalog
 	// `override_app_version: false` param, so app-build-suite keeps the
 	// appVersion declared in Chart.yaml. Already resolved by the generator: it
@@ -83,6 +88,12 @@ type Params struct {
 	// push-to-app-catalog `app_catalog_test` param). Defaults to
 	// "giantswarm-test-catalog". Kept paired with AppCatalog.
 	AppCatalogTest string
+	// SkipAppCatalog is true when the chart must not be published to a GitHub
+	// app catalog (push-to-app-catalog push_to_appcatalog: false), keeping the
+	// OCI registry push. Every GitHub app catalog is a public repository, so a
+	// private chart published to one is world-readable; when set, the chart
+	// ships only to gsociprivate.azurecr.io.
+	SkipAppCatalog bool
 	// BranchPublish is true when the repo opts into publishing a dev image and
 	// chart on branch builds. By default branches build + test only; when set,
 	// the branch path additionally pushes an amd64 dev image and the dev chart
@@ -98,6 +109,15 @@ type Params struct {
 	// `requires` entry, so the branch image validation also gets the workspace.
 	// Empty for the common case.
 	ImagePreBuildJob string
+	// ChartReleaseGateJob names a repo-owned job (defined in .circleci/custom.yml)
+	// that the release chart push must wait on: the generated push-chart-release
+	// job gains a `requires` entry for it, which the append-only custom.yml merge
+	// cannot inject into a generated job. The chart counterpart of
+	// ImagePreBuildJob, for a check that must refuse the release before the chart
+	// is pushed (a meta chart whose component floor resolves to no published chart).
+	// Branch pushes are not gated: a branch build is a dev artifact. Empty for the
+	// common case.
+	ChartReleaseGateJob string
 	// ImagePrivateOnly is true when the repo's image must ship only to the
 	// private registry (gsociprivate). It replaces the default split-china-push
 	// (which also publishes the public gsoci copy and mirrors to Aliyun) with an
@@ -112,6 +132,15 @@ type Params struct {
 	// append-only custom.yml merge cannot rename a generated job's image, so the
 	// generator carries it. Empty keeps the orb default.
 	ImageName string
+	// OwnImages are the gsoci images this pipeline builds
+	// (`gsoci.azurecr.io/<ImageName or giantswarm/<repo>>`, then the images the
+	// repo's custom.yml pushes), set when the chart build stamps appVersion
+	// with the build version. build-chart runs before those images are pushed,
+	// so it names them to app-build-suite's image reference check, which skips
+	// them at the stamped version and resolves every other reference. Empty
+	// when the repo builds no image or the chart keeps the appVersion
+	// Chart.yaml declares.
+	OwnImages []string
 	// ImagePlatforms overrides the buildx platform list for the image build
 	// (the push-to-registries `platforms` param on the build-image and
 	// push-to-registries-release jobs). Empty lets the orb fall back to its
@@ -218,12 +247,9 @@ type Params struct {
 	NodeBuildCachePaths []string
 	// NodeBuildCacheKey is the full save_cache key for the build-output cache,
 	// salted with the node image version (native ABI is node-version-specific)
-	// and the lockfile checksum. Empty when NodeBuildCachePaths is empty.
+	// and the lockfile checksum. Restored on this exact key only (devctl#2183).
+	// Empty when NodeBuildCachePaths is empty.
 	NodeBuildCacheKey string
-	// NodeBuildCacheRestoreKey is the restore_cache prefix for the build-output
-	// cache (node-image-versioned, lockfile-agnostic), so a changed lockfile
-	// warm-starts from the previous node_modules and only reconciles the diff.
-	NodeBuildCacheRestoreKey string
 	// NodeCorepack is true when the package manager needs `corepack enable`
 	// (pnpm, which cimg/node does not bundle).
 	NodeCorepack bool

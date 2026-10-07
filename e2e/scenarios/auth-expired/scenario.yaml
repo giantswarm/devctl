@@ -1,0 +1,17 @@
+# Both identities are in the keyring and both are past their expiry, the
+# GitHub refresh token with them: no command can act without a human. The
+# status reports both as expired, exits 8 and names the login that fixes
+# both. The token values are fixture placeholders; none appears in the output.
+description: auth status with both tokens and the GitHub refresh token expired exits 8 reporting both expired
+args: [auth, status]
+keyring:
+  github:
+    login: e2e-engineer
+    token: ghu_e2e_expired
+    expiresAt: "2000-01-01T00:00:00Z"
+    refreshToken: ghr_e2e_expired
+    refreshExpiresAt: "2000-07-01T00:00:00Z"
+  circleci:
+    login: e2e-engineer
+    token: CCIPAT_e2e_expired
+    expiresAt: "2000-01-01T00:00:00Z"

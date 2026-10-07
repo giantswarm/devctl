@@ -6,10 +6,10 @@ var invalidConfigError = &microerror.Error{
 	Kind: "invalidConfigError",
 }
 
-var invalidArgError = &microerror.Error{
-	Kind: "invalidArgError",
+var invalidFlagError = &microerror.Error{
+	Kind: "invalidFlagError",
 }
 
-var envVarNotFoundError = &microerror.Error{
-	Kind: "envVarNotFoundError",
+var invalidArgError = &microerror.Error{
+	Kind: "invalidArgError",
 }

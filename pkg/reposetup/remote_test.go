@@ -17,6 +17,11 @@ import (
 // teams, and the branch, commit and pull request of one change.
 type fakeTeamFiles struct {
 	files map[string]string // team → content
+	// overrides are the override directories, repository → CODEOWNERS
+	// ("" for a directory without one); nil: no repositories/override.
+	overrides map[string]string
+	// overrideGets counts the reads under repositories/override.
+	overrideGets int
 	// what OpenPullRequest sent
 	branch string
 	commit map[string]any
@@ -45,6 +50,30 @@ func (f *fakeTeamFiles) handler(t *testing.T) http.Handler {
 			return
 		}
 		writeJSON(w, map[string]any{"type": "file", "sha": "sha-" + team, "encoding": "base64", "content": base64.StdEncoding.EncodeToString([]byte(content))})
+	})
+	mux.HandleFunc("GET /repos/giantswarm/github/contents/repositories/override", func(w http.ResponseWriter, r *http.Request) {
+		f.overrideGets++
+		if f.overrides == nil {
+			w.WriteHeader(404)
+			return
+		}
+		dir := []map[string]any{{"type": "file", "name": "README.md"}}
+		for repo := range f.overrides {
+			dir = append(dir, map[string]any{"type": "dir", "name": repo, "path": "repositories/override/" + repo})
+		}
+		writeJSON(w, dir)
+	})
+	mux.HandleFunc("GET /repos/giantswarm/github/contents/repositories/override/{repo}/CODEOWNERS", func(w http.ResponseWriter, r *http.Request) {
+		f.overrideGets++
+		if r.URL.Query().Get("ref") != "main" {
+			t.Errorf("override read at %q, want main", r.URL.Query().Get("ref"))
+		}
+		content := f.overrides[r.PathValue("repo")]
+		if content == "" {
+			w.WriteHeader(404)
+			return
+		}
+		writeJSON(w, map[string]any{"type": "file", "encoding": "base64", "content": base64.StdEncoding.EncodeToString([]byte(content))})
 	})
 	mux.HandleFunc("GET /user", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"login": "octocat"})
@@ -166,13 +195,18 @@ func TestCreationPullRequest(t *testing.T) {
 		NameCheck: NameCheck{Verdict: VerdictFree, Detail: "repository giantswarm/my-service does not exist"},
 	}}, Notices: []Notice{{Kind: NoticeTeamReview, Message: "your team's review will be required"}}}
 
-	pr := CreationPullRequest(tf, []byte("file"), result)
+	pr := CreationPullRequest(tf, []byte("file"), result, CreatedRepository{URL: "https://github.com/giantswarm/my-service", ScaffoldCommit: "def456"})
 	if pr.Title != "feat(bumblebee): declare my-service" || pr.Branch != "repo-create/my-service" || pr.SHA != "abc" || pr.Path != tf.Path {
 		t.Errorf("pull request: %+v", pr)
 	}
-	for _, want := range []string{"```yaml\n- name: my-service\n```", "Template: `giantswarm/template`", "Name check: free -- repository giantswarm/my-service does not exist", "- team-review: your team's review will be required"} {
+	for _, want := range []string{"The repository exists, created by the author: https://github.com/giantswarm/my-service (scaffold commit `def456`).", "```yaml\n- name: my-service\n```", "Template: `giantswarm/template`", "Name check: free -- repository giantswarm/my-service does not exist", "- team-review: your team's review will be required", "the reconciler sets the repository up after the merge"} {
 		if !strings.Contains(pr.Body, want) {
 			t.Errorf("body lacks %q:\n%s", want, pr.Body)
 		}
+	}
+
+	pr = CreationPullRequest(tf, []byte("file"), result, CreatedRepository{})
+	if want := "The reconciler creates the repository as the giantswarm-align-files App once this pull request merges"; !strings.Contains(pr.Body, want) {
+		t.Errorf("body of a declaration without a repository lacks %q:\n%s", want, pr.Body)
 	}
 }

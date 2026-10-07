@@ -1,0 +1,46 @@
+# The engineer's GitHub budget runs out while the wait runs: other tools of
+# the same person spent it. GitHub answers the pull request read 403 with
+# X-RateLimit-Remaining 0 and a reset three seconds away. That is not the
+# outcome: the read is sent again a second after the reset, the wait runs on
+# to green, and the document's warning names the limit and its reset time.
+description: a 403 with the budget spent and a reset inside the timeout is waited out; the wait ends green
+args: [pr, wait, giantswarm/devctl, "42", --timeout, 30m]
+keyring:
+  github:
+    login: e2e-engineer
+    token: ghu_e2e_live
+    expiresAt: "2099-01-01T00:00:00Z"
+    refreshToken: ghr_e2e_live
+    refreshExpiresAt: "2099-01-01T00:00:00Z"
+github:
+  routes:
+    "GET /repos/giantswarm/devctl/pulls/42":
+      - status: 403
+        headers:
+          X-RateLimit-Limit: "5000"
+          X-RateLimit-Remaining: "0"
+          X-RateLimit-Used: "5000"
+          X-RateLimit-Resource: core
+          X-RateLimit-Reset: "+3s"
+        body:
+          message: API rate limit exceeded for user ID 1.
+          documentation_url: https://docs.github.com/rest/overview/rate-limits-for-the-rest-api
+          status: "403"
+      - body:
+          number: 42
+          state: open
+          draft: false
+          merged: false
+          mergeable: true
+          mergeable_state: clean
+          head: {sha: abc123, ref: feature, repo: {full_name: giantswarm/devctl}}
+          base: {ref: main, repo: {full_name: giantswarm/devctl}}
+    "GET /repos/giantswarm/devctl/commits/abc123/check-runs":
+      - body:
+          total_count: 1
+          check_runs:
+            - {id: 101, name: go-test, status: completed, conclusion: success, started_at: "2026-09-21T10:00:00Z", html_url: "https://github.com/giantswarm/devctl/runs/101"}
+    "GET /repos/giantswarm/devctl/commits/abc123/status":
+      - body: {state: pending, total_count: 0, statuses: []}
+    "GET /repos/giantswarm/devctl/actions/runs?head_sha=abc123":
+      - body: {total_count: 0, workflow_runs: []}

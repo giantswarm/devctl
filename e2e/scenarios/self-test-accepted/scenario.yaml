@@ -1,0 +1,5 @@
+# The harness's own proof: the built binary runs with the scenario directory
+# as its working directory and without network, stdout is one JSON document,
+# and the wildcards stand in for the values the scenario does not pin.
+description: repo validate accepts a well-formed team file offline
+args: [repo, validate, --team-file, team-e2e.yaml]

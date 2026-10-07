@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/giantswarm/microerror"
@@ -143,13 +144,40 @@ func (d Declaration) YAML() (string, error) {
 // scaffold rendering read: what align-files reads when it runs the
 // generators for the repository.
 type Fields struct {
-	Name           string   `yaml:"name"`
-	ComponentType  string   `yaml:"componentType"`
-	Description    string   `yaml:"description"`
-	Visibility     string   `yaml:"visibility"`
-	Lifecycle      string   `yaml:"lifecycle"`
+	Name          string `yaml:"name"`
+	ComponentType string `yaml:"componentType"`
+	Description   string `yaml:"description"`
+	Visibility    string `yaml:"visibility"`
+	Lifecycle     string `yaml:"lifecycle"`
+	// DefaultBranch is the repository's default branch, main unless
+	// declared: the settings step keeps the repository on it and the
+	// protection step protects it. A fork line declares the branch that
+	// carries the upstream release plus the carried patches.
+	DefaultBranch string `yaml:"defaultBranch"`
+	// Align is the repository's opt-in to alignment: with it the reconciler
+	// changes the repository to its declared set-up on every trigger,
+	// without it every run is a check that changes nothing.
+	Align          bool     `yaml:"align"`
 	ChoreReviewers []string `yaml:"choreReviewers"`
-	Replace        *struct {
+	// RequiredChecks are status-check contexts the protection step requires
+	// on the default branch whatever reported, next to the baseline's rule:
+	// the repository's own GitHub Actions gate that runs on every pull
+	// request. A declared context is never removed as a ghost.
+	RequiredChecks []string `yaml:"requiredChecks"`
+	// AgentMerge is the repository's opt-out from agent merges: with false
+	// the default branch's ruleset has no bypass actor, so nothing merges
+	// past the required review. Nil is the default, true.
+	AgentMerge *bool `yaml:"agentMerge"`
+	// Rulesets names the repository's own rulesets the team keeps beside
+	// the engine's, the decision to keep them: the protection step leaves a
+	// declared one alone in silence, reports every other one and reports a
+	// declared name the repository carries no ruleset for.
+	Rulesets []string `yaml:"rulesets"`
+	// PruneRulesets makes the declaration the repository's whole ruleset
+	// set: the protection step deletes every active ruleset that is neither
+	// the engine's nor named in Rulesets, instead of reporting it.
+	PruneRulesets bool `yaml:"pruneRulesets"`
+	Replace       *struct {
 		Precommit bool `yaml:"precommit"`
 	} `yaml:"replace"`
 	Gen *GenFields `yaml:"gen"`
@@ -172,11 +200,18 @@ type GenFields struct {
 
 // CIFields is the gen.ci block: the CircleCI generator's knobs.
 type CIFields struct {
-	Generate                *bool  `yaml:"generate"`
+	Generate *bool `yaml:"generate"`
+	// TemplateContent says the .circleci/config.yml this template repository
+	// carries is content for the repositories created from it, not its own
+	// pipeline: CircleCI has nothing to build here. The reconciler's circleci
+	// and release steps skip the repository. It sits beside Generate false;
+	// Generate true beside it is refused.
+	TemplateContent         bool   `yaml:"templateContent"`
 	ReleaseWorkflow         string `yaml:"releaseWorkflow"`
 	AppCatalog              string `yaml:"appCatalog"`
 	AppCatalogTest          string `yaml:"appCatalogTest"`
 	ChartName               string `yaml:"chartName"`
+	ChartReleaseGateJob     string `yaml:"chartReleaseGateJob"`
 	OverrideChartAppVersion *bool  `yaml:"overrideChartAppVersion"`
 	ForcePublic             bool   `yaml:"forcePublic"`
 	Image                   *struct {
@@ -265,6 +300,10 @@ func setMappingValue(m *yaml.Node, key string, value *yaml.Node) {
 
 func scalarNode(value string) *yaml.Node {
 	return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: value}
+}
+
+func boolNode(value bool) *yaml.Node {
+	return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!bool", Value: strconv.FormatBool(value)}
 }
 
 func mappingNode() *yaml.Node {

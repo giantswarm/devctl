@@ -1,0 +1,14 @@
+{
+  "exitCode": 0,
+  "stdoutContains": [
+    "giantswarm/my-service (record from sweep, 5m old)",
+    "declaration: team-bumblebee (repositories/team-bumblebee.yaml): service, go, flavours app, lifecycle production, accepted",
+    "github: https://github.com/giantswarm/my-service · public · default branch main · last person commit 2026-09-01 by alice · latest release v1.0.0 (build success)",
+    "circleci: followed yes, setup workflows yes, head success, from statuses+artifact",
+    "ci: generated, orb 10.5.0, arm64 yes, china push split, signing signed",
+    "renovate: configured (renovate.json5), dashboard #3",
+    "catalog present · mapping present (team bumblebee)",
+    "set-up (check mode, checked 2026-09-22T02:20:00Z):",
+    "converged: set up as declared"
+  ]
+}

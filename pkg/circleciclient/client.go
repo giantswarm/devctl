@@ -1,11 +1,14 @@
 // Package circleciclient is devctl's client for the CircleCI API: the calls
 // the repository set-up engine makes for a project — follow and unfollow
-// and stop building (v1.1), the token's user, the project, its settings and
-// checkout keys, its pipelines and their workflows and jobs (v2) — and
-// nothing else. The token is a personal
+// (v1.1), the token's user, the project, its settings and
+// checkout keys, its pipelines (paged) and their workflows and jobs (v2), a
+// failed job's step output (v1.1) — and nothing else. The token is a personal
 // API token (architectbot's `CIRCLECI_API_TOKEN` for the reconciler, the
 // person's for `devctl repo reconcile`); the org and repository name a
-// project by their GitHub slug.
+// project by their GitHub slug. A reader without a token of its own reads a
+// public project's pipelines, workflows and jobs anonymously
+// ([Config.Anonymous]): CircleCI answers those reads for a public project
+// without one, and a private project with 404.
 package circleciclient
 
 import (
@@ -34,10 +37,22 @@ const KeyTypeDeployKey = "deploy-key"
 type Config struct {
 	// Token is the CircleCI API token, sent as the Circle-Token header.
 	Token string
+	// Anonymous is a client without a token: it reads what CircleCI answers
+	// without one, the pipelines, workflows and jobs of a public project (a
+	// private one answers 404, IsNotFound), and no header is sent. Set with
+	// an empty Token; a token and Anonymous together are a config error, as
+	// is neither, so a reader meant to hold a token does not read anonymously
+	// by accident.
+	Anonymous bool
 	// BaseURL overrides the API host; empty means [DefaultBaseURL].
 	BaseURL string
-	// HTTPClient overrides the HTTP client; nil means one with a timeout.
+	// HTTPClient overrides the HTTP client; nil means one with a timeout,
+	// sending through Transport.
 	HTTPClient *http.Client
+	// Transport sends the requests of the default HTTP client; nil means
+	// http.DefaultTransport. A caller counting the requests builds its
+	// counter here.
+	Transport http.RoundTripper
 	// Logger receives one debug line per request; nil discards.
 	Logger *logrus.Logger
 }
@@ -52,8 +67,11 @@ type Client struct {
 
 // New returns a Client for config.
 func New(config Config) (*Client, error) {
-	if config.Token == "" {
+	switch {
+	case config.Token == "" && !config.Anonymous:
 		return nil, microerror.Maskf(invalidConfigError, "%T.Token must not be empty", config)
+	case config.Token != "" && config.Anonymous:
+		return nil, microerror.Maskf(invalidConfigError, "%T.Anonymous takes no Token", config)
 	}
 	baseURL := config.BaseURL
 	if baseURL == "" {
@@ -64,7 +82,7 @@ func New(config Config) (*Client, error) {
 	}
 	httpClient := config.HTTPClient
 	if httpClient == nil {
-		httpClient = &http.Client{Timeout: 60 * time.Second}
+		httpClient = &http.Client{Timeout: 60 * time.Second, Transport: config.Transport}
 	}
 	logger := config.Logger
 	if logger == nil {
@@ -135,13 +153,6 @@ type PipelineVCS struct {
 	Revision string `json:"revision"`
 }
 
-// TriggerRequest names the revision a pipeline is triggered for: a tag or a
-// branch, one of the two.
-type TriggerRequest struct {
-	Tag    string `json:"tag,omitempty"`
-	Branch string `json:"branch,omitempty"`
-}
-
 // Workflow is one workflow of a pipeline. Status is one of success,
 // running, not_run, failed, error, failing, on_hold, canceled, unauthorized.
 type Workflow struct {
@@ -149,6 +160,9 @@ type Workflow struct {
 	Name           string `json:"name"`
 	Status         string `json:"status"`
 	PipelineNumber int64  `json:"pipeline_number"`
+	// CreatedAt orders the runs of one workflow name: a rerun is a new
+	// workflow with the same name in the same pipeline, and the newest counts.
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // WorkflowSucceeded says whether a workflow status is a finished success.
@@ -164,11 +178,28 @@ func WorkflowFailed(status string) bool {
 	return false
 }
 
-// Job is one job of a workflow.
+// WorkflowFinished says whether a workflow status is final: a success or a
+// terminal failure. A workflow that is not finished can still change, and so
+// can what CircleCI answers about it -- its jobs are listed only once it has
+// set them up.
+func WorkflowFinished(status string) bool { return WorkflowSucceeded(status) || WorkflowFailed(status) }
+
+// Job is one job of a workflow. JobNumber is absent for an approval and for
+// a job that has not started.
 type Job struct {
-	Name   string `json:"name"`
-	Status string `json:"status"`
-	Type   string `json:"type"`
+	Name      string `json:"name"`
+	Status    string `json:"status"`
+	Type      string `json:"type"`
+	JobNumber int64  `json:"job_number"`
+}
+
+// JobFailed says whether a job status is a terminal failure.
+func JobFailed(status string) bool {
+	switch status {
+	case "failed", "error", "canceled", "timedout", "infrastructure_fail", "unauthorized":
+		return true
+	}
+	return false
 }
 
 // User is the token's CircleCI user (GET /api/v2/me). For an account
@@ -225,18 +256,10 @@ func (c *Client) Follow(ctx context.Context, org, repo string) error {
 }
 
 // Unfollow makes the token's user unfollow org/repo (v1.1). The project
-// stays, set up and building for the organization — see StopBuilding; what
-// the unfollow changes is Following.
+// stays, set up and building for the organization; what the unfollow
+// changes is Following.
 func (c *Client) Unfollow(ctx context.Context, org, repo string) error {
 	return microerror.Mask(c.do(ctx, http.MethodPost, c.v1Project(org, repo)+"/unfollow", nil, nil))
-}
-
-// StopBuilding stops the project org/repo from building (v1.1 "Stop
-// building", DELETE …/enable): no pipeline runs for it from then on. The
-// project stays readable — GET /api/v2/project answers as before, so
-// GetProject cannot tell a stopped project from a building one.
-func (c *Client) StopBuilding(ctx context.Context, org, repo string) error {
-	return microerror.Mask(c.do(ctx, http.MethodDelete, c.v1Project(org, repo)+"/enable", nil, nil))
 }
 
 // v1ProjectSettings is the part of the v1.1 project settings the engine
@@ -297,33 +320,39 @@ func (c *Client) CreateCheckoutKey(ctx context.Context, org, repo, keyType strin
 	return &k, nil
 }
 
-// ListPipelines returns the project's most recent pipelines (the first page,
-// newest first).
-func (c *Client) ListPipelines(ctx context.Context, org, repo string) ([]Pipeline, error) {
-	var out struct {
-		Items []Pipeline `json:"items"`
-	}
-	if err := c.do(ctx, http.MethodGet, c.v2Project(org, repo)+"/pipeline", nil, &out); err != nil {
-		return nil, microerror.Mask(err)
-	}
-	return out.Items, nil
+// PipelinePage is one page of a project's pipelines, newest first, and the
+// token of the page after it — empty on the last page.
+type PipelinePage struct {
+	Items         []Pipeline `json:"items"`
+	NextPageToken string     `json:"next_page_token"`
 }
 
-// TriggerPipeline triggers a pipeline for the tag or branch in req: the way
-// a tag build the project missed (followed after the tag, renamed) is run.
-func (c *Client) TriggerPipeline(ctx context.Context, org, repo string, req TriggerRequest) (*Pipeline, error) {
-	if (req.Tag == "") == (req.Branch == "") {
-		return nil, microerror.Maskf(invalidConfigError, "%T: exactly one of Tag and Branch must be set", req)
+// ListPipelines returns one page of the project's pipelines, newest first:
+// the most recent ones for an empty pageToken, the page after a page for its
+// NextPageToken.
+func (c *Client) ListPipelines(ctx context.Context, org, repo, pageToken string) (*PipelinePage, error) {
+	path := c.v2Project(org, repo) + "/pipeline"
+	if pageToken != "" {
+		path += "?page-token=" + url.QueryEscape(pageToken)
 	}
-	var p Pipeline
-	if err := c.do(ctx, http.MethodPost, c.v2Project(org, repo)+"/pipeline", req, &p); err != nil {
+	var page PipelinePage
+	if err := c.do(ctx, http.MethodGet, path, nil, &page); err != nil {
 		return nil, microerror.Mask(err)
 	}
-	if req.Tag != "" {
-		p.VCS.Tag = req.Tag
-	} else {
-		p.VCS.Branch = req.Branch
+	return &page, nil
+}
+
+// TriggerTagPipeline runs the project's pipeline for tag: the build of a tag
+// pushed before CircleCI followed the project, which CircleCI never saw.
+func (c *Client) TriggerTagPipeline(ctx context.Context, org, repo, tag string) (*Pipeline, error) {
+	if tag == "" {
+		return nil, microerror.Maskf(invalidConfigError, "tag must not be empty")
 	}
+	var p Pipeline
+	if err := c.do(ctx, http.MethodPost, c.v2Project(org, repo)+"/pipeline", map[string]string{"tag": tag}, &p); err != nil {
+		return nil, microerror.Mask(err)
+	}
+	p.VCS.Tag = tag
 	return &p, nil
 }
 
@@ -347,6 +376,61 @@ func (c *Client) ListWorkflowJobs(ctx context.Context, workflowID string) ([]Job
 		return nil, microerror.Mask(err)
 	}
 	return out.Items, nil
+}
+
+// FailedStepsOutput returns the output of the failed steps of job number of
+// org/repo (v1.1: API v2 has no job output), in step order. The output
+// lives at a signed URL per step, read without the token.
+func (c *Client) FailedStepsOutput(ctx context.Context, org, repo string, number int64) (string, error) {
+	var job struct {
+		Steps []struct {
+			Actions []struct {
+				Failed    bool   `json:"failed"`
+				OutputURL string `json:"output_url"`
+			} `json:"actions"`
+		} `json:"steps"`
+	}
+	if err := c.do(ctx, http.MethodGet, fmt.Sprintf("%s/%d", c.v1Project(org, repo), number), nil, &job); err != nil {
+		return "", microerror.Mask(err)
+	}
+	var out strings.Builder
+	for _, step := range job.Steps {
+		for _, action := range step.Actions {
+			if !action.Failed || action.OutputURL == "" {
+				continue
+			}
+			if err := c.stepOutput(ctx, action.OutputURL, &out); err != nil {
+				return "", microerror.Mask(err)
+			}
+		}
+	}
+	return out.String(), nil
+}
+
+// stepOutput appends the messages of one step's output to out.
+func (c *Client) stepOutput(ctx context.Context, outputURL string, out *strings.Builder) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, outputURL, nil)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return microerror.Maskf(apiError, "step output: HTTP %d", resp.StatusCode)
+	}
+	var messages []struct {
+		Message string `json:"message"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&messages); err != nil {
+		return microerror.Maskf(apiError, "step output: invalid JSON answer: %v", err)
+	}
+	for _, m := range messages {
+		out.WriteString(m.Message)
+	}
+	return nil
 }
 
 func (c *Client) v1Project(org, repo string) string {
@@ -373,7 +457,9 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) err
 	if err != nil {
 		return microerror.Mask(err)
 	}
-	req.Header.Set("Circle-Token", c.token)
+	if c.token != "" {
+		req.Header.Set("Circle-Token", c.token)
+	}
 	req.Header.Set("Accept", "application/json")
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")

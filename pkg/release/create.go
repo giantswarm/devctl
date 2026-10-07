@@ -61,7 +61,7 @@ var appsToBeAdded = []addedAppConfig{
 
 // CreateRelease creates a release on the filesystem from the given parameters. This is the entry point
 // for the `devctl create release` command logic.
-func CreateRelease(name, base, releases, provider string, components, apps []string, overwrite bool, creationCommand string, bumpall bool, appsToDrop []string, yes bool, output string, verbose bool, changesOnly bool, requestedOnly bool, updateExisting bool, preserveReadme bool, regenerateReadme bool, changelogNoisePatterns []string) error {
+func CreateRelease(githubToken, name, base, releases, provider string, components, apps []string, overwrite bool, creationCommand string, bumpall bool, appsToDrop []string, yes bool, output string, verbose bool, changesOnly bool, requestedOnly bool, updateExisting bool, preserveReadme bool, regenerateReadme bool, changelogNoisePatterns []string) error {
 	if updateExisting {
 		base = name
 	}
@@ -278,7 +278,7 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 			}
 			var detectedVersion string
 			var err error
-			detectedVersion, err = autoDetectVersion(name, componentName)
+			detectedVersion, err = autoDetectVersion(githubToken, name, componentName)
 
 			if err != nil {
 				fmt.Printf("\n⚠️  Warning: Could not auto-detect version for '%s'\n", componentName)
@@ -316,7 +316,7 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 		// We fetch the latest version first, then add them as requested apps
 		for _, newApp := range newAppsToAdd {
 			// Fetch the latest version for the new app
-			latestVersion, err := FindNewestApp(newApp.Name, false, nil)
+			latestVersion, err := FindNewestApp(githubToken, newApp.Name, false, nil)
 			if err != nil {
 				if verbose {
 					fmt.Printf("Warning: Could not fetch latest version for new app %s: %v\n", newApp.Name, err)
@@ -340,7 +340,7 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 		}
 		major := releaseVersionForK8s.Major
 
-		components, apps, err = BumpAll(effectiveBaseRelease, components, apps, releaseType, appsToDropForThisRelease, requests, yes, output, changesOnly, requestedOnly, major)
+		components, apps, err = BumpAll(githubToken, effectiveBaseRelease, components, apps, releaseType, appsToDropForThisRelease, requests, yes, output, changesOnly, requestedOnly, major)
 		if err != nil {
 			return microerror.Mask(err)
 		}
@@ -445,7 +445,7 @@ func CreateRelease(name, base, releases, provider string, components, apps []str
 
 	// containerd is not bumped on its own: it comes from whichever upstream image-builder the
 	// release's os-tooling version pins, so it is derived from that rather than requested.
-	applyContainerdComponent(&updatesRelease, effectiveBaseRelease, verbose)
+	applyContainerdComponent(githubToken, &updatesRelease, effectiveBaseRelease, verbose)
 
 	newRelease := mergeReleases(effectiveBaseRelease, updatesRelease)
 

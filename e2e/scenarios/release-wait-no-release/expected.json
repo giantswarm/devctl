@@ -1,0 +1,21 @@
+{
+  "exitCode": 3,
+  "json": {
+    "command": "release wait",
+    "schemaVersion": 1,
+    "exitCode": 3,
+    "verdict": "no_release",
+    "reason": "the Auto-release run https://github.com/giantswarm/e2e-app/actions/runs/9001 of the merge commit aa11bb22 of giantswarm/e2e-app#96 finished without a tag: the commits since the last release warrant none",
+    "warnings": [],
+    "startedAt": "*",
+    "finishedAt": "*",
+    "repository": "giantswarm/e2e-app",
+    "tag": "",
+    "sha": "aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44",
+    "releaseModel": "auto-release",
+    "ciModel": "generated",
+    "artifacts": [],
+    "pipeline": null,
+    "actions": []
+  }
+}

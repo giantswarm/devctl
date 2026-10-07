@@ -5,6 +5,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"text/template"
@@ -449,10 +450,13 @@ func Test_Golden(t *testing.T) {
 }
 
 // Test_GitIgnoredAuthorsAlwaysPresent verifies every generated config lists
-// the taylorbot author the generated workflows (helm-docs-regen, update-chart,
-// sync-from-upstream) commit with, so Renovate keeps rebasing and autoclosing
-// a branch those workflows pushed to. It is unconditional: a repo without such
-// a workflow never sees a commit by that author, so the entry is inert there.
+// both authors of our own that commit onto a Renovate branch: taylorbot, which
+// pushes what the generated workflows (helm-docs-regen, update-chart,
+// sync-from-upstream) produce, and the marge sweep's App, which writes a bot
+// PR's changelog entry. Renovate keeps rebasing and autoclosing a branch they
+// pushed to only while it is told to ignore them. It is unconditional: a repo
+// that neither touches never sees a commit by those authors, so the entries
+// are inert there.
 func Test_GitIgnoredAuthorsAlwaysPresent(t *testing.T) {
 	for _, c := range []Config{
 		{Language: "go"},
@@ -467,8 +471,9 @@ func Test_GitIgnoredAuthorsAlwaysPresent(t *testing.T) {
 		if err := json5.Unmarshal([]byte(got), &parsed); err != nil {
 			t.Fatalf("generated config is not valid JSON5: %v\n%s", err, got)
 		}
-		if len(parsed.GitIgnoredAuthors) != 1 || parsed.GitIgnoredAuthors[0] != "dev@giantswarm.io" {
-			t.Errorf("gitIgnoredAuthors = %v for %+v, want [dev@giantswarm.io]", parsed.GitIgnoredAuthors, c)
+		want := []string{"dev@giantswarm.io", "329428426+giantswarm-marge[bot]@users.noreply.github.com"}
+		if !slices.Equal(parsed.GitIgnoredAuthors, want) {
+			t.Errorf("gitIgnoredAuthors = %v for %+v, want %v", parsed.GitIgnoredAuthors, c, want)
 		}
 	}
 }

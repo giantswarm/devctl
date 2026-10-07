@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/google/go-github/v92/github"
@@ -18,8 +19,9 @@ import (
 // (the helmcharts annotation, matched by chart name — chartName overrides
 // and -app suffixes differ from the repository) the mapping run is
 // dispatched with the repository. A component without a public chart has
-// nothing to map. A run already queued or in progress is waited for, not
-// dispatched again.
+// nothing to map, and a chart reference that is a template's placeholder
+// ({APP-NAME}) is no chart: the mapping drops it, and so does the step. A
+// run already queued or in progress is waited for, not dispatched again.
 func (r *Runner) stepCatalog(ctx context.Context, s *run, sr *StepResult) error {
 	b := s.baseline
 	if b.CatalogRepository == "" || b.CatalogWorkflow == "" {
@@ -85,22 +87,56 @@ const helmChartsAnnotation = "giantswarm.io/helmcharts"
 // privateRegistryPrefix marks a chart reference the mapping never lists.
 const privateRegistryPrefix = "gsociprivate."
 
+// placeholderMarks are the characters of a template's chart placeholder
+// ({APP-NAME}, {MCP-NAME}) in a chart reference. The mapping's generator
+// drops such a reference, so a dispatch for it would change nothing: the
+// step neither looks it up in the mapping nor dispatches for it.
+const placeholderMarks = "{}"
+
+// mappedTags are the tags a component carries when the mapping's generator
+// (tools/mapping.sh in giantswarm/github) lists its charts: both of them, and
+// not privateTag.
+var mappedTags = []string{"helmchart", "helmchart-deployable"}
+
+// privateTag marks a component of a private repository, whose charts the
+// mapping's generator never lists, whatever registry they are on.
+const privateTag = "private"
+
 // component is the catalog's Backstage Component of a repository.
 type component struct {
 	Kind     string `yaml:"kind"`
 	Metadata struct {
 		Name        string            `yaml:"name"`
+		Tags        []string          `yaml:"tags"`
 		Annotations map[string]string `yaml:"annotations"`
 	} `yaml:"metadata"`
 }
 
-// publicCharts returns the names of the component's charts on a public
-// registry, from the helmcharts annotation; none without the annotation.
+// mapped says whether the mapping's generator lists the component's charts at
+// all: a deployable Helm chart of a repository that is not private. A dispatch
+// for any other component changes nothing, so the step neither looks it up in
+// the mapping nor dispatches for it.
+func (c component) mapped() bool {
+	for _, tag := range mappedTags {
+		if !slices.Contains(c.Metadata.Tags, tag) {
+			return false
+		}
+	}
+	return !slices.Contains(c.Metadata.Tags, privateTag)
+}
+
+// publicCharts returns the names of the component's charts the mapping
+// lists — of a component the generator maps ([component.mapped]), on a public
+// registry, not a template's placeholder — from the helmcharts annotation;
+// none without the annotation.
 func (c component) publicCharts() []string {
+	if !c.mapped() {
+		return nil
+	}
 	var charts []string
 	for _, ref := range strings.Split(c.Metadata.Annotations[helmChartsAnnotation], ",") {
 		ref = strings.TrimSpace(ref)
-		if ref == "" || strings.HasPrefix(ref, privateRegistryPrefix) {
+		if ref == "" || strings.HasPrefix(ref, privateRegistryPrefix) || strings.ContainsAny(ref, placeholderMarks) {
 			continue
 		}
 		charts = append(charts, ref[strings.LastIndexByte(ref, '/')+1:])
@@ -125,9 +161,11 @@ func findComponent(catalog []byte, name string) (component, bool) {
 
 // dispatchOnce dispatches workflow on its default branch unless a run of it
 // is already queued or in progress, in which case the step stays in drift
-// until that run has landed its change.
+// until that run has landed its change. The runs are listed and dispatched
+// with the Dispatch client: the two calls that need an Actions permission.
 func (r *Runner) dispatchOnce(ctx context.Context, s *run, sr *StepResult, owner, repo, workflow string, inputs map[string]any, change string) error {
-	runs, _, err := r.GitHub.Actions.ListWorkflowRunsByFileName(ctx, owner, repo, workflow, &github.ListWorkflowRunsOptions{
+	actions := r.dispatcher().Actions
+	runs, _, err := actions.ListWorkflowRunsByFileName(ctx, owner, repo, workflow, &github.ListWorkflowRunsOptions{
 		ListOptions: github.ListOptions{PerPage: 5},
 	})
 	if err != nil && !isNotFound(nil, err) {
@@ -144,7 +182,7 @@ func (r *Runner) dispatchOnce(ctx context.Context, s *run, sr *StepResult, owner
 		}
 	}
 	return s.plan(sr, change, func() error {
-		_, _, err := r.GitHub.Actions.CreateWorkflowDispatchEventByFileName(ctx, owner, repo, workflow, github.CreateWorkflowDispatchEventRequest{
+		_, _, err := actions.CreateWorkflowDispatchEventByFileName(ctx, owner, repo, workflow, github.CreateWorkflowDispatchEventRequest{
 			Ref:    s.baseline.DefaultBranch,
 			Inputs: inputs,
 		})

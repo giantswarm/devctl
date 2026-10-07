@@ -1,0 +1,16 @@
+description: repo refresh rebuilds the record through refresh_repository and prints it
+args: [repo, refresh, my-service, --output, json]
+keyring:
+  muster:
+    login: e2e-engineer@example.com
+    token: muster_e2e
+    expiresAt: "2099-01-01T00:00:00Z"
+    refreshToken: muster_e2e_refresh
+    endpoint: "${DEVCTL_MUSTER_URL}"
+    issuer: "${MUSTER_ISSUER}"
+muster:
+  bearer: muster_e2e
+  tools:
+    x_giantswarm-repo-manager_refresh_repository:
+      - args: {repository: my-service}
+        result: {repository: giantswarm/my-service, source: refresh, age: 0s}

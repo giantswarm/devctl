@@ -1,0 +1,16 @@
+# A phase that fails ends the watch with the phase and the reason.
+description: repo watch exits with the failed phase and its reason
+args: [repo, watch, new-service, --pull-request, "4711"]
+keyring:
+  muster:
+    login: e2e-engineer@example.com
+    token: muster_e2e
+    expiresAt: "2099-01-01T00:00:00Z"
+    refreshToken: muster_e2e_refresh
+    endpoint: "${DEVCTL_MUSTER_URL}"
+    issuer: "${MUSTER_ISSUER}"
+muster:
+  bearer: muster_e2e
+  tools:
+    x_giantswarm-repo-manager_watch_repository:
+      - result: {repository: https://github.com/giantswarm/new-service, phases: [{name: created, at: "2026-09-22T10:00:00Z", seconds: 0}], ready: false, failure: {phase: released, reason: "ci/circleci: push-to-registries failed"}, waited: 2}

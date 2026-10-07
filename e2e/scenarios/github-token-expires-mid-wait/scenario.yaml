@@ -1,0 +1,48 @@
+# The App user token lasts eight hours, and a wait started before its end
+# outlives it: GitHub answers 401 Bad credentials to the second poll's read of
+# the pull request. The command renews the token through the keychain's
+# refresh token, sends the read again with the new one and waits on from where
+# it was: green at the second poll, the renewed pair in the keychain.
+description: GitHub refuses the token mid-wait; it is refreshed and the refused read sent again, and the wait ends green
+args: [pr, wait, giantswarm/devctl, "42", --timeout, 30m]
+keyring:
+  github:
+    login: e2e-engineer
+    token: ghu_e2e_live
+    expiresAt: "2099-01-01T00:00:00Z"
+    refreshToken: ghr_e2e_live
+    refreshExpiresAt: "2099-01-01T00:00:00Z"
+  circleci:
+    login: e2e-engineer
+    token: CCIPAT_e2e_live
+    expiresAt: "2099-01-01T00:00:00Z"
+github:
+  routes:
+    "GET /repos/giantswarm/devctl/pulls/42":
+      - body: &pr
+          number: 42
+          state: open
+          draft: false
+          merged: false
+          mergeable: true
+          mergeable_state: clean
+          head: {sha: abc123, ref: feature, repo: {full_name: giantswarm/devctl}}
+          base: {ref: main, repo: {full_name: giantswarm/devctl}}
+      - status: 401
+        body: {message: Bad credentials, documentation_url: "https://docs.github.com/rest", status: "401"}
+      - body: *pr
+    "POST /login/oauth/access_token":
+      - body: {access_token: ghu_e2e_renewed, token_type: bearer, expires_in: 28800, refresh_token: ghr_e2e_renewed, refresh_token_expires_in: 15897600, scope: ""}
+    "GET /repos/giantswarm/devctl/commits/abc123/check-runs":
+      - body:
+          total_count: 1
+          check_runs:
+            - {id: 101, name: go-test, status: in_progress, conclusion: null, started_at: "2026-09-21T10:00:00Z", html_url: "https://github.com/giantswarm/devctl/runs/101"}
+      - body:
+          total_count: 1
+          check_runs:
+            - {id: 101, name: go-test, status: completed, conclusion: success, started_at: "2026-09-21T10:00:00Z", html_url: "https://github.com/giantswarm/devctl/runs/101"}
+    "GET /repos/giantswarm/devctl/commits/abc123/status":
+      - body: {state: success, total_count: 0, statuses: []}
+    "GET /repos/giantswarm/devctl/actions/runs?head_sha=abc123":
+      - body: {total_count: 0, workflow_runs: []}

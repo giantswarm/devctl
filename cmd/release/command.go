@@ -10,11 +10,13 @@ import (
 
 	"github.com/giantswarm/devctl/v8/cmd/release/archive"
 	"github.com/giantswarm/devctl/v8/cmd/release/create"
+	"github.com/giantswarm/devctl/v8/cmd/release/promote"
+	"github.com/giantswarm/devctl/v8/cmd/release/wait"
 )
 
 const (
 	name        = "release"
-	description = "Commands for working with releases on the local filesystem."
+	description = "Commands for working with releases: create and archive them on the local filesystem, wait until one is pullable, promote release candidates."
 )
 
 type Config struct {
@@ -64,6 +66,32 @@ func New(config Config) (*cobra.Command, error) {
 		}
 	}
 
+	var waitCmd *cobra.Command
+	{
+		c := wait.Config{
+			Stderr: config.Stderr,
+			Stdout: config.Stdout,
+		}
+
+		waitCmd, err = wait.New(c)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+	}
+
+	var promoteCmd *cobra.Command
+	{
+		c := promote.Config{
+			Stderr: config.Stderr,
+			Stdout: config.Stdout,
+		}
+
+		promoteCmd, err = promote.New(c)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+	}
+
 	f := &flag{}
 
 	r := &runner{
@@ -84,6 +112,8 @@ func New(config Config) (*cobra.Command, error) {
 
 	c.AddCommand(archiveCmd)
 	c.AddCommand(createCmd)
+	c.AddCommand(waitCmd)
+	c.AddCommand(promoteCmd)
 
 	return c, nil
 }

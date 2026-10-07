@@ -14,11 +14,13 @@ import (
 )
 
 // Renderer renders the scaffold of an accepted declaration: the template
-// checkout with its placeholders replaced, the files devctl generates for
-// the declared flavours and language, CODEOWNERS for the team and the chart's
-// team annotation. The generated files are the ones align-files writes for
-// the same declaration with the same devctl, so the first align run after
-// the scaffold is pushed changes nothing.
+// checkout with its placeholders replaced, the chart of the chart template
+// when the flavours produce one the template lacks, the files devctl
+// generates for the declared flavours and language, the chart tests the
+// generated pipeline runs where the template carries none, CODEOWNERS for
+// the team and the chart's team annotation. The generated files are the ones
+// align-files writes for the same declaration with the same devctl, so the
+// first align run after the scaffold is pushed changes nothing.
 type Renderer struct {
 	// Templates fetches the template repositories; nil fetches the tarball
 	// of each template's main branch from GitHub ([GitHubTemplates]).
@@ -34,7 +36,7 @@ type RenderRequest struct {
 	// name.
 	Team string
 	// Entry is an accepted entry of [Validator.Validate]; its Rendered
-	// declaration and Template are read.
+	// declaration, Template and Chart are read.
 	Entry Entry
 	// Dir is the directory the scaffold is rendered into. It is created;
 	// an existing directory has to be empty.
@@ -50,6 +52,9 @@ type Scaffold struct {
 	Dir string `json:"dir"`
 	// Template it was rendered from.
 	Template Template `json:"template"`
+	// Chart is the template whose chart was added at helm/<name>; empty
+	// when the template carries its own chart or the flavours produce none.
+	Chart Template `json:"chart,omitempty"`
 	// Options in effect, defaults included.
 	Options map[string]string `json:"options,omitempty"`
 	// Commands are the `devctl gen …` command lines that produced the
@@ -130,6 +135,11 @@ func (r Renderer) Render(ctx context.Context, req RenderRequest) (*Scaffold, err
 	if err := writeCommonFiles(dir, template, subst); err != nil {
 		return nil, microerror.Mask(err)
 	}
+	if req.Entry.Chart != "" {
+		if err := addChart(ctx, templates, req.Entry.Chart, dir, subst); err != nil {
+			return nil, microerror.Mask(err)
+		}
+	}
 	if err := writeChartOptions(dir, fields.Name, options); err != nil {
 		return nil, microerror.Mask(err)
 	}
@@ -143,6 +153,11 @@ func (r Renderer) Render(ctx context.Context, req RenderRequest) (*Scaffold, err
 	if err := runGen(ctx, dir, r.Log, commands); err != nil {
 		return nil, microerror.Mask(err)
 	}
+	// After the generators: the chart tests follow the ATS dependency file
+	// `devctl gen circleci` emits, and are the repository's own from then on.
+	if err := writeChartTests(dir, fields.Name); err != nil {
+		return nil, microerror.Mask(err)
+	}
 
 	files, err := listFiles(dir)
 	if err != nil {
@@ -152,6 +167,7 @@ func (r Renderer) Render(ctx context.Context, req RenderRequest) (*Scaffold, err
 	s := &Scaffold{
 		Dir:      dir,
 		Template: template,
+		Chart:    req.Entry.Chart,
 		Options:  options,
 		Files:    files,
 	}
@@ -160,6 +176,36 @@ func (r Renderer) Render(ctx context.Context, req RenderRequest) (*Scaffold, err
 	}
 
 	return s, nil
+}
+
+// chartDirs are the directories of the chart template that make up its
+// chart: the chart itself and app-build-suite's configuration pointing at
+// it. Everything else in the chart template is the derived template's or
+// generated.
+var chartDirs = []string{"helm", ".abs"}
+
+// addChart renders the chart template the way the chart-only scaffold is
+// rendered, in a temporary directory, and copies chartDirs into the
+// scaffold at dir.
+func addChart(ctx context.Context, templates TemplateSource, chart Template, dir string, s substitutions) error {
+	tmp, err := os.MkdirTemp("", "reposetup-chart-")
+	if err != nil {
+		return microerror.Mask(err)
+	}
+	defer func() { _ = os.RemoveAll(tmp) }()
+
+	if err := templates.Fetch(ctx, chart.Repository(), tmp); err != nil {
+		return microerror.Mask(err)
+	}
+	if err := replacePlaceholders(tmp, chart, s); err != nil {
+		return microerror.Mask(err)
+	}
+	for _, d := range chartDirs {
+		if err := copyTree(filepath.Join(tmp, d), filepath.Join(dir, d)); err != nil {
+			return microerror.Mask(err)
+		}
+	}
+	return nil
 }
 
 // prepareDir creates dir or checks that it is empty.
@@ -176,8 +222,11 @@ func prepareDir(dir string) error {
 	return nil
 }
 
-// listFiles returns the regular files under dir, relative, slash-separated,
-// sorted.
+// listFiles returns the regular files and symlinks under dir, relative,
+// slash-separated, sorted: a symlink is listed by its own path (its target
+// is not read, let alone followed), and WalkDir does not descend into a
+// directory a symlink points at -- it is a leaf like any other non-directory
+// entry.
 func listFiles(dir string) ([]string, error) {
 	var files []string
 	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
@@ -188,6 +237,9 @@ func listFiles(dir string) ([]string, error) {
 			if d.Name() == gitDir {
 				return filepath.SkipDir
 			}
+			return nil
+		}
+		if !d.Type().IsRegular() && d.Type()&fs.ModeSymlink == 0 {
 			return nil
 		}
 		rel, err := filepath.Rel(dir, p)

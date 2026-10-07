@@ -1,0 +1,6 @@
+- name: good-cli
+  componentType: cli
+  gen:
+    flavours:
+      - cli
+    language: go

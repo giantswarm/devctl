@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -32,6 +33,7 @@ type fakeRepo struct {
 	private, archived        bool
 	hasWiki, hasIssues, hasProjects, allowMerge, allowSquash, allowRebase,
 	allowUpdate, allowAuto, deleteOnMerge bool
+	squashTitle   string // PR_TITLE or COMMIT_OR_PR_TITLE
 	defaultBranch string
 	workflowPerm  string
 	teams         map[string]string
@@ -40,19 +42,34 @@ type fakeRepo struct {
 	files         map[string]string            // default-branch files
 	branchFiles   map[string]map[string]string // other branches
 	protection    *fakeProtection
+	protected     string // the branch the last protection PUT named
+	rulesets      []*github.RepositoryRuleset
 	hooks         []*github.Hook
+	hooksStatus   int // HTTP status of the hooks list when not 200
+	deployKeys    []*github.Key
 	release       string
 	releaseAt     time.Time
-	statuses      []string // commit statuses reported on the head
-	checkRuns     []string // check runs reported on the head
-	checksStatus  int      // HTTP status of the status and check-run reads when not 200
-	tags          []string // tags, all on the head commit
+	createdAt     time.Time // when the repository was created; a month ago for a seeded one
+	statuses      []string  // commit statuses reported on the head
+	checkRuns     []string  // check runs reported on the head
+	checksStatus  int       // HTTP status of the status and check-run reads when not 200
 	prs           []*github.PullRequest
-	blobs         map[string][]byte
-	trees         map[string][]*github.TreeEntry
-	commits       map[string]fakeCommit // commit sha → tree sha and message
-	heads         map[string]string     // branch → sha of its head commit
-	seq           int
+	// merged are the pull requests merged before the run, closed, as the
+	// discovery of the reported checks lists them; the statuses and check
+	// runs are served for their heads as for any ref.
+	merged       []*github.PullRequest
+	issues       []*github.Issue            // what GET /repos/{owner}/{repo}/issues lists
+	history      []*github.RepositoryCommit // the commits behind the head of the default branch
+	issuesStatus int                        // HTTP status of the issues list when not 200
+	blobs        map[string][]byte
+	trees        map[string][]*github.TreeEntry
+	commits      map[string]fakeCommit // commit sha → tree sha and message
+	heads        map[string]string     // branch → sha of its head commit
+	seq          int
+
+	// releaseSubject is the subject of the commit the release's tag names;
+	// empty leaves the tag's commit unknown (404).
+	releaseSubject string
 }
 
 type fakeCommit struct{ tree, message string }
@@ -71,6 +88,81 @@ type fakeProtection struct {
 	checks                              []string
 }
 
+// ruleset returns the repository's ruleset named name, nil without one.
+func (r *fakeRepo) ruleset(name string) *github.RepositoryRuleset {
+	for _, rs := range r.rulesets {
+		if rs.Name == name {
+			return rs
+		}
+	}
+	return nil
+}
+
+// addRuleset seeds a ruleset of the shape the engine writes for an aligned
+// repository — active on ~DEFAULT_BRANCH, one review, deletion and force
+// pushes forbidden, the checks given, the bypass actors given — for a test
+// to bend into a drift case.
+func (r *fakeRepo) addRuleset(name string, checks []*github.RuleStatusCheck, bypass ...*github.BypassActor) *github.RepositoryRuleset {
+	rules := &github.RepositoryRulesetRules{
+		PullRequest:    &github.PullRequestRuleParameters{RequiredApprovingReviewCount: 1},
+		Deletion:       &github.EmptyRuleParameters{},
+		NonFastForward: &github.EmptyRuleParameters{},
+	}
+	if len(checks) > 0 {
+		rules.RequiredStatusChecks = &github.RequiredStatusChecksRuleParameters{RequiredStatusChecks: checks}
+	}
+	r.seq++
+	rs := &github.RepositoryRuleset{
+		ID: new(int64(r.seq)), Name: name, Target: new(github.RulesetTargetBranch), Enforcement: github.RulesetEnforcementActive,
+		BypassActors: bypass,
+		Conditions:   &github.RepositoryRulesetConditions{RefName: &github.RepositoryRulesetRefConditionParameters{Include: []string{"~DEFAULT_BRANCH"}, Exclude: []string{}}},
+		Rules:        rules,
+	}
+	r.rulesets = append(r.rulesets, rs)
+	return rs
+}
+
+// statusCheck is a required check any integration satisfies (a CircleCI
+// status); actionsCheck one pinned to the GitHub Actions App.
+func statusCheck(context string) *github.RuleStatusCheck {
+	return &github.RuleStatusCheck{Context: context}
+}
+
+func actionsCheck(context string) *github.RuleStatusCheck {
+	return &github.RuleStatusCheck{Context: context, IntegrationID: new(int64(15368))}
+}
+
+// appBypass is a GitHub App as bypass actor for pull requests.
+func appBypass(id int64) *github.BypassActor {
+	return &github.BypassActor{ActorID: new(id), ActorType: new(github.BypassActorTypeIntegration), BypassMode: new(github.BypassModePullRequest)}
+}
+
+// adminBypass is the repository role Admin as bypass actor for pull requests.
+func adminBypass() *github.BypassActor {
+	return &github.BypassActor{ActorID: new(int64(5)), ActorType: new(github.BypassActorTypeRepositoryRole), BypassMode: new(github.BypassModePullRequest)}
+}
+
+// teamBypass is a team as bypass actor for pull requests.
+func teamBypass(id int64) *github.BypassActor {
+	return &github.BypassActor{ActorID: new(id), ActorType: new(github.BypassActorTypeTeam), BypassMode: new(github.BypassModePullRequest)}
+}
+
+// testTeamID is the id of the owning team in the fake organization.
+const testTeamID int64 = 7
+
+// checkContexts lists the contexts of a ruleset's required_status_checks
+// rule, nil without the rule.
+func checkContexts(rs *github.RepositoryRuleset) []string {
+	if rs == nil || rs.Rules == nil || rs.Rules.RequiredStatusChecks == nil {
+		return nil
+	}
+	var names []string
+	for _, c := range rs.Rules.RequiredStatusChecks.RequiredStatusChecks {
+		names = append(names, c.Context)
+	}
+	return names
+}
+
 // fakeGitHub is the GitHub fake.
 type fakeGitHub struct {
 	mu        sync.Mutex
@@ -87,14 +179,83 @@ type fakeGitHub struct {
 	// permission is what any user holds on any repository through the
 	// organization's teams unless a direct grant says otherwise.
 	permission string
+	// orgTeams are the organization's teams by slug (GET
+	// /orgs/{org}/teams/{slug}); the owning team is seeded visible
+	// (privacy closed). A ruleset write refuses a Team bypass actor that is
+	// secret or not one of them with 422, as GitHub does.
+	orgTeams map[string]*github.Team
+	// teamBypassRefused, when set, has every ruleset write refuse a Team
+	// bypass actor with 422 whatever the team's privacy: GitHub's judgment
+	// beyond what the team read shows.
+	teamBypassRefused bool
+	// readIdentity, when set, serves a ruleset without its bypass_actors,
+	// as GitHub does to an identity without write access to the ruleset.
+	readIdentity bool
+	// orgRole is the caller's role in any organization (GET
+	// /user/memberships/orgs/{org}); "" answers 404, not a member.
+	orgRole string
+	// createStatus, when not 0, is the status POST /orgs/{org}/repos answers
+	// instead of creating — 403 for a member of an organization that does
+	// not let members create repositories.
+	createStatus int
 	// onDispatch simulates what a dispatched workflow lands.
 	onDispatch func(workflow string, inputs map[string]any)
-	mutations  []string
-	srv        *httptest.Server
+	// runToken, when set, is a workflow run's own token beside the fake's
+	// default identity (no bearer: the App or a person). It sees public
+	// repositories only — a private one answers 404 to it on every
+	// endpoint — and is the one identity that may list and dispatch
+	// workflow runs: the default identity gets 403 there, GitHub's answer
+	// to an App without an Actions permission. Empty models one identity
+	// that may do everything.
+	runToken string
+	// dispatchedBy records the bearer token of every dispatch, "" for none.
+	dispatchedBy []string
+	// readOnly says the fake's default identity holds no admin on any
+	// repository: GET /repos/{owner}/{repo} then omits the six merge
+	// settings, as GitHub does for such an identity; GraphQL carries them
+	// to it as to any identity that reads the repository.
+	readOnly bool
+	// graphqlStatus, when not 0, is the status POST /graphql answers instead
+	// of the query.
+	graphqlStatus int
+	mutations     []string
+	// gets records the path of every GET: what a run costs in requests.
+	gets []string
+	srv  *httptest.Server
+}
+
+// reads counts the GETs of path so far.
+func (f *fakeGitHub) reads(path string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	n := 0
+	for _, p := range f.gets {
+		if p == path {
+			n++
+		}
+	}
+	return n
+}
+
+// bearer is the request's bearer token, "" without one.
+func bearer(r *http.Request) string {
+	return strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+}
+
+// isRunToken says whether r runs under the workflow run's token.
+func (f *fakeGitHub) isRunToken(r *http.Request) bool {
+	return f.runToken != "" && bearer(r) == f.runToken
+}
+
+// mayDispatch says whether r's identity holds the Actions permission: any
+// without a run token, the run token alone with one.
+func (f *fakeGitHub) mayDispatch(r *http.Request) bool {
+	return f.runToken == "" || f.isRunToken(r)
 }
 
 func newFakeGitHub() *fakeGitHub {
-	f := &fakeGitHub{repos: map[string]*fakeRepo{}, redirects: map[string]string{}, runs: map[string][]string{}, permission: "admin"}
+	f := &fakeGitHub{repos: map[string]*fakeRepo{}, redirects: map[string]string{}, runs: map[string][]string{}, permission: "admin", orgRole: "admin"}
+	f.orgTeams = map[string]*github.Team{team: {ID: new(testTeamID), Slug: new(team), Name: new("Team Bumblebee"), Privacy: new("closed")}}
 	f.installation.status = http.StatusOK
 	f.installation.selection = "selected"
 	mux := http.NewServeMux()
@@ -102,8 +263,10 @@ func newFakeGitHub() *fakeGitHub {
 	f.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		r.URL.Path = strings.TrimPrefix(r.URL.Path, "/api/v3") // go-github's enterprise prefix
 		f.mu.Lock()
-		if r.Method != http.MethodGet {
+		if r.Method != http.MethodGet && r.URL.Path != "/graphql" {
 			f.mutations = append(f.mutations, r.Method+" "+r.URL.Path)
+		} else {
+			f.gets = append(f.gets, r.URL.Path) // a GraphQL query is a read
 		}
 		f.mu.Unlock()
 		mux.ServeHTTP(w, r)
@@ -113,23 +276,74 @@ func newFakeGitHub() *fakeGitHub {
 
 // addRepo seeds a repository at the baseline with a scaffold, active and
 // unprotected; the test adjusts it.
+// forkLine shapes the repository as a fork line has it on GitHub: on the
+// branch named after the organisation, its pull requests landing by rebase
+// merge beside squash.
+func (r *fakeRepo) forkLine() *fakeRepo {
+	r.defaultBranch, r.allowRebase = "giantswarm", true
+	return r
+}
+
 func (f *fakeGitHub) addRepo(owner, name string) *fakeRepo {
 	r := &fakeRepo{
 		owner: owner, name: name,
 		hasIssues: true, allowSquash: true, allowUpdate: true, allowAuto: true, deleteOnMerge: true,
+		squashTitle:   "PR_TITLE",
 		defaultBranch: "main", workflowPerm: "write",
+		createdAt:     time.Now().Add(-30 * 24 * time.Hour),
 		teams:         map[string]string{"employees": "admin", "bots": "push"},
 		collaborators: map[string]string{},
 		files:         map[string]string{},
 		branchFiles:   map[string]map[string]string{},
 		blobs:         map[string][]byte{}, trees: map[string][]*github.TreeEntry{}, commits: map[string]fakeCommit{},
 		heads: map[string]string{},
+		merged: []*github.PullRequest{{
+			Number: new(1), State: new("closed"), MergedAt: &github.Timestamp{Time: time.Now().Add(-24 * time.Hour)},
+			Head: &github.PullRequestBranch{SHA: new("merged-head"), Ref: new("merged")}, Base: &github.PullRequestBranch{Ref: new("main")},
+		}},
 	}
 	for p, c := range scaffoldFiles {
 		r.files[p] = c
 	}
 	f.repos[owner+"/"+name] = r
 	return r
+}
+
+// refusesBypass answers 422 to a ruleset write naming a Team bypass actor
+// GitHub would not take — a secret team, a team not of the organization,
+// or any team with teamBypassRefused — and says whether it did.
+func (f *fakeGitHub) refusesBypass(w http.ResponseWriter, actors []*github.BypassActor) bool {
+	for _, a := range actors {
+		if a.ActorType == nil || *a.ActorType != github.BypassActorTypeTeam {
+			continue
+		}
+		var known *github.Team
+		for _, t := range f.orgTeams {
+			if t.GetID() == a.GetActorID() {
+				known = t
+			}
+		}
+		if f.teamBypassRefused || known == nil || known.GetPrivacy() == "secret" {
+			writeJSON(w, 422, map[string]any{"message": "Validation Failed", "errors": []map[string]string{{"resource": "Ruleset", "field": "bypass_actors", "code": "custom", "message": "Bypass actors must be part of the ruleset source or owner organization"}}})
+			return true
+		}
+	}
+	return false
+}
+
+// rulesetIndex is the position of the ruleset with the id in the path, -1
+// without one.
+func (r *fakeRepo) rulesetIndex(id string) int {
+	n, err := strconv.ParseInt(id, 10, 64)
+	if err != nil {
+		return -1
+	}
+	for i, rs := range r.rulesets {
+		if rs.GetID() == n {
+			return i
+		}
+	}
+	return -1
 }
 
 func (f *fakeGitHub) repo(owner, name string) (*fakeRepo, bool) {
@@ -149,25 +363,60 @@ func (r *fakeRepo) next(prefix string) string {
 	return fmt.Sprintf("%s%04d", prefix, r.seq)
 }
 
+// addIssue seeds an open issue created by login — or a pull request, as the
+// issues endpoint lists pull requests too.
+func (r *fakeRepo) addIssue(login, title string, pullRequest bool) *github.Issue {
+	n := len(r.issues) + 1
+	is := &github.Issue{Number: new(n), State: new("open"), Title: new(title), User: &github.User{Login: new(login)}}
+	if pullRequest {
+		is.PullRequestLinks = &github.PullRequestLinks{URL: new(fmt.Sprintf("https://api.github.com/repos/%s/%s/pulls/%d", r.owner, r.name, n))}
+	}
+	r.issues = append(r.issues, is)
+	return is
+}
+
 func (r *fakeRepo) toGitHub() *github.Repository {
 	return &github.Repository{
-		Name:                new(r.name),
-		FullName:            new(r.owner + "/" + r.name),
-		Owner:               &github.User{Login: new(r.owner)},
-		Description:         new(r.description),
-		Private:             new(r.private),
-		Archived:            new(r.archived),
-		HasWiki:             new(r.hasWiki),
-		HasIssues:           new(r.hasIssues),
-		HasProjects:         new(r.hasProjects),
-		AllowMergeCommit:    new(r.allowMerge),
-		AllowSquashMerge:    new(r.allowSquash),
-		AllowRebaseMerge:    new(r.allowRebase),
-		AllowUpdateBranch:   new(r.allowUpdate),
-		AllowAutoMerge:      new(r.allowAuto),
-		DeleteBranchOnMerge: new(r.deleteOnMerge),
-		DefaultBranch:       new(r.defaultBranch),
+		Name:                   new(r.name),
+		FullName:               new(r.owner + "/" + r.name),
+		HTMLURL:                new("https://github.com/" + r.owner + "/" + r.name),
+		Owner:                  &github.User{Login: new(r.owner)},
+		Description:            new(r.description),
+		Private:                new(r.private),
+		CreatedAt:              &github.Timestamp{Time: r.createdAt},
+		Archived:               new(r.archived),
+		HasWiki:                new(r.hasWiki),
+		HasIssues:              new(r.hasIssues),
+		HasProjects:            new(r.hasProjects),
+		AllowMergeCommit:       new(r.allowMerge),
+		AllowSquashMerge:       new(r.allowSquash),
+		AllowRebaseMerge:       new(r.allowRebase),
+		AllowUpdateBranch:      new(r.allowUpdate),
+		AllowAutoMerge:         new(r.allowAuto),
+		DeleteBranchOnMerge:    new(r.deleteOnMerge),
+		SquashMergeCommitTitle: new(r.squashTitle),
+		DefaultBranch:          new(r.defaultBranch),
 	}
+}
+
+// rulesetJSON is the ruleset as GitHub serves it: bypass_actors always
+// present for an identity with write access to the ruleset, an empty array
+// when there are none, and left out for a read identity.
+func rulesetJSON(rs *github.RepositoryRuleset, readIdentity bool) map[string]any {
+	b, err := json.Marshal(rs)
+	if err != nil {
+		panic(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		panic(err)
+	}
+	if readIdentity {
+		delete(m, "bypass_actors")
+	} else if len(rs.BypassActors) == 0 {
+		m["bypass_actors"] = []any{}
+	}
+	return m
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -180,6 +429,17 @@ func notFound(w http.ResponseWriter, msg string) {
 	writeJSON(w, http.StatusNotFound, map[string]string{"message": msg})
 }
 
+// forbidden is GitHub's answer to an identity without the permission.
+// archivedReadOnly is GitHub's answer to a write an archived repository
+// does not take.
+func archivedReadOnly(w http.ResponseWriter) {
+	writeJSON(w, http.StatusForbidden, map[string]string{"message": "Repository was archived so is read-only."})
+}
+
+func forbidden(w http.ResponseWriter) {
+	writeJSON(w, http.StatusForbidden, map[string]string{"message": "Resource not accessible by integration"})
+}
+
 func decode(r *http.Request, v any) {
 	_ = json.NewDecoder(r.Body).Decode(v)
 }
@@ -189,7 +449,7 @@ func (f *fakeGitHub) withRepo(h func(w http.ResponseWriter, r *http.Request, rep
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		repo, ok := f.repo(r.PathValue("owner"), r.PathValue("repo"))
-		if !ok {
+		if !ok || (repo.private && f.isRunToken(r)) {
 			notFound(w, "Not Found")
 			return
 		}
@@ -199,16 +459,60 @@ func (f *fakeGitHub) withRepo(h func(w http.ResponseWriter, r *http.Request, rep
 
 func (f *fakeGitHub) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /repos/{owner}/{repo}", f.withRepo(func(w http.ResponseWriter, _ *http.Request, repo *fakeRepo) {
-		writeJSON(w, 200, repo.toGitHub())
+		out := repo.toGitHub()
+		if f.readOnly {
+			out.AllowMergeCommit, out.AllowSquashMerge, out.AllowRebaseMerge = nil, nil, nil
+			out.AllowUpdateBranch, out.AllowAutoMerge, out.DeleteBranchOnMerge = nil, nil, nil
+			out.SquashMergeCommitTitle = nil
+		}
+		writeJSON(w, 200, out)
 	}))
+	mux.HandleFunc("POST /graphql", func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		if f.graphqlStatus != 0 {
+			writeJSON(w, f.graphqlStatus, map[string]string{"message": "Resource not accessible by integration"})
+			return
+		}
+		var in struct {
+			Query     string            `json:"query"`
+			Variables map[string]string `json:"variables"`
+		}
+		decode(r, &in)
+		slug := in.Variables["owner"] + "/" + in.Variables["name"]
+		repo, ok := f.repo(in.Variables["owner"], in.Variables["name"])
+		if !ok || !strings.Contains(in.Query, "repository(") {
+			writeJSON(w, 200, map[string]any{"data": map[string]any{"repository": nil},
+				"errors": []map[string]string{{"message": "Could not resolve to a Repository with the name '" + slug + "'."}}})
+			return
+		}
+		writeJSON(w, 200, map[string]any{"data": map[string]any{"repository": map[string]any{
+			"mergeCommitAllowed": repo.allowMerge, "squashMergeAllowed": repo.allowSquash, "rebaseMergeAllowed": repo.allowRebase,
+			"allowUpdateBranch": repo.allowUpdate, "autoMergeAllowed": repo.allowAuto, "deleteBranchOnMerge": repo.deleteOnMerge,
+			"squashMergeCommitTitle": repo.squashTitle,
+		}}})
+	})
+	mux.HandleFunc("GET /user/memberships/orgs/{org}", func(w http.ResponseWriter, r *http.Request) {
+		if f.orgRole == "" {
+			writeJSON(w, 404, map[string]string{"message": "Not Found"})
+			return
+		}
+		writeJSON(w, 200, map[string]string{"state": "active", "role": f.orgRole, "organization_url": "https://api.github.com/orgs/" + r.PathValue("org")})
+	})
 	mux.HandleFunc("POST /orgs/{owner}/repos", func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		defer f.mu.Unlock()
+		if f.createStatus != 0 {
+			writeJSON(w, f.createStatus, map[string]string{"message": "Resource not accessible by personal access token"})
+			return
+		}
 		var in github.Repository
 		decode(r, &in)
 		repo := f.addRepo(r.PathValue("owner"), in.GetName())
 		repo.description, repo.private = in.GetDescription(), in.GetPrivate()
+		repo.createdAt = time.Now()
 		repo.hasWiki, repo.teams = true, map[string]string{} // GitHub's defaults, not the baseline
+		repo.squashTitle = "COMMIT_OR_PR_TITLE"
 		repo.files = map[string]string{}
 		repo.empty = !in.GetAutoInit()
 		if in.GetAutoInit() {
@@ -235,17 +539,31 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 		set("allow_update_branch", &repo.allowUpdate)
 		set("allow_auto_merge", &repo.allowAuto)
 		set("delete_branch_on_merge", &repo.deleteOnMerge)
+		if v, ok := in["squash_merge_commit_title"].(string); ok {
+			repo.squashTitle = v
+		}
 		if v, ok := in["description"].(string); ok {
 			repo.description = v
 		}
 		writeJSON(w, 200, repo.toGitHub())
+	}))
+	mux.HandleFunc("DELETE /repos/{owner}/{repo}", f.withRepo(func(w http.ResponseWriter, _ *http.Request, repo *fakeRepo) {
+		delete(f.repos, repo.owner+"/"+repo.name)
+		w.WriteHeader(http.StatusNoContent)
 	}))
 	mux.HandleFunc("GET /repos/{owner}/{repo}/commits", f.withRepo(func(w http.ResponseWriter, _ *http.Request, repo *fakeRepo) {
 		if repo.empty {
 			writeJSON(w, http.StatusConflict, map[string]string{"message": "Git Repository is empty."})
 			return
 		}
-		writeJSON(w, 200, []map[string]any{{"sha": "head"}})
+		writeJSON(w, 200, append([]*github.RepositoryCommit{{SHA: new("head")}}, repo.history...))
+	}))
+	mux.HandleFunc("GET /repos/{owner}/{repo}/commits/{ref}", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		if ref := r.PathValue("ref"); ref != repo.release || repo.releaseSubject == "" {
+			writeJSON(w, http.StatusNotFound, map[string]string{"message": "No commit found for SHA: " + ref})
+			return
+		}
+		writeJSON(w, 200, &github.RepositoryCommit{SHA: new("release-commit"), Commit: &github.Commit{Message: new(repo.releaseSubject + "\n\nbody")}})
 	}))
 	mux.HandleFunc("GET /repos/{owner}/{repo}/commits/{sha}/status", f.withRepo(func(w http.ResponseWriter, _ *http.Request, repo *fakeRepo) {
 		if repo.checksStatus != 0 {
@@ -265,16 +583,9 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 		}
 		writeJSON(w, 200, map[string]any{"total_count": len(runs), "check_runs": runs})
 	}))
-	mux.HandleFunc("GET /repos/{owner}/{repo}/tags", f.withRepo(func(w http.ResponseWriter, _ *http.Request, repo *fakeRepo) {
-		tags := []map[string]any{}
-		for _, t := range repo.tags {
-			tags = append(tags, map[string]any{"name": t, "commit": map[string]string{"sha": "head"}})
-		}
-		writeJSON(w, 200, tags)
-	}))
 	mux.HandleFunc("GET /repos/{owner}/{repo}/pulls", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
 		var out []*github.PullRequest
-		for _, pr := range repo.prs {
+		for _, pr := range append(append([]*github.PullRequest{}, repo.prs...), repo.merged...) {
 			if s := r.URL.Query().Get("state"); s != "" && s != "all" && pr.GetState() != s {
 				continue
 			}
@@ -288,6 +599,23 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 		}
 		writeJSON(w, 200, out)
 	}))
+	mux.HandleFunc("GET /repos/{owner}/{repo}/issues", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		if repo.issuesStatus != 0 {
+			writeJSON(w, repo.issuesStatus, map[string]string{"message": "Resource not accessible by integration"})
+			return
+		}
+		out := []*github.Issue{}
+		for _, is := range repo.issues {
+			if c := r.URL.Query().Get("creator"); c != "" && is.GetUser().GetLogin() != c {
+				continue
+			}
+			if s := r.URL.Query().Get("state"); s != "" && s != "all" && is.GetState() != s {
+				continue
+			}
+			out = append(out, is)
+		}
+		writeJSON(w, 200, out)
+	}))
 	mux.HandleFunc("POST /repos/{owner}/{repo}/pulls", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
 		var in github.CreatePullRequest
 		decode(r, &in)
@@ -296,6 +624,7 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 			Number:  new(n),
 			State:   new("open"),
 			Title:   in.Title,
+			Body:    in.Body,
 			HTMLURL: new(fmt.Sprintf("https://github.com/%s/%s/pull/%d", repo.owner, repo.name, n)),
 			Head:    &github.PullRequestBranch{Ref: new(in.Head)},
 			Base:    &github.PullRequestBranch{Ref: new(in.Base)},
@@ -450,6 +779,16 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 		repo.workflowPerm = in.GetDefaultWorkflowPermissions()
 		w.WriteHeader(204)
 	}))
+	mux.HandleFunc("GET /orgs/{org}/teams/{slug}", func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		t, ok := f.orgTeams[r.PathValue("slug")]
+		if !ok {
+			notFound(w, "Not Found")
+			return
+		}
+		writeJSON(w, 200, t)
+	})
 	mux.HandleFunc("GET /repos/{owner}/{repo}/teams", f.withRepo(func(w http.ResponseWriter, _ *http.Request, repo *fakeRepo) {
 		teams := []map[string]string{}
 		for slug, perm := range repo.teams {
@@ -471,15 +810,35 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 		}
 		writeJSON(w, 200, map[string]any{"permission": permission, "user": map[string]string{"login": login}})
 	}))
+	// An archived repository's collaborators are read-only: GitHub answers
+	// a grant or a revocation with 403 (checked live 2026-09-24).
 	mux.HandleFunc("PUT /repos/{owner}/{repo}/collaborators/{login}", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		if repo.archived {
+			archivedReadOnly(w)
+			return
+		}
 		var in github.RepositoryAddCollaboratorOptions
 		decode(r, &in)
 		repo.collaborators[r.PathValue("login")] = in.Permission
 		writeJSON(w, 201, map[string]any{})
 	}))
 	mux.HandleFunc("DELETE /repos/{owner}/{repo}/collaborators/{login}", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		if repo.archived {
+			archivedReadOnly(w)
+			return
+		}
 		delete(repo.collaborators, r.PathValue("login"))
 		w.WriteHeader(204)
+	}))
+	mux.HandleFunc("POST /repos/{owner}/{repo}/branches/{branch}/rename", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		var in struct {
+			NewName string `json:"new_name"`
+		}
+		decode(r, &in)
+		if r.PathValue("branch") == repo.defaultBranch {
+			repo.defaultBranch = in.NewName
+		}
+		writeJSON(w, 201, map[string]any{"name": in.NewName})
 	}))
 	mux.HandleFunc("GET /repos/{owner}/{repo}/branches/{branch}/protection", f.withRepo(func(w http.ResponseWriter, _ *http.Request, repo *fakeRepo) {
 		p := repo.protection
@@ -521,9 +880,93 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 			}
 		}
 		repo.protection = p
+		repo.protected = r.PathValue("branch")
 		writeJSON(w, 200, map[string]any{})
 	}))
+	mux.HandleFunc("DELETE /repos/{owner}/{repo}/branches/{branch}/protection", f.withRepo(func(w http.ResponseWriter, _ *http.Request, repo *fakeRepo) {
+		if repo.protection == nil {
+			notFound(w, "Branch not protected")
+			return
+		}
+		repo.protection = nil
+		w.WriteHeader(204)
+	}))
+	// The rulesets list carries the summary alone, as GitHub's does: the
+	// rules, conditions and bypass actors need the ruleset itself.
+	mux.HandleFunc("GET /repos/{owner}/{repo}/rulesets", f.withRepo(func(w http.ResponseWriter, _ *http.Request, repo *fakeRepo) {
+		list := []map[string]any{}
+		for _, rs := range repo.rulesets {
+			list = append(list, map[string]any{"id": rs.GetID(), "name": rs.Name, "target": rs.GetTarget(), "source_type": "Repository", "source": repo.owner + "/" + repo.name, "enforcement": rs.Enforcement})
+		}
+		writeJSON(w, 200, list)
+	}))
+	mux.HandleFunc("GET /repos/{owner}/{repo}/rulesets/{id}", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		i := repo.rulesetIndex(r.PathValue("id"))
+		if i < 0 {
+			notFound(w, "Not Found")
+			return
+		}
+		writeJSON(w, 200, rulesetJSON(repo.rulesets[i], f.readIdentity))
+	}))
+	mux.HandleFunc("POST /repos/{owner}/{repo}/rulesets", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		var in github.RepositoryRuleset
+		decode(r, &in)
+		if f.refusesBypass(w, in.BypassActors) {
+			return
+		}
+		repo.seq++
+		in.ID = new(int64(repo.seq))
+		repo.rulesets = append(repo.rulesets, &in)
+		writeJSON(w, 201, in)
+	}))
+	mux.HandleFunc("PUT /repos/{owner}/{repo}/rulesets/{id}", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		i := repo.rulesetIndex(r.PathValue("id"))
+		if i < 0 {
+			notFound(w, "Not Found")
+			return
+		}
+		var in github.RepositoryRuleset
+		decode(r, &in)
+		if f.refusesBypass(w, in.BypassActors) {
+			return
+		}
+		in.ID = repo.rulesets[i].ID
+		repo.rulesets[i] = &in
+		writeJSON(w, 200, in)
+	}))
+	mux.HandleFunc("DELETE /repos/{owner}/{repo}/rulesets/{id}", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		i := repo.rulesetIndex(r.PathValue("id"))
+		if i < 0 {
+			notFound(w, "Not Found")
+			return
+		}
+		repo.rulesets = slices.Delete(repo.rulesets, i, i+1)
+		w.WriteHeader(204)
+	}))
+	// Deploy keys: an archived repository still lets one go (checked live
+	// 2026-09-24).
+	mux.HandleFunc("GET /repos/{owner}/{repo}/keys", f.withRepo(func(w http.ResponseWriter, _ *http.Request, repo *fakeRepo) {
+		keys := repo.deployKeys
+		if keys == nil {
+			keys = []*github.Key{}
+		}
+		writeJSON(w, 200, keys)
+	}))
+	mux.HandleFunc("DELETE /repos/{owner}/{repo}/keys/{id}", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		for i, k := range repo.deployKeys {
+			if strconv.FormatInt(k.GetID(), 10) == r.PathValue("id") {
+				repo.deployKeys = slices.Delete(repo.deployKeys, i, i+1)
+				w.WriteHeader(204)
+				return
+			}
+		}
+		notFound(w, "Not Found")
+	}))
 	mux.HandleFunc("GET /repos/{owner}/{repo}/hooks", f.withRepo(func(w http.ResponseWriter, _ *http.Request, repo *fakeRepo) {
+		if repo.hooksStatus != 0 {
+			writeJSON(w, repo.hooksStatus, map[string]any{"message": "Not Found"})
+			return
+		}
 		hooks := repo.hooks
 		if hooks == nil {
 			hooks = []*github.Hook{}
@@ -572,6 +1015,10 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 		writeJSON(w, 200, map[string]any{"tag_name": repo.release, "created_at": repo.releaseAt.Format(time.RFC3339)})
 	}))
 	mux.HandleFunc("GET /repos/{owner}/{repo}/actions/workflows/{file}/runs", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		if !f.mayDispatch(r) {
+			forbidden(w)
+			return
+		}
 		runs := []map[string]any{}
 		for i, status := range f.runs[repo.owner+"/"+repo.name+"/"+r.PathValue("file")] {
 			runs = append(runs, map[string]any{"run_number": i + 1, "status": status})
@@ -579,9 +1026,14 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 		writeJSON(w, 200, map[string]any{"total_count": len(runs), "workflow_runs": runs})
 	}))
 	mux.HandleFunc("POST /repos/{owner}/{repo}/actions/workflows/{file}/dispatches", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		if !f.mayDispatch(r) {
+			forbidden(w)
+			return
+		}
 		var in github.CreateWorkflowDispatchEventRequest
 		decode(r, &in)
 		f.dispatches = append(f.dispatches, r.PathValue("file"))
+		f.dispatchedBy = append(f.dispatchedBy, bearer(r))
 		if f.onDispatch != nil {
 			f.onDispatch(r.PathValue("file"), in.Inputs)
 		}
@@ -591,23 +1043,37 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 
 // fakeCircleCI is the CircleCI fake.
 type fakeCircleCI struct {
-	mu        sync.Mutex
-	login     string                  // the token's user
+	mu    sync.Mutex
+	login string // the token's user
+	// onFollow runs when a project is followed through the API: CircleCI
+	// installs its GitHub webhook then, for a follow by an admin whose grant
+	// carries the hook scope. Nil models a follow that leaves no hook.
+	onFollow func(org, repo string)
+	// isAdmin says whether the token's user is a GitHub administrator of
+	// the repository: CircleCI takes the follow, the settings and a deploy
+	// key from one only, and answers 403 otherwise. Nil admits every write.
+	isAdmin func(org, repo, login string) bool
+	// keyStatus, when set, is the answer to a deploy key's creation.
+	keyStatus int
 	projects  map[string]*fakeProject // org/repo
 	workflows map[string][]circleciclient.Workflow
 	jobs      map[string][]circleciclient.Job
 	mutations []string
 	seq       int
-	srv       *httptest.Server
+	// pageSize is how many pipelines a page of the pipeline list holds, all
+	// of them when 0; pages records the page tokens the list was read with.
+	pageSize int
+	pages    []string
+	srv      *httptest.Server
 }
 
 type fakeProject struct {
-	// following is the token user's follow; building whether the project
-	// builds for the organization. Neither removes the project.
-	following, building bool
-	setupWorkflows      bool
-	keys                []circleciclient.CheckoutKey
-	pipelines           []circleciclient.Pipeline
+	// following is the token user's follow; unfollowing does not remove
+	// the project.
+	following      bool
+	setupWorkflows bool
+	keys           []circleciclient.CheckoutKey
+	pipelines      []circleciclient.Pipeline
 }
 
 func newFakeCircleCI() *fakeCircleCI {
@@ -625,19 +1091,77 @@ func newFakeCircleCI() *fakeCircleCI {
 	return f
 }
 
-// follow seeds a followed project set up as the baseline wants.
+// circleCIHook is the webhook CircleCI installs on a repository it follows.
+func circleCIHook() *github.Hook {
+	return &github.Hook{ID: new(int64(683979223)), Name: new("web"), Active: new(true), Events: []string{"push", "pull_request"}, Config: &github.HookConfig{URL: new(circleCIWebhookURL), ContentType: new("json")}}
+}
+
+// circleCIDeployKeyID is the id of the deploy key CircleCI adds on the follow.
+const circleCIDeployKeyID = 164277013
+
+// circleCIDeployKey is the deploy key CircleCI adds to a repository it follows.
+func circleCIDeployKey() *github.Key {
+	return &github.Key{ID: new(int64(circleCIDeployKeyID)), Title: new(circleCIDeployKeyTitle), ReadOnly: new(true), Key: new("ssh-rsa AAAAB3NzaC1yc2E circleci")}
+}
+
+// isAdmin is the fake CircleCI's view of the GitHub fake: whether login
+// holds admin on org/repo, directly or through the organization's teams.
+func (f *fakeGitHub) isAdmin(org, repo, login string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	permission := f.permission
+	if r, ok := f.repos[org+"/"+repo]; ok {
+		if p, ok := r.collaborators[login]; ok {
+			permission = p
+		}
+	}
+	return permission == "admin"
+}
+
+// admits answers CircleCI's 403 to a write by a user who is no GitHub
+// administrator of the repository and says whether the write may proceed.
+func (f *fakeCircleCI) admits(w http.ResponseWriter, r *http.Request) bool {
+	if f.isAdmin == nil || f.isAdmin(r.PathValue("org"), r.PathValue("repo"), f.login) {
+		return true
+	}
+	writeJSON(w, 403, map[string]string{"message": "For security purposes only a project's Github administrator may setup Circle."})
+	return false
+}
+
+// installHook is the onFollow of a CircleCI whose follow installs the
+// webhook and CircleCI's deploy key on the GitHub fake's repository.
+func (f *fakeGitHub) installHook(org, repo string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if r, ok := f.repos[org+"/"+repo]; ok {
+		r.hooks = append(r.hooks, circleCIHook())
+		r.deployKeys = append(r.deployKeys, circleCIDeployKey())
+	}
+}
+
+// follow seeds a followed project set up as the baseline wants, its webhook
+// on the repository when the GitHub fake knows it.
 func (f *fakeCircleCI) follow(org, repo string) *fakeProject {
-	p := &fakeProject{following: true, building: true, setupWorkflows: true, keys: []circleciclient.CheckoutKey{{Type: "deploy-key", Preferred: true}}}
+	if f.onFollow != nil {
+		f.onFollow(org, repo)
+	}
+	p := &fakeProject{following: true, setupWorkflows: true, keys: []circleciclient.CheckoutKey{{Type: "deploy-key", Preferred: true}}}
 	f.projects[org+"/"+repo] = p
 	return p
 }
 
-// addPipeline seeds a pipeline for tag with one workflow of status and,
-// when it failed, one failed job.
+// addPipeline seeds a pipeline for tag, created now, with one workflow of
+// status and, when it failed, one failed job.
 func (f *fakeCircleCI) addPipeline(p *fakeProject, tag, status string) {
+	f.seedPipeline(p, circleciclient.PipelineVCS{Tag: tag}, time.Now(), status)
+}
+
+// seedPipeline seeds a pipeline of vcs created at createdAt, newest first,
+// with one workflow of status and, when it failed, one failed job.
+func (f *fakeCircleCI) seedPipeline(p *fakeProject, vcs circleciclient.PipelineVCS, createdAt time.Time, status string) {
 	f.seq++
 	id := fmt.Sprintf("pipeline-%d", f.seq)
-	p.pipelines = append([]circleciclient.Pipeline{{ID: id, Number: int64(f.seq), State: "created", CreatedAt: time.Now(), VCS: circleciclient.PipelineVCS{Tag: tag}}}, p.pipelines...)
+	p.pipelines = append([]circleciclient.Pipeline{{ID: id, Number: int64(f.seq), State: "created", CreatedAt: createdAt, VCS: vcs}}, p.pipelines...)
 	wfID := id + "-wf"
 	f.workflows[id] = []circleciclient.Workflow{{ID: wfID, Name: "build", Status: status, PipelineNumber: int64(f.seq)}}
 	if circleciclient.WorkflowFailed(status) {
@@ -645,6 +1169,15 @@ func (f *fakeCircleCI) addPipeline(p *fakeProject, tag, status string) {
 	} else {
 		f.jobs[wfID] = []circleciclient.Job{{Name: "go-build", Status: status}}
 	}
+}
+
+// rerun seeds a rerun of the newest pipeline's workflow: a second workflow
+// of the same name, newer, of status, with every job of that status.
+func (f *fakeCircleCI) rerun(p *fakeProject, status string) {
+	id := p.pipelines[0].ID
+	wfID := fmt.Sprintf("%s-wf%d", id, len(f.workflows[id])+1)
+	f.workflows[id] = append(f.workflows[id], circleciclient.Workflow{ID: wfID, Name: "build", Status: status, PipelineNumber: p.pipelines[0].Number, CreatedAt: time.Now()})
+	f.jobs[wfID] = []circleciclient.Job{{Name: "go-build", Status: status}, {Name: "push-to-registries-release", Status: status}}
 }
 
 func (f *fakeCircleCI) withProject(h func(w http.ResponseWriter, r *http.Request, p *fakeProject)) http.HandlerFunc {
@@ -669,22 +1202,24 @@ func (f *fakeCircleCI) routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1.1/project/github/{org}/{repo}/follow", func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		defer f.mu.Unlock()
+		if !f.admits(w, r) {
+			return
+		}
 		slug := r.PathValue("org") + "/" + r.PathValue("repo")
 		if _, ok := f.projects[slug]; !ok {
 			f.projects[slug] = &fakeProject{} // CircleCI's defaults: no setup workflows, no key yet
 		}
-		f.projects[slug].following, f.projects[slug].building = true, true
+		f.projects[slug].following = true
+		if f.onFollow != nil {
+			f.onFollow(r.PathValue("org"), r.PathValue("repo"))
+		}
 		writeJSON(w, 200, map[string]any{"followed": true})
 	})
-	// The v1.1 routes of the user's follow and of "stop building": neither
-	// removes the project, as on CircleCI.
+	// The v1.1 route of the user's unfollow: it does not remove the
+	// project, as on CircleCI.
 	mux.HandleFunc("POST /api/v1.1/project/github/{org}/{repo}/unfollow", f.withProject(func(w http.ResponseWriter, _ *http.Request, p *fakeProject) {
 		p.following = false
 		writeJSON(w, 200, map[string]any{"followed": false})
-	}))
-	mux.HandleFunc("DELETE /api/v1.1/project/github/{org}/{repo}/enable", f.withProject(func(w http.ResponseWriter, _ *http.Request, p *fakeProject) {
-		p.building = false
-		writeJSON(w, 200, map[string]any{"following": p.following})
 	}))
 	mux.HandleFunc("GET /api/v1.1/project/github/{org}/{repo}/settings", f.withProject(func(w http.ResponseWriter, _ *http.Request, p *fakeProject) {
 		writeJSON(w, 200, map[string]any{"following": p.following, "has_usable_key": len(p.keys) > 0})
@@ -696,6 +1231,9 @@ func (f *fakeCircleCI) routes(mux *http.ServeMux) {
 		writeJSON(w, 200, map[string]any{"advanced": map[string]any{"setup_workflows": p.setupWorkflows, "autocancel_builds": true}})
 	}))
 	mux.HandleFunc("PATCH /api/v2/project/gh/{org}/{repo}/settings", f.withProject(func(w http.ResponseWriter, r *http.Request, p *fakeProject) {
+		if !f.admits(w, r) {
+			return
+		}
 		var in circleciclient.ProjectSettings
 		decode(r, &in)
 		if in.Advanced.SetupWorkflows != nil {
@@ -711,21 +1249,39 @@ func (f *fakeCircleCI) routes(mux *http.ServeMux) {
 		writeJSON(w, 200, map[string]any{"items": keys, "next_page_token": nil})
 	}))
 	mux.HandleFunc("POST /api/v2/project/gh/{org}/{repo}/checkout-key", f.withProject(func(w http.ResponseWriter, r *http.Request, p *fakeProject) {
+		if !f.admits(w, r) {
+			return
+		}
+		if f.keyStatus != 0 {
+			writeJSON(w, f.keyStatus, map[string]string{"message": "Error creating deploy key"})
+			return
+		}
 		var in map[string]string
 		decode(r, &in)
 		k := circleciclient.CheckoutKey{Type: in["type"], Preferred: true, Fingerprint: "aa:bb", CreatedAt: time.Now()}
 		p.keys = append(p.keys, k)
 		writeJSON(w, 201, k)
 	}))
-	mux.HandleFunc("GET /api/v2/project/gh/{org}/{repo}/pipeline", f.withProject(func(w http.ResponseWriter, _ *http.Request, p *fakeProject) {
-		items := p.pipelines
+	mux.HandleFunc("GET /api/v2/project/gh/{org}/{repo}/pipeline", f.withProject(func(w http.ResponseWriter, r *http.Request, p *fakeProject) {
+		// The page token is the offset of the page's first pipeline.
+		token := r.URL.Query().Get("page-token")
+		f.pages = append(f.pages, token)
+		from, _ := strconv.Atoi(token)
+		items := p.pipelines[min(from, len(p.pipelines)):]
+		var next any
+		if f.pageSize > 0 && len(items) > f.pageSize {
+			items = items[:f.pageSize]
+			next = strconv.Itoa(from + f.pageSize)
+		}
 		if items == nil {
 			items = []circleciclient.Pipeline{}
 		}
-		writeJSON(w, 200, map[string]any{"items": items, "next_page_token": nil})
+		writeJSON(w, 200, map[string]any{"items": items, "next_page_token": next})
 	}))
 	mux.HandleFunc("POST /api/v2/project/gh/{org}/{repo}/pipeline", f.withProject(func(w http.ResponseWriter, r *http.Request, p *fakeProject) {
-		var in circleciclient.TriggerRequest
+		var in struct {
+			Tag string `json:"tag"`
+		}
 		decode(r, &in)
 		f.addPipeline(p, in.Tag, "success")
 		writeJSON(w, 201, p.pipelines[0])
@@ -745,9 +1301,12 @@ func (f *fakeCircleCI) routes(mux *http.ServeMux) {
 // scaffoldFiles is what the fake renderer renders and what a seeded
 // repository carries: the files the steps read.
 var scaffoldFiles = map[string]string{
-	"README.md":  "# sample-service\n",
-	"CODEOWNERS": reposetup.Codeowners("team-bumblebee"),
-	"Makefile":   "include Makefile.*.mk\n",
+	"README.md":      "# sample-service\n",
+	"CODEOWNERS":     reposetup.Codeowners("team-bumblebee"),
+	"Makefile":       "include Makefile.*.mk\n",
+	"renovate.json5": "{\n  extends: ['github>giantswarm/renovate-presets:default.json5'],\n}\n",
+	// The generated pipeline: the setup config continues into workflows.yml.
+	".circleci/config.yml": "version: 2.1\nsetup: true\n",
 	".circleci/workflows.yml": `version: 2.1
 workflows:
   build:
@@ -796,5 +1355,5 @@ func (f fakeRenderer) Render(_ context.Context, req reposetup.RenderRequest) (*r
 		files = append(files, p)
 	}
 	sort.Strings(files)
-	return &reposetup.Scaffold{Dir: req.Dir, Template: req.Entry.Template, Files: files}, nil
+	return &reposetup.Scaffold{Dir: req.Dir, Template: req.Entry.Template, Chart: req.Entry.Chart, Files: files}, nil
 }

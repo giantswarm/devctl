@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	usage            = "replace [flags] [PATTERN] [REPLACEMENT] [GLOB ...]"
+	usage            = "replace [flags] PATTERN REPLACEMENT GLOB..."
 	shortDescription = `Replaces text in files.`
 	longDescription  = `Replaces text in files. PATTERN is Go regular expressions and REPLACEMENT is Go regular expressions replacement string. GLOB is a file path pattern recognizing "*", "**" and "?" globing.`
 	example          = `  devctl replace foo bar /path/to/file

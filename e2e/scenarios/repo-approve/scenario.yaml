@@ -1,0 +1,16 @@
+description: repo approve submits the approving review as the person and prints the outcome sentence
+args: [repo, approve, "6179"]
+keyring:
+  muster:
+    login: e2e-engineer@example.com
+    token: muster_e2e
+    expiresAt: "2099-01-01T00:00:00Z"
+    refreshToken: muster_e2e_refresh
+    endpoint: "${DEVCTL_MUSTER_URL}"
+    issuer: "${MUSTER_ISSUER}"
+muster:
+  bearer: muster_e2e
+  tools:
+    x_giantswarm-repo-manager_approve_change:
+      - args: {pullRequest: 6179, mode: commit}
+        result: {pullRequest: 6179, team: team-bumblebee, author: alice, login: e2e-engineer, teams: [team-bumblebee], member: true, merged: false, autoMerge: true, message: "Approved as e2e-engineer; giantswarm/github#6179 merges by itself once its checks pass."}

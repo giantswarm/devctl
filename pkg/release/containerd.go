@@ -13,8 +13,6 @@ import (
 	"github.com/giantswarm/releases/sdk/api/v1alpha1"
 	"github.com/google/go-github/v92/github"
 	"github.com/sirupsen/logrus"
-
-	"github.com/giantswarm/devctl/v8/internal/env"
 )
 
 const (
@@ -43,12 +41,12 @@ var containerdVersionCache = map[string]string{}
 // kubernetes-sigs/image-builder version in its Dockerfile. That upstream release carries the
 // containerd version in its packer config, and that is the version nodes actually run — it
 // differs from the one Flatcar embeds, which is why it is worth recording in the release.
-func findContainerdVersion(osToolingVersion string) (string, error) {
+func findContainerdVersion(githubToken, osToolingVersion string) (string, error) {
 	if cached, ok := containerdVersionCache[osToolingVersion]; ok {
 		return cached, nil
 	}
 
-	imageBuilderVersion, err := findImageBuilderVersion(osToolingVersion)
+	imageBuilderVersion, err := findImageBuilderVersion(githubToken, osToolingVersion)
 	if err != nil {
 		return "", microerror.Mask(err)
 	}
@@ -90,8 +88,8 @@ func findContainerdVersion(osToolingVersion string) (string, error) {
 // findImageBuilderVersion reads the upstream image-builder version pinned by the given
 // capi-image-builder release. The repository is private, so this goes through the API rather
 // than raw.githubusercontent.com.
-func findImageBuilderVersion(osToolingVersion string) (string, error) {
-	client, err := github.NewClient(github.WithAuthToken(env.GitHubToken.Val()))
+func findImageBuilderVersion(githubToken, osToolingVersion string) (string, error) {
+	client, err := github.NewClient(github.WithAuthToken(githubToken))
 	if err != nil {
 		return "", microerror.Mask(err)
 	}
@@ -122,12 +120,12 @@ func findImageBuilderVersion(osToolingVersion string) (string, error) {
 //
 // A lookup failure is not fatal. The version is informational, and a release should not fail
 // to be created because a tag is missing or GitHub is briefly unavailable.
-func deriveContainerdVersion(osToolingVersion string) string {
+func deriveContainerdVersion(githubToken, osToolingVersion string) string {
 	if osToolingVersion == "" {
 		return ""
 	}
 
-	version, err := findContainerdVersion(osToolingVersion)
+	version, err := findContainerdVersion(githubToken, osToolingVersion)
 	if err != nil {
 		logrus.Warnf("Could not determine containerd version for os-tooling v%s: %v", osToolingVersion, err)
 		return ""
@@ -142,13 +140,13 @@ func deriveContainerdVersion(osToolingVersion string) string {
 //
 // The version is always derived here and never requested: it is a property of the node image,
 // so anything else would record a version no node runs.
-func applyContainerdComponent(updates *v1alpha1.Release, base v1alpha1.Release, verbose bool) {
+func applyContainerdComponent(githubToken string, updates *v1alpha1.Release, base v1alpha1.Release, verbose bool) {
 	osToolingVersion := lookupComponentVersion(updates.Spec.Components, osToolingComponentName)
 	if osToolingVersion == "" {
 		osToolingVersion = lookupComponentVersion(base.Spec.Components, osToolingComponentName)
 	}
 
-	containerdVersion := deriveContainerdVersion(osToolingVersion)
+	containerdVersion := deriveContainerdVersion(githubToken, osToolingVersion)
 	if containerdVersion == "" {
 		return
 	}

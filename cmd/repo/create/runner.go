@@ -11,7 +11,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
-	"github.com/giantswarm/devctl/v8/cmd/repo/internal/auth"
+	"github.com/giantswarm/devctl/v8/pkg/authstore"
 	"github.com/giantswarm/devctl/v8/pkg/githubclient"
 	"github.com/giantswarm/devctl/v8/pkg/reposetup"
 )
@@ -40,21 +40,29 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 	return microerror.Mask(r.run(ctx))
 }
 
+// run is the command: the dry run, then the declaration's pull request.
+// The reconciler creates, scaffolds and sets the repository up once the
+// pull request merges.
 func (r *runner) run(ctx context.Context) error {
 	// The dry run is the command's output and stdout is for it alone.
 	r.logger.SetOutput(r.stderr)
 
-	token, source, err := auth.GitHubToken(ctx, r.flag.GithubTokenEnvVar)
+	var envVars []string
+	if r.flag.GithubTokenEnvVar != "" {
+		envVars = []string{r.flag.GithubTokenEnvVar}
+	}
+	token, err := authstore.ResolveGitHub(ctx, envVars...)
 	if err != nil {
 		return microerror.Mask(err)
 	}
-	r.logger.Debugf("GitHub token from %s", source)
+	token.WarnOnce(r.stderr)
 
-	client, err := githubclient.New(githubclient.Config{Logger: r.logger, AccessToken: token})
+	client, err := githubclient.New(githubclient.Config{Logger: r.logger, AccessToken: token.Value})
 	if err != nil {
 		return microerror.Mask(err)
 	}
-	remote := reposetup.Remote{GitHub: client.GetUnderlyingClient(ctx)}
+	gh := client.GetUnderlyingClient(ctx)
+	remote := reposetup.Remote{GitHub: gh}
 
 	// The team file first: an unknown team ends the command here.
 	teamFile, err := remote.TeamFile(ctx, r.flag.Team)
@@ -102,26 +110,27 @@ func (r *runner) run(ctx context.Context) error {
 		person = reposetup.Person{}
 	}
 
+	// The dry run: the schema, the creation rules, the name free on GitHub.
 	validator := reposetup.Validator{
 		Schema: schema,
 		Names:  reposetup.GitHubNameChecker{Repositories: client},
 		Owner:  r.flag.Owner,
 	}
-	result, err := validator.Validate(ctx, reposetup.Request{
+	dryRun, err := validator.Validate(ctx, reposetup.Request{
 		TeamFile:    changed,
 		Names:       []string{r.flag.Name},
+		Mode:        reposetup.ModeCreate,
 		Author:      person.Login,
 		AuthorTeams: person.Teams,
 	})
 	if err != nil {
 		return microerror.Mask(err)
 	}
-
-	out := output{DryRun: result}
+	out := output{DryRun: dryRun}
 	if r.flag.Output == outputText {
-		r.printDryRun(teamFile, result)
+		r.printDryRun(teamFile, dryRun)
 	}
-	if !result.Accepted {
+	if !dryRun.Accepted {
 		r.print(out)
 		return microerror.Maskf(refusedError, "%s is refused; the problems name the fields, no pull request was opened", r.flag.Name)
 	}
@@ -133,13 +142,24 @@ func (r *runner) run(ctx context.Context) error {
 		return nil
 	}
 
-	pr, err := remote.OpenPullRequest(ctx, reposetup.CreationPullRequest(teamFile, content, result))
+	spec := reposetup.CreationPullRequest(teamFile, content, dryRun, reposetup.CreatedRepository{})
+	pr, err := remote.OpenPullRequest(ctx, spec)
+	state := "opened"
+	if reposetup.IsBranchExists(err) {
+		// A rerun after the pull request was opened: report the open one.
+		pr, err = remote.FindPullRequest(ctx, spec.Branch)
+		if err == nil && pr == nil {
+			err = microerror.Maskf(branchWithoutPullRequestError, "branch %s exists in %s without an open pull request: open the pull request from it or delete the branch, then rerun", spec.Branch, remote.Slug())
+		}
+		state = "open already"
+	}
 	if err != nil {
+		r.print(out)
 		return microerror.Mask(err)
 	}
 	out.PullRequest = pr.GetHTMLURL()
 	if r.flag.Output == outputText {
-		fmt.Fprintf(r.stdout, "pull request: %s\n", out.PullRequest)
+		fmt.Fprintf(r.stdout, "pull request: %s (%s)\n", out.PullRequest, state)
 	}
 	r.print(out)
 
@@ -147,7 +167,8 @@ func (r *runner) run(ctx context.Context) error {
 }
 
 // printDryRun writes the dry run as text: the entry as it goes into the
-// team file, the template, the name check, the problems and the notices.
+// team file, the template and the chart added beside it, the name check,
+// the problems and the notices.
 func (r *runner) printDryRun(tf *reposetup.RemoteTeamFile, result *reposetup.Result) {
 	entry := result.Entries[0]
 	fmt.Fprintf(r.stdout, "%s/%s in %s of %s (schema: %s)\n\n", r.flag.Owner, entry.Name, tf.Path, tf.Team, result.Schema)
@@ -155,6 +176,9 @@ func (r *runner) printDryRun(tf *reposetup.RemoteTeamFile, result *reposetup.Res
 	fmt.Fprintln(r.stdout)
 	if entry.Template != "" {
 		fmt.Fprintf(r.stdout, "template:   %s\n", entry.Template)
+	}
+	if entry.Chart != "" {
+		fmt.Fprintf(r.stdout, "chart:      %s at helm/%s\n", entry.Chart, entry.Name)
 	}
 	check := string(entry.NameCheck.Verdict)
 	if entry.NameCheck.Detail != "" {

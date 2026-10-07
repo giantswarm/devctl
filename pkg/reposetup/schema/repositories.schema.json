@@ -4,6 +4,7 @@
   "type": "array",
   "items": {
     "type": "object",
+    "description": "One repository of the team whose file the entry lives in. The entry is the request for the repository and its desired state: what it declares (settings, branch protection, CircleCI, description, visibility, lifecycle, generated files) is what the automation keeps true. There is no template field; the template a repository is created from is derived from componentType, gen.flavours and gen.language.",
     "required": [
       "name",
       "componentType"
@@ -13,6 +14,16 @@
       "artifactHub": {
         "type": "boolean",
         "description": "Opts the repository's public Helm chart(s) into publication on Artifact Hub under the giantswarm organization (https://artifacthub.io/packages/search?org=giantswarm). The nightly artifacthub-sync workflow resolves the chart name(s) via the 'giantswarm.io/helmcharts' catalog annotation and registers those that exist in gsoci; removing the flag deregisters them. Components tagged 'private' in the catalog are never published. Default: not published. See https://github.com/giantswarm/roadmap/issues/3940."
+      },
+      "align": {
+        "type": "boolean",
+        "default": false,
+        "description": "The repository's opt-in to alignment. With true the reconciler changes the repository to its declared set-up and the company baseline on every trigger: a merged change of this entry, Align now, the nightly. Without it every run is a check -- the drift in the run's summary, the artifact and the inventory, nothing changed on GitHub or CircleCI. A repository created by the automation (devctl repo create, the Repositories page, the Repo Manager) is declared with align: true: its creation is the opt-in. An existing repository opts in when its team adds the field to its entry in a pull request the team reviews; a lifecycle change carries it. The team's channel file teams/team-<name>.yaml names the team's channels and holds no opt-in."
+      },
+      "agentMerge": {
+        "type": "boolean",
+        "default": true,
+        "description": "The repository's opt-out from agent merges. With false no agent merges pull requests in this repository: devctl pr merge refuses with exit 5, naming this field, and the protection step writes the repository's ruleset without a bypass actor, so nothing merges past the required review. Plans and decision records merged by people after review are the case. With true (the default) agents merge through the ruleset's bypass actor, as everywhere else."
       },
       "botPRsSweep": {
         "type": "object",
@@ -26,7 +37,8 @@
           "updateTypes": {
             "type": "array",
             "uniqueItems": true,
-            "description": "Update types that may merge when green in this repository, intersected with the team's Renovate and Dependabot lists. An empty list is a list: it merges no Renovate or Dependabot PR at all, while an Align files or Herald PR still merges. An Align files or Herald PR names no version and is not affected, so \"none\" cannot be named here. An update type the team merges for no kind is refused, and an update whose size the sweep cannot read always waits for a person.",
+            "minItems": 1,
+            "description": "Update types that may merge when green in this repository, intersected with the team's Renovate and Dependabot lists. Name at least one: an empty list merges no Renovate or Dependabot PR at all while an Align files or Herald PR still merges, which is one deleted entry away by accident. Set enabled to false to leave the whole repository alone. An Align files or Herald PR names no version and is not affected, so \"none\" cannot be named here. An update type the team merges for no kind is refused, and an update whose size the sweep cannot read always waits for a person.",
             "items": {
               "type": "string",
               "enum": [
@@ -48,7 +60,7 @@
       "componentType": {
         "type": "string",
         "title": "Component type",
-        "description": "Sets the component type of this repository, specifically for our developer portal catalog, where the component type influences the type of information displayed.",
+        "description": "Sets the component type of this repository, specifically for our developer portal catalog, where the component type influences the type of information displayed. Together with gen.flavours and gen.language it also selects the template a repository is created from -- there is no separate template field.",
         "enum": [
           "appcatalog",
           "cli",
@@ -68,6 +80,12 @@
           "type": "string"
         }
       },
+      "defaultBranch": {
+        "type": "string",
+        "minLength": 1,
+        "default": "main",
+        "description": "The repository's default branch, 'main' unless declared. The settings step keeps the repository on it and renames a default branch that is not the declared one; the protection step protects it and every other step reads the repository on it. A repository whose default branch is another one declares it here and keeps it. For a fork line, the branch that carries the upstream release plus the carried patches. Requires devctl v8.78.0+."
+      },
       "deploymentNames": {
         "type": "array",
         "description": "List of names of apps which are deployed from this repository. Setting this will overwrite the default discovery of apps named REPONAME and REPONAME-app.",
@@ -77,10 +95,12 @@
       },
       "description": {
         "type": "string",
-        "description": "The repository's description on GitHub (the 'About' text). The repository set-up reconciler keeps it in sync with this value; a description changed by hand on GitHub is drift and is set back. See https://github.com/giantswarm/giantswarm/issues/37726."
+        "title": "Repository description",
+        "description": "The repository's description as shown on GitHub (the 'About' text). Part of the desired state: the automation sets it when it creates the repository and keeps it in sync afterwards, so it can be declared for an existing repository as well. Absent means the description on GitHub is left as it is."
       },
       "gen": {
         "type": "object",
+        "description": "What devctl generates for the repository. For a repository the automation creates, flavours and language are mandatory (they select the template together with componentType) and ci.generate defaults to true; an existing entry declares only what it wants generated.",
         "required": [
           "flavours",
           "language"
@@ -89,7 +109,7 @@
         "properties": {
           "flavours": {
             "type": "array",
-            "description": "devctl flavours of the repository (see devctl docs/flavours.md), passed to every 'devctl gen' the sync runs. 'customer' repositories get the generated GitHub workflows plus a generated renovate.json5 extending the giantswarm base preset, and no CircleCI.",
+            "description": "devctl flavours of the repository (see devctl docs/flavours.md), passed to every 'devctl gen' the sync runs. 'customer' repositories get the generated GitHub workflows plus a generated renovate.json5 extending the giantswarm base preset, and no CircleCI. 'fork' is a fork line, a repository that carries an upstream release plus the carried patches on the branch its defaultBranch declares: nothing is generated for it, the scaffold and CODEOWNERS steps are skipped on it, every other step runs as declared, and the settings step keeps rebase merges on (merge commits as the repository has them): the carried patches land by rebase merge, one upstream-ready commit each. Requires devctl v8.78.0+. 'plans' is a team plans repository -- versioned PRDs, their companion websites and the plan-workflow agent skills -- declared beside 'generic' with language 'generic' and no generated CI: it derives the template giantswarm/template-plans and generates nothing of its own.",
             "items": {
               "type": "string",
               "enum": [
@@ -97,10 +117,11 @@
                 "cli",
                 "cluster-app",
                 "customer",
+                "fleet",
+                "fork",
                 "generic",
-                "helmchart",
                 "k8sapi",
-                "fleet"
+                "plans"
               ],
               "minItems": 1
             }
@@ -155,7 +176,11 @@
             "properties": {
               "generate": {
                 "type": "boolean",
-                "description": "Opt this repo into devctl-generated .circleci/config.yml. The pipeline is derived from gen.flavours / gen.language / Dockerfile presence -- there is no per-repo parameter block. The architect-orb version is baked into devctl, not configured here."
+                "description": "Opt this repo into devctl-generated .circleci/config.yml. The pipeline is derived from gen.flavours / gen.language / Dockerfile presence -- there is no per-repo parameter block. The architect-orb version is baked into devctl, not configured here. For a repository the automation creates, a missing gen.ci means generate: true; an existing entry without gen.ci keeps its hand-maintained CircleCI config."
+              },
+              "templateContent": {
+                "type": "boolean",
+                "description": "The .circleci/config.yml this template repository carries is content for the repositories created from it, not its own pipeline: CircleCI has nothing to build here. The reconciler's circleci and release steps skip the repository (no follow, no deploy key, no tag build to verify) and its pull requests are judged from GitHub alone, as for any repository CircleCI does not build. Set it beside generate: false on a template whose configuration carries placeholders for the repositories created from it; generate: true contradicts it, and a template that builds itself leaves it out."
               },
               "releaseWorkflow": {
                 "type": "string",
@@ -163,7 +188,7 @@
                   "legacy",
                   "auto-release"
                 ],
-                "description": "Release workflow to generate. 'auto-release' produces a single push-based auto-release.yaml + cliff.toml that tags + publishes a GitHub Release from conventional commits on every push to main (no release PR, no manual approval). 'legacy' produces the create-release-pr / create-release / validate-changelog trio (releases driven by manually-pushed `main#release#patch`-style branches). When omitted, the effective default depends on `gen.ci.generate`: `true` defaults to 'auto-release' (a devctl-managed CI surface implies a devctl-managed release surface), `false`/unset defaults to 'legacy'. Set `releaseWorkflow: legacy` explicitly to opt a `gen.ci.generate: true` repo back to the legacy trio. Requires devctl v8.8.0+."
+                "description": "Release workflow to generate. 'auto-release' produces a single push-based auto-release.yaml + cliff.toml that tags + publishes a GitHub Release from conventional commits on every push to main (no release PR, no manual approval). 'legacy' produces the create-release-pr / create-release / validate-changelog trio (releases driven by manually-pushed `main#release#patch`-style branches). When omitted, the effective default depends on `gen.ci.generate`: `true` defaults to 'auto-release' (a devctl-managed CI surface implies a devctl-managed release surface), `false`/unset defaults to 'legacy'. Set `releaseWorkflow: legacy` explicitly to opt a `gen.ci.generate: true` repo back to the legacy trio. On a fork line (flavour `fork`) 'auto-release' generates the release flow alone, cut from `defaultBranch` and counted from the line's highest stable tag. Requires devctl v8.8.0+."
               },
               "appCatalog": {
                 "type": "string",
@@ -176,6 +201,10 @@
               "chartName": {
                 "type": "string",
                 "description": "Override the chart name on the generated chart jobs (the push-to-app-catalog 'chart' param and the helm/<chart> directory; passed to '--chart-name'). Defaults to the repo name when omitted. Set it for repos whose chart directory does not match the repo name (e.g. docs-proxy ships helm/docs-proxy-app). The append-only custom.yml merge cannot rename a generated job's chart. Requires devctl v8.19.0+."
+              },
+              "chartReleaseGateJob": {
+                "type": "string",
+                "description": "Name of a repo-owned job (defined in .circleci/custom.yml) the release chart push must wait on (passed to '--chart-release-gate-job'). Adds a 'requires' entry to the generated push-chart-release job, which the append-only custom.yml merge cannot inject into a generated job -- the chart counterpart of image.preBuildJob, for a check that has to refuse a release before its chart is pushed (agent-platform: the meta chart's component floors and BOM pins must resolve to published charts, giantswarm/agent-platform#624). The branch dev push is not gated. Only applies to the app flavour of a non-template repository; devctl rejects the key otherwise. Requires devctl v8.90.0+."
               },
               "overrideChartAppVersion": {
                 "type": "boolean",
@@ -323,12 +352,13 @@
       "lifecycle": {
         "type": "string",
         "enum": [
+          "archived",
+          "deleted",
           "deprecated",
-          "production",
-          "archived"
+          "production"
         ],
         "default": "production",
-        "description": "Lifecycle stage of the repository. Surfaces in the developer portal catalog. Setting 'deprecated' also makes align-files extend the renovate-presets deprecated.json5 preset (disable routine updates, keep only security/vulnerability remediation) for repos whose Renovate config is generated (gen.ci.generate or the customer flavour); every other repo keeps its hand-maintained renovate.json5. Requires devctl v8.26.0+. Setting 'archived' makes the repository set-up reconciler archive the repository on GitHub and unfollow its CircleCI project; the entry stays in the team file as the record and is never recreated. Deletion is not expressible. See https://github.com/giantswarm/giantswarm/issues/37726."
+        "description": "Lifecycle stage of the repository; surfaces in the developer portal catalog. 'production' (the default) is a repository in active use. 'deprecated' is a component we decided to phase out: align-files extends the renovate-presets deprecated.json5 preset (disable routine updates, keep only security/vulnerability remediation) for repos whose Renovate config is generated (gen.ci.generate or the customer flavour), every other repo keeps its hand-maintained renovate.json5 (requires devctl v8.26.0+). 'archived' is a repository whose work is over: it is archived on GitHub and its CircleCI project is unfollowed, and the entry stays in the team file as the record (the automation never recreates it and never removes the entry). 'deleted' is a repository that is to be gone: the reconciler unfollows its CircleCI project and deletes it on GitHub -- code, issues, pull requests, releases and packages with it; an organization owner can restore it on GitHub for 90 days -- and the entry stays in the team file as the record of the deletion (never recreated, never removed by the automation). Like an archive it is set in a team-file pull request the owning team reviews."
       },
       "name": {
         "type": "string",
@@ -343,6 +373,30 @@
           "precommit": {
             "type": "boolean"
           }
+        }
+      },
+      "requiredChecks": {
+        "type": "array",
+        "uniqueItems": true,
+        "description": "Status-check contexts required on the repository's default branch whatever reported. The protection step merges them with the baseline's rule, which requires a context only once it has reported on the default branch or a recently merged pull request and removes a required context nothing reports: a context declared here is required before it has ever reported and is never removed, neither as a ghost nor as an ignored context. For a repository's own GitHub Actions gate that runs on every pull request, such as a team-file validation job, as the check run's name GitHub reports: the job's name, or '<job> / <called job>' for a job that runs a reusable workflow, as shown in a pull request's Checks tab or by GET /repos/{owner}/{repo}/commits/{sha}/check-runs. Requires devctl v8.72.0+.",
+        "items": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "pruneRulesets": {
+        "type": "boolean",
+        "default": false,
+        "description": "The repository's opt-in to ruleset pruning. With true the entry's declaration is the repository's whole ruleset set: the protection step deletes every active repository ruleset that is neither the engine's 'devctl: default branch' nor named in 'rulesets', and reports each deletion as a repair, so a hand-made ruleset without the team's bypass never blocks devctl pr merge past the nightly. A declared ruleset and a disabled one are left alone, and one on evaluate stays the advisory 'foreign-ruleset'. With false (the default) an undeclared ruleset is the advisory 'foreign-ruleset' and deleting it stays with the team."
+      },
+      "rulesets": {
+        "type": "array",
+        "uniqueItems": true,
+        "minItems": 1,
+        "description": "Repository rulesets the team keeps beside the engine's 'devctl: default branch', by name: the decision to keep them, recorded where the reconciler reads it. The protection step leaves a ruleset named here alone and silent; one the repository carries and the entry does not name is the advisory finding 'foreign-ruleset', and a name the repository carries no ruleset for the advisory 'declared-ruleset-missing' -- a ruleset deleted on GitHub, or a name that never matched one. Declaring a ruleset hands nothing to the engine: it writes 'devctl: default branch' and no other, so creating, changing and deleting a declared ruleset stays with the team. A ruleset whose enforcement is 'disabled' enforces nothing and is passed over whether declared or not. For the fork lines' 'protect-giantswarm', 'protect-main', 'protect-mirror-main' and 'protect-consumed-branch', which guard the upstream mirror and the consumed branch.",
+        "items": {
+          "type": "string",
+          "minLength": 1
         }
       },
       "system": {
@@ -375,11 +429,12 @@
       },
       "visibility": {
         "type": "string",
+        "title": "Repository visibility",
         "enum": [
-          "public",
-          "private"
+          "private",
+          "public"
         ],
-        "description": "The repository's visibility on GitHub. The repository set-up reconciler creates the repository with this visibility and keeps it in sync; 'internal' is not offered. A repository whose visibility is changed by hand is drift and is set back. See https://github.com/giantswarm/giantswarm/issues/37726."
+        "description": "The repository's visibility on GitHub. Part of the desired state: the automation creates the repository with it and keeps it in sync afterwards, so it can be declared for an existing repository as well. Only 'public' and 'private' exist for us; 'internal' is refused. Absent means the visibility on GitHub is left as it is; a repository created from an entry without one is created private, the org's default, and devctl repo create writes visibility: private into the entry it adds."
       }
     }
   }

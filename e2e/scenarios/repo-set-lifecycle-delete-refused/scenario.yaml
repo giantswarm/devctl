@@ -1,0 +1,4 @@
+# A deletion without the name typed again is refused before anything is
+# read or called: no keyring, no muster.
+description: repo set-lifecycle deleted without --confirm is refused before any call
+args: [repo, set-lifecycle, scratch-repo, deleted]

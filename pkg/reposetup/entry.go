@@ -13,7 +13,7 @@ type Undeclared struct {
 	Name string
 	// ComponentType of the catalog; left out of the entry when empty.
 	ComponentType string
-	// Lifecycle is the declared lifecycle (archived); left out when empty.
+	// Lifecycle is the declared lifecycle (archived, deleted); left out when empty.
 	Lifecycle string
 }
 

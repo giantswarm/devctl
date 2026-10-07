@@ -1,0 +1,19 @@
+# An archive committed: mode commit, the pull request opened as the person
+# and the ask delivered to the team's channel.
+description: repo set-lifecycle archived commits the lifecycle change and prints the pull request and the ask
+args: [repo, set-lifecycle, old-tool, archived, --reason, "replaced by new-tool"]
+keyring:
+  muster:
+    login: e2e-engineer@example.com
+    token: muster_e2e
+    expiresAt: "2099-01-01T00:00:00Z"
+    refreshToken: muster_e2e_refresh
+    endpoint: "${DEVCTL_MUSTER_URL}"
+    issuer: "${MUSTER_ISSUER}"
+muster:
+  bearer: muster_e2e
+  tools:
+    x_giantswarm-repo-manager_set_lifecycle:
+      - args: {repository: old-tool, lifecycle: archived, mode: commit, reason: replaced by new-tool}
+        result: {pullRequest: {number: 6179, url: https://github.com/giantswarm/github/pull/6179, branch: reposetup/archived-old-tool, title: "chore(team-bumblebee): archive old-tool", autoMerge: true},
+                 ask: {team: team-bumblebee, channel: team-bumblebee, delivered: true, reviewId: r1}}

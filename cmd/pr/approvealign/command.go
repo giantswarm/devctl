@@ -46,6 +46,7 @@ func New(config Config) (*cobra.Command, error) {
 
 	c := &cobra.Command{
 		Use:     longCmd, // Use longCmd for `Use` to match user expectation for `devctl pr approve-align-files`
+		Args:    cobra.NoArgs,
 		Short:   description,
 		Long:    description,
 		Aliases: []string{name, shortCmd}, // Keep `approvealign` and `approvealignfiles` as aliases

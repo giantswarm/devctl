@@ -41,6 +41,15 @@
     language: generic
     ci:
       generate: false
+- name: upstream-fork
+  componentType: service
+  defaultBranch: giantswarm
+  gen:
+    flavours:
+      - fork
+    language: go
+    ci:
+      generate: false
 - name: policies
   componentType: configuration
   gen:
@@ -75,6 +84,22 @@
     flavours:
       - generic
     language: node
+- name: plans-repo
+  componentType: configuration
+  gen:
+    flavours:
+      - generic
+      - plans
+    language: generic
+    ci:
+      generate: false
+- name: plans-wrong-language
+  componentType: configuration
+  gen:
+    flavours:
+      - generic
+      - plans
+    language: go
 - name: Bad_Name
   componentType: library
   gen:
@@ -90,11 +115,12 @@
       - app
     language: generic
     ci:
+      generate: true
       chartName: other-chart
 - name: internal-visibility
   componentType: service
   visibility: internal
-  lifecycle: deleted
+  lifecycle: retired
   gen:
     flavours:
       - app
@@ -142,3 +168,72 @@
     flavours:
       - generic
     language: generic
+- name: align-opt-in
+  componentType: service
+  align: true
+  gen:
+    flavours:
+      - app
+    language: go
+- name: align-not-bool
+  componentType: service
+  align: "yes"
+  gen:
+    flavours:
+      - app
+    language: go
+- name: agent-merge-opt-out
+  componentType: service
+  agentMerge: false
+  gen:
+    flavours:
+      - app
+    language: go
+- name: agent-merge-not-bool
+  componentType: service
+  agentMerge: "no"
+  gen:
+    flavours:
+      - app
+    language: go
+- name: ci-without-generate
+  # A ci block without generate: the creation writes the default, an existing
+  # entry is read as declared and the schema requires the field.
+  componentType: service
+  gen:
+    flavours:
+      - app
+    language: generic
+    ci:
+      chartName: ci-without-generate
+- name: chart-release-gate
+  # A meta chart whose release push waits on a repo-owned job, as
+  # giantswarm/agent-platform declares it.
+  componentType: configuration
+  gen:
+    flavours:
+      - app
+    language: generic
+    ci:
+      generate: true
+      chartReleaseGateJob: verify-release-floors
+- name: template-content
+  # A template whose .circleci/config.yml is content for the repositories
+  # created from it, as giantswarm/mcp-template declares it.
+  componentType: template
+  gen:
+    flavours:
+      - cli
+    language: go
+    ci:
+      generate: false
+      templateContent: true
+- name: template-content-generated
+  componentType: template
+  gen:
+    flavours:
+      - cli
+    language: go
+    ci:
+      generate: true
+      templateContent: true

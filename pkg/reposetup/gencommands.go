@@ -14,6 +14,7 @@ import (
 	"github.com/giantswarm/micrologger"
 
 	gencmd "github.com/giantswarm/devctl/v8/cmd/gen"
+	"github.com/giantswarm/devctl/v8/pkg/gen"
 )
 
 // The generators and the release workflows, as `devctl gen` names them.
@@ -28,7 +29,6 @@ const (
 	releaseWorkflowLegacy      = "legacy"
 	releaseWorkflowAutoRelease = "auto-release"
 
-	visibilityPrivate   = "private"
 	lifecycleDeprecated = "deprecated"
 	precommitHelmchart  = "helmchart"
 
@@ -52,9 +52,11 @@ type genContext struct {
 
 // genCommands returns the `devctl gen …` command lines align-files runs for
 // a declaration, in align-files' order: makefile, workflows, llm,
-// pre-commit, then CircleCI and Renovate when gen.ci.generate is on. Each
+// pre-commit, CircleCI when gen.ci.generate is on, then Renovate. Each
 // line is an argv starting with devctl gen. The declaration has to have
-// gen.flavours and gen.language; the validator refuses one that has not.
+// gen.flavours and gen.language; the validator refuses one that has not. A
+// fork line gets nothing generated ([generates]) but its release flow: the
+// workflows line alone when it is on auto-release, else no line.
 func genCommands(f Fields, gc genContext) [][]string {
 	g := f.Gen
 	if g == nil || len(g.Flavours) == 0 || g.Language == "" {
@@ -69,24 +71,48 @@ func genCommands(f Fields, gc genContext) [][]string {
 	ci := g.CI
 	generateCI := ci != nil && ci.Generate != nil && *ci.Generate
 
+	// The release workflow follows the CI surface: generated CI implies
+	// auto-release, a repository without it stays on legacy.
+	releaseWorkflow := releaseWorkflowLegacy
+	if generateCI {
+		releaseWorkflow = releaseWorkflowAutoRelease
+	}
+	if ci != nil && ci.ReleaseWorkflow != "" {
+		releaseWorkflow = ci.ReleaseWorkflow
+	}
+
 	line := func(generator string, args ...string) []string {
 		return append([]string{"devctl", "gen", generator}, args...)
 	}
+
+	// Workflows. --repo-name is what a scaffold render always needs for
+	// cliff.toml: its temporary directory has no origin remote to read the
+	// name from. Auto-release cuts releases from the default branch.
+	workflows := []string{flagFlavour, flavour, flagLanguage, g.Language, flagRepoName, f.Name}
+	releaseArgs := []string{"--release-workflow", releaseWorkflow}
+	if releaseWorkflow == releaseWorkflowAutoRelease && f.DefaultBranch != "" && f.DefaultBranch != "main" && knows(genWorkflows, "--release-branch") {
+		releaseArgs = append(releaseArgs, "--release-branch", f.DefaultBranch)
+	}
+
+	if !generates(g.Flavours) {
+		if releaseWorkflow != releaseWorkflowAutoRelease {
+			return nil
+		}
+		return [][]string{line(genWorkflows, append(workflows, releaseArgs...)...)}
+	}
+
 	var commands [][]string
 
 	commands = append(commands, line(genMakefile, flagFlavour, flavour, flagLanguage, g.Language))
 
-	// Workflows. The release workflow follows the CI surface: generated CI
-	// implies auto-release, a repository without it stays on legacy. The
-	// OpenSSF scorecard runs on public repositories unless switched off.
-	workflows := []string{flagFlavour, flavour, flagLanguage, g.Language}
+	// The OpenSSF scorecard runs on public repositories unless switched off.
 	if g.InstallUpdateChart {
 		workflows = append(workflows, "--install-update-chart")
 	}
 	if g.HelmDocsRegen {
 		workflows = append(workflows, "--helm-docs-regen")
 	}
-	scorecard := (g.RunSecurityScorecard == nil || *g.RunSecurityScorecard) && f.Visibility != visibilityPrivate
+	scorecard := (g.RunSecurityScorecard == nil || *g.RunSecurityScorecard) && f.Visibility != VisibilityPrivate
 	if !scorecard {
 		workflows = append(workflows, "--run-security-scorecard=false")
 	}
@@ -96,14 +122,7 @@ func genCommands(f Fields, gc genContext) [][]string {
 	if g.DispatchUpdateChartEventsRepo != "" {
 		workflows = append(workflows, "--dispatch-update-chart-events-repo", g.DispatchUpdateChartEventsRepo)
 	}
-	releaseWorkflow := releaseWorkflowLegacy
-	if generateCI {
-		releaseWorkflow = releaseWorkflowAutoRelease
-	}
-	if ci != nil && ci.ReleaseWorkflow != "" {
-		releaseWorkflow = ci.ReleaseWorkflow
-	}
-	workflows = append(workflows, "--release-workflow", releaseWorkflow)
+	workflows = append(workflows, releaseArgs...)
 	commands = append(commands, line(genWorkflows, workflows...))
 
 	if g.GenerateLlmRules == nil || *g.GenerateLlmRules {
@@ -133,17 +152,41 @@ func genCommands(f Fields, gc genContext) [][]string {
 		commands = append(commands, line(genPrecommit, precommit...))
 	}
 
-	if !generateCI {
-		return commands
+	if generateCI {
+		commands = append(commands, line(genCircleCI, circleCIArgs(f, flavour, knows)...))
 	}
 
-	// CircleCI: every gen.ci knob is a flag; a flag this devctl does not
-	// know is left out, as align-files leaves it out after its probe.
-	circleci := []string{flagRepoName, f.Name, flagLanguage, g.Language, flagFlavour, flavour}
-	var extra []string
+	// Renovate: every repository that generates at all gets its
+	// configuration. On generated CI the architect orb is pinned by the
+	// generated config, so --circleci-generated keeps Renovate off it; without
+	// generated CI there is no orb to leave alone. --repo-name is what
+	// align-files' devctl reads from the checkout's origin remote.
+	renovate := []string{flagLanguage, g.Language}
+	if generateCI {
+		renovate = append(renovate, "--circleci-generated")
+	}
+	renovate = append(renovate, flagRepoName, f.Name)
+	if f.Lifecycle == lifecycleDeprecated {
+		renovate = append(renovate, "--deprecated")
+	}
+	for _, reviewer := range f.ChoreReviewers {
+		renovate = append(renovate, "-r", reviewer)
+	}
+	commands = append(commands, line(genRenovate, renovate...))
+
+	return commands
+}
+
+// circleCIArgs are the arguments of the `devctl gen circleci` line of a
+// declaration on generated CI: every gen.ci knob is a flag; a flag this
+// devctl does not know is left out, as align-files leaves it out after its
+// probe.
+func circleCIArgs(f Fields, flavour string, knows func(generator, flag string) bool) []string {
+	g, ci := f.Gen, f.Gen.CI
+	args := []string{flagRepoName, f.Name, flagLanguage, g.Language, flagFlavour, flavour}
 	add := func(flag string, values ...string) {
 		if knows(genCircleCI, flag) {
-			extra = append(append(extra, flag), values...)
+			args = append(append(args, flag), values...)
 		}
 	}
 	if ci.AppCatalog != "" {
@@ -154,6 +197,9 @@ func genCommands(f Fields, gc genContext) [][]string {
 	}
 	if ci.ChartName != "" {
 		add("--chart-name", ci.ChartName)
+	}
+	if ci.ChartReleaseGateJob != "" {
+		add("--chart-release-gate-job", ci.ChartReleaseGateJob)
 	}
 	if ci.ForcePublic {
 		add("--force-public")
@@ -227,21 +273,19 @@ func genCommands(f Fields, gc genContext) [][]string {
 			add("--node-build-output", n.BuildOutput)
 		}
 	}
-	commands = append(commands, line(genCircleCI, append(circleci, extra...)...))
+	return args
+}
 
-	// Renovate follows generated CI: the architect orb is pinned by the
-	// generated config, so Renovate leaves it alone. --repo-name is what
-	// align-files gets from the checkout directory's name.
-	renovate := []string{flagLanguage, g.Language, "--circleci-generated", flagRepoName, f.Name}
-	if f.Lifecycle == lifecycleDeprecated {
-		renovate = append(renovate, "--deprecated")
+// generates says whether the generators produce anything for the declared
+// flavours, as [gen.FlavourSlice.Generates] says it for the parsed ones: a
+// fork line carries its upstream's files plus the carried patches and gets
+// nothing generated.
+func generates(flavours []string) bool {
+	fl := make(gen.FlavourSlice, len(flavours))
+	for i, f := range flavours {
+		fl[i] = gen.Flavour(f)
 	}
-	for _, reviewer := range f.ChoreReviewers {
-		renovate = append(renovate, "-r", reviewer)
-	}
-	commands = append(commands, line(genRenovate, renovate...))
-
-	return commands
+	return fl.Generates()
 }
 
 // cwdMu serializes the generator runs: the generators read the repository

@@ -26,10 +26,12 @@
 // [Request.Mode] says what the entries named in [Request.Names] (all entries
 // when nil) are validated for. In [ModeExisting] they declare repositories
 // that exist and the schema alone decides: an entry the schema accepts is
-// valid, however it predates the creation rules; the name check's verdict
-// is reported and never refuses, a missing repository being the
-// reconciler's finding. In [ModeCreate] (the default) they are repositories
-// the reconciler creates and must satisfy, on top of the schema:
+// valid, however it predates the creation rules, and it is rendered as
+// declared — no default is written, an entry without gen.ci keeps the
+// repository's own CircleCI configuration; the name check's verdict is
+// reported and never refuses, a missing repository being the reconciler's
+// finding. In [ModeCreate] (the default) they are repositories the
+// reconciler creates and must satisfy, on top of the schema:
 //
 //   - gen.flavours and gen.language are set; gen.ci.generate defaults to
 //     true and is written into the rendered entry;
@@ -39,7 +41,8 @@
 //     cluster-app flavour): the repository is named after its chart, without
 //     an -app suffix, and gen.ci.chartName, when set, equals the name;
 //   - a template exists for the language: language node is refused until
-//     giantswarm/template-node ships.
+//     giantswarm/template-node ships, and the plans flavour is refused with
+//     any language but generic — it has one template, generic-only.
 //
 // Every refusal is a [Problem] naming the field in dotted form
 // (gen.ci.chartName, gen.flavours[1]).
@@ -47,26 +50,39 @@
 // # Templates
 //
 // [DeriveTemplate] maps a declaration to its template without a template
-// field: language go → giantswarm/template; language generic with the app
-// flavour → giantswarm/template-app; the customer flavour or component type,
-// the languages python and kyverno-policy, and generic repositories without
-// a chart → the minimal scaffold (README, LICENSE, DCO, SECURITY.md,
+// field: language go → giantswarm/template; the plans flavour with language
+// generic → giantswarm/template-plans, refused for any other language the
+// same way language node is; language generic with the app flavour →
+// giantswarm/template-app; the customer flavour or component type, the
+// languages python and kyverno-policy, and generic repositories without a
+// chart → the minimal scaffold (README, LICENSE, DCO, SECURITY.md,
 // CODEOWNERS, .gitignore plus the generated files).
 //
 // # Rendering
 //
 // [Renderer.Render] renders the scaffold of an accepted [Entry] into a
 // directory: the template's tree (the tarball of its main branch, or a
-// [TemplateSource] of the caller's) with its placeholders replaced -- what
-// `devctl replace` does by hand -- CODEOWNERS for the team, the chart's team
-// annotation and default icon, and the files the generators write for the
-// declared flavours and language: Makefile, workflows including
-// auto-release, LLM rules, pre-commit, and CircleCI and Renovate when
-// gen.ci.generate is on. The generators run through the same `devctl gen`
+// [TemplateSource] of the caller's) with its placeholders replaced in one
+// pass whichever form they take, the brace-less REPOSITORY_NAME of the Go
+// template (a Go module path may not contain braces) or the braced
+// {APP-NAME}, {TEAM-NAME} and {APP HELM REPOSITORY} of template-app -- what
+// `devctl replace` does by hand, token by token -- CODEOWNERS for the team,
+// the chart's team annotation and default icon, and the files the
+// generators write for the declared flavours and language: Makefile,
+// workflows including auto-release, LLM rules, pre-commit, CircleCI when
+// gen.ci.generate is on, and renovate.json5 (with --circleci-generated on
+// generated CI), so no created repository starts without a Renovate
+// configuration. The generators run through the same `devctl gen`
 // commands align-files runs, in align-files' order and with its flags, so
 // the generated files are byte-identical to what the first align run would
 // write and that run changes nothing. [Scaffold.Commands] lists the command
-// lines. The chart-only template offers [Option]s -- the vendir sync and
+// lines. A chart repository whose pipeline runs app-test-suite also gets
+// the chart tests that job runs, beside the generated tests/ats/pyproject.toml
+// and where the template carries none: .ats/main.yaml, skipping the
+// functional and the upgrade scenario a new repository cannot run, and
+// tests/ats/test_smoke.py, one smoke test that the job's kind cluster is
+// reachable; both are the repository's own from then on, never written by
+// an align run. The chart-only template offers [Option]s -- the vendir sync and
 // patch-script scaffolding `devctl app bootstrap` used to write by flag --
 // listed on [Entry.Options] by the dry run and chosen through
 // [RenderRequest.Options].

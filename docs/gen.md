@@ -25,40 +25,32 @@ devctl gen workflows --flavour cli
 | Value | What's emitted | When to use |
 |-------|----------------|-------------|
 | `legacy` (default) | `.github/workflows/zz_generated.create_release.yaml`, `zz_generated.create_release_pr.yaml`, `zz_generated.validate_changelog.yaml`. Releases driven by manually-pushed `main#release#patch`-style branches that open a release PR for human approval. | The historical flow; in use by most giantswarm repos today. |
-| `auto-release` | `.github/workflows/zz_generated.auto_release.yaml` and `cliff.toml` (at repo root). Releases driven by conventional commits on `main` -- the workflow runs `git-cliff --unreleased --bump` on every push, computes the next semver, and creates the matching tag + GitHub Release atomically. No release PR, no human approval. `feat` bumps the minor version, a breaking change the major, every other type the patch; `docs` and `style` commits are skipped and release nothing. | Repos that want push-button releases from conventional commits. Requires `semantic_pull_request` enforcement on PR titles. |
+| `auto-release` | `.github/workflows/zz_generated.auto_release.yaml` and `cliff.toml` (at repo root). Releases driven by conventional commits on `main` -- the workflow runs `git-cliff --unreleased --bump` on every push, computes the next semver, and creates the next release candidate tag + GitHub pre-release atomically. A stable release is a manual promotion of the latest candidate. `feat` bumps the minor version, a breaking change the major, every other type the patch; `docs`, `style` and `test` commits are skipped and release nothing. | Repos that want push-button releases from conventional commits. Requires `semantic_pull_request` enforcement on PR titles. |
 
 Switching between values is bidirectional and self-cleaning: the chosen branch generates its own files and emits deletion inputs for the files of the other branch, so a flipped `--release-workflow` value over two consecutive gen runs leaves the repo with exactly one set of release files.
+
+A fork line (`--flavour fork`) gets nothing generated on `legacy`. On `auto-release` it gets the release flow alone: the workflow, `cliff.toml` and the PR title check. `--release-branch` names the branch the line is consumed from (the declaration's `defaultBranch`, e.g. `giantswarm`), and pushes to that branch alone cut releases. A re-pin rebases that branch onto a new upstream commit, which leaves the line's earlier tags unreachable, while the upstream tags the mirror copies stay reachable. So the line counts from its highest stable tag rather than the nearest reachable one, and git-cliff counts only the tags of that tag's major. After a re-pin, the workflow moves that tag onto the commit the branch still shares with it, in its own checkout only, and the next candidate carries what changed since.
 
 ```nohighlight
 devctl gen workflows --flavour app --language go --release-workflow=auto-release
 ```
 
-#### Release candidates
+#### Release candidates and stable releases
 
-A pull request title of `feat-rc:` or `fix-rc:` marks its change as belonging to a release candidate. The scope and the breaking marker are unchanged, so `feat-rc(auth)!: drop the v1 API` is valid. The workflow then decides over **every unreleased commit**, not just the ones in the push it handles:
-
-> Tag a release candidate when at least one unreleased commit is `feat-rc` or `fix-rc`, and no unreleased `feat`, `fix` or breaking commit lacks the `-rc`.
-
-A commit is breaking through either spelling: a `!` in the subject, or a `BREAKING CHANGE:` (or `BREAKING-CHANGE:`) footer in the body. git-cliff bumps the major on both, so both close a cycle.
-
-`feat` and `fix` decide, everything else follows. A cycle is therefore sticky without any extra state:
+Every releasable push cuts the next release candidate, `vX.Y.Z-rc.N`, for the version git-cliff computes from the conventional commits since the last stable release:
 
 | Merge | Tag | Why |
 |-------|-----|-----|
-| `feat-rc: add x` | `v1.3.0-rc.1` | one marked, none unmarked |
-| `chore(deps): bump y` | `v1.3.0-rc.2` | `chore` does not decide, so a Renovate auto-merge cannot end a cycle |
+| `feat: add x` | `v1.3.0-rc.1` | a `feat` puts the cycle on the next minor |
+| `chore(deps): bump y` | `v1.3.0-rc.2` | releasable, so the next candidate |
 | `docs: fix a typo` | none | `docs` is skipped, so there is nothing new to put in a candidate |
-| `fix: last thing` | `v1.3.0` | an unmarked `fix` closes the cycle |
+| `refactor!: drop y` | `v2.0.0-rc.1` | a breaking change moves the target, and the series restarts at `rc.1` |
 
-A candidate needs something releasable to carry. A push whose commits git-cliff all skips (`docs`, `style`) or drops as non-conventional tags nothing, exactly as it does outside a cycle, so a README typo cannot spend an rc number and a publish pipeline.
+A push whose commits git-cliff all skips (`docs`, `style`, `test`) or drops as non-conventional tags nothing, so a README typo cannot spend an rc number and a publish pipeline. A candidate is flagged as a GitHub pre-release, so it does not surface as the repo's "Latest release", and the `/^v.*/` CircleCI tag filter publishes it like any other tag.
 
-The version does not drift while a cycle runs: the unreleased set still holds the original `feat`, so the closing commit lands on exactly the version the candidates were leading to. A candidate is flagged as a GitHub pre-release, so it does not surface as the repo's "Latest release", and the `/^v.*/` CircleCI tag filter publishes it like any other tag.
+A stable release is cut only by running the workflow by hand with `release-type: stable`. It promotes the latest candidate since the last stable release: the workflow checks that candidate out, so the version, the release notes and the tag's commit are all the candidate's, and whatever merged after it waits for the next candidate. The run fails when there is no candidate to promote, when the candidate has no GitHub pre-release (the run that cut it did not finish), or when a commit status of its commit failed or is still pending (the pipelines that build and publish it report there). Only commit statuses count, which CircleCI writes; a GitHub Actions workflow of the repository's own that publishes on a tag reports check runs, and the promotion does not wait for it. `release-type: auto` applies the same rule as a push. A `stable` run queued behind a push run waits in the branch's concurrency group, where GitHub keeps one waiting run: a further push replaces it, and the promotion has to be started again.
 
-To close a cycle when the last candidate is good and no pull request is left to merge, run the workflow by hand with `release-type: stable`. `release-type: rc` forces one more candidate. Both need something unreleased on the branch: once the cycle has closed, a forced run tags nothing and reports it.
-
-`feat-rc` and `fix-rc` are accepted as PR titles in every repo, because `semantic_pull_request` is generated for both release flows, but they only act under `auto-release`. In a `legacy` repo they are inert.
-
-`cliff.toml`'s `[remote.github].repo` is auto-detected from the consuming repo's `origin` git remote URL. Run from a directory whose `git config remote.origin.url` points at `github.com/giantswarm/<repo>`; outside a git repo the value renders as `""` and git-cliff's GitHub API lookups fail at workflow runtime.
+`cliff.toml`'s `[remote.github].repo` is read from the consuming repo's `origin` git remote URL, its `giantswarm/<repo>` path. A checkout with no origin remote, or one outside `giantswarm`, needs `--repo-name <repo>` instead; without either the command fails rather than silently writing `repo = ""`.
 
 ### helm-docs regen workflow
 
@@ -97,6 +89,8 @@ The `--language` flag sets the primary language (`go`, `python`, `generic`). The
 - `md` — Markdown linting via `markdownlint-cli`
 - `helmchart` — Helm chart schema and docs hooks (auto-detects charts under `helm/`)
 
+No hook reads protobuf-generated code: the config's top-level `exclude` skips `*_pb.*` (protoc-gen-es, grpc-tools), `*_pb2.py`, `*_pb2.pyi`, `*_pb2_grpc.py` and `*.pb.go` with its `_grpc`, `.gw`, `.validate` and `_vtproto` variants. Their generator is the source of truth, so a hook that rewrote them (`end-of-file-fixer` on buf's TypeScript output, `go-imports -local`, `ruff --fix`) would be undone by the next generation. Hand-written files next to them, a `gen/` directory's `README.md` or `buf.gen.yaml` included, are still checked. The fixer hooks also skip `testdata/`, `.yarn/` and the vendored subcharts under `helm/<chart>/charts/`.
+
 Examples:
 
 ```nohighlight
@@ -119,7 +113,7 @@ The giantswarm/github align-files workflow runs this generator for repositories 
 
 ## Generating CircleCI configuration
 
-Generates the dynamic-config pipeline of a repository on devctl-generated CI: `.circleci/config.yml` (the static setup workflow, which merges the optional repo-owned `.circleci/custom.yml` in at pipeline runtime) and `.circleci/workflows.yml` (the pipeline), plus the canonical `tests/ats` dependency file of a chart repository.
+Generates the dynamic-config pipeline of a repository on devctl-generated CI: `.circleci/config.yml` (the static setup workflow, which merges the optional repo-owned `.circleci/custom.yml` in at pipeline runtime) and `.circleci/workflows.yml` (the pipeline), plus the canonical `tests/ats` dependency file of a chart repository. The chart tests themselves -- `.ats/main.yaml` and the Python files under `tests/ats` -- are the repository's own and never generated; app-test-suite picks the pytest executor from the dependency file and refuses a `tests/ats` without a test, so a chart repository carries at least one (`devctl repo create` writes a first smoke test into a new repository's scaffold).
 
 ```nohighlight
 devctl gen circleci --repo-name REPOSITORY --language LANGUAGE --flavour FLAVOUR[,FLAVOUR]

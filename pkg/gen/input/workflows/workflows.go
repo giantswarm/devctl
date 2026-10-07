@@ -9,6 +9,14 @@ import (
 
 type Config struct {
 	Flavours gen.FlavourSlice
+
+	// ReleaseBranch is the branch whose pushes cut releases in the
+	// auto-release workflow; main when empty.
+	ReleaseBranch string
+
+	// RepoName is the repository's name under the giantswarm organization,
+	// for cliff.toml's `[remote.github].repo` field.
+	RepoName string
 }
 
 type Workflows struct {
@@ -16,10 +24,17 @@ type Workflows struct {
 }
 
 func New(config Config) (*Workflows, error) {
+	releaseBranch := config.ReleaseBranch
+	if releaseBranch == "" {
+		releaseBranch = "main"
+	}
+
 	w := &Workflows{
 		params: params.Params{
-			Dir:      ".github/workflows",
-			Flavours: config.Flavours,
+			Dir:           ".github/workflows",
+			Flavours:      config.Flavours,
+			ReleaseBranch: releaseBranch,
+			RepoName:      config.RepoName,
 		},
 	}
 
@@ -58,7 +73,7 @@ func (w *Workflows) AutoReleaseLegacyDeletion() input.Input {
 }
 
 func (w *Workflows) CliffToml() input.Input {
-	return file.NewCliffTomlInput()
+	return file.NewCliffTomlInput(w.params)
 }
 
 func (w *Workflows) CliffTomlDeletion() input.Input {
@@ -115,10 +130,6 @@ func (w *Workflows) SemanticPullRequest() input.Input {
 
 func (w *Workflows) SyncFromUpstream() input.Input {
 	return file.NewSyncFromUpstreamInput(w.params)
-}
-
-func (w *Workflows) TriggerCircleCIPipeline() input.Input {
-	return file.NewTriggerCircleCIPipelineInput(w.params)
 }
 
 func (w *Workflows) TestKyvernoPoliciesWithChainsaw() input.Input {

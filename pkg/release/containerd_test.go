@@ -83,7 +83,7 @@ func TestApplyContainerdComponentWithoutOSTooling(t *testing.T) {
 		},
 	}
 
-	applyContainerdComponent(&updates, base, false)
+	applyContainerdComponent("", &updates, base, false)
 
 	if version := lookupComponentVersion(updates.Spec.Components, containerdComponentName); version != "" {
 		t.Fatalf("expected no containerd component, got %q", version)

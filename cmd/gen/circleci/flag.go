@@ -25,6 +25,7 @@ const (
 	flagGoBuildPath             = "go-build-path"
 	flagGoTestArtifacts         = "go-test-artifacts"
 	flagImagePreBuildJob        = "image-pre-build-job"
+	flagChartReleaseGateJob     = "chart-release-gate-job"
 	flagImagePrivateOnly        = "image-private-only"
 	flagImageName               = "image-name"
 	flagImagePlatforms          = "image-platforms"
@@ -32,6 +33,7 @@ const (
 	flagImageNativeBuilds       = "image-native-builds"
 	flagImageResourceClass      = "image-resource-class"
 	flagResourceClass           = "resource-class"
+	flagSkipAppCatalog          = "skip-app-catalog"
 	flagSkipATS                 = "skip-ats"
 	flagATSBranchOnly           = "ats-branch-only"
 	flagATSOnRelease            = "ats-on-release"
@@ -59,6 +61,7 @@ type flag struct {
 	OverrideChartAppVersion bool
 	ForcePublic             bool
 	ImagePreBuildJob        string
+	ChartReleaseGateJob     string
 	ImagePrivateOnly        bool
 	ImageName               string
 	ImagePlatforms          string
@@ -68,6 +71,7 @@ type flag struct {
 	ResourceClass           string
 	GoBuildPath             string
 	GoTestArtifacts         string
+	SkipAppCatalog          bool
 	SkipATS                 bool
 	ATSBranchOnly           bool
 	ATSOnRelease            bool
@@ -88,7 +92,7 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.AppCatalogTest, flagAppCatalogTest, "", `Test catalog the chart pipeline publishes to (push-to-app-catalog app_catalog_test). Empty defaults to "giantswarm-test-catalog". Kept paired with --app-catalog.`)
 	cmd.Flags().BoolVar(&f.BranchPublish, flagBranchPublish, false, "Publish a dev image and chart on branch builds. By default branches build + test only (no push); when set, the branch path additionally pushes an amd64 dev image and the dev chart (coupled).")
 	cmd.Flags().StringVar(&f.BuildConcurrency, flagBuildConcurrency, "", `Override how many architectures the cli-flavour go-build job compiles concurrently (architect go-build "build_concurrency" param). Empty defaults to "auto" (nproc). Lower it (e.g. "2") for repos whose binary is large enough that a cold full-matrix cross-compile OOMs the runner at "auto" -- memory, not CPU, is the binding constraint, and a killed build never stores the build cache. Only applies to the cli flavour.`)
-	cmd.Flags().StringVar(&f.ChartName, flagChartName, "", "Override the chart name (the push-to-app-catalog `chart` param and the helm/<chart> directory). Empty defaults to the repo name. Set it for repos whose chart directory does not match the repo name (e.g. docs-proxy -> docs-proxy-app). The append-only custom.yml merge cannot rename a generated job's chart.")
+	cmd.Flags().StringVar(&f.ChartName, flagChartName, "", "Override the chart name (the push-to-app-catalog `chart` param and the helm/<chart> directory). Empty defaults to the repo name. Set it for repos whose chart directory does not match the repo name (e.g. docs-proxy -> docs-proxy-app); a name that differs from the repo name beyond an -app suffix also sets explicit_allow_chart_name_mismatch on the chart jobs. The append-only custom.yml merge cannot rename a generated job's chart.")
 	cmd.Flags().StringVar(&f.ComponentType, flagComponentType, "", fmt.Sprintf(`The repository's componentType from the giantswarm/github team file. Only %q changes the output, and only for the app flavour: a template repository's chart lives at helm/%s and carries the placeholders %s, %s and %s that a repository created from it fills in, so its chart job renders the checkout with fixture values (%s, --%s, %s) before app-build-suite builds the rendered chart -- green means a repository created from the template passes its first chart build. Nothing is released from a template, so the chart-test and chart push jobs are not generated and no tests/ats files are written. Every other value, and a template without a chart, renders the pipeline as before. Requires --%s.`, circleci.ComponentTypeTemplate, circleci.TemplateAppNamePlaceholder, circleci.TemplateAppNamePlaceholder, circleci.TemplateTeamPlaceholder, circleci.TemplateHelmRepositoryPlaceholder, circleci.TemplateAppName, flagTeam, circleci.TemplateHelmRepository, flagTeam))
 	cmd.Flags().StringVar(&f.Team, flagTeam, "", fmt.Sprintf("The owning team, as the giantswarm/github team file names it (team-honeybadger or honeybadger; a leading team- is dropped). The template chart job renders %s with it, so the rendered chart carries the team label a created repository gets. Only applies with --%s %s.", circleci.TemplateTeamPlaceholder, flagComponentType, circleci.ComponentTypeTemplate))
 	cmd.Flags().BoolVar(&f.OverrideChartAppVersion, flagOverrideChartAppVersion, true, "Whether app-build-suite stamps the computed build version into the chart's appVersion. Leave it UNSET to derive it from the repo: a repo that builds its own image ships the app it packages, so its appVersion is its own version and gets stamped; a chart-only repo packages an app built elsewhere, so the appVersion declared in Chart.yaml is kept. Pass it explicitly only to overrule that: `=false` for a repo that builds an image and still declares a foreign appVersion, `=true` for a chart-only repo that wants its appVersion stamped anyway. The chart version is always stamped either way.")
@@ -96,6 +100,7 @@ func (f *flag) Init(cmd *cobra.Command) {
 	_ = cmd.Flags().MarkDeprecated(flagKeepChartAppVersion, fmt.Sprintf("use --%s=false", flagOverrideChartAppVersion))
 	cmd.Flags().BoolVar(&f.ForcePublic, flagForcePublic, false, "Push the image and chart as public artifacts even though the repo is private (architect `force-public: true`). Set it for private repos that publish public artifacts (e.g. web-assets). Mutually exclusive with --image-private-only. The append-only custom.yml merge cannot add this to a generated job.")
 	cmd.Flags().StringVar(&f.ImagePreBuildJob, flagImagePreBuildJob, "", "Name of a repo-owned job (defined in .circleci/custom.yml) the release image build must wait on. Adds a `requires` entry to push-to-registries-release, which the append-only custom.yml merge cannot inject into a generated job. Used for workspace-handoff pre-steps. Empty for the common case.")
+	cmd.Flags().StringVar(&f.ChartReleaseGateJob, flagChartReleaseGateJob, "", "Name of a repo-owned job (defined in .circleci/custom.yml) the release chart push must wait on. Adds a `requires` entry to push-chart-release, which the append-only custom.yml merge cannot inject into a generated job -- the chart counterpart of --image-pre-build-job, for a check that has to refuse a release before its chart is pushed (a meta chart whose component floor resolves to no published chart). The branch dev push is not gated. Requires the chart pipeline (app flavour, not a template repository). Empty for the common case.")
 	cmd.Flags().BoolVar(&f.ImagePrivateOnly, flagImagePrivateOnly, false, "Ship the image to the private registry only (gsociprivate), replacing split-china-push and omitting the sync-china-registry job. Set it for private repos whose image must not land in the public catalog.")
 	cmd.Flags().StringVar(&f.ImageName, flagImageName, "", "Override the `giantswarm/<repo>` default image name on the image jobs (push-to-registries / sync-china-registry `image` param). Set it for repos whose published image differs from the repo name (e.g. kserve -> giantswarm/kserve-controller). The append-only custom.yml merge cannot rename a generated job's image. Empty keeps the orb default.")
 	cmd.Flags().StringVar(&f.ImagePlatforms, flagImagePlatforms, "", "Override the buildx platform list on the image jobs (push-to-registries `platforms` param). Empty lets the orb default apply (linux/amd64,linux/arm64 when no go-build .platforms file). Set it for single-architecture images (e.g. vllm -> linux/arm64, whose amd64 build has no prebuilt wheels).")
@@ -105,6 +110,7 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.ResourceClass, flagResourceClass, "", `Override the CircleCI resource_class on the cli-flavour go-build job. Empty defaults to "large". Raise it (e.g. "xlarge") for repos that need more RAM/CPU headroom for the cold cross-compile. Only applies to the cli flavour.`)
 	cmd.Flags().StringVar(&f.GoBuildPath, flagGoBuildPath, "", `Override the package the go-build job compiles. Empty keeps the orb default "." (the module root).`)
 	cmd.Flags().StringVar(&f.GoTestArtifacts, flagGoTestArtifacts, "", "Directory under the checkout that `make test` writes and that the go-build job keeps as a CircleCI build artifact when it fails (e.g. test-reports). Renders post-steps on the generated architect/go-build job: the directory is staged when: on_fail and uploaded with store_artifacts, so a green run stores nothing. For test suites whose full report (per-scenario logs, JSON results) the console output only shows a trimmed tail of, so that a failure is attributable from the artifact. The append-only custom.yml merge cannot add post-steps to a generated job. Must be a relative path under the checkout ([A-Za-z0-9._/-]). Empty renders no post-steps. Only applies with --language=go.")
+	cmd.Flags().BoolVar(&f.SkipAppCatalog, flagSkipAppCatalog, false, "Do not publish the chart to a GitHub app catalog (push-to-app-catalog push_to_appcatalog: false on the branch and tag chart publish jobs); the OCI registry push is kept. Every GitHub app catalog is a public repository, so a private chart published to one is world-readable. Set it for private charts that must stay private: the chart then ships only to gsociprivate.azurecr.io, which Flux consumes via an OCIRepository. The append-only custom.yml merge cannot amend a generated job. Only applies to the app flavour.")
 	cmd.Flags().BoolVar(&f.SkipATS, flagSkipATS, false, `Opt the chart pipeline out of app-test-suite (ATS) chart tests. By default an "app" flavour repo runs architect/run-tests-with-ats between build-chart and the chart push, and generation emits the canonical tests/ats/Pipfile. When set, those test jobs and the Pipfile are not generated and the chart push gates directly on build-chart. Only applies to the app flavour.`)
 	cmd.Flags().BoolVar(&f.ATSBranchOnly, flagATSBranchOnly, false, "Deprecated and ignored: chart tests on branches only is the default since v8.45.0.")
 	_ = cmd.Flags().MarkDeprecated(flagATSBranchOnly, fmt.Sprintf("branch-only chart tests are the default; drop the flag, or pass --%s to run them on the release tag as well", flagATSOnRelease))

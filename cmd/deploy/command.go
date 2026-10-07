@@ -56,7 +56,8 @@ func New(config Config) (*cobra.Command, error) {
 	}
 
 	c := &cobra.Command{
-		Use:     fmt.Sprintf("%s [--gitops-repo] REPOSITORY", name),
+		Use:     fmt.Sprintf("%s [flags]", name),
+		Args:    cobra.NoArgs,
 		Short:   shortDescription,
 		Long:    longDescription,
 		Example: example,

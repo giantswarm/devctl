@@ -18,6 +18,16 @@ type Baseline struct {
 	AllowMergeCommit bool `json:"allowMergeCommit"`
 	AllowSquashMerge bool `json:"allowSquashMerge"`
 	AllowRebaseMerge bool `json:"allowRebaseMerge"`
+	// SquashMergeCommitTitle names the squash commit: PR_TITLE is the pull
+	// request's title; COMMIT_OR_PR_TITLE, GitHub's default, is the title
+	// for a pull request of several commits and the commit's own subject
+	// for one of a single commit. The title check validates the title
+	// alone and auto-release reads the subject that lands on the branch:
+	// under COMMIT_OR_PR_TITLE a one-commit pull request whose title was
+	// made conventional after the commit was written merges under its
+	// unconventional subject, which git-cliff neither releases nor lists.
+	// PR_TITLE in [DefaultBaseline], the subject the merge tool sets too.
+	SquashMergeCommitTitle string `json:"squashMergeCommitTitle"`
 
 	// Pull requests.
 	AllowUpdateBranch   bool `json:"allowUpdateBranch"`
@@ -32,15 +42,19 @@ type Baseline struct {
 	// repository: pull, triage, push, maintain or admin.
 	TeamPermissions map[string]string `json:"teamPermissions"`
 
-	// Branch protection.
+	// Branch protection: classic without a devctl App id, the default
+	// branch's ruleset ([RulesetName]) with one.
 	RequiredReviews int `json:"requiredReviews"`
-	// EnforceAdmins binds administrators to the protection too. True in
-	// [DefaultBaseline] — what `devctl repo setup` applies and gs-pr-merge
-	// lifts and restores for a merge; giantswarm/giantswarm#36733 lists it
-	// as downgraded, one field to flip once the baseline decides. `repo
-	// reconcile --enforce-admins` passes it.
+	// EnforceAdmins binds administrators to classic protection too. True in
+	// [DefaultBaseline], the company baseline: what `devctl repo setup`
+	// applies and what the merge tool lifts and restores around a merge.
+	// The ruleset has no such switch: everyone but its bypass actors is
+	// bound.
 	EnforceAdmins bool `json:"enforceAdmins"`
-	// StrictChecks requires branches to be up to date before merging.
+	// StrictChecks requires a branch to be up to date before it merges.
+	// False in [DefaultBaseline]: on a repository with Renovate and sweep
+	// traffic every merge would invalidate every other open pull request
+	// and re-run its CI.
 	StrictChecks bool `json:"strictChecks"`
 	// RequiredChecks are required whatever reported.
 	RequiredChecks []string `json:"requiredChecks,omitempty"`
@@ -60,7 +74,9 @@ type Baseline struct {
 	Webhooks []Webhook `json:"webhooks,omitempty"`
 
 	// RenovateInstallationID is the Renovate GitHub App installation whose
-	// repository list is checked; 0 skips the check.
+	// repository list the renovate step reads as detail when the token can
+	// (an organization owner's; a GitHub App token cannot); 0 reads none.
+	// The step's verdict comes from the repository's own evidence.
 	RenovateInstallationID int64 `json:"renovateInstallationID"`
 
 	// CatalogRepository holds the catalog and the two workflows, as
@@ -97,24 +113,26 @@ const renovateInstallationID = 17164699
 // and mapping of giantswarm/github and management-cluster-bases.
 func DefaultBaseline() Baseline {
 	return Baseline{
-		DefaultBranch:       "main",
-		HasWiki:             false,
-		HasIssues:           true,
-		HasProjects:         false,
-		AllowMergeCommit:    false,
-		AllowSquashMerge:    true,
-		AllowRebaseMerge:    false,
-		AllowUpdateBranch:   true,
-		AllowAutoMerge:      true,
-		DeleteBranchOnMerge: true,
-		WorkflowPermissions: "write",
-		TeamPermissions:     map[string]string{"employees": "admin", "bots": "push"},
-		RequiredReviews:     1,
-		EnforceAdmins:       true,
-		StrictChecks:        true,
+		DefaultBranch:          "main",
+		HasWiki:                false,
+		HasIssues:              true,
+		HasProjects:            false,
+		AllowMergeCommit:       false,
+		AllowSquashMerge:       true,
+		AllowRebaseMerge:       false,
+		SquashMergeCommitTitle: "PR_TITLE",
+		AllowUpdateBranch:      true,
+		AllowAutoMerge:         true,
+		DeleteBranchOnMerge:    true,
+		WorkflowPermissions:    "write",
+		TeamPermissions:        map[string]string{"employees": "admin", "bots": "push"},
+		RequiredReviews:        1,
+		EnforceAdmins:          true,
+		StrictChecks:           false,
 		RequiredChecksIfReported: []string{
 			"semantic-pull-request / Validate PR title",
 			"pre-commit",
+			"check-values-schema / validate",
 		},
 		IgnoredChecks: []string{
 			`^create-release`,

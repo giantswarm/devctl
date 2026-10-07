@@ -8,30 +8,27 @@ import (
 	"github.com/giantswarm/microerror"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+
+	"github.com/giantswarm/devctl/v8/cmd/repo/internal/client"
 )
 
 const (
 	name            = "status"
-	shortDesc       = "Print a repository's set-up state"
-	longDescription = `Print the set-up state of a declared repository: every set-up step of the
-repository set-up engine with its verdict -- ok, drift (with the changes a
-repair would make), reported (findings with their fix), skipped or failed
--- and whether the repository is set up as its team file declares. The
-verdicts are the ones the Repositories page shows.
+	shortDesc       = "Print a repository's set-up state from giantswarm-repo-manager"
+	longDescription = `Print the set-up state of a declared repository as giantswarm-repo-manager's
+inventory holds it: every set-up step of the repository set-up engine with its
+verdict -- ok, drift (with the changes a repair would make), reported (findings
+with their fix), skipped or failed -- whether the repository is set up as its
+team file declares, the last reconciler run and the run awaited. The verdicts
+are the ones the Repositories page shows.
 
-With a muster endpoint (--muster-endpoint or $MUSTER_ENDPOINT) the state
-comes from giantswarm-repo-manager's inventory, as you; when the manager
-cannot be reached the engine's checks run locally in read mode with your
-GitHub token (and your CircleCI token, when $CIRCLECI_TOKEN is set, for the
-CircleCI and release steps). Nothing is changed either way.
-
-The repository must be declared in a team file of giantswarm/github; --team
-names the file to read instead of searching them all.
+The manager is reached through your muster endpoint with the muster token of
+the keychain (` + "`devctl auth login --muster-only`" + `); the call is yours. Nothing
+is changed. The local check with your own tokens is ` + "`devctl repo reconcile --dry-run`" + `.
 
 Examples:
   devctl repo status my-service
-  devctl repo status giantswarm/my-service --team bumblebee
-  devctl repo status my-service --muster-endpoint https://muster.example.io/mcp --output json`
+  devctl repo status giantswarm/my-service --output json`
 )
 
 type Config struct {
@@ -58,6 +55,7 @@ func New(config Config) (*cobra.Command, error) {
 		logger: config.Logger,
 		stderr: config.Stderr,
 		stdout: config.Stdout,
+		open:   client.Open,
 	}
 
 	c := &cobra.Command{

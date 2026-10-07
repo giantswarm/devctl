@@ -284,6 +284,35 @@ func TestGetLatestIgnoresAnExpiredCache(t *testing.T) {
 	}
 }
 
+// An explicit update or check right after a release: the cache written
+// before it still names the older version and is younger than an hour. The
+// source is asked anyway, and its answer replaces the cache, so the check
+// before the next command knows the release too.
+func TestGetLatestFromSourceIgnoresAFreshCacheAndRefreshesIt(t *testing.T) {
+	dir := t.TempDir()
+	writeCache(t, dir, cache{LastUpdate: time.Now().UTC(), LatestVersion: currentVersion})
+	src := &fakeSource{releases: []selfupdate.SourceRelease{signedRelease("v" + newerVersion)}}
+
+	version, err := newUpdater(t, src, dir).GetLatestFromSource()
+	if !IsHasNewVersion(err) {
+		t.Fatalf("the release newer than the cache should be reported, got: %v", err)
+	}
+	if version != newerVersion {
+		t.Errorf("version = %q, want %s from the source, not the cached %s", version, newerVersion, currentVersion)
+	}
+	if src.listReleases != 1 {
+		t.Errorf("the source was asked %d time(s), want 1", src.listReleases)
+	}
+
+	version, err = newUpdater(t, src, dir).GetLatest()
+	if !IsHasNewVersion(err) || version != newerVersion {
+		t.Errorf("the refreshed cache should name %s, got %q (%v)", newerVersion, version, err)
+	}
+	if src.listReleases != 1 {
+		t.Errorf("the check after the refresh asked the source; %d asks in total, want 1", src.listReleases)
+	}
+}
+
 func TestGetLatestPersistsTheCacheForTheNextUpdater(t *testing.T) {
 	dir := t.TempDir()
 	src := &fakeSource{releases: []selfupdate.SourceRelease{signedRelease("v" + newerVersion)}}
@@ -359,4 +388,66 @@ func TestInstallLatestRefusesADownloadThatDoesNotVerify(t *testing.T) {
 		t.Errorf("the error should say the binary was refused and why, got: %v", err)
 	}
 	assertUnchanged(t, exe, installed)
+}
+
+// accepting stands in for the cosign validator when a download verifies.
+type accepting struct{}
+
+func (accepting) GetValidationAssetName(name string) string { return name + ".bundle" }
+func (accepting) Validate(string, []byte, []byte) error     { return nil }
+
+// acceptEveryDownload makes the next newUpdater verify with accepting.
+func acceptEveryDownload(t *testing.T) {
+	t.Helper()
+	prev := signatureValidator
+	signatureValidator = func(string) selfupdate.Validator { return accepting{} }
+	t.Cleanup(func() { signatureValidator = prev })
+}
+
+// The verified binary replaces the file the executable path names, symbolic
+// links resolved, and nothing else: the link keeps naming it, another copy in
+// the same directory stays as it is, and no staging file is left behind.
+func TestInstallLatestReplacesTheExecutableInPlace(t *testing.T) {
+	acceptEveryDownload(t)
+	src := &fakeSource{
+		releases: []selfupdate.SourceRelease{signedRelease("v" + newerVersion)},
+		assets:   map[int64][]byte{binaryAssetID: []byte("devctl " + newerVersion), bundleAssetID: []byte("its bundle")},
+	}
+	u := newUpdater(t, src, "")
+	exe, _ := installFixture(t)
+	dir := filepath.Dir(exe)
+	other := filepath.Join(dir, "devctl-copy")
+	if err := os.WriteFile(other, []byte("another devctl"), 0o755); err != nil { //nolint:gosec // an executable
+		t.Fatal(err)
+	}
+	link := filepath.Join(t.TempDir(), "devctl")
+	if err := os.Symlink(exe, link); err != nil {
+		t.Skipf("no symbolic links here: %v", err)
+	}
+	executablePath = func() (string, error) { return link, nil }
+
+	if err := u.InstallLatest(); err != nil {
+		t.Fatalf("InstallLatest: %v", err)
+	}
+
+	for path, want := range map[string]string{exe: "devctl " + newerVersion, link: "devctl " + newerVersion, other: "another devctl"} {
+		got, err := os.ReadFile(path) //nolint:gosec // the test's own temp files
+		if err != nil || string(got) != want {
+			t.Errorf("%s holds %q (%v), want %q", path, got, err, want)
+		}
+	}
+	if dest, err := os.Readlink(link); err != nil || dest != exe {
+		t.Errorf("the link names %q (%v), want %s", dest, err, exe)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 {
+		var names []string
+		for _, e := range entries {
+			names = append(names, e.Name())
+		}
+		t.Errorf("%s holds %q, want only devctl and devctl-copy", dir, names)
+	}
 }

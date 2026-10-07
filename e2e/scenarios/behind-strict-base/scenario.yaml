@@ -1,0 +1,28 @@
+# The head is behind a base whose protection requires branches to be up to
+# date (mergeable_state behind). Without --update-branch this is pr wait's
+# not-applicable rule: exit 3 before the first poll, nothing merged. No
+# check, team-file, update-branch or merge route is scripted.
+description: a head behind a strict base exits 3 without --update-branch and nothing is merged
+args: [pr, merge, giantswarm/devctl, "42", --timeout, 30m]
+keyring:
+  github:
+    login: e2e-engineer
+    token: ghu_e2e_live
+    expiresAt: "2099-01-01T00:00:00Z"
+    refreshToken: ghr_e2e_live
+    refreshExpiresAt: "2099-01-01T00:00:00Z"
+github:
+  routes:
+    "GET /repos/giantswarm/devctl/pulls/42":
+      - body:
+          number: 42
+          node_id: PR_e2e_42
+          title: "feat: the change"
+          state: open
+          draft: false
+          merged: false
+          mergeable: true
+          mergeable_state: behind
+          user: {login: e2e-engineer, type: User}
+          head: {sha: abc123, ref: feature, repo: {full_name: giantswarm/devctl}}
+          base: {ref: main, repo: {full_name: giantswarm/devctl}}

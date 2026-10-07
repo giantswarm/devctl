@@ -13,8 +13,8 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
-	"github.com/giantswarm/devctl/v8/internal/env"
 	"github.com/giantswarm/devctl/v8/internal/pr"
+	"github.com/giantswarm/devctl/v8/pkg/authstore"
 	"github.com/giantswarm/devctl/v8/pkg/githubclient"
 )
 
@@ -34,6 +34,12 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 }
 
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
+	token, err := authstore.ResolveGitHub(ctx)
+	if err != nil {
+		return err
+	}
+	token.WarnOnce(r.stderr)
+
 	// Set logger to only show errors to avoid cluttering the table UI
 	r.logger.SetLevel(logrus.ErrorLevel)
 
@@ -42,14 +48,9 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		fmt.Fprintln(r.stdout, "")
 	}
 
-	githubToken := env.GitHubToken.Val()
-	if githubToken == "" {
-		return microerror.Maskf(executionFailedError, "environment variable GITHUB_TOKEN not found, please set it to your GitHub personal access token")
-	}
-
 	ghClientService, err := githubclient.New(githubclient.Config{
 		Logger:      r.logger,
-		AccessToken: githubToken,
+		AccessToken: token.Value,
 		DryRun:      r.flag.DryRun,
 	})
 	if err != nil {
@@ -61,26 +62,36 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	// Search for align-files PRs
 	// Note: We don't filter by status:success here because we want to find all PRs
 	// and then check/wait for their status in processPR (similar to approve-merge-renovate)
-	searchQuery := `is:pr is:open archived:false org:giantswarm review-requested:@me "chore: align files according to platform standards"`
-
-	searchOpts := &github.SearchOptions{
-		ListOptions: github.ListOptions{PerPage: 100},
+	searchQuery := `is:pr is:open archived:false org:giantswarm review-requested:@me "` + alignTitle + `"`
+	if r.flag.Team != "" {
+		// Team scope: a repository that requests no reviewer never puts its
+		// Align files PR into anyone's queue, so search without the review filter.
+		searchQuery = `is:pr is:open archived:false org:giantswarm "` + alignTitle + `"`
 	}
-	searchResults, _, err := githubClient.Search.Issues(ctx, searchQuery, searchOpts)
+
+	issues, err := r.searchIssues(ctx, githubClient, searchQuery)
 	if err != nil {
-		return microerror.Maskf(executionFailedError, "failed to search for PRs: %v", err)
+		return err
 	}
 
-	if searchResults.GetTotal() == 0 {
+	if r.flag.Team != "" {
+		repos, err := teamRepositories(ctx, githubClient, r.flag.Team)
+		if err != nil {
+			return err
+		}
+		issues = selectTeamPRs(issues, repos)
+	}
+
+	if len(issues) == 0 {
 		fmt.Fprintln(r.stdout, "No PRs found.")
 		return nil
 	}
 
 	// Initialize PR statuses with mutex protection for concurrent updates
 	var prStatusesMu sync.Mutex
-	prStatuses := make([]*pr.PRStatus, 0, len(searchResults.Issues))
+	prStatuses := make([]*pr.PRStatus, 0, len(issues))
 
-	for _, issue := range searchResults.Issues {
+	for _, issue := range issues {
 		owner, repoName, err := pr.ParseRepoFromURL(issue.GetHTMLURL())
 		if err != nil {
 			continue
@@ -147,6 +158,23 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 			pr.UpdateTable(r.stdout, prStatuses)
 			prStatusesMu.Unlock()
 		}
+	}
+}
+
+func (r *runner) searchIssues(ctx context.Context, githubClient *github.Client, query string) ([]*github.Issue, error) {
+	opts := &github.SearchOptions{ListOptions: github.ListOptions{PerPage: 100}}
+
+	var issues []*github.Issue
+	for {
+		results, resp, err := githubClient.Search.Issues(ctx, query, opts)
+		if err != nil {
+			return nil, microerror.Maskf(executionFailedError, "failed to search for PRs: %v", err)
+		}
+		issues = append(issues, results.Issues...)
+		if resp.NextPage == 0 {
+			return issues, nil
+		}
+		opts.Page = resp.NextPage
 	}
 }
 
@@ -291,9 +319,13 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 
 			if hasAutoMerge {
 				ps.UpdateStatus("Already approved, queued")
-			} else {
-				ps.UpdateStatus("Already approved")
+				return
 			}
+			if r.flag.Team != "" {
+				r.mergeApproved(ctx, githubClient, ps, prCheck, combinedStatus, checkRuns)
+				return
+			}
+			ps.UpdateStatus("Already approved")
 			return
 		}
 
@@ -363,6 +395,45 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 	ps.UpdateStatus("Timeout waiting for checks")
 }
 
+// mergeApproved merges an approved, green PR that carries no auto-merge, or
+// names the required check that nothing produces when that is what blocks it.
+func (r *runner) mergeApproved(ctx context.Context, githubClient *github.Client, ps *pr.PRStatus, prData *github.PullRequest, combined *github.CombinedStatus, runs *github.ListCheckRunsResults) {
+	if prData == nil {
+		ps.UpdateStatus("Already approved")
+		return
+	}
+
+	switch prData.GetMergeableState() {
+	case "clean":
+	case "blocked":
+		required, err := requiredContexts(ctx, githubClient, ps.Owner, ps.Repo, prData.GetBase().GetRef())
+		if err == nil {
+			if missing := missingContexts(required, combined, runs); len(missing) > 0 {
+				ps.UpdateStatus("Blocked: required check never reported: " + strings.Join(missing, ", "))
+				return
+			}
+		}
+		ps.UpdateStatus("Already approved, blocked")
+		return
+	default:
+		ps.UpdateStatus("Already approved, not mergeable (" + prData.GetMergeableState() + ")")
+		return
+	}
+
+	if r.flag.DryRun {
+		ps.UpdateStatus("Would merge")
+		return
+	}
+
+	ps.UpdateStatus("Merging...")
+	_, _, err := githubClient.PullRequests.Merge(ctx, ps.Owner, ps.Repo, ps.Number, "", &github.PullRequestOptions{MergeMethod: "squash"})
+	if err != nil {
+		ps.UpdateStatus("Failed to merge")
+		return
+	}
+	ps.UpdateStatus("Merged")
+}
+
 func (r *runner) printSummary(prStatuses []*pr.PRStatus) {
 	merged := 0
 	approved := 0
@@ -371,6 +442,7 @@ func (r *runner) printSummary(prStatuses []*pr.PRStatus) {
 	skipped := 0
 	failed := 0
 	waiting := 0
+	blocked := 0
 
 	for _, ps := range prStatuses {
 		status := ps.GetStatus()
@@ -386,6 +458,8 @@ func (r *runner) printSummary(prStatuses []*pr.PRStatus) {
 			queued++
 		} else if strings.Contains(status, "Approved") && !strings.Contains(status, "Would") && !strings.Contains(status, "Already") {
 			approved++
+		} else if strings.Contains(status, "Blocked") || strings.Contains(status, "not mergeable") || strings.HasSuffix(status, "blocked") {
+			blocked++
 		} else if strings.Contains(status, "Already") {
 			skipped++
 		} else if strings.Contains(status, "Failed") {
@@ -417,5 +491,8 @@ func (r *runner) printSummary(prStatuses []*pr.PRStatus) {
 	}
 	if waiting > 0 {
 		fmt.Fprintf(r.stdout, "  PRs still waiting: %d\n", waiting)
+	}
+	if blocked > 0 {
+		fmt.Fprintf(r.stdout, "  PRs blocked: %d\n", blocked)
 	}
 }

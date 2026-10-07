@@ -25,7 +25,18 @@ var refusedError = &microerror.Error{
 }
 
 // IsRefused asserts refusedError: the declaration was refused, the problems
-// name the fields, and no pull request was opened.
+// name the fields, and nothing was created or opened.
 func IsRefused(err error) bool {
 	return microerror.Cause(err) == refusedError
+}
+
+var branchWithoutPullRequestError = &microerror.Error{
+	Kind: "branchWithoutPullRequestError",
+}
+
+// IsBranchWithoutPullRequest asserts branchWithoutPullRequestError: the
+// declaration's branch exists in the team-file repository but no pull
+// request is open for it.
+func IsBranchWithoutPullRequest(err error) bool {
+	return microerror.Cause(err) == branchWithoutPullRequestError
 }

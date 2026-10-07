@@ -1,0 +1,38 @@
+# One check of the head passed, the other stays queued for the whole wait
+# (a runner that never picks the job up). Every poll sees the same state;
+# at the timeout the wait exits 2 and the document names the queued check.
+description: a check that stays queued past the timeout exits 2 naming the check
+args: [pr, wait, giantswarm/devctl, "42", --timeout, 5m]
+keyring:
+  github:
+    login: e2e-engineer
+    token: ghu_e2e_live
+    expiresAt: "2099-01-01T00:00:00Z"
+    refreshToken: ghr_e2e_live
+    refreshExpiresAt: "2099-01-01T00:00:00Z"
+  circleci:
+    login: e2e-engineer
+    token: CCIPAT_e2e_live
+    expiresAt: "2099-01-01T00:00:00Z"
+github:
+  routes:
+    "GET /repos/giantswarm/devctl/pulls/42":
+      - body:
+          number: 42
+          state: open
+          draft: false
+          merged: false
+          mergeable: true
+          mergeable_state: clean
+          head: {sha: abc123, ref: feature, repo: {full_name: giantswarm/devctl}}
+          base: {ref: main, repo: {full_name: giantswarm/devctl}}
+    "GET /repos/giantswarm/devctl/commits/abc123/check-runs":
+      - body:
+          total_count: 2
+          check_runs:
+            - {id: 101, name: go-test, status: completed, conclusion: success, started_at: "2026-09-21T10:00:00Z", html_url: "https://github.com/giantswarm/devctl/runs/101"}
+            - {id: 102, name: go-lint, status: queued, html_url: "https://github.com/giantswarm/devctl/runs/102"}
+    "GET /repos/giantswarm/devctl/commits/abc123/status":
+      - body: {state: pending, total_count: 0, statuses: []}
+    "GET /repos/giantswarm/devctl/actions/runs?head_sha=abc123":
+      - body: {total_count: 0, workflow_runs: []}

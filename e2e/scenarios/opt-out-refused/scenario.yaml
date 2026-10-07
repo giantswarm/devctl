@@ -1,0 +1,34 @@
+# The caller's own pull request in a repository whose entry in the team
+# files of giantswarm/github at main says agentMerge: false. The team files
+# are read the way devctl repo reads them: the directory listing, then the
+# team file. The refusal names the entry, the file and the field; it comes
+# before the wait, so no check route is scripted and no merge route either.
+description: a repository whose team-file entry says agentMerge false is refused with 5 naming the field
+args: [pr, merge, giantswarm/devctl, "42", --timeout, 30m]
+keyring:
+  github:
+    login: e2e-engineer
+    token: ghu_e2e_live
+    expiresAt: "2099-01-01T00:00:00Z"
+    refreshToken: ghr_e2e_live
+    refreshExpiresAt: "2099-01-01T00:00:00Z"
+github:
+  routes:
+    "GET /repos/giantswarm/devctl/pulls/42":
+      - body:
+          number: 42
+          node_id: PR_e2e_42
+          title: "feat: the change"
+          state: open
+          draft: false
+          merged: false
+          mergeable: true
+          mergeable_state: clean
+          user: {login: e2e-engineer, type: User}
+          head: {sha: abc123, ref: feature, repo: {full_name: giantswarm/devctl}}
+          base: {ref: main, repo: {full_name: giantswarm/devctl}}
+    "GET /repos/giantswarm/github/contents/repositories":
+      - body:
+          - {type: file, name: team-e2e.yaml, path: repositories/team-e2e.yaml, sha: t1}
+    "GET /repos/giantswarm/github/contents/repositories/team-e2e.yaml":
+      - body: {type: file, name: team-e2e.yaml, path: repositories/team-e2e.yaml, sha: t2, encoding: base64, content: "LSBuYW1lOiBkZXZjdGwKICBjb21wb25lbnRUeXBlOiBjbGkKICBhZ2VudE1lcmdlOiBmYWxzZQogIGdlbjoKICAgIGZsYXZvdXJzOgogICAgICAtIGNsaQogICAgbGFuZ3VhZ2U6IGdvCg=="}

@@ -1,0 +1,27 @@
+{
+  "exitCode": 5,
+  "json": {
+    "command": "pr merge",
+    "schemaVersion": 1,
+    "exitCode": 5,
+    "verdict": "refused",
+    "reason": "the pull request was opened by colleague, not by e2e-engineer: devctl pr merge merges the caller's own pull requests and those of bots and GitHub Apps (the Bot user type or a [bot] login) and of the automation accounts architectbot, taylorbot",
+    "warnings": [],
+    "startedAt": "*",
+    "finishedAt": "*",
+    "repository": "giantswarm/devctl",
+    "identity": "app",
+    "number": 42,
+    "headSha": "abc123",
+    "baseRef": "main",
+    "checks": [],
+    "actions": [],
+    "mergeCommitSha": "",
+    "mergedBy": "",
+    "method": "squash",
+    "branchDeleted": false,
+    "enqueued": false,
+    "unansweredReviews": null,
+    "release": null
+  }
+}

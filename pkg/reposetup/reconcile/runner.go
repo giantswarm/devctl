@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"time"
 
@@ -18,9 +19,46 @@ import (
 // LifecycleArchived is the lifecycle value that archives a repository.
 const LifecycleArchived = "archived"
 
+// LifecycleDeleted is the lifecycle value that deletes a repository on
+// GitHub; the entry stays in the team file as the record of the deletion.
+const LifecycleDeleted = "deleted"
+
+// lifecycleOver says whether the declared lifecycle ends the repository's
+// life — archived or deleted — so that the lifecycle step is the one that
+// applies.
+func lifecycleOver(lifecycle string) bool {
+	return lifecycle == LifecycleArchived || lifecycle == LifecycleDeleted
+}
+
+// flavourCustomer is the gen.flavours value of a customer repository: its
+// branch protection and default branch are the customer's own flow and it
+// has no CircleCI pipeline of ours. The protection, circleci, codeowners and
+// release steps are skipped on it and its default branch is never renamed;
+// settings, permissions, renovate, metadata, lifecycle and catalog run as
+// declared.
+const flavourCustomer = "customer"
+
+// flavourFork is the gen.flavours value of a fork line: the repository
+// carries an upstream release plus the carried patches on the branch its
+// entry declares as defaultBranch. The scaffold and codeowners steps are
+// skipped on it and nothing is generated for it; every other step runs as
+// declared, protection on the declared branch included. Its pull requests
+// land by rebase merge, one upstream-ready commit per carried patch, so the
+// settings step keeps rebase merges on it ([run.mergeMethods]).
+const flavourFork = "fork"
+
+// componentTypeTemplate is the componentType of a template repository, one
+// other repositories are created from: its chart lives under a placeholder
+// directory (helm/{APP-NAME}) and carries the placeholders a created
+// repository fills in, and nothing is released from it. The scaffold step
+// does not check that chart against app-build-suite's prerequisites; the
+// template's own pipeline builds a rendered copy (gen circleci's template
+// chart job).
+const componentTypeTemplate = "template"
+
 // ReportedChecker returns the check contexts that have reported on the
-// default branch or a recently merged pull request — the reported-only rule
-// of `devctl repo checks`. *githubclient.Client satisfies it.
+// heads of the recently merged pull requests — the reported-only rule of
+// `devctl repo checks`. *githubclient.Client satisfies it.
 type ReportedChecker interface {
 	ReportedChecks(ctx context.Context, repository *github.Repository, branch string) ([]string, error)
 }
@@ -40,6 +78,14 @@ type Runner struct {
 	// GitHub is the client the steps read and write GitHub with, under the
 	// App installation token or the person's.
 	GitHub *github.Client
+	// Dispatch is the client the catalog step lists and dispatches the
+	// catalog and mapping workflow runs with; nil means GitHub. A caller
+	// whose GitHub identity holds no Actions permission on the catalog
+	// repository gives the token that does (a workflow run's own, with
+	// actions: write) here and keeps every read — the repository lookup,
+	// the catalog and the mapping — with GitHub, which sees the private
+	// repositories that token does not.
+	Dispatch *github.Client
 	// Checks answers which check contexts have reported.
 	Checks ReportedChecker
 	// CircleCI is the client for follow, settings, keys and pipelines.
@@ -49,6 +95,25 @@ type Runner struct {
 	// Baseline is the set-up applied on top of the declaration; nil means
 	// [DefaultBaseline].
 	Baseline *Baseline
+	// DevctlAppID is the numeric id of the devctl GitHub App (the App's
+	// settings page; not the client id): what the protection step's bypass
+	// list takes to be compared and written. With it the step writes the
+	// default branch's ruleset with the App and, for people, the owning
+	// team (the team file's team) and the repository admins as bypass
+	// actors in pull_request mode (none on agentMerge: false) and removes
+	// classic protection; 0 reads a ruleset the repository has and compares
+	// its rules alone, and writes classic branch protection as before where
+	// there is none yet. An identity without write access to the ruleset
+	// gets it without its bypass actors (GitHub returns the field to write
+	// access alone): the list is then not compared either, and the summary
+	// says so. The reconciler's wiring passes the id.
+	DevctlAppID int64
+	// GitHubRequests and CircleCIRequests count the requests the clients
+	// send, when the caller built the clients' transports over them (one
+	// [Counter] under GitHub, Checks and Dispatch, one under CircleCI). The
+	// run's cost is what they counted over the run, in [Result.Requests]
+	// and, per step, in the log. Nil counts nothing.
+	GitHubRequests, CircleCIRequests *Counter
 	// Log receives one line per step and change; nil discards.
 	Log io.Writer
 	// Now is the clock; nil means time.Now.
@@ -67,6 +132,11 @@ type Request struct {
 	// Added says the triggering change added the entry: the one condition
 	// under which a missing repository is created.
 	Added bool
+	// Unarchived says the triggering change took lifecycle: archived from the
+	// entry: the one condition under which the lifecycle step unarchives a
+	// repository archived on GitHub. An archive no declaration change undoes
+	// stays the finding archived-undeclared.
+	Unarchived bool
 	// Mode is check or repair; empty means check.
 	Mode Mode
 	// Steps restricts the run to the named steps; nil runs every step. The
@@ -79,6 +149,14 @@ type Request struct {
 	// jobs from instead of the repository's .circleci — the files a caller
 	// has just generated and not pushed yet. Nil reads the repository.
 	Pipeline [][]byte
+	// CodeownersOverride is the repository's CODEOWNERS override, the file
+	// align-files writes in place of the generated one
+	// ([reposetup.CodeownersOverridePath] in giantswarm/github), resolved by
+	// the caller with the entry: [reposetup.ReadCodeownersOverride] from a
+	// checkout, [reposetup.Overrides] from the remote. The codeowners step
+	// wants it verbatim; nil means the repository has none and the step
+	// wants the generated file naming Team.
+	CodeownersOverride []byte
 }
 
 // teamSteps are the steps that read the team: the scaffold names it in
@@ -109,14 +187,52 @@ type run struct {
 	declared, name string
 	fields         reposetup.Fields
 	repo           *github.Repository // nil when the repository does not exist
-	renamed        bool
-	empty          bool // no commits on the default branch
+	// created says the create step created the repository in this run.
+	created bool
+	// followedNow says the circleci step followed the project in this run
+	// (planned the follow, in check mode): CircleCI never saw a tag pushed
+	// before it.
+	followedNow bool
+	renamed     bool
+	// unarchive is the lifecycle step's unarchive, applied by the lookup
+	// ahead of the steps an archived repository refuses (unarchiveRepository);
+	// unarchiveErr is its error. The lifecycle step reports both.
+	unarchive    *StepResult
+	unarchiveErr error
+	empty        bool // no commits on the default branch
+	// scaffoldSHA is the scaffold commit the scaffold step pushed.
+	scaffoldSHA string
 	// scaffoldFailed says the scaffold step could not push the scaffold:
 	// the steps that need it on the default branch wait for the next run,
 	// as they do on an empty repository — protecting the branch first
 	// would keep the scaffold from ever landing.
 	scaffoldFailed bool
-	log            io.Writer
+	// pipeline says whether the repository has a CircleCI pipeline, once
+	// hasPipeline has read it; nil before. The circleci and release steps
+	// share the one answer.
+	pipeline *bool
+	// reported is what Checks.ReportedChecks answered for the run's branch,
+	// once reportedChecks has read it (reportedRead); the error is kept the
+	// same way. The steps that read the reported checks share the one
+	// discovery.
+	reported     []string
+	reportedErr  error
+	reportedRead bool
+	// hooks are the repository's webhooks, once readHooks has read them
+	// (hooksRead); the response and the error are kept the same way. The
+	// circleci step (CircleCI's hook) and the webhooks step (the baseline's)
+	// share the one read.
+	hooks     []*github.Hook
+	hooksResp *github.Response
+	hooksErr  error
+	hooksRead bool
+	// team is the organization's team of the team file's slug, once
+	// owningTeam has read it (teamRead); the error is kept the same way.
+	// The protection step names it as bypass actor of the ruleset.
+	team     *github.Team
+	teamErr  error
+	teamRead bool
+	log      io.Writer
 }
 
 // errReported marks a repair that ended in a finding instead of a change.
@@ -126,6 +242,53 @@ var errReported = errors.New("reported")
 // run could not start (an unaccepted entry, no GitHub client); a step that
 // fails is a [VerdictFailed] in the result and the run continues.
 func (r *Runner) Run(ctx context.Context, req Request) (*Result, error) {
+	s, err := r.newRun(req)
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
+	req = s.req
+
+	before := r.requests()
+	res := &Result{
+		Declared:   s.owner + "/" + s.declared,
+		Team:       req.Team,
+		Mode:       req.Mode,
+		Added:      req.Added,
+		Unarchived: req.Unarchived,
+		StartedAt:  r.now(),
+	}
+	res.Converged = true
+	for _, step := range Steps {
+		selected := req.Steps == nil || containsStep(req.Steps, step)
+		if !selected && step != StepCreate {
+			continue
+		}
+		sr := r.execute(ctx, s, step)
+		if !selected {
+			continue // the lookup ran for the other steps; not part of the result
+		}
+		res.Steps = append(res.Steps, *sr)
+		if !sr.Converges() {
+			res.Converged = false
+		}
+	}
+	res.Repository = s.owner + "/" + s.name
+	res.Requests = r.requests().since(before)
+	res.FinishedAt = r.now()
+	return res, nil
+}
+
+// requests is the counters' reading now; a run's cost is the difference
+// between two readings.
+func (r *Runner) requests() Requests {
+	return Requests{GitHub: count(r.GitHubRequests), CircleCI: count(r.CircleCIRequests)}
+}
+
+// newRun checks what every run needs — a GitHub client, an accepted entry,
+// the team where a step reads it, a known mode and known steps — fills the
+// request's defaults and parses the rendered entry into the state the steps
+// share. [Run] and [Create] start here.
+func (r *Runner) newRun(req Request) (*run, error) {
 	if r.GitHub == nil {
 		return nil, microerror.Maskf(invalidConfigError, "%T.GitHub must not be empty", r)
 	}
@@ -178,45 +341,38 @@ func (r *Runner) Run(ctx context.Context, req Request) (*Result, error) {
 	if r.Log != nil {
 		s.log = r.Log
 	}
-
-	res := &Result{
-		Declared:  s.owner + "/" + s.declared,
-		Team:      req.Team,
-		Mode:      req.Mode,
-		Added:     req.Added,
-		StartedAt: r.now(),
-	}
-	res.Converged = true
-	for _, step := range Steps {
-		selected := req.Steps == nil || containsStep(req.Steps, step)
-		if !selected && step != StepCreate {
-			continue
-		}
-		sr := r.execute(ctx, s, step)
-		if !selected {
-			continue // the lookup ran for the other steps; not part of the result
-		}
-		res.Steps = append(res.Steps, *sr)
-		if sr.Verdict == VerdictDrift || sr.Verdict == VerdictFailed {
-			res.Converged = false
-		}
-	}
-	res.Repository = s.owner + "/" + s.name
-	res.FinishedAt = r.now()
-	return res, nil
+	return s, nil
 }
 
 // execute runs one step, applying the conditions under which a step does
 // not run, and returns its result.
 func (r *Runner) execute(ctx context.Context, s *run, step Step) *StepResult {
+	before := r.requests()
 	sr := &StepResult{Step: step}
-	if reason := s.skipReason(step); reason != "" {
-		sr.Verdict = VerdictSkipped
-		sr.Summary = reason
-		fmt.Fprintf(s.log, "%s/%s %s: skipped: %s\n", s.owner, s.name, step, reason)
-		return sr
+	reason, err := r.skipReason(ctx, s, step)
+	if err == nil {
+		if reason != "" {
+			sr.Verdict = VerdictSkipped
+			sr.Summary = reason
+			fmt.Fprintf(s.log, "%s/%s %s: skipped: %s%s\n", s.owner, s.name, step, reason, costLine(r.requests().since(before)))
+			return sr
+		}
+		err = r.runStep(ctx, s, step, sr)
 	}
+	if err != nil && !errors.Is(err, errReported) {
+		sr.Verdict = VerdictFailed
+		sr.Summary = err.Error()
+		if step == StepScaffold {
+			s.scaffoldFailed = true
+		}
+	}
+	s.finish(sr)
+	fmt.Fprintf(s.log, "%s/%s %s: %s%s%s\n", s.owner, s.name, step, sr.Verdict, summaryLine(sr), costLine(r.requests().since(before)))
+	return sr
+}
 
+// runStep runs one step's body into sr.
+func (r *Runner) runStep(ctx context.Context, s *run, step Step, sr *StepResult) error {
 	var err error
 	switch step {
 	case StepCreate:
@@ -246,47 +402,70 @@ func (r *Runner) execute(ctx context.Context, s *run, step Step) *StepResult {
 	case StepRelease:
 		err = r.stepRelease(ctx, s, sr)
 	}
-	if err != nil && !errors.Is(err, errReported) {
-		sr.Verdict = VerdictFailed
-		sr.Summary = err.Error()
-		if step == StepScaffold {
-			s.scaffoldFailed = true
-		}
-	}
-	s.finish(sr)
-	fmt.Fprintf(s.log, "%s/%s %s: %s%s\n", s.owner, s.name, step, sr.Verdict, summaryLine(sr))
-	return sr
+	return err
 }
 
-// skipReason says why step does not run in the current state, or "".
-func (s *run) skipReason(step Step) string {
+// skipReason says why step does not run in the current state, or "". The
+// circleci and release steps apply to a repository with a pipeline only,
+// which is read from the repository once (hasPipeline).
+func (r *Runner) skipReason(ctx context.Context, s *run, step Step) (string, error) {
 	if step == StepCreate {
-		return ""
+		return "", nil
 	}
 	if s.repo == nil {
-		return "repository does not exist"
+		if s.fields.Lifecycle == LifecycleDeleted {
+			return "deleted, as declared", nil
+		}
+		return "repository does not exist", nil
 	}
-	declaredArchived := s.fields.Lifecycle == LifecycleArchived
-	if declaredArchived && step != StepLifecycle {
-		return "lifecycle: archived"
+	if lifecycleOver(s.fields.Lifecycle) && step != StepLifecycle {
+		return "lifecycle: " + s.fields.Lifecycle, nil
 	}
-	if s.repo.GetArchived() && !declaredArchived {
+	if s.repo.GetArchived() && s.fields.Lifecycle != LifecycleArchived {
 		switch step {
-		case StepLifecycle, StepRenovate, StepRelease:
+		case StepLifecycle, StepRelease:
 		default:
-			return "archived on GitHub"
+			if s.unarchive != nil {
+				return "archived on GitHub until the lifecycle step's unarchive", nil
+			}
+			return "archived on GitHub", nil
+		}
+	}
+	if s.hasFlavour(flavourCustomer) {
+		switch step {
+		case StepProtection, StepCircleCI, StepCodeowners, StepRelease:
+			return "flavour " + flavourCustomer, nil
+		}
+	}
+	if s.hasFlavour(flavourFork) {
+		switch step {
+		case StepScaffold, StepCodeowners:
+			return "flavour " + flavourFork, nil
 		}
 	}
 	switch step {
-	case StepProtection, StepCircleCI, StepCodeowners, StepRelease:
+	case StepProtection, StepCircleCI, StepRenovate, StepCodeowners, StepRelease:
 		if s.empty {
-			return "repository is empty: the scaffold comes first"
+			return "repository is empty: the scaffold comes first", nil
 		}
 		if s.scaffoldFailed {
-			return "the scaffold step failed: the scaffold comes first"
+			return "the scaffold step failed: the scaffold comes first", nil
 		}
 	}
-	return ""
+	switch step {
+	case StepCircleCI, StepRelease:
+		pipeline, err := r.hasPipeline(ctx, s)
+		if err != nil {
+			return "", err
+		}
+		if !pipeline {
+			if templateContent(s.fields) {
+				return "no CircleCI pipeline: .circleci/config.yml is template content (gen.ci.templateContent)", nil
+			}
+			return "no CircleCI pipeline", nil
+		}
+	}
+	return "", nil
 }
 
 // plan records a change: in check mode as what a repair would do, in repair
@@ -310,7 +489,7 @@ func (s *run) plan(sr *StepResult, change string, apply func() error) error {
 
 // report adds a finding.
 func (s *run) report(sr *StepResult, kind FindingKind, message, fix string) {
-	sr.Findings = append(sr.Findings, Finding{Kind: kind, Message: message, Fix: fix})
+	sr.Findings = append(sr.Findings, newFinding(kind, message, fix))
 }
 
 // finish sets the verdict a step did not set itself.
@@ -330,6 +509,14 @@ func (s *run) finish(sr *StepResult) {
 	}
 }
 
+// dispatcher is the client for the workflow-run calls of the catalog step.
+func (r *Runner) dispatcher() *github.Client {
+	if r.Dispatch != nil {
+		return r.Dispatch
+	}
+	return r.GitHub
+}
+
 func (r *Runner) now() time.Time {
 	if r.Now != nil {
 		return r.Now()
@@ -337,11 +524,46 @@ func (r *Runner) now() time.Time {
 	return time.Now()
 }
 
+// branch is the branch the steps read the repository on: its default branch
+// on GitHub, the declared one until the repository has one.
 func (s *run) branch() string {
 	if b := s.repo.GetDefaultBranch(); b != "" {
 		return b
 	}
+	return s.defaultBranch()
+}
+
+// defaultBranch is the branch the entry declares as the repository's default
+// branch, the baseline's when it declares none: the branch the settings step
+// keeps the repository on and the protection step protects.
+func (s *run) defaultBranch() string {
+	if s.fields.DefaultBranch != "" {
+		return s.fields.DefaultBranch
+	}
 	return s.baseline.DefaultBranch
+}
+
+// hasFlavour says whether the entry declares flavour in gen.flavours.
+func (s *run) hasFlavour(flavour string) bool {
+	return s.fields.Gen != nil && slices.Contains(s.fields.Gen.Flavours, flavour)
+}
+
+// isTemplate says whether the entry declares a template repository.
+func (s *run) isTemplate() bool {
+	return s.fields.ComponentType == componentTypeTemplate
+}
+
+// agentMerge says whether the entry lets agents merge pull requests: true
+// unless it declares agentMerge: false.
+func (s *run) agentMerge() bool {
+	return s.fields.AgentMerge == nil || *s.fields.AgentMerge
+}
+
+// keepsDefaultBranch says the repository's default branch is its own and the
+// settings step never renames it: a customer repository's branch is the
+// customer's flow.
+func (s *run) keepsDefaultBranch() bool {
+	return s.hasFlavour(flavourCustomer)
 }
 
 // slug is owner/name as the run addresses the repository.
@@ -373,6 +595,15 @@ func summaryLine(sr *StepResult) string {
 		return ""
 	}
 	return " — " + strings.Join(parts, " | ")
+}
+
+// costLine is the step's cost at the end of its log line, "" when nothing
+// was counted.
+func costLine(cost Requests) string {
+	if s := cost.String(); s != "" {
+		return " [" + s + "]"
+	}
+	return ""
 }
 
 // isNotFound says whether a go-github call answered 404.
