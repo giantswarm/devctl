@@ -375,3 +375,37 @@ func TestReapContinuesAfterABrokenCluster(t *testing.T) {
 		t.Errorf("the good cluster's release did not land on origin: local HEAD %s, origin %s", head, tip)
 	}
 }
+
+// TestReapLeavesAnAppSomeoneElseAlreadyReleased checks the sweep does not fail
+// when a rebase shows the app it meant to release is already gone: another
+// release landed first, so there is nothing left to do.
+func TestReapLeavesAnAppSomeoneElseAlreadyReleased(t *testing.T) {
+	dir1, origin := newReapFixture(t, fixtureOptions{})
+
+	stale := testRequest(dir1)
+	stale.Duration = time.Hour
+	reserveAndPush(t, dir1, stale)
+
+	dir2 := t.TempDir()
+	gittest.RunGit(t, dir2, "clone", origin, ".")
+	if _, err := reservation.Release(reservation.ReleaseRequest{
+		RepoDir: dir2, Cluster: fixtureCluster, App: fixtureApp, User: testUser,
+	}); err != nil {
+		t.Fatalf("releasing on dir2: %v", err)
+	}
+	if err := reservation.Push(context.Background(), dir2); err != nil {
+		t.Fatalf("pushing dir2: %v", err)
+	}
+
+	reaped, err := reservation.Reap(context.Background(), reservation.ReapRequest{
+		RepoDir: dir1,
+		User:    testReaper,
+		Now:     stale.Now.Add(2 * time.Hour),
+	})
+	if err != nil {
+		t.Fatalf("Reap: %v", err)
+	}
+	if len(reaped) != 0 {
+		t.Errorf("got %d reaped reservations, want 0: someone else already released it: %+v", len(reaped), reaped)
+	}
+}

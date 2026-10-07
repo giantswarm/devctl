@@ -48,7 +48,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   them is allowed to pass quietly.
 - `reservation reserve`: a new `--duration` flag. A duration is a whole number of minutes, hours or
   days — `30m`, `4h`, `2d` — and anything else is refused with that list, so the fix is in the
-  message rather than in documentation. Empty stays the 10 hour default. The longest reservation is
+  message rather than in documentation. Empty stays the 10 hour default, or the cluster's lower
+  limit when it has one. The longest reservation is
   7 days, or less when the cluster's reservations ConfigMap carries a lower
   `reservations.giantswarm.io/max-duration` annotation; a cluster can only lower that limit, never
   raise it, and a request over it is refused with the limit named. A malformed annotation is
@@ -78,8 +79,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   folded in. This is what lets two reservations, or two releases, that start together both land. The
   retry gives up and reports the failure after `reservation.MaxPushAttempts` (5) attempts. Neither
   command needs to name its branch or remote: `git push` / `git fetch` / `git reset --hard
-  @{upstream}` follow whatever upstream the checkout already tracks, a token-embedded clone in CI or
-  the engineer's own checkout on a laptop alike.
+  @{upstream}` follow whatever upstream the checkout already tracks, with whatever credentials it
+  already has on a laptop or in CI. `reserve` clones with a token kept out of the URL and
+  `.git/config`, so it hands the token to git through the environment for its push and fetch.
 - `reservation reap`: a new command that sweeps every management cluster enabled for reservations in
   a GitOps repo and releases every reservation whose expiry passed, one at a time through
   `reservation.Release` and `reservation.PushWithRetry`, exactly as `release` does for a single one.
@@ -94,6 +96,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   its own push, so it does the same work from a laptop that a scheduled job would do in CI. For each
   release it prints one tab-separated line — cluster, app, user, branch, pull request, reason
   (`expired` or `renamed`), until (RFC 3339) and commit — and nothing at all when it finds nothing.
+  A reservation someone else released while the sweep pushed is left alone, not reported as an error.
 - `reservation release --pull-request`: the command now releases by pull request. Without
   `--cluster` it scans every enabled cluster and releases every reservation that pull request
   holds, one at a time through `reservation.PushWithRetry`, printing a tab-separated cluster, app
@@ -121,7 +124,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   reservation's own `OCIRepository`, so `kubectl` never shows a stale window. A
   reservation whose expiry already passed is treated as if it did not exist, because reviving it
   could silently break a lock someone else legally took over the same cluster while the dead record
-  sat unswept; if every record a pull request holds is expired, the command refuses exactly as if it
+  sat unswept, and a rebase that brings in another pull request's reservation of the app, or an
+  expired one, is refused the same way; the new window is RFC3339 UTC, as `reserve` writes it.
+  If every record a pull request holds is expired, the command refuses exactly as if it
   found none, naming `/deploy` as the way to create one. A single reservation whose stored duration
   now exceeds its cluster's cap (7 days, or lower per `reservations.giantswarm.io/max-duration`) is
   refused on its own and does not stop the rest of the sweep. The command works on an existing
@@ -149,7 +154,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - `reservation reserve` and `reservation reap`: the GitHub token now comes from
   `authstore.ResolveGitHub`, like `deploy`: `DEVCTL_GITHUB_TOKEN`, `GITHUB_TOKEN` or
   `OPSCTL_GITHUB_TOKEN` when set, else the `devctl auth login` App login. `reap` still
-  runs without any token and skips only the branch-rename check.
+  runs without any token and skips only the branch-rename check. A 404 under the App login names its
+  likely cause, as in `deploy`.
 
 - `pr merge --detach`: the call is checked as the blocking one is, then the merge runs in a process of its own and
   the call returns within seconds with a handle (exit 0, verdict `detached`). `pr merge status <handle>` reads the

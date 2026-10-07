@@ -73,6 +73,8 @@ func Extend(ctx context.Context, req ExtendRequest) ([]Extended, error) {
 	if now.IsZero() {
 		now = time.Now()
 	}
+	// Reserve writes UTC to the second; the window Extend rewrites must read the same.
+	now = now.UTC().Truncate(time.Second)
 
 	clusters, err := enabledClusters(req.RepoDir)
 	if err != nil {
@@ -157,8 +159,11 @@ func extendAndPush(ctx context.Context, req ExtendRequest, cluster string, r Res
 				break
 			}
 		}
-		if current == nil {
-			return microerror.Maskf(notReservedError, "%s on %s no longer holds a reservation to extend", r.App, cluster)
+		// After a rebase the app may hold somebody else's reservation, or one
+		// already past its Until: extending either would renew a lock this pull
+		// request does not hold, or revive a dead one (see Extend).
+		if current == nil || current.PullRequest != req.PullRequest || !current.Until.After(now) {
+			return microerror.Maskf(notReservedError, "%s on %s no longer holds a reservation of %s to extend", r.App, cluster, req.PullRequest)
 		}
 		duration := current.Until.Sub(current.From)
 

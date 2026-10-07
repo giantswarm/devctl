@@ -378,7 +378,7 @@ func TestExtendUsesThePostRebaseReservationNotTheStaleSnapshot(t *testing.T) {
 	}
 	second := testRequest(dir2)
 	second.Branch = "fix/crash-v2"
-	second.Now = time.Date(2026, 9, 15, 11, 0, 0, 0, time.UTC)
+	second.Now = time.Date(2026, 9, 15, 12, 30, 0, 0, time.UTC) // still active at dir1's extend time, 13:00
 	second.Duration = time.Hour
 	if _, err := reservation.Reserve(second); err != nil {
 		t.Fatalf("re-reserving on dir2: %v", err)
@@ -422,5 +422,73 @@ func TestExtendUsesThePostRebaseReservationNotTheStaleSnapshot(t *testing.T) {
 	tip := gittest.GitOutput(t, origin, "rev-parse", gittest.GitOutput(t, dir1, "branch", "--show-current"))
 	if head != tip {
 		t.Errorf("the extension did not land on origin: local HEAD %s, origin %s", head, tip)
+	}
+}
+
+// TestExtendLeavesAReservationAnotherPullRequestTookOver is the sibling of the
+// post-rebase test above: after the rebase the app is held by a different pull
+// request, so extending would renew a lock this pull request no longer holds.
+func TestExtendLeavesAReservationAnotherPullRequestTookOver(t *testing.T) {
+	dir1, origin := newReapFixture(t, fixtureOptions{})
+
+	req := testRequest(dir1)
+	req.Duration = 4 * time.Hour
+	reserveAndPush(t, dir1, req)
+
+	dir2 := t.TempDir()
+	gittest.RunGit(t, dir2, "clone", origin, ".")
+	if _, err := reservation.Release(reservation.ReleaseRequest{
+		RepoDir: dir2, Cluster: fixtureCluster, App: fixtureApp, User: testUser,
+	}); err != nil {
+		t.Fatalf("releasing on dir2: %v", err)
+	}
+	other := testRequest(dir2)
+	other.User = testOtherUser
+	other.Branch = testOtherBranch
+	other.PullRequest = "giantswarm/hello-world#456"
+	other.Duration = 2 * time.Hour
+	reserveAndPush(t, dir2, other)
+
+	// dir1 has not fetched dir2's push, so its first attempt is rejected and the
+	// rebased render finds the other pull request's reservation.
+	_, err := reservation.Extend(context.Background(), reservation.ExtendRequest{
+		RepoDir:     dir1,
+		PullRequest: testPullRequest,
+		User:        testExtender,
+		Now:         req.Now.Add(time.Hour),
+	})
+	if !reservation.IsNotReserved(err) {
+		t.Fatalf("expected a not-reserved error, got %v", err)
+	}
+
+	entry := reservationEntries(t, dir1, fixtureCluster)[fixtureApp]
+	if entry["pr"] != other.PullRequest || entry["until"] != other.Now.Add(2*time.Hour).Format(time.RFC3339) {
+		t.Errorf("the other pull request's reservation was touched: %v", entry)
+	}
+}
+
+// TestExtendWritesUTCToTheSecond checks a caller's local, sub-second clock
+// lands in the entry as RFC3339 in UTC, exactly as Reserve writes it.
+func TestExtendWritesUTCToTheSecond(t *testing.T) {
+	dir, _ := newReapFixture(t, fixtureOptions{})
+	req := testRequest(dir)
+	req.Duration = 4 * time.Hour
+	reserveAndPush(t, dir, req)
+
+	local := time.FixedZone("CEST", 2*60*60)
+	now := time.Date(2026, 9, 15, 15, 0, 0, 500, local) // 13:00:00.0000005 UTC
+	extended, err := reservation.Extend(context.Background(), reservation.ExtendRequest{
+		RepoDir: dir, PullRequest: testPullRequest, User: testExtender, Now: now,
+	})
+	if err != nil {
+		t.Fatalf("Extend: %v", err)
+	}
+
+	entry := reservationEntries(t, dir, fixtureCluster)[fixtureApp]
+	if entry["from"] != "2026-09-15T13:00:00Z" || entry["until"] != "2026-09-15T17:00:00Z" {
+		t.Errorf("entry window: from %q until %q, want 2026-09-15T13:00:00Z to 2026-09-15T17:00:00Z", entry["from"], entry["until"])
+	}
+	if got := extended[0]; got.From.Location() != time.UTC || got.Until.Location() != time.UTC {
+		t.Errorf("Extended window is not in UTC: %s to %s", got.From, got.Until)
 	}
 }

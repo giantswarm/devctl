@@ -227,6 +227,7 @@ func reapAndPush(ctx context.Context, req ReleaseRequest, headBranch HeadBranchF
 	var condemned Reservation
 	var reason string
 	render := func() error {
+		condemned, reason = Reservation{}, "" // a retry must not see the last attempt's record
 		reservations, err := List(ListRequest{RepoDir: req.RepoDir, Cluster: req.Cluster})
 		if err != nil {
 			return microerror.Mask(err)
@@ -245,6 +246,12 @@ func reapAndPush(ctx context.Context, req ReleaseRequest, headBranch HeadBranchF
 			}
 			condemned, reason = current, r
 			break
+		}
+		if condemned.App == "" {
+			// A rebase brought in someone else's release of this app: nothing
+			// is left to condemn, and Release would refuse it as not reserved.
+			result = ReleaseResult{}
+			return nil
 		}
 
 		result, err = Release(req)
