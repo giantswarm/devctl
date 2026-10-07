@@ -293,6 +293,17 @@ above. Only a run with `--devctl-app-id` deletes; one without reports each such 
 `ruleset-pending`. Without the field, nothing changes: an undeclared ruleset is the advisory
 `foreign-ruleset`, and deleting it is up to the team.
 
+An entry with `lineGate` gates a fork line whose upstream re-pin rewrites it, so that no pull-request merge
+can land it: the sync pushes the candidate to a branch of its own, whose push runs the line's checks, and
+lands exactly that commit by a direct push. `lineGate.app`, the numeric id of the App the sync pushes as,
+joins `devctl: default branch` as a bypass actor in every mode, so its push passes the pull-request and
+non-fast-forward rules. The engine keeps its second ruleset, `devctl: line gate`, on the default branch and
+the branches `lineGate.branches` names (the maintenance lines): deletion forbidden, `lineGate.requiredChecks`
+pinned to GitHub Actions and required for every push, and no bypass actor. A push whose head the checks have
+not passed on is refused for the App, the repository admins and the devctl App alike; a pull request merges
+as before, its head having passed them. Without the field the engine deletes `devctl: line gate`. Only a run
+with `--devctl-app-id` writes it; one without reports the difference as `ruleset-pending`.
+
 `--devctl-app-id`, the devctl GitHub App's numeric id (the App's settings page; not the client id), is what
 the bypass list takes to be compared and written; the reconciler's wiring passes it. A run without the id
 -- a laptop, giantswarm-repo-manager's read-mode engine behind `repo status` -- reads the repository's

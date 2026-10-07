@@ -49,6 +49,10 @@ const (
 	// pruneRulesetsEntryYAML makes the declaration the whole ruleset set:
 	// every undeclared active ruleset is deleted.
 	pruneRulesetsEntryYAML = declaredRulesetEntryYAML + "  pruneRulesets: true\n"
+	// lineGateEntryYAML gates a fork line's direct pushes: the sync's App
+	// replaces the line, and no actor lands an unchecked commit on it or on
+	// the maintenance line.
+	lineGateEntryYAML = entryYAML + "  lineGate:\n    app: 414149\n    requiredChecks: [run-tests, govulncheck]\n    branches: [release-1.3]\n"
 	// configurationEntryYAML is a configuration repository: no template, no
 	// generated pipeline.
 	configurationEntryYAML = `- name: sample-service
@@ -1105,6 +1109,72 @@ func TestSteps(t *testing.T) {
 				require.Equal(t, []string{`delete ruleset "renovate-automerge" (not declared, pruneRulesets)`}, sr.Changes)
 				require.Equal(t, []FindingKind{FindingForeignRuleset}, kinds(sr.Findings), "the evaluate ruleset stays the advisory")
 				require.Contains(t, sr.Findings[0].Message, `"trial"`)
+			},
+		},
+		{
+			name: "protection: lineGate adds the sync's App to the default branch's ruleset and writes the gate no actor bypasses", step: StepProtection, entry: lineGateEntryYAML,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID), adminBypass(), teamBypass(testTeamID))
+			},
+			wantCheck: VerdictDrift, wantChange: `create ruleset "devctl: line gate" on ~DEFAULT_BRANCH, refs/heads/release-1.3, deletion forbidden, no bypass actor; require run-tests, govulncheck`,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				line := &github.BypassActor{ActorID: new(int64(414149)), ActorType: new(github.BypassActorTypeIntegration), BypassMode: new(github.BypassModeAlways)}
+				require.Equal(t, []*github.BypassActor{appBypass(testAppID), adminBypass(), teamBypass(testTeamID), line}, h.repo().ruleset(RulesetName).BypassActors, "the sync's App passes the pull-request rule in every mode")
+				gate := h.repo().ruleset(LineGateRulesetName)
+				require.NotNil(t, gate)
+				require.Empty(t, gate.BypassActors, "no actor bypasses the gate")
+				require.Equal(t, []string{"~DEFAULT_BRANCH", "refs/heads/release-1.3"}, gate.Conditions.RefName.Include)
+				require.Equal(t, []*github.RuleStatusCheck{actionsCheck("run-tests"), actionsCheck("govulncheck")}, gate.Rules.RequiredStatusChecks.RequiredStatusChecks, "pinned to GitHub Actions")
+				require.NotNil(t, gate.Rules.Deletion)
+				require.Nil(t, gate.Rules.PullRequest, "a checked commit lands by push")
+				require.Nil(t, gate.Rules.NonFastForward, "the sync's land replaces the line")
+				require.Equal(t, []string{
+					"bypass actors: App 424242 on pull requests, repository admins on pull requests, team team-bumblebee on pull requests, App 414149 always",
+					`create ruleset "devctl: line gate" on ~DEFAULT_BRANCH, refs/heads/release-1.3, deletion forbidden, no bypass actor; require run-tests, govulncheck`,
+				}, res.Step(StepProtection).Changes)
+			},
+		},
+		{
+			name: "protection: lineGate alongside agentMerge false keeps the sync's App alone", step: StepProtection, entry: lineGateEntryYAML + "  agentMerge: false\n",
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)})
+			},
+			wantCheck: VerdictDrift, wantChange: "bypass actor: App 414149 always",
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Len(t, h.repo().ruleset(RulesetName).BypassActors, 1)
+				require.NotNil(t, h.repo().ruleset(LineGateRulesetName))
+			},
+		},
+		{
+			name: "protection: without lineGate the gate ruleset is deleted", step: StepProtection,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID), adminBypass(), teamBypass(testTeamID))
+				r.addRuleset(LineGateRulesetName, []*github.RuleStatusCheck{actionsCheck("run-tests")})
+			},
+			wantCheck: VerdictDrift, wantChange: `delete ruleset "devctl: line gate" (no lineGate)`,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Nil(t, h.repo().ruleset(LineGateRulesetName))
+				require.Empty(t, res.Step(StepProtection).Findings, "the engine's own ruleset is never foreign")
+			},
+		},
+		{
+			name: "protection: without the App id a missing gate is reported for the run with the id, not written", step: StepProtection, entry: lineGateEntryYAML,
+			seed: func(h *harness) {
+				h.runner.DevctlAppID = 0
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)})
+			},
+			wantCheck: VerdictReported, wantFinding: FindingRulesetPending, wantAfter: VerdictReported,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Nil(t, h.repo().ruleset(LineGateRulesetName))
+				require.Contains(t, res.Step(StepProtection).Findings[0].Message, `the ruleset "devctl: line gate" differs from the declared lineGate: create ruleset`)
 			},
 		},
 		{

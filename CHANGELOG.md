@@ -19,6 +19,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `repo reconcile`: the entry field `lineGate` (`app`, `requiredChecks`, `branches`) gates a fork line whose re-pin
+  lands as a direct push of a checked commit. The protection step adds the sync's App to `devctl: default branch` as
+  a bypass actor in every mode and keeps a second ruleset, `devctl: line gate`, on the default branch and the
+  declared maintenance branches: deletion forbidden and the declared checks, pinned to GitHub Actions, required for
+  every push, with no bypass actor. Without the field the engine deletes its gate ruleset.
 - `pr merge --detach`: the call is checked as the blocking one is, then the merge runs in a process of its own and
   the call returns within seconds with a handle (exit 0, verdict `detached`). `pr merge status <handle>` reads the
   outcome: the merge's own document and exit code once it ended, exit 10 `running` while it runs, `lost` when its

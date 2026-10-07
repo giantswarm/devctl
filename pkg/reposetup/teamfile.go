@@ -177,10 +177,27 @@ type Fields struct {
 	// set: the protection step deletes every active ruleset that is neither
 	// the engine's nor named in Rulesets, instead of reporting it.
 	PruneRulesets bool `yaml:"pruneRulesets"`
-	Replace       *struct {
+	// LineGate is a fork line's land gate: the line's sync App replaces the
+	// line without a pull request, and no actor lands a commit the gate's
+	// checks have not passed on. Nil: no gate.
+	LineGate *LineGateFields `yaml:"lineGate"`
+	Replace  *struct {
 		Precommit bool `yaml:"precommit"`
 	} `yaml:"replace"`
 	Gen *GenFields `yaml:"gen"`
+}
+
+// LineGateFields is the lineGate block: the land gate of a fork line.
+type LineGateFields struct {
+	// App is the numeric id of the GitHub App the line's sync pushes as: a
+	// bypass actor of the default branch's ruleset in every mode, so that
+	// its land replaces the line without a pull request.
+	App int64 `yaml:"app"`
+	// RequiredChecks are the GitHub Actions checks that must have passed on
+	// a commit before any push lands it on a gated branch.
+	RequiredChecks []string `yaml:"requiredChecks"`
+	// Branches are the maintenance lines gated beside the default branch.
+	Branches []string `yaml:"branches"`
 }
 
 // GenFields is the gen block: the generators' inputs.
