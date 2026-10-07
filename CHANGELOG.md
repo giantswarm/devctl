@@ -7,6 +7,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- `pr merge --detach` help and the examples in `docs/pr-merge.md` and `docs/rollout-wait.md`: a local wrapper's path
+  had slipped in front of the `devctl` commands; they read `devctl …` again.
+
 ### Added
 
 - `pr merge --detach`: the call is checked as the blocking one is, then the merge runs in a process of its own and

@@ -4,7 +4,7 @@
 devctl pr merge <owner/repo> <number> [--timeout 30m] [--release-timeout 30m] [--no-release-wait]
                 [--rebase] [--update-branch] [--dispatch <owner>/<repo>/<workflow file>[@<ref>]]
                 [--progress] [--failed-log [--failed-log-lines 50]] [--detach [--on-done <command>]]
-/home/teemow/.go/bin/beekeeper gate -- devctl pr merge status [<handle>]
+devctl pr merge status [<handle>]
 ```
 
 One blocking call that waits until the pull request's head is green (the wait of
@@ -269,10 +269,10 @@ Its output goes to the log, its exit code into `onDone` of the status document; 
 merge's outcome. A remote callback is `--dispatch`, which works the same detached.
 
 ```nohighlight
-/home/teemow/.go/bin/beekeeper gate -- devctl pr merge giantswarm/devctl 2278 --detach
-/home/teemow/.go/bin/beekeeper gate -- devctl pr merge giantswarm/devctl 2278 --detach --on-done 'notify-send "merge $DEVCTL_MERGE_NUMBER: exit $DEVCTL_MERGE_EXIT_CODE"'
-/home/teemow/.go/bin/beekeeper gate -- devctl pr merge status giantswarm-devctl-2278-20261007T091500Z
-/home/teemow/.go/bin/beekeeper gate -- devctl pr merge status
+devctl pr merge giantswarm/devctl 2278 --detach
+devctl pr merge giantswarm/devctl 2278 --detach --on-done 'notify-send "merge $DEVCTL_MERGE_NUMBER: exit $DEVCTL_MERGE_EXIT_CODE"'
+devctl pr merge status giantswarm-devctl-2278-20261007T091500Z
+devctl pr merge status
 ```
 
 The blocking call stays the default. A wrapper that already runs the merge outside its caller and
