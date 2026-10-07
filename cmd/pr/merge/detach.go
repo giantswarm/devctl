@@ -92,7 +92,6 @@ func (r *runner) detach(ctx context.Context, args []string, doc *startDocument) 
 	}
 	doc.Handle, doc.PID, doc.Log, doc.Document = job.Handle, job.PID, job.Log(), job.DocumentPath()
 	doc.Status = "devctl pr merge status " + job.Handle
-	doc.Reason = fmt.Sprintf("%s#%d merges in pid %d: %s reads the outcome", doc.Repository, c.number, job.PID, doc.Status)
 	return nil
 }
 

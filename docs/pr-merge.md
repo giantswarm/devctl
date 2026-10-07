@@ -227,7 +227,7 @@ caller's terminal, and the call returns within seconds with exit 0, verdict `det
   "command": "pr merge",
   "exitCode": 0,
   "verdict": "detached",
-  "reason": "giantswarm/devctl#2278 merges in pid 41711: devctl pr merge status giantswarm-devctl-2278-20261007T091500Z reads the outcome",
+  "reason": "",
   "repository": "giantswarm/devctl",
   "number": 2278,
   "identity": "app",

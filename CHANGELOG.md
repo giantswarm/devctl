@@ -10,7 +10,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Fixed
 
 - `pr merge --detach` help and the examples in `docs/pr-merge.md` and `docs/rollout-wait.md`: a local wrapper's path
-  had slipped in front of the `devctl` commands; they read `devctl …` again.
+  had slipped in front of the `devctl` commands; they read `devctl …` again. The documented start document's
+  `reason` is empty, as on every exit 0; `status` names the command that reads the outcome.
 
 ### Added
 
