@@ -41,6 +41,7 @@ func TestExclusiveFlagDefaultsToFalse(t *testing.T) {
 	f := cmd.Flags().Lookup("exclusive")
 	if f == nil {
 		t.Fatal("no --exclusive flag registered")
+		return
 	}
 	if f.Value.Type() != "bool" {
 		t.Errorf("--exclusive type: got %q, want bool", f.Value.Type())

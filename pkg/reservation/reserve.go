@@ -64,7 +64,8 @@ type Request struct {
 	PullRequest string
 	// Now is the start of the reservation. Zero means time.Now().
 	Now time.Time
-	// Duration is how long the reservation lasts. Zero means DefaultDuration.
+	// Duration is how long the reservation lasts. Zero means DefaultDuration, or
+	// the cluster's maximum when that is lower.
 	Duration time.Duration
 	// Scope is the reservation's lock: ScopeApp locks only App, ScopeExclusive
 	// locks the whole cluster. Empty means ScopeApp.

@@ -207,3 +207,25 @@ func TestReserveHonoursTheRequestedDuration(t *testing.T) {
 		t.Errorf("annotation until: got %v, want %q", got, until)
 	}
 }
+
+// TestReserveTakesTheClusterMaximumWhenItIsBelowTheDefault checks a cluster
+// that caps reservations under the 10h default does not make a plain reserve
+// fail on a length nobody asked for, while an explicit 10h still does.
+func TestReserveTakesTheClusterMaximumWhenItIsBelowTheDefault(t *testing.T) {
+	dir := newGitOpsFixture(t, fixtureOptions{extraFiles: reservationsConfigMap("4h")})
+	req := testRequest(dir)
+
+	res, err := reservation.Reserve(req)
+	if err != nil {
+		t.Fatalf("the unrequested default was refused: %v", err)
+	}
+	if got, want := res.Until, req.Now.Add(4*time.Hour); !got.Equal(want) {
+		t.Errorf("until: got %s, want %s", got, want)
+	}
+
+	explicit := testRequest(newGitOpsFixture(t, fixtureOptions{extraFiles: reservationsConfigMap("4h")}))
+	explicit.Duration = reservation.DefaultDuration
+	if _, err := reservation.Reserve(explicit); !reservation.IsInvalidDuration(err) {
+		t.Errorf("an explicit %s over the 4h maximum: got %v, want an invalid-duration error", reservation.DefaultDuration, err)
+	}
+}

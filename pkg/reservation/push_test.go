@@ -2,9 +2,11 @@ package reservation_test
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/giantswarm/devctl/v8/internal/gittest"
@@ -228,5 +230,57 @@ func TestPushWithRetryGivesUpAfterMaxAttempts(t *testing.T) {
 	}
 	if calls != reservation.MaxPushAttempts {
 		t.Errorf("render called %d times, want %d", calls, reservation.MaxPushAttempts)
+	}
+}
+
+// TestPushHandsTheTokenToGitThroughItsEnvironmentOnly checks the token a
+// WithGitHubToken context carries reaches git as an http.extraheader for
+// github.com, after a GIT_CONFIG_* entry already set, and lands in neither
+// the remote URL nor .git/config. A pre-push hook stands in for the network:
+// it sees the environment git pushes with.
+func TestPushHandsTheTokenToGitThroughItsEnvironmentOnly(t *testing.T) {
+	dir, _ := newPushFixture(t)
+	writeAndCommit(t, dir, "change.txt", "change\n")
+
+	envFile := filepath.Join(t.TempDir(), "env")
+	hook := filepath.Join(dir, ".git", "hooks", "pre-push")
+	if err := os.MkdirAll(filepath.Dir(hook), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(hook, []byte("#!/bin/sh\nenv > '"+envFile+"'\n"), 0o700); err != nil { //nolint:gosec // an executable test hook
+		t.Fatal(err)
+	}
+
+	t.Setenv("GIT_CONFIG_COUNT", "1")
+	t.Setenv("GIT_CONFIG_KEY_0", "core.abbrev")
+	t.Setenv("GIT_CONFIG_VALUE_0", "7")
+
+	const token = "s3cret-token"
+	if err := reservation.Push(reservation.WithGitHubToken(context.Background(), token), dir); err != nil {
+		t.Fatalf("Push: %v", err)
+	}
+
+	env, err := os.ReadFile(envFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	header := "Authorization: Basic " + base64.StdEncoding.EncodeToString([]byte("x-access-token:"+token))
+	for _, want := range []string{
+		"GIT_CONFIG_COUNT=2",
+		"GIT_CONFIG_KEY_0=core.abbrev",
+		"GIT_CONFIG_KEY_1=http.https://github.com/.extraheader",
+		"GIT_CONFIG_VALUE_1=" + header,
+	} {
+		if !strings.Contains(string(env), want+"\n") {
+			t.Errorf("git's environment lacks %q:\n%s", want, env)
+		}
+	}
+
+	config, err := os.ReadFile(filepath.Join(dir, ".git", "config"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(config), token) {
+		t.Errorf("the token landed in .git/config:\n%s", config)
 	}
 }

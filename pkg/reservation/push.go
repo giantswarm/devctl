@@ -2,9 +2,12 @@ package reservation
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 
 	"github.com/giantswarm/microerror"
@@ -14,12 +17,43 @@ import (
 // gives up and reports the failure.
 const MaxPushAttempts = 5
 
+type tokenKey struct{}
+
+// WithGitHubToken returns a context under which Push and PushWithRetry
+// authenticate to github.com with token. A githubclient clone keeps its token
+// out of the remote URL and .git/config, so native git has nothing to push
+// with unless the caller that cloned hands the token back. It reaches git only
+// through its environment, never argv, the URL or an error message.
+func WithGitHubToken(ctx context.Context, token string) context.Context {
+	return context.WithValue(ctx, tokenKey{}, token)
+}
+
+// gitEnv is the environment for a native git run: the process's own, plus the
+// token from WithGitHubToken as an http.extraheader for github.com, appended
+// after any GIT_CONFIG_* entries already set.
+func gitEnv(ctx context.Context) []string {
+	env := os.Environ()
+	token, _ := ctx.Value(tokenKey{}).(string)
+	if token == "" {
+		return env
+	}
+
+	n, _ := strconv.Atoi(os.Getenv("GIT_CONFIG_COUNT"))
+	header := "Authorization: Basic " + base64.StdEncoding.EncodeToString([]byte("x-access-token:"+token))
+
+	return append(env,
+		"GIT_CONFIG_COUNT="+strconv.Itoa(n+1),
+		"GIT_CONFIG_KEY_"+strconv.Itoa(n)+"=http.https://github.com/.extraheader",
+		"GIT_CONFIG_VALUE_"+strconv.Itoa(n)+"="+header)
+}
+
 // Push pushes dir's current branch to its upstream, using whatever
-// credentials are already configured on the remote: a token baked into the
-// URL by a githubclient clone in CI, or the checkout's own git credentials on
-// a laptop. Reserve and Release share it, so there is one way to push, not
-// two. It relies on the upstream tracking a clone -- go-git's or native
-// git's -- always sets up, so no caller has to name the branch or the remote.
+// credentials are already configured on the remote: the checkout's own git
+// credentials on a laptop or in CI, or the token a WithGitHubToken context
+// carries for a clone devctl made itself. Reserve and Release share it, so
+// there is one way to push, not two. It relies on the upstream tracking a
+// clone -- go-git's or native git's -- always sets up, so no caller has to
+// name the branch or the remote.
 func Push(ctx context.Context, dir string) error {
 	if err := runGit(ctx, dir, "push"); err != nil {
 		return microerror.Maskf(pushError, "%s", err)
@@ -96,6 +130,7 @@ func rebaseOntoRemote(ctx context.Context, dir string) error {
 
 func runGit(ctx context.Context, dir string, args ...string) error {
 	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...) //nolint:gosec // dir and args are trusted, not user data
+	cmd.Env = gitEnv(ctx)
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
 	cmd.Stdout = io.Discard

@@ -64,7 +64,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		if err != nil {
 			return microerror.Mask(err)
 		}
-		req.HeadBranch = headBranchFunc(client)
+		req.HeadBranch = headBranchFunc(client, authstore.GitHubNotFoundHint(token))
 	}
 
 	reaped, reapErr := reservation.Reap(ctx, req)
@@ -87,7 +87,9 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 // headBranchFunc adapts client into a reservation.HeadBranchFunc: pullRequest
 // is "owner/repo#number", exactly as reserve's --pull-request stores it.
-func headBranchFunc(client *githubclient.Client) reservation.HeadBranchFunc {
+// notFoundHint is added to GitHub's 404 for a pull request the token cannot
+// read (authstore.GitHubNotFoundHint).
+func headBranchFunc(client *githubclient.Client, notFoundHint string) reservation.HeadBranchFunc {
 	return func(ctx context.Context, pullRequest string) (string, error) {
 		owner, repo, number, err := splitPullRequest(pullRequest)
 		if err != nil {
@@ -96,7 +98,7 @@ func headBranchFunc(client *githubclient.Client) reservation.HeadBranchFunc {
 
 		pr, _, err := client.GetUnderlyingClient(ctx).PullRequests.Get(ctx, owner, repo, number)
 		if err != nil {
-			return "", microerror.Mask(err)
+			return "", githubclient.ExplainNotFound(microerror.Mask(err), notFoundHint)
 		}
 
 		return pr.GetHead().GetRef(), nil

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
@@ -45,6 +46,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return err
 	}
 	token.WarnOnce(r.stderr)
+	notFoundHint := authstore.GitHubNotFoundHint(token)
 
 	owner, repo, err := splitRepo(r.flag.GitOpsRepo)
 	if err != nil {
@@ -52,10 +54,14 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	}
 
 	// Already accepted by Validate; the cluster's own maximum is checked once the
-	// clone is on disk, in Reserve.
-	duration, err := reservation.ParseDuration(r.flag.Duration)
-	if err != nil {
-		return microerror.Mask(err)
+	// clone is on disk, in Reserve. Without --duration it stays zero, so Reserve
+	// takes the default held to that maximum instead of refusing it.
+	var duration time.Duration
+	if r.flag.Duration != "" {
+		duration, err = reservation.ParseDuration(r.flag.Duration)
+		if err != nil {
+			return microerror.Mask(err)
+		}
 	}
 
 	client, err := githubclient.New(githubclient.Config{
@@ -76,8 +82,12 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 	err = client.CloneRepository(ctx, owner, repo, dir)
 	if err != nil {
-		return microerror.Mask(err)
+		return githubclient.ExplainNotFound(microerror.Mask(err), notFoundHint)
 	}
+
+	// The clone keeps the token out of its remote URL, so native git, which
+	// pushes and fetches below, needs it handed over.
+	ctx = reservation.WithGitHubToken(ctx, token.Value)
 
 	scope := reservation.ScopeApp
 	if r.flag.Exclusive {

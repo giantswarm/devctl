@@ -35,16 +35,19 @@ var durationUnits = map[string]time.Duration{
 const acceptedDurations = "30m, 4h, 2d"
 
 // clampedDuration returns how long the requested reservation may last, or
-// refuses one that runs past the maximum the cluster allows.
+// refuses one that runs past the maximum the cluster allows. An unrequested
+// duration (zero) is the default, held to that maximum.
 func clampedDuration(req Request, configMapPath string) (time.Duration, error) {
-	duration := req.Duration
-	if duration == 0 {
-		duration = DefaultDuration
-	}
-
 	maxDuration, err := clusterMaxDuration(configMapPath)
 	if err != nil {
 		return 0, microerror.Mask(err)
+	}
+
+	// Nobody asked for the default, so a cluster whose maximum is below it
+	// takes the maximum instead of refusing a length nobody typed.
+	duration := req.Duration
+	if duration == 0 {
+		duration = min(DefaultDuration, maxDuration)
 	}
 	if duration > maxDuration {
 		return 0, microerror.Maskf(invalidDurationError,
