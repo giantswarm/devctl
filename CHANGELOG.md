@@ -9,6 +9,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `repo reconcile` and `repo checks`: the reported checks are read from the newest pull request merged through the
+  gate. A pull request whose head is its own merge commit — merged by a push of its head onto the branch, as a fork
+  line's upstream re-pin is — is passed over: its SHA carries the branch's push runs and statuses and no pull-request
+  check, and reading it removed every check that reports only on a pull request one night and re-added it the next.
 - `pr merge --detach` help and the examples in `docs/pr-merge.md` and `docs/rollout-wait.md`: a local wrapper's path
   had slipped in front of the `devctl` commands; they read `devctl …` again. The documented start document's
   `reason` is empty, as on every exit 0; `status` names the command that reads the outcome.

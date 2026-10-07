@@ -246,9 +246,9 @@ func (c *Client) RemoveRepositoryBranchProtection(ctx context.Context, repositor
 // recently merged pull requests of branch: the checks that demonstrably gate
 // a pull request in this repository. Callers use it to require a check only
 // once it exists (devctl repo checks --checks-if-reported). notFoundError
-// when no pull request has been merged yet, or when the newest merge's head
-// carries no check at all: nothing has reported, and an empty answer is no
-// evidence that a required check is gone.
+// when no pull request has been merged through the gate yet, or when the
+// newest merge's head carries no check at all: nothing has reported, and an
+// empty answer is no evidence that a required check is gone.
 func (c *Client) ReportedChecks(ctx context.Context, repository *github.Repository, branch string) ([]string, error) {
 	checks, err := c.getGithubChecks(ctx, repository, branch, nil)
 	if err != nil {
@@ -387,7 +387,11 @@ const mergedPRsPage = 100
 // repository's history. The page is ordered by update, which a comment, a
 // label or an unassignment on a long-merged pull request moves to the top,
 // so the heads are ordered by their merge time. A pull request closed
-// without a merge is skipped: its checks reflect a failed gate.
+// without a merge is skipped: its checks reflect a failed gate. So is a pull
+// request whose head is its own merge commit: it was merged by a push of
+// its head onto the branch (a fast-forward, a fork line's upstream re-pin),
+// not through the gate, and its head carries the branch's push runs and
+// statuses, not what gates a pull request.
 func (c *Client) getRecentMergedPRHeads(ctx context.Context, repository *github.Repository, branch string, n int) ([]string, error) {
 	owner := repository.GetOwner().GetLogin()
 	repo := repository.GetName()
@@ -402,7 +406,9 @@ func (c *Client) getRecentMergedPRHeads(ctx context.Context, repository *github.
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}
-	merged := slices.DeleteFunc(prs, func(pr *github.PullRequest) bool { return pr.MergedAt == nil })
+	merged := slices.DeleteFunc(prs, func(pr *github.PullRequest) bool {
+		return pr.MergedAt == nil || mergedByPush(pr)
+	})
 	slices.SortStableFunc(merged, func(a, b *github.PullRequest) int {
 		return b.GetMergedAt().Compare(a.GetMergedAt().Time)
 	})
@@ -411,6 +417,15 @@ func (c *Client) getRecentMergedPRHeads(ctx context.Context, repository *github.
 		heads = append(heads, pr.GetHead().GetSHA())
 	}
 	return heads, nil
+}
+
+// mergedByPush says the merged pull request's head landed on the base as it
+// was, by a push: GitHub then records the head itself as the merge commit,
+// where a squash, a merge or a rebase (which rewrites the commits) records
+// a new one.
+func mergedByPush(pr *github.PullRequest) bool {
+	head := pr.GetHead().GetSHA()
+	return head != "" && pr.GetMergeCommitSHA() == head
 }
 
 func (c *Client) SetRepositoryDefaultBranch(ctx context.Context, repository *github.Repository, newDefaultBranch string) (err error) {

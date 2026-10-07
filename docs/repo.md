@@ -252,7 +252,10 @@ The default branch carries the company baseline's protection: one required revie
 checks on the reported-only rule (a context is required once it has reported on the default branch or a
 recently merged pull request, a required context nothing reports is removed, the entry's `requiredChecks`
 are required whatever reported and never removed), a branch need not be up to date to merge; no deletion
-and no force push. A customer repository (flavour `customer`) keeps its own protection.
+and no force push. What reported is read from the head of the newest pull request merged through the gate;
+one merged by a push of its head onto the branch (a fork line's upstream re-pin) is passed over, its head
+carrying the branch's push runs rather than a pull request's checks. A customer repository (flavour
+`customer`) keeps its own protection.
 
 The protection is one repository ruleset, `devctl: default branch`, active on
 `~DEFAULT_BRANCH` so a rename or a fork line's declared branch needs no change: the same rules, a GitHub
