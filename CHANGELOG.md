@@ -9,6 +9,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `gen circleci`: the generated pipelines pin architect orb 10.12.2. Its `push-to-app-catalog` fetches the catalog's
+  head, resets onto it and re-applies the chart on every attempt, with ten attempts and a growing wait, so a chart
+  push that collides with another build's push to the same catalog succeeds instead of failing all four attempts.
 - `repo reconcile` and `repo checks`: the reported checks are read from the newest pull request merged through the
   gate. A pull request whose head is its own merge commit — merged by a push of its head onto the branch, as a fork
   line's upstream re-pin is — is passed over: its SHA carries the branch's push runs and statuses and no pull-request
