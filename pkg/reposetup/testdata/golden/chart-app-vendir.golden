@@ -1573,6 +1573,47 @@ helm-docs: check-env ## Update $(APPLICATION) README.
 check-env:
 	@test -n "$(APPLICATION)" || { echo "APPLICATION is not defined: set it in Makefile.custom.mk or run make APPLICATION=<chart>" >&2; exit 1; }
 
+##@ Chart tests
+
+# renovate: datasource=github-releases depName=helm-unittest/helm-unittest
+HELM_UNITTEST_VERSION ?= v1.2.1
+
+# Discovered in a recipe, like DEPS above: APPLICATION may be set by a later included
+# makefile, so nothing here may read it while make parses this file. Both directory names
+# are in use across the org -- upstream charts vendored from Artifact Hub tend to use
+# `unittests/`, our own charts use `tests/`.
+CHART_TESTS = $(shell ls -d helm/$(APPLICATION)/tests helm/$(APPLICATION)/unittests 2>/dev/null | head -1)
+
+.PHONY: helm-test install-helm-unittest
+
+# helm-test renders the chart and asserts on the rendered manifests. It never talks to a
+# cluster, pulls no image and needs no built chart, so it runs in under a second and it is
+# the first thing to run after a template change. Cluster-level testing is app-test-suite,
+# through the generated `execute-chart-tests` job and the repository's `.ats/main.yaml`;
+# the two do not overlap and neither replaces the other.
+helm-test: check-env install-helm-unittest ## Run the chart unit tests (helm-unittest).
+	@echo "====> $@"
+	@test -n "$(CHART_TESTS)" || { echo "no chart unit tests in helm/$(APPLICATION)"; exit 0; }
+	helm unittest -f "$(notdir $(CHART_TESTS))/*_test.yaml" helm/$(APPLICATION)
+
+# Installs the pinned version, and REPLACES a different one. A guard that only checks that
+# the plugin exists lets a developer keep an old version forever, and then a local run and
+# a CI run are not the same run -- which is the whole point of pinning it here.
+install-helm-unittest:
+	@have=$$(helm plugin list 2>/dev/null | awk '$$1 == "unittest" {print $$2}'); \
+	want=$$(echo "$(HELM_UNITTEST_VERSION)" | sed 's/^v//'); \
+	if [ "$$have" != "$$want" ]; then \
+		[ -z "$$have" ] || helm plugin uninstall unittest >/dev/null 2>&1 || true; \
+		helm plugin install https://github.com/helm-unittest/helm-unittest --version $(HELM_UNITTEST_VERSION); \
+	fi
+
+# Chart tests join `make test`, the interface CI calls (make-target-ci-interface ADR,
+# giantswarm#36734). Prerequisite-only rule, carrying no recipe: it ADDS to the Go `test`
+# recipe in Makefile.gen.go.mk rather than overriding it, and it DEFINES `test` in an app
+# repository that has no Go suite behind it. Keep it last: the first target of the first
+# included makefile is make's default goal.
+test: helm-test
+
 --- README.md
 [![CircleCI](https://dl.circleci.com/status-badge/img/gh/giantswarm/example/tree/main.svg?style=svg)](https://dl.circleci.com/status-badge/redirect/gh/giantswarm/example/tree/main)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/giantswarm/example/badge)](https://securityscorecards.dev/viewer/?uri=github.com/giantswarm/example)
