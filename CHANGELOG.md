@@ -9,6 +9,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `gen circleci`: the generated pipelines pin architect orb 10.12.2. Its `push-to-app-catalog` fetches the catalog's
+  head, resets onto it and re-applies the chart on every attempt, with ten attempts and a growing wait, so a chart
+  push that collides with another build's push to the same catalog succeeds instead of failing all four attempts.
 - `gen makefile --language kyverno-policy`: `make install-policies` and `make dabs` no longer fall back to
   `helm/kyverno-policies`. They use `helm/$(KYVERNO_POLICIES_APP_NAME)` when it has a `Chart.yaml`, as in CI,
   otherwise the one chart under `helm/`, and fail with a clear message when that is none or several.
