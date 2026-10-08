@@ -167,6 +167,21 @@
           "dispatchUpdateChartEventsRepo": {
             "type": "string"
           },
+          "renovate": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "extends": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9-]*\\.json5$"
+                },
+                "description": "Extra presets of giantswarm/renovate-presets the generated renovate.json5 extends, by file name (e.g. flux.json5); each becomes 'github>giantswarm/renovate-presets:<name>' (passed to 'devctl gen renovate --extends'). Applies only where renovate.json5 is generated (gen.ci.generate or the customer flavour). They come after the language and generated-CI presets and before the deprecated preset and renovate-custom.json5."
+              }
+            }
+          },
           "ci": {
             "type": "object",
             "additionalProperties": false,

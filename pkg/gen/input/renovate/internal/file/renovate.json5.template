@@ -28,6 +28,12 @@
     // without an ats/ Pipfile, so it is safe to extend for all generated-CI repos.
     'github>giantswarm/renovate-presets:tests-ats.json5',
     {{- end }}
+    {{- if .Extends }}
+    // Extra presets declared for this repo - https://github.com/giantswarm/renovate-presets
+    {{- range .Extends }}
+    {{ . }},
+    {{- end }}
+    {{- end }}
     {{- if .Deprecated }}
     // Deprecated repo - https://github.com/giantswarm/renovate-presets/blob/main/deprecated.json5
     // Disables all routine updates and keeps only security/vulnerability remediation.

@@ -9,6 +9,9 @@ import (
 	"github.com/giantswarm/devctl/v8/pkg/gen/input/renovate/internal/params"
 )
 
+// presetsPrefix scopes every extra extends entry to giantswarm/renovate-presets.
+const presetsPrefix = "github>giantswarm/renovate-presets:"
+
 //go:embed renovate.json5.template
 var createRenovateTemplate string
 
@@ -46,6 +49,12 @@ func NewCreateRenovateInput(p params.Params) input.Input {
 		quotedReviewers[i] = squote(r)
 	}
 
+	extends := params.Extends(p)
+	quotedExtends := make([]string, len(extends))
+	for i, e := range extends {
+		quotedExtends[i] = squote(presetsPrefix + e)
+	}
+
 	i := input.Input{
 		Path:         filepath.Join(p.Dir, "renovate.json5"),
 		TemplateBody: createRenovateTemplate,
@@ -57,6 +66,7 @@ func NewCreateRenovateInput(p params.Params) input.Input {
 			"RepoName":          params.RepoName(p),
 			"HasCustomConfig":   params.HasCustomConfig(p),
 			"Deprecated":        params.Deprecated(p),
+			"Extends":           quotedExtends,
 		},
 	}
 

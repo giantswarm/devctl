@@ -27,3 +27,7 @@ func HasCustomConfig(p Params) bool {
 func Deprecated(p Params) bool {
 	return p.Deprecated
 }
+
+func Extends(p Params) []string {
+	return p.Extends
+}

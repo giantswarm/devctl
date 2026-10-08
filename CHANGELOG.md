@@ -19,6 +19,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `gen renovate --extends <file>` extends extra presets of `giantswarm/renovate-presets` by file name, before the
+  deprecated preset and `renovate-custom.json5`. The reconciler passes `gen.renovate.extends` of a repository entry.
+
 - `repo reconcile --align-files-app-id`: the align-files App bypasses the review rule and nothing else. The
   protection step moves the review into a ruleset of its own, `devctl: review`, whose bypass actors are those of
   `devctl: default branch` and the App for pull requests; the required checks stay in `devctl: default branch`,
