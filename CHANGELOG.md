@@ -223,6 +223,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   deliveredAt, ref, after, outcome, redeliveredAt}` and the warning says what was sent. GitHub's 403 is exit 8 naming
   what the identity lacks: the devctl App's repository permission Webhooks: read and write, or a repository admin's
   `gh` login. A failed setup workflow is still rerun from failed; a running one still waited for.
+- `gen makefile`: `Makefile.gen.app.mk` gains a `helm-test` target that runs the chart unit tests with
+  `helm-unittest`, and a prerequisite-only `test: helm-test` rule that joins them to `make test`, the target CI calls.
+  The plugin version is pinned in the makefile behind a Renovate annotation, and `install-helm-unittest` installs
+  exactly that version and replaces a different one, so a local run and a CI run are the same run. The target finds
+  `helm/$(APPLICATION)/tests` or `helm/$(APPLICATION)/unittests`, and prints a message and exits 0 in a repository
+  that has neither. Chart tests against a cluster stay with `app-test-suite` and the generated `execute-chart-tests`
+  job; the two do not overlap.
+
 - `gen renovate --extends <file>` extends extra presets of `giantswarm/renovate-presets` by file name, before the
   deprecated preset and `renovate-custom.json5`. The reconciler passes `gen.renovate.extends` of a repository entry.
 
