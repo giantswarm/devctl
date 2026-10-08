@@ -84,6 +84,10 @@ func Reap(ctx context.Context, req ReapRequest) ([]Reaped, error) {
 // not enabled is skipped, not a failure: most of a GitOps repo's clusters
 // never opt in.
 func enabledClusters(repoDir string) ([]string, error) {
+	if err := checkGitOpsRepo(repoDir); err != nil {
+		return nil, err
+	}
+
 	entries, err := os.ReadDir(filepath.Join(repoDir, clustersDir))
 	if err != nil {
 		return nil, microerror.Mask(err)

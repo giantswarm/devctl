@@ -11,6 +11,17 @@ func IsInvalidConfig(err error) bool {
 	return microerror.Cause(err) == invalidConfigError
 }
 
+// notGitOpsRepoError indicates that the directory holds no management-clusters
+// directory, so it is not a GitOps repo checkout.
+var notGitOpsRepoError = &microerror.Error{
+	Kind: "wrongRepoDirError",
+}
+
+// IsNotGitOpsRepo asserts notGitOpsRepoError.
+func IsNotGitOpsRepo(err error) bool {
+	return microerror.Cause(err) == notGitOpsRepoError
+}
+
 // clusterNotFoundError indicates that the GitOps repo holds no such management
 // cluster.
 var clusterNotFoundError = &microerror.Error{

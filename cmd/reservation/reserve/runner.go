@@ -111,6 +111,13 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 			Duration:    duration,
 			Scope:       scope,
 		})
+		if reservation.IsNotGitOpsRepo(err) {
+			// The fresh clone has no --repo-dir to fix: the wrong repo came in
+			// through --gitops-repo.
+			return microerror.Maskf(invalidFlagError,
+				"--gitops-repo %s is not the GitOps repo that holds the management cluster configuration: it has no management-clusters directory. Set --gitops-repo to that repo, for example giantswarm/giantswarm-management-clusters",
+				r.flag.GitOpsRepo)
+		}
 		return microerror.Mask(err)
 	}
 
