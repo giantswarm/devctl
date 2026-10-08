@@ -313,7 +313,7 @@ bypass: its pull request still waits for green checks. The review ruleset is wri
 `devctl: default branch` drops the rule, and deleted after it takes the rule back on a run without the id,
 so the review never lapses. An entry with `agentMerge: false` keeps the review in `devctl: default branch`
 without bypass. Only a run with `--devctl-app-id` writes it; one without reports the difference as
-`ruleset-pending`.
+`ruleset-pending`, and takes a review ruleset it finds for the writing run's layout, not a drift.
 
 `--devctl-app-id`, the devctl GitHub App's numeric id (the App's settings page; not the client id), is what
 the bypass list takes to be compared and written; the reconciler's wiring passes it. A run without the id

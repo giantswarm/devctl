@@ -319,7 +319,7 @@ func (r *Runner) stepRulesetProtection(ctx context.Context, s *run, sr *StepResu
 		}
 	}
 
-	split := r.splitsReview(s)
+	split := r.splitsReview(s, review)
 	desired := rulesetState{
 		enforcement: github.RulesetEnforcementActive,
 		include:     []string{defaultBranchRef},
@@ -407,9 +407,15 @@ func (r *Runner) stepRulesetProtection(ctx context.Context, s *run, sr *StepResu
 // splitsReview says whether the review rule lives in [ReviewRulesetName]:
 // the run has the align-files App's id and the entry allows agent merges.
 // Under agentMerge: false nothing bypasses the review, so the rule stays
-// in [RulesetName].
-func (r *Runner) splitsReview(s *run) bool {
-	return r.AlignFilesAppID != 0 && s.agentMerge()
+// in [RulesetName]. A run without [Runner.DevctlAppID] writes nothing and
+// compares the rules alone, the reading of `repo status` among them: the
+// review ruleset it finds (review) is the writing run's layout, not a
+// drift.
+func (r *Runner) splitsReview(s *run, review *github.RepositoryRuleset) bool {
+	if !s.agentMerge() {
+		return false
+	}
+	return r.AlignFilesAppID != 0 || (r.DevctlAppID == 0 && review != nil)
 }
 
 // stepReviewRuleset keeps the ruleset [ReviewRulesetName] of a run that
@@ -443,9 +449,10 @@ func (r *Runner) stepReviewRuleset(ctx context.Context, s *run, sr *StepResult, 
 			bypass:      append(slices.Clone(bypass), appActor(r.AlignFilesAppID)),
 			team:        s.team,
 		}
-		if have != nil && have.BypassActors == nil {
-			// Not readable by this identity: neither compared nor written.
-			desired.bypass = nil
+		if r.DevctlAppID == 0 || (have != nil && have.BypassActors == nil) {
+			// Without the devctl App id, or not readable by this identity,
+			// the list is neither compared nor written.
+			desired.bypass = from.bypass
 		}
 		if have == nil {
 			// The creation names the rule; what it adds is the bypass list.

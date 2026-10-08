@@ -1196,7 +1196,8 @@ func TestSteps(t *testing.T) {
 				r := h.gh.addRepo(owner, name)
 				r.statuses = []string{ctxGoBuild}
 				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID), adminBypass(), teamBypass(testTeamID)).Rules.PullRequest = nil
-				r.addRuleset(ReviewRulesetName, nil, appBypass(testAppID), adminBypass(), teamBypass(testTeamID), appBypass(testAlignAppID))
+				review := r.addRuleset(ReviewRulesetName, nil, appBypass(testAppID), adminBypass(), teamBypass(testTeamID), appBypass(testAlignAppID))
+				review.Rules.Deletion, review.Rules.NonFastForward = nil, nil
 			},
 			wantCheck: VerdictDrift, wantChange: `delete ruleset "devctl: review" (the review rule is back in "devctl: default branch")`,
 			verify: func(t *testing.T, h *harness, res *Result) {
@@ -1227,6 +1228,22 @@ func TestSteps(t *testing.T) {
 					messages = append(messages, f.Message)
 				}
 				require.Contains(t, strings.Join(messages, "\n"), `the ruleset "devctl: review" differs from the declared review rule: create ruleset`)
+			},
+		},
+		{
+			name: "protection: a run without either App id reads the review ruleset it finds as the layout, not a drift", step: StepProtection,
+			seed: func(h *harness) {
+				h.runner.DevctlAppID = 0
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID), adminBypass(), teamBypass(testTeamID)).Rules.PullRequest = nil
+				review := r.addRuleset(ReviewRulesetName, nil, appBypass(testAppID), adminBypass(), teamBypass(testTeamID), appBypass(testAlignAppID))
+				review.Rules.Deletion, review.Rules.NonFastForward = nil, nil
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.NotNil(t, h.repo().ruleset(ReviewRulesetName))
+				require.Empty(t, res.Step(StepProtection).Findings)
 			},
 		},
 		{
