@@ -1373,7 +1373,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - `gen precommit`: the `$ref` step of the `helm-schema-<chart>` hook keeps its behaviour but its
   rationale is corrected. It was documented as working around an unfixed generator bug
   (losisin/helm-values-schema-json#317). That bug is fixed: v2.6.0 ships #378, and measured against
-  v2.6.0 across all 21 helmchart repos the step is a no-op on generated output. It stays for schemas
+  v2.6.0 across the repositories that declare the `helmchart` flavour the step is a no-op on generated
+  output; the hook also reaches every repository with a `helm/` directory. It stays for schemas
   the generator *bundles* rather than generates — `bundle: true` inlines a `# @schema $ref: <file>`
   target verbatim, defect included — and `security-profiles-operator-app` depends on that today: the
   vendored upstream chart's own schema closes a `$ref`ed k8s Toleration with

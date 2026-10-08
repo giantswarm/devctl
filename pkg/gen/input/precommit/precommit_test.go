@@ -153,7 +153,11 @@ func Test_HelmSchemaFixHook(t *testing.T) {
 		// stopped the GENERATOR from emitting the defect, and the named repo is the
 		// one that still needs the step for a schema the generator BUNDLES. Whoever
 		// deletes this step next has to know both, or they regress that repo.
-		"losisin/helm-values-schema-json#378",
+		// A full URL, not GitHub shorthand: this text ships into every chart repo's
+		// .pre-commit-config.yaml, where `#378` resolves nowhere. Keep both numbers --
+		// #378 is the fix, #317 is the defect it describes.
+		"losisin/helm-values-schema-json/pull/378",
+		"(fixing #317)",
 		"security-profiles-operator-app",
 		"schemalint normalize",
 		// Both binaries are installed AND pinned by the hook itself, so no tooling comes
