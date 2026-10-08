@@ -45,17 +45,24 @@ system that will produce it:
    green on GitHub between its stages; CircleCI knows the workflow is `running`. A rerun of a
    failed workflow is a new workflow of the same name in the same pipeline, and the newest run is
    the one that counts. `not_run` is a skipped workflow. An `errored` pipeline (a configuration
-   error, which produces no workflows) is red.
+   error, which produces no workflows) is red. A setup pipeline (`setup: true` with
+   `continuation/continue`) is unfinished while its state is `setup-pending`, `setup` or `pending`:
+   its `setup` workflow may have finished, but the continued workflows that post the build's
+   contexts do not exist yet. It settles at `created`.
 3. **No GitHub Actions run of the head is open**: `queued`, `in_progress`, `waiting`, `pending`,
-   `requested`, or completed with the conclusion `action_required`. The last one is a fork's
-   workflow run awaiting a maintainer's approval: it completes at once, produces no check runs,
-   and the check list is simply shorter than it will be. The wait goes on; at the timeout the run
-   is named.
+   `requested`, or completed with the conclusion `action_required`. The last one is a workflow
+   run awaiting a repository member's approval (a fork's or a bot's pull request in a repository
+   that requires approval for such contributors): it completes at once, produces no check runs,
+   and the check list is simply shorter than it will be. No wait starts it, a member's approval
+   does: when such runs are all that is pending (nothing red, nothing else running, a required
+   context absent or not), the wait ends at that poll with exit 4, `approval_required`, its
+   `reason` naming each run with its URL. Once approved, the run starts again (`queued`,
+   `in_progress`) and a new wait judges it like any other.
 4. **Every required status context has reported**: the required status checks of the base
    branch's protection and of every ruleset in effect on it. A context nothing has reported under
    is unfinished. While anything of rules 1 to 3 is still pending, the wait goes on and the timeout
-   is exit 2 whatever is absent: the run awaiting approval, the queued check or the running
-   workflow may be what reports the context. Once every check, status, run and workflow of the
+   is exit 2 whatever is absent: the queued check or the running workflow may be what reports the
+   context; a run awaiting approval that is all that is pending is exit 4 `approval_required` (rule 3). Once every check, status, run and workflow of the
    head has finished and a required context is still absent, nothing is left that could report it:
    exit 4 at that poll, without waiting for the timeout.
 
@@ -164,7 +171,7 @@ reset`). Any other `403` is an answer: a permission the token lacks.
 
 | Field | Meaning |
 |---|---|
-| `command`, `schemaVersion`, `exitCode`, `verdict`, `reason`, `warnings`, `startedAt`, `finishedAt` | The envelope every agent-facing command prints. `verdict` is `green`, `red`, `timeout`, `not_applicable`, `required_missing`, `auth_required` or `usage`; `reason` is one sentence for anything but green; `warnings` carries the CircleCI token's expiry notice, a head change, a CircleCI project missing or never built, each retried read (Polling). |
+| `command`, `schemaVersion`, `exitCode`, `verdict`, `reason`, `warnings`, `startedAt`, `finishedAt` | The envelope every agent-facing command prints. `verdict` is `green`, `red`, `timeout`, `not_applicable`, `required_missing`, `approval_required`, `auth_required` or `usage`; `reason` is one sentence for anything but green; `warnings` carries the CircleCI token's expiry notice, a head change, a CircleCI project missing or never built, each retried read (Polling). |
 | `repository`, `number` | The pull request as given. |
 | `identity` | Who read GitHub: `app`, the devctl App login (giantswarm), or `gh`, your own `gh` login (every other owner); empty when the run ended before choosing. |
 | `headSha`, `baseRef` | The head commit judged and the base branch whose protection was read. |
@@ -183,6 +190,7 @@ reset`). Any other `403` is an answer: a permission the token lacks.
 | 2 | `timeout` | The timeout passed before an outcome, or a spent rate limit resets only after it; `unfinished` names what was still open, a required context still absent among it. |
 | 3 | `not_applicable` | Draft, closed, merged, conflicting or behind a strict base; `reason` says which. |
 | 4 | `required_missing` | Every check, run and workflow of the head has finished and a required status context never reported; `reason` names it. Known at the poll that saw it, before the timeout; with anything still pending the outcome is 2, not 4. |
+| 4 | `approval_required` | Nothing is red and the head waits only for GitHub Actions runs awaiting a repository member's approval (and the required contexts they may report); `reason` names each run with its URL. Known at the poll that saw it; approve the runs and wait again. |
 | 7 | `usage` | Wrong arguments or flags, a newer devctl released (the reason names `devctl version update`), or a tooling failure: GitHub or CircleCI answered with an error other than a 5xx, or a read failed eight tries in a row (Polling). |
 | 8 | `auth_required` | No usable token; `reason` names the `devctl auth login` to run. |
 

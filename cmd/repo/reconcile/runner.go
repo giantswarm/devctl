@@ -114,6 +114,7 @@ func (r *runner) run(ctx context.Context, arg string) error {
 		},
 		Baseline:         &baseline,
 		DevctlAppID:      r.flag.DevctlAppID,
+		AlignFilesAppID:  r.flag.AlignFilesAppID,
 		GitHubRequests:   githubRequests,
 		CircleCIRequests: circleciRequests,
 		Log:              engine.LogWriter(r.logger),

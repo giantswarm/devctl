@@ -26,6 +26,7 @@ func TestPrereleasesToTestCatalog(t *testing.T) {
 	for pin, want := range map[string]bool{
 		"10.12.0":       true,
 		"10.12.1":       true,
+		"10.12.2":       true,
 		"11.0.0":        true,
 		"dev:my-branch": true,
 		"10.11.1":       false,

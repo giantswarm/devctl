@@ -70,16 +70,7 @@ func genCommands(f Fields, gc genContext) [][]string {
 	flavour := strings.Join(g.Flavours, ",")
 	ci := g.CI
 	generateCI := ci != nil && ci.Generate != nil && *ci.Generate
-
-	// The release workflow follows the CI surface: generated CI implies
-	// auto-release, a repository without it stays on legacy.
-	releaseWorkflow := releaseWorkflowLegacy
-	if generateCI {
-		releaseWorkflow = releaseWorkflowAutoRelease
-	}
-	if ci != nil && ci.ReleaseWorkflow != "" {
-		releaseWorkflow = ci.ReleaseWorkflow
-	}
+	releaseWorkflow := effectiveReleaseWorkflow(ci)
 
 	line := func(generator string, args ...string) []string {
 		return append([]string{"devctl", "gen", generator}, args...)
@@ -92,6 +83,9 @@ func genCommands(f Fields, gc genContext) [][]string {
 	releaseArgs := []string{"--release-workflow", releaseWorkflow}
 	if releaseWorkflow == releaseWorkflowAutoRelease && f.DefaultBranch != "" && f.DefaultBranch != "main" && knows(genWorkflows, "--release-branch") {
 		releaseArgs = append(releaseArgs, "--release-branch", f.DefaultBranch)
+	}
+	if releaseWorkflow == releaseWorkflowAutoRelease && ci != nil && ci.MaintenanceBranches && knows(genWorkflows, "--maintenance-branches") {
+		releaseArgs = append(releaseArgs, "--maintenance-branches")
 	}
 
 	if !generates(g.Flavours) {
@@ -177,6 +171,13 @@ func genCommands(f Fields, gc genContext) [][]string {
 	}
 	for _, reviewer := range f.ChoreReviewers {
 		renovate = append(renovate, "-r", reviewer)
+	}
+	if g.Renovate != nil {
+		for _, preset := range g.Renovate.Extends {
+			if knows(genRenovate, "--extends") {
+				renovate = append(renovate, "--extends", preset)
+			}
+		}
 	}
 	commands = append(commands, line(genRenovate, renovate...))
 
@@ -286,6 +287,20 @@ func circleCIArgs(f Fields, flavour string, knows func(generator, flag string) b
 // flavours, as [gen.FlavourSlice.Generates] says it for the parsed ones: a
 // fork line carries its upstream's files plus the carried patches and gets
 // nothing generated.
+// effectiveReleaseWorkflow is the release workflow a gen.ci block resolves
+// to: gen.ci.releaseWorkflow when set, else the one the CI surface implies,
+// auto-release for generated CI and legacy without it.
+func effectiveReleaseWorkflow(ci *CIFields) string {
+	switch {
+	case ci != nil && ci.ReleaseWorkflow != "":
+		return ci.ReleaseWorkflow
+	case ci != nil && ci.Generate != nil && *ci.Generate:
+		return releaseWorkflowAutoRelease
+	default:
+		return releaseWorkflowLegacy
+	}
+}
+
 func generates(flavours []string) bool {
 	fl := make(gen.FlavourSlice, len(flavours))
 	for i, f := range flavours {

@@ -17,9 +17,11 @@ import (
 
 // stepCircleCI follows the project (under the new slug after a rename),
 // enables setup workflows — the generated pipeline is dynamic and fails
-// without them — gives the project a deploy key to check out with, and
-// verifies the webhook CircleCI installs on the follow: without it no push
-// and no tag reaches CircleCI, and the project is followed in name only.
+// without them — gives the project a deploy key to check out with, verified
+// on GitHub and named in the summary with the repository's other deploy
+// keys (circleCIDeployKeys), and verifies the webhook CircleCI installs on
+// the follow: without it no push and no tag reaches CircleCI, and the
+// project is followed in name only.
 // The writes run under the admin grant CircleCI asks for (adminGrant),
 // revoked when the step ends.
 func (r *Runner) stepCircleCI(ctx context.Context, s *run, sr *StepResult) (err error) {
@@ -88,15 +90,11 @@ func (r *Runner) stepCircleCI(ctx context.Context, s *run, sr *StepResult) (err 
 	if err != nil {
 		return err
 	}
-	missing := len(keys) == 0
-	if !missing && s.unarchive != nil {
-		// The archive deleted CircleCI's deploy key on GitHub, and CircleCI
-		// still lists its checkout key: the key on GitHub is the one read.
-		missing, err = r.circleCIDeployKeyMissing(ctx, s)
-		if err != nil {
-			return err
-		}
+	deployKeys, err := r.circleCIDeployKeys(ctx, s, sr)
+	if err != nil {
+		return err
 	}
+	missing := len(keys) == 0 || deployKeys.circleCIMissing
 	if missing {
 		if err := grant.ensure(ctx); err != nil {
 			return err
@@ -114,24 +112,59 @@ func (r *Runner) stepCircleCI(ctx context.Context, s *run, sr *StepResult) (err 
 		return err
 	}
 	if len(sr.Changes) == 0 {
-		sr.Summary = "followed, setup workflows on, checkout key present, " + webhook
+		sr.Summary = "followed, setup workflows on, checkout key present, " + deployKeys.summary + ", " + webhook
 	}
 	return nil
 }
 
-// circleCIDeployKeyMissing says whether the repository carries no deploy key
-// of CircleCI's on GitHub.
-func (r *Runner) circleCIDeployKeyMissing(ctx context.Context, s *run) (bool, error) {
-	keys, _, err := r.GitHub.Repositories.ListKeys(ctx, s.owner, s.name, &github.ListOptions{PerPage: 100})
-	if err != nil {
-		return false, err
+// deployKeysRead is what the circleci step read of the repository's deploy
+// keys on GitHub: the summary's words on them, and whether CircleCI's is
+// missing among them.
+type deployKeysRead struct {
+	summary string
+	// circleCIMissing says the keys were read and none is CircleCI's: the
+	// checkout key CircleCI lists cannot check the repository out.
+	circleCIMissing bool
+}
+
+// circleCIDeployKeys reads the repository's deploy keys on GitHub, the side
+// that decides whether CircleCI checks the repository out: CircleCI keeps
+// listing its checkout key after its deploy key is gone from GitHub — the
+// archive deletes it, a person can — so CircleCI's list alone would read a
+// repository no pipeline can clone as set up. The summary names every key
+// with its access, the one place an identity without the Administration
+// permission (the devctl App login answers 403 on GET
+// /repos/{owner}/{repo}/keys) reads them from. Keys the identity cannot read
+// (GitHub answers 404 or 403) are the finding FindingUnchecked, and
+// CircleCI's list decides alone, as it did before; nothing is guessed.
+func (r *Runner) circleCIDeployKeys(ctx context.Context, s *run, sr *StepResult) (deployKeysRead, error) {
+	keys, resp, err := r.GitHub.Repositories.ListKeys(ctx, s.owner, s.name, &github.ListOptions{PerPage: 100})
+	switch {
+	case isNotFound(resp, err) || isForbidden(err):
+		s.report(sr, FindingUnchecked,
+			fmt.Sprintf("the deploy keys of %s are not readable by this identity (GET /repos/{owner}/{repo}/keys needs the administration permission or admin rights): whether CircleCI's deploy key is on the repository is unknown", s.slug()),
+			"run the check as an identity that reads the repository's deploy keys (the reconciler's Align now); the key is verified on a later run")
+		return deployKeysRead{summary: "deploy keys not readable by this identity"}, nil
+	case err != nil:
+		return deployKeysRead{}, err
 	}
+	read := deployKeysRead{circleCIMissing: true}
+	var named []string
 	for _, k := range keys {
 		if k.GetTitle() == circleCIDeployKeyTitle {
-			return false, nil
+			read.circleCIMissing = false
 		}
+		access := "read-write"
+		if k.GetReadOnly() {
+			access = "read-only"
+		}
+		named = append(named, fmt.Sprintf("%s (%s)", k.GetTitle(), access))
 	}
-	return true, nil
+	read.summary = "no deploy key on GitHub"
+	if len(named) > 0 {
+		read.summary = "deploy keys on GitHub: " + strings.Join(named, ", ")
+	}
+	return read, nil
 }
 
 // circleCIWebhookURL is the URL of the webhook CircleCI installs on a

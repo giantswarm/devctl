@@ -113,6 +113,14 @@ func (r *runner) wait(ctx context.Context, args []string, doc *rolloutwait.Docum
 		return &agentcli.Retrying{Base: base, Clock: clock, Progress: progress, Warn: doc.Warn}
 	}
 
+	// The kube context is read before the release wait, so a context that
+	// does not exist ends the wait at once rather than after the release.
+	kubeContext := r.kubeContext(installation)
+	client, err := r.openCluster(installation, kubeContext, retrying)
+	if err != nil {
+		return err
+	}
+
 	// The release first: it names the charts and proves them pullable.
 	progress.Printf("reading the GitHub token from the keychain")
 	sources, err := r.openRelease(ctx, endpoints, retrying(nil), doc.Warn)
@@ -120,23 +128,26 @@ func (r *runner) wait(ctx context.Context, args []string, doc *rolloutwait.Docum
 		return err
 	}
 	releaseWaiter, err := releasewait.New(releasewait.Config{
-		Owner:        owner,
-		Repo:         repo,
-		Version:      version,
-		PR:           r.flag.PR,
-		Timeout:      r.flag.ReleaseTimeout,
-		Images:       r.flag.Images,
-		Charts:       r.flag.Charts,
-		GitHub:       sources.GitHub,
-		Entries:      sources.Entries,
-		CircleCI:     sources.CircleCI,
-		Registry:     sources.Registry,
-		CatalogIndex: sources.CatalogIndex,
-		Endpoints:    endpoints,
-		Clock:        clock,
-		Rate:         sources.Rate,
-		Progress:     progress,
-		Warn:         doc.Warn,
+		Owner:   owner,
+		Repo:    repo,
+		Version: version,
+		PR:      r.flag.PR,
+		// An installation follows the stable release a promote cuts from
+		// the candidate on the merge commit, not the candidate.
+		PreferPromoted: true,
+		Timeout:        r.flag.ReleaseTimeout,
+		Images:         r.flag.Images,
+		Charts:         r.flag.Charts,
+		GitHub:         sources.GitHub,
+		Entries:        sources.Entries,
+		CircleCI:       sources.CircleCI,
+		Registry:       sources.Registry,
+		CatalogIndex:   sources.CatalogIndex,
+		Endpoints:      endpoints,
+		Clock:          clock,
+		Rate:           sources.Rate,
+		Progress:       progress,
+		Warn:           doc.Warn,
 	})
 	if err != nil {
 		return err
@@ -148,7 +159,7 @@ func (r *runner) wait(ctx context.Context, args []string, doc *rolloutwait.Docum
 		// rolls out as its merge commit, through what fetches the
 		// repository on the installation.
 		if releasewait.IsNoRelease(err) && r.flag.PR != 0 && doc.Release.SHA != "" {
-			return r.waitRevision(ctx, installation, owner, repo, sources, retrying, clock, progress, doc, err)
+			return r.waitRevision(ctx, installation, kubeContext, owner, repo, sources, client, clock, progress, doc, err)
 		}
 		return agentcli.NewExitError(code, verdict, "release: %s", err)
 	}
@@ -168,11 +179,6 @@ func (r *runner) wait(ctx context.Context, args []string, doc *rolloutwait.Docum
 		return agentcli.NewExitError(agentcli.ExitNotApplicable, agentcli.VerdictNotApplicable, "%s %s ships no chart, nothing rolls out%s", args[1], doc.Release.Tag, hint)
 	}
 
-	kubeContext := r.kubeContext(installation)
-	client, err := r.openCluster(installation, kubeContext, retrying)
-	if err != nil {
-		return err
-	}
 	waiter, err := rolloutwait.New(rolloutwait.Config{
 		Installation: installation,
 		KubeContext:  kubeContext,
@@ -189,13 +195,18 @@ func (r *runner) wait(ctx context.Context, args []string, doc *rolloutwait.Docum
 	if err != nil {
 		return err
 	}
-	return waiter.Wait(ctx, &doc.Result)
+	err = waiter.Wait(ctx, &doc.Result)
+	if doc.Release.PromotePending && agentcli.Exit(err) == agentcli.ExitNotApplicable {
+		_, verdict := agentcli.Outcome(err)
+		return agentcli.NewExitError(agentcli.ExitNotApplicable, verdict, "%s; %s is the release candidate of #%d and no promoted release contains it yet: the promote is pending (devctl release promote %s), after which --pr follows the promoted release", err, doc.Release.Candidate, r.flag.PR, args[1])
+	}
+	return err
 }
 
 // waitRevision follows the merge commit of a pull request that releases
 // nothing to what applies it on the installation; when nothing there
 // fetches the repository, the answer stays that no release follows.
-func (r *runner) waitRevision(ctx context.Context, installation, owner, repo string, sources *releasewait.Sources, retrying func(http.RoundTripper) http.RoundTripper, clock agentcli.Clock, progress *agentcli.Progress, doc *rolloutwait.Document, noRelease error) error {
+func (r *runner) waitRevision(ctx context.Context, installation, kubeContext, owner, repo string, sources *releasewait.Sources, client dynamic.Interface, clock agentcli.Clock, progress *agentcli.Progress, doc *rolloutwait.Document, noRelease error) error {
 	if sources.Client == nil {
 		return fmt.Errorf("release: %w; following the merge commit needs the GitHub client", noRelease)
 	}
@@ -203,11 +214,6 @@ func (r *runner) waitRevision(ctx context.Context, installation, owner, repo str
 	paths, err := sources.Client.PullRequestFiles(ctx, owner, repo, r.flag.PR)
 	if err != nil {
 		return fmt.Errorf("listing the files of %s/%s#%d: %w", owner, repo, r.flag.PR, err)
-	}
-	kubeContext := r.kubeContext(installation)
-	client, err := r.openCluster(installation, kubeContext, retrying)
-	if err != nil {
-		return err
 	}
 	waiter, err := rolloutwait.New(rolloutwait.Config{
 		Installation: installation,

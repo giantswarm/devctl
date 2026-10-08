@@ -31,6 +31,7 @@ const (
 	VerdictTimeout            Verdict = "timeout"
 	VerdictNotApplicable      Verdict = "not_applicable"
 	VerdictRequiredMissing    Verdict = "required_missing"
+	VerdictApprovalRequired   Verdict = "approval_required"
 	VerdictRefused            Verdict = "refused"
 	VerdictAvailable          Verdict = "available"
 	VerdictCIFailed           Verdict = "ci_failed"
@@ -39,6 +40,11 @@ const (
 	VerdictReleaseUnconfirmed Verdict = "release_unconfirmed"
 	VerdictAuthRequired       Verdict = "auth_required"
 	VerdictUsage              Verdict = "usage"
+	// VerdictDetached: devctl pr merge --detach started the merge in a
+	// process of its own; the handle reads its outcome.
+	VerdictDetached Verdict = "detached"
+	// VerdictRunning: a detached merge has no outcome yet.
+	VerdictRunning Verdict = "running"
 )
 
 // The exit codes of every agent-facing command. 6 and 9 say that devctl pr
@@ -54,7 +60,8 @@ const (
 	// ExitNotApplicable: draft, closed, conflicting, behind a strict base, a
 	// version that does not resolve.
 	ExitNotApplicable = 3
-	// ExitRequiredMissing: a required context never reported.
+	// ExitRequiredMissing: a required context never reported, or the head
+	// waits only for Actions runs a member has to approve.
 	ExitRequiredMissing = 4
 	// ExitRefused: the command declines (another author, an opt-out).
 	ExitRefused = 5
@@ -69,6 +76,9 @@ const (
 	// pullable: the release timeout passed first, or the release wait could
 	// not judge it.
 	ExitReleaseUnconfirmed = 9
+	// ExitRunning: devctl pr merge status found the detached merge still
+	// running.
+	ExitRunning = 10
 )
 
 // Envelope is the head of every command's JSON document. A command's document

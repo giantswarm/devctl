@@ -108,6 +108,15 @@ type Runner struct {
 	// access alone): the list is then not compared either, and the summary
 	// says so. The reconciler's wiring passes the id.
 	DevctlAppID int64
+	// AlignFilesAppID is the numeric id of the align-files GitHub App, whose
+	// installation opens the generated-file pull requests and arms their
+	// auto-merge. With it the protection step moves the review rule into the
+	// ruleset [ReviewRulesetName], which the App bypasses for pull requests
+	// beside the actors of [RulesetName]; the required checks stay in
+	// [RulesetName], which it does not bypass. An entry with agentMerge:
+	// false keeps the review in [RulesetName] without bypass. 0 keeps the
+	// review rule in [RulesetName] and deletes the review ruleset.
+	AlignFilesAppID int64
 	// GitHubRequests and CircleCIRequests count the requests the clients
 	// send, when the caller built the clients' transports over them (one
 	// [Counter] under GitHub, Checks and Dispatch, one under CircleCI). The

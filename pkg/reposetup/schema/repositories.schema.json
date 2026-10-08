@@ -171,6 +171,21 @@
           "dispatchUpdateChartEventsRepo": {
             "type": "string"
           },
+          "renovate": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "extends": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9-]*\\.json5$"
+                },
+                "description": "Extra presets of giantswarm/renovate-presets the generated renovate.json5 extends, by file name (e.g. flux.json5); each becomes 'github>giantswarm/renovate-presets:<name>' (passed to 'devctl gen renovate --extends'). Applies only where renovate.json5 is generated (gen.ci.generate or the customer flavour). They come after the language and generated-CI presets and before the deprecated preset and renovate-custom.json5."
+              }
+            }
+          },
           "ci": {
             "type": "object",
             "additionalProperties": false,
@@ -193,6 +208,10 @@
                   "auto-release"
                 ],
                 "description": "Release workflow to generate. 'auto-release' produces a single push-based auto-release.yaml + cliff.toml that tags + publishes a GitHub Release from conventional commits on every push to main (no release PR, no manual approval). 'legacy' produces the create-release-pr / create-release / validate-changelog trio (releases driven by manually-pushed `main#release#patch`-style branches). When omitted, the effective default depends on `gen.ci.generate`: `true` defaults to 'auto-release' (a devctl-managed CI surface implies a devctl-managed release surface), `false`/unset defaults to 'legacy'. Set `releaseWorkflow: legacy` explicitly to opt a `gen.ci.generate: true` repo back to the legacy trio. On a fork line (flavour `fork`) 'auto-release' generates the release flow alone, cut from `defaultBranch` and counted from the line's highest stable tag. Requires devctl v8.8.0+."
+              },
+              "maintenanceBranches": {
+                "type": "boolean",
+                "description": "On a fork line (flavour `fork`) with releaseWorkflow 'auto-release': the maintenance branches release-X.Y cut releases too, each the patches of its own X.Y series, counted from the series' highest stable tag (release candidates first, as on `defaultBranch`). align-files renders the workflow on `defaultBranch`; a maintenance branch carries the same rendering. Requires devctl v8.117.0+."
               },
               "appCatalog": {
                 "type": "string",
@@ -386,6 +405,38 @@
         "items": {
           "type": "string",
           "minLength": 1
+        }
+      },
+      "lineGate": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["app", "requiredChecks"],
+        "description": "A fork line's land gate (flavour fork), for a line whose upstream re-pin rewrites it so that no pull-request merge can land it: the sync pushes the candidate to a branch of its own, whose push runs the checks, and lands exactly that checked commit by a direct push. The protection step adds the sync's App to 'devctl: default branch' as a bypass actor in every mode, so its push passes the pull-request and non-fast-forward rules, and keeps a second ruleset, 'devctl: line gate', on the default branch and the declared maintenance branches: deletion forbidden and the declared checks, pinned to GitHub Actions, required for every push, with no bypass actor. A push whose head the checks have not passed on is refused for every actor, the App, the repository admins and the devctl App included; pull requests merge as before, their head having passed the checks. Without the block the engine deletes its gate ruleset. Requires devctl v8.120.0+.",
+        "properties": {
+          "app": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "The numeric id of the GitHub App the line's sync pushes as (its settings page; not the client id)."
+          },
+          "requiredChecks": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "description": "The GitHub Actions check runs that must have passed on a commit before any push lands it on a gated branch, by the name GitHub reports.",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "branches": {
+            "type": "array",
+            "uniqueItems": true,
+            "description": "Maintenance lines gated beside the default branch, by branch name, e.g. 'release-1.3'.",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
         }
       },
       "pruneRulesets": {

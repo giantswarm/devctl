@@ -47,6 +47,7 @@ type fakeRepo struct {
 	hooks         []*github.Hook
 	hooksStatus   int // HTTP status of the hooks list when not 200
 	deployKeys    []*github.Key
+	keysStatus    int // HTTP status of the deploy keys list when not 200
 	release       string
 	releaseAt     time.Time
 	createdAt     time.Time // when the repository was created; a month ago for a seeded one
@@ -946,6 +947,10 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 	// Deploy keys: an archived repository still lets one go (checked live
 	// 2026-09-24).
 	mux.HandleFunc("GET /repos/{owner}/{repo}/keys", f.withRepo(func(w http.ResponseWriter, _ *http.Request, repo *fakeRepo) {
+		if repo.keysStatus != 0 {
+			writeJSON(w, repo.keysStatus, map[string]any{"message": "Not Found"})
+			return
+		}
 		keys := repo.deployKeys
 		if keys == nil {
 			keys = []*github.Key{}
@@ -1049,6 +1054,9 @@ type fakeCircleCI struct {
 	// installs its GitHub webhook then, for a follow by an admin whose grant
 	// carries the hook scope. Nil models a follow that leaves no hook.
 	onFollow func(org, repo string)
+	// onKey runs when a checkout key of the deploy-key type is created:
+	// CircleCI installs its deploy key on the GitHub repository then.
+	onKey func(org, repo string)
 	// isAdmin says whether the token's user is a GitHub administrator of
 	// the repository: CircleCI takes the follow, the settings and a deploy
 	// key from one only, and answers 403 otherwise. Nil admits every write.
@@ -1137,6 +1145,24 @@ func (f *fakeGitHub) installHook(org, repo string) {
 		r.hooks = append(r.hooks, circleCIHook())
 		r.deployKeys = append(r.deployKeys, circleCIDeployKey())
 	}
+}
+
+// installDeployKey is the onKey of the CircleCI fake: a checkout key of the
+// deploy-key type puts CircleCI's deploy key on the GitHub fake's
+// repository, once, as CircleCI installs it.
+func (f *fakeGitHub) installDeployKey(org, repo string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	r, ok := f.repos[org+"/"+repo]
+	if !ok {
+		return
+	}
+	for _, k := range r.deployKeys {
+		if k.GetTitle() == circleCIDeployKeyTitle {
+			return
+		}
+	}
+	r.deployKeys = append(r.deployKeys, circleCIDeployKey())
 }
 
 // follow seeds a followed project set up as the baseline wants, its webhook
@@ -1260,6 +1286,9 @@ func (f *fakeCircleCI) routes(mux *http.ServeMux) {
 		decode(r, &in)
 		k := circleciclient.CheckoutKey{Type: in["type"], Preferred: true, Fingerprint: "aa:bb", CreatedAt: time.Now()}
 		p.keys = append(p.keys, k)
+		if in["type"] == circleciclient.KeyTypeDeployKey && f.onKey != nil {
+			f.onKey(r.PathValue("org"), r.PathValue("repo"))
+		}
 		writeJSON(w, 201, k)
 	}))
 	mux.HandleFunc("GET /api/v2/project/gh/{org}/{repo}/pipeline", f.withProject(func(w http.ResponseWriter, r *http.Request, p *fakeProject) {

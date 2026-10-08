@@ -26,6 +26,13 @@ func TestGenCommandsNothingForAForkLine(t *testing.T) {
 		"--release-workflow", "auto-release", "--release-branch", "giantswarm"}}, genCommands(released, genContext{}))
 	require.False(t, hasCIJob(released))
 
+	released.Gen.CI.MaintenanceBranches = true
+	require.Equal(t, [][]string{{"devctl", "gen", "workflows", "--flavour", "fork", "--language", "go", "--repo-name", "upstream-fork",
+		"--release-workflow", "auto-release", "--release-branch", "giantswarm", "--maintenance-branches"}}, genCommands(released, genContext{}))
+	// A pinned devctl that predates the flag renders without it.
+	predates := genContext{Knows: func(_, flag string) bool { return flag != "--maintenance-branches" }}
+	require.NotContains(t, genCommands(released, predates)[0], "--maintenance-branches")
+
 	service := Fields{Name: "service", Gen: &GenFields{Flavours: []string{"app"}, Language: "go"}}
 	require.NotEmpty(t, genCommands(service, genContext{}))
 	require.True(t, hasCIJob(service))
@@ -96,6 +103,12 @@ func TestGenCommandsRenovate(t *testing.T) {
 			want: []string{"devctl", "gen", "renovate", "--language", "generic", "--repo-name", "configs", "--deprecated", "-r", "team:team-honeybadger"},
 		},
 		{
+			name: "extra presets",
+			fields: Fields{Name: "service", Gen: &GenFields{Flavours: []string{"app"}, Language: "go", CI: &CIFields{Generate: &on},
+				Renovate: &RenovateFields{Extends: []string{"flux.json5", "disable-vendir.json5"}}}},
+			want: []string{"devctl", "gen", "renovate", "--language", "go", "--circleci-generated", "--repo-name", "service", "--extends", "flux.json5", "--extends", "disable-vendir.json5"},
+		},
+		{
 			name:   "fork line",
 			fields: Fields{Name: "upstream-fork", Gen: &GenFields{Flavours: []string{"fork"}, Language: "go"}},
 		},
@@ -144,6 +157,7 @@ func TestGenCommandsPassEveryGenCIKey(t *testing.T) {
 	notCircleCIFlags := map[string]bool{
 		"generate":              true, // turns the line on
 		"releaseWorkflow":       true, // a flag of gen workflows
+		"maintenanceBranches":   true, // a flag of gen workflows
 		"requireCircleCIChecks": true, // the protection step's
 		"atsBranchOnly":         true, // deprecated, the generator ignores it
 		"templateContent":       true, // the reconciler's: no pipeline to generate

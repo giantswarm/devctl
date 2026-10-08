@@ -196,6 +196,12 @@ The verdicts are the ones the Repositories page shows:
 | `skipped` | the step does not apply (repository missing or empty, archived or deleted, no client for the system) |
 | `failed` | the step could not run to its end |
 
+The `circleci` line is the reconciler's run: beside the follow, the setup workflows and the webhook it
+names the repository's deploy keys on GitHub as the run read them, every key with its title and
+access (`deploy keys on GitHub: CircleCI (read-only)`), and a CircleCI key gone from GitHub is created
+again. Listing the keys needs the administration permission (the devctl App login answers 403 on
+`GET /repos/{owner}/{repo}/keys`), so the record is where that login reads them.
+
 Under the steps: the verdict line, the last reconciler run with what it was for (created, added,
 transferred, archived, deprecated, changed, dispatched, nightly), the run the record expects after a
 pull request or an Align now, a run that never reported, and the inventory's own findings. Above them,
@@ -246,7 +252,10 @@ The default branch carries the company baseline's protection: one required revie
 checks on the reported-only rule (a context is required once it has reported on the default branch or a
 recently merged pull request, a required context nothing reports is removed, the entry's `requiredChecks`
 are required whatever reported and never removed), a branch need not be up to date to merge; no deletion
-and no force push. A customer repository (flavour `customer`) keeps its own protection.
+and no force push. What reported is read from the head of the newest pull request merged through the gate;
+one merged by a push of its head onto the branch (a fork line's upstream re-pin) is passed over, its head
+carrying the branch's push runs rather than a pull request's checks. A customer repository (flavour
+`customer`) keeps its own protection.
 
 The protection is one repository ruleset, `devctl: default branch`, active on
 `~DEFAULT_BRANCH` so a rename or a fork line's declared branch needs no change: the same rules, a GitHub
@@ -283,6 +292,28 @@ not block `devctl pr merge` past the next run. Declared, `disabled` and `evaluat
 above. Only a run with `--devctl-app-id` deletes; one without reports each such ruleset as
 `ruleset-pending`. Without the field, nothing changes: an undeclared ruleset is the advisory
 `foreign-ruleset`, and deleting it is up to the team.
+
+An entry with `lineGate` gates a fork line whose upstream re-pin rewrites it, so that no pull-request merge
+can land it: the sync pushes the candidate to a branch of its own, whose push runs the line's checks, and
+lands exactly that commit by a direct push. `lineGate.app`, the numeric id of the App the sync pushes as,
+joins `devctl: default branch` as a bypass actor in every mode, so its push passes the pull-request and
+non-fast-forward rules. The engine keeps its second ruleset, `devctl: line gate`, on the default branch and
+the branches `lineGate.branches` names (the maintenance lines): deletion forbidden, `lineGate.requiredChecks`
+pinned to GitHub Actions and required for every push, and no bypass actor. A push whose head the checks have
+not passed on is refused for the App, the repository admins and the devctl App alike; a pull request merges
+as before, its head having passed them. Without the field the engine deletes `devctl: line gate`. Only a run
+with `--devctl-app-id` writes it; one without reports the difference as `ruleset-pending`.
+
+`--align-files-app-id`, the align-files GitHub App's numeric id, lets its generated-file pull requests merge
+by their armed auto-merge without a review. A bypass actor passes a whole ruleset, so the engine moves the
+review rule into a ruleset of its own, `devctl: review`, on the default branch: the baseline's required
+reviews, the bypass actors of `devctl: default branch` and the align-files App for pull requests. The
+required checks, no deletion and no force push stay in `devctl: default branch`, which the App does not
+bypass: its pull request still waits for green checks. The review ruleset is written before
+`devctl: default branch` drops the rule, and deleted after it takes the rule back on a run without the id,
+so the review never lapses. An entry with `agentMerge: false` keeps the review in `devctl: default branch`
+without bypass. Only a run with `--devctl-app-id` writes it; one without reports the difference as
+`ruleset-pending`, and takes a review ruleset it finds for the writing run's layout, not a drift.
 
 `--devctl-app-id`, the devctl GitHub App's numeric id (the App's settings page; not the client id), is what
 the bypass list takes to be compared and written; the reconciler's wiring passes it. A run without the id

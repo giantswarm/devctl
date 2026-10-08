@@ -49,6 +49,10 @@ const (
 	// pruneRulesetsEntryYAML makes the declaration the whole ruleset set:
 	// every undeclared active ruleset is deleted.
 	pruneRulesetsEntryYAML = declaredRulesetEntryYAML + "  pruneRulesets: true\n"
+	// lineGateEntryYAML gates a fork line's direct pushes: the sync's App
+	// replaces the line, and no actor lands an unchecked commit on it or on
+	// the maintenance line.
+	lineGateEntryYAML = entryYAML + "  lineGate:\n    app: 414149\n    requiredChecks: [run-tests, govulncheck]\n    branches: [release-1.3]\n"
 	// configurationEntryYAML is a configuration repository: no template, no
 	// generated pipeline.
 	configurationEntryYAML = `- name: sample-service
@@ -148,6 +152,8 @@ const (
 
 	// testAppID is the devctl App's id the harness configures.
 	testAppID int64 = 424242
+	// testAlignAppID is the align-files App the review ruleset lets past the review.
+	testAlignAppID int64 = 434343
 )
 
 // harness wires a Runner to the two fakes with a validated entry.
@@ -181,6 +187,7 @@ func newHarnessMode(t *testing.T, yaml string, mode reposetup.Mode) *harness {
 	ctx := context.Background()
 	gh, cc := newFakeGitHub(), newFakeCircleCI()
 	cc.onFollow = gh.installHook // a follow by an admin with the hook scope
+	cc.onKey = gh.installDeployKey
 	cc.isAdmin = gh.isAdmin
 	t.Cleanup(gh.srv.Close)
 	t.Cleanup(cc.srv.Close)
@@ -1107,6 +1114,167 @@ func TestSteps(t *testing.T) {
 			},
 		},
 		{
+			name: "protection: lineGate adds the sync's App to the default branch's ruleset and writes the gate no actor bypasses", step: StepProtection, entry: lineGateEntryYAML,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID), adminBypass(), teamBypass(testTeamID))
+			},
+			wantCheck: VerdictDrift, wantChange: `create ruleset "devctl: line gate" on ~DEFAULT_BRANCH, refs/heads/release-1.3, deletion forbidden, no bypass actor; require run-tests, govulncheck`,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				line := &github.BypassActor{ActorID: new(int64(414149)), ActorType: new(github.BypassActorTypeIntegration), BypassMode: new(github.BypassModeAlways)}
+				require.Equal(t, []*github.BypassActor{appBypass(testAppID), adminBypass(), teamBypass(testTeamID), line}, h.repo().ruleset(RulesetName).BypassActors, "the sync's App passes the pull-request rule in every mode")
+				gate := h.repo().ruleset(LineGateRulesetName)
+				require.NotNil(t, gate)
+				require.Empty(t, gate.BypassActors, "no actor bypasses the gate")
+				require.Equal(t, []string{"~DEFAULT_BRANCH", "refs/heads/release-1.3"}, gate.Conditions.RefName.Include)
+				require.Equal(t, []*github.RuleStatusCheck{actionsCheck("run-tests"), actionsCheck("govulncheck")}, gate.Rules.RequiredStatusChecks.RequiredStatusChecks, "pinned to GitHub Actions")
+				require.NotNil(t, gate.Rules.Deletion)
+				require.Nil(t, gate.Rules.PullRequest, "a checked commit lands by push")
+				require.Nil(t, gate.Rules.NonFastForward, "the sync's land replaces the line")
+				require.Equal(t, []string{
+					"bypass actors: App 424242 on pull requests, repository admins on pull requests, team team-bumblebee on pull requests, App 414149 always",
+					`create ruleset "devctl: line gate" on ~DEFAULT_BRANCH, refs/heads/release-1.3, deletion forbidden, no bypass actor; require run-tests, govulncheck`,
+				}, res.Step(StepProtection).Changes)
+			},
+		},
+		{
+			name: "protection: lineGate alongside agentMerge false keeps the sync's App alone", step: StepProtection, entry: lineGateEntryYAML + "  agentMerge: false\n",
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)})
+			},
+			wantCheck: VerdictDrift, wantChange: "bypass actor: App 414149 always",
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Len(t, h.repo().ruleset(RulesetName).BypassActors, 1)
+				require.NotNil(t, h.repo().ruleset(LineGateRulesetName))
+			},
+		},
+		{
+			name: "protection: the align-files App id moves the review into a ruleset the App bypasses, the checks stay binding", step: StepProtection,
+			seed: func(h *harness) {
+				h.runner.AlignFilesAppID = testAlignAppID
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID), adminBypass(), teamBypass(testTeamID))
+			},
+			wantCheck: VerdictDrift, wantChange: `create ruleset "devctl: review", 1 required review(s)`,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				review := h.repo().ruleset(ReviewRulesetName)
+				require.NotNil(t, review)
+				require.Equal(t, []*github.BypassActor{appBypass(testAppID), adminBypass(), teamBypass(testTeamID), appBypass(testAlignAppID)}, review.BypassActors, "the align-files App bypasses the review beside the default branch's actors")
+				require.Equal(t, 1, review.Rules.PullRequest.RequiredApprovingReviewCount)
+				require.Nil(t, review.Rules.RequiredStatusChecks, "the review ruleset carries no checks")
+				main := h.repo().ruleset(RulesetName)
+				require.Nil(t, main.Rules.PullRequest, "the review rule moved out")
+				require.Equal(t, []string{ctxGoBuild}, checkContexts(main), "the checks stay where the align-files App has no bypass")
+				require.NotContains(t, actorKeys(main.BypassActors), actorKey(appBypass(testAlignAppID)))
+				require.Equal(t, []string{
+					`create ruleset "devctl: review", 1 required review(s); bypass actors: App 424242 on pull requests, repository admins on pull requests, team team-bumblebee on pull requests, App 434343 on pull requests`,
+					"stop requiring pull requests",
+				}, res.Step(StepProtection).Changes, "the review ruleset is written before the default branch drops the rule")
+			},
+		},
+		{
+			name: "protection: the align-files App id leaves agentMerge false's review in the default branch's ruleset, without bypass", step: StepProtection, entry: entryYAML + "  agentMerge: false\n",
+			seed: func(h *harness) {
+				h.runner.AlignFilesAppID = testAlignAppID
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)})
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				require.Nil(t, h.repo().ruleset(ReviewRulesetName))
+				require.NotNil(t, h.repo().ruleset(RulesetName).Rules.PullRequest)
+			},
+		},
+		{
+			name: "protection: without the align-files App id the review returns to the default branch's ruleset before the review ruleset goes", step: StepProtection,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID), adminBypass(), teamBypass(testTeamID)).Rules.PullRequest = nil
+				review := r.addRuleset(ReviewRulesetName, nil, appBypass(testAppID), adminBypass(), teamBypass(testTeamID), appBypass(testAlignAppID))
+				review.Rules.Deletion, review.Rules.NonFastForward = nil, nil
+			},
+			wantCheck: VerdictDrift, wantChange: `delete ruleset "devctl: review" (the review rule is back in "devctl: default branch")`,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Nil(t, h.repo().ruleset(ReviewRulesetName))
+				require.Equal(t, 1, h.repo().ruleset(RulesetName).Rules.PullRequest.RequiredApprovingReviewCount)
+				require.Equal(t, []string{
+					"require pull requests; required reviews 0 → 1",
+					`delete ruleset "devctl: review" (the review rule is back in "devctl: default branch")`,
+				}, res.Step(StepProtection).Changes)
+				require.Empty(t, res.Step(StepProtection).Findings, "the engine's own ruleset is never foreign")
+			},
+		},
+		{
+			name: "protection: without the devctl App id a missing review ruleset is reported for the run with the id, not written", step: StepProtection,
+			seed: func(h *harness) {
+				h.runner.DevctlAppID = 0
+				h.runner.AlignFilesAppID = testAlignAppID
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)})
+			},
+			wantCheck: VerdictReported, wantFinding: FindingRulesetPending, wantAfter: VerdictReported,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Nil(t, h.repo().ruleset(ReviewRulesetName))
+				require.NotNil(t, h.repo().ruleset(RulesetName).Rules.PullRequest, "nothing written")
+				var messages []string
+				for _, f := range res.Step(StepProtection).Findings {
+					messages = append(messages, f.Message)
+				}
+				require.Contains(t, strings.Join(messages, "\n"), `the ruleset "devctl: review" differs from the declared review rule: create ruleset`)
+			},
+		},
+		{
+			name: "protection: a run without either App id reads the review ruleset it finds as the layout, not a drift", step: StepProtection,
+			seed: func(h *harness) {
+				h.runner.DevctlAppID = 0
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID), adminBypass(), teamBypass(testTeamID)).Rules.PullRequest = nil
+				review := r.addRuleset(ReviewRulesetName, nil, appBypass(testAppID), adminBypass(), teamBypass(testTeamID), appBypass(testAlignAppID))
+				review.Rules.Deletion, review.Rules.NonFastForward = nil, nil
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.NotNil(t, h.repo().ruleset(ReviewRulesetName))
+				require.Empty(t, res.Step(StepProtection).Findings)
+			},
+		},
+		{
+			name: "protection: without lineGate the gate ruleset is deleted", step: StepProtection,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID), adminBypass(), teamBypass(testTeamID))
+				r.addRuleset(LineGateRulesetName, []*github.RuleStatusCheck{actionsCheck("run-tests")})
+			},
+			wantCheck: VerdictDrift, wantChange: `delete ruleset "devctl: line gate" (no lineGate)`,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Nil(t, h.repo().ruleset(LineGateRulesetName))
+				require.Empty(t, res.Step(StepProtection).Findings, "the engine's own ruleset is never foreign")
+			},
+		},
+		{
+			name: "protection: without the App id a missing gate is reported for the run with the id, not written", step: StepProtection, entry: lineGateEntryYAML,
+			seed: func(h *harness) {
+				h.runner.DevctlAppID = 0
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)})
+			},
+			wantCheck: VerdictReported, wantFinding: FindingRulesetPending, wantAfter: VerdictReported,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Nil(t, h.repo().ruleset(LineGateRulesetName))
+				require.Contains(t, res.Step(StepProtection).Findings[0].Message, `the ruleset "devctl: line gate" differs from the declared lineGate: create ruleset`)
+			},
+		},
+		{
 			name: "protection: under pruneRulesets a run without the App id reports the undeclared ruleset for the run with the id, deletes nothing", step: StepProtection, entry: pruneRulesetsEntryYAML,
 			seed: func(h *harness) {
 				h.runner.DevctlAppID = 0
@@ -1265,7 +1433,7 @@ func TestSteps(t *testing.T) {
 			},
 			wantCheck: VerdictOK,
 			verify: func(t *testing.T, _ *harness, res *Result) {
-				require.Equal(t, "followed, setup workflows on, checkout key present, webhook present", res.Step(StepCircleCI).Summary)
+				require.Equal(t, "followed, setup workflows on, checkout key present, deploy keys on GitHub: CircleCI (read-only), webhook present", res.Step(StepCircleCI).Summary)
 			},
 		},
 		{
@@ -1279,6 +1447,7 @@ func TestSteps(t *testing.T) {
 				r := h.gh.addRepo(owner, name)
 				h.cc.onFollow = nil
 				h.cc.follow(owner, name)
+				r.deployKeys = []*github.Key{circleCIDeployKey()}
 				inactive := circleCIHook()
 				inactive.Active = new(false)
 				r.hooks = []*github.Hook{inactive, {ID: new(int64(7)), Name: new("web"), Active: new(true), Events: []string{"push"}, Config: &github.HookConfig{URL: new("https://github-pr-webhook.ci.giantswarm.io")}}}
@@ -1286,7 +1455,7 @@ func TestSteps(t *testing.T) {
 			wantCheck: VerdictReported, wantFinding: FindingCircleCIWebhookMissing, wantAfter: VerdictReported,
 			verify: func(t *testing.T, _ *harness, res *Result) {
 				sr := res.Step(StepCircleCI)
-				require.Equal(t, "followed, setup workflows on, checkout key present, webhook missing", sr.Summary)
+				require.Equal(t, "followed, setup workflows on, checkout key present, deploy keys on GitHub: CircleCI (read-only), webhook missing", sr.Summary)
 				require.Len(t, sr.Findings, 1)
 				require.False(t, sr.Findings[0].Advisory, "a deaf project is not set up")
 				require.Contains(t, sr.Findings[0].Fix, "POST /api/v1.1/project/github/giantswarm/sample-service/follow")
@@ -1319,7 +1488,58 @@ func TestSteps(t *testing.T) {
 			},
 			wantCheck: VerdictReported, wantFinding: FindingUnchecked, wantAfter: VerdictReported,
 			verify: func(t *testing.T, _ *harness, res *Result) {
-				require.Equal(t, "followed, setup workflows on, checkout key present, webhook not readable by this identity", res.Step(StepCircleCI).Summary)
+				require.Equal(t, "followed, setup workflows on, checkout key present, deploy keys on GitHub: CircleCI (read-only), webhook not readable by this identity", res.Step(StepCircleCI).Summary)
+			},
+		},
+		{
+			// CircleCI lists its checkout key after the deploy key is gone
+			// from GitHub (deleted by hand, or by the archive): no pipeline
+			// can clone the repository. The key on GitHub is the one read,
+			// and the repair creates it again.
+			name: "circleci: CircleCI's deploy key gone from GitHub is created again", step: StepCircleCI,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				h.cc.follow(owner, name)
+				r.deployKeys = nil
+			},
+			wantCheck: VerdictDrift, wantChange: "create a deploy key",
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				require.Len(t, h.repo().deployKeys, 1, "CircleCI installed its deploy key on GitHub again")
+			},
+		},
+		{
+			// A deploy key of another system beside CircleCI's: the summary
+			// names every key on GitHub with its access, the record being
+			// where an identity without the administration permission reads
+			// them.
+			name: "circleci: every deploy key on GitHub is named with its access", step: StepCircleCI,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				h.cc.follow(owner, name)
+				r.deployKeys = append(r.deployKeys, &github.Key{ID: new(int64(42)), Title: new("deployer"), ReadOnly: new(false)})
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, _ *harness, res *Result) {
+				require.Equal(t, "followed, setup workflows on, checkout key present, deploy keys on GitHub: CircleCI (read-only), deployer (read-write), webhook present", res.Step(StepCircleCI).Summary)
+			},
+		},
+		{
+			// GET /repos/{owner}/{repo}/keys answers 404 to a user without
+			// admin rights and 403 to an App without the administration
+			// permission: the keys are unchecked, CircleCI's list decides
+			// alone, nothing is guessed.
+			name: "circleci: deploy keys the identity cannot read are unchecked", step: StepCircleCI,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				h.cc.follow(owner, name)
+				r.keysStatus = 403
+			},
+			wantCheck: VerdictReported, wantFinding: FindingUnchecked, wantAfter: VerdictReported,
+			verify: func(t *testing.T, _ *harness, res *Result) {
+				sr := res.Step(StepCircleCI)
+				require.Equal(t, "followed, setup workflows on, checkout key present, deploy keys not readable by this identity, webhook present", sr.Summary)
+				require.Len(t, sr.Findings, 1)
+				require.Contains(t, sr.Findings[0].Message, "GET /repos/{owner}/{repo}/keys")
 			},
 		},
 		{
@@ -2513,14 +2733,14 @@ func TestRunFullRepositorySetUp(t *testing.T) {
 	require.Contains(t, string(data), `"repository":"giantswarm/sample-service"`)
 
 	// The budget: a check of the converged repository, every step, costs at
-	// most twenty-one GitHub requests (the webhooks read the circleci step
-	// added is the twenty-first), and the count is the fake's own.
+	// most twenty-two GitHub requests (the webhooks and the deploy keys the
+	// circleci step reads are the last two), and the count is the fake's own.
 	before := len(h.gets())
 	check := h.run(ModeCheck, false)
 	require.True(t, check.Converged, "%+v", check.Steps)
 	gets := h.gets()[before:]
 	require.Equal(t, len(gets), check.Requests.GitHub, "the counter and the fake agree")
-	require.LessOrEqual(t, check.Requests.GitHub, 21, "a converged check within the budget of twenty-one; the reads:\n%s", strings.Join(gets, "\n"))
+	require.LessOrEqual(t, check.Requests.GitHub, 22, "a converged check within the budget of twenty-two; the reads:\n%s", strings.Join(gets, "\n"))
 	require.Positive(t, check.Requests.CircleCI, "the circleci and release steps read CircleCI")
 
 	// The override costs nothing: the caller hands it in with the entry

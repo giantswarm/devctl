@@ -15,8 +15,8 @@ runs this one command instead of polling `kubectl get helmrelease` in a loop.
 ```nohighlight
 devctl rollout wait myinstallation giantswarm/app-operator v7.5.4
 devctl rollout wait myinstallation giantswarm/app-operator --pr 1234 --reconcile --progress
-/home/teemow/.go/bin/beekeeper gate -- devctl rollout wait myinstallation giantswarm/kagent-upstream v1.2.4 --chart giantswarm/kagent/helm/kagent --chart giantswarm/kagent/helm/kagent-crds
-/home/teemow/.go/bin/beekeeper gate -- devctl rollout wait myinstallation giantswarm/giantswarm-configs --pr 1234
+devctl rollout wait myinstallation giantswarm/kagent-upstream v1.2.4 --chart giantswarm/kagent/helm/kagent --chart giantswarm/kagent/helm/kagent-crds
+devctl rollout wait myinstallation giantswarm/giantswarm-configs --pr 1234
 ```
 
 ## What the command reads, and why
@@ -32,6 +32,17 @@ giantswarm/agent-platform's connectivity chart, whose HelmRelease upgrades minut
 chart's), and a chart named differently from its repository is found. A release that ships no
 chart is exit 3; for hand-written CI the reason names `--chart`. The document's `release` carries that
 wait's verdict, reason and result.
+
+### A pull request on a release candidate: release, then promote
+
+A repository that releases in two steps tags the merge commit with a release candidate (`v1.2.3-rc.1`, a
+GitHub pre-release) and cuts the stable release later with `devctl release promote`. An installation that
+follows stable releases (`semver: ">=0.0.0"`) never deploys the candidate, so `--pr` follows the promotion:
+the lowest published stable release above the candidate whose tag contains the merge commit (GitHub's
+comparison) is waited for, `release.tag` names it and `release.candidate` the candidate it was promoted
+from. Before the promote the candidate is waited for, with `release.promotePending` true; when nothing on
+the installation follows a pre-release the command ends with exit 3 and a reason that names the candidate
+and the pending promote. Run it again after the promote.
 
 ### A pull request that releases nothing: a configuration change
 
@@ -57,8 +68,10 @@ reconcile, once each.
 ### The installation
 
 The management cluster is read through the kube context `tsh kube login <installation>` writes,
-`teleport.giantswarm.io-<installation>` (`--context` names another), as you. A context that does not
-exist is exit 7; one that is not signed in, or whose credentials expired, is exit 8 naming
+`teleport.giantswarm.io-<installation>`, as you. An installation reached through another context
+(`kubectl gs login`'s `gs-<installation>`, a kind lab) is read through the one `--context` names. The
+context is checked before the release wait: one the kubeconfig does not have is exit 7 at once, its
+reason naming the kubeconfig's contexts that mention the installation and `--context`; one that is not signed in, or whose credentials expired, is exit 8 naming
 `tsh kube login`. Reads that fail in transit or with a 5xx are retried like every other agent-facing
 command's.
 

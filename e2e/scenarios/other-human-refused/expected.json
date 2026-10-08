@@ -21,6 +21,7 @@
     "method": "squash",
     "branchDeleted": false,
     "enqueued": false,
+    "dispatch": null,
     "unansweredReviews": null,
     "release": null
   }

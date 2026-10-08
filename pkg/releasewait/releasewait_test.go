@@ -38,6 +38,7 @@ type fixture struct {
 	version         string
 	pr              int
 	mergeCommit     string
+	preferPromoted  bool
 	timeout         time.Duration
 	catalog         bool
 	catalogLists    bool
@@ -198,7 +199,7 @@ func run(t *testing.T, fx fixture) (Result, error) {
 	}
 	circleCalls := 0
 	config := Config{
-		Owner: testOwner, Repo: testRepo, Version: fx.version, PR: fx.pr, MergeCommitSHA: fx.mergeCommit, Timeout: fx.timeout, Catalog: fx.catalog, Images: fx.images, Charts: fx.charts,
+		Owner: testOwner, Repo: testRepo, Version: fx.version, PR: fx.pr, MergeCommitSHA: fx.mergeCommit, PreferPromoted: fx.preferPromoted, Timeout: fx.timeout, Catalog: fx.catalog, Images: fx.images, Charts: fx.charts,
 		GitHub:  ghClient,
 		Entries: entries{fx.entry},
 		CircleCI: func(context.Context) (CircleCI, error) {
@@ -1178,6 +1179,72 @@ func TestWaitPullRequestAutoReleaseFinishedWithoutTagIsNoRelease(t *testing.T) {
 
 // The known merge commit is used as is: no pull request is read (the mock
 // scripts none, so a read would fail the wait).
+// rcMerged scripts a merge commit auto-release tagged as the release
+// candidate v1.2.3-rc.1, and the repository's releases.
+func rcMerged(releases ...map[string]any) sequence.Routes {
+	github := mergedWithoutTag(autoReleaseRuns(autoReleaseRun("completed", "success")))
+	github[repoRoute("/tags")] = []sequence.Response{{Body: []map[string]any{{"name": "v1.2.3-rc.1", "commit": map[string]any{"sha": testSHA}}}}}
+	github[repoRoute("/releases")] = []sequence.Response{{Body: releases}}
+	return github
+}
+
+// noPipelineYet answers that CircleCI has no pipeline for the tag yet.
+func noPipelineYet() sequence.Routes {
+	return sequence.Routes{"GET /api/v2/project/gh/giantswarm/kserve/pipeline": {{Body: map[string]any{"items": []any{}}}}}
+}
+
+func release(tag string, prerelease bool) map[string]any {
+	return map[string]any{"tag_name": tag, "draft": false, "prerelease": prerelease}
+}
+
+// A merge tagged as a release candidate is followed to the stable release a
+// promote cut from it: the lowest one that contains the merge commit.
+func TestWaitPullRequestFollowsThePromotedRelease(t *testing.T) {
+	const promotedSHA = "fedcba9876543210fedcba9876543210fedcba98"
+	github := rcMerged(release("v1.3.0", false), release("v1.2.3", false), release("v1.2.3-rc.1", true), release("v1.2.2", false))
+	github[repoRoute("/git/ref/tags/"+testTag)] = []sequence.Response{{Body: map[string]any{"ref": "refs/tags/" + testTag, "object": map[string]any{"type": "commit", "sha": promotedSHA}}}}
+	github[repoRoute("/compare/"+testSHA+"...v1.2.3")] = []sequence.Response{{Body: map[string]any{"status": "ahead"}}}
+	fx := fixture{
+		entry: generatedEntry(t), github: github, pr: 7, mergeCommit: testSHA, preferPromoted: true,
+		circleci: pipelineRoutes([][]map[string]any{{wf("w1", "build", "success", "2026-09-21T10:00:00Z")}}, map[string][]map[string]any{"w1": {job("push-to-registries-release", "success")}}),
+		registry: sequence.Routes{
+			"HEAD /v2/giantswarm/kserve-controller/manifests/1.2.3": {{Status: 200}},
+			"HEAD /v2/charts/giantswarm/kserve/manifests/1.2.3":     {{Status: 200}},
+		},
+	}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+	if result.Tag != testTag || result.SHA != promotedSHA || result.Candidate != "v1.2.3-rc.1" || result.PromotePending {
+		t.Errorf("result: %+v", result)
+	}
+}
+
+// Before the promote the candidate is waited for, and the result says the
+// promote is pending: a stable release above it that does not contain the
+// merge commit (cut from another line) is not its promotion.
+func TestWaitPullRequestCandidateBeforeThePromote(t *testing.T) {
+	github := rcMerged(release("v1.2.4", false), release("v1.2.3-rc.1", true), release("v1.2.2", false))
+	github[repoRoute("/compare/"+testSHA+"...v1.2.4")] = []sequence.Response{{Body: map[string]any{"status": "diverged"}}}
+	fx := fixture{
+		entry: generatedEntry(t), github: github, pr: 7, mergeCommit: testSHA, preferPromoted: true, timeout: 45 * time.Second, circleci: noPipelineYet(),
+	}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitTimeout, "")
+	if result.Tag != "v1.2.3-rc.1" || result.SHA != testSHA || result.Candidate != "v1.2.3-rc.1" || !result.PromotePending {
+		t.Errorf("result: %+v", result)
+	}
+}
+
+// Without PreferPromoted (release wait, pr merge) the candidate is the release.
+func TestWaitPullRequestCandidateWithoutPreferPromoted(t *testing.T) {
+	fx := fixture{entry: generatedEntry(t), github: rcMerged(), pr: 7, mergeCommit: testSHA, timeout: 45 * time.Second, circleci: noPipelineYet()}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitTimeout, "")
+	if result.Tag != "v1.2.3-rc.1" || result.Candidate != "" || result.PromotePending {
+		t.Errorf("result: %+v", result)
+	}
+}
+
 func TestWaitPullRequestWithTheMergeCommitReadsNoPullRequest(t *testing.T) {
 	fx := fixture{
 		entry: generatedEntry(t), pr: 7, mergeCommit: testSHA,

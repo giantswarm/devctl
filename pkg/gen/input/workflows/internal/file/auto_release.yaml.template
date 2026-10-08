@@ -30,7 +30,12 @@ on:
   push:
     branches:
       - {{{{ .ReleaseBranch }}}}
-{{{{- if .Fork }}}}
+{{{{- if .MaintenanceBranches }}}}
+      # A fork line's maintenance branches, release-X.Y matched whole: each
+      # releases the patches of its own X.Y series, whose highest stable tag
+      # the baseline step below takes instead of the line's.
+      - 'release-[0-9]+.[0-9]+'
+{{{{- else if .Fork }}}}
       # A fork line releases from its consumed branch alone: the line's
       # baseline below is its highest stable tag, which a backport branch of
       # an older line must not take.
@@ -112,8 +117,26 @@ jobs:
         id: line
         run: |
           set -euo pipefail
-          line=$(git tag --list 'v*.*.*' --sort=-v:refname | { grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' || true; } | head -1)
+          stable='^v[0-9]+\.[0-9]+\.[0-9]+$'
+{{{{- if .MaintenanceBranches }}}}
+          # A maintenance branch release-X.Y releases the X.Y series alone:
+          # its baseline is the series' highest stable tag, git-cliff counts
+          # the series' tags, and every release is a patch, since the next
+          # minor of the line is the consumed branch's to cut.
+          series=""
+          if [[ "$GITHUB_REF_NAME" =~ ^release-([0-9]+)\.([0-9]+)$ ]]; then
+            series="v${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
+            stable="^v${BASH_REMATCH[1]}\.${BASH_REMATCH[2]}\.[0-9]+$"
+          fi
+{{{{- end }}}}
+          line=$(git tag --list 'v*.*.*' --sort=-v:refname | { grep -E "$stable" || true; } | head -1)
           if [ -z "$line" ]; then
+{{{{- if .MaintenanceBranches }}}}
+            if [ -n "$series" ]; then
+              echo "::error title=No series baseline::${GITHUB_REF_NAME} releases the ${series} series, which has no stable ${series}.Z tag to count from: cut ${series}.0 on {{{{ .ReleaseBranch }}}} first."
+              exit 1
+            fi
+{{{{- end }}}}
             echo "no stable tag yet: the line starts from inception"
             exit 0
           fi
@@ -124,10 +147,17 @@ jobs:
             echo "LINE_REPINNED=true" >> "$GITHUB_ENV"
           fi
           major=${line%%.*}
-          echo "line baseline: ${line}, tags ${major}.x"
+          pattern="^${major}\.[0-9]+\.[0-9]+$"
+{{{{- if .MaintenanceBranches }}}}
+          if [ -n "$series" ]; then
+            pattern=$stable
+            echo "LINE_BUMP=patch" >> "$GITHUB_ENV"
+          fi
+{{{{- end }}}}
+          echo "line baseline: ${line}, tags matching ${pattern}"
           {
             echo "LINE_TAG=${line}"
-            echo "GIT_CLIFF__GIT__TAG_PATTERN=^${major}\.[0-9]+\.[0-9]+$"
+            echo "GIT_CLIFF__GIT__TAG_PATTERN=${pattern}"
           } >> "$GITHUB_ENV"
 {{{{- end }}}}
 
@@ -220,8 +250,18 @@ jobs:
           # Without either filter, --bump --context returns the full release
           # history in JSON and the render step below would concatenate every
           # past release into each new release's notes.
+{{{{- if .MaintenanceBranches }}}}
+          #
+          # A maintenance branch bumps the patch alone (LINE_BUMP from the
+          # baseline step). A fixed bump moves the version whatever the
+          # commits, so a context without a commit git-cliff counts has
+          # nothing to release.
+          git-cliff --unreleased --bump "${LINE_BUMP:-auto}" --context > cliff-context.json
+          NEXT=$(jq -r 'if (.[0].commits | length) == 0 then empty else .[0].version // empty end' cliff-context.json)
+{{{{- else }}}}
           git-cliff --unreleased --bump --context > cliff-context.json
           NEXT=$(jq -r '.[0].version // empty' cliff-context.json)
+{{{{- end }}}}
           echo "next computed: ${NEXT:-<empty>}"
           echo "version=${NEXT}" >> "$GITHUB_OUTPUT"
 

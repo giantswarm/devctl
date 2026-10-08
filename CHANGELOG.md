@@ -9,6 +9,61 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `gen circleci`: the generated pipelines pin architect orb 10.12.2. Its `push-to-app-catalog` fetches the catalog's
+  head, resets onto it and re-applies the chart on every attempt, with ten attempts and a growing wait, so a chart
+  push that collides with another build's push to the same catalog succeeds instead of failing all four attempts.
+- `repo reconcile` and `repo checks`: the reported checks are read from the newest pull request merged through the
+  gate. A pull request whose head is its own merge commit — merged by a push of its head onto the branch, as a fork
+  line's upstream re-pin is — is passed over: its SHA carries the branch's push runs and statuses and no pull-request
+  check, and reading it removed every check that reports only on a pull request one night and re-added it the next.
+- `pr merge --detach` help and the examples in `docs/pr-merge.md` and `docs/rollout-wait.md`: a local wrapper's path
+  had slipped in front of the `devctl` commands; they read `devctl …` again. The documented start document's
+  `reason` is empty, as on every exit 0; `status` names the command that reads the outcome.
+
+### Added
+
+- `gen renovate --extends <file>` extends extra presets of `giantswarm/renovate-presets` by file name, before the
+  deprecated preset and `renovate-custom.json5`. The reconciler passes `gen.renovate.extends` of a repository entry.
+
+- `repo reconcile --align-files-app-id`: the align-files App bypasses the review rule and nothing else. The
+  protection step moves the review into a ruleset of its own, `devctl: review`, whose bypass actors are those of
+  `devctl: default branch` and the App for pull requests; the required checks stay in `devctl: default branch`,
+  which the App does not bypass, so a red generated-file pull request still waits. Without the flag the review stays
+  in `devctl: default branch` and the review ruleset is deleted; `agentMerge: false` keeps it there without bypass.
+  `pr merge` reads `devctl: review` as the engine's own.
+- `repo reconcile`: the entry field `lineGate` (`app`, `requiredChecks`, `branches`) gates a fork line whose re-pin
+  lands as a direct push of a checked commit. The protection step adds the sync's App to `devctl: default branch` as
+  a bypass actor in every mode and keeps a second ruleset, `devctl: line gate`, on the default branch and the
+  declared maintenance branches: deletion forbidden and the declared checks, pinned to GitHub Actions, required for
+  every push, with no bypass actor. Without the field the engine deletes its gate ruleset.
+- `pr merge --detach`: the call is checked as the blocking one is, then the merge runs in a process of its own and
+  the call returns within seconds with a handle (exit 0, verdict `detached`). `pr merge status <handle>` reads the
+  outcome: the merge's own document and exit code once it ended, exit 10 `running` while it runs, `lost` when its
+  process ended without a document; without a handle it lists the machine's detached merges. `--on-done <command>`
+  runs a command with the outcome in its environment when the detached merge ended. The blocking call stays the
+  default.
+
+### Fixed
+
+- `pr wait` (and the wait in `pr merge`): a head whose only pending items are GitHub Actions runs awaiting a
+  repository member's approval (`action_required`, as for a fork's or a bot's pull request) ends the wait at that
+  poll with exit 4, verdict `approval_required`, the reason naming each run with its URL. Before, the wait sat out
+  its timeout on runs no wait would start. Approved, the runs start again and a new wait judges them normally.
+
+- `rollout wait`: the kube context is checked before the release wait, so an installation whose
+  `teleport.giantswarm.io-<installation>` context the kubeconfig lacks ends with exit 7 at once instead of after
+  the release. The reason names the kubeconfig's contexts that mention the installation (`gs-<installation>`
+  from `kubectl gs login`) and `--context`, which the help now documents for non-Teleport installations.
+- `pr wait` (and the wait in `pr merge`): a CircleCI setup pipeline whose continuation is not created yet (state
+  `setup-pending`, `setup` or `pending`) keeps the wait going. Before, a finished `setup` workflow read as the whole
+  pipeline, and the required contexts of the continued workflows ended the wait with exit 4 `required_missing`.
+- `rollout wait --pr`: a repository that releases in two steps (the merge tags a release candidate, a promote
+  later cuts the stable release) is followed to the promoted release that contains the merge commit, named in
+  `release.tag` with the candidate in `release.candidate`. Before the promote the candidate is waited for with
+  `release.promotePending`, and an installation that follows only stable releases ends with exit 3 naming the
+  pending promote instead of a bare "excludes the version".
+- `repo reconcile`: the open-pull-requests finding pluralises by count: "1 pull request is open" instead of "1 pull
+  requests are open".
 - `pkg/reposetup` `Test_Render` passes without `go generate` having written the gitignored `.sha` provenance files: the
   golden comparison masks the template provenance link in both of its forms, so a plain `go test` agrees with CI.
 - `pr merge --update-branch`: a head behind a base that does not require branches to be up to date is updated before
@@ -32,6 +87,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   giantswarm/github passes (a devctl that predates the flag is not passed it and generates the workflow regardless).
   Prompted by the dead `docs.giantswarm.io` and `helm/<chart>/...` links in several app READMEs that surfaced in the
   Backstage README cards in October 2026.
+- `pr merge --dispatch <owner>/<repo>/<workflow file>[@<ref>]` (or `DEVCTL_MERGE_DISPATCH`, for every merge on a
+  machine; the flag wins): once the pull request is merged, after its release wait whatever that ended with, the
+  workflow is dispatched through its `workflow_dispatch` trigger on the ref or the repository's default branch, with
+  the inputs `repository` (the merged `<owner/repo>`), `pull_request` (its number) and `release` (the tag the merge
+  released, empty when none follows or none was waited for), so a site generated from merges and releases on a
+  schedule refreshes at once. The document carries it in `dispatch` (`workflow`, `ref`, `inputs`, `dispatched`,
+  `reason`). A dispatch GitHub refuses is a warning and never changes the merge's outcome; nothing is dispatched
+  when nothing merged, and without the flag and the variable nothing changes.
+- `gen workflows --maintenance-branches` (team file: `gen.ci.maintenanceBranches: true`): a fork line's maintenance
+  branches `release-X.Y` cut releases too. Each counts from its series' highest stable `vX.Y.Z` tag and releases the
+  next patch of that series, a feature included, as a candidate first; the stable release is a dispatch of the
+  workflow on the branch with `release-type: stable`. A series without a stable tag refuses. Opt-in: a fork line
+  without it and every other flavour render as before.
+- The circleci step reads the repository's deploy keys on GitHub on every run, the side that decides whether CircleCI
+  checks the repository out: a CircleCI key gone from GitHub (deleted by hand, or by an archive) is created again
+  instead of being read as present from CircleCI's list alone, and the step's summary names every deploy key with its
+  access (`deploy keys on GitHub: CircleCI (read-only)`), so `repo status` shows them to an identity that cannot list
+  them — the devctl App login answers 403 on `GET /repos/{owner}/{repo}/keys`. Keys the identity cannot read are the
+  finding `unchecked`; a converged check costs one request more (twenty-two).
 - `repo reconcile --unarchived`: the way back from `lifecycle: archived`. When the change at hand took the lifecycle
   from the entry, the lifecycle step unarchives the repository on GitHub ahead of the other steps, which set it up
   again (CircleCI follow and deploy key, protection) in the same run; the result says `unarchived`. An archive no

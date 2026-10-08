@@ -13,6 +13,10 @@ const templateKeyHeader = "Header"
 // stable tag.
 const templateKeyFork = "Fork"
 
+// templateKeyMaintenanceBranches is the template data key saying a fork
+// line's maintenance branches (release-X.Y) cut releases of their series.
+const templateKeyMaintenanceBranches = "MaintenanceBranches"
+
 // templateKeyReleaseBranch is the template data key carrying the branch whose
 // pushes cut releases.
 const templateKeyReleaseBranch = "ReleaseBranch"

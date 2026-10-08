@@ -2,7 +2,9 @@
 
 ```nohighlight
 devctl pr merge <owner/repo> <number> [--timeout 30m] [--release-timeout 30m] [--no-release-wait]
-                [--rebase] [--update-branch] [--progress] [--failed-log [--failed-log-lines 50]]
+                [--rebase] [--update-branch] [--dispatch <owner>/<repo>/<workflow file>[@<ref>]]
+                [--progress] [--failed-log [--failed-log-lines 50]] [--detach [--on-done <command>]]
+devctl pr merge status [<handle>]
 ```
 
 One blocking call that waits until the pull request's head is green (the wait of
@@ -14,7 +16,8 @@ per step to stderr.
 
 An agent that merges its own pull request makes this one call and is done when it exits 0: CI was
 green, the pull request is merged, and the release is pullable or none follows the merge. Nothing
-before a consumer bump or a rollout needs a second wait.
+before a consumer bump or a rollout needs a second wait. A caller that cannot be held that long starts
+the same merge with `--detach` and reads its outcome later ([below](#detached-merge---detach)).
 
 The tokens come from the OS keychain (`devctl auth login`, see [auth.md](auth.md)): the GitHub token
 before the first request, the CircleCI token only once the head or the tag turns out to carry a
@@ -177,6 +180,105 @@ Exit codes 6 and 9 say that the pull request was merged: the caller never merges
 `--no-release-wait` ends the command at the merge and leaves `release` null. `devctl release wait`
 remains the command for a release on its own: by version, or with `--catalog`.
 
+## After the merge: a workflow dispatch
+
+A site that is generated from merges and releases on a schedule (a team's product magazine) shows a
+merge only at its next refresh. `--dispatch <owner>/<repo>/<workflow file>[@<ref>]` tells it at once:
+once the pull request is merged, after the release wait whatever it ended with, the workflow of that
+file in `.github/workflows` of the repository is dispatched through its `workflow_dispatch` trigger
+(`POST /repos/{owner}/{repo}/actions/workflows/{file}/dispatches`), on the ref given or the
+repository's default branch, with three inputs:
+
+| Input | Value |
+|---|---|
+| `repository` | The merged pull request's repository, `<owner/repo>`. |
+| `pull_request` | Its number. |
+| `release` | The tag the merge released (`release.tag`); empty when no release follows the merge, when the release was not confirmed in time, or with `--no-release-wait`. |
+
+The workflow declares the three inputs (GitHub refuses a dispatch carrying an input the workflow does
+not declare, with `Unexpected inputs provided`); a workflow of the magazine's kind reads them and
+refreshes. The dispatch is made with the same token as the merge: the devctl App for a repository
+under giantswarm (Actions write, see [auth.md](auth.md)), your `gh` login elsewhere.
+
+`DEVCTL_MERGE_DISPATCH` carries the same value for every merge on a machine (an agent desk whose
+merges all feed one magazine); the flag wins over it. A value in another form is exit 7 before any
+request. Without the flag and the variable nothing changes.
+
+The dispatch never changes the merge's outcome: one GitHub refuses (an unknown workflow, an
+undeclared input, a token without Actions write, a repository it cannot read) is a warning in
+`warnings` and the reason in `dispatch.reason`, and the exit code is the merge's. Nothing is
+dispatched when nothing merged.
+
+```nohighlight
+devctl pr merge giantswarm/devctl 2278 --dispatch giantswarm/team-magazine/refresh.yaml
+DEVCTL_MERGE_DISPATCH=giantswarm/team-magazine/refresh.yaml devctl pr merge giantswarm/devctl 2278
+```
+
+## Detached merge: `--detach`
+
+The blocking call holds its caller through the CI wait, the merge and the release wait, often for
+more than ten minutes. `--detach` hands that wait off: the call is checked exactly as the blocking one
+is (arguments, flags, the version check and the token, so a wrong call is still exit 7 or 8 at once),
+then the same merge starts in a process of its own, in a session of its own so it outlives the
+caller's terminal, and the call returns within seconds with exit 0, verdict `detached`:
+
+```json
+{
+  "command": "pr merge",
+  "exitCode": 0,
+  "verdict": "detached",
+  "reason": "",
+  "repository": "giantswarm/devctl",
+  "number": 2278,
+  "identity": "app",
+  "handle": "giantswarm-devctl-2278-20261007T091500Z",
+  "pid": 41711,
+  "log": "/home/me/.local/state/devctl/merges/giantswarm-devctl-2278-20261007T091500Z/output.log",
+  "document": "/home/me/.local/state/devctl/merges/giantswarm-devctl-2278-20261007T091500Z/document.json",
+  "status": "devctl pr merge status giantswarm-devctl-2278-20261007T091500Z"
+}
+```
+
+The detached merge is the blocking command with every flag given (`--progress` always, so its log
+shows each step) and the environment of the call (`DEVCTL_MERGE_DISPATCH` included). It lives in
+`$XDG_STATE_HOME/devctl/merges/<handle>/` (`~/.local/state/devctl/merges/` without the variable):
+`output.log`, then `document.json`, the merge's document exactly as the blocking call prints it,
+written whole when the merge ended. A second `--detach` of a pull request whose detached merge still
+runs is exit 3 naming its handle. Ended merges are removed 30 days after they started.
+
+`devctl pr merge status <handle>` reads it: one JSON document with `handle`, `state`, `repository`,
+`number`, `pid`, `log`, `merge` (the merge's document once it ended, otherwise `null`) and `onDone`.
+Its exit code is the merge's own once the merge ended, so a caller reads it as it would the blocking
+call's (0 merged and released, 6 and 9 merged, 1 to 5 nothing merged); while the merge runs it is
+10, verdict `running`. A merge whose process is gone without a document (killed, the machine
+restarted) is `state: lost`, exit 7: whether it merged is GitHub's to say, and
+`devctl release wait <owner/repo> --pr <n>` confirms its release. Without a handle, `jobs[]` lists
+every detached merge of the machine, the newest first, with `state` and `exitCode`.
+
+`--on-done <command>` (with `--detach` only) is the callback: once the detached merge wrote its
+document, the command runs in `sh -c` (`cmd /C` on Windows), for at most ten minutes, with
+
+| Variable | Value |
+|---|---|
+| `DEVCTL_MERGE_HANDLE` | The handle. |
+| `DEVCTL_MERGE_EXIT_CODE` | The merge's exit code. |
+| `DEVCTL_MERGE_DOCUMENT` | The path of the merge's document. |
+| `DEVCTL_MERGE_REPOSITORY`, `DEVCTL_MERGE_NUMBER` | The pull request. |
+
+Its output goes to the log, its exit code into `onDone` of the status document; it never changes the
+merge's outcome. A remote callback is `--dispatch`, which works the same detached.
+
+```nohighlight
+devctl pr merge giantswarm/devctl 2278 --detach
+devctl pr merge giantswarm/devctl 2278 --detach --on-done 'notify-send "merge $DEVCTL_MERGE_NUMBER: exit $DEVCTL_MERGE_EXIT_CODE"'
+devctl pr merge status giantswarm-devctl-2278-20261007T091500Z
+devctl pr merge status
+```
+
+The blocking call stays the default. A wrapper that already runs the merge outside its caller and
+reads the blocking call's document keeps calling it without `--detach`: a detached start's document
+carries no `mergeCommitSha`, and its outcome is only in the handle.
+
 ## The document
 
 The document of the merge of [#2368](https://github.com/giantswarm/devctl/pull/2368), shortened where `…` stands:
@@ -226,7 +328,8 @@ The document of the merge of [#2368](https://github.com/giantswarm/devctl/pull/2
                  "workflows": [{"name": "build", "status": "success"}, {"name": "setup", "status": "success"}],
                  "failedJobs": [], "unfinished": []},
     "actions": []
-  }
+  },
+  "dispatch": null
 }
 ```
 
@@ -242,6 +345,7 @@ The envelope and the fields from `repository` to `unfinished[]` are [`pr wait`'s
 | `enqueued` | The base has a merge queue and the pull request went through it. |
 | `unansweredReviews` | The feedback the last review read found unanswered, each with `kind` (`review`, `review_comment`, `comment`), `login`, `state` (reviews only), `at` and `url`; empty when nothing held the merge, `null` when a refusal came before the read. |
 | `release` | The release the merge triggered, as `devctl release wait --pr` reports it: `verdict` (`available`, `no_release`, `ci_failed`, `timeout`, `not_applicable`, `usage`, `auth_required`), `reason`, and its result fields (`repository`, `tag`, `sha`, `releaseModel`, `ciModel`, `artifacts[]`, `pipeline`, `actions[]`, see [release-wait.md](release-wait.md#the-document)). `null` with `--no-release-wait` and when nothing merged. |
+| `dispatch` | The workflow dispatched after the merge ([above](#after-the-merge-a-workflow-dispatch)): `workflow` (`<owner>/<repo>/<file>`), `ref`, `inputs` (`repository`, `pull_request`, `release`), `dispatched` and, when GitHub refused it, `reason`. `null` without `--dispatch` (or `DEVCTL_MERGE_DISPATCH`) and when nothing merged. |
 
 ## Exit codes
 
@@ -251,12 +355,16 @@ The envelope and the fields from `repository` to `unfinished[]` are [`pr wait`'s
 | 1 | `red` | Something failed during the wait, or the merge queue dropped the pull request; `reason` names it. |
 | 2 | `timeout` | The timeout passed before an outcome, in the wait or in the queue; `unfinished` names what was still open. |
 | 3 | `not_applicable` | Draft, closed, merged, conflicting, behind a strict base without `--update-branch`, or GitHub declined the merge as the pull request stands; `reason` says which. |
-| 4 | `required_missing` | A required status context never reported within the timeout; `reason` names it. |
+| 4 | `required_missing`, `approval_required` | A required status context never reported, or the head waits only for Actions runs awaiting a member's approval (`approval_required`), known at the poll that saw it and before any merge; `reason` names the context or the runs. |
 | 5 | `refused` | Another human's pull request, a repository whose entry says `agentMerge: false`, or an unanswered review; `reason` names the author, the field or the feedback (`unanswered review: …`, listed in `unansweredReviews`). |
 | 6 | `release_failed` | **Merged**, and the release failed: the merge commit's auto-release run failed before it tagged, or the tag pipeline failed; `release.pipeline.failedJobs` names the jobs. |
 | 7 | `usage` | Wrong arguments or flags, a newer devctl released (the reason names `devctl version update`), or a tooling failure (GitHub or CircleCI answered with an error other than a 5xx, or a read failed eight tries in a row; the team files could not be read). |
 | 8 | `auth_required` | No usable token; `reason` names the `devctl auth login` to run. |
 | 9 | `release_unconfirmed` | **Merged**, and the release was not confirmed pullable: `--release-timeout` passed, the release wait could not judge it, or the auto-release run was superseded; `release.verdict` and `reason` say which. |
+
+`--detach` exits 0 with verdict `detached` once the merge started, or with the code of the check
+that refused the call. `devctl pr merge status` exits with the merge's code once it ended, 10
+(`running`) while it runs, and 7 for a lost merge or an unknown handle.
 
 Codes 1 to 5 mean nothing was merged, and 6 and 9 that the pull request was merged. A 7 or 8 is read
 with `mergeCommitSha`: a failure after the merge (deleting the branch) leaves it set, while the release
@@ -269,5 +377,6 @@ wait's own tooling and authentication failures are 9.
 | `DEVCTL_GITHUB_API_URL` | `https://api.github.com` | The GitHub REST API; the GraphQL endpoint is `<root>/graphql`. |
 | `DEVCTL_CIRCLECI_API_URL` | `https://circleci.com/api/v2` | The CircleCI API v2. |
 | `DEVCTL_REGISTRY_PUBLIC`, `DEVCTL_REGISTRY_PRIVATE`, `DEVCTL_REGISTRY_INSECURE` | as in [release-wait.md](release-wait.md#environment) | The registries the release's artifacts are probed in. |
+| `DEVCTL_MERGE_DISPATCH` | unset | The workflow every merge dispatches afterwards, `<owner>/<repo>/<workflow file>[@<ref>]`, the value of `--dispatch`, which wins over it ([above](#after-the-merge-a-workflow-dispatch)). |
 | `DEVCTL_KEYRING_FILE` | unset | A 0600 JSON file in place of the OS keychain (tests). |
 | `DEVCTL_TIME_SCALE` | `1` | Multiplies every poll interval and both timeouts (tests). |

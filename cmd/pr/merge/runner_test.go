@@ -296,3 +296,140 @@ func Test_run_notFoundHintGHLogin(t *testing.T) {
 		}
 	}
 }
+
+// dispatching is the magazine repository x/y whose refresh.yaml accepts a
+// dispatch on its default branch.
+func dispatching() sequence.Routes {
+	r := green()
+	r["GET /repos/x/y"] = []sequence.Response{{Body: map[string]any{"full_name": "x/y", "default_branch": "main"}}}
+	r["POST /repos/x/y/actions/workflows/refresh.yaml/dispatches"] = []sequence.Response{{Status: http.StatusNoContent}}
+	return r
+}
+
+func dispatched(t *testing.T, stdout *bytes.Buffer, server *githubmock.Server) map[string]any {
+	t.Helper()
+	doc := decode(t, stdout)
+	dispatch, _ := doc["dispatch"].(map[string]any)
+	if dispatch == nil || dispatch["dispatched"] != true || dispatch["workflow"] != "x/y/refresh.yaml" || dispatch["ref"] != "main" || dispatch["reason"] != "" {
+		t.Fatalf("dispatch: %v", doc["dispatch"])
+	}
+	inputs, _ := dispatch["inputs"].(map[string]any)
+	for key, want := range map[string]any{"repository": "o/r", "pull_request": "42", "release": ""} {
+		if inputs[key] != want {
+			t.Errorf("input %s: want %v, got %v", key, want, inputs[key])
+		}
+	}
+	n := 0
+	for _, req := range server.Requests() {
+		if req.Method == http.MethodPost && req.Path == "/repos/x/y/actions/workflows/refresh.yaml/dispatches" {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Errorf("want one dispatch, got %d", n)
+	}
+	return doc
+}
+
+// --dispatch runs the workflow after the merge with the merged pull request
+// as inputs; o/r releases nothing, so release is empty.
+func Test_run_dispatchFlag(t *testing.T) {
+	f := &flag{Timeout: time.Minute, ReleaseTimeout: time.Minute, Dispatch: "x/y/refresh.yaml", Progress: true,
+		getenv: func(string) string { return "a/b/other.yaml" }}
+	r, stdout, stderr, server := newRunner(t, dispatching(), loggedIn, f)
+	if err := r.run(context.Background(), []string{"o/r", "42"}); err != nil {
+		t.Fatalf("want exit 0, got %v\n%s", err, stderr.String())
+	}
+	doc := dispatched(t, stdout, server)
+	if doc["exitCode"] != 0.0 || len(doc["warnings"].([]any)) != 0 {
+		t.Errorf("document: %v", doc)
+	}
+	if !strings.Contains(stderr.String(), "dispatched: x/y/refresh.yaml on main with pull_request=42 release= repository=o/r") {
+		t.Errorf("--progress names the dispatch:\n%s", stderr.String())
+	}
+}
+
+// DEVCTL_MERGE_DISPATCH is the flag's value for every merge on a machine.
+func Test_run_dispatchEnv(t *testing.T) {
+	f := &flag{Timeout: time.Minute, NoReleaseWait: true, getenv: func(key string) string {
+		if key != "DEVCTL_MERGE_DISPATCH" {
+			t.Errorf("read %s", key)
+		}
+		return "x/y/refresh.yaml"
+	}}
+	r, stdout, _, server := newRunner(t, dispatching(), loggedIn, f)
+	if err := r.run(context.Background(), []string{"o/r", "42"}); err != nil {
+		t.Fatal(err)
+	}
+	dispatched(t, stdout, server)
+}
+
+// The environment variable is read from the process environment.
+func Test_run_dispatchEnvProcess(t *testing.T) {
+	t.Setenv("DEVCTL_MERGE_DISPATCH", "x/y/refresh.yaml")
+	r, stdout, _, server := newRunner(t, dispatching(), loggedIn, &flag{Timeout: time.Minute, NoReleaseWait: true})
+	if err := r.run(context.Background(), []string{"o/r", "42"}); err != nil {
+		t.Fatal(err)
+	}
+	dispatched(t, stdout, server)
+}
+
+// A dispatch in the wrong form is exit 7 before any request, naming the
+// flag, the variable and the form.
+func Test_run_dispatchUsage(t *testing.T) {
+	for name, f := range map[string]*flag{
+		"flag": {Timeout: time.Minute, NoReleaseWait: true, Dispatch: "x/y"},
+		"env":  {Timeout: time.Minute, NoReleaseWait: true, getenv: func(string) string { return "refresh.yaml" }},
+	} {
+		t.Run(name, func(t *testing.T) {
+			r, stdout, _, server := newRunner(t, dispatching(), loggedIn, f)
+			err := r.run(context.Background(), []string{"o/r", "42"})
+			if agentcli.Exit(err) != agentcli.ExitUsage {
+				t.Fatalf("want exit 7, got %v", err)
+			}
+			reason, _ := decode(t, stdout)["reason"].(string)
+			for _, want := range []string{"--dispatch", "$DEVCTL_MERGE_DISPATCH", "<owner>/<repo>/<workflow file>[@<ref>]"} {
+				if !strings.Contains(reason, want) {
+					t.Errorf("reason lacks %q: %s", want, reason)
+				}
+			}
+			if n := len(server.Requests()); n != 0 {
+				t.Errorf("want no request, got %d", n)
+			}
+		})
+	}
+}
+
+// A dispatch GitHub refuses is a warning in the document; the merge is exit 0.
+func Test_run_dispatchRefusedIsAWarning(t *testing.T) {
+	routes := dispatching()
+	routes["POST /repos/x/y/actions/workflows/refresh.yaml/dispatches"] = []sequence.Response{{Status: http.StatusUnprocessableEntity, Body: map[string]any{"message": "Unexpected inputs provided: [\"release\"]"}}}
+	r, stdout, _, _ := newRunner(t, routes, loggedIn, &flag{Timeout: time.Minute, NoReleaseWait: true, Dispatch: "x/y/refresh.yaml"})
+	if err := r.run(context.Background(), []string{"o/r", "42"}); err != nil {
+		t.Fatalf("want exit 0, got %v", err)
+	}
+	doc := decode(t, stdout)
+	dispatch, _ := doc["dispatch"].(map[string]any)
+	if dispatch["dispatched"] != false || !strings.Contains(dispatch["reason"].(string), "Unexpected inputs provided") {
+		t.Errorf("dispatch: %v", dispatch)
+	}
+	warnings, _ := doc["warnings"].([]any)
+	if len(warnings) != 1 || !strings.Contains(warnings[0].(string), "the dispatch of x/y/refresh.yaml after the merge failed") {
+		t.Errorf("warnings: %v", warnings)
+	}
+	if doc["mergeCommitSha"] != "m1" || doc["exitCode"] != 0.0 {
+		t.Errorf("document: %v", doc)
+	}
+}
+
+// Without the flag or the variable nothing changes: dispatch is null.
+func Test_run_withoutDispatch(t *testing.T) {
+	r, stdout, _, _ := newRunner(t, green(), loggedIn, &flag{Timeout: time.Minute, NoReleaseWait: true, getenv: func(string) string { return "" }})
+	if err := r.run(context.Background(), []string{"o/r", "42"}); err != nil {
+		t.Fatal(err)
+	}
+	doc := decode(t, stdout)
+	if dispatch, ok := doc["dispatch"]; !ok || dispatch != nil {
+		t.Errorf("want dispatch null, got %v (present %v)", dispatch, ok)
+	}
+}
