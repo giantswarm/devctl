@@ -152,6 +152,8 @@ const (
 
 	// testAppID is the devctl App's id the harness configures.
 	testAppID int64 = 424242
+	// testAlignAppID is the align-files App the review ruleset lets past the review.
+	testAlignAppID int64 = 434343
 )
 
 // harness wires a Runner to the two fakes with a validated entry.
@@ -1147,6 +1149,101 @@ func TestSteps(t *testing.T) {
 			verify: func(t *testing.T, h *harness, res *Result) {
 				require.Len(t, h.repo().ruleset(RulesetName).BypassActors, 1)
 				require.NotNil(t, h.repo().ruleset(LineGateRulesetName))
+			},
+		},
+		{
+			name: "protection: the align-files App id moves the review into a ruleset the App bypasses, the checks stay binding", step: StepProtection,
+			seed: func(h *harness) {
+				h.runner.AlignFilesAppID = testAlignAppID
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID), adminBypass(), teamBypass(testTeamID))
+			},
+			wantCheck: VerdictDrift, wantChange: `create ruleset "devctl: review", 1 required review(s)`,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				review := h.repo().ruleset(ReviewRulesetName)
+				require.NotNil(t, review)
+				require.Equal(t, []*github.BypassActor{appBypass(testAppID), adminBypass(), teamBypass(testTeamID), appBypass(testAlignAppID)}, review.BypassActors, "the align-files App bypasses the review beside the default branch's actors")
+				require.Equal(t, 1, review.Rules.PullRequest.RequiredApprovingReviewCount)
+				require.Nil(t, review.Rules.RequiredStatusChecks, "the review ruleset carries no checks")
+				main := h.repo().ruleset(RulesetName)
+				require.Nil(t, main.Rules.PullRequest, "the review rule moved out")
+				require.Equal(t, []string{ctxGoBuild}, checkContexts(main), "the checks stay where the align-files App has no bypass")
+				require.NotContains(t, actorKeys(main.BypassActors), actorKey(appBypass(testAlignAppID)))
+				require.Equal(t, []string{
+					`create ruleset "devctl: review", 1 required review(s); bypass actors: App 424242 on pull requests, repository admins on pull requests, team team-bumblebee on pull requests, App 434343 on pull requests`,
+					"stop requiring pull requests",
+				}, res.Step(StepProtection).Changes, "the review ruleset is written before the default branch drops the rule")
+			},
+		},
+		{
+			name: "protection: the align-files App id leaves agentMerge false's review in the default branch's ruleset, without bypass", step: StepProtection, entry: entryYAML + "  agentMerge: false\n",
+			seed: func(h *harness) {
+				h.runner.AlignFilesAppID = testAlignAppID
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)})
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				require.Nil(t, h.repo().ruleset(ReviewRulesetName))
+				require.NotNil(t, h.repo().ruleset(RulesetName).Rules.PullRequest)
+			},
+		},
+		{
+			name: "protection: without the align-files App id the review returns to the default branch's ruleset before the review ruleset goes", step: StepProtection,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID), adminBypass(), teamBypass(testTeamID)).Rules.PullRequest = nil
+				review := r.addRuleset(ReviewRulesetName, nil, appBypass(testAppID), adminBypass(), teamBypass(testTeamID), appBypass(testAlignAppID))
+				review.Rules.Deletion, review.Rules.NonFastForward = nil, nil
+			},
+			wantCheck: VerdictDrift, wantChange: `delete ruleset "devctl: review" (the review rule is back in "devctl: default branch")`,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Nil(t, h.repo().ruleset(ReviewRulesetName))
+				require.Equal(t, 1, h.repo().ruleset(RulesetName).Rules.PullRequest.RequiredApprovingReviewCount)
+				require.Equal(t, []string{
+					"require pull requests; required reviews 0 → 1",
+					`delete ruleset "devctl: review" (the review rule is back in "devctl: default branch")`,
+				}, res.Step(StepProtection).Changes)
+				require.Empty(t, res.Step(StepProtection).Findings, "the engine's own ruleset is never foreign")
+			},
+		},
+		{
+			name: "protection: without the devctl App id a missing review ruleset is reported for the run with the id, not written", step: StepProtection,
+			seed: func(h *harness) {
+				h.runner.DevctlAppID = 0
+				h.runner.AlignFilesAppID = testAlignAppID
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)})
+			},
+			wantCheck: VerdictReported, wantFinding: FindingRulesetPending, wantAfter: VerdictReported,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Nil(t, h.repo().ruleset(ReviewRulesetName))
+				require.NotNil(t, h.repo().ruleset(RulesetName).Rules.PullRequest, "nothing written")
+				var messages []string
+				for _, f := range res.Step(StepProtection).Findings {
+					messages = append(messages, f.Message)
+				}
+				require.Contains(t, strings.Join(messages, "\n"), `the ruleset "devctl: review" differs from the declared review rule: create ruleset`)
+			},
+		},
+		{
+			name: "protection: a run without either App id reads the review ruleset it finds as the layout, not a drift", step: StepProtection,
+			seed: func(h *harness) {
+				h.runner.DevctlAppID = 0
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID), adminBypass(), teamBypass(testTeamID)).Rules.PullRequest = nil
+				review := r.addRuleset(ReviewRulesetName, nil, appBypass(testAppID), adminBypass(), teamBypass(testTeamID), appBypass(testAlignAppID))
+				review.Rules.Deletion, review.Rules.NonFastForward = nil, nil
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.NotNil(t, h.repo().ruleset(ReviewRulesetName))
+				require.Empty(t, res.Step(StepProtection).Findings)
 			},
 		},
 		{
