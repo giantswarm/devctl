@@ -166,6 +166,13 @@ func genCommands(f Fields, gc genContext) [][]string {
 	for _, reviewer := range f.ChoreReviewers {
 		renovate = append(renovate, "-r", reviewer)
 	}
+	if g.Renovate != nil {
+		for _, preset := range g.Renovate.Extends {
+			if knows(genRenovate, "--extends") {
+				renovate = append(renovate, "--extends", preset)
+			}
+		}
+	}
 	commands = append(commands, line(genRenovate, renovate...))
 
 	return commands

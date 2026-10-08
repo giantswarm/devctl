@@ -69,6 +69,12 @@ func TestGenCommandsRenovate(t *testing.T) {
 			want: []string{"devctl", "gen", "renovate", "--language", "generic", "--repo-name", "configs", "--deprecated", "-r", "team:team-honeybadger"},
 		},
 		{
+			name: "extra presets",
+			fields: Fields{Name: "service", Gen: &GenFields{Flavours: []string{"app"}, Language: "go", CI: &CIFields{Generate: &on},
+				Renovate: &RenovateFields{Extends: []string{"flux.json5", "disable-vendir.json5"}}}},
+			want: []string{"devctl", "gen", "renovate", "--language", "go", "--circleci-generated", "--repo-name", "service", "--extends", "flux.json5", "--extends", "disable-vendir.json5"},
+		},
+		{
 			name:   "fork line",
 			fields: Fields{Name: "upstream-fork", Gen: &GenFields{Flavours: []string{"fork"}, Language: "go"}},
 		},

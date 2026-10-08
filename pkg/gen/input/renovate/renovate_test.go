@@ -367,6 +367,33 @@ func Test_DeprecatedBeforeCustomConfig(t *testing.T) {
 	}
 }
 
+// Test_ExtendsBetweenGeneratedAndDeprecated verifies the extra presets are
+// scoped to giantswarm/renovate-presets and extended after the generated-CI
+// presets and before the deprecated preset and renovate-custom.json5.
+func Test_ExtendsBetweenGeneratedAndDeprecated(t *testing.T) {
+	got := render(t, Config{Language: "go", CircleCIGenerated: true, Deprecated: true, RepoName: "some-repo", HasCustomConfig: true, Extends: []string{"flux.json5", "disable-vendir.json5"}})
+
+	var parsed struct {
+		Extends []string `json:"extends"`
+	}
+	if err := json5.Unmarshal([]byte(got), &parsed); err != nil {
+		t.Fatalf("generated config is not valid JSON5: %v\n%s", err, got)
+	}
+
+	want := []string{
+		"github>giantswarm/renovate-presets:default.json5",
+		"github>giantswarm/renovate-presets:lang-go.json5",
+		"github>giantswarm/renovate-presets:tests-ats.json5",
+		"github>giantswarm/renovate-presets:flux.json5",
+		"github>giantswarm/renovate-presets:disable-vendir.json5",
+		"github>giantswarm/renovate-presets:deprecated.json5",
+		"github>giantswarm/some-repo:renovate-custom.json5",
+	}
+	if !slices.Equal(parsed.Extends, want) {
+		t.Errorf("extends = %v, want %v", parsed.Extends, want)
+	}
+}
+
 // Test_Golden pins the exact rendered output -- quoting, trailing commas, and
 // one-item-per-line layout -- for representative config combinations. Unlike
 // the substring assertions above, it catches structural and formatting
@@ -414,6 +441,7 @@ func Test_Golden(t *testing.T) {
 				HasCustomConfig:   true,
 				Interval:          "before 5am on monday",
 				Deprecated:        true,
+				Extends:           []string{"flux.json5", "disable-vendir.json5"},
 			},
 		},
 	}

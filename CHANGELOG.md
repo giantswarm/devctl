@@ -19,6 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+<<<<<<< Updated upstream
 - `repo reconcile --align-files-app-id`: the align-files App bypasses the review rule and nothing else. The
   protection step moves the review into a ruleset of its own, `devctl: review`, whose bypass actors are those of
   `devctl: default branch` and the App for pull requests; the required checks stay in `devctl: default branch`,
@@ -232,6 +233,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   Actions write, which the App carries ([#2456](https://github.com/giantswarm/devctl/issues/2456)), and the
   document's `identity{source, login}` names who dispatched.
 - `release wait` and `rollout wait` take `--image <owner/name>` (repeatable): the image of a hand-written tag job that pushes outside the architect orb (a plain `docker push`), expected as `<image>:<git tag>` beside what the push jobs name. Without it, a `Dockerfile` with no image-naming push job is still exit 7, and the reason now names `--image` instead of "the sources disagree" ([#2418](https://github.com/giantswarm/devctl/issues/2418)).
+=======
+- `gen renovate --extends <file>` extends extra presets of `giantswarm/renovate-presets` by file name, before the
+  deprecated preset and `renovate-custom.json5`. The reconciler passes `gen.renovate.extends` of a repository entry.
+
+>>>>>>> Stashed changes
 - `rollout wait <installation> <owner/repo> (<version> | --pr <n>)` blocks until a release runs on an installation
   ([#2439](https://github.com/giantswarm/devctl/issues/2439)): the release wait first, which names the charts, then
   every Flux HelmRelease (from an OCIRepository or a HelmChart) and App CR on the management cluster that deploys one

@@ -70,6 +70,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 			RepoName:          repoName,
 			HasCustomConfig:   hasCustomConfig,
 			Deprecated:        r.flag.Deprecated,
+			Extends:           r.flag.Extends,
 		}
 
 		renovateInput, err = renovate.New(c)
