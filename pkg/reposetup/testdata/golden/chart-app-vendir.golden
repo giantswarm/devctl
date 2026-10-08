@@ -896,8 +896,13 @@ name: check-readme-links
 # in the repository, reversed link syntax. A pull request that breaks a link
 # goes red. The weekly run catches links whose target moved without the
 # README changing, and files its findings as one issue instead of failing.
+# The issue is filed, updated and closed from the default branch only; a
+# manual run on another branch keeps its report in the job summary.
 # The checker configuration is maintained centrally in
 # giantswarm/github-workflows under link-check/.
+# Switch the check off for this repository with
+# `devctl gen workflows --check-readme-links=false`, in giantswarm/github
+# `gen.checkReadmeLinks: false` on the repository entry.
 
 on:
   pull_request:

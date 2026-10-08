@@ -189,6 +189,7 @@ type GenFields struct {
 	Language                      string    `yaml:"language"`
 	InstallUpdateChart            bool      `yaml:"installUpdateChart"`
 	HelmDocsRegen                 bool      `yaml:"helmDocsRegen"`
+	CheckReadmeLinks              *bool     `yaml:"checkReadmeLinks"`
 	RunSecurityScorecard          *bool     `yaml:"runSecurityScorecard"`
 	GenerateLlmRules              *bool     `yaml:"generateLlmRules"`
 	GoGenerate                    bool      `yaml:"goGenerate"`

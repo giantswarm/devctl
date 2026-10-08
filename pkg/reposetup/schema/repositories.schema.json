@@ -136,6 +136,10 @@
           "installUpdateChart": {
             "type": "boolean"
           },
+          "checkReadmeLinks": {
+            "type": "boolean",
+            "description": "Generate zz_generated.check_readme_links.yaml (app flavour only; on by default). The workflow checks the links in README.md: a pull request that touches README.md fails on a dead URL, a relative path that does not exist in the repository or a reversed link '(text)[url]', and a weekly run files links whose target moved as one issue, 'Broken links in README', updated on later runs and closed once the links are fixed. Set false to pass '--check-readme-links=false' to 'devctl gen workflows' and keep the workflow out of the repository; align-files would otherwise put it back on every run. Requires devctl v8.123.0+ (an older devctl generates it regardless)."
+          },
           "helmDocsRegen": {
             "type": "boolean",
             "description": "Generate zz_generated.helm-docs-regen.yaml (passed to 'devctl gen workflows --helm-docs-regen'; app flavour only). On pull requests from renovate/ and dependabot/ branches that touch helm/ or .pre-commit-config.yaml, the workflow reruns the repo's helm-docs and helm-schema-<chart> pre-commit hooks and pushes the regenerated README and values.schema.json back onto the PR branch with the taylorbot PAT, so an image-tag or values-key bump no longer fails the pre-commit check on files only the hooks can rewrite. Requires devctl v8.55.0+."
