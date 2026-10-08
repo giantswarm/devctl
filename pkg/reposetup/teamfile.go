@@ -202,17 +202,25 @@ type LineGateFields struct {
 
 // GenFields is the gen block: the generators' inputs.
 type GenFields struct {
-	Flavours                      []string  `yaml:"flavours"`
-	Language                      string    `yaml:"language"`
-	InstallUpdateChart            bool      `yaml:"installUpdateChart"`
-	HelmDocsRegen                 bool      `yaml:"helmDocsRegen"`
-	RunSecurityScorecard          *bool     `yaml:"runSecurityScorecard"`
-	GenerateLlmRules              *bool     `yaml:"generateLlmRules"`
-	GoGenerate                    bool      `yaml:"goGenerate"`
-	PreCommit                     []string  `yaml:"preCommit"`
-	EnableUpstreamSyncAutomation  bool      `yaml:"enableUpstreamSyncAutomation"`
-	DispatchUpdateChartEventsRepo string    `yaml:"dispatchUpdateChartEventsRepo"`
-	CI                            *CIFields `yaml:"ci"`
+	Flavours                      []string        `yaml:"flavours"`
+	Language                      string          `yaml:"language"`
+	InstallUpdateChart            bool            `yaml:"installUpdateChart"`
+	HelmDocsRegen                 bool            `yaml:"helmDocsRegen"`
+	RunSecurityScorecard          *bool           `yaml:"runSecurityScorecard"`
+	GenerateLlmRules              *bool           `yaml:"generateLlmRules"`
+	GoGenerate                    bool            `yaml:"goGenerate"`
+	PreCommit                     []string        `yaml:"preCommit"`
+	EnableUpstreamSyncAutomation  bool            `yaml:"enableUpstreamSyncAutomation"`
+	DispatchUpdateChartEventsRepo string          `yaml:"dispatchUpdateChartEventsRepo"`
+	Renovate                      *RenovateFields `yaml:"renovate"`
+	CI                            *CIFields       `yaml:"ci"`
+}
+
+// RenovateFields is the gen.renovate block: the Renovate generator's knobs.
+type RenovateFields struct {
+	// Extends names extra presets of giantswarm/renovate-presets by file
+	// name, each passed as --extends.
+	Extends []string `yaml:"extends"`
 }
 
 // CIFields is the gen.ci block: the CircleCI generator's knobs.

@@ -29,6 +29,9 @@ type Config struct {
 	// security/vulnerability remediation. Set for repos marked
 	// lifecycle: deprecated.
 	Deprecated bool
+	// Extends lists extra giantswarm/renovate-presets presets by file name,
+	// each extended as `github>giantswarm/renovate-presets:<name>`.
+	Extends []string
 }
 
 type Renovate struct {
@@ -47,6 +50,7 @@ func New(config Config) (*Renovate, error) {
 			RepoName:          config.RepoName,
 			HasCustomConfig:   config.HasCustomConfig,
 			Deprecated:        config.Deprecated,
+			Extends:           config.Extends,
 		},
 	}
 
