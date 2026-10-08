@@ -14,7 +14,8 @@ const (
 	shortDescription = "Point one management cluster app at the dev builds of a branch."
 	longDescription  = `Point one management cluster app at the dev builds of a branch.
 
-The command clones the GitOps repository holding the management cluster, adds a
+The command clones the GitOps repository holding the management cluster
+(--gitops-repo, giantswarm/giantswarm-management-clusters by default), adds a
 Kustomize component that serves the app from the dev builds of the branch,
 records the reservation in the cluster's reservations ConfigMap, renders the
 result to check that the reservation really takes effect, and pushes one commit.
@@ -34,7 +35,6 @@ reservations.giantswarm.io/max-duration annotation.
 The cluster has to be enabled for reservations first; the command says how when
 it is not.`
 	example = `  devctl reservation reserve \
-    --gitops-repo giantswarm/giantswarm-management-clusters \
     --cluster graveler \
     --app hello-world \
     --branch fix/crash \

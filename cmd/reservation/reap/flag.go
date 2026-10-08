@@ -3,26 +3,30 @@ package reap
 import (
 	"github.com/giantswarm/microerror"
 	"github.com/spf13/cobra"
+
+	"github.com/giantswarm/devctl/v8/cmd/reservation/gitops"
 )
 
 const (
-	flagRepoDir = "repo-dir"
-	flagUser    = "user"
+	flagUser = "user"
 )
 
 type flag struct {
-	RepoDir string
-	User    string
+	GitOps gitops.Flags
+	User   string
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
-	cmd.Flags().StringVar(&f.RepoDir, flagRepoDir, ".", "Checkout of the GitOps repository to sweep. The command commits to it and pushes; it never clones.")
+	f.GitOps.Init(cmd)
 	cmd.Flags().StringVar(&f.User, flagUser, "", "GitHub login attributed to each release commit. It need not be the original holder.")
 }
 
 func (f *flag) Validate() error {
+	if err := f.GitOps.Validate(); err != nil {
+		return microerror.Mask(err)
+	}
+
 	for _, r := range []struct{ name, value string }{
-		{flagRepoDir, f.RepoDir},
 		{flagUser, f.User},
 	} {
 		if r.value == "" {

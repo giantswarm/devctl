@@ -111,15 +111,15 @@ func TestListReturnsNoneOnAClusterWithNoReservations(t *testing.T) {
 	}
 }
 
-// TestListRefusesADirectoryThatIsNotAGitOpsRepo covers --repo-dir left at its
-// default outside a GitOps checkout: the error has to name the directory and
-// the flag, not claim the cluster is missing.
+// TestListRefusesADirectoryThatIsNotAGitOpsRepo covers a clone of the wrong
+// repo: the error has to name the directory, not claim the cluster is missing.
 func TestListRefusesADirectoryThatIsNotAGitOpsRepo(t *testing.T) {
-	_, err := reservation.List(testListRequest(t.TempDir()))
+	dir := t.TempDir()
+	_, err := reservation.List(testListRequest(dir))
 	if !reservation.IsNotGitOpsRepo(err) {
 		t.Fatalf("expected a not-a-GitOps-repo error, got %v", err)
 	}
-	if !strings.Contains(err.Error(), "--repo-dir") {
-		t.Errorf("error does not tell how to fix it with --repo-dir: %v", err)
+	if !strings.Contains(err.Error(), dir) {
+		t.Errorf("error does not name the directory %s: %v", dir, err)
 	}
 }

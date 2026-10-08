@@ -40,12 +40,19 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// run sweeps --repo-dir directly: no clone. A GitHub token is only needed for
-// the rename check; without one, HeadBranch stays nil and reservation.Reap
-// still releases everything past its expiry.
+// run sweeps a fresh clone of --gitops-repo, which needs a GitHub token. The
+// token also serves the rename check; only with the hidden --repo-dir can it
+// be missing, and then HeadBranch stays nil and reservation.Reap still
+// releases everything past its expiry.
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
+	ctx, dir, cleanup, err := r.flag.GitOps.Open(ctx, r.stderr)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+	defer cleanup()
+
 	req := reservation.ReapRequest{
-		RepoDir: r.flag.RepoDir,
+		RepoDir: dir,
 		User:    r.flag.User,
 	}
 
@@ -79,7 +86,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	}
 
 	if reapErr != nil {
-		return microerror.Mask(reapErr)
+		return microerror.Mask(r.flag.GitOps.Explain(reapErr))
 	}
 
 	return nil

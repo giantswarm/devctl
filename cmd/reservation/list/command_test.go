@@ -3,29 +3,59 @@ package list_test
 import (
 	"bytes"
 	"io"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/dynamic"
+	dynamicfake "k8s.io/client-go/dynamic/fake"
 
 	"github.com/giantswarm/devctl/v8/cmd/reservation/list"
+	"github.com/giantswarm/devctl/v8/pkg/rolloutwait"
 )
 
-const repoDirFlag = "--repo-dir"
+const cluster = "graveler"
 
-// newCommand builds the list command the way cmd/reservation does.
-func newCommand(t *testing.T, stdout io.Writer) *cobra.Command {
+// newCommand builds the list command the way cmd/reservation does, with a
+// fake cluster that holds data as the reservations ConfigMap, or no ConfigMap
+// when data is nil. It fails the test when the command opens another context
+// than the default one.
+func newCommand(t *testing.T, stdout io.Writer, data map[string]any) *cobra.Command {
 	t.Helper()
 
 	logger, err := micrologger.New(micrologger.Config{IOWriter: io.Discard})
 	if err != nil {
 		t.Fatal(err)
 	}
-	cmd, err := list.New(list.Config{Logger: logger, Stderr: io.Discard, Stdout: stdout})
+
+	var objects []runtime.Object
+	if data != nil {
+		objects = append(objects, &unstructured.Unstructured{Object: map[string]any{
+			"apiVersion": "v1",
+			"kind":       "ConfigMap",
+			"metadata":   map[string]any{"name": "reservations", "namespace": "giantswarm"},
+			"data":       data,
+		}})
+	}
+	client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(),
+		map[schema.GroupVersionResource]string{{Version: "v1", Resource: "configmaps"}: "ConfigMapList"}, objects...)
+
+	cmd, err := list.New(list.Config{
+		Logger: logger,
+		Stderr: io.Discard,
+		Stdout: stdout,
+		OpenCluster: func(c, kubeContext string) (dynamic.Interface, error) {
+			if want := rolloutwait.ContextPrefix + cluster; c != cluster || kubeContext != want {
+				t.Errorf("opened %s through %s, want %s through %s", c, kubeContext, cluster, want)
+			}
+			return client, nil
+		},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,53 +67,35 @@ func newCommand(t *testing.T, stdout io.Writer) *cobra.Command {
 	return cmd
 }
 
+func entry(user, until string) string {
+	return "{user: " + user + ", branch: fix/crash, pr: giantswarm/hello-world#123, scope: app, from: 2026-09-15T10:00:00Z, until: " + until + "}"
+}
+
 // TestRefusesAMissingCluster checks that a missing --cluster is refused by the
-// flags, before the command ever opens --repo-dir.
+// flags, before the command opens a cluster.
 func TestRefusesAMissingCluster(t *testing.T) {
-	cmd := newCommand(t, io.Discard)
-	cmd.SetArgs([]string{repoDirFlag, t.TempDir()})
+	cmd := newCommand(t, io.Discard, nil)
 
 	err := cmd.Execute()
-	if err == nil {
-		t.Fatal("expected a refusal, got none")
-	}
 	if !list.IsInvalidFlag(err) {
 		t.Fatalf("expected an invalid-flag error, got %v", err)
 	}
 }
 
-// TestListPrintsTheReservationFields is the CLI-level proof for "both
-// commands work from a laptop": it reads a plain checkout, no clone, no
-// GitHub token, and prints the fields user story 26 asks for.
+// TestListPrintsTheReservationFields reads the ConfigMap on the cluster, no
+// checkout and no GitHub token, and prints the fields user story 26 asks for.
 func TestListPrintsTheReservationFields(t *testing.T) {
-	const cluster, chart = "graveler", "hello-world"
 	until := time.Now().Add(10 * time.Hour).UTC()
-	dir := t.TempDir()
-	clusterDir := filepath.Join(dir, "management-clusters", cluster)
-	if err := os.MkdirAll(clusterDir, 0o750); err != nil {
-		t.Fatal(err)
-	}
-	configMap := "apiVersion: v1\n" +
-		"kind: ConfigMap\n" +
-		"metadata:\n" +
-		"  name: reservations\n" +
-		"  namespace: giantswarm\n" +
-		"data:\n" +
-		"  " + chart + ": '{user: alice, branch: fix/crash, pr: giantswarm/hello-world#123, scope: app, from: 2026-09-15T10:00:00Z, until: " + until.Format(time.RFC3339) + "}'\n"
-	if err := os.WriteFile(filepath.Join(clusterDir, "configmap-reservations.yaml"), []byte(configMap), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
 	var stdout bytes.Buffer
-	cmd := newCommand(t, &stdout)
-	cmd.SetArgs([]string{repoDirFlag, dir, "--cluster", cluster})
+	cmd := newCommand(t, &stdout, map[string]any{"hello-world": entry("alice", until.Format(time.RFC3339))})
+	cmd.SetArgs([]string{"--cluster", cluster})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("list: %v", err)
 	}
 
 	out := stdout.String()
-	for _, want := range []string{chart, "alice", "fix/crash", "giantswarm/hello-world#123", "app", until.Format("2006-01-02")} {
+	for _, want := range []string{"hello-world", "alice", "fix/crash", "giantswarm/hello-world#123", "app", until.Format("2006-01-02")} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output does not mention %q:\n%s", want, out)
 		}
@@ -92,67 +104,53 @@ func TestListPrintsTheReservationFields(t *testing.T) {
 
 // TestListExcludesAnExpiredReservation is the "active" qualifier on user
 // story 26: an entry whose Until has already passed is not active, whether or
-// not the reaper has swept it yet, so list must not print it as if it still
-// held the app.
+// not the reaper has swept it yet.
 func TestListExcludesAnExpiredReservation(t *testing.T) {
-	const cluster, expiredApp, activeApp = "graveler", "hello-world", "other-app"
-	dir := t.TempDir()
-	clusterDir := filepath.Join(dir, "management-clusters", cluster)
-	if err := os.MkdirAll(clusterDir, 0o750); err != nil {
-		t.Fatal(err)
-	}
-	configMap := "apiVersion: v1\n" +
-		"kind: ConfigMap\n" +
-		"metadata:\n" +
-		"  name: reservations\n" +
-		"  namespace: giantswarm\n" +
-		"data:\n" +
-		"  " + expiredApp + ": '{user: alice, branch: fix/crash, pr: \"\", scope: app, from: 2026-09-15T10:00:00Z, until: " +
-		time.Now().Add(-time.Hour).UTC().Format(time.RFC3339) + "}'\n" +
-		"  " + activeApp + ": '{user: bob, branch: feat/other, pr: \"\", scope: app, from: 2026-09-15T10:00:00Z, until: " +
-		time.Now().Add(10*time.Hour).UTC().Format(time.RFC3339) + "}'\n"
-	if err := os.WriteFile(filepath.Join(clusterDir, "configmap-reservations.yaml"), []byte(configMap), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
 	var stdout bytes.Buffer
-	cmd := newCommand(t, &stdout)
-	cmd.SetArgs([]string{repoDirFlag, dir, "--cluster", cluster})
+	cmd := newCommand(t, &stdout, map[string]any{
+		"hello-world": entry("alice", time.Now().Add(-time.Hour).UTC().Format(time.RFC3339)),
+		"other-app":   entry("bob", time.Now().Add(10*time.Hour).UTC().Format(time.RFC3339)),
+	})
+	cmd.SetArgs([]string{"--cluster", cluster})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("list: %v", err)
 	}
 
 	out := stdout.String()
-	if strings.Contains(out, expiredApp) {
-		t.Errorf("output mentions the expired app %q:\n%s", expiredApp, out)
+	if strings.Contains(out, "\nhello-world ") {
+		t.Errorf("output mentions the expired app:\n%s", out)
 	}
-	if !strings.Contains(out, activeApp) {
-		t.Errorf("output does not mention the active app %q:\n%s", activeApp, out)
+	if !strings.Contains(out, "other-app") {
+		t.Errorf("output does not mention the active app:\n%s", out)
 	}
 }
 
 // TestListReportsNoneOnAClusterWithNoReservations checks the empty case reads
-// as "nothing to see", not a blank table.
+// as "nothing to see", not a blank table, and names the Flux lag.
 func TestListReportsNoneOnAClusterWithNoReservations(t *testing.T) {
-	const cluster = "graveler"
-	dir := t.TempDir()
-	clusterDir := filepath.Join(dir, "management-clusters", cluster)
-	if err := os.MkdirAll(clusterDir, 0o750); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(clusterDir, "configmap-reservations.yaml"), []byte("data: {}\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
 	var stdout bytes.Buffer
-	cmd := newCommand(t, &stdout)
-	cmd.SetArgs([]string{repoDirFlag, dir, "--cluster", cluster})
+	cmd := newCommand(t, &stdout, map[string]any{})
+	cmd.SetArgs([]string{"--cluster", cluster})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("list: %v", err)
 	}
-	if !strings.Contains(stdout.String(), "No active reservations") {
-		t.Errorf("output does not say there is nothing to release: %s", stdout.String())
+	for _, want := range []string{"No active reservations", "Flux"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Errorf("output does not mention %q: %s", want, stdout.String())
+		}
+	}
+}
+
+// TestListRefusesAClusterWithoutTheConfigMap checks a cluster that is not
+// enabled is an error, not an empty list.
+func TestListRefusesAClusterWithoutTheConfigMap(t *testing.T) {
+	cmd := newCommand(t, io.Discard, nil)
+	cmd.SetArgs([]string{"--cluster", cluster})
+
+	err := cmd.Execute()
+	if !list.IsClusterNotEnabled(err) {
+		t.Fatalf("expected a cluster-not-enabled error, got %v", err)
 	}
 }

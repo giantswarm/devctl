@@ -33,23 +33,27 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// run works on the checkout at --repo-dir directly: no clone, no GitHub
-// token. It commits with go-git exactly as Reserve does, then pushes with
-// reservation.PushWithRetry, which uses whatever credentials are already
-// configured for that checkout, on the engineer's own laptop or in CI. When
-// the push is rejected, PushWithRetry rebases and reruns Release itself, so a
-// reservation released by someone else in the meantime is not lost or
-// replayed onto a stale tree.
+// run works on a fresh clone of --gitops-repo, as reserve does. It commits
+// with go-git exactly as Reserve does, then pushes with
+// reservation.PushWithRetry. When the push is rejected, PushWithRetry rebases
+// and reruns Release itself, so a reservation released by someone else in
+// the meantime is not lost or replayed onto a stale tree.
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
+	ctx, dir, cleanup, err := r.flag.GitOps.Open(ctx, r.stderr)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+	defer cleanup()
+
 	if r.flag.Cluster == "" {
-		return microerror.Mask(r.releaseAll(ctx))
+		return microerror.Mask(r.flag.GitOps.Explain(r.releaseAll(ctx, dir)))
 	}
 
 	var result reservation.ReleaseResult
 	render := func() error {
 		var err error
 		result, err = reservation.Release(reservation.ReleaseRequest{
-			RepoDir: r.flag.RepoDir,
+			RepoDir: dir,
 			Cluster: r.flag.Cluster,
 			App:     r.flag.App,
 			AppDir:  r.flag.AppDir,
@@ -58,10 +62,10 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 			// clearing a stuck lock passes none and releases regardless.
 			PullRequest: r.flag.PullRequest,
 		})
-		return microerror.Mask(err)
+		return microerror.Mask(r.flag.GitOps.Explain(err))
 	}
 
-	if err := reservation.PushWithRetry(ctx, r.flag.RepoDir, render); err != nil {
+	if err := reservation.PushWithRetry(ctx, dir, render); err != nil {
 		return microerror.Mask(err)
 	}
 
@@ -76,9 +80,9 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 // prints what landed before it looks at the error, exactly as extend does: a
 // cluster nobody can read must not hide the releases that did succeed, since
 // a caller parses this to comment a line per release.
-func (r *runner) releaseAll(ctx context.Context) error {
+func (r *runner) releaseAll(ctx context.Context, dir string) error {
 	released, releaseErr := reservation.ReleaseAll(ctx, reservation.ReleaseAllRequest{
-		RepoDir:     r.flag.RepoDir,
+		RepoDir:     dir,
 		PullRequest: r.flag.PullRequest,
 		User:        r.flag.User,
 	})

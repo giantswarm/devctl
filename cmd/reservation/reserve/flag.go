@@ -1,11 +1,10 @@
 package reserve
 
 import (
-	"strings"
-
 	"github.com/giantswarm/microerror"
 	"github.com/spf13/cobra"
 
+	"github.com/giantswarm/devctl/v8/cmd/reservation/gitops"
 	"github.com/giantswarm/devctl/v8/pkg/reservation"
 )
 
@@ -16,7 +15,6 @@ const (
 	flagCluster     = "cluster"
 	flagDuration    = "duration"
 	flagExclusive   = "exclusive"
-	flagGitOpsRepo  = "gitops-repo"
 	flagPullRequest = "pull-request"
 	flagUser        = "user"
 )
@@ -28,7 +26,7 @@ type flag struct {
 	Cluster     string
 	Duration    string
 	Exclusive   bool
-	GitOpsRepo  string
+	GitOps      gitops.Flags
 	PullRequest string
 	User        string
 }
@@ -40,7 +38,7 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.Cluster, flagCluster, "", "Name of the management cluster to reserve the app on.")
 	cmd.Flags().StringVar(&f.Duration, flagDuration, "", "How long the reservation lasts, as 30m, 4h or 2d. Empty is the default of 10h, or the cluster maximum when that is lower. The maximum is 7d, or less when the management cluster sets its own.")
 	cmd.Flags().BoolVar(&f.Exclusive, flagExclusive, false, "Lock the whole cluster instead of just --app: the reservation fails against any other active reservation, and succeeds as a promotion in place when the only one active belongs to the same user and app.")
-	cmd.Flags().StringVar(&f.GitOpsRepo, flagGitOpsRepo, "", "GitOps repository holding the management cluster, as owner/repo.")
+	f.GitOps.Init(cmd)
 	cmd.Flags().StringVar(&f.PullRequest, flagPullRequest, "", "Pull request the reservation belongs to, as owner/repo#number.")
 	cmd.Flags().StringVar(&f.User, flagUser, "", "GitHub login of the person holding the reservation.")
 }
@@ -49,7 +47,6 @@ func (f *flag) Validate() error {
 	for _, r := range []struct{ name, value string }{
 		{flagBranch, f.Branch},
 		{flagCluster, f.Cluster},
-		{flagGitOpsRepo, f.GitOpsRepo},
 		{flagUser, f.User},
 	} {
 		if r.value == "" {
@@ -60,7 +57,7 @@ func (f *flag) Validate() error {
 		return microerror.Maskf(invalidFlagError,
 			"pass --%s, or --%s pointing at a checkout of the app repository: the chart name is not the repository name", flagApp, flagAppDir)
 	}
-	if _, _, err := splitRepo(f.GitOpsRepo); err != nil {
+	if err := f.GitOps.Validate(); err != nil {
 		return microerror.Mask(err)
 	}
 	// Parsed here rather than after the clone: a wrong duration is a typo, and a
@@ -70,14 +67,4 @@ func (f *flag) Validate() error {
 	}
 
 	return nil
-}
-
-// splitRepo splits an owner/repo reference.
-func splitRepo(repo string) (string, string, error) {
-	owner, name, ok := strings.Cut(repo, "/")
-	if !ok || owner == "" || name == "" || strings.Contains(name, "/") {
-		return "", "", microerror.Maskf(invalidFlagError, "--%s must be owner/repo, got %q", flagGitOpsRepo, repo)
-	}
-
-	return owner, name, nil
 }

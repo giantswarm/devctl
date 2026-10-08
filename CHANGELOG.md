@@ -63,9 +63,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   way `reserve` does, and refuses an app that holds no reservation without changing anything.
   `list` prints every active reservation on a cluster — app, user, branch, pull request, scope and
   expiry — reading them straight from the fields `reserve` wrote, never reconstructed from
-  anywhere else. Both commands work on an existing checkout (`--repo-dir`, default `.`): neither
-  clones, and `release`'s own push needs no GitHub token or any credential beyond what a laptop's
-  checkout already has.
+  anywhere else. `list` reads the `giantswarm/reservations` ConfigMap live from the cluster
+  (`--context`, default `teleport.giantswarm.io-<cluster>`), so it needs no checkout and no GitHub
+  token and shows what Flux applied. `release` works on a fresh clone of `--gitops-repo` (default
+  `giantswarm/giantswarm-management-clusters`, as for `reserve`), so no checkout on disk can be
+  behind.
 - `reservation reserve`: a new `--exclusive` flag locks the whole cluster instead of just the app,
   refusing any other active reservation, ignoring one already expired but unswept, and promoting its
   own sole active reservation of the same user and app in place rather than duplicating it.
@@ -87,13 +89,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   `reservation.Release` and `reservation.PushWithRetry`, exactly as `release` does for a single one.
   It also releases a reservation that is not yet expired when its pull request's current head
   branch no longer matches the reservation's stored branch, because a rename means the old branch
-  builds nothing; that check needs a GitHub token (`DEVCTL_GITHUB_TOKEN`, `GITHUB_TOKEN` or
-  `OPSCTL_GITHUB_TOKEN`), and without one the command still releases everything past its expiry. A
+  builds nothing; that check reads the pull request with the GitHub token (`DEVCTL_GITHUB_TOKEN`, `GITHUB_TOKEN` or
+  `OPSCTL_GITHUB_TOKEN`). A
   cluster that never opted in is skipped, not a failure, and a cluster or a reservation that does
   fail does not stop the sweep from reaching the next one — its error is joined into the one the
-  command reports only after printing every release that did land. The command works on an existing
-  checkout (`--repo-dir`, default `.`): it never clones, and needs no GitHub token for the sweep or
-  its own push, so it does the same work from a laptop that a scheduled job would do in CI. For each
+  command reports only after printing every release that did land. The command works on a fresh
+  clone of `--gitops-repo`, so it does the same work from a laptop that a scheduled job would do in
+  CI; the clone and the push need the GitHub token. For each
   release it prints one tab-separated line — cluster, app, user, branch, pull request, reason
   (`expired` or `renamed`), until (RFC 3339) and commit — and nothing at all when it finds nothing.
   A reservation someone else released while the sweep pushed is left alone, not reported as an error.
@@ -129,9 +131,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   If every record a pull request holds is expired, the command refuses exactly as if it
   found none, naming `/deploy` as the way to create one. A single reservation whose stored duration
   now exceeds its cluster's cap (7 days, or lower per `reservations.giantswarm.io/max-duration`) is
-  refused on its own and does not stop the rest of the sweep. The command works on an existing
-  checkout (`--repo-dir`, default `.`): it never clones and needs no GitHub token, so it does the
-  same work from a laptop that a workflow run would do in CI. For each reservation reset it prints
+  refused on its own and does not stop the rest of the sweep. The command works on a fresh
+  clone of `--gitops-repo`, so it does the same work from a laptop that a workflow run would do in
+  CI. For each reservation reset it prints
   one tab-separated line — cluster, app and the new expiry (RFC 3339) — and nothing at all when it
   finds nothing.
 - `reservation list`: no longer prints a reservation whose expiry has already passed but `reap` has

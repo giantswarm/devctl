@@ -141,7 +141,7 @@ func TestPushWithRetryRerendersAfterAnotherReservationLands(t *testing.T) {
 }
 
 // TestPushWithRetryRefusesToRebaseADirtyWorktree is the regression for a HIGH
-// finding: release, reap and extend all default --repo-dir to ".", running
+// finding: release, reap and extend given the hidden --repo-dir run
 // directly against a developer's own checkout rather than a clone. A rejected
 // push must never fall back to blindly hard-resetting that checkout, because
 // `git reset --hard` cannot spare a file it never wrote -- it would destroy

@@ -103,9 +103,9 @@ func PushWithRetry(ctx context.Context, dir string, render func() error) error {
 // the whole working tree. render's own commit is meant to hold exactly its
 // own files (commitAll stages nothing else), so the working tree should be
 // clean the instant render returns. If it is not, the extra dirt did not come
-// from this operation -- most likely dir defaults to ".", a checkout that
-// also holds a developer's own in-progress edits, on a command that never
-// clones (release, reap, extend all default --repo-dir to "."). Resetting
+// from this operation -- most likely dir is a checkout that
+// also holds a developer's own in-progress edits, passed to a command that
+// then does not clone (the hidden --repo-dir). Resetting
 // anyway would take that unrelated work down with the stale commit, silently
 // and unrecoverably. Refusing is the only safe move: there is no path to
 // spare it from a hard reset, so this is the smallest change that actually

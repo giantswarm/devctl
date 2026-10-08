@@ -431,7 +431,7 @@ func TestReserveHoldsOneAppOnTwoClusters(t *testing.T) {
 
 // TestReserveDoesNotCommitAnUnrelatedDirtyFile is the regression for a HIGH
 // finding: Reserve (like Release and Extend) is meant to run against a
-// checkout of the whole GitOps repo, at --repo-dir's own default of ".". A
+// checkout of the whole GitOps repo, such as one passed with --repo-dir. A
 // developer who runs it from a checkout that also holds their own
 // in-progress edits must never have that file staged or committed under the
 // reservation's commit message -- Reserve only ever wrote res.Files.

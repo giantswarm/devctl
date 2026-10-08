@@ -122,9 +122,8 @@ func (r Request) clusterPath(elem ...string) string {
 	return clusterPath(r.Cluster, elem...)
 }
 
-// checkGitOpsRepo refuses a repoDir that is not a GitOps repo checkout, the
-// usual mistake when --repo-dir is left at its default of the current
-// directory.
+// checkGitOpsRepo refuses a repoDir that is not a GitOps repo checkout, such
+// as a clone of the wrong repo.
 func checkGitOpsRepo(repoDir string) error {
 	if fi, err := os.Stat(filepath.Join(repoDir, clustersDir)); err == nil && fi.IsDir() {
 		return nil
@@ -135,7 +134,7 @@ func checkGitOpsRepo(repoDir string) error {
 		dir = repoDir
 	}
 	return microerror.Maskf(notGitOpsRepoError,
-		"%s is not a checkout of the GitOps repo that holds the management cluster configuration: it has no %s directory. --repo-dir defaults to the current directory, so either run the command from such a checkout, or set --repo-dir to its path, for example `--repo-dir ~/giantswarm-management-clusters`. Pull the checkout first, as these commands read reservations from its files: `git -C <checkout> pull --ff-only`",
+		"%s is not a checkout of the GitOps repo that holds the management cluster configuration: it has no %s directory",
 		dir, clustersDir)
 }
 
@@ -150,7 +149,7 @@ func checkEnabled(repoDir, cluster string) error {
 	clusterDir := filepath.Join(repoDir, clustersDir, cluster)
 	if fi, err := os.Stat(clusterDir); err != nil || !fi.IsDir() {
 		return microerror.Maskf(clusterNotFoundError,
-			"management cluster %q does not exist in this GitOps repo (no %s). Check the --cluster name, and pull the checkout if the cluster is new",
+			"management cluster %q does not exist in this GitOps repo (no %s). Check the --cluster name",
 			cluster, clusterPath(cluster))
 	}
 

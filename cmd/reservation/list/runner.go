@@ -2,6 +2,7 @@ package list
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"text/tabwriter"
@@ -10,15 +11,25 @@ import (
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/dynamic"
 
+	"github.com/giantswarm/devctl/v8/pkg/agentcli"
 	"github.com/giantswarm/devctl/v8/pkg/reservation"
+	"github.com/giantswarm/devctl/v8/pkg/rolloutwait"
 )
 
+var configMaps = schema.GroupVersionResource{Version: "v1", Resource: "configmaps"}
+
 type runner struct {
-	flag   *flag
-	logger micrologger.Logger
-	stdout io.Writer
-	stderr io.Writer
+	flag        *flag
+	logger      micrologger.Logger
+	openCluster func(cluster, kubeContext string) (dynamic.Interface, error)
+	stdout      io.Writer
+	stderr      io.Writer
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
@@ -35,13 +46,38 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// run reads the checkout at --repo-dir directly: no clone, no GitHub token, so
-// it works from a laptop exactly like release.
+// run reads the reservations ConfigMap live from the cluster: that is what
+// Flux applied, so it never depends on a checkout on disk. No GitHub token.
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
-	all, err := reservation.List(reservation.ListRequest{
-		RepoDir: r.flag.RepoDir,
-		Cluster: r.flag.Cluster,
-	})
+	kubeContext := r.flag.Context
+	if kubeContext == "" {
+		kubeContext = rolloutwait.ContextPrefix + r.flag.Cluster
+	}
+	client, err := r.openCluster(r.flag.Cluster, kubeContext)
+	var exitErr *agentcli.ExitError
+	if errors.As(err, &exitErr) {
+		// An ExitError prints nothing, as the agent-facing commands write
+		// their own JSON; this one is for a person.
+		return microerror.Maskf(invalidFlagError, "%s", exitErr.Reason)
+	}
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	configMap, err := client.Resource(configMaps).Namespace("giantswarm").Get(ctx, "reservations", metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		return microerror.Maskf(clusterNotEnabledError,
+			"management cluster %q has no ConfigMap giantswarm/reservations, so it is not enabled for reservations (or Flux did not apply it yet)", r.flag.Cluster)
+	}
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	data, _, err := unstructured.NestedStringMap(configMap.Object, "data")
+	if err != nil {
+		return microerror.Mask(err)
+	}
+	all, err := reservation.ParseReservations(data)
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -58,7 +94,8 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	}
 
 	if len(reservations) == 0 {
-		_, _ = fmt.Fprintf(r.stdout, "No active reservations on %s.\n", r.flag.Cluster)
+		// A push lands on the cluster only once Flux applies it.
+		_, _ = fmt.Fprintf(r.stdout, "No active reservations on %s. A reservation pushed in the last few minutes shows up once Flux applies it.\n", r.flag.Cluster)
 		return nil
 	}
 

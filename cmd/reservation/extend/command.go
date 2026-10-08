@@ -14,13 +14,13 @@ const (
 	shortDescription = "Reset the expiry of every reservation a pull request holds."
 	longDescription  = `Reset the expiry of every reservation a pull request holds.
 
-The command works on an existing checkout of the GitOps repository, given by
---repo-dir (the current directory by default). It never clones. It scans
-every management cluster enabled for reservations -- one that never opted in
+The command works on a fresh clone of the GitOps repository given by
+--gitops-repo, so no checkout on disk is needed. It needs a GitHub token
+(DEVCTL_GITHUB_TOKEN, GITHUB_TOKEN or OPSCTL_GITHUB_TOKEN) to clone and push.
+It scans every management cluster enabled for reservations -- one that never opted in
 is skipped, not a failure -- and resets the window of every reservation whose
 pull request matches --pull-request, one at a time, committing and pushing
-with the checkout's own git configuration: no GitHub token is needed, so this
-also runs from a laptop.
+each change.
 
 Each reservation keeps its own stored cluster, app, scope and duration --
 only the window moves, starting now and lasting as long as the existing
@@ -38,7 +38,7 @@ stdout: cluster, app and the new expiry (RFC 3339). It prints nothing when it
 finds nothing to extend. A cluster or a reservation that fails does not stop
 the sweep from reaching the next one; the command still prints every
 extension that did land before reporting the failure and exiting non-zero.`
-	example = `  devctl reservation extend --repo-dir . --pull-request giantswarm/hello-world#123 --user reservation-extend`
+	example = `  devctl reservation extend --pull-request giantswarm/hello-world#123 --user reservation-extend`
 )
 
 type Config struct {
