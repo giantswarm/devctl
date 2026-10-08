@@ -23,6 +23,18 @@ const RulesetName = "devctl: default branch"
 // that declares a lineGate alone: the fork line's land gate.
 const LineGateRulesetName = "devctl: line gate"
 
+// ReviewRulesetName is the engine's ruleset of the review rule alone,
+// written when [Runner.AlignFilesAppID] is set and the entry allows agent
+// merges: the align-files App bypasses it, and not [RulesetName], whose
+// required checks bind its pull requests as everyone's.
+const ReviewRulesetName = "devctl: review"
+
+// IsEngineRuleset says whether name is one of the rulesets the engine
+// writes.
+func IsEngineRuleset(name string) bool {
+	return name == RulesetName || name == ReviewRulesetName || name == LineGateRulesetName
+}
+
 // defaultBranchRef is the ruleset condition that follows the repository's
 // default branch, so a rename or a fork line's declared branch needs no
 // change to the ruleset.
@@ -58,13 +70,16 @@ const repositoryAdminRoleID int64 = 5
 // devctl release alone changes no repository. Under the entry's
 // pruneRulesets the undeclared active rulesets are deleted first by a run
 // with the id; a run without it reports each as [FindingRulesetPending].
-// The entry's lineGate adds the ruleset [LineGateRulesetName] (stepLineGate).
+// The entry's lineGate adds the ruleset [LineGateRulesetName] (stepLineGate);
+// [Runner.AlignFilesAppID] moves the review rule into [ReviewRulesetName]
+// (stepReviewRuleset).
 func (r *Runner) stepProtection(ctx context.Context, s *run, sr *StepResult) error {
-	have, gate, prune, err := r.ownRuleset(ctx, s, sr)
+	own, err := r.ownRuleset(ctx, s, sr)
 	if err != nil {
 		return err
 	}
-	for _, rs := range prune {
+	have, gate := own.main, own.gate
+	for _, rs := range own.prune {
 		if r.DevctlAppID == 0 {
 			s.report(sr, FindingRulesetPending,
 				fmt.Sprintf("ruleset %q is neither declared nor the engine's, and the entry prunes such rulesets", rs.Name),
@@ -86,7 +101,7 @@ func (r *Runner) stepProtection(ctx context.Context, s *run, sr *StepResult) err
 		if err := r.stepClassicProtection(ctx, s, sr); err != nil {
 			return err
 		}
-	} else if err := r.stepRulesetProtection(ctx, s, sr, have); err != nil {
+	} else if err := r.stepRulesetProtection(ctx, s, sr, have, own.review); err != nil {
 		return err
 	}
 	return r.stepLineGate(ctx, s, sr, gate)
@@ -253,14 +268,18 @@ func (r *Runner) stepClassicProtection(ctx context.Context, s *run, sr *StepResu
 // the same run: its required checks are carried over, then it is removed.
 // Rulesets the engine did not create are left alone and reported (see
 // ownRuleset for the entry's pruneRulesets). have is
-// the repository's ruleset as ownRuleset read it, nil when there is none.
+// the repository's ruleset as ownRuleset read it, nil when there is none;
+// review is its [ReviewRulesetName] likewise. With [Runner.AlignFilesAppID]
+// the review rule lives in the review ruleset instead (stepReviewRuleset),
+// written before [RulesetName] drops the rule and deleted after it takes
+// the rule back, so the review requirement never lapses.
 //
 // Without [Runner.DevctlAppID] the step reads and compares alone: the
 // bypass list, whose App actor the id names, is neither compared nor
 // written, and a difference in the rules or a classic protection still
 // standing beside the ruleset is the finding [FindingRulesetPending] for
 // the run that has the id; nothing is written.
-func (r *Runner) stepRulesetProtection(ctx context.Context, s *run, sr *StepResult, have *github.RepositoryRuleset) error {
+func (r *Runner) stepRulesetProtection(ctx context.Context, s *run, sr *StepResult, have, review *github.RepositoryRuleset) error {
 	b := s.baseline
 	branch := s.branch()
 
@@ -300,17 +319,20 @@ func (r *Runner) stepRulesetProtection(ctx context.Context, s *run, sr *StepResu
 		}
 	}
 
+	split := r.splitsReview(s)
 	desired := rulesetState{
 		enforcement: github.RulesetEnforcementActive,
 		include:     []string{defaultBranchRef},
-		pullRequest: true,
-		reviews:     b.RequiredReviews,
+		pullRequest: !split,
 		checks:      ruleChecks(want, actionsGates(b, s.fields.RequiredChecks), from.checks),
 		strict:      b.StrictChecks,
 		noDeletion:  true,
 		noForcePush: true,
 		bypass:      bypass,
 		team:        s.team,
+	}
+	if !split {
+		desired.reviews = b.RequiredReviews
 	}
 
 	var changes []string
@@ -341,24 +363,16 @@ func (r *Runner) stepRulesetProtection(ctx context.Context, s *run, sr *StepResu
 				"a run with --devctl-app-id, the reconciler's, writes the ruleset with its bypass actors and removes the classic protection; this run has no App id and writes neither")
 		}
 		sr.Summary = fmt.Sprintf("%s: ruleset %q; required: %s; bypass actors not compared (no devctl App id)", branch, RulesetName, describe(want))
-		return nil
+		return r.stepReviewRuleset(ctx, s, sr, review, split, bypass)
+	}
+	if split {
+		if err := r.stepReviewRuleset(ctx, s, sr, review, split, bypass); err != nil {
+			return err
+		}
 	}
 	if len(changes) > 0 {
 		err := s.plan(sr, strings.Join(changes, "; "), func() error {
-			err := r.writeRuleset(ctx, s, RulesetName, have, desired)
-			if statusCode(err) != 422 || s.team == nil || !hasActor(desired.bypass, teamActor(s.team.GetID())) {
-				return err
-			}
-			// GitHub's own judgment on the team, beyond what its privacy
-			// shows: the App stands alone and the team is reported.
-			s.report(sr, FindingTeamBypassRefused,
-				fmt.Sprintf("GitHub refused team %s (privacy %s) as bypass actor of the ruleset: %v; the ruleset is written with the App and the repository admins", s.team.GetSlug(), s.team.GetPrivacy(), err),
-				teamBypassFix(s.owner, s.team.GetSlug()))
-			without := desired
-			without.bypass = slices.DeleteFunc(slices.Clone(desired.bypass), func(a *github.BypassActor) bool {
-				return actorKey(a) == actorKey(teamActor(s.team.GetID()))
-			})
-			return r.writeRuleset(ctx, s, RulesetName, have, without)
+			return r.writeRulesetTeamRefused(ctx, s, sr, RulesetName, have, desired)
 		})
 		if err != nil {
 			return err
@@ -373,13 +387,111 @@ func (r *Runner) stepRulesetProtection(ctx context.Context, s *run, sr *StepResu
 			return err
 		}
 	}
+	if !split {
+		if err := r.stepReviewRuleset(ctx, s, sr, review, split, bypass); err != nil {
+			return err
+		}
+	}
 	if len(sr.Changes) == 0 {
 		sr.Summary = fmt.Sprintf("%s: ruleset %q; required: %s", branch, RulesetName, describe(want))
+		if split {
+			sr.Summary += fmt.Sprintf("; review in ruleset %q, which the align-files App bypasses", ReviewRulesetName)
+		}
 		if !bypassReadable {
 			sr.Summary += "; bypass actors not readable by this identity, not compared"
 		}
 	}
 	return nil
+}
+
+// splitsReview says whether the review rule lives in [ReviewRulesetName]:
+// the run has the align-files App's id and the entry allows agent merges.
+// Under agentMerge: false nothing bypasses the review, so the rule stays
+// in [RulesetName].
+func (r *Runner) splitsReview(s *run) bool {
+	return r.AlignFilesAppID != 0 && s.agentMerge()
+}
+
+// stepReviewRuleset keeps the ruleset [ReviewRulesetName] of a run that
+// splits the review rule out (split): on the default branch, the
+// baseline's required reviews alone, with the bypass actors of
+// [RulesetName] (bypass, as stepRulesetProtection worked them out) and the
+// align-files App for pull requests beside them. The App bypasses the
+// review and nothing else: the required checks of [RulesetName], which it
+// does not bypass, still hold its pull requests until they are green.
+// Without split the ruleset is deleted. As the engine's other rulesets, it
+// is written by a run with [Runner.DevctlAppID] alone; a run without the id
+// reports the difference as [FindingRulesetPending]. have is the review
+// ruleset as ownRuleset read it, nil when there is none.
+func (r *Runner) stepReviewRuleset(ctx context.Context, s *run, sr *StepResult, have *github.RepositoryRuleset, split bool, bypass []*github.BypassActor) error {
+	if !split && have == nil {
+		return nil
+	}
+	var from, desired rulesetState
+	if have != nil {
+		from = stateOfRuleset(have)
+	}
+	var changes []string
+	if !split {
+		changes = []string{fmt.Sprintf("delete ruleset %q (the review rule is back in %q)", ReviewRulesetName, RulesetName)}
+	} else {
+		desired = rulesetState{
+			enforcement: github.RulesetEnforcementActive,
+			include:     []string{defaultBranchRef},
+			pullRequest: true,
+			reviews:     s.baseline.RequiredReviews,
+			bypass:      append(slices.Clone(bypass), appActor(r.AlignFilesAppID)),
+			team:        s.team,
+		}
+		if have != nil && have.BypassActors == nil {
+			// Not readable by this identity: neither compared nor written.
+			desired.bypass = nil
+		}
+		if have == nil {
+			// The creation names the rule; what it adds is the bypass list.
+			from = desired
+			from.bypass = nil
+		}
+		changes = diffRulesetStates(from, desired)
+		if have == nil {
+			changes = append([]string{fmt.Sprintf("create ruleset %q, %d required review(s)", ReviewRulesetName, desired.reviews)}, changes...)
+		}
+	}
+	if len(changes) == 0 {
+		return nil
+	}
+	if r.DevctlAppID == 0 {
+		s.report(sr, FindingRulesetPending,
+			fmt.Sprintf("the ruleset %q differs from the declared review rule: %s", ReviewRulesetName, strings.Join(changes, "; ")),
+			"a run with --devctl-app-id, the reconciler's, writes it; this run has no App id and writes no ruleset")
+		return nil
+	}
+	return s.plan(sr, strings.Join(changes, "; "), func() error {
+		if !split {
+			_, err := r.GitHub.Repositories.DeleteRuleset(ctx, s.owner, s.name, have.GetID())
+			return err
+		}
+		return r.writeRulesetTeamRefused(ctx, s, sr, ReviewRulesetName, have, desired)
+	})
+}
+
+// writeRulesetTeamRefused writes the ruleset name as writeRuleset does and,
+// when GitHub refuses the owning team as bypass actor (422), reports it and
+// writes the ruleset without the team: GitHub's own judgment on the team,
+// beyond what its privacy shows.
+func (r *Runner) writeRulesetTeamRefused(ctx context.Context, s *run, sr *StepResult, name string, have *github.RepositoryRuleset, desired rulesetState) error {
+	err := r.writeRuleset(ctx, s, name, have, desired)
+	if statusCode(err) != 422 || s.team == nil || !hasActor(desired.bypass, teamActor(s.team.GetID())) {
+		return err
+	}
+	s.report(sr, FindingTeamBypassRefused,
+		fmt.Sprintf("GitHub refused team %s (privacy %s) as bypass actor of the ruleset %q: %v; the ruleset is written with the App and the repository admins", s.team.GetSlug(), s.team.GetPrivacy(), name, err),
+		teamBypassFix(s.owner, s.team.GetSlug()))
+	without := desired
+	without.bypass = slices.DeleteFunc(slices.Clone(desired.bypass), func(a *github.BypassActor) bool {
+		return actorKey(a) == actorKey(teamActor(s.team.GetID()))
+	})
+	return r.writeRuleset(ctx, s, name, have, without)
 }
 
 // classicProtection reads the classic branch protection of branch, nil when
@@ -395,10 +507,17 @@ func (r *Runner) classicProtection(ctx context.Context, s *run, branch string) (
 	return protection, nil
 }
 
+// engineRulesets are the engine's rulesets of a repository, read in full,
+// each nil when there is none, and the undeclared ones the entry prunes.
+type engineRulesets struct {
+	main, review, gate *github.RepositoryRuleset
+	prune              []*github.RepositoryRuleset
+}
+
 // ownRuleset reads the repository's own rulesets and returns the engine's
-// with their rules, [RulesetName] as own and [LineGateRulesetName] as gate,
-// each nil when there is none. Every other one is left alone — the engine
-// writes its two and nothing else — and reported unless
+// with their rules: [RulesetName], [ReviewRulesetName] and
+// [LineGateRulesetName]. Every other one is left alone — the engine
+// writes its own and nothing else — and reported unless
 // the entry declares it in rulesets, the team's decision to keep it. Under
 // the entry's pruneRulesets an undeclared active one is returned in prune
 // instead, for the step to delete: the declaration is then the whole set. A
@@ -408,24 +527,23 @@ func (r *Runner) classicProtection(ctx context.Context, s *run, branch string) (
 // live in the audit log. A declared name the repository carries no ruleset
 // for is reported in turn, so that a deleted ruleset does not leave the
 // declaration standing. The organization's rulesets are not read.
-func (r *Runner) ownRuleset(ctx context.Context, s *run, sr *StepResult) (own, gate *github.RepositoryRuleset, prune []*github.RepositoryRuleset, err error) {
+func (r *Runner) ownRuleset(ctx context.Context, s *run, sr *StepResult) (engineRulesets, error) {
+	var own engineRulesets
 	list, _, err := r.GitHub.Repositories.GetAllRulesets(ctx, s.owner, s.name, &github.RepositoryListRulesetsOptions{IncludesParents: new(false)})
 	if err != nil {
-		return nil, nil, nil, err
+		return own, err
 	}
 	declared := toSet(s.fields.Rulesets)
 	carried := make(map[string]bool, len(list))
-	var summary, gateSummary *github.RepositoryRuleset
+	summaries := map[string]*github.RepositoryRuleset{}
 	for _, rs := range list {
 		carried[rs.Name] = true
 		switch {
-		case rs.Name == RulesetName:
-			summary = rs
-		case rs.Name == LineGateRulesetName:
-			gateSummary = rs
+		case IsEngineRuleset(rs.Name):
+			summaries[rs.Name] = rs
 		case rs.Enforcement == github.RulesetEnforcementDisabled, declared[rs.Name]:
 		case s.fields.PruneRulesets && rs.Enforcement == github.RulesetEnforcementActive:
-			prune = append(prune, rs)
+			own.prune = append(own.prune, rs)
 		default:
 			s.report(sr, FindingForeignRuleset,
 				fmt.Sprintf("ruleset %q is not the engine's and is left alone", rs.Name),
@@ -441,13 +559,15 @@ func (r *Runner) ownRuleset(ctx context.Context, s *run, sr *StepResult) (own, g
 	}
 	// The list carries the summary; the rules, conditions and bypass actors
 	// come with the ruleset itself.
-	if own, err = r.ruleset(ctx, s, summary); err != nil {
-		return nil, nil, nil, err
+	for _, read := range []struct {
+		name string
+		into **github.RepositoryRuleset
+	}{{RulesetName, &own.main}, {ReviewRulesetName, &own.review}, {LineGateRulesetName, &own.gate}} {
+		if *read.into, err = r.ruleset(ctx, s, summaries[read.name]); err != nil {
+			return own, err
+		}
 	}
-	if gate, err = r.ruleset(ctx, s, gateSummary); err != nil {
-		return nil, nil, nil, err
-	}
-	return own, gate, prune, nil
+	return own, nil
 }
 
 // ruleset reads the ruleset of a summary in full, nil for no summary.
@@ -752,10 +872,11 @@ func diffRulesetStates(from, to rulesetState) []string {
 			changes = append(changes, "stop requiring pull requests")
 		}
 	}
-	if from.reviews != to.reviews {
+	// A dropped pull_request rule takes its reviews with it.
+	if from.reviews != to.reviews && to.pullRequest {
 		changes = append(changes, fmt.Sprintf("required reviews %d → %d", from.reviews, to.reviews))
 	}
-	if from.dismissStale != to.dismissStale {
+	if from.dismissStale != to.dismissStale && to.pullRequest {
 		changes = append(changes, fmt.Sprintf("dismiss stale reviews %t → %t", from.dismissStale, to.dismissStale))
 	}
 	if !from.noForcePush && to.noForcePush {

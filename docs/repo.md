@@ -304,6 +304,17 @@ not passed on is refused for the App, the repository admins and the devctl App a
 as before, its head having passed them. Without the field the engine deletes `devctl: line gate`. Only a run
 with `--devctl-app-id` writes it; one without reports the difference as `ruleset-pending`.
 
+`--align-files-app-id`, the align-files GitHub App's numeric id, lets its generated-file pull requests merge
+by their armed auto-merge without a review. A bypass actor passes a whole ruleset, so the engine moves the
+review rule into a ruleset of its own, `devctl: review`, on the default branch: the baseline's required
+reviews, the bypass actors of `devctl: default branch` and the align-files App for pull requests. The
+required checks, no deletion and no force push stay in `devctl: default branch`, which the App does not
+bypass: its pull request still waits for green checks. The review ruleset is written before
+`devctl: default branch` drops the rule, and deleted after it takes the rule back on a run without the id,
+so the review never lapses. An entry with `agentMerge: false` keeps the review in `devctl: default branch`
+without bypass. Only a run with `--devctl-app-id` writes it; one without reports the difference as
+`ruleset-pending`.
+
 `--devctl-app-id`, the devctl GitHub App's numeric id (the App's settings page; not the client id), is what
 the bypass list takes to be compared and written; the reconciler's wiring passes it. A run without the id
 -- a laptop, giantswarm-repo-manager's read-mode engine behind `repo status` -- reads the repository's

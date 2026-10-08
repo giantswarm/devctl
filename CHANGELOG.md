@@ -19,6 +19,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `repo reconcile --align-files-app-id`: the align-files App bypasses the review rule and nothing else. The
+  protection step moves the review into a ruleset of its own, `devctl: review`, whose bypass actors are those of
+  `devctl: default branch` and the App for pull requests; the required checks stay in `devctl: default branch`,
+  which the App does not bypass, so a red generated-file pull request still waits. Without the flag the review stays
+  in `devctl: default branch` and the review ruleset is deleted; `agentMerge: false` keeps it there without bypass.
+  `pr merge` reads `devctl: review` as the engine's own.
 - `repo reconcile`: the entry field `lineGate` (`app`, `requiredChecks`, `branches`) gates a fork line whose re-pin
   lands as a direct push of a checked commit. The protection step adds the sync's App to `devctl: default branch` as
   a bypass actor in every mode and keeps a second ruleset, `devctl: line gate`, on the default branch and the
