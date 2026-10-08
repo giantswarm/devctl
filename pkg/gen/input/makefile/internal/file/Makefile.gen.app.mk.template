@@ -47,12 +47,6 @@ check-env:
 # renovate: datasource=github-releases depName=helm-unittest/helm-unittest
 HELM_UNITTEST_VERSION ?= v1.2.1
 
-# Discovered in a recipe, like DEPS above: APPLICATION may be set by a later included
-# makefile, so nothing here may read it while make parses this file. Both directory names
-# are in use across the org -- upstream charts vendored from Artifact Hub tend to use
-# `unittests/`, our own charts use `tests/`.
-CHART_TESTS = $(shell ls -d helm/$(APPLICATION)/tests helm/$(APPLICATION)/unittests 2>/dev/null | head -1)
-
 .PHONY: helm-test install-helm-unittest
 
 # helm-test renders the chart and asserts on the rendered manifests. It never talks to a
@@ -60,10 +54,28 @@ CHART_TESTS = $(shell ls -d helm/$(APPLICATION)/tests helm/$(APPLICATION)/unitte
 # the first thing to run after a template change. Cluster-level testing is app-test-suite,
 # through the generated `execute-chart-tests` job and the repository's `.ats/main.yaml`;
 # the two do not overlap and neither replaces the other.
+#
+# One `helm unittest` run per chart that has tests, rather than one run over the top-level
+# chart. A suite asserts on the defaults of the chart it ships with, and a parent chart's
+# `values.yaml` overrides those defaults for its subcharts -- so a subchart suite run from
+# the parent is asserting against values its author never wrote. `--with-subchart=false`
+# keeps each run inside the chart the suite belongs to.
+#
+# Both directory names are in use across the org: upstream charts vendored from Artifact
+# Hub tend to use `unittests/`, our own charts use `tests/`. The `Chart.yaml` check rejects
+# a nested directory that only shares the name, such as `tests/admission-webhooks/`.
+# Nothing here reads APPLICATION: it may be set by a later included makefile.
 helm-test: check-env install-helm-unittest ## Run the chart unit tests (helm-unittest).
 	@echo "====> $@"
-	@test -n "$(CHART_TESTS)" || { echo "no chart unit tests in helm/$(APPLICATION)"; exit 0; }
-	helm unittest -f "$(notdir $(CHART_TESTS))/*_test.yaml" helm/$(APPLICATION)
+	@found=""; \
+	for d in $$(find helm -type d \( -name tests -o -name unittests \) 2>/dev/null | sort); do \
+		c=$$(dirname "$$d"); \
+		[ -f "$$c/Chart.yaml" ] || continue; \
+		ls "$$d"/*_test.yaml >/dev/null 2>&1 || continue; \
+		found=1; \
+		helm unittest -f "$$(basename "$$d")/*_test.yaml" --with-subchart=false "$$c" || exit 1; \
+	done; \
+	[ -n "$$found" ] || echo "no chart unit tests under helm/"
 
 # Installs the pinned version, and REPLACES a different one. A guard that only checks that
 # the plugin exists lets a developer keep an old version forever, and then a local run and
