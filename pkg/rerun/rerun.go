@@ -31,8 +31,8 @@ const (
 	// OutcomeRunning: the workflow has not finished; CircleCI reruns a
 	// finished workflow only.
 	OutcomeRunning = "running"
-	// OutcomeNoFailedJob: the workflow failed without a failed job to rerun
-	// (canceled before any job ran, for one).
+	// OutcomeNoFailedJob: the workflow was canceled (or unauthorized)
+	// without a failed job to rerun.
 	OutcomeNoFailedJob = "no_failed_job"
 	// OutcomeNothing: the workflow did not fail.
 	OutcomeNothing = "nothing_to_rerun"
@@ -68,7 +68,8 @@ type Workflow struct {
 	ID     string `json:"id"`
 	Status string `json:"status"`
 	URL    string `json:"url"`
-	// FailedJobs are the jobs the rerun runs again, by name.
+	// FailedJobs are the failed jobs as CircleCI lists them, by name; the
+	// listing can lag behind the workflow's status.
 	FailedJobs []string `json:"failedJobs"`
 	// Outcome is one of rerun, running, no_failed_job, nothing_to_rerun,
 	// refused.
@@ -116,7 +117,11 @@ func FromFailed(ctx context.Context, client *circleciclient.Client, org, repo st
 			if w.FailedJobs, err = failedJobs(ctx, client, run.ID); err != nil {
 				return err
 			}
-			if len(w.FailedJobs) == 0 {
+			// A failed workflow is rerun whatever its jobs read: CircleCI's
+			// authenticated job listing lags behind the workflow (a failed
+			// job still reads blocked), and the rerun is CircleCI's to judge.
+			// A canceled one without a failed job never ran what it lacks.
+			if len(w.FailedJobs) == 0 && !failedRun(run.Status) {
 				w.Outcome = OutcomeNoFailedJob
 				break
 			}
@@ -154,6 +159,12 @@ func FromFailed(ctx context.Context, client *circleciclient.Client, org, repo st
 // failed but will not rerun yet. not_run never ran and never will.
 func stillRunning(status string) bool {
 	return circleciclient.WorkflowRunning(status) || !circleciclient.WorkflowFinished(status) && status != "not_run"
+}
+
+// failedRun says whether a workflow status means a job failed: failed or
+// error, as against canceled or unauthorized.
+func failedRun(status string) bool {
+	return status == "failed" || status == "error"
 }
 
 // NoPipeline is exit 3 for a head or tag CircleCI has not built.

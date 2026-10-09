@@ -151,6 +151,23 @@ func TestNothingToRerun(t *testing.T) {
 	}
 }
 
+// TestFailedWithLaggingJobsIsRerun: a failed workflow whose job listing
+// still reads blocked, as CircleCI's authenticated API answers for a while,
+// is rerun all the same.
+func TestFailedWithLaggingJobsIsRerun(t *testing.T) {
+	result, _, server, err := run(t, sequence.Routes{
+		workflowsPath:                    body(map[string]any{"items": []any{workflow("w1", "build", "failed", "2026-10-09T10:00:00Z")}}),
+		"GET /api/v2/workflow/w1/job":    jobs("success", "blocked", "not_run"),
+		"POST /api/v2/workflow/w1/rerun": {{Status: http.StatusAccepted, Body: map[string]any{"workflow_id": "w2"}}},
+	})
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if len(posts(server)) != 1 || result.Workflows[0].Outcome != OutcomeRerun {
+		t.Errorf("posts %q, workflows %+v", posts(server), result.Workflows)
+	}
+}
+
 // TestForbiddenIsALogin: CircleCI's 403 to the rerun is exit 8 naming the
 // CircleCI login, and the workflow is recorded as refused.
 func TestForbiddenIsALogin(t *testing.T) {
