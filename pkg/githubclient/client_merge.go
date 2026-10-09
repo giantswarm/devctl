@@ -25,17 +25,19 @@ const (
 	MergeSquash MergeMethod = "squash"
 	// MergeRebase lands every commit of the head, rebased.
 	MergeRebase MergeMethod = "rebase"
+	// MergeCommit lands the head with a merge commit.
+	MergeCommit MergeMethod = "merge"
 )
 
 // MergeOptions configure [Client.MergePullRequest].
 type MergeOptions struct {
-	// Method is squash or rebase.
+	// Method is squash, rebase or merge.
 	Method MergeMethod
 	// HeadSHA is the head the merge is for: GitHub refuses (409) when the
 	// head moved since it was judged.
 	HeadSHA string
-	// CommitTitle is the squash commit's subject; empty leaves GitHub's
-	// default. A rebase merge keeps the commits' own subjects.
+	// CommitTitle is the squash or merge commit's subject; empty leaves
+	// GitHub's default. A rebase merge keeps the commits' own subjects.
 	CommitTitle string
 }
 

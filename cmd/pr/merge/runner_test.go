@@ -70,6 +70,7 @@ func decode(t *testing.T, stdout *bytes.Buffer) map[string]any {
 // green is o/r#42 opened by the caller with one passed check, merging as m1.
 func green() sequence.Routes {
 	return sequence.Routes{
+		"GET /repos/o/r": {{Body: map[string]any{"full_name": "o/r", "allow_merge_commit": false, "allow_squash_merge": true, "allow_rebase_merge": true}}},
 		"GET /repos/o/r/pulls/42": {{Body: map[string]any{
 			"number": 42, "state": "open", "draft": false, "mergeable_state": "clean", "title": "feat: thing", "node_id": "PR_1",
 			"user": map[string]any{"login": "someone", "type": "User"},

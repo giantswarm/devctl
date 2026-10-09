@@ -10,7 +10,8 @@
 // field). A reviewer's feedback newer than the head that nobody answered
 // refuses it too (exit 5), read before the wait and again right before
 // the merge. Green lands through the merge
-// API as a squash or a rebase with the judged head as the expected head,
+// API as a squash or a rebase with the judged head as the expected head
+// (a merge commit where the repository allows only that),
 // then the branch goes through the refs API. A base with a merge queue is
 // enqueued instead and the pull request waited for. No protection setting,
 // ruleset or enforce_admins is read to be changed, or written.
@@ -95,7 +96,9 @@ type Result struct {
 	// caller the token acts as, or for a merge queue the account GitHub
 	// records as the merger. Empty when nothing merged.
 	MergedBy string `json:"mergedBy"`
-	// Method is squash or rebase.
+	// Method is squash or rebase as asked, or the one method the
+	// repository allows when it does not allow the default squash: merge
+	// for a merge commit.
 	Method string `json:"method"`
 	// BranchDeleted: the head branch was deleted after the merge (or was
 	// gone already). False for a head in a fork, which is left alone.
@@ -203,6 +206,9 @@ func (m *Merger) Merge(ctx context.Context, owner, repo string, number int) (*Re
 	if err := m.guardReviews(ctx, owner, repo, number, pr, caller, result); err != nil {
 		return result, err
 	}
+	if err := m.resolveMethod(ctx, owner, repo, result); err != nil {
+		return result, err
+	}
 	m.progress.Printf("refusals: none; %s by %s", pr.GetHead().GetSHA(), pr.GetUser().GetLogin())
 
 	behind, err := m.behind(ctx, owner, repo, pr)
@@ -215,9 +221,15 @@ func (m *Merger) Merge(ctx context.Context, owner, repo string, number int) (*Re
 		}
 	}
 
+	// The wait's result replaces the one so far; the warnings given before
+	// the wait (the method the settings chose) stay ahead of its own.
+	before := result.Warnings
 	waited, err := m.waiter.Wait(ctx, owner, repo, number)
 	if waited != nil {
 		result.Result = *waited
+		if len(before) > 0 {
+			result.Warnings = append(before, result.Warnings...)
+		}
 	}
 	if err != nil {
 		return result, err
@@ -436,8 +448,9 @@ func (m *Merger) update(ctx context.Context, owner, repo string, number int, hea
 // the review rule, the reason goes on to name the rulesets' bypass actors
 // and the owning team as well (explainReviewRule).
 func (m *Merger) merge(ctx context.Context, owner, repo string, number int, pr *github.PullRequest, result *Result, caller string, verdict Verdict) error {
-	opts := githubclient.MergeOptions{Method: m.method, HeadSHA: result.HeadSHA}
-	if m.method == githubclient.MergeSquash {
+	method := githubclient.MergeMethod(result.Method)
+	opts := githubclient.MergeOptions{Method: method, HeadSHA: result.HeadSHA}
+	if method != githubclient.MergeRebase {
 		opts.CommitTitle = fmt.Sprintf("%s (#%d)", strings.TrimSpace(pr.GetTitle()), number)
 	}
 	sha, err := m.github.MergePullRequest(ctx, owner, repo, number, opts)
@@ -454,7 +467,7 @@ func (m *Merger) merge(ctx context.Context, owner, repo string, number int, pr *
 		return microerror.Mask(err)
 	}
 	result.MergeCommitSHA, result.MergedBy = sha, caller
-	m.progress.Printf("merged: %s of %s is %s, as %s", m.method, result.HeadSHA, sha, caller)
+	m.progress.Printf("merged: %s of %s is %s, as %s", method, result.HeadSHA, sha, caller)
 	return nil
 }
 

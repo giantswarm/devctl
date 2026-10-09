@@ -32,7 +32,11 @@ repository no team file declares is not opted out.
 
 Green lands through the merge API as a squash (--rebase: a rebase merge) with
 the judged head as the expected head, so a head that moved is not merged; the
-squash commit's subject is the pull request's title with its number. The head
+squash commit's subject is the pull request's title with its number. The
+repository's settings are read before the wait: squash off and exactly one
+other method on lands with that one (a merge commit, the same subject), with a
+warning; a method they do not allow is otherwise exit 3 before the wait, and
+--rebase is never replaced. The head
 branch is deleted through the refs API; a head in a fork is left alone. A base
 with a merge queue is enqueued instead, the pull request waited for until the
 queue merged it, then the branch deleted. Nothing reads a protection setting
@@ -88,7 +92,7 @@ verdict, reason, warnings, startedAt, finishedAt, repository, number, headSha,
 baseRef, checks[], circleci{}, actions[], unfinished[], failedJobs[] on red
 with --failed-log, whose tails also go to stderr) plus mergeCommitSha
 (the merge commit, empty when nothing merged), mergedBy (the login the merge
-was made as, empty when nothing merged), method (squash|rebase),
+was made as, empty when nothing merged), method (squash|rebase|merge),
 branchDeleted, enqueued, release: null with --no-release-wait or when
 nothing merged, otherwise the release wait's verdict (available, no_release,
 ci_failed, timeout, ...) and reason with its result (tag, sha, releaseModel,

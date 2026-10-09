@@ -1,12 +1,9 @@
-# The caller's own pull request, clean against main, every check green on
-# the first poll: the GitHub check run, the CircleCI status and the workflow
-# run of the head, and the CircleCI workflow itself. The team file that
-# declares devctl carries no agentMerge field. One call of the merge API
-# lands the squash commit, the refs API deletes the branch: exit 0, the
-# document carries the merge commit and branchDeleted. The entry declares
-# no generated CI, so the repository releases through the legacy workflow
-# and no release follows the merge: the document's release says so.
-description: the caller's own green pull request is squash-merged and its branch deleted
+# The caller's own green pull request in a repository whose settings allow
+# only merge commits (squash and rebase off). The default squash would be
+# declined by GitHub after the whole wait, so the settings are read before
+# it: the one allowed method lands, a merge commit, and the document says
+# method merge with a warning. Everything else is own-green-merged.
+description: a repository that allows only merge commits lands the pull request with a merge commit
 args: [pr, merge, giantswarm/devctl, "42", --timeout, 30m]
 keyring:
   github:
@@ -22,7 +19,7 @@ keyring:
 github:
   routes:
     "GET /repos/giantswarm/devctl":
-      - body: {full_name: giantswarm/devctl, allow_merge_commit: false, allow_squash_merge: true, allow_rebase_merge: true}
+      - body: {full_name: giantswarm/devctl, allow_merge_commit: true, allow_squash_merge: false, allow_rebase_merge: false}
     "GET /repos/giantswarm/devctl/pulls/42/reviews":
       - body: []
     "GET /repos/giantswarm/devctl/pulls/42/comments":
