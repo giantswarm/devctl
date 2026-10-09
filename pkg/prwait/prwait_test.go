@@ -63,6 +63,20 @@ var (
 	pipelines  = body(map[string]any{"items": []any{map[string]any{"id": "p1", "number": 12, "state": "created", "vcs": map[string]any{"revision": sha, "branch": "feature"}}}})
 )
 
+// successStatuses is a combined status of successful contexts.
+func successStatuses(contexts ...string) sequence.Response {
+	list := []any{}
+	for _, c := range contexts {
+		list = append(list, map[string]any{"context": c, "state": "success", "target_url": "https://ci/" + c, "updated_at": "2026-09-21T10:00:00Z"})
+	}
+	return body(map[string]any{"state": "success", "total_count": len(list), "statuses": list})
+}
+
+// setupWorkflow is the setup workflow of a dynamic-config pipeline.
+func setupWorkflow(status string) map[string]any {
+	return map[string]any{"id": "w1", "name": "setup", "status": status, "tag": "setup"}
+}
+
 // gitHubGreen is a head whose GitHub side is green: one successful check run,
 // no statuses, no open run.
 func gitHubGreen() sequence.Routes {
@@ -263,20 +277,16 @@ func Test_Wait_noCircleCIProjectIsGitHubAlone(t *testing.T) {
 	}
 }
 
-func Test_Wait_projectWithoutPipelinesIsGitHubAlone(t *testing.T) {
-	// CircleCI answers a project for every repository the token's user sees
-	// on GitHub, set up on CircleCI or not; one that has never run a
-	// pipeline (a template repository whose configuration is for the
-	// repositories created from it) is not waited for: green from GitHub
-	// alone, the warning in the document, and no pipeline of the branch
-	// looked up.
+func Test_Wait_templateRepositoryIsGitHubAlone(t *testing.T) {
+	// A template repository carries .circleci/config.yml for the
+	// repositories created from it and is never built itself: green from
+	// GitHub alone, the warning in the document, and CircleCI never asked.
 	gh := gitHubGreen()
+	gh[pullPath] = []sequence.Response{pull("clean", map[string]any{
+		"base": map[string]any{"ref": "main", "repo": map[string]any{"full_name": "o/r", "is_template": true}},
+	})}
 	gh[confPath] = []sequence.Response{config}
-	cc := sequence.Routes{
-		projPath: {project},
-		listPath: {body(map[string]any{"items": []any{}, "next_page_token": nil})},
-	}
-	h := start(t, gh, cc, true, 2*time.Minute)
+	h := start(t, gh, sequence.Routes{}, true, 2*time.Minute)
 	result, err := h.waiter.Wait(context.Background(), "o", "r", 42)
 	if err != nil {
 		t.Fatalf("want green, got %v", err)
@@ -284,16 +294,112 @@ func Test_Wait_projectWithoutPipelinesIsGitHubAlone(t *testing.T) {
 	if result.CircleCI != nil {
 		t.Errorf("want no circleci in the document, got %+v", result.CircleCI)
 	}
-	if len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0], "never run a pipeline") {
-		t.Errorf("want one warning naming the project without a pipeline, got %q", result.Warnings)
+	if len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0], "template repository") {
+		t.Errorf("want one warning naming the template repository, got %q", result.Warnings)
 	}
-	for _, r := range h.circleci.Requests() {
-		if r.Query.Get("branch") != "" {
-			t.Errorf("want no pipeline of the branch looked up, got %s", r)
-		}
+	if n := len(h.circleci.Requests()); n != 0 {
+		t.Errorf("want no CircleCI request, got %d", n)
 	}
-	if n := len(h.circleci.Requests()); n != 2 {
-		t.Errorf("want the project and its pipelines read once, got %d requests", n)
+}
+
+func Test_Wait_firstPipelineOfTheProject(t *testing.T) {
+	// A new repository's first pull request: CircleCI has the project and
+	// no pipeline when the wait starts, GitHub reads green. The head is not
+	// green from GitHub alone; its pipeline, the project's first, is waited
+	// for, read once it exists and judged like any other.
+	gh := gitHubGreen()
+	gh[confPath] = []sequence.Response{config}
+	none := body(map[string]any{"items": []any{}, "next_page_token": nil})
+	cc := sequence.Routes{
+		projPath: {project},
+		pipePath: {none, pipelines, pipelines},
+		wfPath: {
+			body(map[string]any{"items": []any{map[string]any{"id": "w1", "name": "build", "status": "running"}}}),
+			body(map[string]any{"items": []any{map[string]any{"id": "w1", "name": "build", "status": "success"}}}),
+		},
+	}
+	h := start(t, gh, cc, true, 2*time.Minute)
+	result, err := h.waiter.Wait(context.Background(), "o", "r", 42)
+	if err != nil {
+		t.Fatalf("want green, got %d %v", exitCode(err), err)
+	}
+	if result.CircleCI == nil || len(result.CircleCI.Workflows) != 1 || result.CircleCI.Workflows[0].Status != "success" {
+		t.Errorf("want the first pipeline's workflow in the document, got %+v", result.CircleCI)
+	}
+	if len(result.Warnings) != 0 {
+		t.Errorf("want no warning, got %q", result.Warnings)
+	}
+	if !strings.Contains(h.progress.String(), "circleci pipeline for abc123 (absent)") {
+		t.Errorf("progress names the absent pipeline:\n%s", h.progress.String())
+	}
+}
+
+func Test_Wait_setupOnlyPipelineWaitsForTheContinuation(t *testing.T) {
+	// The pipeline reads created with its setup workflow alone and GitHub
+	// carries the setup job's status alone: the continuation has not
+	// created the build's workflows yet (a minute or two after the setup
+	// job continues the pipeline, longer while CircleCI's listing lags).
+	// The head waits; it is green once the build workflow exists and
+	// succeeded.
+	gh := gitHubGreen()
+	gh[confPath] = []sequence.Response{config}
+	gh[statPath] = []sequence.Response{successStatuses("ci/circleci: setup")}
+	cc := sequence.Routes{
+		projPath: {project},
+		pipePath: {pipelines},
+		wfPath: {
+			body(map[string]any{"items": []any{setupWorkflow("success")}}),
+			body(map[string]any{"items": []any{setupWorkflow("success"), map[string]any{"id": "w2", "name": "build", "status": "success"}}}),
+		},
+	}
+	h := start(t, gh, cc, true, 2*time.Minute)
+	result, err := h.waiter.Wait(context.Background(), "o", "r", 42)
+	if err != nil {
+		t.Fatalf("want green, got %d %v", exitCode(err), err)
+	}
+	if result.CircleCI == nil || len(result.CircleCI.Workflows) != 2 {
+		t.Errorf("want the continued pipeline's two workflows, got %+v", result.CircleCI)
+	}
+	if !strings.Contains(h.progress.String(), "circleci pipeline 12 (setup finished, the continuation's workflows not created yet)") {
+		t.Errorf("progress names the pending continuation:\n%s", h.progress.String())
+	}
+}
+
+func Test_Wait_setupOnlyListingWithPostedJobsIsJudgedByGitHub(t *testing.T) {
+	// CircleCI's listing lags behind the build's workflows while every job
+	// has posted its status to GitHub: the statuses are the verdict, green
+	// on the first poll.
+	gh := gitHubGreen()
+	gh[confPath] = []sequence.Response{config}
+	gh[statPath] = []sequence.Response{successStatuses("ci/circleci: setup", "ci/circleci: go-build", "ci/circleci: push-chart")}
+	cc := sequence.Routes{
+		projPath: {project},
+		pipePath: {pipelines},
+		wfPath:   {body(map[string]any{"items": []any{setupWorkflow("success")}})},
+	}
+	h := start(t, gh, cc, true, 2*time.Minute)
+	if _, err := h.waiter.Wait(context.Background(), "o", "r", 42); err != nil {
+		t.Fatalf("want green, got %d %v", exitCode(err), err)
+	}
+	if !strings.Contains(h.progress.String(), "poll 1: green") {
+		t.Errorf("want green on the first poll:\n%s", h.progress.String())
+	}
+}
+
+func Test_Wait_cancelledWorkflowIsRed(t *testing.T) {
+	// A CircleCI workflow cancelled (a newer push, a person's cancel) ends
+	// the wait red at that poll, like a failed one: no wait turns it green.
+	gh := gitHubGreen()
+	gh[confPath] = []sequence.Response{config}
+	cc := sequence.Routes{
+		projPath: {project},
+		pipePath: {pipelines},
+		wfPath:   {body(map[string]any{"items": []any{map[string]any{"id": "w1", "name": "build", "status": "canceled"}}})},
+	}
+	h := start(t, gh, cc, true, 2*time.Minute)
+	_, err := h.waiter.Wait(context.Background(), "o", "r", 42)
+	if exitCode(err) != agentcli.ExitRed || !strings.Contains(err.Error(), "circleci workflow build canceled") {
+		t.Fatalf("want exit 1 naming the cancelled workflow, got %d %v", exitCode(err), err)
 	}
 }
 

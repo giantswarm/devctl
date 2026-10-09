@@ -9,6 +9,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `pr wait`, `release wait` and the commands that wait the same way (`pr merge`, `rollout wait`): a
+  wait no longer hangs on a green head or a published release when CircleCI's API lags behind its own
+  pipelines. `release wait` judges the tag pipeline by its workflows and reads a workflow's jobs only
+  to name the failed ones and to derive the artifacts of hand-written CI and of a `custom.yml` that
+  declares push jobs, never the setup workflow's:
+  CircleCI answers 404 on the jobs of a listed, finished workflow for a while after it exists and for
+  as long as its job data lags (half an hour and more on 2026-10-09), and the wait stayed on `jobs not
+  visible yet` past its timeout with every asset uploaded; a failed workflow whose jobs it does not
+  list is named by the workflow. `pr wait` treats a pipeline listed with its setup workflow alone, or
+  with no workflow at all, as unfinished while the head carries the setup job's status alone, and
+  judges it by the continuation's statuses once they posted, whatever the listing reads: a setup-only
+  head was green before the build ran, and a pipeline whose build workflow CircleCI's listing lost, or
+  whose listing read empty with every job's status on GitHub, was waited on past the timeout. A repository whose CircleCI
+  project has no pipeline yet is waited for, the head's own may be the project's first, instead of
+  judged from GitHub alone; a template repository (`is_template`) stays GitHub alone with its warning.
+- `pr wait`, `pr merge`, `release wait`, `rollout wait`: without `--progress`, a heartbeat on stderr
+  says `waiting for <what>` once every two minutes and whenever it changes, so a wait killed by its
+  caller's time limit has named its cause.
 - `pr merge`: a repository whose settings allow only merge commits (squash and rebase off) is merged with a merge
   commit instead of declined by GitHub after the whole wait with "Squash merges are not allowed on this repository".
   The settings are read before the wait: where the default squash is off and exactly one other method is on, the

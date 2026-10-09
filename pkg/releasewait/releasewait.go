@@ -313,7 +313,14 @@ func (w *Waiter) wait(ctx context.Context, result *Result) error {
 			return err
 		}
 		plan.setArtifacts(result, artifacts)
-		plan.custom = content.HasCustomCircleCI()
+		if content.HasCustomCircleCI() {
+			plan.customJobs, err = CustomPushJobs(ctx, w.config.GitHub, owner, repo, result.SHA, *content)
+			if err != nil {
+				return err
+			}
+			plan.custom = len(plan.customJobs) > 0
+			w.progress.Printf("%s/%s at %s declares %d push job(s) beyond the entry's artifacts", circleCIDir, circleCICustom, short(result.SHA), len(plan.customJobs))
+		}
 	case CIModelNone:
 		// Nothing to derive: no CircleCI means no image and no chart.
 		plan.setArtifacts(result, nil)
@@ -423,9 +430,11 @@ type plan struct {
 	// derived says the expected artifacts are known; hand-written CI
 	// derives them from the tag pipeline's jobs once those exist.
 	derived bool
-	// custom says a generated pipeline's custom.yml push jobs are still to
-	// be matched with the tag pipeline's jobs, once those exist.
-	custom bool
+	// customJobs are the push jobs a generated pipeline's custom.yml adds;
+	// custom says they are still to be matched with the tag pipeline's
+	// jobs, once those exist.
+	customJobs []PushJob
+	custom     bool
 	// releaseAssets: no image and no chart; the wait is on the published
 	// release and the tag's workflows.
 	releaseAssets bool
@@ -474,7 +483,10 @@ type chartArtifact struct{ name, catalog, catalogTest string }
 func (w *Waiter) loop(ctx context.Context, result *Result, p *plan) error {
 	owner, repo := w.config.Owner, w.config.Repo
 	for {
-		state, err := w.pipelineState(ctx, result)
+		// The jobs name the artifacts of hand-written CI and of a generated
+		// pipeline's custom.yml; once those are known nothing reads them.
+		needJobs := (!p.derived && result.CIModel == CIModelHandWritten) || p.custom
+		state, err := w.pipelineState(ctx, result, needJobs)
 		if err != nil {
 			return err
 		}
@@ -493,7 +505,7 @@ func (w *Waiter) loop(ctx context.Context, result *Result, p *plan) error {
 			}
 		}
 		if p.custom && state.jobs != nil {
-			artifacts, err := CustomArtifacts(ctx, w.config.GitHub, owner, repo, result.SHA, p.version, *p.content, state.jobs, p.private, w.config.Endpoints)
+			artifacts, err := CustomArtifacts(ctx, w.config.GitHub, owner, repo, result.SHA, p.version, p.customJobs, state.jobs, p.private, w.config.Endpoints)
 			if err != nil {
 				return err
 			}
@@ -538,10 +550,37 @@ func (w *Waiter) loop(ctx context.Context, result *Result, p *plan) error {
 			return nil
 		}
 
+		w.progress.Waiting(w.clock.Now(), w.pending(result, p, state))
 		if err := w.clock.Sleep(ctx, w.interval()); err != nil {
 			return w.timeout(result)
 		}
 	}
+}
+
+// pending names what the wait still waits for, for the heartbeat of a wait
+// without --progress: the artifacts not in their registry, the jobs a
+// derivation needs, the tag's CI and the release.
+func (w *Waiter) pending(result *Result, p *plan, state *pipelineState) string {
+	var parts []string
+	for _, a := range result.Artifacts {
+		if a.State != StateAvailable {
+			parts = append(parts, a.Kind+" "+a.Reference)
+		}
+	}
+	if !p.derived || p.custom {
+		parts = append(parts, "the tag pipeline's jobs, which name the artifacts")
+	}
+	switch {
+	case !state.green && w.circleci == nil:
+		parts = append(parts, fmt.Sprintf("the Actions runs of %s", result.Tag))
+	case !state.green:
+		parts = append(parts, stillRunning(result.Pipeline))
+	case p.releaseAssets:
+		parts = append(parts, fmt.Sprintf("the release of %s published", result.Tag))
+	case w.config.Catalog && len(parts) == 0:
+		parts = append(parts, "the catalog index to list every chart")
+	}
+	return strings.Join(parts, "; ")
 }
 
 // probe asks the registry for every artifact still missing.
@@ -674,6 +713,7 @@ func (w *Waiter) awaitTag(ctx context.Context, version Version) (tag, sha string
 			return candidate, sha, nil
 		}
 		w.progress.Printf("tag %s does not exist yet", version.Tags()[0])
+		w.progress.Waiting(w.clock.Now(), fmt.Sprintf("tag %s to exist", version.Tags()[0]))
 		if err := w.clock.Sleep(ctx, w.interval()); err != nil {
 			return "", "", timeoutErr("tag %s did not appear in %s/%s within %s", version.Tags()[0], w.config.Owner, w.config.Repo, w.config.Timeout)
 		}
@@ -729,6 +769,7 @@ func (w *Waiter) awaitTagForCommit(ctx context.Context, sha string, content *Tag
 			w.untagged = fmt.Sprintf("the %s run %s is %s", run.Name, run.URL, run.Status)
 		}
 		w.progress.Printf("no tag on %s yet; %s", short(sha), w.untagged)
+		w.progress.Waiting(w.clock.Now(), fmt.Sprintf("a tag on the merge commit %s; %s", short(sha), w.untagged))
 		if err := w.clock.Sleep(ctx, w.interval()); err != nil {
 			return "", w.timeout(&Result{SHA: sha})
 		}
