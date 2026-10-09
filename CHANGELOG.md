@@ -87,6 +87,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `gen workflows --flavour app`: new `zz_generated.check_readme_links.yaml`, which calls the `check-readme-links` reusable
+  workflow of giantswarm/github-workflows. On a pull request that touches `README.md` it fails on a dead URL, a relative
+  path that does not exist in the repository or a reversed link `(text)[url]`; the weekly run catches links whose target moved
+  without the README changing and files its findings as one issue, from the default branch only. Generated for every
+  app repository; `--check-readme-links=false` keeps it out, which `gen.checkReadmeLinks: false` on the repository entry in
+  giantswarm/github passes (a devctl that predates the flag is not passed it and generates the workflow regardless).
+  Prompted by the dead `docs.giantswarm.io` and `helm/<chart>/...` links in several app READMEs that surfaced in the
+  Backstage README cards in October 2026.
 - `pr merge --dispatch <owner>/<repo>/<workflow file>[@<ref>]` (or `DEVCTL_MERGE_DISPATCH`, for every merge on a
   machine; the flag wins): once the pull request is merged, after its release wait whatever that ended with, the
   workflow is dispatched through its `workflow_dispatch` trigger on the ref or the repository's default branch, with
