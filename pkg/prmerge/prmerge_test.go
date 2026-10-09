@@ -4,10 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"io"
 	"maps"
 	"net/http"
+	"net/http/httptest"
+	"net/http/httputil"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -69,10 +73,16 @@ var (
 	deleted = sequence.Response{Status: http.StatusNoContent}
 )
 
+// settings is o/r as GitHub answers it, with the merge methods it allows.
+func settings(mergeCommit, squash, rebase bool) map[string]any {
+	return map[string]any{"full_name": "o/r", "allow_merge_commit": mergeCommit, "allow_squash_merge": squash, "allow_rebase_merge": rebase}
+}
+
 // routes is the mock's script for a green o/r#42 that merges as a squash,
 // with more applied on top.
 func routes(pr map[string]any, more ...sequence.Routes) sequence.Routes {
 	r := sequence.Routes{
+		"GET /repos/o/r":                           {{Body: settings(true, true, true)}},
 		"GET /repos/o/r/pulls/42":                  {{Body: pr}},
 		"PUT /repos/o/r/pulls/42/merge":            {merged},
 		"DELETE /repos/o/r/git/refs/heads/feature": {deleted},
@@ -100,9 +110,16 @@ func newHarness(t *testing.T, r sequence.Routes, configure func(*Config)) *harne
 		t.Fatal(err)
 	}
 	t.Cleanup(server.Close)
+	return newHarnessAt(t, server, server.URL, configure)
+}
+
+// newHarnessAt is newHarness with the merger's GitHub at baseURL, a proxy
+// in front of server.
+func newHarnessAt(t *testing.T, server *githubmock.Server, baseURL string, configure func(*Config)) *harness {
+	t.Helper()
 	logger := logrus.New()
 	logger.SetOutput(io.Discard)
-	github, conditional, err := githubclient.NewConditional(githubclient.Config{Logger: logger, AccessToken: "ghu_test", BaseURL: server.URL})
+	github, conditional, err := githubclient.NewConditional(githubclient.Config{Logger: logger, AccessToken: "ghu_test", BaseURL: baseURL})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -255,6 +272,37 @@ func Test_Merge_paths(t *testing.T) {
 			routes:    routes(pull(nil)),
 			configure: func(c *Config) { c.Method = githubclient.MergeRebase },
 			want:      want{method: "rebase", mergedBy: "someone", mergeSHA: "m1", deleted: true, headSHA: "abc123", requested: map[string]int{"PUT /repos/o/r/pulls/42/merge": 1}},
+		},
+		{
+			name:   "a repository that allows only merge commits: the merge lands as one, with a warning",
+			routes: routes(pull(nil), sequence.Routes{"GET /repos/o/r": {{Body: settings(true, false, false)}}}),
+			want: want{method: "merge", mergedBy: "someone", mergeSHA: "m1", deleted: true, headSHA: "abc123", warning: "does not allow squash merges, only merge commits",
+				requested: map[string]int{"GET /repos/o/r": 1, "PUT /repos/o/r/pulls/42/merge": 1}},
+		},
+		{
+			name:   "a repository that allows only rebase merges: the default squash gives way to a rebase",
+			routes: routes(pull(nil), sequence.Routes{"GET /repos/o/r": {{Body: settings(false, false, true)}}}),
+			want: want{method: "rebase", mergedBy: "someone", mergeSHA: "m1", deleted: true, headSHA: "abc123", warning: "only rebase merges",
+				requested: map[string]int{"PUT /repos/o/r/pulls/42/merge": 1}},
+		},
+		{
+			name:   "squash not allowed and two others are: exit 3 before the wait, naming them",
+			routes: routes(pull(nil), sequence.Routes{"GET /repos/o/r": {{Body: settings(true, false, true)}}}),
+			want: want{code: 3, reason: "o/r does not allow squash merges; its settings allow merge commits, rebase merges; --rebase lands a rebase merge", method: "squash", headSHA: "abc123",
+				requested: map[string]int{"GET /repos/o/r/commits/abc123/check-runs": 0, "PUT /repos/o/r/pulls/42/merge": 0}},
+		},
+		{
+			name:      "an explicit rebase never gives way: exit 3 before the wait",
+			routes:    routes(pull(nil), sequence.Routes{"GET /repos/o/r": {{Body: settings(true, false, false)}}}),
+			configure: func(c *Config) { c.Method = githubclient.MergeRebase },
+			want: want{code: 3, reason: "o/r does not allow rebase merges; its settings allow merge commits", method: "rebase", headSHA: "abc123",
+				requested: map[string]int{"GET /repos/o/r/commits/abc123/check-runs": 0, "PUT /repos/o/r/pulls/42/merge": 0}},
+		},
+		{
+			name:   "settings the token cannot read leave the asked method to GitHub",
+			routes: routes(pull(nil), sequence.Routes{"GET /repos/o/r": {{Body: map[string]any{"full_name": "o/r"}}}}),
+			want: want{method: "squash", mergedBy: "someone", mergeSHA: "m1", deleted: true, headSHA: "abc123",
+				requested: map[string]int{"PUT /repos/o/r/pulls/42/merge": 1}},
 		},
 		{
 			name: "a head in a fork is merged and its branch left alone",
@@ -742,4 +790,50 @@ func withBypass(ruleset map[string]any, mode string) map[string]any {
 	out := maps.Clone(ruleset)
 	out["current_user_can_bypass"] = mode
 	return out
+}
+
+// Test_Merge_commitSubject: a squash and a merge commit both carry the
+// title with its number as their subject, the one auto-release reads; a
+// rebase keeps the commits' own.
+func Test_Merge_commitSubject(t *testing.T) {
+	tests := []struct {
+		name      string
+		settings  map[string]any
+		method    githubclient.MergeMethod
+		wantTitle string
+	}{
+		{name: "squash", settings: settings(true, true, true), wantTitle: "feat: thing (#42)"},
+		{name: "merge commit", settings: settings(true, false, false), wantTitle: "feat: thing (#42)"},
+		{name: "rebase", settings: settings(true, true, true), method: githubclient.MergeRebase},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			server, err := githubmock.Start(routes(pull(nil), sequence.Routes{"GET /repos/o/r": {{Body: tc.settings}}}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(server.Close)
+			target, err := url.Parse(server.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			upstream := httputil.NewSingleHostReverseProxy(target)
+			var body map[string]any
+			proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPut {
+					_ = json.NewDecoder(r.Body).Decode(&body)
+					r.Body, r.ContentLength = http.NoBody, 0
+				}
+				upstream.ServeHTTP(w, r)
+			}))
+			t.Cleanup(proxy.Close)
+			h := newHarnessAt(t, server, proxy.URL, func(c *Config) { c.Method = tc.method })
+			if _, err := h.merge(t); err != nil {
+				t.Fatal(err)
+			}
+			if title, _ := body["commit_title"].(string); title != tc.wantTitle {
+				t.Errorf("want commit_title %q, got %q (body %v)", tc.wantTitle, title, body)
+			}
+		})
+	}
 }

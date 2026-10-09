@@ -9,6 +9,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `pr merge`: a repository whose settings allow only merge commits (squash and rebase off) is merged with a merge
+  commit instead of declined by GitHub after the whole wait with "Squash merges are not allowed on this repository".
+  The settings are read before the wait: where the default squash is off and exactly one other method is on, the
+  merge lands with that one, says so in a warning and reports it as `method` (`merge` for a merge commit). A method
+  the settings do not allow is otherwise refused before the wait (exit 3, naming the allowed methods); `--rebase` is
+  never replaced. A merge commit's subject is `<title> (#<number>)`, the subject a squash gets, so auto-release reads
+  it the same way.
+
 - `gen precommit`: the generated pre-commit workflow installs golangci-lint 2.14.0. 2.13.2 cannot read the export
   data of Go 1.27.2, which `setup-go` resolves for a `go 1.27` module, and failed every lint run with
   "export data version 5 is greater than maximum supported version 4".

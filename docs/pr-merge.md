@@ -84,12 +84,19 @@ and are sent once.
 Green lands with one call of the merge API, `PUT /repos/{owner}/{repo}/pulls/{number}/merge`:
 
 - **Squash** by default; `--rebase` is a rebase merge, for repositories whose convention is one
-  commit per patch (the upstream-line forks). Never a merge commit.
+  commit per patch (the upstream-line forks).
+- The repository's settings (`allow_squash_merge`, `allow_merge_commit`, `allow_rebase_merge` of
+  `GET /repos/{owner}/{repo}`) are read before the wait. A repository that does not allow squash
+  merges and allows exactly one other method lands with that one, a merge commit (`method: merge`)
+  or a rebase, with a warning on the progress stream and in `warnings`. A method the settings do
+  not allow is refused before the wait (exit 3, naming the allowed methods) when the choice is not
+  that one: `--rebase` asked, or squash off with both other methods on. Settings the token cannot
+  read leave the asked method to GitHub.
 - The judged head SHA goes along as the expected head: a head that moved between the verdict and
   the merge is not merged (GitHub answers 409), and the pull request is re-read after the wait for
   the same reason (a retitle during the wait names the squash commit).
-- The squash commit's subject is the pull request's title with its number, `<title> (#<number>)`:
-  the title the title check accepted is what the auto-release reads.
+- The squash commit's subject, and a merge commit's, is the pull request's title with its number,
+  `<title> (#<number>)`: the title the title check accepted is what the auto-release reads.
 - Before the merge call, the body as it stands after the wait is read for GitHub's closing keywords (`close`,
   `fix`, `resolve` in any tense and case, an optional colon) directly before a reference. One that names a pull
   request (a `/pull/N` URL, or a `#N`, `GH-N` or `owner/repo#N` GitHub reports as a pull request) or an item of
@@ -338,9 +345,9 @@ The envelope and the fields from `repository` to `unfinished[]` are [`pr wait`'s
 
 | Field | Meaning |
 |---|---|
-| `mergeCommitSha` | The commit the merge produced (the squash commit, the rebased head, or the queue's merge commit); empty when nothing merged. |
+| `mergeCommitSha` | The commit the merge produced (the squash commit, the merge commit, the rebased head, or the queue's merge commit); empty when nothing merged. |
 | `mergedBy` | The login the merge was made as: the account the token acts as, or for a merge queue the account GitHub records as the merger. Empty when nothing merged. |
-| `method` | `squash` or `rebase`, as asked. |
+| `method` | `squash` or `rebase`, as asked, or `merge` (or `rebase`) where the repository does not allow squash merges and allows only that method. |
 | `branchDeleted` | The head branch was deleted after the merge, or was gone already. `false` when nothing merged and for a head in a fork. |
 | `enqueued` | The base has a merge queue and the pull request went through it. |
 | `unansweredReviews` | The feedback the last review read found unanswered, each with `kind` (`review`, `review_comment`, `comment`), `login`, `state` (reviews only), `at` and `url`; empty when nothing held the merge, `null` when a refusal came before the read. |
