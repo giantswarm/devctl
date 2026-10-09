@@ -50,11 +50,12 @@ system that will produce it:
    its `setup` workflow may have finished, but the continued workflows that post the build's
    contexts do not exist yet. It settles at `created`, and reads `created` with the setup workflow
    alone for a minute or two after the setup job continued it, longer when CircleCI's listing lags
-   behind the workflows it created. GitHub tells the two apart: every continued job posts under
-   its own `ci/circleci: <job>` context beside the setup job's, so a pipeline listed with its setup
-   workflow alone is unfinished (`setup finished, the continuation's workflows not created yet`)
-   while the head carries one CircleCI context at most, and is judged by the contexts once more
-   have posted.
+   behind the workflows it created; a listing that lags further reads `created` with no workflow at
+   all. GitHub tells a fresh pipeline from a lagging listing: every continued job posts under its
+   own `ci/circleci: <job>` context beside the setup job's, so a pipeline listed with its setup
+   workflow alone (`setup finished, the continuation's workflows not created yet`) or with none
+   (`no workflows yet`) is unfinished while the head carries one CircleCI context at most, and is
+   judged by the contexts once more have posted, whatever the listing reads.
 3. **No GitHub Actions run of the head is open**: `queued`, `in_progress`, `waiting`, `pending`,
    `requested`, or completed with the conclusion `action_required`. The last one is a workflow
    run awaiting a repository member's approval (a fork's or a bot's pull request in a repository

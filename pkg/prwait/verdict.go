@@ -269,9 +269,9 @@ func circleStatuses(statuses []*github.RepoStatus) int {
 }
 
 // evaluateCircleCI applies rule 2 to the head's pipeline. circleStatuses is
-// how many CircleCI jobs have posted to GitHub: a setup workflow listed on
-// its own is not the pipeline's last word, and GitHub tells whether its
-// continuation has run.
+// how many CircleCI jobs have posted to GitHub: an empty listing or a setup
+// workflow listed on its own is not the pipeline's last word, and GitHub
+// tells whether its continuation has run.
 func (e *evaluation) evaluateCircleCI(headSHA string, c *circleSnapshot, circleStatuses int) {
 	if c.pipeline == nil {
 		e.unfinished = append(e.unfinished, fmt.Sprintf("circleci pipeline for %s (absent)", headSHA))
@@ -292,16 +292,25 @@ func (e *evaluation) evaluateCircleCI(headSHA string, c *circleSnapshot, circleS
 		// A finished setup workflow is not the pipeline's last: the continued
 		// workflows post the build's contexts once they exist.
 		e.unfinished = append(e.unfinished, fmt.Sprintf("circleci pipeline %d (%s, continuation not created yet)", c.pipeline.Number, c.pipeline.State))
+	case circleStatuses > 1:
+		// More than one CircleCI job has posted to the head: the build runs or
+		// ran, whatever the listing reads, and the jobs' contexts are its
+		// verdict (rule 1). The listing is read for what it has: a workflow
+		// it lists is judged below, and one it has not listed yet, or has
+		// lost (an empty listing or the setup workflow alone, for as long as
+		// CircleCI's listing lags behind the workflows it created), has its
+		// jobs on GitHub.
 	case len(workflows) == 0:
+		// Nothing of the pipeline has run yet, or the setup job alone: with
+		// one CircleCI context at most, no continued job has posted, and the
+		// head waits.
 		e.unfinished = append(e.unfinished, fmt.Sprintf("circleci pipeline %d (no workflows yet)", c.pipeline.Number))
-	case circleciclient.SetupOnly(workflows) && circleStatuses <= 1:
+	case circleciclient.SetupOnly(workflows):
 		// The pipeline reads created with the setup workflow alone: for a
 		// while after the setup job continues it, before the build's
-		// workflows exist, and for as long as CircleCI's listing lags behind
-		// them. GitHub tells the two apart: every continued job posts under
-		// its own context beside the setup job's, so with one CircleCI
-		// context at most nothing of the build has run, and the head waits;
-		// with more, the build runs or ran and its contexts are its verdict.
+		// workflows exist. Every continued job posts under its own context
+		// beside the setup job's, so with one CircleCI context at most
+		// nothing of the build has run, and the head waits.
 		e.unfinished = append(e.unfinished, fmt.Sprintf("circleci pipeline %d (setup finished, the continuation's workflows not created yet)", c.pipeline.Number))
 	}
 	for _, w := range workflows {

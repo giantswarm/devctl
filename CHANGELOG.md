@@ -17,10 +17,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   CircleCI answers 404 on the jobs of a listed, finished workflow for a while after it exists and for
   as long as its job data lags (half an hour and more on 2026-10-09), and the wait stayed on `jobs not
   visible yet` past its timeout with every asset uploaded; a failed workflow whose jobs it does not
-  list is named by the workflow. `pr wait` treats a pipeline listed with its setup workflow alone as
-  unfinished while the head carries the setup job's status alone, and judges it by the continuation's
-  statuses once they posted: a setup-only head was green before the build ran, and a pipeline whose
-  build workflow CircleCI's listing lost was waited on past the timeout. A repository whose CircleCI
+  list is named by the workflow. `pr wait` treats a pipeline listed with its setup workflow alone, or
+  with no workflow at all, as unfinished while the head carries the setup job's status alone, and
+  judges it by the continuation's statuses once they posted, whatever the listing reads: a setup-only
+  head was green before the build ran, and a pipeline whose build workflow CircleCI's listing lost, or
+  whose listing read empty with every job's status on GitHub, was waited on past the timeout. A repository whose CircleCI
   project has no pipeline yet is waited for, the head's own may be the project's first, instead of
   judged from GitHub alone; a template repository (`is_template`) stays GitHub alone with its warning.
 - `pr wait`, `pr merge`, `release wait`, `rollout wait`: without `--progress`, a heartbeat on stderr

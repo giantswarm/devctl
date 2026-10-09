@@ -377,6 +377,43 @@ func Test_evaluate(t *testing.T) {
 			wantActions:    []ActionRun{},
 			wantCircleCI:   &CircleCI{PipelineID: "p1", PipelineNumber: 7, Workflows: []Workflow{}},
 		},
+		{
+			name: "a pipeline listed without workflows, the setup job's status alone: the build has not run",
+			snapshot: snapshot{
+				statuses: []*github.RepoStatus{status("ci/circleci: setup", "success")},
+				circleci: circle("created"),
+			},
+			wantUnfinished:  []string{"circleci pipeline 7 (no workflows yet)"},
+			skipFieldChecks: true,
+		},
+		{
+			name: "a pipeline listed without workflows, the continuation's jobs posted: judged by their statuses",
+			snapshot: snapshot{
+				statuses: []*github.RepoStatus{status("ci/circleci: setup", "success"), status("ci/circleci: go-build", "success"), status("ci/circleci: build-image", "pending")},
+				circleci: circle("created"),
+			},
+			wantUnfinished:  []string{"status ci/circleci: build-image (pending)"},
+			skipFieldChecks: true,
+		},
+		{
+			name: "a pipeline listed without workflows, the continuation's jobs all posted success: green",
+			snapshot: snapshot{
+				statuses: []*github.RepoStatus{status("ci/circleci: setup", "success"), status("ci/circleci: go-build", "success"), status("ci/circleci: build-image", "success")},
+				circleci: circle("created"),
+				required: []string{"ci/circleci: go-build", "ci/circleci: build-image"},
+			},
+			wantGreen:       true,
+			skipFieldChecks: true,
+		},
+		{
+			name: "a pipeline listed without workflows, a continued job failed: red",
+			snapshot: snapshot{
+				statuses: []*github.RepoStatus{status("ci/circleci: setup", "success"), status("ci/circleci: go-build", "failure")},
+				circleci: circle("created"),
+			},
+			wantRed:         []string{"status ci/circleci: go-build is failure"},
+			skipFieldChecks: true,
+		},
 	}
 
 	for _, tc := range testCases {
