@@ -391,6 +391,21 @@ func (c *Client) ListWorkflowJobs(ctx context.Context, workflowID string) ([]Job
 	return out.Items, nil
 }
 
+// RerunWorkflowFromFailed reruns the failed jobs of a finished workflow and
+// the jobs that depend on them, and returns the id of the new workflow: the
+// rerun is a second workflow of the same name in the same pipeline. A token
+// without write access is refused with IsForbidden.
+func (c *Client) RerunWorkflowFromFailed(ctx context.Context, workflowID string) (string, error) {
+	var out struct {
+		WorkflowID string `json:"workflow_id"`
+	}
+	body := map[string]bool{"from_failed": true}
+	if err := c.do(ctx, http.MethodPost, "/api/v2/workflow/"+url.PathEscape(workflowID)+"/rerun", body, &out); err != nil {
+		return "", microerror.Mask(err)
+	}
+	return out.WorkflowID, nil
+}
+
 // FailedStepsOutput returns the output of the failed steps of job number of
 // org/repo (v1.1: API v2 has no job output), in step order. The output
 // lives at a signed URL per step, read without the token.
@@ -492,6 +507,8 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) err
 	switch {
 	case resp.StatusCode == http.StatusNotFound:
 		return microerror.Maskf(notFoundError, "%s %s: %s", method, path, apiMessage(data))
+	case resp.StatusCode == http.StatusForbidden:
+		return microerror.Maskf(forbiddenError, "%s %s: HTTP 403 %s", method, path, apiMessage(data))
 	case resp.StatusCode == http.StatusUnauthorized:
 		// v1.1 says "Invalid token provided", v2 "New format tokens are
 		// needed": both also describe a token read with its quotes.

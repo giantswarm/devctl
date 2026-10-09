@@ -30,11 +30,6 @@ const DefaultTimeout = 30 * time.Minute
 // part of the verdict.
 const CircleCIConfigPath = ".circleci/config.yml"
 
-// pipelinePages bounds the search for the head revision among a branch's
-// pipelines, newest first: past three pages the pipeline is not the newest
-// of anything.
-const pipelinePages = 3
-
 // RateSource reports the GitHub rate limit the newest response carried.
 type RateSource interface {
 	Rate() githubclient.RateLimit
@@ -329,10 +324,7 @@ func (w *Waiter) decideCircleCI(ctx context.Context, owner, repo string, number 
 	}
 	h.circleci = client
 	h.project = fmt.Sprintf("github/%s/%s", owner, repo)
-	h.branch = headRef
-	if fork {
-		h.branch = fmt.Sprintf("pull/%d", number)
-	}
+	h.branch = circleciclient.PullRequestBranch(headRef, fork, number)
 	w.progress.Printf("CircleCI project %s, branch %s", h.project, h.branch)
 	return nil
 }
@@ -341,23 +333,11 @@ func (w *Waiter) decideCircleCI(ctx context.Context, owner, repo string, number 
 // branch and reads its workflows.
 func (w *Waiter) readCircleCI(ctx context.Context, owner, repo string, h *head) (*circleSnapshot, error) {
 	s := &circleSnapshot{project: h.project}
-	pageToken := ""
-	for page := 0; page < pipelinePages && s.pipeline == nil; page++ {
-		pipelines, err := h.circleci.ListBranchPipelines(ctx, owner, repo, h.branch, pageToken)
-		if err != nil {
-			return nil, err
-		}
-		for i := range pipelines.Items {
-			if pipelines.Items[i].VCS.Revision == h.sha {
-				s.pipeline = &pipelines.Items[i]
-				break
-			}
-		}
-		if pipelines.NextPageToken == "" {
-			break
-		}
-		pageToken = pipelines.NextPageToken
+	pipeline, err := h.circleci.FindPipelineByRevision(ctx, owner, repo, h.branch, h.sha)
+	if err != nil {
+		return nil, err
 	}
+	s.pipeline = pipeline
 	if s.pipeline == nil {
 		return s, nil
 	}

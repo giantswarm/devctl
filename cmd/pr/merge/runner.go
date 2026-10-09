@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -117,7 +115,7 @@ type call struct {
 func (r *runner) check(ctx context.Context, args []string, repository *string, number *int, identity *string) (call, error) {
 	var c call
 	var err error
-	c.owner, c.repo, c.number, err = parseArgs(args)
+	c.owner, c.repo, c.number, err = agentcli.ParsePullRequest(command, args)
 	if err != nil {
 		return c, err
 	}
@@ -261,20 +259,4 @@ func (r *runner) merge(ctx context.Context, args []string, doc *document) error 
 	}
 	prwait.PrintFailedJobs(r.stderr, result.FailedJobs)
 	return githubclient.ExplainNotFound(err, authexec.NotFoundHint(token, owner))
-}
-
-// parseArgs reads "<owner/repo> <number>".
-func parseArgs(args []string) (owner, repo string, number int, err error) {
-	if len(args) != 2 {
-		return "", "", 0, fmt.Errorf("usage: devctl %s <owner/repo> <number>, got %d argument(s)", command, len(args))
-	}
-	owner, repo, ok := strings.Cut(args[0], "/")
-	if !ok || owner == "" || repo == "" || strings.Contains(repo, "/") {
-		return "", "", 0, fmt.Errorf("the repository is <owner/repo>, got %q", args[0])
-	}
-	number, err = strconv.Atoi(args[1])
-	if err != nil || number <= 0 {
-		return "", "", 0, fmt.Errorf("the pull request number is a positive integer, got %q", args[1])
-	}
-	return owner, repo, number, nil
 }
