@@ -9,6 +9,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `gen precommit`: the generated pre-commit workflow installs golangci-lint 2.14.0. 2.13.2 cannot read the export
+  data of Go 1.27.2, which `setup-go` resolves for a `go 1.27` module, and failed every lint run with
+  "export data version 5 is greater than maximum supported version 4".
 - `gen circleci`: the generated pipelines pin architect orb 10.12.2. Its `push-to-app-catalog` fetches the catalog's
   head, resets onto it and re-applies the chart on every attempt, with ten attempts and a growing wait, so a chart
   push that collides with another build's push to the same catalog succeeds instead of failing all four attempts.
