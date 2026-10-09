@@ -60,9 +60,10 @@ The cluster is polled with a backoff from 5 to 30 seconds; --reconcile asks
 Flux once to reconcile the sources and HelmReleases still behind, the only
 write the command makes.
 
-Output: one JSON document on stdout at the end and nothing else (--progress
-writes one line per step to stderr): the envelope (command, schemaVersion,
-exitCode, verdict, reason, warnings, startedAt, finishedAt), installation,
+Output: one JSON document on stdout at the end; on stderr the release wait's
+heartbeat naming what it still waits for, every two minutes and when it
+changes (--progress writes one line per step instead): the envelope (command,
+schemaVersion, exitCode, verdict, reason, warnings, startedAt, finishedAt), installation,
 context, version, charts, deployments[{kind, namespace, name, chart,
 source, follows, runningVersion, state, message, workloads[{kind,
 namespace, name, ready, message}]}] and release, the release wait's

@@ -887,37 +887,102 @@ func TestWaitJobsNotVisibleYetIsNotYet(t *testing.T) {
 	}
 }
 
-// Jobs that never become visible end the wait at the deadline, exit 2, with
-// the workflow in the pipeline's unfinished list and in the reason.
+// Hand-written CI derives its artifacts from the tag pipeline's jobs; jobs
+// that never become visible leave nothing to probe and end the wait at the
+// deadline, exit 2, with the workflow in the pipeline's unfinished list and
+// in the reason.
 func TestWaitJobsNeverVisibleIsTimeout(t *testing.T) {
-	circleci := pipelineRoutes([][]map[string]any{{wf("w1", "setup", "running", "2026-09-21T10:00:00Z")}}, nil)
+	github := baseGitHub([]string{"Dockerfile", "helm"}, []string{"zz_generated.create_release.yaml", "zz_generated.create_release_pr.yaml"}, []string{"config.yml"})
+	github[repoRoute("/contents/.circleci/config.yml")] = []sequence.Response{{Body: fileContent(".circleci/config.yml", handWrittenConfig)}}
+	circleci := pipelineRoutes([][]map[string]any{{wf("w1", "build", "running", "2026-09-21T10:00:00Z")}}, nil)
 	circleci["GET /api/v2/workflow/w1/job"] = []sequence.Response{{Status: 404, Body: map[string]any{"message": "Workflow not found"}}}
-	fx := fixture{
-		entry:    generatedEntry(t),
-		timeout:  45 * time.Second,
-		github:   baseGitHub([]string{"Dockerfile", "helm"}, []string{"zz_generated.auto_release.yaml"}, []string{"config.yml", "workflows.yml"}),
-		circleci: circleci,
-	}
+	fx := fixture{timeout: 45 * time.Second, github: github, circleci: circleci}
 	result, err := run(t, fx)
-	assertExit(t, err, agentcli.ExitTimeout, "pipeline 12 unfinished: setup (running, jobs not visible yet)")
-	if result.Pipeline == nil || strings.Join(result.Pipeline.Unfinished, ",") != "setup (running, jobs not visible yet)" {
+	assertExit(t, err, agentcli.ExitTimeout, "pipeline 12 unfinished: build (running, jobs not visible yet)")
+	if result.Pipeline == nil || strings.Join(result.Pipeline.Unfinished, ",") != "build (running, jobs not visible yet)" {
 		t.Errorf("pipeline: %+v", result.Pipeline)
+	}
+	if len(result.Artifacts) != 0 {
+		t.Errorf("want no artifact derived without the jobs, got %+v", result.Artifacts)
 	}
 }
 
-// The jobs of a setup workflow that already reads success can still be 404
-// for a poll (giantswarm/devctl v8.114.0): not a tooling failure, the next
-// poll reads them and the wait ends available.
-func TestWaitJobsNotFoundOnAFinishedWorkflowIsNotYet(t *testing.T) {
+// A green pipeline is green without its jobs: CircleCI answers 404 on the
+// jobs of a workflow it lists, finished or not, for a while after the
+// workflow exists and for as long as its job data lags (half an hour and
+// more on 2026-10-09, with the release published and every artifact in the
+// registry). Generated CI names its artifacts from the entry, so the jobs
+// are never read and the wait ends available on the first poll.
+func TestWaitGreenWorkflowsWithHiddenJobsAreAvailable(t *testing.T) {
 	circleci := pipelineRoutes(
 		[][]map[string]any{
 			{wf("w1", "setup", "success", "2026-09-21T10:00:00Z"), wf("w2", "build", "success", "2026-09-21T10:01:00Z")},
 		},
-		map[string][]map[string]any{"w2": {job("push-to-registries-release", "success"), job("push-chart-release", "success")}},
+		nil,
 	)
-	circleci["GET /api/v2/workflow/w1/job"] = []sequence.Response{
-		{Status: 404, Body: map[string]any{"message": "Workflow not found"}},
-		{Body: map[string]any{"items": []map[string]any{job("setup", "success")}}},
+	notFound := sequence.Response{Status: 404, Body: map[string]any{"message": "Workflow not found"}}
+	circleci["GET /api/v2/workflow/w1/job"] = []sequence.Response{notFound}
+	circleci["GET /api/v2/workflow/w2/job"] = []sequence.Response{notFound}
+	fx := fixture{
+		entry:    generatedEntry(t),
+		github:   baseGitHub([]string{"Dockerfile", "helm"}, []string{"zz_generated.auto_release.yaml"}, []string{"config.yml", "workflows.yml"}),
+		circleci: circleci,
+		registry: sequence.Routes{
+			"HEAD /v2/giantswarm/kserve-controller/manifests/1.2.3": {{Status: 200}},
+			"HEAD /v2/charts/giantswarm/kserve/manifests/1.2.3":     {{Status: 200}},
+		},
+	}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+	if result.Pipeline == nil || len(result.Pipeline.Workflows) != 2 || len(result.Pipeline.Unfinished) != 0 {
+		t.Errorf("pipeline: %+v", result.Pipeline)
+	}
+}
+
+// A failed workflow whose jobs CircleCI does not list is the tag's CI
+// failure all the same, named by the workflow.
+func TestWaitFailedWorkflowWithHiddenJobsIsCIFailure(t *testing.T) {
+	circleci := pipelineRoutes([][]map[string]any{{wf("w1", "build", "failed", "2026-09-21T10:00:00Z")}}, nil)
+	circleci["GET /api/v2/workflow/w1/job"] = []sequence.Response{{Status: 404, Body: map[string]any{"message": "Workflow not found"}}}
+	fx := fixture{
+		entry:    generatedEntry(t),
+		github:   baseGitHub([]string{"Dockerfile", "helm"}, []string{"zz_generated.auto_release.yaml"}, []string{"config.yml", "workflows.yml"}),
+		circleci: circleci,
+	}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitRed, "the tag pipeline of v1.2.3 failed: build")
+	if result.Pipeline == nil || strings.Join(result.Pipeline.FailedJobs, ",") != "build" {
+		t.Errorf("pipeline: %+v", result.Pipeline)
+	}
+}
+
+// A cancelled workflow is the tag's CI failure, its cancelled jobs named.
+func TestWaitCancelledWorkflowIsCIFailure(t *testing.T) {
+	fx := fixture{
+		entry:  generatedEntry(t),
+		github: baseGitHub([]string{"Dockerfile", "helm"}, []string{"zz_generated.auto_release.yaml"}, []string{"config.yml", "workflows.yml"}),
+		circleci: pipelineRoutes(
+			[][]map[string]any{{wf("w1", "build", "canceled", "2026-09-21T10:00:00Z")}},
+			map[string][]map[string]any{"w1": {job("go-build", "success"), job("push-to-registries-release", "canceled")}},
+		),
+	}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitRed, "build/push-to-registries-release")
+	if result.Pipeline == nil || strings.Join(result.Pipeline.FailedJobs, ",") != "build/push-to-registries-release" {
+		t.Errorf("pipeline: %+v", result.Pipeline)
+	}
+}
+
+// The tag pipeline of a repository's first release: CircleCI lists no
+// pipeline for the project when the wait starts and the tag's on the next
+// poll; the wait holds until then and ends available once it is green.
+func TestWaitFirstTagPipelineAppearsLater(t *testing.T) {
+	circleci := sequence.Routes{
+		"GET /api/v2/project/gh/giantswarm/kserve/pipeline": {
+			{Body: map[string]any{"items": []map[string]any{}, "next_page_token": nil}},
+			{Body: map[string]any{"items": []map[string]any{{"id": "p1", "number": 1, "vcs": map[string]any{"tag": testTag, "revision": testSHA}}}}},
+		},
+		"GET /api/v2/pipeline/p1/workflow": {{Body: map[string]any{"items": []map[string]any{wf("w1", "build", "success", "2026-09-21T10:00:00Z")}}}},
 	}
 	fx := fixture{
 		entry:    generatedEntry(t),
@@ -930,7 +995,7 @@ func TestWaitJobsNotFoundOnAFinishedWorkflowIsNotYet(t *testing.T) {
 	}
 	result, err := run(t, fx)
 	assertExit(t, err, agentcli.ExitOK, "")
-	if result.Pipeline == nil || len(result.Pipeline.Unfinished) != 0 {
+	if result.Pipeline == nil || result.Pipeline.Number != 1 || len(result.Pipeline.Unfinished) != 0 {
 		t.Errorf("pipeline: %+v", result.Pipeline)
 	}
 }

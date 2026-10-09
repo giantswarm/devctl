@@ -40,7 +40,9 @@ where the App is installed, your own gh login (gh auth token) for every other
 owner; the document's identity says which ("app" or "gh").
 
 Polling is conditional (ETags, a 304 costs no budget) at an interval derived
-from the rate-limit headers of the answers, 15 s to 60 s.
+from the rate-limit headers of the answers, 15 s to 60 s. Without --progress a
+heartbeat on stderr says what the wait still waits for, every two minutes and
+when it changes.
 
 The document (schemaVersion 1): command, exitCode, verdict, reason, warnings,
 startedAt, finishedAt, repository, number, headSha, baseRef,

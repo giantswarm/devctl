@@ -54,9 +54,10 @@ triggered. --catalog also waits for the catalog index to list the chart: the
 test catalog for a pre-release when the tag's architect orb (10.12.0 on) sends
 it there.
 
-Output: one JSON document on stdout at the end and nothing else (--progress
-writes one line per step to stderr): the envelope (command, schemaVersion,
-exitCode, verdict, reason, warnings, startedAt, finishedAt), repository, tag,
+Output: one JSON document on stdout at the end; on stderr a heartbeat naming
+what the wait still waits for, every two minutes and when it changes
+(--progress writes one line per step instead): the envelope (command,
+schemaVersion, exitCode, verdict, reason, warnings, startedAt, finishedAt), repository, tag,
 sha, releaseModel, ciModel, artifacts[{kind, reference, digest, state}],
 pipeline{id, number, url, workflows[{name, status}], failedJobs[], unfinished[]} (null
 without CircleCI) and actions[{name, runId, status, conclusion, url}].

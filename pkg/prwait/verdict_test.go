@@ -337,6 +337,39 @@ func Test_evaluate(t *testing.T) {
 			skipFieldChecks: true,
 		},
 		{
+			name: "a setup workflow listed alone with its status alone: the continuation is pending",
+			snapshot: snapshot{
+				statuses: []*github.RepoStatus{status("ci/circleci: setup", "success")},
+				circleci: circle("created", circleciclient.Workflow{ID: "w1", Name: "setup", Status: "success", Tag: circleciclient.WorkflowTagSetup}),
+			},
+			wantUnfinished:  []string{"circleci pipeline 7 (setup finished, the continuation's workflows not created yet)"},
+			skipFieldChecks: true,
+		},
+		{
+			name: "a setup workflow listed alone, the continuation's jobs posted: judged by their statuses",
+			snapshot: snapshot{
+				statuses: []*github.RepoStatus{status("ci/circleci: setup", "success"), status("ci/circleci: go-build", "success"), status("ci/circleci: push-chart", "pending")},
+				circleci: circle("created", circleciclient.Workflow{ID: "w1", Name: "setup", Status: "success", Tag: circleciclient.WorkflowTagSetup}),
+			},
+			wantUnfinished:  []string{"status ci/circleci: push-chart (pending)"},
+			skipFieldChecks: true,
+		},
+		{
+			name: "a setup workflow listed alone, the continuation's jobs all posted success: green",
+			snapshot: snapshot{
+				statuses: []*github.RepoStatus{status("ci/circleci: setup", "success"), status("ci/circleci: go-build", "success")},
+				circleci: circle("created", circleciclient.Workflow{ID: "w1", Name: "setup", Status: "success", Tag: circleciclient.WorkflowTagSetup}),
+			},
+			wantGreen:       true,
+			skipFieldChecks: true,
+		},
+		{
+			name:            "a cancelled workflow is red",
+			snapshot:        snapshot{circleci: circle("created", circleciclient.Workflow{ID: "w1", Name: "build", Status: "canceled"})},
+			wantRed:         []string{"circleci workflow build canceled"},
+			skipFieldChecks: true,
+		},
+		{
 			name:           "nothing reported at all is not green: an empty head has no verdict yet",
 			snapshot:       snapshot{circleci: circle("created")},
 			wantUnfinished: []string{"circleci pipeline 7 (no workflows yet)"},
