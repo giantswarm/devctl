@@ -2,8 +2,11 @@
 // given the CircleCI pipeline of a pull request's head or of a tag, every
 // finished workflow of it that failed is rerun from failed -- its failed jobs
 // and the jobs that depend on them, the passed ones kept -- with the CircleCI
-// login of `devctl auth login`. The rerun is started, not waited for: `devctl
-// pr wait` and `devctl release wait` wait for it.
+// login of `devctl auth login`. A pipeline that never got a workflow (its
+// setup workflow done and the continuation never created, or pending without
+// a workflow) is sent its push webhook delivery again through GitHub
+// ([Redelivery]), once per head. The rerun is started, not waited for:
+// `devctl pr wait` and `devctl release wait` wait for it.
 package rerun
 
 import (
@@ -52,6 +55,9 @@ type Result struct {
 	// Pipeline is absent when CircleCI has no pipeline for the head or tag.
 	Pipeline  *Pipeline  `json:"pipeline,omitempty"`
 	Workflows []Workflow `json:"workflows"`
+	// Redelivery is the push webhook delivery sent again for a pipeline
+	// without a workflow; absent when the pipeline has workflows to judge.
+	Redelivery *RedeliveryResult `json:"redelivery,omitempty"`
 }
 
 // Pipeline is the CircleCI pipeline whose workflows were considered.
@@ -89,8 +95,10 @@ func NewResult(repository string) *Result {
 // one rerun started (a warning names a workflow that is still running), exit
 // 5 refused when nothing failed yet but a workflow is still running, and exit
 // 3 not applicable when no workflow failed. A rerun CircleCI refuses with 403
-// is exit 8, naming the login that grants write access.
-func FromFailed(ctx context.Context, client *circleciclient.Client, org, repo string, pipeline *circleciclient.Pipeline, result *Result, warn func(string)) error {
+// is exit 8, naming the login that grants write access. A pipeline that never
+// got a workflow is handed to redelivery, which sends its push webhook
+// delivery again once it is [StalledAfter] old.
+func FromFailed(ctx context.Context, client *circleciclient.Client, org, repo string, pipeline *circleciclient.Pipeline, result *Result, warn func(string), redelivery Redelivery) error {
 	result.HeadSHA = pipeline.VCS.Revision
 	result.Pipeline = &Pipeline{ID: pipeline.ID, Number: pipeline.Number, URL: circleciclient.PipelineURL(org, repo, pipeline.Number)}
 
@@ -98,8 +106,18 @@ func FromFailed(ctx context.Context, client *circleciclient.Client, org, repo st
 	if err != nil {
 		return err
 	}
+	newest := circleciclient.NewestWorkflows(runs)
+	if stalled(pipeline, newest) {
+		for _, run := range newest {
+			result.Workflows = append(result.Workflows, Workflow{
+				Name: run.Name, ID: run.ID, Status: run.Status, URL: circleciclient.WorkflowURL(org, repo, pipeline.Number, run.ID),
+				FailedJobs: []string{}, Outcome: OutcomeNothing,
+			})
+		}
+		return redelivery.redeliver(ctx, org, repo, pipeline, result, warn)
+	}
 	var rerun, running []string
-	for _, run := range circleciclient.NewestWorkflows(runs) {
+	for _, run := range newest {
 		w := Workflow{
 			Name:       run.Name,
 			ID:         run.ID,

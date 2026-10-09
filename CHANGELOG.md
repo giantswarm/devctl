@@ -38,6 +38,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `pr rerun` and `release rerun`: a CircleCI pipeline that never got a workflow (its setup workflow done and the
+  continuation never created, or pending without a workflow) is sent its push webhook delivery again once it is five
+  minutes old, through GitHub's webhook API with the identity `pr wait` uses, so CircleCI creates a new pipeline for
+  the head; `release rerun` reads GitHub only then. Once per head: a delivery sent again before is not sent a second
+  time (exit 5 naming the earlier redelivery). The document carries `redelivery{hookId, hookUrl, deliveryId, guid,
+  deliveredAt, ref, after, outcome, redeliveredAt}` and the warning says what was sent. GitHub's 403 is exit 8 naming
+  what the identity lacks: the devctl App's repository permission Webhooks: read and write, or a repository admin's
+  `gh` login. A failed setup workflow is still rerun from failed; a running one still waited for.
 - `gen renovate --extends <file>` extends extra presets of `giantswarm/renovate-presets` by file name, before the
   deprecated preset and `renovate-custom.json5`. The reconciler passes `gen.renovate.extends` of a repository entry.
 
