@@ -11,8 +11,8 @@ One blocking call that waits until the pull request's head is green (the wait of
 [`devctl pr wait`](pr-wait.md), verdicts and codes included), merges it through the merge API,
 deletes its branch through the refs API, and then waits until the release the merge triggers is
 pullable (the wait of [`devctl release wait --pr`](release-wait.md)). It prints one JSON document on
-stdout at the end and nothing else; the exit code says what happened. `--progress` writes one line
-per step to stderr.
+stdout at the end; the exit code says what happened. On stderr a heartbeat names what the wait still
+waits for, every two minutes and when it changes; `--progress` writes one line per step instead.
 
 An agent that merges its own pull request makes this one call and is done when it exits 0: CI was
 green, the pull request is merged, and the release is pullable or none follows the merge. Nothing

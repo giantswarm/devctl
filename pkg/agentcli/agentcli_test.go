@@ -18,6 +18,32 @@ func (authErr) Error() string        { return "GitHub authentication required: r
 func (authErr) ExitCode() int        { return ExitAuthRequired }
 func (authErr) ExitVerdict() Verdict { return VerdictAuthRequired }
 
+func TestProgressWaiting(t *testing.T) {
+	// Without --progress the heartbeat says what the wait waits for once per
+	// HeartbeatInterval, and at once when it changes; with --progress the
+	// per-poll lines carry it and Waiting writes nothing.
+	var out bytes.Buffer
+	p := NewProgress(&out, false)
+	now := time.Date(2026, 10, 9, 16, 0, 0, 0, time.UTC)
+	p.Waiting(now, "circleci workflow build (running)")
+	p.Waiting(now.Add(time.Minute), "circleci workflow build (running)")
+	p.Waiting(now.Add(90*time.Second), "circleci workflow build (running), status ci/circleci: push-chart (pending)")
+	p.Waiting(now.Add(2*time.Minute), "circleci workflow build (running), status ci/circleci: push-chart (pending)")
+	p.Waiting(now.Add(4*time.Minute), "circleci workflow build (running), status ci/circleci: push-chart (pending)")
+	want := "waiting for circleci workflow build (running)\n" +
+		"waiting for circleci workflow build (running), status ci/circleci: push-chart (pending)\n" +
+		"waiting for circleci workflow build (running), status ci/circleci: push-chart (pending)\n"
+	if out.String() != want {
+		t.Errorf("heartbeat:\n want %q\n got  %q", want, out.String())
+	}
+	out.Reset()
+	NewProgress(&out, true).Waiting(now, "anything")
+	if out.Len() != 0 {
+		t.Errorf("with --progress Waiting writes nothing, got %q", out.String())
+	}
+	NewProgress(nil, false).Waiting(now, "anything")
+}
+
 func TestEnvelopeFinish(t *testing.T) {
 	started := time.Date(2026, 9, 21, 10, 0, 0, 0, time.UTC)
 	finished := started.Add(2 * time.Second)

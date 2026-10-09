@@ -18,9 +18,10 @@ type pipelineState struct {
 	// green: every workflow or run finished and none failed. False while
 	// the pipeline does not exist yet.
 	green bool
-	// jobs are the names of the pipeline's jobs across its workflows, for
-	// the artifact derivation of hand-written CI; nil until the pipeline
-	// and its workflows exist.
+	// jobs are the names of the pipeline's jobs across its workflows, read
+	// when the artifact derivation of hand-written or custom CI asks for
+	// them; nil until the pipeline and the jobs of all its workflows are
+	// listed.
 	jobs map[string]bool
 }
 
@@ -28,8 +29,15 @@ type pipelineState struct {
 var failedConclusions = []string{"failure", "cancelled", "timed_out", "startup_failure"}
 
 // pipelineState reads the tag pipeline on CircleCI, or the Actions runs of
-// the tag when the repository has no CircleCI, into result.
-func (w *Waiter) pipelineState(ctx context.Context, result *Result) (*pipelineState, error) {
+// the tag when the repository has no CircleCI, into result. The verdict is
+// the workflows': their statuses say whether the tag's CI is green, failed
+// or still running. The jobs of a workflow are read only where they are
+// needed, with needJobs for the artifact derivation and for a failed
+// workflow to name the jobs that failed, and never for the setup workflow:
+// CircleCI answers 404 on the jobs of a workflow it lists, a finished one
+// included, for a while after the workflow exists and for as long as its
+// job data lags, and a green pipeline is green without them.
+func (w *Waiter) pipelineState(ctx context.Context, result *Result, needJobs bool) (*pipelineState, error) {
 	if w.circleci == nil {
 		return w.actionsState(ctx, result)
 	}
@@ -54,52 +62,61 @@ func (w *Waiter) pipelineState(ctx context.Context, result *Result) (*pipelineSt
 	jobsHidden := false
 	for _, run := range newest {
 		doc.Workflows = append(doc.Workflows, PipelineWorkflow{Name: run.Name, Status: run.Status})
-		jobs, err := w.circleci.ListWorkflowJobs(ctx, run.ID)
+		failed := circleciclient.WorkflowFailed(run.Status)
+		unfinished := ""
 		switch {
-		case err == nil:
-		case circleciclient.IsNotFound(err):
-			// CircleCI knows a workflow by id before it lists its jobs: for
-			// a short while the jobs are 404, of a running workflow and of a
-			// setup workflow that has already finished alike. That is the
-			// tag not readable yet, not a tooling failure: the next poll
-			// reads them, and jobs that never appear end the wait at its
-			// timeout naming the workflow.
-			jobsHidden = true
-			state.green = false
-			doc.Unfinished = append(doc.Unfinished, fmt.Sprintf("%s (%s, jobs not visible yet)", run.Name, run.Status))
-			w.progress.Printf("pipeline %d: workflow %s %s, jobs not visible yet", pipeline.Number, run.Name, run.Status)
-			continue
-		default:
-			return nil, fmt.Errorf("reading the jobs of workflow %s: %w", run.Name, err)
-		}
-		for _, job := range jobs {
-			state.jobs[job.Name] = true
-			if circleciclient.WorkflowFailed(run.Status) && circleciclient.JobFailed(job.Status) {
-				doc.FailedJobs = append(doc.FailedJobs, run.Name+"/"+job.Name)
-			}
-		}
-		switch {
-		case circleciclient.WorkflowFailed(run.Status):
+		case failed:
 			state.failed = true
 			state.green = false
-			if !slices.ContainsFunc(jobs, func(j circleciclient.Job) bool { return circleciclient.JobFailed(j.Status) }) {
-				doc.FailedJobs = append(doc.FailedJobs, run.Name)
-			}
 		case circleciclient.WorkflowSucceeded(run.Status):
 			successes++
 		case run.Status == "not_run":
 		default:
 			state.green = false
-			doc.Unfinished = append(doc.Unfinished, fmt.Sprintf("%s (%s)", run.Name, run.Status))
+			unfinished = fmt.Sprintf("%s (%s)", run.Name, run.Status)
 		}
 		w.progress.Printf("pipeline %d: workflow %s %s", pipeline.Number, run.Name, run.Status)
+		// The setup workflow's one job continues the pipeline and names no
+		// artifact: it is never read, and a failed setup is named as such.
+		readJobs := (needJobs || failed) && run.Tag != circleciclient.WorkflowTagSetup
+		if failed && !readJobs {
+			doc.FailedJobs = append(doc.FailedJobs, run.Name)
+		}
+		if readJobs {
+			jobs, err := w.circleci.ListWorkflowJobs(ctx, run.ID)
+			switch {
+			case err == nil:
+				for _, job := range jobs {
+					state.jobs[job.Name] = true
+					if failed && circleciclient.JobFailed(job.Status) {
+						doc.FailedJobs = append(doc.FailedJobs, run.Name+"/"+job.Name)
+					}
+				}
+				if failed && !slices.ContainsFunc(jobs, func(j circleciclient.Job) bool { return circleciclient.JobFailed(j.Status) }) {
+					doc.FailedJobs = append(doc.FailedJobs, run.Name)
+				}
+			case circleciclient.IsNotFound(err) && failed:
+				// The failed workflow is named without its jobs.
+				doc.FailedJobs = append(doc.FailedJobs, run.Name)
+			case circleciclient.IsNotFound(err):
+				// The derivation that needs the jobs waits for the next poll.
+				jobsHidden = true
+				unfinished = fmt.Sprintf("%s (%s, jobs not visible yet)", run.Name, run.Status)
+				w.progress.Printf("pipeline %d: workflow %s %s, jobs not visible yet", pipeline.Number, run.Name, run.Status)
+			default:
+				return nil, fmt.Errorf("reading the jobs of workflow %s: %w", run.Name, err)
+			}
+		}
+		if unfinished != "" {
+			doc.Unfinished = append(doc.Unfinished, unfinished)
+		}
 	}
 	if successes == 0 {
 		state.green = false
 	}
-	if jobsHidden {
-		// The pipeline's jobs are not all known: hand-written CI derives
-		// its artifacts from them on a later poll.
+	if !needJobs || jobsHidden {
+		// The pipeline's jobs are not all known: a derivation that needs
+		// them reads them on a later poll.
 		state.jobs = nil
 	}
 	sort.Strings(doc.FailedJobs)

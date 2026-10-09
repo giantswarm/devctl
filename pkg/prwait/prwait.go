@@ -102,9 +102,8 @@ type Result struct {
 	BaseRef    string `json:"baseRef"`
 	// Checks are the head's check runs and statuses, the latest per name.
 	Checks []Check `json:"checks"`
-	// CircleCI is absent when the head carries no CircleCI configuration or
-	// CircleCI does not build the repository: no project, or a project that
-	// has never run a pipeline.
+	// CircleCI is absent when the head carries no CircleCI configuration, the
+	// repository is a template or CircleCI has no project for it.
 	CircleCI *CircleCI `json:"circleci,omitempty"`
 	// Actions are the head's GitHub Actions runs, the latest per workflow.
 	Actions []ActionRun `json:"actions"`
@@ -115,7 +114,7 @@ type Result struct {
 	// logs, read with Config.FailedLogLines.
 	FailedJobs []FailedJob `json:"failedJobs,omitempty"`
 	// Warnings are for the envelope: a head that changed under the wait, a
-	// CircleCI project that does not exist or has never run a pipeline.
+	// template repository, a CircleCI project that does not exist.
 	Warnings []string `json:"-"`
 }
 
@@ -187,6 +186,7 @@ func (w *Waiter) Wait(ctx context.Context, owner, repo string, number int) (*Res
 		}
 		interval := w.interval()
 		w.progress.Printf("poll %d: waiting for %s; next poll in %s", poll, strings.Join(e.unfinished, ", "), interval)
+		w.progress.Waiting(w.clock.Now(), strings.Join(e.unfinished, ", "))
 		if err := w.clock.Sleep(ctx, interval); err != nil {
 			return result, w.timedOut(result, last)
 		}
@@ -254,7 +254,7 @@ func (w *Waiter) poll(ctx context.Context, owner, repo string, number int, h *he
 		w.progress.Printf("base %s requires %d context(s)", baseRef, len(required))
 	}
 	if !h.decided {
-		if err := w.decideCircleCI(ctx, owner, repo, number, pr.GetHead().GetRef(), isFork(pr), h, result); err != nil {
+		if err := w.decideCircleCI(ctx, owner, repo, number, pr.GetHead().GetRef(), isFork(pr), pr.GetBase().GetRepo().GetIsTemplate(), h, result); err != nil {
 			return nil, err
 		}
 	}
@@ -281,14 +281,15 @@ func (w *Waiter) poll(ctx context.Context, owner, repo string, number int, h *he
 }
 
 // decideCircleCI settles whether CircleCI is part of this head's verdict: it
-// is when the head carries CircleCIConfigPath and CircleCI builds the
-// repository, a project there with at least one pipeline. The project lookup
-// alone does not decide it: CircleCI answers a project for every repository
-// the token's user sees on GitHub, set up on CircleCI or not, and a template
-// repository carries the configuration for the repositories created from it
-// without ever being built itself. The token is required only past the first
+// is when the head carries CircleCIConfigPath and CircleCI has a project for
+// the repository, unless the repository is a template, which carries the
+// configuration for the repositories created from it without ever being
+// built itself. Whether the project has run a pipeline before does not
+// decide it: the head's own may be the project's first, and judging the
+// head from GitHub alone until it appeared would call a head green whose
+// pipeline has not started. The token is required only past the first
 // condition, so a repository without CircleCI needs GitHub alone.
-func (w *Waiter) decideCircleCI(ctx context.Context, owner, repo string, number int, headRef string, fork bool, h *head, result *Result) error {
+func (w *Waiter) decideCircleCI(ctx context.Context, owner, repo string, number int, headRef string, fork, template bool, h *head, result *Result) error {
 	h.decided = true
 	if w.circleci == nil {
 		return nil
@@ -299,6 +300,11 @@ func (w *Waiter) decideCircleCI(ctx context.Context, owner, repo string, number 
 	}
 	if !hasConfig {
 		w.progress.Printf("no %s at %s: GitHub alone", CircleCIConfigPath, h.sha)
+		return nil
+	}
+	if template {
+		result.Warnings = append(result.Warnings, fmt.Sprintf("%s/%s is a template repository: its %s is for the repositories created from it, GitHub alone", owner, repo, CircleCIConfigPath))
+		w.progress.Printf("%s/%s is a template repository: GitHub alone", owner, repo)
 		return nil
 	}
 	client, err := w.circleci(ctx)
@@ -312,15 +318,6 @@ func (w *Waiter) decideCircleCI(ctx context.Context, owner, repo string, number 
 			return nil
 		}
 		return err
-	}
-	page, err := client.ListPipelines(ctx, owner, repo, "")
-	if err != nil {
-		return err
-	}
-	if len(page.Items) == 0 {
-		result.Warnings = append(result.Warnings, fmt.Sprintf("%s/%s has %s but CircleCI has never run a pipeline for it (not set up there): GitHub alone", owner, repo, CircleCIConfigPath))
-		w.progress.Printf("CircleCI project for %s/%s without a pipeline: GitHub alone", owner, repo)
-		return nil
 	}
 	h.circleci = client
 	h.project = fmt.Sprintf("github/%s/%s", owner, repo)
