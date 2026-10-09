@@ -21,9 +21,9 @@ flaky download) is completed this way, without a new tag.
 
 The pipeline is the newest one CircleCI built for the tag; a version given as
 X.Y.Z or vX.Y.Z finds the tag in either spelling. Of each workflow name the
-newest run counts. A finished workflow that failed with at least one failed
-job is rerun; one that is still running is not, CircleCI reruns a finished
-workflow only. The rerun is started, not waited for: devctl release wait
+newest run counts. A finished workflow that failed is rerun, a canceled one
+when a job of it failed; one that is still running is not, CircleCI reruns a
+finished workflow only. The rerun is started, not waited for: devctl release wait
 waits for it.
 
 A rerun is a write: it takes a CircleCI login that granted Write access
@@ -38,7 +38,7 @@ docs/pr-rerun.md.
 
 Exit codes:
   0  at least one workflow is rerun from failed
-  3  not applicable: no pipeline for the tag, or no workflow with a failed job
+  3  not applicable: no pipeline for the tag, or no failed workflow
   5  refused: nothing finished failed and a workflow is still running
   7  usage or a tooling failure
   8  authentication required: no CircleCI login, or one without Write access`

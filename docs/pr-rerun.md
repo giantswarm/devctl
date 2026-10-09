@@ -17,8 +17,10 @@ pipeline or a new release candidate for a failed tag pipeline.
   the tag in either spelling. GitHub is not read.
 
 Of each workflow name the newest run counts, since a rerun is a new workflow of the same name in the
-same pipeline. A finished workflow that failed with at least one failed job is rerun
-(`POST /api/v2/workflow/{id}/rerun` with `from_failed: true`). A workflow that is still running,
+same pipeline. A finished workflow that failed (`failed`, `error`) is rerun
+(`POST /api/v2/workflow/{id}/rerun` with `from_failed: true`) whatever its jobs read, since CircleCI's
+authenticated job listing can lag behind the workflow; a canceled one is rerun when a job of it
+failed. A workflow that is still running,
 on hold or failing (a job failed while others still run) is not: CircleCI reruns a finished
 workflow only. The rerun is started, not waited for; wait for it with the wait you would use anyway:
 
@@ -51,8 +53,7 @@ One JSON document on stdout, the envelope of every agent-facing command (`comman
 | `identity` | `app` or `gh`, who read GitHub (`pr rerun`) |
 
 `outcome` is `rerun` (the rerun started; `rerunId` and `rerunUrl` are the new workflow),
-`running` (not finished, not rerun), `no_failed_job` (failed without a job to rerun, a workflow
-canceled before its jobs ran), `nothing_to_rerun` (did not fail) or `refused` (CircleCI refused the
+`running` (not finished, not rerun), `no_failed_job` (canceled without a failed job), `nothing_to_rerun` (did not fail) or `refused` (CircleCI refused the
 rerun; the reason says why). A workflow still running beside one that was rerun is named in
 `warnings`.
 
