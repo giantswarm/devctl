@@ -107,10 +107,6 @@ Pass `--log-level debug` to see detailed output and the stack trace of an error:
 devctl --log-level debug repo status my-service
 ```
 
-## Contributing
-
-Please check our [contributing guidelines](CONTRIBUTING.md) for details on how to contribute to this project.
-
 ## License
 
 devctl is licensed under the [Apache 2.0 License](LICENSE).
