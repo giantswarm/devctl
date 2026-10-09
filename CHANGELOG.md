@@ -15,6 +15,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - `gen circleci`: the generated pipelines pin architect orb 10.12.2. Its `push-to-app-catalog` fetches the catalog's
   head, resets onto it and re-applies the chart on every attempt, with ten attempts and a growing wait, so a chart
   push that collides with another build's push to the same catalog succeeds instead of failing all four attempts.
+- `gen makefile --language kyverno-policy`: `make install-policies` and `make dabs` no longer fall back to
+  `helm/kyverno-policies`. They use `helm/$(KYVERNO_POLICIES_APP_NAME)` when it has a `Chart.yaml`, as in CI,
+  otherwise the one chart under `helm/`, and fail with a clear message when that is none or several.
+  `KYVERNO_POLICIES_CHART_DIR` overrides the choice. Without `KYVERNO_POLICIES_APP_NAME` set, the release is named
+  after the chart directory. Locally, both targets failed in every repository except `kyverno-policies`.
 - `repo reconcile` and `repo checks`: the reported checks are read from the newest pull request merged through the
   gate. A pull request whose head is its own merge commit — merged by a push of its head onto the branch, as a fork
   line's upstream re-pin is — is passed over: its SHA carries the branch's push runs and statuses and no pull-request
