@@ -46,7 +46,7 @@ func run(t *testing.T, routes sequence.Routes) (*Result, []string, *circlemock.S
 	result := NewResult("o/r")
 	var warnings []string
 	pipeline := &circleciclient.Pipeline{ID: "p1", Number: 12, VCS: circleciclient.PipelineVCS{Revision: "abc"}}
-	err = FromFailed(context.Background(), client, "o", "r", pipeline, result, func(w string) { warnings = append(warnings, w) })
+	err = FromFailed(context.Background(), client, "o", "r", pipeline, result, func(w string) { warnings = append(warnings, w) }, Redelivery{})
 	return result, warnings, server, err
 }
 

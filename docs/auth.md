@@ -18,7 +18,7 @@ own shell and never enters an agent session.
 | the version check that precedes every command, `version check`, `version update`, `repo validate` | the same, optional and looked up only when GitHub is asked (never while the one-hour version cache is fresh): without one a public read is anonymous (`repo validate`: the embedded schema, repository names unchecked) |
 | `pr wait`, `pr merge`, `pr rerun` | the App login for giantswarm; your own `gh` login (`gh auth token`) for every other owner; never a token in the environment |
 | `release wait`, `rollout wait` | the App login only (`rollout wait` reads the installation with your kube context) |
-| `release rerun` | none: it reads CircleCI alone |
+| `release rerun` | none while a workflow is rerun; to redeliver the push webhook of a pipeline without a workflow, the identity `pr rerun` uses |
 | `repo setup` (and `repo setup ciwebhooks`, `repo setup renovate`), `repo checks` | your own: `$GITHUB_TOKEN` (`--github-token-envvar`) |
 | `repo reconcile` | the engine's installation token in CI: `$GITHUB_TOKEN` (`--github-token-envvar`) |
 | the other `repo` commands | none: giantswarm-repo-manager acts, reached with the muster token |
@@ -52,8 +52,10 @@ more act with another token:
   else: no environment variable, no `gh auth token`, no file. They exit 8 naming `devctl auth login`
   before they wait for anything, since they need the CircleCI token too.
 - `repo setup` and its subcommands `ciwebhooks` and `renovate`, and `repo checks` need
-  Administration or Webhooks write, which the App does not carry: they act with your own token, as the
-  table says, and print no override warning.
+  Administration write, which the App does not carry: they act with your own token, as the table says,
+  and print no override warning.
+- `pr rerun` and `release rerun` redeliver a push webhook with the App's Webhooks permission; a 403 from
+  GitHub is exit 8 naming it, never a silent failure.
 - `repo reconcile` is the engine's CI path and acts with its installation token.
 - `release promote` dispatches the auto-release workflow, which needs Actions write: the App carries it, so the
   login dispatches wherever you may run the workflow yourself. The document's `identity` names the token's source
@@ -76,10 +78,11 @@ log on every request, which separates an agent's actions from the person's own.
 | Release: dispatch a workflow (`release promote`, `pr merge --dispatch`); the tag itself comes from the auto-release workflow's own token | actions, contents: write |
 | Approve and re-run workflow runs | actions: write |
 | Write the organization's project boards (Projects v2) | organization projects: write |
+| Redeliver the push webhook delivery of a CircleCI pipeline that never got a workflow (`pr rerun`, `release rerun`): the hooks, their deliveries, one delivery's payload, the redelivery | webhooks: read and write |
 
-**Not an agent action:** administration (branch protection, rulesets, settings, webhooks, deploy keys,
-repository creation). It stays with giantswarm-repo-manager, its own App reached through the `repo`
-commands, or with a person in their own shell.
+**Not an agent action:** administration (branch protection, rulesets, settings, creating or editing
+webhooks, deploy keys, repository creation). It stays with giantswarm-repo-manager, its own App reached
+through the `repo` commands, or with a person in their own shell.
 
 The App is installed on the giantswarm organization only. `gh` through devctl therefore acts with the
 App token for giantswarm's repositories and wherever no repository is named, and keeps the person's own
