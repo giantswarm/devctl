@@ -103,7 +103,7 @@ func (a *Auth) LoginCircleCI(ctx context.Context) (Identity, error) {
 	codes, stop := serveCallback(listener, state, "devctl is authorized on CircleCI. You can close this tab.")
 	defer stop()
 
-	fmt.Fprintf(a.stderr, "CircleCI: open %s and grant Read access\n", authorize)
+	fmt.Fprintf(a.stderr, "CircleCI: open %s and grant Write access (a rerun needs it)\n", authorize)
 	a.browse(authorize)
 
 	waitCtx, cancel := a.clock.Timeout(ctx, circleCIAuthorizeTimeout)
@@ -217,6 +217,18 @@ func (a *Auth) RequireCircleCI(_ context.Context) (Token, error) {
 		ExpiresAt: record.ExpiresAt,
 		Warning:   circleCIWarning(record.ExpiresAt, now),
 	}, nil
+}
+
+// CircleCIWriteRequired is exit 8 for a CircleCI write the token may not
+// make: a login that granted Read access on the consent page reads pipelines
+// and nothing more, and the next login grants Write. cause says which write
+// was refused.
+func CircleCIWriteRequired(cause string) *AuthRequiredError {
+	return &AuthRequiredError{
+		Identity: identityCircleCI,
+		Cause:    cause + "; a login that granted Read access only cannot write: log in again and grant Write access",
+		Hint:     hintLoginCircleCI,
+	}
 }
 
 // listenLoopback binds the redirect address of the device's client, or a

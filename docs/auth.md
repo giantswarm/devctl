@@ -1,7 +1,7 @@
 # Authentication: `devctl auth`
 
 devctl acts on GitHub as you, with the login of the `giantswarm-devctl` GitHub App; it reads pipelines on
-CircleCI with your CircleCI token and reaches giantswarm-repo-manager with your muster token. All three live
+CircleCI with your CircleCI token (and reruns failed workflows with it) and reaches giantswarm-repo-manager with your muster token. All three live
 in the OS keychain: `devctl auth login` puts them there, `devctl auth status` shows what is there, and no
 command prints a token.
 
@@ -16,8 +16,9 @@ own shell and never enters an agent session.
 | `auth exec` and the `gh` link | the App login; `gh` on a repository of an owner the App is not installed on keeps your own `gh` login |
 | `deploy`, `pr approve-align`, `pr approve-merge-renovate`, `release create`, `release promote`, `repo create` | the App login; a token in the environment overrides it |
 | the version check that precedes every command, `version check`, `version update`, `repo validate` | the same, optional and looked up only when GitHub is asked (never while the one-hour version cache is fresh): without one a public read is anonymous (`repo validate`: the embedded schema, repository names unchecked) |
-| `pr wait`, `pr merge` | the App login for giantswarm; your own `gh` login (`gh auth token`) for every other owner; never a token in the environment |
+| `pr wait`, `pr merge`, `pr rerun` | the App login for giantswarm; your own `gh` login (`gh auth token`) for every other owner; never a token in the environment |
 | `release wait`, `rollout wait` | the App login only (`rollout wait` reads the installation with your kube context) |
+| `release rerun` | none: it reads CircleCI alone |
 | `repo setup` (and `repo setup ciwebhooks`, `repo setup renovate`), `repo checks` | your own: `$GITHUB_TOKEN` (`--github-token-envvar`) |
 | `repo reconcile` | the engine's installation token in CI: `$GITHUB_TOKEN` (`--github-token-envvar`) |
 | the other `repo` commands | none: giantswarm-repo-manager acts, reached with the muster token |
@@ -156,9 +157,11 @@ registration:
    unauthenticated `POST /oauth/register`. The client id and the redirect URI stay in the keychain
    record; later logins reuse them. A new client is registered only when the record has none or
    its loopback port can no longer be bound.
-2. devctl prints the authorization URL to stderr and opens the browser on it. Choose **Read**
-   access on the consent page; it is all the commands need. The browser returns to the loopback
-   address with the code; the state is checked.
+2. devctl prints the authorization URL to stderr and opens the browser on it. Choose **Write**
+   access on the consent page: `pr rerun` and `release rerun` rerun workflows, a write; every other
+   command reads. A login that granted Read access keeps working for the reads, and a rerun on it is
+   exit 8 naming `devctl auth login --circleci-only`. The browser returns to the loopback address
+   with the code; the state is checked.
 3. devctl exchanges the code with the PKCE verifier at `POST /oauth/token`. The result is a standard
    90-day CircleCI API token that works with API v2 (`Circle-Token` header or Bearer).
 
