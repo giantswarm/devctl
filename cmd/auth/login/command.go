@@ -25,8 +25,8 @@ themselves for six months.
 CircleCI: the OAuth 2.0 authorization code flow with PKCE. On the first login
 devctl registers itself on this device as a client without a secret (once; the
 client id stays in the keychain); every login opens the authorization page,
-where you grant Write access: devctl pr rerun and devctl release rerun rerun
-workflows, every other command reads. The token is a 90-day CircleCI API token with no
+where you grant Write access: devctl pr rerun, devctl release rerun and devctl
+ci rerun rerun workflows, every other command reads. The token is a 90-day CircleCI API token with no
 refresh: log in again before it expires; the commands warn seven days ahead.
 Re-authorizing revokes the previous token of this device.
 

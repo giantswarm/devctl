@@ -45,6 +45,9 @@ const (
 	VerdictDetached Verdict = "detached"
 	// VerdictRunning: a detached merge has no outcome yet.
 	VerdictRunning Verdict = "running"
+	// VerdictListed: a read-only view (devctl ci jobs) was read in full; the
+	// document, not the verdict, says where the pipeline stands.
+	VerdictListed Verdict = "listed"
 )
 
 // The exit codes of every agent-facing command. 6 and 9 say that devctl pr

@@ -7,6 +7,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `ci jobs <owner/repo> <pipeline number|id>`: the job-level view of a CircleCI pipeline, one JSON document: every
+  workflow run (reruns included, the newest run of a name marked `latest`) with its jobs, each with its status,
+  number, `startedAt`, `stoppedAt` and `durationSeconds`, and for a running job the step it is in with when it
+  started, when it last wrote output and `outputAgeSeconds`, so a slow job (output seconds old) and a stuck one
+  (output an hour old) read differently while the workflow reads `running`. Takes the keychain's CircleCI login; GitHub
+  is not read. See docs/ci.md.
+- `ci rerun <owner/repo> <workflow id> [--from-failed] [--cancel]`: reruns one workflow in full or from failed, once
+  an hour: when the newest run of the workflow's name in its pipeline is a rerun made less than an hour ago, the call
+  is refused (exit 5) naming it and when the hour ends, so no agent loops on a rerun. A workflow still running is
+  refused unless `--cancel` cancels it first and waits for it to read canceled, the recovery of a stuck one. The
+  rerun is started, not waited for, and takes the keychain's CircleCI login granted Write access.
+
 ### Fixed
 
 - `pr merge`: a repository whose settings allow only merge commits (squash and rebase off) is merged with a merge
