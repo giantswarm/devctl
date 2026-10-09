@@ -12,7 +12,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - `pr wait`, `release wait` and the commands that wait the same way (`pr merge`, `rollout wait`): a
   wait no longer hangs on a green head or a published release when CircleCI's API lags behind its own
   pipelines. `release wait` judges the tag pipeline by its workflows and reads a workflow's jobs only
-  to name the failed ones and to derive the artifacts of hand-written CI and of a `custom.yml`:
+  to name the failed ones and to derive the artifacts of hand-written CI and of a `custom.yml` that
+  declares push jobs, never the setup workflow's:
   CircleCI answers 404 on the jobs of a listed, finished workflow for a while after it exists and for
   as long as its job data lags (half an hour and more on 2026-10-09), and the wait stayed on `jobs not
   visible yet` past its timeout with every asset uploaded; a failed workflow whose jobs it does not

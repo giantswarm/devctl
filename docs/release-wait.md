@@ -166,8 +166,9 @@ second workflow of the same name in the same pipeline, and the one it replaces k
 status for ever). A workflow in `failed`, `error`, `failing`, `canceled` or `unauthorized` ends the
 wait with exit 1 and `pipeline.failedJobs` (`workflow/job`, or the workflow alone when CircleCI does
 not list its jobs). The verdict is the workflows': their jobs are read only where they are needed,
-to name the failed ones and to derive the artifacts of hand-written CI and of a generated
-pipeline's `custom.yml`. CircleCI answers 404 on the jobs of a workflow it lists, a finished one
+to name the failed ones and to derive the artifacts of hand-written CI and of a `custom.yml` that
+declares push jobs (one of test and repository-owned jobs alone names no artifact and needs no look
+at them); the setup workflow's one job continues the pipeline and is never read. CircleCI answers 404 on the jobs of a workflow it lists, a finished one
 included, for a while after the workflow exists and for as long as its job data lags behind (half
 an hour and more during an incident), and a green pipeline is green without them; a derivation
 that needs them goes on polling, `pipeline.unfinished` says `build (running, jobs not visible

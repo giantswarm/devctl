@@ -33,10 +33,10 @@ var failedConclusions = []string{"failure", "cancelled", "timed_out", "startup_f
 // the workflows': their statuses say whether the tag's CI is green, failed
 // or still running. The jobs of a workflow are read only where they are
 // needed, with needJobs for the artifact derivation and for a failed
-// workflow to name the jobs that failed: CircleCI answers 404 on the jobs
-// of a workflow it lists, a finished one included, for a while after the
-// workflow exists and for as long as its job data lags, and a green
-// pipeline is green without them.
+// workflow to name the jobs that failed, and never for the setup workflow:
+// CircleCI answers 404 on the jobs of a workflow it lists, a finished one
+// included, for a while after the workflow exists and for as long as its
+// job data lags, and a green pipeline is green without them.
 func (w *Waiter) pipelineState(ctx context.Context, result *Result, needJobs bool) (*pipelineState, error) {
 	if w.circleci == nil {
 		return w.actionsState(ctx, result)
@@ -76,7 +76,13 @@ func (w *Waiter) pipelineState(ctx context.Context, result *Result, needJobs boo
 			unfinished = fmt.Sprintf("%s (%s)", run.Name, run.Status)
 		}
 		w.progress.Printf("pipeline %d: workflow %s %s", pipeline.Number, run.Name, run.Status)
-		if needJobs || failed {
+		// The setup workflow's one job continues the pipeline and names no
+		// artifact: it is never read, and a failed setup is named as such.
+		readJobs := (needJobs || failed) && run.Tag != circleciclient.WorkflowTagSetup
+		if failed && !readJobs {
+			doc.FailedJobs = append(doc.FailedJobs, run.Name)
+		}
+		if readJobs {
 			jobs, err := w.circleci.ListWorkflowJobs(ctx, run.ID)
 			switch {
 			case err == nil:

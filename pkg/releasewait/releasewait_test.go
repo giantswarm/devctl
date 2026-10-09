@@ -401,19 +401,16 @@ func TestWaitArtifactsAvailablePipelineUnfinishedIsTimeout(t *testing.T) {
 }
 
 // A repository's own tag job that fails after the named artifacts resolved
-// fails the release: the verdict no longer depends on which came first.
+// fails the release: the verdict no longer depends on which came first. The
+// jobs are read once, when the workflow has failed, to name it.
 func TestWaitRepoOwnedTagJobFailingAfterTheArtifactsIsCIFailure(t *testing.T) {
 	circleci := pipelineRoutes(
 		[][]map[string]any{
 			{wf("w1", "build", "running", "2026-09-23T14:19:18Z")},
 			{wf("w1", "build", "failed", "2026-09-23T14:19:18Z")},
 		},
-		nil,
+		map[string][]map[string]any{"w1": {job("push-to-registries-release", "success"), job("push-chart-release", "success"), job("guest-image", "failed")}},
 	)
-	circleci["GET /api/v2/workflow/w1/job"] = []sequence.Response{
-		{Body: map[string]any{"items": []map[string]any{job("push-to-registries-release", "success"), job("push-chart-release", "success"), job("guest-image", "running")}}},
-		{Body: map[string]any{"items": []map[string]any{job("push-to-registries-release", "success"), job("push-chart-release", "success"), job("guest-image", "failed")}}},
-	}
 	fx := fixture{
 		entry:    generatedEntry(t),
 		github:   baseGitHub([]string{"Dockerfile", "helm"}, []string{"zz_generated.auto_release.yaml"}, []string{"config.yml", "workflows.yml", "custom.yml"}),
@@ -936,6 +933,60 @@ func TestWaitGreenWorkflowsWithHiddenJobsAreAvailable(t *testing.T) {
 	assertExit(t, err, agentcli.ExitOK, "")
 	if result.Pipeline == nil || len(result.Pipeline.Workflows) != 2 || len(result.Pipeline.Unfinished) != 0 {
 		t.Errorf("pipeline: %+v", result.Pipeline)
+	}
+}
+
+// A custom.yml of test and repository-owned jobs alone (beekeeper's
+// test-envtest, vm-manager's guest-image) names no artifact: the pipeline's
+// jobs are never read for it, and a green pipeline whose jobs CircleCI does
+// not list is available.
+func TestWaitCustomWithoutPushJobsReadsNoJobs(t *testing.T) {
+	circleci := pipelineRoutes([][]map[string]any{{wf("w1", "build", "success", "2026-09-23T14:19:18Z")}}, nil)
+	circleci["GET /api/v2/workflow/w1/job"] = []sequence.Response{{Status: 404, Body: map[string]any{"message": "Workflow not found"}}}
+	fx := fixture{
+		entry:    generatedEntry(t),
+		github:   baseGitHub([]string{"Dockerfile", "helm"}, []string{"zz_generated.auto_release.yaml"}, []string{"config.yml", "workflows.yml", "custom.yml"}),
+		circleci: circleci,
+		registry: sequence.Routes{
+			"HEAD /v2/giantswarm/kserve-controller/manifests/1.2.3": {{Status: 200}},
+			"HEAD /v2/charts/giantswarm/kserve/manifests/1.2.3":     {{Status: 200}},
+		},
+	}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+	if len(result.Artifacts) != 2 || result.Pipeline == nil || len(result.Pipeline.Unfinished) != 0 {
+		t.Errorf("artifacts %+v, pipeline %+v", result.Artifacts, result.Pipeline)
+	}
+}
+
+// The setup workflow's one job continues the pipeline and names no
+// artifact: hand-written CI derives its artifacts from the build workflow's
+// jobs while CircleCI answers 404 on the setup workflow's.
+func TestWaitSetupWorkflowJobsAreNeverRead(t *testing.T) {
+	github := baseGitHub([]string{"Dockerfile", "helm"}, []string{"zz_generated.create_release.yaml", "zz_generated.create_release_pr.yaml"}, []string{"config.yml"})
+	github[repoRoute("/contents/.circleci/config.yml")] = []sequence.Response{{Body: fileContent(".circleci/config.yml", handWrittenConfig)}}
+	setup := wf("w0", "setup", "success", "2026-09-21T09:59:00Z")
+	setup["tag"] = "setup"
+	circleci := pipelineRoutes(
+		[][]map[string]any{{setup, wf("w1", "build", "success", "2026-09-21T10:00:00Z")}},
+		map[string][]map[string]any{"w1": {job("go-build", "success"), job("push-to-registries-release", "success"), job("push-llmisvc", "success"), job("push-chart", "success")}},
+	)
+	circleci["GET /api/v2/workflow/w0/job"] = []sequence.Response{{Status: 404, Body: map[string]any{"message": "Workflow not found"}}}
+	fx := fixture{
+		github:   github,
+		circleci: circleci,
+		registry: sequence.Routes{
+			"HEAD /v2/giantswarm/kserve-controller/manifests/1.2.3": {{Status: 200}},
+			"HEAD /v2/charts/giantswarm/kserve/manifests/1.2.3":     {{Status: 200}},
+		},
+		privateRegistry: sequence.Routes{
+			"HEAD /v2/giantswarm/llmisvc-controller/manifests/1.2.3": {{Status: 200}},
+		},
+	}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+	if len(result.Artifacts) != 3 || result.Pipeline == nil || len(result.Pipeline.Unfinished) != 0 {
+		t.Errorf("artifacts %+v, pipeline %+v", result.Artifacts, result.Pipeline)
 	}
 }
 

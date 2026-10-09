@@ -313,7 +313,14 @@ func (w *Waiter) wait(ctx context.Context, result *Result) error {
 			return err
 		}
 		plan.setArtifacts(result, artifacts)
-		plan.custom = content.HasCustomCircleCI()
+		if content.HasCustomCircleCI() {
+			plan.customJobs, err = CustomPushJobs(ctx, w.config.GitHub, owner, repo, result.SHA, *content)
+			if err != nil {
+				return err
+			}
+			plan.custom = len(plan.customJobs) > 0
+			w.progress.Printf("%s/%s at %s declares %d push job(s) beyond the entry's artifacts", circleCIDir, circleCICustom, short(result.SHA), len(plan.customJobs))
+		}
 	case CIModelNone:
 		// Nothing to derive: no CircleCI means no image and no chart.
 		plan.setArtifacts(result, nil)
@@ -423,9 +430,11 @@ type plan struct {
 	// derived says the expected artifacts are known; hand-written CI
 	// derives them from the tag pipeline's jobs once those exist.
 	derived bool
-	// custom says a generated pipeline's custom.yml push jobs are still to
-	// be matched with the tag pipeline's jobs, once those exist.
-	custom bool
+	// customJobs are the push jobs a generated pipeline's custom.yml adds;
+	// custom says they are still to be matched with the tag pipeline's
+	// jobs, once those exist.
+	customJobs []PushJob
+	custom     bool
 	// releaseAssets: no image and no chart; the wait is on the published
 	// release and the tag's workflows.
 	releaseAssets bool
@@ -496,7 +505,7 @@ func (w *Waiter) loop(ctx context.Context, result *Result, p *plan) error {
 			}
 		}
 		if p.custom && state.jobs != nil {
-			artifacts, err := CustomArtifacts(ctx, w.config.GitHub, owner, repo, result.SHA, p.version, *p.content, state.jobs, p.private, w.config.Endpoints)
+			artifacts, err := CustomArtifacts(ctx, w.config.GitHub, owner, repo, result.SHA, p.version, p.customJobs, state.jobs, p.private, w.config.Endpoints)
 			if err != nil {
 				return err
 			}
