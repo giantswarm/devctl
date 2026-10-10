@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/v8/cmd/auth"
+	"github.com/giantswarm/devctl/v8/cmd/ci"
 	"github.com/giantswarm/devctl/v8/cmd/completion"
 	"github.com/giantswarm/devctl/v8/cmd/deploy"
 	"github.com/giantswarm/devctl/v8/cmd/gen"
@@ -51,6 +52,19 @@ func New(config Config) (*cobra.Command, error) {
 		}
 
 		authCmd, err = auth.New(c)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+	}
+
+	var ciCmd *cobra.Command
+	{
+		c := ci.Config{
+			Stderr: config.Stderr,
+			Stdout: config.Stdout,
+		}
+
+		ciCmd, err = ci.New(c)
 		if err != nil {
 			return nil, microerror.Mask(err)
 		}
@@ -203,6 +217,7 @@ func New(config Config) (*cobra.Command, error) {
 	f.Init(c)
 
 	c.AddCommand(authCmd)
+	c.AddCommand(ciCmd)
 	c.AddCommand(completionCmd)
 	c.AddCommand(deployCmd)
 	c.AddCommand(genCmd)

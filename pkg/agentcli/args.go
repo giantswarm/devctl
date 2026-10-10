@@ -15,6 +15,21 @@ func ParseRepository(arg string) (owner, repo string, err error) {
 	return owner, repo, nil
 }
 
+// ParseRepositoryArgument reads the arguments "<owner/repo> <what>" of
+// command: the repository and one more argument, named what in the usage.
+func ParseRepositoryArgument(command, what string, args []string) (owner, repo, value string, err error) {
+	if len(args) != 2 {
+		return "", "", "", fmt.Errorf("usage: devctl %s <owner/repo> <%s>, got %d argument(s)", command, what, len(args))
+	}
+	if owner, repo, err = ParseRepository(args[0]); err != nil {
+		return "", "", "", err
+	}
+	if args[1] == "" {
+		return "", "", "", fmt.Errorf("usage: devctl %s <owner/repo> <%s>: the %s is empty", command, what, what)
+	}
+	return owner, repo, args[1], nil
+}
+
 // ParsePullRequest reads the arguments "<owner/repo> <number>" of command.
 func ParsePullRequest(command string, args []string) (owner, repo string, number int, err error) {
 	if len(args) != 2 {

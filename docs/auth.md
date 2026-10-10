@@ -19,6 +19,7 @@ own shell and never enters an agent session.
 | `pr wait`, `pr merge`, `pr rerun` | the App login for giantswarm; your own `gh` login (`gh auth token`) for every other owner; never a token in the environment |
 | `release wait`, `rollout wait` | the App login only (`rollout wait` reads the installation with your kube context) |
 | `release rerun` | none while a workflow is rerun; to redeliver the push webhook of a pipeline without a workflow, the identity `pr rerun` uses |
+| `ci jobs`, `ci rerun` | none: they read CircleCI alone (`ci rerun` writes with the Write login) |
 | `repo setup` (and `repo setup ciwebhooks`, `repo setup renovate`), `repo checks` | your own: `$GITHUB_TOKEN` (`--github-token-envvar`) |
 | `repo reconcile` | the engine's installation token in CI: `$GITHUB_TOKEN` (`--github-token-envvar`) |
 | the other `repo` commands | none: giantswarm-repo-manager acts, reached with the muster token |

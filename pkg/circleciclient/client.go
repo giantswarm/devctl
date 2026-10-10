@@ -2,7 +2,8 @@
 // the repository set-up engine makes for a project — follow and unfollow
 // (v1.1), the token's user, the project, its settings and
 // checkout keys, its pipelines (paged) and their workflows and jobs (v2), a
-// failed job's step output (v1.1) — and nothing else. The token is a personal
+// job's steps and their output (v1.1), a workflow's cancel and rerun (v2) —
+// and nothing else. The token is a personal
 // API token (architectbot's `CIRCLECI_API_TOKEN` for the reconciler, the
 // person's for `devctl repo reconcile`); the org and repository name a
 // project by their GitHub slug. A reader without a token of its own reads a
@@ -156,10 +157,12 @@ type PipelineVCS struct {
 // Workflow is one workflow of a pipeline. Status is one of success,
 // running, not_run, failed, error, failing, on_hold, canceled, unauthorized.
 type Workflow struct {
-	ID             string `json:"id"`
-	Name           string `json:"name"`
-	Status         string `json:"status"`
-	PipelineNumber int64  `json:"pipeline_number"`
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Status string `json:"status"`
+	// StoppedAt is when the workflow finished; zero while it runs.
+	StoppedAt      time.Time `json:"stopped_at"`
+	PipelineNumber int64     `json:"pipeline_number"`
 	// CreatedAt orders the runs of one workflow name: a rerun is a new
 	// workflow with the same name in the same pipeline, and the newest counts.
 	CreatedAt time.Time `json:"created_at"`
@@ -220,12 +223,16 @@ func WorkflowFailed(status string) bool {
 func WorkflowFinished(status string) bool { return WorkflowSucceeded(status) || WorkflowFailed(status) }
 
 // Job is one job of a workflow. JobNumber is absent for an approval and for
-// a job that has not started.
+// a job that has not started, and so are StartedAt (zero) and, while the job
+// runs, StoppedAt.
 type Job struct {
-	Name      string `json:"name"`
-	Status    string `json:"status"`
-	Type      string `json:"type"`
-	JobNumber int64  `json:"job_number"`
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	Status    string    `json:"status"`
+	Type      string    `json:"type"`
+	JobNumber int64     `json:"job_number"`
+	StartedAt time.Time `json:"started_at"`
+	StoppedAt time.Time `json:"stopped_at"`
 }
 
 // JobFailed says whether a job status is a terminal failure.
@@ -418,14 +425,8 @@ func (c *Client) ListWorkflowJobs(ctx context.Context, workflowID string) ([]Job
 // rerun is a second workflow of the same name in the same pipeline. A token
 // without write access is refused with IsForbidden.
 func (c *Client) RerunWorkflowFromFailed(ctx context.Context, workflowID string) (string, error) {
-	var out struct {
-		WorkflowID string `json:"workflow_id"`
-	}
-	body := map[string]bool{"from_failed": true}
-	if err := c.do(ctx, http.MethodPost, "/api/v2/workflow/"+url.PathEscape(workflowID)+"/rerun", body, &out); err != nil {
-		return "", microerror.Mask(err)
-	}
-	return out.WorkflowID, nil
+	id, err := c.RerunWorkflow(ctx, workflowID, true)
+	return id, microerror.Mask(err)
 }
 
 // FailedStepsOutput returns the output of the failed steps of job number of

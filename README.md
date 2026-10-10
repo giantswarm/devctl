@@ -53,6 +53,15 @@ devctl pr rerun giantswarm/devctl 2277
 devctl release rerun giantswarm/devctl v8.123.0
 ```
 
+### CircleCI pipelines at the job level (`devctl ci jobs`, `devctl ci rerun`)
+
+`devctl ci jobs <owner/repo> <pipeline number|id>` reads a pipeline at the job level: every workflow run with its jobs, their start and stop times, and for a running job the step it is in and how long ago that step last wrote output, which tells a slow job from a stuck one while the workflow reads `running`. `devctl ci rerun <owner/repo> <workflow id> [--from-failed] [--cancel]` reruns one workflow, once an hour: a second rerun of the workflow's name in the same pipeline within an hour is refused (exit 5), as is a workflow still running unless `--cancel` cancels it first, the recovery of a stuck one. Both take the `devctl auth login` CircleCI login (Write access for the rerun) and read nothing on GitHub. See [docs/ci.md](docs/ci.md).
+
+```nohighlight
+devctl ci jobs giantswarm/devctl 3885
+devctl ci rerun giantswarm/devctl f1290c29-9a4b-4e0e-8c6a-0b7d3e5f2a11 --from-failed
+```
+
 ### Waiting for a release (`devctl release wait`)
 
 `devctl release wait <owner/repo> (<vX.Y.Z> | --pr <n>)`, the wait `pr merge` runs after its merge, blocks until every image and chart of the tag is pullable and the tag pipeline is green (a repository's own tag jobs included), and prints one JSON document with the digests. The artifact names come from the sources that define them (the team-file entry for generated CI, the tag pipeline's push jobs for hand-written CI), never from the repository name; the public registry is probed anonymously, the private one with the docker keychain; a failed tag pipeline ends the wait as exit 1 with the failed jobs, a timeout as exit 2 naming what is missing. See [docs/release-wait.md](docs/release-wait.md) for the model, the JSON and the exit codes.
