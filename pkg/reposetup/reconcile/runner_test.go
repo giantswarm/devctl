@@ -2382,6 +2382,22 @@ func TestSteps(t *testing.T) {
 			verify: func(t *testing.T, h *harness, _ *Result) { require.Equal(t, "giantswarm", h.repo().defaultBranch) },
 		},
 		{
+			// A fork registered with the upstream mirror on main and the
+			// consumed branch beside it: GitHub refuses to rename main onto
+			// the existing branch, so the step switches the default to it and
+			// main stays the mirror.
+			name: "settings: a declared default branch that exists becomes the default", step: StepSettings, entry: forkEntryYAML,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.allowRebase, r.heads["giantswarm"] = true, "line"
+			},
+			wantCheck: VerdictDrift, wantChange: `default branch "main" → "giantswarm" (switch to the existing branch)`,
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				require.Equal(t, "giantswarm", h.repo().defaultBranch)
+				require.True(t, h.repo().hasBranch("main"), "the old default stays")
+			},
+		},
+		{
 			// The carried patches land by rebase merge, one upstream-ready
 			// commit each, and a re-pin merges upstream's history: the
 			// squash-only baseline would have GitHub refuse the line's merges.
