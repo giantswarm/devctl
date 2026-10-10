@@ -23,6 +23,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `pr rerun`, `release rerun`: the examples in `--help` and docs/pr-rerun.md name `beekeeper gate` by its bare
+  name; they carried an absolute path of one machine.
 - `pr wait`, `release wait` and the commands that wait the same way (`pr merge`, `rollout wait`): a
   wait no longer hangs on a green head or a published release when CircleCI's API lags behind its own
   pipelines. `release wait` judges the tag pipeline by its workflows and reads a workflow's jobs only

@@ -62,7 +62,7 @@ Exit codes:
   8  authentication required: no CircleCI login, or one without Write access;
      a GitHub identity without webhook access`
 	example = `  devctl pr rerun giantswarm/devctl 2277
-  devctl pr rerun giantswarm/devctl 2277 && /home/teemow/.go/bin/beekeeper gate -- devctl pr wait giantswarm/devctl 2277`
+  devctl pr rerun giantswarm/devctl 2277 && beekeeper gate -- devctl pr wait giantswarm/devctl 2277`
 )
 
 type Config struct {

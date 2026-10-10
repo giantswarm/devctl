@@ -25,8 +25,8 @@ on hold or failing (a job failed while others still run) is not: CircleCI reruns
 workflow only. The rerun is started, not waited for; wait for it with the wait you would use anyway:
 
 ```nohighlight
-devctl pr rerun giantswarm/devctl 2277 && /home/teemow/.go/bin/beekeeper gate -- devctl pr wait giantswarm/devctl 2277
-devctl release rerun giantswarm/devctl v8.123.0 && /home/teemow/.go/bin/beekeeper gate -- devctl release wait giantswarm/devctl v8.123.0
+devctl pr rerun giantswarm/devctl 2277 && beekeeper gate -- devctl pr wait giantswarm/devctl 2277
+devctl release rerun giantswarm/devctl v8.123.0 && beekeeper gate -- devctl release wait giantswarm/devctl v8.123.0
 ```
 
 ## A pipeline without a workflow
