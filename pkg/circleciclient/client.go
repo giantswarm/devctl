@@ -166,6 +166,28 @@ type Workflow struct {
 	// CreatedAt orders the runs of one workflow name: a rerun is a new
 	// workflow with the same name in the same pipeline, and the newest counts.
 	CreatedAt time.Time `json:"created_at"`
+	// Tag is [WorkflowTagSetup] for the setup workflow of a dynamic-config
+	// pipeline, the one that continues the pipeline with the workflows that
+	// carry the build; empty for every other workflow.
+	Tag string `json:"tag"`
+}
+
+// WorkflowTagSetup is the Workflow.Tag of a setup workflow.
+const WorkflowTagSetup = "setup"
+
+// SetupOnly says whether workflows are a dynamic-config pipeline's setup
+// workflow and nothing else: the continuation has not created the build's
+// workflows yet, or CircleCI's listing lags behind them.
+func SetupOnly(workflows []Workflow) bool {
+	if len(workflows) == 0 {
+		return false
+	}
+	for _, w := range workflows {
+		if w.Tag != WorkflowTagSetup {
+			return false
+		}
+	}
+	return true
 }
 
 // PipelineContinuing says whether a pipeline state is one of a setup

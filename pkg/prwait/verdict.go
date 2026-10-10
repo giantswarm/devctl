@@ -136,9 +136,9 @@ func (e *evaluation) approvalReason() string {
 //     is completed and not failed; a completed run that needs a human
 //     (action_required) still waits;
 //  2. when CircleCI is consulted, the newest pipeline of the head revision
-//     exists and is past its setup (a setup pipeline's continuation created),
-//     and the newest run of each of its workflows is success (not_run counts
-//     as skipped);
+//     exists and is past its setup (a setup pipeline's continuation created,
+//     its workflows listed or their jobs' statuses on GitHub), and the newest
+//     run of each of its workflows is success (not_run counts as skipped);
 //  3. no GitHub Actions run of the head is queued, in progress, waiting or
 //     awaiting approval;
 //  4. every required status context has reported.
@@ -228,7 +228,7 @@ func evaluate(s snapshot) *evaluation {
 	}
 
 	if s.circleci != nil {
-		e.evaluateCircleCI(s.headSHA, s.circleci)
+		e.evaluateCircleCI(s.headSHA, s.circleci, circleStatuses(s.statuses))
 	}
 
 	// Settled is judged before the required contexts: with nothing pending,
@@ -252,7 +252,27 @@ func evaluate(s snapshot) *evaluation {
 	return e
 }
 
-func (e *evaluation) evaluateCircleCI(headSHA string, c *circleSnapshot) {
+// circleStatusPrefix is the context CircleCI posts a job's status under:
+// one context per job name.
+const circleStatusPrefix = "ci/circleci: "
+
+// circleStatuses counts the CircleCI jobs that have posted a status to the
+// head, one context each.
+func circleStatuses(statuses []*github.RepoStatus) int {
+	n := 0
+	for _, status := range latestStatuses(statuses) {
+		if strings.HasPrefix(status.GetContext(), circleStatusPrefix) {
+			n++
+		}
+	}
+	return n
+}
+
+// evaluateCircleCI applies rule 2 to the head's pipeline. circleStatuses is
+// how many CircleCI jobs have posted to GitHub: an empty listing or a setup
+// workflow listed on its own is not the pipeline's last word, and GitHub
+// tells whether its continuation has run.
+func (e *evaluation) evaluateCircleCI(headSHA string, c *circleSnapshot, circleStatuses int) {
 	if c.pipeline == nil {
 		e.unfinished = append(e.unfinished, fmt.Sprintf("circleci pipeline for %s (absent)", headSHA))
 		return
@@ -272,8 +292,26 @@ func (e *evaluation) evaluateCircleCI(headSHA string, c *circleSnapshot) {
 		// A finished setup workflow is not the pipeline's last: the continued
 		// workflows post the build's contexts once they exist.
 		e.unfinished = append(e.unfinished, fmt.Sprintf("circleci pipeline %d (%s, continuation not created yet)", c.pipeline.Number, c.pipeline.State))
+	case circleStatuses > 1:
+		// More than one CircleCI job has posted to the head: the build runs or
+		// ran, whatever the listing reads, and the jobs' contexts are its
+		// verdict (rule 1). The listing is read for what it has: a workflow
+		// it lists is judged below, and one it has not listed yet, or has
+		// lost (an empty listing or the setup workflow alone, for as long as
+		// CircleCI's listing lags behind the workflows it created), has its
+		// jobs on GitHub.
 	case len(workflows) == 0:
+		// Nothing of the pipeline has run yet, or the setup job alone: with
+		// one CircleCI context at most, no continued job has posted, and the
+		// head waits.
 		e.unfinished = append(e.unfinished, fmt.Sprintf("circleci pipeline %d (no workflows yet)", c.pipeline.Number))
+	case circleciclient.SetupOnly(workflows):
+		// The pipeline reads created with the setup workflow alone: for a
+		// while after the setup job continues it, before the build's
+		// workflows exist. Every continued job posts under its own context
+		// beside the setup job's, so with one CircleCI context at most
+		// nothing of the build has run, and the head waits.
+		e.unfinished = append(e.unfinished, fmt.Sprintf("circleci pipeline %d (setup finished, the continuation's workflows not created yet)", c.pipeline.Number))
 	}
 	for _, w := range workflows {
 		url := fmt.Sprintf("https://app.circleci.com/pipelines/%s/%d/workflows/%s", c.project, c.pipeline.Number, w.ID)

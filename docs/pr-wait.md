@@ -48,7 +48,14 @@ system that will produce it:
    error, which produces no workflows) is red. A setup pipeline (`setup: true` with
    `continuation/continue`) is unfinished while its state is `setup-pending`, `setup` or `pending`:
    its `setup` workflow may have finished, but the continued workflows that post the build's
-   contexts do not exist yet. It settles at `created`.
+   contexts do not exist yet. It settles at `created`, and reads `created` with the setup workflow
+   alone for a minute or two after the setup job continued it, longer when CircleCI's listing lags
+   behind the workflows it created; a listing that lags further reads `created` with no workflow at
+   all. GitHub tells a fresh pipeline from a lagging listing: every continued job posts under its
+   own `ci/circleci: <job>` context beside the setup job's, so a pipeline listed with its setup
+   workflow alone (`setup finished, the continuation's workflows not created yet`) or with none
+   (`no workflows yet`) is unfinished while the head carries one CircleCI context at most, and is
+   judged by the contexts once more have posted, whatever the listing reads.
 3. **No GitHub Actions run of the head is open**: `queued`, `in_progress`, `waiting`, `pending`,
    `requested`, or completed with the conclusion `action_required`. The last one is a workflow
    run awaiting a repository member's approval (a fork's or a bot's pull request in a repository
@@ -87,15 +94,16 @@ the wait to the new head and adds a warning to the document.
 
 ## GitHub alone or GitHub and CircleCI
 
-CircleCI is part of the verdict when the head carries `.circleci/config.yml` and CircleCI builds the
-repository: it has a project there with at least one pipeline. A repository with neither, an upstream
-fork being contributed to, is judged from GitHub alone and needs only the GitHub token. A head with
-the configuration file in a repository CircleCI does not build is judged from GitHub alone with a
-warning in the document: CircleCI knows no project for it, or knows one that has never run a pipeline.
-The project lookup alone does not decide it, because CircleCI answers a project for every repository
-the token's user sees on GitHub, set up on CircleCI or not; a template repository carries the
-configuration for the repositories created from it and is never built itself. A pull request from a
-fork of a CircleCI-built repository is looked up under the branch CircleCI gives it, `pull/<number>`.
+CircleCI is part of the verdict when the head carries `.circleci/config.yml` and CircleCI has a
+project for the repository. A repository without the file, an upstream fork being contributed to,
+is judged from GitHub alone and needs only the GitHub token; so is, with a warning in the document,
+a template repository (`is_template` on GitHub), which carries the configuration for the
+repositories created from it and is never built itself, and a repository CircleCI knows no project
+for. Whether the project has run a pipeline before does not decide it: the head's own pipeline may
+be the project's first (a new repository's first pull request), and until it appears the head is
+unfinished (`circleci pipeline for <sha> (absent)`), not green from GitHub alone. A pull request
+from a fork of a CircleCI-built repository is looked up under the branch CircleCI gives it,
+`pull/<number>`.
 
 ## Polling
 
@@ -105,6 +113,12 @@ the `X-RateLimit-Remaining` and `X-RateLimit-Reset` headers of the answers thems
 the rate-limit endpoint): the remaining budget spread over the time to its reset, bounded to 15 s
 at the shortest and 60 s at the longest. `DEVCTL_TIME_SCALE` multiplies every interval and the
 timeout (the e2e suite runs at 0.001).
+
+Without `--progress` the wait is silent but for a heartbeat on stderr: `waiting for <what>` once
+every two minutes, and at once when what it waits for changed (`circleci workflow build (running)`,
+`status ci/circleci: push-chart (pending)`, `circleci pipeline 12 (setup finished, the
+continuation's workflows not created yet)`), so a wait that outlives its caller's patience has
+named its cause. With `--progress` every poll says it.
 
 A read GitHub or CircleCI does not answer is not an outcome: every poll reads the same state again, so
 a reset connection, an EOF, a try that takes longer than 60 s or a 5xx is sent again after 2 s, the

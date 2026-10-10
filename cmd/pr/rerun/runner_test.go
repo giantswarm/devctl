@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -42,7 +43,7 @@ var failedPipeline = sequence.Routes{
 	"POST /api/v2/workflow/w1/rerun": {{Status: http.StatusAccepted, Body: map[string]any{"workflow_id": "w2"}}},
 }
 
-func start(t *testing.T, gh, cc sequence.Routes) (*runner, *bytes.Buffer, *circlemock.Server) {
+func start(t *testing.T, gh, cc sequence.Routes) (*runner, *githubmock.Server, *circlemock.Server) {
 	t.Helper()
 	ghServer, err := githubmock.Start(gh)
 	if err != nil {
@@ -57,15 +58,14 @@ func start(t *testing.T, gh, cc sequence.Routes) (*runner, *bytes.Buffer, *circl
 	endpoints := agentcli.DefaultEndpoints()
 	endpoints.GitHubAPIURL = ghServer.URL
 	endpoints.CircleCIAPIURL = ccServer.APIURL()
-	stdout := &bytes.Buffer{}
 	return &runner{
 		gate:            func(bool) error { return nil },
-		stdout:          stdout,
+		stdout:          &bytes.Buffer{},
 		requireGitHub:   loggedIn,
 		personGitHub:    loggedIn,
 		requireCircleCI: loggedIn,
 		endpoints:       func() agentcli.Endpoints { return endpoints },
-	}, stdout, ccServer
+	}, ghServer, ccServer
 }
 
 func execute(t *testing.T, r *runner, args ...string) (map[string]any, int) {
@@ -110,6 +110,47 @@ func TestForkReadsPullBranch(t *testing.T) {
 	}
 	if !posted(cc, "/api/v2/workflow/w1/rerun") {
 		t.Errorf("no rerun posted")
+	}
+}
+
+// TestStalledHeadPipelineRedeliversThePush: the head's pipeline pending
+// without a workflow for an hour gets the push of the head revision sent
+// again, with the identity that read the pull request.
+func TestStalledHeadPipelineRedeliversThePush(t *testing.T) {
+	created := time.Now().Add(-time.Hour).UTC().Format(time.RFC3339)
+	r, gh, _ := start(t,
+		sequence.Routes{
+			"GET /repos/o/r/pulls/7": pull("o/r"),
+			"GET /repos/o/r/hooks":   {{Body: []any{map[string]any{"id": 1, "active": true, "config": map[string]any{"url": "https://circleci.com/hooks/github"}}}}},
+			"GET /repos/o/r/hooks/1/deliveries": {{Body: []any{
+				map[string]any{"id": 42, "guid": "g-push", "delivered_at": "2026-10-09T17:59:00Z", "redelivery": false, "event": "push"},
+			}}},
+			"GET /repos/o/r/hooks/1/deliveries/42": {{Body: map[string]any{
+				"id": 42, "guid": "g-push", "delivered_at": "2026-10-09T17:59:00Z", "redelivery": false, "event": "push",
+				"request": map[string]any{"payload": map[string]any{"ref": "refs/heads/feature", "after": "abc"}},
+			}}},
+			"POST /repos/o/r/hooks/1/deliveries/42/attempts": {{Status: http.StatusAccepted}},
+		},
+		sequence.Routes{
+			"GET /api/v2/project/gh/o/r/pipeline?branch=feature": {{Body: map[string]any{"items": []any{
+				map[string]any{"id": "p1", "number": 12, "state": "pending", "created_at": created, "vcs": map[string]any{"revision": "abc"}},
+			}}}},
+			"GET /api/v2/pipeline/p1/workflow": {{Body: map[string]any{"items": []any{}}}},
+		})
+	doc, code := execute(t, r, "o/r", "7")
+	if code != agentcli.ExitOK {
+		t.Fatalf("exit %d: %v", code, doc["reason"])
+	}
+	redelivery, _ := doc["redelivery"].(map[string]any)
+	if doc["identity"] != "app" || redelivery["outcome"] != "redelivered" || redelivery["after"] != "abc" || redelivery["ref"] != "refs/heads/feature" {
+		t.Errorf("document: %v", doc)
+	}
+	posted := false
+	for _, req := range gh.Requests() {
+		posted = posted || req.Method == http.MethodPost && req.Path == "/repos/o/r/hooks/1/deliveries/42/attempts"
+	}
+	if !posted {
+		t.Errorf("no redelivery posted: %v", gh.Requests())
 	}
 }
 

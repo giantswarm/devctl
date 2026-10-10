@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
@@ -74,24 +73,13 @@ func (r *runner) rerun(ctx context.Context, args []string, doc *document) error 
 		return err
 	}
 
-	token, err := authexec.RepositoryToken(ctx, owner, r.requireGitHub, r.personGitHub)
+	endpoints := r.endpoints()
+	retrying := &agentcli.Retrying{Warn: doc.Warn}
+	github, token, err := rerun.NewGitHub(ctx, owner, r.requireGitHub, r.personGitHub, endpoints, retrying)
 	if err != nil {
 		return err
 	}
 	doc.Identity = authexec.Identity(token)
-	endpoints := r.endpoints()
-	retrying := &agentcli.Retrying{Warn: doc.Warn}
-	logger := logrus.New()
-	logger.SetOutput(io.Discard)
-	github, _, err := githubclient.NewConditional(githubclient.Config{
-		Logger:      logger,
-		AccessToken: token.Value,
-		BaseURL:     endpoints.GitHubAPIURL,
-		Transport:   retrying,
-	})
-	if err != nil {
-		return err
-	}
 	pr, err := github.PullRequest(ctx, owner, repo, number)
 	if err != nil {
 		return githubclient.ExplainNotFound(err, authexec.NotFoundHint(token, owner))
@@ -111,5 +99,8 @@ func (r *runner) rerun(ctx context.Context, args []string, doc *document) error 
 	if pipeline == nil {
 		return rerun.NoPipeline(fmt.Sprintf("the head %s of %s/%s#%d on branch %s", sha, owner, repo, number, branch))
 	}
-	return rerun.FromFailed(ctx, circleci, owner, repo, pipeline, doc.Result, doc.Warn)
+	// A pipeline without a workflow gets the push of its revision again, with
+	// the client and identity that read the pull request.
+	redelivery := rerun.Redelivery{Hooks: func(context.Context) (rerun.Hooks, string, error) { return github, doc.Identity, nil }}
+	return rerun.FromFailed(ctx, circleci, owner, repo, pipeline, doc.Result, doc.Warn, redelivery)
 }

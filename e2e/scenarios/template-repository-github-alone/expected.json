@@ -7,7 +7,7 @@
     "verdict": "green",
     "reason": "",
     "warnings": [
-      "giantswarm/e2e-template has .circleci/config.yml but CircleCI has never run a pipeline for it (not set up there): GitHub alone"
+      "giantswarm/e2e-template is a template repository: its .circleci/config.yml is for the repositories created from it, GitHub alone"
     ],
     "startedAt": "*",
     "finishedAt": "*",

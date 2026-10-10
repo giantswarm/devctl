@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
+	"github.com/giantswarm/devctl/v8/pkg/authexec"
 	"github.com/giantswarm/devctl/v8/pkg/authstore"
 	"github.com/giantswarm/devctl/v8/pkg/releasewait"
 	"github.com/giantswarm/devctl/v8/pkg/rerun"
@@ -21,9 +22,21 @@ type runner struct {
 	// gate is versiongate.Check: an outdated devctl ends the run in the
 	// document.
 	gate func(noCache bool) error
-	// The seams tests replace: the token gate and the endpoints.
+	// The seams tests replace: the token gates and the endpoints. GitHub is
+	// asked for a token only when the tag's push webhook is redelivered.
+	requireGitHub   func(ctx context.Context) (authstore.Token, error)
+	personGitHub    func(ctx context.Context) (authstore.Token, error)
 	requireCircleCI func(ctx context.Context) (authstore.Token, error)
 	endpoints       func() agentcli.Endpoints
+}
+
+// document is the command's JSON: the rerun's and, when the tag's push
+// webhook was redelivered, who did it on GitHub.
+type document struct {
+	rerun.Document
+	// Identity is who read GitHub for the redelivery: "app" or "gh", as in
+	// devctl pr wait; absent when GitHub was not read.
+	Identity string `json:"identity,omitempty"`
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
@@ -43,15 +56,15 @@ func (r *runner) FlagError(_ *cobra.Command, err error) error {
 	return agentcli.Report(r.stdout, &doc, agentcli.VerdictGreen, agentcli.FlagError(command, err))
 }
 
-func newDocument(args []string) rerun.Document {
+func newDocument(args []string) document {
 	repository := ""
 	if len(args) > 0 {
 		repository = args[0]
 	}
-	return rerun.NewDocument(command, repository)
+	return document{Document: rerun.NewDocument(command, repository)}
 }
 
-func (r *runner) rerun(ctx context.Context, args []string, doc *rerun.Document) error {
+func (r *runner) rerun(ctx context.Context, args []string, doc *document) error {
 	if len(args) != 2 {
 		return fmt.Errorf("usage: devctl %s <owner/repo> <tag>, got %d argument(s)", command, len(args))
 	}
@@ -64,7 +77,9 @@ func (r *runner) rerun(ctx context.Context, args []string, doc *rerun.Document) 
 		return err
 	}
 
-	circleci, err := rerun.NewCircleCI(ctx, r.requireCircleCI, r.endpoints(), &agentcli.Retrying{Warn: doc.Warn}, doc.Warn)
+	endpoints := r.endpoints()
+	retrying := &agentcli.Retrying{Warn: doc.Warn}
+	circleci, err := rerun.NewCircleCI(ctx, r.requireCircleCI, endpoints, retrying, doc.Warn)
 	if err != nil {
 		return err
 	}
@@ -79,7 +94,20 @@ func (r *runner) rerun(ctx context.Context, args []string, doc *rerun.Document) 
 		}
 		if pipeline != nil {
 			doc.Tag = tag
-			return rerun.FromFailed(ctx, circleci, owner, repo, pipeline, doc.Result, doc.Warn)
+			// A pipeline without a workflow gets the tag's push again; GitHub
+			// is read only then, with the identity devctl pr wait uses.
+			redelivery := rerun.Redelivery{
+				Ref: "refs/tags/" + tag,
+				Hooks: func(ctx context.Context) (rerun.Hooks, string, error) {
+					github, token, err := rerun.NewGitHub(ctx, owner, r.requireGitHub, r.personGitHub, endpoints, retrying)
+					if err != nil {
+						return nil, "", err
+					}
+					doc.Identity = authexec.Identity(token)
+					return github, doc.Identity, nil
+				},
+			}
+			return rerun.FromFailed(ctx, circleci, owner, repo, pipeline, doc.Result, doc.Warn, redelivery)
 		}
 	}
 	return rerun.NoPipeline(fmt.Sprintf("the tag %s of %s/%s among its newest pipelines", strings.Join(tags, " or "), owner, repo))
