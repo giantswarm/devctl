@@ -27,8 +27,8 @@ The desired state is the repository's entry in a team file of
 giantswarm/github (--team-file, the entry named after the repository) —
 the scaffold is rendered from it when the repository is empty. A
 repository without a declaration is reconciled from --team alone: the
-settings, permissions, protection, CircleCI, Renovate and metadata steps
-apply; the scaffold cannot be rendered.
+settings, permissions, protection, CircleCI, Renovate, metadata and labels
+steps apply; the scaffold cannot be rendered.
 
 The steps: create (only with --added), scaffold, settings, permissions,
 protection (required checks on the reported-only rule: a context is
@@ -37,7 +37,9 @@ pull request, ghosts are removed), circleci (follow, setup workflows,
 checkout key), webhooks, renovate (check only), codeowners (a pull
 request; the file align-files writes: the repository's override,
 override/<repository>/CODEOWNERS beside --team-file, when it has one, the
-file naming the team otherwise), metadata, lifecycle (archives or deletes
+file naming the team otherwise), metadata, labels (the owning team's
+team/<team>, created in the default colour when missing, an existing one
+left as it is), lifecycle (archives or deletes
 as the entry declares; with --unarchived, the change at hand took
 lifecycle: archived from the entry, it unarchives the repository ahead of
 the other steps, which then restore its set-up), catalog, release. The CircleCI steps need a

@@ -60,6 +60,7 @@ type fakeRepo struct {
 	// runs are served for their heads as for any ref.
 	merged       []*github.PullRequest
 	issues       []*github.Issue            // what GET /repos/{owner}/{repo}/issues lists
+	labels       map[string]*github.Label   // by lower-cased name: GitHub compares label names case-insensitively
 	history      []*github.RepositoryCommit // the commits behind the head of the default branch
 	issuesStatus int                        // HTTP status of the issues list when not 200
 	blobs        map[string][]byte
@@ -263,6 +264,9 @@ func newFakeGitHub() *fakeGitHub {
 	f.routes(mux)
 	f.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		r.URL.Path = strings.TrimPrefix(r.URL.Path, "/api/v3") // go-github's enterprise prefix
+		// The escaped path too: a label named team/<team> travels as
+		// team%2F<team>, one path segment.
+		r.URL.RawPath = strings.TrimPrefix(r.URL.RawPath, "/api/v3")
 		f.mu.Lock()
 		if r.Method != http.MethodGet && r.URL.Path != "/graphql" {
 			f.mutations = append(f.mutations, r.Method+" "+r.URL.Path)
@@ -305,7 +309,8 @@ func (f *fakeGitHub) addRepo(owner, name string) *fakeRepo {
 		files:         map[string]string{},
 		branchFiles:   map[string]map[string]string{},
 		blobs:         map[string][]byte{}, trees: map[string][]*github.TreeEntry{}, commits: map[string]fakeCommit{},
-		heads: map[string]string{},
+		heads:  map[string]string{},
+		labels: map[string]*github.Label{TeamLabel(team): {Name: TeamLabel(team), Color: DefaultLabelColor}},
 		merged: []*github.PullRequest{{
 			Number: new(1), State: new("closed"), MergedAt: &github.Timestamp{Time: time.Now().Add(-24 * time.Hour)},
 			Head: &github.PullRequestBranch{SHA: new("merged-head"), Ref: new("merged")}, Base: &github.PullRequestBranch{Ref: new("main")},
@@ -523,6 +528,7 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 		repo.hasWiki, repo.teams = true, map[string]string{} // GitHub's defaults, not the baseline
 		repo.squashTitle = "COMMIT_OR_PR_TITLE"
 		repo.files = map[string]string{}
+		repo.labels = map[string]*github.Label{} // GitHub's defaults, no team's
 		repo.empty = !in.GetAutoInit()
 		if in.GetAutoInit() {
 			repo.files["README.md"] = "# " + repo.name + "\n"
@@ -634,6 +640,26 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 			out = append(out, is)
 		}
 		writeJSON(w, 200, out)
+	}))
+	mux.HandleFunc("GET /repos/{owner}/{repo}/labels/{name}", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		l, ok := repo.labels[strings.ToLower(r.PathValue("name"))]
+		if !ok {
+			notFound(w, "Not Found")
+			return
+		}
+		writeJSON(w, 200, l)
+	}))
+	mux.HandleFunc("POST /repos/{owner}/{repo}/labels", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		var in github.CreateIssueLabelRequest
+		decode(r, &in)
+		key := strings.ToLower(in.Name)
+		if _, ok := repo.labels[key]; ok {
+			writeJSON(w, 422, map[string]any{"message": "Validation Failed", "errors": []map[string]string{{"resource": "Label", "field": "name", "code": "already_exists"}}})
+			return
+		}
+		l := &github.Label{Name: in.Name, Color: in.GetColor(), Description: in.Description}
+		repo.labels[key] = l
+		writeJSON(w, 201, l)
 	}))
 	mux.HandleFunc("POST /repos/{owner}/{repo}/pulls", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
 		var in github.CreatePullRequest

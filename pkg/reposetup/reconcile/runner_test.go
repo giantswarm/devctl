@@ -1883,6 +1883,33 @@ func TestSteps(t *testing.T) {
 			},
 		},
 		{
+			name: "labels: a missing owning-team label is created in the default colour", step: StepLabels,
+			seed: func(h *harness) {
+				h.gh.addRepo(owner, name).labels = map[string]*github.Label{}
+			},
+			wantCheck: VerdictDrift, wantChange: "create the label team/bumblebee (#ededed)",
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				l := h.repo().labels["team/bumblebee"]
+				require.NotNil(t, l)
+				require.Equal(t, DefaultLabelColor, l.Color)
+				require.Empty(t, l.GetDescription())
+			},
+		},
+		{
+			name: "labels: an existing owning-team label is left as it is, whatever its case, colour and description", step: StepLabels,
+			seed: func(h *harness) {
+				h.gh.addRepo(owner, name).labels = map[string]*github.Label{
+					"team/bumblebee": {Name: "Team/Bumblebee", Color: "1D76DB", Description: new("Team Bumblebee")},
+				}
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Equal(t, "has team/bumblebee", res.Step(StepLabels).Summary)
+				require.Equal(t, "1D76DB", h.repo().labels["team/bumblebee"].Color)
+				require.Empty(t, h.mutations())
+			},
+		},
+		{
 			// CircleCI's deploy key goes on GitHub — CircleCI's own way to
 			// stop a project it refuses to stop for a renamed repository — and
 			// its webhook stays, a hook the reconciler cannot delete and an
@@ -2749,14 +2776,14 @@ func TestRunFullRepositorySetUp(t *testing.T) {
 	require.Contains(t, string(data), `"repository":"giantswarm/sample-service"`)
 
 	// The budget: a check of the converged repository, every step, costs at
-	// most twenty-two GitHub requests (the webhooks and the deploy keys the
+	// most twenty-three GitHub requests (the webhooks and the deploy keys the
 	// circleci step reads are the last two), and the count is the fake's own.
 	before := len(h.gets())
 	check := h.run(ModeCheck, false)
 	require.True(t, check.Converged, "%+v", check.Steps)
 	gets := h.gets()[before:]
 	require.Equal(t, len(gets), check.Requests.GitHub, "the counter and the fake agree")
-	require.LessOrEqual(t, check.Requests.GitHub, 22, "a converged check within the budget of twenty-two; the reads:\n%s", strings.Join(gets, "\n"))
+	require.LessOrEqual(t, check.Requests.GitHub, 23, "a converged check within the budget of twenty-three; the reads:\n%s", strings.Join(gets, "\n"))
 	require.Positive(t, check.Requests.CircleCI, "the circleci and release steps read CircleCI")
 
 	// The override costs nothing: the caller hands it in with the entry
