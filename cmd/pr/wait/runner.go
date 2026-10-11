@@ -54,6 +54,7 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	agentcli.IgnoreHangup()
 	return r.run(ctx, args)
 }
 

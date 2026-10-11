@@ -44,7 +44,9 @@ owner; the document's identity says which ("app" or "gh").
 Polling is conditional (ETags, a 304 costs no budget) at an interval derived
 from the rate-limit headers of the answers, 15 s to 60 s. Without --progress a
 heartbeat on stderr says what the wait still waits for, every two minutes and
-when it changes.
+when it changes. A read GitHub or CircleCI leaves unanswered through every
+retry is a warning and the wait polls again; the wait ignores SIGHUP and reads
+no stdin, so it outlives its terminal.
 
 The document (schemaVersion 1): command, exitCode, verdict, reason, warnings,
 startedAt, finishedAt, repository, number, headSha, baseRef,
@@ -62,7 +64,8 @@ and CircleCI job once and print its last --failed-log-lines lines (default
 Exit codes:
   0  green
   1  red: a check, status, run or workflow failed; reason names it
-  2  timeout before an outcome; unfinished names what was still open
+  2  timeout before an outcome; unfinished names what was still open, the
+     reason an outage that left the last poll unanswered
   3  not applicable: draft, closed, merged, conflicting, behind a strict base
   4  a required status context never reported, or Actions runs await a
      member's approval and nothing else is pending
