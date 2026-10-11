@@ -4,9 +4,9 @@ Giant Swarm repositories are declared, not clicked together: one entry in the ow
 `repositories/<team>.yaml` of [giantswarm/github](https://github.com/giantswarm/github) is the
 desired state, and the reconciler creates and keeps the repository as declared. The `repo` commands
 are the laptop's client of that engine and of giantswarm-repo-manager -- the same validation, the same
-dry run, the same pull request the Repositories page and the Repo Manager agent produce. `create` and
-`validate` run the engine locally with the devctl App login, `reconcile` with your own token; the
-other verbs call the manager through muster as you.
+dry run, the same pull request the Repositories page and the Repo Manager agent produce. `create` runs
+the engine locally with the devctl App login and `reconcile` with your own token; `validate` and the
+other verbs call the manager through muster as you (`validate --local` runs the engine locally).
 
 ## `devctl repo create`
 
@@ -161,8 +161,8 @@ and nothing runs locally in its place.
 `--reason` on the writes goes into the pull request body and the ask. The dry run of a write prints the
 entry before and after, the pull request (title, branch, files, who opens it) and the ask and notice with
 the channel they reach or why they cannot; a commit prints the pull request's URL, whether the ask was
-delivered, and the run the record now expects. `create`, `validate` and `reconcile` stay what they are:
-the engine run locally with your own tokens.
+delivered, and the run the record now expects. `create` and `reconcile` stay what they are: the engine
+run locally with your own tokens; `validate` asks the manager unless `--local`.
 
 ```nohighlight
 devctl repo list --scope unassigned --inactive-days 365
@@ -234,13 +234,28 @@ CircleCI and sign in again through GitHub). The next reconciler run reads the ci
 
 ## `devctl repo validate`
 
-Validates entries of a local team file and prints the dry run as JSON -- what the validation check on
-`giantswarm/github` runs. `--mode create|existing` says what the entries are validated for:
+Validates entries of a local team file and prints the dry run as JSON, one document whose `engine` says
+who answered:
+
+```nohighlight
+devctl repo validate --team-file repositories/team-bumblebee.yaml --entry my-service
+devctl repo validate --team-file repositories/team-bumblebee.yaml --local
+```
+
+| Engine | When | What validates |
+|---|---|---|
+| `manager` | the default: the entries named with `--entry` are the declarations being added | giantswarm-repo-manager's `validate_repository`, through your muster endpoint with the muster token of the keychain (`devctl auth login --muster-only`): the manager's own engine and the schema on `giantswarm/github` `main`, the names checked by its App, the guard notices from your memberships as it reads them, `align: true` and the visibility default written as it writes them -- the same answer the Repositories page and the Repo Manager agent get, printed as it came (`author`, `authorTeams`, `teamsSource`, `machineApproved`, `findings`, `creation` beside the engine's result). The `engine` carries the endpoint and the login. Without a usable muster token the command exits naming the login and `--local`; nothing runs locally in its place |
+| `local` | `--local`, or CI, where the keychain is never read (the validation check of `giantswarm/github` runs there) | devctl's own engine: `--schema`, else the schema on `giantswarm/github` `main` with a GitHub token (the devctl App login, or a token in the environment that overrides it, `--github-token-envvar`) and the names checked on GitHub, else the embedded copy and the names reported unchecked. The `engine` carries the devctl version and the reason |
+
+What only the local engine does takes `--local`: existing mode, `--schema`, `--author` and `--author-team`
+(the manager reads the author from your sign-in), another `--owner`.
+
+`--mode create|existing` says what the entries are validated for:
 
 | Mode | Applies | Default when |
 |---|---|---|
 | `create` | the schema, the creation rules (`gen.flavours` and `gen.language` set, a template for them, a job for generated CI, the chart-name convention) and a free name on GitHub; the guard notices say what review the change gets | `--entry` names the entries being added |
-| `existing` | the schema alone -- an entry the schema accepts is valid however it predates the creation rules, and it is rendered as declared: no default is written, `gen.ci` left out keeps the repository's own CircleCI configuration; the name check's verdict is reported and never refuses, a missing repository being the reconciler's finding | no `--entry`: the whole file is on main already |
+| `existing` | the schema alone -- an entry the schema accepts is valid however it predates the creation rules, and it is rendered as declared: no default is written, `gen.ci` left out keeps the repository's own CircleCI configuration; the name check's verdict is reported and never refuses, a missing repository being the reconciler's finding; the local engine's (`--local`) | no `--entry`: the whole file is on main already |
 
 `repo status` and `repo reconcile` validate a declared repository's entry in existing mode (`repo
 reconcile --added` in create mode: the repository is created). See `devctl repo validate --help`.
