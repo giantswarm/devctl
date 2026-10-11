@@ -212,6 +212,26 @@ repository the inventory has not checked yet names `devctl repo refresh`. `-o js
 the manager answered. Nothing is changed by `repo status`; the local check with your own tokens is
 `devctl repo reconcile --dry-run`.
 
+## `devctl repo follow-circleci`
+
+Repairs the reconciler's finding `circleci-webhook-missing`: a repository followed on CircleCI without
+CircleCI's webhook (`https://circleci.com/hooks/github`), so no push and no tag reaches CircleCI.
+
+```nohighlight
+devctl repo follow-circleci my-service
+```
+
+CircleCI installs that webhook, signed with a secret of its own, only for a follow by a GitHub admin of
+the repository whose CircleCI grant carries the hook scope, and the reconciler's follow is not one; a
+hook created through GitHub's API would lack CircleCI's secret. The command follows the project again
+with your CircleCI login from the keychain (`devctl auth login --circleci-only`, Write access): an
+unfollow first when you follow it already, then the follow, and it reads the repository's webhooks
+until CircleCI's is there, up to a minute. A repository that carries the webhook is left alone. A
+webhook still missing after the follow ends the command with an error naming your login: you are no
+GitHub admin of the repository, or your CircleCI grant on GitHub lacks the hook scope (sign out of
+CircleCI and sign in again through GitHub). The next reconciler run reads the circleci step `ok` with
+"webhook present".
+
 ## `devctl repo validate`
 
 Validates entries of a local team file and prints the dry run as JSON -- what the validation check on

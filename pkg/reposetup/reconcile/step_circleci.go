@@ -171,6 +171,18 @@ func (r *Runner) circleCIDeployKeys(ctx context.Context, s *run, sr *StepResult)
 // repository it follows: every push and tag reaches CircleCI through it.
 const circleCIWebhookURL = "https://circleci.com/hooks/github"
 
+// HasCircleCIWebhook says whether hooks carry CircleCI's webhook, active and
+// subscribed to push events: what the circleci step reads as "webhook
+// present" and `devctl repo follow-circleci` waits for.
+func HasCircleCIWebhook(hooks []*github.Hook) bool {
+	for _, h := range hooks {
+		if h.GetConfig().GetURL() == circleCIWebhookURL && h.GetActive() && slices.Contains(h.Events, "push") {
+			return true
+		}
+	}
+	return false
+}
+
 // circleCIWebhook verifies the repository carries CircleCI's webhook, active
 // and subscribed to push events, and returns the summary's word on it. A
 // missing hook is the finding FindingCircleCIWebhookMissing: the follow
@@ -191,14 +203,12 @@ func (r *Runner) circleCIWebhook(ctx context.Context, s *run, sr *StepResult) (s
 	case err != nil:
 		return "", err
 	}
-	for _, h := range hooks {
-		if h.GetConfig().GetURL() == circleCIWebhookURL && h.GetActive() && slices.Contains(h.Events, "push") {
-			return "webhook present", nil
-		}
+	if HasCircleCIWebhook(hooks) {
+		return "webhook present", nil
 	}
 	s.report(sr, FindingCircleCIWebhookMissing,
 		fmt.Sprintf("%s is followed on CircleCI but carries no active CircleCI webhook (%s, push events): no push and no tag reaches CircleCI, so no branch builds and the first release tag goes unbuilt", s.slug(), circleCIWebhookURL),
-		fmt.Sprintf("CircleCI installs its webhook only for a follow by a GitHub admin of the repository whose CircleCI grant carries the hook scope: follow the project as such a user (POST /api/v1.1/project/github/%s/follow) or through Project Settings on CircleCI; devctl cannot create the hook, CircleCI signs it with its own secret", s.slug()))
+		fmt.Sprintf("`devctl repo follow-circleci %s` as a GitHub admin of the repository: it follows the project again with your CircleCI login (POST /api/v1.1/project/github/%s/follow), and CircleCI installs its webhook for that follow; devctl cannot create the hook itself, CircleCI signs it with its own secret", s.slug(), s.slug()))
 	return "webhook missing", nil
 }
 
