@@ -7,7 +7,7 @@
     "verdict": "green",
     "reason": "",
     "warnings": [
-      "giantswarm/e2e-template is a template repository: its .circleci/config.yml is for the repositories created from it, GitHub alone"
+      "giantswarm/e2e-template is a template repository: its .circleci/config.yml is for the repositories created from it (gen.ci.templateContent), GitHub alone"
     ],
     "startedAt": "*",
     "finishedAt": "*",
