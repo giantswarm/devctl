@@ -127,15 +127,15 @@ named its cause. With `--progress` every poll says it.
 
 A read GitHub or CircleCI does not answer is not an outcome: every poll reads the same state again, so
 a reset connection, an EOF, a try that takes longer than 60 s or a 5xx is sent again after 2 s, the
-pause doubling up to 60 s, for up to eight tries in a row (about three minutes of pauses), never past
+pause doubling up to 60 s, for up to fifteen tries in a row (about ten minutes of pauses), never past
 the timeout. Each retried failure is a warning with its time:
 
 ```
-2026-09-23T10:11:12Z GET https://api.github.com/repos/giantswarm/devctl/pulls/2360: 500 Internal Server Error; retried in 2s (try 2 of 8)
+2026-09-23T10:11:12Z GET https://api.github.com/repos/giantswarm/devctl/pulls/2360: 500 Internal Server Error; retried in 2s (try 2 of 15)
 ```
 
-A read that fails all eight tries ends the wait with exit 7, the reason naming the request, the count
-and the last failure (`Get "https://api.github.com/repos/giantswarm/devctl/pulls/2360": failed 8 times in
+A read that fails all fifteen tries ends the wait with exit 7, the reason naming the request, the count
+and the last failure (`Get "https://api.github.com/repos/giantswarm/devctl/pulls/2360": failed 15 times in
 a row: 500 Internal Server Error`). A 4xx is an answer and is never retried, nor is a certificate the
 client refuses or a host that does not exist; only reads (GET, HEAD) are retried.
 
@@ -147,7 +147,7 @@ no time after a minute, and a `429` without either on the backoff. The warning n
 time it resets:
 
 ```
-2026-09-23T16:48:03Z GET https://api.github.com/repos/giantswarm/devctl/pulls/2360: 403 Forbidden: the core rate limit (5000) is spent until 2026-09-23T17:50:00Z; retried in 1h1m58s (try 2 of 8)
+2026-09-23T16:48:03Z GET https://api.github.com/repos/giantswarm/devctl/pulls/2360: 403 Forbidden: the core rate limit (5000) is spent until 2026-09-23T17:50:00Z; retried in 1h1m58s (try 2 of 15)
 ```
 
 An answer that spends the last request does not stop the reads after it: the client sends them and

@@ -192,9 +192,13 @@ costs a 304 that does not count against the rate limit. The interval between pol
 `X-RateLimit-Remaining` / `X-RateLimit-Reset` headers of the responses, between 15 and 60 seconds;
 the rate_limit endpoint is never asked. `DEVCTL_TIME_SCALE` multiplies every sleep and the timeout
 (the end-to-end tests run at 0.001). A GitHub or CircleCI read that fails in transit (a reset
-connection, an EOF, a try over 60 s) or with a 5xx is sent again, up to eight tries in a row with a
+connection, an EOF, a try over 60 s) or with a 5xx is sent again, up to fifteen tries in a row with a
 pause from 2 s doubling to 60 s, each retried failure a warning with its time, as in
-[`pr wait`](pr-wait.md#polling); a read that fails all eight is exit 7 naming the request and the count.
+[`pr wait`](pr-wait.md#polling); a read that fails all fifteen is exit 7 naming the request and the count,
+except a read of the tag's CI (the CircleCI pipeline, or the tag's Actions runs): an API that does not
+answer says nothing about the release, so the next poll reads again until the timeout. A timeout after
+such reads is exit 2 whose reason ends `the release is unknown, not failed: the last read of the tag's CI
+went unanswered: <request and failure>`.
 A read refused for a spent rate limit is sent again after the reset (or `Retry-After`), a warning
 naming the limit and the reset time; a reset after the deadline is exit 2 at once, naming it.
 

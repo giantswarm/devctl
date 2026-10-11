@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"maps"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/http/httputil"
@@ -836,4 +837,90 @@ func Test_Merge_commitSubject(t *testing.T) {
 			}
 		})
 	}
+}
+
+// A merge call whose answer is lost (the connection reset after GitHub
+// merged) is settled by reading the pull request again: merged, the merge
+// goes on with GitHub's merge commit; open, the call's error stands;
+// unreadable, the error says the merge is unknown, never that nothing
+// merged.
+func Test_Merge_callFailedInTransit(t *testing.T) {
+	tests := []struct {
+		name string
+		// after is the pull request the read after the merge call gets;
+		// nil resets that read too.
+		after       map[string]any
+		wantErr     string
+		wantMerge   string
+		wantWarning string
+	}{
+		{name: "GitHub merged", after: pull(map[string]any{"state": "closed", "merged": true, "merge_commit_sha": "m9", "merged_by": map[string]any{"login": "someone"}}),
+			wantMerge: "m9", wantWarning: "GitHub reports o/r#42 merged as m9 by someone"},
+		{name: "GitHub did not merge", after: pull(nil), wantErr: "/repos/o/r/pulls/42/merge"},
+		{name: "the read fails too", wantErr: "whether it merged is unknown, reading the pull request failed too"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			server, err := githubmock.Start(routes(pull(nil)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(server.Close)
+			target, err := url.Parse(server.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			upstream := httputil.NewSingleHostReverseProxy(target)
+			called := false
+			proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch {
+				case r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/merge"):
+					called = true
+					resetConnection(t, w)
+				case called && r.Method == http.MethodGet && r.URL.Path == "/repos/o/r/pulls/42" && tc.after == nil:
+					resetConnection(t, w)
+				case called && r.Method == http.MethodGet && r.URL.Path == "/repos/o/r/pulls/42":
+					w.Header().Set("Content-Type", "application/json")
+					_ = json.NewEncoder(w).Encode(tc.after)
+				default:
+					upstream.ServeHTTP(w, r)
+				}
+			}))
+			t.Cleanup(proxy.Close)
+			h := newHarnessAt(t, server, proxy.URL, nil)
+			result, err := h.merge(t)
+			if tc.wantErr != "" {
+				if err == nil || exitCode(err) != -1 || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("want a tooling failure containing %q, got exit %d: %v", tc.wantErr, exitCode(err), err)
+				}
+				if strings.Contains(err.Error(), "nothing merged") || result.MergeCommitSHA != "" || result.BranchDeleted {
+					t.Errorf("result: %+v", result)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.MergeCommitSHA != tc.wantMerge || result.MergedBy != "someone" || !result.BranchDeleted {
+				t.Errorf("result: %+v", result)
+			}
+			if !strings.Contains(strings.Join(result.Warnings, "\n"), tc.wantWarning) {
+				t.Errorf("want a warning containing %q, got %q", tc.wantWarning, result.Warnings)
+			}
+		})
+	}
+}
+
+// resetConnection closes the connection with a TCP reset: the client reads
+// "connection reset by peer".
+func resetConnection(t *testing.T, w http.ResponseWriter) {
+	conn, _, err := w.(http.Hijacker).Hijack()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	if tcp, ok := conn.(*net.TCPConn); ok {
+		_ = tcp.SetLinger(0)
+	}
+	_ = conn.Close()
 }
