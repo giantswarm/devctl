@@ -47,6 +47,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `repo reconcile --steps`: the help lists the engine's steps from the engine, `labels` among them, instead of a
+  hand-kept list.
 - `pr wait`: a read GitHub or CircleCI leaves unanswered through every retry (about ten minutes of an outage) no
   longer ends the wait with exit 7 and the checks of a head still pending. The poll is a warning and the wait polls
   again: an outage shorter than the timeout ends in the head's verdict, a longer one in exit 2 whose reason says the
