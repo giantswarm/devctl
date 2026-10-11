@@ -134,10 +134,16 @@ the timeout. Each retried failure is a warning with its time:
 2026-09-23T10:11:12Z GET https://api.github.com/repos/giantswarm/devctl/pulls/2360: 500 Internal Server Error; retried in 2s (try 2 of 15)
 ```
 
-A read that fails all fifteen tries ends the wait with exit 7, the reason naming the request, the count
-and the last failure (`Get "https://api.github.com/repos/giantswarm/devctl/pulls/2360": failed 15 times in
-a row: 500 Internal Server Error`). A 4xx is an answer and is never retried, nor is a certificate the
-client refuses or a host that does not exist; only reads (GET, HEAD) are retried.
+A read that fails all fifteen tries says nothing about the head either: the poll is unanswered, a
+warning names it (`poll 3 went unanswered: Get "https://api.github.com/repos/giantswarm/devctl/pulls/2360":
+failed 15 times in a row: 500 Internal Server Error`) and the wait polls again at the next interval. An
+outage shorter than the timeout ends in the head's verdict; one that outlasts it is exit 2, the reason
+adding that the head is unknown, not failed, and the last unanswered read. A 4xx is an answer and is never
+retried, nor is a certificate the client refuses or a host that does not exist; only reads (GET, HEAD) are
+retried.
+
+The wait reads nothing from stdin and ignores SIGHUP: a wait whose terminal goes away (a closed terminal
+or SSH session, a harness that moves it to the background) keeps waiting and ends with the verdict.
 
 A spent budget is not an outcome either. The GitHub budget belongs to the person, so other tools and
 waits of the same person can spend it while a wait runs; a read GitHub refuses with `403` or `429` and
@@ -190,7 +196,7 @@ reset`). Any other `403` is an answer: a permission the token lacks.
 
 | Field | Meaning |
 |---|---|
-| `command`, `schemaVersion`, `exitCode`, `verdict`, `reason`, `warnings`, `startedAt`, `finishedAt` | The envelope every agent-facing command prints. `verdict` is `green`, `red`, `timeout`, `not_applicable`, `required_missing`, `approval_required`, `auth_required` or `usage`; `reason` is one sentence for anything but green; `warnings` carries the CircleCI token's expiry notice, a head change, a CircleCI project missing or never built, each retried read (Polling). |
+| `command`, `schemaVersion`, `exitCode`, `verdict`, `reason`, `warnings`, `startedAt`, `finishedAt` | The envelope every agent-facing command prints. `verdict` is `green`, `red`, `timeout`, `not_applicable`, `required_missing`, `approval_required`, `auth_required` or `usage`; `reason` is one sentence for anything but green; `warnings` carries the CircleCI token's expiry notice, a head change, a CircleCI project missing or never built, each retried read and each unanswered poll (Polling). |
 | `repository`, `number` | The pull request as given. |
 | `identity` | Who read GitHub: `app`, the devctl App login (giantswarm), or `gh`, your own `gh` login (every other owner); empty when the run ended before choosing. |
 | `headSha`, `baseRef` | The head commit judged and the base branch whose protection was read. |
@@ -210,7 +216,7 @@ reset`). Any other `403` is an answer: a permission the token lacks.
 | 3 | `not_applicable` | Draft, closed, merged, conflicting or behind a strict base; `reason` says which. |
 | 4 | `required_missing` | Every check, run and workflow of the head has finished and a required status context never reported; `reason` names it. Known at the poll that saw it, before the timeout; with anything still pending the outcome is 2, not 4. |
 | 4 | `approval_required` | Nothing is red and the head waits only for GitHub Actions runs awaiting a repository member's approval (and the required contexts they may report); `reason` names each run with its URL. Known at the poll that saw it; approve the runs and wait again. |
-| 7 | `usage` | Wrong arguments or flags, a newer devctl released (the reason names `devctl version update`), or a tooling failure: GitHub or CircleCI answered with an error other than a 5xx, or a read failed eight tries in a row (Polling). |
+| 7 | `usage` | Wrong arguments or flags, a newer devctl released (the reason names `devctl version update`), or a tooling failure: GitHub or CircleCI answered with an error other than a 5xx. A read that fails every try is no tooling failure: the wait polls again (Polling). |
 | 8 | `auth_required` | No usable token; `reason` names the `devctl auth login` to run. |
 
 ## Environment

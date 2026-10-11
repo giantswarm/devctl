@@ -42,6 +42,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `pr wait`: a read GitHub or CircleCI leaves unanswered through every retry (about ten minutes of an outage) no
+  longer ends the wait with exit 7 and the checks of a head still pending. The poll is a warning and the wait polls
+  again: an outage shorter than the timeout ends in the head's verdict, a longer one in exit 2 whose reason says the
+  head is unknown, not failed. The wait ignores SIGHUP, so one whose terminal goes away keeps waiting and ends with
+  the verdict; it reads nothing from stdin.
 - `pr merge`: an API outage after the merge no longer reads as "nothing confirmed". The release wait reads a CircleCI
   pipeline listing that goes unanswered again at the next poll instead of ending, so an outage shorter than
   `--release-timeout` ends at exit 0 once the release is confirmed; one that outlasts it is exit 9 whose reason says

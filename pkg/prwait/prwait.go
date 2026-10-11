@@ -167,11 +167,14 @@ func (w *Waiter) Wait(ctx context.Context, owner, repo string, number int) (*Res
 
 	h := &head{}
 	var last *evaluation
+	// unanswered is the last poll's read that went unanswered, empty once a
+	// poll completes again.
+	var unanswered string
 	for poll := 1; ; poll++ {
 		e, err := w.poll(ctx, owner, repo, number, h, result)
 		if err != nil {
 			if ctx.Err() != nil && errors.Is(err, ctx.Err()) {
-				return result, w.timedOut(result, last)
+				return result, w.timedOut(result, last, unanswered)
 			}
 			// A rate limit resetting after the deadline is a timeout ahead
 			// of it: the document names what was unfinished all the same.
@@ -179,9 +182,23 @@ func (w *Waiter) Wait(ctx context.Context, owner, repo string, number int) (*Res
 			if errors.As(err, &limited) {
 				result.Unfinished = unfinished(last)
 			}
-			return result, err
+			// A read that failed every try, in transit or with a 5xx, says
+			// nothing about the head: the wait polls again until its
+			// deadline instead of ending as a tooling failure.
+			var exhausted *agentcli.RetriesExhaustedError
+			if !errors.As(err, &exhausted) {
+				return result, err
+			}
+			unanswered = err.Error()
+			result.Warnings = append(result.Warnings, fmt.Sprintf("poll %d went unanswered: %s", poll, unanswered))
+			interval := w.interval()
+			w.progress.Printf("poll %d: unanswered (%s); next poll in %s", poll, unanswered, interval)
+			if err := w.clock.Sleep(ctx, interval); err != nil {
+				return result, w.timedOut(result, last, unanswered)
+			}
+			continue
 		}
-		last = e
+		last, unanswered = e, ""
 		switch {
 		case e.green():
 			w.progress.Printf("poll %d: green", poll)
@@ -204,21 +221,26 @@ func (w *Waiter) Wait(ctx context.Context, owner, repo string, number int) (*Res
 		w.progress.Printf("poll %d: waiting for %s; next poll in %s", poll, strings.Join(e.unfinished, ", "), interval)
 		w.progress.Waiting(w.clock.Now(), strings.Join(e.unfinished, ", "))
 		if err := w.clock.Sleep(ctx, interval); err != nil {
-			return result, w.timedOut(result, last)
+			return result, w.timedOut(result, last, "")
 		}
 	}
 }
 
 // timedOut is the verdict at the deadline, 2: the result names what was
-// unfinished, a required context still absent among it. A head settled with
-// an absent context never reaches the deadline; neverReported ends it first.
-func (w *Waiter) timedOut(result *Result, last *evaluation) error {
+// unfinished, a required context still absent among it, and the reason the
+// read the last poll could not get answered. A head settled with an absent
+// context never reaches the deadline; neverReported ends it first.
+func (w *Waiter) timedOut(result *Result, last *evaluation, unanswered string) error {
 	result.Unfinished = unfinished(last)
+	suffix := ""
+	if unanswered != "" {
+		suffix = "; the head is unknown, not failed: the last poll went unanswered: " + unanswered
+	}
 	if last == nil {
-		return agentcli.NewExitError(agentcli.ExitTimeout, agentcli.VerdictTimeout, "timeout after %s before the first poll completed", w.timeout)
+		return agentcli.NewExitError(agentcli.ExitTimeout, agentcli.VerdictTimeout, "timeout after %s before the first poll completed%s", w.timeout, suffix)
 	}
 	return agentcli.NewExitError(agentcli.ExitTimeout, agentcli.VerdictTimeout,
-		"timeout after %s; unfinished: %s", w.timeout, strings.Join(last.unfinished, ", "))
+		"timeout after %s; unfinished: %s%s", w.timeout, strings.Join(last.unfinished, ", "), suffix)
 }
 
 // unfinished is what the last complete poll was waiting for, or that none

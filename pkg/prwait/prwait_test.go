@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -102,6 +103,13 @@ type harness struct {
 // client is available (the token is missing).
 func start(t *testing.T, gh, cc sequence.Routes, circleci bool, timeout time.Duration) *harness {
 	t.Helper()
+	return startWith(t, gh, cc, circleci, timeout, nil)
+}
+
+// startWith is start with the GitHub client's transport; nil sends every
+// request once.
+func startWith(t *testing.T, gh, cc sequence.Routes, circleci bool, timeout time.Duration, transport http.RoundTripper) *harness {
+	t.Helper()
 	ghServer, err := githubmock.Start(gh)
 	if err != nil {
 		t.Fatal(err)
@@ -115,7 +123,7 @@ func start(t *testing.T, gh, cc sequence.Routes, circleci bool, timeout time.Dur
 
 	logger := logrus.New()
 	logger.SetOutput(io.Discard)
-	client, cond, err := githubclient.NewConditional(githubclient.Config{Logger: logger, AccessToken: "ghu_test", BaseURL: ghServer.URL})
+	client, cond, err := githubclient.NewConditional(githubclient.Config{Logger: logger, AccessToken: "ghu_test", BaseURL: ghServer.URL, Transport: transport})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -688,5 +696,44 @@ func Test_Wait_toolingErrorIsNotAVerdict(t *testing.T) {
 	var coder agentcli.ExitCoder
 	if err == nil || errors.As(err, &coder) {
 		t.Fatalf("want a plain error (exit 7 in the envelope), got %v", err)
+	}
+}
+
+// retryingOnce sends a read twice before it counts as unanswered, at the
+// harness's scale.
+func retryingOnce() *agentcli.Retrying {
+	return &agentcli.Retrying{Clock: agentcli.NewClock(0.001, nil), Attempts: 2}
+}
+
+func Test_Wait_unansweredPollIsNotAVerdict(t *testing.T) {
+	gh := gitHubGreen()
+	unavailable := sequence.Response{Status: 503, Body: map[string]any{"message": "unavailable"}}
+	gh[runsPath] = []sequence.Response{checkRuns(run("go-build", "in_progress", "")), unavailable, unavailable, checkRuns(run("go-build", "completed", "success"))}
+	h := startWith(t, gh, sequence.Routes{}, false, 2*time.Minute, retryingOnce())
+	result, err := h.waiter.Wait(context.Background(), "o", "r", 42)
+	if err != nil {
+		t.Fatalf("want green after the unanswered poll, got exit %d: %v", exitCode(err), err)
+	}
+	if len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0], "poll 2 went unanswered") || !strings.Contains(result.Warnings[0], "failed 2 times in a row: 503") {
+		t.Errorf("want one warning naming the unanswered poll, got %q", result.Warnings)
+	}
+	if !strings.Contains(h.progress.String(), "poll 3: green") {
+		t.Errorf("want the third poll green:\n%s", h.progress.String())
+	}
+}
+
+func Test_Wait_unansweredUntilTheDeadlineIsATimeout(t *testing.T) {
+	gh := gitHubGreen()
+	gh[runsPath] = []sequence.Response{checkRuns(run("go-build", "in_progress", "")), {Status: 503, Body: map[string]any{"message": "unavailable"}}}
+	h := startWith(t, gh, sequence.Routes{}, false, 2*time.Minute, retryingOnce())
+	result, err := h.waiter.Wait(context.Background(), "o", "r", 42)
+	if exitCode(err) != agentcli.ExitTimeout {
+		t.Fatalf("want exit 2, got exit %d: %v", exitCode(err), err)
+	}
+	if !strings.Contains(err.Error(), "unfinished: check go-build (in_progress)") || !strings.Contains(err.Error(), "the head is unknown, not failed: the last poll went unanswered") {
+		t.Errorf("want the reason to name the unfinished check and the unanswered poll, got %q", err)
+	}
+	if diff := cmp.Diff([]string{"check go-build (in_progress)"}, result.Unfinished); diff != "" {
+		t.Errorf("unfinished (-want +got):\n%s", diff)
 	}
 }
