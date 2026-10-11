@@ -15,14 +15,14 @@ own shell and never enters an agent session.
 |---|---|
 | `auth exec` and the `gh` link | the App login; `gh` on a repository of an owner the App is not installed on keeps your own `gh` login |
 | `deploy`, `pr approve-align`, `pr approve-merge-renovate`, `release create`, `release promote`, `repo create` | the App login; a token in the environment overrides it |
-| the version check that precedes every command, `version check`, `version update`, `repo validate` | the same, optional and looked up only when GitHub is asked (never while the one-hour version cache is fresh): without one a public read is anonymous (`repo validate`: the embedded schema, repository names unchecked) |
+| the version check that precedes every command, `version check`, `version update`, `repo validate --local` | the same, optional and looked up only when GitHub is asked (never while the one-hour version cache is fresh): without one a public read is anonymous (`repo validate --local`: the embedded schema, repository names unchecked) |
 | `pr wait`, `pr merge`, `pr rerun` | the App login for giantswarm; your own `gh` login (`gh auth token`) for every other owner; never a token in the environment |
 | `release wait`, `rollout wait` | the App login only (`rollout wait` reads the installation with your kube context) |
 | `release rerun` | none while a workflow is rerun; to redeliver the push webhook of a pipeline without a workflow, the identity `pr rerun` uses |
 | `ci jobs`, `ci rerun` | none: they read CircleCI alone (`ci rerun` writes with the Write login) |
 | `repo setup` (and `repo setup ciwebhooks`, `repo setup renovate`), `repo checks` | your own: `$GITHUB_TOKEN` (`--github-token-envvar`) |
 | `repo reconcile` | the engine's installation token in CI: `$GITHUB_TOKEN` (`--github-token-envvar`) |
-| the other `repo` commands | none: giantswarm-repo-manager acts, reached with the muster token |
+| `repo validate` and the other `repo` commands | none: giantswarm-repo-manager acts, reached with the muster token |
 
 **The default is the App login.** Log in once with `devctl auth login --github-only`; the token refreshes
 itself for six months. A command that needs a token and finds no usable login exits 8 with one sentence

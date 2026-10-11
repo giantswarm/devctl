@@ -25,6 +25,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   refused unless `--cancel` cancels it first and waits for it to read canceled, the recovery of a stuck one. The
   rerun is started, not waited for, and takes the keychain's CircleCI login granted Write access.
 
+### Changed
+
+- `repo validate` asks giantswarm-repo-manager by default, the way the Repositories page and the Repo Manager agent
+  do: the entries named with `--entry` go to its `validate_repository` through your muster endpoint as the
+  declarations being added to the team's file, and the dry run printed is the manager's own -- its engine, the schema
+  on giantswarm/github main, the names checked by its App, the guard notices from your memberships as it reads them,
+  `align: true` and the visibility default written as it writes them. Before, the command validated with devctl's
+  embedded engine and schema, so a declaration it accepted could render differently in the manager, and the output
+  did not say which engine answered. The document now carries `engine` (`manager` with the endpoint and the login,
+  or `local` with the devctl version and why) beside the answer as it came. `--local` runs devctl's own engine as
+  before, and so does CI, where the keychain is never read (the validation check of giantswarm/github runs there);
+  what only the local engine does -- existing mode, `--schema`, `--author` and `--author-team`, another `--owner` --
+  is refused without `--local`, never run locally in the manager's place. Without a usable muster token the error
+  names `devctl auth login --muster-only` and `--local`. See docs/repo.md.
+
 ### Fixed
 
 - `pr wait` and `pr merge`: every run of a check name counts. The jobs of a matrix, or of several workflows calling

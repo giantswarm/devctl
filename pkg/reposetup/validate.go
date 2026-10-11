@@ -183,7 +183,7 @@ func (v Validator) Validate(ctx context.Context, req Request) (*Result, error) {
 		return nil, microerror.Maskf(invalidConfigError, "%T.Mode %q: want %s or %s", req, req.Mode, ModeCreate, ModeExisting)
 	}
 
-	entries, err := selectEntries(req.TeamFile, req.Names)
+	entries, err := SelectEntries(req.TeamFile, req.Names)
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}
@@ -211,8 +211,9 @@ func (v Validator) Validate(ctx context.Context, req Request) (*Result, error) {
 	return result, nil
 }
 
-// selectEntries picks the named entries in request order, or every entry.
-func selectEntries(tf *TeamFile, names []string) ([]Declaration, error) {
+// SelectEntries picks the named entries in request order, or every entry
+// when names is nil; a name the file has no entry for is [IsEntryNotFound].
+func SelectEntries(tf *TeamFile, names []string) ([]Declaration, error) {
 	if names == nil {
 		return tf.Entries, nil
 	}
