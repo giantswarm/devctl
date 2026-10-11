@@ -573,7 +573,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   `webhook present` / `webhook missing` in the `circleci` line when it is set
   ([#2332](https://github.com/giantswarm/devctl/issues/2332)).
 - The `plans` flavour: a team plans repository (versioned PRDs, their companion websites and the
-  plan-workflow agent skills -- cabbage-plans, bumblebee-plans, atlas-plans and the like). An add-on
+  plan-workflow agent skills -- one `<team>-plans` repository per team). An add-on
   flavour declared beside `generic` (`flavours: [generic, plans]`) with `language: generic` and
   `gen.ci.generate: false`; the generators produce nothing extra for it, and `DeriveTemplate` derives
   it the new template `giantswarm/template-plans` (its `{APP-NAME}` and `{TEAM-NAME}` placeholders
