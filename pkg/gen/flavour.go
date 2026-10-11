@@ -82,8 +82,9 @@ func (s FlavourSlice) Contains(f Flavour) bool {
 
 // Generates says whether the generators have anything to produce for the
 // flavours. A fork line carries its upstream's files plus the carried
-// patches: nothing is generated for it, every `devctl gen` leaves it as it
-// is.
+// patches: nothing is generated for it, align-files leaves it as it is; only
+// `devctl gen renovate --flavour fork`, run by hand, writes the renovate.json
+// Renovate needs to scan a GitHub fork.
 func (s FlavourSlice) Generates() bool {
 	return !s.Contains(FlavourFork)
 }

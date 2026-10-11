@@ -3,11 +3,12 @@ package reconcile
 import (
 	"context"
 	"fmt"
-	"regexp"
 	"strings"
 	"time"
 
 	"github.com/google/go-github/v92/github"
+
+	"github.com/giantswarm/devctl/v8/pkg/renovate"
 )
 
 const (
@@ -26,13 +27,9 @@ const (
 	renovateGrace = 24 * time.Hour
 )
 
-// renovateConfigPaths are the configuration files Renovate reads, in its
-// order of precedence.
+// renovateConfigPaths are the configuration files Renovate reads, the
+// generated renovate.json5 first; the first one found is the one reported.
 var renovateConfigPaths = []string{"renovate.json5", "renovate.json", ".github/renovate.json5", ".github/renovate.json", ".renovaterc", ".renovaterc.json"}
-
-// renovateDisabled matches a top-level `enabled: false` of the configuration,
-// JSON or JSON5; one nested in packageRules is indented further.
-var renovateDisabled = regexp.MustCompile(`(?m)^\s{0,2}["']?enabled["']?\s*:\s*false`)
 
 // installationRepositories is a page of GET /user/installations/{id}/repositories.
 type installationRepositories struct {
@@ -110,7 +107,7 @@ func (r *Runner) renovateConfig(ctx context.Context, s *run) (string, bool, erro
 			return "", false, err
 		}
 		if found {
-			return path, renovateDisabled.Match(content), nil
+			return path, renovate.Disables(content), nil
 		}
 	}
 	return "", false, nil

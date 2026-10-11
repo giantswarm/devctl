@@ -9,6 +9,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `gen renovate --flavour fork`: writes the config of a GitHub fork as JSONC into `renovate.json` with
+  `forkProcessing: "enabled"`, the one file and key Renovate's fork check reads; with `renovate.json5` Renovate skipped
+  the fork ("Repository is a fork and not manually configured - skipping"). Every other flavour keeps `renovate.json5`
+  unchanged. A fork line whose config sets `enabled: false` keeps its opt-out, and its `.github/dependabot.yml`, which is
+  upstream's, stays. See docs/gen.md.
 - `repo follow-circleci [owner/]<repo>`: repairs the reconciler's finding `circleci-webhook-missing` without a step in
   CircleCI's UI. It follows the CircleCI project again with the keychain's CircleCI login (an unfollow first when that
   login follows it already), so CircleCI installs its webhook for a GitHub admin's follow, and reads the repository's

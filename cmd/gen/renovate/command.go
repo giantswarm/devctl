@@ -13,12 +13,13 @@ import (
 
 const (
 	name        = "renovate"
-	description = "Generates Renovate config for go and docker dependencies (renovate.json5)."
+	description = "Generates Renovate config for go and docker dependencies (renovate.json5, renovate.json for a fork)."
 	example     = `  devctl gen renovate
   devctl gen renovate --interval "after 9am on thursday"
   devctl gen renovate --language go --circleci-generated
   devctl gen renovate --language go --reviewers team:team-rocket
-  devctl gen renovate --language go --deprecated`
+  devctl gen renovate --language go --deprecated
+  devctl gen renovate --language go --flavour fork`
 )
 
 type Config struct {
