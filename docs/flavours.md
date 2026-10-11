@@ -42,4 +42,4 @@ A repository to be used with GitOps containing kubernetes clusters.
 
 ## `plans`
 
-A team plans repository: versioned PRDs, their companion websites and the plan-workflow agent skills (cabbage-plans, bumblebee-plans, atlas-plans and the like). An add-on flavour, declared beside `generic` (`flavours: [generic, plans]`) with `language: generic` and `gen.ci.generate: false` -- there is no CircleCI for it, the same as `customer`. It derives the template `giantswarm/template-plans`; any other language is refused, the same way language `node` is until its template ships.
+A team plans repository: versioned PRDs, their companion websites and the plan-workflow agent skills (one `<team>-plans` repository per team). An add-on flavour, declared beside `generic` (`flavours: [generic, plans]`) with `language: generic` and `gen.ci.generate: false` -- there is no CircleCI for it, the same as `customer`. It derives the template `giantswarm/template-plans`; any other language is refused, the same way language `node` is until its template ships.
