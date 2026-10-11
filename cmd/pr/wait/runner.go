@@ -16,6 +16,7 @@ import (
 	"github.com/giantswarm/devctl/v8/pkg/circleciclient"
 	"github.com/giantswarm/devctl/v8/pkg/githubclient"
 	"github.com/giantswarm/devctl/v8/pkg/prwait"
+	"github.com/giantswarm/devctl/v8/pkg/releasewait"
 )
 
 const command = "pr wait"
@@ -142,6 +143,7 @@ func (r *runner) wait(ctx context.Context, args []string, doc *document) error {
 				Logger:     logger,
 			})
 		},
+		Entries:        releasewait.TeamFileEntries{GitHub: github.GitHub()},
 		Clock:          clock,
 		Progress:       progress,
 		Timeout:        r.flag.Timeout,

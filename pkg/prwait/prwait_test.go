@@ -17,6 +17,7 @@ import (
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
 	"github.com/giantswarm/devctl/v8/pkg/circleciclient"
 	"github.com/giantswarm/devctl/v8/pkg/githubclient"
+	"github.com/giantswarm/devctl/v8/pkg/reposetup"
 )
 
 const (
@@ -277,16 +278,41 @@ func Test_Wait_noCircleCIProjectIsGitHubAlone(t *testing.T) {
 	}
 }
 
-func Test_Wait_templateRepositoryIsGitHubAlone(t *testing.T) {
-	// A template repository carries .circleci/config.yml for the
-	// repositories created from it and is never built itself: green from
-	// GitHub alone, the warning in the document, and CircleCI never asked.
-	gh := gitHubGreen()
-	gh[pullPath] = []sequence.Response{pull("clean", map[string]any{
+// entries is an EntryFinder over a fixed answer that counts its reads.
+type entries struct {
+	fields *reposetup.Fields
+	err    error
+	reads  int
+}
+
+func (e *entries) FindEntry(context.Context, string, string) (*reposetup.Fields, bool, error) {
+	e.reads++
+	return e.fields, e.fields != nil, e.err
+}
+
+// templateEntry is a team-file entry whose gen.ci.templateContent is the
+// argument.
+func templateEntry(templateContent bool) *reposetup.Fields {
+	return &reposetup.Fields{Name: "r", Gen: &reposetup.GenFields{CI: &reposetup.CIFields{TemplateContent: templateContent}}}
+}
+
+// templatePull is the pull request of a template repository.
+func templatePull() sequence.Response {
+	return pull("clean", map[string]any{
 		"base": map[string]any{"ref": "main", "repo": map[string]any{"full_name": "o/r", "is_template": true}},
-	})}
+	})
+}
+
+func Test_Wait_templateRepositoryDeclaredTemplateContentIsGitHubAlone(t *testing.T) {
+	// A template repository whose entry declares gen.ci.templateContent
+	// carries .circleci/config.yml for the repositories created from it and
+	// is never built itself: green from GitHub alone, the warning in the
+	// document, and CircleCI never asked.
+	gh := gitHubGreen()
+	gh[pullPath] = []sequence.Response{templatePull()}
 	gh[confPath] = []sequence.Response{config}
 	h := start(t, gh, sequence.Routes{}, true, 2*time.Minute)
+	h.waiter.entries = &entries{fields: templateEntry(true)}
 	result, err := h.waiter.Wait(context.Background(), "o", "r", 42)
 	if err != nil {
 		t.Fatalf("want green, got %v", err)
@@ -296,6 +322,94 @@ func Test_Wait_templateRepositoryIsGitHubAlone(t *testing.T) {
 	}
 	if len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0], "template repository") {
 		t.Errorf("want one warning naming the template repository, got %q", result.Warnings)
+	}
+	if n := len(h.circleci.Requests()); n != 0 {
+		t.Errorf("want no CircleCI request, got %d", n)
+	}
+}
+
+func Test_Wait_templateRepositoryWithoutTemplateContentCountsCircleCI(t *testing.T) {
+	// A template repository with its own pipeline: its entry does not
+	// declare gen.ci.templateContent, or no team file declares it. CircleCI
+	// is part of the verdict as for any repository: a red workflow stops
+	// the wait, and no template warning is given.
+	cases := []struct {
+		name    string
+		entries *entries
+	}{
+		{name: "entry without templateContent", entries: &entries{fields: templateEntry(false)}},
+		{name: "entry without gen", entries: &entries{fields: &reposetup.Fields{Name: "r"}}},
+		{name: "not declared", entries: &entries{}},
+		{name: "no entry finder"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			gh := gitHubGreen()
+			gh[pullPath] = []sequence.Response{templatePull()}
+			gh[confPath] = []sequence.Response{config}
+			cc := sequence.Routes{
+				projPath: {project},
+				pipePath: {pipelines},
+				wfPath:   {body(map[string]any{"items": []any{map[string]any{"id": "w1", "name": "go-build-mcp-template", "status": "failed"}}})},
+			}
+			h := start(t, gh, cc, true, 2*time.Minute)
+			if tc.entries != nil {
+				h.waiter.entries = tc.entries
+			}
+			result, err := h.waiter.Wait(context.Background(), "o", "r", 42)
+			if exitCode(err) != agentcli.ExitRed {
+				t.Fatalf("want red from the CircleCI workflow, got %d (%v)", exitCode(err), err)
+			}
+			if !strings.Contains(err.Error(), "go-build-mcp-template") {
+				t.Errorf("want the verdict to name the workflow, got %v", err)
+			}
+			if result.CircleCI == nil || len(result.CircleCI.Workflows) != 1 {
+				t.Errorf("want the workflow in the document, got %+v", result.CircleCI)
+			}
+			if len(result.Warnings) != 0 {
+				t.Errorf("want no warning, got %q", result.Warnings)
+			}
+			if tc.entries != nil && tc.entries.reads != 1 {
+				t.Errorf("want the entry read once, got %d", tc.entries.reads)
+			}
+		})
+	}
+}
+
+func Test_Wait_nonTemplateRepositoryReadsNoEntry(t *testing.T) {
+	// A repository that is not a template is judged as before; its entry is
+	// never read, even one declaring gen.ci.templateContent.
+	gh := gitHubGreen()
+	gh[confPath] = []sequence.Response{config}
+	cc := sequence.Routes{
+		projPath: {project},
+		pipePath: {pipelines},
+		wfPath:   {body(map[string]any{"items": []any{map[string]any{"id": "w1", "name": "build", "status": "success"}}})},
+	}
+	h := start(t, gh, cc, true, 2*time.Minute)
+	finder := &entries{fields: templateEntry(true)}
+	h.waiter.entries = finder
+	result, err := h.waiter.Wait(context.Background(), "o", "r", 42)
+	if err != nil {
+		t.Fatalf("want green, got %v", err)
+	}
+	if result.CircleCI == nil || len(result.CircleCI.Workflows) != 1 {
+		t.Errorf("want the workflow in the document, got %+v", result.CircleCI)
+	}
+	if finder.reads != 0 {
+		t.Errorf("want no entry read, got %d", finder.reads)
+	}
+}
+
+func Test_Wait_templateEntryReadFailureIsAToolingFailure(t *testing.T) {
+	gh := gitHubGreen()
+	gh[pullPath] = []sequence.Response{templatePull()}
+	gh[confPath] = []sequence.Response{config}
+	h := start(t, gh, sequence.Routes{}, true, 2*time.Minute)
+	h.waiter.entries = &entries{err: errors.New("team files unreadable")}
+	_, err := h.waiter.Wait(context.Background(), "o", "r", 42)
+	if err == nil || !strings.Contains(err.Error(), "team files unreadable") {
+		t.Fatalf("want the entry read's error, got %v", err)
 	}
 	if n := len(h.circleci.Requests()); n != 0 {
 		t.Errorf("want no CircleCI request, got %d", n)

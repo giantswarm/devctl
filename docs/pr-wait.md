@@ -97,9 +97,11 @@ the wait to the new head and adds a warning to the document.
 CircleCI is part of the verdict when the head carries `.circleci/config.yml` and CircleCI has a
 project for the repository. A repository without the file, an upstream fork being contributed to,
 is judged from GitHub alone and needs only the GitHub token; so is, with a warning in the document,
-a template repository (`is_template` on GitHub), which carries the configuration for the
-repositories created from it and is never built itself, and a repository CircleCI knows no project
-for. Whether the project has run a pipeline before does not decide it: the head's own pipeline may
+a template repository (`is_template` on GitHub) whose team-file entry in giantswarm/github declares
+`gen.ci.templateContent: true`, which carries the configuration for the repositories created from it
+and is never built itself, and a repository CircleCI knows no project for. A template without that
+declaration carries its own pipeline and is judged like any repository, as the reconciler judges it;
+the entry is read only for a template whose head carries `.circleci/config.yml`. Whether the project has run a pipeline before does not decide it: the head's own pipeline may
 be the project's first (a new repository's first pull request), and until it appears the head is
 unfinished (`circleci pipeline for <sha> (absent)`), not green from GitHub alone. A pull request
 from a fork of a CircleCI-built repository is looked up under the branch CircleCI gives it,

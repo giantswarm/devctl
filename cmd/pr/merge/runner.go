@@ -200,6 +200,10 @@ func (r *runner) merge(ctx context.Context, args []string, doc *document) error 
 		return circleci, err
 	}
 
+	// The team files decide both whether a template repository's head is
+	// judged from GitHub alone and what its release publishes.
+	entries := releasewait.TeamFileEntries{GitHub: github.GitHub()}
+
 	var release prmerge.ReleaseWait
 	if !r.flag.NoReleaseWait {
 		release = func(ctx context.Context, owner, repo string, number int, mergeCommitSHA string, result *releasewait.Result) error {
@@ -210,7 +214,7 @@ func (r *runner) merge(ctx context.Context, args []string, doc *document) error 
 				MergeCommitSHA: mergeCommitSHA,
 				Timeout:        r.flag.ReleaseTimeout,
 				GitHub:         github,
-				Entries:        releasewait.TeamFileEntries{GitHub: github.GitHub()},
+				Entries:        entries,
 				CircleCI: func(ctx context.Context) (releasewait.CircleCI, error) {
 					client, err := openCircleCI(ctx)
 					if err != nil {
@@ -237,6 +241,7 @@ func (r *runner) merge(ctx context.Context, args []string, doc *document) error 
 			GitHub:         github,
 			Rate:           conditional,
 			CircleCI:       openCircleCI,
+			Entries:        entries,
 			Clock:          clock,
 			Progress:       progress,
 			Timeout:        r.flag.Timeout,

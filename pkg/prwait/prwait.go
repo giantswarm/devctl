@@ -21,6 +21,7 @@ import (
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
 	"github.com/giantswarm/devctl/v8/pkg/circleciclient"
 	"github.com/giantswarm/devctl/v8/pkg/githubclient"
+	"github.com/giantswarm/devctl/v8/pkg/reposetup"
 )
 
 // DefaultTimeout bounds a wait whose caller names none.
@@ -35,6 +36,12 @@ type RateSource interface {
 	Rate() githubclient.RateLimit
 }
 
+// EntryFinder finds a repository's declaration in the team files; found
+// false when no team file declares it.
+type EntryFinder interface {
+	FindEntry(ctx context.Context, owner, repo string) (*reposetup.Fields, bool, error)
+}
+
 // Config configures a Waiter.
 type Config struct {
 	// GitHub is required. From [githubclient.NewConditional] its polls are
@@ -47,6 +54,10 @@ type Config struct {
 	// [agentcli.ExitCoder] it returns ends the wait with that code. nil
 	// means CircleCI is never consulted.
 	CircleCI func(ctx context.Context) (*circleciclient.Client, error)
+	// Entries is read only for a template repository whose head carries
+	// CircleCIConfigPath: GitHub alone judges it while its entry declares
+	// gen.ci.templateContent. nil means no repository declares it.
+	Entries EntryFinder
 	// Clock defaults to the wall clock at scale 1.
 	Clock agentcli.Clock
 	// Progress may be nil.
@@ -64,6 +75,7 @@ type Waiter struct {
 	github   *githubclient.Client
 	rate     RateSource
 	circleci func(ctx context.Context) (*circleciclient.Client, error)
+	entries  EntryFinder
 	clock    agentcli.Clock
 	progress *agentcli.Progress
 	timeout  time.Duration
@@ -86,6 +98,7 @@ func New(config Config) (*Waiter, error) {
 		github:   config.GitHub,
 		rate:     config.Rate,
 		circleci: config.CircleCI,
+		entries:  config.Entries,
 		clock:    config.Clock,
 		progress: config.Progress,
 		timeout:  config.Timeout,
@@ -103,7 +116,8 @@ type Result struct {
 	// Checks are the head's check runs and statuses, the latest per name.
 	Checks []Check `json:"checks"`
 	// CircleCI is absent when the head carries no CircleCI configuration, the
-	// repository is a template or CircleCI has no project for it.
+	// repository is a template whose entry declares that configuration as
+	// template content, or CircleCI has no project for it.
 	CircleCI *CircleCI `json:"circleci,omitempty"`
 	// Actions are the head's GitHub Actions runs, the latest per workflow.
 	Actions []ActionRun `json:"actions"`
@@ -282,12 +296,14 @@ func (w *Waiter) poll(ctx context.Context, owner, repo string, number int, h *he
 
 // decideCircleCI settles whether CircleCI is part of this head's verdict: it
 // is when the head carries CircleCIConfigPath and CircleCI has a project for
-// the repository, unless the repository is a template, which carries the
-// configuration for the repositories created from it without ever being
-// built itself. Whether the project has run a pipeline before does not
-// decide it: the head's own may be the project's first, and judging the
-// head from GitHub alone until it appeared would call a head green whose
-// pipeline has not started. The token is required only past the first
+// the repository, unless the repository is a template whose team-file entry
+// declares gen.ci.templateContent: that configuration is for the
+// repositories created from it, and the template is never built itself. A
+// template without the declaration carries its own pipeline and is judged
+// like any repository, as the reconciler judges it. Whether the project has
+// run a pipeline before does not decide it: the head's own may be the
+// project's first, and judging the head from GitHub alone until it appeared
+// would call a head green whose pipeline has not started. The token is required only past the first
 // condition, so a repository without CircleCI needs GitHub alone.
 func (w *Waiter) decideCircleCI(ctx context.Context, owner, repo string, number int, headRef string, fork, template bool, h *head, result *Result) error {
 	h.decided = true
@@ -303,9 +319,16 @@ func (w *Waiter) decideCircleCI(ctx context.Context, owner, repo string, number 
 		return nil
 	}
 	if template {
-		result.Warnings = append(result.Warnings, fmt.Sprintf("%s/%s is a template repository: its %s is for the repositories created from it, GitHub alone", owner, repo, CircleCIConfigPath))
-		w.progress.Printf("%s/%s is a template repository: GitHub alone", owner, repo)
-		return nil
+		declared, err := w.templateContent(ctx, owner, repo)
+		if err != nil {
+			return err
+		}
+		if declared {
+			result.Warnings = append(result.Warnings, fmt.Sprintf("%s/%s is a template repository: its %s is for the repositories created from it (gen.ci.templateContent), GitHub alone", owner, repo, CircleCIConfigPath))
+			w.progress.Printf("%s/%s is a template repository: GitHub alone", owner, repo)
+			return nil
+		}
+		w.progress.Printf("%s/%s is a template repository with its own pipeline (no gen.ci.templateContent)", owner, repo)
 	}
 	client, err := w.circleci(ctx)
 	if err != nil {
@@ -324,6 +347,19 @@ func (w *Waiter) decideCircleCI(ctx context.Context, owner, repo string, number 
 	h.branch = circleciclient.PullRequestBranch(headRef, fork, number)
 	w.progress.Printf("CircleCI project %s, branch %s", h.project, h.branch)
 	return nil
+}
+
+// templateContent reports whether the repository's team-file entry declares
+// its CircleCIConfigPath as template content (gen.ci.templateContent).
+func (w *Waiter) templateContent(ctx context.Context, owner, repo string) (bool, error) {
+	if w.entries == nil {
+		return false, nil
+	}
+	fields, found, err := w.entries.FindEntry(ctx, owner, repo)
+	if err != nil {
+		return false, fmt.Errorf("reading the team-file entry of %s/%s: %w", owner, repo, err)
+	}
+	return found && fields.Gen != nil && fields.Gen.CI != nil && fields.Gen.CI.TemplateContent, nil
 }
 
 // readCircleCI finds the newest pipeline of the head revision on the head's

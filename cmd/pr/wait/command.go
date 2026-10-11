@@ -32,9 +32,11 @@ so do Actions runs awaiting a member's approval when nothing else is pending.
 
 CircleCI is consulted when the head carries .circleci/config.yml and CircleCI
 builds the repository: it has a project there with at least one pipeline. A
-repository without either (an upstream fork; a template repository whose
-configuration is for the repositories created from it) is judged from GitHub
-alone. Tokens come from the keychain (` + "`devctl auth login`" + `); the CircleCI token is
+repository without either (an upstream fork) is judged from GitHub alone, and
+so is a template repository whose team-file entry in giantswarm/github declares
+gen.ci.templateContent: its configuration is for the repositories created from
+it. A template without that declaration carries its own pipeline and is judged
+like any repository. Tokens come from the keychain (` + "`devctl auth login`" + `); the CircleCI token is
 required only when CircleCI is consulted. The GitHub identity follows the owner: the devctl App login for giantswarm,
 where the App is installed, your own gh login (gh auth token) for every other
 owner; the document's identity says which ("app" or "gh").

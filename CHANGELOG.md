@@ -27,6 +27,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `pr wait` and `pr merge`: a template repository is judged from GitHub alone only while its team-file entry declares
+  `gen.ci.templateContent: true`, as the reconciler judges it. A template with its own pipeline (the field left out)
+  is judged like any repository: its CircleCI workflow is waited for, a failed one is red, and no template warning is
+  given; before, every template repository was judged from GitHub alone.
 - `repo reconcile` settings step: a declared default branch the repository already carries (a fork line's consumed
   branch beside the upstream mirror's `main`) becomes the default branch as it is, and the old default stays; the step
   renamed the old default onto it, which GitHub refuses with 422 "New branch already exists". A declared branch the
