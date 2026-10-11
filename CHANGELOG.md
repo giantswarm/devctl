@@ -24,6 +24,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   is refused (exit 5) naming it and when the hour ends, so no agent loops on a rerun. A workflow still running is
   refused unless `--cancel` cancels it first and waits for it to read canceled, the recovery of a stuck one. The
   rerun is started, not waited for, and takes the keychain's CircleCI login granted Write access.
+- The repository set-up engine's step `labels`, after `metadata`: every declared repository carries its owning team's
+  issue label `team/<team>` (`team-bumblebee` → `team/bumblebee`), so an issue the team files there joins the team's
+  cross-repository view. A check (`repo status`, the manager's inventory) reports a missing label as drift, a repair
+  (`repo reconcile`, `repo align`) creates it in the default colour `ededed`; an existing label is left as it is,
+  whatever its colour and description. A converged check costs one request more (twenty-three).
 
 ### Changed
 
