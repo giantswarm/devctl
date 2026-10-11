@@ -23,6 +23,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `repo reconcile` settings step: a declared default branch the repository already carries (a fork line's consumed
+  branch beside the upstream mirror's `main`) becomes the default branch as it is, and the old default stays; the step
+  renamed the old default onto it, which GitHub refuses with 422 "New branch already exists". A declared branch the
+  repository lacks is still the old default renamed.
 - `pr rerun`, `release rerun`: the examples in `--help` and docs/pr-rerun.md name `beekeeper gate` by its bare
   name; they carried an absolute path of one machine.
 - `pr wait`, `release wait` and the commands that wait the same way (`pr merge`, `rollout wait`): a

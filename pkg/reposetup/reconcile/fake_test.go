@@ -285,6 +285,14 @@ func (r *fakeRepo) forkLine() *fakeRepo {
 	return r
 }
 
+// hasBranch says whether the repository carries the branch: its default, one
+// with files of its own or one with a head commit.
+func (r *fakeRepo) hasBranch(branch string) bool {
+	_, files := r.branchFiles[branch]
+	_, head := r.heads[branch]
+	return branch == r.defaultBranch || files || head
+}
+
 func (f *fakeGitHub) addRepo(owner, name string) *fakeRepo {
 	r := &fakeRepo{
 		owner: owner, name: name,
@@ -545,6 +553,16 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 		}
 		if v, ok := in["description"].(string); ok {
 			repo.description = v
+		}
+		if v, ok := in["default_branch"].(string); ok {
+			if !repo.hasBranch(v) {
+				writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"message": "Validation Failed"})
+				return
+			}
+			if _, ok := repo.heads[repo.defaultBranch]; !ok && v != repo.defaultBranch {
+				repo.heads[repo.defaultBranch] = "head" // the old default stays a branch
+			}
+			repo.defaultBranch = v
 		}
 		writeJSON(w, 200, repo.toGitHub())
 	}))
@@ -836,10 +854,21 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 			NewName string `json:"new_name"`
 		}
 		decode(r, &in)
+		if repo.hasBranch(in.NewName) {
+			writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"message": "Validation Failed", "errors": []map[string]string{{"message": "New branch already exists"}}})
+			return
+		}
 		if r.PathValue("branch") == repo.defaultBranch {
 			repo.defaultBranch = in.NewName
 		}
 		writeJSON(w, 201, map[string]any{"name": in.NewName})
+	}))
+	mux.HandleFunc("GET /repos/{owner}/{repo}/branches/{branch}", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		if !repo.hasBranch(r.PathValue("branch")) {
+			notFound(w, "Branch not found")
+			return
+		}
+		writeJSON(w, 200, map[string]any{"name": r.PathValue("branch")})
 	}))
 	mux.HandleFunc("GET /repos/{owner}/{repo}/branches/{branch}/protection", f.withRepo(func(w http.ResponseWriter, _ *http.Request, repo *fakeRepo) {
 		p := repo.protection
