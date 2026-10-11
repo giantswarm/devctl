@@ -22,11 +22,21 @@ const (
 	statusPending   = "pending"
 )
 
-// Check is one check of the head as the merge box lists it: a check run (the
-// latest run of that name) or a commit status (the latest of that context).
+// Check is one check of the head as the merge box lists it: a check run or a
+// commit status (the latest of that context). Every run of a check name
+// counts: the jobs of a matrix, or of several workflows calling one reusable
+// workflow, report under one name, and each is listed with its own ID. Of one
+// workflow run several times for the head (a title check after a retitle),
+// the newest run's jobs count.
 type Check struct {
-	Name   string `json:"name"`
-	Source string `json:"source"`
+	Name string `json:"name"`
+	// ID is the check run's id, the job id of a GitHub Actions job; absent
+	// for a status.
+	ID int64 `json:"id,omitempty"`
+	// Workflow is the GitHub Actions run the check run's job belongs to, when
+	// the head's runs list it.
+	Workflow string `json:"workflow,omitempty"`
+	Source   string `json:"source"`
 	// Status is queued, in_progress or completed for a check run; pending or
 	// completed for a status.
 	Status string `json:"status"`
@@ -132,8 +142,9 @@ func (e *evaluation) approvalReason() string {
 
 // evaluate applies the green rules to a snapshot:
 //
-//  1. every check run and commit status of the head, the latest per name,
-//     is completed and not failed; a completed run that needs a human
+//  1. every check run of the head (each run of a name, of a workflow its
+//     newest run) and every commit status (the latest per context) is
+//     completed and not failed; a completed run that needs a human
 //     (action_required) still waits;
 //  2. when CircleCI is consulted, the newest pipeline of the head revision
 //     exists and is past its setup (a setup pipeline's continuation created,
@@ -160,28 +171,36 @@ func evaluate(s snapshot) *evaluation {
 	}
 	reported := map[string]bool{}
 
-	for _, run := range latestCheckRuns(s.checkRuns) {
-		name := run.GetName()
+	checkRuns := currentCheckRuns(s.checkRuns, s.runs)
+	runsOfName := map[string]int{}
+	for _, c := range checkRuns {
+		runsOfName[c.run.GetName()]++
+	}
+	for _, c := range checkRuns {
+		name := c.run.GetName()
 		reported[name] = true
 		check := Check{
 			Name:       name,
+			ID:         c.run.GetID(),
+			Workflow:   c.workflow.GetName(),
 			Source:     SourceCheckRun,
-			Status:     run.GetStatus(),
-			Conclusion: run.GetConclusion(),
-			URL:        run.GetHTMLURL(),
+			Status:     c.run.GetStatus(),
+			Conclusion: c.run.GetConclusion(),
+			URL:        c.run.GetHTMLURL(),
 			Required:   required[name],
 		}
 		e.checks = append(e.checks, check)
+		label := check.label(runsOfName[name] > 1)
 		switch {
 		case check.Status != statusCompleted:
-			e.unfinished = append(e.unfinished, fmt.Sprintf("check %s (%s)", name, check.Status))
+			e.unfinished = append(e.unfinished, fmt.Sprintf("check %s (%s)", label, check.Status))
 		case check.Conclusion == "action_required":
-			e.unfinished = append(e.unfinished, fmt.Sprintf("check %s (action_required)", name))
+			e.unfinished = append(e.unfinished, fmt.Sprintf("check %s (action_required)", label))
 		case checkRunPassed(check.Conclusion):
 		default:
-			e.red = append(e.red, fmt.Sprintf("check %s concluded %s", name, check.Conclusion))
-			if run.GetApp().GetSlug() == actionsApp {
-				e.failedActionsJobs = append(e.failedActionsJobs, actionsJob{id: run.GetID(), name: name, url: check.URL})
+			e.red = append(e.red, fmt.Sprintf("check %s concluded %s", label, check.Conclusion))
+			if c.run.GetApp().GetSlug() == actionsApp {
+				e.failedActionsJobs = append(e.failedActionsJobs, actionsJob{id: check.ID, name: label, url: check.URL})
 			}
 		}
 	}
@@ -246,9 +265,12 @@ func evaluate(s snapshot) *evaluation {
 		if e.checks[i].Name != e.checks[j].Name {
 			return e.checks[i].Name < e.checks[j].Name
 		}
-		return e.checks[i].Source < e.checks[j].Source
+		if e.checks[i].Source != e.checks[j].Source {
+			return e.checks[i].Source < e.checks[j].Source
+		}
+		return e.checks[i].ID < e.checks[j].ID
 	})
-	sort.Slice(e.actions, func(i, j int) bool { return e.actions[i].Name < e.actions[j].Name })
+	sort.SliceStable(e.actions, func(i, j int) bool { return e.actions[i].Name < e.actions[j].Name })
 	return e
 }
 
@@ -346,20 +368,96 @@ func workflowRunOpen(status string) bool {
 	return false
 }
 
-// latestCheckRuns keeps one run per check name: the one started last, and of
-// two started together the one created later. A rerun replaces a stale run of
-// the same name, which is how the merge box reads a retitled pull request
-// whose title check ran twice.
-func latestCheckRuns(runs []*github.CheckRun) []*github.CheckRun {
-	latest := map[string]*github.CheckRun{}
-	for _, run := range runs {
-		name := run.GetName()
-		current, ok := latest[name]
-		if !ok || newerCheckRun(run, current) {
-			latest[name] = run
+// label names the check in a verdict: its name alone while it is the only
+// run of that name, else with its workflow and id, so the red one of a matrix
+// is told from its green siblings.
+func (c Check) label(shared bool) string {
+	switch {
+	case !shared:
+		return c.Name
+	case c.Workflow != "":
+		return fmt.Sprintf("%s [%s, check run %d]", c.Name, c.Workflow, c.ID)
+	default:
+		return fmt.Sprintf("%s [check run %d]", c.Name, c.ID)
+	}
+}
+
+// headCheckRun is a check run of the head with the GitHub Actions run its job
+// belongs to; workflow is nil for another app's check run, or a job whose
+// run the listing does not carry.
+type headCheckRun struct {
+	run      *github.CheckRun
+	workflow *github.WorkflowRun
+}
+
+// checkRunGroup is the current runs of one check name in one workflow.
+type checkRunGroup struct {
+	workflow *github.WorkflowRun
+	runs     []*github.CheckRun
+}
+
+// currentCheckRuns keeps the check runs that count, sorted by name and id.
+// GitHub's filter=latest already drops the earlier attempts of a rerun job.
+// Check runs are grouped by name and the workflow their job belongs to (the
+// Actions run of their check suite): of a workflow run several times for the
+// head, every run of the name in the newest workflow run counts, which is
+// how the merge box reads a retitled pull request whose title check ran
+// twice, while the jobs of a matrix, or of several workflows calling one
+// reusable workflow, each count. A check run outside a listed workflow run
+// keeps one run per name: the one started last, and of two started together
+// the one created later.
+func currentCheckRuns(runs []*github.CheckRun, workflowRuns []*github.WorkflowRun) []headCheckRun {
+	bySuite := map[int64]*github.WorkflowRun{}
+	for _, run := range workflowRuns {
+		if id := run.GetCheckSuiteID(); id != 0 {
+			bySuite[id] = run
 		}
 	}
-	return sortedByName(latest)
+	groups := map[string]*checkRunGroup{}
+	for _, run := range runs {
+		workflow := bySuite[run.GetCheckSuite().GetID()]
+		key := run.GetName() + "\x00" + workflowKey(workflow)
+		group, ok := groups[key]
+		switch {
+		case !ok:
+			groups[key] = &checkRunGroup{workflow: workflow, runs: []*github.CheckRun{run}}
+		case workflow == nil:
+			if newerCheckRun(run, group.runs[0]) {
+				group.runs[0] = run
+			}
+		case workflow.GetID() == group.workflow.GetID():
+			group.runs = append(group.runs, run)
+		case workflow.GetID() > group.workflow.GetID():
+			group.workflow, group.runs = workflow, []*github.CheckRun{run}
+		}
+	}
+	var current []headCheckRun
+	for _, group := range groups {
+		for _, run := range group.runs {
+			current = append(current, headCheckRun{run: run, workflow: group.workflow})
+		}
+	}
+	sort.Slice(current, func(i, j int) bool {
+		a, b := current[i].run, current[j].run
+		if a.GetName() != b.GetName() {
+			return a.GetName() < b.GetName()
+		}
+		return a.GetID() < b.GetID()
+	})
+	return current
+}
+
+// workflowKey identifies the workflow a run belongs to: its workflow id, the
+// name where the listing carries none; empty for no run.
+func workflowKey(run *github.WorkflowRun) string {
+	switch {
+	case run == nil:
+		return ""
+	case run.GetWorkflowID() != 0:
+		return fmt.Sprintf("id:%d", run.GetWorkflowID())
+	default:
+		return "name:" + run.GetName()
+	}
 }
 
 func newerCheckRun(a, b *github.CheckRun) bool {
@@ -385,19 +483,30 @@ func latestStatuses(statuses []*github.RepoStatus) []*github.RepoStatus {
 	return sortedByName(latest)
 }
 
-// latestWorkflowRuns keeps one run per workflow name, the one with the
-// highest id: a run for the same head created later (a title check run again
-// after the retitle) replaces the stale one.
+// latestWorkflowRuns keeps one run per workflow, the one with the highest id:
+// a run for the same head created later (a title check run again after the
+// retitle) replaces the stale one. Two workflows that share a name are kept
+// apart by their workflow id.
 func latestWorkflowRuns(runs []*github.WorkflowRun) []*github.WorkflowRun {
 	latest := map[string]*github.WorkflowRun{}
 	for _, run := range runs {
-		name := run.GetName()
-		current, ok := latest[name]
+		key := workflowKey(run)
+		current, ok := latest[key]
 		if !ok || run.GetID() > current.GetID() {
-			latest[name] = run
+			latest[key] = run
 		}
 	}
-	return sortedByName(latest)
+	out := make([]*github.WorkflowRun, 0, len(latest))
+	for _, run := range latest {
+		out = append(out, run)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].GetName() != out[j].GetName() {
+			return out[i].GetName() < out[j].GetName()
+		}
+		return out[i].GetID() < out[j].GetID()
+	})
+	return out
 }
 
 // latestWorkflows keeps one workflow per name: the one created last, and of

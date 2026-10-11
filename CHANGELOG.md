@@ -27,6 +27,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `pr wait` and `pr merge`: every run of a check name counts. The jobs of a matrix, or of several workflows calling
+  one reusable workflow, report under one name; before, they collapsed into one entry and the verdict followed the
+  last run reported, so a red job could hide behind a green one. Check runs are now grouped by name and the GitHub
+  Actions workflow their job belongs to, the newest workflow run of a workflow counting (a retitled pull request's
+  title check still reads its newest run); `checks[]` lists each run with its `id` and `workflow`, and the verdict
+  and `--failed-log` name a red run that shares its name by its workflow and check run id. Two workflows sharing a
+  name are no longer folded into one entry of `actions[]`.
 - `pr wait` and `pr merge`: a template repository is judged from GitHub alone only while its team-file entry declares
   `gen.ci.templateContent: true`, as the reconciler judges it. A template with its own pipeline (the field left out)
   is judged like any repository: its CircleCI workflow is waited for, a failed one is red, and no template warning is

@@ -3,7 +3,8 @@
 // request's head is green, red, or cannot become green as it is.
 //
 // Green is the merge box's view, not `gh pr checks`': every check run and
-// commit status of the head (the latest per name), every CircleCI workflow of
+// commit status of the head (every run of a check name, the latest status per
+// context), every CircleCI workflow of
 // the head revision (the newest run per name, read from CircleCI because a job
 // behind `requires:` has posted nothing yet), no GitHub Actions run of the
 // head still queued, running or awaiting approval, and every required status
@@ -113,7 +114,8 @@ type Result struct {
 	Number     int    `json:"number"`
 	HeadSHA    string `json:"headSha"`
 	BaseRef    string `json:"baseRef"`
-	// Checks are the head's check runs and statuses, the latest per name.
+	// Checks are the head's check runs, every run of a name that counts, and
+	// its statuses, the latest per context.
 	Checks []Check `json:"checks"`
 	// CircleCI is absent when the head carries no CircleCI configuration, the
 	// repository is a template whose entry declares that configuration as

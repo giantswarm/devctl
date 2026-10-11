@@ -17,7 +17,7 @@
     "headSha": "abc123",
     "baseRef": "main",
     "checks": [
-      {"name": "bootstrap", "source": "check_run", "status": "completed", "conclusion": "success", "url": "*", "required": false}
+      {"name": "bootstrap", "id": 101, "source": "check_run", "status": "completed", "conclusion": "success", "url": "*", "required": false}
     ],
     "actions": [
       {"name": "template-bootstrap-gate", "runId": 7001, "status": "completed", "conclusion": "success", "url": "*"}
