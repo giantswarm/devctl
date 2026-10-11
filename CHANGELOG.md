@@ -9,6 +9,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `repo follow-circleci [owner/]<repo>`: repairs the reconciler's finding `circleci-webhook-missing` without a step in
+  CircleCI's UI. It follows the CircleCI project again with the keychain's CircleCI login (an unfollow first when that
+  login follows it already), so CircleCI installs its webhook for a GitHub admin's follow, and reads the repository's
+  webhooks until CircleCI's is there; the finding's fix names the command. See docs/repo.md.
 - `ci jobs <owner/repo> <pipeline number|id>`: the job-level view of a CircleCI pipeline, one JSON document: every
   workflow run (reruns included, the newest run of a name marked `latest`) with its jobs, each with its status,
   number, `startedAt`, `stoppedAt` and `durationSeconds`, and for a running job the step it is in with when it
