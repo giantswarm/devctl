@@ -1,6 +1,6 @@
 {
   "exitCode": 0,
-  "stdoutContains": ["/repos/giantswarm/devctl/pulls/42: 403 Forbidden: the core rate limit (5000) is spent until 20", "(try 2 of 8)"],
+  "stdoutContains": ["/repos/giantswarm/devctl/pulls/42: 403 Forbidden: the core rate limit (5000) is spent until 20", "(try 2 of 15)"],
   "json": {
     "command": "pr wait",
     "schemaVersion": 1,

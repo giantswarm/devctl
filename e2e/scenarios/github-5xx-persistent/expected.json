@@ -1,13 +1,13 @@
 {
   "exitCode": 7,
-  "stdoutContains": ["/repos/giantswarm/devctl/pulls/42\\\": failed 8 times in a row: 500 Internal Server Error"],
+  "stdoutContains": ["/repos/giantswarm/devctl/pulls/42\\\": failed 15 times in a row: 500 Internal Server Error"],
   "json": {
     "command": "pr wait",
     "schemaVersion": 1,
     "exitCode": 7,
     "verdict": "usage",
     "reason": "*",
-    "warnings": ["*", "*", "*", "*", "*", "*", "*"],
+    "warnings": ["*", "*", "*", "*", "*", "*", "*", "*", "*", "*", "*", "*", "*", "*"],
     "startedAt": "*",
     "finishedAt": "*",
     "repository": "giantswarm/devctl",
