@@ -121,6 +121,12 @@ Note: The `LANGUAGE` value is not validated currently. `go`, `python` and `node`
 
 The giantswarm/github align-files workflow runs this generator for repositories on devctl-generated CI (with `--circleci-generated`, which disables Renovate's architect-orb updates and extends the ATS preset because `gen circleci` bakes those in) and for the [`customer` flavour](flavours.md#customer) (without it: customer repositories have no CircleCI). Every other repository keeps its hand-maintained `renovate.json5`.
 
+A GitHub fork takes `--flavour fork`. Renovate skips a fork ("Repository is a fork and not manually configured - skipping") unless its default config file, `renovate.json` and never `renovate.json5`, sets `forkProcessing` to `"enabled"` itself; a preset cannot set it. The fork flavour therefore writes the same config as JSONC (comments kept, otherwise strict JSON, which is how Renovate parses `renovate.json`) into `renovate.json` with that key, and removes `renovate.json5`; it leaves `.github/dependabot.yml`, which on a fork line is upstream's, where the other flavours remove it. The fork line's own rules (`enabledManagers`, `customManagers`, `dependencyDashboard`) go into `renovate-custom.json5` as on any other repository. A fork line whose config turns Renovate off (`enabled: false`) keeps it: the command refuses to replace the opt-out, and Renovate skips the fork anyway. align-files generates nothing for a fork line, so the command runs by hand.
+
+```nohighlight
+devctl gen renovate --language go --flavour fork
+```
+
 ## Generating CircleCI configuration
 
 Generates the dynamic-config pipeline of a repository on devctl-generated CI: `.circleci/config.yml` (the static setup workflow, which merges the optional repo-owned `.circleci/custom.yml` in at pipeline runtime) and `.circleci/workflows.yml` (the pipeline), plus the canonical `tests/ats` dependency file of a chart repository. The chart tests themselves -- `.ats/main.yaml` and the Python files under `tests/ats` -- are the repository's own and never generated; app-test-suite picks the pytest executor from the dependency file and refuses a `tests/ats` without a test, so a chart repository carries at least one (`devctl repo create` writes a first smoke test into a new repository's scaffold).

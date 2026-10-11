@@ -36,4 +36,9 @@ type Params struct {
 	// generated-CI presets and before the deprecated preset and the repo-owned
 	// renovate-custom.json5, so both still win over them.
 	Extends []string
+	// Fork says the repository is a GitHub fork. Renovate's fork check reads
+	// only renovate.json and admits the fork only when that file sets
+	// forkProcessing to "enabled" itself, so the config is rendered as JSONC
+	// into renovate.json with that key instead of into renovate.json5.
+	Fork bool
 }
