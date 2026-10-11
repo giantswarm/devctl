@@ -24,6 +24,30 @@ go install github.com/giantswarm/devctl/v7@latest
 
 https://github.com/giantswarm/devctl/releases
 
+### Verifying a release
+
+Every release binary is signed in CircleCI with [cosign](https://github.com/sigstore/cosign) (keyless) and published next to its Sigstore bundle, `<asset>.bundle`. There is no checksums file: the bundle is what a download verifies against. With cosign v2.4 or later:
+
+```bash
+VERSION=v8.128.1        # the release to verify
+ASSET=devctl-linux-amd64 # devctl-{linux,darwin}-{amd64,arm64}, devctl-windows-{amd64,arm64}.exe
+
+curl -fsSLO "https://github.com/giantswarm/devctl/releases/download/${VERSION}/${ASSET}"
+curl -fsSLO "https://github.com/giantswarm/devctl/releases/download/${VERSION}/${ASSET}.bundle"
+
+cosign verify-blob "${ASSET}" \
+  --bundle "${ASSET}.bundle" \
+  --certificate-identity "https://circleci.com/api/v2/projects/8a2733c3-f425-4856-91cd-ca36104ab8eb/pipeline-definitions/e50b2edc-4a9e-5142-9c1b-c5dcda3e15d6" \
+  --certificate-oidc-issuer "https://oidc.circleci.com"
+```
+
+`Verified OK` means the binary was signed by the release pipeline of the giantswarm/devctl CircleCI project:
+
+- **OIDC issuer**: `https://oidc.circleci.com`, CircleCI's OpenID Connect issuer.
+- **Certificate identity**: the CircleCI project and pipeline definition of giantswarm/devctl, `https://circleci.com/api/v2/projects/8a2733c3-f425-4856-91cd-ca36104ab8eb/pipeline-definitions/e50b2edc-4a9e-5142-9c1b-c5dcda3e15d6`. The certificate also records the source repository (`github.com/giantswarm/devctl`) and the release tag (`refs/tags/<version>`).
+
+`devctl version update` does this verification itself: it downloads the bundle published next to this platform's binary and installs the new binary only when the bundle verifies for a CircleCI build of `github.com/giantswarm/devctl` (CircleCI issuer, a CircleCI pipeline-definition identity, and the certificate's source repository pinned to giantswarm/devctl). A release without a bundle, or a binary that does not match its signature, is refused and the installed binary stays as it is.
+
 ## Features
 
 ### Authentication for the agent-facing commands (`devctl auth`)
