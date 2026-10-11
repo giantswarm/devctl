@@ -33,11 +33,14 @@ installation and the read access your `gh` login lacks.
 `pr wait` reads what the merge box reads, and where the merge box has no information yet, the
 system that will produce it:
 
-1. **Every check run and commit status of the head is complete and not failed**, the latest run
-   per name. GitHub keeps every run of a check; a check that ran twice for the same head has a
-   stale first run next to the current one. A pull request retitled after a failed title check
-   has a failed run and a passed run of the same name, and only the newest counts, as in the
-   merge box. A completed run whose conclusion is `action_required` (a deployment waiting for a
+1. **Every check run and commit status of the head is complete and not failed**: every run of a
+   check name, the latest status per context. The jobs of a matrix, or of several workflows
+   calling one reusable workflow, report under one name, and each run must pass: one red job
+   among nine green ones is red, and the verdict names it by its workflow and check run id.
+   GitHub keeps every run of a check; a workflow that ran twice for the same head has a stale
+   first run next to the current one. A pull request retitled after a failed title check has a
+   failed run and a passed run of the same workflow, and only the newest workflow run counts, as
+   in the merge box. A completed run whose conclusion is `action_required` (a deployment waiting for a
    reviewer) is unfinished, not red. `neutral` and `skipped` pass.
 2. **Every CircleCI workflow of the head revision is `success`**, read from CircleCI's API: the
    newest pipeline for the revision, the newest run of each workflow name in it. A CircleCI job
@@ -191,10 +194,10 @@ reset`). Any other `403` is an answer: a permission the token lacks.
 | `repository`, `number` | The pull request as given. |
 | `identity` | Who read GitHub: `app`, the devctl App login (giantswarm), or `gh`, your own `gh` login (every other owner); empty when the run ended before choosing. |
 | `headSha`, `baseRef` | The head commit judged and the base branch whose protection was read. |
-| `checks[]` | The head's check runs and statuses, the latest per name, sorted by name. `source` is `check_run` or `status`; `status` is `queued`, `in_progress` or `completed` for a check run and `pending` or `completed` for a status; `conclusion` is the check run's conclusion or the status's state, empty while unfinished; `required` says whether the base requires this context. |
+| `checks[]` | The head's check runs, every run of a name that counts, and its statuses, the latest per context, sorted by name and id. A check run carries its `id` and, when its job belongs to a GitHub Actions run of the head, its `workflow`. `source` is `check_run` or `status`; `status` is `queued`, `in_progress` or `completed` for a check run and `pending` or `completed` for a status; `conclusion` is the check run's conclusion or the status's state, empty while unfinished; `required` says whether the base requires this context. |
 | `circleci` | Present only when CircleCI was consulted: the newest pipeline of the head revision and its workflows, the newest run per name, sorted by name. |
 | `actions[]` | The head's GitHub Actions runs, the latest per workflow name, sorted by name. |
-| `failedJobs[]` | Present at exit 1 with `--failed-log`: each failed job with `name` (an Actions check run's name, `<workflow>/<job>` on CircleCI), `source` (`actions` or `circleci`), `url`, and `logTail`, the last `--failed-log-lines` lines of its log, or `logError` when the log could not be read. A check run of another app, a commit status and a CircleCI workflow without a failed job are named in `reason` only. |
+| `failedJobs[]` | Present at exit 1 with `--failed-log`: each failed job with `name` (an Actions check run's name, with `[<workflow>, check run <id>]` when several runs share it; `<workflow>/<job>` on CircleCI), `source` (`actions` or `circleci`), `url`, and `logTail`, the last `--failed-log-lines` lines of its log, or `logError` when the log could not be read. A check run of another app, a commit status and a CircleCI workflow without a failed job are named in `reason` only. |
 | `unfinished[]` | Present at exit 2 and 4: what the head was still waiting for, one line each (`check go-test (in_progress)`, `circleci workflow build (running)`, `actions run CI (awaiting approval)`, `required context lint (absent)`). |
 
 ## Exit codes

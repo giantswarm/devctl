@@ -172,7 +172,7 @@ func Test_Wait_stageGap(t *testing.T) {
 	}
 	want := &Result{
 		Repository: "o/r", Number: 42, HeadSHA: sha, BaseRef: "main",
-		Checks:  []Check{{Name: "go-build", Source: SourceCheckRun, Status: "completed", Conclusion: "success", URL: "https://github.com/o/r/runs/1"}},
+		Checks:  []Check{{Name: "go-build", ID: 1, Source: SourceCheckRun, Status: "completed", Conclusion: "success", URL: "https://github.com/o/r/runs/1"}},
 		Actions: []ActionRun{},
 		CircleCI: &CircleCI{PipelineID: "p1", PipelineNumber: 12, Workflows: []Workflow{
 			{Name: "build", Status: "success", URL: "https://app.circleci.com/pipelines/github/o/r/12/workflows/w1"},
