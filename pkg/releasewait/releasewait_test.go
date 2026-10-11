@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/base64"
 	"io"
+	"net/url"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/giantswarm/microerror"
 	"github.com/sirupsen/logrus"
 
 	circlecimock "github.com/giantswarm/devctl/v8/e2e/mock/circleci"
@@ -51,6 +53,8 @@ type fixture struct {
 	// images are the images named with --image.
 	images []string
 	charts []string
+	// wrapCircleCI, when set, stands in front of the CircleCI client.
+	wrapCircleCI func(CircleCI) CircleCI
 }
 
 type entries struct{ fields *reposetup.Fields }
@@ -204,7 +208,11 @@ func run(t *testing.T, fx fixture) (Result, error) {
 		Entries: entries{fx.entry},
 		CircleCI: func(context.Context) (CircleCI, error) {
 			circleCalls++
-			return circleciclient.New(circleciclient.Config{Token: "cci_test", BaseURL: circleciclient.BaseURLFromAPIURL(endpoints.CircleCIAPIURL)})
+			client, err := circleciclient.New(circleciclient.Config{Token: "cci_test", BaseURL: circleciclient.BaseURLFromAPIURL(endpoints.CircleCIAPIURL)})
+			if err != nil || fx.wrapCircleCI == nil {
+				return client, err
+			}
+			return fx.wrapCircleCI(client), nil
 		},
 		Registry:     RegistryProber{Endpoints: endpoints},
 		CatalogIndex: catalog{fx.catalogLists, fx.catalogChart, fx.catalogName},
@@ -1442,4 +1450,69 @@ func TestWaitPullRequestEntryAheadOfTheWorkflowsIsNoRelease(t *testing.T) {
 	_, err := run(t, fixture{github: github, pr: 7, mergeCommit: testSHA, entry: &entry})
 	assertExit(t, err, agentcli.ExitNotApplicable, "declares auto-release, but .github/workflows at 01234567 holds no auto-release workflow")
 	assertNoRelease(t, err)
+}
+
+// unansweredCircleCI is a CircleCI whose pipeline listing goes unanswered
+// the first failures times, the way the retrying transport reports a read
+// that timed out on every try; a negative count never answers.
+type unansweredCircleCI struct {
+	CircleCI
+	failures int
+	calls    int
+}
+
+func (c *unansweredCircleCI) FindPipelineByTag(ctx context.Context, org, repo, tag string) (*circleciclient.Pipeline, error) {
+	c.calls++
+	if c.failures != 0 {
+		c.failures--
+		return nil, microerror.Mask(&url.Error{Op: "Get", URL: "https://circleci.com/api/v2/project/gh/" + org + "/" + repo + "/pipeline", Err: &agentcli.RetriesExhaustedError{Attempts: agentcli.RetryAttempts, Last: "context deadline exceeded"}})
+	}
+	return c.CircleCI.FindPipelineByTag(ctx, org, repo, tag)
+}
+
+func greenGenerated(t *testing.T) fixture {
+	return fixture{
+		entry:  generatedEntry(t),
+		github: baseGitHub([]string{"Dockerfile", "helm"}, []string{"zz_generated.auto_release.yaml"}, []string{"config.yml", "workflows.yml"}),
+		circleci: pipelineRoutes(
+			[][]map[string]any{{wf("w1", "build", "success", "2026-09-21T10:00:00Z")}},
+			map[string][]map[string]any{"w1": {job("push-to-registries-release", "success"), job("push-chart-release", "success")}},
+		),
+		registry: sequence.Routes{
+			"HEAD /v2/giantswarm/kserve-controller/manifests/1.2.3": {{Status: 200}},
+			"HEAD /v2/charts/giantswarm/kserve/manifests/1.2.3":     {{Status: 200}},
+		},
+	}
+}
+
+// A CircleCI outage shorter than the timeout is not an outcome: the wait
+// reads again at the next poll and confirms the release.
+func TestWaitCircleCIUnansweredOnceThenAnswers(t *testing.T) {
+	fx := greenGenerated(t)
+	circleci := &unansweredCircleCI{failures: 1}
+	fx.wrapCircleCI = func(c CircleCI) CircleCI { circleci.CircleCI = c; return circleci }
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+	if circleci.calls != 2 {
+		t.Errorf("pipeline listings: want 2, got %d", circleci.calls)
+	}
+	if !allAvailable(result.Artifacts) || result.Pipeline == nil {
+		t.Errorf("result: %+v", result)
+	}
+}
+
+// A CircleCI that never answers is a timeout whose reason names the
+// unanswered read: the release is unknown, not failed.
+func TestWaitCircleCINeverAnswersIsTimeoutNamingIt(t *testing.T) {
+	fx := greenGenerated(t)
+	circleci := &unansweredCircleCI{failures: -1}
+	fx.wrapCircleCI = func(c CircleCI) CircleCI { circleci.CircleCI = c; return circleci }
+	_, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitTimeout, "the release is unknown, not failed: the last read of the tag's CI went unanswered: listing the pipelines of giantswarm/kserve: Get \"https://circleci.com/api/v2/project/gh/giantswarm/kserve/pipeline\": failed 15 times in a row: context deadline exceeded")
+	if strings.Contains(err.Error(), "webhook") {
+		t.Errorf("an unanswered CircleCI is not a missing webhook: %v", err)
+	}
+	if circleci.calls < 2 {
+		t.Errorf("pipeline listings: want the wait to read again, got %d", circleci.calls)
+	}
 }

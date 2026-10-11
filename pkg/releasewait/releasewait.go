@@ -182,6 +182,10 @@ type Waiter struct {
 	// commit's auto-release run was doing at the last poll, for the
 	// timeout's reason.
 	untagged string
+	// unanswered is, while the tag's CI goes unanswered (CircleCI or GitHub
+	// failing every try of a read), the last such failure, for the
+	// timeout's reason; empty once a read is answered.
+	unanswered string
 }
 
 // New validates config and returns a Waiter.
@@ -487,9 +491,24 @@ func (w *Waiter) loop(ctx context.Context, result *Result, p *plan) error {
 		// pipeline's custom.yml; once those are known nothing reads them.
 		needJobs := (!p.derived && result.CIModel == CIModelHandWritten) || p.custom
 		state, err := w.pipelineState(ctx, result, needJobs)
+		if unanswered(ctx, err) {
+			// An API that does not answer says nothing about the release:
+			// the next poll reads again, until the deadline.
+			w.unanswered = err.Error()
+			if ctx.Err() != nil {
+				return w.timeout(result)
+			}
+			w.progress.Printf("the tag's CI went unanswered (%s); reading again in %s", err, w.interval())
+			w.progress.Waiting(w.clock.Now(), "an answer from the tag's CI: "+err.Error())
+			if err := w.clock.Sleep(ctx, w.interval()); err != nil {
+				return w.timeout(result)
+			}
+			continue
+		}
 		if err != nil {
 			return err
 		}
+		w.unanswered = ""
 		if state.failed {
 			return ciFailedErr("the tag pipeline of %s failed: %s", result.Tag, strings.Join(state.failedJobs, ", "))
 		}
@@ -863,6 +882,9 @@ func (w *Waiter) timeout(result *Result) error {
 	if p := result.Pipeline; p != nil && len(p.Unfinished) > 0 {
 		unfinished = "; " + stillRunning(p)
 	}
+	if w.unanswered != "" {
+		unfinished += "; the release is unknown, not failed: the last read of the tag's CI went unanswered: " + w.unanswered
+	}
 	switch {
 	case result.Tag == "" && w.untagged != "":
 		return timeoutErr("no tag on the merge commit %s of %s/%s#%d within %s; %s", short(result.SHA), w.config.Owner, w.config.Repo, w.config.PR, w.config.Timeout, w.untagged)
@@ -870,12 +892,23 @@ func (w *Waiter) timeout(result *Result) error {
 		return timeoutErr("no tag within %s", w.config.Timeout)
 	case len(missing) > 0:
 		return timeoutErr("not available within %s: %s%s", w.config.Timeout, strings.Join(missing, ", "), unfinished)
-	case result.Pipeline == nil && result.CIModel != CIModelNone:
+	case result.Pipeline == nil && result.CIModel != CIModelNone && w.unanswered == "":
 		return timeoutErr("no CircleCI pipeline for %s within %s: the tag's webhook may not have reached CircleCI", result.Tag, w.config.Timeout)
 	case len(result.Artifacts) > 0 && unfinished != "":
 		return timeoutErr("every artifact of %s is available, the tag pipeline did not finish within %s%s", result.Tag, w.config.Timeout, unfinished)
 	}
 	return timeoutErr("%s was not released within %s%s", result.Tag, w.config.Timeout, unfinished)
+}
+
+// unanswered says whether err is a read of the tag's CI that went
+// unanswered: one that failed every try in transit or with a 5xx, or that
+// the deadline cut short.
+func unanswered(ctx context.Context, err error) bool {
+	if err == nil || isOutcome(err) {
+		return false
+	}
+	var exhausted *agentcli.RetriesExhaustedError
+	return errors.As(err, &exhausted) || ctx.Err() != nil
 }
 
 // stillRunning names what keeps the tag pipeline from being green, for the

@@ -42,6 +42,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `pr merge`: an API outage after the merge no longer reads as "nothing confirmed". The release wait reads a CircleCI
+  pipeline listing that goes unanswered again at the next poll instead of ending, so an outage shorter than
+  `--release-timeout` ends at exit 0 once the release is confirmed; one that outlasts it is exit 9 whose reason says
+  the release is unknown, not failed, names the unanswered request and the `devctl release wait --pr` command that
+  re-checks it (`release wait` alike: exit 2 with that reason). A merge call that fails in transit (a connection reset
+  after GitHub merged) re-reads the pull request: merged, the command goes on with GitHub's merge commit and a warning
+  instead of exit 7. A read retried in transit or for a 5xx gets fifteen tries, about ten minutes of pauses, instead
+  of eight (three minutes), in every wait.
 - `pr wait` and `pr merge`: every run of a check name counts. The jobs of a matrix, or of several workflows calling
   one reusable workflow, report under one name; before, they collapsed into one entry and the verdict followed the
   last run reported, so a red job could hide behind a green one. Check runs are now grouped by name and the GitHub

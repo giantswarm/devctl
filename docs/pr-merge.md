@@ -135,6 +135,13 @@ with `devctl repo adopt`): the reconciler then writes the devctl ruleset, whose 
 owning team and the repository admins merge their own green pull requests. devctl never lifts
 `enforce_admins`, and the devctl App's token carries no Administration permission to do so.
 
+A merge call that fails without GitHub's verdict (a reset connection, a timeout, a 5xx) is never sent
+again, and its error is not taken as "nothing merged": GitHub may have merged before the answer was
+lost. The pull request is read again after 3 s. Merged, the command goes on as after any merge (branch,
+release, dispatch) with GitHub's merge commit and `mergedBy`, and a warning naming the failed call. Still
+open, the call's error is the outcome (exit 7). Unreadable, the exit-7 reason says whether it merged is
+unknown; the pull request's state on GitHub decides before anyone merges it again.
+
 ### A base with a merge queue
 
 When the rules in effect on the base (`GET /repos/{owner}/{repo}/rules/branches/{base}`) include a
@@ -181,7 +188,10 @@ eat into the release's time.
   that is neither a digest nor "manifest unknown"), or the merge commit's auto-release run was
   cancelled because a newer push to the branch superseded it (that push's tag carries the merge).
   `release.verdict` and the reason say which; after a timeout or a login, `devctl release wait
-  <owner/repo> --pr <number>` resumes the wait.
+  <owner/repo> --pr <number>` resumes the wait. A CircleCI API that does not answer is not an outcome:
+  the release wait reads it again at every poll, and only when it is still unanswered at
+  `--release-timeout` is the merge exit 9, its reason naming the unanswered request and the
+  `devctl release wait` command that re-checks the release.
 
 Exit codes 6 and 9 say that the pull request was merged: the caller never merges it again.
 `--no-release-wait` ends the command at the merge and leaves `release` null. `devctl release wait`

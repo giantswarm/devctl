@@ -464,10 +464,35 @@ func (m *Merger) merge(ctx context.Context, owner, repo string, number int, pr *
 		return agentcli.NewExitError(agentcli.ExitNotApplicable, agentcli.VerdictNotApplicable, "%s", reason)
 	}
 	if err != nil {
-		return microerror.Mask(err)
+		return m.mergedAnyway(ctx, owner, repo, number, result, err)
 	}
 	result.MergeCommitSHA, result.MergedBy = sha, caller
 	m.progress.Printf("merged: %s of %s is %s, as %s", method, result.HeadSHA, sha, caller)
+	return nil
+}
+
+// mergedAnyway settles a merge call that failed without GitHub's verdict (a
+// reset connection, a timeout, a 5xx): GitHub may have merged before the
+// answer was lost, so the pull request is read again after a pause. Merged,
+// the merge goes on with GitHub's merge commit and a warning; open, the
+// call's error is the outcome; unreadable, the error says the merge is
+// unknown, never that nothing merged.
+func (m *Merger) mergedAnyway(ctx context.Context, owner, repo string, number int, result *Result, callErr error) error {
+	m.progress.Printf("the merge call failed (%s); reading the pull request in %s", callErr, mergeableInterval)
+	if err := m.clock.Sleep(ctx, mergeableInterval); err != nil {
+		return microerror.Maskf(executionError, "the merge call of %s/%s#%d failed and whether it merged is unknown: %v; the merge call failed: %v", owner, repo, number, err, callErr)
+	}
+	pr, err := m.github.PullRequest(ctx, owner, repo, number)
+	if err != nil {
+		return microerror.Maskf(executionError, "the merge call of %s/%s#%d failed and whether it merged is unknown, reading the pull request failed too: %v; the merge call failed: %v", owner, repo, number, err, callErr)
+	}
+	if !pr.GetMerged() {
+		return microerror.Mask(callErr)
+	}
+	result.MergeCommitSHA, result.MergedBy = pr.GetMergeCommitSHA(), pr.GetMergedBy().GetLogin()
+	warning := fmt.Sprintf("the merge call failed (%s), and GitHub reports %s/%s#%d merged as %s by %s", oneLine(callErr.Error()), owner, repo, number, result.MergeCommitSHA, result.MergedBy)
+	m.progress.Printf("warning: %s", warning)
+	result.Warnings = append(result.Warnings, warning)
 	return nil
 }
 
