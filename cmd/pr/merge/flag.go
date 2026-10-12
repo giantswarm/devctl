@@ -19,6 +19,7 @@ const (
 	flagReleaseTimeout = "release-timeout"
 	flagNoReleaseWait  = "no-release-wait"
 	flagRebase         = "rebase"
+	flagSquash         = "squash"
 	flagUpdateBranch   = "update-branch"
 	flagDispatch       = "dispatch"
 	flagDetach         = "detach"
@@ -33,6 +34,7 @@ type flag struct {
 	ReleaseTimeout time.Duration
 	NoReleaseWait  bool
 	Rebase         bool
+	Squash         bool
 	UpdateBranch   bool
 	Dispatch       string
 	Detach         bool
@@ -48,7 +50,8 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().DurationVar(&f.Timeout, flagTimeout, prwait.DefaultTimeout, "How long to wait for the CI outcome (and a merge queue) before exit 2; scaled by DEVCTL_TIME_SCALE")
 	cmd.Flags().DurationVar(&f.ReleaseTimeout, flagReleaseTimeout, releasewait.DefaultTimeout, "How long to wait after the merge for its release to be pullable before exit 9; scaled by DEVCTL_TIME_SCALE")
 	cmd.Flags().BoolVar(&f.NoReleaseWait, flagNoReleaseWait, false, "End at the merge instead of waiting for the release it triggers (devctl release wait --pr does that wait on its own)")
-	cmd.Flags().BoolVar(&f.Rebase, flagRebase, false, "Rebase-merge instead of squash-merging (repositories whose convention is one commit per patch)")
+	cmd.Flags().BoolVar(&f.Rebase, flagRebase, false, "Rebase-merge instead of squash-merging (repositories whose convention is one commit per patch); the default on a fork line")
+	cmd.Flags().BoolVar(&f.Squash, flagSquash, false, "Squash-merge a fork line's pull request, which rebase-merges by default; elsewhere squash is the default already")
 	cmd.Flags().BoolVar(&f.UpdateBranch, flagUpdateBranch, false, "A head behind its base is updated from the base before its checks are judged, and the new head waited for; behind a strict base, instead of exit 3")
 	cmd.Flags().StringVar(&f.Dispatch, flagDispatch, "", "A workflow to dispatch after the merge, <owner>/<repo>/<workflow file>[@<ref>], with the inputs repository, pull_request and release; a failed dispatch is a warning. Default: $"+prmerge.EnvDispatch)
 	cmd.Flags().BoolVar(&f.Detach, flagDetach, false, "Start the merge in a process of its own and return at once with its handle; devctl pr merge status <handle> reads the outcome")
@@ -73,7 +76,7 @@ func (f *flag) childArgs(repository string, number int, handle string) []string 
 	for _, b := range []struct {
 		name string
 		on   bool
-	}{{flagNoReleaseWait, f.NoReleaseWait}, {flagRebase, f.Rebase}, {flagUpdateBranch, f.UpdateBranch}} {
+	}{{flagNoReleaseWait, f.NoReleaseWait}, {flagRebase, f.Rebase}, {flagSquash, f.Squash}, {flagUpdateBranch, f.UpdateBranch}} {
 		if b.on {
 			argv = append(argv, "--"+b.name)
 		}
