@@ -18,8 +18,8 @@ type ExtendRequest struct {
 	// PullRequest is the key the scan matches on, e.g.
 	// "giantswarm/hello-world#123".
 	PullRequest string
-	// User attributes each commit Extend makes. It need not be the original
-	// holder, exactly like ReapRequest.User.
+	// User becomes the holder of each reservation Extend renews, and attributes
+	// the commits. It need not be the original holder: extend hands it over.
 	User string
 	// Now is the new start of every reservation Extend resets. Zero means
 	// time.Now().
@@ -178,7 +178,7 @@ func extendAndPush(ctx context.Context, req ExtendRequest, cluster string, r Res
 		}
 
 		until := now.Add(duration)
-		entry, err := reservationEntry(current.App, Request{User: current.User, Branch: current.Branch, PullRequest: current.PullRequest, Scope: current.Scope}, now, until)
+		entry, err := reservationEntry(current.App, Request{User: req.User, Branch: current.Branch, PullRequest: current.PullRequest, Scope: current.Scope}, now, until)
 		if err != nil {
 			return microerror.Mask(err)
 		}
@@ -188,7 +188,7 @@ func extendAndPush(ctx context.Context, req ExtendRequest, cluster string, r Res
 		// The ConfigMap entry above and this are one change: a human with no
 		// access to the GitOps repo reads /from and /until off the OCIRepository
 		// with kubectl, and the two must never disagree, in any commit.
-		if err := writeSourceAnnotations(sourcePath, now, until); err != nil {
+		if err := writeSourceAnnotations(sourcePath, req.User, now, until); err != nil {
 			return microerror.Mask(err)
 		}
 
@@ -197,7 +197,7 @@ func extendAndPush(ctx context.Context, req ExtendRequest, cluster string, r Res
 			clusterPath(cluster, collectionsDir, reservationsDir, current.App, current.App+SourceNameSuffix+".yaml"),
 		}
 		if _, err := commitAll(req.RepoDir, req.User, fmt.Sprintf(
-			"extend %s on %s for %s (until %s)", current.App, cluster, current.User, until.Format(time.RFC3339)), files); err != nil {
+			"extend %s on %s for %s (until %s)", current.App, cluster, req.User, until.Format(time.RFC3339)), files); err != nil {
 			return microerror.Mask(err)
 		}
 

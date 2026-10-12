@@ -21,7 +21,7 @@ type flag struct {
 func (f *flag) Init(cmd *cobra.Command) {
 	f.GitOps.Init(cmd)
 	cmd.Flags().StringVar(&f.PullRequest, flagPullRequest, "", "Pull request whose reservations to extend, as owner/repo#number.")
-	cmd.Flags().StringVar(&f.User, flagUser, "", "GitHub login attributed to each extension commit. It need not be the original holder.")
+	cmd.Flags().StringVar(&f.User, flagUser, "", "GitHub login that holds each extended reservation from now on. It need not be the original holder: extend hands the reservation over.")
 }
 
 func (f *flag) Validate() error {

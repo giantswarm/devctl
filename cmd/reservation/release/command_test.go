@@ -303,3 +303,27 @@ func TestReleaseOneClusterChecksThePullRequest(t *testing.T) {
 		t.Errorf("the refusal removed the reservation: %s", configMap)
 	}
 }
+
+// TestReleasePrintsTheCommitOnlyAtDebug checks that the commit line shows with
+// --log-level debug and not by default.
+func TestReleasePrintsTheCommitOnlyAtDebug(t *testing.T) {
+	const cluster, chart = "graveler", "hello-world"
+	for _, level := range []string{"", "debug"} {
+		dir, _ := newReleasableFixture(t, cluster, chart)
+		var stdout bytes.Buffer
+		cmd := newCommand(t, &stdout)
+		// Stands in for the root command's persistent flag.
+		cmd.PersistentFlags().String("log-level", "", "")
+		args := []string{flagRepoDir, dir, flagCluster, cluster, flagApp, chart, flagUser, "alice"}
+		if level != "" {
+			args = append(args, "--log-level", level)
+		}
+		cmd.SetArgs(args)
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("release: %v", err)
+		}
+		if got := strings.Contains(stdout.String(), "Commit "); got != (level == "debug") {
+			t.Errorf("--log-level %q: commit line shown = %v; stdout: %s", level, got, stdout.String())
+		}
+	}
+}

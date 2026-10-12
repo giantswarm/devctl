@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/v8/cmd/reservation/gitops"
+	"github.com/giantswarm/devctl/v8/internal/termout"
 	"github.com/giantswarm/devctl/v8/pkg/reservation"
 )
 
@@ -73,7 +74,9 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	checkout.Wrote(r.stderr)
 
 	_, _ = fmt.Fprintf(r.stdout, "Released %s on %s.\n", result.App, r.flag.Cluster)
-	_, _ = fmt.Fprintf(r.stdout, "Commit %s\n", result.Commit)
+	if termout.Debug(cmd) {
+		_, _ = fmt.Fprintf(r.stdout, "Commit %s\n", result.Commit)
+	}
 
 	return nil
 }

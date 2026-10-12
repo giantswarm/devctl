@@ -113,19 +113,20 @@ patches:
 	return microerror.Mask(os.WriteFile(filepath.Join(dir, "kustomization.yaml"), []byte(component), 0o644)) //nolint:gosec // a file committed to a GitOps repo
 }
 
-// writeSourceAnnotations rewrites the from and until reservation annotations
-// on the source object at path, in place: it edits the two lines rather than
+// writeSourceAnnotations rewrites the user, from and until reservation annotations
+// on the source object at path, in place: it edits those lines rather than
 // re-encoding the document, exactly as writeReservationEntry edits the
 // ConfigMap, so nothing else in the file -- key order, quoting, the
 // generatedBy header -- moves. Extend calls it alongside writeReservationEntry
 // so a `kubectl` read of either one always shows the current window.
-func writeSourceAnnotations(path string, from, until time.Time) error {
+func writeSourceAnnotations(path, user string, from, until time.Time) error {
 	lines, err := readLines(path)
 	if err != nil {
 		return microerror.Mask(err)
 	}
 
 	want := map[string]string{
+		"user":  user,
 		"from":  from.Format(time.RFC3339),
 		"until": until.Format(time.RFC3339),
 	}
@@ -141,7 +142,7 @@ func writeSourceAnnotations(path string, from, until time.Time) error {
 		}
 	}
 	if found != len(want) {
-		return microerror.Maskf(invalidConfigError, "%s carries no %sfrom/%suntil annotations to update", path, AnnotationPrefix, AnnotationPrefix)
+		return microerror.Maskf(invalidConfigError, "%s carries no %suser/%sfrom/%suntil annotations to update", path, AnnotationPrefix, AnnotationPrefix, AnnotationPrefix)
 	}
 
 	return microerror.Mask(writeLines(path, lines))

@@ -9,6 +9,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- Any command: the word `Error` of a failure is red, and the word `Warning` is yellow, when stderr is a terminal and
+  `NO_COLOR` is unset.
+- `reservation reserve` prints one line on success: what it reserved, where, for whom and until when. The source
+  object, its version filter and the commit show only at `--log-level debug`; so does the commit of `reservation
+  release`. Without `--pull-request`, `reserve` warns that it did not check for a pull request and that the caller
+  is responsible for the branch's builds: `--branch` stays required, `--pull-request` optional (CI always sets it).
+- `reservation extend --user` makes that user the holder of each reservation it extends (the entry and the source
+  object's annotation), so a local user can take over a reservation CI made. Before, it only named the commit author.
 - `repo reconcile` and `repo checks`: the reported checks are read from the newest pull request merged through the
   gate. A pull request whose head is its own merge commit — merged by a push of its head onto the branch, as a fork
   line's upstream re-pin is — is passed over: its SHA carries the branch's push runs and statuses and no pull-request

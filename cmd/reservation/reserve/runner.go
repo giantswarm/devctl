@@ -10,6 +10,7 @@ import (
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
 
+	"github.com/giantswarm/devctl/v8/internal/termout"
 	"github.com/giantswarm/devctl/v8/pkg/reservation"
 )
 
@@ -47,6 +48,11 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		if err != nil {
 			return microerror.Mask(err)
 		}
+	}
+
+	if r.flag.PullRequest == "" {
+		_, _ = fmt.Fprintf(r.stderr, "%s: no --%s given. devctl does not check that a pull request exists for branch %s; you are responsible for builds of that branch to exist. extend --%s, release --%s and the reap rename check do not find this reservation.\n",
+			termout.Warning(r.stderr), flagPullRequest, r.flag.Branch, flagPullRequest, flagPullRequest)
 	}
 
 	checkout, err := r.flag.GitOps.Open(ctx, r.stderr)
@@ -87,8 +93,10 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 	_, _ = fmt.Fprintf(r.stdout, "Reserved %s on %s for %s until %s.\n",
 		result.App, r.flag.Cluster, r.flag.User, result.Until.Format("2006-01-02 15:04 MST"))
-	_, _ = fmt.Fprintf(r.stdout, "Source %s follows %s\n", result.SourceName, result.SemverFilter)
-	_, _ = fmt.Fprintf(r.stdout, "Commit %s on %s\n", result.Commit, r.flag.GitOps.Repo)
+	if termout.Debug(cmd) {
+		_, _ = fmt.Fprintf(r.stdout, "Source %s follows %s\n", result.SourceName, result.SemverFilter)
+		_, _ = fmt.Fprintf(r.stdout, "Commit %s on %s\n", result.Commit, r.flag.GitOps.Repo)
+	}
 
 	return nil
 }

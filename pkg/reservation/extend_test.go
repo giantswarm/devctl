@@ -40,6 +40,31 @@ func TestExtendRefusesWhenNothingMatches(t *testing.T) {
 	}
 }
 
+// TestExtendHandsTheReservationToTheExtender: extending a reservation held by
+// someone else (e.g. made by CI) makes the extender the holder.
+func TestExtendHandsTheReservationToTheExtender(t *testing.T) {
+	dir, _ := newReapFixture(t, fixtureOptions{})
+
+	req := testRequest(dir)
+	req.User = "ci-user"
+	req.Now = time.Date(2026, 9, 15, 10, 0, 0, 0, time.UTC)
+	req.Duration = 4 * time.Hour
+	reserveAndPush(t, dir, req)
+
+	if _, err := reservation.Extend(context.Background(), reservation.ExtendRequest{
+		RepoDir:     dir,
+		PullRequest: testPullRequest,
+		User:        "alice",
+		Now:         time.Date(2026, 9, 15, 13, 0, 0, 0, time.UTC),
+	}); err != nil {
+		t.Fatalf("Extend: %v", err)
+	}
+
+	if got := reservationEntries(t, dir, fixtureCluster)[fixtureApp]["user"]; got != "alice" {
+		t.Errorf("entry user: got %q, want alice", got)
+	}
+}
+
 // TestExtendResetsTheExpiryOfAMatchingReservation is the first acceptance
 // criterion: a single active reservation matching the pull request gets a
 // fresh window that starts now and keeps its own stored duration, and the
@@ -80,8 +105,8 @@ func TestExtendResetsTheExpiryOfAMatchingReservation(t *testing.T) {
 		t.Errorf("entry until: got %q, want %q", got, wantUntil.Format(time.RFC3339))
 	}
 	// Everything else about the reservation stays put.
-	if got := entry["user"]; got != testUser {
-		t.Errorf("entry user: got %q, want %q", got, testUser)
+	if got := entry["user"]; got != testExtender {
+		t.Errorf("entry user: got %q, want %q", got, testExtender)
 	}
 	if got := entry["branch"]; got != testBranch {
 		t.Errorf("entry branch: got %q, want %q", got, testBranch)
@@ -132,8 +157,8 @@ func TestExtendUpdatesTheReservationSourceAnnotations(t *testing.T) {
 		t.Errorf("annotation until: got %v, want %q", got, want)
 	}
 	// Everything that names the holder stays exactly as it was.
-	if got := annotations[reservation.AnnotationPrefix+"user"]; got != testUser {
-		t.Errorf("annotation user: got %v, want %q", got, testUser)
+	if got := annotations[reservation.AnnotationPrefix+"user"]; got != testExtender {
+		t.Errorf("annotation user: got %v, want %q", got, testExtender)
 	}
 	if got := annotations[reservation.AnnotationPrefix+"branch"]; got != testBranch {
 		t.Errorf("annotation branch: got %v, want %q", got, testBranch)

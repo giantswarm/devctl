@@ -1,7 +1,9 @@
 package reserve_test
 
 import (
+	"bytes"
 	"io"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -76,5 +78,47 @@ func TestRefusesAWrongDurationBeforeItClones(t *testing.T) {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("refusal does not list %q: %s", want, err.Error())
 		}
+	}
+}
+
+// TestWarnsWithoutAPullRequest checks that a run with no --pull-request says
+// so before it touches the GitOps checkout, and a run with one stays quiet.
+func TestWarnsWithoutAPullRequest(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []string
+		want bool
+	}{
+		{"without", nil, true},
+		{"with", []string{"--pull-request", "giantswarm/hello-world#1"}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var stderr bytes.Buffer
+			logger, err := micrologger.New(micrologger.Config{IOWriter: io.Discard})
+			if err != nil {
+				t.Fatal(err)
+			}
+			cmd, err := reserve.New(reserve.Config{Logger: logger, Stderr: &stderr, Stdout: io.Discard})
+			if err != nil {
+				t.Fatal(err)
+			}
+			cmd.SetOut(io.Discard)
+			cmd.SetErr(io.Discard)
+			cmd.SilenceUsage = true
+			cmd.SilenceErrors = true
+			// The checkout does not exist, so the run stops right after the warning.
+			cmd.SetArgs(append([]string{
+				"--gitops-dir", filepath.Join(t.TempDir(), "missing"),
+				"--cluster", "graveler",
+				"--app", "hello-world",
+				"--branch", "fix/crash",
+				"--user", "alice",
+			}, tc.args...))
+			_ = cmd.Execute()
+
+			if got := strings.Contains(stderr.String(), "Warning: no --pull-request given"); got != tc.want {
+				t.Errorf("warning shown = %v, want %v; stderr: %s", got, tc.want, stderr.String())
+			}
+		})
 	}
 }
