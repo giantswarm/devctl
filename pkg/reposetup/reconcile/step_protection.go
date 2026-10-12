@@ -1102,7 +1102,8 @@ func (r *Runner) pipelineFiles(ctx context.Context, s *run, ref string) ([][]byt
 
 // alignPipelineFiles reads the generated pipeline the open align-files pull
 // request into the default branch brings; nil when there is no such pull
-// request or it brings none.
+// request or it brings none. Only the App's own pull request counts: one a
+// person opens from the branch does not change what is required.
 func (r *Runner) alignPipelineFiles(ctx context.Context, s *run) ([][]byte, error) {
 	open, _, err := r.GitHub.PullRequests.List(ctx, s.owner, s.name, &github.PullRequestListOptions{
 		State: stateOpen,
@@ -1112,10 +1113,11 @@ func (r *Runner) alignPipelineFiles(ctx context.Context, s *run) ([][]byte, erro
 	if err != nil {
 		return nil, fmt.Errorf("%s: align-files pull request: %w", s.slug(), err)
 	}
-	if len(open) == 0 {
+	i := slices.IndexFunc(open, func(pr *github.PullRequest) bool { return pr.GetUser().GetLogin() == AlignFilesLogin })
+	if i < 0 {
 		return nil, nil
 	}
-	pr := open[0]
+	pr := open[i]
 	files, err := r.pipelineFiles(ctx, s, pr.GetHead().GetRef())
 	if err != nil {
 		return nil, err

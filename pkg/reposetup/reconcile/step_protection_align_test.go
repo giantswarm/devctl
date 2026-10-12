@@ -48,7 +48,7 @@ func openAlignPullRequest(r *fakeRepo) {
 		".circleci/workflows.yml": generatedWorkflows,
 	}
 	r.prs = append(r.prs, &github.PullRequest{
-		Number: new(7), State: new("open"),
+		Number: new(7), State: new("open"), User: &github.User{Login: new(AlignFilesLogin), Type: new("Bot")},
 		Head: &github.PullRequestBranch{SHA: new("align-head"), Ref: new(AlignFilesBranch)},
 		Base: &github.PullRequestBranch{Ref: new("main")},
 	})
@@ -107,6 +107,17 @@ func TestProtectionFollowsTheAlignPullRequestsPipeline(t *testing.T) {
 		require.Equal(t, []string{"require " + ctxBuildChart}, check.Step(StepProtection).Changes)
 		h.run(ModeRepair, false, StepProtection)
 		require.Equal(t, []string{ctxBuildChart}, checkContexts(h.repo().ruleset(RulesetName)))
+	})
+
+	t.Run("a person's pull request from the branch changes nothing", func(t *testing.T) {
+		h := newHarness(t, entryYAML)
+		r := seedMigration(h)
+		openAlignPullRequest(r)
+		r.prs[0].User = &github.User{Login: new("someone"), Type: new("User")}
+
+		check := h.run(ModeCheck, false, StepProtection)
+		require.Equal(t, VerdictOK, check.Step(StepProtection).Verdict, "%+v", check.Step(StepProtection))
+		require.Equal(t, []string{ctxAppCatalog}, checkContexts(h.repo().ruleset(RulesetName)))
 	})
 
 	t.Run("a default branch with the generated pipeline does not look for the pull request", func(t *testing.T) {

@@ -292,7 +292,7 @@ one merged by a push of its head onto the branch (a fork line's upstream re-pin)
 carrying the branch's push runs rather than a pull request's checks. A required CircleCI context whose
 job the generated pipeline (`.circleci/workflows.yml`, `custom.yml`) no longer has is removed; while the
 default branch has no generated pipeline, the one the open align-files pull request (`teams-alignment-branch`)
-brings decides, so a repository moving from a hand-kept pipeline stops requiring the old jobs and can merge
+brings decides (the App's own pull request, never one a person opens from the branch), so a repository moving from a hand-kept pipeline stops requiring the old jobs and can merge
 that pull request, and the generated jobs are required once they have reported after the merge. A
 customer repository (flavour `customer`) keeps its own protection.
 

@@ -16,6 +16,10 @@ const CircleCIContextPrefix = "ci/circleci: "
 // pushes a repository's generated files to and opens its pull request from.
 const AlignFilesBranch = "teams-alignment-branch"
 
+// AlignFilesLogin is the login of the align-files App, the author of the
+// pull requests it opens from [AlignFilesBranch].
+const AlignFilesLogin = "giantswarm-align-files[bot]"
+
 // stateOpen is the state of an open pull request, as a list filters on it.
 const stateOpen = "open"
 
