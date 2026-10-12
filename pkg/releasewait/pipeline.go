@@ -7,6 +7,7 @@ import (
 	"sort"
 
 	"github.com/giantswarm/devctl/v8/pkg/circleciclient"
+	"github.com/giantswarm/devctl/v8/pkg/githubclient"
 )
 
 // pipelineState is where the tag's CI stands after one reading.
@@ -45,6 +46,16 @@ func (w *Waiter) pipelineState(ctx context.Context, result *Result, needJobs boo
 	pipeline, err := w.circleci.FindPipelineByTag(ctx, owner, repo, result.Tag)
 	if err != nil {
 		return nil, fmt.Errorf("listing the pipelines of %s/%s: %w", owner, repo, err)
+	}
+	if pipeline == nil {
+		var statuses []githubclient.CommitStatus
+		pipeline, statuses, err = w.pipelineFromStatuses(ctx, result)
+		if err != nil {
+			return nil, err
+		}
+		if pipeline == nil && len(statuses) > 0 {
+			return w.statusesState(result, statuses), nil
+		}
 	}
 	if pipeline == nil {
 		w.progress.Printf("no CircleCI pipeline for %s yet", result.Tag)

@@ -72,6 +72,7 @@ type GitHub interface {
 	ListReleases(ctx context.Context, owner, repo string) ([]githubclient.Release, error)
 	Reachable(ctx context.Context, owner, repo, ref, branch string) (bool, error)
 	ListWorkflowRunsForSHA(ctx context.Context, owner, repo, sha string) ([]githubclient.WorkflowRun, error)
+	ListCommitStatuses(ctx context.Context, owner, repo, sha string) ([]githubclient.CommitStatus, error)
 	ListDirectory(ctx context.Context, owner, repo, path, ref string) ([]string, error)
 	GetFile(ctx context.Context, owner, repo, path, ref string) (githubclient.RepositoryFile, error)
 	IsPrivateRepository(ctx context.Context, owner, repo string) (bool, error)
@@ -83,6 +84,9 @@ type CircleCI interface {
 	FindPipelineByTag(ctx context.Context, org, repo, tag string) (*circleciclient.Pipeline, error)
 	ListPipelineWorkflows(ctx context.Context, pipelineID string) ([]circleciclient.Workflow, error)
 	ListWorkflowJobs(ctx context.Context, workflowID string) ([]circleciclient.Job, error)
+	GetProjectJob(ctx context.Context, org, repo string, number int64) (*circleciclient.ProjectJob, error)
+	GetPipeline(ctx context.Context, id string) (*circleciclient.PipelineDetail, error)
+	GetProjectPipeline(ctx context.Context, org, repo string, number int64) (*circleciclient.PipelineDetail, error)
 }
 
 // EntryFinder returns the team-file entry that declares a repository, and
@@ -186,6 +190,10 @@ type Waiter struct {
 	// failing every try of a read), the last such failure, for the
 	// timeout's reason; empty once a read is answered.
 	unanswered string
+	// statusPipelines is the tag pipeline's resolution from the tag
+	// commit's CircleCI statuses, for when the pipeline listing does not
+	// name it.
+	statusPipelines statusPipelines
 }
 
 // New validates config and returns a Waiter.
