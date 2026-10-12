@@ -1517,14 +1517,14 @@ func TestWaitCircleCINeverAnswersIsTimeoutNamingIt(t *testing.T) {
 	}
 }
 
-// statusesRoute scripts the CircleCI commit statuses of the tag's commit,
-// each "context=state=target URL".
+// statusesRoute scripts the commit statuses of the tag's commit, newest
+// first, each context, state and target URL.
 func statusesRoute(github sequence.Routes, statuses ...[3]string) sequence.Routes {
 	items := []map[string]any{}
 	for _, s := range statuses {
 		items = append(items, map[string]any{"context": s[0], "state": s[1], "target_url": s[2]})
 	}
-	github[repoRoute("/commits/"+testSHA+"/status")] = []sequence.Response{{Body: map[string]any{"state": "success", "sha": testSHA, "statuses": items}}}
+	github[repoRoute("/commits/"+testSHA+"/statuses")] = []sequence.Response{{Body: items}}
 	return github
 }
 
@@ -1616,5 +1616,33 @@ func TestWaitNoTagPipelineNorStatusIsTimeout(t *testing.T) {
 			_, err := run(t, fx)
 			assertExit(t, err, agentcli.ExitTimeout, "no CircleCI pipeline for v1.2.3 within 2m0s: the tag's webhook may not have reached CircleCI")
 		})
+	}
+}
+
+// A release candidate whose promotion tagged the same commit: the newest
+// statuses are the promotion's pipeline, the candidate's are older ones of
+// the same contexts. The wait follows the older ones to the candidate's
+// pipeline.
+func TestWaitTagPipelineFromOlderStatusesWhenAPromotionSharesTheCommit(t *testing.T) {
+	fx := greenGenerated(t)
+	fx.github = statusesRoute(fx.github,
+		[3]string{"ci/circleci: push-chart-release", "success", "https://circleci.com/gh/giantswarm/kserve/202"},
+		[3]string{"ci/circleci: push-to-registries-release", "success", "https://circleci.com/gh/giantswarm/kserve/201"},
+		[3]string{"ci/circleci: push-chart-release", "success", "https://circleci.com/gh/giantswarm/kserve/102"},
+		[3]string{"ci/circleci: push-chart-release", "pending", "https://circleci.com/gh/giantswarm/kserve/102"},
+		[3]string{"ci/circleci: push-to-registries-release", "success", "https://circleci.com/gh/giantswarm/kserve/101"},
+	)
+	circleci := branchPipelineOnly()
+	circleci["GET /api/v2/project/gh/giantswarm/kserve/job/202"] = []sequence.Response{{Body: map[string]any{"number": 202, "pipeline": map[string]any{"id": "p2"}}}}
+	circleci["GET /api/v2/project/gh/giantswarm/kserve/job/201"] = []sequence.Response{{Body: map[string]any{"number": 201, "pipeline": map[string]any{"id": "p2"}}}}
+	circleci["GET /api/v2/pipeline/p2"] = []sequence.Response{{Body: map[string]any{"id": "p2", "number": 13, "vcs": map[string]any{"tag": "v1.3.0", "revision": testSHA}}}}
+	circleci["GET /api/v2/project/gh/giantswarm/kserve/job/102"] = []sequence.Response{{Body: map[string]any{"number": 102, "pipeline": map[string]any{"id": "p1"}}}}
+	circleci["GET /api/v2/pipeline/p1"] = []sequence.Response{{Body: map[string]any{"id": "p1", "number": 12, "vcs": map[string]any{"tag": testTag, "revision": testSHA}}}}
+	circleci["GET /api/v2/pipeline/p1/workflow"] = []sequence.Response{{Body: map[string]any{"items": []map[string]any{wf("w1", "build", "success", "2026-09-21T10:00:00Z")}}}}
+	fx.circleci = circleci
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+	if result.Pipeline == nil || result.Pipeline.ID != "p1" || result.Pipeline.Number != 12 {
+		t.Errorf("pipeline: %+v", result.Pipeline)
 	}
 }

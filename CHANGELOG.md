@@ -52,11 +52,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
-- `release wait`: a tag whose pipeline CircleCI's pipeline listing does not name (its newest pages hold other
-  branches' pipelines) no longer ends in exit 2 "no CircleCI pipeline" while the tag's commit carries green CircleCI
-  statuses. The wait reads the pipeline the statuses' target URLs link (a job of it, or the pipeline itself), and when
-  CircleCI answers for none of them, the statuses are the tag's CI verdict and the document's warnings say so. Exit 2
-  "no CircleCI pipeline" is left for a tag with neither a pipeline nor a CircleCI status.
+- `release wait`: a tag whose pipeline is not in the newest pages of CircleCI's pipeline listing no longer ends in
+  exit 2 "no CircleCI pipeline" while its commit carries the tag pipeline's CircleCI statuses. The wait follows the
+  statuses' target URLs (a job of the pipeline, or the pipeline itself) to the pipeline that built the tag. It reads every
+  status of the commit, not only the newest per context, so a release candidate whose promotion tagged the same commit
+  finds its own pipeline. When CircleCI answers for none of them, the statuses are the tag's CI verdict and the
+  document's warnings say so. Exit 2 "no CircleCI pipeline" is left for a tag with neither a pipeline nor a CircleCI
+  status of its own.
 - Reconciler protection step: a repository moving from a hand-kept CircleCI pipeline to the generated one can merge its
   align-files pull request. While the default branch has no generated pipeline, the step reads the one the open
   align-files pull request (`teams-alignment-branch`) brings, so the hand-kept pipeline's contexts (such as

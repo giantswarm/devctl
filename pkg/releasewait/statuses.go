@@ -12,8 +12,10 @@ import (
 
 // statusPipelines resolves the tag pipeline from the CircleCI statuses of
 // the tag's commit when CircleCI's pipeline listing does not name it: the
-// listing's newest pages hold another branch's pipelines on a busy
-// repository, while the statuses link the jobs that built the tag.
+// listing's newest pages hold other pipelines on a busy repository, while
+// the statuses link the jobs that built the tag. A commit that two tags
+// point at (a release candidate and its promotion) carries the statuses of
+// both tag pipelines, and of the branch's.
 type statusPipelines struct {
 	// pipeline is the tag pipeline once a status led to it.
 	pipeline *circleciclient.Pipeline
@@ -21,6 +23,8 @@ type statusPipelines struct {
 	// each read once: a status of the branch's pipeline on the same commit
 	// leads to a pipeline that did not build the tag, for good.
 	jobs, pipelines map[int64]bool
+	// details are the pipelines read by id, each read once.
+	details map[string]*circleciclient.PipelineDetail
 	// foreign are the target URLs that led to a pipeline of another tag or
 	// a branch: their statuses say nothing about the tag's CI.
 	foreign map[string]bool
@@ -31,8 +35,8 @@ type statusPipelines struct {
 
 // pipelineFromStatuses returns the tag pipeline a CircleCI status of the
 // tag's commit links, nil when none does, and the CircleCI statuses that
-// may be the tag pipeline's: the latest of every ci/circleci context, but
-// for those that led to another pipeline.
+// may be the tag pipeline's: the newest of every ci/circleci context among
+// those that did not lead to another pipeline.
 func (w *Waiter) pipelineFromStatuses(ctx context.Context, result *Result) (*circleciclient.Pipeline, []githubclient.CommitStatus, error) {
 	sp := &w.statusPipelines
 	if sp.pipeline != nil {
@@ -47,7 +51,7 @@ func (w *Waiter) pipelineFromStatuses(ctx context.Context, result *Result) (*cir
 		return nil, nil, fmt.Errorf("reading the commit statuses of %s: %w", short(result.SHA), err)
 	}
 	if sp.jobs == nil {
-		sp.jobs, sp.pipelines, sp.foreign = map[int64]bool{}, map[int64]bool{}, map[string]bool{}
+		sp.jobs, sp.pipelines, sp.foreign, sp.details = map[int64]bool{}, map[int64]bool{}, map[string]bool{}, map[string]*circleciclient.PipelineDetail{}
 	}
 	var circleci []githubclient.CommitStatus
 	for _, s := range all {
@@ -70,7 +74,7 @@ func (w *Waiter) pipelineFromStatuses(ctx context.Context, result *Result) (*cir
 			var job *circleciclient.ProjectJob
 			job, err = w.circleci.GetProjectJob(ctx, owner, repo, target.Job)
 			if err == nil && job.Pipeline.ID != "" {
-				detail, err = w.circleci.GetPipeline(ctx, job.Pipeline.ID)
+				detail, err = w.pipelineByID(ctx, job.Pipeline.ID)
 			}
 		default:
 			continue
@@ -92,12 +96,29 @@ func (w *Waiter) pipelineFromStatuses(ctx context.Context, result *Result) (*cir
 		return sp.pipeline, nil, nil
 	}
 	var statuses []githubclient.CommitStatus
+	seen := map[string]bool{}
 	for _, s := range circleci {
-		if !sp.foreign[s.TargetURL] {
+		if !sp.foreign[s.TargetURL] && !seen[s.Context] {
+			seen[s.Context] = true
 			statuses = append(statuses, s)
 		}
 	}
 	return nil, statuses, nil
+}
+
+// pipelineByID reads the pipeline of id once per wait: the jobs of one
+// pipeline lead to it each.
+func (w *Waiter) pipelineByID(ctx context.Context, id string) (*circleciclient.PipelineDetail, error) {
+	sp := &w.statusPipelines
+	if detail, ok := sp.details[id]; ok {
+		return detail, nil
+	}
+	detail, err := w.circleci.GetPipeline(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	sp.details[id] = detail
+	return detail, nil
 }
 
 // statusesState is the tag's CI read from the CircleCI statuses of its
