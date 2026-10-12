@@ -149,7 +149,8 @@ func TestPushWithRetryRefusesToRebaseADirtyWorktree(t *testing.T) {
 	saboteur := t.TempDir()
 	gittest.RunGit(t, saboteur, "clone", origin, ".")
 
-	const unrelated = "wip.txt"
+	// An edit to a tracked file: an untracked one does not count as dirty.
+	const unrelated = "seed.txt"
 	const wipContent = "someone else's in-progress edit\n"
 	if err := os.WriteFile(filepath.Join(dir, unrelated), []byte(wipContent), 0o600); err != nil {
 		t.Fatal(err)
@@ -159,7 +160,7 @@ func TestPushWithRetryRefusesToRebaseADirtyWorktree(t *testing.T) {
 	render := func() error {
 		calls++
 		// commitAll only ever stages its own files, never -A, so render's own
-		// commit here must do the same: staying oblivious to wip.txt is exactly
+		// commit here must do the same: staying oblivious to seed.txt is exactly
 		// what leaves it dirty for rebaseOntoRemote to catch.
 		if err := os.WriteFile(filepath.Join(dir, "change.txt"), []byte(fmt.Sprintf("change %d\n", calls)), 0o600); err != nil {
 			t.Fatal(err)

@@ -123,10 +123,11 @@ func runGit(ctx context.Context, dir string, args ...string) error {
 	return nil
 }
 
-// gitStatusPorcelain returns dir's `git status --porcelain` output, trimmed:
-// empty means a clean working tree.
+// gitStatusPorcelain returns dir's `git status --porcelain` output for tracked
+// files, trimmed: empty means a clean working tree. Untracked files are the
+// user's and a hard reset leaves them alone, so they do not count.
 func gitStatusPorcelain(ctx context.Context, dir string) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", "-C", dir, "status", "--porcelain") //nolint:gosec // dir is trusted, not user data
+	cmd := exec.CommandContext(ctx, "git", "-C", dir, "status", "--porcelain", "--untracked-files=no") //nolint:gosec // dir is trusted, not user data
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

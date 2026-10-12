@@ -114,12 +114,27 @@ func TestSync(t *testing.T) {
 
 	t.Run("dirty stops", func(t *testing.T) {
 		dir, _ := newPair(t)
-		if err := os.WriteFile(filepath.Join(dir, "x"), []byte("x"), 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, "a"), []byte("changed"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		err := Sync(ctx, dir, &bytes.Buffer{})
 		if !IsSync(err) || !strings.Contains(err.Error(), "is dirty") {
 			t.Errorf("got %v", err)
+		}
+	})
+
+	t.Run("untracked files are left alone", func(t *testing.T) {
+		dir, other := newPair(t)
+		commit(t, other, "b")
+		gittest.RunGit(t, other, "push", "origin", "main")
+		if err := os.WriteFile(filepath.Join(dir, "x"), []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := Sync(ctx, dir, &bytes.Buffer{}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := os.Stat(filepath.Join(dir, "x")); err != nil {
+			t.Errorf("untracked file gone: %v", err)
 		}
 	})
 

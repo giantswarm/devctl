@@ -18,7 +18,8 @@ The command works on a checkout of the GitOps repository, found through
 --gitops-dir or, when that is empty, $UMBRELLA_TARGET_DIR/cmc/<repo> (<repo> is
 the name part of --gitops-repo). It never clones: with neither it fails. Before
 anything else it fast-forwards the checkout to origin/main, and it stops when
-the checkout is not on main, is dirty, or has local commits that are not on
+the checkout is not on main, has changes to tracked files (untracked files are
+left alone), or has local commits that are not on
 origin/main. Git uses the checkout's own credentials.
 It reads the
 tip of main, never the cluster, and needs no GitHub token, so it also runs from

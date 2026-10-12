@@ -150,7 +150,9 @@ func Sync(ctx context.Context, dir string, stderr io.Writer) error {
 			dir, current, branch, branch, FlagDir)
 	}
 
-	status, err := git(ctx, dir, "status", "--porcelain")
+	// Untracked files are the user's: devctl never stages them, and a
+	// fast-forward that would overwrite one fails on its own.
+	status, err := git(ctx, dir, "status", "--porcelain", "--untracked-files=no")
 	if err != nil {
 		return microerror.Maskf(syncError, "%s: %s", dir, err)
 	}
