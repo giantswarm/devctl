@@ -205,7 +205,7 @@ func (r *Runner) archiveRepository(ctx context.Context, s *run, sr *StepResult) 
 // fix is the way back.
 func (r *Runner) reportOpenPullRequests(ctx context.Context, s *run, sr *StepResult) error {
 	var numbers []string
-	opts := &github.PullRequestListOptions{State: "open", ListOptions: github.ListOptions{PerPage: 100}}
+	opts := &github.PullRequestListOptions{State: stateOpen, ListOptions: github.ListOptions{PerPage: 100}}
 	for {
 		prs, resp, err := r.GitHub.PullRequests.List(ctx, s.owner, s.name, opts)
 		if err != nil {
