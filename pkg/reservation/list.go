@@ -74,22 +74,11 @@ func List(req ListRequest) ([]Reservation, error) {
 		return nil, microerror.Maskf(invalidConfigError, "parsing %s: %v", configMapPath, err)
 	}
 
-	reservations, err := ParseReservations(configMap.Data)
-	if err != nil {
-		return nil, microerror.Maskf(invalidConfigError, "%s: %v", configMapPath, err)
-	}
-
-	return reservations, nil
-}
-
-// ParseReservations reads the data of a reservations ConfigMap, from a file
-// in the GitOps repo or from the cluster, sorted by app.
-func ParseReservations(data map[string]string) ([]Reservation, error) {
-	reservations := make([]Reservation, 0, len(data))
-	for app, entry := range data {
+	reservations := make([]Reservation, 0, len(configMap.Data))
+	for app, entry := range configMap.Data {
 		reservation, err := parseReservationEntry(app, entry)
 		if err != nil {
-			return nil, microerror.Maskf(invalidConfigError, "parsing the reservation entry of %q: %v", app, err)
+			return nil, microerror.Maskf(invalidConfigError, "parsing the reservation entry of %q in %s: %v", app, configMapPath, err)
 		}
 		reservations = append(reservations, reservation)
 	}

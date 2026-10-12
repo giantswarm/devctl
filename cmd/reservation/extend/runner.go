@@ -34,16 +34,10 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// run sweeps a fresh clone of --gitops-repo.
+// run sweeps --repo-dir directly: no clone, no GitHub token needed.
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
-	ctx, dir, cleanup, err := r.flag.GitOps.Open(ctx, r.stderr)
-	if err != nil {
-		return microerror.Mask(err)
-	}
-	defer cleanup()
-
 	extended, extendErr := reservation.Extend(ctx, reservation.ExtendRequest{
-		RepoDir:     dir,
+		RepoDir:     r.flag.RepoDir,
 		PullRequest: r.flag.PullRequest,
 		User:        r.flag.User,
 	})
@@ -57,7 +51,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	}
 
 	if extendErr != nil {
-		return microerror.Mask(r.flag.GitOps.Explain(extendErr))
+		return microerror.Mask(extendErr)
 	}
 
 	return nil
