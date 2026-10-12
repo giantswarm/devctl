@@ -2,7 +2,7 @@
 
 ```nohighlight
 devctl pr merge <owner/repo> <number> [--timeout 30m] [--release-timeout 30m] [--no-release-wait]
-                [--rebase] [--update-branch] [--dispatch <owner>/<repo>/<workflow file>[@<ref>]]
+                [--rebase | --squash] [--update-branch] [--dispatch <owner>/<repo>/<workflow file>[@<ref>]]
                 [--progress] [--failed-log [--failed-log-lines 50]] [--detach [--on-done <command>]]
 devctl pr merge status [<handle>]
 ```
@@ -84,13 +84,22 @@ and are sent once.
 Green lands with one call of the merge API, `PUT /repos/{owner}/{repo}/pulls/{number}/merge`:
 
 - **Squash** by default; `--rebase` is a rebase merge, for repositories whose convention is one
-  commit per patch (the upstream-line forks).
+  commit per patch.
+- **Rebase** by default on a fork line: a repository whose team-file entry in giantswarm/github
+  lists the `fork` flavour in `gen.flavours` (the classification the generators read: the line
+  carries its upstream's files plus one commit per carried patch). Each carried commit lands as its
+  own commit without the caller remembering `--rebase`; `--squash` squashes there, and an explicit
+  `--rebase` or `--squash` is never replaced. The entry is the one the `agentMerge` check reads, so
+  this costs no request. An entry whose `gen.flavours` does not decode keeps the squash default,
+  with a warning; a repository no team file declares and one outside giantswarm are no fork line.
+  `--rebase` and `--squash` together are exit 7.
 - The repository's settings (`allow_squash_merge`, `allow_merge_commit`, `allow_rebase_merge` of
   `GET /repos/{owner}/{repo}`) are read before the wait. A repository that does not allow squash
   merges and allows exactly one other method lands with that one, a merge commit (`method: merge`)
   or a rebase, with a warning on the progress stream and in `warnings`. A method the settings do
-  not allow is refused before the wait (exit 3, naming the allowed methods) when the choice is not
-  that one: `--rebase` asked, or squash off with both other methods on. Settings the token cannot
+  not allow is refused before the wait (exit 3, naming the allowed methods and `--rebase` or
+  `--squash` for the other one) when the choice is not that one: `--rebase` or `--squash` asked, a
+  fork line's default rebase, or squash off with both other methods on. Settings the token cannot
   read leave the asked method to GitHub.
 - The judged head SHA goes along as the expected head: a head that moved between the verdict and
   the merge is not merged (GitHub answers 409), and the pull request is re-read after the wait for
@@ -357,7 +366,7 @@ The envelope and the fields from `repository` to `unfinished[]` are [`pr wait`'s
 |---|---|
 | `mergeCommitSha` | The commit the merge produced (the squash commit, the merge commit, the rebased head, or the queue's merge commit); empty when nothing merged. |
 | `mergedBy` | The login the merge was made as: the account the token acts as, or for a merge queue the account GitHub records as the merger. Empty when nothing merged. |
-| `method` | `squash` or `rebase`, as asked, or `merge` (or `rebase`) where the repository does not allow squash merges and allows only that method. |
+| `method` | `squash` or `rebase`, as asked, `rebase` by default on a fork line, or `merge` (or `rebase`) where the repository does not allow squash merges and allows only that method. |
 | `branchDeleted` | The head branch was deleted after the merge, or was gone already. `false` when nothing merged and for a head in a fork. |
 | `enqueued` | The base has a merge queue and the pull request went through it. |
 | `unansweredReviews` | The feedback the last review read found unanswered, each with `kind` (`review`, `review_comment`, `comment`), `login`, `state` (reviews only), `at` and `url`; empty when nothing held the merge, `null` when a refusal came before the read. |

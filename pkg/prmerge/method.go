@@ -38,30 +38,47 @@ func allowedMethods(repository *github.Repository) []githubclient.MergeMethod {
 
 // resolveMethod settles the method against the repository's settings
 // into result.Method, the method the merge lands with, before the wait, so a merge GitHub would decline for its method is not
-// waited for. The asked method stands when the settings allow it or do not
-// say. The default squash, not allowed, gives way to the one other method
-// the settings allow, with a warning; an explicit --rebase never gives way,
-// and neither does squash when two others are allowed: both are exit 3,
-// naming the allowed methods.
-func (m *Merger) resolveMethod(ctx context.Context, owner, repo string, result *Result) error {
+// waited for. Without an explicit method a fork line (the verdict's
+// ForkLine) lands with a rebase merge, one commit per carried patch, and
+// every other repository with a squash. The method stands when the
+// settings allow it or do not say. The default squash, not allowed, gives
+// way to the one other method the settings allow, with a warning; an
+// explicit method never gives way, and neither does a default rebase on a
+// fork line or squash when two others are allowed: all are exit 3, naming
+// the allowed methods and the flag that lands the other one.
+func (m *Merger) resolveMethod(ctx context.Context, owner, repo string, verdict Verdict, result *Result) error {
+	if m.methodDefault {
+		if verdict.Warning != "" {
+			m.progress.Printf("warning: %s", verdict.Warning)
+			result.Warnings = append(result.Warnings, verdict.Warning)
+		}
+		if verdict.ForkLine {
+			result.Method = string(githubclient.MergeRebase)
+			m.progress.Printf("method: %s lists the fork flavour; a fork line lands with method rebase (--squash squashes)", verdict.Entry)
+		}
+	}
+	method := githubclient.MergeMethod(result.Method)
 	repository, _, err := m.github.GitHub().Repositories.Get(ctx, owner, repo)
 	if err != nil {
 		return microerror.Mask(err)
 	}
 	allowed := allowedMethods(repository)
-	if allowed == nil || slices.Contains(allowed, m.method) {
+	if allowed == nil || slices.Contains(allowed, method) {
 		return nil
 	}
-	if m.method == githubclient.MergeSquash && len(allowed) == 1 {
+	if method == githubclient.MergeSquash && m.methodDefault && len(allowed) == 1 {
 		w := fmt.Sprintf("%s/%s does not allow squash merges, only %s: the pull request lands with method %s", owner, repo, describe(allowed), allowed[0])
 		result.Method = string(allowed[0])
 		m.progress.Printf("warning: %s", w)
 		result.Warnings = append(result.Warnings, w)
 		return nil
 	}
-	reason := fmt.Sprintf("%s/%s does not allow %s merges; its settings allow %s", owner, repo, m.method, describe(allowed))
-	if m.method == githubclient.MergeSquash && slices.Contains(allowed, githubclient.MergeRebase) {
+	reason := fmt.Sprintf("%s/%s does not allow %s merges; its settings allow %s", owner, repo, method, describe(allowed))
+	switch {
+	case method == githubclient.MergeSquash && slices.Contains(allowed, githubclient.MergeRebase):
 		reason += "; --rebase lands a rebase merge"
+	case method == githubclient.MergeRebase && slices.Contains(allowed, githubclient.MergeSquash):
+		reason += "; --squash lands a squash merge"
 	}
 	return agentcli.NewExitError(agentcli.ExitNotApplicable, agentcli.VerdictNotApplicable, "%s", reason)
 }

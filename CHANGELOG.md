@@ -7,6 +7,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- `pr merge`: a fork line, a repository whose team-file entry lists the `fork` flavour in `gen.flavours`, lands with a
+  rebase merge by default, so each carried commit stays its own commit without the caller remembering `--rebase`;
+  the new `--squash` squashes there. Every other repository keeps the squash default. An explicit `--rebase` or
+  `--squash` is never replaced, a fork line that does not allow rebase merges is exit 3 naming `--squash`, and an
+  entry whose flavours do not decode keeps the squash default with a warning. See docs/pr-merge.md.
+
 ### Added
 
 - `gen renovate --flavour fork`: writes the config of a GitHub fork as JSONC into `renovate.json` with

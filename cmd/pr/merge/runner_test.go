@@ -134,6 +134,30 @@ func Test_run_rebaseFlag(t *testing.T) {
 	}
 }
 
+func Test_run_squashFlag(t *testing.T) {
+	r, stdout, _, _ := newRunner(t, green(), loggedIn, &flag{Timeout: time.Minute, Squash: true, NoReleaseWait: true})
+	if err := r.run(context.Background(), []string{"o/r", "42"}); err != nil {
+		t.Fatal(err)
+	}
+	if doc := decode(t, stdout); doc["method"] != "squash" {
+		t.Errorf("--squash: want method squash, got %v", doc["method"])
+	}
+}
+
+func Test_run_rebaseAndSquashExcludeEachOther(t *testing.T) {
+	r, stdout, _, server := newRunner(t, green(), loggedIn, &flag{Timeout: time.Minute, Rebase: true, Squash: true, NoReleaseWait: true})
+	err := r.run(context.Background(), []string{"o/r", "42"})
+	if agentcli.Exit(err) != agentcli.ExitUsage || !strings.Contains(err.Error(), "--rebase and --squash exclude each other") {
+		t.Fatalf("want exit 7 naming both flags, got %v", err)
+	}
+	if doc := decode(t, stdout); doc["verdict"] != "usage" {
+		t.Errorf("document: %v", doc)
+	}
+	if n := len(server.Requests()); n != 0 {
+		t.Errorf("want no request, got %d", n)
+	}
+}
+
 // --no-release-wait ends at the merge: the document's release is null and
 // nothing is read after the branch is deleted.
 func Test_run_noReleaseWait(t *testing.T) {

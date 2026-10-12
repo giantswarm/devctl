@@ -15,7 +15,7 @@ import (
 
 const (
 	name        = "merge <owner/repo> <number>"
-	description = "Wait until the pull request's head is green, squash-merge it, delete the branch and wait until the release it triggers is pullable; one JSON document, an exit code."
+	description = "Wait until the pull request's head is green, squash-merge it (rebase-merge on a fork line), delete the branch and wait until the release it triggers is pullable; one JSON document, an exit code."
 	long        = `Wait until the outcome of a pull request's CI is known (the wait of devctl pr
 wait), merge it and delete its branch, then wait until the release the merge
 triggers is pullable (the wait of devctl release wait --pr), print one JSON
@@ -32,11 +32,14 @@ repository no team file declares is not opted out.
 
 Green lands through the merge API as a squash (--rebase: a rebase merge) with
 the judged head as the expected head, so a head that moved is not merged; the
-squash commit's subject is the pull request's title with its number. The
-repository's settings are read before the wait: squash off and exactly one
-other method on lands with that one (a merge commit, the same subject), with a
-warning; a method they do not allow is otherwise exit 3 before the wait, and
---rebase is never replaced. The head
+squash commit's subject is the pull request's title with its number. A fork
+line, a repository whose team-file entry lists the fork flavour in
+gen.flavours (one commit per carried patch), lands with a rebase merge by
+default; --squash squashes there. The repository's settings are read before
+the wait: squash off and exactly one other method on lands the default squash
+with that one (a merge commit, the same subject), with a warning; a method
+they do not allow is otherwise exit 3 before the wait, naming the flag for the
+other one, and an explicit --rebase or --squash is never replaced. The head
 branch is deleted through the refs API; a head in a fork is left alone. A base
 with a merge queue is enqueued instead, the pull request waited for until the
 queue merged it, then the branch deleted. Nothing reads a protection setting
@@ -134,7 +137,8 @@ Exit codes:
 	example = `  devctl pr merge giantswarm/devctl 2278
   devctl pr merge giantswarm/devctl 2278 --timeout 45m --release-timeout 30m --progress
   devctl pr merge giantswarm/devctl 2278 --no-release-wait
-  devctl pr merge giantswarm/kagent-upstream 12 --rebase
+  devctl pr merge giantswarm/kagent-upstream 12
+  devctl pr merge giantswarm/kagent-upstream 12 --squash
   devctl pr merge giantswarm/devctl 2278 --update-branch
   devctl pr merge giantswarm/devctl 2278 --dispatch giantswarm/team-magazine/refresh.yaml
   DEVCTL_MERGE_DISPATCH=giantswarm/team-magazine/refresh.yaml devctl pr merge giantswarm/devctl 2278`

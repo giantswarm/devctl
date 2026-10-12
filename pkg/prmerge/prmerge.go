@@ -65,7 +65,9 @@ type Config struct {
 	// Wait is the wait engine's configuration; its GitHub client, clock,
 	// progress writer and timeout are the merge's too. Required.
 	Wait prwait.Config
-	// Method is squash or rebase; empty is squash.
+	// Method is squash or rebase, asked explicitly; empty is the default:
+	// rebase on a fork line (a team-file entry with the fork flavour),
+	// squash everywhere else.
 	Method githubclient.MergeMethod
 	// UpdateBranch: a head behind its base is updated from the base before
 	// its checks are judged and the new head waited for; behind a strict
@@ -96,7 +98,8 @@ type Result struct {
 	// caller the token acts as, or for a merge queue the account GitHub
 	// records as the merger. Empty when nothing merged.
 	MergedBy string `json:"mergedBy"`
-	// Method is squash or rebase as asked, or the one method the
+	// Method is squash or rebase as asked, rebase by default on a fork
+	// line, or the one method the
 	// repository allows when it does not allow the default squash: merge
 	// for a merge commit.
 	Method string `json:"method"`
@@ -120,17 +123,19 @@ type Result struct {
 
 // Merger runs merges.
 type Merger struct {
-	github       *githubclient.Client
-	waiter       *prwait.Waiter
-	clock        agentcli.Clock
-	progress     *agentcli.Progress
-	timeout      time.Duration
-	method       githubclient.MergeMethod
-	updateBranch bool
-	login        string
-	policy       Policy
-	release      ReleaseWait
-	dispatchTo   *Dispatch
+	github   *githubclient.Client
+	waiter   *prwait.Waiter
+	clock    agentcli.Clock
+	progress *agentcli.Progress
+	timeout  time.Duration
+	method   githubclient.MergeMethod
+	// methodDefault: no method was asked; a fork line rebases.
+	methodDefault bool
+	updateBranch  bool
+	login         string
+	policy        Policy
+	release       ReleaseWait
+	dispatchTo    *Dispatch
 }
 
 // New returns a Merger for config.
@@ -166,7 +171,7 @@ func New(config Config) (*Merger, error) {
 	}
 	switch m.method {
 	case "":
-		m.method = githubclient.MergeSquash
+		m.method, m.methodDefault = githubclient.MergeSquash, true
 	case githubclient.MergeSquash, githubclient.MergeRebase:
 	default:
 		return nil, microerror.Maskf(invalidConfigError, "%T.Method is squash or rebase, got %q", config, config.Method)
@@ -206,7 +211,7 @@ func (m *Merger) Merge(ctx context.Context, owner, repo string, number int) (*Re
 	if err := m.guardReviews(ctx, owner, repo, number, pr, caller, result); err != nil {
 		return result, err
 	}
-	if err := m.resolveMethod(ctx, owner, repo, result); err != nil {
+	if err := m.resolveMethod(ctx, owner, repo, verdict, result); err != nil {
 		return result, err
 	}
 	m.progress.Printf("refusals: none; %s by %s", pr.GetHead().GetSHA(), pr.GetUser().GetLogin())
