@@ -1516,3 +1516,105 @@ func TestWaitCircleCINeverAnswersIsTimeoutNamingIt(t *testing.T) {
 		t.Errorf("pipeline listings: want the wait to read again, got %d", circleci.calls)
 	}
 }
+
+// statusesRoute scripts the CircleCI commit statuses of the tag's commit,
+// each "context=state=target URL".
+func statusesRoute(github sequence.Routes, statuses ...[3]string) sequence.Routes {
+	items := []map[string]any{}
+	for _, s := range statuses {
+		items = append(items, map[string]any{"context": s[0], "state": s[1], "target_url": s[2]})
+	}
+	github[repoRoute("/commits/"+testSHA+"/status")] = []sequence.Response{{Body: map[string]any{"state": "success", "sha": testSHA, "statuses": items}}}
+	return github
+}
+
+// branchPipelineOnly is a pipeline listing whose newest pipelines are a
+// branch's: the tag pipeline is further down than the listing reads.
+func branchPipelineOnly() sequence.Routes {
+	return sequence.Routes{"GET /api/v2/project/gh/giantswarm/kserve/pipeline": {{Body: map[string]any{"items": []map[string]any{{"id": "p9", "number": 99, "vcs": map[string]any{"branch": "renovate/x", "revision": "fedcba98"}}}}}}}
+}
+
+// A tag whose pipeline the listing by tag does not name while the commit's
+// CircleCI statuses link its jobs: the wait reads the pipeline behind the
+// statuses and ends available once it is green.
+func TestWaitTagPipelineFromTheCommitStatuses(t *testing.T) {
+	fx := greenGenerated(t)
+	fx.github = statusesRoute(fx.github,
+		[3]string{"ci/circleci: push-to-registries-release", "success", "https://circleci.com/gh/giantswarm/kserve/101"},
+		[3]string{"ci/circleci: push-chart-release", "success", "https://circleci.com/gh/giantswarm/kserve/102"},
+	)
+	circleci := branchPipelineOnly()
+	circleci["GET /api/v2/project/gh/giantswarm/kserve/job/101"] = []sequence.Response{{Body: map[string]any{"number": 101, "pipeline": map[string]any{"id": "p1"}, "latest_workflow": map[string]any{"id": "w1"}}}}
+	circleci["GET /api/v2/pipeline/p1"] = []sequence.Response{{Body: map[string]any{"id": "p1", "number": 12, "project_slug": "gh/giantswarm/kserve", "vcs": map[string]any{"tag": testTag, "revision": testSHA}}}}
+	circleci["GET /api/v2/pipeline/p1/workflow"] = []sequence.Response{{Body: map[string]any{"items": []map[string]any{wf("w1", "build", "success", "2026-09-21T10:00:00Z")}}}}
+	fx.circleci = circleci
+	var warnings []string
+	fx.warn = func(m string) { warnings = append(warnings, m) }
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+	if result.Pipeline == nil || result.Pipeline.ID != "p1" || result.Pipeline.Number != 12 {
+		t.Errorf("pipeline: %+v", result.Pipeline)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("warnings: %v", warnings)
+	}
+}
+
+// A tag whose statuses link no pipeline CircleCI answers for: the statuses
+// are the verdict, and the document says so.
+func TestWaitTagStatusesAreTheVerdictWhenNoPipelineAnswers(t *testing.T) {
+	fx := greenGenerated(t)
+	fx.github = statusesRoute(fx.github,
+		[3]string{"ci/circleci: push-to-registries-release", "success", "https://circleci.com/gh/giantswarm/kserve/101"},
+		[3]string{"ci/circleci: push-chart-release", "success", "https://circleci.com/gh/giantswarm/kserve/102"},
+	)
+	fx.circleci = noPipelineYet()
+	var warnings []string
+	fx.warn = func(m string) { warnings = append(warnings, m) }
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+	if !allAvailable(result.Artifacts) {
+		t.Errorf("artifacts: %+v", result.Artifacts)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "the tag's CI verdict is those 2 CircleCI statuses") {
+		t.Errorf("warnings: %v", warnings)
+	}
+}
+
+// A failed status fails the tag's CI read from the statuses.
+func TestWaitTagStatusFailedIsCIFailed(t *testing.T) {
+	fx := greenGenerated(t)
+	fx.github = statusesRoute(fx.github,
+		[3]string{"ci/circleci: push-to-registries-release", "failure", "https://circleci.com/gh/giantswarm/kserve/101"},
+	)
+	fx.circleci = noPipelineYet()
+	_, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitRed, "the tag pipeline of v1.2.3 failed: push-to-registries-release")
+}
+
+// Neither a pipeline nor a CircleCI status of the tag: exit 2, the webhook
+// may not have reached CircleCI. A status that leads to a branch's pipeline
+// on the same commit is not the tag's.
+func TestWaitNoTagPipelineNorStatusIsTimeout(t *testing.T) {
+	cases := map[string]func(sequence.Routes) sequence.Routes{
+		"no status": func(github sequence.Routes) sequence.Routes { return statusesRoute(github) },
+		"another CI's status only": func(github sequence.Routes) sequence.Routes {
+			return statusesRoute(github, [3]string{"security/snyk", "success", "https://snyk.io/x"})
+		},
+		"the branch pipeline's status only": func(github sequence.Routes) sequence.Routes {
+			return statusesRoute(github, [3]string{"ci/circleci: go-build", "success", "https://circleci.com/gh/giantswarm/kserve/201"})
+		},
+	}
+	for name, statuses := range cases {
+		t.Run(name, func(t *testing.T) {
+			fx := greenGenerated(t)
+			fx.github = statuses(fx.github)
+			circleci := branchPipelineOnly()
+			circleci["GET /api/v2/project/gh/giantswarm/kserve/job/201"] = []sequence.Response{{Body: map[string]any{"number": 201, "pipeline": map[string]any{"id": "p9"}}}}
+			circleci["GET /api/v2/pipeline/p9"] = []sequence.Response{{Body: map[string]any{"id": "p9", "number": 99, "vcs": map[string]any{"branch": "main", "revision": testSHA}}}}
+			fx.circleci = circleci
+			_, err := run(t, fx)
+			assertExit(t, err, agentcli.ExitTimeout, "no CircleCI pipeline for v1.2.3 within 2m0s: the tag's webhook may not have reached CircleCI")
+		})
+	}
+}

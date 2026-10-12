@@ -44,6 +44,30 @@ func (c *Client) GetProjectPipeline(ctx context.Context, org, repo string, numbe
 	return &p, nil
 }
 
+// ProjectJob is one job as the project's job endpoint answers it: its
+// number, name and status, and the pipeline and workflow it ran in.
+type ProjectJob struct {
+	Number   int64  `json:"number"`
+	Name     string `json:"name"`
+	Status   string `json:"status"`
+	Pipeline struct {
+		ID string `json:"id"`
+	} `json:"pipeline"`
+	LatestWorkflow struct {
+		ID string `json:"id"`
+	} `json:"latest_workflow"`
+}
+
+// GetProjectJob returns job number of org/repo, the number a CircleCI commit
+// status's target URL ends in; IsNotFound when the project has none.
+func (c *Client) GetProjectJob(ctx context.Context, org, repo string, number int64) (*ProjectJob, error) {
+	var j ProjectJob
+	if err := c.do(ctx, http.MethodGet, fmt.Sprintf("%s/job/%d", c.v2Project(org, repo), number), nil, &j); err != nil {
+		return nil, microerror.Mask(err)
+	}
+	return &j, nil
+}
+
 // WorkflowDetail is one workflow as the workflow endpoint answers it: the
 // workflow, its pipeline and its project.
 type WorkflowDetail struct {

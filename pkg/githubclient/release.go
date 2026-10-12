@@ -151,6 +151,38 @@ func (c *Client) ListWorkflowRunsForSHA(ctx context.Context, owner, repo, sha st
 	return out, nil
 }
 
+// CommitStatus is one commit status of a commit, the latest of its context.
+type CommitStatus struct {
+	Context   string
+	State     string // pending, success, failure or error
+	TargetURL string
+}
+
+// ListCommitStatuses returns the commit statuses of sha, the latest per
+// context, as [CommitStatus] values. IsNotFound when the repository has no
+// such commit.
+func (c *Client) ListCommitStatuses(ctx context.Context, owner, repo, sha string) ([]CommitStatus, error) {
+	opts := &github.ListOptions{PerPage: 100}
+	var out []CommitStatus
+	for page := 0; page < maxPages; page++ {
+		combined, resp, err := c.ghClient.Repositories.GetCombinedStatus(ctx, owner, repo, sha, opts)
+		if isGithub404(err) {
+			return nil, microerror.Maskf(notFoundError, "commit %s in %s/%s", sha, owner, repo)
+		}
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+		for _, s := range combined.Statuses {
+			out = append(out, CommitStatus{Context: s.GetContext(), State: s.GetState(), TargetURL: s.GetTargetURL()})
+		}
+		if resp.NextPage == 0 {
+			break
+		}
+		opts.Page = resp.NextPage
+	}
+	return out, nil
+}
+
 // ListDirectory returns the names of the entries of a directory at ref
 // (files and directories alike). IsNotFound when the path does not exist.
 func (c *Client) ListDirectory(ctx context.Context, owner, repo, path, ref string) ([]string, error) {
