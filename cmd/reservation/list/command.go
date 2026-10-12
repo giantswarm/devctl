@@ -11,17 +11,24 @@ import (
 
 const (
 	name             = "list"
-	shortDescription = "List the active reservations on a management cluster."
-	longDescription  = `List the active reservations on a management cluster.
+	shortDescription = "List the reservations on a management cluster."
+	longDescription  = `List the reservations on a management cluster.
 
-The command reads an existing checkout of the GitOps repository holding the
-management cluster, given by --repo-dir (the current directory by default). It
-never clones and needs no GitHub token, so it also runs from a laptop.
+The command works on a checkout of the GitOps repository, found through
+--gitops-dir or, when that is empty, $UMBRELLA_TARGET_DIR/cmc/<repo> (<repo> is
+the name part of --gitops-repo). It never clones: with neither it fails. Before
+anything else it fast-forwards the checkout to origin/main, and it stops when
+the checkout is not on main, is dirty, or has local commits that are not on
+origin/main. Git uses the checkout's own credentials.
+It reads the
+tip of main, never the cluster, and needs no GitHub token, so it also runs from
+a laptop.
 
-For each active reservation it prints the app, the user, the branch, the pull
-request, the scope and the expiry, exactly as recorded in the cluster's
-reservations ConfigMap.`
-	example = `  devctl reservation list --repo-dir . --cluster graveler`
+For each reservation it prints the app, the user, the branch, the pull request,
+the scope, the expiry and the status, exactly as recorded in the cluster's
+reservations ConfigMap. A reservation past its expiry that the reaper has not
+swept yet is marked expired.`
+	example = `  devctl reservation list --gitops-dir ~/umbrella/cmc/giantswarm-management-clusters --cluster graveler`
 )
 
 type Config struct {

@@ -123,8 +123,8 @@ func (r Request) clusterPath(elem ...string) string {
 }
 
 // checkGitOpsRepo refuses a repoDir that is not a GitOps repo checkout, the
-// usual mistake when --repo-dir is left at its default of the current
-// directory.
+// usual mistake when --gitops-dir points at the wrong directory. The cmd layer
+// names the flag or variable that picked it.
 func checkGitOpsRepo(repoDir string) error {
 	if fi, err := os.Stat(filepath.Join(repoDir, clustersDir)); err == nil && fi.IsDir() {
 		return nil
@@ -135,7 +135,7 @@ func checkGitOpsRepo(repoDir string) error {
 		dir = repoDir
 	}
 	return microerror.Maskf(notGitOpsRepoError,
-		"%s is not a checkout of the GitOps repo that holds the management cluster configuration: it has no %s directory. --repo-dir defaults to the current directory, so either run the command from such a checkout, or set --repo-dir to its path, for example `--repo-dir ~/giantswarm-management-clusters`. Pull the checkout first, as these commands read reservations from its files: `git -C <checkout> pull --ff-only`",
+		"%s is not a checkout of the GitOps repo that holds the management cluster configuration: it has no %s directory",
 		dir, clustersDir)
 }
 
@@ -291,9 +291,8 @@ func Reserve(req Request) (Result, error) {
 // answers who reserved or released what without any other lookup. Reserve,
 // Release and Extend share it: each makes exactly one commit of its own
 // files, never of whatever else happens to be dirty in the working tree. A
-// caller's RepoDir defaults to "." on the commands that never clone, so a
-// developer running one from a GitOps checkout that also holds unrelated
-// in-progress edits must never have those staged, committed or pushed here.
+// developer's own checkout may also hold unrelated in-progress edits, which
+// must never be staged, committed or pushed here.
 func commitAll(repoDir, user, message string, files []string) (string, error) {
 	repo, err := git.PlainOpen(repoDir)
 	if err != nil {

@@ -18,7 +18,7 @@ type ListRequest struct {
 	Cluster string
 }
 
-// Reservation is one active reservation, read back exactly as
+// Reservation is one reservation, active or expired, read back exactly as
 // reservationEntry wrote it: never reconstructed from anything else.
 type Reservation struct {
 	// App is the chart the reservation moved. It is the ConfigMap entry's key.
@@ -33,6 +33,12 @@ type Reservation struct {
 	Scope string
 	// From and Until bound the reservation, in UTC. Until is the expiry.
 	From, Until time.Time
+}
+
+// Expired reports whether the reservation no longer holds at now. An expired
+// reservation is not a lock: a later Reserve of the same app replaces it.
+func (r Reservation) Expired(now time.Time) bool {
+	return !r.Until.After(now)
 }
 
 func (r ListRequest) validate() error {

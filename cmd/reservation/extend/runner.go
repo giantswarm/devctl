@@ -34,10 +34,16 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// run sweeps --repo-dir directly: no clone, no GitHub token needed.
+// run sweeps the GitOps checkout, synced to origin/main first: no clone, no
+// GitHub token needed.
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
+	checkout, err := r.flag.GitOps.Open(ctx, r.stderr)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
 	extended, extendErr := reservation.Extend(ctx, reservation.ExtendRequest{
-		RepoDir:     r.flag.RepoDir,
+		RepoDir:     checkout.Dir,
 		PullRequest: r.flag.PullRequest,
 		User:        r.flag.User,
 	})
@@ -50,8 +56,11 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		_, _ = fmt.Fprintf(r.stdout, "%s\t%s\t%s\n", entry.Cluster, entry.App, entry.Until.Format(time.RFC3339))
 	}
 
+	if len(extended) > 0 {
+		checkout.Wrote(r.stderr)
+	}
 	if extendErr != nil {
-		return microerror.Mask(extendErr)
+		return microerror.Mask(checkout.Explain(extendErr))
 	}
 
 	return nil

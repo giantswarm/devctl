@@ -185,15 +185,16 @@ func IsPush(err error) bool {
 	return microerror.Cause(err) == pushError
 }
 
-// pushRetriesExhaustedError indicates that a push kept being rejected until
-// PushWithRetry gave up after MaxPushAttempts.
-var pushRetriesExhaustedError = &microerror.Error{
-	Kind: "pushRetriesExhaustedError",
+// pushFailedError indicates that PushWithRetry gave up: every attempt was
+// rejected, or the push failed for another reason. The commit is still on
+// local main.
+var pushFailedError = &microerror.Error{
+	Kind: "pushFailedError",
 }
 
-// IsPushRetriesExhausted asserts pushRetriesExhaustedError.
-func IsPushRetriesExhausted(err error) bool {
-	return microerror.Cause(err) == pushRetriesExhaustedError
+// IsPushFailed asserts pushFailedError.
+func IsPushFailed(err error) bool {
+	return microerror.Cause(err) == pushFailedError
 }
 
 // dirtyWorktreeError indicates that a rejected push left the working tree

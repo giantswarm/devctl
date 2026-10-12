@@ -22,7 +22,7 @@ func checkCollision(req Request, chart string, now time.Time) (*Reservation, err
 
 	var active []Reservation
 	for _, r := range all {
-		if r.Until.After(now) {
+		if !r.Expired(now) {
 			active = append(active, r)
 		}
 	}

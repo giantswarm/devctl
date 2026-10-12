@@ -119,7 +119,7 @@ func TestListRefusesADirectoryThatIsNotAGitOpsRepo(t *testing.T) {
 	if !reservation.IsNotGitOpsRepo(err) {
 		t.Fatalf("expected a not-a-GitOps-repo error, got %v", err)
 	}
-	if !strings.Contains(err.Error(), "--repo-dir") {
-		t.Errorf("error does not tell how to fix it with --repo-dir: %v", err)
+	if !strings.Contains(err.Error(), "no management-clusters directory") {
+		t.Errorf("error does not say what is missing: %v", err)
 	}
 }

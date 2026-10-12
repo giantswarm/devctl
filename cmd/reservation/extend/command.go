@@ -14,13 +14,17 @@ const (
 	shortDescription = "Reset the expiry of every reservation a pull request holds."
 	longDescription  = `Reset the expiry of every reservation a pull request holds.
 
-The command works on an existing checkout of the GitOps repository, given by
---repo-dir (the current directory by default). It never clones. It scans
-every management cluster enabled for reservations -- one that never opted in
-is skipped, not a failure -- and resets the window of every reservation whose
-pull request matches --pull-request, one at a time, committing and pushing
-with the checkout's own git configuration: no GitHub token is needed, so this
-also runs from a laptop.
+The command works on a checkout of the GitOps repository, found through
+--gitops-dir or, when that is empty, $UMBRELLA_TARGET_DIR/cmc/<repo> (<repo> is
+the name part of --gitops-repo). It never clones: with neither it fails. Before
+anything else it fast-forwards the checkout to origin/main, and it stops when
+the checkout is not on main, is dirty, or has local commits that are not on
+origin/main. Git uses the checkout's own credentials.
+It scans every management cluster enabled for reservations -- one that never
+opted in is skipped, not a failure -- and resets the window of every
+reservation whose pull request matches --pull-request, one at a time,
+committing and pushing. No GitHub token is needed, so this also runs from a
+laptop. Flux applies the change to the cluster a few minutes after the push.
 
 Each reservation keeps its own stored cluster, app, scope and duration --
 only the window moves, starting now and lasting as long as the existing
@@ -38,7 +42,7 @@ stdout: cluster, app and the new expiry (RFC 3339). It prints nothing when it
 finds nothing to extend. A cluster or a reservation that fails does not stop
 the sweep from reaching the next one; the command still prints every
 extension that did land before reporting the failure and exiting non-zero.`
-	example = `  devctl reservation extend --repo-dir . --pull-request giantswarm/hello-world#123 --user reservation-extend`
+	example = `  devctl reservation extend --gitops-dir ~/umbrella/cmc/giantswarm-management-clusters --pull-request giantswarm/hello-world#123 --user reservation-extend`
 )
 
 type Config struct {

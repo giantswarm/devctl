@@ -18,7 +18,7 @@ import (
 
 // Flag names, shared across tests that build a reap command's --args.
 const (
-	flagRepoDir = "--repo-dir"
+	flagRepoDir = "--gitops-dir"
 	flagUser    = "--user"
 )
 

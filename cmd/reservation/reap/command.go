@@ -14,20 +14,24 @@ const (
 	shortDescription = "Sweep a GitOps repo, releasing every reservation that ran out of time or was renamed out from under it."
 	longDescription  = `Sweep a GitOps repo, releasing every reservation that ran out of time or was renamed out from under it.
 
-The command works on an existing checkout of the GitOps repository, given by
---repo-dir (the current directory by default). It never clones. It sweeps
-every management cluster enabled for reservations -- one that never opted in
-is skipped, not a failure -- and releases every reservation whose expiry
-passed, exactly as the release command does one at a time, committing and
-pushing with the checkout's own git configuration: no GitHub token is needed
-for that, so this also runs from a laptop.
+The command works on a checkout of the GitOps repository, found through
+--gitops-dir or, when that is empty, $UMBRELLA_TARGET_DIR/cmc/<repo> (<repo> is
+the name part of --gitops-repo). It never clones: with neither it fails. Before
+anything else it fast-forwards the checkout to origin/main, and it stops when
+the checkout is not on main, is dirty, or has local commits that are not on
+origin/main. Git uses the checkout's own credentials.
+It sweeps every management cluster enabled for reservations -- one that never
+opted in is skipped, not a failure -- and releases every reservation whose
+expiry passed, exactly as the release command does one at a time, committing
+and pushing. No GitHub token is needed for that, so this also runs from a
+laptop. Flux applies the change to the cluster a few minutes after the push.
 
 It also releases a reservation that is not yet expired when its pull
 request's current head branch no longer matches the reservation's stored
-branch: a rename means the old branch builds nothing. That check needs a
-GitHub token (DEVCTL_GITHUB_TOKEN, GITHUB_TOKEN or OPSCTL_GITHUB_TOKEN); with
-none set, the command still releases every expired reservation, it just never
-catches a rename.
+branch: a rename means the old branch builds nothing. That check reads the pull
+request through the GitHub API and needs a GitHub token (DEVCTL_GITHUB_TOKEN,
+GITHUB_TOKEN or OPSCTL_GITHUB_TOKEN); with none set, the command still releases
+every expired reservation, it just never catches a rename.
 
 For each release the command prints one tab-separated line to stdout:
 cluster, app, user, branch, pull request, reason ("expired" or "renamed"),
@@ -35,7 +39,7 @@ until (RFC 3339) and commit. It prints nothing when it finds nothing to
 release. A cluster or a reservation that fails does not stop the sweep from
 reaching the next one; the command still prints every release that did land
 before reporting the failure and exiting non-zero.`
-	example = `  devctl reservation reap --repo-dir . --user reservation-reaper`
+	example = `  devctl reservation reap --gitops-dir ~/umbrella/cmc/giantswarm-management-clusters --user reservation-reaper`
 )
 
 type Config struct {

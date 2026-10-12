@@ -20,8 +20,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Added
 
 - `reservation reserve`: a new command that points one management cluster's copy of one collection
-  app at the dev builds of one branch for 10 hours. It clones the GitOps repository holding the
-  cluster, writes a Kustomize component that carries a second `OCIRepository` following the
+  app at the dev builds of one branch for 10 hours. It works on the synced GitOps checkout (see
+  the bullet on `--gitops-dir` below), writes a Kustomize component that carries a second `OCIRepository` following the
   branch's dev tags plus the patch that points the app's `HelmRelease` at it, records the holder in
   the cluster's `configmap-reservations.yaml`, and pushes one commit. The new source object is a
   copy of the resolved original with only its name, annotations, interval and version selector
@@ -63,8 +63,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   way `reserve` does, and refuses an app that holds no reservation without changing anything.
   `list` prints every active reservation on a cluster — app, user, branch, pull request, scope and
   expiry — reading them straight from the fields `reserve` wrote, never reconstructed from
-  anywhere else. Both commands work on an existing checkout (`--repo-dir`, default `.`): neither
-  clones, and `release`'s own push needs no GitHub token or any credential beyond what a laptop's
+  anywhere else. Both commands work on the synced GitOps checkout (see the `--gitops-dir`
+  bullet below), and `release`'s own push needs no GitHub token or any credential beyond what the
   checkout already has.
 - `reservation reserve`: a new `--exclusive` flag locks the whole cluster instead of just the app,
   refusing any other active reservation, ignoring one already expired but unswept, and promoting its
@@ -80,8 +80,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   retry gives up and reports the failure after `reservation.MaxPushAttempts` (5) attempts. Neither
   command needs to name its branch or remote: `git push` / `git fetch` / `git reset --hard
   @{upstream}` follow whatever upstream the checkout already tracks, with whatever credentials it
-  already has on a laptop or in CI. `reserve` clones with a token kept out of the URL and
-  `.git/config`, so it hands the token to git through the environment for its push and fetch.
+  already has on a laptop or in CI; devctl never hands git a token. A push that gives up leaves the
+  commit on local `main` and fails with an error that says the change is not in effect and prints
+  `git -C <dir> reset --hard origin/main`.
 - `reservation reap`: a new command that sweeps every management cluster enabled for reservations in
   a GitOps repo and releases every reservation whose expiry passed, one at a time through
   `reservation.Release` and `reservation.PushWithRetry`, exactly as `release` does for a single one.
@@ -91,9 +92,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   `OPSCTL_GITHUB_TOKEN`), and without one the command still releases everything past its expiry. A
   cluster that never opted in is skipped, not a failure, and a cluster or a reservation that does
   fail does not stop the sweep from reaching the next one — its error is joined into the one the
-  command reports only after printing every release that did land. The command works on an existing
-  checkout (`--repo-dir`, default `.`): it never clones, and needs no GitHub token for the sweep or
-  its own push, so it does the same work from a laptop that a scheduled job would do in CI. For each
+  command reports only after printing every release that did land. The command works on the synced GitOps
+  checkout, and needs no GitHub token for the sweep or its own push, so it does the same work from
+  a laptop that a scheduled job would do in CI. For each
   release it prints one tab-separated line — cluster, app, user, branch, pull request, reason
   (`expired` or `renamed`), until (RFC 3339) and commit — and nothing at all when it finds nothing.
   A reservation someone else released while the sweep pushed is left alone, not reported as an error.
@@ -129,16 +130,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   If every record a pull request holds is expired, the command refuses exactly as if it
   found none, naming `/deploy` as the way to create one. A single reservation whose stored duration
   now exceeds its cluster's cap (7 days, or lower per `reservations.giantswarm.io/max-duration`) is
-  refused on its own and does not stop the rest of the sweep. The command works on an existing
-  checkout (`--repo-dir`, default `.`): it never clones and needs no GitHub token, so it does the
-  same work from a laptop that a workflow run would do in CI. For each reservation reset it prints
+  refused on its own and does not stop the rest of the sweep. The command works on the synced GitOps
+  checkout and needs no GitHub token, so it does the same work from a laptop that a workflow run
+  would do in CI. For each reservation reset it prints
   one tab-separated line — cluster, app and the new expiry (RFC 3339) — and nothing at all when it
   finds nothing.
-- `reservation list`: no longer prints a reservation whose expiry has already passed but `reap` has
-  not swept yet. `reservation.List` itself still returns every entry on record, expired or not,
-  because `reap` and the collision check both rely on seeing the ones past expiry too; only the
-  `list` command's own output is now filtered to the ones still active as of now, matching what its
-  doc comment and user story 26 always said it printed.
+- `reservation list`: reads the reservations from the synced GitOps checkout, never from the cluster, and
+  shows a reservation past its expiry that `reap` has not swept yet, marked `expired` in a STATUS
+  column, instead of hiding it.
+- `reservation` commands (`reserve`, `release`, `list`, `extend`, `reap`): all five work on one GitOps
+  checkout, found through `--gitops-dir` or, when that is empty, `$UMBRELLA_TARGET_DIR/cmc/<repo>`
+  (`<repo>` is the name part of `--gitops-repo`, default `giantswarm/giantswarm-management-clusters`).
+  With neither, the command fails and names both; nothing is cloned, and `--repo-dir` is gone. Before
+  any command logic, `list` included, devctl checks that the checkout is on a clean `main`, fetches
+  `origin/main` and fast-forwards when it is behind, saying so on stderr. A checkout that is off
+  `main`, dirty, ahead of or diverged from `origin/main` makes the command stop with the reason (and,
+  for local commits, the `git -C <dir> reset --hard origin/main` that clears them). Git uses the
+  checkout's own credentials; the GitHub token is only used by `reap` to read pull requests. After a
+  write the command says that Flux applies the change in a few minutes.
 - `reservation release`: releasing an app whose cluster already had `components: []` in
   `collections/kustomization.yaml` before its first reservation no longer leaves the key deleted, and
   no longer drops whatever followed it in the file. `reserve` turns that literal `[]` into a real
@@ -148,10 +157,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   same way `reserve` already reports one, by masking the underlying error directly instead of
   wrapping it in a package-local `pushError` / `reapError`. Neither local kind was ever asserted
   anywhere, and wrapping discarded the identity of the real error underneath, such as
-  `reservation.IsPush` or `reservation.IsPushRetriesExhausted`; the CLI's own output is unchanged.
+  `reservation.IsPush` or `reservation.IsPushFailed`; the CLI's own output is unchanged.
   `release.IsPush` and `reap.IsReap` are removed along with them.
 
-- `reservation reserve` and `reservation reap`: the GitHub token now comes from
+- `reservation reap`: the GitHub token now comes from
   `authstore.ResolveGitHub`, like `deploy`: `DEVCTL_GITHUB_TOKEN`, `GITHUB_TOKEN` or
   `OPSCTL_GITHUB_TOKEN` when set, else the `devctl auth login` App login. `reap` still
   runs without any token and skips only the branch-rename check. A 404 under the App login names its

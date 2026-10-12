@@ -500,3 +500,81 @@ func TestReserveRefusesAnAppThatIsAlreadyReserved(t *testing.T) {
 		t.Errorf("refusal does not name the holder: %s", err.Error())
 	}
 }
+
+// reserveAt reserves fixtureApp on dir as user at now.
+func reserveAt(t *testing.T, dir, user string, now time.Time) {
+	t.Helper()
+
+	req := testRequest(dir)
+	req.User = user
+	req.Now = now
+	if _, err := reservation.Reserve(req); err != nil {
+		t.Fatalf("reserve as %s: %v", user, err)
+	}
+}
+
+// TestReserveTakesOverAnExpiredEntryOfTheSameApp: an expired reservation is not
+// a lock. Another user's Reserve replaces entry and component in one commit,
+// and Release then restores the true original, not the old dev source.
+func TestReserveTakesOverAnExpiredEntryOfTheSameApp(t *testing.T) {
+	dir := newGitOpsFixture(t, fixtureOptions{})
+	repo, err := git.PlainOpen(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pristine := commitAt(t, repo)
+
+	start := testRequest(dir).Now
+	reserveAt(t, dir, testUser, start)
+	first := commitAt(t, repo)
+
+	reserveAt(t, dir, testOtherUser, start.Add(30*24*time.Hour))
+	second := commitAt(t, repo)
+
+	if len(second.ParentHashes) != 1 || second.ParentHashes[0] != first.Hash {
+		t.Fatalf("the takeover is not exactly one commit on top of the first reservation")
+	}
+	entries := reservationEntries(t, dir, fixtureCluster)
+	if len(entries) != 1 || entries[fixtureApp]["user"] != testOtherUser {
+		t.Errorf("entries after takeover: %v, want only %s held by %s", entries, fixtureApp, testOtherUser)
+	}
+
+	if _, err := reservation.Release(reservation.ReleaseRequest{
+		RepoDir: dir, Cluster: fixtureCluster, App: fixtureApp, User: testOtherUser,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	patch, err := pristine.Patch(commitAt(t, repo))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fp := patch.FilePatches(); len(fp) != 0 {
+		t.Errorf("release after a takeover did not restore the pre-reservation state:\n%s", patch.String())
+	}
+}
+
+// TestReserveLeavesAnExpiredEntryOfAnotherAppAlone: only the same app's expired
+// entry is replaced; the reaper owns the rest.
+func TestReserveLeavesAnExpiredEntryOfAnotherAppAlone(t *testing.T) {
+	dir := newGitOpsFixture(t, fixtureOptions{})
+
+	start := testRequest(dir).Now
+	other := testRequest(dir)
+	other.App = fixtureOtherApp
+	other.User = testOtherUser
+	other.Branch = testOtherBranch
+	if _, err := reservation.Reserve(other); err != nil {
+		t.Fatal(err)
+	}
+	expired := reservationEntries(t, dir, fixtureCluster)[fixtureOtherApp]
+
+	reserveAt(t, dir, testUser, start.Add(30*24*time.Hour))
+
+	entries := reservationEntries(t, dir, fixtureCluster)
+	if diff := cmp.Diff(expired, entries[fixtureOtherApp]); diff != "" {
+		t.Errorf("the expired entry of %s changed (-before +after):\n%s", fixtureOtherApp, diff)
+	}
+	if entries[fixtureApp]["user"] != testUser {
+		t.Errorf("%s entry: %v", fixtureApp, entries[fixtureApp])
+	}
+}

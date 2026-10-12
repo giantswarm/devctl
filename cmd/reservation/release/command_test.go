@@ -17,7 +17,7 @@ import (
 
 // Flag names, shared across tests that build a release command's --args.
 const (
-	flagRepoDir = "--repo-dir"
+	flagRepoDir = "--gitops-dir"
 	flagCluster = "--cluster"
 	flagApp     = "--app"
 	flagUser    = "--user"
@@ -46,7 +46,7 @@ func newCommand(t *testing.T, stdout io.Writer) *cobra.Command {
 }
 
 // TestRefusesAMissingUser checks that a missing --user is refused by the
-// flags, before the command ever opens --repo-dir.
+// flags, before the command ever opens --gitops-dir.
 func TestRefusesAMissingUser(t *testing.T) {
 	cmd := newCommand(t, io.Discard)
 	cmd.SetArgs([]string{

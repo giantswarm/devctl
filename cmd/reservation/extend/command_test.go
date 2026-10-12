@@ -18,7 +18,7 @@ import (
 
 // Flag names, shared across tests that build an extend command's --args.
 const (
-	flagRepoDir     = "--repo-dir"
+	flagRepoDir     = "--gitops-dir"
 	flagPullRequest = "--pull-request"
 	flagUser        = "--user"
 )

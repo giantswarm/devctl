@@ -2,7 +2,6 @@ package reservation_test
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -141,8 +140,7 @@ func TestPushWithRetryRerendersAfterAnotherReservationLands(t *testing.T) {
 }
 
 // TestPushWithRetryRefusesToRebaseADirtyWorktree is the regression for a HIGH
-// finding: release, reap and extend all default --repo-dir to ".", running
-// directly against a developer's own checkout rather than a clone. A rejected
+// finding: the commands run directly against a developer's own checkout. A rejected
 // push must never fall back to blindly hard-resetting that checkout, because
 // `git reset --hard` cannot spare a file it never wrote -- it would destroy
 // whatever unrelated, uncommitted work the developer had in progress there.
@@ -225,62 +223,73 @@ func TestPushWithRetryGivesUpAfterMaxAttempts(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected a failure, got none")
 	}
-	if !reservation.IsPushRetriesExhausted(err) {
-		t.Fatalf("expected a push-retries-exhausted error, got %v", err)
+	if !reservation.IsPushFailed(err) {
+		t.Fatalf("expected a push-failed error, got %v", err)
 	}
 	if calls != reservation.MaxPushAttempts {
 		t.Errorf("render called %d times, want %d", calls, reservation.MaxPushAttempts)
 	}
 }
 
-// TestPushHandsTheTokenToGitThroughItsEnvironmentOnly checks the token a
-// WithGitHubToken context carries reaches git as an http.extraheader for
-// github.com, after a GIT_CONFIG_* entry already set, and lands in neither
-// the remote URL nor .git/config. A pre-push hook stands in for the network:
-// it sees the environment git pushes with.
-func TestPushHandsTheTokenToGitThroughItsEnvironmentOnly(t *testing.T) {
+// TestPushWithRetryKeepsTheCommitWhenItGivesUp checks the failed push leaves
+// the last commit on local main, so the caller can tell the user it was not
+// pushed and nothing is lost.
+func TestPushWithRetryKeepsTheCommitWhenItGivesUp(t *testing.T) {
+	dir, origin := newPushFixture(t)
+	saboteur := t.TempDir()
+	gittest.RunGit(t, saboteur, "clone", origin, ".")
+
+	calls := 0
+	render := func() error {
+		calls++
+		writeAndCommit(t, dir, "change.txt", fmt.Sprintf("change %d\n", calls))
+		gittest.RunGit(t, saboteur, "pull", "--rebase", "origin", "main")
+		writeAndCommit(t, saboteur, "sabotage.txt", fmt.Sprintf("sabotage %d\n", calls))
+		gittest.RunGit(t, saboteur, "push", "origin", "main")
+
+		return nil
+	}
+
+	err := reservation.PushWithRetry(context.Background(), dir, render)
+	if !reservation.IsPushFailed(err) {
+		t.Fatalf("expected a push-failed error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "still on local main and was not pushed") {
+		t.Errorf("error does not say the commit was kept: %v", err)
+	}
+
+	if got := gittest.GitOutput(t, dir, "log", "-1", "--format=%s"); got != "add change.txt" {
+		t.Errorf("the commit was not kept on local main: HEAD is %q", got)
+	}
+	if got := gittest.GitOutput(t, dir, "branch", "--show-current"); got != "main" {
+		t.Errorf("tree is on %q, want main", got)
+	}
+	if got := gittest.GitOutput(t, dir, "status", "--porcelain"); got != "" {
+		t.Errorf("tree is not clean:\n%s", got)
+	}
+}
+
+// TestPushWithRetryKeepsTheCommitOnANonRetryableError covers a push that fails
+// for a reason a re-render cannot fix: it must stop at once, commit kept.
+func TestPushWithRetryKeepsTheCommitOnANonRetryableError(t *testing.T) {
 	dir, _ := newPushFixture(t)
-	writeAndCommit(t, dir, "change.txt", "change\n")
+	gittest.RunGit(t, dir, "remote", "set-url", "origin", filepath.Join(t.TempDir(), "gone"))
 
-	envFile := filepath.Join(t.TempDir(), "env")
-	hook := filepath.Join(dir, ".git", "hooks", "pre-push")
-	if err := os.MkdirAll(filepath.Dir(hook), 0o750); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(hook, []byte("#!/bin/sh\nenv > '"+envFile+"'\n"), 0o700); err != nil { //nolint:gosec // an executable test hook
-		t.Fatal(err)
+	calls := 0
+	render := func() error {
+		calls++
+		writeAndCommit(t, dir, "change.txt", "change\n")
+		return nil
 	}
 
-	t.Setenv("GIT_CONFIG_COUNT", "1")
-	t.Setenv("GIT_CONFIG_KEY_0", "core.abbrev")
-	t.Setenv("GIT_CONFIG_VALUE_0", "7")
-
-	const token = "s3cret-token"
-	if err := reservation.Push(reservation.WithGitHubToken(context.Background(), token), dir); err != nil {
-		t.Fatalf("Push: %v", err)
+	err := reservation.PushWithRetry(context.Background(), dir, render)
+	if !reservation.IsPushFailed(err) {
+		t.Fatalf("expected a push-failed error, got %v", err)
 	}
-
-	env, err := os.ReadFile(envFile)
-	if err != nil {
-		t.Fatal(err)
+	if calls != 1 {
+		t.Errorf("render called %d times, want 1: a non-rejection must not be retried", calls)
 	}
-	header := "Authorization: Basic " + base64.StdEncoding.EncodeToString([]byte("x-access-token:"+token))
-	for _, want := range []string{
-		"GIT_CONFIG_COUNT=2",
-		"GIT_CONFIG_KEY_0=core.abbrev",
-		"GIT_CONFIG_KEY_1=http.https://github.com/.extraheader",
-		"GIT_CONFIG_VALUE_1=" + header,
-	} {
-		if !strings.Contains(string(env), want+"\n") {
-			t.Errorf("git's environment lacks %q:\n%s", want, env)
-		}
-	}
-
-	config, err := os.ReadFile(filepath.Join(dir, ".git", "config"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(config), token) {
-		t.Errorf("the token landed in .git/config:\n%s", config)
+	if got := gittest.GitOutput(t, dir, "log", "-1", "--format=%s"); got != "add change.txt" {
+		t.Errorf("the commit was not kept on local main: HEAD is %q", got)
 	}
 }

@@ -3,6 +3,8 @@ package release
 import (
 	"github.com/giantswarm/microerror"
 	"github.com/spf13/cobra"
+
+	"github.com/giantswarm/devctl/v8/cmd/reservation/gitops"
 )
 
 const (
@@ -10,7 +12,6 @@ const (
 	flagAppDir      = "app-dir"
 	flagCluster     = "cluster"
 	flagPullRequest = "pull-request"
-	flagRepoDir     = "repo-dir"
 	flagUser        = "user"
 )
 
@@ -19,7 +20,7 @@ type flag struct {
 	AppDir      string
 	Cluster     string
 	PullRequest string
-	RepoDir     string
+	GitOps      gitops.Flags
 	User        string
 }
 
@@ -28,13 +29,16 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.AppDir, flagAppDir, "", "Checkout of the app repository, read only to take the chart name when --app is empty.")
 	cmd.Flags().StringVar(&f.PullRequest, flagPullRequest, "", "Pull request whose reservations to release, e.g. giantswarm/hello-world#123. It releases every reservation that pull request holds, on every enabled cluster, so it needs neither --cluster nor --app: a merged or closed pull request knows neither.")
 	cmd.Flags().StringVar(&f.Cluster, flagCluster, "", "Name of the management cluster to release the app on.")
-	cmd.Flags().StringVar(&f.RepoDir, flagRepoDir, ".", "Checkout of the GitOps repository holding the management cluster. The command commits to it and pushes; it never clones.")
+	f.GitOps.Init(cmd)
 	cmd.Flags().StringVar(&f.User, flagUser, "", "GitHub login of whoever releases the reservation. It need not be the original holder.")
 }
 
 func (f *flag) Validate() error {
+	if err := f.GitOps.Validate(); err != nil {
+		return microerror.Mask(err)
+	}
+
 	for _, r := range []struct{ name, value string }{
-		{flagRepoDir, f.RepoDir},
 		{flagUser, f.User},
 	} {
 		if r.value == "" {

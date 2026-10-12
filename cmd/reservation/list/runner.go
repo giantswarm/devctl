@@ -35,38 +35,39 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// run reads the checkout at --repo-dir directly: no clone, no GitHub token, so
-// it works from a laptop exactly like release.
+// run reads the GitOps checkout, synced to origin/main first: never the
+// cluster, and no GitHub token, so it works from a laptop exactly like release.
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
-	all, err := reservation.List(reservation.ListRequest{
-		RepoDir: r.flag.RepoDir,
-		Cluster: r.flag.Cluster,
-	})
+	checkout, err := r.flag.GitOps.Open(ctx, r.stderr)
 	if err != nil {
 		return microerror.Mask(err)
 	}
 
-	// List returns every entry on record, including one already past its
-	// Until that the reaper has not swept yet: that one is not active, and
-	// must not be printed as if it still held the app.
-	now := time.Now()
-	var reservations []reservation.Reservation
-	for _, res := range all {
-		if res.Until.After(now) {
-			reservations = append(reservations, res)
-		}
+	all, err := reservation.List(reservation.ListRequest{
+		RepoDir: checkout.Dir,
+		Cluster: r.flag.Cluster,
+	})
+	if err != nil {
+		return microerror.Mask(checkout.Explain(err))
 	}
 
-	if len(reservations) == 0 {
-		_, _ = fmt.Fprintf(r.stdout, "No active reservations on %s.\n", r.flag.Cluster)
+	if len(all) == 0 {
+		_, _ = fmt.Fprintf(r.stdout, "No reservations on %s.\n", r.flag.Cluster)
 		return nil
 	}
 
+	// An entry past its Until that the reaper has not swept yet is shown, marked
+	// expired: it no longer holds the app, but it is still on record.
+	now := time.Now()
 	w := tabwriter.NewWriter(r.stdout, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(w, "APP\tUSER\tBRANCH\tPULL REQUEST\tSCOPE\tEXPIRES")
-	for _, res := range reservations {
-		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
-			res.App, res.User, res.Branch, res.PullRequest, res.Scope, res.Until.Format("2006-01-02 15:04 MST"))
+	_, _ = fmt.Fprintln(w, "APP\tUSER\tBRANCH\tPULL REQUEST\tSCOPE\tEXPIRES\tSTATUS")
+	for _, res := range all {
+		status := "active"
+		if res.Expired(now) {
+			status = "expired"
+		}
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			res.App, res.User, res.Branch, res.PullRequest, res.Scope, res.Until.Format("2006-01-02 15:04 MST"), status)
 	}
 
 	return microerror.Mask(w.Flush())

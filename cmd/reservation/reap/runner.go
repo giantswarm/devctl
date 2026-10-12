@@ -40,12 +40,18 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// run sweeps --repo-dir directly: no clone. A GitHub token is only needed for
-// the rename check; without one, HeadBranch stays nil and reservation.Reap
-// still releases everything past its expiry.
+// run sweeps the GitOps checkout, synced to origin/main first: no clone. A
+// GitHub token is only needed for the rename check, the one GitHub API call;
+// without one, HeadBranch stays nil and reservation.Reap still releases
+// everything past its expiry.
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
+	checkout, err := r.flag.GitOps.Open(ctx, r.stderr)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
 	req := reservation.ReapRequest{
-		RepoDir: r.flag.RepoDir,
+		RepoDir: checkout.Dir,
 		User:    r.flag.User,
 	}
 
@@ -78,8 +84,11 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 			entry.Reason, entry.Until.Format(time.RFC3339), entry.Commit)
 	}
 
+	if len(reaped) > 0 {
+		checkout.Wrote(r.stderr)
+	}
 	if reapErr != nil {
-		return microerror.Mask(reapErr)
+		return microerror.Mask(checkout.Explain(reapErr))
 	}
 
 	return nil

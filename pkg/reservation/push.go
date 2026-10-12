@@ -2,12 +2,9 @@ package reservation
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
 	"io"
-	"os"
 	"os/exec"
-	"strconv"
 	"strings"
 
 	"github.com/giantswarm/microerror"
@@ -17,43 +14,12 @@ import (
 // gives up and reports the failure.
 const MaxPushAttempts = 5
 
-type tokenKey struct{}
-
-// WithGitHubToken returns a context under which Push and PushWithRetry
-// authenticate to github.com with token. A githubclient clone keeps its token
-// out of the remote URL and .git/config, so native git has nothing to push
-// with unless the caller that cloned hands the token back. It reaches git only
-// through its environment, never argv, the URL or an error message.
-func WithGitHubToken(ctx context.Context, token string) context.Context {
-	return context.WithValue(ctx, tokenKey{}, token)
-}
-
-// gitEnv is the environment for a native git run: the process's own, plus the
-// token from WithGitHubToken as an http.extraheader for github.com, appended
-// after any GIT_CONFIG_* entries already set.
-func gitEnv(ctx context.Context) []string {
-	env := os.Environ()
-	token, _ := ctx.Value(tokenKey{}).(string)
-	if token == "" {
-		return env
-	}
-
-	n, _ := strconv.Atoi(os.Getenv("GIT_CONFIG_COUNT"))
-	header := "Authorization: Basic " + base64.StdEncoding.EncodeToString([]byte("x-access-token:"+token))
-
-	return append(env,
-		"GIT_CONFIG_COUNT="+strconv.Itoa(n+1),
-		"GIT_CONFIG_KEY_"+strconv.Itoa(n)+"=http.https://github.com/.extraheader",
-		"GIT_CONFIG_VALUE_"+strconv.Itoa(n)+"="+header)
-}
-
 // Push pushes dir's current branch to its upstream, using whatever
 // credentials are already configured on the remote: the checkout's own git
-// credentials on a laptop or in CI, or the token a WithGitHubToken context
-// carries for a clone devctl made itself. Reserve and Release share it, so
-// there is one way to push, not two. It relies on the upstream tracking a
-// clone -- go-git's or native git's -- always sets up, so no caller has to
-// name the branch or the remote.
+// credentials (SSH or a credential helper on a laptop, the token
+// actions/checkout persists in CI). Reserve and Release share it, so there is
+// one way to push, not two. It relies on the upstream a checkout of main
+// always tracks, so no caller has to name the branch or the remote.
 func Push(ctx context.Context, dir string) error {
 	if err := runGit(ctx, dir, "push"); err != nil {
 		return microerror.Maskf(pushError, "%s", err)
@@ -70,12 +36,20 @@ func Push(ctx context.Context, dir string) error {
 // whatever it rendered against the old tip; this reruns render against
 // whatever landed there first, so a reservation that collided on the same
 // kustomization.yaml or ConfigMap is folded in instead of corrupted.
+//
+// When it gives up -- every attempt rejected, or a push error that is not a
+// rejection (no credentials, no network) -- the last commit stays on local
+// main and the error is a pushFailedError, so the caller can tell the user
+// the change is committed but not pushed. A render error is returned as is.
 func PushWithRetry(ctx context.Context, dir string, render func() error) error {
 	var lastErr error
 	for attempt := 1; attempt <= MaxPushAttempts; attempt++ {
 		if attempt > 1 {
 			if err := rebaseOntoRemote(ctx, dir); err != nil {
-				return microerror.Mask(err)
+				if IsDirtyWorktree(err) {
+					return microerror.Mask(err)
+				}
+				return microerror.Maskf(pushFailedError, "%s: the commit is still on local main and was not pushed", err)
 			}
 		}
 
@@ -83,16 +57,25 @@ func PushWithRetry(ctx context.Context, dir string, render func() error) error {
 			return microerror.Mask(err)
 		}
 
-		if err := Push(ctx, dir); err != nil {
-			lastErr = err
-			continue
+		err := Push(ctx, dir)
+		if err == nil {
+			return nil
 		}
-
-		return nil
+		lastErr = err
+		if !isRejection(err) {
+			break
+		}
 	}
 
-	return microerror.Maskf(pushRetriesExhaustedError,
-		"push rejected after %d attempts: %s", MaxPushAttempts, lastErr)
+	return microerror.Maskf(pushFailedError,
+		"push failed: %s: the commit is still on local main and was not pushed", lastErr)
+}
+
+// isRejection reports whether err is git refusing a push because the remote
+// moved, the only failure a re-render can fix.
+func isRejection(err error) bool {
+	msg := err.Error()
+	return strings.Contains(msg, "rejected") || strings.Contains(msg, "non-fast-forward") || strings.Contains(msg, "fetch first")
 }
 
 // rebaseOntoRemote discards the local commit render just made and moves dir
@@ -103,9 +86,8 @@ func PushWithRetry(ctx context.Context, dir string, render func() error) error {
 // the whole working tree. render's own commit is meant to hold exactly its
 // own files (commitAll stages nothing else), so the working tree should be
 // clean the instant render returns. If it is not, the extra dirt did not come
-// from this operation -- most likely dir defaults to ".", a checkout that
-// also holds a developer's own in-progress edits, on a command that never
-// clones (release, reap, extend all default --repo-dir to "."). Resetting
+// from this operation -- most likely dir is a developer's own checkout that
+// also holds in-progress edits. Resetting
 // anyway would take that unrelated work down with the stale commit, silently
 // and unrecoverably. Refusing is the only safe move: there is no path to
 // spare it from a hard reset, so this is the smallest change that actually
@@ -130,7 +112,6 @@ func rebaseOntoRemote(ctx context.Context, dir string) error {
 
 func runGit(ctx context.Context, dir string, args ...string) error {
 	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...) //nolint:gosec // dir and args are trusted, not user data
-	cmd.Env = gitEnv(ctx)
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
 	cmd.Stdout = io.Discard
