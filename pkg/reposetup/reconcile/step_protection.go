@@ -1051,20 +1051,27 @@ func describeActor(a *github.BypassActor, team *github.Team) string {
 	return fmt.Sprintf("%s %d (%s)", kind, a.GetActorID(), mode)
 }
 
-// pipelineGates reads the generated pipeline — the request's documents, or
-// the repository's .circleci — and returns the contexts of its branch-side
-// jobs; known is false when there is no pipeline file.
+// pipelineGates reads the generated pipeline — the request's documents, the
+// repository's .circleci, or, while the default branch has none, the one the
+// open align-files pull request brings — and returns the contexts of its
+// branch-side jobs; known is false when there is no pipeline file. Reading
+// the pull request's pipeline lets a repository move from a hand-kept
+// pipeline to the generated one: the old pipeline's contexts are stale
+// against it and stop being required, so the pull request can merge; the
+// generated jobs are required once they have reported on the default
+// branch, by the run after the merge.
 func (r *Runner) pipelineGates(ctx context.Context, s *run) (gates []string, known bool, err error) {
 	files := s.req.Pipeline
 	if files == nil {
-		for _, name := range PipelineFiles {
-			data, found, err := r.fileContent(ctx, s.owner, s.name, ".circleci/"+name, s.branch())
-			if err != nil {
-				return nil, false, err
-			}
-			if found {
-				files = append(files, data)
-			}
+		files, err = r.pipelineFiles(ctx, s, s.branch())
+		if err != nil {
+			return nil, false, err
+		}
+	}
+	if files == nil {
+		files, err = r.alignPipelineFiles(ctx, s)
+		if err != nil {
+			return nil, false, err
 		}
 	}
 	if len(files) == 0 {
@@ -1075,6 +1082,48 @@ func (r *Runner) pipelineGates(ctx context.Context, s *run) (gates []string, kno
 		return nil, false, fmt.Errorf("%s: .circleci: %w", s.slug(), err)
 	}
 	return gates, true, nil
+}
+
+// pipelineFiles reads the generated pipeline's files at ref; nil when it
+// has none.
+func (r *Runner) pipelineFiles(ctx context.Context, s *run, ref string) ([][]byte, error) {
+	var files [][]byte
+	for _, name := range PipelineFiles {
+		data, found, err := r.fileContent(ctx, s.owner, s.name, ".circleci/"+name, ref)
+		if err != nil {
+			return nil, err
+		}
+		if found {
+			files = append(files, data)
+		}
+	}
+	return files, nil
+}
+
+// alignPipelineFiles reads the generated pipeline the open align-files pull
+// request into the default branch brings; nil when there is no such pull
+// request or it brings none.
+func (r *Runner) alignPipelineFiles(ctx context.Context, s *run) ([][]byte, error) {
+	open, _, err := r.GitHub.PullRequests.List(ctx, s.owner, s.name, &github.PullRequestListOptions{
+		State: stateOpen,
+		Head:  s.owner + ":" + AlignFilesBranch,
+		Base:  s.branch(),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("%s: align-files pull request: %w", s.slug(), err)
+	}
+	if len(open) == 0 {
+		return nil, nil
+	}
+	pr := open[0]
+	files, err := r.pipelineFiles(ctx, s, pr.GetHead().GetRef())
+	if err != nil {
+		return nil, err
+	}
+	if files != nil {
+		fmt.Fprintf(s.log, "%s/%s %s: the required CircleCI contexts follow the generated pipeline of align-files pull request #%d\n", s.owner, s.name, StepProtection, pr.GetNumber())
+	}
+	return files, nil
 }
 
 // requiredChecks computes the required contexts: the baseline's

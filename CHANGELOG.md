@@ -52,6 +52,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- Reconciler protection step: a repository moving from a hand-kept CircleCI pipeline to the generated one can merge its
+  align-files pull request. While the default branch has no generated pipeline, the step reads the one the open
+  align-files pull request (`teams-alignment-branch`) brings, so the hand-kept pipeline's contexts (such as
+  `ci/circleci: app-catalog`) are stale against it and stop being required; the generated jobs are required once they
+  have reported on the default branch, by the run after the merge. The entry's `requiredChecks` stay required.
+
 - `repo reconcile --steps`: the help lists the engine's steps from the engine, `labels` among them, instead of a
   hand-kept list.
 - `pr wait`: a read GitHub or CircleCI leaves unanswered through every retry (about ten minutes of an outage) no
