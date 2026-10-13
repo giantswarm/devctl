@@ -187,8 +187,12 @@ merge) is exit 1; the deadline is exit 2 with `unfinished` naming the queue.
 
 A head behind a base that requires branches to be up to date cannot merge as it is, and a head
 behind any other base may be red only because its old base was. With `--update-branch` the command
-asks GitHub to merge the base into the head before any check is judged (the **Update branch**
-button, `PUT .../pulls/{number}/update-branch` with the current head as the expected head), reads
+asks GitHub to bring the head up to its base before any check is judged, with the current head as
+the expected head: a squash or merge-commit merge has the base merged into the head (the **Update
+branch** button, `PUT .../pulls/{number}/update-branch`), a rebase merge (`--rebase`, or a fork
+line's default) has the head rebased onto the base (the **Update with rebase** button, the GraphQL
+mutation `updatePullRequestBranch` with `updateMethod: REBASE`, which REST has no call for), so no
+merge commit lands on a line that merges commit by commit. It reads
 the pull request until the new head is on it, and the wait judges that head: the CI of the updated
 branch is what turns green, and the merge lands it. Behind is GitHub's mergeable state for a strict
 base, and for every other base the comparison of base and head (`GET .../compare/{base}...{head}`,
