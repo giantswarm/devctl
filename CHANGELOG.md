@@ -81,6 +81,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `auth exec` and the `gh` link: a passthrough `gh` shim ahead of the link on `PATH` no longer recurses with it. The
+  link runs the next `gh` past its own `PATH` entry, and a program that hands every call back to the link is refused
+  after four programs in one chain of calls, exit 7, naming them. See docs/auth.md.
 - `release wait`: an image or chart the registry serves to a pull is available on the first probe. A HEAD of the
   manifest that does not confirm it (answered without the digest header, or not found) is followed by the GET a pull
   sends, which decides; before, the probe said missing and a short `--timeout` ended in exit 2 for a published chart.
