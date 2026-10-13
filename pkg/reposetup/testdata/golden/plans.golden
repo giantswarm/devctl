@@ -18,6 +18,7 @@ skill directory for the .claude/skills/x symlink to point at.
   },
   "extraKnownMarketplaces": {
     "giantswarm": {
+      "autoUpdate": true,
       "source": {
         "repo": "giantswarm/claude-code",
         "source": "github"

@@ -135,7 +135,7 @@ Writes the set-up every team plans repository shares. Nothing is generated witho
 devctl gen plans --flavour plans
 ```
 
-`.claude/settings.json` enables the `gs-plans` plugin, the plan-workflow skills, from the `giantswarm` marketplace (giantswarm/claude-code). devctl owns two entries, `extraKnownMarketplaces.giantswarm` and `enabledPlugins["gs-plans@giantswarm"]`, and keeps every other key of an existing file, so a team adds its own settings in the same file. The JSON is rewritten with sorted keys and two-space indentation. The skills live in the plugin, not in the repository; the repository's own rules, such as which plan stages are required, stay in its `AGENTS.md`.
+`.claude/settings.json` enables the `gs-plans` plugin, the plan-workflow skills, from the `giantswarm` marketplace (giantswarm/claude-code), with `autoUpdate` on so Claude Code refreshes the marketplace and its plugins after startup. devctl owns two entries, `extraKnownMarketplaces.giantswarm` and `enabledPlugins["gs-plans@giantswarm"]`, and keeps every other key of an existing file, so a team adds its own settings in the same file. The JSON is rewritten with sorted keys and two-space indentation; strings and numbers stay as written. The skills live in the plugin, not in the repository; the repository's own rules, such as which plan stages are required, stay in its `AGENTS.md`.
 
 ## Generating CircleCI configuration
 

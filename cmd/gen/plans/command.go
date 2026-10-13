@@ -17,8 +17,9 @@ const (
 devctl gen plans --flavour plans
 
 Without the plans flavour nothing is generated. With it, .claude/settings.json enables
-the gs-plans plugin from the giantswarm/claude-code marketplace. Only the marketplace
-entry and the plugin entry are written; every other setting in the file is kept.
+the gs-plans plugin from the giantswarm/claude-code marketplace, with autoUpdate on.
+Only the marketplace entry and the plugin entry are written; every other setting in
+the file is kept.
 `
 )
 

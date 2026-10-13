@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"io/fs"
 	"os"
 
@@ -42,13 +43,14 @@ func NewClaudeSettingsInput(path string) input.Input {
 func mergeClaudeSettings(existing []byte) ([]byte, error) {
 	settings := map[string]any{}
 	if len(bytes.TrimSpace(existing)) > 0 {
-		if err := json.Unmarshal(existing, &settings); err != nil {
-			return nil, microerror.Maskf(invalidSettingsError, "%s is not a JSON object: %v", ClaudeSettingsPath, err)
+		if err := decodeSettings(existing, &settings); err != nil {
+			return nil, microerror.Maskf(invalidSettingsError, "%s: %v", ClaudeSettingsPath, err)
 		}
 	}
 
 	marketplaces := objectAt(settings, "extraKnownMarketplaces")
 	marketplaces[marketplaceName] = map[string]any{
+		"autoUpdate": true,
 		"source": map[string]any{
 			"source": "github",
 			"repo":   marketplaceRepo,
@@ -58,12 +60,31 @@ func mergeClaudeSettings(existing []byte) ([]byte, error) {
 	plugins := objectAt(settings, "enabledPlugins")
 	plugins[plansPlugin] = true
 
-	out, err := json.MarshalIndent(settings, "", "  ")
-	if err != nil {
+	// Permission rules such as Bash(a && b) are kept as written: the default
+	// HTML escaping would rewrite & < > as \u0026 \u003c \u003e.
+	var out bytes.Buffer
+	enc := json.NewEncoder(&out)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(settings); err != nil {
 		return nil, microerror.Mask(err)
 	}
 
-	return append(out, '\n'), nil
+	return out.Bytes(), nil
+}
+
+// decodeSettings decodes one JSON object into settings, keeping numbers as
+// written.
+func decodeSettings(data []byte, settings *map[string]any) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
+	if err := dec.Decode(settings); err != nil {
+		return err
+	}
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
+		return errors.New("unexpected data after the top-level object")
+	}
+	return nil
 }
 
 // objectAt returns settings[key] as an object, replacing a missing or

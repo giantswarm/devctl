@@ -18,8 +18,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Added
 
 - `gen plans`: for the `plans` flavour, `.claude/settings.json` enables the `gs-plans` plugin from the giantswarm/claude-code
-  marketplace. devctl writes only the marketplace and plugin entries and keeps every other key, so a team keeps its own
-  settings in the file. Nothing is generated without the flavour. See docs/gen.md.
+  marketplace, with `autoUpdate` on. devctl writes only the marketplace and plugin entries and keeps every other key, so a
+  team keeps its own settings in the file. Nothing is generated without the flavour. See docs/gen.md.
 - `repo reconcile`: a team-file entry declares the repository's GitHub `topics`, and the metadata step keeps exactly
   those, with the token it runs as (the reconciler's App, which holds administration): `drift` in a dry run,
   `repaired` otherwise, compared as a set. Absent leaves the topics on GitHub alone; an empty list removes them all.

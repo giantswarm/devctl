@@ -20,7 +20,7 @@ func Test_mergeClaudeSettings(t *testing.T) {
 			existing: "",
 			expected: `{
   "enabledPlugins": {"gs-plans@giantswarm": true},
-  "extraKnownMarketplaces": {"giantswarm": {"source": {"source": "github", "repo": "giantswarm/claude-code"}}}
+  "extraKnownMarketplaces": {"giantswarm": {"autoUpdate": true, "source": {"source": "github", "repo": "giantswarm/claude-code"}}}
 }`,
 		},
 		{
@@ -35,7 +35,7 @@ func Test_mergeClaudeSettings(t *testing.T) {
   "enabledPlugins": {"gs-product@giantswarm": true, "gs-plans@giantswarm": true},
   "extraKnownMarketplaces": {
     "other": {"source": {"source": "github", "repo": "example/other"}},
-    "giantswarm": {"source": {"source": "github", "repo": "giantswarm/claude-code"}}
+    "giantswarm": {"autoUpdate": true, "source": {"source": "github", "repo": "giantswarm/claude-code"}}
   }
 }`,
 		},
@@ -44,7 +44,7 @@ func Test_mergeClaudeSettings(t *testing.T) {
 			existing: `{"enabledPlugins": [], "extraKnownMarketplaces": "x"}`,
 			expected: `{
   "enabledPlugins": {"gs-plans@giantswarm": true},
-  "extraKnownMarketplaces": {"giantswarm": {"source": {"source": "github", "repo": "giantswarm/claude-code"}}}
+  "extraKnownMarketplaces": {"giantswarm": {"autoUpdate": true, "source": {"source": "github", "repo": "giantswarm/claude-code"}}}
 }`,
 		},
 	}
@@ -63,9 +63,33 @@ func Test_mergeClaudeSettings(t *testing.T) {
 	}
 }
 
+func Test_mergeClaudeSettings_KeepsValuesAsWritten(t *testing.T) {
+	got, err := mergeClaudeSettings([]byte(`{
+  "permissions": {"allow": ["Bash(make lint && make test)", "Bash(gh pr view <n>:*)"]},
+  "cleanupPeriodDays": 12345678901234567890
+}`))
+	require.NoError(t, err)
+	require.Contains(t, string(got), `"Bash(make lint && make test)"`)
+	require.Contains(t, string(got), `"Bash(gh pr view <n>:*)"`)
+	require.Contains(t, string(got), `"cleanupPeriodDays": 12345678901234567890`)
+}
+
 func Test_mergeClaudeSettings_InvalidJSON(t *testing.T) {
-	_, err := mergeClaudeSettings([]byte(`["not", "an", "object"]`))
-	require.ErrorIs(t, err, invalidSettingsError)
+	testCases := []struct {
+		name     string
+		existing string
+	}{
+		{name: "not an object", existing: `["not", "an", "object"]`},
+		{name: "syntax error", existing: `{"model": "sonnet",}`},
+		{name: "trailing data", existing: `{"model": "sonnet"} {}`},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := mergeClaudeSettings([]byte(tc.existing))
+			require.ErrorIs(t, err, invalidSettingsError)
+		})
+	}
 }
 
 func Test_NewClaudeSettingsInput_ReadsExistingFile(t *testing.T) {
