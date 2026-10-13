@@ -482,6 +482,17 @@
           }
         }
       },
+      "topics": {
+        "type": "array",
+        "title": "Repository topics",
+        "description": "The repository's topics on GitHub, exactly these. Part of the desired state: the metadata step sets them with the reconciler's App, which holds administration, and keeps them in sync afterwards; a topic set on GitHub and not declared here is removed. An empty list removes every topic. Absent means the topics on GitHub are left as they are. GitHub's topic rules: lower-case letters, digits and hyphens, starting with a letter or digit, at most 50 characters, at most 20 topics. Requires devctl v8.133.0+.",
+        "items": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{0,49}$"
+        },
+        "uniqueItems": true,
+        "maxItems": 20
+      },
       "visibility": {
         "type": "string",
         "title": "Repository visibility",
