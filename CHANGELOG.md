@@ -7,6 +7,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- `pr merge --update-branch`: a pull request that lands with a rebase merge (`--rebase`, or a fork line's default) has a
+  head behind its base rebased onto the base (GraphQL `updatePullRequestBranch` with `updateMethod: REBASE`) instead of
+  the base merged into it, so the rebase merge no longer carries a merge commit onto the base. Squash and merge keep
+  GitHub's REST update-branch. See docs/pr-merge.md.
+
 ### Changed
 
 - `pr merge`: a fork line, a repository whose team-file entry lists the `fork` flavour in `gen.flavours`, lands with a

@@ -410,7 +410,54 @@ func Test_Merge_paths(t *testing.T) {
 			}),
 			configure: func(c *Config) { c.UpdateBranch = true },
 			want: want{method: "squash", mergedBy: "someone", mergeSHA: "m1", deleted: true, headSHA: "def456",
-				requested: map[string]int{"PUT /repos/o/r/pulls/42/update-branch": 1, "GET /repos/o/r/commits/def456/check-runs": 1, "GET /repos/o/r/commits/abc123/check-runs": 0, "PUT /repos/o/r/pulls/42/merge": 1}},
+				requested: map[string]int{"PUT /repos/o/r/pulls/42/update-branch": 1, "POST /graphql": 0, "GET /repos/o/r/commits/def456/check-runs": 1, "GET /repos/o/r/commits/abc123/check-runs": 0, "PUT /repos/o/r/pulls/42/merge": 1}},
+		},
+		{
+			name: "behind with --rebase --update-branch: the head is rebased, never merged into, then merged",
+			routes: routes(pull(nil), greenHead("def456"), sequence.Routes{
+				"GET /repos/o/r/pulls/42": {
+					{Body: pull(map[string]any{"mergeable_state": "behind"})},
+					{Body: pull(map[string]any{"mergeable_state": "behind"})},
+					{Body: pull(map[string]any{"head": map[string]any{"sha": "def456", "ref": "feature", "repo": map[string]any{"full_name": "o/r"}}})},
+				},
+				"POST /graphql": {{Body: map[string]any{"data": map[string]any{"updatePullRequestBranch": map[string]any{"pullRequest": map[string]any{"id": "PR_1"}}}}}},
+			}),
+			configure: func(c *Config) {
+				c.UpdateBranch = true
+				c.Method = githubclient.MergeRebase
+			},
+			want: want{method: "rebase", mergedBy: "someone", mergeSHA: "m1", deleted: true, headSHA: "def456",
+				requested: map[string]int{"POST /graphql": 1, "PUT /repos/o/r/pulls/42/update-branch": 0, "GET /repos/o/r/commits/def456/check-runs": 1, "GET /repos/o/r/commits/abc123/check-runs": 0, "PUT /repos/o/r/pulls/42/merge": 1}},
+		},
+		{
+			name: "a fork line behind a base that is not strict, with --update-branch: the default rebase rebases the head",
+			routes: routes(pull(nil), greenHead("def456"), sequence.Routes{
+				"GET /repos/o/r/pulls/42": {
+					{Body: pull(map[string]any{"mergeable_state": "blocked"})},
+					{Body: pull(map[string]any{"mergeable_state": "blocked"})},
+					{Body: pull(map[string]any{"head": map[string]any{"sha": "def456", "ref": "feature", "repo": map[string]any{"full_name": "o/r"}}})},
+				},
+				"GET /repos/o/r/compare/main...abc123": {{Body: map[string]any{"status": "diverged", "ahead_by": 1, "behind_by": 2}}},
+				"POST /graphql":                        {{Body: map[string]any{"data": map[string]any{"updatePullRequestBranch": map[string]any{"pullRequest": map[string]any{"id": "PR_1"}}}}}},
+			}),
+			configure: func(c *Config) {
+				c.UpdateBranch = true
+				c.Policy = verdict(Verdict{Team: "team-a", ForkLine: true})
+			},
+			want: want{method: "rebase", mergedBy: "someone", mergeSHA: "m1", deleted: true, headSHA: "def456",
+				requested: map[string]int{"POST /graphql": 1, "PUT /repos/o/r/pulls/42/update-branch": 0, "GET /repos/o/r/commits/def456/check-runs": 1, "PUT /repos/o/r/pulls/42/merge": 1}},
+		},
+		{
+			name: "GitHub refuses the rebase update: an error, nothing merged",
+			routes: routes(pull(map[string]any{"mergeable_state": "behind"}), sequence.Routes{
+				"POST /graphql": {{Body: map[string]any{"data": nil, "errors": []any{map[string]any{"message": "Rebase failed due to conflicts"}}}}},
+			}),
+			configure: func(c *Config) {
+				c.UpdateBranch = true
+				c.Method = githubclient.MergeRebase
+			},
+			want: want{code: -1, method: "rebase", headSHA: "abc123",
+				requested: map[string]int{"POST /graphql": 1, "PUT /repos/o/r/pulls/42/update-branch": 0, "PUT /repos/o/r/pulls/42/merge": 0}},
 		},
 		{
 			name: "behind a base that is not strict, with --update-branch: update before judging the old head, merge",

@@ -81,6 +81,27 @@ func Test_UpdatePullRequestBranch_acceptsThe202(t *testing.T) {
 	}
 }
 
+func Test_RebasePullRequestBranch_wire(t *testing.T) {
+	c, got := newWireClient(t, http.StatusOK, `{"data":{"updatePullRequestBranch":{"pullRequest":{"id":"PR_1"}}}}`)
+	if err := c.RebasePullRequestBranch(context.Background(), "PR_1", "abc123"); err != nil {
+		t.Fatal(err)
+	}
+	if got.method != http.MethodPost || got.path != "/graphql" {
+		t.Errorf("want POST /graphql, got %s %s", got.method, got.path)
+	}
+	if query, _ := got.body["query"].(string); !strings.Contains(query, "updatePullRequestBranch") || !strings.Contains(query, "updateMethod: REBASE") {
+		t.Errorf("want updatePullRequestBranch with updateMethod REBASE, got %v", got.body["query"])
+	}
+	if variables, _ := got.body["variables"].(map[string]any); variables["id"] != "PR_1" || variables["head"] != "abc123" {
+		t.Errorf("variables: %v", got.body["variables"])
+	}
+
+	c, _ = newWireClient(t, http.StatusOK, `{"data":null,"errors":[{"message":"expected head sha didn't match current head ref"}]}`)
+	if err := c.RebasePullRequestBranch(context.Background(), "PR_1", "abc123"); err == nil || !strings.Contains(err.Error(), "update-branch: expected head sha") {
+		t.Errorf("GraphQL errors are errors naming GitHub's message, got %v", err)
+	}
+}
+
 func Test_DeleteBranch_goneIsFine(t *testing.T) {
 	for _, status := range []int{http.StatusNoContent, http.StatusNotFound, http.StatusUnprocessableEntity} {
 		c, got := newWireClient(t, status, `{"message":"Reference does not exist"}`)
