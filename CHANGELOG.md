@@ -23,6 +23,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   it or it is a security scan (nancy, gitleaks, govulncheck, trivy, kyverno, CodeQL), and once the head is green when no
   check of the head carries the name. The document's `acceptedRed[]` lists each accepted failure with its URL, and
   a warning names it. See docs/pr-merge.md.
+- `repo reconcile --align-files-app-id`: the Renovate GitHub App (id 2740) bypasses the ruleset `devctl: review` for
+  pull requests beside the align-files App, so the automerge a repository configures in its own Renovate
+  configuration lands a green dependency pull request without a review; the required checks of
+  `devctl: default branch` still hold it, and an entry with `agentMerge: false` keeps the review without bypass.
 - `gen renovate --flavour fork`: writes the config of a GitHub fork as JSONC into `renovate.json` with
   `forkProcessing: "enabled"`, the one file and key Renovate's fork check reads; with `renovate.json5` Renovate skipped
   the fork ("Repository is a fork and not manually configured - skipping"). Every other flavour keeps `renovate.json5`
