@@ -69,7 +69,9 @@ func (c *Client) IsPullRequest(ctx context.Context, owner, repo string, number i
 }
 
 // CheckRunsForRef returns the check runs of ref as the merge box lists them:
-// the latest run per check name and app (GitHub's filter=latest), every page.
+// the latest attempt of each (GitHub's filter=latest: a rerun job replaces its
+// earlier attempt; runs of one name in different check suites are all
+// listed), every page.
 func (c *Client) CheckRunsForRef(ctx context.Context, owner, repo, ref string) ([]*github.CheckRun, error) {
 	filter := "latest"
 	opts := &github.ListCheckRunsOptions{

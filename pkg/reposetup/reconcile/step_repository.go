@@ -3,6 +3,7 @@ package reconcile
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/giantswarm/microerror"
@@ -105,9 +106,23 @@ func (r *Runner) unarchiveRepository(ctx context.Context, s *run) {
 	})
 }
 
-// stepMetadata reconciles the description and the visibility the entry
-// declares; a field the entry leaves out is left alone.
+// stepMetadata reconciles the description, the visibility and the topics
+// the entry declares; a field the entry leaves out is left alone.
 func (r *Runner) stepMetadata(ctx context.Context, s *run, sr *StepResult) error {
+	if err := r.editRepository(ctx, s, sr); err != nil {
+		return err
+	}
+	if err := r.replaceTopics(ctx, s, sr); err != nil {
+		return err
+	}
+	if len(sr.Changes) == 0 {
+		sr.Summary = "as declared"
+	}
+	return nil
+}
+
+// editRepository applies the description and the visibility with one repository edit.
+func (r *Runner) editRepository(ctx context.Context, s *run, sr *StepResult) error {
 	edit := &github.Repository{}
 	var changes []string
 	if want := s.fields.Description; want != "" && s.repo.GetDescription() != want {
@@ -122,7 +137,6 @@ func (r *Runner) stepMetadata(ctx context.Context, s *run, sr *StepResult) error
 		}
 	}
 	if len(changes) == 0 {
-		sr.Summary = "as declared"
 		return nil
 	}
 	return s.plan(sr, strings.Join(changes, ", "), func() error {
@@ -133,6 +147,35 @@ func (r *Runner) stepMetadata(ctx context.Context, s *run, sr *StepResult) error
 		s.repo = updated
 		return nil
 	})
+}
+
+// replaceTopics replaces the repository's topics with the declared ones when the
+// two sets differ; GitHub keeps them in no particular order. The write needs
+// administration on the repository, which the reconciler's App holds.
+func (r *Runner) replaceTopics(ctx context.Context, s *run, sr *StepResult) error {
+	want := s.fields.Topics
+	if want == nil {
+		return nil
+	}
+	have := s.repo.Topics
+	if slices.Equal(sortedCopy(have), sortedCopy(want)) {
+		return nil
+	}
+	change := fmt.Sprintf("topics [%s] → [%s]", strings.Join(have, ", "), strings.Join(want, ", "))
+	return s.plan(sr, change, func() error {
+		topics, _, err := r.GitHub.Repositories.ReplaceAllTopics(ctx, s.owner, s.name, want)
+		if err != nil {
+			return err
+		}
+		s.repo.Topics = topics
+		return nil
+	})
+}
+
+func sortedCopy(v []string) []string {
+	c := slices.Clone(v)
+	slices.Sort(c)
+	return c
 }
 
 // stepLifecycle applies the lifecycle that ends a repository's life.
@@ -205,7 +248,7 @@ func (r *Runner) archiveRepository(ctx context.Context, s *run, sr *StepResult) 
 // fix is the way back.
 func (r *Runner) reportOpenPullRequests(ctx context.Context, s *run, sr *StepResult) error {
 	var numbers []string
-	opts := &github.PullRequestListOptions{State: "open", ListOptions: github.ListOptions{PerPage: 100}}
+	opts := &github.PullRequestListOptions{State: stateOpen, ListOptions: github.ListOptions{PerPage: 100}}
 	for {
 		prs, resp, err := r.GitHub.PullRequests.List(ctx, s.owner, s.name, opts)
 		if err != nil {

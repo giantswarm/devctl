@@ -30,4 +30,15 @@ type Params struct {
 	// which disables all routine updates and keeps only security/vulnerability
 	// remediation.
 	Deprecated bool
+	// Extends lists extra presets of giantswarm/renovate-presets by file name
+	// (e.g. flux.json5). Each is extended as
+	// `github>giantswarm/renovate-presets:<name>`, after the language and
+	// generated-CI presets and before the deprecated preset and the repo-owned
+	// renovate-custom.json5, so both still win over them.
+	Extends []string
+	// Fork says the repository is a GitHub fork. Renovate's fork check reads
+	// only renovate.json and admits the fork only when that file sets
+	// forkProcessing to "enabled" itself, so the config is rendered as JSONC
+	// into renovate.json with that key instead of into renovate.json5.
+	Fork bool
 }

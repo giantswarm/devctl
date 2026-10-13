@@ -108,6 +108,15 @@ type Runner struct {
 	// access alone): the list is then not compared either, and the summary
 	// says so. The reconciler's wiring passes the id.
 	DevctlAppID int64
+	// AlignFilesAppID is the numeric id of the align-files GitHub App, whose
+	// installation opens the generated-file pull requests and arms their
+	// auto-merge. With it the protection step moves the review rule into the
+	// ruleset [ReviewRulesetName], which the App and the Renovate App bypass
+	// for pull requests beside the actors of [RulesetName]; the required
+	// checks stay in [RulesetName], which they do not bypass. An entry with
+	// agentMerge: false keeps the review in [RulesetName] without bypass. 0
+	// keeps the review rule in [RulesetName] and deletes the review ruleset.
+	AlignFilesAppID int64
 	// GitHubRequests and CircleCIRequests count the requests the clients
 	// send, when the caller built the clients' transports over them (one
 	// [Counter] under GitHub, Checks and Dispatch, one under CircleCI). The
@@ -160,9 +169,9 @@ type Request struct {
 }
 
 // teamSteps are the steps that read the team: the scaffold names it in
-// CODEOWNERS and the chart, the CODEOWNERS step writes it, the catalog
-// maps the repository to it.
-var teamSteps = []Step{StepScaffold, StepCodeowners, StepCatalog}
+// CODEOWNERS and the chart, the CODEOWNERS step writes it, the labels step
+// keeps its label, the catalog maps the repository to it.
+var teamSteps = []Step{StepScaffold, StepCodeowners, StepLabels, StepCatalog}
 
 // needsTeam says whether a run over steps (nil: every step) reads the team.
 func needsTeam(steps []Step) bool {
@@ -296,7 +305,7 @@ func (r *Runner) newRun(req Request) (*run, error) {
 		return nil, microerror.Maskf(invalidConfigError, "entry %q is not accepted: %d problems", req.Entry.Name, len(req.Entry.Problems))
 	}
 	if req.Team == "" && needsTeam(req.Steps) {
-		return nil, microerror.Maskf(invalidConfigError, "%T.Team must not be empty: the scaffold, codeowners and catalog steps name the team", req)
+		return nil, microerror.Maskf(invalidConfigError, "%T.Team must not be empty: the scaffold, codeowners, labels and catalog steps name the team", req)
 	}
 	switch req.Mode {
 	case "":
@@ -395,6 +404,8 @@ func (r *Runner) runStep(ctx context.Context, s *run, step Step, sr *StepResult)
 		err = r.stepCodeowners(ctx, s, sr)
 	case StepMetadata:
 		err = r.stepMetadata(ctx, s, sr)
+	case StepLabels:
+		err = r.stepLabels(ctx, s, sr)
 	case StepLifecycle:
 		err = r.stepLifecycle(ctx, s, sr)
 	case StepCatalog:

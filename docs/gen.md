@@ -69,6 +69,16 @@ In giantswarm/github the flag is `gen.helmDocsRegen: true` on the repository ent
 devctl gen workflows --flavour app --language generic --helm-docs-regen
 ```
 
+### README link check workflow
+
+The app flavour generates `.github/workflows/zz_generated.check_readme_links.yaml`, which calls the `check-readme-links` reusable workflow of giantswarm/github-workflows. A pull request that touches `README.md` fails on a dead URL, a relative path that does not exist in the repository or a reversed link `(text)[url]`. A weekly run catches links whose target moved without the README changing, which no pull request trigger sees, and files its findings as one issue, `Broken links in README`, updated on later runs and closed with a comment once the links are fixed. The issue is filed, updated and closed from the default branch only: a `workflow_dispatch` on another branch keeps its report in the job summary and the run's artifact. The ignore list and the checker versions live in giantswarm/github-workflows under `link-check/` and are taken from `main` whatever ref the generated workflow pins, so a fix there reaches every repository without a regeneration.
+
+`--check-readme-links=false` (app flavour only, on by default) keeps the workflow out of a repository. In giantswarm/github that is `gen.checkReadmeLinks: false` on the repository entry; without it align-files puts the workflow back on every run.
+
+```nohighlight
+devctl gen workflows --flavour app --language generic --check-readme-links=false
+```
+
 ## Generating Makefiles
 
 Creates common `Makefile` and includes in the root directory.
@@ -110,6 +120,12 @@ devctl gen renovate --language LANGUAGE
 Note: The `LANGUAGE` value is not validated currently. `go`, `python` and `node` add the matching language preset; every other value (e.g. `generic`) renders the base preset alone.
 
 The giantswarm/github align-files workflow runs this generator for repositories on devctl-generated CI (with `--circleci-generated`, which disables Renovate's architect-orb updates and extends the ATS preset because `gen circleci` bakes those in) and for the [`customer` flavour](flavours.md#customer) (without it: customer repositories have no CircleCI). Every other repository keeps its hand-maintained `renovate.json5`.
+
+A GitHub fork takes `--flavour fork`. Renovate skips a fork ("Repository is a fork and not manually configured - skipping") unless its default config file, `renovate.json` and never `renovate.json5`, sets `forkProcessing` to `"enabled"` itself; a preset cannot set it. The fork flavour therefore writes the same config as JSONC (comments kept, otherwise strict JSON, which is how Renovate parses `renovate.json`) into `renovate.json` with that key, and removes `renovate.json5`; it leaves `.github/dependabot.yml`, which on a fork line is upstream's, where the other flavours remove it. The fork line's own rules (`enabledManagers`, `customManagers`, `dependencyDashboard`) go into `renovate-custom.json5` as on any other repository. A fork line whose config turns Renovate off (`enabled: false`) keeps it: the command refuses to replace the opt-out, and Renovate skips the fork anyway. align-files generates nothing for a fork line, so the command runs by hand.
+
+```nohighlight
+devctl gen renovate --language go --flavour fork
+```
 
 ## Generating CircleCI configuration
 

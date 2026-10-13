@@ -106,6 +106,12 @@ func genCommands(f Fields, gc genContext) [][]string {
 	if g.HelmDocsRegen {
 		workflows = append(workflows, "--helm-docs-regen")
 	}
+	// The README link check is on for every app repository unless the entry
+	// switches it off; align-files would otherwise put the workflow back on
+	// every run. A devctl that predates the flag generates it regardless.
+	if g.CheckReadmeLinks != nil && !*g.CheckReadmeLinks && knows(genWorkflows, "--check-readme-links") {
+		workflows = append(workflows, "--check-readme-links=false")
+	}
 	scorecard := (g.RunSecurityScorecard == nil || *g.RunSecurityScorecard) && f.Visibility != VisibilityPrivate
 	if !scorecard {
 		workflows = append(workflows, "--run-security-scorecard=false")
@@ -165,6 +171,13 @@ func genCommands(f Fields, gc genContext) [][]string {
 	}
 	for _, reviewer := range f.ChoreReviewers {
 		renovate = append(renovate, "-r", reviewer)
+	}
+	if g.Renovate != nil {
+		for _, preset := range g.Renovate.Extends {
+			if knows(genRenovate, "--extends") {
+				renovate = append(renovate, "--extends", preset)
+			}
+		}
 	}
 	commands = append(commands, line(genRenovate, renovate...))
 

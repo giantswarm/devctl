@@ -164,10 +164,15 @@ Every poll reads the tag pipeline: the newest CircleCI pipeline whose `vcs.tag` 
 workflows reduced to the **newest run per workflow name** (a rerun, from failed or in full, is a
 second workflow of the same name in the same pipeline, and the one it replaces keeps its failed
 status for ever). A workflow in `failed`, `error`, `failing`, `canceled` or `unauthorized` ends the
-wait with exit 1 and `pipeline.failedJobs` (`workflow/job`). A workflow CircleCI knows by id but
-answers 404 on the jobs of -- the setup workflow for a short while, running or already `success` --
-is not readable yet: the poll goes on and `pipeline.unfinished` says `setup (running, jobs not visible
-yet)`; jobs that never appear end the wait at its timeout naming the workflow. A repository without CircleCI is judged
+wait with exit 1 and `pipeline.failedJobs` (`workflow/job`, or the workflow alone when CircleCI does
+not list its jobs). The verdict is the workflows': their jobs are read only where they are needed,
+to name the failed ones and to derive the artifacts of hand-written CI and of a `custom.yml` that
+declares push jobs (one of test and repository-owned jobs alone names no artifact and needs no look
+at them); the setup workflow's one job continues the pipeline and is never read. CircleCI answers 404 on the jobs of a workflow it lists, a finished one
+included, for a while after the workflow exists and for as long as its job data lags behind (half
+an hour and more during an incident), and a green pipeline is green without them; a derivation
+that needs them goes on polling, `pipeline.unfinished` says `build (running, jobs not visible
+yet)`, and jobs that never appear end the wait at its timeout naming the workflow. A repository without CircleCI is judged
 by the GitHub Actions runs on the tag's commit whose branch is the tag: a `failure`, `cancelled`,
 `timed_out` or `startup_failure` conclusion is exit 1.
 
@@ -187,11 +192,20 @@ costs a 304 that does not count against the rate limit. The interval between pol
 `X-RateLimit-Remaining` / `X-RateLimit-Reset` headers of the responses, between 15 and 60 seconds;
 the rate_limit endpoint is never asked. `DEVCTL_TIME_SCALE` multiplies every sleep and the timeout
 (the end-to-end tests run at 0.001). A GitHub or CircleCI read that fails in transit (a reset
-connection, an EOF, a try over 60 s) or with a 5xx is sent again, up to eight tries in a row with a
+connection, an EOF, a try over 60 s) or with a 5xx is sent again, up to fifteen tries in a row with a
 pause from 2 s doubling to 60 s, each retried failure a warning with its time, as in
-[`pr wait`](pr-wait.md#polling); a read that fails all eight is exit 7 naming the request and the count.
+[`pr wait`](pr-wait.md#polling); a read that fails all fifteen is exit 7 naming the request and the count,
+except a read of the tag's CI (the CircleCI pipeline, or the tag's Actions runs): an API that does not
+answer says nothing about the release, so the next poll reads again until the timeout. A timeout after
+such reads is exit 2 whose reason ends `the release is unknown, not failed: the last read of the tag's CI
+went unanswered: <request and failure>`.
 A read refused for a spent rate limit is sent again after the reset (or `Retry-After`), a warning
 naming the limit and the reset time; a reset after the deadline is exit 2 at once, naming it.
+
+Without `--progress` the wait is silent but for a heartbeat on stderr: `waiting for <what>` once every
+two minutes, and at once when what it waits for changed (the artifacts not in their registry, the tag
+pipeline's unfinished workflows, the tag, the release), so a wait that outlives its caller's patience
+has named its cause; with `--progress` every poll says it.
 
 ## The document
 

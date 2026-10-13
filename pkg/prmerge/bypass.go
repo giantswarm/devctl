@@ -164,7 +164,7 @@ func (m *Merger) describeRuleset(ctx context.Context, owner, repo string, rule g
 	v := rulesetView{
 		ref:    fmt.Sprintf("the ruleset %q of %s", rs.Name, where),
 		bypass: callerBypass(rs.CurrentUserCanBypass),
-		engine: rule.RulesetSourceType != github.RulesetSourceTypeOrganization && rs.Name == reconcile.RulesetName,
+		engine: rule.RulesetSourceType != github.RulesetSourceTypeOrganization && reconcile.IsEngineRuleset(rs.Name),
 	}
 	if len(rs.BypassActors) == 0 {
 		v.noActors = true

@@ -1,6 +1,6 @@
 {
   "exitCode": 0,
-  "stdoutContains": ["/api/v2/pipeline/p1/workflow: 429 Too Many Requests: rate limited until 20", "(Retry-After 30); retried in 30s (try 2 of 8)"],
+  "stdoutContains": ["/api/v2/pipeline/p1/workflow: 429 Too Many Requests: rate limited until 20", "(Retry-After 30); retried in 30s (try 2 of 15)"],
   "json": {
     "command": "pr wait",
     "schemaVersion": 1,
@@ -17,7 +17,7 @@
     "baseRef": "main",
     "checks": [
       {"name": "ci/circleci: build", "source": "status", "status": "completed", "conclusion": "success", "url": "*", "required": false},
-      {"name": "go-test", "source": "check_run", "status": "completed", "conclusion": "success", "url": "*", "required": false}
+      {"name": "go-test", "id": 101, "source": "check_run", "status": "completed", "conclusion": "success", "url": "*", "required": false}
     ],
     "circleci": {
       "pipelineId": "p1",

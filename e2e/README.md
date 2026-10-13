@@ -244,4 +244,4 @@ The incidents the commands encode, one scenario each, by these slugs:
 - `repo` (the manager's verbs over the mocked muster): `repo-auth-missing`, `repo-status`, `repo-status-json`,
   `repo-status-refreshed`, `repo-list`, `repo-info`, `repo-get`, `repo-refresh`, `repo-sweep`, `repo-watch-ready`,
   `repo-watch-failed`, `repo-adopt-dry-run`, `repo-update-set`, `repo-transfer-dry-run`, `repo-set-lifecycle-commit`,
-  `repo-set-lifecycle-delete-refused`, `repo-approve`, `repo-align-dry-run`
+  `repo-set-lifecycle-delete-refused`, `repo-approve`, `repo-align-dry-run`, `repo-validate-manager`

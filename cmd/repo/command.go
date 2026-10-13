@@ -13,6 +13,7 @@ import (
 	"github.com/giantswarm/devctl/v8/cmd/repo/approve"
 	"github.com/giantswarm/devctl/v8/cmd/repo/checks"
 	"github.com/giantswarm/devctl/v8/cmd/repo/create"
+	"github.com/giantswarm/devctl/v8/cmd/repo/followcircleci"
 	"github.com/giantswarm/devctl/v8/cmd/repo/get"
 	"github.com/giantswarm/devctl/v8/cmd/repo/info"
 	"github.com/giantswarm/devctl/v8/cmd/repo/list"
@@ -50,6 +51,11 @@ func New(config Config) (*cobra.Command, error) {
 	}
 
 	var err error
+
+	followCircleCICmd, err := followcircleci.New(followcircleci.Config{Stderr: config.Stderr, Stdout: config.Stdout})
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
 
 	var checksCmd *cobra.Command
 	{
@@ -204,6 +210,7 @@ func New(config Config) (*cobra.Command, error) {
 	c.AddCommand(checksCmd)
 	c.AddCommand(managed...)
 	c.AddCommand(createCmd)
+	c.AddCommand(followCircleCICmd)
 	c.AddCommand(reconcileCmd)
 	c.AddCommand(setupCmd)
 	c.AddCommand(statusCmd)

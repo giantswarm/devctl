@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
 	"github.com/giantswarm/devctl/v8/pkg/circleciclient"
 	"github.com/giantswarm/devctl/v8/pkg/githubclient"
+	"github.com/giantswarm/devctl/v8/pkg/reposetup"
 )
 
 const (
@@ -63,6 +65,20 @@ var (
 	pipelines  = body(map[string]any{"items": []any{map[string]any{"id": "p1", "number": 12, "state": "created", "vcs": map[string]any{"revision": sha, "branch": "feature"}}}})
 )
 
+// successStatuses is a combined status of successful contexts.
+func successStatuses(contexts ...string) sequence.Response {
+	list := []any{}
+	for _, c := range contexts {
+		list = append(list, map[string]any{"context": c, "state": "success", "target_url": "https://ci/" + c, "updated_at": "2026-09-21T10:00:00Z"})
+	}
+	return body(map[string]any{"state": "success", "total_count": len(list), "statuses": list})
+}
+
+// setupWorkflow is the setup workflow of a dynamic-config pipeline.
+func setupWorkflow(status string) map[string]any {
+	return map[string]any{"id": "w1", "name": "setup", "status": status, "tag": "setup"}
+}
+
 // gitHubGreen is a head whose GitHub side is green: one successful check run,
 // no statuses, no open run.
 func gitHubGreen() sequence.Routes {
@@ -87,6 +103,13 @@ type harness struct {
 // client is available (the token is missing).
 func start(t *testing.T, gh, cc sequence.Routes, circleci bool, timeout time.Duration) *harness {
 	t.Helper()
+	return startWith(t, gh, cc, circleci, timeout, nil)
+}
+
+// startWith is start with the GitHub client's transport; nil sends every
+// request once.
+func startWith(t *testing.T, gh, cc sequence.Routes, circleci bool, timeout time.Duration, transport http.RoundTripper) *harness {
+	t.Helper()
 	ghServer, err := githubmock.Start(gh)
 	if err != nil {
 		t.Fatal(err)
@@ -100,7 +123,7 @@ func start(t *testing.T, gh, cc sequence.Routes, circleci bool, timeout time.Dur
 
 	logger := logrus.New()
 	logger.SetOutput(io.Discard)
-	client, cond, err := githubclient.NewConditional(githubclient.Config{Logger: logger, AccessToken: "ghu_test", BaseURL: ghServer.URL})
+	client, cond, err := githubclient.NewConditional(githubclient.Config{Logger: logger, AccessToken: "ghu_test", BaseURL: ghServer.URL, Transport: transport})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +180,7 @@ func Test_Wait_stageGap(t *testing.T) {
 	}
 	want := &Result{
 		Repository: "o/r", Number: 42, HeadSHA: sha, BaseRef: "main",
-		Checks:  []Check{{Name: "go-build", Source: SourceCheckRun, Status: "completed", Conclusion: "success", URL: "https://github.com/o/r/runs/1"}},
+		Checks:  []Check{{Name: "go-build", ID: 1, Source: SourceCheckRun, Status: "completed", Conclusion: "success", URL: "https://github.com/o/r/runs/1"}},
 		Actions: []ActionRun{},
 		CircleCI: &CircleCI{PipelineID: "p1", PipelineNumber: 12, Workflows: []Workflow{
 			{Name: "build", Status: "success", URL: "https://app.circleci.com/pipelines/github/o/r/12/workflows/w1"},
@@ -263,20 +286,41 @@ func Test_Wait_noCircleCIProjectIsGitHubAlone(t *testing.T) {
 	}
 }
 
-func Test_Wait_projectWithoutPipelinesIsGitHubAlone(t *testing.T) {
-	// CircleCI answers a project for every repository the token's user sees
-	// on GitHub, set up on CircleCI or not; one that has never run a
-	// pipeline (a template repository whose configuration is for the
-	// repositories created from it) is not waited for: green from GitHub
-	// alone, the warning in the document, and no pipeline of the branch
-	// looked up.
+// entries is an EntryFinder over a fixed answer that counts its reads.
+type entries struct {
+	fields *reposetup.Fields
+	err    error
+	reads  int
+}
+
+func (e *entries) FindEntry(context.Context, string, string) (*reposetup.Fields, bool, error) {
+	e.reads++
+	return e.fields, e.fields != nil, e.err
+}
+
+// templateEntry is a team-file entry whose gen.ci.templateContent is the
+// argument.
+func templateEntry(templateContent bool) *reposetup.Fields {
+	return &reposetup.Fields{Name: "r", Gen: &reposetup.GenFields{CI: &reposetup.CIFields{TemplateContent: templateContent}}}
+}
+
+// templatePull is the pull request of a template repository.
+func templatePull() sequence.Response {
+	return pull("clean", map[string]any{
+		"base": map[string]any{"ref": "main", "repo": map[string]any{"full_name": "o/r", "is_template": true}},
+	})
+}
+
+func Test_Wait_templateRepositoryDeclaredTemplateContentIsGitHubAlone(t *testing.T) {
+	// A template repository whose entry declares gen.ci.templateContent
+	// carries .circleci/config.yml for the repositories created from it and
+	// is never built itself: green from GitHub alone, the warning in the
+	// document, and CircleCI never asked.
 	gh := gitHubGreen()
+	gh[pullPath] = []sequence.Response{templatePull()}
 	gh[confPath] = []sequence.Response{config}
-	cc := sequence.Routes{
-		projPath: {project},
-		listPath: {body(map[string]any{"items": []any{}, "next_page_token": nil})},
-	}
-	h := start(t, gh, cc, true, 2*time.Minute)
+	h := start(t, gh, sequence.Routes{}, true, 2*time.Minute)
+	h.waiter.entries = &entries{fields: templateEntry(true)}
 	result, err := h.waiter.Wait(context.Background(), "o", "r", 42)
 	if err != nil {
 		t.Fatalf("want green, got %v", err)
@@ -284,16 +328,200 @@ func Test_Wait_projectWithoutPipelinesIsGitHubAlone(t *testing.T) {
 	if result.CircleCI != nil {
 		t.Errorf("want no circleci in the document, got %+v", result.CircleCI)
 	}
-	if len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0], "never run a pipeline") {
-		t.Errorf("want one warning naming the project without a pipeline, got %q", result.Warnings)
+	if len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0], "template repository") {
+		t.Errorf("want one warning naming the template repository, got %q", result.Warnings)
 	}
-	for _, r := range h.circleci.Requests() {
-		if r.Query.Get("branch") != "" {
-			t.Errorf("want no pipeline of the branch looked up, got %s", r)
-		}
+	if n := len(h.circleci.Requests()); n != 0 {
+		t.Errorf("want no CircleCI request, got %d", n)
 	}
-	if n := len(h.circleci.Requests()); n != 2 {
-		t.Errorf("want the project and its pipelines read once, got %d requests", n)
+}
+
+func Test_Wait_templateRepositoryWithoutTemplateContentCountsCircleCI(t *testing.T) {
+	// A template repository with its own pipeline: its entry does not
+	// declare gen.ci.templateContent, or no team file declares it. CircleCI
+	// is part of the verdict as for any repository: a red workflow stops
+	// the wait, and no template warning is given.
+	cases := []struct {
+		name    string
+		entries *entries
+	}{
+		{name: "entry without templateContent", entries: &entries{fields: templateEntry(false)}},
+		{name: "entry without gen", entries: &entries{fields: &reposetup.Fields{Name: "r"}}},
+		{name: "not declared", entries: &entries{}},
+		{name: "no entry finder"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			gh := gitHubGreen()
+			gh[pullPath] = []sequence.Response{templatePull()}
+			gh[confPath] = []sequence.Response{config}
+			cc := sequence.Routes{
+				projPath: {project},
+				pipePath: {pipelines},
+				wfPath:   {body(map[string]any{"items": []any{map[string]any{"id": "w1", "name": "go-build-mcp-template", "status": "failed"}}})},
+			}
+			h := start(t, gh, cc, true, 2*time.Minute)
+			if tc.entries != nil {
+				h.waiter.entries = tc.entries
+			}
+			result, err := h.waiter.Wait(context.Background(), "o", "r", 42)
+			if exitCode(err) != agentcli.ExitRed {
+				t.Fatalf("want red from the CircleCI workflow, got %d (%v)", exitCode(err), err)
+			}
+			if !strings.Contains(err.Error(), "go-build-mcp-template") {
+				t.Errorf("want the verdict to name the workflow, got %v", err)
+			}
+			if result.CircleCI == nil || len(result.CircleCI.Workflows) != 1 {
+				t.Errorf("want the workflow in the document, got %+v", result.CircleCI)
+			}
+			if len(result.Warnings) != 0 {
+				t.Errorf("want no warning, got %q", result.Warnings)
+			}
+			if tc.entries != nil && tc.entries.reads != 1 {
+				t.Errorf("want the entry read once, got %d", tc.entries.reads)
+			}
+		})
+	}
+}
+
+func Test_Wait_nonTemplateRepositoryReadsNoEntry(t *testing.T) {
+	// A repository that is not a template is judged as before; its entry is
+	// never read, even one declaring gen.ci.templateContent.
+	gh := gitHubGreen()
+	gh[confPath] = []sequence.Response{config}
+	cc := sequence.Routes{
+		projPath: {project},
+		pipePath: {pipelines},
+		wfPath:   {body(map[string]any{"items": []any{map[string]any{"id": "w1", "name": "build", "status": "success"}}})},
+	}
+	h := start(t, gh, cc, true, 2*time.Minute)
+	finder := &entries{fields: templateEntry(true)}
+	h.waiter.entries = finder
+	result, err := h.waiter.Wait(context.Background(), "o", "r", 42)
+	if err != nil {
+		t.Fatalf("want green, got %v", err)
+	}
+	if result.CircleCI == nil || len(result.CircleCI.Workflows) != 1 {
+		t.Errorf("want the workflow in the document, got %+v", result.CircleCI)
+	}
+	if finder.reads != 0 {
+		t.Errorf("want no entry read, got %d", finder.reads)
+	}
+}
+
+func Test_Wait_templateEntryReadFailureIsAToolingFailure(t *testing.T) {
+	gh := gitHubGreen()
+	gh[pullPath] = []sequence.Response{templatePull()}
+	gh[confPath] = []sequence.Response{config}
+	h := start(t, gh, sequence.Routes{}, true, 2*time.Minute)
+	h.waiter.entries = &entries{err: errors.New("team files unreadable")}
+	_, err := h.waiter.Wait(context.Background(), "o", "r", 42)
+	if err == nil || !strings.Contains(err.Error(), "team files unreadable") {
+		t.Fatalf("want the entry read's error, got %v", err)
+	}
+	if n := len(h.circleci.Requests()); n != 0 {
+		t.Errorf("want no CircleCI request, got %d", n)
+	}
+}
+
+func Test_Wait_firstPipelineOfTheProject(t *testing.T) {
+	// A new repository's first pull request: CircleCI has the project and
+	// no pipeline when the wait starts, GitHub reads green. The head is not
+	// green from GitHub alone; its pipeline, the project's first, is waited
+	// for, read once it exists and judged like any other.
+	gh := gitHubGreen()
+	gh[confPath] = []sequence.Response{config}
+	none := body(map[string]any{"items": []any{}, "next_page_token": nil})
+	cc := sequence.Routes{
+		projPath: {project},
+		pipePath: {none, pipelines, pipelines},
+		wfPath: {
+			body(map[string]any{"items": []any{map[string]any{"id": "w1", "name": "build", "status": "running"}}}),
+			body(map[string]any{"items": []any{map[string]any{"id": "w1", "name": "build", "status": "success"}}}),
+		},
+	}
+	h := start(t, gh, cc, true, 2*time.Minute)
+	result, err := h.waiter.Wait(context.Background(), "o", "r", 42)
+	if err != nil {
+		t.Fatalf("want green, got %d %v", exitCode(err), err)
+	}
+	if result.CircleCI == nil || len(result.CircleCI.Workflows) != 1 || result.CircleCI.Workflows[0].Status != "success" {
+		t.Errorf("want the first pipeline's workflow in the document, got %+v", result.CircleCI)
+	}
+	if len(result.Warnings) != 0 {
+		t.Errorf("want no warning, got %q", result.Warnings)
+	}
+	if !strings.Contains(h.progress.String(), "circleci pipeline for abc123 (absent)") {
+		t.Errorf("progress names the absent pipeline:\n%s", h.progress.String())
+	}
+}
+
+func Test_Wait_setupOnlyPipelineWaitsForTheContinuation(t *testing.T) {
+	// The pipeline reads created with its setup workflow alone and GitHub
+	// carries the setup job's status alone: the continuation has not
+	// created the build's workflows yet (a minute or two after the setup
+	// job continues the pipeline, longer while CircleCI's listing lags).
+	// The head waits; it is green once the build workflow exists and
+	// succeeded.
+	gh := gitHubGreen()
+	gh[confPath] = []sequence.Response{config}
+	gh[statPath] = []sequence.Response{successStatuses("ci/circleci: setup")}
+	cc := sequence.Routes{
+		projPath: {project},
+		pipePath: {pipelines},
+		wfPath: {
+			body(map[string]any{"items": []any{setupWorkflow("success")}}),
+			body(map[string]any{"items": []any{setupWorkflow("success"), map[string]any{"id": "w2", "name": "build", "status": "success"}}}),
+		},
+	}
+	h := start(t, gh, cc, true, 2*time.Minute)
+	result, err := h.waiter.Wait(context.Background(), "o", "r", 42)
+	if err != nil {
+		t.Fatalf("want green, got %d %v", exitCode(err), err)
+	}
+	if result.CircleCI == nil || len(result.CircleCI.Workflows) != 2 {
+		t.Errorf("want the continued pipeline's two workflows, got %+v", result.CircleCI)
+	}
+	if !strings.Contains(h.progress.String(), "circleci pipeline 12 (setup finished, the continuation's workflows not created yet)") {
+		t.Errorf("progress names the pending continuation:\n%s", h.progress.String())
+	}
+}
+
+func Test_Wait_setupOnlyListingWithPostedJobsIsJudgedByGitHub(t *testing.T) {
+	// CircleCI's listing lags behind the build's workflows while every job
+	// has posted its status to GitHub: the statuses are the verdict, green
+	// on the first poll.
+	gh := gitHubGreen()
+	gh[confPath] = []sequence.Response{config}
+	gh[statPath] = []sequence.Response{successStatuses("ci/circleci: setup", "ci/circleci: go-build", "ci/circleci: push-chart")}
+	cc := sequence.Routes{
+		projPath: {project},
+		pipePath: {pipelines},
+		wfPath:   {body(map[string]any{"items": []any{setupWorkflow("success")}})},
+	}
+	h := start(t, gh, cc, true, 2*time.Minute)
+	if _, err := h.waiter.Wait(context.Background(), "o", "r", 42); err != nil {
+		t.Fatalf("want green, got %d %v", exitCode(err), err)
+	}
+	if !strings.Contains(h.progress.String(), "poll 1: green") {
+		t.Errorf("want green on the first poll:\n%s", h.progress.String())
+	}
+}
+
+func Test_Wait_cancelledWorkflowIsRed(t *testing.T) {
+	// A CircleCI workflow cancelled (a newer push, a person's cancel) ends
+	// the wait red at that poll, like a failed one: no wait turns it green.
+	gh := gitHubGreen()
+	gh[confPath] = []sequence.Response{config}
+	cc := sequence.Routes{
+		projPath: {project},
+		pipePath: {pipelines},
+		wfPath:   {body(map[string]any{"items": []any{map[string]any{"id": "w1", "name": "build", "status": "canceled"}}})},
+	}
+	h := start(t, gh, cc, true, 2*time.Minute)
+	_, err := h.waiter.Wait(context.Background(), "o", "r", 42)
+	if exitCode(err) != agentcli.ExitRed || !strings.Contains(err.Error(), "circleci workflow build canceled") {
+		t.Fatalf("want exit 1 naming the cancelled workflow, got %d %v", exitCode(err), err)
 	}
 }
 
@@ -468,5 +696,44 @@ func Test_Wait_toolingErrorIsNotAVerdict(t *testing.T) {
 	var coder agentcli.ExitCoder
 	if err == nil || errors.As(err, &coder) {
 		t.Fatalf("want a plain error (exit 7 in the envelope), got %v", err)
+	}
+}
+
+// retryingOnce sends a read twice before it counts as unanswered, at the
+// harness's scale.
+func retryingOnce() *agentcli.Retrying {
+	return &agentcli.Retrying{Clock: agentcli.NewClock(0.001, nil), Attempts: 2}
+}
+
+func Test_Wait_unansweredPollIsNotAVerdict(t *testing.T) {
+	gh := gitHubGreen()
+	unavailable := sequence.Response{Status: 503, Body: map[string]any{"message": "unavailable"}}
+	gh[runsPath] = []sequence.Response{checkRuns(run("go-build", "in_progress", "")), unavailable, unavailable, checkRuns(run("go-build", "completed", "success"))}
+	h := startWith(t, gh, sequence.Routes{}, false, 2*time.Minute, retryingOnce())
+	result, err := h.waiter.Wait(context.Background(), "o", "r", 42)
+	if err != nil {
+		t.Fatalf("want green after the unanswered poll, got exit %d: %v", exitCode(err), err)
+	}
+	if len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0], "poll 2 went unanswered") || !strings.Contains(result.Warnings[0], "failed 2 times in a row: 503") {
+		t.Errorf("want one warning naming the unanswered poll, got %q", result.Warnings)
+	}
+	if !strings.Contains(h.progress.String(), "poll 3: green") {
+		t.Errorf("want the third poll green:\n%s", h.progress.String())
+	}
+}
+
+func Test_Wait_unansweredUntilTheDeadlineIsATimeout(t *testing.T) {
+	gh := gitHubGreen()
+	gh[runsPath] = []sequence.Response{checkRuns(run("go-build", "in_progress", "")), {Status: 503, Body: map[string]any{"message": "unavailable"}}}
+	h := startWith(t, gh, sequence.Routes{}, false, 2*time.Minute, retryingOnce())
+	result, err := h.waiter.Wait(context.Background(), "o", "r", 42)
+	if exitCode(err) != agentcli.ExitTimeout {
+		t.Fatalf("want exit 2, got exit %d: %v", exitCode(err), err)
+	}
+	if !strings.Contains(err.Error(), "unfinished: check go-build (in_progress)") || !strings.Contains(err.Error(), "the head is unknown, not failed: the last poll went unanswered") {
+		t.Errorf("want the reason to name the unfinished check and the unanswered poll, got %q", err)
+	}
+	if diff := cmp.Diff([]string{"check go-build (in_progress)"}, result.Unfinished); diff != "" {
+		t.Errorf("unfinished (-want +got):\n%s", diff)
 	}
 }

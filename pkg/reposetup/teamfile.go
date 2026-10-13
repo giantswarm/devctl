@@ -148,7 +148,11 @@ type Fields struct {
 	ComponentType string `yaml:"componentType"`
 	Description   string `yaml:"description"`
 	Visibility    string `yaml:"visibility"`
-	Lifecycle     string `yaml:"lifecycle"`
+	// Topics are the repository's GitHub topics, exactly these. Nil (the
+	// field absent) leaves the topics on GitHub alone; an empty list
+	// removes them all.
+	Topics    []string `yaml:"topics"`
+	Lifecycle string   `yaml:"lifecycle"`
 	// DefaultBranch is the repository's default branch, main unless
 	// declared: the settings step keeps the repository on it and the
 	// protection step protects it. A fork line declares the branch that
@@ -177,25 +181,51 @@ type Fields struct {
 	// set: the protection step deletes every active ruleset that is neither
 	// the engine's nor named in Rulesets, instead of reporting it.
 	PruneRulesets bool `yaml:"pruneRulesets"`
-	Replace       *struct {
+	// LineGate is a fork line's land gate: the line's sync App replaces the
+	// line without a pull request, and no actor lands a commit the gate's
+	// checks have not passed on. Nil: no gate.
+	LineGate *LineGateFields `yaml:"lineGate"`
+	Replace  *struct {
 		Precommit bool `yaml:"precommit"`
 	} `yaml:"replace"`
 	Gen *GenFields `yaml:"gen"`
 }
 
+// LineGateFields is the lineGate block: the land gate of a fork line.
+type LineGateFields struct {
+	// App is the numeric id of the GitHub App the line's sync pushes as: a
+	// bypass actor of the default branch's ruleset in every mode, so that
+	// its land replaces the line without a pull request.
+	App int64 `yaml:"app"`
+	// RequiredChecks are the GitHub Actions checks that must have passed on
+	// a commit before any push lands it on a gated branch.
+	RequiredChecks []string `yaml:"requiredChecks"`
+	// Branches are the maintenance lines gated beside the default branch.
+	Branches []string `yaml:"branches"`
+}
+
 // GenFields is the gen block: the generators' inputs.
 type GenFields struct {
-	Flavours                      []string  `yaml:"flavours"`
-	Language                      string    `yaml:"language"`
-	InstallUpdateChart            bool      `yaml:"installUpdateChart"`
-	HelmDocsRegen                 bool      `yaml:"helmDocsRegen"`
-	RunSecurityScorecard          *bool     `yaml:"runSecurityScorecard"`
-	GenerateLlmRules              *bool     `yaml:"generateLlmRules"`
-	GoGenerate                    bool      `yaml:"goGenerate"`
-	PreCommit                     []string  `yaml:"preCommit"`
-	EnableUpstreamSyncAutomation  bool      `yaml:"enableUpstreamSyncAutomation"`
-	DispatchUpdateChartEventsRepo string    `yaml:"dispatchUpdateChartEventsRepo"`
-	CI                            *CIFields `yaml:"ci"`
+	Flavours                      []string        `yaml:"flavours"`
+	Language                      string          `yaml:"language"`
+	InstallUpdateChart            bool            `yaml:"installUpdateChart"`
+	HelmDocsRegen                 bool            `yaml:"helmDocsRegen"`
+	CheckReadmeLinks              *bool           `yaml:"checkReadmeLinks"`
+	RunSecurityScorecard          *bool           `yaml:"runSecurityScorecard"`
+	GenerateLlmRules              *bool           `yaml:"generateLlmRules"`
+	GoGenerate                    bool            `yaml:"goGenerate"`
+	PreCommit                     []string        `yaml:"preCommit"`
+	EnableUpstreamSyncAutomation  bool            `yaml:"enableUpstreamSyncAutomation"`
+	DispatchUpdateChartEventsRepo string          `yaml:"dispatchUpdateChartEventsRepo"`
+	Renovate                      *RenovateFields `yaml:"renovate"`
+	CI                            *CIFields       `yaml:"ci"`
+}
+
+// RenovateFields is the gen.renovate block: the Renovate generator's knobs.
+type RenovateFields struct {
+	// Extends names extra presets of giantswarm/renovate-presets by file
+	// name, each passed as --extends.
+	Extends []string `yaml:"extends"`
 }
 
 // CIFields is the gen.ci block: the CircleCI generator's knobs.

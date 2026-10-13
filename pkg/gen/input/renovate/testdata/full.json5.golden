@@ -16,6 +16,9 @@
     // (same condition as the architect orb disable below); a no-op for repos
     // without an ats/ Pipfile, so it is safe to extend for all generated-CI repos.
     'github>giantswarm/renovate-presets:tests-ats.json5',
+    // Extra presets declared for this repo - https://github.com/giantswarm/renovate-presets
+    'github>giantswarm/renovate-presets:flux.json5',
+    'github>giantswarm/renovate-presets:disable-vendir.json5',
     // Deprecated repo - https://github.com/giantswarm/renovate-presets/blob/main/deprecated.json5
     // Disables all routine updates and keeps only security/vulnerability remediation.
     'github>giantswarm/renovate-presets:deprecated.json5',

@@ -1,13 +1,17 @@
 {
-  "exitCode": 7,
-  "stdoutContains": ["/repos/giantswarm/devctl/pulls/42\\\": failed 8 times in a row: 500 Internal Server Error"],
+  "exitCode": 2,
+  "stdoutContains": [
+    "poll 1 went unanswered: Get \\\"http://",
+    "/repos/giantswarm/devctl/pulls/42\\\": failed 15 times in a row: 500 Internal Server Error",
+    "timeout after 30m0s before the first poll completed; the head is unknown, not failed: the last poll went unanswered"
+  ],
   "json": {
     "command": "pr wait",
     "schemaVersion": 1,
-    "exitCode": 7,
-    "verdict": "usage",
+    "exitCode": 2,
+    "verdict": "timeout",
     "reason": "*",
-    "warnings": ["*", "*", "*", "*", "*", "*", "*"],
+    "warnings": "*",
     "startedAt": "*",
     "finishedAt": "*",
     "repository": "giantswarm/devctl",
@@ -16,6 +20,7 @@
     "headSha": "",
     "baseRef": "",
     "checks": [],
-    "actions": []
+    "actions": [],
+    "unfinished": ["no complete poll before the deadline"]
   }
 }

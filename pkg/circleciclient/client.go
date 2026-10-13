@@ -2,7 +2,8 @@
 // the repository set-up engine makes for a project — follow and unfollow
 // (v1.1), the token's user, the project, its settings and
 // checkout keys, its pipelines (paged) and their workflows and jobs (v2), a
-// failed job's step output (v1.1) — and nothing else. The token is a personal
+// job's steps and their output (v1.1), a workflow's cancel and rerun (v2) —
+// and nothing else. The token is a personal
 // API token (architectbot's `CIRCLECI_API_TOKEN` for the reconciler, the
 // person's for `devctl repo reconcile`); the org and repository name a
 // project by their GitHub slug. A reader without a token of its own reads a
@@ -156,13 +157,37 @@ type PipelineVCS struct {
 // Workflow is one workflow of a pipeline. Status is one of success,
 // running, not_run, failed, error, failing, on_hold, canceled, unauthorized.
 type Workflow struct {
-	ID             string `json:"id"`
-	Name           string `json:"name"`
-	Status         string `json:"status"`
-	PipelineNumber int64  `json:"pipeline_number"`
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Status string `json:"status"`
+	// StoppedAt is when the workflow finished; zero while it runs.
+	StoppedAt      time.Time `json:"stopped_at"`
+	PipelineNumber int64     `json:"pipeline_number"`
 	// CreatedAt orders the runs of one workflow name: a rerun is a new
 	// workflow with the same name in the same pipeline, and the newest counts.
 	CreatedAt time.Time `json:"created_at"`
+	// Tag is [WorkflowTagSetup] for the setup workflow of a dynamic-config
+	// pipeline, the one that continues the pipeline with the workflows that
+	// carry the build; empty for every other workflow.
+	Tag string `json:"tag"`
+}
+
+// WorkflowTagSetup is the Workflow.Tag of a setup workflow.
+const WorkflowTagSetup = "setup"
+
+// SetupOnly says whether workflows are a dynamic-config pipeline's setup
+// workflow and nothing else: the continuation has not created the build's
+// workflows yet, or CircleCI's listing lags behind them.
+func SetupOnly(workflows []Workflow) bool {
+	if len(workflows) == 0 {
+		return false
+	}
+	for _, w := range workflows {
+		if w.Tag != WorkflowTagSetup {
+			return false
+		}
+	}
+	return true
 }
 
 // PipelineContinuing says whether a pipeline state is one of a setup
@@ -198,12 +223,16 @@ func WorkflowFailed(status string) bool {
 func WorkflowFinished(status string) bool { return WorkflowSucceeded(status) || WorkflowFailed(status) }
 
 // Job is one job of a workflow. JobNumber is absent for an approval and for
-// a job that has not started.
+// a job that has not started, and so are StartedAt (zero) and, while the job
+// runs, StoppedAt.
 type Job struct {
-	Name      string `json:"name"`
-	Status    string `json:"status"`
-	Type      string `json:"type"`
-	JobNumber int64  `json:"job_number"`
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	Status    string    `json:"status"`
+	Type      string    `json:"type"`
+	JobNumber int64     `json:"job_number"`
+	StartedAt time.Time `json:"started_at"`
+	StoppedAt time.Time `json:"stopped_at"`
 }
 
 // JobFailed says whether a job status is a terminal failure.
@@ -391,6 +420,15 @@ func (c *Client) ListWorkflowJobs(ctx context.Context, workflowID string) ([]Job
 	return out.Items, nil
 }
 
+// RerunWorkflowFromFailed reruns the failed jobs of a finished workflow and
+// the jobs that depend on them, and returns the id of the new workflow: the
+// rerun is a second workflow of the same name in the same pipeline. A token
+// without write access is refused with IsForbidden.
+func (c *Client) RerunWorkflowFromFailed(ctx context.Context, workflowID string) (string, error) {
+	id, err := c.RerunWorkflow(ctx, workflowID, true)
+	return id, microerror.Mask(err)
+}
+
 // FailedStepsOutput returns the output of the failed steps of job number of
 // org/repo (v1.1: API v2 has no job output), in step order. The output
 // lives at a signed URL per step, read without the token.
@@ -492,6 +530,8 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) err
 	switch {
 	case resp.StatusCode == http.StatusNotFound:
 		return microerror.Maskf(notFoundError, "%s %s: %s", method, path, apiMessage(data))
+	case resp.StatusCode == http.StatusForbidden:
+		return microerror.Maskf(forbiddenError, "%s %s: HTTP 403 %s", method, path, apiMessage(data))
 	case resp.StatusCode == http.StatusUnauthorized:
 		// v1.1 says "Invalid token provided", v2 "New format tokens are
 		// needed": both also describe a token read with its quotes.
