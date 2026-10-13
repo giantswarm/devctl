@@ -21,6 +21,11 @@ const (
 	// build has to land quickly, unlike a release.
 	SourceInterval = "1m"
 
+	// Keys after AnnotationPrefix that extend rewrites as well as reserve.
+	annotationUser  = "user"
+	annotationFrom  = "from"
+	annotationUntil = "until"
+
 	// devSemverRange selects every version, including pre-releases. The filter
 	// does the actual selecting.
 	devSemverRange = ">=0.0.0-0"
@@ -61,12 +66,12 @@ func devSource(original object, sourceName string, req Request, semverFilter str
 		metadata["annotations"] = annotations
 	}
 	for key, value := range map[string]string{
-		"user":   req.User,
-		"branch": req.Branch,
-		"pr":     req.PullRequest,
-		"scope":  req.Scope,
-		"from":   from.Format(time.RFC3339),
-		"until":  until.Format(time.RFC3339),
+		annotationUser:  req.User,
+		"branch":        req.Branch,
+		"pr":            req.PullRequest,
+		"scope":         req.Scope,
+		annotationFrom:  from.Format(time.RFC3339),
+		annotationUntil: until.Format(time.RFC3339),
 	} {
 		annotations[AnnotationPrefix+key] = value
 	}
@@ -86,12 +91,12 @@ func devSource(original object, sourceName string, req Request, semverFilter str
 // readable and a machine can still parse it.
 func reservationEntry(chart string, req Request, from, until time.Time) (string, error) {
 	fields := [][2]string{
-		{"user", req.User},
+		{annotationUser, req.User},
 		{"branch", req.Branch},
 		{"pr", req.PullRequest},
 		{"scope", req.Scope},
-		{"from", from.Format(time.RFC3339)},
-		{"until", until.Format(time.RFC3339)},
+		{annotationFrom, from.Format(time.RFC3339)},
+		{annotationUntil, until.Format(time.RFC3339)},
 	}
 
 	flow, err := flowMapping(fields)

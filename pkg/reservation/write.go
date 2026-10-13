@@ -126,9 +126,9 @@ func writeSourceAnnotations(path, user string, from, until time.Time) error {
 	}
 
 	want := map[string]string{
-		"user":  user,
-		"from":  from.Format(time.RFC3339),
-		"until": until.Format(time.RFC3339),
+		annotationUser:  user,
+		annotationFrom:  from.Format(time.RFC3339),
+		annotationUntil: until.Format(time.RFC3339),
 	}
 	found := 0
 	for i, l := range lines {

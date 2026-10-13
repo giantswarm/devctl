@@ -249,7 +249,7 @@ func TestReleaseRefusesWhenComponentsListWasReformatted(t *testing.T) {
 	// Requote the entry addComponent wrote. Kustomize parses it exactly the
 	// same either way; removeComponent's plain string matcher does not.
 	collectionsFile := filepath.Join(dir, pathCollections)
-	original, err := os.ReadFile(collectionsFile)
+	original, err := os.ReadFile(collectionsFile) //nolint:gosec // a test fixture
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -258,7 +258,7 @@ func TestReleaseRefusesWhenComponentsListWasReformatted(t *testing.T) {
 	if reformatted == string(original) {
 		t.Fatal("the fixture's components entry was not found to reformat")
 	}
-	if err := os.WriteFile(collectionsFile, []byte(reformatted), 0o644); err != nil {
+	if err := os.WriteFile(collectionsFile, []byte(reformatted), 0o600); err != nil { //nolint:gosec // a test fixture
 		t.Fatal(err)
 	}
 
@@ -295,7 +295,7 @@ func TestReleasePreservesCommentsAndBlankLinesInTheComponentsBlock(t *testing.T)
 
 	// An ops engineer annotates the entry Reserve wrote, before it is released.
 	collectionsFile := filepath.Join(dir, pathCollections)
-	original, err := os.ReadFile(collectionsFile)
+	original, err := os.ReadFile(collectionsFile) //nolint:gosec // a test fixture
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -305,7 +305,7 @@ func TestReleasePreservesCommentsAndBlankLinesInTheComponentsBlock(t *testing.T)
 	if annotated == string(original) {
 		t.Fatal("the fixture's components entry was not found to annotate")
 	}
-	if err := os.WriteFile(collectionsFile, []byte(annotated), 0o644); err != nil {
+	if err := os.WriteFile(collectionsFile, []byte(annotated), 0o600); err != nil { //nolint:gosec // a test fixture
 		t.Fatal(err)
 	}
 

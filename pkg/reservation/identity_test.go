@@ -12,7 +12,7 @@ import (
 
 func runGit(t *testing.T, dir string, args ...string) string {
 	t.Helper()
-	out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput()
+	out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput() //nolint:gosec // a test fixture
 	if err != nil {
 		t.Fatalf("git %v: %v\n%s", args, err, out)
 	}

@@ -291,7 +291,7 @@ func TestExtendRefusesOneReservationOverTheLoweredCap(t *testing.T) {
 	if lowered == string(content) {
 		t.Fatal("fixture no longer carries the max-duration annotation this test rewrites")
 	}
-	if err := os.WriteFile(configMapPath, []byte(lowered), 0o600); err != nil {
+	if err := os.WriteFile(configMapPath, []byte(lowered), 0o600); err != nil { //nolint:gosec // a test fixture
 		t.Fatal(err)
 	}
 

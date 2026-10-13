@@ -467,7 +467,7 @@ func TestReserveDoesNotCommitAnUnrelatedDirtyFile(t *testing.T) {
 		}
 	}
 
-	got, err := os.ReadFile(filepath.Join(dir, unrelated))
+	got, err := os.ReadFile(filepath.Join(dir, unrelated)) //nolint:gosec // a test fixture
 	if err != nil {
 		t.Fatalf("the unrelated file was removed from the working tree: %v", err)
 	}
