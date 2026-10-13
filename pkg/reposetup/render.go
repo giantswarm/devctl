@@ -125,6 +125,7 @@ func (r Renderer) Render(ctx context.Context, req RenderRequest) (*Scaffold, err
 		Team:         req.Team,
 		Description:  fields.Description,
 		UpstreamRepo: options[OptionUpstreamRepo],
+		Private:      IsPrivate(CreationVisibility(fields.Visibility)),
 	}
 	if subst.UpstreamRepo == "" {
 		subst.UpstreamRepo = fmt.Sprintf("https://github.com/%s/%s", DefaultOwner, fields.Name)

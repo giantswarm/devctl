@@ -69,3 +69,35 @@ func TestWriteCommonFiles_README(t *testing.T) {
 		require.Equal(t, readme(s), string(got))
 	})
 }
+
+// TestWriteCommonFiles_badges: a private repository's template README
+// loses the CircleCI and Scorecard badges, which 404 for it, and nothing
+// else; a public repository's keeps them.
+func TestWriteCommonFiles_badges(t *testing.T) {
+	const badges = "[![CircleCI](https://dl.circleci.com/status-badge/img/gh/giantswarm/example/tree/main.svg?style=svg)](https://dl.circleci.com/status-badge/redirect/gh/giantswarm/example/tree/main)\n" +
+		"[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/giantswarm/example/badge)](https://securityscorecards.dev/viewer/?uri=github.com/giantswarm/example)\n\n"
+	const body = "[Guide](https://handbook.giantswarm.io/)\n\n## Example\n\n[![Other](https://example.com/badge.svg)](https://example.com)\n"
+
+	cases := map[string]struct {
+		private bool
+		want    string
+	}{
+		"private drops the badges": {private: true, want: body},
+		"public keeps the badges":  {private: false, want: badges + body},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte(badges+body), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			s := substitutions{Name: "example", Team: "team-shield", Private: tc.private}
+			require.NoError(t, writeCommonFiles(dir, TemplateChart, s))
+
+			got, err := os.ReadFile(filepath.Join(dir, "README.md")) // #nosec G304 -- a fixed path under t.TempDir()
+			require.NoError(t, err)
+			require.Equal(t, tc.want, string(got))
+		})
+	}
+}
