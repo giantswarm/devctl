@@ -264,6 +264,7 @@ func (r *runner) merge(ctx context.Context, args []string, doc *document) error 
 			Progress:       progress,
 			Timeout:        r.flag.Timeout,
 			FailedLogLines: failedLogLines,
+			AcceptRed:      r.flag.AcceptRed,
 		},
 		Method:       r.method(),
 		UpdateBranch: r.flag.UpdateBranch,

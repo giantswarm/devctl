@@ -136,6 +136,8 @@ type Merger struct {
 	policy        Policy
 	release       ReleaseWait
 	dispatchTo    *Dispatch
+	// acceptRed is Wait.AcceptRed: the checks the caller accepts red.
+	acceptRed []string
 }
 
 // New returns a Merger for config.
@@ -159,6 +161,7 @@ func New(config Config) (*Merger, error) {
 		policy:       config.Policy,
 		release:      config.Release,
 		dispatchTo:   config.Dispatch,
+		acceptRed:    config.Wait.AcceptRed,
 	}
 	if m.clock.Scale() == 0 {
 		m.clock = agentcli.NewClock(1, nil)
@@ -206,6 +209,9 @@ func (m *Merger) Merge(ctx context.Context, owner, repo string, number int) (*Re
 
 	caller, verdict, err := m.refuse(ctx, owner, repo, pr)
 	if err != nil {
+		return result, err
+	}
+	if err := m.refuseAcceptRed(ctx, owner, repo, pr.GetBase().GetRef()); err != nil {
 		return result, err
 	}
 	if err := m.guardReviews(ctx, owner, repo, number, pr, caller, result); err != nil {

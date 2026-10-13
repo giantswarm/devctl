@@ -17,6 +17,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `pr merge --accept-red <check>` (repeatable): a failed check run, commit status or CircleCI workflow of exactly
+  that name does not refuse the merge, for a non-required check that is red on the base's head too; every other
+  failed check is still red, exit 1. Refused with exit 3, naming the check, before any wait when the base requires
+  it or it is a security scan (nancy, gitleaks, govulncheck, trivy, kyverno, CodeQL), and once the head is green when no
+  check of the head carries the name. The document's `acceptedRed[]` lists each accepted failure with its URL, and
+  a warning names it. See docs/pr-merge.md.
 - `gen renovate --flavour fork`: writes the config of a GitHub fork as JSONC into `renovate.json` with
   `forkProcessing: "enabled"`, the one file and key Renovate's fork check reads; with `renovate.json5` Renovate skipped
   the fork ("Repository is a fork and not manually configured - skipping"). Every other flavour keeps `renovate.json5`
