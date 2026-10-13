@@ -32,6 +32,9 @@ type substitutions struct {
 	// UpstreamRepo credited in the chart README; the repository's own URL
 	// when the chart follows no upstream.
 	UpstreamRepo string
+	// Private says whether the repository is created private: its README
+	// then carries no badge that only resolves for a public one.
+	Private bool
 }
 
 // teamShortName is the team's name without the team- prefix, the form the
@@ -193,6 +196,10 @@ func writeCommonFiles(dir string, t Template, s substitutions) error {
 		if err := writeFile(filepath.Join(dir, "README.md"), []byte(readme(s)), fileMode); err != nil {
 			return microerror.Mask(err)
 		}
+	} else if s.Private {
+		if err := dropPublicOnlyBadges(filepath.Join(dir, "README.md")); err != nil {
+			return microerror.Mask(err)
+		}
 	}
 
 	if t != TemplateMinimal {
@@ -222,6 +229,30 @@ func readme(s substitutions) string {
 		description = fmt.Sprintf("TODO: describe what %s is for.", s.Name)
 	}
 	return fmt.Sprintf("# %s\n\n%s\n", s.Name, description)
+}
+
+// publicOnlyBadge matches a README line that is a CircleCI status badge or an
+// OpenSSF Scorecard badge. Both 404 for a private repository: CircleCI
+// serves a private project's badge only with an API token in its URL, and
+// the scorecard runs on public repositories alone, so the README link check
+// would fail the repository's first pull request.
+var publicOnlyBadge = regexp.MustCompile(`(?m)^\[!\[[^\]]*\]\(https://(?:dl\.circleci\.com/status-badge|api\.securityscorecards\.dev)/[^)]*\)\]\([^)]*\)[ \t]*\n`)
+
+// dropPublicOnlyBadges removes the [publicOnlyBadge] lines from the README
+// at p, and the blank lines they leave at its top. A missing README is left
+// missing.
+func dropPublicOnlyBadges(p string) error {
+	content, err := os.ReadFile(p) // #nosec G304 -- the README of the scaffold this package just created from the template
+	if os.IsNotExist(err) {
+		return nil
+	} else if err != nil {
+		return microerror.Mask(err)
+	}
+	dropped := publicOnlyBadge.ReplaceAll(content, nil)
+	if bytes.Equal(content, dropped) {
+		return nil
+	}
+	return writeFile(p, bytes.TrimLeft(dropped, "\n"), fileMode)
 }
 
 // gitignore is the minimal scaffold's .gitignore: editor and OS files.

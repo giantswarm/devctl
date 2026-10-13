@@ -25,8 +25,9 @@ const LineGateRulesetName = "devctl: line gate"
 
 // ReviewRulesetName is the engine's ruleset of the review rule alone,
 // written when [Runner.AlignFilesAppID] is set and the entry allows agent
-// merges: the align-files App bypasses it, and not [RulesetName], whose
-// required checks bind its pull requests as everyone's.
+// merges: the align-files and Renovate Apps bypass it, and not
+// [RulesetName], whose required checks bind their pull requests as
+// everyone's.
 const ReviewRulesetName = "devctl: review"
 
 // IsEngineRuleset says whether name is one of the rulesets the engine
@@ -44,6 +45,12 @@ const defaultBranchRef = "~DEFAULT_BRANCH"
 // GitHub Actions gate is pinned to it in the ruleset, so no other
 // integration satisfies the context.
 const gitHubActionsAppID int64 = 15368
+
+// renovateAppID is the id of the Renovate GitHub App on github.com. It
+// bypasses the review in [ReviewRulesetName], so the automerge a repository
+// configures in its own Renovate configuration lands a green dependency pull
+// request; the required checks of [RulesetName] still hold it.
+const renovateAppID int64 = 2740
 
 // teamPrivacySecret is the privacy of a team GitHub shows to its members
 // alone. Such a team cannot be a bypass actor of a ruleset: GitHub refuses
@@ -395,7 +402,7 @@ func (r *Runner) stepRulesetProtection(ctx context.Context, s *run, sr *StepResu
 	if len(sr.Changes) == 0 {
 		sr.Summary = fmt.Sprintf("%s: ruleset %q; required: %s", branch, RulesetName, describe(want))
 		if split {
-			sr.Summary += fmt.Sprintf("; review in ruleset %q, which the align-files App bypasses", ReviewRulesetName)
+			sr.Summary += fmt.Sprintf("; review in ruleset %q, which the align-files and Renovate Apps bypass", ReviewRulesetName)
 		}
 		if !bypassReadable {
 			sr.Summary += "; bypass actors not readable by this identity, not compared"
@@ -422,9 +429,10 @@ func (r *Runner) splitsReview(s *run, review *github.RepositoryRuleset) bool {
 // splits the review rule out (split): on the default branch, the
 // baseline's required reviews alone, with the bypass actors of
 // [RulesetName] (bypass, as stepRulesetProtection worked them out) and the
-// align-files App for pull requests beside them. The App bypasses the
-// review and nothing else: the required checks of [RulesetName], which it
-// does not bypass, still hold its pull requests until they are green.
+// align-files and Renovate Apps for pull requests beside them. The Apps
+// bypass the review and nothing else: the required checks of [RulesetName],
+// which they do not bypass, still hold their pull requests until they are
+// green.
 // Without split the ruleset is deleted. As the engine's other rulesets, it
 // is written by a run with [Runner.DevctlAppID] alone; a run without the id
 // reports the difference as [FindingRulesetPending]. have is the review
@@ -446,7 +454,7 @@ func (r *Runner) stepReviewRuleset(ctx context.Context, s *run, sr *StepResult, 
 			include:     []string{defaultBranchRef},
 			pullRequest: true,
 			reviews:     s.baseline.RequiredReviews,
-			bypass:      append(slices.Clone(bypass), appActor(r.AlignFilesAppID)),
+			bypass:      append(slices.Clone(bypass), appActor(r.AlignFilesAppID), appActor(renovateAppID)),
 			team:        s.team,
 		}
 		if r.DevctlAppID == 0 || (have != nil && have.BypassActors == nil) {
@@ -1051,20 +1059,27 @@ func describeActor(a *github.BypassActor, team *github.Team) string {
 	return fmt.Sprintf("%s %d (%s)", kind, a.GetActorID(), mode)
 }
 
-// pipelineGates reads the generated pipeline — the request's documents, or
-// the repository's .circleci — and returns the contexts of its branch-side
-// jobs; known is false when there is no pipeline file.
+// pipelineGates reads the generated pipeline — the request's documents, the
+// repository's .circleci, or, while the default branch has none, the one the
+// open align-files pull request brings — and returns the contexts of its
+// branch-side jobs; known is false when there is no pipeline file. Reading
+// the pull request's pipeline lets a repository move from a hand-kept
+// pipeline to the generated one: the old pipeline's contexts are stale
+// against it and stop being required, so the pull request can merge; the
+// generated jobs are required once they have reported on the default
+// branch, by the run after the merge.
 func (r *Runner) pipelineGates(ctx context.Context, s *run) (gates []string, known bool, err error) {
 	files := s.req.Pipeline
 	if files == nil {
-		for _, name := range PipelineFiles {
-			data, found, err := r.fileContent(ctx, s.owner, s.name, ".circleci/"+name, s.branch())
-			if err != nil {
-				return nil, false, err
-			}
-			if found {
-				files = append(files, data)
-			}
+		files, err = r.pipelineFiles(ctx, s, s.branch())
+		if err != nil {
+			return nil, false, err
+		}
+	}
+	if files == nil {
+		files, err = r.alignPipelineFiles(ctx, s)
+		if err != nil {
+			return nil, false, err
 		}
 	}
 	if len(files) == 0 {
@@ -1075,6 +1090,50 @@ func (r *Runner) pipelineGates(ctx context.Context, s *run) (gates []string, kno
 		return nil, false, fmt.Errorf("%s: .circleci: %w", s.slug(), err)
 	}
 	return gates, true, nil
+}
+
+// pipelineFiles reads the generated pipeline's files at ref; nil when it
+// has none.
+func (r *Runner) pipelineFiles(ctx context.Context, s *run, ref string) ([][]byte, error) {
+	var files [][]byte
+	for _, name := range PipelineFiles {
+		data, found, err := r.fileContent(ctx, s.owner, s.name, ".circleci/"+name, ref)
+		if err != nil {
+			return nil, err
+		}
+		if found {
+			files = append(files, data)
+		}
+	}
+	return files, nil
+}
+
+// alignPipelineFiles reads the generated pipeline the open align-files pull
+// request into the default branch brings; nil when there is no such pull
+// request or it brings none. Only the App's own pull request counts: one a
+// person opens from the branch does not change what is required.
+func (r *Runner) alignPipelineFiles(ctx context.Context, s *run) ([][]byte, error) {
+	open, _, err := r.GitHub.PullRequests.List(ctx, s.owner, s.name, &github.PullRequestListOptions{
+		State: stateOpen,
+		Head:  s.owner + ":" + AlignFilesBranch,
+		Base:  s.branch(),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("%s: align-files pull request: %w", s.slug(), err)
+	}
+	i := slices.IndexFunc(open, func(pr *github.PullRequest) bool { return pr.GetUser().GetLogin() == AlignFilesLogin })
+	if i < 0 {
+		return nil, nil
+	}
+	pr := open[i]
+	files, err := r.pipelineFiles(ctx, s, pr.GetHead().GetRef())
+	if err != nil {
+		return nil, err
+	}
+	if files != nil {
+		fmt.Fprintf(s.log, "%s/%s %s: the required CircleCI contexts follow the generated pipeline of align-files pull request #%d\n", s.owner, s.name, StepProtection, pr.GetNumber())
+	}
+	return files, nil
 }
 
 // requiredChecks computes the required contexts: the baseline's

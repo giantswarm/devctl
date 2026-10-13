@@ -3,6 +3,7 @@ package reposetup
 import (
 	"encoding/json"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -35,6 +36,39 @@ func TestGenCommandsNothingForAForkLine(t *testing.T) {
 	service := Fields{Name: "service", Gen: &GenFields{Flavours: []string{"app"}, Language: "go"}}
 	require.NotEmpty(t, genCommands(service, genContext{}))
 	require.True(t, hasCIJob(service))
+}
+
+// The README link check is generated for every app repository unless the
+// entry switches it off, and the flag is only passed to a devctl that knows
+// it: align-files probes --help before passing a flag its pinned devctl may
+// predate.
+func TestGenCommandsCheckReadmeLinks(t *testing.T) {
+	on, off := true, false
+	cases := []struct {
+		name  string
+		field *bool
+		knows bool
+		want  bool // the workflows line carries --check-readme-links=false
+	}{
+		{name: "unset", knows: true},
+		{name: "on", field: &on, knows: true},
+		{name: "off", field: &off, knows: true, want: true},
+		{name: "off, devctl predates the flag", field: &off},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fields := Fields{Name: "example", Gen: &GenFields{Flavours: []string{"app"}, Language: "generic", CheckReadmeLinks: tc.field}}
+			knows := func(generator, flag string) bool { return tc.knows || flag != "--check-readme-links" }
+			var workflows []string
+			for _, c := range genCommands(fields, genContext{Knows: knows}) {
+				if c[2] == genWorkflows {
+					workflows = c
+				}
+			}
+			require.NotNil(t, workflows)
+			require.Equal(t, tc.want, slices.Contains(workflows, "--check-readme-links=false"), workflows)
+		})
+	}
 }
 
 // Every declaration that generates at all gets the Renovate line, last;

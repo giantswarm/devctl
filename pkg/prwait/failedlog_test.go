@@ -90,6 +90,48 @@ func Test_Wait_failedLogReadsEachFailedJobOnce(t *testing.T) {
 	}
 }
 
+func Test_Wait_failedLogNamesTheRedRunOfAMatrix(t *testing.T) {
+	blob := blobs(t, map[string]string{"/actions/4": "plan failed\n"})
+	gh := gitHubGreen()
+	var jobs []map[string]any
+	for id := 1; id <= 10; id++ {
+		conclusion := "success"
+		if id == 4 {
+			conclusion = "failure"
+		}
+		job := actionsRun(id, "plan / tofu-plan", conclusion)
+		job["check_suite"] = map[string]any{"id": 100}
+		jobs = append(jobs, job)
+	}
+	gh[runsPath] = []sequence.Response{checkRuns(jobs...)}
+	gh[actsPath] = []sequence.Response{body(map[string]any{"total_count": 1, "workflow_runs": []any{
+		map[string]any{"id": 1, "name": "plan", "workflow_id": 5, "check_suite_id": 100, "status": "completed", "conclusion": "failure", "html_url": "https://github.com/o/r/actions/runs/1"},
+	}})}
+	gh["GET /repos/o/r/actions/jobs/4/logs"] = []sequence.Response{{Status: http.StatusFound, Headers: map[string]string{"Location": blob.URL + "/actions/4"}}}
+	h := start(t, gh, nil, false, 2*time.Minute)
+	h.waiter.failedLogLines = 5
+
+	result, err := h.waiter.Wait(context.Background(), "o", "r", 42)
+	if exitCode(err) != agentcli.ExitRed {
+		t.Fatalf("want exit 1, got %d %v", exitCode(err), err)
+	}
+	if !strings.Contains(err.Error(), "check plan / tofu-plan [plan, check run 4] concluded failure") {
+		t.Errorf("verdict does not name the red run: %v", err)
+	}
+	want := []FailedJob{{Name: "plan / tofu-plan [plan, check run 4]", Source: SourceActions, URL: "https://github.com/o/r/actions/runs/1/job/4", LogTail: "plan failed"}}
+	if diff := cmp.Diff(want, result.FailedJobs); diff != "" {
+		t.Errorf("failedJobs:\n%s", diff)
+	}
+	if len(result.Checks) != 10 {
+		t.Fatalf("want every run of the name listed, got %d checks", len(result.Checks))
+	}
+	for i, check := range result.Checks {
+		if check.ID != int64(i+1) || check.Workflow != "plan" {
+			t.Errorf("checks[%d]: want id %d of workflow plan, got %+v", i, i+1, check)
+		}
+	}
+}
+
 func Test_Wait_failedLogUnreadableKeepsTheVerdict(t *testing.T) {
 	gh := gitHubGreen()
 	gh[runsPath] = []sequence.Response{checkRuns(actionsRun(7, "lint", "failure"))}

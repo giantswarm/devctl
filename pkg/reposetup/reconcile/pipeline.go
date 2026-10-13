@@ -12,6 +12,17 @@ import (
 // CircleCI job: "ci/circleci: <job name>".
 const CircleCIContextPrefix = "ci/circleci: "
 
+// AlignFilesBranch is the branch giantswarm/github's align-files action
+// pushes a repository's generated files to and opens its pull request from.
+const AlignFilesBranch = "teams-alignment-branch"
+
+// AlignFilesLogin is the login of the align-files App, the author of the
+// pull requests it opens from [AlignFilesBranch].
+const AlignFilesLogin = "giantswarm-align-files[bot]"
+
+// stateOpen is the state of an open pull request, as a list filters on it.
+const stateOpen = "open"
+
 // PipelineFiles are the files of a generated pipeline that carry jobs,
 // relative to .circleci: workflows.yml is what `devctl gen circleci`
 // writes, custom.yml the repository-owned additions the setup workflow in

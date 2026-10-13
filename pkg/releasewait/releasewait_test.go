@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/base64"
 	"io"
+	"net/url"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/giantswarm/microerror"
 	"github.com/sirupsen/logrus"
 
 	circlecimock "github.com/giantswarm/devctl/v8/e2e/mock/circleci"
@@ -51,6 +53,8 @@ type fixture struct {
 	// images are the images named with --image.
 	images []string
 	charts []string
+	// wrapCircleCI, when set, stands in front of the CircleCI client.
+	wrapCircleCI func(CircleCI) CircleCI
 }
 
 type entries struct{ fields *reposetup.Fields }
@@ -204,7 +208,11 @@ func run(t *testing.T, fx fixture) (Result, error) {
 		Entries: entries{fx.entry},
 		CircleCI: func(context.Context) (CircleCI, error) {
 			circleCalls++
-			return circleciclient.New(circleciclient.Config{Token: "cci_test", BaseURL: circleciclient.BaseURLFromAPIURL(endpoints.CircleCIAPIURL)})
+			client, err := circleciclient.New(circleciclient.Config{Token: "cci_test", BaseURL: circleciclient.BaseURLFromAPIURL(endpoints.CircleCIAPIURL)})
+			if err != nil || fx.wrapCircleCI == nil {
+				return client, err
+			}
+			return fx.wrapCircleCI(client), nil
 		},
 		Registry:     RegistryProber{Endpoints: endpoints},
 		CatalogIndex: catalog{fx.catalogLists, fx.catalogChart, fx.catalogName},
@@ -401,19 +409,16 @@ func TestWaitArtifactsAvailablePipelineUnfinishedIsTimeout(t *testing.T) {
 }
 
 // A repository's own tag job that fails after the named artifacts resolved
-// fails the release: the verdict no longer depends on which came first.
+// fails the release: the verdict no longer depends on which came first. The
+// jobs are read once, when the workflow has failed, to name it.
 func TestWaitRepoOwnedTagJobFailingAfterTheArtifactsIsCIFailure(t *testing.T) {
 	circleci := pipelineRoutes(
 		[][]map[string]any{
 			{wf("w1", "build", "running", "2026-09-23T14:19:18Z")},
 			{wf("w1", "build", "failed", "2026-09-23T14:19:18Z")},
 		},
-		nil,
+		map[string][]map[string]any{"w1": {job("push-to-registries-release", "success"), job("push-chart-release", "success"), job("guest-image", "failed")}},
 	)
-	circleci["GET /api/v2/workflow/w1/job"] = []sequence.Response{
-		{Body: map[string]any{"items": []map[string]any{job("push-to-registries-release", "success"), job("push-chart-release", "success"), job("guest-image", "running")}}},
-		{Body: map[string]any{"items": []map[string]any{job("push-to-registries-release", "success"), job("push-chart-release", "success"), job("guest-image", "failed")}}},
-	}
 	fx := fixture{
 		entry:    generatedEntry(t),
 		github:   baseGitHub([]string{"Dockerfile", "helm"}, []string{"zz_generated.auto_release.yaml"}, []string{"config.yml", "workflows.yml", "custom.yml"}),
@@ -887,37 +892,156 @@ func TestWaitJobsNotVisibleYetIsNotYet(t *testing.T) {
 	}
 }
 
-// Jobs that never become visible end the wait at the deadline, exit 2, with
-// the workflow in the pipeline's unfinished list and in the reason.
+// Hand-written CI derives its artifacts from the tag pipeline's jobs; jobs
+// that never become visible leave nothing to probe and end the wait at the
+// deadline, exit 2, with the workflow in the pipeline's unfinished list and
+// in the reason.
 func TestWaitJobsNeverVisibleIsTimeout(t *testing.T) {
-	circleci := pipelineRoutes([][]map[string]any{{wf("w1", "setup", "running", "2026-09-21T10:00:00Z")}}, nil)
+	github := baseGitHub([]string{"Dockerfile", "helm"}, []string{"zz_generated.create_release.yaml", "zz_generated.create_release_pr.yaml"}, []string{"config.yml"})
+	github[repoRoute("/contents/.circleci/config.yml")] = []sequence.Response{{Body: fileContent(".circleci/config.yml", handWrittenConfig)}}
+	circleci := pipelineRoutes([][]map[string]any{{wf("w1", "build", "running", "2026-09-21T10:00:00Z")}}, nil)
 	circleci["GET /api/v2/workflow/w1/job"] = []sequence.Response{{Status: 404, Body: map[string]any{"message": "Workflow not found"}}}
-	fx := fixture{
-		entry:    generatedEntry(t),
-		timeout:  45 * time.Second,
-		github:   baseGitHub([]string{"Dockerfile", "helm"}, []string{"zz_generated.auto_release.yaml"}, []string{"config.yml", "workflows.yml"}),
-		circleci: circleci,
-	}
+	fx := fixture{timeout: 45 * time.Second, github: github, circleci: circleci}
 	result, err := run(t, fx)
-	assertExit(t, err, agentcli.ExitTimeout, "pipeline 12 unfinished: setup (running, jobs not visible yet)")
-	if result.Pipeline == nil || strings.Join(result.Pipeline.Unfinished, ",") != "setup (running, jobs not visible yet)" {
+	assertExit(t, err, agentcli.ExitTimeout, "pipeline 12 unfinished: build (running, jobs not visible yet)")
+	if result.Pipeline == nil || strings.Join(result.Pipeline.Unfinished, ",") != "build (running, jobs not visible yet)" {
 		t.Errorf("pipeline: %+v", result.Pipeline)
+	}
+	if len(result.Artifacts) != 0 {
+		t.Errorf("want no artifact derived without the jobs, got %+v", result.Artifacts)
 	}
 }
 
-// The jobs of a setup workflow that already reads success can still be 404
-// for a poll (giantswarm/devctl v8.114.0): not a tooling failure, the next
-// poll reads them and the wait ends available.
-func TestWaitJobsNotFoundOnAFinishedWorkflowIsNotYet(t *testing.T) {
+// A green pipeline is green without its jobs: CircleCI answers 404 on the
+// jobs of a workflow it lists, finished or not, for a while after the
+// workflow exists and for as long as its job data lags (half an hour and
+// more on 2026-10-09, with the release published and every artifact in the
+// registry). Generated CI names its artifacts from the entry, so the jobs
+// are never read and the wait ends available on the first poll.
+func TestWaitGreenWorkflowsWithHiddenJobsAreAvailable(t *testing.T) {
 	circleci := pipelineRoutes(
 		[][]map[string]any{
 			{wf("w1", "setup", "success", "2026-09-21T10:00:00Z"), wf("w2", "build", "success", "2026-09-21T10:01:00Z")},
 		},
-		map[string][]map[string]any{"w2": {job("push-to-registries-release", "success"), job("push-chart-release", "success")}},
+		nil,
 	)
-	circleci["GET /api/v2/workflow/w1/job"] = []sequence.Response{
-		{Status: 404, Body: map[string]any{"message": "Workflow not found"}},
-		{Body: map[string]any{"items": []map[string]any{job("setup", "success")}}},
+	notFound := sequence.Response{Status: 404, Body: map[string]any{"message": "Workflow not found"}}
+	circleci["GET /api/v2/workflow/w1/job"] = []sequence.Response{notFound}
+	circleci["GET /api/v2/workflow/w2/job"] = []sequence.Response{notFound}
+	fx := fixture{
+		entry:    generatedEntry(t),
+		github:   baseGitHub([]string{"Dockerfile", "helm"}, []string{"zz_generated.auto_release.yaml"}, []string{"config.yml", "workflows.yml"}),
+		circleci: circleci,
+		registry: sequence.Routes{
+			"HEAD /v2/giantswarm/kserve-controller/manifests/1.2.3": {{Status: 200}},
+			"HEAD /v2/charts/giantswarm/kserve/manifests/1.2.3":     {{Status: 200}},
+		},
+	}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+	if result.Pipeline == nil || len(result.Pipeline.Workflows) != 2 || len(result.Pipeline.Unfinished) != 0 {
+		t.Errorf("pipeline: %+v", result.Pipeline)
+	}
+}
+
+// A custom.yml of test and repository-owned jobs alone (beekeeper's
+// test-envtest, vm-manager's guest-image) names no artifact: the pipeline's
+// jobs are never read for it, and a green pipeline whose jobs CircleCI does
+// not list is available.
+func TestWaitCustomWithoutPushJobsReadsNoJobs(t *testing.T) {
+	circleci := pipelineRoutes([][]map[string]any{{wf("w1", "build", "success", "2026-09-23T14:19:18Z")}}, nil)
+	circleci["GET /api/v2/workflow/w1/job"] = []sequence.Response{{Status: 404, Body: map[string]any{"message": "Workflow not found"}}}
+	fx := fixture{
+		entry:    generatedEntry(t),
+		github:   baseGitHub([]string{"Dockerfile", "helm"}, []string{"zz_generated.auto_release.yaml"}, []string{"config.yml", "workflows.yml", "custom.yml"}),
+		circleci: circleci,
+		registry: sequence.Routes{
+			"HEAD /v2/giantswarm/kserve-controller/manifests/1.2.3": {{Status: 200}},
+			"HEAD /v2/charts/giantswarm/kserve/manifests/1.2.3":     {{Status: 200}},
+		},
+	}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+	if len(result.Artifacts) != 2 || result.Pipeline == nil || len(result.Pipeline.Unfinished) != 0 {
+		t.Errorf("artifacts %+v, pipeline %+v", result.Artifacts, result.Pipeline)
+	}
+}
+
+// The setup workflow's one job continues the pipeline and names no
+// artifact: hand-written CI derives its artifacts from the build workflow's
+// jobs while CircleCI answers 404 on the setup workflow's.
+func TestWaitSetupWorkflowJobsAreNeverRead(t *testing.T) {
+	github := baseGitHub([]string{"Dockerfile", "helm"}, []string{"zz_generated.create_release.yaml", "zz_generated.create_release_pr.yaml"}, []string{"config.yml"})
+	github[repoRoute("/contents/.circleci/config.yml")] = []sequence.Response{{Body: fileContent(".circleci/config.yml", handWrittenConfig)}}
+	setup := wf("w0", "setup", "success", "2026-09-21T09:59:00Z")
+	setup["tag"] = "setup"
+	circleci := pipelineRoutes(
+		[][]map[string]any{{setup, wf("w1", "build", "success", "2026-09-21T10:00:00Z")}},
+		map[string][]map[string]any{"w1": {job("go-build", "success"), job("push-to-registries-release", "success"), job("push-llmisvc", "success"), job("push-chart", "success")}},
+	)
+	circleci["GET /api/v2/workflow/w0/job"] = []sequence.Response{{Status: 404, Body: map[string]any{"message": "Workflow not found"}}}
+	fx := fixture{
+		github:   github,
+		circleci: circleci,
+		registry: sequence.Routes{
+			"HEAD /v2/giantswarm/kserve-controller/manifests/1.2.3": {{Status: 200}},
+			"HEAD /v2/charts/giantswarm/kserve/manifests/1.2.3":     {{Status: 200}},
+		},
+		privateRegistry: sequence.Routes{
+			"HEAD /v2/giantswarm/llmisvc-controller/manifests/1.2.3": {{Status: 200}},
+		},
+	}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+	if len(result.Artifacts) != 3 || result.Pipeline == nil || len(result.Pipeline.Unfinished) != 0 {
+		t.Errorf("artifacts %+v, pipeline %+v", result.Artifacts, result.Pipeline)
+	}
+}
+
+// A failed workflow whose jobs CircleCI does not list is the tag's CI
+// failure all the same, named by the workflow.
+func TestWaitFailedWorkflowWithHiddenJobsIsCIFailure(t *testing.T) {
+	circleci := pipelineRoutes([][]map[string]any{{wf("w1", "build", "failed", "2026-09-21T10:00:00Z")}}, nil)
+	circleci["GET /api/v2/workflow/w1/job"] = []sequence.Response{{Status: 404, Body: map[string]any{"message": "Workflow not found"}}}
+	fx := fixture{
+		entry:    generatedEntry(t),
+		github:   baseGitHub([]string{"Dockerfile", "helm"}, []string{"zz_generated.auto_release.yaml"}, []string{"config.yml", "workflows.yml"}),
+		circleci: circleci,
+	}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitRed, "the tag pipeline of v1.2.3 failed: build")
+	if result.Pipeline == nil || strings.Join(result.Pipeline.FailedJobs, ",") != "build" {
+		t.Errorf("pipeline: %+v", result.Pipeline)
+	}
+}
+
+// A cancelled workflow is the tag's CI failure, its cancelled jobs named.
+func TestWaitCancelledWorkflowIsCIFailure(t *testing.T) {
+	fx := fixture{
+		entry:  generatedEntry(t),
+		github: baseGitHub([]string{"Dockerfile", "helm"}, []string{"zz_generated.auto_release.yaml"}, []string{"config.yml", "workflows.yml"}),
+		circleci: pipelineRoutes(
+			[][]map[string]any{{wf("w1", "build", "canceled", "2026-09-21T10:00:00Z")}},
+			map[string][]map[string]any{"w1": {job("go-build", "success"), job("push-to-registries-release", "canceled")}},
+		),
+	}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitRed, "build/push-to-registries-release")
+	if result.Pipeline == nil || strings.Join(result.Pipeline.FailedJobs, ",") != "build/push-to-registries-release" {
+		t.Errorf("pipeline: %+v", result.Pipeline)
+	}
+}
+
+// The tag pipeline of a repository's first release: CircleCI lists no
+// pipeline for the project when the wait starts and the tag's on the next
+// poll; the wait holds until then and ends available once it is green.
+func TestWaitFirstTagPipelineAppearsLater(t *testing.T) {
+	circleci := sequence.Routes{
+		"GET /api/v2/project/gh/giantswarm/kserve/pipeline": {
+			{Body: map[string]any{"items": []map[string]any{}, "next_page_token": nil}},
+			{Body: map[string]any{"items": []map[string]any{{"id": "p1", "number": 1, "vcs": map[string]any{"tag": testTag, "revision": testSHA}}}}},
+		},
+		"GET /api/v2/pipeline/p1/workflow": {{Body: map[string]any{"items": []map[string]any{wf("w1", "build", "success", "2026-09-21T10:00:00Z")}}}},
 	}
 	fx := fixture{
 		entry:    generatedEntry(t),
@@ -930,7 +1054,7 @@ func TestWaitJobsNotFoundOnAFinishedWorkflowIsNotYet(t *testing.T) {
 	}
 	result, err := run(t, fx)
 	assertExit(t, err, agentcli.ExitOK, "")
-	if result.Pipeline == nil || len(result.Pipeline.Unfinished) != 0 {
+	if result.Pipeline == nil || result.Pipeline.Number != 1 || len(result.Pipeline.Unfinished) != 0 {
 		t.Errorf("pipeline: %+v", result.Pipeline)
 	}
 }
@@ -1326,4 +1450,199 @@ func TestWaitPullRequestEntryAheadOfTheWorkflowsIsNoRelease(t *testing.T) {
 	_, err := run(t, fixture{github: github, pr: 7, mergeCommit: testSHA, entry: &entry})
 	assertExit(t, err, agentcli.ExitNotApplicable, "declares auto-release, but .github/workflows at 01234567 holds no auto-release workflow")
 	assertNoRelease(t, err)
+}
+
+// unansweredCircleCI is a CircleCI whose pipeline listing goes unanswered
+// the first failures times, the way the retrying transport reports a read
+// that timed out on every try; a negative count never answers.
+type unansweredCircleCI struct {
+	CircleCI
+	failures int
+	calls    int
+}
+
+func (c *unansweredCircleCI) FindPipelineByTag(ctx context.Context, org, repo, tag string) (*circleciclient.Pipeline, error) {
+	c.calls++
+	if c.failures != 0 {
+		c.failures--
+		return nil, microerror.Mask(&url.Error{Op: "Get", URL: "https://circleci.com/api/v2/project/gh/" + org + "/" + repo + "/pipeline", Err: &agentcli.RetriesExhaustedError{Attempts: agentcli.RetryAttempts, Last: "context deadline exceeded"}})
+	}
+	return c.CircleCI.FindPipelineByTag(ctx, org, repo, tag)
+}
+
+func greenGenerated(t *testing.T) fixture {
+	return fixture{
+		entry:  generatedEntry(t),
+		github: baseGitHub([]string{"Dockerfile", "helm"}, []string{"zz_generated.auto_release.yaml"}, []string{"config.yml", "workflows.yml"}),
+		circleci: pipelineRoutes(
+			[][]map[string]any{{wf("w1", "build", "success", "2026-09-21T10:00:00Z")}},
+			map[string][]map[string]any{"w1": {job("push-to-registries-release", "success"), job("push-chart-release", "success")}},
+		),
+		registry: sequence.Routes{
+			"HEAD /v2/giantswarm/kserve-controller/manifests/1.2.3": {{Status: 200}},
+			"HEAD /v2/charts/giantswarm/kserve/manifests/1.2.3":     {{Status: 200}},
+		},
+	}
+}
+
+// A CircleCI outage shorter than the timeout is not an outcome: the wait
+// reads again at the next poll and confirms the release.
+func TestWaitCircleCIUnansweredOnceThenAnswers(t *testing.T) {
+	fx := greenGenerated(t)
+	circleci := &unansweredCircleCI{failures: 1}
+	fx.wrapCircleCI = func(c CircleCI) CircleCI { circleci.CircleCI = c; return circleci }
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+	if circleci.calls != 2 {
+		t.Errorf("pipeline listings: want 2, got %d", circleci.calls)
+	}
+	if !allAvailable(result.Artifacts) || result.Pipeline == nil {
+		t.Errorf("result: %+v", result)
+	}
+}
+
+// A CircleCI that never answers is a timeout whose reason names the
+// unanswered read: the release is unknown, not failed.
+func TestWaitCircleCINeverAnswersIsTimeoutNamingIt(t *testing.T) {
+	fx := greenGenerated(t)
+	circleci := &unansweredCircleCI{failures: -1}
+	fx.wrapCircleCI = func(c CircleCI) CircleCI { circleci.CircleCI = c; return circleci }
+	_, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitTimeout, "the release is unknown, not failed: the last read of the tag's CI went unanswered: listing the pipelines of giantswarm/kserve: Get \"https://circleci.com/api/v2/project/gh/giantswarm/kserve/pipeline\": failed 15 times in a row: context deadline exceeded")
+	if strings.Contains(err.Error(), "webhook") {
+		t.Errorf("an unanswered CircleCI is not a missing webhook: %v", err)
+	}
+	if circleci.calls < 2 {
+		t.Errorf("pipeline listings: want the wait to read again, got %d", circleci.calls)
+	}
+}
+
+// statusesRoute scripts the commit statuses of the tag's commit, newest
+// first, each context, state and target URL.
+func statusesRoute(github sequence.Routes, statuses ...[3]string) sequence.Routes {
+	items := []map[string]any{}
+	for _, s := range statuses {
+		items = append(items, map[string]any{"context": s[0], "state": s[1], "target_url": s[2]})
+	}
+	github[repoRoute("/commits/"+testSHA+"/statuses")] = []sequence.Response{{Body: items}}
+	return github
+}
+
+// branchPipelineOnly is a pipeline listing whose newest pipelines are a
+// branch's: the tag pipeline is further down than the listing reads.
+func branchPipelineOnly() sequence.Routes {
+	return sequence.Routes{"GET /api/v2/project/gh/giantswarm/kserve/pipeline": {{Body: map[string]any{"items": []map[string]any{{"id": "p9", "number": 99, "vcs": map[string]any{"branch": "renovate/x", "revision": "fedcba98"}}}}}}}
+}
+
+// A tag whose pipeline the listing by tag does not name while the commit's
+// CircleCI statuses link its jobs: the wait reads the pipeline behind the
+// statuses and ends available once it is green.
+func TestWaitTagPipelineFromTheCommitStatuses(t *testing.T) {
+	fx := greenGenerated(t)
+	fx.github = statusesRoute(fx.github,
+		[3]string{"ci/circleci: push-to-registries-release", "success", "https://circleci.com/gh/giantswarm/kserve/101"},
+		[3]string{"ci/circleci: push-chart-release", "success", "https://circleci.com/gh/giantswarm/kserve/102"},
+	)
+	circleci := branchPipelineOnly()
+	circleci["GET /api/v2/project/gh/giantswarm/kserve/job/101"] = []sequence.Response{{Body: map[string]any{"number": 101, "pipeline": map[string]any{"id": "p1"}, "latest_workflow": map[string]any{"id": "w1"}}}}
+	circleci["GET /api/v2/pipeline/p1"] = []sequence.Response{{Body: map[string]any{"id": "p1", "number": 12, "project_slug": "gh/giantswarm/kserve", "vcs": map[string]any{"tag": testTag, "revision": testSHA}}}}
+	circleci["GET /api/v2/pipeline/p1/workflow"] = []sequence.Response{{Body: map[string]any{"items": []map[string]any{wf("w1", "build", "success", "2026-09-21T10:00:00Z")}}}}
+	fx.circleci = circleci
+	var warnings []string
+	fx.warn = func(m string) { warnings = append(warnings, m) }
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+	if result.Pipeline == nil || result.Pipeline.ID != "p1" || result.Pipeline.Number != 12 {
+		t.Errorf("pipeline: %+v", result.Pipeline)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("warnings: %v", warnings)
+	}
+}
+
+// A tag whose statuses link no pipeline CircleCI answers for: the statuses
+// are the verdict, and the document says so.
+func TestWaitTagStatusesAreTheVerdictWhenNoPipelineAnswers(t *testing.T) {
+	fx := greenGenerated(t)
+	fx.github = statusesRoute(fx.github,
+		[3]string{"ci/circleci: push-to-registries-release", "success", "https://circleci.com/gh/giantswarm/kserve/101"},
+		[3]string{"ci/circleci: push-chart-release", "success", "https://circleci.com/gh/giantswarm/kserve/102"},
+	)
+	fx.circleci = noPipelineYet()
+	var warnings []string
+	fx.warn = func(m string) { warnings = append(warnings, m) }
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+	if !allAvailable(result.Artifacts) {
+		t.Errorf("artifacts: %+v", result.Artifacts)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "the tag's CI verdict is those 2 CircleCI statuses") {
+		t.Errorf("warnings: %v", warnings)
+	}
+}
+
+// A failed status fails the tag's CI read from the statuses.
+func TestWaitTagStatusFailedIsCIFailed(t *testing.T) {
+	fx := greenGenerated(t)
+	fx.github = statusesRoute(fx.github,
+		[3]string{"ci/circleci: push-to-registries-release", "failure", "https://circleci.com/gh/giantswarm/kserve/101"},
+	)
+	fx.circleci = noPipelineYet()
+	_, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitRed, "the tag pipeline of v1.2.3 failed: push-to-registries-release")
+}
+
+// Neither a pipeline nor a CircleCI status of the tag: exit 2, the webhook
+// may not have reached CircleCI. A status that leads to a branch's pipeline
+// on the same commit is not the tag's.
+func TestWaitNoTagPipelineNorStatusIsTimeout(t *testing.T) {
+	cases := map[string]func(sequence.Routes) sequence.Routes{
+		"no status": func(github sequence.Routes) sequence.Routes { return statusesRoute(github) },
+		"another CI's status only": func(github sequence.Routes) sequence.Routes {
+			return statusesRoute(github, [3]string{"security/snyk", "success", "https://snyk.io/x"})
+		},
+		"the branch pipeline's status only": func(github sequence.Routes) sequence.Routes {
+			return statusesRoute(github, [3]string{"ci/circleci: go-build", "success", "https://circleci.com/gh/giantswarm/kserve/201"})
+		},
+	}
+	for name, statuses := range cases {
+		t.Run(name, func(t *testing.T) {
+			fx := greenGenerated(t)
+			fx.github = statuses(fx.github)
+			circleci := branchPipelineOnly()
+			circleci["GET /api/v2/project/gh/giantswarm/kserve/job/201"] = []sequence.Response{{Body: map[string]any{"number": 201, "pipeline": map[string]any{"id": "p9"}}}}
+			circleci["GET /api/v2/pipeline/p9"] = []sequence.Response{{Body: map[string]any{"id": "p9", "number": 99, "vcs": map[string]any{"branch": "main", "revision": testSHA}}}}
+			fx.circleci = circleci
+			_, err := run(t, fx)
+			assertExit(t, err, agentcli.ExitTimeout, "no CircleCI pipeline for v1.2.3 within 2m0s: the tag's webhook may not have reached CircleCI")
+		})
+	}
+}
+
+// A release candidate whose promotion tagged the same commit: the newest
+// statuses are the promotion's pipeline, the candidate's are older ones of
+// the same contexts. The wait follows the older ones to the candidate's
+// pipeline.
+func TestWaitTagPipelineFromOlderStatusesWhenAPromotionSharesTheCommit(t *testing.T) {
+	fx := greenGenerated(t)
+	fx.github = statusesRoute(fx.github,
+		[3]string{"ci/circleci: push-chart-release", "success", "https://circleci.com/gh/giantswarm/kserve/202"},
+		[3]string{"ci/circleci: push-to-registries-release", "success", "https://circleci.com/gh/giantswarm/kserve/201"},
+		[3]string{"ci/circleci: push-chart-release", "success", "https://circleci.com/gh/giantswarm/kserve/102"},
+		[3]string{"ci/circleci: push-chart-release", "pending", "https://circleci.com/gh/giantswarm/kserve/102"},
+		[3]string{"ci/circleci: push-to-registries-release", "success", "https://circleci.com/gh/giantswarm/kserve/101"},
+	)
+	circleci := branchPipelineOnly()
+	circleci["GET /api/v2/project/gh/giantswarm/kserve/job/202"] = []sequence.Response{{Body: map[string]any{"number": 202, "pipeline": map[string]any{"id": "p2"}}}}
+	circleci["GET /api/v2/project/gh/giantswarm/kserve/job/201"] = []sequence.Response{{Body: map[string]any{"number": 201, "pipeline": map[string]any{"id": "p2"}}}}
+	circleci["GET /api/v2/pipeline/p2"] = []sequence.Response{{Body: map[string]any{"id": "p2", "number": 13, "vcs": map[string]any{"tag": "v1.3.0", "revision": testSHA}}}}
+	circleci["GET /api/v2/project/gh/giantswarm/kserve/job/102"] = []sequence.Response{{Body: map[string]any{"number": 102, "pipeline": map[string]any{"id": "p1"}}}}
+	circleci["GET /api/v2/pipeline/p1"] = []sequence.Response{{Body: map[string]any{"id": "p1", "number": 12, "vcs": map[string]any{"tag": testTag, "revision": testSHA}}}}
+	circleci["GET /api/v2/pipeline/p1/workflow"] = []sequence.Response{{Body: map[string]any{"items": []map[string]any{wf("w1", "build", "success", "2026-09-21T10:00:00Z")}}}}
+	fx.circleci = circleci
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+	if result.Pipeline == nil || result.Pipeline.ID != "p1" || result.Pipeline.Number != 12 {
+		t.Errorf("pipeline: %+v", result.Pipeline)
+	}
 }

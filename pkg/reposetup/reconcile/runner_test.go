@@ -349,6 +349,13 @@ type stepCase struct {
 	verify func(t *testing.T, h *harness, repair *Result)
 }
 
+// seedMetadata adds the repository as the entry declares its description and
+// visibility, carrying the topics given.
+func seedMetadata(h *harness, topics []string) {
+	r := h.gh.addRepo(owner, name)
+	r.description, r.private, r.topics = "A sample service", false, topics
+}
+
 func TestSteps(t *testing.T) {
 	tekton := Webhook{URL: "https://github-pr-webhook.ci.giantswarm.io", Events: []string{"issue_comment", "pull_request", "check_run"}, ContentType: "json", Secret: "shared"}
 
@@ -1163,17 +1170,37 @@ func TestSteps(t *testing.T) {
 			verify: func(t *testing.T, h *harness, res *Result) {
 				review := h.repo().ruleset(ReviewRulesetName)
 				require.NotNil(t, review)
-				require.Equal(t, []*github.BypassActor{appBypass(testAppID), adminBypass(), teamBypass(testTeamID), appBypass(testAlignAppID)}, review.BypassActors, "the align-files App bypasses the review beside the default branch's actors")
+				require.Equal(t, []*github.BypassActor{appBypass(testAppID), adminBypass(), teamBypass(testTeamID), appBypass(testAlignAppID), appBypass(renovateAppID)}, review.BypassActors, "the align-files and Renovate Apps bypass the review beside the default branch's actors")
 				require.Equal(t, 1, review.Rules.PullRequest.RequiredApprovingReviewCount)
 				require.Nil(t, review.Rules.RequiredStatusChecks, "the review ruleset carries no checks")
 				main := h.repo().ruleset(RulesetName)
 				require.Nil(t, main.Rules.PullRequest, "the review rule moved out")
 				require.Equal(t, []string{ctxGoBuild}, checkContexts(main), "the checks stay where the align-files App has no bypass")
 				require.NotContains(t, actorKeys(main.BypassActors), actorKey(appBypass(testAlignAppID)))
+				require.NotContains(t, actorKeys(main.BypassActors), actorKey(appBypass(renovateAppID)), "the Renovate App waits for the checks")
 				require.Equal(t, []string{
-					`create ruleset "devctl: review", 1 required review(s); bypass actors: App 424242 on pull requests, repository admins on pull requests, team team-bumblebee on pull requests, App 434343 on pull requests`,
+					`create ruleset "devctl: review", 1 required review(s); bypass actors: App 424242 on pull requests, repository admins on pull requests, team team-bumblebee on pull requests, App 434343 on pull requests, App 2740 on pull requests`,
 					"stop requiring pull requests",
 				}, res.Step(StepProtection).Changes, "the review ruleset is written before the default branch drops the rule")
+			},
+		},
+		{
+			name: "protection: a review ruleset without the Renovate App gains it, the checks stay binding", step: StepProtection,
+			seed: func(h *harness) {
+				h.runner.AlignFilesAppID = testAlignAppID
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID), adminBypass(), teamBypass(testTeamID)).Rules.PullRequest = nil
+				review := r.addRuleset(ReviewRulesetName, nil, appBypass(testAppID), adminBypass(), teamBypass(testTeamID), appBypass(testAlignAppID))
+				review.Rules.Deletion, review.Rules.NonFastForward = nil, nil
+			},
+			wantCheck: VerdictDrift, wantChange: "bypass actors: App 424242 on pull requests, repository admins on pull requests, team team-bumblebee on pull requests, App 434343 on pull requests, App 2740 on pull requests",
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Equal(t, []string{"bypass actors: App 424242 on pull requests, repository admins on pull requests, team team-bumblebee on pull requests, App 434343 on pull requests, App 2740 on pull requests"}, res.Step(StepProtection).Changes, "one change: the review ruleset's bypass list")
+				require.Contains(t, actorKeys(h.repo().ruleset(ReviewRulesetName).BypassActors), actorKey(appBypass(renovateAppID)))
+				main := h.repo().ruleset(RulesetName)
+				require.NotContains(t, actorKeys(main.BypassActors), actorKey(appBypass(renovateAppID)), "the Renovate App waits for the checks")
+				require.Equal(t, []string{ctxGoBuild}, checkContexts(main))
 			},
 		},
 		{
@@ -1188,6 +1215,7 @@ func TestSteps(t *testing.T) {
 			verify: func(t *testing.T, h *harness, _ *Result) {
 				require.Nil(t, h.repo().ruleset(ReviewRulesetName))
 				require.NotNil(t, h.repo().ruleset(RulesetName).Rules.PullRequest)
+				require.Empty(t, h.repo().ruleset(RulesetName).BypassActors, "nothing bypasses the review, the Renovate App neither")
 			},
 		},
 		{
@@ -1883,6 +1911,73 @@ func TestSteps(t *testing.T) {
 			},
 		},
 		{
+			name: "metadata: the topics follow the declaration, whatever their order on GitHub", step: StepMetadata,
+			entry: entryYAML + "  topics: [agentlab, fixture]\n",
+			seed: func(h *harness) {
+				seedMetadata(h, []string{"stale"})
+			},
+			wantCheck: VerdictDrift, wantChange: "topics [stale] → [agentlab, fixture]",
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				require.Equal(t, []string{"agentlab", "fixture"}, h.repo().topics)
+			},
+		},
+		{
+			name: "metadata: topics declared in another order are as declared", step: StepMetadata,
+			entry: entryYAML + "  topics: [fixture, agentlab]\n",
+			seed: func(h *harness) {
+				seedMetadata(h, []string{"agentlab", "fixture"})
+			},
+			wantCheck: VerdictOK,
+		},
+		{
+			name: "metadata: an empty topics list removes every topic", step: StepMetadata,
+			entry: entryYAML + "  topics: []\n",
+			seed: func(h *harness) {
+				seedMetadata(h, []string{"stale"})
+			},
+			wantCheck: VerdictDrift, wantChange: "topics [stale] → []",
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				require.Empty(t, h.repo().topics)
+			},
+		},
+		{
+			name: "metadata: an entry without topics leaves them alone", step: StepMetadata,
+			seed: func(h *harness) {
+				seedMetadata(h, []string{"kept"})
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				require.Equal(t, []string{"kept"}, h.repo().topics)
+			},
+		},
+		{
+			name: "labels: a missing owning-team label is created in the default colour", step: StepLabels,
+			seed: func(h *harness) {
+				h.gh.addRepo(owner, name).labels = map[string]*github.Label{}
+			},
+			wantCheck: VerdictDrift, wantChange: "create the label team/bumblebee (#ededed)",
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				l := h.repo().labels["team/bumblebee"]
+				require.NotNil(t, l)
+				require.Equal(t, DefaultLabelColor, l.Color)
+				require.Empty(t, l.GetDescription())
+			},
+		},
+		{
+			name: "labels: an existing owning-team label is left as it is, whatever its case, colour and description", step: StepLabels,
+			seed: func(h *harness) {
+				h.gh.addRepo(owner, name).labels = map[string]*github.Label{
+					"team/bumblebee": {Name: "Team/Bumblebee", Color: "1D76DB", Description: new("Team Bumblebee")},
+				}
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Equal(t, "has team/bumblebee", res.Step(StepLabels).Summary)
+				require.Equal(t, "1D76DB", h.repo().labels["team/bumblebee"].Color)
+				require.Empty(t, h.mutations())
+			},
+		},
+		{
 			// CircleCI's deploy key goes on GitHub — CircleCI's own way to
 			// stop a project it refuses to stop for a renamed repository — and
 			// its webhook stays, a hook the reconciler cannot delete and an
@@ -2382,6 +2477,22 @@ func TestSteps(t *testing.T) {
 			verify: func(t *testing.T, h *harness, _ *Result) { require.Equal(t, "giantswarm", h.repo().defaultBranch) },
 		},
 		{
+			// A fork registered with the upstream mirror on main and the
+			// consumed branch beside it: GitHub refuses to rename main onto
+			// the existing branch, so the step switches the default to it and
+			// main stays the mirror.
+			name: "settings: a declared default branch that exists becomes the default", step: StepSettings, entry: forkEntryYAML,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.allowRebase, r.heads["giantswarm"] = true, "line"
+			},
+			wantCheck: VerdictDrift, wantChange: `default branch "main" → "giantswarm" (switch to the existing branch)`,
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				require.Equal(t, "giantswarm", h.repo().defaultBranch)
+				require.True(t, h.repo().hasBranch("main"), "the old default stays")
+			},
+		},
+		{
 			// The carried patches land by rebase merge, one upstream-ready
 			// commit each, and a re-pin merges upstream's history: the
 			// squash-only baseline would have GitHub refuse the line's merges.
@@ -2733,14 +2844,14 @@ func TestRunFullRepositorySetUp(t *testing.T) {
 	require.Contains(t, string(data), `"repository":"giantswarm/sample-service"`)
 
 	// The budget: a check of the converged repository, every step, costs at
-	// most twenty-two GitHub requests (the webhooks and the deploy keys the
+	// most twenty-three GitHub requests (the webhooks and the deploy keys the
 	// circleci step reads are the last two), and the count is the fake's own.
 	before := len(h.gets())
 	check := h.run(ModeCheck, false)
 	require.True(t, check.Converged, "%+v", check.Steps)
 	gets := h.gets()[before:]
 	require.Equal(t, len(gets), check.Requests.GitHub, "the counter and the fake agree")
-	require.LessOrEqual(t, check.Requests.GitHub, 22, "a converged check within the budget of twenty-two; the reads:\n%s", strings.Join(gets, "\n"))
+	require.LessOrEqual(t, check.Requests.GitHub, 23, "a converged check within the budget of twenty-three; the reads:\n%s", strings.Join(gets, "\n"))
 	require.Positive(t, check.Requests.CircleCI, "the circleci and release steps read CircleCI")
 
 	// The override costs nothing: the caller hands it in with the entry

@@ -4,9 +4,9 @@ Giant Swarm repositories are declared, not clicked together: one entry in the ow
 `repositories/<team>.yaml` of [giantswarm/github](https://github.com/giantswarm/github) is the
 desired state, and the reconciler creates and keeps the repository as declared. The `repo` commands
 are the laptop's client of that engine and of giantswarm-repo-manager -- the same validation, the same
-dry run, the same pull request the Repositories page and the Repo Manager agent produce. `create` and
-`validate` run the engine locally with the devctl App login, `reconcile` with your own token; the
-other verbs call the manager through muster as you.
+dry run, the same pull request the Repositories page and the Repo Manager agent produce. `create` runs
+the engine locally with the devctl App login and `reconcile` with your own token; `validate` and the
+other verbs call the manager through muster as you (`validate --local` runs the engine locally).
 
 ## `devctl repo create`
 
@@ -161,8 +161,8 @@ and nothing runs locally in its place.
 `--reason` on the writes goes into the pull request body and the ask. The dry run of a write prints the
 entry before and after, the pull request (title, branch, files, who opens it) and the ask and notice with
 the channel they reach or why they cannot; a commit prints the pull request's URL, whether the ask was
-delivered, and the run the record now expects. `create`, `validate` and `reconcile` stay what they are:
-the engine run locally with your own tokens.
+delivered, and the run the record now expects. `create` and `reconcile` stay what they are: the engine
+run locally with your own tokens; `validate` asks the manager unless `--local`.
 
 ```nohighlight
 devctl repo list --scope unassigned --inactive-days 365
@@ -212,15 +212,50 @@ repository the inventory has not checked yet names `devctl repo refresh`. `-o js
 the manager answered. Nothing is changed by `repo status`; the local check with your own tokens is
 `devctl repo reconcile --dry-run`.
 
+## `devctl repo follow-circleci`
+
+Repairs the reconciler's finding `circleci-webhook-missing`: a repository followed on CircleCI without
+CircleCI's webhook (`https://circleci.com/hooks/github`), so no push and no tag reaches CircleCI.
+
+```nohighlight
+devctl repo follow-circleci my-service
+```
+
+CircleCI installs that webhook, signed with a secret of its own, only for a follow by a GitHub admin of
+the repository whose CircleCI grant carries the hook scope, and the reconciler's follow is not one; a
+hook created through GitHub's API would lack CircleCI's secret. The command follows the project again
+with your CircleCI login from the keychain (`devctl auth login --circleci-only`, Write access): an
+unfollow first when you follow it already, then the follow, and it reads the repository's webhooks
+until CircleCI's is there, up to a minute. A repository that carries the webhook is left alone. A
+webhook still missing after the follow ends the command with an error naming your login: you are no
+GitHub admin of the repository, or your CircleCI grant on GitHub lacks the hook scope (sign out of
+CircleCI and sign in again through GitHub). The next reconciler run reads the circleci step `ok` with
+"webhook present".
+
 ## `devctl repo validate`
 
-Validates entries of a local team file and prints the dry run as JSON -- what the validation check on
-`giantswarm/github` runs. `--mode create|existing` says what the entries are validated for:
+Validates entries of a local team file and prints the dry run as JSON, one document whose `engine` says
+who answered:
+
+```nohighlight
+devctl repo validate --team-file repositories/team-bumblebee.yaml --entry my-service
+devctl repo validate --team-file repositories/team-bumblebee.yaml --local
+```
+
+| Engine | When | What validates |
+|---|---|---|
+| `manager` | the default: the entries named with `--entry` are the declarations being added | giantswarm-repo-manager's `validate_repository`, through your muster endpoint with the muster token of the keychain (`devctl auth login --muster-only`): the manager's own engine and the schema on `giantswarm/github` `main`, the names checked by its App, the guard notices from your memberships as it reads them, `align: true` and the visibility default written as it writes them -- the same answer the Repositories page and the Repo Manager agent get, printed as it came (`author`, `authorTeams`, `teamsSource`, `machineApproved`, `findings`, `creation` beside the engine's result). The `engine` carries the endpoint and the login. Without a usable muster token the command exits naming the login and `--local`; nothing runs locally in its place |
+| `local` | `--local`, or CI, where the keychain is never read (the validation check of `giantswarm/github` runs there) | devctl's own engine: `--schema`, else the schema on `giantswarm/github` `main` with a GitHub token (the devctl App login, or a token in the environment that overrides it, `--github-token-envvar`) and the names checked on GitHub, else the embedded copy and the names reported unchecked. The `engine` carries the devctl version and the reason |
+
+What only the local engine does takes `--local`: existing mode, `--schema`, `--author` and `--author-team`
+(the manager reads the author from your sign-in), another `--owner`.
+
+`--mode create|existing` says what the entries are validated for:
 
 | Mode | Applies | Default when |
 |---|---|---|
 | `create` | the schema, the creation rules (`gen.flavours` and `gen.language` set, a template for them, a job for generated CI, the chart-name convention) and a free name on GitHub; the guard notices say what review the change gets | `--entry` names the entries being added |
-| `existing` | the schema alone -- an entry the schema accepts is valid however it predates the creation rules, and it is rendered as declared: no default is written, `gen.ci` left out keeps the repository's own CircleCI configuration; the name check's verdict is reported and never refuses, a missing repository being the reconciler's finding | no `--entry`: the whole file is on main already |
+| `existing` | the schema alone -- an entry the schema accepts is valid however it predates the creation rules, and it is rendered as declared: no default is written, `gen.ci` left out keeps the repository's own CircleCI configuration; the name check's verdict is reported and never refuses, a missing repository being the reconciler's finding; the local engine's (`--local`) | no `--entry`: the whole file is on main already |
 
 `repo status` and `repo reconcile` validate a declared repository's entry in existing mode (`repo
 reconcile --added` in create mode: the repository is created). See `devctl repo validate --help`.
@@ -254,8 +289,12 @@ recently merged pull request, a required context nothing reports is removed, the
 are required whatever reported and never removed), a branch need not be up to date to merge; no deletion
 and no force push. What reported is read from the head of the newest pull request merged through the gate;
 one merged by a push of its head onto the branch (a fork line's upstream re-pin) is passed over, its head
-carrying the branch's push runs rather than a pull request's checks. A customer repository (flavour
-`customer`) keeps its own protection.
+carrying the branch's push runs rather than a pull request's checks. A required CircleCI context whose
+job the generated pipeline (`.circleci/workflows.yml`, `custom.yml`) no longer has is removed; while the
+default branch has no generated pipeline, the one the open align-files pull request (`teams-alignment-branch`)
+brings decides (the App's own pull request, never one a person opens from the branch), so a repository moving from a hand-kept pipeline stops requiring the old jobs and can merge
+that pull request, and the generated jobs are required once they have reported after the merge. A
+customer repository (flavour `customer`) keeps its own protection.
 
 The protection is one repository ruleset, `devctl: default branch`, active on
 `~DEFAULT_BRANCH` so a rename or a fork line's declared branch needs no change: the same rules, a GitHub
@@ -311,7 +350,9 @@ reviews, the bypass actors of `devctl: default branch` and the align-files App f
 required checks, no deletion and no force push stay in `devctl: default branch`, which the App does not
 bypass: its pull request still waits for green checks. The review ruleset is written before
 `devctl: default branch` drops the rule, and deleted after it takes the rule back on a run without the id,
-so the review never lapses. An entry with `agentMerge: false` keeps the review in `devctl: default branch`
+so the review never lapses. The Renovate GitHub App (id 2740) bypasses `devctl: review` for pull requests too,
+so the automerge a repository configures in its own Renovate configuration lands a green dependency pull
+request. An entry with `agentMerge: false` keeps the review in `devctl: default branch`
 without bypass. Only a run with `--devctl-app-id` writes it; one without reports the difference as
 `ruleset-pending`, and takes a review ruleset it finds for the writing run's layout, not a drift.
 

@@ -1,11 +1,14 @@
 package reconcile
 
 import (
+	"strings"
+
 	"github.com/giantswarm/microerror"
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/v8/cmd/repo/internal/engine"
 	"github.com/giantswarm/devctl/v8/pkg/reposetup"
+	"github.com/giantswarm/devctl/v8/pkg/reposetup/reconcile"
 )
 
 type flag struct {
@@ -39,11 +42,11 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&f.DryRun, "dry-run", false, "Check only: print what a repair would change, change nothing.")
 	cmd.Flags().BoolVar(&f.Added, "added", false, "The entry was added by the change at hand: a missing repository is created. Never inferred.")
 	cmd.Flags().BoolVar(&f.Unarchived, "unarchived", false, "The change at hand took lifecycle: archived from the entry: a repository archived on GitHub is unarchived and set up again. Never inferred; without it an archived repository is reported.")
-	cmd.Flags().StringSliceVar(&f.Steps, "steps", nil, "Run only these steps (create,scaffold,settings,permissions,protection,circleci,webhooks,renovate,codeowners,metadata,lifecycle,catalog,release); every step when not given.")
+	cmd.Flags().StringSliceVar(&f.Steps, "steps", nil, "Run only these steps ("+stepNames()+"); every step when not given.")
 	cmd.Flags().StringToStringVar(&f.Options, "option", nil, "Scaffold option as name=value, the template's options; repeatable.")
 	cmd.Flags().StringVar(&f.Output, "output", engine.OutputTable, "Output format: table or json.")
 	cmd.Flags().Int64Var(&f.DevctlAppID, "devctl-app-id", 0, "Numeric id of the devctl GitHub App (the App's settings page; not the client id): what the protection step's bypass list takes to be compared and written. With it the step writes the default branch's ruleset \"devctl: default branch\" with the App, the owning team and the repository admins as bypass actors in pull_request mode (none when the entry declares agentMerge: false) and removes classic branch protection. Unset, the step reads a ruleset the repository has and compares its rules alone, reporting what only a run with the id writes, and writes classic branch protection as before where there is none yet; the reconciler's wiring passes the id.")
-	cmd.Flags().Int64Var(&f.AlignFilesAppID, "align-files-app-id", 0, "Numeric id of the align-files GitHub App, whose generated-file pull requests merge by their armed auto-merge. With it the protection step keeps the review rule in a ruleset of its own, \"devctl: review\", which the App bypasses for pull requests beside the actors of \"devctl: default branch\"; the required checks stay in \"devctl: default branch\", which the App does not bypass, so its pull request still waits for them. An entry with agentMerge: false keeps the review without bypass. Unset, the review rule stays in \"devctl: default branch\" and the review ruleset is deleted.")
+	cmd.Flags().Int64Var(&f.AlignFilesAppID, "align-files-app-id", 0, "Numeric id of the align-files GitHub App, whose generated-file pull requests merge by their armed auto-merge. With it the protection step keeps the review rule in a ruleset of its own, \"devctl: review\", which the App and the Renovate App (id 2740) bypass for pull requests beside the actors of \"devctl: default branch\"; the required checks stay in \"devctl: default branch\", which neither App bypasses, so their pull requests still wait for them. An entry with agentMerge: false keeps the review without bypass. Unset, the review rule stays in \"devctl: default branch\" and the review ruleset is deleted.")
 }
 
 func (f *flag) Validate() error {
@@ -63,4 +66,14 @@ func (f *flag) Validate() error {
 		return microerror.Maskf(invalidFlagError, "--align-files-app-id must be a positive App id, got %d", f.AlignFilesAppID)
 	}
 	return microerror.Mask(engine.ValidateOutput(f.Output))
+}
+
+// stepNames lists the engine's steps in execution order, comma-separated: the
+// values --steps takes.
+func stepNames() string {
+	names := make([]string, 0, len(reconcile.Steps))
+	for _, s := range reconcile.Steps {
+		names = append(names, string(s))
+	}
+	return strings.Join(names, ",")
 }

@@ -7,8 +7,160 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- `pr merge`: a fork line, a repository whose team-file entry lists the `fork` flavour in `gen.flavours`, lands with a
+  rebase merge by default, so each carried commit stays its own commit without the caller remembering `--rebase`;
+  the new `--squash` squashes there. Every other repository keeps the squash default. An explicit `--rebase` or
+  `--squash` is never replaced, a fork line that does not allow rebase merges is exit 3 naming `--squash`, and an
+  entry whose flavours do not decode keeps the squash default with a warning. See docs/pr-merge.md.
+
+### Added
+
+- `repo reconcile`: a team-file entry declares the repository's GitHub `topics`, and the metadata step keeps exactly
+  those, with the token it runs as (the reconciler's App, which holds administration): `drift` in a dry run,
+  `repaired` otherwise, compared as a set. Absent leaves the topics on GitHub alone; an empty list removes them all.
+  `repo update --set topics=[a,b]` declares them like any other field.
+- `pr merge --accept-red <check>` (repeatable): a failed check run, commit status or CircleCI workflow of exactly
+  that name does not refuse the merge, for a non-required check that is red on the base's head too; every other
+  failed check is still red, exit 1. Refused with exit 3, naming the check, before any wait when the base requires
+  it or it is a security scan (nancy, gitleaks, govulncheck, trivy, kyverno, CodeQL), and once the head is green when no
+  check of the head carries the name. The document's `acceptedRed[]` lists each accepted failure with its URL, and
+  a warning names it. See docs/pr-merge.md.
+- `repo reconcile --align-files-app-id`: the Renovate GitHub App (id 2740) bypasses the ruleset `devctl: review` for
+  pull requests beside the align-files App, so the automerge a repository configures in its own Renovate
+  configuration lands a green dependency pull request without a review; the required checks of
+  `devctl: default branch` still hold it, and an entry with `agentMerge: false` keeps the review without bypass.
+- `gen renovate --flavour fork`: writes the config of a GitHub fork as JSONC into `renovate.json` with
+  `forkProcessing: "enabled"`, the one file and key Renovate's fork check reads; with `renovate.json5` Renovate skipped
+  the fork ("Repository is a fork and not manually configured - skipping"). Every other flavour keeps `renovate.json5`
+  unchanged. A fork line whose config sets `enabled: false` keeps its opt-out, and its `.github/dependabot.yml`, which is
+  upstream's, stays. See docs/gen.md.
+- `repo follow-circleci [owner/]<repo>`: repairs the reconciler's finding `circleci-webhook-missing` without a step in
+  CircleCI's UI. It follows the CircleCI project again with the keychain's CircleCI login (an unfollow first when that
+  login follows it already), so CircleCI installs its webhook for a GitHub admin's follow, and reads the repository's
+  webhooks until CircleCI's is there; the finding's fix names the command. See docs/repo.md.
+- `ci jobs <owner/repo> <pipeline number|id>`: the job-level view of a CircleCI pipeline, one JSON document: every
+  workflow run (reruns included, the newest run of a name marked `latest`) with its jobs, each with its status,
+  number, `startedAt`, `stoppedAt` and `durationSeconds`, and for a running job the step it is in with when it
+  started, when it last wrote output and `outputAgeSeconds`, so a slow job (output seconds old) and a stuck one
+  (output an hour old) read differently while the workflow reads `running`. Takes the keychain's CircleCI login; GitHub
+  is not read. See docs/ci.md.
+- `ci rerun <owner/repo> <workflow id> [--from-failed] [--cancel]`: reruns one workflow in full or from failed, once
+  an hour: when the newest run of the workflow's name in its pipeline is a rerun made less than an hour ago, the call
+  is refused (exit 5) naming it and when the hour ends, so no agent loops on a rerun. A workflow still running is
+  refused unless `--cancel` cancels it first and waits for it to read canceled, the recovery of a stuck one. The
+  rerun is started, not waited for, and takes the keychain's CircleCI login granted Write access.
+- The repository set-up engine's step `labels`, after `metadata`: every declared repository carries its owning team's
+  issue label `team/<team>` (`team-bumblebee` → `team/bumblebee`), so an issue the team files there joins the team's
+  cross-repository view. A check (`repo status`, the manager's inventory) reports a missing label as drift, a repair
+  (`repo reconcile`, `repo align`) creates it in the default colour `ededed`; an existing label is left as it is,
+  whatever its colour and description. A converged check costs one request more (twenty-three).
+
+### Changed
+
+- `repo validate` asks giantswarm-repo-manager by default, the way the Repositories page and the Repo Manager agent
+  do: the entries named with `--entry` go to its `validate_repository` through your muster endpoint as the
+  declarations being added to the team's file, and the dry run printed is the manager's own -- its engine, the schema
+  on giantswarm/github main, the names checked by its App, the guard notices from your memberships as it reads them,
+  `align: true` and the visibility default written as it writes them. Before, the command validated with devctl's
+  embedded engine and schema, so a declaration it accepted could render differently in the manager, and the output
+  did not say which engine answered. The document now carries `engine` (`manager` with the endpoint and the login,
+  or `local` with the devctl version and why) beside the answer as it came. `--local` runs devctl's own engine as
+  before, and so does CI, where the keychain is never read (the validation check of giantswarm/github runs there);
+  what only the local engine does -- existing mode, `--schema`, `--author` and `--author-team`, another `--owner` --
+  is refused without `--local`, never run locally in the manager's place. Without a usable muster token the error
+  names `devctl auth login --muster-only` and `--local`. See docs/repo.md.
+
 ### Fixed
 
+- `repo create` scaffold: a private repository's README from giantswarm/template-app no longer carries the CircleCI
+  status badge and the OpenSSF Scorecard badge, which 404 for a private repository and failed its first pull request's
+  README link check. A public repository's README keeps both.
+- `release wait`: a tag whose pipeline is not in the newest pages of CircleCI's pipeline listing no longer ends in
+  exit 2 "no CircleCI pipeline" while its commit carries the tag pipeline's CircleCI statuses. The wait follows the
+  statuses' target URLs (a job of the pipeline, or the pipeline itself) to the pipeline that built the tag. It reads every
+  status of the commit, not only the newest per context, so a release candidate whose promotion tagged the same commit
+  finds its own pipeline. When CircleCI answers for none of them, the statuses are the tag's CI verdict and the
+  document's warnings say so. Exit 2 "no CircleCI pipeline" is left for a tag with neither a pipeline nor a CircleCI
+  status of its own.
+- Reconciler protection step: a repository moving from a hand-kept CircleCI pipeline to the generated one can merge its
+  align-files pull request. While the default branch has no generated pipeline, the step reads the one the open
+  align-files pull request (`teams-alignment-branch`) brings, so the hand-kept pipeline's contexts (such as
+  `ci/circleci: app-catalog`) are stale against it and stop being required; the generated jobs are required once they
+  have reported on the default branch, by the run after the merge. The entry's `requiredChecks` stay required.
+
+- `repo reconcile --steps`: the help lists the engine's steps from the engine, `labels` among them, instead of a
+  hand-kept list.
+- `pr wait`: a read GitHub or CircleCI leaves unanswered through every retry (about ten minutes of an outage) no
+  longer ends the wait with exit 7 and the checks of a head still pending. The poll is a warning and the wait polls
+  again: an outage shorter than the timeout ends in the head's verdict, a longer one in exit 2 whose reason says the
+  head is unknown, not failed. The wait ignores SIGHUP, so one whose terminal goes away keeps waiting and ends with
+  the verdict; it reads nothing from stdin.
+- `pr merge`: an API outage after the merge no longer reads as "nothing confirmed". The release wait reads a CircleCI
+  pipeline listing that goes unanswered again at the next poll instead of ending, so an outage shorter than
+  `--release-timeout` ends at exit 0 once the release is confirmed; one that outlasts it is exit 9 whose reason says
+  the release is unknown, not failed, names the unanswered request and the `devctl release wait --pr` command that
+  re-checks it (`release wait` alike: exit 2 with that reason). A merge call that fails in transit (a connection reset
+  after GitHub merged) re-reads the pull request: merged, the command goes on with GitHub's merge commit and a warning
+  instead of exit 7. A read retried in transit or for a 5xx gets fifteen tries, about ten minutes of pauses, instead
+  of eight (three minutes), in every wait.
+- `pr wait` and `pr merge`: every run of a check name counts. The jobs of a matrix, or of several workflows calling
+  one reusable workflow, report under one name; before, they collapsed into one entry and the verdict followed the
+  last run reported, so a red job could hide behind a green one. Check runs are now grouped by name and the GitHub
+  Actions workflow their job belongs to, the newest workflow run of a workflow counting (a retitled pull request's
+  title check still reads its newest run); `checks[]` lists each run with its `id` and `workflow`, and the verdict
+  and `--failed-log` name a red run that shares its name by its workflow and check run id. Two workflows sharing a
+  name are no longer folded into one entry of `actions[]`.
+- `pr wait` and `pr merge`: a template repository is judged from GitHub alone only while its team-file entry declares
+  `gen.ci.templateContent: true`, as the reconciler judges it. A template with its own pipeline (the field left out)
+  is judged like any repository: its CircleCI workflow is waited for, a failed one is red, and no template warning is
+  given; before, every template repository was judged from GitHub alone.
+- `repo reconcile` settings step: a declared default branch the repository already carries (a fork line's consumed
+  branch beside the upstream mirror's `main`) becomes the default branch as it is, and the old default stays; the step
+  renamed the old default onto it, which GitHub refuses with 422 "New branch already exists". A declared branch the
+  repository lacks is still the old default renamed.
+- `pr rerun`, `release rerun`: the examples in `--help` and docs/pr-rerun.md name `beekeeper gate` by its bare
+  name; they carried an absolute path of one machine.
+- `pr wait`, `release wait` and the commands that wait the same way (`pr merge`, `rollout wait`): a
+  wait no longer hangs on a green head or a published release when CircleCI's API lags behind its own
+  pipelines. `release wait` judges the tag pipeline by its workflows and reads a workflow's jobs only
+  to name the failed ones and to derive the artifacts of hand-written CI and of a `custom.yml` that
+  declares push jobs, never the setup workflow's:
+  CircleCI answers 404 on the jobs of a listed, finished workflow for a while after it exists and for
+  as long as its job data lags (half an hour and more on 2026-10-09), and the wait stayed on `jobs not
+  visible yet` past its timeout with every asset uploaded; a failed workflow whose jobs it does not
+  list is named by the workflow. `pr wait` treats a pipeline listed with its setup workflow alone, or
+  with no workflow at all, as unfinished while the head carries the setup job's status alone, and
+  judges it by the continuation's statuses once they posted, whatever the listing reads: a setup-only
+  head was green before the build ran, and a pipeline whose build workflow CircleCI's listing lost, or
+  whose listing read empty with every job's status on GitHub, was waited on past the timeout. A repository whose CircleCI
+  project has no pipeline yet is waited for, the head's own may be the project's first, instead of
+  judged from GitHub alone; a template repository (`is_template`) stays GitHub alone with its warning.
+- `pr wait`, `pr merge`, `release wait`, `rollout wait`: without `--progress`, a heartbeat on stderr
+  says `waiting for <what>` once every two minutes and whenever it changes, so a wait killed by its
+  caller's time limit has named its cause.
+- `pr merge`: a repository whose settings allow only merge commits (squash and rebase off) is merged with a merge
+  commit instead of declined by GitHub after the whole wait with "Squash merges are not allowed on this repository".
+  The settings are read before the wait: where the default squash is off and exactly one other method is on, the
+  merge lands with that one, says so in a warning and reports it as `method` (`merge` for a merge commit). A method
+  the settings do not allow is otherwise refused before the wait (exit 3, naming the allowed methods); `--rebase` is
+  never replaced. A merge commit's subject is `<title> (#<number>)`, the subject a squash gets, so auto-release reads
+  it the same way.
+
+- `gen precommit`: the generated pre-commit workflow installs golangci-lint 2.14.0. 2.13.2 cannot read the export
+  data of Go 1.27.2, which `setup-go` resolves for a `go 1.27` module, and failed every lint run with
+  "export data version 5 is greater than maximum supported version 4".
+- `gen circleci`: the generated pipelines pin architect orb 10.13.0. Its executor runs architect 8.6.0 (Go 1.27.2,
+  golangci-lint 2.14.0), so `go-build` lints a module on `toolchain go1.27.2` instead of failing with "export data
+  version 5 is greater than maximum supported version 4". Its `push-to-app-catalog` merges a chart's index entries
+  onto the catalog's fetched head and pushes within about a second, with 20 attempts, so a chart push that collides
+  with other builds' pushes to the same catalog succeeds.
+- `gen makefile --language kyverno-policy`: `make install-policies` and `make dabs` no longer fall back to
+  `helm/kyverno-policies`. They use `helm/$(KYVERNO_POLICIES_APP_NAME)` when it has a `Chart.yaml`, as in CI,
+  otherwise the one chart under `helm/`, and fail with a clear message when that is none or several.
+  `KYVERNO_POLICIES_CHART_DIR` overrides the choice. Without `KYVERNO_POLICIES_APP_NAME` set, the release is named
+  after the chart directory. Locally, both targets failed in every repository except `kyverno-policies`.
 - `repo reconcile` and `repo checks`: the reported checks are read from the newest pull request merged through the
   gate. A pull request whose head is its own merge commit — merged by a push of its head onto the branch, as a fork
   line's upstream re-pin is — is passed over: its SHA carries the branch's push runs and statuses and no pull-request
@@ -19,6 +171,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `pr rerun` and `release rerun`: a CircleCI pipeline that never got a workflow (its setup workflow done and the
+  continuation never created, or pending without a workflow) is sent its push webhook delivery again once it is five
+  minutes old, through GitHub's webhook API with the identity `pr wait` uses, so CircleCI creates a new pipeline for
+  the head; `release rerun` reads GitHub only then. Once per head: a delivery sent again before is not sent a second
+  time (exit 5 naming the earlier redelivery). The document carries `redelivery{hookId, hookUrl, deliveryId, guid,
+  deliveredAt, ref, after, outcome, redeliveredAt}` and the warning says what was sent. GitHub's 403 is exit 8 naming
+  what the identity lacks: the devctl App's repository permission Webhooks: read and write, or a repository admin's
+  `gh` login. A failed setup workflow is still rerun from failed; a running one still waited for.
 - `gen renovate --extends <file>` extends extra presets of `giantswarm/renovate-presets` by file name, before the
   deprecated preset and `renovate-custom.json5`. The reconciler passes `gen.renovate.extends` of a repository entry.
 
@@ -76,6 +236,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `gen workflows --flavour app`: new `zz_generated.check_readme_links.yaml`, which calls the `check-readme-links` reusable
+  workflow of giantswarm/github-workflows. On a pull request that touches `README.md` it fails on a dead URL, a relative
+  path that does not exist in the repository or a reversed link `(text)[url]`; the weekly run catches links whose target moved
+  without the README changing and files its findings as one issue, from the default branch only. Generated for every
+  app repository; `--check-readme-links=false` keeps it out, which `gen.checkReadmeLinks: false` on the repository entry in
+  giantswarm/github passes (a devctl that predates the flag is not passed it and generates the workflow regardless).
+  Prompted by the dead `docs.giantswarm.io` and `helm/<chart>/...` links in several app READMEs that surfaced in the
+  Backstage README cards in October 2026.
 - `pr merge --dispatch <owner>/<repo>/<workflow file>[@<ref>]` (or `DEVCTL_MERGE_DISPATCH`, for every merge on a
   machine; the flag wins): once the pull request is merged, after its release wait whatever that ended with, the
   workflow is dispatched through its `workflow_dispatch` trigger on the ref or the repository's default branch, with
@@ -468,7 +636,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   `webhook present` / `webhook missing` in the `circleci` line when it is set
   ([#2332](https://github.com/giantswarm/devctl/issues/2332)).
 - The `plans` flavour: a team plans repository (versioned PRDs, their companion websites and the
-  plan-workflow agent skills -- cabbage-plans, bumblebee-plans, atlas-plans and the like). An add-on
+  plan-workflow agent skills -- one `<team>-plans` repository per team). An add-on
   flavour declared beside `generic` (`flavours: [generic, plans]`) with `language: generic` and
   `gen.ci.generate: false`; the generators produce nothing extra for it, and `DeriveTemplate` derives
   it the new template `giantswarm/template-plans` (its `{APP-NAME}` and `{TEAM-NAME}` placeholders

@@ -127,6 +127,9 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 
 	if r.flag.Flavours.Contains(gen.FlavourApp) {
 		inputs = append(inputs, workflowsInput.CheckValuesSchema())
+		if r.flag.CheckReadmeLinks {
+			inputs = append(inputs, workflowsInput.CheckReadmeLinks())
+		}
 		if r.flag.HelmDocsRegen {
 			inputs = append(inputs, workflowsInput.HelmDocsRegen())
 		}

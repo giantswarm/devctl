@@ -70,6 +70,7 @@ func decode(t *testing.T, stdout *bytes.Buffer) map[string]any {
 // green is o/r#42 opened by the caller with one passed check, merging as m1.
 func green() sequence.Routes {
 	return sequence.Routes{
+		"GET /repos/o/r": {{Body: map[string]any{"full_name": "o/r", "allow_merge_commit": false, "allow_squash_merge": true, "allow_rebase_merge": true}}},
 		"GET /repos/o/r/pulls/42": {{Body: map[string]any{
 			"number": 42, "state": "open", "draft": false, "mergeable_state": "clean", "title": "feat: thing", "node_id": "PR_1",
 			"user": map[string]any{"login": "someone", "type": "User"},
@@ -130,6 +131,30 @@ func Test_run_rebaseFlag(t *testing.T) {
 	}
 	if doc := decode(t, stdout); doc["method"] != "rebase" {
 		t.Errorf("--rebase: want method rebase, got %v", doc["method"])
+	}
+}
+
+func Test_run_squashFlag(t *testing.T) {
+	r, stdout, _, _ := newRunner(t, green(), loggedIn, &flag{Timeout: time.Minute, Squash: true, NoReleaseWait: true})
+	if err := r.run(context.Background(), []string{"o/r", "42"}); err != nil {
+		t.Fatal(err)
+	}
+	if doc := decode(t, stdout); doc["method"] != "squash" {
+		t.Errorf("--squash: want method squash, got %v", doc["method"])
+	}
+}
+
+func Test_run_rebaseAndSquashExcludeEachOther(t *testing.T) {
+	r, stdout, _, server := newRunner(t, green(), loggedIn, &flag{Timeout: time.Minute, Rebase: true, Squash: true, NoReleaseWait: true})
+	err := r.run(context.Background(), []string{"o/r", "42"})
+	if agentcli.Exit(err) != agentcli.ExitUsage || !strings.Contains(err.Error(), "--rebase and --squash exclude each other") {
+		t.Fatalf("want exit 7 naming both flags, got %v", err)
+	}
+	if doc := decode(t, stdout); doc["verdict"] != "usage" {
+		t.Errorf("document: %v", doc)
+	}
+	if n := len(server.Requests()); n != 0 {
+		t.Errorf("want no request, got %d", n)
 	}
 }
 

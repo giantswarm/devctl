@@ -75,9 +75,10 @@ type Pipeline struct {
 	// failed; empty otherwise.
 	FailedJobs []string `json:"failedJobs"`
 	// Unfinished names the workflows (newest run per name) that have not
-	// finished, as "name (status)"; one whose jobs CircleCI does not list
-	// yet carries ", jobs not visible yet". Empty once every workflow has
-	// finished: what a timeout was still waiting for.
+	// finished, as "name (status)"; one whose jobs the artifact derivation
+	// needs and CircleCI does not list yet carries ", jobs not visible
+	// yet". Empty once every workflow has finished: what a timeout was
+	// still waiting for.
 	Unfinished []string `json:"unfinished"`
 }
 

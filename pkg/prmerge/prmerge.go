@@ -10,7 +10,8 @@
 // field). A reviewer's feedback newer than the head that nobody answered
 // refuses it too (exit 5), read before the wait and again right before
 // the merge. Green lands through the merge
-// API as a squash or a rebase with the judged head as the expected head,
+// API as a squash or a rebase with the judged head as the expected head
+// (a merge commit where the repository allows only that),
 // then the branch goes through the refs API. A base with a merge queue is
 // enqueued instead and the pull request waited for. No protection setting,
 // ruleset or enforce_admins is read to be changed, or written.
@@ -64,7 +65,9 @@ type Config struct {
 	// Wait is the wait engine's configuration; its GitHub client, clock,
 	// progress writer and timeout are the merge's too. Required.
 	Wait prwait.Config
-	// Method is squash or rebase; empty is squash.
+	// Method is squash or rebase, asked explicitly; empty is the default:
+	// rebase on a fork line (a team-file entry with the fork flavour),
+	// squash everywhere else.
 	Method githubclient.MergeMethod
 	// UpdateBranch: a head behind its base is updated from the base before
 	// its checks are judged and the new head waited for; behind a strict
@@ -95,7 +98,10 @@ type Result struct {
 	// caller the token acts as, or for a merge queue the account GitHub
 	// records as the merger. Empty when nothing merged.
 	MergedBy string `json:"mergedBy"`
-	// Method is squash or rebase.
+	// Method is squash or rebase as asked, rebase by default on a fork
+	// line, or the one method the
+	// repository allows when it does not allow the default squash: merge
+	// for a merge commit.
 	Method string `json:"method"`
 	// BranchDeleted: the head branch was deleted after the merge (or was
 	// gone already). False for a head in a fork, which is left alone.
@@ -117,17 +123,21 @@ type Result struct {
 
 // Merger runs merges.
 type Merger struct {
-	github       *githubclient.Client
-	waiter       *prwait.Waiter
-	clock        agentcli.Clock
-	progress     *agentcli.Progress
-	timeout      time.Duration
-	method       githubclient.MergeMethod
-	updateBranch bool
-	login        string
-	policy       Policy
-	release      ReleaseWait
-	dispatchTo   *Dispatch
+	github   *githubclient.Client
+	waiter   *prwait.Waiter
+	clock    agentcli.Clock
+	progress *agentcli.Progress
+	timeout  time.Duration
+	method   githubclient.MergeMethod
+	// methodDefault: no method was asked; a fork line rebases.
+	methodDefault bool
+	updateBranch  bool
+	login         string
+	policy        Policy
+	release       ReleaseWait
+	dispatchTo    *Dispatch
+	// acceptRed is Wait.AcceptRed: the checks the caller accepts red.
+	acceptRed []string
 }
 
 // New returns a Merger for config.
@@ -151,6 +161,7 @@ func New(config Config) (*Merger, error) {
 		policy:       config.Policy,
 		release:      config.Release,
 		dispatchTo:   config.Dispatch,
+		acceptRed:    config.Wait.AcceptRed,
 	}
 	if m.clock.Scale() == 0 {
 		m.clock = agentcli.NewClock(1, nil)
@@ -163,7 +174,7 @@ func New(config Config) (*Merger, error) {
 	}
 	switch m.method {
 	case "":
-		m.method = githubclient.MergeSquash
+		m.method, m.methodDefault = githubclient.MergeSquash, true
 	case githubclient.MergeSquash, githubclient.MergeRebase:
 	default:
 		return nil, microerror.Maskf(invalidConfigError, "%T.Method is squash or rebase, got %q", config, config.Method)
@@ -200,7 +211,13 @@ func (m *Merger) Merge(ctx context.Context, owner, repo string, number int) (*Re
 	if err != nil {
 		return result, err
 	}
+	if err := m.refuseAcceptRed(ctx, owner, repo, pr.GetBase().GetRef()); err != nil {
+		return result, err
+	}
 	if err := m.guardReviews(ctx, owner, repo, number, pr, caller, result); err != nil {
+		return result, err
+	}
+	if err := m.resolveMethod(ctx, owner, repo, verdict, result); err != nil {
 		return result, err
 	}
 	m.progress.Printf("refusals: none; %s by %s", pr.GetHead().GetSHA(), pr.GetUser().GetLogin())
@@ -215,9 +232,15 @@ func (m *Merger) Merge(ctx context.Context, owner, repo string, number int) (*Re
 		}
 	}
 
+	// The wait's result replaces the one so far; the warnings given before
+	// the wait (the method the settings chose) stay ahead of its own.
+	before := result.Warnings
 	waited, err := m.waiter.Wait(ctx, owner, repo, number)
 	if waited != nil {
 		result.Result = *waited
+		if len(before) > 0 {
+			result.Warnings = append(before, result.Warnings...)
+		}
 	}
 	if err != nil {
 		return result, err
@@ -436,8 +459,9 @@ func (m *Merger) update(ctx context.Context, owner, repo string, number int, hea
 // the review rule, the reason goes on to name the rulesets' bypass actors
 // and the owning team as well (explainReviewRule).
 func (m *Merger) merge(ctx context.Context, owner, repo string, number int, pr *github.PullRequest, result *Result, caller string, verdict Verdict) error {
-	opts := githubclient.MergeOptions{Method: m.method, HeadSHA: result.HeadSHA}
-	if m.method == githubclient.MergeSquash {
+	method := githubclient.MergeMethod(result.Method)
+	opts := githubclient.MergeOptions{Method: method, HeadSHA: result.HeadSHA}
+	if method != githubclient.MergeRebase {
 		opts.CommitTitle = fmt.Sprintf("%s (#%d)", strings.TrimSpace(pr.GetTitle()), number)
 	}
 	sha, err := m.github.MergePullRequest(ctx, owner, repo, number, opts)
@@ -451,10 +475,35 @@ func (m *Merger) merge(ctx context.Context, owner, repo string, number int, pr *
 		return agentcli.NewExitError(agentcli.ExitNotApplicable, agentcli.VerdictNotApplicable, "%s", reason)
 	}
 	if err != nil {
-		return microerror.Mask(err)
+		return m.mergedAnyway(ctx, owner, repo, number, result, err)
 	}
 	result.MergeCommitSHA, result.MergedBy = sha, caller
-	m.progress.Printf("merged: %s of %s is %s, as %s", m.method, result.HeadSHA, sha, caller)
+	m.progress.Printf("merged: %s of %s is %s, as %s", method, result.HeadSHA, sha, caller)
+	return nil
+}
+
+// mergedAnyway settles a merge call that failed without GitHub's verdict (a
+// reset connection, a timeout, a 5xx): GitHub may have merged before the
+// answer was lost, so the pull request is read again after a pause. Merged,
+// the merge goes on with GitHub's merge commit and a warning; open, the
+// call's error is the outcome; unreadable, the error says the merge is
+// unknown, never that nothing merged.
+func (m *Merger) mergedAnyway(ctx context.Context, owner, repo string, number int, result *Result, callErr error) error {
+	m.progress.Printf("the merge call failed (%s); reading the pull request in %s", callErr, mergeableInterval)
+	if err := m.clock.Sleep(ctx, mergeableInterval); err != nil {
+		return microerror.Maskf(executionError, "the merge call of %s/%s#%d failed and whether it merged is unknown: %v; the merge call failed: %v", owner, repo, number, err, callErr)
+	}
+	pr, err := m.github.PullRequest(ctx, owner, repo, number)
+	if err != nil {
+		return microerror.Maskf(executionError, "the merge call of %s/%s#%d failed and whether it merged is unknown, reading the pull request failed too: %v; the merge call failed: %v", owner, repo, number, err, callErr)
+	}
+	if !pr.GetMerged() {
+		return microerror.Mask(callErr)
+	}
+	result.MergeCommitSHA, result.MergedBy = pr.GetMergeCommitSHA(), pr.GetMergedBy().GetLogin()
+	warning := fmt.Sprintf("the merge call failed (%s), and GitHub reports %s/%s#%d merged as %s by %s", oneLine(callErr.Error()), owner, repo, number, result.MergeCommitSHA, result.MergedBy)
+	m.progress.Printf("warning: %s", warning)
+	result.Warnings = append(result.Warnings, warning)
 	return nil
 }
 

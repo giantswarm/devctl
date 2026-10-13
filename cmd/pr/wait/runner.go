@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -18,6 +16,7 @@ import (
 	"github.com/giantswarm/devctl/v8/pkg/circleciclient"
 	"github.com/giantswarm/devctl/v8/pkg/githubclient"
 	"github.com/giantswarm/devctl/v8/pkg/prwait"
+	"github.com/giantswarm/devctl/v8/pkg/releasewait"
 )
 
 const command = "pr wait"
@@ -55,6 +54,7 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	agentcli.IgnoreHangup()
 	return r.run(ctx, args)
 }
 
@@ -79,7 +79,7 @@ func newDocument() document {
 }
 
 func (r *runner) wait(ctx context.Context, args []string, doc *document) error {
-	owner, repo, number, err := parseArgs(args)
+	owner, repo, number, err := agentcli.ParsePullRequest(command, args)
 	if err != nil {
 		return err
 	}
@@ -144,6 +144,7 @@ func (r *runner) wait(ctx context.Context, args []string, doc *document) error {
 				Logger:     logger,
 			})
 		},
+		Entries:        releasewait.TeamFileEntries{GitHub: github.GitHub()},
 		Clock:          clock,
 		Progress:       progress,
 		Timeout:        r.flag.Timeout,
@@ -160,20 +161,4 @@ func (r *runner) wait(ctx context.Context, args []string, doc *document) error {
 	}
 	prwait.PrintFailedJobs(r.stderr, result.FailedJobs)
 	return githubclient.ExplainNotFound(err, authexec.NotFoundHint(token, owner))
-}
-
-// parseArgs reads "<owner/repo> <number>".
-func parseArgs(args []string) (owner, repo string, number int, err error) {
-	if len(args) != 2 {
-		return "", "", 0, fmt.Errorf("usage: devctl %s <owner/repo> <number>, got %d argument(s)", command, len(args))
-	}
-	owner, repo, ok := strings.Cut(args[0], "/")
-	if !ok || owner == "" || repo == "" || strings.Contains(repo, "/") {
-		return "", "", 0, fmt.Errorf("the repository is <owner/repo>, got %q", args[0])
-	}
-	number, err = strconv.Atoi(args[1])
-	if err != nil || number <= 0 {
-		return "", "", 0, fmt.Errorf("the pull request number is a positive integer, got %q", args[1])
-	}
-	return owner, repo, number, nil
 }

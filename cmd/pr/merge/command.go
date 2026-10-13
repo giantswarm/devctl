@@ -15,7 +15,7 @@ import (
 
 const (
 	name        = "merge <owner/repo> <number>"
-	description = "Wait until the pull request's head is green, squash-merge it, delete the branch and wait until the release it triggers is pullable; one JSON document, an exit code."
+	description = "Wait until the pull request's head is green, squash-merge it (rebase-merge on a fork line), delete the branch and wait until the release it triggers is pullable; one JSON document, an exit code."
 	long        = `Wait until the outcome of a pull request's CI is known (the wait of devctl pr
 wait), merge it and delete its branch, then wait until the release the merge
 triggers is pullable (the wait of devctl release wait --pr), print one JSON
@@ -32,7 +32,14 @@ repository no team file declares is not opted out.
 
 Green lands through the merge API as a squash (--rebase: a rebase merge) with
 the judged head as the expected head, so a head that moved is not merged; the
-squash commit's subject is the pull request's title with its number. The head
+squash commit's subject is the pull request's title with its number. A fork
+line, a repository whose team-file entry lists the fork flavour in
+gen.flavours (one commit per carried patch), lands with a rebase merge by
+default; --squash squashes there. The repository's settings are read before
+the wait: squash off and exactly one other method on lands the default squash
+with that one (a merge commit, the same subject), with a warning; a method
+they do not allow is otherwise exit 3 before the wait, naming the flag for the
+other one, and an explicit --rebase or --squash is never replaced. The head
 branch is deleted through the refs API; a head in a fork is left alone. A base
 with a merge queue is enqueued instead, the pull request waited for until the
 queue merged it, then the branch deleted. Nothing reads a protection setting
@@ -63,6 +70,19 @@ bump: that is exit 0, and the document says so. --no-release-wait ends the
 command at the merge; devctl release wait remains the command for
 a release on its own (a version, --catalog).
 
+--accept-red <check> (repeatable): a failed check run, commit status or
+CircleCI workflow of exactly that name does not refuse the merge, which
+lands although that check is red; every other failed check is red, exit 1,
+as without the flag. Judging that the check is red for a reason unrelated to
+the pull request (red on the base's head too) is the caller's. Refused with
+exit 3, naming the check: before any wait when the base requires the check
+(branch protection or a ruleset) or it is a security scan (a name containing
+nancy, gitleaks, govulncheck, trivy, kyverno or codeql); once the head is
+green when no check, status or CircleCI workflow of the head carries the
+name. The
+document's acceptedRed[] lists each accepted failure {name, source,
+conclusion, url}, and a warning names it.
+
 --dispatch <owner>/<repo>/<workflow file>[@<ref>] (or DEVCTL_MERGE_DISPATCH,
 for every merge on a machine; the flag wins): once the pull request is
 merged, after its release wait whatever that ended with, the workflow of
@@ -86,9 +106,10 @@ owner; the document's identity says which ("app" or "gh").
 The document (schemaVersion 1) is devctl pr wait's (command, exitCode,
 verdict, reason, warnings, startedAt, finishedAt, repository, number, headSha,
 baseRef, checks[], circleci{}, actions[], unfinished[], failedJobs[] on red
-with --failed-log, whose tails also go to stderr) plus mergeCommitSha
+with --failed-log, whose tails also go to stderr, acceptedRed[] with
+--accept-red) plus mergeCommitSha
 (the merge commit, empty when nothing merged), mergedBy (the login the merge
-was made as, empty when nothing merged), method (squash|rebase),
+was made as, empty when nothing merged), method (squash|rebase|merge),
 branchDeleted, enqueued, release: null with --no-release-wait or when
 nothing merged, otherwise the release wait's verdict (available, no_release,
 ci_failed, timeout, ...) and reason with its result (tag, sha, releaseModel,
@@ -115,7 +136,9 @@ Exit codes:
   1  red: a check, status, run or workflow failed, or the queue dropped it
   2  timeout before an outcome; unfinished names what was still open
   3  not applicable: draft, closed, merged, conflicting, behind a strict base
-     (without --update-branch), or GitHub declined the merge as it stands
+     (without --update-branch), GitHub declined the merge as it stands, or
+     --accept-red names a required check, a security scan or no check of
+     the head
   4  a required status context never reported, or Actions runs await a
      member's approval and nothing else is pending
   5  refused: another human's pull request, or agentMerge: false
@@ -130,8 +153,10 @@ Exit codes:
 	example = `  devctl pr merge giantswarm/devctl 2278
   devctl pr merge giantswarm/devctl 2278 --timeout 45m --release-timeout 30m --progress
   devctl pr merge giantswarm/devctl 2278 --no-release-wait
-  devctl pr merge giantswarm/kagent-upstream 12 --rebase
+  devctl pr merge giantswarm/kagent-upstream 12
+  devctl pr merge giantswarm/kagent-upstream 12 --squash
   devctl pr merge giantswarm/devctl 2278 --update-branch
+  devctl pr merge giantswarm/devctl 2278 --accept-red "e2e / aws"
   devctl pr merge giantswarm/devctl 2278 --dispatch giantswarm/team-magazine/refresh.yaml
   DEVCTL_MERGE_DISPATCH=giantswarm/team-magazine/refresh.yaml devctl pr merge giantswarm/devctl 2278`
 )
