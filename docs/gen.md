@@ -99,6 +99,8 @@ The `--language` flag sets the primary language (`go`, `python`, `generic`). The
 - `md` — Markdown linting via `markdownlint-cli`
 - `helmchart` — Helm chart schema and docs hooks (auto-detects charts under `helm/`)
 
+A Go repository's config also refuses a `require` line in any `go.mod` (single or in a block) whose trailing comment has more than one word (`go-mod-require-comment`): Renovate's gomod manager reads only a one-word comment such as `// indirect` and skips the whole line otherwise, so that dependency is never updated and nothing says so. The explanation goes on a comment line above the require.
+
 No hook reads protobuf-generated code: the config's top-level `exclude` skips `*_pb.*` (protoc-gen-es, grpc-tools), `*_pb2.py`, `*_pb2.pyi`, `*_pb2_grpc.py` and `*.pb.go` with its `_grpc`, `.gw`, `.validate` and `_vtproto` variants. Their generator is the source of truth, so a hook that rewrote them (`end-of-file-fixer` on buf's TypeScript output, `go-imports -local`, `ruff --fix`) would be undone by the next generation. Hand-written files next to them, a `gen/` directory's `README.md` or `buf.gen.yaml` included, are still checked. The fixer hooks also skip `testdata/`, `.yarn/` and the vendored subcharts under `helm/<chart>/charts/`.
 
 Examples:

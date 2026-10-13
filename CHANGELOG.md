@@ -17,6 +17,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `gen precommit`: a Go repository's config refuses a `go.mod` require line (single or in a block) whose trailing
+  comment has more than one word, with the `go-mod-require-comment` hook. Renovate's gomod manager skips such a line
+  without a pull request or a dashboard entry; `// indirect` and other one-word comments pass, and the explanation
+  goes on a comment line above the require.
 - `repo reconcile`: a team-file entry declares the repository's GitHub `topics`, and the metadata step keeps exactly
   those, with the token it runs as (the reconciler's App, which holds administration): `drift` in a dry run,
   `repaired` otherwise, compared as a set. Absent leaves the topics on GitHub alone; an empty list removes them all.
