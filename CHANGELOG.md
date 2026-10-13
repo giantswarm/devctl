@@ -66,6 +66,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `repo create` scaffold: a private repository's README from giantswarm/template-app no longer carries the CircleCI
+  status badge and the OpenSSF Scorecard badge, which 404 for a private repository and failed its first pull request's
+  README link check. A public repository's README keeps both.
 - `release wait`: a tag whose pipeline is not in the newest pages of CircleCI's pipeline listing no longer ends in
   exit 2 "no CircleCI pipeline" while its commit carries the tag pipeline's CircleCI statuses. The wait follows the
   statuses' target URLs (a job of the pipeline, or the pipeline itself) to the pipeline that built the tag. It reads every

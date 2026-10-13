@@ -1618,9 +1618,6 @@ check-env:
 	@test -n "$(APPLICATION)" || { echo "APPLICATION is not defined: set it in Makefile.custom.mk or run make APPLICATION=<chart>" >&2; exit 1; }
 
 --- README.md
-[![CircleCI](https://dl.circleci.com/status-badge/img/gh/giantswarm/example/tree/main.svg?style=svg)](https://dl.circleci.com/status-badge/redirect/gh/giantswarm/example/tree/main)
-[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/giantswarm/example/badge)](https://securityscorecards.dev/viewer/?uri=github.com/giantswarm/example)
-
 [Guide about how to manage an app on Giant Swarm](https://handbook.giantswarm.io/docs/dev-and-releng/app-developer-processes/adding_app_to_appcatalog/)
 
 ## Creating a repository from this template
