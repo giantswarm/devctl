@@ -17,10 +17,10 @@ const (
 	FlavourClusterApp              Flavour = "cluster-app"
 	FlavourManagementClustersFleet Flavour = "fleet"
 	// FlavourPlans is a team plans repository: versioned PRDs, their
-	// companion websites and the plan-workflow agent skills. An add-on
-	// flavour declared beside generic (flavours: [generic, plans]) with
-	// language generic; the generators produce nothing extra for it, and the
-	// repository set-up engine derives it the template giantswarm/template-plans.
+	// companion websites and the plan-workflow agent skills. Declared on its
+	// own (flavours: [plans]) with language generic: the repository set-up
+	// engine derives it the template giantswarm/template-plans, and gen plans
+	// writes its shared set-up.
 	FlavourPlans Flavour = "plans"
 )
 

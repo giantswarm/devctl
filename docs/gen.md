@@ -132,7 +132,7 @@ devctl gen renovate --language go --flavour fork
 Writes the set-up every team plans repository shares. Nothing is generated without the [`plans` flavour](flavours.md#plans).
 
 ```nohighlight
-devctl gen plans --flavour generic,plans
+devctl gen plans --flavour plans
 ```
 
 `.claude/settings.json` enables the `gs-plans` plugin, the plan-workflow skills, from the `giantswarm` marketplace (giantswarm/claude-code). devctl owns two entries, `extraKnownMarketplaces.giantswarm` and `enabledPlugins["gs-plans@giantswarm"]`, and keeps every other key of an existing file, so a team adds its own settings in the same file. The JSON is rewritten with sorted keys and two-space indentation. The skills live in the plugin, not in the repository; the repository's own rules, such as which plan stages are required, stay in its `AGENTS.md`.

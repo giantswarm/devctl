@@ -14,7 +14,7 @@ const (
 	shortDescription = `Generates the shared set-up of a team plans repository.`
 	longDescription  = `Generates the shared set-up of a team plans repository.
 
-devctl gen plans --flavour generic,plans
+devctl gen plans --flavour plans
 
 Without the plans flavour nothing is generated. With it, .claude/settings.json enables
 the gs-plans plugin from the giantswarm/claude-code marketplace. Only the marketplace
