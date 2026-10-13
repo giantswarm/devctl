@@ -89,6 +89,16 @@ devctl repo list --scope unassigned --inactive-days 365
 devctl repo set-lifecycle old-tool archived --reason "replaced by new-tool" --dry-run
 ```
 
+### Reserving an MC for a branch (`devctl reservation`)
+
+`devctl reservation` deploys the dev builds of your branch of an app to one management cluster for a limited time, then puts the normal release back. It only commits to the GitOps repo and lets Flux apply it, so it works the same from a laptop and from CI. See [docs/reservation.md](docs/reservation.md).
+
+```bash
+devctl reservation reserve --cluster graveler --app hello-world --branch fix/crash --pull-request giantswarm/hello-world#123 --user alice
+devctl reservation list --cluster graveler
+devctl reservation release --pull-request giantswarm/hello-world#123 --user alice
+```
+
 ### Running Tests
 
 ```bash
