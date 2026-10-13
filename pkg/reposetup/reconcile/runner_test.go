@@ -349,6 +349,13 @@ type stepCase struct {
 	verify func(t *testing.T, h *harness, repair *Result)
 }
 
+// seedMetadata adds the repository as the entry declares its description and
+// visibility, carrying the topics given.
+func seedMetadata(h *harness, topics []string) {
+	r := h.gh.addRepo(owner, name)
+	r.description, r.private, r.topics = "A sample service", false, topics
+}
+
 func TestSteps(t *testing.T) {
 	tekton := Webhook{URL: "https://github-pr-webhook.ci.giantswarm.io", Events: []string{"issue_comment", "pull_request", "check_run"}, ContentType: "json", Secret: "shared"}
 
@@ -1901,6 +1908,46 @@ func TestSteps(t *testing.T) {
 			verify: func(t *testing.T, h *harness, _ *Result) {
 				require.Equal(t, "A sample service", h.repo().description)
 				require.False(t, h.repo().private)
+			},
+		},
+		{
+			name: "metadata: the topics follow the declaration, whatever their order on GitHub", step: StepMetadata,
+			entry: entryYAML + "  topics: [agentlab, fixture]\n",
+			seed: func(h *harness) {
+				seedMetadata(h, []string{"stale"})
+			},
+			wantCheck: VerdictDrift, wantChange: "topics [stale] → [agentlab, fixture]",
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				require.Equal(t, []string{"agentlab", "fixture"}, h.repo().topics)
+			},
+		},
+		{
+			name: "metadata: topics declared in another order are as declared", step: StepMetadata,
+			entry: entryYAML + "  topics: [fixture, agentlab]\n",
+			seed: func(h *harness) {
+				seedMetadata(h, []string{"agentlab", "fixture"})
+			},
+			wantCheck: VerdictOK,
+		},
+		{
+			name: "metadata: an empty topics list removes every topic", step: StepMetadata,
+			entry: entryYAML + "  topics: []\n",
+			seed: func(h *harness) {
+				seedMetadata(h, []string{"stale"})
+			},
+			wantCheck: VerdictDrift, wantChange: "topics [stale] → []",
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				require.Empty(t, h.repo().topics)
+			},
+		},
+		{
+			name: "metadata: an entry without topics leaves them alone", step: StepMetadata,
+			seed: func(h *harness) {
+				seedMetadata(h, []string{"kept"})
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				require.Equal(t, []string{"kept"}, h.repo().topics)
 			},
 		},
 		{

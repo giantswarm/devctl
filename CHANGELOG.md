@@ -17,6 +17,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `repo reconcile`: a team-file entry declares the repository's GitHub `topics`, and the metadata step keeps exactly
+  those, with the token it runs as (the reconciler's App, which holds administration): `drift` in a dry run,
+  `repaired` otherwise, compared as a set. Absent leaves the topics on GitHub alone; an empty list removes them all.
+  `repo update --set topics=[a,b]` declares them like any other field.
 - `pr merge --accept-red <check>` (repeatable): a failed check run, commit status or CircleCI workflow of exactly
   that name does not refuse the merge, for a non-required check that is red on the base's head too; every other
   failed check is still red, exit 1. Refused with exit 3, naming the check, before any wait when the base requires

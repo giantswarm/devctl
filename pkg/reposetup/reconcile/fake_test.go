@@ -31,6 +31,7 @@ import (
 type fakeRepo struct {
 	owner, name, description string
 	private, archived        bool
+	topics                   []string
 	hasWiki, hasIssues, hasProjects, allowMerge, allowSquash, allowRebase,
 	allowUpdate, allowAuto, deleteOnMerge bool
 	squashTitle   string // PR_TITLE or COMMIT_OR_PR_TITLE
@@ -397,6 +398,7 @@ func (r *fakeRepo) toGitHub() *github.Repository {
 		Owner:                  &github.User{Login: new(r.owner)},
 		Description:            new(r.description),
 		Private:                new(r.private),
+		Topics:                 r.topics,
 		CreatedAt:              &github.Timestamp{Time: r.createdAt},
 		Archived:               new(r.archived),
 		HasWiki:                new(r.hasWiki),
@@ -571,6 +573,14 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 			repo.defaultBranch = v
 		}
 		writeJSON(w, 200, repo.toGitHub())
+	}))
+	mux.HandleFunc("PUT /repos/{owner}/{repo}/topics", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		var in struct {
+			Names []string `json:"names"`
+		}
+		decode(r, &in)
+		repo.topics = in.Names
+		writeJSON(w, 200, in)
 	}))
 	mux.HandleFunc("DELETE /repos/{owner}/{repo}", f.withRepo(func(w http.ResponseWriter, _ *http.Request, repo *fakeRepo) {
 		delete(f.repos, repo.owner+"/"+repo.name)
