@@ -350,7 +350,9 @@ reviews, the bypass actors of `devctl: default branch` and the align-files App f
 required checks, no deletion and no force push stay in `devctl: default branch`, which the App does not
 bypass: its pull request still waits for green checks. The review ruleset is written before
 `devctl: default branch` drops the rule, and deleted after it takes the rule back on a run without the id,
-so the review never lapses. An entry with `agentMerge: false` keeps the review in `devctl: default branch`
+so the review never lapses. The Renovate GitHub App (id 2740) bypasses `devctl: review` for pull requests too,
+so the automerge a repository configures in its own Renovate configuration lands a green dependency pull
+request. An entry with `agentMerge: false` keeps the review in `devctl: default branch`
 without bypass. Only a run with `--devctl-app-id` writes it; one without reports the difference as
 `ruleset-pending`, and takes a review ruleset it finds for the writing run's layout, not a drift.
 
