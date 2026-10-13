@@ -2,6 +2,7 @@ package prwait
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -12,8 +13,9 @@ import (
 
 // The check sources of the document.
 const (
-	SourceCheckRun = "check_run"
-	SourceStatus   = "status"
+	SourceCheckRun         = "check_run"
+	SourceStatus           = "status"
+	SourceCircleCIWorkflow = "circleci_workflow"
 )
 
 // The check states the document shares between check runs and statuses.
@@ -46,6 +48,17 @@ type Check struct {
 	URL        string `json:"url"`
 	// Required: branch protection or a ruleset of the base names this context.
 	Required bool `json:"required"`
+}
+
+// AcceptedRed is a failed check, status or CircleCI workflow the caller
+// named with --accept-red: recorded instead of making the verdict red.
+type AcceptedRed struct {
+	Name string `json:"name"`
+	// Source is check_run, status or circleci_workflow.
+	Source     string `json:"source"`
+	Conclusion string `json:"conclusion"`
+	// URL is the run, the status's target or the workflow.
+	URL string `json:"url"`
 }
 
 // CircleCI is the newest pipeline of the head revision and its workflows,
@@ -81,6 +94,9 @@ type snapshot struct {
 	// circleci is nil when CircleCI is not consulted for this head.
 	circleci *circleSnapshot
 	required []string
+	// accepted are the check names whose failure the caller accepts
+	// (--accept-red); a required one is never accepted.
+	accepted map[string]bool
 }
 
 // circleSnapshot is the CircleCI side of a poll.
@@ -100,6 +116,12 @@ type evaluation struct {
 	circleci *CircleCI
 	// red names every check, status, run or workflow that failed.
 	red []string
+	// acceptedRed are the failed checks, statuses and workflows the caller
+	// named to accept: they do not make the verdict red.
+	acceptedRed []AcceptedRed
+	// seen are the names of every check, status and CircleCI workflow of
+	// the head, the names an acceptance can match.
+	seen map[string]bool
 	// failedActionsJobs and failedWorkflows are the red ones whose logs
 	// --failed-log reads.
 	failedActionsJobs []actionsJob
@@ -164,7 +186,7 @@ func (e *evaluation) approvalReason() string {
 // awaiting approval is approvalOnly: no wait starts them, a member's approval
 // does.
 func evaluate(s snapshot) *evaluation {
-	e := &evaluation{checks: []Check{}, actions: []ActionRun{}}
+	e := &evaluation{checks: []Check{}, actions: []ActionRun{}, seen: map[string]bool{}}
 	required := map[string]bool{}
 	for _, name := range s.required {
 		required[name] = true
@@ -178,7 +200,7 @@ func evaluate(s snapshot) *evaluation {
 	}
 	for _, c := range checkRuns {
 		name := c.run.GetName()
-		reported[name] = true
+		reported[name], e.seen[name] = true, true
 		check := Check{
 			Name:       name,
 			ID:         c.run.GetID(),
@@ -197,6 +219,8 @@ func evaluate(s snapshot) *evaluation {
 		case check.Conclusion == "action_required":
 			e.unfinished = append(e.unfinished, fmt.Sprintf("check %s (action_required)", label))
 		case checkRunPassed(check.Conclusion):
+		case s.accepts(name):
+			e.accept(check.Name, check.Source, check.Conclusion, check.URL)
 		default:
 			e.red = append(e.red, fmt.Sprintf("check %s concluded %s", label, check.Conclusion))
 			if c.run.GetApp().GetSlug() == actionsApp {
@@ -207,7 +231,7 @@ func evaluate(s snapshot) *evaluation {
 
 	for _, status := range latestStatuses(s.statuses) {
 		name := status.GetContext()
-		reported[name] = true
+		reported[name], e.seen[name] = true, true
 		check := Check{
 			Name:     name,
 			Source:   SourceStatus,
@@ -215,12 +239,15 @@ func evaluate(s snapshot) *evaluation {
 			URL:      status.GetTargetURL(),
 			Required: required[name],
 		}
-		switch state := status.GetState(); state {
-		case statusPending:
+		switch state := status.GetState(); {
+		case state == statusPending:
 			check.Status = statusPending
 			e.unfinished = append(e.unfinished, fmt.Sprintf("status %s (pending)", name))
-		case "success":
+		case state == "success":
 			check.Conclusion = state
+		case s.accepts(name):
+			check.Conclusion = state
+			e.accept(name, SourceStatus, state, check.URL)
 		default:
 			check.Conclusion = state
 			e.red = append(e.red, fmt.Sprintf("status %s is %s", name, state))
@@ -247,7 +274,7 @@ func evaluate(s snapshot) *evaluation {
 	}
 
 	if s.circleci != nil {
-		e.evaluateCircleCI(s.headSHA, s.circleci, circleStatuses(s.statuses))
+		e.evaluateCircleCI(s.headSHA, s.circleci, circleStatuses(s.statuses), s.accepts)
 	}
 
 	// Settled is judged before the required contexts: with nothing pending,
@@ -294,7 +321,7 @@ func circleStatuses(statuses []*github.RepoStatus) int {
 // how many CircleCI jobs have posted to GitHub: an empty listing or a setup
 // workflow listed on its own is not the pipeline's last word, and GitHub
 // tells whether its continuation has run.
-func (e *evaluation) evaluateCircleCI(headSHA string, c *circleSnapshot, circleStatuses int) {
+func (e *evaluation) evaluateCircleCI(headSHA string, c *circleSnapshot, circleStatuses int, accepts func(string) bool) {
 	if c.pipeline == nil {
 		e.unfinished = append(e.unfinished, fmt.Sprintf("circleci pipeline for %s (absent)", headSHA))
 		return
@@ -338,8 +365,11 @@ func (e *evaluation) evaluateCircleCI(headSHA string, c *circleSnapshot, circleS
 	for _, w := range workflows {
 		url := fmt.Sprintf("https://app.circleci.com/pipelines/%s/%d/workflows/%s", c.project, c.pipeline.Number, w.ID)
 		e.circleci.Workflows = append(e.circleci.Workflows, Workflow{Name: w.Name, Status: w.Status, URL: url})
+		e.seen[w.Name] = true
 		switch {
 		case circleciclient.WorkflowSucceeded(w.Status), w.Status == "not_run":
+		case circleciclient.WorkflowFailed(w.Status) && accepts(w.Name):
+			e.accept(w.Name, SourceCircleCIWorkflow, w.Status, url)
 		case circleciclient.WorkflowFailed(w.Status):
 			e.red = append(e.red, fmt.Sprintf("circleci workflow %s %s", w.Name, w.Status))
 			e.failedWorkflows = append(e.failedWorkflows, failedWorkflow{id: w.ID, name: w.Name, url: url})
@@ -347,6 +377,30 @@ func (e *evaluation) evaluateCircleCI(headSHA string, c *circleSnapshot, circleS
 			e.unfinished = append(e.unfinished, fmt.Sprintf("circleci workflow %s (%s)", w.Name, w.Status))
 		}
 	}
+}
+
+// accepts: the caller accepts a failure of the check, status or workflow
+// name, and the base does not require it.
+func (s snapshot) accepts(name string) bool {
+	return s.accepted[name] && !slices.Contains(s.required, name)
+}
+
+// accept records a failure the caller accepted instead of a red verdict.
+func (e *evaluation) accept(name, source, conclusion, url string) {
+	e.acceptedRed = append(e.acceptedRed, AcceptedRed{Name: name, Source: source, Conclusion: conclusion, URL: url})
+}
+
+// unseen are the accepted names no check, status or CircleCI workflow of
+// the head carries, sorted.
+func (e *evaluation) unseen(accepted map[string]bool) []string {
+	var names []string
+	for name := range accepted {
+		if !e.seen[name] {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	return names
 }
 
 // checkRunPassed: the conclusion of a completed check run that does not block
