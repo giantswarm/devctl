@@ -129,6 +129,16 @@ A GitHub fork takes `--flavour fork`. Renovate skips a fork ("Repository is a fo
 devctl gen renovate --language go --flavour fork
 ```
 
+## Generating a plans repository's set-up
+
+Writes the set-up every team plans repository shares. Nothing is generated without the [`plans` flavour](flavours.md#plans).
+
+```nohighlight
+devctl gen plans --flavour plans
+```
+
+`.claude/settings.json` enables the `gs-plans` plugin, the plan-workflow skills, from the `giantswarm` marketplace (giantswarm/claude-code), with `autoUpdate` on so Claude Code refreshes the marketplace and its plugins after startup. devctl owns two entries, `extraKnownMarketplaces.giantswarm` and `enabledPlugins["gs-plans@giantswarm"]`, and keeps every other key of an existing file, so a team adds its own settings in the same file. The JSON is rewritten with sorted keys and two-space indentation; strings and numbers stay as written. The skills live in the plugin, not in the repository; the repository's own rules, such as which plan stages are required, stay in its `AGENTS.md`.
+
 ## Generating CircleCI configuration
 
 Generates the dynamic-config pipeline of a repository on devctl-generated CI: `.circleci/config.yml` (the static setup workflow, which merges the optional repo-owned `.circleci/custom.yml` in at pipeline runtime) and `.circleci/workflows.yml` (the pipeline), plus the canonical `tests/ats` dependency file of a chart repository. The chart tests themselves -- `.ats/main.yaml` and the Python files under `tests/ats` -- are the repository's own and never generated; app-test-suite picks the pytest executor from the dependency file and refuses a `tests/ats` without a test, so a chart repository carries at least one (`devctl repo create` writes a first smoke test into a new repository's scaffold).
