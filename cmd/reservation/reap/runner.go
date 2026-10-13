@@ -14,6 +14,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
+	"github.com/giantswarm/devctl/v8/internal/termout"
 	"github.com/giantswarm/devctl/v8/pkg/authstore"
 	"github.com/giantswarm/devctl/v8/pkg/githubclient"
 	"github.com/giantswarm/devctl/v8/pkg/reservation"
@@ -58,7 +59,8 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	token, err := authstore.ResolveGitHub(ctx)
 	switch {
 	case errors.Is(err, authstore.ErrAuthRequired):
-		// No token: skip the rename check.
+		_, _ = fmt.Fprintf(r.stderr, "%s: no GitHub token found, so reap skips the rename check and releases only expired reservations. Set one of %s or run devctl auth login --github-only.\n",
+			termout.Warning(r.stderr), strings.Join(authstore.GitHubEnvVars, ", "))
 	case err != nil:
 		return err
 	default:

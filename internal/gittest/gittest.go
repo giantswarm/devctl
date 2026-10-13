@@ -20,6 +20,13 @@ func RunGit(t testing.TB, dir string, args ...string) {
 	if err != nil {
 		t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
 	}
+
+	// A fresh repo gets a local identity, so devctl's commits pass on a machine
+	// with no global one.
+	if args[0] == "init" || args[0] == "clone" {
+		RunGit(t, dir, "config", "user.name", "test")
+		RunGit(t, dir, "config", "user.email", "test@example.com")
+	}
 }
 
 // GitOutput runs git in dir and returns its trimmed stdout, failing the test

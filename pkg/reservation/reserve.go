@@ -7,9 +7,11 @@ package reservation
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/giantswarm/microerror"
@@ -175,6 +177,9 @@ func Reserve(req Request) (Result, error) {
 	if err := req.validate(); err != nil {
 		return Result{}, microerror.Mask(err)
 	}
+	if _, err := gitIdentity(req.RepoDir); err != nil {
+		return Result{}, microerror.Mask(err)
+	}
 	if err := checkEnabled(req.RepoDir, req.Cluster); err != nil {
 		return Result{}, microerror.Mask(err)
 	}
@@ -268,7 +273,7 @@ func Reserve(req Request) (Result, error) {
 	}
 	sort.Strings(files)
 
-	commit, err := commitAll(req.RepoDir, req.User, fmt.Sprintf(
+	commit, err := commitAll(req.RepoDir, fmt.Sprintf(
 		"reserve %s on %s for %s (branch %s, until %s)",
 		chart, req.Cluster, req.User, req.Branch, until.Format(time.RFC3339)), files)
 	if err != nil {
@@ -287,13 +292,18 @@ func Reserve(req Request) (Result, error) {
 }
 
 // commitAll stages exactly files -- the repo-relative paths the caller's own
-// operation wrote, added, or removed -- and commits them as user, so `git log`
-// answers who reserved or released what without any other lookup. Reserve,
+// operation wrote, added, or removed -- and commits them with the git identity
+// of whoever runs devctl (user.name and user.email from the git config, never
+// the reservation's --user; the commit message names the holder). Reserve,
 // Release and Extend share it: each makes exactly one commit of its own
 // files, never of whatever else happens to be dirty in the working tree. A
 // developer's own checkout may also hold unrelated in-progress edits, which
 // must never be staged, committed or pushed here.
-func commitAll(repoDir, user, message string, files []string) (string, error) {
+func commitAll(repoDir, message string, files []string) (string, error) {
+	author, err := gitIdentity(repoDir)
+	if err != nil {
+		return "", microerror.Mask(err)
+	}
 	repo, err := git.PlainOpen(repoDir)
 	if err != nil {
 		return "", microerror.Mask(err)
@@ -308,16 +318,28 @@ func commitAll(repoDir, user, message string, files []string) (string, error) {
 		}
 	}
 
-	hash, err := worktree.Commit(message, &git.CommitOptions{
-		Author: &gitobject.Signature{
-			Name:  user,
-			Email: fmt.Sprintf("%s@users.noreply.github.com", user),
-			When:  time.Now(),
-		},
-	})
+	hash, err := worktree.Commit(message, &git.CommitOptions{Author: author})
 	if err != nil {
 		return "", microerror.Mask(err)
 	}
 
 	return hash.String(), nil
+}
+
+// gitIdentity reads user.name and user.email through the git CLI, not go-git:
+// go-git ignores include.path, where many people keep their identity. Reserve,
+// Release and Extend call it before they write anything, so a missing identity
+// leaves the checkout untouched.
+func gitIdentity(repoDir string) (*gitobject.Signature, error) {
+	get := func(key string) string {
+		out, _ := exec.Command("git", "-C", repoDir, "config", "--get", key).Output() //nolint:gosec // repoDir is trusted, not user data
+		return strings.TrimSpace(string(out))
+	}
+	name, email := get("user.name"), get("user.email")
+	if name == "" || email == "" {
+		return nil, microerror.Maskf(invalidConfigError,
+			"git user.name and user.email are not set for %s; devctl commits with your git identity. Set them with git config", repoDir)
+	}
+
+	return &gitobject.Signature{Name: name, Email: email, When: time.Now()}, nil
 }

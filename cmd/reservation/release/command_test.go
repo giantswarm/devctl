@@ -327,3 +327,30 @@ func TestReleasePrintsTheCommitOnlyAtDebug(t *testing.T) {
 		}
 	}
 }
+
+// TestReleaseByPullRequestHoldingNothingSaysSo checks that a pull request
+// without a reservation is a success with an explicit line, so the close hook
+// does not fail and a reader does not mistake the silence for a bug.
+func TestReleaseByPullRequestHoldingNothingSaysSo(t *testing.T) {
+	dir, origin := newReleasableFixture(t, "graveler", "hello-world")
+	beforeTip := gittest.GitOutput(t, origin, "rev-parse", "main")
+
+	var stdout bytes.Buffer
+	cmd := newCommand(t, &stdout)
+	cmd.SetArgs([]string{
+		flagRepoDir, dir,
+		flagPullRequest, "giantswarm/other#7",
+		flagUser, "alice",
+	})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("release: %v", err)
+	}
+	const want = "Nothing to release: pull request giantswarm/other#7 holds no reservation.\n"
+	if stdout.String() != want {
+		t.Errorf("stdout: got %q, want %q", stdout.String(), want)
+	}
+	if afterTip := gittest.GitOutput(t, origin, "rev-parse", "main"); afterTip != beforeTip {
+		t.Errorf("origin moved: %s -> %s", beforeTip, afterTip)
+	}
+}

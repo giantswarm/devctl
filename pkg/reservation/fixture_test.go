@@ -192,6 +192,14 @@ data: {}
 	if err != nil {
 		t.Fatal(err)
 	}
+	cfg, err := repo.Config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.User.Name, cfg.User.Email = "test", "test@example.com"
+	if err := repo.SetConfig(cfg); err != nil {
+		t.Fatal(err)
+	}
 	wt, err := repo.Worktree()
 	if err != nil {
 		t.Fatal(err)

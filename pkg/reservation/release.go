@@ -70,6 +70,9 @@ func Release(req ReleaseRequest) (ReleaseResult, error) {
 	if err := req.validate(); err != nil {
 		return ReleaseResult{}, microerror.Mask(err)
 	}
+	if _, err := gitIdentity(req.RepoDir); err != nil {
+		return ReleaseResult{}, microerror.Mask(err)
+	}
 	if err := checkEnabled(req.RepoDir, req.Cluster); err != nil {
 		return ReleaseResult{}, microerror.Mask(err)
 	}
@@ -128,7 +131,7 @@ func Release(req ReleaseRequest) (ReleaseResult, error) {
 	}
 	sort.Strings(files)
 
-	commit, err := commitAll(req.RepoDir, req.User, fmt.Sprintf("release %s on %s (by %s)", chart, req.Cluster, req.User), files)
+	commit, err := commitAll(req.RepoDir, fmt.Sprintf("release %s on %s (by %s)", chart, req.Cluster, req.User), files)
 	if err != nil {
 		return ReleaseResult{}, microerror.Mask(err)
 	}

@@ -100,6 +100,11 @@ func (r *runner) releaseAll(ctx context.Context, checkout *gitops.Checkout) erro
 	if len(released) > 0 {
 		checkout.Wrote(r.stderr)
 	}
+	// A success: the close hook runs this for every pull request, most of
+	// which hold nothing.
+	if len(released) == 0 && releaseErr == nil {
+		_, _ = fmt.Fprintf(r.stdout, "Nothing to release: pull request %s holds no reservation.\n", r.flag.PullRequest)
+	}
 	if releaseErr != nil {
 		return microerror.Mask(checkout.Explain(releaseErr))
 	}

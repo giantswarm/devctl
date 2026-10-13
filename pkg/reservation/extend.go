@@ -68,6 +68,9 @@ func Extend(ctx context.Context, req ExtendRequest) ([]Extended, error) {
 	if err := req.validate(); err != nil {
 		return nil, microerror.Mask(err)
 	}
+	if _, err := gitIdentity(req.RepoDir); err != nil {
+		return nil, microerror.Mask(err)
+	}
 
 	now := req.Now
 	if now.IsZero() {
@@ -196,7 +199,7 @@ func extendAndPush(ctx context.Context, req ExtendRequest, cluster string, r Res
 			clusterPath(cluster, ConfigMapFile),
 			clusterPath(cluster, collectionsDir, reservationsDir, current.App, current.App+SourceNameSuffix+".yaml"),
 		}
-		if _, err := commitAll(req.RepoDir, req.User, fmt.Sprintf(
+		if _, err := commitAll(req.RepoDir, fmt.Sprintf(
 			"extend %s on %s for %s (until %s)", current.App, cluster, req.User, until.Format(time.RFC3339)), files); err != nil {
 			return microerror.Mask(err)
 		}

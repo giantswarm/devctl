@@ -27,6 +27,15 @@ func checkCollision(req Request, chart string, now time.Time) (*Reservation, err
 		}
 	}
 
+	// The holder repeating the very same request refreshes it: it blocks nothing
+	// and Reserve rewrites the entry with a fresh window.
+	for _, r := range active {
+		if r.App == chart && r.User == req.User && r.Branch == req.Branch &&
+			r.PullRequest == req.PullRequest && r.Scope == req.Scope {
+			return nil, nil
+		}
+	}
+
 	if req.Scope == ScopeExclusive {
 		if len(active) == 1 && active[0].User == req.User && active[0].App == chart {
 			promoted := active[0]

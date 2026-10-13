@@ -29,6 +29,13 @@ const (
 func newCommand(t *testing.T, stdout io.Writer) *cobra.Command {
 	t.Helper()
 
+	return newCommandWithStderr(t, stdout, io.Discard)
+}
+
+// newCommandWithStderr is newCommand with a stderr the test can read.
+func newCommandWithStderr(t *testing.T, stdout, stderr io.Writer) *cobra.Command {
+	t.Helper()
+
 	for _, key := range []string{"DEVCTL_GITHUB_TOKEN", "GITHUB_TOKEN", "OPSCTL_GITHUB_TOKEN"} {
 		t.Setenv(key, "")
 	}
@@ -37,7 +44,7 @@ func newCommand(t *testing.T, stdout io.Writer) *cobra.Command {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cmd, err := reap.New(reap.Config{Logger: logger, Stderr: io.Discard, Stdout: stdout})
+	cmd, err := reap.New(reap.Config{Logger: logger, Stderr: stderr, Stdout: stdout})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,5 +173,32 @@ func TestReapStaysSilentWhenNothingToDo(t *testing.T) {
 	afterTip := gittest.GitOutput(t, origin, "rev-parse", "main")
 	if afterTip != beforeTip {
 		t.Errorf("origin moved even though nothing was reaped: %s -> %s", beforeTip, afterTip)
+	}
+}
+
+// TestReapWarnsWhenThereIsNoToken checks that skipping the rename check is
+// said on stderr. CI=1 makes authstore refuse without opening the keychain,
+// so a developer's stored login cannot leak into the test.
+func TestReapWarnsWhenThereIsNoToken(t *testing.T) {
+	t.Setenv("CI", "1")
+	until := time.Now().Add(10 * time.Hour).UTC().Format(time.RFC3339)
+	dir, _ := newReapableFixture(t, "graveler", "hello-world", until)
+
+	var stdout, stderr bytes.Buffer
+	cmd := newCommandWithStderr(t, &stdout, &stderr)
+	cmd.SetArgs([]string{
+		flagRepoDir, dir,
+		flagUser, "reservation-reaper",
+	})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("reap: %v", err)
+	}
+	const want = "Warning: no GitHub token found, so reap skips the rename check and releases only expired reservations. Set one of DEVCTL_GITHUB_TOKEN, GITHUB_TOKEN, OPSCTL_GITHUB_TOKEN or run devctl auth login --github-only.\n"
+	if !strings.Contains(stderr.String(), want) {
+		t.Errorf("stderr: got %q, want it to contain %q", stderr.String(), want)
+	}
+	if stdout.String() != "" {
+		t.Errorf("stdout: got %q, want empty", stdout.String())
 	}
 }

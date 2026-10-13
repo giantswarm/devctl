@@ -17,6 +17,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   is responsible for the branch's builds: `--branch` stays required, `--pull-request` optional (CI always sets it).
 - `reservation extend --user` makes that user the holder of each reservation it extends (the entry and the source
   object's annotation), so a local user can take over a reservation CI made. Before, it only named the commit author.
+- `reservation reserve` repeated with the same app, user, branch, pull request and scope refreshes the reservation:
+  a new window from now, still one entry and one component. Before, it was refused as already reserved.
+- `reservation reserve`, `release`, `extend` and `reap` commit with the git identity of whoever runs devctl
+  (`git config user.name` and `user.email`, including `include.path`), never with `--user`. Without an identity they
+  refuse before they write anything, so the checkout stays clean.
+- `reservation release --pull-request` for a pull request that holds nothing prints `Nothing to release` and exits 0.
+- `reservation reap` warns when it finds no GitHub token: it then skips the rename check and releases only expired
+  reservations.
 - `repo reconcile` and `repo checks`: the reported checks are read from the newest pull request merged through the
   gate. A pull request whose head is its own merge commit — merged by a push of its head onto the branch, as a fork
   line's upstream re-pin is — is passed over: its SHA carries the branch's push runs and statuses and no pull-request
