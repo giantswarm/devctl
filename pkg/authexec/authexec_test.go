@@ -83,6 +83,42 @@ func TestLookPath(t *testing.T) {
 	}
 }
 
+func TestLookPathPastShims(t *testing.T) {
+	self, agentBin, realBin := fixture(t)
+	shimBin := filepath.Join(filepath.Dir(agentBin), "shim")
+	if err := os.Mkdir(shimBin, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(shimBin, "gh"), []byte("#!/bin/sh\n"), 0o700); err != nil { // nolint:gosec // an executable fixture
+		t.Fatal(err)
+	}
+	join := func(dirs ...string) string { return strings.Join(dirs, string(os.PathListSeparator)) }
+	for _, tc := range []struct {
+		path, want string
+	}{
+		{path: join(shimBin, agentBin, realBin), want: realBin},
+		{path: join(shimBin, agentBin, shimBin, agentBin, realBin), want: realBin},
+		{path: join(agentBin, shimBin, realBin), want: shimBin},
+		{path: join(shimBin, agentBin), want: shimBin},
+		{path: join(shimBin, realBin), want: shimBin},
+	} {
+		if got, err := LookPath("gh", tc.path, self); err != nil || got != filepath.Join(tc.want, "gh") {
+			t.Errorf("LookPath(gh, %s) = %q, %v; want %s/gh", tc.path, got, err, tc.want)
+		}
+	}
+}
+
+func TestChained(t *testing.T) {
+	env, err := chained([]string{"PATH=/bin"}, "/a/gh", "/devctl")
+	if err != nil || !slices.Contains(env, EnvChain+"=/a/gh") {
+		t.Fatalf("chained = %v, %v", env, err)
+	}
+	full := EnvChain + "=" + strings.Repeat("/a/gh"+string(os.PathListSeparator), MaxChain-1) + "/a/gh"
+	if _, err := chained([]string{full}, "/a/gh", "/devctl"); err == nil || !strings.Contains(err.Error(), "/a/gh -> /a/gh") {
+		t.Fatalf("chained of a full chain = %v, want a refusal naming it", err)
+	}
+}
+
 func TestRun(t *testing.T) {
 	self, agentBin, realBin := fixture(t)
 	path := strings.Join([]string{agentBin, realBin}, string(os.PathListSeparator))

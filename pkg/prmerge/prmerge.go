@@ -227,7 +227,7 @@ func (m *Merger) Merge(ctx context.Context, owner, repo string, number int) (*Re
 		return result, err
 	}
 	if behind {
-		if err := m.update(ctx, owner, repo, number, pr.GetHead().GetSHA()); err != nil {
+		if err := m.update(ctx, owner, repo, number, pr, githubclient.MergeMethod(result.Method)); err != nil {
 			return result, err
 		}
 	}
@@ -429,14 +429,25 @@ func (m *Merger) behind(ctx context.Context, owner, repo string, pr *github.Pull
 	return by > 0, nil
 }
 
-// update asks GitHub to merge the base into the head and reads the pull
+// update asks GitHub to bring the head up to its base and reads the pull
 // request until the new head is on it, so the wait judges that head and not
-// the one behind.
-func (m *Merger) update(ctx context.Context, owner, repo string, number int, headSHA string) error {
-	if err := m.github.UpdatePullRequestBranch(ctx, owner, repo, number, headSHA); err != nil {
+// the one behind. A rebase merge has the head rebased onto the base, since
+// merging the base in would put a merge commit on a head that lands commit
+// by commit; squash and merge have the base merged into the head.
+func (m *Merger) update(ctx context.Context, owner, repo string, number int, pr *github.PullRequest, method githubclient.MergeMethod) error {
+	headSHA := pr.GetHead().GetSHA()
+	how := "merge of the base"
+	var err error
+	if method == githubclient.MergeRebase {
+		how = "rebase onto the base"
+		err = m.github.RebasePullRequestBranch(ctx, pr.GetNodeID(), headSHA)
+	} else {
+		err = m.github.UpdatePullRequestBranch(ctx, owner, repo, number, headSHA)
+	}
+	if err != nil {
 		return microerror.Mask(err)
 	}
-	m.progress.Printf("update-branch: requested for %s", headSHA)
+	m.progress.Printf("update-branch: %s requested for %s", how, headSHA)
 	for read := 1; read <= updatedHeadReads; read++ {
 		if err := m.clock.Sleep(ctx, updatedHeadInterval); err != nil {
 			return microerror.Mask(err)

@@ -105,8 +105,12 @@ found is exit 7. Environment variables do not override the keychain here, and no
 it: an outdated devctl still hands over the token, so a devctl release never stops an agent's `gh`.
 
 **The `gh` link.** devctl started under the name `gh` (a link to it) is `devctl auth exec -- gh`: it runs
-the next `gh` on `PATH` that is not devctl itself. An agent environment puts such a link in a directory
-first on the agent's `PATH`:
+the next `gh` on `PATH` past its own entry, so another `gh` shim ahead of the link (a test harness's or
+sandbox's, which passed the call on to the link) is never run a second time. Without a `gh` past the link
+it runs the first `gh` on `PATH` that is not devctl itself. A program that hands every call back to the link
+(a shim past it running the first `gh` on `PATH`) loops; devctl refuses after four programs in one chain of
+calls (`DEVCTL_AUTH_EXEC_CHAIN`), exit 7, naming each program it ran. An agent environment puts the link in
+a directory first on the agent's `PATH`:
 
 ```nohighlight
 mkdir -p ~/.local/share/devctl/agent-bin
