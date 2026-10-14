@@ -9,6 +9,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `gen makefile`: `Makefile.gen.app.mk` runs `yq` (mikefarah's v4 only), `helm-docs` and `ct` from `PATH` when they are
+  installed and through `docker run` with their images otherwise, so `lint-chart`, `helm-docs` and `update-deps` work
+  without a container runtime.
 - `repo checks --update` removes no required context it was not told to remove: one already required stays whether it
   reported or not and whatever system reports it, unless `--remove` names it or, with `--circleci-dir`, it is a
   `ci/circleci:` context whose job that pipeline does not have. It used to drop every unreported context, the company's
