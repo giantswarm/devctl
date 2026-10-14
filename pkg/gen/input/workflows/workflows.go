@@ -58,6 +58,13 @@ func (w *Workflows) CheckValuesSchema() input.Input {
 	return file.NewCheckValuesSchemaInput(w.params)
 }
 
+// ChartTests runs the chart unit tests (`make helm-test`) on a pull request.
+// CircleCI calls `make test` only through architect/go-build, so in a
+// chart-only app repository nothing else runs the suites.
+func (w *Workflows) ChartTests() input.Input {
+	return file.NewChartTestsInput(w.params)
+}
+
 func (w *Workflows) ClusterAppDocumentationValidation() input.Input {
 	return file.NewClusterAppDocumentationValidation(w.params)
 }

@@ -988,6 +988,31 @@ jobs:
               ;;
           esac
 
+--- .github/workflows/zz_generated.chart_tests.yaml
+# DO NOT EDIT. Generated with:
+#
+#    devctl
+#
+#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/chart_tests.yaml.template
+#
+
+name: chart-tests
+
+on:
+  pull_request:
+    branches:
+      - master
+      - main
+  merge_group: {}
+
+permissions: {}
+
+jobs:
+  chart-tests:
+    uses: giantswarm/github-workflows/.github/workflows/chart-tests.yaml@main
+    permissions:
+      contents: read
+
 --- .github/workflows/zz_generated.check_readme_links.yaml
 # DO NOT EDIT. Generated with:
 #
@@ -1813,8 +1838,10 @@ HELM_UNITTEST_VERSION ?= v1.2.1
 # Both directory names are in use across the org: upstream charts vendored from Artifact
 # Hub tend to use `unittests/`, our own charts use `tests/`. The `Chart.yaml` check rejects
 # a nested directory that only shares the name, such as `tests/admission-webhooks/`.
-# Nothing here reads APPLICATION: it may be set by a later included makefile.
-helm-test: check-env install-helm-unittest ## Run the chart unit tests (helm-unittest).
+# Nothing here reads APPLICATION, so this target carries no `check-env` prerequisite. A
+# chart-only repository sets APPLICATION nowhere, and requiring it made `make helm-test`
+# fail in exactly the repositories this target exists for.
+helm-test: install-helm-unittest ## Run the chart unit tests (helm-unittest).
 	@echo "====> $@"
 	@found=""; \
 	for d in $$(find helm -type d \( -name tests -o -name unittests \) 2>/dev/null | sort); do \

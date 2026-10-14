@@ -11,6 +11,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - `gen circleci`: the generated pipelines pin architect orb 10.13.3, whose `go-test` retries a transient
   proxy.golang.org error in its "go.mod and go.sum are clean" step instead of failing the job.
+- `gen makefile`: `helm-test` carries no `check-env` prerequisite. The recipe sweeps `helm/` and never reads
+  `APPLICATION`, but `check-env` demanded it, so `make helm-test` failed with `APPLICATION is not defined` in every
+  chart-only repository -- the repositories the target exists for.
 - `repo checks` requires a repository's own CircleCI jobs: without a generated pipeline (`workflows.yml`,
   `custom.yml`) or an open align-files pull request bringing one, the branch-side jobs of the hand-kept
   `.circleci/config.yml` are candidates, required once they have reported; a hand-kept pipeline removes no
@@ -43,6 +46,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   entry whose flavours do not decode keeps the squash default with a warning. See docs/pr-merge.md.
 
 ### Added
+
+- `gen workflows`: app repositories get `zz_generated.chart_tests.yaml`, which runs `make helm-test` on a pull request
+  through `giantswarm/github-workflows`. CircleCI calls `make test` only through `architect/go-build`, so a chart-only
+  repository ran its `helm-unittest` suites nowhere. A Go repository now runs them twice, in CircleCI and here; each run
+  takes under a second.
 
 - `gen workflows` (`auto-release`): a stable promotion runs the repository-owned `.github/release-gate.custom.sh` on the
   candidate's checkout with the version about to be tagged, before the tag and the GitHub release are created; a
