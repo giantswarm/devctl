@@ -83,8 +83,13 @@ A chart is deployed by one of:
 | `App` (`application.giantswarm.io/v1alpha1`) | its `spec.name` is the chart | `status.version` with `status.release.status` `deployed` |
 
 Every match on the cluster is judged; none is exit 3. `--helmrelease <name>` or
-`--helmrelease <namespace>/<name>` (repeatable) adds a HelmRelease whatever chart it deploys, judged
-the same way against the version; a name no HelmRelease on the cluster answers to is exit 3.
+`--helmrelease <namespace>/<name>` (repeatable) adds a HelmRelease whatever chart it deploys; a name no
+HelmRelease on the cluster answers to is exit 3. One of the release's charts is judged the same way against
+the version. One of none of them (a component a meta chart renders, on a version line of its own) is judged
+by itself: rolled out once it is Ready at its current generation (`status.observedGeneration`) with no
+reconcile in flight (`Reconciling` not True) and its workloads are rolled out; `Progressing` or
+`DependencyNotReady` keeps the wait open; Stalled, or not Ready after a failed install, upgrade or test, is
+exit 1. `--reconcile` does not ask it to reconcile.
 
 ### When a deployment has rolled out
 

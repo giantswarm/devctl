@@ -287,7 +287,8 @@ func (w *Waiter) requestReconciles(ctx context.Context, list []Deployment) error
 			w.progress.Printf("requested a reconcile of %s", d.self)
 			continue
 		}
-		if d.Kind != KindHelmRelease || atLeast(d.RunningVersion, w.version) {
+		// A named HelmRelease of another chart is not behind the version.
+		if d.Kind != KindHelmRelease || !w.charts[d.Chart] || atLeast(d.RunningVersion, w.version) {
 			continue
 		}
 		targets := []object{{resource: helmReleases, kind: KindHelmRelease, namespace: d.Namespace, name: d.Name}}

@@ -36,7 +36,11 @@ contexts that mention the installation named as candidates. It reads:
 
 and every HelmRelease --helmrelease names (<name> or <namespace>/<name>,
 repeatable) whatever chart it deploys; a name no HelmRelease answers to is
-exit 3.
+exit 3. A named HelmRelease of none of the charts (a component a meta
+chart renders, on a version line of its own) is judged by itself, not by
+the version: rolled out once it is Ready at its current generation with no
+reconcile in flight and its workloads are rolled out, failed when it is
+Stalled or not Ready after a failed install, upgrade or test.
 
 A deployment has rolled out when it runs the version or a newer one
 (status.history of the HelmRelease, status.version and a deployed release

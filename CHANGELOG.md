@@ -9,6 +9,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `rollout wait --helmrelease` judges a named HelmRelease of none of the release's charts (a component a meta chart
+  renders) by its own Ready condition at its current generation, no reconcile in flight, and its workloads. It was
+  judged by the meta chart's version, which its source excludes, so it read `not_following` and the wait reported
+  `rolled_out` while the component was still `Progressing` or `DependencyNotReady`.
 - `gen circleci`: the generated pipelines pin architect orb 10.13.3, whose `go-test` retries a transient
   proxy.golang.org error in its "go.mod and go.sum are clean" step instead of failing the job.
 - `gen makefile`: `helm-test` carries no `check-env` prerequisite. The recipe sweeps `helm/` and never reads
