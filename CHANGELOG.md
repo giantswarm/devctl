@@ -9,6 +9,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `release create`: the `cluster-aks` changelog URL pointed at the `cluster-azure` repository, so release notes for a
+  `cluster-aks` bump were parsed from the wrong CHANGELOG.
 - `pr merge --update-branch`: a pull request that lands with a rebase merge (`--rebase`, or a fork line's default) has a
   head behind its base rebased onto the base (GraphQL `updatePullRequestBranch` with `updateMethod: REBASE`) instead of
   the base merged into it, so the rebase merge no longer carries a merge commit onto the base. Squash and merge keep
@@ -24,6 +26,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `release create`: support the `aks` provider — `--provider aks` now resolves the provider title (AKS) in release
+  notes and the docs link in the announcement, and `cluster-aks` is treated as a provider chart so a bump of its
+  `cluster` chart dependency is included in the release notes, same as `cluster-eks`.
 - `gen plans`: for the `plans` flavour, `.claude/settings.json` enables the `gs-plans` plugin from the giantswarm/claude-code
   marketplace, with `autoUpdate` on. devctl writes only the marketplace and plugin entries and keeps every other key, so a
   team keeps its own settings in the file. Nothing is generated without the flavour. See docs/gen.md.
