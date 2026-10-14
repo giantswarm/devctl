@@ -25,7 +25,8 @@ Refused before any wait: a draft, a closed or merged pull request, one
 conflicting with its base or behind a base that requires branches to be up to
 date (exit 3, unless --update-branch); a pull request opened by another human
 (exit 5: bots, GitHub Apps, Giant Swarm's automation accounts -- taylorbot,
-which opens every generated release pull request, and architectbot -- and the
+which opens generated release pull requests not yet moved to the
+giantswarm-release App, and architectbot -- and the
 caller's own pull requests are fine); a repository whose team-file entry in
 giantswarm/github says agentMerge: false (exit 5, naming the field). A
 repository no team file declares is not opted out.

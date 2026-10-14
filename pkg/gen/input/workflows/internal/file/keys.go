@@ -1,7 +1,8 @@
 package file
 
 // templateKeyStepSetUpGitIdentity is the template data key under which the
-// workflows that commit as the giantswarm-release GitHub App receive the shared git identity step.
+// workflows that commit as the giantswarm-release GitHub App receive its git identity step
+// (only helm-docs-regen renders it; a workflow pushing with another App needs its own identity).
 const templateKeyStepSetUpGitIdentity = "StepSetUpGitIdentity"
 
 // templateKeyHeader is the template data key carrying the generated-file
