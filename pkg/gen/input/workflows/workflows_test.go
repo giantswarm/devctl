@@ -204,8 +204,8 @@ func Test_HelmDocsRegenIsValidYAML(t *testing.T) {
 	for _, step := range regen.Steps {
 		if strings.HasPrefix(step.Uses, "actions/checkout@") {
 			checkout = true
-			if step.With["token"] != "${{ secrets.TAYLORBOT_GITHUB_ACTION }}" {
-				t.Errorf("regen checkout token = %q, want the taylorbot PAT (a GITHUB_TOKEN push does not re-trigger the required checks)", step.With["token"])
+			if step.With["token"] != "${{ steps.release-token.outputs.token }}" {
+				t.Errorf("regen checkout token = %q, want the giantswarm-release App token (a GITHUB_TOKEN push does not re-trigger the required checks)", step.With["token"])
 			}
 			if step.With["ref"] != "${{ github.head_ref }}" {
 				t.Errorf("regen checkout ref = %q, want the head branch so the commit lands on it", step.With["ref"])

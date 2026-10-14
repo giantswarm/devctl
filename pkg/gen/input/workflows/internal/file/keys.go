@@ -1,7 +1,7 @@
 package file
 
 // templateKeyStepSetUpGitIdentity is the template data key under which the
-// workflows that commit as taylorbot receive the shared git identity step.
+// workflows that commit as the giantswarm-release GitHub App receive the shared git identity step.
 const templateKeyStepSetUpGitIdentity = "StepSetUpGitIdentity"
 
 // templateKeyHeader is the template data key carrying the generated-file

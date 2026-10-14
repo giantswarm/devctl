@@ -239,7 +239,7 @@ For detailed guidelines and examples, always refer to: @https://github.com/giant
 <!--
 DO NOT EDIT. Generated with devctl.
 This file is maintained at:
-https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/llm/internal/file/base_llm_rules.mdc.template
+https://github.com/giantswarm/devctl/tree/main
 Manual changes will be overwritten.
 -->
 
@@ -276,7 +276,7 @@ When creating or modifying Go files, perform the according check and mitigate an
 <!--
 DO NOT EDIT. Generated with devctl.
 This file is maintained at:
-https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/llm/internal/file/go_rules.mdc.template
+https://github.com/giantswarm/devctl/tree/main
 Manual changes will be overwritten.
 -->
 
@@ -467,7 +467,7 @@ jobs:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/auto_release.yaml.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 # yamllint disable rule:truthy
 # Push-based release tagger + release-page publisher.
@@ -993,7 +993,7 @@ jobs:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/chart_tests.yaml.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 
 name: chart-tests
@@ -1018,7 +1018,7 @@ jobs:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/check_readme_links.yaml.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 
 name: check-readme-links
@@ -1062,7 +1062,7 @@ jobs:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/check_values_schema.yaml.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 
 name: check-values-schema
@@ -1087,7 +1087,7 @@ jobs:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/fix_vulnerabilities.yaml.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 
 name: Fix Go vulnerabilities
@@ -1128,7 +1128,7 @@ jobs:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/gitleaks.yaml.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 name: gitleaks
 
@@ -1149,7 +1149,7 @@ jobs:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/precommit/internal/file/pre-commit-action.yaml.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 name: pre-commit
 
@@ -1203,7 +1203,7 @@ jobs:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/run_ossf_scorecard.yaml.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 
 # This workflow uses actions that are not certified by GitHub. They are provided
@@ -1246,7 +1246,7 @@ jobs:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/semantic_pull_request.yaml.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 name: semantic-pull-request
 
@@ -1302,7 +1302,7 @@ CVE-2019-10743 until=2021-10-17
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/precommit/internal/file/pre-commit-config.yaml.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 minimum_pre_commit_version: '2.17'
 default_install_hook_types: [pre-commit, commit-msg]
@@ -1741,7 +1741,7 @@ By making a contribution to this project, I certify that:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/makefile/internal/file/Makefile.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 
 include Makefile.*.mk
@@ -1768,7 +1768,7 @@ help: ## Display this help.
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/makefile/internal/file/Makefile.gen.app.mk.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 
 ##@ App
@@ -1876,7 +1876,7 @@ test: helm-test
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/makefile/internal/file/Makefile.gen.go.mk.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 
 APPLICATION    := $(shell go list -m | cut -d '/' -f 3)
@@ -2029,7 +2029,7 @@ Please visit <https://www.giantswarm.io/responsible-disclosure> for information 
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/cliff.toml.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 # git-cliff config for the push-based auto-release flow.
 #
@@ -2209,7 +2209,7 @@ go 1.25
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/precommit/internal/file/schema.yaml.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 
 # The generated app-platform file goes first so keys the chart defines itself
@@ -2436,7 +2436,7 @@ registry:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/precommit/internal/file/app-platform-values.yaml.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 
 # Values the Giant Swarm app platform injects into every App deployed to a
@@ -2488,10 +2488,12 @@ func main() {}
     // without an ats/ Pipfile, so it is safe to extend for all generated-CI repos.
     'github>giantswarm/renovate-presets:tests-ats.json5',
   ],
-  // Two of our own bots commit onto Renovate branches. taylorbot
-  // <dev@giantswarm.io> pushes what the generated workflows produce
+  // Our own bots commit onto Renovate branches. The giantswarm-release
+  // GitHub App pushes what the generated workflows produce
   // (zz_generated.helm-docs-regen.yaml, the update-chart and
-  // sync-from-upstream flows). giantswarm-marge[bot] writes the bot PR's
+  // sync-from-upstream flows); taylorbot <dev@giantswarm.io> did so before
+  // it and still does in repositories whose workflows are not regenerated
+  // yet. giantswarm-marge[bot] writes the bot PR's
   // changelog entry during the sweep, in the repositories that still cut a
   // release from CHANGELOG.md. Renovate treats a branch whose last commit is
   // by anyone else as edited by a human: it stops rebasing it and, on
@@ -2499,6 +2501,7 @@ func main() {}
   // the authors here makes those commits Renovate's own. Renovate compares
   // the author email, so these are the bare addresses.
   gitIgnoredAuthors: [
+    '342014845+giantswarm-release[bot]@users.noreply.github.com',
     'dev@giantswarm.io',
     '329428426+giantswarm-marge[bot]@users.noreply.github.com',
   ],

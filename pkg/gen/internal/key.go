@@ -43,8 +43,8 @@ func StepSetUpGitIdentity() string {
 	return strings.Join([]string{
 		"      - name: Set up git identity",
 		"        run: |",
-		`          git config --local user.email "dev@giantswarm.io"`,
-		`          git config --local user.name "taylorbot"`,
+		`          git config --local user.email "342014845+giantswarm-release[bot]@users.noreply.github.com"`,
+		`          git config --local user.name "giantswarm-release[bot]"`,
 	}, "\n")
 }
 
