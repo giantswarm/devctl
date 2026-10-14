@@ -9,6 +9,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `gen workflows`: the Auto Release step "Resolve the candidate to promote" retries its `commits/<rc>/status` read
+  four times with backoff (2s, 4s, 8s) on a failed, empty or truncated answer, and refuses the promotion only after the
+  last try, naming the request and the tries. A single transient `unexpected end of JSON input` failed a promote.
 - `rollout wait --helmrelease` judges a named HelmRelease of none of the release's charts (a component a meta chart
   renders) by its own Ready condition at its current generation, no reconcile in flight, and its workloads. It was
   judged by the meta chart's version, which its source excludes, so it read `not_following` and the wait reported
