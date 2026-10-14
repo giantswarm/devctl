@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -22,6 +23,7 @@ const (
 	genMakefile  = "makefile"
 	genWorkflows = "workflows"
 	genLLM       = "llm"
+	genPlans     = "plans"
 	genPrecommit = "precommit"
 	genCircleCI  = "circleci"
 	genRenovate  = "renovate"
@@ -51,8 +53,8 @@ type genContext struct {
 }
 
 // genCommands returns the `devctl gen …` command lines align-files runs for
-// a declaration, in align-files' order: makefile, workflows, llm,
-// pre-commit, CircleCI when gen.ci.generate is on, then Renovate. Each
+// a declaration, in align-files' order: makefile, workflows, llm, plans
+// (the plans flavour only), pre-commit, CircleCI when gen.ci.generate is on, then Renovate. Each
 // line is an argv starting with devctl gen. The declaration has to have
 // gen.flavours and gen.language; the validator refuses one that has not. A
 // fork line gets nothing generated ([generates]) but its release flow: the
@@ -127,6 +129,10 @@ func genCommands(f Fields, gc genContext) [][]string {
 
 	if g.GenerateLlmRules == nil || *g.GenerateLlmRules {
 		commands = append(commands, line(genLLM, flagFlavour, flavour, flagLanguage, g.Language))
+	}
+
+	if slices.Contains(g.Flavours, gen.FlavourPlans.String()) {
+		commands = append(commands, line(genPlans, flagFlavour, flavour))
 	}
 
 	// Pre-commit: generated for every repository on generated CI, and for

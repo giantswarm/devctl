@@ -4,6 +4,7 @@ package release
 // and in the `--provider` flag.
 const (
 	providerAWS           = "aws"
+	providerAKS           = "aks"
 	providerAzure         = "azure"
 	providerEKS           = "eks"
 	providerVSphere       = "vsphere"

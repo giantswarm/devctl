@@ -285,6 +285,38 @@ func TestWaitGeneratedRenamedImageBecomesAvailable(t *testing.T) {
 	}
 }
 
+// A chart the registry serves to a pull is available on the first probe,
+// whatever its HEAD answers: a HEAD carries no body, and an edge in front of
+// the registry may answer it without a header the descriptor needs, or not
+// know the tag a GET of the manifest resolves.
+func TestWaitChartAvailableWhenOnlyItsManifestGetAnswers(t *testing.T) {
+	for name, head := range map[string]sequence.Response{
+		"head without digest": {Status: 200, Headers: map[string]string{"Docker-Content-Digest": ""}},
+		"head not found":      {Status: 404},
+	} {
+		t.Run(name, func(t *testing.T) {
+			fx := fixture{
+				entry:    generatedEntry(t),
+				timeout:  30 * time.Second,
+				github:   baseGitHub([]string{"Dockerfile", "helm"}, []string{"zz_generated.auto_release.yaml"}, []string{"config.yml", "workflows.yml"}),
+				circleci: pipelineRoutes([][]map[string]any{{wf("w1", "build", "success", "2026-09-21T10:00:00Z")}}, map[string][]map[string]any{"w1": {job("push-chart-release", "success")}}),
+				registry: sequence.Routes{
+					"HEAD /v2/giantswarm/kserve-controller/manifests/1.2.3": {{Status: 200}},
+					"HEAD /v2/charts/giantswarm/kserve/manifests/1.2.3":     {head},
+					"GET /v2/charts/giantswarm/kserve/manifests/1.2.3":      {{Status: 200}},
+				},
+			}
+			result, err := run(t, fx)
+			assertExit(t, err, agentcli.ExitOK, "")
+			chart := result.Artifacts[1]
+			want := registrymock.Digest(registrymock.Manifest("charts/giantswarm/kserve"))
+			if chart.Kind != KindChart || chart.State != StateAvailable || chart.Digest != want {
+				t.Errorf("chart: %+v, want available with %s", chart, want)
+			}
+		})
+	}
+}
+
 func TestWaitFailedTagPipeline(t *testing.T) {
 	fx := fixture{
 		entry:  generatedEntry(t),
@@ -446,6 +478,7 @@ func TestWaitUnauthorizedIsToolingNotSlow(t *testing.T) {
 		github: baseGitHub([]string{"Dockerfile", "helm"}, []string{"zz_generated.auto_release.yaml"}, []string{"config.yml", "workflows.yml"}),
 		registry: sequence.Routes{
 			"HEAD /v2/giantswarm/kserve-controller/manifests/1.2.3": {{Status: 401}},
+			"GET /v2/giantswarm/kserve-controller/manifests/1.2.3":  {{Status: 401}},
 		},
 		circleci: pipelineRoutes(
 			[][]map[string]any{{wf("w1", "build", "running", "2026-09-21T10:00:00Z")}},

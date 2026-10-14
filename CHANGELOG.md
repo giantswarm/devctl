@@ -7,6 +7,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- `gen makefile`: `Makefile.gen.app.mk` runs `yq` (mikefarah's v4 only), `helm-docs` and `ct` from `PATH` when they are
+  installed and through `docker run` with their images otherwise, so `lint-chart`, `helm-docs` and `update-deps` work
+  without a container runtime.
+- `repo checks --update` removes no required context it was not told to remove: one already required stays whether it
+  reported or not and whatever system reports it, unless `--remove` names it or, with `--circleci-dir`, it is a
+  `ci/circleci:` context whose job that pipeline does not have. It used to drop every unreported context, the company's
+  ignored ones and the CircleCI contexts the repository's own pipeline lacked, which stripped teams' required checks.
+- `release create`: the `cluster-aks` changelog URL pointed at the `cluster-azure` repository, so release notes for a
+  `cluster-aks` bump were parsed from the wrong CHANGELOG.
+- `pr merge --update-branch`: a pull request that lands with a rebase merge (`--rebase`, or a fork line's default) has a
+  head behind its base rebased onto the base (GraphQL `updatePullRequestBranch` with `updateMethod: REBASE`) instead of
+  the base merged into it, so the rebase merge no longer carries a merge commit onto the base. Squash and merge keep
+  GitHub's REST update-branch. See docs/pr-merge.md.
+
 ### Changed
 
 - `pr merge`: a fork line, a repository whose team-file entry lists the `fork` flavour in `gen.flavours`, lands with a
@@ -17,6 +33,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `gen workflows` (`auto-release`): a stable promotion runs the repository-owned `.github/release-gate.custom.sh` on the
+  candidate's checkout with the version about to be tagged, before the tag and the GitHub release are created; a
+  non-zero exit cuts neither. A repository without the script has no gate. See docs/gen.md.
+- `release create`: support the `aks` provider — `--provider aks` now resolves the provider title (AKS) in release
+  notes and the docs link in the announcement, and `cluster-aks` is treated as a provider chart so a bump of its
+  `cluster` chart dependency is included in the release notes, same as `cluster-eks`.
+- `gen plans`: for the `plans` flavour, `.claude/settings.json` enables the `gs-plans` plugin from the giantswarm/claude-code
+  marketplace, with `autoUpdate` on. devctl writes only the marketplace and plugin entries and keeps every other key, so a
+  team keeps its own settings in the file. Nothing is generated without the flavour. See docs/gen.md.
+- `gen precommit`: a Go repository's config refuses a `go.mod` require line (single or in a block) whose trailing
+  comment has more than one word, with the `go-mod-require-comment` hook. Renovate's gomod manager skips such a line
+  without a pull request or a dashboard entry; `// indirect` and other one-word comments pass, and the explanation
+  goes on a comment line above the require.
 - `repo reconcile`: a team-file entry declares the repository's GitHub `topics`, and the metadata step keeps exactly
   those, with the token it runs as (the reconciler's App, which holds administration): `drift` in a dry run,
   `repaired` otherwise, compared as a set. Absent leaves the topics on GitHub alone; an empty list removes them all.
@@ -74,6 +103,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `auth exec` and the `gh` link: a passthrough `gh` shim ahead of the link on `PATH` no longer recurses with it. The
+  link runs the next `gh` past its own `PATH` entry, and a program that hands every call back to the link is refused
+  after four programs in one chain of calls, exit 7, naming them. See docs/auth.md.
+- `release wait`: an image or chart the registry serves to a pull is available on the first probe. A HEAD of the
+  manifest that does not confirm it (answered without the digest header, or not found) is followed by the GET a pull
+  sends, which decides; before, the probe said missing and a short `--timeout` ended in exit 2 for a published chart.
 - `repo create` scaffold: a private repository's README from giantswarm/template-app no longer carries the CircleCI
   status badge and the OpenSSF Scorecard badge, which 404 for a private repository and failed its first pull request's
   README link check. A public repository's README keeps both.
