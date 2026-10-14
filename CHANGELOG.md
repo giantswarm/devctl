@@ -9,10 +9,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `gen circleci`: the generated pipelines pin architect orb 10.13.3, whose `go-test` retries a transient
+  proxy.golang.org error in its "go.mod and go.sum are clean" step instead of failing the job.
 - `gen makefile`: `helm-test` carries no `check-env` prerequisite. The recipe sweeps `helm/` and never reads
   `APPLICATION`, but `check-env` demanded it, so `make helm-test` failed with `APPLICATION is not defined` in every
   chart-only repository -- the repositories the target exists for.
-
 - `repo checks` requires a repository's own CircleCI jobs: without a generated pipeline (`workflows.yml`,
   `custom.yml`) or an open align-files pull request bringing one, the branch-side jobs of the hand-kept
   `.circleci/config.yml` are candidates, required once they have reported; a hand-kept pipeline removes no
