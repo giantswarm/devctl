@@ -215,6 +215,6 @@ replace (
 	go.etcd.io/etcd/client/pkg/v3 => go.etcd.io/etcd/client/pkg/v3 v3.7.2 // CVE-2026-73500
 	go.etcd.io/etcd/server/v3 => go.etcd.io/etcd/server/v3 v3.7.1 // CVE-2026-44283 CVE-2026-73499
 	go.etcd.io/etcd/v3 => go.etcd.io/etcd/v3 v3.7.1 // CVE-2026-33413 CVE-2026-59818 CVE-2026-73500 CVE-2026-33343 CVE-2026-44283
-	go.opentelemetry.io/otel/exporters/otlp/otlptrace => go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.46.0 // CVE-2026-81870
-	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc => go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.46.0 // CVE-2026-81870
+	go.opentelemetry.io/otel/exporters/otlp/otlptrace => go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.47.0 // CVE-2026-81870
+	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc => go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.47.0 // CVE-2026-81870
 )
