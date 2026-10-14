@@ -9,6 +9,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `repo checks --update` removes no required context it was not told to remove: one already required stays whether it
+  reported or not and whatever system reports it, unless `--remove` names it or, with `--circleci-dir`, it is a
+  `ci/circleci:` context whose job that pipeline does not have. It used to drop every unreported context, the company's
+  ignored ones and the CircleCI contexts the repository's own pipeline lacked, which stripped teams' required checks.
 - `release create`: the `cluster-aks` changelog URL pointed at the `cluster-azure` repository, so release notes for a
   `cluster-aks` bump were parsed from the wrong CHANGELOG.
 - `pr merge --update-branch`: a pull request that lands with a rebase merge (`--rebase`, or a fork line's default) has a
