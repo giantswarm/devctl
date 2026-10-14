@@ -293,8 +293,11 @@ carrying the branch's push runs rather than a pull request's checks. A required 
 job the generated pipeline (`.circleci/workflows.yml`, `custom.yml`) no longer has is removed; while the
 default branch has no generated pipeline, the one the open align-files pull request (`teams-alignment-branch`)
 brings decides (the App's own pull request, never one a person opens from the branch), so a repository moving from a hand-kept pipeline stops requiring the old jobs and can merge
-that pull request, and the generated jobs are required once they have reported after the merge. A
-customer repository (flavour `customer`) keeps its own protection.
+that pull request, and the generated jobs are required once they have reported after the merge. Without
+either, the hand-kept `.circleci/config.yml` names the repository's own jobs: candidates on the same
+reported-only rule, but a hand-kept pipeline removes no CircleCI context. A scheduled or conditional workflow
+and an approval job are never candidates. A customer repository (flavour `customer`) keeps its own
+protection.
 
 The protection is one repository ruleset, `devctl: default branch`, active on
 `~DEFAULT_BRANCH` so a rename or a fork line's declared branch needs no change: the same rules, a GitHub

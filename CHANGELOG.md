@@ -9,6 +9,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `repo checks` requires a repository's own CircleCI jobs: without a generated pipeline (`workflows.yml`,
+  `custom.yml`) or an open align-files pull request bringing one, the branch-side jobs of the hand-kept
+  `.circleci/config.yml` are candidates, required once they have reported; a hand-kept pipeline removes no
+  `ci/circleci:` context. A scheduled (`triggers:`) or conditional (`when:`, `unless:`) workflow and an approval job
+  are never candidates, in a `custom.yml` either, since they do not report on a pull request.
+- `repo checks` works on a repository protected by the ruleset `devctl: default branch` instead of skipping it as
+  unprotected: it writes the ruleset's `required_status_checks` rule alone, the other rules, the target, the
+  enforcement and the bypass actors sent back as they were read, so it needs no devctl App id.
+
 - `gen makefile`: `Makefile.gen.app.mk` runs `yq` (mikefarah's v4 only), `helm-docs` and `ct` from `PATH` when they are
   installed and through `docker run` with their images otherwise, so `lint-chart`, `helm-docs` and `update-deps` work
   without a container runtime.

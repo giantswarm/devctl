@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"regexp"
+	"slices"
 
 	"github.com/giantswarm/microerror"
 	"github.com/google/go-github/v92/github"
@@ -56,13 +57,24 @@ func (r *runner) run(ctx context.Context, arg string) error {
 	branch := repository.GetDefaultBranch()
 	gh := client.GetUnderlyingClient(ctx)
 
+	// The branch is protected by classic protection or by the engine's
+	// ruleset, whose required_status_checks rule alone the step writes.
 	protection, resp, err := gh.Repositories.GetBranchProtection(ctx, owner, repo, branch)
 	switch {
 	case errors.Is(err, github.ErrBranchNotProtected) || (resp != nil && resp.StatusCode == 404):
-		r.logger.Warnf("%s/%s: branch %q has no protection, skipping", owner, repo, branch)
-		return nil
+		protection = nil
 	case err != nil:
 		return microerror.Mask(err)
+	}
+	if protection == nil {
+		ruleset, err := hasEngineRuleset(ctx, gh, owner, repo)
+		if err != nil {
+			return microerror.Mask(err)
+		}
+		if !ruleset {
+			r.logger.Warnf("%s/%s: branch %q has neither classic protection nor the ruleset %q, skipping", owner, repo, branch, reconcile.RulesetName)
+			return nil
+		}
 	}
 
 	baseline := checksBaseline(protection, r.flag.Checks, r.flag.ChecksIfReported, r.flag.Remove)
@@ -106,10 +118,22 @@ func (r *runner) run(ctx context.Context, arg string) error {
 	return microerror.Mask(engine.Report(r.stdout, res, r.flag.Output))
 }
 
+// hasEngineRuleset says whether the repository carries the engine's ruleset
+// [reconcile.RulesetName].
+func hasEngineRuleset(ctx context.Context, gh *github.Client, owner, repo string) (bool, error) {
+	rulesets, _, err := gh.Repositories.GetAllRulesets(ctx, owner, repo, &github.RepositoryListRulesetsOptions{IncludesParents: new(false)})
+	if err != nil {
+		return false, err
+	}
+	return slices.ContainsFunc(rulesets, func(rs *github.RepositoryRuleset) bool { return rs.Name == reconcile.RulesetName }), nil
+}
+
 // checksBaseline is the protection step's baseline for this command: the
 // branch's current reviews, admin enforcement and strict setting (left as
-// they are), --checks required whatever reported, --checks-if-reported
-// required once reported, and --remove never required. A context already
+// they are; with nil protection the branch's ruleset holds them, and the
+// step writes its checks rule alone), --checks required whatever reported,
+// --checks-if-reported required once reported, and --remove never
+// required. A context already
 // required stays unless --remove names it or --circleci-dir has no job for
 // it: the command removes nothing it was not told to.
 func checksBaseline(protection *github.Protection, checks, checksIfReported, remove []string) reconcile.Baseline {
