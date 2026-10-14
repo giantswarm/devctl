@@ -26,6 +26,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `gen workflows` (`auto-release`): a stable promotion runs the repository-owned `.github/release-gate.custom.sh` on the
+  candidate's checkout with the version about to be tagged, before the tag and the GitHub release are created; a
+  non-zero exit cuts neither. A repository without the script has no gate. See docs/gen.md.
 - `release create`: support the `aks` provider — `--provider aks` now resolves the provider title (AKS) in release
   notes and the docs link in the announcement, and `cluster-aks` is treated as a provider chart so a bump of its
   `cluster` chart dependency is included in the release notes, same as `cluster-eks`.
