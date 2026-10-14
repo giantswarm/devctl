@@ -109,8 +109,9 @@ func (r *runner) run(ctx context.Context, arg string) error {
 // checksBaseline is the protection step's baseline for this command: the
 // branch's current reviews, admin enforcement and strict setting (left as
 // they are), --checks required whatever reported, --checks-if-reported
-// required once reported, and --remove never required — on top of the
-// company's ignored contexts and reported-only rule.
+// required once reported, and --remove never required. A context already
+// required stays unless --remove names it or --circleci-dir has no job for
+// it: the command removes nothing it was not told to.
 func checksBaseline(protection *github.Protection, checks, checksIfReported, remove []string) reconcile.Baseline {
 	b := reconcile.DefaultBaseline()
 	b.RequiredReviews = protection.GetRequiredPullRequestReviews().GetRequiredApprovingReviewCount()
@@ -120,6 +121,8 @@ func checksBaseline(protection *github.Protection, checks, checksIfReported, rem
 	}
 	b.RequiredChecks = checks
 	b.RequiredChecksIfReported = checksIfReported
+	b.KeepRequiredChecks = true
+	b.IgnoredChecks = nil
 	for _, name := range remove {
 		b.IgnoredChecks = append(b.IgnoredChecks, "^"+regexp.QuoteMeta(name)+"$")
 	}

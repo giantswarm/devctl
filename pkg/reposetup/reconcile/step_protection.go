@@ -1067,9 +1067,12 @@ func describeActor(a *github.BypassActor, team *github.Team) string {
 // pipeline to the generated one: the old pipeline's contexts are stale
 // against it and stop being required, so the pull request can merge; the
 // generated jobs are required once they have reported on the default
-// branch, by the run after the merge.
+// branch, by the run after the merge. Under the baseline's
+// KeepRequiredChecks only the request's pipeline is known: one read from the
+// repository still names candidates, but removes no CircleCI context.
 func (r *Runner) pipelineGates(ctx context.Context, s *run) (gates []string, known bool, err error) {
 	files := s.req.Pipeline
+	told := files != nil
 	if files == nil {
 		files, err = r.pipelineFiles(ctx, s, s.branch())
 		if err != nil {
@@ -1089,7 +1092,7 @@ func (r *Runner) pipelineGates(ctx context.Context, s *run) (gates []string, kno
 	if err != nil {
 		return nil, false, fmt.Errorf("%s: .circleci: %w", s.slug(), err)
 	}
-	return gates, true, nil
+	return gates, told || !s.baseline.KeepRequiredChecks, nil
 }
 
 // pipelineFiles reads the generated pipeline's files at ref; nil when it
@@ -1180,7 +1183,7 @@ func requiredChecks(b Baseline, declared, current, reported []string, reportedKn
 		switch {
 		case isIgnored(name):
 		case pipelineKnown && stale[name]:
-		case reportedKnown && !isReported[name]:
+		case reportedKnown && !isReported[name] && !b.KeepRequiredChecks:
 		default:
 			add(name)
 		}
