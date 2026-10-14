@@ -68,6 +68,13 @@ type Baseline struct {
 	// workflows, the dependency-graph submission — contexts that report
 	// on the default branch but cannot report on every pull request.
 	IgnoredChecks []string `json:"ignoredChecks,omitempty"`
+	// KeepRequiredChecks keeps every currently required context the run was
+	// not told to remove: only an IgnoredChecks match, or a CircleCI job
+	// missing from the pipeline the request hands in, stops being required.
+	// Contexts that have not reported, and the CircleCI contexts of a
+	// pipeline read from the repository, stay. Set by `devctl repo checks`,
+	// which edits a team's protection on its caller's word.
+	KeepRequiredChecks bool `json:"keepRequiredChecks,omitempty"`
 
 	// Webhooks every repository carries; none by default (CircleCI installs
 	// its own on follow).

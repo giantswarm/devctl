@@ -16,16 +16,18 @@ const (
 	longDescription = `Manage the required status checks on the default branch's protection rule
 with the protection step of the repository set-up engine.
 
-The rule is reported-only: a context is required once it has reported on the
-default branch's latest non-tag commit or on the head of a recently merged
-pull request, and a required context nothing reports any more is removed —
-a job that never ran (no CI project, first run after it was added) cannot
-become a required check nothing can satisfy, and a renamed or dropped job
-cannot leave one behind. The release workflows, the dependency-graph
-submission and the path-filtered workflows are never required. The
-generated CircleCI pipeline's branch-side jobs are candidates: read from
-the repository's .circleci, or from --circleci-dir when the pipeline was
-just generated and is not pushed yet.
+A candidate is required once it has reported on the default branch's latest
+non-tag commit or on the head of a recently merged pull request: a job that
+never ran (no CI project, first run after it was added) cannot become a
+required check nothing can satisfy. The generated CircleCI pipeline's
+branch-side jobs are candidates: read from the repository's .circleci, or
+from --circleci-dir when the pipeline was just generated and is not pushed
+yet.
+
+The command removes nothing it was not told to: a context already required
+stays, whether it reported or not and whatever system reports it, unless
+--remove names it or, with --circleci-dir, it is a 'ci/circleci:' context
+whose job that pipeline does not have.
 
 --checks names are required whatever reported, --checks-if-reported names
 once they have reported, --remove names never. Without --update the drift
