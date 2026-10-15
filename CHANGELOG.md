@@ -14,8 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   secrets `RELEASE_BOT_CLIENT_ID` and `RELEASE_BOT_PRIVATE_KEY` to the reusable workflows in giantswarm/github-workflows
   instead of `TAYLORBOT_GITHUB_ACTION`; those workflows accept them since giantswarm/github-workflows#319, so this
   release must not ship before that PR is merged. `helm-docs-regen` mints a token of the App to push the regenerated files
-  and commits as `giantswarm-release[bot]`. Dependabot-triggered runs only see Dependabot secrets: for `dependabot/` branches
-  the two secrets have to exist as Dependabot secrets too, otherwise the regen job is skipped with a warning as before.
+  and commits as `giantswarm-release[bot]`.
 - `gen renovate`: `gitIgnoredAuthors` also lists `giantswarm-release[bot]`, so Renovate keeps treating a branch the
   generated workflows pushed to as its own. taylorbot's `dev@giantswarm.io` stays for repositories whose workflows are
   not regenerated yet.
