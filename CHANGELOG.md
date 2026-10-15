@@ -23,6 +23,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `release wait` on a repository whose CI is GitHub Actions only reads the check runs of the tag's commit as the tag's
+  pipeline: `ciModel` is `actions` instead of `none`, `pipeline` lists them with their conclusions, the verdict is not
+  `available` until all succeeded and a failed one is `ci_failed`. A repository with CircleCI is unchanged.
 - `pr wait` no longer reads red on a failed check of an earlier run of a workflow (a reopened pull request, a rerun) while
   the workflow's newest run for the head is still open: it keeps waiting and exits on the newer run's outcome.
 - `gen makefile`: `helm-test`, which the generated `chart-tests` workflow runs, skips a chart under a placeholder

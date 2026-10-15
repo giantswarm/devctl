@@ -849,6 +849,53 @@ func TestWaitReleaseAssetsOnlyWithoutCircleCI(t *testing.T) {
 	}
 }
 
+// checkRunsBody is the check runs of the tag's commit, as GitHub lists them.
+func checkRunsBody(runs ...map[string]any) sequence.Response {
+	return sequence.Response{Body: map[string]any{"total_count": len(runs), "check_runs": runs}}
+}
+
+func checkRunJSON(id int, name, status string, conclusion any) map[string]any {
+	return map[string]any{"id": id, "name": name, "status": status, "conclusion": conclusion, "html_url": fmt.Sprintf("https://example/runs/%d", id), "app": map[string]any{"slug": "github-actions"}}
+}
+
+func actionsOnlyGitHub() sequence.Routes {
+	github := baseGitHub([]string{"main.go"}, []string{"zz_generated.auto_release.yaml", "ci.yaml"}, nil)
+	github[repoRoute("/releases/tags/"+testTag)] = []sequence.Response{{Body: map[string]any{
+		"tag_name": testTag, "draft": false, "html_url": "https://example/release", "assets": []map[string]any{},
+	}}}
+	github[repoRoute("/actions/runs")] = []sequence.Response{{Body: map[string]any{"total_count": 0, "workflow_runs": []map[string]any{}}}}
+	return github
+}
+
+func TestWaitActionsOnlyWaitsForTheTagsCheckRuns(t *testing.T) {
+	github := actionsOnlyGitHub()
+	check := repoRoute("/commits/" + testSHA + "/check-runs")
+	github[check] = []sequence.Response{
+		checkRunsBody(checkRunJSON(1, "validate", "completed", "success"), checkRunJSON(2, "deploy", "in_progress", nil)),
+		checkRunsBody(checkRunJSON(1, "validate", "completed", "success"), checkRunJSON(2, "deploy", "completed", "success")),
+	}
+	result, err := run(t, fixture{github: github})
+	assertExit(t, err, agentcli.ExitOK, "")
+	if result.CIModel != CIModelActions {
+		t.Errorf("ciModel = %q, want %q", result.CIModel, CIModelActions)
+	}
+	if result.Pipeline == nil || len(result.Pipeline.Workflows) != 2 || result.Pipeline.Workflows[0].Name != "deploy" || result.Pipeline.Workflows[0].Conclusion != "success" {
+		t.Errorf("pipeline: %+v", result.Pipeline)
+	}
+}
+
+func TestWaitActionsOnlyFailedCheckRunIsCIFailure(t *testing.T) {
+	github := actionsOnlyGitHub()
+	github[repoRoute("/commits/"+testSHA+"/check-runs")] = []sequence.Response{
+		checkRunsBody(checkRunJSON(1, "validate", "completed", "success"), checkRunJSON(2, "deploy", "completed", "failure")),
+	}
+	result, err := run(t, fixture{github: github})
+	assertExit(t, err, agentcli.ExitRed, "deploy")
+	if result.CIModel != CIModelActions || result.Pipeline == nil || len(result.Pipeline.FailedJobs) != 1 || result.Pipeline.FailedJobs[0] != "deploy" {
+		t.Errorf("result: %s %+v", result.CIModel, result.Pipeline)
+	}
+}
+
 func TestWaitActionsRunFailedIsCIFailure(t *testing.T) {
 	github := baseGitHub([]string{"main.go"}, []string{"zz_generated.auto_release.yaml"}, nil)
 	github[repoRoute("/actions/runs")] = []sequence.Response{{Body: map[string]any{"total_count": 1, "workflow_runs": []map[string]any{

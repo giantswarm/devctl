@@ -66,8 +66,10 @@ artifacts.
 
 ### The CI model and the artifact names
 
-`ciModel` is `generated`, `hand-written` or `none`, from the files at the tag: no
-`.circleci/config.yml` is `none`; a `.circleci/workflows.yml` beside it is the signature of
+`ciModel` is `generated`, `hand-written`, `actions` or `none`, from the files at the tag: no
+`.circleci/config.yml` is `none`, or `actions` when the tag's commit carries check runs (a repository whose CI is GitHub
+Actions only: the check runs are the tag's pipeline, reported under `pipeline`, and the verdict is `available` only once
+every one finished successfully, `ci_failed` when one failed); a `.circleci/workflows.yml` beside it is the signature of
 `devctl gen circleci` and means `generated`; a `config.yml` alone is `hand-written`. The entry's
 `gen.ci.generate` is cross-checked against it (`true` without the generated files, or an explicit
 `false` with them, is exit 7).
@@ -263,9 +265,9 @@ stderr.
 | `command`, `schemaVersion`, `exitCode`, `verdict`, `reason`, `warnings`, `startedAt`, `finishedAt` | The envelope every agent-facing command prints. `verdict` is `available`, `ci_failed`, `timeout`, `not_applicable`, `usage` or `auth_required`. `warnings` carries the CircleCI token's seven-day expiry notice and a team-file declaration that disagrees with the tag's workflows about the release model. |
 | `repository`, `tag`, `sha` | What was waited for. `tag` is empty when it never appeared; `sha` is the tag's commit (with `--pr` the merge commit). |
 | `releaseModel` | `auto-release` or `legacy`. |
-| `ciModel` | `generated`, `hand-written` or `none`. |
+| `ciModel` | `generated`, `hand-written`, `actions` or `none`. |
 | `artifacts[]` | `kind` (`image`, `chart`, `release-asset`), `reference` (the pullable reference, or the asset's download URL), `digest` (empty while missing), `state` (`available`, `missing`). Empty until the artifacts are known (hand-written CI before its pipeline exists). |
-| `pipeline` | The tag pipeline on CircleCI: `id`, `number`, `url`, `workflows[{name, status}]` (newest run per name), `failedJobs[]`, `unfinished[]` (the workflows not finished, `name (status)`, with `jobs not visible yet` when CircleCI does not list them yet; what a timeout was waiting for, empty at exit 0). `null` for a repository without CircleCI, or while the pipeline does not exist. |
+| `pipeline` | The tag pipeline on CircleCI: `id`, `number`, `url`, `workflows[{name, status, conclusion}]` (newest run per name; for `ciModel` `actions` one entry per check run of the tag's commit, with its `conclusion`, `id`, `number` empty and `url` the commit's checks page), `failedJobs[]`, `unfinished[]` (the workflows not finished, `name (status)`, with `jobs not visible yet` when CircleCI does not list them yet; what a timeout was waiting for, empty at exit 0). `null` for a repository without CircleCI and without check runs on the tag, or while the CircleCI pipeline does not exist. |
 | `actions[]` | The Actions runs the tag triggered, for a repository without CircleCI: `name`, `runId`, `status`, `conclusion`, `url`. |
 | `failedJobs[]` | Present at exit 1 with `--failed-log`, as in [`pr wait`](pr-wait.md#the-document): each failed job with `name` (`<workflow>/<job>` on CircleCI, `<run>/<job>` on Actions), `source` (`actions` or `circleci`), `url`, and `logTail`, the last `--failed-log-lines` lines of its log, or `logError` when the log could not be read. A failed workflow or run whose jobs cannot be listed is named alone with its `logError`. Absent without the flag. |
 

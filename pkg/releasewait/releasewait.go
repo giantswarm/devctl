@@ -45,6 +45,7 @@ import (
 	"time"
 
 	"github.com/Masterminds/semver/v3"
+	"github.com/google/go-github/v92/github"
 
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
 	"github.com/giantswarm/devctl/v8/pkg/circleciclient"
@@ -75,6 +76,7 @@ type GitHub interface {
 	GetReleaseByTag(ctx context.Context, owner, repo, tag string) (githubclient.Release, error)
 	ListReleases(ctx context.Context, owner, repo string) ([]githubclient.Release, error)
 	Reachable(ctx context.Context, owner, repo, ref, branch string) (bool, error)
+	CheckRunsForRef(ctx context.Context, owner, repo, ref string) ([]*github.CheckRun, error)
 	ListWorkflowRunsForSHA(ctx context.Context, owner, repo, sha string) ([]githubclient.WorkflowRun, error)
 	ListCommitStatuses(ctx context.Context, owner, repo, sha string) ([]githubclient.CommitStatus, error)
 	ListWorkflowRunJobs(ctx context.Context, owner, repo string, runID int64) ([]githubclient.WorkflowJob, error)
@@ -800,7 +802,7 @@ func (w *Waiter) awaitTagForCommit(ctx context.Context, sha string, content *Tag
 		if err != nil {
 			return "", "", err
 		}
-		if run != nil && run.Status == "completed" {
+		if run != nil && run.Status == statusCompleted {
 			// The run tags before it finishes, so a tag it made is in a
 			// listing read after it finished.
 			tag, err := w.config.GitHub.FindTagForCommit(ctx, owner, repo, sha)

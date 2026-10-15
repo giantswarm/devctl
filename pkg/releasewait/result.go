@@ -26,8 +26,12 @@ const (
 	// CIModelHandWritten: the repository maintains its CircleCI
 	// configuration; its push jobs name the artifacts.
 	CIModelHandWritten = "hand-written"
-	// CIModelNone: no CircleCI; the tag is judged by its Actions runs.
+	// CIModelNone: no CircleCI and no check runs on the tag's commit; the tag
+	// is judged by its Actions runs.
 	CIModelNone = "none"
+	// CIModelActions: no CircleCI, and the tag's commit carries check runs
+	// (GitHub Actions jobs): they are the tag's pipeline.
+	CIModelActions = "actions"
 )
 
 // The artifact kinds.
@@ -65,7 +69,9 @@ type Artifact struct {
 // Private says whether the artifact lives in the private registry.
 func (a Artifact) Private() bool { return a.private }
 
-// Pipeline is the tag pipeline on CircleCI as the document reports it.
+// Pipeline is the tag pipeline as the document reports it: on CircleCI, or
+// for ciModel actions the check runs of the tag's commit, one workflow entry
+// each (no id, number or url of a pipeline).
 type Pipeline struct {
 	ID     string `json:"id"`
 	Number int64  `json:"number"`
@@ -87,6 +93,9 @@ type Pipeline struct {
 type PipelineWorkflow struct {
 	Name   string `json:"name"`
 	Status string `json:"status"`
+	// Conclusion is the conclusion of a check run, once it finished; absent
+	// for a CircleCI workflow.
+	Conclusion string `json:"conclusion,omitempty"`
 }
 
 // ActionsRun is one GitHub Actions run the tag triggered, for a repository
@@ -115,7 +124,8 @@ type Result struct {
 	// Artifacts are the expected images and charts, or the release assets
 	// of a repository that ships neither.
 	Artifacts []Artifact `json:"artifacts"`
-	// Pipeline is the tag pipeline; null for a repository without CircleCI.
+	// Pipeline is the tag pipeline, or the check runs of an Actions-only
+	// repository's tag; null for a repository without CircleCI and check runs.
 	Pipeline *Pipeline `json:"pipeline"`
 	// Actions are the runs the tag triggered; empty with CircleCI.
 	Actions []ActionsRun `json:"actions"`

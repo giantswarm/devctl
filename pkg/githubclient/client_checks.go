@@ -71,7 +71,7 @@ func (c *Client) IsPullRequest(ctx context.Context, owner, repo string, number i
 // CheckRunsForRef returns the check runs of ref as the merge box lists them:
 // the latest attempt of each (GitHub's filter=latest: a rerun job replaces its
 // earlier attempt; runs of one name in different check suites are all
-// listed), every page.
+// listed), every page. A ref GitHub does not know is notFoundError.
 func (c *Client) CheckRunsForRef(ctx context.Context, owner, repo, ref string) ([]*github.CheckRun, error) {
 	filter := "latest"
 	opts := &github.ListCheckRunsOptions{
@@ -81,6 +81,9 @@ func (c *Client) CheckRunsForRef(ctx context.Context, owner, repo, ref string) (
 	var runs []*github.CheckRun
 	for page := 0; page < maxPages; page++ {
 		result, resp, err := c.ghClient.Checks.ListCheckRunsForRef(ctx, owner, repo, ref, opts)
+		if isGithub404(err) {
+			return nil, microerror.Maskf(notFoundError, "check runs of %s/%s@%s", owner, repo, ref)
+		}
 		if err != nil {
 			return nil, microerror.Mask(err)
 		}
