@@ -105,8 +105,12 @@ found is exit 7. Environment variables do not override the keychain here, and no
 it: an outdated devctl still hands over the token, so a devctl release never stops an agent's `gh`.
 
 **The `gh` link.** devctl started under the name `gh` (a link to it) is `devctl auth exec -- gh`: it runs
-the next `gh` on `PATH` that is not devctl itself. An agent environment puts such a link in a directory
-first on the agent's `PATH`:
+the next `gh` on `PATH` past its own entry, so another `gh` shim ahead of the link (a test harness's or
+sandbox's, which passed the call on to the link) is never run a second time. Without a `gh` past the link
+it runs the first `gh` on `PATH` that is not devctl itself. A program that hands every call back to the link
+(a shim past it running the first `gh` on `PATH`) loops; devctl refuses after four programs in one chain of
+calls (`DEVCTL_AUTH_EXEC_CHAIN`), exit 7, naming each program it ran. An agent environment puts the link in
+a directory first on the agent's `PATH`:
 
 ```nohighlight
 mkdir -p ~/.local/share/devctl/agent-bin
@@ -296,7 +300,7 @@ Every agent-facing command prints one JSON document on stdout when it finishes a
 | 1 | `red`, `ci_failed` | a check is red or the tag's CI failed |
 | 2 | `timeout` | the deadline passed; the document names what was unfinished |
 | 3 | `not_applicable` | draft, closed, conflicting, behind a strict base, version not resolvable |
-| 4 | `required_missing`, `approval_required` | a required context never reported; Actions runs await a member's approval |
+| 4 | `required_missing`, `approval_required`, `no_checks` | a required context never reported; Actions runs await a member's approval; the `pull_request` workflows never started |
 | 5 | `refused` | another author, an opt-out |
 | 7 | `usage` | wrong usage, a newer devctl released (the reason names `devctl version update`), or a tooling failure |
 | 8 | `auth_required` | no usable token; the reason names `devctl auth login` |

@@ -71,7 +71,7 @@ func (c *Client) IsPullRequest(ctx context.Context, owner, repo string, number i
 // CheckRunsForRef returns the check runs of ref as the merge box lists them:
 // the latest attempt of each (GitHub's filter=latest: a rerun job replaces its
 // earlier attempt; runs of one name in different check suites are all
-// listed), every page.
+// listed), every page. A ref GitHub does not know is notFoundError.
 func (c *Client) CheckRunsForRef(ctx context.Context, owner, repo, ref string) ([]*github.CheckRun, error) {
 	filter := "latest"
 	opts := &github.ListCheckRunsOptions{
@@ -81,6 +81,9 @@ func (c *Client) CheckRunsForRef(ctx context.Context, owner, repo, ref string) (
 	var runs []*github.CheckRun
 	for page := 0; page < maxPages; page++ {
 		result, resp, err := c.ghClient.Checks.ListCheckRunsForRef(ctx, owner, repo, ref, opts)
+		if isGithub404(err) {
+			return nil, microerror.Maskf(notFoundError, "check runs of %s/%s@%s", owner, repo, ref)
+		}
 		if err != nil {
 			return nil, microerror.Mask(err)
 		}
@@ -225,4 +228,38 @@ func (c *Client) JobLog(ctx context.Context, owner, repo string, jobID int64) (i
 		return nil, microerror.Maskf(executionError, "job %d log: HTTP %d", jobID, resp.StatusCode)
 	}
 	return resp.Body, nil
+}
+
+// CommitMessage returns the message of a commit, read through the git data
+// API (no file list).
+func (c *Client) CommitMessage(ctx context.Context, owner, repo, sha string) (string, error) {
+	commit, _, err := c.ghClient.Git.GetCommit(ctx, owner, repo, sha)
+	if err != nil {
+		return "", microerror.Mask(err)
+	}
+	return commit.GetMessage(), nil
+}
+
+// InactiveWorkflowPaths returns the paths of the repository's GitHub Actions
+// workflows that are not active (disabled manually, for inactivity or by a
+// fork), every page: no event starts a run of them.
+func (c *Client) InactiveWorkflowPaths(ctx context.Context, owner, repo string) (map[string]bool, error) {
+	opts := &github.ListOptions{PerPage: 100}
+	inactive := map[string]bool{}
+	for page := 0; page < maxPages; page++ {
+		result, resp, err := c.ghClient.Actions.ListWorkflows(ctx, owner, repo, opts)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+		for _, workflow := range result.Workflows {
+			if workflow.GetState() != "active" {
+				inactive[workflow.GetPath()] = true
+			}
+		}
+		if resp.NextPage == 0 {
+			break
+		}
+		opts.Page = resp.NextPage
+	}
+	return inactive, nil
 }

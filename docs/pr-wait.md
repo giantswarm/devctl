@@ -12,7 +12,7 @@ writes one line per poll to stderr for a person watching.
 `--failed-log` answers why a red wait is red without a second tool: on a red verdict it reads the
 log of each failed job once, a GitHub Actions job (`GET /repos/{owner}/{repo}/actions/jobs/{id}/logs`)
 and a CircleCI job (the output of its failed steps), and keeps the last `--failed-log-lines` lines
-(default 50), without terminal escapes. An Actions log ends at its last `##[error]` line, the failed
+(default 50), without terminal control sequences or control characters but tab. An Actions log ends at its last `##[error]` line, the failed
 step's end, so the post-job cleanup after it does not crowd out why the job failed. The tails go to stderr, one block per job headed
 `failed job <name> (<url>):`, and into the document under `failedJobs[]`. A green, pending or
 timed-out wait reads no log and costs no extra request. A log that cannot be read (expired, not
@@ -40,7 +40,9 @@ system that will produce it:
    GitHub keeps every run of a check; a workflow that ran twice for the same head has a stale
    first run next to the current one. A pull request retitled after a failed title check has a
    failed run and a passed run of the same workflow, and only the newest workflow run counts, as
-   in the merge box. A completed run whose conclusion is `action_required` (a deployment waiting for a
+   in the merge box. A failed check of an earlier run of a workflow (a reopened pull request, a rerun) does
+   not count while the workflow's newest run is still open: the wait goes on and exits on that run's outcome.
+   A completed run whose conclusion is `action_required` (a deployment waiting for a
    reviewer) is unfinished, not red. `neutral` and `skipped` pass.
 2. **Every CircleCI workflow of the head revision is `success`**, read from CircleCI's API: the
    newest pipeline for the revision, the newest run of each workflow name in it. A CircleCI job
@@ -80,8 +82,18 @@ Any failure anywhere is red at once (exit 1): a check run concluded `failure`, `
 `cancelled`, `startup_failure` or `stale`, a status `failure` or `error`, a CircleCI workflow
 `failed`, `error`, `failing`, `canceled` or `unauthorized`, an `errored` pipeline.
 
-A head that reports nothing at all is green: a repository without CI merges on review alone. The
-required contexts of a protected base are what make such a head wait.
+A head that reports nothing at all (no check run, no status, no Actions run, no CircleCI pipeline) is
+green only when nothing is going to report: a repository without CI merges on review alone, and the
+required contexts of a protected base are what make such a head wait. When the head's
+`.github/workflows` hold an active workflow that every push to a pull request against the base runs
+(`on: pull_request` without `paths` or `paths-ignore`, with `types` that include `opened` and
+`synchronize`, and `branches` or `branches-ignore` the base passes), its runs are due: the head
+waits for them (`actions runs of <workflow> (none registered)`). Two minutes after the pull
+request's last update, which a push to its head is, with still nothing reported, GitHub did not
+deliver the `pull_request` event and no wait makes it arrive: exit 4, `no_checks`, its `reason`
+naming the workflows and the retrigger, closing and reopening the pull request. A head commit whose
+message skips CI (`[skip ci]`, `[ci skip]`, `[no ci]`, `[skip actions]`, `[actions skip]`, a
+`skip-checks: true` trailer) expects no run and stays green.
 
 ## What ends the wait before it starts
 
@@ -196,7 +208,7 @@ reset`). Any other `403` is an answer: a permission the token lacks.
 
 | Field | Meaning |
 |---|---|
-| `command`, `schemaVersion`, `exitCode`, `verdict`, `reason`, `warnings`, `startedAt`, `finishedAt` | The envelope every agent-facing command prints. `verdict` is `green`, `red`, `timeout`, `not_applicable`, `required_missing`, `approval_required`, `auth_required` or `usage`; `reason` is one sentence for anything but green; `warnings` carries the CircleCI token's expiry notice, a head change, a CircleCI project missing or never built, each retried read and each unanswered poll (Polling). |
+| `command`, `schemaVersion`, `exitCode`, `verdict`, `reason`, `warnings`, `startedAt`, `finishedAt` | The envelope every agent-facing command prints. `verdict` is `green`, `red`, `timeout`, `not_applicable`, `required_missing`, `approval_required`, `no_checks`, `auth_required` or `usage`; `reason` is one sentence for anything but green; `warnings` carries the CircleCI token's expiry notice, a head change, a CircleCI project missing or never built, each retried read and each unanswered poll (Polling). |
 | `repository`, `number` | The pull request as given. |
 | `identity` | Who read GitHub: `app`, the devctl App login (giantswarm), or `gh`, your own `gh` login (every other owner); empty when the run ended before choosing. |
 | `headSha`, `baseRef` | The head commit judged and the base branch whose protection was read. |
@@ -204,7 +216,7 @@ reset`). Any other `403` is an answer: a permission the token lacks.
 | `circleci` | Present only when CircleCI was consulted: the newest pipeline of the head revision and its workflows, the newest run per name, sorted by name. |
 | `actions[]` | The head's GitHub Actions runs, the latest per workflow name, sorted by name. |
 | `failedJobs[]` | Present at exit 1 with `--failed-log`: each failed job with `name` (an Actions check run's name, with `[<workflow>, check run <id>]` when several runs share it; `<workflow>/<job>` on CircleCI), `source` (`actions` or `circleci`), `url`, and `logTail`, the last `--failed-log-lines` lines of its log, or `logError` when the log could not be read. A check run of another app, a commit status and a CircleCI workflow without a failed job are named in `reason` only. |
-| `unfinished[]` | Present at exit 2 and 4: what the head was still waiting for, one line each (`check go-test (in_progress)`, `circleci workflow build (running)`, `actions run CI (awaiting approval)`, `required context lint (absent)`). |
+| `unfinished[]` | Present at exit 2 and 4: what the head was still waiting for, one line each (`check go-test (in_progress)`, `circleci workflow build (running)`, `actions run CI (awaiting approval)`, `required context lint (absent)`, `actions runs of .github/workflows/ci.yaml (none registered)`). |
 
 ## Exit codes
 
@@ -216,6 +228,7 @@ reset`). Any other `403` is an answer: a permission the token lacks.
 | 3 | `not_applicable` | Draft, closed, merged, conflicting or behind a strict base; `reason` says which. |
 | 4 | `required_missing` | Every check, run and workflow of the head has finished and a required status context never reported; `reason` names it. Known at the poll that saw it, before the timeout; with anything still pending the outcome is 2, not 4. |
 | 4 | `approval_required` | Nothing is red and the head waits only for GitHub Actions runs awaiting a repository member's approval (and the required contexts they may report); `reason` names each run with its URL. Known at the poll that saw it; approve the runs and wait again. |
+| 4 | `no_checks` | The head has no check run, status or Actions run two minutes after the pull request's last update, and the repository has workflows that run on `pull_request`: GitHub did not deliver the event. `reason` names the workflows; close and reopen the pull request to trigger them, and wait again. |
 | 7 | `usage` | Wrong arguments or flags, a newer devctl released (the reason names `devctl version update`), or a tooling failure: GitHub or CircleCI answered with an error other than a 5xx. A read that fails every try is no tooling failure: the wait polls again (Polling). |
 | 8 | `auth_required` | No usable token; `reason` names the `devctl auth login` to run. |
 

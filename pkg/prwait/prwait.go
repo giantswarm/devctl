@@ -69,6 +69,13 @@ type Config struct {
 	// each failed job once and keep that many of its last lines in
 	// Result.FailedJobs. A green or pending head reads no log.
 	FailedLogLines int
+	// AcceptRed are check names whose failure does not make the verdict
+	// red: a failed check run, status or CircleCI workflow of one of these
+	// names is recorded in Result.AcceptedRed with a warning instead. A
+	// name the base requires is never accepted, and a green head that
+	// carries no check of a name is exit 3. Refusing a required name or a
+	// security scan before the wait is the caller's (pkg/prmerge).
+	AcceptRed []string
 }
 
 // Waiter runs waits.
@@ -82,6 +89,8 @@ type Waiter struct {
 	timeout  time.Duration
 	// failedLogLines is Config.FailedLogLines.
 	failedLogLines int
+	// acceptRed is Config.AcceptRed as a set; nil without it.
+	acceptRed map[string]bool
 }
 
 // New returns a Waiter for config.
@@ -95,6 +104,13 @@ func New(config Config) (*Waiter, error) {
 	if config.Progress == nil {
 		config.Progress = agentcli.NewProgress(nil, false)
 	}
+	var acceptRed map[string]bool
+	for _, name := range config.AcceptRed {
+		if acceptRed == nil {
+			acceptRed = map[string]bool{}
+		}
+		acceptRed[name] = true
+	}
 	return &Waiter{
 		github:   config.GitHub,
 		rate:     config.Rate,
@@ -105,6 +121,7 @@ func New(config Config) (*Waiter, error) {
 		timeout:  config.Timeout,
 		// The tail is read only after a red verdict.
 		failedLogLines: config.FailedLogLines,
+		acceptRed:      acceptRed,
 	}, nil
 }
 
@@ -129,6 +146,9 @@ type Result struct {
 	// FailedJobs are the failed jobs of a red head with the tails of their
 	// logs, read with Config.FailedLogLines.
 	FailedJobs []FailedJob `json:"failedJobs,omitempty"`
+	// AcceptedRed are the failed checks the caller accepted with
+	// Config.AcceptRed, each with its run's URL.
+	AcceptedRed []AcceptedRed `json:"acceptedRed,omitempty"`
 	// Warnings are for the envelope: a head that changed under the wait, a
 	// template repository, a CircleCI project that does not exist.
 	Warnings []string `json:"-"`
@@ -145,6 +165,10 @@ type head struct {
 	circleci *circleciclient.Client
 	branch   string
 	project  string
+	// workflows are the pull_request workflows an empty head expects runs
+	// of, once workflowsRead.
+	workflows     []string
+	workflowsRead bool
 }
 
 // Wait blocks until owner/repo#number is green (nil), red or otherwise
@@ -201,6 +225,14 @@ func (w *Waiter) Wait(ctx context.Context, owner, repo string, number int) (*Res
 		last, unanswered = e, ""
 		switch {
 		case e.green():
+			if unseen := e.unseen(w.acceptRed); len(unseen) > 0 {
+				w.progress.Printf("poll %d: green, and no check of the head is named %s", poll, strings.Join(unseen, ", "))
+				return result, agentcli.NewExitError(agentcli.ExitNotApplicable, agentcli.VerdictNotApplicable,
+					"--accept-red names %s, and no check, status or CircleCI workflow of the head %s carries that name", strings.Join(unseen, ", "), h.sha)
+			}
+			for _, a := range e.acceptedRed {
+				result.Warnings = append(result.Warnings, fmt.Sprintf("accepted red: %s %s concluded %s (%s), named by --accept-red", a.Source, a.Name, a.Conclusion, a.URL))
+			}
 			w.progress.Printf("poll %d: green", poll)
 			return result, nil
 		case len(e.red) > 0:
@@ -216,6 +248,10 @@ func (w *Waiter) Wait(ctx context.Context, owner, repo string, number int) (*Res
 			w.progress.Printf("poll %d: waiting for approval: %s", poll, strings.Join(e.unfinished, ", "))
 			result.Unfinished = e.unfinished
 			return result, agentcli.NewExitError(agentcli.ExitRequiredMissing, agentcli.VerdictApprovalRequired, "%s", e.approvalReason())
+		case w.noChecks(e):
+			w.progress.Printf("poll %d: no checks: %s", poll, strings.Join(e.unfinished, ", "))
+			result.Unfinished = e.unfinished
+			return result, noChecksError(h.sha, e.expectedRuns)
 		}
 		interval := w.interval()
 		w.progress.Printf("poll %d: waiting for %s; next poll in %s", poll, strings.Join(e.unfinished, ", "), interval)
@@ -278,11 +314,11 @@ func (w *Waiter) poll(ctx context.Context, owner, repo string, number int, h *he
 		result.Warnings = append(result.Warnings, fmt.Sprintf("the head changed from %s to %s during the wait", h.sha, sha))
 	}
 	if h.sha != sha {
-		h.sha, h.decided, h.circleci = sha, false, nil
+		h.sha, h.decided, h.circleci, h.workflowsRead = sha, false, nil, false
 		result.HeadSHA = sha
 	}
 	if h.baseRef != baseRef || h.required == nil {
-		h.baseRef = baseRef
+		h.baseRef, h.workflowsRead = baseRef, false
 		result.BaseRef = baseRef
 		required, err := w.github.RequiredStatusContexts(ctx, owner, repo, baseRef)
 		if err != nil {
@@ -297,7 +333,7 @@ func (w *Waiter) poll(ctx context.Context, owner, repo string, number int, h *he
 		}
 	}
 
-	s := snapshot{headSHA: sha, required: h.required}
+	s := snapshot{headSHA: sha, required: h.required, accepted: w.acceptRed}
 	if s.checkRuns, err = w.github.CheckRunsForRef(ctx, owner, repo, sha); err != nil {
 		return nil, err
 	}
@@ -314,7 +350,10 @@ func (w *Waiter) poll(ctx context.Context, owner, repo string, number int, h *he
 	}
 
 	e := evaluate(s)
-	result.Checks, result.Actions, result.CircleCI = e.checks, e.actions, e.circleci
+	if err := w.expectPullRequestRuns(ctx, owner, repo, h, pr.GetUpdatedAt().Time, e); err != nil {
+		return nil, err
+	}
+	result.Checks, result.Actions, result.CircleCI, result.AcceptedRed = e.checks, e.actions, e.circleci, e.acceptedRed
 	return e, nil
 }
 

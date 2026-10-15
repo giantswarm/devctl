@@ -9,6 +9,134 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `pr wait` (and the wait of `pr merge`): a head with no check run, status or Actions run, in a repository whose
+  active workflows run on every `pull_request` push against the base, waits for their runs, and two minutes after
+  the pull request's last update ends with exit 4, verdict `no_checks`, naming the workflows and the
+  close-and-reopen retrigger. GitHub had not delivered the event, and the wait answered `green` on the empty set.
+  A repository without such a workflow, and a head commit whose message skips CI, stay green as before.
+
+- `release wait --failed-log [--failed-log-lines 50]`, and `rollout wait`, which runs the release wait first: when the
+  tag's CI failed, the document carries `failedJobs[]` with each failed job's `name`, `source`, `url` and `logTail`
+  (or `logError`), and stderr the tails, read with `pr wait --failed-log`'s readers: the failed jobs of the tag
+  pipeline's failed CircleCI workflows, or of the tag's failed Actions runs. Without the flag the document is
+  unchanged.
+- `rollout wait --kubeconfig <file>` reads the kube context and the installation from that one file instead of
+  `KUBECONFIG` or `~/.kube/config`, so a session can prepare a private one.
+- `rollout wait` on a kubeconfig without the installation's Teleport context runs `tsh kube login <installation>` into
+  a private temporary kubeconfig when `tsh` is logged in, reads through it and removes it; the machine's kubeconfig
+  is never written. A `tsh` that is not logged in is exit 8 (`tsh login`). The missing context was exit 7, and a
+  session ran `tsh kube login` into the shared kubeconfig itself.
+
+### Fixed
+
+- Renovate bumps the tool versions pinned in the generator's Makefile templates. A custom manager reads the standard
+  `# renovate:` annotation in `pkg/gen/input/**/*.mk.template`, which no other manager matched, so
+  `HELM_UNITTEST_VERSION` in `Makefile.gen.app.mk.template` sat unbumped since #2570.
+- `gen workflows`: `sync_from_upstream.yaml` sets `permissions: {}` at the workflow level, and `auto_release.yaml`
+  grants its permissions on the `tag` job instead of the workflow, so no job inherits more than it is given.
+- The updater imports the Giant Swarm go-selfupdate line, `github.com/giantswarm/go-selfupdate` v1.6.3, with
+  `github.com/giantswarm/selfupdate-cosign` v0.3.4: upstream `creativeprojects/go-selfupdate` no longer compiles next
+  to selfupdate-cosign v0.3.4, and the binary no longer carries `golang.org/x/crypto/openpgp` (GO-2026-5932).
+- `gen circleci`: the generated pipelines pin architect orb 10.13.6, whose `cosign-sign-verify` no longer leaves an
+  image or chart unsigned when Rekor answers "an equivalent entry already exists": it checks the registry for the
+  signature and signs again when none is there, so the strict `cosign verify` after it passes.
+- The generated `install-helm-unittest` target passes `--verify=false` when `helm plugin install` knows the flag (helm v4,
+  which refuses the plugin's unverifiable source otherwise) and installs as before with helm v3, so `make helm-test`
+  runs under both.
+- `release wait` on a repository whose CI is GitHub Actions only reads the check runs of the tag's commit as the tag's
+  pipeline: `ciModel` is `actions` instead of `none`, `pipeline` lists them with their conclusions, the verdict is not
+  `available` until all succeeded and a failed one is `ci_failed`. A repository with CircleCI is unchanged.
+- `pr wait` no longer reads red on a failed check of an earlier run of a workflow (a reopened pull request, a rerun) while
+  the workflow's newest run for the head is still open: it keeps waiting and exits on the newer run's outcome.
+- `gen makefile`: `helm-test`, which the generated `chart-tests` workflow runs, skips a chart under a placeholder
+  directory such as `helm/{MCP-NAME}`. A template repository's chart renders only in a repository created from it, so
+  its suites failed the job on every pull request of the template; the rendered copy runs them.
+- `release wait --pr`, `rollout wait --pr` and the release wait of `pr merge` find the release of a pull request merged
+  into a release branch: every tag is read when the newest do not include the merge commit, and when the merge commit's
+  auto-release run tagged nothing the first tag on the pull request's base branch after it carries the merge. A base
+  branch no later tag carries is `no_release`, the reason naming the branch.
+- `pr wait`, `pr merge`, `release wait` and `rollout wait` with `--failed-log` drop every terminal control sequence and
+  control character but tab from a failed job's log tail, on stderr and in `failedJobs[].logTail`: OSC (a clipboard
+  write, a hyperlink), DCS, SOS, PM and APC strings with their payload, every other ESC sequence, C0 and C1 controls
+  in 7-bit and 8-bit form, and the Unicode bidirectional controls. The job's `name`, `url` and `logError` are cleaned
+  the same way. Only CSI sequences were stripped from the tail, so a CI log could drive the reader's terminal.
+- `gen workflows`: the Auto Release step "Resolve the candidate to promote" retries its `commits/<rc>/status` read
+  four times with backoff (2s, 4s, 8s) on a failed, empty or truncated answer, and refuses the promotion only after the
+  last try, naming the request and the tries. A single transient `unexpected end of JSON input` failed a promote.
+- `rollout wait --helmrelease` judges a named HelmRelease of none of the release's charts (a component a meta chart
+  renders) by its own Ready condition at its current generation, no reconcile in flight, and its workloads. It was
+  judged by the meta chart's version, which its source excludes, so it read `not_following` and the wait reported
+  `rolled_out` while the component was still `Progressing` or `DependencyNotReady`.
+- `gen circleci`: the generated pipelines pin architect orb 10.13.3, whose `go-test` retries a transient
+  proxy.golang.org error in its "go.mod and go.sum are clean" step instead of failing the job.
+- `gen makefile`: `helm-test` carries no `check-env` prerequisite. The recipe sweeps `helm/` and never reads
+  `APPLICATION`, but `check-env` demanded it, so `make helm-test` failed with `APPLICATION is not defined` in every
+  chart-only repository -- the repositories the target exists for.
+- `repo checks` requires a repository's own CircleCI jobs: without a generated pipeline (`workflows.yml`,
+  `custom.yml`) or an open align-files pull request bringing one, the branch-side jobs of the hand-kept
+  `.circleci/config.yml` are candidates, required once they have reported; a hand-kept pipeline removes no
+  `ci/circleci:` context. A scheduled (`triggers:`) or conditional (`when:`, `unless:`) workflow and an approval job
+  are never candidates, in a `custom.yml` either, since they do not report on a pull request.
+- `repo checks` works on a repository protected by the ruleset `devctl: default branch` instead of skipping it as
+  unprotected: it writes the ruleset's `required_status_checks` rule alone, the other rules, the target, the
+  enforcement and the bypass actors sent back as they were read, so it needs no devctl App id.
+
+- `gen makefile`: `Makefile.gen.app.mk` runs `yq` (mikefarah's v4 only), `helm-docs` and `ct` from `PATH` when they are
+  installed and through `docker run` with their images otherwise, so `lint-chart`, `helm-docs` and `update-deps` work
+  without a container runtime.
+- `repo checks --update` removes no required context it was not told to remove: one already required stays whether it
+  reported or not and whatever system reports it, unless `--remove` names it or, with `--circleci-dir`, it is a
+  `ci/circleci:` context whose job that pipeline does not have. It used to drop every unreported context, the company's
+  ignored ones and the CircleCI contexts the repository's own pipeline lacked, which stripped teams' required checks.
+- `release create`: the `cluster-aks` changelog URL pointed at the `cluster-azure` repository, so release notes for a
+  `cluster-aks` bump were parsed from the wrong CHANGELOG.
+- `pr merge --update-branch`: a pull request that lands with a rebase merge (`--rebase`, or a fork line's default) has a
+  head behind its base rebased onto the base (GraphQL `updatePullRequestBranch` with `updateMethod: REBASE`) instead of
+  the base merged into it, so the rebase merge no longer carries a merge commit onto the base. Squash and merge keep
+  GitHub's REST update-branch. See docs/pr-merge.md.
+
+### Changed
+
+- `pr merge`: a fork line, a repository whose team-file entry lists the `fork` flavour in `gen.flavours`, lands with a
+  rebase merge by default, so each carried commit stays its own commit without the caller remembering `--rebase`;
+  the new `--squash` squashes there. Every other repository keeps the squash default. An explicit `--rebase` or
+  `--squash` is never replaced, a fork line that does not allow rebase merges is exit 3 naming `--squash`, and an
+  entry whose flavours do not decode keeps the squash default with a warning. See docs/pr-merge.md.
+
+### Added
+
+- `gen workflows`: app repositories get `zz_generated.chart_tests.yaml`, which runs `make helm-test` on a pull request
+  through `giantswarm/github-workflows`. CircleCI calls `make test` only through `architect/go-build`, so a chart-only
+  repository ran its `helm-unittest` suites nowhere. A Go repository now runs them twice, in CircleCI and here; each run
+  takes under a second.
+
+- `gen workflows` (`auto-release`): a stable promotion runs the repository-owned `.github/release-gate.custom.sh` on the
+  candidate's checkout with the version about to be tagged, before the tag and the GitHub release are created; a
+  non-zero exit cuts neither. A repository without the script has no gate. See docs/gen.md.
+- `release create`: support the `aks` provider — `--provider aks` now resolves the provider title (AKS) in release
+  notes and the docs link in the announcement, and `cluster-aks` is treated as a provider chart so a bump of its
+  `cluster` chart dependency is included in the release notes, same as `cluster-eks`.
+- `gen plans`: for the `plans` flavour, `.claude/settings.json` enables the `gs-plans` plugin from the giantswarm/claude-code
+  marketplace, with `autoUpdate` on. devctl writes only the marketplace and plugin entries and keeps every other key, so a
+  team keeps its own settings in the file. Nothing is generated without the flavour. See docs/gen.md.
+- `gen precommit`: a Go repository's config refuses a `go.mod` require line (single or in a block) whose trailing
+  comment has more than one word, with the `go-mod-require-comment` hook. Renovate's gomod manager skips such a line
+  without a pull request or a dashboard entry; `// indirect` and other one-word comments pass, and the explanation
+  goes on a comment line above the require.
+- `repo reconcile`: a team-file entry declares the repository's GitHub `topics`, and the metadata step keeps exactly
+  those, with the token it runs as (the reconciler's App, which holds administration): `drift` in a dry run,
+  `repaired` otherwise, compared as a set. Absent leaves the topics on GitHub alone; an empty list removes them all.
+  `repo update --set topics=[a,b]` declares them like any other field.
+- `pr merge --accept-red <check>` (repeatable): a failed check run, commit status or CircleCI workflow of exactly
+  that name does not refuse the merge, for a non-required check that is red on the base's head too; every other
+  failed check is still red, exit 1. Refused with exit 3, naming the check, before any wait when the base requires
+  it or it is a security scan (nancy, gitleaks, govulncheck, trivy, kyverno, CodeQL), and once the head is green when no
+  check of the head carries the name. The document's `acceptedRed[]` lists each accepted failure with its URL, and
+  a warning names it. See docs/pr-merge.md.
+- `repo reconcile --align-files-app-id`: the Renovate GitHub App (id 2740) bypasses the ruleset `devctl: review` for
+  pull requests beside the align-files App, so the automerge a repository configures in its own Renovate
+  configuration lands a green dependency pull request without a review; the required checks of
+  `devctl: default branch` still hold it, and an entry with `agentMerge: false` keeps the review without bypass.
 - `gen renovate --flavour fork`: writes the config of a GitHub fork as JSONC into `renovate.json` with
   `forkProcessing: "enabled"`, the one file and key Renovate's fork check reads; with `renovate.json5` Renovate skipped
   the fork ("Repository is a fork and not manually configured - skipping"). Every other flavour keeps `renovate.json5`
@@ -54,6 +182,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `auth exec` and the `gh` link: a passthrough `gh` shim ahead of the link on `PATH` no longer recurses with it. The
+  link runs the next `gh` past its own `PATH` entry, and a program that hands every call back to the link is refused
+  after four programs in one chain of calls, exit 7, naming them. See docs/auth.md.
+- `release wait`: an image or chart the registry serves to a pull is available on the first probe. A HEAD of the
+  manifest that does not confirm it (answered without the digest header, or not found) is followed by the GET a pull
+  sends, which decides; before, the probe said missing and a short `--timeout` ended in exit 2 for a published chart.
+- `repo create` scaffold: a private repository's README from giantswarm/template-app no longer carries the CircleCI
+  status badge and the OpenSSF Scorecard badge, which 404 for a private repository and failed its first pull request's
+  README link check. A public repository's README keeps both.
+- `release wait`: a tag whose pipeline is not in the newest pages of CircleCI's pipeline listing no longer ends in
+  exit 2 "no CircleCI pipeline" while its commit carries the tag pipeline's CircleCI statuses. The wait follows the
+  statuses' target URLs (a job of the pipeline, or the pipeline itself) to the pipeline that built the tag. It reads every
+  status of the commit, not only the newest per context, so a release candidate whose promotion tagged the same commit
+  finds its own pipeline. When CircleCI answers for none of them, the statuses are the tag's CI verdict and the
+  document's warnings say so. Exit 2 "no CircleCI pipeline" is left for a tag with neither a pipeline nor a CircleCI
+  status of its own.
 - Reconciler protection step: a repository moving from a hand-kept CircleCI pipeline to the generated one can merge its
   align-files pull request. While the default branch has no generated pipeline, the step reads the one the open
   align-files pull request (`teams-alignment-branch`) brings, so the hand-kept pipeline's contexts (such as
@@ -149,6 +293,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   deliveredAt, ref, after, outcome, redeliveredAt}` and the warning says what was sent. GitHub's 403 is exit 8 naming
   what the identity lacks: the devctl App's repository permission Webhooks: read and write, or a repository admin's
   `gh` login. A failed setup workflow is still rerun from failed; a running one still waited for.
+- `gen makefile`: `Makefile.gen.app.mk` gains a `helm-test` target that runs the chart unit tests with
+  `helm-unittest`, and a prerequisite-only `test: helm-test` rule that joins them to `make test`, the target CI calls.
+  The target runs one suite per chart that has `tests/` or `unittests/`, subcharts included, each with its own
+  values (`--with-subchart=false`).
+  The plugin version is pinned in the makefile behind a Renovate annotation, and `install-helm-unittest` installs
+  exactly that version and replaces a different one, so a local run and a CI run are the same run. A repository with
+  no suites prints a message and exits 0. Chart tests against a cluster stay with `app-test-suite` and the generated
+  `execute-chart-tests` job; the two do not overlap.
+
 - `gen renovate --extends <file>` extends extra presets of `giantswarm/renovate-presets` by file name, before the
   deprecated preset and `renovate-custom.json5`. The reconciler passes `gen.renovate.extends` of a repository entry.
 
@@ -1508,6 +1661,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - `gen circleci`: the architect orb pin moves to `10.5.0`, which adds the `run-tests-with-ats` `kind_config`
   parameter the generated chart-test jobs now set (architect-orb#929). Golden workflows regenerated.
+- `gen precommit`: the `$ref` step of the `helm-schema-<chart>` hook keeps its behaviour but its
+  rationale is corrected. It was documented as working around an unfixed generator bug
+  (losisin/helm-values-schema-json#317). That bug is fixed: v2.6.0 ships #378, and measured against
+  v2.6.0 across the repositories that declare the `helmchart` flavour the step is a no-op on generated
+  output; the hook also reaches every repository with a `helm/` directory. It stays for schemas
+  the generator *bundles* rather than generates — `bundle: true` inlines a `# @schema $ref: <file>`
+  target verbatim, defect included — and `security-profiles-operator-app` depends on that today: the
+  vendored upstream chart's own schema closes a `$ref`ed k8s Toleration with
+  `additionalProperties: false`, which rejects `value` and `tolerationSeconds`. Comment-only, but it
+  moves the template, so every generated `.pre-commit-config.yaml` header URL changes on the next
+  align run.
 - `gen circleci`: the canonical app-test-suite (ATS) test stack moves to `pytest==9.0.3` and
   `pytest-helm-charts==1.3.5` (`uv.lock` re-resolved). pytest 9.0.3 carries the fix for GHSA-6w46-j5rx-g56g
   (CVE-2025-71176), which Dependabot flags on the generated `tests/ats/pyproject.toml` of every chart repo;

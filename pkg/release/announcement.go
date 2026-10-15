@@ -15,6 +15,7 @@ Further details can be found in the [release notes](https://docs.giantswarm.io/c
 
 var providerDocMap = map[string]string{
 	providerAWS:           "capa",
+	providerAKS:           "aks",
 	providerAzure:         "azure",
 	providerEKS:           "eks",
 	providerVSphere:       "vsphere",

@@ -293,8 +293,11 @@ carrying the branch's push runs rather than a pull request's checks. A required 
 job the generated pipeline (`.circleci/workflows.yml`, `custom.yml`) no longer has is removed; while the
 default branch has no generated pipeline, the one the open align-files pull request (`teams-alignment-branch`)
 brings decides (the App's own pull request, never one a person opens from the branch), so a repository moving from a hand-kept pipeline stops requiring the old jobs and can merge
-that pull request, and the generated jobs are required once they have reported after the merge. A
-customer repository (flavour `customer`) keeps its own protection.
+that pull request, and the generated jobs are required once they have reported after the merge. Without
+either, the hand-kept `.circleci/config.yml` names the repository's own jobs: candidates on the same
+reported-only rule, but a hand-kept pipeline removes no CircleCI context. A scheduled or conditional workflow
+and an approval job are never candidates. A customer repository (flavour `customer`) keeps its own
+protection.
 
 The protection is one repository ruleset, `devctl: default branch`, active on
 `~DEFAULT_BRANCH` so a rename or a fork line's declared branch needs no change: the same rules, a GitHub
@@ -350,7 +353,9 @@ reviews, the bypass actors of `devctl: default branch` and the align-files App f
 required checks, no deletion and no force push stay in `devctl: default branch`, which the App does not
 bypass: its pull request still waits for green checks. The review ruleset is written before
 `devctl: default branch` drops the rule, and deleted after it takes the rule back on a run without the id,
-so the review never lapses. An entry with `agentMerge: false` keeps the review in `devctl: default branch`
+so the review never lapses. The Renovate GitHub App (id 2740) bypasses `devctl: review` for pull requests too,
+so the automerge a repository configures in its own Renovate configuration lands a green dependency pull
+request. An entry with `agentMerge: false` keeps the review in `devctl: default branch`
 without bypass. Only a run with `--devctl-app-id` writes it; one without reports the difference as
 `ruleset-pending`, and takes a review ruleset it finds for the writing run's layout, not a drift.
 

@@ -148,7 +148,11 @@ type Fields struct {
 	ComponentType string `yaml:"componentType"`
 	Description   string `yaml:"description"`
 	Visibility    string `yaml:"visibility"`
-	Lifecycle     string `yaml:"lifecycle"`
+	// Topics are the repository's GitHub topics, exactly these. Nil (the
+	// field absent) leaves the topics on GitHub alone; an empty list
+	// removes them all.
+	Topics    []string `yaml:"topics"`
+	Lifecycle string   `yaml:"lifecycle"`
 	// DefaultBranch is the repository's default branch, main unless
 	// declared: the settings step keeps the repository on it and the
 	// protection step protects it. A fork line declares the branch that

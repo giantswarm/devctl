@@ -1,7 +1,7 @@
 # Waiting for a release: `devctl release wait`
 
 ```nohighlight
-devctl release wait <owner/repo> (<vX.Y.Z | X.Y.Z> | --pr <number>) [--timeout 30m] [--catalog] [--image <owner/name>]... [--chart <path>]... [--progress]
+devctl release wait <owner/repo> (<vX.Y.Z | X.Y.Z> | --pr <number>) [--timeout 30m] [--catalog] [--image <owner/name>]... [--chart <path>]... [--progress] [--failed-log [--failed-log-lines 50]]
 ```
 
 Blocks until every image and chart of a release is pullable and the tag's pipeline is green, then prints
@@ -29,10 +29,13 @@ the login command in `reason`, before anything is waited for.
 - `vX.Y.Z` or `X.Y.Z`: the tag is looked up under both spellings, the given one first, and the wait
   starts when it exists. A tag that never appears is a timeout (exit 2).
 - `--pr <number>`: the pull request must be merged (otherwise exit 3). In a repository on the
-  **auto-release** model the tag is the one on the merge commit; the command waits for it to appear,
-  and the merge commit's auto-release run (the push run of the `auto_release` workflow) says when it
-  will not: a run that finished without a tag decided that the commits since the last release warrant
-  no bump, which is exit 3 with the verdict `no_release` at once instead of a timeout; a run that
+  **auto-release** model the tag is the one on the merge commit, on whatever branch the pull request
+  was merged into (a release branch's tag of an older line included); the command waits for it to
+  appear, and the merge commit's auto-release run (the push run of the `auto_release` workflow) says
+  when it will not. A run that finished without a tag decided that the commits since the last release
+  warranted no bump: the release that carries the merge is then the first tag on the pull request's
+  base branch after the merge commit, and without one it is exit 3 with the verdict `no_release` at
+  once instead of a timeout, the reason naming the base branch; a run that
   failed before it tagged is exit 1; a run cancelled before it tagged was superseded by a newer push
   to the branch, whose tag carries the merge, exit 3 naming it. A repository on the **legacy** model
   (`create_release` workflows, a release pull request) does not tag the merge commit of a feature
@@ -63,8 +66,10 @@ artifacts.
 
 ### The CI model and the artifact names
 
-`ciModel` is `generated`, `hand-written` or `none`, from the files at the tag: no
-`.circleci/config.yml` is `none`; a `.circleci/workflows.yml` beside it is the signature of
+`ciModel` is `generated`, `hand-written`, `actions` or `none`, from the files at the tag: no
+`.circleci/config.yml` is `none`, or `actions` when the tag's commit carries check runs (a repository whose CI is GitHub
+Actions only: the check runs are the tag's pipeline, reported under `pipeline`, and the verdict is `available` only once
+every one finished successfully, `ci_failed` when one failed); a `.circleci/workflows.yml` beside it is the signature of
 `devctl gen circleci` and means `generated`; a `config.yml` alone is `hand-written`. The entry's
 `gen.ci.generate` is cross-checked against it (`true` without the generated files, or an explicit
 `false` with them, is exit 7).
@@ -185,6 +190,18 @@ the artifacts resolved is exit 1 with that job in `failedJobs`, and a pipeline t
 time is exit 2 with `every artifact of <tag> is available, the tag pipeline did not finish within <timeout>;
 pipeline N unfinished: …`. A document with exit 0 never lists an unfinished workflow.
 
+`--failed-log` answers why the tag's CI failed, the code's or the CI provider's, without opening the
+job in the browser, the same way as [`devctl pr wait --failed-log`](pr-wait.md) and with its log
+readers: when the tag's CI failed it reads the log of each failed job once and keeps the last
+`--failed-log-lines` lines (default 50), without terminal control sequences or control characters but tab. On CircleCI those are the failed
+jobs of every failed workflow of the tag pipeline (the output of their failed steps), or the job a
+failed CircleCI status links when the statuses are the verdict; for a repository without CircleCI,
+the failed jobs of every failed Actions run of the tag (`GET /repos/{owner}/{repo}/actions/runs/{id}/jobs`,
+then each job's log, ending at its last `##[error]` line). The tails go to stderr, one block per job
+headed `failed job <name> (<url>):`, and into the document under `failedJobs[]`. A green, pending or
+timed-out wait reads no log; a log that cannot be read is named in its job's `logError`, and the
+verdict stays exit 1. Without the flag the document is unchanged.
+
 ### Polling
 
 Requests to GitHub are conditional (`If-None-Match` with the last `ETag`), so an unchanged resource
@@ -248,10 +265,11 @@ stderr.
 | `command`, `schemaVersion`, `exitCode`, `verdict`, `reason`, `warnings`, `startedAt`, `finishedAt` | The envelope every agent-facing command prints. `verdict` is `available`, `ci_failed`, `timeout`, `not_applicable`, `usage` or `auth_required`. `warnings` carries the CircleCI token's seven-day expiry notice and a team-file declaration that disagrees with the tag's workflows about the release model. |
 | `repository`, `tag`, `sha` | What was waited for. `tag` is empty when it never appeared; `sha` is the tag's commit (with `--pr` the merge commit). |
 | `releaseModel` | `auto-release` or `legacy`. |
-| `ciModel` | `generated`, `hand-written` or `none`. |
+| `ciModel` | `generated`, `hand-written`, `actions` or `none`. |
 | `artifacts[]` | `kind` (`image`, `chart`, `release-asset`), `reference` (the pullable reference, or the asset's download URL), `digest` (empty while missing), `state` (`available`, `missing`). Empty until the artifacts are known (hand-written CI before its pipeline exists). |
-| `pipeline` | The tag pipeline on CircleCI: `id`, `number`, `url`, `workflows[{name, status}]` (newest run per name), `failedJobs[]`, `unfinished[]` (the workflows not finished, `name (status)`, with `jobs not visible yet` when CircleCI does not list them yet; what a timeout was waiting for, empty at exit 0). `null` for a repository without CircleCI, or while the pipeline does not exist. |
+| `pipeline` | The tag pipeline on CircleCI: `id`, `number`, `url`, `workflows[{name, status, conclusion}]` (newest run per name; for `ciModel` `actions` one entry per check run of the tag's commit, with its `conclusion`, `id`, `number` empty and `url` the commit's checks page), `failedJobs[]`, `unfinished[]` (the workflows not finished, `name (status)`, with `jobs not visible yet` when CircleCI does not list them yet; what a timeout was waiting for, empty at exit 0). `null` for a repository without CircleCI and without check runs on the tag, or while the CircleCI pipeline does not exist. |
 | `actions[]` | The Actions runs the tag triggered, for a repository without CircleCI: `name`, `runId`, `status`, `conclusion`, `url`. |
+| `failedJobs[]` | Present at exit 1 with `--failed-log`, as in [`pr wait`](pr-wait.md#the-document): each failed job with `name` (`<workflow>/<job>` on CircleCI, `<run>/<job>` on Actions), `source` (`actions` or `circleci`), `url`, and `logTail`, the last `--failed-log-lines` lines of its log, or `logError` when the log could not be read. A failed workflow or run whose jobs cannot be listed is named alone with its `logError`. Absent without the flag. |
 
 ## Exit codes
 
@@ -261,7 +279,7 @@ stderr.
 | 1 | `ci_failed` | A workflow of the tag pipeline, or an Actions run of the tag, failed or was cancelled; with `--pr`, the merge commit's auto-release run failed before it tagged. `reason` and `pipeline.failedJobs` name the jobs. The release is incomplete until a rerun of the failed workflow succeeds or a fix lands as the next tag; artifacts that did resolve are listed `available`. |
 | 2 | `timeout` | The deadline passed. `reason` names what is missing: the tag, the pipeline, the artifacts by reference, and the pipeline's unfinished workflows (also when every artifact is already available). |
 | 3 | `not_applicable` | The pull request is not merged, or its auto-release run was cancelled before it tagged (superseded by a newer push), so `--pr` cannot resolve a version. |
-| 3 | `no_release` | No release follows the pull request's merge: the repository does not tag merge commits (the legacy release model, or no release workflow at all), or the merge commit's auto-release run finished without a tag. |
+| 3 | `no_release` | No release follows the pull request's merge: the repository does not tag merge commits (the legacy release model, or no release workflow at all), or the merge commit's auto-release run finished without a tag and no later tag on the pull request's base branch carries it; the reason names the branch. |
 | 7 | `usage` | A bad argument or flag; a newer devctl released (the reason names `devctl version update`); no source says how the repository releases; the sources disagree about the CI model or the artifacts; a registry answer that is neither a digest nor "manifest unknown"; a tooling error, a GitHub or CircleCI read that failed eight tries in a row among them. |
 | 8 | `auth_required` | No usable token in the keychain; `reason` names the `devctl auth login` invocation. |
 
@@ -287,7 +305,9 @@ The end-to-end harness (`e2e/README.md`) scripts these endpoints; a scenario of 
 the ones its path takes.
 
 GitHub: `GET /repos/{o}/{r}/pulls/{n}` (with `--pr`), `GET /repos/{o}/{r}/tags` (with `--pr`, the
-tag on the merge commit), `GET /repos/{o}/{r}/git/ref/tags/{tag}` (and `GET
+tag on the merge commit among the newest), `GET /repos/{o}/{r}/git/matching-refs/tags/` (with `--pr`,
+every tag, when the newest do not include it), `GET /repos/{o}/{r}/compare/{sha}...{branch}` (with
+`--pr`, after a run that tagged nothing: the base branch's commits since the merge), `GET /repos/{o}/{r}/git/ref/tags/{tag}` (and `GET
 /repos/{o}/{r}/git/tags/{sha}` for an annotated tag), `GET /repos/{o}/{r}` (private or not), `GET
 /repos/{o}/{r}/contents/` with `?ref=` (the root listing: the Dockerfile), `GET
 /repos/{o}/{r}/contents/.github/workflows`, `GET /repos/{o}/{r}/contents/.circleci`, `GET
@@ -296,10 +316,14 @@ listed; `custom.yml` for generated CI too), `GET /repos/{o}/{r}/contents/helm/{d
 /repos/giantswarm/github/contents/repositories/{team}.yaml` (the team-file entry, until the one that
 declares the repository), `GET /repos/{o}/{r}/releases/tags/{tag}` and `GET
 /repos/{o}/{r}/actions/runs?head_sha={sha}` (release assets, no CircleCI; with `--pr`, the merge
-commit's auto-release run while no tag is on it).
+commit's auto-release run while no tag is on it). With `--failed-log` on a failed Actions run: `GET
+/repos/{o}/{r}/actions/runs/{id}/jobs`, then `GET /repos/{o}/{r}/actions/jobs/{id}/logs` (a redirect
+to the log, read without the token).
 
 CircleCI: `GET /api/v2/project/gh/{o}/{r}/pipeline` (the tag pipeline by `vcs.tag`, newest pages),
-`GET /api/v2/pipeline/{id}/workflow`, `GET /api/v2/workflow/{id}/job`.
+`GET /api/v2/pipeline/{id}/workflow`, `GET /api/v2/workflow/{id}/job`. With `--failed-log` on a failed
+job: `GET /api/v1.1/project/github/{o}/{r}/{job}` and its failed steps' `output_url`s, read without
+the token.
 
 Registries: `GET /v2/` then `HEAD /v2/{name}/manifests/{X.Y.Z}`, images under `giantswarm/…`, charts
 under `charts/giantswarm/…`.

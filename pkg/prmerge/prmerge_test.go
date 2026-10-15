@@ -104,6 +104,11 @@ type harness struct {
 
 func allow(context.Context, string, string) (Verdict, error) { return Verdict{}, nil }
 
+// verdict is a policy that answers v for every repository.
+func verdict(v Verdict) Policy {
+	return func(context.Context, string, string) (Verdict, error) { return v, nil }
+}
+
 func newHarness(t *testing.T, r sequence.Routes, configure func(*Config)) *harness {
 	t.Helper()
 	server, err := githubmock.Start(r)
@@ -300,6 +305,51 @@ func Test_Merge_paths(t *testing.T) {
 				requested: map[string]int{"GET /repos/o/r/commits/abc123/check-runs": 0, "PUT /repos/o/r/pulls/42/merge": 0}},
 		},
 		{
+			name:      "a repository that is no fork line keeps the default squash",
+			routes:    routes(pull(nil)),
+			configure: func(c *Config) { c.Policy = verdict(Verdict{Team: "team-a"}) },
+			want: want{method: "squash", mergedBy: "someone", mergeSHA: "m1", deleted: true, headSHA: "abc123",
+				requested: map[string]int{"PUT /repos/o/r/pulls/42/merge": 1}},
+		},
+		{
+			name:      "a fork line lands with a rebase merge by default",
+			routes:    routes(pull(nil)),
+			configure: func(c *Config) { c.Policy = verdict(Verdict{Team: "team-a", ForkLine: true}) },
+			want: want{method: "rebase", mergedBy: "someone", mergeSHA: "m1", deleted: true, headSHA: "abc123",
+				requested: map[string]int{"PUT /repos/o/r/pulls/42/merge": 1}},
+		},
+		{
+			name:   "a fork line squashes only on an explicit --squash",
+			routes: routes(pull(nil)),
+			configure: func(c *Config) {
+				c.Policy = verdict(Verdict{Team: "team-a", ForkLine: true})
+				c.Method = githubclient.MergeSquash
+			},
+			want: want{method: "squash", mergedBy: "someone", mergeSHA: "m1", deleted: true, headSHA: "abc123",
+				requested: map[string]int{"PUT /repos/o/r/pulls/42/merge": 1}},
+		},
+		{
+			name:      "a fork line that does not allow rebase merges: exit 3 before the wait, naming --squash",
+			routes:    routes(pull(nil), sequence.Routes{"GET /repos/o/r": {{Body: settings(false, true, false)}}}),
+			configure: func(c *Config) { c.Policy = verdict(Verdict{Team: "team-a", ForkLine: true}) },
+			want: want{code: 3, reason: "o/r does not allow rebase merges; its settings allow squash merges; --squash lands a squash merge", method: "rebase", headSHA: "abc123",
+				requested: map[string]int{"GET /repos/o/r/commits/abc123/check-runs": 0, "PUT /repos/o/r/pulls/42/merge": 0}},
+		},
+		{
+			name:      "an explicit squash never gives way: exit 3 before the wait",
+			routes:    routes(pull(nil), sequence.Routes{"GET /repos/o/r": {{Body: settings(false, false, true)}}}),
+			configure: func(c *Config) { c.Method = githubclient.MergeSquash },
+			want: want{code: 3, reason: "o/r does not allow squash merges; its settings allow rebase merges; --rebase lands a rebase merge", method: "squash", headSHA: "abc123",
+				requested: map[string]int{"PUT /repos/o/r/pulls/42/merge": 0}},
+		},
+		{
+			name:      "an entry whose flavours cannot be read keeps the default squash, with a warning",
+			routes:    routes(pull(nil)),
+			configure: func(c *Config) { c.Policy = verdict(Verdict{Team: "team-a", Warning: "gen.flavours unreadable"}) },
+			want: want{method: "squash", mergedBy: "someone", mergeSHA: "m1", deleted: true, headSHA: "abc123", warning: "gen.flavours unreadable",
+				requested: map[string]int{"PUT /repos/o/r/pulls/42/merge": 1}},
+		},
+		{
 			name:   "settings the token cannot read leave the asked method to GitHub",
 			routes: routes(pull(nil), sequence.Routes{"GET /repos/o/r": {{Body: map[string]any{"full_name": "o/r"}}}}),
 			want: want{method: "squash", mergedBy: "someone", mergeSHA: "m1", deleted: true, headSHA: "abc123",
@@ -360,7 +410,54 @@ func Test_Merge_paths(t *testing.T) {
 			}),
 			configure: func(c *Config) { c.UpdateBranch = true },
 			want: want{method: "squash", mergedBy: "someone", mergeSHA: "m1", deleted: true, headSHA: "def456",
-				requested: map[string]int{"PUT /repos/o/r/pulls/42/update-branch": 1, "GET /repos/o/r/commits/def456/check-runs": 1, "GET /repos/o/r/commits/abc123/check-runs": 0, "PUT /repos/o/r/pulls/42/merge": 1}},
+				requested: map[string]int{"PUT /repos/o/r/pulls/42/update-branch": 1, "POST /graphql": 0, "GET /repos/o/r/commits/def456/check-runs": 1, "GET /repos/o/r/commits/abc123/check-runs": 0, "PUT /repos/o/r/pulls/42/merge": 1}},
+		},
+		{
+			name: "behind with --rebase --update-branch: the head is rebased, never merged into, then merged",
+			routes: routes(pull(nil), greenHead("def456"), sequence.Routes{
+				"GET /repos/o/r/pulls/42": {
+					{Body: pull(map[string]any{"mergeable_state": "behind"})},
+					{Body: pull(map[string]any{"mergeable_state": "behind"})},
+					{Body: pull(map[string]any{"head": map[string]any{"sha": "def456", "ref": "feature", "repo": map[string]any{"full_name": "o/r"}}})},
+				},
+				"POST /graphql": {{Body: map[string]any{"data": map[string]any{"updatePullRequestBranch": map[string]any{"pullRequest": map[string]any{"id": "PR_1"}}}}}},
+			}),
+			configure: func(c *Config) {
+				c.UpdateBranch = true
+				c.Method = githubclient.MergeRebase
+			},
+			want: want{method: "rebase", mergedBy: "someone", mergeSHA: "m1", deleted: true, headSHA: "def456",
+				requested: map[string]int{"POST /graphql": 1, "PUT /repos/o/r/pulls/42/update-branch": 0, "GET /repos/o/r/commits/def456/check-runs": 1, "GET /repos/o/r/commits/abc123/check-runs": 0, "PUT /repos/o/r/pulls/42/merge": 1}},
+		},
+		{
+			name: "a fork line behind a base that is not strict, with --update-branch: the default rebase rebases the head",
+			routes: routes(pull(nil), greenHead("def456"), sequence.Routes{
+				"GET /repos/o/r/pulls/42": {
+					{Body: pull(map[string]any{"mergeable_state": "blocked"})},
+					{Body: pull(map[string]any{"mergeable_state": "blocked"})},
+					{Body: pull(map[string]any{"head": map[string]any{"sha": "def456", "ref": "feature", "repo": map[string]any{"full_name": "o/r"}}})},
+				},
+				"GET /repos/o/r/compare/main...abc123": {{Body: map[string]any{"status": "diverged", "ahead_by": 1, "behind_by": 2}}},
+				"POST /graphql":                        {{Body: map[string]any{"data": map[string]any{"updatePullRequestBranch": map[string]any{"pullRequest": map[string]any{"id": "PR_1"}}}}}},
+			}),
+			configure: func(c *Config) {
+				c.UpdateBranch = true
+				c.Policy = verdict(Verdict{Team: "team-a", ForkLine: true})
+			},
+			want: want{method: "rebase", mergedBy: "someone", mergeSHA: "m1", deleted: true, headSHA: "def456",
+				requested: map[string]int{"POST /graphql": 1, "PUT /repos/o/r/pulls/42/update-branch": 0, "GET /repos/o/r/commits/def456/check-runs": 1, "PUT /repos/o/r/pulls/42/merge": 1}},
+		},
+		{
+			name: "GitHub refuses the rebase update: an error, nothing merged",
+			routes: routes(pull(map[string]any{"mergeable_state": "behind"}), sequence.Routes{
+				"POST /graphql": {{Body: map[string]any{"data": nil, "errors": []any{map[string]any{"message": "Rebase failed due to conflicts"}}}}},
+			}),
+			configure: func(c *Config) {
+				c.UpdateBranch = true
+				c.Method = githubclient.MergeRebase
+			},
+			want: want{code: -1, method: "rebase", headSHA: "abc123",
+				requested: map[string]int{"POST /graphql": 1, "PUT /repos/o/r/pulls/42/update-branch": 0, "PUT /repos/o/r/pulls/42/merge": 0}},
 		},
 		{
 			name: "behind a base that is not strict, with --update-branch: update before judging the old head, merge",
@@ -677,7 +774,7 @@ func Test_New_method(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.method != githubclient.MergeSquash || m.timeout != prwait.DefaultTimeout || m.policy == nil {
+	if m.method != githubclient.MergeSquash || !m.methodDefault || m.timeout != prwait.DefaultTimeout || m.policy == nil {
 		t.Errorf("defaults: %+v", m)
 	}
 }
@@ -696,6 +793,8 @@ func Test_TeamFilePolicy(t *testing.T) {
 		routes       sequence.Routes
 		wantRefusal  string
 		wantTeam     string
+		wantFork     bool
+		wantWarning  string
 		wantErr      bool
 		wantRequests int
 	}{
@@ -711,6 +810,18 @@ func Test_TeamFilePolicy(t *testing.T) {
 			"GET /repos/giantswarm/github/contents/repositories":             {dir},
 			"GET /repos/giantswarm/github/contents/repositories/team-a.yaml": {teamFile("- name: svc\n")},
 		}, wantRequests: 2},
+		{name: "an entry with the fork flavour is a fork line", owner: "giantswarm", repo: "line", routes: sequence.Routes{
+			"GET /repos/giantswarm/github/contents/repositories":             {dir},
+			"GET /repos/giantswarm/github/contents/repositories/team-a.yaml": {teamFile("- name: line\n  gen:\n    flavours:\n      - fork\n    language: go\n")},
+		}, wantTeam: "team-a", wantFork: true, wantRequests: 2},
+		{name: "an entry with other flavours is no fork line", owner: "giantswarm", repo: "svc", routes: sequence.Routes{
+			"GET /repos/giantswarm/github/contents/repositories":             {dir},
+			"GET /repos/giantswarm/github/contents/repositories/team-a.yaml": {teamFile("- name: svc\n  gen:\n    flavours:\n      - app\n    language: go\n")},
+		}, wantTeam: "team-a", wantRequests: 2},
+		{name: "flavours that do not decode are no fork line, with a warning", owner: "giantswarm", repo: "odd", routes: sequence.Routes{
+			"GET /repos/giantswarm/github/contents/repositories":             {dir},
+			"GET /repos/giantswarm/github/contents/repositories/team-a.yaml": {teamFile("- name: odd\n  gen:\n    flavours: fork\n")},
+		}, wantTeam: "team-a", wantWarning: "is not taken for a fork line", wantRequests: 2},
 		{name: "a repository outside the organisation is not looked up", owner: "o", repo: "r", routes: sequence.Routes{}, wantRequests: 0},
 		{name: "team files the token cannot read are an error, not a guess", owner: "giantswarm", repo: "svc", routes: sequence.Routes{}, wantErr: true, wantRequests: 1},
 	}
@@ -736,6 +847,12 @@ func Test_TeamFilePolicy(t *testing.T) {
 			}
 			if verdict.Team != tc.wantTeam {
 				t.Errorf("want team %q, got %q", tc.wantTeam, verdict.Team)
+			}
+			if verdict.ForkLine != tc.wantFork {
+				t.Errorf("want fork line %v, got %v", tc.wantFork, verdict.ForkLine)
+			}
+			if !strings.Contains(verdict.Warning, tc.wantWarning) || (tc.wantWarning == "" && verdict.Warning != "") {
+				t.Errorf("want warning %q, got %q", tc.wantWarning, verdict.Warning)
 			}
 			if n := len(server.Requests()); n != tc.wantRequests {
 				t.Errorf("want %d request(s), got %d: %v", tc.wantRequests, n, server.Requests())
@@ -923,4 +1040,56 @@ func resetConnection(t *testing.T, w http.ResponseWriter) {
 		_ = tcp.SetLinger(0)
 	}
 	_ = conn.Close()
+}
+
+// A 5xx on the merge call: the pull request is read once; merged, the merge
+// is a success without a second call; open, the call is repeated.
+func Test_Merge_retriesA5xx(t *testing.T) {
+	tests := []struct {
+		name      string
+		after     map[string]any
+		wantCalls int
+	}{
+		{name: "502 then 200", after: pull(nil), wantCalls: 2},
+		{name: "502 and merged meanwhile", after: pull(map[string]any{"state": "closed", "merged": true, "merge_commit_sha": "m9", "merged_by": map[string]any{"login": "someone"}}), wantCalls: 1},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			server, err := githubmock.Start(routes(pull(nil)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(server.Close)
+			target, err := url.Parse(server.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			upstream := httputil.NewSingleHostReverseProxy(target)
+			calls := 0
+			proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch {
+				case r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/merge") && calls == 0:
+					calls++
+					http.Error(w, `{"message":"Server Error"}`, http.StatusBadGateway)
+				case r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/merge"):
+					calls++
+					upstream.ServeHTTP(w, r)
+				case calls == 1 && r.Method == http.MethodGet && r.URL.Path == "/repos/o/r/pulls/42":
+					w.Header().Set("Content-Type", "application/json")
+					_ = json.NewEncoder(w).Encode(tc.after)
+				default:
+					upstream.ServeHTTP(w, r)
+				}
+			}))
+			t.Cleanup(proxy.Close)
+			h := newHarnessAt(t, server, proxy.URL, nil)
+			result, err := h.merge(t)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if calls != tc.wantCalls || result.MergeCommitSHA == "" {
+				t.Errorf("want %d merge call(s) and a merge commit, got %d, %+v", tc.wantCalls, calls, result)
+			}
+		})
+	}
 }

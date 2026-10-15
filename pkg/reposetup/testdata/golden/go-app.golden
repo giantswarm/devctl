@@ -81,7 +81,7 @@ workflows:
 # workflow in .circleci/config.yml merges into this file at pipeline runtime.
 version: 2.1
 orbs:
-  architect: giantswarm/architect@10.13.0
+  architect: giantswarm/architect@10.13.6
 
 workflows:
   build:
@@ -521,13 +521,7 @@ on:
         options: [auto, stable]
         default: auto
 
-permissions:
-  contents: write       # push tags and create the GitHub Release
-  # git-cliff's GitHub API lookups (commit.remote.pr_number / username
-  # in release notes) need PR read access via GITHUB_TOKEN.
-  pull-requests: read
-  # The stable run reads the commit statuses of the candidate it promotes.
-  statuses: read
+permissions: {}
 
 # Scope the concurrency lock per branch so a backport tag on release-2.x
 # doesn't block (or get blocked by) a main release, and vice versa. A second
@@ -540,6 +534,13 @@ jobs:
   tag:
     name: Tag
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write       # push tags and create the GitHub Release
+      # git-cliff's GitHub API lookups (commit.remote.pr_number / username
+      # in release notes) need PR read access via GITHUB_TOKEN.
+      pull-requests: read
+      # The stable run reads the commit statuses of the candidate it promotes.
+      statuses: read
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -600,11 +601,24 @@ jobs:
             echo "::error title=Candidate not a pre-release::the GitHub release of ${rc} is not a pre-release."
             exit 1
           fi
-          if ! status=$(gh api "repos/${GH_REPO}/commits/${rc}/status" --jq '"\(.state) \(.total_count)"'); then
-            echo "::error title=Candidate status unreadable::the commit statuses of ${rc} could not be read (the job needs statuses: read); nothing is promoted."
-            exit 1
-          fi
-          read -r state count <<<"$status"
+          # The API now and then answers with an empty or truncated body or a
+          # 5xx: the read is retried with backoff, and only a failure on every
+          # try refuses the promotion.
+          request="repos/${GH_REPO}/commits/${rc}/status"
+          tries=4
+          for try in $(seq 1 "$tries"); do
+            if status=$(gh api "$request" --jq '"\(.state) \(.total_count)"') \
+              && read -r state count <<<"$status" \
+              && [ -n "$state" ] && [[ "$count" =~ ^[0-9]+$ ]]; then
+              break
+            fi
+            if [ "$try" = "$tries" ]; then
+              echo "::error title=Candidate status unreadable::GET ${request} failed ${tries} times (the job needs statuses: read); nothing is promoted."
+              exit 1
+            fi
+            echo "GET ${request} failed (try ${try} of ${tries}), retrying in $((2 ** try))s"
+            sleep $((2 ** try))
+          done
           if [ "$count" != 0 ] && [ "$state" != success ]; then
             echo "::error title=Candidate not built::the commit statuses of ${rc} are ${state}: https://github.com/${GH_REPO}/commit/$(git rev-parse "${rc}^{commit}"). Promote it once its pipelines passed."
             exit 1
@@ -777,6 +791,32 @@ jobs:
           echo "prerelease=${is_rc}" >> "$GITHUB_OUTPUT"
           echo "target=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
+      # A stable release can carry rules only the repository knows (a fork
+      # line's pins, its release ledger). Checked in the tag's own pipeline
+      # they come too late: the tag and the GitHub release exist by then, and
+      # a refusal leaves a release that looks published with nothing built.
+      # The repository-owned `.github/release-gate.custom.sh`, when the
+      # promoted candidate carries it, runs here on that candidate's checkout
+      # with the version about to be tagged; a non-zero exit cuts no tag and
+      # no release. A repository without the script has no gate.
+      - name: Run the repository's stable gate
+        id: gate
+        if: inputs.release-type == 'stable' && steps.decide.outputs.tag != ''
+        env:
+          TAG: ${{ steps.decide.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gate=.github/release-gate.custom.sh
+          if [ ! -f "$gate" ]; then
+            echo "no ${gate} on the candidate: no repository gate for ${TAG}"
+            exit 0
+          fi
+          if ! bash "$gate" "$TAG"; then
+            echo "::error title=Stable gate refused::${gate} refused ${TAG}: no tag and no release are cut. Fix the cause on the branch and promote its next candidate."
+            exit 1
+          fi
+          echo "${gate} passed ${TAG}"
+
       # cliff-context.json names the stable target git-cliff bumped to, and
       # the tag actually cut is ${NEXT}-rc.N for a candidate. cliff.toml puts
       # `{{ version }}` in the "Full Changelog" compare link, so the context has
@@ -841,7 +881,7 @@ jobs:
             --title "$TAG" \
             --notes-file release-notes.md \
             --target "$TARGET" \
-            "${flags[@]}"
+            ${flags[@]+"${flags[@]}"}
 
       # A tag that never reaches CircleCI is a silent failure: the GitHub
       # Release above exists and looks finished, but nothing gets built or
@@ -888,7 +928,7 @@ jobs:
             url="$api"
             pages=0
             while [ -n "$url" ] && [ "$pages" -lt 2 ]; do
-              resp=$(curl -sS "${auth[@]}" -w '\n%{http_code}' "$url" || printf '\n000')
+              resp=$(curl -sS ${auth[@]+"${auth[@]}"} -w '\n%{http_code}' "$url" || printf '\n000')
               last_code=${resp##*$'\n'}
               body=${resp%$'\n'*}
               [ "$last_code" = "200" ] || break
@@ -922,7 +962,7 @@ jobs:
                 exit 1
               fi
               echo "CircleCI never built ${TAG}; triggering the pipeline through the API"
-              resp=$(curl -sS "${auth[@]}" -w '\n%{http_code}' -X POST -H 'Content-Type: application/json' -d "{\"tag\":\"${TAG}\"}" "$api" || printf '\n000')
+              resp=$(curl -sS ${auth[@]+"${auth[@]}"} -w '\n%{http_code}' -X POST -H 'Content-Type: application/json' -d "{\"tag\":\"${TAG}\"}" "$api" || printf '\n000')
               code=${resp##*$'\n'}
               body=${resp%$'\n'*}
               if [ "$code" != "201" ]; then
@@ -961,6 +1001,31 @@ jobs:
               exit 1
               ;;
           esac
+
+--- .github/workflows/zz_generated.chart_tests.yaml
+# DO NOT EDIT. Generated with:
+#
+#    devctl
+#
+#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/chart_tests.yaml.template
+#
+
+name: chart-tests
+
+on:
+  pull_request:
+    branches:
+      - master
+      - main
+  merge_group: {}
+
+permissions: {}
+
+jobs:
+  chart-tests:
+    uses: giantswarm/github-workflows/.github/workflows/chart-tests.yaml@main
+    permissions:
+      contents: read
 
 --- .github/workflows/zz_generated.check_readme_links.yaml
 # DO NOT EDIT. Generated with:
@@ -1326,6 +1391,18 @@ repos:
       - id: go-imports
         args: [ -local, github.com/giantswarm/example-go-service ]
 
+  # Renovate's gomod manager reads a require line's trailing comment as one
+  # word (`// indirect`); a line whose comment has more words is skipped
+  # without a PR or a dashboard entry, so the dependency silently stops being
+  # updated. The explanation goes on a comment line above the require instead.
+  - repo: local
+    hooks:
+      - id: go-mod-require-comment
+        name: "go.mod require comment is one word (Renovate skips the line otherwise; move the explanation to a comment line above it)"
+        language: pygrep
+        files: (^|/)go\.mod$
+        entry: '^\s*(require\s+)?[A-Za-z0-9][^\s,]*[./][^\s,]*\s+v[0-9]\S*\s*//\s*\S+\s+\S'
+
   # Helm chart schema for example-go-service: verify helm/example-go-service/values.schema.json is up to date.
   #
   # `devctl gen precommit` now generates and writes helm/example-go-service/values.schema.json itself
@@ -1337,17 +1414,31 @@ repos:
   # file on disk and fails the run if any hook modifies it (giantswarm/giantswarm#37267);
   # a read-only check has no resting format to fight over.
   #
-  # The `$ref` step works around a generator bug: with `noAdditionalProperties: true` it
-  # emits `additionalProperties: false` as a sibling of every bare `$ref`. Per JSON Schema
-  # 2020-12, `additionalProperties` only sees sibling `properties`/`patternProperties`
-  # -- NOT properties pulled in through `$ref` -- so it wrongly rejects every field the
-  # referenced schema defines (e.g. `helm template` fails with "additional properties
-  # 'podAntiAffinity' not allowed" for a k8s Affinity). The correct 2020-12 keyword is
-  # `unevaluatedProperties`, which DOES consider $ref-evaluated properties, but the tool
-  # cannot emit it and does not drop the bogus `additionalProperties` when annotated. So
-  # for every object that has both `$ref` and `additionalProperties: false` we drop
-  # `additionalProperties` and set `unevaluatedProperties: false`.
-  # Upstream bug: https://github.com/losisin/helm-values-schema-json/issues/317
+  # The `$ref` step repairs a JSON Schema 2020-12 defect: `additionalProperties: false` as
+  # a sibling of a `$ref`. `additionalProperties` only sees sibling
+  # `properties`/`patternProperties` -- NOT properties pulled in through `$ref` -- so such
+  # a node rejects every field the referenced schema defines (e.g. `helm template` fails
+  # with "additional properties 'podAntiAffinity' not allowed" for a k8s Affinity). The
+  # correct keyword is `unevaluatedProperties`, which DOES consider $ref-evaluated
+  # properties. So for every object that has both `$ref` and `additionalProperties: false`
+  # we drop `additionalProperties` and set `unevaluatedProperties: false`.
+  #
+  # The generator itself no longer produces this. It did until v2.6.0, which shipped
+  # https://github.com/losisin/helm-values-schema-json/pull/378 (fixing #317): at draft
+  # 2019 or later, with `noAdditionalProperties: true`, it now closes applicator-bearing
+  # nodes with `unevaluatedProperties` instead. devctl sets `draft: 2020`, so that holds
+  # here. Under v2.6.0 the step is a no-op on generated output -- measured over every
+  # repository that DECLARES the `helmchart` pre-commit flavour. The hook reaches more
+  # repositories than that: `helmchart` is also the default flavour for any repository
+  # with a `helm/` directory, so re-measure over those too before you act on the number.
+  #
+  # It stays for schemas the generator BUNDLES rather than generates. `bundle: true`
+  # inlines a `# @schema $ref: <file>` target verbatim, defect included, and the tool
+  # cannot be expected to rewrite third-party content. One repo depends on this today:
+  # security-profiles-operator-app vendors the upstream chart's own `values.schema.json`,
+  # whose `daemon.tolerations` items close a `$ref`ed k8s Toleration with
+  # `additionalProperties: false` and so reject `value` and `tolerationSeconds`.
+  # Before removing this step, re-run that measurement -- do not assume it is dead.
   #
   # BOTH binaries are installed and pinned by the hook itself (`additional_dependencies`,
   # hence `language: golang`), at the exact versions devctl's own go.mod requires (stamped
@@ -1711,8 +1802,11 @@ help: ## Display this help.
 
 ##@ App
 
-YQ=docker run --rm -u $$(id -u) -v $${PWD}:/workdir mikefarah/yq:4.29.2
-HELM_DOCS=docker run --rm -u $$(id -u) -v $${PWD}:/helm-docs jnorwood/helm-docs:v1.14.2 --sort-values-order=file
+# yq, helm-docs and ct run from PATH when installed (yq only as mikefarah's yq v4), otherwise
+# from their container images.
+YQ = $(if $(shell yq --version 2>/dev/null | grep -q mikefarah && echo yq),yq,docker run --rm -u $$(id -u) -v $${PWD}:/workdir mikefarah/yq:4.29.2)
+HELM_DOCS = $(if $(shell command -v helm-docs 2>/dev/null),helm-docs,docker run --rm -u $$(id -u) -v $${PWD}:/helm-docs jnorwood/helm-docs:v1.14.2) --sort-values-order=file
+CT = $(if $(shell command -v ct 2>/dev/null),ct,docker run -it --rm -v /tmp/$(APPLICATION)-test:/wd --workdir=/wd --name ct $(IMAGE) ct)
 
 # APPLICATION may be set by a later included makefile (Makefile.gen.go.mk derives it from the
 # Go module, and Makefile.*.mk are included in name order), so nothing here may read it while
@@ -1728,7 +1822,7 @@ lint-chart: check-env ## Runs ct against the default chart.
 	mkdir -p /tmp/$(APPLICATION)-test/helm
 	cp -a ./helm/$(APPLICATION) /tmp/$(APPLICATION)-test/helm/
 	architect helm template --dir /tmp/$(APPLICATION)-test/helm/$(APPLICATION)
-	docker run -it --rm -v /tmp/$(APPLICATION)-test:/wd --workdir=/wd --name ct $(IMAGE) ct lint --validate-maintainers=false --charts="helm/$(APPLICATION)"
+	cd /tmp/$(APPLICATION)-test && $(CT) lint --validate-maintainers=false --charts="helm/$(APPLICATION)"
 	rm -rf /tmp/$(APPLICATION)-test
 
 update-chart: check-env ## Sync chart with upstream repo.
@@ -1750,6 +1844,70 @@ helm-docs: check-env ## Update $(APPLICATION) README.
 
 check-env:
 	@test -n "$(APPLICATION)" || { echo "APPLICATION is not defined: set it in Makefile.custom.mk or run make APPLICATION=<chart>" >&2; exit 1; }
+
+##@ Chart tests
+
+# renovate: datasource=github-releases depName=helm-unittest/helm-unittest
+HELM_UNITTEST_VERSION ?= v1.2.1
+
+.PHONY: helm-test install-helm-unittest
+
+# helm-test renders the chart and asserts on the rendered manifests. It never talks to a
+# cluster, pulls no image and needs no built chart, so it runs in under a second and it is
+# the first thing to run after a template change. Cluster-level testing is app-test-suite,
+# through the generated `execute-chart-tests` job and the repository's `.ats/main.yaml`;
+# the two do not overlap and neither replaces the other.
+#
+# One `helm unittest` run per chart that has tests, rather than one run over the top-level
+# chart. A suite asserts on the defaults of the chart it ships with, and a parent chart's
+# `values.yaml` overrides those defaults for its subcharts -- so a subchart suite run from
+# the parent is asserting against values its author never wrote. `--with-subchart=false`
+# keeps each run inside the chart the suite belongs to.
+#
+# Both directory names are in use across the org: upstream charts vendored from Artifact
+# Hub tend to use `unittests/`, our own charts use `tests/`. The `Chart.yaml` check rejects
+# a nested directory that only shares the name, such as `tests/admission-webhooks/`.
+# Nothing here reads APPLICATION, so this target carries no `check-env` prerequisite. A
+# chart-only repository sets APPLICATION nowhere, and requiring it made `make helm-test`
+# fail in exactly the repositories this target exists for.
+# A chart under a placeholder directory such as `helm/{APP-NAME}` belongs to a template
+# repository: its names render only once a repository created from it fills them in, so
+# its suites cannot pass here and run on the rendered copy instead. It is skipped, as a
+# chart reference with a placeholder is no chart for the catalog either.
+helm-test: install-helm-unittest ## Run the chart unit tests (helm-unittest).
+	@echo "====> $@"
+	@found=""; \
+	for d in $$(find helm -type d \( -name tests -o -name unittests \) 2>/dev/null | sort); do \
+		c=$$(dirname "$$d"); \
+		[ -f "$$c/Chart.yaml" ] || continue; \
+		case "$$c" in *[{}]*) echo "skipping $$c: a template's placeholder chart"; continue;; esac; \
+		ls "$$d"/*_test.yaml >/dev/null 2>&1 || continue; \
+		found=1; \
+		helm unittest -f "$$(basename "$$d")/*_test.yaml" --with-subchart=false "$$c" || exit 1; \
+	done; \
+	[ -n "$$found" ] || echo "no chart unit tests under helm/"
+
+# Installs the pinned version, and REPLACES a different one. A guard that only checks that
+# the plugin exists lets a developer keep an old version forever, and then a local run and
+# a CI run are not the same run -- which is the whole point of pinning it here.
+# helm v4 verifies a plugin's source by default and refuses this one, so `--verify=false`
+# is passed whenever `helm plugin install` knows the flag; helm v3 has none and installs as before.
+install-helm-unittest:
+	@have=$$(helm plugin list 2>/dev/null | awk '$$1 == "unittest" {print $$2}'); \
+	want=$$(echo "$(HELM_UNITTEST_VERSION)" | sed 's/^v//'); \
+	if [ "$$have" != "$$want" ]; then \
+		[ -z "$$have" ] || helm plugin uninstall unittest >/dev/null 2>&1 || true; \
+		verify=""; \
+		helm plugin install --help 2>&1 | grep -q -e '--verify' && verify="--verify=false"; \
+		helm plugin install $$verify https://github.com/helm-unittest/helm-unittest --version $(HELM_UNITTEST_VERSION); \
+	fi
+
+# Chart tests join `make test`, the interface CI calls (make-target-ci-interface ADR,
+# giantswarm#36734). Prerequisite-only rule, carrying no recipe: it ADDS to the Go `test`
+# recipe in Makefile.gen.go.mk rather than overriding it, and it DEFINES `test` in an app
+# repository that has no Go suite behind it. Keep it last: the first target of the first
+# included makefile is make's default goal.
+test: helm-test
 
 --- Makefile.gen.go.mk
 # DO NOT EDIT. Generated with:

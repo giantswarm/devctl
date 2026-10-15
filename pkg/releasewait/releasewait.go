@@ -24,11 +24,12 @@
 // published release and the tag's workflows.
 //
 // For a pull request the tag is the one auto-release puts on the merge
-// commit, and the merge commit's auto-release run says when none will
-// come: a run that finished without a tag decided that the commits warrant
-// no release, which ends the wait at once as no release following the
-// merge ([NoReleaseError]), as does a repository that does not tag merge
-// commits. A repository that releases in two steps tags the merge commit with
+// commit, on whatever branch the pull request was merged into, and the merge
+// commit's auto-release run says when none will come: a run that finished
+// without a tag decided that the commits warranted no release, so the first
+// tag on the base branch after the merge commit carries it, and without one
+// the wait ends at once as no release following the merge ([NoReleaseError]),
+// as does a repository that does not tag merge commits. A repository that releases in two steps tags the merge commit with
 // a release candidate and a promote later cuts the stable release; with
 // [Config.PreferPromoted] the wait follows that promotion.
 package releasewait
@@ -37,12 +38,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"path"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/Masterminds/semver/v3"
+	"github.com/google/go-github/v92/github"
 
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
 	"github.com/giantswarm/devctl/v8/pkg/circleciclient"
@@ -68,10 +71,16 @@ type GitHub interface {
 	GetPullRequestMerge(ctx context.Context, owner, repo string, number int) (githubclient.PullRequestMerge, error)
 	GetTagSHA(ctx context.Context, owner, repo, tag string) (string, error)
 	FindTagForCommit(ctx context.Context, owner, repo, sha string) (string, error)
+	CommitTags(ctx context.Context, owner, repo string) (map[string][]string, error)
+	CommitsAfter(ctx context.Context, owner, repo, sha, branch string) ([]string, error)
 	GetReleaseByTag(ctx context.Context, owner, repo, tag string) (githubclient.Release, error)
 	ListReleases(ctx context.Context, owner, repo string) ([]githubclient.Release, error)
 	Reachable(ctx context.Context, owner, repo, ref, branch string) (bool, error)
+	CheckRunsForRef(ctx context.Context, owner, repo, ref string) ([]*github.CheckRun, error)
 	ListWorkflowRunsForSHA(ctx context.Context, owner, repo, sha string) ([]githubclient.WorkflowRun, error)
+	ListCommitStatuses(ctx context.Context, owner, repo, sha string) ([]githubclient.CommitStatus, error)
+	ListWorkflowRunJobs(ctx context.Context, owner, repo string, runID int64) ([]githubclient.WorkflowJob, error)
+	JobLog(ctx context.Context, owner, repo string, jobID int64) (io.ReadCloser, error)
 	ListDirectory(ctx context.Context, owner, repo, path, ref string) ([]string, error)
 	GetFile(ctx context.Context, owner, repo, path, ref string) (githubclient.RepositoryFile, error)
 	IsPrivateRepository(ctx context.Context, owner, repo string) (bool, error)
@@ -83,6 +92,10 @@ type CircleCI interface {
 	FindPipelineByTag(ctx context.Context, org, repo, tag string) (*circleciclient.Pipeline, error)
 	ListPipelineWorkflows(ctx context.Context, pipelineID string) ([]circleciclient.Workflow, error)
 	ListWorkflowJobs(ctx context.Context, workflowID string) ([]circleciclient.Job, error)
+	GetProjectJob(ctx context.Context, org, repo string, number int64) (*circleciclient.ProjectJob, error)
+	GetPipeline(ctx context.Context, id string) (*circleciclient.PipelineDetail, error)
+	GetProjectPipeline(ctx context.Context, org, repo string, number int64) (*circleciclient.PipelineDetail, error)
+	FailedStepsOutput(ctx context.Context, org, repo string, number int64) (string, error)
 }
 
 // EntryFinder returns the team-file entry that declares a repository, and
@@ -138,6 +151,11 @@ type Config struct {
 	// or with the registry host in front. Each is expected as
 	// <chart>:<version>, the bare version helm requires.
 	Charts []string
+	// FailedLogLines, when positive, makes a failed tag pipeline read the
+	// log of each failed job once and keep that many of its last lines in
+	// Result.FailedJobs, read and trimmed as pr wait's --failed-log does. A
+	// green or pending tag reads no log.
+	FailedLogLines int
 
 	// GitHub is required. Entries and Registry are required; CircleCI is
 	// called once when the tag carries a .circleci/config.yml, so a
@@ -186,6 +204,10 @@ type Waiter struct {
 	// failing every try of a read), the last such failure, for the
 	// timeout's reason; empty once a read is answered.
 	unanswered string
+	// statusPipelines is the tag pipeline's resolution from the tag
+	// commit's CircleCI statuses, for when the pipeline listing does not
+	// name it.
+	statusPipelines statusPipelines
 }
 
 // New validates config and returns a Waiter.
@@ -268,11 +290,20 @@ func (w *Waiter) wait(ctx context.Context, result *Result) error {
 		if result.ReleaseModel != ReleaseModelAutoRelease {
 			return noReleaseErr("%s/%s releases through the %s workflow, which does not tag the merge commit of #%d: a release of it is waited for by its version", owner, repo, result.ReleaseModel, w.config.PR)
 		}
-		tag, err := w.awaitTagForCommit(ctx, sha, content)
+		tag, tagSHA, err := w.awaitTagForCommit(ctx, sha, content)
 		if err != nil {
 			return err
 		}
 		result.Tag = tag
+		if tagSHA != sha {
+			// A later commit's tag carries the merge: the release is read
+			// at that commit.
+			result.SHA = tagSHA
+			content, entry, err = w.readModels(ctx, tagSHA, result)
+			if err != nil {
+				return err
+			}
+		}
 		if w.config.PreferPromoted && isPrerelease(strings.TrimPrefix(tag, "v")) {
 			content, err = w.followPromotion(ctx, sha, content, result)
 			if err != nil {
@@ -510,6 +541,9 @@ func (w *Waiter) loop(ctx context.Context, result *Result, p *plan) error {
 		}
 		w.unanswered = ""
 		if state.failed {
+			if w.config.FailedLogLines > 0 {
+				result.FailedJobs = w.failedJobs(ctx, state)
+			}
 			return ciFailedErr("the tag pipeline of %s failed: %s", result.Tag, strings.Join(state.failedJobs, ", "))
 		}
 
@@ -740,48 +774,59 @@ func (w *Waiter) awaitTag(ctx context.Context, version Version) (tag, sha string
 }
 
 // awaitTagForCommit polls until a tag points at the merge commit, or the
-// merge commit's auto-release run shows that none will: a run that finished
-// without a tag decided the commits since the last release warrant none (no
-// release follows the merge), a run that failed before it tagged is the
-// release's CI failure, and a run cancelled before it tagged was superseded
-// by a newer push, whose tag carries the merge.
-func (w *Waiter) awaitTagForCommit(ctx context.Context, sha string, content *TagContent) (string, error) {
+// merge commit's auto-release run shows that none will, and returns the tag
+// and its commit. A run that finished without a tag decided the commits
+// since the last release warrant none: the release that carries the merge is
+// then the first tag on the run's branch (the pull request's base branch)
+// after the merge commit, and without one no release follows the merge. A run
+// that failed before it tagged is the release's CI failure, and a run
+// cancelled before it tagged was superseded by a newer push, whose tag
+// carries the merge.
+func (w *Waiter) awaitTagForCommit(ctx context.Context, sha string, content *TagContent) (tag, tagSHA string, err error) {
 	owner, repo, number := w.config.Owner, w.config.Repo, w.config.PR
 	auto, _ := content.releaseWorkflows()
 	if len(auto) == 0 {
 		// The entry declares auto-release ahead of the repository: no
 		// workflow at the merge commit tags it.
-		return "", noReleaseErr("the team-file entry of %s/%s declares auto-release, but %s at %s holds no auto-release workflow: nothing tags the merge commit of #%d", owner, repo, workflowsDir, short(sha), number)
+		return "", "", noReleaseErr("the team-file entry of %s/%s declares auto-release, but %s at %s holds no auto-release workflow: nothing tags the merge commit of #%d", owner, repo, workflowsDir, short(sha), number)
 	}
 	for {
 		tag, err := w.config.GitHub.FindTagForCommit(ctx, owner, repo, sha)
 		if err != nil {
-			return "", fmt.Errorf("listing tags: %w", err)
+			return "", "", fmt.Errorf("listing tags: %w", err)
 		}
 		if tag != "" {
-			return tag, nil
+			return tag, sha, nil
 		}
 		run, err := w.autoReleaseRun(ctx, sha, auto)
 		if err != nil {
-			return "", err
+			return "", "", err
 		}
-		if run != nil && run.Status == "completed" {
+		if run != nil && run.Status == statusCompleted {
 			// The run tags before it finishes, so a tag it made is in a
 			// listing read after it finished.
 			tag, err := w.config.GitHub.FindTagForCommit(ctx, owner, repo, sha)
 			if err != nil {
-				return "", fmt.Errorf("listing tags: %w", err)
+				return "", "", fmt.Errorf("listing tags: %w", err)
 			}
 			if tag != "" {
-				return tag, nil
+				return tag, sha, nil
 			}
 			switch run.Conclusion {
 			case "success", "neutral", "skipped":
-				return "", noReleaseErr("the %s run %s of the merge commit %s of %s/%s#%d finished without a tag: the commits since the last release warrant none", run.Name, run.URL, short(sha), owner, repo, number)
+				tag, tagSHA, err := w.firstTagAfter(ctx, sha, run.HeadBranch)
+				if err != nil {
+					return "", "", err
+				}
+				if tag != "" {
+					w.progress.Printf("the %s run of %s tagged nothing; %s at %s on %s is the first release that carries #%d", run.Name, short(sha), tag, short(tagSHA), run.HeadBranch, number)
+					return tag, tagSHA, nil
+				}
+				return "", "", noReleaseErr("the %s run %s of the merge commit %s of %s/%s#%d into %s finished without a tag, and no later tag on %s carries it: the commits since the last release warrant none", run.Name, run.URL, short(sha), owner, repo, number, run.HeadBranch, run.HeadBranch)
 			case "cancelled":
-				return "", notApplicableErr("the %s run %s of the merge commit %s of %s/%s#%d was cancelled before it tagged: a newer push to %s supersedes a pending run, and the next tag on %s carries #%d; wait for that version", run.Name, run.URL, short(sha), owner, repo, number, run.HeadBranch, run.HeadBranch, number)
+				return "", "", notApplicableErr("the %s run %s of the merge commit %s of %s/%s#%d was cancelled before it tagged: a newer push to %s supersedes a pending run, and the next tag on %s carries #%d; wait for that version", run.Name, run.URL, short(sha), owner, repo, number, run.HeadBranch, run.HeadBranch, number)
 			}
-			return "", ciFailedErr("the %s run %s of the merge commit %s of %s/%s#%d concluded %s before it tagged", run.Name, run.URL, short(sha), owner, repo, number, run.Conclusion)
+			return "", "", ciFailedErr("the %s run %s of the merge commit %s of %s/%s#%d concluded %s before it tagged", run.Name, run.URL, short(sha), owner, repo, number, run.Conclusion)
 		}
 		w.untagged = "no auto-release run of it has started"
 		if run != nil {
@@ -790,9 +835,36 @@ func (w *Waiter) awaitTagForCommit(ctx context.Context, sha string, content *Tag
 		w.progress.Printf("no tag on %s yet; %s", short(sha), w.untagged)
 		w.progress.Waiting(w.clock.Now(), fmt.Sprintf("a tag on the merge commit %s; %s", short(sha), w.untagged))
 		if err := w.clock.Sleep(ctx, w.interval()); err != nil {
-			return "", w.timeout(&Result{SHA: sha})
+			return "", "", w.timeout(&Result{SHA: sha})
 		}
 	}
+}
+
+// firstTagAfter is the first tag on branch after sha, the oldest tagged
+// commit of branch that contains sha, and that commit; empty when branch
+// has no tagged commit since sha.
+func (w *Waiter) firstTagAfter(ctx context.Context, sha, branch string) (tag, tagSHA string, err error) {
+	if branch == "" {
+		return "", "", nil
+	}
+	owner, repo := w.config.Owner, w.config.Repo
+	commits, err := w.config.GitHub.CommitsAfter(ctx, owner, repo, sha, branch)
+	if err != nil {
+		return "", "", fmt.Errorf("comparing %s with %s: %w", short(sha), branch, err)
+	}
+	if len(commits) == 0 {
+		return "", "", nil
+	}
+	tags, err := w.config.GitHub.CommitTags(ctx, owner, repo)
+	if err != nil {
+		return "", "", fmt.Errorf("listing tags: %w", err)
+	}
+	for _, commit := range commits {
+		if names := tags[commit]; len(names) > 0 {
+			return githubclient.NewestTag(names), commit, nil
+		}
+	}
+	return "", "", nil
 }
 
 // autoReleaseRun is the newest run of an auto-release workflow (one of

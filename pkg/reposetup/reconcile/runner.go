@@ -111,11 +111,11 @@ type Runner struct {
 	// AlignFilesAppID is the numeric id of the align-files GitHub App, whose
 	// installation opens the generated-file pull requests and arms their
 	// auto-merge. With it the protection step moves the review rule into the
-	// ruleset [ReviewRulesetName], which the App bypasses for pull requests
-	// beside the actors of [RulesetName]; the required checks stay in
-	// [RulesetName], which it does not bypass. An entry with agentMerge:
-	// false keeps the review in [RulesetName] without bypass. 0 keeps the
-	// review rule in [RulesetName] and deletes the review ruleset.
+	// ruleset [ReviewRulesetName], which the App and the Renovate App bypass
+	// for pull requests beside the actors of [RulesetName]; the required
+	// checks stay in [RulesetName], which they do not bypass. An entry with
+	// agentMerge: false keeps the review in [RulesetName] without bypass. 0
+	// keeps the review rule in [RulesetName] and deletes the review ruleset.
 	AlignFilesAppID int64
 	// GitHubRequests and CircleCIRequests count the requests the clients
 	// send, when the caller built the clients' transports over them (one

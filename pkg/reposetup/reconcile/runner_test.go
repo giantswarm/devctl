@@ -349,6 +349,13 @@ type stepCase struct {
 	verify func(t *testing.T, h *harness, repair *Result)
 }
 
+// seedMetadata adds the repository as the entry declares its description and
+// visibility, carrying the topics given.
+func seedMetadata(h *harness, topics []string) {
+	r := h.gh.addRepo(owner, name)
+	r.description, r.private, r.topics = "A sample service", false, topics
+}
+
 func TestSteps(t *testing.T) {
 	tekton := Webhook{URL: "https://github-pr-webhook.ci.giantswarm.io", Events: []string{"issue_comment", "pull_request", "check_run"}, ContentType: "json", Secret: "shared"}
 
@@ -1163,17 +1170,37 @@ func TestSteps(t *testing.T) {
 			verify: func(t *testing.T, h *harness, res *Result) {
 				review := h.repo().ruleset(ReviewRulesetName)
 				require.NotNil(t, review)
-				require.Equal(t, []*github.BypassActor{appBypass(testAppID), adminBypass(), teamBypass(testTeamID), appBypass(testAlignAppID)}, review.BypassActors, "the align-files App bypasses the review beside the default branch's actors")
+				require.Equal(t, []*github.BypassActor{appBypass(testAppID), adminBypass(), teamBypass(testTeamID), appBypass(testAlignAppID), appBypass(renovateAppID)}, review.BypassActors, "the align-files and Renovate Apps bypass the review beside the default branch's actors")
 				require.Equal(t, 1, review.Rules.PullRequest.RequiredApprovingReviewCount)
 				require.Nil(t, review.Rules.RequiredStatusChecks, "the review ruleset carries no checks")
 				main := h.repo().ruleset(RulesetName)
 				require.Nil(t, main.Rules.PullRequest, "the review rule moved out")
 				require.Equal(t, []string{ctxGoBuild}, checkContexts(main), "the checks stay where the align-files App has no bypass")
 				require.NotContains(t, actorKeys(main.BypassActors), actorKey(appBypass(testAlignAppID)))
+				require.NotContains(t, actorKeys(main.BypassActors), actorKey(appBypass(renovateAppID)), "the Renovate App waits for the checks")
 				require.Equal(t, []string{
-					`create ruleset "devctl: review", 1 required review(s); bypass actors: App 424242 on pull requests, repository admins on pull requests, team team-bumblebee on pull requests, App 434343 on pull requests`,
+					`create ruleset "devctl: review", 1 required review(s); bypass actors: App 424242 on pull requests, repository admins on pull requests, team team-bumblebee on pull requests, App 434343 on pull requests, App 2740 on pull requests`,
 					"stop requiring pull requests",
 				}, res.Step(StepProtection).Changes, "the review ruleset is written before the default branch drops the rule")
+			},
+		},
+		{
+			name: "protection: a review ruleset without the Renovate App gains it, the checks stay binding", step: StepProtection,
+			seed: func(h *harness) {
+				h.runner.AlignFilesAppID = testAlignAppID
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID), adminBypass(), teamBypass(testTeamID)).Rules.PullRequest = nil
+				review := r.addRuleset(ReviewRulesetName, nil, appBypass(testAppID), adminBypass(), teamBypass(testTeamID), appBypass(testAlignAppID))
+				review.Rules.Deletion, review.Rules.NonFastForward = nil, nil
+			},
+			wantCheck: VerdictDrift, wantChange: "bypass actors: App 424242 on pull requests, repository admins on pull requests, team team-bumblebee on pull requests, App 434343 on pull requests, App 2740 on pull requests",
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Equal(t, []string{"bypass actors: App 424242 on pull requests, repository admins on pull requests, team team-bumblebee on pull requests, App 434343 on pull requests, App 2740 on pull requests"}, res.Step(StepProtection).Changes, "one change: the review ruleset's bypass list")
+				require.Contains(t, actorKeys(h.repo().ruleset(ReviewRulesetName).BypassActors), actorKey(appBypass(renovateAppID)))
+				main := h.repo().ruleset(RulesetName)
+				require.NotContains(t, actorKeys(main.BypassActors), actorKey(appBypass(renovateAppID)), "the Renovate App waits for the checks")
+				require.Equal(t, []string{ctxGoBuild}, checkContexts(main))
 			},
 		},
 		{
@@ -1188,6 +1215,7 @@ func TestSteps(t *testing.T) {
 			verify: func(t *testing.T, h *harness, _ *Result) {
 				require.Nil(t, h.repo().ruleset(ReviewRulesetName))
 				require.NotNil(t, h.repo().ruleset(RulesetName).Rules.PullRequest)
+				require.Empty(t, h.repo().ruleset(RulesetName).BypassActors, "nothing bypasses the review, the Renovate App neither")
 			},
 		},
 		{
@@ -1880,6 +1908,46 @@ func TestSteps(t *testing.T) {
 			verify: func(t *testing.T, h *harness, _ *Result) {
 				require.Equal(t, "A sample service", h.repo().description)
 				require.False(t, h.repo().private)
+			},
+		},
+		{
+			name: "metadata: the topics follow the declaration, whatever their order on GitHub", step: StepMetadata,
+			entry: entryYAML + "  topics: [agentlab, fixture]\n",
+			seed: func(h *harness) {
+				seedMetadata(h, []string{"stale"})
+			},
+			wantCheck: VerdictDrift, wantChange: "topics [stale] → [agentlab, fixture]",
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				require.Equal(t, []string{"agentlab", "fixture"}, h.repo().topics)
+			},
+		},
+		{
+			name: "metadata: topics declared in another order are as declared", step: StepMetadata,
+			entry: entryYAML + "  topics: [fixture, agentlab]\n",
+			seed: func(h *harness) {
+				seedMetadata(h, []string{"agentlab", "fixture"})
+			},
+			wantCheck: VerdictOK,
+		},
+		{
+			name: "metadata: an empty topics list removes every topic", step: StepMetadata,
+			entry: entryYAML + "  topics: []\n",
+			seed: func(h *harness) {
+				seedMetadata(h, []string{"stale"})
+			},
+			wantCheck: VerdictDrift, wantChange: "topics [stale] → []",
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				require.Empty(t, h.repo().topics)
+			},
+		},
+		{
+			name: "metadata: an entry without topics leaves them alone", step: StepMetadata,
+			seed: func(h *harness) {
+				seedMetadata(h, []string{"kept"})
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				require.Equal(t, []string{"kept"}, h.repo().topics)
 			},
 		},
 		{

@@ -57,9 +57,17 @@ func (p RegistryProber) Probe(ctx context.Context, artifact Artifact) (string, b
 		opts = append(opts, remote.WithAuth(authn.Anonymous))
 	}
 
-	descriptor, err := remote.Head(ref, opts...)
+	head, err := remote.Head(ref, opts...)
 	if err == nil {
-		return descriptor.Digest.String(), true, nil
+		return head.Digest.String(), true, nil
+	}
+	// A HEAD has no body to say what went wrong, and an edge in front of the
+	// registry may answer it without a header the descriptor needs, or not
+	// know a tag it serves to a pull. The GET of the manifest a pull sends
+	// decides: available when it answers, missing or refused when it says so.
+	got, err := remote.Get(ref, opts...)
+	if err == nil {
+		return got.Digest.String(), true, nil
 	}
 	var terr *transport.Error
 	if !errors.As(err, &terr) {
@@ -73,7 +81,7 @@ func (p RegistryProber) Probe(ctx context.Context, artifact Artifact) (string, b
 		}
 	}
 	if terr.StatusCode == http.StatusNotFound && len(terr.Errors) == 0 {
-		// A HEAD carries no body: a plain 404 is the manifest missing.
+		// A 404 without an error body is the manifest missing.
 		return "", false, nil
 	}
 	answer := &RegistryAnswerError{Reference: artifact.Reference, Status: terr.StatusCode}

@@ -88,16 +88,31 @@ func (r *runner) newDocument() document {
 		Envelope: agentcli.NewEnvelope(command, time.Now()),
 		Result: &prmerge.Result{
 			Result: prwait.Result{Checks: []prwait.Check{}, Actions: []prwait.ActionRun{}},
-			Method: string(r.method()),
+			Method: r.documentMethod(),
 		},
 	}
 }
 
+// method is the method asked: --rebase or --squash, empty without either,
+// which leaves the default to the merge (rebase on a fork line, squash
+// elsewhere).
 func (r *runner) method() githubclient.MergeMethod {
-	if r.flag.Rebase {
+	switch {
+	case r.flag.Rebase:
 		return githubclient.MergeRebase
+	case r.flag.Squash:
+		return githubclient.MergeSquash
 	}
-	return githubclient.MergeSquash
+	return ""
+}
+
+// documentMethod is the document's method until the merge settles it: the
+// one asked, or squash.
+func (r *runner) documentMethod() string {
+	if m := r.method(); m != "" {
+		return string(m)
+	}
+	return string(githubclient.MergeSquash)
 }
 
 // call is a merge's arguments and flags, checked, and the token it acts with.
@@ -125,6 +140,9 @@ func (r *runner) check(ctx context.Context, args []string, repository *string, n
 	}
 	if !r.flag.NoReleaseWait && r.flag.ReleaseTimeout <= 0 {
 		return c, fmt.Errorf("--%s must be positive, got %s", flagReleaseTimeout, r.flag.ReleaseTimeout)
+	}
+	if r.flag.Rebase && r.flag.Squash {
+		return c, fmt.Errorf("--%s and --%s exclude each other", flagRebase, flagSquash)
 	}
 	if r.flag.OnDone != "" && !r.flag.Detach && r.flag.DetachedHandle == "" {
 		return c, fmt.Errorf("--%s needs --%s: a blocking merge reports its outcome itself", flagOnDone, flagDetach)
@@ -246,6 +264,7 @@ func (r *runner) merge(ctx context.Context, args []string, doc *document) error 
 			Progress:       progress,
 			Timeout:        r.flag.Timeout,
 			FailedLogLines: failedLogLines,
+			AcceptRed:      r.flag.AcceptRed,
 		},
 		Method:       r.method(),
 		UpdateBranch: r.flag.UpdateBranch,

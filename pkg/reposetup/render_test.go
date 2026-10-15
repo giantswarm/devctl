@@ -30,7 +30,11 @@ var renderCases = []struct {
 }{
 	{name: "go-service", team: "team-bumblebee", template: TemplateGo},
 	{name: "go-app", team: "team-bumblebee", template: TemplateGo, chart: TemplateChart},
+	// chart-app declares no visibility, so it is created private and its
+	// README drops the CircleCI and Scorecard badges; chart-app-public keeps
+	// them.
 	{name: "chart-app", team: "team-shield", template: TemplateChart},
+	{name: "chart-app-public", team: "team-shield", template: TemplateChart},
 	{name: "chart-app-vendir", team: "team-shield", template: TemplateChart, options: map[string]string{
 		OptionSync:          SyncVendir,
 		OptionPatch:         PatchScript,
