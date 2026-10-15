@@ -28,7 +28,9 @@ type runner struct {
 	// openRelease is releasewait.OpenSources and openCluster
 	// rolloutwait.OpenCluster; tests inject fakes.
 	openRelease func(ctx context.Context, endpoints agentcli.Endpoints, transport http.RoundTripper, warn func(string)) (*releasewait.Sources, error)
-	openCluster func(installation, kubeContext string, wrap func(http.RoundTripper) http.RoundTripper) (dynamic.Interface, error)
+	openCluster func(ctx context.Context, c rolloutwait.ClusterConfig) (dynamic.Interface, error)
+	// teleport logs in to an installation the kubeconfig lacks.
+	teleport rolloutwait.Teleport
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
@@ -121,7 +123,14 @@ func (r *runner) wait(ctx context.Context, args []string, doc *rolloutwait.Docum
 	// The kube context is read before the release wait, so a context that
 	// does not exist ends the wait at once rather than after the release.
 	kubeContext := r.kubeContext(installation)
-	client, err := r.openCluster(installation, kubeContext, retrying)
+	client, err := r.openCluster(ctx, rolloutwait.ClusterConfig{
+		Installation: installation,
+		Context:      kubeContext,
+		Kubeconfig:   r.flag.Kubeconfig,
+		Wrap:         retrying,
+		Teleport:     r.teleport,
+		Progress:     progress,
+	})
 	if err != nil {
 		return err
 	}
