@@ -29,6 +29,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- Renovate bumps the tool versions pinned in the generator's Makefile templates. A custom manager reads the standard
+  `# renovate:` annotation in `pkg/gen/input/**/*.mk.template`, which no other manager matched, so
+  `HELM_UNITTEST_VERSION` in `Makefile.gen.app.mk.template` sat unbumped since #2570.
 - `gen workflows`: `sync_from_upstream.yaml` sets `permissions: {}` at the workflow level, and `auto_release.yaml`
   grants its permissions on the `tag` job instead of the workflow, so no job inherits more than it is given.
 - The updater imports the Giant Swarm go-selfupdate line, `github.com/giantswarm/go-selfupdate` v1.6.3, with
