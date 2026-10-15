@@ -1041,3 +1041,55 @@ func resetConnection(t *testing.T, w http.ResponseWriter) {
 	}
 	_ = conn.Close()
 }
+
+// A 5xx on the merge call: the pull request is read once; merged, the merge
+// is a success without a second call; open, the call is repeated.
+func Test_Merge_retriesA5xx(t *testing.T) {
+	tests := []struct {
+		name      string
+		after     map[string]any
+		wantCalls int
+	}{
+		{name: "502 then 200", after: pull(nil), wantCalls: 2},
+		{name: "502 and merged meanwhile", after: pull(map[string]any{"state": "closed", "merged": true, "merge_commit_sha": "m9", "merged_by": map[string]any{"login": "someone"}}), wantCalls: 1},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			server, err := githubmock.Start(routes(pull(nil)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(server.Close)
+			target, err := url.Parse(server.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			upstream := httputil.NewSingleHostReverseProxy(target)
+			calls := 0
+			proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch {
+				case r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/merge") && calls == 0:
+					calls++
+					http.Error(w, `{"message":"Server Error"}`, http.StatusBadGateway)
+				case r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/merge"):
+					calls++
+					upstream.ServeHTTP(w, r)
+				case calls == 1 && r.Method == http.MethodGet && r.URL.Path == "/repos/o/r/pulls/42":
+					w.Header().Set("Content-Type", "application/json")
+					_ = json.NewEncoder(w).Encode(tc.after)
+				default:
+					upstream.ServeHTTP(w, r)
+				}
+			}))
+			t.Cleanup(proxy.Close)
+			h := newHarnessAt(t, server, proxy.URL, nil)
+			result, err := h.merge(t)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if calls != tc.wantCalls || result.MergeCommitSHA == "" {
+				t.Errorf("want %d merge call(s) and a merge commit, got %d, %+v", tc.wantCalls, calls, result)
+			}
+		})
+	}
+}

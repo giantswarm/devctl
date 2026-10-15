@@ -58,6 +58,9 @@ const (
 	// new head appears; updatedHeadInterval is between them.
 	updatedHeadReads    = 20
 	updatedHeadInterval = 3 * time.Second
+	// mergeAttempts bounds the merge calls of one merge: a call that failed
+	// with a 5xx or in transit, on a pull request still open, is repeated.
+	mergeAttempts = 3
 )
 
 // Config configures a Merger.
@@ -476,6 +479,14 @@ func (m *Merger) merge(ctx context.Context, owner, repo string, number int, pr *
 		opts.CommitTitle = fmt.Sprintf("%s (#%d)", strings.TrimSpace(pr.GetTitle()), number)
 	}
 	sha, err := m.github.MergePullRequest(ctx, owner, repo, number, opts)
+	for attempt := 1; err != nil && attempt < mergeAttempts && githubclient.IsMergeRetryable(err); attempt++ {
+		merged, readErr := m.mergedAnyway(ctx, owner, repo, number, result, err)
+		if readErr != nil || merged {
+			return readErr
+		}
+		m.progress.Printf("retrying the merge call (attempt %d of %d)", attempt+1, mergeAttempts)
+		sha, err = m.github.MergePullRequest(ctx, owner, repo, number, opts)
+	}
 	if githubclient.IsMergeDeclined(err) {
 		reason := strings.TrimSuffix(oneLine(err.Error()), ".") + ". "
 		if declinedByReviewRule(err) {
@@ -486,7 +497,10 @@ func (m *Merger) merge(ctx context.Context, owner, repo string, number int, pr *
 		return agentcli.NewExitError(agentcli.ExitNotApplicable, agentcli.VerdictNotApplicable, "%s", reason)
 	}
 	if err != nil {
-		return m.mergedAnyway(ctx, owner, repo, number, result, err)
+		if merged, readErr := m.mergedAnyway(ctx, owner, repo, number, result, err); readErr != nil || merged {
+			return readErr
+		}
+		return microerror.Mask(err)
 	}
 	result.MergeCommitSHA, result.MergedBy = sha, caller
 	m.progress.Printf("merged: %s of %s is %s, as %s", method, result.HeadSHA, sha, caller)
@@ -496,26 +510,27 @@ func (m *Merger) merge(ctx context.Context, owner, repo string, number int, pr *
 // mergedAnyway settles a merge call that failed without GitHub's verdict (a
 // reset connection, a timeout, a 5xx): GitHub may have merged before the
 // answer was lost, so the pull request is read again after a pause. Merged,
-// the merge goes on with GitHub's merge commit and a warning; open, the
-// call's error is the outcome; unreadable, the error says the merge is
-// unknown, never that nothing merged.
-func (m *Merger) mergedAnyway(ctx context.Context, owner, repo string, number int, result *Result, callErr error) error {
+// the merge goes on with GitHub's merge commit and a warning (true); open,
+// false with no error and the caller decides on the call's error or a
+// retry; unreadable, the error says the merge is unknown, never that
+// nothing merged.
+func (m *Merger) mergedAnyway(ctx context.Context, owner, repo string, number int, result *Result, callErr error) (bool, error) {
 	m.progress.Printf("the merge call failed (%s); reading the pull request in %s", callErr, mergeableInterval)
 	if err := m.clock.Sleep(ctx, mergeableInterval); err != nil {
-		return microerror.Maskf(executionError, "the merge call of %s/%s#%d failed and whether it merged is unknown: %v; the merge call failed: %v", owner, repo, number, err, callErr)
+		return false, microerror.Maskf(executionError, "the merge call of %s/%s#%d failed and whether it merged is unknown: %v; the merge call failed: %v", owner, repo, number, err, callErr)
 	}
 	pr, err := m.github.PullRequest(ctx, owner, repo, number)
 	if err != nil {
-		return microerror.Maskf(executionError, "the merge call of %s/%s#%d failed and whether it merged is unknown, reading the pull request failed too: %v; the merge call failed: %v", owner, repo, number, err, callErr)
+		return false, microerror.Maskf(executionError, "the merge call of %s/%s#%d failed and whether it merged is unknown, reading the pull request failed too: %v; the merge call failed: %v", owner, repo, number, err, callErr)
 	}
 	if !pr.GetMerged() {
-		return microerror.Mask(callErr)
+		return false, nil
 	}
 	result.MergeCommitSHA, result.MergedBy = pr.GetMergeCommitSHA(), pr.GetMergedBy().GetLogin()
 	warning := fmt.Sprintf("the merge call failed (%s), and GitHub reports %s/%s#%d merged as %s by %s", oneLine(callErr.Error()), owner, repo, number, result.MergeCommitSHA, result.MergedBy)
 	m.progress.Printf("warning: %s", warning)
 	result.Warnings = append(result.Warnings, warning)
-	return nil
+	return true, nil
 }
 
 // enqueue puts the pull request on the base's merge queue and waits, within

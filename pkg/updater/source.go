@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/creativeprojects/go-selfupdate"
+	"github.com/giantswarm/go-selfupdate"
 	"github.com/giantswarm/microerror"
 	"github.com/google/go-github/v92/github"
 )
