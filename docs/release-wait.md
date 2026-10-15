@@ -1,7 +1,7 @@
 # Waiting for a release: `devctl release wait`
 
 ```nohighlight
-devctl release wait <owner/repo> (<vX.Y.Z | X.Y.Z> | --pr <number>) [--timeout 30m] [--catalog] [--image <owner/name>]... [--chart <path>]... [--progress]
+devctl release wait <owner/repo> (<vX.Y.Z | X.Y.Z> | --pr <number>) [--timeout 30m] [--catalog] [--image <owner/name>]... [--chart <path>]... [--progress] [--failed-log [--failed-log-lines 50]]
 ```
 
 Blocks until every image and chart of a release is pullable and the tag's pipeline is green, then prints
@@ -185,6 +185,18 @@ the artifacts resolved is exit 1 with that job in `failedJobs`, and a pipeline t
 time is exit 2 with `every artifact of <tag> is available, the tag pipeline did not finish within <timeout>;
 pipeline N unfinished: …`. A document with exit 0 never lists an unfinished workflow.
 
+`--failed-log` answers why the tag's CI failed, the code's or the CI provider's, without opening the
+job in the browser, the same way as [`devctl pr wait --failed-log`](pr-wait.md) and with its log
+readers: when the tag's CI failed it reads the log of each failed job once and keeps the last
+`--failed-log-lines` lines (default 50), without terminal escapes. On CircleCI those are the failed
+jobs of every failed workflow of the tag pipeline (the output of their failed steps), or the job a
+failed CircleCI status links when the statuses are the verdict; for a repository without CircleCI,
+the failed jobs of every failed Actions run of the tag (`GET /repos/{owner}/{repo}/actions/runs/{id}/jobs`,
+then each job's log, ending at its last `##[error]` line). The tails go to stderr, one block per job
+headed `failed job <name> (<url>):`, and into the document under `failedJobs[]`. A green, pending or
+timed-out wait reads no log; a log that cannot be read is named in its job's `logError`, and the
+verdict stays exit 1. Without the flag the document is unchanged.
+
 ### Polling
 
 Requests to GitHub are conditional (`If-None-Match` with the last `ETag`), so an unchanged resource
@@ -252,6 +264,7 @@ stderr.
 | `artifacts[]` | `kind` (`image`, `chart`, `release-asset`), `reference` (the pullable reference, or the asset's download URL), `digest` (empty while missing), `state` (`available`, `missing`). Empty until the artifacts are known (hand-written CI before its pipeline exists). |
 | `pipeline` | The tag pipeline on CircleCI: `id`, `number`, `url`, `workflows[{name, status}]` (newest run per name), `failedJobs[]`, `unfinished[]` (the workflows not finished, `name (status)`, with `jobs not visible yet` when CircleCI does not list them yet; what a timeout was waiting for, empty at exit 0). `null` for a repository without CircleCI, or while the pipeline does not exist. |
 | `actions[]` | The Actions runs the tag triggered, for a repository without CircleCI: `name`, `runId`, `status`, `conclusion`, `url`. |
+| `failedJobs[]` | Present at exit 1 with `--failed-log`, as in [`pr wait`](pr-wait.md#the-document): each failed job with `name` (`<workflow>/<job>` on CircleCI, `<run>/<job>` on Actions), `source` (`actions` or `circleci`), `url`, and `logTail`, the last `--failed-log-lines` lines of its log, or `logError` when the log could not be read. A failed workflow or run whose jobs cannot be listed is named alone with its `logError`. Absent without the flag. |
 
 ## Exit codes
 
@@ -296,10 +309,14 @@ listed; `custom.yml` for generated CI too), `GET /repos/{o}/{r}/contents/helm/{d
 /repos/giantswarm/github/contents/repositories/{team}.yaml` (the team-file entry, until the one that
 declares the repository), `GET /repos/{o}/{r}/releases/tags/{tag}` and `GET
 /repos/{o}/{r}/actions/runs?head_sha={sha}` (release assets, no CircleCI; with `--pr`, the merge
-commit's auto-release run while no tag is on it).
+commit's auto-release run while no tag is on it). With `--failed-log` on a failed Actions run: `GET
+/repos/{o}/{r}/actions/runs/{id}/jobs`, then `GET /repos/{o}/{r}/actions/jobs/{id}/logs` (a redirect
+to the log, read without the token).
 
 CircleCI: `GET /api/v2/project/gh/{o}/{r}/pipeline` (the tag pipeline by `vcs.tag`, newest pages),
-`GET /api/v2/pipeline/{id}/workflow`, `GET /api/v2/workflow/{id}/job`.
+`GET /api/v2/pipeline/{id}/workflow`, `GET /api/v2/workflow/{id}/job`. With `--failed-log` on a failed
+job: `GET /api/v1.1/project/github/{o}/{r}/{job}` and its failed steps' `output_url`s, read without
+the token.
 
 Registries: `GET /v2/` then `HEAD /v2/{name}/manifests/{X.Y.Z}`, images under `giantswarm/…`, charts
 under `charts/giantswarm/…`.

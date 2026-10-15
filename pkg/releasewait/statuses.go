@@ -132,7 +132,7 @@ func (w *Waiter) statusesState(result *Result, statuses []githubclient.CommitSta
 	}
 	state := &pipelineState{green: true, jobs: map[string]bool{}}
 	for _, s := range statuses {
-		name := strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(s.Context, circleciclient.StatusContextPrefix), ":"))
+		name := statusJobName(s.Context)
 		state.jobs[name] = true
 		switch s.State {
 		case "success":
@@ -140,6 +140,7 @@ func (w *Waiter) statusesState(result *Result, statuses []githubclient.CommitSta
 			state.failed = true
 			state.green = false
 			state.failedJobs = append(state.failedJobs, name)
+			state.failedStatuses = append(state.failedStatuses, s)
 		default:
 			state.green = false
 		}
@@ -147,4 +148,9 @@ func (w *Waiter) statusesState(result *Result, statuses []githubclient.CommitSta
 	}
 	sort.Strings(state.failedJobs)
 	return state
+}
+
+// statusJobName is the job a CircleCI status context names.
+func statusJobName(context string) string {
+	return strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(context, circleciclient.StatusContextPrefix), ":"))
 }

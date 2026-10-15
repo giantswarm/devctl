@@ -7,6 +7,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `release wait --failed-log [--failed-log-lines 50]`, and `rollout wait`, which runs the release wait first: when the
+  tag's CI failed, the document carries `failedJobs[]` with each failed job's `name`, `source`, `url` and `logTail`
+  (or `logError`), and stderr the tails, read with `pr wait --failed-log`'s readers: the failed jobs of the tag
+  pipeline's failed CircleCI workflows, or of the tag's failed Actions runs. Without the flag the document is
+  unchanged.
+
 ### Fixed
 
 - `gen workflows`: the Auto Release step "Resolve the candidate to promote" retries its `commits/<rc>/status` read

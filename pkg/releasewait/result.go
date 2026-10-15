@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
+	"github.com/giantswarm/devctl/v8/pkg/prwait"
 )
 
 // The release models: how a repository turns a merge into a tag.
@@ -118,6 +119,10 @@ type Result struct {
 	Pipeline *Pipeline `json:"pipeline"`
 	// Actions are the runs the tag triggered; empty with CircleCI.
 	Actions []ActionsRun `json:"actions"`
+	// FailedJobs are, with Config.FailedLogLines, the failed jobs of a
+	// failed tag pipeline or of the tag's failed Actions runs with the tails
+	// of their logs; absent otherwise.
+	FailedJobs []prwait.FailedJob `json:"failedJobs,omitempty"`
 }
 
 // NewResult is the result before anything is known: the repository, empty

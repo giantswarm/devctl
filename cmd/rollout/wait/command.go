@@ -71,7 +71,9 @@ schemaVersion, exitCode, verdict, reason, warnings, startedAt, finishedAt), inst
 context, version, charts, deployments[{kind, namespace, name, chart,
 source, follows, runningVersion, state, message, workloads[{kind,
 namespace, name, ready, message}]}] and release, the release wait's
-{verdict, reason} and its result.
+{verdict, reason} and its result. --failed-log is the release wait's: when
+the release's CI failed, release.failedJobs[] carries the tail of each failed
+job's log, printed to stderr as well.
 
 Exit codes:
   0  rolled out: every deployment of the charts that follows the version

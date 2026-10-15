@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
+	"github.com/giantswarm/devctl/v8/pkg/prwait"
 	"github.com/giantswarm/devctl/v8/pkg/releasewait"
 	"github.com/giantswarm/devctl/v8/pkg/rolloutwait"
 )
@@ -19,6 +20,7 @@ type flag struct {
 	Images         []string
 	Charts         []string
 	HelmReleases   []string
+	FailedLog      prwait.FailedLog
 	Progress       bool
 }
 
@@ -31,5 +33,6 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().StringSliceVar(&f.Images, "image", nil, releasewait.ImageFlagUsage)
 	cmd.Flags().StringSliceVar(&f.Charts, "chart", nil, releasewait.ChartFlagUsage)
 	cmd.Flags().StringSliceVar(&f.HelmReleases, "helmrelease", nil, "Also wait for this HelmRelease, <name> or <namespace>/<name>, whatever chart it deploys (repeatable); exit 3 when none answers to the name")
+	f.FailedLog.Init(cmd)
 	agentcli.ProgressFlag(cmd, &f.Progress)
 }
