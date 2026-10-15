@@ -92,6 +92,20 @@ func (c *Client) MergePullRequest(ctx context.Context, owner, repo string, numbe
 	return result.GetSHA(), nil
 }
 
+// IsMergeRetryable says whether a failed [Client.MergePullRequest] may be
+// repeated once the pull request is read as still open: a 5xx or a call
+// that got no answer (reset, timeout). A spent rate limit and every 4xx
+// stand.
+func IsMergeRetryable(err error) bool {
+	var rate *github.RateLimitError
+	var abuse *github.AbuseRateLimitError
+	if err == nil || IsMergeDeclined(err) || errors.As(err, &rate) || errors.As(err, &abuse) {
+		return false
+	}
+	status := githubStatus(err)
+	return status >= http.StatusInternalServerError || status == 0
+}
+
 // UpdatePullRequestBranch asks GitHub to merge the base into the head
 // (the "Update branch" button). GitHub schedules it and answers 202; the
 // new head appears on the pull request a moment later. expectedHeadSHA
