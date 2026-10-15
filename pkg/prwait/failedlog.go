@@ -6,9 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"regexp"
 	"slices"
 	"strings"
+	"unicode"
 
 	"github.com/spf13/cobra"
 
@@ -115,7 +115,7 @@ type CircleCIJobs interface {
 
 // LogReader reads the tails of failed jobs' logs for the commands that wait
 // with --failed-log: GitHub Actions job logs and the output of CircleCI's
-// failed steps, without terminal escapes. A log that cannot be read is named
+// failed steps, without terminal control sequences or control characters but tab. A log that cannot be read is named
 // in the job's LogError.
 type LogReader struct {
 	GitHub JobLogs
@@ -171,16 +171,13 @@ func (r LogReader) CircleCIJob(ctx context.Context, owner, repo string, client C
 	return job
 }
 
-// ansiEscape matches the colour and cursor sequences CI logs carry.
-var ansiEscape = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]`)
-
 // actionsError marks the line GitHub Actions logs a failed step's end with
 // ("##[error]Process completed with exit code 1."); after the last one come
 // the post-job steps, which do not say why the job failed.
 const actionsError = "##[error]"
 
-// tailLines returns the last n lines of r, without terminal escapes and
-// carriage returns. With a non-empty until, a log that carries it ends at
+// tailLines returns the last n lines of r, without terminal control
+// sequences and control characters (stripControls). With a non-empty until, a log that carries it ends at
 // its last line containing until.
 func tailLines(r io.Reader, n int, until string) (string, error) {
 	var tail, untilTail []string
@@ -188,7 +185,7 @@ func tailLines(r io.Reader, n int, until string) (string, error) {
 	for {
 		line, err := reader.ReadString('\n')
 		if line != "" {
-			line = ansiEscape.ReplaceAllString(strings.TrimRight(line, "\r\n"), "")
+			line = stripControls(line)
 			tail = append(tail, line)
 			if len(tail) > n {
 				tail = tail[1:]
@@ -208,4 +205,87 @@ func tailLines(r io.Reader, n int, until string) (string, error) {
 		tail = untilTail
 	}
 	return strings.Join(tail, "\n"), nil
+}
+
+// stripControls returns line without its terminal control sequences and
+// control characters: a CI log is written by the code under test, and its
+// tail reaches a terminal and a reader that trusts it. Every escape sequence
+// goes whole, its payload included: CSI, OSC up to BEL or ST, DCS, SOS, PM
+// and APC strings up to ST, and the other ESC sequences, in their 7-bit and
+// 8-bit (C1) forms. Every other C0 and C1 control goes too, except tab.
+func stripControls(line string) string {
+	runes := []rune(line)
+	var b strings.Builder
+	for i := 0; i < len(runes); i++ {
+		r := runes[i]
+		if r == '\x1b' && i+1 < len(runes) {
+			switch next := runes[i+1]; {
+			case next == '[':
+				i = skipCSI(runes, i+2)
+				continue
+			case next == ']':
+				i = skipString(runes, i+2, true)
+				continue
+			case next == 'P' || next == 'X' || next == '^' || next == '_':
+				i = skipString(runes, i+2, false)
+				continue
+			case next >= 0x20 && next <= 0x7e:
+				i = skipEscape(runes, i+1)
+				continue
+			}
+		}
+		switch r {
+		case 0x9b:
+			i = skipCSI(runes, i+1)
+			continue
+		case 0x9d:
+			i = skipString(runes, i+1, true)
+			continue
+		case 0x90, 0x98, 0x9e, 0x9f:
+			i = skipString(runes, i+1, false)
+			continue
+		}
+		if r != '\t' && unicode.IsControl(r) {
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
+// skipCSI returns the index of the final byte of the control sequence whose
+// parameters start at i, or the last index when it has none.
+func skipCSI(runes []rune, i int) int {
+	for ; i < len(runes); i++ {
+		if runes[i] >= 0x40 && runes[i] <= 0x7e {
+			return i
+		}
+	}
+	return len(runes) - 1
+}
+
+// skipString returns the index of the string terminator (ST, as ESC \ or
+// 0x9c; BEL too for an OSC) of the control string whose payload starts at i,
+// or the last index when it is not terminated.
+func skipString(runes []rune, i int, bel bool) int {
+	for ; i < len(runes); i++ {
+		switch {
+		case runes[i] == 0x9c, bel && runes[i] == '\a':
+			return i
+		case runes[i] == '\x1b' && i+1 < len(runes) && runes[i+1] == '\\':
+			return i + 1
+		}
+	}
+	return len(runes) - 1
+}
+
+// skipEscape returns the index of the final byte of the ESC sequence whose
+// intermediates (0x20-0x2f) or final byte start at i.
+func skipEscape(runes []rune, i int) int {
+	for ; i < len(runes); i++ {
+		if runes[i] >= 0x30 && runes[i] <= 0x7e {
+			return i
+		}
+	}
+	return len(runes) - 1
 }

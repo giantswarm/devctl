@@ -188,7 +188,7 @@ pipeline N unfinished: …`. A document with exit 0 never lists an unfinished wo
 `--failed-log` answers why the tag's CI failed, the code's or the CI provider's, without opening the
 job in the browser, the same way as [`devctl pr wait --failed-log`](pr-wait.md) and with its log
 readers: when the tag's CI failed it reads the log of each failed job once and keeps the last
-`--failed-log-lines` lines (default 50), without terminal escapes. On CircleCI those are the failed
+`--failed-log-lines` lines (default 50), without terminal control sequences or control characters but tab. On CircleCI those are the failed
 jobs of every failed workflow of the tag pipeline (the output of their failed steps), or the job a
 failed CircleCI status links when the statuses are the verdict; for a repository without CircleCI,
 the failed jobs of every failed Actions run of the tag (`GET /repos/{owner}/{repo}/actions/runs/{id}/jobs`,
