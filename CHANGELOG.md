@@ -23,6 +23,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- The generated `install-helm-unittest` target passes `--verify=false` when `helm plugin install` knows the flag (helm v4,
+  which refuses the plugin's unverifiable source otherwise) and installs as before with helm v3, so `make helm-test`
+  runs under both.
 - `release wait` on a repository whose CI is GitHub Actions only reads the check runs of the tag's commit as the tag's
   pipeline: `ciModel` is `actions` instead of `none`, `pipeline` lists them with their conclusions, the verdict is not
   `available` until all succeeded and a failed one is `ci_failed`. A repository with CircleCI is unchanged.
