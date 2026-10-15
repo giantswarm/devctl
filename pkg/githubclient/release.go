@@ -151,6 +151,36 @@ func (c *Client) ListWorkflowRunsForSHA(ctx context.Context, owner, repo, sha st
 	return out, nil
 }
 
+// WorkflowJob is one job of a GitHub Actions run.
+type WorkflowJob struct {
+	ID         int64
+	Name       string
+	Status     string
+	Conclusion string
+	URL        string
+}
+
+// ListWorkflowRunJobs returns the jobs of the latest attempt of an Actions
+// run as [WorkflowJob] values.
+func (c *Client) ListWorkflowRunJobs(ctx context.Context, owner, repo string, runID int64) ([]WorkflowJob, error) {
+	opts := &github.ListWorkflowJobsOptions{ListOptions: github.ListOptions{PerPage: 100}}
+	var out []WorkflowJob
+	for page := 0; page < maxPages; page++ {
+		jobs, resp, err := c.ghClient.Actions.ListWorkflowJobs(ctx, owner, repo, runID, opts)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+		for _, j := range jobs.Jobs {
+			out = append(out, WorkflowJob{ID: j.GetID(), Name: j.GetName(), Status: j.GetStatus(), Conclusion: j.GetConclusion(), URL: j.GetHTMLURL()})
+		}
+		if resp.NextPage == 0 {
+			break
+		}
+		opts.Page = resp.NextPage
+	}
+	return out, nil
+}
+
 // CommitStatus is one commit status of a commit.
 type CommitStatus struct {
 	Context   string

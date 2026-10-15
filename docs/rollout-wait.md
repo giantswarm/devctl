@@ -3,7 +3,7 @@
 ```nohighlight
 devctl rollout wait <installation> <owner/repo> (<vX.Y.Z | X.Y.Z> | --pr <number>) [--context <kube-context>]
     [--timeout 30m] [--release-timeout 30m] [--image <owner/name>]... [--chart <path>]... [--helmrelease [<namespace>/]<name>]...
-    [--reconcile] [--progress]
+    [--reconcile] [--progress] [--failed-log [--failed-log-lines 50]]
 ```
 
 Blocks until a release runs on an installation, then prints one JSON document and exits with a code
@@ -24,7 +24,7 @@ devctl rollout wait myinstallation giantswarm/giantswarm-configs --pr 1234
 ### The release first
 
 The command starts with the wait of `devctl release wait` for the same version or `--pr`, with the
-same rules, tokens and exit codes (`--release-timeout`, 30 minutes by default; `--image` and `--chart` name the image and the chart a hand-written tag job pushes outside the architect orb, as there: the kagent line's charts under `giantswarm/kagent/helm/`). That wait names the
+same rules, tokens and exit codes (`--release-timeout`, 30 minutes by default; `--image` and `--chart` name the image and the chart a hand-written tag job pushes outside the architect orb, as there: the kagent line's charts under `giantswarm/kagent/helm/`; `--failed-log` and `--failed-log-lines` read the tail of each failed job's log when the release's CI failed, as there and as in [`devctl pr wait`](pr-wait.md), into `release.failedJobs[]` and stderr). That wait names the
 release's charts from the sources that define them (the team-file entry, the tag pipeline's push
 jobs, `helm/<dir>/Chart.yaml` at the tag), so a repository that publishes several charts is waited for
 on all of them (a second chart a generated pipeline's `custom.yml` pushes off the same tag included:
@@ -140,7 +140,7 @@ The envelope (`command`, `schemaVersion`, `exitCode`, `verdict`, `reason`, `warn
 | `revision` | The merge commit of a configuration change waited for; absent for a version. |
 | `charts` | The release's charts, the names deployments are matched by. |
 | `deployments[]` | Every HelmRelease and App of the charts at the last poll (for a configuration change, the GitRepositories, Kustomizations, Konfigurations and HelmReleases above, `runningVersion` the commit each applied or the chart version): `kind`, `namespace`, `name`, `chart`, `source` (`OCIRepository <ns>/<name>`, `HelmChart <ns>/<name>`, `catalog <name>`), `follows` (`semver <range>`, `tag <tag>`, `digest <digest>`, `version <v>`), `runningVersion`, `state` (`rolled_out`, `progressing`, `failed`, `not_following`, `suspended`), `message` (what it waits for or why it failed) and `workloads[]` (`kind`, `namespace`, `name`, `ready`, `message`). |
-| `release` | The release wait's `verdict` and `reason`, and its result fields (see [release-wait.md](release-wait.md#the-document)). |
+| `release` | The release wait's `verdict` and `reason`, and its result fields (see [release-wait.md](release-wait.md#the-document)); with `--failed-log`, `release.failedJobs[]` when the release's CI failed. |
 
 ## Exit codes
 

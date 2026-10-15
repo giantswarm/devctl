@@ -55,6 +55,8 @@ type fixture struct {
 	charts []string
 	// wrapCircleCI, when set, stands in front of the CircleCI client.
 	wrapCircleCI func(CircleCI) CircleCI
+	// failedLogLines is --failed-log-lines with --failed-log; 0 without.
+	failedLogLines int
 }
 
 type entries struct{ fields *reposetup.Fields }
@@ -203,7 +205,7 @@ func run(t *testing.T, fx fixture) (Result, error) {
 	}
 	circleCalls := 0
 	config := Config{
-		Owner: testOwner, Repo: testRepo, Version: fx.version, PR: fx.pr, MergeCommitSHA: fx.mergeCommit, PreferPromoted: fx.preferPromoted, Timeout: fx.timeout, Catalog: fx.catalog, Images: fx.images, Charts: fx.charts,
+		Owner: testOwner, Repo: testRepo, Version: fx.version, PR: fx.pr, MergeCommitSHA: fx.mergeCommit, PreferPromoted: fx.preferPromoted, Timeout: fx.timeout, Catalog: fx.catalog, Images: fx.images, Charts: fx.charts, FailedLogLines: fx.failedLogLines,
 		GitHub:  ghClient,
 		Entries: entries{fx.entry},
 		CircleCI: func(context.Context) (CircleCI, error) {

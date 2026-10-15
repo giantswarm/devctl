@@ -37,6 +37,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"path"
 	"slices"
 	"strings"
@@ -73,6 +74,8 @@ type GitHub interface {
 	Reachable(ctx context.Context, owner, repo, ref, branch string) (bool, error)
 	ListWorkflowRunsForSHA(ctx context.Context, owner, repo, sha string) ([]githubclient.WorkflowRun, error)
 	ListCommitStatuses(ctx context.Context, owner, repo, sha string) ([]githubclient.CommitStatus, error)
+	ListWorkflowRunJobs(ctx context.Context, owner, repo string, runID int64) ([]githubclient.WorkflowJob, error)
+	JobLog(ctx context.Context, owner, repo string, jobID int64) (io.ReadCloser, error)
 	ListDirectory(ctx context.Context, owner, repo, path, ref string) ([]string, error)
 	GetFile(ctx context.Context, owner, repo, path, ref string) (githubclient.RepositoryFile, error)
 	IsPrivateRepository(ctx context.Context, owner, repo string) (bool, error)
@@ -87,6 +90,7 @@ type CircleCI interface {
 	GetProjectJob(ctx context.Context, org, repo string, number int64) (*circleciclient.ProjectJob, error)
 	GetPipeline(ctx context.Context, id string) (*circleciclient.PipelineDetail, error)
 	GetProjectPipeline(ctx context.Context, org, repo string, number int64) (*circleciclient.PipelineDetail, error)
+	FailedStepsOutput(ctx context.Context, org, repo string, number int64) (string, error)
 }
 
 // EntryFinder returns the team-file entry that declares a repository, and
@@ -142,6 +146,11 @@ type Config struct {
 	// or with the registry host in front. Each is expected as
 	// <chart>:<version>, the bare version helm requires.
 	Charts []string
+	// FailedLogLines, when positive, makes a failed tag pipeline read the
+	// log of each failed job once and keep that many of its last lines in
+	// Result.FailedJobs, read and trimmed as pr wait's --failed-log does. A
+	// green or pending tag reads no log.
+	FailedLogLines int
 
 	// GitHub is required. Entries and Registry are required; CircleCI is
 	// called once when the tag carries a .circleci/config.yml, so a
@@ -518,6 +527,9 @@ func (w *Waiter) loop(ctx context.Context, result *Result, p *plan) error {
 		}
 		w.unanswered = ""
 		if state.failed {
+			if w.config.FailedLogLines > 0 {
+				result.FailedJobs = w.failedJobs(ctx, state)
+			}
 			return ciFailedErr("the tag pipeline of %s failed: %s", result.Tag, strings.Join(state.failedJobs, ", "))
 		}
 

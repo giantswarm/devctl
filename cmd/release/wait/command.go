@@ -60,7 +60,15 @@ what the wait still waits for, every two minutes and when it changes
 schemaVersion, exitCode, verdict, reason, warnings, startedAt, finishedAt), repository, tag,
 sha, releaseModel, ciModel, artifacts[{kind, reference, digest, state}],
 pipeline{id, number, url, workflows[{name, status}], failedJobs[], unfinished[]} (null
-without CircleCI) and actions[{name, runId, status, conclusion, url}].
+without CircleCI), actions[{name, runId, status, conclusion, url}], and on
+exit 1 with --failed-log failedJobs[{name, source (actions|circleci), url,
+logTail, logError}].
+
+--failed-log: when the tag's CI failed, read the log of each failed CircleCI
+job of the tag pipeline, or each failed job of the tag's Actions runs, once
+and print its last --failed-log-lines lines (default 50) to stderr, read and
+trimmed the way pr wait's --failed-log does; a green or pending wait reads
+no log.
 
 Exit codes:
   0  available: every artifact resolves to a digest and the tag pipeline
