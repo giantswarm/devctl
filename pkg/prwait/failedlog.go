@@ -212,7 +212,8 @@ func tailLines(r io.Reader, n int, until string) (string, error) {
 // tail reaches a terminal and a reader that trusts it. Every escape sequence
 // goes whole, its payload included: CSI, OSC up to BEL or ST, DCS, SOS, PM
 // and APC strings up to ST, and the other ESC sequences, in their 7-bit and
-// 8-bit (C1) forms. Every other C0 and C1 control goes too, except tab.
+// 8-bit (C1) forms. Every other C0 and C1 control goes too, except tab,
+// and the bidirectional controls, which reorder what a reader sees.
 func stripControls(line string) string {
 	runes := []rune(line)
 	var b strings.Builder
@@ -245,7 +246,7 @@ func stripControls(line string) string {
 			i = skipString(runes, i+1, false)
 			continue
 		}
-		if r != '\t' && unicode.IsControl(r) {
+		if r != '\t' && unicode.IsControl(r) || unicode.Is(unicode.Bidi_Control, r) {
 			continue
 		}
 		b.WriteRune(r)

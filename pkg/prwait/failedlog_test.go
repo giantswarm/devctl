@@ -190,7 +190,8 @@ func Test_tailLines(t *testing.T) {
 		"charset designation":    {in: "a\x1b(Bb\n", n: 1, want: "ab"},
 		"C0 controls":            {in: "a\x07\x08\x00b\rc\x7f\n", n: 1, want: "abc"},
 		"C1 controls":            {in: "a\u009b31mb\u009d0;t\u009cc\u0090q\u009cd\u0085e\n", n: 1, want: "abcde"},
-		"tab and UTF-8 survive":  {in: "ok\tgrüße ✓ 日本 🐝\n", n: 1, want: "ok\tgrüße ✓ 日本 🐝"},
+		"bidi controls":          {in: "a\u202eb\u2066c\u2069\u200fd\n", n: 1, want: "abcd"},
+		"tab and UTF-8 survive":  {in: "ok\tgrüße ✓ 日本 🐝 👩\u200d💻\n", n: 1, want: "ok\tgrüße ✓ 日本 🐝 👩\u200d💻"},
 		"ends at the last until": {in: "a\n##[error]x\nb\n##[error]exit 1\ncleanup\n", n: 2, until: "##[error]", want: "b\n##[error]exit 1"},
 		"until absent":           {in: "a\nb\nc\n", n: 2, until: "##[error]", want: "b\nc"},
 	}
