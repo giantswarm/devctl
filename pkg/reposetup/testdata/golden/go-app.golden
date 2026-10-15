@@ -600,11 +600,24 @@ jobs:
             echo "::error title=Candidate not a pre-release::the GitHub release of ${rc} is not a pre-release."
             exit 1
           fi
-          if ! status=$(gh api "repos/${GH_REPO}/commits/${rc}/status" --jq '"\(.state) \(.total_count)"'); then
-            echo "::error title=Candidate status unreadable::the commit statuses of ${rc} could not be read (the job needs statuses: read); nothing is promoted."
-            exit 1
-          fi
-          read -r state count <<<"$status"
+          # The API now and then answers with an empty or truncated body or a
+          # 5xx: the read is retried with backoff, and only a failure on every
+          # try refuses the promotion.
+          request="repos/${GH_REPO}/commits/${rc}/status"
+          tries=4
+          for try in $(seq 1 "$tries"); do
+            if status=$(gh api "$request" --jq '"\(.state) \(.total_count)"') \
+              && read -r state count <<<"$status" \
+              && [ -n "$state" ] && [[ "$count" =~ ^[0-9]+$ ]]; then
+              break
+            fi
+            if [ "$try" = "$tries" ]; then
+              echo "::error title=Candidate status unreadable::GET ${request} failed ${tries} times (the job needs statuses: read); nothing is promoted."
+              exit 1
+            fi
+            echo "GET ${request} failed (try ${try} of ${tries}), retrying in $((2 ** try))s"
+            sleep $((2 ** try))
+          done
           if [ "$count" != 0 ] && [ "$state" != success ]; then
             echo "::error title=Candidate not built::the commit statuses of ${rc} are ${state}: https://github.com/${GH_REPO}/commit/$(git rev-parse "${rc}^{commit}"). Promote it once its pipelines passed."
             exit 1
@@ -1841,12 +1854,17 @@ HELM_UNITTEST_VERSION ?= v1.2.1
 # Nothing here reads APPLICATION, so this target carries no `check-env` prerequisite. A
 # chart-only repository sets APPLICATION nowhere, and requiring it made `make helm-test`
 # fail in exactly the repositories this target exists for.
+# A chart under a placeholder directory such as `helm/{APP-NAME}` belongs to a template
+# repository: its names render only once a repository created from it fills them in, so
+# its suites cannot pass here and run on the rendered copy instead. It is skipped, as a
+# chart reference with a placeholder is no chart for the catalog either.
 helm-test: install-helm-unittest ## Run the chart unit tests (helm-unittest).
 	@echo "====> $@"
 	@found=""; \
 	for d in $$(find helm -type d \( -name tests -o -name unittests \) 2>/dev/null | sort); do \
 		c=$$(dirname "$$d"); \
 		[ -f "$$c/Chart.yaml" ] || continue; \
+		case "$$c" in *[{}]*) echo "skipping $$c: a template's placeholder chart"; continue;; esac; \
 		ls "$$d"/*_test.yaml >/dev/null 2>&1 || continue; \
 		found=1; \
 		helm unittest -f "$$(basename "$$d")/*_test.yaml" --with-subchart=false "$$c" || exit 1; \

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -408,18 +409,37 @@ func Test_AutoReleaseDecide(t *testing.T) {
 func ghStub(t *testing.T, release, status string) string {
 	t.Helper()
 
+	return "PATH=" + flakyGhStub(t, release, status, 0) + string(os.PathListSeparator) + os.Getenv("PATH")
+}
+
+// flakyGhStub is ghStub whose status read fails its first failures tries the
+// way the API does now and then: alternately a truncated body (gh exits 1 with
+// jq's complaint) and an empty answer. A sleep beside it records each backoff
+// in the file sleeps instead of waiting. It returns the stub directory.
+func flakyGhStub(t *testing.T, release, status string, failures int) string {
+	t.Helper()
+
 	dir := t.TempDir()
-	script := "#!/usr/bin/env bash\n" +
+	gh := "#!/usr/bin/env bash\n" +
 		"case \"$1 $2\" in\n" +
 		"  'release view') [ -n '" + release + "' ] || exit 1; echo '" + release + "' ;;\n" +
-		"  api*) [ -n '" + status + "' ] || exit 1; echo '" + status + "' ;;\n" +
+		"  api*)\n" +
+		"    n=$(cat '" + dir + "/tries' 2>/dev/null || echo 0); echo $((n + 1)) >| '" + dir + "/tries'\n" +
+		"    if [ \"$n\" -lt " + strconv.Itoa(failures) + " ]; then\n" +
+		"      [ $((n % 2)) = 0 ] && { echo 'unexpected end of JSON input' >&2; exit 1; }\n" +
+		"      exit 0\n" +
+		"    fi\n" +
+		"    [ -n '" + status + "' ] || exit 1; echo '" + status + "' ;;\n" +
 		"  *) echo \"unexpected gh $*\" >&2; exit 2 ;;\n" +
 		"esac\n"
-	if err := os.WriteFile(filepath.Join(dir, "gh"), []byte(script), 0o700); err != nil { // #nosec G306 -- test-only executable stub
-		t.Fatalf("write gh stub: %v", err)
+	sleep := "#!/usr/bin/env bash\necho \"$1\" >> '" + dir + "/sleeps'\n"
+	for name, script := range map[string]string{"gh": gh, "sleep": sleep} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(script), 0o700); err != nil { // #nosec G306 -- test-only executable stub
+			t.Fatalf("write %s stub: %v", name, err)
+		}
 	}
 
-	return "PATH=" + dir + string(os.PathListSeparator) + os.Getenv("PATH")
+	return dir
 }
 
 // builtCandidate is the gh stub of a candidate whose pre-release exists and
@@ -523,6 +543,27 @@ func Test_AutoReleasePromote(t *testing.T) {
 	}
 }
 
+// Test_AutoReleasePromoteRetriesTheStatusRead pins that a transient empty or
+// truncated answer of the commit status read is retried with backoff rather
+// than refusing the promotion.
+func Test_AutoReleasePromoteRetriesTheStatusRead(t *testing.T) {
+	dir := repo(t, "v1.2.9", "fix: x", "v1.2.10-rc.1")
+	stub := flakyGhStub(t, "true", "success 2", 3)
+
+	got, log, err := runStep(t, promoteScript(t), dir,
+		"PATH="+stub+string(os.PathListSeparator)+os.Getenv("PATH"), "GH_REPO=giantswarm/example")
+	if err != nil || got["rc"] != "v1.2.10-rc.1" {
+		t.Fatalf("rc = %q, err = %v, want v1.2.10-rc.1:\n%s", got["rc"], err, log)
+	}
+	sleeps, err := os.ReadFile(filepath.Join(stub, "sleeps")) // #nosec G304 -- the stub's own file in a test temp dir
+	if err != nil {
+		t.Fatalf("read sleeps: %v", err)
+	}
+	if got, want := strings.Fields(string(sleeps)), []string{"2", "4", "8"}; !slices.Equal(got, want) {
+		t.Errorf("backoff = %q, want %q", got, want)
+	}
+}
+
 // Test_AutoReleasePromoteRefuses pins the refusals of a stable release: no
 // candidate to promote, a candidate without its GitHub pre-release or with a
 // failed or running pipeline, and a candidate whose commits release a
@@ -563,6 +604,20 @@ func Test_AutoReleasePromoteRefuses(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("a status read failing on every try names the request and the tries", func(t *testing.T) {
+		dir := repo(t, "v1.2.9", "fix: x", "v1.2.10-rc.1")
+		stub := flakyGhStub(t, "true", "success 2", 100)
+		_, log, err := runStep(t, promoteScript(t), dir,
+			"PATH="+stub+string(os.PathListSeparator)+os.Getenv("PATH"), "GH_REPO=giantswarm/example")
+		if err == nil {
+			t.Errorf("promote step succeeded, want a refusal:\n%s", log)
+		}
+		want := "::error title=Candidate status unreadable::GET repos/giantswarm/example/commits/v1.2.10-rc.1/status failed 4 times"
+		if !strings.Contains(log, want) {
+			t.Errorf("no %q annotation:\n%s", want, log)
+		}
+	})
 
 	t.Run("a candidate no pipeline reports on is promoted", func(t *testing.T) {
 		dir := repo(t, "v1.2.9", "fix: x", "v1.2.10-rc.1")

@@ -7,6 +7,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `release wait --failed-log [--failed-log-lines 50]`, and `rollout wait`, which runs the release wait first: when the
+  tag's CI failed, the document carries `failedJobs[]` with each failed job's `name`, `source`, `url` and `logTail`
+  (or `logError`), and stderr the tails, read with `pr wait --failed-log`'s readers: the failed jobs of the tag
+  pipeline's failed CircleCI workflows, or of the tag's failed Actions runs. Without the flag the document is
+  unchanged.
+- `rollout wait --kubeconfig <file>` reads the kube context and the installation from that one file instead of
+  `KUBECONFIG` or `~/.kube/config`, so a session can prepare a private one.
+- `rollout wait` on a kubeconfig without the installation's Teleport context runs `tsh kube login <installation>` into
+  a private temporary kubeconfig when `tsh` is logged in, reads through it and removes it; the machine's kubeconfig
+  is never written. A `tsh` that is not logged in is exit 8 (`tsh login`). The missing context was exit 7, and a
+  session ran `tsh kube login` into the shared kubeconfig itself.
+
 ### Changed
 
 - `gen workflows`: the generated release workflows authenticate as the `giantswarm-release` GitHub App instead of the shared
@@ -21,6 +35,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `release wait` on a repository whose CI is GitHub Actions only reads the check runs of the tag's commit as the tag's
+  pipeline: `ciModel` is `actions` instead of `none`, `pipeline` lists them with their conclusions, the verdict is not
+  `available` until all succeeded and a failed one is `ci_failed`. A repository with CircleCI is unchanged.
+- `pr wait` no longer reads red on a failed check of an earlier run of a workflow (a reopened pull request, a rerun) while
+  the workflow's newest run for the head is still open: it keeps waiting and exits on the newer run's outcome.
+- `gen makefile`: `helm-test`, which the generated `chart-tests` workflow runs, skips a chart under a placeholder
+  directory such as `helm/{MCP-NAME}`. A template repository's chart renders only in a repository created from it, so
+  its suites failed the job on every pull request of the template; the rendered copy runs them.
+- `release wait --pr`, `rollout wait --pr` and the release wait of `pr merge` find the release of a pull request merged
+  into a release branch: every tag is read when the newest do not include the merge commit, and when the merge commit's
+  auto-release run tagged nothing the first tag on the pull request's base branch after it carries the merge. A base
+  branch no later tag carries is `no_release`, the reason naming the branch.
+- `pr wait`, `pr merge`, `release wait` and `rollout wait` with `--failed-log` drop every terminal control sequence and
+  control character but tab from a failed job's log tail, on stderr and in `failedJobs[].logTail`: OSC (a clipboard
+  write, a hyperlink), DCS, SOS, PM and APC strings with their payload, every other ESC sequence, C0 and C1 controls
+  in 7-bit and 8-bit form, and the Unicode bidirectional controls. The job's `name`, `url` and `logError` are cleaned
+  the same way. Only CSI sequences were stripped from the tail, so a CI log could drive the reader's terminal.
+- `gen workflows`: the Auto Release step "Resolve the candidate to promote" retries its `commits/<rc>/status` read
+  four times with backoff (2s, 4s, 8s) on a failed, empty or truncated answer, and refuses the promotion only after the
+  last try, naming the request and the tries. A single transient `unexpected end of JSON input` failed a promote.
+- `rollout wait --helmrelease` judges a named HelmRelease of none of the release's charts (a component a meta chart
+  renders) by its own Ready condition at its current generation, no reconcile in flight, and its workloads. It was
+  judged by the meta chart's version, which its source excludes, so it read `not_following` and the wait reported
+  `rolled_out` while the component was still `Progressing` or `DependencyNotReady`.
 - `gen circleci`: the generated pipelines pin architect orb 10.13.3, whose `go-test` retries a transient
   proxy.golang.org error in its "go.mod and go.sum are clean" step instead of failing the job.
 - `gen makefile`: `helm-test` carries no `check-env` prerequisite. The recipe sweeps `helm/` and never reads

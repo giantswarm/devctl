@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
+	"github.com/giantswarm/devctl/v8/pkg/prwait"
 	"github.com/giantswarm/devctl/v8/pkg/releasewait"
 	"github.com/giantswarm/devctl/v8/pkg/rolloutwait"
 )
@@ -13,23 +14,27 @@ import (
 type flag struct {
 	PR             int
 	Context        string
+	Kubeconfig     string
 	Timeout        time.Duration
 	ReleaseTimeout time.Duration
 	Reconcile      bool
 	Images         []string
 	Charts         []string
 	HelmReleases   []string
+	FailedLog      prwait.FailedLog
 	Progress       bool
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().IntVar(&f.PR, "pr", 0, "Wait for the release auto-release tagged from this merged pull request instead of a version")
 	cmd.Flags().StringVar(&f.Context, "context", "", "The kube context of the installation's management cluster (default "+rolloutwait.ContextPrefix+"<installation>)")
+	cmd.Flags().StringVar(&f.Kubeconfig, "kubeconfig", "", "Read the kube context from this kubeconfig file only, instead of KUBECONFIG or ~/.kube/config; it is never written")
 	cmd.Flags().DurationVar(&f.Timeout, "timeout", rolloutwait.DefaultTimeout, "How long to wait for the rollout once the release is available before exit 2; scaled by DEVCTL_TIME_SCALE")
 	cmd.Flags().DurationVar(&f.ReleaseTimeout, "release-timeout", releasewait.DefaultTimeout, "How long to wait for the release to be available first before exit 2; scaled by DEVCTL_TIME_SCALE")
 	cmd.Flags().BoolVar(&f.Reconcile, "reconcile", false, "Ask Flux to reconcile the sources and HelmReleases that are behind once (sets reconcile.fluxcd.io/requestedAt), instead of waiting for their interval")
 	cmd.Flags().StringSliceVar(&f.Images, "image", nil, releasewait.ImageFlagUsage)
 	cmd.Flags().StringSliceVar(&f.Charts, "chart", nil, releasewait.ChartFlagUsage)
 	cmd.Flags().StringSliceVar(&f.HelmReleases, "helmrelease", nil, "Also wait for this HelmRelease, <name> or <namespace>/<name>, whatever chart it deploys (repeatable); exit 3 when none answers to the name")
+	f.FailedLog.Init(cmd)
 	agentcli.ProgressFlag(cmd, &f.Progress)
 }

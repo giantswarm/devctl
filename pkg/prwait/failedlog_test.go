@@ -2,6 +2,7 @@ package prwait
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -182,6 +183,16 @@ func Test_tailLines(t *testing.T) {
 		"more lines than n":      {in: "a\nb\nc\nd\ne\n", n: 2, want: "d\ne"},
 		"empty":                  {in: "", n: 3, want: ""},
 		"escapes and CRs gone":   {in: "\x1b[1;32mok\x1b[0m\r\n", n: 1, want: "ok"},
+		"OSC 52 gone whole":      {in: "a\x1b]52;c;ZWNobyBwd25lZA==\x07b\n", n: 1, want: "ab"},
+		"OSC 8 keeps its text":   {in: "\x1b]8;;https://evil.example\x1b\\docs\x1b]8;;\x1b\\\n", n: 1, want: "docs"},
+		"DCS gone whole":         {in: "a\x1bP1$r0m\x1b\\b\n", n: 1, want: "ab"},
+		"unterminated OSC":       {in: "a\x1b]0;title\nb\n", n: 2, want: "a\nb"},
+		"bare ESC":               {in: "a\x1bb\x1b\n", n: 1, want: "a"},
+		"charset designation":    {in: "a\x1b(Bb\n", n: 1, want: "ab"},
+		"C0 controls":            {in: "a\x07\x08\x00b\rc\x7f\n", n: 1, want: "abc"},
+		"C1 controls":            {in: "a\u009b31mb\u009d0;t\u009cc\u0090q\u009cd\u0085e\n", n: 1, want: "abcde"},
+		"bidi controls":          {in: "a\u202eb\u2066c\u2069\u200fd\n", n: 1, want: "abcd"},
+		"tab and UTF-8 survive":  {in: "ok\tgrüße ✓ 日本 🐝 👩\u200d💻\n", n: 1, want: "ok\tgrüße ✓ 日本 🐝 👩\u200d💻"},
 		"ends at the last until": {in: "a\n##[error]x\nb\n##[error]exit 1\ncleanup\n", n: 2, until: "##[error]", want: "b\n##[error]exit 1"},
 		"until absent":           {in: "a\nb\nc\n", n: 2, until: "##[error]", want: "b\nc"},
 	}
@@ -207,5 +218,27 @@ func Test_FailedLog_TailLines(t *testing.T) {
 	}
 	if _, err := (FailedLog{Enabled: true}).TailLines(); err == nil {
 		t.Error("want an error for --failed-log-lines 0")
+	}
+}
+
+func Test_FailedJob_controls(t *testing.T) {
+	job := FailedJob{
+		Name:     "build\x1b]52;c;eA==\x07",
+		Source:   SourceActions,
+		URL:      "https://example.com/\x1b[2Jjob",
+		LogError: "boom\u009b31m\r\n",
+	}
+	got, err := json.Marshal([]FailedJob{job})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `[{"name":"build","source":"actions","url":"https://example.com/job","logError":"boom"}]`
+	if string(got) != want {
+		t.Errorf("JSON: got %s, want %s", got, want)
+	}
+	var out strings.Builder
+	PrintFailedJobs(&out, []FailedJob{job})
+	if want := "failed job build (https://example.com/job): log unreadable: boom\n"; out.String() != want {
+		t.Errorf("stderr: got %q, want %q", out.String(), want)
 	}
 }

@@ -12,7 +12,7 @@ writes one line per poll to stderr for a person watching.
 `--failed-log` answers why a red wait is red without a second tool: on a red verdict it reads the
 log of each failed job once, a GitHub Actions job (`GET /repos/{owner}/{repo}/actions/jobs/{id}/logs`)
 and a CircleCI job (the output of its failed steps), and keeps the last `--failed-log-lines` lines
-(default 50), without terminal escapes. An Actions log ends at its last `##[error]` line, the failed
+(default 50), without terminal control sequences or control characters but tab. An Actions log ends at its last `##[error]` line, the failed
 step's end, so the post-job cleanup after it does not crowd out why the job failed. The tails go to stderr, one block per job headed
 `failed job <name> (<url>):`, and into the document under `failedJobs[]`. A green, pending or
 timed-out wait reads no log and costs no extra request. A log that cannot be read (expired, not
@@ -40,7 +40,9 @@ system that will produce it:
    GitHub keeps every run of a check; a workflow that ran twice for the same head has a stale
    first run next to the current one. A pull request retitled after a failed title check has a
    failed run and a passed run of the same workflow, and only the newest workflow run counts, as
-   in the merge box. A completed run whose conclusion is `action_required` (a deployment waiting for a
+   in the merge box. A failed check of an earlier run of a workflow (a reopened pull request, a rerun) does
+   not count while the workflow's newest run is still open: the wait goes on and exits on that run's outcome.
+   A completed run whose conclusion is `action_required` (a deployment waiting for a
    reviewer) is unfinished, not red. `neutral` and `skipped` pass.
 2. **Every CircleCI workflow of the head revision is `success`**, read from CircleCI's API: the
    newest pipeline for the revision, the newest run of each workflow name in it. A CircleCI job
