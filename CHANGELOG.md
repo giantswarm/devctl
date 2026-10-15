@@ -23,12 +23,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
-- Renovate bumps the tool versions pinned in the generator's Makefile templates. A custom manager reads the
-  standard `# renovate:` annotation in `pkg/gen/input/**/*.mk.template`; no built-in manager matched those files, as
-  renovate-presets anchors its Makefile manager on `/^Makefile\..+\.mk$/` and keys its other managers off
-  `# repo:` / `# registry:` comments. `HELM_UNITTEST_VERSION` in `Makefile.gen.app.mk.template` carried the annotation
-  since #2737 and was never bumped.
-
+- Renovate bumps the tool versions pinned in the generator's Makefile templates. A custom manager reads the standard
+  `# renovate:` annotation in `pkg/gen/input/**/*.mk.template`, which no other manager matched, so
+  `HELM_UNITTEST_VERSION` in `Makefile.gen.app.mk.template` sat unbumped since #2570.
 - `pr wait` no longer reads red on a failed check of an earlier run of a workflow (a reopened pull request, a rerun) while
   the workflow's newest run for the head is still open: it keeps waiting and exits on the newer run's outcome.
 - `gen makefile`: `helm-test`, which the generated `chart-tests` workflow runs, skips a chart under a placeholder

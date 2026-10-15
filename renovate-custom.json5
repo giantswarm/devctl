@@ -157,15 +157,16 @@
       depNameTemplate: 'giantswarm/kyverno-crds',
       datasourceTemplate: 'github-releases',
     },
-    // Tool versions pinned in the generator's Makefile templates and carrying the standard
-    // `# renovate:` annotation. No manager sees these files today: renovate-presets keys its
-    // Makefile manager on `/^Makefile\..+\.mk$/`, anchored at both ends, so it never matches
-    // a nested `*.mk.template`, and its other managers read `# repo:` / `# registry:` comment
-    // lines rather than `# renovate:`. One manager for the whole annotation form, so a new
-    // pin in a Makefile template needs only the comment above it. The first one it covers is
-    // HELM_UNITTEST_VERSION in Makefile.gen.app.mk.template, annotated since #2737 but never
-    // renovated. The generated copies in app repos stay uncovered on purpose: align-files
-    // regenerates them from here, so a per-repo bump would only fight the regeneration.
+    // Pins in the generator's Makefile templates that carry the standard `# renovate:`
+    // annotation. Nothing else matches these files: renovate-presets anchors its Makefile
+    // manager on `/^Makefile\..+\.mk$/`, which no nested `*.mk.template` matches, and its
+    // other managers read `# repo:` / `# registry:` comment lines instead. One entry for the
+    // whole annotation form, so a new pin needs only the comment above it -- written as
+    // `# renovate: datasource=X depName=Y [versioning=Z]` on the line directly above a single
+    // `NAME ?= value`. Any other shape silently stops being matched, with no error. The
+    // optional versioning capture is what keeps a `versioning=` annotation matching at all.
+    // The generated copies in app repos stay uncovered on purpose: align-files regenerates
+    // them from here, so a per-repo bump would only fight the regeneration.
     {
       customType: 'regex',
       managerFilePatterns: ['/pkg/gen/input/.*\\.mk\\.template$/'],
