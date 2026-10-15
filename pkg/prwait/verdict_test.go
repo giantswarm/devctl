@@ -186,6 +186,49 @@ func Test_evaluate(t *testing.T) {
 			},
 		},
 		{
+			name: "a reopened pull request: the failed check of the earlier run does not count while the newer run, whose jobs are not listed yet, is in progress",
+			snapshot: snapshot{
+				checkRuns: []*github.CheckRun{inSuite(checkRun(1, "go-build", "completed", "failure", t0), 100)},
+				runs: []*github.WorkflowRun{
+					ofWorkflow(workflowRun(10, "CI", "completed", "failure"), 1, 100),
+					ofWorkflow(workflowRun(11, "CI", "in_progress", ""), 1, 101),
+				},
+			},
+			wantUnfinished:  []string{"actions run CI (in_progress)"},
+			skipFieldChecks: true,
+		},
+		{
+			name: "a rerun of the run: the failed check of the earlier attempt does not count while the new attempt is in progress",
+			snapshot: snapshot{
+				checkRuns: []*github.CheckRun{inSuite(checkRun(1, "go-build", "completed", "failure", t0), 100)},
+				runs: []*github.WorkflowRun{
+					func() *github.WorkflowRun {
+						run := ofWorkflow(workflowRun(10, "CI", "in_progress", ""), 1, 100)
+						run.RunStartedAt = &github.Timestamp{Time: t1}
+						return run
+					}(),
+				},
+			},
+			wantUnfinished:  []string{"actions run CI (in_progress)"},
+			skipFieldChecks: true,
+		},
+		{
+			name: "a job failed in the run in progress: red at once, not superseded",
+			snapshot: snapshot{
+				checkRuns: []*github.CheckRun{inSuite(checkRun(1, "go-build", "completed", "failure", t1), 100)},
+				runs: []*github.WorkflowRun{
+					func() *github.WorkflowRun {
+						run := ofWorkflow(workflowRun(10, "CI", "in_progress", ""), 1, 100)
+						run.RunStartedAt = &github.Timestamp{Time: t0}
+						return run
+					}(),
+				},
+			},
+			wantRed:         []string{"check go-build concluded failure"},
+			wantUnfinished:  []string{"actions run CI (in_progress)"},
+			skipFieldChecks: true,
+		},
+		{
 			name: "one red and nine green runs of one name in one workflow run: red, the red run named",
 			snapshot: snapshot{
 				checkRuns: matrix(4, t0),
