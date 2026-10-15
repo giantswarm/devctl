@@ -467,9 +467,13 @@ func currentCheckRuns(runs []*github.CheckRun, workflowRuns []*github.WorkflowRu
 			bySuite[id] = run
 		}
 	}
+	openRuns := newestOpenWorkflowRuns(workflowRuns)
 	groups := map[string]*checkRunGroup{}
 	for _, run := range runs {
 		workflow := bySuite[run.GetCheckSuite().GetID()]
+		if supersededCheckRun(run, workflow, openRuns) {
+			continue
+		}
 		key := run.GetName() + "\x00" + workflowKey(workflow)
 		group, ok := groups[key]
 		switch {
@@ -499,6 +503,41 @@ func currentCheckRuns(runs []*github.CheckRun, workflowRuns []*github.WorkflowRu
 		return a.GetID() < b.GetID()
 	})
 	return current
+}
+
+// newestOpenWorkflowRuns maps each workflow to its newest run for the head
+// while that run has not finished: the run a rerun or a reopen started, whose
+// jobs may not be listed yet.
+func newestOpenWorkflowRuns(runs []*github.WorkflowRun) map[string]*github.WorkflowRun {
+	open := map[string]*github.WorkflowRun{}
+	for key, run := range newestWorkflowRuns(runs) {
+		if workflowRunOpen(run.GetStatus()) {
+			open[key] = run
+		}
+	}
+	return open
+}
+
+// supersededCheckRun: the check run belongs to an earlier run of its workflow
+// than the newest one, which is still open, or to an earlier attempt of the
+// run that is open again (the check run started before the attempt did). The
+// newer run's jobs are what the head is judged on, and until they are listed
+// the open run itself keeps the wait going: a failure of the earlier run is
+// not the head's verdict.
+func supersededCheckRun(run *github.CheckRun, workflow *github.WorkflowRun, open map[string]*github.WorkflowRun) bool {
+	if workflow == nil {
+		return false
+	}
+	newest, ok := open[workflowKey(workflow)]
+	switch {
+	case !ok:
+		return false
+	case newest.GetID() != workflow.GetID():
+		return true
+	default:
+		attempt := workflow.GetRunStartedAt().Time
+		return !attempt.IsZero() && run.GetStartedAt().Before(attempt)
+	}
 }
 
 // workflowKey identifies the workflow a run belongs to: its workflow id, the
@@ -537,19 +576,25 @@ func latestStatuses(statuses []*github.RepoStatus) []*github.RepoStatus {
 	return sortedByName(latest)
 }
 
+// newestWorkflowRuns maps each workflow to its run with the highest id.
+func newestWorkflowRuns(runs []*github.WorkflowRun) map[string]*github.WorkflowRun {
+	newest := map[string]*github.WorkflowRun{}
+	for _, run := range runs {
+		key := workflowKey(run)
+		current, ok := newest[key]
+		if !ok || run.GetID() > current.GetID() {
+			newest[key] = run
+		}
+	}
+	return newest
+}
+
 // latestWorkflowRuns keeps one run per workflow, the one with the highest id:
 // a run for the same head created later (a title check run again after the
 // retitle) replaces the stale one. Two workflows that share a name are kept
 // apart by their workflow id.
 func latestWorkflowRuns(runs []*github.WorkflowRun) []*github.WorkflowRun {
-	latest := map[string]*github.WorkflowRun{}
-	for _, run := range runs {
-		key := workflowKey(run)
-		current, ok := latest[key]
-		if !ok || run.GetID() > current.GetID() {
-			latest[key] = run
-		}
-	}
+	latest := newestWorkflowRuns(runs)
 	out := make([]*github.WorkflowRun, 0, len(latest))
 	for _, run := range latest {
 		out = append(out, run)

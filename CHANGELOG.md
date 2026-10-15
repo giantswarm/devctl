@@ -29,6 +29,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   `# repo:` / `# registry:` comments. `HELM_UNITTEST_VERSION` in `Makefile.gen.app.mk.template` carried the annotation
   since #2737 and was never bumped.
 
+- `pr wait` no longer reads red on a failed check of an earlier run of a workflow (a reopened pull request, a rerun) while
+  the workflow's newest run for the head is still open: it keeps waiting and exits on the newer run's outcome.
 - `gen makefile`: `helm-test`, which the generated `chart-tests` workflow runs, skips a chart under a placeholder
   directory such as `helm/{MCP-NAME}`. A template repository's chart renders only in a repository created from it, so
   its suites failed the job on every pull request of the template; the rendered copy runs them.
