@@ -81,7 +81,7 @@ workflows:
 # workflow in .circleci/config.yml merges into this file at pipeline runtime.
 version: 2.1
 orbs:
-  architect: giantswarm/architect@10.13.3
+  architect: giantswarm/architect@10.13.6
 
 workflows:
   build:
@@ -521,13 +521,7 @@ on:
         options: [auto, stable]
         default: auto
 
-permissions:
-  contents: write       # push tags and create the GitHub Release
-  # git-cliff's GitHub API lookups (commit.remote.pr_number / username
-  # in release notes) need PR read access via GITHUB_TOKEN.
-  pull-requests: read
-  # The stable run reads the commit statuses of the candidate it promotes.
-  statuses: read
+permissions: {}
 
 # Scope the concurrency lock per branch so a backport tag on release-2.x
 # doesn't block (or get blocked by) a main release, and vice versa. A second
@@ -540,6 +534,13 @@ jobs:
   tag:
     name: Tag
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write       # push tags and create the GitHub Release
+      # git-cliff's GitHub API lookups (commit.remote.pr_number / username
+      # in release notes) need PR read access via GITHUB_TOKEN.
+      pull-requests: read
+      # The stable run reads the commit statuses of the candidate it promotes.
+      statuses: read
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -880,7 +881,7 @@ jobs:
             --title "$TAG" \
             --notes-file release-notes.md \
             --target "$TARGET" \
-            "${flags[@]}"
+            ${flags[@]+"${flags[@]}"}
 
       # A tag that never reaches CircleCI is a silent failure: the GitHub
       # Release above exists and looks finished, but nothing gets built or
@@ -927,7 +928,7 @@ jobs:
             url="$api"
             pages=0
             while [ -n "$url" ] && [ "$pages" -lt 2 ]; do
-              resp=$(curl -sS "${auth[@]}" -w '\n%{http_code}' "$url" || printf '\n000')
+              resp=$(curl -sS ${auth[@]+"${auth[@]}"} -w '\n%{http_code}' "$url" || printf '\n000')
               last_code=${resp##*$'\n'}
               body=${resp%$'\n'*}
               [ "$last_code" = "200" ] || break
@@ -961,7 +962,7 @@ jobs:
                 exit 1
               fi
               echo "CircleCI never built ${TAG}; triggering the pipeline through the API"
-              resp=$(curl -sS "${auth[@]}" -w '\n%{http_code}' -X POST -H 'Content-Type: application/json' -d "{\"tag\":\"${TAG}\"}" "$api" || printf '\n000')
+              resp=$(curl -sS ${auth[@]+"${auth[@]}"} -w '\n%{http_code}' -X POST -H 'Content-Type: application/json' -d "{\"tag\":\"${TAG}\"}" "$api" || printf '\n000')
               code=${resp##*$'\n'}
               body=${resp%$'\n'*}
               if [ "$code" != "201" ]; then
@@ -1874,12 +1875,16 @@ helm-test: install-helm-unittest ## Run the chart unit tests (helm-unittest).
 # Installs the pinned version, and REPLACES a different one. A guard that only checks that
 # the plugin exists lets a developer keep an old version forever, and then a local run and
 # a CI run are not the same run -- which is the whole point of pinning it here.
+# helm v4 verifies a plugin's source by default and refuses this one, so `--verify=false`
+# is passed whenever `helm plugin install` knows the flag; helm v3 has none and installs as before.
 install-helm-unittest:
 	@have=$$(helm plugin list 2>/dev/null | awk '$$1 == "unittest" {print $$2}'); \
 	want=$$(echo "$(HELM_UNITTEST_VERSION)" | sed 's/^v//'); \
 	if [ "$$have" != "$$want" ]; then \
 		[ -z "$$have" ] || helm plugin uninstall unittest >/dev/null 2>&1 || true; \
-		helm plugin install https://github.com/helm-unittest/helm-unittest --version $(HELM_UNITTEST_VERSION); \
+		verify=""; \
+		helm plugin install --help 2>&1 | grep -q -e '--verify' && verify="--verify=false"; \
+		helm plugin install $$verify https://github.com/helm-unittest/helm-unittest --version $(HELM_UNITTEST_VERSION); \
 	fi
 
 # Chart tests join `make test`, the interface CI calls (make-target-ci-interface ADR,

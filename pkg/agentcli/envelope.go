@@ -32,6 +32,7 @@ const (
 	VerdictNotApplicable      Verdict = "not_applicable"
 	VerdictRequiredMissing    Verdict = "required_missing"
 	VerdictApprovalRequired   Verdict = "approval_required"
+	VerdictNoChecks           Verdict = "no_checks"
 	VerdictRefused            Verdict = "refused"
 	VerdictAvailable          Verdict = "available"
 	VerdictCIFailed           Verdict = "ci_failed"
@@ -63,8 +64,9 @@ const (
 	// ExitNotApplicable: draft, closed, conflicting, behind a strict base, a
 	// version that does not resolve.
 	ExitNotApplicable = 3
-	// ExitRequiredMissing: a required context never reported, or the head
-	// waits only for Actions runs a member has to approve.
+	// ExitRequiredMissing: a required context never reported, the head
+	// waits only for Actions runs a member has to approve, or its
+	// pull_request workflows never started.
 	ExitRequiredMissing = 4
 	// ExitRefused: the command declines (another author, an opt-out).
 	ExitRefused = 5

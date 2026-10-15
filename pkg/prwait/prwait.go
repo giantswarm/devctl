@@ -165,6 +165,10 @@ type head struct {
 	circleci *circleciclient.Client
 	branch   string
 	project  string
+	// workflows are the pull_request workflows an empty head expects runs
+	// of, once workflowsRead.
+	workflows     []string
+	workflowsRead bool
 }
 
 // Wait blocks until owner/repo#number is green (nil), red or otherwise
@@ -244,6 +248,10 @@ func (w *Waiter) Wait(ctx context.Context, owner, repo string, number int) (*Res
 			w.progress.Printf("poll %d: waiting for approval: %s", poll, strings.Join(e.unfinished, ", "))
 			result.Unfinished = e.unfinished
 			return result, agentcli.NewExitError(agentcli.ExitRequiredMissing, agentcli.VerdictApprovalRequired, "%s", e.approvalReason())
+		case w.noChecks(e):
+			w.progress.Printf("poll %d: no checks: %s", poll, strings.Join(e.unfinished, ", "))
+			result.Unfinished = e.unfinished
+			return result, noChecksError(h.sha, e.expectedRuns)
 		}
 		interval := w.interval()
 		w.progress.Printf("poll %d: waiting for %s; next poll in %s", poll, strings.Join(e.unfinished, ", "), interval)
@@ -306,11 +314,11 @@ func (w *Waiter) poll(ctx context.Context, owner, repo string, number int, h *he
 		result.Warnings = append(result.Warnings, fmt.Sprintf("the head changed from %s to %s during the wait", h.sha, sha))
 	}
 	if h.sha != sha {
-		h.sha, h.decided, h.circleci = sha, false, nil
+		h.sha, h.decided, h.circleci, h.workflowsRead = sha, false, nil, false
 		result.HeadSHA = sha
 	}
 	if h.baseRef != baseRef || h.required == nil {
-		h.baseRef = baseRef
+		h.baseRef, h.workflowsRead = baseRef, false
 		result.BaseRef = baseRef
 		required, err := w.github.RequiredStatusContexts(ctx, owner, repo, baseRef)
 		if err != nil {
@@ -342,6 +350,9 @@ func (w *Waiter) poll(ctx context.Context, owner, repo string, number int, h *he
 	}
 
 	e := evaluate(s)
+	if err := w.expectPullRequestRuns(ctx, owner, repo, h, pr.GetUpdatedAt().Time, e); err != nil {
+		return nil, err
+	}
 	result.Checks, result.Actions, result.CircleCI, result.AcceptedRed = e.checks, e.actions, e.circleci, e.acceptedRed
 	return e, nil
 }

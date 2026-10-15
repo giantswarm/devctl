@@ -9,6 +9,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `pr wait` (and the wait of `pr merge`): a head with no check run, status or Actions run, in a repository whose
+  active workflows run on every `pull_request` push against the base, waits for their runs, and two minutes after
+  the pull request's last update ends with exit 4, verdict `no_checks`, naming the workflows and the
+  close-and-reopen retrigger. GitHub had not delivered the event, and the wait answered `green` on the empty set.
+  A repository without such a workflow, and a head commit whose message skips CI, stay green as before.
+
 - `release wait --failed-log [--failed-log-lines 50]`, and `rollout wait`, which runs the release wait first: when the
   tag's CI failed, the document carries `failedJobs[]` with each failed job's `name`, `source`, `url` and `logTail`
   (or `logError`), and stderr the tails, read with `pr wait --failed-log`'s readers: the failed jobs of the tag
@@ -35,6 +41,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `gen workflows`: `sync_from_upstream.yaml` sets `permissions: {}` at the workflow level, and `auto_release.yaml`
+  grants its permissions on the `tag` job instead of the workflow, so no job inherits more than it is given.
+- The updater imports the Giant Swarm go-selfupdate line, `github.com/giantswarm/go-selfupdate` v1.6.3, with
+  `github.com/giantswarm/selfupdate-cosign` v0.3.4: upstream `creativeprojects/go-selfupdate` no longer compiles next
+  to selfupdate-cosign v0.3.4, and the binary no longer carries `golang.org/x/crypto/openpgp` (GO-2026-5932).
+- `gen circleci`: the generated pipelines pin architect orb 10.13.6, whose `cosign-sign-verify` no longer leaves an
+  image or chart unsigned when Rekor answers "an equivalent entry already exists": it checks the registry for the
+  signature and signs again when none is there, so the strict `cosign verify` after it passes.
+- The generated `install-helm-unittest` target passes `--verify=false` when `helm plugin install` knows the flag (helm v4,
+  which refuses the plugin's unverifiable source otherwise) and installs as before with helm v3, so `make helm-test`
+  runs under both.
 - `release wait` on a repository whose CI is GitHub Actions only reads the check runs of the tag's commit as the tag's
   pipeline: `ciModel` is `actions` instead of `none`, `pipeline` lists them with their conclusions, the verdict is not
   `available` until all succeeded and a failed one is `ci_failed`. A repository with CircleCI is unchanged.

@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/creativeprojects/go-selfupdate"
+	"github.com/giantswarm/go-selfupdate"
 )
 
 // githubAPI is a GitHub API double serving one release of giantswarm/devctl
