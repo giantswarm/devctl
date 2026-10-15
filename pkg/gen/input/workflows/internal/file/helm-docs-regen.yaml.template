@@ -67,7 +67,7 @@ jobs:
             # Fork PRs never see secrets, and Dependabot-triggered runs only see
             # Dependabot secrets, so the regen job is skipped rather than failed:
             # the PR then behaves as it did before this workflow existed.
-            echo "::warning::The giantswarm-release App secrets (RELEASE_BOT_CLIENT_ID, RELEASE_BOT_PRIVATE_KEY) are not available to this run, nothing is regenerated. For dependabot/ branches add them as Dependabot secrets as well."
+            echo "::warning::The giantswarm-release App secrets (RELEASE_BOT_CLIENT_ID, RELEASE_BOT_PRIVATE_KEY) are not available to this run, nothing is regenerated. Fork PRs and Dependabot runs see no Actions secrets, so this is expected there."
             echo "available=false" >> "$GITHUB_OUTPUT"
           else
             echo "available=true" >> "$GITHUB_OUTPUT"
