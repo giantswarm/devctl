@@ -10,13 +10,13 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.114.3
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/bmatcuk/doublestar/v4 v4.10.3
-	github.com/creativeprojects/go-selfupdate v1.6.0
 	github.com/fatih/color v1.19.0
+	github.com/giantswarm/go-selfupdate v1.6.3
 	github.com/giantswarm/microerror v0.4.1
 	github.com/giantswarm/micrologger v1.1.2
 	github.com/giantswarm/releases/sdk v0.13.0
 	github.com/giantswarm/schemalint/v2 v2.6.3
-	github.com/giantswarm/selfupdate-cosign v0.3.0
+	github.com/giantswarm/selfupdate-cosign v0.3.4
 	github.com/go-git/go-git/v5 v5.19.3
 	github.com/godbus/dbus/v5 v5.2.4
 	github.com/google/go-cmp v0.7.0
