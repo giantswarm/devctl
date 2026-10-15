@@ -23,6 +23,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `gen makefile`: `helm-test`, which the generated `chart-tests` workflow runs, skips a chart under a placeholder
+  directory such as `helm/{MCP-NAME}`. A template repository's chart renders only in a repository created from it, so
+  its suites failed the job on every pull request of the template; the rendered copy runs them.
 - `release wait --pr`, `rollout wait --pr` and the release wait of `pr merge` find the release of a pull request merged
   into a release branch: every tag is read when the newest do not include the merge commit, and when the merge commit's
   auto-release run tagged nothing the first tag on the pull request's base branch after it carries the merge. A base
