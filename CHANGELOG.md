@@ -23,6 +23,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `gen circleci`: the generated pipelines pin architect orb 10.13.6, whose `cosign-sign-verify` no longer leaves an
+  image or chart unsigned when Rekor answers "an equivalent entry already exists": it checks the registry for the
+  signature and signs again when none is there, so the strict `cosign verify` after it passes.
 - The generated `install-helm-unittest` target passes `--verify=false` when `helm plugin install` knows the flag (helm v4,
   which refuses the plugin's unverifiable source otherwise) and installs as before with helm v3, so `make helm-test`
   runs under both.
