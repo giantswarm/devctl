@@ -9,6 +9,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `release wait --failed-log [--failed-log-lines 50]`, and `rollout wait`, which runs the release wait first: when the
+  tag's CI failed, the document carries `failedJobs[]` with each failed job's `name`, `source`, `url` and `logTail`
+  (or `logError`), and stderr the tails, read with `pr wait --failed-log`'s readers: the failed jobs of the tag
+  pipeline's failed CircleCI workflows, or of the tag's failed Actions runs. Without the flag the document is
+  unchanged.
 - `rollout wait --kubeconfig <file>` reads the kube context and the installation from that one file instead of
   `KUBECONFIG` or `~/.kube/config`, so a session can prepare a private one.
 - `rollout wait` on a kubeconfig without the installation's Teleport context runs `tsh kube login <installation>` into

@@ -13,6 +13,7 @@ import (
 	"k8s.io/client-go/dynamic"
 
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
+	"github.com/giantswarm/devctl/v8/pkg/prwait"
 	"github.com/giantswarm/devctl/v8/pkg/releasewait"
 	"github.com/giantswarm/devctl/v8/pkg/rolloutwait"
 )
@@ -99,6 +100,10 @@ func (r *runner) wait(ctx context.Context, args []string, doc *rolloutwait.Docum
 			return err
 		}
 	}
+	failedLogLines, err := r.flag.FailedLog.TailLines()
+	if err != nil {
+		return err
+	}
 	if err := r.gate(false); err != nil {
 		return err
 	}
@@ -147,6 +152,7 @@ func (r *runner) wait(ctx context.Context, args []string, doc *rolloutwait.Docum
 		Timeout:        r.flag.ReleaseTimeout,
 		Images:         r.flag.Images,
 		Charts:         r.flag.Charts,
+		FailedLogLines: failedLogLines,
 		GitHub:         sources.GitHub,
 		Entries:        sources.Entries,
 		CircleCI:       sources.CircleCI,
@@ -162,6 +168,7 @@ func (r *runner) wait(ctx context.Context, args []string, doc *rolloutwait.Docum
 		return err
 	}
 	if err := releaseWaiter.Wait(ctx, &doc.Release.Result); err != nil {
+		prwait.PrintFailedJobs(r.stderr, doc.Release.FailedJobs)
 		code, verdict := agentcli.Outcome(err)
 		doc.Release.Verdict, doc.Release.Reason = verdict, err.Error()
 		// A pull request that releases nothing (a configuration change)

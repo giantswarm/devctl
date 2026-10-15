@@ -24,6 +24,17 @@ type pipelineState struct {
 	// them; nil until the pipeline and the jobs of all its workflows are
 	// listed.
 	jobs map[string]bool
+	// failedWorkflows, failedRuns and failedStatuses are what failed, for
+	// Config.FailedLogLines: the CircleCI workflows, the Actions runs, the
+	// CircleCI commit statuses.
+	failedWorkflows []failedWorkflow
+	failedRuns      []ActionsRun
+	failedStatuses  []githubclient.CommitStatus
+}
+
+// failedWorkflow is a failed workflow of the tag pipeline.
+type failedWorkflow struct {
+	id, name, url string
 }
 
 // The Actions conclusions that are failures.
@@ -79,6 +90,7 @@ func (w *Waiter) pipelineState(ctx context.Context, result *Result, needJobs boo
 		case failed:
 			state.failed = true
 			state.green = false
+			state.failedWorkflows = append(state.failedWorkflows, failedWorkflow{id: run.ID, name: run.Name, url: circleciclient.WorkflowURL(owner, repo, pipeline.Number, run.ID)})
 		case circleciclient.WorkflowSucceeded(run.Status):
 			successes++
 		case run.Status == "not_run":
@@ -158,6 +170,7 @@ func (w *Waiter) actionsState(ctx context.Context, result *Result) (*pipelineSta
 			state.failed = true
 			state.green = false
 			state.failedJobs = append(state.failedJobs, run.Name)
+			state.failedRuns = append(state.failedRuns, result.Actions[len(result.Actions)-1])
 		}
 		w.progress.Printf("actions run %s: %s %s", run.Name, run.Status, run.Conclusion)
 	}

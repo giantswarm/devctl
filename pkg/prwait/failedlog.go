@@ -90,56 +90,85 @@ func PrintFailedJobs(w io.Writer, jobs []FailedJob) {
 // failedJobs reads the log of every failed job of a red evaluation. A log
 // that cannot be read is named in its job; the verdict is red either way.
 func (w *Waiter) failedJobs(ctx context.Context, owner, repo string, h *head, e *evaluation) []FailedJob {
+	logs := LogReader{GitHub: w.github, Lines: w.failedLogLines}
 	jobs := []FailedJob{}
 	for _, job := range e.failedActionsJobs {
-		failed := FailedJob{Name: job.name, Source: SourceActions, URL: job.url}
-		failed.LogTail, failed.LogError = w.actionsLogTail(ctx, owner, repo, job.id)
-		jobs = append(jobs, failed)
+		jobs = append(jobs, logs.ActionsJob(ctx, owner, repo, job.id, job.name, job.url))
 	}
 	for _, workflow := range e.failedWorkflows {
-		jobs = append(jobs, w.circleCIFailedJobs(ctx, owner, repo, h.circleci, workflow)...)
+		jobs = append(jobs, logs.CircleCIWorkflow(ctx, owner, repo, h.circleci, workflow.id, workflow.name, workflow.url)...)
 	}
 	return jobs
 }
 
-func (w *Waiter) actionsLogTail(ctx context.Context, owner, repo string, jobID int64) (string, string) {
-	log, err := w.github.JobLog(ctx, owner, repo, jobID)
-	if err != nil {
-		return "", err.Error()
-	}
-	defer func() { _ = log.Close() }()
-	tail, err := tailLines(log, w.failedLogLines, actionsError)
-	if err != nil {
-		return "", err.Error()
-	}
-	return tail, ""
+// JobLogs reads the log of a GitHub Actions job.
+type JobLogs interface {
+	JobLog(ctx context.Context, owner, repo string, jobID int64) (io.ReadCloser, error)
 }
 
-func (w *Waiter) circleCIFailedJobs(ctx context.Context, owner, repo string, client *circleciclient.Client, workflow failedWorkflow) []FailedJob {
-	jobs, err := client.ListWorkflowJobs(ctx, workflow.id)
+// CircleCIJobs lists the jobs of a CircleCI workflow and reads the output of
+// a job's failed steps.
+type CircleCIJobs interface {
+	ListWorkflowJobs(ctx context.Context, workflowID string) ([]circleciclient.Job, error)
+	FailedStepsOutput(ctx context.Context, org, repo string, number int64) (string, error)
+}
+
+// LogReader reads the tails of failed jobs' logs for the commands that wait
+// with --failed-log: GitHub Actions job logs and the output of CircleCI's
+// failed steps, without terminal escapes. A log that cannot be read is named
+// in the job's LogError.
+type LogReader struct {
+	GitHub JobLogs
+	// Lines is how many of a log's last lines a job keeps.
+	Lines int
+}
+
+// ActionsJob is the failed GitHub Actions job id with the tail of its log; a
+// log that ends with a failed step's error ends at that error.
+func (r LogReader) ActionsJob(ctx context.Context, owner, repo string, id int64, name, url string) FailedJob {
+	job := FailedJob{Name: name, Source: SourceActions, URL: url}
+	log, err := r.GitHub.JobLog(ctx, owner, repo, id)
 	if err != nil {
-		return []FailedJob{{Name: workflow.name, Source: SourceCircleCI, URL: workflow.url, LogError: err.Error()}}
+		job.LogError = err.Error()
+		return job
+	}
+	defer func() { _ = log.Close() }()
+	if job.LogTail, err = tailLines(log, r.Lines, actionsError); err != nil {
+		job.LogError = err.Error()
+	}
+	return job
+}
+
+// CircleCIWorkflow is every failed job of the failed CircleCI workflow id,
+// named workflow/job, with the tail of its failed steps' output; the
+// workflow itself when its jobs cannot be listed.
+func (r LogReader) CircleCIWorkflow(ctx context.Context, owner, repo string, client CircleCIJobs, id, name, url string) []FailedJob {
+	jobs, err := client.ListWorkflowJobs(ctx, id)
+	if err != nil {
+		return []FailedJob{{Name: name, Source: SourceCircleCI, URL: url, LogError: err.Error()}}
 	}
 	var failed []FailedJob
 	for _, job := range jobs {
 		if !circleciclient.JobFailed(job.Status) {
 			continue
 		}
-		f := FailedJob{
-			Name:   workflow.name + "/" + job.Name,
-			Source: SourceCircleCI,
-			URL:    fmt.Sprintf("%s/jobs/%d", workflow.url, job.JobNumber),
-		}
-		output, err := client.FailedStepsOutput(ctx, owner, repo, job.JobNumber)
-		if err == nil {
-			f.LogTail, err = tailLines(strings.NewReader(output), w.failedLogLines, "")
-		}
-		if err != nil {
-			f.LogError = err.Error()
-		}
-		failed = append(failed, f)
+		failed = append(failed, r.CircleCIJob(ctx, owner, repo, client, job.JobNumber, name+"/"+job.Name, fmt.Sprintf("%s/jobs/%d", url, job.JobNumber)))
 	}
 	return failed
+}
+
+// CircleCIJob is the failed CircleCI job number with the tail of its failed
+// steps' output.
+func (r LogReader) CircleCIJob(ctx context.Context, owner, repo string, client CircleCIJobs, number int64, name, url string) FailedJob {
+	job := FailedJob{Name: name, Source: SourceCircleCI, URL: url}
+	output, err := client.FailedStepsOutput(ctx, owner, repo, number)
+	if err == nil {
+		job.LogTail, err = tailLines(strings.NewReader(output), r.Lines, "")
+	}
+	if err != nil {
+		job.LogError = err.Error()
+	}
+	return job
 }
 
 // ansiEscape matches the colour and cursor sequences CI logs carry.
