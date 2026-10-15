@@ -2,6 +2,7 @@ package prwait
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -217,5 +218,27 @@ func Test_FailedLog_TailLines(t *testing.T) {
 	}
 	if _, err := (FailedLog{Enabled: true}).TailLines(); err == nil {
 		t.Error("want an error for --failed-log-lines 0")
+	}
+}
+
+func Test_FailedJob_controls(t *testing.T) {
+	job := FailedJob{
+		Name:     "build\x1b]52;c;eA==\x07",
+		Source:   SourceActions,
+		URL:      "https://example.com/\x1b[2Jjob",
+		LogError: "boom\u009b31m\r\n",
+	}
+	got, err := json.Marshal([]FailedJob{job})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `[{"name":"build","source":"actions","url":"https://example.com/job","logError":"boom"}]`
+	if string(got) != want {
+		t.Errorf("JSON: got %s, want %s", got, want)
+	}
+	var out strings.Builder
+	PrintFailedJobs(&out, []FailedJob{job})
+	if want := "failed job build (https://example.com/job): log unreadable: boom\n"; out.String() != want {
+		t.Errorf("stderr: got %q, want %q", out.String(), want)
 	}
 }

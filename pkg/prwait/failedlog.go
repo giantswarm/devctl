@@ -3,6 +3,7 @@ package prwait
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -39,6 +40,22 @@ type FailedJob struct {
 	LogTail string `json:"logTail,omitempty"`
 	// LogError says why the log could not be read; the verdict stands.
 	LogError string `json:"logError,omitempty"`
+}
+
+// MarshalJSON writes the job with its name, URL and log error without
+// control sequences, as its log tail already is: CI sets them.
+func (j FailedJob) MarshalJSON() ([]byte, error) {
+	type plain FailedJob
+	return json.Marshal(plain(j.clean()))
+}
+
+// clean is the job with its name, URL and log error passed through
+// stripControls; its log tail is clean from tailLines.
+func (j FailedJob) clean() FailedJob {
+	j.Name = stripControls(j.Name)
+	j.URL = stripControls(j.URL)
+	j.LogError = stripControls(j.LogError)
+	return j
 }
 
 // actionsJob is a red check run of GitHub Actions.
@@ -79,6 +96,7 @@ func (f FailedLog) TailLines() (int, error) {
 // PrintFailedJobs writes the tail of each failed job's log to w.
 func PrintFailedJobs(w io.Writer, jobs []FailedJob) {
 	for _, job := range jobs {
+		job = job.clean()
 		if job.LogError != "" {
 			_, _ = fmt.Fprintf(w, "failed job %s (%s): log unreadable: %s\n", job.Name, job.URL, job.LogError)
 			continue
