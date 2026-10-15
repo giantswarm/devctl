@@ -23,6 +23,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- The updater imports the Giant Swarm go-selfupdate line, `github.com/giantswarm/go-selfupdate` v1.6.3, with
+  `github.com/giantswarm/selfupdate-cosign` v0.3.4: upstream `creativeprojects/go-selfupdate` no longer compiles next
+  to selfupdate-cosign v0.3.4, and the binary no longer carries `golang.org/x/crypto/openpgp` (GO-2026-5932).
+
 - `gen circleci`: the generated pipelines pin architect orb 10.13.6, whose `cosign-sign-verify` no longer leaves an
   image or chart unsigned when Rekor answers "an equivalent entry already exists": it checks the registry for the
   signature and signs again when none is there, so the strict `cosign verify` after it passes.
