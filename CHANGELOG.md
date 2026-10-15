@@ -23,6 +23,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `release wait --pr`, `rollout wait --pr` and the release wait of `pr merge` find the release of a pull request merged
+  into a release branch: every tag is read when the newest do not include the merge commit, and when the merge commit's
+  auto-release run tagged nothing the first tag on the pull request's base branch after it carries the merge. A base
+  branch no later tag carries is `no_release`, the reason naming the branch.
 - `pr wait`, `pr merge`, `release wait` and `rollout wait` with `--failed-log` drop every terminal control sequence and
   control character but tab from a failed job's log tail, on stderr and in `failedJobs[].logTail`: OSC (a clipboard
   write, a hyperlink), DCS, SOS, PM and APC strings with their payload, every other ESC sequence, C0 and C1 controls

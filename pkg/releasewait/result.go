@@ -162,7 +162,8 @@ func notApplicableErr(format string, args ...any) error {
 // NoReleaseError says that no release follows a pull request's merge: the
 // repository does not tag merge commits (the legacy release workflow, or no
 // release workflow at all), or its auto-release run finished without a tag
-// because the commits since the last release warrant none. Exit 3 with the
+// because the commits since the last release warrant none and no later tag
+// on the pull request's base branch carries the merge. Exit 3 with the
 // no_release verdict; devctl pr merge reports the merge as done with no
 // release to wait for.
 type NoReleaseError struct {

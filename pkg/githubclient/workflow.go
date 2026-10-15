@@ -112,6 +112,34 @@ func (c *Client) Reachable(ctx context.Context, owner, repo, ref, branch string)
 	return false, nil
 }
 
+// CommitsAfter returns the commits of branch after sha, oldest first: what a
+// comparison of sha (base) with branch (head) lists, empty when branch does
+// not contain sha. A branch or commit that does not exist answers none.
+func (c *Client) CommitsAfter(ctx context.Context, owner, repo, sha, branch string) ([]string, error) {
+	opts := &github.ListOptions{PerPage: 100}
+	var out []string
+	for page := 0; page < maxPages; page++ {
+		comparison, resp, err := c.ghClient.Repositories.CompareCommits(ctx, owner, repo, sha, branch, opts)
+		if isGithub404(err) {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+		if comparison.GetStatus() != "ahead" {
+			return nil, nil
+		}
+		for _, commit := range comparison.Commits {
+			out = append(out, commit.GetSHA())
+		}
+		if resp.NextPage == 0 {
+			break
+		}
+		opts.Page = resp.NextPage
+	}
+	return out, nil
+}
+
 // DispatchWorkflow runs the workflow of the file name on ref through its
 // workflow_dispatch trigger, with inputs. The request needs Actions write.
 func (c *Client) DispatchWorkflow(ctx context.Context, owner, repo, file, ref string, inputs map[string]any) error {

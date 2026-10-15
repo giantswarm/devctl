@@ -3,6 +3,7 @@ package releasewait
 import (
 	"context"
 	"encoding/base64"
+	"fmt"
 	"io"
 	"net/url"
 	"slices"
@@ -1329,7 +1330,7 @@ func TestWaitPullRequestAutoReleaseFinishedWithoutTagIsNoRelease(t *testing.T) {
 		github: mergedWithoutTag(autoReleaseRuns(autoReleaseRun("queued", ""), autoReleaseRun("in_progress", ""), autoReleaseRun("completed", "success"))),
 	}
 	result, err := run(t, fx)
-	assertExit(t, err, agentcli.ExitNotApplicable, "finished without a tag: the commits since the last release warrant none")
+	assertExit(t, err, agentcli.ExitNotApplicable, "into main finished without a tag, and no later tag on main carries it: the commits since the last release warrant none")
 	assertNoRelease(t, err)
 	if result.SHA != testSHA || result.Tag != "" || result.ReleaseModel != ReleaseModelAutoRelease {
 		t.Errorf("result: %+v", result)
@@ -1457,6 +1458,73 @@ func TestWaitPullRequestAutoReleaseFailedAfterTaggingGoesOn(t *testing.T) {
 	if result.Tag != testTag {
 		t.Errorf("tag: %+v", result)
 	}
+}
+
+// releaseBranch is the maintenance branch a pull request is merged into.
+const releaseBranch = "release-v1.1.x"
+
+// mergedIntoReleaseBranch is a merge into releaseBranch whose auto-release
+// run finished; the newest 300 tags, the default branch's, do not include
+// its line, so every tag is read from the matching refs.
+func mergedIntoReleaseBranch(refs ...map[string]any) sequence.Routes {
+	auto := autoReleaseRun("completed", "success")
+	auto["head_branch"] = releaseBranch
+	github := mergedWithoutTag(autoReleaseRuns(auto))
+	var pages []sequence.Response
+	for page := 1; page <= 3; page++ {
+		pages = append(pages, sequence.Response{
+			Headers: map[string]string{"Link": fmt.Sprintf(`<https://api.github.com/repositories/1/tags?per_page=100&page=%d>; rel="next"`, page+1)},
+			Body:    []map[string]any{{"name": fmt.Sprintf("v3.%d.0", 3-page), "commit": map[string]any{"sha": "newer"}}},
+		})
+	}
+	github[repoRoute("/tags")] = pages
+	github[repoRoute("/git/matching-refs/tags/")] = []sequence.Response{{Body: refs}}
+	return github
+}
+
+func tagRef(tag, sha string) map[string]any {
+	return map[string]any{"ref": "refs/tags/" + tag, "object": map[string]any{"type": "commit", "sha": sha}}
+}
+
+// A merge into a release branch tagged on an older line than the newest
+// tags is found among all tags.
+func TestWaitPullRequestIntoAReleaseBranchFindsAnOlderLinesTag(t *testing.T) {
+	github := mergedIntoReleaseBranch(tagRef("v1.1.3", "older"), tagRef("v1.1.4", testSHA), tagRef("v3.2.0", "newer"))
+	fx := fixture{entry: generatedEntry(t), github: github, pr: 7, mergeCommit: testSHA, timeout: 45 * time.Second, circleci: noPipelineYet()}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitTimeout, "")
+	if result.Tag != "v1.1.4" || result.SHA != testSHA {
+		t.Errorf("result: %+v", result)
+	}
+}
+
+// A merge into a release branch whose run tagged nothing is carried by the
+// first tag on that branch after the merge commit.
+func TestWaitPullRequestIntoAReleaseBranchFollowsTheFirstLaterTag(t *testing.T) {
+	const later, latest = "1111111111111111111111111111111111111111", "2222222222222222222222222222222222222222"
+	github := mergedIntoReleaseBranch(tagRef("v1.1.4", later), tagRef("v1.1.5", latest))
+	github[repoRoute("/compare/"+testSHA+"..."+releaseBranch)] = []sequence.Response{{Body: map[string]any{
+		"status": "ahead", "commits": []map[string]any{{"sha": "0000000000000000000000000000000000000000"}, {"sha": later}, {"sha": latest}},
+	}}}
+	fx := fixture{entry: generatedEntry(t), github: github, pr: 7, mergeCommit: testSHA, timeout: 45 * time.Second, circleci: noPipelineYet()}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitTimeout, "")
+	if result.Tag != "v1.1.4" || result.SHA != later {
+		t.Errorf("result: %+v", result)
+	}
+}
+
+// A merge into a release branch that no tag carries yet is no release, and
+// the reason names the branch.
+func TestWaitPullRequestIntoAnUntaggedReleaseBranchIsNoRelease(t *testing.T) {
+	github := mergedIntoReleaseBranch(tagRef("v1.1.3", "older"))
+	github[repoRoute("/compare/"+testSHA+"..."+releaseBranch)] = []sequence.Response{{Body: map[string]any{
+		"status": "ahead", "commits": []map[string]any{{"sha": "1111111111111111111111111111111111111111"}},
+	}}}
+	fx := fixture{entry: generatedEntry(t), github: github, pr: 7, mergeCommit: testSHA, timeout: time.Hour}
+	_, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitNotApplicable, "into "+releaseBranch+" finished without a tag, and no later tag on "+releaseBranch+" carries it")
+	assertNoRelease(t, err)
 }
 
 func TestWaitPullRequestTimeoutNamesTheAutoReleaseRun(t *testing.T) {
