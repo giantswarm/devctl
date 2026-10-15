@@ -32,10 +32,13 @@ from the sources that define them, never from the repository name:
 The release model (auto-release or legacy) comes from the entry's
 releaseWorkflow, defaulting from gen.ci.generate, cross-checked against the
 workflow files at the tag; a disagreement is an error, never a guess. With
---pr the tag is the one auto-release put on the merge commit; a legacy
-repository needs the version. The merge commit's auto-release run says when
-no tag will come: a run that finished without one decided the commits
-warrant no release (exit 3, verdict no_release), a run that failed before it
+--pr the tag is the one auto-release put on the merge commit, on whatever
+branch the pull request was merged into; a legacy repository needs the
+version. The merge commit's auto-release run says when no tag will come: a
+run that finished without one decided the commits warranted no release, and
+the first tag on the pull request's base branch after the merge commit is
+the release that carries it; without one it is exit 3, verdict no_release,
+naming the branch. A run that failed before it
 tagged is exit 1, a run cancelled before it tagged was superseded by a newer
 push whose tag carries the merge (exit 3). devctl pr merge runs this wait
 after its merge.
@@ -78,7 +81,8 @@ Exit codes:
   2  timeout; the document shows what is still missing or still running
   3  not applicable: the pull request is not merged; no release follows it
      (verdict no_release: the repository does not tag merge commits, or its
-     auto-release run finished without a tag); or its auto-release run was
+     auto-release run finished without a tag and no later tag on the base
+     branch carries the merge); or its auto-release run was
      superseded, so --pr cannot resolve a version
   7  usage or tooling: a bad argument, sources that disagree about the
      artifacts, a registry answer that is neither a digest nor "manifest

@@ -2,8 +2,10 @@ package githubclient
 
 import (
 	"context"
+	"strings"
 	"time"
 
+	"github.com/Masterminds/semver/v3"
 	"github.com/giantswarm/microerror"
 	"github.com/google/go-github/v92/github"
 )
@@ -53,12 +55,14 @@ func (c *Client) GetTagSHA(ctx context.Context, owner, repo, tag string) (string
 	return annotated.GetObject().GetSHA(), nil
 }
 
-// tagPages bounds the tag listing of FindTagForCommit: the tag of a fresh
-// merge is among the newest.
+// tagPages bounds the tag listing of FindTagForCommit's first pass: the tag
+// of a fresh merge into the default branch is among the newest.
 const tagPages = 3
 
-// FindTagForCommit returns the newest tag pointing at sha, or "" when the
-// newest tags do not include one.
+// FindTagForCommit returns the newest tag pointing at sha, or "" when no tag
+// does. The tag listing is ordered by version, newest first, so the tag of a
+// fresh merge into the default branch is in its first pages; a tag of an
+// older line (a release branch) is read from [Client.CommitTags].
 func (c *Client) FindTagForCommit(ctx context.Context, owner, repo, sha string) (string, error) {
 	opts := &github.ListOptions{PerPage: 100}
 	for page := 0; page < tagPages; page++ {
@@ -72,11 +76,56 @@ func (c *Client) FindTagForCommit(ctx context.Context, owner, repo, sha string) 
 			}
 		}
 		if resp.NextPage == 0 {
-			break
+			return "", nil
 		}
 		opts.Page = resp.NextPage
 	}
-	return "", nil
+	tags, err := c.CommitTags(ctx, owner, repo)
+	if err != nil {
+		return "", microerror.Mask(err)
+	}
+	return NewestTag(tags[sha]), nil
+}
+
+// CommitTags maps each commit a lightweight tag points at to the names of
+// those tags, every tag of the repository read in one request. Auto-release
+// pushes lightweight tags; an annotated tag points at its tag object and is
+// not in the map.
+func (c *Client) CommitTags(ctx context.Context, owner, repo string) (map[string][]string, error) {
+	refs, _, err := c.ghClient.Git.ListMatchingRefs(ctx, owner, repo, "tags/")
+	if isGithub404(err) {
+		return map[string][]string{}, nil
+	}
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
+	out := map[string][]string{}
+	for _, ref := range refs {
+		if ref.GetObject().GetType() != "commit" {
+			continue
+		}
+		sha := ref.GetObject().GetSHA()
+		out[sha] = append(out[sha], strings.TrimPrefix(ref.GetRef(), "refs/tags/"))
+	}
+	return out, nil
+}
+
+// NewestTag is the highest version among tags, a name that is no version
+// ranking below every version; "" for none.
+func NewestTag(tags []string) string {
+	newest := ""
+	var newestVersion *semver.Version
+	for _, tag := range tags {
+		v, err := semver.NewVersion(tag)
+		switch {
+		case newest == "":
+			newest, newestVersion = tag, v
+		case err != nil:
+		case newestVersion == nil || v.GreaterThan(newestVersion):
+			newest, newestVersion = tag, v
+		}
+	}
+	return newest
 }
 
 // Release is a GitHub release as release wait and release promote read it.

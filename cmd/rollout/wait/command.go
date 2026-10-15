@@ -18,8 +18,9 @@ const (
 	long        = `Wait until a release runs on an installation.
 
 The wait has two parts. The release first, exactly as devctl release wait
-does it (a version, or --pr for the tag auto-release put on the merge
-commit): its images and charts pullable, its tag pipeline green. The
+does it (a version, or --pr for the release that carries the merge commit
+on the pull request's base branch, a release branch's included): its images
+and charts pullable, its tag pipeline green. The
 release names the charts, a second chart its custom.yml pushes off the same
 tag included. Then the installation's management cluster,
 read through the kube context tsh kube login writes
