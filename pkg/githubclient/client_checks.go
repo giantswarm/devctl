@@ -229,3 +229,37 @@ func (c *Client) JobLog(ctx context.Context, owner, repo string, jobID int64) (i
 	}
 	return resp.Body, nil
 }
+
+// CommitMessage returns the message of a commit, read through the git data
+// API (no file list).
+func (c *Client) CommitMessage(ctx context.Context, owner, repo, sha string) (string, error) {
+	commit, _, err := c.ghClient.Git.GetCommit(ctx, owner, repo, sha)
+	if err != nil {
+		return "", microerror.Mask(err)
+	}
+	return commit.GetMessage(), nil
+}
+
+// InactiveWorkflowPaths returns the paths of the repository's GitHub Actions
+// workflows that are not active (disabled manually, for inactivity or by a
+// fork), every page: no event starts a run of them.
+func (c *Client) InactiveWorkflowPaths(ctx context.Context, owner, repo string) (map[string]bool, error) {
+	opts := &github.ListOptions{PerPage: 100}
+	inactive := map[string]bool{}
+	for page := 0; page < maxPages; page++ {
+		result, resp, err := c.ghClient.Actions.ListWorkflows(ctx, owner, repo, opts)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+		for _, workflow := range result.Workflows {
+			if workflow.GetState() != "active" {
+				inactive[workflow.GetPath()] = true
+			}
+		}
+		if resp.NextPage == 0 {
+			break
+		}
+		opts.Page = resp.NextPage
+	}
+	return inactive, nil
+}
