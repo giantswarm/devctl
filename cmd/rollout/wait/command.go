@@ -25,9 +25,14 @@ tag included. Then the installation's management cluster,
 read through the kube context tsh kube login writes
 (teleport.giantswarm.io-<installation>), as you. An installation reached
 through another context (kubectl gs login's gs-<installation>, a kind lab)
-is read through the one --context names. The context is checked before the
-release wait: one the kubeconfig does not have is exit 7 at once, the
-contexts that mention the installation named as candidates. It reads:
+is read through the one --context names. The contexts come from KUBECONFIG
+or ~/.kube/config, or from the one file --kubeconfig names; neither is
+written. The context is checked before the release wait: when the
+kubeconfig lacks the Teleport context and tsh is logged in, tsh kube login
+<installation> runs into a private temporary kubeconfig for that one
+command, which is read and removed; a tsh not logged in is exit 8. Any
+other context the kubeconfig does not have is exit 7 at once, the contexts
+that mention the installation named as candidates. It reads:
 
   HelmRelease  every Flux HelmRelease whose chart source (an OCIRepository
                whose URL ends in the chart's name, a HelmChart, or
@@ -89,7 +94,7 @@ Exit codes:
      (the candidates and --context named),
      a request the cluster refused
   8  authentication required: devctl auth login for GitHub, tsh kube login
-     <installation> for the cluster
+     <installation> for the cluster, tsh login for a missing context
 
 Examples:
   devctl rollout wait myinstallation giantswarm/app-operator v7.5.4
@@ -118,6 +123,7 @@ func New(config Config) (*cobra.Command, error) {
 		stdout:      config.Stdout,
 		openRelease: releasewait.OpenSources,
 		openCluster: rolloutwait.OpenCluster,
+		teleport:    rolloutwait.Tsh{},
 	}
 
 	c := &cobra.Command{
