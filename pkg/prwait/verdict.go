@@ -5,6 +5,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/google/go-github/v92/github"
 
@@ -143,6 +144,11 @@ type evaluation struct {
 	// all the head still waits for, besides absent required contexts they may
 	// report. No wait changes that; a member's approval does.
 	approvalOnly bool
+	// expectedRuns are the repository's pull_request workflows an empty head
+	// waits for; quietFor is how long the pull request has gone without an
+	// update since.
+	expectedRuns []string
+	quietFor     time.Duration
 }
 
 func (e *evaluation) green() bool { return len(e.red) == 0 && len(e.unfinished) == 0 }
