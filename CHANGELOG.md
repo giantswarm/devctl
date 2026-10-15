@@ -23,6 +23,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `pr wait`, `pr merge`, `release wait` and `rollout wait` with `--failed-log` drop every terminal control sequence and
+  control character but tab from a failed job's log tail, on stderr and in `failedJobs[].logTail`: OSC (a clipboard
+  write, a hyperlink), DCS, SOS, PM and APC strings with their payload, every other ESC sequence, C0 and C1 controls
+  in 7-bit and 8-bit form, and the Unicode bidirectional controls. The job's `name`, `url` and `logError` are cleaned
+  the same way. Only CSI sequences were stripped from the tail, so a CI log could drive the reader's terminal.
 - `gen workflows`: the Auto Release step "Resolve the candidate to promote" retries its `commits/<rc>/status` read
   four times with backoff (2s, 4s, 8s) on a failed, empty or truncated answer, and refuses the promotion only after the
   last try, naming the request and the tries. A single transient `unexpected end of JSON input` failed a promote.
