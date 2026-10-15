@@ -7,6 +7,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `rollout wait --kubeconfig <file>` reads the kube context and the installation from that one file instead of
+  `KUBECONFIG` or `~/.kube/config`, so a session can prepare a private one.
+- `rollout wait` on a kubeconfig without the installation's Teleport context runs `tsh kube login <installation>` into
+  a private temporary kubeconfig when `tsh` is logged in, reads through it and removes it; the machine's kubeconfig
+  is never written. A `tsh` that is not logged in is exit 8 (`tsh login`). The missing context was exit 7, and a
+  session ran `tsh kube login` into the shared kubeconfig itself.
+
 ### Fixed
 
 - `gen workflows`: the Auto Release step "Resolve the candidate to promote" retries its `commits/<rc>/status` read

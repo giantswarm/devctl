@@ -1,7 +1,7 @@
 # Waiting for a rollout: `devctl rollout wait`
 
 ```nohighlight
-devctl rollout wait <installation> <owner/repo> (<vX.Y.Z | X.Y.Z> | --pr <number>) [--context <kube-context>]
+devctl rollout wait <installation> <owner/repo> (<vX.Y.Z | X.Y.Z> | --pr <number>) [--context <kube-context>] [--kubeconfig <file>]
     [--timeout 30m] [--release-timeout 30m] [--image <owner/name>]... [--chart <path>]... [--helmrelease [<namespace>/]<name>]...
     [--reconcile] [--progress]
 ```
@@ -70,10 +70,20 @@ reconcile, once each.
 The management cluster is read through the kube context `tsh kube login <installation>` writes,
 `teleport.giantswarm.io-<installation>`, as you. An installation reached through another context
 (`kubectl gs login`'s `gs-<installation>`, a kind lab) is read through the one `--context` names. The
-context is checked before the release wait: one the kubeconfig does not have is exit 7 at once, its
-reason naming the kubeconfig's contexts that mention the installation and `--context`; one that is not signed in, or whose credentials expired, is exit 8 naming
-`tsh kube login`. Reads that fail in transit or with a 5xx are retried like every other agent-facing
-command's.
+contexts come from the default kubeconfig (`KUBECONFIG`, `~/.kube/config`), or from the one file
+`--kubeconfig <file>` names, for both the context lookup and the reads; neither is ever written.
+
+The context is checked before the release wait. When the kubeconfig lacks the Teleport context and `tsh`
+is logged in (`tsh status` shows a profile that has not expired), the wait runs
+`tsh kube login <installation>` with `KUBECONFIG` set to a private temporary file for that one command,
+reads the installation through it and removes the file before the release wait starts: a session needs
+no login of its own and the machine's kubeconfig stays as it was. A `tsh` that is not logged in, or
+whose profile expired, is exit 8 naming `tsh login`; the wait never starts an interactive login. Any
+other missing context (one `--context` names, or the Teleport one without `tsh` installed) is exit 7 at
+once, its reason naming the kubeconfig's contexts that mention the installation and `--context`, as is a
+`tsh kube login` that fails (an installation Teleport does not know). A context that is not signed in,
+or whose credentials expired, is exit 8 naming `tsh kube login`. Reads that fail in transit or with a
+5xx are retried like every other agent-facing command's.
 
 A chart is deployed by one of:
 
@@ -150,5 +160,5 @@ The envelope (`command`, `schemaVersion`, `exitCode`, `verdict`, `reason`, `warn
 | 1 | `rollout_failed`, `ci_failed` | The rollout failed (the reason names the deployment and its condition), or the release's CI did. |
 | 2 | `timeout` | `--release-timeout` or `--timeout` passed; `deployments[].message` says what is missing. |
 | 3 | `not_applicable`, `no_release` | No release follows the pull request and nothing on the installation fetches its repository, nothing reads the GitRepository that does, the release ships no chart, nothing on the installation deploys its charts, no deployment follows the version, or no HelmRelease answers to a `--helmrelease` name. |
-| 7 | `usage` | A bad argument, a kube context that does not exist, a request the cluster refused. |
-| 8 | `auth_required` | No GitHub token (`devctl auth login`), or the kube context is not signed in (`tsh kube login <installation>`). |
+| 7 | `usage` | A bad argument, a kube context that does not exist and `tsh` could not log in to, a `--kubeconfig` that cannot be read, a request the cluster refused. |
+| 8 | `auth_required` | No GitHub token (`devctl auth login`), the kube context is not signed in (`tsh kube login <installation>`), or it is missing and `tsh` is not logged in (`tsh login`). |
