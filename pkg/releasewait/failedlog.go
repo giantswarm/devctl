@@ -24,6 +24,13 @@ func (w *Waiter) failedJobs(ctx context.Context, state *pipelineState) []prwait.
 	for _, run := range state.failedRuns {
 		jobs = append(jobs, w.actionsFailedJobs(ctx, logs, run)...)
 	}
+	for _, check := range state.failedChecks {
+		if check.actions {
+			jobs = append(jobs, logs.ActionsJob(ctx, owner, repo, check.id, check.name, check.url))
+			continue
+		}
+		jobs = append(jobs, prwait.FailedJob{Name: check.name, Source: prwait.SourceActions, URL: check.url, LogError: "the check run is not a GitHub Actions job"})
+	}
 	for _, status := range state.failedStatuses {
 		name := statusJobName(status.Context)
 		target, ok := circleciclient.ParseStatusTarget(status.TargetURL)
