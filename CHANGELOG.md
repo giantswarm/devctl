@@ -23,6 +23,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- Renovate bumps the tool versions pinned in the generator's Makefile templates. A custom manager reads the
+  standard `# renovate:` annotation in `pkg/gen/input/**/*.mk.template`; no built-in manager matched those files, as
+  renovate-presets anchors its Makefile manager on `/^Makefile\..+\.mk$/` and keys its other managers off
+  `# repo:` / `# registry:` comments. `HELM_UNITTEST_VERSION` in `Makefile.gen.app.mk.template` carried the annotation
+  since #2737 and was never bumped.
+
 - `release wait --pr`, `rollout wait --pr` and the release wait of `pr merge` find the release of a pull request merged
   into a release branch: every tag is read when the newest do not include the merge commit, and when the merge commit's
   auto-release run tagged nothing the first tag on the pull request's base branch after it carries the merge. A base
