@@ -72,7 +72,7 @@
 // workflows including auto-release, LLM rules, pre-commit, CircleCI when
 // gen.ci.generate is on, and renovate.json5 (with --circleci-generated on
 // generated CI), so no created repository starts without a Renovate
-// configuration. The generators run through the same `devctl gen`
+// configuration unless its entry declares renovate: false. The generators run through the same `devctl gen`
 // commands align-files runs, in align-files' order and with its flags, so
 // the generated files are byte-identical to what the first align run would
 // write and that run changes nothing. [Scaffold.Commands] lists the command

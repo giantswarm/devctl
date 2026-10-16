@@ -73,6 +73,10 @@ type Request struct {
 	// AuthorTeams are the GitHub team slugs the author is a member of
 	// (team-bumblebee; a giantswarm/ or @giantswarm/ prefix is accepted).
 	AuthorTeams []string
+	// AuthorTeamsUnread are the team slugs whose membership the caller's
+	// token could not read: the author's membership there is unknown, so
+	// the team guard says so instead of calling the author an outsider.
+	AuthorTeamsUnread []string
 }
 
 // Result is the dry-run value: what the reconciler would do with the entries
@@ -145,6 +149,11 @@ const (
 	// NoticeTeamReview: the author is outside the owning team and the
 	// fallback team, so the team's review is required.
 	NoticeTeamReview NoticeKind = "team-review"
+	// NoticeTeamReviewUnknown: the author is a member of neither the
+	// owning team nor the fallback team as far as the token reads, and it
+	// cannot read one of them, so whether the team's review is required is
+	// the validation check's to say.
+	NoticeTeamReviewUnknown NoticeKind = "team-review-unknown"
 	// NoticeBatchReview: more than MaxMachineApprovedEntries entries are
 	// added, so a person reviews.
 	NoticeBatchReview NoticeKind = "batch-review"
@@ -503,10 +512,23 @@ func (v Validator) notices(req Request, mode Mode, added int) []Notice {
 
 	team := req.TeamFile.Team
 	if mode == ModeCreate && req.Author != "" && !memberOf(req.AuthorTeams, team) && !memberOf(req.AuthorTeams, FallbackTeam) {
-		notices = append(notices, Notice{
-			Kind:    NoticeTeamReview,
-			Message: fmt.Sprintf("your team's review will be required: %s is not a member of %s or %s, so the machine does not approve the pull request", req.Author, team, FallbackTeam),
-		})
+		var unread []string
+		for _, t := range []string{team, FallbackTeam} {
+			if memberOf(req.AuthorTeamsUnread, t) {
+				unread = append(unread, t)
+			}
+		}
+		if len(unread) > 0 {
+			notices = append(notices, Notice{
+				Kind:    NoticeTeamReviewUnknown,
+				Message: fmt.Sprintf("whether your team's review will be required is unknown: this token cannot read whether %s is a member of %s; the validation check reads the membership as the giantswarm-align-files App and says so on the pull request", req.Author, strings.Join(unread, " or ")),
+			})
+		} else {
+			notices = append(notices, Notice{
+				Kind:    NoticeTeamReview,
+				Message: fmt.Sprintf("your team's review will be required: %s is not a member of %s or %s, so the machine does not approve the pull request", req.Author, team, FallbackTeam),
+			})
+		}
 	}
 	if mode == ModeCreate && added > MaxMachineApprovedEntries {
 		notices = append(notices, Notice{

@@ -54,8 +54,10 @@ The validation check on `giantswarm/github` classifies every team-file pull requ
 a repository that does not exist yet keeps the owning team's review (`CODEOWNERS`); `devctl pr merge`
 merges it through the ruleset's bypass for the owning team and the admins. The notices in the dry run
 say more about the review (`team-review`: the author is outside the owning team; `batch-review`: more
-than three entries). Membership is read from GitHub as you; a token that cannot read the
-organisation's teams gets no notice, and the command says so.
+than three entries). Membership is read from GitHub as you, the way the validation check reads it as the
+giantswarm-align-files App: the owning team and `team-planeteers`, one by one, the team first and then your membership
+in it. A team your token cannot read leaves your membership there unknown: the notice is then `team-review-unknown`,
+and the validation check's comment on the pull request is the answer.
 
 ### The declaration's fields
 
@@ -85,6 +87,13 @@ repositories created from it, not its own pipeline: the reconciler's circleci an
 (`no CircleCI pipeline: .circleci/config.yml is template content`), no follow, no deploy key, no tag build to verify,
 and the branch is not read for it. It sits beside `generate: false` (the `ci` block requires `generate`); `generate:
 true` beside it is refused. A template that builds itself, like template-app, leaves the field out.
+
+`renovate: false` switches Renovate off for the repository: align-files runs no `devctl gen renovate` for the entry,
+and the reconciler's renovate step is ok with no Renovate configuration (`renovate: false; no Renovate
+configuration`) or one that disables Renovate. A configuration that keeps Renovate on, such as the `renovate.json5`
+generated before the field was set, is the finding `renovate-declared-off`: the step deletes no file, the team deletes
+it or sets `enabled: false` in it. Without the field, or with `true`, the repository gets its generated configuration
+and the step checks that Renovate scans it.
 
 The template is derived, not chosen: `language: go` gives `giantswarm/template`; the `plans` flavour
 with `language: generic` gives `giantswarm/template-plans` and refuses any other language, the same

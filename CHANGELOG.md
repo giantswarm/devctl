@@ -7,6 +7,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `repo`: a team-file entry declares `renovate: false` to switch Renovate off for its repository. align-files runs no
+  `devctl gen renovate` for it, and the reconciler's `renovate` step is ok with no Renovate configuration or one that
+  disables Renovate; a configuration that keeps Renovate on is the new finding `renovate-declared-off`, never deleted
+  by the engine. The embedded schema carries the field.
+
+### Changed
+
+- `repo create`: the dry run reads the author's membership the way giantswarm/github's validation check does, the
+  owning team and `team-planeteers` one by one (the team, then the membership), instead of listing the caller's teams.
+  A team the token cannot read leaves the membership unknown: the notice is `team-review-unknown` instead of a
+  `team-review` that calls a member an outsider.
+
 ### Fixed
 
 - `rollout wait --pr` on a configuration change no longer times out on a values-fed HelmRelease whose deploy that took

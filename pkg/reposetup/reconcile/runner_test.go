@@ -43,6 +43,8 @@ const (
 	// agentMergeFalseEntryYAML opts the repository out of agent merges: the
 	// ruleset has no bypass actor.
 	agentMergeFalseEntryYAML = entryYAML + "  agentMerge: false\n"
+	// renovateFalseEntryYAML switches Renovate off for the repository.
+	renovateFalseEntryYAML = entryYAML + "  renovate: false\n"
 	// declaredRulesetEntryYAML declares a ruleset of the repository's own the
 	// team keeps beside the engine's.
 	declaredRulesetEntryYAML = entryYAML + "  rulesets: [\"protect-giantswarm\"]\n"
@@ -1850,6 +1852,42 @@ func TestSteps(t *testing.T) {
 			wantCheck: VerdictOK,
 			verify: func(t *testing.T, _ *harness, res *Result) {
 				require.Equal(t, "renovate.json5 disables Renovate", res.Step(StepRenovate).Summary)
+			},
+		},
+		{
+			name: "renovate: false without a configuration is ok, and no trace is read", step: StepRenovate, entry: renovateFalseEntryYAML,
+			seed: func(h *harness) {
+				delete(h.gh.addRepo(owner, name).files, "renovate.json5")
+				h.gh.installation.status = 403
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Equal(t, "renovate: false; no Renovate configuration", res.Step(StepRenovate).Summary)
+				require.Empty(t, res.Findings())
+			},
+		},
+		{
+			name: "renovate: false with a configuration that disables Renovate is ok", step: StepRenovate, entry: renovateFalseEntryYAML,
+			seed: func(h *harness) {
+				h.gh.addRepo(owner, name).files["renovate.json5"] = "{\n  enabled: false,\n}\n"
+				h.gh.installation.status = 403
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, _ *harness, res *Result) {
+				require.Equal(t, "renovate: false; renovate.json5 disables Renovate", res.Step(StepRenovate).Summary)
+			},
+		},
+		{
+			name: "renovate: false with a configuration that keeps Renovate on is reported", step: StepRenovate, entry: renovateFalseEntryYAML,
+			seed: func(h *harness) {
+				h.gh.addRepo(owner, name).addIssue(renovateLogin, "Dependency Dashboard", false)
+				h.gh.installation.status = 403
+			},
+			wantCheck: VerdictReported, wantFinding: FindingRenovateDeclaredOff, wantAfter: VerdictReported,
+			verify: func(t *testing.T, _ *harness, res *Result) {
+				f := res.Findings()[0]
+				require.Contains(t, f.Message, "declares renovate: false, but renovate.json5 keeps Renovate on")
+				require.Contains(t, f.Fix, "delete renovate.json5")
 			},
 		},
 		{
