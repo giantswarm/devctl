@@ -77,12 +77,12 @@ func newUpdater(version string, noCache bool, warnings io.Writer) (*updater.Upda
 
 // githubToken is the optional token of a version lookup, a read of public
 // releases: [authstore.ResolveGitHub]'s token, its override warning written
-// to warnings once, or "" to read anonymously when none is configured. Any
-// other error of the resolver is returned.
+// to warnings once, or "" to read anonymously when none is configured or the
+// environment has no keychain. Any other error of the resolver is returned.
 func githubToken(warnings io.Writer) func(context.Context) (string, error) {
 	return func(ctx context.Context) (string, error) {
 		token, err := authstore.ResolveGitHub(ctx)
-		if errors.Is(err, authstore.ErrAuthRequired) {
+		if errors.Is(err, authstore.ErrAuthRequired) || errors.Is(err, authstore.ErrKeychainUnreachable) {
 			return "", nil
 		} else if err != nil {
 			return "", err

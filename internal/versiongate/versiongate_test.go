@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -18,6 +19,17 @@ import (
 func brokenKeychain(t *testing.T) {
 	t.Helper()
 	t.Setenv(agentcli.EnvKeyringFile, t.TempDir())
+}
+
+// noSessionBus is the OS keychain of a container: the Secret Service's
+// session bus is not there.
+func noSessionBus(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS != "linux" {
+		t.Skip("the session bus is the keychain on Linux only")
+	}
+	t.Setenv(agentcli.EnvKeyringFile, "")
+	t.Setenv("DBUS_SESSION_BUS_ADDRESS", "unix:path="+filepath.Join(t.TempDir(), "no-bus"))
 }
 
 // clearGitHubEnv unsets CI and every GitHub token variable for the test: the
@@ -43,6 +55,8 @@ func TestGitHubToken(t *testing.T) {
 			env: map[string]string{authstore.EnvCI: "true"}, keychain: brokenKeychain},
 		{name: "without CI the keychain is opened, and its failure returned",
 			keychain: brokenKeychain, wantErr: true},
+		{name: "no session bus reads anonymously",
+			keychain: noSessionBus},
 		{name: "no App login reads anonymously",
 			keychain: func(t *testing.T) { t.Setenv(agentcli.EnvKeyringFile, filepath.Join(t.TempDir(), "keyring.json")) }},
 		{name: "a token in the environment overrides with the warning",

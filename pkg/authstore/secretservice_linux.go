@@ -116,7 +116,7 @@ func (s secretService) with(fn func(c *secretServiceClient, collection dbus.Obje
 func dialSecretService() (*dbus.Conn, string, error) {
 	conn, err := connectSessionBus()
 	if err != nil {
-		return nil, "", fmt.Errorf("connecting to the session bus for the keychain: %w", err)
+		return nil, "", fmt.Errorf("%w: %w", ErrKeychainUnreachable, err)
 	}
 	return conn, secretsBusName, nil
 }
