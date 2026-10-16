@@ -128,3 +128,43 @@ func variables(envVars []string) string {
 	}
 	return strings.Join(names[:len(names)-1], ", ") + " or " + names[len(names)-1]
 }
+
+// CircleCIEnvVar is the variable [ResolveCircleCI] reads a CircleCI token
+// from when a command names none.
+const CircleCIEnvVar = "CIRCLECI_TOKEN"
+
+// ResolveCircleCI is the CircleCI token a command acts with. envVar is the
+// variable to read; empty means [CircleCIEnvVar], a command with
+// --circleci-token-envvar passes its name.
+//
+//   - A set variable is an explicit override: its token, Source "$NAME".
+//   - Otherwise, with [EnvCI] set: [ErrAuthRequired] naming the variable. The
+//     keychain is never opened.
+//   - Otherwise the `devctl auth login` CircleCI token from the keychain,
+//     Source [SourceKeychain], Warning its expiry notice; [ErrAuthRequired]
+//     when there is none or it expired.
+//
+// It never falls back from one source to another after a failure.
+func ResolveCircleCI(ctx context.Context, envVar string) (Token, error) {
+	return resolveCircleCI(ctx, func() (*Auth, error) { return Open(nil) }, envVar)
+}
+
+func resolveCircleCI(ctx context.Context, open func() (*Auth, error), envVar string) (Token, error) {
+	if envVar == "" {
+		envVar = CircleCIEnvVar
+	}
+	if value := os.Getenv(envVar); value != "" {
+		return Token{Value: value, Source: "$" + envVar}, nil
+	}
+	if ci() {
+		return Token{}, &AuthRequiredError{
+			Identity: identityCircleCI,
+			Cause:    fmt.Sprintf("$%s is set, so the keychain is not read, and there is no token in $%s", EnvCI, envVar),
+		}
+	}
+	a, err := open()
+	if err != nil {
+		return Token{}, err
+	}
+	return a.RequireCircleCI(ctx)
+}

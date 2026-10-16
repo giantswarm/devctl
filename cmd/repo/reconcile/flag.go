@@ -33,7 +33,7 @@ type flag struct {
 func (f *flag) Init(cmd *cobra.Command) {
 	cmd.PersistentFlags().StringVar(&f.GithubTokenEnvVar, "github-token-envvar", engine.DefaultGitHubEnvVar, "Environment variable name for the GitHub token.")
 	cmd.Flags().StringVar(&f.DispatchTokenEnvVar, "dispatch-token-envvar", "", "Environment variable name for the GitHub token the catalog step lists and dispatches the catalog and mapping workflow runs with (actions: write on the catalog repository), when the GitHub token's identity holds no Actions permission there. Every read stays with the GitHub token, the repository lookup included. The GitHub token dispatches when unset.")
-	cmd.Flags().StringVar(&f.CircleCITokenEnvVar, "circleci-token-envvar", engine.DefaultCircleCIEnvVar, "Environment variable name for the CircleCI token. The CircleCI and release steps are skipped when it is unset.")
+	cmd.Flags().StringVar(&f.CircleCITokenEnvVar, "circleci-token-envvar", engine.DefaultCircleCIEnvVar, "Environment variable name for the CircleCI token; it overrides the devctl auth login token in the keychain. The CircleCI and release steps are skipped when neither has one.")
 	cmd.Flags().StringVar(&f.TeamFile, "team-file", "", "Path of the team file (repositories/<team>.yaml of giantswarm/github) holding the repository's entry; the team is the file's name.")
 	cmd.Flags().StringVar(&f.Team, "team", "", "Team slug (team-bumblebee) of a repository without a team-file entry; the entry is then the name alone.")
 	cmd.Flags().StringVar(&f.ComponentType, "component-type", "", "Component type of a repository without a team-file entry (service, library, ...).")

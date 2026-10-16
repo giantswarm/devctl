@@ -43,7 +43,9 @@ left as it is), lifecycle (archives or deletes
 as the entry declares; with --unarchived, the change at hand took
 lifecycle: archived from the entry, it unarchives the repository ahead of
 the other steps, which then restore its set-up), catalog, release. The CircleCI steps need a
-token in $CIRCLECI_TOKEN and are skipped without one. The catalog step
+token: $CIRCLECI_TOKEN when set, the CircleCI login of devctl auth login in
+the keychain otherwise (with $CI set, the variable only); they are skipped
+without one, and the log names the token's source. The catalog step
 dispatches the catalog and mapping workflows of the catalog repository, which
 needs an Actions permission there: --dispatch-token-envvar names a second
 token for those two calls when the GitHub token's identity has none (a
