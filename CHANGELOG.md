@@ -9,6 +9,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `rollout wait --pr` on a configuration change no longer times out on a values-fed HelmRelease whose deploy that took
+  the change has left `status.history` (helm-controller keeps few entries, a chart that rolls often evicts it): when
+  every kept deploy is after the merge and the rendered ConfigMap's revision contains the merge commit, the change is
+  rolled out. A merge newer than a kept deploy still waits.
 - `repo` reconciler: a repository whose generated CI has no CircleCI job (`gen.ci.generate: true` on a generic
   repository without a chart, an image or a Go or Node build: GitHub Actions only, auto-release) is no CircleCI
   pipeline. The `circleci` and `release` steps read the branch for it, as for an undeclared pipeline, and no longer

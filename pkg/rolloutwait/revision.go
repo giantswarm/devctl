@@ -462,25 +462,31 @@ func (w *Waiter) judgeValuesHelmRelease(ctx context.Context, hr *unstructured.Un
 // not when the values last changed: a deploy before it may well run them.
 // What a deployment applied tells instead: a deploy after the merge that
 // took values other than the deploy before it read the change, which
-// renders no earlier than the merge. (konfigure-operator rendering an
-// older revision after the merge is not told apart: its fetch interval.)
+// renders no earlier than the merge. helm-controller keeps few deploys in
+// status.history, so a chart that rolls often evicts that one: when every
+// kept deploy is after the merge, the change ran no later than they do.
+// (konfigure-operator rendering an older revision after the merge is not
+// told apart: its fetch interval.)
 
 // helmReleaseTookNewValues says whether a HelmRelease deployed, after the
 // merge, values (status.history's configDigest) other than its previous
-// deploy's.
+// deploy's, or deployed only after the merge as far as its history keeps.
 func (w *Waiter) helmReleaseTookNewValues(hr *unstructured.Unstructured) bool {
 	if w.mergedAt.IsZero() {
 		return false
 	}
 	history, _, _ := unstructured.NestedSlice(hr.Object, "status", "history")
-	for i := 0; i+1 < len(history); i++ {
+	for i := range history {
 		h, _ := history[i].(map[string]any)
-		previous, _ := history[i+1].(map[string]any)
 		at, _ := h["lastDeployed"].(string)
 		deployed, err := time.Parse(time.RFC3339, at)
 		if err != nil || deployed.Before(w.mergedAt) {
 			return false
 		}
+		if i+1 == len(history) {
+			return true
+		}
+		previous, _ := history[i+1].(map[string]any)
 		if digest, _ := h["configDigest"].(string); digest != "" && digest != previous["configDigest"] {
 			return true
 		}

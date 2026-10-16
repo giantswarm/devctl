@@ -270,6 +270,37 @@ func TestRevisionHelmReleaseNoNewValuesAfterMergeIsATimeout(t *testing.T) {
 	}
 }
 
+// The deploy that took the change left status.history: every kept deploy is
+// after the merge, with the same values, and before konfigure-operator last
+// re-labelled the ConfigMap. The change ran no later than they do. A
+// rendered revision older than the merge still waits.
+func TestRevisionHelmReleaseEvictedHistory(t *testing.T) {
+	for name, tc := range map[string]struct {
+		rendered string
+		code     int
+	}{
+		"rendered at or after the merge": {newerSHA, agentcli.ExitOK},
+		"rendered before the merge":      {olderSHA, agentcli.ExitTimeout},
+	} {
+		t.Run(name, func(t *testing.T) {
+			rolled := withHistory(valuesHelmRelease("agent-platform", time.Time{}, ready("True", "UpgradeSucceeded", "")),
+				deploy{renderedAt.Add(-time.Hour), "sha256:new"}, deploy{mergedAt.Add(time.Hour), "sha256:new"})
+			r := wait(t, newClient(gitRepository(newerSHA), konfiguration(newerSHA, newerSHA, ready("True", "ReconciliationSucceeded", "")), renderedConfigMap(tc.rendered), rolled), false, revision(agentPlatformValues), mergedAtOption)
+			if agentcli.Exit(r.err) != tc.code {
+				t.Errorf("exit %d, want %d: %v", agentcli.Exit(r.err), tc.code, r.err)
+			}
+		})
+	}
+}
+
+// A merge newer than every kept deploy still waits.
+func TestRevisionHelmReleaseMergeNewerThanHistoryIsATimeout(t *testing.T) {
+	stale := withHistory(valuesHelmRelease("agent-platform", time.Time{}, ready("True", "UpgradeSucceeded", "")),
+		deploy{mergedAt.Add(-time.Minute), "sha256:new"}, deploy{mergedAt.Add(-time.Hour), "sha256:new"})
+	r := wait(t, newClient(gitRepository(mergeSHA), konfiguration(mergeSHA, mergeSHA, ready("True", "ReconciliationSucceeded", "")), renderedConfigMap(mergeSHA), stale), false, revision(agentPlatformValues), mergedAtOption)
+	wantExit(t, r, agentcli.ExitTimeout, "HelmRelease flux-giantswarm/agent-platform: last deployed")
+}
+
 // appChart is the Chart app-operator creates for the App and the values it
 // merged for it, last written at written.
 func appChart(written time.Time) []runtime.Object {
