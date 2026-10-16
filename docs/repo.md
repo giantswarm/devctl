@@ -76,7 +76,8 @@ and the validation check's comment on the pull request is the answer.
 `gen.ci.generate` is written as the CircleCI generator decides: `true` when it has a job for the
 declaration (a Go or Node build, a chart from the `app` flavour), `false` when the pipeline would be empty. Either way
 the scaffold carries `renovate.json5` (`devctl gen renovate`, with `--circleci-generated` on generated CI), so the
-repository starts with its Renovate configuration; a fork line gets nothing generated. The help text takes the enums from the schema devctl ships
+repository starts with its Renovate configuration, decided as align-files decides it (`devctl repo renovate-plan`); a
+fork line gets nothing generated. The help text takes the enums from the schema devctl ships
 (`pkg/reposetup/schema/repositories.schema.json`) and the flavours and languages from devctl's own
 lists, so it never lags a copy in this document; the live schema is
 [`.github/repositories.schema.json`](https://github.com/giantswarm/github/blob/main/.github/repositories.schema.json)
@@ -220,6 +221,22 @@ branch and flavours. An undeclared repository is refused with `devctl repo adopt
 repository the inventory has not checked yet names `devctl repo refresh`. `-o json` prints the record as
 the manager answered. Nothing is changed by `repo status`; the local check with your own tokens is
 `devctl repo reconcile --dry-run`.
+
+## `devctl repo renovate-plan`
+
+What align-files does about a repository's Renovate configuration, as JSON on stdout:
+
+```
+devctl repo renovate-plan --team-file repositories/team-rocket.yaml --name my-app --dir my-app
+{"generate":true,"patchReviewers":false}
+```
+
+`generate` runs `devctl gen renovate`, `patchReviewers` runs `devctl gen renovate reviewers` on the configuration
+the repository keeps. An entry that declares `renovate: false` gets neither. An entry with `gen.flavours` that is no
+fork line gets `renovate.json5` generated on generated CI, for the `customer` flavour, and when the checkout at
+`--dir` has no Renovate configuration; every other repository keeps its own, with the chore reviewers patched in.
+The scaffold of `devctl repo create` takes the same decision (`reposetup.PlanRenovate`), so a created repository's
+first align run changes nothing.
 
 ## `devctl repo follow-circleci`
 

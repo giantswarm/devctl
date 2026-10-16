@@ -27,10 +27,6 @@ const (
 	renovateGrace = 24 * time.Hour
 )
 
-// renovateConfigPaths are the configuration files Renovate reads, the
-// generated renovate.json5 first; the first one found is the one reported.
-var renovateConfigPaths = []string{"renovate.json5", "renovate.json", ".github/renovate.json5", ".github/renovate.json", ".renovaterc", ".renovaterc.json"}
-
 // installationRepositories is a page of GET /user/installations/{id}/repositories.
 type installationRepositories struct {
 	TotalCount          int    `json:"total_count"`
@@ -85,7 +81,7 @@ func (r *Runner) stepRenovate(ctx context.Context, s *run, sr *StepResult) error
 	case config == "":
 		s.report(sr, FindingRenovateNotScanned,
 			fmt.Sprintf("%s has no Renovate configuration: Renovate opens no dependency updates", s.slug()),
-			"add renovate.json5 (`devctl gen renovate` writes it; align-files renders it for repositories on devctl-generated CI) or merge Renovate's onboarding pull request; the installation covers all repositories, there is nothing to add there")
+			"add renovate.json5 (`devctl gen renovate` writes it; align-files renders it on its next run for an entry with gen.flavours that is no fork line) or merge Renovate's onboarding pull request; the installation covers all repositories, there is nothing to add there")
 	case disabled:
 		sr.Summary = config + " disables Renovate"
 	case trace != "":
@@ -116,7 +112,8 @@ func (r *Runner) stepRenovate(ctx context.Context, s *run, sr *StepResult) error
 // renovateConfig finds the Renovate configuration on the default branch: its
 // path ("" when there is none) and whether it disables Renovate.
 func (r *Runner) renovateConfig(ctx context.Context, s *run) (string, bool, error) {
-	for _, path := range renovateConfigPaths {
+	// The first configuration found is the one reported.
+	for _, path := range renovate.ConfigPaths {
 		content, found, err := r.fileContent(ctx, s.owner, s.name, path, s.branch())
 		if err != nil {
 			return "", false, err

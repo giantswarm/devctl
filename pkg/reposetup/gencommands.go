@@ -54,8 +54,8 @@ type genContext struct {
 
 // genCommands returns the `devctl gen …` command lines align-files runs for
 // a declaration, in align-files' order: makefile, workflows, llm, plans
-// (the plans flavour only), pre-commit, CircleCI when gen.ci.generate is on, then Renovate unless
-// the entry declares renovate: false. Each
+// (the plans flavour only), pre-commit, CircleCI when gen.ci.generate is on, then Renovate as
+// [PlanRenovate] decides. Each
 // line is an argv starting with devctl gen. The declaration has to have
 // gen.flavours and gen.language; the validator refuses one that has not. A
 // fork line gets nothing generated ([generates]) but its release flow: the
@@ -163,13 +163,14 @@ func genCommands(f Fields, gc genContext) [][]string {
 		commands = append(commands, line(genCircleCI, circleCIArgs(f, flavour, knows)...))
 	}
 
-	// Renovate: every repository that generates at all gets its
-	// configuration, unless its entry declares renovate: false. On generated
-	// CI the architect orb is pinned by the generated config, so
+	// Renovate, as align-files decides it: [PlanRenovate] for a repository
+	// without a configuration of its own -- a template's is none -- so the
+	// scaffold carries the generated one and align-files keeps it. On
+	// generated CI the architect orb is pinned by the generated config, so
 	// --circleci-generated keeps Renovate off it; without generated CI there
 	// is no orb to leave alone. --repo-name is what align-files' devctl reads
 	// from the checkout's origin remote.
-	if f.RenovateOn() {
+	if PlanRenovate(f, false).Generate {
 		commands = append(commands, line(genRenovate, renovateArgs(f, generateCI, knows)...))
 	}
 
@@ -188,13 +189,21 @@ func renovateArgs(f Fields, generateCI bool, knows func(generator, flag string) 
 	if f.Lifecycle == lifecycleDeprecated {
 		args = append(args, "--deprecated")
 	}
-	for _, reviewer := range f.ChoreReviewers {
-		args = append(args, "-r", reviewer)
-	}
+	args = append(args, reviewerArgs(f)...)
 	if g.Renovate != nil && knows(genRenovate, "--extends") {
 		for _, preset := range g.Renovate.Extends {
 			args = append(args, "--extends", preset)
 		}
+	}
+	return args
+}
+
+// reviewerArgs are the -r flags of the entry's chore reviewers, the form
+// both `devctl gen renovate` and its reviewers subcommand take.
+func reviewerArgs(f Fields) []string {
+	var args []string
+	for _, reviewer := range f.ChoreReviewers {
+		args = append(args, "-r", reviewer)
 	}
 	return args
 }
