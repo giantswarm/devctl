@@ -37,6 +37,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `gen` commands run without the version gate: a generator works offline from the repository's files, so in a
+  plain container without a session bus, keychain or token `devctl gen circleci` exits 0 instead of failing on
+  `Reading devctl/github from the keychain: … dbus: couldn't determine address of session bus`.
 - `gen circleci`: the Node job sizes the workers of its tools from its resource class's memory instead of the CPUs
   they detect (on the Docker executor `os.cpus()` reports the host's, jest the cgroup's quota), which started more
   lint threads and jest workers than the class has memory for. It exports `BACKSTAGE_CLI_CONCURRENCY` (one per
