@@ -7,6 +7,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- `rollout wait --pr` on a configuration change judges a values-fed HelmRelease or App by the values it deployed,
+  not only by the rendered ConfigMap's last write: konfigure-operator re-labels that ConfigMap with every revision,
+  so a later commit made an older pull request look pending until the timeout. A HelmRelease that deployed new
+  values (`status.history[].configDigest`) after the merge, or an App in the management cluster whose Chart values
+  app-operator changed after the merge and then deployed, is rolled out.
+
 ### Added
 
 - `rollout wait --pr` on a configuration change follows the App CRs whose `spec.config` or `spec.userConfig` takes

@@ -49,10 +49,13 @@ type Config struct {
 	// repository to what applies them, and the HelmReleases of the apps
 	// Paths, the files the pull request changed, touch. GitHub answers
 	// whether a fetched commit contains it. Version is empty then.
+	// MergedAt is when the pull request merged: no values rendered before
+	// it carry the change.
 	Revision   string
 	Repository string
 	Paths      []string
 	GitHub     GitHub
+	MergedAt   time.Time
 	// HelmReleases name HelmReleases to wait for whatever chart they
 	// deploy, as <name> (any namespace) or <namespace>/<name>.
 	HelmReleases []string
@@ -84,6 +87,7 @@ type Waiter struct {
 
 	revision, repository string
 	github               GitHub
+	mergedAt             time.Time
 	// touched are the apps the configuration change touches.
 	touched map[string]bool
 	// contains keeps whether a commit contains the revision.
@@ -132,6 +136,7 @@ func New(config Config) (*Waiter, error) {
 		revision:         config.Revision,
 		repository:       config.Repository,
 		github:           config.GitHub,
+		mergedAt:         config.MergedAt,
 		contains:         map[string]bool{},
 		requested:        map[string]string{},
 	}

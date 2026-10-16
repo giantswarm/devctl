@@ -214,6 +214,94 @@ func TestRevisionReconcileHandledCountsAsRolledOut(t *testing.T) {
 	wantExit(t, r, agentcli.ExitOK, "")
 }
 
+// mergedAt is when the pull request merged: days before konfigure-operator
+// last re-labelled the rendered values (renderedAt) with a later revision.
+var mergedAt = renderedAt.Add(-72 * time.Hour)
+
+func mergedAtOption(c *Config) { c.MergedAt = mergedAt }
+
+// deploy is one entry of a HelmRelease's status.history: when it deployed
+// and the digest of its values.
+type deploy struct {
+	at     time.Time
+	digest string
+}
+
+// withHistory sets the status.history of a HelmRelease, newest first.
+func withHistory(hr *unstructured.Unstructured, deploys ...deploy) *unstructured.Unstructured {
+	var history []any
+	for i, d := range deploys {
+		status := "superseded"
+		if i == 0 {
+			status = "deployed"
+		}
+		history = append(history, map[string]any{
+			"chartName": hr.GetName(), "chartVersion": "4.109.0+390ef739c266", "status": status, "name": hr.GetName(), "namespace": "agent-platform",
+			"lastDeployed": d.at.Format(time.RFC3339), "configDigest": d.digest,
+		})
+	}
+	_ = unstructured.SetNestedSlice(hr.Object, history, "status", "history")
+	return hr
+}
+
+// A HelmRelease that took new values after the merge runs the change,
+// although konfigure-operator re-rendered its ConfigMap since with a later
+// revision that left the values as they were.
+func TestRevisionHelmReleaseNewValuesAfterMergeRolledOut(t *testing.T) {
+	upgraded := withHistory(valuesHelmRelease("agent-platform", time.Time{}, ready("True", "UpgradeSucceeded", "")),
+		deploy{mergedAt.Add(2 * time.Minute), "sha256:new"}, deploy{mergedAt.Add(-24 * time.Hour), "sha256:old"})
+	r := wait(t, newClient(gitRepository(newerSHA), konfiguration(newerSHA, newerSHA, ready("True", "ReconciliationSucceeded", "")), renderedConfigMap(newerSHA), upgraded), false, revision(agentPlatformValues), mergedAtOption)
+	wantExit(t, r, agentcli.ExitOK, "")
+}
+
+// A deploy after the merge with the values of the one before (a chart
+// upgrade before konfigure-operator rendered the change) does not, nor
+// does a values change before the merge.
+func TestRevisionHelmReleaseNoNewValuesAfterMergeIsATimeout(t *testing.T) {
+	for name, deploys := range map[string][]deploy{
+		"same values after the merge": {{mergedAt.Add(time.Minute), "sha256:old"}, {mergedAt.Add(-24 * time.Hour), "sha256:old"}},
+		"new values before the merge": {{mergedAt.Add(-time.Minute), "sha256:new"}, {mergedAt.Add(-24 * time.Hour), "sha256:old"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			stale := withHistory(valuesHelmRelease("agent-platform", time.Time{}, ready("True", "UpgradeSucceeded", "")), deploys...)
+			r := wait(t, newClient(gitRepository(mergeSHA), konfiguration(mergeSHA, mergeSHA, ready("True", "ReconciliationSucceeded", "")), renderedConfigMap(mergeSHA), stale), false, revision(agentPlatformValues), mergedAtOption)
+			wantExit(t, r, agentcli.ExitTimeout, "HelmRelease flux-giantswarm/agent-platform: last deployed")
+		})
+	}
+}
+
+// appChart is the Chart app-operator creates for the App and the values it
+// merged for it, last written at written.
+func appChart(written time.Time) []runtime.Object {
+	chart := obj("application.giantswarm.io/v1alpha1", "Chart", "giantswarm", "agent-platform", map[string]any{
+		"spec": map[string]any{"config": map[string]any{"configMap": map[string]any{"name": "agent-platform-chart-values", "namespace": "giantswarm"}}},
+	})
+	values := obj("v1", "ConfigMap", "giantswarm", "agent-platform-chart-values", nil)
+	values.SetManagedFields([]metav1.ManagedFieldsEntry{{Manager: "app-operator", Operation: metav1.ManagedFieldsOperationUpdate, Time: &metav1.Time{Time: written}}})
+	return []runtime.Object{chart, values}
+}
+
+// An App whose merged values app-operator changed after the merge, and that
+// deployed them, runs the change although its ConfigMap was re-rendered
+// since; values merged before the merge keep the wait open.
+func TestRevisionAppNewValuesAfterMerge(t *testing.T) {
+	for name, tc := range map[string]struct {
+		written time.Time
+		code    int
+	}{
+		"after the merge":  {mergedAt.Add(time.Minute), agentcli.ExitOK},
+		"before the merge": {mergedAt.Add(-time.Minute), agentcli.ExitTimeout},
+	} {
+		t.Run(name, func(t *testing.T) {
+			objects := append([]runtime.Object{gitRepository(mergeSHA), konfiguration(mergeSHA, mergeSHA, ready("True", "ReconciliationSucceeded", "")), renderedConfigMap(mergeSHA), valuesApp(tc.written, "1.2.0", "deployed")}, appChart(tc.written)...)
+			r := wait(t, newClient(objects...), false, revision(agentPlatformValues), mergedAtOption)
+			if agentcli.Exit(r.err) != tc.code {
+				t.Errorf("exit %d, want %d: %v", agentcli.Exit(r.err), tc.code, r.err)
+			}
+		})
+	}
+}
+
 // The GitRepository is at a newer commit that contains the merge commit,
 // asked once; the Konfiguration still applies an older one.
 func TestRevisionNewerCommitContainsTheMerge(t *testing.T) {

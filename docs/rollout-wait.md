@@ -54,14 +54,18 @@ When `--pr` names a pull request no release follows (a giantswarm-configs change
 | Flux `GitRepository` | its `spec.url` is the repository (ssh or https) | its artifact's commit is the merge commit or contains it (GitHub's comparison) |
 | Flux `Kustomization` | its `spec.sourceRef` is one of those GitRepositories | `lastAppliedRevision` contains the merge commit, Ready at its generation |
 | `Konfiguration` (`konfigure.giantswarm.io`) | its `spec.sources.flux.gitRepository` is one of them | `lastAppliedRevision` contains the merge commit, Ready |
-| Flux `HelmRelease` | its `valuesFrom` takes the ConfigMap or Secret a Konfiguration renders for an app the pull request changed (`installations/<installation>/apps/<app>/`, `default/apps/<app>/`), or `--helmrelease` names it | the rendered ConfigMap's `configuration.giantswarm.io/revision` contains the merge commit, the HelmRelease deployed after that ConfigMap was written (or handled a `--reconcile` request made after it), Ready, its workloads rolled out |
-| `App` (`application.giantswarm.io/v1alpha1`) | its `spec.config` or `spec.userConfig` names the ConfigMap or Secret a Konfiguration renders for an app the pull request changed | the rendered ConfigMap contains the merge commit, the App's `status.release.lastDeployed` is after that ConfigMap was written, its release `deployed` at its `spec.version` (`runningVersion`), its workloads rolled out |
+| Flux `HelmRelease` | its `valuesFrom` takes the ConfigMap or Secret a Konfiguration renders for an app the pull request changed (`installations/<installation>/apps/<app>/`, `default/apps/<app>/`), or `--helmrelease` names it | the rendered ConfigMap's `configuration.giantswarm.io/revision` contains the merge commit, the HelmRelease deployed after that ConfigMap was written, took values other than its previous deploy's (`status.history[].configDigest`) after the pull request merged, or handled a `--reconcile` request made after the ConfigMap was written; Ready, its workloads rolled out |
+| `App` (`application.giantswarm.io/v1alpha1`) | its `spec.config` or `spec.userConfig` names the ConfigMap or Secret a Konfiguration renders for an app the pull request changed | the rendered ConfigMap contains the merge commit, the App's `status.release.lastDeployed` is after that ConfigMap was written or, for an App in the management cluster, after app-operator last changed the values it merges for the App's Chart, which it did after the pull request merged; its release `deployed` at its `spec.version` (`runningVersion`), its workloads rolled out |
 | `ConfigMap` | a Konfiguration renders it for an app the pull request changed and no HelmRelease or App takes it | never: `state` `unknown`, whether the change runs cannot be told |
 
 A HelmRelease upgrades only when its rendered values changed, which only the values tell: a pull request
 that changes files beyond one app's (`installations/<installation>/config.yaml.patch`, `default/config.yaml`)
 follows no HelmRelease by itself, with a warning; `--helmrelease` names one to follow. Another
-installation's files change nothing here. A Kustomization or Konfiguration whose attempt at the revision
+installation's files change nothing here. konfigure-operator re-labels a rendered ConfigMap with every
+revision it applies, so its last write says when it was last rendered, not when its values changed: a
+deployment that took new values after the merge runs the change although the ConfigMap was written since
+(an older revision konfigure-operator renders after the merge, within its fetch interval, is not told
+apart). A Kustomization or Konfiguration whose attempt at the revision
 failed, or an App whose release failed with the new values, is exit 1; once everything else is applied, a
 changed app whose values nothing takes is exit 3, verdict `rollout_unknown`, never `rolled_out`; nothing on the installation fetching the repository keeps the `no_release` verdict, exit
 3, its reason saying so; a GitRepository nothing reads (one included into another) is exit 3. `--reconcile`
