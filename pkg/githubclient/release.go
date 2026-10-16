@@ -2,6 +2,7 @@ package githubclient
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"time"
 
@@ -55,36 +56,43 @@ func (c *Client) GetTagSHA(ctx context.Context, owner, repo, tag string) (string
 	return annotated.GetObject().GetSHA(), nil
 }
 
-// tagPages bounds the tag listing of FindTagForCommit's first pass: the tag
+// tagPages bounds the tag listing of FindTagsForCommit's first pass: the tag
 // of a fresh merge into the default branch is among the newest.
 const tagPages = 3
 
-// FindTagForCommit returns the newest tag pointing at sha, or "" when no tag
-// does. The tag listing is ordered by version, newest first, so the tag of a
-// fresh merge into the default branch is in its first pages; a tag of an
-// older line (a release branch) is read from [Client.CommitTags].
-func (c *Client) FindTagForCommit(ctx context.Context, owner, repo, sha string) (string, error) {
+// FindTagsForCommit returns every tag pointing at sha, empty when no tag
+// does. The tag listing is ordered by version, newest first, so the tags of a
+// fresh merge into the default branch are in its first pages; when the
+// listing goes on beyond them, the tags of an older line (a release branch)
+// and the rest of sha's are read from [Client.CommitTags].
+func (c *Client) FindTagsForCommit(ctx context.Context, owner, repo, sha string) ([]string, error) {
+	var found []string
 	opts := &github.ListOptions{PerPage: 100}
 	for page := 0; page < tagPages; page++ {
 		tags, resp, err := c.ghClient.Repositories.ListTags(ctx, owner, repo, opts)
 		if err != nil {
-			return "", microerror.Mask(err)
+			return nil, microerror.Mask(err)
 		}
 		for _, t := range tags {
 			if t.GetCommit().GetSHA() == sha {
-				return t.GetName(), nil
+				found = append(found, t.GetName())
 			}
 		}
 		if resp.NextPage == 0 {
-			return "", nil
+			return found, nil
 		}
 		opts.Page = resp.NextPage
 	}
 	tags, err := c.CommitTags(ctx, owner, repo)
 	if err != nil {
-		return "", microerror.Mask(err)
+		return nil, microerror.Mask(err)
 	}
-	return NewestTag(tags[sha]), nil
+	for _, name := range tags[sha] {
+		if !slices.Contains(found, name) {
+			found = append(found, name)
+		}
+	}
+	return found, nil
 }
 
 // CommitTags maps each commit a lightweight tag points at to the names of

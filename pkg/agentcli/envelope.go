@@ -41,6 +41,9 @@ const (
 	VerdictReleaseUnconfirmed Verdict = "release_unconfirmed"
 	VerdictAuthRequired       Verdict = "auth_required"
 	VerdictUsage              Verdict = "usage"
+	// VerdictAmbiguousRelease: the commit carries the release tags of more
+	// than one version; the caller names the version.
+	VerdictAmbiguousRelease Verdict = "ambiguous_release"
 	// VerdictDetached: devctl pr merge --detach started the merge in a
 	// process of its own; the handle reads its outcome.
 	VerdictDetached Verdict = "detached"
@@ -84,6 +87,10 @@ const (
 	// ExitRunning: devctl pr merge status found the detached merge still
 	// running.
 	ExitRunning = 10
+	// ExitAmbiguousRelease: the commit a release wait resolves to carries
+	// the release tags of more than one version; the reason names them, and
+	// a wait given the version waits on it.
+	ExitAmbiguousRelease = 11
 )
 
 // Envelope is the head of every command's JSON document. A command's document

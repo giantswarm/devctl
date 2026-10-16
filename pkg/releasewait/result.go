@@ -133,6 +133,10 @@ type Result struct {
 	// failed tag pipeline or of the tag's failed Actions runs with the tails
 	// of their logs; absent otherwise.
 	FailedJobs []prwait.FailedJob `json:"failedJobs,omitempty"`
+	// ConflictingTags are, when the commit carries the release tags of more
+	// than one version, every release tag on it, newest first; absent
+	// otherwise.
+	ConflictingTags []string `json:"conflictingTags,omitempty"`
 }
 
 // NewResult is the result before anything is known: the repository, empty
@@ -192,6 +196,25 @@ func (e *NoReleaseError) ExitVerdict() agentcli.Verdict { return agentcli.Verdic
 func IsNoRelease(err error) bool {
 	var noRelease *NoReleaseError
 	return errors.As(err, &noRelease)
+}
+
+// AmbiguousReleaseError says that the commit a pull request resolves to
+// carries the release tags of more than one version: the wait does not
+// choose, the caller names the version. Exit 11 with the ambiguous_release
+// verdict; Tags are every release tag on the commit, newest first.
+type AmbiguousReleaseError struct {
+	Reason string
+	Tags   []string
+}
+
+func (e *AmbiguousReleaseError) Error() string { return e.Reason }
+
+// ExitCode implements [agentcli.ExitCoder].
+func (e *AmbiguousReleaseError) ExitCode() int { return agentcli.ExitAmbiguousRelease }
+
+// ExitVerdict implements [agentcli.ExitCoder].
+func (e *AmbiguousReleaseError) ExitVerdict() agentcli.Verdict {
+	return agentcli.VerdictAmbiguousRelease
 }
 
 func noReleaseErr(format string, args ...any) error {
