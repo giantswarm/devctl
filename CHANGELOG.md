@@ -9,6 +9,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `gen circleci`: the chart-test jobs (`execute-chart-tests`, `execute-chart-tests-release`) survive a transient
+  gsoci.azurecr.io `toomanyrequests`. Their pre-steps (the new `pull-chart-test-images` command) log in to the
+  registry with the architect context's credentials, so the pull leaves ACR's shared anonymous budget, and pull
+  app-test-suite and the kind node image with bounded retry and backoff (six attempts over up to about four minutes)
+  before the orb starts them. The kind node image is now pinned as `kind_node_image` (`v1.37.0`), so the image
+  pulled is the one `kind create cluster` uses.
 - `rollout wait --pr` on a configuration change judges a values-fed HelmRelease or App by the values it deployed,
   not only by the rendered ConfigMap's last write: konfigure-operator re-labels that ConfigMap with every revision,
   so a later commit made an older pull request look pending until the timeout. A HelmRelease that deployed new
