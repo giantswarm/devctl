@@ -46,9 +46,6 @@ type genContext struct {
 	// HasHelm says whether the scaffold has a helm/ directory: the default
 	// pre-commit flavour is helmchart then.
 	HasHelm bool
-	// HasRenovateConfig says whether the scaffold carries a Renovate
-	// configuration (renovate.HasConfig): [PlanRenovate] decides on it.
-	HasRenovateConfig bool
 	// Knows says whether a `devctl gen <generator>` knows a flag. align-files
 	// probes `--help` before passing a flag its pinned devctl may predate;
 	// nil means every flag is known.
@@ -166,16 +163,15 @@ func genCommands(f Fields, gc genContext) [][]string {
 		commands = append(commands, line(genCircleCI, circleCIArgs(f, flavour, knows)...))
 	}
 
-	// Renovate, as align-files decides it: [PlanRenovate]. On generated CI
-	// the architect orb is pinned by the generated config, so
+	// Renovate, as align-files decides it: [PlanRenovate] for a repository
+	// without a configuration of its own -- a template's is none -- so the
+	// scaffold carries the generated one and align-files keeps it. On
+	// generated CI the architect orb is pinned by the generated config, so
 	// --circleci-generated keeps Renovate off it; without generated CI there
 	// is no orb to leave alone. --repo-name is what align-files' devctl reads
 	// from the checkout's origin remote.
-	switch plan := PlanRenovate(f, gc.HasRenovateConfig); {
-	case plan.Generate:
+	if PlanRenovate(f, false).Generate {
 		commands = append(commands, line(genRenovate, renovateArgs(f, generateCI, knows)...))
-	case plan.PatchReviewers:
-		commands = append(commands, line(genRenovate, append([]string{"reviewers"}, reviewerArgs(f)...)...))
 	}
 
 	return commands

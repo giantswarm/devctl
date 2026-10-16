@@ -11,8 +11,6 @@ import (
 	"strings"
 
 	"github.com/giantswarm/microerror"
-
-	"github.com/giantswarm/devctl/v8/pkg/renovate"
 )
 
 // Renderer renders the scaffold of an accepted declaration: the template
@@ -161,11 +159,7 @@ func (r Renderer) Render(ctx context.Context, req RenderRequest) (*Scaffold, err
 		return nil, microerror.Mask(err)
 	}
 	_, helmErr := os.Stat(filepath.Join(dir, "helm"))
-	hasRenovateConfig, err := renovate.HasConfig(dir)
-	if err != nil {
-		return nil, microerror.Mask(err)
-	}
-	commands := genCommands(fields, genContext{HasHelm: helmErr == nil, HasRenovateConfig: hasRenovateConfig, Knows: knows})
+	commands := genCommands(fields, genContext{HasHelm: helmErr == nil, Knows: knows})
 	if err := runGen(ctx, dir, r.Log, commands); err != nil {
 		return nil, microerror.Mask(err)
 	}

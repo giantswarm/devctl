@@ -72,7 +72,7 @@
 // workflows including auto-release, LLM rules, pre-commit, CircleCI when
 // gen.ci.generate is on, and the Renovate configuration as [PlanRenovate]
 // decides it for align-files too: renovate.json5 (with --circleci-generated
-// on generated CI) unless the template keeps one of its own, so no created
+// on generated CI) whatever the template carries, so no created
 // repository starts without a Renovate configuration unless its entry
 // declares renovate: false. The generators run through the same `devctl gen`
 // commands align-files runs, in align-files' order and with its flags, so

@@ -20,7 +20,7 @@ type RenovatePlan struct {
 
 // PlanRenovate decides what happens to the Renovate configuration of an
 // entry's repository; hasConfig says whether the repository carries one
-// (renovate.HasConfig); a scaffold's is its template's.
+// (renovate.HasConfig); a scaffold has none, a template's is not its own.
 //
 // An entry that declares renovate: false gets neither. An entry with
 // gen.flavours that is no fork line gets renovate.json5 generated on

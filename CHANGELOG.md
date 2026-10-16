@@ -20,8 +20,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Changed
 
 - `repo create`: the scaffold decides its Renovate configuration with `reposetup.PlanRenovate`, align-files' decision:
-  `renovate.json5` on generated CI, for the `customer` flavour and for a repository without a configuration, else the
-  chore reviewers patched into the template's own configuration.
+  `renovate.json5` for every entry that generates, as for a repository without a configuration; align-files keeps it.
 
 - `repo create`: the dry run reads the author's membership the way giantswarm/github's validation check does, the
   owning team and `team-planeteers` one by one (the team, then the membership), instead of listing the caller's teams.
