@@ -50,6 +50,9 @@ const (
 	KindGitRepository = "GitRepository"
 	KindKustomization = "Kustomization"
 	KindKonfiguration = "Konfiguration"
+	// KindConfigMap is the values a Konfiguration renders for a changed
+	// app that no HelmRelease or App takes.
+	KindConfigMap = "ConfigMap"
 )
 
 var (
@@ -150,6 +153,8 @@ func (w *Waiter) revisionConsumers(ctx context.Context, sources []object) ([]Dep
 		return list, nil
 	}
 
+	// followed are the rendered values a HelmRelease or an App takes.
+	followed := map[string]bool{}
 	hrs, err := w.list(ctx, helmReleases, "")
 	if err != nil {
 		return nil, err
@@ -157,7 +162,11 @@ func (w *Waiter) revisionConsumers(ctx context.Context, sources []object) ([]Dep
 	for i := range hrs {
 		hr := &hrs[i]
 		for _, r := range rendered {
-			if r.namespace == hr.GetNamespace() && (r.touched || w.named(hr.GetNamespace(), hr.GetName())) && takesValuesFrom(hr, r.name) {
+			if r.namespace == hr.GetNamespace() && takesValuesFrom(hr, r.name) {
+				followed[r.id()] = true
+				if !r.touched && !w.named(hr.GetNamespace(), hr.GetName()) {
+					continue
+				}
 				d, err := w.judgeValuesHelmRelease(ctx, hr, r)
 				if err != nil {
 					return nil, err
@@ -165,6 +174,37 @@ func (w *Waiter) revisionConsumers(ctx context.Context, sources []object) ([]Dep
 				list = append(list, d)
 				break
 			}
+		}
+	}
+
+	items, err := w.list(ctx, apps, "")
+	if err != nil {
+		return nil, err
+	}
+	for i := range items {
+		app := &items[i]
+		for _, r := range rendered {
+			if appTakesValuesFrom(app, r) {
+				followed[r.id()] = true
+				if !r.touched {
+					continue
+				}
+				d, err := w.judgeValuesApp(ctx, app, r)
+				if err != nil {
+					return nil, err
+				}
+				list = append(list, d)
+				break
+			}
+		}
+	}
+
+	// The values of a changed app that nothing takes: whether the change
+	// runs cannot be told, so it is not reported rolled out.
+	for _, r := range rendered {
+		if r.touched && !followed[r.id()] {
+			d := Deployment{Kind: KindConfigMap, Namespace: r.namespace, Name: r.name, Follows: r.konfiguration.String(), Workloads: []Workload{}}
+			list = append(list, d.set(StateUnknown, "no HelmRelease or App on %s takes these values: whether the change runs there cannot be told", w.installation))
 		}
 	}
 	return list, nil
@@ -303,6 +343,8 @@ type renderedValues struct {
 	// touched: the pull request changed the app's files.
 	touched bool
 }
+
+func (r renderedValues) id() string { return r.namespace + "/" + r.name }
 
 // renderedFor are the values a Konfiguration renders, one per iteration
 // (app), named <prefix>-<app>-<suffix>.

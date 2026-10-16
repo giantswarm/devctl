@@ -84,6 +84,19 @@ func valuesHelmRelease(name string, deployed time.Time, conditions []any) *unstr
 	})
 }
 
+// valuesApp is an App that takes its config from the rendered ConfigMap,
+// pinned to 1.2.0, whose release last deployed at deployed.
+func valuesApp(deployed time.Time, version, releaseStatus string) *unstructured.Unstructured {
+	return obj("application.giantswarm.io/v1alpha1", "App", "giantswarm", "agent-platform", map[string]any{
+		"spec": map[string]any{
+			"name": "agent-platform", "version": "1.2.0", "catalog": "control-plane-catalog", "namespace": "agent-platform",
+			"kubeConfig": map[string]any{"inCluster": true},
+			"config":     map[string]any{"configMap": map[string]any{"name": "agent-platform-konfiguration", "namespace": "flux-giantswarm"}},
+		},
+		"status": map[string]any{"version": version, "release": map[string]any{"status": releaseStatus, "lastDeployed": deployed.Format(time.RFC3339)}},
+	})
+}
+
 func revision(paths ...string) func(*Config) {
 	return func(c *Config) {
 		c.Version, c.Charts = "", nil
@@ -112,6 +125,44 @@ func TestRevisionRolledOut(t *testing.T) {
 	}
 	if !slices.Equal(kinds, []string{KindGitRepository, KindKonfiguration, KindHelmRelease}) {
 		t.Errorf("deployments: %v", kinds)
+	}
+}
+
+// An App that takes the rendered values is followed like a HelmRelease:
+// named with its chart and deployed version, rolled out once it deployed
+// its pinned version after the values were rendered.
+func TestRevisionAppRolledOut(t *testing.T) {
+	r := wait(t, newClient(gitRepository(mergeSHA), konfiguration(mergeSHA, mergeSHA, ready("True", "ReconciliationSucceeded", "")), renderedConfigMap(mergeSHA), valuesApp(renderedAt.Add(time.Minute), "1.2.0", "deployed")), false, revision(agentPlatformValues))
+	wantExit(t, r, agentcli.ExitOK, "")
+	d := r.result.Deployments[len(r.result.Deployments)-1]
+	if d.Kind != KindApp || d.Name != "agent-platform" || d.Chart != "agent-platform" || d.RunningVersion != "1.2.0" || d.State != StateRolledOut {
+		t.Errorf("App: %+v", d)
+	}
+}
+
+// An App not deployed since the values were rendered keeps the wait open.
+func TestRevisionAppNotRedeployedIsATimeout(t *testing.T) {
+	r := wait(t, newClient(gitRepository(mergeSHA), konfiguration(mergeSHA, mergeSHA, ready("True", "ReconciliationSucceeded", "")), renderedConfigMap(mergeSHA), valuesApp(renderedAt.Add(-time.Hour), "1.2.0", "deployed")), false, revision(agentPlatformValues))
+	wantExit(t, r, agentcli.ExitTimeout, "App giantswarm/agent-platform: last deployed")
+}
+
+// An App whose release failed with the new values ends the wait.
+func TestRevisionAppFailedIsExit1(t *testing.T) {
+	r := wait(t, newClient(gitRepository(mergeSHA), konfiguration(mergeSHA, mergeSHA, ready("True", "ReconciliationSucceeded", "")), renderedConfigMap(mergeSHA), valuesApp(renderedAt.Add(time.Minute), "1.2.0", "failed")), false, revision(agentPlatformValues))
+	wantExit(t, r, agentcli.ExitRed, "App giantswarm/agent-platform failed")
+}
+
+// The values of a changed app that no HelmRelease or App takes: the
+// change is applied, whether it runs cannot be told, and it is not
+// reported rolled out.
+func TestRevisionValuesNothingTakesAreUnknown(t *testing.T) {
+	r := wait(t, newClient(gitRepository(mergeSHA), konfiguration(mergeSHA, mergeSHA, ready("True", "ReconciliationSucceeded", "")), renderedConfigMap(mergeSHA)), false, revision(agentPlatformValues))
+	wantExit(t, r, agentcli.ExitNotApplicable, "ConfigMap flux-giantswarm/agent-platform-konfiguration: no HelmRelease or App on myinstallation takes these values")
+	if _, verdict := agentcli.Outcome(r.err); verdict != VerdictRolloutUnknown {
+		t.Errorf("verdict %s", verdict)
+	}
+	if d := r.result.Deployments[len(r.result.Deployments)-1]; d.Kind != KindConfigMap || d.State != StateUnknown {
+		t.Errorf("deployment: %+v", d)
 	}
 }
 
