@@ -65,6 +65,19 @@ const (
     ci:
       generate: false
 `
+	// actionsOnlyEntryYAML is a repository on generated CI without a CircleCI
+	// job: generic, no chart, no image, its generated CI is GitHub Actions
+	// only (auto-release).
+	actionsOnlyEntryYAML = `- name: sample-service
+  componentType: unspecified
+  description: A repository released by GitHub Actions
+  visibility: private
+  gen:
+    flavours: [generic]
+    language: generic
+    ci:
+      generate: true
+`
 	// templateContentEntryYAML is a template repository whose
 	// .circleci/config.yml is content for the repositories created from it.
 	templateContentEntryYAML = `- name: sample-service
@@ -1664,6 +1677,38 @@ func TestSteps(t *testing.T) {
 			verify: func(t *testing.T, h *harness, _ *Result) {
 				require.Contains(t, h.cc.projects, owner+"/"+name)
 				require.Zero(t, h.gh.reads("/repos/"+owner+"/"+name+"/contents/"+circleCIConfig), "a declared pipeline is not looked up")
+			},
+		},
+		{
+			// Generated CI without a CircleCI job is GitHub Actions only:
+			// gen.ci.generate: true declares no pipeline the CircleCI
+			// generator writes, so the branch decides, and a branch without
+			// .circleci/config.yml has none. The repository is neither
+			// followed nor given a key, its release is not held against a tag
+			// build, and a project followed earlier is left as it is.
+			name: "circleci: generated CI without a CircleCI job is no pipeline", step: StepCircleCI, existing: true,
+			entry: actionsOnlyEntryYAML,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				delete(r.files, ".circleci/config.yml")
+				delete(r.files, ".circleci/workflows.yml")
+				r.release, r.releaseAt = "v0.1.0", time.Now().Add(-time.Hour)
+			},
+			wantCheck: VerdictSkipped, wantAfter: VerdictSkipped,
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				require.NotContains(t, h.cc.projects, owner+"/"+name)
+				res := h.run(ModeCheck, false, StepCircleCI, StepRelease)
+				for _, step := range []Step{StepCircleCI, StepRelease} {
+					require.Equal(t, VerdictSkipped, res.Step(step).Verdict, "%s: %+v", step, res.Step(step))
+					require.Equal(t, "no CircleCI pipeline", res.Step(step).Summary)
+					require.Empty(t, res.Step(step).Changes, "%s plans nothing", step)
+				}
+				require.Empty(t, res.Step(StepRelease).Findings, "a release CircleCI never built is no missed tag build")
+
+				h.cc.projects[owner+"/"+name] = &fakeProject{} // followed earlier, no setup workflows, no key
+				res = h.run(ModeRepair, false, StepCircleCI, StepRelease)
+				require.Equal(t, VerdictSkipped, res.Step(StepCircleCI).Verdict, "%+v", res.Step(StepCircleCI))
+				require.Empty(t, h.mutations(), "a followed project of a repository without a pipeline is left as it is")
 			},
 		},
 		{

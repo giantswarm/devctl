@@ -536,6 +536,16 @@ func memberOf(teams []string, team string) bool {
 	return false
 }
 
+// GeneratesCircleCI says whether the declaration's generated CI includes a
+// CircleCI pipeline: gen.ci.generate is on and the CircleCI generator has a
+// job for it ([hasCIJob]). Generated CI without a job is GitHub Actions only
+// (auto-release and the other generated workflows): no .circleci/config.yml
+// is generated, and CircleCI has nothing to build.
+func GeneratesCircleCI(f Fields) bool {
+	g := f.Gen
+	return g != nil && g.CI != nil && g.CI.Generate != nil && *g.CI.Generate && hasCIJob(f)
+}
+
 // hasCIJob says whether the CircleCI generator has a job for the
 // declaration: a Go or Node build, an image (a scaffold has a Dockerfile only
 // where gen.ci.image.dockerfile names one) or a chart.
