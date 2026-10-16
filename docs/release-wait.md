@@ -41,7 +41,12 @@ the login command in `reason`, before anything is waited for.
   (`create_release` workflows, a release pull request) does not tag the merge commit of a feature
   pull request, nor does one without a release workflow that no entry declares a model for: `--pr` is
   exit 3, `no_release`, with one sentence. [`devctl pr merge`](pr-merge.md) runs this wait after its
-  merge, and reads `no_release` as a merge that is done.
+  merge, and reads `no_release` as a merge that is done. A commit that carries the release tags of
+  more than one version (`v1.1.4` and `v1.2.0`) has no one release to follow: the wait does not pick
+  one, it ends at once with exit 11, `ambiguous_release`, naming every release tag on the commit, and
+  a wait given one of those versions follows it. A candidate and the stable promoted onto its commit
+  (`v1.2.0-rc.2`, `v1.2.0`) are one version, the stable followed; a tag outside the release pattern
+  (an upstream `v1.3.0-alpha.1`) counts for nothing.
 
 ### The release model
 
@@ -269,6 +274,7 @@ stderr.
 | `artifacts[]` | `kind` (`image`, `chart`, `release-asset`), `reference` (the pullable reference, or the asset's download URL), `digest` (empty while missing), `state` (`available`, `missing`). Empty until the artifacts are known (hand-written CI before its pipeline exists). |
 | `pipeline` | The tag pipeline on CircleCI: `id`, `number`, `url`, `workflows[{name, status, conclusion}]` (newest run per name; for `ciModel` `actions` one entry per check run of the tag's commit, with its `conclusion`, `id`, `number` empty and `url` the commit's checks page), `failedJobs[]`, `unfinished[]` (the workflows not finished, `name (status)`, with `jobs not visible yet` when CircleCI does not list them yet; what a timeout was waiting for, empty at exit 0). `null` for a repository without CircleCI and without check runs on the tag, or while the CircleCI pipeline does not exist. |
 | `actions[]` | The Actions runs the tag triggered, for a repository without CircleCI: `name`, `runId`, `status`, `conclusion`, `url`. |
+| `conflictingTags[]` | Present at exit 11: every release tag on the commit the wait resolved to, newest first. Absent otherwise. |
 | `failedJobs[]` | Present at exit 1 with `--failed-log`, as in [`pr wait`](pr-wait.md#the-document): each failed job with `name` (`<workflow>/<job>` on CircleCI, `<run>/<job>` on Actions), `source` (`actions` or `circleci`), `url`, and `logTail`, the last `--failed-log-lines` lines of its log, or `logError` when the log could not be read. A failed workflow or run whose jobs cannot be listed is named alone with its `logError`. Absent without the flag. |
 
 ## Exit codes
@@ -282,6 +288,7 @@ stderr.
 | 3 | `no_release` | No release follows the pull request's merge: the repository does not tag merge commits (the legacy release model, or no release workflow at all), or the merge commit's auto-release run finished without a tag and no later tag on the pull request's base branch carries it; the reason names the branch. |
 | 7 | `usage` | A bad argument or flag; a newer devctl released (the reason names `devctl version update`); no source says how the repository releases; the sources disagree about the CI model or the artifacts; a registry answer that is neither a digest nor "manifest unknown"; a tooling error, a GitHub or CircleCI read that failed eight tries in a row among them. |
 | 8 | `auth_required` | No usable token in the keychain; `reason` names the `devctl auth login` invocation. |
+| 11 | `ambiguous_release` | With `--pr`, the commit the wait resolves to (the merge commit, or the first tagged commit after it) carries the release tags (`vX.Y.Z`, `vX.Y.Z-rc.N`) of more than one version: the wait does not choose. `reason` and `conflictingTags` name every release tag on the commit, newest first; a wait given the version waits on it. A candidate and its promoted stable on one commit are one version. |
 
 ## Environment
 

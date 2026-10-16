@@ -29,7 +29,9 @@
 // without a tag decided that the commits warranted no release, so the first
 // tag on the base branch after the merge commit carries it, and without one
 // the wait ends at once as no release following the merge ([NoReleaseError]),
-// as does a repository that does not tag merge commits. A repository that releases in two steps tags the merge commit with
+// as does a repository that does not tag merge commits. A commit carrying the
+// release tags of two versions ends it at once too ([AmbiguousReleaseError]):
+// the wait does not choose, the caller names the version. A repository that releases in two steps tags the merge commit with
 // a release candidate and a promote later cuts the stable release; with
 // [Config.PreferPromoted] the wait follows that promotion.
 package releasewait
@@ -70,7 +72,7 @@ const DefaultTimeout = 30 * time.Minute
 type GitHub interface {
 	GetPullRequestMerge(ctx context.Context, owner, repo string, number int) (githubclient.PullRequestMerge, error)
 	GetTagSHA(ctx context.Context, owner, repo, tag string) (string, error)
-	FindTagForCommit(ctx context.Context, owner, repo, sha string) (string, error)
+	FindTagsForCommit(ctx context.Context, owner, repo, sha string) ([]string, error)
 	CommitTags(ctx context.Context, owner, repo string) (map[string][]string, error)
 	CommitsAfter(ctx context.Context, owner, repo, sha, branch string) ([]string, error)
 	GetReleaseByTag(ctx context.Context, owner, repo, tag string) (githubclient.Release, error)
@@ -261,6 +263,10 @@ func (w *Waiter) Wait(ctx context.Context, result *Result) error {
 	defer cancel()
 
 	err := w.wait(ctx, result)
+	var ambiguous *AmbiguousReleaseError
+	if errors.As(err, &ambiguous) {
+		result.ConflictingTags = ambiguous.Tags
+	}
 	if err != nil && ctx.Err() != nil && !isOutcome(err) {
 		return w.timeout(result)
 	}
@@ -791,12 +797,9 @@ func (w *Waiter) awaitTagForCommit(ctx context.Context, sha string, content *Tag
 		return "", "", noReleaseErr("the team-file entry of %s/%s declares auto-release, but %s at %s holds no auto-release workflow: nothing tags the merge commit of #%d", owner, repo, workflowsDir, short(sha), number)
 	}
 	for {
-		tag, err := w.config.GitHub.FindTagForCommit(ctx, owner, repo, sha)
-		if err != nil {
-			return "", "", fmt.Errorf("listing tags: %w", err)
-		}
-		if tag != "" {
-			return tag, sha, nil
+		tag, err := w.commitTag(ctx, sha)
+		if tag != "" || err != nil {
+			return tag, sha, err
 		}
 		run, err := w.autoReleaseRun(ctx, sha, auto)
 		if err != nil {
@@ -805,12 +808,9 @@ func (w *Waiter) awaitTagForCommit(ctx context.Context, sha string, content *Tag
 		if run != nil && run.Status == statusCompleted {
 			// The run tags before it finishes, so a tag it made is in a
 			// listing read after it finished.
-			tag, err := w.config.GitHub.FindTagForCommit(ctx, owner, repo, sha)
-			if err != nil {
-				return "", "", fmt.Errorf("listing tags: %w", err)
-			}
-			if tag != "" {
-				return tag, sha, nil
+			tag, err := w.commitTag(ctx, sha)
+			if tag != "" || err != nil {
+				return tag, sha, err
 			}
 			switch run.Conclusion {
 			case "success", "neutral", "skipped":
@@ -861,10 +861,21 @@ func (w *Waiter) firstTagAfter(ctx context.Context, sha, branch string) (tag, ta
 	}
 	for _, commit := range commits {
 		if names := tags[commit]; len(names) > 0 {
-			return githubclient.NewestTag(names), commit, nil
+			tag, err := releaseTag(w.config.Owner+"/"+w.config.Repo, commit, names)
+			return tag, commit, err
 		}
 	}
 	return "", "", nil
+}
+
+// commitTag is the tag on sha, as [releaseTag] picks it from every tag
+// there; "" while none is.
+func (w *Waiter) commitTag(ctx context.Context, sha string) (string, error) {
+	tags, err := w.config.GitHub.FindTagsForCommit(ctx, w.config.Owner, w.config.Repo, sha)
+	if err != nil {
+		return "", fmt.Errorf("listing tags: %w", err)
+	}
+	return releaseTag(w.config.Owner+"/"+w.config.Repo, sha, tags)
 }
 
 // autoReleaseRun is the newest run of an auto-release workflow (one of

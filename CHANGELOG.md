@@ -29,6 +29,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `repo`: the reconciler's `release` step judges a release by what is published. A tag pipeline red only in
+  `publish-github-release`, the job whose one output is the GitHub release the step read, is a built release, not
+  `red-release`: auto-release creates the release before the pipeline runs, and every artifact is pushed before that
+  job. A red artifact job is still `red-release`. `reconcile.UnpublishedJobs` exports the rule for the
+  giantswarm-repo-manager inventory.
+
+- `release wait --pr` on a commit that carries the release tags of more than one version (`v1.1.4` and `v1.2.0` on one
+  commit) no longer picks one: it ends at once with the new exit code 11, `ambiguous_release`, naming every release
+  tag on the commit in `reason` and `conflictingTags`; a wait given the version follows it. `rollout wait --pr` exits
+  the same, `pr merge` reports it as exit 9 with `release.verdict` `ambiguous_release`. A candidate and its promoted
+  stable on one commit are one version, as before.
+- `gen workflows`, auto-release: the tag job refuses to create or promote a tag onto a commit that already carries
+  another version's release tag, before the tag and the GitHub release are created, naming both versions. The tags
+  are read from the remote; a stable on its candidate's commit is unchanged.
 - `rollout wait --pr` on a configuration change no longer times out on a values-fed HelmRelease whose deploy that took
   the change has left `status.history` (helm-controller keeps few entries, a chart that rolls often evicts it): when
   every kept deploy is after the merge and the rendered ConfigMap's revision contains the merge commit, the change is
