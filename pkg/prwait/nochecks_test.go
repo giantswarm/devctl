@@ -97,7 +97,7 @@ func Test_Wait_noChecksYoungHeadWaitsForTheRuns(t *testing.T) {
 
 func Test_Wait_noChecksYoungHeadThatStaysEmpty(t *testing.T) {
 	// The head stays empty: the wait ends no_checks once the grace has
-	// passed (120 ms at the test's scale), well before its timeout.
+	// passed (two minutes of virtual time), well before its timeout.
 	h := start(t, emptyHead(time.Now(), "fix", "  pull_request:"), sequence.Routes{}, false, 10*time.Minute)
 	_, err := h.waiter.Wait(context.Background(), "o", "r", 42)
 	if exitCode(err) != agentcli.ExitRequiredMissing || verdict(err) != agentcli.VerdictNoChecks {
