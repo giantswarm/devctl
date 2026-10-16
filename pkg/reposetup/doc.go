@@ -70,9 +70,11 @@
 // the chart's team annotation and default icon, and the files the
 // generators write for the declared flavours and language: Makefile,
 // workflows including auto-release, LLM rules, pre-commit, CircleCI when
-// gen.ci.generate is on, and renovate.json5 (with --circleci-generated on
-// generated CI), so no created repository starts without a Renovate
-// configuration unless its entry declares renovate: false. The generators run through the same `devctl gen`
+// gen.ci.generate is on, and the Renovate configuration as [PlanRenovate]
+// decides it for align-files too: renovate.json5 (with --circleci-generated
+// on generated CI) unless the template keeps one of its own, so no created
+// repository starts without a Renovate configuration unless its entry
+// declares renovate: false. The generators run through the same `devctl gen`
 // commands align-files runs, in align-files' order and with its flags, so
 // the generated files are byte-identical to what the first align run would
 // write and that run changes nothing. [Scaffold.Commands] lists the command

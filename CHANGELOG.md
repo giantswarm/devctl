@@ -13,8 +13,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   `devctl gen renovate` for it, and the reconciler's `renovate` step is ok with no Renovate configuration or one that
   disables Renovate; a configuration that keeps Renovate on is the new finding `renovate-declared-off`, never deleted
   by the engine. The embedded schema carries the field.
+- `repo renovate-plan --team-file <file> --name <repo> [--dir <checkout>]` prints, as JSON, whether align-files
+  generates `renovate.json5` for an entry or patches its chore reviewers into the configuration the repository keeps:
+  the decision of `reposetup.PlanRenovate`, which the scaffold of `repo create` takes too, so the two no longer drift.
 
 ### Changed
+
+- `repo create`: the scaffold decides its Renovate configuration with `reposetup.PlanRenovate`, align-files' decision:
+  `renovate.json5` on generated CI, for the `customer` flavour and for a repository without a configuration, else the
+  chore reviewers patched into the template's own configuration.
 
 - `repo create`: the dry run reads the author's membership the way giantswarm/github's validation check does, the
   owning team and `team-planeteers` one by one (the team, then the membership), instead of listing the caller's teams.
