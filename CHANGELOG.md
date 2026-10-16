@@ -209,6 +209,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- `gen precommit` (`--language go`): the generated workflow restores the Go module, build and golangci-lint caches
+  with a `restore-keys` prefix, so a PR that changes `go.sum` starts warm. The job times out after 30 minutes.
 - `repo validate` asks giantswarm-repo-manager by default, the way the Repositories page and the Repo Manager agent
   do: the entries named with `--entry` go to its `validate_repository` through your muster endpoint as the
   declarations being added to the team's file, and the dry run printed is the manager's own -- its engine, the schema
