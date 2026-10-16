@@ -141,7 +141,8 @@ const (
 	FindingABSPrerequisite FindingKind = "abs-prerequisite"
 	// FindingDefaultIcon: the chart still carries the default icon.
 	FindingDefaultIcon FindingKind = "default-icon"
-	// FindingRedRelease: the latest release's tag pipeline failed.
+	// FindingRedRelease: the latest release's tag pipeline failed in a job
+	// that leaves something unpublished (UnpublishedJobs).
 	FindingRedRelease FindingKind = "red-release"
 	// FindingMissedTagBuild: the latest release's tag has no pipeline. The
 	// reconciler rebuilds no tag but a creation's first release; the fix is

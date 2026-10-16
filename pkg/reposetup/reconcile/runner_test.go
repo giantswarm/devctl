@@ -2391,6 +2391,38 @@ func TestSteps(t *testing.T) {
 			},
 		},
 		{
+			// auto-release creates the GitHub release before the tag
+			// pipeline runs; the pipeline's publish-github-release then
+			// fails on the release being there, after every artifact was
+			// pushed. The release is published, not red.
+			name: "release: a tag pipeline red only in publish-github-release reads built", step: StepRelease,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.release, r.releaseAt = "v0.1.0", time.Now().Add(-time.Hour)
+				h.cc.addPipelineFailedIn(h.cc.follow(owner, name), "v0.1.0", GitHubReleaseJob)
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, _ *harness, res *Result) {
+				require.Empty(t, res.Findings())
+				require.Contains(t, res.Step(StepRelease).Summary, "release v0.1.0 built: pipeline ")
+				require.Contains(t, res.Step(StepRelease).Summary, "build (publish-github-release) failed, the GitHub release it publishes exists")
+			},
+		},
+		{
+			// An artifact job red beside publish-github-release leaves the
+			// artifact unpublished: still red, the artifact job named.
+			name: "release: a tag pipeline red in an artifact job and publish-github-release is red", step: StepRelease,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.release, r.releaseAt = "v0.1.0", time.Now().Add(-time.Hour)
+				h.cc.addPipelineFailedIn(h.cc.follow(owner, name), "v0.1.0", "push-to-registries-release", GitHubReleaseJob)
+			},
+			wantCheck: VerdictReported, wantFinding: FindingRedRelease, wantAfter: VerdictReported,
+			verify: func(t *testing.T, _ *harness, res *Result) {
+				require.Contains(t, res.Findings()[0].Message, "push-to-registries-release")
+			},
+		},
+		{
 			// A rerun from failed is a second workflow of the same name in
 			// the same pipeline; the run it replaced keeps its failed status.
 			// The newest run decides, so the revived tag reads built.
