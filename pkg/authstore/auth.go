@@ -95,8 +95,9 @@ type Token struct {
 	// a GitHub token from an environment variable outside CI ([ResolveGitHub]);
 	// empty otherwise. It never carries token material.
 	Warning string
-	// Source is where a GitHub token came from: [SourceKeychain] or "$NAME",
-	// the environment variable; empty for the other identities.
+	// Source is where a GitHub or CircleCI token came from: [SourceKeychain]
+	// or "$NAME", the environment variable ([ResolveGitHub],
+	// [ResolveCircleCI]); empty for muster.
 	Source string
 	// Endpoint is the muster MCP endpoint a muster token is for; empty for
 	// the other identities.
