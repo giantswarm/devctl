@@ -336,7 +336,7 @@
               },
               "resourceClass": {
                 "type": "string",
-                "description": "Override the CircleCI resource_class on the cli-flavour go-build job (passed to '--resource-class'). Defaults to 'large'. Raise it (e.g. 'xlarge') for repos that need more RAM/CPU headroom for the cold cross-compile. Only applies to the cli flavour. Requires devctl v8.25.0+."
+                "description": "Override the CircleCI resource_class on the cli-flavour go-build job and the Node job (passed to '--resource-class'). Defaults to 'large'. Raise it (e.g. 'xlarge') for repos that need more RAM/CPU headroom for the cold cross-compile or a monorepo verify. The Node job sizes its tools' workers from the class's memory: JEST_MAX_WORKERS one per 4 GiB, BACKSTAGE_CLI_CONCURRENCY one per 8 GiB, lowered under the job's environment in .circleci/custom.yml. Requires devctl v8.25.0+."
               },
               "go": {
                 "type": "object",

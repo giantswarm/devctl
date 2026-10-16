@@ -20,6 +20,19 @@ jobs:
     docker:
     - image: cimg/node:{{ .NodeImageVersion }}
     resource_class: {{ .NodeResourceClass }}
+{{- if .NodeJestMaxWorkers }}
+    # Worker counts sized from the resource class's memory, not from the CPUs
+    # the tools detect (the Docker executor shows the host's count to
+    # os.cpus(), the cgroup's quota to jest), which start more workers than the
+    # class has memory for. backstage-cli's repo lint and repo build read
+    # BACKSTAGE_CLI_CONCURRENCY; jest reads no variable, so the repo's test
+    # script passes --maxWorkers=${JEST_MAX_WORKERS:-40%}. A repo that raises
+    # resource_class or adds a service container in .circleci/custom.yml sets
+    # both under this job's environment there; its values win the merge.
+    environment:
+      BACKSTAGE_CLI_CONCURRENCY: "{{ .NodeLintConcurrency }}"
+      JEST_MAX_WORKERS: "{{ .NodeJestMaxWorkers }}"
+{{- end }}
     steps:
     - checkout
 {{- if .NodeCorepack }}

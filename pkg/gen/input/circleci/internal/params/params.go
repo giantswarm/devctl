@@ -257,6 +257,14 @@ type Params struct {
 	// Defaults to "large"; raised per repo via gen.ci.resourceClass (the same
 	// knob the cli go-build job uses) for a memory-hungry monorepo verify/build.
 	NodeResourceClass string
+	// NodeJestMaxWorkers is the JEST_MAX_WORKERS the Node job exports, sized
+	// from NodeResourceClass's memory; a repo's test script passes it to jest
+	// as --maxWorkers. 0 (a class of unknown memory) exports nothing.
+	NodeJestMaxWorkers int
+	// NodeLintConcurrency is the BACKSTAGE_CLI_CONCURRENCY the Node job
+	// exports, sized from NodeResourceClass's memory; backstage-cli's repo lint
+	// and repo build read it. 0 exports nothing.
+	NodeLintConcurrency int
 	// NodeTestTarget is the package.json script the Node job runs for the
 	// verify phase (the make-target interface). Defaults to "test".
 	NodeTestTarget string

@@ -1939,6 +1939,73 @@ func Test_NodeResourceClass(t *testing.T) {
 	}
 }
 
+// Test_NodeWorkerCounts verifies the Node job exports worker counts sized from
+// its resource class's memory, so lint and jest stay inside the class instead
+// of sizing themselves from the host's or the cgroup's CPU count; a class of
+// unknown memory exports nothing and leaves the tools to their detection.
+func Test_NodeWorkerCounts(t *testing.T) {
+	cases := []struct {
+		class      string
+		jest, lint string
+	}{
+		{class: "", jest: "2", lint: "1"}, // the default, large
+		{class: "medium", jest: "1", lint: "1"},
+		{class: "xlarge", jest: "4", lint: "2"},
+		{class: "2xlarge", jest: "8", lint: "4"},
+		{class: "arm.large", jest: "4", lint: "2"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.class, func(t *testing.T) {
+			got := render(t, Config{
+				RepoName:       repoK8sTypes,
+				Language:       gen.LanguageNode,
+				PackageManager: PackageManagerYarn,
+				ResourceClass:  tc.class,
+			})
+			want := "    environment:\n" +
+				"      BACKSTAGE_CLI_CONCURRENCY: \"" + tc.lint + "\"\n" +
+				"      JEST_MAX_WORKERS: \"" + tc.jest + "\"\n"
+			if !contains(got, want) {
+				t.Errorf("Node job should export\n%s\ngot:\n%s", want, got)
+			}
+		})
+	}
+
+	unknown := render(t, Config{
+		RepoName:       repoK8sTypes,
+		Language:       gen.LanguageNode,
+		PackageManager: PackageManagerYarn,
+		ResourceClass:  "giantswarm/self-hosted",
+	})
+	if contains(unknown, "JEST_MAX_WORKERS") || contains(unknown, "BACKSTAGE_CLI_CONCURRENCY") {
+		t.Errorf("a class of unknown memory should export no worker counts:\n%s", unknown)
+	}
+}
+
+// Test_CustomMergeNodeWorkerCounts verifies a repo lowers the generated worker
+// counts under the job's environment in custom.yml (beside a service
+// container, for one): its values win the deep merge, and the generated
+// variable it does not set stays.
+func Test_CustomMergeNodeWorkerCounts(t *testing.T) {
+	workflows, err := os.ReadFile(goldenNodeYarnBerryPath) // #nosec G304 -- fixed in-package testdata path
+	if err != nil {
+		t.Fatalf("read golden: %v", err)
+	}
+
+	merged := yqMerge(t, string(workflows), `jobs:
+  node-build:
+    environment:
+      JEST_MAX_WORKERS: "1"
+`)
+
+	if got := yqQuery(t, merged, ".jobs.node-build.environment.JEST_MAX_WORKERS"); got != "1" {
+		t.Errorf("custom JEST_MAX_WORKERS should win the merge, got %q", got)
+	}
+	if got := yqQuery(t, merged, ".jobs.node-build.environment.BACKSTAGE_CLI_CONCURRENCY"); got != "1" {
+		t.Errorf("generated BACKSTAGE_CLI_CONCURRENCY should survive the merge, got %q", got)
+	}
+}
+
 // Test_NodeImageVersion verifies the Node job renders devctl's baked-in default
 // when a repo pins nothing, and honours a repo's own pin (detected from .nvmrc
 // by the runner) otherwise. The pin must reach the executor image AND the
