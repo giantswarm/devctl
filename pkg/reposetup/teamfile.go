@@ -172,6 +172,11 @@ type Fields struct {
 	// the default branch's ruleset has no bypass actor, so nothing merges
 	// past the required review. Nil is the default, true.
 	AgentMerge *bool `yaml:"agentMerge"`
+	// Renovate is the repository's opt-out from Renovate: with false no
+	// renovate.json5 is generated and the renovate step accepts a
+	// repository without a Renovate configuration, or with one that
+	// disables Renovate. Nil is the default, true.
+	Renovate *bool `yaml:"renovate"`
 	// Rulesets names the repository's own rulesets the team keeps beside
 	// the engine's, the decision to keep them: the protection step leaves a
 	// declared one alone in silence, reports every other one and reports a
@@ -189,6 +194,12 @@ type Fields struct {
 		Precommit bool `yaml:"precommit"`
 	} `yaml:"replace"`
 	Gen *GenFields `yaml:"gen"`
+}
+
+// RenovateOn says whether the entry keeps Renovate on: true unless it
+// declares renovate: false.
+func (f Fields) RenovateOn() bool {
+	return f.Renovate == nil || *f.Renovate
 }
 
 // LineGateFields is the lineGate block: the land gate of a fork line.

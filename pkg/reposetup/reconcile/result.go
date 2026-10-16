@@ -159,6 +159,10 @@ const (
 	// scans it — no configuration, or a configuration without a trace of a
 	// run (the Dependency Dashboard issue, a pull request, a commit).
 	FindingRenovateNotScanned FindingKind = "renovate-not-scanned"
+	// FindingRenovateDeclaredOff: the entry declares renovate: false and
+	// the repository carries a Renovate configuration that keeps Renovate
+	// on. The engine deletes no file; the fix names the configuration.
+	FindingRenovateDeclaredOff FindingKind = "renovate-declared-off"
 	// FindingArchivedUndeclared: archived on GitHub without lifecycle:
 	// archived.
 	FindingArchivedUndeclared FindingKind = "archived-undeclared"

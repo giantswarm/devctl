@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"net/http"
 	"path"
+	"slices"
 	"strings"
 
 	"github.com/giantswarm/microerror"
@@ -228,17 +230,25 @@ func (r Remote) FindPullRequest(ctx context.Context, branch string) (*github.Pul
 	return prs[0], nil
 }
 
-// Person is the caller as GitHub knows them: the login and the slugs of
-// the owner organisation's teams they belong to -- the inputs of the team
-// guard. Teams need the token to read the organisation (read:org); a token
-// without it gets the login and an error the caller turns into a warning.
+// Person is the caller as GitHub knows them: the login, the asked teams of
+// the owner organisation they are an active member of, and the asked teams
+// whose membership the token cannot read -- the inputs of the team guard.
 type Person struct {
 	Login string
 	Teams []string
+	// Unread are the asked teams the token cannot read (a token without
+	// read:org, or a team hidden from it): whether the caller is a member
+	// of them is unknown, never "not a member".
+	Unread []string
 }
 
-// Person reads the caller's login and team memberships in owner.
-func (r Remote) Person(ctx context.Context, owner string) (Person, error) {
+// Person reads the caller's login and their membership in each of teams in
+// owner, the way giantswarm/github's validation check reads the author's
+// before it classifies a team-file pull request: the team first, which has
+// to be readable, then the caller's membership in it, active or not. A 404
+// on the membership is "not a member"; a team the token cannot read is
+// Unread.
+func (r Remote) Person(ctx context.Context, owner string, teams ...string) (Person, error) {
 	if r.GitHub == nil {
 		return Person{}, microerror.Maskf(invalidConfigError, "%T.GitHub must not be nil", r)
 	}
@@ -248,22 +258,35 @@ func (r Remote) Person(ctx context.Context, owner string) (Person, error) {
 	}
 	p := Person{Login: user.GetLogin()}
 
-	opts := &github.ListOptions{PerPage: 100}
-	for {
-		teams, resp, err := r.GitHub.Teams.ListUserTeams(ctx, opts)
-		if err != nil {
+	for _, team := range teams {
+		_, resp, err := r.GitHub.Teams.GetTeamBySlug(ctx, owner, team)
+		switch {
+		case isStatus(resp, http.StatusForbidden, http.StatusNotFound):
+			p.Unread = append(p.Unread, team)
+			continue
+		case err != nil:
 			return p, microerror.Mask(err)
 		}
-		for _, t := range teams {
-			if strings.EqualFold(t.GetOrganization().GetLogin(), owner) {
-				p.Teams = append(p.Teams, t.GetSlug())
-			}
+		membership, resp, err := r.GitHub.Teams.GetTeamMembershipBySlug(ctx, owner, team, p.Login)
+		switch {
+		case isStatus(resp, http.StatusNotFound):
+			continue
+		case isStatus(resp, http.StatusForbidden):
+			p.Unread = append(p.Unread, team)
+			continue
+		case err != nil:
+			return p, microerror.Mask(err)
 		}
-		if resp.NextPage == 0 {
-			return p, nil
+		if membership.GetState() == "active" {
+			p.Teams = append(p.Teams, team)
 		}
-		opts.Page = resp.NextPage
 	}
+	return p, nil
+}
+
+// isStatus says whether a go-github call was answered with one of codes.
+func isStatus(resp *github.Response, codes ...int) bool {
+	return resp != nil && resp.Response != nil && slices.Contains(codes, resp.StatusCode)
 }
 
 // CreatedRepository is a repository created before its declaration's pull

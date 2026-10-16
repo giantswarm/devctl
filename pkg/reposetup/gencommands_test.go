@@ -72,8 +72,8 @@ func TestGenCommandsCheckReadmeLinks(t *testing.T) {
 }
 
 // Every declaration that generates at all gets the Renovate line, last;
-// --circleci-generated follows gen.ci.generate. A fork line and an entry
-// without gen get none.
+// --circleci-generated follows gen.ci.generate. A fork line, an entry
+// without gen and one that declares renovate: false get none.
 func TestGenCommandsRenovate(t *testing.T) {
 	on, off := true, false
 	cases := []struct {
@@ -107,6 +107,15 @@ func TestGenCommandsRenovate(t *testing.T) {
 			fields: Fields{Name: "service", Gen: &GenFields{Flavours: []string{"app"}, Language: "go", CI: &CIFields{Generate: &on},
 				Renovate: &RenovateFields{Extends: []string{"flux.json5", "disable-vendir.json5"}}}},
 			want: []string{"devctl", "gen", "renovate", "--language", "go", "--circleci-generated", "--repo-name", "service", "--extends", "flux.json5", "--extends", "disable-vendir.json5"},
+		},
+		{
+			name:   "renovate: true is the default",
+			fields: Fields{Name: "tool", Renovate: &on, Gen: &GenFields{Flavours: []string{"generic"}, Language: "python"}},
+			want:   []string{"devctl", "gen", "renovate", "--language", "python", "--repo-name", "tool"},
+		},
+		{
+			name:   "renovate: false",
+			fields: Fields{Name: "sandbox", Renovate: &off, Gen: &GenFields{Flavours: []string{"app"}, Language: "go", CI: &CIFields{Generate: &on}}},
 		},
 		{
 			name:   "fork line",

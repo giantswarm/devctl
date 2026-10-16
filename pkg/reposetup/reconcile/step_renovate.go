@@ -44,7 +44,9 @@ type installationRepositories struct {
 // repository's own evidence: a configuration file, and a trace of a run —
 // the Dependency Dashboard issue, else a pull request or a commit of
 // Renovate's. Both present is ok, as is a configuration that disables
-// Renovate. The Renovate installation covers every repository of the
+// Renovate. An entry that declares renovate: false is ok without a
+// configuration or with one that disables Renovate; one that keeps Renovate
+// on is reported. The Renovate installation covers every repository of the
 // organization, so what is missing is reported for a person and never
 // repaired: a configuration to add, or a run that has not happened yet or a
 // configuration Renovate refuses. A repository younger than renovateGrace
@@ -56,6 +58,19 @@ func (r *Runner) stepRenovate(ctx context.Context, s *run, sr *StepResult) error
 	config, disabled, err := r.renovateConfig(ctx, s)
 	if err != nil {
 		return err
+	}
+	if !s.fields.RenovateOn() {
+		switch {
+		case config == "":
+			sr.Summary = "renovate: false; no Renovate configuration"
+		case disabled:
+			sr.Summary = "renovate: false; " + config + " disables Renovate"
+		default:
+			s.report(sr, FindingRenovateDeclaredOff,
+				fmt.Sprintf("%s declares renovate: false, but %s keeps Renovate on: Renovate still opens dependency updates", s.slug(), config),
+				fmt.Sprintf("delete %s from %s (align-files no longer generates it for this entry) or set `enabled: false` in it", config, s.branch()))
+		}
+		return nil
 	}
 	var trace string
 	var issuesRefused bool
