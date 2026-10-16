@@ -1750,7 +1750,7 @@ func Test_SkipATSOmitsChartTests(t *testing.T) {
 		}
 	}
 	// The ATS test jobs are gone.
-	for _, unwanted := range []string{jobRunTests, "execute-chart-tests", "execute-chart-tests-release"} {
+	for _, unwanted := range []string{jobRunTests, "execute-chart-tests", "execute-chart-tests-release", "pull-chart-test-images"} {
 		if contains(got, unwanted) {
 			t.Errorf("SkipATS config should not contain %q:\n%s", unwanted, got)
 		}
@@ -2434,8 +2434,13 @@ func Test_ATSVersionLegacy(t *testing.T) {
 		if n := strings.Count(got, `app-test-suite_container_tag: "`+tag+`"`); n != 1 {
 			t.Errorf("%s: expected the ATS tag on the chart-test job, found %d:\n%s", tag, n, got)
 		}
-		if contains(got, "create_kind_cluster") {
-			t.Errorf("%s: a 0.x tag must not turn on create_kind_cluster:\n%s", tag, got)
+		if contains(got, "create_kind_cluster") || contains(got, "kind_node_image") {
+			t.Errorf("%s: a 0.x tag must not turn on create_kind_cluster or pin a kind node:\n%s", tag, got)
+		}
+		// dats.sh still starts the app-test-suite image: it is pulled ahead, the
+		// kind node is not (app-test-suite 0.x brings its own).
+		if want := `images: "gsoci.azurecr.io/giantswarm/app-test-suite:` + tag + `"`; !contains(got, want) {
+			t.Errorf("%s: expected the pre-steps to pull only app-test-suite (%s):\n%s", tag, want, got)
 		}
 		if inputs := newCircleCI(t, c).ATSInputs(); len(inputs) != 1 || inputs[0].Path != "tests/ats/Pipfile" {
 			t.Errorf("%s: expected the Pipfile as the only ATS input, got %+v", tag, inputs)
@@ -2849,5 +2854,46 @@ func Test_TemplateChartRejects(t *testing.T) {
 	service.Team = ""
 	if got, want := render(t, service), render(t, Config{RepoName: repoTemplateApp, Language: gen.LanguageGeneric, Flavours: gen.FlavourSlice{gen.FlavourApp}}); got != want {
 		t.Errorf("componentType service must render the plain chart pipeline")
+	}
+}
+
+// Test_ChartTestsPullImagesWithRetry verifies the chart-test jobs survive a
+// transient registry `toomanyrequests`: both run-tests-with-ats jobs pre-pull
+// the images they start -- app-test-suite and the kind node they create the
+// cluster from -- through the pull-chart-test-images command, which logs in to
+// the registry with the architect context's credentials and retries each pull
+// with bounded backoff. The kind node the job uses is the one pulled.
+func Test_ChartTestsPullImagesWithRetry(t *testing.T) {
+	got := render(t, Config{
+		RepoName:      repoMCPKubernetes,
+		Language:      gen.LanguageGo,
+		Flavours:      gen.FlavourSlice{gen.FlavourApp},
+		HasDockerfile: true,
+		ATSOnRelease:  true,
+	})
+
+	kindNode := ATSImageRegistry + "/giantswarm/kind-node:" + ATSKindNodeImageVersion
+	images := `images: "` + ATSImageRegistry + "/giantswarm/app-test-suite:" + DefaultATSVersion + " " + kindNode + `"`
+	for want, n := range map[string]int{
+		"  pull-chart-test-images:\n":               1,
+		"        - pull-chart-test-images:\n":       2,
+		"            registry: " + ATSImageRegistry: 2,
+		"            " + images:                     2,
+		`kind_node_image: "` + kindNode + `"`:       2,
+	} {
+		if c := strings.Count(got, want); c != n {
+			t.Errorf("expected %q %d times, found %d:\n%s", want, n, c, got)
+		}
+	}
+	for _, want := range []string{
+		`docker login "$PULL_REGISTRY" --username "$username_val" --password-stdin`,
+		`retry docker pull "$image"`,
+		`delays="15 30 60 60 60"`,
+		// CircleCI interpolates "<<" in config: the heredoc is escaped.
+		"done \\<<EOF",
+	} {
+		if !contains(got, want) {
+			t.Errorf("pull-chart-test-images missing %q:\n%s", want, got)
+		}
 	}
 }

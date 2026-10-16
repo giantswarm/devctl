@@ -44,6 +44,22 @@ const OrbVersion = "10.13.9"
 // (e.g. "0.15.0") to stay on the legacy dats.sh path until it has.
 const DefaultATSVersion = "1.0.3"
 
+// ATSImageRegistry is the registry the chart-test jobs pull app-test-suite and
+// the kind node image from. The jobs log in to it before pulling: ACR throttles
+// all anonymous pulls of a registry together as one identity, so an anonymous
+// CI pull shares its read budget with every other anonymous puller and fails on
+// `toomanyrequests` in a burst, while an authenticated pull has its own.
+const ATSImageRegistry = "gsoci.azurecr.io"
+
+// ATSKindNodeImageVersion is the kind node image tag
+// (gsoci.azurecr.io/giantswarm/kind-node) the chart-test jobs create their
+// cluster from when the job creates it (app-test-suite 1.x). It is emitted as
+// `kind_node_image` rather than left to the orb default so the image the job
+// pre-pulls with retry is the one `kind create cluster` uses.
+//
+// renovate: datasource=docker depName=gsoci.azurecr.io/giantswarm/kind-node
+const ATSKindNodeImageVersion = "v1.37.0"
+
 // ATSKindConfigPath is the repo-owned kind Cluster configuration the chart-test
 // jobs hand to `kind create cluster --config` (run-tests-with-ats `kind_config`)
 // when the repository carries it. It is a content signal like the Dockerfile
@@ -750,6 +766,12 @@ func New(config Config) (*CircleCI, error) {
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}
+	atsPullImages := []string{ATSImageRegistry + "/giantswarm/app-test-suite:" + config.ATSVersion}
+	var atsKindNodeImage string
+	if atsKindCluster {
+		atsKindNodeImage = ATSImageRegistry + "/giantswarm/kind-node:" + ATSKindNodeImageVersion
+		atsPullImages = append(atsPullImages, atsKindNodeImage)
+	}
 	// A template repository's chart is rendered before it is built, and nothing
 	// is released from it. Without a chart there is nothing to render: the
 	// component type is then a no-op rather than an error, because align-files
@@ -958,6 +980,9 @@ func New(config Config) (*CircleCI, error) {
 			SkipATS:                config.SkipATS,
 			ATSVersion:             config.ATSVersion,
 			ATSKindCluster:         atsKindCluster,
+			ATSKindNodeImage:       atsKindNodeImage,
+			ATSImageRegistry:       ATSImageRegistry,
+			ATSPullImages:          strings.Join(atsPullImages, " "),
 			ATSKindConfig:          atsKindConfig,
 			ATSResourceClass:       config.ATSResourceClass,
 			ATSOnRelease:           config.ATSOnRelease,

@@ -43,6 +43,17 @@ type Params struct {
 	// (tests/ats/pyproject.toml + uv.lock instead of tests/ats/Pipfile). Derived
 	// from ATSVersion (major >= 1).
 	ATSKindCluster bool
+	// ATSKindNodeImage is the kind node image emitted as `kind_node_image` on
+	// both run-tests-with-ats jobs when ATSKindCluster is set.
+	ATSKindNodeImage string
+	// ATSImageRegistry is the registry the chart-test jobs log in to before
+	// pulling ATSPullImages.
+	ATSImageRegistry string
+	// ATSPullImages are the images, space-separated, both run-tests-with-ats
+	// jobs pull in their pre-steps -- logged in, with bounded retry and
+	// backoff -- so a transient registry `toomanyrequests` does not fail the
+	// job: app-test-suite, plus the kind node image when ATSKindCluster.
+	ATSPullImages string
 	// ATSKindConfig is the repo-owned kind Cluster configuration emitted as
 	// `kind_config` on both run-tests-with-ats jobs (the job passes it to
 	// `kind create cluster --config`: feature gates, runtime config, patches,
