@@ -221,8 +221,11 @@ eat into the release's time.
   is merged; the fix is the next pull request or a rerun of the failed workflow.
 - **The release is not confirmed**, exit 9: `--release-timeout` passed first, the release wait could
   not judge it (a missing CircleCI token, sources that disagree about the artifacts, a registry answer
-  that is neither a digest nor "manifest unknown"), or the merge commit's auto-release run was
-  cancelled because a newer push to the branch superseded it (that push's tag carries the merge).
+  that is neither a digest nor "manifest unknown"), the merge commit's auto-release run was
+  cancelled because a newer push to the branch superseded it (that push's tag carries the merge), or
+  the commit carries the release tags of more than one version (`release.verdict`
+  `ambiguous_release`, `release.conflictingTags` naming them; a release wait given the version
+  follows it).
   `release.verdict` and the reason say which; after a timeout or a login, `devctl release wait
   <owner/repo> --pr <number>` resumes the wait. A CircleCI API that does not answer is not an outcome:
   the release wait reads it again at every poll, and only when it is still unanswered at

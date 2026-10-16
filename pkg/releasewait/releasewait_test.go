@@ -1452,6 +1452,55 @@ func TestWaitPullRequestCandidateWithoutPreferPromoted(t *testing.T) {
 	}
 }
 
+// A merge commit that carries the release tags of two versions is not
+// followed: the wait names both and ends at once without choosing.
+func TestWaitPullRequestCommitWithTwoVersionsIsAmbiguous(t *testing.T) {
+	github := mergedWithoutTag(autoReleaseRuns(autoReleaseRun("completed", "success")))
+	github[repoRoute("/tags")] = []sequence.Response{{Body: []map[string]any{
+		{"name": "v1.2.0", "commit": map[string]any{"sha": testSHA}},
+		{"name": "v1.1.5", "commit": map[string]any{"sha": "older"}},
+		{"name": "v1.1.4", "commit": map[string]any{"sha": testSHA}},
+	}}}
+	fx := fixture{entry: generatedEntry(t), github: github, pr: 7, mergeCommit: testSHA, timeout: time.Hour}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitAmbiguousRelease, "carries the release tags of 2 versions (v1.2.0, v1.1.4): release wait does not choose one; name the version, devctl release wait giantswarm/kserve v1.2.0")
+	if result.Tag != "" || result.SHA != testSHA || !slices.Equal(result.ConflictingTags, []string{"v1.2.0", "v1.1.4"}) {
+		t.Errorf("result: %+v", result)
+	}
+}
+
+// A promoted stable shares its candidate's commit by design: no conflict,
+// the stable is the release.
+func TestWaitPullRequestCandidateAndItsStableOnOneCommit(t *testing.T) {
+	github := rcMerged()
+	github[repoRoute("/tags")] = []sequence.Response{{Body: []map[string]any{
+		{"name": testTag, "commit": map[string]any{"sha": testSHA}},
+		{"name": "v1.2.3-rc.1", "commit": map[string]any{"sha": testSHA}},
+	}}}
+	fx := fixture{entry: generatedEntry(t), github: github, pr: 7, mergeCommit: testSHA, timeout: 45 * time.Second, circleci: noPipelineYet()}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitTimeout, "")
+	if result.Tag != testTag || result.ConflictingTags != nil {
+		t.Errorf("result: %+v", result)
+	}
+}
+
+// With the version given the wait follows that version, whatever else
+// tags its commit.
+func TestWaitVersionOnACommitWithTwoVersions(t *testing.T) {
+	github := baseGitHub([]string{"Dockerfile", "helm"}, []string{"zz_generated.auto_release.yaml"}, []string{"config.yml", "workflows.yml"})
+	github[repoRoute("/tags")] = []sequence.Response{{Body: []map[string]any{
+		{"name": testTag, "commit": map[string]any{"sha": testSHA}},
+		{"name": "v1.1.4", "commit": map[string]any{"sha": testSHA}},
+	}}}
+	fx := fixture{entry: generatedEntry(t), github: github, version: testTag, timeout: 45 * time.Second, circleci: noPipelineYet()}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitTimeout, "")
+	if result.Tag != testTag || result.SHA != testSHA || result.ConflictingTags != nil {
+		t.Errorf("result: %+v", result)
+	}
+}
+
 func TestWaitPullRequestWithTheMergeCommitReadsNoPullRequest(t *testing.T) {
 	fx := fixture{
 		entry: generatedEntry(t), pr: 7, mergeCommit: testSHA,
@@ -1557,6 +1606,22 @@ func TestWaitPullRequestIntoAReleaseBranchFollowsTheFirstLaterTag(t *testing.T) 
 	result, err := run(t, fx)
 	assertExit(t, err, agentcli.ExitTimeout, "")
 	if result.Tag != "v1.1.4" || result.SHA != later {
+		t.Errorf("result: %+v", result)
+	}
+}
+
+// The first tagged commit after the merge carrying two versions' release
+// tags is the same conflict.
+func TestWaitPullRequestIntoAReleaseBranchFirstLaterTagWithTwoVersions(t *testing.T) {
+	const later = "1111111111111111111111111111111111111111"
+	github := mergedIntoReleaseBranch(tagRef("v1.1.4", later), tagRef("v1.2.0", later))
+	github[repoRoute("/compare/"+testSHA+"..."+releaseBranch)] = []sequence.Response{{Body: map[string]any{
+		"status": "ahead", "commits": []map[string]any{{"sha": later}},
+	}}}
+	fx := fixture{entry: generatedEntry(t), github: github, pr: 7, mergeCommit: testSHA, timeout: time.Hour}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitAmbiguousRelease, "commit 11111111 of giantswarm/kserve carries the release tags of 2 versions (v1.2.0, v1.1.4)")
+	if !slices.Equal(result.ConflictingTags, []string{"v1.2.0", "v1.1.4"}) {
 		t.Errorf("result: %+v", result)
 	}
 }
