@@ -113,7 +113,7 @@ func (w *Waiter) judgeValuesApp(ctx context.Context, app *unstructured.Unstructu
 		return d.set(StateProgressing, "%s rendered from %s; waiting for %s", d.Source, orNone(short(renderedFrom)), short(w.revision)), nil
 	}
 	renderedAt := lastWrite(cm)
-	if lastDeployed.Before(renderedAt) {
+	if lastDeployed.Before(renderedAt) && !w.appTookNewValues(ctx, app, lastDeployed) {
 		return d.set(StateProgressing, "last deployed %s, before %s rendered the values of %s at %s: waiting for app-operator and chart-operator; values that render the same never upgrade", formatTime(lastDeployed), r.konfiguration, short(w.revision), formatTime(renderedAt)), nil
 	}
 	if status == "failed" {

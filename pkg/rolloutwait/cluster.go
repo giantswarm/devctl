@@ -61,6 +61,7 @@ func ListKinds() map[schema.GroupVersionResource]string {
 		kustomizations:  "KustomizationList",
 		konfigurations:  "KonfigurationList",
 		configMaps:      "ConfigMapList",
+		charts:          "ChartList",
 	}
 }
 
