@@ -9,6 +9,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `rollout wait --pr` on a configuration change follows the App CRs whose `spec.config` or `spec.userConfig` takes
+  the values a Konfiguration renders for a changed app, as it follows such HelmReleases: `deployments[]` names the
+  App with its chart and deployed version, rolled out once its release deployed its `spec.version` after the values
+  were rendered and its workloads rolled out, exit 1 when the release failed. A changed app whose rendered values
+  no HelmRelease or App takes is listed as a `ConfigMap` in state `unknown`, and the wait ends with exit 3, verdict
+  `rollout_unknown`, instead of `rolled_out` on an empty chart list.
+- `rollout wait`: a kube context missing from the kubeconfig names `--kubeconfig <file>` beside `--context`.
+
 - `pr wait` (and the wait of `pr merge`): a head with no check run, status or Actions run, in a repository whose
   active workflows run on every `pull_request` push against the base, waits for their runs, and two minutes after
   the pull request's last update ends with exit 4, verdict `no_checks`, naming the workflows and the

@@ -90,7 +90,8 @@ Exit codes:
      (--timeout); the document shows what is still missing
   3  not applicable: no release follows the pull request, the release
      ships no chart, nothing on the installation deploys its charts, or
-     no deployment follows the version
+     no deployment follows the version; rollout_unknown: a configuration
+     change is applied and nothing takes the values of an app it changed
   7  usage or tooling: a bad argument, a kube context that does not exist
      (the candidates and --context named),
      a request the cluster refused

@@ -152,8 +152,9 @@ func New(config Config) (*Waiter, error) {
 // never to get there, or the timeout passes, and fills result with the last
 // poll. The error places the outcome in the exit-code table: nil when every
 // deployment that follows the version has rolled out, exit 1 when one
-// failed, 2 at the timeout, 3 when no deployment of the charts exists or
-// none follows the version.
+// failed, 2 at the timeout, 3 when no deployment of the charts exists,
+// none follows the version, or whether a changed app runs the change
+// cannot be told.
 func (w *Waiter) Wait(ctx context.Context, result *Result) error {
 	result.Version = w.version
 	result.Revision = w.revision
@@ -177,6 +178,9 @@ func (w *Waiter) Wait(ctx context.Context, result *Result) error {
 			return err
 		}
 		if pendingDeployments(list) == nil {
+			if unknown := unknownDeployments(list); unknown != nil {
+				return agentcli.NewExitError(agentcli.ExitNotApplicable, VerdictRolloutUnknown, "%s is applied on %s, whether it runs cannot be told: %s", w.target(), w.installation, strings.Join(unknown, "; "))
+			}
 			if w.revision != "" {
 				w.progress.Printf("%s@%s is applied on %s", w.repository, short(w.revision), w.installation)
 				return nil
@@ -324,11 +328,23 @@ func (w *Waiter) target() string {
 func pendingDeployments(list []Deployment) []Deployment {
 	var p []Deployment
 	for _, d := range list {
-		if follows(d) && d.State != StateRolledOut {
+		if follows(d) && d.State != StateRolledOut && d.State != StateUnknown {
 			p = append(p, d)
 		}
 	}
 	return p
+}
+
+// unknownDeployments names the deployments whose rollout cannot be told,
+// with why.
+func unknownDeployments(list []Deployment) []string {
+	var u []string
+	for _, d := range list {
+		if d.State == StateUnknown {
+			u = append(u, d.id()+": "+d.Message)
+		}
+	}
+	return u
 }
 
 func (w *Waiter) chartNames() []string {

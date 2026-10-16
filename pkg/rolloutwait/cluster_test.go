@@ -80,7 +80,7 @@ func TestOpenClusterMissingContextNamesTheCandidates(t *testing.T) {
 	if agentcli.Exit(err) != agentcli.ExitUsage {
 		t.Fatalf("want exit %d, got %d (%v)", agentcli.ExitUsage, agentcli.Exit(err), err)
 	}
-	for _, want := range []string{"teleport.giantswarm.io-myinstallation does not exist", "mention myinstallation: gs-myinstallation", "--context", "tsh kube login myinstallation"} {
+	for _, want := range []string{"teleport.giantswarm.io-myinstallation does not exist", "mention myinstallation: gs-myinstallation", "--kubeconfig <file>", "--context", "tsh kube login myinstallation"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("%q does not contain %q", err, want)
 		}
