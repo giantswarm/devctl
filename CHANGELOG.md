@@ -9,6 +9,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `repo` reconciler: a repository whose generated CI has no CircleCI job (`gen.ci.generate: true` on a generic
+  repository without a chart, an image or a Go or Node build: GitHub Actions only, auto-release) is no CircleCI
+  pipeline. The `circleci` and `release` steps read the branch for it, as for an undeclared pipeline, and no longer
+  plan a follow, setup workflows and a deploy key. A repository created with `gen.ci.generate: false` no longer
+  carries the template's `.circleci/`: its scaffold has a CircleCI pipeline only where `devctl gen circleci` writes
+  one.
 - `gen circleci`: the chart-test jobs (`execute-chart-tests`, `execute-chart-tests-release`) survive a transient
   gsoci.azurecr.io `toomanyrequests`. Their pre-steps (the new `pull-chart-test-images` command) log in to the
   registry with the architect context's credentials, so the pull leaves ACR's shared anonymous budget, and pull
