@@ -94,6 +94,8 @@ func NewWorkflowsInput(p params.Params) input.Input {
 			"NodeBuildCacheKey":   p.NodeBuildCacheKey,
 			"NodeCorepack":        p.NodeCorepack,
 			"NodeResourceClass":   p.NodeResourceClass,
+			"NodeJestMaxWorkers":  p.NodeJestMaxWorkers,
+			"NodeLintConcurrency": p.NodeLintConcurrency,
 			"NodeTestTarget":      p.NodeTestTarget,
 			"NodeBuildTarget":     p.NodeBuildTarget,
 			"NodeBuildOutput":     p.NodeBuildOutput,

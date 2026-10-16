@@ -29,6 +29,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `gen circleci`: the Node job sizes the workers of its tools from its resource class's memory instead of the CPUs
+  they detect (on the Docker executor `os.cpus()` reports the host's, jest the cgroup's quota), which started more
+  lint threads and jest workers than the class has memory for. It exports `BACKSTAGE_CLI_CONCURRENCY` (one per
+  8 GiB, read by `backstage-cli repo lint` and `repo build`) and `JEST_MAX_WORKERS` (one per 4 GiB, passed by the
+  repo's test script as `--maxWorkers=${JEST_MAX_WORKERS:-40%}`): `large` 1 and 2, `xlarge` 2 and 4. A repo that
+  raises `resource_class` or adds a service container in `.circleci/custom.yml` sets both under the job's
+  `environment` there.
+
 - Renovate bumps the tool versions pinned in the generator's Makefile templates. A custom manager reads the standard
   `# renovate:` annotation in `pkg/gen/input/**/*.mk.template`, which no other manager matched, so
   `HELM_UNITTEST_VERSION` in `Makefile.gen.app.mk.template` sat unbumped since #2570.
