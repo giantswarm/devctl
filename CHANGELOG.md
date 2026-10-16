@@ -23,6 +23,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `repo`: the reconciler's `release` step judges a release by what is published. A tag pipeline red only in
+  `publish-github-release`, the job whose one output is the GitHub release the step read, is a built release, not
+  `red-release`: auto-release creates the release before the pipeline runs, and every artifact is pushed before that
+  job. A red artifact job is still `red-release`. `reconcile.UnpublishedJobs` exports the rule for the
+  giantswarm-repo-manager inventory.
+
 - `release wait --pr` on a commit that carries the release tags of more than one version (`v1.1.4` and `v1.2.0` on one
   commit) no longer picks one: it ends at once with the new exit code 11, `ambiguous_release`, naming every release
   tag on the commit in `reason` and `conflictingTags`; a wait given the version follows it. `rollout wait --pr` exits
