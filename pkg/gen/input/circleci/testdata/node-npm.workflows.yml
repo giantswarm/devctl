@@ -5,7 +5,7 @@
 # workflow in .circleci/config.yml merges into this file at pipeline runtime.
 version: 2.1
 orbs:
-  architect: giantswarm/architect@10.13.6
+  architect: giantswarm/architect@10.13.9
 
 jobs:
   # Self-contained Node build/test on a cimg/node executor (architect ships no
@@ -17,6 +17,17 @@ jobs:
     docker:
     - image: cimg/node:24.21.0
     resource_class: large
+    # Worker counts sized from the resource class's memory, not from the CPUs
+    # the tools detect (the Docker executor shows the host's count to
+    # os.cpus(), the cgroup's quota to jest), which start more workers than the
+    # class has memory for. backstage-cli's repo lint and repo build read
+    # BACKSTAGE_CLI_CONCURRENCY; jest reads no variable, so the repo's test
+    # script passes --maxWorkers=${JEST_MAX_WORKERS:-40%}. A repo that raises
+    # resource_class or adds a service container in .circleci/custom.yml sets
+    # both under this job's environment there; its values win the merge.
+    environment:
+      BACKSTAGE_CLI_CONCURRENCY: "1"
+      JEST_MAX_WORKERS: "2"
     steps:
     - checkout
     - restore_cache:

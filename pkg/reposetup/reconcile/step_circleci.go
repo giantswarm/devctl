@@ -220,8 +220,11 @@ const circleCIConfig = ".circleci/config.yml"
 
 // hasPipeline says whether the repository has a CircleCI pipeline for the
 // circleci and release steps to act on: the entry declares a generated one
-// (gen.ci.generate: true — on a first creation the config is not on the
-// branch yet), or .circleci/config.yml is on the default branch. The field
+// (gen.ci.generate: true with a job for the CircleCI generator,
+// [reposetup.GeneratesCircleCI] — on a first creation the config is not on
+// the branch yet), or .circleci/config.yml is on the default branch.
+// Generated CI without a CircleCI job is GitHub Actions only, and the
+// branch decides for it as for an undeclared pipeline. The field
 // is read as declared: an existing entry without gen.ci keeps the
 // repository's own CircleCI configuration, so the branch decides for it
 // (the validator writes the creation default for an entry being added
@@ -238,7 +241,7 @@ func (r *Runner) hasPipeline(ctx context.Context, s *run) (bool, error) {
 		s.pipeline = new(false)
 		return false, nil
 	}
-	if g := s.fields.Gen; g != nil && g.CI != nil && g.CI.Generate != nil && *g.CI.Generate {
+	if reposetup.GeneratesCircleCI(s.fields) {
 		s.pipeline = new(true)
 		return true, nil
 	}

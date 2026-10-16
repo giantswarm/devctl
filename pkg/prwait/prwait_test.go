@@ -98,18 +98,26 @@ type harness struct {
 	progress *strings.Builder
 }
 
-// start wires a Waiter to the mocks at scale 0.001: a 15 s poll interval is
-// 15 ms, the two-minute timeout 120 ms. circleci nil means no CircleCI
-// client is available (the token is missing).
+// start wires a Waiter to the mocks on a virtual clock: time passes only in
+// the waiter's sleeps, so a poll interval or the timeout takes no wall-clock
+// time and the outcome does not depend on how fast the machine runs the test.
+// circleci false means no CircleCI client is available (the token is
+// missing).
 func start(t *testing.T, gh, cc sequence.Routes, circleci bool, timeout time.Duration) *harness {
 	t.Helper()
-	return startWith(t, gh, cc, circleci, timeout, nil)
+	return startWith(t, gh, cc, circleci, timeout, 0)
 }
 
-// startWith is start with the GitHub client's transport; nil sends every
-// request once.
-func startWith(t *testing.T, gh, cc sequence.Routes, circleci bool, timeout time.Duration, transport http.RoundTripper) *harness {
+// startWith is start with a GitHub client that sends a read up to attempts
+// times on the same virtual clock before it counts as unanswered; 0 sends
+// every request once.
+func startWith(t *testing.T, gh, cc sequence.Routes, circleci bool, timeout time.Duration, attempts int) *harness {
 	t.Helper()
+	clock := agentcli.NewVirtualClock(time.Now())
+	var transport http.RoundTripper
+	if attempts > 0 {
+		transport = &agentcli.Retrying{Clock: clock, Attempts: attempts}
+	}
 	ghServer, err := githubmock.Start(gh)
 	if err != nil {
 		t.Fatal(err)
@@ -131,7 +139,7 @@ func startWith(t *testing.T, gh, cc sequence.Routes, circleci bool, timeout time
 	config := Config{
 		GitHub:   client,
 		Rate:     cond,
-		Clock:    agentcli.NewClock(0.001, nil),
+		Clock:    clock,
 		Progress: agentcli.NewProgress(progress, true),
 		Timeout:  timeout,
 	}
@@ -699,17 +707,11 @@ func Test_Wait_toolingErrorIsNotAVerdict(t *testing.T) {
 	}
 }
 
-// retryingOnce sends a read twice before it counts as unanswered, at the
-// harness's scale.
-func retryingOnce() *agentcli.Retrying {
-	return &agentcli.Retrying{Clock: agentcli.NewClock(0.001, nil), Attempts: 2}
-}
-
 func Test_Wait_unansweredPollIsNotAVerdict(t *testing.T) {
 	gh := gitHubGreen()
 	unavailable := sequence.Response{Status: 503, Body: map[string]any{"message": "unavailable"}}
 	gh[runsPath] = []sequence.Response{checkRuns(run("go-build", "in_progress", "")), unavailable, unavailable, checkRuns(run("go-build", "completed", "success"))}
-	h := startWith(t, gh, sequence.Routes{}, false, 2*time.Minute, retryingOnce())
+	h := startWith(t, gh, sequence.Routes{}, false, 2*time.Minute, 2)
 	result, err := h.waiter.Wait(context.Background(), "o", "r", 42)
 	if err != nil {
 		t.Fatalf("want green after the unanswered poll, got exit %d: %v", exitCode(err), err)
@@ -725,7 +727,7 @@ func Test_Wait_unansweredPollIsNotAVerdict(t *testing.T) {
 func Test_Wait_unansweredUntilTheDeadlineIsATimeout(t *testing.T) {
 	gh := gitHubGreen()
 	gh[runsPath] = []sequence.Response{checkRuns(run("go-build", "in_progress", "")), {Status: 503, Body: map[string]any{"message": "unavailable"}}}
-	h := startWith(t, gh, sequence.Routes{}, false, 2*time.Minute, retryingOnce())
+	h := startWith(t, gh, sequence.Routes{}, false, 2*time.Minute, 2)
 	result, err := h.waiter.Wait(context.Background(), "o", "r", 42)
 	if exitCode(err) != agentcli.ExitTimeout {
 		t.Fatalf("want exit 2, got exit %d: %v", exitCode(err), err)

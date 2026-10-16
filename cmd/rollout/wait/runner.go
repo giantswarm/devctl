@@ -231,6 +231,10 @@ func (r *runner) waitRevision(ctx context.Context, installation, kubeContext, ow
 	if err != nil {
 		return fmt.Errorf("listing the files of %s/%s#%d: %w", owner, repo, r.flag.PR, err)
 	}
+	merge, err := sources.Client.GetPullRequestMerge(ctx, owner, repo, r.flag.PR)
+	if err != nil {
+		return fmt.Errorf("reading %s/%s#%d: %w", owner, repo, r.flag.PR, err)
+	}
 	waiter, err := rolloutwait.New(rolloutwait.Config{
 		Installation: installation,
 		KubeContext:  kubeContext,
@@ -238,6 +242,7 @@ func (r *runner) waitRevision(ctx context.Context, installation, kubeContext, ow
 		Repository:   owner + "/" + repo,
 		Paths:        paths,
 		GitHub:       sources.Client,
+		MergedAt:     merge.MergedAt,
 		HelmReleases: r.flag.HelmReleases,
 		Client:       client,
 		Timeout:      r.flag.Timeout,

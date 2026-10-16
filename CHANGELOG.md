@@ -7,7 +7,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- `repo` reconciler: a repository whose generated CI has no CircleCI job (`gen.ci.generate: true` on a generic
+  repository without a chart, an image or a Go or Node build: GitHub Actions only, auto-release) is no CircleCI
+  pipeline. The `circleci` and `release` steps read the branch for it, as for an undeclared pipeline, and no longer
+  plan a follow, setup workflows and a deploy key. A repository created with `gen.ci.generate: false` no longer
+  carries the template's `.circleci/`: its scaffold has a CircleCI pipeline only where `devctl gen circleci` writes
+  one.
+- `gen circleci`: the chart-test jobs (`execute-chart-tests`, `execute-chart-tests-release`) survive a transient
+  gsoci.azurecr.io `toomanyrequests`. Their pre-steps (the new `pull-chart-test-images` command) log in to the
+  registry with the architect context's credentials, so the pull leaves ACR's shared anonymous budget, and pull
+  app-test-suite and the kind node image with bounded retry and backoff (six attempts over up to about four minutes)
+  before the orb starts them. The kind node image is now pinned as `kind_node_image` (`v1.37.0`), so the image
+  pulled is the one `kind create cluster` uses.
+- `rollout wait --pr` on a configuration change judges a values-fed HelmRelease or App by the values it deployed,
+  not only by the rendered ConfigMap's last write: konfigure-operator re-labels that ConfigMap with every revision,
+  so a later commit made an older pull request look pending until the timeout. A HelmRelease that deployed new
+  values (`status.history[].configDigest`) after the merge, or an App in the management cluster whose Chart values
+  app-operator changed after the merge and then deployed, is rolled out.
+
 ### Added
+
+- `rollout wait --pr` on a configuration change follows the App CRs whose `spec.config` or `spec.userConfig` takes
+  the values a Konfiguration renders for a changed app, as it follows such HelmReleases: `deployments[]` names the
+  App with its chart and deployed version, rolled out once its release deployed its `spec.version` after the values
+  were rendered and its workloads rolled out, exit 1 when the release failed. A changed app whose rendered values
+  no HelmRelease or App takes is listed as a `ConfigMap` in state `unknown`, and the wait ends with exit 3, verdict
+  `rollout_unknown`, instead of `rolled_out` on an empty chart list.
+- `rollout wait`: a kube context missing from the kubeconfig names `--kubeconfig <file>` beside `--context`.
 
 - `pr wait` (and the wait of `pr merge`): a head with no check run, status or Actions run, in a repository whose
   active workflows run on every `pull_request` push against the base, waits for their runs, and two minutes after
@@ -29,6 +57,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `gen` commands run without the version gate: a generator works offline from the repository's files, so in a
+  plain container without a session bus, keychain or token `devctl gen circleci` exits 0 instead of failing on
+  `Reading devctl/github from the keychain: … dbus: couldn't determine address of session bus`.
+- The version gate reads releases anonymously where there is no keychain (no session bus), as it does without an
+  App login; a command that needs a token still reports the unreachable keychain.
+- `gen circleci`: the Node job sizes the workers of its tools from its resource class's memory instead of the CPUs
+  they detect (on the Docker executor `os.cpus()` reports the host's, jest the cgroup's quota), which started more
+  lint threads and jest workers than the class has memory for. It exports `BACKSTAGE_CLI_CONCURRENCY` (one per
+  8 GiB, read by `backstage-cli repo lint` and `repo build`) and `JEST_MAX_WORKERS` (one per 4 GiB, passed by the
+  repo's test script as `--maxWorkers=${JEST_MAX_WORKERS:-40%}`): `large` 1 and 2, `xlarge` 2 and 4. A repo that
+  raises `resource_class` or adds a service container in `.circleci/custom.yml` sets both under the job's
+  `environment` there.
+
 - Renovate bumps the tool versions pinned in the generator's Makefile templates. A custom manager reads the standard
   `# renovate:` annotation in `pkg/gen/input/**/*.mk.template`, which no other manager matched, so
   `HELM_UNITTEST_VERSION` in `Makefile.gen.app.mk.template` sat unbumped since #2570.
@@ -37,6 +78,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - The updater imports the Giant Swarm go-selfupdate line, `github.com/giantswarm/go-selfupdate` v1.6.3, with
   `github.com/giantswarm/selfupdate-cosign` v0.3.4: upstream `creativeprojects/go-selfupdate` no longer compiles next
   to selfupdate-cosign v0.3.4, and the binary no longer carries `golang.org/x/crypto/openpgp` (GO-2026-5932).
+- `gen circleci`: the generated pipelines pin architect orb 10.13.9. `push-to-app-catalog` retries a push that lost the
+  race on a busy catalog at once for up to 30 minutes instead of giving up after 20 attempts (10.13.8), and a branch
+  pipeline at a release commit ends green instead of failing on the release-version check (10.13.9).
 - `gen circleci`: the generated pipelines pin architect orb 10.13.6, whose `cosign-sign-verify` no longer leaves an
   image or chart unsigned when Rekor answers "an equivalent entry already exists": it checks the registry for the
   signature and signs again when none is there, so the strict `cosign verify` after it passes.
