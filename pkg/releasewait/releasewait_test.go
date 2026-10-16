@@ -1660,11 +1660,59 @@ func TestWaitPullRequestWithoutAnyReleaseWorkflowIsNoRelease(t *testing.T) {
 // An entry that declares auto-release ahead of the repository: no workflow
 // at the merge commit tags it, so no release follows the merge.
 func TestWaitPullRequestEntryAheadOfTheWorkflowsIsNoRelease(t *testing.T) {
-	github := baseGitHub([]string{"main.go"}, []string{"ci.yaml"}, nil)
-	entry := fieldsFromYAML(t, "- name: kserve\n  gen:\n    flavours: [cli]\n    language: go\n    ci:\n      releaseWorkflow: auto-release\n")
+	github := preAutoReleaseMerge(nil)
+	entry := autoReleaseEntry(t)
 	_, err := run(t, fixture{github: github, pr: 7, mergeCommit: testSHA, entry: &entry})
 	assertExit(t, err, agentcli.ExitNotApplicable, "declares auto-release, but .github/workflows at 01234567 holds no auto-release workflow")
 	assertNoRelease(t, err)
+}
+
+// A merge commit that predates the auto-release workflow but carries one
+// release tag resolves to it: the tags are read before the workflows.
+func TestWaitPullRequestPredatingTheWorkflowWithOneTagResolvesIt(t *testing.T) {
+	github := preAutoReleaseMerge([]map[string]any{
+		{"name": testTag, "commit": map[string]any{"sha": testSHA}},
+		{"name": "v1.1.5", "commit": map[string]any{"sha": "older"}},
+	})
+	entry := autoReleaseEntry(t)
+	result, err := run(t, fixture{github: github, pr: 7, mergeCommit: testSHA, entry: &entry, timeout: 45 * time.Second})
+	if IsNoRelease(err) {
+		t.Fatalf("a tagged merge commit is no release: %v", err)
+	}
+	if result.Tag != testTag || result.SHA != testSHA {
+		t.Errorf("result: %+v", result)
+	}
+}
+
+// A merge commit that predates the auto-release workflow and carries the
+// release tags of two versions is a conflict, not no release.
+func TestWaitPullRequestPredatingTheWorkflowWithTwoVersionsIsAmbiguous(t *testing.T) {
+	github := preAutoReleaseMerge([]map[string]any{
+		{"name": "v1.2.0", "commit": map[string]any{"sha": testSHA}},
+		{"name": "v1.1.4", "commit": map[string]any{"sha": testSHA}},
+	})
+	entry := autoReleaseEntry(t)
+	result, err := run(t, fixture{github: github, pr: 7, mergeCommit: testSHA, entry: &entry})
+	assertExit(t, err, agentcli.ExitAmbiguousRelease, "carries the release tags of 2 versions (v1.2.0, v1.1.4)")
+	if result.Tag != "" || result.SHA != testSHA || !slices.Equal(result.ConflictingTags, []string{"v1.2.0", "v1.1.4"}) {
+		t.Errorf("result: %+v", result)
+	}
+}
+
+// preAutoReleaseMerge is a repository whose workflows at the merge commit
+// hold no auto-release workflow, with tags as its tag listing.
+func preAutoReleaseMerge(tags []map[string]any) sequence.Routes {
+	github := baseGitHub([]string{"main.go"}, []string{"ci.yaml"}, nil)
+	if tags == nil {
+		tags = []map[string]any{}
+	}
+	github[repoRoute("/tags")] = []sequence.Response{{Body: tags}}
+	return github
+}
+
+// autoReleaseEntry is a team-file entry that declares auto-release.
+func autoReleaseEntry(t *testing.T) reposetup.Fields {
+	return fieldsFromYAML(t, "- name: kserve\n  gen:\n    flavours: [cli]\n    language: go\n    ci:\n      releaseWorkflow: auto-release\n")
 }
 
 // unansweredCircleCI is a CircleCI whose pipeline listing goes unanswered

@@ -787,11 +787,17 @@ func (w *Waiter) awaitTag(ctx context.Context, version Version) (tag, sha string
 // after the merge commit, and without one no release follows the merge. A run
 // that failed before it tagged is the release's CI failure, and a run
 // cancelled before it tagged was superseded by a newer push, whose tag
-// carries the merge.
+// carries the merge. The tags on the merge commit are read before its
+// workflows: a commit that predates the auto-release workflow may still
+// carry release tags.
 func (w *Waiter) awaitTagForCommit(ctx context.Context, sha string, content *TagContent) (tag, tagSHA string, err error) {
 	owner, repo, number := w.config.Owner, w.config.Repo, w.config.PR
 	auto, _ := content.releaseWorkflows()
 	if len(auto) == 0 {
+		tag, err := w.commitTag(ctx, sha)
+		if tag != "" || err != nil {
+			return tag, sha, err
+		}
 		// The entry declares auto-release ahead of the repository: no
 		// workflow at the merge commit tags it.
 		return "", "", noReleaseErr("the team-file entry of %s/%s declares auto-release, but %s at %s holds no auto-release workflow: nothing tags the merge commit of #%d", owner, repo, workflowsDir, short(sha), number)

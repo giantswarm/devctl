@@ -29,6 +29,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   job. A red artifact job is still `red-release`. `reconcile.UnpublishedJobs` exports the rule for the
   giantswarm-repo-manager inventory.
 
+- `release wait --pr` on a merge commit that predates the repository's auto-release workflow reads the tags on the
+  commit before its workflows: one release tag is the release, the tags of several versions are the conflict report.
+  Only a commit without a release tag still ends `no_release` for the missing workflow.
+
 - `release wait --pr` on a commit that carries the release tags of more than one version (`v1.1.4` and `v1.2.0` on one
   commit) no longer picks one: it ends at once with the new exit code 11, `ambiguous_release`, naming every release
   tag on the commit in `reason` and `conflictingTags`; a wait given the version follows it. `rollout wait --pr` exits
