@@ -219,7 +219,7 @@ A template comment, so the generated config stays byte-identical to the old lite
   # writes to the repo's own charts, so the vendored subtree stays untouched
   # like it does for the base hooks above.
   - repo: https://github.com/norwoodj/helm-docs
-    rev: "v1.14.2"
+    rev: "19.0614"
     hooks:
       - id: helm-docs
         args:
