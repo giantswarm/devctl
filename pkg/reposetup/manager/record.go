@@ -339,11 +339,15 @@ type Person struct {
 // Watch is watch_repository's answer: the phases of a new repository on its
 // way to readiness.
 type Watch struct {
-	Repository    string              `json:"repository"`
-	PullRequest   string              `json:"pullRequest,omitempty"`
-	Phases        []Phase             `json:"phases"`
-	Changed       bool                `json:"changed"`
-	Ready         bool                `json:"ready"`
+	Repository  string  `json:"repository"`
+	PullRequest string  `json:"pullRequest,omitempty"`
+	Phases      []Phase `json:"phases"`
+	Changed     bool    `json:"changed"`
+	Ready       bool    `json:"ready"`
+	// WithoutCI says the repository is declared without CI
+	// (gen.ci.generate: false): no release comes, so it is ready once set
+	// up, without a released phase.
+	WithoutCI     bool                `json:"withoutCI,omitempty"`
 	Pending       string              `json:"pending,omitempty"`
 	PendingReason string              `json:"pendingReason,omitempty"`
 	Failure       *Failure            `json:"failure,omitempty"`

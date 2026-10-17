@@ -24,6 +24,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `repo watch` ends with exit 0 once a repository declared without CI (`gen.ci.generate: false`) is set up, printing
+  `ready: <repository> (no CI: set up, no release to wait for)`, instead of waiting for a release that never comes
+  until `--timeout`; the answer carries `withoutCI` from giantswarm-repo-manager. A repository with CI still waits for
+  `released`.
 - `pr wait` and `pr merge` no longer judge a head on checks that have not registered yet: for one minute after the
   pull request's last update (a push, or the merge commit `--update-branch` creates) a required context still absent is
   pending instead of `required_missing`, and a head without any GitHub Actions run or check run of its own is pending
