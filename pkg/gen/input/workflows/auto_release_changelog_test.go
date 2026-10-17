@@ -1,6 +1,7 @@
 package workflows
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -100,7 +101,9 @@ func Test_AutoReleaseChangelogJob(t *testing.T) {
 // left alone without downloading devctl.
 func Test_AutoReleaseChangelogCutStep(t *testing.T) {
 	job := workflowJobs(t, renderInput(t, newWorkflows(t, gen.FlavourApp).AutoRelease()))["changelog"]
-	script := jobStep(t, job, "cut").Run
+	step := jobStep(t, job, "cut")
+	assertDevctlAuthenticated(t, step)
+	script := step.Run
 
 	// gh "downloads" a devctl that rewrites CHANGELOG.md.
 	bin := t.TempDir()
@@ -127,6 +130,21 @@ func Test_AutoReleaseChangelogCutStep(t *testing.T) {
 	}
 }
 
+// assertDevctlAuthenticated fails unless a step that downloads and runs
+// devctl hands it the job's token: gh reads $GH_TOKEN, and devctl's version
+// check, which reads devctl's releases before every command, reads
+// $GITHUB_TOKEN. Without it the check is anonymous and shares the runner IP's
+// rate limit.
+func assertDevctlAuthenticated(t *testing.T, step autoReleaseStep) {
+	t.Helper()
+
+	for _, v := range []string{"GH_TOKEN", "GITHUB_TOKEN"} {
+		if got := step.Env[v]; got != "${{ secrets.GITHUB_TOKEN }}" {
+			t.Errorf("step %q: env %s = %q, want the job's token", step.Name, v, got)
+		}
+	}
+}
+
 // Test_ChangelogWorkflow pins the pull request check: devctl changelog check
 // on a checkout with every tag.
 func Test_ChangelogWorkflow(t *testing.T) {
@@ -142,11 +160,68 @@ func Test_ChangelogWorkflow(t *testing.T) {
 	if !strings.Contains(rendered, "fetch-depth: 0") || !strings.Contains(rendered, "fetch-tags: true") {
 		t.Fatal("the check does not see every tag")
 	}
-	last := job.Steps[len(job.Steps)-1].Run
-	if !strings.Contains(last, `"${RUNNER_TEMP}/devctl" changelog check`) {
-		t.Fatalf("the check step does not run devctl changelog check:\n%s", last)
+	last := job.Steps[len(job.Steps)-1]
+	if !strings.Contains(last.Run, `"${RUNNER_TEMP}/devctl" changelog check`) {
+		t.Fatalf("the check step does not run devctl changelog check:\n%s", last.Run)
 	}
+	assertDevctlAuthenticated(t, last)
 	if del := newWorkflows(t, gen.FlavourApp).ChangelogDeletion(); !del.Delete || del.Path != in.Path {
 		t.Fatalf("ChangelogDeletion = %+v", del)
+	}
+}
+
+// Test_ChangelogStepsWaitForDevctlBinary runs the download of both steps that
+// run devctl against a gh that finds no assets for its first failures, as for
+// a devctl release whose binaries CircleCI has not uploaded yet: the step
+// retries, and fails saying why once the assets never come.
+func Test_ChangelogStepsWaitForDevctlBinary(t *testing.T) {
+	steps := map[string]autoReleaseStep{
+		"cut": jobStep(t, workflowJobs(t, renderInput(t, newWorkflows(t, gen.FlavourApp).AutoRelease()))["changelog"], "cut"),
+	}
+	check := workflowJobs(t, renderInput(t, newWorkflows(t, gen.FlavourApp).Changelog()))["released-entries"]
+	steps["check"] = check.Steps[len(check.Steps)-1]
+
+	for name, step := range steps {
+		for _, tc := range []struct {
+			failures int
+			wantErr  bool
+		}{
+			{failures: 0},
+			{failures: 3},
+			{failures: 20, wantErr: true},
+		} {
+			t.Run(fmt.Sprintf("%s/%d failures", name, tc.failures), func(t *testing.T) {
+				bin := t.TempDir()
+				count := filepath.Join(bin, "count")
+				// gh fails $failures times, then "downloads" a devctl that
+				// succeeds; sleep only counts.
+				gh := fmt.Sprintf("#!/bin/sh\nn=$(cat %[1]q 2>/dev/null || echo 0); echo $((n+1)) > %[1]q\n"+
+					"if [ \"$n\" -lt %[2]d ]; then echo 'no assets to download' >&2; exit 1; fi\n"+
+					"while [ $# -gt 0 ]; do [ \"$1\" = --output ] && out=$2; shift; done\nprintf '#!/bin/sh\\n' > \"$out\"\n", count, tc.failures)
+				for file, content := range map[string]string{"gh": gh, "sleep": "#!/bin/sh\n"} {
+					if err := os.WriteFile(filepath.Join(bin, file), []byte(content), 0o700); err != nil { // #nosec G306 -- test stand-in
+						t.Fatal(err)
+					}
+				}
+				dir := repo(t)
+				if err := os.WriteFile(filepath.Join(dir, "CHANGELOG.md"), []byte("# Changelog\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+
+				_, out, err := runStep(t, step.Run, dir, "PATH="+bin+":"+os.Getenv("PATH"), "RUNNER_TEMP="+t.TempDir())
+				if tc.wantErr {
+					if err == nil || !strings.Contains(out, "has no devctl-linux-amd64 after 10 minutes") {
+						t.Fatalf("err = %v, want the step to fail saying why:\n%s", err, out)
+					}
+					return
+				}
+				if err != nil {
+					t.Fatalf("err = %v:\n%s", err, out)
+				}
+				if got := strings.Count(out, "retrying in 30s"); got != tc.failures {
+					t.Fatalf("%d retries, want %d:\n%s", got, tc.failures, out)
+				}
+			})
+		}
 	}
 }
