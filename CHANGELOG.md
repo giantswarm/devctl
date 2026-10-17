@@ -36,6 +36,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `DEVCTL_TIME_SCALE` below 1: a timeout keeps a real-time floor of five seconds (or the unscaled timeout, when
+  shorter), so a loaded machine still gets the first poll in; sleeps stay scaled. Production, at scale 1, is unchanged.
 - `pr wait` and the wait in `pr merge`: when GitHub's REST check-runs or combined-status endpoint fails every try
   while GraphQL answers, the head's checks are read from the head commit's `statusCheckRollup` through GraphQL. A
   warning and the new `checksVia: graphql` name the fallback; with both paths failing the poll stays unanswered.
