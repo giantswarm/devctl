@@ -16,12 +16,14 @@ const (
 	// stable release.
 	StateNothingToPromote = "nothing_to_promote"
 	// StateNotBuilt: a commit status of the candidate's commit is not
-	// success; statusState names the combined state.
+	// success; statusState names the combined state, newestBuilt the
+	// highest other candidate that is built.
 	StateNotBuilt = "not_built"
 	// StateNotAutoRelease: the repository has no auto-release workflow.
 	StateNotAutoRelease = "not_auto_release"
 	// StateOutdatedWorkflow: the auto-release workflow on the default branch
-	// has no promotion step: its release-type stable tags the branch head.
+	// has no promotion step: its release-type stable tags the branch head; or,
+	// with --version, its promotion step takes no version input.
 	StateOutdatedWorkflow = "outdated_workflow"
 	// StateFailed: a read or the dispatch failed; the message has GitHub's
 	// answer.
@@ -38,6 +40,11 @@ type Repository struct {
 	// Candidate is the tag of the candidate to promote; empty when there is
 	// none.
 	Candidate string `json:"candidate"`
+	// NewestBuilt is, for not_built, the highest other candidate the
+	// workflow would promote whose commit is built: promote it with
+	// --version instead of waiting. Empty when there is none or for another
+	// state.
+	NewestBuilt string `json:"newestBuilt,omitempty"`
 	// StatusState is the combined commit status of the candidate: success,
 	// pending, failure or error; empty until read.
 	StatusState string `json:"statusState"`

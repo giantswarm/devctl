@@ -40,11 +40,19 @@ const workflowPath = ".github/workflows/" + Workflow
 // branch head on release-type stable and checks no commit status.
 const promotionMarker = "Resolve the candidate to promote"
 
+// versionMarker is the promotion step reading the workflow_dispatch input
+// version: a workflow without it promotes only the latest candidate.
+const versionMarker = "inputs.version"
+
 // The workflow_dispatch input that asks the workflow for a stable release.
 const (
 	inputReleaseType  = "release-type"
 	releaseTypeStable = "stable"
 )
+
+// inputVersion is the workflow_dispatch input naming the candidate to
+// promote instead of the latest.
+const inputVersion = "version"
 
 // The commit status state that counts as built, and the failed ones.
 const (
@@ -70,6 +78,9 @@ type Config struct {
 	GitHub GitHub
 	// DryRun checks every repository and dispatches nothing.
 	DryRun bool
+	// Version is the candidate vX.Y.Z-rc.N to promote instead of the
+	// latest; empty promotes the latest. [ValidVersion] checks its form.
+	Version string
 	// NotFoundHint is added to GitHub's 404 for a repository: what the
 	// token reaches. Empty adds nothing.
 	NotFoundHint string
@@ -127,6 +138,10 @@ func promoteOne(ctx context.Context, config Config, repository string) Repositor
 		return entry.set(StateOutdatedWorkflow, "%s on %s does not promote release candidates: its release-type stable tags the branch head; align the repository to devctl v8.102.0 or later (giantswarm/devctl#2413)", workflowPath, branch)
 	}
 
+	if config.Version != "" && !strings.Contains(string(workflow), versionMarker) {
+		return entry.set(StateOutdatedWorkflow, "%s on %s promotes only the latest release candidate, not one named with --version: align the repository to the current devctl (giantswarm/devctl#2550)", workflowPath, branch)
+	}
+
 	releases, err := gh.ListReleases(ctx, owner, repo)
 	if err != nil {
 		return entry.set(StateFailed, "listing the releases: %v", err)
@@ -134,20 +149,25 @@ func promoteOne(ctx context.Context, config Config, repository string) Repositor
 	reachable := func(tag string) (bool, error) {
 		return gh.Reachable(ctx, owner, repo, tag, branch)
 	}
-	stable, candidate, err := SelectCandidate(releases, reachable)
-	entry.Stable, entry.Candidate = stable, candidate
-	if errors.Is(err, ErrNotPrerelease) {
-		return entry.set(StateFailed, "the highest release candidate on %s, %s, is a full GitHub release, not a pre-release: the workflow refuses to promote it", branch, candidate)
+	var stable, candidate string
+	if config.Version != "" {
+		stable, candidate, err = SelectVersion(releases, reachable, config.Version)
+	} else {
+		stable, candidate, err = SelectCandidate(releases, reachable)
 	}
-	if err != nil {
+	entry.Stable, entry.Candidate = stable, candidate
+	switch {
+	case errors.Is(err, ErrNotPrerelease) && config.Version != "":
+		return entry.set(StateFailed, "%s is a full GitHub release, not a pre-release: the workflow refuses to promote it", candidate)
+	case errors.Is(err, ErrNotPrerelease):
+		return entry.set(StateFailed, "the highest release candidate on %s, %s, is a full GitHub release, not a pre-release: the workflow refuses to promote it", branch, candidate)
+	case errors.Is(err, ErrNotCandidate):
+		return entry.set(StateFailed, "%s is not a release candidate to promote on %s: %v", config.Version, branch, err)
+	case err != nil:
 		return entry.set(StateFailed, "comparing the release tags with %s: %v", branch, err)
 	}
 	if candidate == "" {
-		since := stable
-		if since == "" {
-			since = "inception"
-		}
-		return entry.set(StateNothingToPromote, "no release candidate on %s since %s", branch, since)
+		return entry.set(StateNothingToPromote, "no release candidate on %s since %s", branch, sinceOrInception(stable))
 	}
 
 	status, err := gh.GetCombinedStatus(ctx, owner, repo, candidate)
@@ -157,16 +177,20 @@ func promoteOne(ctx context.Context, config Config, repository string) Repositor
 	entry.StatusState = status.State
 	built, advisory := builtState(status)
 	if built != statusSuccess {
-		return entry.set(StateNotBuilt, "the commit statuses of %s are %s: promote it once its pipelines passed", candidate, built)
+		return notBuilt(ctx, gh, owner, repo, entry, releases, reachable, built)
 	}
 	for _, s := range advisory {
 		entry.Warnings = append(entry.Warnings, fmt.Sprintf("the commit status %s of %s is %s; the release does not require it, so the candidate is judged without it", s.Context, candidate, s.State))
 	}
 
+	inputs := map[string]any{inputReleaseType: releaseTypeStable}
+	if config.Version != "" {
+		inputs[inputVersion] = candidate
+	}
 	if config.DryRun {
 		return entry.set(StateWouldDispatch, "would dispatch %s on %s to promote %s", Workflow, branch, candidate)
 	}
-	err = gh.DispatchWorkflow(ctx, owner, repo, Workflow, branch, map[string]any{inputReleaseType: releaseTypeStable})
+	err = gh.DispatchWorkflow(ctx, owner, repo, Workflow, branch, inputs)
 	if githubclient.IsForbidden(err) {
 		return entry.set(StateFailed, "dispatching %s on %s: %v; the token needs Actions write on %s", Workflow, branch, err, repository)
 	}
@@ -174,6 +198,37 @@ func promoteOne(ctx context.Context, config Config, repository string) Repositor
 		return entry.set(StateFailed, "dispatching %s on %s: %v", Workflow, branch, err)
 	}
 	return entry.set(StateDispatched, "dispatched %s on %s to promote %s", Workflow, branch, candidate)
+}
+
+// notBuilt is entry refused as not_built, its candidate's statuses judged
+// built (the state builtState returned, not success), naming the newest other candidate that is built: the one the caller
+// can promote with --version instead of waiting. A read failing while
+// looking for it leaves it out and says so; the refusal stands either way.
+func notBuilt(ctx context.Context, gh GitHub, owner, repo string, entry Repository, releases []githubclient.Release, reachable func(tag string) (bool, error), built string) Repository {
+	refusal := fmt.Sprintf("the commit statuses of %s are %s", entry.Candidate, built)
+	newest, err := NewestBuilt(releases, reachable, func(tag string) (bool, error) {
+		status, err := gh.GetCombinedStatus(ctx, owner, repo, tag)
+		if err != nil {
+			return false, err
+		}
+		state, _ := builtState(status)
+		return state == statusSuccess, nil
+	}, entry.Candidate)
+	entry.NewestBuilt = newest
+	switch {
+	case err != nil:
+		return entry.set(StateNotBuilt, "%s: promote it once its pipelines passed; looking for a built candidate failed: %v", refusal, err)
+	case newest == "":
+		return entry.set(StateNotBuilt, "%s: promote it once its pipelines passed; no other release candidate since %s is built", refusal, sinceOrInception(entry.Stable))
+	}
+	return entry.set(StateNotBuilt, "%s: promote it once its pipelines passed, or promote the newest built candidate with --version %s", refusal, newest)
+}
+
+func sinceOrInception(stable string) string {
+	if stable == "" {
+		return "inception"
+	}
+	return stable
 }
 
 // builtState is the candidate's combined commit status as the promotion
@@ -237,7 +292,114 @@ type tagVersion struct {
 // compared as semver, so rc.10 follows rc.9 and a candidate for a higher
 // version follows one it replaced.
 func SelectCandidate(releases []githubclient.Release, reachable func(tag string) (bool, error)) (stable, candidate string, err error) {
-	var stables, candidates []tagVersion
+	stables, candidates := parseReleases(releases)
+	stableTag, err := highestReachable(stables, nil, reachable)
+	if err != nil {
+		return "", "", err
+	}
+	stable = stableTag.tag
+	candidateTag, err := highestReachable(candidates, stableTag.version, reachable)
+	if err != nil {
+		return stable, "", err
+	}
+	if candidateTag.tag != "" && !candidateTag.prerelease {
+		return stable, candidateTag.tag, fmt.Errorf("%s: %w", candidateTag.tag, ErrNotPrerelease)
+	}
+	return stable, candidateTag.tag, nil
+}
+
+// ErrNotCandidate is a version named for promotion that is not a release
+// candidate the workflow promotes: no published release of that tag, not
+// newer than the last stable release, or not on the default branch.
+var ErrNotCandidate = errors.New("not a release candidate to promote")
+
+// notCandidate is [ErrNotCandidate] saying why alone.
+type notCandidate string
+
+func (e notCandidate) Error() string        { return string(e) }
+func (e notCandidate) Is(target error) bool { return target == ErrNotCandidate }
+
+// ValidVersion says whether version has the form of a candidate tag,
+// vX.Y.Z-rc.N.
+func ValidVersion(version string) bool {
+	return candidatePattern.MatchString(version)
+}
+
+// SelectVersion is [SelectCandidate] for the named candidate version instead
+// of the highest: the tag of the highest stable release reachable from the
+// default branch, and version once it is a published release newer than
+// that stable release and reachable, the candidates the workflow's `version`
+// input accepts. Anything else is [ErrNotCandidate] saying why; a candidate
+// that is a full release is [ErrNotPrerelease], as the workflow refuses it.
+func SelectVersion(releases []githubclient.Release, reachable func(tag string) (bool, error), version string) (stable, candidate string, err error) {
+	stables, candidates := parseReleases(releases)
+	stableTag, err := highestReachable(stables, nil, reachable)
+	if err != nil {
+		return "", "", err
+	}
+	stable = stableTag.tag
+	i := slices.IndexFunc(candidates, func(t tagVersion) bool { return t.tag == version })
+	if i < 0 {
+		return stable, "", notCandidate("no published GitHub release " + version)
+	}
+	target := candidates[i]
+	if stableTag.version != nil && !target.version.GreaterThan(stableTag.version) {
+		return stable, "", notCandidate("not newer than the last stable release " + stable)
+	}
+	ok, err := reachable(target.tag)
+	if err != nil {
+		return stable, "", fmt.Errorf("%s: %w", target.tag, err)
+	}
+	if !ok {
+		return stable, "", notCandidate("not on the default branch")
+	}
+	if !target.prerelease {
+		return stable, target.tag, fmt.Errorf("%s: %w", target.tag, ErrNotPrerelease)
+	}
+	return stable, target.tag, nil
+}
+
+// NewestBuilt is the highest release candidate other than except that the
+// workflow would promote with `version` and that built accepts, "" when there
+// is none: a published pre-release newer than the highest stable release
+// reachable from the default branch, and reachable itself. Candidates are
+// asked highest first, built only for reachable pre-releases, and only until
+// the first built one.
+func NewestBuilt(releases []githubclient.Release, reachable, built func(tag string) (bool, error), except string) (string, error) {
+	stables, candidates := parseReleases(releases)
+	stableTag, err := highestReachable(stables, nil, reachable)
+	if err != nil {
+		return "", err
+	}
+	slices.SortFunc(candidates, func(a, b tagVersion) int { return b.version.Compare(a.version) })
+	for _, t := range candidates {
+		if stableTag.version != nil && !t.version.GreaterThan(stableTag.version) {
+			break
+		}
+		if t.tag == except || !t.prerelease {
+			continue
+		}
+		ok, err := reachable(t.tag)
+		if err != nil {
+			return "", fmt.Errorf("%s: %w", t.tag, err)
+		}
+		if !ok {
+			continue
+		}
+		ok, err = built(t.tag)
+		if err != nil {
+			return "", fmt.Errorf("%s: %w", t.tag, err)
+		}
+		if ok {
+			return t.tag, nil
+		}
+	}
+	return "", nil
+}
+
+// parseReleases sorts the published releases into stable releases and
+// candidates by their tags; other tags are no releases auto-release cuts.
+func parseReleases(releases []githubclient.Release) (stables, candidates []tagVersion) {
 	for _, rel := range releases {
 		if !rel.Published {
 			continue
@@ -253,20 +415,7 @@ func SelectCandidate(releases []githubclient.Release, reachable func(tag string)
 			candidates = append(candidates, tagVersion{tag: rel.Tag, version: v, prerelease: rel.Prerelease})
 		}
 	}
-
-	stableTag, err := highestReachable(stables, nil, reachable)
-	if err != nil {
-		return "", "", err
-	}
-	stable = stableTag.tag
-	candidateTag, err := highestReachable(candidates, stableTag.version, reachable)
-	if err != nil {
-		return stable, "", err
-	}
-	if candidateTag.tag != "" && !candidateTag.prerelease {
-		return stable, candidateTag.tag, fmt.Errorf("%s: %w", candidateTag.tag, ErrNotPrerelease)
-	}
-	return stable, candidateTag.tag, nil
+	return stables, candidates
 }
 
 // highestReachable is the highest of tags above floor (nil for none) that

@@ -13,9 +13,9 @@ import (
 
 const (
 	name        = "promote [<owner/repo>...]"
-	description = "Promote the latest release candidate of auto-release repositories to a stable release; one JSON document, exit codes for the outcome."
-	long        = `Promote the latest release candidate of auto-release repositories to a stable
-release.
+	description = "Promote the latest release candidate of auto-release repositories, or a named one, to a stable release; one JSON document, exit codes for the outcome."
+	long        = `Promote the latest release candidate of auto-release repositories, or with
+--version a named one, to a stable release.
 
 The auto-release workflow (.github/workflows/zz_generated.auto_release.yaml)
 cuts a release candidate vX.Y.Z-rc.N, a GitHub pre-release, on every
@@ -40,14 +40,24 @@ For each repository, on its default branch:
      is taken. The command reads releases, not tags: a candidate tag whose
      GitHub release was deleted, or is a draft, is not seen, while the
      workflow stops on it.
+     With --version vX.Y.Z-rc.N, for exactly one repository, the candidate
+     is that one instead of the highest: a published pre-release newer than
+     the highest stable release and reachable from the default branch, else
+     failed. The workflow must take its version input, else
+     outdated_workflow. This promotes a candidate that is built while a
+     later one is still building, or the one proven live.
   3. The combined commit status of the candidate's commit: with at least one
      status and a state other than success, not_built. No status at all
      counts as built, as in the workflow. A failed CircleCI status of a job
      the release does not require (sync-china-registry) is judged as
      devctl release wait judges it: a warning in the entry's warnings[],
      not a refusal; any other failed or running context still refuses.
+     A not_built entry names in newestBuilt, and in its message, the
+     highest other candidate since the stable release that is built:
+     promote it with --version, or wait for the refused one.
   4. The workflow is dispatched on the default branch with
-     release-type: stable (dispatched; would_dispatch with --dry-run).
+     release-type: stable, and with --version also version: the candidate
+     (dispatched; would_dispatch with --dry-run).
 
 Repeated repositories are promoted once.
 
@@ -59,8 +69,8 @@ for the stable version of its candidate.
 Output: one JSON document on stdout at the end and nothing else (--progress
 writes one line per repository to stderr): the envelope (command,
 schemaVersion, exitCode, verdict, reason, warnings, startedAt, finishedAt),
-team, dryRun, identity{source, login} and repositories[{repository, stable, candidate, statusState,
-state, message}], state one of dispatched, would_dispatch,
+team, dryRun, identity{source, login} and repositories[{repository, stable, candidate,
+newestBuilt, statusState, state, message}], state one of dispatched, would_dispatch,
 nothing_to_promote, not_built, not_auto_release, outdated_workflow, failed.
 A team without auto-release repositories is exit 0 with a warning.
 
@@ -70,8 +80,9 @@ Exit codes:
   1  at least one repository was not dispatched: not_built,
      not_auto_release, outdated_workflow or failed; the reason names them
   7  usage or tooling: neither or both of repositories and --team, a
-     malformed owner/repo or a team without a team file, before any
-     repository is read
+     malformed owner/repo, --version not of the form vX.Y.Z-rc.N or not
+     with exactly one repository, or a team without a team file, before
+     any repository is read
   8  authentication required: run ` + "`devctl auth login --github-only`" + `
 
 The GitHub token is the App login, or a token in DEVCTL_GITHUB_TOKEN,
@@ -85,6 +96,7 @@ GitHub is reported per repository.
 Examples:
   devctl release promote giantswarm/devctl --dry-run
   devctl release promote giantswarm/devctl giantswarm/klaus
+  devctl release promote giantswarm/devctl --version v1.2.3-rc.14
   devctl release promote --team team-bumblebee --progress`
 )
 
