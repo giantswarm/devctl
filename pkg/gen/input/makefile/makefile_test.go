@@ -405,3 +405,74 @@ func TestApplicationDefaultsToSingleChart(t *testing.T) {
 		})
 	}
 }
+
+// fakeDocker stands in for docker: every call is appended to $DOCKER_CALLS.
+const fakeDocker = `#!/bin/sh
+echo "$*" >> "$DOCKER_CALLS"
+`
+
+// TestLintChartRunsHeadless runs the generated lint-chart target with no TTY on
+// stdin and no ct on PATH: ct runs from the pinned chart-testing image, and
+// docker gets no -t, which it refuses without a TTY.
+func TestLintChartRunsHeadless(t *testing.T) {
+	if _, err := exec.LookPath("make"); err != nil {
+		t.Skip("make is not installed")
+	}
+	if _, err := exec.LookPath("ct"); err == nil {
+		t.Skip("ct is installed, so lint-chart would not run its container")
+	}
+
+	m, err := New(Config{Flavours: gen.FlavourSlice{gen.FlavourApp}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	in := m.MakefileGenApp()
+	tpl, err := template.New("makefile").Parse(in.TemplateBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rendered bytes.Buffer
+	if err := tpl.Execute(&rendered, in.TemplateData); err != nil {
+		t.Fatal(err)
+	}
+
+	dir := t.TempDir()
+	write := func(path, content string, mode os.FileMode) {
+		t.Helper()
+		p := filepath.Join(dir, path)
+		if err := os.MkdirAll(filepath.Dir(p), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), mode); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const chart = "devctl-lint-chart-headless"
+	write(in.Path, rendered.String(), 0o644)
+	write("bin/docker", fakeDocker, 0o755)
+	write("bin/architect", "#!/bin/sh\n", 0o755)
+	write("helm/"+chart+"/Chart.yaml", "name: "+chart+"\n", 0o644)
+
+	calls := filepath.Join(dir, "docker-calls")
+	cmd := exec.Command("make", "-f", "Makefile.gen.app.mk", "lint-chart")
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(),
+		"PATH="+filepath.Join(dir, "bin")+string(os.PathListSeparator)+os.Getenv("PATH"),
+		"DOCKER_CALLS="+calls,
+	)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("make lint-chart: %v\n%s", err, out)
+	}
+
+	got, err := os.ReadFile(filepath.Clean(calls))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "run --rm -v /tmp/" + chart + "-test:/wd --workdir=/wd --name ct " +
+		"gsoci.azurecr.io/giantswarm/helm-chart-testing:v3.15.0 " +
+		"ct lint --validate-maintainers=false --charts=helm/" + chart + "\n"
+	if string(got) != want {
+		t.Errorf("docker calls = %q, want %q", got, want)
+	}
+}
