@@ -51,7 +51,7 @@ func (w *Waiter) judgeApp(ctx context.Context, app *unstructured.Unstructured, c
 	}
 	if atLeast(d.RunningVersion, w.version) {
 		if inCluster, _, _ := unstructured.NestedBool(app.Object, "spec", "kubeConfig", "inCluster"); !inCluster {
-			w.warnOnce(d.id() + " deploys to a workload cluster: its workloads are not checked")
+			w.warnPoll(d.id() + " deploys to a workload cluster: its workloads are not checked")
 			return d.set(StateRolledOut, ""), nil
 		}
 		return w.judgeWorkloads(ctx, d, str(app, "spec", "namespace"), d.Name)
@@ -123,7 +123,7 @@ func (w *Waiter) judgeValuesApp(ctx context.Context, app *unstructured.Unstructu
 		return d.set(StateProgressing, "runs %s; waiting for app-operator to deploy %s with the values of %s (release status %q %s)", orNone(d.RunningVersion), pinned, short(w.revision), status, reason), nil
 	}
 	if inCluster, _, _ := unstructured.NestedBool(app.Object, "spec", "kubeConfig", "inCluster"); !inCluster {
-		w.warnOnce(d.id() + " deploys to a workload cluster: its workloads are not checked")
+		w.warnPoll(d.id() + " deploys to a workload cluster: its workloads are not checked")
 		return d.set(StateRolledOut, ""), nil
 	}
 	return w.judgeWorkloads(ctx, d, str(app, "spec", "namespace"), d.Name)
