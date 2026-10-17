@@ -32,6 +32,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - `gen ami` no longer aborts when a Flatcar release's China key answers `403 AccessDenied`, which S3 returns for a
   missing key to a credential without `s3:ListBucket`. The release's China AMIs are skipped with a warning naming the
   key, like `NoSuchKey`; every other S3 error still fails the run.
+- `gen ami` leaves out a Flatcar release that has no China AMIs yet (`NoSuchKey` or `AccessDenied`) instead of writing
+  it without them, so the next run scrapes it again; with `--keep.existing` a written release was never scraped again.
 - A CircleCI 401 names the source of the token the command used, `$CIRCLECI_TOKEN` (or the variable a command names)
   or the devctl keychain, instead of `CIRCLECI_API_TOKEN`, which devctl does not read.
 - `pr merge` no longer merges a head whose checks ran against an older base than the one it lands on. A head behind
