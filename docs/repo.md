@@ -303,7 +303,9 @@ default branch (the baseline's `main` when the entry declares none); `write` as 
 `GITHUB_TOKEN` permission. Only the fields that differ are sent. A fork line (flavour `fork`) keeps rebase
 merges on and its merge commits as they are: its carried patches land one upstream-ready commit each and a
 re-pin merges upstream's history; the rest of the baseline applies to it as everywhere. A customer
-repository (flavour `customer`) keeps its own default branch. The six merge settings and the squash title
+repository (flavour `customer`) and an app catalog (`componentType: appcatalog`, whose index GitHub Pages
+serves from the default branch, `master` on the older catalogs) keep their own default branch: it is never
+renamed, the protection step protects it, and `devctl repo status` names it. The six merge settings and the squash title
 reach `GET /repos/{owner}/{repo}` for an admin identity only; a read identity reads them through GraphQL
 and, when that fails too, reports them as the finding `unchecked` rather than as drift.
 

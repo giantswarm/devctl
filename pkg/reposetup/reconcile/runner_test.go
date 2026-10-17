@@ -113,6 +113,18 @@ const (
     ci:
       generate: false
 `
+	// appCatalogEntryYAML declares an app catalog: GitHub Pages serves its
+	// index from the repository's default branch, master on the older ones.
+	appCatalogEntryYAML = `- name: sample-service
+  componentType: appcatalog
+  description: An app catalog
+  visibility: public
+  gen:
+    flavours: [generic]
+    language: generic
+    ci:
+      generate: false
+`
 	// forkEntryYAML declares a fork line: the repository carries an upstream
 	// release plus the carried patches on the branch named after the
 	// organisation, which its entry declares; nothing is generated for it.
@@ -2578,6 +2590,29 @@ func TestSteps(t *testing.T) {
 			name: "release: flavour customer has no pipeline of ours to verify", step: StepRelease, entry: customerEntryYAML,
 			seed:      func(h *harness) { h.gh.addRepo(owner, name) },
 			wantCheck: VerdictSkipped, wantAfter: VerdictSkipped,
+		},
+		{
+			name: "settings: an app catalog's default branch is never renamed", step: StepSettings, entry: appCatalogEntryYAML,
+			seed:      func(h *harness) { h.gh.addRepo(owner, name).defaultBranch = "master" },
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Equal(t, "master", h.repo().defaultBranch)
+				require.Empty(t, res.Step(StepSettings).Changes)
+			},
+		},
+		{
+			name: "protection: an app catalog's own default branch is the one protected", step: StepProtection, entry: appCatalogEntryYAML,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.defaultBranch = "master"
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID), adminBypass(), teamBypass(testTeamID))
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Equal(t, `master: ruleset "devctl: default branch"; required: `+ctxGoBuild, res.Step(StepProtection).Summary)
+				require.Equal(t, "master", h.repo().defaultBranch)
+			},
 		},
 		{
 			name: "settings: a fork line stays on its declared default branch", step: StepSettings, entry: forkEntryYAML,
