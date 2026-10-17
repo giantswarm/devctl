@@ -307,6 +307,33 @@ func (c *Client) RequiredStatusContexts(ctx context.Context, owner, repo, branch
 	return contexts, nil
 }
 
+const reviewDecisionQuery = `query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) { reviewDecision }
+  }
+}`
+
+// ReviewDecision returns GitHub's review decision of the pull request:
+// APPROVED, CHANGES_REQUESTED or REVIEW_REQUIRED, empty when the base
+// requires no review. A pull request GitHub does not know is notFoundError.
+func (c *Client) ReviewDecision(ctx context.Context, owner, repo string, number int) (string, error) {
+	var data struct {
+		Repository *struct {
+			PullRequest *struct {
+				ReviewDecision string `json:"reviewDecision"`
+			} `json:"pullRequest"`
+		} `json:"repository"`
+	}
+	variables := map[string]any{"owner": owner, "name": repo, "number": number}
+	if err := c.graphQL(ctx, "reviewDecision", reviewDecisionQuery, variables, &data); err != nil {
+		return "", err
+	}
+	if data.Repository == nil || data.Repository.PullRequest == nil {
+		return "", microerror.Maskf(notFoundError, "pull request %s/%s#%d", owner, repo, number)
+	}
+	return data.Repository.PullRequest.ReviewDecision, nil
+}
+
 // FileExists says whether path is a file at ref.
 func (c *Client) FileExists(ctx context.Context, owner, repo, path, ref string) (bool, error) {
 	file, _, _, err := c.ghClient.Repositories.GetContents(ctx, owner, repo, path, &github.RepositoryContentGetOptions{Ref: ref})

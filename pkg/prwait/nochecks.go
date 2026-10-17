@@ -41,9 +41,10 @@ func noChecksError(sha string, workflows []string) error {
 }
 
 // empty: the head carries no check run, no status, no Actions run and no
-// CircleCI pipeline.
+// CircleCI pipeline, besides pending ones the base does not require: a
+// gatekeeper app reports at once, before the pull_request runs register.
 func (e *evaluation) empty() bool {
-	return len(e.checks) == 0 && len(e.actions) == 0 && e.circleci == nil
+	return len(e.checks) == len(e.notRequired) && len(e.actions) == 0 && e.circleci == nil
 }
 
 // expectPullRequestRuns marks an empty, otherwise green head as waiting for

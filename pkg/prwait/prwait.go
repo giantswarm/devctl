@@ -8,7 +8,10 @@
 // the head revision (the newest run per name, read from CircleCI because a job
 // behind `requires:` has posted nothing yet), no GitHub Actions run of the
 // head still queued, running or awaiting approval, and every required status
-// context reported. Draft, closed, conflicting and behind-a-strict-base end
+// context reported. A pending check of another app, or a pending status of
+// another CI than CircleCI, the base does not require is not waited for, as
+// the merge box does not wait for it: Result.Blocking names it, and a review
+// the base requires that is missing. Draft, closed, conflicting and behind-a-strict-base end
 // the wait before it starts.
 package prwait
 
@@ -157,6 +160,11 @@ type Result struct {
 	// AcceptedRed are the failed checks the caller accepted with
 	// Config.AcceptRed, each with its run's URL.
 	AcceptedRed []AcceptedRed `json:"acceptedRed,omitempty"`
+	// Blocking names what keeps GitHub's merge box from merging a green
+	// head: a check or status the base does not require that is still
+	// pending, which the wait does not wait for, and a review the base
+	// requires that is missing or asks for changes.
+	Blocking []string `json:"blocking,omitempty"`
 	// Warnings are for the envelope: a head that changed under the wait, a
 	// template repository, a CircleCI project that does not exist.
 	Warnings []string `json:"-"`
@@ -165,9 +173,12 @@ type Result struct {
 // head is what the wait learned about the current head and base, refreshed
 // when either changes.
 type head struct {
-	sha      string
-	baseRef  string
-	required []string
+	sha     string
+	baseRef string
+	// mergeableState is GitHub's mergeable state of the pull request at the
+	// last poll.
+	mergeableState string
+	required       []string
 	// decided: whether CircleCI is consulted for this head is known.
 	decided  bool
 	circleci *circleciclient.Client
@@ -241,6 +252,7 @@ func (w *Waiter) Wait(ctx context.Context, owner, repo string, number int) (*Res
 			for _, a := range e.acceptedRed {
 				result.Warnings = append(result.Warnings, fmt.Sprintf("accepted red: %s %s concluded %s (%s), named by --accept-red", a.Source, a.Name, a.Conclusion, a.URL))
 			}
+			w.blocking(ctx, owner, repo, number, h, e, result)
 			w.progress.Printf("poll %d: green", poll)
 			return result, nil
 		case len(e.red) > 0:
@@ -269,6 +281,41 @@ func (w *Waiter) Wait(ctx context.Context, owner, repo string, number int) (*Res
 		}
 	}
 }
+
+// blocking fills Result.Blocking of a green head: the pending checks the
+// base does not require, which the wait did not wait for, and, while GitHub
+// blocks the merge, a missing review or one that requests changes. A review
+// decision that cannot be read is a warning, never the verdict.
+func (w *Waiter) blocking(ctx context.Context, owner, repo string, number int, h *head, e *evaluation, result *Result) {
+	result.Blocking = append([]string(nil), e.notRequired...)
+	if len(e.notRequired) > 0 {
+		result.Warnings = append(result.Warnings, "pending: "+strings.Join(e.notRequired, ", "))
+	}
+	if h.mergeableState != mergeableBlocked {
+		return
+	}
+	decision, err := w.github.ReviewDecision(ctx, owner, repo, number)
+	if err != nil {
+		result.Warnings = append(result.Warnings, fmt.Sprintf("GitHub blocks the merge, and the review decision could not be read: %v", err))
+		return
+	}
+	review := ""
+	switch decision {
+	case "REVIEW_REQUIRED":
+		review = "review: an approving review the base requires is missing"
+	case "CHANGES_REQUESTED":
+		review = "review: a reviewer requested changes"
+	default:
+		return
+	}
+	result.Blocking = append(result.Blocking, review)
+	result.Warnings = append(result.Warnings, "GitHub blocks the merge: "+strings.TrimPrefix(review, "review: "))
+	w.progress.Printf("blocked: %s", review)
+}
+
+// mergeableBlocked is GitHub's mergeable state of a pull request a rule of
+// the base keeps from merging: a required check or a required review.
+const mergeableBlocked = "blocked"
 
 // timedOut is the verdict at the deadline, 2: the result names what was
 // unfinished, a required context still absent among it, and the reason the
@@ -318,6 +365,7 @@ func (w *Waiter) poll(ctx context.Context, owner, repo string, number int, h *he
 	}
 
 	sha, baseRef := pr.GetHead().GetSHA(), pr.GetBase().GetRef()
+	h.mergeableState = pr.GetMergeableState()
 	if h.sha != "" && h.sha != sha {
 		result.Warnings = append(result.Warnings, fmt.Sprintf("the head changed from %s to %s during the wait", h.sha, sha))
 	}
