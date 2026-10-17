@@ -18,6 +18,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `gen makefile`: `lint-chart` runs ct from `gsoci.azurecr.io/giantswarm/helm-chart-testing:v3.15.0` (Helm v3.16)
+  instead of `giantswarm/helm-chart-testing:v3.0.0-rc.1` (Helm v3.1), and gives its container a TTY only when stdin is
+  one, so the target runs headless in CI and automation.
 - `gen makefile`: `APPLICATION` defaults to the one chart under `helm/` when nothing sets it, so `make helm-docs`,
   `make lint-chart` and `make update-chart` run in a chart-only repository; with several charts or none `check-env`
   still stops, naming the charts it found. A value from `Makefile.custom.mk`, the environment, the command line or
