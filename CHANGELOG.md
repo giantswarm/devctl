@@ -7,18 +7,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- The generated Changelog workflow's check step and the Auto-release workflow's changelog cut step pass the job's
+  token to devctl in `GITHUB_TOKEN`, so devctl's version check reads devctl's releases authenticated instead of
+  anonymously under the runner IP's shared rate limit (`403 API rate limit exceeded`). `GH_TOKEN` stays for `gh`.
+
+## [8.142.0] - 2026-10-18
+
 ### Added
 
 - `release rerun` triggers a fresh pipeline for the tag through CircleCI's API where the tag's push cannot be sent
   again (sent again before, or no CircleCI webhook or push delivery left), as for a tag whose pipeline errored before
   any workflow; the document's `trigger` field carries it. Once per tag: a pipeline the API triggered gets no second
   one (exit 5). Rerunning failed workflows from failed is unchanged.
-
-### Fixed
-
-- The generated Changelog workflow's check step and the Auto-release workflow's changelog cut step pass the job's
-  token to devctl in `GITHUB_TOKEN`, so devctl's version check reads devctl's releases authenticated instead of
-  anonymously under the runner IP's shared rate limit (`403 API rate limit exceeded`). `GH_TOKEN` stays for `gh`.
 
 ## [8.142.0-rc.3] - 2026-10-17
 
@@ -5834,7 +5836,8 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.142.0-rc.3...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.142.0...HEAD
+[8.142.0]: https://github.com/giantswarm/devctl/compare/v8.142.0-rc.3...v8.142.0
 [8.142.0-rc.3]: https://github.com/giantswarm/devctl/compare/v8.142.0-rc.2...v8.142.0-rc.3
 [8.142.0-rc.2]: https://github.com/giantswarm/devctl/compare/v8.142.0-rc.1...v8.142.0-rc.2
 [8.142.0-rc.1]: https://github.com/giantswarm/devctl/compare/v8.141.2-rc.2...v8.142.0-rc.1
