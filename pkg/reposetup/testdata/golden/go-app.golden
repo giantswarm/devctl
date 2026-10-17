@@ -309,7 +309,7 @@ For detailed guidelines and examples, always refer to: @https://github.com/giant
 <!--
 DO NOT EDIT. Generated with devctl.
 This file is maintained at:
-https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/llm/internal/file/base_llm_rules.mdc.template
+https://github.com/giantswarm/devctl/tree/main
 Manual changes will be overwritten.
 -->
 
@@ -346,7 +346,7 @@ When creating or modifying Go files, perform the according check and mitigate an
 <!--
 DO NOT EDIT. Generated with devctl.
 This file is maintained at:
-https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/llm/internal/file/go_rules.mdc.template
+https://github.com/giantswarm/devctl/tree/main
 Manual changes will be overwritten.
 -->
 
@@ -537,7 +537,7 @@ jobs:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/auto_release.yaml.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 # yamllint disable rule:truthy
 # Push-based release tagger + release-page publisher.
@@ -611,6 +611,8 @@ jobs:
       pull-requests: read
       # The stable run reads the commit statuses of the candidate it promotes.
       statuses: read
+    outputs:
+      tag: ${{ steps.decide.outputs.tag }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -1135,12 +1137,144 @@ jobs:
               ;;
           esac
 
+  # The entries a merged pull request added under Unreleased in CHANGELOG.md
+  # are part of the release just cut, and the release's CHANGELOG.md still
+  # lists them under Unreleased. `devctl changelog cut` moves every entry a
+  # release carried into that release's section, and this job opens the cut as
+  # a pull request against the released branch and arms auto-merge on it. The
+  # branch head is cut, not the promoted candidate: the cut lands on top of
+  # what merged since. The pull request is `docs`, which git-cliff skips, so
+  # merging it cuts no release of its own. The Changelog workflow fails a pull
+  # request while released entries remain under Unreleased.
+  #
+  # The pull request is opened as taylorbot (TAYLORBOT_GITHUB_ACTION): a pull
+  # request opened with GITHUB_TOKEN runs no workflow, so its required checks
+  # would never report. A fork line carries upstream's CHANGELOG.md, which its
+  # releases do not cut, and has no such job.
+  changelog:
+    name: Cut the CHANGELOG
+    needs: tag
+    if: needs.tag.outputs.tag != ''
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0        # every tag's CHANGELOG.md says what it released
+          fetch-tags: true
+          persist-credentials: false
+
+      - name: Cut released entries out of Unreleased
+        id: cut
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ ! -f CHANGELOG.md ]; then
+            echo "no CHANGELOG.md: nothing to cut"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          gh release download --repo giantswarm/devctl --pattern devctl-linux-amd64 --output "${RUNNER_TEMP}/devctl"
+          chmod +x "${RUNNER_TEMP}/devctl"
+          "${RUNNER_TEMP}/devctl" changelog cut
+          if git diff --quiet -- CHANGELOG.md; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up git identity
+        run: |
+          git config --local user.email "dev@giantswarm.io"
+          git config --local user.name "taylorbot"
+
+      - name: Open the cut as a pull request
+        if: steps.cut.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.TAYLORBOT_GITHUB_ACTION }}
+          TAG: ${{ needs.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::warning title=CHANGELOG not cut::no TAYLORBOT_GITHUB_ACTION secret to open the pull request with; run \`devctl changelog cut\` and commit CHANGELOG.md."
+            exit 0
+          fi
+          # One cut pull request per released branch, rebuilt from the branch
+          # head on every release: it never carries a stale cut.
+          branch="changelog-cut/${GITHUB_REF_NAME}"
+          title="docs(changelog): cut released entries out of Unreleased"
+          git checkout -q -B "$branch"
+          git commit -q -m "$title" -- CHANGELOG.md
+          gh auth setup-git
+          git push --force origin "HEAD:refs/heads/${branch}"
+          pr=$(gh pr list --head "$branch" --base "$GITHUB_REF_NAME" --state open --json url --jq '.[0].url // empty')
+          if [ -z "$pr" ]; then
+            pr=$(gh pr create --base "$GITHUB_REF_NAME" --head "$branch" --title "$title" \
+              --body "Moves the CHANGELOG.md entries ${TAG} and the releases before it carried out of Unreleased into their release sections (\`devctl changelog cut\`). Opened by the Auto-release workflow.")
+          fi
+          echo "cut pull request: ${pr}"
+          if ! gh pr merge "$pr" --auto --squash; then
+            echo "::warning title=Auto-merge not armed::${pr} waits for a merge: auto-merge could not be armed."
+          fi
+
+--- .github/workflows/zz_generated.changelog.yaml
+# DO NOT EDIT. Generated with:
+#
+#    devctl
+#
+#    https://github.com/giantswarm/devctl/tree/main
+#
+# yamllint disable rule:truthy
+# Fails a pull request while CHANGELOG.md lists, under Unreleased, an entry a
+# release already carried: `devctl changelog check` reads every release tag's
+# CHANGELOG.md. The Auto-release workflow opens the cut as a pull request after
+# every release; merging it, or running `devctl changelog cut` and committing
+# CHANGELOG.md, clears the check.
+name: Changelog
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions: {}
+
+jobs:
+  released-entries:
+    name: No released entries under Unreleased
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0        # every tag's CHANGELOG.md says what it released
+          fetch-tags: true
+          persist-credentials: false
+
+      - name: Check CHANGELOG.md
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ ! -f CHANGELOG.md ]; then
+            echo "no CHANGELOG.md: nothing to check"
+            exit 0
+          fi
+          gh release download --repo giantswarm/devctl --pattern devctl-linux-amd64 --output "${RUNNER_TEMP}/devctl"
+          chmod +x "${RUNNER_TEMP}/devctl"
+          "${RUNNER_TEMP}/devctl" changelog check
+
 --- .github/workflows/zz_generated.chart_tests.yaml
 # DO NOT EDIT. Generated with:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/chart_tests.yaml.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 
 name: chart-tests
@@ -1165,7 +1299,7 @@ jobs:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/check_readme_links.yaml.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 
 name: check-readme-links
@@ -1209,7 +1343,7 @@ jobs:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/check_values_schema.yaml.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 
 name: check-values-schema
@@ -1234,7 +1368,7 @@ jobs:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/fix_vulnerabilities.yaml.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 
 name: Fix Go vulnerabilities
@@ -1275,7 +1409,7 @@ jobs:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/gitleaks.yaml.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 name: gitleaks
 
@@ -1296,7 +1430,7 @@ jobs:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/precommit/internal/file/pre-commit-action.yaml.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 name: pre-commit
 
@@ -1365,7 +1499,7 @@ jobs:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/run_ossf_scorecard.yaml.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 
 # This workflow uses actions that are not certified by GitHub. They are provided
@@ -1408,7 +1542,7 @@ jobs:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/semantic_pull_request.yaml.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 name: semantic-pull-request
 
@@ -1464,7 +1598,7 @@ CVE-2019-10743 until=2021-10-17
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/precommit/internal/file/pre-commit-config.yaml.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 minimum_pre_commit_version: '2.17'
 default_install_hook_types: [pre-commit, commit-msg]
@@ -1903,7 +2037,7 @@ By making a contribution to this project, I certify that:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/makefile/internal/file/Makefile.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 
 include Makefile.*.mk
@@ -1930,7 +2064,7 @@ help: ## Display this help.
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/makefile/internal/file/Makefile.gen.app.mk.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 
 ##@ App
@@ -2061,7 +2195,7 @@ test: helm-test
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/makefile/internal/file/Makefile.gen.go.mk.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 
 APPLICATION    := $(shell go list -m | cut -d '/' -f 3)
@@ -2214,7 +2348,7 @@ Please visit <https://www.giantswarm.io/responsible-disclosure> for information 
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/cliff.toml.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 # git-cliff config for the push-based auto-release flow.
 #
@@ -2394,7 +2528,7 @@ go 1.25
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/precommit/internal/file/schema.yaml.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 
 # The generated app-platform file goes first so keys the chart defines itself
@@ -2621,7 +2755,7 @@ registry:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/precommit/internal/file/app-platform-values.yaml.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 
 # Values the Giant Swarm app platform injects into every App deployed to a

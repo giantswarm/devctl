@@ -90,8 +90,10 @@ func Test_Run_RepoName(t *testing.T) {
 
 			if tc.wantRepo == "" {
 				require.NoFileExists(t, "cliff.toml")
+				require.NoFileExists(t, ".github/workflows/zz_generated.changelog.yaml")
 				return
 			}
+			require.FileExists(t, ".github/workflows/zz_generated.changelog.yaml")
 			got, err := os.ReadFile("cliff.toml")
 			require.NoError(t, err)
 			require.Contains(t, string(got), tc.wantRepo)

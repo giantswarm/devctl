@@ -104,6 +104,10 @@ devctl release promote --team team-bumblebee --dry-run
 devctl release promote giantswarm/devctl giantswarm/klaus --progress
 ```
 
+### Cutting the CHANGELOG (`devctl changelog`)
+
+`devctl changelog cut` moves every CHANGELOG.md entry under Unreleased that a release already carried into that release's section: an entry is released by the first release, in version order among the `v` semver tags reachable from HEAD, whose CHANGELOG.md holds it under Unreleased. Every other section keeps its bytes. `devctl changelog check` fails while Unreleased holds such an entry and lists each. The generated Auto-release workflow opens the cut as a pull request after every release, and the generated Changelog workflow runs the check on every pull request. See [docs/changelog.md](docs/changelog.md).
+
 ### Waiting for a rollout (`devctl rollout wait`)
 
 `devctl rollout wait <installation> <owner/repo> (<vX.Y.Z> | --pr <n>)` runs the release wait, then blocks until every Flux HelmRelease and App CR on the installation's management cluster that deploys one of the release's charts runs the version, is ready and has its Deployments, StatefulSets and DaemonSets rolled out. It reads the cluster through the kube context `tsh kube login` writes, as you; `--reconcile` asks Flux to look now. A deployment pinned elsewhere is reported and warned about; a failed install or upgrade of the version is exit 1, a timeout exit 2 naming what is missing. See [docs/rollout-wait.md](docs/rollout-wait.md).

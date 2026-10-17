@@ -104,6 +104,7 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 		inputs = append(inputs,
 			workflowsInput.AutoReleaseLegacyDeletion(),
 			workflowsInput.AutoRelease(),
+			workflowsInput.Changelog(),
 			workflowsInput.CliffToml(),
 			workflowsInput.CreateReleaseDeletion(),
 			workflowsInput.CreateReleasePRDeletion(),
@@ -117,6 +118,7 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 			workflowsInput.ValidateChangelog(),
 			workflowsInput.AutoReleaseLegacyDeletion(),
 			workflowsInput.AutoReleaseDeletion(),
+			workflowsInput.ChangelogDeletion(),
 			workflowsInput.CliffTomlDeletion(),
 		)
 	}
