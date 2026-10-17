@@ -9,6 +9,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `release rerun` triggers a fresh pipeline for the tag through CircleCI's API where the tag's push cannot be sent
+  again (sent again before, or no CircleCI webhook or push delivery left), as for a tag whose pipeline errored before
+  any workflow; the document's `trigger` field carries it. Once per tag: a pipeline the API triggered gets no second
+  one (exit 5). Rerunning failed workflows from failed is unchanged.
+
 - `release promote --version vX.Y.Z-rc.N` promotes that release candidate of the one named repository instead of the
   latest: a candidate that is built while a later one still builds, or the one proven live. The auto-release workflow
   (`gen workflows --release-workflow=auto-release`) takes the same `version` input on `release-type: stable` and

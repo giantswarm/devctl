@@ -58,6 +58,9 @@ type Result struct {
 	// Redelivery is the push webhook delivery sent again for a pipeline
 	// without a workflow; absent when the pipeline has workflows to judge.
 	Redelivery *RedeliveryResult `json:"redelivery,omitempty"`
+	// Trigger is the fresh pipeline triggered through the CircleCI API when
+	// the push could not be sent again; absent otherwise.
+	Trigger *TriggerResult `json:"trigger,omitempty"`
 }
 
 // Pipeline is the CircleCI pipeline whose workflows were considered.
