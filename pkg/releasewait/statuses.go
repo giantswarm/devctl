@@ -144,6 +144,10 @@ func (w *Waiter) statusesState(result *Result, statuses []githubclient.CommitSta
 		switch s.State {
 		case commitStatusSuccess:
 		case commitStatusFailure, commitStatusError:
+			if advisoryJob(name) {
+				w.warnOnce(fmt.Sprintf("the commit status %s of %s is %s; the release does not require it, so the tag's CI is judged without it", s.Context, short(result.SHA), s.State))
+				break
+			}
 			state.failed = true
 			state.green = false
 			state.failedJobs = append(state.failedJobs, name)
@@ -182,6 +186,10 @@ func (w *Waiter) commitStatusesFinal(ctx context.Context, result *Result) (bool,
 		switch s.State {
 		case commitStatusSuccess:
 		case commitStatusFailure, commitStatusError:
+			if strings.HasPrefix(s.Context, circleciclient.StatusContextPrefix) && advisoryJob(statusJobName(s.Context)) {
+				w.warnOnce(fmt.Sprintf("the commit status %s of %s is %s; the release does not require it, so the tag's CI is judged without it", s.Context, short(result.SHA), s.State))
+				continue
+			}
 			failed = append(failed, fmt.Sprintf("%s (%s, %s)", s.Context, s.State, s.URL))
 		default:
 			w.pendingStatuses = append(w.pendingStatuses, s.Context)

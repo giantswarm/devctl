@@ -38,6 +38,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - `DEVCTL_TIME_SCALE` below 1: a timeout keeps a real-time floor of five seconds (or the unscaled timeout, when
   shorter), so a loaded machine still gets the first poll in; sleeps stay scaled. Production, at scale 1, is unchanged.
+
+- `release wait` (and the release wait of `pr merge`): a CircleCI read that gets no answer is cut after three minutes
+  and read again on the next poll, and the registry is probed while CircleCI goes unanswered. A published chart is
+  reported available whatever the CircleCI read does, a timeout whose CI never answered says the release is unknown,
+  not failed, instead of naming the artifacts missing, and one stuck read no longer holds the wait on a stale
+  `pipeline unfinished` verdict until its deadline.
+
+- `release wait`: a tag whose only failed job is `sync-china-registry`, the in-China registry mirror, is released, the
+  failure named as a warning, in the tag pipeline's workflows and in the commit statuses of the tag's commit. Any other
+  failed job still fails the wait.
+
 - `pr wait` and the wait in `pr merge`: when GitHub's REST check-runs or combined-status endpoint fails every try
   while GraphQL answers, the head's checks are read from the head commit's `statusCheckRollup` through GraphQL. A
   warning and the new `checksVia: graphql` name the fallback; with both paths failing the poll stays unanswered.

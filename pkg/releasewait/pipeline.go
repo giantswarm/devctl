@@ -98,24 +98,13 @@ func (w *Waiter) pipelineState(ctx context.Context, result *Result, needJobs boo
 		doc.Workflows = append(doc.Workflows, PipelineWorkflow{Name: run.Name, Status: run.Status})
 		failed := circleciclient.WorkflowFailed(run.Status)
 		unfinished := ""
-		switch {
-		case failed:
-			state.failed = true
-			state.green = false
-			state.failedWorkflows = append(state.failedWorkflows, failedWorkflow{id: run.ID, name: run.Name, url: circleciclient.WorkflowURL(owner, repo, pipeline.Number, run.ID)})
-		case circleciclient.WorkflowSucceeded(run.Status):
-			successes++
-		case run.Status == "not_run":
-		default:
-			state.green = false
-			unfinished = fmt.Sprintf("%s (%s)", run.Name, run.Status)
-		}
 		w.progress.Printf("pipeline %d: workflow %s %s", pipeline.Number, run.Name, run.Status)
 		// The setup workflow's one job continues the pipeline and names no
 		// artifact: it is never read, and a failed setup is named as such.
 		readJobs := (needJobs || failed) && run.Tag != circleciclient.WorkflowTagSetup
+		var failedJobs []string
 		if failed && !readJobs {
-			doc.FailedJobs = append(doc.FailedJobs, run.Name)
+			failedJobs = append(failedJobs, run.Name)
 		}
 		if readJobs {
 			jobs, err := w.circleci.ListWorkflowJobs(ctx, run.ID)
@@ -123,16 +112,21 @@ func (w *Waiter) pipelineState(ctx context.Context, result *Result, needJobs boo
 			case err == nil:
 				for _, job := range jobs {
 					state.jobs[job.Name] = true
-					if failed && circleciclient.JobFailed(job.Status) {
-						doc.FailedJobs = append(doc.FailedJobs, run.Name+"/"+job.Name)
-					}
 				}
-				if failed && !slices.ContainsFunc(jobs, func(j circleciclient.Job) bool { return circleciclient.JobFailed(j.Status) }) {
-					doc.FailedJobs = append(doc.FailedJobs, run.Name)
+				if failed {
+					var verdict string
+					failedJobs, verdict = w.failedWorkflowJobs(run, jobs)
+					switch verdict {
+					case workflowAdvisoryOnly:
+						failed = false
+					case workflowAdvisoryRunning:
+						failed = false
+						unfinished = fmt.Sprintf("%s (%s)", run.Name, run.Status)
+					}
 				}
 			case circleciclient.IsNotFound(err) && failed:
 				// The failed workflow is named without its jobs.
-				doc.FailedJobs = append(doc.FailedJobs, run.Name)
+				failedJobs = append(failedJobs, run.Name)
 			case circleciclient.IsNotFound(err):
 				// The derivation that needs the jobs waits for the next poll.
 				jobsHidden = true
@@ -141,6 +135,22 @@ func (w *Waiter) pipelineState(ctx context.Context, result *Result, needJobs boo
 			default:
 				return nil, fmt.Errorf("reading the jobs of workflow %s: %w", run.Name, err)
 			}
+		}
+		switch {
+		case failed:
+			state.failed = true
+			state.green = false
+			state.failedWorkflows = append(state.failedWorkflows, failedWorkflow{id: run.ID, name: run.Name, url: circleciclient.WorkflowURL(owner, repo, pipeline.Number, run.ID)})
+			doc.FailedJobs = append(doc.FailedJobs, failedJobs...)
+		case unfinished != "":
+			state.green = false
+		case circleciclient.WorkflowSucceeded(run.Status), circleciclient.WorkflowFailed(run.Status):
+			// A workflow failed on advisory jobs alone counts as succeeded.
+			successes++
+		case run.Status == "not_run":
+		default:
+			state.green = false
+			unfinished = fmt.Sprintf("%s (%s)", run.Name, run.Status)
 		}
 		if unfinished != "" {
 			doc.Unfinished = append(doc.Unfinished, unfinished)
@@ -158,6 +168,54 @@ func (w *Waiter) pipelineState(ctx context.Context, result *Result, needJobs boo
 	state.failedJobs = doc.FailedJobs
 	result.Pipeline = doc
 	return state, nil
+}
+
+// The verdicts of a failed workflow's jobs.
+const (
+	// workflowFailed: a job the release requires failed, or did not run.
+	workflowFailed = "failed"
+	// workflowAdvisoryOnly: only advisory jobs failed and every other job
+	// succeeded; the workflow counts as succeeded.
+	workflowAdvisoryOnly = "advisory-only"
+	// workflowAdvisoryRunning: only advisory jobs failed so far and other
+	// jobs still run.
+	workflowAdvisoryRunning = "advisory-running"
+)
+
+// failedWorkflowJobs judges a failed or failing workflow by its jobs: the
+// failed jobs it names, and whether only advisory jobs failed ([advisoryJob]),
+// whose failures are warned about instead.
+func (w *Waiter) failedWorkflowJobs(run circleciclient.Workflow, jobs []circleciclient.Job) ([]string, string) {
+	var failed, advisory []string
+	others := statusCompleted
+	for _, job := range jobs {
+		switch {
+		case circleciclient.JobFailed(job.Status) && advisoryJob(job.Name):
+			advisory = append(advisory, run.Name+"/"+job.Name)
+		case circleciclient.JobFailed(job.Status):
+			failed = append(failed, run.Name+"/"+job.Name)
+		case advisoryJob(job.Name), job.Status == "success":
+		case run.Status != "failing":
+			// A job the workflow's end left blocked or not run; a failing
+			// workflow still runs its other jobs.
+			others = workflowFailed
+		default:
+			others = "running"
+		}
+	}
+	switch {
+	case len(failed) > 0 || others == workflowFailed:
+		return append(failed, advisory...), workflowFailed
+	case len(advisory) == 0:
+		return []string{run.Name}, workflowFailed
+	}
+	for _, name := range advisory {
+		w.warnOnce(fmt.Sprintf("%s failed; the release does not require it, so the tag's CI is judged without it", name))
+	}
+	if others == "running" {
+		return nil, workflowAdvisoryRunning
+	}
+	return nil, workflowAdvisoryOnly
 }
 
 // actionsState reads the Actions runs the tag triggered: the runs on the
