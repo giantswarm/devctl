@@ -194,9 +194,11 @@ type head struct {
 // decided (an [*agentcli.ExitError] with the code of the table), or the
 // timeout passes (exit 2). A required context absent from a head whose
 // checks, runs and workflows have all finished is exit 4 at that poll, before
-// the timeout, and so is a head that waits only for Actions runs awaiting a
-// member's approval; while anything else is still pending, the timeout is 2
-// whatever is absent. The Result is always returned, as far as it was filled; a
+// the timeout, once the pull request's last update is RegistrationGrace old,
+// and so is a head that waits only for Actions runs awaiting a member's
+// approval; while anything else is still pending, the timeout is 2 whatever is
+// absent. A failure the base does not require is red once the required
+// contexts have finished. The Result is always returned, as far as it was filled; a
 // tooling failure is any other error.
 func (w *Waiter) Wait(ctx context.Context, owner, repo string, number int) (*Result, error) {
 	result := &Result{
@@ -255,7 +257,7 @@ func (w *Waiter) Wait(ctx context.Context, owner, repo string, number int) (*Res
 			w.blocking(ctx, owner, repo, number, h, e, result)
 			w.progress.Printf("poll %d: green", poll)
 			return result, nil
-		case len(e.red) > 0:
+		case e.redDecided():
 			w.progress.Printf("poll %d: red: %s", poll, e.redReason())
 			if w.failedLogLines > 0 {
 				result.FailedJobs = w.failedJobs(ctx, owner, repo, h, e)
@@ -330,6 +332,9 @@ func (w *Waiter) timedOut(result *Result, last *evaluation, unanswered string) e
 	if last == nil {
 		return agentcli.NewExitError(agentcli.ExitTimeout, agentcli.VerdictTimeout, "timeout after %s before the first poll completed%s", w.timeout, suffix)
 	}
+	if len(last.red) > 0 {
+		suffix = "; red already, besides the required contexts it waited for: " + last.redReason() + suffix
+	}
 	return agentcli.NewExitError(agentcli.ExitTimeout, agentcli.VerdictTimeout,
 		"timeout after %s; unfinished: %s%s", w.timeout, strings.Join(last.unfinished, ", "), suffix)
 }
@@ -403,9 +408,11 @@ func (w *Waiter) poll(ctx context.Context, owner, repo string, number int, h *he
 	}
 
 	e := evaluate(s)
-	if err := w.expectPullRequestRuns(ctx, owner, repo, h, pr.GetUpdatedAt().Time, e); err != nil {
+	e.quietFor = w.clock.Now().Sub(pr.GetUpdatedAt().Time)
+	if err := w.expectPullRequestRuns(ctx, owner, repo, h, e); err != nil {
 		return nil, err
 	}
+	w.awaitRegistration(e)
 	result.Checks, result.Actions, result.CircleCI, result.AcceptedRed = e.checks, e.actions, e.circleci, e.acceptedRed
 	return e, nil
 }
