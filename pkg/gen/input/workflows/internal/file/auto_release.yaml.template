@@ -741,7 +741,17 @@ jobs:
             echo "changed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          gh release download --repo giantswarm/devctl --pattern devctl-linux-amd64 --output "${RUNNER_TEMP}/devctl"
+          # CircleCI uploads a devctl release's binaries minutes after its
+          # tag: the latest release can have none yet.
+          for attempt in $(seq 1 20); do
+            gh release download --repo giantswarm/devctl --pattern devctl-linux-amd64 --output "${RUNNER_TEMP}/devctl" && break
+            if [ "$attempt" -eq 20 ]; then
+              echo "::error title=No devctl binary::devctl's latest release has no devctl-linux-amd64 after 10 minutes"
+              exit 1
+            fi
+            echo "devctl's latest release has no devctl-linux-amd64 yet (CircleCI uploads it after the tag): retrying in 30s"
+            sleep 30
+          done
           chmod +x "${RUNNER_TEMP}/devctl"
           "${RUNNER_TEMP}/devctl" changelog cut
           if git diff --quiet -- CHANGELOG.md; then

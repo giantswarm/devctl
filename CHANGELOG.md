@@ -12,6 +12,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - The generated Changelog workflow's check step and the Auto-release workflow's changelog cut step pass the job's
   token to devctl in `GITHUB_TOKEN`, so devctl's version check reads devctl's releases authenticated instead of
   anonymously under the runner IP's shared rate limit (`403 API rate limit exceeded`). `GH_TOKEN` stays for `gh`.
+- The same two steps retry downloading devctl for up to 10 minutes while devctl's latest release has no
+  `devctl-linux-amd64` yet (CircleCI uploads it minutes after the tag), instead of failing at once with `no assets to
+  download`, which left a release's changelog cut pull request unopened. They fail saying why when it never appears.
 
 ## [8.142.0] - 2026-10-18
 

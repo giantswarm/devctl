@@ -1,6 +1,7 @@
 package workflows
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -166,5 +167,61 @@ func Test_ChangelogWorkflow(t *testing.T) {
 	assertDevctlAuthenticated(t, last)
 	if del := newWorkflows(t, gen.FlavourApp).ChangelogDeletion(); !del.Delete || del.Path != in.Path {
 		t.Fatalf("ChangelogDeletion = %+v", del)
+	}
+}
+
+// Test_ChangelogStepsWaitForDevctlBinary runs the download of both steps that
+// run devctl against a gh that finds no assets for its first failures, as for
+// a devctl release whose binaries CircleCI has not uploaded yet: the step
+// retries, and fails saying why once the assets never come.
+func Test_ChangelogStepsWaitForDevctlBinary(t *testing.T) {
+	steps := map[string]autoReleaseStep{
+		"cut": jobStep(t, workflowJobs(t, renderInput(t, newWorkflows(t, gen.FlavourApp).AutoRelease()))["changelog"], "cut"),
+	}
+	check := workflowJobs(t, renderInput(t, newWorkflows(t, gen.FlavourApp).Changelog()))["released-entries"]
+	steps["check"] = check.Steps[len(check.Steps)-1]
+
+	for name, step := range steps {
+		for _, tc := range []struct {
+			failures int
+			wantErr  bool
+		}{
+			{failures: 0},
+			{failures: 3},
+			{failures: 20, wantErr: true},
+		} {
+			t.Run(fmt.Sprintf("%s/%d failures", name, tc.failures), func(t *testing.T) {
+				bin := t.TempDir()
+				count := filepath.Join(bin, "count")
+				// gh fails $failures times, then "downloads" a devctl that
+				// succeeds; sleep only counts.
+				gh := fmt.Sprintf("#!/bin/sh\nn=$(cat %[1]q 2>/dev/null || echo 0); echo $((n+1)) > %[1]q\n"+
+					"if [ \"$n\" -lt %[2]d ]; then echo 'no assets to download' >&2; exit 1; fi\n"+
+					"while [ $# -gt 0 ]; do [ \"$1\" = --output ] && out=$2; shift; done\nprintf '#!/bin/sh\\n' > \"$out\"\n", count, tc.failures)
+				for file, content := range map[string]string{"gh": gh, "sleep": "#!/bin/sh\n"} {
+					if err := os.WriteFile(filepath.Join(bin, file), []byte(content), 0o700); err != nil { // #nosec G306 -- test stand-in
+						t.Fatal(err)
+					}
+				}
+				dir := repo(t)
+				if err := os.WriteFile(filepath.Join(dir, "CHANGELOG.md"), []byte("# Changelog\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+
+				_, out, err := runStep(t, step.Run, dir, "PATH="+bin+":"+os.Getenv("PATH"), "RUNNER_TEMP="+t.TempDir())
+				if tc.wantErr {
+					if err == nil || !strings.Contains(out, "has no devctl-linux-amd64 after 10 minutes") {
+						t.Fatalf("err = %v, want the step to fail saying why:\n%s", err, out)
+					}
+					return
+				}
+				if err != nil {
+					t.Fatalf("err = %v:\n%s", err, out)
+				}
+				if got := strings.Count(out, "retrying in 30s"); got != tc.failures {
+					t.Fatalf("%d retries, want %d:\n%s", got, tc.failures, out)
+				}
+			})
+		}
 	}
 }
