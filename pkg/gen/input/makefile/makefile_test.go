@@ -366,7 +366,7 @@ func TestApplicationDefaultsToSingleChart(t *testing.T) {
 			}
 
 			calls := filepath.Join(dir, "helm-docs-calls")
-			cmd := exec.Command("make", append([]string{"helm-docs"}, tc.args...)...)
+			cmd := exec.Command("make", append([]string{"helm-docs"}, tc.args...)...) //nolint:gosec // the arguments are the test's own
 			cmd.Dir = dir
 			env := []string{}
 			for _, e := range os.Environ() {
