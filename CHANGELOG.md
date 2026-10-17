@@ -9,6 +9,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `release promote --version vX.Y.Z-rc.N` promotes that release candidate of the one named repository instead of the
+  latest: a candidate that is built while a later one still builds, or the one proven live. The auto-release workflow
+  (`gen workflows --release-workflow=auto-release`) takes the same `version` input on `release-type: stable` and
+  refuses a tag that is not a candidate since the last stable release. Without `--version`, a `not_built` refusal names
+  the newest built candidate in its message and in `newestBuilt`.
+
 - `changelog cut` moves every CHANGELOG.md entry under Unreleased that a release already carried into that release's
   section (the first release, among the `v` semver tags reachable from HEAD, whose CHANGELOG.md holds it under
   Unreleased), creating the section and its link reference where they are missing; `changelog check` fails while such

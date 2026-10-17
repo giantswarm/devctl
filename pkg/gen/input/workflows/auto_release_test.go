@@ -553,6 +553,39 @@ func Test_AutoReleasePromote(t *testing.T) {
 	}
 }
 
+// Test_AutoReleasePromoteVersion pins `version`, what `devctl release promote
+// --version` passes: a named candidate since the last stable release is
+// promoted on its own commit while a later one exists; any other tag is
+// refused with the candidates there are.
+func Test_AutoReleasePromoteVersion(t *testing.T) {
+	history := []string{"v1.2.2", "feat: add x", "v1.3.0-rc.14", "fix: y", "v1.3.0-rc.15"}
+
+	t.Run("an older candidate is promoted on its own commit", func(t *testing.T) {
+		dir := repo(t, history...)
+		got, log, err := runStep(t, promoteScript(t), dir, builtCandidate(t), "GH_REPO=giantswarm/example", "PROMOTE_VERSION=v1.3.0-rc.14")
+		if err != nil || got["rc"] != "v1.3.0-rc.14" {
+			t.Fatalf("rc = %q, err = %v, want v1.3.0-rc.14:\n%s", got["rc"], err, log)
+		}
+		rcCommit := strings.TrimSpace(mustGit(t, dir, "rev-parse", "v1.3.0-rc.14^{commit}"))
+		if head := strings.TrimSpace(mustGit(t, dir, "rev-parse", "HEAD")); head != rcCommit {
+			t.Errorf("HEAD = %q, want the commit of v1.3.0-rc.14 %q", head, rcCommit)
+		}
+	})
+
+	for _, version := range []string{"v1.2.2", "v1.3.0-rc.13", "v1.3.0-rc.1"} {
+		t.Run(version+" is refused", func(t *testing.T) {
+			_, log, err := runStep(t, promoteScript(t), repo(t, history...), builtCandidate(t), "GH_REPO=giantswarm/example", "PROMOTE_VERSION="+version)
+			if err == nil {
+				t.Errorf("promote step succeeded, want a refusal:\n%s", log)
+			}
+			want := "::error title=Not a release candidate to promote::" + version + " is not a release candidate since v1.2.2 on main; the candidates are v1.3.0-rc.14 v1.3.0-rc.15."
+			if !strings.Contains(log, want) {
+				t.Errorf("no %q annotation:\n%s", want, log)
+			}
+		})
+	}
+}
+
 // Test_AutoReleasePromoteRetriesTheStatusRead pins that a transient empty or
 // truncated answer of the commit status read is retried with backoff rather
 // than refusing the promotion.

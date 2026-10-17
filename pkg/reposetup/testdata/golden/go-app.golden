@@ -555,9 +555,9 @@ jobs:
 #      the webhook got lost (repos with a .circleci/config.yml only)
 #
 # A stable vX.Y.Z is cut only by running this workflow by hand with
-# `release-type: stable`, which promotes the latest release candidate: the
-# stable tag lands on that candidate's commit, so what ships is what was
-# tested.
+# `release-type: stable`, which promotes the latest release candidate, or
+# the one `version` names: the stable tag lands on that candidate's commit,
+# so what ships is what was tested.
 #
 # The tag push then triggers downstream publishing (for chart/service/CLI
 # repos, this is the CircleCI architect pipeline firing on the same /^v.*/
@@ -582,7 +582,8 @@ on:
       - 'release-v[0-9]+.[0-9]+.x'
   # `auto` applies the same rule as a push, which is what a re-run wants.
   # `stable` promotes the latest release candidate since the last stable
-  # release, and fails when there is none.
+  # release, and fails when there is none; `version` names an older one of
+  # those candidates to promote instead.
   workflow_dispatch:
     inputs:
       release-type:
@@ -590,6 +591,11 @@ on:
         type: choice
         options: [auto, stable]
         default: auto
+      version:
+        description: 'With stable: the release candidate to promote, vX.Y.Z-rc.N; empty promotes the latest'
+        type: string
+        required: false
+        default: ''
 
 permissions: {}
 
@@ -644,6 +650,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
+          PROMOTE_VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
           # The same baseline as the decide step below.
@@ -653,11 +660,22 @@ jobs:
           # contains. `sort -V` orders rc.10 after rc.9 and a moved target
           # (v2.0.0-rc.1 after v1.3.0-rc.2) after the one it replaced.
           # `|| true`: grep exits 1 when there is no candidate at all.
-          rc=$(git tag --list --merged HEAD ${last:+--no-merged "$last"} 'v*.*.*-rc.*' \
-            | { grep -E -- '-rc\.[0-9]+$' || true; } | sort -V | tail -1)
-          if [ -z "$rc" ]; then
+          candidates=$(git tag --list --merged HEAD ${last:+--no-merged "$last"} 'v*.*.*-rc.*' \
+            | { grep -E -- '-rc\.[0-9]+$' || true; } | sort -V)
+          if [ -z "$candidates" ]; then
             echo "::error title=No release candidate to promote::no release candidate since ${last:-inception} on ${GITHUB_REF_NAME}. A releasable push cuts one; promote it once it is good."
             exit 1
+          fi
+          rc=$(tail -n 1 <<<"$candidates")
+          # A named candidate (`devctl release promote --version`) is promoted
+          # instead of the latest, when it is one of the same candidates: one
+          # that is built while a later one still builds, or the one proven.
+          if [ -n "${PROMOTE_VERSION:-}" ]; then
+            if ! grep -qxF -- "$PROMOTE_VERSION" <<<"$candidates"; then
+              echo "::error title=Not a release candidate to promote::${PROMOTE_VERSION} is not a release candidate since ${last:-inception} on ${GITHUB_REF_NAME}; the candidates are $(paste -sd ' ' <<<"$candidates")."
+              exit 1
+            fi
+            rc=$PROMOTE_VERSION
           fi
 
           # The tag alone does not say the candidate was built. Its GitHub

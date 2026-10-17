@@ -30,10 +30,14 @@ type fakeRepository struct {
 	noWorkflow bool
 	// outdated serves the workflow without the promotion step.
 	outdated bool
+	// noVersionInput serves a promoting workflow without the version input.
+	noVersionInput bool
 	// unreachable are the tags not on the default branch.
 	unreachable []string
 	releases    []githubclient.Release
 	status      githubclient.CombinedStatus
+	// statuses override status per ref.
+	statuses    map[string]githubclient.CombinedStatus
 	dispatchErr error
 }
 
@@ -62,8 +66,9 @@ func (f *fakeGitHub) DefaultBranch(_ context.Context, owner, repo string) (strin
 }
 
 const (
-	newWorkflow = "jobs:\n  release:\n    steps:\n      - name: Resolve the candidate to promote\n        if: inputs.release-type == 'stable'\n"
-	oldWorkflow = "jobs:\n  release:\n    steps:\n      - name: Create release\n"
+	newWorkflow       = "jobs:\n  release:\n    steps:\n      - name: Resolve the candidate to promote\n        if: inputs.release-type == 'stable'\n        env:\n          PROMOTE_VERSION: ${{ inputs.version }}\n"
+	noVersionWorkflow = "jobs:\n  release:\n    steps:\n      - name: Resolve the candidate to promote\n        if: inputs.release-type == 'stable'\n"
+	oldWorkflow       = "jobs:\n  release:\n    steps:\n      - name: Create release\n"
 )
 
 func (f *fakeGitHub) ReadFile(_ context.Context, owner, repo, path, ref string) ([]byte, bool, error) {
@@ -73,6 +78,9 @@ func (f *fakeGitHub) ReadFile(_ context.Context, owner, repo, path, ref string) 
 	}
 	if r.outdated {
 		return []byte(oldWorkflow), true, nil
+	}
+	if r.noVersionInput {
+		return []byte(noVersionWorkflow), true, nil
 	}
 	return []byte(newWorkflow), true, nil
 }
@@ -91,6 +99,9 @@ func (f *fakeGitHub) ListReleases(_ context.Context, owner, repo string) ([]gith
 func (f *fakeGitHub) GetCombinedStatus(_ context.Context, owner, repo, ref string) (githubclient.CombinedStatus, error) {
 	f.statusRefs = append(f.statusRefs, owner+"/"+repo+"@"+ref)
 	r, err := f.repository(owner, repo)
+	if status, ok := r.statuses[ref]; ok {
+		return status, err
+	}
 	return r.status, err
 }
 
@@ -211,7 +222,7 @@ func TestPromote(t *testing.T) {
 			repository:  fakeRepository{branch: "main", releases: releases, status: githubclient.CombinedStatus{State: "failure", TotalCount: 3}},
 			state:       StateNotBuilt,
 			statusState: "failure",
-			message:     "the commit statuses of v1.3.0-rc.2 are failure: promote it once its pipelines passed",
+			message:     "the commit statuses of v1.3.0-rc.2 are failure: promote it once its pipelines passed; no other release candidate since v1.2.0 is built",
 		},
 		{
 			name: "a failed sync-china-registry alone is built, with a warning",
@@ -234,7 +245,7 @@ func TestPromote(t *testing.T) {
 			}}},
 			state:       StateNotBuilt,
 			statusState: "failure",
-			message:     "the commit statuses of v1.3.0-rc.2 are failure: promote it once its pipelines passed",
+			message:     "the commit statuses of v1.3.0-rc.2 are failure: promote it once its pipelines passed; no other release candidate since v1.2.0 is built",
 		},
 		{
 			name: "a failed sync-china-registry beside a running context is not built",
@@ -244,7 +255,7 @@ func TestPromote(t *testing.T) {
 			}}},
 			state:       StateNotBuilt,
 			statusState: "failure",
-			message:     "the commit statuses of v1.3.0-rc.2 are pending: promote it once its pipelines passed",
+			message:     "the commit statuses of v1.3.0-rc.2 are pending: promote it once its pipelines passed; no other release candidate since v1.2.0 is built",
 		},
 		{
 			name: "a sync-china-registry context outside CircleCI still refuses",
@@ -482,4 +493,164 @@ func newGitHubClient(t *testing.T, baseURL string) *github.Client {
 	client, err := github.NewClient(github.WithURLs(new(baseURL+"/"), nil))
 	require.NoError(t, err)
 	return client
+}
+
+// A merge stream: rc.15 is building, rc.14 is built.
+var (
+	streamReleases = []githubclient.Release{candidate("v1.2.3-rc.15"), candidate("v1.2.3-rc.14"), candidate("v1.2.3-rc.13"), stable("v1.2.2")}
+	builtStatus    = githubclient.CombinedStatus{State: "success", TotalCount: 2}
+	buildingStatus = githubclient.CombinedStatus{State: "pending", TotalCount: 2}
+	streamStatuses = map[string]githubclient.CombinedStatus{"v1.2.3-rc.15": buildingStatus, "v1.2.3-rc.14": builtStatus, "v1.2.3-rc.13": builtStatus}
+)
+
+func TestPromoteVersion(t *testing.T) {
+	cases := []struct {
+		name       string
+		repository fakeRepository
+		version    string
+		state      string
+		candidate  string
+		message    string
+	}{
+		{
+			name:       "a built candidate is promoted while a later one builds",
+			repository: fakeRepository{branch: "main", releases: streamReleases, statuses: streamStatuses},
+			version:    "v1.2.3-rc.14",
+			state:      StateDispatched,
+			candidate:  "v1.2.3-rc.14",
+			message:    "dispatched zz_generated.auto_release.yaml on main to promote v1.2.3-rc.14",
+		},
+		{
+			name:       "the named candidate still building is not built and names the newest built one",
+			repository: fakeRepository{branch: "main", releases: streamReleases, statuses: streamStatuses},
+			version:    "v1.2.3-rc.15",
+			state:      StateNotBuilt,
+			candidate:  "v1.2.3-rc.15",
+			message:    "the commit statuses of v1.2.3-rc.15 are pending: promote it once its pipelines passed, or promote the newest built candidate with --version v1.2.3-rc.14",
+		},
+		{
+			name:       "a candidate without a published release",
+			repository: fakeRepository{branch: "main", releases: streamReleases, statuses: streamStatuses},
+			version:    "v1.2.3-rc.16",
+			state:      StateFailed,
+			message:    "v1.2.3-rc.16 is not a release candidate to promote on main: no published GitHub release v1.2.3-rc.16",
+		},
+		{
+			name:       "a candidate the last stable release contains",
+			repository: fakeRepository{branch: "main", releases: append([]githubclient.Release{candidate("v1.2.2-rc.1")}, streamReleases...), statuses: streamStatuses},
+			version:    "v1.2.2-rc.1",
+			state:      StateFailed,
+			message:    "v1.2.2-rc.1 is not a release candidate to promote on main: not newer than the last stable release v1.2.2",
+		},
+		{
+			name:       "a candidate of another branch",
+			repository: fakeRepository{branch: "main", releases: streamReleases, statuses: streamStatuses, unreachable: []string{"v1.2.3-rc.14"}},
+			version:    "v1.2.3-rc.14",
+			state:      StateFailed,
+			message:    "v1.2.3-rc.14 is not a release candidate to promote on main: not on the default branch",
+		},
+		{
+			name:       "a candidate that is a full release",
+			repository: fakeRepository{branch: "main", releases: []githubclient.Release{{Tag: "v1.2.3-rc.14", Published: true}, stable("v1.2.2")}, status: builtStatus},
+			version:    "v1.2.3-rc.14",
+			state:      StateFailed,
+			candidate:  "v1.2.3-rc.14",
+			message:    "v1.2.3-rc.14 is a full GitHub release, not a pre-release: the workflow refuses to promote it",
+		},
+		{
+			name:       "a workflow without the version input",
+			repository: fakeRepository{branch: "main", releases: streamReleases, statuses: streamStatuses, noVersionInput: true},
+			version:    "v1.2.3-rc.14",
+			state:      StateOutdatedWorkflow,
+			message:    ".github/workflows/zz_generated.auto_release.yaml on main promotes only the latest release candidate, not one named with --version: align the repository to the current devctl (giantswarm/devctl#2550)",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			gh := &fakeGitHub{repositories: map[string]fakeRepository{"giantswarm/kserve": tc.repository}}
+			result := NewResult("")
+			err := Promote(t.Context(), Config{GitHub: gh, Version: tc.version}, []string{"giantswarm/kserve"}, &result)
+
+			got := result.Repositories[0]
+			require.Equal(t, tc.state, got.State, got.Message)
+			require.Equal(t, tc.candidate, got.Candidate)
+			require.Equal(t, tc.message, got.Message)
+			if tc.state != StateDispatched {
+				require.Equal(t, agentcli.ExitRed, agentcli.Exit(err))
+				require.Empty(t, gh.dispatches)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, []dispatch{{repository: "giantswarm/kserve", file: Workflow, ref: "main", inputs: map[string]any{"release-type": "stable", "version": tc.version}}}, gh.dispatches)
+		})
+	}
+}
+
+// Without --version, a latest candidate still building is refused, and the
+// refusal names the newest built one, asking no status beyond it.
+func TestPromoteNotBuiltNamesTheNewestBuiltCandidate(t *testing.T) {
+	gh := &fakeGitHub{repositories: map[string]fakeRepository{
+		"giantswarm/kserve": {branch: "main", releases: streamReleases, statuses: streamStatuses},
+	}}
+	result := NewResult("")
+	err := Promote(t.Context(), Config{GitHub: gh}, []string{"giantswarm/kserve"}, &result)
+
+	require.Equal(t, agentcli.ExitRed, agentcli.Exit(err))
+	require.Equal(t, Repository{
+		Repository:  "giantswarm/kserve",
+		Stable:      "v1.2.2",
+		Candidate:   "v1.2.3-rc.15",
+		NewestBuilt: "v1.2.3-rc.14",
+		StatusState: "pending",
+		State:       StateNotBuilt,
+		Message:     "the commit statuses of v1.2.3-rc.15 are pending: promote it once its pipelines passed, or promote the newest built candidate with --version v1.2.3-rc.14",
+	}, result.Repositories[0])
+	require.Equal(t, []string{"giantswarm/kserve@v1.2.3-rc.15", "giantswarm/kserve@v1.2.3-rc.14"}, gh.statusRefs)
+	require.Empty(t, gh.dispatches)
+}
+
+func TestNewestBuilt(t *testing.T) {
+	built := func(tags ...string) func(string) (bool, error) {
+		return func(tag string) (bool, error) { return slices.Contains(tags, tag), nil }
+	}
+	cases := []struct {
+		name        string
+		releases    []githubclient.Release
+		unreachable []string
+		built       func(string) (bool, error)
+		except      string
+		want        string
+	}{
+		{
+			name:     "the highest built candidate below the refused one",
+			releases: streamReleases,
+			built:    built("v1.2.3-rc.13", "v1.2.3-rc.14"),
+			except:   "v1.2.3-rc.15",
+			want:     "v1.2.3-rc.14",
+		},
+		{
+			name:     "a built candidate above a named one",
+			releases: streamReleases,
+			built:    built("v1.2.3-rc.15"),
+			except:   "v1.2.3-rc.14",
+			want:     "v1.2.3-rc.15",
+		},
+		{
+			name:        "candidates of another branch, full releases and those the stable release contains are skipped",
+			releases:    append([]githubclient.Release{{Tag: "v1.2.3-rc.16", Published: true}, candidate("v1.2.2-rc.1")}, streamReleases...),
+			unreachable: []string{"v1.2.3-rc.14"},
+			built:       built("v1.2.3-rc.16", "v1.2.3-rc.14", "v1.2.2-rc.1"),
+			except:      "v1.2.3-rc.15",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := NewestBuilt(tc.releases, func(tag string) (bool, error) { return !slices.Contains(tc.unreachable, tag), nil }, tc.built, tc.except)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, got)
+		})
+	}
+
+	_, err := NewestBuilt(streamReleases, func(string) (bool, error) { return true, nil }, func(string) (bool, error) { return false, errors.New("boom") }, "v1.2.3-rc.15")
+	require.EqualError(t, err, "v1.2.3-rc.14: boom")
 }
