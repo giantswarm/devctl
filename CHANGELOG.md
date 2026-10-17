@@ -9,6 +9,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `repo reconcile --release-app-id`: the giantswarm-release GitHub App, which the generated release workflows
+  authenticate as, bypasses the ruleset `devctl: review` for pull requests beside the align-files and Renovate Apps.
+  The version bump pull request the release workflow opens and arms auto-merge on lands once the required checks of
+  `devctl: default branch`, which the App does not bypass, are green. Without it, a repository on the generated release
+  workflows that dropped its required review by hand to let that pull request merge was repaired back every night.
+  Unset, the review ruleset has no release App; an entry with `agentMerge: false` keeps the review without bypass.
+
 - `repo`: a team-file entry declares `renovate: false` to switch Renovate off for its repository. align-files runs no
   `devctl gen renovate` for it, and the reconciler's `renovate` step is ok with no Renovate configuration or one that
   disables Renovate; a configuration that keeps Renovate on is the new finding `renovate-declared-off`, never deleted

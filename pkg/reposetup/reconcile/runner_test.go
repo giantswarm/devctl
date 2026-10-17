@@ -181,6 +181,8 @@ const (
 	testAppID int64 = 424242
 	// testAlignAppID is the align-files App the review ruleset lets past the review.
 	testAlignAppID int64 = 434343
+	// testReleaseAppID is the release App the review ruleset lets past the review.
+	testReleaseAppID int64 = 454545
 )
 
 // harness wires a Runner to the two fakes with a validated entry.
@@ -1228,6 +1230,42 @@ func TestSteps(t *testing.T) {
 				main := h.repo().ruleset(RulesetName)
 				require.NotContains(t, actorKeys(main.BypassActors), actorKey(appBypass(renovateAppID)), "the Renovate App waits for the checks")
 				require.Equal(t, []string{ctxGoBuild}, checkContexts(main))
+			},
+		},
+		{
+			name: "protection: the release App id adds the release App to a review ruleset without it, the checks stay binding", step: StepProtection,
+			seed: func(h *harness) {
+				h.runner.AlignFilesAppID = testAlignAppID
+				h.runner.ReleaseAppID = testReleaseAppID
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID), adminBypass(), teamBypass(testTeamID)).Rules.PullRequest = nil
+				review := r.addRuleset(ReviewRulesetName, nil, appBypass(testAppID), adminBypass(), teamBypass(testTeamID), appBypass(testAlignAppID), appBypass(renovateAppID))
+				review.Rules.Deletion, review.Rules.NonFastForward = nil, nil
+			},
+			wantCheck: VerdictDrift, wantChange: "bypass actors: App 424242 on pull requests, repository admins on pull requests, team team-bumblebee on pull requests, App 434343 on pull requests, App 2740 on pull requests, App 454545 on pull requests",
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Equal(t, []string{"bypass actors: App 424242 on pull requests, repository admins on pull requests, team team-bumblebee on pull requests, App 434343 on pull requests, App 2740 on pull requests, App 454545 on pull requests"}, res.Step(StepProtection).Changes, "one change: the review ruleset's bypass list")
+				require.Contains(t, actorKeys(h.repo().ruleset(ReviewRulesetName).BypassActors), actorKey(appBypass(testReleaseAppID)))
+				main := h.repo().ruleset(RulesetName)
+				require.NotContains(t, actorKeys(main.BypassActors), actorKey(appBypass(testReleaseAppID)), "the release App waits for the checks")
+				require.Equal(t, []string{ctxGoBuild}, checkContexts(main))
+			},
+		},
+		{
+			name: "protection: a review ruleset with the release App is clean on a run with its id", step: StepProtection,
+			seed: func(h *harness) {
+				h.runner.AlignFilesAppID = testAlignAppID
+				h.runner.ReleaseAppID = testReleaseAppID
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID), adminBypass(), teamBypass(testTeamID)).Rules.PullRequest = nil
+				review := r.addRuleset(ReviewRulesetName, nil, appBypass(testAppID), adminBypass(), teamBypass(testTeamID), appBypass(testAlignAppID), appBypass(renovateAppID), appBypass(testReleaseAppID))
+				review.Rules.Deletion, review.Rules.NonFastForward = nil, nil
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Empty(t, res.Step(StepProtection).Changes, "the next night repairs nothing")
 			},
 		},
 		{

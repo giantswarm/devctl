@@ -383,7 +383,10 @@ bypass: its pull request still waits for green checks. The review ruleset is wri
 `devctl: default branch` drops the rule, and deleted after it takes the rule back on a run without the id,
 so the review never lapses. The Renovate GitHub App (id 2740) bypasses `devctl: review` for pull requests too,
 so the automerge a repository configures in its own Renovate configuration lands a green dependency pull
-request. An entry with `agentMerge: false` keeps the review in `devctl: default branch`
+request. `--release-app-id`, the giantswarm-release GitHub App's numeric id, adds that App beside them: the
+generated release workflows authenticate as it, and the version bump pull request they open after a release arms
+auto-merge, so it lands once the required checks are green. Without it a repository on the generated release
+workflows needs a review for that pull request. An entry with `agentMerge: false` keeps the review in `devctl: default branch`
 without bypass. Only a run with `--devctl-app-id` writes it; one without reports the difference as
 `ruleset-pending`, and takes a review ruleset it finds for the writing run's layout, not a drift.
 
