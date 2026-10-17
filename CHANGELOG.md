@@ -36,6 +36,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `DEVCTL_TIME_SCALE` below 1: a timeout keeps a real-time floor of five seconds (or the unscaled timeout, when
+  shorter), so a loaded machine still gets the first poll in; sleeps stay scaled. Production, at scale 1, is unchanged.
+
 - `release wait` (and the release wait of `pr merge`): a CircleCI read that gets no answer is cut after three minutes
   and read again on the next poll, and the registry is probed while CircleCI goes unanswered. A published chart is
   reported available whatever the CircleCI read does, a timeout whose CI never answered says the release is unknown,

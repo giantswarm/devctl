@@ -173,7 +173,7 @@ func (w *Waiter) Wait(ctx context.Context, result *Result) error {
 			w.warn(m)
 		}
 	}()
-	deadline := w.clock.Now().Add(w.clock.Scaled(w.timeout))
+	deadline := w.clock.Now().Add(w.clock.ScaledTimeout(w.timeout))
 	interval := IntervalFloor
 	reconciled := false
 	for {
