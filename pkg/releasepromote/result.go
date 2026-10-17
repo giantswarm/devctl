@@ -45,6 +45,10 @@ type Repository struct {
 	State string `json:"state"`
 	// Message says what was done or why not.
 	Message string `json:"message"`
+	// Warnings name what the promotion went on despite: a failed commit
+	// status of an advisory job (circleciclient.AdvisoryJobs), which the
+	// release does not require. Empty when there is none.
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 // OK says whether the repository is dispatched, would be, or has nothing to

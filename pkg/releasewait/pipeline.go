@@ -183,18 +183,18 @@ const (
 )
 
 // failedWorkflowJobs judges a failed or failing workflow by its jobs: the
-// failed jobs it names, and whether only advisory jobs failed ([advisoryJob]),
+// failed jobs it names, and whether only advisory jobs failed ([circleciclient.AdvisoryJob]),
 // whose failures are warned about instead.
 func (w *Waiter) failedWorkflowJobs(run circleciclient.Workflow, jobs []circleciclient.Job) ([]string, string) {
 	var failed, advisory []string
 	others := statusCompleted
 	for _, job := range jobs {
 		switch {
-		case circleciclient.JobFailed(job.Status) && advisoryJob(job.Name):
+		case circleciclient.JobFailed(job.Status) && circleciclient.AdvisoryJob(job.Name):
 			advisory = append(advisory, run.Name+"/"+job.Name)
 		case circleciclient.JobFailed(job.Status):
 			failed = append(failed, run.Name+"/"+job.Name)
-		case advisoryJob(job.Name), job.Status == "success":
+		case circleciclient.AdvisoryJob(job.Name), job.Status == "success":
 		case run.Status != "failing":
 			// A job the workflow's end left blocked or not run; a failing
 			// workflow still runs its other jobs.

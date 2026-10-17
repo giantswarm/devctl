@@ -53,6 +53,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - `release wait`: a tag whose only failed job is `sync-china-registry`, the in-China registry mirror, is released, the
   failure named as a warning, in the tag pipeline's workflows and in the commit statuses of the tag's commit. Any other
   failed job still fails the wait.
+- `release promote` and the promote step of the generated auto-release workflow: a candidate whose only failed commit
+  status is `ci/circleci: sync-china-registry` is promoted, the failure named as a warning (`warnings[]`, a workflow
+  warning annotation), the rule `release wait` applies. Any other failed or running context still refuses.
 
 - `pr wait` and the wait in `pr merge`: when GitHub's REST check-runs or combined-status endpoint fails every try
   while GraphQL answers, the head's checks are read from the head commit's `statusCheckRollup` through GraphQL. A

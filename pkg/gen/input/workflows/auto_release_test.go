@@ -403,9 +403,10 @@ func Test_AutoReleaseDecide(t *testing.T) {
 
 // ghStub puts a gh on PATH that answers the promote step's two questions:
 // `gh release view` prints release ("true" or "false" for isPrerelease; empty
-// fails as for a missing release), `gh api .../status` prints status ("<state>
-// <total_count>"; empty fails as for a token without statuses: read). It
-// returns the PATH entry for runStep.
+// fails as for a missing release), `gh api .../status` prints status, what
+// the step's --jq makes of the combined status: the total_count, then one
+// "<state> <context>" line per context ([statuses]; empty fails as for a
+// token without statuses: read). It returns the PATH entry for runStep.
 func ghStub(t *testing.T, release, status string) string {
 	t.Helper()
 
@@ -442,12 +443,21 @@ func flakyGhStub(t *testing.T, release, status string, failures int) string {
 	return dir
 }
 
+// statuses is the promote step's reading of a combined status whose contexts
+// are lines, "<state> <context>" each.
+func statuses(lines ...string) string {
+	return strings.Join(append([]string{strconv.Itoa(len(lines))}, lines...), "\n")
+}
+
+// built is the reading of a candidate whose pipelines passed.
+var built = statuses("success ci/circleci: go-build", "success ci/circleci: push-to-registries")
+
 // builtCandidate is the gh stub of a candidate whose pre-release exists and
 // whose pipelines passed.
 func builtCandidate(t *testing.T) string {
 	t.Helper()
 
-	return ghStub(t, "true", "success 2")
+	return ghStub(t, "true", built)
 }
 
 // promoteScript extracts the shell of the step that checks out the candidate
@@ -548,7 +558,7 @@ func Test_AutoReleasePromote(t *testing.T) {
 // than refusing the promotion.
 func Test_AutoReleasePromoteRetriesTheStatusRead(t *testing.T) {
 	dir := repo(t, "v1.2.9", "fix: x", "v1.2.10-rc.1")
-	stub := flakyGhStub(t, "true", "success 2", 3)
+	stub := flakyGhStub(t, "true", built, 3)
 
 	got, log, err := runStep(t, promoteScript(t), dir,
 		"PATH="+stub+string(os.PathListSeparator)+os.Getenv("PATH"), "GH_REPO=giantswarm/example")
@@ -587,10 +597,14 @@ func Test_AutoReleasePromoteRefuses(t *testing.T) {
 	for _, tc := range []struct {
 		name, release, status, annotation string
 	}{
-		{"the candidate has no GitHub release", "", "success 2", "Candidate not released"},
-		{"the candidate's release is not a pre-release", "false", "success 2", "Candidate not a pre-release"},
-		{"a pipeline of the candidate failed", "true", "failure 2", "Candidate not built"},
-		{"a pipeline of the candidate is still running", "true", "pending 1", "Candidate not built"},
+		{"the candidate has no GitHub release", "", built, "Candidate not released"},
+		{"the candidate's release is not a pre-release", "false", built, "Candidate not a pre-release"},
+		{"a pipeline of the candidate failed", "true", statuses("success ci/circleci: go-build", "failure ci/circleci: push-to-registries"), "Candidate not built"},
+		{"a pipeline of the candidate errored", "true", statuses("error ci/circleci: push-to-registries"), "Candidate not built"},
+		{"a pipeline of the candidate is still running", "true", statuses("pending ci/circleci: push-to-registries"), "Candidate not built"},
+		{"another context failed beside sync-china-registry", "true", statuses("failure ci/circleci: sync-china-registry", "failure ci/circleci: push-to-registries"), "Candidate not built"},
+		{"a context is still running beside a failed sync-china-registry", "true", statuses("failure ci/circleci: sync-china-registry", "pending ci/circleci: push-to-registries"), "Candidate not built"},
+		{"sync-china-registry of another CI failed", "true", statuses("failure sync-china-registry"), "Candidate not built"},
 		{"the candidate's statuses cannot be read", "true", "", "Candidate status unreadable"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -602,12 +616,15 @@ func Test_AutoReleasePromoteRefuses(t *testing.T) {
 			if !strings.Contains(log, "::error title="+tc.annotation+"::") {
 				t.Errorf("no %q error annotation:\n%s", tc.annotation, log)
 			}
+			if strings.Contains(log, "::warning title=Advisory status failed::") && !strings.Contains(tc.status, "ci/circleci: sync-china-registry") {
+				t.Errorf("an advisory warning without an advisory failure:\n%s", log)
+			}
 		})
 	}
 
 	t.Run("a status read failing on every try names the request and the tries", func(t *testing.T) {
 		dir := repo(t, "v1.2.9", "fix: x", "v1.2.10-rc.1")
-		stub := flakyGhStub(t, "true", "success 2", 100)
+		stub := flakyGhStub(t, "true", built, 100)
 		_, log, err := runStep(t, promoteScript(t), dir,
 			"PATH="+stub+string(os.PathListSeparator)+os.Getenv("PATH"), "GH_REPO=giantswarm/example")
 		if err == nil {
@@ -621,9 +638,22 @@ func Test_AutoReleasePromoteRefuses(t *testing.T) {
 
 	t.Run("a candidate no pipeline reports on is promoted", func(t *testing.T) {
 		dir := repo(t, "v1.2.9", "fix: x", "v1.2.10-rc.1")
-		got, log, err := runStep(t, promoteScript(t), dir, ghStub(t, "true", "pending 0"), "GH_REPO=giantswarm/example")
+		got, log, err := runStep(t, promoteScript(t), dir, ghStub(t, "true", statuses()), "GH_REPO=giantswarm/example")
 		if err != nil || got["rc"] != "v1.2.10-rc.1" {
 			t.Errorf("rc = %q, err = %v, want v1.2.10-rc.1:\n%s", got["rc"], err, log)
+		}
+	})
+
+	t.Run("a candidate whose only failure is sync-china-registry is promoted with a warning", func(t *testing.T) {
+		dir := repo(t, "v1.2.9", "fix: x", "v1.2.10-rc.1")
+		stub := ghStub(t, "true", statuses("success ci/circleci: push-to-registries", "failure ci/circleci: sync-china-registry"))
+		got, log, err := runStep(t, promoteScript(t), dir, stub, "GH_REPO=giantswarm/example")
+		if err != nil || got["rc"] != "v1.2.10-rc.1" {
+			t.Fatalf("rc = %q, err = %v, want v1.2.10-rc.1:\n%s", got["rc"], err, log)
+		}
+		want := "::warning title=Advisory status failed::the commit status ci/circleci: sync-china-registry of v1.2.10-rc.1 failed"
+		if !strings.Contains(log, want) {
+			t.Errorf("no %q annotation:\n%s", want, log)
 		}
 	})
 

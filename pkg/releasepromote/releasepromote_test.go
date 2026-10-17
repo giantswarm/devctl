@@ -189,6 +189,7 @@ func TestPromote(t *testing.T) {
 		statusState string
 		dispatched  bool
 		message     string
+		warnings    []string
 	}{
 		{
 			name:        "built candidate is dispatched",
@@ -211,6 +212,47 @@ func TestPromote(t *testing.T) {
 			state:       StateNotBuilt,
 			statusState: "failure",
 			message:     "the commit statuses of v1.3.0-rc.2 are failure: promote it once its pipelines passed",
+		},
+		{
+			name: "a failed sync-china-registry alone is built, with a warning",
+			repository: fakeRepository{branch: "main", releases: releases, status: githubclient.CombinedStatus{State: "failure", TotalCount: 2, Statuses: []githubclient.CommitStatus{
+				{Context: "ci/circleci: push-to-registries", State: "success"},
+				{Context: "ci/circleci: sync-china-registry", State: "failure"},
+			}}},
+			state:       StateDispatched,
+			statusState: "failure",
+			dispatched:  true,
+			message:     "dispatched zz_generated.auto_release.yaml on main to promote v1.3.0-rc.2",
+			warnings:    []string{"the commit status ci/circleci: sync-china-registry of v1.3.0-rc.2 is failure; the release does not require it, so the candidate is judged without it"},
+		},
+		{
+			name: "another failed context beside sync-china-registry is not built",
+			repository: fakeRepository{branch: "main", releases: releases, status: githubclient.CombinedStatus{State: "failure", TotalCount: 3, Statuses: []githubclient.CommitStatus{
+				{Context: "ci/circleci: push-to-registries", State: "error"},
+				{Context: "ci/circleci: sync-china-registry", State: "failure"},
+				{Context: "ci/circleci: go-build", State: "success"},
+			}}},
+			state:       StateNotBuilt,
+			statusState: "failure",
+			message:     "the commit statuses of v1.3.0-rc.2 are failure: promote it once its pipelines passed",
+		},
+		{
+			name: "a failed sync-china-registry beside a running context is not built",
+			repository: fakeRepository{branch: "main", releases: releases, status: githubclient.CombinedStatus{State: "failure", TotalCount: 2, Statuses: []githubclient.CommitStatus{
+				{Context: "ci/circleci: push-to-registries", State: "pending"},
+				{Context: "ci/circleci: sync-china-registry", State: "failure"},
+			}}},
+			state:       StateNotBuilt,
+			statusState: "failure",
+			message:     "the commit statuses of v1.3.0-rc.2 are pending: promote it once its pipelines passed",
+		},
+		{
+			name: "a sync-china-registry context outside CircleCI still refuses",
+			repository: fakeRepository{branch: "main", releases: releases, status: githubclient.CombinedStatus{State: "failure", TotalCount: 1, Statuses: []githubclient.CommitStatus{
+				{Context: "sync-china-registry", State: "failure"},
+			}}},
+			state:       StateNotBuilt,
+			statusState: "failure",
 		},
 		{
 			name:        "pending status with a count is not built",
@@ -279,6 +321,7 @@ func TestPromote(t *testing.T) {
 			if tc.message != "" {
 				require.Equal(t, tc.message, got.Message)
 			}
+			require.Equal(t, tc.warnings, got.Warnings)
 			if got.OK() {
 				require.NoError(t, err)
 			} else {
