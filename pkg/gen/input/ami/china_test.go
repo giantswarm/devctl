@@ -10,6 +10,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/aws/smithy-go"
 )
 
 type fakeObjectGetter struct {
@@ -53,8 +54,25 @@ func Test_getFlatcarRelease(t *testing.T) {
 		}
 	})
 
+	t.Run("access denied is not an error", func(t *testing.T) {
+		client := &fakeObjectGetter{err: &smithy.OperationError{ServiceID: "S3", OperationName: "GetObject", Err: &smithy.GenericAPIError{Code: "AccessDenied", Message: "not authorized to perform: s3:ListBucket"}}}
+
+		got, err := getFlatcarRelease(context.Background(), client, config, "1.2.3")
+		if err != nil || got != nil {
+			t.Fatalf("got %v, %v; want nil, nil", got, err)
+		}
+	})
+
+	t.Run("other API errors are returned", func(t *testing.T) {
+		client := &fakeObjectGetter{err: &smithy.GenericAPIError{Code: "InvalidAccessKeyId"}}
+
+		if _, err := getFlatcarRelease(context.Background(), client, config, "1.2.3"); err == nil {
+			t.Fatal("expected an error")
+		}
+	})
+
 	t.Run("other errors are returned", func(t *testing.T) {
-		client := &fakeObjectGetter{err: errors.New("access denied")}
+		client := &fakeObjectGetter{err: errors.New("connection reset")}
 
 		if _, err := getFlatcarRelease(context.Background(), client, config, "1.2.3"); err == nil {
 			t.Fatal("expected an error")
