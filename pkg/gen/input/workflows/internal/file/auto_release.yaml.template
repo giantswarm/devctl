@@ -82,6 +82,10 @@ jobs:
       pull-requests: read
       # The stable run reads the commit statuses of the candidate it promotes.
       statuses: read
+{{{{- if not .Fork }}}}
+    outputs:
+      tag: ${{ steps.decide.outputs.tag }}
+{{{{- end }}}}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -675,3 +679,86 @@ jobs:
               exit 1
               ;;
           esac
+{{{{- if not .Fork }}}}
+
+  # The entries a merged pull request added under Unreleased in CHANGELOG.md
+  # are part of the release just cut, and the release's CHANGELOG.md still
+  # lists them under Unreleased. `devctl changelog cut` moves every entry a
+  # release carried into that release's section, and this job opens the cut as
+  # a pull request against the released branch and arms auto-merge on it. The
+  # branch head is cut, not the promoted candidate: the cut lands on top of
+  # what merged since. The pull request is `docs`, which git-cliff skips, so
+  # merging it cuts no release of its own. The Changelog workflow fails a pull
+  # request while released entries remain under Unreleased.
+  #
+  # The pull request is opened as taylorbot (TAYLORBOT_GITHUB_ACTION): a pull
+  # request opened with GITHUB_TOKEN runs no workflow, so its required checks
+  # would never report. A fork line carries upstream's CHANGELOG.md, which its
+  # releases do not cut, and has no such job.
+  changelog:
+    name: Cut the CHANGELOG
+    needs: tag
+    if: needs.tag.outputs.tag != ''
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0        # every tag's CHANGELOG.md says what it released
+          fetch-tags: true
+          persist-credentials: false
+
+      - name: Cut released entries out of Unreleased
+        id: cut
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ ! -f CHANGELOG.md ]; then
+            echo "no CHANGELOG.md: nothing to cut"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          gh release download --repo giantswarm/devctl --pattern devctl-linux-amd64 --output "${RUNNER_TEMP}/devctl"
+          chmod +x "${RUNNER_TEMP}/devctl"
+          "${RUNNER_TEMP}/devctl" changelog cut
+          if git diff --quiet -- CHANGELOG.md; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+{{{{ .StepSetUpGitIdentity }}}}
+
+      - name: Open the cut as a pull request
+        if: steps.cut.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.TAYLORBOT_GITHUB_ACTION }}
+          TAG: ${{ needs.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::warning title=CHANGELOG not cut::no TAYLORBOT_GITHUB_ACTION secret to open the pull request with; run \`devctl changelog cut\` and commit CHANGELOG.md."
+            exit 0
+          fi
+          # One cut pull request per released branch, rebuilt from the branch
+          # head on every release: it never carries a stale cut.
+          branch="changelog-cut/${GITHUB_REF_NAME}"
+          title="docs(changelog): cut released entries out of Unreleased"
+          git checkout -q -B "$branch"
+          git commit -q -m "$title" -- CHANGELOG.md
+          gh auth setup-git
+          git push --force origin "HEAD:refs/heads/${branch}"
+          pr=$(gh pr list --head "$branch" --base "$GITHUB_REF_NAME" --state open --json url --jq '.[0].url // empty')
+          if [ -z "$pr" ]; then
+            pr=$(gh pr create --base "$GITHUB_REF_NAME" --head "$branch" --title "$title" \
+              --body "Moves the CHANGELOG.md entries ${TAG} and the releases before it carried out of Unreleased into their release sections (\`devctl changelog cut\`). Opened by the Auto-release workflow.")
+          fi
+          echo "cut pull request: ${pr}"
+          if ! gh pr merge "$pr" --auto --squash; then
+            echo "::warning title=Auto-merge not armed::${pr} waits for a merge: auto-merge could not be armed."
+          fi
+{{{{- end }}}}
