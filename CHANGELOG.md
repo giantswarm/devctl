@@ -124,6 +124,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   is never written. A `tsh` that is not logged in is exit 8 (`tsh login`). The missing context was exit 7, and a
   session ran `tsh kube login` into the shared kubeconfig itself.
 
+### Changed
+
+- `gen workflows`: the generated release workflows authenticate as the `giantswarm-release` GitHub App instead of the shared
+  taylorbot account (giantswarm/giantswarm#2280). `create_release`, `create_release_pr` and `update_chart` pass the org
+  secrets `RELEASE_BOT_CLIENT_ID` and `RELEASE_BOT_PRIVATE_KEY` to the reusable workflows in giantswarm/github-workflows
+  instead of `TAYLORBOT_GITHUB_ACTION`; those workflows accept them since giantswarm/github-workflows#319, so this
+  release must not ship before that PR is merged. `helm-docs-regen` mints a token of the App to push the regenerated files
+  and commits as `giantswarm-release[bot]`.
+- `gen renovate`: `gitIgnoredAuthors` also lists `giantswarm-release[bot]`, so Renovate keeps treating a branch the
+  generated workflows pushed to as its own. taylorbot's `dev@giantswarm.io` stays for repositories whose workflows are
+  not regenerated yet.
+
 ### Fixed
 
 - `gen` commands run without the version gate: a generator works offline from the repository's files, so in a

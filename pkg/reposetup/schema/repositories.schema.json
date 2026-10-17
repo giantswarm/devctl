@@ -147,7 +147,7 @@
           },
           "helmDocsRegen": {
             "type": "boolean",
-            "description": "Generate zz_generated.helm-docs-regen.yaml (passed to 'devctl gen workflows --helm-docs-regen'; app flavour only). On pull requests from renovate/ and dependabot/ branches that touch helm/ or .pre-commit-config.yaml, the workflow reruns the repo's helm-docs and helm-schema-<chart> pre-commit hooks and pushes the regenerated README and values.schema.json back onto the PR branch with the taylorbot PAT, so an image-tag or values-key bump no longer fails the pre-commit check on files only the hooks can rewrite. Requires devctl v8.55.0+."
+            "description": "Generate zz_generated.helm-docs-regen.yaml (passed to 'devctl gen workflows --helm-docs-regen'; app flavour only). On pull requests from renovate/ and dependabot/ branches that touch helm/ or .pre-commit-config.yaml, the workflow reruns the repo's helm-docs and helm-schema-<chart> pre-commit hooks and pushes the regenerated README and values.schema.json back onto the PR branch with a giantswarm-release GitHub App token, so an image-tag or values-key bump no longer fails the pre-commit check on files only the hooks can rewrite. Requires devctl v8.55.0+."
           },
           "language": {
             "type": "string",

@@ -26,7 +26,8 @@ conflicting with its base, or behind its base, strict or not, since its
 checks ran against an older base than the one the merge lands it on (exit 3,
 naming --update-branch); a pull request opened by another human
 (exit 5: bots, GitHub Apps, Giant Swarm's automation accounts -- taylorbot,
-which opens every generated release pull request, and architectbot -- and the
+which opens generated release pull requests not yet moved to the
+giantswarm-release App, and architectbot -- and the
 caller's own pull requests are fine); a repository whose team-file entry in
 giantswarm/github says agentMerge: false (exit 5, naming the field). A
 repository no team file declares is not opted out.
