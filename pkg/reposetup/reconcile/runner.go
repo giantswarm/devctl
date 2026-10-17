@@ -117,6 +117,14 @@ type Runner struct {
 	// agentMerge: false keeps the review in [RulesetName] without bypass. 0
 	// keeps the review rule in [RulesetName] and deletes the review ruleset.
 	AlignFilesAppID int64
+	// ReleaseAppID is the numeric id of the giantswarm-release GitHub App,
+	// which the generated release workflows authenticate as. It bypasses
+	// [ReviewRulesetName] for pull requests beside the align-files and
+	// Renovate Apps, so the version bump pull request the release workflow
+	// opens and arms auto-merge on lands once the required checks of
+	// [RulesetName], which it does not bypass, are green. 0 adds no release
+	// App to the review ruleset.
+	ReleaseAppID int64
 	// GitHubRequests and CircleCIRequests count the requests the clients
 	// send, when the caller built the clients' transports over them (one
 	// [Counter] under GitHub, Checks and Dispatch, one under CircleCI). The
