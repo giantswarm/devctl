@@ -58,6 +58,8 @@ type fixture struct {
 	wrapCircleCI func(CircleCI) CircleCI
 	// failedLogLines is --failed-log-lines with --failed-log; 0 without.
 	failedLogLines int
+	// clock, when set, is the wait's clock; a virtual clock otherwise.
+	clock *agentcli.Clock
 }
 
 type entries struct{ fields *reposetup.Fields }
@@ -223,6 +225,9 @@ func run(t *testing.T, fx fixture) (Result, error) {
 		Clock:        agentcli.NewVirtualClock(time.Now()),
 		Rate:         conditional.Rate,
 		Warn:         fx.warn,
+	}
+	if fx.clock != nil {
+		config.Clock = *fx.clock
 	}
 	if config.Timeout == 0 {
 		config.Timeout = 2 * time.Minute
@@ -1770,8 +1775,17 @@ func TestWaitCircleCINeverAnswersIsTimeoutNamingIt(t *testing.T) {
 	fx := greenGenerated(t)
 	circleci := &unansweredCircleCI{failures: -1}
 	fx.wrapCircleCI = func(c CircleCI) CircleCI { circleci.CircleCI = c; return circleci }
-	_, err := run(t, fx)
+	result, err := run(t, fx)
 	assertExit(t, err, agentcli.ExitTimeout, "the release is unknown, not failed: the last read of the tag's CI went unanswered: listing the pipelines of giantswarm/kserve: Get \"https://circleci.com/api/v2/project/gh/giantswarm/kserve/pipeline\": failed 15 times in a row: context deadline exceeded")
+	// The registry answers while CircleCI does not: what it serves is
+	// available, never reported missing for want of a CI answer.
+	assertExit(t, err, agentcli.ExitTimeout, "every artifact of v1.2.3 is available")
+	if strings.Contains(err.Error(), "not available") {
+		t.Errorf("a published artifact is reported missing: %v", err)
+	}
+	if !allAvailable(result.Artifacts) {
+		t.Errorf("artifacts: %+v", result.Artifacts)
+	}
 	if strings.Contains(err.Error(), "webhook") {
 		t.Errorf("an unanswered CircleCI is not a missing webhook: %v", err)
 	}
@@ -1993,4 +2007,112 @@ func TestWaitPendingStatusOfAnotherCIWaits(t *testing.T) {
 	)
 	_, err := run(t, fx)
 	assertExit(t, err, agentcli.ExitOK, "")
+}
+
+// hangingCircleCI is a CircleCI whose pipeline listing hangs the first
+// hangs times: the read gets no answer until its context ends, the way a
+// CircleCI that accepts the connection and never answers holds a read
+// through every retry.
+type hangingCircleCI struct {
+	CircleCI
+	clock agentcli.Clock
+	hangs int
+	calls int
+}
+
+func (c *hangingCircleCI) FindPipelineByTag(ctx context.Context, org, repo, tag string) (*circleciclient.Pipeline, error) {
+	c.calls++
+	if c.hangs != 0 {
+		c.hangs--
+		for {
+			if err := c.clock.Sleep(ctx, time.Minute); err != nil {
+				return nil, microerror.Mask(&url.Error{Op: "Get", URL: "https://circleci.com/api/v2/project/gh/" + org + "/" + repo + "/pipeline", Err: err})
+			}
+		}
+	}
+	return c.CircleCI.FindPipelineByTag(ctx, org, repo, tag)
+}
+
+// A CircleCI read that hangs is cut at the read bound and read again on the
+// next poll: one stuck read does not hold the wait on a stale verdict until
+// its deadline, and the registry is probed meanwhile.
+func TestWaitHangingCircleCIReadIsReadAgain(t *testing.T) {
+	fx := greenGenerated(t)
+	fx.timeout = 30 * time.Minute
+	clock := agentcli.NewVirtualClock(time.Now())
+	fx.clock = &clock
+	circleci := &hangingCircleCI{clock: clock, hangs: 1}
+	fx.wrapCircleCI = func(c CircleCI) CircleCI { circleci.CircleCI = c; return circleci }
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+	if circleci.calls != 2 {
+		t.Errorf("pipeline listings: want 2, got %d", circleci.calls)
+	}
+	if !allAvailable(result.Artifacts) {
+		t.Errorf("artifacts: %+v", result.Artifacts)
+	}
+}
+
+// chinaSync is the generated tag pipeline's build workflow with the
+// artifacts pushed and the in-China mirror job in the given state.
+func chinaSync(workflow, sync string, others ...map[string]any) sequence.Routes {
+	jobs := append([]map[string]any{job("push-to-registries-release", "success"), job("push-chart-release", "success"), job("sync-china-registry", sync)}, others...)
+	return pipelineRoutes([][]map[string]any{{wf("w1", "build", workflow, "2026-09-21T10:00:00Z")}}, map[string][]map[string]any{"w1": jobs})
+}
+
+// A tag whose only failure is the in-China mirror job is released: the
+// mirror is the China registry's, not the release's, and the failure is
+// named as a warning.
+func TestWaitFailedChinaSyncAloneIsAvailableWithAWarning(t *testing.T) {
+	fx := greenGenerated(t)
+	fx.circleci = chinaSync("failed", "failed")
+	var warnings []string
+	fx.warn = func(m string) { warnings = append(warnings, m) }
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+	if !allAvailable(result.Artifacts) {
+		t.Errorf("artifacts: %+v", result.Artifacts)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "build/sync-china-registry failed") {
+		t.Errorf("warnings: %v", warnings)
+	}
+}
+
+// Any other failed job still fails the wait, the mirror job beside it.
+func TestWaitFailedChinaSyncBesideAnotherFailureIsCIFailure(t *testing.T) {
+	fx := greenGenerated(t)
+	fx.circleci = chinaSync("failed", "failed", job("guest-image", "failed"))
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitRed, "build/guest-image")
+	if result.Pipeline == nil || strings.Join(result.Pipeline.FailedJobs, ",") != "build/guest-image,build/sync-china-registry" {
+		t.Errorf("pipeline: %+v", result.Pipeline)
+	}
+}
+
+// A workflow failing on the mirror job while another job still runs is not
+// finished: the wait goes on until that job ends.
+func TestWaitFailingChinaSyncWhileAJobRunsIsNotYet(t *testing.T) {
+	fx := greenGenerated(t)
+	fx.timeout = 45 * time.Second
+	fx.circleci = chinaSync("failing", "failed", job("guest-image", "running"))
+	_, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitTimeout, "pipeline 12 unfinished: build (failing)")
+}
+
+// The mirror job's failed commit status is a warning too, in the tag's CI
+// read from the statuses and in the statuses of the tag's commit.
+func TestWaitFailedChinaSyncStatusIsAWarning(t *testing.T) {
+	fx := greenGenerated(t)
+	fx.github = statusesRoute(fx.github,
+		[3]string{"ci/circleci: push-to-registries-release", "success", "https://circleci.com/gh/giantswarm/kserve/101"},
+		[3]string{"ci/circleci: sync-china-registry", "failure", "https://circleci.com/gh/giantswarm/kserve/103"},
+	)
+	fx.circleci = noPipelineYet()
+	var warnings []string
+	fx.warn = func(m string) { warnings = append(warnings, m) }
+	_, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+	if !slices.ContainsFunc(warnings, func(w string) bool { return strings.Contains(w, "ci/circleci: sync-china-registry") }) {
+		t.Errorf("warnings: %v", warnings)
+	}
 }
