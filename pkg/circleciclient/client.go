@@ -38,6 +38,10 @@ const KeyTypeDeployKey = "deploy-key"
 type Config struct {
 	// Token is the CircleCI API token, sent as the Circle-Token header.
 	Token string
+	// TokenSource names where Token came from for the 401 hint: an
+	// environment variable ("$CIRCLECI_TOKEN"), or a description such as the
+	// devctl keychain. Empty means "the CircleCI token".
+	TokenSource string
 	// Anonymous is a client without a token: it reads what CircleCI answers
 	// without one, the pipelines, workflows and jobs of a public project (a
 	// private one answers 404, IsNotFound), and no header is sent. Set with
@@ -60,10 +64,11 @@ type Config struct {
 
 // Client calls the CircleCI API.
 type Client struct {
-	token   string
-	baseURL string
-	http    *http.Client
-	logger  *logrus.Logger
+	token            string
+	unauthorizedHint string
+	baseURL          string
+	http             *http.Client
+	logger           *logrus.Logger
 }
 
 // New returns a Client for config.
@@ -91,11 +96,25 @@ func New(config Config) (*Client, error) {
 		logger.SetOutput(io.Discard)
 	}
 	return &Client{
-		token:   config.Token,
-		baseURL: strings.TrimRight(baseURL, "/"),
-		http:    httpClient,
-		logger:  logger,
+		token:            config.Token,
+		unauthorizedHint: unauthorizedHint(config.TokenSource),
+		baseURL:          strings.TrimRight(baseURL, "/"),
+		http:             httpClient,
+		logger:           logger,
 	}, nil
+}
+
+// unauthorizedHint is what a 401 asks to check: the token's source, and for
+// a variable the quotes a token is easily read with, which fail the same way.
+func unauthorizedHint(source string) string {
+	switch {
+	case source == "":
+		return "check the CircleCI token"
+	case strings.HasPrefix(source, "$"):
+		return "check " + source + ": a token read with its surrounding quotes fails the same way"
+	default:
+		return "check the token from " + source
+	}
 }
 
 // Project is a CircleCI project as the v2 API describes it.
@@ -535,7 +554,7 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) err
 	case resp.StatusCode == http.StatusUnauthorized:
 		// v1.1 says "Invalid token provided", v2 "New format tokens are
 		// needed": both also describe a token read with its quotes.
-		return microerror.Maskf(apiError, "%s %s: HTTP 401 %s (check CIRCLECI_API_TOKEN: a token read with its surrounding quotes fails the same way)", method, path, apiMessage(data))
+		return microerror.Maskf(apiError, "%s %s: HTTP 401 %s (%s)", method, path, apiMessage(data), c.unauthorizedHint)
 	case resp.StatusCode < 200 || resp.StatusCode > 299:
 		return microerror.Maskf(apiError, "%s %s: HTTP %d %s", method, path, resp.StatusCode, apiMessage(data))
 	}

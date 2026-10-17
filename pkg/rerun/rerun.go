@@ -236,8 +236,9 @@ func NewCircleCI(ctx context.Context, require func(context.Context) (authstore.T
 	}
 	warn(token.Warning)
 	return circleciclient.New(circleciclient.Config{
-		Token:      token.Value,
-		BaseURL:    circleciclient.BaseURLFromAPIURL(endpoints.CircleCIAPIURL),
-		HTTPClient: &http.Client{Transport: transport},
+		Token:       token.Value,
+		TokenSource: token.SourceName(),
+		BaseURL:     circleciclient.BaseURLFromAPIURL(endpoints.CircleCIAPIURL),
+		HTTPClient:  &http.Client{Transport: transport},
 	})
 }
