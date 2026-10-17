@@ -7,6 +7,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- The generated Auto-release workflow tags a patch of the last stable release (only fixes and chores since it) as a
+  stable `vX.Y.Z` on its push: there is no patch release candidate any more. A minor or major version still cuts
+  `vX.Y.0-rc.N` and is promoted with `release-type: stable`, and a fix during such a cycle rides its next candidate.
+  A maintenance branch's releases are patches, so they are stable on their push. The repository's
+  `.github/release-gate.custom.sh` runs before every stable tag, a patch's included.
+
 ### Fixed
 
 - The generated Changelog workflow's check step and the Auto-release workflow's changelog cut step pass the job's

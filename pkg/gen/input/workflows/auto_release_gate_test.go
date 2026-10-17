@@ -30,7 +30,7 @@ func Test_AutoReleaseStableGateOrder(t *testing.T) {
 			if gate < decide || gate > release {
 				t.Errorf("step order %v: the gate has to run after decide and before release", ids)
 			}
-			if want := "inputs.release-type == 'stable' && steps.decide.outputs.tag != ''"; steps[gate].If != want {
+			if want := "steps.decide.outputs.prerelease == 'false' && steps.decide.outputs.tag != ''"; steps[gate].If != want {
 				t.Errorf("gate if = %q, want %q", steps[gate].If, want)
 			}
 		})
@@ -52,7 +52,7 @@ func Test_AutoReleaseStableGate(t *testing.T) {
 	}{
 		{
 			name:      "a repository without a gate is released",
-			expectLog: "no .github/release-gate.custom.sh on the candidate",
+			expectLog: "no .github/release-gate.custom.sh on the released commit",
 		},
 		{
 			name:      "a gate that passes lets the release go on",
