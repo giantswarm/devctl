@@ -18,6 +18,8 @@ keyring:
     expiresAt: "2099-01-01T00:00:00Z"
 github:
   routes:
+    "GET /repos/giantswarm/e2e-app/compare/main...abc123":
+      - body: {status: ahead, ahead_by: 1, behind_by: 0}
     "GET /repos/giantswarm/e2e-app/pulls/42/reviews":
       - body: []
     "GET /repos/giantswarm/e2e-app/pulls/42/comments":

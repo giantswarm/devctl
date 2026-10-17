@@ -29,6 +29,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `pr merge` no longer merges a head whose checks ran against an older base than the one it lands on. A head behind
+  a base that is not strict (the comparison's `behind_by`) is exit 3 like one behind a strict base, before the wait,
+  and the head is compared with the base again after the wait: a base that moved during it is exit 3 too. The reason
+  names the behind state and `--update-branch`, which updates the head and waits for it again, at most three waits.
+  A base with a merge queue is not compared: the queue tests every entry against its base.
+
 - `pr merge`: a comment by `codecov-commenter`, the coverage report GitHub carries as a plain user's, no longer
   counts as an unanswered non-author comment and refuses the merge with exit 5. Commenting automation accounts are
   pinned by account id as well as login; a person's comment or review still holds the merge.

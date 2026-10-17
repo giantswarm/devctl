@@ -1,0 +1,28 @@
+{
+  "exitCode": 3,
+  "json": {
+    "command": "pr merge",
+    "schemaVersion": 1,
+    "exitCode": 3,
+    "verdict": "not_applicable",
+    "reason": "the pull request is 145 commit(s) behind main: its checks ran against an older main than the one the merge lands it on; --update-branch updates it from main and waits for its checks again (or update the branch and run the merge again)",
+    "warnings": [],
+    "startedAt": "*",
+    "finishedAt": "*",
+    "repository": "giantswarm/devctl",
+    "identity": "app",
+    "number": 42,
+    "headSha": "abc123",
+    "baseRef": "main",
+    "checks": [],
+    "actions": [],
+    "mergeCommitSha": "",
+    "mergedBy": "",
+    "method": "squash",
+    "branchDeleted": false,
+    "enqueued": false,
+    "dispatch": null,
+    "unansweredReviews": [],
+    "release": null
+  }
+}
