@@ -17,17 +17,17 @@ import (
 )
 
 // LifecycleArchived is the lifecycle value that archives a repository.
-const LifecycleArchived = "archived"
+const LifecycleArchived = reposetup.LifecycleArchived
 
 // LifecycleDeleted is the lifecycle value that deletes a repository on
 // GitHub; the entry stays in the team file as the record of the deletion.
-const LifecycleDeleted = "deleted"
+const LifecycleDeleted = reposetup.LifecycleDeleted
 
 // lifecycleOver says whether the declared lifecycle ends the repository's
 // life — archived or deleted — so that the lifecycle step is the one that
 // applies.
 func lifecycleOver(lifecycle string) bool {
-	return lifecycle == LifecycleArchived || lifecycle == LifecycleDeleted
+	return reposetup.LifecycleOver(lifecycle)
 }
 
 // flavourCustomer is the gen.flavours value of a customer repository: its

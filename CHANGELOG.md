@@ -16,6 +16,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   `docs(changelog)` pull request after every release and arms auto-merge on it, and the new
   `zz_generated.changelog.yaml` runs the check on every pull request. Released entries no longer stay under Unreleased.
 
+### Fixed
+
+- `release promote --team` lists no repository whose team-file entry is declared `lifecycle: archived` or `deleted`:
+  such an entry is the record of the repository, which takes no release (archived) or is gone from GitHub (deleted), so
+  a deleted one no longer fails the run as not found.
+
 ## [8.140.1-rc.2] - 2026-10-17
 
 ### Fixed
