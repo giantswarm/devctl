@@ -45,8 +45,10 @@ On the `auto-release` release workflow (`devctl gen workflows --release-workflow
   against the released branch (or updates the open one) and arms auto-merge on it. git-cliff skips `docs`, so the
   merge cuts no release of its own. The pull request is opened with `TAYLORBOT_GITHUB_ACTION`, as a pull request
   opened with `GITHUB_TOKEN` runs no workflow and its required checks would never report; without the secret the job
-  warns and opens nothing. Where auto-merge cannot be armed, or a required review holds it, the pull request waits for
-  a merge.
+  warns and opens nothing. The review the branch's ruleset requires comes from a second identity: the job approves the
+  pull request with `ARCHITECT_GITHUB_REPO_SYNC_TOKEN` (architectbot), since an author cannot approve its own, so the
+  armed auto-merge lands the cut once its required checks are green. Without that secret, or where the approval or
+  auto-merge is refused, the job warns and the pull request waits for a review or a merge.
 - `zz_generated.changelog.yaml` runs `devctl changelog check` on every pull request ("No released entries under
   Unreleased"): merging the open cut pull request, or running `devctl changelog cut` and committing CHANGELOG.md,
   clears it. A repository without CHANGELOG.md passes.

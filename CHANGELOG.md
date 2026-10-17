@@ -7,6 +7,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- The generated Auto-release workflow's changelog cut pull request is approved by a second identity, architectbot
+  (`ARCHITECT_GITHUB_REPO_SYNC_TOKEN`), so its armed auto-merge lands it once the required checks are green instead of
+  waiting on the required review, while every other pull request failed "No released entries under Unreleased".
+  Without the secret the job warns and the pull request waits for a review.
+
+## [8.143.0] - 2026-10-18
+
 ### Changed
 
 - The generated Auto-release workflow tags a patch of the last stable release (only fixes and chores since it) as a
@@ -5849,7 +5858,8 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.142.1...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.143.0...HEAD
+[8.143.0]: https://github.com/giantswarm/devctl/compare/v8.142.1...v8.143.0
 [8.142.1]: https://github.com/giantswarm/devctl/compare/v8.142.0...v8.142.1
 [8.142.0]: https://github.com/giantswarm/devctl/compare/v8.142.0-rc.3...v8.142.0
 [8.142.0-rc.3]: https://github.com/giantswarm/devctl/compare/v8.142.0-rc.2...v8.142.0-rc.3
