@@ -175,3 +175,105 @@ func TestInstallHelmUnittestAcrossHelmMajors(t *testing.T) {
 		})
 	}
 }
+
+// fakeHelmFlakyInstall stands in for helm whose plugin download fails with a
+// transient network error until $HELM_FAILURES installs have failed; every
+// install and uninstall call is appended to $HELM_CALLS.
+const fakeHelmFlakyInstall = `#!/bin/sh
+if [ "$1" = plugin ] && [ "$2" = list ]; then
+	exit 0
+fi
+if [ "$1" = plugin ] && [ "$2" = install ] && [ "$3" = --help ]; then
+	exit 0
+fi
+echo "$1 $2" >> "$HELM_CALLS"
+if [ "$1" = plugin ] && [ "$2" = install ]; then
+	failed=$(grep -c "plugin install" "$HELM_CALLS")
+	if [ "$failed" -le "$HELM_FAILURES" ]; then
+		echo "curl: (55) Recv failure: Connection reset by peer" >&2
+		exit 1
+	fi
+fi
+`
+
+// TestInstallHelmUnittestRetriesTransientErrors runs the generated
+// install-helm-unittest target against a helm whose plugin download fails: two
+// failures are retried, cleaning up the partial install before each retry, and
+// a download that keeps failing fails the target after the last attempt.
+func TestInstallHelmUnittestRetriesTransientErrors(t *testing.T) {
+	if _, err := exec.LookPath("make"); err != nil {
+		t.Skip("make is not installed")
+	}
+
+	m, err := New(Config{Flavours: gen.FlavourSlice{gen.FlavourApp}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	in := m.MakefileGenApp()
+	tpl, err := template.New("makefile").Parse(in.TemplateBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rendered bytes.Buffer
+	if err := tpl.Execute(&rendered, in.TemplateData); err != nil {
+		t.Fatal(err)
+	}
+
+	const (
+		install   = "plugin install\n"
+		uninstall = "plugin uninstall\n"
+	)
+	tests := []struct {
+		name     string
+		failures string
+		wantErr  bool
+		want     string
+	}{
+		{
+			name:     "transient",
+			failures: "2",
+			want:     install + uninstall + install + uninstall + install,
+		},
+		{
+			name:     "persistent",
+			failures: "99",
+			wantErr:  true,
+			want:     install + uninstall + install + uninstall + install,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.MkdirAll(filepath.Join(dir, "bin"), 0o750); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, in.Path), rendered.Bytes(), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, "bin", "helm"), []byte(fakeHelmFlakyInstall), 0o700); err != nil { //nolint:gosec // a script that must be executable
+				t.Fatal(err)
+			}
+
+			calls := filepath.Join(dir, "helm-calls")
+			cmd := exec.Command("make", "-f", "Makefile.gen.app.mk", "install-helm-unittest", "HELM_UNITTEST_RETRY_DELAY=0")
+			cmd.Dir = dir
+			cmd.Env = append(os.Environ(),
+				"PATH="+filepath.Join(dir, "bin")+string(os.PathListSeparator)+os.Getenv("PATH"),
+				"HELM_CALLS="+calls,
+				"HELM_FAILURES="+tc.failures,
+			)
+			out, err := cmd.CombinedOutput()
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("make install-helm-unittest: err = %v, want error %v\n%s", err, tc.wantErr, out)
+			}
+
+			got, err := os.ReadFile(filepath.Clean(calls))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(got) != tc.want {
+				t.Errorf("helm calls = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
