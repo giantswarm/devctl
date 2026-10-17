@@ -427,7 +427,7 @@ The envelope and the fields from `repository` to `unfinished[]` are [`pr wait`'s
 | 6 | `release_failed` | **Merged**, and the release failed: the merge commit's auto-release run failed before it tagged, or the tag pipeline failed; `release.pipeline.failedJobs` names the jobs. |
 | 7 | `usage` | Wrong arguments or flags, a newer devctl released (the reason names `devctl version update`), or a tooling failure (GitHub or CircleCI answered with an error other than a 5xx, or a read failed eight tries in a row; the team files could not be read). |
 | 8 | `auth_required` | No usable token; `reason` names the `devctl auth login` to run. |
-| 9 | `release_unconfirmed` | **Merged**, and the release was not confirmed pullable: `--release-timeout` passed, the release wait could not judge it, or the auto-release run was superseded; `release.verdict` and `reason` say which. |
+| 9 | `release_unconfirmed` | **Merged**, and the release was not confirmed pullable: `--release-timeout` passed, the release wait could not judge it, the auto-release run was superseded, or a commit status of the release's commit failed (`status_failed`); `release.verdict` and `reason` say which. |
 
 `--detach` exits 0 with verdict `detached` once the merge started, or with the code of the check
 that refused the call. `devctl pr merge status` exits with the merge's code once it ended, 10

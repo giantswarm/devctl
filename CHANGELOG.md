@@ -36,6 +36,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `release wait`: a release is available only once every commit status of the tag's commit, the newest per context,
+  succeeded: the gate `release promote` puts on a candidate. A late job, the branch pipeline or another CI still
+  pending keeps the wait going, so a promote run right after a successful wait no longer answers `not_built`; a failed
+  one ends it with the new exit code 12, `status_failed`, naming the failed contexts. The document carries
+  `statuses[{context, state, url}]`. `pr merge` reports a `status_failed` release as exit 9, `rollout wait` passes
+  exit 12 through.
 - `rollout wait`: the result's warnings are those of the last poll. A deployment warned about mid-roll (a source still
   on the previous version, which the release then moves) no longer leaves its warning in a `rolled_out` result; a
   warning is still shown as progress the moment it is first seen. See docs/rollout-wait.md.

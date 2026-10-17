@@ -1909,3 +1909,88 @@ func TestWaitTagPipelineFromOlderStatusesWhenAPromotionSharesTheCommit(t *testin
 		t.Errorf("pipeline: %+v", result.Pipeline)
 	}
 }
+
+// commitStatuses scripts the tag commit's statuses as the polls read them:
+// one listing per poll, newest status first, the last listing repeating.
+func commitStatuses(github sequence.Routes, polls ...[][3]string) sequence.Routes {
+	var seq []sequence.Response
+	for _, statuses := range polls {
+		items := []map[string]any{}
+		for _, s := range statuses {
+			items = append(items, map[string]any{"context": s[0], "state": s[1], "target_url": s[2]})
+		}
+		seq = append(seq, sequence.Response{Body: items})
+	}
+	github[repoRoute("/commits/"+testSHA+"/statuses")] = seq
+	return github
+}
+
+const lateJobURL = "https://circleci.com/gh/giantswarm/kserve/301"
+
+// A late job of the commit still pending while every artifact is pullable
+// and the tag pipeline green: the wait goes on until it is green, the gate
+// devctl release promote applies.
+func TestWaitPendingCommitStatusWaitsUntilGreen(t *testing.T) {
+	fx := greenGenerated(t)
+	fx.github = commitStatuses(fx.github,
+		[][3]string{{"ci/circleci: integration-test", "pending", lateJobURL}, {"ci/circleci: push-to-registries-release", "success", "https://circleci.com/gh/giantswarm/kserve/101"}},
+		[][3]string{{"ci/circleci: integration-test", "pending", lateJobURL}, {"ci/circleci: push-to-registries-release", "success", "https://circleci.com/gh/giantswarm/kserve/101"}},
+		[][3]string{{"ci/circleci: integration-test", "success", lateJobURL}, {"ci/circleci: integration-test", "pending", lateJobURL}, {"ci/circleci: push-to-registries-release", "success", "https://circleci.com/gh/giantswarm/kserve/101"}},
+	)
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+	// Only the third listing reads green: the wait read it.
+	want := []Status{
+		{Context: "ci/circleci: integration-test", State: "success", URL: lateJobURL},
+		{Context: "ci/circleci: push-to-registries-release", State: "success", URL: "https://circleci.com/gh/giantswarm/kserve/101"},
+	}
+	if !slices.Equal(result.Statuses, want) {
+		t.Errorf("statuses: %+v", result.Statuses)
+	}
+}
+
+// A status that stays pending is a timeout naming it, not a release.
+func TestWaitCommitStatusPendingUntilTheDeadlineIsTimeout(t *testing.T) {
+	fx := greenGenerated(t)
+	fx.github = commitStatuses(fx.github, [][3]string{{"ci/circleci: integration-test", "pending", lateJobURL}})
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitTimeout, "v1.2.3 is available and its tag pipeline green, and the commit statuses of 01234567 did not finish within 2m0s: ci/circleci: integration-test pending")
+	if !allAvailable(result.Artifacts) {
+		t.Errorf("artifacts: %+v", result.Artifacts)
+	}
+}
+
+// A failed status of the commit (the branch pipeline's flaky test, another
+// CI) is exit 12 naming it, though the artifacts are out and the tag
+// pipeline is green: devctl release promote refuses the commit.
+func TestWaitFailedCommitStatusIsStatusFailed(t *testing.T) {
+	for name, state := range map[string]string{"failure": "failure", "error": "error"} {
+		t.Run(name, func(t *testing.T) {
+			fx := greenGenerated(t)
+			fx.github = commitStatuses(fx.github, [][3]string{
+				{"ci/circleci: go-test", state, "https://circleci.com/gh/giantswarm/kserve/401"},
+				{"ci/circleci: integration-test", "pending", lateJobURL},
+				{"security/snyk", "success", "https://snyk.io/x"},
+			})
+			result, err := run(t, fx)
+			assertExit(t, err, agentcli.ExitStatusFailed, "the commit 01234567 of v1.2.3 carries a failed commit status, so devctl release promote refuses it: ci/circleci: go-test ("+state+", https://circleci.com/gh/giantswarm/kserve/401)")
+			if _, verdict := agentcli.Outcome(err); verdict != agentcli.VerdictStatusFailed {
+				t.Errorf("verdict: %s", verdict)
+			}
+			if len(result.Statuses) != 3 {
+				t.Errorf("statuses: %+v", result.Statuses)
+			}
+		})
+	}
+}
+
+// Another CI's status counts as the combined status counts it.
+func TestWaitPendingStatusOfAnotherCIWaits(t *testing.T) {
+	fx := greenGenerated(t)
+	fx.github = commitStatuses(fx.github,
+		[][3]string{{"security/snyk", "pending", "https://snyk.io/x"}},
+		[][3]string{{"security/snyk", "success", "https://snyk.io/x"}},
+	)
+	_, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+}

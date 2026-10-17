@@ -143,8 +143,8 @@ GitHub reports.
 
 ### Availability
 
-A release is available when every artifact resolves to a digest **and** the tag's CI is green (the next
-section). The artifacts alone are not the release: a repository's own tag jobs push more than the sources
+A release is available when every artifact resolves to a digest, the tag's CI is green (the next
+section) **and** every commit status of the tag's commit succeeded ([The commit's statuses](#the-commits-statuses)). The artifacts alone are not the release: a repository's own tag jobs push more than the sources
 name, and a job signs what it pushed after the digest resolves.
 
 An artifact is available when its manifest resolves to a digest:
@@ -207,6 +207,22 @@ headed `failed job <name> (<url>):`, and into the document under `failedJobs[]`.
 timed-out wait reads no log; a log that cannot be read is named in its job's `logError`, and the
 verdict stays exit 1. Without the flag the document is unchanged.
 
+### The commit's statuses
+
+The tag pipeline is not every status of the tag's commit: a late job, the branch pipeline that built
+the same commit and other CIs report there too, and `devctl release promote` refuses a candidate as
+`not_built` while their combined status is anything but `success`. Once every artifact is available
+and the tag's CI is green, the wait reads the commit's statuses, the newest per context, as the
+combined status judges them, and reports them in `statuses[]`:
+
+- every one succeeded, or the commit carries none: the release is available, and a promote run right
+  after accepts it;
+- one is pending: the wait goes on, its heartbeat naming the context; at the deadline exit 2 names
+  the pending contexts;
+- one is `failure` or `error`: exit 12, `status_failed`, naming each failed context and its URL. The
+  artifacts are out and the tag pipeline is green, so this is not the tag's CI failure (exit 1); a
+  rerun that turns the context green is what the promote waits for.
+
 ### Polling
 
 Requests to GitHub are conditional (`If-None-Match` with the last `ETag`), so an unchanged resource
@@ -267,13 +283,14 @@ stderr.
 
 | Field | Meaning |
 |---|---|
-| `command`, `schemaVersion`, `exitCode`, `verdict`, `reason`, `warnings`, `startedAt`, `finishedAt` | The envelope every agent-facing command prints. `verdict` is `available`, `ci_failed`, `timeout`, `not_applicable`, `usage` or `auth_required`. `warnings` carries the CircleCI token's seven-day expiry notice and a team-file declaration that disagrees with the tag's workflows about the release model. |
+| `command`, `schemaVersion`, `exitCode`, `verdict`, `reason`, `warnings`, `startedAt`, `finishedAt` | The envelope every agent-facing command prints. `verdict` is `available`, `ci_failed`, `timeout`, `not_applicable`, `no_release`, `ambiguous_release`, `status_failed`, `usage` or `auth_required`. `warnings` carries the CircleCI token's seven-day expiry notice and a team-file declaration that disagrees with the tag's workflows about the release model. |
 | `repository`, `tag`, `sha` | What was waited for. `tag` is empty when it never appeared; `sha` is the tag's commit (with `--pr` the merge commit). |
 | `releaseModel` | `auto-release` or `legacy`. |
 | `ciModel` | `generated`, `hand-written`, `actions` or `none`. |
 | `artifacts[]` | `kind` (`image`, `chart`, `release-asset`), `reference` (the pullable reference, or the asset's download URL), `digest` (empty while missing), `state` (`available`, `missing`). Empty until the artifacts are known (hand-written CI before its pipeline exists). |
 | `pipeline` | The tag pipeline on CircleCI: `id`, `number`, `url`, `workflows[{name, status, conclusion}]` (newest run per name; for `ciModel` `actions` one entry per check run of the tag's commit, with its `conclusion`, `id`, `number` empty and `url` the commit's checks page), `failedJobs[]`, `unfinished[]` (the workflows not finished, `name (status)`, with `jobs not visible yet` when CircleCI does not list them yet; what a timeout was waiting for, empty at exit 0). `null` for a repository without CircleCI and without check runs on the tag, or while the CircleCI pipeline does not exist. |
 | `actions[]` | The Actions runs the tag triggered, for a repository without CircleCI: `name`, `runId`, `status`, `conclusion`, `url`. |
+| `statuses[]` | The newest commit status of every context of the tag's commit, `context`, `state` (`pending`, `success`, `failure`, `error`) and `url`, read once the artifacts are available and the tag's CI is green; empty before. |
 | `conflictingTags[]` | Present at exit 11: every release tag on the commit the wait resolved to, newest first. Absent otherwise. |
 | `failedJobs[]` | Present at exit 1 with `--failed-log`, as in [`pr wait`](pr-wait.md#the-document): each failed job with `name` (`<workflow>/<job>` on CircleCI, `<run>/<job>` on Actions), `source` (`actions` or `circleci`), `url`, and `logTail`, the last `--failed-log-lines` lines of its log, or `logError` when the log could not be read. A failed workflow or run whose jobs cannot be listed is named alone with its `logError`. Absent without the flag. |
 
@@ -289,6 +306,7 @@ stderr.
 | 7 | `usage` | A bad argument or flag; a newer devctl released (the reason names `devctl version update`); no source says how the repository releases; the sources disagree about the CI model or the artifacts; a registry answer that is neither a digest nor "manifest unknown"; a tooling error, a GitHub or CircleCI read that failed eight tries in a row among them. |
 | 8 | `auth_required` | No usable token in the keychain; `reason` names the `devctl auth login` invocation. |
 | 11 | `ambiguous_release` | With `--pr`, the commit the wait resolves to (the merge commit, or the first tagged commit after it) carries the release tags (`vX.Y.Z`, `vX.Y.Z-rc.N`) of more than one version: the wait does not choose. `reason` and `conflictingTags` name every release tag on the commit, newest first; a wait given the version waits on it. A candidate and its promoted stable on one commit are one version. |
+| 12 | `status_failed` | Every artifact is available and the tag's CI is green, and a commit status of the tag's commit (the branch pipeline's, another CI's) is `failure` or `error`: `devctl release promote` refuses the commit. `reason` and `statuses[]` name the failed contexts. |
 
 ## Environment
 

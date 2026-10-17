@@ -44,6 +44,9 @@ const (
 	// VerdictAmbiguousRelease: the commit carries the release tags of more
 	// than one version; the caller names the version.
 	VerdictAmbiguousRelease Verdict = "ambiguous_release"
+	// VerdictStatusFailed: the artifacts are available and the tag's CI is
+	// green, and a commit status of the tag's commit failed.
+	VerdictStatusFailed Verdict = "status_failed"
 	// VerdictDetached: devctl pr merge --detach started the merge in a
 	// process of its own; the handle reads its outcome.
 	VerdictDetached Verdict = "detached"
@@ -91,6 +94,11 @@ const (
 	// the release tags of more than one version; the reason names them, and
 	// a wait given the version waits on it.
 	ExitAmbiguousRelease = 11
+	// ExitStatusFailed: a release wait found every artifact available and
+	// the tag's CI green, and a commit status of the tag's commit (a branch
+	// pipeline's, another CI's) failed: devctl release promote refuses the
+	// commit. The reason names the failed statuses.
+	ExitStatusFailed = 12
 )
 
 // Envelope is the head of every command's JSON document. A command's document

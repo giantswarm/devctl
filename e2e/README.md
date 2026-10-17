@@ -239,7 +239,7 @@ The incidents the commands encode, one scenario each, by these slugs:
 - `release wait`: `renamed-image`, `renamed-chart`, `hand-written-ci`, `release-assets-only`, `failed-tag-pipeline`,
   `rerun-replaces-failed`, `stale-registry-login`, `release-wait-timeout`, `jobs-not-visible-yet`,
   `declaration-behind-repository`, `repo-owned-tag-job`, `release-wait-no-release`,
-  `release-wait-github-5xx-retried`
+  `release-wait-github-5xx-retried`, `commit-status-pending`, `commit-status-failed`
 - `auth`: `auth-missing`, `auth-expired`, `auth-refreshed`, `auth-login-muster`, `auth-login-muster-no-manager`
 - `repo` (the manager's verbs over the mocked muster): `repo-auth-missing`, `repo-status`, `repo-status-json`,
   `repo-status-refreshed`, `repo-list`, `repo-info`, `repo-get`, `repo-refresh`, `repo-sweep`, `repo-watch-ready`,
