@@ -18,6 +18,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `gen makefile`: `APPLICATION` defaults to the one chart under `helm/` when nothing sets it, so `make helm-docs`,
+  `make lint-chart` and `make update-chart` run in a chart-only repository; with several charts or none `check-env`
+  still stops, naming the charts it found. A value from `Makefile.custom.mk`, the environment, the command line or
+  `Makefile.gen.go.mk` keeps precedence.
 - `release promote --team` lists no repository whose team-file entry is declared `lifecycle: archived` or `deleted`:
   such an entry is the record of the repository, which takes no release (archived) or is gone from GitHub (deleted), so
   a deleted one no longer fails the run as not found.

@@ -13,6 +13,13 @@ CT = $(if $(shell command -v ct 2>/dev/null),ct,docker run -it --rm -v /tmp/$(AP
 # make parses this file: DEPS is recursively expanded (=) and the guard is a recipe.
 DEPS = $(shell find helm/$(APPLICATION)/charts -maxdepth 2 -name "Chart.yaml" -printf "%h\n" 2>/dev/null)
 
+# A chart-only repository sets APPLICATION nowhere: it defaults to the one chart under helm/,
+# and stays empty when there are several or none, so check-env stops. `?=` keeps a value set
+# earlier (Makefile.custom.mk, the environment, the command line), and a later assignment
+# (Makefile.gen.go.mk's `:=`, Makefile.zzz.custom.mk) replaces the default.
+HELM_CHARTS = $(patsubst helm/%/Chart.yaml,%,$(wildcard helm/*/Chart.yaml))
+APPLICATION ?= $(if $(word 2,$(HELM_CHARTS)),,$(HELM_CHARTS))
+
 .PHONY: lint-chart check-env update-chart helm-docs update-deps
 
 lint-chart: IMAGE := giantswarm/helm-chart-testing:v3.0.0-rc.1
@@ -43,7 +50,7 @@ helm-docs: check-env ## Update $(APPLICATION) README.
 	$(HELM_DOCS) -c helm/$(APPLICATION) -g helm/$(APPLICATION)
 
 check-env:
-	@test -n "$(APPLICATION)" || { echo "APPLICATION is not defined: set it in Makefile.custom.mk or run make APPLICATION=<chart>" >&2; exit 1; }
+	@test -n "$(APPLICATION)" || { echo "APPLICATION is not defined and helm/ does not hold exactly one chart (found: $(or $(HELM_CHARTS),none)): set it in Makefile.custom.mk or run make APPLICATION=<chart>" >&2; exit 1; }
 
 ##@ Chart tests
 
