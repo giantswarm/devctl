@@ -36,6 +36,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `pr wait` and the wait in `pr merge`: when GitHub's REST check-runs or combined-status endpoint fails every try
+  while GraphQL answers, the head's checks are read from the head commit's `statusCheckRollup` through GraphQL. A
+  warning and the new `checksVia: graphql` name the fallback; with both paths failing the poll stays unanswered.
+
 - `release wait`: a release is available only once every commit status of the tag's commit, the newest per context,
   succeeded: the gate `release promote` puts on a candidate. A late job, the branch pipeline or another CI still
   pending keeps the wait going, so a promote run right after a successful wait no longer answers `not_built`; a failed

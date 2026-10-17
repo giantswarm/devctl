@@ -32,6 +32,10 @@ const DefaultTimeout = 30 * time.Minute
 // part of the verdict.
 const CircleCIConfigPath = ".circleci/config.yml"
 
+// ChecksViaGraphQL is Result.ChecksVia when the head's checks were read
+// through GraphQL's statusCheckRollup.
+const ChecksViaGraphQL = "graphql"
+
 // RateSource reports the GitHub rate limit the newest response carried.
 type RateSource interface {
 	Rate() githubclient.RateLimit
@@ -134,6 +138,10 @@ type Result struct {
 	// Checks are the head's check runs, every run of a name that counts, and
 	// its statuses, the latest per context.
 	Checks []Check `json:"checks"`
+	// ChecksVia is ChecksViaGraphQL when the last poll read Checks through
+	// GraphQL because REST's check endpoints went unanswered; absent when REST
+	// answered.
+	ChecksVia string `json:"checksVia,omitempty"`
 	// CircleCI is absent when the head carries no CircleCI configuration, the
 	// repository is a template whose entry declares that configuration as
 	// template content, or CircleCI has no project for it.
@@ -334,10 +342,7 @@ func (w *Waiter) poll(ctx context.Context, owner, repo string, number int, h *he
 	}
 
 	s := snapshot{headSHA: sha, required: h.required, accepted: w.acceptRed}
-	if s.checkRuns, err = w.github.CheckRunsForRef(ctx, owner, repo, sha); err != nil {
-		return nil, err
-	}
-	if s.statuses, err = w.github.CommitStatuses(ctx, owner, repo, sha); err != nil {
+	if err := w.readChecks(ctx, owner, repo, sha, &s, result); err != nil {
 		return nil, err
 	}
 	if s.runs, err = w.github.WorkflowRunsForSHA(ctx, owner, repo, sha); err != nil {
@@ -355,6 +360,48 @@ func (w *Waiter) poll(ctx context.Context, owner, repo string, number int, h *he
 	}
 	result.Checks, result.Actions, result.CircleCI, result.AcceptedRed = e.checks, e.actions, e.circleci, e.acceptedRed
 	return e, nil
+}
+
+// readChecks reads the head's check runs and statuses from REST's check-runs
+// and combined-status endpoints. When those fail every try while GraphQL
+// answers, it reads them from the head commit's statusCheckRollup instead,
+// says so in a warning and Result.ChecksVia, and keeps reading GraphQL for the
+// rest of the wait, so later polls do not spend the retry budget on REST
+// again; a GraphQL read that fails then goes back to REST. With both paths
+// failing the read is unanswered, as a REST read alone would be.
+func (w *Waiter) readChecks(ctx context.Context, owner, repo, sha string, s *snapshot, result *Result) error {
+	var graphQLErr error
+	if result.ChecksVia == ChecksViaGraphQL {
+		if s.checkRuns, s.statuses, graphQLErr = w.github.CheckRollup(ctx, owner, repo, sha); graphQLErr == nil {
+			return nil
+		}
+		result.ChecksVia = ""
+		w.progress.Printf("reading the checks through GraphQL failed (%v): REST again", graphQLErr)
+	}
+	err := w.readChecksREST(ctx, owner, repo, sha, s)
+	var exhausted *agentcli.RetriesExhaustedError
+	if err == nil || !errors.As(err, &exhausted) {
+		return err
+	}
+	if graphQLErr == nil {
+		if s.checkRuns, s.statuses, graphQLErr = w.github.CheckRollup(ctx, owner, repo, sha); graphQLErr == nil {
+			result.ChecksVia = ChecksViaGraphQL
+			result.Warnings = append(result.Warnings, fmt.Sprintf("the REST check endpoints went unanswered (%v): the head's checks are read through GraphQL (statusCheckRollup)", err))
+			w.progress.Printf("REST check endpoints unanswered: reading the head's checks through GraphQL (statusCheckRollup)")
+			return nil
+		}
+	}
+	return fmt.Errorf("%w; reading them through GraphQL (statusCheckRollup) failed too: %v", err, graphQLErr)
+}
+
+// readChecksREST reads the head's check runs and statuses from REST.
+func (w *Waiter) readChecksREST(ctx context.Context, owner, repo, sha string, s *snapshot) error {
+	var err error
+	if s.checkRuns, err = w.github.CheckRunsForRef(ctx, owner, repo, sha); err != nil {
+		return err
+	}
+	s.statuses, err = w.github.CommitStatuses(ctx, owner, repo, sha)
+	return err
 }
 
 // decideCircleCI settles whether CircleCI is part of this head's verdict: it

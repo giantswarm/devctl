@@ -154,6 +154,14 @@ adding that the head is unknown, not failed, and the last unanswered read. A 4xx
 retried, nor is a certificate the client refuses or a host that does not exist; only reads (GET, HEAD) are
 retried.
 
+GitHub's REST check-runs and combined-status endpoints can fail for hours while GraphQL answers. When
+the read of the head's check runs or statuses fails all fifteen tries, the wait reads them from the head
+commit's `statusCheckRollup` through GraphQL instead, warns once (`the REST check endpoints went
+unanswered (…): the head's checks are read through GraphQL (statusCheckRollup)`), sets `checksVia` to
+`graphql` and keeps reading GraphQL for the rest of the wait, going back to REST if a GraphQL read fails.
+Only the checks fall back: the pull request, the Actions runs and, in `pr merge`, the merge itself still
+need REST. With both paths failing the poll is unanswered, as above.
+
 The wait reads nothing from stdin and ignores SIGHUP: a wait whose terminal goes away (a closed terminal
 or SSH session, a harness that moves it to the background) keeps waiting and ends with the verdict.
 
@@ -213,6 +221,7 @@ reset`). Any other `403` is an answer: a permission the token lacks.
 | `identity` | Who read GitHub: `app`, the devctl App login (giantswarm), or `gh`, your own `gh` login (every other owner); empty when the run ended before choosing. |
 | `headSha`, `baseRef` | The head commit judged and the base branch whose protection was read. |
 | `checks[]` | The head's check runs, every run of a name that counts, and its statuses, the latest per context, sorted by name and id. A check run carries its `id` and, when its job belongs to a GitHub Actions run of the head, its `workflow`. `source` is `check_run` or `status`; `status` is `queued`, `in_progress` or `completed` for a check run and `pending` or `completed` for a status; `conclusion` is the check run's conclusion or the status's state, empty while unfinished; `required` says whether the base requires this context. |
+| `checksVia` | `graphql` when the last poll read `checks[]` through GraphQL's `statusCheckRollup` because REST's check endpoints went unanswered (Polling); absent when REST answered. |
 | `circleci` | Present only when CircleCI was consulted: the newest pipeline of the head revision and its workflows, the newest run per name, sorted by name. |
 | `actions[]` | The head's GitHub Actions runs, the latest per workflow name, sorted by name. |
 | `failedJobs[]` | Present at exit 1 with `--failed-log`: each failed job with `name` (an Actions check run's name, with `[<workflow>, check run <id>]` when several runs share it; `<workflow>/<job>` on CircleCI), `source` (`actions` or `circleci`), `url`, and `logTail`, the last `--failed-log-lines` lines of its log, or `logError` when the log could not be read. A check run of another app, a commit status and a CircleCI workflow without a failed job are named in `reason` only. |
