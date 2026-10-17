@@ -41,6 +41,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `pr wait`, `pr merge`: a pending check the base does not require is no longer waited for, as the merge box does
+  not wait for it: a check run of an app other than GitHub Actions (a gatekeeper app that stays `in_progress` while
+  the pull request lacks its review) and a status of another CI than CircleCI. A head whose required checks are green
+  ends green at once instead of at the 30 minute timeout. The document's new `blocking[]` names each such check and,
+  while GitHub blocks the merge, the missing review or the requested changes; a merge GitHub then declines for the
+  review rule ends with that reason. A GitHub Actions job and a CircleCI job are still waited for through their run and
+  pipeline, and a failed check stays red whether required or not.
+
 - `DEVCTL_TIME_SCALE` below 1: a timeout keeps a real-time floor of five seconds (or the unscaled timeout, when
   shorter), so a loaded machine still gets the first poll in; sleeps stay scaled. Production, at scale 1, is unchanged.
 

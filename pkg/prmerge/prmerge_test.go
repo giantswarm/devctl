@@ -1183,3 +1183,43 @@ func Test_refuseBehind(t *testing.T) {
 		})
 	}
 }
+
+func Test_Merge_gatekeeperPendingAndReviewMissingEndsWithTheReview(t *testing.T) {
+	// The required check is green, a gatekeeper app the base does not
+	// require stays in progress until the pull request is reviewed, and
+	// GitHub declines the merge for the missing review: the merge ends with
+	// the review rule, not at the wait's timeout, and the document names
+	// both.
+	declined := sequence.Response{Status: http.StatusMethodNotAllowed, Body: map[string]any{
+		"message": "Repository rule violations found\n\nAt least 1 approving review is required by reviewers with write access.\n\n",
+	}}
+	h := newHarness(t, routes(pull(map[string]any{"mergeable_state": "blocked"}), sequence.Routes{
+		"GET /repos/o/r/commits/abc123/check-runs": {{Body: map[string]any{"total_count": 2, "check_runs": []any{
+			map[string]any{"id": 1, "name": "go-build", "status": "completed", "conclusion": "success", "html_url": "https://github.com/o/r/runs/1"},
+			map[string]any{"id": 2, "name": "Heimdall - PR Gatekeeper", "status": "in_progress", "html_url": "https://github.com/o/r/runs/2", "app": map[string]any{"slug": "tinkerers-ci"}},
+		}}}},
+		"POST /graphql":                 {{Body: map[string]any{"data": map[string]any{"repository": map[string]any{"pullRequest": map[string]any{"reviewDecision": "REVIEW_REQUIRED"}}}}}},
+		"PUT /repos/o/r/pulls/42/merge": {declined},
+		"GET /repos/o/r/rules/branches/main": {{Body: []any{
+			map[string]any{"type": "required_status_checks", "parameters": map[string]any{"required_status_checks": []any{map[string]any{"context": "go-build"}}}},
+			map[string]any{"type": "pull_request", "ruleset_source_type": "Repository", "ruleset_source": "o/r", "ruleset_id": 7, "parameters": map[string]any{"required_approving_review_count": 1}},
+		}}},
+		"GET /repos/o/r/rulesets/7": {{Body: map[string]any{"id": 7, "name": "devctl: default branch", "source_type": "Repository", "source": "o/r", "enforcement": "active", "current_user_can_bypass": "never"}}},
+	}), nil)
+
+	result, err := h.merge(t)
+	var exitErr *agentcli.ExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != agentcli.ExitNotApplicable {
+		t.Fatalf("want exit %d, got %v\n%s", agentcli.ExitNotApplicable, err, h.progress.String())
+	}
+	if !strings.Contains(exitErr.Reason, "approving review is required") {
+		t.Errorf("want the review rule in the reason, got %q", exitErr.Reason)
+	}
+	want := []string{
+		"check Heimdall - PR Gatekeeper (in_progress, not required, not waited for)",
+		"review: an approving review the base requires is missing",
+	}
+	if strings.Join(result.Blocking, "\n") != strings.Join(want, "\n") {
+		t.Errorf("blocking: want %q, got %q", want, result.Blocking)
+	}
+}
