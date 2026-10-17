@@ -1188,7 +1188,8 @@ jobs:
       - name: Cut released entries out of Unreleased
         id: cut
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}      # gh downloads devctl
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # devctl's version check reads its releases
         run: |
           set -euo pipefail
           if [ ! -f CHANGELOG.md ]; then
@@ -1276,7 +1277,8 @@ jobs:
 
       - name: Check CHANGELOG.md
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}      # gh downloads devctl
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # devctl's version check reads its releases
         run: |
           set -euo pipefail
           if [ ! -f CHANGELOG.md ]; then
