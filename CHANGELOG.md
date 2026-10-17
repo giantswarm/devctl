@@ -15,6 +15,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   A maintenance branch's releases are patches, so they are stable on their push. The repository's
   `.github/release-gate.custom.sh` runs before every stable tag, a patch's included.
 
+## [8.142.1] - 2026-10-18
+
 ### Fixed
 
 - The generated Changelog workflow's check step and the Auto-release workflow's changelog cut step pass the job's
@@ -5847,7 +5849,8 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.142.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.142.1...HEAD
+[8.142.1]: https://github.com/giantswarm/devctl/compare/v8.142.0...v8.142.1
 [8.142.0]: https://github.com/giantswarm/devctl/compare/v8.142.0-rc.3...v8.142.0
 [8.142.0-rc.3]: https://github.com/giantswarm/devctl/compare/v8.142.0-rc.2...v8.142.0-rc.3
 [8.142.0-rc.2]: https://github.com/giantswarm/devctl/compare/v8.142.0-rc.1...v8.142.0-rc.2
