@@ -115,8 +115,11 @@ func (r *runner) printProgress(w *manager.Watch, printed map[string]bool, lastRe
 		fmt.Fprintf(r.stdout, "failed at %s: %s\n", w.Failure.Phase, w.Failure.Reason)
 	case w.Ready:
 		line := "ready: " + w.Repository
-		if w.Release != nil {
+		switch {
+		case w.Release != nil:
 			line += fmt.Sprintf(" (release %s, %s)", w.Release.Tag, w.Release.URL)
+		case w.WithoutCI:
+			line += " (no CI: set up, no release to wait for)"
 		}
 		fmt.Fprintln(r.stdout, line)
 		for _, f := range w.Findings {

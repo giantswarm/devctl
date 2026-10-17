@@ -18,6 +18,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `repo watch` ends with exit 0 once a repository declared without CI (`gen.ci.generate: false`) is set up, printing
+  `ready: <repository> (no CI: set up, no release to wait for)`, instead of waiting for a release that never comes
+  until `--timeout`; the answer carries `withoutCI` from giantswarm-repo-manager. A repository with CI still waits for
+  `released`.
 - `gen makefile`: `lint-chart` runs ct from `gsoci.azurecr.io/giantswarm/helm-chart-testing:v3.15.0` (Helm v3.16)
   instead of `giantswarm/helm-chart-testing:v3.0.0-rc.1` (Helm v3.1), and gives its container a TTY only when stdin is
   one, so the target runs headless in CI and automation.
