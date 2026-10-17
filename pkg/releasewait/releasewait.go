@@ -214,6 +214,8 @@ type Waiter struct {
 	// green, the contexts of the tag commit's statuses still pending, for the
 	// heartbeat and the timeout's reason.
 	pendingStatuses []string
+	// warned are the warnings given already, each given once.
+	warned map[string]bool
 }
 
 // New validates config and returns a Waiter.
@@ -341,10 +343,11 @@ func (w *Waiter) wait(ctx context.Context, result *Result) error {
 	version := strings.TrimPrefix(result.Tag, "v")
 
 	if content.HasCircleCI() {
-		w.circleci, err = w.config.CircleCI(ctx)
+		client, err := w.config.CircleCI(ctx)
 		if err != nil {
 			return err
 		}
+		w.circleci = boundedCircleCI{CircleCI: client, clock: w.clock}
 	}
 
 	plan := &plan{version: version, private: private, content: content, entry: entry}
@@ -538,6 +541,17 @@ func (w *Waiter) loop(ctx context.Context, result *Result, p *plan) error {
 			w.unanswered = err.Error()
 			if ctx.Err() != nil {
 				return w.timeout(result)
+			}
+			// The registry answers for the artifacts whatever CircleCI
+			// does: what it serves is available, never missing for want
+			// of a CI answer.
+			if p.derived {
+				if err := w.probe(ctx, result, p); err != nil {
+					if ctx.Err() != nil {
+						return w.timeout(result)
+					}
+					return err
+				}
 			}
 			w.progress.Printf("the tag's CI went unanswered (%s); reading again in %s", err, w.interval())
 			w.progress.Waiting(w.clock.Now(), "an answer from the tag's CI: "+err.Error())
@@ -1005,6 +1019,8 @@ func (w *Waiter) timeout(result *Result) error {
 		return timeoutErr("%s is available and its tag pipeline green, and the commit statuses of %s did not finish within %s: %s pending; devctl release promote refuses the commit until they succeed", result.Tag, short(result.SHA), w.config.Timeout, strings.Join(w.pendingStatuses, ", "))
 	case result.Pipeline == nil && result.CIModel != CIModelNone && w.unanswered == "":
 		return timeoutErr("no CircleCI pipeline for %s within %s: the tag's webhook may not have reached CircleCI", result.Tag, w.config.Timeout)
+	case len(result.Artifacts) > 0 && w.unanswered != "":
+		return timeoutErr("every artifact of %s is available, and the tag's CI did not answer within %s; the release is unknown, not failed: the last read of the tag's CI went unanswered: %s", result.Tag, w.config.Timeout, w.unanswered)
 	case len(result.Artifacts) > 0 && unfinished != "":
 		return timeoutErr("every artifact of %s is available, the tag pipeline did not finish within %s%s", result.Tag, w.config.Timeout, unfinished)
 	}
@@ -1012,14 +1028,15 @@ func (w *Waiter) timeout(result *Result) error {
 }
 
 // unanswered says whether err is a read of the tag's CI that went
-// unanswered: one that failed every try in transit or with a 5xx, or that
-// the deadline cut short.
+// unanswered: one that failed every try in transit or with a 5xx, one that
+// got no answer within [CircleCIReadBound], or one the deadline cut short.
 func unanswered(ctx context.Context, err error) bool {
 	if err == nil || isOutcome(err) {
 		return false
 	}
 	var exhausted *agentcli.RetriesExhaustedError
-	return errors.As(err, &exhausted) || ctx.Err() != nil
+	var timedOut *ReadTimeoutError
+	return errors.As(err, &exhausted) || errors.As(err, &timedOut) || ctx.Err() != nil
 }
 
 // stillRunning names what keeps the tag pipeline from being green, for the
