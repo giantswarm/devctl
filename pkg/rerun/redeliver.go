@@ -61,6 +61,29 @@ type Redelivery struct {
 	Ref string
 	// Now is the clock; nil reads time.Now.
 	Now func() time.Time
+	// Trigger starts a fresh pipeline through the CircleCI API when the push
+	// cannot be sent again: it was sent again before, or the webhook or its
+	// delivery is gone. Once per tag: a pipeline the API triggered gets no
+	// second one. Nil keeps those outcomes as they are.
+	Trigger func(ctx context.Context) (*circleciclient.Pipeline, error)
+}
+
+// The outcomes of a fresh pipeline.
+const (
+	// OutcomeTriggered: CircleCI was asked for a fresh pipeline through its
+	// API and created it.
+	OutcomeTriggered = "triggered"
+	// OutcomeAlreadyTriggered: the pipeline without a workflow is itself one
+	// the API triggered; a second one is not triggered.
+	OutcomeAlreadyTriggered = "already_triggered"
+)
+
+// TriggerResult is the fresh pipeline in the command's document.
+type TriggerResult struct {
+	// Outcome is one of triggered, already_triggered, refused.
+	Outcome string `json:"outcome"`
+	// Pipeline is the fresh pipeline (triggered).
+	Pipeline *Pipeline `json:"pipeline,omitempty"`
 }
 
 // RedeliveryResult is the redelivery in the command's document: the hook,
@@ -130,8 +153,8 @@ func (r Redelivery) redeliver(ctx context.Context, org, repo string, pipeline *c
 	}
 	hook := circleCIHook(all)
 	if hook == nil {
-		return agentcli.NewExitError(agentcli.ExitNotApplicable, agentcli.VerdictNotApplicable,
-			"%s, and %s/%s has no CircleCI webhook among its %d (none posts to circleci.com): nothing to redeliver", state, org, repo, len(all))
+		return r.fresh(ctx, org, repo, pipeline, result, warn, agentcli.NewExitError(agentcli.ExitNotApplicable, agentcli.VerdictNotApplicable,
+			"%s, and %s/%s has no CircleCI webhook among its %d (none posts to circleci.com): nothing to redeliver", state, org, repo, len(all)))
 	}
 	deliveries, err := hooks.ListHookDeliveries(ctx, org, repo, hook.GetID())
 	if err != nil {
@@ -162,9 +185,9 @@ func (r Redelivery) redeliver(ctx context.Context, org, repo string, pipeline *c
 		}
 	}
 	if match == nil {
-		return agentcli.NewExitError(agentcli.ExitNotApplicable, agentcli.VerdictNotApplicable,
+		return r.fresh(ctx, org, repo, pipeline, result, warn, agentcli.NewExitError(agentcli.ExitNotApplicable, agentcli.VerdictNotApplicable,
 			"%s, and none of the newest %d deliveries of its CircleCI webhook is the push of %s: nothing to redeliver (a head in a fork is pushed to the fork)",
-			state, len(deliveries), r.what(pipeline))
+			state, len(deliveries), r.what(pipeline)))
 	}
 	result.Redelivery = &RedeliveryResult{
 		HookID: hook.GetID(), HookURL: hook.GetConfig().GetURL(),
@@ -173,9 +196,9 @@ func (r Redelivery) redeliver(ctx context.Context, org, repo string, pipeline *c
 	}
 	if at, ok := redelivered[match.GetGUID()]; ok {
 		result.Redelivery.Outcome, result.Redelivery.RedeliveredAt = OutcomeAlreadyRedelivered, &at
-		return agentcli.NewExitError(agentcli.ExitRefused, agentcli.VerdictRefused,
+		return r.fresh(ctx, org, repo, pipeline, result, warn, agentcli.NewExitError(agentcli.ExitRefused, agentcli.VerdictRefused,
 			"%s, and its push delivery %s was already sent again at %s: a second redelivery is not sent; "+
-				"check CircleCI's status, or push an empty commit", state, match.GetGUID(), at.UTC().Format(time.RFC3339))
+				"check CircleCI's status, or push an empty commit", state, match.GetGUID(), at.UTC().Format(time.RFC3339)))
 	}
 	if err := hooks.RedeliverHookDelivery(ctx, org, repo, hook.GetID(), match.GetID()); err != nil {
 		result.Redelivery.Outcome = OutcomeRefused
@@ -184,6 +207,31 @@ func (r Redelivery) redeliver(ctx context.Context, org, repo string, pipeline *c
 	result.Redelivery.Outcome = OutcomeRedelivered
 	warn(fmt.Sprintf("%s: its push delivery %s (%s at %s, delivered %s) was sent again; CircleCI creates a new pipeline for the head, the one the wait reads",
 		state, match.GetGUID(), push.Ref, push.After, match.GetDeliveredAt().UTC().Format(time.RFC3339)))
+	return nil
+}
+
+// fresh triggers a fresh pipeline through the CircleCI API where the push
+// cannot be sent again (deadEnd says why): exit 5 for a pipeline the API
+// triggered itself, exit 8 for CircleCI's 403. Without [Redelivery.Trigger]
+// deadEnd is returned unchanged.
+func (r Redelivery) fresh(ctx context.Context, org, repo string, pipeline *circleciclient.Pipeline, result *Result, warn func(string), deadEnd error) error {
+	if r.Trigger == nil {
+		return deadEnd
+	}
+	result.Trigger = &TriggerResult{}
+	if pipeline.TriggeredByAPI() {
+		result.Trigger.Outcome = OutcomeAlreadyTriggered
+		return agentcli.NewExitError(agentcli.ExitRefused, agentcli.VerdictRefused,
+			"pipeline %d has no workflow and was itself triggered through the CircleCI API: a second fresh pipeline is not triggered; check CircleCI's status and the project's configuration", pipeline.Number)
+	}
+	p, err := r.Trigger(ctx)
+	if err != nil {
+		result.Trigger.Outcome = OutcomeRefused
+		return refused(err, "the fresh pipeline")
+	}
+	result.Trigger.Outcome = OutcomeTriggered
+	result.Trigger.Pipeline = &Pipeline{ID: p.ID, Number: p.Number, URL: circleciclient.PipelineURL(org, repo, p.Number)}
+	warn(fmt.Sprintf("%v; a fresh pipeline %d was triggered through the CircleCI API instead, the one the wait reads", deadEnd, p.Number))
 	return nil
 }
 

@@ -11,6 +11,7 @@ import (
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
 	"github.com/giantswarm/devctl/v8/pkg/authexec"
 	"github.com/giantswarm/devctl/v8/pkg/authstore"
+	"github.com/giantswarm/devctl/v8/pkg/circleciclient"
 	"github.com/giantswarm/devctl/v8/pkg/releasewait"
 	"github.com/giantswarm/devctl/v8/pkg/rerun"
 )
@@ -96,8 +97,13 @@ func (r *runner) rerun(ctx context.Context, args []string, doc *document) error 
 			doc.Tag = tag
 			// A pipeline without a workflow gets the tag's push again; GitHub
 			// is read only then, with the identity devctl pr wait uses.
+			// Where the push cannot be sent again, CircleCI's API triggers a
+			// fresh pipeline for the tag.
 			redelivery := rerun.Redelivery{
 				Ref: "refs/tags/" + tag,
+				Trigger: func(ctx context.Context) (*circleciclient.Pipeline, error) {
+					return circleci.TriggerTagPipeline(ctx, owner, repo, tag)
+				},
 				Hooks: func(ctx context.Context) (rerun.Hooks, string, error) {
 					github, token, err := rerun.NewGitHub(ctx, owner, r.requireGitHub, r.personGitHub, endpoints, retrying)
 					if err != nil {

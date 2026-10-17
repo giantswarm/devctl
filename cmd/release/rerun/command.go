@@ -35,7 +35,11 @@ devctl release wait reads. Once per tag: a delivery sent again before is not
 sent a second time. GitHub is read only then, with the identity devctl pr
 wait uses (the devctl App login for giantswarm, your own gh login elsewhere);
 a 403 names the permission that identity lacks (the App's repository
-permission Webhooks: read and write).
+permission Webhooks: read and write). Where the push cannot be sent again (it
+was sent again before, or the webhook or its delivery is gone, as for a
+pipeline that errored before any workflow), a fresh pipeline for the tag is
+triggered through the CircleCI API instead. Once per tag: a pipeline the API
+triggered gets no second one.
 
 A rerun is a write: it takes a CircleCI login that granted Write access
 (devctl auth login --circleci-only, Write on the consent page); a login that
@@ -46,16 +50,17 @@ startedAt, finishedAt, repository, tag, headSha, pipeline{id, number, url},
 workflows[{name, id, status, url, failedJobs[], outcome
 (rerun|running|no_failed_job|nothing_to_rerun|refused), rerunId, rerunUrl}],
 redelivery{hookId, hookUrl, deliveryId, guid, deliveredAt, ref, after, outcome
-(redelivered|already_redelivered|refused), redeliveredAt}, identity. See
+(redelivered|already_redelivered|refused), redeliveredAt}, trigger{outcome
+(triggered|already_triggered|refused), pipeline{id, number, url}}, identity. See
 docs/pr-rerun.md.
 
 Exit codes:
-  0  at least one workflow is rerun from failed, or the push webhook redelivered
-  3  not applicable: no pipeline for the tag, no failed workflow, or no push
-     delivery to send again
+  0  at least one workflow is rerun from failed, the push webhook redelivered,
+     or a fresh pipeline triggered
+  3  not applicable: no pipeline for the tag, or no failed workflow
   5  refused: nothing finished failed and a workflow is still running, a
-     pipeline without a workflow younger than five minutes, or a delivery
-     sent again before
+     pipeline without a workflow younger than five minutes, or one the API
+     triggered itself
   7  usage or a tooling failure
   8  authentication required: no CircleCI login, or one without Write access;
      a GitHub identity without webhook access`

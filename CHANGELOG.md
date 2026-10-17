@@ -9,18 +9,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
-- `release promote --version vX.Y.Z-rc.N` promotes that release candidate of the one named repository instead of the
-  latest: a candidate that is built while a later one still builds, or the one proven live. The auto-release workflow
-  (`gen workflows --release-workflow=auto-release`) takes the same `version` input on `release-type: stable` and
-  refuses a tag that is not a candidate since the last stable release. Without `--version`, a `not_built` refusal names
-  the newest built candidate in its message and in `newestBuilt`.
+- `release rerun` triggers a fresh pipeline for the tag through CircleCI's API where the tag's push cannot be sent
+  again (sent again before, or no CircleCI webhook or push delivery left), as for a tag whose pipeline errored before
+  any workflow; the document's `trigger` field carries it. Once per tag: a pipeline the API triggered gets no second
+  one (exit 5). Rerunning failed workflows from failed is unchanged.
 
-- `changelog cut` moves every CHANGELOG.md entry under Unreleased that a release already carried into that release's
-  section (the first release, among the `v` semver tags reachable from HEAD, whose CHANGELOG.md holds it under
-  Unreleased), creating the section and its link reference where they are missing; `changelog check` fails while such
-  an entry remains. `gen workflows --release-workflow=auto-release`: the Auto-release workflow opens the cut as a
-  `docs(changelog)` pull request after every release and arms auto-merge on it, and the new
-  `zz_generated.changelog.yaml` runs the check on every pull request. Released entries no longer stay under Unreleased.
+## [8.142.0-rc.3] - 2026-10-17
 
 ### Fixed
 
@@ -28,21 +22,62 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   `ready: <repository> (no CI: set up, no release to wait for)`, instead of waiting for a release that never comes
   until `--timeout`; the answer carries `withoutCI` from giantswarm-repo-manager. A repository with CI still waits for
   `released`.
+
+## [8.142.0-rc.2] - 2026-10-17
+
+### Fixed
+
 - `pr wait` and `pr merge` no longer judge a head on checks that have not registered yet: for one minute after the
   pull request's last update (a push, or the merge commit `--update-branch` creates) a required context still absent is
   pending instead of `required_missing`, and a head without any GitHub Actions run or check run of its own is pending
   instead of `green`. A pending check of another app keeps a head with an absent required context waiting, and a failed
   check the base does not require is red only once the required contexts have finished.
+
+## [8.142.0-rc.1] - 2026-10-17
+
+### Added
+
+- `release promote --version vX.Y.Z-rc.N` promotes that release candidate of the one named repository instead of the
+  latest: a candidate that is built while a later one still builds, or the one proven live. The auto-release workflow
+  (`gen workflows --release-workflow=auto-release`) takes the same `version` input on `release-type: stable` and
+  refuses a tag that is not a candidate since the last stable release. Without `--version`, a `not_built` refusal names
+  the newest built candidate in its message and in `newestBuilt`.
+
+## [8.141.2-rc.2] - 2026-10-17
+
+### Fixed
+
 - `gen makefile`: `lint-chart` runs ct from `gsoci.azurecr.io/giantswarm/helm-chart-testing:v3.15.0` (Helm v3.16)
   instead of `giantswarm/helm-chart-testing:v3.0.0-rc.1` (Helm v3.1), and gives its container a TTY only when stdin is
   one, so the target runs headless in CI and automation.
+
+## [8.141.2-rc.1] - 2026-10-17
+
+### Fixed
+
 - `gen makefile`: `APPLICATION` defaults to the one chart under `helm/` when nothing sets it, so `make helm-docs`,
   `make lint-chart` and `make update-chart` run in a chart-only repository; with several charts or none `check-env`
   still stops, naming the charts it found. A value from `Makefile.custom.mk`, the environment, the command line or
   `Makefile.gen.go.mk` keeps precedence.
+
+## [8.141.1-rc.1] - 2026-10-17
+
+### Fixed
+
 - `release promote --team` lists no repository whose team-file entry is declared `lifecycle: archived` or `deleted`:
   such an entry is the record of the repository, which takes no release (archived) or is gone from GitHub (deleted), so
   a deleted one no longer fails the run as not found.
+
+## [8.141.0] - 2026-10-17
+
+### Added
+
+- `changelog cut` moves every CHANGELOG.md entry under Unreleased that a release already carried into that release's
+  section (the first release, among the `v` semver tags reachable from HEAD, whose CHANGELOG.md holds it under
+  Unreleased), creating the section and its link reference where they are missing; `changelog check` fails while such
+  an entry remains. `gen workflows --release-workflow=auto-release`: the Auto-release workflow opens the cut as a
+  `docs(changelog)` pull request after every release and arms auto-merge on it, and the new
+  `zz_generated.changelog.yaml` runs the check on every pull request. Released entries no longer stay under Unreleased.
 
 ## [8.140.1-rc.2] - 2026-10-17
 
@@ -5793,7 +5828,14 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.140.1-rc.2...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.142.0-rc.3...HEAD
+[8.142.0-rc.3]: https://github.com/giantswarm/devctl/compare/v8.142.0-rc.2...v8.142.0-rc.3
+[8.142.0-rc.2]: https://github.com/giantswarm/devctl/compare/v8.142.0-rc.1...v8.142.0-rc.2
+[8.142.0-rc.1]: https://github.com/giantswarm/devctl/compare/v8.141.2-rc.2...v8.142.0-rc.1
+[8.141.2-rc.2]: https://github.com/giantswarm/devctl/compare/v8.141.2-rc.1...v8.141.2-rc.2
+[8.141.2-rc.1]: https://github.com/giantswarm/devctl/compare/v8.141.1-rc.1...v8.141.2-rc.1
+[8.141.1-rc.1]: https://github.com/giantswarm/devctl/compare/v8.141.0...v8.141.1-rc.1
+[8.141.0]: https://github.com/giantswarm/devctl/compare/v8.140.1-rc.2...v8.141.0
 [8.140.1-rc.2]: https://github.com/giantswarm/devctl/compare/v8.140.1-rc.1...v8.140.1-rc.2
 [8.140.1-rc.1]: https://github.com/giantswarm/devctl/compare/v8.140.0...v8.140.1-rc.1
 [8.140.0]: https://github.com/giantswarm/devctl/compare/v8.140.0-rc.21...v8.140.0

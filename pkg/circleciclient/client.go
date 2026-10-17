@@ -159,11 +159,25 @@ type CheckoutKey struct {
 
 // Pipeline is one pipeline of a project.
 type Pipeline struct {
-	ID        string      `json:"id"`
-	Number    int64       `json:"number"`
-	State     string      `json:"state"`
-	CreatedAt time.Time   `json:"created_at"`
-	VCS       PipelineVCS `json:"vcs"`
+	ID        string          `json:"id"`
+	Number    int64           `json:"number"`
+	State     string          `json:"state"`
+	CreatedAt time.Time       `json:"created_at"`
+	VCS       PipelineVCS     `json:"vcs"`
+	Trigger   PipelineTrigger `json:"trigger"`
+}
+
+// PipelineTrigger is what created a pipeline. Type is webhook for a push,
+// api (or explicit) for a pipeline triggered through the API, schedule or
+// scheduled_pipeline for a schedule.
+type PipelineTrigger struct {
+	Type string `json:"type"`
+}
+
+// TriggeredByAPI says whether the pipeline was triggered through the API,
+// as [Client.TriggerTagPipeline] does, rather than by a push.
+func (p Pipeline) TriggeredByAPI() bool {
+	return p.Trigger.Type == "api" || p.Trigger.Type == "explicit"
 }
 
 // PipelineVCS is what a pipeline built.
