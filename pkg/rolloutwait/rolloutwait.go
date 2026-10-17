@@ -83,7 +83,10 @@ type Waiter struct {
 	clock                              agentcli.Clock
 	progress                           *agentcli.Progress
 	warn                               func(string)
-	warned                             map[string]bool
+	// polled are the warnings of the latest poll; announced those already
+	// shown as progress.
+	polled    []string
+	announced map[string]bool
 
 	revision, repository string
 	github               GitHub
@@ -132,7 +135,7 @@ func New(config Config) (*Waiter, error) {
 		clock:            config.Clock,
 		progress:         config.Progress,
 		warn:             config.Warn,
-		warned:           map[string]bool{},
+		announced:        map[string]bool{},
 		revision:         config.Revision,
 		repository:       config.Repository,
 		github:           config.GitHub,
@@ -159,15 +162,22 @@ func New(config Config) (*Waiter, error) {
 // deployment that follows the version has rolled out, exit 1 when one
 // failed, 2 at the timeout, 3 when no deployment of the charts exists,
 // none follows the version, or whether a changed app runs the change
-// cannot be told.
+// cannot be told. Only the warnings of the last poll reach the result: a
+// state seen mid-roll and gone by the end is not reported.
 func (w *Waiter) Wait(ctx context.Context, result *Result) error {
 	result.Version = w.version
 	result.Revision = w.revision
 	result.Charts = w.chartNames()
+	defer func() {
+		for _, m := range w.polled {
+			w.warn(m)
+		}
+	}()
 	deadline := w.clock.Now().Add(w.clock.Scaled(w.timeout))
 	interval := IntervalFloor
 	reconciled := false
 	for {
+		w.polled = nil
 		list, err := w.observe(ctx)
 		if err != nil {
 			return err
@@ -269,7 +279,7 @@ func (w *Waiter) outcome(list []Deployment) error {
 	var excluded []string
 	for _, d := range list {
 		if !follows(d) {
-			w.warnOnce(fmt.Sprintf("%s will not deploy %s: %s", d.id(), w.target(), d.Message))
+			w.warnPoll(fmt.Sprintf("%s will not deploy %s: %s", d.id(), w.target(), d.Message))
 			excluded = append(excluded, d.id()+": "+d.Message)
 		}
 	}
@@ -361,14 +371,18 @@ func (w *Waiter) chartNames() []string {
 	return names
 }
 
-// warnOnce adds a warning the first time it is seen: every poll judges the
-// same deployments again.
-func (w *Waiter) warnOnce(message string) {
-	if w.warned[message] {
+// warnPoll records a warning about what this poll found, shown as progress
+// the first time it is seen: every poll judges the same deployments again,
+// and the result keeps the last poll's.
+func (w *Waiter) warnPoll(message string) {
+	if slices.Contains(w.polled, message) {
 		return
 	}
-	w.warned[message] = true
-	w.warn(message)
+	w.polled = append(w.polled, message)
+	if !w.announced[message] {
+		w.announced[message] = true
+		w.progress.Printf("warning: %s", message)
+	}
 }
 
 // ChartName is the chart of a chart artifact reference,

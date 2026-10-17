@@ -36,6 +36,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `rollout wait`: the result's warnings are those of the last poll. A deployment warned about mid-roll (a source still
+  on the previous version, which the release then moves) no longer leaves its warning in a `rolled_out` result; a
+  warning is still shown as progress the moment it is first seen. See docs/rollout-wait.md.
 - `repo reconcile`: an app catalog (`componentType: appcatalog`) keeps its own default branch, as a customer repository
   does: the settings step never renames `master`, which GitHub Pages serves the catalog from, to `main`; the protection
   step protects it; `repo status` names it on the declaration line.

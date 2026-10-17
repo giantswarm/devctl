@@ -148,7 +148,8 @@ only write the command makes; without it the command only reads.
 ## The document
 
 The envelope (`command`, `schemaVersion`, `exitCode`, `verdict`, `reason`, `warnings`, `startedAt`,
-`finishedAt`) and:
+`finishedAt`; `warnings` holds what the last poll found, a warning seen mid-roll and gone by the end is only
+shown as progress) and:
 
 | Field | Meaning |
 |---|---|

@@ -444,7 +444,7 @@ func (w *Waiter) judgeValuesHelmRelease(ctx context.Context, hr *unstructured.Un
 			return d.set(StateProgressing, "upgraded with the values of %s, the HelmRelease not ready: %s", short(w.revision), orUnknown(ready)), nil
 		}
 		if _, remote, _ := unstructured.NestedMap(hr.Object, "spec", "kubeConfig"); remote {
-			w.warnOnce(fmt.Sprintf("%s deploys to a remote cluster: its workloads are not checked, helm-controller's wait vouches for them", d.id()))
+			w.warnPoll(fmt.Sprintf("%s deploys to a remote cluster: its workloads are not checked, helm-controller's wait vouches for them", d.id()))
 			return d.set(StateRolledOut, ""), nil
 		}
 		return w.judgeWorkloads(ctx, d, releaseNamespace, release)
