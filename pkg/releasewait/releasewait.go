@@ -210,6 +210,10 @@ type Waiter struct {
 	// commit's CircleCI statuses, for when the pipeline listing does not
 	// name it.
 	statusPipelines statusPipelines
+	// pendingStatuses are, once the artifacts are available and the tag's CI
+	// green, the contexts of the tag commit's statuses still pending, for the
+	// heartbeat and the timeout's reason.
+	pendingStatuses []string
 }
 
 // New validates config and returns a Waiter.
@@ -606,6 +610,20 @@ func (w *Waiter) loop(ctx context.Context, result *Result, p *plan) error {
 			}
 		}
 		if done {
+			// The tag pipeline is not every status of its commit: a late
+			// job, the branch pipeline and other CIs report there too, and
+			// devctl release promote gates on them all.
+			done, err = w.commitStatusesFinal(ctx, result)
+			if unanswered(ctx, err) {
+				w.unanswered, done, err = err.Error(), false, nil
+			}
+			if err != nil {
+				return err
+			}
+		} else {
+			w.pendingStatuses = nil
+		}
+		if done {
 			return nil
 		}
 
@@ -634,6 +652,8 @@ func (w *Waiter) pending(result *Result, p *plan, state *pipelineState) string {
 		parts = append(parts, fmt.Sprintf("the Actions runs of %s", result.Tag))
 	case !state.green:
 		parts = append(parts, stillRunning(result.Pipeline))
+	case len(w.pendingStatuses) > 0:
+		parts = append(parts, fmt.Sprintf("the commit statuses of %s: %s pending", short(result.SHA), strings.Join(w.pendingStatuses, ", ")))
 	case p.releaseAssets:
 		parts = append(parts, fmt.Sprintf("the release of %s published", result.Tag))
 	case w.config.Catalog && len(parts) == 0:
@@ -981,6 +1001,8 @@ func (w *Waiter) timeout(result *Result) error {
 		return timeoutErr("no tag within %s", w.config.Timeout)
 	case len(missing) > 0:
 		return timeoutErr("not available within %s: %s%s", w.config.Timeout, strings.Join(missing, ", "), unfinished)
+	case len(w.pendingStatuses) > 0:
+		return timeoutErr("%s is available and its tag pipeline green, and the commit statuses of %s did not finish within %s: %s pending; devctl release promote refuses the commit until they succeed", result.Tag, short(result.SHA), w.config.Timeout, strings.Join(w.pendingStatuses, ", "))
 	case result.Pipeline == nil && result.CIModel != CIModelNone && w.unanswered == "":
 		return timeoutErr("no CircleCI pipeline for %s within %s: the tag's webhook may not have reached CircleCI", result.Tag, w.config.Timeout)
 	case len(result.Artifacts) > 0 && unfinished != "":

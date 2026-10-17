@@ -53,7 +53,11 @@ UNAUTHORIZED; the private registry is read with the docker keychain. An answer
 other than a digest or "manifest unknown" ends the wait as a tooling failure.
 A failed or cancelled workflow ends it as the tag's CI failure with the failed
 jobs; a repository without CircleCI is judged by the Actions runs the tag
-triggered. --catalog also waits for the catalog index to list the chart: the
+triggered. Then every commit status of the tag's commit, the newest per
+context, has to succeed, the gate devctl release promote puts on a
+candidate: a late job, the branch pipeline and other CIs report there too.
+The wait goes on while one is pending; a failed one ends it with exit 12
+naming it. --catalog also waits for the catalog index to list the chart: the
 test catalog for a pre-release when the tag's architect orb (10.12.0 on) sends
 it there.
 
@@ -63,7 +67,8 @@ what the wait still waits for, every two minutes and when it changes
 schemaVersion, exitCode, verdict, reason, warnings, startedAt, finishedAt), repository, tag,
 sha, releaseModel, ciModel, artifacts[{kind, reference, digest, state}],
 pipeline{id, number, url, workflows[{name, status}], failedJobs[], unfinished[]} (null
-without CircleCI), actions[{name, runId, status, conclusion, url}], and on
+without CircleCI), actions[{name, runId, status, conclusion, url}],
+statuses[{context, state, url}] (the newest commit status per context), and on
 exit 1 with --failed-log failedJobs[{name, source (actions|circleci), url,
 logTail, logError}].
 
@@ -74,8 +79,8 @@ trimmed the way pr wait's --failed-log does; a green or pending wait reads
 no log.
 
 Exit codes:
-  0  available: every artifact resolves to a digest and the tag pipeline
-     is green
+  0  available: every artifact resolves to a digest, the tag pipeline
+     is green and every commit status of the tag's commit succeeded
   1  the tag's CI failed, or with --pr the auto-release run failed before
      it tagged; the document names the failed jobs
   2  timeout; the document shows what is still missing or still running
@@ -88,6 +93,10 @@ Exit codes:
      artifacts, a registry answer that is neither a digest nor "manifest
      unknown"
   8  authentication required: run ` + "`devctl auth login`" + `
+ 12  status_failed: the artifacts are available and the tag pipeline is
+     green, and a commit status of the tag's commit failed (the branch
+     pipeline's, another CI's): devctl release promote refuses the commit;
+     the reason names the failed statuses
 
 Tokens come from the keychain (devctl auth login). GitHub is always needed;
 CircleCI only when the tag carries a .circleci/config.yml.

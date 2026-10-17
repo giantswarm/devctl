@@ -62,7 +62,8 @@
       "ciModel": "generated",
       "artifacts": [],
       "pipeline": null,
-      "actions": []
+      "actions": [],
+      "statuses": []
     }
   }
 }
