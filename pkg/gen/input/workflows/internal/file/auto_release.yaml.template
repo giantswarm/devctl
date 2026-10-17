@@ -726,8 +726,13 @@ jobs:
   #
   # The pull request is opened as taylorbot (TAYLORBOT_GITHUB_ACTION): a pull
   # request opened with GITHUB_TOKEN runs no workflow, so its required checks
-  # would never report. A fork line carries upstream's CHANGELOG.md, which its
-  # releases do not cut, and has no such job.
+  # would never report. The review the branch's ruleset requires comes from a
+  # second machine identity, architectbot (ARCHITECT_GITHUB_REPO_SYNC_TOKEN),
+  # since an author cannot approve its own pull request: the armed auto-merge
+  # then lands the cut once its required checks are green, and no other pull
+  # request fails the Changelog workflow on a cut left waiting for a person. A
+  # fork line carries upstream's CHANGELOG.md, which its releases do not cut,
+  # and has no such job.
   changelog:
     name: Cut the CHANGELOG
     needs: tag
@@ -781,6 +786,7 @@ jobs:
         if: steps.cut.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ secrets.TAYLORBOT_GITHUB_ACTION }}
+          APPROVER_TOKEN: ${{ secrets.ARCHITECT_GITHUB_REPO_SYNC_TOKEN }}
           TAG: ${{ needs.tag.outputs.tag }}
         run: |
           set -euo pipefail
@@ -804,5 +810,12 @@ jobs:
           echo "cut pull request: ${pr}"
           if ! gh pr merge "$pr" --auto --squash; then
             echo "::warning title=Auto-merge not armed::${pr} waits for a merge: auto-merge could not be armed."
+          fi
+          # Approved anew on every release: the branch is rebuilt each time.
+          if [ -z "${APPROVER_TOKEN:-}" ]; then
+            echo "::warning title=Cut not approved::no ARCHITECT_GITHUB_REPO_SYNC_TOKEN secret to approve ${pr} with: it waits for a review."
+          elif ! GH_TOKEN="$APPROVER_TOKEN" gh pr review "$pr" --approve \
+            --body "Approved by the Auto-release workflow: the cut only moves released entries out of Unreleased."; then
+            echo "::warning title=Cut not approved::${pr} waits for a review: the approval was refused."
           fi
 {{{{- end }}}}

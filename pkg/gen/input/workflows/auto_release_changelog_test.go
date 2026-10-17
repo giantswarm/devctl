@@ -130,6 +130,97 @@ func Test_AutoReleaseChangelogCutStep(t *testing.T) {
 	}
 }
 
+// Test_AutoReleaseChangelogOpenStep runs the open step with a stand-in gh that
+// logs every call with the token it ran under: taylorbot opens the cut and
+// arms auto-merge, and architectbot, a second identity, approves it, so the
+// review the branch requires never waits for a person. Without the approver's
+// secret the step warns and still succeeds.
+func Test_AutoReleaseChangelogOpenStep(t *testing.T) {
+	job := workflowJobs(t, renderInput(t, newWorkflows(t, gen.FlavourApp).AutoRelease()))["changelog"]
+	var step autoReleaseStep
+	for _, s := range job.Steps {
+		if s.Name == "Open the cut as a pull request" {
+			step = s
+		}
+	}
+	for v, want := range map[string]string{ // #nosec G101 -- secret names, not values
+		"GH_TOKEN":       "${{ secrets.TAYLORBOT_GITHUB_ACTION }}",
+		"APPROVER_TOKEN": "${{ secrets.ARCHITECT_GITHUB_REPO_SYNC_TOKEN }}",
+	} {
+		if got := step.Env[v]; got != want {
+			t.Fatalf("open step: env %s = %q, want %q", v, got, want)
+		}
+	}
+
+	for _, tc := range []struct {
+		name     string
+		approver string
+		want     []string
+		warning  string
+	}{
+		{
+			name:     "approved by a second identity",
+			approver: "architect",
+			want: []string{
+				"taylor pr create",
+				`taylor pr merge https://github.com/o/r/pull/1 --auto --squash`,
+				"architect pr review https://github.com/o/r/pull/1 --approve",
+			},
+		},
+		{
+			name:    "no approver secret",
+			want:    []string{"taylor pr create", "taylor pr merge"},
+			warning: "::warning title=Cut not approved::no ARCHITECT_GITHUB_REPO_SYNC_TOKEN secret",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			bin := t.TempDir()
+			log := filepath.Join(bin, "log")
+			gh := fmt.Sprintf("#!/bin/sh\necho \"$GH_TOKEN $*\" >> %q\n"+
+				"[ \"$1 $2\" = 'pr create' ] && echo https://github.com/o/r/pull/1\nexit 0\n", log)
+			if err := os.WriteFile(filepath.Join(bin, "gh"), []byte(gh), 0o700); err != nil { // #nosec G306 -- test stand-in
+				t.Fatal(err)
+			}
+			origin := t.TempDir()
+			mustGit(t, origin, "init", "--bare")
+			dir := repo(t)
+			mustGit(t, dir, "remote", "add", "origin", origin)
+			if err := os.WriteFile(filepath.Join(dir, "CHANGELOG.md"), []byte("# Changelog\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			mustGit(t, dir, "add", "CHANGELOG.md")
+			mustGit(t, dir, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-m", "docs: changelog")
+			if err := os.WriteFile(filepath.Join(dir, "CHANGELOG.md"), []byte("# Changelog\ncut\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			mustGit(t, dir, "config", "--local", "user.name", "taylorbot")
+			mustGit(t, dir, "config", "--local", "user.email", "dev@giantswarm.io")
+
+			_, out, err := runStep(t, step.Run, dir, "PATH="+bin+":"+os.Getenv("PATH"),
+				"GH_TOKEN=taylor", "APPROVER_TOKEN="+tc.approver, "TAG=v1.1.0-rc.1")
+			if err != nil {
+				t.Fatalf("err = %v:\n%s", err, out)
+			}
+			raw, err := os.ReadFile(log) // #nosec G304 -- path built from t.TempDir
+			if err != nil {
+				t.Fatal(err)
+			}
+			calls := string(raw)
+			for _, want := range tc.want {
+				if !strings.Contains(calls, want) {
+					t.Errorf("no gh call %q:\n%s", want, calls)
+				}
+			}
+			if tc.approver == "" && strings.Contains(calls, "--approve") {
+				t.Errorf("approved without an approver token:\n%s", calls)
+			}
+			if !strings.Contains(out, tc.warning) {
+				t.Errorf("output lacks %q:\n%s", tc.warning, out)
+			}
+		})
+	}
+}
+
 // assertDevctlAuthenticated fails unless a step that downloads and runs
 // devctl hands it the job's token: gh reads $GH_TOKEN, and devctl's version
 // check, which reads devctl's releases before every command, reads
