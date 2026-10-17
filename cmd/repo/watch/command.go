@@ -23,6 +23,8 @@ or the agent) to readiness, and print each phase as it completes: created,
 scaffolded, declared (the pull request is open), merged, set up (the
 reconciler's run of the pull request has reported) and released (the first
 release exists and its CircleCI statuses are green, complete and settled).
+A repository declared without CI (gen.ci.generate: false) has no release to
+wait for: it is ready once set up.
 giantswarm-repo-manager answers each call as soon as a phase completes or
 after its own timeout; the command calls again until the repository is ready,
 a phase fails, or --timeout runs out. The exit is 0 when ready, otherwise an
