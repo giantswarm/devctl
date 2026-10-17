@@ -14,6 +14,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   any workflow; the document's `trigger` field carries it. Once per tag: a pipeline the API triggered gets no second
   one (exit 5). Rerunning failed workflows from failed is unchanged.
 
+### Fixed
+
+- The generated Changelog workflow's check step and the Auto-release workflow's changelog cut step pass the job's
+  token to devctl in `GITHUB_TOKEN`, so devctl's version check reads devctl's releases authenticated instead of
+  anonymously under the runner IP's shared rate limit (`403 API rate limit exceeded`). `GH_TOKEN` stays for `gh`.
+
 ## [8.142.0-rc.3] - 2026-10-17
 
 ### Fixed

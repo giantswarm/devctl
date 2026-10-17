@@ -100,7 +100,9 @@ func Test_AutoReleaseChangelogJob(t *testing.T) {
 // left alone without downloading devctl.
 func Test_AutoReleaseChangelogCutStep(t *testing.T) {
 	job := workflowJobs(t, renderInput(t, newWorkflows(t, gen.FlavourApp).AutoRelease()))["changelog"]
-	script := jobStep(t, job, "cut").Run
+	step := jobStep(t, job, "cut")
+	assertDevctlAuthenticated(t, step)
+	script := step.Run
 
 	// gh "downloads" a devctl that rewrites CHANGELOG.md.
 	bin := t.TempDir()
@@ -127,6 +129,21 @@ func Test_AutoReleaseChangelogCutStep(t *testing.T) {
 	}
 }
 
+// assertDevctlAuthenticated fails unless a step that downloads and runs
+// devctl hands it the job's token: gh reads $GH_TOKEN, and devctl's version
+// check, which reads devctl's releases before every command, reads
+// $GITHUB_TOKEN. Without it the check is anonymous and shares the runner IP's
+// rate limit.
+func assertDevctlAuthenticated(t *testing.T, step autoReleaseStep) {
+	t.Helper()
+
+	for _, v := range []string{"GH_TOKEN", "GITHUB_TOKEN"} {
+		if got := step.Env[v]; got != "${{ secrets.GITHUB_TOKEN }}" {
+			t.Errorf("step %q: env %s = %q, want the job's token", step.Name, v, got)
+		}
+	}
+}
+
 // Test_ChangelogWorkflow pins the pull request check: devctl changelog check
 // on a checkout with every tag.
 func Test_ChangelogWorkflow(t *testing.T) {
@@ -142,10 +159,11 @@ func Test_ChangelogWorkflow(t *testing.T) {
 	if !strings.Contains(rendered, "fetch-depth: 0") || !strings.Contains(rendered, "fetch-tags: true") {
 		t.Fatal("the check does not see every tag")
 	}
-	last := job.Steps[len(job.Steps)-1].Run
-	if !strings.Contains(last, `"${RUNNER_TEMP}/devctl" changelog check`) {
-		t.Fatalf("the check step does not run devctl changelog check:\n%s", last)
+	last := job.Steps[len(job.Steps)-1]
+	if !strings.Contains(last.Run, `"${RUNNER_TEMP}/devctl" changelog check`) {
+		t.Fatalf("the check step does not run devctl changelog check:\n%s", last.Run)
 	}
+	assertDevctlAuthenticated(t, last)
 	if del := newWorkflows(t, gen.FlavourApp).ChangelogDeletion(); !del.Delete || del.Path != in.Path {
 		t.Fatalf("ChangelogDeletion = %+v", del)
 	}
