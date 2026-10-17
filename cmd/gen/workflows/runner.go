@@ -2,7 +2,10 @@ package workflows
 
 import (
 	"context"
+	"fmt"
 	"io"
+	"os"
+	"strings"
 
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
@@ -107,6 +110,7 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 			workflowsInput.ValidateChangelogDeletion(),
 		)
 	} else {
+		r.warnAutoReleaseDeclaredLegacy(workflowsInput.AutoReleaseDeletion(), workflowsInput.CliffTomlDeletion())
 		inputs = append(inputs,
 			workflowsInput.CreateRelease(),
 			workflowsInput.CreateReleasePR(),
@@ -184,4 +188,22 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 	}
 
 	return nil
+}
+
+// warnAutoReleaseDeclaredLegacy names the declaration when a legacy run is
+// about to delete Auto Release files the repository carries: they were added
+// without the declaration saying auto-release, and every run deletes them
+// again until it does.
+func (r *runner) warnAutoReleaseDeclaredLegacy(deletions ...input.Input) {
+	var found []string
+	for _, d := range deletions {
+		if _, err := os.Stat(d.Path); err == nil {
+			found = append(found, d.Path)
+		}
+	}
+	if len(found) == 0 || r.stderr == nil {
+		return
+	}
+
+	fmt.Fprintf(r.stderr, "Warning: deleting %s: --%s is %s, as the repository's declaration in giantswarm/github says. Auto Release is enabled there, with gen.ci.releaseWorkflow: %s in the repository's entry; files added without it are deleted on every run.\n", strings.Join(found, " and "), flagReleaseWorkflow, releaseWorkflowLegacy, releaseWorkflowAutoRelease)
 }
