@@ -18,6 +18,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `pr wait` and `pr merge` no longer judge a head on checks that have not registered yet: for one minute after the
+  pull request's last update (a push, or the merge commit `--update-branch` creates) a required context still absent is
+  pending instead of `required_missing`, and a head without any GitHub Actions run or check run of its own is pending
+  instead of `green`. A pending check of another app keeps a head with an absent required context waiting, and a failed
+  check the base does not require is red only once the required contexts have finished.
 - `gen makefile`: `lint-chart` runs ct from `gsoci.azurecr.io/giantswarm/helm-chart-testing:v3.15.0` (Helm v3.16)
   instead of `giantswarm/helm-chart-testing:v3.0.0-rc.1` (Helm v3.1), and gives its container a TTY only when stdin is
   one, so the target runs headless in CI and automation.
