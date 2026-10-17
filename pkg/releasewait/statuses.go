@@ -139,12 +139,12 @@ func (w *Waiter) statusesState(result *Result, statuses []githubclient.CommitSta
 	}
 	state := &pipelineState{green: true, jobs: map[string]bool{}}
 	for _, s := range statuses {
-		name := statusJobName(s.Context)
+		name := circleciclient.StatusJobName(s.Context)
 		state.jobs[name] = true
 		switch s.State {
 		case commitStatusSuccess:
 		case commitStatusFailure, commitStatusError:
-			if advisoryJob(name) {
+			if circleciclient.AdvisoryJob(name) {
 				w.warnOnce(fmt.Sprintf("the commit status %s of %s is %s; the release does not require it, so the tag's CI is judged without it", s.Context, short(result.SHA), s.State))
 				break
 			}
@@ -159,11 +159,6 @@ func (w *Waiter) statusesState(result *Result, statuses []githubclient.CommitSta
 	}
 	sort.Strings(state.failedJobs)
 	return state
-}
-
-// statusJobName is the job a CircleCI status context names.
-func statusJobName(context string) string {
-	return strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(context, circleciclient.StatusContextPrefix), ":"))
 }
 
 // commitStatusesFinal is the gate devctl release promote puts on a release
@@ -186,7 +181,7 @@ func (w *Waiter) commitStatusesFinal(ctx context.Context, result *Result) (bool,
 		switch s.State {
 		case commitStatusSuccess:
 		case commitStatusFailure, commitStatusError:
-			if strings.HasPrefix(s.Context, circleciclient.StatusContextPrefix) && advisoryJob(statusJobName(s.Context)) {
+			if circleciclient.AdvisoryStatus(s.Context) {
 				w.warnOnce(fmt.Sprintf("the commit status %s of %s is %s; the release does not require it, so the tag's CI is judged without it", s.Context, short(result.SHA), s.State))
 				continue
 			}

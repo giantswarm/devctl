@@ -13,19 +13,30 @@ import (
 type CombinedStatus struct {
 	State      string
 	TotalCount int
+	// Statuses is the latest status of every context, the first
+	// [combinedStatusPage] of them.
+	Statuses []CommitStatus
 }
+
+// combinedStatusPage bounds the contexts GetCombinedStatus reads: one page,
+// the most GitHub serves.
+const combinedStatusPage = 100
 
 // GetCombinedStatus returns the combined commit status of ref, a branch, tag
 // or SHA. IsNotFound when the ref does not exist.
 func (c *Client) GetCombinedStatus(ctx context.Context, owner, repo, ref string) (CombinedStatus, error) {
-	combined, _, err := c.ghClient.Repositories.GetCombinedStatus(ctx, owner, repo, ref, &github.ListOptions{PerPage: 1})
+	combined, _, err := c.ghClient.Repositories.GetCombinedStatus(ctx, owner, repo, ref, &github.ListOptions{PerPage: combinedStatusPage})
 	if isGithub404(err) {
 		return CombinedStatus{}, microerror.Maskf(notFoundError, "ref %s in %s/%s", ref, owner, repo)
 	}
 	if err != nil {
 		return CombinedStatus{}, microerror.Mask(err)
 	}
-	return CombinedStatus{State: combined.GetState(), TotalCount: combined.GetTotalCount()}, nil
+	status := CombinedStatus{State: combined.GetState(), TotalCount: combined.GetTotalCount()}
+	for _, s := range combined.Statuses {
+		status.Statuses = append(status.Statuses, CommitStatus{Context: s.GetContext(), State: s.GetState(), TargetURL: s.GetTargetURL()})
+	}
+	return status, nil
 }
 
 // releasePages bounds ListReleases: 1000 releases.
