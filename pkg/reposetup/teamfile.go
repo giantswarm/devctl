@@ -407,3 +407,17 @@ func kindName(k yaml.Kind) string {
 	}
 	return fmt.Sprintf("node of kind %d", k)
 }
+
+// LifecycleArchived is the lifecycle value of an archived repository.
+const LifecycleArchived = "archived"
+
+// LifecycleDeleted is the lifecycle value of a deleted repository; the entry
+// stays in the team file as the record of the deletion.
+const LifecycleDeleted = "deleted"
+
+// LifecycleOver says whether the declared lifecycle ends the repository's
+// life: archived or deleted. Such an entry is only the record of the
+// repository; nothing releases or changes it.
+func LifecycleOver(lifecycle string) bool {
+	return lifecycle == LifecycleArchived || lifecycle == LifecycleDeleted
+}
