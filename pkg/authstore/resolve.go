@@ -14,6 +14,15 @@ const EnvCI = "CI"
 // SourceKeychain is [Token].Source of the devctl GitHub App login.
 const SourceKeychain = "keychain"
 
+// SourceName names where t came from for a message: the variable ("$NAME"),
+// or the devctl keychain; empty for a token without a source.
+func (t Token) SourceName() string {
+	if t.Source == SourceKeychain {
+		return "the devctl keychain (`" + hintLogin + "`)"
+	}
+	return t.Source
+}
+
 // GitHubEnvVars are the variables [ResolveGitHub] reads a GitHub token from
 // when a command names none, in this order.
 var GitHubEnvVars = []string{"DEVCTL_GITHUB_TOKEN", "GITHUB_TOKEN", "OPSCTL_GITHUB_TOKEN"}

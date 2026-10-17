@@ -87,21 +87,12 @@ func CircleCIClient(ctx context.Context, logger *logrus.Logger, tokenEnv string,
 	if token.Warning != "" {
 		logger.Warn(token.Warning)
 	}
-	logger.Infof("CircleCI token from %s", tokenSource(token.Source))
-	client, err := circleciclient.New(circleciclient.Config{Token: token.Value, Logger: logger, Transport: transport})
+	logger.Infof("CircleCI token from %s", token.SourceName())
+	client, err := circleciclient.New(circleciclient.Config{Token: token.Value, TokenSource: token.SourceName(), Logger: logger, Transport: transport})
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}
 	return client, nil
-}
-
-// tokenSource names a token's source for the log: the variable, or the
-// devctl keychain.
-func tokenSource(source string) string {
-	if source == authstore.SourceKeychain {
-		return "the devctl keychain (`devctl auth login`)"
-	}
-	return source
 }
 
 // Slug splits owner/name; a bare name takes defaultOwner, and without one

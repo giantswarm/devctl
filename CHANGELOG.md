@@ -29,6 +29,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- A CircleCI 401 names the source of the token the command used, `$CIRCLECI_TOKEN` (or the variable a command names)
+  or the devctl keychain, instead of `CIRCLECI_API_TOKEN`, which devctl does not read.
 - `pr merge` no longer merges a head whose checks ran against an older base than the one it lands on. A head behind
   a base that is not strict (the comparison's `behind_by`) is exit 3 like one behind a strict base, before the wait,
   and the head is compared with the base again after the wait: a base that moved during it is exit 3 too. The reason
