@@ -7,6 +7,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- The generated Auto-release workflow tags a patch of the last stable release (only fixes and chores since it) as a
+  stable `vX.Y.Z` on its push: there is no patch release candidate any more. A minor or major version still cuts
+  `vX.Y.0-rc.N` and is promoted with `release-type: stable`, and a fix during such a cycle rides its next candidate.
+  A maintenance branch's releases are patches, so they are stable on their push. The repository's
+  `.github/release-gate.custom.sh` runs before every stable tag, a patch's included.
+
+## [8.142.1] - 2026-10-18
+
 ### Fixed
 
 - The generated Changelog workflow's check step and the Auto-release workflow's changelog cut step pass the job's
@@ -5839,7 +5849,8 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.142.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.142.1...HEAD
+[8.142.1]: https://github.com/giantswarm/devctl/compare/v8.142.0...v8.142.1
 [8.142.0]: https://github.com/giantswarm/devctl/compare/v8.142.0-rc.3...v8.142.0
 [8.142.0-rc.3]: https://github.com/giantswarm/devctl/compare/v8.142.0-rc.2...v8.142.0-rc.3
 [8.142.0-rc.2]: https://github.com/giantswarm/devctl/compare/v8.142.0-rc.1...v8.142.0-rc.2

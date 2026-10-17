@@ -282,10 +282,11 @@ func Test_AutoReleaseDecideWarnsOnUnconventionalSubjects(t *testing.T) {
 	})
 }
 
-// Test_AutoReleaseDecide pins the release rule: every releasable push cuts
-// the next rc.N for the version git-cliff computed (`next`), and a push with
-// nothing releasable since the last stable release or the last candidate
-// cuts nothing.
+// Test_AutoReleaseDecide pins the release rule: a releasable push cuts the
+// next rc.N for the minor or major version git-cliff computed (`next`), a
+// patch of the last stable release is tagged stable on its push, and a push
+// with nothing releasable since the last stable release or the last
+// candidate cuts nothing.
 func Test_AutoReleaseDecide(t *testing.T) {
 	script := decideScript(t)
 
@@ -294,6 +295,8 @@ func Test_AutoReleaseDecide(t *testing.T) {
 		history   []string
 		next      string
 		expectTag string
+		// stable is a tag cut as a stable release, not a candidate.
+		stable bool
 	}{
 		{
 			name:      "a feat opens a cycle",
@@ -302,10 +305,33 @@ func Test_AutoReleaseDecide(t *testing.T) {
 			expectTag: "v1.3.0-rc.1",
 		},
 		{
-			name:      "a fix opens a cycle",
+			name:      "a fix is a patch, tagged stable without a candidate",
 			history:   []string{"v1.2.9", "fix: x"},
 			next:      "v1.2.10",
-			expectTag: "v1.2.10-rc.1",
+			expectTag: "v1.2.10",
+			stable:    true,
+		},
+		{
+			name:      "a chore(deps) alone is a patch too",
+			history:   []string{"v1.2.9", "chore(deps): bump y"},
+			next:      "v1.2.10",
+			expectTag: "v1.2.10",
+			stable:    true,
+		},
+		{
+			// A patch candidate cut before the patch fast path is released by
+			// the next push: the version is the same, now stable.
+			name:      "a patch candidate from before the fast path is released stable",
+			history:   []string{"v1.2.9", "fix: x", "v1.2.10-rc.1", "fix: y"},
+			next:      "v1.2.10",
+			expectTag: "v1.2.10",
+			stable:    true,
+		},
+		{
+			name:      "a fix during a minor cycle rides its next candidate",
+			history:   []string{"v1.2.9", "feat: add x", "v1.3.0-rc.1", "fix: y"},
+			next:      "v1.3.0",
+			expectTag: "v1.3.0-rc.2",
 		},
 		{
 			name:      "chore(deps) during a cycle cuts the next candidate",
@@ -365,10 +391,11 @@ func Test_AutoReleaseDecide(t *testing.T) {
 			expectTag: "",
 		},
 		{
-			name:      "after a stable release the next fix opens a new cycle",
+			name:      "after a stable release the next fix is its patch",
 			history:   []string{"v1.2.9", "feat: add x", "v1.3.0-rc.1", "v1.3.0", "fix: y"},
 			next:      "v1.3.1",
-			expectTag: "v1.3.1-rc.1",
+			expectTag: "v1.3.1",
+			stable:    true,
 		},
 		{
 			// On release-2.x the reachable baseline is v2.3.5, not the higher
@@ -377,7 +404,8 @@ func Test_AutoReleaseDecide(t *testing.T) {
 			name:      "a backport branch bumps from its own reachable baseline",
 			history:   []string{"v2.3.5", "fix: backport"},
 			next:      "v2.3.6",
-			expectTag: "v2.3.6-rc.1",
+			expectTag: "v2.3.6",
+			stable:    true,
 		},
 	}
 
@@ -392,8 +420,8 @@ func Test_AutoReleaseDecide(t *testing.T) {
 			if tc.expectTag == "" {
 				return
 			}
-			if got["prerelease"] != "true" {
-				t.Errorf("prerelease = %q, want true", got["prerelease"])
+			if want := strconv.FormatBool(!tc.stable); got["prerelease"] != want {
+				t.Errorf("prerelease = %q, want %s", got["prerelease"], want)
 			}
 			if head := strings.TrimSpace(mustGit(t, dir, "rev-parse", "HEAD")); got["target"] != head {
 				t.Errorf("target = %q, want HEAD %q", got["target"], head)
