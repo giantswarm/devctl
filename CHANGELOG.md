@@ -26,6 +26,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- `gen circleci`: the generated pipelines pin architect orb 10.14.0, whose `go-test` / `go-build` run `govulncheck`
+  next to nancy. It checks the code against the Go vulnerability database, which needs no account or credits, and
+  fails closed: a reachable known vulnerability fails the job, and so does a scan that could not run, so a green check
+  always means the code was scanned. Reviewed findings go into `.govulncheck-ignore` with a required `until=` date.
+
 - `repo create`: the scaffold decides its Renovate configuration with `reposetup.PlanRenovate`, align-files' decision:
   `renovate.json5` for every entry that generates, as for a repository without a configuration; align-files keeps it.
 
