@@ -29,6 +29,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `pr merge`: a comment by `codecov-commenter`, the coverage report GitHub carries as a plain user's, no longer
+  counts as an unanswered non-author comment and refuses the merge with exit 5. Commenting automation accounts are
+  pinned by account id as well as login; a person's comment or review still holds the merge.
+
 - `repo`: the reconciler's `release` step judges a release by what is published. A tag pipeline red only in
   `publish-github-release`, the job whose one output is the GitHub release the step read, is a built release, not
   `red-release`: auto-release creates the release before the pipeline runs, and every artifact is pushed before that
