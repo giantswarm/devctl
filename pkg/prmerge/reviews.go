@@ -93,7 +93,7 @@ func (f feedback) unanswered(author, caller string) []UnansweredReview {
 	answerer := func(u *github.User) bool {
 		return strings.EqualFold(u.GetLogin(), author) || strings.EqualFold(u.GetLogin(), caller)
 	}
-	reviewer := func(u *github.User) bool { return !answerer(u) && !isAutomation(u) }
+	reviewer := func(u *github.User) bool { return !answerer(u) && !isFeedbackAutomation(u) }
 
 	var lastAnswer time.Time
 	answered := func(u *github.User, at time.Time) {
@@ -149,6 +149,28 @@ func (f feedback) unanswered(author, caller string) []UnansweredReview {
 	}
 	slices.SortStableFunc(open, func(a, b UnansweredReview) int { return a.At.Compare(b.At) })
 	return open
+}
+
+// commentAccounts are third-party automation accounts that GitHub carries as
+// plain users and that only ever comment: codecov-commenter posts the
+// coverage report on the pull requests of every repository with Codecov.
+// Their comments hold no merge, but unlike automationAccounts they open no
+// pull request devctl merges. Each is pinned by its numeric account id as
+// well as its login, like automationAccounts.
+var commentAccounts = map[string]int64{
+	"codecov-commenter": 65553080,
+}
+
+// isFeedbackAutomation: the user's feedback is automatic and answers
+// nobody's question: a bot, a GitHub App, one of Giant Swarm's automation
+// accounts or a commenting automation account, matched on login and account
+// id.
+func isFeedbackAutomation(user *github.User) bool {
+	if isAutomation(user) {
+		return true
+	}
+	id, known := commentAccounts[strings.ToLower(user.GetLogin())]
+	return known && id == user.GetID()
 }
 
 // answerers names who answers feedback: the author and the caller, or

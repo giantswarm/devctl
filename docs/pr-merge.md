@@ -58,7 +58,9 @@ call** (or the enqueue), so feedback that lands while the checks run is caught t
 refuses with exit 5, `refused`, while one item is unanswered:
 
 - **Whose**: a person other than the pull request's author and the caller. Bots, GitHub Apps and the
-  automation accounts (as in the author rule) never hold a merge.
+  automation accounts (as in the author rule) never hold a merge, nor do the commenting automation accounts
+  GitHub carries as plain users -- `codecov-commenter`, which posts the coverage report -- matched on account id
+  as well as login. Those accounts only comment: their pull requests stay refused by the author rule.
 - **Which**: a review in state `COMMENTED` or `CHANGES_REQUESTED` (not `APPROVED`, `DISMISSED` or pending), a
   review comment, a conversation comment.
 - **Newer than the head**: a review or review comment on the head commit, or any item written after the head
