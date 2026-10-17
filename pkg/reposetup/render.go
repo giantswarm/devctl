@@ -130,6 +130,15 @@ func (r Renderer) Render(ctx context.Context, req RenderRequest) (*Scaffold, err
 	if subst.UpstreamRepo == "" {
 		subst.UpstreamRepo = fmt.Sprintf("https://github.com/%s/%s", DefaultOwner, fields.Name)
 	}
+	// The template's CircleCI pipeline is the template's: a scaffold gets
+	// one from `devctl gen circleci` only, so a repository without
+	// generated CircleCI starts without one and is not followed in
+	// CircleCI.
+	if !GeneratesCircleCI(fields) {
+		if err := os.RemoveAll(filepath.Join(dir, circleCIDir)); err != nil {
+			return nil, microerror.Mask(err)
+		}
+	}
 	if err := replacePlaceholders(dir, template, subst); err != nil {
 		return nil, microerror.Mask(err)
 	}

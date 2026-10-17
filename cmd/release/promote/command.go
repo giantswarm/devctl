@@ -42,7 +42,10 @@ For each repository, on its default branch:
      workflow stops on it.
   3. The combined commit status of the candidate's commit: with at least one
      status and a state other than success, not_built. No status at all
-     counts as built, as in the workflow.
+     counts as built, as in the workflow. A failed CircleCI status of a job
+     the release does not require (sync-china-registry) is judged as
+     devctl release wait judges it: a warning in the entry's warnings[],
+     not a refusal; any other failed or running context still refuses.
   4. The workflow is dispatched on the default branch with
      release-type: stable (dispatched; would_dispatch with --dry-run).
 

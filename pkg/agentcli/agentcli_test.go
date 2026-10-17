@@ -170,6 +170,35 @@ func TestClockSleepHonoursContext(t *testing.T) {
 	}
 }
 
+// A scaled clock keeps its sleeps in milliseconds, but its timeouts never drop
+// below a real-time floor: a loaded machine must still get its first poll in.
+func TestClockTimeoutHasARealTimeFloor(t *testing.T) {
+	c := NewClock(0.001, nil)
+	if got := c.Scaled(time.Minute); got != 60*time.Millisecond {
+		t.Errorf("Scaled(1m) = %s, want 60ms", got)
+	}
+	cases := map[time.Duration]time.Duration{
+		time.Minute:            MinScaledTimeout,
+		2 * time.Hour:          2 * time.Hour / 1000,
+		MinScaledTimeout / 2:   MinScaledTimeout / 2,
+		500 * time.Millisecond: 500 * time.Millisecond,
+	}
+	for d, want := range cases {
+		if got := c.ScaledTimeout(d); got != want {
+			t.Errorf("ScaledTimeout(%s) = %s, want %s", d, got, want)
+		}
+	}
+	if got := NewClock(1, nil).ScaledTimeout(time.Minute); got != time.Minute {
+		t.Errorf("unscaled ScaledTimeout(1m) = %s", got)
+	}
+	ctx, cancel := c.Timeout(context.Background(), time.Minute)
+	defer cancel()
+	deadline, ok := ctx.Deadline()
+	if !ok || time.Until(deadline) < MinScaledTimeout-time.Second {
+		t.Errorf("Timeout(1m) ends in %s, want about %s", time.Until(deadline), MinScaledTimeout)
+	}
+}
+
 // A virtual clock's time passes only in Sleep: a Timeout ends when the sleeps
 // reach it, never while the caller works between them.
 func TestVirtualClock(t *testing.T) {

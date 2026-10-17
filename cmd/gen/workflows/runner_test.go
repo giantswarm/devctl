@@ -1,6 +1,7 @@
 package workflows
 
 import (
+	"bytes"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -89,8 +90,10 @@ func Test_Run_RepoName(t *testing.T) {
 
 			if tc.wantRepo == "" {
 				require.NoFileExists(t, "cliff.toml")
+				require.NoFileExists(t, ".github/workflows/zz_generated.changelog.yaml")
 				return
 			}
+			require.FileExists(t, ".github/workflows/zz_generated.changelog.yaml")
 			got, err := os.ReadFile("cliff.toml")
 			require.NoError(t, err)
 			require.Contains(t, string(got), tc.wantRepo)
@@ -143,6 +146,57 @@ func Test_Run_ForkLine(t *testing.T) {
 				require.NoError(t, err)
 				require.Contains(t, string(workflow), "      - giantswarm\n")
 			}
+		})
+	}
+}
+
+// Test_Run_AutoReleaseDeclaredLegacy pins what a repository that carries the
+// Auto Release files gets: a legacy run deletes them and names the
+// declaration as the place to enable Auto Release, its validate-changelog
+// workflow refuses them on a pull request, and an auto-release run keeps
+// them without a warning.
+func Test_Run_AutoReleaseDeclaredLegacy(t *testing.T) {
+	for _, tc := range []struct {
+		releaseWorkflow string
+		wantWarning     bool
+	}{
+		{releaseWorkflow: releaseWorkflowLegacy, wantWarning: true},
+		{releaseWorkflow: releaseWorkflowAutoRelease},
+	} {
+		t.Run(tc.releaseWorkflow, func(t *testing.T) {
+			t.Chdir(t.TempDir())
+			require.NoError(t, os.MkdirAll(".github/workflows", 0o750))
+			require.NoError(t, os.WriteFile(".github/workflows/zz_generated.auto_release.yaml", []byte("name: Auto Release\n"), 0o600))
+			require.NoError(t, os.WriteFile("cliff.toml", []byte("[changelog]\n"), 0o600))
+
+			var stderr bytes.Buffer
+			r := &runner{
+				flag: &flag{
+					Flavours:        gen.FlavourSlice{gen.FlavourGeneric},
+					ReleaseBranch:   "main",
+					ReleaseWorkflow: tc.releaseWorkflow,
+					RepoName:        "app-catalog-cleanup-tool",
+				},
+				stderr: &stderr,
+			}
+			require.NoError(t, r.Run(&cobra.Command{}, nil))
+
+			if !tc.wantWarning {
+				require.Empty(t, stderr.String())
+				require.FileExists(t, ".github/workflows/zz_generated.auto_release.yaml")
+				require.FileExists(t, "cliff.toml")
+				return
+			}
+
+			require.Contains(t, stderr.String(), "deleting .github/workflows/zz_generated.auto_release.yaml and cliff.toml")
+			require.Contains(t, stderr.String(), "gen.ci.releaseWorkflow: auto-release")
+			require.NoFileExists(t, ".github/workflows/zz_generated.auto_release.yaml")
+			require.NoFileExists(t, "cliff.toml")
+
+			workflow, err := os.ReadFile(".github/workflows/zz_generated.validate_changelog.yaml")
+			require.NoError(t, err)
+			require.Contains(t, string(workflow), "      - '.github/workflows/zz_generated.auto_release.yaml'\n      - 'cliff.toml'\n")
+			require.Contains(t, string(workflow), "set gen.ci.releaseWorkflow: auto-release there")
 		})
 	}
 }

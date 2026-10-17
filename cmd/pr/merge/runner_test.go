@@ -88,6 +88,7 @@ func green() sequence.Routes {
 		"GET /repos/o/r/pulls/42/comments":            {{Body: []any{}}},
 		"GET /repos/o/r/issues/42/comments":           {{Body: []any{}}},
 		"GET /repos/o/r/git/commits/abc123":           {{Body: map[string]any{"sha": "abc123", "committer": map[string]any{"date": "2026-10-01T10:00:00Z"}}}},
+		"GET /repos/o/r/compare/main...abc123":        {{Body: map[string]any{"status": "ahead", "ahead_by": 1, "behind_by": 0}}},
 	}
 }
 

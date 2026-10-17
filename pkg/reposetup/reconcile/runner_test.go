@@ -43,6 +43,8 @@ const (
 	// agentMergeFalseEntryYAML opts the repository out of agent merges: the
 	// ruleset has no bypass actor.
 	agentMergeFalseEntryYAML = entryYAML + "  agentMerge: false\n"
+	// renovateFalseEntryYAML switches Renovate off for the repository.
+	renovateFalseEntryYAML = entryYAML + "  renovate: false\n"
 	// declaredRulesetEntryYAML declares a ruleset of the repository's own the
 	// team keeps beside the engine's.
 	declaredRulesetEntryYAML = entryYAML + "  rulesets: [\"protect-giantswarm\"]\n"
@@ -64,6 +66,19 @@ const (
     language: generic
     ci:
       generate: false
+`
+	// actionsOnlyEntryYAML is a repository on generated CI without a CircleCI
+	// job: generic, no chart, no image, its generated CI is GitHub Actions
+	// only (auto-release).
+	actionsOnlyEntryYAML = `- name: sample-service
+  componentType: unspecified
+  description: A repository released by GitHub Actions
+  visibility: private
+  gen:
+    flavours: [generic]
+    language: generic
+    ci:
+      generate: true
 `
 	// templateContentEntryYAML is a template repository whose
 	// .circleci/config.yml is content for the repositories created from it.
@@ -94,6 +109,18 @@ const (
   visibility: private
   gen:
     flavours: [customer]
+    language: generic
+    ci:
+      generate: false
+`
+	// appCatalogEntryYAML declares an app catalog: GitHub Pages serves its
+	// index from the repository's default branch, master on the older ones.
+	appCatalogEntryYAML = `- name: sample-service
+  componentType: appcatalog
+  description: An app catalog
+  visibility: public
+  gen:
+    flavours: [generic]
     language: generic
     ci:
       generate: false
@@ -154,6 +181,8 @@ const (
 	testAppID int64 = 424242
 	// testAlignAppID is the align-files App the review ruleset lets past the review.
 	testAlignAppID int64 = 434343
+	// testReleaseAppID is the release App the review ruleset lets past the review.
+	testReleaseAppID int64 = 454545
 )
 
 // harness wires a Runner to the two fakes with a validated entry.
@@ -1204,6 +1233,42 @@ func TestSteps(t *testing.T) {
 			},
 		},
 		{
+			name: "protection: the release App id adds the release App to a review ruleset without it, the checks stay binding", step: StepProtection,
+			seed: func(h *harness) {
+				h.runner.AlignFilesAppID = testAlignAppID
+				h.runner.ReleaseAppID = testReleaseAppID
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID), adminBypass(), teamBypass(testTeamID)).Rules.PullRequest = nil
+				review := r.addRuleset(ReviewRulesetName, nil, appBypass(testAppID), adminBypass(), teamBypass(testTeamID), appBypass(testAlignAppID), appBypass(renovateAppID))
+				review.Rules.Deletion, review.Rules.NonFastForward = nil, nil
+			},
+			wantCheck: VerdictDrift, wantChange: "bypass actors: App 424242 on pull requests, repository admins on pull requests, team team-bumblebee on pull requests, App 434343 on pull requests, App 2740 on pull requests, App 454545 on pull requests",
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Equal(t, []string{"bypass actors: App 424242 on pull requests, repository admins on pull requests, team team-bumblebee on pull requests, App 434343 on pull requests, App 2740 on pull requests, App 454545 on pull requests"}, res.Step(StepProtection).Changes, "one change: the review ruleset's bypass list")
+				require.Contains(t, actorKeys(h.repo().ruleset(ReviewRulesetName).BypassActors), actorKey(appBypass(testReleaseAppID)))
+				main := h.repo().ruleset(RulesetName)
+				require.NotContains(t, actorKeys(main.BypassActors), actorKey(appBypass(testReleaseAppID)), "the release App waits for the checks")
+				require.Equal(t, []string{ctxGoBuild}, checkContexts(main))
+			},
+		},
+		{
+			name: "protection: a review ruleset with the release App is clean on a run with its id", step: StepProtection,
+			seed: func(h *harness) {
+				h.runner.AlignFilesAppID = testAlignAppID
+				h.runner.ReleaseAppID = testReleaseAppID
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID), adminBypass(), teamBypass(testTeamID)).Rules.PullRequest = nil
+				review := r.addRuleset(ReviewRulesetName, nil, appBypass(testAppID), adminBypass(), teamBypass(testTeamID), appBypass(testAlignAppID), appBypass(renovateAppID), appBypass(testReleaseAppID))
+				review.Rules.Deletion, review.Rules.NonFastForward = nil, nil
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Empty(t, res.Step(StepProtection).Changes, "the next night repairs nothing")
+			},
+		},
+		{
 			name: "protection: the align-files App id leaves agentMerge false's review in the default branch's ruleset, without bypass", step: StepProtection, entry: entryYAML + "  agentMerge: false\n",
 			seed: func(h *harness) {
 				h.runner.AlignFilesAppID = testAlignAppID
@@ -1667,6 +1732,38 @@ func TestSteps(t *testing.T) {
 			},
 		},
 		{
+			// Generated CI without a CircleCI job is GitHub Actions only:
+			// gen.ci.generate: true declares no pipeline the CircleCI
+			// generator writes, so the branch decides, and a branch without
+			// .circleci/config.yml has none. The repository is neither
+			// followed nor given a key, its release is not held against a tag
+			// build, and a project followed earlier is left as it is.
+			name: "circleci: generated CI without a CircleCI job is no pipeline", step: StepCircleCI, existing: true,
+			entry: actionsOnlyEntryYAML,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				delete(r.files, ".circleci/config.yml")
+				delete(r.files, ".circleci/workflows.yml")
+				r.release, r.releaseAt = "v0.1.0", time.Now().Add(-time.Hour)
+			},
+			wantCheck: VerdictSkipped, wantAfter: VerdictSkipped,
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				require.NotContains(t, h.cc.projects, owner+"/"+name)
+				res := h.run(ModeCheck, false, StepCircleCI, StepRelease)
+				for _, step := range []Step{StepCircleCI, StepRelease} {
+					require.Equal(t, VerdictSkipped, res.Step(step).Verdict, "%s: %+v", step, res.Step(step))
+					require.Equal(t, "no CircleCI pipeline", res.Step(step).Summary)
+					require.Empty(t, res.Step(step).Changes, "%s plans nothing", step)
+				}
+				require.Empty(t, res.Step(StepRelease).Findings, "a release CircleCI never built is no missed tag build")
+
+				h.cc.projects[owner+"/"+name] = &fakeProject{} // followed earlier, no setup workflows, no key
+				res = h.run(ModeRepair, false, StepCircleCI, StepRelease)
+				require.Equal(t, VerdictSkipped, res.Step(StepCircleCI).Verdict, "%+v", res.Step(StepCircleCI))
+				require.Empty(t, h.mutations(), "a followed project of a repository without a pipeline is left as it is")
+			},
+		},
+		{
 			// The reconciler validates a declared repository's entry as an
 			// existing one, rendered as declared: an entry with gen and no
 			// gen.ci does not get the creation default gen.ci.generate: true
@@ -1805,6 +1902,42 @@ func TestSteps(t *testing.T) {
 			wantCheck: VerdictOK,
 			verify: func(t *testing.T, _ *harness, res *Result) {
 				require.Equal(t, "renovate.json5 disables Renovate", res.Step(StepRenovate).Summary)
+			},
+		},
+		{
+			name: "renovate: false without a configuration is ok, and no trace is read", step: StepRenovate, entry: renovateFalseEntryYAML,
+			seed: func(h *harness) {
+				delete(h.gh.addRepo(owner, name).files, "renovate.json5")
+				h.gh.installation.status = 403
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Equal(t, "renovate: false; no Renovate configuration", res.Step(StepRenovate).Summary)
+				require.Empty(t, res.Findings())
+			},
+		},
+		{
+			name: "renovate: false with a configuration that disables Renovate is ok", step: StepRenovate, entry: renovateFalseEntryYAML,
+			seed: func(h *harness) {
+				h.gh.addRepo(owner, name).files["renovate.json5"] = "{\n  enabled: false,\n}\n"
+				h.gh.installation.status = 403
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, _ *harness, res *Result) {
+				require.Equal(t, "renovate: false; renovate.json5 disables Renovate", res.Step(StepRenovate).Summary)
+			},
+		},
+		{
+			name: "renovate: false with a configuration that keeps Renovate on is reported", step: StepRenovate, entry: renovateFalseEntryYAML,
+			seed: func(h *harness) {
+				h.gh.addRepo(owner, name).addIssue(renovateLogin, "Dependency Dashboard", false)
+				h.gh.installation.status = 403
+			},
+			wantCheck: VerdictReported, wantFinding: FindingRenovateDeclaredOff, wantAfter: VerdictReported,
+			verify: func(t *testing.T, _ *harness, res *Result) {
+				f := res.Findings()[0]
+				require.Contains(t, f.Message, "declares renovate: false, but renovate.json5 keeps Renovate on")
+				require.Contains(t, f.Fix, "delete renovate.json5")
 			},
 		},
 		{
@@ -2308,6 +2441,38 @@ func TestSteps(t *testing.T) {
 			},
 		},
 		{
+			// auto-release creates the GitHub release before the tag
+			// pipeline runs; the pipeline's publish-github-release then
+			// fails on the release being there, after every artifact was
+			// pushed. The release is published, not red.
+			name: "release: a tag pipeline red only in publish-github-release reads built", step: StepRelease,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.release, r.releaseAt = "v0.1.0", time.Now().Add(-time.Hour)
+				h.cc.addPipelineFailedIn(h.cc.follow(owner, name), "v0.1.0", GitHubReleaseJob)
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, _ *harness, res *Result) {
+				require.Empty(t, res.Findings())
+				require.Contains(t, res.Step(StepRelease).Summary, "release v0.1.0 built: pipeline ")
+				require.Contains(t, res.Step(StepRelease).Summary, "build (publish-github-release) failed, the GitHub release it publishes exists")
+			},
+		},
+		{
+			// An artifact job red beside publish-github-release leaves the
+			// artifact unpublished: still red, the artifact job named.
+			name: "release: a tag pipeline red in an artifact job and publish-github-release is red", step: StepRelease,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.release, r.releaseAt = "v0.1.0", time.Now().Add(-time.Hour)
+				h.cc.addPipelineFailedIn(h.cc.follow(owner, name), "v0.1.0", "push-to-registries-release", GitHubReleaseJob)
+			},
+			wantCheck: VerdictReported, wantFinding: FindingRedRelease, wantAfter: VerdictReported,
+			verify: func(t *testing.T, _ *harness, res *Result) {
+				require.Contains(t, res.Findings()[0].Message, "push-to-registries-release")
+			},
+		},
+		{
 			// A rerun from failed is a second workflow of the same name in
 			// the same pipeline; the run it replaced keeps its failed status.
 			// The newest run decides, so the revived tag reads built.
@@ -2463,6 +2628,29 @@ func TestSteps(t *testing.T) {
 			name: "release: flavour customer has no pipeline of ours to verify", step: StepRelease, entry: customerEntryYAML,
 			seed:      func(h *harness) { h.gh.addRepo(owner, name) },
 			wantCheck: VerdictSkipped, wantAfter: VerdictSkipped,
+		},
+		{
+			name: "settings: an app catalog's default branch is never renamed", step: StepSettings, entry: appCatalogEntryYAML,
+			seed:      func(h *harness) { h.gh.addRepo(owner, name).defaultBranch = "master" },
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Equal(t, "master", h.repo().defaultBranch)
+				require.Empty(t, res.Step(StepSettings).Changes)
+			},
+		},
+		{
+			name: "protection: an app catalog's own default branch is the one protected", step: StepProtection, entry: appCatalogEntryYAML,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.defaultBranch = "master"
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID), adminBypass(), teamBypass(testTeamID))
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Equal(t, `master: ruleset "devctl: default branch"; required: `+ctxGoBuild, res.Step(StepProtection).Summary)
+				require.Equal(t, "master", h.repo().defaultBranch)
+			},
 		},
 		{
 			name: "settings: a fork line stays on its declared default branch", step: StepSettings, entry: forkEntryYAML,

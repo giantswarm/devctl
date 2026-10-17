@@ -210,10 +210,11 @@ func (r *runner) merge(ctx context.Context, args []string, doc *document) error 
 		}
 		doc.Warn(token.Warning)
 		circleci, err = circleciclient.New(circleciclient.Config{
-			Token:      token.Value,
-			BaseURL:    circleciclient.BaseURLFromAPIURL(endpoints.CircleCIAPIURL),
-			HTTPClient: &http.Client{Transport: retrying},
-			Logger:     logger,
+			Token:       token.Value,
+			TokenSource: token.SourceName(),
+			BaseURL:     circleciclient.BaseURLFromAPIURL(endpoints.CircleCIAPIURL),
+			HTTPClient:  &http.Client{Transport: retrying},
+			Logger:      logger,
 		})
 		return circleci, err
 	}

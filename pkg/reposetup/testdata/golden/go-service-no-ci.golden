@@ -1,0 +1,1093 @@
+template: giantswarm/template
+command: devctl gen makefile --flavour generic --language go
+command: devctl gen workflows --flavour generic --language go --repo-name example-service --release-workflow legacy
+command: devctl gen llm --flavour generic --language go
+command: devctl gen renovate --language go --repo-name example-service
+
+--- .cursor/rules/zz_generated.base-llm-rules.mdc
+---
+description: Instructions for AI/LLM assistants
+alwaysApply: true
+---
+
+# Instructions for AI/LLM assistants
+
+You are an AI assistant acting as an expert software developer and platform engineer working on Giant Swarm platform components. Your task is to act as a pair programmer and help others working in this codebase to keep the code delightful to work with. This includes ensuring that the code adheres to Giant Swarm's quality standards, keeping the project well-architected and organized, and maintaining supporting documentation, diagrams, and rules for other AI assistants.
+
+# Persona: Senior Giant Swarm Platform Engineer
+
+- **Technical Depth**: You are a domain expert in Go (formerly, golang), Helm, Kubernetes APIs and development, software design patterns, software architecture, Go application security, software testing, and software performance optimization,
+- **Problem-Solver**: You approach issues methodically, prioritizing safety and stability. You first investigate deeply with the tools provided to you, before suggesting changes. You find and fix the root cause, not the symptoms.
+- **Clear Communicator**: You explain complex topics clearly and provide actionable steps.
+- **Collaborative**: You guide users, suggest diagnostic paths, and help them think through problems.
+- **Best Practices**: You adhere to Giant Swarm operational and technical standards.
+
+# Reviewer Guidelines
+
+## Core Behaviors
+
+- Unless directed by the user, never use or recommend external linters, code analysis, or other tooling which isn't already recommended in Giant Swarm agent rules or style guides.
+- Always adhere to the central coding guidelines and best practices maintained at: @https://github.com/giantswarm/fmt/
+- Prioritize readability, maintainability, and security.
+- Write comprehensive tests and documentation.
+- If documentation is available in the `docs` folder, keep this up-to-date when changing code.
+- Maintain the main README.md file for correctness.
+- If a changelog is available as CHANGELOG.md, add your changes to it.
+
+## Release Management
+
+- Follow the changelog and release guidelines from @https://github.com/giantswarm/fmt/tree/main/releases
+- Use semantic versioning and conventional commits
+
+
+## Language-Specific Guidelines
+
+Additional language-specific rules can be found in the general style guide and in the other rules files in this repository.
+
+
+### Go Development
+
+- Go code must always adhere to the Go language-specific development guidelines and patterns rules in this repository.
+
+### Go Application Security
+
+- Ensure all Go dependencies are up to date.
+- Follow best security practices for Go applications.
+
+
+---
+
+For detailed guidelines and examples, always refer to: @https://github.com/giantswarm/fmt/
+
+
+<!--
+DO NOT EDIT. Generated with devctl.
+This file is maintained at:
+https://github.com/giantswarm/devctl/tree/main
+Manual changes will be overwritten.
+-->
+
+--- .cursor/rules/zz_generated.go-llm-rules.mdc
+---
+description: Go language-specific development guidelines and patterns
+globs: **/*.go,go.mod,go.sum
+---
+
+These guidelines apply to Go code and supplement any other general development instructions or workflows.
+
+# Go Code Guidelines
+
+- All Go code is expected to adhere to the rules outlined in the Giant Swarm style guide located at @https://github.com/giantswarm/fmt/tree/main/go .
+- Always fetch and fully understand the style guide before reviewing any code.
+- The Giant Swarm style guide linked above must always be considered definitive. ALL rules and provisions contained in the style guide MUST be met.
+- When applying the style guide, always list all instances of a particular issue, grouped by the finding type.
+
+## Formatting
+
+CI will perform the following check for proper code formatting and sorting/grouping of imports:
+
+```bash
+go install golang.org/x/tools/cmd/goimports@latest && \
+if [[ -n $(goimports -local github.com/${CIRCLE_PROJECT_USERNAME}/${CIRCLE_PROJECT_REPONAME} -l .) ]];
+then
+  goimports -local github.com/${CIRCLE_PROJECT_USERNAME}/${CIRCLE_PROJECT_REPONAME} -d . && exit 1;
+fi
+```
+
+When creating or modifying Go files, perform the according check and mitigate any issues before committing.
+
+
+<!--
+DO NOT EDIT. Generated with devctl.
+This file is maintained at:
+https://github.com/giantswarm/devctl/tree/main
+Manual changes will be overwritten.
+-->
+
+--- .github/pull_request_template.md
+### What does this PR do?
+
+(Please set a descriptive PR title. Use this space for additional explanations.)
+
+### What is the effect of this change to users?
+
+### How does it look like?
+
+(Please add anything that represents the change visually. Screenshots, output, logs, ...)
+
+### Any background context you can provide?
+
+(Please link public issues or summarize if not public.)
+
+### What is needed from the reviewers?
+
+### Do the docs need to be updated?
+
+### Should this change be mentioned in the release notes?
+
+- [ ] CHANGELOG.md has been updated (if it exists)
+
+--- .github/workflows/zz_generated.add-team-labels.yaml
+name: Add appropriate labels to issue
+
+on:
+  issues:
+    types: [assigned]
+
+jobs:
+  build_user_list:
+    name: Get yaml config of GS users
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+    - name: Get user-mapping
+      env:
+        GH_TOKEN: ${{ secrets.ISSUE_AUTOMATION }}
+      run: |
+        mkdir -p artifacts
+        gh api -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" \
+          /repos/giantswarm/github/contents/tools/issue-automation/user-mapping.yaml \
+          | jq -r '.content' \
+          | base64 -d > artifacts/users.yaml
+    - name: Upload Artifact
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: users
+        path: artifacts/users.yaml
+        retention-days: 1
+
+  add_label:
+    name: Add team label when assigned
+    runs-on: ubuntu-latest
+    needs: build_user_list
+    steps:
+    - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+      id: download-users
+      with:
+        name: users
+    - name: Find team label based on user names
+      run: |
+        event_assignee=$(cat $GITHUB_EVENT_PATH | jq -r .assignee.login | tr '[:upper:]' '[:lower:]')
+        echo "Issue assigned to: ${event_assignee}"
+
+        TEAMS=$(cat ${{steps.download-users.outputs.download-path}}/users.yaml | tr '[:upper:]' '[:lower:]' | yq ".${event_assignee}.teams" -o csv | tr ',' ' ')
+
+        echo "LABEL<<EOF" >> $GITHUB_ENV
+        for team in ${TEAMS}; do
+          echo "Team: ${team} | Label: team/${team}"
+          echo "team/${team}" >> $GITHUB_ENV
+        done
+        echo "EOF" >> $GITHUB_ENV
+    - name: Apply label to issue
+      if: ${{ env.LABEL != '' && env.LABEL != 'null' && env.LABEL != null }}
+      uses: actions-ecosystem/action-add-labels@18f1af5e3544586314bbe15c0273249c770b2daf  # v1.1.3
+      with:
+        github_token: ${{ secrets.ISSUE_AUTOMATION }}
+        labels: |
+          ${{ env.LABEL }}
+
+--- .github/workflows/zz_generated.add-to-project-board.yaml
+name: Add Issue to Project when assigned
+
+on:
+  issues:
+    types:
+    - assigned
+    - labeled
+
+jobs:
+  build_user_list:
+    name: Get yaml config of GS users
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+    - name: Get user-mapping
+      env:
+        GH_TOKEN: ${{ secrets.ISSUE_AUTOMATION }}
+      run: |
+        mkdir -p artifacts
+        gh api -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" \
+          /repos/giantswarm/github/contents/tools/issue-automation/user-mapping.yaml \
+          | jq -r '.content' \
+          | base64 -d > artifacts/users.yaml
+    - name: Upload Artifact
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: users
+        path: artifacts/users.yaml
+        retention-days: 1
+    - name: Get label-mapping
+      env:
+        GH_TOKEN: ${{ secrets.ISSUE_AUTOMATION }}
+      run: |
+        mkdir -p artifacts
+        gh api -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" \
+          /repos/giantswarm/github/contents/tools/issue-automation/label-mapping.yaml \
+          | jq -r '.content' \
+          | base64 -d > artifacts/labels.yaml
+    - name: Upload Artifact
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: labels
+        path: artifacts/labels.yaml
+        retention-days: 1
+
+  add_to_personal_board:
+    name: Add issue to personal board
+    runs-on: ubuntu-latest
+    needs: build_user_list
+    if: github.event.action == 'assigned'
+    steps:
+    - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+      id: download-users
+      with:
+        name: users
+    - name: Find personal board based on user names
+      run: |
+        event_assignee=$(cat $GITHUB_EVENT_PATH | jq -r .assignee.login | tr '[:upper:]' '[:lower:]')
+        echo "Issue assigned to: ${event_assignee}"
+
+        BOARD=($(cat ${{steps.download-users.outputs.download-path}}/users.yaml | tr '[:upper:]' '[:lower:]' | yq ".${event_assignee}.personalboard"))
+        echo "Personal board URL: ${BOARD}"
+
+        echo "BOARD=${BOARD}" >> $GITHUB_ENV
+    - name: Add issue to personal board
+      if: ${{ env.BOARD != 'null' && env.BOARD != ''  && env.BOARD != null }}
+      uses: actions/add-to-project@5afcf98fcd03f1c2f92c3c83f58ae24323cc57fd # v2.0.0
+      with:
+        project-url: ${{ env.BOARD }}
+        github-token: ${{ secrets.ISSUE_AUTOMATION }}
+
+  add_to_team_board:
+    name: Add issue to team board
+    runs-on: ubuntu-latest
+    needs: build_user_list
+    if: github.event.action == 'labeled'
+    steps:
+    - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+      id: download-labels
+      with:
+        name: labels
+    - name: Find team board based on label
+      run: |
+        event_label=$(cat $GITHUB_EVENT_PATH | jq -r .label.name | tr '[:upper:]' '[:lower:]')
+        echo "Issue labelled with: ${event_label}"
+
+        BOARD=($(cat ${{steps.download-labels.outputs.download-path}}/labels.yaml | tr '[:upper:]' '[:lower:]' | yq ".[\"${event_label}\"].projectboard"))
+        echo "Team board URL: ${BOARD}"
+
+        echo "BOARD=${BOARD}" >> $GITHUB_ENV
+    - name: Add issue to team board
+      if: ${{ env.BOARD != 'null' && env.BOARD != '' && env.BOARD != null }}
+      uses: actions/add-to-project@5afcf98fcd03f1c2f92c3c83f58ae24323cc57fd # v2.0.0
+      with:
+        project-url: ${{ env.BOARD }}
+        github-token: ${{ secrets.ISSUE_AUTOMATION }}
+
+--- .github/workflows/zz_generated.create_release.yaml
+# DO NOT EDIT. Generated with:
+#
+#    devctl
+#
+#    https://github.com/giantswarm/devctl/tree/main
+#
+name: Create Release
+
+on:
+  push:
+    branches:
+      - 'legacy'
+      - 'main'
+      - 'master'
+      - 'release-v*.*.x'
+      # "!" negates previous positive patterns so it has to be at the end.
+      - '!release-v*.x.x'
+
+permissions: {}
+
+jobs:
+  create-release:
+    uses: giantswarm/github-workflows/.github/workflows/create-release.yaml@main
+    with:
+      fetch-deep-gitlog-for-build: true
+    secrets:
+      RELEASE_BOT_CLIENT_ID: ${{ secrets.RELEASE_BOT_CLIENT_ID }}
+      RELEASE_BOT_PRIVATE_KEY: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+    permissions:
+      contents: write
+
+--- .github/workflows/zz_generated.create_release_pr.yaml
+# DO NOT EDIT. Generated with:
+#
+#    devctl
+#
+#    https://github.com/giantswarm/devctl/tree/main
+#
+name: Create Release PR
+on:
+  push:
+    branches:
+      - 'legacy#release#v*.*.*'
+      - 'main#release#v*.*.*'
+      - 'main#release#major'
+      - 'main#release#minor'
+      - 'main#release#patch'
+      - 'main#release#major-rc'
+      - 'main#release#minor-rc'
+      - 'main#release#patch-rc'
+      - 'main#release#rc'
+      - 'main#release#rc-release'
+      - 'master#release#v*.*.*'
+      - 'master#release#major'
+      - 'master#release#minor'
+      - 'master#release#patch'
+      - 'master#release#major-rc'
+      - 'master#release#minor-rc'
+      - 'master#release#patch-rc'
+      - 'master#release#rc'
+      - 'master#release#rc-release'
+      - 'release#v*.*.*'
+      - 'release#major'
+      - 'release#minor'
+      - 'release#patch'
+      - 'release#major-rc'
+      - 'release#minor-rc'
+      - 'release#patch-rc'
+      - 'release#rc'
+      - 'release#rc-release'
+      - 'release-v*.*.x#release#v*.*.*'
+      # "!" negates previous positive patterns so it has to be at the end.
+      - '!release-v*.x.x#release#v*.*.*'
+  workflow_call:
+    inputs:
+      branch:
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  publish:
+    uses: giantswarm/github-workflows/.github/workflows/create-release-pr.yaml@main
+    permissions:
+      contents: read
+    with:
+      branch: ${{ inputs.branch }}
+    secrets:
+      RELEASE_BOT_CLIENT_ID: ${{ secrets.RELEASE_BOT_CLIENT_ID }}
+      RELEASE_BOT_PRIVATE_KEY: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+
+--- .github/workflows/zz_generated.fix_vulnerabilities.yaml
+# DO NOT EDIT. Generated with:
+#
+#    devctl
+#
+#    https://github.com/giantswarm/devctl/tree/main
+#
+
+name: Fix Go vulnerabilities
+
+on:
+  schedule:
+    - cron: '0 21 * * 3'
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: Branch on which to fix vulnerabilities
+        default: main
+        required: true
+        type: string
+      log_level:
+        description: Log Level (info / error / debug)
+        default: info
+        type: string
+
+permissions: {}
+
+jobs:
+  fix:
+    uses: giantswarm/github-workflows/.github/workflows/fix-vulnerabilities.yaml@main
+    permissions:
+      contents: read
+    with:
+      branch: ${{ inputs.branch || github.ref }}
+      log_level: ${{ inputs.log_level || 'info' }}
+    secrets:
+      HERALD_APP_ID: ${{ secrets.HERALD_APP_ID }}
+      HERALD_APP_KEY: ${{ secrets.HERALD_APP_KEY }}
+      NANCY_USER: ${{ secrets.NANCY_USER }}
+      NANCY_TOKEN: ${{ secrets.NANCY_TOKEN }}
+
+--- .github/workflows/zz_generated.gitleaks.yaml
+# DO NOT EDIT. Generated with:
+#
+#    devctl
+#
+#    https://github.com/giantswarm/devctl/tree/main
+#
+name: gitleaks
+
+on:
+  - pull_request
+  - merge_group
+
+permissions: {}
+
+jobs:
+  publish:
+    uses: giantswarm/github-workflows/.github/workflows/gitleaks.yaml@main
+    permissions:
+      contents: read
+
+--- .github/workflows/zz_generated.run_ossf_scorecard.yaml
+# DO NOT EDIT. Generated with:
+#
+#    devctl
+#
+#    https://github.com/giantswarm/devctl/tree/main
+#
+
+# This workflow uses actions that are not certified by GitHub. They are provided
+# by a third-party and are governed by separate terms of service, privacy
+# policy, and support documentation.
+
+name: Scorecard supply-chain security
+on:
+  # For Branch-Protection check. Only the default branch is supported. See
+  # https://github.com/ossf/scorecard/blob/main/docs/checks.md#branch-protection
+  branch_protection_rule: {}
+  # To guarantee Maintained check is occasionally updated. See
+  # https://github.com/ossf/scorecard/blob/main/docs/checks.md#maintained
+  schedule:
+    - cron: '15 15 15 * *'
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch: {}
+
+permissions: {}
+
+jobs:
+  analysis:
+    uses: giantswarm/github-workflows/.github/workflows/ossf-scorecard.yaml@main
+    permissions:
+      contents: read
+      actions: read
+      issues: read
+      pull-requests: read
+      checks: read
+      security-events: write
+      id-token: write
+    secrets:
+      scorecard_token: ${{ secrets.SCORECARD_TOKEN }}
+
+--- .github/workflows/zz_generated.semantic_pull_request.yaml
+# DO NOT EDIT. Generated with:
+#
+#    devctl
+#
+#    https://github.com/giantswarm/devctl/tree/main
+#
+name: semantic-pull-request
+
+on:
+  pull_request:
+    types:
+      - opened
+      - edited
+      - synchronize
+  merge_group: {}
+
+permissions: {}
+
+jobs:
+  semantic-pull-request:
+    uses: giantswarm/github-workflows/.github/workflows/semantic-pull-request.yaml@main
+    permissions:
+      pull-requests: read
+    with:
+      # `types` REPLACES the action's default list rather than extending it, so
+      # all eleven defaults from commitizen/conventional-commit-types are
+      # repeated here, plus the additions below. Entries are regexes the action
+      # wraps in `^ $`.
+      #
+      # `security` is not one of the action's defaults and has to be listed to
+      # be accepted at all. cliff.toml maps it to the Security changelog group,
+      # which no title can reach while the type is rejected.
+      types: |
+        feat
+        fix
+        docs
+        style
+        refactor
+        perf
+        test
+        build
+        ci
+        chore
+        revert
+        security
+
+--- .github/workflows/zz_generated.validate_changelog.yaml
+# DO NOT EDIT. Generated with:
+#
+#    devctl
+#
+#    https://github.com/giantswarm/devctl/tree/main
+#
+name: Validate changelog
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'CHANGELOG.md'
+      - '.github/workflows/zz_generated.auto_release.yaml'
+      - 'cliff.toml'
+
+permissions: {}
+
+jobs:
+  validate-changelog:
+    uses: giantswarm/github-workflows/.github/workflows/validate-changelog.yaml@main
+    permissions:
+      contents: read
+      pull-requests: write
+
+  # This repository's declaration in giantswarm/github says the legacy release
+  # workflow, so the next align-files run deletes the Auto Release files again.
+  release-workflow-declaration:
+    name: Release workflow matches the declaration
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/workflows
+      - name: Refuse Auto Release files under a legacy declaration
+        run: |
+          found=""
+          for f in .github/workflows/zz_generated.auto_release.yaml cliff.toml; do
+            if [ -e "$f" ]; then
+              found="$found $f"
+            fi
+          done
+          if [ -n "$found" ]; then
+            echo "::error::This repository is declared on the legacy release workflow, so align-files deletes${found} again. Auto Release is enabled in the repository's entry in giantswarm/github: set gen.ci.releaseWorkflow: auto-release there and let align-files generate the files, instead of adding them in this pull request."
+            exit 1
+          fi
+
+--- .nancy-ignore
+# Affects all versions of archiver which is required by vault.
+# Taken from: https://github.com/giantswarm/opsctl/pull/1072/files#diff-bbe4a7fb12c43622bce7c6840c770e9995be614626a219942ca138403629cb69R1
+CVE-2019-10743 until=2021-10-17
+
+--- .nancy-ignore.generated
+# This file is generated by https://github.com/giantswarm/github
+# Repository specific ignores should be added to .nancy-ignore
+
+--- .yamllint.yaml
+---
+extends: default
+rules:
+  comments:
+    min-spaces-from-content: 1
+  document-start: disable
+  line-length:
+    max: 200
+
+--- CHANGELOG.md
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+
+
+## [Unreleased]
+
+
+
+[Unreleased]: https://github.com/giantswarm/example-service/tree/main
+
+--- CODEOWNERS
+# generated by giantswarm/github actions - changes will be overwritten
+* @giantswarm/team-bumblebee
+
+--- DCO
+Developer Certificate of Origin
+Version 1.1
+
+Copyright (C) 2004, 2006 The Linux Foundation and its contributors.
+660 York Street, Suite 102,
+San Francisco, CA 94110 USA
+
+Everyone is permitted to copy and distribute verbatim copies of this
+license document, but changing it is not allowed.
+
+
+Developer's Certificate of Origin 1.1
+
+By making a contribution to this project, I certify that:
+
+(a) The contribution was created in whole or in part by me and I
+    have the right to submit it under the open source license
+    indicated in the file; or
+
+(b) The contribution is based upon previous work that, to the best
+    of my knowledge, is covered under an appropriate open source
+    license and I have the right under that license to submit that
+    work with modifications, whether created in whole or in part
+    by me, under the same open source license (unless I am
+    permitted to submit under a different license), as indicated
+    in the file; or
+
+(c) The contribution was provided directly to me by some other
+    person who certified (a), (b) or (c) and I have not modified
+    it.
+
+(d) I understand and agree that this project and the contribution
+    are public and that a record of the contribution (including all
+    personal information I submit with it, including my sign-off) is
+    maintained indefinitely and may be redistributed consistent with
+    this project or the open source license(s) involved.
+
+--- LICENSE
+                                 Apache License
+                           Version 2.0, January 2004
+                        http://www.apache.org/licenses/
+
+   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
+
+   1. Definitions.
+
+      "License" shall mean the terms and conditions for use, reproduction,
+      and distribution as defined by Sections 1 through 9 of this document.
+
+      "Licensor" shall mean the copyright owner or entity authorized by
+      the copyright owner that is granting the License.
+
+      "Legal Entity" shall mean the union of the acting entity and all
+      other entities that control, are controlled by, or are under common
+      control with that entity. For the purposes of this definition,
+      "control" means (i) the power, direct or indirect, to cause the
+      direction or management of such entity, whether by contract or
+      otherwise, or (ii) ownership of fifty percent (50%) or more of the
+      outstanding shares, or (iii) beneficial ownership of such entity.
+
+      "You" (or "Your") shall mean an individual or Legal Entity
+      exercising permissions granted by this License.
+
+      "Source" form shall mean the preferred form for making modifications,
+      including but not limited to software source code, documentation
+      source, and configuration files.
+
+      "Object" form shall mean any form resulting from mechanical
+      transformation or translation of a Source form, including but
+      not limited to compiled object code, generated documentation,
+      and conversions to other media types.
+
+      "Work" shall mean the work of authorship, whether in Source or
+      Object form, made available under the License, as indicated by a
+      copyright notice that is included in or attached to the work
+      (an example is provided in the Appendix below).
+
+      "Derivative Works" shall mean any work, whether in Source or Object
+      form, that is based on (or derived from) the Work and for which the
+      editorial revisions, annotations, elaborations, or other modifications
+      represent, as a whole, an original work of authorship. For the purposes
+      of this License, Derivative Works shall not include works that remain
+      separable from, or merely link (or bind by name) to the interfaces of,
+      the Work and Derivative Works thereof.
+
+      "Contribution" shall mean any work of authorship, including
+      the original version of the Work and any modifications or additions
+      to that Work or Derivative Works thereof, that is intentionally
+      submitted to Licensor for inclusion in the Work by the copyright owner
+      or by an individual or Legal Entity authorized to submit on behalf of
+      the copyright owner. For the purposes of this definition, "submitted"
+      means any form of electronic, verbal, or written communication sent
+      to the Licensor or its representatives, including but not limited to
+      communication on electronic mailing lists, source code control systems,
+      and issue tracking systems that are managed by, or on behalf of, the
+      Licensor for the purpose of discussing and improving the Work, but
+      excluding communication that is conspicuously marked or otherwise
+      designated in writing by the copyright owner as "Not a Contribution."
+
+      "Contributor" shall mean Licensor and any individual or Legal Entity
+      on behalf of whom a Contribution has been received by Licensor and
+      subsequently incorporated within the Work.
+
+   2. Grant of Copyright License. Subject to the terms and conditions of
+      this License, each Contributor hereby grants to You a perpetual,
+      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
+      copyright license to reproduce, prepare Derivative Works of,
+      publicly display, publicly perform, sublicense, and distribute the
+      Work and such Derivative Works in Source or Object form.
+
+   3. Grant of Patent License. Subject to the terms and conditions of
+      this License, each Contributor hereby grants to You a perpetual,
+      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
+      (except as stated in this section) patent license to make, have made,
+      use, offer to sell, sell, import, and otherwise transfer the Work,
+      where such license applies only to those patent claims licensable
+      by such Contributor that are necessarily infringed by their
+      Contribution(s) alone or by combination of their Contribution(s)
+      with the Work to which such Contribution(s) was submitted. If You
+      institute patent litigation against any entity (including a
+      cross-claim or counterclaim in a lawsuit) alleging that the Work
+      or a Contribution incorporated within the Work constitutes direct
+      or contributory patent infringement, then any patent licenses
+      granted to You under this License for that Work shall terminate
+      as of the date such litigation is filed.
+
+   4. Redistribution. You may reproduce and distribute copies of the
+      Work or Derivative Works thereof in any medium, with or without
+      modifications, and in Source or Object form, provided that You
+      meet the following conditions:
+
+      (a) You must give any other recipients of the Work or
+          Derivative Works a copy of this License; and
+
+      (b) You must cause any modified files to carry prominent notices
+          stating that You changed the files; and
+
+      (c) You must retain, in the Source form of any Derivative Works
+          that You distribute, all copyright, patent, trademark, and
+          attribution notices from the Source form of the Work,
+          excluding those notices that do not pertain to any part of
+          the Derivative Works; and
+
+      (d) If the Work includes a "NOTICE" text file as part of its
+          distribution, then any Derivative Works that You distribute must
+          include a readable copy of the attribution notices contained
+          within such NOTICE file, excluding those notices that do not
+          pertain to any part of the Derivative Works, in at least one
+          of the following places: within a NOTICE text file distributed
+          as part of the Derivative Works; within the Source form or
+          documentation, if provided along with the Derivative Works; or,
+          within a display generated by the Derivative Works, if and
+          wherever such third-party notices normally appear. The contents
+          of the NOTICE file are for informational purposes only and
+          do not modify the License. You may add Your own attribution
+          notices within Derivative Works that You distribute, alongside
+          or as an addendum to the NOTICE text from the Work, provided
+          that such additional attribution notices cannot be construed
+          as modifying the License.
+
+      You may add Your own copyright statement to Your modifications and
+      may provide additional or different license terms and conditions
+      for use, reproduction, or distribution of Your modifications, or
+      for any such Derivative Works as a whole, provided Your use,
+      reproduction, and distribution of the Work otherwise complies with
+      the conditions stated in this License.
+
+   5. Submission of Contributions. Unless You explicitly state otherwise,
+      any Contribution intentionally submitted for inclusion in the Work
+      by You to the Licensor shall be under the terms and conditions of
+      this License, without any additional terms or conditions.
+      Notwithstanding the above, nothing herein shall supersede or modify
+      the terms of any separate license agreement you may have executed
+      with Licensor regarding such Contributions.
+
+   6. Trademarks. This License does not grant permission to use the trade
+      names, trademarks, service marks, or product names of the Licensor,
+      except as required for reasonable and customary use in describing the
+      origin of the Work and reproducing the content of the NOTICE file.
+
+   7. Disclaimer of Warranty. Unless required by applicable law or
+      agreed to in writing, Licensor provides the Work (and each
+      Contributor provides its Contributions) on an "AS IS" BASIS,
+      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+      implied, including, without limitation, any warranties or conditions
+      of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
+      PARTICULAR PURPOSE. You are solely responsible for determining the
+      appropriateness of using or redistributing the Work and assume any
+      risks associated with Your exercise of permissions under this License.
+
+   8. Limitation of Liability. In no event and under no legal theory,
+      whether in tort (including negligence), contract, or otherwise,
+      unless required by applicable law (such as deliberate and grossly
+      negligent acts) or agreed to in writing, shall any Contributor be
+      liable to You for damages, including any direct, indirect, special,
+      incidental, or consequential damages of any character arising as a
+      result of this License or out of the use or inability to use the
+      Work (including but not limited to damages for loss of goodwill,
+      work stoppage, computer failure or malfunction, or any and all
+      other commercial damages or losses), even if such Contributor
+      has been advised of the possibility of such damages.
+
+   9. Accepting Warranty or Additional Liability. While redistributing
+      the Work or Derivative Works thereof, You may choose to offer,
+      and charge a fee for, acceptance of support, warranty, indemnity,
+      or other liability obligations and/or rights consistent with this
+      License. However, in accepting such obligations, You may act only
+      on Your own behalf and on Your sole responsibility, not on behalf
+      of any other Contributor, and only if You agree to indemnify,
+      defend, and hold each Contributor harmless for any liability
+      incurred by, or claims asserted against, such Contributor by reason
+      of your accepting any such warranty or additional liability.
+
+   END OF TERMS AND CONDITIONS
+
+   APPENDIX: How to apply the Apache License to your work.
+
+      To apply the Apache License to your work, attach the following
+      boilerplate notice, with the fields enclosed by brackets "{}"
+      replaced with your own identifying information. (Don't include
+      the brackets!)  The text should be enclosed in the appropriate
+      comment syntax for the file format. We also recommend that a
+      file or class name and description of purpose be included on the
+      same "printed page" as the copyright notice for easier
+      identification within third-party archives.
+
+   Copyright 2016 - 2026 Giant Swarm GmbH
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+
+--- Makefile
+# DO NOT EDIT. Generated with:
+#
+#    devctl
+#
+#    https://github.com/giantswarm/devctl/tree/main
+#
+
+include Makefile.*.mk
+
+##@ General
+
+# The help target prints out all targets with their descriptions organized
+# beneath their categories. The categories are represented by '##@' and the
+# target descriptions by '##'. The awk commands is responsible for reading the
+# entire set of makefiles included in this invocation, looking for lines of the
+# file as xyz: ## something, and then pretty-format the target and help. Then,
+# if there's a line with ##@ something, that gets pretty-printed as a category.
+# More info on the usage of ANSI control characters for terminal formatting:
+# https://en.wikipedia.org/wiki/ANSI_escape_code#SGR_parameters
+# More info on the awk command:
+# http://linuxcommand.org/lc3_adv_awk.php
+
+.PHONY: help
+help: ## Display this help.
+	@awk 'BEGIN {FS = ":.*##"; n = 0; w = 0} /^[a-zA-Z%\\\/_0-9-]+:.*?##/ { order[n] = "t"; targets[n] = $$1; descs[n] = $$2; if (length($$1) > w) w = length($$1); n++ } /^##@/ { order[n] = "c"; cats[n] = substr($$0, 5); n++ } END { printf "\nUsage:\n  make \033[36m<target>\033[0m\n"; for (i = 0; i < n; i++) { if (order[i] == "c") printf "\n\033[1m%s\033[0m\n", cats[i]; else printf "  \033[36m%-*s\033[0m  %s\n", w, targets[i], descs[i] } }' $(MAKEFILE_LIST)
+
+--- Makefile.gen.go.mk
+# DO NOT EDIT. Generated with:
+#
+#    devctl
+#
+#    https://github.com/giantswarm/devctl/tree/main
+#
+
+APPLICATION    := $(shell go list -m | cut -d '/' -f 3)
+BUILDTIMESTAMP := $(shell date -u '+%FT%TZ')
+GITSHA1        := $(shell git rev-parse --verify HEAD)
+MODULE         := $(shell go list -m)
+# main() is usually in `main.go`, but sometimes in `cmd/main.go` (for example in newer kubebuilder projects)
+MAIN_SOURCE    := $(shell if test -e cmd/main.go; then echo cmd/main.go; else echo main.go; fi)
+OS             := $(shell go env GOOS)
+SOURCES        := $(shell find . -name '*.go')
+VERSION        := $(shell gitsemver get)
+ifeq ($(OS), linux)
+EXTLDFLAGS := -static
+endif
+LDFLAGS        ?= -w -linkmode 'auto' -extldflags '$(EXTLDFLAGS)' \
+  -X '$(MODULE)/pkg/project.version=$(VERSION)' \
+  -X '$(MODULE)/pkg/project.buildTimestamp=$(BUILDTIMESTAMP)' \
+  -X '$(MODULE)/pkg/project.gitSHA=$(GITSHA1)'
+
+.DEFAULT_GOAL := build
+
+##@ Go
+
+.PHONY: build build-darwin build-darwin-64 build-linux build-linux-arm64 build-windows-amd64
+build: $(APPLICATION) ## Builds a local binary.
+	@echo "====> $@"
+build-darwin: $(APPLICATION)-darwin ## Builds a local binary for darwin/amd64.
+	@echo "====> $@"
+build-darwin-arm64: $(APPLICATION)-darwin-arm64 ## Builds a local binary for darwin/arm64.
+	@echo "====> $@"
+build-linux: $(APPLICATION)-linux ## Builds a local binary for linux/amd64.
+	@echo "====> $@"
+build-linux-arm64: $(APPLICATION)-linux-arm64 ## Builds a local binary for linux/arm64.
+	@echo "====> $@"
+build-windows-amd64: $(APPLICATION)-windows-amd64.exe ## Builds a local binary for windows/amd64.
+	@echo "====> $@"
+
+$(APPLICATION): $(APPLICATION)-v$(VERSION)-$(OS)-amd64
+	@echo "====> $@"
+	cp -a $< $@
+
+$(APPLICATION)-darwin: $(APPLICATION)-v$(VERSION)-darwin-amd64
+	@echo "====> $@"
+	cp -a $< $@
+
+$(APPLICATION)-darwin-arm64: $(APPLICATION)-v$(VERSION)-darwin-arm64
+	@echo "====> $@"
+	cp -a $< $@
+
+$(APPLICATION)-linux: $(APPLICATION)-v$(VERSION)-linux-amd64
+	@echo "====> $@"
+	cp -a $< $@
+
+$(APPLICATION)-linux-arm64: $(APPLICATION)-v$(VERSION)-linux-arm64
+	@echo "====> $@"
+	cp -a $< $@
+
+$(APPLICATION)-windows-amd64.exe: $(APPLICATION)-v$(VERSION)-windows-amd64.exe
+	@echo "====> $@"
+	cp -a $< $@
+
+$(APPLICATION)-v$(VERSION)-%-amd64: $(SOURCES)
+	@echo "====> $@"
+	CGO_ENABLED=0 GOOS=$* GOARCH=amd64 go build -trimpath -ldflags "$(LDFLAGS)" -o $@ "$(MAIN_SOURCE)"
+
+$(APPLICATION)-v$(VERSION)-%-arm64: $(SOURCES)
+	@echo "====> $@"
+	CGO_ENABLED=0 GOOS=$* GOARCH=arm64 go build -trimpath -ldflags "$(LDFLAGS)" -o $@ "$(MAIN_SOURCE)"
+
+$(APPLICATION)-v$(VERSION)-windows-amd64.exe: $(SOURCES)
+	@echo "====> $@"
+	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "$(LDFLAGS)" -o $@ "$(MAIN_SOURCE)"
+
+.PHONY: install
+install: ## Install the application.
+	@echo "====> $@"
+	go build -ldflags "$(LDFLAGS)" -o "$(shell go env GOPATH)/bin/$(APPLICATION)" "$(MAIN_SOURCE)"
+
+.PHONY: run
+run: ## Runs go run main.go.
+	@echo "====> $@"
+	go run -ldflags "$(LDFLAGS)" -race "$(MAIN_SOURCE)"
+
+.PHONY: clean
+clean: ## Cleans the binary.
+	@echo "====> $@"
+	rm -f $(APPLICATION)*
+	go clean
+
+.PHONY: imports
+imports: ## Runs goimports.
+	@echo "====> $@"
+	goimports -local $(MODULE) -w .
+
+.PHONY: lint
+lint: ## Runs golangci-lint.
+	@echo "====> $@"
+	golangci-lint run -E gosec -E goconst --timeout=15m ./...
+
+.PHONY: fmt
+fmt: ## Run go fmt against code.
+	go fmt ./...
+
+.PHONY: vet
+vet: ## Run go vet against code.
+	go vet ./...
+
+# `-deps ./...` lists only the packages actually compiled into this module, so nancy
+# reports vulnerabilities in code we really ship. `-m all` walks the entire module
+# graph instead and flags modules that are never built: on team-stamper it reported 7
+# vulnerable modules of which 5 are not in the build at all, including golang.org/x/crypto
+# and its 13 CVEs. #680 moved to `-deps ./...` for exactly this reason; #1964 moved back
+# to `-m all` only to dodge nancy's 10 MB stdin cap, which nancy made configurable and
+# defaulted to 100 MB in v2.1.0 -- so the workaround costs accuracy for nothing.
+.PHONY: nancy
+nancy: ## Runs nancy (requires v2.1.0 or newer).
+	@echo "====> $@"
+	CGO_ENABLED=0 go list -json -deps ./... | nancy sleuth --skip-update-check --quiet --exclude-vulnerability-file ./.nancy-ignore --additional-exclude-vulnerability-files ./.nancy-ignore.generated
+
+# Race detector needs a C toolchain. The architect CI image has none and runs
+# with CGO_ENABLED=0, so degrade to cgo-free there; everywhere a compiler exists
+# (laptops, coding agents, GitHub Actions, any cgo-capable runner) keeps -race.
+RACE := $(shell { [ "$${CGO_ENABLED:-1}" != "0" ] && { command -v gcc || command -v clang; } >/dev/null 2>&1; } && echo -race)
+
+.PHONY: test
+test: ## Runs go test with default values (race detector when a C toolchain is available).
+	@echo "====> $@"
+	go test -ldflags "$(LDFLAGS)" $(RACE) ./...
+
+.PHONY: build-docker
+build-docker: build-linux ## Builds docker image to registry.
+	@echo "====> $@"
+	cp -a $(APPLICATION)-linux $(APPLICATION)
+	docker build -t ${APPLICATION}:${VERSION} .
+
+--- README.md
+# example-service
+
+An example Go service.
+
+--- SECURITY.md
+# Security Policy
+
+## Reporting a Vulnerability
+
+Please visit <https://www.giantswarm.io/responsible-disclosure> for information on reporting security issues.
+
+--- docs/development.md
+# Developing on example-service
+
+This is a great place to explain how to get started developing on this project.
+
+--- go.mod
+module github.com/giantswarm/example-service
+
+go 1.25
+
+--- go.sum
+
+--- main.go
+package main
+
+func main() {}
+
+--- renovate.json5
+// DO NOT EDIT. This file is generated by `devctl gen renovate` and kept in sync
+// by the giantswarm/github align-files workflow. Repo-specific Renovate rules
+// belong in renovate-custom.json5 (repo root) -- it is added as the last
+// `extends` entry when present and never touched by devctl. Rules for a whole
+// class of repos belong in giantswarm/renovate-presets instead.
+{
+  extends: [
+    // Base config - https://github.com/giantswarm/renovate-presets/blob/main/default.json5
+    'github>giantswarm/renovate-presets:default.json5',
+    // Go specific config - https://github.com/giantswarm/renovate-presets/blob/main/lang-go.json5
+    'github>giantswarm/renovate-presets:lang-go.json5',
+  ],
+  // Our own bots commit onto Renovate branches. The giantswarm-release
+  // GitHub App pushes what the generated workflows produce
+  // (zz_generated.helm-docs-regen.yaml, the update-chart and
+  // sync-from-upstream flows); taylorbot <dev@giantswarm.io> did so before
+  // it and still does in repositories whose workflows are not regenerated
+  // yet. giantswarm-marge[bot] writes the bot PR's
+  // changelog entry during the sweep, in the repositories that still cut a
+  // release from CHANGELOG.md. Renovate treats a branch whose last commit is
+  // by anyone else as edited by a human: it stops rebasing it and, on
+  // autoclose, retitles the PR "- abandoned" instead of closing it. Listing
+  // the authors here makes those commits Renovate's own. Renovate compares
+  // the author email, so these are the bare addresses.
+  gitIgnoredAuthors: [
+    '342014845+giantswarm-release[bot]@users.noreply.github.com',
+    'dev@giantswarm.io',
+    '329428426+giantswarm-marge[bot]@users.noreply.github.com',
+  ],
+}

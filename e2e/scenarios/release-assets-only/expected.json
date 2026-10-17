@@ -21,6 +21,7 @@
     "pipeline": null,
     "actions": [
       {"name": "Upload release assets", "runId": 9002, "status": "completed", "conclusion": "success", "url": "https://github.com/giantswarm/e2e-cli/actions/runs/9002"}
-    ]
+    ],
+    "statuses": []
   }
 }

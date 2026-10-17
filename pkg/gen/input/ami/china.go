@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/aws/smithy-go"
 	"github.com/giantswarm/microerror"
 )
 
@@ -32,15 +33,22 @@ type objectGetter interface {
 }
 
 func getFlatcarRelease(ctx context.Context, client objectGetter, config Config, version string) (map[string]string, error) {
+	key := fmt.Sprintf("%s/%s/%s.json", config.Channel, config.Arch, version)
 	result, err := client.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(config.ChinaBucketName),
-		Key:    aws.String(fmt.Sprintf("%s/%s/%s.json", config.Channel, config.Arch, version)),
+		Key:    aws.String(key),
 	})
 	if err != nil {
 		var noSuchKey *types.NoSuchKey
 		if errors.As(err, &noSuchKey) {
 			// Not found, but that's fine
 			fmt.Printf("Release %s not found in china\n", version)
+			return nil, nil
+		}
+		// Without s3:ListBucket, S3 answers a missing key with AccessDenied
+		// instead of NoSuchKey, so a release not yet imported looks the same.
+		if isAccessDenied(err) {
+			fmt.Printf("Warning: skipping china AMIs for release %s: key %q is not imported yet or not readable\n", version, key)
 			return nil, nil
 		}
 		return nil, microerror.Mask(err)
@@ -53,4 +61,9 @@ func getFlatcarRelease(ctx context.Context, client objectGetter, config Config, 
 	}
 
 	return chinaVersionAMI, nil
+}
+
+func isAccessDenied(err error) bool {
+	var apiErr smithy.APIError
+	return errors.As(err, &apiErr) && apiErr.ErrorCode() == "AccessDenied"
 }

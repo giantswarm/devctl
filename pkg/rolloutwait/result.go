@@ -9,6 +9,9 @@ import (
 const (
 	VerdictRolledOut     agentcli.Verdict = "rolled_out"
 	VerdictRolloutFailed agentcli.Verdict = "rollout_failed"
+	// VerdictRolloutUnknown: what applies the change is done, and whether
+	// a changed app runs it cannot be told (exit 3).
+	VerdictRolloutUnknown agentcli.Verdict = "rollout_unknown"
 )
 
 // The kinds of object that deploy a chart on an installation.
@@ -31,6 +34,9 @@ const (
 	StateNotFollowing = "not_following"
 	// StateSuspended: Flux does not reconcile the object.
 	StateSuspended = "suspended"
+	// StateUnknown: whether the change runs cannot be told; nothing
+	// deploys what it changed. It never counts as rolled out.
+	StateUnknown = "unknown"
 )
 
 // Result is what the rollout wait found on the installation.
@@ -75,7 +81,8 @@ type Deployment struct {
 	// RunningVersion is the deployed chart version without build
 	// metadata; empty before the first deployment.
 	RunningVersion string `json:"runningVersion"`
-	// State is rolled_out, progressing, failed, not_following or suspended.
+	// State is rolled_out, progressing, failed, not_following, suspended or
+	// unknown.
 	State string `json:"state"`
 	// Message says why the deployment is not rolled out; empty when it is.
 	Message string `json:"message"`

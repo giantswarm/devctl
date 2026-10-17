@@ -61,7 +61,8 @@
       "ciModel": "generated",
       "artifacts": [],
       "pipeline": null,
-      "actions": []
+      "actions": [],
+      "statuses": []
     },
     "dispatch": {
       "workflow": "giantswarm/e2e-magazine/refresh.yaml",

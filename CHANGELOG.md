@@ -9,31 +9,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
-- `pr wait` (and the wait of `pr merge`): a head with no check run, status or Actions run, in a repository whose
-  active workflows run on every `pull_request` push against the base, waits for their runs, and two minutes after
-  the pull request's last update ends with exit 4, verdict `no_checks`, naming the workflows and the
-  close-and-reopen retrigger. GitHub had not delivered the event, and the wait answered `green` on the empty set.
-  A repository without such a workflow, and a head commit whose message skips CI, stay green as before.
-
-- `release wait --failed-log [--failed-log-lines 50]`, and `rollout wait`, which runs the release wait first: when the
-  tag's CI failed, the document carries `failedJobs[]` with each failed job's `name`, `source`, `url` and `logTail`
-  (or `logError`), and stderr the tails, read with `pr wait --failed-log`'s readers: the failed jobs of the tag
-  pipeline's failed CircleCI workflows, or of the tag's failed Actions runs. Without the flag the document is
-  unchanged.
-- `rollout wait --kubeconfig <file>` reads the kube context and the installation from that one file instead of
-  `KUBECONFIG` or `~/.kube/config`, so a session can prepare a private one.
-- `rollout wait` on a kubeconfig without the installation's Teleport context runs `tsh kube login <installation>` into
-  a private temporary kubeconfig when `tsh` is logged in, reads through it and removes it; the machine's kubeconfig
-  is never written. A `tsh` that is not logged in is exit 8 (`tsh login`). The missing context was exit 7, and a
-  session ran `tsh kube login` into the shared kubeconfig itself.
+- `changelog cut` moves every CHANGELOG.md entry under Unreleased that a release already carried into that release's
+  section (the first release, among the `v` semver tags reachable from HEAD, whose CHANGELOG.md holds it under
+  Unreleased), creating the section and its link reference where they are missing; `changelog check` fails while such
+  an entry remains. `gen workflows --release-workflow=auto-release`: the Auto-release workflow opens the cut as a
+  `docs(changelog)` pull request after every release and arms auto-merge on it, and the new
+  `zz_generated.changelog.yaml` runs the check on every pull request. Released entries no longer stay under Unreleased.
 
 ### Changed
 
 - `gen workflows`: the generated release workflows authenticate as the `giantswarm-release` GitHub App instead of the shared
   taylorbot account (giantswarm/giantswarm#2280). `create_release`, `create_release_pr` and `update_chart` pass the org
   secrets `RELEASE_BOT_CLIENT_ID` and `RELEASE_BOT_PRIVATE_KEY` to the reusable workflows in giantswarm/github-workflows
-  instead of `TAYLORBOT_GITHUB_ACTION`; those workflows accept them since giantswarm/github-workflows#319, so this
-  release must not ship before that PR is merged. `helm-docs-regen` mints a token of the App to push the regenerated files
+  instead of `TAYLORBOT_GITHUB_ACTION`; those workflows accept them since giantswarm/github-workflows#319. `helm-docs-regen` mints a token of the App to push the regenerated files
   and commits as `giantswarm-release[bot]`.
 - `gen renovate`: `gitIgnoredAuthors` also lists `giantswarm-release[bot]`, so Renovate keeps treating a branch the
   generated workflows pushed to as its own. taylorbot's `dev@giantswarm.io` stays for repositories whose workflows are
@@ -41,49 +29,479 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `release promote --team` lists no repository whose team-file entry is declared `lifecycle: archived` or `deleted`:
+  such an entry is the record of the repository, which takes no release (archived) or is gone from GitHub (deleted), so
+  a deleted one no longer fails the run as not found.
+
+## [8.140.1-rc.2] - 2026-10-17
+
+### Fixed
+
+- `pr wait`, `pr merge`: a pending check the base does not require is no longer waited for, as the merge box does
+  not wait for it: a check run of an app other than GitHub Actions (a gatekeeper app that stays `in_progress` while
+  the pull request lacks its review) and a status of another CI than CircleCI. A head whose required checks are green
+  ends green at once instead of at the 30 minute timeout. The document's new `blocking[]` names each such check and,
+  while GitHub blocks the merge, the missing review or the requested changes; a merge GitHub then declines for the
+  review rule ends with that reason. A GitHub Actions job and a CircleCI job are still waited for through their run and
+  pipeline, and a failed check stays red whether required or not.
+
+## [8.140.1-rc.1] - 2026-10-17
+
+### Fixed
+
+- `release promote` and the promote step of the generated auto-release workflow: a candidate whose only failed commit
+  status is `ci/circleci: sync-china-registry` is promoted, the failure named as a warning (`warnings[]`, a workflow
+  warning annotation), the rule `release wait` applies. Any other failed or running context still refuses.
+
+## [8.140.0] - 2026-10-17
+
+### Changed
+
+- `gen circleci`: the generated pipelines pin architect orb 10.14.0, whose `go-test` / `go-build` run `govulncheck`
+  next to nancy. It checks the code against the Go vulnerability database, which needs no account or credits, and
+  fails closed: a reachable known vulnerability fails the job, and so does a scan that could not run, so a green check
+  always means the code was scanned. Reviewed findings go into `.govulncheck-ignore` with a required `until=` date.
+
+## [8.140.0-rc.21] - 2026-10-17
+
+### Fixed
+
+- `DEVCTL_TIME_SCALE` below 1: a timeout keeps a real-time floor of five seconds (or the unscaled timeout, when
+  shorter), so a loaded machine still gets the first poll in; sleeps stay scaled. Production, at scale 1, is unchanged.
+
+## [8.140.0-rc.20] - 2026-10-17
+
+### Fixed
+
+- `release wait` (and the release wait of `pr merge`): a CircleCI read that gets no answer is cut after three minutes
+  and read again on the next poll, and the registry is probed while CircleCI goes unanswered. A published chart is
+  reported available whatever the CircleCI read does, a timeout whose CI never answered says the release is unknown,
+  not failed, instead of naming the artifacts missing, and one stuck read no longer holds the wait on a stale
+  `pipeline unfinished` verdict until its deadline.
+- `release wait`: a tag whose only failed job is `sync-china-registry`, the in-China registry mirror, is released, the
+  failure named as a warning, in the tag pipeline's workflows and in the commit statuses of the tag's commit. Any other
+  failed job still fails the wait.
+
+## [8.140.0-rc.19] - 2026-10-17
+
+### Fixed
+
+- `pr wait` and the wait in `pr merge`: when GitHub's REST check-runs or combined-status endpoint fails every try
+  while GraphQL answers, the head's checks are read from the head commit's `statusCheckRollup` through GraphQL. A
+  warning and the new `checksVia: graphql` name the fallback; with both paths failing the poll stays unanswered.
+
+## [8.140.0-rc.18] - 2026-10-17
+
+### Fixed
+
+- `release wait`: a release is available only once every commit status of the tag's commit, the newest per context,
+  succeeded: the gate `release promote` puts on a candidate. A late job, the branch pipeline or another CI still
+  pending keeps the wait going, so a promote run right after a successful wait no longer answers `not_built`; a failed
+  one ends it with the new exit code 12, `status_failed`, naming the failed contexts. The document carries
+  `statuses[{context, state, url}]`. `pr merge` reports a `status_failed` release as exit 9, `rollout wait` passes
+  exit 12 through.
+
+## [8.140.0-rc.17] - 2026-10-17
+
+### Fixed
+
+- `rollout wait`: the result's warnings are those of the last poll. A deployment warned about mid-roll (a source still
+  on the previous version, which the release then moves) no longer leaves its warning in a `rolled_out` result; a
+  warning is still shown as progress the moment it is first seen. See docs/rollout-wait.md.
+
+## [8.140.0-rc.15] - 2026-10-17
+
+### Added
+
+- `repo reconcile --release-app-id`: the giantswarm-release GitHub App, which the generated release workflows
+  authenticate as, bypasses the ruleset `devctl: review` for pull requests beside the align-files and Renovate Apps.
+  The version bump pull request the release workflow opens and arms auto-merge on lands once the required checks of
+  `devctl: default branch`, which the App does not bypass, are green. Without it, a repository on the generated release
+  workflows that dropped its required review by hand to let that pull request merge was repaired back every night.
+  Unset, the review ruleset has no release App; an entry with `agentMerge: false` keeps the review without bypass.
+
+## [8.140.0-rc.14] - 2026-10-17
+
+### Fixed
+
+- `repo reconcile`: an app catalog (`componentType: appcatalog`) keeps its own default branch, as a customer repository
+  does: the settings step never renames `master`, which GitHub Pages serves the catalog from, to `main`; the protection
+  step protects it; `repo status` names it on the declaration line.
+
+## [8.140.0-rc.13] - 2026-10-17
+
+### Fixed
+
+- `gen ami` leaves out a Flatcar release that has no China AMIs yet (`NoSuchKey` or `AccessDenied`) instead of writing
+  it without them, so the next run scrapes it again; with `--keep.existing` a written release was never scraped again.
+
+## [8.140.0-rc.12] - 2026-10-17
+
+### Fixed
+
+- `gen ami` no longer aborts when a Flatcar release's China key answers `403 AccessDenied`, which S3 returns for a
+  missing key to a credential without `s3:ListBucket`. The release's China AMIs are skipped with a warning naming the
+  key, like `NoSuchKey`; every other S3 error still fails the run.
+
+## [8.140.0-rc.10] - 2026-10-17
+
+### Fixed
+
+- A CircleCI 401 names the source of the token the command used, `$CIRCLECI_TOKEN` (or the variable a command names)
+  or the devctl keychain, instead of `CIRCLECI_API_TOKEN`, which devctl does not read.
+
+## [8.140.0-rc.9] - 2026-10-17
+
+### Fixed
+
+- `pr merge` no longer merges a head whose checks ran against an older base than the one it lands on. A head behind
+  a base that is not strict (the comparison's `behind_by`) is exit 3 like one behind a strict base, before the wait,
+  and the head is compared with the base again after the wait: a base that moved during it is exit 3 too. The reason
+  names the behind state and `--update-branch`, which updates the head and waits for it again, at most three waits.
+  A base with a merge queue is not compared: the queue tests every entry against its base.
+
+## [8.140.0-rc.8] - 2026-10-17
+
+### Fixed
+
+- `pr merge`: a comment by `codecov-commenter`, the coverage report GitHub carries as a plain user's, no longer
+  counts as an unanswered non-author comment and refuses the merge with exit 5. Commenting automation accounts are
+  pinned by account id as well as login; a person's comment or review still holds the merge.
+
+## [8.140.0-rc.6] - 2026-10-16
+
+### Fixed
+
+- `release wait --pr` on a merge commit that predates the repository's auto-release workflow reads the tags on the
+  commit before its workflows: one release tag is the release, the tags of several versions are the conflict report.
+  Only a commit without a release tag still ends `no_release` for the missing workflow.
+
+## [8.140.0-rc.4] - 2026-10-16
+
+### Added
+
+- `repo renovate-plan --team-file <file> --name <repo> [--dir <checkout>]` prints, as JSON, whether align-files
+  generates `renovate.json5` for an entry or patches its chore reviewers into the configuration the repository keeps:
+  the decision of `reposetup.PlanRenovate`, which the scaffold of `repo create` takes too, so the two no longer drift.
+
+### Changed
+
+- `repo create`: the scaffold decides its Renovate configuration with `reposetup.PlanRenovate`, align-files' decision:
+  `renovate.json5` for every entry that generates, as for a repository without a configuration; align-files keeps it.
+
+## [8.140.0-rc.3] - 2026-10-16
+
+### Fixed
+
+- `repo`: the reconciler's `release` step judges a release by what is published. A tag pipeline red only in
+  `publish-github-release`, the job whose one output is the GitHub release the step read, is a built release, not
+  `red-release`: auto-release creates the release before the pipeline runs, and every artifact is pushed before that
+  job. A red artifact job is still `red-release`. `reconcile.UnpublishedJobs` exports the rule for the
+  giantswarm-repo-manager inventory.
+
+## [8.140.0-rc.2] - 2026-10-16
+
+### Fixed
+
+- `release wait --pr` on a commit that carries the release tags of more than one version (`v1.1.4` and `v1.2.0` on one
+  commit) no longer picks one: it ends at once with the new exit code 11, `ambiguous_release`, naming every release
+  tag on the commit in `reason` and `conflictingTags`; a wait given the version follows it. `rollout wait --pr` exits
+  the same, `pr merge` reports it as exit 9 with `release.verdict` `ambiguous_release`. A candidate and its promoted
+  stable on one commit are one version, as before.
+- `gen workflows`, auto-release: the tag job refuses to create or promote a tag onto a commit that already carries
+  another version's release tag, before the tag and the GitHub release are created, naming both versions. The tags
+  are read from the remote; a stable on its candidate's commit is unchanged.
+
+## [8.140.0-rc.1] - 2026-10-16
+
+### Added
+
+- `repo`: a team-file entry declares `renovate: false` to switch Renovate off for its repository. align-files runs no
+  `devctl gen renovate` for it, and the reconciler's `renovate` step is ok with no Renovate configuration or one that
+  disables Renovate; a configuration that keeps Renovate on is the new finding `renovate-declared-off`, never deleted
+  by the engine. The embedded schema carries the field.
+
+### Changed
+
+- `repo create`: the dry run reads the author's membership the way giantswarm/github's validation check does, the
+  owning team and `team-planeteers` one by one (the team, then the membership), instead of listing the caller's teams.
+  A team the token cannot read leaves the membership unknown: the notice is `team-review-unknown` instead of a
+  `team-review` that calls a member an outsider.
+
+## [8.139.14] - 2026-10-16
+
+### Fixed
+
+- `rollout wait --pr` on a configuration change no longer times out on a values-fed HelmRelease whose deploy that took
+  the change has left `status.history` (helm-controller keeps few entries, a chart that rolls often evicts it): when
+  every kept deploy is after the merge and the rendered ConfigMap's revision contains the merge commit, the change is
+  rolled out. A merge newer than a kept deploy still waits.
+
+## [8.139.14-rc.1] - 2026-10-16
+
+### Changed
+
+- `gen precommit` (`--language go`): the generated workflow restores the Go module, build and golangci-lint caches
+  with a `restore-keys` prefix, so a PR that changes `go.sum` starts warm. The job times out after 30 minutes.
+
+## [8.139.13] - 2026-10-16
+
+### Fixed
+
+- `repo` reconciler: a repository whose generated CI has no CircleCI job (`gen.ci.generate: true` on a generic
+  repository without a chart, an image or a Go or Node build: GitHub Actions only, auto-release) is no CircleCI
+  pipeline. The `circleci` and `release` steps read the branch for it, as for an undeclared pipeline, and no longer
+  plan a follow, setup workflows and a deploy key. A repository created with `gen.ci.generate: false` no longer
+  carries the template's `.circleci/`: its scaffold has a CircleCI pipeline only where `devctl gen circleci` writes
+  one.
+
+## [8.139.13-rc.1] - 2026-10-16
+
+### Fixed
+
+- `gen circleci`: the chart-test jobs (`execute-chart-tests`, `execute-chart-tests-release`) survive a transient
+  gsoci.azurecr.io `toomanyrequests`. Their pre-steps (the new `pull-chart-test-images` command) log in to the
+  registry with the architect context's credentials, so the pull leaves ACR's shared anonymous budget, and pull
+  app-test-suite and the kind node image with bounded retry and backoff (six attempts over up to about four minutes)
+  before the orb starts them. The kind node image is now pinned as `kind_node_image` (`v1.37.0`), so the image
+  pulled is the one `kind create cluster` uses.
+
+## [8.139.12] - 2026-10-16
+
+### Fixed
+
+- `rollout wait --pr` on a configuration change judges a values-fed HelmRelease or App by the values it deployed,
+  not only by the rendered ConfigMap's last write: konfigure-operator re-labels that ConfigMap with every revision,
+  so a later commit made an older pull request look pending until the timeout. A HelmRelease that deployed new
+  values (`status.history[].configDigest`) after the merge, or an App in the management cluster whose Chart values
+  app-operator changed after the merge and then deployed, is rolled out.
+
+## [8.139.11] - 2026-10-16
+
+### Fixed
+
+- `gen` commands run without the version gate: a generator works offline from the repository's files, so in a
+  plain container without a session bus, keychain or token `devctl gen circleci` exits 0 instead of failing on
+  `Reading devctl/github from the keychain: … dbus: couldn't determine address of session bus`.
+- The version gate reads releases anonymously where there is no keychain (no session bus), as it does without an
+  App login; a command that needs a token still reports the unreachable keychain.
+
+## [8.139.10] - 2026-10-16
+
+### Added
+
+- `rollout wait --pr` on a configuration change follows the App CRs whose `spec.config` or `spec.userConfig` takes
+  the values a Konfiguration renders for a changed app, as it follows such HelmReleases: `deployments[]` names the
+  App with its chart and deployed version, rolled out once its release deployed its `spec.version` after the values
+  were rendered and its workloads rolled out, exit 1 when the release failed. A changed app whose rendered values
+  no HelmRelease or App takes is listed as a `ConfigMap` in state `unknown`, and the wait ends with exit 3, verdict
+  `rollout_unknown`, instead of `rolled_out` on an empty chart list.
+- `rollout wait`: a kube context missing from the kubeconfig names `--kubeconfig <file>` beside `--context`.
+
+## [8.139.9] - 2026-10-16
+
+### Fixed
+
+- `gen circleci`: the Node job sizes the workers of its tools from its resource class's memory instead of the CPUs
+  they detect (on the Docker executor `os.cpus()` reports the host's, jest the cgroup's quota), which started more
+  lint threads and jest workers than the class has memory for. It exports `BACKSTAGE_CLI_CONCURRENCY` (one per
+  8 GiB, read by `backstage-cli repo lint` and `repo build`) and `JEST_MAX_WORKERS` (one per 4 GiB, passed by the
+  repo's test script as `--maxWorkers=${JEST_MAX_WORKERS:-40%}`): `large` 1 and 2, `xlarge` 2 and 4. A repo that
+  raises `resource_class` or adds a service container in `.circleci/custom.yml` sets both under the job's
+  `environment` there.
+
+## [8.139.9-rc.4] - 2026-10-16
+
+### Fixed
+
+- `gen circleci`: the generated pipelines pin architect orb 10.13.9. `push-to-app-catalog` retries a push that lost the
+  race on a busy catalog at once for up to 30 minutes instead of giving up after 20 attempts (10.13.8), and a branch
+  pipeline at a release commit ends green instead of failing on the release-version check (10.13.9).
+
+## [8.139.9-rc.2] - 2026-10-15
+
+### Fixed
+
 - Renovate bumps the tool versions pinned in the generator's Makefile templates. A custom manager reads the standard
   `# renovate:` annotation in `pkg/gen/input/**/*.mk.template`, which no other manager matched, so
   `HELM_UNITTEST_VERSION` in `Makefile.gen.app.mk.template` sat unbumped since #2570.
+
+## [8.139.9-rc.1] - 2026-10-15
+
+### Fixed
+
 - `gen workflows`: `sync_from_upstream.yaml` sets `permissions: {}` at the workflow level, and `auto_release.yaml`
   grants its permissions on the `tag` job instead of the workflow, so no job inherits more than it is given.
+
+## [8.139.8] - 2026-10-15
+
+### Added
+
+- `pr wait` (and the wait of `pr merge`): a head with no check run, status or Actions run, in a repository whose
+  active workflows run on every `pull_request` push against the base, waits for their runs, and two minutes after
+  the pull request's last update ends with exit 4, verdict `no_checks`, naming the workflows and the
+  close-and-reopen retrigger. GitHub had not delivered the event, and the wait answered `green` on the empty set.
+  A repository without such a workflow, and a head commit whose message skips CI, stay green as before.
+
+## [8.139.7] - 2026-10-15
+
+### Fixed
+
 - The updater imports the Giant Swarm go-selfupdate line, `github.com/giantswarm/go-selfupdate` v1.6.3, with
   `github.com/giantswarm/selfupdate-cosign` v0.3.4: upstream `creativeprojects/go-selfupdate` no longer compiles next
   to selfupdate-cosign v0.3.4, and the binary no longer carries `golang.org/x/crypto/openpgp` (GO-2026-5932).
+
+## [8.139.6] - 2026-10-15
+
+### Fixed
+
 - `gen circleci`: the generated pipelines pin architect orb 10.13.6, whose `cosign-sign-verify` no longer leaves an
   image or chart unsigned when Rekor answers "an equivalent entry already exists": it checks the registry for the
   signature and signs again when none is there, so the strict `cosign verify` after it passes.
+
+## [8.139.5] - 2026-10-15
+
+### Fixed
+
 - The generated `install-helm-unittest` target passes `--verify=false` when `helm plugin install` knows the flag (helm v4,
   which refuses the plugin's unverifiable source otherwise) and installs as before with helm v3, so `make helm-test`
   runs under both.
+
+## [8.139.3] - 2026-10-15
+
+### Fixed
+
 - `release wait` on a repository whose CI is GitHub Actions only reads the check runs of the tag's commit as the tag's
   pipeline: `ciModel` is `actions` instead of `none`, `pipeline` lists them with their conclusions, the verdict is not
   `available` until all succeeded and a failed one is `ci_failed`. A repository with CircleCI is unchanged.
+
+## [8.139.3-rc.1] - 2026-10-15
+
+### Fixed
+
 - `pr wait` no longer reads red on a failed check of an earlier run of a workflow (a reopened pull request, a rerun) while
   the workflow's newest run for the head is still open: it keeps waiting and exits on the newer run's outcome.
+
+## [8.139.2] - 2026-10-15
+
+### Fixed
+
 - `gen makefile`: `helm-test`, which the generated `chart-tests` workflow runs, skips a chart under a placeholder
   directory such as `helm/{MCP-NAME}`. A template repository's chart renders only in a repository created from it, so
   its suites failed the job on every pull request of the template; the rendered copy runs them.
+
+## [8.139.1] - 2026-10-15
+
+### Fixed
+
 - `release wait --pr`, `rollout wait --pr` and the release wait of `pr merge` find the release of a pull request merged
   into a release branch: every tag is read when the newest do not include the merge commit, and when the merge commit's
   auto-release run tagged nothing the first tag on the pull request's base branch after it carries the merge. A base
   branch no later tag carries is `no_release`, the reason naming the branch.
+
+## [8.139.0] - 2026-10-15
+
+### Fixed
+
 - `pr wait`, `pr merge`, `release wait` and `rollout wait` with `--failed-log` drop every terminal control sequence and
   control character but tab from a failed job's log tail, on stderr and in `failedJobs[].logTail`: OSC (a clipboard
   write, a hyperlink), DCS, SOS, PM and APC strings with their payload, every other ESC sequence, C0 and C1 controls
   in 7-bit and 8-bit form, and the Unicode bidirectional controls. The job's `name`, `url` and `logError` are cleaned
   the same way. Only CSI sequences were stripped from the tail, so a CI log could drive the reader's terminal.
+
+## [8.139.0-rc.2] - 2026-10-15
+
+### Added
+
+- `rollout wait --kubeconfig <file>` reads the kube context and the installation from that one file instead of
+  `KUBECONFIG` or `~/.kube/config`, so a session can prepare a private one.
+- `rollout wait` on a kubeconfig without the installation's Teleport context runs `tsh kube login <installation>` into
+  a private temporary kubeconfig when `tsh` is logged in, reads through it and removes it; the machine's kubeconfig
+  is never written. A `tsh` that is not logged in is exit 8 (`tsh login`). The missing context was exit 7, and a
+  session ran `tsh kube login` into the shared kubeconfig itself.
+
+## [8.139.0-rc.1] - 2026-10-15
+
+### Added
+
+- `release wait --failed-log [--failed-log-lines 50]`, and `rollout wait`, which runs the release wait first: when the
+  tag's CI failed, the document carries `failedJobs[]` with each failed job's `name`, `source`, `url` and `logTail`
+  (or `logError`), and stderr the tails, read with `pr wait --failed-log`'s readers: the failed jobs of the tag
+  pipeline's failed CircleCI workflows, or of the tag's failed Actions runs. Without the flag the document is
+  unchanged.
+
+## [8.138.2-rc.2] - 2026-10-15
+
+### Fixed
+
 - `gen workflows`: the Auto Release step "Resolve the candidate to promote" retries its `commits/<rc>/status` read
   four times with backoff (2s, 4s, 8s) on a failed, empty or truncated answer, and refuses the promotion only after the
   last try, naming the request and the tries. A single transient `unexpected end of JSON input` failed a promote.
+
+## [8.138.1] - 2026-10-14
+
+### Fixed
+
 - `rollout wait --helmrelease` judges a named HelmRelease of none of the release's charts (a component a meta chart
   renders) by its own Ready condition at its current generation, no reconcile in flight, and its workloads. It was
   judged by the meta chart's version, which its source excludes, so it read `not_following` and the wait reported
   `rolled_out` while the component was still `Progressing` or `DependencyNotReady`.
-- `gen circleci`: the generated pipelines pin architect orb 10.13.3, whose `go-test` retries a transient
-  proxy.golang.org error in its "go.mod and go.sum are clean" step instead of failing the job.
+
+## [8.138.0] - 2026-10-14
+
+### Added
+
+- `gen workflows`: app repositories get `zz_generated.chart_tests.yaml`, which runs `make helm-test` on a pull request
+  through `giantswarm/github-workflows`. CircleCI calls `make test` only through `architect/go-build`, so a chart-only
+  repository ran its `helm-unittest` suites nowhere. A Go repository now runs them twice, in CircleCI and here; each run
+  takes under a second.
+
+### Fixed
+
 - `gen makefile`: `helm-test` carries no `check-env` prerequisite. The recipe sweeps `helm/` and never reads
   `APPLICATION`, but `check-env` demanded it, so `make helm-test` failed with `APPLICATION is not defined` in every
   chart-only repository -- the repositories the target exists for.
+
+## [8.137.1] - 2026-10-14
+
+### Fixed
+
+- `gen circleci`: the generated pipelines pin architect orb 10.13.3, whose `go-test` retries a transient
+  proxy.golang.org error in its "go.mod and go.sum are clean" step instead of failing the job.
+
+## [8.137.0] - 2026-10-14
+
+### Added
+
+- `gen makefile`: `Makefile.gen.app.mk` gains a `helm-test` target that runs the chart unit tests with
+  `helm-unittest`, and a prerequisite-only `test: helm-test` rule that joins them to `make test`, the target CI calls.
+  The target runs one suite per chart that has `tests/` or `unittests/`, subcharts included, each with its own
+  values (`--with-subchart=false`).
+  The plugin version is pinned in the makefile behind a Renovate annotation, and `install-helm-unittest` installs
+  exactly that version and replaces a different one, so a local run and a CI run are the same run. A repository with
+  no suites prints a message and exits 0. Chart tests against a cluster stay with `app-test-suite` and the generated
+  `execute-chart-tests` job; the two do not overlap.
+
+## [8.136.2-rc.1] - 2026-10-14
+
+### Changed
+
+- `gen precommit`: the `$ref` step of the `helm-schema-<chart>` hook keeps its behaviour but its
+  rationale is corrected. It was documented as working around an unfixed generator bug
+  (losisin/helm-values-schema-json#317). That bug is fixed: v2.6.0 ships #378, and measured against
+  v2.6.0 across the repositories that declare the `helmchart` flavour the step is a no-op on generated
+  output; the hook also reaches every repository with a `helm/` directory. It stays for schemas
+  the generator *bundles* rather than generates — `bundle: true` inlines a `# @schema $ref: <file>`
+  target verbatim, defect included — and `security-profiles-operator-app` depends on that today: the
+  vendored upstream chart's own schema closes a `$ref`ed k8s Toleration with
+  `additionalProperties: false`, which rejects `value` and `tolerationSeconds`. Comment-only, but it
+  moves the template, so every generated `.pre-commit-config.yaml` header URL changes on the next
+  align run.
+
+## [8.136.1] - 2026-10-14
+
+### Fixed
+
 - `repo checks` requires a repository's own CircleCI jobs: without a generated pipeline (`workflows.yml`,
   `custom.yml`) or an open align-files pull request bringing one, the branch-side jobs of the hand-kept
   `.circleci/config.yml` are candidates, required once they have reported; a hand-kept pipeline removes no
@@ -93,19 +511,136 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   unprotected: it writes the ruleset's `required_status_checks` rule alone, the other rules, the target, the
   enforcement and the bypass actors sent back as they were read, so it needs no devctl App id.
 
+## [8.136.0-rc.4] - 2026-10-14
+
+### Fixed
+
 - `gen makefile`: `Makefile.gen.app.mk` runs `yq` (mikefarah's v4 only), `helm-docs` and `ct` from `PATH` when they are
   installed and through `docker run` with their images otherwise, so `lint-chart`, `helm-docs` and `update-deps` work
   without a container runtime.
+
+## [8.136.0-rc.3] - 2026-10-14
+
+### Fixed
+
 - `repo checks --update` removes no required context it was not told to remove: one already required stays whether it
   reported or not and whatever system reports it, unless `--remove` names it or, with `--circleci-dir`, it is a
   `ci/circleci:` context whose job that pipeline does not have. It used to drop every unreported context, the company's
   ignored ones and the CircleCI contexts the repository's own pipeline lacked, which stripped teams' required checks.
+
+## [8.136.0-rc.1] - 2026-10-14
+
+### Added
+
+- `gen workflows` (`auto-release`): a stable promotion runs the repository-owned `.github/release-gate.custom.sh` on the
+  candidate's checkout with the version about to be tagged, before the tag and the GitHub release are created; a
+  non-zero exit cuts neither. A repository without the script has no gate. See docs/gen.md.
+
+## [8.135.0] - 2026-10-14
+
+### Added
+
+- `release create`: support the `aks` provider — `--provider aks` now resolves the provider title (AKS) in release
+  notes and the docs link in the announcement, and `cluster-aks` is treated as a provider chart so a bump of its
+  `cluster` chart dependency is included in the release notes, same as `cluster-eks`.
+
+### Fixed
+
 - `release create`: the `cluster-aks` changelog URL pointed at the `cluster-azure` repository, so release notes for a
   `cluster-aks` bump were parsed from the wrong CHANGELOG.
+
+## [8.134.3] - 2026-10-14
+
+### Fixed
+
 - `pr merge --update-branch`: a pull request that lands with a rebase merge (`--rebase`, or a fork line's default) has a
   head behind its base rebased onto the base (GraphQL `updatePullRequestBranch` with `updateMethod: REBASE`) instead of
   the base merged into it, so the rebase merge no longer carries a merge commit onto the base. Squash and merge keep
   GitHub's REST update-branch. See docs/pr-merge.md.
+
+## [8.134.2] - 2026-10-13
+
+### Fixed
+
+- `auth exec` and the `gh` link: a passthrough `gh` shim ahead of the link on `PATH` no longer recurses with it. The
+  link runs the next `gh` past its own `PATH` entry, and a program that hands every call back to the link is refused
+  after four programs in one chain of calls, exit 7, naming them. See docs/auth.md.
+
+## [8.134.0] - 2026-10-13
+
+### Added
+
+- `gen plans`: for the `plans` flavour, `.claude/settings.json` enables the `gs-plans` plugin from the giantswarm/claude-code
+  marketplace, with `autoUpdate` on. devctl writes only the marketplace and plugin entries and keeps every other key, so a
+  team keeps its own settings in the file. Nothing is generated without the flavour. See docs/gen.md.
+
+## [8.134.0-rc.1] - 2026-10-13
+
+### Added
+
+- `gen precommit`: a Go repository's config refuses a `go.mod` require line (single or in a block) whose trailing
+  comment has more than one word, with the `go-mod-require-comment` hook. Renovate's gomod manager skips such a line
+  without a pull request or a dashboard entry; `// indirect` and other one-word comments pass, and the explanation
+  goes on a comment line above the require.
+
+## [8.133.1] - 2026-10-13
+
+### Fixed
+
+- `release wait`: an image or chart the registry serves to a pull is available on the first probe. A HEAD of the
+  manifest that does not confirm it (answered without the digest header, or not found) is followed by the GET a pull
+  sends, which decides; before, the probe said missing and a short `--timeout` ended in exit 2 for a published chart.
+
+## [8.133.0-rc.1] - 2026-10-13
+
+### Added
+
+- `repo reconcile`: a team-file entry declares the repository's GitHub `topics`, and the metadata step keeps exactly
+  those, with the token it runs as (the reconciler's App, which holds administration): `drift` in a dry run,
+  `repaired` otherwise, compared as a set. Absent leaves the topics on GitHub alone; an empty list removes them all.
+  `repo update --set topics=[a,b]` declares them like any other field.
+
+## [8.132.0] - 2026-10-13
+
+### Added
+
+- `repo reconcile --align-files-app-id`: the Renovate GitHub App (id 2740) bypasses the ruleset `devctl: review` for
+  pull requests beside the align-files App, so the automerge a repository configures in its own Renovate
+  configuration lands a green dependency pull request without a review; the required checks of
+  `devctl: default branch` still hold it, and an entry with `agentMerge: false` keeps the review without bypass.
+
+## [8.131.1-rc.1] - 2026-10-13
+
+### Fixed
+
+- `repo create` scaffold: a private repository's README from giantswarm/template-app no longer carries the CircleCI
+  status badge and the OpenSSF Scorecard badge, which 404 for a private repository and failed its first pull request's
+  README link check. A public repository's README keeps both.
+
+## [8.131.0] - 2026-10-13
+
+### Added
+
+- `pr merge --accept-red <check>` (repeatable): a failed check run, commit status or CircleCI workflow of exactly
+  that name does not refuse the merge, for a non-required check that is red on the base's head too; every other
+  failed check is still red, exit 1. Refused with exit 3, naming the check, before any wait when the base requires
+  it or it is a security scan (nancy, gitleaks, govulncheck, trivy, kyverno, CodeQL), and once the head is green when no
+  check of the head carries the name. The document's `acceptedRed[]` lists each accepted failure with its URL, and
+  a warning names it. See docs/pr-merge.md.
+
+## [8.130.2] - 2026-10-12
+
+### Fixed
+
+- `release wait`: a tag whose pipeline is not in the newest pages of CircleCI's pipeline listing no longer ends in
+  exit 2 "no CircleCI pipeline" while its commit carries the tag pipeline's CircleCI statuses. The wait follows the
+  statuses' target URLs (a job of the pipeline, or the pipeline itself) to the pipeline that built the tag. It reads every
+  status of the commit, not only the newest per context, so a release candidate whose promotion tagged the same commit
+  finds its own pipeline. When CircleCI answers for none of them, the statuses are the tag's CI verdict and the
+  document's warnings say so. Exit 2 "no CircleCI pipeline" is left for a tag with neither a pipeline nor a CircleCI
+  status of its own.
+
+## [8.130.1] - 2026-10-12
 
 ### Changed
 
@@ -115,65 +650,79 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   `--squash` is never replaced, a fork line that does not allow rebase merges is exit 3 naming `--squash`, and an
   entry whose flavours do not decode keeps the squash default with a warning. See docs/pr-merge.md.
 
+## [8.130.0] - 2026-10-12
+
+### Fixed
+
+- Reconciler protection step: a repository moving from a hand-kept CircleCI pipeline to the generated one can merge its
+  align-files pull request. While the default branch has no generated pipeline, the step reads the one the open
+  align-files pull request (`teams-alignment-branch`) brings, so the hand-kept pipeline's contexts (such as
+  `ci/circleci: app-catalog`) are stale against it and stop being required; the generated jobs are required once they
+  have reported on the default branch, by the run after the merge. The entry's `requiredChecks` stay required.
+
+## [8.130.0-rc.1] - 2026-10-12
+
 ### Added
 
-- `gen workflows`: app repositories get `zz_generated.chart_tests.yaml`, which runs `make helm-test` on a pull request
-  through `giantswarm/github-workflows`. CircleCI calls `make test` only through `architect/go-build`, so a chart-only
-  repository ran its `helm-unittest` suites nowhere. A Go repository now runs them twice, in CircleCI and here; each run
-  takes under a second.
-
-- `gen workflows` (`auto-release`): a stable promotion runs the repository-owned `.github/release-gate.custom.sh` on the
-  candidate's checkout with the version about to be tagged, before the tag and the GitHub release are created; a
-  non-zero exit cuts neither. A repository without the script has no gate. See docs/gen.md.
-- `release create`: support the `aks` provider — `--provider aks` now resolves the provider title (AKS) in release
-  notes and the docs link in the announcement, and `cluster-aks` is treated as a provider chart so a bump of its
-  `cluster` chart dependency is included in the release notes, same as `cluster-eks`.
-- `gen plans`: for the `plans` flavour, `.claude/settings.json` enables the `gs-plans` plugin from the giantswarm/claude-code
-  marketplace, with `autoUpdate` on. devctl writes only the marketplace and plugin entries and keeps every other key, so a
-  team keeps its own settings in the file. Nothing is generated without the flavour. See docs/gen.md.
-- `gen precommit`: a Go repository's config refuses a `go.mod` require line (single or in a block) whose trailing
-  comment has more than one word, with the `go-mod-require-comment` hook. Renovate's gomod manager skips such a line
-  without a pull request or a dashboard entry; `// indirect` and other one-word comments pass, and the explanation
-  goes on a comment line above the require.
-- `repo reconcile`: a team-file entry declares the repository's GitHub `topics`, and the metadata step keeps exactly
-  those, with the token it runs as (the reconciler's App, which holds administration): `drift` in a dry run,
-  `repaired` otherwise, compared as a set. Absent leaves the topics on GitHub alone; an empty list removes them all.
-  `repo update --set topics=[a,b]` declares them like any other field.
-- `pr merge --accept-red <check>` (repeatable): a failed check run, commit status or CircleCI workflow of exactly
-  that name does not refuse the merge, for a non-required check that is red on the base's head too; every other
-  failed check is still red, exit 1. Refused with exit 3, naming the check, before any wait when the base requires
-  it or it is a security scan (nancy, gitleaks, govulncheck, trivy, kyverno, CodeQL), and once the head is green when no
-  check of the head carries the name. The document's `acceptedRed[]` lists each accepted failure with its URL, and
-  a warning names it. See docs/pr-merge.md.
-- `repo reconcile --align-files-app-id`: the Renovate GitHub App (id 2740) bypasses the ruleset `devctl: review` for
-  pull requests beside the align-files App, so the automerge a repository configures in its own Renovate
-  configuration lands a green dependency pull request without a review; the required checks of
-  `devctl: default branch` still hold it, and an entry with `agentMerge: false` keeps the review without bypass.
 - `gen renovate --flavour fork`: writes the config of a GitHub fork as JSONC into `renovate.json` with
   `forkProcessing: "enabled"`, the one file and key Renovate's fork check reads; with `renovate.json5` Renovate skipped
   the fork ("Repository is a fork and not manually configured - skipping"). Every other flavour keeps `renovate.json5`
   unchanged. A fork line whose config sets `enabled: false` keeps its opt-out, and its `.github/dependabot.yml`, which is
   upstream's, stays. See docs/gen.md.
-- `repo follow-circleci [owner/]<repo>`: repairs the reconciler's finding `circleci-webhook-missing` without a step in
-  CircleCI's UI. It follows the CircleCI project again with the keychain's CircleCI login (an unfollow first when that
-  login follows it already), so CircleCI installs its webhook for a GitHub admin's follow, and reads the repository's
-  webhooks until CircleCI's is there; the finding's fix names the command. See docs/repo.md.
-- `ci jobs <owner/repo> <pipeline number|id>`: the job-level view of a CircleCI pipeline, one JSON document: every
-  workflow run (reruns included, the newest run of a name marked `latest`) with its jobs, each with its status,
-  number, `startedAt`, `stoppedAt` and `durationSeconds`, and for a running job the step it is in with when it
-  started, when it last wrote output and `outputAgeSeconds`, so a slow job (output seconds old) and a stuck one
-  (output an hour old) read differently while the workflow reads `running`. Takes the keychain's CircleCI login; GitHub
-  is not read. See docs/ci.md.
-- `ci rerun <owner/repo> <workflow id> [--from-failed] [--cancel]`: reruns one workflow in full or from failed, once
-  an hour: when the newest run of the workflow's name in its pipeline is a rerun made less than an hour ago, the call
-  is refused (exit 5) naming it and when the hour ends, so no agent loops on a rerun. A workflow still running is
-  refused unless `--cancel` cancels it first and waits for it to read canceled, the recovery of a stuck one. The
-  rerun is started, not waited for, and takes the keychain's CircleCI login granted Write access.
+
+## [8.129.0] - 2026-10-11
+
+### Fixed
+
+- `repo reconcile --steps`: the help lists the engine's steps from the engine, `labels` among them, instead of a
+  hand-kept list.
+
+## [8.129.0-rc.1] - 2026-10-11
+
+### Added
+
 - The repository set-up engine's step `labels`, after `metadata`: every declared repository carries its owning team's
   issue label `team/<team>` (`team-bumblebee` → `team/bumblebee`), so an issue the team files there joins the team's
   cross-repository view. A check (`repo status`, the manager's inventory) reports a missing label as drift, a repair
   (`repo reconcile`, `repo align`) creates it in the default colour `ededed`; an existing label is left as it is,
   whatever its colour and description. A converged check costs one request more (twenty-three).
+
+## [8.128.2] - 2026-10-11
+
+### Fixed
+
+- `pr wait`: a read GitHub or CircleCI leaves unanswered through every retry (about ten minutes of an outage) no
+  longer ends the wait with exit 7 and the checks of a head still pending. The poll is a warning and the wait polls
+  again: an outage shorter than the timeout ends in the head's verdict, a longer one in exit 2 whose reason says the
+  head is unknown, not failed. The wait ignores SIGHUP, so one whose terminal goes away keeps waiting and ends with
+  the verdict; it reads nothing from stdin.
+
+## [8.128.1] - 2026-10-11
+
+### Added
+
+- The `plans` flavour: a team plans repository (versioned PRDs, their companion websites and the
+  plan-workflow agent skills -- one `<team>-plans` repository per team). An add-on
+  flavour declared beside `generic` (`flavours: [generic, plans]`) with `language: generic` and
+  `gen.ci.generate: false`; the generators produce nothing extra for it, and `DeriveTemplate` derives
+  it the new template `giantswarm/template-plans` (its `{APP-NAME}` and `{TEAM-NAME}` placeholders
+  replaced the same way `giantswarm/template-app`'s are), refusing any other language the same way
+  language `node` is refused until its template ships. The embedded schema copy
+  (`pkg/reposetup/schema/repositories.schema.json`) carries the flavour; the live schema in
+  giantswarm/github and the Backstage "Plans" scaffolder preset land in companion pull requests.
+
+### Fixed
+
+- `pr merge`: an API outage after the merge no longer reads as "nothing confirmed". The release wait reads a CircleCI
+  pipeline listing that goes unanswered again at the next poll instead of ending, so an outage shorter than
+  `--release-timeout` ends at exit 0 once the release is confirmed; one that outlasts it is exit 9 whose reason says
+  the release is unknown, not failed, names the unanswered request and the `devctl release wait --pr` command that
+  re-checks it (`release wait` alike: exit 2 with that reason). A merge call that fails in transit (a connection reset
+  after GitHub merged) re-reads the pull request: merged, the command goes on with GitHub's merge commit and a warning
+  instead of exit 7. A read retried in transit or for a 5xx gets fifteen tries, about ten minutes of pauses, instead
+  of eight (three minutes), in every wait.
+
+## [8.128.0] - 2026-10-11
 
 ### Changed
 
@@ -190,45 +739,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   is refused without `--local`, never run locally in the manager's place. Without a usable muster token the error
   names `devctl auth login --muster-only` and `--local`. See docs/repo.md.
 
+## [8.127.2-rc.1] - 2026-10-11
+
 ### Fixed
 
-- `auth exec` and the `gh` link: a passthrough `gh` shim ahead of the link on `PATH` no longer recurses with it. The
-  link runs the next `gh` past its own `PATH` entry, and a program that hands every call back to the link is refused
-  after four programs in one chain of calls, exit 7, naming them. See docs/auth.md.
-- `release wait`: an image or chart the registry serves to a pull is available on the first probe. A HEAD of the
-  manifest that does not confirm it (answered without the digest header, or not found) is followed by the GET a pull
-  sends, which decides; before, the probe said missing and a short `--timeout` ended in exit 2 for a published chart.
-- `repo create` scaffold: a private repository's README from giantswarm/template-app no longer carries the CircleCI
-  status badge and the OpenSSF Scorecard badge, which 404 for a private repository and failed its first pull request's
-  README link check. A public repository's README keeps both.
-- `release wait`: a tag whose pipeline is not in the newest pages of CircleCI's pipeline listing no longer ends in
-  exit 2 "no CircleCI pipeline" while its commit carries the tag pipeline's CircleCI statuses. The wait follows the
-  statuses' target URLs (a job of the pipeline, or the pipeline itself) to the pipeline that built the tag. It reads every
-  status of the commit, not only the newest per context, so a release candidate whose promotion tagged the same commit
-  finds its own pipeline. When CircleCI answers for none of them, the statuses are the tag's CI verdict and the
-  document's warnings say so. Exit 2 "no CircleCI pipeline" is left for a tag with neither a pipeline nor a CircleCI
-  status of its own.
-- Reconciler protection step: a repository moving from a hand-kept CircleCI pipeline to the generated one can merge its
-  align-files pull request. While the default branch has no generated pipeline, the step reads the one the open
-  align-files pull request (`teams-alignment-branch`) brings, so the hand-kept pipeline's contexts (such as
-  `ci/circleci: app-catalog`) are stale against it and stop being required; the generated jobs are required once they
-  have reported on the default branch, by the run after the merge. The entry's `requiredChecks` stay required.
-
-- `repo reconcile --steps`: the help lists the engine's steps from the engine, `labels` among them, instead of a
-  hand-kept list.
-- `pr wait`: a read GitHub or CircleCI leaves unanswered through every retry (about ten minutes of an outage) no
-  longer ends the wait with exit 7 and the checks of a head still pending. The poll is a warning and the wait polls
-  again: an outage shorter than the timeout ends in the head's verdict, a longer one in exit 2 whose reason says the
-  head is unknown, not failed. The wait ignores SIGHUP, so one whose terminal goes away keeps waiting and ends with
-  the verdict; it reads nothing from stdin.
-- `pr merge`: an API outage after the merge no longer reads as "nothing confirmed". The release wait reads a CircleCI
-  pipeline listing that goes unanswered again at the next poll instead of ending, so an outage shorter than
-  `--release-timeout` ends at exit 0 once the release is confirmed; one that outlasts it is exit 9 whose reason says
-  the release is unknown, not failed, names the unanswered request and the `devctl release wait --pr` command that
-  re-checks it (`release wait` alike: exit 2 with that reason). A merge call that fails in transit (a connection reset
-  after GitHub merged) re-reads the pull request: merged, the command goes on with GitHub's merge commit and a warning
-  instead of exit 7. A read retried in transit or for a 5xx gets fifteen tries, about ten minutes of pauses, instead
-  of eight (three minutes), in every wait.
 - `pr wait` and `pr merge`: every run of a check name counts. The jobs of a matrix, or of several workflows calling
   one reusable workflow, report under one name; before, they collapsed into one entry and the verdict followed the
   last run reported, so a red job could hide behind a green one. Check runs are now grouped by name and the GitHub
@@ -236,16 +750,84 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   title check still reads its newest run); `checks[]` lists each run with its `id` and `workflow`, and the verdict
   and `--failed-log` name a red run that shares its name by its workflow and check run id. Two workflows sharing a
   name are no longer folded into one entry of `actions[]`.
+
+## [8.127.1] - 2026-10-11
+
+### Fixed
+
 - `pr wait` and `pr merge`: a template repository is judged from GitHub alone only while its team-file entry declares
   `gen.ci.templateContent: true`, as the reconciler judges it. A template with its own pipeline (the field left out)
   is judged like any repository: its CircleCI workflow is waited for, a failed one is red, and no template warning is
   given; before, every template repository was judged from GitHub alone.
+
+## [8.127.0] - 2026-10-11
+
+### Added
+
+- `repo follow-circleci [owner/]<repo>`: repairs the reconciler's finding `circleci-webhook-missing` without a step in
+  CircleCI's UI. It follows the CircleCI project again with the keychain's CircleCI login (an unfollow first when that
+  login follows it already), so CircleCI installs its webhook for a GitHub admin's follow, and reads the repository's
+  webhooks until CircleCI's is there; the finding's fix names the command. See docs/repo.md.
+
+## [8.126.1] - 2026-10-11
+
+### Fixed
+
 - `repo reconcile` settings step: a declared default branch the repository already carries (a fork line's consumed
   branch beside the upstream mirror's `main`) becomes the default branch as it is, and the old default stays; the step
   renamed the old default onto it, which GitHub refuses with 422 "New branch already exists". A declared branch the
   repository lacks is still the old default renamed.
+
+## [8.126.0] - 2026-10-10
+
+### Fixed
+
 - `pr rerun`, `release rerun`: the examples in `--help` and docs/pr-rerun.md name `beekeeper gate` by its bare
   name; they carried an absolute path of one machine.
+
+## [8.126.0-rc.1] - 2026-10-10
+
+### Added
+
+- `ci jobs <owner/repo> <pipeline number|id>`: the job-level view of a CircleCI pipeline, one JSON document: every
+  workflow run (reruns included, the newest run of a name marked `latest`) with its jobs, each with its status,
+  number, `startedAt`, `stoppedAt` and `durationSeconds`, and for a running job the step it is in with when it
+  started, when it last wrote output and `outputAgeSeconds`, so a slow job (output seconds old) and a stuck one
+  (output an hour old) read differently while the workflow reads `running`. Takes the keychain's CircleCI login; GitHub
+  is not read. See docs/ci.md.
+- `ci rerun <owner/repo> <workflow id> [--from-failed] [--cancel]`: reruns one workflow in full or from failed, once
+  an hour: when the newest run of the workflow's name in its pipeline is a rerun made less than an hour ago, the call
+  is refused (exit 5) naming it and when the hour ends, so no agent loops on a rerun. A workflow still running is
+  refused unless `--cancel` cancels it first and waits for it to read canceled, the recovery of a stuck one. The
+  rerun is started, not waited for, and takes the keychain's CircleCI login granted Write access.
+
+## [8.125.0] - 2026-10-10
+
+### Fixed
+
+- `gen circleci`: the generated pipelines pin architect orb 10.13.0. Its executor runs architect 8.6.0 (Go 1.27.2,
+  golangci-lint 2.14.0), so `go-build` lints a module on `toolchain go1.27.2` instead of failing with "export data
+  version 5 is greater than maximum supported version 4". Its `push-to-app-catalog` merges a chart's index entries
+  onto the catalog's fetched head and pushes within about a second, with 20 attempts, so a chart push that collides
+  with other builds' pushes to the same catalog succeeds.
+
+## [8.125.0-rc.1] - 2026-10-10
+
+### Added
+
+- `pr rerun` and `release rerun`: a CircleCI pipeline that never got a workflow (its setup workflow done and the
+  continuation never created, or pending without a workflow) is sent its push webhook delivery again once it is five
+  minutes old, through GitHub's webhook API with the identity `pr wait` uses, so CircleCI creates a new pipeline for
+  the head; `release rerun` reads GitHub only then. Once per head: a delivery sent again before is not sent a second
+  time (exit 5 naming the earlier redelivery). The document carries `redelivery{hookId, hookUrl, deliveryId, guid,
+  deliveredAt, ref, after, outcome, redeliveredAt}` and the warning says what was sent. GitHub's 403 is exit 8 naming
+  what the identity lacks: the devctl App's repository permission Webhooks: read and write, or a repository admin's
+  `gh` login. A failed setup workflow is still rerun from failed; a running one still waited for.
+
+## [8.124.1-rc.2] - 2026-10-10
+
+### Fixed
+
 - `pr wait`, `release wait` and the commands that wait the same way (`pr merge`, `rollout wait`): a
   wait no longer hangs on a green head or a published release when CircleCI's API lags behind its own
   pipelines. `release wait` judges the tag pipeline by its workflows and reads a workflow's jobs only
@@ -264,6 +846,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - `pr wait`, `pr merge`, `release wait`, `rollout wait`: without `--progress`, a heartbeat on stderr
   says `waiting for <what>` once every two minutes and whenever it changes, so a wait killed by its
   caller's time limit has named its cause.
+
+## [8.123.0] - 2026-10-09
+
+### Fixed
+
 - `pr merge`: a repository whose settings allow only merge commits (squash and rebase off) is merged with a merge
   commit instead of declined by GitHub after the whole wait with "Squash merges are not allowed on this repository".
   The settings are read before the wait: where the default squash is off and exactly one other method is on, the
@@ -272,100 +859,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   never replaced. A merge commit's subject is `<title> (#<number>)`, the subject a squash gets, so auto-release reads
   it the same way.
 
-- `gen precommit`: the generated pre-commit workflow installs golangci-lint 2.14.0. 2.13.2 cannot read the export
-  data of Go 1.27.2, which `setup-go` resolves for a `go 1.27` module, and failed every lint run with
-  "export data version 5 is greater than maximum supported version 4".
-- `gen circleci`: the generated pipelines pin architect orb 10.13.0. Its executor runs architect 8.6.0 (Go 1.27.2,
-  golangci-lint 2.14.0), so `go-build` lints a module on `toolchain go1.27.2` instead of failing with "export data
-  version 5 is greater than maximum supported version 4". Its `push-to-app-catalog` merges a chart's index entries
-  onto the catalog's fetched head and pushes within about a second, with 20 attempts, so a chart push that collides
-  with other builds' pushes to the same catalog succeeds.
-- `gen makefile --language kyverno-policy`: `make install-policies` and `make dabs` no longer fall back to
-  `helm/kyverno-policies`. They use `helm/$(KYVERNO_POLICIES_APP_NAME)` when it has a `Chart.yaml`, as in CI,
-  otherwise the one chart under `helm/`, and fail with a clear message when that is none or several.
-  `KYVERNO_POLICIES_CHART_DIR` overrides the choice. Without `KYVERNO_POLICIES_APP_NAME` set, the release is named
-  after the chart directory. Locally, both targets failed in every repository except `kyverno-policies`.
-- `repo reconcile` and `repo checks`: the reported checks are read from the newest pull request merged through the
-  gate. A pull request whose head is its own merge commit — merged by a push of its head onto the branch, as a fork
-  line's upstream re-pin is — is passed over: its SHA carries the branch's push runs and statuses and no pull-request
-  check, and reading it removed every check that reports only on a pull request one night and re-added it the next.
-- `pr merge --detach` help and the examples in `docs/pr-merge.md` and `docs/rollout-wait.md`: a local wrapper's path
-  had slipped in front of the `devctl` commands; they read `devctl …` again. The documented start document's
-  `reason` is empty, as on every exit 0; `status` names the command that reads the outcome.
-
-### Added
-
-- `pr rerun` and `release rerun`: a CircleCI pipeline that never got a workflow (its setup workflow done and the
-  continuation never created, or pending without a workflow) is sent its push webhook delivery again once it is five
-  minutes old, through GitHub's webhook API with the identity `pr wait` uses, so CircleCI creates a new pipeline for
-  the head; `release rerun` reads GitHub only then. Once per head: a delivery sent again before is not sent a second
-  time (exit 5 naming the earlier redelivery). The document carries `redelivery{hookId, hookUrl, deliveryId, guid,
-  deliveredAt, ref, after, outcome, redeliveredAt}` and the warning says what was sent. GitHub's 403 is exit 8 naming
-  what the identity lacks: the devctl App's repository permission Webhooks: read and write, or a repository admin's
-  `gh` login. A failed setup workflow is still rerun from failed; a running one still waited for.
-- `gen makefile`: `Makefile.gen.app.mk` gains a `helm-test` target that runs the chart unit tests with
-  `helm-unittest`, and a prerequisite-only `test: helm-test` rule that joins them to `make test`, the target CI calls.
-  The target runs one suite per chart that has `tests/` or `unittests/`, subcharts included, each with its own
-  values (`--with-subchart=false`).
-  The plugin version is pinned in the makefile behind a Renovate annotation, and `install-helm-unittest` installs
-  exactly that version and replaces a different one, so a local run and a CI run are the same run. A repository with
-  no suites prints a message and exits 0. Chart tests against a cluster stay with `app-test-suite` and the generated
-  `execute-chart-tests` job; the two do not overlap.
-
-- `gen renovate --extends <file>` extends extra presets of `giantswarm/renovate-presets` by file name, before the
-  deprecated preset and `renovate-custom.json5`. The reconciler passes `gen.renovate.extends` of a repository entry.
-
-- `repo reconcile --align-files-app-id`: the align-files App bypasses the review rule and nothing else. The
-  protection step moves the review into a ruleset of its own, `devctl: review`, whose bypass actors are those of
-  `devctl: default branch` and the App for pull requests; the required checks stay in `devctl: default branch`,
-  which the App does not bypass, so a red generated-file pull request still waits. Without the flag the review stays
-  in `devctl: default branch` and the review ruleset is deleted; `agentMerge: false` keeps it there without bypass.
-  `pr merge` reads `devctl: review` as the engine's own.
-- `repo reconcile`: the entry field `lineGate` (`app`, `requiredChecks`, `branches`) gates a fork line whose re-pin
-  lands as a direct push of a checked commit. The protection step adds the sync's App to `devctl: default branch` as
-  a bypass actor in every mode and keeps a second ruleset, `devctl: line gate`, on the default branch and the
-  declared maintenance branches: deletion forbidden and the declared checks, pinned to GitHub Actions, required for
-  every push, with no bypass actor. Without the field the engine deletes its gate ruleset.
-- `pr merge --detach`: the call is checked as the blocking one is, then the merge runs in a process of its own and
-  the call returns within seconds with a handle (exit 0, verdict `detached`). `pr merge status <handle>` reads the
-  outcome: the merge's own document and exit code once it ended, exit 10 `running` while it runs, `lost` when its
-  process ended without a document; without a handle it lists the machine's detached merges. `--on-done <command>`
-  runs a command with the outcome in its environment when the detached merge ended. The blocking call stays the
-  default.
-
-### Fixed
-
-- `pr wait` (and the wait in `pr merge`): a head whose only pending items are GitHub Actions runs awaiting a
-  repository member's approval (`action_required`, as for a fork's or a bot's pull request) ends the wait at that
-  poll with exit 4, verdict `approval_required`, the reason naming each run with its URL. Before, the wait sat out
-  its timeout on runs no wait would start. Approved, the runs start again and a new wait judges them normally.
-
-- `rollout wait`: the kube context is checked before the release wait, so an installation whose
-  `teleport.giantswarm.io-<installation>` context the kubeconfig lacks ends with exit 7 at once instead of after
-  the release. The reason names the kubeconfig's contexts that mention the installation (`gs-<installation>`
-  from `kubectl gs login`) and `--context`, which the help now documents for non-Teleport installations.
-- `pr wait` (and the wait in `pr merge`): a CircleCI setup pipeline whose continuation is not created yet (state
-  `setup-pending`, `setup` or `pending`) keeps the wait going. Before, a finished `setup` workflow read as the whole
-  pipeline, and the required contexts of the continued workflows ended the wait with exit 4 `required_missing`.
-- `rollout wait --pr`: a repository that releases in two steps (the merge tags a release candidate, a promote
-  later cuts the stable release) is followed to the promoted release that contains the merge commit, named in
-  `release.tag` with the candidate in `release.candidate`. Before the promote the candidate is waited for with
-  `release.promotePending`, and an installation that follows only stable releases ends with exit 3 naming the
-  pending promote instead of a bare "excludes the version".
-- `repo reconcile`: the open-pull-requests finding pluralises by count: "1 pull request is open" instead of "1 pull
-  requests are open".
-- `pkg/reposetup` `Test_Render` passes without `go generate` having written the gitignored `.sha` provenance files: the
-  golden comparison masks the template provenance link in both of its forms, so a plain `go test` agrees with CI.
-- `pr merge --update-branch`: a head behind a base that does not require branches to be up to date is updated before
-  its checks are judged, found by the comparison of base and head, which GitHub's mergeable state does not report.
-  A pull request red only because its old base was red, behind a base fixed since, is updated and merged in one call
-  instead of ending with exit 1 on the old head. Without the flag nothing changes.
-- `gen precommit --flavors helmchart`: the helm-docs hook passes `--chart-to-generate` with the repository's own
-  charts, so it no longer rewrites the READMEs of vendored subcharts under `helm/<chart>/charts/` and fails every pull
-  request that touches the chart's values; a repository-local `.helmdocsignore` is no longer needed.
-- `release wait` (and the release wait of `pr merge`): a 404 on the jobs of a CircleCI workflow that already reads
-  finished, the setup workflow of a fresh tag pipeline, is read again on the next poll instead of ending the wait
-  with exit 7 (exit 9 after a merge); jobs that never appear end the wait at its timeout naming the workflow.
+## [8.123.0-rc.1] - 2026-10-09
 
 ### Added
 
@@ -377,6 +871,85 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   giantswarm/github passes (a devctl that predates the flag is not passed it and generates the workflow regardless).
   Prompted by the dead `docs.giantswarm.io` and `helm/<chart>/...` links in several app READMEs that surfaced in the
   Backstage README cards in October 2026.
+
+## [8.122.3-rc.2] - 2026-10-09
+
+### Fixed
+
+- `gen makefile --language kyverno-policy`: `make install-policies` and `make dabs` no longer fall back to
+  `helm/kyverno-policies`. They use `helm/$(KYVERNO_POLICIES_APP_NAME)` when it has a `Chart.yaml`, as in CI,
+  otherwise the one chart under `helm/`, and fail with a clear message when that is none or several.
+  `KYVERNO_POLICIES_CHART_DIR` overrides the choice. Without `KYVERNO_POLICIES_APP_NAME` set, the release is named
+  after the chart directory. Locally, both targets failed in every repository except `kyverno-policies`.
+
+## [8.122.2] - 2026-10-09
+
+### Fixed
+
+- `gen precommit`: the generated pre-commit workflow installs golangci-lint 2.14.0. 2.13.2 cannot read the export
+  data of Go 1.27.2, which `setup-go` resolves for a `go 1.27` module, and failed every lint run with
+  "export data version 5 is greater than maximum supported version 4".
+
+## [8.122.0] - 2026-10-08
+
+### Added
+
+- `gen renovate --extends <file>` extends extra presets of `giantswarm/renovate-presets` by file name, before the
+  deprecated preset and `renovate-custom.json5`. The reconciler passes `gen.renovate.extends` of a repository entry.
+
+## [8.121.0] - 2026-10-08
+
+### Added
+
+- `repo reconcile --align-files-app-id`: the align-files App bypasses the review rule and nothing else. The
+  protection step moves the review into a ruleset of its own, `devctl: review`, whose bypass actors are those of
+  `devctl: default branch` and the App for pull requests; the required checks stay in `devctl: default branch`,
+  which the App does not bypass, so a red generated-file pull request still waits. Without the flag the review stays
+  in `devctl: default branch` and the review ruleset is deleted; `agentMerge: false` keeps it there without bypass.
+  `pr merge` reads `devctl: review` as the engine's own.
+
+## [8.120.0] - 2026-10-08
+
+### Added
+
+- `repo reconcile`: the entry field `lineGate` (`app`, `requiredChecks`, `branches`) gates a fork line whose re-pin
+  lands as a direct push of a checked commit. The protection step adds the sync's App to `devctl: default branch` as
+  a bypass actor in every mode and keeps a second ruleset, `devctl: line gate`, on the default branch and the
+  declared maintenance branches: deletion forbidden and the declared checks, pinned to GitHub Actions, required for
+  every push, with no bypass actor. Without the field the engine deletes its gate ruleset.
+
+## [8.119.2] - 2026-10-07
+
+### Fixed
+
+- `repo reconcile` and `repo checks`: the reported checks are read from the newest pull request merged through the
+  gate. A pull request whose head is its own merge commit — merged by a push of its head onto the branch, as a fork
+  line's upstream re-pin is — is passed over: its SHA carries the branch's push runs and statuses and no pull-request
+  check, and reading it removed every check that reports only on a pull request one night and re-added it the next.
+
+## [8.119.1] - 2026-10-07
+
+### Fixed
+
+- `pr merge --detach` help and the examples in `docs/pr-merge.md` and `docs/rollout-wait.md`: a local wrapper's path
+  had slipped in front of the `devctl` commands; they read `devctl …` again. The documented start document's
+  `reason` is empty, as on every exit 0; `status` names the command that reads the outcome.
+
+## [8.119.0] - 2026-10-07
+
+### Added
+
+- `pr merge --detach`: the call is checked as the blocking one is, then the merge runs in a process of its own and
+  the call returns within seconds with a handle (exit 0, verdict `detached`). `pr merge status <handle>` reads the
+  outcome: the merge's own document and exit code once it ended, exit 10 `running` while it runs, `lost` when its
+  process ended without a document; without a handle it lists the machine's detached merges. `--on-done <command>`
+  runs a command with the outcome in its environment when the detached merge ended. The blocking call stays the
+  default.
+
+## [8.118.0] - 2026-10-07
+
+### Added
+
 - `pr merge --dispatch <owner>/<repo>/<workflow file>[@<ref>]` (or `DEVCTL_MERGE_DISPATCH`, for every merge on a
   machine; the flag wins): once the pull request is merged, after its release wait whatever that ended with, the
   workflow is dispatched through its `workflow_dispatch` trigger on the ref or the repository's default branch, with
@@ -385,17 +958,99 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   schedule refreshes at once. The document carries it in `dispatch` (`workflow`, `ref`, `inputs`, `dispatched`,
   `reason`). A dispatch GitHub refuses is a warning and never changes the merge's outcome; nothing is dispatched
   when nothing merged, and without the flag and the variable nothing changes.
+
+## [8.117.1] - 2026-10-07
+
+### Fixed
+
+- `pr wait` (and the wait in `pr merge`): a head whose only pending items are GitHub Actions runs awaiting a
+  repository member's approval (`action_required`, as for a fork's or a bot's pull request) ends the wait at that
+  poll with exit 4, verdict `approval_required`, the reason naming each run with its URL. Before, the wait sat out
+  its timeout on runs no wait would start. Approved, the runs start again and a new wait judges them normally.
+
+## [8.117.0] - 2026-10-06
+
+### Added
+
 - `gen workflows --maintenance-branches` (team file: `gen.ci.maintenanceBranches: true`): a fork line's maintenance
   branches `release-X.Y` cut releases too. Each counts from its series' highest stable `vX.Y.Z` tag and releases the
   next patch of that series, a feature included, as a candidate first; the stable release is a dispatch of the
   workflow on the branch with `release-type: stable`. A series without a stable tag refuses. Opt-in: a fork line
   without it and every other flavour render as before.
+
+## [8.116.0] - 2026-10-06
+
+### Added
+
 - The circleci step reads the repository's deploy keys on GitHub on every run, the side that decides whether CircleCI
   checks the repository out: a CircleCI key gone from GitHub (deleted by hand, or by an archive) is created again
   instead of being read as present from CircleCI's list alone, and the step's summary names every deploy key with its
   access (`deploy keys on GitHub: CircleCI (read-only)`), so `repo status` shows them to an identity that cannot list
   them — the devctl App login answers 403 on `GET /repos/{owner}/{repo}/keys`. Keys the identity cannot read are the
   finding `unchecked`; a converged check costs one request more (twenty-two).
+
+## [8.115.8] - 2026-10-06
+
+### Fixed
+
+- `rollout wait`: the kube context is checked before the release wait, so an installation whose
+  `teleport.giantswarm.io-<installation>` context the kubeconfig lacks ends with exit 7 at once instead of after
+  the release. The reason names the kubeconfig's contexts that mention the installation (`gs-<installation>`
+  from `kubectl gs login`) and `--context`, which the help now documents for non-Teleport installations.
+
+## [8.115.7] - 2026-10-06
+
+### Fixed
+
+- `pr wait` (and the wait in `pr merge`): a CircleCI setup pipeline whose continuation is not created yet (state
+  `setup-pending`, `setup` or `pending`) keeps the wait going. Before, a finished `setup` workflow read as the whole
+  pipeline, and the required contexts of the continued workflows ended the wait with exit 4 `required_missing`.
+
+## [8.115.5] - 2026-10-06
+
+### Fixed
+
+- `rollout wait --pr`: a repository that releases in two steps (the merge tags a release candidate, a promote
+  later cuts the stable release) is followed to the promoted release that contains the merge commit, named in
+  `release.tag` with the candidate in `release.candidate`. Before the promote the candidate is waited for with
+  `release.promotePending`, and an installation that follows only stable releases ends with exit 3 naming the
+  pending promote instead of a bare "excludes the version".
+
+## [8.115.4] - 2026-10-06
+
+### Fixed
+
+- `repo reconcile`: the open-pull-requests finding pluralises by count: "1 pull request is open" instead of "1 pull
+  requests are open".
+
+## [8.115.3] - 2026-10-06
+
+### Fixed
+
+- `pkg/reposetup` `Test_Render` passes without `go generate` having written the gitignored `.sha` provenance files: the
+  golden comparison masks the template provenance link in both of its forms, so a plain `go test` agrees with CI.
+
+## [8.115.2] - 2026-10-06
+
+### Fixed
+
+- `pr merge --update-branch`: a head behind a base that does not require branches to be up to date is updated before
+  its checks are judged, found by the comparison of base and head, which GitHub's mergeable state does not report.
+  A pull request red only because its old base was red, behind a base fixed since, is updated and merged in one call
+  instead of ending with exit 1 on the old head. Without the flag nothing changes.
+
+## [8.115.1] - 2026-10-06
+
+### Fixed
+
+- `gen precommit --flavors helmchart`: the helm-docs hook passes `--chart-to-generate` with the repository's own
+  charts, so it no longer rewrites the READMEs of vendored subcharts under `helm/<chart>/charts/` and fails every pull
+  request that touches the chart's values; a repository-local `.helmdocsignore` is no longer needed.
+
+## [8.115.0] - 2026-10-06
+
+### Added
+
 - `repo reconcile --unarchived`: the way back from `lifecycle: archived`. When the change at hand took the lifecycle
   from the entry, the lifecycle step unarchives the repository on GitHub ahead of the other steps, which set it up
   again (CircleCI follow and deploy key, protection) in the same run; the result says `unarchived`. An archive no
@@ -403,37 +1058,81 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   the way back, `repo update <repo> --unset lifecycle`.
 - The lifecycle step reports the pull requests still open in a repository it archives (the advisory finding
   `open-pull-requests`): an archive leaves them read-only.
+
+## [8.114.1] - 2026-10-06
+
+### Fixed
+
+- `release wait` (and the release wait of `pr merge`): a 404 on the jobs of a CircleCI workflow that already reads
+  finished, the setup workflow of a fresh tag pipeline, is read again on the next poll instead of ending the wait
+  with exit 7 (exit 9 after a merge); jobs that never appear end the wait at its timeout naming the workflow.
+
+## [8.114.0] - 2026-10-06
+
+### Added
+
 - `pr wait` and `pr merge` reach repositories outside giantswarm: the App login serves the owners the devctl App is
   installed on (giantswarm), your own `gh` login (`gh auth token` of the real `gh`, never a `gh` link to devctl) every
   other owner, with the same wait, squash merge and exit codes. The document's new `identity` says which (`app` or
   `gh`); no `gh` login is exit 8 naming `gh auth login`, and a repository neither identity can read is exit 7 naming
   the missing installation and the read access the `gh` login lacks.
 
+## [8.113.7] - 2026-10-06
+
 ### Fixed
 
 - `pr merge` (the merge-queue enqueue) and `repo setup` (the merge-settings read), the two GraphQL calls: a refusal
   for a spent rate limit names the limit and its reset (`the graphql rate limit (5000) is spent until …`), since
   GraphQL refuses a caller whose limit is spent while REST still answers. `release wait` and `pr wait` read REST only.
+
+## [8.113.6] - 2026-10-06
+
+### Fixed
+
 - `pr merge`: a merge declined on classic branch protection names the entry whose `align: true` gives the repository
   the devctl ruleset (`the entry <repo> in repositories/<team>.yaml of giantswarm/github`), or `devctl repo adopt` for
   a repository no team file declares, and says that devctl never lifts `enforce_admins`: its token carries no
   Administration permission, so the lift-merge-restore is no way through for an agent.
+
+## [8.113.5] - 2026-10-06
+
+### Fixed
+
+- `gen workflows`: after a re-pin, the fork line's auto-release numbers its next candidate above the candidates the
+  rebase left behind. The counter only saw candidates reachable from the branch, so a re-pin whose target already
+  had candidates tried to cut `-rc.1` again and failed on the existing tag.
+
+## [8.113.4] - 2026-10-06
+
+### Fixed
+
 - `repo create` opens the declaration's pull request and nothing else: the reconciler of giantswarm/github creates the
   repository as its App once the pull request merges, scaffolds it and sets it up. The command no longer creates the
   repository or pushes the scaffold as the person, no longer requires the organization's owner role, and acts with the
   devctl App login (a token in the environment overrides it) instead of `gh auth token`.
-- `gen workflows`: after a re-pin, the fork line's auto-release numbers its next candidate above the candidates the
-  rebase left behind. The counter only saw candidates reachable from the branch, so a re-pin whose target already
-  had candidates tried to cut `-rc.1` again and failed on the existing tag.
-- `gen circleci`: the generated pipelines pin architect orb 10.12.1. With 10.12.0 a stable release tag pushed its
-  chart to the test catalog instead of the production one
-  ([architect-orb#968](https://github.com/giantswarm/architect-orb/issues/968)).
-- `pr merge`'s unanswered-review refusal names who answers: the caller on a bot's pull request, which cannot
-  reply, and the author or the caller otherwise.
+
+## [8.113.3] - 2026-10-05
 
 ### Changed
 
-- The generated pre-commit `golangci-lint` hook no longer passes `--timeout=300s`, which timed out on larger repositories; a repository sets `run.timeout` in its `.golangci.yml` ([#2484](https://github.com/giantswarm/devctl/issues/2484)).
+- Ignore `.patch` files in the pre-commit config for the file-checking hooks.
+
+## [8.113.2] - 2026-10-05
+
+### Fixed
+
+- `gen circleci`: the generated pipelines pin architect orb 10.12.1. With 10.12.0 a stable release tag pushed its
+  chart to the test catalog instead of the production one
+  ([architect-orb#968](https://github.com/giantswarm/architect-orb/issues/968)).
+
+## [8.113.1] - 2026-10-05
+
+### Fixed
+
+- `pr merge`'s unanswered-review refusal names who answers: the caller on a bot's pull request, which cannot
+  reply, and the author or the caller otherwise.
+
+## [8.113.0] - 2026-10-05
 
 ### Added
 
@@ -443,11 +1142,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   reviewer. Read before the wait and again right before the merge call; bots never hold a merge. The document
   lists the items in `unansweredReviews` ([#2491](https://github.com/giantswarm/devctl/issues/2491)).
 
+## [8.112.1] - 2026-10-04
+
+### Changed
+
+- The generated pre-commit `golangci-lint` hook no longer passes `--timeout=300s`, which timed out on larger repositories; a repository sets `run.timeout` in its `.golangci.yml` ([#2484](https://github.com/giantswarm/devctl/issues/2484)).
+
+## [8.112.0] - 2026-10-04
+
+### Added
+
 - `pr approve-align-files --team <name>`: sweeps every open bot-authored Align files PR in the repositories of
   `repositories/team-<name>.yaml` of giantswarm/github, whether or not a review is requested from the caller,
   so a repository that requests no reviewer is no longer skipped. A PR that is approved, green and has no
   auto-merge is merged (squash); one blocked by a required check that nothing reports is listed with the
   check's name. Without the flag nothing changes.
+
+## [8.111.0] - 2026-10-04
+
+### Added
+
 - `rollout wait --pr` on a pull request that releases nothing (a giantswarm-configs change) follows its merge
   commit on the installation instead of answering `no_release` with an empty result: the Flux GitRepository
   of the repository, the Kustomizations and Konfigurations that read it, and the HelmReleases that take the
@@ -459,28 +1173,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   (`--chart giantswarm/kagent/helm/kagent` for the kagent line); `rollout wait` then follows its
   HelmReleases. A release of hand-written CI that ships no chart names `--chart` in its reason.
 
+## [8.109.2] - 2026-10-04
+
+### Added
+
 - `rollout wait`: `--helmrelease <name>` or `<namespace>/<name>` (repeatable) also waits for a HelmRelease
   whatever chart it deploys; a name no HelmRelease answers to is exit 3.
-
-- `pr merge`: the document names the merging identity in `mergedBy`, the login the token acts as (for a merge
-  queue, the merger GitHub records); empty when nothing merged. A declined merge's reason names that login too
-  (`devctl acts as <login>`), and a merge GitHub refuses for the token's permissions (403, such as a pull request
-  that changes a workflow without the App's `workflows` permission) is exit 3 with GitHub's sentence instead of a
-  tooling failure.
-
-- `gen circleci`: new `--skip-app-catalog` flag (`gen.ci.skipAppCatalog` in giantswarm/github). It sets
-  `push_to_appcatalog: false` on the branch (`push-chart`, with `--branch-publish`) and tag
-  (`push-chart-release`) chart publish jobs and keeps the OCI registry push. Every GitHub app catalog is a
-  public repository, so a chart built from a private repo is otherwise published world-readable; with the
-  flag it ships only to `gsociprivate.azurecr.io`, which Flux consumes through an `OCIRepository`. Off by
-  default: the generated output for every repo that does not set it is unchanged.
-- `pr wait`, `pr merge`: `--failed-log` reads, on a red verdict, the log of each failed GitHub Actions job and
-  each failed CircleCI job once and prints its last `--failed-log-lines` lines (default 50) to stderr; the
-  document carries them under `failedJobs[].logTail`. A green or pending wait makes no extra request.
-- `repo reconcile`: the entry field `pruneRulesets: true` makes the declaration the repository's whole ruleset
-  set. The protection step deletes every active ruleset that is neither `devctl: default branch` nor named in
-  `rulesets` and reports each deletion as a repair. Declared, disabled and evaluate rulesets are left alone.
-  Without the field an undeclared ruleset stays the advisory `foreign-ruleset`, whose fix now names the opt-in.
 
 ### Fixed
 
@@ -488,6 +1186,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   architect push jobs in `.circleci/custom.yml` the tag pipeline runs. `rollout wait` for
   giantswarm/agent-platform said `rolled_out` while the connectivity chart's HelmRelease, released off the same
   tag, was still upgrading; it now waits for both HelmReleases.
+
+## [8.109.0] - 2026-10-02
+
+### Added
+
+- `pr merge`: the document names the merging identity in `mergedBy`, the login the token acts as (for a merge
+  queue, the merger GitHub records); empty when nothing merged. A declined merge's reason names that login too
+  (`devctl acts as <login>`), and a merge GitHub refuses for the token's permissions (403, such as a pull request
+  that changes a workflow without the App's `workflows` permission) is exit 3 with GitHub's sentence instead of a
+  tooling failure.
+
+## [8.108.0] - 2026-10-01
+
+### Added
+
+- `gen circleci`: new `--skip-app-catalog` flag (`gen.ci.skipAppCatalog` in giantswarm/github). It sets
+  `push_to_appcatalog: false` on the branch (`push-chart`, with `--branch-publish`) and tag
+  (`push-chart-release`) chart publish jobs and keeps the OCI registry push. Every GitHub app catalog is a
+  public repository, so a chart built from a private repo is otherwise published world-readable; with the
+  flag it ships only to `gsociprivate.azurecr.io`, which Flux consumes through an `OCIRepository`. Off by
+  default: the generated output for every repo that does not set it is unchanged.
+
+## [8.107.1] - 2026-10-01
+
+### Fixed
+
 - `gen circleci`: the generated pipelines pin architect orb 10.12.0. A pre-release tag (`vX.Y.Z-rc.N`) pushes its
   chart to the repository's test catalog instead of the production one; the OCI push is unchanged. A release
   candidate no longer becomes the `latest` AppCatalogEntry on the management clusters, nor the version happa and
@@ -495,33 +1219,70 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - `release wait --catalog`: a pre-release is looked for in the test catalog
   (`gen.ci.appCatalogTest` or a job's `app_catalog_test`, default `giantswarm-test-catalog`) when the tag pins
   architect orb 10.12.0 or later, where that orb pushed it; with an older pin, in the production catalog as before.
+
+## [8.107.0] - 2026-10-01
+
+### Added
+
+- `pr wait`, `pr merge`: `--failed-log` reads, on a red verdict, the log of each failed GitHub Actions job and
+  each failed CircleCI job once and prints its last `--failed-log-lines` lines (default 50) to stderr; the
+  document carries them under `failedJobs[].logTail`. A green or pending wait makes no extra request.
+
+## [8.106.0] - 2026-09-30
+
+### Added
+
+- `repo reconcile`: the entry field `pruneRulesets: true` makes the declaration the repository's whole ruleset
+  set. The protection step deletes every active ruleset that is neither `devctl: default branch` nor named in
+  `rulesets` and reports each deletion as a repair. Declared, disabled and evaluate rulesets are left alone.
+  Without the field an undeclared ruleset stays the advisory `foreign-ruleset`, whose fix now names the opt-in.
+
+## [8.105.5] - 2026-09-30
+
+### Fixed
+
 - `pr merge`: a merge the review rule declines names as blockers only the rulesets the caller cannot bypass
   (GitHub's `current_user_can_bypass`) and lists the bypassed ones apart. Past a blocker without bypass actors the
   reason no longer sends the caller to a team member or an admin, and a ruleset devctl did not create is named a
   `foreign-ruleset` left to the owning team.
 
+## [8.105.4] - 2026-09-30
+
+### Fixed
+
 - `gen workflows`: the auto-release workflow creates a release of a maintenance branch (`release-v3.x`, ...) with
   `--latest=false`, so the repository's Latest release stays on the release branch's newest stable instead of
   flipping to the older line whenever it releases.
+
+## [8.105.3] - 2026-09-30
+
+### Fixed
+
 - `gen circleci`: every branch-only job (the branch image builds, `build-chart`, `execute-chart-tests`, the branch
   publish jobs) ignores the auto-release maintenance branches like `main`, not only the publish jobs. A merge there
   is tagged within seconds, so the branch pipeline resolved the release version and architect refused to build it,
   which left the release branch red after every release.
+
+## [8.105.2] - 2026-09-30
+
+### Fixed
+
+- `gen circleci`: the branch publish jobs (`branchPublish`: the branch image builds and pushes, `push-chart`) ignore
+  the maintenance branches the auto-release workflow tags (`release-v3.x`, `release-2.3.x`, ...), like `main`. A merge
+  there is tagged within seconds, so the branch pipeline pushed the stable version's chart and image a second time
+  under a new digest; the tag pipeline alone publishes them now.
+
+## [8.105.1] - 2026-09-30
 
 ### Changed
 
 - `gen workflows`: the auto-release `cliff.toml` skips `test` commits like `docs` and `style`, so a test-only push
   (a test fixture bump included) cuts no release candidate; the change ships with the next release.
 
+## [8.105.0] - 2026-09-30
+
 ### Added
 
-- `gen workflows` generates the release flow of a fork line (`--flavour fork`) on `--release-workflow auto-release`:
-  the auto-release workflow, `cliff.toml` and the PR title check, nothing else. The new `--release-branch` (default
-  `main`) names the branch whose pushes cut releases; a fork line's workflow triggers on that branch alone. Its
-  baseline is the line's highest stable tag, even when a re-pin rebased the branch away from it, and git-cliff counts
-  only the tags of that major, never the upstream tags the mirror copies. The repository set-up engine passes
-  `--release-branch` from `defaultBranch` for every auto-release declaration off `main`, and emits that single line
-  for a fork declaration on `releaseWorkflow: auto-release`.
 - `release promote (<owner/repo>... | --team <team>) [--dry-run]` promotes the latest release candidate of
   auto-release repositories to a stable release. Per repository (named, repeats once, or every auto-release entry of
   the team's file in giantswarm/github) it requires the auto-release workflow of devctl v8.102.0 or later on the
@@ -535,33 +1296,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   7 usage, 8 not signed in. The GitHub token is the App login, overridable from the environment; the dispatch needs
   Actions write, which the App carries ([#2456](https://github.com/giantswarm/devctl/issues/2456)), and the
   document's `identity{source, login}` names who dispatched.
-- `release wait` and `rollout wait` take `--image <owner/name>` (repeatable): the image of a hand-written tag job that pushes outside the architect orb (a plain `docker push`), expected as `<image>:<git tag>` beside what the push jobs name. Without it, a `Dockerfile` with no image-naming push job is still exit 7, and the reason now names `--image` instead of "the sources disagree" ([#2418](https://github.com/giantswarm/devctl/issues/2418)).
-- `rollout wait <installation> <owner/repo> (<version> | --pr <n>)` blocks until a release runs on an installation
-  ([#2439](https://github.com/giantswarm/devctl/issues/2439)): the release wait first, which names the charts, then
-  every Flux HelmRelease (from an OCIRepository or a HelmChart) and App CR on the management cluster that deploys one
-  of them, read through the Teleport kube context as you, until it runs the version, is ready and its workloads are
-  rolled out. One JSON document; exit 0 rolled out, 1 the version failed, 2 timeout, 3 nothing follows the version,
-  7 usage, 8 not signed in. `--reconcile` asks Flux to reconcile what is behind once. See `docs/rollout-wait.md`.
 
-- `pr merge` warns before the merge when the pull request's body closes something other than an issue of its own
-  repository ([#2421](https://github.com/giantswarm/devctl/issues/2421)): a closing keyword (`close`, `fix` or
-  `resolve` in any tense and case, an optional colon) directly before a pull request (a `#N`, `GH-N` or `owner/repo#N`
-  whose number GitHub reports as one, a `/pull/N` URL) or before an item of another repository (`owner/repo#N`, a full
-  issue or pull URL). GitHub closes those on the merge without a prompt, a pull request unmerged; `fixes #123's` counts
-  as `fixes #123`. The warning goes to the progress stream and the document's `warnings`, names the phrase and the
-  item, and suggests a wording without the keyword; the merge proceeds and the exit code is unchanged. An issue of the
-  same repository, a number that does not exist and a reference without a closing keyword stay silent.
+## [8.104.0] - 2026-09-30
+
+### Added
+
+- `gen workflows` generates the release flow of a fork line (`--flavour fork`) on `--release-workflow auto-release`:
+  the auto-release workflow, `cliff.toml` and the PR title check, nothing else. The new `--release-branch` (default
+  `main`) names the branch whose pushes cut releases; a fork line's workflow triggers on that branch alone. Its
+  baseline is the line's highest stable tag, even when a re-pin rebased the branch away from it, and git-cliff counts
+  only the tags of that major, never the upstream tags the mirror copies. The repository set-up engine passes
+  `--release-branch` from `defaultBranch` for every auto-release declaration off `main`, and emits that single line
+  for a fork declaration on `releaseWorkflow: auto-release`.
+
+## [8.103.2] - 2026-09-30
 
 ### Fixed
 
-- `gen circleci`: the branch publish jobs (`branchPublish`: the branch image builds and pushes, `push-chart`) ignore
-  the maintenance branches the auto-release workflow tags (`release-v3.x`, `release-2.3.x`, ...), like `main`. A merge
-  there is tagged within seconds, so the branch pipeline pushed the stable version's chart and image a second time
-  under a new digest; the tag pipeline alone publishes them now.
 - The reconcile's protection step requires `check-values-schema / validate` once it has reported, beside
   `semantic-pull-request / Validate PR title` and `pre-commit`: the generated values-schema gate of a chart
   repository runs on every pull request, and it was required only where the classic protection had carried it over,
   so a repository whose checks were removed could not get it back.
+
+## [8.103.1] - 2026-09-30
+
+### Fixed
 
 - The reconcile's protection step reads the reported checks from the head of the newest merge, not of the most
   recently updated merged pull request: the closed pull requests are listed by update, so an unassignment on a
@@ -569,6 +1328,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   required checks of a repository whose workflows had not changed. The heads of one page of a hundred are ordered
   by their merge time. A head that carries no check at all is nothing reported, not an empty report, so a
   required check is never removed on it.
+
+## [8.102.0] - 2026-09-29
+
+### Changed
+
+- `gen workflows --release-workflow=auto-release`: every releasable push cuts the next release candidate
+  `vX.Y.Z-rc.N`, a GitHub pre-release. A stable release is cut only by running the workflow by hand with
+  `release-type: stable`, which promotes the latest candidate since the last stable release: the tag, the version and
+  the release notes are the candidate's. The run fails when there is no candidate, when the candidate has no GitHub
+  pre-release, or when a commit status of its commit failed or is pending. After a repository regenerates its
+  workflows, consumers that skip pre-releases (Renovate, `devctl release bumpall`, Flux ranges without a pre-release)
+  get a new version only when a candidate is promoted.
+
+### Removed
+
+- `gen workflows`: the `feat-rc` and `fix-rc` pull request title types, and the auto-release workflow's
+  `release-type: rc` input. A `feat-rc`/`fix-rc` commit still releases as its plain type.
+
+## [8.101.6] - 2026-09-29
+
+### Fixed
 
 - A repository whose entry declares no `visibility` is created private, the org's default, not public: the create
   step passed `Private: visibility == private` to GitHub, whose default for a created repository is public. The
@@ -583,12 +1363,58 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   entry without one is created private but generated like any undeclared entry until it declares it.
   `reposetup.VisibilityPrivate`, `reposetup.VisibilityPublic`, `reposetup.CreationVisibility` and `reposetup.IsPrivate`
   are exported for the other writers of entries; `repo list --visibility` takes its values from the schema.
+
+## [8.101.5] - 2026-09-29
+
+### Fixed
+
+- `reposetup`: a repository scaffolded from giantswarm/template-plans (the `plans` flavour) kept neither its README
+  nor any of its symlinks — giantswarm/honeybadger-plan came out with its README replaced by the generic stub and no
+  `.claude/` directory or `CLAUDE.md` at all. `writeCommonFiles` overwrote every template's README with the stub
+  except giantswarm/template-app's; template-plans ships its own repository-specific README the same way and now
+  keeps it too. Separately, `extractTarball` and `copyTree` skipped every symlink a template carried
+  (`.claude/skills/<name> -> ../../.agents/skills/<name>`, `CLAUDE.md -> AGENTS.md`) instead of recreating it, and the
+  scaffold commit's tree, built with `os.Stat`/`os.ReadFile`, would have followed one into its target's content had it
+  survived that far. Both now recreate a symlink after confining its target to the scaffold directory (refusing an
+  absolute target or one escaping via `..`), and every path that reads scaffold files (`replacePlaceholders`,
+  `listFiles`, `treeEntries`) uses `Lstat`/`Readlink` so a symlink is carried through as itself, mode `120000` in the
+  pushed commit.
+
+## [8.101.2] - 2026-09-29
+
+### Added
+
+- `release wait` and `rollout wait` take `--image <owner/name>` (repeatable): the image of a hand-written tag job that pushes outside the architect orb (a plain `docker push`), expected as `<image>:<git tag>` beside what the push jobs name. Without it, a `Dockerfile` with no image-naming push job is still exit 7, and the reason now names `--image` instead of "the sources disagree" ([#2418](https://github.com/giantswarm/devctl/issues/2418)).
+
+### Fixed
+
 - `release wait --image` probes the named image under the git tag as written (`giantswarm/dex:v2.43.3`, the `$CIRCLE_TAG` a plain `docker push` job pushes), not the version without its `v`, which such a job never pushes.
+
+## [8.101.1] - 2026-09-29
+
+### Fixed
+
 - `gen circleci`: the Node job restores its build-output cache (`node_modules`, `.yarn/install-state.gz`) on the exact
   lockfile key only ([#2183](https://github.com/giantswarm/devctl/issues/2183)). The prefix fallback restored another
   lockfile's tree, so `yarn install --immutable` reconciled only part of it and skipped the root workspace's build step:
   a `patch-package` postinstall silently never ran, and a dependency PR failed in the build on a file its diff never
   touched. The key salt moves to `v2`, so entries a prefix restore may have poisoned are not restored again.
+
+## [8.100.0] - 2026-09-26
+
+### Added
+
+- `rollout wait <installation> <owner/repo> (<version> | --pr <n>)` blocks until a release runs on an installation
+  ([#2439](https://github.com/giantswarm/devctl/issues/2439)): the release wait first, which names the charts, then
+  every Flux HelmRelease (from an OCIRepository or a HelmChart) and App CR on the management cluster that deploys one
+  of them, read through the Teleport kube context as you, until it runs the version, is ready and its workloads are
+  rolled out. One JSON document; exit 0 rolled out, 1 the version failed, 2 timeout, 3 nothing follows the version,
+  7 usage, 8 not signed in. `--reconcile` asks Flux to reconcile what is behind once. See `docs/rollout-wait.md`.
+
+## [8.99.5] - 2026-09-26
+
+### Fixed
+
 - `pr wait` and `pr merge` add a hint to a pull request's "not found" naming the devctl GitHub App login's reach
   ([#2436](https://github.com/giantswarm/devctl/issues/2436)): the App is installed on the giantswarm organization
   only, and GitHub answers 404 rather than 403 for a private repository the token cannot read, so a personal
@@ -596,6 +1422,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   environment override (`pkg/authstore.RequireGitHub`, never `ResolveGitHub`), so the hint names the cause without
   suggesting a variable that would have no effect on them (`authstore.GitHubAppOnlyNotFoundHint`, unlike `deploy`'s
   and `release create`'s `GitHubNotFoundHint`).
+
+## [8.99.4] - 2026-09-26
+
+### Fixed
+
 - `gen workflows --release-workflow=auto-release` refuses to render cliff.toml with an empty `[remote.github].repo`
   instead of writing one silently ([#2435](https://github.com/giantswarm/devctl/issues/2435)). Detection (the origin
   remote's `giantswarm/<repo>` path) never succeeds when there is no real checkout to read it from — a scaffold
@@ -605,11 +1436,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   `repo = ""`, which made git-cliff's GitHub API lookups (and every release note's PR and compare links) fail at
   workflow runtime; giantswarm/beekeeper, scaffolded before this fix, carried the empty value until an alignment run
   regenerates its `cliff.toml`.
+
+## [8.99.3] - 2026-09-25
+
+### Fixed
+
 - `repo set-lifecycle`, `transfer` and `update` name an ask's or notice's Slack channel by the name the manager's
   answer carries, with its ID: `ask: delivered to team-bumblebee in #team-bumblebee (C0ALXPMB1PW)`; the ID alone when
   the answer has no `channelName`, and the team's channel with the debug channel under a debug redirect
   ([#2432](https://github.com/giantswarm/devctl/issues/2432)). The embedded `repositories.schema.json` is the live
   schema again: the `align` description names the channel file `teams/team-<name>.yaml`.
+
+## [8.99.2] - 2026-09-25
+
+### Fixed
+
 - `pr wait`, `pr merge`, `release wait`: a run that outlives the eight-hour GitHub App user token renews it and waits
   on ([#2427](https://github.com/giantswarm/devctl/issues/2427)). The commands read the token once at the start, so a
   run spanning the expiry ended with `401 Bad credentials` (exit 7), a `pr merge` before it merged. When GitHub now
@@ -619,11 +1460,45 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   under a lock every devctl on the machine shares (`authstore.Store.Lock`), so two runs never spend the same refresh
   token, which GitHub accepts once. A refused refresh is exit 8; a 401 to the renewed token is exit 7 with GitHub's
   answer.
+
+## [8.99.1] - 2026-09-25
+
+### Fixed
+
 - `repo reconcile`: the catalog step compares only the charts the apps-to-teams mapping's generator maps — a component
   tagged `helmchart` and `helmchart-deployable` and not `private` ([#2428](https://github.com/giantswarm/devctl/issues/2428)).
   A private repository whose chart is on the public registry (giantswarm/blog, giantswarm/giantswarmio-nginx) was
   expected in a mapping that never lists it, so every run dispatched the mapping workflow, which changed nothing, and
   the repository never converged.
+
+## [8.99.0] - 2026-09-25
+
+### Added
+
+- `pr merge` warns before the merge when the pull request's body closes something other than an issue of its own
+  repository ([#2421](https://github.com/giantswarm/devctl/issues/2421)): a closing keyword (`close`, `fix` or
+  `resolve` in any tense and case, an optional colon) directly before a pull request (a `#N`, `GH-N` or `owner/repo#N`
+  whose number GitHub reports as one, a `/pull/N` URL) or before an item of another repository (`owner/repo#N`, a full
+  issue or pull URL). GitHub closes those on the merge without a prompt, a pull request unmerged; `fixes #123's` counts
+  as `fixes #123`. The warning goes to the progress stream and the document's `warnings`, names the phrase and the
+  item, and suggests a wording without the keyword; the merge proceeds and the exit code is unchanged. An issue of the
+  same repository, a number that does not exist and a reference without a closing keyword stay silent.
+
+## [8.98.9] - 2026-09-25
+
+### Fixed
+
+- `repo create`: a scaffold without generated CI (`gen.ci.generate: false`: configuration, customer, Python and
+  Kyverno policy repositories, any repository whose pipeline would be empty) carries `renovate.json5`
+  ([#2419](https://github.com/giantswarm/devctl/issues/2419)). The Renovate line of the scaffold's generators ran only
+  after the CircleCI generator, so such a repository started without a Renovate configuration and the reconciler's
+  first run reported it (`renovate-not-scanned`) next to the creation notice. Every scaffold that generates at all now
+  runs `devctl gen renovate`, with `--circleci-generated` only on generated CI; a fork line still gets nothing.
+
+## [8.98.8] - 2026-09-24
+
+### Fixed
+
 - `repo reconcile`: the codeowners step keeps a repository's align-files `CODEOWNERS` override
   ([#2416](https://github.com/giantswarm/devctl/issues/2416)). It always wanted the generated file naming the team, so
   on a repository with an override in `repositories/override/<repository>/CODEOWNERS` of giantswarm/github it opened
@@ -637,225 +1512,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   `io.giantswarm.application.team`, as app-build-suite's C0001 HasTeamLabel does
   ([#2422](https://github.com/giantswarm/devctl/issues/2422)). A chart carrying only the older key was reported as the
   non-advisory `abs-prerequisite` and never read in sync, although it builds.
-- `repo create`: a scaffold without generated CI (`gen.ci.generate: false`: configuration, customer, Python and
-  Kyverno policy repositories, any repository whose pipeline would be empty) carries `renovate.json5`
-  ([#2419](https://github.com/giantswarm/devctl/issues/2419)). The Renovate line of the scaffold's generators ran only
-  after the CircleCI generator, so such a repository started without a Renovate configuration and the reconciler's
-  first run reported it (`renovate-not-scanned`) next to the creation notice. Every scaffold that generates at all now
-  runs `devctl gen renovate`, with `--circleci-generated` only on generated CI; a fork line still gets nothing.
-- `reposetup`: a repository scaffolded from giantswarm/template-plans (the `plans` flavour) kept neither its README
-  nor any of its symlinks — giantswarm/honeybadger-plan came out with its README replaced by the generic stub and no
-  `.claude/` directory or `CLAUDE.md` at all. `writeCommonFiles` overwrote every template's README with the stub
-  except giantswarm/template-app's; template-plans ships its own repository-specific README the same way and now
-  keeps it too. Separately, `extractTarball` and `copyTree` skipped every symlink a template carried
-  (`.claude/skills/<name> -> ../../.agents/skills/<name>`, `CLAUDE.md -> AGENTS.md`) instead of recreating it, and the
-  scaffold commit's tree, built with `os.Stat`/`os.ReadFile`, would have followed one into its target's content had it
-  survived that far. Both now recreate a symlink after confining its target to the scaffold directory (refusing an
-  absolute target or one escaping via `..`), and every path that reads scaffold files (`replacePlaceholders`,
-  `listFiles`, `treeEntries`) uses `Lstat`/`Readlink` so a symlink is carried through as itself, mode `120000` in the
-  pushed commit.
-- `repo reconcile`: a created repository's first release is built by the run that follows its project on CircleCI
-  ([#2408](https://github.com/giantswarm/devctl/issues/2408)). v8.97.2 keyed the trigger on `--added`, which the
-  reconciler workflow never passes (it validates every entry in existing mode), so no reconciler run triggered it and
-  a created chart repository still published no chart for `v0.1.0`. The release step now triggers the tag's pipeline
-  when this run's circleci step followed the project and the tag names the scaffold commit — in check mode it plans
-  the trigger beside the planned follow. A scaffold tag of a project followed before the run, and an adoption's own
-  tag, stay `missed-tag-build`.
+
+## [8.98.6] - 2026-09-24
 
 ### Changed
 
-- `gen workflows --release-workflow=auto-release`: every releasable push cuts the next release candidate
-  `vX.Y.Z-rc.N`, a GitHub pre-release. A stable release is cut only by running the workflow by hand with
-  `release-type: stable`, which promotes the latest candidate since the last stable release: the tag, the version and
-  the release notes are the candidate's. The run fails when there is no candidate, when the candidate has no GitHub
-  pre-release, or when a commit status of its commit failed or is pending. After a repository regenerates its
-  workflows, consumers that skip pre-releases (Renovate, `devctl release bumpall`, Flux ranges without a pre-release)
-  get a new version only when a candidate is promoted.
 - `gen circleci`: the generated pipelines pin architect orb 10.11.1, whose chart jobs run app-build-suite 2.5.1. Its
   image reference check leaves a Helm test out, a manifest whose `helm.sh/hook` names only `test` events: only
   `helm test` creates it, no install or upgrade pulls its images. A chart whose subchart ships a test pod with an
   image the mirror does not carry builds with the check on
   ([app-build-suite#627](https://github.com/giantswarm/app-build-suite/pull/627)).
-- `gen circleci`: `build-chart` also exempts the images the repository's `.circleci/custom.yml` pushes with
-  `architect/push-to-registries` jobs, derived from the checkout like the Dockerfile probe. A chart that deploys such an
-  image at the stamped `appVersion` (a backend beside the app) failed `build-chart` on app-build-suite 2.5.0: the chart
-  is packaged before that image is pushed, and the generated `ABS_HELM_IMAGE_REFERENCE_VALIDATOR_OWN_IMAGE` overrode
-  any `.abs/main.yaml` entry. With more than one own image the variable carries a list (`"[<generated>, <custom>...]"`);
-  a repository with one own image renders as before.
-- `repo reconcile`: the run of the change that adds an entry builds the repository's first release. A repository
-  created pull-request-last (`devctl repo create`, the repository manager) has its scaffold tagged `v0.1.0` before the
-  entry merges, and the run of the merge is the first to follow the project on CircleCI, which therefore never saw
-  the tag: since v8.71.0 that release was a `missed-tag-build` finding, and every created repository stayed without a
-  built first release until a person triggered its pipeline. The release step now triggers the pipeline of a tag
-  that names the scaffold commit (`feat: initial scaffold of <name> from `) in a run whose change added the entry,
-  once: the next run finds the pipeline. Every other missed tag build, an adopted repository's included, stays a
-  finding and is never rebuilt. `circleciclient.TriggerTagPipeline` is back for it.
-- `gen circleci`: the generated pipelines pin architect orb 10.11.0, whose chart jobs run app-build-suite 2.5.0. In a
-  repository that builds an image and stamps the chart's `appVersion`, `build-chart` no longer switches the image
-  reference check off: its `pre-steps` step exports `ABS_HELM_IMAGE_REFERENCE_VALIDATOR_OWN_IMAGE` with the
-  repository's own image (`gsoci.azurecr.io/giantswarm/<repo>`, or `gsoci.azurecr.io/<imageName>`). app-build-suite
-  skips that image at the stamped version, which `build-chart` packages before the image is pushed, and resolves
-  every other `gsoci.azurecr.io` reference. A missing third-party mirror tag goes red on the pull request again
-  instead of at `push-chart-release`
-  ([app-build-suite#624](https://github.com/giantswarm/app-build-suite/issues/624)). A chart that keeps the
-  `appVersion` Chart.yaml declares is checked in full in `build-chart`; `push-chart` and `push-chart-release` check
-  every reference as before.
-- `gen circleci`: the generated pipelines pin architect orb 10.10.0, whose `architect` executor bundles gitsemver 3
-  like its `app-build-suite` executor. From 10.8.0 to 10.9.0 a branch pipeline tagged its image with gitsemver 2's
-  `X.Y.Z-dev.<branch>.<date>.<time>.h<sha>` and stamped its chart with gitsemver 3's `X.Y.Z-r<branch-hash>t<timestamp>h<sha>`,
-  so the branch chart named an image that was never pushed and `execute-chart-tests` hung in `helm --wait`
-  ([architect-orb#956](https://github.com/giantswarm/architect-orb/issues/956)). Dev image tags now follow the
-  gitsemver 3 schema: a Flux filter that matches `-dev.<branch>.` stops matching new builds and selects a branch
-  with `^.*-r<branch-hash>t[0-9]{14}h[0-9a-f]{7}$` (`gitsemver branch-hash <branch>`).
-- `gen circleci`: the generated pipelines pin architect orb 10.9.0. Its `go-build` takes the compile parallelism from
-  the executor's cgroup CPU quota instead of the host's `nproc`, which since 10.6.1 ran `-p 36` on a 2-vCPU `medium`
-  executor and killed heavy builds in `Build binaries`
-  ([architect-orb#952](https://github.com/giantswarm/architect-orb/issues/952), 10.8.1). On tag builds `go-test`
-  stamps `pkg/project.version` with the tag, and the files the build writes no longer mark the build info `+dirty`
-  (10.9.0). Its chart jobs run app-build-suite 2.4.1, which fails a chart whose rendered `gsoci.azurecr.io` image
-  references the registry does not carry (10.8.0).
-  `build-chart` packages the chart before the pipeline pushes its own image, and a branch without `branchPublish`
-  never pushes it. So in a repository that builds an image, `build-chart` sets
-  `ABS_DISABLE_HELM_IMAGE_REFERENCE_VALIDATOR=true` in a `pre-steps` step, and the check runs in `push-chart` and
-  `push-chart-release`: they require the image job and run app-build-suite again before they publish. A chart of
-  images built elsewhere keeps the check in `build-chart`. A template repository's `build-chart` sets the variable
-  on the job, because the chart it renders pulls fixture images no registry carries. No job, parameter or required
-  check changes name.
-- `deploy`, `pr approve-align`, `pr approve-merge-renovate` and `release create` act with the `giantswarm-devctl`
-  App login by default, through `authstore.ResolveGitHub`: no personal token is needed after `devctl auth login
-  --github-only`. A token in `DEVCTL_GITHUB_TOKEN`, `GITHUB_TOKEN` or `OPSCTL_GITHUB_TOKEN` overrides the login and
-  prints the resolver's warning once; with neither they exit 8 naming `devctl auth login --github-only` instead of
-  failing with an error about `GITHUB_TOKEN`. `release create` resolves one token and builds every GitHub client of
-  the release from it. A 404 from GitHub in `deploy` or `release create` under the App login names its likely cause:
-  the App reaches the giantswarm organization and public repositories only, a token in the environment reaches the
-  rest (`authstore.GitHubNotFoundHint`, `githubclient.ExplainNotFound`). `deploy` passes the token to git as basic
-  auth instead of in the remote URL, so a git error quoting the URL no longer prints it
-  ([#2380](https://github.com/giantswarm/devctl/issues/2380)).
 
-### Added
-
-- `reposetup.(*Schema).FieldValues(path)` returns the values the repositories schema allows for a declaration field
-  (`componentType`, `gen.flavours`, `gen.language`, `visibility`, `lifecycle`), in the schema's order, read from the
-  document the `Schema` was compiled from with its `$ref`s followed, so the embedded schema and one fetched from
-  giantswarm/github each answer from themselves. An unknown path or a field without an enum is an error.
-  `EmbeddedFieldValues` is built on it, and a test pins the schema's `gen.language` to `gen.AllLanguages()`.
-- `gen.ci.templateContent: true` in a team-file entry says the `.circleci/config.yml` a template repository carries is
-  content for the repositories created from it, not its own pipeline. The reconciler's circleci and release steps skip
-  such a repository (`no CircleCI pipeline: .circleci/config.yml is template content`): no follow, no deploy key, no
-  tag build to verify, and the branch is not read for it. It sits beside `generate: false`; `generate: true` beside it
-  is refused by the validator, and the schema carries the field. Before, a template repository whose configuration carries placeholders (mcp-template's
-  `{MCP-NAME}`) was treated like any repository with a configuration on its default branch, and aligning it would have
-  made CircleCI follow it and run the placeholder pipeline on every push.
-- `authstore.ResolveGitHub(ctx, envVars...)`, the one resolver of the GitHub token a command for people acts
-  with: a token in `DEVCTL_GITHUB_TOKEN`, `GITHUB_TOKEN` or `OPSCTL_GITHUB_TOKEN` (or the one variable a
-  `--github-token-envvar` names) is an explicit override that carries one warning naming the variable and
-  `devctl auth login --github-only`; without one, the `giantswarm-devctl` App login from the keychain, refreshed when
-  expired; neither is `ErrAuthRequired`, exit 8. With `CI` set the keychain is never read and nothing warns. It never
-  falls back from one source to another and never asks `gh auth token`. The token names its `Source` (`keychain` or
-  `$NAME`). `devctl auth status` warns when such a variable overrides the App login, its exit code unchanged, and
-  `docs/auth.md` describes the GitHub token of every command
-  ([#2379](https://github.com/giantswarm/devctl/issues/2379)).
-- `repo reconcile`'s circleci step verifies the webhook CircleCI installs on the follow: after `followed, setup
-  workflows on, checkout key present` it reads the repository's webhooks and requires one active hook for
-  `https://circleci.com/hooks/github` with the `push` event, `webhook present` in the summary. A followed project
-  without it is the finding `circleci-webhook-missing` (not advisory: no push and no tag reaches CircleCI, so no branch
-  builds and the first release tag goes unbuilt), its fix naming what installs the hook -- a follow by a GitHub admin of
-  the repository whose CircleCI grant carries the hook scope, `POST /api/v1.1/project/github/{owner}/{repo}/follow`
-  or Project Settings; devctl cannot create it, CircleCI signs it with its own secret. Webhooks the identity cannot
-  read (a read identity without the `repository_hooks` permission) are `unchecked`, never guessed. Before, the
-  reconciler's follow as architectbot under its temporary admin grant left a project followed with a deploy key and
-  setup workflows but no hook, every branch build silently absent and the step reading `ok`. The inventory record's
-  `circleci` facts carry `webhook` for the manager to fill from the step, and `devctl repo status` prints
-  `webhook present` / `webhook missing` in the `circleci` line when it is set
-  ([#2332](https://github.com/giantswarm/devctl/issues/2332)).
-- The `plans` flavour: a team plans repository (versioned PRDs, their companion websites and the
-  plan-workflow agent skills -- one `<team>-plans` repository per team). An add-on
-  flavour declared beside `generic` (`flavours: [generic, plans]`) with `language: generic` and
-  `gen.ci.generate: false`; the generators produce nothing extra for it, and `DeriveTemplate` derives
-  it the new template `giantswarm/template-plans` (its `{APP-NAME}` and `{TEAM-NAME}` placeholders
-  replaced the same way `giantswarm/template-app`'s are), refusing any other language the same way
-  language `node` is refused until its template ships. The embedded schema copy
-  (`pkg/reposetup/schema/repositories.schema.json`) carries the flavour; the live schema in
-  giantswarm/github and the Backstage "Plans" scaffolder preset land in companion pull requests.
-- `devctl gen circleci --chart-release-gate-job <job>` (`gen.ci.chartReleaseGateJob` in the giantswarm/github team
-  file): the generated `push-chart-release` job requires the named repo-owned `custom.yml` job, the chart counterpart of
-  `--image-pre-build-job`, for a check that has to refuse a release before its chart is pushed -- a meta chart whose
-  component floor resolves to no published chart (giantswarm/agent-platform#624). The branch dev push is not gated; a
-  repository without a chart release push refuses the flag.
-- `circleciclient.Config.Anonymous`: a client without a token, for a reader that holds none -- it reads what CircleCI
-  answers without one, the pipelines, workflows and jobs of a public project (a private one is 404), and sends no
-  `Circle-Token` header; `New` still refuses an empty token without the flag, and a token with it, so a reader meant
-  to hold a token never reads anonymously by accident. `circleciclient.WorkflowURL` names a workflow's page beside
-  `PipelineURL` ([#2352](https://github.com/giantswarm/devctl/issues/2352)).
-- The team-file entry declares the repository's own rulesets, the ones a team keeps beside the engine's: `rulesets`
-  names them, and `repo reconcile`'s protection step leaves a ruleset named there alone and silent. A ruleset the
-  repository carries and the entry does not name is the advisory `foreign-ruleset` as before, its fix naming the
-  field; a name the repository carries no ruleset for is the new advisory `declared-ruleset-missing` -- a ruleset
-  deleted on GitHub, or a name that never matched one -- so a stale declaration does not stand unread. Both leave
-  `converged` true, and the engine still writes `devctl: default branch` and no other ruleset: creating, changing and
-  deleting a declared ruleset stays with the team. Before, the fix text asked for a declaration the entry could not
-  carry, so a repository that keeps a ruleset knowingly -- the fork lines' `protect-giantswarm`, `protect-main`,
-  `protect-mirror-main` and `protect-consumed-branch`, which guard the upstream mirror and the consumed branch --
-  carried the finding on every run for ever ([#2344](https://github.com/giantswarm/devctl/issues/2344)). The embedded
-  schema copy (`pkg/reposetup/schema/repositories.schema.json`) carries the field; the live schema in
-  giantswarm/github accepts it once its own change merges.
-
-### Changed
-
-- The version check that precedes every command, `version check`, `version update` and `repo validate` read GitHub
-  with the `giantswarm-devctl` App login when there is no token in the environment, through
-  `authstore.ResolveGitHub`: a token in `DEVCTL_GITHUB_TOKEN`, `GITHUB_TOKEN` or `OPSCTL_GITHUB_TOKEN` (`repo validate
-  --github-token-envvar` names one variable instead; its default is now those three) overrides it with the resolver's
-  warning, printed once per invocation. The token stays optional: with neither the reads stay anonymous (`repo
-  validate`: the embedded schema, names unchecked), and with `CI` set the keychain is never read. The version check
-  resolves the token only when it asks GitHub, never while its one-hour cache is fresh. `pkg/updater` reads releases
-  through its own GitHub source, so the selfupdate library no longer picks up `GITHUB_TOKEN` by itself, and follows
-  `DEVCTL_GITHUB_API_URL` ([#2381](https://github.com/giantswarm/devctl/issues/2381)).
-- A command for people that fails with an error carrying its exit code (`agentcli.ExitCoder`) exits with that
-  code: `ErrAuthRequired` is exit 8 for every command, its one sentence on stderr, so a `repo` command without a
-  muster login exits 8 as `docs/auth.md` says. Before, every such error was exit 2
-  ([#2379](https://github.com/giantswarm/devctl/issues/2379)).
-- A command called the wrong way says what is wrong and how to call it, without a stack trace: a missing
-  argument is named from the usage line (`Missing [OWNER/]REPOSITORY`), an extra one is `Unexpected argument "b"`,
-  an unknown command or flag, or a flag the command's validation refuses, is followed by the command's usage line
-  and `Run 'devctl repo status --help' for more information.` An unknown subcommand of a group (`devctl repo
-  statsu`) is an error with the subcommands it resembles (`did you mean "status"?`) and exit 2, where it printed
-  the group's help and exited 0. Every command declares the arguments it takes, so a stray argument to a command
-  that takes none (`devctl gen circleci x`) is refused instead of ignored. The stack trace of an error is printed
-  only at `--log-level debug`. The notice that a newer devctl is released is one line naming the version, the
-  update command and `DEVCTL_UNSAFE_FORCE_VERSION`.
-- `devctl pr merge` waits for the release its merge triggers: after the merge it runs the wait of `release wait --pr`
-  on the merge commit it produced, so one blocking call returns when CI was green, the pull request is merged and the
-  release is pullable (its images and charts resolve to a digest, its tag pipeline is green). The document gains
-  `release` (the release wait's `verdict` and `reason` with its result: tag, sha, models, artifacts with digests,
-  pipeline); `--release-timeout` bounds that wait (30 minutes) apart from `--timeout`; `--no-release-wait` ends the
-  command at the merge. A merge that no release follows is exit 0: a repository that does not tag merge commits, or one
-  whose auto-release run finished without a tag. After a merge, exit 6 (`release_failed`) says the release failed and
-  exit 9 (`release_unconfirmed`) that it was not confirmed in time or could not be judged; both mean merged, never
-  merge again. The agent no longer needs a second `devctl release wait --pr` call after its merge.
-- `devctl release wait --pr` reads the merge commit's auto-release run while no tag is on the merge commit: a run that
-  finished without a tag ends the wait at once as exit 3 with the new verdict `no_release` instead of a timeout, a run
-  that failed before it tagged is exit 1, a run cancelled by a newer push is exit 3 naming the superseding push. A
-  legacy repository's `--pr`, and one without any release workflow or declared release model, is `no_release` too.
-- `release wait` declares a CircleCI release `available` only when every artifact resolves **and** the tag
-  pipeline is green: every workflow (newest run per name) finished, none failed. The artifacts the team-file entry or
-  the push jobs name are not the whole release: a repository's own tag jobs in `.circleci/custom.yml` push and sign
-  more (vm-manager's guest image, muster's CRD chart, backstage's control-plane catalog entry), and `release wait
-  giantswarm/vm-manager --pr 78` answered `available` for v0.22.3 while its `guest-image` job was still running.
-  Artifacts that resolve under a running pipeline now keep the wait polling (`every artifact is available; pipeline
-  N unfinished: …` on `--progress`); a tag job that fails after them is exit 1 with the job in `failedJobs`, a
-  pipeline that does not finish in time exit 2 saying the artifacts are there. The Aliyun mirror is part of the
-  wait; it typically ends within a minute of the chart push. An exit 0 document never lists an unfinished workflow
-  ([#2364](https://github.com/giantswarm/devctl/issues/2364)).
-- `gen circleci`: the generated pipelines pin architect orb 10.6.3, whose `image-prepare-tag` fails a branch pipeline at a
-  tagged commit instead of resolving the release version and publishing it again
-  ([architect-orb#942](https://github.com/giantswarm/architect-orb/issues/942)).
-- `devctl repo reconcile` writes the repository admins (GitHub's repository role Admin) as a third bypass actor of the
-  ruleset `devctl: default branch`, in `pull_request` mode beside the devctl App and the owning team: `devctl pr merge`
-  run by an admin of the repository merges their own green pull request through the ruleset in every aligned
-  repository, as classic protection without `enforce_admins` let them, every bypass in the audit log. A ruleset written
-  before gains the actor on the next run; `agentMerge: false` still leaves the list empty. The decline's reason, the
-  help and the docs name the role.
+## [8.98.5] - 2026-09-24
 
 ### Fixed
 
@@ -870,25 +1538,192 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   done is finished by the next one; deleting a deploy key works on an archived repository. `lifecycle: deleted`
   unfollows, then deletes the repository. Neither asks for an admin grant any more, and v8.98.4's grant, its unarchive
   and `circleciclient.StopBuilding` are gone.
+
+## [8.98.3] - 2026-09-24
+
+### Fixed
+
+- `repo reconcile`: a created repository's first release is built by the run that follows its project on CircleCI
+  ([#2408](https://github.com/giantswarm/devctl/issues/2408)). v8.97.2 keyed the trigger on `--added`, which the
+  reconciler workflow never passes (it validates every entry in existing mode), so no reconciler run triggered it and
+  a created chart repository still published no chart for `v0.1.0`. The release step now triggers the tag's pipeline
+  when this run's circleci step followed the project and the tag names the scaffold commit — in check mode it plans
+  the trigger beside the planned follow. A scaffold tag of a project followed before the run, and an adoption's own
+  tag, stay `missed-tag-build`.
+
+## [8.98.2] - 2026-09-24
+
+### Fixed
+
 - `gen circleci`: a `--chart-name` that differs from the repository name beyond an `-app` suffix also sets
   `explicit_allow_chart_name_mismatch: true` on every chart job, so the orb's chart name check no longer fails it.
+
+## [8.98.1] - 2026-09-24
+
+### Changed
+
+- `gen circleci`: `build-chart` also exempts the images the repository's `.circleci/custom.yml` pushes with
+  `architect/push-to-registries` jobs, derived from the checkout like the Dockerfile probe. A chart that deploys such an
+  image at the stamped `appVersion` (a backend beside the app) failed `build-chart` on app-build-suite 2.5.0: the chart
+  is packaged before that image is pushed, and the generated `ABS_HELM_IMAGE_REFERENCE_VALIDATOR_OWN_IMAGE` overrode
+  any `.abs/main.yaml` entry. With more than one own image the variable carries a list (`"[<generated>, <custom>...]"`);
+  a repository with one own image renders as before.
+
+## [8.98.0] - 2026-09-24
+
+### Added
+
+- `reposetup.(*Schema).FieldValues(path)` returns the values the repositories schema allows for a declaration field
+  (`componentType`, `gen.flavours`, `gen.language`, `visibility`, `lifecycle`), in the schema's order, read from the
+  document the `Schema` was compiled from with its `$ref`s followed, so the embedded schema and one fetched from
+  giantswarm/github each answer from themselves. An unknown path or a field without an enum is an error.
+  `EmbeddedFieldValues` is built on it, and a test pins the schema's `gen.language` to `gen.AllLanguages()`.
+
+## [8.97.2] - 2026-09-24
+
+### Changed
+
+- `repo reconcile`: the run of the change that adds an entry builds the repository's first release. A repository
+  created pull-request-last (`devctl repo create`, the repository manager) has its scaffold tagged `v0.1.0` before the
+  entry merges, and the run of the merge is the first to follow the project on CircleCI, which therefore never saw
+  the tag: since v8.71.0 that release was a `missed-tag-build` finding, and every created repository stayed without a
+  built first release until a person triggered its pipeline. The release step now triggers the pipeline of a tag
+  that names the scaffold commit (`feat: initial scaffold of <name> from `) in a run whose change added the entry,
+  once: the next run finds the pipeline. Every other missed tag build, an adopted repository's included, stays a
+  finding and is never rebuilt. `circleciclient.TriggerTagPipeline` is back for it.
+
+## [8.97.1] - 2026-09-24
+
+### Fixed
+
 - `repo reconcile`: the `circleci` step's admin grant for the CircleCI token's GitHub user covers every CircleCI write
   the step makes, not the follow alone. CircleCI takes the follow, the setup-workflows setting and a deploy key only
   from a GitHub admin of the repository. The step grants admin once, before its first write, when the user is not an
   admin already ("grant architectbot admin for the CircleCI set-up, revoked after it"), and revokes the grant when the
   step ends, also after a failed write. Before, the grant was revoked right after the follow, and a followed project
   missing its setup workflows or its deploy key was repaired without it.
+
+## [8.97.0] - 2026-09-24
+
+### Changed
+
+- `gen circleci`: the generated pipelines pin architect orb 10.11.0, whose chart jobs run app-build-suite 2.5.0. In a
+  repository that builds an image and stamps the chart's `appVersion`, `build-chart` no longer switches the image
+  reference check off: its `pre-steps` step exports `ABS_HELM_IMAGE_REFERENCE_VALIDATOR_OWN_IMAGE` with the
+  repository's own image (`gsoci.azurecr.io/giantswarm/<repo>`, or `gsoci.azurecr.io/<imageName>`). app-build-suite
+  skips that image at the stamped version, which `build-chart` packages before the image is pushed, and resolves
+  every other `gsoci.azurecr.io` reference. A missing third-party mirror tag goes red on the pull request again
+  instead of at `push-chart-release`
+  ([app-build-suite#624](https://github.com/giantswarm/app-build-suite/issues/624)). A chart that keeps the
+  `appVersion` Chart.yaml declares is checked in full in `build-chart`; `push-chart` and `push-chart-release` check
+  every reference as before.
+
+## [8.96.1] - 2026-09-24
+
+### Fixed
+
 - `version update` replaces the running devctl, symbolic links resolved, with a single rename
   (`selfupdatecosign.Install`). go-selfupdate's swap renamed the binary to `.devctl.old` before it moved
   `.devctl.new` in, so a `devctl` started in between found no binary, and two updates at once shared those names:
   three updates of one binary lost it in most runs. Now a `devctl` started meanwhile runs the old binary or the new
   one, any number of updates can run at once, no other file is touched, and the binary keeps its mode.
+
+## [8.96.0] - 2026-09-24
+
+### Added
+
+- `gen.ci.templateContent: true` in a team-file entry says the `.circleci/config.yml` a template repository carries is
+  content for the repositories created from it, not its own pipeline. The reconciler's circleci and release steps skip
+  such a repository (`no CircleCI pipeline: .circleci/config.yml is template content`): no follow, no deploy key, no
+  tag build to verify, and the branch is not read for it. It sits beside `generate: false`; `generate: true` beside it
+  is refused by the validator, and the schema carries the field. Before, a template repository whose configuration carries placeholders (mcp-template's
+  `{MCP-NAME}`) was treated like any repository with a configuration on its default branch, and aligning it would have
+  made CircleCI follow it and run the placeholder pipeline on every push.
+
+## [8.95.2] - 2026-09-24
+
+### Fixed
+
+- `pr wait` and `pr merge` no longer wait for a CircleCI pipeline of a repository CircleCI does not build. CircleCI's
+  project lookup answers a project for every repository the token's user sees on GitHub, set up on CircleCI or not,
+  so a head carrying `.circleci/config.yml` in a repository never set up there -- a template repository whose
+  configuration is for the repositories created from it -- was waited for until the timeout
+  (`unfinished: circleci pipeline for <sha> (absent)`). CircleCI is now part of the verdict only when the project has
+  run at least one pipeline; a project without one is judged from GitHub alone with a warning in the document, like a
+  repository without a project.
+
+## [8.95.1] - 2026-09-24
+
+### Changed
+
+- `gen circleci`: the generated pipelines pin architect orb 10.10.0, whose `architect` executor bundles gitsemver 3
+  like its `app-build-suite` executor. From 10.8.0 to 10.9.0 a branch pipeline tagged its image with gitsemver 2's
+  `X.Y.Z-dev.<branch>.<date>.<time>.h<sha>` and stamped its chart with gitsemver 3's `X.Y.Z-r<branch-hash>t<timestamp>h<sha>`,
+  so the branch chart named an image that was never pushed and `execute-chart-tests` hung in `helm --wait`
+  ([architect-orb#956](https://github.com/giantswarm/architect-orb/issues/956)). Dev image tags now follow the
+  gitsemver 3 schema: a Flux filter that matches `-dev.<branch>.` stops matching new builds and selects a branch
+  with `^.*-r<branch-hash>t[0-9]{14}h[0-9a-f]{7}$` (`gitsemver branch-hash <branch>`).
+
+## [8.95.0] - 2026-09-23
+
+### Changed
+
+- `gen circleci`: the generated pipelines pin architect orb 10.9.0. Its `go-build` takes the compile parallelism from
+  the executor's cgroup CPU quota instead of the host's `nproc`, which since 10.6.1 ran `-p 36` on a 2-vCPU `medium`
+  executor and killed heavy builds in `Build binaries`
+  ([architect-orb#952](https://github.com/giantswarm/architect-orb/issues/952), 10.8.1). On tag builds `go-test`
+  stamps `pkg/project.version` with the tag, and the files the build writes no longer mark the build info `+dirty`
+  (10.9.0). Its chart jobs run app-build-suite 2.4.1, which fails a chart whose rendered `gsoci.azurecr.io` image
+  references the registry does not carry (10.8.0).
+  `build-chart` packages the chart before the pipeline pushes its own image, and a branch without `branchPublish`
+  never pushes it. So in a repository that builds an image, `build-chart` sets
+  `ABS_DISABLE_HELM_IMAGE_REFERENCE_VALIDATOR=true` in a `pre-steps` step, and the check runs in `push-chart` and
+  `push-chart-release`: they require the image job and run app-build-suite again before they publish. A chart of
+  images built elsewhere keeps the check in `build-chart`. A template repository's `build-chart` sets the variable
+  on the job, because the chart it renders pulls fixture images no registry carries. No job, parameter or required
+  check changes name.
+
+## [8.94.2] - 2026-09-23
+
+### Fixed
+
 - `gen precommit` skips protobuf-generated code in every hook: a top-level `exclude` matches `*_pb.*`, `*_pb2*.py`
   and `*.pb.go` with its variants. `end-of-file-fixer` rewrote the buf-generated `*_pb.ts` files of a repository on
   every run, their next generation undid it, and the generated `pre-commit` check stayed red, so align-files could
   not land there. Hand-written files next to the output, a `gen/` directory's `README.md` and `buf.gen.yaml`
   included, are still checked, and so is `zz_generated.app-platform.values.yaml`, which triggers the helm-schema hook
   ([#2392](https://github.com/giantswarm/devctl/issues/2392)).
+
+## [8.94.1] - 2026-09-23
+
+### Fixed
+
+- `devctl release wait` (and the release wait of `devctl pr merge`) probes a chart under the `name` its
+  `helm/<dir>/Chart.yaml` declares at the tag, where `<dir>` is `gen.ci.chartName` or the repository (generated CI)
+  or the push job's `chart` parameter (hand-written CI); `--catalog` looks the same name up in the index. Both only
+  choose the directory the architect orb packages, and `helm push` names the OCI repository after the packaged chart.
+  Before, a repository renamed after its chart was created (`helm/<old-name>`, `name: <repo>`) was probed under the
+  directory name and never confirmed: exit 2, exit 9 after a merge. A `Chart.yaml` that is missing, does not parse or
+  declares no name is exit 7 naming the file ([#2388](https://github.com/giantswarm/devctl/issues/2388)).
+
+## [8.94.0] - 2026-09-23
+
+### Changed
+
+- The version check that precedes every command, `version check`, `version update` and `repo validate` read GitHub
+  with the `giantswarm-devctl` App login when there is no token in the environment, through
+  `authstore.ResolveGitHub`: a token in `DEVCTL_GITHUB_TOKEN`, `GITHUB_TOKEN` or `OPSCTL_GITHUB_TOKEN` (`repo validate
+  --github-token-envvar` names one variable instead; its default is now those three) overrides it with the resolver's
+  warning, printed once per invocation. The token stays optional: with neither the reads stay anonymous (`repo
+  validate`: the embedded schema, names unchecked), and with `CI` set the keychain is never read. The version check
+  resolves the token only when it asks GitHub, never while its one-hour cache is fresh. `pkg/updater` reads releases
+  through its own GitHub source, so the selfupdate library no longer picks up `GITHUB_TOKEN` by itself, and follows
+  `DEVCTL_GITHUB_API_URL` ([#2381](https://github.com/giantswarm/devctl/issues/2381)).
+
+## [8.93.1] - 2026-09-23
+
+### Fixed
+
 - `gen renovate` reads the repository of the `github>giantswarm/<name>:renovate-custom.json5` extends entry from
   the git origin remote when `--repo-name` is not given (`git remote get-url origin`, the `giantswarm/<name>` path
   of an https or ssh URL, `.git` stripped), no longer from the working directory's name. A worktree or a clone in
@@ -899,13 +1734,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   generated config names the repository. `gen workflows` reads cliff.toml's `[remote.github].repo` with the same
   parser, so an origin that names no `<owner>/<name>` (a local path) renders `repo = ""` like a missing one
   ([#2389](https://github.com/giantswarm/devctl/pull/2389)).
-- `devctl release wait` (and the release wait of `devctl pr merge`) probes a chart under the `name` its
-  `helm/<dir>/Chart.yaml` declares at the tag, where `<dir>` is `gen.ci.chartName` or the repository (generated CI)
-  or the push job's `chart` parameter (hand-written CI); `--catalog` looks the same name up in the index. Both only
-  choose the directory the architect orb packages, and `helm push` names the OCI repository after the packaged chart.
-  Before, a repository renamed after its chart was created (`helm/<old-name>`, `name: <repo>`) was probed under the
-  directory name and never confirmed: exit 2, exit 9 after a merge. A `Chart.yaml` that is missing, does not parse or
-  declares no name is exit 7 naming the file ([#2388](https://github.com/giantswarm/devctl/issues/2388)).
+
+## [8.93.0] - 2026-09-23
+
+### Changed
+
+- `deploy`, `pr approve-align`, `pr approve-merge-renovate` and `release create` act with the `giantswarm-devctl`
+  App login by default, through `authstore.ResolveGitHub`: no personal token is needed after `devctl auth login
+  --github-only`. A token in `DEVCTL_GITHUB_TOKEN`, `GITHUB_TOKEN` or `OPSCTL_GITHUB_TOKEN` overrides the login and
+  prints the resolver's warning once; with neither they exit 8 naming `devctl auth login --github-only` instead of
+  failing with an error about `GITHUB_TOKEN`. `release create` resolves one token and builds every GitHub client of
+  the release from it. A 404 from GitHub in `deploy` or `release create` under the App login names its likely cause:
+  the App reaches the giantswarm organization and public repositories only, a token in the environment reaches the
+  rest (`authstore.GitHubNotFoundHint`, `githubclient.ExplainNotFound`). `deploy` passes the token to git as basic
+  auth instead of in the remote URL, so a git error quoting the URL no longer prints it
+  ([#2380](https://github.com/giantswarm/devctl/issues/2380)).
+
+## [8.92.1] - 2026-09-23
+
+### Fixed
+
 - `devctl pr wait`, `devctl pr merge` and `devctl release wait` wait for a spent rate limit instead of ending on it
   with exit 7: a GitHub or CircleCI read refused with `403` or `429` and `X-RateLimit-Remaining: 0` is sent again a
   second after `X-RateLimit-Reset`, one with `Retry-After` (a secondary limit, CircleCI's `429`) that much later,
@@ -913,36 +1761,84 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   with exit 2 (9 after a merge), the reason naming the reset and the deadline. go-github's own bookkeeping no longer
   refuses the reads after an answer that spent the budget ("not making remote request"). A `403` with budget left is
   an answer, as before ([#2373](https://github.com/giantswarm/devctl/issues/2373)).
+
+## [8.92.0] - 2026-09-23
+
+### Added
+
+- `authstore.ResolveGitHub(ctx, envVars...)`, the one resolver of the GitHub token a command for people acts
+  with: a token in `DEVCTL_GITHUB_TOKEN`, `GITHUB_TOKEN` or `OPSCTL_GITHUB_TOKEN` (or the one variable a
+  `--github-token-envvar` names) is an explicit override that carries one warning naming the variable and
+  `devctl auth login --github-only`; without one, the `giantswarm-devctl` App login from the keychain, refreshed when
+  expired; neither is `ErrAuthRequired`, exit 8. With `CI` set the keychain is never read and nothing warns. It never
+  falls back from one source to another and never asks `gh auth token`. The token names its `Source` (`keychain` or
+  `$NAME`). `devctl auth status` warns when such a variable overrides the App login, its exit code unchanged, and
+  `docs/auth.md` describes the GitHub token of every command
+  ([#2379](https://github.com/giantswarm/devctl/issues/2379)).
+
+### Changed
+
+- A command for people that fails with an error carrying its exit code (`agentcli.ExitCoder`) exits with that
+  code: `ErrAuthRequired` is exit 8 for every command, its one sentence on stderr, so a `repo` command without a
+  muster login exits 8 as `docs/auth.md` says. Before, every such error was exit 2
+  ([#2379](https://github.com/giantswarm/devctl/issues/2379)).
+
+## [8.91.7] - 2026-09-23
+
+### Fixed
+
+- A created repository's scaffold passes `gen.ci.chartReleaseGateJob` to `gen circleci` as
+  `--chart-release-gate-job`, as align-files does, so its first CircleCI configuration gates the release chart push
+  on the declared job. Before, the scaffold left the key out and the gate appeared only with the first align. A test
+  holds every `gen.ci` key of the embedded schema to the flag the scaffold's `gen circleci` line passes.
+
+## [8.91.6] - 2026-09-23
+
+### Fixed
+
 - The embedded schema copy (`pkg/reposetup/schema/repositories.schema.json`) carries `gen.ci.chartReleaseGateJob`,
   the team-file key for `gen circleci --chart-release-gate-job`. Validation against the embedded copy, which
   giantswarm-repo-manager runs on every declared entry, refused an entry setting it as `not a field of the
   repositories schema` (`entry-refused`, no set-up checks), while giantswarm/github's schema carries the key and the
   reconciler aligns the repository with it. A test holds every `gen circleci` flag a team file sets to a `gen.ci` key
   of the embedded copy.
-- A created repository's scaffold passes `gen.ci.chartReleaseGateJob` to `gen circleci` as
-  `--chart-release-gate-job`, as align-files does, so its first CircleCI configuration gates the release chart push
-  on the declared job. Before, the scaffold left the key out and the gate appeared only with the first align. A test
-  holds every `gen.ci` key of the embedded schema to the flag the scaffold's `gen circleci` line passes.
+
+## [8.91.5] - 2026-09-23
+
+### Fixed
+
 - A newer devctl release no longer breaks the agent-facing commands' contract: `pr wait`, `pr merge`, `release
   wait`, `auth login` and `auth status` run the version check after their argument checks and report an outdated
   devctl in their document, exit 7 with the reason naming `devctl version update` and `DEVCTL_UNSAFE_FORCE_VERSION`.
   Before, the check that precedes every command printed its error for a person and devctl exited 2, the code of a
   `timeout`, with no document, from the moment a release was published until the binary was updated.
+
+## [8.91.4] - 2026-09-23
+
+### Changed
+
+- A command called the wrong way says what is wrong and how to call it, without a stack trace: a missing
+  argument is named from the usage line (`Missing [OWNER/]REPOSITORY`), an extra one is `Unexpected argument "b"`,
+  an unknown command or flag, or a flag the command's validation refuses, is followed by the command's usage line
+  and `Run 'devctl repo status --help' for more information.` An unknown subcommand of a group (`devctl repo
+  statsu`) is an error with the subcommands it resembles (`did you mean "status"?`) and exit 2, where it printed
+  the group's help and exited 0. Every command declares the arguments it takes, so a stray argument to a command
+  that takes none (`devctl gen circleci x`) is refused instead of ignored. The stack trace of an error is printed
+  only at `--log-level debug`. The notice that a newer devctl is released is one line naming the version, the
+  update command and `DEVCTL_UNSAFE_FORCE_VERSION`.
+
+### Fixed
+
 - The agent-facing commands (`pr wait`, `pr merge`, `release wait`, `auth login`, `auth status`) answer a flag that
   does not parse (`--timeout 30`, an unknown flag) and wrong arguments with their JSON document and exit 7 (`usage`),
   the flag error naming `--help`. Before, cobra printed the error and devctl exited 2, the code of a `timeout`, with
   no document; `release wait` did the same for a missing or extra argument, and `auth login` and `auth status`
   for any argument.
-- `devctl repo status` and `devctl repo get` read a record whose declaration the schema refuses: the manager keeps the
-  declaration's `problems` as `field: message` strings (its inventory record, the Dev Portal's `InventoryRecord`),
-  where devctl expected `{field, message}` objects and failed every such record with `cannot unmarshal string into Go
-  struct field Declaration.declaration.problems`. A write's dry run keeps its problems as objects, as the manager
-  answers them.
-- `devctl version update` and `devctl version check` ask GitHub for the latest release every time and refresh the
-  version cache with the answer. Right after a release the one-hour cache still named the older version, so an explicit
-  update answered "You are already using the latest version." until `--no-cache` or the hour passed
-  ([#2370](https://github.com/giantswarm/devctl/issues/2370)). The check before every other command keeps using the
-  cache within its hour; `--no-cache` now only leaves the cache as it is.
+
+## [8.91.3] - 2026-09-23
+
+### Fixed
+
 - `devctl pr wait`, `devctl pr merge` and `devctl release wait` retry a read that GitHub or CircleCI did not answer
   instead of ending on it: a reset connection, an EOF, a try over 60 s or a 5xx is sent again after 2 s, the pause
   doubling up to 60 s, for up to eight tries in a row (about three minutes), never past the wait's timeout, each
@@ -953,21 +1849,110 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   HEAD are retried; the merge, the branch update and the branch deletion are sent once. The e2e mocks answer
   `reset: true` with a TCP reset ([#2359](https://github.com/giantswarm/devctl/issues/2359),
   [#2361](https://github.com/giantswarm/devctl/issues/2361)).
+
+## [8.91.2] - 2026-09-23
+
+### Fixed
+
+- `devctl repo status` and `devctl repo get` read a record whose declaration the schema refuses: the manager keeps the
+  declaration's `problems` as `field: message` strings (its inventory record, the Dev Portal's `InventoryRecord`),
+  where devctl expected `{field, message}` objects and failed every such record with `cannot unmarshal string into Go
+  struct field Declaration.declaration.problems`. A write's dry run keeps its problems as objects, as the manager
+  answers them.
+
+## [8.91.1] - 2026-09-23
+
+### Fixed
+
+- `devctl version update` and `devctl version check` ask GitHub for the latest release every time and refresh the
+  version cache with the answer. Right after a release the one-hour cache still named the older version, so an explicit
+  update answered "You are already using the latest version." until `--no-cache` or the hour passed
+  ([#2370](https://github.com/giantswarm/devctl/issues/2370)). The check before every other command keeps using the
+  cache within its hour; `--no-cache` now only leaves the cache as it is.
+
+## [8.91.0] - 2026-09-23
+
+### Changed
+
+- `devctl pr merge` waits for the release its merge triggers: after the merge it runs the wait of `release wait --pr`
+  on the merge commit it produced, so one blocking call returns when CI was green, the pull request is merged and the
+  release is pullable (its images and charts resolve to a digest, its tag pipeline is green). The document gains
+  `release` (the release wait's `verdict` and `reason` with its result: tag, sha, models, artifacts with digests,
+  pipeline); `--release-timeout` bounds that wait (30 minutes) apart from `--timeout`; `--no-release-wait` ends the
+  command at the merge. A merge that no release follows is exit 0: a repository that does not tag merge commits, or one
+  whose auto-release run finished without a tag. After a merge, exit 6 (`release_failed`) says the release failed and
+  exit 9 (`release_unconfirmed`) that it was not confirmed in time or could not be judged; both mean merged, never
+  merge again. The agent no longer needs a second `devctl release wait --pr` call after its merge.
+- `devctl release wait --pr` reads the merge commit's auto-release run while no tag is on the merge commit: a run that
+  finished without a tag ends the wait at once as exit 3 with the new verdict `no_release` instead of a timeout, a run
+  that failed before it tagged is exit 1, a run cancelled by a newer push is exit 3 naming the superseding push. A
+  legacy repository's `--pr`, and one without any release workflow or declared release model, is `no_release` too.
+
+## [8.90.1] - 2026-09-23
+
+### Changed
+
+- `release wait` declares a CircleCI release `available` only when every artifact resolves **and** the tag
+  pipeline is green: every workflow (newest run per name) finished, none failed. The artifacts the team-file entry or
+  the push jobs name are not the whole release: a repository's own tag jobs in `.circleci/custom.yml` push and sign
+  more (vm-manager's guest image, muster's CRD chart, backstage's control-plane catalog entry), and `release wait
+  giantswarm/vm-manager --pr 78` answered `available` for v0.22.3 while its `guest-image` job was still running.
+  Artifacts that resolve under a running pipeline now keep the wait polling (`every artifact is available; pipeline
+  N unfinished: …` on `--progress`); a tag job that fails after them is exit 1 with the job in `failedJobs`, a
+  pipeline that does not finish in time exit 2 saying the artifacts are there. The Aliyun mirror is part of the
+  wait; it typically ends within a minute of the chart push. An exit 0 document never lists an unfinished workflow
+  ([#2364](https://github.com/giantswarm/devctl/issues/2364)).
+
+## [8.90.0] - 2026-09-23
+
+### Added
+
+- `devctl gen circleci --chart-release-gate-job <job>` (`gen.ci.chartReleaseGateJob` in the giantswarm/github team
+  file): the generated `push-chart-release` job requires the named repo-owned `custom.yml` job, the chart counterpart of
+  `--image-pre-build-job`, for a check that has to refuse a release before its chart is pushed -- a meta chart whose
+  component floor resolves to no published chart (giantswarm/agent-platform#624). The branch dev push is not gated; a
+  repository without a chart release push refuses the flag.
+
+## [8.89.1] - 2026-09-23
+
+### Changed
+
+- `gen circleci`: the generated pipelines pin architect orb 10.6.3, whose `image-prepare-tag` fails a branch pipeline at a
+  tagged commit instead of resolving the release version and publishing it again
+  ([architect-orb#942](https://github.com/giantswarm/architect-orb/issues/942)).
+
+## [8.88.1] - 2026-09-23
+
+### Fixed
+
 - `devctl pr merge`'s refusal of another human's pull request (exit 5) names every author it accepts -- the caller,
   bots and GitHub Apps (the `Bot` user type or a `[bot]` login) and the automation accounts `architectbot` and
   `taylorbot` -- where it said "the caller's own pull requests and bots' only", which left a reader guessing whether
   a release pull request counted; an automation login whose account id is not the pinned one is named with both ids,
   so the login alone opening nothing is visible in the reason ([#2340](https://github.com/giantswarm/devctl/issues/2340)).
-- A repository created with `devctl repo create` with the `app` flavour merges its first pull request on green CI. The
-  scaffold carries the chart tests its generated pipeline's `execute-chart-tests` job runs, beside the generated
-  `tests/ats/pyproject.toml`: `.ats/main.yaml`, which skips the functional scenario and the upgrade scenario (a new
-  repository has no released chart to upgrade from), and `tests/ats/test_smoke.py`, one `smoke` test that the job's
-  kind cluster is reachable. Before, app-test-suite picked the pytest executor from the generated dependency file and
-  the job failed in the smoke scenario's pre-run -- "Pytest tests were requested, but no python source code file was
-  found" -- on the first pull request of every new chart repository; with a test in place the upgrade scenario refused
-  next, having no released chart to upgrade from. Both files are the repository's own: a template that carries a test
-  or the configuration keeps it, and an align run never writes them
-  ([#2354](https://github.com/giantswarm/devctl/issues/2354)).
+
+## [8.88.0] - 2026-09-23
+
+### Added
+
+- `repo reconcile`'s circleci step verifies the webhook CircleCI installs on the follow: after `followed, setup
+  workflows on, checkout key present` it reads the repository's webhooks and requires one active hook for
+  `https://circleci.com/hooks/github` with the `push` event, `webhook present` in the summary. A followed project
+  without it is the finding `circleci-webhook-missing` (not advisory: no push and no tag reaches CircleCI, so no branch
+  builds and the first release tag goes unbuilt), its fix naming what installs the hook -- a follow by a GitHub admin of
+  the repository whose CircleCI grant carries the hook scope, `POST /api/v1.1/project/github/{owner}/{repo}/follow`
+  or Project Settings; devctl cannot create it, CircleCI signs it with its own secret. Webhooks the identity cannot
+  read (a read identity without the `repository_hooks` permission) are `unchecked`, never guessed. Before, the
+  reconciler's follow as architectbot under its temporary admin grant left a project followed with a deploy key and
+  setup workflows but no hook, every branch build silently absent and the step reading `ok`. The inventory record's
+  `circleci` facts carry `webhook` for the manager to fill from the step, and `devctl repo status` prints
+  `webhook present` / `webhook missing` in the `circleci` line when it is set
+  ([#2332](https://github.com/giantswarm/devctl/issues/2332)).
+
+## [8.87.5] - 2026-09-23
+
+### Fixed
+
 - `devctl release wait` waits out a tag pipeline whose jobs CircleCI does not list yet. Right after the auto-release
   tags a merge, CircleCI knows the pipeline's setup workflow by id but answers 404 on `GET /workflow/{id}/job` for a
   short while; the wait read that as a tooling failure and ended with exit 7 (`reading the jobs of workflow setup:
@@ -989,12 +1974,45 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   carries the generated pipeline is exit 7 naming that, where it crashed. The CI model is still cross-checked: an
   entry with `gen.ci.generate` set has to match the files
   ([#2333](https://github.com/giantswarm/devctl/issues/2333)).
+
+## [8.87.4] - 2026-09-23
+
+### Fixed
+
+- A repository created with `devctl repo create` with the `app` flavour merges its first pull request on green CI. The
+  scaffold carries the chart tests its generated pipeline's `execute-chart-tests` job runs, beside the generated
+  `tests/ats/pyproject.toml`: `.ats/main.yaml`, which skips the functional scenario and the upgrade scenario (a new
+  repository has no released chart to upgrade from), and `tests/ats/test_smoke.py`, one `smoke` test that the job's
+  kind cluster is reachable. Before, app-test-suite picked the pytest executor from the generated dependency file and
+  the job failed in the smoke scenario's pre-run -- "Pytest tests were requested, but no python source code file was
+  found" -- on the first pull request of every new chart repository; with a test in place the upgrade scenario refused
+  next, having no released chart to upgrade from. Both files are the repository's own: a template that carries a test
+  or the configuration keeps it, and an align run never writes them
+  ([#2354](https://github.com/giantswarm/devctl/issues/2354)).
+
+## [8.87.3] - 2026-09-23
+
+### Added
+
+- `circleciclient.Config.Anonymous`: a client without a token, for a reader that holds none -- it reads what CircleCI
+  answers without one, the pipelines, workflows and jobs of a public project (a private one is 404), and sends no
+  `Circle-Token` header; `New` still refuses an empty token without the flag, and a token with it, so a reader meant
+  to hold a token never reads anonymously by accident. `circleciclient.WorkflowURL` names a workflow's page beside
+  `PipelineURL` ([#2352](https://github.com/giantswarm/devctl/issues/2352)).
+
+### Fixed
+
 - `repo reconcile`'s release step counts only the newest run of every workflow of the tag's pipeline, as `release
   wait` does: a rerun from failed is a second workflow of the same name, and the run it replaced keeps its failed
   status for ever, so a tag revived by a rerun read `red-release` until the next tag. The finding's fix no longer
   calls the tag dead: it names the rerun from failed (the rerun checks out the same commit and runs the publish
   jobs) and `devctl release wait` to confirm, the next tag only when the cause is in the code
   ([#2352](https://github.com/giantswarm/devctl/issues/2352)).
+
+## [8.87.2] - 2026-09-23
+
+### Fixed
+
 - `devctl pr merge` merges the release pull requests Giant Swarm's automation opens. `taylorbot` and `architectbot`
   are plain GitHub user accounts -- no `[bot]` login, no `Bot` user type -- so the author check could not tell them
   from a teammate and refused every one with exit 5, "opened by taylorbot, not by you". taylorbot opens the
@@ -1006,6 +2024,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   `giantswarm-align-files[bot]`, `giantswarm-marge[bot]`, `heraldbot[bot]`, `giantswarm-mctlbot[bot]`) merged before
   and merges now.
 
+## [8.87.1] - 2026-09-23
+
+### Fixed
+
 - `repo reconcile`'s protection step compares a ruleset's bypass list only when the identity can read it: GitHub
   returns `bypass_actors` to an identity with write access to the ruleset alone, so a read identity (giantswarm-repo-manager's
   inventory App behind `repo status`) got the ruleset without the field, the step compared an empty list against the App,
@@ -1014,12 +2036,38 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   rules are compared, the bypass list is not, and the summary says `bypass actors not readable by this identity, not
   compared`; an identity that reads the list compares and writes it as before (#2346).
 
+## [8.87.0] - 2026-09-23
+
+### Added
+
+- The team-file entry declares the repository's own rulesets, the ones a team keeps beside the engine's: `rulesets`
+  names them, and `repo reconcile`'s protection step leaves a ruleset named there alone and silent. A ruleset the
+  repository carries and the entry does not name is the advisory `foreign-ruleset` as before, its fix naming the
+  field; a name the repository carries no ruleset for is the new advisory `declared-ruleset-missing` -- a ruleset
+  deleted on GitHub, or a name that never matched one -- so a stale declaration does not stand unread. Both leave
+  `converged` true, and the engine still writes `devctl: default branch` and no other ruleset: creating, changing and
+  deleting a declared ruleset stays with the team. Before, the fix text asked for a declaration the entry could not
+  carry, so a repository that keeps a ruleset knowingly -- the fork lines' `protect-giantswarm`, `protect-main`,
+  `protect-mirror-main` and `protect-consumed-branch`, which guard the upstream mirror and the consumed branch --
+  carried the finding on every run for ever ([#2344](https://github.com/giantswarm/devctl/issues/2344)). The embedded
+  schema copy (`pkg/reposetup/schema/repositories.schema.json`) carries the field; the live schema in
+  giantswarm/github accepts it once its own change merges.
+
+## [8.86.2] - 2026-09-23
+
+### Fixed
+
 - `devctl repo reconcile`'s protection step passes over a repository ruleset whose enforcement is `disabled`: it
   enforces nothing, so it neither conflicts with `devctl: default branch` nor leaves a person anything to weigh, and
   the advisory `foreign-ruleset` no longer names it on every run. A ruleset on `evaluate` is reported like an active
   one, its rules being live in the audit log. Before, every ruleset the engine did not create was reported whatever
   it enforced -- a disabled Copilot review ruleset as loudly as an active branch protection
   ([#2344](https://github.com/giantswarm/devctl/issues/2344)).
+
+## [8.86.1] - 2026-09-23
+
+### Fixed
+
 - `devctl repo reconcile --mode check` without `--devctl-app-id`, and with it giantswarm-repo-manager's read-mode
   engine behind `repo status`, reads a repository on the ruleset `devctl: default branch` as converged. The protection
   step reads the repository's rulesets first and compares the ruleset's rules with the write path's comparison, the
@@ -1031,16 +2079,49 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   App for the reconciler, `--devctl-app-id` the write path's remedy. Before, a run without the id went to the classic
   protection without reading the rulesets, found none on an aligned repository and planned to write one: every aligned
   repository read "not converged", the advisory naming a switch made long since (#2341).
+
+## [8.86.0] - 2026-09-23
+
+### Changed
+
+- `devctl repo reconcile` writes the repository admins (GitHub's repository role Admin) as a third bypass actor of the
+  ruleset `devctl: default branch`, in `pull_request` mode beside the devctl App and the owning team: `devctl pr merge`
+  run by an admin of the repository merges their own green pull request through the ruleset in every aligned
+  repository, as classic protection without `enforce_admins` let them, every bypass in the audit log. A ruleset written
+  before gains the actor on the next run; `agentMerge: false` still leaves the list empty. The decline's reason, the
+  help and the docs name the role.
+
+### Fixed
+
 - A merge `devctl pr merge` has declined for the review rule says whom devctl acted as (the user token of `devctl auth
   login`; the App's bypass covers installation tokens devctl never holds), which rulesets of the base carry a pull
   request rule and their bypass actors, and the team whose file declares the entry: one of its members or a repository
   admin merges it, or a reviewer with write access approves it first. The help and `docs/pr-merge.md` said the App's
   bypass passed the review rule.
+
+## [8.85.7] - 2026-09-23
+
+### Fixed
+
 - `repo reconcile`'s release step verifies the latest release only when its tag is a `vX.Y.Z` tag (a pre-release
   suffix allowed): the shape auto-release cuts and the generated pipeline's `/^v.*/` filter builds. A latest release
   tagged otherwise -- per component, `base/v0.1.0` -- ends the step `skipped` naming the tag, with no CircleCI request and
   no finding, where it was reported as `missed-tag-build` the repository could never clear
   ([#2330](https://github.com/giantswarm/devctl/issues/2330)).
+
+## [8.85.6] - 2026-09-23
+
+### Fixed
+
+- `repo reconcile`: the catalog step no longer dispatches the apps-to-teams mapping for a chart whose reference is a
+  template's placeholder (`{APP-NAME}`, `{MCP-NAME}`): the mapping's generator drops such a reference, so the dispatch
+  changed nothing and the repository never converged. The scaffold step's chart check does not read the chart of a
+  `componentType: template` entry, which lives under a placeholder directory and is built from a rendered copy by the
+  template's own pipeline; it reported `abs-prerequisite: no chart at helm/<name>/Chart.yaml` before (#2326).
+
+## [8.85.5] - 2026-09-23
+
+### Fixed
 
 - `devctl repo reconcile` and `repo status` read `gen.ci.generate` as the entry declares it: an existing entry with
   `gen` but no `gen.ci` keeps the repository's own CircleCI configuration, as the schema says, and the circleci and
@@ -1050,10 +2131,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   a repository released by GitHub Actions was planned a CircleCI follow with a deploy key, and its release reported
   as a missed tag build.
 
+## [8.85.4] - 2026-09-23
+
+### Fixed
+
 - `devctl repo reconcile`: the settings step keeps rebase merges on a fork line (flavour `fork`) and leaves its merge
   commits as the repository has them; the rest of the settings baseline applies as everywhere. A fork line's carried
   patches land by rebase merge, one upstream-ready commit each, and a re-pin merges upstream's history: with the
   squash-only baseline applied, GitHub refused the line's merges, so the fork lines could not opt in to alignment.
+
+## [8.85.3] - 2026-09-23
+
+### Fixed
 
 - The scaffold step's `abs-prerequisite` check reads the chart at `helm/<gen.ci.chartName>` when the entry sets the
   field, `helm/<repository>` otherwise: a repository whose chart is named otherwise (docs-proxy ships
@@ -1061,23 +2150,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   could not converge. When the declared directory has no chart, the fix names the charts the repository has under
   `helm/` and the `gen.ci.chartName` remedy: a repository renamed on GitHub keeps its chart under the old name.
 
-- `repo reconcile`: the catalog step no longer dispatches the apps-to-teams mapping for a chart whose reference is a
-  template's placeholder (`{APP-NAME}`, `{MCP-NAME}`): the mapping's generator drops such a reference, so the dispatch
-  changed nothing and the repository never converged. The scaffold step's chart check does not read the chart of a
-  `componentType: template` entry, which lives under a placeholder directory and is built from a rendered copy by the
-  template's own pipeline; it reported `abs-prerequisite: no chart at helm/<name>/Chart.yaml` before (#2326).
+## [8.85.2] - 2026-09-22
+
+### Fixed
+
 - The repo commands call giantswarm-repo-manager's tools through muster's `call_tool` meta-tool and unwrap its envelope,
   which is how muster exposes every server's tool to a session (the muster CLI and the platform's agents do the same):
   8.85.0 called the tools directly and muster answered `tool not found` for every one of them. The e2e muster mock now
   behaves like muster -- the meta-tools listed, server tools through `call_tool` in the envelope, direct calls refused --
   so the `repo-*` and `auth-login-muster` scenarios prove the real path. `auth login --muster-only` treats only
   `Server 'giantswarm-repo-manager' not found` as the manager's absence.
+
+## [8.85.1] - 2026-09-22
+
+### Fixed
+
 - `devctl auth login --muster-only` identifies devctl by its Client ID Metadata Document
   (`https://giantswarm.github.io/muster/devctl.json`, served next to the muster agent's) instead of registering a
   client at muster's `/oauth/register`, which gazelle's muster gates with a registration token: the sign-in was refused
   with `invalid_token` before any browser opened. A server that does not advertise
   `client_id_metadata_document_supported` is refused with the reason; the e2e muster mock accepts a metadata-document
   client id.
+
+## [8.85.0] - 2026-09-22
 
 ### Added
 
@@ -1101,6 +2196,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   reconciler run, the run awaited, a run that never reported and the inventory's own findings; `-o json` prints the
   record as the manager answered.
 
+## [8.84.0] - 2026-09-22
+
+### Changed
+
 - `devctl auth login --muster-only`: the sign-in to muster for the `repo` commands, which call giantswarm-repo-manager
   through it. The authorization code flow with PKCE runs against muster's own authorization server, discovered from
   the endpoint (RFC 9728, RFC 8414); devctl registers itself there once per device, binds the token to the endpoint
@@ -1112,6 +2211,92 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   (its OAuth server and MCP endpoint) and `browser: true`, the harness playing the person at the browser; scenarios
   `auth-login-muster` and `auth-login-muster-no-manager`.
 
+## [8.83.0] - 2026-09-22
+
+### Changed
+
+- `repo reconcile`: the protection step's ruleset names the repository's owning team as a second bypass actor
+  beside the devctl App, both in `pull_request` mode -- the organization's team of the team file's slug, its id
+  read once per run. GitHub evaluates a request made with the App's user access token as the person, not as the
+  App, so the App's bypass alone let nobody merge through the API without a second review: a team member's own
+  green pull request now merges through their token, direct pushes stay forbidden, every bypass is audited.
+  `agentMerge: false` keeps the list empty as before; a repository already on the ruleset gains the team actor
+  and nothing else; a secret team, which GitHub refuses as bypass actor, is reported as the finding
+  `team-bypass-refused` naming the team and its privacy, and the ruleset is written with the App alone (#2315).
+
+## [8.82.10] - 2026-09-22
+
+### Fixed
+
+- `pr wait` exited 4, `required_missing`, at the timeout when a required context was absent although a run of the
+  head was still pending, a fork's workflow run awaiting a maintainer's approval among them, whose approval is what
+  reports the contexts. The timeout is now exit 2 whenever anything is still pending, with `unfinished` naming the
+  run and the absent contexts; exit 4 is a fail-fast at the poll that sees every check, status, run and workflow
+  of the head finished with a required context still absent, without waiting for the timeout. The e2e scenario
+  `fork-awaiting-approval` requires contexts and asserts 2; the new `required-never-reported` asserts 4 before the
+  timeout; `docs/pr-wait.md` states the precedence (#2313).
+
+## [8.82.9] - 2026-09-22
+
+### Fixed
+
+- A one-commit pull request squash-merged under its commit's own subject rather than the title the title check had
+  accepted, because GitHub's default names the squash commit `COMMIT_OR_PR_TITLE`; an unconventional subject is then
+  neither released nor listed by auto-release (git-cliff's `filter_unconventional`), and the next merge's release notes
+  omit the pull request. The repository baseline of `repo reconcile`, `repo setup` and `repo status` now names the squash
+  commit after the pull request's title (`squash_merge_commit_title: PR_TITLE`), read with the repository or through
+  GraphQL like the six merge settings and repaired with them; the auto-release decide step names an unconventional
+  subject in the unreleased range as a workflow warning, where before the run only counted zero deciding commits.
+  Every declared repository carries GitHub's default today, so one that is not opted in to alignment reads
+  `settings drift: squash_merge_commit_title COMMIT_OR_PR_TITLE → PR_TITLE` on its next check until its team opts it
+  in (the nightly repairs the opted-in entries) or an administrator sets it by hand.
+
+## [8.82.8] - 2026-09-21
+
+### Fixed
+
+- `auth login` ran the GitHub device flow with a placeholder client id and GitHub refused it; the binary now carries the
+  client id of the `giantswarm-devctl` GitHub App (`Iv23liWio5REm4MfY2Mw`, owned by the `giantswarm` organization),
+  and `docs/auth.md` names the App (#2276).
+
+## [8.82.7] - 2026-09-21
+
+### Fixed
+
+- `repo status`, `repo checks`, `repo reconcile` and the reconcile engine's settings step as an identity without admin rights on
+  the repository (an App installation with `administration: read`, a member with read access) reported `allow_squash_merge`,
+  `allow_update_branch`, `allow_auto_merge` and `delete_branch_on_merge` as `false → true` drift on every repository:
+  `GET /repos/{owner}/{repo}` carries the six merge settings for admins only and an absent field read as `false`. The step
+  reads them through GraphQL (`Repository { mergeCommitAllowed squashMergeAllowed … }`, which answers any identity that
+  reads the repository) when the repository came without them, and reports them as an `unchecked` finding — never as
+  drift — when that read fails too. An admin identity costs no extra request.
+
+## [8.82.6] - 2026-09-21
+
+### Fixed
+
+- `reconcile.Refused` (the result of an entry the schema refuses: `devctl repo reconcile`, the reconciler's
+  artifact, giantswarm-repo-manager's check) reports `converged: false`: nothing was checked against the
+  declaration, so the repository is not set up as declared, and not drifted either -- the fix is in the entry.
+  `Result.Refused()` tells a refusal from drift; the table header and `devctl repo status` say "entry refused"
+  instead of "drift or failed steps". Before, a refused entry read as converged next to its refusal.
+
+## [8.82.5] - 2026-09-21
+
+### Fixed
+
+- `pkg/authstore` on Linux speaks the Secret Service API over D-Bus itself instead of through go-keyring: the default
+  collection is resolved through `ReadAlias` and unlocked only when its `Locked` property says so (a prompt is
+  completed through `org.freedesktop.Secret.Prompt`), items are searched, created (replacing the record of the same
+  identity), read and deleted on the resolved collection. oo7-daemon and KeePassXC, which refuse `Unlock` on the alias
+  path, now hold devctl's tokens; GNOME Keyring and KWallet keep working with the records written before. A failing
+  call reads `keychain <call> on <collection path> (<Secret Service process>): <error>`. macOS and Windows keep
+  go-keyring's backends (#2304).
+
+## [8.82.3] - 2026-09-21
+
+### Changed
+
 - e2e scenarios for `devctl pr merge`, the six paths the command encodes, each asserting the exit code and the JSON
   document against the mocked GitHub and CircleCI APIs: `own-green-merged` (the caller's own green pull request is
   squash-merged through the merge API and its branch deleted through the refs API), `other-human-refused` (exit 5
@@ -1120,13 +2305,43 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   the head, the new head waited for and merged), `merge-queue` (enqueued through GraphQL, merged by the queue, the
   branch deleted), `red-not-merged` (exit 1, nothing merged) (#2278).
 
-- e2e scenarios for `devctl pr wait`, the six field incidents the command encodes, each asserting the exit code
-  and the JSON document against the mocked GitHub and CircleCI APIs: `stage-gap` (a CircleCI workflow behind
-  `requires:` still running while the check list reads green ends green once it succeeds), `fork-awaiting-approval`
-  (a fork's workflow run awaiting approval keeps the wait open; exit 2 names the run), `conflicting-pr` (exit 3
-  before the first poll of the head), `retitled-stale-run` (a stale failed title check next to the passed rerun is
-  green), `red-circleci-workflow` (the newest run of a workflow failed: exit 1 naming it), `pr-wait-timeout` (a check
-  that stays queued: exit 2 naming it) (#2277).
+## [8.82.2] - 2026-09-21
+
+### Changed
+
+- `e2e/scenarios/renamed-image`, `hand-written-ci`, `release-assets-only`, `failed-tag-pipeline`,
+  `rerun-replaces-failed`, `stale-registry-login` and `release-wait-timeout`: `release wait` against the seven field
+  incidents, each asserting the exit code and the JSON document. Generated CI whose entry renames the image
+  (`gen.ci.image.name`) is probed under the override and never under the repository name; hand-written CI names its
+  two images through the tag pipeline's push jobs and both are probed; a repository with neither image nor chart is
+  available through its published release and green tag workflows (`kind: release-asset`); a failed workflow of the
+  tag pipeline is exit 1 with `pipeline.failedJobs`; a rerun of a failed workflow of the same name reads as green;
+  a stale docker login to the public registry never reaches the anonymous probe; artifacts that never appear while
+  the pipeline runs are exit 2 at the deadline. The registry mock's `staleLogin` refuses the requests that carry
+  credentials and serves anonymous reads, the answer a public registry gives (#2279).
+
+## [8.82.1] - 2026-09-21
+
+### Changed
+
+- `reconcile.Result.Requests` (`"requests": {"github": N, "circleci": M}` in the artifact, omitted when
+  nothing was counted) and the count on the summary's header line: what the run cost in requests to each
+  system, counted at the clients' transports through `reconcile.Counter`, an `http.RoundTripper` the CLI
+  builds both clients over (`githubclient.Config.Transport`, `circleciclient.Config.Transport`) and hands
+  to `reconcile.Runner.GitHubRequests` and `.CircleCIRequests`; the log names each step's cost (#2274).
+- `repo reconcile`, `repo setup`, `repo checks`: a check of a converged repository costs at most twenty GitHub
+  requests (giantswarm/backstage 18, giantswarm/klaus 19 measured; the devctl App id's ruleset reads add two).
+  The reported checks are the statuses and check runs of the newest merged pull request's head, from one page
+  of the recently merged pull requests (three requests; the branch's tags and commits are no longer read: a
+  check that reports only on a push to the default branch or on a tag never gates a pull request, and on an
+  auto-released repository every commit is a tag); without a merged pull request nothing has reported and
+  nothing is required or removed. The scaffold step reads the root listing alone (the head commit only when
+  `repo create` reports it); the renovate step looks the installation up only for a repository without a trace
+  of a run, and reads no trace on a repository younger than a day (#2274).
+
+## [8.82.0] - 2026-09-21
+
+### Changed
 
 - `devctl pr merge <owner/repo> <number> [--timeout 30m] [--rebase] [--update-branch] [--progress]`: the wait of
   `pr wait` (same verdicts, same codes), then a squash merge (`--rebase`: a rebase merge)
@@ -1140,37 +2355,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   `enqueued`. The engine is `pkg/prmerge` on `pkg/prwait`; `pkg/githubclient` gains the merge, update-branch,
   ref deletion, merge-queue rule and enqueue calls (#2278).
 
-- `reconcile.Result.Requests` (`"requests": {"github": N, "circleci": M}` in the artifact, omitted when
-  nothing was counted) and the count on the summary's header line: what the run cost in requests to each
-  system, counted at the clients' transports through `reconcile.Counter`, an `http.RoundTripper` the CLI
-  builds both clients over (`githubclient.Config.Transport`, `circleciclient.Config.Transport`) and hands
-  to `reconcile.Runner.GitHubRequests` and `.CircleCIRequests`; the log names each step's cost (#2274).
+## [8.81.1] - 2026-09-21
 
-- `devctl pr wait <owner/repo> <number> [--timeout 30m] [--progress]`: one bounded, blocking wait until the
-  pull request's head is green as the merge box sees it, red, or in a state no CI can turn green, then one
-  JSON document and an exit code (0 green, 1 red, 2 timeout naming what was unfinished, 3 draft/closed/
-  conflicting/behind a strict base, 4 a required context never reported, 7 usage, 8 authentication). Green
-  is the latest check run per name (a rerun replaces a stale failed run), every CircleCI workflow of the head
-  revision read from CircleCI (a job behind `requires:` has posted nothing to GitHub between stages), no
-  GitHub Actions run open or awaiting a fork's approval, and every required status context of the base's
-  protection and rulesets reported. CircleCI is consulted only when the head carries `.circleci/config.yml`
-  and the project exists; an upstream fork is judged from GitHub alone. Polls are conditional requests
-  (ETags; `githubclient.NewConditional`) at an interval from the rate-limit headers, 15 s to 60 s. The engine
-  is `pkg/prwait`, for `pr merge` to reuse (#2277).
+### Changed
 
-- `devctl repo reconcile --devctl-app-id` and `reconcile.Runner.DevctlAppID`: the numeric id of the devctl
-  GitHub App (the App's settings page; not the client id) and the switch to rulesets. With it the protection
-  step writes the default branch's repository ruleset `devctl: default branch` -- active on `~DEFAULT_BRANCH`,
-  so a rename or a fork line's declared branch needs no change; the baseline's review requirement; the required
-  checks on the reported-only rule, strict off, a GitHub Actions gate pinned to the GitHub Actions App; no
-  deletion, no force push; the App as bypass actor in `pull_request` mode unless the entry declares
-  `agentMerge: false` (then none, so nothing merges past the required review) -- and classic protection gives
-  way in the same run: its checks carried over, the ruleset written, the classic protection removed; the dry
-  run plans both, a second run plans nothing. A ruleset the engine did not create is left alone and reported
-  as the advisory finding `foreign-ruleset`. Without the id the step writes classic branch protection as
-  before, converged as before, and reports the missing id as the advisory finding `rulesets-not-enabled`: the
-  reconciler's wiring passes the id, so a devctl release alone moves no repository to rulesets.
-  `reposetup.Fields` gains `AgentMerge` (#2288).
+- e2e scenarios for `devctl pr wait`, the six field incidents the command encodes, each asserting the exit code
+  and the JSON document against the mocked GitHub and CircleCI APIs: `stage-gap` (a CircleCI workflow behind
+  `requires:` still running while the check list reads green ends green once it succeeds), `fork-awaiting-approval`
+  (a fork's workflow run awaiting approval keeps the wait open; exit 2 names the run), `conflicting-pr` (exit 3
+  before the first poll of the head), `retitled-stale-run` (a stale failed title check next to the passed rerun is
+  green), `red-circleci-workflow` (the newest run of a workflow failed: exit 1 naming it), `pr-wait-timeout` (a check
+  that stays queued: exit 2 naming it) (#2277).
+
+## [8.81.0] - 2026-09-21
+
+### Changed
 
 - `devctl release wait <owner/repo> (<vX.Y.Z|X.Y.Z> | --pr <n>) [--timeout 30m] [--catalog] [--progress]`:
   block until a tag's images and charts are pullable (`pkg/releasewait`). The release model comes from the
@@ -1189,6 +2388,77 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   document and the exit codes. `pkg/githubclient` gains the tag, release and directory calls; `pkg/circleciclient` the
   newest run per workflow name and the pipeline of a tag (#2279).
 
+## [8.80.1] - 2026-09-21
+
+### Changed
+
+- `repo reconcile`, `repo setup`, `repo checks`: the discovery of the reported checks reads one page of the
+  newest hundred tags (`per_page=100`) instead of walking the whole list ten per page, and the reconciler
+  reads it once per run and shares the answer between the steps. A check run of a repository with 838 tags
+  makes 32 GitHub requests instead of 115, one of them for the tags instead of 84. The package doc of
+  `pkg/reposetup/reconcile` states what a run costs in requests and which steps share which read (#2254).
+
+## [8.80.0] - 2026-09-21
+
+### Changed
+
+- `devctl repo reconcile --devctl-app-id` and `reconcile.Runner.DevctlAppID`: the numeric id of the devctl
+  GitHub App (the App's settings page; not the client id) and the switch to rulesets. With it the protection
+  step writes the default branch's repository ruleset `devctl: default branch` -- active on `~DEFAULT_BRANCH`,
+  so a rename or a fork line's declared branch needs no change; the baseline's review requirement; the required
+  checks on the reported-only rule, strict off, a GitHub Actions gate pinned to the GitHub Actions App; no
+  deletion, no force push; the App as bypass actor in `pull_request` mode unless the entry declares
+  `agentMerge: false` (then none, so nothing merges past the required review) -- and classic protection gives
+  way in the same run: its checks carried over, the ruleset written, the classic protection removed; the dry
+  run plans both, a second run plans nothing. A ruleset the engine did not create is left alone and reported
+  as the advisory finding `foreign-ruleset`. Without the id the step writes classic branch protection as
+  before, converged as before, and reports the missing id as the advisory finding `rulesets-not-enabled`: the
+  reconciler's wiring passes the id, so a devctl release alone moves no repository to rulesets.
+  `reposetup.Fields` gains `AgentMerge` (#2288).
+
+## [8.79.0] - 2026-09-21
+
+### Changed
+
+- `devctl pr wait <owner/repo> <number> [--timeout 30m] [--progress]`: one bounded, blocking wait until the
+  pull request's head is green as the merge box sees it, red, or in a state no CI can turn green, then one
+  JSON document and an exit code (0 green, 1 red, 2 timeout naming what was unfinished, 3 draft/closed/
+  conflicting/behind a strict base, 4 a required context never reported, 7 usage, 8 authentication). Green
+  is the latest check run per name (a rerun replaces a stale failed run), every CircleCI workflow of the head
+  revision read from CircleCI (a job behind `requires:` has posted nothing to GitHub between stages), no
+  GitHub Actions run open or awaiting a fork's approval, and every required status context of the base's
+  protection and rulesets reported. CircleCI is consulted only when the head carries `.circleci/config.yml`
+  and the project exists; an upstream fork is judged from GitHub alone. Polls are conditional requests
+  (ETags; `githubclient.NewConditional`) at an interval from the rate-limit headers, 15 s to 60 s. The engine
+  is `pkg/prwait`, for `pr merge` to reuse (#2277).
+
+## [8.78.2] - 2026-09-21
+
+### Changed
+
+- `e2e/scenarios/auth-missing`, `auth-expired` and `auth-refreshed`: `auth status` against the keyring states the
+  gate of the agent-facing commands distinguishes: no record (exit 8 naming `devctl auth login`), both tokens
+  and the GitHub refresh token expired (exit 8, both reported expired), a GitHub token expired under a live
+  refresh token and a valid CircleCI token (exit 0, the GitHub identity `refreshable`). Nothing is contacted and
+  no token material is asserted (#2276).
+
+## [8.78.0] - 2026-09-21
+
+### Changed
+
+- `defaultBranch` and the flavour `fork` in the repositories schema devctl ships and in `reposetup.Fields`.
+  `defaultBranch` (default `main`) is the repository's default branch: the settings step keeps the repository on it
+  and renames a default branch that is not the declared one, the protection step protects it, so a repository on a
+  branch of its own declares it and keeps it. `fork` is a fork line, a repository that carries an upstream release
+  plus the carried patches on the branch it declares: the scaffold and codeowners steps are skipped on it
+  (`skipped: flavour fork`), the generators (`devctl gen makefile|workflows|llm|circleci`, and the scaffold's
+  command lines) produce nothing for it, every other step runs as declared. `repo status` names the declared
+  branch and flavours next to the opt-in (#2271).
+
+## [8.77.0] - 2026-09-21
+
+### Changed
+
 - `devctl auth login` and `devctl auth status`: the identities the agent-facing commands act with. GitHub
   through the device flow of the devctl GitHub App (a user access token refreshed by the commands themselves
   for six months, no client secret in the binary), CircleCI through the OAuth 2.0 authorization code flow with
@@ -1200,6 +2470,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   agent-facing commands share: the JSON envelope, the exit-code table, the `DEVCTL_TIME_SCALE` clock, the
   endpoint variables and the `--progress` writer (#2276).
 
+## [8.76.0] - 2026-09-21
+
+### Changed
+
 - `e2e/`: the end-to-end harness of the agent commands, run by `make test`. `TestMain` builds devctl once and
   every `e2e/scenarios/<slug>/` runs the binary against in-process mocks of the GitHub REST API (rate-limit
   headers, ETags, 304 on a conditional request), the CircleCI API v2 and an OCI registry (one public, one
@@ -1209,36 +2483,109 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   Adding a scenario is a directory with `scenario.yaml` and `expected.json`; `e2e/README.md` documents the format,
   the environment seams and the slugs of the known incidents (#2280).
 
-- `defaultBranch` and the flavour `fork` in the repositories schema devctl ships and in `reposetup.Fields`.
-  `defaultBranch` (default `main`) is the repository's default branch: the settings step keeps the repository on it
-  and renames a default branch that is not the declared one, the protection step protects it, so a repository on a
-  branch of its own declares it and keeps it. `fork` is a fork line, a repository that carries an upstream release
-  plus the carried patches on the branch it declares: the scaffold and codeowners steps are skipped on it
-  (`skipped: flavour fork`), the generators (`devctl gen makefile|workflows|llm|circleci`, and the scaffold's
-  command lines) produce nothing for it, every other step runs as declared. `repo status` names the declared
-  branch and flavours next to the opt-in (#2271).
+## [8.75.0] - 2026-09-21
 
-- `e2e/scenarios/auth-missing`, `auth-expired` and `auth-refreshed`: `auth status` against the keyring states the
-  gate of the agent-facing commands distinguishes: no record (exit 8 naming `devctl auth login`), both tokens
-  and the GitHub refresh token expired (exit 8, both reported expired), a GitHub token expired under a live
-  refresh token and a valid CircleCI token (exit 0, the GitHub identity `refreshable`). Nothing is contacted and
-  no token material is asserted (#2276).
+### Changed
 
-- `e2e/scenarios/renamed-image`, `hand-written-ci`, `release-assets-only`, `failed-tag-pipeline`,
-  `rerun-replaces-failed`, `stale-registry-login` and `release-wait-timeout`: `release wait` against the seven field
-  incidents, each asserting the exit code and the JSON document. Generated CI whose entry renames the image
-  (`gen.ci.image.name`) is probed under the override and never under the repository name; hand-written CI names its
-  two images through the tag pipeline's push jobs and both are probed; a repository with neither image nor chart is
-  available through its published release and green tag workflows (`kind: release-asset`); a failed workflow of the
-  tag pipeline is exit 1 with `pipeline.failedJobs`; a rerun of a failed workflow of the same name reads as green;
-  a stale docker login to the public registry never reaches the anonymous probe; artifacts that never appear while
-  the pipeline runs are exit 2 at the deadline. The registry mock's `staleLogin` refuses the requests that carry
-  credentials and serves anonymous reads, the answer a public registry gives (#2279).
+- The repositories schema devctl ships (`pkg/reposetup/schema/repositories.schema.json`) is regenerated from
+  giantswarm/github's `.github/repositories.schema.json` at commit 3a5bbec: it gains `agentMerge`, the repository's
+  opt-out from agent merges (boolean, default `true`, with the live schema's description text), so `repo validate`
+  accepts `agentMerge: false` without a token and refuses a non-boolean value, naming the field. `requiredChecks`
+  stays in the shipped copy ahead of the live schema, which gains it with giantswarm/github#6199 (#2287).
+
+## [8.74.0] - 2026-09-21
+
+### Changed
+
+- The `customer` flavour is a profile of the repository set-up reconciler: a customer repository's branch protection
+  and default branch are the customer's own flow and it has no CircleCI pipeline of ours, so the protection, circleci,
+  codeowners and release steps are skipped on it (`skipped: flavour customer`) and the settings step never plans the
+  rename of its default branch; settings, permissions, renovate, metadata, lifecycle and catalog run as declared
+  (#2272).
+
+## [8.73.0] - 2026-09-21
+
+### Changed
+
+- The circleci and release steps of `repo reconcile` run only for a repository with a CircleCI pipeline:
+  `.circleci/config.yml` on its default branch, or `gen.ci.generate: true` in its entry (a generated pipeline, on a
+  first creation not on the branch yet). Without one both steps read `skipped: no CircleCI pipeline`: a configuration
+  repository or a repository released by GitHub Actions is not followed, gets no deploy key, and its release is not
+  held against a pipeline; a project someone followed by hand is left as it is. The answer costs one request per run,
+  shared by the two steps, and none when the entry declares the pipeline (#2269).
+
+## [8.72.0] - 2026-09-21
+
+### Changed
 
 - `requiredChecks` in the repositories schema devctl ships and in `reposetup.Fields`: status-check contexts an entry
   requires on its default branch whatever reported, merged with the baseline's reported-only rule by the protection
   step and never removed as ghosts. For a repository's own GitHub Actions gate that runs on every pull request, such
   as a team-file validation job, which the rule could not require before it had reported (#2273).
+
+## [8.71.0] - 2026-09-21
+
+### Changed
+
+- `repo reconcile` never rebuilds a tag. The latest release's tag without a pipeline is the finding
+  `missed-tag-build` (a person's to fix, not advisory), the step reads `reported` and no request is written in any
+  mode; the fix is the next tag, or the tag's pipeline triggered by hand. The triggered rebuild published a chart or
+  an image nobody asked for. `red-release` is unchanged (#2270).
+
+### Removed
+
+- `circleciclient.Client.TriggerPipeline` and `TriggerRequest`: the reconciler's tag rebuild was their only caller
+  (#2270).
+
+### Fixed
+
+- `gen workflows` (`--release-workflow=auto-release`): the "Verify CircleCI picked up the tag" step passes with a
+  `::warning::` annotation when CircleCI does not follow the project (HTTP 404 with a token) instead of failing the
+  run. The first tag of a repository created pull-request-last is pushed before the repository set-up reconciler
+  follows the project on CircleCI, and the reconciler reports the missed tag build, so every new repository's first
+  Auto Release run was red although the release existed. Following takes an administrator's token the workflow does
+  not hold. A followed project whose pipeline is missing after the wait is
+  still triggered by the step (HTTP 200, empty list); API errors still fail it (giantswarm/giantswarm#37726, #2245).
+
+## [8.70.0] - 2026-09-21
+
+### Changed
+
+- A finding kind carries whether it is advisory, and the finding carries it in the artifact (`"advisory": true`), so a
+  reader knows its weight without knowing the kinds; `default-icon` is advisory. The run's `converged` is true when
+  every step ended `ok`, `skipped` or `repaired`, or `reported` with advisory findings only: the default icon alone
+  does not keep a repository from counting as set up as declared, while a finding a person must fix
+  (`abs-prerequisite`, `renovate-not-scanned`, `red-release`, ...) now clears the mark it left untouched before.
+  `repo reconcile` marks an advisory finding in its table and `repo status` in its findings lines (#2268).
+
+## [8.69.0] - 2026-09-21
+
+### Changed
+
+- `reconcile.DefaultBaseline` has strict status checks off (`StrictChecks: false`): a branch need not be up to date
+  to merge, so on a repository with Renovate and sweep traffic a merge no longer invalidates every other open pull
+  request and re-runs its CI. The protection step plans `strict checks true → false` where a repository has them on
+  and reports both values of every protection change (`enforce admins false → true`). `EnforceAdmins: true` is the
+  company baseline, final (#2267).
+
+### Removed
+
+- `repo reconcile --enforce-admins`: the branch protection binds administrators too, the baseline's value with no
+  knob; the flag and its "until the baseline decides" note are gone (#2267).
+
+## [8.68.0] - 2026-09-21
+
+### Changed
+
+- The generated `renovate.json5` lists the marge sweep's App
+  (`giantswarm-marge[bot]`) in `gitIgnoredAuthors` beside taylorbot. The sweep
+  commits a bot PR's changelog entry onto the bot's own branch, and Renovate
+  stops rebasing and autoclosing a branch whose last commit is by an author it
+  does not ignore.
+
+## [8.67.0] - 2026-09-18
+
+### Changed
 
 - `lifecycle: deleted`, the fourth lifecycle of the repositories schema devctl ships, and the engine's handling of it:
   the lifecycle step unfollows the repository's CircleCI project and stops it building, then deletes the repository on
@@ -1248,80 +2595,107 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   report (`deleted, as declared`). The `repository-missing` fix names `lifecycle: deleted` as the record of a
   repository deleted by hand, in place of removing the entry (#2262).
 
+## [8.66.0] - 2026-09-18
+
+### Changed
+
 - The repositories schema devctl ships (`pkg/reposetup/schema/repositories.schema.json`, the copy of
   giantswarm/github's `.github/repositories.schema.json`) knows `align`, the repository's opt-in to alignment: with
   `align: true` in its entry the reconciler changes the repository to its declared set-up on every trigger, without it
   every run is a check that changes nothing. `reposetup.Fields.Align` carries the field; `repo status` says whether
   the repository is opted in when the engine reads the entry (#2259).
-
-### Changed
-
-- `repo reconcile`: the protection step's ruleset names the repository's owning team as a second bypass actor
-  beside the devctl App, both in `pull_request` mode -- the organization's team of the team file's slug, its id
-  read once per run. GitHub evaluates a request made with the App's user access token as the person, not as the
-  App, so the App's bypass alone let nobody merge through the API without a second review: a team member's own
-  green pull request now merges through their token, direct pushes stay forbidden, every bypass is audited.
-  `agentMerge: false` keeps the list empty as before; a repository already on the ruleset gains the team actor
-  and nothing else; a secret team, which GitHub refuses as bypass actor, is reported as the finding
-  `team-bypass-refused` naming the team and its privacy, and the ruleset is written with the App alone (#2315).
-
-- `repo reconcile`, `repo setup`, `repo checks`: a check of a converged repository costs at most twenty GitHub
-  requests (giantswarm/backstage 18, giantswarm/klaus 19 measured; the devctl App id's ruleset reads add two).
-  The reported checks are the statuses and check runs of the newest merged pull request's head, from one page
-  of the recently merged pull requests (three requests; the branch's tags and commits are no longer read: a
-  check that reports only on a push to the default branch or on a tag never gates a pull request, and on an
-  auto-released repository every commit is a tag); without a merged pull request nothing has reported and
-  nothing is required or removed. The scaffold step reads the root listing alone (the head commit only when
-  `repo create` reports it); the renovate step looks the installation up only for a repository without a trace
-  of a run, and reads no trace on a repository younger than a day (#2274).
-- `repo reconcile`, `repo setup`, `repo checks`: the discovery of the reported checks reads one page of the
-  newest hundred tags (`per_page=100`) instead of walking the whole list ten per page, and the reconciler
-  reads it once per run and shares the answer between the steps. A check run of a repository with 838 tags
-  makes 32 GitHub requests instead of 115, one of them for the tags instead of 84. The package doc of
-  `pkg/reposetup/reconcile` states what a run costs in requests and which steps share which read (#2254).
-
-- The repositories schema devctl ships (`pkg/reposetup/schema/repositories.schema.json`) is regenerated from
-  giantswarm/github's `.github/repositories.schema.json` at commit 3a5bbec: it gains `agentMerge`, the repository's
-  opt-out from agent merges (boolean, default `true`, with the live schema's description text), so `repo validate`
-  accepts `agentMerge: false` without a token and refuses a non-boolean value, naming the field. `requiredChecks`
-  stays in the shipped copy ahead of the live schema, which gains it with giantswarm/github#6199 (#2287).
-
-- The circleci and release steps of `repo reconcile` run only for a repository with a CircleCI pipeline:
-  `.circleci/config.yml` on its default branch, or `gen.ci.generate: true` in its entry (a generated pipeline, on a
-  first creation not on the branch yet). Without one both steps read `skipped: no CircleCI pipeline`: a configuration
-  repository or a repository released by GitHub Actions is not followed, gets no deploy key, and its release is not
-  held against a pipeline; a project someone followed by hand is left as it is. The answer costs one request per run,
-  shared by the two steps, and none when the entry declares the pipeline (#2269).
-
-- The `customer` flavour is a profile of the repository set-up reconciler: a customer repository's branch protection
-  and default branch are the customer's own flow and it has no CircleCI pipeline of ours, so the protection, circleci,
-  codeowners and release steps are skipped on it (`skipped: flavour customer`) and the settings step never plans the
-  rename of its default branch; settings, permissions, renovate, metadata, lifecycle and catalog run as declared
-  (#2272).
-
-- `reconcile.DefaultBaseline` has strict status checks off (`StrictChecks: false`): a branch need not be up to date
-  to merge, so on a repository with Renovate and sweep traffic a merge no longer invalidates every other open pull
-  request and re-runs its CI. The protection step plans `strict checks true → false` where a repository has them on
-  and reports both values of every protection change (`enforce admins false → true`). `EnforceAdmins: true` is the
-  company baseline, final (#2267).
-- A finding kind carries whether it is advisory, and the finding carries it in the artifact (`"advisory": true`), so a
-  reader knows its weight without knowing the kinds; `default-icon` is advisory. The run's `converged` is true when
-  every step ended `ok`, `skipped` or `repaired`, or `reported` with advisory findings only: the default icon alone
-  does not keep a repository from counting as set up as declared, while a finding a person must fix
-  (`abs-prerequisite`, `renovate-not-scanned`, `red-release`, ...) now clears the mark it left untouched before.
-  `repo reconcile` marks an advisory finding in its table and `repo status` in its findings lines (#2268).
-- `repo reconcile` never rebuilds a tag. The latest release's tag without a pipeline is the finding
-  `missed-tag-build` (a person's to fix, not advisory), the step reads `reported` and no request is written in any
-  mode; the fix is the next tag, or the tag's pipeline triggered by hand. The triggered rebuild published a chart or
-  an image nobody asked for. `red-release` is unchanged (#2270).
-- The generated `renovate.json5` lists the marge sweep's App
-  (`giantswarm-marge[bot]`) in `gitIgnoredAuthors` beside taylorbot. The sweep
-  commits a bot PR's changelog entry onto the bot's own branch, and Renovate
-  stops rebasing and autoclosing a branch whose last commit is by an author it
-  does not ignore.
 - `repo create` declares `align: true`: a repository created through the product is opted in to alignment by its
   creation, so the run that follows its merged pull request sets it up instead of only checking it. The entry's key
   order is name, description, visibility, componentType, align, gen (#2259).
+
+## [8.65.8] - 2026-09-18
+
+### Fixed
+
+- `repo create` and the set-up engine scaffold a repository whose flavours produce a chart (`app`, `cluster-app`)
+  from a template without one -- the Go service with the `app` flavour -- with the chart of `giantswarm/template-app`
+  at `helm/<name>` (and `.abs/main.yaml` pointing at it), the name substituted and the team annotation set, so the
+  first release's chart job builds instead of failing on a chart that is not there. The dry run, the plan and the
+  scaffold commit name the chart (`chart` on the entry and the scaffold in `--output json`).
+
+## [8.65.7] - 2026-09-18
+
+### Fixed
+
+- `repo validate`: the embedded repositories schema admits as `gen.flavours` exactly the flavours devctl's generators
+  accept -- `helmchart` is gone from the enum (it is a `gen precommit` flavour, the schema's `gen.preCommit`), so a
+  declaration naming it is refused at the schema, in existing mode too, instead of by the first `devctl gen` run
+  align-files makes for the repository; a test pins the enum to `gen.AllFlavours()`. The creation rules no longer add
+  a second problem to a field the schema refused. The embedded copy is otherwise level with `giantswarm/github` main
+  again (field descriptions). (giantswarm/github#6122)
+
+## [8.65.6] - 2026-09-17
+
+### Fixed
+
+- `repo reconcile`: the `renovate` step no longer reports `renovate-not-scanned` on a repository younger than a day
+  that has a configuration but no trace of a run: Renovate's first run is not due yet (the hosted App picks a new
+  repository up within hours, the Dependency Dashboard issue follows), so the step is `ok` with a summary saying so,
+  and a repository created by the same run counts as young. An older repository without a trace stays a finding
+  (giantswarm/giantswarm#37726).
+
+## [8.65.5] - 2026-09-17
+
+### Fixed
+
+- `repo reconcile`: the `renovate` step no longer fails on a private repository whose issues the token cannot read —
+  a GitHub App without `issues: read` is answered 403 there (and, on a public repository, a list of pull requests
+  only, without the Dependency Dashboard issue). The refused read falls through to the commit trace on the default
+  branch; without one the step reports the `unchecked` finding naming the permission to grant, never `failed`, and
+  the `renovate-not-scanned` fix names the permission the dashboard's visibility takes (#2251).
+
+## [8.65.4] - 2026-09-17
+
+### Fixed
+
+- `repo reconcile`: the `renovate` step decides from the repository's own evidence — a Renovate configuration
+  file and a trace of a run (the Dependency Dashboard issue, else a pull request or a commit of Renovate's) —
+  instead of the Renovate installation's repository list, which only an organization owner's token can read:
+  under the reconciler's GitHub App token the step was skipped on every run. Both present is `ok`, as is a
+  configuration that disables Renovate; what is missing is the `renovate-not-scanned` finding (replacing
+  `renovate-missing`) with the fix — the installation covers all repositories, so a missing configuration is
+  added, and a configuration without a trace means Renovate has not run yet or refuses it. The installation's
+  list is read as detail for the summary when the token can. The step waits for the scaffold on an empty
+  repository and is skipped on a repository archived on GitHub; `repo setup --renovate=false` leaves the step
+  out (giantswarm/giantswarm#37726, #2247).
+
+## [8.65.2] - 2026-09-17
+
+### Fixed
+
+- `repo reconcile`: the `catalog` step dispatches for a private repository. The reconciler runs the step as its
+  workflow run, whose token holds the `actions: write` the App does not, and that token sees public repositories
+  only: the run's repository lookup answered 404 and every step of the invocation ended
+  `skipped — repository does not exist`, so the catalog regeneration was never dispatched and the step's
+  `in the catalog` verdict was out of reach for a private repository. `--dispatch-token-envvar` names the token
+  for the step's two workflow-run calls (listing the runs, dispatching) alone; every read -- the repository
+  lookup, the catalog, the mapping -- stays with the GitHub token, which sees the repository.
+  `reconcile.Runner.Dispatch` is the client behind the flag; nil keeps everything on `GitHub`
+  (giantswarm/giantswarm#37726, #2244).
+
+## [8.65.1] - 2026-09-17
+
+### Fixed
+
+- `repo reconcile`: the `release` step triggers the missed tag build whenever the latest release's tag has no
+  CircleCI pipeline. It skipped the trigger when the most recent pipeline was newer than the release, taking that
+  as a sign the tag's pipeline was merely further down the list — but a repository created pull-request-last is
+  followed on CircleCI after its first tag, and the follow builds the default branch right away, so the first
+  release stayed unbuilt with `pipeline not among the 1 most recent, not verified`. The step now decides from the
+  tag alone: it pages through the project's pipelines until the tag's pipeline is found, until a pipeline older
+  than the release is seen (the tag's would have been listed before it) or until the pages end, and triggers only
+  when none exists — never twice. `circleciclient.ListPipelines` reads one page at a time (`PipelinePage`,
+  `NextPageToken`) (giantswarm/giantswarm#37726, #2243).
+
+## [8.65.0] - 2026-09-17
+
+### Changed
+
 - `repo create` is pull-request-last: the dry run, then the repository created with the person's GitHub login
   (description and visibility from the declaration), the scaffold pushed as the one commit on `main`, then the
   declaration's pull request in `giantswarm/github`, validated in existing mode for a repository that exists and is
@@ -1335,126 +2709,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   steps standalone for one accepted entry with any authenticated client — the same steps `Run` executes for the
   reconciler — and returns the repository URL, the scaffold commit and the step results; giantswarm-repo-manager
   imports it to create as the person (giantswarm/giantswarm#37726, #2238).
-- Ignore `.patch` files in the pre-commit config for the file-checking hooks.
 
-### Removed
-
-- `gen workflows`: the `feat-rc` and `fix-rc` pull request title types, and the auto-release workflow's
-  `release-type: rc` input. A `feat-rc`/`fix-rc` commit still releases as its plain type.
-- `repo reconcile --enforce-admins`: the branch protection binds administrators too, the baseline's value with no
-  knob; the flag and its "until the baseline decides" note are gone (#2267).
-- `circleciclient.Client.TriggerPipeline` and `TriggerRequest`: the reconciler's tag rebuild was their only caller
-  (#2270).
+## [8.64.8] - 2026-09-17
 
 ### Fixed
 
-- `pr wait` exited 4, `required_missing`, at the timeout when a required context was absent although a run of the
-  head was still pending, a fork's workflow run awaiting a maintainer's approval among them, whose approval is what
-  reports the contexts. The timeout is now exit 2 whenever anything is still pending, with `unfinished` naming the
-  run and the absent contexts; exit 4 is a fail-fast at the poll that sees every check, status, run and workflow
-  of the head finished with a required context still absent, without waiting for the timeout. The e2e scenario
-  `fork-awaiting-approval` requires contexts and asserts 2; the new `required-never-reported` asserts 4 before the
-  timeout; `docs/pr-wait.md` states the precedence (#2313).
-
-- A one-commit pull request squash-merged under its commit's own subject rather than the title the title check had
-  accepted, because GitHub's default names the squash commit `COMMIT_OR_PR_TITLE`; an unconventional subject is then
-  neither released nor listed by auto-release (git-cliff's `filter_unconventional`), and the next merge's release notes
-  omit the pull request. The repository baseline of `repo reconcile`, `repo setup` and `repo status` now names the squash
-  commit after the pull request's title (`squash_merge_commit_title: PR_TITLE`), read with the repository or through
-  GraphQL like the six merge settings and repaired with them; the auto-release decide step names an unconventional
-  subject in the unreleased range as a workflow warning, where before the run only counted zero deciding commits.
-  Every declared repository carries GitHub's default today, so one that is not opted in to alignment reads
-  `settings drift: squash_merge_commit_title COMMIT_OR_PR_TITLE → PR_TITLE` on its next check until its team opts it
-  in (the nightly repairs the opted-in entries) or an administrator sets it by hand.
-
-- `auth login` ran the GitHub device flow with a placeholder client id and GitHub refused it; the binary now carries the
-  client id of the `giantswarm-devctl` GitHub App (`Iv23liWio5REm4MfY2Mw`, owned by the `giantswarm` organization),
-  and `docs/auth.md` names the App (#2276).
-
-- `repo status`, `repo checks`, `repo reconcile` and the reconcile engine's settings step as an identity without admin rights on
-  the repository (an App installation with `administration: read`, a member with read access) reported `allow_squash_merge`,
-  `allow_update_branch`, `allow_auto_merge` and `delete_branch_on_merge` as `false → true` drift on every repository:
-  `GET /repos/{owner}/{repo}` carries the six merge settings for admins only and an absent field read as `false`. The step
-  reads them through GraphQL (`Repository { mergeCommitAllowed squashMergeAllowed … }`, which answers any identity that
-  reads the repository) when the repository came without them, and reports them as an `unchecked` finding — never as
-  drift — when that read fails too. An admin identity costs no extra request.
-
-- `reconcile.Refused` (the result of an entry the schema refuses: `devctl repo reconcile`, the reconciler's
-  artifact, giantswarm-repo-manager's check) reports `converged: false`: nothing was checked against the
-  declaration, so the repository is not set up as declared, and not drifted either -- the fix is in the entry.
-  `Result.Refused()` tells a refusal from drift; the table header and `devctl repo status` say "entry refused"
-  instead of "drift or failed steps". Before, a refused entry read as converged next to its refusal.
-
-- `pkg/authstore` on Linux speaks the Secret Service API over D-Bus itself instead of through go-keyring: the default
-  collection is resolved through `ReadAlias` and unlocked only when its `Locked` property says so (a prompt is
-  completed through `org.freedesktop.Secret.Prompt`), items are searched, created (replacing the record of the same
-  identity), read and deleted on the resolved collection. oo7-daemon and KeePassXC, which refuse `Unlock` on the alias
-  path, now hold devctl's tokens; GNOME Keyring and KWallet keep working with the records written before. A failing
-  call reads `keychain <call> on <collection path> (<Secret Service process>): <error>`. macOS and Windows keep
-  go-keyring's backends (#2304).
-
-- `repo create` and the set-up engine scaffold a repository whose flavours produce a chart (`app`, `cluster-app`)
-  from a template without one -- the Go service with the `app` flavour -- with the chart of `giantswarm/template-app`
-  at `helm/<name>` (and `.abs/main.yaml` pointing at it), the name substituted and the team annotation set, so the
-  first release's chart job builds instead of failing on a chart that is not there. The dry run, the plan and the
-  scaffold commit name the chart (`chart` on the entry and the scaffold in `--output json`).
-- `repo validate`: the embedded repositories schema admits as `gen.flavours` exactly the flavours devctl's generators
-  accept -- `helmchart` is gone from the enum (it is a `gen precommit` flavour, the schema's `gen.preCommit`), so a
-  declaration naming it is refused at the schema, in existing mode too, instead of by the first `devctl gen` run
-  align-files makes for the repository; a test pins the enum to `gen.AllFlavours()`. The creation rules no longer add
-  a second problem to a field the schema refused. The embedded copy is otherwise level with `giantswarm/github` main
-  again (field descriptions). (giantswarm/github#6122)
-- `repo reconcile`: the `renovate` step no longer reports `renovate-not-scanned` on a repository younger than a day
-  that has a configuration but no trace of a run: Renovate's first run is not due yet (the hosted App picks a new
-  repository up within hours, the Dependency Dashboard issue follows), so the step is `ok` with a summary saying so,
-  and a repository created by the same run counts as young. An older repository without a trace stays a finding
-  (giantswarm/giantswarm#37726).
-- `repo reconcile`: the `renovate` step no longer fails on a private repository whose issues the token cannot read —
-  a GitHub App without `issues: read` is answered 403 there (and, on a public repository, a list of pull requests
-  only, without the Dependency Dashboard issue). The refused read falls through to the commit trace on the default
-  branch; without one the step reports the `unchecked` finding naming the permission to grant, never `failed`, and
-  the `renovate-not-scanned` fix names the permission the dashboard's visibility takes (#2251).
-- `repo reconcile`: the `catalog` step dispatches for a private repository. The reconciler runs the step as its
-  workflow run, whose token holds the `actions: write` the App does not, and that token sees public repositories
-  only: the run's repository lookup answered 404 and every step of the invocation ended
-  `skipped — repository does not exist`, so the catalog regeneration was never dispatched and the step's
-  `in the catalog` verdict was out of reach for a private repository. `--dispatch-token-envvar` names the token
-  for the step's two workflow-run calls (listing the runs, dispatching) alone; every read -- the repository
-  lookup, the catalog, the mapping -- stays with the GitHub token, which sees the repository.
-  `reconcile.Runner.Dispatch` is the client behind the flag; nil keeps everything on `GitHub`
-  (giantswarm/giantswarm#37726, #2244).
-- `gen workflows` (`--release-workflow=auto-release`): the "Verify CircleCI picked up the tag" step passes with a
-  `::warning::` annotation when CircleCI does not follow the project (HTTP 404 with a token) instead of failing the
-  run. The first tag of a repository created pull-request-last is pushed before the repository set-up reconciler
-  follows the project on CircleCI, and the reconciler reports the missed tag build, so every new repository's first
-  Auto Release run was red although the release existed. Following takes an administrator's token the workflow does
-  not hold. A followed project whose pipeline is missing after the wait is
-  still triggered by the step (HTTP 200, empty list); API errors still fail it (giantswarm/giantswarm#37726, #2245).
-- `repo reconcile`: the `renovate` step decides from the repository's own evidence — a Renovate configuration
-  file and a trace of a run (the Dependency Dashboard issue, else a pull request or a commit of Renovate's) —
-  instead of the Renovate installation's repository list, which only an organization owner's token can read:
-  under the reconciler's GitHub App token the step was skipped on every run. Both present is `ok`, as is a
-  configuration that disables Renovate; what is missing is the `renovate-not-scanned` finding (replacing
-  `renovate-missing`) with the fix — the installation covers all repositories, so a missing configuration is
-  added, and a configuration without a trace means Renovate has not run yet or refuses it. The installation's
-  list is read as detail for the summary when the token can. The step waits for the scaffold on an empty
-  repository and is skipped on a repository archived on GitHub; `repo setup --renovate=false` leaves the step
-  out (giantswarm/giantswarm#37726, #2247).
-- `repo reconcile`: the `release` step triggers the missed tag build whenever the latest release's tag has no
-  CircleCI pipeline. It skipped the trigger when the most recent pipeline was newer than the release, taking that
-  as a sign the tag's pipeline was merely further down the list — but a repository created pull-request-last is
-  followed on CircleCI after its first tag, and the follow builds the default branch right away, so the first
-  release stayed unbuilt with `pipeline not among the 1 most recent, not verified`. The step now decides from the
-  tag alone: it pages through the project's pipelines until the tag's pipeline is found, until a pipeline older
-  than the release is seen (the tag's would have been listed before it) or until the pages end, and triggers only
-  when none exists — never twice. `circleciclient.ListPipelines` reads one page at a time (`PipelinePage`,
-  `NextPageToken`) (giantswarm/giantswarm#37726, #2243).
 - `repo reconcile`: `lifecycle: archived` unfollows on CircleCI once. The step read the v2 project to decide
   "followed", which answers 200 for ever — unfollowed or stopped alike (checked live) — so every run planned and
   re-applied `unfollow on CircleCI` on every archived repository. It now reads the token user's follow from the v1.1
   project settings (the state the unfollow changes), unfollows and stops the project building
   (`circleciclient.StopBuilding`, the UI's "Stop building"), and verifies the follow is gone before calling the
   repair done; a second run is `ok` (giantswarm/giantswarm#37726, #2231). `circleciclient.Following` reads the state.
+
+## [8.64.7] - 2026-09-17
+
+### Fixed
+
 - `repo reconcile`: an entry the validator refuses is a result, not exit 2 without output — one step `entry`,
   verdict `reported`, one finding per problem (`gen-circleci-refused` for `gen.ci.generate`, the new `entry-refused`
   otherwise) with the field to fix, exit 0: the declaration is at fault, not the run; a flag or token error still
@@ -1462,24 +2732,43 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   Bumblebee's 72 jobs died on the empty result (giantswarm/giantswarm#37726, #2229). `reconcile.Refused` builds the
   result. `--enforce-admins` (default true, the baseline's) is the documented knob for whether the branch protection
   binds administrators, for the reconciler to pass once giantswarm/giantswarm#36733 decides.
+
+## [8.64.6] - 2026-09-17
+
+### Fixed
+
 - `pkg/githubclient.ReportedChecks`, `repo reconcile`, `repo checks`: on a repository whose every commit on the
   default branch is tagged — a fresh repository whose only commit is the scaffold, tagged v0.1.0 by auto-release
   within seconds — the head is the candidate commit instead of a not-found error, so the checks that reported on it
   (`pre-commit`, the pipeline's jobs) are required on the first run. The protection step's `unchecked` finding is
   worded by cause: a 401/403 names the permissions to grant (`statuses: read`, `checks: read`), a branch without a
   commit is "nothing reported yet" without a finding (giantswarm/giantswarm#37726, #2228).
+
+## [8.64.5] - 2026-09-17
+
+### Fixed
+
 - `repo reconcile`: the `catalog` step maps by chart, not by repository name: the component's
   `giantswarm.io/helmcharts` annotation in `catalog/components.yaml` names the charts to look for in the
   apps-to-teams mapping, matched by chart name (`chartName` overrides and `-app` suffixes differ from the
   repository), private-registry charts left out; a component without a public chart — a Go service without a chart,
   a library, a CLI — ends the step `ok` ("in the catalog; no public chart to map") instead of dispatching the
   mapping run on every reconcile for a repair that cannot converge (giantswarm/giantswarm#37726, #2227).
+
+## [8.64.4] - 2026-09-17
+
+### Fixed
+
 - `repo reconcile`: the `circleci` step grants the CircleCI token's GitHub user `admin` on the repository before
   following the project and revokes the grant right after, when that user is not an administrator already — CircleCI
   follows a project for a repository administrator only ("only a project's Github administrator may setup Circle"),
   and the reconciler's identity holds push through the bots team, so the first live run on two fresh repositories
   failed at the follow and left the scaffold's v0.1.0 tag unbuilt (giantswarm/giantswarm#37726, #2226). The grant and
   the follow are two changes of the step (`--dry-run` plans both); `pkg/circleciclient` gains `Me` (`GET /api/v2/me`).
+
+## [8.64.3] - 2026-09-17
+
+### Fixed
 
 - `pkg/reposetup`, `repo validate`, `repo status`, `repo reconcile`: the creation rules (`gen.flavours`/`gen.language`
   set, the chart-name convention, generated CI has a job, the name free on GitHub) apply to entries being added
@@ -1492,7 +2781,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   mode). Before, 222 of the 443 entries declared in the real team files were refused and the read-mode checks of
   giantswarm-repo-manager could not run over them; in existing mode none is.
 
+## [8.64.2] - 2026-09-16
+
+### Fixed
+
 - `pkg/gen/input`: devctl builds as a module dependency again. The template provenance files (`*.template.sha`, written by `go generate`, gitignored) were embedded by name, so `pkg/reposetup` — which renders scaffolds with the gen inputs since v8.60.0 — could not compile from the module proxy (`pattern x.template.sha: no matching files found`). Each site now embeds `<template>*` and reads the `.sha` through `input.TemplateSHA`, which falls back to the module version's tree link when the file is absent; generated output is unchanged where `go generate` ran.
+
+## [8.64.1] - 2026-09-16
+
+### Fixed
+
+- The repository set-up engine pushes the scaffold as a conventional commit, `feat: initial scaffold of <name> from
+  <template>`, so the generated auto-release workflow tags the created repository `v0.1.0` from it: git-cliff drops a
+  non-conventional commit (`filter_unconventional`), and with the old `Scaffold <name> from <template>` subject a new
+  repository never got a release and the first-release check could not pass. The CODEOWNERS pull request's commit
+  follows the same rule (#2214).
+
+## [8.64.0] - 2026-09-16
 
 ### Added
 
@@ -1512,6 +2817,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   text, `Remote` reads team files and memberships from giantswarm/github and opens the pull request as the
   caller, `CreationPullRequest` shapes it; `pkg/reposetup/manager` is the client of giantswarm-repo-manager's
   `get_repository` tool over MCP's streamable HTTP transport.
+
+### Removed
+
+- `app bootstrap`. Its replacement is `repo create`: the declaration goes through the engine's validation and
+  the team-file pull request instead of a hard-coded `-app` suffix, an unvalidated team-file write, an SSH clone
+  and a push-then-protect sequence; the reconciler creates the repository from the merged entry. The vendir and
+  kustomize sync and the patch-script scaffolding live on as options of the chart-only template's dry run
+  (`pkg/reposetup` options). The `app` command group is gone with its only subcommand.
+
+## [8.63.0] - 2026-09-16
+
+### Added
+
 - `repo reconcile REPOSITORY` (giantswarm/giantswarm#37726, #2214): runs the repository set-up steps of
   `pkg/reposetup/reconcile` locally as the person — the way to repair a repository when the reconciler
   workflow is down and to develop the engine against a real repository. The desired state is the
@@ -1525,14 +2843,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   instead of the repository's `.circleci`; a run restricted to steps that do not read the team needs no
   team. `pkg/reposetup.UndeclaredEntry` is the accepted entry of a repository without a team-file
   declaration.
-
-### Fixed
-
-- The repository set-up engine pushes the scaffold as a conventional commit, `feat: initial scaffold of <name> from
-  <template>`, so the generated auto-release workflow tags the created repository `v0.1.0` from it: git-cliff drops a
-  non-conventional commit (`filter_unconventional`), and with the old `Scaffold <name> from <template>` subject a new
-  repository never got a release and the first-release check could not pass. The CODEOWNERS pull request's commit
-  follows the same rule (#2214).
 
 ### Changed
 
@@ -1549,54 +2859,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   failing on the `PUT` an organization owner alone may make. Both commands print the run's result as a table
   (`--output json` for the structured value); a step that could not run to its end is the non-zero exit.
 
+## [8.62.0] - 2026-09-16
+
+### Changed
+
 - `pkg/reposetup/reconcile`: the repository set-up steps as check and repair, idempotent — create (only from an added entry), scaffold push before protection, settings baseline, team permissions, branch protection with required checks on the reported-only rule (ghost contexts removed, contexts following the generated pipeline), CircleCI follow, setup workflows and checkout key, webhooks, Renovate installation (check only), CODEOWNERS (a pull request), description and visibility, lifecycle `archived` (archive and unfollow), catalog and mapping (the giantswarm/github workflows), first-release verification (a missed tag build is triggered). `reconcile.Runner.Run` returns a structured `reconcile.Result`; a redirect on the declared name is followed as a rename, and what is not repaired (repository gone, `gen circleci` refusal, ABS prerequisites, red release, default icon) is reported with the fix. Table-tested against in-process fakes of GitHub's and CircleCI's REST surfaces.
 - `pkg/circleciclient`: a CircleCI client for follow and unfollow (v1.1), the project, its settings, checkout keys, pipelines, workflows and jobs (v2).
 - `pkg/githubclient`: `Config.BaseURL` points the client at another GitHub API host.
 
-- `gen circleci`: `--component-type template --team TEAM` renders a template repository's chart before it builds
-  (giantswarm/giantswarm#37726, #2217). A template's chart lives at `helm/{APP-NAME}` and carries the
-  placeholders a repository created from it fills in (`{APP-NAME}`, `{TEAM-NAME}`, `{APP HELM REPOSITORY}`),
-  so the generated `build-chart` of `giantswarm/template-app` was red on every pipeline. For
-  `componentType: template` the chart job is now an inline job on the app-build-suite executor that renders
-  the checkout with fixture values (`sample-app`, the owning team from the team file, an example Helm
-  repository) and runs app-build-suite on the rendered chart, so green means a repository created from the
-  template passes its first chart build. Nothing is released from a template: no chart-test job, no push
-  jobs, no release leg, no `tests/ats` files, and the job runs on `main` too. A template without a chart
-  and every other component type render the pipeline as before.
-- `repo validate` and the `pkg/reposetup` package, the front half of the repository set-up engine
-  (giantswarm/giantswarm#37726, #2213): an entry of a giantswarm/github team file is validated against
-  the repositories schema — fetched from `giantswarm/github` main, with an embedded copy that already
-  carries the plan's `description`, `visibility` and `lifecycle: archived` fields as the fallback — and
-  against the rules for a repository the reconciler creates: `gen.flavours` and `gen.language` are
-  mandatory, `gen.ci.generate` defaults to `true` (written into the rendered entry), the name is
-  lowercase and free on GitHub (an existing repository or a redirect from a renamed one is taken), a
-  chart repository is named after its chart (no `-app` suffix, `gen.ci.chartName` equal to the name),
-  and `language: node` is refused until the Node template exists. Every refusal names the field. The
-  template is derived, never declared: Go → `giantswarm/template`, chart-only (`generic` with the `app`
-  flavour) → `giantswarm/template-app`, customer, configuration, python and kyverno-policy → the minimal
-  scaffold. The command prints the dry run as JSON on stdout (log lines go to stderr) — the rendered
-  entry, the implied template, the name verdict, the problems and the guard notices: an author outside
-  the owning team and team-planeteers keeps the team's review, more than three added entries get a
-  person — and exits non-zero on a refusal. The package is the one place validation and rendering live
-  for the reconciler workflow, `repo create` and giantswarm-repo-manager; the scaffold rendering is the
-  engine's next half.
-- `gen workflows`: the `auto-release` flow can now cut release candidates. A pull request titled
-  `feat-rc:` or `fix-rc:` marks its change as part of a candidate, and the workflow tags
-  `vX.Y.Z-rc.N` instead of `vX.Y.Z`, flagged as a GitHub pre-release. The decision is taken over
-  every unreleased commit: a candidate is tagged when at least one of them carries `-rc` and no
-  unreleased `feat`, `fix` or breaking commit does not, so an unmarked `chore(deps)` from Renovate
-  cannot end a candidate cycle and an unmarked `feat` or `fix` closes it at the stable version the
-  candidates were leading to. A commit counts as breaking through either spelling, a `!` in the
-  subject or a `BREAKING CHANGE:`/`BREAKING-CHANGE:` footer. A push that carries nothing releasable
-  tags no candidate, so a `docs`- or `style`-only push behaves inside a cycle the way it does
-  outside one. `zz_generated.auto_release.yaml` also gains a `workflow_dispatch` trigger with a
-  `release-type` input to close a cycle when no pull request is left to merge.
-- `gen workflows`: `zz_generated.semantic_pull_request.yaml` passes `types` and `header_pattern` to
-  `giantswarm/github-workflows`, so `feat-rc` and `fix-rc` pass the PR title check. The action's
-  stock parser reads the type with `\w*` and cannot match a hyphen, so the `header_pattern`
-  override is what admits the type at all. The titles are accepted in every repository but only
-  act under `--release-workflow=auto-release`. `security` joins the accepted types, which the
-  action's default list never held although `cliff.toml` maps it to a Security changelog group.
+## [8.61.0] - 2026-09-16
+
+### Changed
 
 - `pkg/reposetup`: scaffold rendering, the back half of the repository set-up engine
   (giantswarm/giantswarm#37726, #2213). `Renderer.Render` renders an accepted entry into a directory: the
@@ -1614,6 +2887,46 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - `repo validate` refuses `gen.ci.generate: true` for a declaration the CircleCI generator has no job for
   (a language other than go or node, no app flavour, no `gen.ci.image.dockerfile`): align-files' `devctl
   gen circleci` would fail on the created repository. The field is `gen.ci.generate`.
+
+## [8.60.0] - 2026-09-16
+
+### Changed
+
+- `gen circleci`: `--component-type template --team TEAM` renders a template repository's chart before it builds
+  (giantswarm/giantswarm#37726, #2217). A template's chart lives at `helm/{APP-NAME}` and carries the
+  placeholders a repository created from it fills in (`{APP-NAME}`, `{TEAM-NAME}`, `{APP HELM REPOSITORY}`),
+  so the generated `build-chart` of `giantswarm/template-app` was red on every pipeline. For
+  `componentType: template` the chart job is now an inline job on the app-build-suite executor that renders
+  the checkout with fixture values (`sample-app`, the owning team from the team file, an example Helm
+  repository) and runs app-build-suite on the rendered chart, so green means a repository created from the
+  template passes its first chart build. Nothing is released from a template: no chart-test job, no push
+  jobs, no release leg, no `tests/ats` files, and the job runs on `main` too. A template without a chart
+  and every other component type render the pipeline as before.
+
+## [8.59.0] - 2026-09-16
+
+### Changed
+
+- `repo validate` and the `pkg/reposetup` package, the front half of the repository set-up engine
+  (giantswarm/giantswarm#37726, #2213): an entry of a giantswarm/github team file is validated against
+  the repositories schema — fetched from `giantswarm/github` main, with an embedded copy that already
+  carries the plan's `description`, `visibility` and `lifecycle: archived` fields as the fallback — and
+  against the rules for a repository the reconciler creates: `gen.flavours` and `gen.language` are
+  mandatory, `gen.ci.generate` defaults to `true` (written into the rendered entry), the name is
+  lowercase and free on GitHub (an existing repository or a redirect from a renamed one is taken), a
+  chart repository is named after its chart (no `-app` suffix, `gen.ci.chartName` equal to the name),
+  and `language: node` is refused until the Node template exists. Every refusal names the field. The
+  template is derived, never declared: Go → `giantswarm/template`, chart-only (`generic` with the `app`
+  flavour) → `giantswarm/template-app`, customer, configuration, python and kyverno-policy → the minimal
+  scaffold. The command prints the dry run as JSON on stdout (log lines go to stderr) — the rendered
+  entry, the implied template, the name verdict, the problems and the guard notices: an author outside
+  the owning team and team-planeteers keeps the team's review, more than three added entries get a
+  person — and exits non-zero on a refusal. The package is the one place validation and rendering live
+  for the reconciler workflow, `repo create` and giantswarm-repo-manager; the scaffold rendering is the
+  engine's next half.
+
+## [8.58.0] - 2026-09-16
+
 ### Changed
 
 - `gen precommit`: `devctl gen precommit` now writes `helm/<chart>/values.schema.json` itself,
@@ -1644,6 +2957,126 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   URL followed the flag, so a repository on another Kubernetes version described itself with two
   different versions. Output is unchanged for the default version.
 
+## [8.57.16] - 2026-09-15
+
+### Fixed
+
+- `gen workflows`: the `auto-release` flow applies its "nothing releasable" check to a forced
+  `release-type: rc` as well. A candidate extends an open cycle, and once the stable release has closed
+  the cycle there is none to extend: the run now skips and says so, the way `release-type: stable`
+  already did, instead of tagging `vX.Y.Z-rc.N` above the shipped `vX.Y.Z`.
+
+## [8.57.14] - 2026-09-15
+
+### Changed
+
+- `release bumpall`: reads `slices` from the standard library instead of `golang.org/x/exp/slices`,
+  which is deprecated. `golang.org/x/exp` is dropped from `go.mod`.
+- The `github.Ptr` and `github.String` helpers, deprecated in go-github v92, are replaced by the
+  `new` builtin.
+- Repeated string literals are named: template data keys and delimiters in the `workflows`,
+  `precommit` and `makefile` generators, and provider names, release types, output formats and
+  component names in `pkg/release`.
+- Permissive file and directory modes in tests are tightened to `0600` and `0750`.
+- `.golangci.yml` sets `goconst.ignore-tests`. A table test repeats a fixture across its cases so
+  that the input and the expectation can be read together. It also excludes `fmt.Fprint`,
+  `fmt.Fprintf` and `fmt.Fprintln` from errcheck: the runners print to an injected `io.Writer`,
+  and a failed write to the user's terminal cannot be reported to the user's terminal.
+
+### Fixed
+
+- `pr`: the parent command reports an error from `--help` instead of discarding it.
+- `gen precommit`: new `--go-generate` flag renders a `go generate ./...` step into
+  `zz_generated.pre-commit.yaml` before the hooks, and devctl sets it for itself. golangci-lint
+  compiles the packages it analyses, and devctl embeds 37 gitignored `*.template.sha` provenance
+  files, so the job stopped at a load error instead of linting. The flag is opt-in and requires
+  `--language go`: the job installs no code generators, so a repository whose directives need
+  `controller-gen` or `mockgen` must not get the step.
+- `release`: `getLatestGithubRelease` and the Kubernetes release lookup name the upstream
+  repository through `kubernetesGitHubOwner`/`kubernetesGitHubRepo` rather than repeat a literal
+  that also means the component name.
+
+### Security
+
+- `app bootstrap`: `--name` and `--team` are now validated as identifiers. `--team` is joined into
+  `repositories/team-<team>.yaml` inside the `giantswarm/github` checkout, so a value carrying `..`
+  or `/` reached a file outside that directory; `--name` becomes an argument of `devctl repo setup`,
+  so a value starting with `-` was read as a flag. The bootstrap flow also runs only `devctl`, `git`
+  and `vendir`, checked against an allow list before the subprocess starts.
+- `deploy`: `--app-name`, `--app-catalog`, `--target-namespace`, `--management-cluster`,
+  `--organization` and `--workload-cluster` are now validated as identifiers, and `--app-version` as
+  a version. All seven are passed to `kubectl gs gitops add app`, where a value starting with `-`
+  was read as a kubectl flag.
+- `pkg/appstatus`: `WaitForAppDeployment` validates the app name, organization namespace and
+  management cluster it passes to `tsh` and `kubectl`, rather than trust its callers.
+- `release create`: the provider name is validated before it is joined into the releases directory,
+  so it cannot address a directory outside it. The chart name and version read from a release
+  manifest are validated before they are interpolated into the `raw.githubusercontent.com` URL the
+  cluster dependency lookup fetches.
+
+## [8.57.10] - 2026-09-15
+
+### Fixed
+
+- `gen workflows`: `cliff.toml` counts only `vX.Y.Z` tags as releases (`tag_pattern`, replacing the
+  `ignore_tags` pre-release filter), so a `vX.Y.Z-rc.N` candidate tag no longer ends the range the
+  `auto-release` flow releases from. The version and the notes span the whole candidate cycle: the stable
+  release that closes a cycle carries every commit the candidates carried (devctl#2202), a
+  `workflow_dispatch` run with a candidate tag on `HEAD` names the target of the cycle rather than the last
+  stable version (devctl#2201), and a candidate pushed during a cycle keeps the target the cycle
+  established. Candidate notes become cumulative as a result: `rc.2` lists what `rc.1` listed, plus what is
+  new. The `decide` step's describe baseline also excludes build-metadata tags (`--exclude='*+*'`), so both
+  ends of the flow read the same set of tags.
+
+## [8.57.1] - 2026-09-15
+
+### Fixed
+
+- `gen workflows`: the `auto-release` flow renders the release notes after it decides which tag to cut, so
+  the "Full Changelog" compare link on a release candidate points at the tag that was created
+  (`compare/v0.1.5...v0.1.6-rc.1`) instead of at the stable target, which has no tag until the cycle closes.
+
+## [8.57.0] - 2026-09-15
+
+### Changed
+
+- `gen workflows`: the `auto-release` flow can now cut release candidates. A pull request titled
+  `feat-rc:` or `fix-rc:` marks its change as part of a candidate, and the workflow tags
+  `vX.Y.Z-rc.N` instead of `vX.Y.Z`, flagged as a GitHub pre-release. The decision is taken over
+  every unreleased commit: a candidate is tagged when at least one of them carries `-rc` and no
+  unreleased `feat`, `fix` or breaking commit does not, so an unmarked `chore(deps)` from Renovate
+  cannot end a candidate cycle and an unmarked `feat` or `fix` closes it at the stable version the
+  candidates were leading to. A commit counts as breaking through either spelling, a `!` in the
+  subject or a `BREAKING CHANGE:`/`BREAKING-CHANGE:` footer. A push that carries nothing releasable
+  tags no candidate, so a `docs`- or `style`-only push behaves inside a cycle the way it does
+  outside one. `zz_generated.auto_release.yaml` also gains a `workflow_dispatch` trigger with a
+  `release-type` input to close a cycle when no pull request is left to merge.
+- `gen workflows`: `zz_generated.semantic_pull_request.yaml` passes `types` and `header_pattern` to
+  `giantswarm/github-workflows`, so `feat-rc` and `fix-rc` pass the PR title check. The action's
+  stock parser reads the type with `\w*` and cannot match a hyphen, so the `header_pattern`
+  override is what admits the type at all. The titles are accepted in every repository but only
+  act under `--release-workflow=auto-release`. `security` joins the accepted types, which the
+  action's default list never held although `cliff.toml` maps it to a Security changelog group.
+
+## [8.56.2] - 2026-09-14
+
+### Fixed
+
+- `gen makefile`: the `app` flavour's targets (`helm-docs`, `lint-chart`, `update-chart`, `update-deps`) work
+  on repositories that also have the `go` flavour. The root `Makefile` includes `Makefile.*.mk` in name order,
+  so `Makefile.gen.app.mk` is parsed before `Makefile.gen.go.mk` sets `APPLICATION` from the Go module; the
+  `check-env` guard was a parse-time `ifndef` and `DEPS` a parse-time `:=`, so every go+app repository
+  (vm-manager, model-manager) failed with `Makefile.gen.app.mk:47: *** APPLICATION is not defined` although the
+  variable is set once make runs a recipe. The guard is now a recipe line and `DEPS` is recursively expanded, so
+  both read `APPLICATION` at recipe time; the per-dependency `$(DEPS)` targets, whose names were also fixed at
+  parse time, become a loop inside `update-deps`. App-only repositories keep working as before: `APPLICATION`
+  from `Makefile.custom.mk` or the command line is honoured, and an unset `APPLICATION` still fails the target
+  with a message (and `make help` no longer trips over it).
+
+## [8.56.0] - 2026-09-11
+
+### Changed
+
 - `gen circleci`: the generated chart-test jobs (`execute-chart-tests` and, with `--ats-on-release`,
   `execute-chart-tests-release`) let the repository shape and size the kind cluster they test on
   (devctl#2188, architect-orb#928):
@@ -1666,22 +3099,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   - `gen circleci --help` and the comment above the generated job name both conventions. New golden
     `agent.ats-kind-config.workflows.yml`; `go test ./pkg/gen/input/circleci/ -update` now rewrites the golden
     files from the current template instead of each test carrying its own compare-and-print block.
+- `gen circleci`: the architect orb pin moves to `10.5.0`, which adds the `run-tests-with-ats` `kind_config`
+  parameter the generated chart-test jobs now set (architect-orb#929). Golden workflows regenerated.
+
+## [8.55.0] - 2026-09-10
+
+### Added
+
+- `gen workflows --helm-docs-regen` (app flavour) generates `zz_generated.helm-docs-regen.yaml`: on pull requests
+  from `renovate/**` and `dependabot/**` branches it regenerates the chart README (helm-docs) and
+  `values.schema.json` (the `helm-schema-<chart>` hooks) and pushes the result back onto the PR branch with the
+  taylorbot PAT, so an image-tag or values-key bump no longer fails the `pre-commit` check on files only the hooks
+  can rewrite (giantswarm/agent-platform#295, #301, #302, #320; agent-sandbox#38; agentgateway#3). The hooks and
+  their tool pins are read from the repo's own `.pre-commit-config.yaml` at run time, every hook runs twice with
+  the second pass required clean, a clean tree is a no-op so the run the push triggers exits without pushing again,
+  and the job is skipped with a warning where the secret is not available (fork and Dependabot-triggered runs).
+  Opt in through `gen.helmDocsRegen: true` in giantswarm/github. Closes #2185.
+- `gen renovate` lists `dev@giantswarm.io` in `gitIgnoredAuthors`: the author the generated workflows commit
+  with (helm-docs-regen, update-chart, sync-from-upstream) now counts as Renovate's own, so a branch they pushed
+  to keeps being rebased and autoclosed instead of retitled "- abandoned".
+
+## [8.54.4] - 2026-09-10
 
 ### Changed
 
-- `gen circleci`: the architect orb pin moves to `10.5.0`, which adds the `run-tests-with-ats` `kind_config`
-  parameter the generated chart-test jobs now set (architect-orb#929). Golden workflows regenerated.
-- `gen precommit`: the `$ref` step of the `helm-schema-<chart>` hook keeps its behaviour but its
-  rationale is corrected. It was documented as working around an unfixed generator bug
-  (losisin/helm-values-schema-json#317). That bug is fixed: v2.6.0 ships #378, and measured against
-  v2.6.0 across the repositories that declare the `helmchart` flavour the step is a no-op on generated
-  output; the hook also reaches every repository with a `helm/` directory. It stays for schemas
-  the generator *bundles* rather than generates — `bundle: true` inlines a `# @schema $ref: <file>`
-  target verbatim, defect included — and `security-profiles-operator-app` depends on that today: the
-  vendored upstream chart's own schema closes a `$ref`ed k8s Toleration with
-  `additionalProperties: false`, which rejects `value` and `tolerationSeconds`. Comment-only, but it
-  moves the template, so every generated `.pre-commit-config.yaml` header URL changes on the next
-  align run.
 - `gen circleci`: the canonical app-test-suite (ATS) test stack moves to `pytest==9.0.3` and
   `pytest-helm-charts==1.3.5` (`uv.lock` re-resolved). pytest 9.0.3 carries the fix for GHSA-6w46-j5rx-g56g
   (CVE-2025-71176), which Dependabot flags on the generated `tests/ats/pyproject.toml` of every chart repo;
@@ -1689,42 +3130,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   generator tests no longer hardcode the stack's versions -- they assert the pins exist, that both layouts
   (Pipfile and pyproject.toml) agree and that `uv.lock` locks them -- so the grouped Renovate bumps of this
   stack stop failing `go-build`.
-- `gen circleci`: the architect orb pin moves to `10.4.1`, which ships the `sync-china-registry` fix
-  (architect-orb#921): the job now waits until the image the push job published is visible from the
-  in-China runner, child manifests included, before `regctl image copy` starts. The runner reads the
-  Southeast Asia replica of `gsoci.azurecr.io`, which receives a pushed image asynchronously, and the old
-  fixed 10 × 5 s retry never fit a multi-GiB image (every `vllm` tag since v0.4.7 needed a manual rerun).
-  No template change; the generated jobs take the orb's new `replica-wait-minutes` default of 60. Golden
-  workflows regenerated.
+
+## [8.54.3] - 2026-09-10
 
 ### Fixed
 
-- `gen workflows`: the `auto-release` flow applies its "nothing releasable" check to a forced
-  `release-type: rc` as well. A candidate extends an open cycle, and once the stable release has closed
-  the cycle there is none to extend: the run now skips and says so, the way `release-type: stable`
-  already did, instead of tagging `vX.Y.Z-rc.N` above the shipped `vX.Y.Z`.
-- `gen workflows`: the `auto-release` flow renders the release notes after it decides which tag to cut, so
-  the "Full Changelog" compare link on a release candidate points at the tag that was created
-  (`compare/v0.1.5...v0.1.6-rc.1`) instead of at the stable target, which has no tag until the cycle closes.
-- `gen workflows`: `cliff.toml` counts only `vX.Y.Z` tags as releases (`tag_pattern`, replacing the
-  `ignore_tags` pre-release filter), so a `vX.Y.Z-rc.N` candidate tag no longer ends the range the
-  `auto-release` flow releases from. The version and the notes span the whole candidate cycle: the stable
-  release that closes a cycle carries every commit the candidates carried (devctl#2202), a
-  `workflow_dispatch` run with a candidate tag on `HEAD` names the target of the cycle rather than the last
-  stable version (devctl#2201), and a candidate pushed during a cycle keeps the target the cycle
-  established. Candidate notes become cumulative as a result: `rc.2` lists what `rc.1` listed, plus what is
-  new. The `decide` step's describe baseline also excludes build-metadata tags (`--exclude='*+*'`), so both
-  ends of the flow read the same set of tags.
-- `gen makefile`: the `app` flavour's targets (`helm-docs`, `lint-chart`, `update-chart`, `update-deps`) work
-  on repositories that also have the `go` flavour. The root `Makefile` includes `Makefile.*.mk` in name order,
-  so `Makefile.gen.app.mk` is parsed before `Makefile.gen.go.mk` sets `APPLICATION` from the Go module; the
-  `check-env` guard was a parse-time `ifndef` and `DEPS` a parse-time `:=`, so every go+app repository
-  (vm-manager, model-manager) failed with `Makefile.gen.app.mk:47: *** APPLICATION is not defined` although the
-  variable is set once make runs a recipe. The guard is now a recipe line and `DEPS` is recursively expanded, so
-  both read `APPLICATION` at recipe time; the per-dependency `$(DEPS)` targets, whose names were also fixed at
-  parse time, become a loop inside `update-deps`. App-only repositories keep working as before: `APPLICATION`
-  from `Makefile.custom.mk` or the command line is honoured, and an unset `APPLICATION` still fails the target
-  with a message (and `make help` no longer trips over it).
 - `gen precommit`: the `helm-schema-<chart>` hook now installs and pins its own generator
   (`github.com/losisin/helm-values-schema-json/v2@v2.6.0` in `additional_dependencies`, next to the
   existing `schemalint` pin) and calls that binary directly, instead of calling a bare `helm schema`
@@ -1746,20 +3156,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   `helm_values_schema_json_version` pin added here is superseded by the `gen precommit` fix above,
   which removes that pin entirely; neither has shipped yet.)
 
+## [8.54.2] - 2026-09-08
+
+### Changed
+
+- `gen circleci`: the architect orb pin moves to `10.4.1`, which ships the `sync-china-registry` fix
+  (architect-orb#921): the job now waits until the image the push job published is visible from the
+  in-China runner, child manifests included, before `regctl image copy` starts. The runner reads the
+  Southeast Asia replica of `gsoci.azurecr.io`, which receives a pushed image asynchronously, and the old
+  fixed 10 × 5 s retry never fit a multi-GiB image (every `vllm` tag since v0.4.7 needed a manual rerun).
+  No template change; the generated jobs take the orb's new `replica-wait-minutes` default of 60. Golden
+  workflows regenerated.
+
+## [8.54.0] - 2026-09-08
+
 ### Added
 
-- `gen workflows --helm-docs-regen` (app flavour) generates `zz_generated.helm-docs-regen.yaml`: on pull requests
-  from `renovate/**` and `dependabot/**` branches it regenerates the chart README (helm-docs) and
-  `values.schema.json` (the `helm-schema-<chart>` hooks) and pushes the result back onto the PR branch with the
-  taylorbot PAT, so an image-tag or values-key bump no longer fails the `pre-commit` check on files only the hooks
-  can rewrite (giantswarm/agent-platform#295, #301, #302, #320; agent-sandbox#38; agentgateway#3). The hooks and
-  their tool pins are read from the repo's own `.pre-commit-config.yaml` at run time, every hook runs twice with
-  the second pass required clean, a clean tree is a no-op so the run the push triggers exits without pushing again,
-  and the job is skipped with a warning where the secret is not available (fork and Dependabot-triggered runs).
-  Opt in through `gen.helmDocsRegen: true` in giantswarm/github. Closes #2185.
-- `gen renovate` lists `dev@giantswarm.io` in `gitIgnoredAuthors`: the author the generated workflows commit
-  with (helm-docs-regen, update-chart, sync-from-upstream) now counts as Renovate's own, so a branch they pushed
-  to keeps being rebased and autoclosed instead of retitled "- abandoned".
 - `version update` installs a release binary only after its cosign Sigstore bundle verifies. Every devctl release
   asset comes with a `<asset>.bundle` next to it: cosign's keyless signature made by the CircleCI pipeline and
   recorded in Rekor. The download is verified against that bundle for a CircleCI build of
@@ -1769,6 +3181,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   way. Version lookups (`version check`, and the check that runs before every command) do not look at the bundle,
   so an unsigned release can never block devctl; cache, exit status 125 and `DEVCTL_UNSAFE_FORCE_VERSION` behave
   as before.
+
+### Changed
+
+- `pkg/updater` moves from the unmaintained `rhysd/go-github-selfupdate` to `creativeprojects/go-selfupdate`,
+  which the shared validator `github.com/giantswarm/selfupdate-cosign` plugs into. Same GitHub API calls, same
+  asset selection (`devctl-<os>-<arch>`), same in-place replacement of the running binary. The one fallback that
+  goes away: without a token in the environment the old library also read `github.token` from the git config;
+  the new one calls the GitHub API anonymously in that case, which works for the public devctl repository.
+
+## [8.53.0] - 2026-09-05
+
+### Added
+
 - `gen circleci --image-resource-class <platform>=<class>` (repeatable): overrides the CircleCI resource class
   of the native per-architecture `build-image` jobs for one platform, on both the branch and the release leg.
   Defaults stay linux/amd64 on `small` and linux/arm64 on `arm.medium`. For an image whose leg is dominated by
@@ -1777,11 +3202,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   proper had taken 8. The class must belong to the platform's architecture (the orb refuses a mismatch instead
   of emulating) and the platform must be in `--image-platforms`; both are checked at generation time. Requires
   `--image-native-builds`.
+
+## [8.52.0] - 2026-09-05
+
+### Added
+
 - `gen circleci`: the chart-test jobs (`execute-chart-tests`, `execute-chart-tests-release`) run with the
   architect context, and the architect orb pin moves to 10.4.0. The orb's `run-tests-with-ats` turns the
   context's registry credentials into `/var/lib/kubelet/config.json` on the kind cluster it creates, so a chart
   whose image lives in gsociprivate.azurecr.io can be smoke-tested without `imagePullSecrets` (first users:
   alfred-app, mcp-runbooks). Without the context the orb step only prints a notice.
+
+## [8.51.0] - 2026-09-05
+
+### Added
+
 - `repo checks --update --circleci-dir <repo>/.circleci`: reconciles the required `ci/circleci: <job>` contexts
   with the pipeline itself. The branch-side jobs of the generated `workflows.yml` and the repo-owned `custom.yml`
   (every workflow; a job counts unless its branch filter has `only:` or ignores every branch) are required once
@@ -1792,17 +3227,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   request with a check nothing could report. A pipeline that cannot be read leaves the CircleCI contexts as they
   are; contexts of other systems (GitHub Actions workflows) are never touched.
 
+## [8.50.2] - 2026-09-05
+
 ### Changed
 
-- `pkg/updater` moves from the unmaintained `rhysd/go-github-selfupdate` to `creativeprojects/go-selfupdate`,
-  which the shared validator `github.com/giantswarm/selfupdate-cosign` plugs into. Same GitHub API calls, same
-  asset selection (`devctl-<os>-<arch>`), same in-place replacement of the running binary. The one fallback that
-  goes away: without a token in the environment the old library also read `github.token` from the git config;
-  the new one calls the GitHub API anonymously in that case, which works for the public devctl repository.
 - `gen circleci`: the default app-test-suite tag moves to `1.0.3`, which waits for the bootstrapped CRDs
   (`--cluster-crds`) to be `Established` before the Helm deploy. On 1.0.2 a chart whose templates render a
   kind from those CRDs (giantswarm/agent renders a kagent `Agent`) failed `helm upgrade --install` with
   `no matches for kind`, because `kubectl apply` returns before the API server serves the new kinds.
+
+## [8.50.1] - 2026-09-05
 
 ### Fixed
 
@@ -1813,6 +3247,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   not, so the first alignment with `gen.ci.requireCircleCIChecks` aborted on the three private repositories
   (muster-runbooks, agent-platform-ui, web-assets) before syncing any file. `--checks` and `--remove` are applied
   as before in that case.
+
+## [8.50.0] - 2026-09-05
+
+### Added
+
+- `gen workflows --release-workflow auto-release`: after creating the release, the generated
+  `zz_generated.auto_release.yaml` verifies that CircleCI picked up the tag (repos with a
+  `.circleci/config.yml` only): it polls the v2 pipeline list for up to 120 s and, if no pipeline appears,
+  triggers one through the API with the org secret `CIRCLECI_API_TOKEN`. Without the secret the step is a
+  detector (a missing pipeline on a public project fails the run with the manual `curl`; a 404 on a private
+  project is a warning). GitHub delivers the tag-push webhook once and never retries; on 2026-09-04 CircleCI
+  answered three of ~55 tag pushes with an empty HTTP 400 and those releases had no pipeline.
+
+## [8.49.0] - 2026-09-05
 
 ### Added
 
@@ -1828,19 +3276,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   (tunnelport#80 released v1.2.6 without a chart). `--checks` keeps adding unconditionally; `strict` and
   checks not named stay untouched as before.
 
-### Fixed
-
-- `gen circleci`: the default app-test-suite tag moves to `1.0.2`, which accepts `oci://` values for
-  `upgrade-tests-app-catalog-url` at config validation (1.0.0 and 1.0.1 rejected them as `Wrong catalog URL`
-  although the resolver supports OCI catalogs), so upgrade scenarios can take their stable chart from
-  `oci://gsoci.azurecr.io/charts/giantswarm`.
-
-### Fixed
-
-- `gen circleci`: the default app-test-suite tag moves to `1.0.1`. The `1.0.0` image ships a CRD bundle whose
-  `gateway-api.yaml` starts with helm's `Pulled:`/`Digest:` lines (captured from stdout while syncing), so
-  `kubectl apply --server-side -f /etc/ats/crds` rejects the directory and every 1.0.0 run fails at CRD
-  bootstrap before a single test runs. 1.0.1 fixes the bundle and guards it with a unit test.
+## [8.48.0] - 2026-09-05
 
 ### Added
 
@@ -1852,18 +3288,74 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   custom.yml merge cannot add post-steps to a generated job (yq `*+` appends a second `architect/go-build`
   entry, which CircleCI rejects), so the generator carries it. Go repos only; the path must be a relative
   directory under the checkout.
-- `gen workflows --release-workflow auto-release`: after creating the release, the generated
-  `zz_generated.auto_release.yaml` verifies that CircleCI picked up the tag (repos with a
-  `.circleci/config.yml` only): it polls the v2 pipeline list for up to 120 s and, if no pipeline appears,
-  triggers one through the API with the org secret `CIRCLECI_API_TOKEN`. Without the secret the step is a
-  detector (a missing pipeline on a public project fails the run with the manual `curl`; a 404 on a private
-  project is a warning). GitHub delivers the tag-push webhook once and never retries; on 2026-09-04 CircleCI
-  answered three of ~55 tag pushes with an empty HTTP 400 and those releases had no pipeline.
+
+## [8.47.0] - 2026-09-04
+
+### Added
+
 - `gen circleci`: new `--go-build-path` flag setting the architect `go-build` job's `path` param for
   Go repos.
+
+## [8.46.2] - 2026-09-04
+
+### Fixed
+
+- `gen circleci`: the default app-test-suite tag moves to `1.0.2`, which accepts `oci://` values for
+  `upgrade-tests-app-catalog-url` at config validation (1.0.0 and 1.0.1 rejected them as `Wrong catalog URL`
+  although the resolver supports OCI catalogs), so upgrade scenarios can take their stable chart from
+  `oci://gsoci.azurecr.io/charts/giantswarm`.
+
+## [8.46.1] - 2026-09-04
+
+### Fixed
+
+- `gen circleci`: the default app-test-suite tag moves to `1.0.1`. The `1.0.0` image ships a CRD bundle whose
+  `gateway-api.yaml` starts with helm's `Pulled:`/`Digest:` lines (captured from stdout while syncing), so
+  `kubectl apply --server-side -f /etc/ats/crds` rejects the directory and every 1.0.0 run fails at CRD
+  bootstrap before a single test runs. 1.0.1 fixes the bundle and guards it with a unit test.
+
+## [8.46.0] - 2026-09-04
+
+### Changed
+
+- `gen circleci`: **app-test-suite 1.0.0 is the default** for every generated-CI chart repo
+  (`DefaultATSVersion`, next to the orb pin). Unset, `--ats-version` now renders exactly what
+  `--ats-version 1.0.0` renders: `app-test-suite_container_tag: "1.0.0"` and `create_kind_cluster: true`
+  on the chart-test jobs, and `tests/ats/pyproject.toml` + `uv.lock` instead of the Pipfile. The repo owns
+  the rest of its migration (`.ats/main.yaml` without the `*-cluster-type` keys, tests that install with
+  Helm instead of an App CR); a repo that has not migrated yet pins a 0.x tag (`--ats-version 0.15.0`,
+  `gen.ci.atsVersion: "0.15.0"` in giantswarm/github) to stay on the legacy dats.sh path with the Pipfile.
+  `--skip-ats` no longer conflicts with the tag: the opt-out wins and the tag is ignored.
+
+## [8.45.0] - 2026-09-04
+
+### Added
+
 - `gen circleci`: new `--ats-on-release` flag (`gen.ci.atsOnRelease` in giantswarm/github). Restores
   the pre-v8.45.0 chart pipeline: an `execute-chart-tests-release` job on the tag, after the release
   image, with `push-chart-release` gating on it. Mutually exclusive with `--skip-ats`.
+
+### Changed
+
+- `gen circleci`: the chart tests run on branches only. The generated chart pipeline no longer carries
+  `execute-chart-tests-release`; `push-chart-release` gates directly on `build-chart` (plus the release
+  image when there is one), so a release is the build + push alone. The tag is cut from the merge commit
+  of a PR whose `execute-chart-tests` already ran on that tree; on `agent-platform-standalone` the
+  tag-time re-run was ~4m10 of a ~6 min release, never caught a chart regression and failed only on the
+  apptestctl bootstrap race. Every app-flavour repo changes shape at its next alignment. For the tag to
+  be the tree the PR tested, make the `ci/circleci` statuses required checks on the default branch with
+  up-to-date branches (strict); a repo that cannot, or whose `custom.yml` jobs require
+  `execute-chart-tests-release` (backstage's second catalog push did), sets `--ats-on-release`.
+
+### Deprecated
+
+- `gen circleci --ats-branch-only` (added in v8.43.0): branch-only chart tests are the default now. The
+  flag is accepted and ignored; `gen.ci.atsBranchOnly` in giantswarm/github is ignored the same way.
+
+## [8.44.0] - 2026-09-04
+
+### Added
+
 - `gen circleci`: new `--ats-version` flag (`gen.ci.atsVersion` in giantswarm/github). Pins the
   app-test-suite container tag on both `run-tests-with-ats` jobs (`app-test-suite_container_tag`). A
   1.x tag also emits `create_kind_cluster: true` on both jobs -- app-test-suite 1.x no longer
@@ -1879,6 +3371,38 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   (architect-orb#917): the job installs kind, creates the cluster and hands its kubeconfig to
   app-test-suite 1.x, which provisions none. `--ats-version` with a 1.x tag emits that parameter, and
   10.2.0 rejects it as unknown, so the pin and the knob ship together.
+
+## [8.43.1] - 2026-09-04
+
+### Changed
+
+- `gen workflows --release-workflow auto-release`: `cliff.toml` skips `docs` commits the way it skips
+  `style`. git-cliff bumps at least the patch for every commit that is not skipped, so a docs-only
+  merge tagged and published an identical artifact (agent-platform-standalone v0.35.2 and v0.35.3,
+  both CLAUDE.md-only); now such a push computes the current version and the workflow logs
+  `No releasable commits since vX.Y.Z; skipping tag.` The template comment that claimed the bump
+  ignores the parser groups is replaced by the actual rule. `chore` and `ci` keep releasing.
+
+## [8.43.0] - 2026-09-04
+
+### Added
+
+- `gen circleci`: new `--ats-branch-only` flag (`gen.ci.atsBranchOnly` in giantswarm/github). The chart
+  pipeline keeps `execute-chart-tests` on branches and the canonical `tests/ats/Pipfile`, but no longer
+  generates the tag-time `execute-chart-tests-release`; `push-chart-release` gates directly on
+  `build-chart`. The tag is cut from the merge commit of a PR whose `execute-chart-tests` already passed
+  on that tree, so the tag-time run re-tested an identical tree: on `agent-platform-standalone` it was
+  4m10s of a 5m57s release (p50 over 53 tag pipelines since 2026-08-31) and its only three failures were
+  the apptestctl bootstrap race, never a chart regression. It is only sound when the repo's branch
+  protection makes the `ci/circleci` statuses required checks on the default branch and requires
+  branches to be up to date with it (strict); set that first. Mutually exclusive with `--skip-ats`,
+  which drops both jobs and the Pipfile. Off by default: the generated output for every repo that does
+  not set it is unchanged.
+
+## [8.42.0] - 2026-09-04
+
+### Added
+
 - `gen circleci`: new `--image-native-builds` flag (`gen.ci.image.nativeBuilds` in giantswarm/github),
   the opt-in for native per-architecture image builds. It emits one `architect/build-image` job per
   platform in `--image-platforms` (default `linux/amd64,linux/arm64`), each on a resource class of that
@@ -1893,73 +3417,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   default: the generated output for every repo that does not set it is unchanged. Pays off for
   Dockerfiles with real work in `RUN` steps; a `COPY` of a cross-compiled binary gains nothing.
 - The architect orb pin moves to `10.2.0`, which ships `build-image` and `merge-digests`.
-- `gen circleci`: new `--ats-branch-only` flag (`gen.ci.atsBranchOnly` in giantswarm/github). The chart
-  pipeline keeps `execute-chart-tests` on branches and the canonical `tests/ats/Pipfile`, but no longer
-  generates the tag-time `execute-chart-tests-release`; `push-chart-release` gates directly on
-  `build-chart`. The tag is cut from the merge commit of a PR whose `execute-chart-tests` already passed
-  on that tree, so the tag-time run re-tested an identical tree: on `agent-platform-standalone` it was
-  4m10s of a 5m57s release (p50 over 53 tag pipelines since 2026-08-31) and its only three failures were
-  the apptestctl bootstrap race, never a chart regression. It is only sound when the repo's branch
-  protection makes the `ci/circleci` statuses required checks on the default branch and requires
-  branches to be up to date with it (strict); set that first. Mutually exclusive with `--skip-ats`,
-  which drops both jobs and the Pipfile. Off by default: the generated output for every repo that does
-  not set it is unchanged.
+
+## [8.41.2] - 2026-09-03
 
 ### Changed
 
-- `gen circleci`: **app-test-suite 1.0.0 is the default** for every generated-CI chart repo
-  (`DefaultATSVersion`, next to the orb pin). Unset, `--ats-version` now renders exactly what
-  `--ats-version 1.0.0` renders: `app-test-suite_container_tag: "1.0.0"` and `create_kind_cluster: true`
-  on the chart-test jobs, and `tests/ats/pyproject.toml` + `uv.lock` instead of the Pipfile. The repo owns
-  the rest of its migration (`.ats/main.yaml` without the `*-cluster-type` keys, tests that install with
-  Helm instead of an App CR); a repo that has not migrated yet pins a 0.x tag (`--ats-version 0.15.0`,
-  `gen.ci.atsVersion: "0.15.0"` in giantswarm/github) to stay on the legacy dats.sh path with the Pipfile.
-  `--skip-ats` no longer conflicts with the tag: the opt-out wins and the tag is ignored.
-- `gen circleci`: the chart tests run on branches only. The generated chart pipeline no longer carries
-  `execute-chart-tests-release`; `push-chart-release` gates directly on `build-chart` (plus the release
-  image when there is one), so a release is the build + push alone. The tag is cut from the merge commit
-  of a PR whose `execute-chart-tests` already ran on that tree; on `agent-platform-standalone` the
-  tag-time re-run was ~4m10 of a ~6 min release, never caught a chart regression and failed only on the
-  apptestctl bootstrap race. Every app-flavour repo changes shape at its next alignment. For the tag to
-  be the tree the PR tested, make the `ci/circleci` statuses required checks on the default branch with
-  up-to-date branches (strict); a repo that cannot, or whose `custom.yml` jobs require
-  `execute-chart-tests-release` (backstage's second catalog push did), sets `--ats-on-release`.
-
-- `gen workflows --release-workflow auto-release`: `cliff.toml` skips `docs` commits the way it skips
-  `style`. git-cliff bumps at least the patch for every commit that is not skipped, so a docs-only
-  merge tagged and published an identical artifact (agent-platform-standalone v0.35.2 and v0.35.3,
-  both CLAUDE.md-only); now such a push computes the current version and the workflow logs
-  `No releasable commits since vX.Y.Z; skipping tag.` The template comment that claimed the bump
-  ignores the parser groups is replaced by the actual rule. `chore` and `ci` keep releasing.
-- `gen workflows`: run the generated "Fix Go vulnerabilities" (nancy-fixer) workflow every Wednesday night.
-
-- `gen circleci`: whether the chart's `appVersion` is stamped now follows the repo's shape. A repo with
-  **no image pipeline** gets `override_app_version: false` on its chart jobs, so app-build-suite keeps the
-  `appVersion` declared in `Chart.yaml`. The chart version is still always stamped.
-
-  `appVersion` is the version of the packaged application. A repo that builds its own image ships the app
-  it packages, so `appVersion` equals the chart version and stamping it is correct. A chart-only repo
-  packages an app built elsewhere, so its `appVersion` is that app's version. Of the organisation's 249
-  chart repos, 97 chart-only repos declare a real upstream `appVersion` that packaging overwrote, while 65
-  of the 82 image-building repos already declare `appVersion` == `version`.
-
-  Derived from the same signal as the image pipeline (`HasDockerfile`, or a non-empty `ImageDockerfile`),
-  so no repo has to opt in.
-
-- `gen circleci --override-chart-app-version`: overrules that derivation in either direction. Leave it
-  unset for the derived behaviour; pass `=false` for a repo that builds an image and still declares a
-  foreign `appVersion`, or `=true` for a chart-only repo that wants its `appVersion` stamped anyway.
-
 - align helm-docs command in `Makefile.gen.app.mk.template` with the `pre-commit-config.yaml.template` configuration
 
-### Deprecated
-
-- `gen circleci --ats-branch-only` (added in v8.43.0): branch-only chart tests are the default now. The
-  flag is accepted and ignored; `gen.ci.atsBranchOnly` in giantswarm/github is ignored the same way.
-
-- `gen circleci --keep-chart-app-version` (added in v8.39.0): use `--override-chart-app-version=false`. It
-  is still honoured, and the repos it was added for no longer need either flag — the derivation covers
-  them.
+## [8.41.1] - 2026-08-31
 
 ### Fixed
 
@@ -1975,69 +3440,37 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   the repository that hit it, emits 12 MB, and CI already runs nancy 2.1.0. The target's doc comment
   now says v2.1.0 rather than v1.0.37.
 
-### Security
-
-- `app bootstrap`: `--name` and `--team` are now validated as identifiers. `--team` is joined into
-  `repositories/team-<team>.yaml` inside the `giantswarm/github` checkout, so a value carrying `..`
-  or `/` reached a file outside that directory; `--name` becomes an argument of `devctl repo setup`,
-  so a value starting with `-` was read as a flag. The bootstrap flow also runs only `devctl`, `git`
-  and `vendir`, checked against an allow list before the subprocess starts.
-- `deploy`: `--app-name`, `--app-catalog`, `--target-namespace`, `--management-cluster`,
-  `--organization` and `--workload-cluster` are now validated as identifiers, and `--app-version` as
-  a version. All seven are passed to `kubectl gs gitops add app`, where a value starting with `-`
-  was read as a kubectl flag.
-- `pkg/appstatus`: `WaitForAppDeployment` validates the app name, organization namespace and
-  management cluster it passes to `tsh` and `kubectl`, rather than trust its callers.
-- `release create`: the provider name is validated before it is joined into the releases directory,
-  so it cannot address a directory outside it. The chart name and version read from a release
-  manifest are validated before they are interpolated into the `raw.githubusercontent.com` URL the
-  cluster dependency lookup fetches.
-
-### Fixed
-
-- `pr`: the parent command reports an error from `--help` instead of discarding it.
-- `gen precommit`: new `--go-generate` flag renders a `go generate ./...` step into
-  `zz_generated.pre-commit.yaml` before the hooks, and devctl sets it for itself. golangci-lint
-  compiles the packages it analyses, and devctl embeds 37 gitignored `*.template.sha` provenance
-  files, so the job stopped at a load error instead of linting. The flag is opt-in and requires
-  `--language go`: the job installs no code generators, so a repository whose directives need
-  `controller-gen` or `mockgen` must not get the step.
-- `release`: `getLatestGithubRelease` and the Kubernetes release lookup name the upstream
-  repository through `kubernetesGitHubOwner`/`kubernetesGitHubRepo` rather than repeat a literal
-  that also means the component name.
+## [8.41.0] - 2026-08-28
 
 ### Changed
 
-- `release bumpall`: reads `slices` from the standard library instead of `golang.org/x/exp/slices`,
-  which is deprecated. `golang.org/x/exp` is dropped from `go.mod`.
-- The `github.Ptr` and `github.String` helpers, deprecated in go-github v92, are replaced by the
-  `new` builtin.
-- Repeated string literals are named: template data keys and delimiters in the `workflows`,
-  `precommit` and `makefile` generators, and provider names, release types, output formats and
-  component names in `pkg/release`.
-- Permissive file and directory modes in tests are tightened to `0600` and `0750`.
-- `.golangci.yml` sets `goconst.ignore-tests`. A table test repeats a fixture across its cases so
-  that the input and the expectation can be read together. It also excludes `fmt.Fprint`,
-  `fmt.Fprintf` and `fmt.Fprintln` from errcheck: the runners print to an injected `io.Writer`,
-  and a failed write to the user's terminal cannot be reported to the user's terminal.
+- `gen workflows`: run the generated "Fix Go vulnerabilities" (nancy-fixer) workflow every Wednesday night.
 
-### Removed
+## [8.40.0] - 2026-08-27
 
-- `app bootstrap`. Its replacement is `repo create`: the declaration goes through the engine's validation and
-  the team-file pull request instead of a hard-coded `-app` suffix, an unvalidated team-file write, an SSH clone
-  and a push-then-protect sequence; the reconciler creates the repository from the merged entry. The vendir and
-  kustomize sync and the patch-script scaffolding live on as options of the chart-only template's dry run
-  (`pkg/reposetup` options). The `app` command group is gone with its only subcommand.
+### Changed
 
-### Fixed
+- `gen circleci`: whether the chart's `appVersion` is stamped now follows the repo's shape. A repo with
+  **no image pipeline** gets `override_app_version: false` on its chart jobs, so app-build-suite keeps the
+  `appVersion` declared in `Chart.yaml`. The chart version is still always stamped.
 
-- `pr wait` and `pr merge` no longer wait for a CircleCI pipeline of a repository CircleCI does not build. CircleCI's
-  project lookup answers a project for every repository the token's user sees on GitHub, set up on CircleCI or not,
-  so a head carrying `.circleci/config.yml` in a repository never set up there -- a template repository whose
-  configuration is for the repositories created from it -- was waited for until the timeout
-  (`unfinished: circleci pipeline for <sha> (absent)`). CircleCI is now part of the verdict only when the project has
-  run at least one pipeline; a project without one is judged from GitHub alone with a warning in the document, like a
-  repository without a project.
+  `appVersion` is the version of the packaged application. A repo that builds its own image ships the app
+  it packages, so `appVersion` equals the chart version and stamping it is correct. A chart-only repo
+  packages an app built elsewhere, so its `appVersion` is that app's version. Of the organisation's 249
+  chart repos, 97 chart-only repos declare a real upstream `appVersion` that packaging overwrote, while 65
+  of the 82 image-building repos already declare `appVersion` == `version`.
+
+  Derived from the same signal as the image pipeline (`HasDockerfile`, or a non-empty `ImageDockerfile`),
+  so no repo has to opt in.
+- `gen circleci --override-chart-app-version`: overrules that derivation in either direction. Leave it
+  unset for the derived behaviour; pass `=false` for a repo that builds an image and still declares a
+  foreign `appVersion`, or `=true` for a chart-only repo that wants its `appVersion` stamped anyway.
+
+### Deprecated
+
+- `gen circleci --keep-chart-app-version` (added in v8.39.0): use `--override-chart-app-version=false`. It
+  is still honoured, and the repos it was added for no longer need either flag — the derivation covers
+  them.
 
 ## [8.23.0] - 2026-06-24
 
@@ -4349,7 +5782,289 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.23.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.140.1-rc.2...HEAD
+[8.140.1-rc.2]: https://github.com/giantswarm/devctl/compare/v8.140.1-rc.1...v8.140.1-rc.2
+[8.140.1-rc.1]: https://github.com/giantswarm/devctl/compare/v8.140.0...v8.140.1-rc.1
+[8.140.0]: https://github.com/giantswarm/devctl/compare/v8.140.0-rc.21...v8.140.0
+[8.140.0-rc.21]: https://github.com/giantswarm/devctl/compare/v8.140.0-rc.20...v8.140.0-rc.21
+[8.140.0-rc.20]: https://github.com/giantswarm/devctl/compare/v8.140.0-rc.19...v8.140.0-rc.20
+[8.140.0-rc.19]: https://github.com/giantswarm/devctl/compare/v8.140.0-rc.18...v8.140.0-rc.19
+[8.140.0-rc.18]: https://github.com/giantswarm/devctl/compare/v8.140.0-rc.17...v8.140.0-rc.18
+[8.140.0-rc.17]: https://github.com/giantswarm/devctl/compare/v8.140.0-rc.15...v8.140.0-rc.17
+[8.140.0-rc.15]: https://github.com/giantswarm/devctl/compare/v8.140.0-rc.14...v8.140.0-rc.15
+[8.140.0-rc.14]: https://github.com/giantswarm/devctl/compare/v8.140.0-rc.13...v8.140.0-rc.14
+[8.140.0-rc.13]: https://github.com/giantswarm/devctl/compare/v8.140.0-rc.12...v8.140.0-rc.13
+[8.140.0-rc.12]: https://github.com/giantswarm/devctl/compare/v8.140.0-rc.10...v8.140.0-rc.12
+[8.140.0-rc.10]: https://github.com/giantswarm/devctl/compare/v8.140.0-rc.9...v8.140.0-rc.10
+[8.140.0-rc.9]: https://github.com/giantswarm/devctl/compare/v8.140.0-rc.8...v8.140.0-rc.9
+[8.140.0-rc.8]: https://github.com/giantswarm/devctl/compare/v8.140.0-rc.6...v8.140.0-rc.8
+[8.140.0-rc.6]: https://github.com/giantswarm/devctl/compare/v8.140.0-rc.4...v8.140.0-rc.6
+[8.140.0-rc.4]: https://github.com/giantswarm/devctl/compare/v8.140.0-rc.3...v8.140.0-rc.4
+[8.140.0-rc.3]: https://github.com/giantswarm/devctl/compare/v8.140.0-rc.2...v8.140.0-rc.3
+[8.140.0-rc.2]: https://github.com/giantswarm/devctl/compare/v8.140.0-rc.1...v8.140.0-rc.2
+[8.140.0-rc.1]: https://github.com/giantswarm/devctl/compare/v8.139.14...v8.140.0-rc.1
+[8.139.14]: https://github.com/giantswarm/devctl/compare/v8.139.14-rc.1...v8.139.14
+[8.139.14-rc.1]: https://github.com/giantswarm/devctl/compare/v8.139.13...v8.139.14-rc.1
+[8.139.13]: https://github.com/giantswarm/devctl/compare/v8.139.13-rc.1...v8.139.13
+[8.139.13-rc.1]: https://github.com/giantswarm/devctl/compare/v8.139.12...v8.139.13-rc.1
+[8.139.12]: https://github.com/giantswarm/devctl/compare/v8.139.11...v8.139.12
+[8.139.11]: https://github.com/giantswarm/devctl/compare/v8.139.10...v8.139.11
+[8.139.10]: https://github.com/giantswarm/devctl/compare/v8.139.9...v8.139.10
+[8.139.9]: https://github.com/giantswarm/devctl/compare/v8.139.9-rc.4...v8.139.9
+[8.139.9-rc.4]: https://github.com/giantswarm/devctl/compare/v8.139.9-rc.2...v8.139.9-rc.4
+[8.139.9-rc.2]: https://github.com/giantswarm/devctl/compare/v8.139.9-rc.1...v8.139.9-rc.2
+[8.139.9-rc.1]: https://github.com/giantswarm/devctl/compare/v8.139.8...v8.139.9-rc.1
+[8.139.8]: https://github.com/giantswarm/devctl/compare/v8.139.7...v8.139.8
+[8.139.7]: https://github.com/giantswarm/devctl/compare/v8.139.6...v8.139.7
+[8.139.6]: https://github.com/giantswarm/devctl/compare/v8.139.5...v8.139.6
+[8.139.5]: https://github.com/giantswarm/devctl/compare/v8.139.3...v8.139.5
+[8.139.3]: https://github.com/giantswarm/devctl/compare/v8.139.3-rc.1...v8.139.3
+[8.139.3-rc.1]: https://github.com/giantswarm/devctl/compare/v8.139.2...v8.139.3-rc.1
+[8.139.2]: https://github.com/giantswarm/devctl/compare/v8.139.1...v8.139.2
+[8.139.1]: https://github.com/giantswarm/devctl/compare/v8.139.0...v8.139.1
+[8.139.0]: https://github.com/giantswarm/devctl/compare/v8.139.0-rc.2...v8.139.0
+[8.139.0-rc.2]: https://github.com/giantswarm/devctl/compare/v8.139.0-rc.1...v8.139.0-rc.2
+[8.139.0-rc.1]: https://github.com/giantswarm/devctl/compare/v8.138.2-rc.2...v8.139.0-rc.1
+[8.138.2-rc.2]: https://github.com/giantswarm/devctl/compare/v8.138.1...v8.138.2-rc.2
+[8.138.1]: https://github.com/giantswarm/devctl/compare/v8.138.0...v8.138.1
+[8.138.0]: https://github.com/giantswarm/devctl/compare/v8.137.1...v8.138.0
+[8.137.1]: https://github.com/giantswarm/devctl/compare/v8.137.0...v8.137.1
+[8.137.0]: https://github.com/giantswarm/devctl/compare/v8.136.2-rc.1...v8.137.0
+[8.136.2-rc.1]: https://github.com/giantswarm/devctl/compare/v8.136.1...v8.136.2-rc.1
+[8.136.1]: https://github.com/giantswarm/devctl/compare/v8.136.0-rc.4...v8.136.1
+[8.136.0-rc.4]: https://github.com/giantswarm/devctl/compare/v8.136.0-rc.3...v8.136.0-rc.4
+[8.136.0-rc.3]: https://github.com/giantswarm/devctl/compare/v8.136.0-rc.1...v8.136.0-rc.3
+[8.136.0-rc.1]: https://github.com/giantswarm/devctl/compare/v8.135.0...v8.136.0-rc.1
+[8.135.0]: https://github.com/giantswarm/devctl/compare/v8.134.3...v8.135.0
+[8.134.3]: https://github.com/giantswarm/devctl/compare/v8.134.2...v8.134.3
+[8.134.2]: https://github.com/giantswarm/devctl/compare/v8.134.0...v8.134.2
+[8.134.0]: https://github.com/giantswarm/devctl/compare/v8.134.0-rc.1...v8.134.0
+[8.134.0-rc.1]: https://github.com/giantswarm/devctl/compare/v8.133.1...v8.134.0-rc.1
+[8.133.1]: https://github.com/giantswarm/devctl/compare/v8.133.0-rc.1...v8.133.1
+[8.133.0-rc.1]: https://github.com/giantswarm/devctl/compare/v8.132.0...v8.133.0-rc.1
+[8.132.0]: https://github.com/giantswarm/devctl/compare/v8.131.1-rc.1...v8.132.0
+[8.131.1-rc.1]: https://github.com/giantswarm/devctl/compare/v8.131.0...v8.131.1-rc.1
+[8.131.0]: https://github.com/giantswarm/devctl/compare/v8.130.2...v8.131.0
+[8.130.2]: https://github.com/giantswarm/devctl/compare/v8.130.1...v8.130.2
+[8.130.1]: https://github.com/giantswarm/devctl/compare/v8.130.0...v8.130.1
+[8.130.0]: https://github.com/giantswarm/devctl/compare/v8.130.0-rc.1...v8.130.0
+[8.130.0-rc.1]: https://github.com/giantswarm/devctl/compare/v8.129.0...v8.130.0-rc.1
+[8.129.0]: https://github.com/giantswarm/devctl/compare/v8.129.0-rc.1...v8.129.0
+[8.129.0-rc.1]: https://github.com/giantswarm/devctl/compare/v8.128.2...v8.129.0-rc.1
+[8.128.2]: https://github.com/giantswarm/devctl/compare/v8.128.1...v8.128.2
+[8.128.1]: https://github.com/giantswarm/devctl/compare/v8.128.0...v8.128.1
+[8.128.0]: https://github.com/giantswarm/devctl/compare/v8.127.2-rc.1...v8.128.0
+[8.127.2-rc.1]: https://github.com/giantswarm/devctl/compare/v8.127.1...v8.127.2-rc.1
+[8.127.1]: https://github.com/giantswarm/devctl/compare/v8.127.0...v8.127.1
+[8.127.0]: https://github.com/giantswarm/devctl/compare/v8.126.1...v8.127.0
+[8.126.1]: https://github.com/giantswarm/devctl/compare/v8.126.0...v8.126.1
+[8.126.0]: https://github.com/giantswarm/devctl/compare/v8.126.0-rc.1...v8.126.0
+[8.126.0-rc.1]: https://github.com/giantswarm/devctl/compare/v8.125.0...v8.126.0-rc.1
+[8.125.0]: https://github.com/giantswarm/devctl/compare/v8.125.0-rc.1...v8.125.0
+[8.125.0-rc.1]: https://github.com/giantswarm/devctl/compare/v8.124.1-rc.2...v8.125.0-rc.1
+[8.124.1-rc.2]: https://github.com/giantswarm/devctl/compare/v8.123.0...v8.124.1-rc.2
+[8.123.0]: https://github.com/giantswarm/devctl/compare/v8.123.0-rc.1...v8.123.0
+[8.123.0-rc.1]: https://github.com/giantswarm/devctl/compare/v8.122.3-rc.2...v8.123.0-rc.1
+[8.122.3-rc.2]: https://github.com/giantswarm/devctl/compare/v8.122.2...v8.122.3-rc.2
+[8.122.2]: https://github.com/giantswarm/devctl/compare/v8.122.0...v8.122.2
+[8.122.0]: https://github.com/giantswarm/devctl/compare/v8.121.0...v8.122.0
+[8.121.0]: https://github.com/giantswarm/devctl/compare/v8.120.0...v8.121.0
+[8.120.0]: https://github.com/giantswarm/devctl/compare/v8.119.2...v8.120.0
+[8.119.2]: https://github.com/giantswarm/devctl/compare/v8.119.1...v8.119.2
+[8.119.1]: https://github.com/giantswarm/devctl/compare/v8.119.0...v8.119.1
+[8.119.0]: https://github.com/giantswarm/devctl/compare/v8.118.0...v8.119.0
+[8.118.0]: https://github.com/giantswarm/devctl/compare/v8.117.1...v8.118.0
+[8.117.1]: https://github.com/giantswarm/devctl/compare/v8.117.0...v8.117.1
+[8.117.0]: https://github.com/giantswarm/devctl/compare/v8.116.0...v8.117.0
+[8.116.0]: https://github.com/giantswarm/devctl/compare/v8.115.8...v8.116.0
+[8.115.8]: https://github.com/giantswarm/devctl/compare/v8.115.7...v8.115.8
+[8.115.7]: https://github.com/giantswarm/devctl/compare/v8.115.5...v8.115.7
+[8.115.5]: https://github.com/giantswarm/devctl/compare/v8.115.4...v8.115.5
+[8.115.4]: https://github.com/giantswarm/devctl/compare/v8.115.3...v8.115.4
+[8.115.3]: https://github.com/giantswarm/devctl/compare/v8.115.2...v8.115.3
+[8.115.2]: https://github.com/giantswarm/devctl/compare/v8.115.1...v8.115.2
+[8.115.1]: https://github.com/giantswarm/devctl/compare/v8.115.0...v8.115.1
+[8.115.0]: https://github.com/giantswarm/devctl/compare/v8.114.1...v8.115.0
+[8.114.1]: https://github.com/giantswarm/devctl/compare/v8.114.0...v8.114.1
+[8.114.0]: https://github.com/giantswarm/devctl/compare/v8.113.7...v8.114.0
+[8.113.7]: https://github.com/giantswarm/devctl/compare/v8.113.6...v8.113.7
+[8.113.6]: https://github.com/giantswarm/devctl/compare/v8.113.5...v8.113.6
+[8.113.5]: https://github.com/giantswarm/devctl/compare/v8.113.4...v8.113.5
+[8.113.4]: https://github.com/giantswarm/devctl/compare/v8.113.3...v8.113.4
+[8.113.3]: https://github.com/giantswarm/devctl/compare/v8.113.2...v8.113.3
+[8.113.2]: https://github.com/giantswarm/devctl/compare/v8.113.1...v8.113.2
+[8.113.1]: https://github.com/giantswarm/devctl/compare/v8.113.0...v8.113.1
+[8.113.0]: https://github.com/giantswarm/devctl/compare/v8.112.1...v8.113.0
+[8.112.1]: https://github.com/giantswarm/devctl/compare/v8.112.0...v8.112.1
+[8.112.0]: https://github.com/giantswarm/devctl/compare/v8.111.0...v8.112.0
+[8.111.0]: https://github.com/giantswarm/devctl/compare/v8.109.2...v8.111.0
+[8.109.2]: https://github.com/giantswarm/devctl/compare/v8.109.0...v8.109.2
+[8.109.0]: https://github.com/giantswarm/devctl/compare/v8.108.0...v8.109.0
+[8.108.0]: https://github.com/giantswarm/devctl/compare/v8.107.1...v8.108.0
+[8.107.1]: https://github.com/giantswarm/devctl/compare/v8.107.0...v8.107.1
+[8.107.0]: https://github.com/giantswarm/devctl/compare/v8.106.0...v8.107.0
+[8.106.0]: https://github.com/giantswarm/devctl/compare/v8.105.5...v8.106.0
+[8.105.5]: https://github.com/giantswarm/devctl/compare/v8.105.4...v8.105.5
+[8.105.4]: https://github.com/giantswarm/devctl/compare/v8.105.3...v8.105.4
+[8.105.3]: https://github.com/giantswarm/devctl/compare/v8.105.2...v8.105.3
+[8.105.2]: https://github.com/giantswarm/devctl/compare/v8.105.1...v8.105.2
+[8.105.1]: https://github.com/giantswarm/devctl/compare/v8.105.0...v8.105.1
+[8.105.0]: https://github.com/giantswarm/devctl/compare/v8.104.0...v8.105.0
+[8.104.0]: https://github.com/giantswarm/devctl/compare/v8.103.2...v8.104.0
+[8.103.2]: https://github.com/giantswarm/devctl/compare/v8.103.1...v8.103.2
+[8.103.1]: https://github.com/giantswarm/devctl/compare/v8.102.0...v8.103.1
+[8.102.0]: https://github.com/giantswarm/devctl/compare/v8.101.6...v8.102.0
+[8.101.6]: https://github.com/giantswarm/devctl/compare/v8.101.5...v8.101.6
+[8.101.5]: https://github.com/giantswarm/devctl/compare/v8.101.2...v8.101.5
+[8.101.2]: https://github.com/giantswarm/devctl/compare/v8.101.1...v8.101.2
+[8.101.1]: https://github.com/giantswarm/devctl/compare/v8.100.0...v8.101.1
+[8.100.0]: https://github.com/giantswarm/devctl/compare/v8.99.5...v8.100.0
+[8.99.5]: https://github.com/giantswarm/devctl/compare/v8.99.4...v8.99.5
+[8.99.4]: https://github.com/giantswarm/devctl/compare/v8.99.3...v8.99.4
+[8.99.3]: https://github.com/giantswarm/devctl/compare/v8.99.2...v8.99.3
+[8.99.2]: https://github.com/giantswarm/devctl/compare/v8.99.1...v8.99.2
+[8.99.1]: https://github.com/giantswarm/devctl/compare/v8.99.0...v8.99.1
+[8.99.0]: https://github.com/giantswarm/devctl/compare/v8.98.9...v8.99.0
+[8.98.9]: https://github.com/giantswarm/devctl/compare/v8.98.8...v8.98.9
+[8.98.8]: https://github.com/giantswarm/devctl/compare/v8.98.6...v8.98.8
+[8.98.6]: https://github.com/giantswarm/devctl/compare/v8.98.5...v8.98.6
+[8.98.5]: https://github.com/giantswarm/devctl/compare/v8.98.3...v8.98.5
+[8.98.3]: https://github.com/giantswarm/devctl/compare/v8.98.2...v8.98.3
+[8.98.2]: https://github.com/giantswarm/devctl/compare/v8.98.1...v8.98.2
+[8.98.1]: https://github.com/giantswarm/devctl/compare/v8.98.0...v8.98.1
+[8.98.0]: https://github.com/giantswarm/devctl/compare/v8.97.2...v8.98.0
+[8.97.2]: https://github.com/giantswarm/devctl/compare/v8.97.1...v8.97.2
+[8.97.1]: https://github.com/giantswarm/devctl/compare/v8.97.0...v8.97.1
+[8.97.0]: https://github.com/giantswarm/devctl/compare/v8.96.1...v8.97.0
+[8.96.1]: https://github.com/giantswarm/devctl/compare/v8.96.0...v8.96.1
+[8.96.0]: https://github.com/giantswarm/devctl/compare/v8.95.2...v8.96.0
+[8.95.2]: https://github.com/giantswarm/devctl/compare/v8.95.1...v8.95.2
+[8.95.1]: https://github.com/giantswarm/devctl/compare/v8.95.0...v8.95.1
+[8.95.0]: https://github.com/giantswarm/devctl/compare/v8.94.2...v8.95.0
+[8.94.2]: https://github.com/giantswarm/devctl/compare/v8.94.1...v8.94.2
+[8.94.1]: https://github.com/giantswarm/devctl/compare/v8.94.0...v8.94.1
+[8.94.0]: https://github.com/giantswarm/devctl/compare/v8.93.1...v8.94.0
+[8.93.1]: https://github.com/giantswarm/devctl/compare/v8.93.0...v8.93.1
+[8.93.0]: https://github.com/giantswarm/devctl/compare/v8.92.1...v8.93.0
+[8.92.1]: https://github.com/giantswarm/devctl/compare/v8.92.0...v8.92.1
+[8.92.0]: https://github.com/giantswarm/devctl/compare/v8.91.7...v8.92.0
+[8.91.7]: https://github.com/giantswarm/devctl/compare/v8.91.6...v8.91.7
+[8.91.6]: https://github.com/giantswarm/devctl/compare/v8.91.5...v8.91.6
+[8.91.5]: https://github.com/giantswarm/devctl/compare/v8.91.4...v8.91.5
+[8.91.4]: https://github.com/giantswarm/devctl/compare/v8.91.3...v8.91.4
+[8.91.3]: https://github.com/giantswarm/devctl/compare/v8.91.2...v8.91.3
+[8.91.2]: https://github.com/giantswarm/devctl/compare/v8.91.1...v8.91.2
+[8.91.1]: https://github.com/giantswarm/devctl/compare/v8.91.0...v8.91.1
+[8.91.0]: https://github.com/giantswarm/devctl/compare/v8.90.1...v8.91.0
+[8.90.1]: https://github.com/giantswarm/devctl/compare/v8.90.0...v8.90.1
+[8.90.0]: https://github.com/giantswarm/devctl/compare/v8.89.1...v8.90.0
+[8.89.1]: https://github.com/giantswarm/devctl/compare/v8.88.1...v8.89.1
+[8.88.1]: https://github.com/giantswarm/devctl/compare/v8.88.0...v8.88.1
+[8.88.0]: https://github.com/giantswarm/devctl/compare/v8.87.5...v8.88.0
+[8.87.5]: https://github.com/giantswarm/devctl/compare/v8.87.4...v8.87.5
+[8.87.4]: https://github.com/giantswarm/devctl/compare/v8.87.3...v8.87.4
+[8.87.3]: https://github.com/giantswarm/devctl/compare/v8.87.2...v8.87.3
+[8.87.2]: https://github.com/giantswarm/devctl/compare/v8.87.1...v8.87.2
+[8.87.1]: https://github.com/giantswarm/devctl/compare/v8.87.0...v8.87.1
+[8.87.0]: https://github.com/giantswarm/devctl/compare/v8.86.2...v8.87.0
+[8.86.2]: https://github.com/giantswarm/devctl/compare/v8.86.1...v8.86.2
+[8.86.1]: https://github.com/giantswarm/devctl/compare/v8.86.0...v8.86.1
+[8.86.0]: https://github.com/giantswarm/devctl/compare/v8.85.7...v8.86.0
+[8.85.7]: https://github.com/giantswarm/devctl/compare/v8.85.6...v8.85.7
+[8.85.6]: https://github.com/giantswarm/devctl/compare/v8.85.5...v8.85.6
+[8.85.5]: https://github.com/giantswarm/devctl/compare/v8.85.4...v8.85.5
+[8.85.4]: https://github.com/giantswarm/devctl/compare/v8.85.3...v8.85.4
+[8.85.3]: https://github.com/giantswarm/devctl/compare/v8.85.2...v8.85.3
+[8.85.2]: https://github.com/giantswarm/devctl/compare/v8.85.1...v8.85.2
+[8.85.1]: https://github.com/giantswarm/devctl/compare/v8.85.0...v8.85.1
+[8.85.0]: https://github.com/giantswarm/devctl/compare/v8.84.0...v8.85.0
+[8.84.0]: https://github.com/giantswarm/devctl/compare/v8.83.0...v8.84.0
+[8.83.0]: https://github.com/giantswarm/devctl/compare/v8.82.10...v8.83.0
+[8.82.10]: https://github.com/giantswarm/devctl/compare/v8.82.9...v8.82.10
+[8.82.9]: https://github.com/giantswarm/devctl/compare/v8.82.8...v8.82.9
+[8.82.8]: https://github.com/giantswarm/devctl/compare/v8.82.7...v8.82.8
+[8.82.7]: https://github.com/giantswarm/devctl/compare/v8.82.6...v8.82.7
+[8.82.6]: https://github.com/giantswarm/devctl/compare/v8.82.5...v8.82.6
+[8.82.5]: https://github.com/giantswarm/devctl/compare/v8.82.3...v8.82.5
+[8.82.3]: https://github.com/giantswarm/devctl/compare/v8.82.2...v8.82.3
+[8.82.2]: https://github.com/giantswarm/devctl/compare/v8.82.1...v8.82.2
+[8.82.1]: https://github.com/giantswarm/devctl/compare/v8.82.0...v8.82.1
+[8.82.0]: https://github.com/giantswarm/devctl/compare/v8.81.1...v8.82.0
+[8.81.1]: https://github.com/giantswarm/devctl/compare/v8.81.0...v8.81.1
+[8.81.0]: https://github.com/giantswarm/devctl/compare/v8.80.1...v8.81.0
+[8.80.1]: https://github.com/giantswarm/devctl/compare/v8.80.0...v8.80.1
+[8.80.0]: https://github.com/giantswarm/devctl/compare/v8.79.0...v8.80.0
+[8.79.0]: https://github.com/giantswarm/devctl/compare/v8.78.2...v8.79.0
+[8.78.2]: https://github.com/giantswarm/devctl/compare/v8.78.0...v8.78.2
+[8.78.0]: https://github.com/giantswarm/devctl/compare/v8.77.0...v8.78.0
+[8.77.0]: https://github.com/giantswarm/devctl/compare/v8.76.0...v8.77.0
+[8.76.0]: https://github.com/giantswarm/devctl/compare/v8.75.0...v8.76.0
+[8.75.0]: https://github.com/giantswarm/devctl/compare/v8.74.0...v8.75.0
+[8.74.0]: https://github.com/giantswarm/devctl/compare/v8.73.0...v8.74.0
+[8.73.0]: https://github.com/giantswarm/devctl/compare/v8.72.0...v8.73.0
+[8.72.0]: https://github.com/giantswarm/devctl/compare/v8.71.0...v8.72.0
+[8.71.0]: https://github.com/giantswarm/devctl/compare/v8.70.0...v8.71.0
+[8.70.0]: https://github.com/giantswarm/devctl/compare/v8.69.0...v8.70.0
+[8.69.0]: https://github.com/giantswarm/devctl/compare/v8.68.0...v8.69.0
+[8.68.0]: https://github.com/giantswarm/devctl/compare/v8.67.0...v8.68.0
+[8.67.0]: https://github.com/giantswarm/devctl/compare/v8.66.0...v8.67.0
+[8.66.0]: https://github.com/giantswarm/devctl/compare/v8.65.8...v8.66.0
+[8.65.8]: https://github.com/giantswarm/devctl/compare/v8.65.7...v8.65.8
+[8.65.7]: https://github.com/giantswarm/devctl/compare/v8.65.6...v8.65.7
+[8.65.6]: https://github.com/giantswarm/devctl/compare/v8.65.5...v8.65.6
+[8.65.5]: https://github.com/giantswarm/devctl/compare/v8.65.4...v8.65.5
+[8.65.4]: https://github.com/giantswarm/devctl/compare/v8.65.2...v8.65.4
+[8.65.2]: https://github.com/giantswarm/devctl/compare/v8.65.1...v8.65.2
+[8.65.1]: https://github.com/giantswarm/devctl/compare/v8.65.0...v8.65.1
+[8.65.0]: https://github.com/giantswarm/devctl/compare/v8.64.8...v8.65.0
+[8.64.8]: https://github.com/giantswarm/devctl/compare/v8.64.7...v8.64.8
+[8.64.7]: https://github.com/giantswarm/devctl/compare/v8.64.6...v8.64.7
+[8.64.6]: https://github.com/giantswarm/devctl/compare/v8.64.5...v8.64.6
+[8.64.5]: https://github.com/giantswarm/devctl/compare/v8.64.4...v8.64.5
+[8.64.4]: https://github.com/giantswarm/devctl/compare/v8.64.3...v8.64.4
+[8.64.3]: https://github.com/giantswarm/devctl/compare/v8.64.2...v8.64.3
+[8.64.2]: https://github.com/giantswarm/devctl/compare/v8.64.1...v8.64.2
+[8.64.1]: https://github.com/giantswarm/devctl/compare/v8.64.0...v8.64.1
+[8.64.0]: https://github.com/giantswarm/devctl/compare/v8.63.0...v8.64.0
+[8.63.0]: https://github.com/giantswarm/devctl/compare/v8.62.0...v8.63.0
+[8.62.0]: https://github.com/giantswarm/devctl/compare/v8.61.0...v8.62.0
+[8.61.0]: https://github.com/giantswarm/devctl/compare/v8.60.0...v8.61.0
+[8.60.0]: https://github.com/giantswarm/devctl/compare/v8.59.0...v8.60.0
+[8.59.0]: https://github.com/giantswarm/devctl/compare/v8.58.0...v8.59.0
+[8.58.0]: https://github.com/giantswarm/devctl/compare/v8.57.16...v8.58.0
+[8.57.16]: https://github.com/giantswarm/devctl/compare/v8.57.14...v8.57.16
+[8.57.14]: https://github.com/giantswarm/devctl/compare/v8.57.10...v8.57.14
+[8.57.10]: https://github.com/giantswarm/devctl/compare/v8.57.1...v8.57.10
+[8.57.1]: https://github.com/giantswarm/devctl/compare/v8.57.0...v8.57.1
+[8.57.0]: https://github.com/giantswarm/devctl/compare/v8.56.2...v8.57.0
+[8.56.2]: https://github.com/giantswarm/devctl/compare/v8.56.0...v8.56.2
+[8.56.0]: https://github.com/giantswarm/devctl/compare/v8.55.0...v8.56.0
+[8.55.0]: https://github.com/giantswarm/devctl/compare/v8.54.4...v8.55.0
+[8.54.4]: https://github.com/giantswarm/devctl/compare/v8.54.3...v8.54.4
+[8.54.3]: https://github.com/giantswarm/devctl/compare/v8.54.2...v8.54.3
+[8.54.2]: https://github.com/giantswarm/devctl/compare/v8.54.0...v8.54.2
+[8.54.0]: https://github.com/giantswarm/devctl/compare/v8.53.0...v8.54.0
+[8.53.0]: https://github.com/giantswarm/devctl/compare/v8.52.0...v8.53.0
+[8.52.0]: https://github.com/giantswarm/devctl/compare/v8.51.0...v8.52.0
+[8.51.0]: https://github.com/giantswarm/devctl/compare/v8.50.2...v8.51.0
+[8.50.2]: https://github.com/giantswarm/devctl/compare/v8.50.1...v8.50.2
+[8.50.1]: https://github.com/giantswarm/devctl/compare/v8.50.0...v8.50.1
+[8.50.0]: https://github.com/giantswarm/devctl/compare/v8.49.0...v8.50.0
+[8.49.0]: https://github.com/giantswarm/devctl/compare/v8.48.0...v8.49.0
+[8.48.0]: https://github.com/giantswarm/devctl/compare/v8.47.0...v8.48.0
+[8.47.0]: https://github.com/giantswarm/devctl/compare/v8.46.2...v8.47.0
+[8.46.2]: https://github.com/giantswarm/devctl/compare/v8.46.1...v8.46.2
+[8.46.1]: https://github.com/giantswarm/devctl/compare/v8.46.0...v8.46.1
+[8.46.0]: https://github.com/giantswarm/devctl/compare/v8.45.0...v8.46.0
+[8.45.0]: https://github.com/giantswarm/devctl/compare/v8.44.0...v8.45.0
+[8.44.0]: https://github.com/giantswarm/devctl/compare/v8.43.1...v8.44.0
+[8.43.1]: https://github.com/giantswarm/devctl/compare/v8.43.0...v8.43.1
+[8.43.0]: https://github.com/giantswarm/devctl/compare/v8.42.0...v8.43.0
+[8.42.0]: https://github.com/giantswarm/devctl/compare/v8.41.2...v8.42.0
+[8.41.2]: https://github.com/giantswarm/devctl/compare/v8.41.1...v8.41.2
+[8.41.1]: https://github.com/giantswarm/devctl/compare/v8.41.0...v8.41.1
+[8.41.0]: https://github.com/giantswarm/devctl/compare/v8.40.0...v8.41.0
+[8.40.0]: https://github.com/giantswarm/devctl/compare/v8.23.0...v8.40.0
 [8.23.0]: https://github.com/giantswarm/devctl/compare/v8.22.1...v8.23.0
 [8.22.1]: https://github.com/giantswarm/devctl/compare/v8.22.0...v8.22.1
 [8.22.0]: https://github.com/giantswarm/devctl/compare/v8.21.1...v8.22.0

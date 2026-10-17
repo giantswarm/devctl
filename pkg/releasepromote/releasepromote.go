@@ -22,6 +22,7 @@ import (
 	"github.com/Masterminds/semver/v3"
 
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
+	"github.com/giantswarm/devctl/v8/pkg/circleciclient"
 	"github.com/giantswarm/devctl/v8/pkg/githubclient"
 )
 
@@ -45,8 +46,12 @@ const (
 	releaseTypeStable = "stable"
 )
 
-// The commit status state that counts as built.
-const statusSuccess = "success"
+// The commit status state that counts as built, and the failed ones.
+const (
+	statusSuccess = "success"
+	statusFailure = "failure"
+	statusError   = "error"
+)
 
 // GitHub is what a promotion reads from and writes to GitHub;
 // *githubclient.Client is one.
@@ -85,6 +90,9 @@ func Promote(ctx context.Context, config Config, repositories []string, result *
 	for _, repository := range repositories {
 		entry := promoteOne(ctx, config, repository)
 		config.Progress.Printf("%s: %s", repository, entry.Message)
+		for _, warning := range entry.Warnings {
+			config.Progress.Printf("%s: warning: %s", repository, warning)
+		}
 		result.Repositories = append(result.Repositories, entry)
 		if !entry.OK() {
 			refused = append(refused, fmt.Sprintf("%s (%s)", entry.Repository, entry.State))
@@ -147,8 +155,12 @@ func promoteOne(ctx context.Context, config Config, repository string) Repositor
 		return entry.set(StateFailed, "reading the commit status of %s: %v", candidate, err)
 	}
 	entry.StatusState = status.State
-	if status.TotalCount > 0 && status.State != statusSuccess {
-		return entry.set(StateNotBuilt, "the commit statuses of %s are %s: promote it once its pipelines passed", candidate, status.State)
+	built, advisory := builtState(status)
+	if built != statusSuccess {
+		return entry.set(StateNotBuilt, "the commit statuses of %s are %s: promote it once its pipelines passed", candidate, built)
+	}
+	for _, s := range advisory {
+		entry.Warnings = append(entry.Warnings, fmt.Sprintf("the commit status %s of %s is %s; the release does not require it, so the candidate is judged without it", s.Context, candidate, s.State))
 	}
 
 	if config.DryRun {
@@ -162,6 +174,37 @@ func promoteOne(ctx context.Context, config Config, repository string) Repositor
 		return entry.set(StateFailed, "dispatching %s on %s: %v", Workflow, branch, err)
 	}
 	return entry.set(StateDispatched, "dispatched %s on %s to promote %s", Workflow, branch, candidate)
+}
+
+// builtState is the candidate's combined commit status as the promotion
+// judges it, success when it is built, and the failed statuses of advisory
+// jobs ([circleciclient.AdvisoryStatus]) it was judged without: the rule
+// devctl release wait applies. A commit no context reports on is built. A
+// failure that is not an advisory job's keeps GitHub's combined state, and
+// a context still running beside an advisory failure is pending.
+func builtState(status githubclient.CombinedStatus) (string, []githubclient.CommitStatus) {
+	if status.TotalCount == 0 || status.State == statusSuccess {
+		return statusSuccess, nil
+	}
+	state := statusSuccess
+	var advisory []githubclient.CommitStatus
+	for _, s := range status.Statuses {
+		switch s.State {
+		case statusSuccess:
+		case statusFailure, statusError:
+			if !circleciclient.AdvisoryStatus(s.Context) {
+				return status.State, nil
+			}
+			advisory = append(advisory, s)
+		default:
+			state = s.State
+		}
+	}
+	if len(advisory) == 0 {
+		// GitHub's state is not explained by the contexts read.
+		return status.State, nil
+	}
+	return state, advisory
 }
 
 // The tags auto-release cuts: a stable vX.Y.Z and a candidate vX.Y.Z-rc.N.

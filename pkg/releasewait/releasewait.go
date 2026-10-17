@@ -29,7 +29,9 @@
 // without a tag decided that the commits warranted no release, so the first
 // tag on the base branch after the merge commit carries it, and without one
 // the wait ends at once as no release following the merge ([NoReleaseError]),
-// as does a repository that does not tag merge commits. A repository that releases in two steps tags the merge commit with
+// as does a repository that does not tag merge commits. A commit carrying the
+// release tags of two versions ends it at once too ([AmbiguousReleaseError]):
+// the wait does not choose, the caller names the version. A repository that releases in two steps tags the merge commit with
 // a release candidate and a promote later cuts the stable release; with
 // [Config.PreferPromoted] the wait follows that promotion.
 package releasewait
@@ -70,7 +72,7 @@ const DefaultTimeout = 30 * time.Minute
 type GitHub interface {
 	GetPullRequestMerge(ctx context.Context, owner, repo string, number int) (githubclient.PullRequestMerge, error)
 	GetTagSHA(ctx context.Context, owner, repo, tag string) (string, error)
-	FindTagForCommit(ctx context.Context, owner, repo, sha string) (string, error)
+	FindTagsForCommit(ctx context.Context, owner, repo, sha string) ([]string, error)
 	CommitTags(ctx context.Context, owner, repo string) (map[string][]string, error)
 	CommitsAfter(ctx context.Context, owner, repo, sha, branch string) ([]string, error)
 	GetReleaseByTag(ctx context.Context, owner, repo, tag string) (githubclient.Release, error)
@@ -208,6 +210,12 @@ type Waiter struct {
 	// commit's CircleCI statuses, for when the pipeline listing does not
 	// name it.
 	statusPipelines statusPipelines
+	// pendingStatuses are, once the artifacts are available and the tag's CI
+	// green, the contexts of the tag commit's statuses still pending, for the
+	// heartbeat and the timeout's reason.
+	pendingStatuses []string
+	// warned are the warnings given already, each given once.
+	warned map[string]bool
 }
 
 // New validates config and returns a Waiter.
@@ -261,6 +269,10 @@ func (w *Waiter) Wait(ctx context.Context, result *Result) error {
 	defer cancel()
 
 	err := w.wait(ctx, result)
+	var ambiguous *AmbiguousReleaseError
+	if errors.As(err, &ambiguous) {
+		result.ConflictingTags = ambiguous.Tags
+	}
 	if err != nil && ctx.Err() != nil && !isOutcome(err) {
 		return w.timeout(result)
 	}
@@ -331,10 +343,11 @@ func (w *Waiter) wait(ctx context.Context, result *Result) error {
 	version := strings.TrimPrefix(result.Tag, "v")
 
 	if content.HasCircleCI() {
-		w.circleci, err = w.config.CircleCI(ctx)
+		client, err := w.config.CircleCI(ctx)
 		if err != nil {
 			return err
 		}
+		w.circleci = boundedCircleCI{CircleCI: client, clock: w.clock}
 	}
 
 	plan := &plan{version: version, private: private, content: content, entry: entry}
@@ -529,6 +542,17 @@ func (w *Waiter) loop(ctx context.Context, result *Result, p *plan) error {
 			if ctx.Err() != nil {
 				return w.timeout(result)
 			}
+			// The registry answers for the artifacts whatever CircleCI
+			// does: what it serves is available, never missing for want
+			// of a CI answer.
+			if p.derived {
+				if err := w.probe(ctx, result, p); err != nil {
+					if ctx.Err() != nil {
+						return w.timeout(result)
+					}
+					return err
+				}
+			}
 			w.progress.Printf("the tag's CI went unanswered (%s); reading again in %s", err, w.interval())
 			w.progress.Waiting(w.clock.Now(), "an answer from the tag's CI: "+err.Error())
 			if err := w.clock.Sleep(ctx, w.interval()); err != nil {
@@ -600,6 +624,20 @@ func (w *Waiter) loop(ctx context.Context, result *Result, p *plan) error {
 			}
 		}
 		if done {
+			// The tag pipeline is not every status of its commit: a late
+			// job, the branch pipeline and other CIs report there too, and
+			// devctl release promote gates on them all.
+			done, err = w.commitStatusesFinal(ctx, result)
+			if unanswered(ctx, err) {
+				w.unanswered, done, err = err.Error(), false, nil
+			}
+			if err != nil {
+				return err
+			}
+		} else {
+			w.pendingStatuses = nil
+		}
+		if done {
 			return nil
 		}
 
@@ -628,6 +666,8 @@ func (w *Waiter) pending(result *Result, p *plan, state *pipelineState) string {
 		parts = append(parts, fmt.Sprintf("the Actions runs of %s", result.Tag))
 	case !state.green:
 		parts = append(parts, stillRunning(result.Pipeline))
+	case len(w.pendingStatuses) > 0:
+		parts = append(parts, fmt.Sprintf("the commit statuses of %s: %s pending", short(result.SHA), strings.Join(w.pendingStatuses, ", ")))
 	case p.releaseAssets:
 		parts = append(parts, fmt.Sprintf("the release of %s published", result.Tag))
 	case w.config.Catalog && len(parts) == 0:
@@ -781,22 +821,25 @@ func (w *Waiter) awaitTag(ctx context.Context, version Version) (tag, sha string
 // after the merge commit, and without one no release follows the merge. A run
 // that failed before it tagged is the release's CI failure, and a run
 // cancelled before it tagged was superseded by a newer push, whose tag
-// carries the merge.
+// carries the merge. The tags on the merge commit are read before its
+// workflows: a commit that predates the auto-release workflow may still
+// carry release tags.
 func (w *Waiter) awaitTagForCommit(ctx context.Context, sha string, content *TagContent) (tag, tagSHA string, err error) {
 	owner, repo, number := w.config.Owner, w.config.Repo, w.config.PR
 	auto, _ := content.releaseWorkflows()
 	if len(auto) == 0 {
+		tag, err := w.commitTag(ctx, sha)
+		if tag != "" || err != nil {
+			return tag, sha, err
+		}
 		// The entry declares auto-release ahead of the repository: no
 		// workflow at the merge commit tags it.
 		return "", "", noReleaseErr("the team-file entry of %s/%s declares auto-release, but %s at %s holds no auto-release workflow: nothing tags the merge commit of #%d", owner, repo, workflowsDir, short(sha), number)
 	}
 	for {
-		tag, err := w.config.GitHub.FindTagForCommit(ctx, owner, repo, sha)
-		if err != nil {
-			return "", "", fmt.Errorf("listing tags: %w", err)
-		}
-		if tag != "" {
-			return tag, sha, nil
+		tag, err := w.commitTag(ctx, sha)
+		if tag != "" || err != nil {
+			return tag, sha, err
 		}
 		run, err := w.autoReleaseRun(ctx, sha, auto)
 		if err != nil {
@@ -805,12 +848,9 @@ func (w *Waiter) awaitTagForCommit(ctx context.Context, sha string, content *Tag
 		if run != nil && run.Status == statusCompleted {
 			// The run tags before it finishes, so a tag it made is in a
 			// listing read after it finished.
-			tag, err := w.config.GitHub.FindTagForCommit(ctx, owner, repo, sha)
-			if err != nil {
-				return "", "", fmt.Errorf("listing tags: %w", err)
-			}
-			if tag != "" {
-				return tag, sha, nil
+			tag, err := w.commitTag(ctx, sha)
+			if tag != "" || err != nil {
+				return tag, sha, err
 			}
 			switch run.Conclusion {
 			case "success", "neutral", "skipped":
@@ -861,10 +901,21 @@ func (w *Waiter) firstTagAfter(ctx context.Context, sha, branch string) (tag, ta
 	}
 	for _, commit := range commits {
 		if names := tags[commit]; len(names) > 0 {
-			return githubclient.NewestTag(names), commit, nil
+			tag, err := releaseTag(w.config.Owner+"/"+w.config.Repo, commit, names)
+			return tag, commit, err
 		}
 	}
 	return "", "", nil
+}
+
+// commitTag is the tag on sha, as [releaseTag] picks it from every tag
+// there; "" while none is.
+func (w *Waiter) commitTag(ctx context.Context, sha string) (string, error) {
+	tags, err := w.config.GitHub.FindTagsForCommit(ctx, w.config.Owner, w.config.Repo, sha)
+	if err != nil {
+		return "", fmt.Errorf("listing tags: %w", err)
+	}
+	return releaseTag(w.config.Owner+"/"+w.config.Repo, sha, tags)
 }
 
 // autoReleaseRun is the newest run of an auto-release workflow (one of
@@ -964,8 +1015,12 @@ func (w *Waiter) timeout(result *Result) error {
 		return timeoutErr("no tag within %s", w.config.Timeout)
 	case len(missing) > 0:
 		return timeoutErr("not available within %s: %s%s", w.config.Timeout, strings.Join(missing, ", "), unfinished)
+	case len(w.pendingStatuses) > 0:
+		return timeoutErr("%s is available and its tag pipeline green, and the commit statuses of %s did not finish within %s: %s pending; devctl release promote refuses the commit until they succeed", result.Tag, short(result.SHA), w.config.Timeout, strings.Join(w.pendingStatuses, ", "))
 	case result.Pipeline == nil && result.CIModel != CIModelNone && w.unanswered == "":
 		return timeoutErr("no CircleCI pipeline for %s within %s: the tag's webhook may not have reached CircleCI", result.Tag, w.config.Timeout)
+	case len(result.Artifacts) > 0 && w.unanswered != "":
+		return timeoutErr("every artifact of %s is available, and the tag's CI did not answer within %s; the release is unknown, not failed: the last read of the tag's CI went unanswered: %s", result.Tag, w.config.Timeout, w.unanswered)
 	case len(result.Artifacts) > 0 && unfinished != "":
 		return timeoutErr("every artifact of %s is available, the tag pipeline did not finish within %s%s", result.Tag, w.config.Timeout, unfinished)
 	}
@@ -973,14 +1028,15 @@ func (w *Waiter) timeout(result *Result) error {
 }
 
 // unanswered says whether err is a read of the tag's CI that went
-// unanswered: one that failed every try in transit or with a 5xx, or that
-// the deadline cut short.
+// unanswered: one that failed every try in transit or with a 5xx, one that
+// got no answer within [CircleCIReadBound], or one the deadline cut short.
 func unanswered(ctx context.Context, err error) bool {
 	if err == nil || isOutcome(err) {
 		return false
 	}
 	var exhausted *agentcli.RetriesExhaustedError
-	return errors.As(err, &exhausted) || ctx.Err() != nil
+	var timedOut *ReadTimeoutError
+	return errors.As(err, &exhausted) || errors.As(err, &timedOut) || ctx.Err() != nil
 }
 
 // stillRunning names what keeps the tag pipeline from being green, for the

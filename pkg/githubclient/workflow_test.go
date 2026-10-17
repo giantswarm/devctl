@@ -50,10 +50,13 @@ func TestReachable(t *testing.T) {
 }
 
 func TestGetCombinedStatus(t *testing.T) {
-	c, got := newWireClient(t, http.StatusOK, `{"state":"failure","total_count":3,"statuses":[]}`)
+	c, got := newWireClient(t, http.StatusOK, `{"state":"failure","total_count":2,"statuses":[{"context":"ci/circleci: push-to-registries","state":"success","target_url":"https://circleci.com/gh/o/r/1"},{"context":"ci/circleci: sync-china-registry","state":"failure","target_url":"https://circleci.com/gh/o/r/2"}]}`)
 	status, err := c.GetCombinedStatus(t.Context(), "o", "r", "v1.2.0-rc.1")
 	require.NoError(t, err)
-	require.Equal(t, CombinedStatus{State: "failure", TotalCount: 3}, status)
+	require.Equal(t, CombinedStatus{State: "failure", TotalCount: 2, Statuses: []CommitStatus{
+		{Context: "ci/circleci: push-to-registries", State: "success", TargetURL: "https://circleci.com/gh/o/r/1"},
+		{Context: "ci/circleci: sync-china-registry", State: "failure", TargetURL: "https://circleci.com/gh/o/r/2"},
+	}}, status)
 	require.Equal(t, "/repos/o/r/commits/v1.2.0-rc.1/status", got.path)
 }
 

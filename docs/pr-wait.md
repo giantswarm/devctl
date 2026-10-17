@@ -44,6 +44,12 @@ system that will produce it:
    not count while the workflow's newest run is still open: the wait goes on and exits on that run's outcome.
    A completed run whose conclusion is `action_required` (a deployment waiting for a
    reviewer) is unfinished, not red. `neutral` and `skipped` pass.
+   A pending check the base does not require is not waited for, as the merge box does not wait
+   for it: a check run of an app other than GitHub Actions (a gatekeeper app that stays
+   `in_progress` until the pull request is reviewed) and a status of another CI than CircleCI. It
+   is named in `blocking[]` and a warning. A GitHub Actions job is still waited for through its
+   run (rule 3), a CircleCI job through its pipeline (rule 2), and a failure of a check the base
+   does not require is still red.
 2. **Every CircleCI workflow of the head revision is `success`**, read from CircleCI's API: the
    newest pipeline for the revision, the newest run of each workflow name in it. A CircleCI job
    behind `requires:` posts no status to GitHub until it starts, so a multi-stage pipeline reads
@@ -154,6 +160,14 @@ adding that the head is unknown, not failed, and the last unanswered read. A 4xx
 retried, nor is a certificate the client refuses or a host that does not exist; only reads (GET, HEAD) are
 retried.
 
+GitHub's REST check-runs and combined-status endpoints can fail for hours while GraphQL answers. When
+the read of the head's check runs or statuses fails all fifteen tries, the wait reads them from the head
+commit's `statusCheckRollup` through GraphQL instead, warns once (`the REST check endpoints went
+unanswered (…): the head's checks are read through GraphQL (statusCheckRollup)`), sets `checksVia` to
+`graphql` and keeps reading GraphQL for the rest of the wait, going back to REST if a GraphQL read fails.
+Only the checks fall back: the pull request, the Actions runs and, in `pr merge`, the merge itself still
+need REST. With both paths failing the poll is unanswered, as above.
+
 The wait reads nothing from stdin and ignores SIGHUP: a wait whose terminal goes away (a closed terminal
 or SSH session, a harness that moves it to the background) keeps waiting and ends with the verdict.
 
@@ -213,9 +227,11 @@ reset`). Any other `403` is an answer: a permission the token lacks.
 | `identity` | Who read GitHub: `app`, the devctl App login (giantswarm), or `gh`, your own `gh` login (every other owner); empty when the run ended before choosing. |
 | `headSha`, `baseRef` | The head commit judged and the base branch whose protection was read. |
 | `checks[]` | The head's check runs, every run of a name that counts, and its statuses, the latest per context, sorted by name and id. A check run carries its `id` and, when its job belongs to a GitHub Actions run of the head, its `workflow`. `source` is `check_run` or `status`; `status` is `queued`, `in_progress` or `completed` for a check run and `pending` or `completed` for a status; `conclusion` is the check run's conclusion or the status's state, empty while unfinished; `required` says whether the base requires this context. |
+| `checksVia` | `graphql` when the last poll read `checks[]` through GraphQL's `statusCheckRollup` because REST's check endpoints went unanswered (Polling); absent when REST answered. |
 | `circleci` | Present only when CircleCI was consulted: the newest pipeline of the head revision and its workflows, the newest run per name, sorted by name. |
 | `actions[]` | The head's GitHub Actions runs, the latest per workflow name, sorted by name. |
 | `failedJobs[]` | Present at exit 1 with `--failed-log`: each failed job with `name` (an Actions check run's name, with `[<workflow>, check run <id>]` when several runs share it; `<workflow>/<job>` on CircleCI), `source` (`actions` or `circleci`), `url`, and `logTail`, the last `--failed-log-lines` lines of its log, or `logError` when the log could not be read. A check run of another app, a commit status and a CircleCI workflow without a failed job are named in `reason` only. |
+| `blocking[]` | Present on a green head that GitHub's merge box still holds: each pending check the base does not require, which the wait did not wait for (`check Heimdall - PR Gatekeeper (in_progress, not required, not waited for)`, `status <context> (pending, not required, not waited for)`), and, while the pull request's `mergeable_state` is `blocked`, the review the base requires (`review: an approving review the base requires is missing`, `review: a reviewer requested changes`), read from GitHub's `reviewDecision`. Each is a warning too. |
 | `unfinished[]` | Present at exit 2 and 4: what the head was still waiting for, one line each (`check go-test (in_progress)`, `circleci workflow build (running)`, `actions run CI (awaiting approval)`, `required context lint (absent)`, `actions runs of .github/workflows/ci.yaml (none registered)`). |
 
 ## Exit codes
