@@ -234,7 +234,7 @@ The incidents the commands encode, one scenario each, by these slugs:
   `github-5xx-persistent`, `circleci-connection-reset`, `github-rate-limit-reset`,
   `github-rate-limit-spent-answer`, `github-rate-limit-after-deadline`, `circleci-rate-limit-retry-after`, `no-checks-event-never-fired`
 - `pr merge`: `own-green-merged`, `other-human-refused`, `opt-out-refused`, `behind-strict-base`,
-  `behind-update-branch`, `merge-queue`, `red-not-merged`, `merge-released`, `merge-no-release`,
+  `behind-base-refused`, `behind-update-branch`, `merge-queue`, `red-not-merged`, `merge-released`, `merge-no-release`,
   `merge-release-failed`, `merge-github-5xx-retried`
 - `release wait`: `renamed-image`, `renamed-chart`, `hand-written-ci`, `release-assets-only`, `failed-tag-pipeline`,
   `rerun-replaces-failed`, `stale-registry-login`, `release-wait-timeout`, `jobs-not-visible-yet`,

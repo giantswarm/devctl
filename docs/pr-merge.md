@@ -37,7 +37,8 @@ Every refusal comes before the first poll and before anything is written.
 
 | Code | Verdict | Refused |
 |---|---|---|
-| 3 | `not_applicable` | A **draft**; a **closed** or **merged** pull request; one that **conflicts** with its base; one **behind** a base whose protection requires branches to be up to date, unless `--update-branch` is given. The rule is `pr wait`'s. |
+| 3 | `not_applicable` | A **draft**; a **closed** or **merged** pull request; one that **conflicts** with its base. The rule is `pr wait`'s. |
+| 3 | `not_applicable` | A head **behind its base**, unless `--update-branch` is given: behind a base whose protection requires branches to be up to date (GitHub's mergeable state), or behind any other base by the comparison of base and head (`GET .../compare/{base}...{head}`, `behind_by`). Its checks ran against an older base than the one the merge would land it on, so a change that is green on its own base and breaks the current one would land unverified. The reason names the state (how many commits behind, for a base that is not strict) and the way out, `--update-branch`. A base with a merge queue is not compared: the queue tests every entry against the base it lands on. See [`--update-branch`](#--update-branch). |
 | 3 | `not_applicable` | `--accept-red` naming a check the base **requires** (branch protection or a ruleset) or a **security scan**; see [`--accept-red`](#--accept-red-a-known-red-check). |
 | 5 | `refused` | A pull request **another human opened**. The author is compared with the account the token acts as (the login of the keychain record, or `GET /user`); a bot, a GitHub App (user type `Bot`) or a `[bot]` login is fine, so a Renovate or Dependabot pull request merges. Giant Swarm's automation accounts that GitHub carries as plain users are fine too -- `taylorbot`, which opens the release pull request of every repository on devctl-generated CI, and `architectbot` -- each matched on its numeric account id as well as its login, so the login alone opens nothing. The reason names every author the merge accepts, and for an automation login whose account id is not the pinned one, both ids. |
 | 5 | `refused` | A repository whose team-file entry **opts out of agent merges**: the entry named after the repository in `repositories/<team>.yaml` of `giantswarm/github` at `main` says `agentMerge: false`. The entry is read the way `devctl repo` reads one; the reason names the field. An entry without the field, a repository no team file declares and a repository outside the organisation the team files declare are not opted out. Team files the token cannot read are a tooling failure (7), not a guess. |
@@ -127,6 +128,10 @@ Green lands with one call of the merge API, `PUT /repos/{owner}/{repo}/pulls/{nu
 - The judged head SHA goes along as the expected head: a head that moved between the verdict and
   the merge is not merged (GitHub answers 409), and the pull request is re-read after the wait for
   the same reason (a retitle during the wait names the squash commit).
+- The head is compared with the base again after the wait: a base that moved while the checks ran
+  leaves a green head whose checks ran against an older base. Without `--update-branch` that is exit 3
+  before the merge call, the reason saying the base moved during the wait and naming `--update-branch`;
+  with it the head is updated and waited for again (see [`--update-branch`](#--update-branch)).
 - The squash commit's subject, and a merge commit's, is the pull request's title with its number,
   `<title> (#<number>)`: the title the title check accepted is what the auto-release reads.
 - Before the merge call, the body as it stands after the wait is read for GitHub's closing keywords (`close`,
@@ -196,8 +201,11 @@ merge commit lands on a line that merges commit by commit. It reads
 the pull request until the new head is on it, and the wait judges that head: the CI of the updated
 branch is what turns green, and the merge lands it. Behind is GitHub's mergeable state for a strict
 base, and for every other base the comparison of base and head (`GET .../compare/{base}...{head}`,
-`behind_by`); a head that is not behind is judged as it is. Without the flag, behind a strict base
-is exit 3 and a head behind any other base is judged as it is.
+`behind_by`); a head that is not behind is judged as it is. After the wait the head is compared again,
+and a base that moved during it has the head updated and waited for once more, at most three waits in
+all; a base that moves during each of them is exit 3, naming the base to wait for. Without the flag a
+head behind its base, strict or not, before the wait or after it, is exit 3: its checks ran against
+an older base than the one the merge would land it on.
 
 ## The release
 

@@ -22,8 +22,9 @@ triggers is pullable (the wait of devctl release wait --pr), print one JSON
 document on stdout and exit with a code that says what happened.
 
 Refused before any wait: a draft, a closed or merged pull request, one
-conflicting with its base or behind a base that requires branches to be up to
-date (exit 3, unless --update-branch); a pull request opened by another human
+conflicting with its base, or behind its base, strict or not, since its
+checks ran against an older base than the one the merge lands it on (exit 3,
+naming --update-branch); a pull request opened by another human
 (exit 5: bots, GitHub Apps, Giant Swarm's automation accounts -- taylorbot,
 which opens every generated release pull request, and architectbot -- and the
 caller's own pull requests are fine); a repository whose team-file entry in
@@ -58,7 +59,11 @@ check is judged (GitHub's Update branch, which merges the base in; with a
 rebase merge, Update with rebase, which rebases the head onto the base, so no
 merge commit lands on the line), and the new head is what the wait
 judges and the merge lands: behind a strict base by the mergeable state,
-behind any other base by the comparison of base and head. A merge GitHub declines as the pull request stands (a rule blocks
+behind any other base by the comparison of base and head. The head is compared
+with the base again after the wait: a base that moved during it is exit 3
+without --update-branch, and with it the head is updated and waited for again,
+at most three waits in all. A base with a merge queue is not compared without
+--update-branch: the queue tests the pull request against it. A merge GitHub declines as the pull request stands (a rule blocks
 it, the base or the head moved) is exit 3 with GitHub's sentence.
 
 The release: in a repository whose release model is auto-release, the tag
@@ -137,7 +142,7 @@ Exit codes:
      release is pullable or no release follows the merge
   1  red: a check, status, run or workflow failed, or the queue dropped it
   2  timeout before an outcome; unfinished names what was still open
-  3  not applicable: draft, closed, merged, conflicting, behind a strict base
+  3  not applicable: draft, closed, merged, conflicting, behind its base
      (without --update-branch), GitHub declined the merge as it stands, or
      --accept-red names a required check, a security scan or no check of
      the head

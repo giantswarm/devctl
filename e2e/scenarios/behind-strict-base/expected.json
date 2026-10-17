@@ -5,7 +5,7 @@
     "schemaVersion": 1,
     "exitCode": 3,
     "verdict": "not_applicable",
-    "reason": "the pull request is behind main, which requires branches to be up to date",
+    "reason": "the pull request is behind main, which requires branches to be up to date; --update-branch updates it from main and waits for its checks again (or update the branch and run the merge again)",
     "warnings": [],
     "startedAt": "*",
     "finishedAt": "*",
