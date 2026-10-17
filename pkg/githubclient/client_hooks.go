@@ -5,7 +5,7 @@ import (
 	"errors"
 
 	"github.com/giantswarm/microerror"
-	"github.com/google/go-github/v92/github"
+	"github.com/google/go-github/v93/github"
 )
 
 // hookDeliveriesPage bounds ListHookDeliveries: the delivery of a fresh push

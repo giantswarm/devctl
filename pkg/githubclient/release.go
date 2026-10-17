@@ -8,7 +8,7 @@ import (
 
 	"github.com/Masterminds/semver/v3"
 	"github.com/giantswarm/microerror"
-	"github.com/google/go-github/v92/github"
+	"github.com/google/go-github/v93/github"
 )
 
 // PullRequestMerge is what release wait reads of a pull request.

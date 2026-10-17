@@ -21,7 +21,7 @@ require (
 	github.com/go-git/go-git/v5 v5.19.3
 	github.com/godbus/dbus/v5 v5.2.4
 	github.com/google/go-cmp v0.7.0
-	github.com/google/go-github/v92 v92.0.0
+	github.com/google/go-github/v93 v93.0.0
 	github.com/jedib0t/go-pretty/v6 v6.8.3
 	github.com/losisin/helm-values-schema-json/v2 v2.6.0
 	github.com/manifoldco/promptui v0.9.0

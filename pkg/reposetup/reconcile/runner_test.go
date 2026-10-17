@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/go-github/v92/github"
+	"github.com/google/go-github/v93/github"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
 
