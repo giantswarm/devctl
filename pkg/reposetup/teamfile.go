@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -156,7 +157,9 @@ type Fields struct {
 	// DefaultBranch is the repository's default branch, main unless
 	// declared: the settings step keeps the repository on it and the
 	// protection step protects it. A fork line declares the branch that
-	// carries the upstream release plus the carried patches.
+	// carries the upstream release plus the carried patches. A repository
+	// that keeps its own default branch ([Fields.KeepsDefaultBranch]) is
+	// never renamed to it.
 	DefaultBranch string `yaml:"defaultBranch"`
 	// Align is the repository's opt-in to alignment: with it the reconciler
 	// changes the repository to its declared set-up on every trigger,
@@ -194,6 +197,24 @@ type Fields struct {
 		Precommit bool `yaml:"precommit"`
 	} `yaml:"replace"`
 	Gen *GenFields `yaml:"gen"`
+}
+
+// FlavourCustomer is the gen.flavours value of a customer repository.
+const FlavourCustomer = "customer"
+
+// componentTypeAppCatalog is the componentType of an app catalog: GitHub
+// Pages serves the catalog's index from the repository's default branch.
+const componentTypeAppCatalog = "appcatalog"
+
+// KeepsDefaultBranch says the repository's default branch is its own and the
+// reconciler never renames it: a customer repository's branch is the
+// customer's flow, an app catalog's the branch GitHub Pages serves the
+// catalog from. The protection step protects that branch, whatever its name.
+func (f Fields) KeepsDefaultBranch() bool {
+	if f.ComponentType == componentTypeAppCatalog {
+		return true
+	}
+	return f.Gen != nil && slices.Contains(f.Gen.Flavours, FlavourCustomer)
 }
 
 // RenovateOn says whether the entry keeps Renovate on: true unless it

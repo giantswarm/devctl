@@ -29,6 +29,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `repo reconcile`: an app catalog (`componentType: appcatalog`) keeps its own default branch, as a customer repository
+  does: the settings step never renames `master`, which GitHub Pages serves the catalog from, to `main`; the protection
+  step protects it; `repo status` names it on the declaration line.
 - `gen ami` no longer aborts when a Flatcar release's China key answers `403 AccessDenied`, which S3 returns for a
   missing key to a credential without `s3:ListBucket`. The release's China AMIs are skipped with a warning naming the
   key, like `NoSuchKey`; every other S3 error still fails the run.

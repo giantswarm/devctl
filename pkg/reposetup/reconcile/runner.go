@@ -36,7 +36,7 @@ func lifecycleOver(lifecycle string) bool {
 // release steps are skipped on it and its default branch is never renamed;
 // settings, permissions, renovate, metadata, lifecycle and catalog run as
 // declared.
-const flavourCustomer = "customer"
+const flavourCustomer = reposetup.FlavourCustomer
 
 // flavourFork is the gen.flavours value of a fork line: the repository
 // carries an upstream release plus the carried patches on the branch its
@@ -571,10 +571,9 @@ func (s *run) agentMerge() bool {
 }
 
 // keepsDefaultBranch says the repository's default branch is its own and the
-// settings step never renames it: a customer repository's branch is the
-// customer's flow.
+// settings step never renames it ([reposetup.Fields.KeepsDefaultBranch]).
 func (s *run) keepsDefaultBranch() bool {
-	return s.hasFlavour(flavourCustomer)
+	return s.fields.KeepsDefaultBranch()
 }
 
 // slug is owner/name as the run addresses the repository.
