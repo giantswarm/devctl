@@ -7,6 +7,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `devctl release promote --version` names, in each repository's `later[]` and its message, the release candidates
+  on the default branch cut after the promoted one: the stable release is the named candidate's commit, so they are
+  not in it.
+
+## [8.143.2] - 2026-10-18
+
 ### Fixed
 
 - The changelog cut job arms its pinned auto-merge only after GitHub reports the cut commit as the pull request's

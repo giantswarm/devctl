@@ -45,7 +45,10 @@ For each repository, on its default branch:
      the highest stable release and reachable from the default branch, else
      failed. The workflow must take its version input, else
      outdated_workflow. This promotes a candidate that is built while a
-     later one is still building, or the one proven live.
+     later one is still building, or the one proven live: the stable tag
+     lands on that candidate's commit whatever was cut after it. The
+     candidates cut after it on the default branch are named in later[]
+     and in the message, as not in the release.
   3. The combined commit status of the candidate's commit: with at least one
      status and a state other than success, not_built. No status at all
      counts as built, as in the workflow. A failed CircleCI status of a job
@@ -70,7 +73,7 @@ Output: one JSON document on stdout at the end and nothing else (--progress
 writes one line per repository to stderr): the envelope (command,
 schemaVersion, exitCode, verdict, reason, warnings, startedAt, finishedAt),
 team, dryRun, identity{source, login} and repositories[{repository, stable, candidate,
-newestBuilt, statusState, state, message}], state one of dispatched, would_dispatch,
+newestBuilt, later, statusState, state, message}], state one of dispatched, would_dispatch,
 nothing_to_promote, not_built, not_auto_release, outdated_workflow, failed.
 A team without auto-release repositories is exit 0 with a warning.
 

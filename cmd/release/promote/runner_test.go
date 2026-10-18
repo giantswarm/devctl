@@ -241,7 +241,8 @@ func streamRoutes(repository string) sequence.Routes {
 	return routes
 }
 
-// With rc.15 building and rc.14 built, --version v1.2.3-rc.14 promotes rc.14.
+// With rc.15 building and rc.14 built, --version v1.2.3-rc.14 promotes rc.14
+// and names rc.15 as left out.
 func TestRunVersionPromotesTheNamedCandidate(t *testing.T) {
 	server, open := mockSources(t, streamRoutes("giantswarm/kserve"))
 	doc, err := runCommand(t, []string{"giantswarm/kserve"}, &flag{Version: "v1.2.3-rc.14"}, open)
@@ -250,9 +251,10 @@ func TestRunVersionPromotesTheNamedCandidate(t *testing.T) {
 		"repository":  "giantswarm/kserve",
 		"stable":      "v1.2.2",
 		"candidate":   "v1.2.3-rc.14",
+		"later":       []any{"v1.2.3-rc.15"},
 		"statusState": "success",
 		"state":       "dispatched",
-		"message":     "dispatched zz_generated.auto_release.yaml on main to promote v1.2.3-rc.14",
+		"message":     "dispatched zz_generated.auto_release.yaml on main to promote v1.2.3-rc.14; not in it, cut after it: v1.2.3-rc.15",
 	}}, doc["repositories"])
 	require.Equal(t, 1, dispatches(server))
 }
