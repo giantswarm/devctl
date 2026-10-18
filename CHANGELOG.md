@@ -9,15 +9,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- devctl's version check under `CI` also reads the token in `$GH_TOKEN`, after `$DEVCTL_GITHUB_TOKEN`,
+  `$GITHUB_TOKEN` and `$OPSCTL_GITHUB_TOKEN`: a workflow step that sets only gh's variable (a changelog workflow
+  generated before v8.142.1) no longer lists devctl's releases anonymously and hits the rate limit of a shared runner
+  IP.
+
+## [8.144.1] - 2026-10-18
+
+### Fixed
+
 - `devctl release wait` on a hand-written CircleCI configuration also waits for the charts its own jobs push with
   `helm push` (giantswarm/substrate's `charts` job): every chart under `helm/` or `charts/` a job of the tag pipeline
   names is expected at the repository that job pushes to, its environment read (`oci://${REGISTRY}/helm`), with the
   bare version, so the release is not `available` before they are pullable. A chart at the tag that no push job and
   no `--chart` covers is named in the document's `warnings` as unchecked.
-- devctl's version check under `CI` also reads the token in `$GH_TOKEN`, after `$DEVCTL_GITHUB_TOKEN`,
-  `$GITHUB_TOKEN` and `$OPSCTL_GITHUB_TOKEN`: a workflow step that sets only gh's variable (a changelog workflow
-  generated before v8.142.1) no longer lists devctl's releases anonymously and hits the rate limit of a shared runner
-  IP.
 
 ## [8.144.0] - 2026-10-18
 
@@ -5903,7 +5908,8 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.144.0...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.144.1...HEAD
+[8.144.1]: https://github.com/giantswarm/devctl/compare/v8.144.0...v8.144.1
 [8.144.0]: https://github.com/giantswarm/devctl/compare/v8.143.3...v8.144.0
 [8.143.3]: https://github.com/giantswarm/devctl/compare/v8.143.2...v8.143.3
 [8.143.2]: https://github.com/giantswarm/devctl/compare/v8.143.1...v8.143.2
