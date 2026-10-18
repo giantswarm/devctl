@@ -9,6 +9,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- The changelog cut job pins its auto-merge (`--match-head-commit`) and architectbot's approval (the review's
+  `commit_id`) to the cut commit it verified, so a later push to `changelog-cut/<branch>` merges nothing on either.
+
+## [8.143.1] - 2026-10-18
+
+### Fixed
+
 - The changelog cut job's approval is scoped to the cut it pushed: architectbot approves only a pull request the
   opening identity authored, whose head is the cut commit and whose only file is `CHANGELOG.md`. Any other pull
   request, a moved head or another file gets no approval and waits for a review.
@@ -5866,7 +5873,8 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.143.1-rc.1...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.143.1...HEAD
+[8.143.1]: https://github.com/giantswarm/devctl/compare/v8.143.1-rc.1...v8.143.1
 [8.143.1-rc.1]: https://github.com/giantswarm/devctl/compare/v8.143.0...v8.143.1-rc.1
 [8.143.0]: https://github.com/giantswarm/devctl/compare/v8.142.1...v8.143.0
 [8.142.1]: https://github.com/giantswarm/devctl/compare/v8.142.0...v8.142.1

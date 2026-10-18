@@ -217,7 +217,7 @@ func Test_AutoReleaseChangelogOpenStep(t *testing.T) {
 			mustGit(t, dir, "config", "--local", "user.email", "dev@giantswarm.io")
 
 			_, out, err := runStep(t, step.Run, dir, "PATH="+bin+":"+os.Getenv("PATH"),
-				"GH_TOKEN=taylor", "APPROVER_TOKEN="+tc.approver, "TAG=v1.1.0-rc.1",
+				"GH_TOKEN=taylor", "APPROVER_TOKEN="+tc.approver, "TAG=v1.1.0-rc.1", "GITHUB_REPOSITORY=o/r",
 				"PR_AUTHOR="+tc.author, "PR_HEAD="+tc.head, "PR_FILES="+tc.files)
 			if err != nil {
 				t.Fatalf("err = %v:\n%s", err, out)
@@ -227,12 +227,18 @@ func Test_AutoReleaseChangelogOpenStep(t *testing.T) {
 				t.Fatal(err)
 			}
 			calls := string(raw)
-			for _, want := range []string{"taylor pr create", "taylor pr merge https://github.com/o/r/pull/1 --auto --squash"} {
+			// The auto-merge and the approval are pinned to the cut commit,
+			// so a later push to the branch merges nothing on them.
+			sha := strings.TrimSpace(mustGit(t, dir, "rev-parse", "HEAD"))
+			for _, want := range []string{
+				"taylor pr create",
+				"taylor pr merge https://github.com/o/r/pull/1 --auto --squash --match-head-commit " + sha,
+			} {
 				if !strings.Contains(calls, want) {
 					t.Errorf("no gh call %q:\n%s", want, calls)
 				}
 			}
-			approval := "architect pr review https://github.com/o/r/pull/1 --approve"
+			approval := "architect api --silent -X POST repos/o/r/pulls/1/reviews -f event=APPROVE -f commit_id=" + sha
 			if got := strings.Contains(calls, approval); got != tc.approved {
 				t.Errorf("approved = %t, want %t:\n%s", got, tc.approved, calls)
 			}

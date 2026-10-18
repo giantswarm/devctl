@@ -1189,7 +1189,10 @@ jobs:
               --body "Moves the CHANGELOG.md entries ${TAG} and the releases before it carried out of Unreleased into their release sections (\`devctl changelog cut\`). Opened by the Auto-release workflow.")
           fi
           echo "cut pull request: ${pr}"
-          if ! gh pr merge "$pr" --auto --squash; then
+          # The auto-merge and the approval hold for the cut commit alone: a
+          # later push to the branch merges nothing on them.
+          sha=$(git rev-parse HEAD)
+          if ! gh pr merge "$pr" --auto --squash --match-head-commit "$sha"; then
             echo "::warning title=Auto-merge not armed::${pr} waits for a merge: auto-merge could not be armed."
           fi
           # Approved anew on every release: the branch is rebuilt each time.
@@ -1198,7 +1201,7 @@ jobs:
           # whose only file is CHANGELOG.md. Anything else waits for a person.
           # GitHub can report an updated pull request's previous head for a
           # few seconds after the push: read it again before refusing.
-          cut="$(gh api user --jq .login) $(git rev-parse HEAD) CHANGELOG.md"
+          cut="$(gh api user --jq .login) ${sha} CHANGELOG.md"
           for attempt in $(seq 1 6); do
             scope=$(gh pr view "$pr" --json author,headRefOid,files \
               --jq '[.author.login, .headRefOid, ([.files[].path] | join(","))] | join(" ")')
@@ -1211,8 +1214,9 @@ jobs:
             echo "::warning title=Cut not approved::no ARCHITECT_GITHUB_REPO_SYNC_TOKEN secret to approve ${pr} with: it waits for a review."
           elif [ "$scope" != "$cut" ]; then
             echo "::warning title=Cut not approved::${pr} is not the cut alone (author, head, files: ${scope}; the cut: ${cut}): it waits for a review."
-          elif ! GH_TOKEN="$APPROVER_TOKEN" gh pr review "$pr" --approve \
-            --body "Approved by the Auto-release workflow: the cut only moves released entries out of Unreleased."; then
+          elif ! GH_TOKEN="$APPROVER_TOKEN" gh api --silent -X POST "repos/${GITHUB_REPOSITORY}/pulls/${pr##*/}/reviews" \
+            -f event=APPROVE -f commit_id="$sha" \
+            -f body="Approved by the Auto-release workflow: the cut only moves released entries out of Unreleased."; then
             echo "::warning title=Cut not approved::${pr} waits for a review: the approval was refused."
           fi
 
