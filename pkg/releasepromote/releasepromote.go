@@ -184,11 +184,19 @@ func promoteOne(ctx context.Context, config Config, repository string) Repositor
 	}
 
 	inputs := map[string]any{inputReleaseType: releaseTypeStable}
+	leftOut := ""
 	if config.Version != "" {
 		inputs[inputVersion] = candidate
+		entry.Later, err = LaterCandidates(releases, reachable, candidate)
+		if err != nil {
+			entry.Warnings = append(entry.Warnings, fmt.Sprintf("listing the release candidates cut after %s failed: %v; the stable release is %s's commit whatever came after it", candidate, err, candidate))
+		}
+		if len(entry.Later) > 0 {
+			leftOut = fmt.Sprintf("; not in it, cut after it: %s", strings.Join(entry.Later, ", "))
+		}
 	}
 	if config.DryRun {
-		return entry.set(StateWouldDispatch, "would dispatch %s on %s to promote %s", Workflow, branch, candidate)
+		return entry.set(StateWouldDispatch, "would dispatch %s on %s to promote %s%s", Workflow, branch, candidate, leftOut)
 	}
 	err = gh.DispatchWorkflow(ctx, owner, repo, Workflow, branch, inputs)
 	if githubclient.IsForbidden(err) {
@@ -197,7 +205,7 @@ func promoteOne(ctx context.Context, config Config, repository string) Repositor
 	if err != nil {
 		return entry.set(StateFailed, "dispatching %s on %s: %v", Workflow, branch, err)
 	}
-	return entry.set(StateDispatched, "dispatched %s on %s to promote %s", Workflow, branch, candidate)
+	return entry.set(StateDispatched, "dispatched %s on %s to promote %s%s", Workflow, branch, candidate, leftOut)
 }
 
 // notBuilt is entry refused as not_built, its candidate's statuses judged
@@ -395,6 +403,33 @@ func NewestBuilt(releases []githubclient.Release, reachable, built func(tag stri
 		}
 	}
 	return "", nil
+}
+
+// LaterCandidates are the release candidates higher than candidate that are
+// reachable from the default branch, lowest first: those a promotion of
+// candidate leaves out, since the workflow tags candidate's commit. Nil when
+// there is none.
+func LaterCandidates(releases []githubclient.Release, reachable func(tag string) (bool, error), candidate string) ([]string, error) {
+	pinned, err := semver.NewVersion(candidate)
+	if err != nil {
+		return nil, err
+	}
+	_, candidates := parseReleases(releases)
+	slices.SortFunc(candidates, func(a, b tagVersion) int { return a.version.Compare(b.version) })
+	var later []string
+	for _, t := range candidates {
+		if !t.version.GreaterThan(pinned) {
+			continue
+		}
+		ok, err := reachable(t.tag)
+		if err != nil {
+			return later, fmt.Errorf("%s: %w", t.tag, err)
+		}
+		if ok {
+			later = append(later, t.tag)
+		}
+	}
+	return later, nil
 }
 
 // parseReleases sorts the published releases into stable releases and

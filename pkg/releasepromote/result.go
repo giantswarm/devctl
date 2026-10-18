@@ -45,6 +45,11 @@ type Repository struct {
 	// --version instead of waiting. Empty when there is none or for another
 	// state.
 	NewestBuilt string `json:"newestBuilt,omitempty"`
+	// Later are, with --version, the release candidates on the default
+	// branch cut after the promoted one, lowest first: the stable release
+	// is the promoted candidate's commit, so they are not in it. Empty
+	// without --version or when there is none.
+	Later []string `json:"later,omitempty"`
 	// StatusState is the combined commit status of the candidate: success,
 	// pending, failure or error; empty until read.
 	StatusState string `json:"statusState"`

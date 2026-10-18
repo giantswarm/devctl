@@ -510,15 +510,34 @@ func TestPromoteVersion(t *testing.T) {
 		version    string
 		state      string
 		candidate  string
+		later      []string
 		message    string
 	}{
 		{
-			name:       "a built candidate is promoted while a later one builds",
+			name:       "a built candidate is promoted while a later one builds, which it names as left out",
 			repository: fakeRepository{branch: "main", releases: streamReleases, statuses: streamStatuses},
 			version:    "v1.2.3-rc.14",
 			state:      StateDispatched,
 			candidate:  "v1.2.3-rc.14",
-			message:    "dispatched zz_generated.auto_release.yaml on main to promote v1.2.3-rc.14",
+			later:      []string{"v1.2.3-rc.15"},
+			message:    "dispatched zz_generated.auto_release.yaml on main to promote v1.2.3-rc.14; not in it, cut after it: v1.2.3-rc.15",
+		},
+		{
+			name:       "the proven candidate is promoted after two merges cut newer ones",
+			repository: fakeRepository{branch: "main", releases: append([]githubclient.Release{candidate("v1.2.3-rc.16")}, streamReleases...), status: builtStatus},
+			version:    "v1.2.3-rc.14",
+			state:      StateDispatched,
+			candidate:  "v1.2.3-rc.14",
+			later:      []string{"v1.2.3-rc.15", "v1.2.3-rc.16"},
+			message:    "dispatched zz_generated.auto_release.yaml on main to promote v1.2.3-rc.14; not in it, cut after it: v1.2.3-rc.15, v1.2.3-rc.16",
+		},
+		{
+			name:       "the newest candidate named leaves nothing out",
+			repository: fakeRepository{branch: "main", releases: streamReleases, status: builtStatus},
+			version:    "v1.2.3-rc.15",
+			state:      StateDispatched,
+			candidate:  "v1.2.3-rc.15",
+			message:    "dispatched zz_generated.auto_release.yaml on main to promote v1.2.3-rc.15",
 		},
 		{
 			name:       "the named candidate still building is not built and names the newest built one",
@@ -574,6 +593,7 @@ func TestPromoteVersion(t *testing.T) {
 			got := result.Repositories[0]
 			require.Equal(t, tc.state, got.State, got.Message)
 			require.Equal(t, tc.candidate, got.Candidate)
+			require.Equal(t, tc.later, got.Later)
 			require.Equal(t, tc.message, got.Message)
 			if tc.state != StateDispatched {
 				require.Equal(t, agentcli.ExitRed, agentcli.Exit(err))
@@ -653,4 +673,46 @@ func TestNewestBuilt(t *testing.T) {
 
 	_, err := NewestBuilt(streamReleases, func(string) (bool, error) { return true, nil }, func(string) (bool, error) { return false, errors.New("boom") }, "v1.2.3-rc.15")
 	require.EqualError(t, err, "v1.2.3-rc.14: boom")
+}
+
+func TestLaterCandidates(t *testing.T) {
+	releases := append([]githubclient.Release{candidate("v1.3.0-rc.1"), candidate("v1.2.3-rc.16"), {Tag: "v1.2.3-rc.17"}}, streamReleases...)
+	got, err := LaterCandidates(releases, func(tag string) (bool, error) { return tag != "v1.2.3-rc.16", nil }, "v1.2.3-rc.14")
+	require.NoError(t, err)
+	require.Equal(t, []string{"v1.2.3-rc.15", "v1.3.0-rc.1"}, got, "higher, published candidates on the default branch, lowest first")
+
+	got, err = LaterCandidates(streamReleases, func(string) (bool, error) { return true, nil }, "v1.2.3-rc.15")
+	require.NoError(t, err)
+	require.Empty(t, got)
+
+	_, err = LaterCandidates(streamReleases, func(string) (bool, error) { return false, errors.New("boom") }, "v1.2.3-rc.13")
+	require.EqualError(t, err, "v1.2.3-rc.14: boom")
+}
+
+// A failing read of the later candidates is a warning: the named candidate
+// is still promoted, as the workflow tags its commit.
+func TestPromoteVersionWarnsWhenTheLaterCandidatesAreUnreadable(t *testing.T) {
+	gh := &laterFailingGitHub{fakeGitHub: &fakeGitHub{repositories: map[string]fakeRepository{
+		"giantswarm/kserve": {branch: "main", releases: streamReleases, status: builtStatus},
+	}}, failOn: "v1.2.3-rc.15"}
+	result := NewResult("")
+	err := Promote(t.Context(), Config{GitHub: gh, Version: "v1.2.3-rc.14"}, []string{"giantswarm/kserve"}, &result)
+
+	require.NoError(t, err)
+	got := result.Repositories[0]
+	require.Equal(t, StateDispatched, got.State)
+	require.Equal(t, []string{"listing the release candidates cut after v1.2.3-rc.14 failed: v1.2.3-rc.15: boom; the stable release is v1.2.3-rc.14's commit whatever came after it"}, got.Warnings)
+}
+
+// laterFailingGitHub fails the reachability of one tag.
+type laterFailingGitHub struct {
+	*fakeGitHub
+	failOn string
+}
+
+func (f *laterFailingGitHub) Reachable(ctx context.Context, owner, repo, ref, branch string) (bool, error) {
+	if ref == f.failOn {
+		return false, errors.New("boom")
+	}
+	return f.fakeGitHub.Reachable(ctx, owner, repo, ref, branch)
 }
