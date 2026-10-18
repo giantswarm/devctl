@@ -133,8 +133,10 @@ func Test_AutoReleaseChangelogCutStep(t *testing.T) {
 // Test_AutoReleaseChangelogOpenStep runs the open step with a stand-in gh that
 // logs every call with the token it ran under: taylorbot opens the cut and
 // arms auto-merge, and architectbot, a second identity, approves it, so the
-// review the branch requires never waits for a person. Without the approver's
-// secret the step warns and still succeeds.
+// review the branch requires never waits for a person. The approval is scoped
+// to the cut the step pushed: a pull request another account authored, whose
+// head moved, or that changes any file beside CHANGELOG.md gets none. Without
+// the approver's secret the step warns and still succeeds.
 func Test_AutoReleaseChangelogOpenStep(t *testing.T) {
 	job := workflowJobs(t, renderInput(t, newWorkflows(t, gen.FlavourApp).AutoRelease()))["changelog"]
 	var step autoReleaseStep
@@ -152,34 +154,52 @@ func Test_AutoReleaseChangelogOpenStep(t *testing.T) {
 		}
 	}
 
+	const notApproved = "::warning title=Cut not approved::"
 	for _, tc := range []struct {
 		name     string
 		approver string
-		want     []string
+		// The pull request gh reports: its author, the revision its head is
+		// (HEAD is the cut commit) and its files; empty is the cut's own.
+		author, head, files string
+		// lag is how many reads report the previous head before the cut's.
+		lag      int
+		approved bool
 		warning  string
 	}{
+		{name: "the cut, approved by a second identity", approver: "architect", approved: true},
 		{
-			name:     "approved by a second identity",
-			approver: "architect",
-			want: []string{
-				"taylor pr create",
-				`taylor pr merge https://github.com/o/r/pull/1 --auto --squash`,
-				"architect pr review https://github.com/o/r/pull/1 --approve",
-			},
+			name: "no approver secret", warning: notApproved + "no ARCHITECT_GITHUB_REPO_SYNC_TOKEN secret",
 		},
 		{
-			name:    "no approver secret",
-			want:    []string{"taylor pr create", "taylor pr merge"},
-			warning: "::warning title=Cut not approved::no ARCHITECT_GITHUB_REPO_SYNC_TOKEN secret",
+			name: "another file beside the cut", approver: "architect", files: "CHANGELOG.md,main.go",
+			warning: notApproved + "https://github.com/o/r/pull/1 is not the cut alone",
+		},
+		{
+			name: "another author", approver: "architect", author: "someone",
+			warning: notApproved + "https://github.com/o/r/pull/1 is not the cut alone",
+		},
+		{
+			name: "the head reported late, read again", approver: "architect", lag: 2, approved: true,
+		},
+		{
+			name: "the head moved after the push", approver: "architect", head: "HEAD~1",
+			warning: notApproved + "https://github.com/o/r/pull/1 is not the cut alone",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			bin := t.TempDir()
 			log := filepath.Join(bin, "log")
-			gh := fmt.Sprintf("#!/bin/sh\necho \"$GH_TOKEN $*\" >> %q\n"+
-				"[ \"$1 $2\" = 'pr create' ] && echo https://github.com/o/r/pull/1\nexit 0\n", log)
-			if err := os.WriteFile(filepath.Join(bin, "gh"), []byte(gh), 0o700); err != nil { // #nosec G306 -- test stand-in
-				t.Fatal(err)
+			// gh's pr view reports HEAD~1 for its first $PR_LAG reads; sleep
+			// only returns.
+			gh := fmt.Sprintf("#!/bin/sh\necho \"$GH_TOKEN $*\" >> %[1]q\ncase \"$1 $2\" in\n"+
+				"'pr create') echo https://github.com/o/r/pull/1 ;;\n"+
+				"'pr view') n=$(grep -c 'pr view' %[1]q); head=${PR_HEAD:-HEAD}; [ \"$n\" -le %[2]d ] && head=HEAD~1\n"+
+				"  echo \"${PR_AUTHOR:-taylorbot} $(git rev-parse \"$head\") ${PR_FILES:-CHANGELOG.md}\" ;;\n"+
+				"'api user') echo taylorbot ;;\nesac\n", log, tc.lag)
+			for file, content := range map[string]string{"gh": gh, "sleep": "#!/bin/sh\n"} {
+				if err := os.WriteFile(filepath.Join(bin, file), []byte(content), 0o700); err != nil { // #nosec G306 -- test stand-in
+					t.Fatal(err)
+				}
 			}
 			origin := t.TempDir()
 			mustGit(t, origin, "init", "--bare")
@@ -197,7 +217,8 @@ func Test_AutoReleaseChangelogOpenStep(t *testing.T) {
 			mustGit(t, dir, "config", "--local", "user.email", "dev@giantswarm.io")
 
 			_, out, err := runStep(t, step.Run, dir, "PATH="+bin+":"+os.Getenv("PATH"),
-				"GH_TOKEN=taylor", "APPROVER_TOKEN="+tc.approver, "TAG=v1.1.0-rc.1")
+				"GH_TOKEN=taylor", "APPROVER_TOKEN="+tc.approver, "TAG=v1.1.0-rc.1",
+				"PR_AUTHOR="+tc.author, "PR_HEAD="+tc.head, "PR_FILES="+tc.files)
 			if err != nil {
 				t.Fatalf("err = %v:\n%s", err, out)
 			}
@@ -206,13 +227,17 @@ func Test_AutoReleaseChangelogOpenStep(t *testing.T) {
 				t.Fatal(err)
 			}
 			calls := string(raw)
-			for _, want := range tc.want {
+			for _, want := range []string{"taylor pr create", "taylor pr merge https://github.com/o/r/pull/1 --auto --squash"} {
 				if !strings.Contains(calls, want) {
 					t.Errorf("no gh call %q:\n%s", want, calls)
 				}
 			}
-			if tc.approver == "" && strings.Contains(calls, "--approve") {
-				t.Errorf("approved without an approver token:\n%s", calls)
+			approval := "architect pr review https://github.com/o/r/pull/1 --approve"
+			if got := strings.Contains(calls, approval); got != tc.approved {
+				t.Errorf("approved = %t, want %t:\n%s", got, tc.approved, calls)
+			}
+			if tc.approved && strings.Contains(out, notApproved) {
+				t.Errorf("the approved cut warns:\n%s", out)
 			}
 			if !strings.Contains(out, tc.warning) {
 				t.Errorf("output lacks %q:\n%s", tc.warning, out)
