@@ -17,6 +17,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- The changelog cut job arms its pinned auto-merge only after GitHub reports the cut commit as the pull request's
+  head: armed right after the push, GitHub still reported the previous head and refused it (`expected head oid does
+  not match the current head oid`), so the cut waited for a merge.
+
+## [8.143.2] - 2026-10-18
+
+### Fixed
+
 - The changelog cut job pins its auto-merge (`--match-head-commit`) and architectbot's approval (the review's
   `commit_id`) to the cut commit it verified, so a later push to `changelog-cut/<branch>` merges nothing on either.
 
