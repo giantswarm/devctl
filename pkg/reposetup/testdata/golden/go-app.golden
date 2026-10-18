@@ -1184,11 +1184,13 @@ jobs:
   # request opened with GITHUB_TOKEN runs no workflow, so its required checks
   # would never report. The review the branch's ruleset requires comes from a
   # second machine identity, architectbot (ARCHITECT_GITHUB_REPO_SYNC_TOKEN),
-  # since an author cannot approve its own pull request: the armed auto-merge
-  # then lands the cut once its required checks are green, and no other pull
-  # request fails the Changelog workflow on a cut left waiting for a person. A
-  # fork line carries upstream's CHANGELOG.md, which its releases do not cut,
-  # and has no such job.
+  # since an author cannot approve its own pull request. It approves only the
+  # cut this job pushed: the opener's pull request, its head the cut commit,
+  # CHANGELOG.md its only file; anything else waits for a review. The armed
+  # auto-merge then lands the cut once its required checks are green, and no
+  # other pull request fails the Changelog workflow on a cut left waiting for a
+  # person. A fork line carries upstream's CHANGELOG.md, which its releases do
+  # not cut, and has no such job.
   changelog:
     name: Cut the CHANGELOG
     needs: tag
@@ -1271,8 +1273,24 @@ jobs:
             echo "::warning title=Auto-merge not armed::${pr} waits for a merge: auto-merge could not be armed."
           fi
           # Approved anew on every release: the branch is rebuilt each time.
+          # architectbot approves only what this step pushed: a pull request
+          # the opening identity authored, whose head is the cut commit and
+          # whose only file is CHANGELOG.md. Anything else waits for a person.
+          # GitHub can report an updated pull request's previous head for a
+          # few seconds after the push: read it again before refusing.
+          cut="$(gh api user --jq .login) $(git rev-parse HEAD) CHANGELOG.md"
+          for attempt in $(seq 1 6); do
+            scope=$(gh pr view "$pr" --json author,headRefOid,files \
+              --jq '[.author.login, .headRefOid, ([.files[].path] | join(","))] | join(" ")')
+            if [ "$scope" = "$cut" ] || [ "$attempt" -eq 6 ]; then
+              break
+            fi
+            sleep 5
+          done
           if [ -z "${APPROVER_TOKEN:-}" ]; then
             echo "::warning title=Cut not approved::no ARCHITECT_GITHUB_REPO_SYNC_TOKEN secret to approve ${pr} with: it waits for a review."
+          elif [ "$scope" != "$cut" ]; then
+            echo "::warning title=Cut not approved::${pr} is not the cut alone (author, head, files: ${scope}; the cut: ${cut}): it waits for a review."
           elif ! GH_TOKEN="$APPROVER_TOKEN" gh pr review "$pr" --approve \
             --body "Approved by the Auto-release workflow: the cut only moves released entries out of Unreleased."; then
             echo "::warning title=Cut not approved::${pr} waits for a review: the approval was refused."
