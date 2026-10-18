@@ -12,6 +12,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - The generated changelog check compares a pull request with the base its checked-out merge commit was built
   on, the merge's first parent, rather than the event's base commit, which a reopened pull request can carry
   from before its base moved.
+- `devctl changelog cut` and `check` read an entry in a section the cut created, beyond those its release
+  carried under Unreleased, as an Unreleased entry: a pull request whose branch update merged a just-merged
+  cut, which slots the pull request's entry under the cut's new release heading, no longer loses it to that
+  release; the next cut moves it into the section of the release that shipped it.
 
 ## [8.144.4] - 2026-10-18
 

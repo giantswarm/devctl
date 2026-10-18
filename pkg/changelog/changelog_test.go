@@ -154,9 +154,12 @@ func TestCutWithoutUnreleased(t *testing.T) {
 	}
 }
 
-func TestReleases(t *testing.T) {
-	dir := t.TempDir()
-	run := func(args ...string) {
+// repo is a git repository in a temporary directory, run runs git in it and
+// write writes its CHANGELOG.md.
+func repo(t *testing.T) (dir string, run func(args ...string) string, write func(text string)) {
+	t.Helper()
+	dir = t.TempDir()
+	run = func(args ...string) string {
 		t.Helper()
 		cmd := exec.Command("git", args...) // #nosec G204 -- fixed binary, args are built by this test, test-only
 		cmd.Dir = dir
@@ -164,16 +167,23 @@ func TestReleases(t *testing.T) {
 			"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.com", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@example.com",
 			"GIT_AUTHOR_DATE=2026-02-01T12:00:00Z", "GIT_COMMITTER_DATE=2026-02-01T12:00:00Z",
 			"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1")
-		if out, err := cmd.CombinedOutput(); err != nil {
+		out, err := cmd.CombinedOutput()
+		if err != nil {
 			t.Fatalf("git %v: %v\n%s", args, err, out)
 		}
+		return string(out)
 	}
-	write := func(text string) {
+	write = func(text string) {
 		t.Helper()
 		if err := os.WriteFile(filepath.Join(dir, "CHANGELOG.md"), []byte(text), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
+	return dir, run, write
+}
+
+func TestReleases(t *testing.T) {
+	dir, run, write := repo(t)
 
 	run("init", "-q", "-b", "main")
 	run("commit", "-q", "--allow-empty", "-m", "chore: start")
@@ -203,6 +213,122 @@ func TestReleases(t *testing.T) {
 	want := "v0.1.0=@2026-02-01 v1.0.0=one@2026-02-01 v1.0.1-rc.1=two@2026-02-01"
 	if strings.Join(names, " ") != want {
 		t.Fatalf("Releases = %v, want %s", names, want)
+	}
+}
+
+func TestCutReclaimsAnEntryABranchUpdateMisplaced(t *testing.T) {
+	// v1.1.0 released "- Released.": its cut merges while a pull request with
+	// its own entry is open, and the pull request's branch update merges the
+	// cut. git puts the pull request's entry under the cut's new heading.
+	at110 := preamble + `
+## [Unreleased]
+
+### Fixed
+
+- Released.
+
+## [1.0.0] - 2026-01-01
+
+### Added
+
+- The first release.
+
+[Unreleased]: https://github.com/giantswarm/example/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/giantswarm/example/releases/tag/v1.0.0
+`
+	v110 := release(t, "1.1.0", "2026-02-01", at110)
+	cut, moved := Cut(at110, []Release{v110})
+	if len(moved) != 1 {
+		t.Fatalf("the v1.1.0 cut moved %+v", moved)
+	}
+
+	for name, pr := range map[string]string{
+		"at the group's top":    strings.Replace(at110, "- Released.\n", "- The pull request's fix.\n- Released.\n", 1),
+		"at the group's bottom": strings.Replace(at110, "- Released.\n", "- Released.\n- The pull request's fix.\n", 1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, run, write := repo(t)
+			run("init", "-q", "-b", "main")
+			write(at110)
+			run("add", ".")
+			run("commit", "-q", "-m", "fix: released")
+			run("checkout", "-q", "-b", "pr")
+			write(pr)
+			run("commit", "-q", "-am", "fix: the pull request's fix")
+			run("checkout", "-q", "main")
+			write(cut)
+			run("commit", "-q", "-am", "docs(changelog): cut released entries out of Unreleased")
+			run("checkout", "-q", "pr")
+			run("merge", "-q", "--no-edit", "main") // the branch update: clean
+			merged := run("show", "HEAD:CHANGELOG.md")
+			if !strings.Contains(merged, "## [Unreleased]\n\n## [1.1.0] - 2026-02-01\n\n### Fixed\n\n") ||
+				strings.Index(merged, "- The pull request's fix.") < strings.Index(merged, "## [1.1.0]") {
+				t.Fatalf("the merge no longer misplaces the entry, the case this test reproduces:\n%s", merged)
+			}
+
+			// The pull request's check on its merge: its entry is no release's.
+			if own, pending := Pending(merged, cut, []Release{v110}); len(own) != 0 || len(pending) != 0 {
+				t.Fatalf("check: own = %+v pending = %+v, want none", own, pending)
+			}
+
+			// The pull request merges and v1.2.0 carries the entry under
+			// [1.1.0]: the v1.2.0 cut moves it into v1.2.0's section.
+			releases := []Release{v110, release(t, "1.2.0", "2026-03-01", merged)}
+			got, moved := Cut(merged, releases)
+			want := preamble + `
+## [Unreleased]
+
+## [1.2.0] - 2026-03-01
+
+### Fixed
+
+- The pull request's fix.
+
+## [1.1.0] - 2026-02-01
+
+### Fixed
+
+- Released.
+
+## [1.0.0] - 2026-01-01
+
+### Added
+
+- The first release.
+
+[Unreleased]: https://github.com/giantswarm/example/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/giantswarm/example/compare/v1.1.0...v1.2.0
+[1.1.0]: https://github.com/giantswarm/example/compare/v1.0.0...v1.1.0
+[1.0.0]: https://github.com/giantswarm/example/releases/tag/v1.0.0
+`
+			if got != want {
+				t.Fatalf("Cut:\n%s\nwant:\n%s", got, want)
+			}
+			if len(moved) != 1 || moved[0] != (Moved{Release: "v1.2.0", Entry: "- The pull request's fix."}) {
+				t.Fatalf("moved = %+v, want the pull request's fix in v1.2.0", moved)
+			}
+			if again, moved := Cut(got, releases); again != got || len(moved) != 0 {
+				t.Fatalf("second Cut moved %+v", moved)
+			}
+		})
+	}
+}
+
+func TestCutKeepsSectionsItDidNotCreate(t *testing.T) {
+	// 1.1.0's tag holds its own section: an entry added to it later is a
+	// correction, not a stray. 1.2.0's tag holds nothing of the section a
+	// person wrote for it later.
+	old := "## [1.2.0] - 2026-03-01\n\n- Written later.\n\n## [1.1.0] - 2026-02-01\n\n- One.\n- Added later.\n"
+	at110 := preamble + "\n## [Unreleased]\n\n## [1.1.0] - 2026-02-01\n\n- One.\n"
+	at120 := preamble + "\n## [Unreleased]\n\n- Two.\n\n## [1.1.0] - 2026-02-01\n\n- One.\n"
+	head := preamble + "\n## [Unreleased]\n\n- New.\n\n" + old
+
+	got, moved := Cut(head, []Release{
+		release(t, "1.1.0", "2026-02-01", at110),
+		release(t, "1.2.0", "2026-03-01", at120),
+	})
+	if got != head || len(moved) != 0 {
+		t.Fatalf("Cut moved %+v:\n%s", moved, got)
 	}
 }
 

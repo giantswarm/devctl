@@ -29,6 +29,11 @@ CHANGELOG.md holds it under Unreleased; the tags on one commit are one release,
 named by the highest version (a promoted release candidate by its final
 version).
 
+An entry in a section cut created, beyond those its release carried under
+Unreleased, counts as an Unreleased entry: a pull request's branch update with
+a just-merged cut can slot the pull request's entry under the cut's new
+release heading, and the next cut moves it where it belongs.
+
   cut    moves every released entry into its release's section, creating the
          section and its link reference where they are missing. Every other
          section keeps its bytes.
