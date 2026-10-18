@@ -7,6 +7,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [8.145.0-rc.2] - 2026-10-18
+
+### Fixed
+
+- `--failed-log` of `pr wait`, `pr merge`, `release wait`, `rollout wait` and `release promote`: when a failed
+  job's first failure lies before the last `--failed-log-lines` lines, up to that many lines from just before it
+  lead `failedJobs[].logTail`, the skipped lines counted: a failing Prettier check ahead of green tests in one
+  CircleCI step, or a failing Go package's `--- FAIL` block ahead of the green packages and the run's summary, is
+  no longer pushed out of the tail. A failure already within the tail prints as before.
+
+## [8.145.0-rc.1] - 2026-10-18
+
 ### Changed
 
 - `devctl release promote` follows the Auto Release run each dispatch started until it concludes, at most
@@ -16,20 +28,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   that passes leaves the promotion `dispatched` as before, with `run.conclusion`; `--no-follow` returns
   right after the dispatch.
 
+## [8.144.6] - 2026-10-18
+
 ### Fixed
 
-- `--failed-log` of `pr wait`, `pr merge`, `release wait`, `rollout wait` and `release promote`: when a failed
-  job's first failure lies before the last `--failed-log-lines` lines, up to that many lines from just before it
-  lead `failedJobs[].logTail`, the skipped lines counted: a failing Prettier check ahead of green tests in one
-  CircleCI step, or a failing Go package's `--- FAIL` block ahead of the green packages and the run's summary, is
-  no longer pushed out of the tail. A failure already within the tail prints as before.
-- The generated changelog check compares a pull request with the base its checked-out merge commit was built
-  on, the merge's first parent, rather than the event's base commit, which a reopened pull request can carry
-  from before its base moved.
 - `devctl changelog cut` and `check` read an entry in a section the cut created, beyond those its release
   carried under Unreleased, as an Unreleased entry: a pull request whose branch update merged a just-merged
   cut, which slots the pull request's entry under the cut's new release heading, no longer loses it to that
   release; the next cut moves it into the section of the release that shipped it.
+
+## [8.144.5] - 2026-10-18
+
+### Fixed
+
+- The generated changelog check compares a pull request with the base its checked-out merge commit was built
+  on, the merge's first parent, rather than the event's base commit, which a reopened pull request can carry
+  from before its base moved.
 
 ## [8.144.4] - 2026-10-18
 
@@ -5953,7 +5967,11 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.144.4...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.145.0-rc.2...HEAD
+[8.145.0-rc.2]: https://github.com/giantswarm/devctl/compare/v8.145.0-rc.1...v8.145.0-rc.2
+[8.145.0-rc.1]: https://github.com/giantswarm/devctl/compare/v8.144.6...v8.145.0-rc.1
+[8.144.6]: https://github.com/giantswarm/devctl/compare/v8.144.5...v8.144.6
+[8.144.5]: https://github.com/giantswarm/devctl/compare/v8.144.4...v8.144.5
 [8.144.4]: https://github.com/giantswarm/devctl/compare/v8.144.3...v8.144.4
 [8.144.3]: https://github.com/giantswarm/devctl/compare/v8.144.2...v8.144.3
 [8.144.2]: https://github.com/giantswarm/devctl/compare/v8.144.1...v8.144.2
