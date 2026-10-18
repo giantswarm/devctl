@@ -190,7 +190,7 @@ const ImageFlagUsage = "An image the hand-written tag pipeline pushes outside th
 
 // ChartFlagUsage is the help of --chart on the commands that wait for a
 // release.
-const ChartFlagUsage = "A chart the hand-written tag pipeline pushes outside the architect orb (a helm push of its own), as its repository path (giantswarm/kagent/helm/kagent) or with the registry host in front; expected as <chart>:<version>, the bare version (1.2.3). Repeatable"
+const ChartFlagUsage = "A chart the hand-written tag pipeline pushes in a way neither the configuration nor the root Makefile shows, as its repository path (giantswarm/kagent/helm/kagent) or with the registry host in front; expected as <chart>:<version>, the bare version (1.2.3). Repeatable"
 
 // Waiter runs one wait.
 type Waiter struct {
@@ -572,9 +572,12 @@ func (w *Waiter) loop(ctx context.Context, result *Result, p *plan) error {
 		}
 
 		if !p.derived && result.CIModel == CIModelHandWritten && state.jobs != nil {
-			artifacts, err := HandWrittenArtifacts(ctx, w.config.GitHub, owner, repo, result.SHA, p.version, result.Tag, *p.content, state.jobs, p.private, w.config.Images, w.config.Charts, w.config.Endpoints)
+			artifacts, warnings, err := HandWrittenArtifacts(ctx, w.config.GitHub, owner, repo, result.SHA, p.version, result.Tag, *p.content, state.jobs, p.private, w.config.Images, w.config.Charts, w.config.Endpoints)
 			if err != nil {
 				return err
+			}
+			for _, warning := range warnings {
+				w.warn(warning)
 			}
 			p.setArtifacts(result, artifacts)
 			for _, a := range artifacts {

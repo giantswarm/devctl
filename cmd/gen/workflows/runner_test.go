@@ -68,6 +68,10 @@ func Test_Run_RepoName(t *testing.T) {
 				git(t, "-C", dir, "remote", "add", "origin", tc.remote)
 			}
 			t.Chdir(dir)
+			// A repository generated while devctl shipped the Changelog
+			// check carries it: every gen run deletes it.
+			require.NoError(t, os.MkdirAll(".github/workflows", 0o750))
+			require.NoError(t, os.WriteFile(".github/workflows/zz_generated.changelog.yaml", nil, 0o600))
 
 			releaseWorkflow := tc.releaseWorkflow
 			if releaseWorkflow == "" {
@@ -87,13 +91,12 @@ func Test_Run_RepoName(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
+			require.NoFileExists(t, ".github/workflows/zz_generated.changelog.yaml")
 
 			if tc.wantRepo == "" {
 				require.NoFileExists(t, "cliff.toml")
-				require.NoFileExists(t, ".github/workflows/zz_generated.changelog.yaml")
 				return
 			}
-			require.FileExists(t, ".github/workflows/zz_generated.changelog.yaml")
 			got, err := os.ReadFile("cliff.toml")
 			require.NoError(t, err)
 			require.Contains(t, string(got), tc.wantRepo)

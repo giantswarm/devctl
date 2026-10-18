@@ -10,7 +10,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/v8/cmd/auth"
-	"github.com/giantswarm/devctl/v8/cmd/changelog"
 	"github.com/giantswarm/devctl/v8/cmd/ci"
 	"github.com/giantswarm/devctl/v8/cmd/completion"
 	"github.com/giantswarm/devctl/v8/cmd/deploy"
@@ -127,19 +126,6 @@ func New(config Config) (*cobra.Command, error) {
 		}
 	}
 
-	var changelogCmd *cobra.Command
-	{
-		c := changelog.Config{
-			Stderr: config.Stderr,
-			Stdout: config.Stdout,
-		}
-
-		changelogCmd, err = changelog.New(c)
-		if err != nil {
-			return nil, microerror.Mask(err)
-		}
-	}
-
 	var rolloutCmd *cobra.Command
 	{
 		c := rollout.Config{
@@ -231,7 +217,6 @@ func New(config Config) (*cobra.Command, error) {
 	f.Init(c)
 
 	c.AddCommand(authCmd)
-	c.AddCommand(changelogCmd)
 	c.AddCommand(ciCmd)
 	c.AddCommand(completionCmd)
 	c.AddCommand(deployCmd)

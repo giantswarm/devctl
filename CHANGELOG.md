@@ -7,17 +7,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
-### Added
-
-- `changelog cut` moves every CHANGELOG.md entry under Unreleased that a release already carried into that release's
-  section (the first release, among the `v` semver tags reachable from HEAD, whose CHANGELOG.md holds it under
-  Unreleased), creating the section and its link reference where they are missing; `changelog check` fails while such
-  an entry remains. `gen workflows --release-workflow=auto-release`: the Auto-release workflow opens the cut as a
-  `docs(changelog)` pull request after every release and arms auto-merge on it, and the new
-  `zz_generated.changelog.yaml` runs the check on every pull request. Released entries no longer stay under Unreleased.
-
 ### Changed
 
+- `devctl release promote` follows the Auto Release run each dispatch started until it concludes, at most
+  `--follow-timeout` (20m): a run the repository's stable gate refuses, or that fails otherwise, is `refused`
+  and exit 1 at once, its message naming the run's URL and the errors its failed jobs annotated (the gate's
+  "Stable gate refused"), `failedJobs[]` the end of each failed job's log with the gate's own output. A run
+  that passes leaves the promotion `dispatched` as before, with `run.conclusion`; `--no-follow` returns
+  right after the dispatch.
 - `gen workflows`: the generated release workflows authenticate as the `giantswarm-release` GitHub App instead of the shared
   taylorbot account (giantswarm/giantswarm#2280). `create_release`, `create_release_pr` and `update_chart` pass the org
   secrets `RELEASE_BOT_CLIENT_ID` and `RELEASE_BOT_PRIVATE_KEY` to the reusable workflows in giantswarm/github-workflows
@@ -29,9 +26,191 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `--failed-log` of `pr wait`, `pr merge`, `release wait`, `rollout wait` and `release promote`: when a failed
+  job's first failure lies before the last `--failed-log-lines` lines, up to that many lines from just before it
+  lead `failedJobs[].logTail`, the skipped lines counted: a failing Prettier check ahead of green tests in one
+  CircleCI step, or a failing Go package's `--- FAIL` block ahead of the green packages and the run's summary, is
+  no longer pushed out of the tail. A failure already within the tail prints as before.
+
+### Removed
+
+- The CHANGELOG cut: `devctl changelog cut` and `check`, the Auto-release workflow's job that opened, approved
+  and auto-merged a `docs(changelog)` cut pull request after every release, and the generated
+  `zz_generated.changelog.yaml` check. `devctl gen workflows` deletes `zz_generated.changelog.yaml` from a
+  repository that carries it.
+
+## [8.144.4] - 2026-10-18
+
+### Fixed
+
+- A release no longer turns the changelog check red on every open pull request until its cut pull request
+  merges: `devctl changelog check --base <revision>` lists the released entries the base already holds under
+  Unreleased as waiting for the base's own cut and fails only on those the pull request brings itself, and the
+  generated `zz_generated.changelog.yaml` checks each pull request against its base commit.
+
+## [8.144.3] - 2026-10-18
+
+### Fixed
+
+- The release wait on a hand-written pipeline also finds the charts a repository keeps as
+  `helm/*/Chart-template.yaml` (no `Chart.yaml` until the build renders it) and follows a job's
+  `make <target>` into the root Makefile to the `helm push` it runs: the kagent line's charts, pushed by
+  `make helm-publish`, are awaited without `--chart`, and a chart template no push job covers is named in
+  the warnings instead of going unchecked in silence.
+
+## [8.144.2] - 2026-10-18
+
+### Fixed
+
+- devctl's version check under `CI` also reads the token in `$GH_TOKEN`, after `$DEVCTL_GITHUB_TOKEN`,
+  `$GITHUB_TOKEN` and `$OPSCTL_GITHUB_TOKEN`: a workflow step that sets only gh's variable (a changelog workflow
+  generated before v8.142.1) no longer lists devctl's releases anonymously and hits the rate limit of a shared runner
+  IP.
+
+## [8.144.1] - 2026-10-18
+
+### Fixed
+
+- `devctl release wait` on a hand-written CircleCI configuration also waits for the charts its own jobs push with
+  `helm push` (giantswarm/substrate's `charts` job): every chart under `helm/` or `charts/` a job of the tag pipeline
+  names is expected at the repository that job pushes to, its environment read (`oci://${REGISTRY}/helm`), with the
+  bare version, so the release is not `available` before they are pullable. A chart at the tag that no push job and
+  no `--chart` covers is named in the document's `warnings` as unchecked.
+
+## [8.144.0] - 2026-10-18
+
+### Added
+
+- `devctl release promote --version` names, in each repository's `later[]` and its message, the release candidates
+  on the default branch cut after the promoted one: the stable release is the named candidate's commit, so they are
+  not in it.
+
+## [8.143.3] - 2026-10-18
+
+### Fixed
+
+- The changelog cut job arms its pinned auto-merge only after GitHub reports the cut commit as the pull request's
+  head: armed right after the push, GitHub still reported the previous head and refused it (`expected head oid does
+  not match the current head oid`), so the cut waited for a merge.
+
+## [8.143.2] - 2026-10-18
+
+### Fixed
+
+- The changelog cut job pins its auto-merge (`--match-head-commit`) and architectbot's approval (the review's
+  `commit_id`) to the cut commit it verified, so a later push to `changelog-cut/<branch>` merges nothing on either.
+
+## [8.143.1] - 2026-10-18
+
+### Fixed
+
+- The changelog cut job's approval is scoped to the cut it pushed: architectbot approves only a pull request the
+  opening identity authored, whose head is the cut commit and whose only file is `CHANGELOG.md`. Any other pull
+  request, a moved head or another file gets no approval and waits for a review.
+
+## [8.143.1-rc.1] - 2026-10-18
+
+### Fixed
+
+- The generated Auto-release workflow's changelog cut pull request is approved by a second identity, architectbot
+  (`ARCHITECT_GITHUB_REPO_SYNC_TOKEN`), so its armed auto-merge lands it once the required checks are green instead of
+  waiting on the required review, while every other pull request failed "No released entries under Unreleased".
+  Without the secret the job warns and the pull request waits for a review.
+
+## [8.143.0] - 2026-10-18
+
+### Changed
+
+- The generated Auto-release workflow tags a patch of the last stable release (only fixes and chores since it) as a
+  stable `vX.Y.Z` on its push: there is no patch release candidate any more. A minor or major version still cuts
+  `vX.Y.0-rc.N` and is promoted with `release-type: stable`, and a fix during such a cycle rides its next candidate.
+  A maintenance branch's releases are patches, so they are stable on their push. The repository's
+  `.github/release-gate.custom.sh` runs before every stable tag, a patch's included.
+
+## [8.142.1] - 2026-10-18
+
+### Fixed
+
+- The generated Changelog workflow's check step and the Auto-release workflow's changelog cut step pass the job's
+  token to devctl in `GITHUB_TOKEN`, so devctl's version check reads devctl's releases authenticated instead of
+  anonymously under the runner IP's shared rate limit (`403 API rate limit exceeded`). `GH_TOKEN` stays for `gh`.
+- The same two steps retry downloading devctl for up to 10 minutes while devctl's latest release has no
+  `devctl-linux-amd64` yet (CircleCI uploads it minutes after the tag), instead of failing at once with `no assets to
+  download`, which left a release's changelog cut pull request unopened. They fail saying why when it never appears.
+
+## [8.142.0] - 2026-10-18
+
+### Added
+
+- `release rerun` triggers a fresh pipeline for the tag through CircleCI's API where the tag's push cannot be sent
+  again (sent again before, or no CircleCI webhook or push delivery left), as for a tag whose pipeline errored before
+  any workflow; the document's `trigger` field carries it. Once per tag: a pipeline the API triggered gets no second
+  one (exit 5). Rerunning failed workflows from failed is unchanged.
+
+## [8.142.0-rc.3] - 2026-10-17
+
+### Fixed
+
+- `repo watch` ends with exit 0 once a repository declared without CI (`gen.ci.generate: false`) is set up, printing
+  `ready: <repository> (no CI: set up, no release to wait for)`, instead of waiting for a release that never comes
+  until `--timeout`; the answer carries `withoutCI` from giantswarm-repo-manager. A repository with CI still waits for
+  `released`.
+
+## [8.142.0-rc.2] - 2026-10-17
+
+### Fixed
+
+- `pr wait` and `pr merge` no longer judge a head on checks that have not registered yet: for one minute after the
+  pull request's last update (a push, or the merge commit `--update-branch` creates) a required context still absent is
+  pending instead of `required_missing`, and a head without any GitHub Actions run or check run of its own is pending
+  instead of `green`. A pending check of another app keeps a head with an absent required context waiting, and a failed
+  check the base does not require is red only once the required contexts have finished.
+
+## [8.142.0-rc.1] - 2026-10-17
+
+### Added
+
+- `release promote --version vX.Y.Z-rc.N` promotes that release candidate of the one named repository instead of the
+  latest: a candidate that is built while a later one still builds, or the one proven live. The auto-release workflow
+  (`gen workflows --release-workflow=auto-release`) takes the same `version` input on `release-type: stable` and
+  refuses a tag that is not a candidate since the last stable release. Without `--version`, a `not_built` refusal names
+  the newest built candidate in its message and in `newestBuilt`.
+
+## [8.141.2-rc.2] - 2026-10-17
+
+### Fixed
+
+- `gen makefile`: `lint-chart` runs ct from `gsoci.azurecr.io/giantswarm/helm-chart-testing:v3.15.0` (Helm v3.16)
+  instead of `giantswarm/helm-chart-testing:v3.0.0-rc.1` (Helm v3.1), and gives its container a TTY only when stdin is
+  one, so the target runs headless in CI and automation.
+
+## [8.141.2-rc.1] - 2026-10-17
+
+### Fixed
+
+- `gen makefile`: `APPLICATION` defaults to the one chart under `helm/` when nothing sets it, so `make helm-docs`,
+  `make lint-chart` and `make update-chart` run in a chart-only repository; with several charts or none `check-env`
+  still stops, naming the charts it found. A value from `Makefile.custom.mk`, the environment, the command line or
+  `Makefile.gen.go.mk` keeps precedence.
+
+## [8.141.1-rc.1] - 2026-10-17
+
+### Fixed
+
 - `release promote --team` lists no repository whose team-file entry is declared `lifecycle: archived` or `deleted`:
   such an entry is the record of the repository, which takes no release (archived) or is gone from GitHub (deleted), so
   a deleted one no longer fails the run as not found.
+
+## [8.141.0] - 2026-10-17
+
+### Added
+
+- `changelog cut` moves every CHANGELOG.md entry under Unreleased that a release already carried into that release's
+  section (the first release, among the `v` semver tags reachable from HEAD, whose CHANGELOG.md holds it under
+  Unreleased), creating the section and its link reference where they are missing; `changelog check` fails while such
+  an entry remains. `gen workflows --release-workflow=auto-release`: the Auto-release workflow opens the cut as a
+  `docs(changelog)` pull request after every release and arms auto-merge on it, and the new
+  `zz_generated.changelog.yaml` runs the check on every pull request. Released entries no longer stay under Unreleased.
 
 ## [8.140.1-rc.2] - 2026-10-17
 
@@ -5782,7 +5961,26 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.140.1-rc.2...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.144.4...HEAD
+[8.144.4]: https://github.com/giantswarm/devctl/compare/v8.144.3...v8.144.4
+[8.144.3]: https://github.com/giantswarm/devctl/compare/v8.144.2...v8.144.3
+[8.144.2]: https://github.com/giantswarm/devctl/compare/v8.144.1...v8.144.2
+[8.144.1]: https://github.com/giantswarm/devctl/compare/v8.144.0...v8.144.1
+[8.144.0]: https://github.com/giantswarm/devctl/compare/v8.143.3...v8.144.0
+[8.143.3]: https://github.com/giantswarm/devctl/compare/v8.143.2...v8.143.3
+[8.143.2]: https://github.com/giantswarm/devctl/compare/v8.143.1...v8.143.2
+[8.143.1]: https://github.com/giantswarm/devctl/compare/v8.143.1-rc.1...v8.143.1
+[8.143.1-rc.1]: https://github.com/giantswarm/devctl/compare/v8.143.0...v8.143.1-rc.1
+[8.143.0]: https://github.com/giantswarm/devctl/compare/v8.142.1...v8.143.0
+[8.142.1]: https://github.com/giantswarm/devctl/compare/v8.142.0...v8.142.1
+[8.142.0]: https://github.com/giantswarm/devctl/compare/v8.142.0-rc.3...v8.142.0
+[8.142.0-rc.3]: https://github.com/giantswarm/devctl/compare/v8.142.0-rc.2...v8.142.0-rc.3
+[8.142.0-rc.2]: https://github.com/giantswarm/devctl/compare/v8.142.0-rc.1...v8.142.0-rc.2
+[8.142.0-rc.1]: https://github.com/giantswarm/devctl/compare/v8.141.2-rc.2...v8.142.0-rc.1
+[8.141.2-rc.2]: https://github.com/giantswarm/devctl/compare/v8.141.2-rc.1...v8.141.2-rc.2
+[8.141.2-rc.1]: https://github.com/giantswarm/devctl/compare/v8.141.1-rc.1...v8.141.2-rc.1
+[8.141.1-rc.1]: https://github.com/giantswarm/devctl/compare/v8.141.0...v8.141.1-rc.1
+[8.141.0]: https://github.com/giantswarm/devctl/compare/v8.140.1-rc.2...v8.141.0
 [8.140.1-rc.2]: https://github.com/giantswarm/devctl/compare/v8.140.1-rc.1...v8.140.1-rc.2
 [8.140.1-rc.1]: https://github.com/giantswarm/devctl/compare/v8.140.0...v8.140.1-rc.1
 [8.140.0]: https://github.com/giantswarm/devctl/compare/v8.140.0-rc.21...v8.140.0

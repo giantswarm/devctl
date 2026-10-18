@@ -125,12 +125,27 @@ first and then decides the registry, else the repository's visibility does). Eac
 pullable and the tag pipeline is green. `--image` applies to hand-written CI only: with generated CI or
 none, the artifacts are derived as before and a warning says the named image is not probed.
 
-A chart such a job pushes with helm itself is named the same way with `--chart <path>` (repeatable), its
-repository path in the registry: `--chart giantswarm/kagent/helm/kagent` for the kagent line, whose
-`push-charts` job runs `make helm-publish` into `oci://gsoci.azurecr.io/giantswarm/kagent/helm`. It is
-expected as `<path>:<version>`, the bare version helm requires (`1.2.4`), its chart name the path's last
-element; it goes to no app catalog, so `--catalog` does not wait for it. `--chart` applies to hand-written
-CI only, like `--image`.
+A job the configuration defines itself whose commands run `helm push <package> oci://<target>` (the
+substrate line's `charts` job) is read as well: every chart directory under `helm/` or `charts/` at the
+tag whose directory or chart name the job's commands name is expected at `<target>/<chart>:<version>`,
+the bare version, the job's `environment` and the plain `NAME=value` assignments of its commands filling
+`$VAR` and `${VAR}` in the target (`oci://${REGISTRY}/helm` with `REGISTRY: gsoci.azurecr.io/giantswarm/substrate`),
+when the job runs in the tag pipeline. A chart directory is one with a `Chart.yaml`, else a
+`Chart-template.yaml` the build renders it from (the kagent line's `make helm-version`); the name either
+declares is the published one. A job that runs `make <target>` instead is followed into the root
+`Makefile` at the tag: the first `helm push` of the target's recipe, or of its prerequisites', names the
+target, with the variables of the make command line over the Makefile's own (the kagent line's
+`make helm-publish HELM_REPO="oci://${registry}/giantswarm"` pushes to `$(HELM_REPO)/kagent/helm`, so
+its `kagent` and `kagent-crds` charts are expected at `giantswarm/kagent/helm/<chart>`). A chart at the
+tag that no push job and no `--chart` covers, or whose job's target names neither registry once its
+environment is read (a variable of a context, a Makefile default elsewhere), is unchecked: the
+document's `warnings` name it and `--chart`.
+
+A chart a job pushes with helm in a way the configuration and the Makefile do not show is named the same
+way with `--chart <path>` (repeatable), its repository path in the registry:
+`--chart giantswarm/kagent/helm/kagent`. It is expected as `<path>:<version>`, the bare version helm
+requires (`1.2.4`), its chart name the path's last element; it goes to no app catalog, so `--catalog`
+does not wait for it. `--chart` applies to hand-written CI only, like `--image`.
 
 When a `Dockerfile` exists at the tag and neither a push job of the pipeline nor `--image` names an
 image: exit 7 with the jobs seen, the reason naming `--image`. The repository name is never used as a
@@ -202,7 +217,8 @@ readers: when the tag's CI failed it reads the log of each failed job once and k
 jobs of every failed workflow of the tag pipeline (the output of their failed steps), or the job a
 failed CircleCI status links when the statuses are the verdict; for a repository without CircleCI,
 the failed jobs of every failed Actions run of the tag (`GET /repos/{owner}/{repo}/actions/runs/{id}/jobs`,
-then each job's log, ending at its last `##[error]` line). The tails go to stderr, one block per job
+then each job's log, ending at its last `##[error]` line). The lines from a log's first failure lead its tail
+when that failure lies before it, as in [`pr wait`](pr-wait.md). The tails go to stderr, one block per job
 headed `failed job <name> (<url>):`, and into the document under `failedJobs[]`. A green, pending or
 timed-out wait reads no log; a log that cannot be read is named in its job's `logError`, and the
 verdict stays exit 1. Without the flag the document is unchanged.
@@ -292,7 +308,7 @@ stderr.
 | `actions[]` | The Actions runs the tag triggered, for a repository without CircleCI: `name`, `runId`, `status`, `conclusion`, `url`. |
 | `statuses[]` | The newest commit status of every context of the tag's commit, `context`, `state` (`pending`, `success`, `failure`, `error`) and `url`, read once the artifacts are available and the tag's CI is green; empty before. |
 | `conflictingTags[]` | Present at exit 11: every release tag on the commit the wait resolved to, newest first. Absent otherwise. |
-| `failedJobs[]` | Present at exit 1 with `--failed-log`, as in [`pr wait`](pr-wait.md#the-document): each failed job with `name` (`<workflow>/<job>` on CircleCI, `<run>/<job>` on Actions), `source` (`actions` or `circleci`), `url`, and `logTail`, the last `--failed-log-lines` lines of its log, or `logError` when the log could not be read. A failed workflow or run whose jobs cannot be listed is named alone with its `logError`. Absent without the flag. |
+| `failedJobs[]` | Present at exit 1 with `--failed-log`, as in [`pr wait`](pr-wait.md#the-document): each failed job with `name` (`<workflow>/<job>` on CircleCI, `<run>/<job>` on Actions), `source` (`actions` or `circleci`), `url`, and `logTail`, the last `--failed-log-lines` lines of its log, led by the lines from its first failure when that lies before them, or `logError` when the log could not be read. A failed workflow or run whose jobs cannot be listed is named alone with its `logError`. Absent without the flag. |
 
 ## Exit codes
 
