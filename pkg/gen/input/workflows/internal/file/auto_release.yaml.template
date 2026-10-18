@@ -811,17 +811,11 @@ jobs:
           fi
           echo "cut pull request: ${pr}"
           # The auto-merge and the approval hold for the cut commit alone: a
-          # later push to the branch merges nothing on them.
+          # later push to the branch merges nothing on them. GitHub reports an
+          # updated pull request's previous head for a few seconds after the
+          # push, and refuses an expected head it does not report yet: the
+          # pull request is read until its head is the cut before either.
           sha=$(git rev-parse HEAD)
-          if ! gh pr merge "$pr" --auto --squash --match-head-commit "$sha"; then
-            echo "::warning title=Auto-merge not armed::${pr} waits for a merge: auto-merge could not be armed."
-          fi
-          # Approved anew on every release: the branch is rebuilt each time.
-          # architectbot approves only what this step pushed: a pull request
-          # the opening identity authored, whose head is the cut commit and
-          # whose only file is CHANGELOG.md. Anything else waits for a person.
-          # GitHub can report an updated pull request's previous head for a
-          # few seconds after the push: read it again before refusing.
           cut="$(gh api user --jq .login) ${sha} CHANGELOG.md"
           for attempt in $(seq 1 6); do
             scope=$(gh pr view "$pr" --json author,headRefOid,files \
@@ -831,6 +825,13 @@ jobs:
             fi
             sleep 5
           done
+          if ! gh pr merge "$pr" --auto --squash --match-head-commit "$sha"; then
+            echo "::warning title=Auto-merge not armed::${pr} waits for a merge: auto-merge could not be armed."
+          fi
+          # Approved anew on every release: the branch is rebuilt each time.
+          # architectbot approves only what this step pushed: a pull request
+          # the opening identity authored, whose head is the cut commit and
+          # whose only file is CHANGELOG.md. Anything else waits for a person.
           if [ -z "${APPROVER_TOKEN:-}" ]; then
             echo "::warning title=Cut not approved::no ARCHITECT_GITHUB_REPO_SYNC_TOKEN secret to approve ${pr} with: it waits for a review."
           elif [ "$scope" != "$cut" ]; then
