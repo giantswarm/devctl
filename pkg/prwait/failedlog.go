@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"regexp"
 	"slices"
 	"strings"
 	"unicode"
@@ -36,7 +37,8 @@ type FailedJob struct {
 	Source string `json:"source"`
 	URL    string `json:"url"`
 	// LogTail is the last lines of the job's log; on CircleCI, of the output
-	// of its failed steps.
+	// of its failed steps. The lines from the log's first failure lead them
+	// when that failure lies before them.
 	LogTail string `json:"logTail,omitempty"`
 	// LogError says why the log could not be read; the verdict stands.
 	LogError string `json:"logError,omitempty"`
@@ -194,22 +196,49 @@ func (r LogReader) CircleCIJob(ctx context.Context, owner, repo string, client C
 // the post-job steps, which do not say why the job failed.
 const actionsError = "##[error]"
 
+// failureMarker matches a line that says why a job failed: a failed Actions
+// step's error, a Go test's `--- FAIL` and a package's or a Jest file's
+// `FAIL`, a panic, Prettier's `[error]` and its `Code style issues` verdict,
+// and a non-zero exit code. A line may lead with an Actions timestamp and a
+// `[name] ` prefix of concurrently.
+var failureMarker = regexp.MustCompile(`##\[error\]` +
+	`|^(?:\d{4}-\d\d-\d\dT\S+Z )?(?:\[[^\]\s]+\] )?(?:--- FAIL|FAIL|panic: |\[error\]|\[warn\] Code style issues)` +
+	`|(?i:\bexit(?:ed)? (?:with )?(?:code |status |exit )*[1-9])`)
+
 // tailLines returns the last n lines of r, without terminal control
 // sequences and control characters (stripControls). With a non-empty until, a log that carries it ends at
-// its last line containing until.
+// its last line containing until. When the log's first failure marker lies
+// before those lines, up to n lines from just before it lead the tail: the
+// first failing step's output, which green steps after it would otherwise
+// push out.
 func tailLines(r io.Reader, n int, until string) (string, error) {
-	var tail, untilTail []string
+	var tail, untilTail, lead, first []string
+	count, untilEnd, firstStart := 0, 0, -1
 	reader := bufio.NewReader(r)
 	for {
 		line, err := reader.ReadString('\n')
 		if line != "" {
 			line = stripControls(line)
+			count++
+			switch {
+			case firstStart < 0 && failureMarker.MatchString(line):
+				first = append(lead, line)
+				firstStart = count - len(first)
+			case firstStart < 0:
+				lead = append(lead, line)
+				if len(lead) > n/5 {
+					lead = lead[1:]
+				}
+			case len(first) < n:
+				first = append(first, line)
+			}
 			tail = append(tail, line)
 			if len(tail) > n {
 				tail = tail[1:]
 			}
 			if until != "" && strings.Contains(line, until) {
 				untilTail = slices.Clone(tail)
+				untilEnd = count
 			}
 		}
 		if errors.Is(err, io.EOF) {
@@ -219,10 +248,26 @@ func tailLines(r io.Reader, n int, until string) (string, error) {
 			return "", err
 		}
 	}
+	end := count
 	if untilTail != nil {
-		tail = untilTail
+		tail, end = untilTail, untilEnd
 	}
-	return strings.Join(tail, "\n"), nil
+	return joinFirstFailure(first, firstStart, tail, end-len(tail)), nil
+}
+
+// joinFirstFailure joins the tail of a log, whose first line is line
+// tailStart (0-based), with first, the excerpt around the log's first failure
+// starting at line firstStart (-1 for none): the excerpt leads when it starts
+// before the tail, the lines skipped between them counted.
+func joinFirstFailure(first []string, firstStart int, tail []string, tailStart int) string {
+	if firstStart < 0 || firstStart >= tailStart {
+		return strings.Join(tail, "\n")
+	}
+	gap := tailStart - firstStart - len(first)
+	if gap <= 0 {
+		return strings.Join(slices.Concat(first[:tailStart-firstStart], tail), "\n")
+	}
+	return fmt.Sprintf("%s\n[... %d lines ...]\n%s", strings.Join(first, "\n"), gap, strings.Join(tail, "\n"))
 }
 
 // stripControls returns line without its terminal control sequences and

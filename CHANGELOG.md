@@ -18,6 +18,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `--failed-log` of `pr wait`, `pr merge`, `release wait`, `rollout wait` and `release promote`: when a failed
+  job's first failure lies before the last `--failed-log-lines` lines, up to that many lines from just before it
+  lead `failedJobs[].logTail`, the skipped lines counted: a failing Prettier check ahead of green tests in one
+  CircleCI step, or a failing Go package's `--- FAIL` block ahead of the green packages and the run's summary, is
+  no longer pushed out of the tail. A failure already within the tail prints as before.
 - The generated changelog check compares a pull request with the base its checked-out merge commit was built
   on, the merge's first parent, rather than the event's base commit, which a reopened pull request can carry
   from before its base moved.
