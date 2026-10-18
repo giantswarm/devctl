@@ -18,6 +18,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- The Auto-release workflow's unconventional-subject warning accepts every type git-cliff parses (letters,
+  digits, `_` and `-`), so `Feat: x` or `my-type: x` is no longer reported as dropped.
 - `--failed-log` of `pr wait`, `pr merge`, `release wait`, `rollout wait` and `release promote`: when a failed
   job's first failure lies before the last `--failed-log-lines` lines, up to that many lines from just before it
   lead `failedJobs[].logTail`, the skipped lines counted: a failing Prettier check ahead of green tests in one
@@ -30,6 +32,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   and auto-merged a `docs(changelog)` cut pull request after every release, and the generated
   `zz_generated.changelog.yaml` check. `devctl gen workflows` deletes `zz_generated.changelog.yaml` from a
   repository that carries it.
+- The `feat-rc`/`fix-rc` subject type: the generated `cliff.toml` no longer normalises it to `feat`/`fix`.
+  The PR title check does not accept it, and no repository on the Auto-release workflow carries one after its
+  last stable release.
 
 ## [8.144.4] - 2026-10-18
 

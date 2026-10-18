@@ -143,10 +143,9 @@ func repo(t *testing.T, history ...string) string {
 // bump, so they are not releasable on their own.
 var cliffSkippedTypes = []string{"docs", "style", "test"}
 
-// countedSubject matches a conventional subject and captures its type. The
-// optional -rc mirrors cliff.toml's commit_preprocessor, which normalises
-// feat-rc/fix-rc to feat/fix before git-cliff parses the type.
-var countedSubject = regexp.MustCompile(`^([a-z]+)(?:-rc)?(?:\([^)]*\))?!?: `)
+// countedSubject matches a conventional subject as git-cliff parses it
+// (letters, digits, `_` and `-` in the type) and captures its type.
+var countedSubject = regexp.MustCompile(`^([A-Za-z0-9_-]+)(?:\([^)]*\))?!?: `)
 
 // cliffContext writes the cliff-context.json that the decide step reads. The
 // test environment has no git-cliff, so this stands in for it: the file holds
@@ -270,7 +269,7 @@ func Test_AutoReleaseDecideWarnsOnUnconventionalSubjects(t *testing.T) {
 	})
 
 	t.Run("a conventional subject of any type is not warned about", func(t *testing.T) {
-		dir := repo(t, "v1.2.9", "chore(deps): bump y", "docs: fix typo", "feat-rc(auth): add x", "refactor!: drop y", "fix: last thing")
+		dir := repo(t, "v1.2.9", "chore(deps): bump y", "docs: fix typo", "feat(auth): add x", "Perf_x-1: speed z", "refactor!: drop y", "fix: last thing")
 		_, log := decideWithLog(t, script, dir, "v2.0.0", "auto")
 
 		if strings.Contains(log, "::warning") {
@@ -371,12 +370,6 @@ func Test_AutoReleaseDecide(t *testing.T) {
 			history:   []string{"v1.2.9", "feat: add x", "v1.3.0-rc.9", "fix: tweak"},
 			next:      "v1.3.0",
 			expectTag: "v1.3.0-rc.10",
-		},
-		{
-			name:      "a leftover -rc type still cuts a candidate",
-			history:   []string{"v1.2.9", "feat-rc: add x"},
-			next:      "v1.3.0",
-			expectTag: "v1.3.0-rc.1",
 		},
 		{
 			name:      "inception, with no tag at all",
@@ -786,21 +779,6 @@ func Test_AutoReleaseDecideIgnoresBuildMetadataTags(t *testing.T) {
 
 	if got["tag"] != "" {
 		t.Errorf("tag = %q, want none: v1.2.3+build.1 is not a release", got["tag"])
-	}
-}
-
-// Test_AutoReleaseCliffNormalisesRcTypes pins the contract between the
-// workflow and cliff.toml: the workflow reads the raw -rc subjects, so
-// git-cliff must be handed the plain type. features_always_bump_minor keys off
-// the type being exactly "feat", and an un-normalised feat-rc bumps patch.
-func Test_AutoReleaseCliffNormalisesRcTypes(t *testing.T) {
-	cliff := renderInput(t, newWorkflows(t, gen.FlavourApp).CliffToml())
-
-	if !strings.Contains(cliff, `{ pattern = '^(feat|fix)-rc', replace = "${1}" }`) {
-		t.Errorf("cliff.toml does not normalise feat-rc/fix-rc before parsing:\n%s", cliff)
-	}
-	if !strings.Contains(cliff, "features_always_bump_minor = true") {
-		t.Error("cliff.toml no longer sets features_always_bump_minor; the normalisation above may be pointless")
 	}
 }
 
