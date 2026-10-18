@@ -92,11 +92,16 @@ func promoteRoutes(repository string) sequence.Routes {
 		"GET /repos/" + repository + "/contents/.github/workflows/zz_generated.auto_release.yaml": {{Body: map[string]any{
 			"type": "file", "encoding": "base64", "path": ".github/workflows/zz_generated.auto_release.yaml", "content": base64Encode(workflow),
 		}}},
-		"GET /repos/" + repository + "/releases":                                                     {{Body: []map[string]any{{"tag_name": "v1.3.0-rc.1", "prerelease": true}, {"tag_name": "v1.2.0"}}}},
-		"GET /repos/" + repository + "/compare/v1.2.0...main":                                        {{Body: map[string]any{"status": "ahead"}}},
-		"GET /repos/" + repository + "/compare/v1.3.0-rc.1...main":                                   {{Body: map[string]any{"status": "identical"}}},
-		"GET /repos/" + repository + "/commits/v1.3.0-rc.1/status":                                   {{Body: map[string]any{"state": "success", "total_count": 1}}},
-		"POST /repos/" + repository + "/actions/workflows/zz_generated.auto_release.yaml/dispatches": {{Status: http.StatusNoContent}},
+		"GET /repos/" + repository + "/releases":                   {{Body: []map[string]any{{"tag_name": "v1.3.0-rc.1", "prerelease": true}, {"tag_name": "v1.2.0"}}}},
+		"GET /repos/" + repository + "/compare/v1.2.0...main":      {{Body: map[string]any{"status": "ahead"}}},
+		"GET /repos/" + repository + "/compare/v1.3.0-rc.1...main": {{Body: map[string]any{"status": "identical"}}},
+		"GET /repos/" + repository + "/commits/v1.3.0-rc.1/status": {{Body: map[string]any{"state": "success", "total_count": 1}}},
+		"POST /repos/" + repository + "/actions/workflows/zz_generated.auto_release.yaml/dispatches": {{Body: map[string]any{
+			"workflow_run_id": 7, "html_url": "https://github.com/" + repository + "/actions/runs/7",
+		}}},
+		"GET /repos/" + repository + "/actions/runs/7": {{Body: map[string]any{
+			"id": 7, "status": "completed", "conclusion": "success", "html_url": "https://github.com/" + repository + "/actions/runs/7",
+		}}},
 	}
 }
 
@@ -144,7 +149,49 @@ func TestRunDispatchesAndReports(t *testing.T) {
 		"statusState": "success",
 		"state":       "dispatched",
 		"message":     "dispatched zz_generated.auto_release.yaml on main to promote v1.3.0-rc.1",
+		"run":         map[string]any{"id": float64(7), "url": "https://github.com/giantswarm/kserve/actions/runs/7", "status": "completed", "conclusion": "success"},
 	}}, doc["repositories"])
+	require.Equal(t, 1, dispatches(server))
+}
+
+// The stable gate refusing in the dispatched run is exit 1 at the run's
+// conclusion, the run's URL and the gate's refusal in the message.
+func TestRunGateRefusalIsExit1(t *testing.T) {
+	routes := promoteRoutes("giantswarm/kserve")
+	routes["GET /repos/giantswarm/kserve/actions/runs/7"] = []sequence.Response{
+		{Body: map[string]any{"id": 7, "status": "in_progress", "html_url": "https://github.com/giantswarm/kserve/actions/runs/7"}},
+		{Body: map[string]any{"id": 7, "status": "completed", "conclusion": "failure", "html_url": "https://github.com/giantswarm/kserve/actions/runs/7"}},
+	}
+	routes["GET /repos/giantswarm/kserve/actions/runs/7/jobs"] = []sequence.Response{{Body: map[string]any{"total_count": 1, "jobs": []map[string]any{
+		{"id": 71, "name": "Tag", "status": "completed", "conclusion": "failure", "html_url": "https://github.com/giantswarm/kserve/actions/runs/7/job/71"},
+	}}}}
+	routes["GET /repos/giantswarm/kserve/check-runs/71/annotations"] = []sequence.Response{{Body: []map[string]any{
+		{"annotation_level": "failure", "title": "Stable gate refused", "message": ".github/release-gate.custom.sh refused v1.3.0: no tag and no release are cut."},
+		{"annotation_level": "failure", "message": "Process completed with exit code 1."},
+	}}}
+	_, open := mockSources(t, routes)
+	t.Setenv(agentcli.EnvTimeScale, "0.001")
+	doc, err := runCommand(t, []string{"giantswarm/kserve"}, &flag{}, open)
+	require.Equal(t, agentcli.ExitRed, agentcli.Exit(err), "%v", err)
+	require.Equal(t, "1 of 1 repositories not promoted: giantswarm/kserve (refused)", doc["reason"])
+	entry := doc["repositories"].([]any)[0].(map[string]any)
+	require.Equal(t, "refused", entry["state"])
+	require.Equal(t, "the run https://github.com/giantswarm/kserve/actions/runs/7 promoting v1.3.0-rc.1 concluded failure: no stable release is cut; Stable gate refused: .github/release-gate.custom.sh refused v1.3.0: no tag and no release are cut.", entry["message"])
+	job := entry["failedJobs"].([]any)[0].(map[string]any)
+	require.Equal(t, "Tag", job["name"])
+	require.Equal(t, "https://github.com/giantswarm/kserve/actions/runs/7/job/71", job["url"])
+}
+
+// --no-follow returns right after the dispatch: the run is never read.
+func TestRunNoFollowReadsNoRun(t *testing.T) {
+	routes := promoteRoutes("giantswarm/kserve")
+	delete(routes, "GET /repos/giantswarm/kserve/actions/runs/7")
+	server, open := mockSources(t, routes)
+	doc, err := runCommand(t, []string{"giantswarm/kserve"}, &flag{NoFollow: true}, open)
+	require.NoError(t, err)
+	entry := doc["repositories"].([]any)[0].(map[string]any)
+	require.Equal(t, "dispatched", entry["state"])
+	require.Equal(t, map[string]any{"id": float64(7), "url": "https://github.com/giantswarm/kserve/actions/runs/7", "status": "", "conclusion": ""}, entry["run"])
 	require.Equal(t, 1, dispatches(server))
 }
 
@@ -164,7 +211,7 @@ func TestRunNotAutoReleaseIsExit1(t *testing.T) {
 	doc, err := runCommand(t, []string{"giantswarm/kserve"}, &flag{}, open)
 	require.Equal(t, agentcli.ExitRed, agentcli.Exit(err))
 	require.Equal(t, string(agentcli.VerdictRed), doc["verdict"])
-	require.Equal(t, "1 of 1 repositories not dispatched: giantswarm/kserve (not_auto_release)", doc["reason"])
+	require.Equal(t, "1 of 1 repositories not promoted: giantswarm/kserve (not_auto_release)", doc["reason"])
 	require.Zero(t, dispatches(server))
 }
 
@@ -255,6 +302,7 @@ func TestRunVersionPromotesTheNamedCandidate(t *testing.T) {
 		"statusState": "success",
 		"state":       "dispatched",
 		"message":     "dispatched zz_generated.auto_release.yaml on main to promote v1.2.3-rc.14; not in it, cut after it: v1.2.3-rc.15",
+		"run":         map[string]any{"id": float64(7), "url": "https://github.com/giantswarm/kserve/actions/runs/7", "status": "completed", "conclusion": "success"},
 	}}, doc["repositories"])
 	require.Equal(t, 1, dispatches(server))
 }
@@ -264,7 +312,7 @@ func TestRunNotBuiltNamesTheNewestBuiltCandidate(t *testing.T) {
 	server, open := mockSources(t, streamRoutes("giantswarm/kserve"))
 	doc, err := runCommand(t, []string{"giantswarm/kserve"}, &flag{}, open)
 	require.Equal(t, agentcli.ExitRed, agentcli.Exit(err))
-	require.Equal(t, "1 of 1 repositories not dispatched: giantswarm/kserve (not_built)", doc["reason"])
+	require.Equal(t, "1 of 1 repositories not promoted: giantswarm/kserve (not_built)", doc["reason"])
 	require.Equal(t, []any{map[string]any{
 		"repository":  "giantswarm/kserve",
 		"stable":      "v1.2.2",

@@ -17,6 +17,36 @@ func TestDispatchWorkflowWire(t *testing.T) {
 	require.Equal(t, map[string]any{"ref": "main", "inputs": map[string]any{"release-type": "stable"}}, got.body)
 }
 
+func TestDispatchWorkflowRunWire(t *testing.T) {
+	c, got := newWireClient(t, http.StatusOK, `{"workflow_run_id":7,"run_url":"https://api.github.com/repos/o/r/actions/runs/7","html_url":"https://github.com/o/r/actions/runs/7"}`)
+	run, err := c.DispatchWorkflowRun(t.Context(), "o", "r", "zz_generated.auto_release.yaml", "main", map[string]any{"release-type": "stable"})
+	require.NoError(t, err)
+	require.Equal(t, DispatchedRun{ID: 7, URL: "https://github.com/o/r/actions/runs/7"}, run)
+	require.Equal(t, "/repos/o/r/actions/workflows/zz_generated.auto_release.yaml/dispatches", got.path)
+	require.Equal(t, map[string]any{"ref": "main", "inputs": map[string]any{"release-type": "stable"}, "return_run_details": true}, got.body)
+
+	c, _ = newWireClient(t, http.StatusNoContent, "")
+	run, err = c.DispatchWorkflowRun(t.Context(), "o", "r", "zz_generated.auto_release.yaml", "main", nil)
+	require.NoError(t, err)
+	require.Equal(t, DispatchedRun{}, run)
+}
+
+func TestGetWorkflowRun(t *testing.T) {
+	c, got := newWireClient(t, http.StatusOK, `{"id":7,"name":"Auto Release","path":".github/workflows/zz_generated.auto_release.yaml","event":"workflow_dispatch","status":"completed","conclusion":"failure","html_url":"https://github.com/o/r/actions/runs/7"}`)
+	run, err := c.GetWorkflowRun(t.Context(), "o", "r", 7)
+	require.NoError(t, err)
+	require.Equal(t, "/repos/o/r/actions/runs/7", got.path)
+	require.Equal(t, WorkflowRun{Name: "Auto Release", Path: ".github/workflows/zz_generated.auto_release.yaml", ID: 7, Event: "workflow_dispatch", Status: "completed", Conclusion: "failure", URL: "https://github.com/o/r/actions/runs/7"}, run)
+}
+
+func TestCheckRunAnnotations(t *testing.T) {
+	c, got := newWireClient(t, http.StatusOK, `[{"annotation_level":"failure","title":"Stable gate refused","message":"refused v1.3.0"},{"annotation_level":"failure","message":"Process completed with exit code 1."}]`)
+	annotations, err := c.CheckRunAnnotations(t.Context(), "o", "r", 71)
+	require.NoError(t, err)
+	require.Equal(t, "/repos/o/r/check-runs/71/annotations", got.path)
+	require.Equal(t, []Annotation{{Level: "failure", Title: "Stable gate refused", Message: "refused v1.3.0"}, {Level: "failure", Message: "Process completed with exit code 1."}}, annotations)
+}
+
 func TestReadFile(t *testing.T) {
 	content := base64.StdEncoding.EncodeToString([]byte("name: Auto release\n"))
 	c, got := newWireClient(t, http.StatusOK, `{"type":"file","encoding":"base64","path":".github/workflows/zz_generated.auto_release.yaml","content":"`+content+`"}`)

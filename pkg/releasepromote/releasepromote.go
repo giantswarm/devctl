@@ -8,16 +8,21 @@
 // picks that candidate from the repository's releases reachable from the
 // default branch, checks that its commit is built (the rule the workflow
 // applies) and dispatches the workflow on the default branch. The workflow
-// does the promotion and its own checks; nothing here waits for its run.
+// does the promotion and its own checks, the repository's stable gate among
+// them; with [Config.Follow] the package follows the dispatched run until it
+// concludes and reports a run that cut no release as refused, with its
+// errors.
 package releasepromote
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/Masterminds/semver/v3"
 
@@ -69,7 +74,11 @@ type GitHub interface {
 	ListReleases(ctx context.Context, owner, repo string) ([]githubclient.Release, error)
 	Reachable(ctx context.Context, owner, repo, ref, branch string) (bool, error)
 	GetCombinedStatus(ctx context.Context, owner, repo, ref string) (githubclient.CombinedStatus, error)
-	DispatchWorkflow(ctx context.Context, owner, repo, file, ref string, inputs map[string]any) error
+	DispatchWorkflowRun(ctx context.Context, owner, repo, file, ref string, inputs map[string]any) (githubclient.DispatchedRun, error)
+	GetWorkflowRun(ctx context.Context, owner, repo string, id int64) (githubclient.WorkflowRun, error)
+	ListWorkflowRunJobs(ctx context.Context, owner, repo string, runID int64) ([]githubclient.WorkflowJob, error)
+	CheckRunAnnotations(ctx context.Context, owner, repo string, id int64) ([]githubclient.Annotation, error)
+	JobLog(ctx context.Context, owner, repo string, jobID int64) (io.ReadCloser, error)
 }
 
 // Config configures a promotion.
@@ -84,6 +93,14 @@ type Config struct {
 	// NotFoundHint is added to GitHub's 404 for a repository: what the
 	// token reaches. Empty adds nothing.
 	NotFoundHint string
+	// Follow reads the run each dispatch started until it concludes, at
+	// most FollowTimeout: a run that cuts no release, the stable gate's
+	// refusal for one, is refused.
+	Follow bool
+	// FollowTimeout bounds following; zero means DefaultFollowTimeout.
+	FollowTimeout time.Duration
+	// Clock paces following; the zero value is the wall clock.
+	Clock agentcli.Clock
 	// Progress receives one line per repository; nil is silent.
 	Progress *agentcli.Progress
 }
@@ -91,13 +108,15 @@ type Config struct {
 // Promote runs the promotion of every repository, owner/repo each, in order,
 // and fills result.Repositories. A repository that is not dispatched is
 // reported in its entry and does not stop the others; the error is then an
-// [agentcli.ExitRed] outcome naming them. Nil when every repository was
-// dispatched, would be, or has nothing to promote.
+// [agentcli.ExitRed] outcome naming them. With config.Follow the dispatched
+// runs are followed once every repository is dispatched, and a refused run
+// is such an entry too. Nil when every repository was dispatched (and its
+// run passed or still runs), would be, or has nothing to promote.
 func Promote(ctx context.Context, config Config, repositories []string, result *Result) error {
 	if config.GitHub == nil {
 		return usageErr("%T.GitHub must not be empty", config)
 	}
-	var refused []string
+	first := len(result.Repositories)
 	for _, repository := range repositories {
 		entry := promoteOne(ctx, config, repository)
 		config.Progress.Printf("%s: %s", repository, entry.Message)
@@ -105,12 +124,18 @@ func Promote(ctx context.Context, config Config, repositories []string, result *
 			config.Progress.Printf("%s: warning: %s", repository, warning)
 		}
 		result.Repositories = append(result.Repositories, entry)
+	}
+	if config.Follow && !config.DryRun {
+		follow(ctx, config, result.Repositories[first:])
+	}
+	var refused []string
+	for _, entry := range result.Repositories[first:] {
 		if !entry.OK() {
 			refused = append(refused, fmt.Sprintf("%s (%s)", entry.Repository, entry.State))
 		}
 	}
 	if len(refused) > 0 {
-		return agentcli.NewExitError(agentcli.ExitRed, agentcli.VerdictRed, "%d of %d repositories not dispatched: %s", len(refused), len(repositories), strings.Join(refused, ", "))
+		return agentcli.NewExitError(agentcli.ExitRed, agentcli.VerdictRed, "%d of %d repositories not promoted: %s", len(refused), len(repositories), strings.Join(refused, ", "))
 	}
 	return nil
 }
@@ -198,12 +223,17 @@ func promoteOne(ctx context.Context, config Config, repository string) Repositor
 	if config.DryRun {
 		return entry.set(StateWouldDispatch, "would dispatch %s on %s to promote %s%s", Workflow, branch, candidate, leftOut)
 	}
-	err = gh.DispatchWorkflow(ctx, owner, repo, Workflow, branch, inputs)
+	run, err := gh.DispatchWorkflowRun(ctx, owner, repo, Workflow, branch, inputs)
 	if githubclient.IsForbidden(err) {
 		return entry.set(StateFailed, "dispatching %s on %s: %v; the token needs Actions write on %s", Workflow, branch, err, repository)
 	}
 	if err != nil {
 		return entry.set(StateFailed, "dispatching %s on %s: %v", Workflow, branch, err)
+	}
+	if run.ID != 0 {
+		entry.Run = &Run{ID: run.ID, URL: run.URL}
+	} else if config.Follow {
+		entry.Warnings = append(entry.Warnings, fmt.Sprintf("GitHub named no run for the dispatch, so its stable gate is not followed; follow the release with devctl release wait %s %s", repository, StableVersion(candidate)))
 	}
 	return entry.set(StateDispatched, "dispatched %s on %s to promote %s%s", Workflow, branch, candidate, leftOut)
 }

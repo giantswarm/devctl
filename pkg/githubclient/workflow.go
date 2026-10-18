@@ -160,3 +160,56 @@ func (c *Client) DispatchWorkflow(ctx context.Context, owner, repo, file, ref st
 	}
 	return nil
 }
+
+// DispatchedRun is the Actions run a workflow dispatch started.
+type DispatchedRun struct {
+	ID  int64
+	URL string
+}
+
+// DispatchWorkflowRun is [Client.DispatchWorkflow] asking GitHub to name the
+// run it started. The run is the zero value when GitHub answers without one
+// (an Enterprise Server that predates run details).
+func (c *Client) DispatchWorkflowRun(ctx context.Context, owner, repo, file, ref string, inputs map[string]any) (DispatchedRun, error) {
+	returnRunDetails := true
+	details, _, err := c.ghClient.Actions.CreateWorkflowDispatchEventByFileName(ctx, owner, repo, file, github.CreateWorkflowDispatchEventRequest{Ref: ref, Inputs: inputs, ReturnRunDetails: &returnRunDetails})
+	if err != nil {
+		return DispatchedRun{}, microerror.Mask(err)
+	}
+	if details == nil {
+		return DispatchedRun{}, nil
+	}
+	return DispatchedRun{ID: details.GetWorkflowRunID(), URL: details.GetHTMLURL()}, nil
+}
+
+// GetWorkflowRun returns the Actions run id.
+func (c *Client) GetWorkflowRun(ctx context.Context, owner, repo string, id int64) (WorkflowRun, error) {
+	run, _, err := c.ghClient.Actions.GetWorkflowRunByID(ctx, owner, repo, id)
+	if err != nil {
+		return WorkflowRun{}, microerror.Mask(err)
+	}
+	return toWorkflowRun(run), nil
+}
+
+// Annotation is one annotation of a check run: what a step's `::error` or
+// `::warning` command wrote.
+type Annotation struct {
+	// Level is notice, warning or failure.
+	Level   string
+	Title   string
+	Message string
+}
+
+// CheckRunAnnotations returns the annotations of a check run, the first page
+// of 50; the check run of an Actions job carries the job's id.
+func (c *Client) CheckRunAnnotations(ctx context.Context, owner, repo string, id int64) ([]Annotation, error) {
+	annotations, _, err := c.ghClient.Checks.ListCheckRunAnnotations(ctx, owner, repo, id, &github.ListOptions{PerPage: 50})
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
+	out := make([]Annotation, 0, len(annotations))
+	for _, a := range annotations {
+		out = append(out, Annotation{Level: a.GetAnnotationLevel(), Title: a.GetTitle(), Message: a.GetMessage()})
+	}
+	return out, nil
+}

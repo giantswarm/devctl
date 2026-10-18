@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"io"
 	"net/http"
 	"net/url"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/google/go-github/v92/github"
@@ -39,6 +41,14 @@ type fakeRepository struct {
 	// statuses override status per ref.
 	statuses    map[string]githubclient.CombinedStatus
 	dispatchErr error
+	// run is the run the dispatch names; zero names none.
+	run githubclient.DispatchedRun
+	// runReads answer GetWorkflowRun in turn, the last one again after.
+	runReads []githubclient.WorkflowRun
+	jobs     []githubclient.WorkflowJob
+	// annotations and logs are per job id.
+	annotations map[int64][]githubclient.Annotation
+	logs        map[int64]string
 }
 
 // fakeGitHub answers per owner/repo; a repository it does not know is
@@ -48,6 +58,7 @@ type fakeGitHub struct {
 	dispatches   []dispatch
 	statusRefs   []string
 	compared     []string
+	runReads     int
 }
 
 var errNotFound = errors.New("404 Not Found")
@@ -105,16 +116,46 @@ func (f *fakeGitHub) GetCombinedStatus(_ context.Context, owner, repo, ref strin
 	return r.status, err
 }
 
-func (f *fakeGitHub) DispatchWorkflow(_ context.Context, owner, repo, file, ref string, inputs map[string]any) error {
+func (f *fakeGitHub) DispatchWorkflowRun(_ context.Context, owner, repo, file, ref string, inputs map[string]any) (githubclient.DispatchedRun, error) {
 	r, err := f.repository(owner, repo)
 	if err != nil {
-		return err
+		return githubclient.DispatchedRun{}, err
 	}
 	if r.dispatchErr != nil {
-		return r.dispatchErr
+		return githubclient.DispatchedRun{}, r.dispatchErr
 	}
 	f.dispatches = append(f.dispatches, dispatch{repository: owner + "/" + repo, file: file, ref: ref, inputs: inputs})
-	return nil
+	return r.run, nil
+}
+
+func (f *fakeGitHub) GetWorkflowRun(_ context.Context, owner, repo string, id int64) (githubclient.WorkflowRun, error) {
+	r, err := f.repository(owner, repo)
+	if err != nil || id != r.run.ID || len(r.runReads) == 0 {
+		return githubclient.WorkflowRun{}, errNotFound
+	}
+	f.runReads++
+	return r.runReads[min(f.runReads, len(r.runReads))-1], nil
+}
+
+func (f *fakeGitHub) ListWorkflowRunJobs(_ context.Context, owner, repo string, _ int64) ([]githubclient.WorkflowJob, error) {
+	r, err := f.repository(owner, repo)
+	return r.jobs, err
+}
+
+func (f *fakeGitHub) CheckRunAnnotations(_ context.Context, owner, repo string, id int64) ([]githubclient.Annotation, error) {
+	r, err := f.repository(owner, repo)
+	if a, ok := r.annotations[id]; ok || err != nil {
+		return a, err
+	}
+	return nil, errors.New("403 Resource not accessible by integration")
+}
+
+func (f *fakeGitHub) JobLog(_ context.Context, owner, repo string, id int64) (io.ReadCloser, error) {
+	r, err := f.repository(owner, repo)
+	if err != nil {
+		return nil, err
+	}
+	return io.NopCloser(strings.NewReader(r.logs[id])), nil
 }
 
 func stable(tag string) githubclient.Release {
@@ -366,7 +407,7 @@ func TestPromoteGoesOnAfterARepositoryFails(t *testing.T) {
 	err := Promote(t.Context(), Config{GitHub: gh, NotFoundHint: "the App reaches giantswarm only."}, []string{"giantswarm/a", "giantswarm/missing", "giantswarm/c"}, &result)
 
 	require.Equal(t, agentcli.ExitRed, agentcli.Exit(err))
-	require.EqualError(t, err, "1 of 3 repositories not dispatched: giantswarm/missing (failed)")
+	require.EqualError(t, err, "1 of 3 repositories not promoted: giantswarm/missing (failed)")
 	states := []string{}
 	for _, r := range result.Repositories {
 		states = append(states, r.State)
