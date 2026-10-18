@@ -2,7 +2,7 @@
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/tree/v8.143.2+dirty
+#    https://github.com/giantswarm/devctl/blob/f8912fad4e14c1316d737b9e1bc5baa2995e40c3/pkg/gen/input/workflows/internal/file/auto_release.yaml.template
 #
 # yamllint disable rule:truthy
 # Push-based release tagger + release-page publisher.
