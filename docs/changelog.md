@@ -57,7 +57,7 @@ On the `auto-release` release workflow (`devctl gen workflows --release-workflow
   waits for a review. The auto-merge and the approval are pinned to that commit, so a later push to the branch
   merges nothing on them. Without that secret, or where the approval or
   auto-merge is refused, the job warns and the pull request waits for a review or a merge.
-- `zz_generated.changelog.yaml` runs `devctl changelog check --base <the pull request's base commit>` on every pull
+- `zz_generated.changelog.yaml` runs `devctl changelog check --base <the base its merge commit was built on>` on every pull
   request ("No released entries under Unreleased"): released entries the base already holds wait for its open cut
   pull request and pass; for the pull request's own, merging the open cut pull request, or running
   `devctl changelog cut` and committing CHANGELOG.md, clears it. A repository without CHANGELOG.md passes.
