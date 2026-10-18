@@ -49,7 +49,8 @@ On the `auto-release` release workflow (`devctl gen workflows --release-workflow
   pull request with `ARCHITECT_GITHUB_REPO_SYNC_TOKEN` (architectbot), since an author cannot approve its own, so the
   armed auto-merge lands the cut once its required checks are green. It approves only the cut it pushed: a pull request
   the opening identity authored, whose head is the cut commit and whose only file is `CHANGELOG.md`; anything else
-  waits for a review. Without that secret, or where the approval or
+  waits for a review. The auto-merge and the approval are pinned to that commit, so a later push to the branch
+  merges nothing on them. Without that secret, or where the approval or
   auto-merge is refused, the job warns and the pull request waits for a review or a merge.
 - `zz_generated.changelog.yaml` runs `devctl changelog check` on every pull request ("No released entries under
   Unreleased"): merging the open cut pull request, or running `devctl changelog cut` and committing CHANGELOG.md,
