@@ -1282,7 +1282,14 @@ jobs:
             sleep 30
           done
           chmod +x "${RUNNER_TEMP}/devctl"
-          "${RUNNER_TEMP}/devctl" changelog check --base "${BASE_SHA}"
+          # The checkout is the pull request merged with its base: its first
+          # parent is the base it was built on. The event's base commit is the
+          # fallback for a checkout that is no merge.
+          base=$BASE_SHA
+          if git rev-parse --verify --quiet HEAD^2 >/dev/null; then
+            base=$(git rev-parse HEAD^1)
+          fi
+          "${RUNNER_TEMP}/devctl" changelog check --base "$base"
 
 --- .github/workflows/zz_generated.chart_tests.yaml
 # DO NOT EDIT. Generated with:

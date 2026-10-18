@@ -288,7 +288,7 @@ func Test_ChangelogWorkflow(t *testing.T) {
 		t.Fatal("the check does not see every tag")
 	}
 	last := job.Steps[len(job.Steps)-1]
-	if !strings.Contains(last.Run, `"${RUNNER_TEMP}/devctl" changelog check --base "${BASE_SHA}"`) {
+	if !strings.Contains(last.Run, `"${RUNNER_TEMP}/devctl" changelog check --base "$base"`) {
 		t.Fatalf("the check step does not run devctl changelog check against the base:\n%s", last.Run)
 	}
 	if got := last.Env["BASE_SHA"]; got != "${{ github.event.pull_request.base.sha }}" {
@@ -353,5 +353,66 @@ func Test_ChangelogStepsWaitForDevctlBinary(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// Test_ChangelogCheckBase runs the check step with a devctl stand-in that
+// records its arguments: on a merge commit, the checkout a pull_request event
+// makes, the check compares with the merge's first parent, the base the merge
+// was built on, even when the event's base commit is older; on any other
+// checkout with the event's base commit.
+func Test_ChangelogCheckBase(t *testing.T) {
+	check := workflowJobs(t, renderInput(t, newWorkflows(t, gen.FlavourApp).Changelog()))["released-entries"]
+	step := check.Steps[len(check.Steps)-1]
+
+	bin := t.TempDir()
+	args := filepath.Join(bin, "args")
+	gh := fmt.Sprintf("#!/bin/sh\nwhile [ $# -gt 0 ]; do [ \"$1\" = --output ] && out=$2; shift; done\n"+
+		"printf '#!/bin/sh\\necho \"$*\" > %s\\n' > \"$out\"\n", args)
+	if err := os.WriteFile(filepath.Join(bin, "gh"), []byte(gh), 0o700); err != nil { // #nosec G306 -- test stand-in
+		t.Fatal(err)
+	}
+	commit := func(dir, msg string) {
+		t.Helper()
+		mustGit(t, dir, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "--allow-empty", "-m", msg)
+	}
+
+	dir := repo(t)
+	if err := os.WriteFile(filepath.Join(dir, "CHANGELOG.md"), []byte("# Changelog\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	mustGit(t, dir, "add", "CHANGELOG.md")
+	commit(dir, "docs: changelog")
+	stale := strings.TrimSpace(mustGit(t, dir, "rev-parse", "HEAD"))
+	mustGit(t, dir, "checkout", "-q", "-b", "pr")
+	commit(dir, "fix: pr")
+	mustGit(t, dir, "checkout", "-q", "-")
+	commit(dir, "fix: the base moved")
+	base := strings.TrimSpace(mustGit(t, dir, "rev-parse", "HEAD"))
+
+	for _, tc := range []struct {
+		name  string
+		merge bool
+		want  string
+	}{
+		{name: "a non-merge checkout", want: stale},
+		{name: "the merge with the base", merge: true, want: base},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.merge {
+				mustGit(t, dir, "-c", "user.name=t", "-c", "user.email=t@example.com", "merge", "-q", "--no-ff", "-m", "merge", "pr")
+			}
+			_, out, err := runStep(t, step.Run, dir, "PATH="+bin+":"+os.Getenv("PATH"), "RUNNER_TEMP="+t.TempDir(), "BASE_SHA="+stale)
+			if err != nil {
+				t.Fatalf("err = %v:\n%s", err, out)
+			}
+			raw, err := os.ReadFile(args) // #nosec G304 -- path built from t.TempDir
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got, want := strings.TrimSpace(string(raw)), "changelog check --base "+tc.want; got != want {
+				t.Fatalf("devctl ran %q, want %q", got, want)
+			}
+		})
 	}
 }

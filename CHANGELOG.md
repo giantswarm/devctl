@@ -7,7 +7,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
-## [8.144.3] - 2026-10-18
+### Fixed
+
+- The generated changelog check compares a pull request with the base its checked-out merge commit was built
+  on, the merge's first parent, rather than the event's base commit, which a reopened pull request can carry
+  from before its base moved.
+
+## [8.144.4] - 2026-10-18
 
 ### Fixed
 
@@ -15,6 +21,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   merges: `devctl changelog check --base <revision>` lists the released entries the base already holds under
   Unreleased as waiting for the base's own cut and fails only on those the pull request brings itself, and the
   generated `zz_generated.changelog.yaml` checks each pull request against its base commit.
+
+## [8.144.3] - 2026-10-18
+
+### Fixed
+
 - The release wait on a hand-written pipeline also finds the charts a repository keeps as
   `helm/*/Chart-template.yaml` (no `Chart.yaml` until the build renders it) and follows a job's
   `make <target>` into the root Makefile to the `helm push` it runs: the kagent line's charts, pushed by
@@ -5924,7 +5935,8 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.144.3...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.144.4...HEAD
+[8.144.4]: https://github.com/giantswarm/devctl/compare/v8.144.3...v8.144.4
 [8.144.3]: https://github.com/giantswarm/devctl/compare/v8.144.2...v8.144.3
 [8.144.2]: https://github.com/giantswarm/devctl/compare/v8.144.1...v8.144.2
 [8.144.1]: https://github.com/giantswarm/devctl/compare/v8.144.0...v8.144.1
