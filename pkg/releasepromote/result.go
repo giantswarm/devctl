@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
+	"github.com/giantswarm/devctl/v8/pkg/prwait"
 )
 
 // The states of one repository.
@@ -28,7 +29,22 @@ const (
 	// StateFailed: a read or the dispatch failed; the message has GitHub's
 	// answer.
 	StateFailed = "failed"
+	// StateRefused: the dispatched run concluded without cutting the stable
+	// release, the repository's stable gate refusing it for one; the message
+	// names the run and the errors its failed jobs annotated, failedJobs the
+	// end of their logs.
+	StateRefused = "refused"
 )
+
+// Run is the Auto Release run a dispatch started, as last read.
+type Run struct {
+	ID  int64  `json:"id"`
+	URL string `json:"url"`
+	// Status is queued, in_progress or completed; empty until read.
+	Status string `json:"status"`
+	// Conclusion is success, failure, cancelled, ... once completed.
+	Conclusion string `json:"conclusion"`
+}
 
 // Repository is one repository's promotion as the document reports it.
 type Repository struct {
@@ -57,6 +73,12 @@ type Repository struct {
 	State string `json:"state"`
 	// Message says what was done or why not.
 	Message string `json:"message"`
+	// Run is the run the dispatch started; nil before a dispatch or when
+	// GitHub named no run.
+	Run *Run `json:"run,omitempty"`
+	// FailedJobs are, for refused, the run's failed jobs with the end of
+	// their logs, where the stable gate's own output is.
+	FailedJobs []prwait.FailedJob `json:"failedJobs,omitempty"`
 	// Warnings name what the promotion went on despite: a failed commit
 	// status of an advisory job (circleciclient.AdvisoryJobs), which the
 	// release does not require. Empty when there is none.

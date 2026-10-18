@@ -7,6 +7,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- `devctl release promote` follows the Auto Release run each dispatch started until it concludes, at most
+  `--follow-timeout` (20m): a run the repository's stable gate refuses, or that fails otherwise, is `refused`
+  and exit 1 at once, its message naming the run's URL and the errors its failed jobs annotated (the gate's
+  "Stable gate refused"), `failedJobs[]` the end of each failed job's log with the gate's own output. A run
+  that passes leaves the promotion `dispatched` as before, with `run.conclusion`; `--no-follow` returns
+  right after the dispatch.
+
 ### Fixed
 
 - The generated changelog check compares a pull request with the base its checked-out merge commit was built
