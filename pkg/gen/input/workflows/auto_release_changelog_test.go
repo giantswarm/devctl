@@ -161,7 +161,8 @@ func Test_AutoReleaseChangelogOpenStep(t *testing.T) {
 		// The pull request gh reports: its author, the revision its head is
 		// (HEAD is the cut commit) and its files; empty is the cut's own.
 		author, head, files string
-		// lag is how many reads report the previous head before the cut's.
+		// lag is how many reads report the previous head before the cut's;
+		// until then pr merge refuses the cut as the expected head.
 		lag      int
 		approved bool
 		warning  string
@@ -193,6 +194,9 @@ func Test_AutoReleaseChangelogOpenStep(t *testing.T) {
 			// only returns.
 			gh := fmt.Sprintf("#!/bin/sh\necho \"$GH_TOKEN $*\" >> %[1]q\ncase \"$1 $2\" in\n"+
 				"'pr create') echo https://github.com/o/r/pull/1 ;;\n"+
+				// Like GitHub, pr merge refuses an expected head it does not
+				// report yet.
+				"'pr merge') if [ \"$(grep -c 'pr view' %[1]q)\" -le %[2]d ]; then echo 'expected head oid does not match' >&2; exit 1; fi ;;\n"+
 				"'pr view') n=$(grep -c 'pr view' %[1]q); head=${PR_HEAD:-HEAD}; [ \"$n\" -le %[2]d ] && head=HEAD~1\n"+
 				"  echo \"${PR_AUTHOR:-taylorbot} $(git rev-parse \"$head\") ${PR_FILES:-CHANGELOG.md}\" ;;\n"+
 				"'api user') echo taylorbot ;;\nesac\n", log, tc.lag)
@@ -242,7 +246,7 @@ func Test_AutoReleaseChangelogOpenStep(t *testing.T) {
 			if got := strings.Contains(calls, approval); got != tc.approved {
 				t.Errorf("approved = %t, want %t:\n%s", got, tc.approved, calls)
 			}
-			if tc.approved && strings.Contains(out, notApproved) {
+			if tc.approved && strings.Contains(out, "::warning") {
 				t.Errorf("the approved cut warns:\n%s", out)
 			}
 			if !strings.Contains(out, tc.warning) {
