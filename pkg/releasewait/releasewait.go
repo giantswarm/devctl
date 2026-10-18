@@ -572,9 +572,12 @@ func (w *Waiter) loop(ctx context.Context, result *Result, p *plan) error {
 		}
 
 		if !p.derived && result.CIModel == CIModelHandWritten && state.jobs != nil {
-			artifacts, err := HandWrittenArtifacts(ctx, w.config.GitHub, owner, repo, result.SHA, p.version, result.Tag, *p.content, state.jobs, p.private, w.config.Images, w.config.Charts, w.config.Endpoints)
+			artifacts, warnings, err := HandWrittenArtifacts(ctx, w.config.GitHub, owner, repo, result.SHA, p.version, result.Tag, *p.content, state.jobs, p.private, w.config.Images, w.config.Charts, w.config.Endpoints)
 			if err != nil {
 				return err
+			}
+			for _, warning := range warnings {
+				w.warn(warning)
 			}
 			p.setArtifacts(result, artifacts)
 			for _, a := range artifacts {

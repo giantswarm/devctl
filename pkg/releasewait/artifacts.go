@@ -39,11 +39,17 @@ type ChartNames func(dir string) (string, error)
 // unreadable as YAML or without a name is an error naming the file, never
 // the directory in its place.
 func TagChartNames(ctx context.Context, gh GitHub, owner, repo, sha string) ChartNames {
+	return chartNamesIn(ctx, gh, owner, repo, sha, helmDir)
+}
+
+// chartNamesIn reads the names from <base>/<dir>/Chart.yaml at sha, the way
+// TagChartNames reads them under helm/.
+func chartNamesIn(ctx context.Context, gh GitHub, owner, repo, sha, base string) ChartNames {
 	return func(dir string) (string, error) {
-		path := helmDir + "/" + dir + "/" + chartFile
+		path := base + "/" + dir + "/" + chartFile
 		file, err := gh.GetFile(ctx, owner, repo, path, sha)
 		if githubclient.IsNotFound(err) {
-			return "", usageErr("%s does not exist at %s: the pipeline packages %s/%s and publishes the chart under the name that file declares", path, short(sha), helmDir, dir)
+			return "", usageErr("%s does not exist at %s: the pipeline packages %s/%s and publishes the chart under the name that file declares", path, short(sha), base, dir)
 		}
 		if err != nil {
 			return "", fmt.Errorf("reading %s at %s: %w", path, short(sha), err)
@@ -276,19 +282,23 @@ func ParsePushJobs(config []byte) ([]PushJob, error) {
 // pushes outside the architect orb, tagged with the git tag as written: such
 // a job pushes $CIRCLE_TAG, where the orb strips the v, and the charts the
 // caller names (--chart) for a job that pushes them with helm itself,
-// tagged with the bare version as helm requires. A Dockerfile at the tag with no image
-// among them is a usage error naming --image; the repository name is never
-// taken for the image.
-func HandWrittenArtifacts(ctx context.Context, gh GitHub, owner, repo, sha, version, tag string, content TagContent, pipelineJobs map[string]bool, privateRepo bool, images, charts []string, endpoints agentcli.Endpoints) ([]Artifact, error) {
-	jobs, artifacts, err := pushJobArtifacts(ctx, gh, owner, repo, sha, version, content, []string{circleCIConfig, circleCIWorkflows, circleCICustom}, pipelineJobs, privateRepo, endpoints)
+// tagged with the bare version as helm requires. The charts under helm/ and
+// charts/ that the configuration's own jobs push with helm push are expected
+// at the repository that job pushes to; the warnings name every chart at the
+// tag that none of these covers and so goes unchecked. A Dockerfile at the
+// tag with no image among them is a usage error naming --image; the
+// repository name is never taken for the image.
+func HandWrittenArtifacts(ctx context.Context, gh GitHub, owner, repo, sha, version, tag string, content TagContent, pipelineJobs map[string]bool, privateRepo bool, images, charts []string, endpoints agentcli.Endpoints) ([]Artifact, []string, error) {
+	files := []string{circleCIConfig, circleCIWorkflows, circleCICustom}
+	jobs, artifacts, err := pushJobArtifacts(ctx, gh, owner, repo, sha, version, content, files, pipelineJobs, privateRepo, endpoints)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	for _, name := range images {
 		path, private, err := namedImage(name, endpoints)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if private == nil {
 			private = &privateRepo
@@ -298,7 +308,7 @@ func HandWrittenArtifacts(ctx context.Context, gh GitHub, owner, repo, sha, vers
 	for _, name := range charts {
 		path, private, err := namedChart(name, endpoints)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if private == nil {
 			private = &privateRepo
@@ -306,11 +316,22 @@ func HandWrittenArtifacts(ctx context.Context, gh GitHub, owner, repo, sha, vers
 		artifacts = append(artifacts, namedChartArtifact(path, version, *private, endpoints))
 	}
 
+	helmJobs, err := readHelmPushJobs(ctx, gh, owner, repo, sha, content, files)
+	if err != nil {
+		return nil, nil, err
+	}
+	tagCharts, err := readTagCharts(ctx, gh, owner, repo, sha, content)
+	if err != nil {
+		return nil, nil, err
+	}
+	pushed, warnings := helmPushArtifacts(tagCharts, helmJobs, pipelineJobs, artifacts, version, endpoints)
+	artifacts = append(artifacts, pushed...)
+
 	hasImage := slices.ContainsFunc(artifacts, func(a Artifact) bool { return a.Kind == KindImage })
 	if content.HasDockerfile() && !hasImage {
-		return nil, usageErr("a Dockerfile exists at %s but no push job of the tag pipeline names an image (pipeline jobs: %s; architect push jobs in the configuration: %s): a job that pushes outside the architect orb (a plain docker push) cannot be read from the configuration, and the repository name is never taken for the image; name it with devctl release wait --image, e.g. --image %s/%s", short(sha), listOrNone(sortedKeys(pipelineJobs)), listOrNone(jobNames(jobs)), owner, repo)
+		return nil, nil, usageErr("a Dockerfile exists at %s but no push job of the tag pipeline names an image (pipeline jobs: %s; architect push jobs in the configuration: %s): a job that pushes outside the architect orb (a plain docker push) cannot be read from the configuration, and the repository name is never taken for the image; name it with devctl release wait --image, e.g. --image %s/%s", short(sha), listOrNone(sortedKeys(pipelineJobs)), listOrNone(jobNames(jobs)), owner, repo)
 	}
-	return dedupe(artifacts), nil
+	return dedupe(artifacts), warnings, nil
 }
 
 // CustomPushJobs are the architect push jobs the repository's own custom.yml
@@ -351,7 +372,17 @@ func pushJobArtifacts(ctx context.Context, gh GitHub, owner, repo, sha, version 
 // readPushJobs reads the push jobs of the named configuration files at the
 // tag; a file the tag does not carry is skipped.
 func readPushJobs(ctx context.Context, gh GitHub, owner, repo, sha string, content TagContent, files []string) ([]PushJob, error) {
-	var jobs []PushJob
+	return readConfigs(ctx, gh, owner, repo, sha, content, files, ParsePushJobs)
+}
+
+// readHelmPushJobs reads the helm push jobs of the named configuration files
+// at the tag, the way readPushJobs reads the orb's.
+func readHelmPushJobs(ctx context.Context, gh GitHub, owner, repo, sha string, content TagContent, files []string) ([]HelmPushJob, error) {
+	return readConfigs(ctx, gh, owner, repo, sha, content, files, ParseHelmPushJobs)
+}
+
+func readConfigs[T any](ctx context.Context, gh GitHub, owner, repo, sha string, content TagContent, files []string, parse func([]byte) ([]T, error)) ([]T, error) {
+	var jobs []T
 	for _, name := range files {
 		if !slices.Contains(content.CircleCI, name) {
 			continue
@@ -360,7 +391,7 @@ func readPushJobs(ctx context.Context, gh GitHub, owner, repo, sha string, conte
 		if err != nil {
 			return nil, fmt.Errorf("reading %s/%s at %s: %w", circleCIDir, name, short(sha), err)
 		}
-		parsed, err := ParsePushJobs(file.Data)
+		parsed, err := parse(file.Data)
 		if err != nil {
 			return nil, usageErr("%s/%s at %s: %v", circleCIDir, name, short(sha), err)
 		}
