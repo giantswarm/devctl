@@ -23,13 +23,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   lead `failedJobs[].logTail`, the skipped lines counted: a failing Prettier check ahead of green tests in one
   CircleCI step, or a failing Go package's `--- FAIL` block ahead of the green packages and the run's summary, is
   no longer pushed out of the tail. A failure already within the tail prints as before.
-- The generated changelog check compares a pull request with the base its checked-out merge commit was built
-  on, the merge's first parent, rather than the event's base commit, which a reopened pull request can carry
-  from before its base moved.
-- `devctl changelog cut` and `check` read an entry in a section the cut created, beyond those its release
-  carried under Unreleased, as an Unreleased entry: a pull request whose branch update merged a just-merged
-  cut, which slots the pull request's entry under the cut's new release heading, no longer loses it to that
-  release; the next cut moves it into the section of the release that shipped it.
+
+### Removed
+
+- The CHANGELOG cut: `devctl changelog cut` and `check`, the Auto-release workflow's job that opened, approved
+  and auto-merged a `docs(changelog)` cut pull request after every release, and the generated
+  `zz_generated.changelog.yaml` check. `devctl gen workflows` deletes `zz_generated.changelog.yaml` from a
+  repository that carries it.
 
 ## [8.144.4] - 2026-10-18
 
