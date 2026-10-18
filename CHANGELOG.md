@@ -16,6 +16,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   that passes leaves the promotion `dispatched` as before, with `run.conclusion`; `--no-follow` returns
   right after the dispatch.
 
+### Fixed
+
+- `--failed-log` of `pr wait`, `pr merge`, `release wait`, `rollout wait` and `release promote`: when a failed
+  job's first failure lies before the last `--failed-log-lines` lines, up to that many lines from just before it
+  lead `failedJobs[].logTail`, the skipped lines counted: a failing Prettier check ahead of green tests in one
+  CircleCI step, or a failing Go package's `--- FAIL` block ahead of the green packages and the run's summary, is
+  no longer pushed out of the tail. A failure already within the tail prints as before.
+
 ### Removed
 
 - The CHANGELOG cut: `devctl changelog cut` and `check`, the Auto-release workflow's job that opened, approved

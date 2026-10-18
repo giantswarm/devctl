@@ -13,7 +13,13 @@ writes one line per poll to stderr for a person watching.
 log of each failed job once, a GitHub Actions job (`GET /repos/{owner}/{repo}/actions/jobs/{id}/logs`)
 and a CircleCI job (the output of its failed steps), and keeps the last `--failed-log-lines` lines
 (default 50), without terminal control sequences or control characters but tab. An Actions log ends at its last `##[error]` line, the failed
-step's end, so the post-job cleanup after it does not crowd out why the job failed. The tails go to stderr, one block per job headed
+step's end, so the post-job cleanup after it does not crowd out why the job failed. When the log's first failure
+lies before those lines, up to `--failed-log-lines` lines from just before it lead the tail, the lines
+skipped between them counted as `[... <n> lines ...]`: a step that failed early, or a failing Go package's `--- FAIL`
+block, is not pushed out by the green output after it. A failure is the first line carrying `##[error]`,
+`--- FAIL`, a leading `FAIL` (Go, Jest), `panic: `, Prettier's `[error]` or `Code style issues`, or a non-zero exit
+code (`exit code 2`, `exited with code 1`), after an optional Actions timestamp and `[name] ` prefix; a failure
+already within the tail, a single failing last step, prints the tail alone. The tails go to stderr, one block per job headed
 `failed job <name> (<url>):`, and into the document under `failedJobs[]`. A green, pending or
 timed-out wait reads no log and costs no extra request. A log that cannot be read (expired, not
 yet uploaded) is named in its job's `logError`; the verdict stays red.
@@ -248,7 +254,7 @@ reset`). Any other `403` is an answer: a permission the token lacks.
 | `checksVia` | `graphql` when the last poll read `checks[]` through GraphQL's `statusCheckRollup` because REST's check endpoints went unanswered (Polling); absent when REST answered. |
 | `circleci` | Present only when CircleCI was consulted: the newest pipeline of the head revision and its workflows, the newest run per name, sorted by name. |
 | `actions[]` | The head's GitHub Actions runs, the latest per workflow name, sorted by name. |
-| `failedJobs[]` | Present at exit 1 with `--failed-log`: each failed job with `name` (an Actions check run's name, with `[<workflow>, check run <id>]` when several runs share it; `<workflow>/<job>` on CircleCI), `source` (`actions` or `circleci`), `url`, and `logTail`, the last `--failed-log-lines` lines of its log, or `logError` when the log could not be read. A check run of another app, a commit status and a CircleCI workflow without a failed job are named in `reason` only. |
+| `failedJobs[]` | Present at exit 1 with `--failed-log`: each failed job with `name` (an Actions check run's name, with `[<workflow>, check run <id>]` when several runs share it; `<workflow>/<job>` on CircleCI), `source` (`actions` or `circleci`), `url`, and `logTail`, the last `--failed-log-lines` lines of its log, led by the lines from its first failure when that lies before them, or `logError` when the log could not be read. A check run of another app, a commit status and a CircleCI workflow without a failed job are named in `reason` only. |
 | `blocking[]` | Present on a green head that GitHub's merge box still holds: each pending check the base does not require, which the wait did not wait for (`check Heimdall - PR Gatekeeper (in_progress, not required, not waited for)`, `status <context> (pending, not required, not waited for)`), and, while the pull request's `mergeable_state` is `blocked`, the review the base requires (`review: an approving review the base requires is missing`, `review: a reviewer requested changes`), read from GitHub's `reviewDecision`. Each is a warning too. |
 | `unfinished[]` | Present at exit 2 and 4: what the head was still waiting for, one line each (`check go-test (in_progress)`, `circleci workflow build (running)`, `actions run CI (awaiting approval)`, `required context lint (absent)`, `actions runs of .github/workflows/ci.yaml (none registered)`). |
 
