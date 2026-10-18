@@ -876,6 +876,181 @@ func TestWaitHandWrittenHelmPushJobUnresolvedTargetWarns(t *testing.T) {
 	}
 }
 
+// makePushConfig is a hand-written configuration whose own job pushes the
+// charts through a make target, to a registry its commands assign and pass
+// on the make command line (giantswarm/kagent-upstream's push-charts job).
+const makePushConfig = `version: 2.1
+orbs:
+  architect: giantswarm/architect@10.10.0
+jobs:
+  push-charts:
+    executor: architect/architect
+    steps:
+      - checkout
+      - run:
+          name: Push both charts
+          command: |
+            set -euo pipefail
+            VERSION=$(cat .build_version)
+            export VERSION
+            registry=gsoci.azurecr.io
+            eval "$(make -s substrate-pin)"
+            for chart in kagent kagent-crds; do
+              printf 'appVersion: %s\n' "${VERSION}" >> "helm/${chart}/Chart-template.yaml"
+            done
+            make helm-publish HELM_REPO="oci://${registry}/giantswarm"
+workflows:
+  publish:
+    jobs:
+      - architect/push-to-registries:
+          context: architect
+          name: push-controller
+          image: giantswarm/kagent/controller
+      - push-charts:
+          context: architect
+          requires: [push-controller]
+`
+
+// makePushMakefile pushes the charts it packages from the rendered
+// Chart-template.yaml files to $(HELM_REPO)/kagent/helm.
+const makePushMakefile = `HELM_REPO ?= oci://ghcr.io/kagent-dev
+HELM_DIST_FOLDER ?= dist
+VERSION ?= $(shell git describe --tags)
+
+.PHONY: helm-version
+helm-version: ## Stamp chart versions and package kagent + kagent-crds
+	VERSION=$(VERSION) envsubst < helm/kagent-crds/Chart-template.yaml > helm/kagent-crds/Chart.yaml
+	VERSION=$(VERSION) envsubst < helm/kagent/Chart-template.yaml > helm/kagent/Chart.yaml
+	helm package -d $(HELM_DIST_FOLDER) helm/kagent-crds
+	helm package -d $(HELM_DIST_FOLDER) helm/kagent
+
+.PHONY: substrate-pin
+substrate-pin:
+	@echo SUBSTRATE_VERSION=1.0.0
+
+.PHONY: helm-publish
+helm-publish: ## Package and push all Helm charts to the OCI registry
+helm-publish: helm-version
+	helm push ./$(HELM_DIST_FOLDER)/kagent-crds-$(VERSION).tgz $(HELM_REPO)/kagent/helm
+	helm push ./$(HELM_DIST_FOLDER)/kagent-$(VERSION).tgz \
+		$(HELM_REPO)/kagent/helm
+`
+
+// chartTemplateRoutes scripts a helm/ directory whose charts carry a
+// Chart-template.yaml and no Chart.yaml, beside a directory with neither.
+func chartTemplateRoutes(github sequence.Routes, charts ...string) sequence.Routes {
+	github[repoRoute("/contents/helm")] = []sequence.Response{{Body: dirListing(append(slices.Clone(charts), "tools")...)}}
+	for _, dir := range charts {
+		path := "helm/" + dir + "/Chart-template.yaml"
+		github[repoRoute("/contents/"+path)] = []sequence.Response{{Body: fileContent(path, "apiVersion: v2\nname: "+dir+"\nversion: ${VERSION}\n")}}
+	}
+	return github
+}
+
+// A hand-written tag job that pushes the charts of a Chart-template.yaml-only
+// layout through a make target (giantswarm/kagent-upstream): the wait reads
+// the charts from their templates and the target's helm push from the
+// Makefile at the tag, and awaits both at the repository the make command
+// line names, without --chart and without a warning.
+func TestWaitHandWrittenMakeHelmPushChartTemplatesAreAwaited(t *testing.T) {
+	github := baseGitHub([]string{"Makefile", "README.md", "helm"}, []string{"zz_generated.create_release.yaml"}, []string{"config.yml"})
+	github[repoRoute("/contents/.circleci/config.yml")] = []sequence.Response{{Body: fileContent(".circleci/config.yml", makePushConfig)}}
+	github[repoRoute("/contents/Makefile")] = []sequence.Response{{Body: fileContent("Makefile", makePushMakefile)}}
+	github = chartTemplateRoutes(github, "kagent", "kagent-crds")
+	var warnings []string
+	fx := fixture{
+		github: github,
+		circleci: pipelineRoutes(
+			[][]map[string]any{{wf("w1", "publish", "success", "2026-09-21T10:00:00Z")}},
+			map[string][]map[string]any{"w1": {job("push-controller", "success"), job("push-charts", "success")}},
+		),
+		registry: sequence.Routes{
+			"HEAD /v2/giantswarm/kagent/controller/manifests/1.2.3":       {{Status: 200}},
+			"HEAD /v2/giantswarm/kagent/helm/kagent/manifests/1.2.3":      {{Status: 404}, {Status: 200}},
+			"HEAD /v2/giantswarm/kagent/helm/kagent-crds/manifests/1.2.3": {{Status: 200}},
+		},
+		warn: func(w string) { warnings = append(warnings, w) },
+	}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+	var refs []string
+	for _, a := range result.Artifacts {
+		refs = append(refs, a.Kind+" "+a.Reference[strings.Index(a.Reference, "/"):]+" "+a.State)
+	}
+	want := "image /giantswarm/kagent/controller:1.2.3 available\nchart /giantswarm/kagent/helm/kagent:1.2.3 available\nchart /giantswarm/kagent/helm/kagent-crds:1.2.3 available"
+	if strings.Join(refs, "\n") != want {
+		t.Errorf("artifacts:\n want %s\n got  %s", want, strings.Join(refs, "\n"))
+	}
+	if len(warnings) != 0 {
+		t.Errorf("want no warning, got %q", warnings)
+	}
+}
+
+// A chart that only a Chart-template.yaml declares and no push job of the
+// tag pipeline names goes unchecked with a warning naming --chart, never in
+// silence.
+func TestWaitHandWrittenChartTemplateUncheckedWarns(t *testing.T) {
+	config := strings.ReplaceAll(makePushConfig, `make helm-publish HELM_REPO="oci://${registry}/giantswarm"`, "true")
+	github := baseGitHub([]string{"Makefile", "README.md", "helm"}, []string{"zz_generated.create_release.yaml"}, []string{"config.yml"})
+	github[repoRoute("/contents/.circleci/config.yml")] = []sequence.Response{{Body: fileContent(".circleci/config.yml", config)}}
+	github[repoRoute("/contents/Makefile")] = []sequence.Response{{Body: fileContent("Makefile", makePushMakefile)}}
+	github = chartTemplateRoutes(github, "kagent", "kagent-crds")
+	var warnings []string
+	fx := fixture{
+		github: github,
+		circleci: pipelineRoutes(
+			[][]map[string]any{{wf("w1", "publish", "success", "2026-09-21T10:00:00Z")}},
+			map[string][]map[string]any{"w1": {job("push-controller", "success"), job("push-charts", "success")}},
+		),
+		registry: sequence.Routes{
+			"HEAD /v2/giantswarm/kagent/controller/manifests/1.2.3": {{Status: 200}},
+		},
+		warn: func(w string) { warnings = append(warnings, w) },
+	}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+	if len(result.Artifacts) != 1 {
+		t.Errorf("artifacts: want the image alone, got %+v", result.Artifacts)
+	}
+	for _, dir := range []string{"helm/kagent ", "helm/kagent-crds "} {
+		if !slices.ContainsFunc(warnings, func(w string) bool { return strings.Contains(w, dir) && strings.Contains(w, "--chart") }) {
+			t.Errorf("want a warning that %sgoes unchecked, got %q", dir, warnings)
+		}
+	}
+	if slices.ContainsFunc(warnings, func(w string) bool { return strings.Contains(w, "helm/tools") }) {
+		t.Errorf("helm/tools declares no chart, no warning expected, got %q", warnings)
+	}
+}
+
+// A make target that pushes to the Makefile's own default registry, outside
+// the ones the wait probes, leaves its charts unchecked with a warning.
+func TestWaitHandWrittenMakeHelmPushDefaultRegistryWarns(t *testing.T) {
+	config := strings.ReplaceAll(makePushConfig, ` HELM_REPO="oci://${registry}/giantswarm"`, "")
+	github := baseGitHub([]string{"Makefile", "README.md", "helm"}, []string{"zz_generated.create_release.yaml"}, []string{"config.yml"})
+	github[repoRoute("/contents/.circleci/config.yml")] = []sequence.Response{{Body: fileContent(".circleci/config.yml", config)}}
+	github[repoRoute("/contents/Makefile")] = []sequence.Response{{Body: fileContent("Makefile", makePushMakefile)}}
+	github = chartTemplateRoutes(github, "kagent")
+	var warnings []string
+	fx := fixture{
+		github: github,
+		circleci: pipelineRoutes(
+			[][]map[string]any{{wf("w1", "publish", "success", "2026-09-21T10:00:00Z")}},
+			map[string][]map[string]any{"w1": {job("push-controller", "success"), job("push-charts", "success")}},
+		),
+		registry: sequence.Routes{
+			"HEAD /v2/giantswarm/kagent/controller/manifests/1.2.3": {{Status: 200}},
+		},
+		warn: func(w string) { warnings = append(warnings, w) },
+	}
+	_, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+	if !slices.ContainsFunc(warnings, func(w string) bool {
+		return strings.Contains(w, "helm/kagent ") && strings.Contains(w, "ghcr.io/kagent-dev/kagent/helm") && strings.Contains(w, "--chart")
+	}) {
+		t.Errorf("want a warning that helm/kagent is pushed to ghcr.io and goes unchecked, got %q", warnings)
+	}
+}
+
 func TestNamedChart(t *testing.T) {
 	endpoints := agentcli.DefaultEndpoints()
 	path, private, err := namedChart("giantswarm/kagent/helm/kagent-crds", endpoints)

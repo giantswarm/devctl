@@ -39,14 +39,14 @@ type ChartNames func(dir string) (string, error)
 // unreadable as YAML or without a name is an error naming the file, never
 // the directory in its place.
 func TagChartNames(ctx context.Context, gh GitHub, owner, repo, sha string) ChartNames {
-	return chartNamesIn(ctx, gh, owner, repo, sha, helmDir)
+	return chartNamesIn(ctx, gh, owner, repo, sha, helmDir, chartFile)
 }
 
-// chartNamesIn reads the names from <base>/<dir>/Chart.yaml at sha, the way
-// TagChartNames reads them under helm/.
-func chartNamesIn(ctx context.Context, gh GitHub, owner, repo, sha, base string) ChartNames {
+// chartNamesIn reads the names from <base>/<dir>/<file> at sha, the way
+// TagChartNames reads them from helm/<dir>/Chart.yaml.
+func chartNamesIn(ctx context.Context, gh GitHub, owner, repo, sha, base, file string) ChartNames {
 	return func(dir string) (string, error) {
-		path := base + "/" + dir + "/" + chartFile
+		path := base + "/" + dir + "/" + file
 		file, err := gh.GetFile(ctx, owner, repo, path, sha)
 		if githubclient.IsNotFound(err) {
 			return "", usageErr("%s does not exist at %s: the pipeline packages %s/%s and publishes the chart under the name that file declares", path, short(sha), base, dir)
@@ -377,8 +377,32 @@ func readPushJobs(ctx context.Context, gh GitHub, owner, repo, sha string, conte
 
 // readHelmPushJobs reads the helm push jobs of the named configuration files
 // at the tag, the way readPushJobs reads the orb's.
+// A job that pushes through a make target reads the root Makefile at the
+// tag, once.
 func readHelmPushJobs(ctx context.Context, gh GitHub, owner, repo, sha string, content TagContent, files []string) ([]HelmPushJob, error) {
-	return readConfigs(ctx, gh, owner, repo, sha, content, files, ParseHelmPushJobs)
+	var mk *makefile
+	load := func() (*makefile, error) {
+		if mk != nil {
+			return mk, nil
+		}
+		mk = parseMakefile(nil)
+		if !slices.Contains(content.Root, makefileName) {
+			return mk, nil
+		}
+		file, err := gh.GetFile(ctx, owner, repo, makefileName, sha)
+		if githubclient.IsNotFound(err) {
+			return mk, nil
+		}
+		if err != nil {
+			mk = nil
+			return nil, fmt.Errorf("reading %s at %s: %w", makefileName, short(sha), err)
+		}
+		mk = parseMakefile(file.Data)
+		return mk, nil
+	}
+	return readConfigs(ctx, gh, owner, repo, sha, content, files, func(config []byte) ([]HelmPushJob, error) {
+		return parseHelmPushJobs(config, load)
+	})
 }
 
 func readConfigs[T any](ctx context.Context, gh GitHub, owner, repo, sha string, content TagContent, files []string, parse func([]byte) ([]T, error)) ([]T, error) {

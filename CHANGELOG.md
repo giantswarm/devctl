@@ -13,6 +13,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   `$GITHUB_TOKEN` and `$OPSCTL_GITHUB_TOKEN`: a workflow step that sets only gh's variable (a changelog workflow
   generated before v8.142.1) no longer lists devctl's releases anonymously and hits the rate limit of a shared runner
   IP.
+- The release wait on a hand-written pipeline also finds the charts a repository keeps as
+  `helm/*/Chart-template.yaml` (no `Chart.yaml` until the build renders it) and follows a job's
+  `make <target>` into the root Makefile to the `helm push` it runs: the kagent line's charts, pushed by
+  `make helm-publish`, are awaited without `--chart`, and a chart template no push job covers is named in
+  the warnings instead of going unchecked in silence.
 
 ## [8.144.1] - 2026-10-18
 
