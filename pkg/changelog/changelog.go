@@ -6,12 +6,18 @@
 // CHANGELOG.md of the tag lists it under Unreleased. Cut moves every such entry
 // into the section of the release that first carried it; Check lists them.
 //
-// Only Unreleased and the sections receiving entries are rewritten: every other
-// section, the preamble and the link references keep their bytes.
+// A pull request whose branch is updated with a just-merged cut can have its
+// own entry slotted into the cut's new section: git keeps Unreleased's group
+// headings in place for the release and puts the entry under them. Such an
+// entry is no release's yet, so Cut and Check read it as an Unreleased entry.
+//
+// Only Unreleased and the sections receiving or losing entries are rewritten:
+// every other section, the preamble and the link references keep their bytes.
 package changelog
 
 import (
 	"fmt"
+	"maps"
 	"regexp"
 	"sort"
 	"strings"
@@ -92,6 +98,12 @@ func HasUnreleased(text string) bool {
 // entries. A text without an Unreleased section is returned unchanged. An entry
 // added again after a release carried it once stays: a release is credited
 // only with the copies its CHANGELOG.md holds beyond the previous release's.
+//
+// A section Cut created holds the entries its release carried under
+// Unreleased; an entry beyond those is a stray a branch update slotted in, and
+// counts as an Unreleased entry, in the text and in every release's
+// CHANGELOG.md alike: it moves into the section of the first release that
+// carried it, or back into Unreleased.
 func Cut(text string, releases []Release) (string, []Moved) {
 	doc := parse(text)
 	unrel := doc.find(Unreleased)
@@ -99,7 +111,8 @@ func Cut(text string, releases []Release) (string, []Moved) {
 		return text, nil
 	}
 	releases = sorted(releases)
-	unrel.parseGroups()
+	cut := cutSections(releases)
+	doc.reclaim(cut)
 
 	// credit[key] lists, oldest first, the release of every copy of an entry
 	// the releases carried under Unreleased.
@@ -107,8 +120,9 @@ func Cut(text string, releases []Release) (string, []Moved) {
 	prev := map[string]int{}
 	for _, r := range releases {
 		counts := map[string]int{}
-		if s := parse(r.Changelog).find(Unreleased); s != nil {
-			s.parseGroups()
+		at := parse(r.Changelog)
+		at.reclaim(cut)
+		if s := at.find(Unreleased); s != nil {
 			for _, g := range s.groups {
 				for _, e := range g.entries {
 					counts[key(e)]++
@@ -178,6 +192,80 @@ func key(entry string) string {
 		lines[i] = strings.TrimRight(l, " \t")
 	}
 	return strings.TrimRight(strings.Join(lines, "\n"), "\n")
+}
+
+// cutSections maps the version of every release whose tag holds no section of
+// its own, the ones Cut gives one, to the copies of each entry the tag carried
+// under Unreleased.
+func cutSections(releases []Release) map[string]map[string]int {
+	cut := map[string]map[string]int{}
+	for _, r := range releases {
+		doc := parse(r.Changelog)
+		s := doc.find(Unreleased)
+		if s == nil || doc.find(r.Version.Original()) != nil {
+			continue
+		}
+		s.parseGroups()
+		counts := map[string]int{}
+		for _, g := range s.groups {
+			for _, e := range g.entries {
+				counts[e]++
+			}
+		}
+		cut[r.Version.Original()] = counts
+	}
+	return cut
+}
+
+// reclaim parses Unreleased and moves into it every stray of a section Cut
+// created: an entry beyond the copies the section's release carried under
+// Unreleased. A section sharing no entry with its release's Unreleased is not
+// Cut's and keeps its bytes, as does one without a stray.
+func (d *document) reclaim(cut map[string]map[string]int) {
+	unrel := d.find(Unreleased)
+	if unrel == nil {
+		return
+	}
+	unrel.parseGroups()
+	for _, s := range d.sections {
+		carried, ok := cut[s.name]
+		if !ok || s.groups != nil {
+			continue
+		}
+		probe := &section{body: s.body}
+		probe.parseGroups()
+		left := maps.Clone(carried)
+		shared, strays := false, false
+		for _, g := range probe.groups {
+			for _, e := range g.entries {
+				if left[e] > 0 {
+					left[e]--
+					shared = true
+				} else {
+					strays = true
+				}
+			}
+		}
+		if !shared || !strays {
+			continue
+		}
+
+		left = maps.Clone(carried)
+		s.groups = probe.groups
+		for _, g := range s.groups {
+			kept := g.entries[:0]
+			for _, e := range g.entries {
+				if left[e] > 0 {
+					left[e]--
+					kept = append(kept, e)
+					continue
+				}
+				target := unrel.group(g.name)
+				target.entries = append(target.entries, e)
+			}
+			g.entries = kept
+		}
+	}
 }
 
 func sorted(releases []Release) []Release {
