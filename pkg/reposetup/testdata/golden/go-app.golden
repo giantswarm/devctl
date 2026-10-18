@@ -817,9 +817,8 @@ jobs:
 
           unconventional=0
           while IFS= read -r -d '' subject; do
-            # A leftover -rc type is still conventional: cliff.toml normalises
-            # it to its plain type.
-            if ! printf '%s' "$subject" | grep -qE '^[a-z]+(-rc)?(\([^)]*\))?!?: '; then
+            # git-cliff takes letters, digits, `_` and `-` as a type.
+            if ! printf '%s' "$subject" | grep -qE '^[A-Za-z0-9_-]+(\([^)]*\))?!?: '; then
               # git-cliff drops a subject it cannot parse as conventional
               # (`filter_unconventional`): the commit neither bumps the
               # version nor appears in any release's notes, silently. The
@@ -2345,13 +2344,8 @@ tag_pattern = '^v[0-9]+\.[0-9]+\.[0-9]+$'
 # commit text -- git-cliff's default regex mode is single-line). This
 # anchoring keeps `(#N)` references that appear inside commit bodies
 # untouched.
-#
-# A feat-rc/fix-rc subject is released as its plain type:
-# `features_always_bump_minor` keys off the type being exactly "feat", and an
-# un-normalised feat-rc would bump patch instead of minor.
 commit_preprocessors = [
   { pattern = '(?m) \(#\d+\)$', replace = "" },
-  { pattern = '^(feat|fix)-rc', replace = "${1}" },
 ]
 
 # Map commit types to changelog groups (Keep-a-Changelog convention):

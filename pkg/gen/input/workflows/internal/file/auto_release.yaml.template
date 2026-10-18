@@ -358,9 +358,8 @@ jobs:
 
           unconventional=0
           while IFS= read -r -d '' subject; do
-            # A leftover -rc type is still conventional: cliff.toml normalises
-            # it to its plain type.
-            if ! printf '%s' "$subject" | grep -qE '^[a-z]+(-rc)?(\([^)]*\))?!?: '; then
+            # git-cliff takes letters, digits, `_` and `-` as a type.
+            if ! printf '%s' "$subject" | grep -qE '^[A-Za-z0-9_-]+(\([^)]*\))?!?: '; then
               # git-cliff drops a subject it cannot parse as conventional
               # (`filter_unconventional`): the commit neither bumps the
               # version nor appears in any release's notes, silently. The
