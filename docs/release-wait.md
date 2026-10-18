@@ -127,19 +127,25 @@ none, the artifacts are derived as before and a warning says the named image is 
 
 A job the configuration defines itself whose commands run `helm push <package> oci://<target>` (the
 substrate line's `charts` job) is read as well: every chart directory under `helm/` or `charts/` at the
-tag whose directory or `Chart.yaml` name the job's commands name is expected at `<target>/<chart>:<version>`,
-the bare version, the job's `environment` filling `$VAR` and `${VAR}` in the target
-(`oci://${REGISTRY}/helm` with `REGISTRY: gsoci.azurecr.io/giantswarm/substrate`), when the job runs in the
-tag pipeline. A chart at the tag that no push job and no `--chart` covers, or whose job's target names
-neither registry once its environment is read (a variable of a context, a `make` target), is unchecked:
-the document's `warnings` name it and `--chart`.
+tag whose directory or chart name the job's commands name is expected at `<target>/<chart>:<version>`,
+the bare version, the job's `environment` and the plain `NAME=value` assignments of its commands filling
+`$VAR` and `${VAR}` in the target (`oci://${REGISTRY}/helm` with `REGISTRY: gsoci.azurecr.io/giantswarm/substrate`),
+when the job runs in the tag pipeline. A chart directory is one with a `Chart.yaml`, else a
+`Chart-template.yaml` the build renders it from (the kagent line's `make helm-version`); the name either
+declares is the published one. A job that runs `make <target>` instead is followed into the root
+`Makefile` at the tag: the first `helm push` of the target's recipe, or of its prerequisites', names the
+target, with the variables of the make command line over the Makefile's own (the kagent line's
+`make helm-publish HELM_REPO="oci://${registry}/giantswarm"` pushes to `$(HELM_REPO)/kagent/helm`, so
+its `kagent` and `kagent-crds` charts are expected at `giantswarm/kagent/helm/<chart>`). A chart at the
+tag that no push job and no `--chart` covers, or whose job's target names neither registry once its
+environment is read (a variable of a context, a Makefile default elsewhere), is unchecked: the
+document's `warnings` name it and `--chart`.
 
-A chart a job pushes with helm in a way the configuration does not show is named the same way with `--chart <path>` (repeatable), its
-repository path in the registry: `--chart giantswarm/kagent/helm/kagent` for the kagent line, whose
-`push-charts` job runs `make helm-publish` into `oci://gsoci.azurecr.io/giantswarm/kagent/helm`. It is
-expected as `<path>:<version>`, the bare version helm requires (`1.2.4`), its chart name the path's last
-element; it goes to no app catalog, so `--catalog` does not wait for it. `--chart` applies to hand-written
-CI only, like `--image`.
+A chart a job pushes with helm in a way the configuration and the Makefile do not show is named the same
+way with `--chart <path>` (repeatable), its repository path in the registry:
+`--chart giantswarm/kagent/helm/kagent`. It is expected as `<path>:<version>`, the bare version helm
+requires (`1.2.4`), its chart name the path's last element; it goes to no app catalog, so `--catalog`
+does not wait for it. `--chart` applies to hand-written CI only, like `--image`.
 
 When a `Dockerfile` exists at the tag and neither a push job of the pipeline nor `--image` names an
 image: exit 7 with the jobs seen, the reason naming `--image`. The repository name is never used as a
