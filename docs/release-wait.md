@@ -217,7 +217,8 @@ readers: when the tag's CI failed it reads the log of each failed job once and k
 jobs of every failed workflow of the tag pipeline (the output of their failed steps), or the job a
 failed CircleCI status links when the statuses are the verdict; for a repository without CircleCI,
 the failed jobs of every failed Actions run of the tag (`GET /repos/{owner}/{repo}/actions/runs/{id}/jobs`,
-then each job's log, ending at its last `##[error]` line). The tails go to stderr, one block per job
+then each job's log, ending at its last `##[error]` line). The lines from a log's first failure lead its tail
+when that failure lies before it, as in [`pr wait`](pr-wait.md). The tails go to stderr, one block per job
 headed `failed job <name> (<url>):`, and into the document under `failedJobs[]`. A green, pending or
 timed-out wait reads no log; a log that cannot be read is named in its job's `logError`, and the
 verdict stays exit 1. Without the flag the document is unchanged.
@@ -307,7 +308,7 @@ stderr.
 | `actions[]` | The Actions runs the tag triggered, for a repository without CircleCI: `name`, `runId`, `status`, `conclusion`, `url`. |
 | `statuses[]` | The newest commit status of every context of the tag's commit, `context`, `state` (`pending`, `success`, `failure`, `error`) and `url`, read once the artifacts are available and the tag's CI is green; empty before. |
 | `conflictingTags[]` | Present at exit 11: every release tag on the commit the wait resolved to, newest first. Absent otherwise. |
-| `failedJobs[]` | Present at exit 1 with `--failed-log`, as in [`pr wait`](pr-wait.md#the-document): each failed job with `name` (`<workflow>/<job>` on CircleCI, `<run>/<job>` on Actions), `source` (`actions` or `circleci`), `url`, and `logTail`, the last `--failed-log-lines` lines of its log, or `logError` when the log could not be read. A failed workflow or run whose jobs cannot be listed is named alone with its `logError`. Absent without the flag. |
+| `failedJobs[]` | Present at exit 1 with `--failed-log`, as in [`pr wait`](pr-wait.md#the-document): each failed job with `name` (`<workflow>/<job>` on CircleCI, `<run>/<job>` on Actions), `source` (`actions` or `circleci`), `url`, and `logTail`, the last `--failed-log-lines` lines of its log, led by the lines from its first failure when that lies before them, or `logError` when the log could not be read. A failed workflow or run whose jobs cannot be listed is named alone with its `logError`. Absent without the flag. |
 
 ## Exit codes
 
