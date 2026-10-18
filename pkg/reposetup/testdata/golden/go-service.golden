@@ -1141,7 +1141,10 @@ jobs:
 # release already carried: `devctl changelog check` reads every release tag's
 # CHANGELOG.md. The Auto-release workflow opens the cut as a pull request after
 # every release; merging it, or running `devctl changelog cut` and committing
-# CHANGELOG.md, clears the check.
+# CHANGELOG.md, clears the check. An entry the base branch already holds
+# released (a release's cut pull request not merged yet) is listed and passes:
+# the check runs on the pull request's merge with its base, and the cut is
+# the base's to land, not every open pull request's.
 name: Changelog
 
 on:
@@ -1168,6 +1171,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}      # gh downloads devctl
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # devctl's version check reads its releases
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
           if [ ! -f CHANGELOG.md ]; then
@@ -1186,7 +1190,7 @@ jobs:
             sleep 30
           done
           chmod +x "${RUNNER_TEMP}/devctl"
-          "${RUNNER_TEMP}/devctl" changelog check
+          "${RUNNER_TEMP}/devctl" changelog check --base "${BASE_SHA}"
 
 --- .github/workflows/zz_generated.fix_vulnerabilities.yaml
 # DO NOT EDIT. Generated with:

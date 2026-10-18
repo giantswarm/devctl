@@ -9,6 +9,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- A release no longer turns the changelog check red on every open pull request until its cut pull request
+  merges: `devctl changelog check --base <revision>` lists the released entries the base already holds under
+  Unreleased as waiting for the base's own cut and fails only on those the pull request brings itself, and the
+  generated `zz_generated.changelog.yaml` checks each pull request against its base commit.
 - The release wait on a hand-written pipeline also finds the charts a repository keeps as
   `helm/*/Chart-template.yaml` (no `Chart.yaml` until the build renders it) and follows a job's
   `make <target>` into the root Makefile to the `helm push` it runs: the kagent line's charts, pushed by

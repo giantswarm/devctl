@@ -6,7 +6,7 @@ Unreleased. Left alone, Unreleased collects every released change and reads as i
 
 ```
 devctl changelog cut   [--file CHANGELOG.md]
-devctl changelog check [--file CHANGELOG.md]
+devctl changelog check [--file CHANGELOG.md] [--base <revision>]
 ```
 
 Both run in a clone with its tags (a shallow clone or one fetched without tags sees no release), from the directory
@@ -35,6 +35,11 @@ nothing. A file without an Unreleased section is left alone.
 Exits 0 when Unreleased holds only changes no release carries, and non-zero listing each released entry with the tag
 that carried it.
 
+`--base <revision>` checks a pull request on its merge with its base: an entry the base's CHANGELOG.md already holds
+released under Unreleased is listed as waiting for the base's own cut pull request and does not fail the check. A
+release cut on the base therefore does not turn the check red on every open pull request until its cut merges; an
+entry the pull request itself brings back under Unreleased still fails it.
+
 ## In the generated workflows
 
 On the `auto-release` release workflow (`devctl gen workflows --release-workflow=auto-release`):
@@ -52,9 +57,10 @@ On the `auto-release` release workflow (`devctl gen workflows --release-workflow
   waits for a review. The auto-merge and the approval are pinned to that commit, so a later push to the branch
   merges nothing on them. Without that secret, or where the approval or
   auto-merge is refused, the job warns and the pull request waits for a review or a merge.
-- `zz_generated.changelog.yaml` runs `devctl changelog check` on every pull request ("No released entries under
-  Unreleased"): merging the open cut pull request, or running `devctl changelog cut` and committing CHANGELOG.md,
-  clears it. A repository without CHANGELOG.md passes.
+- `zz_generated.changelog.yaml` runs `devctl changelog check --base <the pull request's base commit>` on every pull
+  request ("No released entries under Unreleased"): released entries the base already holds wait for its open cut
+  pull request and pass; for the pull request's own, merging the open cut pull request, or running
+  `devctl changelog cut` and committing CHANGELOG.md, clears it. A repository without CHANGELOG.md passes.
 
 Both download the latest devctl release. A fork line carries upstream's CHANGELOG.md and gets neither; the `legacy`
 release workflow writes the CHANGELOG.md sections in its release pull request, and its run deletes

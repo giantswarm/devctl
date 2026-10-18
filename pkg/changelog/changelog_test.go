@@ -226,3 +226,26 @@ func TestCutLinksSectionsCreatedTogether(t *testing.T) {
 		t.Fatalf("Cut:\n%s\nwant links:\n%s", got, want)
 	}
 }
+
+func TestPending(t *testing.T) {
+	at110 := preamble + "\n## [Unreleased]\n\n- Old.\n- Twice.\n"
+	at120 := preamble + "\n## [Unreleased]\n\n- Old.\n- Twice.\n- Twice.\n- Newer.\n"
+	releases := []Release{release(t, "1.1.0", "2026-02-01", at110), release(t, "1.2.0", "2026-03-01", at120)}
+
+	// The base holds Old., one Twice. and Newer. released: the pull request
+	// adds New. and the second copy of Twice. comes back on its own.
+	base := preamble + "\n## [Unreleased]\n\n- Old.\n- Twice.\n- Newer.\n"
+	head := preamble + "\n## [Unreleased]\n\n- New.\n- Old.\n- Twice.\n- Twice.\n- Newer.\n"
+	own, pending := Pending(head, base, releases)
+	if len(own) != 1 || own[0] != (Moved{Release: "v1.2.0", Entry: "- Twice."}) {
+		t.Fatalf("own = %+v, want the second Twice. of v1.2.0", own)
+	}
+	if len(pending) != 3 {
+		t.Fatalf("pending = %+v, want Old., Twice. and Newer.", pending)
+	}
+
+	// Without a base every released entry is the pull request's own.
+	if own, pending := Pending(head, "", releases); len(own) != 4 || len(pending) != 0 {
+		t.Fatalf("without a base: own = %+v pending = %+v", own, pending)
+	}
+}

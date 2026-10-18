@@ -272,7 +272,8 @@ func assertDevctlAuthenticated(t *testing.T, step autoReleaseStep) {
 }
 
 // Test_ChangelogWorkflow pins the pull request check: devctl changelog check
-// on a checkout with every tag.
+// on a checkout with every tag, against the pull request's base, so a release
+// whose cut pull request is still open fails no other pull request.
 func Test_ChangelogWorkflow(t *testing.T) {
 	in := newWorkflows(t, gen.FlavourApp).Changelog()
 	if in.Path != ".github/workflows/zz_generated.changelog.yaml" {
@@ -287,8 +288,11 @@ func Test_ChangelogWorkflow(t *testing.T) {
 		t.Fatal("the check does not see every tag")
 	}
 	last := job.Steps[len(job.Steps)-1]
-	if !strings.Contains(last.Run, `"${RUNNER_TEMP}/devctl" changelog check`) {
-		t.Fatalf("the check step does not run devctl changelog check:\n%s", last.Run)
+	if !strings.Contains(last.Run, `"${RUNNER_TEMP}/devctl" changelog check --base "${BASE_SHA}"`) {
+		t.Fatalf("the check step does not run devctl changelog check against the base:\n%s", last.Run)
+	}
+	if got := last.Env["BASE_SHA"]; got != "${{ github.event.pull_request.base.sha }}" {
+		t.Fatalf("the check step's BASE_SHA = %q, want the pull request's base", got)
 	}
 	assertDevctlAuthenticated(t, last)
 	if del := newWorkflows(t, gen.FlavourApp).ChangelogDeletion(); !del.Delete || del.Path != in.Path {
@@ -334,7 +338,7 @@ func Test_ChangelogStepsWaitForDevctlBinary(t *testing.T) {
 					t.Fatal(err)
 				}
 
-				_, out, err := runStep(t, step.Run, dir, "PATH="+bin+":"+os.Getenv("PATH"), "RUNNER_TEMP="+t.TempDir())
+				_, out, err := runStep(t, step.Run, dir, "PATH="+bin+":"+os.Getenv("PATH"), "RUNNER_TEMP="+t.TempDir(), "BASE_SHA=HEAD")
 				if tc.wantErr {
 					if err == nil || !strings.Contains(out, "has no devctl-linux-amd64 after 10 minutes") {
 						t.Fatalf("err = %v, want the step to fail saying why:\n%s", err, out)
