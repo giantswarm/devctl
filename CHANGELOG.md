@@ -14,6 +14,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   names is expected at the repository that job pushes to, its environment read (`oci://${REGISTRY}/helm`), with the
   bare version, so the release is not `available` before they are pullable. A chart at the tag that no push job and
   no `--chart` covers is named in the document's `warnings` as unchecked.
+- devctl's version check under `CI` also reads the token in `$GH_TOKEN`, after `$DEVCTL_GITHUB_TOKEN`,
+  `$GITHUB_TOKEN` and `$OPSCTL_GITHUB_TOKEN`: a workflow step that sets only gh's variable (a changelog workflow
+  generated before v8.142.1) no longer lists devctl's releases anonymously and hits the rate limit of a shared runner
+  IP.
 
 ## [8.144.0] - 2026-10-18
 
