@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [8.144.3] - 2026-10-18
+
 ### Fixed
 
 - A release no longer turns the changelog check red on every open pull request until its cut pull request
@@ -5922,7 +5924,8 @@ Renovate config
 
 - First release.
 
-[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.144.2...HEAD
+[Unreleased]: https://github.com/giantswarm/devctl/compare/v8.144.3...HEAD
+[8.144.3]: https://github.com/giantswarm/devctl/compare/v8.144.2...v8.144.3
 [8.144.2]: https://github.com/giantswarm/devctl/compare/v8.144.1...v8.144.2
 [8.144.1]: https://github.com/giantswarm/devctl/compare/v8.144.0...v8.144.1
 [8.144.0]: https://github.com/giantswarm/devctl/compare/v8.143.3...v8.144.0
