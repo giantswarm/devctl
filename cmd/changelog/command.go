@@ -32,13 +32,17 @@ version).
   cut    moves every released entry into its release's section, creating the
          section and its link reference where they are missing. Every other
          section keeps its bytes.
-  check  fails while Unreleased holds a released entry, listing each.
+  check  fails while Unreleased holds a released entry, listing each. With
+         --base, an entry the base revision already holds released under
+         Unreleased is listed as waiting for the base's own cut and does not
+         fail: a pull request is checked on its merge with the base.
 
 Run them in a clone with its tags: a shallow clone or one without tags sees no
 release. The generated Auto Release workflow opens the cut as a pull request
 after every release; its changelog check fails a pull request while released
-entries remain under Unreleased.`
+entries the pull request brings remain under Unreleased.`
 
+	flagBase = "base"
 	flagFile = "file"
 )
 
@@ -48,6 +52,7 @@ type Config struct {
 }
 
 type flag struct {
+	Base string
 	File string
 }
 
@@ -75,14 +80,16 @@ func New(config Config) (*cobra.Command, error) {
 			return microerror.Mask(run(f, config.Stdout, false))
 		},
 	})
-	c.AddCommand(&cobra.Command{
+	check := &cobra.Command{
 		Use:   "check",
 		Args:  cobra.NoArgs,
 		Short: "Fail while Unreleased holds an entry a release already carried.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return microerror.Mask(run(f, config.Stdout, true))
 		},
-	})
+	}
+	check.Flags().StringVar(&f.Base, flagBase, "", "A pull request's base revision: entries it already holds released under Unreleased wait for its own cut and do not fail the check")
+	c.AddCommand(check)
 
 	return c, nil
 }
@@ -103,21 +110,11 @@ func run(f *flag, stdout io.Writer, check bool) error {
 	if err != nil {
 		return microerror.Mask(err)
 	}
-	text, moved := changelog.Cut(string(raw), releases)
-
 	if check {
-		if len(moved) == 0 {
-			fmt.Fprintf(stdout, "%s: %s holds only changes no release carries (%d releases read).\n", f.File, changelog.Unreleased, len(releases))
-			return nil
-		}
-		var b strings.Builder
-		fmt.Fprintf(&b, "%s: %d entries under %s are already released:\n", f.File, len(moved), changelog.Unreleased)
-		for _, m := range moved {
-			fmt.Fprintf(&b, "  %s: %s\n", m.Release, m.Summary(100))
-		}
-		fmt.Fprintf(&b, "Merge the open changelog cut pull request, or run `devctl changelog cut` and commit %s.", f.File)
-		return microerror.Maskf(releasedEntriesError, "%s", b.String())
+		return microerror.Mask(runCheck(f, stdout, string(raw), releases))
 	}
+
+	text, moved := changelog.Cut(string(raw), releases)
 
 	if len(moved) == 0 {
 		fmt.Fprintf(stdout, "%s: nothing to cut (%d releases read).\n", f.File, len(releases))
@@ -132,4 +129,38 @@ func run(f *flag, stdout io.Writer, check bool) error {
 	}
 	fmt.Fprintf(stdout, "%s: moved %d entries out of %s.\n", f.File, len(moved), changelog.Unreleased)
 	return nil
+}
+
+func runCheck(f *flag, stdout io.Writer, text string, releases []changelog.Release) error {
+	base := ""
+	if f.Base != "" {
+		var err error
+		base, err = changelog.File(".", f.Base, f.File)
+		if err != nil {
+			return microerror.Mask(err)
+		}
+	}
+	moved, pending := changelog.Pending(text, base, releases)
+
+	if len(pending) > 0 {
+		fmt.Fprintf(stdout, "%s: %d released entries under %s are already on the base %s and wait for its changelog cut pull request:\n", f.File, len(pending), changelog.Unreleased, f.Base)
+		for _, m := range pending {
+			fmt.Fprintf(stdout, "  %s: %s\n", m.Release, m.Summary(100))
+		}
+	}
+	switch {
+	case len(moved) == 0 && len(pending) > 0:
+		fmt.Fprintf(stdout, "%s: beside those, %s holds only changes no release carries (%d releases read).\n", f.File, changelog.Unreleased, len(releases))
+		return nil
+	case len(moved) == 0:
+		fmt.Fprintf(stdout, "%s: %s holds only changes no release carries (%d releases read).\n", f.File, changelog.Unreleased, len(releases))
+		return nil
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s: %d entries under %s are already released:\n", f.File, len(moved), changelog.Unreleased)
+	for _, m := range moved {
+		fmt.Fprintf(&b, "  %s: %s\n", m.Release, m.Summary(100))
+	}
+	fmt.Fprintf(&b, "Merge the open changelog cut pull request, or run `devctl changelog cut` and commit %s.", f.File)
+	return microerror.Maskf(releasedEntriesError, "%s", b.String())
 }

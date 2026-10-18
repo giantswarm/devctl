@@ -65,6 +65,21 @@ func Releases(dir, path string) ([]Release, error) {
 	return sorted(releases), nil
 }
 
+// File reads the file at path, relative to dir, at the revision rev of the git
+// repository at dir; "" when rev has no such file.
+func File(dir, rev, path string) (string, error) {
+	commit, err := git(dir, nil, "rev-parse", "--verify", "--quiet", rev+"^{commit}")
+	if err != nil {
+		return "", microerror.Maskf(executionFailedError, "revision %q: no such commit in the clone", rev)
+	}
+	commit = strings.TrimSpace(commit)
+	files, err := blobs(dir, []string{commit}, path)
+	if err != nil {
+		return "", microerror.Mask(err)
+	}
+	return files[commit], nil
+}
+
 // blobs reads the file at path in every commit through one `git cat-file
 // --batch`; a commit without the file maps to "".
 func blobs(dir string, commits []string, path string) (map[string]string, error) {

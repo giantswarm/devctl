@@ -147,6 +147,30 @@ func Cut(text string, releases []Release) (string, []Moved) {
 	return doc.render(), moved
 }
 
+// Pending splits the entries Cut moves out of text into the ones base already
+// held released under Unreleased, which wait for the cut of base itself, and
+// the rest, which text brings on its own. A pull request is checked on its
+// merge with base: a release cut on base after base's last cut makes every
+// pull request carry base's released entries until base's cut lands, and
+// those are not the pull request's to clear.
+func Pending(text, base string, releases []Release) (own, pending []Moved) {
+	_, moved := Cut(text, releases)
+	_, onBase := Cut(base, releases)
+	left := map[Moved]int{}
+	for _, m := range onBase {
+		left[m]++
+	}
+	for _, m := range moved {
+		if left[m] > 0 {
+			left[m]--
+			pending = append(pending, m)
+			continue
+		}
+		own = append(own, m)
+	}
+	return own, pending
+}
+
 // key is an entry's identity: its lines without trailing white space.
 func key(entry string) string {
 	lines := strings.Split(entry, "\n")
