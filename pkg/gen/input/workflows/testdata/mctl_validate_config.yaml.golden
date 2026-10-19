@@ -82,6 +82,7 @@ jobs:
           ORG:            ${{ github.repository_owner }}
           INIT_PR_NUMBER: ${{ github.event.pull_request.number }}
           GITHUB_TOKEN:   ${{ steps.app-token.outputs.token }}
+          BRANCH:         ${{ github.head_ref }}
         run: |
           set +e
           output=$(docker run --rm \
@@ -91,7 +92,7 @@ jobs:
               --installation   "$INSTALLATION" \
               --cmc-org        "$ORG" \
               --cmc-repo       "$CMC_REPO" \
-              --cmc-branch     "${{ github.head_ref }}" \
+              --cmc-branch     "$BRANCH" \
               --init-pr-number "$INIT_PR_NUMBER" \
             2>&1)
           exit_code=$?

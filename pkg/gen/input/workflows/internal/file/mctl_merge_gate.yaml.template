@@ -41,9 +41,9 @@
 #                          statuses on this repo
 #   MCTL_APP_PRIVATE_KEY - giantswarm-mctlbot GitHub App private key
 #
-# Setup (one-time, per CMC repo): register the context as required.
-#   gh api -X PATCH repos/{org}/{repo}/branches/main/protection/required_status_checks \
-#     -f 'contexts[]=mctl/ready-to-merge'
+# Setup: the context is made required by `requiredChecks: [mctl/ready-to-merge]`
+# on the repository's entry in giantswarm/github -- only once this workflow is
+# on main, and never for template-management-clusters (the gate is skipped there).
 #
 # When testing changes to this file: issue_comment-triggered workflows always
 # run the copy on the repository's DEFAULT branch, so edits here have no effect

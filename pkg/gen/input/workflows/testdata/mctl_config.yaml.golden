@@ -171,6 +171,7 @@ jobs:
           CMC_REPO: ${{ github.event.repository.name }}
           ORG: ${{ github.repository_owner }}
           USER_FLAGS: ${{ steps.parse.outputs.flags }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           set +e
           # op is the entrypoint and each value is its own argv element. The old
@@ -180,7 +181,7 @@ jobs:
             --entrypoint op \
             -e OP_SERVICE_ACCOUNT_TOKEN \
             -e OP_VAULT \
-            -e GITHUB_TOKEN="${{ steps.app-token.outputs.token }}" \
+            -e GITHUB_TOKEN \
             -v "$RUNNER_TEMP/op.env:/op.env:ro" \
             "$MCTL_IMAGE" \
             run --env-file /op.env -- mctl config \

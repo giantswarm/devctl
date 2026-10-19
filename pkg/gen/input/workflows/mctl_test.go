@@ -260,6 +260,23 @@ func Test_MctlMergeGatePassesOtherPRs(t *testing.T) {
 	}
 }
 
+// Test_MctlNoExpressionInRun guards against template injection and secret
+// leaks: branch names, comment bodies, PR titles and tokens reach a run:
+// script through env:, never as an interpolated ${{ }} expression.
+func Test_MctlNoExpressionInRun(t *testing.T) {
+	forbidden := regexp.MustCompile(`\$\{\{\s*(github\.head_ref|github\.event\.comment\.body|github\.event\.pull_request\.title|github\.event\.pull_request\.head\.ref|steps\.[\w-]+\.outputs\.token)`)
+
+	for name, body := range mctlRenders(t, false) {
+		for job, j := range parseMctl(t, name, body).Jobs {
+			for _, step := range j.Steps {
+				if m := forbidden.FindString(step.Run); m != "" {
+					t.Errorf("%s job %s step %q interpolates %s}} into its run script; pass it through env:", name, job, step.Name, m)
+				}
+			}
+		}
+	}
+}
+
 // Test_MctlScrapesMctlOutput pins the strings the workflows read out of mctl's
 // output (manifest.PlaceholderCommandMarker and
 // manifest.PlaceholdersFoundMessage in giantswarm/mctl). Drift is silent: no
