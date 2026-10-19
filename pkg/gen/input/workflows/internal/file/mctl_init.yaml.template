@@ -121,11 +121,13 @@ jobs:
           MCTL_OUTPUT:    ${{ steps.mctl.outputs.output }}
           MCTL_EXIT_CODE: ${{ steps.mctl.outputs.exit_code }}
           BRANCH:         ${{ github.event.ref }}
+          PROVIDER:       ${{ steps.parse.outputs.provider }}
         with:
           script: |
             const output   = process.env.MCTL_OUTPUT || '';
             const exitCode = parseInt(process.env.MCTL_EXIT_CODE || '1', 10);
             const branch   = process.env.BRANCH;
+            const provider = process.env.PROVIDER;
 
             // If mctl failed before creating the PR, fail the job explicitly
             // so it doesn't silently succeed with no output.
@@ -164,6 +166,12 @@ jobs:
             if (!cmdLine) return;
             const initCmd = cmdLine.slice(marker.length).trim();
 
+            // CAPA: /init opens an aws-account-setup PR; /config fails
+            // until its terraform has applied.
+            const nextStep = provider === 'capa'
+              ? 'Replace each `<PLACEHOLDER>` with the real value. `/init` then opens an aws-account-setup PR: approve it (auto-merges) and, once the validation check is green, comment `/config` to continue.'
+              : 'Replace each `<PLACEHOLDER>` with the real value. Once the validation check is green, comment `/config` to continue.';
+
             const body = [
               '### Placeholder values need to be filled in',
               '',
@@ -173,7 +181,7 @@ jobs:
               initCmd,
               '```',
               '',
-              'Replace each `<PLACEHOLDER>` with the real value. Once the validation check is green, comment `/config` to continue.',
+              nextStep,
             ].join('\n');
 
             await github.rest.issues.createComment({
