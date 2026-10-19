@@ -26,6 +26,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `release create`: end the updated `releases.json` with a trailing newline.
 - The Auto-release workflow's unconventional-subject warning accepts every type git-cliff parses (letters,
   digits, `_` and `-`), so `Feat: x` or `my-type: x` is no longer reported as dropped.
 - `--failed-log` of `pr wait`, `pr merge`, `release wait`, `rollout wait` and `release promote`: when a failed

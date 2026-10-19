@@ -678,6 +678,8 @@ func CreateRelease(githubToken, name, base, releases, provider string, component
 		return microerror.Mask(err)
 	}
 
+	updatedReleasesData = append(updatedReleasesData, '\n')
+
 	err = os.WriteFile(releasesJSONPath, updatedReleasesData, 0644) //nolint:gosec
 	if err != nil {
 		return microerror.Mask(err)
