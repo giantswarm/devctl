@@ -7,6 +7,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `devctl release rerun` cancels a tag workflow running longer than `--wedged-after` (2h; `0` turns it off), its
+  jobs hung on CircleCI's side, waits for the cancel to land and reruns it from failed, from start where CircleCI
+  offers no rerun from failed (`workflows[].canceled`, `rerunFrom`). A cancel CircleCI does not honour within two
+  minutes gets a fresh pipeline for the tag through the API instead, once per tag (`trigger`). A running workflow
+  younger than the bound is refused as before, the reason naming its age and the bound.
+
 ### Changed
 
 - `devctl release promote` follows the Auto Release run each dispatch started until it concludes, at most

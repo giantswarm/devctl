@@ -109,7 +109,7 @@ func redeliverWith(t *testing.T, gh, cc sequence.Routes, pipeline *circleciclien
 		Now:   func() time.Time { return now },
 		Hooks: func(context.Context) (Hooks, string, error) { return github, identity, nil },
 	}
-	run.err = FromFailed(context.Background(), circleci, "o", "r", pipeline, run.result, func(w string) { run.warnings = append(run.warnings, w) }, redelivery)
+	run.err = FromFailed(context.Background(), circleci, "o", "r", pipeline, run.result, func(w string) { run.warnings = append(run.warnings, w) }, redelivery, Wedged{})
 	return run
 }
 
@@ -328,7 +328,7 @@ func TestStalledWithoutHooksIsRefused(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = FromFailed(context.Background(), client, "o", "r", stalledPipeline("pending", time.Hour), NewResult("o/r"), func(string) {}, Redelivery{Now: func() time.Time { return now }})
+	err = FromFailed(context.Background(), client, "o", "r", stalledPipeline("pending", time.Hour), NewResult("o/r"), func(string) {}, Redelivery{Now: func() time.Time { return now }}, Wedged{})
 	if code, _ := agentcli.Outcome(err); code != agentcli.ExitRefused || !strings.Contains(err.Error(), "redeliver its push webhook") {
 		t.Fatalf("err: %v", err)
 	}

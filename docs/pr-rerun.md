@@ -29,6 +29,27 @@ devctl pr rerun giantswarm/devctl 2277 && beekeeper gate -- devctl pr wait giant
 devctl release rerun giantswarm/devctl v8.123.0 && beekeeper gate -- devctl release wait giantswarm/devctl v8.123.0
 ```
 
+## A workflow wedged in running
+
+A tag workflow whose jobs hang on CircleCI's side reads `running` for hours, and a cancel from the UI
+may not even take. `release rerun` treats a workflow running (or failing) longer than
+`--wedged-after` (default **2h**, far beyond any tag build; `0` turns it off) as wedged:
+
+1. it is canceled (`POST /api/v2/workflow/{id}/cancel`) with the same CircleCI login as the rerun;
+2. it is read until it no longer runs, at most two minutes (`ci.CancelTimeout`);
+3. it is rerun from failed, or from start (`from_failed: false`) where CircleCI offers no rerun from
+   failed for it. The workflow's `canceled` is `true`, `rerunFrom` says which, and a warning names its
+   age and the bound.
+
+Where CircleCI does not honour the cancel within those two minutes, the tag gets a fresh pipeline
+through the API instead, as for a pipeline without a workflow below: `trigger`, once per tag. A
+workflow on hold waits for a person and is never canceled. A running workflow younger than the bound
+is refused as before (exit 5), the reason naming its age and the bound. `pr rerun` cancels nothing.
+
+```nohighlight
+devctl release rerun giantswarm/kagent-upstream v1.17.0 && beekeeper gate -- devctl release wait giantswarm/kagent-upstream v1.17.0
+```
+
 ## A pipeline without a workflow
 
 A pipeline that never got a workflow has nothing to rerun: its setup workflow finished and the
@@ -87,7 +108,7 @@ One JSON document on stdout, the envelope of every agent-facing command (`comman
 | `tag` | the tag as CircleCI built it (`release rerun`) |
 | `headSha` | the revision the pipeline built |
 | `pipeline` | `{id, number, url}`; absent when CircleCI has no pipeline for the head or tag |
-| `workflows[]` | `{name, id, status, url, failedJobs[], outcome, rerunId, rerunUrl}` |
+| `workflows[]` | `{name, id, status, url, failedJobs[], outcome, rerunId, rerunUrl, canceled, rerunFrom}`; `canceled` and `rerunFrom` (`failed` or `start`) only for a wedged workflow (`release rerun`) |
 | `redelivery` | `{hookId, hookUrl, deliveryId, guid, deliveredAt, ref, after, outcome, redeliveredAt}`: the push delivery sent again for a pipeline without a workflow; absent otherwise |
 | `trigger` | `{outcome, pipeline{id, number, url}}`: the fresh tag pipeline triggered through CircleCI's API (`release rerun`); absent otherwise |
 | `identity` | `app` or `gh`, who read GitHub (`pr rerun`; `release rerun` when it redelivered) |
@@ -124,8 +145,8 @@ API triggered; no second one) or `refused` (CircleCI refused it; 403 is exit 8).
 
 | Code | Verdict | |
 |---|---|---|
-| 0 | `green` | at least one workflow is rerun from failed, the push webhook delivery was sent again, or a fresh tag pipeline was triggered (`release rerun`) |
+| 0 | `green` | at least one workflow is rerun from failed, a wedged one canceled and rerun, the push webhook delivery was sent again, or a fresh tag pipeline was triggered (`release rerun`) |
 | 3 | `not_applicable` | no pipeline for the head or tag, no workflow with a failed job, or no push delivery to send again for a pull request (no CircleCI webhook, a fork's head): nothing to rerun |
-| 5 | `refused` | nothing finished failed and a workflow is still running; a pipeline without a workflow younger than five minutes; a pull request's delivery sent again before; a tag pipeline the API triggered itself |
+| 5 | `refused` | nothing finished failed and a workflow is still running (for `release rerun`: within `--wedged-after`); a pipeline without a workflow younger than five minutes; a pull request's delivery sent again before; a tag pipeline the API triggered itself |
 | 7 | `usage` | wrong usage or a tooling failure |
 | 8 | `auth_required` | no CircleCI login, or one without Write access (`devctl auth login --circleci-only`); a GitHub identity without webhook access (the App's repository permission Webhooks: read and write) |
