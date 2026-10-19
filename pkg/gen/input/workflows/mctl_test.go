@@ -247,6 +247,42 @@ func Test_MctlMergeGatePassesOtherPRs(t *testing.T) {
 	}
 }
 
+// Test_MctlMergeGateStatusUsesGithubToken checks the status is posted as the GitHub Actions app, which required checks are pinned to.
+func Test_MctlMergeGateStatusUsesGithubToken(t *testing.T) {
+	body := mctlRenders(t, false)["merge_gate"]
+	wf := parseMctl(t, "merge_gate", body)
+
+	var publishers int
+	for _, step := range wf.Jobs["gate"].Steps {
+		script := step.With["script"]
+		if !strings.Contains(script, "createCommitStatus") {
+			continue
+		}
+		publishers++
+		if got := step.With["github-token"]; got != "${{ github.token }}" {
+			t.Errorf("step %q posts the status with github-token %q, want ${{ github.token }}", step.Name, got)
+		}
+		if strings.Contains(script, "crossRepo.rest.repos.createCommitStatus") {
+			t.Errorf("step %q posts the status with the App token client", step.Name)
+		}
+	}
+	if publishers != 1 {
+		t.Errorf("%d steps post a commit status, want 1", publishers)
+	}
+
+	var perms struct {
+		Jobs map[string]struct {
+			Permissions map[string]string `yaml:"permissions"`
+		} `yaml:"jobs"`
+	}
+	if err := yaml.Unmarshal([]byte(body), &perms); err != nil {
+		t.Fatal(err)
+	}
+	if got := perms.Jobs["gate"].Permissions["statuses"]; got != "write" {
+		t.Errorf("gate job permissions.statuses = %q, want write", got)
+	}
+}
+
 // Test_MctlNoExpressionInRun checks untrusted input and tokens reach run: scripts only via env:.
 func Test_MctlNoExpressionInRun(t *testing.T) {
 	forbidden := regexp.MustCompile(`\$\{\{\s*(github\.head_ref|github\.event\.comment\.body|github\.event\.pull_request\.title|github\.event\.pull_request\.head\.ref|steps\.[\w-]+\.outputs\.token)`)

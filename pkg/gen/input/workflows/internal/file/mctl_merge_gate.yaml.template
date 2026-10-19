@@ -12,16 +12,18 @@ on:
   issue_comment:
     types: [created, edited]
 
-permissions:
-  contents: read
-  pull-requests: read
-  issues: write
-  statuses: write
+permissions: {}
 
 jobs:
   gate:
     name: Check cluster PRs are ready to merge
     runs-on: ubuntu-latest
+    # The status is posted with github.token: required checks are pinned to the GitHub Actions app.
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: write
+      statuses: write
     # Must run on every PR: a skipped job posts no status and blocks the required check.
     if: >
       github.repository != 'giantswarm/template-management-clusters' && (
@@ -30,7 +32,7 @@ jobs:
       )
 
     steps:
-      # Non-fatal: only cross-repo reads need the App token.
+      # Non-fatal: only the cross-repo PR reads need the App token.
       - name: Generate app token
         id: app-token
         continue-on-error: true
@@ -44,10 +46,14 @@ jobs:
       - name: Evaluate and publish status
         id: gate
         uses: actions/github-script@v7
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
         with:
-          github-token: ${{ steps.app-token.outputs.token || github.token }}
+          github-token: ${{ github.token }}
           script: |
             const CONTEXT = 'mctl/ready-to-merge';
+            // Without the App token the cross-repo reads fail and post 'error'.
+            const crossRepo = process.env.APP_TOKEN ? getOctokit(process.env.APP_TOKEN) : github;
             const targetURL =
               `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}` +
               `/actions/runs/${context.runId}`;
@@ -127,7 +133,7 @@ jobs:
             async function stateOf(url) {
               const m = url.match(/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
               const [, owner, repo, number] = m;
-              const { data } = await github.rest.pulls.get({
+              const { data } = await crossRepo.rest.pulls.get({
                 owner, repo, pull_number: parseInt(number, 10),
               });
               return data.merged ? 'merged' : data.state;
