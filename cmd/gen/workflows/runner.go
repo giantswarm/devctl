@@ -176,6 +176,8 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 
 	if r.flag.Flavours.Contains(gen.FlavourManagementClustersFleet) {
 		inputs = append(inputs, workflowsInput.ClusterAppValuesValidationUsingSchema())
+		inputs = append(inputs, workflowsInput.Mctl()...)
+		inputs = append(inputs, workflowsInput.MctlLegacyDeletion()...)
 	}
 
 	if r.flag.PublishTechdocs {

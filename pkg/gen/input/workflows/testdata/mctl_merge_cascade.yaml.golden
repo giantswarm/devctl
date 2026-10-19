@@ -1,0 +1,307 @@
+# DO NOT EDIT. Generated with:
+#
+#    devctl
+#
+
+# Triggered when a cluster init PR is MERGED.
+#
+# An init PR carries two PRs that must land with it, and neither is merged
+# earlier in the flow:
+#
+#   - the installations PR (opened by `mctl config`) — the installation's
+#     record in giantswarm/installations
+#   - the teleport-fleet PR (opened by `mctl create mc`) — the MC's
+#     TeleportProvisionToken, without which tbot cannot authenticate and
+#     teleport-operator never takes over rotating the node join token
+#
+# The CCR PR is NOT handled here: it is merged at `/create-mc` time, before
+# the Tekton pipeline starts, because Flux must read that config during the
+# bootstrap. See zz_generated.mctl_create_mc.yaml.
+#
+# The two are landed differently, on purpose:
+#
+#   installations   — merged directly. The giantswarm-mctlbot app has repo
+#                     Administration write and `enforce_admins` is false, so
+#                     the 1-approval requirement is bypassed. It is a records
+#                     repo; merging it has no deploy consequence.
+#
+#   teleport-fleet  — auto-merge is armed instead, so the repo's own
+#                     `Deploy (test)` and `Deploy (prod)` checks must pass
+#                     first. Merging to main there runs `helm upgrade --install`
+#                     against BOTH Teleport environments, so a malformed token
+#                     CR breaks the fleet deploy for every installation, not
+#                     just this one. Those checks are the only thing standing
+#                     between a bad JWKS block and that outcome — the admin
+#                     bypass is deliberately not used. If the PR is already
+#                     fully green, it is merged directly instead, since there
+#                     is then nothing left to wait for.
+#
+# Registering the two bots (`tctl bots add`) stays manual: there is no CRD for
+# Teleport bots and it writes to the shared central Teleport cluster. The
+# result comment repeats both exact commands.
+#
+# The zz_generated.mctl_merge_gate.yaml check should keep an init PR from being merged before
+# these PRs exist, but this workflow re-verifies that the bootstrap actually
+# succeeded — a repo admin can merge past a required status check.
+#
+# Branch naming convention: {installation}-init or {installation}-init-{provider}
+#
+# Required repository secrets:
+#   MCTL_APP_ID          - giantswarm-mctlbot GitHub App ID, used to mint a
+#                          token with write access to the installations and
+#                          teleport-fleet repos
+#   MCTL_APP_PRIVATE_KEY - giantswarm-mctlbot GitHub App private key
+#
+# Generated into (customer)-management-clusters repos by devctl (fleet flavour)
+# and kept current by giantswarm/github align-files. Edit the template in
+# giantswarm/devctl, not the generated copy.
+
+name: Merge cascade
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  merge-cascade:
+    name: Merge related cluster PRs
+    runs-on: ubuntu-latest
+    # Never in the public template repo: it is copied from, not run.
+    # Only when merged and the branch follows the init naming convention.
+    if: >
+      github.repository != 'giantswarm/template-management-clusters' &&
+      github.event.pull_request.merged == true && (
+        endsWith(github.event.pull_request.head.ref, '-init') ||
+        endsWith(github.event.pull_request.head.ref, '-init-capa') ||
+        endsWith(github.event.pull_request.head.ref, '-init-capz') ||
+        endsWith(github.event.pull_request.head.ref, '-init-capv') ||
+        endsWith(github.event.pull_request.head.ref, '-init-capvcd')
+      )
+
+    steps:
+      - name: Generate app token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.MCTL_APP_ID }}
+          private-key: ${{ secrets.MCTL_APP_PRIVATE_KEY }}
+          # Without owner, the token is scoped to this repo alone and every
+          # cross-repo step (CCR, installations, teleport-fleet) 404s.
+          owner: ${{ github.repository_owner }}
+
+      - name: Merge installations and teleport-fleet PRs
+        uses: actions/github-script@v7
+        env:
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          script: |
+            const prNumber = context.payload.pull_request.number;
+            const branch = process.env.BRANCH;
+            const installation = branch.replace(/-init(-(capa|capz|capv|capvcd))?$/, '');
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+            });
+
+            async function comment(body) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                body,
+              });
+            }
+
+            // Marker format is shared with zz_generated.mctl_merge_gate.yaml and the Tekton
+            // result comment — keep the three in sync.
+            function findMarker(label) {
+              const re = new RegExp(`\\*\\*${label}:\\*\\*\\s*(.+)`);
+              for (const c of [...comments].reverse()) {
+                const m = (c.body || '').match(re);
+                if (m) return m[1].trim();
+              }
+              return '';
+            }
+
+            function asPR(reported) {
+              const m = reported.match(
+                /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
+              if (!m) return null;
+              return { owner: m[1], repo: m[2], number: parseInt(m[3], 10), url: m[0] };
+            }
+
+            // The gate should have caught this, but a repo admin can merge past
+            // a required status check. Merging an installations record for a
+            // cluster that was never successfully created is worse than doing
+            // nothing, so bail out loudly instead.
+            const resultToken = `<!-- mctl-create-mc-result-${installation} -->`;
+            const results = comments.filter(c => (c.body || '').includes(resultToken));
+            const latestResult = results.length ? results[results.length - 1].body : '';
+            if (!latestResult.includes('created successfully')) {
+              await comment([
+                '### ⚠️ Merge cascade skipped',
+                '',
+                `The newest \`/create-mc\` result for \`${installation}\` does not report success,`,
+                'so the installations and teleport-fleet PRs were left alone.',
+                '',
+                'If the cluster is in fact healthy, merge them by hand; otherwise close them.',
+              ].join('\n'));
+              return;
+            }
+
+            // mergeable_state is computed asynchronously; it reads "unknown"
+            // for a moment after any change to the PR or its base.
+            async function getPR(target) {
+              for (let attempt = 0; attempt < 4; attempt++) {
+                const { data } = await github.rest.pulls.get({
+                  owner: target.owner, repo: target.repo, pull_number: target.number,
+                });
+                if (data.mergeable_state !== 'unknown' || data.merged) return data;
+                await new Promise(r => setTimeout(r, 3000));
+              }
+              const { data } = await github.rest.pulls.get({
+                owner: target.owner, repo: target.repo, pull_number: target.number,
+              });
+              return data;
+            }
+
+            // Squash is the only method allowed on all of installations,
+            // teleport-fleet and the CCR repos; merge commits are disabled.
+            async function mergeNow(target) {
+              await github.rest.pulls.merge({
+                owner: target.owner, repo: target.repo,
+                pull_number: target.number, merge_method: 'squash',
+              });
+            }
+
+            async function armAutoMerge(target, nodeID) {
+              await github.graphql(
+                `mutation($id: ID!) {
+                   enablePullRequestAutoMerge(input: {pullRequestId: $id, mergeMethod: SQUASH}) {
+                     pullRequest { number }
+                   }
+                 }`,
+                { id: nodeID });
+            }
+
+            // Land a PR, returning {row} for the report plus {failure} when the
+            // PR neither merged nor has auto-merge armed. A missing PR and an
+            // already-merged PR are not failures.
+            //
+            // waitForChecks=false merges straight away (admin bypass); true
+            // arms auto-merge so the target repo's own required checks decide.
+            async function land(label, reported, waitForChecks) {
+              if (!reported) {
+                return { row: `| ${label} | ❓ not found | No PR link was reported on this PR. |` };
+              }
+              const target = asPR(reported);
+              if (!target) {
+                return { row: `| ${label} | ❌ not opened | ${reported} |` };
+              }
+
+              let pr;
+              try {
+                pr = await getPR(target);
+              } catch (err) {
+                return {
+                  row: `| ${label} | ❌ unreadable | ${target.url} — ${err.status || err.message} |`,
+                  failure: `${label} ${target.url} could not be read: ${err.status || err.message}`,
+                };
+              }
+              if (pr.merged) {
+                return { row: `| ${label} | ✅ already merged | ${target.url} |` };
+              }
+              if (pr.state === 'closed') {
+                return {
+                  row: `| ${label} | ❌ closed unmerged | ${target.url} |`,
+                  failure: `${label} ${target.url} is closed without being merged`,
+                };
+              }
+              if (pr.mergeable_state === 'dirty') {
+                return {
+                  row: `| ${label} | ❌ conflicts | ${target.url} — resolve and merge by hand. |`,
+                  failure: `${label} ${target.url} has conflicts`,
+                };
+              }
+
+              // "behind" only blocks on repos requiring branches to be up to
+              // date (teleport-fleet does). Updating re-runs its checks, which
+              // is exactly what auto-merge then waits for.
+              if (pr.mergeable_state === 'behind') {
+                try {
+                  await github.rest.pulls.updateBranch({
+                    owner: target.owner, repo: target.repo, pull_number: target.number,
+                  });
+                } catch (err) {
+                  core.warning(`Could not update ${target.url}: ${err.message}`);
+                }
+              }
+
+              const readyToMerge = pr.mergeable_state === 'clean';
+              let mergeErr = '';
+              if (!waitForChecks || readyToMerge) {
+                try {
+                  await mergeNow(target);
+                  return { row: `| ${label} | ✅ merged | ${target.url} |` };
+                } catch (err) {
+                  mergeErr = err.message;
+                  core.warning(`Direct merge of ${target.url} failed: ${err.message}`);
+                  // Fall through and try auto-merge instead.
+                }
+              }
+
+              try {
+                await armAutoMerge(target, pr.node_id);
+                return {
+                  row: `| ${label} | ⏳ auto-merge armed | ${target.url} — merges when its checks pass. |`,
+                };
+              } catch (err) {
+                const why = mergeErr ? `${mergeErr}; auto-merge: ${err.message}` : err.message;
+                return {
+                  row: `| ${label} | ❌ needs a manual merge | ${target.url} — ${why} |`,
+                  failure: `${label} ${target.url} was neither merged nor armed for auto-merge: ${why}`,
+                };
+              }
+            }
+
+            const outcomes = [];
+            outcomes.push(await land(
+              'installations', findMarker('Installations PR'), false));
+            outcomes.push(await land(
+              'teleport-fleet', findMarker('Teleport fleet PR'), true));
+            const rows = outcomes.map(o => o.row);
+
+            await comment([
+              `### Cluster PRs for \`${installation}\``,
+              '',
+              '| PR | Status | |',
+              '|:-|:-|:-|',
+              ...rows,
+              '',
+              '#### Remaining manual step — register both Teleport bots',
+              '',
+              'Once the teleport-fleet PR is merged, run (both environments):',
+              '',
+              '```sh',
+              "tsh login --auth giantswarm --proxy 'teleport.giantswarm.io:443' \\",
+              `    && tctl bots add "${installation}" --token "bot-${installation}" --roles teleport-operator,teleport-tbot \\`,
+              `    && tctl bots add "mimir-alertmanager-${installation}" --token "mimir-alertmanager-${installation}-token" --roles teleport-proxy`,
+              '```',
+              '',
+              'There is no CRD for Teleport bots, so this cannot be automated. Until it is done,',
+              'tbot cannot authenticate and the node join token expires 30 days after bootstrap;',
+              'the `mimir-alertmanager` pod stays in `Init:CrashLoopBackOff`.',
+            ].join('\n'));
+
+            const failures = outcomes.filter(o => o.failure).map(o => o.failure);
+            if (failures.length) {
+              core.setFailed(failures.join(' | '));
+            }

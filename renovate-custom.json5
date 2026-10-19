@@ -10,9 +10,12 @@
 {
   // Let the github-actions manager also scan the workflow templates devctl
   // emits, so action versions baked into the templates get bumped too.
+  // The mctl workflow goldens too, so a bump moves template and golden in one
+  // PR and the byte-for-byte golden tests stay green.
   'github-actions': {
     managerFilePatterns: [
       '/.*.yaml.template$/',
+      '/pkg/gen/input/workflows/testdata/mctl_.*\\.yaml\\.golden$/',
     ],
   },
   customManagers: [
@@ -90,6 +93,22 @@
       matchStrings: ['continuation: circleci/continuation@(?<currentValue>\\S+)'],
       depNameTemplate: 'circleci/continuation',
       datasourceTemplate: 'orb',
+    },
+    // The mctl image tag the fleet flavour's mctl workflows run (MctlVersion),
+    // and the goldens that render it, in one PR. Image tags carry no `v`.
+    {
+      customType: 'regex',
+      managerFilePatterns: ['/pkg/gen/input/workflows/internal/file/mctl\\.go$/'],
+      matchStrings: [
+        '// renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n\\s*const MctlVersion = "(?<currentValue>[^"]+)"',
+      ],
+    },
+    {
+      customType: 'regex',
+      managerFilePatterns: ['/pkg/gen/input/workflows/testdata/mctl_.*\\.yaml\\.golden$/'],
+      matchStrings: ['gsoci\\.azurecr\\.io/giantswarm/mctl:(?<currentValue>\\d+\\.\\d+\\.\\d+)'],
+      depNameTemplate: 'gsoci.azurecr.io/giantswarm/mctl',
+      datasourceTemplate: 'docker',
     },
     // Pre-commit hook revisions in the pre-commit config template.
     // The built-in pre-commit manager cannot parse this file because it contains

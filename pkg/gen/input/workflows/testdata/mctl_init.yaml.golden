@@ -1,0 +1,187 @@
+# DO NOT EDIT. Generated with:
+#
+#    devctl
+#
+
+# Triggered when a branch matching {installation}-init-{provider} is created.
+# Runs mctl init with placeholder values and opens a PR.
+# mctl validate then runs as a check on the PR — the output shows exactly which
+# placeholder values need to be replaced before /config can be triggered.
+#
+# Branch naming convention: {installation}-init-{provider}
+#   Examples: antiaws-init-capa, myazure-init-capz
+#   The installation name is everything before -init-{provider}.
+#
+# Branches named {installation}-init (without provider suffix) are not
+# handled here — those are created by local mctl init runs.
+#
+# Required repository secrets:
+#   MCTL_APP_ID          - giantswarm-mctlbot GitHub App ID
+#   MCTL_APP_PRIVATE_KEY - giantswarm-mctlbot GitHub App private key
+#
+# Generated into (customer)-management-clusters repos by devctl (fleet flavour)
+# and kept current by giantswarm/github align-files. Edit the template in
+# giantswarm/devctl, not the generated copy.
+
+name: Init
+
+on:
+  create:
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+env:
+  MCTL_IMAGE: ${{ vars.MCTL_IMAGE || 'gsoci.azurecr.io/giantswarm/mctl:0.1.16' }}
+
+jobs:
+  init:
+    name: Run mctl init
+    runs-on: ubuntu-latest
+    # Never in the public template repo: it is copied from, not run.
+    # Only act on branch creation events matching *-init-{provider}
+    if: >
+      github.repository != 'giantswarm/template-management-clusters' &&
+      github.event.ref_type == 'branch' &&
+      (
+        endsWith(github.event.ref, '-init-capa')   ||
+        endsWith(github.event.ref, '-init-capz')   ||
+        endsWith(github.event.ref, '-init-capv')   ||
+        endsWith(github.event.ref, '-init-capvcd')
+      )
+
+    steps:
+      - name: Parse branch name
+        id: parse
+        env:
+          BRANCH: ${{ github.event.ref }}
+        run: |
+          # Strip -init-{provider} suffix to get installation name and provider.
+          # e.g. antiaws-init-capa → installation=antiaws, provider=capa
+          if [[ "$BRANCH" =~ ^(.+)-init-(capa|capz|capv|capvcd)$ ]]; then
+            echo "installation=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+            echo "provider=${BASH_REMATCH[2]}"     >> "$GITHUB_OUTPUT"
+          else
+            echo "Could not parse branch: $BRANCH" >&2
+            exit 1
+          fi
+
+      - name: Generate app token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.MCTL_APP_ID }}
+          private-key: ${{ secrets.MCTL_APP_PRIVATE_KEY }}
+          # Without owner, the token is scoped to this repo alone and every
+          # cross-repo step (CCR, installations, teleport-fleet) 404s.
+          owner: ${{ github.repository_owner }}
+
+      - name: Run mctl init
+        id: mctl
+        env:
+          INSTALLATION: ${{ steps.parse.outputs.installation }}
+          PROVIDER:     ${{ steps.parse.outputs.provider }}
+          BRANCH:       ${{ github.event.ref }}
+          CMC_REPO:     ${{ github.event.repository.name }}
+          ORG:          ${{ github.repository_owner }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set +e
+
+          # Derive customer and CCR repo from the CMC repo name.
+          # e.g. antonia-management-clusters → customer=antonia, ccr=antonia-configs
+          CUSTOMER="${CMC_REPO%-management-clusters}"
+          CCR_REPO="${CUSTOMER}-configs"
+
+          # --placeholders makes mctl fill every required provider flag with its
+          # own placeholder token, so the token list lives in mctl alone.
+          output=$(docker run --rm \
+            -e GITHUB_TOKEN \
+            "$MCTL_IMAGE" \
+            init \
+              --installation "$INSTALLATION" \
+              --provider     "$PROVIDER" \
+              --customer     "$CUSTOMER" \
+              --cmc-repo     "$CMC_REPO" \
+              --ccr-repo     "$CCR_REPO" \
+              --branch       "$BRANCH" \
+              --placeholders \
+            2>&1)
+          exit_code=$?
+          {
+            echo "output<<MCTL_EOF"
+            echo "$output"
+            echo "MCTL_EOF"
+            echo "exit_code=$exit_code"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Post comment
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          MCTL_OUTPUT:    ${{ steps.mctl.outputs.output }}
+          MCTL_EXIT_CODE: ${{ steps.mctl.outputs.exit_code }}
+          BRANCH:         ${{ github.event.ref }}
+        with:
+          script: |
+            const output   = process.env.MCTL_OUTPUT || '';
+            const exitCode = parseInt(process.env.MCTL_EXIT_CODE || '1', 10);
+            const branch   = process.env.BRANCH;
+
+            // If mctl failed before creating the PR, fail the job explicitly
+            // so it doesn't silently succeed with no output.
+            if (exitCode !== 0) {
+              const prs = await github.rest.pulls.list({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                head: `${context.repo.owner}:${branch}`,
+                state: 'open',
+              });
+              if (prs.data.length > 0) {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: prs.data[0].number,
+                  body: `### ❌ \`mctl init\` failed\n\n\`\`\`\n${output}\n\`\`\``,
+                });
+              }
+              core.setFailed(`mctl init exited ${exitCode}`);
+              return;
+            }
+
+            const prs = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              head: `${context.repo.owner}:${branch}`,
+              state: 'open',
+            });
+            if (prs.data.length === 0) return;
+            const prNumber = prs.data[0].number;
+
+            // mctl prints the exact /init command after a marker line, so the
+            // flag list is never restated here.
+            const marker  = 'Fill them in by commenting:';
+            const cmdLine = output.split('\n').find(l => l.startsWith(marker));
+            if (!cmdLine) return;
+            const initCmd = cmdLine.slice(marker.length).trim();
+
+            const body = [
+              '### Placeholder values need to be filled in',
+              '',
+              'This PR was generated with placeholder values. Fill them in by commenting:',
+              '',
+              '```',
+              initCmd,
+              '```',
+              '',
+              'Replace each `<PLACEHOLDER>` with the real value. Once the validation check is green, comment `/config` to continue.',
+            ].join('\n');
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              body,
+            });

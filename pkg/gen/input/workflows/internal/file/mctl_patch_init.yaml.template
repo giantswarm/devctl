@@ -1,0 +1,201 @@
+{{{{ .Header }}}}
+
+# Triggered by a /init comment on a pull request.
+# Re-runs mctl init on the existing branch with the flags provided in the comment,
+# replacing placeholder values with real ones.
+#
+# Usage (comment on the init PR):
+#   /init --base-domain=my.domain.io --region=eu-west-1 --aws-account-id=123456789012
+#
+# The branch must follow the {installation}-init-{provider} naming convention.
+# The exact command with the required flags is posted by the CI init workflow.
+#
+# The manifest is regenerated from scratch, so pass every flag you want kept:
+# one omitted here falls back to its default, and hand edits to the manifest in
+# the PR are overwritten.
+#
+# Required repository secrets:
+#   MCTL_APP_ID          - giantswarm-mctlbot GitHub App ID
+#   MCTL_APP_PRIVATE_KEY - giantswarm-mctlbot GitHub App private key
+#
+# Generated into (customer)-management-clusters repos by devctl (fleet flavour)
+# and kept current by giantswarm/github align-files. Edit the template in
+# giantswarm/devctl, not the generated copy.
+
+name: Patch init
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+env:
+  MCTL_IMAGE: ${{ vars.MCTL_IMAGE || 'gsoci.azurecr.io/giantswarm/mctl:{{{{ .MctlVersion }}}}' }}
+
+jobs:
+  patch-init:
+    name: Re-run mctl init with real values
+    runs-on: ubuntu-latest
+    # Never in the public template repo: it is copied from, not run.
+    if: >
+      github.repository != 'giantswarm/template-management-clusters' &&
+      github.event.issue.pull_request != null &&
+      startsWith(github.event.comment.body, '/init') &&
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
+
+    steps:
+      - name: Acknowledge comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: context.payload.comment.id,
+              content: 'eyes',
+            });
+
+      - name: Get PR branch
+        id: pr
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+            });
+            core.setOutput('branch', pr.data.head.ref);
+
+      - name: Parse branch and comment flags
+        id: parse
+        env:
+          BRANCH:  ${{ steps.pr.outputs.branch }}
+          COMMENT: ${{ github.event.comment.body }}
+        run: |
+          # Derive installation and provider from branch name.
+          if [[ "$BRANCH" =~ ^(.+)-init-(capa|capz|capv|capvcd)$ ]]; then
+            echo "installation=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+            echo "provider=${BASH_REMATCH[2]}"     >> "$GITHUB_OUTPUT"
+          else
+            echo "Branch $BRANCH does not match {installation}-init-{provider} pattern" >&2
+            exit 1
+          fi
+
+          # Only the first line is the command, and GitHub comment bodies are
+          # CRLF: \r is not in IFS, so without stripping it the shell glues it
+          # onto the last flag value (mctl#277).
+          flags=$(printf '%s' "$COMMENT" | head -n 1 | tr -d '\r')
+          flags="${flags#/init}"
+          flags="${flags#"${flags%%[![:space:]]*}"}" # trim leading whitespace
+
+          # Set by the workflow from the event. A comment repeating one would come
+          # later on the command line and win, redirecting an org-scoped token.
+          read -ra tokens <<< "$flags" || true
+          for tok in "${tokens[@]}"; do
+            case "${tok%%=*}" in
+              --installation|--provider|--customer|--cmc-repo|--ccr-repo|--branch|--config-file)
+                echo "::error::$tok is set by the workflow and cannot be passed in an /init comment"
+                exit 1 ;;
+            esac
+          done
+
+          echo "flags=$flags" >> "$GITHUB_OUTPUT"
+
+      - name: Generate app token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.MCTL_APP_ID }}
+          private-key: ${{ secrets.MCTL_APP_PRIVATE_KEY }}
+          # Without owner, the token is scoped to this repo alone and every
+          # cross-repo step (CCR, installations, teleport-fleet) 404s.
+          owner: ${{ github.repository_owner }}
+
+      - name: Run mctl init
+        id: mctl
+        env:
+          INSTALLATION: ${{ steps.parse.outputs.installation }}
+          PROVIDER:     ${{ steps.parse.outputs.provider }}
+          BRANCH:       ${{ steps.pr.outputs.branch }}
+          CMC_REPO:     ${{ github.event.repository.name }}
+          ORG:          ${{ github.repository_owner }}
+          USER_FLAGS:   ${{ steps.parse.outputs.flags }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set +e
+          CUSTOMER="${CMC_REPO%-management-clusters}"
+          CCR_REPO="${CUSTOMER}-configs"
+          # Quoted array expansion: an unquoted $USER_FLAGS is glob-expanded
+          # against the runner's working directory.
+          read -ra USER_FLAG_ARR <<< "$USER_FLAGS" || true
+          output=$(docker run --rm \
+            -e GITHUB_TOKEN \
+            "$MCTL_IMAGE" \
+            init \
+              --installation "$INSTALLATION" \
+              --provider     "$PROVIDER" \
+              --customer     "$CUSTOMER" \
+              --cmc-repo     "$CMC_REPO" \
+              --ccr-repo     "$CCR_REPO" \
+              --branch       "$BRANCH" \
+              "${USER_FLAG_ARR[@]}" \
+            2>&1)
+          exit_code=$?
+          {
+            echo "output<<MCTL_EOF"
+            echo "$output"
+            echo "MCTL_EOF"
+            echo "exit_code=$exit_code"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Post result comment
+        uses: actions/github-script@v7
+        env:
+          MCTL_OUTPUT:    ${{ steps.mctl.outputs.output }}
+          MCTL_EXIT_CODE: ${{ steps.mctl.outputs.exit_code }}
+        with:
+          script: |
+            const output   = process.env.MCTL_OUTPUT    || '';
+            const exitCode = parseInt(process.env.MCTL_EXIT_CODE || '1', 10);
+
+            let body;
+            if (exitCode !== 0) {
+              body = `### ❌ \`mctl init\` failed\n\n\`\`\`\n${output}\n\`\`\``;
+            } else {
+              const lines = [
+                '### ✅ Manifest updated',
+                '',
+                'The placeholder values have been replaced. Check the validation status above.',
+                'Once the validation check is green, follow the "Next step" instructions in the PR description above to continue.',
+              ];
+
+              // For CAPA, surface the companion aws-account-setup PR as a
+              // comment — this re-run's PR body can't be updated in place.
+              // Only tell the reviewer to approve it when a PR reference is
+              // actually present — not for the "already provisioned" or
+              // "not opened" outcomes, which have nothing to approve.
+              const markerLine = output.match(/^- \*\*AWS account-setup PR:\*\*.*$/m);
+              if (markerLine) {
+                lines.push('', markerLine[0]);
+                if (/[\w.-]+\/[\w.-]+#\d+/.test(markerLine[0])) {
+                  lines.push('Approve the above PR, it should be auto merged.');
+                }
+                lines.push('Then continue by commenting `/config` below.');
+              }
+
+              body = lines.join('\n');
+            }
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });
+
+            if (exitCode !== 0) core.setFailed(`mctl init exited ${exitCode}`);
