@@ -54,7 +54,7 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&f.NoReleaseWait, flagNoReleaseWait, false, "End at the merge instead of waiting for the release it triggers (devctl release wait --pr does that wait on its own)")
 	cmd.Flags().BoolVar(&f.Rebase, flagRebase, false, "Rebase-merge instead of squash-merging (repositories whose convention is one commit per patch); the default on a fork line")
 	cmd.Flags().BoolVar(&f.Squash, flagSquash, false, "Squash-merge a fork line's pull request, which rebase-merges by default; elsewhere squash is the default already")
-	cmd.Flags().BoolVar(&f.UpdateBranch, flagUpdateBranch, false, "A head behind its base is updated from the base before its checks are judged, and the new head waited for; behind a strict base, instead of exit 3")
+	cmd.Flags().BoolVar(&f.UpdateBranch, flagUpdateBranch, false, "A head behind its base, before the wait or after it, is updated from the base and the new head waited for, instead of exit 3")
 	cmd.Flags().StringVar(&f.Dispatch, flagDispatch, "", "A workflow to dispatch after the merge, <owner>/<repo>/<workflow file>[@<ref>], with the inputs repository, pull_request and release; a failed dispatch is a warning. Default: $"+prmerge.EnvDispatch)
 	cmd.Flags().StringArrayVar(&f.AcceptRed, flagAcceptRed, nil, prmerge.AcceptRedHelp())
 	cmd.Flags().BoolVar(&f.Detach, flagDetach, false, "Start the merge in a process of its own and return at once with its handle; devctl pr merge status <handle> reads the outcome")

@@ -61,6 +61,7 @@ func ListKinds() map[schema.GroupVersionResource]string {
 		kustomizations:  "KustomizationList",
 		konfigurations:  "KonfigurationList",
 		configMaps:      "ConfigMapList",
+		charts:          "ChartList",
 	}
 }
 
@@ -120,7 +121,7 @@ func openWithTeleport(ctx context.Context, c ClusterConfig, missing error) (dyna
 		return nil, fmt.Errorf("kube context %s does not exist, and %w", c.Context, err)
 	}
 	if !loggedIn {
-		return nil, agentcli.NewExitError(agentcli.ExitAuthRequired, agentcli.VerdictAuthRequired, "kube context %s does not exist and tsh is not logged in (%s): sign in with `tsh login`, the wait then logs in to %s into a private kubeconfig; --context <name> reads the installation through another context", c.Context, why, c.Installation)
+		return nil, agentcli.NewExitError(agentcli.ExitAuthRequired, agentcli.VerdictAuthRequired, "kube context %s does not exist and tsh is not logged in (%s): sign in with `tsh login`, the wait then logs in to %s into a private kubeconfig; %s", c.Context, why, c.Installation, otherContexts)
 	}
 
 	dir, err := os.MkdirTemp("", "devctl-rollout-wait-")
@@ -132,7 +133,7 @@ func openWithTeleport(ctx context.Context, c ClusterConfig, missing error) (dyna
 
 	c.Progress.Printf("kube context %s is not in the kubeconfig; tsh kube login %s into a private kubeconfig", c.Context, c.Installation)
 	if err := c.Teleport.KubeLogin(ctx, c.Installation, c.Context, private); err != nil {
-		return nil, agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "kube context %s does not exist and %v; --context <name> reads the installation through another context", c.Context, err)
+		return nil, agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "kube context %s does not exist and %v; %s", c.Context, err, otherContexts)
 	}
 	rules := loadingRules(private)
 	raw, err := rules.Load()
@@ -166,6 +167,10 @@ func openContext(rules *clientcmd.ClientConfigLoadingRules, c ClusterConfig) (dy
 	return client, nil
 }
 
+// otherContexts names the flags that read an installation whose context is
+// not in the default kubeconfig.
+const otherContexts = "--kubeconfig <file> reads the context from a kubeconfig outside KUBECONFIG and ~/.kube/config, --context <name> reads the installation through another context"
+
 // MissingContextError is the usage error for a kube context the kubeconfig
 // does not have. An installation reached through another context than the
 // one tsh kube login writes (kubectl gs login's gs-<installation>, a lab's
@@ -183,7 +188,7 @@ func MissingContextError(installation, kubeContext string, contexts []string) er
 	if len(candidates) > 0 {
 		hint = "contexts in the kubeconfig that mention " + installation + ": " + strings.Join(candidates, ", ")
 	}
-	return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "kube context %s does not exist (%s); --context <name> reads the installation through another context, `tsh kube login %s` writes this one", kubeContext, hint, installation)
+	return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "kube context %s does not exist (%s); %s, `tsh kube login %s` writes this one", kubeContext, hint, otherContexts, installation)
 }
 
 // object is a namespaced object of one resource.

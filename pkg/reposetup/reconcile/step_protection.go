@@ -25,7 +25,8 @@ const LineGateRulesetName = "devctl: line gate"
 
 // ReviewRulesetName is the engine's ruleset of the review rule alone,
 // written when [Runner.AlignFilesAppID] is set and the entry allows agent
-// merges: the align-files and Renovate Apps bypass it, and not
+// merges: the align-files and Renovate Apps, and the release App
+// ([Runner.ReleaseAppID]) when set, bypass it, and not
 // [RulesetName], whose required checks bind their pull requests as
 // everyone's.
 const ReviewRulesetName = "devctl: review"
@@ -480,7 +481,8 @@ func (r *Runner) splitsReview(s *run, review *github.RepositoryRuleset) bool {
 // splits the review rule out (split): on the default branch, the
 // baseline's required reviews alone, with the bypass actors of
 // [RulesetName] (bypass, as stepRulesetProtection worked them out) and the
-// align-files and Renovate Apps for pull requests beside them. The Apps
+// align-files and Renovate Apps, and the release App when
+// [Runner.ReleaseAppID] is set, for pull requests beside them. The Apps
 // bypass the review and nothing else: the required checks of [RulesetName],
 // which they do not bypass, still hold their pull requests until they are
 // green.
@@ -507,6 +509,9 @@ func (r *Runner) stepReviewRuleset(ctx context.Context, s *run, sr *StepResult, 
 			reviews:     s.baseline.RequiredReviews,
 			bypass:      append(slices.Clone(bypass), appActor(r.AlignFilesAppID), appActor(renovateAppID)),
 			team:        s.team,
+		}
+		if r.ReleaseAppID != 0 {
+			desired.bypass = append(desired.bypass, appActor(r.ReleaseAppID))
 		}
 		if r.DevctlAppID == 0 || (have != nil && have.BypassActors == nil) {
 			// Without the devctl App id, or not readable by this identity,

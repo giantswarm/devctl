@@ -25,6 +25,11 @@
         "default": true,
         "description": "The repository's opt-out from agent merges. With false no agent merges pull requests in this repository: devctl pr merge refuses with exit 5, naming this field, and the protection step writes the repository's ruleset without a bypass actor, so nothing merges past the required review. Plans and decision records merged by people after review are the case. With true (the default) agents merge through the ruleset's bypass actor, as everywhere else."
       },
+      "renovate": {
+        "type": "boolean",
+        "default": true,
+        "description": "The repository's opt-out from Renovate. With false align-files generates no renovate.json5 for the repository (devctl gen renovate is not run) and the reconciler's renovate step accepts a repository without a Renovate configuration or with one that disables Renovate; a configuration that keeps Renovate on is the finding 'renovate-declared-off', and deleting it stays with the team. With true (the default) the repository gets its generated renovate.json5 and the step checks that Renovate scans it. Requires devctl v8.140.0+."
+      },
       "botPRsSweep": {
         "type": "object",
         "additionalProperties": false,
@@ -336,7 +341,7 @@
               },
               "resourceClass": {
                 "type": "string",
-                "description": "Override the CircleCI resource_class on the cli-flavour go-build job (passed to '--resource-class'). Defaults to 'large'. Raise it (e.g. 'xlarge') for repos that need more RAM/CPU headroom for the cold cross-compile. Only applies to the cli flavour. Requires devctl v8.25.0+."
+                "description": "Override the CircleCI resource_class on the cli-flavour go-build job and the Node job (passed to '--resource-class'). Defaults to 'large'. Raise it (e.g. 'xlarge') for repos that need more RAM/CPU headroom for the cold cross-compile or a monorepo verify. The Node job sizes its tools' workers from the class's memory: JEST_MAX_WORKERS one per 4 GiB, BACKSTAGE_CLI_CONCURRENCY one per 8 GiB, lowered under the job's environment in .circleci/custom.yml. Requires devctl v8.25.0+."
               },
               "go": {
                 "type": "object",

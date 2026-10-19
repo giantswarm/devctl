@@ -52,6 +52,23 @@ func matrix(red int64, started time.Time) []*github.CheckRun {
 	return runs
 }
 
+// ofApp gives a check run the app that reports it.
+func ofApp(run *github.CheckRun, slug string) *github.CheckRun {
+	run.App = &github.App{Slug: &slug}
+	return run
+}
+
+// gatekeeperRun is a check run of an app other than GitHub Actions that
+// holds a pull request until it is reviewed.
+func gatekeeperRun(id int64, status, conclusion string) *github.CheckRun {
+	return ofApp(checkRun(id, "Heimdall - PR Gatekeeper", status, conclusion, time.Time{}), "tinkerers-ci")
+}
+
+// actionsCheckRun is the check run of a GitHub Actions job.
+func actionsCheckRun(id int64, name, status string) *github.CheckRun {
+	return ofApp(checkRun(id, name, status, "", time.Time{}), actionsApp)
+}
+
 func status(context, state string) *github.RepoStatus {
 	return &github.RepoStatus{Context: &context, State: &state, TargetURL: ptr("https://ci/" + context)}
 }
@@ -87,6 +104,7 @@ func Test_evaluate(t *testing.T) {
 		// at this poll.
 		wantNeverReported bool
 		wantApprovalOnly  bool
+		wantNotRequired   []string
 		wantChecks        []Check
 		wantActions       []ActionRun
 		wantCircleCI      *CircleCI
@@ -384,17 +402,58 @@ func Test_evaluate(t *testing.T) {
 			skipFieldChecks: true,
 		},
 		{
-			name: "a failed status is red, a pending one waits",
+			name: "a failed status is red, a pending required one waits",
 			snapshot: snapshot{
 				statuses: []*github.RepoStatus{status("ci/a", "error"), status("ci/b", "pending")},
+				required: []string{"ci/b"},
 			},
 			wantRed:        []string{"status ci/a is error"},
 			wantUnfinished: []string{"status ci/b (pending)"},
 			wantChecks: []Check{
 				{Name: "ci/a", Source: SourceStatus, Status: "completed", Conclusion: "error", URL: "https://ci/ci/a"},
-				{Name: "ci/b", Source: SourceStatus, Status: "pending", URL: "https://ci/ci/b"},
+				{Name: "ci/b", Source: SourceStatus, Status: "pending", URL: "https://ci/ci/b", Required: true},
 			},
 			wantActions: []ActionRun{},
+		},
+		{
+			name: "a pending status and a pending check of another app the base does not require: green, not waited for",
+			snapshot: snapshot{
+				checkRuns: []*github.CheckRun{checkRun(1, "lint", "completed", "success", t0), gatekeeperRun(2, "in_progress", "")},
+				statuses:  []*github.RepoStatus{status("external/scan", "pending")},
+				required:  []string{"lint"},
+			},
+			wantGreen: true,
+			wantNotRequired: []string{
+				"check Heimdall - PR Gatekeeper (in_progress, not required, not waited for)",
+				"status external/scan (pending, not required, not waited for)",
+			},
+			skipFieldChecks: true,
+		},
+		{
+			name: "a gatekeeper check awaiting a human the base does not require: green, not waited for",
+			snapshot: snapshot{
+				checkRuns: []*github.CheckRun{gatekeeperRun(2, "completed", "action_required")},
+			},
+			wantGreen:       true,
+			wantNotRequired: []string{"check Heimdall - PR Gatekeeper (action_required, not required, not waited for)"},
+			skipFieldChecks: true,
+		},
+		{
+			name: "a pending CircleCI job status the base does not require waits: the pipeline's verdict",
+			snapshot: snapshot{
+				statuses: []*github.RepoStatus{status("ci/circleci: setup", "success"), status("ci/circleci: go-build", "success"), status("ci/circleci: push", "pending")},
+				circleci: circle("created"),
+			},
+			wantUnfinished:  []string{"status ci/circleci: push (pending)"},
+			skipFieldChecks: true,
+		},
+		{
+			name: "a pending GitHub Actions job the base does not require waits",
+			snapshot: snapshot{
+				checkRuns: []*github.CheckRun{actionsCheckRun(1, "test", "in_progress")},
+			},
+			wantUnfinished:  []string{"check test (in_progress)"},
+			skipFieldChecks: true,
 		},
 		{
 			name: "every check and run finished, a required context absent: never reported, known without a timeout",
@@ -585,6 +644,9 @@ func Test_evaluate(t *testing.T) {
 			}
 			if e.neverReported() != tc.wantNeverReported {
 				t.Errorf("neverReported: want %v, got %v (settled %v, unfinished %q)", tc.wantNeverReported, e.neverReported(), e.settled, e.unfinished)
+			}
+			if diff := cmp.Diff(tc.wantNotRequired, e.notRequired, cmp.Transformer("nilToEmpty", nilToEmpty)); diff != "" {
+				t.Errorf("notRequired:\n%s", diff)
 			}
 			if e.approvalOnly != tc.wantApprovalOnly {
 				t.Errorf("approvalOnly: want %v, got %v (red %q, unfinished %q)", tc.wantApprovalOnly, e.approvalOnly, e.red, e.unfinished)

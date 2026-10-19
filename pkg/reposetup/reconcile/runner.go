@@ -17,17 +17,17 @@ import (
 )
 
 // LifecycleArchived is the lifecycle value that archives a repository.
-const LifecycleArchived = "archived"
+const LifecycleArchived = reposetup.LifecycleArchived
 
 // LifecycleDeleted is the lifecycle value that deletes a repository on
 // GitHub; the entry stays in the team file as the record of the deletion.
-const LifecycleDeleted = "deleted"
+const LifecycleDeleted = reposetup.LifecycleDeleted
 
 // lifecycleOver says whether the declared lifecycle ends the repository's
 // life — archived or deleted — so that the lifecycle step is the one that
 // applies.
 func lifecycleOver(lifecycle string) bool {
-	return lifecycle == LifecycleArchived || lifecycle == LifecycleDeleted
+	return reposetup.LifecycleOver(lifecycle)
 }
 
 // flavourCustomer is the gen.flavours value of a customer repository: its
@@ -36,7 +36,7 @@ func lifecycleOver(lifecycle string) bool {
 // release steps are skipped on it and its default branch is never renamed;
 // settings, permissions, renovate, metadata, lifecycle and catalog run as
 // declared.
-const flavourCustomer = "customer"
+const flavourCustomer = reposetup.FlavourCustomer
 
 // flavourFork is the gen.flavours value of a fork line: the repository
 // carries an upstream release plus the carried patches on the branch its
@@ -117,6 +117,14 @@ type Runner struct {
 	// agentMerge: false keeps the review in [RulesetName] without bypass. 0
 	// keeps the review rule in [RulesetName] and deletes the review ruleset.
 	AlignFilesAppID int64
+	// ReleaseAppID is the numeric id of the giantswarm-release GitHub App,
+	// which the generated release workflows authenticate as. It bypasses
+	// [ReviewRulesetName] for pull requests beside the align-files and
+	// Renovate Apps, so the version bump pull request the release workflow
+	// opens and arms auto-merge on lands once the required checks of
+	// [RulesetName], which it does not bypass, are green. 0 adds no release
+	// App to the review ruleset.
+	ReleaseAppID int64
 	// GitHubRequests and CircleCIRequests count the requests the clients
 	// send, when the caller built the clients' transports over them (one
 	// [Counter] under GitHub, Checks and Dispatch, one under CircleCI). The
@@ -571,10 +579,9 @@ func (s *run) agentMerge() bool {
 }
 
 // keepsDefaultBranch says the repository's default branch is its own and the
-// settings step never renames it: a customer repository's branch is the
-// customer's flow.
+// settings step never renames it ([reposetup.Fields.KeepsDefaultBranch]).
 func (s *run) keepsDefaultBranch() bool {
-	return s.hasFlavour(flavourCustomer)
+	return s.fields.KeepsDefaultBranch()
 }
 
 // slug is owner/name as the run addresses the repository.

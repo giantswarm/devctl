@@ -54,7 +54,7 @@ For detailed guidelines and examples, always refer to: @https://github.com/giant
 <!--
 DO NOT EDIT. Generated with devctl.
 This file is maintained at:
-https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/llm/internal/file/base_llm_rules.mdc.template
+https://github.com/giantswarm/devctl/tree/main
 Manual changes will be overwritten.
 -->
 
@@ -63,7 +63,7 @@ Manual changes will be overwritten.
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/add_customer_board_automation.yaml.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 
 name: Add issue to general customer board
@@ -85,7 +85,7 @@ jobs:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/create_release.yaml.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 name: Create Release
 
@@ -116,7 +116,7 @@ jobs:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/create_release_pr.yaml.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 name: Create Release PR
 on:
@@ -176,7 +176,7 @@ jobs:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/gitleaks.yaml.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 name: gitleaks
 
@@ -197,7 +197,7 @@ jobs:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/semantic_pull_request.yaml.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 name: semantic-pull-request
 
@@ -244,7 +244,7 @@ jobs:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/validate_changelog.yaml.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 name: Validate changelog
 
@@ -253,6 +253,8 @@ on:
     types: [opened, synchronize, reopened]
     paths:
       - 'CHANGELOG.md'
+      - '.github/workflows/zz_generated.auto_release.yaml'
+      - 'cliff.toml'
 
 permissions: {}
 
@@ -262,6 +264,32 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+
+  # This repository's declaration in giantswarm/github says the legacy release
+  # workflow, so the next align-files run deletes the Auto Release files again.
+  release-workflow-declaration:
+    name: Release workflow matches the declaration
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/workflows
+      - name: Refuse Auto Release files under a legacy declaration
+        run: |
+          found=""
+          for f in .github/workflows/zz_generated.auto_release.yaml cliff.toml; do
+            if [ -e "$f" ]; then
+              found="$found $f"
+            fi
+          done
+          if [ -n "$found" ]; then
+            echo "::error::This repository is declared on the legacy release workflow, so align-files deletes${found} again. Auto Release is enabled in the repository's entry in giantswarm/github: set gen.ci.releaseWorkflow: auto-release there and let align-files generate the files, instead of adding them in this pull request."
+            exit 1
+          fi
 
 --- .gitignore
 # Editor and OS files
@@ -520,7 +548,7 @@ By making a contribution to this project, I certify that:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/makefile/internal/file/Makefile.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 
 include Makefile.*.mk

@@ -80,7 +80,70 @@ workflows:
 # workflow in .circleci/config.yml merges into this file at pipeline runtime.
 version: 2.1
 orbs:
-  architect: giantswarm/architect@10.13.6
+  architect: giantswarm/architect@10.14.0
+
+commands:
+  # Pre-steps of the chart-test jobs: pull the images run-tests-with-ats starts
+  # (app-test-suite, the kind node) before the orb does, so `docker run` and
+  # `kind create cluster` find them locally. The pull is logged in with the
+  # registry's credentials from the architect context: ACR throttles all
+  # anonymous pulls of a registry together as one identity, an authenticated
+  # pull has its own budget. A transient `toomanyrequests` (or any failed pull)
+  # is retried with backoff; ACR's Retry-After counts down to the end of its
+  # throttling period, at most about a minute, which the longer delays cover.
+  pull-chart-test-images:
+    parameters:
+      registry:
+        type: string
+      images:
+        description: Images to pull, space-separated.
+        type: string
+    steps:
+    - run:
+        name: Pull chart-test images (logged in, with retry)
+        environment:
+          PULL_REGISTRY: << parameters.registry >>
+          PULL_IMAGES: << parameters.images >>
+        command: |
+          delays="15 30 60 60 60"
+          retry() {
+            for delay in $delays ""; do
+              if "$@"; then return 0; fi
+              [ -n "$delay" ] || return 1
+              echo "Attempt failed, retrying in ${delay}s: $*"
+              sleep "$delay"
+            done
+          }
+
+          # Same input as architect/image-login-to-registries: one registry per
+          # line, "visibility registry username_envvar password_envvar push_dev".
+          # No xtrace: the loop resolves the password.
+          set +x
+          username_val=""
+          password_val=""
+          while read -r _ reg username password _; do
+            [ "$reg" = "$PULL_REGISTRY" ] && [ -n "$username" ] && [ -n "$password" ] || continue
+            case "$username$password" in *[!a-zA-Z0-9_]*) echo "Invalid credential variable name for $reg" >&2; exit 1 ;; esac
+            eval "username_val=\${$username:-}"
+            eval "password_val=\${$password:-}"
+          done \<<EOF
+          $(printf '%s' "${REGISTRIES_DATA_BASE64:-}" | base64 -d)
+          EOF
+          login() {
+            printf '%s' "$password_val" | docker login "$PULL_REGISTRY" --username "$username_val" --password-stdin
+          }
+          if [ -z "$username_val" ] || [ -z "$password_val" ]; then
+            echo "No $PULL_REGISTRY credentials in the job's context: pulling anonymously."
+          elif ! retry login; then
+            echo "Login to $PULL_REGISTRY failed: pulling anonymously."
+          fi
+
+          for image in $PULL_IMAGES; do
+            if ! retry docker pull "$image"; then
+              echo "Pulling $image failed after every retry." >&2
+              exit 1
+            fi
+          done
 
 workflows:
   build:
@@ -121,6 +184,8 @@ workflows:
     # patches, extra nodes) from .ats/kind-config.yaml when the repo carries one
     # -- repo-owned, like .ats/main.yaml -- and its resource class from
     # gen.ci.atsResourceClass in giantswarm/github (the orb default is medium).
+    # Its pre-steps pull the images it starts logged in and with retry (see
+    # pull-chart-test-images above).
     - architect/run-tests-with-ats:
         name: execute-chart-tests
         context: architect
@@ -128,6 +193,11 @@ workflows:
         # app-test-suite 1.x provisions no cluster: the job creates the kind
         # cluster and runs the pinned image against its kubeconfig.
         create_kind_cluster: true
+        kind_node_image: "gsoci.azurecr.io/giantswarm/kind-node:v1.37.0"
+        pre-steps:
+        - pull-chart-test-images:
+            registry: gsoci.azurecr.io
+            images: "gsoci.azurecr.io/giantswarm/app-test-suite:1.0.3 gsoci.azurecr.io/giantswarm/kind-node:v1.37.0"
         requires:
         - build-chart
         filters:
@@ -213,7 +283,7 @@ For detailed guidelines and examples, always refer to: @https://github.com/giant
 <!--
 DO NOT EDIT. Generated with devctl.
 This file is maintained at:
-https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/llm/internal/file/base_llm_rules.mdc.template
+https://github.com/giantswarm/devctl/tree/main
 Manual changes will be overwritten.
 -->
 
@@ -387,7 +457,7 @@ jobs:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/auto_release.yaml.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 # yamllint disable rule:truthy
 # Push-based release tagger + release-page publisher.
@@ -397,17 +467,19 @@ jobs:
 # exact pattern). Inspects conventional commits reachable from the pushed
 # ref since the latest reachable v*.*.* tag via git-cliff, and:
 #
-#   1. creates the next vX.Y.Z-rc.N git tag if a bump is warranted: every
-#      releasable push cuts a release candidate
+#   1. creates the next git tag if a bump is warranted: a minor or major
+#      bump cuts the next vX.Y.0-rc.N release candidate, a patch of the last
+#      stable release (only fixes and chores since it) is tagged vX.Y.Z
+#      stable directly, so there is never a patch candidate
 #   2. creates the matching GitHub Release with notes generated by git-cliff,
-#      flagged as a pre-release
+#      a candidate flagged as a pre-release
 #   3. checks that CircleCI picked the tag up and triggers the pipeline if
 #      the webhook got lost (repos with a .circleci/config.yml only)
 #
-# A stable vX.Y.Z is cut only by running this workflow by hand with
-# `release-type: stable`, which promotes the latest release candidate: the
-# stable tag lands on that candidate's commit, so what ships is what was
-# tested.
+# A minor or major vX.Y.0 is cut only by running this workflow by hand with
+# `release-type: stable`, which promotes the latest release candidate, or
+# the one `version` names: the stable tag lands on that candidate's commit,
+# so what ships is what was tested.
 #
 # The tag push then triggers downstream publishing (for chart/service/CLI
 # repos, this is the CircleCI architect pipeline firing on the same /^v.*/
@@ -432,7 +504,8 @@ on:
       - 'release-v[0-9]+.[0-9]+.x'
   # `auto` applies the same rule as a push, which is what a re-run wants.
   # `stable` promotes the latest release candidate since the last stable
-  # release, and fails when there is none.
+  # release, and fails when there is none; `version` names an older one of
+  # those candidates to promote instead.
   workflow_dispatch:
     inputs:
       release-type:
@@ -440,6 +513,11 @@ on:
         type: choice
         options: [auto, stable]
         default: auto
+      version:
+        description: 'With stable: the release candidate to promote, vX.Y.Z-rc.N; empty promotes the latest'
+        type: string
+        required: false
+        default: ''
 
 permissions: {}
 
@@ -492,6 +570,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
+          PROMOTE_VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
           # The same baseline as the decide step below.
@@ -501,18 +580,31 @@ jobs:
           # contains. `sort -V` orders rc.10 after rc.9 and a moved target
           # (v2.0.0-rc.1 after v1.3.0-rc.2) after the one it replaced.
           # `|| true`: grep exits 1 when there is no candidate at all.
-          rc=$(git tag --list --merged HEAD ${last:+--no-merged "$last"} 'v*.*.*-rc.*' \
-            | { grep -E -- '-rc\.[0-9]+$' || true; } | sort -V | tail -1)
-          if [ -z "$rc" ]; then
-            echo "::error title=No release candidate to promote::no release candidate since ${last:-inception} on ${GITHUB_REF_NAME}. A releasable push cuts one; promote it once it is good."
+          candidates=$(git tag --list --merged HEAD ${last:+--no-merged "$last"} 'v*.*.*-rc.*' \
+            | { grep -E -- '-rc\.[0-9]+$' || true; } | sort -V)
+          if [ -z "$candidates" ]; then
+            echo "::error title=No release candidate to promote::no release candidate since ${last:-inception} on ${GITHUB_REF_NAME}. A minor or major push cuts one; a patch is tagged stable on its push and has none."
             exit 1
+          fi
+          rc=$(tail -n 1 <<<"$candidates")
+          # A named candidate (`devctl release promote --version`) is promoted
+          # instead of the latest, when it is one of the same candidates: one
+          # that is built while a later one still builds, or the one proven.
+          if [ -n "${PROMOTE_VERSION:-}" ]; then
+            if ! grep -qxF -- "$PROMOTE_VERSION" <<<"$candidates"; then
+              echo "::error title=Not a release candidate to promote::${PROMOTE_VERSION} is not a release candidate since ${last:-inception} on ${GITHUB_REF_NAME}; the candidates are $(paste -sd ' ' <<<"$candidates")."
+              exit 1
+            fi
+            rc=$PROMOTE_VERSION
           fi
 
           # The tag alone does not say the candidate was built. Its GitHub
           # pre-release is created with the tag, and the pipelines that build
           # and publish it report on its commit: a failed or still running one
           # refuses the promotion. A commit no pipeline reports on has nothing
-          # to wait for.
+          # to wait for. A failed CircleCI job the release does not require
+          # (advisory_jobs, the rule `devctl release wait` and `devctl release
+          # promote` apply) is a warning, not a refusal.
           if ! prerelease=$(gh release view "$rc" --json isPrerelease --jq .isPrerelease 2>/dev/null); then
             echo "::error title=Candidate not released::${rc} has no GitHub release; the run that cut it did not finish. Cut a new candidate."
             exit 1
@@ -523,13 +615,14 @@ jobs:
           fi
           # The API now and then answers with an empty or truncated body or a
           # 5xx: the read is retried with backoff, and only a failure on every
-          # try refuses the promotion.
+          # try refuses the promotion. The answer's first line is the number
+          # of contexts, every further one a context's latest
+          # "<state> <context>".
           request="repos/${GH_REPO}/commits/${rc}/status"
           tries=4
           for try in $(seq 1 "$tries"); do
-            if status=$(gh api "$request" --jq '"\(.state) \(.total_count)"') \
-              && read -r state count <<<"$status" \
-              && [ -n "$state" ] && [[ "$count" =~ ^[0-9]+$ ]]; then
+            if statuses=$(gh api -X GET "$request" -F per_page=100 --jq '.total_count, (.statuses[] | "\(.state) \(.context)")') \
+              && count=$(head -n 1 <<<"$statuses") && [[ "$count" =~ ^[0-9]+$ ]]; then
               break
             fi
             if [ "$try" = "$tries" ]; then
@@ -539,10 +632,35 @@ jobs:
             echo "GET ${request} failed (try ${try} of ${tries}), retrying in $((2 ** try))s"
             sleep $((2 ** try))
           done
-          if [ "$count" != 0 ] && [ "$state" != success ]; then
-            echo "::error title=Candidate not built::the commit statuses of ${rc} are ${state}: https://github.com/${GH_REPO}/commit/$(git rev-parse "${rc}^{commit}"). Promote it once its pipelines passed."
+          advisory_jobs=" sync-china-registry "
+          failed=() running=() advisory=()
+          while read -r state context; do
+            case "$state" in
+              success) ;;
+              failure | error)
+                if [[ "$context" == "ci/circleci: "* && "$advisory_jobs" == *" ${context#ci/circleci: } "* ]]; then
+                  advisory+=("$context")
+                else
+                  failed+=("${context} (${state})")
+                fi
+                ;;
+              *) running+=("$context") ;;
+            esac
+          done < <(tail -n +2 <<<"$statuses")
+          commit="https://github.com/${GH_REPO}/commit/$(git rev-parse "${rc}^{commit}")"
+          if [ "${#failed[@]}" != 0 ]; then
+            printf -v list '%s, ' "${failed[@]}"
+            echo "::error title=Candidate not built::the commit statuses of ${rc} are failure: ${list%, } on ${commit}. Promote it once its pipelines passed."
             exit 1
           fi
+          if [ "${#running[@]}" != 0 ]; then
+            printf -v list '%s, ' "${running[@]}"
+            echo "::error title=Candidate not built::the commit statuses of ${rc} are pending: ${list%, } on ${commit}. Promote it once its pipelines passed."
+            exit 1
+          fi
+          for context in "${advisory[@]}"; do
+            echo "::warning title=Advisory status failed::the commit status ${context} of ${rc} failed; the release does not require it, so the candidate is judged without it."
+          done
 
           after=$(git log --format='%h %s' "${rc}..HEAD")
           git checkout -q --detach "$rc"
@@ -619,9 +737,8 @@ jobs:
 
           unconventional=0
           while IFS= read -r -d '' subject; do
-            # A leftover -rc type is still conventional: cliff.toml normalises
-            # it to its plain type.
-            if ! printf '%s' "$subject" | grep -qE '^[a-z]+(-rc)?(\([^)]*\))?!?: '; then
+            # git-cliff takes letters, digits, `_` and `-` as a type.
+            if ! printf '%s' "$subject" | grep -qE '^[A-Za-z0-9_-]+(\([^)]*\))?!?: '; then
               # git-cliff drops a subject it cannot parse as conventional
               # (`filter_unconventional`): the commit neither bumps the
               # version nor appears in any release's notes, silently. The
@@ -651,6 +768,16 @@ jobs:
             echo "tag=" >> "$GITHUB_OUTPUT"
             echo "prerelease=" >> "$GITHUB_OUTPUT"
             exit 0
+          fi
+
+          # A patch of the last stable release (`NEXT` keeps its major and
+          # minor: only fixes and chores since it) takes the fast path and is
+          # tagged stable on this push: there is no patch candidate. A fix
+          # during a minor or major cycle moves no target and rides that
+          # cycle's next candidate.
+          if [ "$is_rc" = true ] && [ -n "$last" ] && [ "${NEXT%.*}" = "${last%.*}" ]; then
+            is_rc=false
+            echo "${NEXT} is a patch of ${last}: tagged stable, no candidate"
           fi
 
           if [ "$is_rc" = true ]; then
@@ -696,6 +823,8 @@ jobs:
               fi
             fi
             tag="${NEXT}-rc.$(( ${n:-0} + 1 ))"
+          elif [ "$WANT" != stable ]; then
+            tag="${NEXT}"
           else
             # git-cliff ran on the promoted candidate, so it has to land on
             # that candidate's own version. A mismatch means the candidate's
@@ -711,28 +840,64 @@ jobs:
           echo "prerelease=${is_rc}" >> "$GITHUB_OUTPUT"
           echo "target=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
+      # One commit releases one version: the release tags of two versions on
+      # one commit give two answers to "which version is this", and every
+      # reader (a release wait, a rollout, a person) picks its own. A
+      # candidate and its promoted stable share a commit by design, and an
+      # upstream pre-release outside the release pattern names no release of
+      # this repository. The tags are read from the remote, not from this
+      # checkout: the fork baseline step may move one here, and a run on
+      # another branch may have tagged the commit since the checkout.
+      - name: Refuse another version's tag on the commit
+        id: one-version
+        if: steps.decide.outputs.tag != ''
+        env:
+          TAG: ${{ steps.decide.outputs.tag }}
+          TARGET: ${{ steps.decide.outputs.target }}
+        run: |
+          set -euo pipefail
+          release='^v?([0-9]+\.[0-9]+\.[0-9]+)(-rc\.[0-9]+)?$'
+          [[ "$TAG" =~ $release ]]
+          version=${BASH_REMATCH[1]}
+          # An annotated tag is listed twice, its peeled commit under ^{}:
+          # only that line matches the commit.
+          conflicts=()
+          while read -r sha ref; do
+            tag=${ref#refs/tags/}
+            tag=${tag%'^{}'}
+            if [ "$sha" = "$TARGET" ] && [[ "$tag" =~ $release ]] && [ "${BASH_REMATCH[1]}" != "$version" ]; then
+              conflicts+=("$tag")
+            fi
+          done < <(git ls-remote --tags origin)
+          if [ "${#conflicts[@]}" -gt 0 ]; then
+            echo "::error title=Another version on the commit::${TAG} would land on ${TARGET:0:8}, which already carries the release tag of another version: ${conflicts[*]}. One commit releases one version: no tag and no release are cut. Merge a change to cut the next candidate on a commit of its own."
+            exit 1
+          fi
+          echo "${TARGET:0:8} carries no other version's release tag: ${TAG} is its only version"
+
       # A stable release can carry rules only the repository knows (a fork
       # line's pins, its release ledger). Checked in the tag's own pipeline
       # they come too late: the tag and the GitHub release exist by then, and
       # a refusal leaves a release that looks published with nothing built.
       # The repository-owned `.github/release-gate.custom.sh`, when the
-      # promoted candidate carries it, runs here on that candidate's checkout
-      # with the version about to be tagged; a non-zero exit cuts no tag and
-      # no release. A repository without the script has no gate.
+      # released commit carries it (the promoted candidate, or the push's head
+      # for a patch), runs here on its checkout with the version about to be
+      # tagged; a non-zero exit cuts no tag and no release. A repository
+      # without the script has no gate.
       - name: Run the repository's stable gate
         id: gate
-        if: inputs.release-type == 'stable' && steps.decide.outputs.tag != ''
+        if: steps.decide.outputs.prerelease == 'false' && steps.decide.outputs.tag != ''
         env:
           TAG: ${{ steps.decide.outputs.tag }}
         run: |
           set -euo pipefail
           gate=.github/release-gate.custom.sh
           if [ ! -f "$gate" ]; then
-            echo "no ${gate} on the candidate: no repository gate for ${TAG}"
+            echo "no ${gate} on the released commit: no repository gate for ${TAG}"
             exit 0
           fi
           if ! bash "$gate" "$TAG"; then
-            echo "::error title=Stable gate refused::${gate} refused ${TAG}: no tag and no release are cut. Fix the cause on the branch and promote its next candidate."
+            echo "::error title=Stable gate refused::${gate} refused ${TAG}: no tag and no release are cut. Fix the cause on the branch and release it again."
             exit 1
           fi
           echo "${gate} passed ${TAG}"
@@ -927,7 +1092,7 @@ jobs:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/chart_tests.yaml.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 
 name: chart-tests
@@ -952,7 +1117,7 @@ jobs:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/check_readme_links.yaml.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 
 name: check-readme-links
@@ -996,7 +1161,7 @@ jobs:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/check_values_schema.yaml.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 
 name: check-values-schema
@@ -1021,7 +1186,7 @@ jobs:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/gitleaks.yaml.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 name: gitleaks
 
@@ -1042,7 +1207,7 @@ jobs:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/precommit/internal/file/pre-commit-action.yaml.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 name: pre-commit
 
@@ -1060,6 +1225,7 @@ env:
 jobs:
   pre-commit:
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - name: Check out code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -1083,7 +1249,7 @@ jobs:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/run_ossf_scorecard.yaml.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 
 # This workflow uses actions that are not certified by GitHub. They are provided
@@ -1126,7 +1292,7 @@ jobs:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/semantic_pull_request.yaml.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 name: semantic-pull-request
 
@@ -1173,7 +1339,7 @@ jobs:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/update_chart.yaml.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 
 name: Create Update Chart PR
@@ -1214,7 +1380,7 @@ vendor
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/precommit/internal/file/pre-commit-config.yaml.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 minimum_pre_commit_version: '2.17'
 default_install_hook_types: [pre-commit, commit-msg]
@@ -1624,7 +1790,7 @@ By making a contribution to this project, I certify that:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/makefile/internal/file/Makefile.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 
 include Makefile.*.mk
@@ -1651,25 +1817,32 @@ help: ## Display this help.
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/makefile/internal/file/Makefile.gen.app.mk.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 
 ##@ App
 
 # yq, helm-docs and ct run from PATH when installed (yq only as mikefarah's yq v4), otherwise
-# from their container images.
+# from their container images; ct's container gets a TTY only when stdin is one.
 YQ = $(if $(shell yq --version 2>/dev/null | grep -q mikefarah && echo yq),yq,docker run --rm -u $$(id -u) -v $${PWD}:/workdir mikefarah/yq:4.29.2)
 HELM_DOCS = $(if $(shell command -v helm-docs 2>/dev/null),helm-docs,docker run --rm -u $$(id -u) -v $${PWD}:/helm-docs jnorwood/helm-docs:v1.14.2) --sort-values-order=file
-CT = $(if $(shell command -v ct 2>/dev/null),ct,docker run -it --rm -v /tmp/$(APPLICATION)-test:/wd --workdir=/wd --name ct $(IMAGE) ct)
+CT = $(if $(shell command -v ct 2>/dev/null),ct,docker run $$(test -t 0 && echo -t) --rm -v /tmp/$(APPLICATION)-test:/wd --workdir=/wd --name ct $(IMAGE) ct)
 
 # APPLICATION may be set by a later included makefile (Makefile.gen.go.mk derives it from the
 # Go module, and Makefile.*.mk are included in name order), so nothing here may read it while
 # make parses this file: DEPS is recursively expanded (=) and the guard is a recipe.
 DEPS = $(shell find helm/$(APPLICATION)/charts -maxdepth 2 -name "Chart.yaml" -printf "%h\n" 2>/dev/null)
 
+# A chart-only repository sets APPLICATION nowhere: it defaults to the one chart under helm/,
+# and stays empty when there are several or none, so check-env stops. `?=` keeps a value set
+# earlier (Makefile.custom.mk, the environment, the command line), and a later assignment
+# (Makefile.gen.go.mk's `:=`, Makefile.zzz.custom.mk) replaces the default.
+HELM_CHARTS = $(patsubst helm/%/Chart.yaml,%,$(wildcard helm/*/Chart.yaml))
+APPLICATION ?= $(if $(word 2,$(HELM_CHARTS)),,$(HELM_CHARTS))
+
 .PHONY: lint-chart check-env update-chart helm-docs update-deps
 
-lint-chart: IMAGE := giantswarm/helm-chart-testing:v3.0.0-rc.1
+lint-chart: IMAGE := gsoci.azurecr.io/giantswarm/helm-chart-testing:v3.15.0
 lint-chart: check-env ## Runs ct against the default chart.
 	@echo "====> $@"
 	rm -rf /tmp/$(APPLICATION)-test
@@ -1697,12 +1870,14 @@ helm-docs: check-env ## Update $(APPLICATION) README.
 	$(HELM_DOCS) -c helm/$(APPLICATION) -g helm/$(APPLICATION)
 
 check-env:
-	@test -n "$(APPLICATION)" || { echo "APPLICATION is not defined: set it in Makefile.custom.mk or run make APPLICATION=<chart>" >&2; exit 1; }
+	@test -n "$(APPLICATION)" || { echo "APPLICATION is not defined and helm/ does not hold exactly one chart (found: $(or $(HELM_CHARTS),none)): set it in Makefile.custom.mk or run make APPLICATION=<chart>" >&2; exit 1; }
 
 ##@ Chart tests
 
 # renovate: datasource=github-releases depName=helm-unittest/helm-unittest
 HELM_UNITTEST_VERSION ?= v1.2.1
+HELM_UNITTEST_ATTEMPTS ?= 3
+HELM_UNITTEST_RETRY_DELAY ?= 5
 
 .PHONY: helm-test install-helm-unittest
 
@@ -1746,6 +1921,11 @@ helm-test: install-helm-unittest ## Run the chart unit tests (helm-unittest).
 # a CI run are not the same run -- which is the whole point of pinning it here.
 # helm v4 verifies a plugin's source by default and refuses this one, so `--verify=false`
 # is passed whenever `helm plugin install` knows the flag; helm v3 has none and installs as before.
+# The plugin's install hook downloads its binary with curl and no retry, so a transient
+# network error (a connection reset) fails it; the install runs up to
+# HELM_UNITTEST_ATTEMPTS times, HELM_UNITTEST_RETRY_DELAY seconds apart. A failed attempt
+# can leave a half-installed plugin behind that the next install refuses, so it is
+# uninstalled before each retry.
 install-helm-unittest:
 	@have=$$(helm plugin list 2>/dev/null | awk '$$1 == "unittest" {print $$2}'); \
 	want=$$(echo "$(HELM_UNITTEST_VERSION)" | sed 's/^v//'); \
@@ -1753,7 +1933,14 @@ install-helm-unittest:
 		[ -z "$$have" ] || helm plugin uninstall unittest >/dev/null 2>&1 || true; \
 		verify=""; \
 		helm plugin install --help 2>&1 | grep -q -e '--verify' && verify="--verify=false"; \
-		helm plugin install $$verify https://github.com/helm-unittest/helm-unittest --version $(HELM_UNITTEST_VERSION); \
+		attempt=1; \
+		until helm plugin install $$verify https://github.com/helm-unittest/helm-unittest --version $(HELM_UNITTEST_VERSION); do \
+			[ "$$attempt" -lt "$(HELM_UNITTEST_ATTEMPTS)" ] || exit 1; \
+			echo "helm-unittest install failed (attempt $$attempt of $(HELM_UNITTEST_ATTEMPTS)), retrying in $(HELM_UNITTEST_RETRY_DELAY)s" >&2; \
+			helm plugin uninstall unittest >/dev/null 2>&1 || true; \
+			sleep $(HELM_UNITTEST_RETRY_DELAY); \
+			attempt=$$((attempt + 1)); \
+		done; \
 	fi
 
 # Chart tests join `make test`, the interface CI calls (make-target-ci-interface ADR,
@@ -1860,7 +2047,7 @@ Please visit <https://www.giantswarm.io/responsible-disclosure> for information 
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/cliff.toml.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 # git-cliff config for the push-based auto-release flow.
 #
@@ -1942,13 +2129,8 @@ tag_pattern = '^v[0-9]+\.[0-9]+\.[0-9]+$'
 # commit text -- git-cliff's default regex mode is single-line). This
 # anchoring keeps `(#N)` references that appear inside commit bodies
 # untouched.
-#
-# A feat-rc/fix-rc subject is released as its plain type:
-# `features_always_bump_minor` keys off the type being exactly "feat", and an
-# un-normalised feat-rc would bump patch instead of minor.
 commit_preprocessors = [
   { pattern = '(?m) \(#\d+\)$', replace = "" },
-  { pattern = '^(feat|fix)-rc', replace = "${1}" },
 ]
 
 # Map commit types to changelog groups (Keep-a-Changelog convention):
@@ -2028,7 +2210,7 @@ footer = ""
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/precommit/internal/file/schema.yaml.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 
 # The generated app-platform file goes first so keys the chart defines itself
@@ -2255,7 +2437,7 @@ registry:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/precommit/internal/file/app-platform-values.yaml.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 
 # Values the Giant Swarm app platform injects into every App deployed to a

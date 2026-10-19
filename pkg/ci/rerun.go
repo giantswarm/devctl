@@ -116,7 +116,7 @@ func Rerun(ctx context.Context, client *circleciclient.Client, org, repo, workfl
 			return writeRefused(err, "the cancel of "+detail.Name)
 		}
 		result.Canceled = true
-		status, err := awaitCanceled(ctx, client, workflowID, clock)
+		status, err := AwaitCanceled(ctx, client, workflowID, clock)
 		if err != nil {
 			return err
 		}
@@ -153,9 +153,9 @@ func runsOfName(runs []circleciclient.Workflow, name string) (newest *circlecicl
 	return newest, count
 }
 
-// awaitCanceled reads the workflow until it no longer runs and returns its
+// AwaitCanceled reads the workflow until it no longer runs and returns its
 // status; exit 2 when it still runs after CancelTimeout.
-func awaitCanceled(ctx context.Context, client *circleciclient.Client, workflowID string, clock agentcli.Clock) (string, error) {
+func AwaitCanceled(ctx context.Context, client *circleciclient.Client, workflowID string, clock agentcli.Clock) (string, error) {
 	ctx, cancel := clock.Timeout(ctx, CancelTimeout)
 	defer cancel()
 	status := ""

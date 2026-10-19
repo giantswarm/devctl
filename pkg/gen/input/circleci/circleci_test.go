@@ -1750,7 +1750,7 @@ func Test_SkipATSOmitsChartTests(t *testing.T) {
 		}
 	}
 	// The ATS test jobs are gone.
-	for _, unwanted := range []string{jobRunTests, "execute-chart-tests", "execute-chart-tests-release"} {
+	for _, unwanted := range []string{jobRunTests, "execute-chart-tests", "execute-chart-tests-release", "pull-chart-test-images"} {
 		if contains(got, unwanted) {
 			t.Errorf("SkipATS config should not contain %q:\n%s", unwanted, got)
 		}
@@ -1936,6 +1936,73 @@ func Test_NodeResourceClass(t *testing.T) {
 	}
 	if contains(override, "resource_class: "+DefaultNodeResourceClass) {
 		t.Errorf("default resource_class leaked through despite override:\n%s", override)
+	}
+}
+
+// Test_NodeWorkerCounts verifies the Node job exports worker counts sized from
+// its resource class's memory, so lint and jest stay inside the class instead
+// of sizing themselves from the host's or the cgroup's CPU count; a class of
+// unknown memory exports nothing and leaves the tools to their detection.
+func Test_NodeWorkerCounts(t *testing.T) {
+	cases := []struct {
+		class      string
+		jest, lint string
+	}{
+		{class: "", jest: "2", lint: "1"}, // the default, large
+		{class: "medium", jest: "1", lint: "1"},
+		{class: "xlarge", jest: "4", lint: "2"},
+		{class: "2xlarge", jest: "8", lint: "4"},
+		{class: "arm.large", jest: "4", lint: "2"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.class, func(t *testing.T) {
+			got := render(t, Config{
+				RepoName:       repoK8sTypes,
+				Language:       gen.LanguageNode,
+				PackageManager: PackageManagerYarn,
+				ResourceClass:  tc.class,
+			})
+			want := "    environment:\n" +
+				"      BACKSTAGE_CLI_CONCURRENCY: \"" + tc.lint + "\"\n" +
+				"      JEST_MAX_WORKERS: \"" + tc.jest + "\"\n"
+			if !contains(got, want) {
+				t.Errorf("Node job should export\n%s\ngot:\n%s", want, got)
+			}
+		})
+	}
+
+	unknown := render(t, Config{
+		RepoName:       repoK8sTypes,
+		Language:       gen.LanguageNode,
+		PackageManager: PackageManagerYarn,
+		ResourceClass:  "giantswarm/self-hosted",
+	})
+	if contains(unknown, "JEST_MAX_WORKERS") || contains(unknown, "BACKSTAGE_CLI_CONCURRENCY") {
+		t.Errorf("a class of unknown memory should export no worker counts:\n%s", unknown)
+	}
+}
+
+// Test_CustomMergeNodeWorkerCounts verifies a repo lowers the generated worker
+// counts under the job's environment in custom.yml (beside a service
+// container, for one): its values win the deep merge, and the generated
+// variable it does not set stays.
+func Test_CustomMergeNodeWorkerCounts(t *testing.T) {
+	workflows, err := os.ReadFile(goldenNodeYarnBerryPath) // #nosec G304 -- fixed in-package testdata path
+	if err != nil {
+		t.Fatalf("read golden: %v", err)
+	}
+
+	merged := yqMerge(t, string(workflows), `jobs:
+  node-build:
+    environment:
+      JEST_MAX_WORKERS: "1"
+`)
+
+	if got := yqQuery(t, merged, ".jobs.node-build.environment.JEST_MAX_WORKERS"); got != "1" {
+		t.Errorf("custom JEST_MAX_WORKERS should win the merge, got %q", got)
+	}
+	if got := yqQuery(t, merged, ".jobs.node-build.environment.BACKSTAGE_CLI_CONCURRENCY"); got != "1" {
+		t.Errorf("generated BACKSTAGE_CLI_CONCURRENCY should survive the merge, got %q", got)
 	}
 }
 
@@ -2367,8 +2434,13 @@ func Test_ATSVersionLegacy(t *testing.T) {
 		if n := strings.Count(got, `app-test-suite_container_tag: "`+tag+`"`); n != 1 {
 			t.Errorf("%s: expected the ATS tag on the chart-test job, found %d:\n%s", tag, n, got)
 		}
-		if contains(got, "create_kind_cluster") {
-			t.Errorf("%s: a 0.x tag must not turn on create_kind_cluster:\n%s", tag, got)
+		if contains(got, "create_kind_cluster") || contains(got, "kind_node_image") {
+			t.Errorf("%s: a 0.x tag must not turn on create_kind_cluster or pin a kind node:\n%s", tag, got)
+		}
+		// dats.sh still starts the app-test-suite image: it is pulled ahead, the
+		// kind node is not (app-test-suite 0.x brings its own).
+		if want := `images: "gsoci.azurecr.io/giantswarm/app-test-suite:` + tag + `"`; !contains(got, want) {
+			t.Errorf("%s: expected the pre-steps to pull only app-test-suite (%s):\n%s", tag, want, got)
 		}
 		if inputs := newCircleCI(t, c).ATSInputs(); len(inputs) != 1 || inputs[0].Path != "tests/ats/Pipfile" {
 			t.Errorf("%s: expected the Pipfile as the only ATS input, got %+v", tag, inputs)
@@ -2782,5 +2854,46 @@ func Test_TemplateChartRejects(t *testing.T) {
 	service.Team = ""
 	if got, want := render(t, service), render(t, Config{RepoName: repoTemplateApp, Language: gen.LanguageGeneric, Flavours: gen.FlavourSlice{gen.FlavourApp}}); got != want {
 		t.Errorf("componentType service must render the plain chart pipeline")
+	}
+}
+
+// Test_ChartTestsPullImagesWithRetry verifies the chart-test jobs survive a
+// transient registry `toomanyrequests`: both run-tests-with-ats jobs pre-pull
+// the images they start -- app-test-suite and the kind node they create the
+// cluster from -- through the pull-chart-test-images command, which logs in to
+// the registry with the architect context's credentials and retries each pull
+// with bounded backoff. The kind node the job uses is the one pulled.
+func Test_ChartTestsPullImagesWithRetry(t *testing.T) {
+	got := render(t, Config{
+		RepoName:      repoMCPKubernetes,
+		Language:      gen.LanguageGo,
+		Flavours:      gen.FlavourSlice{gen.FlavourApp},
+		HasDockerfile: true,
+		ATSOnRelease:  true,
+	})
+
+	kindNode := ATSImageRegistry + "/giantswarm/kind-node:" + ATSKindNodeImageVersion
+	images := `images: "` + ATSImageRegistry + "/giantswarm/app-test-suite:" + DefaultATSVersion + " " + kindNode + `"`
+	for want, n := range map[string]int{
+		"  pull-chart-test-images:\n":               1,
+		"        - pull-chart-test-images:\n":       2,
+		"            registry: " + ATSImageRegistry: 2,
+		"            " + images:                     2,
+		`kind_node_image: "` + kindNode + `"`:       2,
+	} {
+		if c := strings.Count(got, want); c != n {
+			t.Errorf("expected %q %d times, found %d:\n%s", want, n, c, got)
+		}
+	}
+	for _, want := range []string{
+		`docker login "$PULL_REGISTRY" --username "$username_val" --password-stdin`,
+		`retry docker pull "$image"`,
+		`delays="15 30 60 60 60"`,
+		// CircleCI interpolates "<<" in config: the heredoc is escaped.
+		"done \\<<EOF",
+	} {
+		if !contains(got, want) {
+			t.Errorf("pull-chart-test-images missing %q:\n%s", want, got)
+		}
 	}
 }

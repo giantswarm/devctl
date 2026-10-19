@@ -141,7 +141,8 @@ const (
 	FindingABSPrerequisite FindingKind = "abs-prerequisite"
 	// FindingDefaultIcon: the chart still carries the default icon.
 	FindingDefaultIcon FindingKind = "default-icon"
-	// FindingRedRelease: the latest release's tag pipeline failed.
+	// FindingRedRelease: the latest release's tag pipeline failed in a job
+	// that leaves something unpublished (UnpublishedJobs).
 	FindingRedRelease FindingKind = "red-release"
 	// FindingMissedTagBuild: the latest release's tag has no pipeline. The
 	// reconciler rebuilds no tag but a creation's first release; the fix is
@@ -159,6 +160,10 @@ const (
 	// scans it — no configuration, or a configuration without a trace of a
 	// run (the Dependency Dashboard issue, a pull request, a commit).
 	FindingRenovateNotScanned FindingKind = "renovate-not-scanned"
+	// FindingRenovateDeclaredOff: the entry declares renovate: false and
+	// the repository carries a Renovate configuration that keeps Renovate
+	// on. The engine deletes no file; the fix names the configuration.
+	FindingRenovateDeclaredOff FindingKind = "renovate-declared-off"
 	// FindingArchivedUndeclared: archived on GitHub without lifecycle:
 	// archived.
 	FindingArchivedUndeclared FindingKind = "archived-undeclared"

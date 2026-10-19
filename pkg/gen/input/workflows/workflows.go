@@ -88,6 +88,10 @@ func (w *Workflows) AutoReleaseLegacyDeletion() input.Input {
 	return file.NewAutoReleaseLegacyDeletionInput(w.params)
 }
 
+func (w *Workflows) ChangelogDeletion() input.Input {
+	return file.NewChangelogDeletionInput(w.params)
+}
+
 func (w *Workflows) CliffToml() input.Input {
 	return file.NewCliffTomlInput(w.params)
 }

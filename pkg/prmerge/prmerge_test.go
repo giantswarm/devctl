@@ -69,6 +69,15 @@ func noFeedback(shas ...string) sequence.Routes {
 	return r
 }
 
+// upToDate is every head of shas compared with main: none behind it.
+func upToDate(shas ...string) sequence.Routes {
+	r := sequence.Routes{}
+	for _, sha := range shas {
+		r["GET /repos/o/r/compare/main..."+sha] = []sequence.Response{{Body: map[string]any{"status": "ahead", "ahead_by": 1, "behind_by": 0}}}
+	}
+	return r
+}
+
 var (
 	merged  = sequence.Response{Body: map[string]any{"sha": "m1", "merged": true, "message": "Pull Request successfully merged"}}
 	deleted = sequence.Response{Status: http.StatusNoContent}
@@ -90,6 +99,7 @@ func routes(pr map[string]any, more ...sequence.Routes) sequence.Routes {
 	}
 	maps.Copy(r, greenHead("abc123"))
 	maps.Copy(r, noFeedback("abc123", "def456"))
+	maps.Copy(r, upToDate("abc123", "def456"))
 	for _, m := range more {
 		maps.Copy(r, m)
 	}
@@ -191,7 +201,8 @@ func Test_Merge_refusalsBeforeTheWait(t *testing.T) {
 		{name: "merged", pr: pull(map[string]any{"state": "closed", "merged": true}), wantCode: 3, wantReason: "is merged", wantVerdict: agentcli.VerdictNotApplicable},
 		{name: "draft", pr: pull(map[string]any{"draft": true}), wantCode: 3, wantReason: "draft", wantVerdict: agentcli.VerdictNotApplicable},
 		{name: "conflicting", pr: pull(map[string]any{"mergeable_state": "dirty"}), wantCode: 3, wantReason: "conflicts with main", wantVerdict: agentcli.VerdictNotApplicable},
-		{name: "behind without --update-branch", pr: pull(map[string]any{"mergeable_state": "behind"}), wantCode: 3, wantReason: "behind main", wantVerdict: agentcli.VerdictNotApplicable},
+		{name: "behind without --update-branch", pr: pull(map[string]any{"mergeable_state": "behind"}), wantCode: 3, wantReason: "behind main, which requires branches to be up to date; --update-branch updates it from main", wantVerdict: agentcli.VerdictNotApplicable},
+		{name: "behind a base that is not strict, without --update-branch", pr: pull(map[string]any{"mergeable_state": "blocked"}), wantCode: 3, wantReason: "the pull request is 2 commit(s) behind main: its checks ran against an older main than the one the merge lands it on; --update-branch updates it from main and waits for its checks again", wantVerdict: agentcli.VerdictNotApplicable},
 		{name: "another human", pr: pull(map[string]any{"user": map[string]any{"login": "alice", "type": "User"}}), wantCode: 5, wantReason: "the pull request was opened by alice, not by someone: devctl pr merge merges the caller's own pull requests and those of bots and GitHub Apps (the Bot user type or a [bot] login) and of the automation accounts architectbot, taylorbot", wantVerdict: agentcli.VerdictRefused},
 		{name: "opted out", pr: pull(nil), configure: func(c *Config) {
 			c.Policy = func(context.Context, string, string) (Verdict, error) {
@@ -212,7 +223,11 @@ func Test_Merge_refusalsBeforeTheWait(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			h := newHarness(t, routes(tc.pr, sequence.Routes{"GET /user": {{Body: map[string]any{"login": "someone"}}}}), tc.configure)
+			r := routes(tc.pr, sequence.Routes{"GET /user": {{Body: map[string]any{"login": "someone"}}}})
+			if tc.pr["mergeable_state"] == "blocked" {
+				r["GET /repos/o/r/compare/main...abc123"] = []sequence.Response{{Body: map[string]any{"status": "diverged", "ahead_by": 1, "behind_by": 2}}}
+			}
+			h := newHarness(t, r, tc.configure)
 			result, err := h.merge(t)
 			if code := exitCode(err); code != tc.wantCode {
 				t.Fatalf("want exit %d, got %d: %v", tc.wantCode, code, err)
@@ -481,13 +496,55 @@ func Test_Merge_paths(t *testing.T) {
 			}),
 			configure: func(c *Config) { c.UpdateBranch = true },
 			want: want{method: "squash", mergedBy: "someone", mergeSHA: "m1", deleted: true, headSHA: "abc123",
-				requested: map[string]int{"GET /repos/o/r/compare/main...abc123": 1, "PUT /repos/o/r/pulls/42/update-branch": 0, "PUT /repos/o/r/pulls/42/merge": 1}},
+				requested: map[string]int{"GET /repos/o/r/compare/main...abc123": 2, "PUT /repos/o/r/pulls/42/update-branch": 0, "PUT /repos/o/r/pulls/42/merge": 1}},
 		},
 		{
-			name:   "without --update-branch the base is not compared",
+			name:   "up to date without --update-branch: the base is compared before and after the wait, the head merged",
 			routes: routes(pull(map[string]any{"mergeable_state": "blocked"})),
 			want: want{method: "squash", mergedBy: "someone", mergeSHA: "m1", deleted: true, headSHA: "abc123",
-				requested: map[string]int{"GET /repos/o/r/compare/main...abc123": 0, "PUT /repos/o/r/pulls/42/update-branch": 0, "PUT /repos/o/r/pulls/42/merge": 1}},
+				requested: map[string]int{"GET /repos/o/r/compare/main...abc123": 2, "PUT /repos/o/r/pulls/42/update-branch": 0, "PUT /repos/o/r/pulls/42/merge": 1}},
+		},
+		{
+			name: "the base moves during the wait, without --update-branch: exit 3, nothing merged",
+			routes: routes(pull(nil), sequence.Routes{
+				"GET /repos/o/r/compare/main...abc123": {
+					{Body: map[string]any{"status": "ahead", "ahead_by": 1, "behind_by": 0}},
+					{Body: map[string]any{"status": "diverged", "ahead_by": 1, "behind_by": 3}},
+				},
+			}),
+			want: want{code: 3, reason: "3 commit(s) behind main: its checks ran against an older main than the one the merge lands it on (main moved during the wait); --update-branch", method: "squash", headSHA: "abc123",
+				requested: map[string]int{"GET /repos/o/r/commits/abc123/check-runs": 1, "PUT /repos/o/r/pulls/42/update-branch": 0, "PUT /repos/o/r/pulls/42/merge": 0}},
+		},
+		{
+			name: "the base moves during the wait, with --update-branch: update, wait for the new head, merge it",
+			routes: routes(pull(nil), greenHead("def456"), sequence.Routes{
+				"GET /repos/o/r/pulls/42": {
+					{Body: pull(nil)}, {Body: pull(nil)}, {Body: pull(nil)}, {Body: pull(nil)},
+					{Body: pull(map[string]any{"head": map[string]any{"sha": "def456", "ref": "feature", "repo": map[string]any{"full_name": "o/r"}}})},
+				},
+				"GET /repos/o/r/compare/main...abc123": {
+					{Body: map[string]any{"status": "ahead", "ahead_by": 1, "behind_by": 0}},
+					{Body: map[string]any{"status": "diverged", "ahead_by": 1, "behind_by": 3}},
+				},
+				"PUT /repos/o/r/pulls/42/update-branch": {{Status: http.StatusAccepted, Body: map[string]any{"message": "Updating pull request branch.", "url": "https://api.github.com/repos/o/r/pulls/42"}}},
+			}),
+			configure: func(c *Config) { c.UpdateBranch = true },
+			want: want{method: "squash", mergedBy: "someone", mergeSHA: "m1", deleted: true, headSHA: "def456",
+				requested: map[string]int{"GET /repos/o/r/commits/abc123/check-runs": 1, "PUT /repos/o/r/pulls/42/update-branch": 1, "GET /repos/o/r/commits/def456/check-runs": 1, "GET /repos/o/r/compare/main...def456": 1, "PUT /repos/o/r/pulls/42/merge": 1}},
+		},
+		{
+			name: "behind a merge-queue base without --update-branch: the queue tests it against the base, no comparison",
+			routes: routes(pull(nil), sequence.Routes{
+				"GET /repos/o/r/pulls/42": {
+					{Body: pull(nil)}, {Body: pull(nil)}, {Body: pull(nil)},
+					{Body: pull(map[string]any{"state": "closed", "merged": true, "merge_commit_sha": "q1", "merged_by": map[string]any{"login": "queue-enqueuer"}})},
+				},
+				"GET /repos/o/r/rules/branches/main":   {{Body: []any{map[string]any{"type": "merge_queue", "ruleset_id": 1}}}},
+				"GET /repos/o/r/compare/main...abc123": {{Body: map[string]any{"status": "diverged", "ahead_by": 1, "behind_by": 2}}},
+				"POST /graphql":                        {{Body: map[string]any{"data": map[string]any{"enqueuePullRequest": map[string]any{"mergeQueueEntry": map[string]any{"id": "MQE_1"}}}}}},
+			}),
+			want: want{method: "squash", mergedBy: "queue-enqueuer", mergeSHA: "q1", deleted: true, enqueued: true, headSHA: "abc123",
+				requested: map[string]int{"GET /repos/o/r/compare/main...abc123": 0, "POST /graphql": 1, "PUT /repos/o/r/pulls/42/merge": 0}},
 		},
 		{
 			name: "a mergeable state not computed yet is read again",
@@ -1091,5 +1148,78 @@ func Test_Merge_retriesA5xx(t *testing.T) {
 				t.Errorf("want %d merge call(s) and a merge commit, got %d, %+v", tc.wantCalls, calls, result)
 			}
 		})
+	}
+}
+
+func Test_refuseBehind(t *testing.T) {
+	pr := &github.PullRequest{Base: &github.PullRequestBranch{Ref: new("main")}}
+	tests := []struct {
+		name         string
+		updateBranch bool
+		behind       int
+		round        int
+		wantReason   string // empty: update it
+	}{
+		{name: "strict, no flag", behind: behindStrict, round: 1, wantReason: "the pull request is behind main, which requires branches to be up to date; --update-branch updates it from main and waits for its checks again"},
+		{name: "not strict, no flag", behind: 4, round: 1, wantReason: "the pull request is 4 commit(s) behind main: its checks ran against an older main than the one the merge lands it on; --update-branch"},
+		{name: "moved during the wait, no flag", behind: 1, round: 2, wantReason: "(main moved during the wait); --update-branch"},
+		{name: "flag, first round", updateBranch: true, behind: 4, round: 1},
+		{name: "flag, last round", updateBranch: true, behind: 1, round: updateRounds},
+		{name: "flag, the base moved during every wait", updateBranch: true, behind: 1, round: updateRounds + 1, wantReason: "(main moved during the wait) after 3 waits; run the merge again once main is quiet"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := (&Merger{updateBranch: tc.updateBranch}).refuseBehind(pr, tc.behind, tc.round)
+			if tc.wantReason == "" {
+				if err != nil {
+					t.Fatalf("want an update, got %v", err)
+				}
+				return
+			}
+			var exitErr *agentcli.ExitError
+			if !errors.As(err, &exitErr) || exitErr.Code != agentcli.ExitNotApplicable || !strings.Contains(exitErr.Reason, tc.wantReason) {
+				t.Fatalf("want exit 3 with %q, got %v", tc.wantReason, err)
+			}
+		})
+	}
+}
+
+func Test_Merge_gatekeeperPendingAndReviewMissingEndsWithTheReview(t *testing.T) {
+	// The required check is green, a gatekeeper app the base does not
+	// require stays in progress until the pull request is reviewed, and
+	// GitHub declines the merge for the missing review: the merge ends with
+	// the review rule, not at the wait's timeout, and the document names
+	// both.
+	declined := sequence.Response{Status: http.StatusMethodNotAllowed, Body: map[string]any{
+		"message": "Repository rule violations found\n\nAt least 1 approving review is required by reviewers with write access.\n\n",
+	}}
+	h := newHarness(t, routes(pull(map[string]any{"mergeable_state": "blocked"}), sequence.Routes{
+		"GET /repos/o/r/commits/abc123/check-runs": {{Body: map[string]any{"total_count": 2, "check_runs": []any{
+			map[string]any{"id": 1, "name": "go-build", "status": "completed", "conclusion": "success", "html_url": "https://github.com/o/r/runs/1"},
+			map[string]any{"id": 2, "name": "Heimdall - PR Gatekeeper", "status": "in_progress", "html_url": "https://github.com/o/r/runs/2", "app": map[string]any{"slug": "tinkerers-ci"}},
+		}}}},
+		"POST /graphql":                 {{Body: map[string]any{"data": map[string]any{"repository": map[string]any{"pullRequest": map[string]any{"reviewDecision": "REVIEW_REQUIRED"}}}}}},
+		"PUT /repos/o/r/pulls/42/merge": {declined},
+		"GET /repos/o/r/rules/branches/main": {{Body: []any{
+			map[string]any{"type": "required_status_checks", "parameters": map[string]any{"required_status_checks": []any{map[string]any{"context": "go-build"}}}},
+			map[string]any{"type": "pull_request", "ruleset_source_type": "Repository", "ruleset_source": "o/r", "ruleset_id": 7, "parameters": map[string]any{"required_approving_review_count": 1}},
+		}}},
+		"GET /repos/o/r/rulesets/7": {{Body: map[string]any{"id": 7, "name": "devctl: default branch", "source_type": "Repository", "source": "o/r", "enforcement": "active", "current_user_can_bypass": "never"}}},
+	}), nil)
+
+	result, err := h.merge(t)
+	var exitErr *agentcli.ExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != agentcli.ExitNotApplicable {
+		t.Fatalf("want exit %d, got %v\n%s", agentcli.ExitNotApplicable, err, h.progress.String())
+	}
+	if !strings.Contains(exitErr.Reason, "approving review is required") {
+		t.Errorf("want the review rule in the reason, got %q", exitErr.Reason)
+	}
+	want := []string{
+		"check Heimdall - PR Gatekeeper (in_progress, not required, not waited for)",
+		"review: an approving review the base requires is missing",
+	}
+	if strings.Join(result.Blocking, "\n") != strings.Join(want, "\n") {
+		t.Errorf("blocking: want %q, got %q", want, result.Blocking)
 	}
 }

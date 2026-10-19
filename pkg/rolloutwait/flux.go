@@ -195,7 +195,7 @@ func (w *Waiter) judgeHelmRelease(ctx context.Context, hr *unstructured.Unstruct
 			return d.set(StateProgressing, "%s deployed, the HelmRelease not ready: %s", d.RunningVersion, orUnknown(ready)), nil
 		}
 		if _, remote, _ := unstructured.NestedMap(hr.Object, "spec", "kubeConfig"); remote {
-			w.warnOnce(fmt.Sprintf("%s deploys to a remote cluster: its workloads are not checked, helm-controller's wait vouches for them", d.id()))
+			w.warnPoll(fmt.Sprintf("%s deploys to a remote cluster: its workloads are not checked, helm-controller's wait vouches for them", d.id()))
 			return d.set(StateRolledOut, ""), nil
 		}
 		return w.judgeWorkloads(ctx, d, releaseNamespace, release)
@@ -235,7 +235,7 @@ func (w *Waiter) judgeNamedHelmRelease(ctx context.Context, d Deployment, hr *un
 		return d.set(StateProgressing, "runs %s, the HelmRelease not ready: %s", orNone(d.RunningVersion), orUnknown(ready)), nil
 	}
 	if _, remote, _ := unstructured.NestedMap(hr.Object, "spec", "kubeConfig"); remote {
-		w.warnOnce(fmt.Sprintf("%s deploys to a remote cluster: its workloads are not checked, helm-controller's wait vouches for them", d.id()))
+		w.warnPoll(fmt.Sprintf("%s deploys to a remote cluster: its workloads are not checked, helm-controller's wait vouches for them", d.id()))
 		return d.set(StateRolledOut, ""), nil
 	}
 	return w.judgeWorkloads(ctx, d, namespace, release)
@@ -256,7 +256,7 @@ func (w *Waiter) judgeWorkloads(ctx context.Context, d Deployment, namespace, re
 		return d.set(StateProgressing, "%s deployed, rolling out: %s", d.RunningVersion, p), nil
 	}
 	if w.revision == "" && w.charts[d.Chart] && d.RunningVersion != w.version {
-		w.warnOnce(fmt.Sprintf("%s runs %s, newer than %s", d.id(), d.RunningVersion, w.version))
+		w.warnPoll(fmt.Sprintf("%s runs %s, newer than %s", d.id(), d.RunningVersion, w.version))
 	}
 	return d.set(StateRolledOut, ""), nil
 }

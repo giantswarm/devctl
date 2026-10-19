@@ -59,6 +59,17 @@ func (r *runner) promote(ctx context.Context, args []string, doc *releasepromote
 			return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "%q is not a repository: expected owner/repo", arg)
 		}
 	}
+	if r.flag.FollowTimeout < 0 {
+		return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "--follow-timeout must not be negative, got %s", r.flag.FollowTimeout)
+	}
+	if r.flag.Version != "" {
+		if !releasepromote.ValidVersion(r.flag.Version) {
+			return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "--version %q is not a release candidate tag: expected vX.Y.Z-rc.N", r.flag.Version)
+		}
+		if len(unique(args)) != 1 {
+			return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "--version names a candidate of one repository: pass exactly one owner/repo with it, got %d repository argument(s) and --team %q", len(args), r.flag.Team)
+		}
+	}
 	if err := r.gate(false); err != nil {
 		return err
 	}
@@ -91,10 +102,14 @@ func (r *runner) promote(ctx context.Context, args []string, doc *releasepromote
 	}
 
 	return releasepromote.Promote(ctx, releasepromote.Config{
-		GitHub:       sources.GitHub,
-		DryRun:       r.flag.DryRun,
-		NotFoundHint: sources.NotFoundHint,
-		Progress:     progress,
+		GitHub:        sources.GitHub,
+		DryRun:        r.flag.DryRun,
+		Version:       r.flag.Version,
+		NotFoundHint:  sources.NotFoundHint,
+		Follow:        !r.flag.NoFollow,
+		FollowTimeout: r.flag.FollowTimeout,
+		Clock:         clock,
+		Progress:      progress,
 	}, repositories, &doc.Result)
 }
 

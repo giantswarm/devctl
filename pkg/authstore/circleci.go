@@ -216,6 +216,7 @@ func (a *Auth) RequireCircleCI(_ context.Context) (Token, error) {
 		Login:     record.Login,
 		ExpiresAt: record.ExpiresAt,
 		Warning:   circleCIWarning(record.ExpiresAt, now),
+		Source:    SourceKeychain,
 	}, nil
 }
 

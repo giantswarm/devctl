@@ -63,6 +63,16 @@
       depNameTemplate: 'cimg/node',
       datasourceTemplate: 'docker',
     },
+    // The golden fixtures render the kind node tag ATSKindNodeImageVersion sets
+    // (matched by the `\w*ImageVersion` constant rule above), so they move in
+    // the same PR.
+    {
+      customType: 'regex',
+      managerFilePatterns: ['/pkg/gen/input/circleci/testdata/.*\\.workflows\\.yml$/'],
+      matchStrings: ['gsoci\\.azurecr\\.io/giantswarm/kind-node:(?<currentValue>v[\\w.-]+)'],
+      depNameTemplate: 'gsoci.azurecr.io/giantswarm/kind-node',
+      datasourceTemplate: 'docker',
+    },
     // The golden fixtures pin the same orb versions the generator emits. Same
     // depName/datasource as the constants above, so Renovate bumps constant and
     // goldens in one PR and the byte-for-byte golden tests stay green -- without

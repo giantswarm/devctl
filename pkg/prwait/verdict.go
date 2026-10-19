@@ -23,6 +23,9 @@ const (
 const (
 	statusCompleted = "completed"
 	statusPending   = "pending"
+	// conclusionActionRequired is a completed check run or Actions run
+	// waiting for a human.
+	conclusionActionRequired = "action_required"
 )
 
 // Check is one check of the head as the merge box lists it: a check run or a
@@ -130,8 +133,24 @@ type evaluation struct {
 	// unfinished names everything the head still waits for, in the words the
 	// document uses at a timeout.
 	unfinished []string
+	// notRequired names the pending check runs of named apps other than
+	// GitHub Actions and the pending statuses of other CI than CircleCI the
+	// base does not require: the merge box does not wait for them, and
+	// neither does the wait.
+	notRequired []string
 	// requiredMissing are the required contexts nothing has reported under.
 	requiredMissing []string
+	// requiredRed: a check or status the base requires failed.
+	requiredRed bool
+	// requiredPending: a check or status the base requires is registered
+	// and has not finished.
+	requiredPending bool
+	// actionsRegistered: the head carries a GitHub Actions run or a check
+	// run that is not another app's.
+	actionsRegistered bool
+	// registering: the pull request was updated less than RegistrationGrace
+	// ago, so the head's workflows may not have registered their runs yet.
+	registering bool
 	// awaitingApproval are the Actions runs that completed with
 	// action_required: they start only once a repository member approves
 	// them.
@@ -146,16 +165,31 @@ type evaluation struct {
 	approvalOnly bool
 	// expectedRuns are the repository's pull_request workflows an empty head
 	// waits for; quietFor is how long the pull request has gone without an
-	// update since.
+	// update.
 	expectedRuns []string
 	quietFor     time.Duration
 }
 
 func (e *evaluation) green() bool { return len(e.red) == 0 && len(e.unfinished) == 0 }
 
-// neverReported: the head is settled and a required context is still absent.
-// That verdict needs no timeout: nothing is running that could report it.
-func (e *evaluation) neverReported() bool { return e.settled && len(e.requiredMissing) > 0 }
+// neverReported: the head is settled, past the registration grace, and a
+// required context is still absent. That verdict needs no timeout: nothing is
+// running that could report it, and the head's workflows have had the time to
+// register their runs.
+func (e *evaluation) neverReported() bool {
+	return e.settled && !e.registering && len(e.requiredMissing) > 0
+}
+
+// redDecided: the head is red, and that is its verdict now: a check or status
+// the base requires failed, or nothing the base requires is left to wait for.
+// A failure the base does not require waits for the required contexts still
+// running or yet to report, whose results the caller needs as well.
+func (e *evaluation) redDecided() bool {
+	if len(e.red) == 0 || e.requiredRed {
+		return len(e.red) > 0
+	}
+	return !e.requiredPending && (len(e.requiredMissing) == 0 || e.neverReported())
+}
 
 func (e *evaluation) redReason() string { return strings.Join(e.red, "; ") }
 
@@ -173,7 +207,11 @@ func (e *evaluation) approvalReason() string {
 //  1. every check run of the head (each run of a name, of a workflow its
 //     newest run) and every commit status (the latest per context) is
 //     completed and not failed; a completed run that needs a human
-//     (action_required) still waits;
+//     (action_required) still waits; a pending status, or a pending check
+//     run of a named app other than GitHub Actions, that the base does not
+//     require is not waited for, as the merge box does not wait for it, and
+//     is named in notRequired (an Actions job is waited for through its run,
+//     rule 3, a CircleCI job through its pipeline, rule 2);
 //  2. when CircleCI is consulted, the newest pipeline of the head revision
 //     exists and is past its setup (a setup pipeline's continuation created,
 //     its workflows listed or their jobs' statuses on GitHub), and the newest
@@ -182,15 +220,18 @@ func (e *evaluation) approvalReason() string {
 //     awaiting approval;
 //  4. every required status context has reported.
 //
-// A failure anywhere is red at once; anything else still open keeps the wait
+// A failure anywhere is red: at once when the base requires the failed
+// context or nothing it requires is pending or absent, else once the required
+// contexts have finished (redDecided); anything else still open keeps the wait
 // going. A required context nothing has reported under is unfinished like the
 // rest while a check, status, run, workflow or pipeline setup is still
-// pending (rules 1 to 3): the one awaiting approval, still running or not
-// continued yet may be what reports it. Once all
-// of them have finished, the head is settled and an absent context is one
-// that will never report. A head whose only pending items are Actions runs
-// awaiting approval is approvalOnly: no wait starts them, a member's approval
-// does.
+// pending (rules 1 to 3), the pending ones the base does not require
+// included: the one awaiting approval, still running or not continued yet may
+// be what reports it. Once all of them have finished, the head is settled and
+// an absent context is one that will never report, past the registration
+// grace the wait applies (neverReported). A head whose only pending items are
+// Actions runs awaiting approval is approvalOnly: no wait starts them, a
+// member's approval does.
 func evaluate(s snapshot) *evaluation {
 	e := &evaluation{checks: []Check{}, actions: []ActionRun{}, seen: map[string]bool{}}
 	required := map[string]bool{}
@@ -219,16 +260,22 @@ func evaluate(s snapshot) *evaluation {
 		}
 		e.checks = append(e.checks, check)
 		label := check.label(runsOfName[name] > 1)
+		pending := check.Status != statusCompleted || check.Conclusion == conclusionActionRequired
+		e.requiredPending = e.requiredPending || pending && check.Required
+		e.actionsRegistered = e.actionsRegistered || !otherApp(c.run)
 		switch {
+		case pending && !check.Required && otherApp(c.run):
+			e.notRequired = append(e.notRequired, fmt.Sprintf("check %s (%s, not required, not waited for)", label, pendingState(check)))
 		case check.Status != statusCompleted:
 			e.unfinished = append(e.unfinished, fmt.Sprintf("check %s (%s)", label, check.Status))
-		case check.Conclusion == "action_required":
+		case check.Conclusion == conclusionActionRequired:
 			e.unfinished = append(e.unfinished, fmt.Sprintf("check %s (action_required)", label))
 		case checkRunPassed(check.Conclusion):
 		case s.accepts(name):
 			e.accept(check.Name, check.Source, check.Conclusion, check.URL)
 		default:
 			e.red = append(e.red, fmt.Sprintf("check %s concluded %s", label, check.Conclusion))
+			e.requiredRed = e.requiredRed || check.Required
 			if c.run.GetApp().GetSlug() == actionsApp {
 				e.failedActionsJobs = append(e.failedActionsJobs, actionsJob{id: check.ID, name: label, url: check.URL})
 			}
@@ -246,8 +293,12 @@ func evaluate(s snapshot) *evaluation {
 			Required: required[name],
 		}
 		switch state := status.GetState(); {
+		case state == statusPending && !check.Required && !strings.HasPrefix(name, circleStatusPrefix):
+			check.Status = statusPending
+			e.notRequired = append(e.notRequired, fmt.Sprintf("status %s (pending, not required, not waited for)", name))
 		case state == statusPending:
 			check.Status = statusPending
+			e.requiredPending = e.requiredPending || check.Required
 			e.unfinished = append(e.unfinished, fmt.Sprintf("status %s (pending)", name))
 		case state == "success":
 			check.Conclusion = state
@@ -257,6 +308,7 @@ func evaluate(s snapshot) *evaluation {
 		default:
 			check.Conclusion = state
 			e.red = append(e.red, fmt.Sprintf("status %s is %s", name, state))
+			e.requiredRed = e.requiredRed || check.Required
 		}
 		e.checks = append(e.checks, check)
 	}
@@ -270,8 +322,9 @@ func evaluate(s snapshot) *evaluation {
 			URL:        run.GetHTMLURL(),
 		}
 		e.actions = append(e.actions, action)
+		e.actionsRegistered = true
 		switch {
-		case action.Conclusion == "action_required":
+		case action.Conclusion == conclusionActionRequired:
 			e.awaitingApproval = append(e.awaitingApproval, action)
 			e.unfinished = append(e.unfinished, fmt.Sprintf("actions run %s (awaiting approval)", action.Name))
 		case workflowRunOpen(action.Status):
@@ -284,8 +337,10 @@ func evaluate(s snapshot) *evaluation {
 	}
 
 	// Settled is judged before the required contexts: with nothing pending,
-	// an absent context has nothing left that could report it.
-	e.settled = len(e.unfinished) == 0
+	// an absent context has nothing left that could report it. A pending
+	// check the base does not require is not waited for on its own, but it
+	// may be what reports an absent one.
+	e.settled = len(e.unfinished) == 0 && len(e.notRequired) == 0
 	e.approvalOnly = len(e.red) == 0 && len(e.awaitingApproval) > 0 && len(e.unfinished) == len(e.awaitingApproval)
 	for _, name := range s.required {
 		if !reported[name] {
@@ -426,6 +481,23 @@ func workflowRunOpen(status string) bool {
 		return true
 	}
 	return false
+}
+
+// otherApp: the check run is reported by a named app other than GitHub
+// Actions. An Actions job is judged through its run as well, and a check run
+// whose app the listing does not name is waited for.
+func otherApp(run *github.CheckRun) bool {
+	slug := run.GetApp().GetSlug()
+	return slug != "" && slug != actionsApp
+}
+
+// pendingState is how a pending check run reads in the document: its status,
+// or action_required once it completed waiting for a human.
+func pendingState(c Check) string {
+	if c.Status == statusCompleted {
+		return c.Conclusion
+	}
+	return c.Status
 }
 
 // label names the check in a verdict: its name alone while it is the only

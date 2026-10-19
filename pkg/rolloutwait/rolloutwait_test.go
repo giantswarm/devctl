@@ -384,6 +384,45 @@ func withCharts(charts ...string) func(*Config) {
 	return func(c *Config) { c.Charts = charts }
 }
 
+// The companion's source, read mid-roll, still pins the previous version
+// while the main chart is upgrading: a warning then. By the end the source
+// follows the version and the companion runs it, and the rolled-out result
+// carries no warning its final state contradicts.
+func TestWarningRaisedMidRollClearsByTheEnd(t *testing.T) {
+	client := newClient(deployment(2))
+	polls := 0
+	client.PrependReactor("list", "ocirepositories", func(k8stesting.Action) (bool, runtime.Object, error) {
+		polls++
+		companionSrc := companionSource()
+		if polls == 1 {
+			_ = unstructured.SetNestedField(companionSrc.Object, "0.48.0", "spec", "ref", "semver")
+		}
+		list := &unstructured.UnstructuredList{Object: map[string]any{"apiVersion": "source.toolkit.fluxcd.io/v1", "kind": "OCIRepositoryList"}}
+		list.Items = []unstructured.Unstructured{*ociRepository(map[string]any{"semver": ">=0.17.0"}), *companionSrc}
+		return true, list, nil
+	})
+	client.PrependReactor("list", "helmreleases", func(k8stesting.Action) (bool, runtime.Object, error) {
+		running, companionRunning := "0.48.0", "0.48.0"
+		if polls > 1 {
+			companionRunning = "0.48.1"
+		}
+		if polls > 2 {
+			running = "0.48.1"
+		}
+		list := &unstructured.UnstructuredList{Object: map[string]any{"apiVersion": "helm.toolkit.fluxcd.io/v2", "kind": "HelmReleaseList"}}
+		list.Items = []unstructured.Unstructured{*helmRelease(running, nil), *companionRelease(companionRunning)}
+		return true, list, nil
+	})
+	r := wait(t, client, false, withCharts(chart, companion))
+	wantExit(t, r, agentcli.ExitOK, "")
+	if polls != 3 {
+		t.Fatalf("want 3 polls, got %d", polls)
+	}
+	if len(r.warnings) != 0 {
+		t.Errorf("warnings of a rolled-out result: %v", r.warnings)
+	}
+}
+
 // The release's second HelmRelease upgrades minutes after the first: the
 // wait is rolled out only once both run the version.
 func TestSecondHelmReleaseLaggingKeepsTheWaitOpen(t *testing.T) {

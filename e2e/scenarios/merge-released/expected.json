@@ -87,7 +87,8 @@
         "failedJobs": [],
         "unfinished": []
       },
-      "actions": []
+      "actions": [],
+      "statuses": []
     }
   }
 }

@@ -54,13 +54,20 @@ When `--pr` names a pull request no release follows (a giantswarm-configs change
 | Flux `GitRepository` | its `spec.url` is the repository (ssh or https) | its artifact's commit is the merge commit or contains it (GitHub's comparison) |
 | Flux `Kustomization` | its `spec.sourceRef` is one of those GitRepositories | `lastAppliedRevision` contains the merge commit, Ready at its generation |
 | `Konfiguration` (`konfigure.giantswarm.io`) | its `spec.sources.flux.gitRepository` is one of them | `lastAppliedRevision` contains the merge commit, Ready |
-| Flux `HelmRelease` | its `valuesFrom` takes the ConfigMap or Secret a Konfiguration renders for an app the pull request changed (`installations/<installation>/apps/<app>/`, `default/apps/<app>/`), or `--helmrelease` names it | the rendered ConfigMap's `configuration.giantswarm.io/revision` contains the merge commit, the HelmRelease deployed after that ConfigMap was written (or handled a `--reconcile` request made after it), Ready, its workloads rolled out |
+| Flux `HelmRelease` | its `valuesFrom` takes the ConfigMap or Secret a Konfiguration renders for an app the pull request changed (`installations/<installation>/apps/<app>/`, `default/apps/<app>/`), or `--helmrelease` names it | the rendered ConfigMap's `configuration.giantswarm.io/revision` contains the merge commit, the HelmRelease deployed after that ConfigMap was written, took values other than its previous deploy's (`status.history[].configDigest`) after the pull request merged, deployed only after the merge as far as `status.history` keeps (the deploy that took the change evicted), or handled a `--reconcile` request made after the ConfigMap was written; Ready, its workloads rolled out |
+| `App` (`application.giantswarm.io/v1alpha1`) | its `spec.config` or `spec.userConfig` names the ConfigMap or Secret a Konfiguration renders for an app the pull request changed | the rendered ConfigMap contains the merge commit, the App's `status.release.lastDeployed` is after that ConfigMap was written or, for an App in the management cluster, after app-operator last changed the values it merges for the App's Chart, which it did after the pull request merged; its release `deployed` at its `spec.version` (`runningVersion`), its workloads rolled out |
+| `ConfigMap` | a Konfiguration renders it for an app the pull request changed and no HelmRelease or App takes it | never: `state` `unknown`, whether the change runs cannot be told |
 
 A HelmRelease upgrades only when its rendered values changed, which only the values tell: a pull request
 that changes files beyond one app's (`installations/<installation>/config.yaml.patch`, `default/config.yaml`)
 follows no HelmRelease by itself, with a warning; `--helmrelease` names one to follow. Another
-installation's files change nothing here. A Kustomization or Konfiguration whose attempt at the revision
-failed is exit 1; nothing on the installation fetching the repository keeps the `no_release` verdict, exit
+installation's files change nothing here. konfigure-operator re-labels a rendered ConfigMap with every
+revision it applies, so its last write says when it was last rendered, not when its values changed: a
+deployment that took new values after the merge runs the change although the ConfigMap was written since
+(an older revision konfigure-operator renders after the merge, within its fetch interval, is not told
+apart). A Kustomization or Konfiguration whose attempt at the revision
+failed, or an App whose release failed with the new values, is exit 1; once everything else is applied, a
+changed app whose values nothing takes is exit 3, verdict `rollout_unknown`, never `rolled_out`; nothing on the installation fetching the repository keeps the `no_release` verdict, exit
 3, its reason saying so; a GitRepository nothing reads (one included into another) is exit 3. `--reconcile`
 asks the GitRepository, the Kustomizations and, once its values are rendered, each HelmRelease to
 reconcile, once each.
@@ -141,7 +148,8 @@ only write the command makes; without it the command only reads.
 ## The document
 
 The envelope (`command`, `schemaVersion`, `exitCode`, `verdict`, `reason`, `warnings`, `startedAt`,
-`finishedAt`) and:
+`finishedAt`; `warnings` holds what the last poll found, a warning seen mid-roll and gone by the end is only
+shown as progress) and:
 
 | Field | Meaning |
 |---|---|
@@ -149,7 +157,7 @@ The envelope (`command`, `schemaVersion`, `exitCode`, `verdict`, `reason`, `warn
 | `version` | The version waited for, bare; empty for a configuration change. |
 | `revision` | The merge commit of a configuration change waited for; absent for a version. |
 | `charts` | The release's charts, the names deployments are matched by. |
-| `deployments[]` | Every HelmRelease and App of the charts at the last poll (for a configuration change, the GitRepositories, Kustomizations, Konfigurations and HelmReleases above, `runningVersion` the commit each applied or the chart version): `kind`, `namespace`, `name`, `chart`, `source` (`OCIRepository <ns>/<name>`, `HelmChart <ns>/<name>`, `catalog <name>`), `follows` (`semver <range>`, `tag <tag>`, `digest <digest>`, `version <v>`), `runningVersion`, `state` (`rolled_out`, `progressing`, `failed`, `not_following`, `suspended`), `message` (what it waits for or why it failed) and `workloads[]` (`kind`, `namespace`, `name`, `ready`, `message`). |
+| `deployments[]` | Every HelmRelease and App of the charts at the last poll (for a configuration change, the GitRepositories, Kustomizations, Konfigurations, HelmReleases, Apps and ConfigMaps above, `runningVersion` the commit each applied or the chart version): `kind`, `namespace`, `name`, `chart`, `source` (`OCIRepository <ns>/<name>`, `HelmChart <ns>/<name>`, `catalog <name>`), `follows` (`semver <range>`, `tag <tag>`, `digest <digest>`, `version <v>`), `runningVersion`, `state` (`rolled_out`, `progressing`, `failed`, `not_following`, `suspended`, `unknown`), `message` (what it waits for or why it failed) and `workloads[]` (`kind`, `namespace`, `name`, `ready`, `message`). |
 | `release` | The release wait's `verdict` and `reason`, and its result fields (see [release-wait.md](release-wait.md#the-document)); with `--failed-log`, `release.failedJobs[]` when the release's CI failed. |
 
 ## Exit codes
@@ -159,6 +167,8 @@ The envelope (`command`, `schemaVersion`, `exitCode`, `verdict`, `reason`, `warn
 | 0 | `rolled_out` | Every deployment of the charts that follows the version runs it or a newer one, ready and rolled out; for a configuration change, everything above applied the merge commit. |
 | 1 | `rollout_failed`, `ci_failed` | The rollout failed (the reason names the deployment and its condition), or the release's CI did. |
 | 2 | `timeout` | `--release-timeout` or `--timeout` passed; `deployments[].message` says what is missing. |
-| 3 | `not_applicable`, `no_release` | No release follows the pull request and nothing on the installation fetches its repository, nothing reads the GitRepository that does, the release ships no chart, nothing on the installation deploys its charts, no deployment follows the version, or no HelmRelease answers to a `--helmrelease` name. |
+| 3 | `not_applicable`, `no_release`, `rollout_unknown` | No release follows the pull request and nothing on the installation fetches its repository, nothing reads the GitRepository that does, the release ships no chart, nothing on the installation deploys its charts, no deployment follows the version, or no HelmRelease answers to a `--helmrelease` name; `rollout_unknown`: a configuration change is applied and no HelmRelease or App takes the values of an app it changed, so whether it runs cannot be told. |
 | 7 | `usage` | A bad argument, a kube context that does not exist and `tsh` could not log in to, a `--kubeconfig` that cannot be read, a request the cluster refused. |
 | 8 | `auth_required` | No GitHub token (`devctl auth login`), the kube context is not signed in (`tsh kube login <installation>`), or it is missing and `tsh` is not logged in (`tsh login`). |
+| 11 | `ambiguous_release` | With `--pr`, the release's commit carries the release tags of more than one version, as in [`release wait`](release-wait.md#exit-codes); `release.conflictingTags` names them, and the wait given the version follows it. |
+| 12 | `status_failed` | The release's artifacts are available and its tag pipeline is green, and a commit status of its commit failed, as in [`release wait`](release-wait.md#exit-codes); the reason names the failed contexts. |

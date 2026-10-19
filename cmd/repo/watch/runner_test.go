@@ -48,9 +48,11 @@ func newRunner(answers ...string) (*runner, *sequence, *bytes.Buffer) {
 }
 
 const (
-	pending = `{"repository":"https://github.com/giantswarm/new","phases":[{"name":"created","at":"2026-09-22T10:00:00Z","seconds":0},{"name":"scaffolded","at":"2026-09-22T10:00:05Z","seconds":5}],"changed":true,"ready":false,"pending":"declared","pendingReason":"the pull request is not open yet","waited":3}`
-	ready   = `{"repository":"https://github.com/giantswarm/new","phases":[{"name":"created","at":"2026-09-22T10:00:00Z","seconds":0},{"name":"scaffolded","at":"2026-09-22T10:00:05Z","seconds":5},{"name":"declared","at":"2026-09-22T10:00:09Z","seconds":4},{"name":"merged","at":"2026-09-22T10:01:00Z","seconds":51},{"name":"setUp","at":"2026-09-22T10:01:40Z","seconds":40},{"name":"released","at":"2026-09-22T10:03:30Z","seconds":110}],"changed":false,"ready":true,"release":{"tag":"v0.1.0","url":"https://github.com/giantswarm/new/releases/tag/v0.1.0"},"findings":[{"kind":"default-icon","message":"the default icon","fix":"replace it"}],"waited":1}`
-	failed  = `{"repository":"https://github.com/giantswarm/new","phases":[{"name":"created","at":"2026-09-22T10:00:00Z","seconds":0}],"ready":false,"failure":{"phase":"released","reason":"ci/circleci: push-to-registries failed"},"waited":2}`
+	pending      = `{"repository":"https://github.com/giantswarm/new","phases":[{"name":"created","at":"2026-09-22T10:00:00Z","seconds":0},{"name":"scaffolded","at":"2026-09-22T10:00:05Z","seconds":5}],"changed":true,"ready":false,"pending":"declared","pendingReason":"the pull request is not open yet","waited":3}`
+	ready        = `{"repository":"https://github.com/giantswarm/new","phases":[{"name":"created","at":"2026-09-22T10:00:00Z","seconds":0},{"name":"scaffolded","at":"2026-09-22T10:00:05Z","seconds":5},{"name":"declared","at":"2026-09-22T10:00:09Z","seconds":4},{"name":"merged","at":"2026-09-22T10:01:00Z","seconds":51},{"name":"setUp","at":"2026-09-22T10:01:40Z","seconds":40},{"name":"released","at":"2026-09-22T10:03:30Z","seconds":110}],"changed":false,"ready":true,"release":{"tag":"v0.1.0","url":"https://github.com/giantswarm/new/releases/tag/v0.1.0"},"findings":[{"kind":"default-icon","message":"the default icon","fix":"replace it"}],"waited":1}`
+	setUpPending = `{"repository":"https://github.com/giantswarm/new","phases":[{"name":"created","at":"2026-09-22T10:00:00Z","seconds":0},{"name":"scaffolded","at":"2026-09-22T10:00:05Z","seconds":5},{"name":"declared","at":"2026-09-22T10:00:09Z","seconds":4},{"name":"merged","at":"2026-09-22T10:01:00Z","seconds":51}],"changed":true,"ready":false,"pending":"setUp","waited":3}`
+	readyNoCI    = `{"repository":"https://github.com/giantswarm/new","phases":[{"name":"created","at":"2026-09-22T10:00:00Z","seconds":0},{"name":"scaffolded","at":"2026-09-22T10:00:05Z","seconds":5},{"name":"declared","at":"2026-09-22T10:00:09Z","seconds":4},{"name":"merged","at":"2026-09-22T10:01:00Z","seconds":51},{"name":"setUp","at":"2026-09-22T10:01:40Z","seconds":40}],"changed":true,"ready":true,"withoutCI":true,"waited":40}`
+	failed       = `{"repository":"https://github.com/giantswarm/new","phases":[{"name":"created","at":"2026-09-22T10:00:00Z","seconds":0}],"ready":false,"failure":{"phase":"released","reason":"ci/circleci: push-to-registries failed"},"waited":2}`
 )
 
 // The phases are printed once each as they complete, the pending reason
@@ -70,6 +72,20 @@ func TestRunReady(t *testing.T) {
 	require.Contains(t, text, "  released   2026-09-22T10:03:30Z (+110s)")
 	require.Contains(t, text, "ready: https://github.com/giantswarm/new (release v0.1.0, https://github.com/giantswarm/new/releases/tag/v0.1.0)")
 	require.Contains(t, text, "  default-icon: the default icon -- fix: replace it")
+}
+
+// A repository without CI is ready once set up: the watch ends with no
+// error and no released phase, saying there is no release to wait for.
+func TestRunReadyWithoutCI(t *testing.T) {
+	r, seq, out := newRunner(setUpPending, readyNoCI)
+	require.NoError(t, r.run(context.Background(), "new"))
+	require.Equal(t, 2, seq.calls)
+
+	text := out.String()
+	require.Contains(t, text, "waiting for setUp")
+	require.Contains(t, text, "  setUp      2026-09-22T10:01:40Z (+40s)")
+	require.NotContains(t, text, "released")
+	require.Contains(t, text, "ready: https://github.com/giantswarm/new (no CI: set up, no release to wait for)")
 }
 
 // A failed phase ends the watch with an error naming it.

@@ -41,16 +41,17 @@ func noChecksError(sha string, workflows []string) error {
 }
 
 // empty: the head carries no check run, no status, no Actions run and no
-// CircleCI pipeline.
+// CircleCI pipeline, besides pending ones the base does not require: a
+// gatekeeper app reports at once, before the pull_request runs register.
 func (e *evaluation) empty() bool {
-	return len(e.checks) == 0 && len(e.actions) == 0 && e.circleci == nil
+	return len(e.checks) == len(e.notRequired) && len(e.actions) == 0 && e.circleci == nil
 }
 
 // expectPullRequestRuns marks an empty, otherwise green head as waiting for
-// the runs of the repository's pull_request workflows, and records how long
-// the pull request has been quiet. A head GitHub skips CI for, and a
-// repository without such a workflow, stay green: nothing is going to report.
-func (w *Waiter) expectPullRequestRuns(ctx context.Context, owner, repo string, h *head, updatedAt time.Time, e *evaluation) error {
+// the runs of the repository's pull_request workflows. A head GitHub skips CI
+// for, and a repository without such a workflow, stay green: nothing is going
+// to report.
+func (w *Waiter) expectPullRequestRuns(ctx context.Context, owner, repo string, h *head, e *evaluation) error {
 	if !e.green() || !e.empty() {
 		return nil
 	}
@@ -59,7 +60,6 @@ func (w *Waiter) expectPullRequestRuns(ctx context.Context, owner, repo string, 
 		return err
 	}
 	e.expectedRuns = workflows
-	e.quietFor = w.clock.Now().Sub(updatedAt)
 	e.unfinished = append(e.unfinished, fmt.Sprintf("actions runs of %s (none registered)", strings.Join(workflows, ", ")))
 	return nil
 }

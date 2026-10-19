@@ -21,6 +21,11 @@ const templateKeyMaintenanceBranches = "MaintenanceBranches"
 // pushes cut releases.
 const templateKeyReleaseBranch = "ReleaseBranch"
 
+// templateKeyAdvisoryJobs is the template data key carrying the CircleCI
+// jobs whose failure does not fail a release, space-separated: the
+// auto-release promote step warns on them as devctl's release commands do.
+const templateKeyAdvisoryJobs = "AdvisoryJobs"
+
 // The workflow templates render GitHub Actions ${{ }} expressions verbatim, so
 // they use four braces as their own action delimiters.
 const (

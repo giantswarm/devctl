@@ -53,6 +53,27 @@ func TestSetReviewers(t *testing.T) {
 			expected:    "{\n  reviewers: ['team:team-rocket'],\n  extends: ['foo'],\n}",
 		},
 		{
+			name:        "the reviewers listed already leave the generator's multi-line array as it is",
+			input:       "{\n  reviewers: [\n    'team:team-rocket',\n    \"team:team-honeybadger\",\n  ],\n}",
+			reviewers:   []string{"team:team-rocket", "team:team-honeybadger"},
+			singleQuote: true,
+			expected:    "{\n  reviewers: [\n    'team:team-rocket',\n    \"team:team-honeybadger\",\n  ],\n}",
+		},
+		{
+			name:        "the same reviewers in another order are rewritten",
+			input:       "{\n  reviewers: [\n    'b',\n    'a',\n  ],\n}",
+			reviewers:   []string{"a", "b"},
+			singleQuote: true,
+			expected:    "{\n  reviewers: ['a', 'b'],\n}",
+		},
+		{
+			name:        "a commented array is rewritten",
+			input:       "{\n  reviewers: [\n    // owners\n    'a',\n  ],\n}",
+			reviewers:   []string{"a"},
+			singleQuote: true,
+			expected:    "{\n  reviewers: ['a'],\n}",
+		},
+		{
 			name:        "replace existing single-quoted reviewers",
 			input:       "{\n  reviewers: ['old'],\n  extends: ['foo'],\n}",
 			reviewers:   []string{"team:team-rocket", "team:team-honeybadger"},

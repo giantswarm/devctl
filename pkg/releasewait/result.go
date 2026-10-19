@@ -108,6 +108,14 @@ type ActionsRun struct {
 	URL        string `json:"url"`
 }
 
+// Status is one context's newest commit status of the tag's commit.
+type Status struct {
+	Context string `json:"context"`
+	// State is pending, success, failure or error.
+	State string `json:"state"`
+	URL   string `json:"url"`
+}
+
 // Result is the command's document below the envelope.
 type Result struct {
 	Repository string `json:"repository"`
@@ -129,16 +137,24 @@ type Result struct {
 	Pipeline *Pipeline `json:"pipeline"`
 	// Actions are the runs the tag triggered; empty with CircleCI.
 	Actions []ActionsRun `json:"actions"`
+	// Statuses are the newest commit status of every context of the tag's
+	// commit, read once the artifacts are available and the tag's CI is
+	// green: what devctl release promote gates a candidate on. Empty before.
+	Statuses []Status `json:"statuses"`
 	// FailedJobs are, with Config.FailedLogLines, the failed jobs of a
 	// failed tag pipeline or of the tag's failed Actions runs with the tails
 	// of their logs; absent otherwise.
 	FailedJobs []prwait.FailedJob `json:"failedJobs,omitempty"`
+	// ConflictingTags are, when the commit carries the release tags of more
+	// than one version, every release tag on it, newest first; absent
+	// otherwise.
+	ConflictingTags []string `json:"conflictingTags,omitempty"`
 }
 
 // NewResult is the result before anything is known: the repository, empty
 // arrays, no pipeline.
 func NewResult(repository string) Result {
-	return Result{Repository: repository, Artifacts: []Artifact{}, Actions: []ActionsRun{}}
+	return Result{Repository: repository, Artifacts: []Artifact{}, Actions: []ActionsRun{}, Statuses: []Status{}}
 }
 
 // Document is the command's JSON: the envelope and the result.
@@ -159,6 +175,10 @@ func allAvailable(artifacts []Artifact) bool {
 // The outcomes of the exit-code table this command produces.
 func ciFailedErr(format string, args ...any) error {
 	return agentcli.NewExitError(agentcli.ExitRed, agentcli.VerdictCIFailed, format, args...)
+}
+
+func statusFailedErr(format string, args ...any) error {
+	return agentcli.NewExitError(agentcli.ExitStatusFailed, agentcli.VerdictStatusFailed, format, args...)
 }
 
 func timeoutErr(format string, args ...any) error {
@@ -192,6 +212,25 @@ func (e *NoReleaseError) ExitVerdict() agentcli.Verdict { return agentcli.Verdic
 func IsNoRelease(err error) bool {
 	var noRelease *NoReleaseError
 	return errors.As(err, &noRelease)
+}
+
+// AmbiguousReleaseError says that the commit a pull request resolves to
+// carries the release tags of more than one version: the wait does not
+// choose, the caller names the version. Exit 11 with the ambiguous_release
+// verdict; Tags are every release tag on the commit, newest first.
+type AmbiguousReleaseError struct {
+	Reason string
+	Tags   []string
+}
+
+func (e *AmbiguousReleaseError) Error() string { return e.Reason }
+
+// ExitCode implements [agentcli.ExitCoder].
+func (e *AmbiguousReleaseError) ExitCode() int { return agentcli.ExitAmbiguousRelease }
+
+// ExitVerdict implements [agentcli.ExitCoder].
+func (e *AmbiguousReleaseError) ExitVerdict() agentcli.Verdict {
+	return agentcli.VerdictAmbiguousRelease
 }
 
 func noReleaseErr(format string, args ...any) error {
