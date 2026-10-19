@@ -136,15 +136,12 @@ func (w *Workflows) HelmRenderDiff() input.Input {
 	return file.NewHelmRenderDiff(w.params)
 }
 
-// Mctl returns the mctl workflows of a management-clusters repository
-// (flavour fleet): init, config, create-mc and the merge gate and cascades
-// around the cluster init PR.
+// Mctl returns the mctl workflows of a management-clusters repository.
 func (w *Workflows) Mctl() []input.Input {
 	return file.NewMctlInputs(w.params)
 }
 
-// MctlLegacyDeletion deletes the unprefixed workflows and op.env that
-// `mctl create cmc-repo` wrote before devctl generated them.
+// MctlLegacyDeletion deletes the unprefixed workflows and op.env written by `mctl create cmc-repo`.
 func (w *Workflows) MctlLegacyDeletion() []input.Input {
 	return file.NewMctlLegacyDeletionInputs(w.params)
 }

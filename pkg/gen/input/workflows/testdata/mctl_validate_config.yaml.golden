@@ -3,25 +3,7 @@
 #    devctl
 #
 
-# Runs automatically on every push to a cluster init branch.
-# Validates that the CCR and installations PRs created by mctl config contain
-# all expected files with correct content.
-#
-# For CAPA, it also reports — even before mctl config has run — whether the
-# companion aws-account-setup PR mctl init opened has been merged yet.
-#
-# When mctl config has not run yet (CCR or installations PRs not found) AND
-# there's nothing else to report, the check exits 0 silently.
-#
-# Required repository secrets:
-#   MCTL_APP_ID          - giantswarm-mctlbot GitHub App ID, used to mint a
-#                          token with read access to CCR and installations
-#                          repos
-#   MCTL_APP_PRIVATE_KEY - giantswarm-mctlbot GitHub App private key
-#
-# Generated into (customer)-management-clusters repos by devctl (fleet flavour)
-# and kept current by giantswarm/github align-files. Edit the template in
-# giantswarm/devctl, not the generated copy.
+# Runs `mctl validate-config` on init PRs; silent until `mctl config` has run, then prompts for /create-mc.
 
 name: Validate config
 
@@ -44,8 +26,7 @@ jobs:
   validate-config:
     name: Run mctl validate-config
     runs-on: ubuntu-latest
-    # Never in the public template repo: it is copied from, not run.
-    # Only run on init branches — skip other PRs (e.g. direct manifest edits on main).
+    # Not in the template repo; only init branches.
     if: >
       github.repository != 'giantswarm/template-management-clusters' &&
       contains(github.head_ref, '-init')
@@ -56,7 +37,7 @@ jobs:
         env:
           BRANCH: ${{ github.head_ref }}
         run: |
-          # Branch format: {installation}-init or {installation}-init-{provider}
+          # {installation}-init or {installation}-init-{provider}
           if [[ "$BRANCH" =~ ^(.+)-init-(capa|capz|capv|capvcd)$ ]]; then
             installation="${BASH_REMATCH[1]}"
           else
@@ -70,8 +51,7 @@ jobs:
         with:
           app-id: ${{ secrets.MCTL_APP_ID }}
           private-key: ${{ secrets.MCTL_APP_PRIVATE_KEY }}
-          # Without owner, the token is scoped to this repo alone and every
-          # cross-repo step (CCR, installations, teleport-fleet) 404s.
+          # Owner-scoped so cross-repo calls work.
           owner: ${{ github.repository_owner }}
 
       - name: Run mctl validate-config
@@ -104,7 +84,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Post failure comment
-        # Only comment on actual failures — skips (config not run yet) are silent.
+        # Skips (config not run yet) stay silent.
         if: steps.mctl.outputs.exit_code != '0'
         uses: actions/github-script@v7
         env:
@@ -131,8 +111,7 @@ jobs:
             core.setFailed(`mctl validate-config exited ${process.env.MCTL_EXIT_CODE}`);
 
       - name: Post create-mc prompt
-        # Post (or update) a prompt when validation passed and config has run.
-        # "skipped" means config hasn't run yet — stay silent in that case.
+        # Only once config has run ("skipped" means it has not).
         if: steps.mctl.outputs.exit_code == '0' && !contains(steps.mctl.outputs.output, 'validate-config skipped')
         uses: actions/github-script@v7
         env:
@@ -140,7 +119,7 @@ jobs:
         with:
           script: |
             const installation = process.env.INSTALLATION;
-            // Embed a token so this comment can be updated idempotently on reruns.
+            // Token lets reruns update the comment in place.
             const token = `<!-- mctl-validate-config-ready-${installation} -->`;
             const body = [
               token,

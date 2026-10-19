@@ -3,27 +3,7 @@
 #    devctl
 #
 
-# Triggered when a cluster init PR is closed without merging.
-# Finds the PRs opened on this installation's behalf — the CCR and installations
-# PRs from `mctl config`, and the teleport-fleet provision-token PR from
-# `mctl create mc` — and closes them. Their URLs are recorded in the result
-# comments those steps post.
-#
-# The teleport-fleet PR matters most here: it lives in a shared repo owned by
-# another team, so an abandoned init PR that leaves it open puts a stale
-# TeleportProvisionToken for a cluster that does not exist in front of them.
-#
-# The merged case is handled by zz_generated.mctl_merge_cascade.yaml.
-#
-# Branch naming convention: {installation}-init or {installation}-init-{provider}
-#
-# Required repository secrets:
-#   MCTL_APP_ID          - giantswarm-mctlbot GitHub App ID
-#   MCTL_APP_PRIVATE_KEY - giantswarm-mctlbot GitHub App private key
-#
-# Generated into (customer)-management-clusters repos by devctl (fleet flavour)
-# and kept current by giantswarm/github align-files. Edit the template in
-# giantswarm/devctl, not the generated copy.
+# Closes the CCR, installations and teleport-fleet PRs of a cluster init PR closed without merging.
 
 name: Close cascade
 
@@ -39,8 +19,7 @@ jobs:
   close-cascade:
     name: Close related config PRs
     runs-on: ubuntu-latest
-    # Never in the public template repo: it is copied from, not run.
-    # Only when closed without merging and branch follows init naming convention.
+    # Not in the template repo; only unmerged init branches.
     if: >
       github.repository != 'giantswarm/template-management-clusters' &&
       github.event.pull_request.merged == false && (
@@ -66,9 +45,7 @@ jobs:
               }
             );
 
-            // Search from newest to oldest to pick up the most recent run.
-            // The marker format is shared with zz_generated.mctl_merge_gate.yaml and
-            // zz_generated.mctl_merge_cascade.yaml — keep the three in sync.
+            // Newest first; markers shared with merge_gate and merge_cascade.
             let ccrURL = '';
             let instURL = '';
             let fleetURL = '';
@@ -82,8 +59,7 @@ jobs:
                 if (m) instURL = m[1];
               }
               if (!fleetURL) {
-                // Only a URL counts: the pipeline reports this marker as
-                // "⚠️ not opened — <reason>" when the PR could not be created.
+                // Only a URL counts; a failed PR is reported as "not opened".
                 const m = comment.body.match(/\*\*Teleport fleet PR:\*\* (https?:\/\/\S+)/);
                 if (m) fleetURL = m[1];
               }
@@ -104,8 +80,7 @@ jobs:
         with:
           app-id: ${{ secrets.MCTL_APP_ID }}
           private-key: ${{ secrets.MCTL_APP_PRIVATE_KEY }}
-          # Without owner, the token is scoped to this repo alone and every
-          # cross-repo step (CCR, installations, teleport-fleet) 404s.
+          # Owner-scoped so cross-repo calls work.
           owner: ${{ github.repository_owner }}
 
       - name: Close related PRs

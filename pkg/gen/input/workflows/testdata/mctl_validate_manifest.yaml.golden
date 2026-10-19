@@ -3,13 +3,7 @@
 #    devctl
 #
 
-# Validates cluster-app-manifests.yaml files changed in a pull request.
-# Runs mctl validate against each changed manifest and reports the result
-# as a PR check.
-#
-# Generated into (customer)-management-clusters repos by devctl (fleet flavour)
-# and kept current by giantswarm/github align-files. Edit the template in
-# giantswarm/devctl, not the generated copy.
+# Runs `mctl validate` on changed cluster-app-manifests.yaml files.
 
 name: Validate cluster manifest
 
@@ -31,7 +25,7 @@ jobs:
   validate:
     name: Schema validation
     runs-on: ubuntu-latest
-    # Never in the public template repo: it is copied from, not run.
+    # Not in the template repo.
     if: github.repository != 'giantswarm/template-management-clusters'
 
     steps:
@@ -57,10 +51,7 @@ jobs:
           failed=0
           for f in $files; do
             echo "--- $f ---"
-            # mctl validate knows the release-* cluster charts only; a
-            # management cluster still on a legacy chart (cluster-aws, …)
-            # would fail before anything is validated, so it is skipped.
-            # An unreadable manifest falls through to mctl, which reports it.
+            # mctl only knows release-* charts; skip legacy ones, let mctl report unparsable ones.
             chart=$(yq eval-all 'select(.kind == "App") | .spec.name' "$f" 2>/dev/null | head -1) || chart=""
             case "$chart" in
               release-*|""|null) ;;
@@ -96,9 +87,7 @@ jobs:
         id: placeholders
         if: failure() && steps.validate.outputs.failed == '1'
         run: |
-          # mctl validate reports placeholders itself, so the token list is not
-          # repeated here. When any are left the init comment already told the
-          # user what to do — skip the validate comment.
+          # Placeholders left: the init comment already covers it, so no failure comment.
           if grep -q 'manifest still contains placeholder values' /tmp/validate_output 2>/dev/null; then
             echo "has_placeholders=true" >> "$GITHUB_OUTPUT"
           else

@@ -1,57 +1,6 @@
 {{{{ .Header }}}}
 
-# Triggered when a cluster init PR is MERGED.
-#
-# An init PR carries two PRs that must land with it, and neither is merged
-# earlier in the flow:
-#
-#   - the installations PR (opened by `mctl config`) — the installation's
-#     record in giantswarm/installations
-#   - the teleport-fleet PR (opened by `mctl create mc`) — the MC's
-#     TeleportProvisionToken, without which tbot cannot authenticate and
-#     teleport-operator never takes over rotating the node join token
-#
-# The CCR PR is NOT handled here: it is merged at `/create-mc` time, before
-# the Tekton pipeline starts, because Flux must read that config during the
-# bootstrap. See zz_generated.mctl_create_mc.yaml.
-#
-# The two are landed differently, on purpose:
-#
-#   installations   — merged directly. The giantswarm-mctlbot app has repo
-#                     Administration write and `enforce_admins` is false, so
-#                     the 1-approval requirement is bypassed. It is a records
-#                     repo; merging it has no deploy consequence.
-#
-#   teleport-fleet  — auto-merge is armed instead, so the repo's own
-#                     `Deploy (test)` and `Deploy (prod)` checks must pass
-#                     first. Merging to main there runs `helm upgrade --install`
-#                     against BOTH Teleport environments, so a malformed token
-#                     CR breaks the fleet deploy for every installation, not
-#                     just this one. Those checks are the only thing standing
-#                     between a bad JWKS block and that outcome — the admin
-#                     bypass is deliberately not used. If the PR is already
-#                     fully green, it is merged directly instead, since there
-#                     is then nothing left to wait for.
-#
-# Registering the two bots (`tctl bots add`) stays manual: there is no CRD for
-# Teleport bots and it writes to the shared central Teleport cluster. The
-# result comment repeats both exact commands.
-#
-# The zz_generated.mctl_merge_gate.yaml check should keep an init PR from being merged before
-# these PRs exist, but this workflow re-verifies that the bootstrap actually
-# succeeded — a repo admin can merge past a required status check.
-#
-# Branch naming convention: {installation}-init or {installation}-init-{provider}
-#
-# Required repository secrets:
-#   MCTL_APP_ID          - giantswarm-mctlbot GitHub App ID, used to mint a
-#                          token with write access to the installations and
-#                          teleport-fleet repos
-#   MCTL_APP_PRIVATE_KEY - giantswarm-mctlbot GitHub App private key
-#
-# Generated into (customer)-management-clusters repos by devctl (fleet flavour)
-# and kept current by giantswarm/github align-files. Edit the template in
-# giantswarm/devctl, not the generated copy.
+# On init PR merge: merges the installations PR directly, arms auto-merge on the teleport-fleet PR so its Deploy checks gate it.
 
 name: Merge cascade
 
@@ -68,8 +17,7 @@ jobs:
   merge-cascade:
     name: Merge related cluster PRs
     runs-on: ubuntu-latest
-    # Never in the public template repo: it is copied from, not run.
-    # Only when merged and the branch follows the init naming convention.
+    # Not in the template repo; only merged init branches.
     if: >
       github.repository != 'giantswarm/template-management-clusters' &&
       github.event.pull_request.merged == true && (
@@ -87,8 +35,7 @@ jobs:
         with:
           app-id: ${{ secrets.MCTL_APP_ID }}
           private-key: ${{ secrets.MCTL_APP_PRIVATE_KEY }}
-          # Without owner, the token is scoped to this repo alone and every
-          # cross-repo step (CCR, installations, teleport-fleet) 404s.
+          # Owner-scoped so cross-repo calls work.
           owner: ${{ github.repository_owner }}
 
       - name: Merge installations and teleport-fleet PRs
@@ -117,8 +64,7 @@ jobs:
               });
             }
 
-            // Marker format is shared with zz_generated.mctl_merge_gate.yaml and the Tekton
-            // result comment — keep the three in sync.
+            // Markers shared with merge_gate and the Tekton result comment.
             function findMarker(label) {
               const re = new RegExp(`\\*\\*${label}:\\*\\*\\s*(.+)`);
               for (const c of [...comments].reverse()) {
@@ -135,10 +81,7 @@ jobs:
               return { owner: m[1], repo: m[2], number: parseInt(m[3], 10), url: m[0] };
             }
 
-            // The gate should have caught this, but a repo admin can merge past
-            // a required status check. Merging an installations record for a
-            // cluster that was never successfully created is worse than doing
-            // nothing, so bail out loudly instead.
+            // Admins can merge past the gate; never land PRs for a failed bootstrap.
             const resultToken = `<!-- mctl-create-mc-result-${installation} -->`;
             const results = comments.filter(c => (c.body || '').includes(resultToken));
             const latestResult = results.length ? results[results.length - 1].body : '';
@@ -154,8 +97,7 @@ jobs:
               return;
             }
 
-            // mergeable_state is computed asynchronously; it reads "unknown"
-            // for a moment after any change to the PR or its base.
+            // mergeable_state is "unknown" until GitHub has computed it.
             async function getPR(target) {
               for (let attempt = 0; attempt < 4; attempt++) {
                 const { data } = await github.rest.pulls.get({
@@ -170,8 +112,7 @@ jobs:
               return data;
             }
 
-            // Squash is the only method allowed on all of installations,
-            // teleport-fleet and the CCR repos; merge commits are disabled.
+            // Squash is the only method allowed on the target repos.
             async function mergeNow(target) {
               await github.rest.pulls.merge({
                 owner: target.owner, repo: target.repo,
@@ -189,12 +130,7 @@ jobs:
                 { id: nodeID });
             }
 
-            // Land a PR, returning {row} for the report plus {failure} when the
-            // PR neither merged nor has auto-merge armed. A missing PR and an
-            // already-merged PR are not failures.
-            //
-            // waitForChecks=false merges straight away (admin bypass); true
-            // arms auto-merge so the target repo's own required checks decide.
+            // waitForChecks=false merges now (admin bypass); true arms auto-merge.
             async function land(label, reported, waitForChecks) {
               if (!reported) {
                 return { row: `| ${label} | ❓ not found | No PR link was reported on this PR. |` };
@@ -229,9 +165,7 @@ jobs:
                 };
               }
 
-              // "behind" only blocks on repos requiring branches to be up to
-              // date (teleport-fleet does). Updating re-runs its checks, which
-              // is exactly what auto-merge then waits for.
+              // Update a "behind" branch so auto-merge can proceed.
               if (pr.mergeable_state === 'behind') {
                 try {
                   await github.rest.pulls.updateBranch({
@@ -251,7 +185,6 @@ jobs:
                 } catch (err) {
                   mergeErr = err.message;
                   core.warning(`Direct merge of ${target.url} failed: ${err.message}`);
-                  // Fall through and try auto-merge instead.
                 }
               }
 

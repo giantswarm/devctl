@@ -3,37 +3,7 @@
 #    devctl
 #
 
-# Triggered by a /create-mc comment on an init PR.
-# Merges the CCR PR opened by mctl config, then posts a
-# /create-mc INSTALLATION=<name> comment so the Tekton mctl-create-mc Trigger
-# picks it up and runs the bootstrap pipeline.
-# Progress and results are posted back to the PR by the Tekton pipeline.
-#
-# The CCR PR is merged here, and not with the others when the init PR is
-# merged, because Flux must be able to read that config during the bootstrap.
-# The installations and teleport-fleet PRs are merged by zz_generated.mctl_merge_cascade.yaml
-# when the init PR itself is merged.
-#
-# Branch naming convention: {installation}-init or {installation}-init-{provider}
-# The installation name is derived by stripping the -init[-{provider}] suffix.
-#
-# Required repository secrets:
-#   MCTL_APP_ID          - giantswarm-mctlbot GitHub App ID, used to mint the
-#                          token for posting the /create-mc trigger comment
-#                          and merging the CCR PR
-#   MCTL_APP_PRIVATE_KEY - giantswarm-mctlbot GitHub App private key
-#
-# The Tekton EventListener must be registered as a GitHub webhook on this
-# repository. Endpoints by environment:
-#   cicddev:  https://github-pr-webhook.ci-dev.giantswarm.io
-#   cicdprod: https://github-pr-webhook.ci.giantswarm.io
-#
-# The Pipeline, Trigger, TriggerTemplate and RBAC this comment fires live in
-# giantswarm/tekton-resources and are reconciled onto both cicd clusters by Flux.
-#
-# Generated into (customer)-management-clusters repos by devctl (fleet flavour)
-# and kept current by giantswarm/github align-files. Edit the template in
-# giantswarm/devctl, not the generated copy.
+# `/create-mc` on an init PR merges the CCR PR (Flux reads it during bootstrap) and fires the Tekton mctl-create-mc pipeline.
 
 name: Create MC
 
@@ -53,16 +23,7 @@ jobs:
   trigger:
     name: Trigger Tekton pipeline
     runs-on: ubuntu-latest
-    # Never in the public template repo: it is copied from, not run.
-    # Only run on PR comments that are exactly /create-mc (with optional trailing whitespace).
-    # The Tekton trigger is fired via a hidden HTML comment, which does not match this condition.
-    #
-    # author_association gates who may start a bootstrap. This step merges the CCR
-    # and installations PRs using the giantswarm-mctlbot app token and then launches a
-    # cluster-admin Tekton pipeline, so it must not be reachable by anyone who can
-    # merely comment on the PR (e.g. an outside contributor on a fork PR).
-    # Note this is stricter than the sibling /config and /init workflows, which
-    # are currently ungated.
+    # Not in the template repo; only /create-mc from members (it starts a cluster-admin pipeline), not the trigger comment.
     if: >
       github.repository != 'giantswarm/template-management-clusters' &&
       github.event.issue.pull_request != null &&
@@ -88,8 +49,7 @@ jobs:
         with:
           app-id: ${{ secrets.MCTL_APP_ID }}
           private-key: ${{ secrets.MCTL_APP_PRIVATE_KEY }}
-          # Without owner, the token is scoped to this repo alone and every
-          # cross-repo step (CCR, installations, teleport-fleet) 404s.
+          # Owner-scoped so cross-repo calls work.
           owner: ${{ github.repository_owner }}
 
       - name: Get PR branch
@@ -109,8 +69,7 @@ jobs:
         env:
           BRANCH: ${{ steps.pr.outputs.branch }}
         run: |
-          # Branch format: {installation}-init or {installation}-init-{provider}
-          # Strip -init-{provider} first, then -init, so both patterns work.
+          # {installation}-init or {installation}-init-{provider}.
           if [[ "$BRANCH" =~ ^(.+)-init-(capa|capz|capv|capvcd)$ ]]; then
             installation="${BASH_REMATCH[1]}"
           else
@@ -118,10 +77,7 @@ jobs:
           fi
           echo "name=$installation" >> "$GITHUB_OUTPUT"
 
-      # Find and merge the CCR PR that mctl config opened. The zz_generated.mctl_config.yaml
-      # workflow posts its URL in a comment on this PR:
-      #   - **CCR PR:** https://github.com/...
-      #   - **Installations PR:** https://github.com/...
+      # URLs come from the `**CCR PR:**` / `**Installations PR:**` lines the config workflow posts.
       - name: Merge CCR PR
         uses: actions/github-script@v7
         with:
@@ -136,8 +92,7 @@ jobs:
               }
             );
 
-            // Anchored on the labelled line, newest comment first, like
-            // zz_generated.mctl_close_cascade.yaml. An unanchored scan matched a usage example.
+            // Anchored on the labelled line, newest comment first.
             function findLabelled(label) {
               for (let i = comments.length - 1; i >= 0; i--) {
                 const m = (comments[i].body || '').match(
@@ -148,8 +103,7 @@ jobs:
               return null;
             }
 
-            // installations is merged by zz_generated.mctl_merge_cascade.yaml at init-PR merge;
-            // checked here only because its absence means config never ran.
+            // Installations PR is merged later; a missing one means config never ran.
             const ccrURL  = findLabelled('CCR PR');
             const instURL = findLabelled('Installations PR');
 
@@ -180,8 +134,7 @@ jobs:
                 merge_method: 'squash',
               });
             } catch (err) {
-              // 405 covers both an already-merged PR and a refused merge, so ask
-              // the API which it was rather than assuming the benign one.
+              // 405 is either already merged or refused; check which.
               const { data: ccrPR } = await github.rest.pulls.get({
                 owner: ccrOrg, repo: ccrRepo, pull_number: parseInt(ccrNum),
               });
@@ -201,9 +154,7 @@ jobs:
               'zz_generated.mctl_merge_cascade.yaml merges it when this init PR is merged.'
             );
 
-      # Post a "running" status comment so the user knows the pipeline started.
-      # The comment body contains the Tekton result replace-token so it will be
-      # overwritten in-place when the pipeline posts its success or failure result.
+      # The Tekton pipeline replaces this comment in place via its result token.
       - name: Post running comment
         uses: actions/github-script@v7
         env:
@@ -230,13 +181,7 @@ jobs:
               ].join('\n'),
             });
 
-      # Post a hidden HTML comment as taylorbot to fire the Tekton mctl-create-mc Trigger.
-      # HTML comments are invisible in the GitHub UI but present in the raw webhook payload,
-      # so the Tekton CEL filter can match on it without polluting the PR thread with a command.
-      # The hidden format also ensures this step can never re-trigger this workflow.
-      # MCTL_IMAGE is carried along so the Tekton pipeline runs the same mctl
-      # version this CMC repo uses for init/config, instead of its own separately
-      # pinned default.
+      # Hidden comment matched by the Tekton CEL filter; carries MCTL_IMAGE so the pipeline runs the same mctl.
       - name: Post Tekton trigger comment
         uses: actions/github-script@v7
         env:
@@ -250,7 +195,6 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
-              // The hidden HTML comment is what the Tekton CEL filter matches on.
-              // Visible text is added so the comment doesn't appear blank in the GitHub UI.
+              // Visible text so the comment isn't blank in the UI.
               body: `<!-- mctl-create-mc INSTALLATION=${installation} MCTL_IMAGE=${mctlImage} -->\n_Triggering Tekton bootstrap pipeline for \`${installation}\`…_`,
             });

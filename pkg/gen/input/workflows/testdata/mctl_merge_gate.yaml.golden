@@ -3,59 +3,7 @@
 #    devctl
 #
 
-# Publishes the `mctl/ready-to-merge` commit status on cluster init PRs.
-#
-# The status is red until the installation is genuinely safe to merge, and it
-# is meant to be registered as a REQUIRED status check on the CMC repo's
-# default branch (see "Setup" below). Merging the init PR triggers the merge
-# cascade (zz_generated.mctl_merge_cascade.yaml), which merges the installations PR and arms
-# auto-merge on the teleport-fleet PR. If those PRs do not exist yet, merging
-# the init PR silently loses that cascade — hence the gate.
-#
-# The status is green only when all three hold:
-#
-#   1. The newest `/create-mc` result comment reports success. The teleport-fleet
-#      PR is opened mid-run (after pivot, before setup-flux), and it is reported
-#      on failures too, so "the PR links exist" alone does NOT mean the cluster
-#      was created — a run that died in verify would otherwise unblock the merge.
-#   2. An installations PR URL was reported and that PR is open or merged.
-#   3. A teleport-fleet PR URL was reported and that PR is open or merged.
-#
-# Once green, it also comments asking for the patch-gitrepo-*-branch.yaml overrides to be removed — merging with them in place strands the GitRepository resources pinned to this branch.
-#
-# Why a commit status and not a check run: the facts this gate reads arrive in
-# PR comments (posted by the config workflow and by the Tekton pipeline), not in
-# pushes. A commit status can be re-posted for the same head SHA on an
-# issue_comment event, so the gate flips green the moment the pipeline reports
-# success — without anyone pushing a commit.
-#
-# Why non-init PRs get an explicit green rather than being skipped: a job
-# skipped by an `if:` condition posts no status at all, and GitHub treats a
-# missing required check as "expected — waiting", which would block every
-# unrelated PR in the repo forever. Note the inverse trap too: a job that is
-# skipped *after* being triggered reports as "skipped", which GitHub counts as
-# PASSING for required checks. Either way, the gate must run and post
-# explicitly rather than rely on `if:`.
-#
-# Required repository secrets:
-#   MCTL_APP_ID          - giantswarm-mctlbot GitHub App ID, used to mint a
-#                          token with read access to the CCR, installations
-#                          and teleport-fleet repos, and write access to
-#                          statuses on this repo
-#   MCTL_APP_PRIVATE_KEY - giantswarm-mctlbot GitHub App private key
-#
-# Setup: the context is made required by `requiredChecks: [mctl/ready-to-merge]`
-# on the repository's entry in giantswarm/github -- only once this workflow is
-# on main, and never for template-management-clusters (the gate is skipped there).
-#
-# When testing changes to this file: issue_comment-triggered workflows always
-# run the copy on the repository's DEFAULT branch, so edits here have no effect
-# on comment events until they are merged to main of the CMC repo. Push events
-# on the PR branch do pick up the branch's copy.
-#
-# Generated into (customer)-management-clusters repos by devctl (fleet flavour)
-# and kept current by giantswarm/github align-files. Edit the template in
-# giantswarm/devctl, not the generated copy.
+# Posts the required mctl/ready-to-merge status: green once the latest /create-mc succeeded and the installations and teleport-fleet PRs are open or merged.
 
 name: Merge gate
 
@@ -77,11 +25,7 @@ jobs:
   gate:
     name: Check cluster PRs are ready to merge
     runs-on: ubuntu-latest
-    # Comment events fire on issues as well as PRs; only PRs have a head SHA to
-    # attach a status to. Everything else is decided inside the script so that
-    # a status is always posted — see the header on skipped-vs-missing checks.
-    # The template repo is excluded: it is copied from, not run, and has no
-    # required checks.
+    # Must run on every PR: a skipped job posts no status and blocks the required check.
     if: >
       github.repository != 'giantswarm/template-management-clusters' && (
         github.event_name == 'pull_request' ||
@@ -89,8 +33,7 @@ jobs:
       )
 
     steps:
-      # Non-fatal: only the cross-repo reads need the App. Posting the status
-      # needs statuses:write, which this workflow's own token already has.
+      # Non-fatal: only cross-repo reads need the App token.
       - name: Generate app token
         id: app-token
         continue-on-error: true
@@ -98,8 +41,7 @@ jobs:
         with:
           app-id: ${{ secrets.MCTL_APP_ID }}
           private-key: ${{ secrets.MCTL_APP_PRIVATE_KEY }}
-          # Without owner, the token is scoped to this repo alone and every
-          # cross-repo step (CCR, installations, teleport-fleet) 404s.
+          # Owner-scoped so cross-repo calls work.
           owner: ${{ github.repository_owner }}
 
       - name: Evaluate and publish status
@@ -140,7 +82,7 @@ jobs:
               core.info(`${CONTEXT} = ${state}: ${trimmed}`);
             }
 
-            // Branch format: {installation}-init or {installation}-init-{provider}
+            // {installation}-init or {installation}-init-{provider}
             const branch = pr.head.ref;
             const match = branch.match(/^(.+)-init(?:-(?:capa|capz|capv|capvcd))?$/);
             if (!match) {
@@ -155,12 +97,7 @@ jobs:
               issue_number: prNumber,
             });
 
-            // 1. Did the newest bootstrap run succeed?
-            //
-            // The Tekton finally tasks overwrite the newest comment carrying this
-            // token, so the last one holds the latest run's outcome. Deliberately
-            // the newest comment rather than the newest match: if an earlier run
-            // succeeded and a rerun failed, the latest outcome is what governs.
+            // The newest result comment governs, even if an earlier run succeeded.
             const resultToken = `<!-- mctl-create-mc-result-${installation} -->`;
             const results = comments.filter(c => (c.body || '').includes(resultToken));
             const latestResult = results.length ? results[results.length - 1].body : '';
@@ -174,9 +111,7 @@ jobs:
               return;
             }
 
-            // 2 + 3. Collect the PR links the config workflow and the pipeline
-            // reported. Newest-first first match, so a link recorded by an
-            // earlier run is not lost if a later comment omits it.
+            // Newest match first, so a link from an earlier run is kept.
             function findMarker(label) {
               const re = new RegExp(`\\*\\*${label}:\\*\\*\\s*(.+)`);
               for (const comment of [...comments].reverse()) {
@@ -186,8 +121,7 @@ jobs:
               return '';
             }
 
-            // Reported values are either a URL or a human-readable failure note
-            // (e.g. the pipeline's "⚠️ not opened — <reason>").
+            // A reported value is a URL or a failure note.
             function asURL(reported) {
               const m = reported.match(/^(https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+)/);
               return m ? m[1] : '';
@@ -237,7 +171,7 @@ jobs:
               summary.push(`- **${target.label}** (${state}): ${url}`);
             }
 
-            // A reminder and not a gate condition: the overrides are what keeps the new MC reconciling until this PR lands.
+            // Reminder only, not a gate condition.
             let overrideLines = [];
             try {
               const { data: file } = await github.rest.repos.getContent({
@@ -275,9 +209,9 @@ jobs:
             }
             await publish('success', 'installations + teleport-fleet PRs will be merged when this PR merges.');
 
-      # Default GITHUB_TOKEN, not the app token: its events start no workflow runs, so this cannot re-trigger the gate's own issue_comment listener.
+      # Default GITHUB_TOKEN so the comment cannot re-trigger the gate.
       - name: Comment on leftover branch overrides
-        # Set only on the fully-green path — every earlier return leaves it empty.
+        # Set only on the green path.
         if: steps.gate.outputs.installation != ''
         uses: actions/github-script@v7
         env:

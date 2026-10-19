@@ -1,36 +1,6 @@
 {{{{ .Header }}}}
 
-# Triggered by a /config comment on a pull request.
-# Runs mctl config in CI mode and posts the result back as a PR comment.
-#
-# Branch naming convention: {installation}-init (created by mctl init).
-# The installation name is derived by stripping the -init suffix.
-#
-# Usage (comment on the init PR):
-#   /config
-#   /config --credentials <1Password item name>
-#
-# The second form is required for customer installations (anything not on
-# mctl's hardcoded test-customer allow-list) — mctl config itself refuses to
-# run without it. The 1Password item must live in the vault referenced by
-# OP_VAULT below and hold this installation's cloud-provider bootstrap
-# credentials (see docs/configuration.md in giantswarm/mctl). Everything
-# after "/config" is passed straight through to `mctl config`, the same way
-# zz_generated.mctl_patch_init.yaml passes flags through to `mctl init`.
-#
-# Required repository secrets:
-#   MCTL_APP_ID              - giantswarm-mctlbot GitHub App ID
-#   MCTL_APP_PRIVATE_KEY     - giantswarm-mctlbot GitHub App private key
-#   OP_SERVICE_ACCOUNT_TOKEN - 1Password service account token scoped to the
-#                              vault referenced in op.env
-#
-# op.env (1Password secret paths) is private, so it is fetched at runtime from
-# giantswarm/mctl ci/op.env at the tag matching MCTL_IMAGE (main for latest or
-# dev tags). The giantswarm-mctlbot App needs read access to giantswarm/mctl.
-#
-# Generated into (customer)-management-clusters repos by devctl (fleet flavour)
-# and kept current by giantswarm/github align-files. Edit the template in
-# giantswarm/devctl, not the generated copy.
+# `/config [flags]` on an init PR runs `mctl config --ci`; customer installations need `--credentials <1Password item>`.
 
 name: Config
 
@@ -51,8 +21,7 @@ jobs:
   config:
     name: Run mctl config
     runs-on: ubuntu-latest
-    # Never in the public template repo: it is copied from, not run.
-    # Only run on PR comments that start with /config
+    # Not in the template repo; only /config PR comments.
     if: >
       github.repository != 'giantswarm/template-management-clusters' &&
       github.event.issue.pull_request != null &&
@@ -66,8 +35,7 @@ jobs:
         with:
           app-id: ${{ secrets.MCTL_APP_ID }}
           private-key: ${{ secrets.MCTL_APP_PRIVATE_KEY }}
-          # Without owner, the token is scoped to this repo alone and every
-          # cross-repo step (CCR, installations, teleport-fleet) 404s.
+          # Owner-scoped so cross-repo calls work.
           owner: ${{ github.repository_owner }}
 
       - name: Acknowledge comment
@@ -99,8 +67,7 @@ jobs:
         env:
           BRANCH: ${{ steps.pr.outputs.branch }}
         run: |
-          # Branch format: {installation}-init or {installation}-init-{provider}
-          # Strip -init-{provider} first, then -init, so both patterns work.
+          # {installation}-init or {installation}-init-{provider}.
           if [[ "$BRANCH" =~ ^(.+)-init-(capa|capz|capv|capvcd)$ ]]; then
             installation="${BASH_REMATCH[1]}"
           else
@@ -113,17 +80,12 @@ jobs:
         env:
           COMMENT: ${{ github.event.comment.body }}
         run: |
-          # Extract everything after '/config ' as flags to pass through
-          # (e.g. --credentials <item>), same as zz_generated.mctl_patch_init.yaml does for /init.
-          # Only the first line is the command, and GitHub comment bodies are
-          # CRLF: \r is not in IFS, so without stripping it the shell glues it
-          # onto the last flag value (mctl#277).
+          # First line only, CR stripped (comment bodies are CRLF).
           flags=$(printf '%s' "$COMMENT" | head -n 1 | tr -d '\r')
           flags="${flags#/config}"
           flags="${flags#"${flags%%[![:space:]]*}"}" # trim leading whitespace
 
-          # Set by the workflow from the event. A comment repeating one would come
-          # later on the command line and win, redirecting an org-scoped token.
+          # Workflow-set flags must not be overridden from the comment.
           read -ra tokens <<< "$flags" || true
           for tok in "${tokens[@]}"; do
             case "${tok%%=*}" in
@@ -171,8 +133,7 @@ jobs:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           set +e
-          # op is the entrypoint and each value is its own argv element. The old
-          # `sh -c` form let a comment append commands next to the tokens.
+          # No shell in the container: user flags stay separate argv elements.
           read -ra USER_FLAG_ARR <<< "$USER_FLAGS" || true
           output=$(docker run --rm \
             --entrypoint op \
@@ -219,7 +180,7 @@ jobs:
               if (ccrMatch)  lines.push(`- **CCR PR:** ${ccrMatch[1]}`);
               if (instMatch) lines.push(`- **Installations PR:** ${instMatch[1]}`);
 
-              // Parse individual skipped steps: `[name] reason\n  → command`
+              // Skipped steps: `[name] reason\n  → command`
               const stepMatches = [...output.matchAll(/\[([\w-]+)\] ([^\n]+)\n\s+→ ([^\n]+)/g)];
               if (stepMatches.length > 0) {
                 lines.push('\n#### ⚠️ Complete these steps locally before running `/create-mc`\n');

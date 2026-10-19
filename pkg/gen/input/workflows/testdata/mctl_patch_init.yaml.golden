@@ -3,27 +3,7 @@
 #    devctl
 #
 
-# Triggered by a /init comment on a pull request.
-# Re-runs mctl init on the existing branch with the flags provided in the comment,
-# replacing placeholder values with real ones.
-#
-# Usage (comment on the init PR):
-#   /init --base-domain=my.domain.io --region=eu-west-1 --aws-account-id=123456789012
-#
-# The branch must follow the {installation}-init-{provider} naming convention.
-# The exact command with the required flags is posted by the CI init workflow.
-#
-# The manifest is regenerated from scratch, so pass every flag you want kept:
-# one omitted here falls back to its default, and hand edits to the manifest in
-# the PR are overwritten.
-#
-# Required repository secrets:
-#   MCTL_APP_ID          - giantswarm-mctlbot GitHub App ID
-#   MCTL_APP_PRIVATE_KEY - giantswarm-mctlbot GitHub App private key
-#
-# Generated into (customer)-management-clusters repos by devctl (fleet flavour)
-# and kept current by giantswarm/github align-files. Edit the template in
-# giantswarm/devctl, not the generated copy.
+# `/init <flags>` on an init PR regenerates the manifest from scratch; omitted flags fall back to defaults.
 
 name: Patch init
 
@@ -43,7 +23,7 @@ jobs:
   patch-init:
     name: Re-run mctl init with real values
     runs-on: ubuntu-latest
-    # Never in the public template repo: it is copied from, not run.
+    # Not in the template repo.
     if: >
       github.repository != 'giantswarm/template-management-clusters' &&
       github.event.issue.pull_request != null &&
@@ -80,7 +60,6 @@ jobs:
           BRANCH:  ${{ steps.pr.outputs.branch }}
           COMMENT: ${{ github.event.comment.body }}
         run: |
-          # Derive installation and provider from branch name.
           if [[ "$BRANCH" =~ ^(.+)-init-(capa|capz|capv|capvcd)$ ]]; then
             echo "installation=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
             echo "provider=${BASH_REMATCH[2]}"     >> "$GITHUB_OUTPUT"
@@ -89,15 +68,12 @@ jobs:
             exit 1
           fi
 
-          # Only the first line is the command, and GitHub comment bodies are
-          # CRLF: \r is not in IFS, so without stripping it the shell glues it
-          # onto the last flag value (mctl#277).
+          # First line only, CR stripped (comment bodies are CRLF).
           flags=$(printf '%s' "$COMMENT" | head -n 1 | tr -d '\r')
           flags="${flags#/init}"
           flags="${flags#"${flags%%[![:space:]]*}"}" # trim leading whitespace
 
-          # Set by the workflow from the event. A comment repeating one would come
-          # later on the command line and win, redirecting an org-scoped token.
+          # Workflow-set flags must not be overridden from the comment.
           read -ra tokens <<< "$flags" || true
           for tok in "${tokens[@]}"; do
             case "${tok%%=*}" in
@@ -115,8 +91,7 @@ jobs:
         with:
           app-id: ${{ secrets.MCTL_APP_ID }}
           private-key: ${{ secrets.MCTL_APP_PRIVATE_KEY }}
-          # Without owner, the token is scoped to this repo alone and every
-          # cross-repo step (CCR, installations, teleport-fleet) 404s.
+          # Owner-scoped so cross-repo calls work.
           owner: ${{ github.repository_owner }}
 
       - name: Run mctl init
@@ -133,8 +108,7 @@ jobs:
           set +e
           CUSTOMER="${CMC_REPO%-management-clusters}"
           CCR_REPO="${CUSTOMER}-configs"
-          # Quoted array expansion: an unquoted $USER_FLAGS is glob-expanded
-          # against the runner's working directory.
+          # Quoted array, so flags are not glob-expanded.
           read -ra USER_FLAG_ARR <<< "$USER_FLAGS" || true
           output=$(docker run --rm \
             -e GITHUB_TOKEN \
@@ -177,11 +151,7 @@ jobs:
                 'Once the validation check is green, follow the "Next step" instructions in the PR description above to continue.',
               ];
 
-              // For CAPA, surface the companion aws-account-setup PR as a
-              // comment — this re-run's PR body can't be updated in place.
-              // Only tell the reviewer to approve it when a PR reference is
-              // actually present — not for the "already provisioned" or
-              // "not opened" outcomes, which have nothing to approve.
+              // CAPA: surface the aws-account-setup PR; ask for approval only if one was opened.
               const markerLine = output.match(/^- \*\*AWS account-setup PR:\*\*.*$/m);
               if (markerLine) {
                 lines.push('', markerLine[0]);

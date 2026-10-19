@@ -10,8 +10,7 @@
 {
   // Let the github-actions manager also scan the workflow templates devctl
   // emits, so action versions baked into the templates get bumped too.
-  // The mctl workflow goldens too, so a bump moves template and golden in one
-  // PR and the byte-for-byte golden tests stay green.
+  // Also the mctl goldens, so template and golden bump in one PR.
   'github-actions': {
     managerFilePatterns: [
       '/.*.yaml.template$/',
@@ -94,8 +93,7 @@
       depNameTemplate: 'circleci/continuation',
       datasourceTemplate: 'orb',
     },
-    // The mctl image tag the fleet flavour's mctl workflows run (MctlVersion),
-    // and the goldens that render it, in one PR. Image tags carry no `v`.
+    // mctl image tag (MctlVersion) and the goldens that render it.
     {
       customType: 'regex',
       managerFilePatterns: ['/pkg/gen/input/workflows/internal/file/mctl\\.go$/'],

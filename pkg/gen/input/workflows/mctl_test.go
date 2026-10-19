@@ -14,8 +14,7 @@ import (
 	"github.com/giantswarm/devctl/v8/pkg/gen/input/workflows/internal/file"
 )
 
-// mctlNames are the mctl workflows by their generated name,
-// zz_generated.mctl_<name>.yaml.
+// mctlNames are the generated names, zz_generated.mctl_<name>.yaml.
 var mctlNames = []string{
 	"close_cascade",
 	"config",
@@ -87,8 +86,7 @@ func mctlStepScript(t *testing.T, name, step string) string {
 	return ""
 }
 
-// Test_MctlPaths pins the generated file names, and that the deletions cover
-// the names `mctl create cmc-repo` wrote them under, plus op.env.
+// Test_MctlPaths pins the generated and the deleted legacy file names.
 func Test_MctlPaths(t *testing.T) {
 	w := newWorkflows(t, gen.FlavourManagementClustersFleet)
 
@@ -117,8 +115,7 @@ func Test_MctlPaths(t *testing.T) {
 	}
 }
 
-// Test_GoldenMctl pins the exact rendered workflows. They carry nothing
-// repository-specific, so one golden each covers every fleet repository.
+// Test_GoldenMctl pins the rendered workflows; they are repository-independent.
 func Test_GoldenMctl(t *testing.T) {
 	for name, got := range mctlRenders(t, true) {
 		t.Run(name, func(t *testing.T) {
@@ -127,9 +124,7 @@ func Test_GoldenMctl(t *testing.T) {
 	}
 }
 
-// Test_MctlGuardsTemplateRepo pins that no job runs in the public template
-// repository, whatever the trigger: every job's if starts with the guard, and
-// an if that has an || at its top level keeps it inside parentheses.
+// Test_MctlGuardsTemplateRepo checks every job's if starts with the template repo guard and has no top-level ||.
 func Test_MctlGuardsTemplateRepo(t *testing.T) {
 	for name, body := range mctlRenders(t, false) {
 		wf := parseMctl(t, name, body)
@@ -174,10 +169,7 @@ func topLevelOr(s string) bool {
 	return false
 }
 
-// Test_MctlImagePinned pins the image every workflow runs: the MctlVersion
-// tag, overridable with the MCTL_IMAGE variable, never a floating tag. The
-// config workflow derives the giantswarm/mctl ref it fetches op.env from out
-// of this tag, so it has to be a bare release version.
+// Test_MctlImagePinned checks the image is the bare X.Y.Z MctlVersion tag; config derives the op.env ref from it.
 func Test_MctlImagePinned(t *testing.T) {
 	if !regexp.MustCompile(`^\d+\.\d+\.\d+$`).MatchString(file.MctlVersion) {
 		t.Fatalf("MctlVersion = %q, want a bare X.Y.Z image tag", file.MctlVersion)
@@ -203,8 +195,7 @@ func Test_MctlImagePinned(t *testing.T) {
 	}
 }
 
-// Test_MctlNoOpEnvInRepo pins that the config workflow reads op.env from
-// giantswarm/mctl at run time: devctl is public and generates no op.env.
+// Test_MctlNoOpEnvInRepo checks op.env is fetched from giantswarm/mctl, never read from the repo.
 func Test_MctlNoOpEnvInRepo(t *testing.T) {
 	script := mctlStepScript(t, "config", "Fetch op.env")
 	if !strings.Contains(script, "repos/giantswarm/mctl/contents/ci/op.env?ref=$ref") {
@@ -217,11 +208,7 @@ func Test_MctlNoOpEnvInRepo(t *testing.T) {
 	}
 }
 
-// Test_MctlMergeGatePassesOtherPRs pins what the merge gate posts on a pull
-// request that is not a cluster init PR (align-files, Renovate, hand PRs):
-// a green mctl/ready-to-merge, since the context is a required check. The job
-// must run for every pull request -- a skipped job posts no status and a
-// required check that never reports blocks the PR.
+// Test_MctlMergeGatePassesOtherPRs checks the gate runs on every PR and posts success for non-init PRs.
 func Test_MctlMergeGatePassesOtherPRs(t *testing.T) {
 	body := mctlRenders(t, false)["merge_gate"]
 	wf := parseMctl(t, "merge_gate", body)
@@ -260,9 +247,7 @@ func Test_MctlMergeGatePassesOtherPRs(t *testing.T) {
 	}
 }
 
-// Test_MctlNoExpressionInRun guards against template injection and secret
-// leaks: branch names, comment bodies, PR titles and tokens reach a run:
-// script through env:, never as an interpolated ${{ }} expression.
+// Test_MctlNoExpressionInRun checks untrusted input and tokens reach run: scripts only via env:.
 func Test_MctlNoExpressionInRun(t *testing.T) {
 	forbidden := regexp.MustCompile(`\$\{\{\s*(github\.head_ref|github\.event\.comment\.body|github\.event\.pull_request\.title|github\.event\.pull_request\.head\.ref|steps\.[\w-]+\.outputs\.token)`)
 
@@ -277,10 +262,7 @@ func Test_MctlNoExpressionInRun(t *testing.T) {
 	}
 }
 
-// Test_MctlScrapesMctlOutput pins the strings the workflows read out of mctl's
-// output (manifest.PlaceholderCommandMarker and
-// manifest.PlaceholdersFoundMessage in giantswarm/mctl). Drift is silent: no
-// comment is posted, or one is posted too early.
+// Test_MctlScrapesMctlOutput pins the mctl output strings the workflows match on (see mctl's pkg/manifest).
 func Test_MctlScrapesMctlOutput(t *testing.T) {
 	renders := mctlRenders(t, false)
 	for name, want := range map[string]string{
@@ -293,8 +275,7 @@ func Test_MctlScrapesMctlOutput(t *testing.T) {
 	}
 }
 
-// Test_MctlConfigParsesHyphenatedSkippedSteps pins that the config workflow's
-// skipped-step parser keeps a hyphenated step name (etcd-backup).
+// Test_MctlConfigParsesHyphenatedSkippedSteps checks the skipped-step parser keeps hyphenated names.
 func Test_MctlConfigParsesHyphenatedSkippedSteps(t *testing.T) {
 	m := regexp.MustCompile(`matchAll\(/(.+?)/g\)`).FindStringSubmatch(mctlRenders(t, false)["config"])
 	if m == nil {
@@ -311,11 +292,7 @@ func Test_MctlConfigParsesHyphenatedSkippedSteps(t *testing.T) {
 	}
 }
 
-// Test_MctlCommentFlagParsing runs the real shell from the workflows. GitHub
-// comment bodies are CRLF and \r is not an IFS separator, so an unstripped one
-// ends up glued to the last flag value; text after the command line is
-// ignored; and a flag the workflow sets itself is refused, since a repeated
-// one would come later on the command line and win.
+// Test_MctlCommentFlagParsing runs the workflows' flag parsing: CRLF stripped, trailing text ignored, reserved flags refused.
 func Test_MctlCommentFlagParsing(t *testing.T) {
 	const (
 		patchInitStep = "Parse branch and comment flags"
@@ -377,9 +354,7 @@ func Test_MctlCommentFlagParsing(t *testing.T) {
 	}
 }
 
-// Test_MctlValidateManifestSkipsLegacyCharts runs the validate step with git
-// and docker stubbed: a manifest on a legacy cluster chart is skipped, a
-// release-* one and an unreadable one reach mctl validate.
+// Test_MctlValidateManifestSkipsLegacyCharts checks legacy charts are skipped, release-* and unparsable ones validated.
 func Test_MctlValidateManifestSkipsLegacyCharts(t *testing.T) {
 	if _, err := exec.LookPath("yq"); err != nil {
 		t.Skip("yq not on PATH (it is on the GitHub-hosted runner)")

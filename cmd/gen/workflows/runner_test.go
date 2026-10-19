@@ -212,10 +212,7 @@ func git(t *testing.T, args ...string) {
 	require.NoError(t, err, string(out))
 }
 
-// Test_Run_FleetMctl pins what a management-clusters repository (flavour
-// fleet) gets: the mctl workflows under zz_generated.mctl_*, and the
-// unprefixed copies and op.env `mctl create cmc-repo` wrote deleted. The
-// deletions are fleet-only: another flavour's own config.yaml stays.
+// Test_Run_FleetMctl checks fleet gets the mctl workflows and legacy deletions, other flavours neither.
 func Test_Run_FleetMctl(t *testing.T) {
 	mctlWorkflows := []string{"close-cascade", "config", "create-mc", "init", "merge-cascade", "merge-gate", "patch-init", "validate-config", "validate-manifest"}
 	legacy := []string{"op.env"}

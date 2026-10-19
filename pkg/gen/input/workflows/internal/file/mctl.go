@@ -9,18 +9,11 @@ import (
 	"github.com/giantswarm/devctl/v8/pkg/gen/input/workflows/internal/params"
 )
 
-// MctlVersion is the gsoci.azurecr.io/giantswarm/mctl image tag the mctl
-// workflows of a management-clusters repository run, unless the repository
-// overrides it with the MCTL_IMAGE Actions variable. Pinned here so the
-// workflows and the binary they drive move together.
-//
+// MctlVersion is the mctl image tag the workflows run unless vars.MCTL_IMAGE overrides it.
 // renovate: datasource=docker depName=gsoci.azurecr.io/giantswarm/mctl
 const MctlVersion = "0.1.16"
 
-// mctlWorkflows are the mctl workflows of a management-clusters repository
-// (flavour fleet), by the name `mctl create cmc-repo` used to write them under
-// before devctl generated them. Each renders from mctl_<name>.yaml.template,
-// with dashes as underscores.
+// mctlWorkflows are the legacy file names; each renders from mctl_<name_with_underscores>.yaml.template.
 var mctlWorkflows = []string{
 	"close-cascade",
 	"config",
@@ -45,8 +38,7 @@ var mctlWorkflows = []string{
 //go:embed mctl_*.yaml.template*
 var mctlTemplateFiles embed.FS
 
-// NewMctlInputs returns the mctl workflows, one zz_generated.mctl_<name>.yaml
-// each.
+// NewMctlInputs returns one zz_generated.mctl_<name>.yaml per mctl workflow.
 func NewMctlInputs(p params.Params) []input.Input {
 	inputs := make([]input.Input, 0, len(mctlWorkflows))
 	for _, name := range mctlWorkflows {
@@ -55,7 +47,6 @@ func NewMctlInputs(p params.Params) []input.Input {
 
 		body, err := mctlTemplateFiles.ReadFile(tmpl)
 		if err != nil {
-			// The names are fixed and the files embedded with them.
 			panic(err)
 		}
 
@@ -76,10 +67,7 @@ func NewMctlInputs(p params.Params) []input.Input {
 	return inputs
 }
 
-// NewMctlLegacyDeletionInputs returns Inputs that delete what `mctl create
-// cmc-repo` wrote before devctl generated the mctl workflows: each workflow
-// under its unprefixed name, and op.env, which the config workflow now fetches
-// from giantswarm/mctl at run time.
+// NewMctlLegacyDeletionInputs deletes the unprefixed workflows and op.env written by `mctl create cmc-repo`.
 func NewMctlLegacyDeletionInputs(p params.Params) []input.Input {
 	inputs := make([]input.Input, 0, len(mctlWorkflows)+1)
 	for _, name := range mctlWorkflows {
