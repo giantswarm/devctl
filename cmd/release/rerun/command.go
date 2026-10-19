@@ -27,6 +27,13 @@ when a job of it failed; one that is still running is not, CircleCI reruns a
 finished workflow only. The rerun is started, not waited for: devctl release wait
 waits for it.
 
+A workflow running (or failing) longer than --wedged-after (2h), far beyond any
+tag build, has jobs hung on CircleCI's side: it is canceled, read until the
+cancel lands (at most two minutes), and rerun from failed, from start where
+CircleCI offers no rerun from failed. Where CircleCI does not honour the cancel,
+a fresh pipeline for the tag is triggered through the CircleCI API instead, once
+per tag. --wedged-after 0 leaves running workflows alone.
+
 A pipeline that never got a workflow (its setup workflow done and the
 continuation never created, or pending without a workflow) has nothing to
 rerun: once it is five minutes old, the tag's push webhook delivery is sent
@@ -48,23 +55,26 @@ granted Read access only is exit 8 naming that login.
 The document (schemaVersion 1): command, exitCode, verdict, reason, warnings,
 startedAt, finishedAt, repository, tag, headSha, pipeline{id, number, url},
 workflows[{name, id, status, url, failedJobs[], outcome
-(rerun|running|no_failed_job|nothing_to_rerun|refused), rerunId, rerunUrl}],
+(rerun|running|no_failed_job|nothing_to_rerun|refused), rerunId, rerunUrl,
+canceled, rerunFrom (failed|start)}],
 redelivery{hookId, hookUrl, deliveryId, guid, deliveredAt, ref, after, outcome
 (redelivered|already_redelivered|refused), redeliveredAt}, trigger{outcome
 (triggered|already_triggered|refused), pipeline{id, number, url}}, identity. See
 docs/pr-rerun.md.
 
 Exit codes:
-  0  at least one workflow is rerun from failed, the push webhook redelivered,
-     or a fresh pipeline triggered
+  0  at least one workflow is rerun from failed, a wedged one canceled and
+     rerun, the push webhook redelivered, or a fresh pipeline triggered
   3  not applicable: no pipeline for the tag, or no failed workflow
-  5  refused: nothing finished failed and a workflow is still running, a
+  5  refused: nothing finished failed and a workflow is still running within
+     --wedged-after, a
      pipeline without a workflow younger than five minutes, or one the API
      triggered itself
   7  usage or a tooling failure
   8  authentication required: no CircleCI login, or one without Write access;
      a GitHub identity without webhook access`
 	example = `  devctl release rerun giantswarm/devctl v8.123.0
+  devctl release rerun giantswarm/devctl v8.123.0 --wedged-after 1h
   devctl release rerun giantswarm/devctl v8.123.0 && beekeeper gate -- devctl release wait giantswarm/devctl v8.123.0`
 )
 
@@ -81,13 +91,16 @@ func New(config Config) (*cobra.Command, error) {
 		config.Stdout = os.Stdout
 	}
 
+	f := &flag{}
 	r := &runner{
+		flag:            f,
 		gate:            versiongate.Check,
 		stdout:          config.Stdout,
 		requireGitHub:   authstore.RequireGitHub,
 		personGitHub:    authexec.PersonGitHub,
 		requireCircleCI: authstore.RequireCircleCI,
 		endpoints:       agentcli.EndpointsFromEnv,
+		clock:           agentcli.SystemClock,
 	}
 
 	c := &cobra.Command{
@@ -101,6 +114,7 @@ func New(config Config) (*cobra.Command, error) {
 		RunE:        r.Run,
 		Annotations: agentcli.AgentFacing(),
 	}
+	f.Init(c)
 	c.SetFlagErrorFunc(r.FlagError)
 
 	return c, nil

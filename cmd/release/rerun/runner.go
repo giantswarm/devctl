@@ -19,6 +19,7 @@ import (
 const command = rerun.CommandRelease
 
 type runner struct {
+	flag   *flag
 	stdout io.Writer
 	// gate is versiongate.Check: an outdated devctl ends the run in the
 	// document.
@@ -29,6 +30,7 @@ type runner struct {
 	personGitHub    func(ctx context.Context) (authstore.Token, error)
 	requireCircleCI func(ctx context.Context) (authstore.Token, error)
 	endpoints       func() agentcli.Endpoints
+	clock           func() (agentcli.Clock, error)
 }
 
 // document is the command's JSON: the rerun's and, when the tag's push
@@ -74,12 +76,19 @@ func (r *runner) rerun(ctx context.Context, args []string, doc *document) error 
 		return err
 	}
 	doc.Repository, doc.Tag = owner+"/"+repo, args[1]
+	if r.flag.WedgedAfter < 0 {
+		return fmt.Errorf("--%s %s: must not be negative; 0 leaves running workflows alone", flagWedgedAfter, r.flag.WedgedAfter)
+	}
 	if err := r.gate(false); err != nil {
+		return err
+	}
+	clock, err := r.clock()
+	if err != nil {
 		return err
 	}
 
 	endpoints := r.endpoints()
-	retrying := &agentcli.Retrying{Warn: doc.Warn}
+	retrying := &agentcli.Retrying{Warn: doc.Warn, Clock: clock}
 	circleci, err := rerun.NewCircleCI(ctx, r.requireCircleCI, endpoints, retrying, doc.Warn)
 	if err != nil {
 		return err
@@ -113,7 +122,9 @@ func (r *runner) rerun(ctx context.Context, args []string, doc *document) error 
 					return github, doc.Identity, nil
 				},
 			}
-			return rerun.FromFailed(ctx, circleci, owner, repo, pipeline, doc.Result, doc.Warn, redelivery)
+			// A workflow running past --wedged-after is canceled and rerun.
+			wedged := rerun.Wedged{After: r.flag.WedgedAfter, Clock: clock}
+			return rerun.FromFailed(ctx, circleci, owner, repo, pipeline, doc.Result, doc.Warn, redelivery, wedged)
 		}
 	}
 	return rerun.NoPipeline(fmt.Sprintf("the tag %s of %s/%s among its newest pipelines", strings.Join(tags, " or "), owner, repo))

@@ -212,7 +212,8 @@ func (r Redelivery) redeliver(ctx context.Context, org, repo string, pipeline *c
 
 // fresh triggers a fresh pipeline through the CircleCI API where the push
 // cannot be sent again (deadEnd says why): exit 5 for a pipeline the API
-// triggered itself, exit 8 for CircleCI's 403. Without [Redelivery.Trigger]
+// triggered itself, exit 8 for CircleCI's 403. deadEnd is also a workflow
+// whose cancel CircleCI does not honour ([Wedged]). Without [Redelivery.Trigger]
 // deadEnd is returned unchanged.
 func (r Redelivery) fresh(ctx context.Context, org, repo string, pipeline *circleciclient.Pipeline, result *Result, warn func(string), deadEnd error) error {
 	if r.Trigger == nil {
@@ -222,7 +223,7 @@ func (r Redelivery) fresh(ctx context.Context, org, repo string, pipeline *circl
 	if pipeline.TriggeredByAPI() {
 		result.Trigger.Outcome = OutcomeAlreadyTriggered
 		return agentcli.NewExitError(agentcli.ExitRefused, agentcli.VerdictRefused,
-			"pipeline %d has no workflow and was itself triggered through the CircleCI API: a second fresh pipeline is not triggered; check CircleCI's status and the project's configuration", pipeline.Number)
+			"%v, and pipeline %d was itself triggered through the CircleCI API: a second fresh pipeline is not triggered; check CircleCI's status and the project's configuration", deadEnd, pipeline.Number)
 	}
 	p, err := r.Trigger(ctx)
 	if err != nil {
