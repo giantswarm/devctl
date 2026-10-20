@@ -1,0 +1,32 @@
+{
+  "exitCode": 0,
+  "json": {
+    "engine": {
+      "name": "manager",
+      "server": "giantswarm-repo-manager",
+      "endpoint": "*",
+      "login": "e2e-engineer@example.com"
+    },
+    "team": "team-e2e",
+    "mode": "create",
+    "schema": "giantswarm/github@main",
+    "entries": [
+      {
+        "name": "new-cli",
+        "rendered": "- name: new-cli\n  componentType: tool\n  visibility: private\n  align: true\n  gen:\n    ci:\n      generate: true\n    flavours:\n      - cli\n    language: go\n",
+        "template": "giantswarm/template",
+        "nameCheck": {
+          "verdict": "free",
+          "detail": "no repository giantswarm/new-cli"
+        },
+        "accepted": true
+      }
+    ],
+    "accepted": true,
+    "author": "e2e-engineer",
+    "authorLogin": "e2e-engineer",
+    "authorTeams": ["team-e2e"],
+    "teamsSource": "github",
+    "machineApproved": true
+  }
+}

@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/creativeprojects/go-selfupdate"
+	"github.com/giantswarm/go-selfupdate"
 	"github.com/giantswarm/microerror"
-	"github.com/google/go-github/v92/github"
+	"github.com/google/go-github/v93/github"
 )
 
 // githubSource is the releases of one GitHub repository, read with the token

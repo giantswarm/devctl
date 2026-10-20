@@ -3,11 +3,15 @@
 // request's head is green, red, or cannot become green as it is.
 //
 // Green is the merge box's view, not `gh pr checks`': every check run and
-// commit status of the head (the latest per name), every CircleCI workflow of
+// commit status of the head (every run of a check name, the latest status per
+// context), every CircleCI workflow of
 // the head revision (the newest run per name, read from CircleCI because a job
 // behind `requires:` has posted nothing yet), no GitHub Actions run of the
 // head still queued, running or awaiting approval, and every required status
-// context reported. Draft, closed, conflicting and behind-a-strict-base end
+// context reported. A pending check of another app, or a pending status of
+// another CI than CircleCI, the base does not require is not waited for, as
+// the merge box does not wait for it: Result.Blocking names it, and a review
+// the base requires that is missing. Draft, closed, conflicting and behind-a-strict-base end
 // the wait before it starts.
 package prwait
 
@@ -21,6 +25,7 @@ import (
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
 	"github.com/giantswarm/devctl/v8/pkg/circleciclient"
 	"github.com/giantswarm/devctl/v8/pkg/githubclient"
+	"github.com/giantswarm/devctl/v8/pkg/reposetup"
 )
 
 // DefaultTimeout bounds a wait whose caller names none.
@@ -30,9 +35,19 @@ const DefaultTimeout = 30 * time.Minute
 // part of the verdict.
 const CircleCIConfigPath = ".circleci/config.yml"
 
+// ChecksViaGraphQL is Result.ChecksVia when the head's checks were read
+// through GraphQL's statusCheckRollup.
+const ChecksViaGraphQL = "graphql"
+
 // RateSource reports the GitHub rate limit the newest response carried.
 type RateSource interface {
 	Rate() githubclient.RateLimit
+}
+
+// EntryFinder finds a repository's declaration in the team files; found
+// false when no team file declares it.
+type EntryFinder interface {
+	FindEntry(ctx context.Context, owner, repo string) (*reposetup.Fields, bool, error)
 }
 
 // Config configures a Waiter.
@@ -47,6 +62,10 @@ type Config struct {
 	// [agentcli.ExitCoder] it returns ends the wait with that code. nil
 	// means CircleCI is never consulted.
 	CircleCI func(ctx context.Context) (*circleciclient.Client, error)
+	// Entries is read only for a template repository whose head carries
+	// CircleCIConfigPath: GitHub alone judges it while its entry declares
+	// gen.ci.templateContent. nil means no repository declares it.
+	Entries EntryFinder
 	// Clock defaults to the wall clock at scale 1.
 	Clock agentcli.Clock
 	// Progress may be nil.
@@ -57,6 +76,13 @@ type Config struct {
 	// each failed job once and keep that many of its last lines in
 	// Result.FailedJobs. A green or pending head reads no log.
 	FailedLogLines int
+	// AcceptRed are check names whose failure does not make the verdict
+	// red: a failed check run, status or CircleCI workflow of one of these
+	// names is recorded in Result.AcceptedRed with a warning instead. A
+	// name the base requires is never accepted, and a green head that
+	// carries no check of a name is exit 3. Refusing a required name or a
+	// security scan before the wait is the caller's (pkg/prmerge).
+	AcceptRed []string
 }
 
 // Waiter runs waits.
@@ -64,11 +90,14 @@ type Waiter struct {
 	github   *githubclient.Client
 	rate     RateSource
 	circleci func(ctx context.Context) (*circleciclient.Client, error)
+	entries  EntryFinder
 	clock    agentcli.Clock
 	progress *agentcli.Progress
 	timeout  time.Duration
 	// failedLogLines is Config.FailedLogLines.
 	failedLogLines int
+	// acceptRed is Config.AcceptRed as a set; nil without it.
+	acceptRed map[string]bool
 }
 
 // New returns a Waiter for config.
@@ -82,15 +111,24 @@ func New(config Config) (*Waiter, error) {
 	if config.Progress == nil {
 		config.Progress = agentcli.NewProgress(nil, false)
 	}
+	var acceptRed map[string]bool
+	for _, name := range config.AcceptRed {
+		if acceptRed == nil {
+			acceptRed = map[string]bool{}
+		}
+		acceptRed[name] = true
+	}
 	return &Waiter{
 		github:   config.GitHub,
 		rate:     config.Rate,
 		circleci: config.CircleCI,
+		entries:  config.Entries,
 		clock:    config.Clock,
 		progress: config.Progress,
 		timeout:  config.Timeout,
 		// The tail is read only after a red verdict.
 		failedLogLines: config.FailedLogLines,
+		acceptRed:      acceptRed,
 	}, nil
 }
 
@@ -100,10 +138,16 @@ type Result struct {
 	Number     int    `json:"number"`
 	HeadSHA    string `json:"headSha"`
 	BaseRef    string `json:"baseRef"`
-	// Checks are the head's check runs and statuses, the latest per name.
+	// Checks are the head's check runs, every run of a name that counts, and
+	// its statuses, the latest per context.
 	Checks []Check `json:"checks"`
+	// ChecksVia is ChecksViaGraphQL when the last poll read Checks through
+	// GraphQL because REST's check endpoints went unanswered; absent when REST
+	// answered.
+	ChecksVia string `json:"checksVia,omitempty"`
 	// CircleCI is absent when the head carries no CircleCI configuration, the
-	// repository is a template or CircleCI has no project for it.
+	// repository is a template whose entry declares that configuration as
+	// template content, or CircleCI has no project for it.
 	CircleCI *CircleCI `json:"circleci,omitempty"`
 	// Actions are the head's GitHub Actions runs, the latest per workflow.
 	Actions []ActionRun `json:"actions"`
@@ -113,6 +157,14 @@ type Result struct {
 	// FailedJobs are the failed jobs of a red head with the tails of their
 	// logs, read with Config.FailedLogLines.
 	FailedJobs []FailedJob `json:"failedJobs,omitempty"`
+	// AcceptedRed are the failed checks the caller accepted with
+	// Config.AcceptRed, each with its run's URL.
+	AcceptedRed []AcceptedRed `json:"acceptedRed,omitempty"`
+	// Blocking names what keeps GitHub's merge box from merging a green
+	// head: a check or status the base does not require that is still
+	// pending, which the wait does not wait for, and a review the base
+	// requires that is missing or asks for changes.
+	Blocking []string `json:"blocking,omitempty"`
 	// Warnings are for the envelope: a head that changed under the wait, a
 	// template repository, a CircleCI project that does not exist.
 	Warnings []string `json:"-"`
@@ -121,23 +173,32 @@ type Result struct {
 // head is what the wait learned about the current head and base, refreshed
 // when either changes.
 type head struct {
-	sha      string
-	baseRef  string
-	required []string
+	sha     string
+	baseRef string
+	// mergeableState is GitHub's mergeable state of the pull request at the
+	// last poll.
+	mergeableState string
+	required       []string
 	// decided: whether CircleCI is consulted for this head is known.
 	decided  bool
 	circleci *circleciclient.Client
 	branch   string
 	project  string
+	// workflows are the pull_request workflows an empty head expects runs
+	// of, once workflowsRead.
+	workflows     []string
+	workflowsRead bool
 }
 
 // Wait blocks until owner/repo#number is green (nil), red or otherwise
 // decided (an [*agentcli.ExitError] with the code of the table), or the
 // timeout passes (exit 2). A required context absent from a head whose
 // checks, runs and workflows have all finished is exit 4 at that poll, before
-// the timeout, and so is a head that waits only for Actions runs awaiting a
-// member's approval; while anything else is still pending, the timeout is 2
-// whatever is absent. The Result is always returned, as far as it was filled; a
+// the timeout, once the pull request's last update is RegistrationGrace old,
+// and so is a head that waits only for Actions runs awaiting a member's
+// approval; while anything else is still pending, the timeout is 2 whatever is
+// absent. A failure the base does not require is red once the required
+// contexts have finished. The Result is always returned, as far as it was filled; a
 // tooling failure is any other error.
 func (w *Waiter) Wait(ctx context.Context, owner, repo string, number int) (*Result, error) {
 	result := &Result{
@@ -151,11 +212,14 @@ func (w *Waiter) Wait(ctx context.Context, owner, repo string, number int) (*Res
 
 	h := &head{}
 	var last *evaluation
+	// unanswered is the last poll's read that went unanswered, empty once a
+	// poll completes again.
+	var unanswered string
 	for poll := 1; ; poll++ {
 		e, err := w.poll(ctx, owner, repo, number, h, result)
 		if err != nil {
 			if ctx.Err() != nil && errors.Is(err, ctx.Err()) {
-				return result, w.timedOut(result, last)
+				return result, w.timedOut(result, last, unanswered)
 			}
 			// A rate limit resetting after the deadline is a timeout ahead
 			// of it: the document names what was unfinished all the same.
@@ -163,14 +227,37 @@ func (w *Waiter) Wait(ctx context.Context, owner, repo string, number int) (*Res
 			if errors.As(err, &limited) {
 				result.Unfinished = unfinished(last)
 			}
-			return result, err
+			// A read that failed every try, in transit or with a 5xx, says
+			// nothing about the head: the wait polls again until its
+			// deadline instead of ending as a tooling failure.
+			var exhausted *agentcli.RetriesExhaustedError
+			if !errors.As(err, &exhausted) {
+				return result, err
+			}
+			unanswered = err.Error()
+			result.Warnings = append(result.Warnings, fmt.Sprintf("poll %d went unanswered: %s", poll, unanswered))
+			interval := w.interval()
+			w.progress.Printf("poll %d: unanswered (%s); next poll in %s", poll, unanswered, interval)
+			if err := w.clock.Sleep(ctx, interval); err != nil {
+				return result, w.timedOut(result, last, unanswered)
+			}
+			continue
 		}
-		last = e
+		last, unanswered = e, ""
 		switch {
 		case e.green():
+			if unseen := e.unseen(w.acceptRed); len(unseen) > 0 {
+				w.progress.Printf("poll %d: green, and no check of the head is named %s", poll, strings.Join(unseen, ", "))
+				return result, agentcli.NewExitError(agentcli.ExitNotApplicable, agentcli.VerdictNotApplicable,
+					"--accept-red names %s, and no check, status or CircleCI workflow of the head %s carries that name", strings.Join(unseen, ", "), h.sha)
+			}
+			for _, a := range e.acceptedRed {
+				result.Warnings = append(result.Warnings, fmt.Sprintf("accepted red: %s %s concluded %s (%s), named by --accept-red", a.Source, a.Name, a.Conclusion, a.URL))
+			}
+			w.blocking(ctx, owner, repo, number, h, e, result)
 			w.progress.Printf("poll %d: green", poll)
 			return result, nil
-		case len(e.red) > 0:
+		case e.redDecided():
 			w.progress.Printf("poll %d: red: %s", poll, e.redReason())
 			if w.failedLogLines > 0 {
 				result.FailedJobs = w.failedJobs(ctx, owner, repo, h, e)
@@ -183,26 +270,73 @@ func (w *Waiter) Wait(ctx context.Context, owner, repo string, number int) (*Res
 			w.progress.Printf("poll %d: waiting for approval: %s", poll, strings.Join(e.unfinished, ", "))
 			result.Unfinished = e.unfinished
 			return result, agentcli.NewExitError(agentcli.ExitRequiredMissing, agentcli.VerdictApprovalRequired, "%s", e.approvalReason())
+		case w.noChecks(e):
+			w.progress.Printf("poll %d: no checks: %s", poll, strings.Join(e.unfinished, ", "))
+			result.Unfinished = e.unfinished
+			return result, noChecksError(h.sha, e.expectedRuns)
 		}
 		interval := w.interval()
 		w.progress.Printf("poll %d: waiting for %s; next poll in %s", poll, strings.Join(e.unfinished, ", "), interval)
 		w.progress.Waiting(w.clock.Now(), strings.Join(e.unfinished, ", "))
 		if err := w.clock.Sleep(ctx, interval); err != nil {
-			return result, w.timedOut(result, last)
+			return result, w.timedOut(result, last, "")
 		}
 	}
 }
 
+// blocking fills Result.Blocking of a green head: the pending checks the
+// base does not require, which the wait did not wait for, and, while GitHub
+// blocks the merge, a missing review or one that requests changes. A review
+// decision that cannot be read is a warning, never the verdict.
+func (w *Waiter) blocking(ctx context.Context, owner, repo string, number int, h *head, e *evaluation, result *Result) {
+	result.Blocking = append([]string(nil), e.notRequired...)
+	if len(e.notRequired) > 0 {
+		result.Warnings = append(result.Warnings, "pending: "+strings.Join(e.notRequired, ", "))
+	}
+	if h.mergeableState != mergeableBlocked {
+		return
+	}
+	decision, err := w.github.ReviewDecision(ctx, owner, repo, number)
+	if err != nil {
+		result.Warnings = append(result.Warnings, fmt.Sprintf("GitHub blocks the merge, and the review decision could not be read: %v", err))
+		return
+	}
+	review := ""
+	switch decision {
+	case "REVIEW_REQUIRED":
+		review = "review: an approving review the base requires is missing"
+	case "CHANGES_REQUESTED":
+		review = "review: a reviewer requested changes"
+	default:
+		return
+	}
+	result.Blocking = append(result.Blocking, review)
+	result.Warnings = append(result.Warnings, "GitHub blocks the merge: "+strings.TrimPrefix(review, "review: "))
+	w.progress.Printf("blocked: %s", review)
+}
+
+// mergeableBlocked is GitHub's mergeable state of a pull request a rule of
+// the base keeps from merging: a required check or a required review.
+const mergeableBlocked = "blocked"
+
 // timedOut is the verdict at the deadline, 2: the result names what was
-// unfinished, a required context still absent among it. A head settled with
-// an absent context never reaches the deadline; neverReported ends it first.
-func (w *Waiter) timedOut(result *Result, last *evaluation) error {
+// unfinished, a required context still absent among it, and the reason the
+// read the last poll could not get answered. A head settled with an absent
+// context never reaches the deadline; neverReported ends it first.
+func (w *Waiter) timedOut(result *Result, last *evaluation, unanswered string) error {
 	result.Unfinished = unfinished(last)
+	suffix := ""
+	if unanswered != "" {
+		suffix = "; the head is unknown, not failed: the last poll went unanswered: " + unanswered
+	}
 	if last == nil {
-		return agentcli.NewExitError(agentcli.ExitTimeout, agentcli.VerdictTimeout, "timeout after %s before the first poll completed", w.timeout)
+		return agentcli.NewExitError(agentcli.ExitTimeout, agentcli.VerdictTimeout, "timeout after %s before the first poll completed%s", w.timeout, suffix)
+	}
+	if len(last.red) > 0 {
+		suffix = "; red already, besides the required contexts it waited for: " + last.redReason() + suffix
 	}
 	return agentcli.NewExitError(agentcli.ExitTimeout, agentcli.VerdictTimeout,
-		"timeout after %s; unfinished: %s", w.timeout, strings.Join(last.unfinished, ", "))
+		"timeout after %s; unfinished: %s%s", w.timeout, strings.Join(last.unfinished, ", "), suffix)
 }
 
 // unfinished is what the last complete poll was waiting for, or that none
@@ -236,15 +370,16 @@ func (w *Waiter) poll(ctx context.Context, owner, repo string, number int, h *he
 	}
 
 	sha, baseRef := pr.GetHead().GetSHA(), pr.GetBase().GetRef()
+	h.mergeableState = pr.GetMergeableState()
 	if h.sha != "" && h.sha != sha {
 		result.Warnings = append(result.Warnings, fmt.Sprintf("the head changed from %s to %s during the wait", h.sha, sha))
 	}
 	if h.sha != sha {
-		h.sha, h.decided, h.circleci = sha, false, nil
+		h.sha, h.decided, h.circleci, h.workflowsRead = sha, false, nil, false
 		result.HeadSHA = sha
 	}
 	if h.baseRef != baseRef || h.required == nil {
-		h.baseRef = baseRef
+		h.baseRef, h.workflowsRead = baseRef, false
 		result.BaseRef = baseRef
 		required, err := w.github.RequiredStatusContexts(ctx, owner, repo, baseRef)
 		if err != nil {
@@ -259,11 +394,8 @@ func (w *Waiter) poll(ctx context.Context, owner, repo string, number int, h *he
 		}
 	}
 
-	s := snapshot{headSHA: sha, required: h.required}
-	if s.checkRuns, err = w.github.CheckRunsForRef(ctx, owner, repo, sha); err != nil {
-		return nil, err
-	}
-	if s.statuses, err = w.github.CommitStatuses(ctx, owner, repo, sha); err != nil {
+	s := snapshot{headSHA: sha, required: h.required, accepted: w.acceptRed}
+	if err := w.readChecks(ctx, owner, repo, sha, &s, result); err != nil {
 		return nil, err
 	}
 	if s.runs, err = w.github.WorkflowRunsForSHA(ctx, owner, repo, sha); err != nil {
@@ -276,18 +408,67 @@ func (w *Waiter) poll(ctx context.Context, owner, repo string, number int, h *he
 	}
 
 	e := evaluate(s)
-	result.Checks, result.Actions, result.CircleCI = e.checks, e.actions, e.circleci
+	e.quietFor = w.clock.Now().Sub(pr.GetUpdatedAt().Time)
+	if err := w.expectPullRequestRuns(ctx, owner, repo, h, e); err != nil {
+		return nil, err
+	}
+	w.awaitRegistration(e)
+	result.Checks, result.Actions, result.CircleCI, result.AcceptedRed = e.checks, e.actions, e.circleci, e.acceptedRed
 	return e, nil
+}
+
+// readChecks reads the head's check runs and statuses from REST's check-runs
+// and combined-status endpoints. When those fail every try while GraphQL
+// answers, it reads them from the head commit's statusCheckRollup instead,
+// says so in a warning and Result.ChecksVia, and keeps reading GraphQL for the
+// rest of the wait, so later polls do not spend the retry budget on REST
+// again; a GraphQL read that fails then goes back to REST. With both paths
+// failing the read is unanswered, as a REST read alone would be.
+func (w *Waiter) readChecks(ctx context.Context, owner, repo, sha string, s *snapshot, result *Result) error {
+	var graphQLErr error
+	if result.ChecksVia == ChecksViaGraphQL {
+		if s.checkRuns, s.statuses, graphQLErr = w.github.CheckRollup(ctx, owner, repo, sha); graphQLErr == nil {
+			return nil
+		}
+		result.ChecksVia = ""
+		w.progress.Printf("reading the checks through GraphQL failed (%v): REST again", graphQLErr)
+	}
+	err := w.readChecksREST(ctx, owner, repo, sha, s)
+	var exhausted *agentcli.RetriesExhaustedError
+	if err == nil || !errors.As(err, &exhausted) {
+		return err
+	}
+	if graphQLErr == nil {
+		if s.checkRuns, s.statuses, graphQLErr = w.github.CheckRollup(ctx, owner, repo, sha); graphQLErr == nil {
+			result.ChecksVia = ChecksViaGraphQL
+			result.Warnings = append(result.Warnings, fmt.Sprintf("the REST check endpoints went unanswered (%v): the head's checks are read through GraphQL (statusCheckRollup)", err))
+			w.progress.Printf("REST check endpoints unanswered: reading the head's checks through GraphQL (statusCheckRollup)")
+			return nil
+		}
+	}
+	return fmt.Errorf("%w; reading them through GraphQL (statusCheckRollup) failed too: %v", err, graphQLErr)
+}
+
+// readChecksREST reads the head's check runs and statuses from REST.
+func (w *Waiter) readChecksREST(ctx context.Context, owner, repo, sha string, s *snapshot) error {
+	var err error
+	if s.checkRuns, err = w.github.CheckRunsForRef(ctx, owner, repo, sha); err != nil {
+		return err
+	}
+	s.statuses, err = w.github.CommitStatuses(ctx, owner, repo, sha)
+	return err
 }
 
 // decideCircleCI settles whether CircleCI is part of this head's verdict: it
 // is when the head carries CircleCIConfigPath and CircleCI has a project for
-// the repository, unless the repository is a template, which carries the
-// configuration for the repositories created from it without ever being
-// built itself. Whether the project has run a pipeline before does not
-// decide it: the head's own may be the project's first, and judging the
-// head from GitHub alone until it appeared would call a head green whose
-// pipeline has not started. The token is required only past the first
+// the repository, unless the repository is a template whose team-file entry
+// declares gen.ci.templateContent: that configuration is for the
+// repositories created from it, and the template is never built itself. A
+// template without the declaration carries its own pipeline and is judged
+// like any repository, as the reconciler judges it. Whether the project has
+// run a pipeline before does not decide it: the head's own may be the
+// project's first, and judging the head from GitHub alone until it appeared
+// would call a head green whose pipeline has not started. The token is required only past the first
 // condition, so a repository without CircleCI needs GitHub alone.
 func (w *Waiter) decideCircleCI(ctx context.Context, owner, repo string, number int, headRef string, fork, template bool, h *head, result *Result) error {
 	h.decided = true
@@ -303,9 +484,16 @@ func (w *Waiter) decideCircleCI(ctx context.Context, owner, repo string, number 
 		return nil
 	}
 	if template {
-		result.Warnings = append(result.Warnings, fmt.Sprintf("%s/%s is a template repository: its %s is for the repositories created from it, GitHub alone", owner, repo, CircleCIConfigPath))
-		w.progress.Printf("%s/%s is a template repository: GitHub alone", owner, repo)
-		return nil
+		declared, err := w.templateContent(ctx, owner, repo)
+		if err != nil {
+			return err
+		}
+		if declared {
+			result.Warnings = append(result.Warnings, fmt.Sprintf("%s/%s is a template repository: its %s is for the repositories created from it (gen.ci.templateContent), GitHub alone", owner, repo, CircleCIConfigPath))
+			w.progress.Printf("%s/%s is a template repository: GitHub alone", owner, repo)
+			return nil
+		}
+		w.progress.Printf("%s/%s is a template repository with its own pipeline (no gen.ci.templateContent)", owner, repo)
 	}
 	client, err := w.circleci(ctx)
 	if err != nil {
@@ -324,6 +512,19 @@ func (w *Waiter) decideCircleCI(ctx context.Context, owner, repo string, number 
 	h.branch = circleciclient.PullRequestBranch(headRef, fork, number)
 	w.progress.Printf("CircleCI project %s, branch %s", h.project, h.branch)
 	return nil
+}
+
+// templateContent reports whether the repository's team-file entry declares
+// its CircleCIConfigPath as template content (gen.ci.templateContent).
+func (w *Waiter) templateContent(ctx context.Context, owner, repo string) (bool, error) {
+	if w.entries == nil {
+		return false, nil
+	}
+	fields, found, err := w.entries.FindEntry(ctx, owner, repo)
+	if err != nil {
+		return false, fmt.Errorf("reading the team-file entry of %s/%s: %w", owner, repo, err)
+	}
+	return found && fields.Gen != nil && fields.Gen.CI != nil && fields.Gen.CI.TemplateContent, nil
 }
 
 // readCircleCI finds the newest pipeline of the head revision on the head's

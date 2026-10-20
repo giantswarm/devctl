@@ -1,0 +1,208 @@
+# DO NOT EDIT. Generated with:
+#
+#    devctl
+#
+
+# `/config [flags]` on an init PR runs `mctl config --ci`; customer installations need `--credentials <1Password item>`.
+
+name: Config
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+env:
+  MCTL_IMAGE: ${{ vars.MCTL_IMAGE || 'gsoci.azurecr.io/giantswarm/mctl:0.2.1' }}
+  OP_VAULT: mctl - common
+
+jobs:
+  config:
+    name: Run mctl config
+    runs-on: ubuntu-latest
+    # Not in the template repo; only /config PR comments.
+    if: >
+      github.repository != 'giantswarm/template-management-clusters' &&
+      github.event.issue.pull_request != null &&
+      startsWith(github.event.comment.body, '/config') &&
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
+
+    steps:
+      - name: Generate app token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.MCTL_APP_ID }}
+          private-key: ${{ secrets.MCTL_APP_PRIVATE_KEY }}
+          # Owner-scoped so cross-repo calls work.
+          owner: ${{ github.repository_owner }}
+
+      - name: Acknowledge comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: context.payload.comment.id,
+              content: 'eyes',
+            });
+
+      - name: Get PR info
+        id: pr
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+            });
+            core.setOutput('branch', pr.data.head.ref);
+            core.setOutput('url', pr.data.html_url);
+
+      - name: Derive installation name
+        id: install
+        env:
+          BRANCH: ${{ steps.pr.outputs.branch }}
+        run: |
+          # {installation}-init or {installation}-init-{provider}.
+          if [[ "$BRANCH" =~ ^(.+)-init-(capa|capz|capv|capvcd)$ ]]; then
+            installation="${BASH_REMATCH[1]}"
+          else
+            installation="${BRANCH%-init}"
+          fi
+          echo "name=$installation" >> "$GITHUB_OUTPUT"
+
+      - name: Parse comment flags
+        id: parse
+        env:
+          COMMENT: ${{ github.event.comment.body }}
+        run: |
+          # First line only, CR stripped (comment bodies are CRLF).
+          flags=$(printf '%s' "$COMMENT" | head -n 1 | tr -d '\r')
+          flags="${flags#/config}"
+          flags="${flags#"${flags%%[![:space:]]*}"}" # trim leading whitespace
+
+          # Workflow-set flags must not be overridden from the comment.
+          read -ra tokens <<< "$flags" || true
+          for tok in "${tokens[@]}"; do
+            case "${tok%%=*}" in
+              --installation|--customer|--cmc-repo|--branch|--source-pr)
+                echo "::error::$tok is set by the workflow and cannot be passed in a /config comment"
+                exit 1 ;;
+            esac
+          done
+
+          echo "flags=$flags" >> "$GITHUB_OUTPUT"
+
+      - name: Fetch op.env
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          # Release image tags map to their git tag; latest and dev builds to main.
+          tag="${MCTL_IMAGE##*:}"
+          tag="${tag#v}"
+          if [[ "$tag" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            ref="v$tag"
+          else
+            ref="main"
+          fi
+          if ! gh api "repos/giantswarm/mctl/contents/ci/op.env?ref=$ref" \
+              -H "Accept: application/vnd.github.raw" > "$RUNNER_TEMP/op.env"; then
+            echo "::error::Could not fetch ci/op.env from giantswarm/mctl at $ref (MCTL_IMAGE=$MCTL_IMAGE). Does the giantswarm-mctlbot App have read access to giantswarm/mctl, and does $ref exist?"
+            exit 1
+          fi
+          if [[ ! -s "$RUNNER_TEMP/op.env" ]]; then
+            echo "::error::ci/op.env from giantswarm/mctl at $ref is empty"
+            exit 1
+          fi
+          echo "Fetched op.env from giantswarm/mctl@$ref"
+
+      - name: Run mctl config
+        id: mctl
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          INSTALLATION: ${{ steps.install.outputs.name }}
+          BRANCH: ${{ steps.pr.outputs.branch }}
+          PR_URL: ${{ steps.pr.outputs.url }}
+          CMC_REPO: ${{ github.event.repository.name }}
+          ORG: ${{ github.repository_owner }}
+          USER_FLAGS: ${{ steps.parse.outputs.flags }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set +e
+          # No shell in the container: user flags stay separate argv elements.
+          read -ra USER_FLAG_ARR <<< "$USER_FLAGS" || true
+          output=$(docker run --rm \
+            --entrypoint op \
+            -e OP_SERVICE_ACCOUNT_TOKEN \
+            -e OP_VAULT \
+            -e GITHUB_TOKEN \
+            -v "$RUNNER_TEMP/op.env:/op.env:ro" \
+            "$MCTL_IMAGE" \
+            run --env-file /op.env -- mctl config \
+              --installation "$INSTALLATION" \
+              --customer "$ORG" \
+              --cmc-repo "$CMC_REPO" \
+              --branch "$BRANCH" \
+              --ci \
+              --source-pr "$PR_URL" \
+              "${USER_FLAG_ARR[@]}" \
+            2>&1)
+          exit_code=$?
+          {
+            echo "output<<MCTL_EOF"
+            echo "$output"
+            echo "MCTL_EOF"
+            echo "exit_code=$exit_code"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Post result comment
+        uses: actions/github-script@v7
+        env:
+          MCTL_OUTPUT: ${{ steps.mctl.outputs.output }}
+          MCTL_EXIT_CODE: ${{ steps.mctl.outputs.exit_code }}
+        with:
+          script: |
+            const output = process.env.MCTL_OUTPUT || '';
+            const exitCode = parseInt(process.env.MCTL_EXIT_CODE || '1', 10);
+
+            let body;
+            if (exitCode !== 0) {
+              body = `### ❌ \`mctl config\` failed\n\n\`\`\`\n${output}\n\`\`\``;
+            } else {
+              const ccrMatch  = output.match(/CCR PR: (https?:\/\/\S+)/);
+              const instMatch = output.match(/Installations PR: (https?:\/\/\S+)/);
+
+              const lines = ['### ✅ `mctl config` completed\n'];
+              if (ccrMatch)  lines.push(`- **CCR PR:** ${ccrMatch[1]}`);
+              if (instMatch) lines.push(`- **Installations PR:** ${instMatch[1]}`);
+
+              // Skipped steps: `[name] reason\n  → command`
+              const stepMatches = [...output.matchAll(/\[([\w-]+)\] ([^\n]+)\n\s+→ ([^\n]+)/g)];
+              if (stepMatches.length > 0) {
+                lines.push('\n#### ⚠️ Complete these steps locally before running `/create-mc`\n');
+                lines.push('Run each command from your local mctl checkout:\n');
+                for (const [, name, reason, cmd] of stepMatches) {
+                  lines.push(`**${name}** — ${reason}\n\`\`\`sh\n${cmd}\n\`\`\``);
+                }
+                const ccrLink = ccrMatch ? `the [CCR PR](${ccrMatch[1]})` : 'the CCR PR for this installation';
+                lines.push(`\nThen check ${ccrLink} to confirm the commits are there, and comment \`/create-mc\` when ready.`);
+              } else {
+                lines.push('\nThe `validate-config` check will run automatically. Once it passes you will be prompted to comment `/create-mc` to start the bootstrap pipeline.');
+              }
+
+              body = lines.join('\n');
+            }
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });

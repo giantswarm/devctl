@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
 	"github.com/giantswarm/devctl/v8/pkg/circleciclient"
 	"github.com/giantswarm/devctl/v8/pkg/githubclient"
+	"github.com/giantswarm/devctl/v8/pkg/reposetup"
 )
 
 const (
@@ -96,11 +98,26 @@ type harness struct {
 	progress *strings.Builder
 }
 
-// start wires a Waiter to the mocks at scale 0.001: a 15 s poll interval is
-// 15 ms, the two-minute timeout 120 ms. circleci nil means no CircleCI
-// client is available (the token is missing).
+// start wires a Waiter to the mocks on a virtual clock: time passes only in
+// the waiter's sleeps, so a poll interval or the timeout takes no wall-clock
+// time and the outcome does not depend on how fast the machine runs the test.
+// circleci false means no CircleCI client is available (the token is
+// missing).
 func start(t *testing.T, gh, cc sequence.Routes, circleci bool, timeout time.Duration) *harness {
 	t.Helper()
+	return startWith(t, gh, cc, circleci, timeout, 0)
+}
+
+// startWith is start with a GitHub client that sends a read up to attempts
+// times on the same virtual clock before it counts as unanswered; 0 sends
+// every request once.
+func startWith(t *testing.T, gh, cc sequence.Routes, circleci bool, timeout time.Duration, attempts int) *harness {
+	t.Helper()
+	clock := agentcli.NewVirtualClock(time.Now())
+	var transport http.RoundTripper
+	if attempts > 0 {
+		transport = &agentcli.Retrying{Clock: clock, Attempts: attempts}
+	}
 	ghServer, err := githubmock.Start(gh)
 	if err != nil {
 		t.Fatal(err)
@@ -114,7 +131,7 @@ func start(t *testing.T, gh, cc sequence.Routes, circleci bool, timeout time.Dur
 
 	logger := logrus.New()
 	logger.SetOutput(io.Discard)
-	client, cond, err := githubclient.NewConditional(githubclient.Config{Logger: logger, AccessToken: "ghu_test", BaseURL: ghServer.URL})
+	client, cond, err := githubclient.NewConditional(githubclient.Config{Logger: logger, AccessToken: "ghu_test", BaseURL: ghServer.URL, Transport: transport})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +139,7 @@ func start(t *testing.T, gh, cc sequence.Routes, circleci bool, timeout time.Dur
 	config := Config{
 		GitHub:   client,
 		Rate:     cond,
-		Clock:    agentcli.NewClock(0.001, nil),
+		Clock:    clock,
 		Progress: agentcli.NewProgress(progress, true),
 		Timeout:  timeout,
 	}
@@ -171,7 +188,7 @@ func Test_Wait_stageGap(t *testing.T) {
 	}
 	want := &Result{
 		Repository: "o/r", Number: 42, HeadSHA: sha, BaseRef: "main",
-		Checks:  []Check{{Name: "go-build", Source: SourceCheckRun, Status: "completed", Conclusion: "success", URL: "https://github.com/o/r/runs/1"}},
+		Checks:  []Check{{Name: "go-build", ID: 1, Source: SourceCheckRun, Status: "completed", Conclusion: "success", URL: "https://github.com/o/r/runs/1"}},
 		Actions: []ActionRun{},
 		CircleCI: &CircleCI{PipelineID: "p1", PipelineNumber: 12, Workflows: []Workflow{
 			{Name: "build", Status: "success", URL: "https://app.circleci.com/pipelines/github/o/r/12/workflows/w1"},
@@ -277,16 +294,41 @@ func Test_Wait_noCircleCIProjectIsGitHubAlone(t *testing.T) {
 	}
 }
 
-func Test_Wait_templateRepositoryIsGitHubAlone(t *testing.T) {
-	// A template repository carries .circleci/config.yml for the
-	// repositories created from it and is never built itself: green from
-	// GitHub alone, the warning in the document, and CircleCI never asked.
-	gh := gitHubGreen()
-	gh[pullPath] = []sequence.Response{pull("clean", map[string]any{
+// entries is an EntryFinder over a fixed answer that counts its reads.
+type entries struct {
+	fields *reposetup.Fields
+	err    error
+	reads  int
+}
+
+func (e *entries) FindEntry(context.Context, string, string) (*reposetup.Fields, bool, error) {
+	e.reads++
+	return e.fields, e.fields != nil, e.err
+}
+
+// templateEntry is a team-file entry whose gen.ci.templateContent is the
+// argument.
+func templateEntry(templateContent bool) *reposetup.Fields {
+	return &reposetup.Fields{Name: "r", Gen: &reposetup.GenFields{CI: &reposetup.CIFields{TemplateContent: templateContent}}}
+}
+
+// templatePull is the pull request of a template repository.
+func templatePull() sequence.Response {
+	return pull("clean", map[string]any{
 		"base": map[string]any{"ref": "main", "repo": map[string]any{"full_name": "o/r", "is_template": true}},
-	})}
+	})
+}
+
+func Test_Wait_templateRepositoryDeclaredTemplateContentIsGitHubAlone(t *testing.T) {
+	// A template repository whose entry declares gen.ci.templateContent
+	// carries .circleci/config.yml for the repositories created from it and
+	// is never built itself: green from GitHub alone, the warning in the
+	// document, and CircleCI never asked.
+	gh := gitHubGreen()
+	gh[pullPath] = []sequence.Response{templatePull()}
 	gh[confPath] = []sequence.Response{config}
 	h := start(t, gh, sequence.Routes{}, true, 2*time.Minute)
+	h.waiter.entries = &entries{fields: templateEntry(true)}
 	result, err := h.waiter.Wait(context.Background(), "o", "r", 42)
 	if err != nil {
 		t.Fatalf("want green, got %v", err)
@@ -296,6 +338,94 @@ func Test_Wait_templateRepositoryIsGitHubAlone(t *testing.T) {
 	}
 	if len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0], "template repository") {
 		t.Errorf("want one warning naming the template repository, got %q", result.Warnings)
+	}
+	if n := len(h.circleci.Requests()); n != 0 {
+		t.Errorf("want no CircleCI request, got %d", n)
+	}
+}
+
+func Test_Wait_templateRepositoryWithoutTemplateContentCountsCircleCI(t *testing.T) {
+	// A template repository with its own pipeline: its entry does not
+	// declare gen.ci.templateContent, or no team file declares it. CircleCI
+	// is part of the verdict as for any repository: a red workflow stops
+	// the wait, and no template warning is given.
+	cases := []struct {
+		name    string
+		entries *entries
+	}{
+		{name: "entry without templateContent", entries: &entries{fields: templateEntry(false)}},
+		{name: "entry without gen", entries: &entries{fields: &reposetup.Fields{Name: "r"}}},
+		{name: "not declared", entries: &entries{}},
+		{name: "no entry finder"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			gh := gitHubGreen()
+			gh[pullPath] = []sequence.Response{templatePull()}
+			gh[confPath] = []sequence.Response{config}
+			cc := sequence.Routes{
+				projPath: {project},
+				pipePath: {pipelines},
+				wfPath:   {body(map[string]any{"items": []any{map[string]any{"id": "w1", "name": "go-build-mcp-template", "status": "failed"}}})},
+			}
+			h := start(t, gh, cc, true, 2*time.Minute)
+			if tc.entries != nil {
+				h.waiter.entries = tc.entries
+			}
+			result, err := h.waiter.Wait(context.Background(), "o", "r", 42)
+			if exitCode(err) != agentcli.ExitRed {
+				t.Fatalf("want red from the CircleCI workflow, got %d (%v)", exitCode(err), err)
+			}
+			if !strings.Contains(err.Error(), "go-build-mcp-template") {
+				t.Errorf("want the verdict to name the workflow, got %v", err)
+			}
+			if result.CircleCI == nil || len(result.CircleCI.Workflows) != 1 {
+				t.Errorf("want the workflow in the document, got %+v", result.CircleCI)
+			}
+			if len(result.Warnings) != 0 {
+				t.Errorf("want no warning, got %q", result.Warnings)
+			}
+			if tc.entries != nil && tc.entries.reads != 1 {
+				t.Errorf("want the entry read once, got %d", tc.entries.reads)
+			}
+		})
+	}
+}
+
+func Test_Wait_nonTemplateRepositoryReadsNoEntry(t *testing.T) {
+	// A repository that is not a template is judged as before; its entry is
+	// never read, even one declaring gen.ci.templateContent.
+	gh := gitHubGreen()
+	gh[confPath] = []sequence.Response{config}
+	cc := sequence.Routes{
+		projPath: {project},
+		pipePath: {pipelines},
+		wfPath:   {body(map[string]any{"items": []any{map[string]any{"id": "w1", "name": "build", "status": "success"}}})},
+	}
+	h := start(t, gh, cc, true, 2*time.Minute)
+	finder := &entries{fields: templateEntry(true)}
+	h.waiter.entries = finder
+	result, err := h.waiter.Wait(context.Background(), "o", "r", 42)
+	if err != nil {
+		t.Fatalf("want green, got %v", err)
+	}
+	if result.CircleCI == nil || len(result.CircleCI.Workflows) != 1 {
+		t.Errorf("want the workflow in the document, got %+v", result.CircleCI)
+	}
+	if finder.reads != 0 {
+		t.Errorf("want no entry read, got %d", finder.reads)
+	}
+}
+
+func Test_Wait_templateEntryReadFailureIsAToolingFailure(t *testing.T) {
+	gh := gitHubGreen()
+	gh[pullPath] = []sequence.Response{templatePull()}
+	gh[confPath] = []sequence.Response{config}
+	h := start(t, gh, sequence.Routes{}, true, 2*time.Minute)
+	h.waiter.entries = &entries{err: errors.New("team files unreadable")}
+	_, err := h.waiter.Wait(context.Background(), "o", "r", 42)
+	if err == nil || !strings.Contains(err.Error(), "team files unreadable") {
+		t.Fatalf("want the entry read's error, got %v", err)
 	}
 	if n := len(h.circleci.Requests()); n != 0 {
 		t.Errorf("want no CircleCI request, got %d", n)
@@ -574,5 +704,144 @@ func Test_Wait_toolingErrorIsNotAVerdict(t *testing.T) {
 	var coder agentcli.ExitCoder
 	if err == nil || errors.As(err, &coder) {
 		t.Fatalf("want a plain error (exit 7 in the envelope), got %v", err)
+	}
+}
+
+func Test_Wait_unansweredPollIsNotAVerdict(t *testing.T) {
+	gh := gitHubGreen()
+	unavailable := sequence.Response{Status: 503, Body: map[string]any{"message": "unavailable"}}
+	gh[runsPath] = []sequence.Response{checkRuns(run("go-build", "in_progress", "")), unavailable, unavailable, checkRuns(run("go-build", "completed", "success"))}
+	h := startWith(t, gh, sequence.Routes{}, false, 2*time.Minute, 2)
+	result, err := h.waiter.Wait(context.Background(), "o", "r", 42)
+	if err != nil {
+		t.Fatalf("want green after the unanswered poll, got exit %d: %v", exitCode(err), err)
+	}
+	if len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0], "poll 2 went unanswered") || !strings.Contains(result.Warnings[0], "failed 2 times in a row: 503") {
+		t.Errorf("want one warning naming the unanswered poll, got %q", result.Warnings)
+	}
+	if !strings.Contains(h.progress.String(), "poll 3: green") {
+		t.Errorf("want the third poll green:\n%s", h.progress.String())
+	}
+}
+
+func Test_Wait_unansweredUntilTheDeadlineIsATimeout(t *testing.T) {
+	gh := gitHubGreen()
+	gh[runsPath] = []sequence.Response{checkRuns(run("go-build", "in_progress", "")), {Status: 503, Body: map[string]any{"message": "unavailable"}}}
+	h := startWith(t, gh, sequence.Routes{}, false, 2*time.Minute, 2)
+	result, err := h.waiter.Wait(context.Background(), "o", "r", 42)
+	if exitCode(err) != agentcli.ExitTimeout {
+		t.Fatalf("want exit 2, got exit %d: %v", exitCode(err), err)
+	}
+	if !strings.Contains(err.Error(), "unfinished: check go-build (in_progress)") || !strings.Contains(err.Error(), "the head is unknown, not failed: the last poll went unanswered") {
+		t.Errorf("want the reason to name the unfinished check and the unanswered poll, got %q", err)
+	}
+	if diff := cmp.Diff([]string{"check go-build (in_progress)"}, result.Unfinished); diff != "" {
+		t.Errorf("unfinished (-want +got):\n%s", diff)
+	}
+}
+
+const graphQLPath = "POST /graphql"
+
+// rollup is a statusCheckRollup answer of the head commit.
+func rollup(nodes ...map[string]any) sequence.Response {
+	return body(map[string]any{"data": map[string]any{"repository": map[string]any{"object": map[string]any{
+		"statusCheckRollup": map[string]any{"contexts": map[string]any{
+			"pageInfo": map[string]any{"hasNextPage": false, "endCursor": ""},
+			"nodes":    nodes,
+		}},
+	}}}})
+}
+
+func rollupRun(name, status, conclusion string) map[string]any {
+	return map[string]any{"__typename": "CheckRun", "databaseId": 7, "name": name, "status": status, "conclusion": conclusion,
+		"url": "https://github.com/o/r/runs/7", "startedAt": "2026-10-07T17:00:00Z", "checkSuite": map[string]any{"databaseId": 70, "app": map[string]any{"slug": "github-actions"}}}
+}
+
+func Test_Wait_unansweredCheckEndpointsFallBackToGraphQL(t *testing.T) {
+	gh := gitHubGreen()
+	unavailable := sequence.Response{Status: 500, Body: map[string]any{"message": "boom"}}
+	gh[runsPath] = []sequence.Response{unavailable}
+	gh[statPath] = []sequence.Response{unavailable}
+	gh[graphQLPath] = []sequence.Response{
+		rollup(rollupRun("go-build", "IN_PROGRESS", ""), map[string]any{"__typename": "StatusContext", "context": "ci/circleci: build", "state": "PENDING", "targetUrl": "https://ci/1", "createdAt": "2026-10-07T17:00:00Z"}),
+		rollup(rollupRun("go-build", "COMPLETED", "SUCCESS"), map[string]any{"__typename": "StatusContext", "context": "ci/circleci: build", "state": "SUCCESS", "targetUrl": "https://ci/1", "createdAt": "2026-10-07T17:05:00Z"},
+			map[string]any{"__typename": "StatusContext", "context": "required-later", "state": "EXPECTED"}),
+	}
+	h := startWith(t, gh, sequence.Routes{}, false, 30*time.Minute, 2)
+	result, err := h.waiter.Wait(context.Background(), "o", "r", 42)
+	if err != nil {
+		t.Fatalf("want green through GraphQL, got exit %d: %v", exitCode(err), err)
+	}
+	if result.ChecksVia != ChecksViaGraphQL {
+		t.Errorf("want checksVia %q, got %q", ChecksViaGraphQL, result.ChecksVia)
+	}
+	want := []Check{
+		{Name: "ci/circleci: build", Source: SourceStatus, Status: "completed", Conclusion: "success", URL: "https://ci/1"},
+		{Name: "go-build", ID: 7, Source: SourceCheckRun, Status: "completed", Conclusion: "success", URL: "https://github.com/o/r/runs/7"},
+	}
+	if diff := cmp.Diff(want, result.Checks); diff != "" {
+		t.Errorf("checks (-want +got):\n%s", diff)
+	}
+	if len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0], "read through GraphQL (statusCheckRollup)") || !strings.Contains(result.Warnings[0], "failed 2 times in a row: 500") {
+		t.Errorf("want one warning naming the fallback and the REST failure, got %q", result.Warnings)
+	}
+	// The second poll reads GraphQL alone: REST's check endpoints are not
+	// tried again within the wait.
+	rest := 0
+	for _, r := range h.github.Requests() {
+		if strings.HasSuffix(r.Path, "/check-runs") || strings.HasSuffix(r.Path, "/status") {
+			rest++
+		}
+	}
+	if rest != 2 {
+		t.Errorf("want the two tries of the first poll's check-run read on REST, got %d REST check reads", rest)
+	}
+}
+
+func Test_Wait_redThroughGraphQL(t *testing.T) {
+	gh := gitHubGreen()
+	gh[runsPath] = []sequence.Response{{Status: 502}}
+	gh[graphQLPath] = []sequence.Response{rollup(rollupRun("go-build", "COMPLETED", "FAILURE"))}
+	h := startWith(t, gh, sequence.Routes{}, false, 30*time.Minute, 2)
+	result, err := h.waiter.Wait(context.Background(), "o", "r", 42)
+	if exitCode(err) != agentcli.ExitRed {
+		t.Fatalf("want exit 1, got exit %d: %v", exitCode(err), err)
+	}
+	if result.ChecksVia != ChecksViaGraphQL || !strings.Contains(err.Error(), "check go-build concluded failure") {
+		t.Errorf("want the red check read through GraphQL, got checksVia %q: %v", result.ChecksVia, err)
+	}
+}
+
+func Test_Wait_bothCheckPathsUnansweredIsUnanswered(t *testing.T) {
+	gh := gitHubGreen()
+	gh[runsPath] = []sequence.Response{checkRuns(run("go-build", "in_progress", "")), {Status: 503}}
+	gh[graphQLPath] = []sequence.Response{{Status: 502, Body: map[string]any{"message": "bad gateway"}}}
+	h := startWith(t, gh, sequence.Routes{}, false, 2*time.Minute, 2)
+	result, err := h.waiter.Wait(context.Background(), "o", "r", 42)
+	if exitCode(err) != agentcli.ExitTimeout {
+		t.Fatalf("want exit 2, got exit %d: %v", exitCode(err), err)
+	}
+	if !strings.Contains(err.Error(), "the last poll went unanswered") || !strings.Contains(err.Error(), "reading them through GraphQL (statusCheckRollup) failed too") {
+		t.Errorf("want the reason to name both unanswered paths, got %q", err)
+	}
+	if result.ChecksVia != "" {
+		t.Errorf("want no checksVia, got %q", result.ChecksVia)
+	}
+}
+
+func Test_Wait_graphQLFailureGoesBackToREST(t *testing.T) {
+	gh := gitHubGreen()
+	gh[runsPath] = []sequence.Response{{Status: 503}, {Status: 503}, checkRuns(run("go-build", "completed", "success"))}
+	gh[graphQLPath] = []sequence.Response{rollup(rollupRun("go-build", "IN_PROGRESS", "")), {Status: 502}}
+	h := startWith(t, gh, sequence.Routes{}, false, 30*time.Minute, 2)
+	result, err := h.waiter.Wait(context.Background(), "o", "r", 42)
+	if err != nil {
+		t.Fatalf("want green from REST again, got exit %d: %v", exitCode(err), err)
+	}
+	if result.ChecksVia != "" {
+		t.Errorf("want REST for the last poll, got checksVia %q", result.ChecksVia)
+	}
+	if !strings.Contains(h.progress.String(), "through GraphQL failed") {
+		t.Errorf("want the return to REST in the progress:\n%s", h.progress.String())
 	}
 }

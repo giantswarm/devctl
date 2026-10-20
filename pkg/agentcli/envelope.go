@@ -32,6 +32,7 @@ const (
 	VerdictNotApplicable      Verdict = "not_applicable"
 	VerdictRequiredMissing    Verdict = "required_missing"
 	VerdictApprovalRequired   Verdict = "approval_required"
+	VerdictNoChecks           Verdict = "no_checks"
 	VerdictRefused            Verdict = "refused"
 	VerdictAvailable          Verdict = "available"
 	VerdictCIFailed           Verdict = "ci_failed"
@@ -40,6 +41,12 @@ const (
 	VerdictReleaseUnconfirmed Verdict = "release_unconfirmed"
 	VerdictAuthRequired       Verdict = "auth_required"
 	VerdictUsage              Verdict = "usage"
+	// VerdictAmbiguousRelease: the commit carries the release tags of more
+	// than one version; the caller names the version.
+	VerdictAmbiguousRelease Verdict = "ambiguous_release"
+	// VerdictStatusFailed: the artifacts are available and the tag's CI is
+	// green, and a commit status of the tag's commit failed.
+	VerdictStatusFailed Verdict = "status_failed"
 	// VerdictDetached: devctl pr merge --detach started the merge in a
 	// process of its own; the handle reads its outcome.
 	VerdictDetached Verdict = "detached"
@@ -63,8 +70,9 @@ const (
 	// ExitNotApplicable: draft, closed, conflicting, behind a strict base, a
 	// version that does not resolve.
 	ExitNotApplicable = 3
-	// ExitRequiredMissing: a required context never reported, or the head
-	// waits only for Actions runs a member has to approve.
+	// ExitRequiredMissing: a required context never reported, the head
+	// waits only for Actions runs a member has to approve, or its
+	// pull_request workflows never started.
 	ExitRequiredMissing = 4
 	// ExitRefused: the command declines (another author, an opt-out).
 	ExitRefused = 5
@@ -82,6 +90,15 @@ const (
 	// ExitRunning: devctl pr merge status found the detached merge still
 	// running.
 	ExitRunning = 10
+	// ExitAmbiguousRelease: the commit a release wait resolves to carries
+	// the release tags of more than one version; the reason names them, and
+	// a wait given the version waits on it.
+	ExitAmbiguousRelease = 11
+	// ExitStatusFailed: a release wait found every artifact available and
+	// the tag's CI green, and a commit status of the tag's commit (a branch
+	// pipeline's, another CI's) failed: devctl release promote refuses the
+	// commit. The reason names the failed statuses.
+	ExitStatusFailed = 12
 )
 
 // Envelope is the head of every command's JSON document. A command's document

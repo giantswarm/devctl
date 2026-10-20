@@ -52,7 +52,7 @@ func OpenSources(ctx context.Context, endpoints agentcli.Endpoints, transport ht
 				return nil, err
 			}
 			warn(token.Warning)
-			client, err := circleciclient.New(circleciclient.Config{Token: token.Value, BaseURL: circleciclient.BaseURLFromAPIURL(endpoints.CircleCIAPIURL), HTTPClient: &http.Client{Transport: transport}})
+			client, err := circleciclient.New(circleciclient.Config{Token: token.Value, TokenSource: token.SourceName(), BaseURL: circleciclient.BaseURLFromAPIURL(endpoints.CircleCIAPIURL), HTTPClient: &http.Client{Transport: transport}})
 			if err != nil {
 				return nil, err
 			}

@@ -102,5 +102,5 @@ func (r *runner) rerun(ctx context.Context, args []string, doc *document) error 
 	// A pipeline without a workflow gets the push of its revision again, with
 	// the client and identity that read the pull request.
 	redelivery := rerun.Redelivery{Hooks: func(context.Context) (rerun.Hooks, string, error) { return github, doc.Identity, nil }}
-	return rerun.FromFailed(ctx, circleci, owner, repo, pipeline, doc.Result, doc.Warn, redelivery)
+	return rerun.FromFailed(ctx, circleci, owner, repo, pipeline, doc.Result, doc.Warn, redelivery, rerun.Wedged{})
 }

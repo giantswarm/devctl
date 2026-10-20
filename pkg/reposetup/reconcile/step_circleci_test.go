@@ -3,6 +3,7 @@ package reconcile
 import (
 	"testing"
 
+	"github.com/google/go-github/v93/github"
 	"github.com/stretchr/testify/require"
 )
 
@@ -27,4 +28,23 @@ func TestIsReleaseTag(t *testing.T) {
 			require.Equal(t, want, isReleaseTag(tag))
 		})
 	}
+}
+
+// TestHasCircleCIWebhook: CircleCI's webhook counts when it is active and
+// subscribed to push events; another URL, an inactive hook or one without
+// push does not.
+func TestHasCircleCIWebhook(t *testing.T) {
+	hook := func(url string, active bool, events ...string) *github.Hook {
+		return &github.Hook{Active: new(active), Events: events, Config: &github.HookConfig{URL: new(url)}}
+	}
+	require.False(t, HasCircleCIWebhook(nil))
+	require.False(t, HasCircleCIWebhook([]*github.Hook{
+		hook("https://circleci.com/hooks/github", false, "push"),
+		hook("https://circleci.com/hooks/github", true, "pull_request"),
+		hook("https://github-pr-webhook.ci.giantswarm.io", true, "push"),
+	}))
+	require.True(t, HasCircleCIWebhook([]*github.Hook{
+		hook("https://github-pr-webhook.ci.giantswarm.io", true, "push"),
+		hook("https://circleci.com/hooks/github", true, "fork", "pull_request", "push"),
+	}))
 }

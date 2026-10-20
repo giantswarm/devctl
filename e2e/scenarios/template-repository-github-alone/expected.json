@@ -7,7 +7,7 @@
     "verdict": "green",
     "reason": "",
     "warnings": [
-      "giantswarm/e2e-template is a template repository: its .circleci/config.yml is for the repositories created from it, GitHub alone"
+      "giantswarm/e2e-template is a template repository: its .circleci/config.yml is for the repositories created from it (gen.ci.templateContent), GitHub alone"
     ],
     "startedAt": "*",
     "finishedAt": "*",
@@ -17,7 +17,7 @@
     "headSha": "abc123",
     "baseRef": "main",
     "checks": [
-      {"name": "bootstrap", "source": "check_run", "status": "completed", "conclusion": "success", "url": "*", "required": false}
+      {"name": "bootstrap", "id": 101, "source": "check_run", "status": "completed", "conclusion": "success", "url": "*", "required": false}
     ],
     "actions": [
       {"name": "template-bootstrap-gate", "runId": 7001, "status": "completed", "conclusion": "success", "url": "*"}

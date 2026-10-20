@@ -12,6 +12,17 @@ import (
 // CircleCI job: "ci/circleci: <job name>".
 const CircleCIContextPrefix = "ci/circleci: "
 
+// AlignFilesBranch is the branch giantswarm/github's align-files action
+// pushes a repository's generated files to and opens its pull request from.
+const AlignFilesBranch = "teams-alignment-branch"
+
+// AlignFilesLogin is the login of the align-files App, the author of the
+// pull requests it opens from [AlignFilesBranch].
+const AlignFilesLogin = "giantswarm-align-files[bot]"
+
+// stateOpen is the state of an open pull request, as a list filters on it.
+const stateOpen = "open"
+
 // PipelineFiles are the files of a generated pipeline that carry jobs,
 // relative to .circleci: workflows.yml is what `devctl gen circleci`
 // writes, custom.yml the repository-owned additions the setup workflow in
@@ -23,7 +34,10 @@ var PipelineFiles = []string{"workflows.yml", "custom.yml"}
 // unless its branch filter restricts it to named branches (`only:`) or
 // ignores every branch (`ignore: /.*/`, the tag-only release jobs): those
 // never report on a pull request and cannot gate one. Jobs of every workflow
-// count; custom.yml may add its own workflows.
+// count; custom.yml may add its own workflows. A workflow that runs on a
+// schedule (`triggers:`) or a condition (`when:`, `unless:`) and an
+// approval job wait for something other than a push, so they cannot gate a
+// pull request either.
 func GateContexts(files ...[]byte) ([]string, error) {
 	seen := map[string]bool{}
 	for _, raw := range files {
@@ -58,6 +72,9 @@ func GateJobs(raw []byte) ([]string, error) {
 		if !ok {
 			continue // `version: 2` keys and the like
 		}
+		if !workflowGatesPushes(wfMap) {
+			continue
+		}
 		jobs, ok := wfMap["jobs"].([]any)
 		if !ok {
 			continue
@@ -78,7 +95,7 @@ func GateJobs(raw []byte) ([]string, error) {
 					if n, ok := p["name"].(string); ok && n != "" {
 						name = n
 					}
-					if !jobGatesBranches(p) {
+					if !jobGatesBranches(p) || p["type"] == "approval" {
 						continue
 					}
 					names = append(names, name)
@@ -87,6 +104,17 @@ func GateJobs(raw []byte) ([]string, error) {
 		}
 	}
 	return names, nil
+}
+
+// workflowGatesPushes reports whether a workflow runs on every push: no
+// schedule (`triggers:`) and no condition (`when:`, `unless:`).
+func workflowGatesPushes(wf map[string]any) bool {
+	for _, key := range []string{"triggers", "when", "unless"} {
+		if _, has := wf[key]; has {
+			return false
+		}
+	}
+	return true
 }
 
 // jobGatesBranches reports whether a job with the given parameters runs on

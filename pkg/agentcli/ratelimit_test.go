@@ -86,7 +86,7 @@ func TestRetryingWaitsForTheRateLimit(t *testing.T) {
 			if len(warnings) != 1 {
 				t.Fatalf("warnings: want 1, got %q", warnings)
 			}
-			for _, part := range []string{"GET " + server.URL + "/repos/o/r/pulls/1: ", tc.failure, tc.pause, "(try 2 of 8)"} {
+			for _, part := range []string{"GET " + server.URL + "/repos/o/r/pulls/1: ", tc.failure, tc.pause, "(try 2 of " + strconv.Itoa(RetryAttempts) + ")"} {
 				if !strings.Contains(warnings[0], part) {
 					t.Errorf("warning %q does not name %q", warnings[0], part)
 				}

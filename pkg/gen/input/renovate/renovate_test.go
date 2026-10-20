@@ -2,9 +2,11 @@ package renovate
 
 import (
 	"bytes"
+	"encoding/json"
 	"flag"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -19,7 +21,8 @@ import (
 var update = flag.Bool("update", false, "update golden files")
 
 // render executes the renovate input the same way pkg/gen/internal.Execute
-// does, returning the bytes that would be written to renovate.json5.
+// does, returning the bytes that would be written to renovate.json5, or to
+// renovate.json for a fork.
 func render(t *testing.T, c Config) string {
 	t.Helper()
 
@@ -29,6 +32,14 @@ func render(t *testing.T, c Config) string {
 	}
 
 	in := r.CreateRenovate()
+
+	if in.Generate != nil {
+		got, err := in.Generate(t.Context())
+		if err != nil {
+			t.Fatalf("Generate() returned unexpected error: %v", err)
+		}
+		return string(got)
+	}
 
 	tpl := template.New("renovate")
 	if in.TemplateDelims.Left != "" {
@@ -444,19 +455,52 @@ func Test_Golden(t *testing.T) {
 				Extends:           []string{"flux.json5", "disable-vendir.json5"},
 			},
 		},
+		{
+			// A fork line with its repo-owned rules in renovate-custom.json5:
+			// renovate.json in JSONC with forkProcessing.
+			name: "fork",
+			config: Config{
+				Language:        "go",
+				Reviewers:       []string{"teemow"},
+				RepoName:        "kagent-upstream",
+				HasCustomConfig: true,
+				Fork:            true,
+			},
+		},
+		{
+			// Every optional block on at once in JSONC, with a schedule that
+			// has quotes and a backslash to convert.
+			name: "fork-full",
+			config: Config{
+				Language:          "node",
+				Reviewers:         []string{"team:team-rocket", "team:team-honeybadger"},
+				CircleCIGenerated: true,
+				RepoName:          "some-repo",
+				HasCustomConfig:   true,
+				Interval:          `before 5am on 'monday' \ "x"`,
+				Deprecated:        true,
+				Extends:           []string{"flux.json5", "disable-vendir.json5"},
+				Fork:              true,
+			},
+		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			got := render(t, tc.config)
 
-			// Every golden must itself be valid JSON5.
+			// Every golden must itself be valid JSON5, a fork's valid JSONC.
 			var parsed map[string]interface{}
 			if err := json5.Unmarshal([]byte(got), &parsed); err != nil {
 				t.Fatalf("rendered config is not valid JSON5: %v\n%s", err, got)
 			}
+			ext := ".json5"
+			if tc.config.Fork {
+				ext = ".json"
+				parseJSONC(t, got)
+			}
 
-			golden := filepath.Join("testdata", tc.name+".json5.golden")
+			golden := filepath.Join("testdata", tc.name+ext+".golden")
 
 			if *update {
 				if err := os.WriteFile(golden, []byte(got), 0o600); err != nil {
@@ -478,10 +522,11 @@ func Test_Golden(t *testing.T) {
 }
 
 // Test_GitIgnoredAuthorsAlwaysPresent verifies every generated config lists
-// both authors of our own that commit onto a Renovate branch: taylorbot, which
-// pushes what the generated workflows (helm-docs-regen, update-chart,
-// sync-from-upstream) produce, and the marge sweep's App, which writes a bot
-// PR's changelog entry. Renovate keeps rebasing and autoclosing a branch they
+// the authors of our own that commit onto a Renovate branch: the
+// giantswarm-release App, which pushes what the generated workflows
+// (helm-docs-regen, update-chart, sync-from-upstream) produce, taylorbot, which
+// did so before it in repositories whose workflows are not regenerated yet, and
+// the marge sweep's App, which writes a bot PR's changelog entry. Renovate keeps rebasing and autoclosing a branch they
 // pushed to only while it is told to ignore them. It is unconditional: a repo
 // that neither touches never sees a commit by those authors, so the entries
 // are inert there.
@@ -499,9 +544,77 @@ func Test_GitIgnoredAuthorsAlwaysPresent(t *testing.T) {
 		if err := json5.Unmarshal([]byte(got), &parsed); err != nil {
 			t.Fatalf("generated config is not valid JSON5: %v\n%s", err, got)
 		}
-		want := []string{"dev@giantswarm.io", "329428426+giantswarm-marge[bot]@users.noreply.github.com"}
+		want := []string{"342014845+giantswarm-release[bot]@users.noreply.github.com", "dev@giantswarm.io", "329428426+giantswarm-marge[bot]@users.noreply.github.com"}
 		if !slices.Equal(parsed.GitIgnoredAuthors, want) {
 			t.Errorf("gitIgnoredAuthors = %v for %+v, want %v", parsed.GitIgnoredAuthors, c, want)
 		}
+	}
+}
+
+// parseJSONC parses a fork's config the way Renovate's JSONC parser reads
+// renovate.json: whole-line comments aside, it has to be strict JSON, no
+// single quotes, bare keys or trailing commas.
+func parseJSONC(t *testing.T, config string) map[string]interface{} {
+	t.Helper()
+
+	var lines []string
+	for _, line := range strings.Split(config, "\n") {
+		if !strings.HasPrefix(strings.TrimSpace(line), "//") {
+			lines = append(lines, line)
+		}
+	}
+	var parsed map[string]interface{}
+	if err := json.Unmarshal([]byte(strings.Join(lines, "\n")), &parsed); err != nil {
+		t.Fatalf("fork config is not JSON once its comments are stripped: %v\n%s", err, config)
+	}
+	return parsed
+}
+
+// Test_ForkWritesWhatTheForkCheckReads verifies the fork flavour: the file is
+// renovate.json, the one Renovate's fork check reads, its top level sets
+// forkProcessing to "enabled", and otherwise it holds exactly the config the
+// other flavours get in renovate.json5.
+func Test_ForkWritesWhatTheForkCheckReads(t *testing.T) {
+	c := Config{
+		Language:          "go",
+		Reviewers:         []string{"team:team-rocket"},
+		CircleCIGenerated: true,
+		RepoName:          "some-repo",
+		HasCustomConfig:   true,
+		Interval:          `after 9am on 'thursday' \ "x"` + "\n!",
+		Extends:           []string{"flux.json5"},
+	}
+
+	r, err := New(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := r.CreateRenovate().Path; got != "renovate.json5" {
+		t.Errorf("path without fork = %q, want renovate.json5", got)
+	}
+	var want map[string]interface{}
+	if err := json5.Unmarshal([]byte(render(t, c)), &want); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := want["forkProcessing"]; ok {
+		t.Errorf("renovate.json5 sets forkProcessing: %v", want["forkProcessing"])
+	}
+
+	c.Fork = true
+	r, err = New(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := r.CreateRenovate().Path; got != "renovate.json" {
+		t.Errorf("path with fork = %q, want renovate.json", got)
+	}
+	got := parseJSONC(t, render(t, c))
+	if got["forkProcessing"] != "enabled" {
+		t.Errorf("forkProcessing = %v, want \"enabled\"", got["forkProcessing"])
+	}
+
+	delete(got, "forkProcessing")
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("fork config holds more than forkProcessing beside the renovate.json5 config:\n got %v\nwant %v", got, want)
 	}
 }

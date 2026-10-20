@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -18,10 +19,11 @@ import (
 // autoReleaseStep is one step of the tag job as the rendered workflow declares
 // it.
 type autoReleaseStep struct {
-	ID   string `yaml:"id"`
-	Name string `yaml:"name"`
-	If   string `yaml:"if"`
-	Run  string `yaml:"run"`
+	ID   string            `yaml:"id"`
+	Name string            `yaml:"name"`
+	If   string            `yaml:"if"`
+	Run  string            `yaml:"run"`
+	Env  map[string]string `yaml:"env"`
 }
 
 // tagJobSteps returns the steps of the auto-release tag job from the rendered
@@ -141,10 +143,9 @@ func repo(t *testing.T, history ...string) string {
 // bump, so they are not releasable on their own.
 var cliffSkippedTypes = []string{"docs", "style", "test"}
 
-// countedSubject matches a conventional subject and captures its type. The
-// optional -rc mirrors cliff.toml's commit_preprocessor, which normalises
-// feat-rc/fix-rc to feat/fix before git-cliff parses the type.
-var countedSubject = regexp.MustCompile(`^([a-z]+)(?:-rc)?(?:\([^)]*\))?!?: `)
+// countedSubject matches a conventional subject as git-cliff parses it
+// (letters, digits, `_` and `-` in the type) and captures its type.
+var countedSubject = regexp.MustCompile(`^([A-Za-z0-9_-]+)(?:\([^)]*\))?!?: `)
 
 // cliffContext writes the cliff-context.json that the decide step reads. The
 // test environment has no git-cliff, so this stands in for it: the file holds
@@ -268,7 +269,7 @@ func Test_AutoReleaseDecideWarnsOnUnconventionalSubjects(t *testing.T) {
 	})
 
 	t.Run("a conventional subject of any type is not warned about", func(t *testing.T) {
-		dir := repo(t, "v1.2.9", "chore(deps): bump y", "docs: fix typo", "feat-rc(auth): add x", "refactor!: drop y", "fix: last thing")
+		dir := repo(t, "v1.2.9", "chore(deps): bump y", "docs: fix typo", "feat(auth): add x", "Perf_x-1: speed z", "refactor!: drop y", "fix: last thing")
 		_, log := decideWithLog(t, script, dir, "v2.0.0", "auto")
 
 		if strings.Contains(log, "::warning") {
@@ -280,10 +281,11 @@ func Test_AutoReleaseDecideWarnsOnUnconventionalSubjects(t *testing.T) {
 	})
 }
 
-// Test_AutoReleaseDecide pins the release rule: every releasable push cuts
-// the next rc.N for the version git-cliff computed (`next`), and a push with
-// nothing releasable since the last stable release or the last candidate
-// cuts nothing.
+// Test_AutoReleaseDecide pins the release rule: a releasable push cuts the
+// next rc.N for the minor or major version git-cliff computed (`next`), a
+// patch of the last stable release is tagged stable on its push, and a push
+// with nothing releasable since the last stable release or the last
+// candidate cuts nothing.
 func Test_AutoReleaseDecide(t *testing.T) {
 	script := decideScript(t)
 
@@ -292,6 +294,8 @@ func Test_AutoReleaseDecide(t *testing.T) {
 		history   []string
 		next      string
 		expectTag string
+		// stable is a tag cut as a stable release, not a candidate.
+		stable bool
 	}{
 		{
 			name:      "a feat opens a cycle",
@@ -300,10 +304,33 @@ func Test_AutoReleaseDecide(t *testing.T) {
 			expectTag: "v1.3.0-rc.1",
 		},
 		{
-			name:      "a fix opens a cycle",
+			name:      "a fix is a patch, tagged stable without a candidate",
 			history:   []string{"v1.2.9", "fix: x"},
 			next:      "v1.2.10",
-			expectTag: "v1.2.10-rc.1",
+			expectTag: "v1.2.10",
+			stable:    true,
+		},
+		{
+			name:      "a chore(deps) alone is a patch too",
+			history:   []string{"v1.2.9", "chore(deps): bump y"},
+			next:      "v1.2.10",
+			expectTag: "v1.2.10",
+			stable:    true,
+		},
+		{
+			// A patch candidate cut before the patch fast path is released by
+			// the next push: the version is the same, now stable.
+			name:      "a patch candidate from before the fast path is released stable",
+			history:   []string{"v1.2.9", "fix: x", "v1.2.10-rc.1", "fix: y"},
+			next:      "v1.2.10",
+			expectTag: "v1.2.10",
+			stable:    true,
+		},
+		{
+			name:      "a fix during a minor cycle rides its next candidate",
+			history:   []string{"v1.2.9", "feat: add x", "v1.3.0-rc.1", "fix: y"},
+			next:      "v1.3.0",
+			expectTag: "v1.3.0-rc.2",
 		},
 		{
 			name:      "chore(deps) during a cycle cuts the next candidate",
@@ -345,12 +372,6 @@ func Test_AutoReleaseDecide(t *testing.T) {
 			expectTag: "v1.3.0-rc.10",
 		},
 		{
-			name:      "a leftover -rc type still cuts a candidate",
-			history:   []string{"v1.2.9", "feat-rc: add x"},
-			next:      "v1.3.0",
-			expectTag: "v1.3.0-rc.1",
-		},
-		{
 			name:      "inception, with no tag at all",
 			history:   []string{"feat: add x"},
 			next:      "v0.1.0",
@@ -363,10 +384,11 @@ func Test_AutoReleaseDecide(t *testing.T) {
 			expectTag: "",
 		},
 		{
-			name:      "after a stable release the next fix opens a new cycle",
+			name:      "after a stable release the next fix is its patch",
 			history:   []string{"v1.2.9", "feat: add x", "v1.3.0-rc.1", "v1.3.0", "fix: y"},
 			next:      "v1.3.1",
-			expectTag: "v1.3.1-rc.1",
+			expectTag: "v1.3.1",
+			stable:    true,
 		},
 		{
 			// On release-2.x the reachable baseline is v2.3.5, not the higher
@@ -375,7 +397,8 @@ func Test_AutoReleaseDecide(t *testing.T) {
 			name:      "a backport branch bumps from its own reachable baseline",
 			history:   []string{"v2.3.5", "fix: backport"},
 			next:      "v2.3.6",
-			expectTag: "v2.3.6-rc.1",
+			expectTag: "v2.3.6",
+			stable:    true,
 		},
 	}
 
@@ -390,8 +413,8 @@ func Test_AutoReleaseDecide(t *testing.T) {
 			if tc.expectTag == "" {
 				return
 			}
-			if got["prerelease"] != "true" {
-				t.Errorf("prerelease = %q, want true", got["prerelease"])
+			if want := strconv.FormatBool(!tc.stable); got["prerelease"] != want {
+				t.Errorf("prerelease = %q, want %s", got["prerelease"], want)
 			}
 			if head := strings.TrimSpace(mustGit(t, dir, "rev-parse", "HEAD")); got["target"] != head {
 				t.Errorf("target = %q, want HEAD %q", got["target"], head)
@@ -402,32 +425,61 @@ func Test_AutoReleaseDecide(t *testing.T) {
 
 // ghStub puts a gh on PATH that answers the promote step's two questions:
 // `gh release view` prints release ("true" or "false" for isPrerelease; empty
-// fails as for a missing release), `gh api .../status` prints status ("<state>
-// <total_count>"; empty fails as for a token without statuses: read). It
-// returns the PATH entry for runStep.
+// fails as for a missing release), `gh api .../status` prints status, what
+// the step's --jq makes of the combined status: the total_count, then one
+// "<state> <context>" line per context ([statuses]; empty fails as for a
+// token without statuses: read). It returns the PATH entry for runStep.
 func ghStub(t *testing.T, release, status string) string {
 	t.Helper()
 
+	return "PATH=" + flakyGhStub(t, release, status, 0) + string(os.PathListSeparator) + os.Getenv("PATH")
+}
+
+// flakyGhStub is ghStub whose status read fails its first failures tries the
+// way the API does now and then: alternately a truncated body (gh exits 1 with
+// jq's complaint) and an empty answer. A sleep beside it records each backoff
+// in the file sleeps instead of waiting. It returns the stub directory.
+func flakyGhStub(t *testing.T, release, status string, failures int) string {
+	t.Helper()
+
 	dir := t.TempDir()
-	script := "#!/usr/bin/env bash\n" +
+	gh := "#!/usr/bin/env bash\n" +
 		"case \"$1 $2\" in\n" +
 		"  'release view') [ -n '" + release + "' ] || exit 1; echo '" + release + "' ;;\n" +
-		"  api*) [ -n '" + status + "' ] || exit 1; echo '" + status + "' ;;\n" +
+		"  api*)\n" +
+		"    n=$(cat '" + dir + "/tries' 2>/dev/null || echo 0); echo $((n + 1)) >| '" + dir + "/tries'\n" +
+		"    if [ \"$n\" -lt " + strconv.Itoa(failures) + " ]; then\n" +
+		"      [ $((n % 2)) = 0 ] && { echo 'unexpected end of JSON input' >&2; exit 1; }\n" +
+		"      exit 0\n" +
+		"    fi\n" +
+		"    [ -n '" + status + "' ] || exit 1; echo '" + status + "' ;;\n" +
 		"  *) echo \"unexpected gh $*\" >&2; exit 2 ;;\n" +
 		"esac\n"
-	if err := os.WriteFile(filepath.Join(dir, "gh"), []byte(script), 0o700); err != nil { // #nosec G306 -- test-only executable stub
-		t.Fatalf("write gh stub: %v", err)
+	sleep := "#!/usr/bin/env bash\necho \"$1\" >> '" + dir + "/sleeps'\n"
+	for name, script := range map[string]string{"gh": gh, "sleep": sleep} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(script), 0o700); err != nil { // #nosec G306 -- test-only executable stub
+			t.Fatalf("write %s stub: %v", name, err)
+		}
 	}
 
-	return "PATH=" + dir + string(os.PathListSeparator) + os.Getenv("PATH")
+	return dir
 }
+
+// statuses is the promote step's reading of a combined status whose contexts
+// are lines, "<state> <context>" each.
+func statuses(lines ...string) string {
+	return strings.Join(append([]string{strconv.Itoa(len(lines))}, lines...), "\n")
+}
+
+// built is the reading of a candidate whose pipelines passed.
+var built = statuses("success ci/circleci: go-build", "success ci/circleci: push-to-registries")
 
 // builtCandidate is the gh stub of a candidate whose pre-release exists and
 // whose pipelines passed.
 func builtCandidate(t *testing.T) string {
 	t.Helper()
 
-	return ghStub(t, "true", "success 2")
+	return ghStub(t, "true", built)
 }
 
 // promoteScript extracts the shell of the step that checks out the candidate
@@ -523,6 +575,60 @@ func Test_AutoReleasePromote(t *testing.T) {
 	}
 }
 
+// Test_AutoReleasePromoteVersion pins `version`, what `devctl release promote
+// --version` passes: a named candidate since the last stable release is
+// promoted on its own commit while a later one exists; any other tag is
+// refused with the candidates there are.
+func Test_AutoReleasePromoteVersion(t *testing.T) {
+	history := []string{"v1.2.2", "feat: add x", "v1.3.0-rc.14", "fix: y", "v1.3.0-rc.15"}
+
+	t.Run("an older candidate is promoted on its own commit", func(t *testing.T) {
+		dir := repo(t, history...)
+		got, log, err := runStep(t, promoteScript(t), dir, builtCandidate(t), "GH_REPO=giantswarm/example", "PROMOTE_VERSION=v1.3.0-rc.14")
+		if err != nil || got["rc"] != "v1.3.0-rc.14" {
+			t.Fatalf("rc = %q, err = %v, want v1.3.0-rc.14:\n%s", got["rc"], err, log)
+		}
+		rcCommit := strings.TrimSpace(mustGit(t, dir, "rev-parse", "v1.3.0-rc.14^{commit}"))
+		if head := strings.TrimSpace(mustGit(t, dir, "rev-parse", "HEAD")); head != rcCommit {
+			t.Errorf("HEAD = %q, want the commit of v1.3.0-rc.14 %q", head, rcCommit)
+		}
+	})
+
+	for _, version := range []string{"v1.2.2", "v1.3.0-rc.13", "v1.3.0-rc.1"} {
+		t.Run(version+" is refused", func(t *testing.T) {
+			_, log, err := runStep(t, promoteScript(t), repo(t, history...), builtCandidate(t), "GH_REPO=giantswarm/example", "PROMOTE_VERSION="+version)
+			if err == nil {
+				t.Errorf("promote step succeeded, want a refusal:\n%s", log)
+			}
+			want := "::error title=Not a release candidate to promote::" + version + " is not a release candidate since v1.2.2 on main; the candidates are v1.3.0-rc.14 v1.3.0-rc.15."
+			if !strings.Contains(log, want) {
+				t.Errorf("no %q annotation:\n%s", want, log)
+			}
+		})
+	}
+}
+
+// Test_AutoReleasePromoteRetriesTheStatusRead pins that a transient empty or
+// truncated answer of the commit status read is retried with backoff rather
+// than refusing the promotion.
+func Test_AutoReleasePromoteRetriesTheStatusRead(t *testing.T) {
+	dir := repo(t, "v1.2.9", "fix: x", "v1.2.10-rc.1")
+	stub := flakyGhStub(t, "true", built, 3)
+
+	got, log, err := runStep(t, promoteScript(t), dir,
+		"PATH="+stub+string(os.PathListSeparator)+os.Getenv("PATH"), "GH_REPO=giantswarm/example")
+	if err != nil || got["rc"] != "v1.2.10-rc.1" {
+		t.Fatalf("rc = %q, err = %v, want v1.2.10-rc.1:\n%s", got["rc"], err, log)
+	}
+	sleeps, err := os.ReadFile(filepath.Join(stub, "sleeps")) // #nosec G304 -- the stub's own file in a test temp dir
+	if err != nil {
+		t.Fatalf("read sleeps: %v", err)
+	}
+	if got, want := strings.Fields(string(sleeps)), []string{"2", "4", "8"}; !slices.Equal(got, want) {
+		t.Errorf("backoff = %q, want %q", got, want)
+	}
+}
+
 // Test_AutoReleasePromoteRefuses pins the refusals of a stable release: no
 // candidate to promote, a candidate without its GitHub pre-release or with a
 // failed or running pipeline, and a candidate whose commits release a
@@ -546,10 +652,14 @@ func Test_AutoReleasePromoteRefuses(t *testing.T) {
 	for _, tc := range []struct {
 		name, release, status, annotation string
 	}{
-		{"the candidate has no GitHub release", "", "success 2", "Candidate not released"},
-		{"the candidate's release is not a pre-release", "false", "success 2", "Candidate not a pre-release"},
-		{"a pipeline of the candidate failed", "true", "failure 2", "Candidate not built"},
-		{"a pipeline of the candidate is still running", "true", "pending 1", "Candidate not built"},
+		{"the candidate has no GitHub release", "", built, "Candidate not released"},
+		{"the candidate's release is not a pre-release", "false", built, "Candidate not a pre-release"},
+		{"a pipeline of the candidate failed", "true", statuses("success ci/circleci: go-build", "failure ci/circleci: push-to-registries"), "Candidate not built"},
+		{"a pipeline of the candidate errored", "true", statuses("error ci/circleci: push-to-registries"), "Candidate not built"},
+		{"a pipeline of the candidate is still running", "true", statuses("pending ci/circleci: push-to-registries"), "Candidate not built"},
+		{"another context failed beside sync-china-registry", "true", statuses("failure ci/circleci: sync-china-registry", "failure ci/circleci: push-to-registries"), "Candidate not built"},
+		{"a context is still running beside a failed sync-china-registry", "true", statuses("failure ci/circleci: sync-china-registry", "pending ci/circleci: push-to-registries"), "Candidate not built"},
+		{"sync-china-registry of another CI failed", "true", statuses("failure sync-china-registry"), "Candidate not built"},
 		{"the candidate's statuses cannot be read", "true", "", "Candidate status unreadable"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -561,14 +671,44 @@ func Test_AutoReleasePromoteRefuses(t *testing.T) {
 			if !strings.Contains(log, "::error title="+tc.annotation+"::") {
 				t.Errorf("no %q error annotation:\n%s", tc.annotation, log)
 			}
+			if strings.Contains(log, "::warning title=Advisory status failed::") && !strings.Contains(tc.status, "ci/circleci: sync-china-registry") {
+				t.Errorf("an advisory warning without an advisory failure:\n%s", log)
+			}
 		})
 	}
 
+	t.Run("a status read failing on every try names the request and the tries", func(t *testing.T) {
+		dir := repo(t, "v1.2.9", "fix: x", "v1.2.10-rc.1")
+		stub := flakyGhStub(t, "true", built, 100)
+		_, log, err := runStep(t, promoteScript(t), dir,
+			"PATH="+stub+string(os.PathListSeparator)+os.Getenv("PATH"), "GH_REPO=giantswarm/example")
+		if err == nil {
+			t.Errorf("promote step succeeded, want a refusal:\n%s", log)
+		}
+		want := "::error title=Candidate status unreadable::GET repos/giantswarm/example/commits/v1.2.10-rc.1/status failed 4 times"
+		if !strings.Contains(log, want) {
+			t.Errorf("no %q annotation:\n%s", want, log)
+		}
+	})
+
 	t.Run("a candidate no pipeline reports on is promoted", func(t *testing.T) {
 		dir := repo(t, "v1.2.9", "fix: x", "v1.2.10-rc.1")
-		got, log, err := runStep(t, promoteScript(t), dir, ghStub(t, "true", "pending 0"), "GH_REPO=giantswarm/example")
+		got, log, err := runStep(t, promoteScript(t), dir, ghStub(t, "true", statuses()), "GH_REPO=giantswarm/example")
 		if err != nil || got["rc"] != "v1.2.10-rc.1" {
 			t.Errorf("rc = %q, err = %v, want v1.2.10-rc.1:\n%s", got["rc"], err, log)
+		}
+	})
+
+	t.Run("a candidate whose only failure is sync-china-registry is promoted with a warning", func(t *testing.T) {
+		dir := repo(t, "v1.2.9", "fix: x", "v1.2.10-rc.1")
+		stub := ghStub(t, "true", statuses("success ci/circleci: push-to-registries", "failure ci/circleci: sync-china-registry"))
+		got, log, err := runStep(t, promoteScript(t), dir, stub, "GH_REPO=giantswarm/example")
+		if err != nil || got["rc"] != "v1.2.10-rc.1" {
+			t.Fatalf("rc = %q, err = %v, want v1.2.10-rc.1:\n%s", got["rc"], err, log)
+		}
+		want := "::warning title=Advisory status failed::the commit status ci/circleci: sync-china-registry of v1.2.10-rc.1 failed"
+		if !strings.Contains(log, want) {
+			t.Errorf("no %q annotation:\n%s", want, log)
 		}
 	})
 
@@ -639,21 +779,6 @@ func Test_AutoReleaseDecideIgnoresBuildMetadataTags(t *testing.T) {
 
 	if got["tag"] != "" {
 		t.Errorf("tag = %q, want none: v1.2.3+build.1 is not a release", got["tag"])
-	}
-}
-
-// Test_AutoReleaseCliffNormalisesRcTypes pins the contract between the
-// workflow and cliff.toml: the workflow reads the raw -rc subjects, so
-// git-cliff must be handed the plain type. features_always_bump_minor keys off
-// the type being exactly "feat", and an un-normalised feat-rc bumps patch.
-func Test_AutoReleaseCliffNormalisesRcTypes(t *testing.T) {
-	cliff := renderInput(t, newWorkflows(t, gen.FlavourApp).CliffToml())
-
-	if !strings.Contains(cliff, `{ pattern = '^(feat|fix)-rc', replace = "${1}" }`) {
-		t.Errorf("cliff.toml does not normalise feat-rc/fix-rc before parsing:\n%s", cliff)
-	}
-	if !strings.Contains(cliff, "features_always_bump_minor = true") {
-		t.Error("cliff.toml no longer sets features_always_bump_minor; the normalisation above may be pointless")
 	}
 }
 

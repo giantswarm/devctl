@@ -16,6 +16,7 @@ import (
 	"github.com/giantswarm/devctl/v8/pkg/circleciclient"
 	"github.com/giantswarm/devctl/v8/pkg/githubclient"
 	"github.com/giantswarm/devctl/v8/pkg/prwait"
+	"github.com/giantswarm/devctl/v8/pkg/releasewait"
 )
 
 const command = "pr wait"
@@ -53,6 +54,7 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	agentcli.IgnoreHangup()
 	return r.run(ctx, args)
 }
 
@@ -136,12 +138,14 @@ func (r *runner) wait(ctx context.Context, args []string, doc *document) error {
 			}
 			doc.Warn(token.Warning)
 			return circleciclient.New(circleciclient.Config{
-				Token:      token.Value,
-				BaseURL:    circleciclient.BaseURLFromAPIURL(endpoints.CircleCIAPIURL),
-				HTTPClient: &http.Client{Transport: retrying},
-				Logger:     logger,
+				Token:       token.Value,
+				TokenSource: token.SourceName(),
+				BaseURL:     circleciclient.BaseURLFromAPIURL(endpoints.CircleCIAPIURL),
+				HTTPClient:  &http.Client{Transport: retrying},
+				Logger:      logger,
 			})
 		},
+		Entries:        releasewait.TeamFileEntries{GitHub: github.GitHub()},
 		Clock:          clock,
 		Progress:       progress,
 		Timeout:        r.flag.Timeout,

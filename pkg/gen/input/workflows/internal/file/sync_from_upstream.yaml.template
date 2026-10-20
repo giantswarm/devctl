@@ -7,6 +7,8 @@ on:
       - 'renovate/vendir/**'
   workflow_dispatch:
 
+permissions: {}
+
 jobs:
   sync-from-upstream:
     uses: giantswarm/github-workflows/.github/workflows/sync-from-upstream.yaml@main

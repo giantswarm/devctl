@@ -16,7 +16,8 @@ var executionError = &microerror.Error{
 }
 
 // IsExecution asserts executionError: GitHub did not do what it accepted to
-// do within the bound (an update-branch that produced no new head).
+// do within the bound (an update-branch that produced no new head), or a
+// merge call failed and whether it merged could not be read.
 func IsExecution(err error) bool {
 	return microerror.Cause(err) == executionError
 }

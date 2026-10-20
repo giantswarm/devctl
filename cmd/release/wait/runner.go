@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
+	"github.com/giantswarm/devctl/v8/pkg/prwait"
 	"github.com/giantswarm/devctl/v8/pkg/releasewait"
 )
 
@@ -72,6 +73,10 @@ func (r *runner) wait(ctx context.Context, args []string, doc *releasewait.Docum
 			return err
 		}
 	}
+	failedLogLines, err := r.flag.FailedLog.TailLines()
+	if err != nil {
+		return err
+	}
 	if err := r.gate(false); err != nil {
 		return err
 	}
@@ -93,27 +98,30 @@ func (r *runner) wait(ctx context.Context, args []string, doc *releasewait.Docum
 	}
 
 	waiter, err := releasewait.New(releasewait.Config{
-		Owner:        owner,
-		Repo:         repo,
-		Version:      version,
-		PR:           r.flag.PR,
-		Timeout:      r.flag.Timeout,
-		Catalog:      r.flag.Catalog,
-		Images:       r.flag.Images,
-		Charts:       r.flag.Charts,
-		GitHub:       c.GitHub,
-		Entries:      c.Entries,
-		CircleCI:     c.CircleCI,
-		Registry:     c.Registry,
-		CatalogIndex: c.CatalogIndex,
-		Endpoints:    endpoints,
-		Clock:        clock,
-		Rate:         c.Rate,
-		Progress:     progress,
-		Warn:         doc.Warn,
+		Owner:          owner,
+		Repo:           repo,
+		Version:        version,
+		PR:             r.flag.PR,
+		Timeout:        r.flag.Timeout,
+		Catalog:        r.flag.Catalog,
+		Images:         r.flag.Images,
+		Charts:         r.flag.Charts,
+		FailedLogLines: failedLogLines,
+		GitHub:         c.GitHub,
+		Entries:        c.Entries,
+		CircleCI:       c.CircleCI,
+		Registry:       c.Registry,
+		CatalogIndex:   c.CatalogIndex,
+		Endpoints:      endpoints,
+		Clock:          clock,
+		Rate:           c.Rate,
+		Progress:       progress,
+		Warn:           doc.Warn,
 	})
 	if err != nil {
 		return err
 	}
-	return waiter.Wait(ctx, &doc.Result)
+	err = waiter.Wait(ctx, &doc.Result)
+	prwait.PrintFailedJobs(r.stderr, doc.FailedJobs)
+	return err
 }

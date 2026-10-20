@@ -14,6 +14,7 @@
     "checks": [
       {
         "name": "go-test",
+        "id": 101,
         "source": "check_run",
         "status": "completed",
         "conclusion": "success",
@@ -86,7 +87,8 @@
         "failedJobs": [],
         "unfinished": []
       },
-      "actions": []
+      "actions": [],
+      "statuses": []
     }
   }
 }

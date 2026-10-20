@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"github.com/giantswarm/microerror"
-	"github.com/google/go-github/v92/github"
+	"github.com/google/go-github/v93/github"
 )
 
 // The calls `devctl pr merge` makes once the head is green: the merge itself,
@@ -92,12 +92,27 @@ func (c *Client) MergePullRequest(ctx context.Context, owner, repo string, numbe
 	return result.GetSHA(), nil
 }
 
+// IsMergeRetryable says whether a failed [Client.MergePullRequest] may be
+// repeated once the pull request is read as still open: a 5xx or a call
+// that got no answer (reset, timeout). A spent rate limit and every 4xx
+// stand.
+func IsMergeRetryable(err error) bool {
+	var rate *github.RateLimitError
+	var abuse *github.AbuseRateLimitError
+	if err == nil || IsMergeDeclined(err) || errors.As(err, &rate) || errors.As(err, &abuse) {
+		return false
+	}
+	status := githubStatus(err)
+	return status >= http.StatusInternalServerError || status == 0
+}
+
 // UpdatePullRequestBranch asks GitHub to merge the base into the head
 // (the "Update branch" button). GitHub schedules it and answers 202; the
 // new head appears on the pull request a moment later. expectedHeadSHA
-// guards against updating a head that moved meanwhile.
+// guards against updating a head that moved meanwhile. The REST endpoint
+// only merges; [Client.RebasePullRequestBranch] rebases.
 func (c *Client) UpdatePullRequestBranch(ctx context.Context, owner, repo string, number int, expectedHeadSHA string) error {
-	_, _, err := c.ghClient.PullRequests.UpdateBranch(ctx, owner, repo, number, &github.PullRequestBranchUpdateOptions{
+	_, _, err := c.ghClient.PullRequests.UpdateBranch(ctx, owner, repo, number, github.UpdatePullRequestBranchRequest{
 		ExpectedHeadSHA: &expectedHeadSHA,
 	})
 	var accepted *github.AcceptedError
@@ -105,6 +120,18 @@ func (c *Client) UpdatePullRequestBranch(ctx context.Context, owner, repo string
 		return microerror.Mask(err)
 	}
 	return nil
+}
+
+// RebasePullRequestBranch asks GitHub to rebase the head onto the base (the
+// "Update with rebase" button): the GraphQL mutation updatePullRequestBranch
+// with updateMethod REBASE, which REST has no call for, so the head stays
+// free of merge commits. expectedHeadSHA guards against updating a head that
+// moved meanwhile; the new head appears on the pull request once GitHub has
+// rebased it.
+func (c *Client) RebasePullRequestBranch(ctx context.Context, nodeID, expectedHeadSHA string) error {
+	return c.graphQLMutation(ctx, "update-branch",
+		`mutation($id: ID!, $head: GitObjectID!) { updatePullRequestBranch(input: {pullRequestId: $id, expectedHeadOid: $head, updateMethod: REBASE}) { pullRequest { id } } }`,
+		map[string]any{"id": nodeID, "head": expectedHeadSHA})
 }
 
 // BehindBy is the number of commits of the branch base that the commit
@@ -153,10 +180,24 @@ func (c *Client) MergeQueueRequired(ctx context.Context, owner, repo, branch str
 // is <REST root>/graphql, api.github.com's layout. The queue merges when its
 // checks pass; the caller waits on the pull request.
 func (c *Client) EnqueuePullRequest(ctx context.Context, nodeID string) error {
-	query := map[string]any{
-		"query":     `mutation($id: ID!) { enqueuePullRequest(input: {pullRequestId: $id}) { mergeQueueEntry { id } } }`,
-		"variables": map[string]any{"id": nodeID},
-	}
+	return c.graphQLMutation(ctx, "enqueue",
+		`mutation($id: ID!) { enqueuePullRequest(input: {pullRequestId: $id}) { mergeQueueEntry { id } } }`,
+		map[string]any{"id": nodeID})
+}
+
+// graphQLMutation posts mutation with variables to <REST root>/graphql,
+// api.github.com's layout. A non-200 answer or GraphQL errors are an
+// executionError prefixed with op, a spent rate limit named by
+// [GraphQLRefusal].
+func (c *Client) graphQLMutation(ctx context.Context, op, mutation string, variables map[string]any) error {
+	return c.graphQL(ctx, op, mutation, variables, nil)
+}
+
+// graphQL posts document with variables to <REST root>/graphql and decodes
+// the answer's data into data, when not nil. Failures are those of
+// graphQLMutation.
+func (c *Client) graphQL(ctx context.Context, op, document string, variables map[string]any, data any) error {
+	query := map[string]any{"query": document, "variables": variables}
 	body, err := json.Marshal(query)
 	if err != nil {
 		return microerror.Mask(err)
@@ -177,22 +218,29 @@ func (c *Client) EnqueuePullRequest(ctx context.Context, nodeID string) error {
 		return microerror.Mask(err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return microerror.Maskf(executionError, "enqueue: %s", GraphQLRefusal(resp.Header, fmt.Sprintf("GraphQL answered %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))))
+		return microerror.Maskf(executionError, "%s: %s", op, GraphQLRefusal(resp.Header, fmt.Sprintf("GraphQL answered %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))))
 	}
 	var answer struct {
+		Data   json.RawMessage `json:"data"`
 		Errors []struct {
 			Message string `json:"message"`
 		} `json:"errors"`
 	}
 	if err := json.Unmarshal(raw, &answer); err != nil {
-		return microerror.Maskf(executionError, "enqueue: GraphQL answered with no JSON: %s", strings.TrimSpace(string(raw)))
+		return microerror.Maskf(executionError, "%s: GraphQL answered with no JSON: %s", op, strings.TrimSpace(string(raw)))
 	}
 	if len(answer.Errors) > 0 {
 		messages := make([]string, 0, len(answer.Errors))
 		for _, e := range answer.Errors {
 			messages = append(messages, e.Message)
 		}
-		return microerror.Maskf(executionError, "enqueue: %s", GraphQLRefusal(resp.Header, strings.Join(messages, "; ")))
+		return microerror.Maskf(executionError, "%s: %s", op, GraphQLRefusal(resp.Header, strings.Join(messages, "; ")))
+	}
+	if data == nil {
+		return nil
+	}
+	if err := json.Unmarshal(answer.Data, data); err != nil {
+		return microerror.Maskf(executionError, "%s: GraphQL answered with data of another shape: %v", op, err)
 	}
 	return nil
 }

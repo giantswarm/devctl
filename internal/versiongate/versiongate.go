@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 
 	"github.com/giantswarm/microerror"
 
@@ -76,13 +77,14 @@ func newUpdater(version string, noCache bool, warnings io.Writer) (*updater.Upda
 }
 
 // githubToken is the optional token of a version lookup, a read of public
-// releases: [authstore.ResolveGitHub]'s token, its override warning written
-// to warnings once, or "" to read anonymously when none is configured. Any
-// other error of the resolver is returned.
+// releases: [authstore.ResolveGitHub]'s token from [lookupEnvVars], its
+// override warning written to warnings once, or "" to read anonymously when
+// none is configured or the environment has no keychain. Any other error of
+// the resolver is returned.
 func githubToken(warnings io.Writer) func(context.Context) (string, error) {
 	return func(ctx context.Context) (string, error) {
-		token, err := authstore.ResolveGitHub(ctx)
-		if errors.Is(err, authstore.ErrAuthRequired) {
+		token, err := authstore.ResolveGitHub(ctx, lookupEnvVars()...)
+		if errors.Is(err, authstore.ErrAuthRequired) || errors.Is(err, authstore.ErrKeychainUnreachable) {
 			return "", nil
 		} else if err != nil {
 			return "", err
@@ -105,4 +107,19 @@ func Exempt() map[string]string {
 // IsExempt reports whether a command's annotations carry [Exempt].
 func IsExempt(annotations map[string]string) bool {
 	return annotations[annotation] == "true"
+}
+
+// envGH is the variable gh reads its token from, the one a workflow step
+// sets for gh.
+const envGH = "GH_TOKEN"
+
+// lookupEnvVars are the variables a version lookup reads a token from:
+// [authstore.GitHubEnvVars], and under CI then $GH_TOKEN, so a workflow step
+// that hands only gh the job's token does not read anonymously from a shared
+// runner IP. Outside CI the App login comes before $GH_TOKEN.
+func lookupEnvVars() []string {
+	if os.Getenv(authstore.EnvCI) == "" {
+		return authstore.GitHubEnvVars
+	}
+	return append(slices.Clone(authstore.GitHubEnvVars), envGH)
 }

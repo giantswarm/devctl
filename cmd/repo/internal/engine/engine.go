@@ -7,6 +7,7 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"os"
@@ -16,6 +17,7 @@ import (
 	"github.com/giantswarm/microerror"
 	"github.com/sirupsen/logrus"
 
+	"github.com/giantswarm/devctl/v8/pkg/authstore"
 	"github.com/giantswarm/devctl/v8/pkg/circleciclient"
 	"github.com/giantswarm/devctl/v8/pkg/githubclient"
 	"github.com/giantswarm/devctl/v8/pkg/reposetup"
@@ -27,8 +29,9 @@ const (
 	// read from unless a flag names another.
 	DefaultGitHubEnvVar = "GITHUB_TOKEN"
 	// DefaultCircleCIEnvVar names the environment variable the CircleCI token
-	// is read from unless a flag names another.
-	DefaultCircleCIEnvVar = "CIRCLECI_TOKEN"
+	// is read from unless a flag names another; without it set, the token of
+	// `devctl auth login` in the keychain.
+	DefaultCircleCIEnvVar = authstore.CircleCIEnvVar
 
 	// OutputTable renders the result as a table, OutputJSON as the
 	// structured value.
@@ -65,17 +68,27 @@ func GitHubClient(logger *logrus.Logger, tokenEnv string, dryRun bool, transport
 	return client, nil
 }
 
-// CircleCIClient returns the CircleCI client for the token in $tokenEnv,
-// sending through transport (nil: the default transport; a reconcile.Counter
-// to count the requests), or nil when the variable is unset: the steps that
-// need CircleCI are then skipped, which the log says.
-func CircleCIClient(logger *logrus.Logger, tokenEnv string, transport http.RoundTripper) (*circleciclient.Client, error) {
-	token := os.Getenv(tokenEnv)
-	if token == "" {
-		logger.Warnf("no CircleCI token in $%s: the CircleCI and release steps are skipped", tokenEnv)
+// CircleCIClient returns the CircleCI client for the token
+// [authstore.ResolveCircleCI] resolves: $tokenEnv when set, the `devctl auth
+// login` token from the keychain otherwise (never with $CI set). It sends
+// through transport (nil: the default transport; a reconcile.Counter to count
+// the requests). The log names the token's source, never its value. Without a
+// token, or with a keychain that cannot be reached, it returns nil: the steps
+// that need CircleCI are then skipped, which the log says.
+func CircleCIClient(ctx context.Context, logger *logrus.Logger, tokenEnv string, transport http.RoundTripper) (*circleciclient.Client, error) {
+	token, err := authstore.ResolveCircleCI(ctx, tokenEnv)
+	if errors.Is(err, authstore.ErrAuthRequired) || errors.Is(err, authstore.ErrKeychainUnreachable) {
+		logger.Warnf("no CircleCI token in $%s or the devctl keychain (%s): the CircleCI and release steps are skipped", tokenEnv, err)
 		return nil, nil
 	}
-	client, err := circleciclient.New(circleciclient.Config{Token: token, Logger: logger, Transport: transport})
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
+	if token.Warning != "" {
+		logger.Warn(token.Warning)
+	}
+	logger.Infof("CircleCI token from %s", token.SourceName())
+	client, err := circleciclient.New(circleciclient.Config{Token: token.Value, TokenSource: token.SourceName(), Logger: logger, Transport: transport})
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}

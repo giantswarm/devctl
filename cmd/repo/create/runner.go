@@ -99,9 +99,11 @@ func (r *runner) run(ctx context.Context) error {
 		}
 	}
 
-	// The guard's inputs are read from GitHub as the person; a token that
-	// cannot read the organisation's teams gets no guard, not a wrong one.
-	person, err := remote.Person(ctx, r.flag.Owner)
+	// The guard's inputs are read from GitHub as the person, the way the
+	// validation check reads them: the owning team's and the fallback
+	// team's membership, one by one; a team the token cannot read leaves
+	// the membership unknown, never "not a member".
+	person, err := remote.Person(ctx, r.flag.Owner, teamFile.Team, reposetup.FallbackTeam)
 	if err != nil {
 		if person.Login == "" {
 			return microerror.Mask(err)
@@ -117,11 +119,12 @@ func (r *runner) run(ctx context.Context) error {
 		Owner:  r.flag.Owner,
 	}
 	dryRun, err := validator.Validate(ctx, reposetup.Request{
-		TeamFile:    changed,
-		Names:       []string{r.flag.Name},
-		Mode:        reposetup.ModeCreate,
-		Author:      person.Login,
-		AuthorTeams: person.Teams,
+		TeamFile:          changed,
+		Names:             []string{r.flag.Name},
+		Mode:              reposetup.ModeCreate,
+		Author:            person.Login,
+		AuthorTeams:       person.Teams,
+		AuthorTeamsUnread: person.Unread,
 	})
 	if err != nil {
 		return microerror.Mask(err)

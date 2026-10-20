@@ -88,6 +88,7 @@ func green() sequence.Routes {
 		"GET /repos/o/r/pulls/42/comments":            {{Body: []any{}}},
 		"GET /repos/o/r/issues/42/comments":           {{Body: []any{}}},
 		"GET /repos/o/r/git/commits/abc123":           {{Body: map[string]any{"sha": "abc123", "committer": map[string]any{"date": "2026-10-01T10:00:00Z"}}}},
+		"GET /repos/o/r/compare/main...abc123":        {{Body: map[string]any{"status": "ahead", "ahead_by": 1, "behind_by": 0}}},
 	}
 }
 
@@ -131,6 +132,30 @@ func Test_run_rebaseFlag(t *testing.T) {
 	}
 	if doc := decode(t, stdout); doc["method"] != "rebase" {
 		t.Errorf("--rebase: want method rebase, got %v", doc["method"])
+	}
+}
+
+func Test_run_squashFlag(t *testing.T) {
+	r, stdout, _, _ := newRunner(t, green(), loggedIn, &flag{Timeout: time.Minute, Squash: true, NoReleaseWait: true})
+	if err := r.run(context.Background(), []string{"o/r", "42"}); err != nil {
+		t.Fatal(err)
+	}
+	if doc := decode(t, stdout); doc["method"] != "squash" {
+		t.Errorf("--squash: want method squash, got %v", doc["method"])
+	}
+}
+
+func Test_run_rebaseAndSquashExcludeEachOther(t *testing.T) {
+	r, stdout, _, server := newRunner(t, green(), loggedIn, &flag{Timeout: time.Minute, Rebase: true, Squash: true, NoReleaseWait: true})
+	err := r.run(context.Background(), []string{"o/r", "42"})
+	if agentcli.Exit(err) != agentcli.ExitUsage || !strings.Contains(err.Error(), "--rebase and --squash exclude each other") {
+		t.Fatalf("want exit 7 naming both flags, got %v", err)
+	}
+	if doc := decode(t, stdout); doc["verdict"] != "usage" {
+		t.Errorf("document: %v", doc)
+	}
+	if n := len(server.Requests()); n != 0 {
+		t.Errorf("want no request, got %d", n)
 	}
 }
 

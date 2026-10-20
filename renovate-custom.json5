@@ -10,9 +10,11 @@
 {
   // Let the github-actions manager also scan the workflow templates devctl
   // emits, so action versions baked into the templates get bumped too.
+  // Also the mctl goldens, so template and golden bump in one PR.
   'github-actions': {
     managerFilePatterns: [
       '/.*.yaml.template$/',
+      '/pkg/gen/input/workflows/testdata/mctl_.*\\.yaml\\.golden$/',
     ],
   },
   customManagers: [
@@ -63,6 +65,16 @@
       depNameTemplate: 'cimg/node',
       datasourceTemplate: 'docker',
     },
+    // The golden fixtures render the kind node tag ATSKindNodeImageVersion sets
+    // (matched by the `\w*ImageVersion` constant rule above), so they move in
+    // the same PR.
+    {
+      customType: 'regex',
+      managerFilePatterns: ['/pkg/gen/input/circleci/testdata/.*\\.workflows\\.yml$/'],
+      matchStrings: ['gsoci\\.azurecr\\.io/giantswarm/kind-node:(?<currentValue>v[\\w.-]+)'],
+      depNameTemplate: 'gsoci.azurecr.io/giantswarm/kind-node',
+      datasourceTemplate: 'docker',
+    },
     // The golden fixtures pin the same orb versions the generator emits. Same
     // depName/datasource as the constants above, so Renovate bumps constant and
     // goldens in one PR and the byte-for-byte golden tests stay green -- without
@@ -80,6 +92,21 @@
       matchStrings: ['continuation: circleci/continuation@(?<currentValue>\\S+)'],
       depNameTemplate: 'circleci/continuation',
       datasourceTemplate: 'orb',
+    },
+    // mctl image tag (MctlVersion) and the goldens that render it.
+    {
+      customType: 'regex',
+      managerFilePatterns: ['/pkg/gen/input/workflows/internal/file/mctl\\.go$/'],
+      matchStrings: [
+        '// renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n\\s*const MctlVersion = "(?<currentValue>[^"]+)"',
+      ],
+    },
+    {
+      customType: 'regex',
+      managerFilePatterns: ['/pkg/gen/input/workflows/testdata/mctl_.*\\.yaml\\.golden$/'],
+      matchStrings: ['gsoci\\.azurecr\\.io/giantswarm/mctl:(?<currentValue>\\d+\\.\\d+\\.\\d+)'],
+      depNameTemplate: 'gsoci.azurecr.io/giantswarm/mctl',
+      datasourceTemplate: 'docker',
     },
     // Pre-commit hook revisions in the pre-commit config template.
     // The built-in pre-commit manager cannot parse this file because it contains
@@ -156,6 +183,24 @@
       ],
       depNameTemplate: 'giantswarm/kyverno-crds',
       datasourceTemplate: 'github-releases',
+    },
+    // Pins in the generator's Makefile templates that carry the standard `# renovate:`
+    // annotation. Nothing else matches these files: renovate-presets anchors its Makefile
+    // manager on `/^Makefile\..+\.mk$/`, which no nested `*.mk.template` matches, and its
+    // other managers read `# repo:` / `# registry:` comment lines instead. One entry for the
+    // whole annotation form, so a new pin needs only the comment above it -- written as
+    // `# renovate: datasource=X depName=Y [versioning=Z]` on the line directly above a single
+    // `NAME ?= value`. Any other shape silently stops being matched, with no error. The
+    // optional versioning capture is what keeps a `versioning=` annotation matching at all.
+    // The generated copies in app repos stay uncovered on purpose: align-files regenerates
+    // them from here, so a per-repo bump would only fight the regeneration.
+    {
+      customType: 'regex',
+      managerFilePatterns: ['/pkg/gen/input/.*\\.mk\\.template$/'],
+      matchStrings: [
+        '# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: versioning=(?<versioning>\\S+))?\\n\\s*\\w+ \\?= (?<currentValue>\\S+)',
+      ],
+      versioningTemplate: '{{#if versioning}}{{{versioning}}}{{else}}semver{{/if}}',
     },
   ],
   packageRules: [

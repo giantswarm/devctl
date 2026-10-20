@@ -384,6 +384,45 @@ func withCharts(charts ...string) func(*Config) {
 	return func(c *Config) { c.Charts = charts }
 }
 
+// The companion's source, read mid-roll, still pins the previous version
+// while the main chart is upgrading: a warning then. By the end the source
+// follows the version and the companion runs it, and the rolled-out result
+// carries no warning its final state contradicts.
+func TestWarningRaisedMidRollClearsByTheEnd(t *testing.T) {
+	client := newClient(deployment(2))
+	polls := 0
+	client.PrependReactor("list", "ocirepositories", func(k8stesting.Action) (bool, runtime.Object, error) {
+		polls++
+		companionSrc := companionSource()
+		if polls == 1 {
+			_ = unstructured.SetNestedField(companionSrc.Object, "0.48.0", "spec", "ref", "semver")
+		}
+		list := &unstructured.UnstructuredList{Object: map[string]any{"apiVersion": "source.toolkit.fluxcd.io/v1", "kind": "OCIRepositoryList"}}
+		list.Items = []unstructured.Unstructured{*ociRepository(map[string]any{"semver": ">=0.17.0"}), *companionSrc}
+		return true, list, nil
+	})
+	client.PrependReactor("list", "helmreleases", func(k8stesting.Action) (bool, runtime.Object, error) {
+		running, companionRunning := "0.48.0", "0.48.0"
+		if polls > 1 {
+			companionRunning = "0.48.1"
+		}
+		if polls > 2 {
+			running = "0.48.1"
+		}
+		list := &unstructured.UnstructuredList{Object: map[string]any{"apiVersion": "helm.toolkit.fluxcd.io/v2", "kind": "HelmReleaseList"}}
+		list.Items = []unstructured.Unstructured{*helmRelease(running, nil), *companionRelease(companionRunning)}
+		return true, list, nil
+	})
+	r := wait(t, client, false, withCharts(chart, companion))
+	wantExit(t, r, agentcli.ExitOK, "")
+	if polls != 3 {
+		t.Fatalf("want 3 polls, got %d", polls)
+	}
+	if len(r.warnings) != 0 {
+		t.Errorf("warnings of a rolled-out result: %v", r.warnings)
+	}
+}
+
 // The release's second HelmRelease upgrades minutes after the first: the
 // wait is rolled out only once both run the version.
 func TestSecondHelmReleaseLaggingKeepsTheWaitOpen(t *testing.T) {
@@ -429,13 +468,115 @@ func TestSecondHelmReleaseNeverUpgradingIsATimeoutNamingIt(t *testing.T) {
 
 // --helmrelease adds a HelmRelease the release's charts do not name.
 func TestNamedHelmReleaseIsWaitedFor(t *testing.T) {
-	client := newClient(ociRepository(map[string]any{"semver": ">=0.17.0"}), helmRelease("0.48.1", nil), deployment(2), companionSource(), companionRelease("0.48.0"))
-	for _, name := range []string{companion, "flux-giantswarm/" + companion} {
+	client := newClient(ociRepository(map[string]any{"semver": ">=0.17.0"}), helmRelease("0.48.1", nil), deployment(2), componentSource(), componentRelease(2, ready("Unknown", "Progressing", "Running 'upgrade' action")))
+	for _, name := range []string{component, "flux-giantswarm/" + component} {
 		r := wait(t, client, false, func(c *Config) { c.HelmReleases = []string{name} })
-		wantExit(t, r, agentcli.ExitTimeout, "HelmRelease flux-giantswarm/"+companion)
+		wantExit(t, r, agentcli.ExitTimeout, "HelmRelease flux-giantswarm/"+component)
 		if len(r.result.Deployments) != 2 {
 			t.Errorf("%s: deployments: %+v", name, r.result.Deployments)
 		}
+	}
+}
+
+// component is a chart a meta chart renders a HelmRelease of (kagent under
+// agent-platform), on a version line of its own.
+const component = "kagent"
+
+func componentSource() *unstructured.Unstructured {
+	u := ociRepository(map[string]any{"semver": "0.9.2"})
+	u.SetName(component)
+	_ = unstructured.SetNestedField(u.Object, "oci://gsoci.azurecr.io/charts/giantswarm/"+component, "spec", "url")
+	return u
+}
+
+// componentRelease is the component's HelmRelease running 0.9.2 at
+// generation, observed at generation, with the conditions.
+func componentRelease(generation int64, conditions []any) *unstructured.Unstructured {
+	u := helmRelease("", map[string]any{
+		"observedGeneration": generation,
+		"conditions":         conditions,
+		"history":            []any{map[string]any{"chartName": component, "chartVersion": "0.9.2", "status": "deployed", "name": component, "namespace": "kagent"}},
+	})
+	u.SetName(component)
+	u.SetGeneration(generation)
+	_ = unstructured.SetNestedField(u.Object, component, "spec", "chartRef", "name")
+	return u
+}
+
+// A meta chart's rollout: its own HelmRelease runs the version while the
+// component HelmReleases it upgraded still reconcile. A named component is
+// judged by its own Ready condition at its generation, not by the meta
+// chart's version its source excludes, so the wait stays open until it is
+// Ready.
+func TestNamedComponentHelmReleaseIsWaitedForUntilReady(t *testing.T) {
+	client := newClient(ociRepository(map[string]any{"semver": ">=0.17.0"}), helmRelease("0.48.1", nil), deployment(2), componentSource())
+	polls := 0
+	client.PrependReactor("list", "helmreleases", func(k8stesting.Action) (bool, runtime.Object, error) {
+		polls++
+		conditions := ready("False", "DependencyNotReady", "dependency 'flux-giantswarm/kagent-crds' is not ready")
+		if polls == 2 {
+			conditions = ready("Unknown", "Progressing", "Running 'upgrade' action")
+		}
+		if polls > 2 {
+			conditions = ready("True", "UpgradeSucceeded", "Helm upgrade succeeded")
+		}
+		list := &unstructured.UnstructuredList{Object: map[string]any{"apiVersion": "helm.toolkit.fluxcd.io/v2", "kind": "HelmReleaseList"}}
+		list.Items = []unstructured.Unstructured{*helmRelease("0.48.1", nil), *componentRelease(2, conditions)}
+		return true, list, nil
+	})
+	r := wait(t, client, true, func(c *Config) { c.HelmReleases = []string{component} })
+	wantExit(t, r, agentcli.ExitOK, "")
+	if polls != 3 {
+		t.Errorf("want 3 polls, got %d", polls)
+	}
+	for _, d := range r.result.Deployments {
+		if d.State != StateRolledOut {
+			t.Errorf("deployment: %+v", d)
+		}
+	}
+	if len(r.warnings) != 0 {
+		t.Errorf("warnings: %v", r.warnings)
+	}
+	// --reconcile asks only for the release's own chart, which is not behind.
+	for _, a := range client.Actions() {
+		if a.GetVerb() == "patch" {
+			t.Errorf("unexpected reconcile request: %v", a)
+		}
+	}
+}
+
+func TestNamedComponentHelmReleaseJudgedAtItsGeneration(t *testing.T) {
+	for name, tc := range map[string]struct {
+		release *unstructured.Unstructured
+		code    int
+		reason  string
+	}{
+		"ready at an older generation": {
+			release: func() *unstructured.Unstructured {
+				u := componentRelease(2, ready("True", "UpgradeSucceeded", "Helm upgrade succeeded"))
+				u.SetGeneration(3)
+				return u
+			}(),
+			code: agentcli.ExitTimeout, reason: "has not observed generation 3",
+		},
+		"ready with a reconcile in flight": {
+			release: componentRelease(2, append(ready("True", "UpgradeSucceeded", ""), map[string]any{"type": "Reconciling", "status": "True", "reason": "Progressing"})),
+			code:    agentcli.ExitTimeout, reason: "HelmRelease flux-giantswarm/" + component,
+		},
+		"upgrade failed": {
+			release: componentRelease(2, ready("False", "UpgradeFailed", "context deadline exceeded")),
+			code:    agentcli.ExitRed, reason: "UpgradeFailed at generation 2",
+		},
+		"ready": {
+			release: componentRelease(2, ready("True", "UpgradeSucceeded", "")),
+			code:    agentcli.ExitOK,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			client := newClient(ociRepository(map[string]any{"semver": ">=0.17.0"}), helmRelease("0.48.1", nil), deployment(2), componentSource(), tc.release)
+			r := wait(t, client, false, func(c *Config) { c.HelmReleases = []string{component} })
+			wantExit(t, r, tc.code, tc.reason)
+		})
 	}
 }
 
