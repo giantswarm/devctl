@@ -1,6 +1,7 @@
 package reservation
 
 import (
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -24,4 +25,18 @@ func SplitPullRequest(pullRequest string) (owner, repo string, number int, err e
 	}
 
 	return owner, repo, number, nil
+}
+
+// githubLogin is a GitHub login: 1-39 alphanumerics or single hyphens, never
+// starting or ending with a hyphen, plus the "[bot]" suffix of an app's login.
+var githubLogin = regexp.MustCompile(`^[A-Za-z0-9](?:-?[A-Za-z0-9]){0,38}(?:\[bot\])?$`)
+
+// ValidateUser checks the form every --user flag takes. The login is written
+// into YAML, so anything else would corrupt the reservation's source object.
+func ValidateUser(user string) error {
+	if !githubLogin.MatchString(user) {
+		return microerror.Maskf(invalidConfigError, "user %q is not a GitHub login", user)
+	}
+
+	return nil
 }

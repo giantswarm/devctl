@@ -53,6 +53,9 @@ func (f *flag) Validate() error {
 			return microerror.Maskf(invalidFlagError, "--%s must not be empty", r.name)
 		}
 	}
+	if err := reservation.ValidateUser(f.User); err != nil {
+		return microerror.Mask(err)
+	}
 	if f.App == "" && f.AppDir == "" {
 		return microerror.Maskf(invalidFlagError,
 			"pass --%s, or --%s pointing at a checkout of the app repository: the chart name is not the repository name", flagApp, flagAppDir)

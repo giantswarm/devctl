@@ -46,6 +46,9 @@ func (f *flag) Validate() error {
 			return microerror.Maskf(invalidFlagError, "--%s must not be empty", r.name)
 		}
 	}
+	if err := reservation.ValidateUser(f.User); err != nil {
+		return microerror.Mask(err)
+	}
 
 	return nil
 }
