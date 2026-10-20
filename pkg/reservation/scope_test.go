@@ -1,10 +1,13 @@
 package reservation_test
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/giantswarm/devctl/v8/internal/gittest"
 	"github.com/giantswarm/devctl/v8/pkg/reservation"
 )
 
@@ -116,12 +119,17 @@ func TestReserveExclusivePromotesItsOwnSoleReservation(t *testing.T) {
 
 	before := reservationEntries(t, dir, fixtureCluster)[fixtureApp]
 
+	// A promotion for another branch is refused: it keeps the existing branch
+	// and window, so it would report "Reserved" and leave the cluster elsewhere.
+	other := testRequest(dir)
+	other.Scope = reservation.ScopeExclusive
+	other.Branch = testOtherBranch
+	if _, err := reservation.Reserve(other); !reservation.IsAlreadyReserved(err) {
+		t.Fatalf("expected a refusal for a promotion on another branch, got %v", err)
+	}
+
 	promotion := testRequest(dir)
 	promotion.Scope = reservation.ScopeExclusive
-	// A promotion request can even come with a different branch than the
-	// original: it must be ignored, since the reservation it promotes keeps
-	// everything but its scope.
-	promotion.Branch = testOtherBranch
 
 	res, err := reservation.Reserve(promotion)
 	if err != nil {
@@ -148,5 +156,26 @@ func TestReserveExclusivePromotesItsOwnSoleReservation(t *testing.T) {
 	}
 	if got, want := after["until"], before["until"]; got != want {
 		t.Errorf("promotion changed `until`: got %q, want %q (unchanged)", got, want)
+	}
+}
+
+// TestReserveFailureLeavesTheCheckoutClean: a Reserve that fails after its
+// first write must not leave half-written files, or the next run stops in Sync
+// with "is dirty" over files the user never touched.
+func TestReserveFailureLeavesTheCheckoutClean(t *testing.T) {
+	dir := newGitOpsFixture(t, fixtureOptions{})
+
+	// Valid enough to pass the earlier checks, but with no `data:` key to write to.
+	cm := filepath.Join(dir, "management-clusters", fixtureCluster, reservation.ConfigMapFile)
+	if err := os.WriteFile(cm, []byte("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: reservations\n  namespace: reservations\n"), 0o644); err != nil { //nolint:gosec // a test fixture
+		t.Fatal(err)
+	}
+	gittest.RunGit(t, dir, "commit", "-qam", "break the configmap")
+
+	if _, err := reservation.Reserve(testRequest(dir)); err == nil {
+		t.Fatal("expected Reserve to fail")
+	}
+	if st := gittest.GitOutput(t, dir, "status", "--porcelain"); st != "" {
+		t.Errorf("failed Reserve left the checkout dirty:\n%s", st)
 	}
 }

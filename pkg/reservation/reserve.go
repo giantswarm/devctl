@@ -173,7 +173,7 @@ func checkEnabled(repoDir, cluster string) error {
 // and commits the change to the working tree at req.RepoDir. It renders the
 // cluster's collections and refuses to commit unless the rendered output really
 // carries the reservation.
-func Reserve(req Request) (Result, error) {
+func Reserve(req Request) (res Result, err error) {
 	if err := req.validate(); err != nil {
 		return Result{}, microerror.Mask(err)
 	}
@@ -240,7 +240,12 @@ func Reserve(req Request) (Result, error) {
 
 	// The entry and the component are one change. Everything below is staged in
 	// the working tree and lands in a single commit, or the run fails and the
-	// clone is thrown away.
+	// writes are discarded, so the user's checkout stays clean for the next run.
+	defer func() {
+		if err != nil {
+			discardWrites(req.RepoDir, req.Cluster, chart)
+		}
+	}()
 	err = writeComponent(filepath.Join(collectionsPath, reservationsDir, chart),
 		sourceName, resolved.helmReleases, devSource(resolved.original, sourceName, req, semverFilter, from, until))
 	if err != nil {

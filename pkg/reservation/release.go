@@ -30,7 +30,7 @@ type ReleaseRequest struct {
 	User string
 	// PullRequest, when set, restricts the release to a reservation that pull
 	// request holds, e.g. "giantswarm/hello-world#123". Any other pull
-	// request's reservation is refused, so /undeploy <MC> cannot free a
+	// request's reservation is refused, so releasing from another pull request cannot free a
 	// cluster somebody else is testing on. Empty means no check: that is the
 	// force-release a human runs from a laptop to clear a stuck lock, and it
 	// is what Reap uses.
@@ -66,7 +66,7 @@ func (r ReleaseRequest) validate() error {
 // working tree byte for byte to the state a matching Reserve found it in, and
 // commits the change. It works on a working tree only: like Reserve, it never
 // clones and never pushes.
-func Release(req ReleaseRequest) (ReleaseResult, error) {
+func Release(req ReleaseRequest) (res ReleaseResult, err error) {
 	if err := req.validate(); err != nil {
 		return ReleaseResult{}, microerror.Mask(err)
 	}
@@ -93,6 +93,13 @@ func Release(req ReleaseRequest) (ReleaseResult, error) {
 	collectionsPath := filepath.Join(req.RepoDir, clustersDir, req.Cluster, collectionsDir)
 	component := path.Join(reservationsDir, chart)
 	sourceName := chart + SourceNameSuffix
+
+	// A failure after the first removal must not leave the checkout half edited.
+	defer func() {
+		if err != nil {
+			discardWrites(req.RepoDir, req.Cluster, chart)
+		}
+	}()
 
 	// The reverse of Reserve's writes, in the same single working-tree commit:
 	// the line in collections' kustomization.yaml that references the
@@ -180,7 +187,7 @@ func checkReserved(path, app string) error {
 }
 
 // checkPullRequestHolds refuses to release a reservation another pull request
-// holds. Without it, /undeploy <MC> run from any pull request in the repo
+// holds. Without it, a release by any pull request in the repo
 // frees a cluster somebody else is testing on: Release keys a reservation on
 // the cluster and the chart alone, and every pull request in an app repo
 // resolves to the same chart.

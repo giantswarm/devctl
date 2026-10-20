@@ -39,6 +39,12 @@ func checkCollision(req Request, chart string, now time.Time) (*Reservation, err
 	if req.Scope == ScopeExclusive {
 		if len(active) == 1 && active[0].User == req.User && active[0].App == chart {
 			promoted := active[0]
+			// A promotion keeps the existing branch and window, so a request for
+			// another branch or pull request would report "Reserved" and leave
+			// the cluster elsewhere: refuse it instead.
+			if promoted.Branch != req.Branch || (req.PullRequest != "" && promoted.PullRequest != req.PullRequest) {
+				return nil, refusal(alreadyReservedError, promoted)
+			}
 			return &promoted, nil
 		}
 		if len(active) > 0 {
@@ -62,9 +68,8 @@ func checkCollision(req Request, chart string, now time.Time) (*Reservation, err
 }
 
 // refusal names the holder, the app, the branch and the expiry of the
-// reservation that blocks a request. A refusal reports these four things and
-// nothing else changes: slice 09 puts the message straight into a
-// pull-request comment.
+// reservation that blocks a request, so the caller can tell who to ask. A
+// refusal reports these four things and nothing else.
 func refusal(kind *microerror.Error, holder Reservation) error {
 	return microerror.Maskf(kind,
 		"%s is held by %s on branch %s until %s",
