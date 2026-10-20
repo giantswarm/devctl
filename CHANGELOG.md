@@ -27,6 +27,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `gen workflows` flavour `fleet`: the mctl merge gate no longer calls `getOctokit`, which `actions/github-script@v7` does not provide; the step crashed before posting `mctl/ready-to-merge`.
 - `release create`: end the updated `releases.json` with a trailing newline.
 - The Auto-release workflow's unconventional-subject warning accepts every type git-cliff parses (letters,
   digits, `_` and `-`), so `Feat: x` or `my-type: x` is no longer reported as dropped.

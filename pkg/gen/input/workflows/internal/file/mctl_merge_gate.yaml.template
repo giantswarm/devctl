@@ -53,7 +53,7 @@ jobs:
           script: |
             const CONTEXT = 'mctl/ready-to-merge';
             // Without the App token the cross-repo reads fail and post 'error'.
-            const crossRepo = process.env.APP_TOKEN ? getOctokit(process.env.APP_TOKEN) : github;
+            const crossRepo = process.env.APP_TOKEN ? new github.constructor({ auth: process.env.APP_TOKEN }) : github;
             const targetURL =
               `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}` +
               `/actions/runs/${context.runId}`;
