@@ -15,8 +15,8 @@
     "headSha": "abc123",
     "baseRef": "main",
     "checks": [
-      {"name": "go-lint", "source": "check_run", "status": "queued", "conclusion": "", "url": "*", "required": false},
-      {"name": "go-test", "source": "check_run", "status": "completed", "conclusion": "success", "url": "*", "required": false}
+      {"name": "go-lint", "id": 102, "source": "check_run", "status": "queued", "conclusion": "", "url": "*", "required": false},
+      {"name": "go-test", "id": 101, "source": "check_run", "status": "completed", "conclusion": "success", "url": "*", "required": false}
     ],
     "actions": [],
     "unfinished": ["check go-lint (queued)"]

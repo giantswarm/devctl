@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/go-github/v92/github"
+	"github.com/google/go-github/v93/github"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
 
@@ -43,6 +43,8 @@ const (
 	// agentMergeFalseEntryYAML opts the repository out of agent merges: the
 	// ruleset has no bypass actor.
 	agentMergeFalseEntryYAML = entryYAML + "  agentMerge: false\n"
+	// renovateFalseEntryYAML switches Renovate off for the repository.
+	renovateFalseEntryYAML = entryYAML + "  renovate: false\n"
 	// declaredRulesetEntryYAML declares a ruleset of the repository's own the
 	// team keeps beside the engine's.
 	declaredRulesetEntryYAML = entryYAML + "  rulesets: [\"protect-giantswarm\"]\n"
@@ -64,6 +66,19 @@ const (
     language: generic
     ci:
       generate: false
+`
+	// actionsOnlyEntryYAML is a repository on generated CI without a CircleCI
+	// job: generic, no chart, no image, its generated CI is GitHub Actions
+	// only (auto-release).
+	actionsOnlyEntryYAML = `- name: sample-service
+  componentType: unspecified
+  description: A repository released by GitHub Actions
+  visibility: private
+  gen:
+    flavours: [generic]
+    language: generic
+    ci:
+      generate: true
 `
 	// templateContentEntryYAML is a template repository whose
 	// .circleci/config.yml is content for the repositories created from it.
@@ -94,6 +109,18 @@ const (
   visibility: private
   gen:
     flavours: [customer]
+    language: generic
+    ci:
+      generate: false
+`
+	// appCatalogEntryYAML declares an app catalog: GitHub Pages serves its
+	// index from the repository's default branch, master on the older ones.
+	appCatalogEntryYAML = `- name: sample-service
+  componentType: appcatalog
+  description: An app catalog
+  visibility: public
+  gen:
+    flavours: [generic]
     language: generic
     ci:
       generate: false
@@ -154,6 +181,8 @@ const (
 	testAppID int64 = 424242
 	// testAlignAppID is the align-files App the review ruleset lets past the review.
 	testAlignAppID int64 = 434343
+	// testReleaseAppID is the release App the review ruleset lets past the review.
+	testReleaseAppID int64 = 454545
 )
 
 // harness wires a Runner to the two fakes with a validated entry.
@@ -347,6 +376,13 @@ type stepCase struct {
 	wantAfter Verdict
 	// verify inspects the fakes after the repair.
 	verify func(t *testing.T, h *harness, repair *Result)
+}
+
+// seedMetadata adds the repository as the entry declares its description and
+// visibility, carrying the topics given.
+func seedMetadata(h *harness, topics []string) {
+	r := h.gh.addRepo(owner, name)
+	r.description, r.private, r.topics = "A sample service", false, topics
 }
 
 func TestSteps(t *testing.T) {
@@ -1163,17 +1199,73 @@ func TestSteps(t *testing.T) {
 			verify: func(t *testing.T, h *harness, res *Result) {
 				review := h.repo().ruleset(ReviewRulesetName)
 				require.NotNil(t, review)
-				require.Equal(t, []*github.BypassActor{appBypass(testAppID), adminBypass(), teamBypass(testTeamID), appBypass(testAlignAppID)}, review.BypassActors, "the align-files App bypasses the review beside the default branch's actors")
+				require.Equal(t, []*github.BypassActor{appBypass(testAppID), adminBypass(), teamBypass(testTeamID), appBypass(testAlignAppID), appBypass(renovateAppID)}, review.BypassActors, "the align-files and Renovate Apps bypass the review beside the default branch's actors")
 				require.Equal(t, 1, review.Rules.PullRequest.RequiredApprovingReviewCount)
 				require.Nil(t, review.Rules.RequiredStatusChecks, "the review ruleset carries no checks")
 				main := h.repo().ruleset(RulesetName)
 				require.Nil(t, main.Rules.PullRequest, "the review rule moved out")
 				require.Equal(t, []string{ctxGoBuild}, checkContexts(main), "the checks stay where the align-files App has no bypass")
 				require.NotContains(t, actorKeys(main.BypassActors), actorKey(appBypass(testAlignAppID)))
+				require.NotContains(t, actorKeys(main.BypassActors), actorKey(appBypass(renovateAppID)), "the Renovate App waits for the checks")
 				require.Equal(t, []string{
-					`create ruleset "devctl: review", 1 required review(s); bypass actors: App 424242 on pull requests, repository admins on pull requests, team team-bumblebee on pull requests, App 434343 on pull requests`,
+					`create ruleset "devctl: review", 1 required review(s); bypass actors: App 424242 on pull requests, repository admins on pull requests, team team-bumblebee on pull requests, App 434343 on pull requests, App 2740 on pull requests`,
 					"stop requiring pull requests",
 				}, res.Step(StepProtection).Changes, "the review ruleset is written before the default branch drops the rule")
+			},
+		},
+		{
+			name: "protection: a review ruleset without the Renovate App gains it, the checks stay binding", step: StepProtection,
+			seed: func(h *harness) {
+				h.runner.AlignFilesAppID = testAlignAppID
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID), adminBypass(), teamBypass(testTeamID)).Rules.PullRequest = nil
+				review := r.addRuleset(ReviewRulesetName, nil, appBypass(testAppID), adminBypass(), teamBypass(testTeamID), appBypass(testAlignAppID))
+				review.Rules.Deletion, review.Rules.NonFastForward = nil, nil
+			},
+			wantCheck: VerdictDrift, wantChange: "bypass actors: App 424242 on pull requests, repository admins on pull requests, team team-bumblebee on pull requests, App 434343 on pull requests, App 2740 on pull requests",
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Equal(t, []string{"bypass actors: App 424242 on pull requests, repository admins on pull requests, team team-bumblebee on pull requests, App 434343 on pull requests, App 2740 on pull requests"}, res.Step(StepProtection).Changes, "one change: the review ruleset's bypass list")
+				require.Contains(t, actorKeys(h.repo().ruleset(ReviewRulesetName).BypassActors), actorKey(appBypass(renovateAppID)))
+				main := h.repo().ruleset(RulesetName)
+				require.NotContains(t, actorKeys(main.BypassActors), actorKey(appBypass(renovateAppID)), "the Renovate App waits for the checks")
+				require.Equal(t, []string{ctxGoBuild}, checkContexts(main))
+			},
+		},
+		{
+			name: "protection: the release App id adds the release App to a review ruleset without it, the checks stay binding", step: StepProtection,
+			seed: func(h *harness) {
+				h.runner.AlignFilesAppID = testAlignAppID
+				h.runner.ReleaseAppID = testReleaseAppID
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID), adminBypass(), teamBypass(testTeamID)).Rules.PullRequest = nil
+				review := r.addRuleset(ReviewRulesetName, nil, appBypass(testAppID), adminBypass(), teamBypass(testTeamID), appBypass(testAlignAppID), appBypass(renovateAppID))
+				review.Rules.Deletion, review.Rules.NonFastForward = nil, nil
+			},
+			wantCheck: VerdictDrift, wantChange: "bypass actors: App 424242 on pull requests, repository admins on pull requests, team team-bumblebee on pull requests, App 434343 on pull requests, App 2740 on pull requests, App 454545 on pull requests",
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Equal(t, []string{"bypass actors: App 424242 on pull requests, repository admins on pull requests, team team-bumblebee on pull requests, App 434343 on pull requests, App 2740 on pull requests, App 454545 on pull requests"}, res.Step(StepProtection).Changes, "one change: the review ruleset's bypass list")
+				require.Contains(t, actorKeys(h.repo().ruleset(ReviewRulesetName).BypassActors), actorKey(appBypass(testReleaseAppID)))
+				main := h.repo().ruleset(RulesetName)
+				require.NotContains(t, actorKeys(main.BypassActors), actorKey(appBypass(testReleaseAppID)), "the release App waits for the checks")
+				require.Equal(t, []string{ctxGoBuild}, checkContexts(main))
+			},
+		},
+		{
+			name: "protection: a review ruleset with the release App is clean on a run with its id", step: StepProtection,
+			seed: func(h *harness) {
+				h.runner.AlignFilesAppID = testAlignAppID
+				h.runner.ReleaseAppID = testReleaseAppID
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID), adminBypass(), teamBypass(testTeamID)).Rules.PullRequest = nil
+				review := r.addRuleset(ReviewRulesetName, nil, appBypass(testAppID), adminBypass(), teamBypass(testTeamID), appBypass(testAlignAppID), appBypass(renovateAppID), appBypass(testReleaseAppID))
+				review.Rules.Deletion, review.Rules.NonFastForward = nil, nil
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Empty(t, res.Step(StepProtection).Changes, "the next night repairs nothing")
 			},
 		},
 		{
@@ -1188,6 +1280,7 @@ func TestSteps(t *testing.T) {
 			verify: func(t *testing.T, h *harness, _ *Result) {
 				require.Nil(t, h.repo().ruleset(ReviewRulesetName))
 				require.NotNil(t, h.repo().ruleset(RulesetName).Rules.PullRequest)
+				require.Empty(t, h.repo().ruleset(RulesetName).BypassActors, "nothing bypasses the review, the Renovate App neither")
 			},
 		},
 		{
@@ -1639,6 +1732,38 @@ func TestSteps(t *testing.T) {
 			},
 		},
 		{
+			// Generated CI without a CircleCI job is GitHub Actions only:
+			// gen.ci.generate: true declares no pipeline the CircleCI
+			// generator writes, so the branch decides, and a branch without
+			// .circleci/config.yml has none. The repository is neither
+			// followed nor given a key, its release is not held against a tag
+			// build, and a project followed earlier is left as it is.
+			name: "circleci: generated CI without a CircleCI job is no pipeline", step: StepCircleCI, existing: true,
+			entry: actionsOnlyEntryYAML,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				delete(r.files, ".circleci/config.yml")
+				delete(r.files, ".circleci/workflows.yml")
+				r.release, r.releaseAt = "v0.1.0", time.Now().Add(-time.Hour)
+			},
+			wantCheck: VerdictSkipped, wantAfter: VerdictSkipped,
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				require.NotContains(t, h.cc.projects, owner+"/"+name)
+				res := h.run(ModeCheck, false, StepCircleCI, StepRelease)
+				for _, step := range []Step{StepCircleCI, StepRelease} {
+					require.Equal(t, VerdictSkipped, res.Step(step).Verdict, "%s: %+v", step, res.Step(step))
+					require.Equal(t, "no CircleCI pipeline", res.Step(step).Summary)
+					require.Empty(t, res.Step(step).Changes, "%s plans nothing", step)
+				}
+				require.Empty(t, res.Step(StepRelease).Findings, "a release CircleCI never built is no missed tag build")
+
+				h.cc.projects[owner+"/"+name] = &fakeProject{} // followed earlier, no setup workflows, no key
+				res = h.run(ModeRepair, false, StepCircleCI, StepRelease)
+				require.Equal(t, VerdictSkipped, res.Step(StepCircleCI).Verdict, "%+v", res.Step(StepCircleCI))
+				require.Empty(t, h.mutations(), "a followed project of a repository without a pipeline is left as it is")
+			},
+		},
+		{
 			// The reconciler validates a declared repository's entry as an
 			// existing one, rendered as declared: an entry with gen and no
 			// gen.ci does not get the creation default gen.ci.generate: true
@@ -1780,6 +1905,42 @@ func TestSteps(t *testing.T) {
 			},
 		},
 		{
+			name: "renovate: false without a configuration is ok, and no trace is read", step: StepRenovate, entry: renovateFalseEntryYAML,
+			seed: func(h *harness) {
+				delete(h.gh.addRepo(owner, name).files, "renovate.json5")
+				h.gh.installation.status = 403
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Equal(t, "renovate: false; no Renovate configuration", res.Step(StepRenovate).Summary)
+				require.Empty(t, res.Findings())
+			},
+		},
+		{
+			name: "renovate: false with a configuration that disables Renovate is ok", step: StepRenovate, entry: renovateFalseEntryYAML,
+			seed: func(h *harness) {
+				h.gh.addRepo(owner, name).files["renovate.json5"] = "{\n  enabled: false,\n}\n"
+				h.gh.installation.status = 403
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, _ *harness, res *Result) {
+				require.Equal(t, "renovate: false; renovate.json5 disables Renovate", res.Step(StepRenovate).Summary)
+			},
+		},
+		{
+			name: "renovate: false with a configuration that keeps Renovate on is reported", step: StepRenovate, entry: renovateFalseEntryYAML,
+			seed: func(h *harness) {
+				h.gh.addRepo(owner, name).addIssue(renovateLogin, "Dependency Dashboard", false)
+				h.gh.installation.status = 403
+			},
+			wantCheck: VerdictReported, wantFinding: FindingRenovateDeclaredOff, wantAfter: VerdictReported,
+			verify: func(t *testing.T, _ *harness, res *Result) {
+				f := res.Findings()[0]
+				require.Contains(t, f.Message, "declares renovate: false, but renovate.json5 keeps Renovate on")
+				require.Contains(t, f.Fix, "delete renovate.json5")
+			},
+		},
+		{
 			name: "renovate: the installation's list is detail when the token reads it, never the verdict", step: StepRenovate,
 			seed: func(h *harness) {
 				h.gh.addRepo(owner, name)
@@ -1880,6 +2041,73 @@ func TestSteps(t *testing.T) {
 			verify: func(t *testing.T, h *harness, _ *Result) {
 				require.Equal(t, "A sample service", h.repo().description)
 				require.False(t, h.repo().private)
+			},
+		},
+		{
+			name: "metadata: the topics follow the declaration, whatever their order on GitHub", step: StepMetadata,
+			entry: entryYAML + "  topics: [agentlab, fixture]\n",
+			seed: func(h *harness) {
+				seedMetadata(h, []string{"stale"})
+			},
+			wantCheck: VerdictDrift, wantChange: "topics [stale] → [agentlab, fixture]",
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				require.Equal(t, []string{"agentlab", "fixture"}, h.repo().topics)
+			},
+		},
+		{
+			name: "metadata: topics declared in another order are as declared", step: StepMetadata,
+			entry: entryYAML + "  topics: [fixture, agentlab]\n",
+			seed: func(h *harness) {
+				seedMetadata(h, []string{"agentlab", "fixture"})
+			},
+			wantCheck: VerdictOK,
+		},
+		{
+			name: "metadata: an empty topics list removes every topic", step: StepMetadata,
+			entry: entryYAML + "  topics: []\n",
+			seed: func(h *harness) {
+				seedMetadata(h, []string{"stale"})
+			},
+			wantCheck: VerdictDrift, wantChange: "topics [stale] → []",
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				require.Empty(t, h.repo().topics)
+			},
+		},
+		{
+			name: "metadata: an entry without topics leaves them alone", step: StepMetadata,
+			seed: func(h *harness) {
+				seedMetadata(h, []string{"kept"})
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				require.Equal(t, []string{"kept"}, h.repo().topics)
+			},
+		},
+		{
+			name: "labels: a missing owning-team label is created in the default colour", step: StepLabels,
+			seed: func(h *harness) {
+				h.gh.addRepo(owner, name).labels = map[string]*github.Label{}
+			},
+			wantCheck: VerdictDrift, wantChange: "create the label team/bumblebee (#ededed)",
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				l := h.repo().labels["team/bumblebee"]
+				require.NotNil(t, l)
+				require.Equal(t, DefaultLabelColor, l.Color)
+				require.Empty(t, l.GetDescription())
+			},
+		},
+		{
+			name: "labels: an existing owning-team label is left as it is, whatever its case, colour and description", step: StepLabels,
+			seed: func(h *harness) {
+				h.gh.addRepo(owner, name).labels = map[string]*github.Label{
+					"team/bumblebee": {Name: "Team/Bumblebee", Color: "1D76DB", Description: new("Team Bumblebee")},
+				}
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Equal(t, "has team/bumblebee", res.Step(StepLabels).Summary)
+				require.Equal(t, "1D76DB", h.repo().labels["team/bumblebee"].Color)
+				require.Empty(t, h.mutations())
 			},
 		},
 		{
@@ -2213,6 +2441,38 @@ func TestSteps(t *testing.T) {
 			},
 		},
 		{
+			// auto-release creates the GitHub release before the tag
+			// pipeline runs; the pipeline's publish-github-release then
+			// fails on the release being there, after every artifact was
+			// pushed. The release is published, not red.
+			name: "release: a tag pipeline red only in publish-github-release reads built", step: StepRelease,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.release, r.releaseAt = "v0.1.0", time.Now().Add(-time.Hour)
+				h.cc.addPipelineFailedIn(h.cc.follow(owner, name), "v0.1.0", GitHubReleaseJob)
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, _ *harness, res *Result) {
+				require.Empty(t, res.Findings())
+				require.Contains(t, res.Step(StepRelease).Summary, "release v0.1.0 built: pipeline ")
+				require.Contains(t, res.Step(StepRelease).Summary, "build (publish-github-release) failed, the GitHub release it publishes exists")
+			},
+		},
+		{
+			// An artifact job red beside publish-github-release leaves the
+			// artifact unpublished: still red, the artifact job named.
+			name: "release: a tag pipeline red in an artifact job and publish-github-release is red", step: StepRelease,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.release, r.releaseAt = "v0.1.0", time.Now().Add(-time.Hour)
+				h.cc.addPipelineFailedIn(h.cc.follow(owner, name), "v0.1.0", "push-to-registries-release", GitHubReleaseJob)
+			},
+			wantCheck: VerdictReported, wantFinding: FindingRedRelease, wantAfter: VerdictReported,
+			verify: func(t *testing.T, _ *harness, res *Result) {
+				require.Contains(t, res.Findings()[0].Message, "push-to-registries-release")
+			},
+		},
+		{
 			// A rerun from failed is a second workflow of the same name in
 			// the same pipeline; the run it replaced keeps its failed status.
 			// The newest run decides, so the revived tag reads built.
@@ -2370,6 +2630,29 @@ func TestSteps(t *testing.T) {
 			wantCheck: VerdictSkipped, wantAfter: VerdictSkipped,
 		},
 		{
+			name: "settings: an app catalog's default branch is never renamed", step: StepSettings, entry: appCatalogEntryYAML,
+			seed:      func(h *harness) { h.gh.addRepo(owner, name).defaultBranch = "master" },
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Equal(t, "master", h.repo().defaultBranch)
+				require.Empty(t, res.Step(StepSettings).Changes)
+			},
+		},
+		{
+			name: "protection: an app catalog's own default branch is the one protected", step: StepProtection, entry: appCatalogEntryYAML,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.defaultBranch = "master"
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID), adminBypass(), teamBypass(testTeamID))
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Equal(t, `master: ruleset "devctl: default branch"; required: `+ctxGoBuild, res.Step(StepProtection).Summary)
+				require.Equal(t, "master", h.repo().defaultBranch)
+			},
+		},
+		{
 			name: "settings: a fork line stays on its declared default branch", step: StepSettings, entry: forkEntryYAML,
 			seed:      func(h *harness) { h.gh.addRepo(owner, name).forkLine() },
 			wantCheck: VerdictOK,
@@ -2380,6 +2663,22 @@ func TestSteps(t *testing.T) {
 			seed:      func(h *harness) { h.gh.addRepo(owner, name).allowRebase = true },
 			wantCheck: VerdictDrift, wantChange: `default branch "main" → "giantswarm"`,
 			verify: func(t *testing.T, h *harness, _ *Result) { require.Equal(t, "giantswarm", h.repo().defaultBranch) },
+		},
+		{
+			// A fork registered with the upstream mirror on main and the
+			// consumed branch beside it: GitHub refuses to rename main onto
+			// the existing branch, so the step switches the default to it and
+			// main stays the mirror.
+			name: "settings: a declared default branch that exists becomes the default", step: StepSettings, entry: forkEntryYAML,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.allowRebase, r.heads["giantswarm"] = true, "line"
+			},
+			wantCheck: VerdictDrift, wantChange: `default branch "main" → "giantswarm" (switch to the existing branch)`,
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				require.Equal(t, "giantswarm", h.repo().defaultBranch)
+				require.True(t, h.repo().hasBranch("main"), "the old default stays")
+			},
 		},
 		{
 			// The carried patches land by rebase merge, one upstream-ready
@@ -2733,14 +3032,14 @@ func TestRunFullRepositorySetUp(t *testing.T) {
 	require.Contains(t, string(data), `"repository":"giantswarm/sample-service"`)
 
 	// The budget: a check of the converged repository, every step, costs at
-	// most twenty-two GitHub requests (the webhooks and the deploy keys the
+	// most twenty-three GitHub requests (the webhooks and the deploy keys the
 	// circleci step reads are the last two), and the count is the fake's own.
 	before := len(h.gets())
 	check := h.run(ModeCheck, false)
 	require.True(t, check.Converged, "%+v", check.Steps)
 	gets := h.gets()[before:]
 	require.Equal(t, len(gets), check.Requests.GitHub, "the counter and the fake agree")
-	require.LessOrEqual(t, check.Requests.GitHub, 22, "a converged check within the budget of twenty-two; the reads:\n%s", strings.Join(gets, "\n"))
+	require.LessOrEqual(t, check.Requests.GitHub, 23, "a converged check within the budget of twenty-three; the reads:\n%s", strings.Join(gets, "\n"))
 	require.Positive(t, check.Requests.CircleCI, "the circleci and release steps read CircleCI")
 
 	// The override costs nothing: the caller hands it in with the entry

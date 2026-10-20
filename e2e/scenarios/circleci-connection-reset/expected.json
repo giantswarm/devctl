@@ -16,7 +16,7 @@
     "baseRef": "main",
     "checks": [
       {"name": "ci/circleci: build", "source": "status", "status": "completed", "conclusion": "success", "url": "*", "required": false},
-      {"name": "go-test", "source": "check_run", "status": "completed", "conclusion": "success", "url": "*", "required": false}
+      {"name": "go-test", "id": 101, "source": "check_run", "status": "completed", "conclusion": "success", "url": "*", "required": false}
     ],
     "circleci": {
       "pipelineId": "p1",

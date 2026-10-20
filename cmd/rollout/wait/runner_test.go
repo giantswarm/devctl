@@ -40,7 +40,7 @@ func runCommandWithCluster(t *testing.T, args []string, f *flag, openErr, cluste
 			}
 			return nil, openErr
 		},
-		openCluster: func(string, string, func(http.RoundTripper) http.RoundTripper) (dynamic.Interface, error) {
+		openCluster: func(context.Context, rolloutwait.ClusterConfig) (dynamic.Interface, error) {
 			return nil, clusterErr
 		},
 	}
@@ -121,5 +121,28 @@ func TestRunMissingContextEndsBeforeTheRelease(t *testing.T) {
 	}
 	if reason, _ := doc["reason"].(string); !strings.Contains(reason, "gs-myinstallation") || !strings.Contains(reason, "--context") {
 		t.Errorf("reason should name the candidate and --context: %q", reason)
+	}
+}
+
+func TestRunPassesKubeconfigAndTeleport(t *testing.T) {
+	var got rolloutwait.ClusterConfig
+	var stdout bytes.Buffer
+	r := &runner{
+		gate:   func(bool) error { return nil },
+		flag:   &flag{Kubeconfig: "/home/me/own.kubeconfig"},
+		stdout: &stdout,
+		stderr: &bytes.Buffer{},
+		openRelease: func(context.Context, agentcli.Endpoints, http.RoundTripper, func(string)) (*releasewait.Sources, error) {
+			return nil, errors.New("stop after the cluster")
+		},
+		openCluster: func(_ context.Context, c rolloutwait.ClusterConfig) (dynamic.Interface, error) {
+			got = c
+			return nil, nil
+		},
+		teleport: rolloutwait.Tsh{},
+	}
+	_ = r.run(context.Background(), []string{"myinstallation", "giantswarm/devctl", "v1.2.3"})
+	if got.Installation != "myinstallation" || got.Context != "teleport.giantswarm.io-myinstallation" || got.Kubeconfig != "/home/me/own.kubeconfig" || got.Teleport == nil || got.Wrap == nil {
+		t.Errorf("cluster config: %+v", got)
 	}
 }

@@ -6,7 +6,7 @@ import (
 	"net/http"
 
 	"github.com/go-git/go-git/v5/plumbing/transport"
-	"github.com/google/go-github/v92/github"
+	"github.com/google/go-github/v93/github"
 )
 
 // ExplainNotFound is err with hint added when err is GitHub's answer that a

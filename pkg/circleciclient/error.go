@@ -21,6 +21,16 @@ func IsNotFound(err error) bool {
 	return microerror.Cause(err) == notFoundError
 }
 
+var forbiddenError = &microerror.Error{
+	Kind: "forbiddenError",
+}
+
+// IsForbidden asserts forbiddenError: CircleCI answered 403 -- for a write,
+// the token is read-only or its user may not write to the project.
+func IsForbidden(err error) bool {
+	return microerror.Cause(err) == forbiddenError
+}
+
 var apiError = &microerror.Error{
 	Kind: "apiError",
 }

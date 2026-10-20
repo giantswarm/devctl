@@ -20,6 +20,8 @@ keyring:
     expiresAt: "2099-01-01T00:00:00Z"
 github:
   routes:
+    "GET /repos/giantswarm/devctl":
+      - body: {full_name: giantswarm/devctl, allow_merge_commit: false, allow_squash_merge: true, allow_rebase_merge: true}
     "GET /repos/giantswarm/devctl/pulls/42/reviews":
       - body: []
     "GET /repos/giantswarm/devctl/pulls/42/comments":

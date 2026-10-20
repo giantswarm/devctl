@@ -122,6 +122,23 @@ func (c Clock) Scaled(d time.Duration) time.Duration {
 	return scaled
 }
 
+// MinScaledTimeout is the real-time floor of a timeout on a clock scaled
+// below 1: a one-minute wait at scale 0.001 would otherwise leave 60ms, which
+// a loaded machine can spend before the first poll returns. Sleeps stay
+// scaled, so a wait still polls in milliseconds.
+const MinScaledTimeout = 5 * time.Second
+
+// ScaledTimeout is the real duration of a timeout of d: d at the clock's
+// scale, but at a scale below 1 never less than MinScaledTimeout, nor more
+// than d itself.
+func (c Clock) ScaledTimeout(d time.Duration) time.Duration {
+	scaled := c.Scaled(d)
+	if floor := min(d, MinScaledTimeout); scaled < floor {
+		return floor
+	}
+	return scaled
+}
+
 // Sleep waits for the scaled d or until ctx ends, whichever comes first, and
 // returns ctx's error in the second case.
 func (c Clock) Sleep(ctx context.Context, d time.Duration) error {
@@ -142,7 +159,7 @@ func (c Clock) Sleep(ctx context.Context, d time.Duration) error {
 	}
 }
 
-// Timeout derives a context that ends after the scaled d.
+// Timeout derives a context that ends after [Clock.ScaledTimeout] of d.
 func (c Clock) Timeout(ctx context.Context, d time.Duration) (context.Context, context.CancelFunc) {
 	if c.virtual != nil {
 		ctx, cancel := context.WithCancel(ctx)
@@ -152,5 +169,5 @@ func (c Clock) Timeout(ctx context.Context, d time.Duration) (context.Context, c
 		c.virtual.advance(0)
 		return ctx, cancel
 	}
-	return context.WithTimeout(ctx, c.Scaled(d))
+	return context.WithTimeout(ctx, c.ScaledTimeout(d))
 }

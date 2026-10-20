@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
+	"github.com/giantswarm/devctl/v8/pkg/prwait"
 )
 
 // The release models: how a repository turns a merge into a tag.
@@ -25,8 +26,12 @@ const (
 	// CIModelHandWritten: the repository maintains its CircleCI
 	// configuration; its push jobs name the artifacts.
 	CIModelHandWritten = "hand-written"
-	// CIModelNone: no CircleCI; the tag is judged by its Actions runs.
+	// CIModelNone: no CircleCI and no check runs on the tag's commit; the tag
+	// is judged by its Actions runs.
 	CIModelNone = "none"
+	// CIModelActions: no CircleCI, and the tag's commit carries check runs
+	// (GitHub Actions jobs): they are the tag's pipeline.
+	CIModelActions = "actions"
 )
 
 // The artifact kinds.
@@ -64,7 +69,9 @@ type Artifact struct {
 // Private says whether the artifact lives in the private registry.
 func (a Artifact) Private() bool { return a.private }
 
-// Pipeline is the tag pipeline on CircleCI as the document reports it.
+// Pipeline is the tag pipeline as the document reports it: on CircleCI, or
+// for ciModel actions the check runs of the tag's commit, one workflow entry
+// each (no id, number or url of a pipeline).
 type Pipeline struct {
 	ID     string `json:"id"`
 	Number int64  `json:"number"`
@@ -75,9 +82,10 @@ type Pipeline struct {
 	// failed; empty otherwise.
 	FailedJobs []string `json:"failedJobs"`
 	// Unfinished names the workflows (newest run per name) that have not
-	// finished, as "name (status)"; one whose jobs CircleCI does not list
-	// yet carries ", jobs not visible yet". Empty once every workflow has
-	// finished: what a timeout was still waiting for.
+	// finished, as "name (status)"; one whose jobs the artifact derivation
+	// needs and CircleCI does not list yet carries ", jobs not visible
+	// yet". Empty once every workflow has finished: what a timeout was
+	// still waiting for.
 	Unfinished []string `json:"unfinished"`
 }
 
@@ -85,6 +93,9 @@ type Pipeline struct {
 type PipelineWorkflow struct {
 	Name   string `json:"name"`
 	Status string `json:"status"`
+	// Conclusion is the conclusion of a check run, once it finished; absent
+	// for a CircleCI workflow.
+	Conclusion string `json:"conclusion,omitempty"`
 }
 
 // ActionsRun is one GitHub Actions run the tag triggered, for a repository
@@ -95,6 +106,14 @@ type ActionsRun struct {
 	Status     string `json:"status"`
 	Conclusion string `json:"conclusion"`
 	URL        string `json:"url"`
+}
+
+// Status is one context's newest commit status of the tag's commit.
+type Status struct {
+	Context string `json:"context"`
+	// State is pending, success, failure or error.
+	State string `json:"state"`
+	URL   string `json:"url"`
 }
 
 // Result is the command's document below the envelope.
@@ -113,16 +132,29 @@ type Result struct {
 	// Artifacts are the expected images and charts, or the release assets
 	// of a repository that ships neither.
 	Artifacts []Artifact `json:"artifacts"`
-	// Pipeline is the tag pipeline; null for a repository without CircleCI.
+	// Pipeline is the tag pipeline, or the check runs of an Actions-only
+	// repository's tag; null for a repository without CircleCI and check runs.
 	Pipeline *Pipeline `json:"pipeline"`
 	// Actions are the runs the tag triggered; empty with CircleCI.
 	Actions []ActionsRun `json:"actions"`
+	// Statuses are the newest commit status of every context of the tag's
+	// commit, read once the artifacts are available and the tag's CI is
+	// green: what devctl release promote gates a candidate on. Empty before.
+	Statuses []Status `json:"statuses"`
+	// FailedJobs are, with Config.FailedLogLines, the failed jobs of a
+	// failed tag pipeline or of the tag's failed Actions runs with the tails
+	// of their logs; absent otherwise.
+	FailedJobs []prwait.FailedJob `json:"failedJobs,omitempty"`
+	// ConflictingTags are, when the commit carries the release tags of more
+	// than one version, every release tag on it, newest first; absent
+	// otherwise.
+	ConflictingTags []string `json:"conflictingTags,omitempty"`
 }
 
 // NewResult is the result before anything is known: the repository, empty
 // arrays, no pipeline.
 func NewResult(repository string) Result {
-	return Result{Repository: repository, Artifacts: []Artifact{}, Actions: []ActionsRun{}}
+	return Result{Repository: repository, Artifacts: []Artifact{}, Actions: []ActionsRun{}, Statuses: []Status{}}
 }
 
 // Document is the command's JSON: the envelope and the result.
@@ -145,6 +177,10 @@ func ciFailedErr(format string, args ...any) error {
 	return agentcli.NewExitError(agentcli.ExitRed, agentcli.VerdictCIFailed, format, args...)
 }
 
+func statusFailedErr(format string, args ...any) error {
+	return agentcli.NewExitError(agentcli.ExitStatusFailed, agentcli.VerdictStatusFailed, format, args...)
+}
+
 func timeoutErr(format string, args ...any) error {
 	return agentcli.NewExitError(agentcli.ExitTimeout, agentcli.VerdictTimeout, format, args...)
 }
@@ -156,7 +192,8 @@ func notApplicableErr(format string, args ...any) error {
 // NoReleaseError says that no release follows a pull request's merge: the
 // repository does not tag merge commits (the legacy release workflow, or no
 // release workflow at all), or its auto-release run finished without a tag
-// because the commits since the last release warrant none. Exit 3 with the
+// because the commits since the last release warrant none and no later tag
+// on the pull request's base branch carries the merge. Exit 3 with the
 // no_release verdict; devctl pr merge reports the merge as done with no
 // release to wait for.
 type NoReleaseError struct {
@@ -175,6 +212,25 @@ func (e *NoReleaseError) ExitVerdict() agentcli.Verdict { return agentcli.Verdic
 func IsNoRelease(err error) bool {
 	var noRelease *NoReleaseError
 	return errors.As(err, &noRelease)
+}
+
+// AmbiguousReleaseError says that the commit a pull request resolves to
+// carries the release tags of more than one version: the wait does not
+// choose, the caller names the version. Exit 11 with the ambiguous_release
+// verdict; Tags are every release tag on the commit, newest first.
+type AmbiguousReleaseError struct {
+	Reason string
+	Tags   []string
+}
+
+func (e *AmbiguousReleaseError) Error() string { return e.Reason }
+
+// ExitCode implements [agentcli.ExitCoder].
+func (e *AmbiguousReleaseError) ExitCode() int { return agentcli.ExitAmbiguousRelease }
+
+// ExitVerdict implements [agentcli.ExitCoder].
+func (e *AmbiguousReleaseError) ExitVerdict() agentcli.Verdict {
+	return agentcli.VerdictAmbiguousRelease
 }
 
 func noReleaseErr(format string, args ...any) error {

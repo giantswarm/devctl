@@ -27,6 +27,17 @@ const EnvToken = "GH_TOKEN"
 // command started on it does not see it expire.
 const MinValidity = 10 * time.Minute
 
+// EnvChain is the variable that carries the programs devctl ran so far in
+// one chain of calls, separated like PATH: devctl started again under it,
+// by the program or something it ran, adds the program it runs next.
+const EnvChain = "DEVCTL_AUTH_EXEC_CHAIN"
+
+// MaxChain is how many programs one chain holds before devctl refuses to run
+// another: a program that hands the call back to devctl (a gh shim passing
+// it to the first gh on PATH, the link) loops, and a program legitimately
+// calling gh again (a gh alias) nests far less deep.
+const MaxChain = 4
+
 // proxies are the names devctl answers to as a proxy: started as one of them
 // (a link named so), it runs the program of that name with the token.
 var proxies = map[string]bool{"gh": true}
@@ -76,7 +87,8 @@ func Default() Config {
 
 // Run runs name with args and the token in [EnvToken] and returns the exit
 // code to leave with: the program's, or 8 without a usable login and 7 when
-// the program is not found, each with one line on stderr naming the cause.
+// the program is not found or the chain of calls loops ([MaxChain]), each
+// with one line on stderr naming the cause.
 // gh acting on a repository of an owner outside [AppOwners] runs without the
 // token, on the person's own gh login.
 func Run(ctx context.Context, c Config, name string, args []string) int {
@@ -85,10 +97,15 @@ func Run(ctx context.Context, c Config, name string, args []string) int {
 		fmt.Fprintf(c.Stderr, "devctl auth exec: %s\n", err)
 		return agentcli.ExitUsage
 	}
+	environ, err := chained(c.Environ, path, c.Self)
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "devctl auth exec: %s\n", err)
+		return agentcli.ExitUsage
+	}
 	argv := append([]string{name}, args...)
 	if strings.TrimSuffix(filepath.Base(name), ".exe") == "gh" {
-		if owner := GHOwner(args, c.Environ, c.Remotes); owner != "" && !AppOwners[owner] {
-			return c.run(path, argv, without(c.Environ, EnvToken))
+		if owner := GHOwner(args, environ, c.Remotes); owner != "" && !AppOwners[owner] {
+			return c.run(path, argv, without(environ, EnvToken))
 		}
 	}
 	token, err := c.Token(ctx, MinValidity)
@@ -100,7 +117,25 @@ func Run(ctx context.Context, c Config, name string, args []string) int {
 		}
 		return agentcli.ExitUsage
 	}
-	return c.run(path, argv, Environ(c.Environ, token.Value))
+	return c.run(path, argv, Environ(environ, token.Value))
+}
+
+// chained is environ with path added to [EnvChain], or an error naming the
+// chain when it holds [MaxChain] programs already.
+func chained(environ []string, path, self string) ([]string, error) {
+	var chain []string
+	for _, kv := range environ {
+		if v, ok := strings.CutPrefix(kv, EnvChain+"="); ok && v != "" {
+			chain = filepath.SplitList(v)
+		}
+	}
+	if len(chain) >= MaxChain {
+		return nil, fmt.Errorf("refusing to run %s: devctl (%s) was started again by each program it ran, %s; "+
+			"a program on PATH passes the call back to devctl (a gh shim running the first gh on PATH, the gh link) instead of the real one",
+			path, self, strings.Join(chain, " -> "))
+	}
+	chain = append(chain, path)
+	return append(without(environ, EnvChain), EnvChain+"="+strings.Join(chain, string(os.PathListSeparator))), nil
 }
 
 func (c Config) run(path string, argv, env []string) int {
@@ -130,8 +165,11 @@ func without(environ []string, name string) []string {
 }
 
 // LookPath is the program name names: a path as given, a bare name the first
-// executable of that name on path that is not self (devctl, also through a
-// link), so a `gh` link to devctl first on PATH runs the real gh.
+// executable of that name on path past the last entry that is self (devctl,
+// also through a link), so a `gh` link to devctl runs the real gh and never a
+// gh shim ahead of the link, which handed the call to the link and would hand
+// it back. Without such an entry, or nothing past it, it is the first
+// executable of that name on path that is not self.
 func LookPath(name, path, self string) (string, error) {
 	selfResolved := resolve(self)
 	if strings.ContainsRune(name, filepath.Separator) || strings.ContainsRune(name, '/') {
@@ -143,15 +181,28 @@ func LookPath(name, path, self string) (string, error) {
 		}
 		return name, nil
 	}
+	var found []string
+	past := 0
 	for _, dir := range filepath.SplitList(path) {
 		if dir == "" {
 			continue
 		}
 		for _, candidate := range candidates(filepath.Join(dir, name)) {
-			if executable(candidate) && resolve(candidate) != selfResolved {
-				return candidate, nil
+			if !executable(candidate) {
+				continue
 			}
+			if resolve(candidate) == selfResolved {
+				past = len(found)
+				continue
+			}
+			found = append(found, candidate)
 		}
+	}
+	switch {
+	case past < len(found):
+		return found[past], nil
+	case len(found) > 0:
+		return found[0], nil
 	}
 	return "", fmt.Errorf("%s: not found on PATH (devctl itself skipped)", name)
 }

@@ -2,7 +2,10 @@ package workflows
 
 import (
 	"context"
+	"fmt"
 	"io"
+	"os"
+	"strings"
 
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
@@ -96,23 +99,27 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 	// giantswarm/github) in either direction leaves the repo with exactly
 	// one set of release files. The un-prefixed `auto-release.yaml` left
 	// over from manual migrations predating the `zz_generated.` rename is
-	// deleted in BOTH branches via AutoReleaseLegacyDeletion.
+	// deleted in BOTH branches via AutoReleaseLegacyDeletion, and so is the
+	// retired zz_generated.changelog.yaml via ChangelogDeletion.
 	if r.flag.ReleaseWorkflow == releaseWorkflowAutoRelease {
 		inputs = append(inputs,
 			workflowsInput.AutoReleaseLegacyDeletion(),
 			workflowsInput.AutoRelease(),
+			workflowsInput.ChangelogDeletion(),
 			workflowsInput.CliffToml(),
 			workflowsInput.CreateReleaseDeletion(),
 			workflowsInput.CreateReleasePRDeletion(),
 			workflowsInput.ValidateChangelogDeletion(),
 		)
 	} else {
+		r.warnAutoReleaseDeclaredLegacy(workflowsInput.AutoReleaseDeletion(), workflowsInput.CliffTomlDeletion())
 		inputs = append(inputs,
 			workflowsInput.CreateRelease(),
 			workflowsInput.CreateReleasePR(),
 			workflowsInput.ValidateChangelog(),
 			workflowsInput.AutoReleaseLegacyDeletion(),
 			workflowsInput.AutoReleaseDeletion(),
+			workflowsInput.ChangelogDeletion(),
 			workflowsInput.CliffTomlDeletion(),
 		)
 	}
@@ -127,6 +134,10 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 
 	if r.flag.Flavours.Contains(gen.FlavourApp) {
 		inputs = append(inputs, workflowsInput.CheckValuesSchema())
+		inputs = append(inputs, workflowsInput.ChartTests())
+		if r.flag.CheckReadmeLinks {
+			inputs = append(inputs, workflowsInput.CheckReadmeLinks())
+		}
 		if r.flag.HelmDocsRegen {
 			inputs = append(inputs, workflowsInput.HelmDocsRegen())
 		}
@@ -165,6 +176,8 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 
 	if r.flag.Flavours.Contains(gen.FlavourManagementClustersFleet) {
 		inputs = append(inputs, workflowsInput.ClusterAppValuesValidationUsingSchema())
+		inputs = append(inputs, workflowsInput.Mctl()...)
+		inputs = append(inputs, workflowsInput.MctlLegacyDeletion()...)
 	}
 
 	if r.flag.PublishTechdocs {
@@ -180,4 +193,22 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 	}
 
 	return nil
+}
+
+// warnAutoReleaseDeclaredLegacy names the declaration when a legacy run is
+// about to delete Auto Release files the repository carries: they were added
+// without the declaration saying auto-release, and every run deletes them
+// again until it does.
+func (r *runner) warnAutoReleaseDeclaredLegacy(deletions ...input.Input) {
+	var found []string
+	for _, d := range deletions {
+		if _, err := os.Stat(d.Path); err == nil {
+			found = append(found, d.Path)
+		}
+	}
+	if len(found) == 0 || r.stderr == nil {
+		return
+	}
+
+	fmt.Fprintf(r.stderr, "Warning: deleting %s: --%s is %s, as the repository's declaration in giantswarm/github says. Auto Release is enabled there, with gen.ci.releaseWorkflow: %s in the repository's entry; files added without it are deleted on every run.\n", strings.Join(found, " and "), flagReleaseWorkflow, releaseWorkflowLegacy, releaseWorkflowAutoRelease)
 }

@@ -1,7 +1,7 @@
 # Authentication: `devctl auth`
 
 devctl acts on GitHub as you, with the login of the `giantswarm-devctl` GitHub App; it reads pipelines on
-CircleCI with your CircleCI token and reaches giantswarm-repo-manager with your muster token. All three live
+CircleCI with your CircleCI token (and reruns failed workflows with it) and reaches giantswarm-repo-manager with your muster token. All three live
 in the OS keychain: `devctl auth login` puts them there, `devctl auth status` shows what is there, and no
 command prints a token.
 
@@ -15,12 +15,14 @@ own shell and never enters an agent session.
 |---|---|
 | `auth exec` and the `gh` link | the App login; `gh` on a repository of an owner the App is not installed on keeps your own `gh` login |
 | `deploy`, `pr approve-align`, `pr approve-merge-renovate`, `release create`, `release promote`, `repo create` | the App login; a token in the environment overrides it |
-| the version check that precedes every command, `version check`, `version update`, `repo validate` | the same, optional and looked up only when GitHub is asked (never while the one-hour version cache is fresh): without one a public read is anonymous (`repo validate`: the embedded schema, repository names unchecked) |
-| `pr wait`, `pr merge` | the App login for giantswarm; your own `gh` login (`gh auth token`) for every other owner; never a token in the environment |
+| the version check that precedes every command, `version check`, `version update`, `repo validate --local` | the same, optional and looked up only when GitHub is asked (never while the one-hour version cache is fresh): without one a public read is anonymous (`repo validate --local`: the embedded schema, repository names unchecked) |
+| `pr wait`, `pr merge`, `pr rerun` | the App login for giantswarm; your own `gh` login (`gh auth token`) for every other owner; never a token in the environment |
 | `release wait`, `rollout wait` | the App login only (`rollout wait` reads the installation with your kube context) |
+| `release rerun` | none while a workflow is rerun; to redeliver the push webhook of a pipeline without a workflow, the identity `pr rerun` uses |
+| `ci jobs`, `ci rerun` | none: they read CircleCI alone (`ci rerun` writes with the Write login) |
 | `repo setup` (and `repo setup ciwebhooks`, `repo setup renovate`), `repo checks` | your own: `$GITHUB_TOKEN` (`--github-token-envvar`) |
 | `repo reconcile` | the engine's installation token in CI: `$GITHUB_TOKEN` (`--github-token-envvar`) |
-| the other `repo` commands | none: giantswarm-repo-manager acts, reached with the muster token |
+| `repo validate` and the other `repo` commands | none: giantswarm-repo-manager acts, reached with the muster token |
 
 **The default is the App login.** Log in once with `devctl auth login --github-only`; the token refreshes
 itself for six months. A command that needs a token and finds no usable login exits 8 with one sentence
@@ -51,8 +53,10 @@ more act with another token:
   else: no environment variable, no `gh auth token`, no file. They exit 8 naming `devctl auth login`
   before they wait for anything, since they need the CircleCI token too.
 - `repo setup` and its subcommands `ciwebhooks` and `renovate`, and `repo checks` need
-  Administration or Webhooks write, which the App does not carry: they act with your own token, as the
-  table says, and print no override warning.
+  Administration write, which the App does not carry: they act with your own token, as the table says,
+  and print no override warning.
+- `pr rerun` and `release rerun` redeliver a push webhook with the App's Webhooks permission; a 403 from
+  GitHub is exit 8 naming it, never a silent failure.
 - `repo reconcile` is the engine's CI path and acts with its installation token.
 - `release promote` dispatches the auto-release workflow, which needs Actions write: the App carries it, so the
   login dispatches wherever you may run the workflow yourself. The document's `identity` names the token's source
@@ -75,10 +79,11 @@ log on every request, which separates an agent's actions from the person's own.
 | Release: dispatch a workflow (`release promote`, `pr merge --dispatch`); the tag itself comes from the auto-release workflow's own token | actions, contents: write |
 | Approve and re-run workflow runs | actions: write |
 | Write the organization's project boards (Projects v2) | organization projects: write |
+| Redeliver the push webhook delivery of a CircleCI pipeline that never got a workflow (`pr rerun`, `release rerun`): the hooks, their deliveries, one delivery's payload, the redelivery | webhooks: read and write |
 
-**Not an agent action:** administration (branch protection, rulesets, settings, webhooks, deploy keys,
-repository creation). It stays with giantswarm-repo-manager, its own App reached through the `repo`
-commands, or with a person in their own shell.
+**Not an agent action:** administration (branch protection, rulesets, settings, creating or editing
+webhooks, deploy keys, repository creation). It stays with giantswarm-repo-manager, its own App reached
+through the `repo` commands, or with a person in their own shell.
 
 The App is installed on the giantswarm organization only. `gh` through devctl therefore acts with the
 App token for giantswarm's repositories and wherever no repository is named, and keeps the person's own
@@ -100,8 +105,12 @@ found is exit 7. Environment variables do not override the keychain here, and no
 it: an outdated devctl still hands over the token, so a devctl release never stops an agent's `gh`.
 
 **The `gh` link.** devctl started under the name `gh` (a link to it) is `devctl auth exec -- gh`: it runs
-the next `gh` on `PATH` that is not devctl itself. An agent environment puts such a link in a directory
-first on the agent's `PATH`:
+the next `gh` on `PATH` past its own entry, so another `gh` shim ahead of the link (a test harness's or
+sandbox's, which passed the call on to the link) is never run a second time. Without a `gh` past the link
+it runs the first `gh` on `PATH` that is not devctl itself. A program that hands every call back to the link
+(a shim past it running the first `gh` on `PATH`) loops; devctl refuses after four programs in one chain of
+calls (`DEVCTL_AUTH_EXEC_CHAIN`), exit 7, naming each program it ran. An agent environment puts the link in
+a directory first on the agent's `PATH`:
 
 ```nohighlight
 mkdir -p ~/.local/share/devctl/agent-bin
@@ -156,9 +165,11 @@ registration:
    unauthenticated `POST /oauth/register`. The client id and the redirect URI stay in the keychain
    record; later logins reuse them. A new client is registered only when the record has none or
    its loopback port can no longer be bound.
-2. devctl prints the authorization URL to stderr and opens the browser on it. Choose **Read**
-   access on the consent page; it is all the commands need. The browser returns to the loopback
-   address with the code; the state is checked.
+2. devctl prints the authorization URL to stderr and opens the browser on it. Choose **Write**
+   access on the consent page: `pr rerun` and `release rerun` rerun workflows, a write; every other
+   command reads. A login that granted Read access keeps working for the reads, and a rerun on it is
+   exit 8 naming `devctl auth login --circleci-only`. The browser returns to the loopback address
+   with the code; the state is checked.
 3. devctl exchanges the code with the PKCE verifier at `POST /oauth/token`. The result is a standard
    90-day CircleCI API token that works with API v2 (`Circle-Token` header or Bearer).
 
@@ -289,7 +300,7 @@ Every agent-facing command prints one JSON document on stdout when it finishes a
 | 1 | `red`, `ci_failed` | a check is red or the tag's CI failed |
 | 2 | `timeout` | the deadline passed; the document names what was unfinished |
 | 3 | `not_applicable` | draft, closed, conflicting, behind a strict base, version not resolvable |
-| 4 | `required_missing`, `approval_required` | a required context never reported; Actions runs await a member's approval |
+| 4 | `required_missing`, `approval_required`, `no_checks` | a required context never reported; Actions runs await a member's approval; the `pull_request` workflows never started |
 | 5 | `refused` | another author, an opt-out |
 | 7 | `usage` | wrong usage, a newer devctl released (the reason names `devctl version update`), or a tooling failure |
 | 8 | `auth_required` | no usable token; the reason names `devctl auth login` |

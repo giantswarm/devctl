@@ -1,0 +1,115 @@
+{{{{ .Header }}}}
+
+# Runs `mctl validate` on changed cluster-app-manifests.yaml files.
+
+name: Validate cluster manifest
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'management-clusters/**/cluster-app-manifests.yaml'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+env:
+  MCTL_IMAGE: ${{ vars.MCTL_IMAGE || 'gsoci.azurecr.io/giantswarm/mctl:{{{{ .MctlVersion }}}}' }}
+
+jobs:
+  validate:
+    name: Schema validation
+    runs-on: ubuntu-latest
+    # Not in the template repo.
+    if: github.repository != 'giantswarm/template-management-clusters'
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate changed manifests
+        id: validate
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          files=$(git diff --name-only --diff-filter=ACM "$BASE" "$HEAD" \
+            -- 'management-clusters/**/cluster-app-manifests.yaml')
+
+          if [ -z "$files" ]; then
+            echo "No manifest files changed."
+            exit 0
+          fi
+
+          echo "Validating: $files"
+          failed=0
+          for f in $files; do
+            echo "--- $f ---"
+            # mctl only knows release-* charts; skip legacy ones, let mctl report unparsable ones.
+            chart=$(yq eval-all 'select(.kind == "App") | .spec.name' "$f" 2>/dev/null | head -1) || chart=""
+            case "$chart" in
+              release-*|""|null) ;;
+              *)
+                echo "skipped: cluster chart \"$chart\" is not validated by mctl (release-* charts only)"
+                continue
+                ;;
+            esac
+            set +e
+            result=$(docker run --rm -v "$(pwd):/workspace" \
+              "$MCTL_IMAGE" \
+              validate --manifest "/workspace/$f" 2>&1)
+            exit_code=$?
+            set -e
+            echo "$result"
+            if [ $exit_code -ne 0 ]; then
+              failed=1
+              printf '#### `%s`\n```\n%s\n```\n\n' "$f" "$result" >> /tmp/validate_output
+            fi
+          done
+
+          delimiter="VALIDATE_EOF_${RANDOM}_${RANDOM}"
+          {
+            echo "failed=$failed"
+            echo "output<<${delimiter}"
+            cat /tmp/validate_output 2>/dev/null || true
+            echo "${delimiter}"
+          } >> "$GITHUB_OUTPUT"
+
+          exit $failed
+
+      - name: Check for placeholders
+        id: placeholders
+        if: failure() && steps.validate.outputs.failed == '1'
+        run: |
+          # Placeholders left: the init comment already covers it, so no failure comment.
+          if grep -q 'manifest still contains placeholder values' /tmp/validate_output 2>/dev/null; then
+            echo "has_placeholders=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_placeholders=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Post validation failures as PR comment
+        if: failure() && steps.validate.outputs.failed == '1' && steps.placeholders.outputs.has_placeholders == 'false'
+        uses: actions/github-script@v7
+        env:
+          VALIDATE_OUTPUT: ${{ steps.validate.outputs.output }}
+        with:
+          script: |
+            const output = process.env.VALIDATE_OUTPUT || '';
+            const body = [
+              '### ❌ Manifest validation failed',
+              '',
+              'The following files have schema validation errors. Fix them before commenting `/config`.',
+              '',
+              output,
+            ].join('\n');
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });

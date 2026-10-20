@@ -15,7 +15,7 @@
     "headSha": "abc123",
     "baseRef": "main",
     "checks": [
-      {"name": "go-build", "source": "check_run", "status": "completed", "conclusion": "success", "url": "*", "required": true}
+      {"name": "go-build", "id": 101, "source": "check_run", "status": "completed", "conclusion": "success", "url": "*", "required": true}
     ],
     "actions": [
       {"name": "CI", "runId": 7001, "status": "completed", "conclusion": "success", "url": "*"}

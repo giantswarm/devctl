@@ -1,0 +1,21 @@
+{
+  "exitCode": 4,
+  "json": {
+    "command": "pr wait",
+    "schemaVersion": 1,
+    "exitCode": 4,
+    "verdict": "no_checks",
+    "reason": "the head abc123 has no check run, status or Actions run more than 2m0s after the pull request's last update, while .github/workflows/ci.yaml run on pull_request: GitHub did not deliver the pull_request event; close and reopen the pull request to trigger them, then wait again",
+    "warnings": [],
+    "startedAt": "*",
+    "finishedAt": "*",
+    "repository": "giantswarm/devctl",
+    "identity": "app",
+    "number": 42,
+    "headSha": "abc123",
+    "baseRef": "main",
+    "checks": [],
+    "actions": [],
+    "unfinished": ["actions runs of .github/workflows/ci.yaml (none registered)"]
+  }
+}

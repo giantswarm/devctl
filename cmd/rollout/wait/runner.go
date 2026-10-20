@@ -13,6 +13,7 @@ import (
 	"k8s.io/client-go/dynamic"
 
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
+	"github.com/giantswarm/devctl/v8/pkg/prwait"
 	"github.com/giantswarm/devctl/v8/pkg/releasewait"
 	"github.com/giantswarm/devctl/v8/pkg/rolloutwait"
 )
@@ -27,7 +28,9 @@ type runner struct {
 	// openRelease is releasewait.OpenSources and openCluster
 	// rolloutwait.OpenCluster; tests inject fakes.
 	openRelease func(ctx context.Context, endpoints agentcli.Endpoints, transport http.RoundTripper, warn func(string)) (*releasewait.Sources, error)
-	openCluster func(installation, kubeContext string, wrap func(http.RoundTripper) http.RoundTripper) (dynamic.Interface, error)
+	openCluster func(ctx context.Context, c rolloutwait.ClusterConfig) (dynamic.Interface, error)
+	// teleport logs in to an installation the kubeconfig lacks.
+	teleport rolloutwait.Teleport
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
@@ -97,6 +100,10 @@ func (r *runner) wait(ctx context.Context, args []string, doc *rolloutwait.Docum
 			return err
 		}
 	}
+	failedLogLines, err := r.flag.FailedLog.TailLines()
+	if err != nil {
+		return err
+	}
 	if err := r.gate(false); err != nil {
 		return err
 	}
@@ -116,7 +123,14 @@ func (r *runner) wait(ctx context.Context, args []string, doc *rolloutwait.Docum
 	// The kube context is read before the release wait, so a context that
 	// does not exist ends the wait at once rather than after the release.
 	kubeContext := r.kubeContext(installation)
-	client, err := r.openCluster(installation, kubeContext, retrying)
+	client, err := r.openCluster(ctx, rolloutwait.ClusterConfig{
+		Installation: installation,
+		Context:      kubeContext,
+		Kubeconfig:   r.flag.Kubeconfig,
+		Wrap:         retrying,
+		Teleport:     r.teleport,
+		Progress:     progress,
+	})
 	if err != nil {
 		return err
 	}
@@ -138,6 +152,7 @@ func (r *runner) wait(ctx context.Context, args []string, doc *rolloutwait.Docum
 		Timeout:        r.flag.ReleaseTimeout,
 		Images:         r.flag.Images,
 		Charts:         r.flag.Charts,
+		FailedLogLines: failedLogLines,
 		GitHub:         sources.GitHub,
 		Entries:        sources.Entries,
 		CircleCI:       sources.CircleCI,
@@ -153,6 +168,7 @@ func (r *runner) wait(ctx context.Context, args []string, doc *rolloutwait.Docum
 		return err
 	}
 	if err := releaseWaiter.Wait(ctx, &doc.Release.Result); err != nil {
+		prwait.PrintFailedJobs(r.stderr, doc.Release.FailedJobs)
 		code, verdict := agentcli.Outcome(err)
 		doc.Release.Verdict, doc.Release.Reason = verdict, err.Error()
 		// A pull request that releases nothing (a configuration change)
@@ -215,6 +231,10 @@ func (r *runner) waitRevision(ctx context.Context, installation, kubeContext, ow
 	if err != nil {
 		return fmt.Errorf("listing the files of %s/%s#%d: %w", owner, repo, r.flag.PR, err)
 	}
+	merge, err := sources.Client.GetPullRequestMerge(ctx, owner, repo, r.flag.PR)
+	if err != nil {
+		return fmt.Errorf("reading %s/%s#%d: %w", owner, repo, r.flag.PR, err)
+	}
 	waiter, err := rolloutwait.New(rolloutwait.Config{
 		Installation: installation,
 		KubeContext:  kubeContext,
@@ -222,6 +242,7 @@ func (r *runner) waitRevision(ctx context.Context, installation, kubeContext, ow
 		Repository:   owner + "/" + repo,
 		Paths:        paths,
 		GitHub:       sources.Client,
+		MergedAt:     merge.MergedAt,
 		HelmReleases: r.flag.HelmReleases,
 		Client:       client,
 		Timeout:      r.flag.Timeout,

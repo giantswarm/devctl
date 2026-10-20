@@ -1,0 +1,42 @@
+{
+  "exitCode": 0,
+  "json": {
+    "command": "release rerun",
+    "schemaVersion": 1,
+    "exitCode": 0,
+    "verdict": "green",
+    "reason": "",
+    "warnings": ["*"],
+    "startedAt": "*",
+    "finishedAt": "*",
+    "repository": "giantswarm/e2e-app",
+    "tag": "v1.2.3",
+    "headSha": "aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44",
+    "pipeline": {
+      "id": "p1",
+      "number": 7,
+      "url": "https://app.circleci.com/pipelines/github/giantswarm/e2e-app/7"
+    },
+    "workflows": [
+      {
+        "name": "setup",
+        "id": "w1",
+        "status": "success",
+        "url": "https://app.circleci.com/pipelines/github/giantswarm/e2e-app/7/workflows/w1",
+        "failedJobs": [],
+        "outcome": "nothing_to_rerun"
+      }
+    ],
+    "redelivery": {
+      "hookId": 77,
+      "hookUrl": "https://circleci.com/hooks/github",
+      "deliveryId": 9001,
+      "guid": "e2e-push-guid",
+      "deliveredAt": "2026-09-21T09:59:55Z",
+      "ref": "refs/tags/v1.2.3",
+      "after": "aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44",
+      "outcome": "redelivered"
+    },
+    "identity": "app"
+  }
+}

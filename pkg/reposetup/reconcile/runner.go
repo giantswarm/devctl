@@ -10,24 +10,24 @@ import (
 	"time"
 
 	"github.com/giantswarm/microerror"
-	"github.com/google/go-github/v92/github"
+	"github.com/google/go-github/v93/github"
 
 	"github.com/giantswarm/devctl/v8/pkg/circleciclient"
 	"github.com/giantswarm/devctl/v8/pkg/reposetup"
 )
 
 // LifecycleArchived is the lifecycle value that archives a repository.
-const LifecycleArchived = "archived"
+const LifecycleArchived = reposetup.LifecycleArchived
 
 // LifecycleDeleted is the lifecycle value that deletes a repository on
 // GitHub; the entry stays in the team file as the record of the deletion.
-const LifecycleDeleted = "deleted"
+const LifecycleDeleted = reposetup.LifecycleDeleted
 
 // lifecycleOver says whether the declared lifecycle ends the repository's
 // life — archived or deleted — so that the lifecycle step is the one that
 // applies.
 func lifecycleOver(lifecycle string) bool {
-	return lifecycle == LifecycleArchived || lifecycle == LifecycleDeleted
+	return reposetup.LifecycleOver(lifecycle)
 }
 
 // flavourCustomer is the gen.flavours value of a customer repository: its
@@ -36,7 +36,7 @@ func lifecycleOver(lifecycle string) bool {
 // release steps are skipped on it and its default branch is never renamed;
 // settings, permissions, renovate, metadata, lifecycle and catalog run as
 // declared.
-const flavourCustomer = "customer"
+const flavourCustomer = reposetup.FlavourCustomer
 
 // flavourFork is the gen.flavours value of a fork line: the repository
 // carries an upstream release plus the carried patches on the branch its
@@ -111,12 +111,20 @@ type Runner struct {
 	// AlignFilesAppID is the numeric id of the align-files GitHub App, whose
 	// installation opens the generated-file pull requests and arms their
 	// auto-merge. With it the protection step moves the review rule into the
-	// ruleset [ReviewRulesetName], which the App bypasses for pull requests
-	// beside the actors of [RulesetName]; the required checks stay in
-	// [RulesetName], which it does not bypass. An entry with agentMerge:
-	// false keeps the review in [RulesetName] without bypass. 0 keeps the
-	// review rule in [RulesetName] and deletes the review ruleset.
+	// ruleset [ReviewRulesetName], which the App and the Renovate App bypass
+	// for pull requests beside the actors of [RulesetName]; the required
+	// checks stay in [RulesetName], which they do not bypass. An entry with
+	// agentMerge: false keeps the review in [RulesetName] without bypass. 0
+	// keeps the review rule in [RulesetName] and deletes the review ruleset.
 	AlignFilesAppID int64
+	// ReleaseAppID is the numeric id of the giantswarm-release GitHub App,
+	// which the generated release workflows authenticate as. It bypasses
+	// [ReviewRulesetName] for pull requests beside the align-files and
+	// Renovate Apps, so the version bump pull request the release workflow
+	// opens and arms auto-merge on lands once the required checks of
+	// [RulesetName], which it does not bypass, are green. 0 adds no release
+	// App to the review ruleset.
+	ReleaseAppID int64
 	// GitHubRequests and CircleCIRequests count the requests the clients
 	// send, when the caller built the clients' transports over them (one
 	// [Counter] under GitHub, Checks and Dispatch, one under CircleCI). The
@@ -169,9 +177,9 @@ type Request struct {
 }
 
 // teamSteps are the steps that read the team: the scaffold names it in
-// CODEOWNERS and the chart, the CODEOWNERS step writes it, the catalog
-// maps the repository to it.
-var teamSteps = []Step{StepScaffold, StepCodeowners, StepCatalog}
+// CODEOWNERS and the chart, the CODEOWNERS step writes it, the labels step
+// keeps its label, the catalog maps the repository to it.
+var teamSteps = []Step{StepScaffold, StepCodeowners, StepLabels, StepCatalog}
 
 // needsTeam says whether a run over steps (nil: every step) reads the team.
 func needsTeam(steps []Step) bool {
@@ -305,7 +313,7 @@ func (r *Runner) newRun(req Request) (*run, error) {
 		return nil, microerror.Maskf(invalidConfigError, "entry %q is not accepted: %d problems", req.Entry.Name, len(req.Entry.Problems))
 	}
 	if req.Team == "" && needsTeam(req.Steps) {
-		return nil, microerror.Maskf(invalidConfigError, "%T.Team must not be empty: the scaffold, codeowners and catalog steps name the team", req)
+		return nil, microerror.Maskf(invalidConfigError, "%T.Team must not be empty: the scaffold, codeowners, labels and catalog steps name the team", req)
 	}
 	switch req.Mode {
 	case "":
@@ -404,6 +412,8 @@ func (r *Runner) runStep(ctx context.Context, s *run, step Step, sr *StepResult)
 		err = r.stepCodeowners(ctx, s, sr)
 	case StepMetadata:
 		err = r.stepMetadata(ctx, s, sr)
+	case StepLabels:
+		err = r.stepLabels(ctx, s, sr)
 	case StepLifecycle:
 		err = r.stepLifecycle(ctx, s, sr)
 	case StepCatalog:
@@ -569,10 +579,9 @@ func (s *run) agentMerge() bool {
 }
 
 // keepsDefaultBranch says the repository's default branch is its own and the
-// settings step never renames it: a customer repository's branch is the
-// customer's flow.
+// settings step never renames it ([reposetup.Fields.KeepsDefaultBranch]).
 func (s *run) keepsDefaultBranch() bool {
-	return s.hasFlavour(flavourCustomer)
+	return s.fields.KeepsDefaultBranch()
 }
 
 // slug is owner/name as the run addresses the repository.

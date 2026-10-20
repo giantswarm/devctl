@@ -4,15 +4,20 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"io"
 	"maps"
+	"net"
 	"net/http"
+	"net/http/httptest"
+	"net/http/httputil"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/google/go-github/v92/github"
+	"github.com/google/go-github/v93/github"
 	"github.com/sirupsen/logrus"
 
 	githubmock "github.com/giantswarm/devctl/v8/e2e/mock/github"
@@ -64,21 +69,37 @@ func noFeedback(shas ...string) sequence.Routes {
 	return r
 }
 
+// upToDate is every head of shas compared with main: none behind it.
+func upToDate(shas ...string) sequence.Routes {
+	r := sequence.Routes{}
+	for _, sha := range shas {
+		r["GET /repos/o/r/compare/main..."+sha] = []sequence.Response{{Body: map[string]any{"status": "ahead", "ahead_by": 1, "behind_by": 0}}}
+	}
+	return r
+}
+
 var (
 	merged  = sequence.Response{Body: map[string]any{"sha": "m1", "merged": true, "message": "Pull Request successfully merged"}}
 	deleted = sequence.Response{Status: http.StatusNoContent}
 )
 
+// settings is o/r as GitHub answers it, with the merge methods it allows.
+func settings(mergeCommit, squash, rebase bool) map[string]any {
+	return map[string]any{"full_name": "o/r", "allow_merge_commit": mergeCommit, "allow_squash_merge": squash, "allow_rebase_merge": rebase}
+}
+
 // routes is the mock's script for a green o/r#42 that merges as a squash,
 // with more applied on top.
 func routes(pr map[string]any, more ...sequence.Routes) sequence.Routes {
 	r := sequence.Routes{
+		"GET /repos/o/r":                           {{Body: settings(true, true, true)}},
 		"GET /repos/o/r/pulls/42":                  {{Body: pr}},
 		"PUT /repos/o/r/pulls/42/merge":            {merged},
 		"DELETE /repos/o/r/git/refs/heads/feature": {deleted},
 	}
 	maps.Copy(r, greenHead("abc123"))
 	maps.Copy(r, noFeedback("abc123", "def456"))
+	maps.Copy(r, upToDate("abc123", "def456"))
 	for _, m := range more {
 		maps.Copy(r, m)
 	}
@@ -93,6 +114,11 @@ type harness struct {
 
 func allow(context.Context, string, string) (Verdict, error) { return Verdict{}, nil }
 
+// verdict is a policy that answers v for every repository.
+func verdict(v Verdict) Policy {
+	return func(context.Context, string, string) (Verdict, error) { return v, nil }
+}
+
 func newHarness(t *testing.T, r sequence.Routes, configure func(*Config)) *harness {
 	t.Helper()
 	server, err := githubmock.Start(r)
@@ -100,9 +126,16 @@ func newHarness(t *testing.T, r sequence.Routes, configure func(*Config)) *harne
 		t.Fatal(err)
 	}
 	t.Cleanup(server.Close)
+	return newHarnessAt(t, server, server.URL, configure)
+}
+
+// newHarnessAt is newHarness with the merger's GitHub at baseURL, a proxy
+// in front of server.
+func newHarnessAt(t *testing.T, server *githubmock.Server, baseURL string, configure func(*Config)) *harness {
+	t.Helper()
 	logger := logrus.New()
 	logger.SetOutput(io.Discard)
-	github, conditional, err := githubclient.NewConditional(githubclient.Config{Logger: logger, AccessToken: "ghu_test", BaseURL: server.URL})
+	github, conditional, err := githubclient.NewConditional(githubclient.Config{Logger: logger, AccessToken: "ghu_test", BaseURL: baseURL})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +201,8 @@ func Test_Merge_refusalsBeforeTheWait(t *testing.T) {
 		{name: "merged", pr: pull(map[string]any{"state": "closed", "merged": true}), wantCode: 3, wantReason: "is merged", wantVerdict: agentcli.VerdictNotApplicable},
 		{name: "draft", pr: pull(map[string]any{"draft": true}), wantCode: 3, wantReason: "draft", wantVerdict: agentcli.VerdictNotApplicable},
 		{name: "conflicting", pr: pull(map[string]any{"mergeable_state": "dirty"}), wantCode: 3, wantReason: "conflicts with main", wantVerdict: agentcli.VerdictNotApplicable},
-		{name: "behind without --update-branch", pr: pull(map[string]any{"mergeable_state": "behind"}), wantCode: 3, wantReason: "behind main", wantVerdict: agentcli.VerdictNotApplicable},
+		{name: "behind without --update-branch", pr: pull(map[string]any{"mergeable_state": "behind"}), wantCode: 3, wantReason: "behind main, which requires branches to be up to date; --update-branch updates it from main", wantVerdict: agentcli.VerdictNotApplicable},
+		{name: "behind a base that is not strict, without --update-branch", pr: pull(map[string]any{"mergeable_state": "blocked"}), wantCode: 3, wantReason: "the pull request is 2 commit(s) behind main: its checks ran against an older main than the one the merge lands it on; --update-branch updates it from main and waits for its checks again", wantVerdict: agentcli.VerdictNotApplicable},
 		{name: "another human", pr: pull(map[string]any{"user": map[string]any{"login": "alice", "type": "User"}}), wantCode: 5, wantReason: "the pull request was opened by alice, not by someone: devctl pr merge merges the caller's own pull requests and those of bots and GitHub Apps (the Bot user type or a [bot] login) and of the automation accounts architectbot, taylorbot", wantVerdict: agentcli.VerdictRefused},
 		{name: "opted out", pr: pull(nil), configure: func(c *Config) {
 			c.Policy = func(context.Context, string, string) (Verdict, error) {
@@ -189,7 +223,11 @@ func Test_Merge_refusalsBeforeTheWait(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			h := newHarness(t, routes(tc.pr, sequence.Routes{"GET /user": {{Body: map[string]any{"login": "someone"}}}}), tc.configure)
+			r := routes(tc.pr, sequence.Routes{"GET /user": {{Body: map[string]any{"login": "someone"}}}})
+			if tc.pr["mergeable_state"] == "blocked" {
+				r["GET /repos/o/r/compare/main...abc123"] = []sequence.Response{{Body: map[string]any{"status": "diverged", "ahead_by": 1, "behind_by": 2}}}
+			}
+			h := newHarness(t, r, tc.configure)
 			result, err := h.merge(t)
 			if code := exitCode(err); code != tc.wantCode {
 				t.Fatalf("want exit %d, got %d: %v", tc.wantCode, code, err)
@@ -257,6 +295,82 @@ func Test_Merge_paths(t *testing.T) {
 			want:      want{method: "rebase", mergedBy: "someone", mergeSHA: "m1", deleted: true, headSHA: "abc123", requested: map[string]int{"PUT /repos/o/r/pulls/42/merge": 1}},
 		},
 		{
+			name:   "a repository that allows only merge commits: the merge lands as one, with a warning",
+			routes: routes(pull(nil), sequence.Routes{"GET /repos/o/r": {{Body: settings(true, false, false)}}}),
+			want: want{method: "merge", mergedBy: "someone", mergeSHA: "m1", deleted: true, headSHA: "abc123", warning: "does not allow squash merges, only merge commits",
+				requested: map[string]int{"GET /repos/o/r": 1, "PUT /repos/o/r/pulls/42/merge": 1}},
+		},
+		{
+			name:   "a repository that allows only rebase merges: the default squash gives way to a rebase",
+			routes: routes(pull(nil), sequence.Routes{"GET /repos/o/r": {{Body: settings(false, false, true)}}}),
+			want: want{method: "rebase", mergedBy: "someone", mergeSHA: "m1", deleted: true, headSHA: "abc123", warning: "only rebase merges",
+				requested: map[string]int{"PUT /repos/o/r/pulls/42/merge": 1}},
+		},
+		{
+			name:   "squash not allowed and two others are: exit 3 before the wait, naming them",
+			routes: routes(pull(nil), sequence.Routes{"GET /repos/o/r": {{Body: settings(true, false, true)}}}),
+			want: want{code: 3, reason: "o/r does not allow squash merges; its settings allow merge commits, rebase merges; --rebase lands a rebase merge", method: "squash", headSHA: "abc123",
+				requested: map[string]int{"GET /repos/o/r/commits/abc123/check-runs": 0, "PUT /repos/o/r/pulls/42/merge": 0}},
+		},
+		{
+			name:      "an explicit rebase never gives way: exit 3 before the wait",
+			routes:    routes(pull(nil), sequence.Routes{"GET /repos/o/r": {{Body: settings(true, false, false)}}}),
+			configure: func(c *Config) { c.Method = githubclient.MergeRebase },
+			want: want{code: 3, reason: "o/r does not allow rebase merges; its settings allow merge commits", method: "rebase", headSHA: "abc123",
+				requested: map[string]int{"GET /repos/o/r/commits/abc123/check-runs": 0, "PUT /repos/o/r/pulls/42/merge": 0}},
+		},
+		{
+			name:      "a repository that is no fork line keeps the default squash",
+			routes:    routes(pull(nil)),
+			configure: func(c *Config) { c.Policy = verdict(Verdict{Team: "team-a"}) },
+			want: want{method: "squash", mergedBy: "someone", mergeSHA: "m1", deleted: true, headSHA: "abc123",
+				requested: map[string]int{"PUT /repos/o/r/pulls/42/merge": 1}},
+		},
+		{
+			name:      "a fork line lands with a rebase merge by default",
+			routes:    routes(pull(nil)),
+			configure: func(c *Config) { c.Policy = verdict(Verdict{Team: "team-a", ForkLine: true}) },
+			want: want{method: "rebase", mergedBy: "someone", mergeSHA: "m1", deleted: true, headSHA: "abc123",
+				requested: map[string]int{"PUT /repos/o/r/pulls/42/merge": 1}},
+		},
+		{
+			name:   "a fork line squashes only on an explicit --squash",
+			routes: routes(pull(nil)),
+			configure: func(c *Config) {
+				c.Policy = verdict(Verdict{Team: "team-a", ForkLine: true})
+				c.Method = githubclient.MergeSquash
+			},
+			want: want{method: "squash", mergedBy: "someone", mergeSHA: "m1", deleted: true, headSHA: "abc123",
+				requested: map[string]int{"PUT /repos/o/r/pulls/42/merge": 1}},
+		},
+		{
+			name:      "a fork line that does not allow rebase merges: exit 3 before the wait, naming --squash",
+			routes:    routes(pull(nil), sequence.Routes{"GET /repos/o/r": {{Body: settings(false, true, false)}}}),
+			configure: func(c *Config) { c.Policy = verdict(Verdict{Team: "team-a", ForkLine: true}) },
+			want: want{code: 3, reason: "o/r does not allow rebase merges; its settings allow squash merges; --squash lands a squash merge", method: "rebase", headSHA: "abc123",
+				requested: map[string]int{"GET /repos/o/r/commits/abc123/check-runs": 0, "PUT /repos/o/r/pulls/42/merge": 0}},
+		},
+		{
+			name:      "an explicit squash never gives way: exit 3 before the wait",
+			routes:    routes(pull(nil), sequence.Routes{"GET /repos/o/r": {{Body: settings(false, false, true)}}}),
+			configure: func(c *Config) { c.Method = githubclient.MergeSquash },
+			want: want{code: 3, reason: "o/r does not allow squash merges; its settings allow rebase merges; --rebase lands a rebase merge", method: "squash", headSHA: "abc123",
+				requested: map[string]int{"PUT /repos/o/r/pulls/42/merge": 0}},
+		},
+		{
+			name:      "an entry whose flavours cannot be read keeps the default squash, with a warning",
+			routes:    routes(pull(nil)),
+			configure: func(c *Config) { c.Policy = verdict(Verdict{Team: "team-a", Warning: "gen.flavours unreadable"}) },
+			want: want{method: "squash", mergedBy: "someone", mergeSHA: "m1", deleted: true, headSHA: "abc123", warning: "gen.flavours unreadable",
+				requested: map[string]int{"PUT /repos/o/r/pulls/42/merge": 1}},
+		},
+		{
+			name:   "settings the token cannot read leave the asked method to GitHub",
+			routes: routes(pull(nil), sequence.Routes{"GET /repos/o/r": {{Body: map[string]any{"full_name": "o/r"}}}}),
+			want: want{method: "squash", mergedBy: "someone", mergeSHA: "m1", deleted: true, headSHA: "abc123",
+				requested: map[string]int{"PUT /repos/o/r/pulls/42/merge": 1}},
+		},
+		{
 			name: "a head in a fork is merged and its branch left alone",
 			routes: routes(pull(map[string]any{
 				"head": map[string]any{"sha": "abc123", "ref": "feature", "repo": map[string]any{"full_name": "alice/r"}},
@@ -311,7 +425,54 @@ func Test_Merge_paths(t *testing.T) {
 			}),
 			configure: func(c *Config) { c.UpdateBranch = true },
 			want: want{method: "squash", mergedBy: "someone", mergeSHA: "m1", deleted: true, headSHA: "def456",
-				requested: map[string]int{"PUT /repos/o/r/pulls/42/update-branch": 1, "GET /repos/o/r/commits/def456/check-runs": 1, "GET /repos/o/r/commits/abc123/check-runs": 0, "PUT /repos/o/r/pulls/42/merge": 1}},
+				requested: map[string]int{"PUT /repos/o/r/pulls/42/update-branch": 1, "POST /graphql": 0, "GET /repos/o/r/commits/def456/check-runs": 1, "GET /repos/o/r/commits/abc123/check-runs": 0, "PUT /repos/o/r/pulls/42/merge": 1}},
+		},
+		{
+			name: "behind with --rebase --update-branch: the head is rebased, never merged into, then merged",
+			routes: routes(pull(nil), greenHead("def456"), sequence.Routes{
+				"GET /repos/o/r/pulls/42": {
+					{Body: pull(map[string]any{"mergeable_state": "behind"})},
+					{Body: pull(map[string]any{"mergeable_state": "behind"})},
+					{Body: pull(map[string]any{"head": map[string]any{"sha": "def456", "ref": "feature", "repo": map[string]any{"full_name": "o/r"}}})},
+				},
+				"POST /graphql": {{Body: map[string]any{"data": map[string]any{"updatePullRequestBranch": map[string]any{"pullRequest": map[string]any{"id": "PR_1"}}}}}},
+			}),
+			configure: func(c *Config) {
+				c.UpdateBranch = true
+				c.Method = githubclient.MergeRebase
+			},
+			want: want{method: "rebase", mergedBy: "someone", mergeSHA: "m1", deleted: true, headSHA: "def456",
+				requested: map[string]int{"POST /graphql": 1, "PUT /repos/o/r/pulls/42/update-branch": 0, "GET /repos/o/r/commits/def456/check-runs": 1, "GET /repos/o/r/commits/abc123/check-runs": 0, "PUT /repos/o/r/pulls/42/merge": 1}},
+		},
+		{
+			name: "a fork line behind a base that is not strict, with --update-branch: the default rebase rebases the head",
+			routes: routes(pull(nil), greenHead("def456"), sequence.Routes{
+				"GET /repos/o/r/pulls/42": {
+					{Body: pull(map[string]any{"mergeable_state": "blocked"})},
+					{Body: pull(map[string]any{"mergeable_state": "blocked"})},
+					{Body: pull(map[string]any{"head": map[string]any{"sha": "def456", "ref": "feature", "repo": map[string]any{"full_name": "o/r"}}})},
+				},
+				"GET /repos/o/r/compare/main...abc123": {{Body: map[string]any{"status": "diverged", "ahead_by": 1, "behind_by": 2}}},
+				"POST /graphql":                        {{Body: map[string]any{"data": map[string]any{"updatePullRequestBranch": map[string]any{"pullRequest": map[string]any{"id": "PR_1"}}}}}},
+			}),
+			configure: func(c *Config) {
+				c.UpdateBranch = true
+				c.Policy = verdict(Verdict{Team: "team-a", ForkLine: true})
+			},
+			want: want{method: "rebase", mergedBy: "someone", mergeSHA: "m1", deleted: true, headSHA: "def456",
+				requested: map[string]int{"POST /graphql": 1, "PUT /repos/o/r/pulls/42/update-branch": 0, "GET /repos/o/r/commits/def456/check-runs": 1, "PUT /repos/o/r/pulls/42/merge": 1}},
+		},
+		{
+			name: "GitHub refuses the rebase update: an error, nothing merged",
+			routes: routes(pull(map[string]any{"mergeable_state": "behind"}), sequence.Routes{
+				"POST /graphql": {{Body: map[string]any{"data": nil, "errors": []any{map[string]any{"message": "Rebase failed due to conflicts"}}}}},
+			}),
+			configure: func(c *Config) {
+				c.UpdateBranch = true
+				c.Method = githubclient.MergeRebase
+			},
+			want: want{code: -1, method: "rebase", headSHA: "abc123",
+				requested: map[string]int{"POST /graphql": 1, "PUT /repos/o/r/pulls/42/update-branch": 0, "PUT /repos/o/r/pulls/42/merge": 0}},
 		},
 		{
 			name: "behind a base that is not strict, with --update-branch: update before judging the old head, merge",
@@ -335,13 +496,55 @@ func Test_Merge_paths(t *testing.T) {
 			}),
 			configure: func(c *Config) { c.UpdateBranch = true },
 			want: want{method: "squash", mergedBy: "someone", mergeSHA: "m1", deleted: true, headSHA: "abc123",
-				requested: map[string]int{"GET /repos/o/r/compare/main...abc123": 1, "PUT /repos/o/r/pulls/42/update-branch": 0, "PUT /repos/o/r/pulls/42/merge": 1}},
+				requested: map[string]int{"GET /repos/o/r/compare/main...abc123": 2, "PUT /repos/o/r/pulls/42/update-branch": 0, "PUT /repos/o/r/pulls/42/merge": 1}},
 		},
 		{
-			name:   "without --update-branch the base is not compared",
+			name:   "up to date without --update-branch: the base is compared before and after the wait, the head merged",
 			routes: routes(pull(map[string]any{"mergeable_state": "blocked"})),
 			want: want{method: "squash", mergedBy: "someone", mergeSHA: "m1", deleted: true, headSHA: "abc123",
-				requested: map[string]int{"GET /repos/o/r/compare/main...abc123": 0, "PUT /repos/o/r/pulls/42/update-branch": 0, "PUT /repos/o/r/pulls/42/merge": 1}},
+				requested: map[string]int{"GET /repos/o/r/compare/main...abc123": 2, "PUT /repos/o/r/pulls/42/update-branch": 0, "PUT /repos/o/r/pulls/42/merge": 1}},
+		},
+		{
+			name: "the base moves during the wait, without --update-branch: exit 3, nothing merged",
+			routes: routes(pull(nil), sequence.Routes{
+				"GET /repos/o/r/compare/main...abc123": {
+					{Body: map[string]any{"status": "ahead", "ahead_by": 1, "behind_by": 0}},
+					{Body: map[string]any{"status": "diverged", "ahead_by": 1, "behind_by": 3}},
+				},
+			}),
+			want: want{code: 3, reason: "3 commit(s) behind main: its checks ran against an older main than the one the merge lands it on (main moved during the wait); --update-branch", method: "squash", headSHA: "abc123",
+				requested: map[string]int{"GET /repos/o/r/commits/abc123/check-runs": 1, "PUT /repos/o/r/pulls/42/update-branch": 0, "PUT /repos/o/r/pulls/42/merge": 0}},
+		},
+		{
+			name: "the base moves during the wait, with --update-branch: update, wait for the new head, merge it",
+			routes: routes(pull(nil), greenHead("def456"), sequence.Routes{
+				"GET /repos/o/r/pulls/42": {
+					{Body: pull(nil)}, {Body: pull(nil)}, {Body: pull(nil)}, {Body: pull(nil)},
+					{Body: pull(map[string]any{"head": map[string]any{"sha": "def456", "ref": "feature", "repo": map[string]any{"full_name": "o/r"}}})},
+				},
+				"GET /repos/o/r/compare/main...abc123": {
+					{Body: map[string]any{"status": "ahead", "ahead_by": 1, "behind_by": 0}},
+					{Body: map[string]any{"status": "diverged", "ahead_by": 1, "behind_by": 3}},
+				},
+				"PUT /repos/o/r/pulls/42/update-branch": {{Status: http.StatusAccepted, Body: map[string]any{"message": "Updating pull request branch.", "url": "https://api.github.com/repos/o/r/pulls/42"}}},
+			}),
+			configure: func(c *Config) { c.UpdateBranch = true },
+			want: want{method: "squash", mergedBy: "someone", mergeSHA: "m1", deleted: true, headSHA: "def456",
+				requested: map[string]int{"GET /repos/o/r/commits/abc123/check-runs": 1, "PUT /repos/o/r/pulls/42/update-branch": 1, "GET /repos/o/r/commits/def456/check-runs": 1, "GET /repos/o/r/compare/main...def456": 1, "PUT /repos/o/r/pulls/42/merge": 1}},
+		},
+		{
+			name: "behind a merge-queue base without --update-branch: the queue tests it against the base, no comparison",
+			routes: routes(pull(nil), sequence.Routes{
+				"GET /repos/o/r/pulls/42": {
+					{Body: pull(nil)}, {Body: pull(nil)}, {Body: pull(nil)},
+					{Body: pull(map[string]any{"state": "closed", "merged": true, "merge_commit_sha": "q1", "merged_by": map[string]any{"login": "queue-enqueuer"}})},
+				},
+				"GET /repos/o/r/rules/branches/main":   {{Body: []any{map[string]any{"type": "merge_queue", "ruleset_id": 1}}}},
+				"GET /repos/o/r/compare/main...abc123": {{Body: map[string]any{"status": "diverged", "ahead_by": 1, "behind_by": 2}}},
+				"POST /graphql":                        {{Body: map[string]any{"data": map[string]any{"enqueuePullRequest": map[string]any{"mergeQueueEntry": map[string]any{"id": "MQE_1"}}}}}},
+			}),
+			want: want{method: "squash", mergedBy: "queue-enqueuer", mergeSHA: "q1", deleted: true, enqueued: true, headSHA: "abc123",
+				requested: map[string]int{"GET /repos/o/r/compare/main...abc123": 0, "POST /graphql": 1, "PUT /repos/o/r/pulls/42/merge": 0}},
 		},
 		{
 			name: "a mergeable state not computed yet is read again",
@@ -628,7 +831,7 @@ func Test_New_method(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.method != githubclient.MergeSquash || m.timeout != prwait.DefaultTimeout || m.policy == nil {
+	if m.method != githubclient.MergeSquash || !m.methodDefault || m.timeout != prwait.DefaultTimeout || m.policy == nil {
 		t.Errorf("defaults: %+v", m)
 	}
 }
@@ -647,6 +850,8 @@ func Test_TeamFilePolicy(t *testing.T) {
 		routes       sequence.Routes
 		wantRefusal  string
 		wantTeam     string
+		wantFork     bool
+		wantWarning  string
 		wantErr      bool
 		wantRequests int
 	}{
@@ -662,6 +867,18 @@ func Test_TeamFilePolicy(t *testing.T) {
 			"GET /repos/giantswarm/github/contents/repositories":             {dir},
 			"GET /repos/giantswarm/github/contents/repositories/team-a.yaml": {teamFile("- name: svc\n")},
 		}, wantRequests: 2},
+		{name: "an entry with the fork flavour is a fork line", owner: "giantswarm", repo: "line", routes: sequence.Routes{
+			"GET /repos/giantswarm/github/contents/repositories":             {dir},
+			"GET /repos/giantswarm/github/contents/repositories/team-a.yaml": {teamFile("- name: line\n  gen:\n    flavours:\n      - fork\n    language: go\n")},
+		}, wantTeam: "team-a", wantFork: true, wantRequests: 2},
+		{name: "an entry with other flavours is no fork line", owner: "giantswarm", repo: "svc", routes: sequence.Routes{
+			"GET /repos/giantswarm/github/contents/repositories":             {dir},
+			"GET /repos/giantswarm/github/contents/repositories/team-a.yaml": {teamFile("- name: svc\n  gen:\n    flavours:\n      - app\n    language: go\n")},
+		}, wantTeam: "team-a", wantRequests: 2},
+		{name: "flavours that do not decode are no fork line, with a warning", owner: "giantswarm", repo: "odd", routes: sequence.Routes{
+			"GET /repos/giantswarm/github/contents/repositories":             {dir},
+			"GET /repos/giantswarm/github/contents/repositories/team-a.yaml": {teamFile("- name: odd\n  gen:\n    flavours: fork\n")},
+		}, wantTeam: "team-a", wantWarning: "is not taken for a fork line", wantRequests: 2},
 		{name: "a repository outside the organisation is not looked up", owner: "o", repo: "r", routes: sequence.Routes{}, wantRequests: 0},
 		{name: "team files the token cannot read are an error, not a guess", owner: "giantswarm", repo: "svc", routes: sequence.Routes{}, wantErr: true, wantRequests: 1},
 	}
@@ -687,6 +904,12 @@ func Test_TeamFilePolicy(t *testing.T) {
 			}
 			if verdict.Team != tc.wantTeam {
 				t.Errorf("want team %q, got %q", tc.wantTeam, verdict.Team)
+			}
+			if verdict.ForkLine != tc.wantFork {
+				t.Errorf("want fork line %v, got %v", tc.wantFork, verdict.ForkLine)
+			}
+			if !strings.Contains(verdict.Warning, tc.wantWarning) || (tc.wantWarning == "" && verdict.Warning != "") {
+				t.Errorf("want warning %q, got %q", tc.wantWarning, verdict.Warning)
 			}
 			if n := len(server.Requests()); n != tc.wantRequests {
 				t.Errorf("want %d request(s), got %d: %v", tc.wantRequests, n, server.Requests())
@@ -742,4 +965,261 @@ func withBypass(ruleset map[string]any, mode string) map[string]any {
 	out := maps.Clone(ruleset)
 	out["current_user_can_bypass"] = mode
 	return out
+}
+
+// Test_Merge_commitSubject: a squash and a merge commit both carry the
+// title with its number as their subject, the one auto-release reads; a
+// rebase keeps the commits' own.
+func Test_Merge_commitSubject(t *testing.T) {
+	tests := []struct {
+		name      string
+		settings  map[string]any
+		method    githubclient.MergeMethod
+		wantTitle string
+	}{
+		{name: "squash", settings: settings(true, true, true), wantTitle: "feat: thing (#42)"},
+		{name: "merge commit", settings: settings(true, false, false), wantTitle: "feat: thing (#42)"},
+		{name: "rebase", settings: settings(true, true, true), method: githubclient.MergeRebase},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			server, err := githubmock.Start(routes(pull(nil), sequence.Routes{"GET /repos/o/r": {{Body: tc.settings}}}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(server.Close)
+			target, err := url.Parse(server.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			upstream := httputil.NewSingleHostReverseProxy(target)
+			var body map[string]any
+			proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPut {
+					_ = json.NewDecoder(r.Body).Decode(&body)
+					r.Body, r.ContentLength = http.NoBody, 0
+				}
+				upstream.ServeHTTP(w, r)
+			}))
+			t.Cleanup(proxy.Close)
+			h := newHarnessAt(t, server, proxy.URL, func(c *Config) { c.Method = tc.method })
+			if _, err := h.merge(t); err != nil {
+				t.Fatal(err)
+			}
+			if title, _ := body["commit_title"].(string); title != tc.wantTitle {
+				t.Errorf("want commit_title %q, got %q (body %v)", tc.wantTitle, title, body)
+			}
+		})
+	}
+}
+
+// A merge call whose answer is lost (the connection reset after GitHub
+// merged) is settled by reading the pull request again: merged, the merge
+// goes on with GitHub's merge commit; open, the call's error stands;
+// unreadable, the error says the merge is unknown, never that nothing
+// merged.
+func Test_Merge_callFailedInTransit(t *testing.T) {
+	tests := []struct {
+		name string
+		// after is the pull request the read after the merge call gets;
+		// nil resets that read too.
+		after       map[string]any
+		wantErr     string
+		wantMerge   string
+		wantWarning string
+	}{
+		{name: "GitHub merged", after: pull(map[string]any{"state": "closed", "merged": true, "merge_commit_sha": "m9", "merged_by": map[string]any{"login": "someone"}}),
+			wantMerge: "m9", wantWarning: "GitHub reports o/r#42 merged as m9 by someone"},
+		{name: "GitHub did not merge", after: pull(nil), wantErr: "/repos/o/r/pulls/42/merge"},
+		{name: "the read fails too", wantErr: "whether it merged is unknown, reading the pull request failed too"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			server, err := githubmock.Start(routes(pull(nil)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(server.Close)
+			target, err := url.Parse(server.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			upstream := httputil.NewSingleHostReverseProxy(target)
+			called := false
+			proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch {
+				case r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/merge"):
+					called = true
+					resetConnection(t, w)
+				case called && r.Method == http.MethodGet && r.URL.Path == "/repos/o/r/pulls/42" && tc.after == nil:
+					resetConnection(t, w)
+				case called && r.Method == http.MethodGet && r.URL.Path == "/repos/o/r/pulls/42":
+					w.Header().Set("Content-Type", "application/json")
+					_ = json.NewEncoder(w).Encode(tc.after)
+				default:
+					upstream.ServeHTTP(w, r)
+				}
+			}))
+			t.Cleanup(proxy.Close)
+			h := newHarnessAt(t, server, proxy.URL, nil)
+			result, err := h.merge(t)
+			if tc.wantErr != "" {
+				if err == nil || exitCode(err) != -1 || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("want a tooling failure containing %q, got exit %d: %v", tc.wantErr, exitCode(err), err)
+				}
+				if strings.Contains(err.Error(), "nothing merged") || result.MergeCommitSHA != "" || result.BranchDeleted {
+					t.Errorf("result: %+v", result)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.MergeCommitSHA != tc.wantMerge || result.MergedBy != "someone" || !result.BranchDeleted {
+				t.Errorf("result: %+v", result)
+			}
+			if !strings.Contains(strings.Join(result.Warnings, "\n"), tc.wantWarning) {
+				t.Errorf("want a warning containing %q, got %q", tc.wantWarning, result.Warnings)
+			}
+		})
+	}
+}
+
+// resetConnection closes the connection with a TCP reset: the client reads
+// "connection reset by peer".
+func resetConnection(t *testing.T, w http.ResponseWriter) {
+	conn, _, err := w.(http.Hijacker).Hijack()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	if tcp, ok := conn.(*net.TCPConn); ok {
+		_ = tcp.SetLinger(0)
+	}
+	_ = conn.Close()
+}
+
+// A 5xx on the merge call: the pull request is read once; merged, the merge
+// is a success without a second call; open, the call is repeated.
+func Test_Merge_retriesA5xx(t *testing.T) {
+	tests := []struct {
+		name      string
+		after     map[string]any
+		wantCalls int
+	}{
+		{name: "502 then 200", after: pull(nil), wantCalls: 2},
+		{name: "502 and merged meanwhile", after: pull(map[string]any{"state": "closed", "merged": true, "merge_commit_sha": "m9", "merged_by": map[string]any{"login": "someone"}}), wantCalls: 1},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			server, err := githubmock.Start(routes(pull(nil)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(server.Close)
+			target, err := url.Parse(server.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			upstream := httputil.NewSingleHostReverseProxy(target)
+			calls := 0
+			proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch {
+				case r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/merge") && calls == 0:
+					calls++
+					http.Error(w, `{"message":"Server Error"}`, http.StatusBadGateway)
+				case r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/merge"):
+					calls++
+					upstream.ServeHTTP(w, r)
+				case calls == 1 && r.Method == http.MethodGet && r.URL.Path == "/repos/o/r/pulls/42":
+					w.Header().Set("Content-Type", "application/json")
+					_ = json.NewEncoder(w).Encode(tc.after)
+				default:
+					upstream.ServeHTTP(w, r)
+				}
+			}))
+			t.Cleanup(proxy.Close)
+			h := newHarnessAt(t, server, proxy.URL, nil)
+			result, err := h.merge(t)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if calls != tc.wantCalls || result.MergeCommitSHA == "" {
+				t.Errorf("want %d merge call(s) and a merge commit, got %d, %+v", tc.wantCalls, calls, result)
+			}
+		})
+	}
+}
+
+func Test_refuseBehind(t *testing.T) {
+	pr := &github.PullRequest{Base: &github.PullRequestBranch{Ref: new("main")}}
+	tests := []struct {
+		name         string
+		updateBranch bool
+		behind       int
+		round        int
+		wantReason   string // empty: update it
+	}{
+		{name: "strict, no flag", behind: behindStrict, round: 1, wantReason: "the pull request is behind main, which requires branches to be up to date; --update-branch updates it from main and waits for its checks again"},
+		{name: "not strict, no flag", behind: 4, round: 1, wantReason: "the pull request is 4 commit(s) behind main: its checks ran against an older main than the one the merge lands it on; --update-branch"},
+		{name: "moved during the wait, no flag", behind: 1, round: 2, wantReason: "(main moved during the wait); --update-branch"},
+		{name: "flag, first round", updateBranch: true, behind: 4, round: 1},
+		{name: "flag, last round", updateBranch: true, behind: 1, round: updateRounds},
+		{name: "flag, the base moved during every wait", updateBranch: true, behind: 1, round: updateRounds + 1, wantReason: "(main moved during the wait) after 3 waits; run the merge again once main is quiet"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := (&Merger{updateBranch: tc.updateBranch}).refuseBehind(pr, tc.behind, tc.round)
+			if tc.wantReason == "" {
+				if err != nil {
+					t.Fatalf("want an update, got %v", err)
+				}
+				return
+			}
+			var exitErr *agentcli.ExitError
+			if !errors.As(err, &exitErr) || exitErr.Code != agentcli.ExitNotApplicable || !strings.Contains(exitErr.Reason, tc.wantReason) {
+				t.Fatalf("want exit 3 with %q, got %v", tc.wantReason, err)
+			}
+		})
+	}
+}
+
+func Test_Merge_gatekeeperPendingAndReviewMissingEndsWithTheReview(t *testing.T) {
+	// The required check is green, a gatekeeper app the base does not
+	// require stays in progress until the pull request is reviewed, and
+	// GitHub declines the merge for the missing review: the merge ends with
+	// the review rule, not at the wait's timeout, and the document names
+	// both.
+	declined := sequence.Response{Status: http.StatusMethodNotAllowed, Body: map[string]any{
+		"message": "Repository rule violations found\n\nAt least 1 approving review is required by reviewers with write access.\n\n",
+	}}
+	h := newHarness(t, routes(pull(map[string]any{"mergeable_state": "blocked"}), sequence.Routes{
+		"GET /repos/o/r/commits/abc123/check-runs": {{Body: map[string]any{"total_count": 2, "check_runs": []any{
+			map[string]any{"id": 1, "name": "go-build", "status": "completed", "conclusion": "success", "html_url": "https://github.com/o/r/runs/1"},
+			map[string]any{"id": 2, "name": "Heimdall - PR Gatekeeper", "status": "in_progress", "html_url": "https://github.com/o/r/runs/2", "app": map[string]any{"slug": "tinkerers-ci"}},
+		}}}},
+		"POST /graphql":                 {{Body: map[string]any{"data": map[string]any{"repository": map[string]any{"pullRequest": map[string]any{"reviewDecision": "REVIEW_REQUIRED"}}}}}},
+		"PUT /repos/o/r/pulls/42/merge": {declined},
+		"GET /repos/o/r/rules/branches/main": {{Body: []any{
+			map[string]any{"type": "required_status_checks", "parameters": map[string]any{"required_status_checks": []any{map[string]any{"context": "go-build"}}}},
+			map[string]any{"type": "pull_request", "ruleset_source_type": "Repository", "ruleset_source": "o/r", "ruleset_id": 7, "parameters": map[string]any{"required_approving_review_count": 1}},
+		}}},
+		"GET /repos/o/r/rulesets/7": {{Body: map[string]any{"id": 7, "name": "devctl: default branch", "source_type": "Repository", "source": "o/r", "enforcement": "active", "current_user_can_bypass": "never"}}},
+	}), nil)
+
+	result, err := h.merge(t)
+	var exitErr *agentcli.ExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != agentcli.ExitNotApplicable {
+		t.Fatalf("want exit %d, got %v\n%s", agentcli.ExitNotApplicable, err, h.progress.String())
+	}
+	if !strings.Contains(exitErr.Reason, "approving review is required") {
+		t.Errorf("want the review rule in the reason, got %q", exitErr.Reason)
+	}
+	want := []string{
+		"check Heimdall - PR Gatekeeper (in_progress, not required, not waited for)",
+		"review: an approving review the base requires is missing",
+	}
+	if strings.Join(result.Blocking, "\n") != strings.Join(want, "\n") {
+		t.Errorf("blocking: want %q, got %q", want, result.Blocking)
+	}
 }

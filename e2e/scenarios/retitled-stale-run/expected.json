@@ -15,7 +15,7 @@
     "headSha": "abc123",
     "baseRef": "main",
     "checks": [
-      {"name": "PR title", "source": "check_run", "status": "completed", "conclusion": "success", "url": "*", "required": false}
+      {"name": "PR title", "id": 102, "source": "check_run", "status": "completed", "conclusion": "success", "url": "*", "required": false}
     ],
     "actions": [
       {"name": "PR title", "runId": 7002, "status": "completed", "conclusion": "success", "url": "*"}

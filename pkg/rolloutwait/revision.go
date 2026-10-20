@@ -50,6 +50,9 @@ const (
 	KindGitRepository = "GitRepository"
 	KindKustomization = "Kustomization"
 	KindKonfiguration = "Konfiguration"
+	// KindConfigMap is the values a Konfiguration renders for a changed
+	// app that no HelmRelease or App takes.
+	KindConfigMap = "ConfigMap"
 )
 
 var (
@@ -57,6 +60,7 @@ var (
 	kustomizations  = schema.GroupVersionResource{Group: "kustomize.toolkit.fluxcd.io", Version: "v1", Resource: "kustomizations"}
 	konfigurations  = schema.GroupVersionResource{Group: "konfigure.giantswarm.io", Version: "v1alpha1", Resource: "konfigurations"}
 	configMaps      = schema.GroupVersionResource{Version: "v1", Resource: "configmaps"}
+	charts          = apps.GroupVersion().WithResource("charts")
 )
 
 // labelRevision is the label konfigure-operator puts on what it renders:
@@ -150,6 +154,8 @@ func (w *Waiter) revisionConsumers(ctx context.Context, sources []object) ([]Dep
 		return list, nil
 	}
 
+	// followed are the rendered values a HelmRelease or an App takes.
+	followed := map[string]bool{}
 	hrs, err := w.list(ctx, helmReleases, "")
 	if err != nil {
 		return nil, err
@@ -157,7 +163,11 @@ func (w *Waiter) revisionConsumers(ctx context.Context, sources []object) ([]Dep
 	for i := range hrs {
 		hr := &hrs[i]
 		for _, r := range rendered {
-			if r.namespace == hr.GetNamespace() && (r.touched || w.named(hr.GetNamespace(), hr.GetName())) && takesValuesFrom(hr, r.name) {
+			if r.namespace == hr.GetNamespace() && takesValuesFrom(hr, r.name) {
+				followed[r.id()] = true
+				if !r.touched && !w.named(hr.GetNamespace(), hr.GetName()) {
+					continue
+				}
 				d, err := w.judgeValuesHelmRelease(ctx, hr, r)
 				if err != nil {
 					return nil, err
@@ -165,6 +175,37 @@ func (w *Waiter) revisionConsumers(ctx context.Context, sources []object) ([]Dep
 				list = append(list, d)
 				break
 			}
+		}
+	}
+
+	items, err := w.list(ctx, apps, "")
+	if err != nil {
+		return nil, err
+	}
+	for i := range items {
+		app := &items[i]
+		for _, r := range rendered {
+			if appTakesValuesFrom(app, r) {
+				followed[r.id()] = true
+				if !r.touched {
+					continue
+				}
+				d, err := w.judgeValuesApp(ctx, app, r)
+				if err != nil {
+					return nil, err
+				}
+				list = append(list, d)
+				break
+			}
+		}
+	}
+
+	// The values of a changed app that nothing takes: whether the change
+	// runs cannot be told, so it is not reported rolled out.
+	for _, r := range rendered {
+		if r.touched && !followed[r.id()] {
+			d := Deployment{Kind: KindConfigMap, Namespace: r.namespace, Name: r.name, Follows: r.konfiguration.String(), Workloads: []Workload{}}
+			list = append(list, d.set(StateUnknown, "no HelmRelease or App on %s takes these values: whether the change runs there cannot be told", w.installation))
 		}
 	}
 	return list, nil
@@ -304,6 +345,8 @@ type renderedValues struct {
 	touched bool
 }
 
+func (r renderedValues) id() string { return r.namespace + "/" + r.name }
+
 // renderedFor are the values a Konfiguration renders, one per iteration
 // (app), named <prefix>-<app>-<suffix>.
 func (w *Waiter) renderedFor(k *unstructured.Unstructured) []renderedValues {
@@ -349,9 +392,9 @@ func takesValuesFrom(hr *unstructured.Unstructured, name string) bool {
 
 // judgeValuesHelmRelease judges a HelmRelease whose values a Konfiguration
 // renders: rolled out once it deployed after the ConfigMap took the merge
-// commit (or handled the reconcile --reconcile requested after it did,
-// which reads the values as they are), is ready and its workloads are
-// rolled out.
+// commit, took new values after the merge, or handled the reconcile
+// --reconcile requested after it did (which reads the values as they are),
+// is ready and its workloads are rolled out.
 func (w *Waiter) judgeValuesHelmRelease(ctx context.Context, hr *unstructured.Unstructured, r renderedValues) (Deployment, error) {
 	d := Deployment{
 		Kind: KindHelmRelease, Namespace: hr.GetNamespace(), Name: hr.GetName(),
@@ -396,12 +439,12 @@ func (w *Waiter) judgeValuesHelmRelease(ctx context.Context, hr *unstructured.Un
 	current := num(hr, "status", "observedGeneration") >= hr.GetGeneration()
 	requestedAt, requested := w.requested[self.String()]
 	handled := requested && str(hr, "status", "lastHandledReconcileAt") == requestedAt
-	if !lastDeployed.Before(renderedAt) || handled {
+	if !lastDeployed.Before(renderedAt) || handled || w.helmReleaseTookNewValues(hr) {
 		if !current || ready.status != conditionTrue {
 			return d.set(StateProgressing, "upgraded with the values of %s, the HelmRelease not ready: %s", short(w.revision), orUnknown(ready)), nil
 		}
 		if _, remote, _ := unstructured.NestedMap(hr.Object, "spec", "kubeConfig"); remote {
-			w.warnOnce(fmt.Sprintf("%s deploys to a remote cluster: its workloads are not checked, helm-controller's wait vouches for them", d.id()))
+			w.warnPoll(fmt.Sprintf("%s deploys to a remote cluster: its workloads are not checked, helm-controller's wait vouches for them", d.id()))
 			return d.set(StateRolledOut, ""), nil
 		}
 		return w.judgeWorkloads(ctx, d, releaseNamespace, release)
@@ -414,8 +457,71 @@ func (w *Waiter) judgeValuesHelmRelease(ctx context.Context, hr *unstructured.Un
 	return d.set(StateProgressing, "last deployed %s, before %s rendered the values of %s at %s: waiting for helm-controller (its interval, or --reconcile); values that render the same never upgrade", formatTime(lastDeployed), r.konfiguration, short(w.revision), formatTime(renderedAt)), nil
 }
 
-// lastWrite is the newest time a manager wrote the object: when
-// konfigure-operator last changed what it rendered.
+// konfigure-operator re-labels what it renders with every revision it
+// applies, so the rendered ConfigMap's last write is when it last rendered,
+// not when the values last changed: a deploy before it may well run them.
+// What a deployment applied tells instead: a deploy after the merge that
+// took values other than the deploy before it read the change, which
+// renders no earlier than the merge. helm-controller keeps few deploys in
+// status.history, so a chart that rolls often evicts that one: when every
+// kept deploy is after the merge, the change ran no later than they do.
+// (konfigure-operator rendering an older revision after the merge is not
+// told apart: its fetch interval.)
+
+// helmReleaseTookNewValues says whether a HelmRelease deployed, after the
+// merge, values (status.history's configDigest) other than its previous
+// deploy's, or deployed only after the merge as far as its history keeps.
+func (w *Waiter) helmReleaseTookNewValues(hr *unstructured.Unstructured) bool {
+	if w.mergedAt.IsZero() {
+		return false
+	}
+	history, _, _ := unstructured.NestedSlice(hr.Object, "status", "history")
+	for i := range history {
+		h, _ := history[i].(map[string]any)
+		at, _ := h["lastDeployed"].(string)
+		deployed, err := time.Parse(time.RFC3339, at)
+		if err != nil || deployed.Before(w.mergedAt) {
+			return false
+		}
+		if i+1 == len(history) {
+			return true
+		}
+		previous, _ := history[i+1].(map[string]any)
+		if digest, _ := h["configDigest"].(string); digest != "" && digest != previous["configDigest"] {
+			return true
+		}
+	}
+	return false
+}
+
+// chartNamespace is where app-operator creates the Chart of an App
+// deployed into the management cluster.
+const chartNamespace = "giantswarm"
+
+// appTookNewValues says whether an App deployed into the management cluster
+// deployed, after the merge, values other than before: app-operator writes
+// the values it merges for the App's Chart only when they change.
+func (w *Waiter) appTookNewValues(ctx context.Context, app *unstructured.Unstructured, lastDeployed time.Time) bool {
+	if inCluster, _, _ := unstructured.NestedBool(app.Object, "spec", "kubeConfig", "inCluster"); !inCluster || w.mergedAt.IsZero() {
+		return false
+	}
+	chart, err := w.client.Resource(charts).Namespace(chartNamespace).Get(ctx, app.GetName(), metav1.GetOptions{})
+	if err != nil {
+		return false
+	}
+	name, namespace := str(chart, "spec", "config", "configMap", "name"), str(chart, "spec", "config", "configMap", "namespace")
+	if name == "" {
+		return false
+	}
+	merged, err := w.client.Resource(configMaps).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return false
+	}
+	changed := lastWrite(merged)
+	return !changed.Before(w.mergedAt) && !lastDeployed.Before(changed)
+}
+
+// lastWrite is the newest time a manager wrote the object.
 func lastWrite(u *unstructured.Unstructured) time.Time {
 	var t time.Time
 	for _, f := range u.GetManagedFields() {

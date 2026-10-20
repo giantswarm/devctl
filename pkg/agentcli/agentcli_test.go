@@ -18,6 +18,32 @@ func (authErr) Error() string        { return "GitHub authentication required: r
 func (authErr) ExitCode() int        { return ExitAuthRequired }
 func (authErr) ExitVerdict() Verdict { return VerdictAuthRequired }
 
+func TestProgressWaiting(t *testing.T) {
+	// Without --progress the heartbeat says what the wait waits for once per
+	// HeartbeatInterval, and at once when it changes; with --progress the
+	// per-poll lines carry it and Waiting writes nothing.
+	var out bytes.Buffer
+	p := NewProgress(&out, false)
+	now := time.Date(2026, 10, 9, 16, 0, 0, 0, time.UTC)
+	p.Waiting(now, "circleci workflow build (running)")
+	p.Waiting(now.Add(time.Minute), "circleci workflow build (running)")
+	p.Waiting(now.Add(90*time.Second), "circleci workflow build (running), status ci/circleci: push-chart (pending)")
+	p.Waiting(now.Add(2*time.Minute), "circleci workflow build (running), status ci/circleci: push-chart (pending)")
+	p.Waiting(now.Add(4*time.Minute), "circleci workflow build (running), status ci/circleci: push-chart (pending)")
+	want := "waiting for circleci workflow build (running)\n" +
+		"waiting for circleci workflow build (running), status ci/circleci: push-chart (pending)\n" +
+		"waiting for circleci workflow build (running), status ci/circleci: push-chart (pending)\n"
+	if out.String() != want {
+		t.Errorf("heartbeat:\n want %q\n got  %q", want, out.String())
+	}
+	out.Reset()
+	NewProgress(&out, true).Waiting(now, "anything")
+	if out.Len() != 0 {
+		t.Errorf("with --progress Waiting writes nothing, got %q", out.String())
+	}
+	NewProgress(nil, false).Waiting(now, "anything")
+}
+
 func TestEnvelopeFinish(t *testing.T) {
 	started := time.Date(2026, 9, 21, 10, 0, 0, 0, time.UTC)
 	finished := started.Add(2 * time.Second)
@@ -141,6 +167,35 @@ func TestClockSleepHonoursContext(t *testing.T) {
 	fixed := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	if got := NewClock(1, func() time.Time { return fixed }).Now(); got != fixed {
 		t.Fatalf("Now = %s", got)
+	}
+}
+
+// A scaled clock keeps its sleeps in milliseconds, but its timeouts never drop
+// below a real-time floor: a loaded machine must still get its first poll in.
+func TestClockTimeoutHasARealTimeFloor(t *testing.T) {
+	c := NewClock(0.001, nil)
+	if got := c.Scaled(time.Minute); got != 60*time.Millisecond {
+		t.Errorf("Scaled(1m) = %s, want 60ms", got)
+	}
+	cases := map[time.Duration]time.Duration{
+		time.Minute:            MinScaledTimeout,
+		2 * time.Hour:          2 * time.Hour / 1000,
+		MinScaledTimeout / 2:   MinScaledTimeout / 2,
+		500 * time.Millisecond: 500 * time.Millisecond,
+	}
+	for d, want := range cases {
+		if got := c.ScaledTimeout(d); got != want {
+			t.Errorf("ScaledTimeout(%s) = %s, want %s", d, got, want)
+		}
+	}
+	if got := NewClock(1, nil).ScaledTimeout(time.Minute); got != time.Minute {
+		t.Errorf("unscaled ScaledTimeout(1m) = %s", got)
+	}
+	ctx, cancel := c.Timeout(context.Background(), time.Minute)
+	defer cancel()
+	deadline, ok := ctx.Deadline()
+	if !ok || time.Until(deadline) < MinScaledTimeout-time.Second {
+		t.Errorf("Timeout(1m) ends in %s, want about %s", time.Until(deadline), MinScaledTimeout)
 	}
 }
 

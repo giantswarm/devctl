@@ -1,0 +1,24 @@
+# A declaration being added, validated by giantswarm-repo-manager: the entry
+# goes to validate_repository as it stands in the team file, with the team
+# the file's name, and the manager's answer -- its engine, the schema on
+# main, the name checked by its App, the entry rendered as it writes it --
+# is printed as it came, under the engine that answered.
+description: repo validate sends the entries being added to the manager's validate_repository and prints its answer
+args: [repo, validate, --team-file, team-e2e.yaml, --entry, new-cli]
+keyring:
+  muster:
+    login: e2e-engineer@example.com
+    token: muster_e2e
+    expiresAt: "2099-01-01T00:00:00Z"
+    refreshToken: muster_e2e_refresh
+    endpoint: "${DEVCTL_MUSTER_URL}"
+    issuer: "${MUSTER_ISSUER}"
+muster:
+  bearer: muster_e2e
+  tools:
+    x_giantswarm-repo-manager_validate_repository:
+      - args: {team: team-e2e, entries: [{name: new-cli, componentType: tool, gen: {flavours: [cli], language: go}}]}
+        result: {team: team-e2e, mode: create, schema: giantswarm/github@main,
+                 entries: [{name: new-cli, rendered: "- name: new-cli\n  componentType: tool\n  visibility: private\n  align: true\n  gen:\n    ci:\n      generate: true\n    flavours:\n      - cli\n    language: go\n",
+                            template: giantswarm/template, nameCheck: {verdict: free, detail: "no repository giantswarm/new-cli"}, accepted: true}],
+                 accepted: true, author: e2e-engineer, authorLogin: e2e-engineer, authorTeams: [team-e2e], teamsSource: github, machineApproved: true}

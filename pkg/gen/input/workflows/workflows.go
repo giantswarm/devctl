@@ -50,8 +50,19 @@ func (w *Workflows) AddCustomerBoardAutomation() input.Input {
 	return file.NewCustomerBoardAutomationInput(w.params)
 }
 
+func (w *Workflows) CheckReadmeLinks() input.Input {
+	return file.NewCheckReadmeLinksInput(w.params)
+}
+
 func (w *Workflows) CheckValuesSchema() input.Input {
 	return file.NewCheckValuesSchemaInput(w.params)
+}
+
+// ChartTests runs the chart unit tests (`make helm-test`) on a pull request.
+// CircleCI calls `make test` only through architect/go-build, so in a
+// chart-only app repository nothing else runs the suites.
+func (w *Workflows) ChartTests() input.Input {
+	return file.NewChartTestsInput(w.params)
 }
 
 func (w *Workflows) ClusterAppDocumentationValidation() input.Input {
@@ -75,6 +86,10 @@ func (w *Workflows) AutoReleaseDeletion() input.Input {
 
 func (w *Workflows) AutoReleaseLegacyDeletion() input.Input {
 	return file.NewAutoReleaseLegacyDeletionInput(w.params)
+}
+
+func (w *Workflows) ChangelogDeletion() input.Input {
+	return file.NewChangelogDeletionInput(w.params)
 }
 
 func (w *Workflows) CliffToml() input.Input {
@@ -119,6 +134,16 @@ func (w *Workflows) HelmDocsRegen() input.Input {
 
 func (w *Workflows) HelmRenderDiff() input.Input {
 	return file.NewHelmRenderDiff(w.params)
+}
+
+// Mctl returns the mctl workflows of a management-clusters repository.
+func (w *Workflows) Mctl() []input.Input {
+	return file.NewMctlInputs(w.params)
+}
+
+// MctlLegacyDeletion deletes the unprefixed workflows and op.env written by `mctl create cmc-repo`.
+func (w *Workflows) MctlLegacyDeletion() []input.Input {
+	return file.NewMctlLegacyDeletionInputs(w.params)
 }
 
 func (w *Workflows) PublishTechdocsInput() input.Input {

@@ -31,3 +31,7 @@ func Deprecated(p Params) bool {
 func Extends(p Params) []string {
 	return p.Extends
 }
+
+func Fork(p Params) bool {
+	return p.Fork
+}

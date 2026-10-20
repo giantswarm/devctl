@@ -16,7 +16,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/go-github/v92/github"
+	"github.com/google/go-github/v93/github"
 
 	"github.com/giantswarm/devctl/v8/pkg/circleciclient"
 	"github.com/giantswarm/devctl/v8/pkg/reposetup"
@@ -31,6 +31,7 @@ import (
 type fakeRepo struct {
 	owner, name, description string
 	private, archived        bool
+	topics                   []string
 	hasWiki, hasIssues, hasProjects, allowMerge, allowSquash, allowRebase,
 	allowUpdate, allowAuto, deleteOnMerge bool
 	squashTitle   string // PR_TITLE or COMMIT_OR_PR_TITLE
@@ -60,6 +61,7 @@ type fakeRepo struct {
 	// runs are served for their heads as for any ref.
 	merged       []*github.PullRequest
 	issues       []*github.Issue            // what GET /repos/{owner}/{repo}/issues lists
+	labels       map[string]*github.Label   // by lower-cased name: GitHub compares label names case-insensitively
 	history      []*github.RepositoryCommit // the commits behind the head of the default branch
 	issuesStatus int                        // HTTP status of the issues list when not 200
 	blobs        map[string][]byte
@@ -263,6 +265,9 @@ func newFakeGitHub() *fakeGitHub {
 	f.routes(mux)
 	f.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		r.URL.Path = strings.TrimPrefix(r.URL.Path, "/api/v3") // go-github's enterprise prefix
+		// The escaped path too: a label named team/<team> travels as
+		// team%2F<team>, one path segment.
+		r.URL.RawPath = strings.TrimPrefix(r.URL.RawPath, "/api/v3")
 		f.mu.Lock()
 		if r.Method != http.MethodGet && r.URL.Path != "/graphql" {
 			f.mutations = append(f.mutations, r.Method+" "+r.URL.Path)
@@ -285,6 +290,14 @@ func (r *fakeRepo) forkLine() *fakeRepo {
 	return r
 }
 
+// hasBranch says whether the repository carries the branch: its default, one
+// with files of its own or one with a head commit.
+func (r *fakeRepo) hasBranch(branch string) bool {
+	_, files := r.branchFiles[branch]
+	_, head := r.heads[branch]
+	return branch == r.defaultBranch || files || head
+}
+
 func (f *fakeGitHub) addRepo(owner, name string) *fakeRepo {
 	r := &fakeRepo{
 		owner: owner, name: name,
@@ -297,7 +310,8 @@ func (f *fakeGitHub) addRepo(owner, name string) *fakeRepo {
 		files:         map[string]string{},
 		branchFiles:   map[string]map[string]string{},
 		blobs:         map[string][]byte{}, trees: map[string][]*github.TreeEntry{}, commits: map[string]fakeCommit{},
-		heads: map[string]string{},
+		heads:  map[string]string{},
+		labels: map[string]*github.Label{TeamLabel(team): {Name: TeamLabel(team), Color: DefaultLabelColor}},
 		merged: []*github.PullRequest{{
 			Number: new(1), State: new("closed"), MergedAt: &github.Timestamp{Time: time.Now().Add(-24 * time.Hour)},
 			Head: &github.PullRequestBranch{SHA: new("merged-head"), Ref: new("merged")}, Base: &github.PullRequestBranch{Ref: new("main")},
@@ -384,6 +398,7 @@ func (r *fakeRepo) toGitHub() *github.Repository {
 		Owner:                  &github.User{Login: new(r.owner)},
 		Description:            new(r.description),
 		Private:                new(r.private),
+		Topics:                 r.topics,
 		CreatedAt:              &github.Timestamp{Time: r.createdAt},
 		Archived:               new(r.archived),
 		HasWiki:                new(r.hasWiki),
@@ -515,6 +530,7 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 		repo.hasWiki, repo.teams = true, map[string]string{} // GitHub's defaults, not the baseline
 		repo.squashTitle = "COMMIT_OR_PR_TITLE"
 		repo.files = map[string]string{}
+		repo.labels = map[string]*github.Label{} // GitHub's defaults, no team's
 		repo.empty = !in.GetAutoInit()
 		if in.GetAutoInit() {
 			repo.files["README.md"] = "# " + repo.name + "\n"
@@ -546,7 +562,25 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 		if v, ok := in["description"].(string); ok {
 			repo.description = v
 		}
+		if v, ok := in["default_branch"].(string); ok {
+			if !repo.hasBranch(v) {
+				writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"message": "Validation Failed"})
+				return
+			}
+			if _, ok := repo.heads[repo.defaultBranch]; !ok && v != repo.defaultBranch {
+				repo.heads[repo.defaultBranch] = "head" // the old default stays a branch
+			}
+			repo.defaultBranch = v
+		}
 		writeJSON(w, 200, repo.toGitHub())
+	}))
+	mux.HandleFunc("PUT /repos/{owner}/{repo}/topics", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		var in struct {
+			Names []string `json:"names"`
+		}
+		decode(r, &in)
+		repo.topics = in.Names
+		writeJSON(w, 200, in)
 	}))
 	mux.HandleFunc("DELETE /repos/{owner}/{repo}", f.withRepo(func(w http.ResponseWriter, _ *http.Request, repo *fakeRepo) {
 		delete(f.repos, repo.owner+"/"+repo.name)
@@ -616,6 +650,26 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 			out = append(out, is)
 		}
 		writeJSON(w, 200, out)
+	}))
+	mux.HandleFunc("GET /repos/{owner}/{repo}/labels/{name}", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		l, ok := repo.labels[strings.ToLower(r.PathValue("name"))]
+		if !ok {
+			notFound(w, "Not Found")
+			return
+		}
+		writeJSON(w, 200, l)
+	}))
+	mux.HandleFunc("POST /repos/{owner}/{repo}/labels", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		var in github.CreateIssueLabelRequest
+		decode(r, &in)
+		key := strings.ToLower(in.Name)
+		if _, ok := repo.labels[key]; ok {
+			writeJSON(w, 422, map[string]any{"message": "Validation Failed", "errors": []map[string]string{{"resource": "Label", "field": "name", "code": "already_exists"}}})
+			return
+		}
+		l := &github.Label{Name: in.Name, Color: in.GetColor(), Description: in.Description}
+		repo.labels[key] = l
+		writeJSON(w, 201, l)
 	}))
 	mux.HandleFunc("POST /repos/{owner}/{repo}/pulls", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
 		var in github.CreatePullRequest
@@ -798,9 +852,9 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 		writeJSON(w, 200, teams)
 	}))
 	mux.HandleFunc("PUT /orgs/{org}/teams/{slug}/repos/{owner}/{repo}", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
-		var in github.TeamAddTeamRepoOptions
+		var in github.AddTeamRepoRequest
 		decode(r, &in)
-		repo.teams[strings.ToLower(r.PathValue("slug"))] = in.Permission
+		repo.teams[strings.ToLower(r.PathValue("slug"))] = in.GetPermission()
 		w.WriteHeader(204)
 	}))
 	mux.HandleFunc("GET /repos/{owner}/{repo}/collaborators/{login}/permission", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
@@ -818,9 +872,9 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 			archivedReadOnly(w)
 			return
 		}
-		var in github.RepositoryAddCollaboratorOptions
+		var in github.AddCollaboratorRequest
 		decode(r, &in)
-		repo.collaborators[r.PathValue("login")] = in.Permission
+		repo.collaborators[r.PathValue("login")] = in.GetPermission()
 		writeJSON(w, 201, map[string]any{})
 	}))
 	mux.HandleFunc("DELETE /repos/{owner}/{repo}/collaborators/{login}", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
@@ -836,10 +890,21 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 			NewName string `json:"new_name"`
 		}
 		decode(r, &in)
+		if repo.hasBranch(in.NewName) {
+			writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"message": "Validation Failed", "errors": []map[string]string{{"message": "New branch already exists"}}})
+			return
+		}
 		if r.PathValue("branch") == repo.defaultBranch {
 			repo.defaultBranch = in.NewName
 		}
 		writeJSON(w, 201, map[string]any{"name": in.NewName})
+	}))
+	mux.HandleFunc("GET /repos/{owner}/{repo}/branches/{branch}", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		if !repo.hasBranch(r.PathValue("branch")) {
+			notFound(w, "Branch not found")
+			return
+		}
+		writeJSON(w, 200, map[string]any{"name": r.PathValue("branch")})
 	}))
 	mux.HandleFunc("GET /repos/{owner}/{repo}/branches/{branch}/protection", f.withRepo(func(w http.ResponseWriter, _ *http.Request, repo *fakeRepo) {
 		p := repo.protection
@@ -1195,6 +1260,18 @@ func (f *fakeCircleCI) seedPipeline(p *fakeProject, vcs circleciclient.PipelineV
 	} else {
 		f.jobs[wfID] = []circleciclient.Job{{Name: "go-build", Status: status}}
 	}
+}
+
+// addPipelineFailedIn seeds a failed pipeline for tag, created now, whose one
+// workflow has go-build green and every job of failed red.
+func (f *fakeCircleCI) addPipelineFailedIn(p *fakeProject, tag string, failed ...string) {
+	f.addPipeline(p, tag, "failed")
+	wfID := p.pipelines[0].ID + "-wf"
+	jobs := []circleciclient.Job{{Name: "go-build", Status: "success"}}
+	for _, j := range failed {
+		jobs = append(jobs, circleciclient.Job{Name: j, Status: "failed"})
+	}
+	f.jobs[wfID] = jobs
 }
 
 // rerun seeds a rerun of the newest pipeline's workflow: a second workflow

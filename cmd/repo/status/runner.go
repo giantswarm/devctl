@@ -39,7 +39,8 @@ type output struct {
 	// it; nil when the record carries no entry.
 	Align *bool
 	// DefaultBranch is the entry's default branch, the baseline's when it
-	// declares none; Flavours the entry's gen.flavours.
+	// declares none, the repository's own on GitHub when the entry keeps it;
+	// Flavours the entry's gen.flavours.
 	DefaultBranch string
 	Flavours      []string
 	CheckedAt     time.Time
@@ -126,6 +127,9 @@ func fromRecord(record *manager.Record, endpoint string) (*output, error) {
 		align := fields.Align
 		out.Align = &align
 		out.DefaultBranch = fields.DefaultBranch
+		if out.DefaultBranch == "" && fields.KeepsDefaultBranch() && record.Reality != nil {
+			out.DefaultBranch = record.Reality.DefaultBranch
+		}
 		if out.DefaultBranch == "" {
 			out.DefaultBranch = reconcile.DefaultBaseline().DefaultBranch
 		}

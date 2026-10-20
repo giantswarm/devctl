@@ -43,6 +43,17 @@ type Params struct {
 	// (tests/ats/pyproject.toml + uv.lock instead of tests/ats/Pipfile). Derived
 	// from ATSVersion (major >= 1).
 	ATSKindCluster bool
+	// ATSKindNodeImage is the kind node image emitted as `kind_node_image` on
+	// both run-tests-with-ats jobs when ATSKindCluster is set.
+	ATSKindNodeImage string
+	// ATSImageRegistry is the registry the chart-test jobs log in to before
+	// pulling ATSPullImages.
+	ATSImageRegistry string
+	// ATSPullImages are the images, space-separated, both run-tests-with-ats
+	// jobs pull in their pre-steps -- logged in, with bounded retry and
+	// backoff -- so a transient registry `toomanyrequests` does not fail the
+	// job: app-test-suite, plus the kind node image when ATSKindCluster.
+	ATSPullImages string
 	// ATSKindConfig is the repo-owned kind Cluster configuration emitted as
 	// `kind_config` on both run-tests-with-ats jobs (the job passes it to
 	// `kind create cluster --config`: feature gates, runtime config, patches,
@@ -257,6 +268,14 @@ type Params struct {
 	// Defaults to "large"; raised per repo via gen.ci.resourceClass (the same
 	// knob the cli go-build job uses) for a memory-hungry monorepo verify/build.
 	NodeResourceClass string
+	// NodeJestMaxWorkers is the JEST_MAX_WORKERS the Node job exports, sized
+	// from NodeResourceClass's memory; a repo's test script passes it to jest
+	// as --maxWorkers. 0 (a class of unknown memory) exports nothing.
+	NodeJestMaxWorkers int
+	// NodeLintConcurrency is the BACKSTAGE_CLI_CONCURRENCY the Node job
+	// exports, sized from NodeResourceClass's memory; backstage-cli's repo lint
+	// and repo build read it. 0 exports nothing.
+	NodeLintConcurrency int
 	// NodeTestTarget is the package.json script the Node job runs for the
 	// verify phase (the make-target interface). Defaults to "test".
 	NodeTestTarget string

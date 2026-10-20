@@ -1,6 +1,11 @@
 {
   "exitCode": 2,
   "json": {
+    "engine": {
+      "name": "local",
+      "version": "*",
+      "reason": "--local"
+    },
     "team": "team-e2e",
     "mode": "existing",
     "schema": "embedded",

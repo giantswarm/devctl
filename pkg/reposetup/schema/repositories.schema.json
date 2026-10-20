@@ -25,6 +25,11 @@
         "default": true,
         "description": "The repository's opt-out from agent merges. With false no agent merges pull requests in this repository: devctl pr merge refuses with exit 5, naming this field, and the protection step writes the repository's ruleset without a bypass actor, so nothing merges past the required review. Plans and decision records merged by people after review are the case. With true (the default) agents merge through the ruleset's bypass actor, as everywhere else."
       },
+      "renovate": {
+        "type": "boolean",
+        "default": true,
+        "description": "The repository's opt-out from Renovate. With false align-files generates no renovate.json5 for the repository (devctl gen renovate is not run) and the reconciler's renovate step accepts a repository without a Renovate configuration or with one that disables Renovate; a configuration that keeps Renovate on is the finding 'renovate-declared-off', and deleting it stays with the team. With true (the default) the repository gets its generated renovate.json5 and the step checks that Renovate scans it. Requires devctl v8.140.0+."
+      },
       "botPRsSweep": {
         "type": "object",
         "additionalProperties": false,
@@ -109,7 +114,7 @@
         "properties": {
           "flavours": {
             "type": "array",
-            "description": "devctl flavours of the repository (see devctl docs/flavours.md), passed to every 'devctl gen' the sync runs. 'customer' repositories get the generated GitHub workflows plus a generated renovate.json5 extending the giantswarm base preset, and no CircleCI. 'fork' is a fork line, a repository that carries an upstream release plus the carried patches on the branch its defaultBranch declares: nothing is generated for it, the scaffold and CODEOWNERS steps are skipped on it, every other step runs as declared, and the settings step keeps rebase merges on (merge commits as the repository has them): the carried patches land by rebase merge, one upstream-ready commit each. Requires devctl v8.78.0+. 'plans' is a team plans repository -- versioned PRDs, their companion websites and the plan-workflow agent skills -- declared beside 'generic' with language 'generic' and no generated CI: it derives the template giantswarm/template-plans and generates nothing of its own.",
+            "description": "devctl flavours of the repository (see devctl docs/flavours.md), passed to every 'devctl gen' the sync runs. 'customer' repositories get the generated GitHub workflows plus a generated renovate.json5 extending the giantswarm base preset, and no CircleCI. 'fork' is a fork line, a repository that carries an upstream release plus the carried patches on the branch its defaultBranch declares: nothing is generated for it, the scaffold and CODEOWNERS steps are skipped on it, every other step runs as declared, and the settings step keeps rebase merges on (merge commits as the repository has them): the carried patches land by rebase merge, one upstream-ready commit each. Requires devctl v8.78.0+. 'plans' is a team plans repository -- versioned PRDs, their companion websites and the plan-workflow agent skills -- declared on its own with language 'generic' and no generated CI (a 'generic' beside it changes nothing): it derives the template giantswarm/template-plans, and 'devctl gen plans' writes its .claude/settings.json enabling the gs-plans plugin (other settings kept). Requires devctl with 'gen plans' for the settings file.",
             "items": {
               "type": "string",
               "enum": [
@@ -136,9 +141,13 @@
           "installUpdateChart": {
             "type": "boolean"
           },
+          "checkReadmeLinks": {
+            "type": "boolean",
+            "description": "Generate zz_generated.check_readme_links.yaml (app flavour only; on by default). The workflow checks the links in README.md: a pull request that touches README.md fails on a dead URL, a relative path that does not exist in the repository or a reversed link '(text)[url]', and a weekly run files links whose target moved as one issue, 'Broken links in README', updated on later runs and closed once the links are fixed. Set false to pass '--check-readme-links=false' to 'devctl gen workflows' and keep the workflow out of the repository; align-files would otherwise put it back on every run. Requires devctl v8.123.0+ (an older devctl generates it regardless)."
+          },
           "helmDocsRegen": {
             "type": "boolean",
-            "description": "Generate zz_generated.helm-docs-regen.yaml (passed to 'devctl gen workflows --helm-docs-regen'; app flavour only). On pull requests from renovate/ and dependabot/ branches that touch helm/ or .pre-commit-config.yaml, the workflow reruns the repo's helm-docs and helm-schema-<chart> pre-commit hooks and pushes the regenerated README and values.schema.json back onto the PR branch with the taylorbot PAT, so an image-tag or values-key bump no longer fails the pre-commit check on files only the hooks can rewrite. Requires devctl v8.55.0+."
+            "description": "Generate zz_generated.helm-docs-regen.yaml (passed to 'devctl gen workflows --helm-docs-regen'; app flavour only). On pull requests from renovate/ and dependabot/ branches that touch helm/ or .pre-commit-config.yaml, the workflow reruns the repo's helm-docs and helm-schema-<chart> pre-commit hooks and pushes the regenerated README and values.schema.json back onto the PR branch with a giantswarm-release GitHub App token, so an image-tag or values-key bump no longer fails the pre-commit check on files only the hooks can rewrite. Requires devctl v8.55.0+."
           },
           "language": {
             "type": "string",
@@ -332,7 +341,7 @@
               },
               "resourceClass": {
                 "type": "string",
-                "description": "Override the CircleCI resource_class on the cli-flavour go-build job (passed to '--resource-class'). Defaults to 'large'. Raise it (e.g. 'xlarge') for repos that need more RAM/CPU headroom for the cold cross-compile. Only applies to the cli flavour. Requires devctl v8.25.0+."
+                "description": "Override the CircleCI resource_class on the cli-flavour go-build job and the Node job (passed to '--resource-class'). Defaults to 'large'. Raise it (e.g. 'xlarge') for repos that need more RAM/CPU headroom for the cold cross-compile or a monorepo verify. The Node job sizes its tools' workers from the class's memory: JEST_MAX_WORKERS one per 4 GiB, BACKSTAGE_CLI_CONCURRENCY one per 8 GiB, lowered under the job's environment in .circleci/custom.yml. Requires devctl v8.25.0+."
               },
               "go": {
                 "type": "object",
@@ -477,6 +486,17 @@
             "description": "Filter upstream releases to those whose tag starts with this prefix, e.g. 'external-dns-helm-chart-'"
           }
         }
+      },
+      "topics": {
+        "type": "array",
+        "title": "Repository topics",
+        "description": "The repository's topics on GitHub, exactly these. Part of the desired state: the metadata step sets them with the reconciler's App, which holds administration, and keeps them in sync afterwards; a topic set on GitHub and not declared here is removed. An empty list removes every topic. Absent means the topics on GitHub are left as they are. GitHub's topic rules: lower-case letters, digits and hyphens, starting with a letter or digit, at most 50 characters, at most 20 topics. Requires devctl v8.133.0+.",
+        "items": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{0,49}$"
+        },
+        "uniqueItems": true,
+        "maxItems": 20
       },
       "visibility": {
         "type": "string",

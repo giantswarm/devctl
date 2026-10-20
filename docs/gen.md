@@ -29,6 +29,8 @@ devctl gen workflows --flavour cli
 
 Switching between values is bidirectional and self-cleaning: the chosen branch generates its own files and emits deletion inputs for the files of the other branch, so a flipped `--release-workflow` value over two consecutive gen runs leaves the repo with exactly one set of release files.
 
+A repository's release workflow is its declaration in giantswarm/github (`gen.ci.releaseWorkflow` in its team-file entry), which align-files passes as `--release-workflow`. Auto Release files added to a repository whose declaration says `legacy` are deleted again by the next run, so both places name the declaration as the place to change instead: a `legacy` run that deletes `zz_generated.auto_release.yaml` or `cliff.toml` warns on stderr, and the generated `zz_generated.validate_changelog.yaml` fails a pull request whose head carries either file (job "Release workflow matches the declaration").
+
 A fork line (`--flavour fork`) gets nothing generated on `legacy`. On `auto-release` it gets the release flow alone: the workflow, `cliff.toml` and the PR title check. `--release-branch` names the branch the line is consumed from (the declaration's `defaultBranch`, e.g. `giantswarm`), and pushes to that branch alone cut releases. A re-pin rebases that branch onto a new upstream commit, which leaves the line's earlier tags unreachable, while the upstream tags the mirror copies stay reachable. So the line counts from its highest stable tag rather than the nearest reachable one, and git-cliff counts only the tags of that tag's major. After a re-pin, the workflow moves that tag onto the commit the branch still shares with it, in its own checkout only, and the next candidate carries what changed since. `--maintenance-branches` (team file `gen.ci.maintenanceBranches: true`) adds the line's maintenance branches `release-X.Y`: each releases patches of its own X.Y series, counted from that series' highest stable tag, so a backported feature is a patch and the next minor stays the consumed branch's. A maintenance branch carries the same rendering as the consumed branch.
 
 ```nohighlight
@@ -37,18 +39,22 @@ devctl gen workflows --flavour app --language go --release-workflow=auto-release
 
 #### Release candidates and stable releases
 
-Every releasable push cuts the next release candidate, `vX.Y.Z-rc.N`, for the version git-cliff computes from the conventional commits since the last stable release:
+Every releasable push releases the version git-cliff computes from the conventional commits since the last stable release. A minor or major version is cut as the next release candidate, `vX.Y.0-rc.N`; a patch of the last stable release (only fixes and chores since it) is the fast path and is tagged `vX.Y.Z` stable on its push, so there is never a patch candidate:
 
-| Merge | Tag | Why |
+| Merge (after `v1.2.9`) | Tag | Why |
 |-------|-----|-----|
+| `fix: x` | `v1.2.10` | a patch of the last stable release, tagged stable on its push |
 | `feat: add x` | `v1.3.0-rc.1` | a `feat` puts the cycle on the next minor |
-| `chore(deps): bump y` | `v1.3.0-rc.2` | releasable, so the next candidate |
+| `fix: y` | `v1.3.0-rc.2` | a fix during a cycle rides its next candidate |
+| `chore(deps): bump y` | `v1.3.0-rc.3` | releasable, so the next candidate |
 | `docs: fix a typo` | none | `docs` is skipped, so there is nothing new to put in a candidate |
 | `refactor!: drop y` | `v2.0.0-rc.1` | a breaking change moves the target, and the series restarts at `rc.1` |
 
+The first release of a repository with no stable tag is a candidate. On a maintenance branch (`release-v3.x`, a fork line's `release-X.Y`) every release is a patch of its series, so it is tagged stable on its push. A patch candidate cut before this rule is released by the next releasable push as its stable version.
+
 A push whose commits git-cliff all skips (`docs`, `style`, `test`) or drops as non-conventional tags nothing, so a README typo cannot spend an rc number and a publish pipeline. A candidate is flagged as a GitHub pre-release, so it does not surface as the repo's "Latest release", and the `/^v.*/` CircleCI tag filter publishes it like any other tag.
 
-A stable release is cut only by running the workflow by hand with `release-type: stable`. It promotes the latest candidate since the last stable release: the workflow checks that candidate out, so the version, the release notes and the tag's commit are all the candidate's, and whatever merged after it waits for the next candidate. The run fails when there is no candidate to promote, when the candidate has no GitHub pre-release (the run that cut it did not finish), or when a commit status of its commit failed or is still pending (the pipelines that build and publish it report there). Only commit statuses count, which CircleCI writes; a GitHub Actions workflow of the repository's own that publishes on a tag reports check runs, and the promotion does not wait for it. `release-type: auto` applies the same rule as a push. A `stable` run queued behind a push run waits in the branch's concurrency group, where GitHub keeps one waiting run: a further push replaces it, and the promotion has to be started again.
+A stable minor or major release is cut only by running the workflow by hand with `release-type: stable`. It promotes the latest candidate since the last stable release, or the one its `version` input names (`vX.Y.Z-rc.N`, one of those candidates: one built while a later one still builds, or the one proven; any other tag fails the run): the workflow checks that candidate out, so the version, the release notes and the tag's commit are all the candidate's, and whatever merged after it waits for the next candidate. The run fails when there is no candidate to promote, when the candidate has no GitHub pre-release (the run that cut it did not finish), or when a commit status of its commit failed or is still pending (the pipelines that build and publish it report there). A failed `ci/circleci: sync-china-registry`, the in-China mirror the release does not require, is a warning on the run, not a refusal, as in `devctl release wait` and `devctl release promote`. Only commit statuses count, which CircleCI writes; a GitHub Actions workflow of the repository's own that publishes on a tag reports check runs, and the promotion does not wait for it. A repository's own rules for a stable release go in `.github/release-gate.custom.sh`: when the released commit carries it (the promoted candidate, or a patch push's head), the run executes it with bash on that checkout, with the version about to be tagged as its argument, after the version is decided and before the tag and the GitHub release are created; a non-zero exit fails the run and cuts neither. A repository without the script has no gate. A check in the tag's own pipeline runs after the release exists, so a refusal there leaves a release that looks published with nothing built. One commit releases one version: every run that is about to tag, a candidate or a stable, first reads the remote's tags, and when the commit already carries the release tag (`vX.Y.Z`, `vX.Y.Z-rc.N`) of another version the run fails naming both and cuts no tag and no release. A stable on its own candidate's commit is the same version and passes; a tag outside that pattern (an upstream pre-release) counts for nothing. `release-type: auto` applies the same rule as a push. A `stable` run queued behind a push run waits in the branch's concurrency group, where GitHub keeps one waiting run: a further push replaces it, and the promotion has to be started again.
 
 `cliff.toml`'s `[remote.github].repo` is read from the consuming repo's `origin` git remote URL, its `giantswarm/<repo>` path. A checkout with no origin remote, or one outside `giantswarm`, needs `--repo-name <repo>` instead; without either the command fails rather than silently writing `repo = ""`.
 
@@ -58,15 +64,25 @@ A stable release is cut only by running the workflow by hand with `release-type:
 
 How it works:
 
-- A `preflight` job reads the repo's own `.pre-commit-config.yaml`: every `helm-schema-<chart>` hook plus the hooks of the `norwoodj/helm-docs` entry, whose `rev` names the helm-docs release to install. Nothing in the workflow is repo-specific, so it needs no regeneration when a chart is added or a tool is bumped. No hooks (or no `TAYLORBOT_GITHUB_ACTION` secret, as on fork and Dependabot-triggered runs, which only see Dependabot secrets) skips the second job with a warning.
-- A `regen` job checks out the head branch with `secrets.TAYLORBOT_GITHUB_ACTION`, installs that helm-docs release (the schema hook installs and pins its own generator through `additional_dependencies`), and runs each hook twice through pre-commit: the first pass may rewrite files, the second pass has to be clean. A hook that still rewrites, or errors out, fails the job and nothing is pushed.
-- A changed tree is committed as `taylorbot <dev@giantswarm.io>` and pushed. The push uses the PAT because a `GITHUB_TOKEN` push does not re-trigger the required checks on the new commit. A clean tree is a no-op, so the run the push triggers on the new head exits without pushing again. Runs are serialised per head ref with `cancel-in-progress`.
-- `devctl gen renovate` lists `dev@giantswarm.io` in `gitIgnoredAuthors`, so Renovate treats the regen commit as its own and keeps rebasing and autoclosing the PR. A repo whose `renovate-custom.json5` sets its own `gitIgnoredAuthors` must repeat the address: Renovate replaces the array instead of merging it.
+- A `preflight` job reads the repo's own `.pre-commit-config.yaml`: every `helm-schema-<chart>` hook plus the hooks of the `norwoodj/helm-docs` entry, whose `rev` names the helm-docs release to install. Nothing in the workflow is repo-specific, so it needs no regeneration when a chart is added or a tool is bumped. No hooks (or no `RELEASE_BOT_CLIENT_ID`/`RELEASE_BOT_PRIVATE_KEY` secrets, as on fork and Dependabot-triggered runs, which only see Dependabot secrets) skips the second job with a warning.
+- A `regen` job mints a short-lived token of the `giantswarm-release` GitHub App (`secrets.RELEASE_BOT_CLIENT_ID`, `secrets.RELEASE_BOT_PRIVATE_KEY`), checks out the head branch with it, installs that helm-docs release (the schema hook installs and pins its own generator through `additional_dependencies`), and runs each hook twice through pre-commit: the first pass may rewrite files, the second pass has to be clean. A hook that still rewrites, or errors out, fails the job and nothing is pushed.
+- A changed tree is committed as `giantswarm-release[bot]` and pushed. The push uses the App token because a `GITHUB_TOKEN` push does not re-trigger the required checks on the new commit. A clean tree is a no-op, so the run the push triggers on the new head exits without pushing again. Runs are serialised per head ref with `cancel-in-progress`.
+- `devctl gen renovate` lists the regen commit's author `342014845+giantswarm-release[bot]@users.noreply.github.com` (and taylorbot's `dev@giantswarm.io` for repositories not regenerated yet) in `gitIgnoredAuthors`, so Renovate treats the regen commit as its own and keeps rebasing and autoclosing the PR. A repo whose `renovate-custom.json5` sets its own `gitIgnoredAuthors` must repeat the addresses: Renovate replaces the array instead of merging it. If the App token cannot be minted (the App is not installed on the repository, or its key is stale), the regen job fails loudly instead of skipping: that is a broken set-up to fix, not a missing secret.
 
 In giantswarm/github the flag is `gen.helmDocsRegen: true` on the repository entry.
 
 ```nohighlight
 devctl gen workflows --flavour app --language generic --helm-docs-regen
+```
+
+### README link check workflow
+
+The app flavour generates `.github/workflows/zz_generated.check_readme_links.yaml`, which calls the `check-readme-links` reusable workflow of giantswarm/github-workflows. A pull request that touches `README.md` fails on a dead URL, a relative path that does not exist in the repository or a reversed link `(text)[url]`. A weekly run catches links whose target moved without the README changing, which no pull request trigger sees, and files its findings as one issue, `Broken links in README`, updated on later runs and closed with a comment once the links are fixed. The issue is filed, updated and closed from the default branch only: a `workflow_dispatch` on another branch keeps its report in the job summary and the run's artifact. The ignore list and the checker versions live in giantswarm/github-workflows under `link-check/` and are taken from `main` whatever ref the generated workflow pins, so a fix there reaches every repository without a regeneration.
+
+`--check-readme-links=false` (app flavour only, on by default) keeps the workflow out of a repository. In giantswarm/github that is `gen.checkReadmeLinks: false` on the repository entry; without it align-files puts the workflow back on every run.
+
+```nohighlight
+devctl gen workflows --flavour app --language generic --check-readme-links=false
 ```
 
 ## Generating Makefiles
@@ -89,6 +105,8 @@ The `--language` flag sets the primary language (`go`, `python`, `generic`). The
 - `md` — Markdown linting via `markdownlint-cli`
 - `helmchart` — Helm chart schema and docs hooks (auto-detects charts under `helm/`)
 
+A Go repository's config also refuses a `require` line in any `go.mod` (single or in a block) whose trailing comment has more than one word (`go-mod-require-comment`): Renovate's gomod manager reads only a one-word comment such as `// indirect` and skips the whole line otherwise, so that dependency is never updated and nothing says so. The explanation goes on a comment line above the require.
+
 No hook reads protobuf-generated code: the config's top-level `exclude` skips `*_pb.*` (protoc-gen-es, grpc-tools), `*_pb2.py`, `*_pb2.pyi`, `*_pb2_grpc.py` and `*.pb.go` with its `_grpc`, `.gw`, `.validate` and `_vtproto` variants. Their generator is the source of truth, so a hook that rewrote them (`end-of-file-fixer` on buf's TypeScript output, `go-imports -local`, `ruff --fix`) would be undone by the next generation. Hand-written files next to them, a `gen/` directory's `README.md` or `buf.gen.yaml` included, are still checked. The fixer hooks also skip `testdata/`, `.yarn/` and the vendored subcharts under `helm/<chart>/charts/`.
 
 Examples:
@@ -110,6 +128,22 @@ devctl gen renovate --language LANGUAGE
 Note: The `LANGUAGE` value is not validated currently. `go`, `python` and `node` add the matching language preset; every other value (e.g. `generic`) renders the base preset alone.
 
 The giantswarm/github align-files workflow runs this generator for repositories on devctl-generated CI (with `--circleci-generated`, which disables Renovate's architect-orb updates and extends the ATS preset because `gen circleci` bakes those in) and for the [`customer` flavour](flavours.md#customer) (without it: customer repositories have no CircleCI). Every other repository keeps its hand-maintained `renovate.json5`.
+
+A GitHub fork takes `--flavour fork`. Renovate skips a fork ("Repository is a fork and not manually configured - skipping") unless its default config file, `renovate.json` and never `renovate.json5`, sets `forkProcessing` to `"enabled"` itself; a preset cannot set it. The fork flavour therefore writes the same config as JSONC (comments kept, otherwise strict JSON, which is how Renovate parses `renovate.json`) into `renovate.json` with that key, and removes `renovate.json5`; it leaves `.github/dependabot.yml`, which on a fork line is upstream's, where the other flavours remove it. The fork line's own rules (`enabledManagers`, `customManagers`, `dependencyDashboard`) go into `renovate-custom.json5` as on any other repository. A fork line whose config turns Renovate off (`enabled: false`) keeps it: the command refuses to replace the opt-out, and Renovate skips the fork anyway. align-files generates nothing for a fork line, so the command runs by hand.
+
+```nohighlight
+devctl gen renovate --language go --flavour fork
+```
+
+## Generating a plans repository's set-up
+
+Writes the set-up every team plans repository shares. Nothing is generated without the [`plans` flavour](flavours.md#plans).
+
+```nohighlight
+devctl gen plans --flavour plans
+```
+
+`.claude/settings.json` enables the `gs-plans` plugin, the plan-workflow skills, from the `giantswarm` marketplace (giantswarm/claude-code), with `autoUpdate` on so Claude Code refreshes the marketplace and its plugins after startup. devctl owns two entries, `extraKnownMarketplaces.giantswarm` and `enabledPlugins["gs-plans@giantswarm"]`, and keeps every other key of an existing file, so a team adds its own settings in the same file. The JSON is rewritten with sorted keys and two-space indentation; strings and numbers stay as written. The skills live in the plugin, not in the repository; the repository's own rules, such as which plan stages are required, stay in its `AGENTS.md`.
 
 ## Generating CircleCI configuration
 

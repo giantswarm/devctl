@@ -65,11 +65,23 @@ func (r *runner) persistentPreRun(ctx context.Context, cmd *cobra.Command, args 
 	}
 	// An agent-facing command runs the gate itself and reports it in its
 	// document.
-	if agentcli.IsAgentFacing(cmd.Annotations) || versiongate.IsExempt(cmd.Annotations) {
+	if agentcli.IsAgentFacing(cmd.Annotations) || gateExempt(cmd) {
 		return nil
 	}
 
 	return microerror.Mask(versiongate.Check(r.flag.NoCache))
+}
+
+// gateExempt reports whether cmd or one of its parents carries
+// [versiongate.Exempt]: the annotation on a group (`gen`) covers every
+// command in it.
+func gateExempt(cmd *cobra.Command) bool {
+	for c := cmd; c != nil; c = c.Parent() {
+		if versiongate.IsExempt(c.Annotations) {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *runner) configureLogger(ctx context.Context, cmd *cobra.Command, args []string) error {

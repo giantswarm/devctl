@@ -24,6 +24,30 @@ go install github.com/giantswarm/devctl/v7@latest
 
 https://github.com/giantswarm/devctl/releases
 
+### Verifying a release
+
+Every release binary is signed in CircleCI with [cosign](https://github.com/sigstore/cosign) (keyless) and published next to its Sigstore bundle, `<asset>.bundle`. There is no checksums file: the bundle is what a download verifies against. With cosign v2.4 or later:
+
+```bash
+VERSION=v8.128.1        # the release to verify
+ASSET=devctl-linux-amd64 # devctl-{linux,darwin}-{amd64,arm64}, devctl-windows-{amd64,arm64}.exe
+
+curl -fsSLO "https://github.com/giantswarm/devctl/releases/download/${VERSION}/${ASSET}"
+curl -fsSLO "https://github.com/giantswarm/devctl/releases/download/${VERSION}/${ASSET}.bundle"
+
+cosign verify-blob "${ASSET}" \
+  --bundle "${ASSET}.bundle" \
+  --certificate-identity "https://circleci.com/api/v2/projects/8a2733c3-f425-4856-91cd-ca36104ab8eb/pipeline-definitions/e50b2edc-4a9e-5142-9c1b-c5dcda3e15d6" \
+  --certificate-oidc-issuer "https://oidc.circleci.com"
+```
+
+`Verified OK` means the binary was signed by the release pipeline of the giantswarm/devctl CircleCI project:
+
+- **OIDC issuer**: `https://oidc.circleci.com`, CircleCI's OpenID Connect issuer.
+- **Certificate identity**: the CircleCI project and pipeline definition of giantswarm/devctl, `https://circleci.com/api/v2/projects/8a2733c3-f425-4856-91cd-ca36104ab8eb/pipeline-definitions/e50b2edc-4a9e-5142-9c1b-c5dcda3e15d6`. The certificate also records the source repository (`github.com/giantswarm/devctl`) and the release tag (`refs/tags/<version>`).
+
+`devctl version update` does this verification itself: it downloads the bundle published next to this platform's binary and installs the new binary only when the bundle verifies for a CircleCI build of `github.com/giantswarm/devctl` (CircleCI issuer, a CircleCI pipeline-definition identity, and the certificate's source repository pinned to giantswarm/devctl). A release without a bundle, or a binary that does not match its signature, is refused and the installed binary stays as it is.
+
 ## Features
 
 ### Authentication for the agent-facing commands (`devctl auth`)
@@ -44,6 +68,24 @@ devctl auth status
 devctl pr wait giantswarm/devctl 2277 --timeout 45m --progress
 ```
 
+### Rerunning failed CircleCI workflows (`devctl pr rerun`, `devctl release rerun`)
+
+`devctl pr rerun <owner/repo> <number>` reruns every failed CircleCI workflow of the pull request head's pipeline from failed, `devctl release rerun <owner/repo> <tag>` those of a tag's pipeline: the fix for a job that failed on a transient cause, without an empty commit or a new tag. A workflow still running is not rerun (exit 5), a pipeline without a failed job is exit 3. The rerun is started, not waited for (`pr wait`, `release wait` wait for it), and takes the `devctl auth login` CircleCI login granted Write access. See [docs/pr-rerun.md](docs/pr-rerun.md).
+
+```nohighlight
+devctl pr rerun giantswarm/devctl 2277
+devctl release rerun giantswarm/devctl v8.123.0
+```
+
+### CircleCI pipelines at the job level (`devctl ci jobs`, `devctl ci rerun`)
+
+`devctl ci jobs <owner/repo> <pipeline number|id>` reads a pipeline at the job level: every workflow run with its jobs, their start and stop times, and for a running job the step it is in and how long ago that step last wrote output, which tells a slow job from a stuck one while the workflow reads `running`. `devctl ci rerun <owner/repo> <workflow id> [--from-failed] [--cancel]` reruns one workflow, once an hour: a second rerun of the workflow's name in the same pipeline within an hour is refused (exit 5), as is a workflow still running unless `--cancel` cancels it first, the recovery of a stuck one. Both take the `devctl auth login` CircleCI login (Write access for the rerun) and read nothing on GitHub. See [docs/ci.md](docs/ci.md).
+
+```nohighlight
+devctl ci jobs giantswarm/devctl 3885
+devctl ci rerun giantswarm/devctl f1290c29-9a4b-4e0e-8c6a-0b7d3e5f2a11 --from-failed
+```
+
 ### Waiting for a release (`devctl release wait`)
 
 `devctl release wait <owner/repo> (<vX.Y.Z> | --pr <n>)`, the wait `pr merge` runs after its merge, blocks until every image and chart of the tag is pullable and the tag pipeline is green (a repository's own tag jobs included), and prints one JSON document with the digests. The artifact names come from the sources that define them (the team-file entry for generated CI, the tag pipeline's push jobs for hand-written CI), never from the repository name; the public registry is probed anonymously, the private one with the docker keychain; a failed tag pipeline ends the wait as exit 1 with the failed jobs, a timeout as exit 2 naming what is missing. See [docs/release-wait.md](docs/release-wait.md) for the model, the JSON and the exit codes.
@@ -55,11 +97,12 @@ devctl release wait giantswarm/devctl --pr 2289 --progress
 
 ### Promoting release candidates (`devctl release promote`)
 
-`devctl release promote (<owner/repo>... | --team <team>) [--dry-run]` promotes the latest release candidate of auto-release repositories to a stable release: for each repository (named, or every entry of `repositories/<team>.yaml` in giantswarm/github whose release model is auto-release) it requires the auto-release workflow of devctl v8.102.0 or later on the default branch, picks the highest `vX.Y.Z-rc.N` GitHub release newer than the latest stable release, both reachable from the default branch (`failed` when that candidate is a full release, not a pre-release, as the workflow refuses it), checks that the combined commit status of the candidate's commit is success (or that no status reported), and dispatches `zz_generated.auto_release.yaml` on the default branch with `release-type: stable`; the workflow does the promotion. It does not wait for the run; `devctl release wait <owner/repo> vX.Y.Z` does. One JSON document with a `repositories[]` entry per repository (`repository`, `stable`, `candidate`, `statusState`, `state`, `message`), exit 0 when each was dispatched (`would_dispatch` with `--dry-run`) or has nothing to promote, 1 when any is `not_built`, `not_auto_release`, `outdated_workflow` or `failed`, 7 usage, 8 not signed in. Dispatching needs Actions write, which the devctl GitHub App carries: the `devctl auth login` identity dispatches wherever you may run the workflow yourself, and `identity` in the document names the token's source and, for the login, its account. A 403 on a dispatch says the token needs Actions write on that repository.
+`devctl release promote (<owner/repo>... | --team <team>) [--dry-run]` promotes the latest release candidate of auto-release repositories to a stable release (`--version vX.Y.Z-rc.N` with one repository promotes that candidate instead: a published pre-release newer than the latest stable release and reachable from the default branch, else `failed`, on a workflow that takes its `version` input, else `outdated_workflow`; the stable tag lands on that candidate's commit, and the candidates cut after it are named in `later` as not in the release): for each repository (named, or every entry of `repositories/<team>.yaml` in giantswarm/github whose release model is auto-release) it requires the auto-release workflow of devctl v8.102.0 or later on the default branch, picks the highest `vX.Y.Z-rc.N` GitHub release newer than the latest stable release, both reachable from the default branch (`failed` when that candidate is a full release, not a pre-release, as the workflow refuses it), checks that the combined commit status of the candidate's commit is success (or that no status reported), and dispatches `zz_generated.auto_release.yaml` on the default branch with `release-type: stable`; the workflow does the promotion, the repository's stable gate (`.github/release-gate.custom.sh`) among its checks. It then follows each dispatched run until it concludes, at most `--follow-timeout` (20m; `--no-follow` returns right after the dispatch): a run that concludes other than success cut no release and is `refused`, its message naming the run's URL and the errors its failed jobs annotated (the gate's "Stable gate refused"), `failedJobs[]` the end of each failed job's log, where the gate's own output is; a run still going at the timeout stays `dispatched` with a warning. The release built from the tag is `devctl release wait <owner/repo> vX.Y.Z`'s. One JSON document with a `repositories[]` entry per repository (`repository`, `stable`, `candidate`, `newestBuilt`, `later`, `statusState`, `state`, `message`, `run`, `failedJobs`; `newestBuilt`, for `not_built`, is the highest other candidate that is built, to promote with `--version` instead of waiting), exit 0 when each was dispatched and its run passed or still runs (`would_dispatch` with `--dry-run`) or has nothing to promote, 1 when any is `not_built`, `not_auto_release`, `outdated_workflow`, `refused` or `failed`, 7 usage, 8 not signed in. Dispatching needs Actions write, which the devctl GitHub App carries: the `devctl auth login` identity dispatches wherever you may run the workflow yourself, and `identity` in the document names the token's source and, for the login, its account. A 403 on a dispatch says the token needs Actions write on that repository.
 
 ```bash
 devctl release promote --team team-bumblebee --dry-run
 devctl release promote giantswarm/devctl giantswarm/klaus --progress
+devctl release promote giantswarm/devctl --version v1.2.3-rc.14
 ```
 
 ### Waiting for a rollout (`devctl rollout wait`)
@@ -72,7 +115,7 @@ devctl rollout wait myinstallation giantswarm/app-operator v7.5.4 --progress
 
 ### Merging a pull request (`devctl pr merge`)
 
-`devctl pr merge <owner/repo> <number>` is the one call an agent makes to land its own pull request: it runs the wait of `pr wait`, squash-merges the pull request (`--rebase` for a rebase merge) through the merge API with the judged head as the expected head, deletes the branch through the refs API, and then runs the wait of `release wait --pr` on the merge commit until the release is pullable (`--release-timeout`, 30 minutes by default; `--no-release-wait` ends at the merge). A base with a merge queue is enqueued and waited for instead of merged. A merge that no release follows (a repository that does not tag merge commits, an auto-release run that tagged nothing) is exit 0. Refused before any wait: a draft, closed or conflicting pull request and one behind a strict base (exit 3; `--update-branch` updates it and waits for the new head), another human's pull request and a repository whose team-file entry says `agentMerge: false` (exit 5). A reviewer's `COMMENTED` or `CHANGES_REQUESTED` review or comment newer than the head that the author has not answered refuses it too (exit 5), read before the wait and again right before the merge. No protection setting is read to be changed or written: the merge is made as you, through the bypass the repository's ruleset grants its owning team and its admins. One JSON document (`pr wait`'s fields plus `mergeCommitSha`, `mergedBy`, `method`, `branchDeleted`, `enqueued`, `unansweredReviews` and `release`), exit 0, 1, 2, 3, 4, 5, 7 or 8, and after a merge 6 (the release failed) or 9 (the release not confirmed). `--detach` starts the same merge in a process of its own and returns within seconds with a handle; `devctl pr merge status <handle>` reads its outcome later, with the merge's exit code, and `--on-done <command>` runs a command when it ended. See [docs/pr-merge.md](docs/pr-merge.md).
+`devctl pr merge <owner/repo> <number>` is the one call an agent makes to land its own pull request: it runs the wait of `pr wait`, squash-merges the pull request (`--rebase` for a rebase merge, the default on a fork line, whose team-file entry lists the `fork` flavour, where `--squash` squashes; a merge commit where the repository allows only that) through the merge API with the judged head as the expected head, deletes the branch through the refs API, and then runs the wait of `release wait --pr` on the merge commit until the release is pullable (`--release-timeout`, 30 minutes by default; `--no-release-wait` ends at the merge). A base with a merge queue is enqueued and waited for instead of merged. A merge that no release follows (a repository that does not tag merge commits, an auto-release run that tagged nothing) is exit 0. Refused before any wait: a draft, closed or conflicting pull request and one behind its base, strict or not, whose checks ran against an older base (exit 3; `--update-branch` updates it and waits for the new head); a base that moved during the wait is compared again before the merge, with the same rule, another human's pull request and a repository whose team-file entry says `agentMerge: false` (exit 5). A reviewer's `COMMENTED` or `CHANGES_REQUESTED` review or comment newer than the head that the author has not answered refuses it too (exit 5), read before the wait and again right before the merge. No protection setting is read to be changed or written: the merge is made as you, through the bypass the repository's ruleset grants its owning team and its admins. One JSON document (`pr wait`'s fields plus `mergeCommitSha`, `mergedBy`, `method`, `branchDeleted`, `enqueued`, `unansweredReviews` and `release`), exit 0, 1, 2, 3, 4, 5, 7 or 8, and after a merge 6 (the release failed) or 9 (the release not confirmed). `--detach` starts the same merge in a process of its own and returns within seconds with a handle; `devctl pr merge status <handle>` reads its outcome later, with the merge's exit code, and `--on-done <command>` runs a command when it ended. See [docs/pr-merge.md](docs/pr-merge.md).
 
 ```bash
 devctl pr merge giantswarm/devctl 2278 --timeout 45m --progress
@@ -106,10 +149,6 @@ Pass `--log-level debug` to see detailed output and the stack trace of an error:
 ```bash
 devctl --log-level debug repo status my-service
 ```
-
-## Contributing
-
-Please check our [contributing guidelines](CONTRIBUTING.md) for details on how to contribute to this project.
 
 ## License
 

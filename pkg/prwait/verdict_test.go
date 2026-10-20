@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-github/v92/github"
+	"github.com/google/go-github/v93/github"
 
 	"github.com/giantswarm/devctl/v8/pkg/circleciclient"
 )
@@ -24,6 +24,49 @@ func checkRun(id int64, name, status, conclusion string, started time.Time) *git
 		run.Conclusion = &conclusion
 	}
 	return run
+}
+
+// inSuite puts a check run into the check suite of a GitHub Actions run.
+func inSuite(run *github.CheckRun, suite int64) *github.CheckRun {
+	run.CheckSuite = &github.CheckSuite{ID: &suite}
+	return run
+}
+
+// ofWorkflow gives a run its workflow and check suite.
+func ofWorkflow(run *github.WorkflowRun, workflowID, suite int64) *github.WorkflowRun {
+	run.WorkflowID, run.CheckSuiteID = &workflowID, &suite
+	return run
+}
+
+// matrix is a workflow run of ten jobs reporting under one name, the job of
+// id red failed.
+func matrix(red int64, started time.Time) []*github.CheckRun {
+	var runs []*github.CheckRun
+	for id := int64(1); id <= 10; id++ {
+		conclusion := "success"
+		if id == red {
+			conclusion = "failure"
+		}
+		runs = append(runs, inSuite(checkRun(id, "plan / tofu-plan", "completed", conclusion, started), 100))
+	}
+	return runs
+}
+
+// ofApp gives a check run the app that reports it.
+func ofApp(run *github.CheckRun, slug string) *github.CheckRun {
+	run.App = &github.App{Slug: &slug}
+	return run
+}
+
+// gatekeeperRun is a check run of an app other than GitHub Actions that
+// holds a pull request until it is reviewed.
+func gatekeeperRun(id int64, status, conclusion string) *github.CheckRun {
+	return ofApp(checkRun(id, "Heimdall - PR Gatekeeper", status, conclusion, time.Time{}), "tinkerers-ci")
+}
+
+// actionsCheckRun is the check run of a GitHub Actions job.
+func actionsCheckRun(id int64, name, status string) *github.CheckRun {
+	return ofApp(checkRun(id, name, status, "", time.Time{}), actionsApp)
 }
 
 func status(context, state string) *github.RepoStatus {
@@ -61,6 +104,7 @@ func Test_evaluate(t *testing.T) {
 		// at this poll.
 		wantNeverReported bool
 		wantApprovalOnly  bool
+		wantNotRequired   []string
 		wantChecks        []Check
 		wantActions       []ActionRun
 		wantCircleCI      *CircleCI
@@ -77,7 +121,7 @@ func Test_evaluate(t *testing.T) {
 			wantGreen: true,
 			wantChecks: []Check{
 				{Name: "ci/circleci: test", Source: SourceStatus, Status: "completed", Conclusion: "success", URL: "https://ci/ci/circleci: test"},
-				{Name: "go-build", Source: SourceCheckRun, Status: "completed", Conclusion: "success", URL: "https://github.com/o/r/runs/go-build", Required: true},
+				{Name: "go-build", ID: 1, Source: SourceCheckRun, Status: "completed", Conclusion: "success", URL: "https://github.com/o/r/runs/go-build", Required: true},
 			},
 			wantActions: []ActionRun{{Name: "CI", RunID: 10, Status: "completed", Conclusion: "success", URL: "https://github.com/o/r/actions/runs/CI"}},
 		},
@@ -88,7 +132,7 @@ func Test_evaluate(t *testing.T) {
 				circleci:  circle("created", circleciclient.Workflow{ID: "w1", Name: "build", Status: "running"}),
 			},
 			wantUnfinished: []string{"circleci workflow build (running)"},
-			wantChecks:     []Check{{Name: "go-build", Source: SourceCheckRun, Status: "completed", Conclusion: "success", URL: "https://github.com/o/r/runs/go-build"}},
+			wantChecks:     []Check{{Name: "go-build", ID: 1, Source: SourceCheckRun, Status: "completed", Conclusion: "success", URL: "https://github.com/o/r/runs/go-build"}},
 			wantActions:    []ActionRun{},
 			wantCircleCI: &CircleCI{PipelineID: "p1", PipelineNumber: 7, Workflows: []Workflow{
 				{Name: "build", Status: "running", URL: "https://app.circleci.com/pipelines/github/o/r/7/workflows/w1"},
@@ -154,10 +198,136 @@ func Test_evaluate(t *testing.T) {
 				},
 			},
 			wantGreen:  true,
-			wantChecks: []Check{{Name: "pr-title", Source: SourceCheckRun, Status: "completed", Conclusion: "success", URL: "https://github.com/o/r/runs/pr-title"}},
+			wantChecks: []Check{{Name: "pr-title", ID: 2, Source: SourceCheckRun, Status: "completed", Conclusion: "success", URL: "https://github.com/o/r/runs/pr-title"}},
 			wantActions: []ActionRun{
 				{Name: "PR title", RunID: 11, Status: "completed", Conclusion: "success", URL: "https://github.com/o/r/actions/runs/PR title"},
 			},
+		},
+		{
+			name: "a reopened pull request: the failed check of the earlier run does not count while the newer run, whose jobs are not listed yet, is in progress",
+			snapshot: snapshot{
+				checkRuns: []*github.CheckRun{inSuite(checkRun(1, "go-build", "completed", "failure", t0), 100)},
+				runs: []*github.WorkflowRun{
+					ofWorkflow(workflowRun(10, "CI", "completed", "failure"), 1, 100),
+					ofWorkflow(workflowRun(11, "CI", "in_progress", ""), 1, 101),
+				},
+			},
+			wantUnfinished:  []string{"actions run CI (in_progress)"},
+			skipFieldChecks: true,
+		},
+		{
+			name: "a rerun of the run: the failed check of the earlier attempt does not count while the new attempt is in progress",
+			snapshot: snapshot{
+				checkRuns: []*github.CheckRun{inSuite(checkRun(1, "go-build", "completed", "failure", t0), 100)},
+				runs: []*github.WorkflowRun{
+					func() *github.WorkflowRun {
+						run := ofWorkflow(workflowRun(10, "CI", "in_progress", ""), 1, 100)
+						run.RunStartedAt = &github.Timestamp{Time: t1}
+						return run
+					}(),
+				},
+			},
+			wantUnfinished:  []string{"actions run CI (in_progress)"},
+			skipFieldChecks: true,
+		},
+		{
+			name: "a job failed in the run in progress: red at once, not superseded",
+			snapshot: snapshot{
+				checkRuns: []*github.CheckRun{inSuite(checkRun(1, "go-build", "completed", "failure", t1), 100)},
+				runs: []*github.WorkflowRun{
+					func() *github.WorkflowRun {
+						run := ofWorkflow(workflowRun(10, "CI", "in_progress", ""), 1, 100)
+						run.RunStartedAt = &github.Timestamp{Time: t0}
+						return run
+					}(),
+				},
+			},
+			wantRed:         []string{"check go-build concluded failure"},
+			wantUnfinished:  []string{"actions run CI (in_progress)"},
+			skipFieldChecks: true,
+		},
+		{
+			name: "one red and nine green runs of one name in one workflow run: red, the red run named",
+			snapshot: snapshot{
+				checkRuns: matrix(4, t0),
+				runs:      []*github.WorkflowRun{ofWorkflow(workflowRun(10, "plan", "completed", "failure"), 1, 100)},
+			},
+			wantRed:         []string{"check plan / tofu-plan [plan, check run 4] concluded failure"},
+			skipFieldChecks: true,
+		},
+		{
+			name: "the red run listed first: still red, the green ones after it do not hide it",
+			snapshot: snapshot{
+				checkRuns: append(matrix(0, t1), inSuite(checkRun(11, "plan / tofu-plan", "completed", "failure", t0), 100)),
+				runs:      []*github.WorkflowRun{ofWorkflow(workflowRun(10, "plan", "completed", "failure"), 1, 100)},
+			},
+			wantRed:         []string{"check plan / tofu-plan [plan, check run 11] concluded failure"},
+			skipFieldChecks: true,
+		},
+		{
+			name: "one green and one running run of one name: the head waits for the running one",
+			snapshot: snapshot{
+				checkRuns: []*github.CheckRun{
+					inSuite(checkRun(1, "plan / tofu-plan", "in_progress", "", t0), 100),
+					inSuite(checkRun(2, "plan / tofu-plan", "completed", "success", t1), 100),
+				},
+				runs: []*github.WorkflowRun{ofWorkflow(workflowRun(10, "plan", "in_progress", ""), 1, 100)},
+			},
+			wantUnfinished:  []string{"check plan / tofu-plan [plan, check run 1] (in_progress)", "actions run plan (in_progress)"},
+			skipFieldChecks: true,
+		},
+		{
+			name: "two workflows calling one reusable workflow: each run of the name counts and is listed",
+			snapshot: snapshot{
+				checkRuns: []*github.CheckRun{
+					inSuite(checkRun(1, "plan / tofu-plan", "completed", "failure", t0), 100),
+					inSuite(checkRun(2, "plan / tofu-plan", "completed", "success", t1), 200),
+				},
+				runs: []*github.WorkflowRun{
+					ofWorkflow(workflowRun(10, "a: Tofu Plan", "completed", "failure"), 1, 100),
+					ofWorkflow(workflowRun(11, "b: Tofu Plan", "completed", "success"), 2, 200),
+				},
+			},
+			wantRed: []string{"check plan / tofu-plan [a: Tofu Plan, check run 1] concluded failure"},
+			wantChecks: []Check{
+				{Name: "plan / tofu-plan", ID: 1, Workflow: "a: Tofu Plan", Source: SourceCheckRun, Status: "completed", Conclusion: "failure", URL: "https://github.com/o/r/runs/plan / tofu-plan"},
+				{Name: "plan / tofu-plan", ID: 2, Workflow: "b: Tofu Plan", Source: SourceCheckRun, Status: "completed", Conclusion: "success", URL: "https://github.com/o/r/runs/plan / tofu-plan"},
+			},
+			wantActions: []ActionRun{
+				{Name: "a: Tofu Plan", RunID: 10, Status: "completed", Conclusion: "failure", URL: "https://github.com/o/r/actions/runs/a: Tofu Plan"},
+				{Name: "b: Tofu Plan", RunID: 11, Status: "completed", Conclusion: "success", URL: "https://github.com/o/r/actions/runs/b: Tofu Plan"},
+			},
+		},
+		{
+			name: "one workflow run twice for the head: the newest run's jobs count, the stale failed one does not",
+			snapshot: snapshot{
+				checkRuns: []*github.CheckRun{
+					inSuite(checkRun(1, "pr-title", "completed", "failure", t1), 100),
+					inSuite(checkRun(2, "pr-title", "completed", "success", t0), 200),
+				},
+				runs: []*github.WorkflowRun{
+					ofWorkflow(workflowRun(10, "PR title", "completed", "failure"), 1, 100),
+					ofWorkflow(workflowRun(11, "PR title", "completed", "success"), 1, 200),
+				},
+			},
+			wantGreen: true,
+			wantChecks: []Check{
+				{Name: "pr-title", ID: 2, Workflow: "PR title", Source: SourceCheckRun, Status: "completed", Conclusion: "success", URL: "https://github.com/o/r/runs/pr-title"},
+			},
+			wantActions: []ActionRun{
+				{Name: "PR title", RunID: 11, Status: "completed", Conclusion: "success", URL: "https://github.com/o/r/actions/runs/PR title"},
+			},
+		},
+		{
+			name: "two workflows sharing a name: both runs are listed, the running one keeps the head waiting",
+			snapshot: snapshot{
+				runs: []*github.WorkflowRun{
+					ofWorkflow(workflowRun(10, "CI", "completed", "success"), 1, 100),
+					ofWorkflow(workflowRun(11, "CI", "in_progress", ""), 2, 200),
+				},
+			},
+			wantUnfinished:  []string{"actions run CI (in_progress)"},
+			skipFieldChecks: true,
 		},
 		{
 			name: "a red CircleCI workflow: red at once although a rerun of another workflow still runs",
@@ -232,17 +402,58 @@ func Test_evaluate(t *testing.T) {
 			skipFieldChecks: true,
 		},
 		{
-			name: "a failed status is red, a pending one waits",
+			name: "a failed status is red, a pending required one waits",
 			snapshot: snapshot{
 				statuses: []*github.RepoStatus{status("ci/a", "error"), status("ci/b", "pending")},
+				required: []string{"ci/b"},
 			},
 			wantRed:        []string{"status ci/a is error"},
 			wantUnfinished: []string{"status ci/b (pending)"},
 			wantChecks: []Check{
 				{Name: "ci/a", Source: SourceStatus, Status: "completed", Conclusion: "error", URL: "https://ci/ci/a"},
-				{Name: "ci/b", Source: SourceStatus, Status: "pending", URL: "https://ci/ci/b"},
+				{Name: "ci/b", Source: SourceStatus, Status: "pending", URL: "https://ci/ci/b", Required: true},
 			},
 			wantActions: []ActionRun{},
+		},
+		{
+			name: "a pending status and a pending check of another app the base does not require: green, not waited for",
+			snapshot: snapshot{
+				checkRuns: []*github.CheckRun{checkRun(1, "lint", "completed", "success", t0), gatekeeperRun(2, "in_progress", "")},
+				statuses:  []*github.RepoStatus{status("external/scan", "pending")},
+				required:  []string{"lint"},
+			},
+			wantGreen: true,
+			wantNotRequired: []string{
+				"check Heimdall - PR Gatekeeper (in_progress, not required, not waited for)",
+				"status external/scan (pending, not required, not waited for)",
+			},
+			skipFieldChecks: true,
+		},
+		{
+			name: "a gatekeeper check awaiting a human the base does not require: green, not waited for",
+			snapshot: snapshot{
+				checkRuns: []*github.CheckRun{gatekeeperRun(2, "completed", "action_required")},
+			},
+			wantGreen:       true,
+			wantNotRequired: []string{"check Heimdall - PR Gatekeeper (action_required, not required, not waited for)"},
+			skipFieldChecks: true,
+		},
+		{
+			name: "a pending CircleCI job status the base does not require waits: the pipeline's verdict",
+			snapshot: snapshot{
+				statuses: []*github.RepoStatus{status("ci/circleci: setup", "success"), status("ci/circleci: go-build", "success"), status("ci/circleci: push", "pending")},
+				circleci: circle("created"),
+			},
+			wantUnfinished:  []string{"status ci/circleci: push (pending)"},
+			skipFieldChecks: true,
+		},
+		{
+			name: "a pending GitHub Actions job the base does not require waits",
+			snapshot: snapshot{
+				checkRuns: []*github.CheckRun{actionsCheckRun(1, "test", "in_progress")},
+			},
+			wantUnfinished:  []string{"check test (in_progress)"},
+			skipFieldChecks: true,
 		},
 		{
 			name: "every check and run finished, a required context absent: never reported, known without a timeout",
@@ -337,12 +548,82 @@ func Test_evaluate(t *testing.T) {
 			skipFieldChecks: true,
 		},
 		{
+			name: "a setup workflow listed alone with its status alone: the continuation is pending",
+			snapshot: snapshot{
+				statuses: []*github.RepoStatus{status("ci/circleci: setup", "success")},
+				circleci: circle("created", circleciclient.Workflow{ID: "w1", Name: "setup", Status: "success", Tag: circleciclient.WorkflowTagSetup}),
+			},
+			wantUnfinished:  []string{"circleci pipeline 7 (setup finished, the continuation's workflows not created yet)"},
+			skipFieldChecks: true,
+		},
+		{
+			name: "a setup workflow listed alone, the continuation's jobs posted: judged by their statuses",
+			snapshot: snapshot{
+				statuses: []*github.RepoStatus{status("ci/circleci: setup", "success"), status("ci/circleci: go-build", "success"), status("ci/circleci: push-chart", "pending")},
+				circleci: circle("created", circleciclient.Workflow{ID: "w1", Name: "setup", Status: "success", Tag: circleciclient.WorkflowTagSetup}),
+			},
+			wantUnfinished:  []string{"status ci/circleci: push-chart (pending)"},
+			skipFieldChecks: true,
+		},
+		{
+			name: "a setup workflow listed alone, the continuation's jobs all posted success: green",
+			snapshot: snapshot{
+				statuses: []*github.RepoStatus{status("ci/circleci: setup", "success"), status("ci/circleci: go-build", "success")},
+				circleci: circle("created", circleciclient.Workflow{ID: "w1", Name: "setup", Status: "success", Tag: circleciclient.WorkflowTagSetup}),
+			},
+			wantGreen:       true,
+			skipFieldChecks: true,
+		},
+		{
+			name:            "a cancelled workflow is red",
+			snapshot:        snapshot{circleci: circle("created", circleciclient.Workflow{ID: "w1", Name: "build", Status: "canceled"})},
+			wantRed:         []string{"circleci workflow build canceled"},
+			skipFieldChecks: true,
+		},
+		{
 			name:           "nothing reported at all is not green: an empty head has no verdict yet",
 			snapshot:       snapshot{circleci: circle("created")},
 			wantUnfinished: []string{"circleci pipeline 7 (no workflows yet)"},
 			wantChecks:     []Check{},
 			wantActions:    []ActionRun{},
 			wantCircleCI:   &CircleCI{PipelineID: "p1", PipelineNumber: 7, Workflows: []Workflow{}},
+		},
+		{
+			name: "a pipeline listed without workflows, the setup job's status alone: the build has not run",
+			snapshot: snapshot{
+				statuses: []*github.RepoStatus{status("ci/circleci: setup", "success")},
+				circleci: circle("created"),
+			},
+			wantUnfinished:  []string{"circleci pipeline 7 (no workflows yet)"},
+			skipFieldChecks: true,
+		},
+		{
+			name: "a pipeline listed without workflows, the continuation's jobs posted: judged by their statuses",
+			snapshot: snapshot{
+				statuses: []*github.RepoStatus{status("ci/circleci: setup", "success"), status("ci/circleci: go-build", "success"), status("ci/circleci: build-image", "pending")},
+				circleci: circle("created"),
+			},
+			wantUnfinished:  []string{"status ci/circleci: build-image (pending)"},
+			skipFieldChecks: true,
+		},
+		{
+			name: "a pipeline listed without workflows, the continuation's jobs all posted success: green",
+			snapshot: snapshot{
+				statuses: []*github.RepoStatus{status("ci/circleci: setup", "success"), status("ci/circleci: go-build", "success"), status("ci/circleci: build-image", "success")},
+				circleci: circle("created"),
+				required: []string{"ci/circleci: go-build", "ci/circleci: build-image"},
+			},
+			wantGreen:       true,
+			skipFieldChecks: true,
+		},
+		{
+			name: "a pipeline listed without workflows, a continued job failed: red",
+			snapshot: snapshot{
+				statuses: []*github.RepoStatus{status("ci/circleci: setup", "success"), status("ci/circleci: go-build", "failure")},
+				circleci: circle("created"),
+			},
+			wantRed:         []string{"status ci/circleci: go-build is failure"},
+			skipFieldChecks: true,
 		},
 	}
 
@@ -363,6 +644,9 @@ func Test_evaluate(t *testing.T) {
 			}
 			if e.neverReported() != tc.wantNeverReported {
 				t.Errorf("neverReported: want %v, got %v (settled %v, unfinished %q)", tc.wantNeverReported, e.neverReported(), e.settled, e.unfinished)
+			}
+			if diff := cmp.Diff(tc.wantNotRequired, e.notRequired, cmp.Transformer("nilToEmpty", nilToEmpty)); diff != "" {
+				t.Errorf("notRequired:\n%s", diff)
 			}
 			if e.approvalOnly != tc.wantApprovalOnly {
 				t.Errorf("approvalOnly: want %v, got %v (red %q, unfinished %q)", tc.wantApprovalOnly, e.approvalOnly, e.red, e.unfinished)

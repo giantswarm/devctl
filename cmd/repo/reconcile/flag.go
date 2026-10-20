@@ -1,11 +1,14 @@
 package reconcile
 
 import (
+	"strings"
+
 	"github.com/giantswarm/microerror"
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/v8/cmd/repo/internal/engine"
 	"github.com/giantswarm/devctl/v8/pkg/reposetup"
+	"github.com/giantswarm/devctl/v8/pkg/reposetup/reconcile"
 )
 
 type flag struct {
@@ -25,12 +28,13 @@ type flag struct {
 	Output              string
 	DevctlAppID         int64
 	AlignFilesAppID     int64
+	ReleaseAppID        int64
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
 	cmd.PersistentFlags().StringVar(&f.GithubTokenEnvVar, "github-token-envvar", engine.DefaultGitHubEnvVar, "Environment variable name for the GitHub token.")
 	cmd.Flags().StringVar(&f.DispatchTokenEnvVar, "dispatch-token-envvar", "", "Environment variable name for the GitHub token the catalog step lists and dispatches the catalog and mapping workflow runs with (actions: write on the catalog repository), when the GitHub token's identity holds no Actions permission there. Every read stays with the GitHub token, the repository lookup included. The GitHub token dispatches when unset.")
-	cmd.Flags().StringVar(&f.CircleCITokenEnvVar, "circleci-token-envvar", engine.DefaultCircleCIEnvVar, "Environment variable name for the CircleCI token. The CircleCI and release steps are skipped when it is unset.")
+	cmd.Flags().StringVar(&f.CircleCITokenEnvVar, "circleci-token-envvar", engine.DefaultCircleCIEnvVar, "Environment variable name for the CircleCI token; it overrides the devctl auth login token in the keychain. The CircleCI and release steps are skipped when neither has one.")
 	cmd.Flags().StringVar(&f.TeamFile, "team-file", "", "Path of the team file (repositories/<team>.yaml of giantswarm/github) holding the repository's entry; the team is the file's name.")
 	cmd.Flags().StringVar(&f.Team, "team", "", "Team slug (team-bumblebee) of a repository without a team-file entry; the entry is then the name alone.")
 	cmd.Flags().StringVar(&f.ComponentType, "component-type", "", "Component type of a repository without a team-file entry (service, library, ...).")
@@ -39,11 +43,12 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&f.DryRun, "dry-run", false, "Check only: print what a repair would change, change nothing.")
 	cmd.Flags().BoolVar(&f.Added, "added", false, "The entry was added by the change at hand: a missing repository is created. Never inferred.")
 	cmd.Flags().BoolVar(&f.Unarchived, "unarchived", false, "The change at hand took lifecycle: archived from the entry: a repository archived on GitHub is unarchived and set up again. Never inferred; without it an archived repository is reported.")
-	cmd.Flags().StringSliceVar(&f.Steps, "steps", nil, "Run only these steps (create,scaffold,settings,permissions,protection,circleci,webhooks,renovate,codeowners,metadata,lifecycle,catalog,release); every step when not given.")
+	cmd.Flags().StringSliceVar(&f.Steps, "steps", nil, "Run only these steps ("+stepNames()+"); every step when not given.")
 	cmd.Flags().StringToStringVar(&f.Options, "option", nil, "Scaffold option as name=value, the template's options; repeatable.")
 	cmd.Flags().StringVar(&f.Output, "output", engine.OutputTable, "Output format: table or json.")
 	cmd.Flags().Int64Var(&f.DevctlAppID, "devctl-app-id", 0, "Numeric id of the devctl GitHub App (the App's settings page; not the client id): what the protection step's bypass list takes to be compared and written. With it the step writes the default branch's ruleset \"devctl: default branch\" with the App, the owning team and the repository admins as bypass actors in pull_request mode (none when the entry declares agentMerge: false) and removes classic branch protection. Unset, the step reads a ruleset the repository has and compares its rules alone, reporting what only a run with the id writes, and writes classic branch protection as before where there is none yet; the reconciler's wiring passes the id.")
-	cmd.Flags().Int64Var(&f.AlignFilesAppID, "align-files-app-id", 0, "Numeric id of the align-files GitHub App, whose generated-file pull requests merge by their armed auto-merge. With it the protection step keeps the review rule in a ruleset of its own, \"devctl: review\", which the App bypasses for pull requests beside the actors of \"devctl: default branch\"; the required checks stay in \"devctl: default branch\", which the App does not bypass, so its pull request still waits for them. An entry with agentMerge: false keeps the review without bypass. Unset, the review rule stays in \"devctl: default branch\" and the review ruleset is deleted.")
+	cmd.Flags().Int64Var(&f.AlignFilesAppID, "align-files-app-id", 0, "Numeric id of the align-files GitHub App, whose generated-file pull requests merge by their armed auto-merge. With it the protection step keeps the review rule in a ruleset of its own, \"devctl: review\", which the App and the Renovate App (id 2740) bypass for pull requests beside the actors of \"devctl: default branch\"; the required checks stay in \"devctl: default branch\", which neither App bypasses, so their pull requests still wait for them. An entry with agentMerge: false keeps the review without bypass. Unset, the review rule stays in \"devctl: default branch\" and the review ruleset is deleted.")
+	cmd.Flags().Int64Var(&f.ReleaseAppID, "release-app-id", 0, "Numeric id of the giantswarm-release GitHub App (the App's settings page; not the client id), which the generated release workflows authenticate as. With --align-files-app-id it bypasses the review ruleset \"devctl: review\" for pull requests beside the align-files and Renovate Apps, so the version bump pull request the release workflow opens and arms auto-merge on lands once its required checks are green; it does not bypass \"devctl: default branch\". Unset, the review ruleset has no release App.")
 }
 
 func (f *flag) Validate() error {
@@ -62,5 +67,18 @@ func (f *flag) Validate() error {
 	if f.AlignFilesAppID < 0 {
 		return microerror.Maskf(invalidFlagError, "--align-files-app-id must be a positive App id, got %d", f.AlignFilesAppID)
 	}
+	if f.ReleaseAppID < 0 {
+		return microerror.Maskf(invalidFlagError, "--release-app-id must be a positive App id, got %d", f.ReleaseAppID)
+	}
 	return microerror.Mask(engine.ValidateOutput(f.Output))
+}
+
+// stepNames lists the engine's steps in execution order, comma-separated: the
+// values --steps takes.
+func stepNames() string {
+	names := make([]string, 0, len(reconcile.Steps))
+	for _, s := range reconcile.Steps {
+		names = append(names, string(s))
+	}
+	return strings.Join(names, ",")
 }

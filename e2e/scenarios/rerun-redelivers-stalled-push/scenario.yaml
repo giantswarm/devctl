@@ -1,0 +1,72 @@
+# A tag pipeline whose setup workflow finished and whose continuation was
+# never created (pending, no other workflow) has nothing to rerun. Its push
+# webhook delivery is sent again through GitHub, under the identity devctl
+# pr wait uses: the hooks, the CircleCI hook's deliveries, the payload of
+# the one push delivery (the tag's ref), the redelivery; GitHub answers 202.
+# CircleCI then creates a new pipeline for the tag, which release wait reads.
+description: release rerun redelivers the push webhook of a pipeline that never got a workflow
+args: [release, rerun, giantswarm/e2e-app, v1.2.3]
+keyring:
+  github:
+    login: e2e-engineer
+    token: ghu_e2e_live
+    expiresAt: "2099-01-01T00:00:00Z"
+  circleci:
+    login: e2e-engineer
+    token: CCIPAT_e2e_live
+    expiresAt: "2099-01-01T00:00:00Z"
+github:
+  routes:
+    "GET /repos/giantswarm/e2e-app/hooks":
+      - body:
+          - id: 77
+            type: Repository
+            name: web
+            active: true
+            events: [push, pull_request]
+            config: {content_type: json, insecure_ssl: "0", url: https://circleci.com/hooks/github}
+            url: https://api.github.com/repos/giantswarm/e2e-app/hooks/77
+            deliveries_url: https://api.github.com/repos/giantswarm/e2e-app/hooks/77/deliveries
+    "GET /repos/giantswarm/e2e-app/hooks/77/deliveries":
+      - body:
+          - {id: 9002, guid: e2e-pr-guid, delivered_at: "2026-09-21T10:00:30Z", redelivery: false, duration: 0.31, status: OK, status_code: 200, event: pull_request, action: synchronize, installation_id: null, repository_id: 456}
+          - {id: 9001, guid: e2e-push-guid, delivered_at: "2026-09-21T09:59:55Z", redelivery: false, duration: 0.27, status: OK, status_code: 200, event: push, action: null, installation_id: null, repository_id: 456}
+    "GET /repos/giantswarm/e2e-app/hooks/77/deliveries/9001":
+      - body:
+          id: 9001
+          guid: e2e-push-guid
+          delivered_at: "2026-09-21T09:59:55Z"
+          redelivery: false
+          duration: 0.27
+          status: OK
+          status_code: 200
+          event: push
+          action: null
+          installation_id: null
+          repository_id: 456
+          url: ""
+          request:
+            headers: {Accept: "*/*", Content-Type: application/json, X-GitHub-Event: push, X-GitHub-Delivery: e2e-push-guid}
+            payload:
+              ref: refs/tags/v1.2.3
+              before: "0000000000000000000000000000000000000000"
+              after: aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44
+              created: true
+              deleted: false
+              forced: false
+              repository: {full_name: giantswarm/e2e-app}
+          response:
+            headers: {Content-Type: text/plain}
+            payload: ""
+    "POST /repos/giantswarm/e2e-app/hooks/77/deliveries/9001/attempts":
+      - status: 202
+        body: {message: Accepted}
+circleci:
+  routes:
+    "GET /api/v2/project/gh/giantswarm/e2e-app/pipeline":
+      - body: {items: [{id: p1, number: 7, state: pending, created_at: "2026-09-21T10:00:00Z", vcs: {tag: v1.2.3, revision: aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44}}], next_page_token: null}
+    "GET /api/v2/pipeline/p1/workflow":
+      - body:
+          items:
+            - {id: w1, name: setup, status: success, created_at: "2026-09-21T10:00:05Z"}
+          next_page_token: null

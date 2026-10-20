@@ -21,7 +21,8 @@
 // the reported-only rule, CircleCI (follow, setup workflows, checkout key,
 // and the webhook CircleCI installs on the follow, verified), webhooks,
 // Renovate (check only), CODEOWNERS (a pull request), description
-// and visibility, lifecycle (archived → unfollowed on CircleCI and
+// and visibility, labels (the owning team's team/<team>, created when
+// missing), lifecycle (archived → unfollowed on CircleCI and
 // CircleCI's deploy key deleted, then archived on GitHub; deleted →
 // unfollowed, then deleted on GitHub, the entry the record),
 // catalog and mapping (the giantswarm/github workflows), first-release
@@ -31,7 +32,7 @@
 //
 // What a run costs in requests is counted at the clients' transports
 // ([Counter]) into [Result.Requests], and per step in the log. A check of a
-// converged repository with every step costs at most twenty-two GitHub
+// converged repository with every step costs at most twenty-three GitHub
 // requests, the budget of the nightly reconciler: the repository (one read,
 // shared by the create, metadata and lifecycle steps); the root listing and
 // the chart's Chart.yaml and values.schema.json; the workflow permission;
@@ -43,8 +44,8 @@
 // config.yml once when the entry does not declare the pipeline); the
 // deploy keys (one read, the circleci step); the webhooks (one read, shared
 // by the circleci and webhooks steps); renovate.json5 and the Dependency
-// Dashboard issue; CODEOWNERS; the catalog and the mapping; the latest
-// release. Measured in check mode with a person's token: giantswarm/backstage
+// Dashboard issue; CODEOWNERS; the owning team's label; the catalog and the
+// mapping; the latest release. Measured in check mode with a person's token: giantswarm/backstage
 // 18, giantswarm/klaus 19 (one of them a CODEOWNERS drift, which also lists
 // the open pull requests); the ruleset reads add two to each and the deploy
 // keys one. A planned change costs the same reads; a repair adds one write
@@ -73,6 +74,7 @@ const (
 	StepRenovate    Step = "renovate"
 	StepCodeowners  Step = "codeowners"
 	StepMetadata    Step = "metadata"
+	StepLabels      Step = "labels"
 	StepLifecycle   Step = "lifecycle"
 	StepCatalog     Step = "catalog"
 	StepRelease     Step = "release"
@@ -86,7 +88,7 @@ const (
 var Steps = []Step{
 	StepCreate, StepScaffold, StepSettings, StepPermissions, StepProtection,
 	StepCircleCI, StepWebhooks, StepRenovate, StepCodeowners, StepMetadata,
-	StepLifecycle, StepCatalog, StepRelease,
+	StepLabels, StepLifecycle, StepCatalog, StepRelease,
 }
 
 // Mode is what a run does with the drift it finds.
@@ -139,7 +141,8 @@ const (
 	FindingABSPrerequisite FindingKind = "abs-prerequisite"
 	// FindingDefaultIcon: the chart still carries the default icon.
 	FindingDefaultIcon FindingKind = "default-icon"
-	// FindingRedRelease: the latest release's tag pipeline failed.
+	// FindingRedRelease: the latest release's tag pipeline failed in a job
+	// that leaves something unpublished (UnpublishedJobs).
 	FindingRedRelease FindingKind = "red-release"
 	// FindingMissedTagBuild: the latest release's tag has no pipeline. The
 	// reconciler rebuilds no tag but a creation's first release; the fix is
@@ -157,6 +160,10 @@ const (
 	// scans it — no configuration, or a configuration without a trace of a
 	// run (the Dependency Dashboard issue, a pull request, a commit).
 	FindingRenovateNotScanned FindingKind = "renovate-not-scanned"
+	// FindingRenovateDeclaredOff: the entry declares renovate: false and
+	// the repository carries a Renovate configuration that keeps Renovate
+	// on. The engine deletes no file; the fix names the configuration.
+	FindingRenovateDeclaredOff FindingKind = "renovate-declared-off"
 	// FindingArchivedUndeclared: archived on GitHub without lifecycle:
 	// archived.
 	FindingArchivedUndeclared FindingKind = "archived-undeclared"

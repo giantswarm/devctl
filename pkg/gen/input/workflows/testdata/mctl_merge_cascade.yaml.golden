@@ -1,0 +1,240 @@
+# DO NOT EDIT. Generated with:
+#
+#    devctl
+#
+
+# On init PR merge: merges the installations PR directly, arms auto-merge on the teleport-fleet PR so its Deploy checks gate it.
+
+name: Merge cascade
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  merge-cascade:
+    name: Merge related cluster PRs
+    runs-on: ubuntu-latest
+    # Not in the template repo; only merged init branches.
+    if: >
+      github.repository != 'giantswarm/template-management-clusters' &&
+      github.event.pull_request.merged == true && (
+        endsWith(github.event.pull_request.head.ref, '-init') ||
+        endsWith(github.event.pull_request.head.ref, '-init-capa') ||
+        endsWith(github.event.pull_request.head.ref, '-init-capz') ||
+        endsWith(github.event.pull_request.head.ref, '-init-capv') ||
+        endsWith(github.event.pull_request.head.ref, '-init-capvcd')
+      )
+
+    steps:
+      - name: Generate app token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.MCTL_APP_ID }}
+          private-key: ${{ secrets.MCTL_APP_PRIVATE_KEY }}
+          # Owner-scoped so cross-repo calls work.
+          owner: ${{ github.repository_owner }}
+
+      - name: Merge installations and teleport-fleet PRs
+        uses: actions/github-script@v7
+        env:
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          script: |
+            const prNumber = context.payload.pull_request.number;
+            const branch = process.env.BRANCH;
+            const installation = branch.replace(/-init(-(capa|capz|capv|capvcd))?$/, '');
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+            });
+
+            async function comment(body) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                body,
+              });
+            }
+
+            // Markers shared with merge_gate and the Tekton result comment.
+            function findMarker(label) {
+              const re = new RegExp(`\\*\\*${label}:\\*\\*\\s*(.+)`);
+              for (const c of [...comments].reverse()) {
+                const m = (c.body || '').match(re);
+                if (m) return m[1].trim();
+              }
+              return '';
+            }
+
+            function asPR(reported) {
+              const m = reported.match(
+                /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
+              if (!m) return null;
+              return { owner: m[1], repo: m[2], number: parseInt(m[3], 10), url: m[0] };
+            }
+
+            // Admins can merge past the gate; never land PRs for a failed bootstrap.
+            const resultToken = `<!-- mctl-create-mc-result-${installation} -->`;
+            const results = comments.filter(c => (c.body || '').includes(resultToken));
+            const latestResult = results.length ? results[results.length - 1].body : '';
+            if (!latestResult.includes('created successfully')) {
+              await comment([
+                '### ⚠️ Merge cascade skipped',
+                '',
+                `The newest \`/create-mc\` result for \`${installation}\` does not report success,`,
+                'so the installations and teleport-fleet PRs were left alone.',
+                '',
+                'If the cluster is in fact healthy, merge them by hand; otherwise close them.',
+              ].join('\n'));
+              return;
+            }
+
+            // mergeable_state is "unknown" until GitHub has computed it.
+            async function getPR(target) {
+              for (let attempt = 0; attempt < 4; attempt++) {
+                const { data } = await github.rest.pulls.get({
+                  owner: target.owner, repo: target.repo, pull_number: target.number,
+                });
+                if (data.mergeable_state !== 'unknown' || data.merged) return data;
+                await new Promise(r => setTimeout(r, 3000));
+              }
+              const { data } = await github.rest.pulls.get({
+                owner: target.owner, repo: target.repo, pull_number: target.number,
+              });
+              return data;
+            }
+
+            // Squash is the only method allowed on the target repos.
+            async function mergeNow(target) {
+              await github.rest.pulls.merge({
+                owner: target.owner, repo: target.repo,
+                pull_number: target.number, merge_method: 'squash',
+              });
+            }
+
+            async function armAutoMerge(target, nodeID) {
+              await github.graphql(
+                `mutation($id: ID!) {
+                   enablePullRequestAutoMerge(input: {pullRequestId: $id, mergeMethod: SQUASH}) {
+                     pullRequest { number }
+                   }
+                 }`,
+                { id: nodeID });
+            }
+
+            // waitForChecks=false merges now (admin bypass); true arms auto-merge.
+            async function land(label, reported, waitForChecks) {
+              if (!reported) {
+                return { row: `| ${label} | ❓ not found | No PR link was reported on this PR. |` };
+              }
+              const target = asPR(reported);
+              if (!target) {
+                return { row: `| ${label} | ❌ not opened | ${reported} |` };
+              }
+
+              let pr;
+              try {
+                pr = await getPR(target);
+              } catch (err) {
+                return {
+                  row: `| ${label} | ❌ unreadable | ${target.url} — ${err.status || err.message} |`,
+                  failure: `${label} ${target.url} could not be read: ${err.status || err.message}`,
+                };
+              }
+              if (pr.merged) {
+                return { row: `| ${label} | ✅ already merged | ${target.url} |` };
+              }
+              if (pr.state === 'closed') {
+                return {
+                  row: `| ${label} | ❌ closed unmerged | ${target.url} |`,
+                  failure: `${label} ${target.url} is closed without being merged`,
+                };
+              }
+              if (pr.mergeable_state === 'dirty') {
+                return {
+                  row: `| ${label} | ❌ conflicts | ${target.url} — resolve and merge by hand. |`,
+                  failure: `${label} ${target.url} has conflicts`,
+                };
+              }
+
+              // Update a "behind" branch so auto-merge can proceed.
+              if (pr.mergeable_state === 'behind') {
+                try {
+                  await github.rest.pulls.updateBranch({
+                    owner: target.owner, repo: target.repo, pull_number: target.number,
+                  });
+                } catch (err) {
+                  core.warning(`Could not update ${target.url}: ${err.message}`);
+                }
+              }
+
+              const readyToMerge = pr.mergeable_state === 'clean';
+              let mergeErr = '';
+              if (!waitForChecks || readyToMerge) {
+                try {
+                  await mergeNow(target);
+                  return { row: `| ${label} | ✅ merged | ${target.url} |` };
+                } catch (err) {
+                  mergeErr = err.message;
+                  core.warning(`Direct merge of ${target.url} failed: ${err.message}`);
+                }
+              }
+
+              try {
+                await armAutoMerge(target, pr.node_id);
+                return {
+                  row: `| ${label} | ⏳ auto-merge armed | ${target.url} — merges when its checks pass. |`,
+                };
+              } catch (err) {
+                const why = mergeErr ? `${mergeErr}; auto-merge: ${err.message}` : err.message;
+                return {
+                  row: `| ${label} | ❌ needs a manual merge | ${target.url} — ${why} |`,
+                  failure: `${label} ${target.url} was neither merged nor armed for auto-merge: ${why}`,
+                };
+              }
+            }
+
+            const outcomes = [];
+            outcomes.push(await land(
+              'installations', findMarker('Installations PR'), false));
+            outcomes.push(await land(
+              'teleport-fleet', findMarker('Teleport fleet PR'), true));
+            const rows = outcomes.map(o => o.row);
+
+            await comment([
+              `### Cluster PRs for \`${installation}\``,
+              '',
+              '| PR | Status | |',
+              '|:-|:-|:-|',
+              ...rows,
+              '',
+              '#### Remaining manual step — register both Teleport bots',
+              '',
+              'Once the teleport-fleet PR is merged, run (both environments):',
+              '',
+              '```sh',
+              "tsh login --auth giantswarm --proxy 'teleport.giantswarm.io:443' \\",
+              `    && tctl bots add "${installation}" --token "bot-${installation}" --roles teleport-operator,teleport-tbot \\`,
+              `    && tctl bots add "mimir-alertmanager-${installation}" --token "mimir-alertmanager-${installation}-token" --roles teleport-proxy`,
+              '```',
+              '',
+              'There is no CRD for Teleport bots, so this cannot be automated. Until it is done,',
+              'tbot cannot authenticate and the node join token expires 30 days after bootstrap;',
+              'the `mimir-alertmanager` pod stays in `Init:CrashLoopBackOff`.',
+            ].join('\n'));
+
+            const failures = outcomes.filter(o => o.failure).map(o => o.failure);
+            if (failures.length) {
+              core.setFailed(failures.join(' | '));
+            }

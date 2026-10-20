@@ -9,7 +9,7 @@ import (
 	"slices"
 
 	"github.com/giantswarm/microerror"
-	"github.com/google/go-github/v92/github"
+	"github.com/google/go-github/v93/github"
 )
 
 func (c *Client) ListRepositories(ctx context.Context, owner string) ([]Repository, error) {
@@ -131,7 +131,7 @@ func (c *Client) SetRepositoryPermissions(ctx context.Context, repository *githu
 
 	for teamSlug, permission := range permissions {
 
-		opt := &github.TeamAddTeamRepoOptions{Permission: permission}
+		opt := github.AddTeamRepoRequest{Permission: new(permission)}
 
 		c.logger.Debugf("grant %q permission to %q", permission, teamSlug)
 

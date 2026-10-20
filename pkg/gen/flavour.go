@@ -17,10 +17,10 @@ const (
 	FlavourClusterApp              Flavour = "cluster-app"
 	FlavourManagementClustersFleet Flavour = "fleet"
 	// FlavourPlans is a team plans repository: versioned PRDs, their
-	// companion websites and the plan-workflow agent skills. An add-on
-	// flavour declared beside generic (flavours: [generic, plans]) with
-	// language generic; the generators produce nothing extra for it, and the
-	// repository set-up engine derives it the template giantswarm/template-plans.
+	// companion websites and the plan-workflow agent skills. Declared on its
+	// own (flavours: [plans]) with language generic: the repository set-up
+	// engine derives it the template giantswarm/template-plans, and gen plans
+	// writes its shared set-up.
 	FlavourPlans Flavour = "plans"
 )
 
@@ -82,8 +82,9 @@ func (s FlavourSlice) Contains(f Flavour) bool {
 
 // Generates says whether the generators have anything to produce for the
 // flavours. A fork line carries its upstream's files plus the carried
-// patches: nothing is generated for it, every `devctl gen` leaves it as it
-// is.
+// patches: nothing is generated for it, align-files leaves it as it is; only
+// `devctl gen renovate --flavour fork`, run by hand, writes the renovate.json
+// Renovate needs to scan a GitHub fork.
 func (s FlavourSlice) Generates() bool {
 	return !s.Contains(FlavourFork)
 }
