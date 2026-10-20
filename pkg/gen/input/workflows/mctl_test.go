@@ -463,3 +463,12 @@ func outputValue(raw, key string) string {
 	}
 	return ""
 }
+
+// actions/github-script@v7 injects no getOctokit; a call to it crashes the step.
+func Test_MctlNoGetOctokit(t *testing.T) {
+	for name, body := range mctlRenders(t, false) {
+		if strings.Contains(body, "getOctokit(") {
+			t.Errorf("%s calls getOctokit, which github-script@v7 does not provide; use new github.constructor({ auth })", name)
+		}
+	}
+}
