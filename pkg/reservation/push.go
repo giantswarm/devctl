@@ -14,14 +14,14 @@ import (
 // gives up and reports the failure.
 const MaxPushAttempts = 5
 
-// Push pushes dir's current branch to its upstream, using whatever
-// credentials are already configured on the remote: the checkout's own git
-// credentials (SSH or a credential helper on a laptop, the token
-// actions/checkout persists in CI). Reserve and Release share it, so there is
-// one way to push, not two. It relies on the upstream a checkout of main
-// always tracks, so no caller has to name the branch or the remote.
+// Push pushes dir's HEAD to main on origin, using whatever credentials are
+// already configured on the remote: the checkout's own git credentials (SSH or
+// a credential helper on a laptop, the token actions/checkout persists in CI).
+// Reserve and Release share it, so there is one way to push, not two. Like the
+// sync before every command, it names main and origin explicitly instead of
+// relying on a tracking branch.
 func Push(ctx context.Context, dir string) error {
-	if err := runGit(ctx, dir, "push"); err != nil {
+	if err := runGit(ctx, dir, "push", "origin", "HEAD:main"); err != nil {
 		return microerror.Maskf(pushError, "%s", err)
 	}
 
@@ -30,7 +30,7 @@ func Push(ctx context.Context, dir string) error {
 
 // PushWithRetry calls render, which must render, assert and commit exactly as
 // Reserve and Release do, and pushes the commit it made. When the push is
-// rejected, it fetches and hard-resets dir to its upstream's new tip --
+// rejected, it fetches and hard-resets dir to origin/main's new tip --
 // discarding the commit render just made, not replaying it -- and calls
 // render again. A rebase that only replayed the old commit would carry
 // whatever it rendered against the old tip; this reruns render against
@@ -79,7 +79,7 @@ func isRejection(err error) bool {
 }
 
 // rebaseOntoRemote discards the local commit render just made and moves dir
-// to match its upstream's new tip, so the next render call starts from
+// to match origin/main's new tip, so the next render call starts from
 // whatever a rejected push means someone else already landed.
 //
 // `git reset --hard` cannot be scoped to a set of paths: it always rewrites
@@ -93,7 +93,7 @@ func isRejection(err error) bool {
 // spare it from a hard reset, so this is the smallest change that actually
 // closes the hole.
 func rebaseOntoRemote(ctx context.Context, dir string) error {
-	if err := runGit(ctx, dir, "fetch"); err != nil {
+	if err := runGit(ctx, dir, "fetch", "origin", "+refs/heads/main:refs/remotes/origin/main"); err != nil {
 		return microerror.Mask(err)
 	}
 
@@ -107,7 +107,7 @@ func rebaseOntoRemote(ctx context.Context, dir string) error {
 			dir, status)
 	}
 
-	return runGit(ctx, dir, "reset", "--hard", "@{upstream}")
+	return runGit(ctx, dir, "reset", "--hard", "origin/main")
 }
 
 func runGit(ctx context.Context, dir string, args ...string) error {
@@ -137,4 +137,13 @@ func gitStatusPorcelain(ctx context.Context, dir string) (string, error) {
 	}
 
 	return strings.TrimSpace(stdout.String()), nil
+}
+
+// discardWrites puts the cluster's ConfigMap and collections back to HEAD and
+// removes a component directory Reserve created, after a failure past the
+// first write. Best effort: the original error is the one worth reporting.
+func discardWrites(dir, cluster, chart string) {
+	ctx := context.Background()
+	_ = runGit(ctx, dir, "checkout", "HEAD", "--", clusterPath(cluster, ConfigMapFile), clusterPath(cluster, collectionsDir))
+	_ = runGit(ctx, dir, "clean", "-fdq", "--", clusterPath(cluster, collectionsDir, reservationsDir, chart))
 }

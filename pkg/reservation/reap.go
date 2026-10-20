@@ -73,6 +73,9 @@ func Reap(ctx context.Context, req ReapRequest) ([]Reaped, error) {
 		reaped = append(reaped, released...)
 		if err != nil {
 			errs = append(errs, err)
+			if IsPushFailed(err) {
+				break
+			}
 		}
 	}
 
@@ -141,6 +144,10 @@ func reapCluster(ctx context.Context, req ReapRequest, cluster string, now time.
 		}, req.HeadBranch, now)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("releasing %q on cluster %q: %w", r.App, cluster, err))
+			// A given-up push leaves its commit on local main; going on would push it with the next change.
+			if IsPushFailed(err) {
+				break
+			}
 			continue
 		}
 		if result.Commit == "" {

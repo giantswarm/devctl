@@ -57,10 +57,10 @@ type Extended struct {
 // A reservation whose Until has already passed is treated as if it did not
 // exist: reviving it could silently break an exclusive lock somebody else
 // legally took over the same cluster while the dead record sat unswept (see
-// checkCollision). Only /deploy brings a dead reservation back.
+// checkCollision). Only `reserve` brings a dead reservation back.
 //
 // It refuses when the pull request holds no matching, unexpired record on any
-// cluster, naming /deploy as the way to create one. A single reservation
+// cluster, naming `devctl reservation reserve` as the way to create one. A single reservation
 // whose stored duration now exceeds its cluster's cap is refused on its own
 // and does not stop the rest of the sweep, exactly as Reap behaves: Extend
 // never returns a bare nil, err when some reservations did get extended.
@@ -93,12 +93,15 @@ func Extend(ctx context.Context, req ExtendRequest) ([]Extended, error) {
 		found = found || matched
 		if err != nil {
 			errs = append(errs, err)
+			if IsPushFailed(err) {
+				break
+			}
 		}
 	}
 
 	if !found {
 		errs = append(errs, microerror.Maskf(nothingToExtendError,
-			"pull request %q holds no reservation to extend. Run /deploy <MC> to create one", req.PullRequest))
+			"pull request %q holds no reservation to extend. Run `devctl reservation reserve` to create one", req.PullRequest))
 	}
 
 	return extended, errors.Join(errs...)
@@ -127,6 +130,10 @@ func extendCluster(ctx context.Context, req ExtendRequest, cluster string, now t
 		result, err := extendAndPush(ctx, req, cluster, r, now)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("extending %q on cluster %q: %w", r.App, cluster, err))
+			// A given-up push leaves its commit on local main; going on would push it with the next change.
+			if IsPushFailed(err) {
+				break
+			}
 			continue
 		}
 		extended = append(extended, result)

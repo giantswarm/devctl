@@ -71,6 +71,9 @@ func ReleaseAll(ctx context.Context, req ReleaseAllRequest) ([]Released, error) 
 		released = append(released, rel...)
 		if err != nil {
 			errs = append(errs, err)
+			if IsPushFailed(err) {
+				break
+			}
 		}
 	}
 
@@ -102,6 +105,10 @@ func releaseAllCluster(ctx context.Context, req ReleaseAllRequest, cluster strin
 		})
 		if err != nil {
 			errs = append(errs, fmt.Errorf("releasing %q on cluster %q: %w", r.App, cluster, err))
+			// A given-up push leaves its commit on local main; going on would push it with the next change.
+			if IsPushFailed(err) {
+				break
+			}
 			continue
 		}
 
