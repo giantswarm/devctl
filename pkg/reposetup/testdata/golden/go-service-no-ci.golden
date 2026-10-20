@@ -313,7 +313,8 @@ jobs:
     with:
       fetch-deep-gitlog-for-build: true
     secrets:
-      TAYLORBOT_GITHUB_ACTION: ${{ secrets.TAYLORBOT_GITHUB_ACTION }}
+      RELEASE_BOT_CLIENT_ID: ${{ secrets.RELEASE_BOT_CLIENT_ID }}
+      RELEASE_BOT_PRIVATE_KEY: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
     permissions:
       contents: write
 
@@ -375,7 +376,8 @@ jobs:
     with:
       branch: ${{ inputs.branch }}
     secrets:
-      TAYLORBOT_GITHUB_ACTION: ${{ secrets.TAYLORBOT_GITHUB_ACTION }}
+      RELEASE_BOT_CLIENT_ID: ${{ secrets.RELEASE_BOT_CLIENT_ID }}
+      RELEASE_BOT_PRIVATE_KEY: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
 
 --- .github/workflows/zz_generated.fix_vulnerabilities.yaml
 # DO NOT EDIT. Generated with:
@@ -1080,10 +1082,12 @@ func main() {}
     // Go specific config - https://github.com/giantswarm/renovate-presets/blob/main/lang-go.json5
     'github>giantswarm/renovate-presets:lang-go.json5',
   ],
-  // Two of our own bots commit onto Renovate branches. taylorbot
-  // <dev@giantswarm.io> pushes what the generated workflows produce
+  // Our own bots commit onto Renovate branches. The giantswarm-release
+  // GitHub App pushes what the generated workflows produce
   // (zz_generated.helm-docs-regen.yaml, the update-chart and
-  // sync-from-upstream flows). giantswarm-marge[bot] writes the bot PR's
+  // sync-from-upstream flows); taylorbot <dev@giantswarm.io> did so before
+  // it and still does in repositories whose workflows are not regenerated
+  // yet. giantswarm-marge[bot] writes the bot PR's
   // changelog entry during the sweep, in the repositories that still cut a
   // release from CHANGELOG.md. Renovate treats a branch whose last commit is
   // by anyone else as edited by a human: it stops rebasing it and, on
@@ -1091,6 +1095,7 @@ func main() {}
   // the authors here makes those commits Renovate's own. Renovate compares
   // the author email, so these are the bare addresses.
   gitIgnoredAuthors: [
+    '342014845+giantswarm-release[bot]@users.noreply.github.com',
     'dev@giantswarm.io',
     '329428426+giantswarm-marge[bot]@users.noreply.github.com',
   ],
