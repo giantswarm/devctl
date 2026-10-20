@@ -91,7 +91,7 @@ func Test_feedback_unanswered(t *testing.T) {
 			f: feedback{comments: []*github.IssueComment{
 				comment(&github.User{Login: ptr("renovate[bot]"), Type: ptr("Bot")}, 12),
 				comment(&github.User{Login: ptr("some-app"), Type: ptr("Bot")}, 12),
-				comment(&github.User{Login: ptr("taylorbot"), Type: ptr("User"), ID: ptr(int64(25685558))}, 12),
+				comment(&github.User{Login: ptr("architectbot"), Type: ptr("User"), ID: ptr(int64(61872893))}, 12),
 			}}},
 		{name: "a commenting automation account's comment never holds",
 			f: feedback{comments: []*github.IssueComment{
@@ -112,7 +112,10 @@ func Test_feedback_unanswered(t *testing.T) {
 			f:    feedback{comments: []*github.IssueComment{comment(&github.User{Login: ptr("codecov-commenter"), Type: ptr("User"), ID: ptr(int64(1))}, 12)}},
 			want: []string{"comment/codecov-commenter"}},
 		{name: "an impostor of an automation login holds",
-			f:    feedback{comments: []*github.IssueComment{comment(&github.User{Login: ptr("taylorbot"), Type: ptr("User"), ID: ptr(int64(1))}, 12)}},
+			f:    feedback{comments: []*github.IssueComment{comment(&github.User{Login: ptr("architectbot"), Type: ptr("User"), ID: ptr(int64(1))}, 12)}},
+			want: []string{"comment/architectbot"}},
+		{name: "taylorbot's comment holds like a person's",
+			f:    feedback{comments: []*github.IssueComment{comment(&github.User{Login: ptr("taylorbot"), Type: ptr("User"), ID: ptr(int64(25685558))}, 12)}},
 			want: []string{"comment/taylorbot"}},
 		{name: "the author's own comments never hold",
 			f: feedback{comments: []*github.IssueComment{comment(person("someone"), 12)}}},

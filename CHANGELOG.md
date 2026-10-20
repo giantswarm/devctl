@@ -19,6 +19,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Changed
 
 - `gen workflows` flavour `fleet`: mctl image pinned to 0.2.1.
+- `devctl pr merge` no longer accepts `taylorbot` as an automation account: a pull request it opens is refused
+  like any other person's (exit 5), and its comment holds the merge like a person's. The `giantswarm-release`
+  GitHub App opens the generated release pull requests and is accepted as an App; `architectbot` stays
+  (giantswarm/giantswarm#2280).
 - `devctl release promote` follows the Auto Release run each dispatch started until it concludes, at most
   `--follow-timeout` (20m): a run the repository's stable gate refuses, or that fails otherwise, is `refused`
   and exit 1 at once, its message naming the run's URL and the errors its failed jobs annotated (the gate's
