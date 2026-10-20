@@ -16,7 +16,7 @@ permissions:
   issues: write
 
 env:
-  MCTL_IMAGE: ${{ vars.MCTL_IMAGE || 'gsoci.azurecr.io/giantswarm/mctl:0.2.0' }}
+  MCTL_IMAGE: ${{ vars.MCTL_IMAGE || 'gsoci.azurecr.io/giantswarm/mctl:0.2.1' }}
 
 jobs:
   init:
