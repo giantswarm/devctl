@@ -34,8 +34,8 @@ func newCommand(t *testing.T) *cobra.Command {
 	return cmd
 }
 
-// TestExclusiveFlagDefaultsToFalse checks the cobra surface a caller like
-// slice 09 depends on: an --exclusive bool flag, off by default, so a plain
+// TestExclusiveFlagDefaultsToFalse checks the cobra surface callers
+// depend on: an --exclusive bool flag, off by default, so a plain
 // reserve keeps requesting the app scope it always has.
 func TestExclusiveFlagDefaultsToFalse(t *testing.T) {
 	cmd := newCommand(t)
