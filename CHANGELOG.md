@@ -42,6 +42,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- The auto-release workflow skips a candidate number that a tag off the branch already holds. Such a tag is a
+  candidate tagged by hand on a pull request's branch to prove it, whose commits a rebase merge then rewrote. Before,
+  the workflow cut that tag name again, and GitHub attached the new release to the old tag's commit.
 - `gen workflows` flavour `fleet`: the mctl merge gate no longer calls `getOctokit`, which `actions/github-script@v7` does not provide; the step crashed before posting `mctl/ready-to-merge`.
 - `release create`: end the updated `releases.json` with a trailing newline.
 - The Auto-release workflow's unconventional-subject warning accepts every type git-cliff parses (letters,
