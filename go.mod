@@ -13,7 +13,7 @@ require (
 	github.com/bmatcuk/doublestar/v4 v4.10.3
 	github.com/fatih/color v1.19.0
 	github.com/giantswarm/gitsemver/v3 v3.0.1
-	github.com/giantswarm/go-selfupdate v1.6.3
+	github.com/giantswarm/go-selfupdate v1.6.5
 	github.com/giantswarm/microerror v0.4.1
 	github.com/giantswarm/micrologger v1.1.2
 	github.com/giantswarm/releases/sdk v0.13.0
