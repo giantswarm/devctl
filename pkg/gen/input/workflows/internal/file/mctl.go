@@ -11,7 +11,7 @@ import (
 
 // MctlVersion is the mctl image tag the workflows run unless vars.MCTL_IMAGE overrides it.
 // renovate: datasource=docker depName=gsoci.azurecr.io/giantswarm/mctl
-const MctlVersion = "0.1.16"
+const MctlVersion = "0.2.0"
 
 // mctlWorkflows are the legacy file names; each renders from mctl_<name_with_underscores>.yaml.template.
 var mctlWorkflows = []string{
