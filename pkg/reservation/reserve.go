@@ -224,7 +224,10 @@ func Reserve(req Request) (res Result, err error) {
 
 	collectionsPath := filepath.Join(req.RepoDir, clustersDir, req.Cluster, collectionsDir)
 
-	before, err := renderCollections(collectionsPath)
+	if err := assertRootKeepsReservation(filepath.Join(req.RepoDir, clustersDir, req.Cluster)); err != nil {
+		return Result{}, microerror.Mask(err)
+	}
+	before, err := renderDir(collectionsPath)
 	if err != nil {
 		return Result{}, microerror.Mask(err)
 	}
@@ -262,7 +265,7 @@ func Reserve(req Request) (res Result, err error) {
 		return Result{}, microerror.Mask(err)
 	}
 
-	after, err := renderCollections(collectionsPath)
+	after, err := renderDir(collectionsPath)
 	if err != nil {
 		return Result{}, microerror.Mask(err)
 	}

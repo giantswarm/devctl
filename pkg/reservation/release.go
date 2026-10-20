@@ -122,7 +122,7 @@ func Release(req ReleaseRequest) (res ReleaseResult, err error) {
 	// The only trustworthy check that the release actually took effect: render
 	// the collections the way kustomize-controller does and confirm the
 	// reservation's source, and every instance patched to it, are really gone.
-	after, err := renderCollections(collectionsPath)
+	after, err := renderDir(collectionsPath)
 	if err != nil {
 		return ReleaseResult{}, microerror.Mask(err)
 	}

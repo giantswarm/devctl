@@ -57,11 +57,11 @@ func (o object) nested(path ...string) any {
 	return cur
 }
 
-// renderCollections builds the cluster's collections overlay the way
-// kustomize-controller does. A reservation that does not survive this render
+// renderDir builds a kustomization directory (a cluster's collections overlay or
+// its root) the way kustomize-controller does. A reservation that does not survive this render
 // does nothing on the cluster, so it is the only trustworthy check available
 // before the push.
-func renderCollections(dir string) ([]object, error) {
+func renderDir(dir string) ([]object, error) {
 	m, err := krusty.MakeKustomizer(krusty.MakeDefaultOptions()).Run(filesys.MakeFsOnDisk(), dir)
 	if err != nil {
 		return nil, microerror.Maskf(renderError, "rendering %s: %v", dir, err)
@@ -78,6 +78,61 @@ func renderCollections(dir string) ([]object, error) {
 	}
 
 	return objects, nil
+}
+
+// collectionsKustomization is the Flux Kustomization that applies a cluster's
+// collections directory. It is not a resource of the cluster root, so building
+// the root does not show the reservation; what can undo it is this object
+// gaining patches, images or components that rewrite the sources.
+const (
+	collectionsKustomizationName      = "collections"
+	collectionsKustomizationNamespace = "flux-giantswarm"
+)
+
+// assertRootKeepsReservation builds the cluster root the way kustomize-controller
+// does (remote resources included, so it needs git and network) and refuses
+// when the collections Flux Kustomization is missing or could rewrite the
+// OCIRepository or HelmRelease objects the reservation writes. Not checked:
+// postBuild.substitute, which only replaces ${var} text, and the reservation
+// writes literal values.
+func assertRootKeepsReservation(rootDir string) error {
+	objects, err := renderDir(rootDir)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	var ks object
+	for _, o := range objects {
+		if o.kind() == "Kustomization" && o.namespace() == collectionsKustomizationNamespace && o.name() == collectionsKustomizationName {
+			ks = o
+			break
+		}
+	}
+	if ks == nil {
+		return microerror.Maskf(renderAssertionError,
+			"the cluster root renders no Flux Kustomization %s/%s, so devctl cannot tell what applies the collections",
+			collectionsKustomizationNamespace, collectionsKustomizationName)
+	}
+
+	for _, field := range []string{"images", "components"} {
+		if v, _ := ks.nested("spec", field).([]any); len(v) > 0 {
+			return microerror.Maskf(renderAssertionError,
+				"the Flux Kustomization %s/%s sets spec.%s, which could undo the reservation",
+				collectionsKustomizationNamespace, collectionsKustomizationName, field)
+		}
+	}
+	patches, _ := ks.nested("spec", "patches").([]any)
+	for _, p := range patches {
+		pm, _ := p.(map[string]any)
+		kind, _ := object(pm).nested("target", "kind").(string)
+		if kind == "" || kind == ociRepositoryKind || kind == helmReleaseKind {
+			return microerror.Maskf(renderAssertionError,
+				"the Flux Kustomization %s/%s has a spec.patches entry targeting %q, which could undo the reservation",
+				collectionsKustomizationNamespace, collectionsKustomizationName, kind)
+		}
+	}
+
+	return nil
 }
 
 // findSource returns the OCIRepository with the given name. It is a lookup of a

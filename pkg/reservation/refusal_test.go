@@ -74,3 +74,42 @@ func TestReserveRefusalMakesNoCommit(t *testing.T) {
 		})
 	}
 }
+
+// TestReserveRefusesARootThatCouldUndoTheReservation covers the cluster root
+// check: the collections Flux Kustomization must not rewrite what the
+// reservation writes, and must exist.
+func TestReserveRefusesARootThatCouldUndoTheReservation(t *testing.T) {
+	for name, spec := range map[string]string{
+		"oci repository patch": "  patches:\n    - target:\n        kind: OCIRepository\n      patch: |\n        - op: replace\n          path: /spec/ref/semver\n          value: 1.0.0\n",
+		"patch without target": "  patches:\n    - patch: |\n        - op: add\n          path: /metadata/labels/a\n          value: b\n",
+		"images":               "  images:\n    - name: x\n      newTag: y\n",
+		"components":           "  components:\n    - ../x\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := newGitOpsFixture(t, fixtureOptions{collectionsSpec: spec})
+
+			_, err := reservation.Reserve(testRequest(dir))
+			if !reservation.IsRenderAssertion(err) {
+				t.Fatalf("expected a render assertion error, got %v", err)
+			}
+		})
+	}
+
+	t.Run("patch of another kind passes", func(t *testing.T) {
+		spec := "  patches:\n    - target:\n        kind: ConfigMap\n      patch: |\n        - op: add\n          path: /metadata/labels/a\n          value: b\n"
+		dir := newGitOpsFixture(t, fixtureOptions{collectionsSpec: spec})
+		if _, err := reservation.Reserve(testRequest(dir)); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	t.Run("no collections kustomization", func(t *testing.T) {
+		dir := newGitOpsFixture(t, fixtureOptions{extraFiles: map[string]string{
+			"management-clusters/" + fixtureCluster + "/flux-collections.yaml": "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: x\n",
+		}})
+		_, err := reservation.Reserve(testRequest(dir))
+		if !reservation.IsRenderAssertion(err) {
+			t.Fatalf("expected a render assertion error, got %v", err)
+		}
+	})
+}
