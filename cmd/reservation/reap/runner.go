@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strconv"
 	"strings"
 	"time"
 
@@ -102,7 +101,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 // read (authstore.GitHubNotFoundHint).
 func headBranchFunc(client *githubclient.Client, notFoundHint string) reservation.HeadBranchFunc {
 	return func(ctx context.Context, pullRequest string) (string, error) {
-		owner, repo, number, err := splitPullRequest(pullRequest)
+		owner, repo, number, err := reservation.SplitPullRequest(pullRequest)
 		if err != nil {
 			return "", microerror.Mask(err)
 		}
@@ -114,22 +113,4 @@ func headBranchFunc(client *githubclient.Client, notFoundHint string) reservatio
 
 		return pr.GetHead().GetRef(), nil
 	}
-}
-
-// splitPullRequest parses "owner/repo#number".
-func splitPullRequest(pullRequest string) (owner, repo string, number int, err error) {
-	repoPart, numberPart, ok := strings.Cut(pullRequest, "#")
-	if !ok {
-		return "", "", 0, microerror.Maskf(invalidPullRequestError, "pull request %q is not owner/repo#number", pullRequest)
-	}
-	owner, repo, ok = strings.Cut(repoPart, "/")
-	if !ok || owner == "" || repo == "" {
-		return "", "", 0, microerror.Maskf(invalidPullRequestError, "pull request %q is not owner/repo#number", pullRequest)
-	}
-	number, err = strconv.Atoi(numberPart)
-	if err != nil {
-		return "", "", 0, microerror.Maskf(invalidPullRequestError, "pull request %q is not owner/repo#number: %v", pullRequest, err)
-	}
-
-	return owner, repo, number, nil
 }

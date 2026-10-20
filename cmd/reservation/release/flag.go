@@ -2,6 +2,8 @@ package release
 
 import (
 	"github.com/giantswarm/microerror"
+
+	"github.com/giantswarm/devctl/v8/pkg/reservation"
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/v8/cmd/reservation/gitops"
@@ -43,6 +45,12 @@ func (f *flag) Validate() error {
 	} {
 		if r.value == "" {
 			return microerror.Maskf(invalidFlagError, "--%s must not be empty", r.name)
+		}
+	}
+
+	if f.PullRequest != "" {
+		if _, _, _, err := reservation.SplitPullRequest(f.PullRequest); err != nil {
+			return microerror.Mask(err)
 		}
 	}
 

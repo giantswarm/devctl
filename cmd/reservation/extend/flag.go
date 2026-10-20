@@ -2,6 +2,8 @@ package extend
 
 import (
 	"github.com/giantswarm/microerror"
+
+	"github.com/giantswarm/devctl/v8/pkg/reservation"
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/v8/cmd/reservation/gitops"
@@ -27,6 +29,12 @@ func (f *flag) Init(cmd *cobra.Command) {
 func (f *flag) Validate() error {
 	if err := f.GitOps.Validate(); err != nil {
 		return microerror.Mask(err)
+	}
+
+	if f.PullRequest != "" {
+		if _, _, _, err := reservation.SplitPullRequest(f.PullRequest); err != nil {
+			return microerror.Mask(err)
+		}
 	}
 
 	for _, r := range []struct{ name, value string }{

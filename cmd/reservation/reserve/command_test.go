@@ -122,3 +122,23 @@ func TestWarnsWithoutAPullRequest(t *testing.T) {
 		})
 	}
 }
+
+// TestRefusesAMalformedPullRequest checks a typo or a URL is refused when it is
+// written, not later by every reap run that reads it.
+func TestRefusesAMalformedPullRequest(t *testing.T) {
+	for _, pr := range []string{"123", "https://github.com/giantswarm/hello-world/pull/123", "giantswarm/hello-world#x"} {
+		cmd := newCommand(t)
+		cmd.SetArgs([]string{
+			"--cluster", "graveler",
+			"--app", "hello-world",
+			"--branch", "fix/crash",
+			"--user", "alice",
+			"--pull-request", pr,
+		})
+
+		err := cmd.Execute()
+		if err == nil || !reservation.IsInvalidConfig(err) {
+			t.Errorf("--pull-request %q: expected an invalid-config refusal, got %v", pr, err)
+		}
+	}
+}

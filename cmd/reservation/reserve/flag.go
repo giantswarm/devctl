@@ -60,6 +60,12 @@ func (f *flag) Validate() error {
 	if err := f.GitOps.Validate(); err != nil {
 		return microerror.Mask(err)
 	}
+	if f.PullRequest != "" {
+		if _, _, _, err := reservation.SplitPullRequest(f.PullRequest); err != nil {
+			return microerror.Mask(err)
+		}
+	}
+
 	// Parsed here before the sync: a wrong duration is a typo, and a typo should
 	// not cost a fetch from the GitOps repo to find out about.
 	if _, err := reservation.ParseDuration(f.Duration); err != nil {
