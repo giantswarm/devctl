@@ -9,6 +9,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `gen workflows --patch-candidates` (team file: `gen.ci.patchCandidates: true`): a patch of the last stable release
+  is cut as a release candidate `vX.Y.Z-rc.N` too, on the default branch and on a fork line's maintenance branches,
+  never tagged stable on its push, for a repository whose consumers take its next patch on their own. Every stable
+  release is a promotion. Opt-in: a repository without it keeps the patch fast path.
+- `devctl release promote --branch <branch>`, for one repository: promotes the candidate of that branch instead of the
+  default branch's, a fork line's maintenance branch `release-X.Y` cutting the candidates of its own series.
 - `gen workflows` flavour `fleet`: the mctl workflows of a management-clusters repository (`zz_generated.mctl_*.yaml`, mctl image pinned to 0.1.16), replacing the copies and `op.env` `mctl create cmc-repo` wrote.
 - `devctl release rerun` cancels a tag workflow running longer than `--wedged-after` (2h; `0` turns it off), its
   jobs hung on CircleCI's side, waits for the cancel to land and reruns it from failed, from start where CircleCI

@@ -272,7 +272,10 @@ type CIFields struct {
 	ReleaseWorkflow string `yaml:"releaseWorkflow"`
 	// MaintenanceBranches says a fork line's maintenance branches
 	// (release-X.Y) cut releases too, each the patches of its X.Y series.
-	MaintenanceBranches     bool   `yaml:"maintenanceBranches"`
+	MaintenanceBranches bool `yaml:"maintenanceBranches"`
+	// PatchCandidates says a patch of the last stable release is cut as a
+	// release candidate too, never tagged stable on its push.
+	PatchCandidates         bool   `yaml:"patchCandidates"`
 	AppCatalog              string `yaml:"appCatalog"`
 	AppCatalogTest          string `yaml:"appCatalogTest"`
 	ChartName               string `yaml:"chartName"`

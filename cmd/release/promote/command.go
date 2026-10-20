@@ -26,7 +26,9 @@ giantswarm/github whose release model is auto-release (releaseWorkflow,
 defaulting from gen.ci.generate), in the giantswarm organization. Pass
 exactly one of the two.
 
-For each repository, on its default branch:
+For each repository, on its default branch (--branch names another, for one
+repository: a fork line's maintenance branch release-X.Y, whose candidates
+are its own series'):
   1. The workflow file must be there (else not_auto_release) and carry the
      step "Resolve the candidate to promote" of devctl v8.102.0 or later
      (else outdated_workflow: an older workflow's release-type stable tags
@@ -100,7 +102,8 @@ Exit codes:
   7  usage or tooling: neither or both of repositories and --team, a
      malformed owner/repo, a negative --follow-timeout, --version not of
      the form vX.Y.Z-rc.N or not
-     with exactly one repository, or a team without a team file, before
+     with exactly one repository, --branch not with exactly one
+     repository, or a team without a team file, before
      any repository is read
   8  authentication required: run ` + "`devctl auth login --github-only`" + `
 
@@ -117,6 +120,7 @@ Examples:
   devctl release promote giantswarm/devctl --dry-run
   devctl release promote giantswarm/devctl giantswarm/klaus
   devctl release promote giantswarm/devctl --version v1.2.3-rc.14
+  devctl release promote giantswarm/substrate --branch release-1.16 --version v1.16.5-rc.1
   devctl release promote --team team-bumblebee --progress`
 )
 
