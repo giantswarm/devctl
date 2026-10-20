@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/go-github/v92/github"
+	"github.com/google/go-github/v93/github"
 
 	"github.com/giantswarm/devctl/v8/e2e/mock/sequence"
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
@@ -93,6 +93,24 @@ func Test_feedback_unanswered(t *testing.T) {
 				comment(&github.User{Login: ptr("some-app"), Type: ptr("Bot")}, 12),
 				comment(&github.User{Login: ptr("taylorbot"), Type: ptr("User"), ID: ptr(int64(25685558))}, 12),
 			}}},
+		{name: "a commenting automation account's comment never holds",
+			f: feedback{comments: []*github.IssueComment{
+				comment(&github.User{Login: ptr("codecov-commenter"), Type: ptr("User"), ID: ptr(int64(65553080))}, 12),
+			}}},
+		{name: "a bot's review and review comment never hold",
+			f: feedback{
+				reviews:        []*github.PullRequestReview{{User: &github.User{Login: ptr("copilot-pull-request-reviewer[bot]"), Type: ptr("Bot")}, State: ptr("COMMENTED"), CommitID: ptr("abc123"), SubmittedAt: at(12)}},
+				reviewComments: []*github.PullRequestComment{{User: &github.User{Login: ptr("some-app"), Type: ptr("Bot")}, OriginalCommitID: ptr("abc123"), CreatedAt: at(12)}},
+			}},
+		{name: "a person's comment next to a bot's still holds",
+			f: feedback{comments: []*github.IssueComment{
+				comment(&github.User{Login: ptr("codecov-commenter"), Type: ptr("User"), ID: ptr(int64(65553080))}, 12),
+				comment(person("marians"), 13),
+			}},
+			want: []string{"comment/marians"}},
+		{name: "an impostor of a commenting automation login holds",
+			f:    feedback{comments: []*github.IssueComment{comment(&github.User{Login: ptr("codecov-commenter"), Type: ptr("User"), ID: ptr(int64(1))}, 12)}},
+			want: []string{"comment/codecov-commenter"}},
 		{name: "an impostor of an automation login holds",
 			f:    feedback{comments: []*github.IssueComment{comment(&github.User{Login: ptr("taylorbot"), Type: ptr("User"), ID: ptr(int64(1))}, 12)}},
 			want: []string{"comment/taylorbot"}},
@@ -198,5 +216,24 @@ func Test_answerers(t *testing.T) {
 		if got := answerers(tc.author, "caller"); got != tc.want {
 			t.Errorf("%s: want %q, got %q", tc.author.GetLogin(), tc.want, got)
 		}
+	}
+}
+
+func Test_Merge_automaticCommentMerges(t *testing.T) {
+	coverage := map[string]any{
+		"id": 10, "created_at": "2026-10-01T10:06:00Z",
+		"user":     map[string]any{"login": "codecov-commenter", "type": "User", "id": 65553080},
+		"html_url": "https://github.com/o/r/pull/42#issuecomment-10",
+	}
+	h := newHarness(t, routes(pull(nil), sequence.Routes{
+		"GET /repos/o/r/issues/42/comments": {{Body: []any{coverage}}},
+	}), nil)
+
+	result, err := h.merge(t)
+	if err != nil {
+		t.Fatalf("want a merge, got %v", err)
+	}
+	if result.MergeCommitSHA != "m1" || len(result.UnansweredReviews) != 0 {
+		t.Errorf("result: %+v", result)
 	}
 }

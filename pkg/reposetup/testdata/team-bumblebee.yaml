@@ -196,6 +196,20 @@
     flavours:
       - app
     language: go
+- name: renovate-off
+  componentType: service
+  renovate: false
+  gen:
+    flavours:
+      - app
+    language: go
+- name: renovate-not-bool
+  componentType: service
+  renovate: "off"
+  gen:
+    flavours:
+      - app
+    language: go
 - name: ci-without-generate
   # A ci block without generate: the creation writes the default, an existing
   # entry is read as declared and the schema requires the field.

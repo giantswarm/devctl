@@ -29,6 +29,27 @@ devctl pr rerun giantswarm/devctl 2277 && beekeeper gate -- devctl pr wait giant
 devctl release rerun giantswarm/devctl v8.123.0 && beekeeper gate -- devctl release wait giantswarm/devctl v8.123.0
 ```
 
+## A workflow wedged in running
+
+A tag workflow whose jobs hang on CircleCI's side reads `running` for hours, and a cancel from the UI
+may not even take. `release rerun` treats a workflow running (or failing) longer than
+`--wedged-after` (default **2h**, far beyond any tag build; `0` turns it off) as wedged:
+
+1. it is canceled (`POST /api/v2/workflow/{id}/cancel`) with the same CircleCI login as the rerun;
+2. it is read until it no longer runs, at most two minutes (`ci.CancelTimeout`);
+3. it is rerun from failed, or from start (`from_failed: false`) where CircleCI offers no rerun from
+   failed for it. The workflow's `canceled` is `true`, `rerunFrom` says which, and a warning names its
+   age and the bound.
+
+Where CircleCI does not honour the cancel within those two minutes, the tag gets a fresh pipeline
+through the API instead, as for a pipeline without a workflow below: `trigger`, once per tag. A
+workflow on hold waits for a person and is never canceled. A running workflow younger than the bound
+is refused as before (exit 5), the reason naming its age and the bound. `pr rerun` cancels nothing.
+
+```nohighlight
+devctl release rerun giantswarm/kagent-upstream v1.17.0 && beekeeper gate -- devctl release wait giantswarm/kagent-upstream v1.17.0
+```
+
 ## A pipeline without a workflow
 
 A pipeline that never got a workflow has nothing to rerun: its setup workflow finished and the
@@ -51,6 +72,13 @@ not sent a second time; exit 5 names the earlier redelivery, and what remains is
 empty commit. A head in a fork was pushed to the fork, whose deliveries the repository does not have:
 exit 3. A pending pipeline whose setup workflow *failed* is rerun from failed like any other; one whose
 setup workflow still runs is waited for (exit 5).
+
+`release rerun` goes one step further where the push cannot be sent again -- it was sent again before,
+or the repository has no CircleCI webhook or no longer lists the tag's push delivery, as for a tag whose
+pipeline errored before any workflow: it triggers a fresh pipeline for the tag through CircleCI's API
+(`POST /api/v2/project/gh/{o}/{r}/pipeline` with `{"tag": …}`), the one `devctl release wait` reads.
+The outcome is one line in `warnings` and the `trigger` field. Once per tag: a pipeline without a
+workflow that the API triggered itself (`trigger.type` `api` or `explicit`) gets no second one (exit 5).
 
 ## Credentials
 
@@ -80,8 +108,9 @@ One JSON document on stdout, the envelope of every agent-facing command (`comman
 | `tag` | the tag as CircleCI built it (`release rerun`) |
 | `headSha` | the revision the pipeline built |
 | `pipeline` | `{id, number, url}`; absent when CircleCI has no pipeline for the head or tag |
-| `workflows[]` | `{name, id, status, url, failedJobs[], outcome, rerunId, rerunUrl}` |
+| `workflows[]` | `{name, id, status, url, failedJobs[], outcome, rerunId, rerunUrl, canceled, rerunFrom}`; `canceled` and `rerunFrom` (`failed` or `start`) only for a wedged workflow (`release rerun`) |
 | `redelivery` | `{hookId, hookUrl, deliveryId, guid, deliveredAt, ref, after, outcome, redeliveredAt}`: the push delivery sent again for a pipeline without a workflow; absent otherwise |
+| `trigger` | `{outcome, pipeline{id, number, url}}`: the fresh tag pipeline triggered through CircleCI's API (`release rerun`); absent otherwise |
 | `identity` | `app` or `gh`, who read GitHub (`pr rerun`; `release rerun` when it redelivered) |
 
 `outcome` is `rerun` (the rerun started; `rerunId` and `rerunUrl` are the new workflow),
@@ -89,7 +118,9 @@ One JSON document on stdout, the envelope of every agent-facing command (`comman
 rerun; the reason says why). A workflow still running beside one that was rerun is named in
 `warnings`. `redelivery.outcome` is `redelivered` (sent again; the warning says so),
 `already_redelivered` (sent again before, at `redeliveredAt`; not sent a second time) or `refused`
-(GitHub refused it; the reason names the permission).
+(GitHub refused it; the reason names the permission). `trigger.outcome` is `triggered` (the fresh
+pipeline is `trigger.pipeline`; the warning says so), `already_triggered` (the pipeline is itself one the
+API triggered; no second one) or `refused` (CircleCI refused it; 403 is exit 8).
 
 ```json
 {
@@ -114,8 +145,8 @@ rerun; the reason says why). A workflow still running beside one that was rerun 
 
 | Code | Verdict | |
 |---|---|---|
-| 0 | `green` | at least one workflow is rerun from failed, or the push webhook delivery was sent again |
-| 3 | `not_applicable` | no pipeline for the head or tag, no workflow with a failed job, or no push delivery to send again (no CircleCI webhook, a fork's head): nothing to rerun |
-| 5 | `refused` | nothing finished failed and a workflow is still running; a pipeline without a workflow younger than five minutes; a delivery sent again before |
+| 0 | `green` | at least one workflow is rerun from failed, a wedged one canceled and rerun, the push webhook delivery was sent again, or a fresh tag pipeline was triggered (`release rerun`) |
+| 3 | `not_applicable` | no pipeline for the head or tag, no workflow with a failed job, or no push delivery to send again for a pull request (no CircleCI webhook, a fork's head): nothing to rerun |
+| 5 | `refused` | nothing finished failed and a workflow is still running (for `release rerun`: within `--wedged-after`); a pipeline without a workflow younger than five minutes; a pull request's delivery sent again before; a tag pipeline the API triggered itself |
 | 7 | `usage` | wrong usage or a tooling failure |
 | 8 | `auth_required` | no CircleCI login, or one without Write access (`devctl auth login --circleci-only`); a GitHub identity without webhook access (the App's repository permission Webhooks: read and write) |

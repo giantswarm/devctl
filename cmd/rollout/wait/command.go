@@ -18,16 +18,22 @@ const (
 	long        = `Wait until a release runs on an installation.
 
 The wait has two parts. The release first, exactly as devctl release wait
-does it (a version, or --pr for the tag auto-release put on the merge
-commit): its images and charts pullable, its tag pipeline green. The
+does it (a version, or --pr for the release that carries the merge commit
+on the pull request's base branch, a release branch's included): its images
+and charts pullable, its tag pipeline green. The
 release names the charts, a second chart its custom.yml pushes off the same
 tag included. Then the installation's management cluster,
 read through the kube context tsh kube login writes
 (teleport.giantswarm.io-<installation>), as you. An installation reached
 through another context (kubectl gs login's gs-<installation>, a kind lab)
-is read through the one --context names. The context is checked before the
-release wait: one the kubeconfig does not have is exit 7 at once, the
-contexts that mention the installation named as candidates. It reads:
+is read through the one --context names. The contexts come from KUBECONFIG
+or ~/.kube/config, or from the one file --kubeconfig names; neither is
+written. The context is checked before the release wait: when the
+kubeconfig lacks the Teleport context and tsh is logged in, tsh kube login
+<installation> runs into a private temporary kubeconfig for that one
+command, which is read and removed; a tsh not logged in is exit 8. Any
+other context the kubeconfig does not have is exit 7 at once, the contexts
+that mention the installation named as candidates. It reads:
 
   HelmRelease  every Flux HelmRelease whose chart source (an OCIRepository
                whose URL ends in the chart's name, a HelmChart, or
@@ -36,7 +42,11 @@ contexts that mention the installation named as candidates. It reads:
 
 and every HelmRelease --helmrelease names (<name> or <namespace>/<name>,
 repeatable) whatever chart it deploys; a name no HelmRelease answers to is
-exit 3.
+exit 3. A named HelmRelease of none of the charts (a component a meta
+chart renders, on a version line of its own) is judged by itself, not by
+the version: rolled out once it is Ready at its current generation with no
+reconcile in flight and its workloads are rolled out, failed when it is
+Stalled or not Ready after a failed install, upgrade or test.
 
 A deployment has rolled out when it runs the version or a newer one
 (status.history of the HelmRelease, status.version and a deployed release
@@ -67,7 +77,9 @@ schemaVersion, exitCode, verdict, reason, warnings, startedAt, finishedAt), inst
 context, version, charts, deployments[{kind, namespace, name, chart,
 source, follows, runningVersion, state, message, workloads[{kind,
 namespace, name, ready, message}]}] and release, the release wait's
-{verdict, reason} and its result.
+{verdict, reason} and its result. --failed-log is the release wait's: when
+the release's CI failed, release.failedJobs[] carries the tail of each failed
+job's log, printed to stderr as well.
 
 Exit codes:
   0  rolled out: every deployment of the charts that follows the version
@@ -78,12 +90,13 @@ Exit codes:
      (--timeout); the document shows what is still missing
   3  not applicable: no release follows the pull request, the release
      ships no chart, nothing on the installation deploys its charts, or
-     no deployment follows the version
+     no deployment follows the version; rollout_unknown: a configuration
+     change is applied and nothing takes the values of an app it changed
   7  usage or tooling: a bad argument, a kube context that does not exist
      (the candidates and --context named),
      a request the cluster refused
   8  authentication required: devctl auth login for GitHub, tsh kube login
-     <installation> for the cluster
+     <installation> for the cluster, tsh login for a missing context
 
 Examples:
   devctl rollout wait myinstallation giantswarm/app-operator v7.5.4
@@ -112,6 +125,7 @@ func New(config Config) (*cobra.Command, error) {
 		stdout:      config.Stdout,
 		openRelease: releasewait.OpenSources,
 		openCluster: rolloutwait.OpenCluster,
+		teleport:    rolloutwait.Tsh{},
 	}
 
 	c := &cobra.Command{

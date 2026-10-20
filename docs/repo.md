@@ -54,8 +54,10 @@ The validation check on `giantswarm/github` classifies every team-file pull requ
 a repository that does not exist yet keeps the owning team's review (`CODEOWNERS`); `devctl pr merge`
 merges it through the ruleset's bypass for the owning team and the admins. The notices in the dry run
 say more about the review (`team-review`: the author is outside the owning team; `batch-review`: more
-than three entries). Membership is read from GitHub as you; a token that cannot read the
-organisation's teams gets no notice, and the command says so.
+than three entries). Membership is read from GitHub as you, the way the validation check reads it as the
+giantswarm-align-files App: the owning team and `team-planeteers`, one by one, the team first and then your membership
+in it. A team your token cannot read leaves your membership there unknown: the notice is then `team-review-unknown`,
+and the validation check's comment on the pull request is the answer.
 
 ### The declaration's fields
 
@@ -74,7 +76,8 @@ organisation's teams gets no notice, and the command says so.
 `gen.ci.generate` is written as the CircleCI generator decides: `true` when it has a job for the
 declaration (a Go or Node build, a chart from the `app` flavour), `false` when the pipeline would be empty. Either way
 the scaffold carries `renovate.json5` (`devctl gen renovate`, with `--circleci-generated` on generated CI), so the
-repository starts with its Renovate configuration; a fork line gets nothing generated. The help text takes the enums from the schema devctl ships
+repository starts with its Renovate configuration, decided as align-files decides it (`devctl repo renovate-plan`); a
+fork line gets nothing generated. The help text takes the enums from the schema devctl ships
 (`pkg/reposetup/schema/repositories.schema.json`) and the flavours and languages from devctl's own
 lists, so it never lags a copy in this document; the live schema is
 [`.github/repositories.schema.json`](https://github.com/giantswarm/github/blob/main/.github/repositories.schema.json)
@@ -85,6 +88,13 @@ repositories created from it, not its own pipeline: the reconciler's circleci an
 (`no CircleCI pipeline: .circleci/config.yml is template content`), no follow, no deploy key, no tag build to verify,
 and the branch is not read for it. It sits beside `generate: false` (the `ci` block requires `generate`); `generate:
 true` beside it is refused. A template that builds itself, like template-app, leaves the field out.
+
+`renovate: false` switches Renovate off for the repository: align-files runs no `devctl gen renovate` for the entry,
+and the reconciler's renovate step is ok with no Renovate configuration (`renovate: false; no Renovate
+configuration`) or one that disables Renovate. A configuration that keeps Renovate on, such as the `renovate.json5`
+generated before the field was set, is the finding `renovate-declared-off`: the step deletes no file, the team deletes
+it or sets `enabled: false` in it. Without the field, or with `true`, the repository gets its generated configuration
+and the step checks that Renovate scans it.
 
 The template is derived, not chosen: `language: go` gives `giantswarm/template`; the `plans` flavour
 with `language: generic` gives `giantswarm/template-plans` and refuses any other language, the same
@@ -150,7 +160,7 @@ and nothing runs locally in its place.
 | `repo refresh <repo>` | `refresh_repository` | the record rebuilt now (the engine's checks in read mode) and printed like `get`; the cache only, nothing on GitHub |
 | `repo status <repo>` | `get_repository` | the set-up state alone, as before: the steps and their verdicts, the opt-in to alignment and the declared branch and flavours from the entry, the last run and the run awaited |
 | `repo sweep` | `sweep_inventory` | the full sweep started now, for a member of the manager's owning teams |
-| `repo watch <repo> --pull-request N` | `watch_repository` | a new repository followed to readiness: created, scaffolded, declared, merged, set up, released; the phases printed as they complete, `--timeout` (15 m) for the whole |
+| `repo watch <repo> --pull-request N` | `watch_repository` | a new repository followed to readiness: created, scaffolded, declared, merged, set up, released; the phases printed as they complete, `--timeout` (15 m) for the whole; a repository declared without CI (`gen.ci.generate: false`) is ready once set up |
 | `repo adopt <repo> --team T [entry flags]` | `adopt_repository` | an existing, undeclared repository declared in the team's file; `--component-type`, `--description`, `--visibility`, `--language`, `--flavour`, `--ci-generate`, `--align`, `--lifecycle deprecated\|archived` |
 | `repo update <repo> --set path=value \| --unset path \| --entry-file f` | `update_repository` | the entry changed: `--set` edits the inventory's entry field by field (`gen.ci.generate=false`, `align=true`, `gen.flavours=[app, k8sapi]`; the value is YAML), `--entry-file` passes the whole entry |
 | `repo transfer <repo> --to-team T` | `transfer_repository` | the entry moved to another team's file; the receiving team approves, the giving team is told |
@@ -211,6 +221,22 @@ branch and flavours. An undeclared repository is refused with `devctl repo adopt
 repository the inventory has not checked yet names `devctl repo refresh`. `-o json` prints the record as
 the manager answered. Nothing is changed by `repo status`; the local check with your own tokens is
 `devctl repo reconcile --dry-run`.
+
+## `devctl repo renovate-plan`
+
+What align-files does about a repository's Renovate configuration, as JSON on stdout:
+
+```
+devctl repo renovate-plan --team-file repositories/team-rocket.yaml --name my-app --dir my-app
+{"generate":true,"patchReviewers":false}
+```
+
+`generate` runs `devctl gen renovate`, `patchReviewers` runs `devctl gen renovate reviewers` on the configuration
+the repository keeps. An entry that declares `renovate: false` gets neither. An entry with `gen.flavours` that is no
+fork line gets `renovate.json5` generated on generated CI, for the `customer` flavour, and when the checkout at
+`--dir` has no Renovate configuration; every other repository keeps its own, with the chore reviewers patched in.
+The scaffold of `devctl repo create` takes the same decision (`reposetup.PlanRenovate`), so a created repository's
+first align run changes nothing.
 
 ## `devctl repo follow-circleci`
 
@@ -277,7 +303,9 @@ default branch (the baseline's `main` when the entry declares none); `write` as 
 `GITHUB_TOKEN` permission. Only the fields that differ are sent. A fork line (flavour `fork`) keeps rebase
 merges on and its merge commits as they are: its carried patches land one upstream-ready commit each and a
 re-pin merges upstream's history; the rest of the baseline applies to it as everywhere. A customer
-repository (flavour `customer`) keeps its own default branch. The six merge settings and the squash title
+repository (flavour `customer`) and an app catalog (`componentType: appcatalog`, whose index GitHub Pages
+serves from the default branch, `master` on the older catalogs) keep their own default branch: it is never
+renamed, the protection step protects it, and `devctl repo status` names it. The six merge settings and the squash title
 reach `GET /repos/{owner}/{repo}` for an admin identity only; a read identity reads them through GraphQL
 and, when that fails too, reports them as the finding `unchecked` rather than as drift.
 
@@ -293,8 +321,11 @@ carrying the branch's push runs rather than a pull request's checks. A required 
 job the generated pipeline (`.circleci/workflows.yml`, `custom.yml`) no longer has is removed; while the
 default branch has no generated pipeline, the one the open align-files pull request (`teams-alignment-branch`)
 brings decides (the App's own pull request, never one a person opens from the branch), so a repository moving from a hand-kept pipeline stops requiring the old jobs and can merge
-that pull request, and the generated jobs are required once they have reported after the merge. A
-customer repository (flavour `customer`) keeps its own protection.
+that pull request, and the generated jobs are required once they have reported after the merge. Without
+either, the hand-kept `.circleci/config.yml` names the repository's own jobs: candidates on the same
+reported-only rule, but a hand-kept pipeline removes no CircleCI context. A scheduled or conditional workflow
+and an approval job are never candidates. A customer repository (flavour `customer`) keeps its own
+protection.
 
 The protection is one repository ruleset, `devctl: default branch`, active on
 `~DEFAULT_BRANCH` so a rename or a fork line's declared branch needs no change: the same rules, a GitHub
@@ -352,7 +383,10 @@ bypass: its pull request still waits for green checks. The review ruleset is wri
 `devctl: default branch` drops the rule, and deleted after it takes the rule back on a run without the id,
 so the review never lapses. The Renovate GitHub App (id 2740) bypasses `devctl: review` for pull requests too,
 so the automerge a repository configures in its own Renovate configuration lands a green dependency pull
-request. An entry with `agentMerge: false` keeps the review in `devctl: default branch`
+request. `--release-app-id`, the giantswarm-release GitHub App's numeric id, adds that App beside them: the
+generated release workflows authenticate as it, and the version bump pull request they open after a release arms
+auto-merge, so it lands once the required checks are green. Without it a repository on the generated release
+workflows needs a review for that pull request. An entry with `agentMerge: false` keeps the review in `devctl: default branch`
 without bypass. Only a run with `--devctl-app-id` writes it; one without reports the difference as
 `ruleset-pending`, and takes a review ruleset it finds for the writing run's layout, not a drift.
 

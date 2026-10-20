@@ -10,6 +10,13 @@ import (
 	"github.com/giantswarm/devctl/v8/pkg/githubclient"
 )
 
+// The final states of a commit status; any other is pending.
+const (
+	commitStatusSuccess = "success"
+	commitStatusFailure = "failure"
+	commitStatusError   = "error"
+)
+
 // statusPipelines resolves the tag pipeline from the CircleCI statuses of
 // the tag's commit when CircleCI's pipeline listing does not name it: the
 // listing's newest pages hold other pipelines on a busy repository, while
@@ -132,14 +139,19 @@ func (w *Waiter) statusesState(result *Result, statuses []githubclient.CommitSta
 	}
 	state := &pipelineState{green: true, jobs: map[string]bool{}}
 	for _, s := range statuses {
-		name := strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(s.Context, circleciclient.StatusContextPrefix), ":"))
+		name := circleciclient.StatusJobName(s.Context)
 		state.jobs[name] = true
 		switch s.State {
-		case "success":
-		case "failure", "error":
+		case commitStatusSuccess:
+		case commitStatusFailure, commitStatusError:
+			if circleciclient.AdvisoryJob(name) {
+				w.warnOnce(fmt.Sprintf("the commit status %s of %s is %s; the release does not require it, so the tag's CI is judged without it", s.Context, short(result.SHA), s.State))
+				break
+			}
 			state.failed = true
 			state.green = false
 			state.failedJobs = append(state.failedJobs, name)
+			state.failedStatuses = append(state.failedStatuses, s)
 		default:
 			state.green = false
 		}
@@ -147,4 +159,59 @@ func (w *Waiter) statusesState(result *Result, statuses []githubclient.CommitSta
 	}
 	sort.Strings(state.failedJobs)
 	return state
+}
+
+// commitStatusesFinal is the gate devctl release promote puts on a release
+// candidate, applied to the tag's commit: the newest status of every context,
+// the branch pipeline's and other CIs' beside the tag pipeline's, as GitHub's
+// combined status judges them. It is true once every one succeeded or the
+// commit carries none, false while one is pending, and a failed one ends the
+// wait: a release the wait reports is one a promote accepts.
+func (w *Waiter) commitStatusesFinal(ctx context.Context, result *Result) (bool, error) {
+	w.pendingStatuses = nil
+	all, err := w.config.GitHub.ListCommitStatuses(ctx, w.config.Owner, w.config.Repo, result.SHA)
+	if githubclient.IsNotFound(err) {
+		all = nil
+	} else if err != nil {
+		return false, fmt.Errorf("reading the commit statuses of %s: %w", short(result.SHA), err)
+	}
+	result.Statuses = newestStatuses(all)
+	var failed []string
+	for _, s := range result.Statuses {
+		switch s.State {
+		case commitStatusSuccess:
+		case commitStatusFailure, commitStatusError:
+			if circleciclient.AdvisoryStatus(s.Context) {
+				w.warnOnce(fmt.Sprintf("the commit status %s of %s is %s; the release does not require it, so the tag's CI is judged without it", s.Context, short(result.SHA), s.State))
+				continue
+			}
+			failed = append(failed, fmt.Sprintf("%s (%s, %s)", s.Context, s.State, s.URL))
+		default:
+			w.pendingStatuses = append(w.pendingStatuses, s.Context)
+		}
+	}
+	if len(failed) > 0 {
+		return false, statusFailedErr("the commit %s of %s carries a failed commit status, so devctl release promote refuses it: %s", short(result.SHA), result.Tag, strings.Join(failed, ", "))
+	}
+	if len(w.pendingStatuses) > 0 {
+		w.progress.Printf("every artifact is available and the tag pipeline green; commit status pending: %s", strings.Join(w.pendingStatuses, ", "))
+		return false, nil
+	}
+	return true, nil
+}
+
+// newestStatuses keeps the newest of every context of statuses, which come
+// newest first, sorted by context.
+func newestStatuses(statuses []githubclient.CommitStatus) []Status {
+	out := []Status{}
+	seen := map[string]bool{}
+	for _, s := range statuses {
+		if seen[s.Context] {
+			continue
+		}
+		seen[s.Context] = true
+		out = append(out, Status{Context: s.Context, State: s.State, URL: s.TargetURL})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Context < out[j].Context })
+	return out
 }

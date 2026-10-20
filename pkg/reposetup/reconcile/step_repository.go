@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/giantswarm/microerror"
-	"github.com/google/go-github/v92/github"
+	"github.com/google/go-github/v93/github"
 
 	"github.com/giantswarm/devctl/v8/pkg/circleciclient"
 	"github.com/giantswarm/devctl/v8/pkg/reposetup"
@@ -31,8 +31,8 @@ func (r *Runner) stepCreate(ctx context.Context, s *run, sr *StepResult) error {
 		if s.req.Added && !lifecycleOver(s.fields.Lifecycle) {
 			visibility := reposetup.CreationVisibility(s.fields.Visibility)
 			return s.plan(sr, fmt.Sprintf("create %s from the added entry, %s", s.slug(), visibility), func() error {
-				created, _, err := r.GitHub.Repositories.Create(ctx, s.owner, &github.Repository{
-					Name:        new(s.name),
+				created, _, err := r.GitHub.Repositories.Create(ctx, s.owner, github.CreateRepositoryRequest{
+					Name:        s.name,
 					Description: new(s.fields.Description),
 					// Public only when the entry says public: an entry
 					// without a visibility is created private, the org's

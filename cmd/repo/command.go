@@ -18,6 +18,7 @@ import (
 	"github.com/giantswarm/devctl/v8/cmd/repo/info"
 	"github.com/giantswarm/devctl/v8/cmd/repo/list"
 	"github.com/giantswarm/devctl/v8/cmd/repo/reconcile"
+	"github.com/giantswarm/devctl/v8/cmd/repo/renovateplan"
 	"github.com/giantswarm/devctl/v8/cmd/repo/setlifecycle"
 	"github.com/giantswarm/devctl/v8/cmd/repo/setup"
 	"github.com/giantswarm/devctl/v8/cmd/repo/status"
@@ -53,6 +54,11 @@ func New(config Config) (*cobra.Command, error) {
 	var err error
 
 	followCircleCICmd, err := followcircleci.New(followcircleci.Config{Stderr: config.Stderr, Stdout: config.Stdout})
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
+
+	renovatePlanCmd, err := renovateplan.New(renovateplan.Config{Stdout: config.Stdout})
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}
@@ -212,6 +218,7 @@ func New(config Config) (*cobra.Command, error) {
 	c.AddCommand(createCmd)
 	c.AddCommand(followCircleCICmd)
 	c.AddCommand(reconcileCmd)
+	c.AddCommand(renovatePlanCmd)
 	c.AddCommand(setupCmd)
 	c.AddCommand(statusCmd)
 	c.AddCommand(validateCmd)

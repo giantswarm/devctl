@@ -8,7 +8,10 @@
 // the head revision (the newest run per name, read from CircleCI because a job
 // behind `requires:` has posted nothing yet), no GitHub Actions run of the
 // head still queued, running or awaiting approval, and every required status
-// context reported. Draft, closed, conflicting and behind-a-strict-base end
+// context reported. A pending check of another app, or a pending status of
+// another CI than CircleCI, the base does not require is not waited for, as
+// the merge box does not wait for it: Result.Blocking names it, and a review
+// the base requires that is missing. Draft, closed, conflicting and behind-a-strict-base end
 // the wait before it starts.
 package prwait
 
@@ -31,6 +34,10 @@ const DefaultTimeout = 30 * time.Minute
 // CircleCIConfigPath is the file whose presence at the head makes CircleCI
 // part of the verdict.
 const CircleCIConfigPath = ".circleci/config.yml"
+
+// ChecksViaGraphQL is Result.ChecksVia when the head's checks were read
+// through GraphQL's statusCheckRollup.
+const ChecksViaGraphQL = "graphql"
 
 // RateSource reports the GitHub rate limit the newest response carried.
 type RateSource interface {
@@ -134,6 +141,10 @@ type Result struct {
 	// Checks are the head's check runs, every run of a name that counts, and
 	// its statuses, the latest per context.
 	Checks []Check `json:"checks"`
+	// ChecksVia is ChecksViaGraphQL when the last poll read Checks through
+	// GraphQL because REST's check endpoints went unanswered; absent when REST
+	// answered.
+	ChecksVia string `json:"checksVia,omitempty"`
 	// CircleCI is absent when the head carries no CircleCI configuration, the
 	// repository is a template whose entry declares that configuration as
 	// template content, or CircleCI has no project for it.
@@ -149,6 +160,11 @@ type Result struct {
 	// AcceptedRed are the failed checks the caller accepted with
 	// Config.AcceptRed, each with its run's URL.
 	AcceptedRed []AcceptedRed `json:"acceptedRed,omitempty"`
+	// Blocking names what keeps GitHub's merge box from merging a green
+	// head: a check or status the base does not require that is still
+	// pending, which the wait does not wait for, and a review the base
+	// requires that is missing or asks for changes.
+	Blocking []string `json:"blocking,omitempty"`
 	// Warnings are for the envelope: a head that changed under the wait, a
 	// template repository, a CircleCI project that does not exist.
 	Warnings []string `json:"-"`
@@ -157,23 +173,32 @@ type Result struct {
 // head is what the wait learned about the current head and base, refreshed
 // when either changes.
 type head struct {
-	sha      string
-	baseRef  string
-	required []string
+	sha     string
+	baseRef string
+	// mergeableState is GitHub's mergeable state of the pull request at the
+	// last poll.
+	mergeableState string
+	required       []string
 	// decided: whether CircleCI is consulted for this head is known.
 	decided  bool
 	circleci *circleciclient.Client
 	branch   string
 	project  string
+	// workflows are the pull_request workflows an empty head expects runs
+	// of, once workflowsRead.
+	workflows     []string
+	workflowsRead bool
 }
 
 // Wait blocks until owner/repo#number is green (nil), red or otherwise
 // decided (an [*agentcli.ExitError] with the code of the table), or the
 // timeout passes (exit 2). A required context absent from a head whose
 // checks, runs and workflows have all finished is exit 4 at that poll, before
-// the timeout, and so is a head that waits only for Actions runs awaiting a
-// member's approval; while anything else is still pending, the timeout is 2
-// whatever is absent. The Result is always returned, as far as it was filled; a
+// the timeout, once the pull request's last update is RegistrationGrace old,
+// and so is a head that waits only for Actions runs awaiting a member's
+// approval; while anything else is still pending, the timeout is 2 whatever is
+// absent. A failure the base does not require is red once the required
+// contexts have finished. The Result is always returned, as far as it was filled; a
 // tooling failure is any other error.
 func (w *Waiter) Wait(ctx context.Context, owner, repo string, number int) (*Result, error) {
 	result := &Result{
@@ -229,9 +254,10 @@ func (w *Waiter) Wait(ctx context.Context, owner, repo string, number int) (*Res
 			for _, a := range e.acceptedRed {
 				result.Warnings = append(result.Warnings, fmt.Sprintf("accepted red: %s %s concluded %s (%s), named by --accept-red", a.Source, a.Name, a.Conclusion, a.URL))
 			}
+			w.blocking(ctx, owner, repo, number, h, e, result)
 			w.progress.Printf("poll %d: green", poll)
 			return result, nil
-		case len(e.red) > 0:
+		case e.redDecided():
 			w.progress.Printf("poll %d: red: %s", poll, e.redReason())
 			if w.failedLogLines > 0 {
 				result.FailedJobs = w.failedJobs(ctx, owner, repo, h, e)
@@ -244,6 +270,10 @@ func (w *Waiter) Wait(ctx context.Context, owner, repo string, number int) (*Res
 			w.progress.Printf("poll %d: waiting for approval: %s", poll, strings.Join(e.unfinished, ", "))
 			result.Unfinished = e.unfinished
 			return result, agentcli.NewExitError(agentcli.ExitRequiredMissing, agentcli.VerdictApprovalRequired, "%s", e.approvalReason())
+		case w.noChecks(e):
+			w.progress.Printf("poll %d: no checks: %s", poll, strings.Join(e.unfinished, ", "))
+			result.Unfinished = e.unfinished
+			return result, noChecksError(h.sha, e.expectedRuns)
 		}
 		interval := w.interval()
 		w.progress.Printf("poll %d: waiting for %s; next poll in %s", poll, strings.Join(e.unfinished, ", "), interval)
@@ -253,6 +283,41 @@ func (w *Waiter) Wait(ctx context.Context, owner, repo string, number int) (*Res
 		}
 	}
 }
+
+// blocking fills Result.Blocking of a green head: the pending checks the
+// base does not require, which the wait did not wait for, and, while GitHub
+// blocks the merge, a missing review or one that requests changes. A review
+// decision that cannot be read is a warning, never the verdict.
+func (w *Waiter) blocking(ctx context.Context, owner, repo string, number int, h *head, e *evaluation, result *Result) {
+	result.Blocking = append([]string(nil), e.notRequired...)
+	if len(e.notRequired) > 0 {
+		result.Warnings = append(result.Warnings, "pending: "+strings.Join(e.notRequired, ", "))
+	}
+	if h.mergeableState != mergeableBlocked {
+		return
+	}
+	decision, err := w.github.ReviewDecision(ctx, owner, repo, number)
+	if err != nil {
+		result.Warnings = append(result.Warnings, fmt.Sprintf("GitHub blocks the merge, and the review decision could not be read: %v", err))
+		return
+	}
+	review := ""
+	switch decision {
+	case "REVIEW_REQUIRED":
+		review = "review: an approving review the base requires is missing"
+	case "CHANGES_REQUESTED":
+		review = "review: a reviewer requested changes"
+	default:
+		return
+	}
+	result.Blocking = append(result.Blocking, review)
+	result.Warnings = append(result.Warnings, "GitHub blocks the merge: "+strings.TrimPrefix(review, "review: "))
+	w.progress.Printf("blocked: %s", review)
+}
+
+// mergeableBlocked is GitHub's mergeable state of a pull request a rule of
+// the base keeps from merging: a required check or a required review.
+const mergeableBlocked = "blocked"
 
 // timedOut is the verdict at the deadline, 2: the result names what was
 // unfinished, a required context still absent among it, and the reason the
@@ -266,6 +331,9 @@ func (w *Waiter) timedOut(result *Result, last *evaluation, unanswered string) e
 	}
 	if last == nil {
 		return agentcli.NewExitError(agentcli.ExitTimeout, agentcli.VerdictTimeout, "timeout after %s before the first poll completed%s", w.timeout, suffix)
+	}
+	if len(last.red) > 0 {
+		suffix = "; red already, besides the required contexts it waited for: " + last.redReason() + suffix
 	}
 	return agentcli.NewExitError(agentcli.ExitTimeout, agentcli.VerdictTimeout,
 		"timeout after %s; unfinished: %s%s", w.timeout, strings.Join(last.unfinished, ", "), suffix)
@@ -302,15 +370,16 @@ func (w *Waiter) poll(ctx context.Context, owner, repo string, number int, h *he
 	}
 
 	sha, baseRef := pr.GetHead().GetSHA(), pr.GetBase().GetRef()
+	h.mergeableState = pr.GetMergeableState()
 	if h.sha != "" && h.sha != sha {
 		result.Warnings = append(result.Warnings, fmt.Sprintf("the head changed from %s to %s during the wait", h.sha, sha))
 	}
 	if h.sha != sha {
-		h.sha, h.decided, h.circleci = sha, false, nil
+		h.sha, h.decided, h.circleci, h.workflowsRead = sha, false, nil, false
 		result.HeadSHA = sha
 	}
 	if h.baseRef != baseRef || h.required == nil {
-		h.baseRef = baseRef
+		h.baseRef, h.workflowsRead = baseRef, false
 		result.BaseRef = baseRef
 		required, err := w.github.RequiredStatusContexts(ctx, owner, repo, baseRef)
 		if err != nil {
@@ -326,10 +395,7 @@ func (w *Waiter) poll(ctx context.Context, owner, repo string, number int, h *he
 	}
 
 	s := snapshot{headSHA: sha, required: h.required, accepted: w.acceptRed}
-	if s.checkRuns, err = w.github.CheckRunsForRef(ctx, owner, repo, sha); err != nil {
-		return nil, err
-	}
-	if s.statuses, err = w.github.CommitStatuses(ctx, owner, repo, sha); err != nil {
+	if err := w.readChecks(ctx, owner, repo, sha, &s, result); err != nil {
 		return nil, err
 	}
 	if s.runs, err = w.github.WorkflowRunsForSHA(ctx, owner, repo, sha); err != nil {
@@ -342,8 +408,55 @@ func (w *Waiter) poll(ctx context.Context, owner, repo string, number int, h *he
 	}
 
 	e := evaluate(s)
+	e.quietFor = w.clock.Now().Sub(pr.GetUpdatedAt().Time)
+	if err := w.expectPullRequestRuns(ctx, owner, repo, h, e); err != nil {
+		return nil, err
+	}
+	w.awaitRegistration(e)
 	result.Checks, result.Actions, result.CircleCI, result.AcceptedRed = e.checks, e.actions, e.circleci, e.acceptedRed
 	return e, nil
+}
+
+// readChecks reads the head's check runs and statuses from REST's check-runs
+// and combined-status endpoints. When those fail every try while GraphQL
+// answers, it reads them from the head commit's statusCheckRollup instead,
+// says so in a warning and Result.ChecksVia, and keeps reading GraphQL for the
+// rest of the wait, so later polls do not spend the retry budget on REST
+// again; a GraphQL read that fails then goes back to REST. With both paths
+// failing the read is unanswered, as a REST read alone would be.
+func (w *Waiter) readChecks(ctx context.Context, owner, repo, sha string, s *snapshot, result *Result) error {
+	var graphQLErr error
+	if result.ChecksVia == ChecksViaGraphQL {
+		if s.checkRuns, s.statuses, graphQLErr = w.github.CheckRollup(ctx, owner, repo, sha); graphQLErr == nil {
+			return nil
+		}
+		result.ChecksVia = ""
+		w.progress.Printf("reading the checks through GraphQL failed (%v): REST again", graphQLErr)
+	}
+	err := w.readChecksREST(ctx, owner, repo, sha, s)
+	var exhausted *agentcli.RetriesExhaustedError
+	if err == nil || !errors.As(err, &exhausted) {
+		return err
+	}
+	if graphQLErr == nil {
+		if s.checkRuns, s.statuses, graphQLErr = w.github.CheckRollup(ctx, owner, repo, sha); graphQLErr == nil {
+			result.ChecksVia = ChecksViaGraphQL
+			result.Warnings = append(result.Warnings, fmt.Sprintf("the REST check endpoints went unanswered (%v): the head's checks are read through GraphQL (statusCheckRollup)", err))
+			w.progress.Printf("REST check endpoints unanswered: reading the head's checks through GraphQL (statusCheckRollup)")
+			return nil
+		}
+	}
+	return fmt.Errorf("%w; reading them through GraphQL (statusCheckRollup) failed too: %v", err, graphQLErr)
+}
+
+// readChecksREST reads the head's check runs and statuses from REST.
+func (w *Waiter) readChecksREST(ctx context.Context, owner, repo, sha string, s *snapshot) error {
+	var err error
+	if s.checkRuns, err = w.github.CheckRunsForRef(ctx, owner, repo, sha); err != nil {
+		return err
+	}
+	s.statuses, err = w.github.CommitStatuses(ctx, owner, repo, sha)
+	return err
 }
 
 // decideCircleCI settles whether CircleCI is part of this head's verdict: it

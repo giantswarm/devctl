@@ -167,3 +167,13 @@ func Test_BehindBy_failure(t *testing.T) {
 		t.Fatal("want an error for a comparison GitHub cannot make")
 	}
 }
+
+func Test_IsMergeRetryable(t *testing.T) {
+	for status, want := range map[int]bool{http.StatusBadGateway: true, http.StatusInternalServerError: true, http.StatusUnauthorized: false, http.StatusNotFound: false, http.StatusConflict: false} {
+		c, _ := newWireClient(t, status, `{"message":"x"}`)
+		_, err := c.MergePullRequest(context.Background(), "o", "r", 42, MergeOptions{})
+		if got := IsMergeRetryable(err); got != want {
+			t.Errorf("%d: want %v, got %v", status, want, got)
+		}
+	}
+}

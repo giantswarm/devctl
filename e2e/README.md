@@ -232,14 +232,15 @@ The incidents the commands encode, one scenario each, by these slugs:
 - `pr wait`: `stage-gap`, `fork-awaiting-approval`, `conflicting-pr`, `retitled-stale-run`,
   `red-circleci-workflow`, `pr-wait-timeout`, `required-never-reported`, `github-5xx-retried`,
   `github-5xx-persistent`, `circleci-connection-reset`, `github-rate-limit-reset`,
-  `github-rate-limit-spent-answer`, `github-rate-limit-after-deadline`, `circleci-rate-limit-retry-after`
+  `github-rate-limit-spent-answer`, `github-rate-limit-after-deadline`, `circleci-rate-limit-retry-after`, `no-checks-event-never-fired`,
+  `github-check-endpoints-5xx-graphql`, `github-check-endpoints-and-graphql-5xx`
 - `pr merge`: `own-green-merged`, `other-human-refused`, `opt-out-refused`, `behind-strict-base`,
-  `behind-update-branch`, `merge-queue`, `red-not-merged`, `merge-released`, `merge-no-release`,
+  `behind-base-refused`, `behind-update-branch`, `merge-queue`, `red-not-merged`, `merge-released`, `merge-no-release`,
   `merge-release-failed`, `merge-github-5xx-retried`
 - `release wait`: `renamed-image`, `renamed-chart`, `hand-written-ci`, `release-assets-only`, `failed-tag-pipeline`,
   `rerun-replaces-failed`, `stale-registry-login`, `release-wait-timeout`, `jobs-not-visible-yet`,
   `declaration-behind-repository`, `repo-owned-tag-job`, `release-wait-no-release`,
-  `release-wait-github-5xx-retried`
+  `release-wait-github-5xx-retried`, `commit-status-pending`, `commit-status-failed`
 - `auth`: `auth-missing`, `auth-expired`, `auth-refreshed`, `auth-login-muster`, `auth-login-muster-no-manager`
 - `repo` (the manager's verbs over the mocked muster): `repo-auth-missing`, `repo-status`, `repo-status-json`,
   `repo-status-refreshed`, `repo-list`, `repo-info`, `repo-get`, `repo-refresh`, `repo-sweep`, `repo-watch-ready`,

@@ -8,7 +8,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/google/go-github/v92/github"
+	"github.com/google/go-github/v93/github"
 
 	"github.com/giantswarm/devctl/v8/pkg/githubclient"
 )
@@ -25,7 +25,8 @@ const LineGateRulesetName = "devctl: line gate"
 
 // ReviewRulesetName is the engine's ruleset of the review rule alone,
 // written when [Runner.AlignFilesAppID] is set and the entry allows agent
-// merges: the align-files and Renovate Apps bypass it, and not
+// merges: the align-files and Renovate Apps, and the release App
+// ([Runner.ReleaseAppID]) when set, bypass it, and not
 // [RulesetName], whose required checks bind their pull requests as
 // everyone's.
 const ReviewRulesetName = "devctl: review"
@@ -313,6 +314,9 @@ func (r *Runner) stepRulesetProtection(ctx context.Context, s *run, sr *StepResu
 	if err != nil {
 		return err
 	}
+	if b.KeepRequiredChecks && have != nil {
+		return r.stepRulesetChecks(ctx, s, sr, have, from, want)
+	}
 	// The bypass list takes the App id, and GitHub returns it to an identity
 	// with write access to the ruleset alone: a read identity gets the
 	// ruleset without the field, and an empty list it can read is an array.
@@ -411,6 +415,54 @@ func (r *Runner) stepRulesetProtection(ctx context.Context, s *run, sr *StepResu
 	return nil
 }
 
+// stepRulesetChecks is the protection step of a run that changes the
+// required checks alone (the baseline's KeepRequiredChecks, `devctl repo
+// checks`) on a repository [RulesetName] protects: the ruleset's
+// required_status_checks rule becomes want, and its other rules, target,
+// enforcement and bypass actors are sent as they were read, so the write
+// needs no devctl App id. A rule not there yet takes the baseline's
+// strictness. from is have as stateOfRuleset reads it.
+func (r *Runner) stepRulesetChecks(ctx context.Context, s *run, sr *StepResult, have *github.RepositoryRuleset, from rulesetState, want []string) error {
+	desired := from
+	desired.checks = ruleChecks(want, actionsGates(s.baseline, s.fields.RequiredChecks), from.checks)
+	if from.checks == nil {
+		desired.strict = s.baseline.StrictChecks
+	}
+	changes := diffRulesetStates(from, desired)
+	if len(changes) == 0 {
+		sr.Summary = fmt.Sprintf("%s: ruleset %q; required: %s", s.branch(), RulesetName, describe(want))
+		return nil
+	}
+	return s.plan(sr, strings.Join(changes, "; "), func() error {
+		var rules github.RepositoryRulesetRules
+		if have.Rules != nil {
+			rules = *have.Rules
+		}
+		rules.RequiredStatusChecks = nil
+		if len(desired.checks) > 0 {
+			params := github.RequiredStatusChecksRuleParameters{}
+			if have.Rules != nil && have.Rules.RequiredStatusChecks != nil {
+				params = *have.Rules.RequiredStatusChecks
+			}
+			params.RequiredStatusChecks = desired.checks
+			params.StrictRequiredStatusChecksPolicy = desired.strict
+			rules.RequiredStatusChecks = &params
+		}
+		// A nil bypass list (an identity that cannot read it) is omitted
+		// and so kept; a read one is sent back unchanged.
+		body := github.RepositoryRuleset{
+			Name:         have.Name,
+			Target:       have.Target,
+			Enforcement:  have.Enforcement,
+			BypassActors: have.BypassActors,
+			Conditions:   have.Conditions,
+			Rules:        &rules,
+		}
+		_, _, err := r.GitHub.Repositories.UpdateRuleset(ctx, s.owner, s.name, have.GetID(), body)
+		return err
+	})
+}
+
 // splitsReview says whether the review rule lives in [ReviewRulesetName]:
 // the run has the align-files App's id and the entry allows agent merges.
 // Under agentMerge: false nothing bypasses the review, so the rule stays
@@ -429,7 +481,8 @@ func (r *Runner) splitsReview(s *run, review *github.RepositoryRuleset) bool {
 // splits the review rule out (split): on the default branch, the
 // baseline's required reviews alone, with the bypass actors of
 // [RulesetName] (bypass, as stepRulesetProtection worked them out) and the
-// align-files and Renovate Apps for pull requests beside them. The Apps
+// align-files and Renovate Apps, and the release App when
+// [Runner.ReleaseAppID] is set, for pull requests beside them. The Apps
 // bypass the review and nothing else: the required checks of [RulesetName],
 // which they do not bypass, still hold their pull requests until they are
 // green.
@@ -456,6 +509,9 @@ func (r *Runner) stepReviewRuleset(ctx context.Context, s *run, sr *StepResult, 
 			reviews:     s.baseline.RequiredReviews,
 			bypass:      append(slices.Clone(bypass), appActor(r.AlignFilesAppID), appActor(renovateAppID)),
 			team:        s.team,
+		}
+		if r.ReleaseAppID != 0 {
+			desired.bypass = append(desired.bypass, appActor(r.ReleaseAppID))
 		}
 		if r.DevctlAppID == 0 || (have != nil && have.BypassActors == nil) {
 			// Without the devctl App id, or not readable by this identity,
@@ -1059,15 +1115,19 @@ func describeActor(a *github.BypassActor, team *github.Team) string {
 	return fmt.Sprintf("%s %d (%s)", kind, a.GetActorID(), mode)
 }
 
-// pipelineGates reads the generated pipeline — the request's documents, the
-// repository's .circleci, or, while the default branch has none, the one the
-// open align-files pull request brings — and returns the contexts of its
+// pipelineGates reads the pipeline — the request's documents, the
+// repository's generated .circleci, or, while the default branch has none,
+// the one the open align-files pull request brings, else the hand-kept
+// config.yml of the default branch — and returns the contexts of its
 // branch-side jobs; known is false when there is no pipeline file. Reading
 // the pull request's pipeline lets a repository move from a hand-kept
 // pipeline to the generated one: the old pipeline's contexts are stale
 // against it and stop being required, so the pull request can merge; the
 // generated jobs are required once they have reported on the default
-// branch, by the run after the merge. Under the baseline's
+// branch, by the run after the merge. A hand-kept pipeline's jobs are the
+// repository's own: candidates like the generated ones, but never known, so
+// no CircleCI context is removed on a reading of a file the generator does
+// not write (dynamic configuration, anchors). Under the baseline's
 // KeepRequiredChecks only the request's pipeline is known: one read from the
 // repository still names candidates, but removes no CircleCI context.
 func (r *Runner) pipelineGates(ctx context.Context, s *run) (gates []string, known bool, err error) {
@@ -1085,6 +1145,16 @@ func (r *Runner) pipelineGates(ctx context.Context, s *run) (gates []string, kno
 			return nil, false, err
 		}
 	}
+	handKept := false
+	if files == nil {
+		config, found, err := r.fileContent(ctx, s.owner, s.name, circleCIConfig, s.branch())
+		if err != nil {
+			return nil, false, err
+		}
+		if found {
+			files, handKept = [][]byte{config}, true
+		}
+	}
 	if len(files) == 0 {
 		return nil, false, nil
 	}
@@ -1092,7 +1162,7 @@ func (r *Runner) pipelineGates(ctx context.Context, s *run) (gates []string, kno
 	if err != nil {
 		return nil, false, fmt.Errorf("%s: .circleci: %w", s.slug(), err)
 	}
-	return gates, told || !s.baseline.KeepRequiredChecks, nil
+	return gates, !handKept && (told || !s.baseline.KeepRequiredChecks), nil
 }
 
 // pipelineFiles reads the generated pipeline's files at ref; nil when it

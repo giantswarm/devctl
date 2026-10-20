@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/Masterminds/semver/v3"
-	"github.com/google/go-github/v92/github"
+	"github.com/google/go-github/v93/github"
 
 	"github.com/giantswarm/devctl/v8/pkg/circleciclient"
 	"github.com/giantswarm/devctl/v8/pkg/reposetup"
@@ -220,8 +220,11 @@ const circleCIConfig = ".circleci/config.yml"
 
 // hasPipeline says whether the repository has a CircleCI pipeline for the
 // circleci and release steps to act on: the entry declares a generated one
-// (gen.ci.generate: true — on a first creation the config is not on the
-// branch yet), or .circleci/config.yml is on the default branch. The field
+// (gen.ci.generate: true with a job for the CircleCI generator,
+// [reposetup.GeneratesCircleCI] — on a first creation the config is not on
+// the branch yet), or .circleci/config.yml is on the default branch.
+// Generated CI without a CircleCI job is GitHub Actions only, and the
+// branch decides for it as for an undeclared pipeline. The field
 // is read as declared: an existing entry without gen.ci keeps the
 // repository's own CircleCI configuration, so the branch decides for it
 // (the validator writes the creation default for an entry being added
@@ -238,7 +241,7 @@ func (r *Runner) hasPipeline(ctx context.Context, s *run) (bool, error) {
 		s.pipeline = new(false)
 		return false, nil
 	}
-	if g := s.fields.Gen; g != nil && g.CI != nil && g.CI.Generate != nil && *g.CI.Generate {
+	if reposetup.GeneratesCircleCI(s.fields) {
 		s.pipeline = new(true)
 		return true, nil
 	}
@@ -287,7 +290,7 @@ func (g *adminGrant) ensure(ctx context.Context) error {
 		return err
 	}
 	return g.s.plan(g.sr, fmt.Sprintf("grant %s admin for the CircleCI set-up, revoked after it", login), func() error {
-		_, _, err := g.r.GitHub.Repositories.AddCollaborator(ctx, g.s.owner, g.s.name, login, &github.RepositoryAddCollaboratorOptions{Permission: permissionAdmin})
+		_, _, err := g.r.GitHub.Repositories.AddCollaborator(ctx, g.s.owner, g.s.name, login, github.AddCollaboratorRequest{Permission: new(permissionAdmin)})
 		if err == nil {
 			g.grantee = login
 		}
@@ -346,7 +349,9 @@ func (r *Runner) circleCIGrantee(ctx context.Context, s *run) (string, error) {
 // ref (the follow itself builds the default branch) is no evidence that the
 // tag was built. Of every workflow name only the newest run counts: a rerun
 // is a second workflow of the same name in the same pipeline, and the run
-// it replaced keeps its failed status for ever.
+// it replaced keeps its failed status for ever. A workflow red only in
+// GitHubReleaseJob is a published release: the GitHub release this step
+// read is that job's one output, and every artifact was pushed before it.
 //
 // The release verified is one of the platform's flow, a vX.Y.Z tag
 // (isReleaseTag). A latest release tagged otherwise — per component,
@@ -408,7 +413,7 @@ func (r *Runner) stepRelease(ctx context.Context, s *run, sr *StepResult) error 
 		return err
 	}
 	workflows = circleciclient.NewestWorkflows(workflows)
-	var failed, pending, succeeded []string
+	var failed, pending, succeeded, published []string
 	for _, wf := range workflows {
 		switch {
 		case circleciclient.WorkflowFailed(wf.Status):
@@ -421,6 +426,11 @@ func (r *Runner) stepRelease(ctx context.Context, s *run, sr *StepResult) error 
 				if circleciclient.WorkflowFailed(j.Status) {
 					redJobs = append(redJobs, j.Name)
 				}
+			}
+			if unpublished := UnpublishedJobs(redJobs); len(redJobs) > 0 && len(unpublished) == 0 {
+				succeeded = append(succeeded, wf.Name)
+				published = append(published, fmt.Sprintf("%s (%s)", wf.Name, describe(redJobs)))
+				continue
 			}
 			failed = append(failed, fmt.Sprintf("%s (%s: %s)", wf.Name, wf.Status, describe(redJobs)))
 		case circleciclient.WorkflowSucceeded(wf.Status):
@@ -440,8 +450,32 @@ func (r *Runner) stepRelease(ctx context.Context, s *run, sr *StepResult) error 
 		sr.Summary = fmt.Sprintf("release %s: pipeline %d has no workflows yet", tag, pipeline.Number)
 	default:
 		sr.Summary = fmt.Sprintf("release %s built: pipeline %d, workflows %s succeeded", tag, pipeline.Number, strings.Join(succeeded, ", "))
+		if len(published) > 0 {
+			sr.Summary += fmt.Sprintf("; %s failed, the GitHub release it publishes exists", strings.Join(published, ", "))
+		}
 	}
 	return nil
+}
+
+// GitHubReleaseJob is the generated tag pipeline's job whose one output is
+// the tag's GitHub release. It runs after every artifact is pushed, so its
+// failure leaves nothing unpublished once the release exists: auto-release
+// creates the release before the pipeline starts, and the job then fails on
+// the release already being there.
+const GitHubReleaseJob = "publish-github-release"
+
+// UnpublishedJobs are the failed jobs of a release's tag pipeline that leave
+// something of the release unpublished: every one but GitHubReleaseJob. The
+// caller has read the GitHub release; a red tag pipeline whose failed jobs
+// all drop out is a published release, not red-release.
+func UnpublishedJobs(failed []string) []string {
+	var out []string
+	for _, j := range failed {
+		if j != GitHubReleaseJob {
+			out = append(out, j)
+		}
+	}
+	return out
 }
 
 // firstRelease says whether tag is the first release of a repository the

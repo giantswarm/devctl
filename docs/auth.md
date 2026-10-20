@@ -300,7 +300,7 @@ Every agent-facing command prints one JSON document on stdout when it finishes a
 | 1 | `red`, `ci_failed` | a check is red or the tag's CI failed |
 | 2 | `timeout` | the deadline passed; the document names what was unfinished |
 | 3 | `not_applicable` | draft, closed, conflicting, behind a strict base, version not resolvable |
-| 4 | `required_missing`, `approval_required` | a required context never reported; Actions runs await a member's approval |
+| 4 | `required_missing`, `approval_required`, `no_checks` | a required context never reported; Actions runs await a member's approval; the `pull_request` workflows never started |
 | 5 | `refused` | another author, an opt-out |
 | 7 | `usage` | wrong usage, a newer devctl released (the reason names `devctl version update`), or a tooling failure |
 | 8 | `auth_required` | no usable token; the reason names `devctl auth login` |

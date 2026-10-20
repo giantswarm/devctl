@@ -49,10 +49,13 @@ type Config struct {
 	// repository to what applies them, and the HelmReleases of the apps
 	// Paths, the files the pull request changed, touch. GitHub answers
 	// whether a fetched commit contains it. Version is empty then.
+	// MergedAt is when the pull request merged: no values rendered before
+	// it carry the change.
 	Revision   string
 	Repository string
 	Paths      []string
 	GitHub     GitHub
+	MergedAt   time.Time
 	// HelmReleases name HelmReleases to wait for whatever chart they
 	// deploy, as <name> (any namespace) or <namespace>/<name>.
 	HelmReleases []string
@@ -80,10 +83,14 @@ type Waiter struct {
 	clock                              agentcli.Clock
 	progress                           *agentcli.Progress
 	warn                               func(string)
-	warned                             map[string]bool
+	// polled are the warnings of the latest poll; announced those already
+	// shown as progress.
+	polled    []string
+	announced map[string]bool
 
 	revision, repository string
 	github               GitHub
+	mergedAt             time.Time
 	// touched are the apps the configuration change touches.
 	touched map[string]bool
 	// contains keeps whether a commit contains the revision.
@@ -128,10 +135,11 @@ func New(config Config) (*Waiter, error) {
 		clock:            config.Clock,
 		progress:         config.Progress,
 		warn:             config.Warn,
-		warned:           map[string]bool{},
+		announced:        map[string]bool{},
 		revision:         config.Revision,
 		repository:       config.Repository,
 		github:           config.GitHub,
+		mergedAt:         config.MergedAt,
 		contains:         map[string]bool{},
 		requested:        map[string]string{},
 	}
@@ -152,16 +160,24 @@ func New(config Config) (*Waiter, error) {
 // never to get there, or the timeout passes, and fills result with the last
 // poll. The error places the outcome in the exit-code table: nil when every
 // deployment that follows the version has rolled out, exit 1 when one
-// failed, 2 at the timeout, 3 when no deployment of the charts exists or
-// none follows the version.
+// failed, 2 at the timeout, 3 when no deployment of the charts exists,
+// none follows the version, or whether a changed app runs the change
+// cannot be told. Only the warnings of the last poll reach the result: a
+// state seen mid-roll and gone by the end is not reported.
 func (w *Waiter) Wait(ctx context.Context, result *Result) error {
 	result.Version = w.version
 	result.Revision = w.revision
 	result.Charts = w.chartNames()
-	deadline := w.clock.Now().Add(w.clock.Scaled(w.timeout))
+	defer func() {
+		for _, m := range w.polled {
+			w.warn(m)
+		}
+	}()
+	deadline := w.clock.Now().Add(w.clock.ScaledTimeout(w.timeout))
 	interval := IntervalFloor
 	reconciled := false
 	for {
+		w.polled = nil
 		list, err := w.observe(ctx)
 		if err != nil {
 			return err
@@ -177,6 +193,9 @@ func (w *Waiter) Wait(ctx context.Context, result *Result) error {
 			return err
 		}
 		if pendingDeployments(list) == nil {
+			if unknown := unknownDeployments(list); unknown != nil {
+				return agentcli.NewExitError(agentcli.ExitNotApplicable, VerdictRolloutUnknown, "%s is applied on %s, whether it runs cannot be told: %s", w.target(), w.installation, strings.Join(unknown, "; "))
+			}
 			if w.revision != "" {
 				w.progress.Printf("%s@%s is applied on %s", w.repository, short(w.revision), w.installation)
 				return nil
@@ -260,7 +279,7 @@ func (w *Waiter) outcome(list []Deployment) error {
 	var excluded []string
 	for _, d := range list {
 		if !follows(d) {
-			w.warnOnce(fmt.Sprintf("%s will not deploy %s: %s", d.id(), w.target(), d.Message))
+			w.warnPoll(fmt.Sprintf("%s will not deploy %s: %s", d.id(), w.target(), d.Message))
 			excluded = append(excluded, d.id()+": "+d.Message)
 		}
 	}
@@ -287,7 +306,8 @@ func (w *Waiter) requestReconciles(ctx context.Context, list []Deployment) error
 			w.progress.Printf("requested a reconcile of %s", d.self)
 			continue
 		}
-		if d.Kind != KindHelmRelease || atLeast(d.RunningVersion, w.version) {
+		// A named HelmRelease of another chart is not behind the version.
+		if d.Kind != KindHelmRelease || !w.charts[d.Chart] || atLeast(d.RunningVersion, w.version) {
 			continue
 		}
 		targets := []object{{resource: helmReleases, kind: KindHelmRelease, namespace: d.Namespace, name: d.Name}}
@@ -323,11 +343,23 @@ func (w *Waiter) target() string {
 func pendingDeployments(list []Deployment) []Deployment {
 	var p []Deployment
 	for _, d := range list {
-		if follows(d) && d.State != StateRolledOut {
+		if follows(d) && d.State != StateRolledOut && d.State != StateUnknown {
 			p = append(p, d)
 		}
 	}
 	return p
+}
+
+// unknownDeployments names the deployments whose rollout cannot be told,
+// with why.
+func unknownDeployments(list []Deployment) []string {
+	var u []string
+	for _, d := range list {
+		if d.State == StateUnknown {
+			u = append(u, d.id()+": "+d.Message)
+		}
+	}
+	return u
 }
 
 func (w *Waiter) chartNames() []string {
@@ -339,14 +371,18 @@ func (w *Waiter) chartNames() []string {
 	return names
 }
 
-// warnOnce adds a warning the first time it is seen: every poll judges the
-// same deployments again.
-func (w *Waiter) warnOnce(message string) {
-	if w.warned[message] {
+// warnPoll records a warning about what this poll found, shown as progress
+// the first time it is seen: every poll judges the same deployments again,
+// and the result keeps the last poll's.
+func (w *Waiter) warnPoll(message string) {
+	if slices.Contains(w.polled, message) {
 		return
 	}
-	w.warned[message] = true
-	w.warn(message)
+	w.polled = append(w.polled, message)
+	if !w.announced[message] {
+		w.announced[message] = true
+		w.progress.Printf("warning: %s", message)
+	}
 }
 
 // ChartName is the chart of a chart artifact reference,

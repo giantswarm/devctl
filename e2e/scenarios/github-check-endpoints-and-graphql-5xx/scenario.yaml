@@ -1,0 +1,33 @@
+# GitHub's REST check-runs endpoint answers 500 and GraphQL answers 502: no
+# path reads the head's checks. Every poll is unanswered, its warning names
+# both failures, and the wait ends at its timeout in exit 2 whose reason says
+# the head is unknown, not failed.
+description: REST check endpoints and GraphQL both answering 5xx leave every poll unanswered and end the wait at its timeout with exit 2
+args: [pr, wait, giantswarm/devctl, "42", --timeout, 30m]
+keyring:
+  github:
+    login: e2e-engineer
+    token: ghu_e2e_live
+    expiresAt: "2099-01-01T00:00:00Z"
+    refreshToken: ghr_e2e_live
+    refreshExpiresAt: "2099-01-01T00:00:00Z"
+github:
+  routes:
+    "GET /repos/giantswarm/devctl/pulls/42":
+      - body:
+          number: 42
+          state: open
+          draft: false
+          merged: false
+          mergeable: true
+          mergeable_state: clean
+          head: {sha: abc123, ref: feature, repo: {full_name: giantswarm/devctl}}
+          base: {ref: main, repo: {full_name: giantswarm/devctl}}
+    "GET /repos/giantswarm/devctl/contents/.circleci/config.yml":
+      - status: 404
+        body: {message: Not Found}
+    "GET /repos/giantswarm/devctl/commits/abc123/check-runs":
+      - status: 500
+    "POST /graphql":
+      - status: 502
+        body: {message: Bad Gateway}
