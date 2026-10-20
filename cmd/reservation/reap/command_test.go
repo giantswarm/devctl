@@ -36,6 +36,8 @@ func newCommand(t *testing.T, stdout io.Writer) *cobra.Command {
 func newCommandWithStderr(t *testing.T, stdout, stderr io.Writer) *cobra.Command {
 	t.Helper()
 
+	// CI makes authstore refuse without opening the developer's keychain.
+	t.Setenv("CI", "1")
 	for _, key := range []string{"DEVCTL_GITHUB_TOKEN", "GITHUB_TOKEN", "OPSCTL_GITHUB_TOKEN"} {
 		t.Setenv(key, "")
 	}

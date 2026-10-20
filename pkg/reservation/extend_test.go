@@ -16,7 +16,7 @@ const testExtender = "reservation-extend"
 
 // TestExtendRefusesWhenNothingMatches is the walking skeleton: an enabled
 // cluster holding no reservation at all refuses, and the refusal names
-// /deploy as the way to create one.
+// reserve as the way to create one.
 func TestExtendRefusesWhenNothingMatches(t *testing.T) {
 	dir, _ := newReapFixture(t, fixtureOptions{})
 
@@ -32,8 +32,8 @@ func TestExtendRefusesWhenNothingMatches(t *testing.T) {
 	if !reservation.IsNothingToExtend(err) {
 		t.Fatalf("expected a nothing-to-extend error, got %v", err)
 	}
-	if !strings.Contains(err.Error(), "/deploy") {
-		t.Errorf("refusal does not name /deploy: %s", err.Error())
+	if !strings.Contains(err.Error(), "devctl reservation reserve") {
+		t.Errorf("refusal does not name reserve: %s", err.Error())
 	}
 	if len(extended) != 0 {
 		t.Errorf("got %d extended reservations, want 0: %+v", len(extended), extended)

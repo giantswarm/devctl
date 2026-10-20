@@ -34,7 +34,7 @@ if it did not exist, since reviving it could silently break a lock someone
 else legally took over the same cluster while the dead record sat unswept.
 
 The command refuses when the pull request holds no matching, unexpired
-reservation on any cluster, naming /deploy as the way to create one. A single
+reservation on any cluster, naming devctl reservation reserve as the way to create one. A single
 reservation whose stored duration now exceeds its cluster's cap is refused on
 its own and does not stop the rest of the sweep.
 

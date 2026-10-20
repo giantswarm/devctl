@@ -9,9 +9,26 @@ import (
 	"testing"
 )
 
+// isolate keeps the developer's global and system git config (gpg signing, hooks,
+// includes) out of the test, for the fixture's git and for devctl's own. A test
+// that sets its own GIT_CONFIG_GLOBAL keeps it.
+func isolate(t testing.TB) {
+	t.Helper()
+
+	if os.Getenv("GIT_CONFIG_GLOBAL") == "" {
+		t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
+	}
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	// The fixtures are repos of a GitOps repo whose branch is main.
+	t.Setenv("GIT_CONFIG_COUNT", "1")
+	t.Setenv("GIT_CONFIG_KEY_0", "init.defaultBranch")
+	t.Setenv("GIT_CONFIG_VALUE_0", "main")
+}
+
 // RunGit runs git in dir, failing the test on error.
 func RunGit(t testing.TB, dir string, args ...string) {
 	t.Helper()
+	isolate(t)
 
 	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...) //nolint:gosec // test-only, fixed args
 	cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@example.com",
@@ -33,6 +50,7 @@ func RunGit(t testing.TB, dir string, args ...string) {
 // on error.
 func GitOutput(t testing.TB, dir string, args ...string) string {
 	t.Helper()
+	isolate(t)
 
 	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...) //nolint:gosec // test-only, fixed args
 	out, err := cmd.Output()

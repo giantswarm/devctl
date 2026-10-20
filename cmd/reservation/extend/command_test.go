@@ -146,8 +146,8 @@ func TestExtendCommitsAndPushesWithNoToken(t *testing.T) {
 }
 
 // TestExtendRefusalNamesDeploy is the acceptance criterion "the refusal must
-// name /deploy": a pull request with no matching reservation anywhere fails
-// the command and the error names /deploy as the way to create one.
+// name reserve": a pull request with no matching reservation anywhere fails
+// the command and the error names reserve as the way to create one.
 func TestExtendRefusalNamesDeploy(t *testing.T) {
 	const cluster, app = "graveler", "hello-world"
 	from := time.Now().Add(-time.Hour).UTC().Format(time.RFC3339)
@@ -166,8 +166,8 @@ func TestExtendRefusalNamesDeploy(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected a refusal, got none")
 	}
-	if !strings.Contains(err.Error(), "/deploy") {
-		t.Errorf("refusal does not name /deploy: %v", err)
+	if !strings.Contains(err.Error(), "devctl reservation reserve") {
+		t.Errorf("refusal does not name reserve: %v", err)
 	}
 	if stdout.String() != "" {
 		t.Errorf("stdout: got %q, want empty", stdout.String())

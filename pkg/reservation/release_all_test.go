@@ -141,7 +141,7 @@ func TestReleaseAllContinuesAfterABrokenCluster(t *testing.T) {
 
 // TestReleaseRefusesAnotherPullRequestsReservation is the ticket's
 // authorization rule: a release that names a pull request may only remove
-// what that pull request holds. Without it, /undeploy <MC> from any pull
+// what that pull request holds. Without it, a release from any pull
 // request in the repo frees a cluster somebody else is testing on.
 func TestReleaseRefusesAnotherPullRequestsReservation(t *testing.T) {
 	dir, _ := newReapFixture(t, fixtureOptions{})
@@ -227,7 +227,7 @@ func TestReleaseAllLeavesAnotherPullRequestsReservationAlone(t *testing.T) {
 
 // TestReleaseAllSaysNothingWhenThePullRequestHoldsNothing locks in the
 // difference from Extend: a merged pull request that reserved nothing is the
-// ordinary case, not a mistake, so it is no error. Only /undeploy tells the
+// ordinary case, not a mistake, so it is no error. Only an explicit release tells the
 // user, and it does that from an empty result.
 func TestReleaseAllSaysNothingWhenThePullRequestHoldsNothing(t *testing.T) {
 	dir, _ := newReapFixture(t, fixtureOptions{})

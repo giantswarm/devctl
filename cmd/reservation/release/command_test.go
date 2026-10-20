@@ -263,7 +263,7 @@ func TestReleaseByPullRequestNeedsNoClusterOrApp(t *testing.T) {
 	}
 }
 
-// TestReleaseOneClusterChecksThePullRequest is the /undeploy <MC> form: it
+// TestReleaseOneClusterChecksThePullRequest is the one-cluster form: it
 // names a cluster and an app, and it also names the pull request it runs
 // from, so a pull request cannot free a cluster another one is testing on.
 func TestReleaseOneClusterChecksThePullRequest(t *testing.T) {
