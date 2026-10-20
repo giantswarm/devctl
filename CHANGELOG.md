@@ -16,6 +16,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   `docs(changelog)` pull request after every release and arms auto-merge on it, and the new
   `zz_generated.changelog.yaml` runs the check on every pull request. Released entries no longer stay under Unreleased.
 
+### Changed
+
+- go-github moves to v93: library consumers (`reconcile.Runner`, `githubclient`) pass a `github.com/google/go-github/v93`
+  client.
+
 ### Fixed
 
 - `release promote --team` lists no repository whose team-file entry is declared `lifecycle: archived` or `deleted`:

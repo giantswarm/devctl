@@ -131,7 +131,7 @@ func (c *Client) SetRepositoryPermissions(ctx context.Context, repository *githu
 
 	for teamSlug, permission := range permissions {
 
-		opt := &github.TeamAddTeamRepoOptions{Permission: permission}
+		opt := github.AddTeamRepoRequest{Permission: new(permission)}
 
 		c.logger.Debugf("grant %q permission to %q", permission, teamSlug)
 

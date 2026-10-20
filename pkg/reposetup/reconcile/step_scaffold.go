@@ -202,7 +202,7 @@ func (r *Runner) treeEntries(ctx context.Context, s *run, dir string, files []st
 			entry.Content = new(string(data))
 		} else {
 			blob, _, err := r.GitHub.Git.CreateBlob(ctx, s.owner, s.name, github.Blob{
-				Content:  new(base64.StdEncoding.EncodeToString(data)),
+				Content:  base64.StdEncoding.EncodeToString(data),
 				Encoding: new("base64"),
 			})
 			if err != nil {

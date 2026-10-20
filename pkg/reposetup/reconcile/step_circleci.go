@@ -290,7 +290,7 @@ func (g *adminGrant) ensure(ctx context.Context) error {
 		return err
 	}
 	return g.s.plan(g.sr, fmt.Sprintf("grant %s admin for the CircleCI set-up, revoked after it", login), func() error {
-		_, _, err := g.r.GitHub.Repositories.AddCollaborator(ctx, g.s.owner, g.s.name, login, &github.RepositoryAddCollaboratorOptions{Permission: permissionAdmin})
+		_, _, err := g.r.GitHub.Repositories.AddCollaborator(ctx, g.s.owner, g.s.name, login, github.AddCollaboratorRequest{Permission: new(permissionAdmin)})
 		if err == nil {
 			g.grantee = login
 		}

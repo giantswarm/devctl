@@ -276,7 +276,7 @@ func (r *Runner) stepPermissions(ctx context.Context, s *run, sr *StepResult) er
 			continue
 		}
 		err := s.plan(sr, fmt.Sprintf("team %s: %s", slug, want), func() error {
-			_, err := r.GitHub.Teams.AddTeamRepoBySlug(ctx, s.owner, slug, s.owner, s.name, &github.TeamAddTeamRepoOptions{Permission: want})
+			_, err := r.GitHub.Teams.AddTeamRepoBySlug(ctx, s.owner, slug, s.owner, s.name, github.AddTeamRepoRequest{Permission: new(want)})
 			return err
 		})
 		if err != nil {

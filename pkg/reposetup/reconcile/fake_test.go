@@ -852,9 +852,9 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 		writeJSON(w, 200, teams)
 	}))
 	mux.HandleFunc("PUT /orgs/{org}/teams/{slug}/repos/{owner}/{repo}", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
-		var in github.TeamAddTeamRepoOptions
+		var in github.AddTeamRepoRequest
 		decode(r, &in)
-		repo.teams[strings.ToLower(r.PathValue("slug"))] = in.Permission
+		repo.teams[strings.ToLower(r.PathValue("slug"))] = in.GetPermission()
 		w.WriteHeader(204)
 	}))
 	mux.HandleFunc("GET /repos/{owner}/{repo}/collaborators/{login}/permission", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
@@ -872,9 +872,9 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 			archivedReadOnly(w)
 			return
 		}
-		var in github.RepositoryAddCollaboratorOptions
+		var in github.AddCollaboratorRequest
 		decode(r, &in)
-		repo.collaborators[r.PathValue("login")] = in.Permission
+		repo.collaborators[r.PathValue("login")] = in.GetPermission()
 		writeJSON(w, 201, map[string]any{})
 	}))
 	mux.HandleFunc("DELETE /repos/{owner}/{repo}/collaborators/{login}", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {

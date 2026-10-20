@@ -295,7 +295,7 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 				}
 
 				ps.UpdateStatus("Updating branch...")
-				_, _, err := githubClient.PullRequests.UpdateBranch(ctx, ps.Owner, ps.Repo, ps.Number, nil)
+				_, _, err := githubClient.PullRequests.UpdateBranch(ctx, ps.Owner, ps.Repo, ps.Number, github.UpdatePullRequestBranchRequest{})
 				if err != nil {
 					ps.UpdateStatus("Failed to update branch")
 					return
@@ -360,7 +360,7 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 		// Check if PR branch is behind and needs updating
 		if prCheck != nil && prCheck.GetMergeableState() == "behind" {
 			ps.UpdateStatus("Updating branch...")
-			_, _, err := githubClient.PullRequests.UpdateBranch(ctx, ps.Owner, ps.Repo, ps.Number, nil)
+			_, _, err := githubClient.PullRequests.UpdateBranch(ctx, ps.Owner, ps.Repo, ps.Number, github.UpdatePullRequestBranchRequest{})
 			if err != nil {
 				ps.UpdateStatus("Failed to update branch")
 				return
