@@ -1,6 +1,6 @@
 package prwait
 
-import "github.com/google/go-github/v92/github"
+import "github.com/google/go-github/v93/github"
 
 // NotApplicable is the rule Wait applies before its first poll, for a caller
 // that reads the pull request itself first (pr merge, whose refusals come

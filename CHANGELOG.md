@@ -201,6 +201,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [8.141.1-rc.1] - 2026-10-17
 
+### Changed
+
+- go-github moves to v93: library consumers (`reconcile.Runner`, `githubclient`) pass a `github.com/google/go-github/v93`
+  client.
+
 ### Fixed
 
 - `release promote --team` lists no repository whose team-file entry is declared `lifecycle: archived` or `deleted`:

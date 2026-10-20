@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/Masterminds/semver/v3"
-	"github.com/google/go-github/v92/github"
+	"github.com/google/go-github/v93/github"
 
 	"github.com/giantswarm/devctl/v8/pkg/circleciclient"
 	"github.com/giantswarm/devctl/v8/pkg/reposetup"
@@ -290,7 +290,7 @@ func (g *adminGrant) ensure(ctx context.Context) error {
 		return err
 	}
 	return g.s.plan(g.sr, fmt.Sprintf("grant %s admin for the CircleCI set-up, revoked after it", login), func() error {
-		_, _, err := g.r.GitHub.Repositories.AddCollaborator(ctx, g.s.owner, g.s.name, login, &github.RepositoryAddCollaboratorOptions{Permission: permissionAdmin})
+		_, _, err := g.r.GitHub.Repositories.AddCollaborator(ctx, g.s.owner, g.s.name, login, github.AddCollaboratorRequest{Permission: new(permissionAdmin)})
 		if err == nil {
 			g.grantee = login
 		}
