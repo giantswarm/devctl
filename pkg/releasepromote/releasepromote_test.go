@@ -28,8 +28,11 @@ type dispatch struct {
 
 // fakeRepository is what the fake answers for one repository.
 type fakeRepository struct {
-	branch     string
-	noWorkflow bool
+	// branch carries the workflow and the candidates; it is the default
+	// branch unless defaultBranch names another.
+	branch        string
+	defaultBranch string
+	noWorkflow    bool
 	// outdated serves the workflow without the promotion step.
 	outdated bool
 	// noVersionInput serves a promoting workflow without the version input.
@@ -73,6 +76,9 @@ func (f *fakeGitHub) repository(owner, repo string) (fakeRepository, error) {
 
 func (f *fakeGitHub) DefaultBranch(_ context.Context, owner, repo string) (string, error) {
 	r, err := f.repository(owner, repo)
+	if r.defaultBranch != "" {
+		return r.defaultBranch, err
+	}
 	return r.branch, err
 }
 
@@ -400,6 +406,23 @@ func TestPromoteReadsTheCandidateStatusAndDispatchesOnTheDefaultBranch(t *testin
 	require.Equal(t, Repository{Repository: "giantswarm/fork", Candidate: "v0.2.0-rc.1", State: StateDispatched, Message: "dispatched zz_generated.auto_release.yaml on giantswarm-main to promote v0.2.0-rc.1"}, result.Repositories[0])
 }
 
+func TestPromoteOnAMaintenanceBranch(t *testing.T) {
+	maintenance := fakeRepository{branch: "release-1.16", defaultBranch: "giantswarm", releases: []githubclient.Release{candidate("v1.16.5-rc.1"), stable("v1.16.4")}}
+
+	gh := &fakeGitHub{repositories: map[string]fakeRepository{"giantswarm/fork": maintenance}}
+	result := NewResult("")
+	require.NoError(t, Promote(t.Context(), Config{GitHub: gh, Branch: "release-1.16", Version: "v1.16.5-rc.1"}, []string{"giantswarm/fork"}, &result))
+	require.Equal(t, []dispatch{{repository: "giantswarm/fork", file: Workflow, ref: "release-1.16", inputs: map[string]any{"release-type": "stable", "version": "v1.16.5-rc.1"}}}, gh.dispatches)
+	require.Equal(t, "dispatched zz_generated.auto_release.yaml on release-1.16 to promote v1.16.5-rc.1", result.Repositories[0].Message)
+
+	// Without --branch the default branch is read, which has neither.
+	gh = &fakeGitHub{repositories: map[string]fakeRepository{"giantswarm/fork": maintenance}}
+	result = NewResult("")
+	require.Error(t, Promote(t.Context(), Config{GitHub: gh, Version: "v1.16.5-rc.1"}, []string{"giantswarm/fork"}, &result))
+	require.Equal(t, StateNotAutoRelease, result.Repositories[0].State)
+	require.Empty(t, gh.dispatches)
+}
+
 func TestPromoteGoesOnAfterARepositoryFails(t *testing.T) {
 	built := fakeRepository{branch: "main", releases: []githubclient.Release{candidate("v1.0.0-rc.1")}, status: githubclient.CombinedStatus{State: "success", TotalCount: 1}}
 	gh := &fakeGitHub{repositories: map[string]fakeRepository{"giantswarm/a": built, "giantswarm/c": built}}
@@ -607,7 +630,7 @@ func TestPromoteVersion(t *testing.T) {
 			repository: fakeRepository{branch: "main", releases: streamReleases, statuses: streamStatuses, unreachable: []string{"v1.2.3-rc.14"}},
 			version:    "v1.2.3-rc.14",
 			state:      StateFailed,
-			message:    "v1.2.3-rc.14 is not a release candidate to promote on main: not on the default branch",
+			message:    "v1.2.3-rc.14 is not a release candidate to promote on main: not on that branch",
 		},
 		{
 			name:       "a candidate that is a full release",

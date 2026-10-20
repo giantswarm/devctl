@@ -18,6 +18,11 @@ const templateKeyFork = "Fork"
 // line's maintenance branches (release-X.Y) cut releases of their series.
 const templateKeyMaintenanceBranches = "MaintenanceBranches"
 
+// templateKeyPatchCandidates is the template data key saying a patch of
+// the last stable release is cut as a candidate too, never tagged stable on
+// its push.
+const templateKeyPatchCandidates = "PatchCandidates"
+
 // templateKeyReleaseBranch is the template data key carrying the branch whose
 // pushes cut releases.
 const templateKeyReleaseBranch = "ReleaseBranch"

@@ -37,6 +37,7 @@ func NewAutoReleaseInput(p params.Params) input.Input {
 			templateKeyHeader:              params.Header("#", autoReleaseTemplateSha),
 			templateKeyFork:                params.IsFlavourFork(p),
 			templateKeyMaintenanceBranches: params.IsFlavourFork(p) && p.MaintenanceBranches,
+			templateKeyPatchCandidates:     p.PatchCandidates,
 			templateKeyReleaseBranch:       p.ReleaseBranch,
 			templateKeyAdvisoryJobs:        strings.Join(circleciclient.AdvisoryJobs, " "),
 		},

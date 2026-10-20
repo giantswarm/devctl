@@ -254,6 +254,26 @@
       generate: false
       releaseWorkflow: auto-release
       maintenanceBranches: true
+- name: patch-candidates
+  # Every release a candidate first, a patch included.
+  componentType: service
+  gen:
+    flavours:
+      - app
+    language: go
+    ci:
+      generate: true
+      patchCandidates: true
+- name: patch-candidates-legacy
+  componentType: service
+  gen:
+    flavours:
+      - app
+    language: go
+    ci:
+      generate: true
+      releaseWorkflow: legacy
+      patchCandidates: true
 - name: maintenance-branches-no-fork
   componentType: service
   gen:

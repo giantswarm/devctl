@@ -70,6 +70,9 @@ func (r *runner) promote(ctx context.Context, args []string, doc *releasepromote
 			return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "--version names a candidate of one repository: pass exactly one owner/repo with it, got %d repository argument(s) and --team %q", len(args), r.flag.Team)
 		}
 	}
+	if r.flag.Branch != "" && len(unique(args)) != 1 {
+		return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "--branch names a branch of one repository: pass exactly one owner/repo with it, got %d repository argument(s) and --team %q", len(args), r.flag.Team)
+	}
 	if err := r.gate(false); err != nil {
 		return err
 	}
@@ -105,6 +108,7 @@ func (r *runner) promote(ctx context.Context, args []string, doc *releasepromote
 		GitHub:        sources.GitHub,
 		DryRun:        r.flag.DryRun,
 		Version:       r.flag.Version,
+		Branch:        r.flag.Branch,
 		NotFoundHint:  sources.NotFoundHint,
 		Follow:        !r.flag.NoFollow,
 		FollowTimeout: r.flag.FollowTimeout,
