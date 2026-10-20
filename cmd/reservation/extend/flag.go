@@ -3,8 +3,9 @@ package extend
 import (
 	"github.com/giantswarm/microerror"
 
-	"github.com/giantswarm/devctl/v8/pkg/reservation"
 	"github.com/spf13/cobra"
+
+	"github.com/giantswarm/devctl/v8/pkg/reservation"
 
 	"github.com/giantswarm/devctl/v8/cmd/reservation/gitops"
 )
