@@ -277,3 +277,202 @@ func TestInstallHelmUnittestRetriesTransientErrors(t *testing.T) {
 		})
 	}
 }
+
+// fakeHelmDocs stands in for helm-docs: every call is appended to $HELM_DOCS_CALLS.
+const fakeHelmDocs = `#!/bin/sh
+echo "$*" >> "$HELM_DOCS_CALLS"
+`
+
+// TestApplicationDefaultsToSingleChart runs the generated helm-docs target,
+// which needs APPLICATION, in repositories that set it nowhere: one chart under
+// helm/ is the default, several or none stop check-env with a message naming
+// them, and a value set in Makefile.custom.mk or on the command line wins.
+func TestApplicationDefaultsToSingleChart(t *testing.T) {
+	if _, err := exec.LookPath("make"); err != nil {
+		t.Skip("make is not installed")
+	}
+
+	m, err := New(Config{Flavours: gen.FlavourSlice{gen.FlavourApp}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	in := m.MakefileGenApp()
+	tpl, err := template.New("makefile").Parse(in.TemplateBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rendered bytes.Buffer
+	if err := tpl.Execute(&rendered, in.TemplateData); err != nil {
+		t.Fatal(err)
+	}
+
+	testCases := []struct {
+		name      string
+		charts    []string
+		custom    string
+		args      []string
+		wantCalls string
+		wantErr   string
+	}{
+		{
+			name:      "one chart",
+			charts:    []string{"agent"},
+			wantCalls: "--sort-values-order=file -c helm/agent -g helm/agent\n",
+		},
+		{
+			name:    "several charts",
+			charts:  []string{"one", "two"},
+			wantErr: "helm/ does not hold exactly one chart (found: one two)",
+		},
+		{
+			name:    "no chart",
+			wantErr: "helm/ does not hold exactly one chart (found: none)",
+		},
+		{
+			name:      "set in Makefile.custom.mk",
+			charts:    []string{"one", "two"},
+			custom:    "APPLICATION := two\n",
+			wantCalls: "--sort-values-order=file -c helm/two -g helm/two\n",
+		},
+		{
+			name:      "set on the command line",
+			charts:    []string{"agent"},
+			args:      []string{"APPLICATION=other"},
+			wantCalls: "--sort-values-order=file -c helm/other -g helm/other\n",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			write := func(path, content string, mode os.FileMode) {
+				t.Helper()
+				p := filepath.Join(dir, path)
+				if err := os.MkdirAll(filepath.Dir(p), 0o750); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(p, []byte(content), mode); err != nil {
+					t.Fatal(err)
+				}
+			}
+			write("Makefile", "include Makefile.*.mk\n", 0o644)
+			write(in.Path, rendered.String(), 0o644)
+			write("bin/helm-docs", fakeHelmDocs, 0o755)
+			if tc.custom != "" {
+				write("Makefile.custom.mk", tc.custom, 0o644)
+			}
+			for _, chart := range tc.charts {
+				write("helm/"+chart+"/Chart.yaml", "name: "+chart+"\n", 0o644)
+			}
+
+			calls := filepath.Join(dir, "helm-docs-calls")
+			cmd := exec.Command("make", append([]string{"helm-docs"}, tc.args...)...) //nolint:gosec // the arguments are the test's own
+			cmd.Dir = dir
+			env := []string{}
+			for _, e := range os.Environ() {
+				if !strings.HasPrefix(e, "APPLICATION=") {
+					env = append(env, e)
+				}
+			}
+			cmd.Env = append(env,
+				"PATH="+filepath.Join(dir, "bin")+string(os.PathListSeparator)+os.Getenv("PATH"),
+				"HELM_DOCS_CALLS="+calls,
+			)
+			out, err := cmd.CombinedOutput()
+
+			if tc.wantErr != "" {
+				if err == nil {
+					t.Fatalf("make helm-docs succeeded, want it to stop at check-env\n%s", out)
+				}
+				if !strings.Contains(string(out), tc.wantErr) {
+					t.Errorf("output does not contain %q:\n%s", tc.wantErr, out)
+				}
+				if _, err := os.Stat(calls); err == nil {
+					t.Errorf("helm-docs ran although check-env failed")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("make helm-docs: %v\n%s", err, out)
+			}
+			got, err := os.ReadFile(filepath.Clean(calls))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(got) != tc.wantCalls {
+				t.Errorf("helm-docs calls = %q, want %q", got, tc.wantCalls)
+			}
+		})
+	}
+}
+
+// fakeDocker stands in for docker: every call is appended to $DOCKER_CALLS.
+const fakeDocker = `#!/bin/sh
+echo "$*" >> "$DOCKER_CALLS"
+`
+
+// TestLintChartRunsHeadless runs the generated lint-chart target with no TTY on
+// stdin and no ct on PATH: ct runs from the pinned chart-testing image, and
+// docker gets no -t, which it refuses without a TTY.
+func TestLintChartRunsHeadless(t *testing.T) {
+	if _, err := exec.LookPath("make"); err != nil {
+		t.Skip("make is not installed")
+	}
+	if _, err := exec.LookPath("ct"); err == nil {
+		t.Skip("ct is installed, so lint-chart would not run its container")
+	}
+
+	m, err := New(Config{Flavours: gen.FlavourSlice{gen.FlavourApp}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	in := m.MakefileGenApp()
+	tpl, err := template.New("makefile").Parse(in.TemplateBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rendered bytes.Buffer
+	if err := tpl.Execute(&rendered, in.TemplateData); err != nil {
+		t.Fatal(err)
+	}
+
+	dir := t.TempDir()
+	write := func(path, content string, mode os.FileMode) {
+		t.Helper()
+		p := filepath.Join(dir, path)
+		if err := os.MkdirAll(filepath.Dir(p), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), mode); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const chart = "devctl-lint-chart-headless"
+	write(in.Path, rendered.String(), 0o644)
+	write("bin/docker", fakeDocker, 0o755)
+	write("bin/architect", "#!/bin/sh\n", 0o755)
+	write("helm/"+chart+"/Chart.yaml", "name: "+chart+"\n", 0o644)
+
+	calls := filepath.Join(dir, "docker-calls")
+	cmd := exec.Command("make", "-f", "Makefile.gen.app.mk", "lint-chart")
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(),
+		"PATH="+filepath.Join(dir, "bin")+string(os.PathListSeparator)+os.Getenv("PATH"),
+		"DOCKER_CALLS="+calls,
+	)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("make lint-chart: %v\n%s", err, out)
+	}
+
+	got, err := os.ReadFile(filepath.Clean(calls))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "run --rm -v /tmp/" + chart + "-test:/wd --workdir=/wd --name ct " +
+		"gsoci.azurecr.io/giantswarm/helm-chart-testing:v3.15.0 " +
+		"ct lint --validate-maintainers=false --charts=helm/" + chart + "\n"
+	if string(got) != want {
+		t.Errorf("docker calls = %q, want %q", got, want)
+	}
+}

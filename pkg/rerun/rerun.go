@@ -18,6 +18,7 @@ import (
 
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
 	"github.com/giantswarm/devctl/v8/pkg/authstore"
+	"github.com/giantswarm/devctl/v8/pkg/ci"
 	"github.com/giantswarm/devctl/v8/pkg/circleciclient"
 )
 
@@ -58,6 +59,9 @@ type Result struct {
 	// Redelivery is the push webhook delivery sent again for a pipeline
 	// without a workflow; absent when the pipeline has workflows to judge.
 	Redelivery *RedeliveryResult `json:"redelivery,omitempty"`
+	// Trigger is the fresh pipeline triggered through the CircleCI API when
+	// the push could not be sent again; absent otherwise.
+	Trigger *TriggerResult `json:"trigger,omitempty"`
 }
 
 // Pipeline is the CircleCI pipeline whose workflows were considered.
@@ -83,6 +87,75 @@ type Workflow struct {
 	// RerunID and RerunURL are the new workflow of a rerun.
 	RerunID  string `json:"rerunId,omitempty"`
 	RerunURL string `json:"rerunUrl,omitempty"`
+	// Canceled says the workflow ran past [Wedged.After] and was canceled
+	// before its rerun; Status is what it read once the cancel landed.
+	Canceled bool `json:"canceled,omitempty"`
+	// RerunFrom is how a canceled workflow was rerun: failed, or start
+	// where CircleCI offers no rerun from failed.
+	RerunFrom string `json:"rerunFrom,omitempty"`
+}
+
+// The ways a canceled workflow is rerun.
+const (
+	RerunFromFailed = "failed"
+	RerunFromStart  = "start"
+)
+
+// Wedged is the way out of a workflow that runs far longer than any build
+// does, its jobs hung on CircleCI's side: it is canceled, and rerun once the
+// cancel lands. A cancel CircleCI does not honour within [ci.CancelTimeout]
+// gets a fresh pipeline through [Redelivery.Trigger] instead, once per tag.
+type Wedged struct {
+	// After is how long a workflow may run before it counts as wedged; zero
+	// leaves every running workflow alone.
+	After time.Duration
+	// Clock times the workflow's age and the wait for its cancel.
+	Clock agentcli.Clock
+}
+
+// wedged says whether run has been running past After: running or failing,
+// never on hold, which waits for a person.
+func (w Wedged) wedged(run circleciclient.Workflow) bool {
+	if w.After <= 0 || run.CreatedAt.IsZero() || run.Status != "running" && run.Status != "failing" {
+		return false
+	}
+	return w.age(run) >= w.After
+}
+
+func (w Wedged) age(run circleciclient.Workflow) time.Duration {
+	return w.Clock.Now().Sub(run.CreatedAt).Round(time.Minute)
+}
+
+// unstick cancels the wedged run and reruns it once the cancel landed:
+// from failed, from start where CircleCI refuses that. It returns false
+// without an error when the cancel did not land within [ci.CancelTimeout].
+func (w Wedged) unstick(ctx context.Context, client *circleciclient.Client, run circleciclient.Workflow, result *Workflow, warn func(string)) (bool, error) {
+	if err := client.CancelWorkflow(ctx, run.ID); err != nil {
+		result.Outcome = OutcomeRefused
+		return false, refused(err, "the cancel of "+run.Name)
+	}
+	result.Canceled = true
+	status, err := ci.AwaitCanceled(ctx, client, run.ID, w.Clock)
+	switch {
+	case agentcli.Exit(err) == agentcli.ExitTimeout:
+		result.Outcome = OutcomeRunning
+		return false, nil
+	case err != nil:
+		return false, err
+	}
+	result.Status, result.RerunFrom = status, RerunFromFailed
+	id, err := client.RerunWorkflow(ctx, run.ID, true)
+	if circleciclient.IsAPI(err) {
+		result.RerunFrom = RerunFromStart
+		id, err = client.RerunWorkflow(ctx, run.ID, false)
+	}
+	if err != nil {
+		result.Outcome = OutcomeRefused
+		return false, refused(err, run.Name)
+	}
+	result.Outcome, result.RerunID = OutcomeRerun, id
+	warn(fmt.Sprintf("%s ran %s, past the bound of %s: canceled, it read %s, and was rerun from %s", run.Name, w.age(run), w.After, status, result.RerunFrom))
+	return true, nil
 }
 
 // NewResult is an empty result for repository.
@@ -97,8 +170,10 @@ func NewResult(repository string) *Result {
 // 3 not applicable when no workflow failed. A rerun CircleCI refuses with 403
 // is exit 8, naming the login that grants write access. A pipeline that never
 // got a workflow is handed to redelivery, which sends its push webhook
-// delivery again once it is [StalledAfter] old.
-func FromFailed(ctx context.Context, client *circleciclient.Client, org, repo string, pipeline *circleciclient.Pipeline, result *Result, warn func(string), redelivery Redelivery) error {
+// delivery again once it is [StalledAfter] old. A workflow running past
+// wedged.After is canceled and rerun; one whose cancel does not land gets a
+// fresh pipeline through redelivery's Trigger.
+func FromFailed(ctx context.Context, client *circleciclient.Client, org, repo string, pipeline *circleciclient.Pipeline, result *Result, warn func(string), redelivery Redelivery, wedged Wedged) error {
 	result.HeadSHA = pipeline.VCS.Revision
 	result.Pipeline = &Pipeline{ID: pipeline.ID, Number: pipeline.Number, URL: circleciclient.PipelineURL(org, repo, pipeline.Number)}
 
@@ -116,7 +191,7 @@ func FromFailed(ctx context.Context, client *circleciclient.Client, org, repo st
 		}
 		return redelivery.redeliver(ctx, org, repo, pipeline, result, warn)
 	}
-	var rerun, running []string
+	var rerun, running, stuck []string
 	for _, run := range newest {
 		w := Workflow{
 			Name:       run.Name,
@@ -126,9 +201,23 @@ func FromFailed(ctx context.Context, client *circleciclient.Client, org, repo st
 			FailedJobs: []string{},
 		}
 		switch {
+		case wedged.wedged(run):
+			ok, err := wedged.unstick(ctx, client, run, &w, warn)
+			if err != nil {
+				result.Workflows = append(result.Workflows, w)
+				return err
+			}
+			if !ok {
+				stuck = append(stuck, run.Name)
+				break
+			}
+			if w.RerunID != "" {
+				w.RerunURL = circleciclient.WorkflowURL(org, repo, pipeline.Number, w.RerunID)
+			}
+			rerun = append(rerun, run.Name)
 		case stillRunning(run.Status):
 			w.Outcome = OutcomeRunning
-			running = append(running, fmt.Sprintf("%s (%s)", run.Name, run.Status))
+			running = append(running, runningFor(run, wedged))
 		case !circleciclient.WorkflowFailed(run.Status):
 			w.Outcome = OutcomeNothing
 		default:
@@ -158,6 +247,12 @@ func FromFailed(ctx context.Context, client *circleciclient.Client, org, repo st
 		result.Workflows = append(result.Workflows, w)
 	}
 
+	if len(stuck) > 0 {
+		// The pipeline cannot finish while a workflow of it never stops: the
+		// tag gets a fresh one, which the wait reads.
+		return redelivery.fresh(ctx, org, repo, pipeline, result, warn, agentcli.NewExitError(agentcli.ExitTimeout, agentcli.VerdictTimeout,
+			"CircleCI did not honour the cancel of %s within %s", strings.Join(stuck, ", "), ci.CancelTimeout))
+	}
 	switch {
 	case len(rerun) > 0:
 		if len(running) > 0 {
@@ -165,8 +260,12 @@ func FromFailed(ctx context.Context, client *circleciclient.Client, org, repo st
 		}
 		return nil
 	case len(running) > 0:
+		hint := "wait for it and rerun if it fails"
+		if wedged.After > 0 {
+			hint = fmt.Sprintf("a workflow running longer than %s (--wedged-after) is canceled and rerun; until then wait for it and rerun if it fails", wedged.After)
+		}
 		return agentcli.NewExitError(agentcli.ExitRefused, agentcli.VerdictRefused,
-			"no finished workflow failed and %s still running: CircleCI reruns a finished workflow only; wait for it and rerun if it fails", strings.Join(running, ", "))
+			"no finished workflow failed and %s still running: CircleCI reruns a finished workflow only; %s", strings.Join(running, ", "), hint)
 	}
 	return agentcli.NewExitError(agentcli.ExitNotApplicable, agentcli.VerdictNotApplicable,
 		"no workflow of pipeline %d has a failed job: nothing to rerun", pipeline.Number)
@@ -177,6 +276,14 @@ func FromFailed(ctx context.Context, client *circleciclient.Client, org, repo st
 // failed but will not rerun yet. not_run never ran and never will.
 func stillRunning(status string) bool {
 	return circleciclient.WorkflowRunning(status) || !circleciclient.WorkflowFinished(status) && status != "not_run"
+}
+
+// runningFor names a running workflow, with its age when a bound applies.
+func runningFor(run circleciclient.Workflow, wedged Wedged) string {
+	if wedged.After <= 0 || run.CreatedAt.IsZero() {
+		return fmt.Sprintf("%s (%s)", run.Name, run.Status)
+	}
+	return fmt.Sprintf("%s (%s for %s)", run.Name, run.Status, wedged.age(run))
 }
 
 // failedRun says whether a workflow status means a job failed: failed or

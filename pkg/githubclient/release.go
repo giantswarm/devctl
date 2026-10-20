@@ -193,19 +193,23 @@ func (c *Client) ListWorkflowRunsForSHA(ctx context.Context, owner, repo, sha st
 	}
 	out := make([]WorkflowRun, 0, len(runs))
 	for _, r := range runs {
-		out = append(out, WorkflowRun{
-			Name:       r.GetName(),
-			Path:       r.GetPath(),
-			ID:         r.GetID(),
-			Event:      r.GetEvent(),
-			HeadBranch: r.GetHeadBranch(),
-			Status:     r.GetStatus(),
-			Conclusion: r.GetConclusion(),
-			URL:        r.GetHTMLURL(),
-			CreatedAt:  r.GetCreatedAt().Time,
-		})
+		out = append(out, toWorkflowRun(r))
 	}
 	return out, nil
+}
+
+func toWorkflowRun(r *github.WorkflowRun) WorkflowRun {
+	return WorkflowRun{
+		Name:       r.GetName(),
+		Path:       r.GetPath(),
+		ID:         r.GetID(),
+		Event:      r.GetEvent(),
+		HeadBranch: r.GetHeadBranch(),
+		Status:     r.GetStatus(),
+		Conclusion: r.GetConclusion(),
+		URL:        r.GetHTMLURL(),
+		CreatedAt:  r.GetCreatedAt().Time,
+	}
 }
 
 // WorkflowJob is one job of a GitHub Actions run.

@@ -99,12 +99,13 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 	// giantswarm/github) in either direction leaves the repo with exactly
 	// one set of release files. The un-prefixed `auto-release.yaml` left
 	// over from manual migrations predating the `zz_generated.` rename is
-	// deleted in BOTH branches via AutoReleaseLegacyDeletion.
+	// deleted in BOTH branches via AutoReleaseLegacyDeletion, and so is the
+	// retired zz_generated.changelog.yaml via ChangelogDeletion.
 	if r.flag.ReleaseWorkflow == releaseWorkflowAutoRelease {
 		inputs = append(inputs,
 			workflowsInput.AutoReleaseLegacyDeletion(),
 			workflowsInput.AutoRelease(),
-			workflowsInput.Changelog(),
+			workflowsInput.ChangelogDeletion(),
 			workflowsInput.CliffToml(),
 			workflowsInput.CreateReleaseDeletion(),
 			workflowsInput.CreateReleasePRDeletion(),

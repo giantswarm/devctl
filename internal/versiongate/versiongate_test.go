@@ -3,6 +3,9 @@ package versiongate
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -36,7 +39,7 @@ func noSessionBus(t *testing.T) {
 // CI running the tests sets some of them.
 func clearGitHubEnv(t *testing.T) {
 	t.Helper()
-	for _, name := range append([]string{authstore.EnvCI}, authstore.GitHubEnvVars...) {
+	for _, name := range append([]string{authstore.EnvCI, envGH}, authstore.GitHubEnvVars...) {
 		t.Setenv(name, "")
 	}
 }
@@ -65,6 +68,15 @@ func TestGitHubToken(t *testing.T) {
 		{name: "a token in the environment under CI, without the warning",
 			env: map[string]string{"OPSCTL_GITHUB_TOKEN": "ghp_ci", authstore.EnvCI: "true"}, keychain: brokenKeychain,
 			want: "ghp_ci"},
+		{name: "gh's $GH_TOKEN alone under CI, the token a workflow step sets for gh",
+			env: map[string]string{envGH: "ghs_job", authstore.EnvCI: "true"}, keychain: brokenKeychain,
+			want: "ghs_job"},
+		{name: "a devctl token variable wins over $GH_TOKEN under CI",
+			env: map[string]string{authstore.GitHubEnvVars[1]: "devctl-token", envGH: "ghs_job", authstore.EnvCI: "true"}, keychain: brokenKeychain,
+			want: "devctl-token"},
+		{name: "without CI $GH_TOKEN is not read: the App login is",
+			env:      map[string]string{envGH: "ghs_job"},
+			keychain: func(t *testing.T) { t.Setenv(agentcli.EnvKeyringFile, filepath.Join(t.TempDir(), "keyring.json")) }},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -118,6 +130,50 @@ func TestCheckWithAFreshCacheDoesNotOpenTheKeychain(t *testing.T) {
 	}
 	if err := check("0.9.0", false, &warnings); err == nil || !strings.Contains(err.Error(), "version 1.0.0 of devctl is released") {
 		t.Errorf("check of an older build: %v, want the cached release named", err)
+	}
+	if warnings.Len() != 0 {
+		t.Errorf("warned %q", warnings.String())
+	}
+}
+
+// TestCheckInAWorkflowStepWithGHTokenAuthenticates is a generated workflow
+// step that hands devctl the job's token in $GH_TOKEN only: the version
+// check's releases call carries it, where GitHub answers an anonymous one
+// from a shared runner IP with the rate limit.
+func TestCheckInAWorkflowStepWithGHTokenAuthenticates(t *testing.T) {
+	clearGitHubEnv(t)
+	t.Setenv("DEVCTL_UNSAFE_FORCE_VERSION", "")
+	t.Setenv(authstore.EnvCI, "true")
+	t.Setenv(envGH, "ghs_job")
+	brokenKeychain(t)
+
+	var auths []string
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /repos/giantswarm/devctl/releases", func(w http.ResponseWriter, r *http.Request) {
+		auth := r.Header.Get("Authorization")
+		auths = append(auths, auth)
+		if auth == "" {
+			w.Header().Set("X-RateLimit-Remaining", "0")
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(`{"message":"API rate limit exceeded for 4.242.196.129."}`))
+			return
+		}
+		asset := "devctl-" + runtime.GOOS + "-" + runtime.GOARCH
+		_ = json.NewEncoder(w).Encode([]map[string]any{{
+			"id": 1, "tag_name": "v1.0.0", "name": "v1.0.0",
+			"assets": []map[string]any{{"id": 2, "name": asset, "size": 3, "browser_download_url": "https://example.test/" + asset}},
+		}})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	t.Setenv(agentcli.EnvGitHubAPIURL, srv.URL)
+
+	var warnings bytes.Buffer
+	if err := check("1.0.0", true, &warnings); err != nil {
+		t.Fatalf("check: %v", err)
+	}
+	if len(auths) != 1 || auths[0] != "Bearer ghs_job" {
+		t.Errorf("releases requests carried Authorization %q, want one with the job's token", auths)
 	}
 	if warnings.Len() != 0 {
 		t.Errorf("warned %q", warnings.String())
