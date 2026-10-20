@@ -1,0 +1,153 @@
+# DO NOT EDIT. Generated with:
+#
+#    devctl
+#
+
+# Runs `mctl validate-config` on init PRs; silent until `mctl config` has run, then prompts for /create-mc.
+
+name: Validate config
+
+on:
+  pull_request:
+    types: [synchronize, opened, reopened]
+    branches:
+      - main
+    paths:
+      - 'management-clusters/**'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+env:
+  MCTL_IMAGE: ${{ vars.MCTL_IMAGE || 'gsoci.azurecr.io/giantswarm/mctl:0.1.16' }}
+
+jobs:
+  validate-config:
+    name: Run mctl validate-config
+    runs-on: ubuntu-latest
+    # Not in the template repo; only init branches.
+    if: >
+      github.repository != 'giantswarm/template-management-clusters' &&
+      contains(github.head_ref, '-init')
+
+    steps:
+      - name: Derive installation name
+        id: install
+        env:
+          BRANCH: ${{ github.head_ref }}
+        run: |
+          # {installation}-init or {installation}-init-{provider}
+          if [[ "$BRANCH" =~ ^(.+)-init-(capa|capz|capv|capvcd)$ ]]; then
+            installation="${BASH_REMATCH[1]}"
+          else
+            installation="${BRANCH%-init}"
+          fi
+          echo "name=$installation" >> "$GITHUB_OUTPUT"
+
+      - name: Generate app token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.MCTL_APP_ID }}
+          private-key: ${{ secrets.MCTL_APP_PRIVATE_KEY }}
+          # Owner-scoped so cross-repo calls work.
+          owner: ${{ github.repository_owner }}
+
+      - name: Run mctl validate-config
+        id: mctl
+        env:
+          INSTALLATION:   ${{ steps.install.outputs.name }}
+          CMC_REPO:       ${{ github.event.repository.name }}
+          ORG:            ${{ github.repository_owner }}
+          INIT_PR_NUMBER: ${{ github.event.pull_request.number }}
+          GITHUB_TOKEN:   ${{ steps.app-token.outputs.token }}
+          BRANCH:         ${{ github.head_ref }}
+        run: |
+          set +e
+          output=$(docker run --rm \
+            -e GITHUB_TOKEN \
+            "$MCTL_IMAGE" \
+            validate-config \
+              --installation   "$INSTALLATION" \
+              --cmc-org        "$ORG" \
+              --cmc-repo       "$CMC_REPO" \
+              --cmc-branch     "$BRANCH" \
+              --init-pr-number "$INIT_PR_NUMBER" \
+            2>&1)
+          exit_code=$?
+          {
+            echo "output<<MCTL_EOF"
+            echo "$output"
+            echo "MCTL_EOF"
+            echo "exit_code=$exit_code"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Post failure comment
+        # Skips (config not run yet) stay silent.
+        if: steps.mctl.outputs.exit_code != '0'
+        uses: actions/github-script@v7
+        env:
+          MCTL_OUTPUT:    ${{ steps.mctl.outputs.output }}
+          MCTL_EXIT_CODE: ${{ steps.mctl.outputs.exit_code }}
+        with:
+          script: |
+            const output = process.env.MCTL_OUTPUT || '';
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body: [
+                '### ❌ `mctl validate-config` failed',
+                '',
+                '```',
+                output,
+                '```',
+                '',
+                'Run `/config` if you have not done so yet, or check the CCR and',
+                'installations PRs for missing files.',
+              ].join('\n'),
+            });
+            core.setFailed(`mctl validate-config exited ${process.env.MCTL_EXIT_CODE}`);
+
+      - name: Post create-mc prompt
+        # Only once config has run ("skipped" means it has not).
+        if: steps.mctl.outputs.exit_code == '0' && !contains(steps.mctl.outputs.output, 'validate-config skipped')
+        uses: actions/github-script@v7
+        env:
+          INSTALLATION: ${{ steps.install.outputs.name }}
+        with:
+          script: |
+            const installation = process.env.INSTALLATION;
+            // Token lets reruns update the comment in place.
+            const token = `<!-- mctl-validate-config-ready-${installation} -->`;
+            const body = [
+              token,
+              '### ✅ Config validated — ready to bootstrap',
+              '',
+              `All checks passed for **${installation}**.`,
+              '',
+              'Comment `/create-mc` on this PR when you are ready to start the bootstrap pipeline.',
+            ].join('\n');
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+            });
+            const existing = comments.find(c => c.body && c.body.includes(token));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.pull_request.number,
+                body,
+              });
+            }

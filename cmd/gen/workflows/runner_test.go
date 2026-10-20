@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -209,4 +210,47 @@ func git(t *testing.T, args ...string) {
 
 	out, err := exec.Command("git", args...).CombinedOutput() //nolint:gosec // the arguments are the test's own
 	require.NoError(t, err, string(out))
+}
+
+// Test_Run_FleetMctl checks fleet gets the mctl workflows and legacy deletions, other flavours neither.
+func Test_Run_FleetMctl(t *testing.T) {
+	mctlWorkflows := []string{"close-cascade", "config", "create-mc", "init", "merge-cascade", "merge-gate", "patch-init", "validate-config", "validate-manifest"}
+	legacy := []string{"op.env"}
+	for _, name := range mctlWorkflows {
+		legacy = append(legacy, name+".yaml")
+	}
+
+	for _, flavour := range []gen.Flavour{gen.FlavourManagementClustersFleet, gen.FlavourGeneric} {
+		t.Run(flavour.String(), func(t *testing.T) {
+			t.Chdir(t.TempDir())
+			require.NoError(t, os.MkdirAll(".github/workflows", 0o750))
+			for _, name := range append(legacy, "lint.yaml") {
+				require.NoError(t, os.WriteFile(filepath.Join(".github/workflows", name), []byte("name: x\n"), 0o600))
+			}
+
+			r := &runner{flag: &flag{
+				Flavours:        gen.FlavourSlice{flavour},
+				Language:        "generic",
+				ReleaseWorkflow: releaseWorkflowLegacy,
+			}}
+			require.NoError(t, r.Run(&cobra.Command{}, nil))
+
+			require.FileExists(t, ".github/workflows/lint.yaml")
+			for _, name := range legacy {
+				if flavour == gen.FlavourManagementClustersFleet {
+					require.NoFileExists(t, filepath.Join(".github/workflows", name))
+				} else {
+					require.FileExists(t, filepath.Join(".github/workflows", name))
+				}
+			}
+			for _, name := range mctlWorkflows {
+				generated := filepath.Join(".github/workflows", "zz_generated.mctl_"+strings.ReplaceAll(name, "-", "_")+".yaml")
+				if flavour == gen.FlavourManagementClustersFleet {
+					require.FileExists(t, generated)
+				} else {
+					require.NoFileExists(t, generated)
+				}
+			}
+		})
+	}
 }

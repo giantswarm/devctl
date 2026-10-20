@@ -1,0 +1,287 @@
+# DO NOT EDIT. Generated with:
+#
+#    devctl
+#
+
+# Posts the required mctl/ready-to-merge status: green once the latest /create-mc succeeded and the installations and teleport-fleet PRs are open or merged.
+
+name: Merge gate
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - main
+  issue_comment:
+    types: [created, edited]
+
+permissions: {}
+
+jobs:
+  gate:
+    name: Check cluster PRs are ready to merge
+    runs-on: ubuntu-latest
+    # The status is posted with github.token: required checks are pinned to the GitHub Actions app.
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: write
+      statuses: write
+    # Must run on every PR: a skipped job posts no status and blocks the required check.
+    if: >
+      github.repository != 'giantswarm/template-management-clusters' && (
+        github.event_name == 'pull_request' ||
+        github.event.issue.pull_request != null
+      )
+
+    steps:
+      # Non-fatal: only the cross-repo PR reads need the App token.
+      - name: Generate app token
+        id: app-token
+        continue-on-error: true
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.MCTL_APP_ID }}
+          private-key: ${{ secrets.MCTL_APP_PRIVATE_KEY }}
+          # Owner-scoped so cross-repo calls work.
+          owner: ${{ github.repository_owner }}
+
+      - name: Evaluate and publish status
+        id: gate
+        uses: actions/github-script@v7
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const CONTEXT = 'mctl/ready-to-merge';
+            // Without the App token the cross-repo reads fail and post 'error'.
+            const crossRepo = process.env.APP_TOKEN ? getOctokit(process.env.APP_TOKEN) : github;
+            const targetURL =
+              `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}` +
+              `/actions/runs/${context.runId}`;
+
+            const prNumber = context.eventName === 'pull_request'
+              ? context.payload.pull_request.number
+              : context.issue.number;
+
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber,
+            });
+
+            // GitHub caps status descriptions at 140 characters.
+            async function publish(state, description) {
+              const trimmed = description.length > 137
+                ? description.slice(0, 137) + '...'
+                : description;
+              await github.rest.repos.createCommitStatus({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                sha: pr.head.sha,
+                context: CONTEXT,
+                state,
+                description: trimmed,
+                target_url: targetURL,
+              });
+              core.info(`${CONTEXT} = ${state}: ${trimmed}`);
+            }
+
+            // {installation}-init or {installation}-init-{provider}
+            const branch = pr.head.ref;
+            const match = branch.match(/^(.+)-init(?:-(?:capa|capz|capv|capvcd))?$/);
+            if (!match) {
+              await publish('success', 'Not a cluster init PR — nothing to gate.');
+              return;
+            }
+            const installation = match[1];
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+            });
+
+            // The newest result comment governs, even if an earlier run succeeded.
+            const resultToken = `<!-- mctl-create-mc-result-${installation} -->`;
+            const results = comments.filter(c => (c.body || '').includes(resultToken));
+            const latestResult = results.length ? results[results.length - 1].body : '';
+
+            if (!latestResult) {
+              await publish('failure', `No /create-mc run for ${installation} yet — comment /create-mc to bootstrap it.`);
+              return;
+            }
+            if (!latestResult.includes('created successfully')) {
+              await publish('failure', `The latest /create-mc run for ${installation} did not succeed — rerun /create-mc.`);
+              return;
+            }
+
+            // Newest match first, so a link from an earlier run is kept.
+            function findMarker(label) {
+              const re = new RegExp(`\\*\\*${label}:\\*\\*\\s*(.+)`);
+              for (const comment of [...comments].reverse()) {
+                const m = (comment.body || '').match(re);
+                if (m) return m[1].trim();
+              }
+              return '';
+            }
+
+            // A reported value is a URL or a failure note.
+            function asURL(reported) {
+              const m = reported.match(/^(https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+)/);
+              return m ? m[1] : '';
+            }
+
+            async function stateOf(url) {
+              const m = url.match(/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
+              const [, owner, repo, number] = m;
+              const { data } = await crossRepo.rest.pulls.get({
+                owner, repo, pull_number: parseInt(number, 10),
+              });
+              return data.merged ? 'merged' : data.state;
+            }
+
+            const targets = [
+              { label: 'Installations PR', name: 'installations' },
+              { label: 'Teleport fleet PR', name: 'teleport-fleet' },
+            ];
+
+            const summary = [];
+            for (const target of targets) {
+              const reported = findMarker(target.label);
+              if (!reported) {
+                await publish('failure', `No ${target.name} PR reported for ${installation} — run /config, then /create-mc.`);
+                return;
+              }
+
+              const url = asURL(reported);
+              if (!url) {
+                // The run reported the step but it did not produce a PR.
+                await publish('failure', `${target.name} PR missing: ${reported}`);
+                return;
+              }
+
+              let state;
+              try {
+                state = await stateOf(url);
+              } catch (err) {
+                await publish('error', `Could not read the ${target.name} PR (${err.status || err.message}).`);
+                return;
+              }
+
+              if (state !== 'open' && state !== 'merged') {
+                await publish('failure', `The ${target.name} PR is ${state} without being merged: ${url}`);
+                return;
+              }
+              summary.push(`- **${target.label}** (${state}): ${url}`);
+            }
+
+            // Reminder only, not a gate condition.
+            let overrideLines = [];
+            try {
+              const { data: file } = await github.rest.repos.getContent({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                path: `management-clusters/${installation}/kustomization.yaml`,
+                ref: pr.head.sha,
+              });
+              const kustomization = Buffer.from(file.content, 'base64').toString('utf8');
+              // Matches all three overrides, including the conditional releases one.
+              overrideLines = kustomization
+                .split('\n')
+                .filter(line => /patch-gitrepo-\S*branch\.yaml/.test(line));
+            } catch (err) {
+              // Never let a reminder become a new way to get stuck.
+              core.warning(`Could not read kustomization.yaml (${err.status || err.message}) — skipping the branch override check.`);
+            }
+
+            core.setOutput('installation', installation);
+            core.setOutput('pr_number', String(prNumber));
+            core.setOutput('override_lines', overrideLines.join('\n'));
+
+            await core.summary
+              .addHeading(`✅ ${installation} is ready to merge`, 3)
+              .addRaw([
+                'Merging this PR will merge the installations PR and arm auto-merge on the',
+                'teleport-fleet PR.\n\n',
+                summary.join('\n'),
+              ].join(' '))
+              .write();
+
+            if (overrideLines.length) {
+              await publish('success', 'Ready to merge — remove the branch override patches first (see the PR comment).');
+              return;
+            }
+            await publish('success', 'installations + teleport-fleet PRs will be merged when this PR merges.');
+
+      # Default GITHUB_TOKEN so the comment cannot re-trigger the gate.
+      - name: Comment on leftover branch overrides
+        # Set only on the green path.
+        if: steps.gate.outputs.installation != ''
+        uses: actions/github-script@v7
+        env:
+          INSTALLATION:   ${{ steps.gate.outputs.installation }}
+          PR_NUMBER:      ${{ steps.gate.outputs.pr_number }}
+          OVERRIDE_LINES: ${{ steps.gate.outputs.override_lines }}
+        with:
+          script: |
+            const installation = process.env.INSTALLATION;
+            const prNumber = parseInt(process.env.PR_NUMBER, 10);
+            const lines = (process.env.OVERRIDE_LINES || '').split('\n').filter(Boolean);
+            const path = `management-clusters/${installation}/kustomization.yaml`;
+            // Embedded so the comment can be updated in place on reruns.
+            const token = `<!-- mctl-branch-overrides-${installation} -->`;
+
+            const body = lines.length
+              ? [
+                  token,
+                  '### ⚠️ Remove the branch override patches before merging',
+                  '',
+                  `**${installation}** is ready to merge, but \`${path}\` still pins Flux to`,
+                  "this PR's branches. Merging deletes the branch, those `GitRepository`",
+                  'resources stop reconciling, and the MC freezes on its last-applied state.',
+                  '',
+                  'Delete these lines from the `patches:` list, then merge:',
+                  '',
+                  '```yaml',
+                  ...lines,
+                  '```',
+                  '',
+                  'Leave the files under `patches/` — kustomize ignores them once they are',
+                  'unreferenced, and they are what you re-add to re-pin.',
+                ].join('\n')
+              : [
+                  token,
+                  '### ✅ Branch overrides removed',
+                  '',
+                  `\`${path}\` no longer pins Flux to this PR's branches.`,
+                ].join('\n');
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+            });
+            const existing = comments.find(c => (c.body || '').includes(token));
+
+            if (!existing) {
+              // Nothing to say on a PR that was already clean.
+              if (!lines.length) return;
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                body,
+              });
+              return;
+            }
+
+            if ((existing.body || '').trim() === body.trim()) return;
+
+            await github.rest.issues.updateComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: existing.id,
+              body,
+            });
