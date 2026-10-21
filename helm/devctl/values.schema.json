@@ -5,7 +5,7 @@
     "properties": {
         "affinity": {
             "type": "object",
-            "additionalProperties": false
+            "additionalProperties": true
         },
         "baseDomain": {
             "type": "string"
@@ -150,7 +150,7 @@
                         "labels": {
                             "type": "object",
                             "description": "Labels on the ServiceMonitor. The Giant Swarm observability platform routes a scrape to a Mimir tenant by observability.giantswarm.io/tenant.",
-                            "additionalProperties": false
+                            "additionalProperties": true
                         }
                     }
                 }
@@ -180,7 +180,7 @@
                         "labels": {
                             "type": "object",
                             "description": "Extra labels on the MCPServer.",
-                            "additionalProperties": false
+                            "additionalProperties": true
                         },
                         "name": {
                             "type": "string",
@@ -208,15 +208,15 @@
         },
         "nodeSelector": {
             "type": "object",
-            "additionalProperties": false
+            "additionalProperties": true
         },
         "podAnnotations": {
             "type": "object",
-            "additionalProperties": false
+            "additionalProperties": true
         },
         "podLabels": {
             "type": "object",
-            "additionalProperties": false
+            "additionalProperties": true
         },
         "podSecurityContext": {
             "type": "object",
