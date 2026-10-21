@@ -18,7 +18,7 @@ type flag struct {
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
-	cmd.Flags().StringVar(&f.Cluster, flagCluster, "", "Name of the management cluster to list reservations on.")
+	cmd.Flags().StringVar(&f.Cluster, flagCluster, "", "Name of the management cluster to list reservations on. Required.")
 	f.GitOps.Init(cmd)
 }
 

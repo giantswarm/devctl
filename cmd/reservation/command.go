@@ -16,8 +16,22 @@ import (
 )
 
 const (
-	name        = "reservation"
-	description = "Commands for reserving a management cluster app for the dev builds of a branch."
+	name            = "reservation"
+	description     = "Commands for reserving a management cluster app for the dev builds of a branch."
+	longDescription = description + `
+
+A reservation points one app on a management cluster at the dev builds of a
+branch for a limited time. The commands change the GitOps repository, and Flux
+applies the change to the cluster.
+
+  reserve  points an app at the dev builds of a branch.
+  release  undoes a reservation, by cluster and app or by pull request.
+  extend   resets the expiry of every reservation a pull request holds.
+  list     shows the reservations on a management cluster.
+  reap     releases every expired or renamed reservation.
+
+Every command except list takes --dry-run, which pushes nothing. Every command
+takes --output table|json.`
 )
 
 type Config struct {
@@ -124,7 +138,7 @@ func New(config Config) (*cobra.Command, error) {
 	c := &cobra.Command{
 		Use:   name,
 		Short: description,
-		Long:  description,
+		Long:  longDescription,
 		RunE:  r.Run,
 	}
 

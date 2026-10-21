@@ -7,39 +7,38 @@ import (
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
+
+	"github.com/giantswarm/devctl/v8/cmd/reservation/gitops"
 )
 
 const (
 	name             = "reap"
-	shortDescription = "Sweep a GitOps repo, releasing every reservation that ran out of time or was renamed out from under it."
-	longDescription  = `Sweep a GitOps repo, releasing every reservation that ran out of time or was renamed out from under it.
+	shortDescription = "Release every reservation that expired or whose pull request changed branch."
+	longDescription  = `Release every reservation that expired or whose pull request changed branch.
 
-The command works on a checkout of the GitOps repository, found through
---gitops-dir or, when that is empty, $UMBRELLA_TARGET_DIR/cmc/<repo> (<repo> is
-the name part of --gitops-repo). It never clones: with neither it fails. Before
-anything else it fast-forwards the checkout to origin/main, and it stops when
-the checkout is not on main, has changes to tracked files (untracked files are
-left alone), or has local commits that are not on
-origin/main. Git uses the checkout's own credentials.
-It sweeps every management cluster enabled for reservations -- one that never
-opted in is skipped, not a failure -- and releases every reservation whose
-expiry passed, exactly as the release command does one at a time, committing
-and pushing. No GitHub token is needed for that, so this also runs from a
-laptop. Flux applies the change to the cluster a few minutes after the push.
+` + gitops.CheckoutHelp + `
 
-It also releases a reservation that is not yet expired when its pull
-request's current head branch no longer matches the reservation's stored
-branch: a rename means the old branch builds nothing. That check reads the pull
-request through the GitHub API and needs a GitHub token (DEVCTL_GITHUB_TOKEN,
-GITHUB_TOKEN or OPSCTL_GITHUB_TOKEN); with none set, the command still releases
-every expired reservation, it just never catches a rename.
+It sweeps every management cluster enabled for reservations, and skips a
+cluster that never opted in. It releases every expired reservation, as the
+release command does, one at a time, and commits and pushes each. With --user
+set, that needs no GitHub token, so it also runs from a laptop. Flux applies
+the change to the cluster a few minutes after the push.
 
-For each release the command prints one tab-separated line to stdout:
-cluster, app, user, branch, pull request, reason ("expired" or "renamed"),
-until (RFC 3339) and commit. It prints nothing when it finds nothing to
-release. A cluster or a reservation that fails does not stop the sweep from
-reaching the next one; the command still prints every release that did land
-before reporting the failure and exiting non-zero.`
+It also releases an unexpired reservation when the head branch of its pull
+request no longer matches the stored branch, as the old branch builds nothing.
+That check reads the pull request through the GitHub API with the first of
+DEVCTL_GITHUB_TOKEN, GITHUB_TOKEN and OPSCTL_GITHUB_TOKEN that is set, else
+with the devctl auth login --github-only login (never under CI). Without a
+token the command still releases every expired reservation, but it never
+catches a rename.
+
+For each release the command prints one tab-separated line to stdout: cluster,
+app, user, branch, pull request, reason ("expired" or "renamed"), until (RFC
+3339) and commit. It prints nothing when it finds nothing to release. With
+--output json it prints the same entries as a JSON array, [] when there are
+none. A failure on one cluster or reservation does not stop the sweep: the
+command prints every release that landed, then reports the failure and exits
+non-zero.`
 	example = `  devctl reservation reap --gitops-dir ~/umbrella/cmc/giantswarm-management-clusters --user reservation-reaper`
 )
 

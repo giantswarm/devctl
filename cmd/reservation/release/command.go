@@ -7,6 +7,8 @@ import (
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
+
+	"github.com/giantswarm/devctl/v8/cmd/reservation/gitops"
 )
 
 const (
@@ -14,26 +16,24 @@ const (
 	shortDescription = "Undo a reservation on a management cluster app."
 	longDescription  = `Undo a reservation on a management cluster app.
 
-The command works on a checkout of the GitOps repository, found through
---gitops-dir or, when that is empty, $UMBRELLA_TARGET_DIR/cmc/<repo> (<repo> is
-the name part of --gitops-repo). It never clones: with neither it fails. Before
-anything else it fast-forwards the checkout to origin/main, and it stops when
-the checkout is not on main, has changes to tracked files (untracked files are
-left alone), or has local commits that are not on
-origin/main. Git uses the checkout's own credentials.
-It deletes the
-reservation's Kustomize component, the line that references it, and the entry
-in the cluster's reservations ConfigMap, commits the result, and pushes. No
-GitHub token is needed, so this also runs from a laptop to free a stuck
-reservation by hand. Flux applies the change to the cluster a few minutes
-after the push.
+` + gitops.CheckoutHelp + `
 
-The app is keyed on the resolved chart name, exactly as reserve resolves it:
-pass the same --app (or --app-dir) as the reserve call, or the App field of its
-Result.
+It deletes the reservation's Kustomize component, the line that references
+it, and the entry in the cluster's reservations ConfigMap, commits the result,
+and pushes. With --user set, it needs no GitHub token, so it also runs from a
+laptop to free a stuck reservation by hand. Flux applies the change to the
+cluster a few minutes after the push.
 
-The command refuses, and changes nothing, when the app holds no reservation on
-the cluster.`
+With --cluster, it releases one app, keyed on the chart name as reserve
+resolves it: pass the same --app or --app-dir as the reserve call. It refuses,
+and changes nothing, when the app holds no reservation on the cluster. It
+prints the released app and the commit.
+
+Without --cluster, it releases every reservation that --pull-request holds, on
+every enabled cluster. It prints one tab-separated line per release to stdout:
+cluster, app and commit. It exits 0 when the pull request holds no
+reservation. With --output json it prints the same entries as a JSON array, []
+when there are none. In the --cluster form, the JSON output is one object.`
 	example = `  devctl reservation release \
     --gitops-dir ~/umbrella/cmc/giantswarm-management-clusters \
     --cluster graveler \

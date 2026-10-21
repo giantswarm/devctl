@@ -27,13 +27,13 @@ type flag struct {
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
-	cmd.Flags().StringVar(&f.App, flagApp, "", "Chart of the collection app to release. Empty takes the name from the app repository's helm/*/Chart.yaml, as --app-dir points at. Reserve's Result.App is always safe to pass here, since a reservation is keyed on the resolved chart.")
-	cmd.Flags().StringVar(&f.AppDir, flagAppDir, "", "Checkout of the app repository, read only to take the chart name when --app is empty. Empty is the current directory. Not with --app.")
-	cmd.Flags().StringVar(&f.PullRequest, flagPullRequest, "", "Pull request whose reservations to release, e.g. giantswarm/hello-world#123. It releases every reservation that pull request holds, on every enabled cluster, so it needs neither --cluster nor --app: a merged or closed pull request knows neither.")
-	cmd.Flags().StringVar(&f.Cluster, flagCluster, "", "Name of the management cluster to release the app on.")
+	cmd.Flags().StringVar(&f.App, flagApp, "", "Chart of the collection app to release. Empty takes the name from the app repository's helm/*/Chart.yaml, as --app-dir points at. Not with --app-dir.")
+	cmd.Flags().StringVar(&f.AppDir, flagAppDir, "", "Checkout of the app repository, read only to take the chart name when --app is empty. Empty is the current directory.")
+	cmd.Flags().StringVar(&f.PullRequest, flagPullRequest, "", "Pull request whose reservations to release, as owner/repo#number. Without --cluster, it releases every reservation that pull request holds, on every enabled cluster: a merged or closed pull request knows neither cluster nor app. Required without --cluster.")
+	cmd.Flags().StringVar(&f.Cluster, flagCluster, "", "Name of the management cluster to release the app on. Empty releases by --pull-request on every enabled cluster.")
 	f.GitOps.Init(cmd)
 	f.GitOps.InitDryRun(cmd)
-	cmd.Flags().StringVar(&f.User, flagUser, "", "GitHub login recorded in the release commit message. It need not be the original holder.")
+	cmd.Flags().StringVar(&f.User, flagUser, "", gitops.UserHelp("recorded in the release commit message. It need not be the original holder"))
 }
 
 func (f *flag) Validate() error {

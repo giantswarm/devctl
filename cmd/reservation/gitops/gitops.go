@@ -42,12 +42,12 @@ const (
 
 // CheckoutHelp is the paragraph every reservation command's long help
 // carries about the GitOps checkout.
-const CheckoutHelp = `The command works on a checkout of the GitOps repository: --gitops-dir, or
-$` + EnvTargetDir + `/cmc/<repo> when that is empty, where <repo> is the name part
-of --gitops-repo. It never clones. First it fast-forwards the checkout to
-origin/main. It stops when the checkout is not on main, has changes to tracked
-files, or has local commits that are not on origin/main. It leaves untracked
-files alone. Git uses the checkout's own credentials.`
+const CheckoutHelp = `The command works on a checkout of the GitOps repository: --gitops-dir,
+or $` + EnvTargetDir + `/cmc/<repo> when that is empty, where <repo> is the
+name part of --gitops-repo. It never clones. First it fast-forwards the
+checkout to origin/main. It stops when the checkout is not on main, has changes
+to tracked files, or has local commits that are not on origin/main. It leaves
+untracked files alone. Git uses the checkout's own credentials.`
 
 // Flags select the GitOps repo and where its checkout is, and the flags every
 // reservation command shares: how to print the result and, for a command that

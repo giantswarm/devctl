@@ -7,6 +7,8 @@ import (
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
+
+	"github.com/giantswarm/devctl/v8/cmd/reservation/gitops"
 )
 
 const (
@@ -14,33 +16,29 @@ const (
 	shortDescription = "Point one management cluster app at the dev builds of a branch."
 	longDescription  = `Point one management cluster app at the dev builds of a branch.
 
-The command works on a checkout of the GitOps repository, found through
---gitops-dir or, when that is empty, $UMBRELLA_TARGET_DIR/cmc/<repo> (<repo> is
-the name part of --gitops-repo). It never clones: with neither it fails. Before
-anything else it fast-forwards the checkout to origin/main, and it stops when
-the checkout is not on main, has changes to tracked files (untracked files are
-left alone), or has local commits that are not on
-origin/main. Git uses the checkout's own credentials.
+` + gitops.CheckoutHelp + `
 
-The command adds a Kustomize component that serves the app from the dev builds of the branch,
-records the reservation in the cluster's reservations ConfigMap, renders the
-result to check that the reservation really takes effect, and pushes one commit. No GitHub token is needed. Flux applies the change to the
-cluster a few minutes after the push.
+The command adds a Kustomize component that serves the app from the dev
+builds of the branch, records the reservation in the cluster's reservations
+ConfigMap, renders the result to check that the reservation really takes
+effect, and pushes one commit. With --user set, it needs no GitHub token. Flux
+applies the change to the cluster a few minutes after the push.
 
-The app is located by rendering the cluster's collections and matching the
-rendered source objects on the chart their OCI URL serves, never on the object
-name: collection names repeat across collections, so a name match is ambiguous.
-The chart name comes from the app repository's helm/*/Chart.yaml unless --app
-gives it. Every instance of the app on the cluster is patched, and all of them
-share one source object.
+The command finds the app by rendering the cluster's collections and matching
+the rendered source objects on the chart their OCI URL serves, never on the
+object name: collection names repeat across collections, so a name match is
+ambiguous. The chart name comes from the app repository's helm/*/Chart.yaml
+unless --app gives it. The command patches every instance of the app on the
+cluster, and all of them share one source object.
 
-The reservation lasts 10 hours unless --duration says otherwise. A duration is a
-whole number of minutes, hours or days: 30m, 4h, 2d. The longest is 7d, or less
-when the cluster's reservations ConfigMap carries a lower
+The reservation lasts 10 hours unless --duration says otherwise. Accepted
+durations are 30m, 4h, 4h30m or 2d. The longest is 7d, or less when the
+cluster's reservations ConfigMap carries a lower
 reservations.giantswarm.io/max-duration annotation.
 
-The cluster has to be enabled for reservations first; the command says how when
-it is not.`
+The cluster has to be enabled for reservations first; the command says how
+when it is not. With --output json the command prints the reservation as one
+JSON object.`
 	example = `  devctl reservation reserve \
     --gitops-dir ~/umbrella/cmc/giantswarm-management-clusters \
     --cluster graveler \
