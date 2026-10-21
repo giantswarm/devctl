@@ -69,6 +69,7 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 			Flavours:            r.flag.Flavours,
 			ReleaseBranch:       r.flag.ReleaseBranch,
 			MaintenanceBranches: r.flag.MaintenanceBranches,
+			PatchCandidates:     r.flag.PatchCandidates,
 			RepoName:            repoName,
 		}
 

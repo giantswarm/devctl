@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -63,12 +64,18 @@ func (r *runner) promote(ctx context.Context, args []string, doc *releasepromote
 		return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "--follow-timeout must not be negative, got %s", r.flag.FollowTimeout)
 	}
 	if r.flag.Version != "" {
-		if !releasepromote.ValidVersion(r.flag.Version) {
-			return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "--version %q is not a release candidate tag: expected vX.Y.Z-rc.N", r.flag.Version)
+		// The bare version is the tag's, as devctl release wait takes it.
+		version := "v" + strings.TrimPrefix(r.flag.Version, "v")
+		if !releasepromote.ValidVersion(version) {
+			return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "--version %q is not a release candidate: expected vX.Y.Z-rc.N or X.Y.Z-rc.N", r.flag.Version)
 		}
+		r.flag.Version = version
 		if len(unique(args)) != 1 {
 			return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "--version names a candidate of one repository: pass exactly one owner/repo with it, got %d repository argument(s) and --team %q", len(args), r.flag.Team)
 		}
+	}
+	if r.flag.Branch != "" && len(unique(args)) != 1 {
+		return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "--branch names a branch of one repository: pass exactly one owner/repo with it, got %d repository argument(s) and --team %q", len(args), r.flag.Team)
 	}
 	if err := r.gate(false); err != nil {
 		return err
@@ -105,6 +112,7 @@ func (r *runner) promote(ctx context.Context, args []string, doc *releasepromote
 		GitHub:        sources.GitHub,
 		DryRun:        r.flag.DryRun,
 		Version:       r.flag.Version,
+		Branch:        r.flag.Branch,
 		NotFoundHint:  sources.NotFoundHint,
 		Follow:        !r.flag.NoFollow,
 		FollowTimeout: r.flag.FollowTimeout,

@@ -90,6 +90,11 @@ type Config struct {
 	// Version is the candidate vX.Y.Z-rc.N to promote instead of the
 	// latest; empty promotes the latest. [ValidVersion] checks its form.
 	Version string
+	// Branch is the branch to promote on instead of the default branch: a
+	// fork line's maintenance branch release-X.Y, whose candidates are its
+	// own. Its workflow is read, its candidates taken and the workflow
+	// dispatched on it. Empty is the default branch.
+	Branch string
 	// NotFoundHint is added to GitHub's 404 for a repository: what the
 	// token reaches. Empty adds nothing.
 	NotFoundHint string
@@ -148,9 +153,13 @@ func promoteOne(ctx context.Context, config Config, repository string) Repositor
 	}
 	gh := config.GitHub
 
-	branch, err := gh.DefaultBranch(ctx, owner, repo)
-	if err != nil {
-		return entry.set(StateFailed, "reading the repository: %v", githubclient.ExplainNotFound(err, config.NotFoundHint))
+	branch := config.Branch
+	if branch == "" {
+		var err error
+		branch, err = gh.DefaultBranch(ctx, owner, repo)
+		if err != nil {
+			return entry.set(StateFailed, "reading the repository: %v", githubclient.ExplainNotFound(err, config.NotFoundHint))
+		}
 	}
 	workflow, found, err := gh.ReadFile(ctx, owner, repo, workflowPath, branch)
 	if err != nil {
@@ -348,7 +357,7 @@ func SelectCandidate(releases []githubclient.Release, reachable func(tag string)
 
 // ErrNotCandidate is a version named for promotion that is not a release
 // candidate the workflow promotes: no published release of that tag, not
-// newer than the last stable release, or not on the default branch.
+// newer than the last stable release, or not on the branch promoted on.
 var ErrNotCandidate = errors.New("not a release candidate to promote")
 
 // notCandidate is [ErrNotCandidate] saying why alone.
@@ -389,7 +398,7 @@ func SelectVersion(releases []githubclient.Release, reachable func(tag string) (
 		return stable, "", fmt.Errorf("%s: %w", target.tag, err)
 	}
 	if !ok {
-		return stable, "", notCandidate("not on the default branch")
+		return stable, "", notCandidate("not on that branch")
 	}
 	if !target.prerelease {
 		return stable, target.tag, fmt.Errorf("%s: %w", target.tag, ErrNotPrerelease)

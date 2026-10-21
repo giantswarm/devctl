@@ -16,6 +16,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - `reservation reap`: releases every expired reservation of every enabled cluster, and one whose pull request's branch was renamed (needs a GitHub token from `authstore.ResolveGitHub`; without one it releases only the expired ones). It prints one tab-separated line per release.
 - `reservation list`: prints the active reservations of a cluster, and marks one past its expiry that `reap` has not swept yet as `expired`.
 - `reservation` commands work only on a synced GitOps checkout (`--gitops-dir`, or `$UMBRELLA_TARGET_DIR/cmc/<repo>`), never clone and never read the Kubernetes API. The checkout must be a clean `main`; devctl fetches and fast-forwards it first. Commits use the git identity of whoever runs devctl, never `--user`. A rejected push is fetched, reset and rerun up to 5 times.
+- `gen workflows --patch-candidates` (team file: `gen.ci.patchCandidates: true`): a patch of the last stable release
+  is cut as a release candidate `vX.Y.Z-rc.N` too, on the default branch and on a fork line's maintenance branches,
+  never tagged stable on its push, for a repository whose consumers take its next patch on their own. Every stable
+  release is a promotion. Opt-in: a repository without it keeps the patch fast path.
+- `devctl release promote --branch <branch>`, for one repository: promotes the candidate of that branch instead of the
+  default branch's, a fork line's maintenance branch `release-X.Y` cutting the candidates of its own series.
 - `gen workflows` flavour `fleet`: the mctl workflows of a management-clusters repository (`zz_generated.mctl_*.yaml`, mctl image pinned to 0.1.16), replacing the copies and `op.env` `mctl create cmc-repo` wrote.
 - `devctl release rerun` cancels a tag workflow running longer than `--wedged-after` (2h; `0` turns it off), its
   jobs hung on CircleCI's side, waits for the cancel to land and reruns it from failed, from start where CircleCI
@@ -43,6 +49,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `devctl pr merge` refuses (exit 5) while a reviewer's `CHANGES_REQUESTED` review is still their latest verdict:
+  a newer commit, an author reply or the reviewer's later `COMMENTED` review no longer clears it, only the same
+  reviewer's `APPROVED` review or the review's dismissal. The reason names the reviewer and links the review;
+  `unansweredReviews[]` marks it `standing: true`.
+- The `gh` link (`devctl auth exec -- gh`) runs `gh issue|pr` with `--attach` on the person's own `gh` login: GitHub's
+  file upload endpoint refuses the App user token, which `gh` reported as "attaching files requires write access to the
+  repository" for a person with push access. The person's login also no longer sees a `$GITHUB_TOKEN` of the agent's
+  environment.
+- Builds on Go 1.27.3 (`toolchain go1.27.3`), which fixes the standard library vulnerability GO-2026-6809 that
+  govulncheck reports for Go 1.27.2.
+- `devctl release promote --version` accepts the bare version `X.Y.Z-rc.N`, as `devctl release wait` does, besides the
+  tag `vX.Y.Z-rc.N`.
+- The auto-release workflow skips a candidate number that a tag off the branch already holds. Such a tag is a
+  candidate tagged by hand on a pull request's branch to prove it, whose commits a rebase merge then rewrote. Before,
+  the workflow cut that tag name again, and GitHub attached the new release to the old tag's commit.
 - `gen workflows` flavour `fleet`: the mctl merge gate no longer calls `getOctokit`, which `actions/github-script@v7` does not provide; the step crashed before posting `mctl/ready-to-merge`.
 - `release create`: end the updated `releases.json` with a trailing newline.
 - The Auto-release workflow's unconventional-subject warning accepts every type git-cliff parses (letters,

@@ -218,6 +218,10 @@
                 "type": "boolean",
                 "description": "On a fork line (flavour `fork`) with releaseWorkflow 'auto-release': the maintenance branches release-X.Y cut releases too, each the patches of its own X.Y series, counted from the series' highest stable tag (release candidates first, as on `defaultBranch`). align-files renders the workflow on `defaultBranch`; a maintenance branch carries the same rendering. Requires devctl v8.117.0+."
               },
+              "patchCandidates": {
+                "type": "boolean",
+                "description": "With releaseWorkflow 'auto-release': a patch of the last stable release is cut as a release candidate vX.Y.Z-rc.N too, never tagged stable on its push, so every stable release is a promotion of a proven candidate (`devctl release promote`). For a repository whose consumers follow a semver range that takes its next patch on their own. Requires devctl v8.149.0+."
+              },
               "appCatalog": {
                 "type": "string",
                 "description": "Catalog the generated chart pipeline publishes to (passed to 'devctl gen circleci --app-catalog'). Defaults to 'giantswarm-catalog' when omitted. Set it for repos that ship to a different catalog (e.g. the internal 'giantswarm-operations-platform-catalog') so generation does not migrate their chart to the public catalog. Requires devctl v8.16.0+."

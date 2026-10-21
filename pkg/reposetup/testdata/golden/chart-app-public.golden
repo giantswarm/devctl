@@ -80,7 +80,7 @@ workflows:
 # workflow in .circleci/config.yml merges into this file at pipeline runtime.
 version: 2.1
 orbs:
-  architect: giantswarm/architect@10.14.0
+  architect: giantswarm/architect@10.14.13
 
 commands:
   # Pre-steps of the chart-test jobs: pull the images run-tests-with-ats starts
@@ -822,7 +822,17 @@ jobs:
                 exit 0
               fi
             fi
-            tag="${NEXT}-rc.$(( ${n:-0} + 1 ))"
+            # The next number skips a name a tag already holds off this
+            # branch: a candidate tagged by hand on a pull request's branch to
+            # prove it, whose commits a rebase merge rewrote. The release is
+            # created through the API by its tag name, and GitHub attaches it
+            # to an existing tag's commit instead of creating the tag here.
+            n=${n:-0}
+            while git rev-parse -q --verify "refs/tags/${NEXT}-rc.$(( n + 1 ))" >/dev/null; do
+              echo "${NEXT}-rc.$(( n + 1 )) is taken by $(git rev-parse --short "${NEXT}-rc.$(( n + 1 ))^{commit}"), not on ${GITHUB_REF_NAME}; skipping the number"
+              n=$(( n + 1 ))
+            done
+            tag="${NEXT}-rc.$(( n + 1 ))"
           elif [ "$WANT" != stable ]; then
             tag="${NEXT}"
           else
