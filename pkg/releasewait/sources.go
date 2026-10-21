@@ -5,10 +5,10 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/sirupsen/logrus"
 
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
-	"github.com/giantswarm/devctl/v8/pkg/authstore"
 	"github.com/giantswarm/devctl/v8/pkg/circleciclient"
 	"github.com/giantswarm/devctl/v8/pkg/githubclient"
 )
@@ -27,38 +27,52 @@ type Sources struct {
 	Client *githubclient.Client
 }
 
-// OpenSources is the production wiring: the GitHub token through the gate,
-// conditional requests below it, the team files of the organisation, the
-// CircleCI token through its gate when the tag turns out to carry a
-// CircleCI configuration, the registries and the catalog index. The GitHub
-// and CircleCI requests go through transport.
-func OpenSources(ctx context.Context, endpoints agentcli.Endpoints, transport http.RoundTripper, warn func(string)) (*Sources, error) {
-	token, err := authstore.RequireGitHub(ctx)
-	if err != nil {
-		return nil, err
-	}
+// Credentials are what a wait acts with, handed in by its caller: the CLI
+// reads them from the keychain, a server holds them for the person it
+// serves. Nothing in this package reads a credential store.
+type Credentials struct {
+	// GitHubToken is the GitHub access token; required.
+	GitHubToken string
+	// RenewGitHub is what a GitHub client that got 401 for the rejected
+	// token sends its request with again; nil never renews.
+	RenewGitHub func(ctx context.Context, rejected string) (string, error)
+	// CircleCI answers the CircleCI token and where it came from, asked for
+	// only when the tag turns out to carry a CircleCI configuration; nil is
+	// exit 8 then.
+	CircleCI func(ctx context.Context) (token, source string, err error)
+	// Registry answers the private registry; nil reads it anonymously.
+	Registry authn.Keychain
+}
+
+// NewSources builds the sources of a wait from credentials: the GitHub
+// client with conditional requests below it, the team files of the
+// organisation, the CircleCI client when first needed, the registries and
+// the catalog index. The GitHub and CircleCI requests go through transport.
+func NewSources(endpoints agentcli.Endpoints, transport http.RoundTripper, credentials Credentials) (*Sources, error) {
 	logger := logrus.New()
 	logger.SetOutput(io.Discard)
-	gh, conditional, err := githubclient.NewConditional(githubclient.Config{Logger: logger, AccessToken: token.Value, BaseURL: endpoints.GitHubAPIURL, Transport: transport, Renew: authstore.RenewGitHubToken})
+	gh, conditional, err := githubclient.NewConditional(githubclient.Config{Logger: logger, AccessToken: credentials.GitHubToken, BaseURL: endpoints.GitHubAPIURL, Transport: transport, Renew: credentials.RenewGitHub})
 	if err != nil {
 		return nil, err
 	}
 	return &Sources{
 		GitHub:  gh,
-		Entries: TeamFileEntries{GitHub: gh.GetUnderlyingClient(ctx)},
+		Entries: TeamFileEntries{GitHub: gh.GitHub()},
 		CircleCI: func(ctx context.Context) (CircleCI, error) {
-			token, err := authstore.RequireCircleCI(ctx)
+			if credentials.CircleCI == nil {
+				return nil, agentcli.NewExitError(agentcli.ExitAuthRequired, agentcli.VerdictAuthRequired, "the release's pipeline runs on CircleCI and no CircleCI token was handed in")
+			}
+			token, source, err := credentials.CircleCI(ctx)
 			if err != nil {
 				return nil, err
 			}
-			warn(token.Warning)
-			client, err := circleciclient.New(circleciclient.Config{Token: token.Value, TokenSource: token.SourceName(), BaseURL: circleciclient.BaseURLFromAPIURL(endpoints.CircleCIAPIURL), HTTPClient: &http.Client{Transport: transport}})
+			client, err := circleciclient.New(circleciclient.Config{Token: token, TokenSource: source, BaseURL: circleciclient.BaseURLFromAPIURL(endpoints.CircleCIAPIURL), HTTPClient: &http.Client{Transport: transport}})
 			if err != nil {
 				return nil, err
 			}
 			return client, nil
 		},
-		Registry:     RegistryProber{Endpoints: endpoints},
+		Registry:     RegistryProber{Endpoints: endpoints, Keychain: credentials.Registry},
 		CatalogIndex: CatalogIndex{BaseURL: CatalogURLFromEnv()},
 		Rate:         conditional.Rate,
 		Client:       gh,

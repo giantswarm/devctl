@@ -6,10 +6,9 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/giantswarm/devctl/v8/internal/laptop"
 	"github.com/giantswarm/devctl/v8/internal/versiongate"
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
-	"github.com/giantswarm/devctl/v8/pkg/releasewait"
-	"github.com/giantswarm/devctl/v8/pkg/rolloutwait"
 )
 
 const (
@@ -123,9 +122,9 @@ func New(config Config) (*cobra.Command, error) {
 		flag:        f,
 		stderr:      config.Stderr,
 		stdout:      config.Stdout,
-		openRelease: releasewait.OpenSources,
-		openCluster: rolloutwait.OpenCluster,
-		teleport:    rolloutwait.Tsh{},
+		openRelease: laptop.ReleaseWaitSources,
+		openCluster: laptop.OpenCluster,
+		teleport:    laptop.Tsh{},
 	}
 
 	c := &cobra.Command{
