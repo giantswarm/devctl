@@ -42,6 +42,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- The `gh` link (`devctl auth exec -- gh`) runs `gh issue|pr` with `--attach` on the person's own `gh` login: GitHub's
+  file upload endpoint refuses the App user token, which `gh` reported as "attaching files requires write access to the
+  repository" for a person with push access. The person's login also no longer sees a `$GITHUB_TOKEN` of the agent's
+  environment.
 - Builds on Go 1.27.3 (`toolchain go1.27.3`), which fixes the standard library vulnerability GO-2026-6809 that
   govulncheck reports for Go 1.27.2.
 - `devctl release promote --version` accepts the bare version `X.Y.Z-rc.N`, as `devctl release wait` does, besides the

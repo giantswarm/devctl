@@ -127,6 +127,11 @@ repository as gh resolves it (`gh repo set-default`, then the remotes `upstream`
 Everything else (a giantswarm repository, `gh api user`, `gh api graphql`, `gh search`) acts with the App
 token.
 
+**The upload rule.** `gh issue|pr` with `--attach` (`gh pr comment 5 --attach proof.png`) also runs on the
+person's own `gh` login, whatever the owner: GitHub's file upload endpoint refuses an App user token (404,
+which `gh` reports as "attaching files requires write access to the repository"). A person without write
+access to the repository is still refused.
+
 Every `gh` the agent runs, also from scripts and subprocesses, then acts by that rule, and
 `devctl version update` replacing the binary keeps the link working. `gh auth status` in such a shell
 names `GH_TOKEN` as the source; `gh api user/installations` answers only for an App user token and names
