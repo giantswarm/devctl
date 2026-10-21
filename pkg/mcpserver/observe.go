@@ -4,20 +4,24 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 	"github.com/prometheus/client_golang/prometheus"
+
+	"github.com/giantswarm/devctl/v8/pkg/agentcli"
 )
 
 // Anonymous is the subject of a call no verified caller made.
 const Anonymous = "anonymous"
 
 // Metrics are the server's call metrics, labelled with the tool, the
-// calling person's subject, the repository (owner/repo, empty for a tool
-// that names none) and the verdict.
+// verified caller's subject (Anonymous without a verifier), the repository
+// (owner/repo; empty for a tool that names none or an argument refused as
+// usage) and the verdict. The caller's email is in the log line only.
 type Metrics struct {
 	calls    *prometheus.CounterVec
 	duration *prometheus.HistogramVec
@@ -86,8 +90,9 @@ func (s *Server) observe(next server.ToolHandlerFunc) server.ToolHandlerFunc {
 		verdict, exitCode := outcomeOf(result, err)
 		elapsed := time.Since(started)
 		if s.metrics != nil {
-			s.metrics.calls.WithLabelValues(tool, subject, repository, verdict).Inc()
-			s.metrics.duration.WithLabelValues(tool, subject, repository, verdict).Observe(elapsed.Seconds())
+			label := repositoryLabel(repository, verdict)
+			s.metrics.calls.WithLabelValues(tool, subject, label, verdict).Inc()
+			s.metrics.duration.WithLabelValues(tool, subject, label, verdict).Observe(elapsed.Seconds())
 		}
 		s.logger.LogAttrs(ctx, slog.LevelInfo, "tool call",
 			slog.String("tool", tool),
@@ -100,6 +105,19 @@ func (s *Server) observe(next server.ToolHandlerFunc) server.ToolHandlerFunc {
 		)
 		return result, err
 	}
+}
+
+// repositoryPattern is a GitHub owner/repo.
+var repositoryPattern = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})/[A-Za-z0-9._-]{1,100}$`)
+
+// repositoryLabel is the repository a call's metrics name: only a GitHub
+// owner/repo of a call past its usage checks, so a caller's free-form
+// argument never becomes a label value.
+func repositoryLabel(repository, verdict string) string {
+	if verdict == string(agentcli.VerdictUsage) || !repositoryPattern.MatchString(repository) {
+		return ""
+	}
+	return repository
 }
 
 // grantRequired marks result, an auth_required answer, as needing the

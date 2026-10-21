@@ -33,9 +33,12 @@ type OIDCVerifier struct {
 	audiences []string
 }
 
-// NewOIDCVerifier discovers issuer's signing keys and accepts its ID tokens
-// for any of audiences.
-func NewOIDCVerifier(ctx context.Context, issuer string, audiences []string) (*OIDCVerifier, error) {
+// NewOIDCVerifier discovers issuer's signing keys through client (nil is
+// http.DefaultClient) and accepts its ID tokens for any of audiences.
+func NewOIDCVerifier(ctx context.Context, client *http.Client, issuer string, audiences []string) (*OIDCVerifier, error) {
+	if client != nil {
+		ctx = oidc.ClientContext(ctx, client)
+	}
 	provider, err := oidc.NewProvider(ctx, issuer)
 	if err != nil {
 		return nil, fmt.Errorf("discovering the issuer %s: %w", issuer, err)

@@ -4,6 +4,8 @@ package serve
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"io"
@@ -68,6 +70,7 @@ type flag struct {
 	GitHubApp        string
 	OIDCIssuer       string
 	OIDCAudiences    []string
+	OIDCCAFile       string
 }
 
 func New(config Config) (*cobra.Command, error) {
@@ -95,6 +98,7 @@ func New(config Config) (*cobra.Command, error) {
 	c.Flags().StringVar(&f.GitHubApp, "github-app", "", "The GitHub App behind --grant-app, as refusals name it; empty is --grant-app")
 	c.Flags().StringVar(&f.OIDCIssuer, "oidc-issuer", "", "The issuer of the ID token muster forwards; empty verifies no caller")
 	c.Flags().StringSliceVar(&f.OIDCAudiences, "oidc-audience", nil, "An audience of the forwarded ID token this server trusts; repeatable, required with --oidc-issuer")
+	c.Flags().StringVar(&f.OIDCCAFile, "oidc-ca-file", "", "PEM CA bundle the issuer's certificate is checked against, besides the system's; for an issuer with a private CA")
 	c.Flags().DurationVar(&f.ProgressInterval, "progress-interval", mcpserver.DefaultProgressInterval, "How often a wait sends notifications/progress; below the registered timeout of the gateway in front")
 	return c, nil
 }
@@ -118,7 +122,11 @@ func run(ctx context.Context, stderr io.Writer, f *flag) error {
 		}
 	}
 	if f.OIDCIssuer != "" {
-		verifier, err := mcpserver.NewOIDCVerifier(ctx, f.OIDCIssuer, f.OIDCAudiences)
+		client, err := issuerClient(f.OIDCCAFile)
+		if err != nil {
+			return err
+		}
+		verifier, err := mcpserver.NewOIDCVerifier(ctx, client, f.OIDCIssuer, f.OIDCAudiences)
 		if err != nil {
 			return err
 		}
@@ -179,4 +187,26 @@ func serveMetrics(address string, registry *prometheus.Registry) (func(), error)
 	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	go func() { _ = srv.Serve(listener) }()
 	return func() { _ = srv.Close() }, nil
+}
+
+// issuerClient is the HTTP client the issuer is read with: the system's
+// roots plus caFile's, or nil for the default client without one.
+func issuerClient(caFile string) (*http.Client, error) {
+	if caFile == "" {
+		return nil, nil
+	}
+	pem, err := os.ReadFile(caFile) //nolint:gosec // G304: the operator names the CA file
+	if err != nil {
+		return nil, err
+	}
+	roots, err := x509.SystemCertPool()
+	if err != nil {
+		roots = x509.NewCertPool()
+	}
+	if !roots.AppendCertsFromPEM(pem) {
+		return nil, fmt.Errorf("--oidc-ca-file %s holds no PEM certificate", caFile)
+	}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.TLSClientConfig = &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}
+	return &http.Client{Transport: transport, Timeout: 30 * time.Second}, nil
 }
