@@ -92,19 +92,13 @@ func (g GitHubSources) client(token string, transport http.RoundTripper) (*githu
 	})
 }
 
-// ReleaseWait implements [Sources].
+// ReleaseWait implements [Sources]: no CircleCI client, the wait reads
+// CircleCI through the commit statuses of the tag's commit.
 func (g GitHubSources) ReleaseWait(_ context.Context, token string, transport http.RoundTripper) (*releasewait.Sources, error) {
 	sources, err := releasewait.NewSources(g.Endpoints, transport, releasewait.Credentials{GitHubToken: token})
 	if err != nil {
 		return nil, err
 	}
-	sources.CircleCI = noCircleCI
+	sources.CircleCI = nil
 	return sources, nil
-}
-
-// noCircleCI is the CircleCI of a server that holds no CircleCI credential:
-// a release whose tag pipeline runs on CircleCI cannot be judged by it yet.
-func noCircleCI(context.Context) (releasewait.CircleCI, error) {
-	return nil, agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage,
-		"the release's pipeline runs on CircleCI and the devctl server reads no CircleCI: wait for it with devctl release wait on a laptop")
 }

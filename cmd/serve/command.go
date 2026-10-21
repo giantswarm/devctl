@@ -57,7 +57,7 @@ is not installed on is not_applicable. With --oidc-issuer every request
 carries the ID token muster forwards (spec.auth.forwardToken), checked
 against the issuer and --oidc-audience, and each call's log line on stderr
 and its metrics at --metrics-address name the caller's subject and the
-repository. It reads no keychain or credential file, runs no version check
+repository. It holds no CircleCI credential: the waits read CircleCI through the commit statuses it posts to GitHub, and a job the revision's CircleCI configuration runs that has posted none yet, one behind requires:, keeps a wait pending. No rerun and no CircleCI job listing is served. It reads no keychain or credential file, runs no version check
 (the deployment pins the version), writes nothing to disk and ignores
 DEVCTL_TIME_SCALE.`
 
