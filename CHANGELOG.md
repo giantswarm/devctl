@@ -42,6 +42,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- Builds on Go 1.27.3 (`toolchain go1.27.3`), which fixes the standard library vulnerability GO-2026-6809 that
+  govulncheck reports for Go 1.27.2.
+- `devctl release promote --version` accepts the bare version `X.Y.Z-rc.N`, as `devctl release wait` does, besides the
+  tag `vX.Y.Z-rc.N`.
 - The auto-release workflow skips a candidate number that a tag off the branch already holds. Such a tag is a
   candidate tagged by hand on a pull request's branch to prove it, whose commits a rebase merge then rewrote. Before,
   the workflow cut that tag name again, and GitHub attached the new release to the old tag's commit.

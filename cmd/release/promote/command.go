@@ -42,10 +42,10 @@ are its own series'):
      is taken. The command reads releases, not tags: a candidate tag whose
      GitHub release was deleted, or is a draft, is not seen, while the
      workflow stops on it.
-     With --version vX.Y.Z-rc.N, for exactly one repository, the candidate
-     is that one instead of the highest: a published pre-release newer than
-     the highest stable release and reachable from the default branch, else
-     failed. The workflow must take its version input, else
+     With --version vX.Y.Z-rc.N (or the bare X.Y.Z-rc.N), for exactly one
+     repository, the candidate is that one instead of the highest: a
+     published pre-release newer than the highest stable release and
+     reachable from the default branch, else failed. The workflow must take its version input, else
      outdated_workflow. This promotes a candidate that is built while a
      later one is still building, or the one proven live: the stable tag
      lands on that candidate's commit whatever was cut after it. The
@@ -101,8 +101,7 @@ Exit codes:
      names them
   7  usage or tooling: neither or both of repositories and --team, a
      malformed owner/repo, a negative --follow-timeout, --version not of
-     the form vX.Y.Z-rc.N or not
-     with exactly one repository, --branch not with exactly one
+     the form vX.Y.Z-rc.N or X.Y.Z-rc.N or not with exactly one repository, --branch not with exactly one
      repository, or a team without a team file, before
      any repository is read
   8  authentication required: run ` + "`devctl auth login --github-only`" + `
