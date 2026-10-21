@@ -130,6 +130,7 @@ func TestRetryingEndsAtALimitPastTheDeadline(t *testing.T) {
 
 	started := time.Now()
 	_, err := get(t, ctx, client, http.MethodGet, server.URL+"/repos/o/r/pulls/1")
+	elapsed := time.Since(started)
 	var limited *RateLimitedError
 	if !errors.As(err, &limited) {
 		t.Fatalf("want a RateLimitedError, got %v", err)
@@ -142,11 +143,13 @@ func TestRetryingEndsAtALimitPastTheDeadline(t *testing.T) {
 			t.Errorf("error %q does not name %q", err, part)
 		}
 	}
-	// The deadline is named on the unscaled clock, about 30 minutes ahead.
-	if ahead := limited.Deadline.Sub(started); ahead < 29*time.Minute || ahead > 31*time.Minute {
-		t.Errorf("deadline: want about 30m ahead, got %s", ahead)
+	// The deadline is named on the unscaled clock, about 30 minutes ahead:
+	// the context's time left when the request was sent, unscaled, so the
+	// time the request took to be sent counts a thousandfold.
+	if ahead, least := limited.Deadline.Sub(started), 29*time.Minute-1000*elapsed; ahead < least || ahead > 31*time.Minute {
+		t.Errorf("deadline: want about 30m ahead, at least %s after the request took %s, got %s", least, elapsed, ahead)
 	}
-	if elapsed := time.Since(started); elapsed > 500*time.Millisecond {
+	if elapsed > 500*time.Millisecond {
 		t.Errorf("want the wait ended at once, took %s", elapsed)
 	}
 	if s.count() != 1 || len(warnings) != 0 {
