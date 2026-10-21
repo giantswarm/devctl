@@ -26,6 +26,7 @@ import (
 
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
 	"github.com/giantswarm/devctl/v8/pkg/circleciclient"
+	"github.com/giantswarm/devctl/v8/pkg/circleciconfig"
 	"github.com/giantswarm/devctl/v8/pkg/githubclient"
 	"github.com/giantswarm/devctl/v8/pkg/reposetup"
 )
@@ -81,6 +82,12 @@ type Config struct {
 	// [agentcli.ExitCoder] it returns ends the wait with that code. nil
 	// means CircleCI is never consulted.
 	CircleCI func(ctx context.Context) (*circleciclient.Client, error)
+	// CircleCIFromStatuses, without CircleCI, reads CircleCI through the
+	// commit statuses it posts to GitHub alone: the jobs the head's
+	// CircleCIConfigPath runs on its branch are listed from the
+	// configuration, and one that has posted no status yet, a job behind
+	// requires: whose required jobs still run, keeps the head pending.
+	CircleCIFromStatuses bool
 	// Entries is read only for a template repository whose head carries
 	// CircleCIConfigPath: GitHub alone judges it while its entry declares
 	// gen.ci.templateContent. nil means no repository declares it.
@@ -109,10 +116,12 @@ type Waiter struct {
 	github   GitHub
 	rate     RateSource
 	circleci func(ctx context.Context) (*circleciclient.Client, error)
-	entries  EntryFinder
-	clock    agentcli.Clock
-	progress *agentcli.Progress
-	timeout  time.Duration
+	// fromStatuses is Config.CircleCIFromStatuses.
+	fromStatuses bool
+	entries      EntryFinder
+	clock        agentcli.Clock
+	progress     *agentcli.Progress
+	timeout      time.Duration
 	// failedLogLines is Config.FailedLogLines.
 	failedLogLines int
 	// acceptRed is Config.AcceptRed as a set; nil without it.
@@ -123,6 +132,9 @@ type Waiter struct {
 func New(config Config) (*Waiter, error) {
 	if config.GitHub == nil {
 		return nil, fmt.Errorf("%T.GitHub must not be empty", config)
+	}
+	if config.CircleCI != nil && config.CircleCIFromStatuses {
+		return nil, fmt.Errorf("%T.CircleCI and CircleCIFromStatuses exclude each other", config)
 	}
 	if config.Timeout <= 0 {
 		config.Timeout = DefaultTimeout
@@ -138,13 +150,14 @@ func New(config Config) (*Waiter, error) {
 		acceptRed[name] = true
 	}
 	return &Waiter{
-		github:   config.GitHub,
-		rate:     config.Rate,
-		circleci: config.CircleCI,
-		entries:  config.Entries,
-		clock:    config.Clock,
-		progress: config.Progress,
-		timeout:  config.Timeout,
+		github:       config.GitHub,
+		rate:         config.Rate,
+		circleci:     config.CircleCI,
+		fromStatuses: config.CircleCIFromStatuses,
+		entries:      config.Entries,
+		clock:        config.Clock,
+		progress:     config.Progress,
+		timeout:      config.Timeout,
 		// The tail is read only after a red verdict.
 		failedLogLines: config.FailedLogLines,
 		acceptRed:      acceptRed,
@@ -203,6 +216,10 @@ type head struct {
 	circleci *circleciclient.Client
 	branch   string
 	project  string
+	// circleJobs are, with CircleCIFromStatuses, the jobs the head's
+	// CircleCI configuration runs on its branch, each expected to post a
+	// status.
+	circleJobs []string
 	// workflows are the pull_request workflows an empty head expects runs
 	// of, once workflowsRead.
 	workflows     []string
@@ -394,7 +411,7 @@ func (w *Waiter) poll(ctx context.Context, owner, repo string, number int, h *he
 		result.Warnings = append(result.Warnings, fmt.Sprintf("the head changed from %s to %s during the wait", h.sha, sha))
 	}
 	if h.sha != sha {
-		h.sha, h.decided, h.circleci, h.workflowsRead = sha, false, nil, false
+		h.sha, h.decided, h.circleci, h.circleJobs, h.workflowsRead = sha, false, nil, nil, false
 		result.HeadSHA = sha
 	}
 	if h.baseRef != baseRef || h.required == nil {
@@ -413,7 +430,7 @@ func (w *Waiter) poll(ctx context.Context, owner, repo string, number int, h *he
 		}
 	}
 
-	s := snapshot{headSHA: sha, required: h.required, accepted: w.acceptRed}
+	s := snapshot{headSHA: sha, required: h.required, accepted: w.acceptRed, circleJobs: h.circleJobs}
 	if err := w.readChecks(ctx, owner, repo, sha, &s, result); err != nil {
 		return nil, err
 	}
@@ -491,7 +508,7 @@ func (w *Waiter) readChecksREST(ctx context.Context, owner, repo, sha string, s 
 // condition, so a repository without CircleCI needs GitHub alone.
 func (w *Waiter) decideCircleCI(ctx context.Context, owner, repo string, number int, headRef string, fork, template bool, h *head, result *Result) error {
 	h.decided = true
-	if w.circleci == nil {
+	if w.circleci == nil && !w.fromStatuses {
 		return nil
 	}
 	hasConfig, err := w.github.FileExists(ctx, owner, repo, CircleCIConfigPath, h.sha)
@@ -514,6 +531,9 @@ func (w *Waiter) decideCircleCI(ctx context.Context, owner, repo string, number 
 		}
 		w.progress.Printf("%s/%s is a template repository with its own pipeline (no gen.ci.templateContent)", owner, repo)
 	}
+	if w.fromStatuses {
+		return w.listCircleJobs(ctx, owner, repo, circleciclient.PullRequestBranch(headRef, fork, number), h, result)
+	}
 	client, err := w.circleci(ctx)
 	if err != nil {
 		return err
@@ -530,6 +550,22 @@ func (w *Waiter) decideCircleCI(ctx context.Context, owner, repo string, number 
 	h.project = fmt.Sprintf("github/%s/%s", owner, repo)
 	h.branch = circleciclient.PullRequestBranch(headRef, fork, number)
 	w.progress.Printf("CircleCI project %s, branch %s", h.project, h.branch)
+	return nil
+}
+
+// listCircleJobs lists the jobs the head's CircleCI configuration runs on
+// branch, the ones whose statuses the head waits for.
+func (w *Waiter) listCircleJobs(ctx context.Context, owner, repo, branch string, h *head, result *Result) error {
+	read := func(ctx context.Context, path string) ([]byte, bool, error) {
+		return w.github.ReadFile(ctx, owner, repo, path, h.sha)
+	}
+	jobs, _, err := circleciconfig.List(ctx, read, circleciconfig.Run{Branch: branch})
+	if err != nil {
+		return fmt.Errorf("listing the CircleCI jobs of %s: %w", h.sha, err)
+	}
+	h.circleJobs = jobs.Names
+	result.Warnings = append(result.Warnings, jobs.Warnings...)
+	w.progress.Printf("CircleCI through its commit statuses: branch %s runs %s", branch, strings.Join(jobs.Names, ", "))
 	return nil
 }
 

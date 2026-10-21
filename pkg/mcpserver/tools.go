@@ -71,12 +71,14 @@ func (s *Server) runPRWait(ctx context.Context, request mcp.CallToolRequest, doc
 			return err
 		}
 		waiter, err := prwait.New(prwait.Config{
-			GitHub:   sources.GitHub,
-			Rate:     sources.Rate,
-			Entries:  sources.Entries,
-			Clock:    s.clock,
-			Progress: progress,
-			Timeout:  timeout,
+			GitHub:  sources.GitHub,
+			Rate:    sources.Rate,
+			Entries: sources.Entries,
+			// The server holds no CircleCI credential.
+			CircleCIFromStatuses: true,
+			Clock:                s.clock,
+			Progress:             progress,
+			Timeout:              timeout,
 		})
 		if err != nil {
 			return err
@@ -164,24 +166,25 @@ func (s *Server) runReleaseWait(ctx context.Context, request mcp.CallToolRequest
 			return err
 		}
 		waiter, err := releasewait.New(releasewait.Config{
-			Owner:        owner,
-			Repo:         repo,
-			Version:      version,
-			PR:           pr,
-			Timeout:      timeout,
-			Catalog:      request.GetBool("catalog", false),
-			Images:       request.GetStringSlice("images", nil),
-			Charts:       request.GetStringSlice("charts", nil),
-			GitHub:       sources.GitHub,
-			Entries:      sources.Entries,
-			CircleCI:     sources.CircleCI,
-			Registry:     sources.Registry,
-			CatalogIndex: sources.CatalogIndex,
-			Endpoints:    s.endpoints,
-			Clock:        s.clock,
-			Rate:         sources.Rate,
-			Progress:     progress,
-			Warn:         doc.Warn,
+			Owner:   owner,
+			Repo:    repo,
+			Version: version,
+			PR:      pr,
+			Timeout: timeout,
+			Catalog: request.GetBool("catalog", false),
+			Images:  request.GetStringSlice("images", nil),
+			Charts:  request.GetStringSlice("charts", nil),
+			GitHub:  sources.GitHub,
+			Entries: sources.Entries,
+			// The server holds no CircleCI credential.
+			CircleCIFromStatuses: true,
+			Registry:             sources.Registry,
+			CatalogIndex:         sources.CatalogIndex,
+			Endpoints:            s.endpoints,
+			Clock:                s.clock,
+			Rate:                 sources.Rate,
+			Progress:             progress,
+			Warn:                 doc.Warn,
 		})
 		if err != nil {
 			return err

@@ -160,13 +160,15 @@ func (s *Server) runPRMerge(ctx context.Context, request mcp.CallToolRequest, do
 		}
 		merger, err := prmerge.New(prmerge.Config{
 			Wait: prwait.Config{
-				GitHub:    sources.GitHub,
-				Rate:      sources.Rate,
-				Entries:   sources.Entries,
-				Clock:     s.clock,
-				Progress:  progress,
-				Timeout:   c.timeout,
-				AcceptRed: c.acceptRed,
+				GitHub:  sources.GitHub,
+				Rate:    sources.Rate,
+				Entries: sources.Entries,
+				// The server holds no CircleCI credential.
+				CircleCIFromStatuses: true,
+				Clock:                s.clock,
+				Progress:             progress,
+				Timeout:              c.timeout,
+				AcceptRed:            c.acceptRed,
 			},
 			Method:       c.method,
 			UpdateBranch: c.updateBranch,
@@ -200,14 +202,15 @@ func (s *Server) mergeRelease(githubToken string, retrying *agentcli.Retrying, t
 			Timeout:        timeout,
 			GitHub:         sources.GitHub,
 			Entries:        sources.Entries,
-			CircleCI:       sources.CircleCI,
-			Registry:       sources.Registry,
-			CatalogIndex:   sources.CatalogIndex,
-			Endpoints:      s.endpoints,
-			Clock:          s.clock,
-			Rate:           sources.Rate,
-			Progress:       progress,
-			Warn:           warn,
+			// The server holds no CircleCI credential.
+			CircleCIFromStatuses: true,
+			Registry:             sources.Registry,
+			CatalogIndex:         sources.CatalogIndex,
+			Endpoints:            s.endpoints,
+			Clock:                s.clock,
+			Rate:                 sources.Rate,
+			Progress:             progress,
+			Warn:                 warn,
 		})
 		if err != nil {
 			return err

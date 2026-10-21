@@ -97,7 +97,10 @@ type snapshot struct {
 	runs      []*github.WorkflowRun
 	// circleci is nil when CircleCI is not consulted for this head.
 	circleci *circleSnapshot
-	required []string
+	// circleJobs are, when CircleCI is read through its commit statuses,
+	// the jobs expected to post one.
+	circleJobs []string
+	required   []string
 	// accepted are the check names whose failure the caller accepts
 	// (--accept-red); a required one is never accepted.
 	accepted map[string]bool
@@ -218,7 +221,10 @@ func (e *evaluation) approvalReason() string {
 //     run of each of its workflows is success (not_run counts as skipped);
 //  3. no GitHub Actions run of the head is queued, in progress, waiting or
 //     awaiting approval;
-//  4. every required status context has reported.
+//  4. every required status context has reported;
+//  5. when CircleCI is read through its commit statuses, every job the head's
+//     configuration runs has posted one: a job behind requires: posts
+//     nothing until it starts.
 //
 // A failure anywhere is red: at once when the base requires the failed
 // context or nothing it requires is pending or absent, else once the required
@@ -334,6 +340,11 @@ func evaluate(s snapshot) *evaluation {
 
 	if s.circleci != nil {
 		e.evaluateCircleCI(s.headSHA, s.circleci, circleStatuses(s.statuses), s.accepts)
+	}
+	for _, job := range s.circleJobs {
+		if !reported[circleStatusPrefix+job] {
+			e.unfinished = append(e.unfinished, fmt.Sprintf("status %s%s (not posted yet)", circleStatusPrefix, job))
+		}
 	}
 
 	// Settled is judged before the required contexts: with nothing pending,

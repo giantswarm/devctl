@@ -44,7 +44,11 @@ instead of exit 3, so a second call after a lost answer merges nothing.
 pr_merge and release_promote carry no read-only annotation.
 
 The server acts on GitHub as the person who calls it, with the token the
-platform hands it for them; without one a call is auth_required. It reads no
+platform hands it for them; without one a call is auth_required. It holds no
+CircleCI credential: the waits read CircleCI through the commit statuses it
+posts to GitHub, and a job the revision's CircleCI configuration runs that
+has posted none yet, one behind requires:, keeps a wait pending. No rerun
+and no CircleCI job listing is served. It reads no
 keychain or credential file, runs no version check (the deployment pins the
 version), writes nothing to disk and ignores DEVCTL_TIME_SCALE.`
 
