@@ -2,6 +2,7 @@ package list_test
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
@@ -168,5 +169,46 @@ func TestListReportsNoneOnAClusterWithNoReservations(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "No reservations on") {
 		t.Errorf("output does not say there is nothing to release: %s", stdout.String())
+	}
+}
+
+// TestListPrintsJSON checks --output json: one object per entry with its
+// status, and [] (not null) for a cluster with no reservations.
+func TestListPrintsJSON(t *testing.T) {
+	const cluster, chart = "graveler", "hello-world"
+	configMap := "data:\n" +
+		"  " + chart + ": '{user: alice, branch: fix/crash, pr: giantswarm/hello-world#123, scope: app, from: 2026-09-15T10:00:00Z, until: " +
+		time.Now().Add(-time.Hour).UTC().Format(time.RFC3339) + "}'\n"
+	for name, tc := range map[string]struct {
+		configMap string
+		want      string
+	}{
+		"one entry": {configMap, `[{"app":"hello-world","branch":"fix/crash","pullRequest":"giantswarm/hello-world#123","scope":"app","status":"expired","user":"alice"}]`},
+		"empty":     {"data: {}\n", `[]`},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := newCheckout(t, map[string]string{"management-clusters/" + cluster + "/configmap-reservations.yaml": tc.configMap})
+
+			var stdout bytes.Buffer
+			cmd := newCommand(t, &stdout)
+			cmd.SetArgs([]string{repoDirFlag, dir, "--cluster", cluster, "--output", "json"})
+			if err := cmd.Execute(); err != nil {
+				t.Fatalf("list: %v", err)
+			}
+
+			// The times change per run, so compare everything else. Marshal sorts the keys.
+			var got []map[string]any
+			if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+				t.Fatalf("stdout is not JSON: %v\n%s", err, stdout.String())
+			}
+			for _, entry := range got {
+				delete(entry, "from")
+				delete(entry, "until")
+			}
+			gotJSON, _ := json.Marshal(got)
+			if string(gotJSON) != tc.want {
+				t.Errorf("stdout: got %s, want %s", gotJSON, tc.want)
+			}
+		})
 	}
 }

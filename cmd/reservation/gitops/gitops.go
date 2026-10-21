@@ -6,6 +6,7 @@ package gitops
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -20,8 +21,13 @@ import (
 )
 
 const (
-	FlagRepo = "gitops-repo"
-	FlagDir  = "gitops-dir"
+	FlagRepo   = "gitops-repo"
+	FlagDir    = "gitops-dir"
+	FlagDryRun = "dry-run"
+	FlagOutput = "output"
+
+	OutputTable = "table"
+	OutputJSON  = "json"
 
 	// EnvTargetDir is the umbrella checkout directory; the GitOps repo lives in
 	// its cmc/<repo> subdirectory.
@@ -34,20 +40,54 @@ const (
 	branch = "main"
 )
 
-// Flags select the GitOps repo and where its checkout is.
+// CheckoutHelp is the paragraph every reservation command's long help
+// carries about the GitOps checkout.
+const CheckoutHelp = `The command works on a checkout of the GitOps repository: --gitops-dir, or
+$` + EnvTargetDir + `/cmc/<repo> when that is empty, where <repo> is the name part
+of --gitops-repo. It never clones. First it fast-forwards the checkout to
+origin/main. It stops when the checkout is not on main, has changes to tracked
+files, or has local commits that are not on origin/main. It leaves untracked
+files alone. Git uses the checkout's own credentials.`
+
+// Flags select the GitOps repo and where its checkout is, and the flags every
+// reservation command shares: how to print the result and, for a command that
+// pushes, whether to push.
 type Flags struct {
-	Repo string
-	Dir  string
+	Repo   string
+	Dir    string
+	DryRun bool
+	Output string
 }
 
 func (f *Flags) Init(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.Repo, FlagRepo, DefaultRepo, "GitOps repository holding the management cluster, as owner/repo. Only its name selects the checkout under $"+EnvTargetDir+"/cmc/.")
 	cmd.Flags().StringVar(&f.Dir, FlagDir, "", "Checkout of the GitOps repository. Empty takes $"+EnvTargetDir+"/cmc/<repo>. The command fast-forwards it to origin/main first, and refuses a checkout that is not on a clean main.")
+	cmd.Flags().StringVar(&f.Output, FlagOutput, OutputTable, "Output format: table or json.")
+}
+
+// InitDryRun adds --dry-run, for a command that pushes.
+func (f *Flags) InitDryRun(cmd *cobra.Command) {
+	cmd.Flags().BoolVar(&f.DryRun, FlagDryRun, false, "Make the commits in the GitOps checkout, show them on stderr, then drop them. Nothing is pushed.")
 }
 
 func (f *Flags) Validate() error {
+	if f.Output != OutputTable && f.Output != OutputJSON {
+		return microerror.Maskf(invalidFlagError, "--%s %q: want %s or %s", FlagOutput, f.Output, OutputTable, OutputJSON)
+	}
 	_, err := f.repoName()
 	return microerror.Mask(err)
+}
+
+// JSON reports whether --output asks for JSON.
+func (f *Flags) JSON() bool {
+	return f.Output == OutputJSON
+}
+
+// WriteJSON prints v as indented JSON.
+func WriteJSON(w io.Writer, v any) error {
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	return microerror.Mask(enc.Encode(v))
 }
 
 func (f *Flags) repoName() (string, error) {
@@ -125,8 +165,39 @@ func (c *Checkout) Explain(err error) error {
 }
 
 // Wrote tells the user that a pushed change still has to be applied by Flux.
+// A dry run pushed nothing, so it says nothing.
 func (c *Checkout) Wrote(stderr io.Writer) {
+	if c.flags.DryRun {
+		return
+	}
 	_, _ = fmt.Fprintln(stderr, "Flux applies the change to the cluster in a few minutes.")
+}
+
+// Finish ends the command. After a dry run it shows the commits the command
+// made on stderr and resets the checkout to origin/main, even when err is
+// set. Open left the checkout clean on origin/main, so the reset drops only
+// what the command wrote. It returns err, or the reset's error when err is
+// nil.
+func (c *Checkout) Finish(ctx context.Context, stderr io.Writer, err error) error {
+	if !c.flags.DryRun {
+		return err
+	}
+
+	log, logErr := git(ctx, c.Dir, "log", "-p", "--reverse", "origin/"+branch+"..HEAD")
+	switch {
+	case logErr != nil:
+		_, _ = fmt.Fprintf(stderr, "Dry run: cannot show the commits: %s\n", logErr)
+	case log == "":
+		_, _ = fmt.Fprintln(stderr, "Dry run: no commit to push.")
+	default:
+		_, _ = fmt.Fprintf(stderr, "%s\n\nDry run: nothing was pushed. devctl drops these commits from %s.\n", log, c.Dir)
+	}
+
+	if _, resetErr := git(ctx, c.Dir, "reset", "--hard", "origin/"+branch); resetErr != nil && err == nil {
+		return microerror.Maskf(syncError, "dry run: cannot drop the commits: %s. To drop them, run:\n\n  %s", resetErr, resetCommand(c.Dir))
+	}
+
+	return err
 }
 
 func resetCommand(dir string) string {

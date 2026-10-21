@@ -41,7 +41,14 @@ func Push(ctx context.Context, dir string) error {
 // rejection (no credentials, no network) -- the last commit stays on local
 // main and the error is a pushFailedError, so the caller can tell the user
 // the change is committed but not pushed. A render error is returned as is.
-func PushWithRetry(ctx context.Context, dir string, render func() error) error {
+//
+// With dryRun it calls render once and pushes nothing: the commit stays on
+// local main for the caller to show and drop.
+func PushWithRetry(ctx context.Context, dir string, dryRun bool, render func() error) error {
+	if dryRun {
+		return microerror.Mask(render())
+	}
+
 	var lastErr error
 	for attempt := 1; attempt <= MaxPushAttempts; attempt++ {
 		if attempt > 1 {

@@ -78,17 +78,18 @@ type Request struct {
 type Result struct {
 	// App is the chart Reserve resolved the request to. It is the reservation's
 	// key on the cluster.
-	App string
+	App string `json:"app"`
 	// Commit is the hash of the commit Reserve made.
-	Commit string
+	Commit string `json:"commit"`
 	// SourceName is the name of the new OCIRepository.
-	SourceName string
+	SourceName string `json:"sourceName"`
 	// SemverFilter is the version selector the new OCIRepository carries.
-	SemverFilter string
+	SemverFilter string `json:"semverFilter"`
 	// Files are the repo-relative paths Reserve wrote, sorted.
-	Files []string
+	Files []string `json:"files,omitempty"`
 	// From and Until bound the reservation, in UTC.
-	From, Until time.Time
+	From  time.Time `json:"from"`
+	Until time.Time `json:"until"`
 }
 
 func (r Request) validate() error {

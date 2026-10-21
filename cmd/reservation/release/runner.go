@@ -42,7 +42,7 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 // the push is rejected, PushWithRetry rebases and reruns Release itself, so a
 // reservation released by someone else in the meantime is not lost or
 // replayed onto a stale tree.
-func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
+func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) (err error) {
 	user, err := gitops.User(ctx, r.flag.User, r.stderr)
 	if err != nil {
 		return microerror.Mask(err)
@@ -51,6 +51,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	if err != nil {
 		return microerror.Mask(err)
 	}
+	defer func() { err = checkout.Finish(ctx, r.stderr, err) }()
 
 	if r.flag.Cluster == "" {
 		return microerror.Mask(r.releaseAll(ctx, checkout, user))
@@ -78,10 +79,17 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 
-	if err := reservation.PushWithRetry(ctx, checkout.Dir, render); err != nil {
+	if err := reservation.PushWithRetry(ctx, checkout.Dir, r.flag.GitOps.DryRun, render); err != nil {
 		return microerror.Mask(checkout.Explain(err))
 	}
 	checkout.Wrote(r.stderr)
+
+	if r.flag.GitOps.JSON() {
+		return gitops.WriteJSON(r.stdout, struct {
+			Cluster string `json:"cluster"`
+			reservation.ReleaseResult
+		}{r.flag.Cluster, result})
+	}
 
 	_, _ = fmt.Fprintf(r.stdout, "Released %s on %s.\n", result.App, r.flag.Cluster)
 	if termout.Debug(cmd) {
@@ -101,10 +109,17 @@ func (r *runner) releaseAll(ctx context.Context, checkout *gitops.Checkout, user
 		RepoDir:     checkout.Dir,
 		PullRequest: r.flag.PullRequest,
 		User:        user,
+		DryRun:      r.flag.GitOps.DryRun,
 	})
 
-	for _, entry := range released {
-		_, _ = fmt.Fprintf(r.stdout, "%s\t%s\t%s\n", entry.Cluster, entry.App, entry.Commit)
+	if r.flag.GitOps.JSON() {
+		if err := gitops.WriteJSON(r.stdout, append([]reservation.Released{}, released...)); err != nil {
+			return microerror.Mask(err)
+		}
+	} else {
+		for _, entry := range released {
+			_, _ = fmt.Fprintf(r.stdout, "%s\t%s\t%s\n", entry.Cluster, entry.App, entry.Commit)
+		}
 	}
 
 	if len(released) > 0 {
@@ -112,7 +127,7 @@ func (r *runner) releaseAll(ctx context.Context, checkout *gitops.Checkout, user
 	}
 	// A success: the close hook runs this for every pull request, most of
 	// which hold nothing.
-	if len(released) == 0 && releaseErr == nil {
+	if len(released) == 0 && releaseErr == nil && !r.flag.GitOps.JSON() {
 		_, _ = fmt.Fprintf(r.stdout, "Nothing to release: pull request %s holds no reservation.\n", r.flag.PullRequest)
 	}
 	if releaseErr != nil {

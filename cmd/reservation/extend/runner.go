@@ -37,7 +37,7 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 
 // run sweeps the GitOps checkout, synced to origin/main first: no clone, no
 // GitHub token needed.
-func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
+func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) (err error) {
 	user, err := gitops.User(ctx, r.flag.User, r.stderr)
 	if err != nil {
 		return microerror.Mask(err)
@@ -46,19 +46,27 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	if err != nil {
 		return microerror.Mask(err)
 	}
+	defer func() { err = checkout.Finish(ctx, r.stderr, err) }()
 
 	extended, extendErr := reservation.Extend(ctx, reservation.ExtendRequest{
 		RepoDir:     checkout.Dir,
 		PullRequest: r.flag.PullRequest,
 		User:        user,
+		DryRun:      r.flag.GitOps.DryRun,
 	})
 
 	// Print every extension that did land before ever looking at extendErr: a
 	// broken cluster or an over-cap reservation among several must not hide
 	// extensions that succeeded, since a caller parses this to post a comment
 	// per line.
-	for _, entry := range extended {
-		_, _ = fmt.Fprintf(r.stdout, "%s\t%s\t%s\n", entry.Cluster, entry.App, entry.Until.Format(time.RFC3339))
+	if r.flag.GitOps.JSON() {
+		if err := gitops.WriteJSON(r.stdout, append([]reservation.Extended{}, extended...)); err != nil {
+			return microerror.Mask(err)
+		}
+	} else {
+		for _, entry := range extended {
+			_, _ = fmt.Fprintf(r.stdout, "%s\t%s\t%s\n", entry.Cluster, entry.App, entry.Until.Format(time.RFC3339))
+		}
 	}
 
 	if len(extended) > 0 {

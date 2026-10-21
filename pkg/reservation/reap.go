@@ -31,6 +31,8 @@ type ReapRequest struct {
 	// branch. Required only when some active reservation names one; Reap never
 	// calls it for a reservation its expiry already condemns.
 	HeadBranch HeadBranchFunc
+	// DryRun commits each release on local main and pushes nothing.
+	DryRun bool
 }
 
 func (r ReapRequest) validate() error {
@@ -139,6 +141,7 @@ func reapCluster(ctx context.Context, req ReapRequest, cluster string, now time.
 			Cluster: cluster,
 			App:     r.App,
 			User:    req.User,
+			DryRun:  req.DryRun,
 			// No PullRequest: the reaper releases by expiry and by rename,
 			// not on behalf of a pull request.
 		}, req.HeadBranch, now)
@@ -211,7 +214,7 @@ func releaseAndPush(ctx context.Context, req ReleaseRequest) (ReleaseResult, err
 		return microerror.Mask(err)
 	}
 
-	if err := PushWithRetry(ctx, req.RepoDir, render); err != nil {
+	if err := PushWithRetry(ctx, req.RepoDir, req.DryRun, render); err != nil {
 		return ReleaseResult{}, microerror.Mask(err)
 	}
 
@@ -269,7 +272,7 @@ func reapAndPush(ctx context.Context, req ReleaseRequest, headBranch HeadBranchF
 		return microerror.Mask(err)
 	}
 
-	if err := PushWithRetry(ctx, req.RepoDir, render); err != nil {
+	if err := PushWithRetry(ctx, req.RepoDir, req.DryRun, render); err != nil {
 		return ReleaseResult{}, Reservation{}, "", microerror.Mask(err)
 	}
 
@@ -279,24 +282,24 @@ func reapAndPush(ctx context.Context, req ReleaseRequest, headBranch HeadBranchF
 // Reaped reports one reservation Reap released.
 type Reaped struct {
 	// Cluster is the management cluster the reservation was released on.
-	Cluster string
+	Cluster string `json:"cluster"`
 	// App is the chart Release resolved the reservation to.
-	App string
+	App string `json:"app"`
 	// User is the GitHub login of the reservation's original holder -- not
 	// ReapRequest.User, which only attributes the release commit.
-	User string
+	User string `json:"user"`
 	// Branch is the reservation's stored branch: the one that makes no more
 	// builds when Reason is "renamed".
-	Branch string
+	Branch string `json:"branch"`
 	// PullRequest is the reservation's pull request, e.g.
 	// "giantswarm/hello-world#123", or empty when it named none.
-	PullRequest string
+	PullRequest string `json:"pullRequest,omitempty"`
 	// Reason is why Reap released it: ReasonExpired or ReasonRenamed.
-	Reason string
+	Reason string `json:"reason"`
 	// Until is the reservation's expiry, in UTC.
-	Until time.Time
+	Until time.Time `json:"until"`
 	// Commit is the hash of the commit Release made.
-	Commit string
+	Commit string `json:"commit"`
 }
 
 const (

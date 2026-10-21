@@ -21,6 +21,8 @@ type ReleaseAllRequest struct {
 	// User attributes each release commit. It need not be the original holder,
 	// exactly like ReapRequest.User.
 	User string
+	// DryRun commits each release on local main and pushes nothing.
+	DryRun bool
 }
 
 func (r ReleaseAllRequest) validate() error {
@@ -39,16 +41,16 @@ func (r ReleaseAllRequest) validate() error {
 // Released reports one reservation ReleaseAll removed.
 type Released struct {
 	// Cluster is the management cluster the reservation lived on.
-	Cluster string
+	Cluster string `json:"cluster"`
 	// App is the chart Release resolved the reservation to.
-	App string
+	App string `json:"app"`
 	// User is the GitHub login of the reservation's original holder -- not
 	// ReleaseAllRequest.User, which only attributes the release commit.
-	User string
+	User string `json:"user"`
 	// Branch is the reservation's stored branch.
-	Branch string
+	Branch string `json:"branch"`
 	// Commit is the hash of the commit Release made.
-	Commit string
+	Commit string `json:"commit"`
 }
 
 // ReleaseAll releases every reservation req.PullRequest holds across every
@@ -102,6 +104,7 @@ func releaseAllCluster(ctx context.Context, req ReleaseAllRequest, cluster strin
 			App:         r.App,
 			User:        req.User,
 			PullRequest: req.PullRequest,
+			DryRun:      req.DryRun,
 		})
 		if err != nil {
 			errs = append(errs, fmt.Errorf("releasing %q on cluster %q: %w", r.App, cluster, err))

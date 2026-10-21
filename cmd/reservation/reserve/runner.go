@@ -38,13 +38,12 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
+func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) (err error) {
 	// Already accepted by Validate; the cluster's own maximum is checked once
 	// the checkout is synced, in Reserve. Without --duration it stays zero, so
 	// Reserve takes the default held to that maximum instead of refusing it.
 	var duration time.Duration
 	if r.flag.Duration != "" {
-		var err error
 		duration, err = reservation.ParseDuration(r.flag.Duration)
 		if err != nil {
 			return microerror.Mask(err)
@@ -71,6 +70,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 	dir := checkout.Dir
+	defer func() { err = checkout.Finish(ctx, r.stderr, err) }()
 
 	scope := reservation.ScopeApp
 	if r.flag.Exclusive {
@@ -97,11 +97,21 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 
-	if err := reservation.PushWithRetry(ctx, dir, render); err != nil {
+	if err := reservation.PushWithRetry(ctx, dir, r.flag.GitOps.DryRun, render); err != nil {
 		return microerror.Mask(checkout.Explain(err))
 	}
 	checkout.Wrote(r.stderr)
 
+	if r.flag.GitOps.JSON() {
+		return gitops.WriteJSON(r.stdout, struct {
+			Cluster     string `json:"cluster"`
+			User        string `json:"user"`
+			Branch      string `json:"branch"`
+			PullRequest string `json:"pullRequest,omitempty"`
+			Scope       string `json:"scope"`
+			reservation.Result
+		}{r.flag.Cluster, user, r.flag.Branch, r.flag.PullRequest, scope, result})
+	}
 	_, _ = fmt.Fprintf(r.stdout, "Reserved %s on %s for %s until %s.\n",
 		result.App, r.flag.Cluster, user, result.Until.Format("2006-01-02 15:04 MST"))
 	if termout.Debug(cmd) {

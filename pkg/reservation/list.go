@@ -22,17 +22,18 @@ type ListRequest struct {
 // reservationEntry wrote it: never reconstructed from anything else.
 type Reservation struct {
 	// App is the chart the reservation moved. It is the ConfigMap entry's key.
-	App string
+	App string `json:"app"`
 	// User is the GitHub login of the holder.
-	User string
+	User string `json:"user"`
 	// Branch is the app repo branch the reservation follows.
-	Branch string
+	Branch string `json:"branch"`
 	// PullRequest is the holder's pull request.
-	PullRequest string
+	PullRequest string `json:"pullRequest,omitempty"`
 	// Scope is the reservation's scope, e.g. ScopeApp.
-	Scope string
+	Scope string `json:"scope"`
 	// From and Until bound the reservation, in UTC. Until is the expiry.
-	From, Until time.Time
+	From  time.Time `json:"from"`
+	Until time.Time `json:"until"`
 }
 
 // Expired reports whether the reservation no longer holds at now. An expired

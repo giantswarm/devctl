@@ -40,6 +40,7 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.Duration, flagDuration, "", "How long the reservation lasts, as 30m, 4h or 2d. Empty is the default of 10h, or the cluster maximum when that is lower. The maximum is 7d, or less when the management cluster sets its own.")
 	cmd.Flags().BoolVar(&f.Exclusive, flagExclusive, false, "Lock the whole cluster instead of just --app: the reservation fails against any other active reservation, and succeeds as a promotion in place when the only one active belongs to the same user and app.")
 	f.GitOps.Init(cmd)
+	f.GitOps.InitDryRun(cmd)
 	cmd.Flags().StringVar(&f.PullRequest, flagPullRequest, "", "Pull request the reservation belongs to, as owner/repo#number. Optional: omit it for a branch built some other way. Without it devctl does not check that a pull request exists for --branch, and extend --pull-request, release --pull-request and the reap rename check do not find this reservation.")
 	cmd.Flags().StringVar(&f.User, flagUser, "", "GitHub login of the person holding the reservation. The commit author is your git identity, not this.")
 }

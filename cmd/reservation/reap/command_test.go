@@ -2,6 +2,7 @@ package reap_test
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
@@ -202,5 +203,65 @@ func TestReapWarnsWhenThereIsNoToken(t *testing.T) {
 	}
 	if stdout.String() != "" {
 		t.Errorf("stdout: got %q, want empty", stdout.String())
+	}
+}
+
+// TestReapDryRunPushesNothing checks that --dry-run reports the reap as JSON,
+// then drops the commit: origin and the checkout stay at the old main.
+func TestReapDryRunPushesNothing(t *testing.T) {
+	const cluster, app = "graveler", "hello-world"
+	until := time.Now().Add(-time.Hour).UTC().Format(time.RFC3339)
+	dir, origin := newReapableFixture(t, cluster, app, until)
+	before := gittest.GitOutput(t, origin, "rev-parse", "main")
+
+	var stdout bytes.Buffer
+	cmd := newCommand(t, &stdout)
+	cmd.SetArgs([]string{
+		flagRepoDir, dir,
+		flagUser, "reservation-reaper",
+		"--dry-run",
+		"--output", "json",
+	})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("reap: %v", err)
+	}
+
+	var reaped []struct {
+		Cluster, App, Reason string
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &reaped); err != nil {
+		t.Fatalf("stdout is not JSON: %v\n%s", err, stdout.String())
+	}
+	if len(reaped) != 1 || reaped[0].Cluster != cluster || reaped[0].App != app || reaped[0].Reason != "expired" {
+		t.Errorf("stdout: got %+v", reaped)
+	}
+
+	if got := gittest.GitOutput(t, origin, "rev-parse", "main"); got != before {
+		t.Errorf("dry run pushed: origin main %s, want %s", got, before)
+	}
+	if got := gittest.GitOutput(t, dir, "rev-parse", "HEAD"); got != before {
+		t.Errorf("dry run kept its commit: HEAD %s, want %s", got, before)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "management-clusters", cluster, "collections", "reservations", app)); err != nil {
+		t.Errorf("dry run left the component directory removed: %v", err)
+	}
+}
+
+// TestReapJSONIsAnEmptyArrayWhenNothingToDo checks that JSON output is [],
+// not null, when nothing expired.
+func TestReapJSONIsAnEmptyArrayWhenNothingToDo(t *testing.T) {
+	until := time.Now().Add(10 * time.Hour).UTC().Format(time.RFC3339)
+	dir, _ := newReapableFixture(t, "graveler", "hello-world", until)
+
+	var stdout bytes.Buffer
+	cmd := newCommand(t, &stdout)
+	cmd.SetArgs([]string{flagRepoDir, dir, flagUser, "reservation-reaper", "--output", "json"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("reap: %v", err)
+	}
+	if got := strings.TrimSpace(stdout.String()); got != "[]" {
+		t.Errorf("stdout: got %q, want []", got)
 	}
 }

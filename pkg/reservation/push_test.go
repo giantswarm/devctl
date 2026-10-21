@@ -61,7 +61,7 @@ func TestPushWithRetrySucceedsOnFirstAttempt(t *testing.T) {
 		return nil
 	}
 
-	if err := reservation.PushWithRetry(context.Background(), dir, render); err != nil {
+	if err := reservation.PushWithRetry(context.Background(), dir, false, render); err != nil {
 		t.Fatalf("PushWithRetry: %v", err)
 	}
 	if calls != 1 {
@@ -72,6 +72,33 @@ func TestPushWithRetrySucceedsOnFirstAttempt(t *testing.T) {
 	tip := gittest.GitOutput(t, origin, "rev-parse", "main")
 	if head != tip {
 		t.Errorf("push did not land: local HEAD %s, origin main %s", head, tip)
+	}
+}
+
+// TestPushWithRetryDryRunPushesNothing checks that a dry run renders and
+// commits once, and leaves origin as it was.
+func TestPushWithRetryDryRunPushesNothing(t *testing.T) {
+	dir, origin := newPushFixture(t)
+	before := gittest.GitOutput(t, origin, "rev-parse", "main")
+
+	calls := 0
+	render := func() error {
+		calls++
+		writeAndCommit(t, dir, "change.txt", "change\n")
+		return nil
+	}
+
+	if err := reservation.PushWithRetry(context.Background(), dir, true, render); err != nil {
+		t.Fatalf("PushWithRetry: %v", err)
+	}
+	if calls != 1 {
+		t.Errorf("render called %d times, want 1", calls)
+	}
+	if after := gittest.GitOutput(t, origin, "rev-parse", "main"); after != before {
+		t.Errorf("dry run pushed: origin main moved from %s to %s", before, after)
+	}
+	if got := gittest.GitOutput(t, dir, "rev-list", "--count", "origin/main..HEAD"); got != "1" {
+		t.Errorf("local commits ahead of origin/main = %s, want 1", got)
 	}
 }
 
@@ -117,7 +144,7 @@ func TestPushWithRetryRerendersAfterAnotherReservationLands(t *testing.T) {
 		return err
 	}
 
-	if err := reservation.PushWithRetry(context.Background(), dir1, render); err != nil {
+	if err := reservation.PushWithRetry(context.Background(), dir1, false, render); err != nil {
 		t.Fatalf("PushWithRetry: %v", err)
 	}
 	if calls != 2 {
@@ -178,7 +205,7 @@ func TestPushWithRetryRefusesToRebaseADirtyWorktree(t *testing.T) {
 		return nil
 	}
 
-	err := reservation.PushWithRetry(context.Background(), dir, render)
+	err := reservation.PushWithRetry(context.Background(), dir, false, render)
 	if err == nil {
 		t.Fatal("expected a failure, got none")
 	}
@@ -220,7 +247,7 @@ func TestPushWithRetryGivesUpAfterMaxAttempts(t *testing.T) {
 		return nil
 	}
 
-	err := reservation.PushWithRetry(context.Background(), dir, render)
+	err := reservation.PushWithRetry(context.Background(), dir, false, render)
 	if err == nil {
 		t.Fatal("expected a failure, got none")
 	}
@@ -251,7 +278,7 @@ func TestPushWithRetryKeepsTheCommitWhenItGivesUp(t *testing.T) {
 		return nil
 	}
 
-	err := reservation.PushWithRetry(context.Background(), dir, render)
+	err := reservation.PushWithRetry(context.Background(), dir, false, render)
 	if !reservation.IsPushFailed(err) {
 		t.Fatalf("expected a push-failed error, got %v", err)
 	}
@@ -283,7 +310,7 @@ func TestPushWithRetryKeepsTheCommitOnANonRetryableError(t *testing.T) {
 		return nil
 	}
 
-	err := reservation.PushWithRetry(context.Background(), dir, render)
+	err := reservation.PushWithRetry(context.Background(), dir, false, render)
 	if !reservation.IsPushFailed(err) {
 		t.Fatalf("expected a push-failed error, got %v", err)
 	}

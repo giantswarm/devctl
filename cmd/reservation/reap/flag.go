@@ -20,6 +20,7 @@ type flag struct {
 
 func (f *flag) Init(cmd *cobra.Command) {
 	f.GitOps.Init(cmd)
+	f.GitOps.InitDryRun(cmd)
 	cmd.Flags().StringVar(&f.User, flagUser, "", "GitHub login recorded in each release commit message. It need not be the original holder.")
 }
 

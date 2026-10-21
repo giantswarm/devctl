@@ -24,6 +24,8 @@ type ExtendRequest struct {
 	// Now is the new start of every reservation Extend resets. Zero means
 	// time.Now().
 	Now time.Time
+	// DryRun commits each extension on local main and pushes nothing.
+	DryRun bool
 }
 
 func (r ExtendRequest) validate() error {
@@ -42,11 +44,12 @@ func (r ExtendRequest) validate() error {
 // Extended reports one reservation Extend reset.
 type Extended struct {
 	// Cluster is the management cluster the reservation lives on.
-	Cluster string
+	Cluster string `json:"cluster"`
 	// App is the reservation's chart.
-	App string
+	App string `json:"app"`
 	// From and Until bound the new window, in UTC.
-	From, Until time.Time
+	From  time.Time `json:"from"`
+	Until time.Time `json:"until"`
 }
 
 // Extend resets the expiry of every reservation req.PullRequest holds across
@@ -215,7 +218,7 @@ func extendAndPush(ctx context.Context, req ExtendRequest, cluster string, r Res
 		return nil
 	}
 
-	if err := PushWithRetry(ctx, req.RepoDir, render); err != nil {
+	if err := PushWithRetry(ctx, req.RepoDir, req.DryRun, render); err != nil {
 		return Extended{}, microerror.Mask(err)
 	}
 

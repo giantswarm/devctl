@@ -35,16 +35,19 @@ type ReleaseRequest struct {
 	// force-release a human runs from a laptop to clear a stuck lock, and it
 	// is what Reap uses.
 	PullRequest string
+	// DryRun is read only by the sweeps that push: Release itself never
+	// pushes.
+	DryRun bool
 }
 
 // ReleaseResult reports what Release removed.
 type ReleaseResult struct {
 	// App is the chart Release resolved the request to.
-	App string
+	App string `json:"app"`
 	// Commit is the hash of the commit Release made.
-	Commit string
+	Commit string `json:"commit"`
 	// Files are the repo-relative paths Release removed or edited, sorted.
-	Files []string
+	Files []string `json:"files,omitempty"`
 }
 
 func (r ReleaseRequest) validate() error {

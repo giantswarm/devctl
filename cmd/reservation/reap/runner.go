@@ -45,7 +45,7 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 // GitHub token is only needed for the rename check, the one GitHub API call;
 // without one, HeadBranch stays nil and reservation.Reap still releases
 // everything past its expiry.
-func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
+func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) (err error) {
 	user, err := gitops.User(ctx, r.flag.User, r.stderr)
 	if err != nil {
 		return microerror.Mask(err)
@@ -54,10 +54,12 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	if err != nil {
 		return microerror.Mask(err)
 	}
+	defer func() { err = checkout.Finish(ctx, r.stderr, err) }()
 
 	req := reservation.ReapRequest{
 		RepoDir: checkout.Dir,
 		User:    user,
+		DryRun:  r.flag.GitOps.DryRun,
 	}
 
 	token, err := authstore.ResolveGitHub(ctx)
@@ -84,10 +86,16 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	// Print every release that did land before ever looking at reapErr: a
 	// broken cluster or a failed push among several must not hide releases
 	// that succeeded, since a caller parses this to post a comment per line.
-	for _, entry := range reaped {
-		_, _ = fmt.Fprintf(r.stdout, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-			entry.Cluster, entry.App, entry.User, entry.Branch, entry.PullRequest,
-			entry.Reason, entry.Until.Format(time.RFC3339), entry.Commit)
+	if r.flag.GitOps.JSON() {
+		if err := gitops.WriteJSON(r.stdout, append([]reservation.Reaped{}, reaped...)); err != nil {
+			return microerror.Mask(err)
+		}
+	} else {
+		for _, entry := range reaped {
+			_, _ = fmt.Fprintf(r.stdout, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+				entry.Cluster, entry.App, entry.User, entry.Branch, entry.PullRequest,
+				entry.Reason, entry.Until.Format(time.RFC3339), entry.Commit)
+		}
 	}
 
 	if len(reaped) > 0 {

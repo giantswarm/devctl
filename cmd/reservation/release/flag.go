@@ -32,6 +32,7 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.PullRequest, flagPullRequest, "", "Pull request whose reservations to release, e.g. giantswarm/hello-world#123. It releases every reservation that pull request holds, on every enabled cluster, so it needs neither --cluster nor --app: a merged or closed pull request knows neither.")
 	cmd.Flags().StringVar(&f.Cluster, flagCluster, "", "Name of the management cluster to release the app on.")
 	f.GitOps.Init(cmd)
+	f.GitOps.InitDryRun(cmd)
 	cmd.Flags().StringVar(&f.User, flagUser, "", "GitHub login recorded in the release commit message. It need not be the original holder.")
 }
 
