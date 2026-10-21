@@ -26,7 +26,8 @@ const (
 	name        = "serve"
 	description = "Serve the agent-facing commands as MCP tools over streamable HTTP."
 	long        = `Serve the agent-facing commands as MCP tools over streamable HTTP, at /mcp:
-pr_wait, pr_merge_status and release_wait. Each answers the command's JSON
+pr_wait, pr_merge, pr_merge_status and release_wait, and release_promote
+with --release-promote. Each answers the command's JSON
 document, devctl's envelope included, as structured content; the exit code
 is a field, and the call is an MCP error only for auth_required.
 
@@ -35,6 +36,12 @@ notifications/progress on the caller's progressToken every
 --progress-interval, which keeps the call alive through a gateway that
 restarts its timeout on progress (muster). A wait without a progressToken is
 refused at once, verdict progress_token_required.
+
+pr_merge is devctl pr merge in one call: the wait for green, the merge with
+the judged head as the expected head, then the release wait, with the CLI's
+refusals. A pull request merged already answers its merge and its release
+instead of exit 3, so a second call after a lost answer merges nothing.
+pr_merge and release_promote carry no read-only annotation.
 
 The server acts on GitHub as the person who calls it, with the token the
 platform hands it for them; without one a call is auth_required. It reads no
@@ -52,6 +59,7 @@ type Config struct {
 type flag struct {
 	Address          string
 	ProgressInterval time.Duration
+	ReleasePromote   bool
 }
 
 func New(config Config) (*cobra.Command, error) {
@@ -74,6 +82,7 @@ func New(config Config) (*cobra.Command, error) {
 		},
 	}
 	c.Flags().StringVar(&f.Address, "address", ":8080", "Address to listen on")
+	c.Flags().BoolVar(&f.ReleasePromote, "release-promote", false, "Also serve release_promote, which cuts stable releases")
 	c.Flags().DurationVar(&f.ProgressInterval, "progress-interval", mcpserver.DefaultProgressInterval, "How often a wait sends notifications/progress; below the registered timeout of the gateway in front")
 	return c, nil
 }
@@ -86,6 +95,7 @@ func run(ctx context.Context, stderr io.Writer, f *flag) error {
 		Version:          project.Version(),
 		Endpoints:        agentcli.EndpointsFromEnv(),
 		ProgressInterval: f.ProgressInterval,
+		ReleasePromote:   f.ReleasePromote,
 	})
 	mux := http.NewServeMux()
 	mux.Handle("/mcp", s.Handler())

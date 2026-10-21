@@ -1,7 +1,7 @@
 # devctl serve
 
 ```
-devctl serve [--address :8080] [--progress-interval 10s]
+devctl serve [--address :8080] [--progress-interval 10s] [--release-promote]
 ```
 
 Serves the agent-facing commands as MCP tools over streamable HTTP, at `/mcp` (`/healthz` answers 200). A platform runs
@@ -13,11 +13,29 @@ the server speaks no stdio.
 | Tool | Command | Arguments | Read-only |
 |---|---|---|---|
 | `pr_wait` | [`devctl pr wait`](pr-wait.md) | `repository` (owner/repo), `number`, `timeout` | yes |
+| `pr_merge` | [`devctl pr merge`](pr-merge.md) | `repository`, `number`, `timeout`, `releaseTimeout`, `noReleaseWait`, `method` (squash or rebase), `updateBranch`, `acceptRed` | no |
 | `pr_merge_status` | [`devctl pr merge status`](pr-merge.md) | `handle` (empty lists every merge) | yes |
 | `release_wait` | [`devctl release wait`](release-wait.md) | `repository`, `version` or `pr`, `timeout`, `catalog`, `images`, `charts` | yes |
+| `release_promote` (`--release-promote` only) | [`devctl release promote`](release-promote.md) | `repositories` or `team`, `dryRun`, `version`, `branch`, `noFollow`, `followTimeout` | no |
 
 `timeout` is a Go duration, 30m by default and at most 55m, below the hour a gateway keeps a progress-kept call alive.
-`pr_merge_status` reads the merges this server runs, kept in memory; a laptop's detached merges stay on the laptop.
+`pr_merge_status` reads the merges this server runs, `pr_merge`'s, kept in memory; a laptop's detached merges stay on
+the laptop.
+
+## pr_merge
+
+`pr_merge` is `devctl pr merge` in one call, kept alive by progress like a wait: the wait for green, the merge with the
+judged head as the expected head, the branch deletion, then the release wait on the merge commit. It refuses what the
+CLI refuses, with the same document: a draft, closed or conflicting pull request (exit 3), another human's (exit 5), a
+repository whose team-file entry says `agentMerge: false` (exit 5), `acceptRed` naming a required check or a security
+scan (exit 3). These refusals guide an agent; GitHub's branch protection and rulesets are the boundary, for `pr_merge`
+and `gh pr merge` alike.
+
+A call on a pull request merged already answers that merge (its `mergeCommitSha` and `mergedBy`, a warning that no
+merge call was made) and waits for its release, where the CLI exits 3: an agent that lost an answer calls again and
+nothing merges twice. A second call while one runs waits for it. After a merge, "merged, release failed" stays exit 6
+and "merged, release not confirmed" exit 9. `timeout` and `releaseTimeout` together stay within 55m; `releaseTimeout`
+defaults to the rest, at most 30m. There is no `dispatch` and no failed-log tail (a CircleCI read).
 
 ## Answers
 
@@ -46,6 +64,6 @@ waits at scale 1 whatever `DEVCTL_TIME_SCALE` says.
 ## Credentials
 
 The server acts on GitHub with the token of the person a call is made for; with no token for them a call is
-`auth_required`. It holds no CircleCI credential: `pr_wait` judges CircleCI from the commit statuses it posts to GitHub,
+`auth_required`. A promotion's document names the identity source `platform`. It holds no CircleCI credential: `pr_wait` judges CircleCI from the commit statuses it posts to GitHub,
 and a release whose tag pipeline runs on CircleCI is not judged by `release_wait` yet (exit 7, the reason says so). The
 private registry is read anonymously.

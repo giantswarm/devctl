@@ -21,10 +21,19 @@ import (
 	"github.com/giantswarm/devctl/v8/pkg/mcpserver"
 	"github.com/giantswarm/devctl/v8/pkg/prwait"
 	"github.com/giantswarm/devctl/v8/pkg/prwait/prwaittest"
+	"github.com/giantswarm/devctl/v8/pkg/releasepromote"
 	"github.com/giantswarm/devctl/v8/pkg/releasewait"
 )
 
 type serverSources struct{ github prwait.GitHub }
+
+func (s serverSources) PRMerge(context.Context, string, http.RoundTripper) (mcpserver.PRMergeSources, error) {
+	panic("not a merge")
+}
+
+func (s serverSources) ReleasePromote(context.Context, string, http.RoundTripper) (*releasepromote.Sources, error) {
+	panic("not a promotion")
+}
 
 func (s serverSources) PRWait(context.Context, string, http.RoundTripper) (mcpserver.PRWaitSources, error) {
 	return mcpserver.PRWaitSources{GitHub: s.github}, nil

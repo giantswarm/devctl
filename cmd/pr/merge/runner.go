@@ -21,7 +21,7 @@ import (
 	"github.com/giantswarm/devctl/v8/pkg/releasewait"
 )
 
-const command = "pr merge"
+const command = prmerge.Command
 
 type runner struct {
 	flag   *flag
@@ -43,16 +43,39 @@ type runner struct {
 	// --detach starts; tests replace both.
 	jobRoot    func() (string, error)
 	executable func() (string, error)
+	// github is newClients: what a merge reads and writes GitHub through.
+	github func(config githubclient.Config) (clients, error)
 }
 
 // document is the command's JSON: the envelope and the merge's result.
-type document struct {
-	agentcli.Envelope
-	*prmerge.Result
-	// Identity is who acted on GitHub: "app", the devctl GitHub App login,
-	// or "gh", the person\'s own gh login for an owner the App is not
-	// installed on; empty when the run ended before choosing.
-	Identity string `json:"identity"`
+type document = prmerge.Document
+
+// clients are what a merge reads and writes GitHub through.
+type clients struct {
+	github  prmerge.GitHub
+	rate    prwait.RateSource
+	entries prwait.EntryFinder
+	// policy is the repository's opt-out; nil reads the team files.
+	policy prmerge.Policy
+	// release is what the release wait reads; rateLimit its pace.
+	release   releasewait.GitHub
+	rateLimit func() githubclient.RateLimit
+}
+
+// newClients is the GitHub client of config with conditional requests
+// below it, its rate and the organisation's team files.
+func newClients(config githubclient.Config) (clients, error) {
+	github, conditional, err := githubclient.NewConditional(config)
+	if err != nil {
+		return clients{}, err
+	}
+	return clients{
+		github:    github,
+		rate:      conditional,
+		entries:   releasewait.TeamFileEntries{GitHub: github.GitHub()},
+		release:   github,
+		rateLimit: conditional.Rate,
+	}, nil
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
@@ -85,13 +108,7 @@ func (r *runner) run(ctx context.Context, args []string) error {
 }
 
 func (r *runner) newDocument() document {
-	return document{
-		Envelope: agentcli.NewEnvelope(command, time.Now()),
-		Result: &prmerge.Result{
-			Result: prwait.Result{Checks: []prwait.Check{}, Actions: []prwait.ActionRun{}},
-			Method: r.documentMethod(),
-		},
-	}
+	return prmerge.NewDocument(time.Now(), r.documentMethod())
 }
 
 // method is the method asked: --rebase or --squash, empty without either,
@@ -187,7 +204,7 @@ func (r *runner) merge(ctx context.Context, args []string, doc *document) error 
 	// A read that fails in transit or with a 5xx is sent again, not taken
 	// as the outcome of either wait; the merge itself is never repeated.
 	retrying := &agentcli.Retrying{Clock: clock, Progress: progress, Warn: doc.Warn}
-	github, conditional, err := githubclient.NewConditional(githubclient.Config{
+	gh, err := r.github(githubclient.Config{
 		Logger:      logger,
 		AccessToken: token.Value,
 		BaseURL:     endpoints.GitHubAPIURL,
@@ -222,7 +239,7 @@ func (r *runner) merge(ctx context.Context, args []string, doc *document) error 
 
 	// The team files decide both whether a template repository's head is
 	// judged from GitHub alone and what its release publishes.
-	entries := releasewait.TeamFileEntries{GitHub: github.GitHub()}
+	entries := gh.entries
 
 	var release prmerge.ReleaseWait
 	if !r.flag.NoReleaseWait {
@@ -233,7 +250,7 @@ func (r *runner) merge(ctx context.Context, args []string, doc *document) error 
 				PR:             number,
 				MergeCommitSHA: mergeCommitSHA,
 				Timeout:        r.flag.ReleaseTimeout,
-				GitHub:         github,
+				GitHub:         gh.release,
 				Entries:        entries,
 				CircleCI: func(ctx context.Context) (releasewait.CircleCI, error) {
 					client, err := openCircleCI(ctx)
@@ -245,7 +262,7 @@ func (r *runner) merge(ctx context.Context, args []string, doc *document) error 
 				Registry:  releasewait.RegistryProber{Endpoints: endpoints, Keychain: authn.DefaultKeychain},
 				Endpoints: endpoints,
 				Clock:     clock,
-				Rate:      conditional.Rate,
+				Rate:      gh.rateLimit,
 				Progress:  progress,
 				Warn:      doc.Warn,
 			})
@@ -258,8 +275,8 @@ func (r *runner) merge(ctx context.Context, args []string, doc *document) error 
 
 	merger, err := prmerge.New(prmerge.Config{
 		Wait: prwait.Config{
-			GitHub:         github,
-			Rate:           conditional,
+			GitHub:         gh.github,
+			Rate:           gh.rate,
 			CircleCI:       openCircleCI,
 			Entries:        entries,
 			Clock:          clock,
@@ -271,6 +288,7 @@ func (r *runner) merge(ctx context.Context, args []string, doc *document) error 
 		Method:       r.method(),
 		UpdateBranch: r.flag.UpdateBranch,
 		Login:        token.Login,
+		Policy:       gh.policy,
 		Release:      release,
 		Dispatch:     dispatch,
 	})
@@ -279,10 +297,7 @@ func (r *runner) merge(ctx context.Context, args []string, doc *document) error 
 	}
 
 	result, err := merger.Merge(ctx, owner, repo, number)
-	doc.Result = result
-	for _, w := range result.Warnings {
-		doc.Warn(w)
-	}
+	doc.Take(result)
 	prwait.PrintFailedJobs(r.stderr, result.FailedJobs)
 	return githubclient.ExplainNotFound(err, authexec.NotFoundHint(token, owner))
 }

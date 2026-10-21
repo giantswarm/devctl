@@ -9,6 +9,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `devctl serve`: `pr_merge`, `devctl pr merge` in one call kept alive by progress (the wait for green, the merge with
+  the judged head as the expected head, the release wait) with the CLI's refusals and document, its merges listed by
+  `pr_merge_status`. A pull request merged already answers its merge and release state instead of exit 3, and a
+  second call while one runs waits for it, so nothing merges twice; exits 6 and 9 stay distinct. `release_promote`
+  behind `--release-promote`. Neither carries the read-only annotation. The CLI keeps exit 3 for a merged pull
+  request; its merge engine takes any `prmerge.GitHub`, and `pkg/prmerge/prmergetest` is its in-process test double.
 - `devctl serve`: the read-only agent-facing commands as MCP tools over streamable HTTP (`/mcp`): `pr_wait`,
   `pr_merge_status` and `release_wait`, each with the read-only annotation. A tool answers the command's document,
   devctl's envelope included, as structured content; the exit code is a field and the call is an MCP error only for
