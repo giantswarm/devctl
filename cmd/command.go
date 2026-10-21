@@ -19,6 +19,7 @@ import (
 	"github.com/giantswarm/devctl/v8/cmd/replace"
 	"github.com/giantswarm/devctl/v8/cmd/repo"
 	"github.com/giantswarm/devctl/v8/cmd/rollout"
+	"github.com/giantswarm/devctl/v8/cmd/serve"
 	"github.com/giantswarm/devctl/v8/cmd/version"
 	"github.com/giantswarm/devctl/v8/pkg/project"
 )
@@ -139,6 +140,14 @@ func New(config Config) (*cobra.Command, error) {
 		}
 	}
 
+	var serveCmd *cobra.Command
+	{
+		serveCmd, err = serve.New(serve.Config{Stderr: config.Stderr})
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+	}
+
 	var replaceCmd *cobra.Command
 	{
 		c := replace.Config{
@@ -225,6 +234,7 @@ func New(config Config) (*cobra.Command, error) {
 	c.AddCommand(releaseCmd)
 	c.AddCommand(replaceCmd)
 	c.AddCommand(rolloutCmd)
+	c.AddCommand(serveCmd)
 	c.AddCommand(repoCmd)
 	c.AddCommand(versionCmd)
 

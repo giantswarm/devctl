@@ -120,8 +120,13 @@ func (j Job) Save() error {
 	return writeJSON(filepath.Join(j.Dir, jobFile), j)
 }
 
-// Log is the path of the job's log.
-func (j Job) Log() string { return filepath.Join(j.Dir, LogFile) }
+// Log is the path of the job's log, empty for a job without a directory.
+func (j Job) Log() string {
+	if j.Dir == "" {
+		return ""
+	}
+	return filepath.Join(j.Dir, LogFile)
+}
 
 // DocumentPath is the path the merge's document is written to.
 func (j Job) DocumentPath() string { return filepath.Join(j.Dir, documentFile) }

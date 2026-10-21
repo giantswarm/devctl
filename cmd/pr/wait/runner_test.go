@@ -41,6 +41,7 @@ func newRunner(t *testing.T, routes sequence.Routes, github func(context.Context
 		},
 		endpoints: func() agentcli.Endpoints { return endpoints },
 		clock:     func() (agentcli.Clock, error) { return agentcli.NewClock(0.001, nil), nil },
+		github:    newGitHub,
 	}
 	return r, stdout, stderr, server
 }
