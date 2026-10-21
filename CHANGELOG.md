@@ -24,6 +24,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- The agent-facing engines (`pr wait`, `pr merge`, `release wait`, `release promote`, `rollout wait`) take clients built
+  from tokens their caller hands in: `releasewait.NewSources`, `releasepromote.NewSources` (each from `Credentials`) and
+  `rolloutwait.NewClient` (a `rest.Config`, a bearer token for one). The keychain, docker keychain, kubeconfig and tsh
+  wiring moved out of the engine packages into the CLI's `internal/laptop`; `releasewait.RegistryProber` with no
+  `Keychain` reads the private registry anonymously. The laptop commands and their documents are unchanged.
 - `gen workflows` flavour `fleet`: mctl image pinned to 0.2.1.
 - `devctl release promote` follows the Auto Release run each dispatch started until it concludes, at most
   `--follow-timeout` (20m): a run the repository's stable gate refuses, or that fails otherwise, is `refused`

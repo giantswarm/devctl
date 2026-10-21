@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
@@ -241,7 +242,7 @@ func (r *runner) merge(ctx context.Context, args []string, doc *document) error 
 					}
 					return client, nil
 				},
-				Registry:  releasewait.RegistryProber{Endpoints: endpoints},
+				Registry:  releasewait.RegistryProber{Endpoints: endpoints, Keychain: authn.DefaultKeychain},
 				Endpoints: endpoints,
 				Clock:     clock,
 				Rate:      conditional.Rate,

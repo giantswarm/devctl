@@ -16,12 +16,13 @@ import (
 
 // RegistryProber probes OCI registries with go-containerregistry: the public
 // registry anonymously, so a stale docker login cannot produce a false
-// UNAUTHORIZED for a public artifact; the private registry with the docker
-// keychain, the credentials `docker login` stored.
+// UNAUTHORIZED for a public artifact; the private registry with Keychain,
+// the docker keychain on a laptop.
 type RegistryProber struct {
 	// Endpoints name the registries and whether they speak plain HTTP.
 	Endpoints agentcli.Endpoints
-	// Keychain answers the private registry; nil means the docker keychain.
+	// Keychain answers the private registry; nil reads it anonymously. The
+	// caller hands it in: nothing here reads the docker keychain.
 	Keychain authn.Keychain
 	// Transport sends the requests; nil means the default.
 	Transport http.RoundTripper
@@ -47,12 +48,8 @@ func (p RegistryProber) Probe(ctx context.Context, artifact Artifact) (string, b
 	if p.Transport != nil {
 		opts = append(opts, remote.WithTransport(p.Transport))
 	}
-	if artifact.private {
-		keychain := p.Keychain
-		if keychain == nil {
-			keychain = authn.DefaultKeychain
-		}
-		opts = append(opts, remote.WithAuthFromKeychain(keychain))
+	if artifact.private && p.Keychain != nil {
+		opts = append(opts, remote.WithAuthFromKeychain(p.Keychain))
 	} else {
 		opts = append(opts, remote.WithAuth(authn.Anonymous))
 	}
@@ -89,6 +86,8 @@ func (p RegistryProber) Probe(ctx context.Context, artifact Artifact) (string, b
 		answer.Code = string(terr.Errors[0].Code)
 	}
 	switch {
+	case terr.StatusCode == http.StatusUnauthorized && artifact.private && p.Keychain == nil:
+		answer.Hint = "the private registry refused an anonymous read, and no registry credentials were handed in"
 	case terr.StatusCode == http.StatusUnauthorized && artifact.private:
 		answer.Hint = fmt.Sprintf("the private registry refused the docker keychain's credentials; run `docker login %s`", ref.Context().RegistryStr())
 	case terr.StatusCode == http.StatusUnauthorized:

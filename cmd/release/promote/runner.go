@@ -21,7 +21,7 @@ type runner struct {
 	// gate is versiongate.Check: an outdated devctl ends the run in the
 	// document.
 	gate func(noCache bool) error
-	// open is releasepromote.OpenSources; tests inject clients over mocks.
+	// open is laptop.ReleasePromoteSources; tests inject clients over mocks.
 	open func(ctx context.Context, endpoints agentcli.Endpoints, transport http.RoundTripper, warn func(string)) (*releasepromote.Sources, error)
 }
 

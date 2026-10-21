@@ -11,10 +11,10 @@ import (
 
 	"k8s.io/client-go/dynamic"
 
+	"github.com/giantswarm/devctl/v8/internal/laptop"
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
 	"github.com/giantswarm/devctl/v8/pkg/authstore"
 	"github.com/giantswarm/devctl/v8/pkg/releasewait"
-	"github.com/giantswarm/devctl/v8/pkg/rolloutwait"
 )
 
 // runCommand runs the command with release sources that refuse to open, so
@@ -40,7 +40,7 @@ func runCommandWithCluster(t *testing.T, args []string, f *flag, openErr, cluste
 			}
 			return nil, openErr
 		},
-		openCluster: func(context.Context, rolloutwait.ClusterConfig) (dynamic.Interface, error) {
+		openCluster: func(context.Context, laptop.ClusterConfig) (dynamic.Interface, error) {
 			return nil, clusterErr
 		},
 	}
@@ -114,7 +114,7 @@ func TestRunAuthRequiredIsExit8(t *testing.T) {
 }
 
 func TestRunMissingContextEndsBeforeTheRelease(t *testing.T) {
-	missing := rolloutwait.MissingContextError("myinstallation", "teleport.giantswarm.io-myinstallation", []string{"gs-myinstallation"})
+	missing := laptop.MissingContextError("myinstallation", "teleport.giantswarm.io-myinstallation", []string{"gs-myinstallation"})
 	doc, err := runCommandWithCluster(t, []string{"myinstallation", "giantswarm/devctl", "v1.2.3"}, &flag{}, nil, missing)
 	if agentcli.Exit(err) != agentcli.ExitUsage {
 		t.Fatalf("want exit %d, got %d (%v)", agentcli.ExitUsage, agentcli.Exit(err), err)
@@ -125,7 +125,7 @@ func TestRunMissingContextEndsBeforeTheRelease(t *testing.T) {
 }
 
 func TestRunPassesKubeconfigAndTeleport(t *testing.T) {
-	var got rolloutwait.ClusterConfig
+	var got laptop.ClusterConfig
 	var stdout bytes.Buffer
 	r := &runner{
 		gate:   func(bool) error { return nil },
@@ -135,11 +135,11 @@ func TestRunPassesKubeconfigAndTeleport(t *testing.T) {
 		openRelease: func(context.Context, agentcli.Endpoints, http.RoundTripper, func(string)) (*releasewait.Sources, error) {
 			return nil, errors.New("stop after the cluster")
 		},
-		openCluster: func(_ context.Context, c rolloutwait.ClusterConfig) (dynamic.Interface, error) {
+		openCluster: func(_ context.Context, c laptop.ClusterConfig) (dynamic.Interface, error) {
 			got = c
 			return nil, nil
 		},
-		teleport: rolloutwait.Tsh{},
+		teleport: laptop.Tsh{},
 	}
 	_ = r.run(context.Background(), []string{"myinstallation", "giantswarm/devctl", "v1.2.3"})
 	if got.Installation != "myinstallation" || got.Context != "teleport.giantswarm.io-myinstallation" || got.Kubeconfig != "/home/me/own.kubeconfig" || got.Teleport == nil || got.Wrap == nil {
