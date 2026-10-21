@@ -31,9 +31,6 @@ type fixtureOptions struct {
 	omitConfigMap bool
 	// collectionsKustomization overrides the cluster's collections/kustomization.yaml.
 	collectionsKustomization string
-	// collectionsSpec is extra YAML under spec of the collections Flux
-	// Kustomization in the cluster root, e.g. a patches list.
-	collectionsSpec string
 	// clusters names the management clusters to write. Empty means one cluster,
 	// fixtureCluster.
 	clusters []string
@@ -160,7 +157,7 @@ resources:
 kind: Kustomization
 resources:
   # Like the real root, it does not include collections/: a Flux Kustomization
-  # applies that directory, and it is what the root check looks at.
+  # applies that directory.
   - flux-collections.yaml
   - configmap-reservations.yaml
 `
@@ -176,7 +173,7 @@ spec:
   sourceRef:
     kind: GitRepository
     name: management-clusters-fleet
-` + opts.collectionsSpec
+`
 		files[root+"collections/kustomization.yaml"] = opts.collectionsKustomization
 
 		if !opts.omitConfigMap {
