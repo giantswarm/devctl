@@ -58,7 +58,7 @@ metrics:
     interval: ""
     # -- Labels on the ServiceMonitor. The Giant Swarm observability platform
     # routes a scrape to a Mimir tenant by observability.giantswarm.io/tenant.
-    labels: {}
+    labels: {}  # @schema additionalProperties: true
 
 muster:
   mcpServer:
@@ -81,7 +81,7 @@ muster:
     # them at sign-in.
     requiredAudiences: []
     # -- Extra labels on the MCPServer.
-    labels: {}
+    labels: {}  # @schema additionalProperties: true
 
 serviceAccount:
   create: true
@@ -90,8 +90,8 @@ serviceAccount:
 service:
   port: 8080
 
-podAnnotations: {}
-podLabels: {}
+podAnnotations: {}  # @schema additionalProperties: true
+podLabels: {}  # @schema additionalProperties: true
 
 podSecurityContext:
   runAsNonRoot: true
@@ -126,6 +126,6 @@ extraArgs: []
 # endpoints of devctl's agent-facing commands).
 extraEnv: []
 
-nodeSelector: {}
+nodeSelector: {}  # @schema additionalProperties: true
 tolerations: []
-affinity: {}
+affinity: {}  # @schema additionalProperties: true
