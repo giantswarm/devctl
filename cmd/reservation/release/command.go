@@ -25,7 +25,7 @@ It deletes the
 reservation's Kustomize component, the line that references it, and the entry
 in the cluster's reservations ConfigMap, commits the result, and pushes. No
 GitHub token is needed, so this also runs from a laptop to free a stuck
-reservation without CI. Flux applies the change to the cluster a few minutes
+reservation by hand. Flux applies the change to the cluster a few minutes
 after the push.
 
 The app is keyed on the resolved chart name, exactly as reserve resolves it:
