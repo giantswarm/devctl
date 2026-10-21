@@ -42,6 +42,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `devctl pr merge` refuses (exit 5) while a reviewer's `CHANGES_REQUESTED` review is still their latest verdict:
+  a newer commit, an author reply or the reviewer's later `COMMENTED` review no longer clears it, only the same
+  reviewer's `APPROVED` review or the review's dismissal. The reason names the reviewer and links the review;
+  `unansweredReviews[]` marks it `standing: true`.
 - The `gh` link (`devctl auth exec -- gh`) runs `gh issue|pr` with `--attach` on the person's own `gh` login: GitHub's
   file upload endpoint refuses the App user token, which `gh` reported as "attaching files requires write access to the
   repository" for a person with push access. The person's login also no longer sees a `$GITHUB_TOKEN` of the agent's
