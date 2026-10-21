@@ -11,13 +11,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-github/v93/github"
 	"github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
 
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
 	"github.com/giantswarm/devctl/v8/pkg/mcpserver"
+	"github.com/giantswarm/devctl/v8/pkg/prmerge"
+	"github.com/giantswarm/devctl/v8/pkg/prmerge/prmergetest"
 	"github.com/giantswarm/devctl/v8/pkg/prwait/prwaittest"
+	"github.com/giantswarm/devctl/v8/pkg/releasepromote"
 	"github.com/giantswarm/devctl/v8/pkg/releasewait"
 	"github.com/giantswarm/devctl/v8/pkg/releasewait/releasewaittest"
 )
@@ -31,7 +35,10 @@ func (p person) GitHubToken(context.Context) (string, error) { return string(p),
 // and record the tokens they were built with.
 type sources struct {
 	pr      *prwaittest.GitHub
+	merge   *prmergetest.GitHub
+	policy  prmerge.Policy
 	release *releasewait.Sources
+	promote *releasepromote.Sources
 
 	mu     sync.Mutex
 	tokens []string
@@ -42,6 +49,20 @@ func (s *sources) PRWait(_ context.Context, token string, _ http.RoundTripper) (
 	s.tokens = append(s.tokens, token)
 	s.mu.Unlock()
 	return mcpserver.PRWaitSources{GitHub: s.pr}, nil
+}
+
+func (s *sources) PRMerge(_ context.Context, token string, _ http.RoundTripper) (mcpserver.PRMergeSources, error) {
+	s.mu.Lock()
+	s.tokens = append(s.tokens, token)
+	s.mu.Unlock()
+	return mcpserver.PRMergeSources{GitHub: s.merge, Policy: s.policy}, nil
+}
+
+func (s *sources) ReleasePromote(_ context.Context, token string, _ http.RoundTripper) (*releasepromote.Sources, error) {
+	s.mu.Lock()
+	s.tokens = append(s.tokens, token)
+	s.mu.Unlock()
+	return s.promote, nil
 }
 
 func (s *sources) ReleaseWait(_ context.Context, token string, _ http.RoundTripper) (*releasewait.Sources, error) {
@@ -157,26 +178,41 @@ func assertVerdict(t *testing.T, doc map[string]any, verdict agentcli.Verdict, e
 	}
 }
 
-// TestToolsListReadOnlyAnnotations: the read-only tools are served, each
-// with the read-only annotation, and no CircleCI-only command.
+// TestToolsListReadOnlyAnnotations: the read-only tools carry the
+// read-only annotation and the write tools none, release_promote is served
+// behind its selector only, and no CircleCI-only command is.
 func TestToolsListReadOnlyAnnotations(t *testing.T) {
-	c, _ := connect(t, mcpserver.Config{})
-	tools, err := c.ListTools(context.Background(), mcp.ListToolsRequest{})
-	if err != nil {
-		t.Fatal(err)
+	tests := map[string]struct {
+		config mcpserver.Config
+		want   map[string]bool
+	}{
+		"default": {
+			want: map[string]bool{mcpserver.ToolPRWait: true, mcpserver.ToolPRMerge: false, mcpserver.ToolPRMergeStatus: true, mcpserver.ToolReleaseWait: true},
+		},
+		"with release_promote": {
+			config: mcpserver.Config{ReleasePromote: true},
+			want:   map[string]bool{mcpserver.ToolPRWait: true, mcpserver.ToolPRMerge: false, mcpserver.ToolPRMergeStatus: true, mcpserver.ToolReleaseWait: true, mcpserver.ToolReleasePromote: false},
+		},
 	}
-	readOnly := map[string]bool{}
-	for _, tool := range tools.Tools {
-		readOnly[tool.Name] = tool.Annotations.ReadOnlyHint != nil && *tool.Annotations.ReadOnlyHint
-	}
-	want := map[string]bool{mcpserver.ToolPRWait: true, mcpserver.ToolPRMergeStatus: true, mcpserver.ToolReleaseWait: true}
-	if len(readOnly) != len(want) {
-		t.Errorf("tools %v, want %v", readOnly, want)
-	}
-	for name, ro := range want {
-		if readOnly[name] != ro {
-			t.Errorf("%s: readOnlyHint %v, want %v", name, readOnly[name], ro)
-		}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			c, _ := connect(t, tt.config)
+			tools, err := c.ListTools(context.Background(), mcp.ListToolsRequest{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			readOnly := map[string]bool{}
+			for _, tool := range tools.Tools {
+				hint := tool.Annotations.ReadOnlyHint
+				if hint == nil {
+					t.Errorf("%s: no readOnlyHint", tool.Name)
+				}
+				readOnly[tool.Name] = hint != nil && *hint
+			}
+			if diff := cmp.Diff(tt.want, readOnly); diff != "" {
+				t.Errorf("tools and their readOnlyHint (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 

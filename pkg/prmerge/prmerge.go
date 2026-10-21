@@ -91,6 +91,12 @@ type Config struct {
 	// Dispatch is the workflow to dispatch after a merge, with the merged
 	// pull request and its release as inputs; nil dispatches nothing.
 	Dispatch *Dispatch
+	// Idempotent: a pull request merged already is the merge's outcome, not
+	// exit 3: its merge commit, then the wait for its release, with no
+	// refusal, merge call, branch deletion or dispatch. devctl serve's
+	// pr_merge, whose caller calls again after a lost answer; the CLI
+	// leaves it false.
+	Idempotent bool
 }
 
 // Result is the command's part of the document: the wait's fields and the
@@ -129,7 +135,7 @@ type Result struct {
 
 // Merger runs merges.
 type Merger struct {
-	github   *githubclient.Client
+	github   GitHub
 	waiter   *prwait.Waiter
 	clock    agentcli.Clock
 	progress *agentcli.Progress
@@ -143,15 +149,16 @@ type Merger struct {
 	release       ReleaseWait
 	dispatchTo    *Dispatch
 	// acceptRed is Wait.AcceptRed: the checks the caller accepts red.
-	acceptRed []string
+	acceptRed  []string
+	idempotent bool
 }
 
 // New returns a Merger for config.
 func New(config Config) (*Merger, error) {
 	// The merge reads and writes beyond the wait's interface.
-	github, ok := config.Wait.GitHub.(*githubclient.Client)
+	github, ok := config.Wait.GitHub.(GitHub)
 	if !ok || github == nil {
-		return nil, microerror.Maskf(invalidConfigError, "%T.Wait.GitHub must be a non-nil %T", config, github)
+		return nil, microerror.Maskf(invalidConfigError, "%T.Wait.GitHub must be a non-nil prmerge.GitHub, got %T", config, config.Wait.GitHub)
 	}
 	waiter, err := prwait.New(config.Wait)
 	if err != nil {
@@ -170,6 +177,7 @@ func New(config Config) (*Merger, error) {
 		release:      config.Release,
 		dispatchTo:   config.Dispatch,
 		acceptRed:    config.Wait.AcceptRed,
+		idempotent:   config.Idempotent,
 	}
 	if m.clock.Scale() == 0 {
 		m.clock = agentcli.NewClock(1, nil)
@@ -188,7 +196,11 @@ func New(config Config) (*Merger, error) {
 		return nil, microerror.Maskf(invalidConfigError, "%T.Method is squash or rebase, got %q", config, config.Method)
 	}
 	if m.policy == nil {
-		m.policy = TeamFilePolicy(m.github.GitHub())
+		client, ok := m.github.(*githubclient.Client)
+		if !ok {
+			return nil, microerror.Maskf(invalidConfigError, "%T.Policy must be set for a %T, which reads no team file", config, m.github)
+		}
+		m.policy = TeamFilePolicy(client.GitHub())
 	}
 	return m, nil
 }
@@ -214,6 +226,9 @@ func (m *Merger) Merge(ctx context.Context, owner, repo string, number int) (*Re
 		return result, err
 	}
 	result.HeadSHA, result.BaseRef = pr.GetHead().GetSHA(), pr.GetBase().GetRef()
+	if m.idempotent && pr.GetMerged() {
+		return result, m.mergedAlready(ctx, owner, repo, number, pr, result)
+	}
 
 	caller, verdict, err := m.refuse(ctx, owner, repo, pr)
 	if err != nil {
@@ -306,6 +321,22 @@ func (m *Merger) Merge(ctx context.Context, owner, repo string, number int) (*Re
 	}
 	m.dispatch(ctx, result)
 	return result, err
+}
+
+// mergedAlready is the outcome of a pull request merged before the call:
+// the merge commit and its merger as GitHub records them, a warning saying
+// so, and the release wait on that commit, whose exits 6 and 9 stay the
+// merge's. Nothing is written: the branch, the dispatch and the merge were
+// the first merge's.
+func (m *Merger) mergedAlready(ctx context.Context, owner, repo string, number int, pr *github.PullRequest, result *Result) error {
+	result.MergeCommitSHA, result.MergedBy = pr.GetMergeCommitSHA(), pr.GetMergedBy().GetLogin()
+	warning := fmt.Sprintf("%s/%s#%d was merged already, as %s by %s: no merge call was made", owner, repo, number, result.MergeCommitSHA, result.MergedBy)
+	m.progress.Printf("warning: %s", warning)
+	result.Warnings = append(result.Warnings, warning)
+	if m.release == nil {
+		return nil
+	}
+	return m.awaitRelease(ctx, owner, repo, number, result)
 }
 
 // deleteBranch deletes the merged head branch; a head in a fork is left
