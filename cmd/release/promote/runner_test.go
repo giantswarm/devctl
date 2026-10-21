@@ -57,7 +57,8 @@ func TestRunUsageErrorsAreDocuments(t *testing.T) {
 		{name: "both repositories and team", args: []string{"giantswarm/devctl"}, flag: flag{Team: "team-bumblebee"}, reason: "pass exactly one of repositories and --team"},
 		{name: "no slash", args: []string{"giantswarm/devctl", "devctl"}, reason: `"devctl" is not a repository: expected owner/repo`},
 		{name: "too many slashes", args: []string{"giantswarm/devctl/x"}, reason: "expected owner/repo"},
-		{name: "a version that is no candidate tag", args: []string{"giantswarm/devctl"}, flag: flag{Version: "v1.2.3"}, reason: `--version "v1.2.3" is not a release candidate tag: expected vX.Y.Z-rc.N`},
+		{name: "a version that is no candidate tag", args: []string{"giantswarm/devctl"}, flag: flag{Version: "v1.2.3"}, reason: `--version "v1.2.3" is not a release candidate: expected vX.Y.Z-rc.N or X.Y.Z-rc.N`},
+		{name: "a bare version that is no candidate", args: []string{"giantswarm/devctl"}, flag: flag{Version: "1.2.3"}, reason: `--version "1.2.3" is not a release candidate: expected vX.Y.Z-rc.N or X.Y.Z-rc.N`},
 		{name: "a version for two repositories", args: []string{"giantswarm/devctl", "giantswarm/klaus"}, flag: flag{Version: "v1.2.3-rc.14"}, reason: "--version names a candidate of one repository"},
 		{name: "a version for a team", flag: flag{Team: "team-bumblebee", Version: "v1.2.3-rc.14"}, reason: "--version names a candidate of one repository"},
 	}
@@ -289,10 +290,18 @@ func streamRoutes(repository string) sequence.Routes {
 }
 
 // With rc.15 building and rc.14 built, --version v1.2.3-rc.14 promotes rc.14
-// and names rc.15 as left out.
+// and names rc.15 as left out; the bare 1.2.3-rc.14 is the same candidate.
 func TestRunVersionPromotesTheNamedCandidate(t *testing.T) {
+	for _, version := range []string{"v1.2.3-rc.14", "1.2.3-rc.14"} {
+		t.Run(version, func(t *testing.T) {
+			testRunVersionPromotesTheNamedCandidate(t, version)
+		})
+	}
+}
+
+func testRunVersionPromotesTheNamedCandidate(t *testing.T, version string) {
 	server, open := mockSources(t, streamRoutes("giantswarm/kserve"))
-	doc, err := runCommand(t, []string{"giantswarm/kserve"}, &flag{Version: "v1.2.3-rc.14"}, open)
+	doc, err := runCommand(t, []string{"giantswarm/kserve"}, &flag{Version: version}, open)
 	require.NoError(t, err)
 	require.Equal(t, []any{map[string]any{
 		"repository":  "giantswarm/kserve",
