@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -193,7 +194,7 @@ func Test_tailLines(t *testing.T) {
 		"C1 controls":            {in: "a\u009b31mb\u009d0;t\u009cc\u0090q\u009cd\u0085e\n", n: 1, want: "abcde"},
 		"bidi controls":          {in: "a\u202eb\u2066c\u2069\u200fd\n", n: 1, want: "abcd"},
 		"tab and UTF-8 survive":  {in: "ok\tgrüße ✓ 日本 🐝 👩\u200d💻\n", n: 1, want: "ok\tgrüße ✓ 日本 🐝 👩\u200d💻"},
-		"ends at the last until": {in: "a\n##[error]x\nb\n##[error]exit 1\ncleanup\n", n: 2, until: "##[error]", want: "b\n##[error]exit 1"},
+		"ends at the last until": {in: "a\n##[error]x\nb\n##[error]exit 1\ncleanup\n", n: 2, until: "##[error]", want: "##[error]x\nb\n##[error]exit 1"},
 		"until absent":           {in: "a\nb\nc\n", n: 2, until: "##[error]", want: "b\nc"},
 	}
 	for name, tc := range tests {
@@ -204,6 +205,119 @@ func Test_tailLines(t *testing.T) {
 			}
 			if got != tc.want {
 				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// logLines is lines, each ended by a newline.
+func logLines(lines ...string) string {
+	return strings.Join(lines, "\n") + "\n"
+}
+
+// repeated is n lines of format, each formatted with its 1-based number.
+func repeated(n int, format string) []string {
+	lines := make([]string, n)
+	for i := range lines {
+		lines[i] = fmt.Sprintf(format, i+1)
+	}
+	return lines
+}
+
+func Test_tailLines_firstFailure(t *testing.T) {
+	// A CircleCI step running concurrently --group: Prettier fails in the
+	// lint group, the test group's green output comes after it.
+	circleci := logLines(slices.Concat(
+		[]string{
+			"$ yarn run ci:patches && concurrently --group --names test,tsc,lint ...",
+			"[lint] Checking formatting...",
+			"[lint] [warn] plugins/agents/src/Page.tsx",
+			"[lint] [warn] Code style issues found in the above file. Run Prettier with --write to fix.",
+			"[lint] yarn run ci:lint exited with code 1",
+		},
+		repeated(30, "[test] PASS plugins/p%d/src/index.test.ts"),
+		[]string{"[test] yarn run test:all exited with code 0"},
+	)...)
+	// An Actions Go test step: the failing package's --- FAIL block comes
+	// before the green packages after it and the run's summary.
+	actions := logLines(slices.Concat(
+		[]string{
+			"2026-10-10T12:00:00.0000000Z ##[group]Run make test",
+			"2026-10-10T12:00:01.0000000Z ok  \tgithub.com/o/r/pkg/a\t0.1s",
+			"2026-10-10T12:00:02.0000000Z --- FAIL: TestReconcile (0.00s)",
+			"2026-10-10T12:00:02.0000000Z     reconcile_test.go:42: got 1, want 2",
+			"2026-10-10T12:00:02.0000000Z FAIL",
+			"2026-10-10T12:00:02.0000000Z FAIL\tgithub.com/o/r/pkg/b\t0.2s",
+		},
+		repeated(30, "2026-10-10T12:00:03.0000000Z ok  \tgithub.com/o/r/pkg/c%d\t0.1s"),
+		[]string{
+			"2026-10-10T12:00:04.0000000Z make: *** [Makefile:12: test] Error 1",
+			"2026-10-10T12:00:04.0000000Z ##[error]Process completed with exit code 2.",
+			"2026-10-10T12:00:05.0000000Z Post job cleanup.",
+		},
+	)...)
+
+	tests := map[string]struct {
+		in    string
+		n     int
+		until string
+		want  []string
+	}{
+		"CircleCI: the failing group leads the green one": {
+			in: circleci, n: 5,
+			want: []string{
+				"[lint] [warn] plugins/agents/src/Page.tsx",
+				"[lint] [warn] Code style issues found in the above file. Run Prettier with --write to fix.",
+				"[lint] yarn run ci:lint exited with code 1",
+				"[test] PASS plugins/p1/src/index.test.ts",
+				"[test] PASS plugins/p2/src/index.test.ts",
+				"[... 24 lines ...]",
+				"[test] PASS plugins/p27/src/index.test.ts",
+				"[test] PASS plugins/p28/src/index.test.ts",
+				"[test] PASS plugins/p29/src/index.test.ts",
+				"[test] PASS plugins/p30/src/index.test.ts",
+				"[test] yarn run test:all exited with code 0",
+			},
+		},
+		"Actions: the failing Go package leads the summary": {
+			in: actions, n: 5, until: actionsError,
+			want: []string{
+				"2026-10-10T12:00:01.0000000Z ok  \tgithub.com/o/r/pkg/a\t0.1s",
+				"2026-10-10T12:00:02.0000000Z --- FAIL: TestReconcile (0.00s)",
+				"2026-10-10T12:00:02.0000000Z     reconcile_test.go:42: got 1, want 2",
+				"2026-10-10T12:00:02.0000000Z FAIL",
+				"2026-10-10T12:00:02.0000000Z FAIL\tgithub.com/o/r/pkg/b\t0.2s",
+				"[... 27 lines ...]",
+				"2026-10-10T12:00:03.0000000Z ok  \tgithub.com/o/r/pkg/c28\t0.1s",
+				"2026-10-10T12:00:03.0000000Z ok  \tgithub.com/o/r/pkg/c29\t0.1s",
+				"2026-10-10T12:00:03.0000000Z ok  \tgithub.com/o/r/pkg/c30\t0.1s",
+				"2026-10-10T12:00:04.0000000Z make: *** [Makefile:12: test] Error 1",
+				"2026-10-10T12:00:04.0000000Z ##[error]Process completed with exit code 2.",
+			},
+		},
+		"excerpt running into the tail joins it": {
+			in: logLines("a", "b", "FAIL x", "c", "d", "e", "f"), n: 3,
+			want: []string{"FAIL x", "c", "d", "e", "f"},
+		},
+		"a single failing last step as before": {
+			in:    logLines(slices.Concat(repeated(10, "build %d"), []string{"--- FAIL: TestX (0.00s)", "FAIL", "##[error]Process completed with exit code 1.", "Post job cleanup."})...),
+			n:     5,
+			until: actionsError,
+			want:  []string{"build 9", "build 10", "--- FAIL: TestX (0.00s)", "FAIL", "##[error]Process completed with exit code 1."},
+		},
+		"exit code 0 is no failure": {
+			in: logLines("x exited with code 0", "a", "b", "c"), n: 2,
+			want: []string{"b", "c"},
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			got, err := tailLines(strings.NewReader(tc.in), tc.n, tc.until)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if diff := cmp.Diff(strings.Join(tc.want, "\n"), got); diff != "" {
+				t.Errorf("tail (-want +got):\n%s", diff)
 			}
 		})
 	}

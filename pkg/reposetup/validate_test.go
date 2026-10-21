@@ -77,12 +77,16 @@ func TestValidateEntries(t *testing.T) {
 		{name: "align-not-bool", template: TemplateGo, verdict: VerdictFree, fields: []string{"align"}},
 		{name: "agent-merge-opt-out", template: TemplateGo, verdict: VerdictFree},
 		{name: "agent-merge-not-bool", template: TemplateGo, verdict: VerdictFree, fields: []string{"agentMerge"}},
+		{name: "renovate-off", template: TemplateGo, verdict: VerdictFree},
+		{name: "renovate-not-bool", template: TemplateGo, verdict: VerdictFree, fields: []string{"renovate"}},
 		{name: "ci-without-generate", template: TemplateChart, verdict: VerdictFree},
 		{name: "chart-release-gate", template: TemplateChart, verdict: VerdictFree},
 		{name: "template-content", template: TemplateGo, verdict: VerdictFree},
 		{name: "template-content-generated", template: TemplateGo, verdict: VerdictFree, fields: []string{"gen.ci.templateContent"}},
 		{name: "maintenance-branches", template: TemplateMinimal, verdict: VerdictFree},
 		{name: "maintenance-branches-no-fork", template: TemplateGo, verdict: VerdictFree, fields: []string{"gen.ci.maintenanceBranches"}},
+		{name: "patch-candidates", template: TemplateGo, verdict: VerdictFree},
+		{name: "patch-candidates-legacy", template: TemplateGo, verdict: VerdictFree, fields: []string{"gen.ci.patchCandidates"}},
 	}
 
 	for _, tc := range tests {
@@ -124,7 +128,7 @@ func problemFields(problems []Problem) []string {
 func TestValidateMessagesNameTheReason(t *testing.T) {
 	v, tf := fixtureValidator(t)
 	result, err := v.Validate(context.Background(), Request{TeamFile: tf, Names: []string{
-		"node-ui", "plans-wrong-language", "hello-world-app", "chart-name-mismatch", "internal-visibility", "unknown-field", "unknown-flavour", "taken-name", "renamed-name", "twice", "no-gen", "template-content-generated", "maintenance-branches-no-fork",
+		"node-ui", "plans-wrong-language", "hello-world-app", "chart-name-mismatch", "internal-visibility", "unknown-field", "unknown-flavour", "taken-name", "renamed-name", "twice", "no-gen", "template-content-generated", "maintenance-branches-no-fork", "patch-candidates-legacy",
 	}})
 	require.NoError(t, err)
 
@@ -141,6 +145,7 @@ func TestValidateMessagesNameTheReason(t *testing.T) {
 	require.Contains(t, messages["chart-name-mismatch/gen.ci.chartName"], `must equal the repository name "chart-name-mismatch"`)
 	require.Contains(t, messages["template-content-generated/gen.ci.templateContent"], "contradicts gen.ci.generate: true")
 	require.Contains(t, messages["maintenance-branches-no-fork/gen.ci.maintenanceBranches"], "needs gen.flavours fork")
+	require.Contains(t, messages["patch-candidates-legacy/gen.ci.patchCandidates"], "needs gen.ci.releaseWorkflow auto-release")
 	require.Contains(t, messages["internal-visibility/visibility"], "public")
 	require.Contains(t, messages["internal-visibility/lifecycle"], "archived")
 	require.Equal(t, "not a field of the repositories schema", messages["unknown-field/template"])
@@ -270,6 +275,26 @@ func TestNotices(t *testing.T) {
 		require.True(t, result.Accepted, "a notice is not a refusal")
 	})
 
+	t.Run("an unreadable team leaves the review unknown", func(t *testing.T) {
+		result, err := v.Validate(ctx, Request{TeamFile: tf, Names: three, Author: "someone", AuthorTeams: []string{"team-rocket"}, AuthorTeamsUnread: []string{"team-bumblebee"}})
+		require.NoError(t, err)
+		require.Equal(t, []NoticeKind{NoticeTeamReviewUnknown}, kinds(result.Notices))
+		require.Contains(t, result.Notices[0].Message, "cannot read whether someone is a member of team-bumblebee;")
+		require.True(t, result.Accepted)
+	})
+
+	t.Run("a membership read beside an unreadable team is the answer", func(t *testing.T) {
+		result, err := v.Validate(ctx, Request{TeamFile: tf, Names: three, Author: "someone", AuthorTeams: []string{"team-planeteers"}, AuthorTeamsUnread: []string{"team-bumblebee"}})
+		require.NoError(t, err)
+		require.Empty(t, result.Notices)
+	})
+
+	t.Run("an unreadable team outside the guard changes nothing", func(t *testing.T) {
+		result, err := v.Validate(ctx, Request{TeamFile: tf, Names: three, Author: "someone", AuthorTeamsUnread: []string{"team-rocket"}})
+		require.NoError(t, err)
+		require.Equal(t, []NoticeKind{NoticeTeamReview}, kinds(result.Notices))
+	})
+
 	t.Run("unknown author skips the team guard", func(t *testing.T) {
 		result, err := v.Validate(ctx, Request{TeamFile: tf, Names: three})
 		require.NoError(t, err)
@@ -367,7 +392,7 @@ func TestValidateExistingMode(t *testing.T) {
 				refused = append(refused, entry.Name)
 			}
 		}
-		require.Equal(t, []string{"empty-gen", "internal-visibility", "unknown-field", "unknown-flavour", "twice", "twice", "align-not-bool", "agent-merge-not-bool", "ci-without-generate"}, refused)
+		require.Equal(t, []string{"empty-gen", "internal-visibility", "unknown-field", "unknown-flavour", "twice", "twice", "align-not-bool", "agent-merge-not-bool", "renovate-not-bool", "ci-without-generate"}, refused)
 		require.False(t, result.Accepted)
 	})
 

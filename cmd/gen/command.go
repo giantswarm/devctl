@@ -18,6 +18,7 @@ import (
 	"github.com/giantswarm/devctl/v8/cmd/gen/precommit"
 	"github.com/giantswarm/devctl/v8/cmd/gen/renovate"
 	"github.com/giantswarm/devctl/v8/cmd/gen/workflows"
+	"github.com/giantswarm/devctl/v8/internal/versiongate"
 )
 
 const (
@@ -198,6 +199,10 @@ func New(config Config) (*cobra.Command, error) {
 		Short: description,
 		Long:  description,
 		RunE:  r.Run,
+		// A generator writes from the repository's files and the templates of
+		// this binary, without GitHub: it runs offline in a container without
+		// a keychain, at the version its image pins.
+		Annotations: versiongate.Exempt(),
 	}
 
 	f.Init(c)

@@ -45,7 +45,8 @@
       "ciModel": "none",
       "artifacts": [],
       "pipeline": null,
-      "actions": []
+      "actions": [],
+      "statuses": []
     }
   }
 }

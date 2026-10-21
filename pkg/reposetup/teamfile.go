@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -156,7 +157,9 @@ type Fields struct {
 	// DefaultBranch is the repository's default branch, main unless
 	// declared: the settings step keeps the repository on it and the
 	// protection step protects it. A fork line declares the branch that
-	// carries the upstream release plus the carried patches.
+	// carries the upstream release plus the carried patches. A repository
+	// that keeps its own default branch ([Fields.KeepsDefaultBranch]) is
+	// never renamed to it.
 	DefaultBranch string `yaml:"defaultBranch"`
 	// Align is the repository's opt-in to alignment: with it the reconciler
 	// changes the repository to its declared set-up on every trigger,
@@ -172,6 +175,11 @@ type Fields struct {
 	// the default branch's ruleset has no bypass actor, so nothing merges
 	// past the required review. Nil is the default, true.
 	AgentMerge *bool `yaml:"agentMerge"`
+	// Renovate is the repository's opt-out from Renovate: with false no
+	// renovate.json5 is generated and the renovate step accepts a
+	// repository without a Renovate configuration, or with one that
+	// disables Renovate. Nil is the default, true.
+	Renovate *bool `yaml:"renovate"`
 	// Rulesets names the repository's own rulesets the team keeps beside
 	// the engine's, the decision to keep them: the protection step leaves a
 	// declared one alone in silence, reports every other one and reports a
@@ -189,6 +197,30 @@ type Fields struct {
 		Precommit bool `yaml:"precommit"`
 	} `yaml:"replace"`
 	Gen *GenFields `yaml:"gen"`
+}
+
+// FlavourCustomer is the gen.flavours value of a customer repository.
+const FlavourCustomer = "customer"
+
+// componentTypeAppCatalog is the componentType of an app catalog: GitHub
+// Pages serves the catalog's index from the repository's default branch.
+const componentTypeAppCatalog = "appcatalog"
+
+// KeepsDefaultBranch says the repository's default branch is its own and the
+// reconciler never renames it: a customer repository's branch is the
+// customer's flow, an app catalog's the branch GitHub Pages serves the
+// catalog from. The protection step protects that branch, whatever its name.
+func (f Fields) KeepsDefaultBranch() bool {
+	if f.ComponentType == componentTypeAppCatalog {
+		return true
+	}
+	return f.Gen != nil && slices.Contains(f.Gen.Flavours, FlavourCustomer)
+}
+
+// RenovateOn says whether the entry keeps Renovate on: true unless it
+// declares renovate: false.
+func (f Fields) RenovateOn() bool {
+	return f.Renovate == nil || *f.Renovate
 }
 
 // LineGateFields is the lineGate block: the land gate of a fork line.
@@ -240,7 +272,10 @@ type CIFields struct {
 	ReleaseWorkflow string `yaml:"releaseWorkflow"`
 	// MaintenanceBranches says a fork line's maintenance branches
 	// (release-X.Y) cut releases too, each the patches of its X.Y series.
-	MaintenanceBranches     bool   `yaml:"maintenanceBranches"`
+	MaintenanceBranches bool `yaml:"maintenanceBranches"`
+	// PatchCandidates says a patch of the last stable release is cut as a
+	// release candidate too, never tagged stable on its push.
+	PatchCandidates         bool   `yaml:"patchCandidates"`
 	AppCatalog              string `yaml:"appCatalog"`
 	AppCatalogTest          string `yaml:"appCatalogTest"`
 	ChartName               string `yaml:"chartName"`
@@ -374,4 +409,18 @@ func kindName(k yaml.Kind) string {
 		return "alias"
 	}
 	return fmt.Sprintf("node of kind %d", k)
+}
+
+// LifecycleArchived is the lifecycle value of an archived repository.
+const LifecycleArchived = "archived"
+
+// LifecycleDeleted is the lifecycle value of a deleted repository; the entry
+// stays in the team file as the record of the deletion.
+const LifecycleDeleted = "deleted"
+
+// LifecycleOver says whether the declared lifecycle ends the repository's
+// life: archived or deleted. Such an entry is only the record of the
+// repository; nothing releases or changes it.
+func LifecycleOver(lifecycle string) bool {
+	return lifecycle == LifecycleArchived || lifecycle == LifecycleDeleted
 }

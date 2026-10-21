@@ -196,6 +196,20 @@
     flavours:
       - app
     language: go
+- name: renovate-off
+  componentType: service
+  renovate: false
+  gen:
+    flavours:
+      - app
+    language: go
+- name: renovate-not-bool
+  componentType: service
+  renovate: "off"
+  gen:
+    flavours:
+      - app
+    language: go
 - name: ci-without-generate
   # A ci block without generate: the creation writes the default, an existing
   # entry is read as declared and the schema requires the field.
@@ -240,6 +254,26 @@
       generate: false
       releaseWorkflow: auto-release
       maintenanceBranches: true
+- name: patch-candidates
+  # Every release a candidate first, a patch included.
+  componentType: service
+  gen:
+    flavours:
+      - app
+    language: go
+    ci:
+      generate: true
+      patchCandidates: true
+- name: patch-candidates-legacy
+  componentType: service
+  gen:
+    flavours:
+      - app
+    language: go
+    ci:
+      generate: true
+      releaseWorkflow: legacy
+      patchCandidates: true
 - name: maintenance-branches-no-fork
   componentType: service
   gen:

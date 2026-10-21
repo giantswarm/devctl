@@ -1,7 +1,8 @@
 package file
 
 // templateKeyStepSetUpGitIdentity is the template data key under which the
-// workflows that commit as taylorbot receive the shared git identity step.
+// workflows that commit as the giantswarm-release GitHub App receive its git identity step
+// (only helm-docs-regen renders it; a workflow pushing with another App needs its own identity).
 const templateKeyStepSetUpGitIdentity = "StepSetUpGitIdentity"
 
 // templateKeyHeader is the template data key carrying the generated-file
@@ -17,9 +18,19 @@ const templateKeyFork = "Fork"
 // line's maintenance branches (release-X.Y) cut releases of their series.
 const templateKeyMaintenanceBranches = "MaintenanceBranches"
 
+// templateKeyPatchCandidates is the template data key saying a patch of
+// the last stable release is cut as a candidate too, never tagged stable on
+// its push.
+const templateKeyPatchCandidates = "PatchCandidates"
+
 // templateKeyReleaseBranch is the template data key carrying the branch whose
 // pushes cut releases.
 const templateKeyReleaseBranch = "ReleaseBranch"
+
+// templateKeyAdvisoryJobs is the template data key carrying the CircleCI
+// jobs whose failure does not fail a release, space-separated: the
+// auto-release promote step warns on them as devctl's release commands do.
+const templateKeyAdvisoryJobs = "AdvisoryJobs"
 
 // The workflow templates render GitHub Actions ${{ }} expressions verbatim, so
 // they use four braces as their own action delimiters.

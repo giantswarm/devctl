@@ -89,8 +89,8 @@ func Default() Config {
 // code to leave with: the program's, or 8 without a usable login and 7 when
 // the program is not found or the chain of calls loops ([MaxChain]), each
 // with one line on stderr naming the cause.
-// gh acting on a repository of an owner outside [AppOwners] runs without the
-// token, on the person's own gh login.
+// gh acting on a repository of an owner outside [AppOwners], or uploading a
+// file ([GHAttaches]), runs without the token, on the person's own gh login.
 func Run(ctx context.Context, c Config, name string, args []string) int {
 	path, err := LookPath(name, c.Path, c.Self)
 	if err != nil {
@@ -104,8 +104,8 @@ func Run(ctx context.Context, c Config, name string, args []string) int {
 	}
 	argv := append([]string{name}, args...)
 	if strings.TrimSuffix(filepath.Base(name), ".exe") == "gh" {
-		if owner := GHOwner(args, environ, c.Remotes); owner != "" && !AppOwners[owner] {
-			return c.run(path, argv, without(environ, EnvToken))
+		if owner := GHOwner(args, environ, c.Remotes); (owner != "" && !AppOwners[owner]) || GHAttaches(args) {
+			return c.run(path, argv, withoutGHTokens(environ))
 		}
 	}
 	token, err := c.Token(ctx, MinValidity)

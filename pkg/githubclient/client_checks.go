@@ -6,9 +6,10 @@ import (
 	"io"
 	"net/http"
 	"sort"
+	"strings"
 
 	"github.com/giantswarm/microerror"
-	"github.com/google/go-github/v92/github"
+	"github.com/google/go-github/v93/github"
 )
 
 // maxPages bounds every paged listing here: a head with more than 1000 check
@@ -115,6 +116,126 @@ func (c *Client) CommitStatuses(ctx context.Context, owner, repo, ref string) ([
 	return statuses, nil
 }
 
+// checkRollupQuery reads one page of a commit's statusCheckRollup: the check
+// runs of its latest check suites and the latest status per context.
+const checkRollupQuery = `query($owner: String!, $name: String!, $oid: GitObjectID!, $after: String) {
+  repository(owner: $owner, name: $name) {
+    object(oid: $oid) {
+      ... on Commit {
+        statusCheckRollup {
+          contexts(first: 100, after: $after) {
+            pageInfo { hasNextPage endCursor }
+            nodes {
+              __typename
+              ... on CheckRun { databaseId name status conclusion url startedAt checkSuite { databaseId app { slug } } }
+              ... on StatusContext { context state targetUrl createdAt }
+            }
+          }
+        }
+      }
+    }
+  }
+}`
+
+type checkRollupPage struct {
+	Repository *struct {
+		Object *struct {
+			StatusCheckRollup *struct {
+				Contexts struct {
+					PageInfo struct {
+						HasNextPage bool   `json:"hasNextPage"`
+						EndCursor   string `json:"endCursor"`
+					} `json:"pageInfo"`
+					Nodes []checkRollupNode `json:"nodes"`
+				} `json:"contexts"`
+			} `json:"statusCheckRollup"`
+		} `json:"object"`
+	} `json:"repository"`
+}
+
+// checkRollupNode is a CheckRun or a StatusContext, told by Typename.
+type checkRollupNode struct {
+	Typename string `json:"__typename"`
+
+	DatabaseID int64             `json:"databaseId"`
+	Name       string            `json:"name"`
+	Status     string            `json:"status"`
+	Conclusion string            `json:"conclusion"`
+	URL        string            `json:"url"`
+	StartedAt  *github.Timestamp `json:"startedAt"`
+	CheckSuite *struct {
+		DatabaseID int64 `json:"databaseId"`
+		App        *struct {
+			Slug string `json:"slug"`
+		} `json:"app"`
+	} `json:"checkSuite"`
+
+	Context   string            `json:"context"`
+	State     string            `json:"state"`
+	TargetURL string            `json:"targetUrl"`
+	CreatedAt *github.Timestamp `json:"createdAt"`
+}
+
+// CheckRollup returns what CheckRunsForRef and CommitStatuses return, read
+// through GraphQL's statusCheckRollup of the commit sha instead of the REST
+// check-runs and combined-status endpoints, every page: the read for when
+// those answer 5xx and GraphQL answers. Status, conclusion and state are
+// REST's lowercase words; a status context GitHub only expects (a required
+// context nothing has reported) is left out, as the combined status leaves it
+// out. A commit GitHub does not know is notFoundError.
+func (c *Client) CheckRollup(ctx context.Context, owner, repo, sha string) ([]*github.CheckRun, []*github.RepoStatus, error) {
+	runs, statuses := []*github.CheckRun{}, []*github.RepoStatus{}
+	variables := map[string]any{"owner": owner, "name": repo, "oid": sha}
+	for page := 0; page < maxPages; page++ {
+		var data checkRollupPage
+		if err := c.graphQL(ctx, "statusCheckRollup", checkRollupQuery, variables, &data); err != nil {
+			return nil, nil, err
+		}
+		if data.Repository == nil || data.Repository.Object == nil {
+			return nil, nil, microerror.Maskf(notFoundError, "commit %s/%s@%s", owner, repo, sha)
+		}
+		rollup := data.Repository.Object.StatusCheckRollup
+		if rollup == nil {
+			break
+		}
+		for _, node := range rollup.Contexts.Nodes {
+			switch node.Typename {
+			case "CheckRun":
+				run := &github.CheckRun{
+					ID:         new(node.DatabaseID),
+					Name:       new(node.Name),
+					Status:     new(strings.ToLower(node.Status)),
+					Conclusion: new(strings.ToLower(node.Conclusion)),
+					HTMLURL:    new(node.URL),
+					StartedAt:  node.StartedAt,
+				}
+				if suite := node.CheckSuite; suite != nil {
+					run.CheckSuite = &github.CheckSuite{ID: new(suite.DatabaseID)}
+					if suite.App != nil {
+						run.App = &github.App{Slug: new(suite.App.Slug)}
+					}
+				}
+				runs = append(runs, run)
+			case "StatusContext":
+				if node.State == "EXPECTED" {
+					continue
+				}
+				statuses = append(statuses, &github.RepoStatus{
+					Context:   new(node.Context),
+					State:     new(strings.ToLower(node.State)),
+					TargetURL: new(node.TargetURL),
+					UpdatedAt: node.CreatedAt,
+				})
+			}
+		}
+		if !rollup.Contexts.PageInfo.HasNextPage {
+			break
+		}
+		variables["after"] = rollup.Contexts.PageInfo.EndCursor
+	}
+	return runs, statuses, nil
+}
+
 // WorkflowRunsForSHA returns every GitHub Actions run of the head SHA,
 // whatever its status, every page.
 func (c *Client) WorkflowRunsForSHA(ctx context.Context, owner, repo, sha string) ([]*github.WorkflowRun, error) {
@@ -184,6 +305,33 @@ func (c *Client) RequiredStatusContexts(ctx context.Context, owner, repo, branch
 	}
 	sort.Strings(contexts)
 	return contexts, nil
+}
+
+const reviewDecisionQuery = `query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) { reviewDecision }
+  }
+}`
+
+// ReviewDecision returns GitHub's review decision of the pull request:
+// APPROVED, CHANGES_REQUESTED or REVIEW_REQUIRED, empty when the base
+// requires no review. A pull request GitHub does not know is notFoundError.
+func (c *Client) ReviewDecision(ctx context.Context, owner, repo string, number int) (string, error) {
+	var data struct {
+		Repository *struct {
+			PullRequest *struct {
+				ReviewDecision string `json:"reviewDecision"`
+			} `json:"pullRequest"`
+		} `json:"repository"`
+	}
+	variables := map[string]any{"owner": owner, "name": repo, "number": number}
+	if err := c.graphQL(ctx, "reviewDecision", reviewDecisionQuery, variables, &data); err != nil {
+		return "", err
+	}
+	if data.Repository == nil || data.Repository.PullRequest == nil {
+		return "", microerror.Maskf(notFoundError, "pull request %s/%s#%d", owner, repo, number)
+	}
+	return data.Repository.PullRequest.ReviewDecision, nil
 }
 
 // FileExists says whether path is a file at ref.

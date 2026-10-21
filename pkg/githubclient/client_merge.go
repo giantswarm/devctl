@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"github.com/giantswarm/microerror"
-	"github.com/google/go-github/v92/github"
+	"github.com/google/go-github/v93/github"
 )
 
 // The calls `devctl pr merge` makes once the head is green: the merge itself,
@@ -112,7 +112,7 @@ func IsMergeRetryable(err error) bool {
 // guards against updating a head that moved meanwhile. The REST endpoint
 // only merges; [Client.RebasePullRequestBranch] rebases.
 func (c *Client) UpdatePullRequestBranch(ctx context.Context, owner, repo string, number int, expectedHeadSHA string) error {
-	_, _, err := c.ghClient.PullRequests.UpdateBranch(ctx, owner, repo, number, &github.PullRequestBranchUpdateOptions{
+	_, _, err := c.ghClient.PullRequests.UpdateBranch(ctx, owner, repo, number, github.UpdatePullRequestBranchRequest{
 		ExpectedHeadSHA: &expectedHeadSHA,
 	})
 	var accepted *github.AcceptedError
@@ -190,7 +190,14 @@ func (c *Client) EnqueuePullRequest(ctx context.Context, nodeID string) error {
 // executionError prefixed with op, a spent rate limit named by
 // [GraphQLRefusal].
 func (c *Client) graphQLMutation(ctx context.Context, op, mutation string, variables map[string]any) error {
-	query := map[string]any{"query": mutation, "variables": variables}
+	return c.graphQL(ctx, op, mutation, variables, nil)
+}
+
+// graphQL posts document with variables to <REST root>/graphql and decodes
+// the answer's data into data, when not nil. Failures are those of
+// graphQLMutation.
+func (c *Client) graphQL(ctx context.Context, op, document string, variables map[string]any, data any) error {
+	query := map[string]any{"query": document, "variables": variables}
 	body, err := json.Marshal(query)
 	if err != nil {
 		return microerror.Mask(err)
@@ -214,6 +221,7 @@ func (c *Client) graphQLMutation(ctx context.Context, op, mutation string, varia
 		return microerror.Maskf(executionError, "%s: %s", op, GraphQLRefusal(resp.Header, fmt.Sprintf("GraphQL answered %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))))
 	}
 	var answer struct {
+		Data   json.RawMessage `json:"data"`
 		Errors []struct {
 			Message string `json:"message"`
 		} `json:"errors"`
@@ -227,6 +235,12 @@ func (c *Client) graphQLMutation(ctx context.Context, op, mutation string, varia
 			messages = append(messages, e.Message)
 		}
 		return microerror.Maskf(executionError, "%s: %s", op, GraphQLRefusal(resp.Header, strings.Join(messages, "; ")))
+	}
+	if data == nil {
+		return nil
+	}
+	if err := json.Unmarshal(answer.Data, data); err != nil {
+		return microerror.Maskf(executionError, "%s: GraphQL answered with data of another shape: %v", op, err)
 	}
 	return nil
 }

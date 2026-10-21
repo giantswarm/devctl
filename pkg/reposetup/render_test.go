@@ -29,6 +29,9 @@ var renderCases = []struct {
 	options  map[string]string
 }{
 	{name: "go-service", team: "team-bumblebee", template: TemplateGo},
+	// go-service-no-ci declares gen.ci.generate: false: the Go template's
+	// .circleci/ stays out of the scaffold.
+	{name: "go-service-no-ci", team: "team-bumblebee", template: TemplateGo},
 	{name: "go-app", team: "team-bumblebee", template: TemplateGo, chart: TemplateChart},
 	// chart-app declares no visibility, so it is created private and its
 	// README drops the CircleCI and Scorecard badges; chart-app-public keeps
@@ -129,9 +132,29 @@ func Test_Render(t *testing.T) {
 			if !strings.Contains(got, "\n--- renovate.json5\n") {
 				t.Errorf("the scaffold has no renovate.json5")
 			}
+			// A scaffold carries a CircleCI pipeline only where `devctl gen
+			// circleci` wrote it, never the template's.
+			hasPipeline := strings.Contains(got, "\n--- .circleci/config.yml\n")
+			if want := GeneratesCircleCI(declarationFields(t, entry)); hasPipeline != want {
+				t.Errorf(".circleci/config.yml in the scaffold = %t, want %t", hasPipeline, want)
+			}
 			assertGolden(t, filepath.Join("testdata", "golden", tc.name+".golden"), got)
 		})
 	}
+}
+
+// declarationFields are the fields of the entry as the dry run rendered it.
+func declarationFields(t *testing.T, entry Entry) Fields {
+	t.Helper()
+	tf, err := ParseTeamFile("team", strings.NewReader(entry.Rendered))
+	if err != nil {
+		t.Fatalf("parse rendered entry: %v", err)
+	}
+	fields, err := tf.Entries[0].Fields()
+	if err != nil {
+		t.Fatalf("fields: %v", err)
+	}
+	return fields
 }
 
 // Test_Render_alignRunIsNoop is the acceptance criterion: the generated

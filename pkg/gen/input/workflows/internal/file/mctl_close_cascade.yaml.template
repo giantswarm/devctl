@@ -1,0 +1,137 @@
+{{{{ .Header }}}}
+
+# Closes the CCR, installations and teleport-fleet PRs of a cluster init PR closed without merging.
+
+name: Close cascade
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  pull-requests: write
+  issues: write
+
+jobs:
+  close-cascade:
+    name: Close related config PRs
+    runs-on: ubuntu-latest
+    # Not in the template repo; only unmerged init branches.
+    if: >
+      github.repository != 'giantswarm/template-management-clusters' &&
+      github.event.pull_request.merged == false && (
+        endsWith(github.event.pull_request.head.ref, '-init') ||
+        endsWith(github.event.pull_request.head.ref, '-init-capa') ||
+        endsWith(github.event.pull_request.head.ref, '-init-capz') ||
+        endsWith(github.event.pull_request.head.ref, '-init-capv') ||
+        endsWith(github.event.pull_request.head.ref, '-init-capvcd')
+      )
+
+    steps:
+      - name: Find config PR URLs from comments
+        id: find
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const comments = await github.paginate(
+              github.rest.issues.listComments,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.pull_request.number,
+              }
+            );
+
+            // Newest first; markers shared with merge_gate and merge_cascade.
+            let ccrURL = '';
+            let instURL = '';
+            let fleetURL = '';
+            for (const comment of comments.reverse()) {
+              if (!ccrURL) {
+                const m = comment.body.match(/\*\*CCR PR:\*\* (https?:\/\/\S+)/);
+                if (m) ccrURL = m[1];
+              }
+              if (!instURL) {
+                const m = comment.body.match(/\*\*Installations PR:\*\* (https?:\/\/\S+)/);
+                if (m) instURL = m[1];
+              }
+              if (!fleetURL) {
+                // Only a URL counts; a failed PR is reported as "not opened".
+                const m = comment.body.match(/\*\*Teleport fleet PR:\*\* (https?:\/\/\S+)/);
+                if (m) fleetURL = m[1];
+              }
+              if (ccrURL && instURL && fleetURL) break;
+            }
+
+            core.setOutput('ccr_pr_url', ccrURL);
+            core.setOutput('installations_pr_url', instURL);
+            core.setOutput('teleport_fleet_pr_url', fleetURL);
+
+            if (!ccrURL && !instURL && !fleetURL) {
+              core.info('No cluster PR URLs found in comments — nothing to close.');
+            }
+
+      - name: Generate app token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.MCTL_APP_ID }}
+          private-key: ${{ secrets.MCTL_APP_PRIVATE_KEY }}
+          # Owner-scoped so cross-repo calls work.
+          owner: ${{ github.repository_owner }}
+
+      - name: Close related PRs
+        if: >
+          steps.find.outputs.ccr_pr_url != '' ||
+          steps.find.outputs.installations_pr_url != '' ||
+          steps.find.outputs.teleport_fleet_pr_url != ''
+        uses: actions/github-script@v7
+        env:
+          CCR_PR_URL: ${{ steps.find.outputs.ccr_pr_url }}
+          INSTALLATIONS_PR_URL: ${{ steps.find.outputs.installations_pr_url }}
+          TELEPORT_FLEET_PR_URL: ${{ steps.find.outputs.teleport_fleet_pr_url }}
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          script: |
+            const closed = [];
+            const failed = [];
+
+            async function closePR(url) {
+              if (!url) return;
+              const m = url.match(/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
+              if (!m) {
+                core.warning(`Cannot parse PR URL: ${url}`);
+                return;
+              }
+              const [, owner, repo, pull_number] = m;
+              try {
+                await github.rest.pulls.update({
+                  owner,
+                  repo,
+                  pull_number: parseInt(pull_number),
+                  state: 'closed',
+                });
+                closed.push(url);
+              } catch (e) {
+                core.warning(`Failed to close ${url}: ${e.message}`);
+                failed.push(url);
+              }
+            }
+
+            await closePR(process.env.CCR_PR_URL);
+            await closePR(process.env.INSTALLATIONS_PR_URL);
+            await closePR(process.env.TELEPORT_FLEET_PR_URL);
+
+            const lines = ['### Related cluster PRs closed\n'];
+            for (const url of closed) lines.push(`- ${url}`);
+            if (failed.length) {
+              lines.push('\n**Failed to close (check the giantswarm-mctlbot app permissions):**');
+              for (const url of failed) lines.push(`- ${url}`);
+            }
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body: lines.join('\n'),
+            });

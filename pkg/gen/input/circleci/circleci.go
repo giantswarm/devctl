@@ -34,7 +34,7 @@ import (
 // custom manager that reads this annotation lives in renovate-custom.json5.
 //
 // renovate: datasource=github-tags depName=giantswarm/architect-orb
-const OrbVersion = "10.13.6"
+const OrbVersion = "10.14.13"
 
 // DefaultATSVersion is the app-test-suite container tag the generated chart-test
 // jobs run when a repo pins none (`gen circleci --ats-version`). app-test-suite
@@ -43,6 +43,22 @@ const OrbVersion = "10.13.6"
 // A repo that has not migrated its .ats/main.yaml and tests yet pins a 0.x tag
 // (e.g. "0.15.0") to stay on the legacy dats.sh path until it has.
 const DefaultATSVersion = "1.0.3"
+
+// ATSImageRegistry is the registry the chart-test jobs pull app-test-suite and
+// the kind node image from. The jobs log in to it before pulling: ACR throttles
+// all anonymous pulls of a registry together as one identity, so an anonymous
+// CI pull shares its read budget with every other anonymous puller and fails on
+// `toomanyrequests` in a burst, while an authenticated pull has its own.
+const ATSImageRegistry = "gsoci.azurecr.io"
+
+// ATSKindNodeImageVersion is the kind node image tag
+// (gsoci.azurecr.io/giantswarm/kind-node) the chart-test jobs create their
+// cluster from when the job creates it (app-test-suite 1.x). It is emitted as
+// `kind_node_image` rather than left to the orb default so the image the job
+// pre-pulls with retry is the one `kind create cluster` uses.
+//
+// renovate: datasource=docker depName=gsoci.azurecr.io/giantswarm/kind-node
+const ATSKindNodeImageVersion = "v1.37.0"
 
 // ATSKindConfigPath is the repo-owned kind Cluster configuration the chart-test
 // jobs hand to `kind create cluster --config` (run-tests-with-ats `kind_config`)
@@ -67,9 +83,24 @@ const CustomConfigPath = ".circleci/custom.yml"
 // generated one.
 const PushToRegistriesJob = "architect/push-to-registries"
 
+// CircleCI Docker resource classes the generated jobs name.
+const (
+	classSmall       = "small"
+	classMedium      = "medium"
+	classMediumPlus  = "medium+"
+	classLarge       = "large"
+	classXLarge      = "xlarge"
+	class2XLarge     = "2xlarge"
+	class2XLargePlus = "2xlarge+"
+	classArmMedium   = "arm.medium"
+	classArmLarge    = "arm.large"
+	classArmXLarge   = "arm.xlarge"
+	classArm2XLarge  = "arm.2xlarge"
+)
+
 // atsResourceClasses are the classes the orb's run-tests-with-ats job accepts
 // (its resource_class enum). The orb default is medium (2 vCPU / 7.5 GB).
-var atsResourceClasses = []string{"medium", "large", "xlarge", "2xlarge"}
+var atsResourceClasses = []string{classMedium, classLarge, classXLarge, class2XLarge}
 
 // ComponentTypeTemplate is the giantswarm/github team-file componentType of a
 // repository other repositories are created from (giantswarm/template-app).
@@ -182,7 +213,47 @@ const DefaultNodeTestTarget = "test"
 // NODE_OPTIONS max-old-space-size to 6 GiB -- so "large" (4 vCPU / 8 GiB) is the
 // floor. A bigger monorepo raises it via gen.ci.resourceClass, the same knob the
 // cli go-build job uses.
-const DefaultNodeResourceClass = "large"
+const DefaultNodeResourceClass = classLarge
+
+// nodeResourceClassMemoryGiB is the memory of each CircleCI Docker resource
+// class the Node job can run on. The parallel tools of ci:verify size their
+// workers from the CPUs they detect -- backstage-cli from os.cpus(), the
+// host's count on the Docker executor; jest from the cgroup's quota -- so they
+// start more workers than the class has memory for. The Node job sizes them
+// from this memory instead (nodeWorkerCounts).
+var nodeResourceClassMemoryGiB = map[string]int{
+	classSmall:       2,
+	classMedium:      4,
+	classMediumPlus:  6,
+	classLarge:       8,
+	classXLarge:      16,
+	class2XLarge:     32,
+	class2XLargePlus: 40,
+	classArmMedium:   8,
+	classArmLarge:    16,
+	classArmXLarge:   32,
+	classArm2XLarge:  64,
+}
+
+// Memory each worker the Node job starts is given. A jest worker of a large
+// frontend suite peaks at ~1.5 GiB, an ESLint thread of backstage-cli lint at
+// less but beside tsc's heap; on xlarge (16 GiB) that is 4 jest workers and 2
+// lint threads, the configuration measured to peak at 11.4 GiB beside tsc.
+const (
+	nodeJestWorkerGiB = 4
+	nodeLintWorkerGiB = 8
+)
+
+// nodeWorkerCounts returns the jest worker count and the backstage-cli
+// concurrency for a resource class, at least 1 each, and false for a class
+// whose memory is unknown, which leaves the tools to their own detection.
+func nodeWorkerCounts(resourceClass string) (jest, lint int, ok bool) {
+	gib, ok := nodeResourceClassMemoryGiB[resourceClass]
+	if !ok {
+		return 0, 0, false
+	}
+	return max(1, gib/nodeJestWorkerGiB), max(1, gib/nodeLintWorkerGiB), true
+}
 
 // Package-manager values detected from the lockfile. Yarn Berry and Yarn
 // Classic are distinguished because their install commands and cache
@@ -281,7 +352,7 @@ func nodeToolchainFor(packageManager string) nodeToolchain {
 // defaults.
 const (
 	DefaultBuildConcurrency = "auto"
-	DefaultResourceClass    = "large"
+	DefaultResourceClass    = classLarge
 )
 
 type Config struct {
@@ -449,9 +520,10 @@ type Config struct {
 	// stays permanently cold. Only applies to the cli flavour (ReleaseBinaries).
 	BuildConcurrency string
 	// ResourceClass overrides the CircleCI resource_class on the cli-flavour
-	// go-build job. Empty defaults to "large". Raise it (e.g. "xlarge") for
-	// repos that need more RAM/CPU headroom for the cold cross-compile. Only
-	// applies to the cli flavour (ReleaseBinaries).
+	// go-build job and the Node job. Empty defaults to "large". Raise it (e.g.
+	// "xlarge") for repos that need more RAM/CPU headroom for the cold
+	// cross-compile or a monorepo verify; the Node job sizes its tools' workers
+	// from the class's memory (nodeWorkerCounts).
 	ResourceClass string
 	// GoBuildPath overrides the package the go-build job compiles (the
 	// architect go-build `path` param). Empty keeps the orb default ".", the
@@ -538,8 +610,8 @@ const DefaultImagePlatforms = "linux/amd64,linux/arm64"
 // already given a medium remote-docker VM, which is where the build runs.
 // arm.medium is the floor on the Arm side; there is no arm.small.
 var imageResourceClasses = map[string]string{
-	"linux/amd64": "small",
-	"linux/arm64": "arm.medium",
+	"linux/amd64": classSmall,
+	"linux/arm64": classArmMedium,
 }
 
 // imageResourceClassesByPlatform lists the classes a native build-image job may
@@ -549,8 +621,8 @@ var imageResourceClasses = map[string]string{
 // linux/arm64 build would emulate, which the orb refuses; the split keeps that a
 // generation-time error.
 var imageResourceClassesByPlatform = map[string][]string{
-	"linux/amd64": {"small", "medium", "medium+", "large", "xlarge"},
-	"linux/arm64": {"arm.medium", "arm.large", "arm.xlarge", "arm.2xlarge"},
+	"linux/amd64": {classSmall, classMedium, classMediumPlus, classLarge, classXLarge},
+	"linux/arm64": {classArmMedium, classArmLarge, classArmXLarge, classArm2XLarge},
 }
 
 // resolveImageBuilds turns a comma-separated platform list into one build-image
@@ -694,6 +766,12 @@ func New(config Config) (*CircleCI, error) {
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}
+	atsPullImages := []string{ATSImageRegistry + "/giantswarm/app-test-suite:" + config.ATSVersion}
+	var atsKindNodeImage string
+	if atsKindCluster {
+		atsKindNodeImage = ATSImageRegistry + "/giantswarm/kind-node:" + ATSKindNodeImageVersion
+		atsPullImages = append(atsPullImages, atsKindNodeImage)
+	}
 	// A template repository's chart is rendered before it is built, and nothing
 	// is released from it. Without a chart there is nothing to render: the
 	// component type is then a no-op rather than an error, because align-files
@@ -792,6 +870,8 @@ func New(config Config) (*CircleCI, error) {
 		nodeCorepack        bool
 		nodeImageVersion    string
 		nodeResourceClass   string
+		nodeJestMaxWorkers  int
+		nodeLintConcurrency int
 		nodeTestTarget      string
 		nodeBuildTarget     string
 		nodeBuildOutput     string
@@ -817,6 +897,7 @@ func New(config Config) (*CircleCI, error) {
 		if nodeResourceClass == "" {
 			nodeResourceClass = DefaultNodeResourceClass
 		}
+		nodeJestMaxWorkers, nodeLintConcurrency, _ = nodeWorkerCounts(nodeResourceClass)
 		// Embed the literal CircleCI `{{ checksum }}` expression as a plain Go
 		// string so it survives Go-template rendering untouched and is
 		// evaluated by CircleCI at pipeline time. Key on the package manager so
@@ -899,6 +980,9 @@ func New(config Config) (*CircleCI, error) {
 			SkipATS:                config.SkipATS,
 			ATSVersion:             config.ATSVersion,
 			ATSKindCluster:         atsKindCluster,
+			ATSKindNodeImage:       atsKindNodeImage,
+			ATSImageRegistry:       ATSImageRegistry,
+			ATSPullImages:          strings.Join(atsPullImages, " "),
 			ATSKindConfig:          atsKindConfig,
 			ATSResourceClass:       config.ATSResourceClass,
 			ATSOnRelease:           config.ATSOnRelease,
@@ -938,6 +1022,8 @@ func New(config Config) (*CircleCI, error) {
 			NodeBuildCacheKey:      nodeBuildCacheKey,
 			NodeCorepack:           nodeCorepack,
 			NodeResourceClass:      nodeResourceClass,
+			NodeJestMaxWorkers:     nodeJestMaxWorkers,
+			NodeLintConcurrency:    nodeLintConcurrency,
 			NodeTestTarget:         nodeTestTarget,
 			NodeBuildTarget:        nodeBuildTarget,
 			NodeBuildOutput:        nodeBuildOutput,

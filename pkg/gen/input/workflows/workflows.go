@@ -18,6 +18,10 @@ type Config struct {
 	// (release-X.Y) cut releases too, each the patches of its X.Y series.
 	MaintenanceBranches bool
 
+	// PatchCandidates says a patch of the last stable release is cut as a
+	// release candidate too, never tagged stable on its push.
+	PatchCandidates bool
+
 	// RepoName is the repository's name under the giantswarm organization,
 	// for cliff.toml's `[remote.github].repo` field.
 	RepoName string
@@ -39,6 +43,7 @@ func New(config Config) (*Workflows, error) {
 			Flavours:            config.Flavours,
 			ReleaseBranch:       releaseBranch,
 			MaintenanceBranches: config.MaintenanceBranches,
+			PatchCandidates:     config.PatchCandidates,
 			RepoName:            config.RepoName,
 		},
 	}
@@ -88,6 +93,10 @@ func (w *Workflows) AutoReleaseLegacyDeletion() input.Input {
 	return file.NewAutoReleaseLegacyDeletionInput(w.params)
 }
 
+func (w *Workflows) ChangelogDeletion() input.Input {
+	return file.NewChangelogDeletionInput(w.params)
+}
+
 func (w *Workflows) CliffToml() input.Input {
 	return file.NewCliffTomlInput(w.params)
 }
@@ -130,6 +139,16 @@ func (w *Workflows) HelmDocsRegen() input.Input {
 
 func (w *Workflows) HelmRenderDiff() input.Input {
 	return file.NewHelmRenderDiff(w.params)
+}
+
+// Mctl returns the mctl workflows of a management-clusters repository.
+func (w *Workflows) Mctl() []input.Input {
+	return file.NewMctlInputs(w.params)
+}
+
+// MctlLegacyDeletion deletes the unprefixed workflows and op.env written by `mctl create cmc-repo`.
+func (w *Workflows) MctlLegacyDeletion() []input.Input {
+	return file.NewMctlLegacyDeletionInputs(w.params)
 }
 
 func (w *Workflows) PublishTechdocsInput() input.Input {

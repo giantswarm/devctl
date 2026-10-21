@@ -1,0 +1,197 @@
+{{{{ .Header }}}}
+
+# `/create-mc` on an init PR merges the CCR PR (Flux reads it during bootstrap) and fires the Tekton mctl-create-mc pipeline.
+
+name: Create MC
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+env:
+  MCTL_IMAGE: ${{ vars.MCTL_IMAGE || 'gsoci.azurecr.io/giantswarm/mctl:{{{{ .MctlVersion }}}}' }}
+
+jobs:
+  trigger:
+    name: Trigger Tekton pipeline
+    runs-on: ubuntu-latest
+    # Not in the template repo; only /create-mc from members (it starts a cluster-admin pipeline), not the trigger comment.
+    if: >
+      github.repository != 'giantswarm/template-management-clusters' &&
+      github.event.issue.pull_request != null &&
+      startsWith(github.event.comment.body, '/create-mc') &&
+      !contains(github.event.comment.body, 'INSTALLATION=') &&
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
+
+    steps:
+      - name: Acknowledge comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: context.payload.comment.id,
+              content: 'eyes',
+            });
+
+      - name: Generate app token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.MCTL_APP_ID }}
+          private-key: ${{ secrets.MCTL_APP_PRIVATE_KEY }}
+          # Owner-scoped so cross-repo calls work.
+          owner: ${{ github.repository_owner }}
+
+      - name: Get PR branch
+        id: pr
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+            });
+            core.setOutput('branch', pr.data.head.ref);
+
+      - name: Derive installation name
+        id: install
+        env:
+          BRANCH: ${{ steps.pr.outputs.branch }}
+        run: |
+          # {installation}-init or {installation}-init-{provider}.
+          if [[ "$BRANCH" =~ ^(.+)-init-(capa|capz|capv|capvcd)$ ]]; then
+            installation="${BASH_REMATCH[1]}"
+          else
+            installation="${BRANCH%-init}"
+          fi
+          echo "name=$installation" >> "$GITHUB_OUTPUT"
+
+      # URLs come from the `**CCR PR:**` / `**Installations PR:**` lines the config workflow posts.
+      - name: Merge CCR PR
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          script: |
+            const comments = await github.paginate(
+              github.rest.issues.listComments,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+              }
+            );
+
+            // Anchored on the labelled line, newest comment first.
+            function findLabelled(label) {
+              for (let i = comments.length - 1; i >= 0; i--) {
+                const m = (comments[i].body || '').match(
+                  new RegExp('\\*\\*' + label + ':\\*\\* (https://github\\.com/\\S+)')
+                );
+                if (m) return m[1];
+              }
+              return null;
+            }
+
+            // Installations PR is merged later; a missing one means config never ran.
+            const ccrURL  = findLabelled('CCR PR');
+            const instURL = findLabelled('Installations PR');
+
+            if (!ccrURL || !instURL) {
+              core.setFailed(
+                'Could not find CCR PR or Installations PR URLs in init PR comments. ' +
+                'Run /config on this PR before running /create-mc.'
+              );
+              return;
+            }
+
+            const ccrParts = ccrURL.match(/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
+            const instParts = instURL.match(/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
+            if (!ccrParts || !instParts) {
+              core.setFailed(`Could not parse PR URLs: CCR=${ccrURL} installations=${instURL}`);
+              return;
+            }
+            const [, ccrOrg, ccrRepo, ccrNum] = ccrParts;
+            const [, instOrg, , instNum] = instParts;
+
+            core.info(`Merging CCR PR: ${ccrOrg}/${ccrRepo}#${ccrNum}`);
+            try {
+              await github.rest.pulls.merge({
+                owner: ccrOrg,
+                repo: ccrRepo,
+                pull_number: parseInt(ccrNum),
+                // Squash is the only method allowed on all CCR repos.
+                merge_method: 'squash',
+              });
+            } catch (err) {
+              // 405 is either already merged or refused; check which.
+              const { data: ccrPR } = await github.rest.pulls.get({
+                owner: ccrOrg, repo: ccrRepo, pull_number: parseInt(ccrNum),
+              });
+              if (ccrPR.merged) {
+                core.info('CCR PR already merged — continuing.');
+              } else {
+                core.setFailed(
+                  `Could not merge CCR PR ${ccrURL}: ${err.message}. ` +
+                  'Flux must read that config during the bootstrap, so the pipeline was not started.'
+                );
+                return;
+              }
+            }
+
+            core.info(
+              `Installations PR ${instOrg}/installations#${instNum} left open — ` +
+              'zz_generated.mctl_merge_cascade.yaml merges it when this init PR is merged.'
+            );
+
+      # The Tekton pipeline replaces this comment in place via its result token.
+      - name: Post running comment
+        uses: actions/github-script@v7
+        env:
+          INSTALLATION: ${{ steps.install.outputs.name }}
+        with:
+          script: |
+            const installation = process.env.INSTALLATION;
+            const token = `<!-- mctl-create-mc-result-${installation} -->`;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: [
+                token,
+                `### ⚙️ Bootstrapping \`${installation}\``,
+                '',
+                'The CCR PR has been merged. The Tekton pipeline is starting.',
+                '',
+                'Track progress: [Tekton dashboard — mctl-create-mc runs]' +
+                '(https://tekton.ci.giantswarm.io/#/namespaces/tekton-pipelines' +
+                '/pipelineruns?labelSelector=tekton.dev%2Fpipeline%3Dmctl-create-mc)',
+                '',
+                'Results will be posted here when the pipeline completes.',
+              ].join('\n'),
+            });
+
+      # Hidden comment matched by the Tekton CEL filter; carries MCTL_IMAGE so the pipeline runs the same mctl.
+      - name: Post Tekton trigger comment
+        uses: actions/github-script@v7
+        env:
+          INSTALLATION: ${{ steps.install.outputs.name }}
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          script: |
+            const installation = process.env.INSTALLATION;
+            const mctlImage = process.env.MCTL_IMAGE;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              // Visible text so the comment isn't blank in the UI.
+              body: `<!-- mctl-create-mc INSTALLATION=${installation} MCTL_IMAGE=${mctlImage} -->\n_Triggering Tekton bootstrap pipeline for \`${installation}\`…_`,
+            });

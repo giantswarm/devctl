@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/giantswarm/microerror"
-	"github.com/google/go-github/v92/github"
+	"github.com/google/go-github/v93/github"
 )
 
 // PullRequestReviews returns every review of a pull request, oldest first,

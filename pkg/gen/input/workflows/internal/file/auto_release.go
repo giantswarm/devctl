@@ -3,7 +3,9 @@ package file
 import (
 	"embed"
 	"path/filepath"
+	"strings"
 
+	"github.com/giantswarm/devctl/v8/pkg/circleciclient"
 	"github.com/giantswarm/devctl/v8/pkg/gen/input"
 	"github.com/giantswarm/devctl/v8/pkg/gen/input/workflows/internal/params"
 )
@@ -35,7 +37,9 @@ func NewAutoReleaseInput(p params.Params) input.Input {
 			templateKeyHeader:              params.Header("#", autoReleaseTemplateSha),
 			templateKeyFork:                params.IsFlavourFork(p),
 			templateKeyMaintenanceBranches: params.IsFlavourFork(p) && p.MaintenanceBranches,
+			templateKeyPatchCandidates:     p.PatchCandidates,
 			templateKeyReleaseBranch:       p.ReleaseBranch,
+			templateKeyAdvisoryJobs:        strings.Join(circleciclient.AdvisoryJobs, " "),
 		},
 	}
 }

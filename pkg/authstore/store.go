@@ -24,6 +24,11 @@ const (
 // ErrNotFound is returned when the identity has no record.
 var ErrNotFound = errors.New("no record in the keychain")
 
+// ErrKeychainUnreachable is in the error of a keychain the environment has
+// none of: a shell without a session bus, a container or a CI step. A caller
+// whose token is optional reads anonymously; one that needs it reports it.
+var ErrKeychainUnreachable = errors.New("connecting to the session bus for the keychain")
+
 // Record is what the keychain holds for one identity. A zero time means the
 // value does not expire.
 type Record struct {

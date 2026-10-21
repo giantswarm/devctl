@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/google/go-github/v92/github"
+	"github.com/google/go-github/v93/github"
 )
 
 // fakeTeamFiles is giantswarm/github's REST surface as Remote uses it:
@@ -27,6 +27,14 @@ type fakeTeamFiles struct {
 	commit map[string]any
 	pull   map[string]any
 }
+
+// The caller's team memberships in the fake: team-bumblebee active,
+// team-rocket pending, team-hidden unreadable to the token, team-secret
+// invisible to it; every other team readable without a membership.
+var (
+	memberships = map[string]string{"team-bumblebee": "active", "team-rocket": "pending"}
+	teamStatus  = map[string]int{"team-hidden": 403, "team-secret": 404}
+)
 
 func (f *fakeTeamFiles) handler(t *testing.T) http.Handler {
 	writeJSON := func(w http.ResponseWriter, v any) {
@@ -78,11 +86,23 @@ func (f *fakeTeamFiles) handler(t *testing.T) http.Handler {
 	mux.HandleFunc("GET /user", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"login": "octocat"})
 	})
-	mux.HandleFunc("GET /user/teams", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, []map[string]any{
-			{"slug": "team-bumblebee", "organization": map[string]any{"login": "giantswarm"}},
-			{"slug": "team-other-org", "organization": map[string]any{"login": "elsewhere"}},
-		})
+	// The caller's teams as the validation check reads them: the team,
+	// then the membership. teamStatus answers a team read other than 200;
+	// memberships are the caller's states, a team without one a 404.
+	mux.HandleFunc("GET /orgs/giantswarm/teams/{team}", func(w http.ResponseWriter, r *http.Request) {
+		if status := teamStatus[r.PathValue("team")]; status != 0 {
+			w.WriteHeader(status)
+			return
+		}
+		writeJSON(w, map[string]any{"slug": r.PathValue("team")})
+	})
+	mux.HandleFunc("GET /orgs/giantswarm/teams/{team}/memberships/{login}", func(w http.ResponseWriter, r *http.Request) {
+		state, ok := memberships[r.PathValue("team")]
+		if !ok || r.PathValue("login") != "octocat" {
+			w.WriteHeader(404)
+			return
+		}
+		writeJSON(w, map[string]any{"state": state, "role": "member"})
 	})
 	mux.HandleFunc("GET /repos/giantswarm/github/git/ref/heads/main", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"ref": "refs/heads/main", "object": map[string]any{"sha": "main-sha"}})
@@ -156,8 +176,8 @@ func TestRemote(t *testing.T) {
 		t.Errorf("undeclared: got %v, want entryNotFoundError", err)
 	}
 
-	person, err := remote.Person(ctx, "giantswarm")
-	if err != nil || person.Login != "octocat" || strings.Join(person.Teams, ",") != "team-bumblebee" {
+	person, err := remote.Person(ctx, "giantswarm", "team-bumblebee", "team-planeteers", "team-rocket", "team-hidden", "team-secret")
+	if err != nil || person.Login != "octocat" || strings.Join(person.Teams, ",") != "team-bumblebee" || strings.Join(person.Unread, ",") != "team-hidden,team-secret" {
 		t.Errorf("Person: %+v, %v", person, err)
 	}
 

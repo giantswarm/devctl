@@ -37,12 +37,13 @@ Every refusal comes before the first poll and before anything is written.
 
 | Code | Verdict | Refused |
 |---|---|---|
-| 3 | `not_applicable` | A **draft**; a **closed** or **merged** pull request; one that **conflicts** with its base; one **behind** a base whose protection requires branches to be up to date, unless `--update-branch` is given. The rule is `pr wait`'s. |
+| 3 | `not_applicable` | A **draft**; a **closed** or **merged** pull request; one that **conflicts** with its base. The rule is `pr wait`'s. |
+| 3 | `not_applicable` | A head **behind its base**, unless `--update-branch` is given: behind a base whose protection requires branches to be up to date (GitHub's mergeable state), or behind any other base by the comparison of base and head (`GET .../compare/{base}...{head}`, `behind_by`). Its checks ran against an older base than the one the merge would land it on, so a change that is green on its own base and breaks the current one would land unverified. The reason names the state (how many commits behind, for a base that is not strict) and the way out, `--update-branch`. A base with a merge queue is not compared: the queue tests every entry against the base it lands on. See [`--update-branch`](#--update-branch). |
 | 3 | `not_applicable` | `--accept-red` naming a check the base **requires** (branch protection or a ruleset) or a **security scan**; see [`--accept-red`](#--accept-red-a-known-red-check). |
-| 5 | `refused` | A pull request **another human opened**. The author is compared with the account the token acts as (the login of the keychain record, or `GET /user`); a bot, a GitHub App (user type `Bot`) or a `[bot]` login is fine, so a Renovate or Dependabot pull request merges. Giant Swarm's automation accounts that GitHub carries as plain users are fine too -- `taylorbot`, which opens the release pull request of every repository on devctl-generated CI, and `architectbot` -- each matched on its numeric account id as well as its login, so the login alone opens nothing. The reason names every author the merge accepts, and for an automation login whose account id is not the pinned one, both ids. |
+| 5 | `refused` | A pull request **another human opened**. The author is compared with the account the token acts as (the login of the keychain record, or `GET /user`); a bot, a GitHub App (user type `Bot`) or a `[bot]` login is fine, so a Renovate or Dependabot pull request merges. Giant Swarm's automation accounts that GitHub carries as plain users are fine too -- `taylorbot`, which opened the release pull request of every repository on devctl-generated CI before the `giantswarm-release` GitHub App took over and still does where the workflows are not regenerated yet, and `architectbot` -- each matched on its numeric account id as well as its login, so the login alone opens nothing. The reason names every author the merge accepts, and for an automation login whose account id is not the pinned one, both ids. |
 | 5 | `refused` | A repository whose team-file entry **opts out of agent merges**: the entry named after the repository in `repositories/<team>.yaml` of `giantswarm/github` at `main` says `agentMerge: false`. The entry is read the way `devctl repo` reads one; the reason names the field. An entry without the field, a repository no team file declares and a repository outside the organisation the team files declare are not opted out. Team files the token cannot read are a tooling failure (7), not a guess. |
 
-| 5 | `refused` | **Unanswered review**: a reviewer's feedback newer than the head that nobody answered (see [Unanswered reviews](#unanswered-reviews)). Read here and again right before the merge call. |
+| 5 | `refused` | **Unanswered review**: a reviewer's standing request for changes, or a reviewer's feedback newer than the head that nobody answered (see [Unanswered reviews](#unanswered-reviews)). Read here and again right before the merge call. |
 
 A mergeable state GitHub has not computed yet (`unknown`) is read again a few times before the
 refusals are applied, so a pull request just pushed is judged on its state and not on GitHub's
@@ -54,20 +55,26 @@ A review in state `COMMENTED` does not block GitHub's protection, so a pull requ
 a reviewer asked for changes. `devctl pr merge` reads the pull request's reviews, review comments (on the diff,
 replies included) and conversation comments after the refusals above, and again **immediately before the merge
 call** (or the enqueue), so feedback that lands while the checks run is caught too. Each read is fresh. It
-refuses with exit 5, `refused`, while one item is unanswered:
+refuses with exit 5, `refused`, while a request for changes stands or one item is unanswered:
 
 - **Whose**: a person other than the pull request's author and the caller. Bots, GitHub Apps and the
-  automation accounts (as in the author rule) never hold a merge.
-- **Which**: a review in state `COMMENTED` or `CHANGES_REQUESTED` (not `APPROVED`, `DISMISSED` or pending), a
-  review comment, a conversation comment.
-- **Newer than the head**: a review or review comment on the head commit, or any item written after the head
-  commit's committer date. Feedback on an older commit and before it was answered by the later commit.
-- **Answered** by anything the author or the caller wrote on the pull request after it (a reply in the thread,
-  a comment on the conversation, a review), by an `APPROVED` review of the same reviewer no older than it, or by
-  a new commit. Another reviewer's approval answers nothing.
+  automation accounts (as in the author rule) never hold a merge, nor do the commenting automation accounts
+  GitHub carries as plain users -- `codecov-commenter`, which posts the coverage report -- matched on account id
+  as well as login. Those accounts only comment: their pull requests stay refused by the author rule.
+- **A standing request for changes**: a `CHANGES_REQUESTED` review that is still its reviewer's latest verdict
+  (`APPROVED`, `CHANGES_REQUESTED` or `DISMISSED`, as GitHub's review decision counts them). A new commit, a reply
+  or the reviewer's later `COMMENTED` review leaves it standing; only the same reviewer's later `APPROVED` review
+  or the review's dismissal clears it. Another reviewer's approval clears nothing.
+- **Unanswered feedback**: a review in state `COMMENTED`, a review comment, a conversation comment, while
+  - **newer than the head**: a review or review comment on the head commit, or any item written after the head
+    commit's committer date. Feedback on an older commit and before it was answered by the later commit;
+  - and **unanswered**: anything the author or the caller wrote on the pull request after it (a reply in the
+    thread, a comment on the conversation, a review), an `APPROVED` review of the same reviewer no older than it,
+    or a new commit answers it. Another reviewer's approval answers nothing.
 
-The reason names the count and the first five items (kind, state, reviewer, link) and what clears them;
-`unansweredReviews[]` in the document lists every one. The caller answers the feedback (or pushes the fix) and
+The reason names each standing request for changes (`changes requested: review CHANGES_REQUESTED by <reviewer>
+<link>; …`), then the count and the first five unanswered items (kind, state, reviewer, link), each with what
+clears it; `unansweredReviews[]` in the document lists every one, a standing request with `standing: true`. The caller answers the feedback (or pushes the fix) and
 runs the merge again.
 
 ## The wait
@@ -77,7 +84,8 @@ required context never reported. Nothing is merged on any of them. `--failed-log
 wait prints the tail of each failed job's log to stderr and carries it in `failedJobs[]`. A head that changes under the
 wait resets it to the new head with a warning. Its reads, and the release wait's, are retried the way
 `pr wait`'s are ([Polling](pr-wait.md#polling)): a reset connection or a 5xx is a warning and another
-try, exit 7 only after eight in a row; a spent rate limit is a warning and a wait for its reset, exit 2
+try, a read that fails every try leaves the poll unanswered, and the head's checks are then read through
+GraphQL (`checksVia: graphql`); a spent rate limit is a warning and a wait for its reset, exit 2
 before the merge (9 after it) when the reset falls after the deadline. The merge, the branch update and the branch deletion are writes
 and are sent once.
 
@@ -127,6 +135,10 @@ Green lands with one call of the merge API, `PUT /repos/{owner}/{repo}/pulls/{nu
 - The judged head SHA goes along as the expected head: a head that moved between the verdict and
   the merge is not merged (GitHub answers 409), and the pull request is re-read after the wait for
   the same reason (a retitle during the wait names the squash commit).
+- The head is compared with the base again after the wait: a base that moved while the checks ran
+  leaves a green head whose checks ran against an older base. Without `--update-branch` that is exit 3
+  before the merge call, the reason saying the base moved during the wait and naming `--update-branch`;
+  with it the head is updated and waited for again (see [`--update-branch`](#--update-branch)).
 - The squash commit's subject, and a merge commit's, is the pull request's title with its number,
   `<title> (#<number>)`: the title the title check accepted is what the auto-release reads.
 - Before the merge call, the body as it stands after the wait is read for GitHub's closing keywords (`close`,
@@ -196,8 +208,11 @@ merge commit lands on a line that merges commit by commit. It reads
 the pull request until the new head is on it, and the wait judges that head: the CI of the updated
 branch is what turns green, and the merge lands it. Behind is GitHub's mergeable state for a strict
 base, and for every other base the comparison of base and head (`GET .../compare/{base}...{head}`,
-`behind_by`); a head that is not behind is judged as it is. Without the flag, behind a strict base
-is exit 3 and a head behind any other base is judged as it is.
+`behind_by`); a head that is not behind is judged as it is. After the wait the head is compared again,
+and a base that moved during it has the head updated and waited for once more, at most three waits in
+all; a base that moves during each of them is exit 3, naming the base to wait for. Without the flag a
+head behind its base, strict or not, before the wait or after it, is exit 3: its checks ran against
+an older base than the one the merge would land it on.
 
 ## The release
 
@@ -221,8 +236,11 @@ eat into the release's time.
   is merged; the fix is the next pull request or a rerun of the failed workflow.
 - **The release is not confirmed**, exit 9: `--release-timeout` passed first, the release wait could
   not judge it (a missing CircleCI token, sources that disagree about the artifacts, a registry answer
-  that is neither a digest nor "manifest unknown"), or the merge commit's auto-release run was
-  cancelled because a newer push to the branch superseded it (that push's tag carries the merge).
+  that is neither a digest nor "manifest unknown"), the merge commit's auto-release run was
+  cancelled because a newer push to the branch superseded it (that push's tag carries the merge), or
+  the commit carries the release tags of more than one version (`release.verdict`
+  `ambiguous_release`, `release.conflictingTags` naming them; a release wait given the version
+  follows it).
   `release.verdict` and the reason say which; after a timeout or a login, `devctl release wait
   <owner/repo> --pr <number>` resumes the wait. A CircleCI API that does not answer is not an outcome:
   the release wait reads it again at every poll, and only when it is still unanswered at
@@ -397,7 +415,7 @@ The envelope and the fields from `repository` to `unfinished[]` are [`pr wait`'s
 | `method` | `squash` or `rebase`, as asked, `rebase` by default on a fork line, or `merge` (or `rebase`) where the repository does not allow squash merges and allows only that method. |
 | `branchDeleted` | The head branch was deleted after the merge, or was gone already. `false` when nothing merged and for a head in a fork. |
 | `enqueued` | The base has a merge queue and the pull request went through it. |
-| `unansweredReviews` | The feedback the last review read found unanswered, each with `kind` (`review`, `review_comment`, `comment`), `login`, `state` (reviews only), `at` and `url`; empty when nothing held the merge, `null` when a refusal came before the read. |
+| `unansweredReviews` | The feedback the last review read found unanswered, each with `kind` (`review`, `review_comment`, `comment`), `login`, `state` (reviews only), `at`, `url` and `standing` (a standing request for changes); empty when nothing held the merge, `null` when a refusal came before the read. |
 | `release` | The release the merge triggered, as `devctl release wait --pr` reports it: `verdict` (`available`, `no_release`, `ci_failed`, `timeout`, `not_applicable`, `usage`, `auth_required`), `reason`, and its result fields (`repository`, `tag`, `sha`, `releaseModel`, `ciModel`, `artifacts[]`, `pipeline`, `actions[]`, see [release-wait.md](release-wait.md#the-document)). `null` with `--no-release-wait` and when nothing merged. |
 | `dispatch` | The workflow dispatched after the merge ([above](#after-the-merge-a-workflow-dispatch)): `workflow` (`<owner>/<repo>/<file>`), `ref`, `inputs` (`repository`, `pull_request`, `release`), `dispatched` and, when GitHub refused it, `reason`. `null` without `--dispatch` (or `DEVCTL_MERGE_DISPATCH`) and when nothing merged. |
 
@@ -410,11 +428,11 @@ The envelope and the fields from `repository` to `unfinished[]` are [`pr wait`'s
 | 2 | `timeout` | The timeout passed before an outcome, in the wait or in the queue; `unfinished` names what was still open. |
 | 3 | `not_applicable` | Draft, closed, merged, conflicting, behind a strict base without `--update-branch`, GitHub declined the merge as the pull request stands, or `--accept-red` names a required check, a security scan or no check of the head; `reason` says which. |
 | 4 | `required_missing`, `approval_required`, `no_checks` | A required status context never reported, the head waits only for Actions runs awaiting a member's approval (`approval_required`), or its `pull_request` workflows never started (`no_checks`: close and reopen the pull request), known at the poll that saw it and before any merge; `reason` names the context or the runs. |
-| 5 | `refused` | Another human's pull request, a repository whose entry says `agentMerge: false`, or an unanswered review; `reason` names the author, the field or the feedback (`unanswered review: …`, listed in `unansweredReviews`). |
+| 5 | `refused` | Another human's pull request, a repository whose entry says `agentMerge: false`, or a standing request for changes or an unanswered review; `reason` names the author, the field or the feedback (`changes requested: …`, `unanswered review: …`, listed in `unansweredReviews`). |
 | 6 | `release_failed` | **Merged**, and the release failed: the merge commit's auto-release run failed before it tagged, or the tag pipeline failed; `release.pipeline.failedJobs` names the jobs. |
 | 7 | `usage` | Wrong arguments or flags, a newer devctl released (the reason names `devctl version update`), or a tooling failure (GitHub or CircleCI answered with an error other than a 5xx, or a read failed eight tries in a row; the team files could not be read). |
 | 8 | `auth_required` | No usable token; `reason` names the `devctl auth login` to run. |
-| 9 | `release_unconfirmed` | **Merged**, and the release was not confirmed pullable: `--release-timeout` passed, the release wait could not judge it, or the auto-release run was superseded; `release.verdict` and `reason` say which. |
+| 9 | `release_unconfirmed` | **Merged**, and the release was not confirmed pullable: `--release-timeout` passed, the release wait could not judge it, the auto-release run was superseded, or a commit status of the release's commit failed (`status_failed`); `release.verdict` and `reason` say which. |
 
 `--detach` exits 0 with verdict `detached` once the merge started, or with the code of the check
 that refused the call. `devctl pr merge status` exits with the merge's code once it ended, 10
