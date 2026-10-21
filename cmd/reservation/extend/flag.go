@@ -2,12 +2,10 @@ package extend
 
 import (
 	"github.com/giantswarm/microerror"
-
 	"github.com/spf13/cobra"
 
-	"github.com/giantswarm/devctl/v8/pkg/reservation"
-
 	"github.com/giantswarm/devctl/v8/cmd/reservation/gitops"
+	"github.com/giantswarm/devctl/v8/pkg/reservation"
 )
 
 const (
@@ -32,22 +30,17 @@ func (f *flag) Validate() error {
 		return microerror.Mask(err)
 	}
 
-	if f.PullRequest != "" {
-		if _, _, _, err := reservation.SplitPullRequest(f.PullRequest); err != nil {
-			return microerror.Mask(err)
-		}
+	if f.PullRequest == "" {
+		return microerror.Maskf(invalidFlagError, "--%s must not be empty", flagPullRequest)
 	}
 
-	for _, r := range []struct{ name, value string }{
-		{flagPullRequest, f.PullRequest},
-		{flagUser, f.User},
-	} {
-		if r.value == "" {
-			return microerror.Maskf(invalidFlagError, "--%s must not be empty", r.name)
+	if f.User != "" {
+		if reservation.ValidateUser(f.User) != nil {
+			return microerror.Maskf(invalidFlagError, "--%s %q is not a GitHub login", flagUser, f.User)
 		}
 	}
-	if err := reservation.ValidateUser(f.User); err != nil {
-		return microerror.Mask(err)
+	if _, _, _, err := reservation.SplitPullRequest(f.PullRequest); err != nil {
+		return microerror.Maskf(invalidFlagError, "--%s %q is not owner/repo#number", flagPullRequest, f.PullRequest)
 	}
 
 	return nil

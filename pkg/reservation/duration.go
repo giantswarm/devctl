@@ -4,6 +4,7 @@ import (
 	"os"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/giantswarm/microerror"
@@ -15,24 +16,14 @@ import (
 // MaxDuration.
 const MaxDurationAnnotation = "reservations.giantswarm.io/max-duration"
 
-// durationForm matches the whole accepted grammar: a positive whole number of
-// minutes, hours or days.
-//
-// Not time.ParseDuration: it rejects "2d", which is the form people reach for
-// for a multi-day reservation, and it accepts "1ns" and "-4h", which are not
-// reservations anybody means.
-var durationForm = regexp.MustCompile(`^([0-9]+)([mhd])$`)
+// dayForm matches a whole number of days, the form people reach for for a
+// multi-day reservation. time.ParseDuration has no day unit, so it takes every
+// other form.
+var dayForm = regexp.MustCompile(`^([0-9]+)d$`)
 
-// durationUnits maps the accepted suffixes.
-var durationUnits = map[string]time.Duration{
-	"m": time.Minute,
-	"h": time.Hour,
-	"d": 24 * time.Hour,
-}
-
-// acceptedDurations is the list every duration refusal carries, so the fix is
+// AcceptedDurations is the list every duration refusal carries, so the fix is
 // in the message and nobody has to go and read documentation for it.
-const acceptedDurations = "30m, 4h, 2d"
+const AcceptedDurations = "30m, 4h, 4h30m or 2d: a positive whole number of minutes in Go duration form (m, h), or a whole number of days (d)"
 
 // clampedDuration returns how long the requested reservation may last, or
 // refuses one that runs past the maximum the cluster allows. An unrequested
@@ -88,7 +79,7 @@ func clusterMaxDuration(path string) (time.Duration, error) {
 	clusterMax, err := ParseDuration(value)
 	if err != nil {
 		return 0, microerror.Maskf(invalidDurationError,
-			"the %s annotation in %s is %q, which is not a duration. Accepted forms are %s", MaxDurationAnnotation, path, value, acceptedDurations)
+			"the %s annotation in %s is %q, which is not a duration. Accepted forms are %s", MaxDurationAnnotation, path, value, AcceptedDurations)
 	}
 
 	return min(clusterMax, MaxDuration), nil
@@ -103,31 +94,35 @@ func formatDuration(d time.Duration) string {
 	case d%time.Hour == 0:
 		return strconv.Itoa(int(d/time.Hour)) + "h"
 	default:
-		return strconv.Itoa(int(d/time.Minute)) + "m"
+		// Whole minutes, so the String form always ends in a zero seconds part.
+		return strings.TrimSuffix(d.String(), "0s")
 	}
 }
 
-// ParseDuration reads a reservation duration. An empty string is the default,
-// so a caller never has to special-case a duration nobody gave.
+// ParseDuration reads a reservation duration: a whole number of days, or a
+// time.ParseDuration string that is positive and a whole number of minutes,
+// so "1ns" and "-4h" are not reservations. An empty string is the default, so
+// a caller never has to special-case a duration nobody gave.
 func ParseDuration(s string) (time.Duration, error) {
 	if s == "" {
 		return DefaultDuration, nil
 	}
 
-	if m := durationForm.FindStringSubmatch(s); m != nil {
+	if m := dayForm.FindStringSubmatch(s); m != nil {
 		// The pattern already limits this to digits, so only an overflow fails.
 		if n, err := strconv.Atoi(m[1]); err == nil && n > 0 {
-			unit := durationUnits[m[2]]
+			day := 24 * time.Hour
 			// A number big enough to overflow the nanosecond counter wraps round
 			// into a short duration, which would then walk straight past the
 			// maximum. Dividing back catches it.
-			if d := time.Duration(n) * unit; d > 0 && d/unit == time.Duration(n) {
+			if d := time.Duration(n) * day; d > 0 && d/day == time.Duration(n) {
 				return d, nil
 			}
 		}
+	} else if d, err := time.ParseDuration(s); err == nil && d > 0 && d%time.Minute == 0 {
+		return d, nil
 	}
 
 	return 0, microerror.Maskf(invalidDurationError,
-		"%q is not a duration. Accepted forms are %s: a whole number of minutes (m), hours (h) or days (d)",
-		s, acceptedDurations)
+		"%q is not a duration. Accepted forms are %s", s, AcceptedDurations)
 }

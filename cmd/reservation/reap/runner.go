@@ -13,6 +13,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
+	"github.com/giantswarm/devctl/v8/cmd/reservation/gitops"
 	"github.com/giantswarm/devctl/v8/internal/termout"
 	"github.com/giantswarm/devctl/v8/pkg/authstore"
 	"github.com/giantswarm/devctl/v8/pkg/githubclient"
@@ -45,6 +46,10 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 // without one, HeadBranch stays nil and reservation.Reap still releases
 // everything past its expiry.
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
+	user, err := gitops.User(ctx, r.flag.User, r.stderr)
+	if err != nil {
+		return microerror.Mask(err)
+	}
 	checkout, err := r.flag.GitOps.Open(ctx, r.stderr)
 	if err != nil {
 		return microerror.Mask(err)
@@ -52,7 +57,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 	req := reservation.ReapRequest{
 		RepoDir: checkout.Dir,
-		User:    r.flag.User,
+		User:    user,
 	}
 
 	token, err := authstore.ResolveGitHub(ctx)

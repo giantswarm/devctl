@@ -45,22 +45,23 @@ func newCommand(t *testing.T, stdout io.Writer) *cobra.Command {
 	return cmd
 }
 
-// TestRefusesAMissingUser checks that a missing --user is refused by the
-// flags, before the command ever opens --gitops-dir.
-func TestRefusesAMissingUser(t *testing.T) {
-	cmd := newCommand(t, io.Discard)
-	cmd.SetArgs([]string{
-		flagRepoDir, t.TempDir(),
-		flagCluster, "graveler",
-		flagApp, "hello-world",
-	})
+// TestRefusesAWrongCall checks that the flags refuse a malformed or
+// conflicting call before the command ever opens --gitops-dir.
+func TestRefusesAWrongCall(t *testing.T) {
+	for _, args := range [][]string{
+		{flagCluster, "graveler", flagApp, "hello-world", "--user", "not a login"},
+		{flagCluster, "../graveler", flagApp, "hello-world", "--user", "alice"},
+		{flagCluster, "graveler", flagApp, "hello-world", "--app-dir", ".", "--user", "alice"},
+		{"--pull-request", "giantswarm/hello-world#1", "--app-dir", ".", "--user", "alice"},
+		{"--pull-request", "giantswarm/hello-world#0", "--user", "alice"},
+		{"--user", "alice"},
+	} {
+		cmd := newCommand(t, io.Discard)
+		cmd.SetArgs(append([]string{flagRepoDir, t.TempDir()}, args...))
 
-	err := cmd.Execute()
-	if err == nil {
-		t.Fatal("expected a refusal, got none")
-	}
-	if !release.IsInvalidFlag(err) {
-		t.Fatalf("expected an invalid-flag error, got %v", err)
+		if err := cmd.Execute(); !release.IsInvalidFlag(err) {
+			t.Errorf("%v: expected an invalid-flag error, got %v", args, err)
+		}
 	}
 }
 

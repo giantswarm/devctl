@@ -10,6 +10,7 @@ import (
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
 
+	"github.com/giantswarm/devctl/v8/cmd/reservation/gitops"
 	"github.com/giantswarm/devctl/v8/pkg/reservation"
 )
 
@@ -37,6 +38,10 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 // run sweeps the GitOps checkout, synced to origin/main first: no clone, no
 // GitHub token needed.
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
+	user, err := gitops.User(ctx, r.flag.User, r.stderr)
+	if err != nil {
+		return microerror.Mask(err)
+	}
 	checkout, err := r.flag.GitOps.Open(ctx, r.stderr)
 	if err != nil {
 		return microerror.Mask(err)
@@ -45,7 +50,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	extended, extendErr := reservation.Extend(ctx, reservation.ExtendRequest{
 		RepoDir:     checkout.Dir,
 		PullRequest: r.flag.PullRequest,
-		User:        r.flag.User,
+		User:        user,
 	})
 
 	// Print every extension that did land before ever looking at extendErr: a

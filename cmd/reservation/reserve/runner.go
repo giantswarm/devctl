@@ -10,6 +10,7 @@ import (
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
 
+	"github.com/giantswarm/devctl/v8/cmd/reservation/gitops"
 	"github.com/giantswarm/devctl/v8/internal/termout"
 	"github.com/giantswarm/devctl/v8/pkg/reservation"
 )
@@ -55,6 +56,16 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 			termout.Warning(r.stderr), flagPullRequest, r.flag.Branch, flagPullRequest, flagPullRequest)
 	}
 
+	user, err := gitops.User(ctx, r.flag.User, r.stderr)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+	// Empty --app-dir is the current directory, read only when --app is empty.
+	appDir := r.flag.AppDir
+	if r.flag.App == "" && appDir == "" {
+		appDir = "."
+	}
+
 	checkout, err := r.flag.GitOps.Open(ctx, r.stderr)
 	if err != nil {
 		return microerror.Mask(err)
@@ -76,9 +87,9 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 			RepoDir:     dir,
 			Cluster:     r.flag.Cluster,
 			App:         r.flag.App,
-			AppDir:      r.flag.AppDir,
+			AppDir:      appDir,
 			Branch:      r.flag.Branch,
-			User:        r.flag.User,
+			User:        user,
 			PullRequest: r.flag.PullRequest,
 			Duration:    duration,
 			Scope:       scope,
@@ -92,7 +103,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	checkout.Wrote(r.stderr)
 
 	_, _ = fmt.Fprintf(r.stdout, "Reserved %s on %s for %s until %s.\n",
-		result.App, r.flag.Cluster, r.flag.User, result.Until.Format("2006-01-02 15:04 MST"))
+		result.App, r.flag.Cluster, user, result.Until.Format("2006-01-02 15:04 MST"))
 	if termout.Debug(cmd) {
 		_, _ = fmt.Fprintf(r.stdout, "Source %s follows %s\n", result.SourceName, result.SemverFilter)
 		_, _ = fmt.Fprintf(r.stdout, "Commit %s on %s\n", result.Commit, r.flag.GitOps.Repo)

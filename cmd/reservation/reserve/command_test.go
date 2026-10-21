@@ -11,7 +11,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/v8/cmd/reservation/reserve"
-	"github.com/giantswarm/devctl/v8/pkg/reservation"
 )
 
 // newCommand builds the reserve command the way cmd/reservation does.
@@ -71,8 +70,8 @@ func TestRefusesAWrongDurationBeforeItClones(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected a refusal, got none")
 	}
-	if !reservation.IsInvalidDuration(err) {
-		t.Fatalf("expected an invalid-duration error, got %v", err)
+	if !reserve.IsInvalidFlag(err) {
+		t.Fatalf("expected an invalid-flag error, got %v", err)
 	}
 	for _, want := range []string{"30m", "4h", "2d"} {
 		if !strings.Contains(err.Error(), want) {
@@ -126,7 +125,7 @@ func TestWarnsWithoutAPullRequest(t *testing.T) {
 // TestRefusesAMalformedPullRequest checks a typo or a URL is refused when it is
 // written, not later by every reap run that reads it.
 func TestRefusesAMalformedPullRequest(t *testing.T) {
-	for _, pr := range []string{"123", "https://github.com/giantswarm/hello-world/pull/123", "giantswarm/hello-world#x"} {
+	for _, pr := range []string{"123", "https://github.com/giantswarm/hello-world/pull/123", "giantswarm/hello-world#x", "a/b/c#1", "giantswarm/hello-world#0"} {
 		cmd := newCommand(t)
 		cmd.SetArgs([]string{
 			"--cluster", "graveler",
@@ -137,8 +136,8 @@ func TestRefusesAMalformedPullRequest(t *testing.T) {
 		})
 
 		err := cmd.Execute()
-		if err == nil || !reservation.IsInvalidConfig(err) {
-			t.Errorf("--pull-request %q: expected an invalid-config refusal, got %v", pr, err)
+		if !reserve.IsInvalidFlag(err) {
+			t.Errorf("--pull-request %q: expected an invalid-flag refusal, got %v", pr, err)
 		}
 	}
 }

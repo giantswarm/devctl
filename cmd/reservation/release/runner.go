@@ -43,13 +43,23 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 // reservation released by someone else in the meantime is not lost or
 // replayed onto a stale tree.
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
+	user, err := gitops.User(ctx, r.flag.User, r.stderr)
+	if err != nil {
+		return microerror.Mask(err)
+	}
 	checkout, err := r.flag.GitOps.Open(ctx, r.stderr)
 	if err != nil {
 		return microerror.Mask(err)
 	}
 
 	if r.flag.Cluster == "" {
-		return microerror.Mask(r.releaseAll(ctx, checkout))
+		return microerror.Mask(r.releaseAll(ctx, checkout, user))
+	}
+
+	// Empty --app-dir is the current directory, read only when --app is empty.
+	appDir := r.flag.AppDir
+	if r.flag.App == "" && appDir == "" {
+		appDir = "."
 	}
 
 	var result reservation.ReleaseResult
@@ -59,8 +69,8 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 			RepoDir: checkout.Dir,
 			Cluster: r.flag.Cluster,
 			App:     r.flag.App,
-			AppDir:  r.flag.AppDir,
-			User:    r.flag.User,
+			AppDir:  appDir,
+			User:    user,
 			// Empty unless the caller runs from a pull request. A human
 			// clearing a stuck lock passes none and releases regardless.
 			PullRequest: r.flag.PullRequest,
@@ -86,11 +96,11 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 // prints what landed before it looks at the error, exactly as extend does: a
 // cluster nobody can read must not hide the releases that did succeed, since
 // a caller parses this to comment a line per release.
-func (r *runner) releaseAll(ctx context.Context, checkout *gitops.Checkout) error {
+func (r *runner) releaseAll(ctx context.Context, checkout *gitops.Checkout, user string) error {
 	released, releaseErr := reservation.ReleaseAll(ctx, reservation.ReleaseAllRequest{
 		RepoDir:     checkout.Dir,
 		PullRequest: r.flag.PullRequest,
-		User:        r.flag.User,
+		User:        user,
 	})
 
 	for _, entry := range released {

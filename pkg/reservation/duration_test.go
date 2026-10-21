@@ -18,6 +18,8 @@ func TestParseDurationAcceptsTheDocumentedForms(t *testing.T) {
 		{"2d", 48 * time.Hour},
 		{"1d", 24 * time.Hour},
 		{"90m", 90 * time.Minute},
+		{"1h30m", 90 * time.Minute},
+		{"1.5h", 90 * time.Minute},
 		// Nothing given is the default, so a caller never has to special-case an
 		// absent duration.
 		{"", reservation.DefaultDuration},
@@ -36,7 +38,7 @@ func TestParseDurationAcceptsTheDocumentedForms(t *testing.T) {
 
 func TestParseDurationRefusalListsTheAcceptedForms(t *testing.T) {
 	for _, in := range []string{
-		"4 hours", "two hours", "4H", "1w", "-2h", "0h", "1h30m", "4", "h", "10s",
+		"4 hours", "two hours", "4H", "1w", "-2h", "0h", "0d", "4", "h", "10s", "1h30m30s", "1d4h",
 		// Long enough to overflow the nanosecond counter. It must not wrap round
 		// into a short duration and walk straight past the maximum.
 		"1000000000000d", "99999999999999999999h",

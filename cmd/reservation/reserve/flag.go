@@ -5,6 +5,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/v8/cmd/reservation/gitops"
+	"github.com/giantswarm/devctl/v8/internal/validate"
 	"github.com/giantswarm/devctl/v8/pkg/reservation"
 )
 
@@ -33,7 +34,7 @@ type flag struct {
 
 func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.App, flagApp, "", "Chart of the collection app to reserve. Empty takes the name from the app repository's helm/*/Chart.yaml. Required when that repository holds several charts, and also the override when a chart is named differently from the chart its OCI URL serves.")
-	cmd.Flags().StringVar(&f.AppDir, flagAppDir, ".", "Checkout of the app repository, read only to take the chart name when --app is empty.")
+	cmd.Flags().StringVar(&f.AppDir, flagAppDir, "", "Checkout of the app repository, read only to take the chart name when --app is empty. Empty is the current directory. Not with --app.")
 	cmd.Flags().StringVar(&f.Branch, flagBranch, "", "Branch of the app repository whose dev builds the cluster follows.")
 	cmd.Flags().StringVar(&f.Cluster, flagCluster, "", "Name of the management cluster to reserve the app on.")
 	cmd.Flags().StringVar(&f.Duration, flagDuration, "", "How long the reservation lasts, as 30m, 4h or 2d. Empty is the default of 10h, or the cluster maximum when that is lower. The maximum is 7d, or less when the management cluster sets its own.")
@@ -44,35 +45,40 @@ func (f *flag) Init(cmd *cobra.Command) {
 }
 
 func (f *flag) Validate() error {
+	if err := f.GitOps.Validate(); err != nil {
+		return microerror.Mask(err)
+	}
+
 	for _, r := range []struct{ name, value string }{
 		{flagBranch, f.Branch},
 		{flagCluster, f.Cluster},
-		{flagUser, f.User},
 	} {
 		if r.value == "" {
 			return microerror.Maskf(invalidFlagError, "--%s must not be empty", r.name)
 		}
 	}
-	if err := reservation.ValidateUser(f.User); err != nil {
-		return microerror.Mask(err)
+
+	if err := validate.Name("--"+flagCluster, f.Cluster); err != nil {
+		return microerror.Maskf(invalidFlagError, "%v", err)
 	}
-	if f.App == "" && f.AppDir == "" {
-		return microerror.Maskf(invalidFlagError,
-			"pass --%s, or --%s pointing at a checkout of the app repository: the chart name is not the repository name", flagApp, flagAppDir)
-	}
-	if err := f.GitOps.Validate(); err != nil {
-		return microerror.Mask(err)
+	if f.User != "" {
+		if reservation.ValidateUser(f.User) != nil {
+			return microerror.Maskf(invalidFlagError, "--%s %q is not a GitHub login", flagUser, f.User)
+		}
 	}
 	if f.PullRequest != "" {
 		if _, _, _, err := reservation.SplitPullRequest(f.PullRequest); err != nil {
-			return microerror.Mask(err)
+			return microerror.Maskf(invalidFlagError, "--%s %q is not owner/repo#number", flagPullRequest, f.PullRequest)
 		}
 	}
-
 	// Parsed here before the sync: a wrong duration is a typo, and a typo should
 	// not cost a fetch from the GitOps repo to find out about.
 	if _, err := reservation.ParseDuration(f.Duration); err != nil {
-		return microerror.Mask(err)
+		return microerror.Maskf(invalidFlagError, "--%s %q is not a duration. Accepted forms are %s", flagDuration, f.Duration, reservation.AcceptedDurations)
+	}
+
+	if f.App != "" && f.AppDir != "" {
+		return microerror.Maskf(invalidFlagError, "--%s and --%s are mutually exclusive: --%s is read only to take the chart name", flagApp, flagAppDir, flagAppDir)
 	}
 
 	return nil

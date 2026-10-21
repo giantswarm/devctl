@@ -2,12 +2,11 @@ package release
 
 import (
 	"github.com/giantswarm/microerror"
-
 	"github.com/spf13/cobra"
 
-	"github.com/giantswarm/devctl/v8/pkg/reservation"
-
 	"github.com/giantswarm/devctl/v8/cmd/reservation/gitops"
+	"github.com/giantswarm/devctl/v8/internal/validate"
+	"github.com/giantswarm/devctl/v8/pkg/reservation"
 )
 
 const (
@@ -29,7 +28,7 @@ type flag struct {
 
 func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.App, flagApp, "", "Chart of the collection app to release. Empty takes the name from the app repository's helm/*/Chart.yaml, as --app-dir points at. Reserve's Result.App is always safe to pass here, since a reservation is keyed on the resolved chart.")
-	cmd.Flags().StringVar(&f.AppDir, flagAppDir, ".", "Checkout of the app repository, read only to take the chart name when --app is empty.")
+	cmd.Flags().StringVar(&f.AppDir, flagAppDir, "", "Checkout of the app repository, read only to take the chart name when --app is empty. Empty is the current directory. Not with --app.")
 	cmd.Flags().StringVar(&f.PullRequest, flagPullRequest, "", "Pull request whose reservations to release, e.g. giantswarm/hello-world#123. It releases every reservation that pull request holds, on every enabled cluster, so it needs neither --cluster nor --app: a merged or closed pull request knows neither.")
 	cmd.Flags().StringVar(&f.Cluster, flagCluster, "", "Name of the management cluster to release the app on.")
 	f.GitOps.Init(cmd)
@@ -41,46 +40,45 @@ func (f *flag) Validate() error {
 		return microerror.Mask(err)
 	}
 
-	for _, r := range []struct{ name, value string }{
-		{flagUser, f.User},
-	} {
-		if r.value == "" {
-			return microerror.Maskf(invalidFlagError, "--%s must not be empty", r.name)
-		}
-	}
-	if err := reservation.ValidateUser(f.User); err != nil {
-		return microerror.Mask(err)
+	if f.Cluster == "" && f.PullRequest == "" {
+		return microerror.Maskf(invalidFlagError,
+			"pass --%s, or --%s to release every reservation a pull request holds", flagCluster, flagPullRequest)
 	}
 
+	if f.Cluster != "" {
+		if err := validate.Name("--"+flagCluster, f.Cluster); err != nil {
+			return microerror.Maskf(invalidFlagError, "%v", err)
+		}
+	}
+	if f.User != "" {
+		if reservation.ValidateUser(f.User) != nil {
+			return microerror.Maskf(invalidFlagError, "--%s %q is not a GitHub login", flagUser, f.User)
+		}
+	}
 	if f.PullRequest != "" {
 		if _, _, _, err := reservation.SplitPullRequest(f.PullRequest); err != nil {
-			return microerror.Mask(err)
+			return microerror.Maskf(invalidFlagError, "--%s %q is not owner/repo#number", flagPullRequest, f.PullRequest)
 		}
 	}
 
 	// --cluster picks the form. With one, this releases that cluster's app,
 	// and --pull-request restricts it to a reservation that pull request
 	// holds. Without one, --pull-request releases every reservation the pull
-	// request holds, wherever it holds one, and an app would be ignored.
+	// request holds, wherever it holds one, so it takes no app.
 	if f.Cluster == "" {
-		if f.PullRequest == "" {
-			return microerror.Maskf(invalidFlagError,
-				"pass --%s, or --%s to release every reservation a pull request holds", flagCluster, flagPullRequest)
+		for _, r := range []struct{ name, value string }{
+			{flagApp, f.App},
+			{flagAppDir, f.AppDir},
+		} {
+			if r.value != "" {
+				return microerror.Maskf(invalidFlagError,
+					"--%s without --%s releases every reservation the pull request holds, so it takes no --%s",
+					flagPullRequest, flagCluster, r.name)
+			}
 		}
-		// --app-dir is not checked: its "." default cannot be told from a flag
-		// the user passed, and it is ignored here anyway.
-		if f.App != "" {
-			return microerror.Maskf(invalidFlagError,
-				"--%s without --%s releases every reservation the pull request holds, so it takes no --%s",
-				flagPullRequest, flagCluster, flagApp)
-		}
-
-		return nil
 	}
-
-	if f.App == "" && f.AppDir == "" {
-		return microerror.Maskf(invalidFlagError,
-			"pass --%s, or --%s pointing at a checkout of the app repository: the chart name is not the repository name", flagApp, flagAppDir)
+	if f.App != "" && f.AppDir != "" {
+		return microerror.Maskf(invalidFlagError, "--%s and --%s are mutually exclusive: --%s is read only to take the chart name", flagApp, flagAppDir, flagAppDir)
 	}
 
 	return nil

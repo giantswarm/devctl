@@ -3,28 +3,27 @@ package reservation
 import (
 	"regexp"
 	"strconv"
-	"strings"
 
 	"github.com/giantswarm/microerror"
 )
 
+// pullRequestForm is "owner/repo#number": a GitHub owner, a repository name
+// that is not "." or "..", and a positive number without leading zeros.
+var pullRequestForm = regexp.MustCompile(`^([A-Za-z0-9-]+)/([A-Za-z0-9._-]+)#([1-9][0-9]*)$`)
+
 // SplitPullRequest parses "owner/repo#number", the form every --pull-request
 // flag stores and matches on.
 func SplitPullRequest(pullRequest string) (owner, repo string, number int, err error) {
-	repoPart, numberPart, ok := strings.Cut(pullRequest, "#")
-	if !ok {
+	m := pullRequestForm.FindStringSubmatch(pullRequest)
+	if m == nil || m[2] == "." || m[2] == ".." {
 		return "", "", 0, microerror.Maskf(invalidConfigError, "pull request %q is not owner/repo#number", pullRequest)
 	}
-	owner, repo, ok = strings.Cut(repoPart, "/")
-	if !ok || owner == "" || repo == "" {
-		return "", "", 0, microerror.Maskf(invalidConfigError, "pull request %q is not owner/repo#number", pullRequest)
-	}
-	number, err = strconv.Atoi(numberPart)
+	number, err = strconv.Atoi(m[3])
 	if err != nil {
 		return "", "", 0, microerror.Maskf(invalidConfigError, "pull request %q is not owner/repo#number: %v", pullRequest, err)
 	}
 
-	return owner, repo, number, nil
+	return m[1], m[2], number, nil
 }
 
 // githubLogin is a GitHub login: 1-39 alphanumerics or single hyphens, never

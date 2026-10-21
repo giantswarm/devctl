@@ -5,6 +5,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/v8/cmd/reservation/gitops"
+	"github.com/giantswarm/devctl/v8/internal/validate"
 )
 
 const (
@@ -26,12 +27,12 @@ func (f *flag) Validate() error {
 		return microerror.Mask(err)
 	}
 
-	for _, r := range []struct{ name, value string }{
-		{flagCluster, f.Cluster},
-	} {
-		if r.value == "" {
-			return microerror.Maskf(invalidFlagError, "--%s must not be empty", r.name)
-		}
+	if f.Cluster == "" {
+		return microerror.Maskf(invalidFlagError, "--%s must not be empty", flagCluster)
+	}
+
+	if err := validate.Name("--"+flagCluster, f.Cluster); err != nil {
+		return microerror.Maskf(invalidFlagError, "%v", err)
 	}
 
 	return nil
