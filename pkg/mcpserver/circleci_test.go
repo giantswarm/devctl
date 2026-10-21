@@ -45,7 +45,7 @@ func circleStatus(job, state string) *github.RepoStatus {
 // job behind requires: has posted nothing: devctl's build-image, which
 // requires go-build, posts its first status only once go-build finished.
 func TestPRWaitJobBehindRequiresKeepsItPending(t *testing.T) {
-	beforeBuildImage := prwaittest.Head{Statuses: []*github.RepoStatus{circleStatus("setup", "success"), circleStatus("go-build", "success")}}
+	beforeBuildImage := prwaittest.Head{Statuses: []*github.RepoStatus{circleStatus("setup", "success"), circleStatus("build-chart", "success"), circleStatus("go-build", "success")}}
 	tests := []struct {
 		name    string
 		heads   []prwaittest.Head
@@ -56,8 +56,8 @@ func TestPRWaitJobBehindRequiresKeepsItPending(t *testing.T) {
 			name: "green once the job behind requires: posted and passed",
 			heads: []prwaittest.Head{
 				beforeBuildImage,
-				{Statuses: []*github.RepoStatus{circleStatus("setup", "success"), circleStatus("go-build", "success"), circleStatus("build-image", "pending")}},
-				{Statuses: []*github.RepoStatus{circleStatus("setup", "success"), circleStatus("go-build", "success"), circleStatus("build-image", "success")}},
+				{Statuses: []*github.RepoStatus{circleStatus("setup", "success"), circleStatus("build-chart", "success"), circleStatus("go-build", "success"), circleStatus("build-image", "pending")}},
+				{Statuses: []*github.RepoStatus{circleStatus("setup", "success"), circleStatus("build-chart", "success"), circleStatus("go-build", "success"), circleStatus("build-image", "success")}},
 			},
 			verdict: agentcli.VerdictGreen,
 		},
