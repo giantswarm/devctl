@@ -45,7 +45,10 @@ func (p person) GitHubToken(context.Context) (string, error) { return string(p),
 
 // TestToolDocumentEqualsCLI: for the same GitHub, CircleCI and registry
 // state, devctl serve's release_wait answers the document devctl release
-// wait prints, apart from its timestamps.
+// wait prints, apart from its timestamps and the tag's CI: the CLI reads the
+// pipeline from CircleCI, the server, which holds no CircleCI credential,
+// from the commit statuses CircleCI posts, so the pipeline and a failure's
+// reason name its jobs instead of its workflows.
 func TestToolDocumentEqualsCLI(t *testing.T) {
 	for _, workflow := range []string{"success", "failed"} {
 		t.Run(workflow, func(t *testing.T) {
@@ -53,6 +56,10 @@ func TestToolDocumentEqualsCLI(t *testing.T) {
 			for _, doc := range []map[string]any{cli, tool} {
 				delete(doc, "startedAt")
 				delete(doc, "finishedAt")
+				delete(doc, "pipeline")
+				if workflow == "failed" {
+					delete(doc, "reason")
+				}
 			}
 			if diff := cmp.Diff(cli, tool); diff != "" {
 				t.Errorf("the tool's document differs from the CLI's (-cli +tool):\n%s", diff)

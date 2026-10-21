@@ -64,6 +64,27 @@ waits at scale 1 whatever `DEVCTL_TIME_SCALE` says.
 ## Credentials
 
 The server acts on GitHub with the token of the person a call is made for; with no token for them a call is
-`auth_required`. A promotion's document names the identity source `platform`. It holds no CircleCI credential: `pr_wait` judges CircleCI from the commit statuses it posts to GitHub,
-and a release whose tag pipeline runs on CircleCI is not judged by `release_wait` yet (exit 7, the reason says so). The
-private registry is read anonymously.
+`auth_required`. A promotion's document names the identity source `platform`. The private registry is read
+anonymously.
+
+## CircleCI through GitHub
+
+The server holds no CircleCI credential; the laptop keeps its own. `pr_wait`, `pr_merge` and `release_wait` read
+CircleCI only through the commit statuses it posts to GitHub (`ci/circleci: <job>`). A job behind `requires:` posts
+nothing until the jobs it requires have finished, so the waits read the jobs CircleCI runs from the revision's
+`.circleci/config.yml` through GitHub: devctl's generated setup workflow continues with `.circleci/workflows.yml`
+deep-merged with `.circleci/custom.yml`, any other configuration is its own; a job runs when its `filters` take the
+pull request's branch (`pull/<n>` for a fork) or the tag and every job it requires runs, an approval posts nothing,
+and a workflow runs when its `when`/`unless` holds for a push (pipeline parameters at their defaults, `trigger_source`
+`webhook`), a scheduled one never. Every such job that has posted no status yet keeps a wait pending, named
+`ci/circleci: <job> (not posted yet)`. What the configuration cannot tell before the pipeline runs (a matrix job, a
+condition on another pipeline value, a setup workflow devctl does not generate) is a warning, and those jobs count once
+they post.
+
+`release_wait` judges the tag's CI by those statuses on the tag's commit: green once every tag job posted, no job is
+pending and the newest status of no context failed; the document's `pipeline` lists the jobs, with no CircleCI id,
+number or url. A job the branch's pipeline runs too may have posted from that pipeline; the tag-only jobs require it,
+so they post only once it ran in the tag pipeline.
+
+There is no `pr_rerun`, `ci_jobs`, `ci_rerun` or `release_rerun`, and no failed-log tail: they read or write CircleCI.
+A coding agent that meets a flaky job reports it, or pushes a commit that rebuilds.

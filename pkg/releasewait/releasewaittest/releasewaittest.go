@@ -56,8 +56,11 @@ type GitHub struct {
 	WorkflowRuns [][]githubclient.WorkflowRun
 	// CheckRuns are the check runs of a commit, one list per read.
 	CheckRuns [][]*github.CheckRun
-	// Statuses are the commit statuses of a commit.
+	// Statuses are the commit statuses of a commit, newest first.
 	Statuses []githubclient.CommitStatus
+	// StatusReads, when set, are the commit statuses of a commit, newest
+	// first, one list per read instead of Statuses.
+	StatusReads [][]githubclient.CommitStatus
 
 	reads sequence
 }
@@ -135,6 +138,9 @@ func (g *GitHub) ListWorkflowRunsForSHA(context.Context, string, string, string)
 }
 
 func (g *GitHub) ListCommitStatuses(context.Context, string, string, string) ([]githubclient.CommitStatus, error) {
+	if len(g.StatusReads) > 0 {
+		return g.StatusReads[g.reads.next("statuses", len(g.StatusReads))], nil
+	}
 	return g.Statuses, nil
 }
 
@@ -288,7 +294,9 @@ const ReleaseSHA = "0123456789abcdef0123456789abcdef01234567"
 // GeneratedRelease are the sources of release v1.2.3 of owner/repo, a
 // repository whose CI devctl generates: its tag pipeline on CircleCI, one
 // workflow whose status at each read is the next of workflows, pushes the
-// image owner/repo and the chart repo to registry.
+// image owner/repo and the chart repo to registry. Its one tag job,
+// push-to-registries-release, posts the commit status of the workflow's
+// status at each read, as CircleCI does on GitHub.
 func GeneratedRelease(owner, repo string, registry *Registry, workflows ...string) (*releasewait.Sources, error) {
 	teamFile, err := reposetup.ParseTeamFile("team-test", strings.NewReader(fmt.Sprintf(
 		"- name: %s\n  gen:\n    flavours: [app]\n    language: go\n    ci:\n      generate: true\n      image:\n        name: %s/%s\n", repo, owner, repo)))
@@ -304,8 +312,8 @@ func GeneratedRelease(owner, repo string, registry *Registry, workflows ...strin
 		Files: map[string]string{
 			"Dockerfile":                                       "FROM scratch\n",
 			"helm/" + repo + "/Chart.yaml":                     "apiVersion: v2\nname: " + repo + "\nversion: [[ .Version ]]\n",
-			".circleci/config.yml":                             "version: 2.1\n",
-			".circleci/workflows.yml":                          "workflows: {}\n",
+			".circleci/config.yml":                             generatedSetup,
+			".circleci/workflows.yml":                          generatedWorkflows,
 			".github/workflows/zz_generated.auto_release.yaml": "on: push\n",
 		},
 	}
@@ -313,6 +321,17 @@ func GeneratedRelease(owner, repo string, registry *Registry, workflows ...strin
 	created := time.Date(2026, 10, 21, 10, 0, 0, 0, time.UTC)
 	for _, status := range workflows {
 		circleci.Workflows = append(circleci.Workflows, []circleciclient.Workflow{{ID: "w1", Name: "build", Status: status, PipelineNumber: 12, CreatedAt: created}})
+	}
+	for _, status := range workflows {
+		gh.StatusReads = append(gh.StatusReads, []githubclient.CommitStatus{{
+			Context:   circleciclient.StatusContextPrefix + ": push-to-registries-release",
+			State:     commitStatusOf[status],
+			TargetURL: "https://circleci.com/gh/" + owner + "/" + repo + "/101",
+		}, {
+			Context:   circleciclient.StatusContextPrefix + ": setup",
+			State:     success,
+			TargetURL: "https://circleci.com/gh/" + owner + "/" + repo + "/100",
+		}})
 	}
 	jobs := "running"
 	if len(workflows) > 0 {
@@ -330,3 +349,41 @@ func GeneratedRelease(owner, repo string, registry *Registry, workflows ...strin
 		CatalogIndex: Catalog{},
 	}, nil
 }
+
+// commitStatusOf is the commit status CircleCI posts for a job in a
+// workflow's status.
+var commitStatusOf = map[string]string{success: success, "failed": "failure", "running": "pending"}
+
+// success is a successful workflow's and commit status's state.
+const success = "success"
+
+// generatedSetup and generatedWorkflows are a generated configuration's
+// setup workflow and the workflows it continues with: one job on tags.
+const (
+	generatedSetup = `version: 2.1
+setup: true
+jobs:
+  setup:
+    steps:
+    - run: cp .circleci/workflows.yml .circleci/continue.yml
+workflows:
+  setup:
+    jobs:
+    - setup:
+        filters:
+          tags:
+            only: /^v.*/
+`
+	generatedWorkflows = `version: 2.1
+workflows:
+  build:
+    jobs:
+    - architect/push-to-registries:
+        name: push-to-registries-release
+        filters:
+          tags:
+            only: /^v.*/
+          branches:
+            ignore: /.*/
+`
+)
