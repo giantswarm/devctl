@@ -78,8 +78,12 @@ type Config struct {
 	// DefaultProgressInterval.
 	ProgressInterval time.Duration
 	// Merges are the merges of this server pr_merge_status reads; nil is an
-	// empty [mergejob.Memory]. Nothing is kept on disk.
+	// empty [mergejob.Memory]. pr_merge records its merges in them when they
+	// take a Put, as a Memory does. Nothing is kept on disk.
 	Merges mergejob.Jobs
+	// ReleasePromote serves release_promote, the selector of the one tool
+	// that cuts a stable release; off, the tool is not listed.
+	ReleasePromote bool
 	// Verifier checks the ID token the gateway forwards on every request
 	// and names the caller; nil verifies none, and every call is
 	// anonymous.
@@ -88,6 +92,11 @@ type Config struct {
 	Metrics *Metrics
 	// Logger logs one line per call; nil logs nothing.
 	Logger *slog.Logger
+}
+
+// recorder is a [mergejob.Jobs] pr_merge records its merges in.
+type recorder interface {
+	Put(mergejob.Status)
 }
 
 // Server is devctl serve's MCP server.
@@ -102,6 +111,8 @@ type Server struct {
 	verifier         Verifier
 	metrics          *Metrics
 	logger           *slog.Logger
+	// pulls serialize the merges of one pull request, by owner/repo#number.
+	pulls pulls
 }
 
 // New returns the server of config with its tools registered.
@@ -141,8 +152,12 @@ func New(config Config) *Server {
 	}
 	s.mcp = server.NewMCPServer(Name, config.Version, server.WithToolCapabilities(false), server.WithToolHandlerMiddleware(s.observe))
 	s.mcp.AddTool(prWaitTool(), s.prWait)
+	s.mcp.AddTool(prMergeTool(), s.prMerge)
 	s.mcp.AddTool(prMergeStatusTool(), s.prMergeStatus)
 	s.mcp.AddTool(releaseWaitTool(), s.releaseWait)
+	if config.ReleasePromote {
+		s.mcp.AddTool(releasePromoteTool(), s.releasePromote)
+	}
 	return s
 }
 
@@ -163,11 +178,26 @@ func (s *Server) MCP() *server.MCPServer { return s.mcp }
 // the tool's result: structured content and its JSON as text, an MCP error
 // only for auth_required.
 func answer(doc agentcli.Document, ok agentcli.Verdict, err error) (*mcp.CallToolResult, error) {
+	text, err := finish(doc, ok, err)
+	if err != nil {
+		return nil, err
+	}
+	return resultOf(doc, text)
+}
+
+// finish finishes doc with err, the outcome of its command, and returns its
+// JSON.
+func finish(doc agentcli.Document, ok agentcli.Verdict, err error) ([]byte, error) {
 	doc.Finish(time.Now(), ok, err)
 	text, merr := json.Marshal(doc)
 	if merr != nil {
 		return nil, fmt.Errorf("encoding the document: %w", merr)
 	}
+	return text, nil
+}
+
+// resultOf is the tool result of doc, finished, and text, its JSON.
+func resultOf(doc agentcli.Document, text []byte) (*mcp.CallToolResult, error) {
 	// The structured content is the JSON object the text carries.
 	var structured map[string]any
 	if err := json.Unmarshal(text, &structured); err != nil {
@@ -176,6 +206,18 @@ func answer(doc agentcli.Document, ok agentcli.Verdict, err error) (*mcp.CallToo
 	result := mcp.NewToolResultStructured(structured, string(text))
 	result.IsError = agentcli.Exit(doc.Err()) == agentcli.ExitAuthRequired
 	return result, nil
+}
+
+// writes is the annotation of a tool that changes GitHub: no read-only hint,
+// so a read-only preset leaves it out. idempotent says a second call with
+// the same arguments changes nothing more.
+func writes(idempotent bool) mcp.ToolOption {
+	return mcp.WithToolAnnotation(mcp.ToolAnnotation{
+		ReadOnlyHint:    mcp.ToBoolPtr(false),
+		DestructiveHint: mcp.ToBoolPtr(false),
+		IdempotentHint:  mcp.ToBoolPtr(idempotent),
+		OpenWorldHint:   mcp.ToBoolPtr(true),
+	})
 }
 
 // readOnly is the annotation of a tool that changes nothing: the waits and

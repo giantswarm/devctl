@@ -112,7 +112,7 @@ func connectAs(t *testing.T, config mcpserver.Config, headers map[string]string)
 	return c, err
 }
 
-func greenPR() *prwaittest.GitHub {
+func greenHead() *prwaittest.GitHub {
 	return &prwaittest.GitHub{Heads: []prwaittest.Head{
 		{CheckRuns: []*github.CheckRun{prwaittest.CheckRun("test", "completed", "success")}},
 	}}
@@ -126,7 +126,7 @@ func prWaitArgs(repository string) map[string]any {
 // marked grant_required for it, which muster answers with the App's
 // sign-in link; no GitHub client is built.
 func TestGrantRequired(t *testing.T) {
-	s := &sources{pr: greenPR()}
+	s := &sources{pr: greenHead()}
 	c, err := connectAs(t, mcpserver.Config{
 		Credentials: mcpserver.MusterGrant{App: app, GitHubApp: "gazelle-agents", Installations: &installed{owners: []string{"giantswarm"}}},
 		Sources:     s,
@@ -155,7 +155,7 @@ func TestGrantRequired(t *testing.T) {
 // one every client of the call is built with, and the one the App's
 // installations are read with.
 func TestGrantActsAsThePerson(t *testing.T) {
-	s := &sources{pr: greenPR()}
+	s := &sources{pr: greenHead()}
 	i := &installed{owners: []string{"GiantSwarm"}}
 	c, err := connectAs(t, mcpserver.Config{
 		Credentials: mcpserver.MusterGrant{App: app, Installations: i},
@@ -178,7 +178,7 @@ func TestGrantActsAsThePerson(t *testing.T) {
 // TestRepositoryOutsideTheApp: a repository whose owner the App is not
 // installed on is not_applicable, naming the owner and the App.
 func TestRepositoryOutsideTheApp(t *testing.T) {
-	s := &sources{pr: greenPR()}
+	s := &sources{pr: greenHead()}
 	c, err := connectAs(t, mcpserver.Config{
 		Credentials: mcpserver.MusterGrant{App: app, GitHubApp: "gazelle-agents", Installations: &installed{owners: []string{"giantswarm"}}},
 		Sources:     s,
@@ -227,7 +227,7 @@ func TestCallTraced(t *testing.T) {
 	var logs bytes.Buffer
 	c, err := connectAs(t, mcpserver.Config{
 		Credentials: mcpserver.MusterGrant{App: app},
-		Sources:     &sources{pr: greenPR()},
+		Sources:     &sources{pr: greenHead()},
 		Clock:       virtual(),
 		Verifier:    sig.verifier,
 		Metrics:     metrics,
