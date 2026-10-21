@@ -51,6 +51,14 @@ metrics:
   # verdict) at /metrics on port.
   enabled: true
   port: 9090
+  serviceMonitor:
+    # -- Render a ServiceMonitor for the metrics port.
+    enabled: false
+    # -- Scrape interval; empty uses the Prometheus Operator default.
+    interval: ""
+    # -- Labels on the ServiceMonitor. The Giant Swarm observability platform
+    # routes a scrape to a Mimir tenant by observability.giantswarm.io/tenant.
+    labels: {}
 
 muster:
   mcpServer:
