@@ -148,15 +148,17 @@ type Merger struct {
 
 // New returns a Merger for config.
 func New(config Config) (*Merger, error) {
-	if config.Wait.GitHub == nil {
-		return nil, microerror.Maskf(invalidConfigError, "%T.Wait.GitHub must not be nil", config)
+	// The merge reads and writes beyond the wait's interface.
+	github, ok := config.Wait.GitHub.(*githubclient.Client)
+	if !ok || github == nil {
+		return nil, microerror.Maskf(invalidConfigError, "%T.Wait.GitHub must be a non-nil %T", config, github)
 	}
 	waiter, err := prwait.New(config.Wait)
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}
 	m := &Merger{
-		github:       config.Wait.GitHub,
+		github:       github,
 		waiter:       waiter,
 		clock:        config.Wait.Clock,
 		progress:     config.Wait.Progress,

@@ -1,0 +1,166 @@
+// Package mcpserver is devctl serve: the agent-facing commands as MCP tools
+// over streamable HTTP, acting on GitHub as the person who calls them.
+//
+// A tool answers with the command's JSON document, devctl's envelope
+// included, as structured content: the exit code is a field, and the call is
+// an MCP error only for auth_required. A wait is one call that blocks until
+// its verdict and sends notifications/progress on the caller's progressToken
+// meanwhile, at an interval below the server's registered timeout, so the
+// gateway restarts that timeout on each.
+//
+// What only a laptop needs is not here: no version gate, no keychain or
+// other credential store, no detached merge state on disk, no SIGHUP
+// handling and no DEVCTL_TIME_SCALE.
+package mcpserver
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"time"
+
+	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/mark3labs/mcp-go/server"
+
+	"github.com/giantswarm/devctl/v8/pkg/agentcli"
+	"github.com/giantswarm/devctl/v8/pkg/mergejob"
+)
+
+// Name is the server's name in its MCP implementation info.
+const Name = "devctl"
+
+// DefaultProgressInterval is how often a wait reports progress: below
+// muster's default registered timeout of 30 s with headroom.
+const DefaultProgressInterval = 10 * time.Second
+
+// MaxTimeout bounds a wait's own timeout: below the hour muster keeps a
+// progress-kept call alive at most, so the wait ends with devctl's own
+// timeout verdict, not the gateway's.
+const MaxTimeout = 55 * time.Minute
+
+// Credentials answer the GitHub token of the person a call is made for.
+type Credentials interface {
+	// GitHubToken is the person's token for the call in ctx; an
+	// [agentcli.ExitCoder] of [agentcli.ExitAuthRequired] when the server
+	// holds none for them.
+	GitHubToken(ctx context.Context) (string, error)
+}
+
+// NoCredentials is the server with no hand-over of a person's token: every
+// call that reads GitHub is auth_required.
+type NoCredentials struct{}
+
+// GitHubToken implements [Credentials].
+func (NoCredentials) GitHubToken(context.Context) (string, error) {
+	return "", agentcli.NewExitError(agentcli.ExitAuthRequired, agentcli.VerdictAuthRequired,
+		"this devctl server has no GitHub token for you: it is handed over by the platform once you signed in to its GitHub App")
+}
+
+// Config configures a Server.
+type Config struct {
+	// Version is the version the server reports: the binary's.
+	Version string
+	// Credentials answer the person's GitHub token; nil is [NoCredentials].
+	Credentials Credentials
+	// Sources build the clients a wait reads with; nil is [GitHubSources]
+	// over Endpoints.
+	Sources Sources
+	// Endpoints are GitHub's and the registries'; zero is
+	// [agentcli.DefaultEndpoints].
+	Endpoints agentcli.Endpoints
+	// Clock is the waits' clock; nil is the wall clock at scale 1, never
+	// DEVCTL_TIME_SCALE.
+	Clock *agentcli.Clock
+	// ProgressInterval is how often a wait reports progress; zero is
+	// DefaultProgressInterval.
+	ProgressInterval time.Duration
+	// Merges are the merges of this server pr_merge_status reads; nil is an
+	// empty [mergejob.Memory]. Nothing is kept on disk.
+	Merges mergejob.Jobs
+}
+
+// Server is devctl serve's MCP server.
+type Server struct {
+	mcp              *server.MCPServer
+	credentials      Credentials
+	sources          Sources
+	endpoints        agentcli.Endpoints
+	clock            agentcli.Clock
+	progressInterval time.Duration
+	merges           mergejob.Jobs
+}
+
+// New returns the server of config with its tools registered.
+func New(config Config) *Server {
+	if config.Credentials == nil {
+		config.Credentials = NoCredentials{}
+	}
+	if config.Endpoints == (agentcli.Endpoints{}) {
+		config.Endpoints = agentcli.DefaultEndpoints()
+	}
+	if config.Sources == nil {
+		config.Sources = GitHubSources{Endpoints: config.Endpoints}
+	}
+	clock := agentcli.NewClock(1, time.Now)
+	if config.Clock != nil {
+		clock = *config.Clock
+	}
+	if config.ProgressInterval <= 0 {
+		config.ProgressInterval = DefaultProgressInterval
+	}
+	if config.Merges == nil {
+		config.Merges = &mergejob.Memory{}
+	}
+	s := &Server{
+		mcp:              server.NewMCPServer(Name, config.Version, server.WithToolCapabilities(false)),
+		credentials:      config.Credentials,
+		sources:          config.Sources,
+		endpoints:        config.Endpoints,
+		clock:            clock,
+		progressInterval: config.ProgressInterval,
+		merges:           config.Merges,
+	}
+	s.mcp.AddTool(prWaitTool(), s.prWait)
+	s.mcp.AddTool(prMergeStatusTool(), s.prMergeStatus)
+	s.mcp.AddTool(releaseWaitTool(), s.releaseWait)
+	return s
+}
+
+// Handler is the streamable HTTP handler of the server, at every path.
+func (s *Server) Handler() http.Handler {
+	return server.NewStreamableHTTPServer(s.mcp)
+}
+
+// MCP is the server's MCP server, for in-process clients.
+func (s *Server) MCP() *server.MCPServer { return s.mcp }
+
+// answer finishes doc with err, the outcome of its command, and returns it as
+// the tool's result: structured content and its JSON as text, an MCP error
+// only for auth_required.
+func answer(doc agentcli.Document, ok agentcli.Verdict, err error) (*mcp.CallToolResult, error) {
+	doc.Finish(time.Now(), ok, err)
+	text, merr := json.Marshal(doc)
+	if merr != nil {
+		return nil, fmt.Errorf("encoding the document: %w", merr)
+	}
+	// The structured content is the JSON object the text carries.
+	var structured map[string]any
+	if err := json.Unmarshal(text, &structured); err != nil {
+		return nil, fmt.Errorf("decoding the document: %w", err)
+	}
+	result := mcp.NewToolResultStructured(structured, string(text))
+	result.IsError = agentcli.Exit(doc.Err()) == agentcli.ExitAuthRequired
+	return result, nil
+}
+
+// readOnly is the annotation of a tool that changes nothing: the waits and
+// pr_merge_status.
+func readOnly() mcp.ToolOption {
+	return mcp.WithToolAnnotation(mcp.ToolAnnotation{
+		ReadOnlyHint:    mcp.ToBoolPtr(true),
+		DestructiveHint: mcp.ToBoolPtr(false),
+		IdempotentHint:  mcp.ToBoolPtr(true),
+		OpenWorldHint:   mcp.ToBoolPtr(true),
+	})
+}

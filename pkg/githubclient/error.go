@@ -20,6 +20,12 @@ func IsNotFound(err error) bool {
 	return microerror.Cause(err) == notFoundError
 }
 
+// NotFound is the error of a read GitHub answers 404, what IsNotFound
+// asserts: for a GitHub of its own, a test double, to answer as the client.
+func NotFound(format string, args ...any) error {
+	return microerror.Maskf(notFoundError, format, args...)
+}
+
 var invalidConfigError = &microerror.Error{
 	Kind: "invalidConfigError",
 }

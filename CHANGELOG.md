@@ -9,6 +9,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `devctl serve`: the read-only agent-facing commands as MCP tools over streamable HTTP (`/mcp`): `pr_wait`,
+  `pr_merge_status` and `release_wait`, each with the read-only annotation. A tool answers the command's document,
+  devctl's envelope included, as structured content; the exit code is a field and the call is an MCP error only for
+  `auth_required`. A wait is one call that sends `notifications/progress` on the caller's `progressToken` every
+  `--progress-interval` (10s) until its verdict; a wait without a `progressToken` is refused at once, verdict
+  `progress_token_required` (exit 7). The server has no version gate, keychain, on-disk state, SIGHUP handling or
+  `DEVCTL_TIME_SCALE`; it reads no CircleCI, and until the platform hands it a person's GitHub token every call that
+  reads GitHub is `auth_required`.
 - `gen workflows --patch-candidates` (team file: `gen.ci.patchCandidates: true`): a patch of the last stable release
   is cut as a release candidate `vX.Y.Z-rc.N` too, on the default branch and on a fork line's maintenance branches,
   never tagged stable on its push, for a repository whose consumers take its next patch on their own. Every stable
@@ -24,6 +32,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- `prwait.Config.GitHub` is the `prwait.GitHub` interface `*githubclient.Client` satisfies, and the `pr wait` and
+  `pr merge status` documents are `prwait.Document` and `mergejob.StatusDocument`, shared by the CLI and the server.
 - The agent-facing engines (`pr wait`, `pr merge`, `release wait`, `release promote`, `rollout wait`) take clients built
   from tokens their caller hands in: `releasewait.NewSources`, `releasepromote.NewSources` (each from `Credentials`) and
   `rolloutwait.NewClient` (a `rest.Config`, a bearer token for one). The keychain, docker keychain, kubeconfig and tsh

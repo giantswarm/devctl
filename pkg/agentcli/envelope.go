@@ -55,6 +55,10 @@ const (
 	// VerdictListed: a read-only view (devctl ci jobs) was read in full; the
 	// document, not the verdict, says where the pipeline stands.
 	VerdictListed Verdict = "listed"
+	// VerdictProgressTokenRequired: devctl serve refused a wait called
+	// without a progressToken, exit 7: the progress notifications keep a
+	// wait's one call alive, so a wait without them is never started.
+	VerdictProgressTokenRequired Verdict = "progress_token_required"
 )
 
 // The exit codes of every agent-facing command. 6 and 9 say that devctl pr

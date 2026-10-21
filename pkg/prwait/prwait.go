@@ -22,6 +22,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/go-github/v93/github"
+
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
 	"github.com/giantswarm/devctl/v8/pkg/circleciclient"
 	"github.com/giantswarm/devctl/v8/pkg/githubclient"
@@ -39,6 +41,23 @@ const CircleCIConfigPath = ".circleci/config.yml"
 // through GraphQL's statusCheckRollup.
 const ChecksViaGraphQL = "graphql"
 
+// GitHub is what the wait reads from GitHub; *githubclient.Client is one.
+type GitHub interface {
+	JobLogs
+	PullRequest(ctx context.Context, owner, repo string, number int) (*github.PullRequest, error)
+	ReviewDecision(ctx context.Context, owner, repo string, number int) (string, error)
+	RequiredStatusContexts(ctx context.Context, owner, repo, branch string) ([]string, error)
+	WorkflowRunsForSHA(ctx context.Context, owner, repo, sha string) ([]*github.WorkflowRun, error)
+	CheckRollup(ctx context.Context, owner, repo, sha string) ([]*github.CheckRun, []*github.RepoStatus, error)
+	CheckRunsForRef(ctx context.Context, owner, repo, ref string) ([]*github.CheckRun, error)
+	CommitStatuses(ctx context.Context, owner, repo, ref string) ([]*github.RepoStatus, error)
+	FileExists(ctx context.Context, owner, repo, path, ref string) (bool, error)
+	CommitMessage(ctx context.Context, owner, repo, sha string) (string, error)
+	ListDirectory(ctx context.Context, owner, repo, path, ref string) ([]string, error)
+	InactiveWorkflowPaths(ctx context.Context, owner, repo string) (map[string]bool, error)
+	ReadFile(ctx context.Context, owner, repo, path, ref string) ([]byte, bool, error)
+}
+
 // RateSource reports the GitHub rate limit the newest response carried.
 type RateSource interface {
 	Rate() githubclient.RateLimit
@@ -54,7 +73,7 @@ type EntryFinder interface {
 type Config struct {
 	// GitHub is required. From [githubclient.NewConditional] its polls are
 	// conditional requests and Rate is the [githubclient.Conditional].
-	GitHub *githubclient.Client
+	GitHub GitHub
 	// Rate is where the poll interval comes from; nil polls at the floor.
 	Rate RateSource
 	// CircleCI returns the client once the head is known to carry a CircleCI
@@ -87,7 +106,7 @@ type Config struct {
 
 // Waiter runs waits.
 type Waiter struct {
-	github   *githubclient.Client
+	github   GitHub
 	rate     RateSource
 	circleci func(ctx context.Context) (*circleciclient.Client, error)
 	entries  EntryFinder
