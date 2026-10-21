@@ -2,6 +2,9 @@
 
 ```
 devctl serve [--address :8080] [--progress-interval 10s] [--release-promote]
+             [--grant-app <app>] [--github-app <name>]
+             [--oidc-issuer <url> --oidc-audience <aud>... [--oidc-ca-file <pem>]]
+             [--metrics-address :9090]
 ```
 
 Serves the agent-facing commands as MCP tools over streamable HTTP, at `/mcp` (`/healthz` answers 200). A platform runs
@@ -64,8 +67,22 @@ waits at scale 1 whatever `DEVCTL_TIME_SCALE` says.
 ## Credentials
 
 The server acts on GitHub with the token of the person a call is made for; with no token for them a call is
-`auth_required`. A promotion's document names the identity source `platform`. The private registry is read
-anonymously.
+`auth_required`. That token is the person's grant of the GitHub App muster keeps as `--grant-app` (muster's
+`aggregator.providerApps`; on a Giant Swarm installation the `<installation>-agents` App, the identity coding agents
+use for git): muster attaches it to every call in `X-Muster-Grant-<app>` once the person granted the App, because the
+server's `MCPServer` names the App in `spec.auth.providerApps`. The server stores no token and runs no sign-in.
+
+- No grant: `auth_required` with `status: grant_required` and `apps: [<app>]` in the structured content, which muster
+  answers with the App's sign-in link (`authUrl`); after the person signed in, the same call acts as them.
+- A repository whose owner the App is not installed on (`GET /user/installations` with the person's token, kept five
+  minutes): `not_applicable`, exit 3, naming the owner and the App (`--github-app`). Such a repository is for devctl on
+  a laptop.
+
+With `--oidc-issuer` every request carries the ID token muster forwards (`spec.auth.forwardToken`): signed by the issuer
+(`--oidc-ca-file` for a private CA) for one of the `--oidc-audience` audiences, or the request is refused with 401
+before any tool runs. Its subject is the caller of the call.
+
+A promotion's document names the identity source `platform`. The private registry is read anonymously.
 
 ## CircleCI through GitHub
 
@@ -88,3 +105,24 @@ so they post only once it ran in the tag pipeline.
 
 There is no `pr_rerun`, `ci_jobs`, `ci_rerun` or `release_rerun`, and no failed-log tail: they read or write CircleCI.
 A coding agent that meets a flaky job reports it, or pushes a commit that rebuilds.
+
+## Tracing
+
+Each call logs one JSON line on stderr — `tool`, the caller's `subject` and `email`, `repository`, `verdict`,
+`exitCode`, `duration` — and, with `--metrics-address`, counts it at `/metrics`:
+`devctl_mcp_tool_calls_total` and `devctl_mcp_tool_call_duration_seconds` by `tool`, `subject`, `repository` and
+`verdict`. A metric's `repository` is a GitHub `owner/repo` of a call past its usage checks, else empty; the email is
+in the log only.
+
+## Deployment
+
+The chart `helm/devctl` runs the server from the image CircleCI pushes on every tag, so the server and the binary share
+a version (its MCP `serverInfo.version`). One values change registers it with muster: `muster.mcpServer.enabled` with
+`github.grantApp` and `identity.issuer` / `identity.audiences` (and `identity.caSecret` for a private CA) renders one
+`MCPServer` with `toolPrefix: devctl` — tools `x_devctl_<tool>` — unpinned, `forwardToken: true`,
+`providerApps: [<grantApp>]`, `timeout` 30 s and `progress.maxDuration` 3600 s. It runs one replica: a merge lives in
+the memory of the replica that runs it.
+
+An installation's muster configuration adds the toolset presets `devctl` (`server: devctl`, every tool, the write
+tools included) and `devctl-read-only` (the waits, `pr_merge_status` and `reservation_list` by name), which resolves to
+the same devctl tools as muster's built-in `read-only`.
