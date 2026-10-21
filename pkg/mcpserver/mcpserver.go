@@ -17,6 +17,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -78,6 +80,14 @@ type Config struct {
 	// Merges are the merges of this server pr_merge_status reads; nil is an
 	// empty [mergejob.Memory]. Nothing is kept on disk.
 	Merges mergejob.Jobs
+	// Verifier checks the ID token the gateway forwards on every request
+	// and names the caller; nil verifies none, and every call is
+	// anonymous.
+	Verifier Verifier
+	// Metrics count the calls; nil counts none.
+	Metrics *Metrics
+	// Logger logs one line per call; nil logs nothing.
+	Logger *slog.Logger
 }
 
 // Server is devctl serve's MCP server.
@@ -89,6 +99,9 @@ type Server struct {
 	clock            agentcli.Clock
 	progressInterval time.Duration
 	merges           mergejob.Jobs
+	verifier         Verifier
+	metrics          *Metrics
+	logger           *slog.Logger
 }
 
 // New returns the server of config with its tools registered.
@@ -112,24 +125,35 @@ func New(config Config) *Server {
 	if config.Merges == nil {
 		config.Merges = &mergejob.Memory{}
 	}
+	if config.Logger == nil {
+		config.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+	}
 	s := &Server{
-		mcp:              server.NewMCPServer(Name, config.Version, server.WithToolCapabilities(false)),
 		credentials:      config.Credentials,
 		sources:          config.Sources,
 		endpoints:        config.Endpoints,
 		clock:            clock,
 		progressInterval: config.ProgressInterval,
 		merges:           config.Merges,
+		verifier:         config.Verifier,
+		metrics:          config.Metrics,
+		logger:           config.Logger,
 	}
+	s.mcp = server.NewMCPServer(Name, config.Version, server.WithToolCapabilities(false), server.WithToolHandlerMiddleware(s.observe))
 	s.mcp.AddTool(prWaitTool(), s.prWait)
 	s.mcp.AddTool(prMergeStatusTool(), s.prMergeStatus)
 	s.mcp.AddTool(releaseWaitTool(), s.releaseWait)
 	return s
 }
 
-// Handler is the streamable HTTP handler of the server, at every path.
+// Handler is the streamable HTTP handler of the server, at every path. With
+// a Verifier it refuses a request without an ID token it accepts.
 func (s *Server) Handler() http.Handler {
-	return server.NewStreamableHTTPServer(s.mcp)
+	handler := server.NewStreamableHTTPServer(s.mcp, server.WithHTTPContextFunc(httpContext))
+	if s.verifier == nil {
+		return handler
+	}
+	return authenticate(s.verifier, handler)
 }
 
 // MCP is the server's MCP server, for in-process clients.
