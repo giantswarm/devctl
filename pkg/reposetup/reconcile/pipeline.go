@@ -29,6 +29,14 @@ const stateOpen = "open"
 // config.yml merges into it at pipeline runtime.
 var PipelineFiles = []string{"workflows.yml", "custom.yml"}
 
+// E2ETestsDir is the directory of a repository's end-to-end tests, which
+// Heimdall runs on its pull requests.
+const E2ETestsDir = "tests/e2e"
+
+// HeimdallContext is the check run of Heimdall's gatekeeper, required once
+// it has reported on a repository with an [E2ETestsDir].
+const HeimdallContext = "Heimdall - PR Gatekeeper"
+
 // GateContexts returns the status contexts of the branch-side jobs of the
 // pipeline documents in files, sorted and without duplicates. A job counts
 // unless its branch filter restricts it to named branches (`only:`) or
