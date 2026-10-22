@@ -114,7 +114,8 @@ expires, so the cluster answers by the person's access:
 ```
 
 `caFile` (PEM) is the API's certificate authority, empty for the system roots; `issuer` is what the exchanged token
-must name, empty for the token endpoint without `/token`; `audience` defaults to `dex-k8s-authenticator`.
+must name, empty for the token endpoint without `/token`; `audience` defaults to `dex-k8s-authenticator`. Without
+`clientSecretFile` the client is a public one, named in the form (kubectl-gs's, for a server run on a laptop).
 
 ## What only a laptop has
 

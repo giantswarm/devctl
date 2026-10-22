@@ -56,7 +56,9 @@ func (d *dex) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	d.forms = append(d.forms, form)
 	d.mu.Unlock()
 	w.Header().Set("Content-Type", "application/json")
-	if id, secret, ok := r.BasicAuth(); !ok || id != "muster-token-exchange-graveler" || secret != "client-secret" {
+	id, secret, ok := r.BasicAuth()
+	public := !ok && r.PostForm.Get("client_id") == "public-client"
+	if !public && (!ok || id != "muster-token-exchange-graveler" || secret != "client-secret") {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte(`{"error":"invalid_client"}`))
 		return
@@ -112,6 +114,13 @@ func (a *apiServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // TLS servers whose certificate the installation file trusts.
 func graveler(t *testing.T, d *dex, a *apiServer) *mcpserver.DexExchange {
 	t.Helper()
+	return gravelerWith(t, d, a, "muster-token-exchange-graveler\n", "client-secret")
+}
+
+// gravelerWith is graveler with the exchange client clientID, and
+// clientSecret unless empty (a public client).
+func gravelerWith(t *testing.T, d *dex, a *apiServer, clientID, clientSecret string) *mcpserver.DexExchange {
+	t.Helper()
 	dexServer := httptest.NewTLSServer(d)
 	t.Cleanup(dexServer.Close)
 	api := httptest.NewTLSServer(a)
@@ -125,17 +134,20 @@ func graveler(t *testing.T, d *dex, a *apiServer) *mcpserver.DexExchange {
 		return path
 	}
 	ca := write("ca.pem", string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: api.Certificate().Raw})))
+	exchange := map[string]any{
+		"tokenEndpoint": dexServer.URL + "/token",
+		"issuer":        issuer,
+		"connectorId":   "giantswarm-simple-oidc",
+		"clientIdFile":  write("client-id", clientID),
+	}
+	if clientSecret != "" {
+		exchange["clientSecretFile"] = write("client-secret", clientSecret)
+	}
 	file := map[string]any{"installations": []map[string]any{{
 		"name":      "graveler",
 		"apiServer": api.URL,
 		"caFile":    ca,
-		"dex": map[string]any{
-			"tokenEndpoint":    dexServer.URL + "/token",
-			"issuer":           issuer,
-			"connectorId":      "giantswarm-simple-oidc",
-			"clientIdFile":     write("client-id", "muster-token-exchange-graveler\n"),
-			"clientSecretFile": write("client-secret", "client-secret"),
-		},
+		"dex":       exchange,
 	}}}
 	data, _ := json.Marshal(file)
 	clusters, err := mcpserver.ReadInstallations(write("installations.json", string(data)))
@@ -275,6 +287,30 @@ func TestRolloutWaitExchangesOncePerToken(t *testing.T) {
 	}
 	if d.exchanges != 1 {
 		t.Errorf("%d exchanges for %d requests, want 1", d.exchanges, len(a.callers))
+	}
+}
+
+// TestRolloutWaitPublicClient: an exchange client without a secret file is
+// a public one, named in the form instead of authenticating.
+func TestRolloutWaitPublicClient(t *testing.T) {
+	release, err := releasewaittest.GeneratedRelease("giantswarm", "devctl", &releasewaittest.Registry{}, "success")
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, a := &dex{}, &apiServer{}
+	c, err := connectAs(t, mcpserver.Config{
+		Credentials: person("ghu_person"),
+		Sources:     &sources{release: release},
+		Clusters:    gravelerWith(t, d, a, "public-client", ""),
+		Clock:       virtual(),
+	}, map[string]string{"Authorization": "Bearer " + aliceHub})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, doc := call(t, c, mcpserver.ToolRolloutWait, map[string]any{"installation": "graveler", "repository": "giantswarm/devctl", "version": "v1.2.3"}, "rollout-1")
+	assertVerdict(t, doc, agentcli.VerdictNotApplicable, agentcli.ExitNotApplicable)
+	if len(a.callers) == 0 || a.callers[0] != "alice@example.com" {
+		t.Errorf("the cluster saw %v, want alice", a.callers)
 	}
 }
 

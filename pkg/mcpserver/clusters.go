@@ -87,9 +87,10 @@ type Dex struct {
 	// as a cross-client audience; empty is dex-k8s-authenticator.
 	Audience string `json:"audience,omitempty"`
 	// ClientIDFile and ClientSecretFile hold the client the exchange
-	// authenticates as, read when the server starts.
+	// authenticates as, read when the server starts; without
+	// ClientSecretFile the client is a public one.
 	ClientIDFile     string `json:"clientIdFile"`
-	ClientSecretFile string `json:"clientSecretFile"`
+	ClientSecretFile string `json:"clientSecretFile,omitempty"`
 }
 
 // DefaultAudience is the client the API server of a Giant Swarm management
@@ -146,9 +147,11 @@ func NewDexExchange(installations []Installation) (*DexExchange, error) {
 		if err != nil {
 			return nil, fmt.Errorf("installation %s: the client id: %w", i.Name, err)
 		}
-		clientSecret, err := readFile(i.Dex.ClientSecretFile)
-		if err != nil {
-			return nil, fmt.Errorf("installation %s: the client secret: %w", i.Name, err)
+		clientSecret := ""
+		if i.Dex.ClientSecretFile != "" {
+			if clientSecret, err = readFile(i.Dex.ClientSecretFile); err != nil {
+				return nil, fmt.Errorf("installation %s: the client secret: %w", i.Name, err)
+			}
 		}
 		if i.Dex.Issuer == "" {
 			i.Dex.Issuer = strings.TrimSuffix(i.Dex.TokenEndpoint, "/token")
@@ -290,13 +293,19 @@ func (d *DexExchange) exchange(ctx context.Context, i installation, subject stri
 		"connector_id":         {i.Dex.ConnectorID},
 		"scope":                {"openid profile email groups audience:server:client_id:" + i.Dex.Audience},
 	}
+	if i.clientSecret == "" {
+		// A public client names itself in the form.
+		form.Set("client_id", i.clientID)
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, i.Dex.TokenEndpoint, strings.NewReader(form.Encode()))
 	if err != nil {
 		return "", time.Time{}, err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
-	req.SetBasicAuth(url.QueryEscape(i.clientID), url.QueryEscape(i.clientSecret))
+	if i.clientSecret != "" {
+		req.SetBasicAuth(url.QueryEscape(i.clientID), url.QueryEscape(i.clientSecret))
+	}
 	client := d.Client
 	if client == nil {
 		client = http.DefaultClient
