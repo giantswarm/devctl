@@ -51,6 +51,7 @@ spec:
             - serve
             - --address=:8080
             - --progress-interval={{ .Values.progressInterval }}
+            - --no-progress-timeout={{ .Values.noProgressTimeout }}
             {{- if .Values.metrics.enabled }}
             - --metrics-address=:{{ .Values.metrics.port }}
             {{- end }}

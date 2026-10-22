@@ -36,6 +36,11 @@ const Name = "devctl"
 // muster's default registered timeout of 30 s with headroom.
 const DefaultProgressInterval = 10 * time.Second
 
+// DefaultNoProgressTimeout bounds a wait called without a progressToken,
+// which no progress keeps alive: below muster's default registered timeout of
+// 30 s with headroom for pr_merge's merge call.
+const DefaultNoProgressTimeout = 20 * time.Second
+
 // MaxTimeout bounds a wait's own timeout: below the hour muster keeps a
 // progress-kept call alive at most, so the wait ends with devctl's own
 // timeout verdict, not the gateway's.
@@ -77,6 +82,10 @@ type Config struct {
 	// ProgressInterval is how often a wait reports progress; zero is
 	// DefaultProgressInterval.
 	ProgressInterval time.Duration
+	// NoProgressTimeout bounds a wait called without a progressToken, so
+	// it answers within the gateway's registered timeout; zero is
+	// DefaultNoProgressTimeout.
+	NoProgressTimeout time.Duration
 	// Merges are the merges of this server pr_merge_status reads; nil is an
 	// empty [mergejob.Memory]. pr_merge records its merges in them when they
 	// take a Put, as a Memory does. Nothing is kept on disk.
@@ -107,10 +116,12 @@ type Server struct {
 	endpoints        agentcli.Endpoints
 	clock            agentcli.Clock
 	progressInterval time.Duration
-	merges           mergejob.Jobs
-	verifier         Verifier
-	metrics          *Metrics
-	logger           *slog.Logger
+	// noProgressTimeout bounds a wait called without a progressToken.
+	noProgressTimeout time.Duration
+	merges            mergejob.Jobs
+	verifier          Verifier
+	metrics           *Metrics
+	logger            *slog.Logger
 	// pulls serialize the merges of one pull request, by owner/repo#number.
 	pulls pulls
 }
@@ -133,6 +144,9 @@ func New(config Config) *Server {
 	if config.ProgressInterval <= 0 {
 		config.ProgressInterval = DefaultProgressInterval
 	}
+	if config.NoProgressTimeout <= 0 {
+		config.NoProgressTimeout = DefaultNoProgressTimeout
+	}
 	if config.Merges == nil {
 		config.Merges = &mergejob.Memory{}
 	}
@@ -140,23 +154,24 @@ func New(config Config) *Server {
 		config.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
 	s := &Server{
-		credentials:      config.Credentials,
-		sources:          config.Sources,
-		endpoints:        config.Endpoints,
-		clock:            clock,
-		progressInterval: config.ProgressInterval,
-		merges:           config.Merges,
-		verifier:         config.Verifier,
-		metrics:          config.Metrics,
-		logger:           config.Logger,
+		credentials:       config.Credentials,
+		sources:           config.Sources,
+		endpoints:         config.Endpoints,
+		clock:             clock,
+		progressInterval:  config.ProgressInterval,
+		noProgressTimeout: config.NoProgressTimeout,
+		merges:            config.Merges,
+		verifier:          config.Verifier,
+		metrics:           config.Metrics,
+		logger:            config.Logger,
 	}
 	s.mcp = server.NewMCPServer(Name, config.Version, server.WithToolCapabilities(false), server.WithToolHandlerMiddleware(s.observe))
-	s.mcp.AddTool(prWaitTool(), s.prWait)
-	s.mcp.AddTool(prMergeTool(), s.prMerge)
+	s.mcp.AddTool(prWaitTool(s.noProgressTimeout), s.prWait)
+	s.mcp.AddTool(prMergeTool(s.noProgressTimeout), s.prMerge)
 	s.mcp.AddTool(prMergeStatusTool(), s.prMergeStatus)
-	s.mcp.AddTool(releaseWaitTool(), s.releaseWait)
+	s.mcp.AddTool(releaseWaitTool(s.noProgressTimeout), s.releaseWait)
 	if config.ReleasePromote {
-		s.mcp.AddTool(releasePromoteTool(), s.releasePromote)
+		s.mcp.AddTool(releasePromoteTool(s.noProgressTimeout), s.releasePromote)
 	}
 	return s
 }

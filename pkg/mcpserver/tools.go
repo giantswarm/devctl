@@ -21,12 +21,19 @@ const (
 	ToolReleaseWait   = "release_wait"
 )
 
+// progressDescription is what a blocking tool's description says about the
+// progressToken, for a server whose no-progress timeout is noProgress.
+func progressDescription(noProgress time.Duration) string {
+	return "Call it with a progressToken; it reports progress until its verdict. " +
+		fmt.Sprintf("Without one it answers within %s with the verdict reached by then, timeout (exit 2) while still pending: call it again to go on. ", noProgress)
+}
+
 const timeoutDescription = "How long the wait may take, a Go duration (30m, 1h); at most 55m. Default 30m."
 
-func prWaitTool() mcp.Tool {
+func prWaitTool(noProgress time.Duration) mcp.Tool {
 	return mcp.NewTool(ToolPRWait,
 		mcp.WithDescription("Wait until a pull request's head is green, red, or cannot become green as it is, in one call: devctl pr wait. "+
-			"Call it with a progressToken; it reports progress until its verdict. "+
+			progressDescription(noProgress)+
 			"Answers devctl's document: verdict green, red, timeout, not_applicable, required_missing, approval_required, no_checks or auth_required, and its exitCode."),
 		mcp.WithString("repository", mcp.Required(), mcp.Description("The repository, owner/repo.")),
 		mcp.WithInteger("number", mcp.Required(), mcp.Description("The pull request's number.")),
@@ -56,9 +63,7 @@ func (s *Server) runPRWait(ctx context.Context, request mcp.CallToolRequest, doc
 		return err
 	}
 	token := progressToken(request)
-	if token == nil {
-		return errNoProgressToken(ToolPRWait)
-	}
+	timeout = s.bound(token, ToolPRWait, timeout, doc.Warn)
 	githubToken, err := s.credentials.GitHubToken(ctx)
 	if err != nil {
 		return err
@@ -104,10 +109,10 @@ func (s *Server) prMergeStatus(_ context.Context, request mcp.CallToolRequest) (
 	return answer(&doc, ok, err)
 }
 
-func releaseWaitTool() mcp.Tool {
+func releaseWaitTool(noProgress time.Duration) mcp.Tool {
 	return mcp.NewTool(ToolReleaseWait,
 		mcp.WithDescription("Wait until a release's images and charts are pullable and its tag pipeline is green, in one call: devctl release wait. "+
-			"Name exactly one of version and pr. Call it with a progressToken; it reports progress until its verdict. "+
+			"Name exactly one of version and pr. "+progressDescription(noProgress)+
 			"Answers devctl's document: verdict available, ci_failed, timeout, not_applicable, no_release, ambiguous_release, status_failed or auth_required, and its exitCode."),
 		mcp.WithString("repository", mcp.Required(), mcp.Description("The repository, owner/repo.")),
 		mcp.WithString("version", mcp.Description("The release's version, vX.Y.Z or X.Y.Z.")),
@@ -148,9 +153,7 @@ func (s *Server) runReleaseWait(ctx context.Context, request mcp.CallToolRequest
 		return err
 	}
 	token := progressToken(request)
-	if token == nil {
-		return errNoProgressToken(ToolReleaseWait)
-	}
+	timeout = s.bound(token, ToolReleaseWait, timeout, doc.Warn)
 	githubToken, err := s.credentials.GitHubToken(ctx)
 	if err != nil {
 		return err

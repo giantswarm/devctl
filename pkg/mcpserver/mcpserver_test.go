@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -316,42 +317,69 @@ func TestPRWaitVerdicts(t *testing.T) {
 // TestPRWaitAuthRequired: a person the server holds no token for gets
 // auth_required, the one verdict that is an MCP error.
 func TestPRWaitAuthRequired(t *testing.T) {
-	s := &sources{pr: &prwaittest.GitHub{}}
-	c, _ := connect(t, mcpserver.Config{Sources: s})
-	result, doc := call(t, c, mcpserver.ToolPRWait, map[string]any{"repository": "giantswarm/devctl", "number": 7}, "wait-1")
-	assertVerdict(t, doc, agentcli.VerdictAuthRequired, agentcli.ExitAuthRequired)
-	if !result.IsError {
-		t.Error("auth_required is not an MCP error")
-	}
-	if s.pr.Polls() != 0 {
-		t.Errorf("GitHub was read %d times without a token", s.pr.Polls())
+	for name, token := range map[string]mcp.ProgressToken{"with a progressToken": "wait-1", "without a progressToken": nil} {
+		t.Run(name, func(t *testing.T) {
+			s := &sources{pr: &prwaittest.GitHub{}}
+			c, _ := connect(t, mcpserver.Config{Sources: s})
+			result, doc := call(t, c, mcpserver.ToolPRWait, map[string]any{"repository": "giantswarm/devctl", "number": 7}, token)
+			assertVerdict(t, doc, agentcli.VerdictAuthRequired, agentcli.ExitAuthRequired)
+			if !result.IsError {
+				t.Error("auth_required is not an MCP error")
+			}
+			if s.pr.Polls() != 0 {
+				t.Errorf("GitHub was read %d times without a token", s.pr.Polls())
+			}
+		})
 	}
 }
 
-// TestWaitWithoutProgressTokenIsRefused: a wait called without a
-// progressToken is refused at once, nothing read.
-func TestWaitWithoutProgressTokenIsRefused(t *testing.T) {
-	for _, tool := range []struct {
-		name string
-		args map[string]any
+// TestWaitWithoutProgressToken: a wait called without a progressToken
+// answers within the no-progress timeout, whatever its timeout argument, with
+// the verdict it reached by then, timeout while pending, a warning saying how
+// to go on, and no progress notification.
+func TestWaitWithoutProgressToken(t *testing.T) {
+	pending := prwaittest.Head{CheckRuns: []*github.CheckRun{prwaittest.CheckRun("test", "in_progress", "")}}
+	green := prwaittest.Head{CheckRuns: []*github.CheckRun{prwaittest.CheckRun("test", "completed", "success")}}
+	tests := []struct {
+		name      string
+		tool      string
+		args      map[string]any
+		heads     []prwaittest.Head
+		workflows []string
+		verdict   agentcli.Verdict
+		exit      int
 	}{
-		{mcpserver.ToolPRWait, map[string]any{"repository": "giantswarm/devctl", "number": 7}},
-		{mcpserver.ToolReleaseWait, map[string]any{"repository": "giantswarm/devctl", "version": "v1.2.3"}},
-	} {
-		t.Run(tool.name, func(t *testing.T) {
-			s := &sources{pr: &prwaittest.GitHub{}}
-			c, n := connect(t, mcpserver.Config{Credentials: person("ghu_person"), Sources: s})
-			start := time.Now()
-			result, doc := call(t, c, tool.name, tool.args, nil)
-			if took := time.Since(start); took > 2*time.Second {
-				t.Errorf("the refusal took %s", took)
+		{name: "pr_wait, green", tool: mcpserver.ToolPRWait, heads: []prwaittest.Head{pending, green}, verdict: agentcli.VerdictGreen},
+		{name: "pr_wait, pending", tool: mcpserver.ToolPRWait, heads: []prwaittest.Head{pending}, verdict: agentcli.VerdictTimeout, exit: agentcli.ExitTimeout},
+		{name: "release_wait, available", tool: mcpserver.ToolReleaseWait, workflows: []string{"success"}, verdict: agentcli.VerdictAvailable},
+		{name: "release_wait, pending", tool: mcpserver.ToolReleaseWait, workflows: []string{"running"}, verdict: agentcli.VerdictTimeout, exit: agentcli.ExitTimeout},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &sources{pr: &prwaittest.GitHub{Heads: tt.heads}}
+			args := map[string]any{"repository": "giantswarm/devctl", "number": 7, "timeout": "30m"}
+			if tt.tool == mcpserver.ToolReleaseWait {
+				release, err := releasewaittest.GeneratedRelease("giantswarm", "devctl", &releasewaittest.Registry{}, tt.workflows...)
+				if err != nil {
+					t.Fatal(err)
+				}
+				s.release = release
+				args = map[string]any{"repository": "giantswarm/devctl", "version": "v1.2.3", "timeout": "30m"}
 			}
-			assertVerdict(t, doc, agentcli.VerdictProgressTokenRequired, agentcli.ExitUsage)
+			c, n := connect(t, mcpserver.Config{Credentials: person("ghu_person"), Sources: s, Clock: virtual(), NoProgressTimeout: 20 * time.Second})
+			result, doc := call(t, c, tt.tool, args, nil)
+			assertVerdict(t, doc, tt.verdict, tt.exit)
 			if result.IsError {
-				t.Error("the refusal is an MCP error")
+				t.Errorf("%s is an MCP error", tt.verdict)
 			}
-			if len(s.tokens) != 0 || len(n.all()) != 0 {
-				t.Errorf("the refused wait read GitHub (%v) or sent progress (%d)", s.tokens, len(n.all()))
+			if tt.exit == agentcli.ExitTimeout && !strings.Contains(stringOf(doc["reason"]), "20s") {
+				t.Errorf("the reason %q names no timeout of 20s", doc["reason"])
+			}
+			if !hasWarning(doc, "called without a progressToken") {
+				t.Errorf("no warning on how to go on: %v", doc["warnings"])
+			}
+			if got := len(n.all()); got != 0 {
+				t.Errorf("%d progress notifications without a progressToken", got)
 			}
 		})
 	}
