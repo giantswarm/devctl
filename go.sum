@@ -162,8 +162,8 @@ github.com/fxamacker/cbor/v2 v2.9.2 h1:X4Ksno9+x3cz0TZv69ec1hxP/+tymuR8PXQJyDwfh
 github.com/fxamacker/cbor/v2 v2.9.2/go.mod h1:vM4b+DJCtHn+zz7h3FFp/hDAI9WNWCsZj23V5ytsSxQ=
 github.com/giantswarm/gitsemver/v3 v3.0.1 h1:LFSmiim+ArIzTK8O/XIPbs37/WHRNEk+uIzwvNjYEto=
 github.com/giantswarm/gitsemver/v3 v3.0.1/go.mod h1:0XlTQzT118MezezrJgVxj86UXV+lT7gc6njwIpxlC1M=
-github.com/giantswarm/go-selfupdate v1.6.6 h1:ZpijF9fDo8/uCHj8asTpOkY9P0oop8CKoWJV5MrbEHQ=
-github.com/giantswarm/go-selfupdate v1.6.6/go.mod h1:ZRK84xA7SPPJ+y9c988e8UZ0MuV/QNbWT4mjwBj963I=
+github.com/giantswarm/go-selfupdate v1.6.7 h1:bpDO//KDxmKOQaCe7wV5icFjMIDrLY2pbUFRcea382E=
+github.com/giantswarm/go-selfupdate v1.6.7/go.mod h1:ZRK84xA7SPPJ+y9c988e8UZ0MuV/QNbWT4mjwBj963I=
 github.com/giantswarm/microerror v0.4.1 h1:WMiD7HQASoUA9lZzPlPK+erCEOJ0uT4cyo18VfCXHD0=
 github.com/giantswarm/microerror v0.4.1/go.mod h1:URFj0gFCmZihjya6saQCXxslBrgctXb4NsXYHB5JdrI=
 github.com/giantswarm/micrologger v1.1.2 h1:dNmnGZgAT0rnZkpc2ivj1shJ3Stnnjsy7jIi84//Jqc=

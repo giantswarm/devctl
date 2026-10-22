@@ -177,3 +177,150 @@ func TestNewRejectsAWrongGitHubAPIURL(t *testing.T) {
 		t.Errorf("New: %v, want an invalid config", err)
 	}
 }
+
+// releaseJSON is a release of giantswarm/devctl carrying this platform's
+// binary, or none when complete is false.
+func releaseJSON(id int64, tag string, complete bool) map[string]any {
+	rel := map[string]any{"id": id, "tag_name": tag, "html_url": repositoryURL + "/releases/tag/" + tag, "assets": []map[string]any{}}
+	if complete {
+		rel["assets"] = []map[string]any{{"id": id * 10, "name": binaryAsset(), "browser_download_url": "https://example.test/" + binaryAsset()}}
+	}
+	return rel
+}
+
+// flakyGitHub serves giantswarm/devctl's release lists, one per request and
+// the last one from then on, and its latest release with latestStatus.
+// listed counts the list requests.
+type flakyGitHub struct {
+	lists        [][]map[string]any
+	latestStatus int
+	latest       map[string]any
+	listed       int
+}
+
+func (g *flakyGitHub) source(t *testing.T) *githubSource {
+	t.Helper()
+	prev := listRetryDelay
+	listRetryDelay = 0
+	t.Cleanup(func() { listRetryDelay = prev })
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /repos/giantswarm/devctl/releases", func(w http.ResponseWriter, _ *http.Request) {
+		g.listed++
+		_ = json.NewEncoder(w).Encode(g.lists[min(g.listed, len(g.lists))-1])
+	})
+	mux.HandleFunc("GET /repos/giantswarm/devctl/releases/latest", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(g.latestStatus)
+		_ = json.NewEncoder(w).Encode(g.latest)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	s, err := newGitHubSource(selfupdate.ParseSlug("giantswarm/devctl"), srv.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+func (g *flakyGitHub) detectLatest(t *testing.T) (*selfupdate.Release, bool) {
+	t.Helper()
+	up, err := selfupdate.NewUpdater(selfupdate.Config{Source: g.source(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rel, found, err := up.DetectLatest(context.Background(), selfupdate.ParseSlug("giantswarm/devctl"))
+	if err != nil {
+		t.Fatalf("DetectLatest: %v", err)
+	}
+	return rel, found
+}
+
+// GitHub intermittently lists no release; the latest release is the most
+// recently published one, here a fix of an older line.
+func TestAnEmptyListIsAskedForAgain(t *testing.T) {
+	g := &flakyGitHub{
+		lists:        [][]map[string]any{{}, {releaseJSON(3, "v1.0.1", true), releaseJSON(2, "v2.0.0", true)}},
+		latestStatus: http.StatusOK,
+		latest:       releaseJSON(3, "v1.0.1", true),
+	}
+	rel, found := g.detectLatest(t)
+	if !found || rel.Version() != newerVersion {
+		t.Fatalf("DetectLatest = %v, %v; want %s", rel, found, newerVersion)
+	}
+	if g.listed != 2 {
+		t.Errorf("the list was asked for %d times, want 2", g.listed)
+	}
+}
+
+func TestTheLatestReleaseIsFoundWhenTheListStaysEmpty(t *testing.T) {
+	g := &flakyGitHub{lists: [][]map[string]any{{}}, latestStatus: http.StatusOK, latest: releaseJSON(2, "v2.0.0", true)}
+	rel, found := g.detectLatest(t)
+	if !found || rel.Version() != newerVersion {
+		t.Fatalf("DetectLatest = %v, %v; want %s", rel, found, newerVersion)
+	}
+	if g.listed != 1+listRetries {
+		t.Errorf("the list was asked for %d times, want %d", g.listed, 1+listRetries)
+	}
+}
+
+// A release's assets upload after it is published.
+func TestALatestReleaseWithoutAssetsFallsBackToTheListed(t *testing.T) {
+	g := &flakyGitHub{
+		lists:        [][]map[string]any{{releaseJSON(1, "v1.0.0", true)}},
+		latestStatus: http.StatusOK,
+		latest:       releaseJSON(2, "v2.0.0", false),
+	}
+	rel, found := g.detectLatest(t)
+	if !found || rel.Version() != currentVersion {
+		t.Fatalf("DetectLatest = %v, %v; want %s", rel, found, currentVersion)
+	}
+}
+
+func TestListReleasesWithTheLatestRelease(t *testing.T) {
+	listed := []map[string]any{releaseJSON(1, "v1.0.0", true)}
+	for _, tc := range []struct {
+		name         string
+		list         []map[string]any
+		latestStatus int
+		want         []string
+		wantErr      bool
+	}{
+		{"latest added", listed, http.StatusOK, []string{"v1.0.0", "v2.0.0"}, false},
+		{"latest listed once", []map[string]any{releaseJSON(2, "v2.0.0", true)}, http.StatusOK, []string{"v2.0.0"}, false},
+		{"no release yet", []map[string]any{}, http.StatusNotFound, []string{}, false},
+		{"latest fails, the list stands", listed, http.StatusBadGateway, []string{"v1.0.0"}, false},
+		{"latest fails, nothing listed", []map[string]any{}, http.StatusBadGateway, nil, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			g := &flakyGitHub{lists: [][]map[string]any{tc.list}, latestStatus: tc.latestStatus, latest: releaseJSON(2, "v2.0.0", true)}
+			rels, err := g.source(t).ListReleases(context.Background(), selfupdate.ParseSlug("giantswarm/devctl"))
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("ListReleases answered, want an error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			tags := []string{}
+			for _, rel := range rels {
+				tags = append(tags, rel.GetTagName())
+			}
+			if !slices.Equal(tags, tc.want) {
+				t.Errorf("listed %v, want %v", tags, tc.want)
+			}
+		})
+	}
+}
+
+func TestTheRetryEndsWithTheContext(t *testing.T) {
+	g := &flakyGitHub{lists: [][]map[string]any{{}}, latestStatus: http.StatusOK, latest: releaseJSON(2, "v2.0.0", true)}
+	s := g.source(t)
+	listRetryDelay = time.Hour
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	if _, err := s.ListReleases(ctx, selfupdate.ParseSlug("giantswarm/devctl")); !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("ListReleases: %v, want the context's deadline", err)
+	}
+}

@@ -99,6 +99,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `version update`, `version check` and the version check before every command find the latest release while GitHub
+  answers its release list with no release at all, which it does intermittently: an empty list is asked for again
+  twice, and the latest release, asked for on its own, is added when the list lacks it. go-selfupdate v1.6.7 carries
+  the same fix for its own GitHub source.
 - `rollout wait --pr` of a configuration change follows the HelmReleases a Kustomization changed with the merge
   commit: the HelmRelease itself (until helm-controller observed its new generation), a ConfigMap or Secret of its
   `valuesFrom` or its chart source (until it deployed after kustomize-controller wrote them). A management-clusters
