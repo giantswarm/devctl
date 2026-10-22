@@ -56,6 +56,7 @@ func ListKinds() map[schema.GroupVersionResource]string {
 		kustomizations:  "KustomizationList",
 		konfigurations:  "KonfigurationList",
 		configMaps:      "ConfigMapList",
+		secrets:         "SecretList",
 		charts:          "ChartList",
 	}
 }
@@ -80,17 +81,23 @@ type object struct {
 
 func (o object) String() string { return o.kind + " " + o.namespace + "/" + o.name }
 
-// list lists a resource in namespace (all namespaces when empty). A resource
-// the cluster does not serve (the App CRD on a cluster without app-operator)
-// lists as empty.
+// list lists a resource in namespace (all namespaces when empty), once per
+// poll. A resource the cluster does not serve (the App CRD on a cluster
+// without app-operator) lists as empty.
 func (w *Waiter) list(ctx context.Context, resource schema.GroupVersionResource, namespace string) ([]unstructured.Unstructured, error) {
+	key := resource.String() + "|" + namespace
+	if items, ok := w.listed[key]; ok {
+		return items, nil
+	}
 	list, err := w.client.Resource(resource).Namespace(namespace).List(ctx, metav1.ListOptions{})
 	if apierrors.IsNotFound(err) {
+		w.listed[key] = nil
 		return nil, nil
 	}
 	if err != nil {
 		return nil, w.clusterErr("listing "+resource.Resource, err)
 	}
+	w.listed[key] = list.Items
 	return list.Items, nil
 }
 

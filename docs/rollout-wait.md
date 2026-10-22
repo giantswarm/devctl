@@ -55,6 +55,7 @@ When `--pr` names a pull request no release follows (a giantswarm-configs change
 | Flux `Kustomization` | its `spec.sourceRef` is one of those GitRepositories | `lastAppliedRevision` contains the merge commit, Ready at its generation |
 | `Konfiguration` (`konfigure.giantswarm.io`) | its `spec.sources.flux.gitRepository` is one of them | `lastAppliedRevision` contains the merge commit, Ready |
 | Flux `HelmRelease` | its `valuesFrom` takes the ConfigMap or Secret a Konfiguration renders for an app the pull request changed (`installations/<installation>/apps/<app>/`, `default/apps/<app>/`), or `--helmrelease` names it | the rendered ConfigMap's `configuration.giantswarm.io/revision` contains the merge commit, the HelmRelease deployed after that ConfigMap was written, took values other than its previous deploy's (`status.history[].configDigest`) after the pull request merged, deployed only after the merge as far as `status.history` keeps (the deploy that took the change evicted), or handled a `--reconcile` request made after the ConfigMap was written; Ready, its workloads rolled out |
+| Flux `HelmRelease` of a Kustomization | one of those Kustomizations changed it since the pull request merged (its `status.inventory` holds it and kustomize-controller's field-manager entry is newer than the merge: a chart range or another spec field), changed a ConfigMap or Secret of its `valuesFrom`, or changed the OCIRepository or HelmChart its `spec.chartRef` names; or `--helmrelease` names it | a changed HelmRelease: helm-controller observed its new generation, Ready with no reconcile in flight, its workloads rolled out; changed values or chart source: the HelmRelease deployed no earlier than kustomize-controller wrote them (`source` names them, `follows` the Kustomization) or handled a `--reconcile` request, Ready, its workloads rolled out; a failed install, upgrade or test since is exit 1; a named HelmRelease nothing changed: Ready at its generation, its workloads rolled out |
 | `App` (`application.giantswarm.io/v1alpha1`) | its `spec.config` or `spec.userConfig` names the ConfigMap or Secret a Konfiguration renders for an app the pull request changed | the rendered ConfigMap contains the merge commit, the App's `status.release.lastDeployed` is after that ConfigMap was written or, for an App in the management cluster, after app-operator last changed the values it merges for the App's Chart, which it did after the pull request merged; its release `deployed` at its `spec.version` (`runningVersion`), its workloads rolled out |
 | `ConfigMap` | a Konfiguration renders it for an app the pull request changed and no HelmRelease or App takes it | never: `state` `unknown`, whether the change runs cannot be told |
 
@@ -65,7 +66,9 @@ installation's files change nothing here. konfigure-operator re-labels a rendere
 revision it applies, so its last write says when it was last rendered, not when its values changed: a
 deployment that took new values after the merge runs the change although the ConfigMap was written since
 (an older revision konfigure-operator renders after the merge, within its fetch interval, is not told
-apart). A Kustomization or Konfiguration whose attempt at the revision
+apart). kustomize-controller writes an object only when the repository changed it, so its field-manager entry
+says when the change landed: a pull request that changes no HelmRelease, values or chart source returns once
+the source and the Kustomizations applied it. A Kustomization or Konfiguration whose attempt at the revision
 failed, or an App whose release failed with the new values, is exit 1; once everything else is applied, a
 changed app whose values nothing takes is exit 3, verdict `rollout_unknown`, never `rolled_out`; nothing on the installation fetching the repository keeps the `no_release` verdict, exit
 3, its reason saying so; a GitRepository nothing reads (one included into another) is exit 3. `--reconcile`
@@ -101,7 +104,8 @@ A chart is deployed by one of:
 
 Every match on the cluster is judged; none is exit 3. `--helmrelease <name>` or
 `--helmrelease <namespace>/<name>` (repeatable) adds a HelmRelease whatever chart it deploys; a name no
-HelmRelease on the cluster answers to is exit 3. One of the release's charts is judged the same way against
+HelmRelease on the cluster answers to is exit 3, the reason naming how many HelmReleases it looked through, in
+all namespaces of the context. One of the release's charts is judged the same way against
 the version. One of none of them (a component a meta chart renders, on a version line of its own) is judged
 by itself: rolled out once it is Ready at its current generation (`status.observedGeneration`) with no
 reconcile in flight (`Reconciling` not True) and its workloads are rolled out; `Progressing` or
@@ -111,13 +115,14 @@ exit 1. `--reconcile` does not ask it to reconcile.
 ### When a deployment has rolled out
 
 It runs the version or a newer one (a newer one with a warning), the HelmRelease is Ready at its
-current generation, and every Deployment, StatefulSet and DaemonSet of its Helm release (Helm's
+current generation, and every Deployment, StatefulSet, DaemonSet and Flux HelmRelease of its Helm release (Helm's
 `meta.helm.sh/release-name` and `release-namespace` annotations, in any namespace: kagent's chart
 renders its controller into `kagent` from a release in `agent-platform`) is rolled
 out the way `kubectl rollout status` judges it: the new generation observed, every replica updated,
 no old replica left, the updated ones available (a StatefulSet: ready and at the update revision or
 above its partition; a DaemonSet: every scheduled pod updated and available; `OnDelete` counts as
-rolled out). The workloads of a HelmRelease with `spec.kubeConfig` or of an App into a workload cluster
+rolled out; a HelmRelease a meta chart renders: its generation observed, Ready with no reconcile in flight,
+its dependencies included, a suspended one counted, Stalled or a failed install, upgrade or test exit 1). The workloads of a HelmRelease with `spec.kubeConfig` or of an App into a workload cluster
 live elsewhere and are not read; a warning says so.
 
 ### When a deployment will not get there
