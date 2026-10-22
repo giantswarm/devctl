@@ -1,0 +1,341 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+        "affinity": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "baseDomain": {
+            "type": "string"
+        },
+        "bootstrapMode": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "chartOperator": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "ciliumNetworkPolicy": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "cluster": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "clusterCA": {
+            "type": "string"
+        },
+        "clusterCIDR": {
+            "type": "string"
+        },
+        "clusterDNSIP": {
+            "type": "string"
+        },
+        "clusterID": {
+            "type": "string"
+        },
+        "extraArgs": {
+            "type": "array",
+            "description": "Extra arguments to devctl serve."
+        },
+        "extraEnv": {
+            "type": "array",
+            "description": "Extra environment variables (DEVCTL_GITHUB_API_URL and the other endpoints of devctl's agent-facing commands)."
+        },
+        "fullnameOverride": {
+            "type": "string",
+            "description": "Override the full release name."
+        },
+        "gcpProject": {
+            "type": "string"
+        },
+        "github": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "app": {
+                    "type": "string",
+                    "description": "The GitHub App behind grantApp (`<installation>-agents`), as an auth_required or not_applicable answer names it; empty is grantApp."
+                },
+                "grantApp": {
+                    "type": "string",
+                    "description": "The provider App muster keeps whose grant carries the person's GitHub token (muster's providerApps entry, the workspace-manager's provider instance name): muster attaches it in X-Muster-Grant-<grantApp> and the server acts on GitHub with it. Required with muster.mcpServer.enabled."
+                }
+            }
+        },
+        "global": {
+            "type": [
+                "object",
+                "null"
+            ],
+            "description": "Global values shared between all subcharts",
+            "$comment": "Added automatically by 'helm schema' to allow this chart to be used as a Helm dependency, as this schema would otherwise not allow Helm's special 'global' values key."
+        },
+        "image": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "pullPolicy": {
+                    "type": "string"
+                },
+                "registry": {
+                    "type": "string"
+                },
+                "repository": {
+                    "type": "string"
+                },
+                "tag": {
+                    "type": "string",
+                    "description": "Empty is the chart's appVersion: the devctl release the chart ships with, so the server and the binary share a version."
+                }
+            }
+        },
+        "imagePullSecrets": {
+            "type": "array"
+        },
+        "installations": {
+            "type": "object",
+            "description": "The installations rollout_wait reads as the person, by name: the server exchanges the person's Dex token, which muster forwards, at the installation's Dex for a token its management cluster's API accepts, with the client the hub's muster presents there (the Secret `<name>-token-exchange-credentials` in the release namespace, keys client-id and client-secret, read at start). baseDomain derives the rest: apiServer `https://happaapi.<baseDomain>`, dex.tokenEndpoint `https://dex.<baseDomain>/token`, dex.issuer `https://dex.<baseDomain>`; each can be set instead, with dex.connectorId (giantswarm-simple-oidc), dex.audience (dex-k8s-authenticator) and credentialsSecret. Empty: rollout_wait reaches no installation.",
+            "additionalProperties": true
+        },
+        "metrics": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "description": "Serve the call metrics (devctl_mcp_tool_calls_total and devctl_mcp_tool_call_duration_seconds, by tool, the caller's GitHub login and user id, repository and verdict) at /metrics on port."
+                },
+                "port": {
+                    "type": "integer"
+                },
+                "serviceMonitor": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "enabled": {
+                            "type": "boolean",
+                            "description": "Render a ServiceMonitor for the metrics port."
+                        },
+                        "interval": {
+                            "type": "string",
+                            "description": "Scrape interval; empty uses the Prometheus Operator default."
+                        },
+                        "labels": {
+                            "type": "object",
+                            "description": "Labels on the ServiceMonitor. The Giant Swarm observability platform routes a scrape to a Mimir tenant by observability.giantswarm.io/tenant.",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "muster": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "mcpServer": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "description": {
+                            "type": "string"
+                        },
+                        "autoStart": {
+                            "type": "boolean"
+                        },
+                        "displayName": {
+                            "type": "string"
+                        },
+                        "enabled": {
+                            "type": "boolean",
+                            "description": "Register the server with muster: an MCPServer in the release namespace, which muster watches. Needs github.grantApp: one values change registers the server on an installation."
+                        },
+                        "labels": {
+                            "type": "object",
+                            "description": "Extra labels on the MCPServer.",
+                            "additionalProperties": true
+                        },
+                        "name": {
+                            "type": "string",
+                            "description": "The MCPServer's name."
+                        },
+                        "progressMaxDuration": {
+                            "type": "integer",
+                            "description": "How long progress keeps one call going at most, in seconds (at most 3600): above the server's longest wait, 55 minutes."
+                        },
+                        "requiredAudiences": {
+                            "type": "array",
+                            "description": "Extra audiences the forwarded ID token carries; muster requests them at sign-in. With installations, dex-k8s-authenticator is always among them: the installations' Dex connectors accept the person's token of that audience for the exchange."
+                        },
+                        "timeout": {
+                            "type": "integer",
+                            "description": "How long muster waits for an answer or the next progress notification, in seconds (1 to 300)."
+                        }
+                    }
+                }
+            }
+        },
+        "nameOverride": {
+            "type": "string",
+            "description": "Override the chart name."
+        },
+        "noProgressTimeout": {
+            "type": "string",
+            "description": "How long a wait called without a progressToken runs before it answers, a Go duration: below muster.mcpServer.timeout, as nothing keeps the call alive."
+        },
+        "nodeSelector": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "podAnnotations": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "podLabels": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "podSecurityContext": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "fsGroup": {
+                    "type": "integer"
+                },
+                "runAsGroup": {
+                    "type": "integer"
+                },
+                "runAsNonRoot": {
+                    "type": "boolean"
+                },
+                "runAsUser": {
+                    "type": "integer"
+                },
+                "seccompProfile": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "type": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "progressInterval": {
+            "type": "string",
+            "description": "How often a wait sends notifications/progress, a Go duration: below muster.mcpServer.timeout, which each notification restarts."
+        },
+        "provider": {
+            "type": "string"
+        },
+        "replicaCount": {
+            "type": "integer",
+            "description": "Replicas. A merge lives in the memory of the replica whose call started it (pr_merge_status reads it there), so the server runs one."
+        },
+        "resources": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "limits": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "memory": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "requests": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "cpu": {
+                            "type": "string"
+                        },
+                        "memory": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "revisionHistoryLimit": {
+            "type": "integer"
+        },
+        "securityContext": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "allowPrivilegeEscalation": {
+                    "type": "boolean"
+                },
+                "capabilities": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "drop": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "readOnlyRootFilesystem": {
+                    "type": "boolean"
+                },
+                "runAsGroup": {
+                    "type": "integer"
+                },
+                "runAsNonRoot": {
+                    "type": "boolean"
+                },
+                "runAsUser": {
+                    "type": "integer"
+                },
+                "seccompProfile": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "type": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "service": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "port": {
+                    "type": "integer"
+                }
+            }
+        },
+        "serviceAccount": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "create": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "subscriptionID": {
+            "type": "string"
+        },
+        "tolerations": {
+            "type": "array"
+        }
+    }
+}

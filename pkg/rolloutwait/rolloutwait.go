@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/dynamic"
 
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
@@ -66,6 +67,9 @@ type Config struct {
 	// Reconcile asks Flux to reconcile the sources and HelmReleases that
 	// are behind once, instead of waiting for their next interval.
 	Reconcile bool
+	// SignIn is what a refused sign-in tells the caller to do; empty is
+	// tsh kube login <installation>, the laptop's.
+	SignIn string
 
 	Clock    agentcli.Clock
 	Progress *agentcli.Progress
@@ -80,6 +84,7 @@ type Waiter struct {
 	client                             dynamic.Interface
 	timeout                            time.Duration
 	reconcile                          bool
+	signIn                             string
 	clock                              agentcli.Clock
 	progress                           *agentcli.Progress
 	warn                               func(string)
@@ -98,6 +103,10 @@ type Waiter struct {
 	// requested are the reconcile requests --reconcile made, by object:
 	// the requestedAt each carried.
 	requested map[string]string
+	// seenHelmReleases is how many HelmReleases the last poll listed.
+	seenHelmReleases int
+	// listed are the lists of this poll, by resource and namespace.
+	listed map[string][]unstructured.Unstructured
 }
 
 // New validates config.
@@ -123,6 +132,9 @@ func New(config Config) (*Waiter, error) {
 	if config.Warn == nil {
 		config.Warn = func(string) {}
 	}
+	if config.SignIn == "" {
+		config.SignIn = fmt.Sprintf("sign in with `tsh kube login %s`", config.Installation)
+	}
 	w := &Waiter{
 		installation:     config.Installation,
 		kubeContext:      config.KubeContext,
@@ -132,6 +144,7 @@ func New(config Config) (*Waiter, error) {
 		client:           config.Client,
 		timeout:          config.Timeout,
 		reconcile:        config.Reconcile,
+		signIn:           config.SignIn,
 		clock:            config.Clock,
 		progress:         config.Progress,
 		warn:             config.Warn,
@@ -177,14 +190,14 @@ func (w *Waiter) Wait(ctx context.Context, result *Result) error {
 	interval := IntervalFloor
 	reconciled := false
 	for {
-		w.polled = nil
+		w.polled, w.listed = nil, map[string][]unstructured.Unstructured{}
 		list, err := w.observe(ctx)
 		if err != nil {
 			return err
 		}
 		result.Deployments = list
 		if missing := w.missingHelmReleases(list); len(missing) > 0 {
-			return agentcli.NewExitError(agentcli.ExitNotApplicable, agentcli.VerdictNotApplicable, "no HelmRelease %s on %s", strings.Join(missing, ", "), w.installation)
+			return agentcli.NewExitError(agentcli.ExitNotApplicable, agentcli.VerdictNotApplicable, "no HelmRelease %s on %s: none of the %d HelmReleases in all namespaces of %s answers to it as <name> or <namespace>/<name>", strings.Join(missing, ", "), w.installation, w.seenHelmReleases, w.kubeContext)
 		}
 		if len(list) == 0 {
 			return agentcli.NewExitError(agentcli.ExitNotApplicable, agentcli.VerdictNotApplicable, "no HelmRelease or App on %s deploys %s", w.installation, strings.Join(result.Charts, ", "))

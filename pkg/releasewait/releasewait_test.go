@@ -202,28 +202,33 @@ func run(t *testing.T, fx fixture) (Result, error) {
 		GitHubAPIURL: gh.URL, CircleCIAPIURL: cc.APIURL(),
 		RegistryPublic: reg.Host(), RegistryPrivate: preg.Host(), RegistryInsecure: true,
 	}
-	ghClient, conditional, err := githubclient.NewConditional(githubclient.Config{Logger: discardLogger(), AccessToken: "ghu_test", BaseURL: gh.URL})
+	// The clients are built from tokens handed in, as a server builds them;
+	// TestMain makes every credential store fail.
+	sources, err := NewSources(endpoints, nil, Credentials{
+		GitHubToken: "ghu_test",
+		CircleCI:    func(context.Context) (string, string, error) { return "cci_test", "", nil },
+	})
 	if err != nil {
-		t.Fatalf("github client: %v", err)
+		t.Fatalf("sources: %v", err)
 	}
 	circleCalls := 0
 	config := Config{
 		Owner: testOwner, Repo: testRepo, Version: fx.version, PR: fx.pr, MergeCommitSHA: fx.mergeCommit, PreferPromoted: fx.preferPromoted, Timeout: fx.timeout, Catalog: fx.catalog, Images: fx.images, Charts: fx.charts, FailedLogLines: fx.failedLogLines,
-		GitHub:  ghClient,
+		GitHub:  sources.GitHub,
 		Entries: entries{fx.entry},
-		CircleCI: func(context.Context) (CircleCI, error) {
+		CircleCI: func(ctx context.Context) (CircleCI, error) {
 			circleCalls++
-			client, err := circleciclient.New(circleciclient.Config{Token: "cci_test", BaseURL: circleciclient.BaseURLFromAPIURL(endpoints.CircleCIAPIURL)})
+			client, err := sources.CircleCI(ctx)
 			if err != nil || fx.wrapCircleCI == nil {
 				return client, err
 			}
 			return fx.wrapCircleCI(client), nil
 		},
-		Registry:     RegistryProber{Endpoints: endpoints},
+		Registry:     sources.Registry,
 		CatalogIndex: catalog{fx.catalogLists, fx.catalogChart, fx.catalogName},
 		Endpoints:    endpoints,
 		Clock:        agentcli.NewVirtualClock(time.Now()),
-		Rate:         conditional.Rate,
+		Rate:         sources.Rate,
 		Warn:         fx.warn,
 	}
 	if fx.clock != nil {

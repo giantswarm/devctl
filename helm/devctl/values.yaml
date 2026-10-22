@@ -1,0 +1,136 @@
+# -- Override the chart name.
+nameOverride: ""
+# -- Override the full release name.
+fullnameOverride: ""
+
+# -- Replicas. A merge lives in the memory of the replica whose call started
+# it (pr_merge_status reads it there), so the server runs one.
+replicaCount: 1
+revisionHistoryLimit: 3
+
+image:
+  registry: gsoci.azurecr.io
+  repository: giantswarm/devctl
+  # -- Empty is the chart's appVersion: the devctl release the chart ships
+  # with, so the server and the binary share a version.
+  tag: ""
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+# -- How often a wait sends notifications/progress, a Go duration: below
+# muster.mcpServer.timeout, which each notification restarts.
+progressInterval: 10s
+
+# -- How long a wait called without a progressToken runs before it answers, a
+# Go duration: below muster.mcpServer.timeout, as nothing keeps the call alive.
+noProgressTimeout: 20s
+
+github:
+  # -- The provider App muster keeps whose grant carries the person's GitHub
+  # token (muster's providerApps entry, the workspace-manager's provider
+  # instance name): muster attaches it in X-Muster-Grant-<grantApp> and the
+  # server acts on GitHub with it. Required with muster.mcpServer.enabled.
+  grantApp: ""
+  # -- The GitHub App behind grantApp (`<installation>-agents`), as an
+  # auth_required or not_applicable answer names it; empty is grantApp.
+  app: ""
+
+# -- The installations rollout_wait reads as the person, by name: the server
+# exchanges the person's Dex token, which muster forwards, at the
+# installation's Dex for a token its management cluster's API accepts, with
+# the client the hub's muster presents there (the Secret
+# `<name>-token-exchange-credentials` in the release namespace, keys
+# client-id and client-secret, read at start). baseDomain derives the rest:
+# apiServer `https://happaapi.<baseDomain>`, dex.tokenEndpoint
+# `https://dex.<baseDomain>/token`, dex.issuer `https://dex.<baseDomain>`;
+# each can be set instead, with dex.connectorId (giantswarm-simple-oidc),
+# dex.audience (dex-k8s-authenticator) and credentialsSecret. Empty:
+# rollout_wait reaches no installation.
+installations: {}  # @schema additionalProperties: true
+
+metrics:
+  # -- Serve the call metrics (devctl_mcp_tool_calls_total and
+  # devctl_mcp_tool_call_duration_seconds, by tool, the caller's GitHub login
+  # and user id, repository and verdict) at /metrics on port.
+  enabled: true
+  port: 9090
+  serviceMonitor:
+    # -- Render a ServiceMonitor for the metrics port.
+    enabled: false
+    # -- Scrape interval; empty uses the Prometheus Operator default.
+    interval: ""
+    # -- Labels on the ServiceMonitor. The Giant Swarm observability platform
+    # routes a scrape to a Mimir tenant by observability.giantswarm.io/tenant.
+    labels: {}  # @schema additionalProperties: true
+
+muster:
+  mcpServer:
+    # -- Register the server with muster: an MCPServer in the release
+    # namespace, which muster watches. Needs github.grantApp: one values
+    # change registers the server on an installation.
+    enabled: false
+    # -- The MCPServer's name.
+    name: devctl
+    displayName: devctl
+    description: devctl's waits and merges as the calling person, through the installation's agents App
+    autoStart: true
+    # -- How long muster waits for an answer or the next progress
+    # notification, in seconds (1 to 300).
+    timeout: 30
+    # -- How long progress keeps one call going at most, in seconds (at most
+    # 3600): above the server's longest wait, 55 minutes.
+    progressMaxDuration: 3600
+    # -- Extra audiences the forwarded ID token carries; muster requests
+    # them at sign-in. With installations, dex-k8s-authenticator is always
+    # among them: the installations' Dex connectors accept the person's token
+    # of that audience for the exchange.
+    requiredAudiences: []
+    # -- Extra labels on the MCPServer.
+    labels: {}  # @schema additionalProperties: true
+
+serviceAccount:
+  create: true
+  name: ""
+
+service:
+  port: 8080
+
+podAnnotations: {}  # @schema additionalProperties: true
+podLabels: {}  # @schema additionalProperties: true
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  capabilities:
+    drop:
+      - ALL
+  seccompProfile:
+    type: RuntimeDefault
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    memory: 256Mi
+
+# -- Extra arguments to devctl serve.
+extraArgs: []
+# -- Extra environment variables (DEVCTL_GITHUB_API_URL and the other
+# endpoints of devctl's agent-facing commands).
+extraEnv: []
+
+nodeSelector: {}  # @schema additionalProperties: true
+tolerations: []
+affinity: {}  # @schema additionalProperties: true

@@ -99,3 +99,30 @@ func TestGateOutsideGen(t *testing.T) {
 		t.Fatalf("exit 0, want the gate's error:\n%s", out)
 	}
 }
+
+// TestServeRunsWithoutTheGate: `devctl serve` starts where the version gate
+// cannot pass (a test binary is version "dev", older than every release, and
+// neither the keychain nor GitHub answers): a server from an older release
+// serves, its version pinned by its deployment.
+func TestServeRunsWithoutTheGate(t *testing.T) {
+	hits := offlineContainer(t)
+
+	logger, err := micrologger.New(micrologger.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := New(Config{Logger: logger, Stderr: &bytes.Buffer{}, Stdout: &bytes.Buffer{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	serve, _, err := root.Find([]string{"serve"})
+	if err != nil || serve.Name() != "serve" {
+		t.Fatalf("no serve command: %v", err)
+	}
+	if err := root.PersistentPreRunE(serve, nil); err != nil {
+		t.Errorf("the gate ran before serve: %v", err)
+	}
+	if n := hits.Load(); n != 0 {
+		t.Errorf("GitHub was asked %d times, want 0", n)
+	}
+}

@@ -6,10 +6,9 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/giantswarm/devctl/v8/internal/laptop"
 	"github.com/giantswarm/devctl/v8/internal/versiongate"
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
-	"github.com/giantswarm/devctl/v8/pkg/releasewait"
-	"github.com/giantswarm/devctl/v8/pkg/rolloutwait"
 )
 
 const (
@@ -51,9 +50,10 @@ Stalled or not Ready after a failed install, upgrade or test.
 A deployment has rolled out when it runs the version or a newer one
 (status.history of the HelmRelease, status.version and a deployed release
 of the App), is Ready at its current generation, and every Deployment,
-StatefulSet and DaemonSet of its Helm release (Helm's release annotations,
-in the release namespace) is rolled out the way kubectl rollout status
-judges it. The workloads of a HelmRelease with spec.kubeConfig or an App
+StatefulSet, DaemonSet and Flux HelmRelease (a meta chart's components) of
+its Helm release (Helm's release annotations) is rolled out the way kubectl
+rollout status judges it, a HelmRelease once its generation is observed and
+it is Ready, its dependencies included. The workloads of a HelmRelease with spec.kubeConfig or an App
 into a workload cluster are not read; a warning says so.
 
 A deployment that will not get there is reported in the document and a
@@ -123,9 +123,9 @@ func New(config Config) (*cobra.Command, error) {
 		flag:        f,
 		stderr:      config.Stderr,
 		stdout:      config.Stdout,
-		openRelease: releasewait.OpenSources,
-		openCluster: rolloutwait.OpenCluster,
-		teleport:    rolloutwait.Tsh{},
+		openRelease: laptop.ReleaseWaitSources,
+		openCluster: laptop.OpenCluster,
+		teleport:    laptop.Tsh{},
 	}
 
 	c := &cobra.Command{

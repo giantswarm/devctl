@@ -121,6 +121,10 @@ devctl rollout wait myinstallation giantswarm/app-operator v7.5.4 --progress
 devctl pr merge giantswarm/devctl 2278 --timeout 45m --progress
 ```
 
+### The agent-facing commands as MCP tools (`devctl serve`)
+
+`devctl serve` serves the agent-facing commands as MCP tools over streamable HTTP at `/mcp`: `pr_wait`, `pr_merge`, `pr_merge_status` and `release_wait` (and `release_promote` with `--release-promote`), the read-only ones with the MCP read-only annotation. A tool answers the command's JSON document as structured content, exit code included; the call is an MCP error only for `auth_required`. A wait is one call kept alive by `notifications/progress` on the caller's `progressToken`, which a gateway such as muster takes to restart its timeout; a wait without one answers within `--no-progress-timeout` (20s) with the verdict it reached, `timeout` while still pending, for the caller to call again. The server acts on GitHub as the person who calls it, with the token handed to it for them, and has no version gate, keychain, on-disk state, SIGHUP handling or `DEVCTL_TIME_SCALE`. See [docs/serve.md](docs/serve.md).
+
 ### Repository set-up (`devctl repo`)
 
 Giant Swarm repositories are declared in the team files of [giantswarm/github](https://github.com/giantswarm/github); the reconciler keeps them as declared. `devctl repo create` creates a repository as you, pushes its scaffold and opens the team-file pull request; the other verbs are giantswarm-repo-manager's tools called through muster as you (`devctl auth login --muster-only` first): `list`, `get`, `refresh`, `status`, `sweep`, `watch`, `adopt`, `update`, `transfer`, `set-lifecycle`, `approve`, `align`, each with `--dry-run` where it writes and `-o json` for the manager's answer. See [docs/repo.md](docs/repo.md).

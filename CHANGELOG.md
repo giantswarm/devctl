@@ -16,6 +16,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - `reservation reap`: releases every expired reservation of every enabled cluster, and one whose pull request's branch was renamed (needs a GitHub token from `authstore.ResolveGitHub`; without one it releases only the expired ones). It prints one tab-separated line per release.
 - `reservation list`: prints the reservations of a cluster, each marked `active`, or `expired` when it is past its expiry and `reap` has not swept it yet.
 - `reservation` commands work only on a synced GitOps checkout (`--gitops-dir`, or `$UMBRELLA_TARGET_DIR/cmc/<repo>`), never clone and never read the Kubernetes API. The checkout must be a clean `main`; devctl fetches and fast-forwards it first. Commits use the git identity of whoever runs devctl, never `--user`. A rejected push is fetched, reset and rerun up to 5 times. `--user` defaults to the login of the GitHub token. `--output json` prints the result as JSON. `--dry-run` (all but `list`) makes the commits, shows them on stderr and resets the checkout, pushing nothing. `--duration` takes Go durations of whole minutes (`4h30m`) or whole days (`2d`). `--cluster`, `--user` and `--pull-request` are checked strictly before any work.
+- `devctl serve`: `rollout_wait`, `devctl rollout wait` in one call kept alive by progress, read-only (no
+  reconcile). It reads the installation's management cluster as the person: muster's forwarded Dex token is exchanged
+  at the installation's Dex (RFC 8693) for a token the cluster's API accepts, so the cluster answers by the person's
+  access; no kubeconfig, no credential of a cluster. `--installations` names each installation's API, Dex and exchange
+  client; the chart's `installations` values render it from a base domain and mount the hub muster's
+  `<name>-token-exchange-credentials`, and add `dex-k8s-authenticator` to the `MCPServer`'s `requiredAudiences`.
+  The release-then-rollout wait moved from the CLI's runner into `rolloutwait.Release`, which both share.
+
+- `repo reconcile`, `repo setup`, `repo checks`: a repository with a `tests/e2e` directory requires Heimdall's gatekeeper check once it has reported.
+- `devctl serve`: `pr_merge`, `devctl pr merge` in one call kept alive by progress (the wait for green, the merge with
+  the judged head as the expected head, the release wait) with the CLI's refusals and document, its merges listed by
+  `pr_merge_status`. A pull request merged already answers its merge and release state instead of exit 3, and a
+  second call while one runs waits for it, so nothing merges twice; exits 6 and 9 stay distinct. `release_promote`
+  behind `--release-promote`. Neither carries the read-only annotation. The CLI keeps exit 3 for a merged pull
+  request; its merge engine takes any `prmerge.GitHub`, and `pkg/prmerge/prmergetest` is its in-process test double.
+- `devctl serve`: the read-only agent-facing commands as MCP tools over streamable HTTP (`/mcp`): `pr_wait`,
+  `pr_merge_status` and `release_wait`, each with the read-only annotation. A tool answers the command's document,
+  devctl's envelope included, as structured content; the exit code is a field and the call is an MCP error only for
+  `auth_required`. A wait is one call that sends `notifications/progress` on the caller's `progressToken` every
+  `--progress-interval` (10s) until its verdict; a wait without a `progressToken` is refused at once, verdict
+  `progress_token_required` (exit 7). The server has no version gate, keychain, on-disk state, SIGHUP handling or
+  `DEVCTL_TIME_SCALE`; it reads no CircleCI, and until the platform hands it a person's GitHub token every call that
+  reads GitHub is `auth_required`.
 - `gen workflows --patch-candidates` (team file: `gen.ci.patchCandidates: true`): a patch of the last stable release
   is cut as a release candidate `vX.Y.Z-rc.N` too, on the default branch and on a fork line's maintenance branches,
   never tagged stable on its push, for a repository whose consumers take its next patch on their own. Every stable
@@ -31,6 +54,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- `devctl serve` names the caller from the person's GitHub grant (`GET /user`, kept five minutes), not from the ID
+  token muster forwards: logs carry `login` and `userId`, metrics `login` and `user_id` instead of `subject`. A tool
+  call without a grant GitHub accepts, `pr_merge_status` included, is `auth_required` marked `grant_required`. The
+  chart ignores `identity`.
+
+- `devctl serve`: a blocking tool (`pr_wait`, `pr_merge`, `release_wait`, `release_promote`) called without a
+  `progressToken`, as through muster's `call_tool` or `muster call`, is no longer refused with
+  `progress_token_required`: it answers within `--no-progress-timeout` (20s) with the verdict reached by then,
+  `timeout` (exit 2) while pending, and a warning saying how to go on. `pr_merge` merges only a head it judged green
+  in that time; a merge whose release is not confirmed yet is exit 9, and calling again merges nothing twice. Without
+  a grant such a call is `auth_required`. A call with a `progressToken` blocks as before. The chart's
+  `noProgressTimeout` sets the flag.
+
+- `prwait.Config.GitHub` is the `prwait.GitHub` interface `*githubclient.Client` satisfies, and the `pr wait` and
+  `pr merge status` documents are `prwait.Document` and `mergejob.StatusDocument`, shared by the CLI and the server.
+- The agent-facing engines (`pr wait`, `pr merge`, `release wait`, `release promote`, `rollout wait`) take clients built
+  from tokens their caller hands in: `releasewait.NewSources`, `releasepromote.NewSources` (each from `Credentials`) and
+  `rolloutwait.NewClient` (a `rest.Config`, a bearer token for one). The keychain, docker keychain, kubeconfig and tsh
+  wiring moved out of the engine packages into the CLI's `internal/laptop`; `releasewait.RegistryProber` with no
+  `Keychain` reads the private registry anonymously. The laptop commands and their documents are unchanged.
 - `gen workflows` flavour `fleet`: mctl image pinned to 0.2.1.
 - `devctl release promote` follows the Auto Release run each dispatch started until it concludes, at most
   `--follow-timeout` (20m): a run the repository's stable gate refuses, or that fails otherwise, is `refused`
@@ -49,6 +92,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `rollout wait --pr` of a configuration change follows the HelmReleases a Kustomization changed with the merge
+  commit: the HelmRelease itself (until helm-controller observed its new generation), a ConfigMap or Secret of its
+  `valuesFrom` or its chart source (until it deployed after kustomize-controller wrote them). A management-clusters
+  pull request that changed a HelmRelease's values ConfigMap was `rolled_out` as soon as the Kustomization applied it.
+- `rollout wait --pr --helmrelease` of a configuration change no Konfiguration renders finds the named HelmRelease in
+  any namespace instead of exit 3; the exit 3 for a name nothing answers to says how many HelmReleases it looked
+  through, in all namespaces of the context.
+- `rollout wait`: the HelmReleases a release renders (a meta chart's components) are among its workloads, rolled out
+  once helm-controller observed their generation and they are Ready, dependencies included; a failed one is exit 1.
+  Each poll lists a resource once.
 - `devctl pr merge` refuses (exit 5) while a reviewer's `CHANGES_REQUESTED` review is still their latest verdict:
   a newer commit, an author reply or the reviewer's later `COMMENTED` review no longer clears it, only the same
   reviewer's `APPROVED` review or the review's dismissal. The reason names the reviewer and links the review;
@@ -75,6 +128,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   no longer pushed out of the tail. A failure already within the tail prints as before.
 
 ### Removed
+
+- The devctl chart's `identity` value, ignored since the server names the caller from the GitHub grant.
+
+- `devctl serve`: `--oidc-issuer`, `--oidc-audience` and `--oidc-ca-file`; the chart no longer mounts an issuer CA.
 
 - The CHANGELOG cut: `devctl changelog cut` and `check`, the Auto-release workflow's job that opened, approved
   and auto-merged a `docs(changelog)` cut pull request after every release, and the generated
@@ -551,14 +608,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
-- Renovate bumps the tool versions pinned in the generator's Makefile templates. A custom manager reads the standard
-  `# renovate:` annotation in `pkg/gen/input/**/*.mk.template`, which no other manager matched, so
-  `HELM_UNITTEST_VERSION` in `Makefile.gen.app.mk.template` sat unbumped since #2570.
-
-## [8.139.9-rc.1] - 2026-10-15
-
-### Fixed
-
+- Renovate bumps the tool versions pinned in the generator's templates. A custom manager reads the standard
+  `# renovate:` annotation in `pkg/gen/input/**/*.template`, which no other manager matched, so
+  `HELM_UNITTEST_VERSION` in `Makefile.gen.app.mk.template` sat unbumped since #2570. The kind, Kubernetes and
+  Kyverno pins of the kyverno-policy flavour carry that annotation now, in place of the `# repository:` comments,
+  which matched nothing either: `Makefile.gen.chainsaw.mk` and `test-kyverno-policies-with-chainsaw.yaml` change in
+  every kyverno-policy repo on the next align-files run.
 - `gen workflows`: `sync_from_upstream.yaml` sets `permissions: {}` at the workflow level, and `auto_release.yaml`
   grants its permissions on the `tag` job instead of the workflow, so no job inherits more than it is given.
 
