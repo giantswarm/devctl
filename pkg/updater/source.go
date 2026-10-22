@@ -12,6 +12,14 @@ import (
 	"github.com/google/go-github/v93/github"
 )
 
+// GitHub intermittently answers the release list with 200 and no releases at
+// all: an empty list is asked for again this many times, waiting
+// listRetryDelay times the attempt in between.
+var (
+	listRetries    = 2
+	listRetryDelay = 500 * time.Millisecond
+)
+
 // githubSource is the releases of one GitHub repository, read with the token
 // that Config.GithubToken returns when the first request is made: never when
 // the version cache answers, once for a lookup and its download together. An
@@ -66,7 +74,13 @@ func (s *githubSource) newClient(token string) (*github.Client, error) {
 	return github.NewClient(options...)
 }
 
-// ListReleases implements selfupdate.Source.
+// ListReleases implements selfupdate.Source. GitHub intermittently answers
+// the release list with 200 and no releases at all, independently each time:
+// an empty list is asked for again. The latest release, answered reliably, is
+// asked for on its own and added when the list lacks it, so a list that stays
+// empty still finds it; it is the most recently published release, not
+// necessarily the highest version, hence the list's second chance. A failed
+// latest lookup is an error only when the list is empty too.
 func (s *githubSource) ListReleases(ctx context.Context, repository selfupdate.Repository) ([]selfupdate.SourceRelease, error) {
 	owner, repo, err := repository.GetSlug()
 	if err != nil {
@@ -77,6 +91,14 @@ func (s *githubSource) ListReleases(ctx context.Context, repository selfupdate.R
 		return nil, err
 	}
 	rels, res, err := client.Repositories.ListReleases(ctx, owner, repo, nil)
+	for retry := 1; err == nil && len(rels) == 0 && retry <= listRetries; retry++ {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(time.Duration(retry) * listRetryDelay):
+		}
+		rels, res, err = client.Repositories.ListReleases(ctx, owner, repo, nil)
+	}
 	if res != nil && res.StatusCode == http.StatusNotFound {
 		// No such repository, or not for this token: no release, which
 		// the updater reports as such.
@@ -85,11 +107,27 @@ func (s *githubSource) ListReleases(ctx context.Context, repository selfupdate.R
 	if err != nil {
 		return nil, err
 	}
-	releases := make([]selfupdate.SourceRelease, len(rels))
-	for i, rel := range rels {
-		releases[i] = githubRelease{rel}
+	releases := make([]selfupdate.SourceRelease, 0, len(rels)+1)
+	for _, rel := range rels {
+		releases = append(releases, githubRelease{rel})
 	}
-	return releases, nil
+
+	latest, res, err := client.Repositories.GetLatestRelease(ctx, owner, repo)
+	switch {
+	case res != nil && res.StatusCode == http.StatusNotFound:
+		// No release yet.
+		return releases, nil
+	case err != nil && len(releases) == 0:
+		return nil, err
+	case err != nil:
+		return releases, nil
+	}
+	for _, rel := range rels {
+		if rel.GetID() == latest.GetID() {
+			return releases, nil
+		}
+	}
+	return append(releases, githubRelease{latest}), nil
 }
 
 // DownloadReleaseAsset implements selfupdate.Source.
