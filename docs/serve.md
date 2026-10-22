@@ -2,7 +2,7 @@
 
 ```
 devctl serve [--address :8080] [--progress-interval 10s] [--no-progress-timeout 20s] [--release-promote]
-             [--grant-app <app>] [--github-app <name>]
+             [--grant-app <app>] [--github-app <name>] [--installations <file>]
              [--metrics-address :9090]
 ```
 
@@ -18,9 +18,11 @@ the server speaks no stdio.
 | `pr_merge` | [`devctl pr merge`](pr-merge.md) | `repository`, `number`, `timeout`, `releaseTimeout`, `noReleaseWait`, `method` (squash or rebase), `updateBranch`, `acceptRed` | no |
 | `pr_merge_status` | [`devctl pr merge status`](pr-merge.md) | `handle` (empty lists every merge) | yes |
 | `release_wait` | [`devctl release wait`](release-wait.md) | `repository`, `version` or `pr`, `timeout`, `catalog`, `images`, `charts` | yes |
+| `rollout_wait` | [`devctl rollout wait`](rollout-wait.md) | `installation`, `repository`, `version` or `pr`, `timeout`, `images`, `charts`, `helmreleases` | yes |
 | `release_promote` (`--release-promote` only) | [`devctl release promote`](release-promote.md) | `repositories` or `team`, `dryRun`, `version`, `branch`, `noFollow`, `followTimeout` | no |
 
-`timeout` is a Go duration, 30m by default and at most 55m, below the hour a gateway keeps a progress-kept call alive.
+`timeout` is a Go duration, 30m by default and at most 55m, below the hour a gateway keeps a progress-kept call alive;
+`rollout_wait`'s bounds its release wait and its rollout together.
 `pr_merge_status` reads the merges this server runs, `pr_merge`'s, kept in memory; a laptop's detached merges stay on
 the laptop.
 
@@ -74,6 +76,47 @@ Every such answer carries a warning that the call had no `progressToken`. The ca
 verdict is no longer `timeout` (or `release_unconfirmed` after a merge); a call with a `progressToken` waits for the
 verdict in one call. Without a grant the call is `auth_required` as with a token.
 
+## rollout_wait
+
+`rollout_wait` is `devctl rollout wait` in one call: the release wait, then every Flux `HelmRelease` and App CR of the
+release's charts on the installation's management cluster, as the CLI judges them; a `pr` that releases nothing is
+followed as its merge commit. It never asks Flux to reconcile (the CLI's `--reconcile`), so it stays read-only.
+
+The cluster is read as the person, without a kubeconfig or a credential of the cluster. muster forwards the person's
+Dex token in `Authorization` (`forwardToken`), and the server exchanges it at the installation's Dex (RFC 8693,
+`connector_id` the Dex connector that trusts the hub's Dex, an ID token with the audience
+`audience:server:client_id:dex-k8s-authenticator`), authenticated as the token-exchange client the hub's muster
+presents there. The exchanged token goes with every request to the cluster's API, kept until 30 seconds before it
+expires, so the cluster answers by the person's access:
+
+- A person the cluster's RBAC refuses gets its refusal, exit 7 with the cluster's message, and no data.
+- No forwarded token, or one the installation's Dex refuses (expired, of another Dex): `auth_required`, exit 8; the
+  person signs in to muster again.
+- An installation the server has no entry for: `not_applicable`, exit 3, naming the ones it reaches. The laptop's
+  Teleport context stays the laptop's.
+
+`--installations` names the installations, a JSON file read at start:
+
+```json
+{"installations": [{
+  "name": "graveler",
+  "apiServer": "https://happaapi.graveler.gaws2.gigantic.io",
+  "caFile": "",
+  "dex": {
+    "tokenEndpoint": "https://dex.graveler.gaws2.gigantic.io/token",
+    "issuer": "https://dex.graveler.gaws2.gigantic.io",
+    "connectorId": "giantswarm-simple-oidc",
+    "audience": "dex-k8s-authenticator",
+    "clientIdFile": "/etc/devctl/installations/graveler/client-id",
+    "clientSecretFile": "/etc/devctl/installations/graveler/client-secret"
+  }
+}]}
+```
+
+`caFile` (PEM) is the API's certificate authority, empty for the system roots; `issuer` is what the exchanged token
+must name, empty for the token endpoint without `/token`; `audience` defaults to `dex-k8s-authenticator`. Without
+`clientSecretFile` the client is a public one, named in the form (kubectl-gs's, for a server run on a laptop).
+
 ## What only a laptop has
 
 The server has no version gate (its deployment pins the version), reads no keychain, docker keychain or kubeconfig,
@@ -97,8 +140,7 @@ server's `MCPServer` names the App in `spec.auth.providerApps`. The server store
   minutes): `not_applicable`, exit 3, naming the owner and the App (`--github-app`). Such a repository is for devctl on
   a laptop.
 
-The server reads no ID token: its `MCPServer` keeps `spec.auth.forwardToken` only because muster attaches provider App
-grants to a connection made as the person, so no list of audiences has to follow muster's.
+The forwarded ID token is not read for GitHub: it is what `rollout_wait` exchanges at an installation's Dex.
 
 A promotion's document names the identity source `platform`. The private registry is read anonymously.
 
@@ -141,8 +183,13 @@ a version (its MCP `serverInfo.version`). One values change registers it with mu
 `providerApps: [<grantApp>]`, `timeout` 30 s and `progress.maxDuration` 3600 s. It runs one replica: a merge lives in
 the memory of the replica that runs it.
 
+`installations`, by name, are what `rollout_wait` reaches: `baseDomain` derives the API (`https://happaapi.<baseDomain>`)
+and the Dex (`https://dex.<baseDomain>`), and the exchange client is the hub muster's Secret
+`<name>-token-exchange-credentials` in the release namespace, mounted into the pod. With installations, the
+`MCPServer`'s `requiredAudiences` carry `dex-k8s-authenticator`, the audience the installations' Dex connectors accept.
+
 An installation's muster configuration adds the toolset presets `devctl` (`server: devctl`, every tool, the write
 tools included) and `devctl-read-only` (`pr_wait`, `release_wait`, `rollout_wait`, `pr_merge_status` and
 `reservation_list` by name), which resolves to the same devctl tools as muster's built-in `read-only`. A preset names
-`rollout_wait` and `reservation_list` ahead of the server: a name no tool in the [list above](#tools) answers matches
-nothing until a release serves it.
+`reservation_list` ahead of the server: a name no tool in the [list above](#tools) answers matches nothing until a
+release serves it.

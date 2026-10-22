@@ -70,6 +70,9 @@ type Config struct {
 	Version string
 	// Credentials answer the person's GitHub token; nil is [NoCredentials].
 	Credentials Credentials
+	// Clusters open an installation's management cluster as the person;
+	// nil is [NoClusters].
+	Clusters Clusters
 	// Sources build the clients a wait reads with; nil is [GitHubSources]
 	// over Endpoints.
 	Sources Sources
@@ -108,6 +111,7 @@ type recorder interface {
 type Server struct {
 	mcp              *server.MCPServer
 	credentials      Credentials
+	clusters         Clusters
 	sources          Sources
 	endpoints        agentcli.Endpoints
 	clock            agentcli.Clock
@@ -125,6 +129,9 @@ type Server struct {
 func New(config Config) *Server {
 	if config.Credentials == nil {
 		config.Credentials = NoCredentials{}
+	}
+	if config.Clusters == nil {
+		config.Clusters = NoClusters{}
 	}
 	if config.Endpoints == (agentcli.Endpoints{}) {
 		config.Endpoints = agentcli.DefaultEndpoints()
@@ -150,6 +157,7 @@ func New(config Config) *Server {
 	}
 	s := &Server{
 		credentials:       config.Credentials,
+		clusters:          config.Clusters,
 		sources:           config.Sources,
 		endpoints:         config.Endpoints,
 		clock:             clock,
@@ -164,6 +172,7 @@ func New(config Config) *Server {
 	s.mcp.AddTool(prMergeTool(s.noProgressTimeout), s.prMerge)
 	s.mcp.AddTool(prMergeStatusTool(), s.prMergeStatus)
 	s.mcp.AddTool(releaseWaitTool(s.noProgressTimeout), s.releaseWait)
+	s.mcp.AddTool(rolloutWaitTool(s.noProgressTimeout, s.clusters.Installations()), s.rolloutWait)
 	if config.ReleasePromote {
 		s.mcp.AddTool(releasePromoteTool(s.noProgressTimeout), s.releasePromote)
 	}

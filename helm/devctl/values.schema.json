@@ -97,6 +97,11 @@
         "imagePullSecrets": {
             "type": "array"
         },
+        "installations": {
+            "type": "object",
+            "description": "The installations rollout_wait reads as the person, by name: the server exchanges the person's Dex token, which muster forwards, at the installation's Dex for a token its management cluster's API accepts, with the client the hub's muster presents there (the Secret `<name>-token-exchange-credentials` in the release namespace, keys client-id and client-secret, read at start). baseDomain derives the rest: apiServer `https://happaapi.<baseDomain>`, dex.tokenEndpoint `https://dex.<baseDomain>/token`, dex.issuer `https://dex.<baseDomain>`; each can be set instead, with dex.connectorId (giantswarm-simple-oidc), dex.audience (dex-k8s-authenticator) and credentialsSecret. Empty: rollout_wait reaches no installation.",
+            "additionalProperties": true
+        },
         "metrics": {
             "type": "object",
             "additionalProperties": false,
@@ -165,7 +170,7 @@
                         },
                         "requiredAudiences": {
                             "type": "array",
-                            "description": "Extra audiences the forwarded ID token carries; muster requests them at sign-in. The server reads no ID token: muster forwards one only because it attaches the grant to a connection made as the person."
+                            "description": "Extra audiences the forwarded ID token carries; muster requests them at sign-in. With installations, dex-k8s-authenticator is always among them: the installations' Dex connectors accept the person's token of that audience for the exchange."
                         },
                         "timeout": {
                             "type": "integer",

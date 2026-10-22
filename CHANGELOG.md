@@ -9,6 +9,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `devctl serve`: `rollout_wait`, `devctl rollout wait` in one call kept alive by progress, read-only (no
+  reconcile). It reads the installation's management cluster as the person: muster's forwarded Dex token is exchanged
+  at the installation's Dex (RFC 8693) for a token the cluster's API accepts, so the cluster answers by the person's
+  access; no kubeconfig, no credential of a cluster. `--installations` names each installation's API, Dex and exchange
+  client; the chart's `installations` values render it from a base domain and mount the hub muster's
+  `<name>-token-exchange-credentials`, and add `dex-k8s-authenticator` to the `MCPServer`'s `requiredAudiences`.
+  The release-then-rollout wait moved from the CLI's runner into `rolloutwait.Release`, which both share.
+
 - `repo reconcile`, `repo setup`, `repo checks`: a repository with a `tests/e2e` directory requires Heimdall's gatekeeper check once it has reported.
 - `devctl serve`: `pr_merge`, `devctl pr merge` in one call kept alive by progress (the wait for green, the merge with
   the judged head as the expected head, the release wait) with the CLI's refusals and document, its merges listed by

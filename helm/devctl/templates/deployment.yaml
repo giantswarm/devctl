@@ -13,10 +13,12 @@ spec:
       {{- include "devctl.selectorLabels" . | nindent 6 }}
   template:
     metadata:
-      {{- with .Values.podAnnotations }}
       annotations:
+        {{- /* The installations are read at start: a changed list restarts the server. */}}
+        checksum/installations: {{ include "devctl.installations" . | sha256sum }}
+        {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
-      {{- end }}
+        {{- end }}
       labels:
         {{- include "devctl.labels" . | nindent 8 }}
         {{- with .Values.podLabels }}
@@ -58,6 +60,9 @@ spec:
             {{- with .Values.github.app }}
             - --github-app={{ . }}
             {{- end }}
+            {{- if .Values.installations }}
+            - --installations=/etc/devctl/installations.json
+            {{- end }}
             {{- with .Values.extraArgs }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -94,9 +99,36 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            {{- if .Values.installations }}
+            - name: installations
+              mountPath: /etc/devctl/installations.json
+              subPath: installations.json
+              readOnly: true
+            {{- range $name, $_ := .Values.installations }}
+            - name: exchange-{{ $name }}
+              mountPath: /etc/devctl/installations/{{ $name }}
+              readOnly: true
+            {{- end }}
+            {{- end }}
       volumes:
         - name: tmp
           emptyDir: {}
+        {{- if .Values.installations }}
+        - name: installations
+          configMap:
+            name: {{ include "devctl.fullname" . }}-installations
+        {{- range $name, $i := .Values.installations }}
+        {{- /* The exchange client the hub's muster presents at the installation's Dex. */}}
+        - name: exchange-{{ $name }}
+          secret:
+            secretName: {{ include "devctl.credentialsSecret" (dict "name" $name "i" ($i | default dict)) }}
+            items:
+              - key: client-id
+                path: client-id
+              - key: client-secret
+                path: client-secret
+        {{- end }}
+        {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

@@ -115,10 +115,11 @@ func (w *Waiter) requestReconcile(ctx context.Context, o object) error {
 }
 
 // clusterErr places a failed request in the exit-code table: a context
-// that is not signed in is exit 8, anything else a tooling failure.
+// that is not signed in is exit 8, anything else a tooling failure, the
+// cluster's refusal of the caller's access included.
 func (w *Waiter) clusterErr(what string, err error) error {
 	if apierrors.IsUnauthorized(err) || strings.Contains(err.Error(), "getting credentials") {
-		return agentcli.NewExitError(agentcli.ExitAuthRequired, agentcli.VerdictAuthRequired, "%s on %s: %v; sign in with `tsh kube login %s`", what, w.kubeContext, err, w.installation)
+		return agentcli.NewExitError(agentcli.ExitAuthRequired, agentcli.VerdictAuthRequired, "%s on %s: %v; %s", what, w.kubeContext, err, w.signIn)
 	}
 	return fmt.Errorf("%s on %s: %w", what, w.kubeContext, err)
 }
