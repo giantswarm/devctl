@@ -134,10 +134,12 @@ func (g *GitHubInstallations) read(ctx context.Context, token string) ([]string,
 }
 
 // call is what the server learns about one tool call on its way: the
-// person's grants muster attached, the repository's owner, the caller their
-// grant names, and the App whose grant the call lacked.
+// person's grants muster attached, the person's Dex token muster forwarded,
+// the repository's owner, the caller their grant names, and the App whose
+// grant the call lacked.
 type call struct {
 	grants        map[string]string
+	bearer        string
 	owner         string
 	caller        Caller
 	grantRequired string
@@ -151,6 +153,16 @@ func callFrom(ctx context.Context) *call {
 		return c
 	}
 	return &call{}
+}
+
+// bearerOf is the token r carries in Authorization: the person's Dex token
+// muster forwards (forwardToken).
+func bearerOf(r *http.Request) string {
+	scheme, token, ok := strings.Cut(r.Header.Get("Authorization"), " ")
+	if !ok || !strings.EqualFold(scheme, "Bearer") {
+		return ""
+	}
+	return strings.TrimSpace(token)
 }
 
 // grantsOf are the provider App tokens of r, by canonical header name.

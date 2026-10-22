@@ -55,13 +55,19 @@ func NewMetrics(registerer prometheus.Registerer) (*Metrics, error) {
 	return m, nil
 }
 
-// httpContext puts the person's grants muster attached into a call's
-// context.
+// httpContext puts the person's grants and Dex token muster attached into a
+// call's context.
 func httpContext(ctx context.Context, r *http.Request) context.Context {
-	return context.WithValue(ctx, grantsKey{}, grantsOf(r))
+	return context.WithValue(ctx, requestKey{}, callRequest{grants: grantsOf(r), bearer: bearerOf(r)})
 }
 
-type grantsKey struct{}
+type requestKey struct{}
+
+// callRequest is what a call's HTTP request carries for it.
+type callRequest struct {
+	grants map[string]string
+	bearer string
+}
 
 // observe follows every tool call: it gives the call its state, answers a
 // call that lacked the person's grant so muster turns it into the App's
@@ -70,8 +76,8 @@ type grantsKey struct{}
 func (s *Server) observe(next server.ToolHandlerFunc) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		repository := request.GetString("repository", "")
-		c := &call{}
-		c.grants, _ = ctx.Value(grantsKey{}).(map[string]string)
+		r, _ := ctx.Value(requestKey{}).(callRequest)
+		c := &call{grants: r.grants, bearer: r.bearer}
 		if owner, _, ok := strings.Cut(repository, "/"); ok {
 			c.owner = owner
 		}

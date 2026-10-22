@@ -29,8 +29,8 @@ const (
 	name        = "serve"
 	description = "Serve the agent-facing commands as MCP tools over streamable HTTP."
 	long        = `Serve the agent-facing commands as MCP tools over streamable HTTP, at /mcp:
-pr_wait, pr_merge, pr_merge_status and release_wait, and release_promote
-with --release-promote. Each answers the command's JSON
+pr_wait, pr_merge, pr_merge_status, release_wait and rollout_wait, and
+release_promote with --release-promote. Each answers the command's JSON
 document, devctl's envelope included, as structured content; the exit code
 is a field, and the call is an MCP error only for auth_required.
 
@@ -60,7 +60,17 @@ GitHub refuses, every tool call is auth_required, structured status
 grant_required, which muster answers with the App's sign-in link; a
 repository whose owner the App is not installed on is not_applicable. It holds no CircleCI credential: the waits read CircleCI through the commit statuses it posts to GitHub, and a job the revision's CircleCI configuration runs that has posted none yet, one behind requires:, keeps a wait pending. No rerun and no CircleCI job listing is served. It reads no keychain or credential file, runs no version check
 (the deployment pins the version), writes nothing to disk and ignores
-DEVCTL_TIME_SCALE.`
+DEVCTL_TIME_SCALE.
+
+rollout_wait reads an installation's management cluster as the person too:
+muster forwards the person's Dex token (forwardToken), which the server
+exchanges at the installation's Dex (RFC 8693, its connector that trusts the
+hub's Dex) for a token the cluster's API accepts, so the cluster answers by
+the person's access. --installations names each installation's API and Dex,
+and the files of the exchange client the hub's muster presents there; the
+server reads no kubeconfig and holds no credential of a cluster. Without a
+forwarded token the call is auth_required; an installation not in the file
+is not_applicable. It never asks Flux to reconcile.`
 
 	// shutdownTimeout bounds the drain of running calls on SIGTERM.
 	shutdownTimeout = 30 * time.Second
@@ -78,6 +88,7 @@ type flag struct {
 	ReleasePromote    bool
 	GrantApp          string
 	GitHubApp         string
+	Installations     string
 }
 
 func New(config Config) (*cobra.Command, error) {
@@ -104,6 +115,7 @@ func New(config Config) (*cobra.Command, error) {
 	c.Flags().StringVar(&f.MetricsAddress, "metrics-address", "", "Address to serve /metrics on; empty serves none")
 	c.Flags().StringVar(&f.GrantApp, "grant-app", "", "The provider App in muster whose grant carries the person's GitHub token (X-Muster-Grant-<app>); empty: every call is auth_required")
 	c.Flags().StringVar(&f.GitHubApp, "github-app", "", "The GitHub App behind --grant-app, as refusals name it; empty is --grant-app")
+	c.Flags().StringVar(&f.Installations, "installations", "", "A JSON file of the installations rollout_wait reads as the person, through token exchange at each one's Dex; empty: rollout_wait reaches none")
 	c.Flags().DurationVar(&f.ProgressInterval, "progress-interval", mcpserver.DefaultProgressInterval, "How often a wait sends notifications/progress; below the registered timeout of the gateway in front")
 	c.Flags().DurationVar(&f.NoProgressTimeout, "no-progress-timeout", mcpserver.DefaultNoProgressTimeout, "How long a wait called without a progressToken runs before it answers; below the registered timeout of the gateway in front")
 	return c, nil
@@ -132,6 +144,13 @@ func run(ctx context.Context, stderr io.Writer, f *flag) error {
 			Users:         &mcpserver.GitHubUsers{BaseURL: endpoints.GitHubAPIURL},
 			Installations: &mcpserver.GitHubInstallations{BaseURL: endpoints.GitHubAPIURL},
 		}
+	}
+	if f.Installations != "" {
+		clusters, err := mcpserver.ReadInstallations(f.Installations)
+		if err != nil {
+			return err
+		}
+		config.Clusters = clusters
 	}
 	if f.MetricsAddress != "" {
 		registry := prometheus.NewRegistry()

@@ -60,3 +60,39 @@ ServiceAccount name.
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
 {{- end }}
+
+{{/*
+The installations rollout_wait reads, as devctl serve's --installations file
+names them: each with its API, its Dex and the files of the exchange client
+mounted from its credentials Secret.
+*/}}
+{{- define "devctl.installations" -}}
+{{- $list := list }}
+{{- range $name, $i := .Values.installations }}
+{{- $i = $i | default dict }}
+{{- $dex := $i.dex | default dict }}
+{{- if and (not $i.baseDomain) (or (not $i.apiServer) (not $dex.tokenEndpoint)) }}
+{{- fail (printf "installations.%s: set baseDomain, or apiServer and dex.tokenEndpoint" $name) }}
+{{- end }}
+{{- $dir := printf "/etc/devctl/installations/%s" $name }}
+{{- $entry := dict
+  "name" $name
+  "apiServer" ($i.apiServer | default (printf "https://happaapi.%s" $i.baseDomain))
+  "dex" (dict
+    "tokenEndpoint" ($dex.tokenEndpoint | default (printf "https://dex.%s/token" $i.baseDomain))
+    "issuer" ($dex.issuer | default (ternary (printf "https://dex.%s" $i.baseDomain) "" (not (empty $i.baseDomain))))
+    "connectorId" ($dex.connectorId | default "giantswarm-simple-oidc")
+    "audience" ($dex.audience | default "dex-k8s-authenticator")
+    "clientIdFile" (printf "%s/client-id" $dir)
+    "clientSecretFile" (printf "%s/client-secret" $dir)) }}
+{{- $list = append $list $entry }}
+{{- end }}
+{{- dict "installations" $list | toJson }}
+{{- end }}
+
+{{/*
+The credentials Secret of installation name, i its values.
+*/}}
+{{- define "devctl.credentialsSecret" -}}
+{{- .i.credentialsSecret | default (printf "%s-token-exchange-credentials" .name) }}
+{{- end }}

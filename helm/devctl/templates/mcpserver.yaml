@@ -3,8 +3,10 @@
 Registers devctl serve with muster, one MCPServer with toolPrefix devctl: its
 tools appear as x_devctl_<tool>. Unpinned with forwardToken, so muster connects
 as the person and attaches their token of the provider App github.grantApp,
-which muster keeps (spec.auth.providerApps), in X-Muster-Grant-<app>; the
-server reads no ID token. That token names the caller (GitHub's GET /user): a
+which muster keeps (spec.auth.providerApps), in X-Muster-Grant-<app>. The
+forwarded ID token is what rollout_wait exchanges at an installation's Dex:
+with installations it carries dex-k8s-authenticator, the audience the
+installations' Dex connectors accept. The grant's token names the caller (GitHub's GET /user): a
 call without it, or with one GitHub refuses, answers grant_required, which
 muster turns into auth_required with the App's sign-in link. A wait is one
 call kept alive by progress: each progress notification restarts timeout, up
@@ -44,7 +46,11 @@ spec:
     forwardToken: true
     providerApps:
       - {{ .Values.github.grantApp | quote }}
-    {{- with .Values.muster.mcpServer.requiredAudiences }}
+    {{- $audiences := .Values.muster.mcpServer.requiredAudiences }}
+    {{- if .Values.installations }}
+    {{- $audiences = append $audiences "dex-k8s-authenticator" | uniq }}
+    {{- end }}
+    {{- with $audiences }}
     requiredAudiences:
       {{- toYaml . | nindent 6 }}
     {{- end }}

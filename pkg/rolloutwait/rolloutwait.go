@@ -67,6 +67,9 @@ type Config struct {
 	// Reconcile asks Flux to reconcile the sources and HelmReleases that
 	// are behind once, instead of waiting for their next interval.
 	Reconcile bool
+	// SignIn is what a refused sign-in tells the caller to do; empty is
+	// tsh kube login <installation>, the laptop's.
+	SignIn string
 
 	Clock    agentcli.Clock
 	Progress *agentcli.Progress
@@ -81,6 +84,7 @@ type Waiter struct {
 	client                             dynamic.Interface
 	timeout                            time.Duration
 	reconcile                          bool
+	signIn                             string
 	clock                              agentcli.Clock
 	progress                           *agentcli.Progress
 	warn                               func(string)
@@ -128,6 +132,9 @@ func New(config Config) (*Waiter, error) {
 	if config.Warn == nil {
 		config.Warn = func(string) {}
 	}
+	if config.SignIn == "" {
+		config.SignIn = fmt.Sprintf("sign in with `tsh kube login %s`", config.Installation)
+	}
 	w := &Waiter{
 		installation:     config.Installation,
 		kubeContext:      config.KubeContext,
@@ -137,6 +144,7 @@ func New(config Config) (*Waiter, error) {
 		client:           config.Client,
 		timeout:          config.Timeout,
 		reconcile:        config.Reconcile,
+		signIn:           config.SignIn,
 		clock:            config.Clock,
 		progress:         config.Progress,
 		warn:             config.Warn,
