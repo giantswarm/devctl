@@ -89,6 +89,9 @@ type Config struct {
 	// it answers within the gateway's registered timeout; zero is
 	// DefaultNoProgressTimeout.
 	NoProgressTimeout time.Duration
+	// Checkouts clone the GitOps repository of a reservation call; nil is
+	// [GitCheckouts] from GitHub into the system's temporary directory.
+	Checkouts Checkouts
 	// Merges are the merges of this server pr_merge_status reads; nil is an
 	// empty [mergejob.Memory]. pr_merge records its merges in them when they
 	// take a Put, as a Memory does. Nothing is kept on disk.
@@ -113,6 +116,7 @@ type Server struct {
 	credentials      Credentials
 	clusters         Clusters
 	sources          Sources
+	checkouts        Checkouts
 	endpoints        agentcli.Endpoints
 	clock            agentcli.Clock
 	progressInterval time.Duration
@@ -132,6 +136,9 @@ func New(config Config) *Server {
 	}
 	if config.Clusters == nil {
 		config.Clusters = NoClusters{}
+	}
+	if config.Checkouts == nil {
+		config.Checkouts = GitCheckouts{}
 	}
 	if config.Endpoints == (agentcli.Endpoints{}) {
 		config.Endpoints = agentcli.DefaultEndpoints()
@@ -159,6 +166,7 @@ func New(config Config) *Server {
 		credentials:       config.Credentials,
 		clusters:          config.Clusters,
 		sources:           config.Sources,
+		checkouts:         config.Checkouts,
 		endpoints:         config.Endpoints,
 		clock:             clock,
 		progressInterval:  config.ProgressInterval,
@@ -173,6 +181,10 @@ func New(config Config) *Server {
 	s.mcp.AddTool(prMergeStatusTool(), s.prMergeStatus)
 	s.mcp.AddTool(releaseWaitTool(s.noProgressTimeout), s.releaseWait)
 	s.mcp.AddTool(rolloutWaitTool(s.noProgressTimeout, s.clusters.Installations()), s.rolloutWait)
+	s.mcp.AddTool(reservationReserveTool(), s.reservationReserve)
+	s.mcp.AddTool(reservationListTool(), s.reservationList)
+	s.mcp.AddTool(reservationExtendTool(), s.reservationExtend)
+	s.mcp.AddTool(reservationReleaseTool(), s.reservationRelease)
 	if config.ReleasePromote {
 		s.mcp.AddTool(releasePromoteTool(s.noProgressTimeout), s.releasePromote)
 	}

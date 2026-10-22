@@ -9,6 +9,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `devctl serve`: `reservation_reserve`, `reservation_list`, `reservation_extend` and `reservation_release`, the
+  `devctl reservation` commands as the person, `reservation_list` read-only. They take no `user`: the holder is the
+  login of the person's grant. Each call works on a shallow clone of the GitOps repository's `main` of its own,
+  removed when it ends, with the person's token as its git credential and the person (login, noreply address) as the
+  commits' author, and answers the command's JSON in devctl's envelope: another holder's reservation and a push the
+  repository refuses are `refused` (exit 5), a missing cluster, app or reservation `not_applicable` (exit 3). The
+  image carries `git`.
 - Any command: the word `Error` of a failure is red, and the word `Warning` is yellow, when stderr is a terminal and `NO_COLOR` is unset.
 - `reservation reserve`: points one management cluster's copy of one collection app at the dev builds of one branch for 10 hours (`--duration` up to 7 days, or the cluster's lower `reservations.giantswarm.io/max-duration`). It writes a Kustomize component with a second `OCIRepository` following the branch's dev tags, records the holder in the cluster's `configmap-reservations.yaml`, renders the cluster's collections to check the reservation really is in effect, and pushes one commit. `--exclusive` locks the whole cluster. The app is found by the chart its source object serves (`--app` overrides). Repeating the same reservation refreshes its window. `--pull-request` must be `owner/repo#number` in `reserve`, `extend` and `release`; a failed run leaves the checkout clean; promoting to `--exclusive` for another branch or pull request is refused. `--user` must be a GitHub login (or an app's `name[bot]`) in `reserve`, `extend`, `release` and `reap`.
 - `reservation release`: undoes what `reserve` wrote for one app on one cluster in one commit, and fails when the app holds no reservation there. With `--pull-request` and no `--cluster` it releases everything that pull request holds, and a pull request that holds nothing is not an error. `--app` and `--app-dir` are refused together, and without `--cluster`.

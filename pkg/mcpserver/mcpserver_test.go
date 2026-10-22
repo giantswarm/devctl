@@ -188,11 +188,11 @@ func TestToolsListReadOnlyAnnotations(t *testing.T) {
 		want   map[string]bool
 	}{
 		"default": {
-			want: map[string]bool{mcpserver.ToolPRWait: true, mcpserver.ToolPRMerge: false, mcpserver.ToolPRMergeStatus: true, mcpserver.ToolReleaseWait: true, mcpserver.ToolRolloutWait: true},
+			want: map[string]bool{mcpserver.ToolPRWait: true, mcpserver.ToolPRMerge: false, mcpserver.ToolPRMergeStatus: true, mcpserver.ToolReleaseWait: true, mcpserver.ToolRolloutWait: true, mcpserver.ToolReservationReserve: false, mcpserver.ToolReservationList: true, mcpserver.ToolReservationExtend: false, mcpserver.ToolReservationRelease: false},
 		},
 		"with release_promote": {
 			config: mcpserver.Config{ReleasePromote: true},
-			want:   map[string]bool{mcpserver.ToolPRWait: true, mcpserver.ToolPRMerge: false, mcpserver.ToolPRMergeStatus: true, mcpserver.ToolReleaseWait: true, mcpserver.ToolRolloutWait: true, mcpserver.ToolReleasePromote: false},
+			want:   map[string]bool{mcpserver.ToolPRWait: true, mcpserver.ToolPRMerge: false, mcpserver.ToolPRMergeStatus: true, mcpserver.ToolReleaseWait: true, mcpserver.ToolRolloutWait: true, mcpserver.ToolReservationReserve: false, mcpserver.ToolReservationList: true, mcpserver.ToolReservationExtend: false, mcpserver.ToolReservationRelease: false, mcpserver.ToolReleasePromote: false},
 		},
 	}
 	for name, tt := range tests {

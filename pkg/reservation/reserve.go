@@ -39,6 +39,10 @@ const (
 	// own sole one, but it still patches only the requester's own app.
 	ScopeExclusive = "exclusive"
 
+	// DefaultGitOpsRepository holds the configuration of every Giant Swarm
+	// management cluster.
+	DefaultGitOpsRepository = "giantswarm/giantswarm-management-clusters"
+
 	clustersDir     = "management-clusters"
 	collectionsDir  = "collections"
 	reservationsDir = "reservations"
