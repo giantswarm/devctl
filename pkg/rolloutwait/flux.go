@@ -58,6 +58,7 @@ func (w *Waiter) helmReleases(ctx context.Context) ([]Deployment, error) {
 	if err != nil {
 		return nil, err
 	}
+	w.seenHelmReleases = len(items)
 	var list []Deployment
 	for i := range items {
 		hr := &items[i]

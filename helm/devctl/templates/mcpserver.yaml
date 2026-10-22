@@ -1,18 +1,15 @@
 {{- if .Values.muster.mcpServer.enabled }}
 {{- /*
 Registers devctl serve with muster, one MCPServer with toolPrefix devctl: its
-tools appear as x_devctl_<tool>. Unpinned: muster forwards the session's Dex ID
-token (forwardToken), which the server checks against identity.issuer and
-identity.audiences, and attaches the person's token of the provider App
-github.grantApp, which muster keeps (spec.auth.providerApps), in
-X-Muster-Grant-<app>. A call without that grant answers grant_required, which
+tools appear as x_devctl_<tool>. Unpinned with forwardToken, so muster connects
+as the person and attaches their token of the provider App github.grantApp,
+which muster keeps (spec.auth.providerApps), in X-Muster-Grant-<app>; the
+server reads no ID token. That token names the caller (GitHub's GET /user): a
+call without it, or with one GitHub refuses, answers grant_required, which
 muster turns into auth_required with the App's sign-in link. A wait is one
 call kept alive by progress: each progress notification restarts timeout, up
 to progress.maxDuration.
 */}}
-{{- if not .Values.identity.issuer }}
-{{- fail "muster.mcpServer.enabled forwards the person's ID token, which the server checks: set identity.issuer and identity.audiences" }}
-{{- end }}
 {{- if not .Values.github.grantApp }}
 {{- fail "muster.mcpServer.enabled: github.grantApp names the provider App whose grant muster attaches; without it every call is auth_required" }}
 {{- end }}

@@ -2,111 +2,136 @@ package mcpserver
 
 import (
 	"context"
-	"errors"
+	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"net/http"
-	"slices"
 	"strings"
+	"sync"
+	"time"
 
-	"github.com/coreos/go-oidc/v3/oidc"
+	"github.com/giantswarm/devctl/v8/pkg/agentcli"
 )
 
-// Caller is the person a call is made for, as the ID token the gateway in
-// front forwards names them (muster's forwardToken).
+// Caller is the person a call is made for, as GitHub names the holder of
+// their grant's token.
 type Caller struct {
-	// Subject is the token's sub, the person's stable identity at the
-	// issuer.
-	Subject string
-	// Email is the token's email claim, when it carries one.
-	Email string
+	// Login is the person's GitHub login.
+	Login string
+	// ID is the person's GitHub user id, stable across a renamed login.
+	ID int64
 }
 
-// Verifier checks the bearer token of a call and names its caller.
-type Verifier interface {
-	Verify(ctx context.Context, rawIDToken string) (Caller, error)
+// Users answer the GitHub user a token of the App acts as.
+type Users interface {
+	User(ctx context.Context, token string) (Caller, error)
 }
 
-// OIDCVerifier accepts an ID token its issuer signed for one of its
-// audiences.
-type OIDCVerifier struct {
-	verifier  *oidc.IDTokenVerifier
-	audiences []string
+// GitHubUsers read GET /user at BaseURL and keep each token's answer for
+// TTL: a token GitHub refuses is auth_required.
+type GitHubUsers struct {
+	BaseURL string
+	Client  *http.Client
+	TTL     time.Duration
+	Now     func() time.Time
+
+	cache tokenCache[Caller]
 }
 
-// NewOIDCVerifier discovers issuer's signing keys through client (nil is
-// http.DefaultClient) and accepts its ID tokens for any of audiences.
-func NewOIDCVerifier(ctx context.Context, client *http.Client, issuer string, audiences []string) (*OIDCVerifier, error) {
-	if client != nil {
-		ctx = oidc.ClientContext(ctx, client)
+// DefaultUsersTTL is how long a token's user is kept.
+const DefaultUsersTTL = 5 * time.Minute
+
+// User implements [Users].
+func (g *GitHubUsers) User(ctx context.Context, token string) (Caller, error) {
+	return g.cache.get(token, g.TTL, DefaultUsersTTL, g.Now, func() (Caller, error) { return g.read(ctx, token) })
+}
+
+func (g *GitHubUsers) read(ctx context.Context, token string) (Caller, error) {
+	var user struct {
+		Login string `json:"login"`
+		ID    int64  `json:"id"`
 	}
-	provider, err := oidc.NewProvider(ctx, issuer)
-	if err != nil {
-		return nil, fmt.Errorf("discovering the issuer %s: %w", issuer, err)
-	}
-	return newOIDCVerifier(provider.VerifierContext(ctx, &oidc.Config{SkipClientIDCheck: true}), audiences)
-}
-
-// NewStaticOIDCVerifier accepts issuer's ID tokens signed by keys for any of
-// audiences, with no discovery.
-func NewStaticOIDCVerifier(issuer string, keys oidc.KeySet, audiences []string) (*OIDCVerifier, error) {
-	return newOIDCVerifier(oidc.NewVerifier(issuer, keys, &oidc.Config{SkipClientIDCheck: true}), audiences)
-}
-
-func newOIDCVerifier(verifier *oidc.IDTokenVerifier, audiences []string) (*OIDCVerifier, error) {
-	if len(audiences) == 0 {
-		return nil, errors.New("an ID token verifier needs at least one trusted audience")
-	}
-	return &OIDCVerifier{verifier: verifier, audiences: audiences}, nil
-}
-
-// Verify implements [Verifier].
-func (v *OIDCVerifier) Verify(ctx context.Context, rawIDToken string) (Caller, error) {
-	token, err := v.verifier.Verify(ctx, rawIDToken)
-	if err != nil {
+	if err := getGitHub(ctx, g.Client, strings.TrimSuffix(g.BaseURL, "/")+"/user", token, "your GitHub user", &user); err != nil {
 		return Caller{}, err
 	}
-	if !slices.ContainsFunc(token.Audience, func(aud string) bool { return slices.Contains(v.audiences, aud) }) {
-		return Caller{}, fmt.Errorf("the token's audiences %v hold none this server trusts", token.Audience)
+	if user.Login == "" || user.ID == 0 {
+		return Caller{}, fmt.Errorf("reading your GitHub user: GitHub named no login")
 	}
-	var claims struct {
-		Email string `json:"email"`
-	}
-	if err := token.Claims(&claims); err != nil {
-		return Caller{}, err
-	}
-	if token.Subject == "" {
-		return Caller{}, errors.New("the token names no subject")
-	}
-	return Caller{Subject: token.Subject, Email: claims.Email}, nil
+	return Caller{Login: user.Login, ID: user.ID}, nil
 }
 
-type callerKey struct{}
-
-// CallerFrom is the caller of the call in ctx, if the server verified one.
-func CallerFrom(ctx context.Context) (Caller, bool) {
-	c, ok := ctx.Value(callerKey{}).(Caller)
-	return c, ok
+// getGitHub reads url with token into body: auth_required when GitHub
+// refuses the token, which the person grants again in muster.
+func getGitHub(ctx context.Context, client *http.Client, url, token, what string, body any) error {
+	if client == nil {
+		client = http.DefaultClient
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("reading %s: %w", what, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	switch {
+	case resp.StatusCode == http.StatusUnauthorized:
+		return agentcli.NewExitError(agentcli.ExitAuthRequired, agentcli.VerdictAuthRequired,
+			"GitHub refused your token of the App: grant it again in muster, then call again")
+	case resp.StatusCode != http.StatusOK:
+		return fmt.Errorf("reading %s: GitHub answered %s", what, resp.Status)
+	}
+	if err := json.NewDecoder(resp.Body).Decode(body); err != nil {
+		return fmt.Errorf("reading %s: %w", what, err)
+	}
+	return nil
 }
 
-// authenticate refuses a request without a bearer token verifier accepts,
-// and puts the caller it names into the request's context.
-func authenticate(verifier Verifier, next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		scheme, raw, _ := strings.Cut(r.Header.Get("Authorization"), " ")
-		if !strings.EqualFold(scheme, "Bearer") || raw == "" {
-			unauthorized(w, "a bearer ID token is required")
-			return
+// tokenCache keeps one answer per token, by the token's hash, until it
+// expires; an error is never kept.
+type tokenCache[T any] struct {
+	mu      sync.Mutex
+	entries map[[sha256.Size]byte]cached[T]
+}
+
+type cached[T any] struct {
+	value   T
+	expires time.Time
+}
+
+// get is token's kept answer, or read's, kept for ttl (fallback when ttl is
+// not positive).
+func (c *tokenCache[T]) get(token string, ttl, fallback time.Duration, now func() time.Time, read func() (T, error)) (T, error) {
+	if now == nil {
+		now = time.Now
+	}
+	key := sha256.Sum256([]byte(token))
+	c.mu.Lock()
+	entry, ok := c.entries[key]
+	c.mu.Unlock()
+	if ok && now().Before(entry.expires) {
+		return entry.value, nil
+	}
+	value, err := read()
+	if err != nil {
+		return value, err
+	}
+	if ttl <= 0 {
+		ttl = fallback
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.entries == nil {
+		c.entries = map[[sha256.Size]byte]cached[T]{}
+	}
+	for k, v := range c.entries {
+		if !now().Before(v.expires) {
+			delete(c.entries, k)
 		}
-		caller, err := verifier.Verify(r.Context(), raw)
-		if err != nil {
-			unauthorized(w, "the bearer ID token is not accepted")
-			return
-		}
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), callerKey{}, caller)))
-	})
-}
-
-func unauthorized(w http.ResponseWriter, message string) {
-	w.Header().Set("WWW-Authenticate", `Bearer error="invalid_token"`)
-	http.Error(w, message, http.StatusUnauthorized)
+	}
+	c.entries[key] = cached[T]{value: value, expires: now().Add(ttl)}
+	return value, nil
 }

@@ -21,7 +21,9 @@ import (
 // apply it. A Konfiguration renders a ConfigMap and a Secret per app,
 // labelled with the revision, and the HelmReleases that take their values
 // from them upgrade when the values changed: those of the apps the pull
-// request changed are followed too.
+// request changed are followed too. A Kustomization applies objects as
+// they are in the repository: the HelmReleases it changed, or whose values
+// or chart source it changed, are followed as well.
 
 // GitHub answers whether a commit contains another; *githubclient.Client
 // is one.
@@ -53,6 +55,7 @@ const (
 	// KindConfigMap is the values a Konfiguration renders for a changed
 	// app that no HelmRelease or App takes.
 	KindConfigMap = "ConfigMap"
+	kindSecret    = "Secret"
 )
 
 var (
@@ -60,6 +63,7 @@ var (
 	kustomizations  = schema.GroupVersionResource{Group: "kustomize.toolkit.fluxcd.io", Version: "v1", Resource: "kustomizations"}
 	konfigurations  = schema.GroupVersionResource{Group: "konfigure.giantswarm.io", Version: "v1alpha1", Resource: "konfigurations"}
 	configMaps      = schema.GroupVersionResource{Version: "v1", Resource: "configmaps"}
+	secrets         = schema.GroupVersionResource{Version: "v1", Resource: "secrets"}
 	charts          = apps.GroupVersion().WithResource("charts")
 )
 
@@ -112,8 +116,10 @@ func (w *Waiter) observeRevision(ctx context.Context) ([]Deployment, error) {
 }
 
 // revisionConsumers are the Kustomizations and Konfigurations that read one
-// of the sources, and the HelmReleases that take their values from what a
-// Konfiguration renders for an app the pull request changed or that
+// of the sources, the HelmReleases that take their values from what a
+// Konfiguration renders for an app the pull request changed, the
+// HelmReleases a Kustomization changed with the revision (their spec, a
+// ConfigMap or Secret of their valuesFrom, their chart source), and those
 // --helmrelease names.
 func (w *Waiter) revisionConsumers(ctx context.Context, sources []object) ([]Deployment, error) {
 	ks, err := w.list(ctx, kustomizations, "")
@@ -121,6 +127,9 @@ func (w *Waiter) revisionConsumers(ctx context.Context, sources []object) ([]Dep
 		return nil, err
 	}
 	var list []Deployment
+	// applied are the objects the Kustomizations apply: inventory ID to
+	// the Kustomization.
+	applied := map[string]string{}
 	for i := range ks {
 		k := &ks[i]
 		if str(k, "spec", "sourceRef", "kind") != KindGitRepository || !slices.Contains(sources, sourceRef(k, "spec", "sourceRef")) {
@@ -131,6 +140,14 @@ func (w *Waiter) revisionConsumers(ctx context.Context, sources []object) ([]Dep
 			return nil, err
 		}
 		list = append(list, d)
+		entries, _, _ := unstructured.NestedSlice(k.Object, "status", "inventory", "entries")
+		for _, e := range entries {
+			if m, ok := e.(map[string]any); ok {
+				if id, ok := m["id"].(string); ok {
+					applied[id] = d.id()
+				}
+			}
+		}
 	}
 
 	kfgs, err := w.list(ctx, konfigurations, "")
@@ -150,9 +167,6 @@ func (w *Waiter) revisionConsumers(ctx context.Context, sources []object) ([]Dep
 		list = append(list, d)
 		rendered = append(rendered, w.renderedFor(k)...)
 	}
-	if len(rendered) == 0 {
-		return list, nil
-	}
 
 	// followed are the rendered values a HelmRelease or an App takes.
 	followed := map[string]bool{}
@@ -160,8 +174,10 @@ func (w *Waiter) revisionConsumers(ctx context.Context, sources []object) ([]Dep
 	if err != nil {
 		return nil, err
 	}
+	w.seenHelmReleases = len(hrs)
 	for i := range hrs {
 		hr := &hrs[i]
+		judged := false
 		for _, r := range rendered {
 			if r.namespace == hr.GetNamespace() && takesValuesFrom(hr, r.name) {
 				followed[r.id()] = true
@@ -173,9 +189,23 @@ func (w *Waiter) revisionConsumers(ctx context.Context, sources []object) ([]Dep
 					return nil, err
 				}
 				list = append(list, d)
+				judged = true
 				break
 			}
 		}
+		if judged {
+			continue
+		}
+		d, follow, err := w.judgeAppliedHelmRelease(ctx, hr, applied)
+		if err != nil {
+			return nil, err
+		}
+		if follow {
+			list = append(list, d)
+		}
+	}
+	if len(rendered) == 0 {
+		return list, nil
 	}
 
 	items, err := w.list(ctx, apps, "")
@@ -383,7 +413,7 @@ func takesValuesFrom(hr *unstructured.Unstructured, name string) bool {
 	list, _, _ := unstructured.NestedSlice(hr.Object, "spec", "valuesFrom")
 	for _, item := range list {
 		m, ok := item.(map[string]any)
-		if ok && m["name"] == name && (m["kind"] == "ConfigMap" || m["kind"] == "Secret") {
+		if ok && m["name"] == name && (m["kind"] == KindConfigMap || m["kind"] == kindSecret) {
 			return true
 		}
 	}
@@ -400,20 +430,7 @@ func (w *Waiter) judgeValuesHelmRelease(ctx context.Context, hr *unstructured.Un
 		Kind: KindHelmRelease, Namespace: hr.GetNamespace(), Name: hr.GetName(),
 		Source: "ConfigMap " + r.namespace + "/" + r.name, Follows: r.konfiguration.String(), Workloads: []Workload{},
 	}
-	self := object{resource: helmReleases, kind: KindHelmRelease, namespace: hr.GetNamespace(), name: hr.GetName()}
-	var lastDeployed time.Time
-	release, releaseNamespace := "", ""
-	if history, _, _ := unstructured.NestedSlice(hr.Object, "status", "history"); len(history) > 0 {
-		if h, ok := history[0].(map[string]any); ok && h["status"] == statusDeployed {
-			d.Chart, _ = h["chartName"].(string)
-			v, _ := h["chartVersion"].(string)
-			d.RunningVersion = bare(v)
-			release, _ = h["name"].(string)
-			releaseNamespace, _ = h["namespace"].(string)
-			at, _ := h["lastDeployed"].(string)
-			lastDeployed, _ = time.Parse(time.RFC3339, at)
-		}
-	}
+	d, last := lastDeploy(d, hr)
 	if suspended, _, _ := unstructured.NestedBool(hr.Object, "spec", "suspend"); suspended {
 		return d.set(StateSuspended, "the HelmRelease is suspended: flux resume helmrelease -n %s %s", d.Namespace, d.Name), nil
 	}
@@ -433,13 +450,47 @@ func (w *Waiter) judgeValuesHelmRelease(ctx context.Context, hr *unstructured.Un
 	if !ok {
 		return d.set(StateProgressing, "%s rendered from %s; waiting for %s", d.Source, orNone(short(renderedFrom)), short(w.revision)), nil
 	}
-	renderedAt := lastWrite(cm)
+	return w.judgeNewValues(ctx, d, hr, last, lastWrite(cm), w.helmReleaseTookNewValues(hr))
+}
 
+// deployed is a HelmRelease's last successful deploy: its Helm release and
+// when.
+type deployed struct {
+	release, namespace string
+	at                 time.Time
+}
+
+// lastDeploy fills the chart and the running version of a HelmRelease from
+// its last deploy, when that succeeded.
+func lastDeploy(d Deployment, hr *unstructured.Unstructured) (Deployment, deployed) {
+	var last deployed
+	if history, _, _ := unstructured.NestedSlice(hr.Object, "status", "history"); len(history) > 0 {
+		if h, ok := history[0].(map[string]any); ok && h["status"] == statusDeployed {
+			d.Chart, _ = h["chartName"].(string)
+			v, _ := h["chartVersion"].(string)
+			d.RunningVersion = bare(v)
+			last.release, _ = h["name"].(string)
+			last.namespace, _ = h["namespace"].(string)
+			at, _ := h["lastDeployed"].(string)
+			last.at, _ = time.Parse(time.RFC3339, at)
+		}
+	}
+	return d, last
+}
+
+// judgeNewValues judges a HelmRelease whose values (d.Source) changed with
+// the revision at changedAt: rolled out once it deployed no earlier, took
+// new values after the merge (tookNew), or handled the reconcile
+// --reconcile requested (which reads the values as they are), is ready at
+// its generation and its workloads are rolled out; failed when it failed
+// since.
+func (w *Waiter) judgeNewValues(ctx context.Context, d Deployment, hr *unstructured.Unstructured, last deployed, changedAt time.Time, tookNew bool) (Deployment, error) {
+	self := object{resource: helmReleases, kind: KindHelmRelease, namespace: hr.GetNamespace(), name: hr.GetName()}
 	ready := condition(hr, "Ready")
 	current := num(hr, "status", "observedGeneration") >= hr.GetGeneration()
 	requestedAt, requested := w.requested[self.String()]
 	handled := requested && str(hr, "status", "lastHandledReconcileAt") == requestedAt
-	if !lastDeployed.Before(renderedAt) || handled || w.helmReleaseTookNewValues(hr) {
+	if !last.at.Before(changedAt) || handled || tookNew {
 		if !current || ready.status != conditionTrue {
 			return d.set(StateProgressing, "upgraded with the values of %s, the HelmRelease not ready: %s", short(w.revision), orUnknown(ready)), nil
 		}
@@ -447,14 +498,156 @@ func (w *Waiter) judgeValuesHelmRelease(ctx context.Context, hr *unstructured.Un
 			w.warnPoll(fmt.Sprintf("%s deploys to a remote cluster: its workloads are not checked, helm-controller's wait vouches for them", d.id()))
 			return d.set(StateRolledOut, ""), nil
 		}
-		return w.judgeWorkloads(ctx, d, releaseNamespace, release)
+		return w.judgeWorkloads(ctx, d, last.namespace, last.release)
 	}
-	if ready.status == conditionFalse && helmReleaseFailures[ready.reason] && !ready.since.Before(renderedAt) {
+	if ready.status == conditionFalse && helmReleaseFailures[ready.reason] && !ready.since.Before(changedAt) {
 		return d.set(StateFailed, "%s with the values of %s: %s", ready.reason, short(w.revision), ready.message), nil
 	}
 	// Only now does a reconcile request read the values of the revision.
 	d.self = &self
-	return d.set(StateProgressing, "last deployed %s, before %s rendered the values of %s at %s: waiting for helm-controller (its interval, or --reconcile); values that render the same never upgrade", formatTime(lastDeployed), r.konfiguration, short(w.revision), formatTime(renderedAt)), nil
+	return d.set(StateProgressing, "last deployed %s, before %s wrote %s with %s at %s: waiting for helm-controller (its interval, or --reconcile); values that render the same never upgrade", formatTime(last.at), d.Follows, d.Source, short(w.revision), formatTime(changedAt)), nil
+}
+
+// kustomizeManager is the field manager kustomize-controller applies as.
+const kustomizeManager = "kustomize-controller"
+
+// inventoryID is how a Kustomization's status.inventory names an object.
+func inventoryID(namespace, name, group, kind string) string {
+	return namespace + "_" + name + "_" + group + "_" + kind
+}
+
+// appliedAt is when kustomize-controller last changed the object: it
+// writes only what differs from the repository, so a no-op apply leaves
+// the time as it was. Zero when it never wrote the object.
+func appliedAt(u *unstructured.Unstructured) time.Time {
+	var t time.Time
+	for _, f := range u.GetManagedFields() {
+		if f.Manager == kustomizeManager && f.Subresource == "" && f.Time != nil && f.Time.After(t) {
+			t = f.Time.Time
+		}
+	}
+	return t
+}
+
+// appliedChange is what a Kustomization that reads the repository changed
+// for a HelmRelease since the pull request merged.
+type appliedChange struct {
+	// spec: the HelmRelease itself, a new generation helm-controller
+	// reconciles with the values as they are.
+	spec bool
+	// objects are its valuesFrom ConfigMaps and Secrets and its chartRef
+	// source, as "<Kind> <namespace>/<name>"; at the newest change of them.
+	objects []string
+	at      time.Time
+	// by is the Kustomization that applied the change.
+	by string
+}
+
+// appliedChanges reads what the Kustomizations (applied: inventory ID to
+// the Kustomization) changed for a HelmRelease since the merge.
+func (w *Waiter) appliedChanges(ctx context.Context, hr *unstructured.Unstructured, applied map[string]string) (appliedChange, error) {
+	var c appliedChange
+	if w.mergedAt.IsZero() {
+		return c, nil
+	}
+	if by := applied[inventoryID(hr.GetNamespace(), hr.GetName(), helmReleases.Group, KindHelmRelease)]; by != "" && !appliedAt(hr).Before(w.mergedAt) {
+		c.spec, c.by = true, by
+	}
+	type ref struct {
+		o     object
+		group string
+	}
+	var refs []ref
+	list, _, _ := unstructured.NestedSlice(hr.Object, "spec", "valuesFrom")
+	for _, item := range list {
+		m, _ := item.(map[string]any)
+		name, _ := m["name"].(string)
+		switch m["kind"] {
+		case KindConfigMap:
+			refs = append(refs, ref{object{resource: configMaps, kind: KindConfigMap, namespace: hr.GetNamespace(), name: name}, ""})
+		case kindSecret:
+			refs = append(refs, ref{object{resource: secrets, kind: kindSecret, namespace: hr.GetNamespace(), name: name}, ""})
+		}
+	}
+	if kind := str(hr, "spec", "chartRef", "kind"); kind == kindOCIRepository || kind == kindHelmChart {
+		ns := str(hr, "spec", "chartRef", "namespace")
+		if ns == "" {
+			ns = hr.GetNamespace()
+		}
+		resource := ociRepositories
+		if kind == kindHelmChart {
+			resource = helmCharts
+		}
+		refs = append(refs, ref{object{resource: resource, kind: kind, namespace: ns, name: str(hr, "spec", "chartRef", "name")}, groupSource})
+	}
+	for _, r := range refs {
+		by := applied[inventoryID(r.o.namespace, r.o.name, r.group, r.o.kind)]
+		if by == "" {
+			continue
+		}
+		u, err := w.client.Resource(r.o.resource).Namespace(r.o.namespace).Get(ctx, r.o.name, metav1.GetOptions{})
+		if apierrors.IsNotFound(err) {
+			continue
+		}
+		if apierrors.IsForbidden(err) {
+			w.warnPoll(fmt.Sprintf("%s: reading %s is forbidden, so whether %s changed it is not told", hrID(hr), r.o, by))
+			continue
+		}
+		if err != nil {
+			return c, w.clusterErr("reading "+r.o.String(), err)
+		}
+		if at := appliedAt(u); !at.Before(w.mergedAt) {
+			c.objects = append(c.objects, r.o.String())
+			c.at = maxTime(c.at, at)
+			if c.by == "" {
+				c.by = by
+			}
+		}
+	}
+	return c, nil
+}
+
+func hrID(hr *unstructured.Unstructured) string {
+	return KindHelmRelease + " " + hr.GetNamespace() + "/" + hr.GetName()
+}
+
+func maxTime(a, b time.Time) time.Time {
+	if b.After(a) {
+		return b
+	}
+	return a
+}
+
+// judgeAppliedHelmRelease judges a HelmRelease no rendered values of a
+// changed app feed: followed when a Kustomization that reads the
+// repository changed it, its values or its chart source with the revision,
+// or --helmrelease names it. A new generation is rolled out once
+// helm-controller observed it, Ready, its workloads rolled out; changed
+// values or a changed chart source once it deployed after the change (or
+// handled a --reconcile request). A named HelmRelease nothing changed is
+// judged by its Ready.
+func (w *Waiter) judgeAppliedHelmRelease(ctx context.Context, hr *unstructured.Unstructured, applied map[string]string) (Deployment, bool, error) {
+	c, err := w.appliedChanges(ctx, hr, applied)
+	if err != nil {
+		return Deployment{}, false, err
+	}
+	if !c.spec && len(c.objects) == 0 && !w.named(hr.GetNamespace(), hr.GetName()) {
+		return Deployment{}, false, nil
+	}
+	d := Deployment{
+		Kind: KindHelmRelease, Namespace: hr.GetNamespace(), Name: hr.GetName(),
+		Source: strings.Join(c.objects, ", "), Follows: c.by, Workloads: []Workload{},
+	}
+	d, last := lastDeploy(d, hr)
+	if suspended, _, _ := unstructured.NestedBool(hr.Object, "spec", "suspend"); suspended {
+		return d.set(StateSuspended, "the HelmRelease is suspended: flux resume helmrelease -n %s %s", d.Namespace, d.Name), true, nil
+	}
+	if c.spec || len(c.objects) == 0 {
+		d, err := w.judgeNamedHelmRelease(ctx, d, hr, last.namespace, last.release)
+		return d, true, err
+	}
+	d, err = w.judgeNewValues(ctx, d, hr, last, c.at, false)
+	return d, true, err
 }
 
 // konfigure-operator re-labels what it renders with every revision it

@@ -86,8 +86,8 @@ type Deployment struct {
 	State string `json:"state"`
 	// Message says why the deployment is not rolled out; empty when it is.
 	Message string `json:"message"`
-	// Workloads are the Deployments, StatefulSets and DaemonSets of the
-	// Helm release, read once the version is deployed.
+	// Workloads are the Deployments, StatefulSets, DaemonSets and
+	// HelmReleases of the Helm release, read once the version is deployed.
 	Workloads []Workload `json:"workloads"`
 
 	// source is the Flux source object a reconcile request goes to; nil for
@@ -98,7 +98,8 @@ type Deployment struct {
 	self *object
 }
 
-// Workload is one Deployment, StatefulSet or DaemonSet of a release.
+// Workload is one Deployment, StatefulSet, DaemonSet or HelmRelease of a
+// release.
 type Workload struct {
 	Kind      string `json:"kind"`
 	Namespace string `json:"namespace"`
