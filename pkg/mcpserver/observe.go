@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -15,13 +16,14 @@ import (
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
 )
 
-// Anonymous is the subject of a call no verified caller made.
+// Anonymous is the login of a call refused before its grant named the
+// caller: one without a grant, or one refused as usage.
 const Anonymous = "anonymous"
 
 // Metrics are the server's call metrics, labelled with the tool, the
-// verified caller's subject (Anonymous without a verifier), the repository
-// (owner/repo; empty for a tool that names none or an argument refused as
-// usage) and the verdict. The caller's email is in the log line only.
+// caller's GitHub login and user id (Anonymous and empty for a call whose
+// grant named none), the repository (owner/repo; empty for a tool that
+// names none or an argument refused as usage) and the verdict.
 type Metrics struct {
 	calls    *prometheus.CounterVec
 	duration *prometheus.HistogramVec
@@ -29,19 +31,19 @@ type Metrics struct {
 
 // NewMetrics registers the server's metrics with registerer.
 func NewMetrics(registerer prometheus.Registerer) (*Metrics, error) {
-	labels := []string{"tool", "subject", "repository", "verdict"}
+	labels := []string{"tool", "login", "user_id", "repository", "verdict"}
 	m := &Metrics{
 		calls: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: "devctl",
 			Subsystem: "mcp",
 			Name:      "tool_calls_total",
-			Help:      "Tool calls answered, by tool, calling subject, repository and verdict.",
+			Help:      "Tool calls answered, by tool, calling GitHub login and user id, repository and verdict.",
 		}, labels),
 		duration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: "devctl",
 			Subsystem: "mcp",
 			Name:      "tool_call_duration_seconds",
-			Help:      "How long a tool call took, a wait included, by tool, calling subject, repository and verdict.",
+			Help:      "How long a tool call took, a wait included, by tool, calling GitHub login and user id, repository and verdict.",
 			Buckets:   []float64{0.1, 0.5, 1, 5, 30, 60, 300, 900, 1800, 3600},
 		}, labels),
 	}
@@ -53,21 +55,18 @@ func NewMetrics(registerer prometheus.Registerer) (*Metrics, error) {
 	return m, nil
 }
 
-// httpContext puts the person's grants muster attached and the caller the
-// server verified into a call's context.
+// httpContext puts the person's grants muster attached into a call's
+// context.
 func httpContext(ctx context.Context, r *http.Request) context.Context {
-	ctx = context.WithValue(ctx, grantsKey{}, grantsOf(r))
-	if caller, ok := CallerFrom(r.Context()); ok {
-		ctx = context.WithValue(ctx, callerKey{}, caller)
-	}
-	return ctx
+	return context.WithValue(ctx, grantsKey{}, grantsOf(r))
 }
 
 type grantsKey struct{}
 
 // observe follows every tool call: it gives the call its state, answers a
 // call that lacked the person's grant so muster turns it into the App's
-// sign-in link, and logs and counts the call by its caller and repository.
+// sign-in link, and logs and counts the call by the caller the grant names
+// and the repository.
 func (s *Server) observe(next server.ToolHandlerFunc) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		repository := request.GetString("repository", "")
@@ -83,21 +82,21 @@ func (s *Server) observe(next server.ToolHandlerFunc) server.ToolHandlerFunc {
 		}
 
 		tool := request.Params.Name
-		subject, email := Anonymous, ""
-		if caller, ok := CallerFrom(ctx); ok {
-			subject, email = caller.Subject, caller.Email
+		login, userID := Anonymous, ""
+		if c.caller.Login != "" {
+			login, userID = c.caller.Login, strconv.FormatInt(c.caller.ID, 10)
 		}
 		verdict, exitCode := outcomeOf(result, err)
 		elapsed := time.Since(started)
 		if s.metrics != nil {
 			label := repositoryLabel(repository, verdict)
-			s.metrics.calls.WithLabelValues(tool, subject, label, verdict).Inc()
-			s.metrics.duration.WithLabelValues(tool, subject, label, verdict).Observe(elapsed.Seconds())
+			s.metrics.calls.WithLabelValues(tool, login, userID, label, verdict).Inc()
+			s.metrics.duration.WithLabelValues(tool, login, userID, label, verdict).Observe(elapsed.Seconds())
 		}
 		s.logger.LogAttrs(ctx, slog.LevelInfo, "tool call",
 			slog.String("tool", tool),
-			slog.String("subject", subject),
-			slog.String("email", email),
+			slog.String("login", login),
+			slog.String("userId", userID),
 			slog.String("repository", repository),
 			slog.String("verdict", verdict),
 			slog.Int("exitCode", exitCode),

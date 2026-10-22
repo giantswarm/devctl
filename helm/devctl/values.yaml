@@ -35,24 +35,15 @@ github:
   # auth_required or not_applicable answer names it; empty is grantApp.
   app: ""
 
-identity:
-  # -- The issuer of the ID token muster forwards (forwardToken), the
-  # installation's Dex: every request must carry one it signed. Required with
-  # muster.mcpServer.enabled.
-  issuer: ""
-  # -- The audiences of that token the server trusts, one at least: muster's
-  # Dex client.
-  audiences: []
-  # -- A Secret in the release namespace with the issuer's CA, for an issuer
-  # with a private certificate; empty trusts the system's roots alone.
-  caSecret:
-    name: ""
-    key: ca.crt
+# -- Ignored: the server names the caller from the person's GitHub grant, not
+# from the ID token muster forwards. Accepted so a configuration that still
+# sets it renders.
+identity: {}  # @schema additionalProperties: true
 
 metrics:
   # -- Serve the call metrics (devctl_mcp_tool_calls_total and
-  # devctl_mcp_tool_call_duration_seconds, by tool, subject, repository and
-  # verdict) at /metrics on port.
+  # devctl_mcp_tool_call_duration_seconds, by tool, the caller's GitHub login
+  # and user id, repository and verdict) at /metrics on port.
   enabled: true
   port: 9090
   serviceMonitor:
@@ -67,8 +58,8 @@ metrics:
 muster:
   mcpServer:
     # -- Register the server with muster: an MCPServer in the release
-    # namespace, which muster watches. Needs github.grantApp and identity:
-    # one values change registers the server on an installation.
+    # namespace, which muster watches. Needs github.grantApp: one values
+    # change registers the server on an installation.
     enabled: false
     # -- The MCPServer's name.
     name: devctl
@@ -82,7 +73,8 @@ muster:
     # 3600): above the server's longest wait, 55 minutes.
     progressMaxDuration: 3600
     # -- Extra audiences the forwarded ID token carries; muster requests
-    # them at sign-in.
+    # them at sign-in. The server reads no ID token: muster forwards one only
+    # because it attaches the grant to a connection made as the person.
     requiredAudiences: []
     # -- Extra labels on the MCPServer.
     labels: {}  # @schema additionalProperties: true

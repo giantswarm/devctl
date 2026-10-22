@@ -103,8 +103,12 @@ func prMergeStatusTool() mcp.Tool {
 	)
 }
 
-func (s *Server) prMergeStatus(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func (s *Server) prMergeStatus(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	doc := mergejob.NewStatusDocument(time.Now())
+	// It reads no GitHub, but answers only a caller a grant names.
+	if _, err := s.credentials.GitHubToken(ctx); err != nil {
+		return answer(&doc, agentcli.VerdictGreen, err)
+	}
 	ok, err := mergejob.ReadStatus(s.merges, request.GetString("handle", ""), &doc)
 	return answer(&doc, ok, err)
 }

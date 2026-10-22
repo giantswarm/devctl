@@ -1,6 +1,3 @@
-{{- if and .Values.identity.issuer (not .Values.identity.audiences) }}
-{{- fail "identity.audiences: the forwarded ID token's trusted audiences are required with identity.issuer" }}
-{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -61,15 +58,6 @@ spec:
             {{- with .Values.github.app }}
             - --github-app={{ . }}
             {{- end }}
-            {{- with .Values.identity.issuer }}
-            - --oidc-issuer={{ . }}
-            {{- end }}
-            {{- range .Values.identity.audiences }}
-            - --oidc-audience={{ . }}
-            {{- end }}
-            {{- if .Values.identity.caSecret.name }}
-            - --oidc-ca-file=/etc/devctl/issuer-ca/ca.crt
-            {{- end }}
             {{- with .Values.extraArgs }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -106,24 +94,9 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
-            {{- if .Values.identity.caSecret.name }}
-            - name: issuer-ca
-              mountPath: /etc/devctl/issuer-ca
-              readOnly: true
-            {{- end }}
       volumes:
         - name: tmp
           emptyDir: {}
-        {{- with .Values.identity.caSecret }}
-        {{- if .name }}
-        - name: issuer-ca
-          secret:
-            secretName: {{ .name }}
-            items:
-              - key: {{ .key }}
-                path: ca.crt
-        {{- end }}
-        {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

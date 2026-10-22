@@ -3,21 +3,16 @@ package mcpserver_test
 import (
 	"bytes"
 	"context"
-	"crypto"
-	"crypto/rand"
-	"crypto/rsa"
 	"encoding/json"
 	"log/slog"
+	"net/http"
 	"net/http/httptest"
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
-	"time"
 
-	"github.com/coreos/go-oidc/v3/oidc"
-	"github.com/go-jose/go-jose/v4"
-	"github.com/go-jose/go-jose/v4/jwt"
 	"github.com/google/go-github/v93/github"
 	"github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/client/transport"
@@ -30,11 +25,7 @@ import (
 	"github.com/giantswarm/devctl/v8/pkg/prwait/prwaittest"
 )
 
-const (
-	issuer   = "https://dex.example.com"
-	audience = "muster"
-	app      = "github"
-)
+const app = "github"
 
 // installed answers the owners the App is installed on, the same for every
 // token, and records the tokens it was asked with.
@@ -52,43 +43,24 @@ func (i *installed) Owners(_ context.Context, token string) ([]string, error) {
 	return i.owners, nil
 }
 
-// signer signs ID tokens of issuer, and its verifier accepts them.
-type signer struct {
-	signer   jose.Signer
-	verifier *mcpserver.OIDCVerifier
+// users answer the same caller for every token, or err, and record the
+// tokens they were asked with.
+type users struct {
+	caller mcpserver.Caller
+	err    error
+
+	mu     sync.Mutex
+	tokens []string
 }
 
-func newSigner(t *testing.T) signer {
-	t.Helper()
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		t.Fatal(err)
-	}
-	s, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.RS256, Key: key}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	v, err := mcpserver.NewStaticOIDCVerifier(issuer, &oidc.StaticKeySet{PublicKeys: []crypto.PublicKey{&key.PublicKey}}, []string{audience})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return signer{signer: s, verifier: v}
+func (u *users) User(_ context.Context, token string) (mcpserver.Caller, error) {
+	u.mu.Lock()
+	u.tokens = append(u.tokens, token)
+	u.mu.Unlock()
+	return u.caller, u.err
 }
 
-func (s signer) idToken(t *testing.T, subject, email, aud string) string {
-	t.Helper()
-	raw, err := jwt.Signed(s.signer).Claims(jwt.Claims{
-		Issuer:   issuer,
-		Subject:  subject,
-		Audience: jwt.Audience{aud},
-		Expiry:   jwt.NewNumericDate(time.Now().Add(time.Hour)),
-		IssuedAt: jwt.NewNumericDate(time.Now()),
-	}).Claims(map[string]any{"email": email}).Serialize()
-	if err != nil {
-		t.Fatal(err)
-	}
-	return raw
-}
+var alice = mcpserver.Caller{Login: "alice", ID: 4711}
 
 // connectAs serves config over streamable HTTP and returns a client whose
 // every request carries headers, as muster sends them.
@@ -152,13 +124,14 @@ func TestGrantRequired(t *testing.T) {
 }
 
 // TestGrantActsAsThePerson: the token muster attaches for the App is the
-// one every client of the call is built with, and the one the App's
-// installations are read with.
+// one every client of the call is built with, the one the caller is read
+// with, and the one the App's installations are read with.
 func TestGrantActsAsThePerson(t *testing.T) {
 	s := &sources{pr: greenHead()}
 	i := &installed{owners: []string{"GiantSwarm"}}
+	u := &users{caller: alice}
 	c, err := connectAs(t, mcpserver.Config{
-		Credentials: mcpserver.MusterGrant{App: app, Installations: i},
+		Credentials: mcpserver.MusterGrant{App: app, Users: u, Installations: i},
 		Sources:     s,
 		Clock:       virtual(),
 	}, map[string]string{
@@ -170,8 +143,8 @@ func TestGrantActsAsThePerson(t *testing.T) {
 	}
 	_, doc := call(t, c, mcpserver.ToolPRWait, prWaitArgs("giantswarm/devctl"), "w")
 	assertVerdict(t, doc, agentcli.VerdictGreen, agentcli.ExitOK)
-	if !slices.Equal(s.tokens, []string{"ghu_person"}) || !slices.Equal(i.tokens, []string{"ghu_person"}) {
-		t.Errorf("clients built with %v, installations read with %v, want the person's token of %s only", s.tokens, i.tokens, app)
+	if !slices.Equal(s.tokens, []string{"ghu_person"}) || !slices.Equal(u.tokens, []string{"ghu_person"}) || !slices.Equal(i.tokens, []string{"ghu_person"}) {
+		t.Errorf("clients built with %v, caller read with %v, installations read with %v, want the person's token of %s only", s.tokens, u.tokens, i.tokens, app)
 	}
 }
 
@@ -197,28 +170,54 @@ func TestRepositoryOutsideTheApp(t *testing.T) {
 	}
 }
 
-// TestCallerRequired: with a verifier, a request without an ID token it
-// accepts is refused before any tool runs.
-func TestCallerRequired(t *testing.T) {
-	sig := newSigner(t)
-	for name, headers := range map[string]map[string]string{
-		"no token":           nil,
-		"another audience":   {"Authorization": "Bearer " + sig.idToken(t, "alice", "alice@example.com", "someone-else")},
-		"not an ID token":    {"Authorization": "Bearer ghu_person"},
-		"another key signed": {"Authorization": "Bearer " + newSigner(t).idToken(t, "alice", "alice@example.com", audience)},
-	} {
-		t.Run(name, func(t *testing.T) {
-			if _, err := connectAs(t, mcpserver.Config{Verifier: sig.verifier}, headers); err == nil {
-				t.Error("the server accepted the session")
-			}
-		})
+// TestGrantRefusedByGitHub: a grant whose token GitHub refuses names no
+// caller: the call is auth_required marked grant_required, so muster
+// answers it with the App's sign-in link, and no GitHub client is built.
+func TestGrantRefusedByGitHub(t *testing.T) {
+	s := &sources{pr: greenHead()}
+	c, err := connectAs(t, mcpserver.Config{
+		Credentials: mcpserver.MusterGrant{App: app, Users: &users{err: agentcli.NewExitError(agentcli.ExitAuthRequired, agentcli.VerdictAuthRequired, "refused")}},
+		Sources:     s,
+		Clock:       virtual(),
+	}, map[string]string{mcpserver.GrantHeaderPrefix + app: "ghu_revoked"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, doc := call(t, c, mcpserver.ToolPRWait, prWaitArgs("giantswarm/devctl"), "w")
+	assertVerdict(t, doc, agentcli.VerdictAuthRequired, agentcli.ExitAuthRequired)
+	if doc["status"] != mcpserver.StatusGrantRequired {
+		t.Errorf("status %v, want %s", doc["status"], mcpserver.StatusGrantRequired)
+	}
+	if len(s.tokens) != 0 {
+		t.Errorf("clients were built with a refused grant: %v", s.tokens)
 	}
 }
 
-// TestCallTraced: a call's log line and its metric labels carry the
-// caller's subject and the repository.
+// TestSessionWithoutGrant: a person who has not granted the App opens a
+// session and lists the tools, so muster shows them; pr_merge_status, which
+// reads no GitHub, is refused like every other tool call.
+func TestSessionWithoutGrant(t *testing.T) {
+	c, err := connectAs(t, mcpserver.Config{
+		Credentials: mcpserver.MusterGrant{App: app, Users: &users{caller: alice}},
+		Clock:       virtual(),
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tools, err := c.ListTools(context.Background(), mcp.ListToolsRequest{})
+	if err != nil || len(tools.Tools) == 0 {
+		t.Fatalf("listing the tools without a grant: %v, %v", tools, err)
+	}
+	_, doc := call(t, c, mcpserver.ToolPRMergeStatus, map[string]any{}, nil)
+	assertVerdict(t, doc, agentcli.VerdictAuthRequired, agentcli.ExitAuthRequired)
+	if doc["status"] != mcpserver.StatusGrantRequired {
+		t.Errorf("status %v, want %s", doc["status"], mcpserver.StatusGrantRequired)
+	}
+}
+
+// TestCallTraced: a call's log line and its metric labels carry the GitHub
+// login and id the grant names, and the repository.
 func TestCallTraced(t *testing.T) {
-	sig := newSigner(t)
 	registry := prometheus.NewRegistry()
 	metrics, err := mcpserver.NewMetrics(registry)
 	if err != nil {
@@ -226,16 +225,12 @@ func TestCallTraced(t *testing.T) {
 	}
 	var logs bytes.Buffer
 	c, err := connectAs(t, mcpserver.Config{
-		Credentials: mcpserver.MusterGrant{App: app},
+		Credentials: mcpserver.MusterGrant{App: app, Users: &users{caller: alice}},
 		Sources:     &sources{pr: greenHead()},
 		Clock:       virtual(),
-		Verifier:    sig.verifier,
 		Metrics:     metrics,
 		Logger:      slog.New(slog.NewJSONHandler(&logs, nil)),
-	}, map[string]string{
-		"Authorization":                   "Bearer " + sig.idToken(t, "Cg5hbGljZQ", "alice@example.com", audience),
-		mcpserver.GrantHeaderPrefix + app: "ghu_person",
-	})
+	}, map[string]string{mcpserver.GrantHeaderPrefix + app: "ghu_person"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,19 +241,50 @@ func TestCallTraced(t *testing.T) {
 	if err := json.Unmarshal(logs.Bytes(), &line); err != nil {
 		t.Fatalf("not one JSON log line: %v\n%s", err, logs.String())
 	}
-	for key, want := range map[string]any{"tool": mcpserver.ToolPRWait, "subject": "Cg5hbGljZQ", "email": "alice@example.com", "repository": "giantswarm/devctl", "verdict": "green"} {
+	for key, want := range map[string]any{"tool": mcpserver.ToolPRWait, "login": "alice", "userId": "4711", "repository": "giantswarm/devctl", "verdict": "green"} {
 		if line[key] != want {
 			t.Errorf("log %s = %v, want %v", key, line[key], want)
 		}
 	}
-	if got := testutil.ToFloat64(metricWith(t, registry, "Cg5hbGljZQ", "giantswarm/devctl")); got != 1 {
+	if got := testutil.ToFloat64(metricWith(t, registry, "alice", "4711", "giantswarm/devctl")); got != 1 {
 		t.Errorf("devctl_mcp_tool_calls_total for the caller and repository = %v, want 1", got)
 	}
 }
 
-// metricWith is the call counter of subject and repository for a green
-// pr_wait, read back from registry.
-func metricWith(t *testing.T, registry *prometheus.Registry, subject, repository string) prometheus.Collector {
+// TestGitHubUsers: the caller is GitHub's user for the token, read once per
+// token within the TTL; a token GitHub refuses is auth_required.
+func TestGitHubUsers(t *testing.T) {
+	var reads atomic.Int32
+	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reads.Add(1)
+		if r.URL.Path != "/user" || r.Header.Get("Authorization") != "Bearer ghu_person" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		_, _ = w.Write([]byte(`{"login":"alice","id":4711}`))
+	}))
+	t.Cleanup(gh.Close)
+	u := &mcpserver.GitHubUsers{BaseURL: gh.URL}
+	for range 2 {
+		caller, err := u.User(context.Background(), "ghu_person")
+		if err != nil || caller != alice {
+			t.Fatalf("User = %+v, %v, want %+v", caller, err, alice)
+		}
+	}
+	if reads.Load() != 1 {
+		t.Errorf("GET /user read %d times for one token, want 1", reads.Load())
+	}
+	if _, err := u.User(context.Background(), "ghu_revoked"); agentcli.Exit(err) != agentcli.ExitAuthRequired {
+		t.Errorf("a refused token answered %v, want auth_required", err)
+	}
+	if _, err := u.User(context.Background(), "ghu_revoked"); err == nil || reads.Load() != 3 {
+		t.Errorf("a refusal was kept: %d reads", reads.Load())
+	}
+}
+
+// metricWith is the call counter of login, userID and repository for a
+// green pr_wait, read back from registry.
+func metricWith(t *testing.T, registry *prometheus.Registry, login, userID, repository string) prometheus.Collector {
 	t.Helper()
 	families, err := registry.Gather()
 	if err != nil {
@@ -273,12 +299,12 @@ func metricWith(t *testing.T, registry *prometheus.Registry, subject, repository
 			for _, l := range m.GetLabel() {
 				labels[l.GetName()] = l.GetValue()
 			}
-			if labels["subject"] == subject && labels["repository"] == repository && labels["tool"] == mcpserver.ToolPRWait && labels["verdict"] == "green" {
+			if labels["login"] == login && labels["user_id"] == userID && labels["repository"] == repository && labels["tool"] == mcpserver.ToolPRWait && labels["verdict"] == "green" {
 				return prometheus.NewCounterFunc(prometheus.CounterOpts{Name: "x", Help: "x"}, m.GetCounter().GetValue)
 			}
 		}
 	}
-	t.Fatalf("no devctl_mcp_tool_calls_total{subject=%q,repository=%q}", subject, repository)
+	t.Fatalf("no devctl_mcp_tool_calls_total{login=%q,user_id=%q,repository=%q}", login, userID, repository)
 	return nil
 }
 

@@ -13,7 +13,6 @@ require (
 	github.com/aws/smithy-go v1.28.5
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/bmatcuk/doublestar/v4 v4.10.3
-	github.com/coreos/go-oidc/v3 v3.17.0
 	github.com/fatih/color v1.19.0
 	github.com/giantswarm/go-selfupdate v1.6.6
 	github.com/giantswarm/microerror v0.4.1
@@ -22,7 +21,6 @@ require (
 	github.com/giantswarm/schemalint/v2 v2.6.3
 	github.com/giantswarm/selfupdate-cosign v0.3.10
 	github.com/go-git/go-git/v5 v5.19.3
-	github.com/go-jose/go-jose/v4 v4.1.4
 	github.com/godbus/dbus/v5 v5.2.4
 	github.com/google/go-cmp v0.7.0
 	github.com/google/go-github/v93 v93.0.0

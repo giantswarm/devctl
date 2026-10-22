@@ -39,6 +39,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- `devctl serve` names the caller from the person's GitHub grant (`GET /user`, kept five minutes), not from the ID
+  token muster forwards: logs carry `login` and `userId`, metrics `login` and `user_id` instead of `subject`. A tool
+  call without a grant GitHub accepts, `pr_merge_status` included, is `auth_required` marked `grant_required`. The
+  chart ignores `identity`.
+
 - `devctl serve`: a blocking tool (`pr_wait`, `pr_merge`, `release_wait`, `release_promote`) called without a
   `progressToken`, as through muster's `call_tool` or `muster call`, is no longer refused with
   `progress_token_required`: it answers within `--no-progress-timeout` (20s) with the verdict reached by then,
@@ -108,6 +113,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   no longer pushed out of the tail. A failure already within the tail prints as before.
 
 ### Removed
+
+- `devctl serve`: `--oidc-issuer`, `--oidc-audience` and `--oidc-ca-file`; the chart no longer mounts an issuer CA.
 
 - The CHANGELOG cut: `devctl changelog cut` and `check`, the Auto-release workflow's job that opened, approved
   and auto-merged a `docs(changelog)` cut pull request after every release, and the generated

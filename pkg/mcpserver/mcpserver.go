@@ -93,10 +93,6 @@ type Config struct {
 	// ReleasePromote serves release_promote, the selector of the one tool
 	// that cuts a stable release; off, the tool is not listed.
 	ReleasePromote bool
-	// Verifier checks the ID token the gateway forwards on every request
-	// and names the caller; nil verifies none, and every call is
-	// anonymous.
-	Verifier Verifier
 	// Metrics count the calls; nil counts none.
 	Metrics *Metrics
 	// Logger logs one line per call; nil logs nothing.
@@ -119,7 +115,6 @@ type Server struct {
 	// noProgressTimeout bounds a wait called without a progressToken.
 	noProgressTimeout time.Duration
 	merges            mergejob.Jobs
-	verifier          Verifier
 	metrics           *Metrics
 	logger            *slog.Logger
 	// pulls serialize the merges of one pull request, by owner/repo#number.
@@ -161,7 +156,6 @@ func New(config Config) *Server {
 		progressInterval:  config.ProgressInterval,
 		noProgressTimeout: config.NoProgressTimeout,
 		merges:            config.Merges,
-		verifier:          config.Verifier,
 		metrics:           config.Metrics,
 		logger:            config.Logger,
 	}
@@ -176,14 +170,11 @@ func New(config Config) *Server {
 	return s
 }
 
-// Handler is the streamable HTTP handler of the server, at every path. With
-// a Verifier it refuses a request without an ID token it accepts.
+// Handler is the streamable HTTP handler of the server, at every path.
+// Sessions and listings need no grant, so a person who has not granted the
+// App yet sees the tools; every tool call is refused without one.
 func (s *Server) Handler() http.Handler {
-	handler := server.NewStreamableHTTPServer(s.mcp, server.WithHTTPContextFunc(httpContext))
-	if s.verifier == nil {
-		return handler
-	}
-	return authenticate(s.verifier, handler)
+	return server.NewStreamableHTTPServer(s.mcp, server.WithHTTPContextFunc(httpContext))
 }
 
 // MCP is the server's MCP server, for in-process clients.

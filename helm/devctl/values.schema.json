@@ -77,30 +77,8 @@
         },
         "identity": {
             "type": "object",
-            "additionalProperties": false,
-            "properties": {
-                "audiences": {
-                    "type": "array",
-                    "description": "The audiences of that token the server trusts, one at least: muster's Dex client."
-                },
-                "caSecret": {
-                    "type": "object",
-                    "description": "A Secret in the release namespace with the issuer's CA, for an issuer with a private certificate; empty trusts the system's roots alone.",
-                    "additionalProperties": false,
-                    "properties": {
-                        "key": {
-                            "type": "string"
-                        },
-                        "name": {
-                            "type": "string"
-                        }
-                    }
-                },
-                "issuer": {
-                    "type": "string",
-                    "description": "The issuer of the ID token muster forwards (forwardToken), the installation's Dex: every request must carry one it signed. Required with muster.mcpServer.enabled."
-                }
-            }
+            "description": "Ignored: the server names the caller from the person's GitHub grant, not from the ID token muster forwards. Accepted so a configuration that still sets it renders.",
+            "additionalProperties": true
         },
         "image": {
             "type": "object",
@@ -130,7 +108,7 @@
             "properties": {
                 "enabled": {
                     "type": "boolean",
-                    "description": "Serve the call metrics (devctl_mcp_tool_calls_total and devctl_mcp_tool_call_duration_seconds, by tool, subject, repository and verdict) at /metrics on port."
+                    "description": "Serve the call metrics (devctl_mcp_tool_calls_total and devctl_mcp_tool_call_duration_seconds, by tool, the caller's GitHub login and user id, repository and verdict) at /metrics on port."
                 },
                 "port": {
                     "type": "integer"
@@ -175,7 +153,7 @@
                         },
                         "enabled": {
                             "type": "boolean",
-                            "description": "Register the server with muster: an MCPServer in the release namespace, which muster watches. Needs github.grantApp and identity: one values change registers the server on an installation."
+                            "description": "Register the server with muster: an MCPServer in the release namespace, which muster watches. Needs github.grantApp: one values change registers the server on an installation."
                         },
                         "labels": {
                             "type": "object",
@@ -192,7 +170,7 @@
                         },
                         "requiredAudiences": {
                             "type": "array",
-                            "description": "Extra audiences the forwarded ID token carries; muster requests them at sign-in."
+                            "description": "Extra audiences the forwarded ID token carries; muster requests them at sign-in. The server reads no ID token: muster forwards one only because it attaches the grant to a connection made as the person."
                         },
                         "timeout": {
                             "type": "integer",
